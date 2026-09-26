@@ -463,6 +463,9 @@ typedef struct { TypeEnv *env; const char *src;
                      armb[TKC_MAX_ARM_BINDS];
                  int armb_count;
                  const Node *mt_discard;
+                 /* 127.221: the string literal whose `\(..)` sub-parse
+                  * is being inferred — its nodes are not in the tree. */
+                 const Node *interp_host;
                } Ctx;
 
 /* tc_first_report — 1 the first time `n` is reported on, 0 afterwards. */
@@ -695,7 +698,10 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
                 shift_tok_offsets(expr, delta, strnode);
+                const Node *saved_host = cx->interp_host;
+                cx->interp_host = strnode;
                 Type *t = infer(cx, expr);
+                cx->interp_host = saved_host;
                 int composite = t && (t->kind == TY_ARRAY || t->kind == TY_MAP ||
                                       t->kind == TY_STRUCT);
                 /* 123.11-fu: a bare composite *local* (`\(arrVar)`) infers
@@ -936,10 +942,30 @@ static int closure_between(const Node *root, const Node *n) {
     return 0;
 }
 
+/*
+ * in_tree_use (127.221) — the node that stands for `use` in the function
+ * tree.  check_interp_composites infers each `\(..)` from a fresh sub-parse
+ * whose nodes are re-homed onto the real source but are NOT in the tree, so
+ * every node_contains() test below answered "no" for them: a closure or an
+ * `mt` arm body never contained an interpolated use.  Measured on main
+ * (8f4a843): `mt r{$ok:t io.println("\(t.upper())")};let t=@("x")` drew a
+ * false E4036 — the arm binding was skipped and the later array `let` was
+ * found instead.  The literal holding the interpolation is in the tree and is
+ * at the same place, so it answers for the use.  find_binding_before, which
+ * has no Ctx, anchors on its own (tree_anchor_rec).
+ */
+static const Node *in_tree_use(const Ctx *cx, const Node *use) {
+    if (!use || !cx->interp_host) return use;
+    const Node *root = cx->fn_node ? cx->fn_node : cx->root;
+    if (root && !node_contains(root, use)) return cx->interp_host;
+    return use;
+}
+
 static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
                                   const Node *use) {
     const Node *best = NULL;
     if (!cx->fn_node || !use) return NULL;
+    use = in_tree_use(cx, use);
     local_in_force_rec(cx->fn_node, cx->src, name, nlen, use, &best);
     return best;
 }
@@ -1781,8 +1807,15 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
         if (cx->armb[k].len != nlen || memcmp(cx->armb[k].name, nb, (size_t)nlen) != 0)
             continue;
         const Node *body = cx->armb[k].body;
-        /* A re-entered initialiser outside the arm is not in its scope. */
-        if (!node_contains(body, use)) continue;
+        /* A re-entered initialiser outside the arm is not in its scope.
+         * 127.221: a use in an interpolation sub-parse is in the arm when
+         * the literal holding it is — unless the `mt` is itself inside the
+         * interpolation, and then the use is in its (sub-parse) body. */
+        if (!node_contains(body, use)) {
+            const Node *host = in_tree_use(cx, use);
+            if (host == use || !node_contains(body, host)) continue;
+            use = host;
+        }
         if (cx->fn_node) {
             const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, use);
             if (bn && node_contains(body, bn) && bn->start < use->start) return NULL;
