@@ -118,10 +118,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev clang cppcheck clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev clang cppcheck clang-tidy libssl-dev
 
+      # 135.3e: src/stdlib/tls.c needs OpenSSL headers. Without them the gate
+      # reports tls.c as a named SKIP; here libssl-dev is installed and
+      # TK_LINT_REQUIRE_OPENSSL=1 makes that skip a failure.
       - name: make lint (compiler --analyze)
         run: make lint
+        env:
+          TK_LINT_REQUIRE_OPENSSL: 1
 
       - name: cppcheck
         run: |
@@ -186,7 +191,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang libssl-dev
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -217,6 +222,8 @@ jobs:
       # Sibling of `make lint`, added by 135.3a, never run by CI.
       - name: Non-host platform branches build
         run: make lint-nonhost
+        env:
+          TK_LINT_REQUIRE_OPENSSL: 1   # 135.3e: tls.c is checked, never skipped, here
 
       - name: Index is in sync
         run: make check-index

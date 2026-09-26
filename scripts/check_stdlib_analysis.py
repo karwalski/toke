@@ -68,6 +68,11 @@ Usage:
     passed BY THE MAKEFILE ($(ANALYZE_SRCS)) so that what the repository
     builds and what it analyses cannot drift into two different lists here.
 
+    OpenSSL (135.3e): src/stdlib/tls.c needs <openssl/ssl.h>.  The gate finds
+    it via $TK_OPENSSL_PREFIX, the default path, pkg-config or brew; failing
+    that, tls.c is a NAMED SKIP in the final line, and
+    TK_LINT_REQUIRE_OPENSSL=1 turns the skip into a failure (CI sets it).
+
     `--report` prints skiplist lines for everything currently failing and
     exits 0.  It is a drafting aid: paste the lines in and write a real
     reason and story next to each.  It deliberately does NOT write the file.
@@ -114,6 +119,73 @@ EXTRA_FLAGS = {
     # -Wpedantic.  Same suppression the Makefile applies to encrypt.o.
     "src/stdlib/encrypt.c": ["-Wno-pedantic"],
 }
+
+# ── 135.3e: OpenSSL, found rather than assumed ────────────────────────────────
+#
+# src/stdlib/tls.c includes <openssl/ssl.h> unconditionally.  Until 135.3e the
+# gate passed no OpenSSL include path, so on this macOS host (Homebrew's
+# headers are not on Apple clang's default path) the file failed on its first
+# #include and sat on the skiplist as "cannot be checked" -- 910 lines of the
+# TLS 1.3 module, analysed by nothing.  OpenSSL WAS installed the whole time.
+#
+# Now the gate looks for the headers, in this order, and uses the first
+# location where `#include <openssl/ssl.h>` actually compiles:
+#   1. $TK_OPENSSL_PREFIX/include        (explicit; wins over everything)
+#   2. the compiler's default path       (Linux with libssl-dev)
+#   3. `pkg-config --cflags-only-I openssl`
+#   4. `brew --prefix openssl@3`/include (macOS)
+#
+# If none works, every source needing OpenSSL is reported as a NAMED SKIP --
+# on its own line and in the gate's final line -- never a silent pass, and
+# TK_LINT_REQUIRE_OPENSSL=1 (CI sets it) turns that skip into a failure.
+OPENSSL_SRCS = {"src/stdlib/tls.c"}
+
+
+def _probe_openssl(flags):
+    r = subprocess.run([CC, "-x", "c", "-fsyntax-only"] + flags + ["-"],
+                       input="#include <openssl/ssl.h>\nint tk_probe;\n",
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
+
+def find_openssl():
+    """Return (include_flags or None, description of what was tried/found)."""
+    tried = []
+    pre = os.environ.get("TK_OPENSSL_PREFIX")
+    cands = []
+    if pre:
+        cands.append(("TK_OPENSSL_PREFIX", ["-I" + os.path.join(pre, "include")]))
+    cands.append(("compiler default path", []))
+    try:
+        r = subprocess.run(["pkg-config", "--cflags-only-I", "openssl"],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            cands.append(("pkg-config", r.stdout.split()))
+    except OSError:
+        pass
+    try:
+        r = subprocess.run(["brew", "--prefix", "openssl@3"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            cands.append(("brew openssl@3",
+                          ["-I" + os.path.join(r.stdout.strip(), "include")]))
+    except OSError:
+        pass
+    for how, flags in cands:
+        if _probe_openssl(flags):
+            return flags, "%s%s" % (how, (" (" + " ".join(flags) + ")") if flags else "")
+        tried.append(how)
+        if how == "TK_OPENSSL_PREFIX":
+            # An explicit prefix that does not work is an error, not a hint to
+            # go looking elsewhere.
+            return None, "TK_OPENSSL_PREFIX=%s has no usable include/openssl/ssl.h" % pre
+    return None, "not found (tried: %s)" % ", ".join(tried)
+
+
+OPENSSL_FLAGS, OPENSSL_HOW = find_openssl()
+if OPENSSL_FLAGS is not None:
+    for _s in OPENSSL_SRCS:
+        EXTRA_FLAGS[_s] = EXTRA_FLAGS.get(_s, []) + OPENSSL_FLAGS
 
 # Which macro identifies "this host".  Undefining it is what reaches the #else
 # branch.  This is the C033 technique, generalised.
@@ -279,6 +351,15 @@ def main():
               file=sys.stderr)
         return 2
 
+    named_skips = []
+    if OPENSSL_FLAGS is None:
+        for src in sorted(set(sources) & OPENSSL_SRCS):
+            named_skips.append("%s: NOT compiled, analysed or nonhost-checked -- "
+                               "OpenSSL headers unavailable: %s. Set TK_OPENSSL_PREFIX=<prefix> "
+                               "or install them (brew install openssl@3 / "
+                               "apt-get install libssl-dev)." % (src, OPENSSL_HOW))
+        sources = [s for s in sources if s not in OPENSSL_SRCS]
+
     skips, skip_errors = load_skiplist()
     failures = list(skip_errors)
     if "compile" in modes:
@@ -377,6 +458,14 @@ def main():
     n_skips = sum(1 for k in skips if k[0] in modes)
     print("check_stdlib_analysis: %d sources, modes=%s, %d skiplist entries in play"
           % (len(sources), ",".join(modes), n_skips))
+    if OPENSSL_FLAGS is not None:
+        print("check_stdlib_analysis: OpenSSL headers via %s" % OPENSSL_HOW)
+    require_ssl = os.environ.get("TK_LINT_REQUIRE_OPENSSL") == "1"
+    for n in named_skips:
+        if require_ssl:
+            failures.append("OPENSSL (TK_LINT_REQUIRE_OPENSSL=1): %s" % n)
+        else:
+            print("  SKIP:  %s" % n)
 
     for s in sorted(set(stale)):
         print("  STALE: %s" % s)
@@ -387,6 +476,10 @@ def main():
         print("check_stdlib_analysis: FAIL (%d unaccounted, %d stale)"
               % (len(set(failures)), len(set(stale))))
         return 1
+    if named_skips:
+        print("check_stdlib_analysis: OK, %d source(s) SKIPPED -- not checked: %s"
+              % (len(named_skips), ", ".join(n.split(":")[0] for n in named_skips)))
+        return 0
     print("check_stdlib_analysis: OK")
     return 0
 
