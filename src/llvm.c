@@ -1718,6 +1718,18 @@ static int stdlib_err_passes_through(Ctx *c, const char *from, const char *to)
     return 1;
 }
 
+/* 127.210: `!` from a user callee declaring `T!$a` inside a function
+ * declaring `U!$b` passed the callee's error box through unchanged, so a
+ * `$a` payload was read as a `$b` variant (a str pointer printed as `$b`'s
+ * i64 variant).  127.182's rule, for user errors: pass through only into the
+ * same layout, else re-raise payload-less (tag -1). */
+static int user_err_reraise(Ctx *c, const FnSig *ucs) {
+    if (!c->cur_fn_err[0] || !ucs || !ucs->err_type_name[0]) return 0;
+    const char *from = ucs->err_type_name[0] == '$' ? ucs->err_type_name + 1
+                                                    : ucs->err_type_name;
+    return !stdlib_err_passes_through(c, from, c->cur_fn_err);
+}
+
 /*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
@@ -6457,14 +6469,20 @@ static int emit_expr(Ctx *c, const Node *n)
                             break;
                         }
                     }
-                    if (ucs && ucs->err_type_name[0]) prop_cur_err = 1;
+                    if (ucs && ucs->err_type_name[0]) {
+                        prop_cur_err = 1;
+                        prop_reraise = user_err_reraise(c, ucs);   /* 127.210 */
+                    }
                 }
             } else if (sc->kind == NODE_IDENT) {
                 char cn[256]; tok_cp(c->src, sc, cn, sizeof cn);
                 if (strcmp(cn, "main")) {
                     mangle_fn_name(c, cn, sizeof cn);
                     const FnSig *ucs = lookup_fn(c, cn);
-                    if (ucs && ucs->err_type_name[0]) prop_cur_err = 1;
+                    if (ucs && ucs->err_type_name[0]) {
+                        prop_cur_err = 1;
+                        prop_reraise = user_err_reraise(c, ucs);   /* 127.210 */
+                    }
                 }
             }
         }
