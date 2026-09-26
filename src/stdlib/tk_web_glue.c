@@ -854,9 +854,10 @@ static Res staticdir_handler(Req req) {
     }
     FILE *f = fopen(filepath, "rb");
     if (!f) return mk404();
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    rewind(f);
+    /* 135.3c: checked seeks, not rewind() -- rewind cannot report failure,
+     * and a failed seek left the read starting at an unknown position. */
+    long sz = fseek(f, 0, SEEK_END) == 0 ? ftell(f) : -1;
+    if (sz >= 0 && fseek(f, 0, SEEK_SET) != 0) sz = -1;
     if (sz < 0 || sz > 16 * 1024 * 1024) {
         fclose(f);
         Res r; r.status = 500; r.body = "File too large";
