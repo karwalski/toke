@@ -43,6 +43,28 @@ int64_t tk_ws_send_w(int64_t conn, int64_t msg) {
 }
 
 /*
+ * 127.150 — ws.sendbytes(conn; data: @($byte)) : void!$wserr.
+ *
+ * Declared in stdlib/ws.tki and documented in docs/stdlib/ws.md with no
+ * caveat, while no _w wrapper existed, so any program naming it died at ld
+ * on a bare _tk_ws_sendbytes_w. The C core has had ws_sendbytes() (a WS_BINARY
+ * frame through the same ws_encode_frame / ws_send_all path ws_send uses)
+ * all along; this is the missing door. Same error convention as ws.send:
+ * 0 is $ok, -1 is $err. A [byte] is an i64 array of byte values (bytes_rt.h),
+ * so it is unpacked to a contiguous buffer first — an embedded 0x00 is data.
+ */
+int64_t tk_ws_sendbytes_w(int64_t conn, int64_t data) {
+    WsConn *c = ws_handle(conn);
+    if (!c) return -1;
+    uint8_t *buf = NULL;
+    uint64_t n = tk_bytes_unpack(data, &buf);
+    if (!buf) return -1;
+    WsSendResult r = ws_sendbytes(c, buf, n);
+    free(buf);
+    return r.is_err ? -1 : 0;
+}
+
+/*
  * 127.145 — ws.recv is declared `$wsconn -> $wsmsg!$wserr` and returned a
  * bare `char *`.
  *
