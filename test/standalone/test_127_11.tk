@@ -21,8 +21,8 @@ f=viaparam(xs:@i64;v:i64):i64{
 
 f=main():$i64{
   let a=@(3;1;2);
-  cks("contains-present";"\(a.contains(2))";"1");
-  cks("contains-absent";"\(a.contains(9))";"0");
+  cks("contains-present";"\(a.contains(2))";"true");
+  cks("contains-absent";"\(a.contains(9))";"false");
   cks("indexof-present";"\(a.indexof(1))";"1");
   cks("indexof-absent";"\(a.indexof(9))";"-1");
   cks("find-by-value";"\(a.find(2))";"2");
@@ -35,8 +35,8 @@ f=main():$i64{
   let srt=a.sort(&cmp).slice(0;2);
   cks("chained-sort-slice";"\(srt.get(0)) \(srt.get(1))";"1 2");
   let w=s.split("x,y,z";",");
-  cks("str-array-contains";"\(w.contains("y"))";"1");
-  cks("str-array-contains-absent";"\(w.contains("q"))";"0");
+  cks("str-array-contains";"\(w.contains("y"))";"true");
+  cks("str-array-contains-absent";"\(w.contains("q"))";"false");
   cks("str-array-indexof";"\(w.indexof("z"))";"2");
   let ws=w.slice(1;3);
   cks("str-array-slice";s.join(",";ws);"y,z");
@@ -48,6 +48,6 @@ f=main():$i64{
   cks("str-slice-unchanged";s.slice("hello";1;3);"el");
   let h="hello";
   cks("str-method-slice-unchanged";h.slice(1;3);"el");
-  cks("str-method-contains-unchanged";"\(h.contains("ell"))";"1");
+  cks("str-method-contains-unchanged";"\(h.contains("ell"))";"true"); (* 127.194: a predicate receiver method renders true/false *)
   <0
 };

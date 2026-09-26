@@ -271,7 +271,10 @@ f=main():i64{
 # callee is a NODE_FIELD_EXPR.  If the new diagnostic fired on the callee they
 # would all break, so pin them.  Also pins 127.31 (contains) and 127.55 (set
 # leaves the receiver alone: `m.contains("c")` is 0).
-run_case "map methods still work" "1 2 1 0 2 9 0" \
+# CHANGED 2026-09-25 (Batch Y1, 127.194): the three m.contains results render
+# as true/false (owner decision 127.15); they printed 1/0 while receiver
+# predicates were invisible to 127.94.  The values asserted are unchanged.
+run_case "map methods still work" "1 2 true false 2 9 false" \
 'm=main;
 i=io:std.io;
 f=main():i64{

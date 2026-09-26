@@ -16,14 +16,14 @@ f=cks(name:str;got:str;want:str):i64{
 
 f=main():$i64{
   let m=@("a":1;"z":0);
-  cks("contains-present";"\(m.contains("a"))";"1");
-  cks("contains-stored-zero";"\(m.contains("z"))";"1");
-  cks("contains-absent";"\(m.contains("nope"))";"0");
+  cks("contains-present";"\(m.contains("a"))";"true");
+  cks("contains-stored-zero";"\(m.contains("z"))";"true");
+  cks("contains-absent";"\(m.contains("nope"))";"false");
   let n=@(1:10;2:0);
-  cks("contains-int";"\(n.contains(2)) \(n.contains(3))";"1 0");
+  cks("contains-int";"\(n.contains(2)) \(n.contains(3))";"true false");
   let e=mut.@("k":1);
   e=e.set("new";5);
-  cks("contains-after-set";"\(e.contains("new"))";"1");
+  cks("contains-after-set";"\(e.contains("new"))";"true");
   if(m.contains("a")){ io.println("PASS contains-in-if") }
   el{ io.println("FAIL contains-in-if") };
   cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"true"); (* 127.94 *)

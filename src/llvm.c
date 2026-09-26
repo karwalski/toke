@@ -2650,6 +2650,51 @@ static int field_declares_bool(Ctx *c, const Node *e) {
     return 0;
 }
 
+/* recv_call_is_bool (127.194) — `e` is a value-receiver call whose result
+ * the program reads as a bool, but which reaches the backend as an i64:
+ *   - a predicate member of the receiver dispatch (`s.contains(x)`,
+ *     `m.contains(k)`, `a.contains(v)`, `s.starts(p)`, `s.ends(p)`,
+ *     `s.eq(t)`) — every glue symbol those lower to returns 0/1;
+ *   - `.get(i)` on an array whose elements are bool — an array slot is an
+ *     i64, so the element arrives as 0/1.
+ * Interpolation printed both as `1` after 127.94 had made every other bool
+ * print `true`.  Same c->src rule as call_declares_bool. */
+static const char *get_llvm_name(Ctx *c, const char *toke_name);
+static int recv_method_in_chain(const char *m);
+static int arr_elem_is_bool(Ctx *c, const Node *r) {
+    if (!r) return 0;
+    if (r->rtype && r->rtype->kind == TY_ARRAY && r->rtype->elem &&
+        r->rtype->elem->kind != TY_UNKNOWN)
+        return r->rtype->elem->kind == TY_BOOL;
+    if (r->kind == NODE_IDENT) {
+        char nb[128]; tok_cp(c->src, r, nb, sizeof nb);
+        const char *st = ptr_local_struct_type(c, get_llvm_name(c, nb));
+        if (!st) st = ptr_local_struct_type(c, nb);
+        return st && !strcmp(st, "@bool");
+    }
+    return 0;
+}
+static int recv_call_is_bool(Ctx *c, const Node *e) {
+    /* `a.get(i)` with one argument parses as an index expression. */
+    if (e && e->kind == NODE_INDEX_EXPR && e->child_count >= 2)
+        return arr_elem_is_bool(c, e->children[0]);
+    if (!e || e->kind != NODE_CALL_EXPR || e->child_count < 1) return 0;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2 ||
+        !cal->children[0] || !cal->children[1]) return 0;
+    char recv[128], member[128];
+    tok_cp(c->src, cal->children[0], recv, sizeof recv);
+    tok_cp(c->src, cal->children[1], member, sizeof member);
+    for (int ii = 0; ii < c->import_count; ii++)
+        if (!strcmp(c->imports[ii].alias, recv)) return 0;   /* a module call */
+    if (!strcmp(member, "contains") || !strcmp(member, "starts") ||
+        !strcmp(member, "ends") || !strcmp(member, "eq"))
+        return recv_method_in_chain(member);
+    if (!strcmp(member, "get") && e->child_count == 2)
+        return arr_elem_is_bool(c, cal->children[0]);
+    return 0;
+}
+
 static int emit_bool_to_str(Ctx *c, int v) {
     int at = 1, af = 1;
     int st = emit_str_global(c, "\"true\"", 6, &at);
@@ -2907,7 +2952,8 @@ static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
  * `chain` distinguishes the members the big chain handles from the three that
  * a special case above it returns for (`len` inline or via tk_*_len_w, `keys`
  * on a map, `toarray` on a Vec).  Those must not enter the chain — its final
- * `else` is `tk_str_eq_w` — but the checker must still accept them.
+ * `else` is an internal-error diagnostic (127.167; it was `tk_str_eq_w`) —
+ * but the checker must still accept them.
  *
  * ARITY IS NOT IN THIS TABLE.  It is read from g_stdlib_decls, the compiler's
  * record of the native side, and only when EVERY candidate symbol agrees; a
@@ -2915,52 +2961,75 @@ static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
  * is left unchecked rather than judged against a guess.  That is the same
  * ground 136.1/127.61 put the module-call arity check on.
  */
+/* Receiver kinds a member's dispatch handles (127.151, 127.177).  A kind is
+ * set only where the chain below has a branch that picks glue for that kind:
+ *   append/push/pop          → tk_array_*            (Vec is its own path)
+ *   getor, keys              → tk_map_*
+ *   set                      → recv_is_map ? tk_map_set_w : tk_array_set_w
+ *   map/filter/reduce/fold/sort → tk_arr_*
+ *   contains                 → map / array / str, each by its own test
+ *   slice/find/indexof       → recv_is_array ? tk_arr_* : tk_str_*
+ *   join                     → str receiver = separator, else tk_arr_join_w
+ *   len                      → str / map / vec glue, arrays inline
+ *   toarray                  → Vec only (no str/array/map kind)
+ *   the rest                 → tk_str_* only
+ * RK_UNJUDGED: `get`, whose one-argument form is an index expression; the
+ * checker says nothing about its receiver kind.
+ *
+ * This column used to be a copy in types.c (s_recv_kinds), kept honest only
+ * by C049's drift guard.  It lives here now, beside the dispatch it
+ * describes, and the checker reads it through recv_method_on_kind(). */
+#define RK_S 1u
+#define RK_A 2u
+#define RK_M 4u
+#define RK_UNJUDGED 8u
 typedef struct {
     const char *member;
     int         chain;        /* 1 = dispatched by the big chain below */
+    unsigned    kinds;        /* RK_* — the receiver kinds the dispatch lowers */
     const char *syms[5];      /* NULL-terminated; every symbol the chain may pick */
 } RecvMethod;
 
 static const RecvMethod g_recv_methods[] = {
     /* handled by a special case ABOVE the chain */
-    {"len",       0, {"tk_str_len_w", "tk_map_len_w", "tk_vec_len_w", NULL}},
-    {"keys",      0, {"tk_map_keys_w", NULL}},
-    {"toarray",   0, {"tk_vec_toarray_w", NULL}},
+    {"len",       0, RK_S|RK_A|RK_M, {"tk_str_len_w", "tk_map_len_w", "tk_vec_len_w", NULL}},
+    {"keys",      0, RK_M, {"tk_map_keys_w", NULL}},
+    {"toarray",   0, 0, {"tk_vec_toarray_w", NULL}},
     /* handled by the chain */
-    {"append",    1, {"tk_array_append_w", NULL}},
-    {"push",      1, {"tk_array_append_w", "tk_vec_push_w", NULL}},
-    {"pop",       1, {"tk_array_pop_w", "tk_vec_pop_w", NULL}},
-    {"set",       1, {"tk_map_set_w", "tk_array_set_w", "tk_vec_set_w", NULL}},
-    {"get",       1, {"tk_str_arrayget_w", "tk_vec_get_w", NULL}},
-    {"getor",     1, {"tk_map_getor_w", NULL}},
-    {"map",       1, {"tk_arr_map", NULL}},
-    {"filter",    1, {"tk_arr_filter", NULL}},
-    {"reduce",    1, {"tk_arr_reduce", NULL}},
-    {"fold",      1, {"tk_arr_reduce", NULL}},
-    {"sort",      1, {"tk_arr_sort", NULL}},
-    {"split",     1, {"tk_str_split_w", NULL}},
-    {"trim",      1, {"tk_str_trim_w", NULL}},
-    {"contains",  1, {"tk_map_contains_w", "tk_str_contains_w",
+    {"append",    1, RK_A, {"tk_array_append_w", NULL}},
+    {"push",      1, RK_A, {"tk_array_append_w", "tk_vec_push_w", NULL}},
+    {"pop",       1, RK_A, {"tk_array_pop_w", "tk_vec_pop_w", NULL}},
+    {"set",       1, RK_A|RK_M, {"tk_map_set_w", "tk_array_set_w", "tk_vec_set_w", NULL}},
+    {"get",       1, RK_UNJUDGED, {"tk_str_arrayget_w", "tk_vec_get_w", NULL}},
+    {"getor",     1, RK_M, {"tk_map_getor_w", NULL}},
+    {"map",       1, RK_A, {"tk_arr_map", NULL}},
+    {"filter",    1, RK_A, {"tk_arr_filter", NULL}},
+    {"reduce",    1, RK_A, {"tk_arr_reduce", NULL}},
+    {"fold",      1, RK_A, {"tk_arr_reduce", NULL}},
+    {"sort",      1, RK_A, {"tk_arr_sort", NULL}},
+    {"split",     1, RK_S, {"tk_str_split_w", NULL}},
+    {"trim",      1, RK_S, {"tk_str_trim_w", NULL}},
+    {"contains",  1, RK_S|RK_A|RK_M, {"tk_map_contains_w", "tk_str_contains_w",
                       "tk_arr_contains_w", "tk_arr_containsstr_w", NULL}},
-    {"charat",    1, {"tk_str_charat_w", NULL}},
-    {"slice",     1, {"tk_str_slice_w", "tk_arr_slice_w", NULL}},
-    {"find",      1, {"tk_str_find_w", "tk_arr_find_w", "tk_arr_findstr_w", NULL}},
-    {"starts",    1, {"tk_str_starts_w", NULL}},
-    {"indexof",   1, {"tk_str_indexof_w", "tk_arr_indexof_w",
+    {"charat",    1, RK_S, {"tk_str_charat_w", NULL}},
+    {"slice",     1, RK_S|RK_A, {"tk_str_slice_w", "tk_arr_slice_w", NULL}},
+    {"find",      1, RK_S|RK_A, {"tk_str_find_w", "tk_arr_find_w", "tk_arr_findstr_w", NULL}},
+    {"starts",    1, RK_S, {"tk_str_starts_w", NULL}},
+    {"indexof",   1, RK_S|RK_A, {"tk_str_indexof_w", "tk_arr_indexof_w",
                       "tk_arr_indexofstr_w", NULL}},
-    {"substr",    1, {"tk_str_substr_w", NULL}},
-    {"substring", 1, {"tk_str_substr_w", NULL}},
-    {"concat",    1, {"tk_str_concat_w", NULL}},
-    {"chars",     1, {"tk_str_chars_w", NULL}},
-    {"sub",       1, {"tk_str_sub_w", NULL}},
-    {"eq",        1, {"tk_str_eq_w", NULL}},
-    {"upper",     1, {"tk_str_upper_w", NULL}},
-    {"lower",     1, {"tk_str_lower_w", NULL}},
-    {"ends",      1, {"tk_str_ends_w", NULL}},
-    {"replace",   1, {"tk_str_replace_w", NULL}},
-    {"fields",    1, {"tk_str_fields_w", NULL}},
-    {"join",      1, {"tk_str_join_w", "tk_arr_join_w", NULL}},
-    {NULL, 0, {NULL}}
+    {"substr",    1, RK_S, {"tk_str_substr_w", NULL}},
+    {"substring", 1, RK_S, {"tk_str_substr_w", NULL}},
+    {"concat",    1, RK_S, {"tk_str_concat_w", NULL}},
+    {"chars",     1, RK_S, {"tk_str_chars_w", NULL}},
+    {"sub",       1, RK_S, {"tk_str_sub_w", NULL}},
+    {"eq",        1, RK_S, {"tk_str_eq_w", NULL}},
+    {"upper",     1, RK_S, {"tk_str_upper_w", NULL}},
+    {"lower",     1, RK_S, {"tk_str_lower_w", NULL}},
+    {"ends",      1, RK_S, {"tk_str_ends_w", NULL}},
+    {"replace",   1, RK_S, {"tk_str_replace_w", NULL}},
+    {"fields",    1, RK_S, {"tk_str_fields_w", NULL}},
+    {"join",      1, RK_S|RK_A, {"tk_str_join_w", "tk_arr_join_w", NULL}},
+    {NULL, 0, 0, {NULL}}
 };
 
 static const RecvMethod *recv_method_find(const char *m) {
@@ -2979,6 +3048,22 @@ static int recv_method_in_chain(const char *m) {
 
 /* 127.115: does the receiver dispatch lower this member at all? */
 int recv_method_known(const char *m) { return recv_method_find(m) != NULL; }
+
+/*
+ * recv_method_on_kind (127.151, 127.177) — does the dispatch lower member `m`
+ * on a receiver of kind `k` ('s' str, 'a' array, 'm' map)?  1 yes, 0 no, -1
+ * when there is nothing to judge: an unknown member, an unknown kind, or a
+ * member marked RK_UNJUDGED.  The checker's receiver-kind check (types.c,
+ * check_recv_method_call) reads this, so the kinds it refuses are the kinds
+ * this table says the chain has no branch for.
+ */
+int recv_method_on_kind(const char *m, char k) {
+    const RecvMethod *r = recv_method_find(m);
+    if (!r || (r->kinds & RK_UNJUDGED)) return -1;
+    unsigned bit = k == 's' ? RK_S : k == 'a' ? RK_A : k == 'm' ? RK_M : 0u;
+    if (!bit) return -1;
+    return (r->kinds & bit) ? 1 : 0;
+}
 
 /*
  * recv_method_arity — the call arity (receiver included) every glue symbol
@@ -3644,7 +3729,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
                         int abi_bool = ety && !strcmp(ety, "i64")
                                        && (call_declares_bool(c, expr_node)
-                                           || field_declares_bool(c, expr_node));
+                                           || field_declares_bool(c, expr_node)
+                                           || recv_call_is_bool(c, expr_node));
                         diag_rebase_pop();
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
@@ -4049,16 +4135,11 @@ static int emit_expr(Ctx *c, const Node *n)
         const char *rty = expr_llvm_type(c, n->children[1]);
         /* Concat dispatch for `+` with at least one i8* operand.
          *
-         * Epic 111 / ADR-0004: `+` is type-checker-rejected for $str+$str.
-         * In practice a few patterns still slip through (e.g.
-         * `let formatted=s.format(...); formatted+"%"` — the let binding
-         * doesn't propagate TY_STR from the stdlib call, so the type
-         * checker sees TY_UNKNOWN + TY_STR and lets it through). Codegen
-         * dispatches on the operand struct-type marker:
+         * Epic 111 / ADR-0004: `+` is type-checker-rejected for $str+$str,
+         * in every shape since C043/C057.  Codegen dispatches on the
+         * operand struct-type marker:
          *   "@<elem>"  → tk_array_concat (real array)
-         *   "$str" / NULL → tk_str_concat (safe for strings; the
-         *                   migration tool flags these for rewriting
-         *                   but they shouldn't crash in the interim)
+         *   anything else → internal error (127.172; was tk_str_concat)
          */
         if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
             /* 114.19c: adding a bare number/bool literal to an array or string
@@ -4100,6 +4181,17 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (rhs_mark && rhs_mark[0] == '@') is_array = 1;
                 }
             }
+            /* 127.172: the checker's type is authoritative where it has one.
+             * The local-tag tests above see only literals and identifiers, so
+             * `quicksort(less)+equal+quicksort(greater)` — arrays returned by
+             * calls — fell to the str-concat "safety net" and printed garbage
+             * at exit 0 (18 corpus records, P3-A-SRT-0013/14/15). */
+            if (!is_array) {
+                const Type *lt0 = n->children[0]->rtype;
+                const Type *rt0 = n->child_count > 1 ? n->children[1]->rtype : NULL;
+                if ((lt0 && lt0->kind == TY_ARRAY) || (rt0 && rt0->kind == TY_ARRAY))
+                    is_array = 1;
+            }
             /* NOTE (Story 114.19c): an earlier codegen guard here rejected
              * `array + i64` to catch `@(a)+b` (unwrapped-scalar append). It was
              * reverted — an array handle is itself often an i64 (e.g. a @byte
@@ -4122,7 +4214,22 @@ static int emit_expr(Ctx *c, const Node *n)
             if (is_array) {
                 fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
             } else {
-                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d) ; safety net — should be migrated\n", t, lhs, rhs);
+                /* 127.172: this was `tk_str_concat` — a "safety net" lowering
+                 * of `str + str`, the operator ADR-0004 removed.  The checker
+                 * now rejects every shape of it (E4031, C043/C057), so a
+                 * checked STRING cannot arrive here.  What can is an integer
+                 * the backend mistyped as i8* while the checker left the sum
+                 * unknown — `arr.get(0).get(1)` on an @(@i64) (the round-trip
+                 * fixture struct_literal.tk) — which tk_str_concat turned into
+                 * a segfault at run time.  Either way the lowering cannot be
+                 * trusted: say so and fail the build.  No `fix` (§3.1). */
+                diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                          "internal compiler error: '+' reached codegen with a "
+                          "pointer operand that is not an array and that the "
+                          "type checker did not type as a number; toke has no "
+                          "string '+' (ADR-0004)",
+                          (void *)0);
+                fprintf(c->out, "  %%t%d = inttoptr i64 0 to i8* ; 127.172 error stub\n", t);
             }
             return t;
         }
@@ -4737,7 +4844,28 @@ static int emit_expr(Ctx *c, const Node *n)
                 else if (!strcmp(method_im, "chars"))   fn_im = "tk_str_chars_w";
                 else if (!strcmp(method_im, "sub"))     fn_im = "tk_str_sub_w";
                 else if (!strcmp(method_im, "substring"))fn_im = "tk_str_substr_w";
-                else                                    fn_im = "tk_str_eq_w";
+                else if (!strcmp(method_im, "eq"))      fn_im = "tk_str_eq_w";
+                else {
+                    /* 127.167: this `else` used to be `fn_im = "tk_str_eq_w"`,
+                     * so a member present in g_recv_methods with no branch
+                     * above lowered SILENTLY to str.eq with the wrong arity
+                     * (a trial `indexfrom` row made `t.indexfrom(",";2)`
+                     * print 0).  Every chain member now has its own branch
+                     * (C073 checks the table against this chain), so reaching
+                     * here is a compiler defect, not a user error: say so and
+                     * fail the build.  No `fix` — nothing the user can change
+                     * repairs it (AGENTS.md §3.1). */
+                    char imsg[256];
+                    snprintf(imsg, sizeof imsg,
+                             "internal compiler error: receiver method '%s' is "
+                             "in the dispatch table but the dispatch chain has "
+                             "no branch for it", method_im);
+                    diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                              imsg, (void *)0);
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; 127.167 error stub\n", t);
+                    return t;
+                }
                 /* Emit base object as first arg (coerce ptr→i64) */
                 int obj_v = emit_expr(c, n->children[0]->children[0]);
                 const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
@@ -6543,6 +6671,21 @@ static int emit_expr(Ctx *c, const Node *n)
          * the payload (slot[1]) interpreted per that variant's type. */
         const char *scr_sum = expr_struct_type(c, n->children[0]);
         const StructInfo *ssi = scr_sum ? lookup_struct(c, scr_sum) : NULL;
+        /* 127.174: the backend's own tags do not follow a sum value out of an
+         * array (`mt(xs.get(0))`, or `let a=xs.get(0); mt(a)`), so the tag
+         * switch declined and a 3-arm match died with E9005 — on a program
+         * the checker had accepted, because the checker DOES type the element
+         * as the sum (127.129/127.152).  Read the checker's type when the
+         * tags have nothing: a sum-typed rtype names the sum, and the box
+         * layout is the same whichever way the value arrived. */
+        if ((!ssi || !ssi->is_sum) && n->children[0]->rtype &&
+            n->children[0]->rtype->kind == TY_STRUCT &&
+            n->children[0]->rtype->name) {
+            const char *rn = n->children[0]->rtype->name;
+            const StructInfo *rsi = lookup_struct(c, rn);
+            if (!rsi && rn[0] == '$') rsi = lookup_struct(c, rn + 1);
+            if (rsi && rsi->is_sum) { ssi = rsi; scr_sum = rsi->name; }
+        }
         int sum_match = 0;
         if (ssi && ssi->is_sum && num_arms >= 1 && n->child_count >= 2 &&
             n->children[1]->child_count >= 1) {
@@ -7139,6 +7282,11 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (ck == NODE_FLOAT_LIT) return "@f64";
             const char *ety = expr_llvm_type(c, n->children[i]);
             if (!strcmp(ety, "double")) return "@f64";
+            /* 127.194: a bool-element literal is "@bool" — the tag an @bool
+             * PARAMETER already gets (the "@<elem>" marker) — so `.get(i)`
+             * on it can be rendered as a bool.  Nothing else reads the
+             * difference: every other test is on the '@' prefix. */
+            if (!strcmp(ety, "i1")) return "@bool";
             /* 126.6: a string-element array literal (`@("x";"y")`) must be
              * tagged "@str" (not "@i64") so element access `arr.get(i)` types
              * as $str — else `\(arr.get(i))` interpolation and var-to-var `=`
@@ -7623,6 +7771,17 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str")))
             return "@str";
+        /* Y1 (found by the 127.172 corpus sweep): an @f64 / @bool return is
+         * tagged the way an @f64 / @bool PARAMETER already is, so `.get(i)` on
+         * `let a=f(..)` reads a double (102.29b) or renders a bool (127.194).
+         * Without it `\(a.get(i))` printed the f64's bit pattern as an
+         * integer — 4607182418800017408 for 1.0 — at exit 0. */
+        if (sig && (!strcmp(sig->ret_type_name, "@f64") ||
+                    !strcmp(sig->ret_type_name, "@$f64")))
+            return "@f64";
+        if (sig && (!strcmp(sig->ret_type_name, "@bool") ||
+                    !strcmp(sig->ret_type_name, "@$bool")))
+            return "@bool";
         /* 136.28: a function returning an array of structs */
         if (sig) { const char *es = array_elem_struct_name(c, sig->ret_type_name);
                    if (es) return array_struct_tag(es); }
@@ -7998,7 +8157,12 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
          * `zext` before an `inttoptr`).  Adding a widening instruction would
          * not have helped: the coercion site is correct and complete, it was
          * being told the wrong source type. */
+        /* 127.194: not for a receiver call (`a.contains(true)`): that is the
+         * dispatch chain, whose result is always the glue's i64.  Answering
+         * with the ARGUMENT's type here said "i1", and interpolating the call
+         * emitted `select i1` on an i64 — E9003 from clang. */
         if (n->child_count == 2 && strncmp(fn, "tk_", 3) != 0 &&
+            n->children[0]->kind != NODE_FIELD_EXPR &&
             !variant_ctor_sum(c, n)) {
             const char *aty = expr_llvm_type(c, n->children[1]);
             /* emit_expr ptrtoints an i8* argument into the i64 slot. */

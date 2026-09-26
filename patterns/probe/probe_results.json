@@ -344,9 +344,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -470,9 +470,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -2318,9 +2318,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -2360,9 +2360,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
