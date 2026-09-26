@@ -17,8 +17,16 @@ The toke compiler emits structured JSON diagnostics with stable error codes. Err
 | E4xxx  | 4000--4999  | Type Checker       |
 | E5xxx  | 5000--5999  | Arena Validator    |
 | E6xxx  | 6000--6999  | IR Lowerer         |
+| E8xxx  | 8000--8999  | FFI                |
 | E9xxx  | 9000--9999  | Codegen / Internal |
-| W1xxx  | 1000--1999  | Warnings           |
+| Wnxxx  | same ranges | Warnings — the number, not the emitting pass, sets the stage |
+
+The `stage` field of every JSON diagnostic is derived from the code's number
+(`phase_for_code` in `src/diag.c`), so it reads `lex`, `parse`,
+`name_resolution`, `type_check`, `arena_check`, `ir_lower`, `ffi` or `codegen`.
+Each section's **Stage** row gives that value first; when another pass
+actually emits the code, the row says so in parentheses (for example E2030 is
+`parse`, emitted by name resolution). `make check-error-codes` gates both rows.
 
 ---
 
@@ -274,7 +282,7 @@ Triggers E2004.
 | Field    | Value      |
 |----------|------------|
 | Severity | error      |
-| Stage    | type_check |
+| Stage    | parse (emitted by the type checker) |
 
 Pointer types (`*T`) are only valid in extern (bodyless) function signatures. Using `*T` in a function with a body produces this error.
 <!-- skip-check -->
@@ -320,7 +328,7 @@ Emitted when a struct declares the same field name twice.
 | Field    | Value           |
 |----------|-----------------|
 | Severity | error           |
-| Stage    | name_resolution |
+| Stage    | parse (emitted by name resolution) |
 
 The module path in an `i=` declaration does not resolve to any `.tki` interface file on the search path.
 
@@ -337,7 +345,7 @@ A `std.*` path is checked the same way (story 127.42): a standard-library module
 | Field    | Value           |
 |----------|-----------------|
 | Severity | error           |
-| Stage    | name_resolution |
+| Stage    | parse (emitted by name resolution) |
 
 The import graph contains a cycle. Module A imports B which (directly or transitively) imports A.
 
@@ -352,7 +360,7 @@ The import graph contains a cycle. Module A imports B which (directly or transit
 | Field    | Value           |
 |----------|-----------------|
 | Severity | error           |
-| Stage    | name_resolution |
+| Stage    | parse (emitted by name resolution) |
 
 The optional version string in an import declaration does not match the expected `MAJOR.MINOR` or `MAJOR.MINOR.PATCH` format.
 <!-- skip-check -->
@@ -374,7 +382,7 @@ Triggers E2035.
 | Field    | Value           |
 |----------|-----------------|
 | Severity | error           |
-| Stage    | name_resolution |
+| Stage    | parse (reserved for name resolution; not yet emitted) |
 
 Reserved. Interface files were found but none match the requested version constraint.
 
@@ -387,7 +395,7 @@ Reserved. Interface files were found but none match the requested version constr
 | Field    | Value           |
 |----------|-----------------|
 | Severity | error           |
-| Stage    | name_resolution |
+| Stage    | parse (emitted by name resolution) |
 
 Two import declarations reference the same module path with different major versions. toke does not support diamond-dependency version conflicts within a single compilation unit.
 
@@ -456,7 +464,7 @@ Triggers E3012 on the second `t=box`.
 | Field    | Value      |
 |----------|------------|
 | Severity | error      |
-| Stage    | type_check |
+| Stage    | name_resolution (emitted by the type checker) |
 
 The propagation operator `!` can only be applied to a value whose type is an error union (`T!Err`), and only inside a function whose return type is also an error union.
 
@@ -633,7 +641,7 @@ Reserved. Planned for type mismatches at FFI boundaries.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 Emitted when a call passes too few or too many arguments.
 
@@ -650,7 +658,7 @@ Since 127.1 it also covers a member call on a VALUE receiver, `recv.member(args)
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 Emitted for `alias.member(...)` when neither the imported module's `.tki` interface nor the runtime declares `member`. Before 136.1 such a call was lowered to a symbol name anyway and surfaced as an E9003 link failure naming a mangled symbol, with no file and no line.
 
@@ -688,7 +696,7 @@ guess.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen |
+| Stage    | type_check (also emitted by codegen) |
 
 Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a string first (e.g. its fields/elements). Fires at code generation.
 
@@ -699,7 +707,7 @@ Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a 
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 Emitted when a declared type's name stands in a value position. Three spellings
 reach it, from three stages:
@@ -758,7 +766,7 @@ Triggers E4033 on `thing`.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen |
+| Stage    | type_check (emitted by codegen) |
 
 Emitted when a `.field` access reaches lowering and the base's struct type is not established, and the field name does not resolve to one unambiguous layout — either no struct in scope declares it, or several declare it at different offsets.
 
@@ -773,7 +781,7 @@ No `fix` is supplied: the obvious instruction — annotate the binding — is no
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck (also codegen) |
+| Stage    | type_check (also emitted by codegen) |
 
 Emitted for `m.name` on a map where `name` is not one of the two map
 properties, `len` and `keys`. A map has no fields, so there is no layout to
@@ -809,7 +817,7 @@ it is a member call, and the receiver dispatch is what refuses it.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 Emitted for `recv.member(args)` where `recv` is a value rather than an import
 alias and `member` is not a member the receiver dispatch lowers.
@@ -871,7 +879,7 @@ and the call disagrees with its arity.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 Emitted when code assigns to a `let` binding that was not declared mutable.
 
@@ -882,7 +890,7 @@ Emitted when code assigns to a `let` binding that was not declared mutable.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 `<` is toke's return operator. A function body that ends in a *value*
 expression without one computes the value, discards it, and returns `0` —
@@ -951,7 +959,7 @@ Per `AGENTS.md` §3.1 an incorrect `fix` breaks the automated repair loop, and
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 `<$v(x)` returns a variant constructed by the call form, and `$v` is declared
 by two or more sum types of which none is the enclosing function's error
@@ -983,7 +991,7 @@ reported as **E4031**, the code the literal form `<$other{$v:x}` already drew.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | typecheck |
+| Stage    | type_check |
 
 A `\(..)` interpolation whose expression contains another interpolated
 string. The lexer accepts it, but the lowering finds the end of each `\(..)`
@@ -1028,7 +1036,7 @@ f=bad(): i64 { let x = 0; {arena x = 1}; < x };
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | arena |
+| Stage    | arena_check |
 
 Emitted for statements that follow a `<` return in the same block.
 
@@ -1272,7 +1280,7 @@ mut.1` and write `x = 2`. If a distinct binding was meant, rename it.
 | Field    | Value |
 |----------|-------|
 | Severity | warning |
-| Stage    | typecheck |
+| Stage    | arena_check (emitted by the type checker) |
 
 Escape analysis warns that a value may outlive its arena.
 
@@ -1283,6 +1291,6 @@ Escape analysis warns that a value may outlive its arena.
 | Field    | Value |
 |----------|-------|
 | Severity | warning |
-| Stage    | typecheck |
+| Stage    | ffi (emitted by codegen) |
 
 An `extern` function crosses the FFI boundary and is not memory-safe.
