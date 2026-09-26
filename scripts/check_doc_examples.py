@@ -60,6 +60,8 @@ and a working clang, which `make` already provides.
 
 Usage: python3 scripts/check_doc_examples.py [docs_dir] [--check-only]
                                              [--jobs N] [--verbose]
+       python3 scripts/check_doc_examples.py [docs_dir] --pattern-report
+                                             (132.43: pattern rules, report only)
        python3 scripts/check_doc_examples.py --self-test
 Env:   TKC (compiler path), TKC_STDLIB_DIR, TKC_JOBS
 """
@@ -224,8 +226,106 @@ CANARY_LINK_ONLY = [
 ]
 
 
+# ── 132.43: the idiom/pattern half, REPORT mode ─────────────────────────────
+# The build gate above proves an example compiles and links. It says nothing
+# about whether the example teaches CANONICAL toke -- and the docs feed the
+# corpus. The idiom judge (toke-corpus regen/idiom_judge.py, 131.10) is built
+# on the compiler's own pattern rules: its hard gate is "any pattern-rule hit
+# at severity error or warning". `--pattern-report` runs exactly those rules
+# (`tkc --lint --diag-json`) over every documented full program and REPORTS
+# them. It does not fail: the docs predate the catalogue, and a rewrite into a
+# form the catalogue has not measured is what 132.43 says not to do. It does
+# not recompute the judge's numeric score -- its weights live in toke-corpus,
+# and this script reads nothing outside this repository.
+#
+# The rule set is read from docs/lint-rules-v1.md ("## Pattern rules"), the
+# normative list, so a new pattern rule is picked up without editing this.
+LINT_RULES_MD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "docs", "lint-rules-v1.md")
+JUDGE_GATE = ("error", "warning")     # idiom_judge.GATE_SEVERITIES
+CANARY_PATTERN = """m=canary;
+i=io:std.io;
+f=main():i64{
+  let a=mut.0;
+  if(1>0){a=1}el{a=2};
+  io.println("\\(a)");
+  <0
+};
+"""
+
+
+def pattern_rules():
+    """Rule ids under '## Pattern rules' in docs/lint-rules-v1.md."""
+    text = open(LINT_RULES_MD, encoding="utf-8").read()
+    m = re.search(r"^## Pattern rules.*?$(.*?)(?=^## )", text, re.M | re.S)
+    return set(re.findall(r"^### `([a-z0-9-]+)`", m.group(1), re.M)) if m else set()
+
+
+def lint_one(src, rules):
+    """[(rule, severity, line)] pattern-rule hits for one program."""
+    d = tempfile.mkdtemp(prefix="docpat-")
+    try:
+        path = os.path.join(d, "ex.tk")
+        with open(path, "w") as f:
+            f.write(src)
+        r = subprocess.run([TKC, "--lint", "--diag-json", path],
+                           capture_output=True, text=True, timeout=60)
+        hits = []
+        for line in (r.stdout + r.stderr).splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                j = json.loads(line)
+            except ValueError:
+                continue
+            if j.get("stage") == "lint" and j.get("rule") in rules:
+                hits.append((j["rule"], j.get("severity"), (j.get("pos") or {}).get("line")))
+        return hits
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def pattern_report(work, jobs):
+    rules = pattern_rules()
+    if len(rules) < 6:
+        print(f"pattern report: only {len(rules)} pattern rules found in "
+              f"{LINT_RULES_MD} -- the anchor moved; refusing to report 0 hits")
+        return 2
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        hits = list(pool.map(lambda w: lint_one(w[2], rules), work))
+    gated = [(w, h) for w, h in zip(work, hits) if any(sv in JUDGE_GATE for _, sv, _ in h)]
+    hinted = [(w, h) for w, h in zip(work, hits) if h and not any(sv in JUDGE_GATE for _, sv, _ in h)]
+    by_rule = {}
+    for h in hits:
+        for rule, sv, _ in h:
+            by_rule[(rule, sv)] = by_rule.get((rule, sv), 0) + 1
+    print(f"doc pattern report (132.43) -- Reported, not asserted: "
+          f"{len(gated)}/{len(work)} documented full programs would fail the idiom "
+          f"judge's hard gate (a pattern rule at error/warning); {len(hinted)} more "
+          f"carry hints only; {len(work) - len(gated) - len(hinted)} are clean. "
+          f"Rules: {', '.join(sorted(rules))}.")
+    for (rule, sv), n in sorted(by_rule.items()):
+        print(f"  {n:4d}  {rule:<24s} {sv}")
+    for (rel, i, _), h in gated:
+        desc = ", ".join(f"{r}@{ln}" for r, sv, ln in h if sv in JUDGE_GATE)
+        print(f"  GATE {rel} [block {i}]: {desc}")
+    return 0
+
+
 def self_test():
     ok = True
+    # 132.43: the pattern report must see a known violation, and must find its
+    # rule list; an empty list would report every page clean.
+    rules = pattern_rules()
+    canary = lint_one(CANARY_PATTERN, rules) if rules else []
+    if len(rules) < 6 or not any(r == "mut-flag-if" and sv in JUDGE_GATE for r, sv, _ in canary):
+        print(f"  SELF-TEST FAIL: the pattern report did not flag the mut-flag-if "
+              f"canary ({len(rules)} rules read from {LINT_RULES_MD}, hits {canary})")
+        ok = False
+    else:
+        print(f"  self-test: the pattern report reads {len(rules)} pattern rules and "
+              f"flags the mut-flag-if canary")
     good = build_one(CANARY_GOOD, link=True)
     if good is not None:
         print(f"  SELF-TEST FAIL: the known-good canary does not build: {good}")
@@ -304,6 +404,9 @@ def main():
         for i, block in enumerate(FENCE.findall(text)):
             if is_full_program(block):
                 work.append((rel, i, block))
+
+    if "--pattern-report" in sys.argv:
+        sys.exit(pattern_report(work, jobs))
 
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=jobs) as pool:

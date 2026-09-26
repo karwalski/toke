@@ -2418,9 +2418,6 @@ const char *stdlib_symbol_for(const char *mod, int is_std, const char *method) {
         if (!strcmp(method, "serve"))          return "tk_http_serve";
         if (!strcmp(method, "servetls"))       return "tk_http_servetls";
         if (!strcmp(method, "serveworkers"))   return "tk_http_serveworkers_w";
-        if (!strcmp(method, "vhost"))          return "tk_http_vhost";
-        if (!strcmp(method, "servevhosts"))    return "tk_http_servevhosts";
-        if (!strcmp(method, "servevhoststls")) return "tk_http_servevhoststls";
         if (!strcmp(method, "setnotfound"))    return "tk_http_set_notfound";
         if (!strcmp(method, "setcors"))        return "tk_http_set_cors";
     }
@@ -5226,7 +5223,6 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_http_res_ok", "tk_http_res_bad", "tk_http_res_err",
                         "tk_http_serve_staticdir_w",
                         "tk_http_serve", "tk_http_servetls", "tk_http_serveworkers_w",
-                        "tk_http_vhost", "tk_http_servevhosts", "tk_http_servevhoststls",
                         "tk_http_set_notfound", "tk_http_set_cors",
                         "tk_log_open_access_w", "tk_log_open_error_w", "tk_log_accessformat_w",
                         "tk_log_info_w", "tk_log_error_w",
@@ -10186,9 +10182,6 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_http_serve", "declare i64 @tk_http_serve(i64)", 0},
     {"tk_http_servetls", "declare i64 @tk_http_servetls(i64, i64, i64)", 0},
     {"tk_http_serveworkers_w", "declare i64 @tk_http_serveworkers_w(i64, i64)", 0},
-    {"tk_http_vhost", "declare i64 @tk_http_vhost(i64, i64)", 0},
-    {"tk_http_servevhosts", "declare i64 @tk_http_servevhosts(i64)", 0},
-    {"tk_http_servevhoststls", "declare i64 @tk_http_servevhoststls(i64, i64, i64)", 0},
     {"tk_http_set_notfound", "declare i64 @tk_http_set_notfound(i64)", 0},
     {"tk_http_set_cors", "declare i64 @tk_http_set_cors(i64)", 0},
     {"tk_http_client_w", "declare i64 @tk_http_client_w(i64)", 0},

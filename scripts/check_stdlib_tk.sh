@@ -11,6 +11,12 @@
 # an entry whose file now passes is stale and fails the gate, so the list can
 # only shrink and cannot shrink silently. A comment-only stub is skipped, and
 # counted, so a stub that grows code is picked up automatically.
+#
+# 136.68: test/stdlib/*.tk -- toke programs that exercise a stdlib module --
+# are type-checked here too. 22 of 37 had stopped passing --check with nobody
+# noticing, because nothing compiled them; 21 were archived
+# (~/tk/archive/toke-test-stdlib-tk-20260926/) and every one that remains must
+# check. They take the same KNOWN_RED list (empty for them today).
 
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,8 +41,10 @@ known_story() {
   return 1
 }
 
-fail=0; ok=0; red=0; stubs=0; seen=""
-for f in stdlib/*.tk; do
+fail=0; ok=0; red=0; stubs=0; seen=""; tests=0
+for f in stdlib/*.tk test/stdlib/*.tk; do
+  [ -e "${f}" ] || continue
+  case "${f}" in test/*) tests=$((tests+1)) ;; esac
   if ! grep -q '^m=' "${f}"; then stubs=$((stubs+1)); continue; fi
   seen="${seen} ${f}"
   log="${WORK}/$(basename "${f}").log"
@@ -66,5 +74,10 @@ for e in "${KNOWN_RED[@]}"; do
   esac
 done
 
-echo "check-stdlib-tk: ${ok} clean, ${red} known-red, ${stubs} comment-only stubs skipped, ${fail} failure(s)"
+# A glob that silently matched nothing would read as a clean pass (132.68).
+if [ "${tests}" -lt 10 ]; then
+  echo "FAIL test/stdlib/*.tk: only ${tests} found -- the glob no longer reaches the test programs"
+  fail=$((fail+1))
+fi
+echo "check-stdlib-tk: ${ok} clean (incl. ${tests} test/stdlib programs), ${red} known-red, ${stubs} comment-only stubs skipped, ${fail} failure(s)"
 [ "${fail}" -eq 0 ]

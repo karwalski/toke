@@ -2,7 +2,7 @@
  * tk_web_glue.c — i64-ABI wrappers for HTTP/routing layer.
  *
  * This file contains ONLY the HTTP-specific wrappers (static routes,
- * dynamic GET/POST/PUT/DELETE/PATCH handlers, vhost routing, static
+ * dynamic GET/POST/PUT/DELETE/PATCH handlers, static
  * file serving, etc.).
  *
  * Per-module wrappers have been split into separate *_glue.c files:
@@ -1099,127 +1099,6 @@ int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
     return (int64_t)g_page_count;
 }
 
-/* ── vhost registry ───────────────────────────────────────────────────── */
-
-#define TK_MAX_VHOSTS 8
-
-typedef struct {
-    const char *hostname;
-    const char *docroot;
-} TkVhost;
-
-static TkVhost g_vhosts[TK_MAX_VHOSTS];
-static int     g_vhost_count = 0;
-
-int64_t tk_http_vhost(int64_t hostname, int64_t docroot) {
-    if (g_vhost_count >= TK_MAX_VHOSTS) return -1;
-    int i = g_vhost_count++;
-    g_vhosts[i].hostname = (const char *)(intptr_t)hostname;
-    g_vhosts[i].docroot  = (const char *)(intptr_t)docroot;
-    return 0;
-}
-
-static Res vhost_catchall_handler(Req req) {
-    const char *docroot = NULL;
-    HttpResult host_r = http_header(req, "Host");
-    if (!host_r.is_err && host_r.ok) {
-        const char *host = host_r.ok;
-        const char *colon = strrchr(host, ':');
-        char hostname_buf[256];
-        if (colon) {
-            size_t len = (size_t)(colon - host);
-            if (len >= sizeof hostname_buf) len = sizeof hostname_buf - 1;
-            memcpy(hostname_buf, host, len);
-            hostname_buf[len] = '\0';
-            host = hostname_buf;
-        }
-        for (int i = 0; i < g_vhost_count; i++) {
-            if (strcmp(g_vhosts[i].hostname, host) == 0) {
-                docroot = g_vhosts[i].docroot;
-                break;
-            }
-        }
-    }
-    if (!docroot && g_vhost_count > 0)
-        docroot = g_vhosts[0].docroot;
-
-    if (!docroot) {
-        Res r; r.status = 503; r.body = "No vhost configured";
-        r.headers.data = NULL; r.headers.len = 0;
-        return r;
-    }
-
-    /* 127.100: a vhost docroot is a static-file root like any other — the
-     * query string is not part of the filename. */
-    char vpathbuf[2048];
-    const char *url_path = http_path_only(req.path ? req.path : "/",
-                                          vpathbuf, sizeof vpathbuf);
-    const char *rel_path = (url_path[0] == '/') ? url_path + 1 : url_path;
-
-    HttpResult inm_r = http_header(req, "If-None-Match");
-    const char *if_none_match = (!inm_r.is_err && inm_r.ok) ? inm_r.ok : NULL;
-
-    HttpResult range_r = http_header(req, "Range");
-    const char *range_hdr = (!range_r.is_err && range_r.ok) ? range_r.ok : NULL;
-
-    TkRouteResp rr = router_static_serve(docroot, rel_path, if_none_match,
-                                          range_hdr);
-
-    Res res;
-    res.status = (uint16_t)rr.status;
-    res.body   = rr.body;
-
-    /*
-     * 127.148: router_static_serve's own contract says "callers are
-     * responsible for freeing" resp.body and the header values — and no
-     * caller did.  On a 200 that is the ENTIRE FILE plus four strdup'd
-     * header values and two pointer arrays, leaked per request; this is the
-     * single largest instance of the unstated Res-body ownership rule.
-     * The header NAMES are string literals inside router.c and must not be
-     * freed; the arrays holding them are malloc'd and must.
-     */
-    http_defer_free((void *)(uintptr_t)rr.body);
-
-    const char *ct = rr.content_type ? rr.content_type : "text/plain";
-    uint64_t extra = rr.nheaders > 0 && rr.header_names && rr.header_values
-                     ? rr.nheaders : 0;
-    uint64_t total = 1 + extra;
-    StrPair *pairs = malloc(total * sizeof(StrPair));
-    if (pairs) {
-        pairs[0].key = "Content-Type";
-        pairs[0].val = ct;
-        for (uint64_t i = 0; i < extra; i++) {
-            pairs[1 + i].key = rr.header_names[i];
-            pairs[1 + i].val = rr.header_values[i];
-            http_defer_free((void *)(uintptr_t)rr.header_values[i]);
-        }
-        res.headers.data = pairs;
-        res.headers.len  = total;
-        http_defer_free(pairs);
-    } else {
-        res.headers.data = NULL;
-        res.headers.len  = 0;
-        for (uint64_t i = 0; i < extra; i++)
-            http_defer_free((void *)(uintptr_t)rr.header_values[i]);
-    }
-    /* The two pointer arrays are malloc'd by router_static_serve whether or
-     * not `pairs` was allocated.  content_type is static storage from
-     * mime_for_path and must not be freed. */
-    http_defer_free((void *)(uintptr_t)rr.header_names);
-    http_defer_free((void *)(uintptr_t)rr.header_values);
-    return res;
-}
-
-int64_t tk_http_servevhosts(int64_t port) {
-    http_GET("*", vhost_catchall_handler);
-    return tk_http_serve(port);
-}
-
-int64_t tk_http_servevhoststls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
-    http_GET("*", vhost_catchall_handler);
-    return tk_http_servetls(port, cert_ptr, key_ptr);
-}
-
 int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
     int p = (int)port;
     if (p <= 0 || p > 65535) p = 8080;
@@ -2164,9 +2043,6 @@ int64_t tk_http_patchhandler_w(int64_t path, int64_t handler) { return tk_http_p
 /* Server lifecycle */
 int64_t tk_http_serve_w(int64_t port) { return tk_http_serve(port); }
 int64_t tk_http_servetls_w(int64_t port, int64_t cert, int64_t key) { return tk_http_servetls(port, cert, key); }
-int64_t tk_http_servevhosts_w(int64_t port) { return tk_http_servevhosts(port); }
-int64_t tk_http_servevhoststls_w(int64_t port, int64_t cert, int64_t key) { return tk_http_servevhoststls(port, cert, key); }
-int64_t tk_http_vhost_w(int64_t hostname, int64_t docroot) { return tk_http_vhost(hostname, docroot); }
 int64_t tk_http_servedir_w(int64_t prefix, int64_t root) { return tk_http_serve_staticdir_w(prefix, root); }
 /* tk_http_servepages_w defined above (Story 95.2) */
 

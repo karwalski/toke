@@ -722,39 +722,6 @@
       "return": "i64",
       "gen": "abi",
       "internal": true
-    },
-    {
-      "kind": "func",
-      "name": "http.servevhosts",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi",
-      "internal": true
-    },
-    {
-      "kind": "func",
-      "name": "http.servevhoststls",
-      "params": [
-        "i64",
-        "i64",
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi",
-      "internal": true
-    },
-    {
-      "kind": "func",
-      "name": "http.vhost",
-      "params": [
-        "i64",
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi",
-      "internal": true
     }
   ],
   "note_137_10": "http.get/post/put/delete were each declared TWICE here, as a route and as a client func. stdlib_symbol_for() answers one symbol per name -- the route's (tk_http_<verb>_handler) -- so no argument list could reach the func form and E4026 cited the route's arity for a four-parameter client call. The client wrappers are real (tk_http_get_w / _post_w / _put_w / _delete_w in tk_web_glue.c) but unreachable under any spelling a caller can write, so the declarations are withdrawn rather than left promising something that cannot be called. Reachable client spellings today: http.postjson, http.postheaders, http.posturl. Giving the client surface names of its own is an open decision (137.10)."

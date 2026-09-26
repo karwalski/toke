@@ -575,6 +575,43 @@ def excusing_unit(line, start, end, near, cue):
     return "\n".join(parts)
 
 
+def rule3_unit(line, s, m, near):
+    """132.98: the text a supersession cue must sit in to excuse a withdrawn
+    headline restated in sentence `s` of `line` (`m` is the headline's match
+    in `s`).
+
+    Rule 3 searched SUPERSEDED over `near`, which for a table row is the row
+    plus its header (and for a one-line HTML table, the whole table), so
+    "withdrawn" or "previously" in any cell excused a withdrawn headline in
+    every other -- the scope 132.96 removed from rule 4. A table row now uses
+    rule 4's unit (`excusing_unit`): the headline's own cell, a status-only
+    cell, its column's header, a note line below the table. Outside a table
+    `near` keeps its meaning.
+    """
+    if not is_table_row(line):
+        return near
+    off = line.find(s)
+    if off < 0:                 # not locatable: keep the pre-132.98 reading
+        return near
+    unit = excusing_unit(line, off + m.start(), off + m.end(), near, SUPERSEDED)
+    # A cell in the column the table itself heads "Status" is the row's
+    # status however many words it carries ("**Withdrawn, not requalified**"
+    # in docs/whitepaper/toke-research-language.md §9 -- a corrections table
+    # whose whole purpose is to withdraw the headline in its first column).
+    if line.lstrip().startswith("|"):
+        cells = _cells(line)
+        for other in near.split("\n"):
+            if other == line or not other.lstrip().startswith("|"):
+                continue
+            hcells = _cells(other)
+            if len(hcells) != len(cells):
+                continue
+            for k, (a, b) in enumerate(hcells):
+                if re.sub(r"[*_`\s]", "", other[a:b]).lower() == "status":
+                    unit += "\n" + line[cells[k][0]:cells[k][1]]
+    return unit
+
+
 def dating_unit(line, start, end, block=None, idx=0):
     """132.88: the text a date must sit in to date THIS count.
 
@@ -1180,8 +1217,9 @@ def check_file(path):
                 for pat, label in WITHDRAWN:
                     if ATTRIBUTED.search(s):
                         break
-                    if pat.search(s) and not (SUPERSEDED.search(s)
-                                              or SUPERSEDED.search(near)):
+                    m = pat.search(s)
+                    if m and not (SUPERSEDED.search(s)
+                                  or SUPERSEDED.search(rule3_unit(line, s, m, near))):
                         findings.append(
                             (i + 1, "restates %s with no supersession note" % label, s))
                         break
@@ -1372,6 +1410,38 @@ SELFTEST = [
      "| Historical ecosystem | Now |\n|---|---|\n| 57 stdlib modules | see facts |"),
     (True, "132.96: an era cue in the historical count's own cell",
      "| Spec | Corpus |\n|---|---|\n| grammar | v0.2-era: 46,754 validated programs |"),
+
+    # -- 132.98: rule 3 gets the same unit -- a supersession cue excuses a
+    # withdrawn headline only from its own cell, a status cell, its column's
+    # header. Every case carries a tokenizer and an
+    # N, so rule 1 is satisfied and a rejection can only be rule 3.
+    (False, "132.98: \"withdrawn\" in another cell's prose does not excuse the headline",
+     "| Figure | Commentary |\n|---|---|\n"
+     "| toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens | "
+     "an unrelated benchmark was withdrawn last year |"),
+    (False, "132.98: the same in a one-line HTML table",
+     "<table><tr><td>toke-16K vs cl100k on identical source, N = 500: 52% fewer "
+     "tokens</td><td>the old page previously linked a different chart</td></tr></table>",
+     ".html"),
+    (True, "132.98: a status-only cell excuses the row's headline",
+     "| Figure | Status |\n|---|---|\n"
+     "| toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens | "
+     "**Withdrawn** |"),
+    (True, "132.98: the header of the headline's own column",
+     "| Superseded figure | Where |\n|---|---|\n"
+     "| toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens | v0.3 site |"),
+    (True, "132.98: the cell under the table's own Status column (whitepaper §9)",
+     "| Published claim | Status | Correct statement |\n|---|---|---|\n"
+     "| toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens | "
+     "**Withdrawn, not requalified** | see below |"),
+    (False, "132.98: the same words under a column that is not Status",
+     "| Published claim | Commentary | Correct statement |\n|---|---|---|\n"
+     "| toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens | "
+     "withdrawn elsewhere, not here | see below |"),
+    (True, "132.98: the cue in the headline's own cell",
+     "| Figure | Where |\n|---|---|\n"
+     "| toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens "
+     "(withdrawn) | v0.3 site |"),
 ]
 
 

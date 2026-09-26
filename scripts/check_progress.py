@@ -97,7 +97,28 @@ def parse_header(line):
 
 
 def main():
+    # 132.59a: `--path FILE` checks another copy of the tracker (a repaired
+    # candidate) against the same rules; `--baseline FILE` swaps the ratchet
+    # (use an empty file to see every finding as new).  `--record` is refused
+    # with either, so the checked-in baseline is only ever recorded from the
+    # checked-in tracker.
     path = pathlib.Path(__file__).resolve().parent.parent / "docs" / "progress.md"
+    baseline = BASELINE
+    argv = sys.argv[1:]
+    for flag in ("--path", "--baseline"):
+        if flag in argv:
+            i = argv.index(flag)
+            if i + 1 >= len(argv):
+                print(f"check-progress: {flag} needs a file argument", file=sys.stderr)
+                return 2
+            val = pathlib.Path(argv[i + 1])
+            if flag == "--path":
+                path = val
+            else:
+                baseline = val
+    if "--record" in argv and ("--path" in argv or "--baseline" in argv):
+        print("check-progress: --record only records the checked-in tracker", file=sys.stderr)
+        return 2
     if not path.exists():
         print(f"check-progress: anchor missing: {path}", file=sys.stderr)
         return 2
@@ -185,12 +206,12 @@ def main():
         print(f"check-progress: recorded {len(findings)} baseline entries")
         return 0
 
-    if not BASELINE.exists():
-        print(f"check-progress: baseline missing: {BASELINE}", file=sys.stderr)
+    if not baseline.exists():
+        print(f"check-progress: baseline missing: {baseline}", file=sys.stderr)
         return 2
 
     known = {
-        l for l in BASELINE.read_text().split("\n")
+        l for l in baseline.read_text().split("\n")
         if l.strip() and not l.startswith("#")
     }
     produced = {k for k, _ in findings}
@@ -204,7 +225,7 @@ def main():
         print(
             f"STALE baseline entry no longer produced: {k.split(chr(9))[0]} "
             f"{k.split(chr(9))[1]} -- the row was fixed or renumbered. Remove "
-            f"it from {BASELINE.name} (--record) so the ratchet tightens."
+            f"it from {baseline.name} (--record) so the ratchet tightens."
         )
 
     print(
