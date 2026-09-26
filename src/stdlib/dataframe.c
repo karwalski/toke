@@ -143,8 +143,11 @@ DfResult df_fromcsv(const char *csv_data, uint64_t csv_len, int has_header)
         return result;
     }
 
-    /* Build column names. */
-    char **col_names = malloc(ncols * sizeof(char *));
+    /* Build column names.  135.3c: both temporaries are declared before the
+     * first `goto oom` and freed there -- the oom exit used to leak them and
+     * every parsed row (clang unix.Malloc). */
+    DfColType *types = NULL;
+    char **col_names = calloc(ncols, sizeof(char *));
     if (!col_names) goto oom;
 
     if (has_header) {
@@ -159,7 +162,7 @@ DfResult df_fromcsv(const char *csv_data, uint64_t csv_len, int has_header)
     }
 
     /* Detect column types: if every data value in the column is f64 → F64. */
-    DfColType *types = malloc(ncols * sizeof(DfColType));
+    types = malloc(ncols * sizeof(DfColType));
     if (!types) goto oom;
 
     for (uint64_t j = 0; j < ncols; j++) {
@@ -220,6 +223,17 @@ DfResult df_fromcsv(const char *csv_data, uint64_t csv_len, int has_header)
     return result;
 
 oom:
+    if (col_names) {
+        for (uint64_t j = 0; j < ncols; j++) free(col_names[j]);
+        free(col_names);
+    }
+    free(types);
+    for (uint64_t r = 0; r < nrows_raw; r++) {
+        for (uint64_t c = 0; c < rows[r].len; c++)
+            free((char *)rows[r].data[c]);
+        free((char **)rows[r].data);
+    }
+    free(rows);
     result.is_err = 1;
     result.err_msg = "df_fromcsv: out of memory";
     return result;
@@ -561,9 +575,10 @@ DfResult df_join(TkDataframe *left, TkDataframe *right, const char *on_col)
         out->cols[j].type  = left->cols[j].type;
         out->cols[j].nrows = out_nrows;
         if (left->cols[j].type == DF_COL_F64)
-            out->cols[j].f64_data = malloc(out_nrows * sizeof(double));
+            out->cols[j].f64_data = calloc(out_nrows ? out_nrows : 1, sizeof(double));
         else
-            out->cols[j].str_data = malloc(out_nrows * sizeof(char *));
+            out->cols[j].str_data = calloc(out_nrows ? out_nrows : 1, sizeof(char *));
+        if (!out->cols[j].f64_data && !out->cols[j].str_data) goto join_oom;
     }
     uint64_t oj = left->ncols;
     for (uint64_t j = 0; j < right->ncols; j++) {
@@ -572,9 +587,10 @@ DfResult df_join(TkDataframe *left, TkDataframe *right, const char *on_col)
         out->cols[oj].type  = right->cols[j].type;
         out->cols[oj].nrows = out_nrows;
         if (right->cols[j].type == DF_COL_F64)
-            out->cols[oj].f64_data = malloc(out_nrows * sizeof(double));
+            out->cols[oj].f64_data = calloc(out_nrows ? out_nrows : 1, sizeof(double));
         else
-            out->cols[oj].str_data = malloc(out_nrows * sizeof(char *));
+            out->cols[oj].str_data = calloc(out_nrows ? out_nrows : 1, sizeof(char *));
+        if (!out->cols[oj].f64_data && !out->cols[oj].str_data) goto join_oom;
         oj++;
     }
 
@@ -612,6 +628,14 @@ DfResult df_join(TkDataframe *left, TkDataframe *right, const char *on_col)
 
     ht_free(ht);
     res.ok = out;
+    return res;
+
+join_oom:
+    /* 135.3c: the output columns' allocations were unchecked, and the fill
+     * above wrote through NULL on OOM (clang core.NullDereference x2). */
+    df_free(out);
+    ht_free(ht);
+    res.is_err = 1; res.err_msg = "df_join: OOM";
     return res;
 }
 

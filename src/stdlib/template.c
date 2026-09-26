@@ -847,9 +847,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 for (uint64_t j = 0; j < nitems; j++) {
                     /* Build index string */
                     char idx_buf[32];
-                    int idx_len = snprintf(idx_buf, sizeof(idx_buf),
-                                           "%" PRIu64, j);
-                    if (idx_len < 0) idx_len = 0;
+                    snprintf(idx_buf, sizeof(idx_buf), "%" PRIu64, j);
 
                     TkTmplVar item_vars[2];
                     item_vars[0].key   = ".";
@@ -1095,7 +1093,8 @@ const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
     if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
     long fsize = ftell(fp);
     if (fsize < 0) { fclose(fp); return NULL; }
-    rewind(fp);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return NULL; }
 
     char *src = (char *)malloc((size_t)fsize + 1);
     if (!src) { fclose(fp); return NULL; }
@@ -1135,7 +1134,8 @@ static char *tmpl_readfile(const char *path) {
     if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
     long fsize = ftell(fp);
     if (fsize < 0) { fclose(fp); return NULL; }
-    rewind(fp);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return NULL; }
     char *buf = (char *)malloc((size_t)fsize + 1);
     if (!buf) { fclose(fp); return NULL; }
     size_t nread = fread(buf, 1, (size_t)fsize, fp);
@@ -1184,6 +1184,9 @@ static int parse_page_directives(const char *src, char **layout_name,
                 while (*p && *p != '"') p++;
                 if (*p != '"') return 0;
                 size_t nlen = (size_t)(p - name_start);
+                /* 135.3c: a second layout("...") overwrote -- and leaked --
+                 * the first; the last one wins, as before. */
+                free(*layout_name);
                 *layout_name = (char *)malloc(nlen + 1);
                 if (!*layout_name) return 0;
                 memcpy(*layout_name, name_start, nlen);

@@ -2072,6 +2072,10 @@ static int mp_parse_headers(const char *hdr_block, size_t hdr_len,
         if (strncasecmp(p, "Content-Disposition:", 20) == 0) {
             char *line = mp_strdup_n(p, linelen);
             if (line) {
+                /* 135.3c: a part may repeat the header; the earlier values
+                 * were overwritten and leaked (any client can send this). */
+                free(*name_out);
+                free(*filename_out);
                 *name_out     = mp_parse_cd_param(line, "name");
                 *filename_out = mp_parse_cd_param(line, "filename");
                 free(line);
@@ -2081,6 +2085,7 @@ static int mp_parse_headers(const char *hdr_block, size_t hdr_len,
             const char *vend = p + linelen;
             while (vend > v && (*(vend-1) == ' ' || *(vend-1) == '\t'))
                 vend--;
+            free(*content_type_out);   /* 135.3c: same, for a repeated header */
             *content_type_out = mp_strdup_n(v, (size_t)(vend - v));
         }
 

@@ -13,7 +13,15 @@
 
 #ifdef TKC_WASM_BUILD
 
+/* 136.64: without emcc there is no <emscripten.h>.  The only thing this file
+ * takes from it is EMSCRIPTEN_KEEPALIVE, so a host compile of the WASM build
+ * (test/conform/C135, and `make lint`) gets an equivalent -- "keep this symbol"
+ * -- instead of a missing header.  Under emcc the real header is used. */
+#ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE __attribute__((used))
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -174,7 +182,9 @@ static PipeResult run_pipeline(const char *source, const char *up_to)
     if (strcmp(up_to, "lex") == 0) { r.ok = 1; return r; }
 
     /* ── Parse ───────────────────────────────────────────────────── */
-    r.ast = parse(r.toks, r.tc, source, r.arena);
+    /* 136.64: parse() gained its Profile argument; this call was never
+     * updated because nothing compiled this file. */
+    r.ast = parse(r.toks, r.tc, source, r.arena, PROFILE_DEFAULT);
     if (!r.ast || diag_error_count() > 0) {
         r.fail_stage = "parse";
         return r;
@@ -324,5 +334,11 @@ void tkc_free(void *ptr)
 {
     free(ptr);
 }
+
+#else /* !TKC_WASM_BUILD */
+
+/* 136.64: outside the WASM build this file is empty, which ISO C forbids
+ * (-Wpedantic).  Say so in code rather than leave an empty translation unit. */
+typedef int tkc_wasm_api_unused;
 
 #endif /* TKC_WASM_BUILD */

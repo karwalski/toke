@@ -72,7 +72,10 @@ int64_t tk_encrypt_aes256gcmdecrypt_w(int64_t key, int64_t nonce,
     int64_t err_slot = dup_str_i64(res.is_err ? (res.err_msg ? res.err_msg : "decrypt failed") : "");
     if (res.ok) free(res.ok);
     free(kb); free(nb); free(cb); free(ab);
-    return tk_rec2(ok_slot, err_slot);
+    int64_t rec = tk_rec2(ok_slot, err_slot);
+    /* 135.3c: the message copy leaked when the record box could not be made. */
+    if (!rec) free((void *)(intptr_t)err_slot);
+    return rec;
 }
 
 /* encrypt.aes256gcm_keygen():[byte] */

@@ -355,4 +355,11 @@ const DbBackend db_postgres_backend = {
     .table_exists    = pg_table_exists,
 };
 
+#else /* !TK_HAVE_LIBPQ */
+
+/* 135.3d: without the backend macro this file would be an EMPTY translation
+ * unit, which ISO C forbids (-Wpedantic) and which is indistinguishable from a
+ * file whose whole body was #ifdef-ed out by mistake.  Say so in code. */
+typedef int tk_db_postgres_unused;
+
 #endif /* TK_HAVE_LIBPQ */

@@ -78,7 +78,12 @@ StrFileResult file_read(const char *path)
         fclose(f);
         r.is_err = 1; r.err = make_err(errno, "ftell failed"); return r;
     }
-    rewind(f);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        int e = errno;
+        fclose(f);
+        r.is_err = 1; r.err = make_err(e, "seek failed"); return r;
+    }
 
     char *buf = malloc((size_t)sz + 1);
     if (!buf) {
@@ -313,18 +318,26 @@ BoolFileResult file_copy(const char *src, const char *dst)
 
     char buf[8192];
     size_t nread;
-    while ((nread = fread(buf, 1, sizeof(buf), in)) > 0) {
-        if (fwrite(buf, 1, nread, out) != nread) {
+    /* 135.3c: stop at the first short read instead of calling fread() again
+     * on a stream already at EOF or in error (clang unix.Stream), and check
+     * fclose(out): buffered data is written THERE, so a full disk used to be
+     * reported as a successful copy. */
+    for (;;) {
+        nread = fread(buf, 1, sizeof(buf), in);
+        if (nread > 0 && fwrite(buf, 1, nread, out) != nread) {
             int saved_errno = errno; fclose(in); fclose(out);
             r.is_err = 1; r.err = make_err(saved_errno, "write failed"); return r;
         }
+        if (nread < sizeof(buf)) break;
     }
     if (ferror(in)) {
         int saved_errno = errno; fclose(in); fclose(out);
         r.is_err = 1; r.err = make_err(saved_errno, "read failed"); return r;
     }
     fclose(in);
-    fclose(out);
+    if (fclose(out) != 0) {
+        r.is_err = 1; r.err = make_err(errno, "write failed"); return r;
+    }
     r.ok = 1;
     return r;
 }

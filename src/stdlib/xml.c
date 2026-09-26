@@ -150,7 +150,13 @@ static void nv_push(NodeVec *v, XmlNode n) {
     if (v->len >= v->cap) {
         int newcap = v->cap ? v->cap * 2 : 16;
         XmlNode *tmp = (XmlNode *)realloc(v->items, (size_t)newcap * sizeof(XmlNode));
-        if (!tmp) return;
+        if (!tmp) {
+            /* 135.3c: the node owns its three strings; dropping it on OOM
+             * without freeing them leaked all three (clang unix.Malloc, six
+             * reports -- one per call site and string). */
+            free((void *)n.tag); free((void *)n.content); free((void *)n.attrs);
+            return;
+        }
         v->items = tmp;
         v->cap = newcap;
     }

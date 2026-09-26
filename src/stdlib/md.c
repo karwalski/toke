@@ -25,18 +25,23 @@ typedef struct { char *buf; size_t len; size_t cap; } MdBuf;
 
 static void mdb_init(MdBuf *b) { b->buf = NULL; b->len = 0; b->cap = 0; }
 
-static void mdb_grow(MdBuf *b, size_t need) {
-    if (b->len + need + 1 <= b->cap) return;
+/* Returns 1 when `need` more bytes (plus a NUL) fit, 0 when they cannot.
+ * 135.3c: this returned void and every caller then wrote regardless -- on a
+ * failed realloc that was a write past the old capacity, or through NULL
+ * (clang unix.cstring.NullArg md.c:40). */
+static int mdb_grow(MdBuf *b, size_t need) {
+    if (b->len + need + 1 <= b->cap) return 1;
     size_t nc = b->cap ? b->cap * 2 : 512;
     while (nc < b->len + need + 1) nc *= 2;
     char *p = realloc(b->buf, nc);
-    if (!p) return;
+    if (!p) return 0;
     b->buf = p; b->cap = nc;
+    return 1;
 }
 
 static void mdb_cat(MdBuf *b, const char *s, size_t n) {
     if (!n) return;
-    mdb_grow(b, n);
+    if (!mdb_grow(b, n)) return;
     memcpy(b->buf + b->len, s, n);
     b->len += n;
     b->buf[b->len] = '\0';
@@ -51,7 +56,8 @@ static void mdb_esc(MdBuf *b, const char *s, size_t n) {
             case '>': mdb_cats(b, "&gt;");   break;
             case '&': mdb_cats(b, "&amp;");  break;
             case '"': mdb_cats(b, "&quot;"); break;
-            default:  mdb_grow(b, 1); b->buf[b->len++] = s[i]; b->buf[b->len] = '\0'; break;
+            default:  if (!mdb_grow(b, 1)) return;
+                      b->buf[b->len++] = s[i]; b->buf[b->len] = '\0'; break;
         }
     }
 }
@@ -139,7 +145,8 @@ static void md_inline_cell(MdBuf *b, const char *s, size_t len) {
             case '<': mdb_cats(b, "&lt;");  break;
             case '>': mdb_cats(b, "&gt;");  break;
             case '&': mdb_cats(b, "&amp;"); break;
-            default:  mdb_grow(b, 1); b->buf[b->len++] = s[i]; b->buf[b->len] = '\0'; break;
+            default:  if (!mdb_grow(b, 1)) return;
+                      b->buf[b->len++] = s[i]; b->buf[b->len] = '\0'; break;
         }
         i++;
     }
@@ -426,7 +433,8 @@ MdFileResult md_render_file(const char *path)
     }
     long sz = ftell(f);
     if (sz < 0) { fclose(f); r.is_err = 1; r.err_msg = "ftell failed"; return r; }
-    rewind(f);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); r.is_err = 1; r.err_msg = "seek failed"; return r; }
 
     char *src = malloc((size_t)sz + 1);
     if (!src) { fclose(f); r.is_err = 1; r.err_msg = "allocation failed"; return r; }

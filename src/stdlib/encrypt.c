@@ -2557,22 +2557,28 @@ static const uint8_t *rsa_read_field(const uint8_t **pp, uint64_t *rem, uint32_t
     const uint8_t *d=*pp; *pp+=len; *rem-=len; *fl=len; return d;
 }
 
-/* ---- MGF1-SHA256 ---- */
-static void mgf1_sha256(uint8_t *out, uint64_t olen,
-                         const uint8_t *seed, uint64_t slen)
+/* ---- MGF1-SHA256 ----
+ * Returns 1 when all olen bytes of mask were produced, 0 otherwise.
+ * 135.3c: this was void and `break`s out on an allocation failure, leaving
+ * the rest of `out` uninitialised -- and all six callers XORed that into the
+ * OAEP/PSS block regardless (clang core.uninitialized.Assign).  A mask of
+ * whatever the heap held is not a mask.  Every caller now fails instead. */
+static int mgf1_sha256(uint8_t *out, uint64_t olen,
+                        const uint8_t *seed, uint64_t slen)
 {
     uint64_t done=0; uint32_t ctr=0;
     while (done<olen) {
-        uint8_t *buf=(uint8_t*)malloc(slen+4); if(!buf) break;
+        uint8_t *buf=(uint8_t*)malloc(slen+4); if(!buf) return 0;
         memcpy(buf,seed,slen);
         buf[slen+0]=(uint8_t)(ctr>>24); buf[slen+1]=(uint8_t)(ctr>>16);
         buf[slen+2]=(uint8_t)(ctr>>8);  buf[slen+3]=(uint8_t)ctr;
         ByteArray ba; ba.data=buf; ba.len=slen+4;
-        ByteArray h=crypto_sha256(ba); free(buf); if(!h.data) break;
+        ByteArray h=crypto_sha256(ba); free(buf); if(!h.data) return 0;
         uint64_t take=olen-done; if(take>32) take=32;
         memcpy(out+done,h.data,(size_t)take); free((void*)h.data);
         done+=take; ctr++;
     }
+    return 1;
 }
 
 /* ---- OAEP-SHA256 ---- */
@@ -2594,9 +2600,9 @@ static int oaep_encode(uint8_t *em, uint64_t em_len,
     memcpy(db+hlen+ps_len+1,msg,mlen);
     random_bytes(seed,hlen);
     uint8_t *dbm=(uint8_t*)malloc((size_t)db_len); if(!dbm) return 0;
-    mgf1_sha256(dbm,db_len,seed,hlen);
+    if (!mgf1_sha256(dbm,db_len,seed,hlen)) { free(dbm); return 0; }
     uint64_t i; for (i=0;i<db_len;i++) db[i]^=dbm[i]; free(dbm);
-    uint8_t sm[32]; mgf1_sha256(sm,hlen,db,db_len);
+    uint8_t sm[32]; if (!mgf1_sha256(sm,hlen,db,db_len)) return 0;
     for (i=0;i<hlen;i++) seed[i]^=sm[i];
     em[0]=0x00; return 1;
 }
@@ -2610,13 +2616,13 @@ static uint64_t oaep_decode(const uint8_t *em, uint64_t em_len,
     const uint8_t *seed=em+1, *db=em+hlen+1;
     uint64_t db_len=em_len-hlen-1;
     uint8_t rs[32]; memcpy(rs,seed,hlen);
-    uint8_t sm[32]; mgf1_sha256(sm,hlen,db,db_len);
+    uint8_t sm[32]; if (!mgf1_sha256(sm,hlen,db,db_len)) return 0;
     uint64_t i; for (i=0;i<hlen;i++) rs[i]^=sm[i];
     uint8_t *rdb=(uint8_t*)malloc((size_t)db_len); if(!rdb) return 0;
     memcpy(rdb,db,(size_t)db_len);
     uint8_t *dbm=(uint8_t*)malloc((size_t)db_len);
     if (!dbm) { free(rdb); return 0; }
-    mgf1_sha256(dbm,db_len,rs,hlen);
+    if (!mgf1_sha256(dbm,db_len,rs,hlen)) { free(dbm); free(rdb); return 0; }
     for (i=0;i<db_len;i++) rdb[i]^=dbm[i]; free(dbm);
     uint8_t lhash[32];
     ByteArray lba; lba.data=label; lba.len=llen;
@@ -2648,7 +2654,7 @@ static int pss_encode(uint8_t *em, uint64_t em_len, uint64_t em_bits,
     uint64_t ps_len=db_len-slen-1;
     memset(db,0,(size_t)ps_len); db[ps_len]=0x01; memcpy(db+ps_len+1,salt,slen);
     uint8_t *dbm=(uint8_t*)malloc((size_t)db_len); if(!dbm) return 0;
-    mgf1_sha256(dbm,db_len,H,hlen);
+    if (!mgf1_sha256(dbm,db_len,H,hlen)) { free(dbm); return 0; }
     uint64_t i; for (i=0;i<db_len;i++) db[i]^=dbm[i]; free(dbm);
     if (em_bits%8!=0) db[0]&=(uint8_t)((1u<<(em_bits%8))-1u);
     memcpy(em+db_len,H,hlen); em[em_len-1]=0xbc; return 1;
@@ -2664,7 +2670,7 @@ static int pss_verify(const uint8_t *em, uint64_t em_len, uint64_t em_bits,
     memcpy(db,em,(size_t)db_len);
     uint8_t *dbm=(uint8_t*)malloc((size_t)db_len);
     if (!dbm) { free(db); return 0; }
-    mgf1_sha256(dbm,db_len,H,hlen);
+    if (!mgf1_sha256(dbm,db_len,H,hlen)) { free(dbm); free(db); return 0; }
     uint64_t i; for (i=0;i<db_len;i++) db[i]^=dbm[i]; free(dbm);
     if (em_bits%8!=0) db[0]&=(uint8_t)((1u<<(em_bits%8))-1u);
     uint64_t ps_len=db_len-slen-1;

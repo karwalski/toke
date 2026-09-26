@@ -276,7 +276,11 @@ TkZipArchive *zip_open_file(const char *path)
         fclose(f);
         return (TkZipArchive *)zip_fail("zip: archive size cap exceeded");
     }
-    rewind(f);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return (TkZipArchive *)zip_fail("zip: cannot seek archive file");
+    }
 
     uint8_t *buf = (uint8_t *)malloc((size_t)n ? (size_t)n : 1);
     if (!buf) { fclose(f); return (TkZipArchive *)zip_fail("zip: out of memory"); }

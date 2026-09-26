@@ -327,6 +327,13 @@ uint64_t csv_reader_line_number(TkCsvReader *r)
     return r->line_number;
 }
 
+void csv_reader_adopt(TkCsvReader *r, char *buf)
+{
+    if (!r) { free(buf); return; }
+    free(r->owned);
+    r->owned = buf;
+}
+
 void csv_reader_free(TkCsvReader *r)
 {
     if (!r) return;

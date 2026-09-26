@@ -407,10 +407,16 @@ sys.exit(1)
 
     # ── Report ───────────────────────────────────────────────────────────────
     if $pass; then
-        echo -e "${GREEN}PASS${RESET} ${test_id}: ${description}"
+        # 127.131: printf, not `echo -e`.  -e interprets backslash escapes in
+        # the DESCRIPTION too, and L007's description contains a literal
+        # backslash-zero: echo -e wrote a raw NUL into every conformance log,
+        # file(1) called the log `data`, and a binary-skipping grep (ugrep -I,
+        # BSD grep's "Binary file matches") read a passing run as having no
+        # PASS lines.  Colours go through %b; test text only through %s.
+        printf '%bPASS%b %s: %s\n' "${GREEN}" "${RESET}" "${test_id}" "${description}"
         PASS=$((PASS + 1))
     else
-        echo -e "${RED}FAIL${RESET} ${test_id}: ${description}"
+        printf '%bFAIL%b %s: %s\n' "${RED}" "${RESET}" "${test_id}" "${description}"
         for reason in "${fail_reasons[@]}"; do
             echo "      ${reason}"
         done
@@ -436,7 +442,8 @@ while IFS= read -r -d '' yaml_file; do
 done < <(find "${TEST_DIR}" -path "${TEST_DIR}/fuzz" -prune -o -name '*.yaml' -print0 | sort -z)
 
 echo "------------------------------------------------------------"
-echo -e "Results: ${GREEN}${PASS} passed${RESET}, ${RED}${FAIL} failed${RESET}, ${SKIP} skipped"
+printf 'Results: %b%s passed%b, %b%s failed%b, %s skipped\n' \
+    "${GREEN}" "${PASS}" "${RESET}" "${RED}" "${FAIL}" "${RESET}" "${SKIP}"
 
 if [ ${FAIL} -gt 0 ]; then
     echo ""
@@ -444,6 +451,14 @@ if [ ${FAIL} -gt 0 ]; then
     for id in "${FAILURES[@]}"; do
         echo "  ${id}"
     done
+    exit 1
+fi
+
+# 127.131: assert a positive.  Zero PASS and zero FAIL is not a pass -- it is
+# a run that did not happen (an empty find, a SERIES filter matching nothing,
+# a TEST_DIR pointing at the wrong tree), and it must not exit 0.
+if [ $((PASS + FAIL)) -eq 0 ]; then
+    echo "conformance: NO cases ran (0 passed, 0 failed) -- that is not a pass" >&2
     exit 1
 fi
 

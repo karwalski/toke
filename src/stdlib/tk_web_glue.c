@@ -71,19 +71,12 @@ extern __thread int64_t tk_current_error;
 #include <arpa/inet.h>
 #include <unistd.h>
 
-/* ── f64<->i64 bitcast helpers (Story 7.5.2) ───────────────────────── */
-static double i64_to_f64(int64_t i) {
-    double d;
-    memcpy(&d, &i, sizeof(d));
-    return d;
-}
-static int64_t f64_to_i64(double d) {
-    int64_t i;
-    memcpy(&i, &d, sizeof(i));
-    return i;
-}
-
 /* ── Story 76.1.9d: Closure-aware dispatch helpers ────────────────────── */
+/* 135.3g: only the one-argument form is used (the http listen handler).  The
+ * two-argument call_closure_2, the f64<->i64 bitcasts, the ByteArray
+ * encode/decode pair left behind when the encrypt wrappers moved to
+ * encrypt_glue.c, and an unused FNV hash beside the cache stubs were deleted:
+ * nothing called them and -Wunused-function said so. */
 
 static int64_t call_closure_1(int64_t fn_val, int64_t arg) {
     int64_t *pair = (int64_t *)(intptr_t)fn_val;
@@ -92,15 +85,6 @@ static int64_t call_closure_1(int64_t fn_val, int64_t arg) {
     typedef int64_t (*ClosureFn1)(int64_t, int64_t);
     ClosureFn1 f = (ClosureFn1)(intptr_t)real_fn;
     return f(env, arg);
-}
-
-static int64_t call_closure_2(int64_t fn_val, int64_t a, int64_t b) {
-    int64_t *pair = (int64_t *)(intptr_t)fn_val;
-    int64_t real_fn = pair[0];
-    int64_t env     = pair[1];
-    typedef int64_t (*ClosureFn2)(int64_t, int64_t, int64_t);
-    ClosureFn2 f = (ClosureFn2)(intptr_t)real_fn;
-    return f(env, a, b);
 }
 
 /* ── Static route registry ─────────────────────────────────────────── */
@@ -870,9 +854,10 @@ static Res staticdir_handler(Req req) {
     }
     FILE *f = fopen(filepath, "rb");
     if (!f) return mk404();
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    rewind(f);
+    /* 135.3c: checked seeks, not rewind() -- rewind cannot report failure,
+     * and a failed seek left the read starting at an unknown position. */
+    long sz = fseek(f, 0, SEEK_END) == 0 ? ftell(f) : -1;
+    if (sz >= 0 && fseek(f, 0, SEEK_SET) != 0) sz = -1;
     if (sz < 0 || sz > 16 * 1024 * 1024) {
         fclose(f);
         Res r; r.status = 500; r.body = "File too large";
@@ -884,8 +869,11 @@ static Res staticdir_handler(Req req) {
         Res r; r.status = 500; r.body = "OOM";
         r.headers.data = NULL; r.headers.len = 0; return r;
     }
-    fread(body, 1, (size_t)sz, f);
-    body[sz] = '\0';
+    /* 135.3g/135.3c: terminate at what was READ, not at what ftell said.  A
+     * file that shrinks between the two used to be served with its tail of
+     * uninitialised heap bytes. */
+    size_t got = fread(body, 1, (size_t)sz, f);
+    body[got] = '\0';
     fclose(f);
     const char *mime = mime_for_ext(filepath);
     Res res;
@@ -1469,37 +1457,6 @@ int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
 
 /* ── Misc stubs that remain in the HTTP glue (cross-module) ──────────── */
 
-/* ── encrypt wrappers (encrypt.h) ─────────────────────────────────────
- *
- * Toke ByteArray ABI: ptr[-1] = byte count (i64), ptr[0..n-1] = bytes.
- * We decode that into a C ByteArray struct for the encrypt.h functions.
- */
-static ByteArray decode_bytearray(int64_t arr) {
-    ByteArray ba = {NULL, 0};
-    if (!arr) return ba;
-    int64_t *hdr = (int64_t *)(intptr_t)arr;
-    int64_t len = hdr[-1];
-    if (len <= 0) return ba;
-    ba.data = (uint8_t *)(intptr_t)arr;
-    ba.len  = (uint64_t)len;
-    return ba;
-}
-
-/* Return a toke-ABI byte array: allocate [count][bytes...] block */
-static int64_t encode_bytearray(ByteArray ba) {
-    if (!ba.data || ba.len == 0) return 0;
-    /* Raw-byte layout (paired with decode_bytearray): handle[-1] = byte count,
-     * the data region holds ba.len contiguous bytes. Allocate enough i64 slots
-     * to hold the bytes, then set the length to the real byte count so
-     * handle[-1] matches the array-len convention. */
-    int64_t slots = (int64_t)((ba.len + 7) / 8);
-    int64_t h = tk_arr_alloc(slots, slots);
-    if (!h) return 0;
-    tk_arr_setlen(h, (int64_t)ba.len);
-    memcpy((void *)(intptr_t)h, ba.data, ba.len);
-    return h;
-}
-
 /* ── encrypt wrappers moved to encrypt_glue.c (Story 114.17/114.31): the
  *    versions here were stale (2-arg AES-GCM with an internal nonce that was
  *    discarded — broken) and collided with encrypt_glue.c's correct .tki-
@@ -1571,12 +1528,6 @@ typedef struct TkCacheEntry {
 typedef struct {
     TkCacheEntry *buckets[TK_CACHE_BUCKETS];
 } TkCache;
-
-static uint32_t tk_cache_hash(const char *s) {
-    uint32_t h = 2166136261u;
-    for (; *s; s++) h = (h ^ (uint8_t)*s) * 16777619u;
-    return h;
-}
 
 int64_t tk_cache_new_w(void) {
     TkCache *c = (TkCache *)calloc(1, sizeof(TkCache));

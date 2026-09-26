@@ -587,7 +587,9 @@ static int hpack_insert(HpackTable *t, const char *name, const char *value)
 
     /* Grow array if needed */
     if (t->count >= t->capacity) {
-        size_t new_cap = t->capacity * 2;
+        /* 135.3c: a zero capacity (table never given its initial 64) must
+         * not realloc to zero bytes and then write entries[0]. */
+        size_t new_cap = t->capacity ? t->capacity * 2 : 64;
         HpackEntry *ne = realloc(t->entries, new_cap * sizeof(HpackEntry));
         if (!ne) return -1;
         t->entries  = ne;
@@ -798,10 +800,15 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
 
     int count = 0;
     size_t pos = 0;
+    /* 135.3c: outside the loop so `err` can free a half-decoded pair.  A
+     * header whose name decoded and whose value did not (malformed input,
+     * i.e. any peer) used to leak the name on every such block. */
+    char *name  = NULL;
+    char *value = NULL;
 
     while (pos < len) {
-        char *name  = NULL;
-        char *value = NULL;
+        name  = NULL;
+        value = NULL;
 
         if (buf[pos] & 0x80) {
             /* Indexed header field (§6.1) */
@@ -850,10 +857,15 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
         }
 
         if ((size_t)count >= cap) {
+            /* 135.3c: through temporaries -- assigning realloc's NULL straight
+             * back lost the arrays, then `err` indexed through NULL. */
+            char **nn = realloc(names, cap * 2 * sizeof(char *));
+            if (!nn) goto err;
+            names = nn;
+            char **nv = realloc(values, cap * 2 * sizeof(char *));
+            if (!nv) goto err;
+            values = nv;
             cap *= 2;
-            names  = realloc(names,  cap * sizeof(char *));
-            values = realloc(values, cap * sizeof(char *));
-            if (!names || !values) goto err;
         }
         names[count]  = name;
         values[count] = value;
@@ -865,6 +877,8 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
     return count;
 
 err:
+    free(name);
+    free(value);
     for (int i = 0; i < count; i++) {
         free(names[i]);
         free(values[i]);

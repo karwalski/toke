@@ -47,6 +47,18 @@ static int bind_and_step(sqlite3_stmt *stmt, StrArray params)
 /* Collect current stmt row into a heap-allocated Row.
  * All strings are strdup'd so they remain valid after sqlite3_finalize.
  * col_nulls[c] is set to 1 when the column value is SQL NULL. */
+/* Release everything collect_row() allocated for one row. */
+static void free_row(Row *row)
+{
+    for (uint64_t c = 0; c < row->col_count; c++) {
+        if (row->col_names)  free((void *)row->col_names[c]);
+        if (row->col_values) free((void *)row->col_values[c]);
+    }
+    free((void *)row->col_names);
+    free((void *)row->col_values);
+    free(row->col_nulls);
+}
+
 static Row collect_row(sqlite3_stmt *stmt)
 {
     int n = sqlite3_column_count(stmt);
@@ -96,18 +108,36 @@ RowArrayResult db_many(const char *sql, StrArray params)
     }
     uint64_t cap = 8, count = 0;
     Row *rows = malloc(cap * sizeof(Row));
+    if (!rows) {
+        sqlite3_finalize(stmt);
+        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, "out of memory");
+        return res;
+    }
     for (uint64_t i = 0; i < params.len; i++)
         sqlite3_bind_text(stmt, (int)(i + 1), params.data[i], -1, SQLITE_STATIC);
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        if (count == cap) { cap *= 2; rows = realloc(rows, cap * sizeof(Row)); }
+        if (count == cap) {
+            /* 135.3c: through a temporary -- realloc's NULL used to overwrite
+             * `rows` and the next store wrote through it. */
+            Row *nr = realloc(rows, cap * 2 * sizeof(Row));
+            if (!nr) { rc = SQLITE_NOMEM; break; }
+            rows = nr; cap *= 2;
+        }
         rows[count++] = collect_row(stmt);
     }
-    sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) {
-        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+        /* 135.3c: a query that failed part-way returned the error and leaked
+         * every row already collected (clang unix.Malloc). */
+        sqlite3_finalize(stmt);   /* before errmsg, as before: it may reset it */
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, rc == SQLITE_NOMEM ? "out of memory"
+                                                           : sqlite3_errmsg(g_db));
+        for (uint64_t i = 0; i < count; i++) free_row(&rows[i]);
+        free(rows);
         return res;
     }
+    sqlite3_finalize(stmt);
     res.ok.data = rows; res.ok.len = count;
     return res;
 }

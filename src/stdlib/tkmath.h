@@ -2,7 +2,7 @@
 #define TK_STDLIB_MATH_H
 
 /*
- * math.h — C interface for the std.math standard library module.
+ * tkmath.h — C interface for the std.math standard library module.
  *
  * Type mappings:
  *   [f64]        = F64Array  (defined below)
@@ -12,6 +12,11 @@
  * Link with -lm.
  *
  * Story: 16.1.2
+ *
+ * 135.3b: this header was src/stdlib/math.h.  Any compile that put src/stdlib
+ * on a -I path turned `#include <math.h>` into THIS file, so sqrt() became an
+ * implicit declaration.  scripts/check_stdlib_analysis.py now fails if any
+ * header here takes a standard header's name.
  */
 
 #include <stdint.h>

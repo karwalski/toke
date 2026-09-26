@@ -121,6 +121,14 @@ static TkToolDecl *decode_tools(int64_t arr, uint64_t *out_n) {
     return tools;
 }
 
+/* Free what decode_tools() allocated: the param arrays and the array itself.
+ * The strings are borrowed from the toke values (slot_str), not owned. */
+static void free_tools(TkToolDecl *tools, uint64_t n) {
+    if (!tools) return;
+    for (uint64_t i = 0; i < n; i++) free(tools[i].params);
+    free(tools);
+}
+
 /* decode @(llmmsg) into a TkLlmMsg array. */
 static TkLlmMsg *decode_msgs(int64_t arr, uint64_t *out_n) {
     *out_n = 0;
@@ -245,6 +253,10 @@ int64_t tk_llmtool_withtools_w(int64_t client, int64_t tools_arr) {
         g_bindings[g_nbindings].tools  = tools;
         g_bindings[g_nbindings].ntools = ntools;
         g_nbindings++;
+    } else {
+        /* 135.3c: with the binding table full the decoded declarations were
+         * dropped without being freed (clang unix.Malloc). */
+        free_tools(tools, ntools);
     }
     tk_current_error = 0;
     return (int64_t)(intptr_t)copy;
@@ -261,7 +273,11 @@ int64_t tk_llmtool_chatwithtools_w(int64_t client, int64_t msgs_arr) {
                                          b ? b->tools : NULL,
                                          b ? b->ntools : 0);
     free(msgs);
-    if (r.is_err || r.ncalls == 0 || !r.calls) { tk_current_error = 1; return 0; }
+    if (r.is_err || r.ncalls == 0 || !r.calls) {
+        free((char *)r.err_msg);   /* 135.3c: heap-owned; was dropped */
+        free(r.calls);
+        tk_current_error = 1; return 0;
+    }
     tk_current_error = 0;
     return toolcall_block(&r.calls[0]);
 }
@@ -289,7 +305,11 @@ int64_t tk_llmtool_submitresult_w(int64_t client, int64_t msgs_arr, int64_t resu
 int64_t tk_llmtool_parsetoolcalls_w(int64_t raw) {
     if (!raw) { tk_current_error = 1; return 0; }
     ToolCallResult r = llm_parse_tool_calls((const char *)(intptr_t)raw);
-    if (r.is_err || r.ncalls == 0 || !r.calls) { tk_current_error = 1; return 0; }
+    if (r.is_err || r.ncalls == 0 || !r.calls) {
+        free((char *)r.err_msg);   /* 135.3c: heap-owned; was dropped */
+        free(r.calls);
+        tk_current_error = 1; return 0;
+    }
     tk_current_error = 0;
     return toolcall_block(&r.calls[0]);
 }

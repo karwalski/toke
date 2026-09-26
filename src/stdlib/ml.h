@@ -19,7 +19,7 @@
 
 #include <stdint.h>
 
-/* Re-use the F64Array type from math.h if already included; otherwise define
+/* Re-use the F64Array type from tkmath.h if already included; otherwise define
  * it here.  The guard prevents a duplicate-typedef error. */
 #ifndef TK_F64ARRAY_DEFINED
 #define TK_F64ARRAY_DEFINED

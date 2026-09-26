@@ -86,6 +86,10 @@ static int parse_url(const char *base_url, const char *path_suffix,
 {
     const char *p = base_url;
     *is_https_out = 0;
+    /* 135.3c: a client with no base_url reached strncmp(NULL, ...) here
+     * (clang unix.cstring.NullArg); every caller already reports a nonzero
+     * return as "failed to parse base_url". */
+    if (!p) return -1;
 
     if (strncmp(p, "https://", 8) == 0) {
         *is_https_out = 1;
@@ -818,7 +822,7 @@ static char *http_post_with_backoff(TkLlmClient *c,
     for (uint64_t attempt = 0; attempt <= max_retries; attempt++) {
         if (attempt > 0 && base_delay > 0) {
             /* exponential backoff: delay = base * 2^(attempt-1), cap 30 000 ms */
-            uint64_t delay = base_delay;
+            uint64_t delay;
             uint64_t shift = attempt - 1u;
             /* avoid overflow: cap shift at 14 (2^14 = 16384) */
             if (shift > 14u) shift = 14u;

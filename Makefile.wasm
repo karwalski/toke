@@ -15,10 +15,27 @@ CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
           -DTKC_STDLIB_DIR='"/stdlib"'
 
 # Sources: all compiler pipeline files plus the WASM API shim.
-# Excludes main.c (replaced by wasm_api.c) and llvm.c / ir.c (no codegen
-# in the browser — check and format only).
+# Excludes main.c (replaced by wasm_api.c) and ir.c (no codegen in the
+# browser — check and format only).
+#
+# 136.64: llvm.c, stdlib_deps.c and glue_gen.c ARE needed, although no code
+# is generated.  The type checker (types.c) resolves stdlib calls through
+# tables that live in llvm.c (stdlib_symbol_for, recv_method_*,
+# stdlib_glue_arity, ...) and stdlib_deps.c (stdlib_module_registered), and
+# llvm.c's link step references glue_gen.c.  Leaving them out made this build
+# fail to link with 8 undefined symbols -- which nobody saw, because nothing
+# built it.  Nothing in the check/format path calls codegen; its fork/exec of
+# clang is unreachable here.  Splitting the tables out of llvm.c so the
+# browser build does not carry the code generator is a follow-up.
+#
+# There is no emcc on the development hosts or in CI.  test/conform/
+# C135_wasm_build_stand_in.sh compiles exactly this source list (read via
+# `make -f Makefile.wasm print-srcs`) with the host compiler, -DTKC_WASM_BUILD
+# and these warning flags, links it, and drives the exported API.  It proves
+# the C is valid and the API works; it does not prove emcc accepts it.
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/diag.c src/config.c src/fmt.c \
+          src/llvm.c src/stdlib_deps.c src/glue_gen.c \
           src/stdlib/str.c \
           src/wasm_api.c
 
@@ -43,7 +60,14 @@ EM_FLAGS = -O2 \
            -s ENVIRONMENT='web' \
            -s SINGLE_FILE=0
 
-.PHONY: all clean
+.PHONY: all clean print-srcs
+
+# For the host stand-in (C135): the source list and the compile flags, minus
+# the compiler itself, so the stand-in cannot drift from this file.
+print-srcs:
+	@echo 'SRCS=$(SRCS)'
+	@echo 'CFLAGS=$(CFLAGS)'
+	@echo 'EXPORTED_FUNCTIONS=$(EXPORTED_FUNCTIONS)'
 
 all: $(TARGET)
 

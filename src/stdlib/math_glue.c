@@ -5,7 +5,7 @@
  * when a program imports std.math.
  */
 
-#include "math.h"
+#include "tkmath.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

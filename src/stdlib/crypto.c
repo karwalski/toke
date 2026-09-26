@@ -1390,9 +1390,16 @@ const char *crypto_sha256file(const char *path)
 
     uint8_t buf[8192];
     size_t n;
-    while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
-        sha256_update_state(&s, buf, (uint64_t)n);
+    /* 135.3c: stop at the first short read (clang unix.Stream: fread called
+     * again on a stream at EOF or in error) and refuse on a read ERROR -- it
+     * used to return the digest of however much had been read, a plausible
+     * hash of the wrong bytes. */
+    for (;;) {
+        n = fread(buf, 1, sizeof buf, f);
+        if (n > 0) sha256_update_state(&s, buf, (uint64_t)n);
+        if (n < sizeof buf) break;
     }
+    if (ferror(f)) { fclose(f); return NULL; }
     fclose(f);
 
     uint8_t digest[SHA256_DIGEST_SIZE];

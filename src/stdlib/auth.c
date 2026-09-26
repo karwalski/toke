@@ -121,7 +121,7 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
     if (need_comma) pos += snprintf(payload_json + pos, buf_size - (size_t)pos, ",");
     pos += snprintf(payload_json + pos, buf_size - (size_t)pos,
                     "\"iat\":%" PRId64, iat);
-    need_comma = 1;
+    /* every later field writes its own leading comma */
 
     if (exp != 0) {
         pos += snprintf(payload_json + pos, buf_size - (size_t)pos,

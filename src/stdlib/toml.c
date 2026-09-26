@@ -61,7 +61,8 @@ TomlResult toml_load_file(const char *path)
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     if (sz < 0) { fclose(f); return toml_err("ftell failed"); }
-    rewind(f);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); return toml_err("seek failed"); }
 
     char *src = malloc((size_t)sz + 1);
     if (!src) { fclose(f); return toml_err("allocation failed"); }

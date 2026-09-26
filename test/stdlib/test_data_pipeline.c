@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "../../src/stdlib/csv.h"
-#include "../../src/stdlib/math.h"
+#include "../../src/stdlib/tkmath.h"
 #include "../../src/stdlib/dataframe.h"
 #include "../../src/stdlib/analytics.h"
 #include "../../src/stdlib/chart.h"

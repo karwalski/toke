@@ -758,6 +758,7 @@ ToolCallResultArray llm_parallel_tool_calls(TkLlmClient *client,
     if (tc.is_err || tc.ncalls == 0) {
         /* No tool calls — return empty array */
         if (tc.calls) free(tc.calls);
+        free((char *)tc.err_msg);   /* 135.3c: heap-owned; was dropped */
         return out;
     }
 
@@ -907,6 +908,9 @@ const char *llm_agentic_loop(TkLlmClient *client,
             /* No tool calls — this is the final answer */
             final_answer = strdup(resp.content);
             if (tc.calls) free(tc.calls);
+            /* 135.3c: err_msg is heap-owned (llm_parse_tool_calls strdup()s
+             * it) and was dropped here (clang unix.Malloc llm_tool.c:1012). */
+            free((char *)tc.err_msg);
             break;
         }
 
