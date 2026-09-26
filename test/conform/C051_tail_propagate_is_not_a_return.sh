@@ -19,9 +19,10 @@
 #      — `<` is not a certain repair: the author may have meant the error.
 #   2. The resolved shape (a user fn) is still E4071 (C021's case).
 #   3. Correct programs stay clean: `<x!$e` at the tail, a propagation
-#      statement followed by `<`, a void function ending in a propagation,
-#      and a non-void function whose tail propagation is of a void callee
-#      (a missing return — out of this code's scope, as a void tail call is).
+#      statement followed by `<`, and a void function ending in a
+#      propagation.  (A non-void function whose tail propagation is of a
+#      void callee was asserted clean here too; 127.188 made it E4071 — it
+#      is a missing return — and C088 owns that case, so case 3b pins it.)
 #   4. The fixed program runs and prints on its ok path.
 #
 # Negative control: TKC built from 39b6cfd — case 1 has no E4071 (red).
@@ -77,11 +78,17 @@ f=chk(x:i64):void!$e{ if(x<0){<$e{$bad:x}} };
 f=run(x:i64):void!$e{
   chk(x)!$e
 };
+EOF2
+expect "3-void-propagate-tail-clean" "$(codes "${WORK}/g3.tk")" ""
+cat > "${WORK}/g3b.tk" <<'EOF2'
+m=t;
+t=$e{$bad:i64};
+f=chk(x:i64):void!$e{ if(x<0){<$e{$bad:x}} };
 f=run2(x:i64):i64!$e{
   chk(x)!$e
 };
 EOF2
-expect "3-void-propagate-tail-clean" "$(codes "${WORK}/g3.tk")" ""
+expect "3b-void-callee-tail-in-i64-fn-is-E4071" "$(codes "${WORK}/g3b.tk")" "E4071 "
 
 # ── 4. the corrected program runs ────────────────────────────────────────
 printf '%s\nf=find(p:str):@(str)!$storeerr{\n  <file.listall(p)!$storeerr\n};\nf=main():i64{\n  mt find(".") {$ok:v io.println("OK");$err:e io.println("ERR")};\n  <0\n};\n' "$HDR" > "${WORK}/run.tk"
