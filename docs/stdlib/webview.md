@@ -44,11 +44,12 @@ Implementing it was weighed and rejected for now, on four grounds:
    `TkWebviewHandle` by value and `tk_webview_close` takes its address and frees
    the `id` but not the struct, so the glue must own a handle table rather than
    cast a pointer.
-4. **A known-unsafe surface would ship ahead of its fix.** 121.38 and 122.11 are
-   open: the `WKWebView` bridge loads an arbitrary URL with JS enabled, exposes
-   native `messageHandlers`, host `evaluateJavaScript:` and a custom `loke://`
-   scheme, with no origin restriction. `registerhandler` is the function that
-   exposes it.
+4. **A known-unsafe surface would ship ahead of its fix.** When the module was
+   withdrawn, 121.38 and 122.11 were open: the `WKWebView` bridge loaded an
+   arbitrary URL with JS enabled and exposed native `messageHandlers`, host
+   `evaluateJavaScript:` and a custom `loke://` scheme with no origin
+   restriction. The C core now carries an origin policy (122.11, below); it is
+   unit-tested headless and has never run against a live window.
 
 The C core (`src/stdlib/webview.c`, `src/stdlib/webview.h`) is retained and
 unbuilt, so restoring the module costs a `webview_glue.c`, the link flags
@@ -82,6 +83,49 @@ its consumer calls it that way. The deleted `.tki` agreed. The **spec**
 `open(title; url; ...)`, and also used the pre-113.2a underscore spellings
 (`set_title`, `is_available`) that the `.tki` had already dropped. Two
 documents, two different interfaces, neither of them callable.
+
+## Bridge security (story 122.11)
+
+The retained C core restricts its native bridge to **trusted origins**. A
+restored module must keep this policy and publish `allow_origin` alongside the
+other calls.
+
+| Origin of the page | Trusted? |
+|---|---|
+| `loke://...` | yes: the app's own content |
+| `file://...` | yes: local content shipped with the app |
+| an origin added with `tk_webview_allow_origin(h, "https://host[:port]")` | yes, on an exact scheme + host + port match |
+| anything else: a remote page reached by redirect or link, `about:blank`, `data:`, a third-party iframe | **no** |
+
+What the policy gates:
+
+- **Script messages.** A `window.toke.<name>()` call is dropped unless it comes
+  from the **main frame** of a trusted origin, and the page in the view is
+  trusted. The bootstrap is injected into the main frame only, but that is
+  hygiene: WebKit exposes `messageHandlers` to every frame, so the sender check
+  is the gate.
+- **`evaluateJavaScript:`.** `tk_webview_eval_js` returns 0, and a handler's
+  reply is not delivered, when the page in the view is not trusted.
+- **`loke://`.** A `loke://` request is answered only when the document that
+  initiated it is trusted; otherwise the scheme task fails.
+- **Handler names** are spliced into JavaScript, so only `[A-Za-z][A-Za-z0-9]*`
+  (at most 64 characters, plus the reserved `loke_scheme`) is accepted.
+- **Replies** are escaped for a JavaScript string literal (quote, backslash,
+  every control character, `<`, `>`, U+2028, U+2029) and are never truncated.
+
+**The unsafe case.** Loading an untrusted or remote URL into a bridged webview
+and then allowing its origin hands that page every registered handler, and
+with them whatever those handlers can do on the user's machine. Only allow
+origins you control, over `https`. The examples below that open
+`http://localhost:8080` need `tk_webview_allow_origin(h, "http://localhost:8080")`
+first, or the bridge stays closed to that page.
+
+**What is and is not tested.** `test/conform/C139_webview_bridge_policy.sh`
+drives the origin parser, the trust decision, the name check and the reply
+escaper under ASan and UBSan, headless, on every host. The WebKit side (that a
+sub-frame message is dropped, that `eval_js` refuses a remote page, that a
+`loke://` load from a remote page fails) needs a window, a display and a run
+loop, and no test exercises it.
 
 ---
 
@@ -207,4 +251,4 @@ The module registers a custom `loke://` URL scheme handler when a window is open
 | Windows  | WebView2 (stub) | Planned |
 | Other    | —               | `is_available()` returns `false` |
 
-The C implementation file must be compiled as Objective-C (`.m` or `-x objective-c`) on macOS because it uses the Cocoa and WebKit frameworks. See `webview.h` for details.
+The C implementation compiles as plain C99 on every platform: on macOS it reaches Cocoa and WebKit through the Objective-C runtime C API, so no `-x objective-c` is needed. It links on macOS with `-framework WebKit -framework Cocoa -lobjc`. See `webview.h` for details.
