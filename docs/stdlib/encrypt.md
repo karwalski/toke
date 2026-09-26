@@ -268,6 +268,27 @@ if(ok){
 };
 ```
 
+## Quantum-safety posture
+
+Summary; the full posture, HNDL guidance and deprecation track are in
+[`docs/security/threat-model.md`, Part III](../security/threat-model.md).
+
+| Functions | Quantum status |
+|---|---|
+| `aes256gcm*`, `hkdfsha256` | adequate: symmetric and hash primitives at 256-bit strength |
+| `x25519keypair`, `x25519dh` | **quantum-vulnerable.** A key agreed with X25519 alone can be recovered from a recorded exchange once a cryptographically relevant quantum computer exists (harvest now, decrypt later) |
+| `ed25519keypair`, `ed25519sign`, `ed25519verify` | **quantum-vulnerable.** Signatures become forgeable once such a computer exists |
+| `tlscertfingerprint` | adequate: a SHA-256 digest |
+
+Do not rely on `x25519dh` alone for a key that protects data meant to stay
+confidential for years, and do not rely on Ed25519 for signatures that must still
+be trusted then. `std.encrypt` has no hybrid (X25519 + ML-KEM) or ML-DSA API yet
+(story 122.5); `std.tls` negotiates the hybrid `X25519MLKEM768` group when both
+sides support it, and `tls.genselfsignedalg` can issue ML-DSA-65 certificates.
+The X25519 and Ed25519 functions are on the deprecation track for protecting
+long-lived data (stage 0, notice); they will be deprecated only once a
+replacement ships.
+
 ## See Also
 
 - [std.crypto](/docs/stdlib/crypto) -- SHA-256, SHA-512, HMAC, random bytes, and hex encoding
