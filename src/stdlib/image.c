@@ -1723,14 +1723,27 @@ typedef struct {
     uint64_t count; /* number of pixels in this bucket */
 } MedBucket;
 
-/* Channel index used by pixel_cmp; set before each qsort call. */
-static int g_sort_ch = 0;
-
-static int pixel_cmp(const void *a, const void *b)
+/*
+ * sort_pixels_by_channel — order `count` pixels of `ch` bytes each by the
+ * value of channel `key`, in place.  135.19 (5): this was qsort with the key
+ * channel in a static global read by the comparator, so two threads
+ * quantizing at once raced on it and sorted by each other's channel.  A
+ * channel is one byte, so a counting sort keyed on its 256 values needs no
+ * shared state at all (and is stable and O(n), where qsort was neither).
+ * `tmp` is caller-provided scratch of count*ch bytes.
+ */
+static void sort_pixels_by_channel(uint8_t *px, uint64_t count, uint8_t ch,
+                                   int key, uint8_t *tmp)
 {
-    const uint8_t *pa = (const uint8_t *)a;
-    const uint8_t *pb = (const uint8_t *)b;
-    return (int)pa[g_sort_ch] - (int)pb[g_sort_ch];
+    uint64_t pos[256] = {0};
+    for (uint64_t i = 0; i < count; i++) pos[px[i * ch + (uint64_t)key]]++;
+    uint64_t run = 0;
+    for (int v = 0; v < 256; v++) { uint64_t n = pos[v]; pos[v] = run; run += n; }
+    for (uint64_t i = 0; i < count; i++) {
+        uint64_t d = pos[px[i * ch + (uint64_t)key]]++;
+        memcpy(tmp + d * ch, px + i * ch, ch);
+    }
+    memcpy(px, tmp, (size_t)(count * ch));
 }
 
 TkImgBuf image_quantize(TkImgBuf buf, uint64_t ncolors)
@@ -1753,6 +1766,8 @@ TkImgBuf image_quantize(TkImgBuf buf, uint64_t ncolors)
     uint64_t max_buckets = ncolors * 2 + 2;
     MedBucket *buckets = (MedBucket *)malloc(max_buckets * sizeof(MedBucket));
     if (!buckets) { free(pixels); return zero; }
+    uint8_t *sort_tmp = (uint8_t *)malloc(npix * ch);   /* 135.19 (5) */
+    if (!sort_tmp) { free(pixels); free(buckets); return zero; }
 
     buckets[0].start = 0;
     buckets[0].count = npix;
@@ -1789,8 +1804,8 @@ TkImgBuf image_quantize(TkImgBuf buf, uint64_t ncolors)
         }
 
         /* Sort this bucket's pixels by the chosen channel. */
-        g_sort_ch = best_ch;
-        qsort(pixels + bk->start * ch, (size_t)bk->count, ch, pixel_cmp);
+        sort_pixels_by_channel(pixels + bk->start * ch, bk->count, ch,
+                               best_ch, sort_tmp);
 
         /* Split at the median. */
         uint64_t half        = bk->count / 2;
@@ -1806,6 +1821,8 @@ TkImgBuf image_quantize(TkImgBuf buf, uint64_t ncolors)
             nbuckets++;
         }
     }
+
+    free(sort_tmp);
 
     /* Compute representative (mean) colour for each bucket. */
     uint8_t *palette = (uint8_t *)malloc(nbuckets * ch);
