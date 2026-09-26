@@ -570,6 +570,16 @@ const char *chart_histogram(const double *values, uint64_t n,
     SB sb;
     if (!sb_init(&sb)) { free(counts); return NULL; }
 
+    /* 135.3c: every append below can fail, and the section's macros returned
+     * without freeing `counts` (clang unix.Malloc).  Route them through one
+     * exit that does, for this function only. */
+#undef A
+#undef AJ
+#undef AD
+#define A(s)   do { if (!sb_append(&sb, (s)))          goto oom; } while(0)
+#define AJ(s)  do { if (!sb_append_json_str(&sb, (s))) goto oom; } while(0)
+#define AD(v)  do { if (!sb_append_double(&sb, (v)))   goto oom; } while(0)
+
     A("{\"type\":\"bar\"");
 
     /* labels = bin midpoints */
@@ -589,6 +599,7 @@ const char *chart_histogram(const double *values, uint64_t n,
         A(tmp);
     }
     free(counts);
+    counts = NULL;
     A("],\"backgroundColor\":");
     AJ(DEFAULT_COLORS[0]);
     A("}]}");
@@ -604,7 +615,18 @@ const char *chart_histogram(const double *values, uint64_t n,
 
     A("}");
     return sb.buf;
+
+oom:
+    free(counts);
+    free(sb.buf);
+    return NULL;
 }
+#undef A
+#undef AJ
+#undef AD
+#define A(s)   do { if (!sb_append(&sb, (s)))             { free(sb.buf); return NULL; } } while(0)
+#define AJ(s)  do { if (!sb_append_json_str(&sb, (s)))    { free(sb.buf); return NULL; } } while(0)
+#define AD(v)  do { if (!sb_append_double(&sb, (v)))      { free(sb.buf); return NULL; } } while(0)
 
 /* -----------------------------------------------------------------------
  * chart_heatmap — SVG-based matrix visualisation (no native CJS heatmap).
