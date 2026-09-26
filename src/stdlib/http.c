@@ -315,9 +315,10 @@ void http_free_params(StrPair *out, int *cnt)
  * two parameter blocks can produce, with nothing left over, so the moment a
  * handler started handing its response body to this list as well the worst
  * case could overflow and silently DROP — i.e. leak — the body.  The extra
- * 16 slots are the per-request handler budget: the largest producer is the
+ * 16 slots are the per-request handler budget: the largest producer was the
  * vhost static handler at nine pointers (body, five header values, two
- * header arrays, the StrPair block).
+ * header arrays, the StrPair block).  136.69 removed that handler with the
+ * unused vhost surface; the budget is kept as headroom.
  */
 #define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS + 16)
 

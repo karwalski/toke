@@ -15,11 +15,14 @@
 #   (c) heap the handler hands to http_defer_free() in the same breath.
 #
 # There is no fourth case.  It was never written down and never enforced,
-# and all three handlers that build a body on the heap simply dropped it:
+# and all three handlers that built a body on the heap simply dropped it:
 # staticdir_handler leaked the whole file plus a StrPair block,
 # tk_page_dispatch leaked the rendered HTML plus a block, and
 # vhost_catchall_handler ignored router_static_serve's own written contract
 # and leaked the file, four strdup'd header values and two pointer arrays.
+# (136.69 removed the vhost surface -- http.vhost / servevhosts /
+# servevhoststls and that handler -- which had no caller anywhere, so the
+# measurement below, a real http.servedir mount, is what this suite covers.)
 #
 # MEASURED ON THIS TREE with the harness this script builds, macOS/arm64, a
 # real http.servedir mount serving a 64 KiB file over keep-alive:

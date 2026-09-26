@@ -18,7 +18,8 @@
  *                              caller must free resp.body and the header
  *                              values; no caller did.  On a 200 that is the
  *                              entire file, four strdup'd header values and
- *                              two pointer arrays, every request.
+ *                              two pointer arrays, every request.  (Removed
+ *                              with the unused vhost surface, 136.69.)
  *
  * So the same design choice that makes 127.72's fix correct also made every
  * static file the server ever sent a per-request leak the size of the file.

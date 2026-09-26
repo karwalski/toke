@@ -60,7 +60,7 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 |---|---|---|
 | `fs.writetext` | `tk_fs_writetext_w` | `file_glue.c` |
 
-### `std.http` (23)
+### `std.http` (20)
 
 | Export | Glue symbol | Defined in |
 |---|---|---|
@@ -84,9 +84,6 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `http.resjsonnew` | `tk_http_resjsonnew_w` | `tk_web_glue.c` |
 | `http.resnew` | `tk_http_res_new` | `tk_web_glue.c` |
 | `http.resp` | `tk_http_resp_w` | `tk_web_glue.c` |
-| `http.servevhosts` | `tk_http_servevhosts` | `tk_web_glue.c` |
-| `http.servevhoststls` | `tk_http_servevhoststls` | `tk_web_glue.c` |
-| `http.vhost` | `tk_http_vhost` | `tk_web_glue.c` |
 
 ### `std.string` (12)
 
@@ -114,8 +111,8 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | `emitted` | the compiler emits a call to it by name: a lowering target | 69 |
 | `c-internal` | called only from other C in `src/stdlib/` | 140 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 98 |
-| | **total** | **316** |
+| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 95 |
+| | **total** | **313** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -352,7 +349,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `dead` (98)
+### `dead` (95)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -395,11 +392,8 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_http_serve_w` | `tk_web_glue.c` | - |
 | `tk_http_servedir_w` | `tk_web_glue.c` | - |
 | `tk_http_servetls_w` | `tk_web_glue.c` | - |
-| `tk_http_servevhosts_w` | `tk_web_glue.c` | - |
-| `tk_http_servevhoststls_w` | `tk_web_glue.c` | - |
 | `tk_http_setcors_w` | `tk_web_glue.c` | - |
 | `tk_http_setnotfound_w` | `tk_web_glue.c` | - |
-| `tk_http_vhost_w` | `tk_web_glue.c` | - |
 | `tk_infer_is_loaded` | `infer.c` | - |
 | `tk_infer_stream_cleanup` | `infer_stream.c` | - |
 | `tk_infer_unload` | `infer.c` | - |
