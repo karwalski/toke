@@ -45,7 +45,7 @@ be removed with the fix.
 | RT004 division (ADR-0012 b) | `cg_trap_div`, `cg_trap_rem`, `cg_trap_div_intmin` (121.36, fixed 127.217) |
 | RT005 nil (ADR-0012 d) | `cg_trap_nil` |
 | error unions, `!`, let-bound / mut-assigned | `cg_err_union`, `cg_err_letbound_payload` (127.103, fixed da7be68) |
-| interpolation of scalars | `cg_interp_scalars`, `cg_unsigned_as_str`, `cg_interp_byte` (127.217), witnesses `cg_interp_bool_shapes` (127.194), `cg_unsigned` |
+| interpolation of scalars | `cg_interp_scalars`, `cg_unsigned_as_str`, `cg_interp_byte` (127.217), `cg_interp_bool_shapes` (127.194, fixed by 127.52), witness `cg_unsigned` |
 | `j.print` of a str at the i64 ABI (127.215) | `cg_json_print_str` |
 | maps | `cg_map` |
 | arrays, in-place vs copying | `cg_array_paths` |

@@ -1,5 +1,6 @@
-(* 123.6 WITNESS for 127.194 (quarantined): the two bool shapes 127.94 did not
- * reach still interpolate as 1/0 — an element of a bool array, a bool field
+(* 123.6 certificate for 127.194 (a witness until 127.52 fixed its last case —
+ * the struct tag of an array element now comes from the checker's type): the
+ * bool shapes 127.94 did not reach interpolated as 1/0 — an element of a bool array, a bool field
  * of a struct read off an array element (found by 123.6, same array-element
  * root), and a bool-returning receiver method (str/array/map .contains).  Every other bool
  * shape renders true/false (cg_interp_scalars.tk), so one program prints the

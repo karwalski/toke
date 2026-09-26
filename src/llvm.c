@@ -908,26 +908,11 @@ static void prepass_funcs(Ctx *c, const Node *n) {
                     tok_cp(c->src, rs->children[0]->children[0], el, sizeof el);
                     snprintf(ret_tn, sizeof ret_tn, "@%s", el);
                 }
-                /* 127.28: a map return (`@(k:v)`) — the un-annotated `let m=mk()`
-                 * is never checker-typed, so carry the map-ness through the
-                 * FnSig; expr_struct_type turns it into the "__map__" local tag
-                 * and .keys()/.get/.len take the map runtime path (they linked
-                 * against `_keys` / read an array header before). */
-                if (rs->children[0]->kind == NODE_MAP_TYPE) {
-                    /* 127.39: carry the key/value kinds too — `f=mk():@(str:str)`
-                     * must tag `let u=mk()` so `\(u.get(k))` interpolates the
-                     * string instead of its address. */
-                    int mk_int = 0, mv_str = 0;
-                    if (rs->children[0]->child_count > 0) {
-                        char kt[64]; tok_cp(c->src, rs->children[0]->children[0], kt, sizeof kt);
-                        mk_int = !strstr(kt, "str");
-                    }
-                    if (rs->children[0]->child_count > 1) {
-                        char vt[64]; tok_cp(c->src, rs->children[0]->children[1], vt, sizeof vt);
-                        mv_str = strstr(vt, "str") != NULL;
-                    }
-                    snprintf(ret_tn, sizeof ret_tn, "%s", map_tag(mk_int, mv_str));
-                }
+                /* 127.28's "__map__" return tag lived here: a map return
+                 * (`@(k:v)`) was carried through the FnSig because `let m=mk()`
+                 * was never checker-typed.  The checker types it now (127.40,
+                 * 127.114) and expr_struct_type reads that type first (127.52),
+                 * so the workaround and its two readers are gone. */
             }
         }
     }
@@ -7541,7 +7526,55 @@ static const char *tki_declared_tag(Ctx *c, const char *alias, const char *metho
     return NULL;
 }
 
+/*
+ * 127.52: the backend tag for a checker Type — the translation that lets
+ * expr_struct_type consume Node.rtype instead of re-deriving it from the
+ * shape of the source.  NULL when the type carries no tag (scalars) or when
+ * the checker's answer is not specific enough to stand in for the backend's
+ * (unknown, nested arrays, element types the tags do not spell), in which
+ * case the string inference below keeps deciding.
+ */
+static const char *type_backend_tag(Ctx *c, const Type *t) {
+    if (!t) return NULL;
+    switch (t->kind) {
+    case TY_STR: return "$str";
+    case TY_ARRAY: {
+        const Type *e = t->elem;
+        if (!e) return NULL;
+        switch (e->kind) {
+        case TY_STR:  return "@str";
+        case TY_F64: case TY_F32: return "@f64";
+        case TY_BOOL: return "@bool";
+        case TY_I64:  return "@i64";
+        case TY_STRUCT:
+            return (e->name && lookup_struct(c, e->name)) ? array_struct_tag(e->name) : NULL;
+        default: return NULL;
+        }
+    }
+    case TY_MAP: {
+        const Type *k = t->elem;
+        const Type *v = (t->field_count > 0 && t->field_types) ? t->field_types[0] : NULL;
+        if (!k || !v || k->kind == TY_UNKNOWN || v->kind == TY_UNKNOWN) return NULL;
+        return map_tag(k->kind != TY_STR, v->kind == TY_STR);
+    }
+    case TY_STRUCT:
+        return (t->name && lookup_struct(c, t->name)) ? t->name : NULL;
+    default: return NULL;
+    }
+}
+
+static const char *expr_struct_type_legacy(Ctx *c, const Node *n);
+/* 127.52: the checker's type first; the legacy string inference only where
+ * the checker left the node untyped or its type has no tag. */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
+    if (n && n->rtype) {
+        const char *tag = type_backend_tag(c, n->rtype);
+        if (tag) return tag;
+    }
+    return expr_struct_type_legacy(c, n);
+}
+
+static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
     if (!n) return NULL;
     /* Bug 111.10: string literals must be marked "$str" so that locals
      * bound to one (`let s="hello"`) aren't misidentified by the
@@ -8042,8 +8075,6 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             /* 136.28: a function returning an array of structs */
             if (sig2) { const char *es = array_elem_struct_name(c, sig2->ret_type_name);
                         if (es) return array_struct_tag(es); }
-            /* 127.28 (+127.39/127.41 suffixes: "__map__i" / "__map__S") */
-            if (sig2 && !strncmp(sig2->ret_type_name, "__map__", 7)) return sig2->ret_type_name;
             /* 114.56: a cross-module user fn returning a scalar string — tag
              * "$str" so the result is recognised as a string (the ABI lowers
              * str returns to i64, erasing the i8* type), routing `<`/`<=`/`>`/
@@ -8078,7 +8109,6 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         /* 136.28: a function returning an array of structs */
         if (sig) { const char *es = array_elem_struct_name(c, sig->ret_type_name);
                    if (es) return array_struct_tag(es); }
-        if (sig && !strncmp(sig->ret_type_name, "__map__", 7)) return sig->ret_type_name; /* 127.28 */
         /* 114.56: a user fn returning a scalar string — tag "$str" so the
          * comparison and var-to-var `=` codegen route to strcmp, not a
          * pointer-address compare (the str return is lowered to i64 at the ABI,
