@@ -47,7 +47,10 @@ int64_t tk_csv_parse_w(int64_t data) {
         for (uint64_t j = 0; j < fl; j++)
             fields[j] = (int64_t)(intptr_t)rows[i].data[j];
         int64_t *cr = (int64_t *)malloc(sizeof(int64_t));
-        if (!cr) { outer[i] = 0; continue; }
+        if (!cr) {   /* 135.3c: the fields block leaked here */
+            free((int64_t *)(intptr_t)fields_h - TK_ARR_HDR);
+            outer[i] = 0; continue;
+        }
         cr[0] = fields_h;
         outer[i] = (int64_t)(intptr_t)cr;
     }
@@ -101,6 +104,7 @@ int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
     s[len] = '\0';
     TkCsvReader *r = csv_reader_new(s, len);
     if (!r) { free(s); return 0; }
+    csv_reader_adopt(r, s);   /* 135.3c: freed by csv.close, not leaked */
     if (sep) csv_reader_set_separator(r, (char)sep);
     return (int64_t)(intptr_t)r;
 }
@@ -253,8 +257,7 @@ int64_t tk_csv_readeropts_w(int64_t data, int64_t opts) {
         o.has_header = p[5] ? 1 : 0;
     }
     /* csv_reader_open copies (and where needed transcodes) the buffer and
-     * owns the copy, so the staging buffer is freed here rather than leaked
-     * for the reader's lifetime as tk_csv_reader_w must. */
+     * owns the copy, so the staging buffer is freed here. */
     TkCsvReader *r = csv_reader_open((const char *)bytes, bytes ? len : 0, &o);
     free(bytes);
     return (int64_t)(intptr_t)r;

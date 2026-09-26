@@ -27,6 +27,10 @@ typedef struct TkCsvWriter TkCsvWriter;
  * Returns a heap-allocated reader; caller must call csv_reader_free(). */
 TkCsvReader *csv_reader_new(const char *data, uint64_t len);
 void         csv_reader_free(TkCsvReader *r);
+/* csv_reader_adopt: hand `buf` (heap, the buffer this reader parses) to the
+ * reader, which frees it in csv_reader_free().  135.3c: tk_csv_reader_w had
+ * no way to do this and leaked its copy of the input on every csv.close. */
+void         csv_reader_adopt(TkCsvReader *r, char *buf);
 
 /* csv_reader_has_next: returns 1 if there is at least one more row to read,
  * 0 at EOF. */

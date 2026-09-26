@@ -107,7 +107,6 @@ analyze src/stdlib/auth.c::deadcode.DeadStores               1   # 2026-09-23 st
 analyze src/stdlib/chart.c::unix.Malloc                      1   # 2026-09-23 leak/use-after-free path found by the analyzer; needs a read of the error paths [135.3c]
 analyze src/stdlib/collections_glue.c::core.NullDereference  1   # 2026-09-23 analyzer-reachable NULL dereference [135.3c]
 analyze src/stdlib/crypto.c::unix.Stream                     2   # 2026-09-23 stream used after a failed op / at EOF; needs a read of the error paths [135.3c]
-analyze src/stdlib/csv_glue.c::unix.Malloc                   2   # 2026-09-23 leak/use-after-free path found by the analyzer; needs a read of the error paths [135.3c]
 analyze src/stdlib/dashboard.c::unix.Malloc                  13  # 2026-09-23 leak/use-after-free path found by the analyzer; needs a read of the error paths [135.3c]
 analyze src/stdlib/dataframe.c::core.NullDereference         2   # 2026-09-23 analyzer-reachable NULL dereference [135.3c]
 analyze src/stdlib/dataframe.c::unix.Malloc                  2   # 2026-09-23 leak/use-after-free path found by the analyzer; needs a read of the error paths [135.3c]
