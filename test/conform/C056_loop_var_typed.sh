@@ -9,8 +9,8 @@
 # lookup right and the warning vanished.
 #
 # WHAT IS ASSERTED:
-#   1. a value derived from `lp(let v=0;..)`'s counter (`v-1`) is typed
-#      i64, so `w as u64` is W1001, in both the counter and the shadowing
+#   1. `(v-1)` over `lp(let v=0;..)`'s counter is typed
+#      i64, so `(v-1) as u64` is W1001, in both the counter and the shadowing
 #      shape the corpus records have. (127.189 deliberately stopped W1001 on
 #      the counter itself — provably non-negative — and 127.204 on a literal
 #      cast, so neither can witness the typing any more; `v-1` can.)
@@ -39,7 +39,7 @@ cat > "${WORK}/a.tk" <<'EOF2'
 m=t;
 f=g():@u64{
   let out=mut.@();
-  lp(let v=0;v<3;v=v+1){ let w=v-1; out=out.append(w as u64) };
+  lp(let v=0;v<3;v=v+1){ out=out.append((v-1) as u64) };
   <out
 };
 EOF2
@@ -53,7 +53,7 @@ f=g(arr:@u64):@u64{
     let v=arr.get(i);
     out=out.append(v)
   };
-  lp(let v=0;v<2;v=v+1){ let w=v-1; out=out.append(w as u64) };
+  lp(let v=0;v<2;v=v+1){ out=out.append((v-1) as u64) };
   <out
 };
 EOF2
