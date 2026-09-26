@@ -188,6 +188,73 @@
         "[byte]"
       ],
       "return": "u32!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.brightness",
+      "params": [
+        "imgbuf",
+        "f64"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.contrast",
+      "params": [
+        "imgbuf",
+        "f64"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.histogram",
+      "params": [
+        "imgbuf"
+      ],
+      "return": "[i64]"
+    },
+    {
+      "kind": "func",
+      "name": "image.paste",
+      "params": [
+        "imgbuf",
+        "imgbuf",
+        "i64",
+        "i64"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.quantize",
+      "params": [
+        "imgbuf",
+        "u32"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.textdraw",
+      "params": [
+        "imgbuf",
+        "str",
+        "i64",
+        "i64",
+        "u32",
+        "u32"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.sharpen",
+      "params": [
+        "imgbuf"
+      ],
+      "return": "imgbuf"
     }
   ]
 }
