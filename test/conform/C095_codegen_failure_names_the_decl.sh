@@ -19,11 +19,12 @@
 # position in pos/line/col/offset.  An unmappable failure stays at line 0.
 #
 # HOW IT FORCES THE FAILURES.  Real toke programs, no injected IR:
-#   * `let q=2.5 as bool` lowers to an i64 stored into an i1 slot, which clang
-#     rejects with a line number.  This is a live codegen defect used as a
-#     fixture (filed by Batch BB, 2026-09-26); when it is fixed, swap in the
-#     next construct that yields invalid IR.  Until 2026-09-26 the fixture was
-#     `let g=&add; g(1;2)`, which 124.0c fixed.
+#   * `let z=$p{x:1} as f64` (a struct cast to f64) lowers to
+#     `ptrtoint i8* .. to double`, which clang rejects with a line number.
+#     This is a live codegen defect used as a fixture (found by Batch CC,
+#     2026-09-27); when it is fixed, swap in the next construct that yields
+#     invalid IR.  Previous fixtures, each fixed in turn: `let g=&add;
+#     g(1;2)` (124.0c), then `let q=2.5 as bool` (127.224 item 6).
 #   * an extern `f=nosuchcfn(x:i64):i64;` that nothing defines fails in ld;
 #   * `-o` into a directory that does not exist fails with no IR involved.
 
@@ -49,10 +50,10 @@ echo "C095: E9003 names the toke declaration clang or ld failed on"
 echo "------------------------------------------------------------"
 
 cat > fp.tk <<'EOF'
-m=fp;
+m=fp;t=$p{x:i64};
 f=add(a:i64;b:i64):i64{<a+b};
 f=helper():i64{
-  let q=2.5 as bool;
+  let q=$p{x:1} as f64;
   <add(1;2)
 };
 f=main():i64{<helper()};
@@ -66,10 +67,10 @@ f=user(n:i64):i64{
 f=main():i64{<user(1)};
 EOF
 cat > lib.tk <<'EOF'
-m=pair.lib;
+m=pair.lib;t=$p{x:i64};
 f=add(a:i64;b:i64):i64{<a+b};
 f=twice(x:i64):i64{
-  let q=(x as f64) as bool;
+  let q=$p{x:x} as f64;
   <add(x;x)
 };
 EOF
@@ -79,11 +80,11 @@ i=lib:pair.lib;
 f=main():i64{<lib.twice(2)};
 EOF
 cat > clos.tk <<'EOF'
-m=cl;
+m=cl;t=$p{x:i64};
 f=add(a:i64;b:i64):i64{<a+b};
 f=main():i64{
   let k=5;
-  let h=fn(x:i64):i64{let q=2.5 as bool;<add(x;k)};
+  let h=fn(x:i64):i64{let q=$p{x:x} as f64;<add(x;k)};
   <h(1)
 };
 EOF
@@ -127,11 +128,11 @@ case_() {   # NAME LOG FILE LINE COL SUBSTR...
 # ── 1. clang rejects an IR line: mapped to the enclosing f= ───────────────
 "${TKC}" fp.tk -o fpb > fp.log 2>&1
 case_ "clang IR error names f=helper at fp.tk:3" fp.log fp.tk 3 1 \
-      "while compiling f=helper at fp.tk:3" "defined with type 'i64' but expected 'i1'"
+      "while compiling f=helper at fp.tk:3" "invalid cast opcode for cast from 'ptr' to 'double'"
 if grep -q '"source_line":"f=helper():i64{"' fp.log; then
     echo "  PASS: source_line is the declaration's line"; PASS=$((PASS + 1))
 else echo "  FAIL: source_line is not the declaration's line"; FAIL=$((FAIL + 1)); fi
-if grep -q "error: '%t[0-9]*' defined with type 'i64' but expected 'i1'" fp.log; then
+if grep -q "error: invalid cast opcode for cast from 'ptr' to 'double'" fp.log; then
     echo "  PASS: clang's own message still reaches stderr"; PASS=$((PASS + 1))
 else echo "  FAIL: clang's own message no longer reaches stderr"; FAIL=$((FAIL + 1)); fi
 

@@ -5768,7 +5768,20 @@ static int emit_expr(Ctx *c, const Node *n)
                 int src_is_int = (!strcmp(src_ty, "i64") || !strcmp(src_ty, "i32") ||
                                   !strcmp(src_ty, "i16") || !strcmp(src_ty, "i8") ||
                                   !strcmp(src_ty, "i1"));
-                if (!strcmp(src_ty, dst_ty)) {
+                if (!strcmp(dst_ty, "i1") && strcmp(src_ty, "i1")
+                    && (src_is_int || src_is_float)) {
+                    /* 127.224 item 6: `x as bool` is x != 0.  The int path
+                     * below truncated to the LOW BIT (`2 as bool` was false)
+                     * and then re-extended to i64 for storage, and the float
+                     * path converted with fptosi and did the same — either
+                     * way an i64 reached the i1 slot the binding declares,
+                     * and clang rejected the module (E9003).  A NaN compares
+                     * unordered-not-equal, so it is true, as in C. */
+                    if (src_is_float)
+                        fprintf(c->out, "  %%t%d = fcmp une %s %%t%d, 0.0\n", t, src_ty, v);
+                    else
+                        fprintf(c->out, "  %%t%d = icmp ne %s %%t%d, 0\n", t, src_ty, v);
+                } else if (!strcmp(src_ty, dst_ty)) {
                     /* Same LLVM type — identity */
                     if (dst_is_float)
                         fprintf(c->out, "  %%t%d = fadd %s 0.0, %%t%d\n", t, dst_ty, v);
