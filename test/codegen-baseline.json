@@ -69,6 +69,11 @@
   1,
   "bcb2630962c36bb6"
  ],
+ "test/codegen/cg_trap_set_oob.tk": [
+  true,
+  1,
+  "a493d4db068b975b"
+ ],
  "test/codegen/cg_typed_empty.tk": [
   true,
   0,

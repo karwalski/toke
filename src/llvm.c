@@ -2814,6 +2814,27 @@ static int recv_is_map(Ctx *c, const Node *recv) {
  * list of addresses. Passing the shape from the compiler removes the guess.
  * The checker's rtype is authoritative; the backend's "@…" tag is the fallback
  * and knows one level only. */
+/* 127.217 / ADR-0012 (a): `.set` out of range traps RT003 exactly as a read
+ * does. tk_array_set_w and tk_array_set_inplace_w returned the array
+ * unchanged for an index outside [0, len), so `a=a.set(5;v)` on a 2-element
+ * array was a silent no-op. The length comes from tk_str_arraylen_w, which
+ * reads base[-1] and answers 0 for a null (empty) handle, so an empty array
+ * traps too. `arr` and `idx` are i64 temporaries. */
+static void emit_set_bounds_check(Ctx *c, int arr, int idx) {
+    int len = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_arraylen_w(i64 %%t%d) ; RT003 .set len\n", len, arr);
+    int lo = next_tmp(c), hi = next_tmp(c), oob = next_tmp(c);
+    fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", lo, idx);
+    fprintf(c->out, "  %%t%d = icmp sge i64 %%t%d, %%t%d\n", hi, idx, len);
+    fprintf(c->out, "  %%t%d = or i1 %%t%d, %%t%d\n", oob, lo, hi);
+    int lt = next_lbl(c), lc = next_lbl(c);
+    fprintf(c->out, "  br i1 %%t%d, label %%oob_trap%d, label %%oob_ok%d\n", oob, lt, lc);
+    fprintf(c->out, "oob_trap%d:\n", lt);
+    fprintf(c->out, "  call void @tk_bounds_trap(i64 %%t%d, i64 %%t%d)\n", idx, len);
+    fprintf(c->out, "  unreachable\n");
+    fprintf(c->out, "oob_ok%d:\n", lc);
+}
+
 static int json_arr_shape(Ctx *c, const Node *n, int *kind_out) {
     *kind_out = 0;
     if (!n) return 0;
@@ -4896,6 +4917,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     coa[i+1] = av;
                 }
                 int tot = na_im + 1;
+                if (!strcmp(fn_im, "tk_array_set_w") && na_im >= 1)
+                    emit_set_bounds_check(c, coa[0], coa[1]);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @%s(", t, fn_im);
                 for (int i = 0; i < tot; i++) {
@@ -9178,6 +9201,7 @@ static void emit_stmt(Ctx *c, const Node *n)
                     iv = coerce_value(c, iv, expr_llvm_type(c, rhs->children[1]), "i64");
                     int ev = emit_expr(c, rhs->children[2]);
                     ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[2]), "i64");
+                    emit_set_bounds_check(c, recv, iv);
                     res = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @tk_array_set_inplace_w(i64 %%t%d, i64 %%t%d, i64 %%t%d) ; 114.18 in-place set\n",
                             res, recv, iv, ev);
