@@ -1,6 +1,6 @@
-(* 123.6 WITNESS (quarantined; new defect found by 123.6): `x as str` on a u8
- * passes the checker and fails the build with E9003 (clang rejects the
- * emitted IR); the same cast on an i64 or a bool works (cg_interp_scalars.tk).
+(* 123.6 certificate (a witness until 127.217 fixed it): `x as str` on a u8
+ * passed the checker and failed the build with E9003 (clang rejected the
+ * emitted IR: an i8 handed to an i64 parameter); the same cast on an i64 or a bool works (cg_interp_scalars.tk).
  * Expected output below is the correct rendering. *)
 m=cgunsignedasstr;
 i=io:std.io;

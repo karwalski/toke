@@ -41,14 +41,15 @@ be removed with the fix.
 
 | Area | Cases |
 |---|---|
-| RT003 bounds (ADR-0012 a) | `cg_trap_bounds_{high,neg,loop,struct}`, witness `cg_trap_set_oob` |
-| RT004 division (ADR-0012 b) | `cg_trap_div`, `cg_trap_rem`, witness `cg_trap_div_intmin` (121.36) |
+| RT003 bounds (ADR-0012 a) | `cg_trap_bounds_{high,neg,loop,struct}`, `cg_trap_set_oob` (127.217) |
+| RT004 division (ADR-0012 b) | `cg_trap_div`, `cg_trap_rem`, `cg_trap_div_intmin` (121.36, fixed 127.217) |
 | RT005 nil (ADR-0012 d) | `cg_trap_nil` |
 | error unions, `!`, let-bound / mut-assigned | `cg_err_union`, `cg_err_letbound_payload` (127.103, fixed da7be68) |
-| interpolation of scalars | `cg_interp_scalars`, witnesses `cg_interp_bool_shapes` (127.194), `cg_unsigned`, `cg_unsigned_as_str`, `cg_interp_byte` |
+| interpolation of scalars | `cg_interp_scalars`, `cg_unsigned_as_str`, `cg_interp_byte` (127.217), `cg_interp_bool_shapes` (127.194, fixed by 127.52), witness `cg_unsigned` |
+| `j.print` of a str at the i64 ABI (127.215) | `cg_json_print_str` |
 | maps | `cg_map` |
 | arrays, in-place vs copying | `cg_array_paths` |
 | typed-empty arrays (127.164) | `cg_typed_empty` |
 | structs over 16 fields (127.190) | `cg_wide_struct` |
 | receiver dispatch | `cg_recv_dispatch`, witness `cg_recv_field_receiver` |
-| multi-module (127.76) | `multimod/geom`, witness `multimod/boolfn` |
+| multi-module (127.76) | `multimod/geom`, `multimod/boolfn` (127.217) |

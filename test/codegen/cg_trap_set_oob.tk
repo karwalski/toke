@@ -1,8 +1,8 @@
-(* 123.6 WITNESS (quarantined; new defect found by 123.6): ADR-0012 (a)
+(* 123.6 certificate (a witness until 127.217 fixed it): ADR-0012 (a)
  * "converge the silent guards to the same trap" — `.set` out of range must
  * trap RT003 like `.get` does (ADR-0012 trap table: RT003 is emitted at
- * NODE_INDEX_EXPR AND `.set`).  Today `a.set(5;v)` and `a.set(-1;v)` on a
- * 2-element array return the array unchanged and the program carries on.
+ * NODE_INDEX_EXPR AND `.set`).  Until 127.217 `a.set(5;v)` and `a.set(-1;v)`
+ * on a 2-element array returned the array unchanged and the program carried on.
  * expect-exit: 1
  * expect-stderr: RT003: index 5 out of bounds for length 2 *)
 m=cgtrapsetoob;

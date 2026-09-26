@@ -29,6 +29,7 @@
  * in emit_llvm_ir and threaded through every function.
  */
 #include "llvm.h"
+#include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
 #include "parser.h"
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
 #include "diag.h"
@@ -178,7 +179,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char fref_lname[64][NAME_BUF]; const Node *fref_lnode[64]; int fref_lcount; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int clos_lser[64]; int fn_serial; int in_lifted; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -735,7 +736,7 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
     if (!strcmp(tn, "f32"))  return "float";
     if (!strcmp(tn, "str"))  return "i8*";
     if (!strcmp(tn, "void")) return "void";
-    if (!strcmp(tn, "i8")  || !strcmp(tn, "u8")  || !strcmp(tn, "Byte")) return "i8";
+    if (!strcmp(tn, "i8")  || !strcmp(tn, "u8")  || !strcmp(tn, "Byte") || !strcmp(tn, "byte")) return "i8";
     if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i16";
     if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i32";
     return "i64";
@@ -921,26 +922,11 @@ static void prepass_funcs(Ctx *c, const Node *n) {
                     tok_cp(c->src, rs->children[0]->children[0], el, sizeof el);
                     snprintf(ret_tn, sizeof ret_tn, "@%s", el);
                 }
-                /* 127.28: a map return (`@(k:v)`) — the un-annotated `let m=mk()`
-                 * is never checker-typed, so carry the map-ness through the
-                 * FnSig; expr_struct_type turns it into the "__map__" local tag
-                 * and .keys()/.get/.len take the map runtime path (they linked
-                 * against `_keys` / read an array header before). */
-                if (rs->children[0]->kind == NODE_MAP_TYPE) {
-                    /* 127.39: carry the key/value kinds too — `f=mk():@(str:str)`
-                     * must tag `let u=mk()` so `\(u.get(k))` interpolates the
-                     * string instead of its address. */
-                    int mk_int = 0, mv_str = 0;
-                    if (rs->children[0]->child_count > 0) {
-                        char kt[64]; tok_cp(c->src, rs->children[0]->children[0], kt, sizeof kt);
-                        mk_int = !strstr(kt, "str");
-                    }
-                    if (rs->children[0]->child_count > 1) {
-                        char vt[64]; tok_cp(c->src, rs->children[0]->children[1], vt, sizeof vt);
-                        mv_str = strstr(vt, "str") != NULL;
-                    }
-                    snprintf(ret_tn, sizeof ret_tn, "%s", map_tag(mk_int, mv_str));
-                }
+                /* 127.28's "__map__" return tag lived here: a map return
+                 * (`@(k:v)`) was carried through the FnSig because `let m=mk()`
+                 * was never checker-typed.  The checker types it now (127.40,
+                 * 127.114) and expr_struct_type reads that type first (127.52),
+                 * so the workaround and its two readers are gone. */
             }
         }
     }
@@ -1081,23 +1067,22 @@ static void register_tki_struct_types(Ctx *c) {
         fclose(f);
         buf[rd] = '\0';
 
-        char *p = buf;
-        while ((p = strstr(p, "\"kind\"")) != NULL) {
-            char *next_kind = strstr(p + 6, "\"kind\"");
-            /* Extract the kind value (first quoted string after "kind"). */
-            char *kc = strchr(p + 6, ':');
-            char *kq1 = kc ? strchr(kc, '"') : NULL;
-            char *kq2 = kq1 ? strchr(kq1 + 1, '"') : NULL;
-            int is_record = kq1 && kq2 && (size_t)(kq2 - kq1 - 1) == 4 &&
-                            !strncmp(kq1 + 1, "type", 4);
-            if (!is_record) { p = next_kind ? next_kind : p + 6; continue; }
+        /* 127.134a: one record at a time, bounded by its own braces (see
+         * tki_scan.h) — `next_kind` keeps its name but is now the record's
+         * end, not the next "kind" substring, which a field named `kind`
+         * produced mid-record. */
+        const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+        while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+            char *p = (char *)trec;
+            char *next_kind = (char *)trend;
+            if (strcmp(tkind, "type") != 0) continue;
 
-            /* Type name: first "name" after the kind, before next_kind. */
-            char *nk = strstr(kq2, "\"name\"");
-            if (!nk || (next_kind && nk > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+            /* Type name: the record's own "name" key. */
+            char *nk = tki_keypos(p, next_kind, "name");
+            if (!nk || (next_kind && nk > next_kind)) { continue; }
             char *nq1 = strchr(nk + 6, '"');
             char *nq2 = nq1 ? strchr(nq1 + 1, '"') : NULL;
-            if (!nq2) { p = next_kind ? next_kind : p + 6; continue; }
+            if (!nq2) { continue; }
             char tname[128];
             int tlen = (int)(nq2 - nq1 - 1);
             if (tlen >= (int)sizeof tname) tlen = (int)sizeof tname - 1;
@@ -1105,13 +1090,13 @@ static void register_tki_struct_types(Ctx *c) {
             tname[tlen] = '\0';
 
             if (lookup_struct(c, tname) || c->struct_count >= c->struct_cap) {
-                p = next_kind ? next_kind : p + 6; continue;
+                continue;
             }
 
             /* Fields: scan "name"/"type" pairs inside the "fields" array,
              * bounded by next_kind. */
             char *fields = strstr(nq2, "\"fields\"");
-            if (!fields || (next_kind && fields > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+            if (!fields || (next_kind && fields > next_kind)) { continue; }
             char *bound = next_kind ? next_kind : (buf + rd);
 
             StructInfo *si = &c->structs[c->struct_count];
@@ -1119,7 +1104,7 @@ static void register_tki_struct_types(Ctx *c) {
             /* 127.190: size the field arrays by the entries in this record. */
             int nf = 0;
             for (char *q = strstr(fields + 8, "\"name\""); q && q < bound; q = strstr(q + 6, "\"name\"")) nf++;
-            if (struct_alloc_fields(c, si, nf) < 0) { p = next_kind ? next_kind : p + 6; continue; }
+            if (struct_alloc_fields(c, si, nf) < 0) { continue; }
             int fc = 0;
             char *fp = fields + 8;
             while (fc < si->field_cap) {
@@ -1163,7 +1148,6 @@ static void register_tki_struct_types(Ctx *c) {
               while (sv && (*sv == ':' || *sv == ' ')) sv++;
               si->is_sum = (sk && sk < bound && sv && !strncmp(sv, "true", 4)) ? 1 : 0; }
             c->struct_count++;
-            p = next_kind ? next_kind : p + 6;
         }
         free(buf);
     }
@@ -1268,19 +1252,19 @@ static void load_stdlib_tki(const char *module) {
     fclose(f);
     buf[rd] = '\0';
 
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        char *next_kind = strstr(p + 6, "\"kind\"");
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
         /* Accept both "func" and "extern_c" kinds (Story 76.1.2b) */
-        char *kv_func = strstr(p, "\"func\"");
-        char *kv_extern = strstr(p, "\"extern_c\"");
-        int is_func = kv_func && (!next_kind || kv_func < next_kind);
-        int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
-        if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
+        int is_func = !strcmp(tkind, "func");
+        int is_extern_c = !strcmp(tkind, "extern_c");
+        if (!is_func && !is_extern_c) continue;
         if (g_tki_cache_count >= TKI_CACHE_MAX) { g_tki_cache_overflow = 1; break; }
 
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -1292,7 +1276,7 @@ static void load_stdlib_tki(const char *module) {
         fname[nlen] = '\0';
 
         char *dot = strchr(fname, '.');
-        if (!dot) { p = next_kind ? next_kind : p + 6; continue; }
+        if (!dot) { continue; }
         char mod_part[64], meth_part[64];
         int mlen = (int)(dot - fname);
         if (mlen >= (int)sizeof(mod_part)) mlen = (int)sizeof(mod_part) - 1;
@@ -1383,8 +1367,6 @@ static void load_stdlib_tki(const char *module) {
         if (!strcmp(e->llvm_ret, "void") && strchr(toke_ret, '!'))
             e->llvm_ret = "i64";
         g_tki_cache_count++;
-
-        p = next_kind ? next_kind : p + 6;
     }
     free(buf);
 }
@@ -1802,19 +1784,18 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
     }
 
     /* Scan for each "kind":"func" or "kind":"extern_c" entry (Story 76.1.2b) */
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        /* Check if this is a func or extern_c entry */
-        char *next_kind = strstr(p + 6, "\"kind\"");
-        char *kv_func = strstr(p, "\"func\"");
-        char *kv_extern = strstr(p, "\"extern_c\"");
-        int is_func = kv_func && (!next_kind || kv_func < next_kind);
-        int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
-        if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
+        int is_func = !strcmp(tkind, "func");
+        int is_extern_c = !strcmp(tkind, "extern_c");
+        if (!is_func && !is_extern_c) continue;
 
         /* Extract name */
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -1893,8 +1874,6 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
                 }
             }
         }
-
-        p = next_kind ? next_kind : p + 6;
     }
     free(buf);
 }
@@ -1916,15 +1895,16 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
     fclose(f);
     buf[rd] = '\0';
 
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        char *kv = strstr(p, "\"type\"");
-        char *next_kind = strstr(p + 6, "\"kind\"");
-        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
+        if (strcmp(tkind, "type") != 0) continue;
 
         /* Extract name */
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -2009,8 +1989,6 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                 }
             }
         }
-
-        p = next_kind ? next_kind : p + 6;
     }
     free(buf);
 }
@@ -2649,7 +2627,24 @@ static int call_declares_bool(Ctx *c, const Node *e) {
     tok_cp(c->src, cal->children[0], alias, sizeof alias);
     tok_cp(c->src, cal->children[1], method, sizeof method);
     const TkiCacheEntry *te = tki_entry_for(c, alias, method);
-    if (!te) return 0;
+    if (!te) {
+        /* 127.217: a function in another USER module.  Its signature was
+         * registered from that module's .tki under the mangled name
+         * <module path with '.'->'_'>_<method>, with the declared toke
+         * return type kept in ret_type_name; the i64 cross-module ABI made
+         * a `bool` from `p.isbig(500)` interpolate as 1/0. */
+        for (int ii = 0; ii < c->import_count; ii++) {
+            if (c->imports[ii].is_std || strcmp(c->imports[ii].alias, alias)) continue;
+            char mangled[512]; int ml = 0;
+            for (const char *mp = c->imports[ii].module; *mp && ml < 250; mp++)
+                mangled[ml++] = (*mp == '.') ? '_' : *mp;
+            mangled[ml] = '\0';
+            snprintf(mangled + ml, sizeof mangled - (size_t)ml, "_%s", method);
+            const FnSig *sig = lookup_fn(c, mangled);
+            return sig && !strcmp(sig->ret_type_name, "bool");
+        }
+        return 0;
+    }
     char b[64];
     tki_base_return_type(te->toke_ret, b, sizeof b);
     return !strcmp(b, "bool");
@@ -2734,6 +2729,34 @@ static int emit_bool_to_str(Ctx *c, int v) {
     return sel;
 }
 
+static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param);
+static void ir_call_record(const char *sym, const char *alias, const char *member,
+                           const char *module, const Node *n);   /* 127.218 */
+/* 124.0c: the LLVM type and backend tag of each closure capture, recorded
+ * where the env box is built (the only place the outer local's type is in
+ * scope) and read back where the closure is lifted.  Captures travel as i64
+ * slots; without this an f64 capture was reloaded as an integer and
+ * `sitofp`'d, so `x*k` with k=2.5 computed with k's bit pattern. */
+#define TKC_CAP_TYPED 16
+static struct { const char *ty[TKC_CAP_TYPED]; char tag[TKC_CAP_TYPED][NAME_BUF]; } g_cap_info[512];
+static const char *canon_llvm_ty(const char *t) {
+    static const char *k[] = { "i64", "double", "float", "i1", "i8*", "i8", "i16", "i32", NULL };
+    for (int i = 0; t && k[i]; i++) if (!strcmp(t, k[i])) return k[i];
+    return "i64";
+}
+/* The closure literal a local of this name is bound to, or NULL.  The table
+ * was module-wide and first-match, so a closure-bound `g` in one f= captured
+ * a later f='s unrelated `g` (a function reference, say), which was then
+ * lowered as a closure box and failed as invalid IR.  Inside an f= only that
+ * function's bindings match, latest first; a lifted closure body (emitted at
+ * module tail) keeps the module-wide lookup its captures rely on. */
+static const Node *clos_local_lookup(Ctx *c, const char *nm) {
+    for (int i = c->clos_lcount - 1; i >= 0; i--)
+        if ((c->in_lifted || c->clos_lser[i] == c->fn_serial) &&
+            !strcmp(c->clos_lname[i], nm)) return c->clos_lnode[i];
+    return NULL;
+}
+
 /* ── Expression emission ───────────────────────────────────────────── */
 
 /* Forward declarations — needed because emit_expr and emit_stmt are
@@ -2752,6 +2775,202 @@ static void emit_if_branch_value(Ctx *c, const Node *blk, const char *res_ty,
  * establish?" — see the definition below expr_struct_type. */
 static int interp_operand_type_unknown(Ctx *c, const Node *e,
                                        const char *ety, const char *est);
+
+/* fwd_decl_once — append one `declare` line to the forward-declaration
+ * buffer unless a declaration of `sym` is already there. */
+static void fwd_decl_once(Ctx *c, const char *sym, const char *decl) {
+    if (strstr(c->fwd_decls, sym)) return;
+    int dl = (int)strlen(decl);
+    if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+        memcpy(c->fwd_decls + c->fwd_decls_len, decl, (size_t)dl);
+        c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+    }
+}
+
+/* 127.217: is `t` one of the unsigned integer kinds?  The checker's type is
+ * the only place signedness lives: u8 and i8 are both `i8` in the IR. */
+static int type_is_unsigned(const Type *t) {
+    return t && (t->kind == TY_U8 || t->kind == TY_U16 ||
+                 t->kind == TY_U32 || t->kind == TY_U64);
+}
+
+/* binop_is_unsigned — lower this integer binary operation with unsigned
+ * semantics (icmp u*, udiv/urem, lshr, u*.with.overflow)?  Only when the
+ * checker typed BOTH operands unsigned, or one unsigned and the other an
+ * integer literal.  A u64 meeting an i64 widens to i64 (127.114), so that
+ * mix stays signed. */
+static int binop_is_unsigned(const Node *n) {
+    if (!n || n->child_count < 2) return 0;
+    const Node *a = n->children[0], *b = n->children[1];
+    int ua = a && type_is_unsigned(a->rtype), ub = b && type_is_unsigned(b->rtype);
+    if (ua && ub) return 1;
+    if (ua && b && b->kind == NODE_INT_LIT) return 1;
+    if (ub && a && a->kind == NODE_INT_LIT) return 1;
+    return 0;
+}
+
+/* emit_int_to_str — an integer value of LLVM type `ity` (i1 excluded) as a
+ * decimal i8* string.  127.217: a narrow value is widened by ITS OWN
+ * signedness (a u8 holding 200 printed -56 through sext), and a u64 at or
+ * above 2^63 — negative when read as i64 — is rendered as (v udiv 10)
+ * followed by (v urem 10), both of which fit in i64, so no unsigned
+ * formatter is needed in the runtime. */
+static int emit_int_to_str(Ctx *c, int v, const char *ity, int is_uns) {
+    if (ity && (!strcmp(ity, "i8") || !strcmp(ity, "i16") || !strcmp(ity, "i32"))) {
+        int zx = next_tmp(c);
+        fprintf(c->out, "  %%t%d = %s %s %%t%d to i64\n", zx, is_uns ? "zext" : "sext", ity, v);
+        v = zx;
+        is_uns = 0;   /* now non-negative as an i64 when it was unsigned */
+    }
+    fwd_decl_once(c, "@tk_str_fromi64_w(", "declare i64 @tk_str_fromi64_w(i64)\n");
+    int cv = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", cv, v);
+    int z = next_tmp(c);
+    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
+    if (!is_uns) return z;
+    int q = next_tmp(c), r = next_tmp(c);
+    fprintf(c->out, "  %%t%d = udiv i64 %%t%d, 10\n", q, v);
+    fprintf(c->out, "  %%t%d = urem i64 %%t%d, 10\n", r, v);
+    int qs = next_tmp(c), rs = next_tmp(c), qp = next_tmp(c), rp = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", qs, q);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", rs, r);
+    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", qp, qs);
+    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", rp, rs);
+    int cat = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i8* (i64, ...) @tk_str_join_n(i64 2, i8* %%t%d, i8* %%t%d) ; u64 >= 2^63\n",
+            cat, qp, rp);
+    int neg = next_tmp(c), sel = next_tmp(c);
+    fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", neg, v);
+    fprintf(c->out, "  %%t%d = select i1 %%t%d, i8* %%t%d, i8* %%t%d\n", sel, neg, cat, z);
+    return sel;
+}
+
+/* interp_child_at — the interpolated expression the parser attached to the
+ * STR_LIT `n` (127.24) for the segment at [seg_start, seg_end) of its token
+ * text, or NULL.  Unlike the wrapper re-parse below, this node is part of the
+ * checked tree, so it carries the checker's type wherever the checker
+ * assigned one. */
+static const Node *interp_child_at(const Node *n, int seg_start, int seg_end) {
+    for (int q = 0; q < n->child_count; q++) {
+        const Node *ch = n->children[q];
+        if (!ch) continue;
+        int ts = ch->tok_start - n->tok_start;
+        if (ts >= seg_start && ts < seg_end) return ch;
+    }
+    return NULL;
+}
+
+/* interp_render — turn one lowered interpolation operand into an i8* string.
+ * `rt` is the operand's checker type when known (NULL otherwise); it decides
+ * over the backend's guesses for bool, str and unsigned integers (127.217).
+ * `rebase` says the operand's positions are wrapper offsets (the re-parse
+ * path) and a diagnostic must be re-homed (127.186). */
+static int interp_render(Ctx *c, const Node *n, const Node *expr_node, int seg_val,
+                         const char *ety, const char *est, int unknown_ret,
+                         int abi_bool, const Type *rt, int rebase,
+                         int rb_prefix, int rb_base, int elen) {
+    int is_uns = type_is_unsigned(rt);
+    if (rt && rt->kind == TY_BOOL && ety && !strcmp(ety, "i64")) abi_bool = 1;
+    if (rt && rt->kind != TY_UNKNOWN) unknown_ret = 0;
+    /* 114.32: interpolation of a non-string value. Previously
+     * any i64 was inttoptr'd to i8* on the assumption it
+     * carried a string pointer (true for s.fromint/format),
+     * so a raw `\(n)` (n:i64/f64/bool) deref'd a bogus pointer
+     * → segfault. Detect strings vs numbers and auto-convert
+     * numbers/bools to their string form. */
+    /* 123.5: a genuine string and a composite (array/struct/
+     * map) are BOTH i8*. Using a composite's heap pointer as a
+     * NUL-terminated C string reads garbage — a silent-wrong-
+     * value bug. `est` (expr_struct_type) discriminates:
+     * "$str"=string, "@…"=array, "$X"(≠$str)=struct. Fail loud
+     * on known composites; treat est==NULL+i8* as a string
+     * (preserves interp of strings the tracker didn't tag). */
+    int est_is_str = (est && (!strcmp(est, "$str") || !strcmp(est, "str"))) ||
+                     (rt && rt->kind == TY_STR);
+    int est_is_composite = est && (est[0] == '@' ||
+                                   (est[0] == '$' && strcmp(est, "$str") != 0));
+    if (ety && !strcmp(ety, "i8*") && est_is_composite) {
+        /* expr_node's position is in the wrapper (127.186) */
+        if (rebase) diag_rebase_push(rb_prefix, rb_base, elen);
+        diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
+                  "cannot interpolate a composite value (array/struct/map) into a string",
+                  "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
+                  NULL);
+        if (rebase) diag_rebase_pop();
+        /* Emit an empty-string placeholder so the IR stays
+         * well-formed (compilation has already failed). */
+        int alenc = 1;
+        int sic = emit_str_global(c, "\"\"", 2, &alenc);
+        seg_val = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                seg_val, alenc, alenc, c->module_prefix, sic);
+    } else if (est_is_str || (ety && !strcmp(ety, "i8*"))) {
+        if (ety && !strcmp(ety, "i64")) {
+            int z = next_tmp(c);
+            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
+            seg_val = z;
+        }
+        /* else already i8* */
+    } else if (ety && (!strcmp(ety, "double") || !strcmp(ety, "float"))) {
+        if (!strcmp(ety, "float")) {
+            int ext = next_tmp(c);
+            fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, seg_val);
+            seg_val = ext;
+        }
+        if (!strstr(c->fwd_decls, "@tk_str_fromfloat_w(")) {
+            const char *d = "declare i64 @tk_str_fromfloat_w(i64)\n";
+            int dl = (int)strlen(d);
+            if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+                memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
+                c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+            }
+        }
+        int bc = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, seg_val);
+        int cv = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", cv, bc);
+        int z = next_tmp(c);
+        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
+        seg_val = z;
+    } else if (unknown_ret) {
+        /*
+         * 127.80: the last resort used to be "assume it is
+         * an integer and print it in decimal".  For a
+         * stdlib call the compiler has no declared return
+         * type for, that assumption is a coin flip, and
+         * when it loses it prints a heap address as a
+         * plausible-looking number at exit 0 — the exact
+         * failure this story exists to remove.  If the
+         * type cannot be established, say so.
+         */
+        /* position from the enclosing literal: expr_node's
+         * offsets index the synthetic wrapper buffer, not
+         * the user's file. */
+        diag_emit(DIAG_ERROR, E4032, n->start, n->line, n->col,
+                  "cannot interpolate a value whose type the compiler cannot determine",
+                  "this stdlib call declares no return type in its .tki interface; "
+                  "bind it to a typed local first, or add the `return` entry to the interface file",
+                  NULL);
+        int alenu = 1;
+        int siu = emit_str_global(c, "\"\"", 2, &alenu);
+        seg_val = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                seg_val, alenu, alenu, c->module_prefix, siu);
+    } else if (ety && !strcmp(ety, "i1")) {
+        /* 127.15/127.94: a bool prints true/false */
+        seg_val = emit_bool_to_str(c, seg_val);
+    } else if (abi_bool) {
+        /* the same, for a bool that crossed the i64 ABI */
+        int nz = next_tmp(c);
+        fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, seg_val);
+        seg_val = emit_bool_to_str(c, nz);
+    } else {
+        /* raw int → decimal string (127.217: by its own signedness) */
+    seg_val = emit_int_to_str(c, seg_val, ety, is_uns);
+    }
+    return seg_val;
+}
+
 
 /* True when a match arm's body is exactly its own binding ident (`$ok:v v`),
  * i.e. the arm yields the bound ok value unchanged. Used by result-type
@@ -2838,6 +3057,27 @@ static int recv_is_map(Ctx *c, const Node *recv) {
  * list of addresses. Passing the shape from the compiler removes the guess.
  * The checker's rtype is authoritative; the backend's "@…" tag is the fallback
  * and knows one level only. */
+/* 127.217 / ADR-0012 (a): `.set` out of range traps RT003 exactly as a read
+ * does. tk_array_set_w and tk_array_set_inplace_w returned the array
+ * unchanged for an index outside [0, len), so `a=a.set(5;v)` on a 2-element
+ * array was a silent no-op. The length comes from tk_str_arraylen_w, which
+ * reads base[-1] and answers 0 for a null (empty) handle, so an empty array
+ * traps too. `arr` and `idx` are i64 temporaries. */
+static void emit_set_bounds_check(Ctx *c, int arr, int idx) {
+    int len = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_arraylen_w(i64 %%t%d) ; RT003 .set len\n", len, arr);
+    int lo = next_tmp(c), hi = next_tmp(c), oob = next_tmp(c);
+    fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", lo, idx);
+    fprintf(c->out, "  %%t%d = icmp sge i64 %%t%d, %%t%d\n", hi, idx, len);
+    fprintf(c->out, "  %%t%d = or i1 %%t%d, %%t%d\n", oob, lo, hi);
+    int lt = next_lbl(c), lc = next_lbl(c);
+    fprintf(c->out, "  br i1 %%t%d, label %%oob_trap%d, label %%oob_ok%d\n", oob, lt, lc);
+    fprintf(c->out, "oob_trap%d:\n", lt);
+    fprintf(c->out, "  call void @tk_bounds_trap(i64 %%t%d, i64 %%t%d)\n", idx, len);
+    fprintf(c->out, "  unreachable\n");
+    fprintf(c->out, "oob_ok%d:\n", lc);
+}
+
 static int json_arr_shape(Ctx *c, const Node *n, int *kind_out) {
     *kind_out = 0;
     if (!n) return 0;
@@ -3668,7 +3908,27 @@ static int emit_expr(Ctx *c, const Node *n)
         int seg_vals[MAX_SEGS]; int nvals = 0;
         for (int p = 0; p < nsegs; p++) {
             int seg_val;
-            if (segs[p].is_expr) {
+            const Node *ich = segs[p].is_expr
+                ? interp_child_at(n, segs[p].start, segs[p].end) : NULL;
+            if (ich) {
+                /* 127.217: lower the parser's attached operand (127.24)
+                 * rather than a fresh re-parse: it is the node the checker
+                 * saw, so it and its sub-expressions carry the checker's
+                 * types — which decide bool/str/unsigned rendering, and the
+                 * signedness of any comparison inside the operand.  Its
+                 * positions are real source offsets, so no rebase. */
+                seg_val = emit_expr(c, ich);
+                const char *ety = expr_llvm_type(c, ich);
+                const char *est = expr_struct_type(c, ich);
+                int unknown_ret = interp_operand_type_unknown(c, ich, ety, est);
+                int abi_bool = ety && !strcmp(ety, "i64")
+                               && (call_declares_bool(c, ich)
+                                   || field_declares_bool(c, ich)
+                                   || recv_call_is_bool(c, ich));
+                seg_val = interp_render(c, n, ich, seg_val, ety, est,
+                                        unknown_ret, abi_bool, ich->rtype,
+                                        0, 0, 0, 0);
+            } else if (segs[p].is_expr) {
                 /* Build a synthetic wrapper program and parse it. The
                  * wrapper is allocated in the compiler arena so its
                  * source text outlives the parse — emit_expr below
@@ -3761,118 +4021,9 @@ static int emit_expr(Ctx *c, const Node *n)
                         diag_rebase_pop();
                         c->src = saved_src;
                         g_interp_host = saved_host; g_interp_src = saved_hsrc;
-                        /* 114.32: interpolation of a non-string value. Previously
-                         * any i64 was inttoptr'd to i8* on the assumption it
-                         * carried a string pointer (true for s.fromint/format),
-                         * so a raw `\(n)` (n:i64/f64/bool) deref'd a bogus pointer
-                         * → segfault. Detect strings vs numbers and auto-convert
-                         * numbers/bools to their string form. */
-                        /* 123.5: a genuine string and a composite (array/struct/
-                         * map) are BOTH i8*. Using a composite's heap pointer as a
-                         * NUL-terminated C string reads garbage — a silent-wrong-
-                         * value bug. `est` (expr_struct_type) discriminates:
-                         * "$str"=string, "@…"=array, "$X"(≠$str)=struct. Fail loud
-                         * on known composites; treat est==NULL+i8* as a string
-                         * (preserves interp of strings the tracker didn't tag). */
-                        int est_is_str = est && (!strcmp(est, "$str") || !strcmp(est, "str"));
-                        int est_is_composite = est && (est[0] == '@' ||
-                                                       (est[0] == '$' && strcmp(est, "$str") != 0));
-                        if (ety && !strcmp(ety, "i8*") && est_is_composite) {
-                            /* expr_node's position is in the wrapper (127.186) */
-                            diag_rebase_push(rb_prefix, rb_base, elen);
-                            diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
-                                      "cannot interpolate a composite value (array/struct/map) into a string",
-                                      "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
-                                      NULL);
-                            diag_rebase_pop();
-                            /* Emit an empty-string placeholder so the IR stays
-                             * well-formed (compilation has already failed). */
-                            int alenc = 1;
-                            int sic = emit_str_global(c, "\"\"", 2, &alenc);
-                            seg_val = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
-                                    seg_val, alenc, alenc, c->module_prefix, sic);
-                        } else if (est_is_str || (ety && !strcmp(ety, "i8*"))) {
-                            if (ety && !strcmp(ety, "i64")) {
-                                int z = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
-                                seg_val = z;
-                            }
-                            /* else already i8* */
-                        } else if (ety && (!strcmp(ety, "double") || !strcmp(ety, "float"))) {
-                            if (!strcmp(ety, "float")) {
-                                int ext = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, seg_val);
-                                seg_val = ext;
-                            }
-                            if (!strstr(c->fwd_decls, "@tk_str_fromfloat_w(")) {
-                                const char *d = "declare i64 @tk_str_fromfloat_w(i64)\n";
-                                int dl = (int)strlen(d);
-                                if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
-                                    memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
-                                    c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
-                                }
-                            }
-                            int bc = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, seg_val);
-                            int cv = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", cv, bc);
-                            int z = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
-                            seg_val = z;
-                        } else if (unknown_ret) {
-                            /*
-                             * 127.80: the last resort used to be "assume it is
-                             * an integer and print it in decimal".  For a
-                             * stdlib call the compiler has no declared return
-                             * type for, that assumption is a coin flip, and
-                             * when it loses it prints a heap address as a
-                             * plausible-looking number at exit 0 — the exact
-                             * failure this story exists to remove.  If the
-                             * type cannot be established, say so.
-                             */
-                            /* position from the enclosing literal: expr_node's
-                             * offsets index the synthetic wrapper buffer, not
-                             * the user's file. */
-                            diag_emit(DIAG_ERROR, E4032, n->start, n->line, n->col,
-                                      "cannot interpolate a value whose type the compiler cannot determine",
-                                      "this stdlib call declares no return type in its .tki interface; "
-                                      "bind it to a typed local first, or add the `return` entry to the interface file",
-                                      NULL);
-                            int alenu = 1;
-                            int siu = emit_str_global(c, "\"\"", 2, &alenu);
-                            seg_val = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
-                                    seg_val, alenu, alenu, c->module_prefix, siu);
-                        } else if (ety && !strcmp(ety, "i1")) {
-                            /* 127.15/127.94: a bool prints true/false */
-                            seg_val = emit_bool_to_str(c, seg_val);
-                        } else if (abi_bool) {
-                            /* the same, for a bool that crossed the i64 ABI */
-                            int nz = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, seg_val);
-                            seg_val = emit_bool_to_str(c, nz);
-                        } else {
-                            /* raw int → decimal string */
-                            if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
-                                int zx = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", zx, ety, seg_val);
-                                seg_val = zx;
-                            }
-                            if (!strstr(c->fwd_decls, "@tk_str_fromi64_w(")) {
-                                const char *d = "declare i64 @tk_str_fromi64_w(i64)\n";
-                                int dl = (int)strlen(d);
-                                if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
-                                    memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
-                                    c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
-                                }
-                            }
-                            int cv = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", cv, seg_val);
-                            int z = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
-                            seg_val = z;
-                        }
+                        seg_val = interp_render(c, n, expr_node, seg_val, ety, est,
+                                                unknown_ret, abi_bool, NULL,
+                                                1, rb_prefix, rb_base, elen);
                     }
                 }
             } else {
@@ -4012,6 +4163,12 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, base, i + 1);
             const char *ln = get_llvm_name(c, caps[i]);
             const char *lty = get_local_type(c, caps[i]);
+            if (i < TKC_CAP_TYPED) {
+                g_cap_info[cid].ty[i] = canon_llvm_ty(lty);
+                const char *tg = ln ? ptr_local_struct_type(c, ln) : NULL;
+                if (!tg) tg = ptr_local_struct_type(c, caps[i]);
+                snprintf(g_cap_info[cid].tag[i], NAME_BUF, "%s", tg ? tg : "");
+            }
             if (ln && lty) {
                 int lv = next_tmp(c);
                 fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", lv, lty, lty, ln);
@@ -4477,14 +4634,17 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         /* Determine the integer type string for operations */
         const char *ity = lty; /* e.g. "i64", "i32", "i16", "i8" */
+        /* 127.217: u8..u64 share the signed types' IR widths; signedness
+         * comes from the checker. */
+        const int uns = binop_is_unsigned(n);
         /* Checked arithmetic for +, -, * (D2=E) — only for i64 */
         if ((n->op == TK_PLUS || n->op == TK_MINUS || n->op == TK_STAR) && !strcmp(ity, "i64")) {
             const char *intrinsic;
             int op_code;
             switch (n->op) {
-            case TK_PLUS:  intrinsic = "@llvm.sadd.with.overflow.i64"; op_code = 0; break;
-            case TK_MINUS: intrinsic = "@llvm.ssub.with.overflow.i64"; op_code = 1; break;
-            default:       intrinsic = "@llvm.smul.with.overflow.i64"; op_code = 2; break;
+            case TK_PLUS:  intrinsic = uns ? "@llvm.uadd.with.overflow.i64" : "@llvm.sadd.with.overflow.i64"; op_code = 0; break;
+            case TK_MINUS: intrinsic = uns ? "@llvm.usub.with.overflow.i64" : "@llvm.ssub.with.overflow.i64"; op_code = 1; break;
+            default:       intrinsic = uns ? "@llvm.umul.with.overflow.i64" : "@llvm.smul.with.overflow.i64"; op_code = 2; break;
             }
             int r = next_tmp(c);
             fprintf(c->out, "  %%t%d = call {i64, i1} %s(i64 %%t%d, i64 %%t%d)\n", r, intrinsic, lhs, rhs);
@@ -4526,7 +4686,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = select i1 %%t%d, %s %d, %s %%t%d\n",
                         cl, ge, ity, width - 1, ity, rhs);
                 t = next_tmp(c);
-                fprintf(c->out, "  %%t%d = ashr %s %%t%d, %%t%d\n", t, ity, lhs, cl);
+                fprintf(c->out, "  %%t%d = %s %s %%t%d, %%t%d\n", t, uns ? "lshr" : "ashr", ity, lhs, cl);
             } else {
                 int mask = next_tmp(c), sh = next_tmp(c), ge = next_tmp(c);
                 fprintf(c->out, "  %%t%d = and %s %%t%d, %d\n", mask, ity, rhs, width - 1);
@@ -4540,19 +4700,19 @@ static int emit_expr(Ctx *c, const Node *n)
             t = next_tmp(c);
             char op_buf[32];
             switch (n->op) {
-            case TK_SLASH:   snprintf(op_buf, sizeof op_buf, "sdiv %s", ity); break;
-            case TK_LT:     snprintf(op_buf, sizeof op_buf, "icmp slt %s", ity); break;
-            case TK_GT:     snprintf(op_buf, sizeof op_buf, "icmp sgt %s", ity); break;
+            case TK_SLASH:   snprintf(op_buf, sizeof op_buf, "%s %s", uns ? "udiv" : "sdiv", ity); break;
+            case TK_LT:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "ult" : "slt", ity); break;
+            case TK_GT:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "ugt" : "sgt", ity); break;
             case TK_EQ:     snprintf(op_buf, sizeof op_buf, "icmp eq %s", ity); break;
-            case TK_LE:     snprintf(op_buf, sizeof op_buf, "icmp sle %s", ity); break;
-            case TK_GE:     snprintf(op_buf, sizeof op_buf, "icmp sge %s", ity); break;
+            case TK_LE:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "ule" : "sle", ity); break;
+            case TK_GE:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "uge" : "sge", ity); break;
             case TK_NE:     snprintf(op_buf, sizeof op_buf, "icmp ne %s", ity); break;
             case TK_AMP:    snprintf(op_buf, sizeof op_buf, "and %s", ity); break;
             case TK_PIPE:   snprintf(op_buf, sizeof op_buf, "or %s", ity); break;
             case TK_CARET:  snprintf(op_buf, sizeof op_buf, "xor %s", ity); break;
             case TK_SHL:    snprintf(op_buf, sizeof op_buf, "shl %s", ity); break;
             case TK_SHR:    snprintf(op_buf, sizeof op_buf, "ashr %s", ity); break;
-            case TK_PERCENT:snprintf(op_buf, sizeof op_buf, "srem %s", ity); break;
+            case TK_PERCENT:snprintf(op_buf, sizeof op_buf, "%s %s", uns ? "urem" : "srem", ity); break;
             default:       snprintf(op_buf, sizeof op_buf, "add %s", ity);
                 fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
             }
@@ -4567,6 +4727,26 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  call void @tk_div_trap(i32 %d)\n", n->op == TK_PERCENT ? 1 : 0);
                 fprintf(c->out, "  unreachable\n");
                 fprintf(c->out, "dz_ok%d:\n", lc);
+                /* 121.36 / ADR-0012 (b): the other undefined sdiv/srem is the
+                 * most negative value divided by -1 — the quotient does not
+                 * fit, and measured -O0 and -O2 builds disagreed (INT64_MIN
+                 * vs 0).  Trap RT004 for both `/` and `%`, as the ADR says. */
+                if (!uns) {
+                    const char *mn = !strcmp(ity, "i8")  ? "-128"
+                                   : !strcmp(ity, "i16") ? "-32768"
+                                   : !strcmp(ity, "i32") ? "-2147483648"
+                                   : "-9223372036854775808";
+                    int ism = next_tmp(c), isn1 = next_tmp(c), ovf = next_tmp(c);
+                    int lt2 = next_lbl(c), lc2 = next_lbl(c);
+                    fprintf(c->out, "  %%t%d = icmp eq %s %%t%d, %s\n", ism, ity, lhs, mn);
+                    fprintf(c->out, "  %%t%d = icmp eq %s %%t%d, -1\n", isn1, ity, rhs);
+                    fprintf(c->out, "  %%t%d = and i1 %%t%d, %%t%d\n", ovf, ism, isn1);
+                    fprintf(c->out, "  br i1 %%t%d, label %%dv_trap%d, label %%dv_ok%d\n", ovf, lt2, lc2);
+                    fprintf(c->out, "dv_trap%d:\n", lt2);
+                    fprintf(c->out, "  call void @tk_div_trap(i32 %d)\n", n->op == TK_PERCENT ? 3 : 2);
+                    fprintf(c->out, "  unreachable\n");
+                    fprintf(c->out, "dv_ok%d:\n", lc2);
+                }
             }
             fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op_buf, lhs, rhs);
         }
@@ -4640,8 +4820,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 clos = callee;
             } else if (callee->kind == NODE_IDENT) {
                 char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
-                for (int i = 0; i < c->clos_lcount; i++)
-                    if (!strcmp(c->clos_lname[i], cnm)) { clos = c->clos_lnode[i]; break; }
+                clos = clos_local_lookup(c, cnm);
             }
             if (clos) {
                 char fpty[256]; const char *cret;
@@ -4678,6 +4857,67 @@ static int emit_expr(Ctx *c, const Node *n)
                 for (int i = 0; i < na; i++)
                     fprintf(c->out, ", %s %%t%d", argt[i], argv[i]);
                 fputs(")\n", c->out);
+                /* 124.0c (memory-model §2.5): the env of a closure literal
+                 * applied on the spot, `fn(x){..}(7)`, has exactly one
+                 * reference — this call — and captures are copies, so the
+                 * result cannot point into it.  Release it here.  A closure
+                 * bound to a local may be copied, passed or returned, and
+                 * still needs the reference tracking the spec describes. */
+                if (callee->kind == NODE_CLOSURE)
+                    fprintf(c->out, "  call void @free(i8* %%t%d) ; 124.0c env released\n", box);
+                return t;
+            }
+        }
+        /* 124.0c: a call of a local bound to a function reference
+         * (`let g=&add; g(1;2)`).  The local holds the function's address as
+         * an i64 (NODE_FUNC_REF lowering); codegen used to emit `call @g`,
+         * a global that does not exist, and clang rejected the module.
+         * Resolve the referenced function's signature the same way the
+         * reference itself does, and call through the pointer. */
+        if (n->children[0]->kind == NODE_IDENT && c->fref_lcount > 0) {
+            char fnm[128]; tok_cp(c->src, n->children[0], fnm, sizeof fnm);
+            const Node *fr = NULL;
+            for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
+                if (!strcmp(c->fref_lname[i], fnm)) fr = c->fref_lnode[i];
+            const FnSig *ref = NULL;
+            if (fr && fr->child_count == 0) {
+                char rn[256]; tok_cp(c->src, fr, rn, sizeof rn);
+                if (!strcmp(rn, "main")) strcpy(rn, "tk_main");
+                mangle_fn_name(c, rn, sizeof rn);
+                ref = lookup_fn(c, rn);
+            }
+            if (fr && ref) {
+                int fpi = emit_expr(c, n->children[0]);   /* the stored i64 address */
+                const char *fty = expr_llvm_type(c, n->children[0]);
+                fpi = coerce_value(c, fpi, fty, "i64");
+                int na = n->child_count - 1;
+                if (na > ref->param_count) na = ref->param_count;  /* arity is the checker's */
+                int argv[TKC_MAX_PARAMS];
+                for (int i = 0; i < na && i < TKC_MAX_PARAMS; i++) {
+                    int av = emit_expr(c, n->children[i + 1]);
+                    argv[i] = coerce_value(c, av, expr_llvm_type(c, n->children[i + 1]),
+                                           ref->param_tys[i]);
+                }
+                int fp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to %s (", fp, fpi, ref->ret);
+                for (int i = 0; i < ref->param_count; i++)
+                    fprintf(c->out, "%s%s", i ? ", " : "", ref->param_tys[i]);
+                fputs(")*\n", c->out);
+                const char *cc = ref->is_internal ? "fastcc " : "";
+                if (!strcmp(ref->ret, "void")) {
+                    fprintf(c->out, "  call %svoid %%t%d(", cc, fp);
+                    t = -1;
+                } else {
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call %s%s %%t%d(", t, cc, ref->ret, fp);
+                }
+                for (int i = 0; i < na; i++)
+                    fprintf(c->out, "%s%s %%t%d", i ? ", " : "", ref->param_tys[i], argv[i]);
+                fputs(")\n", c->out);
+                if (t < 0) {
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                }
                 return t;
             }
         }
@@ -4925,6 +5165,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     coa[i+1] = av;
                 }
                 int tot = na_im + 1;
+                if (!strcmp(fn_im, "tk_array_set_w") && na_im >= 1)
+                    emit_set_bounds_check(c, coa[0], coa[1]);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @%s(", t, fn_im);
                 for (int i = 0; i < tot; i++) {
@@ -5148,6 +5390,18 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
         } else if (!callee && resolved_fn && !is_cross_module_user) {
+            /* 127.218: remember where each std call is, by glue symbol. */
+            if (n->children[0]->kind == NODE_FIELD_EXPR && n->children[0]->child_count >= 2 &&
+                n->children[0]->children[0] && n->children[0]->children[0]->kind == NODE_IDENT) {
+                char ra[128], rm[128];
+                tok_cp(c->src, n->children[0]->children[0], ra, sizeof ra);
+                tok_cp(c->src, n->children[0]->children[1], rm, sizeof rm);
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (c->imports[ii].is_std && !strcmp(c->imports[ii].alias, ra)) {
+                        ir_call_record(tb, ra, rm, c->imports[ii].module, n->children[0]->children[0]);
+                        break;
+                    }
+            }
             /* Story 7.5.5 Phase 1: resolve return type from .tki cache first,
              * then fall back to hardcoded mappings for special cases (libc math,
              * json print, str.argv) that don't follow the tk_<mod>_<meth>_w
@@ -5325,8 +5579,28 @@ static int emit_expr(Ctx *c, const Node *n)
             } else if (!strcmp(aty0, "i64")) {
                 /* 127.43: tk_json_print treats any value over 1e9 as a pointer,
                  * so `j.print(4294967296)` walked the number as a char* and
-                 * segfaulted. A checker-typed i64 prints as a number. */
-                fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
+                 * segfaulted. A checker-typed i64 prints as a number.
+                 * 127.215: but a str returned by a user function or a str
+                 * method (`g()`, `let r=g()`, `r.slice(..)`) also reaches here
+                 * as an i64 handle, and printed as its address. Consult the
+                 * checker type / backend tag exactly as the enc path below
+                 * does, and print a string as a string. */
+                const Node *jn0 = n->children[1];
+                int j_is_str = (jn0->rtype && jn0->rtype->kind == TY_STR) ||
+                               jn0->kind == NODE_STR_LIT;
+                if (!j_is_str && !(jn0->rtype && jn0->rtype->kind != TY_UNKNOWN)) {
+                    const char *jst = expr_struct_type(c, jn0);
+                    j_is_str = jst && (!strcmp(jst, "$str") || !strcmp(jst, "str"));
+                }
+                if (j_is_str) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, args[0]);
+                    fprintf(c->out, "  call void @tk_json_print_str(i8* %%t%d)\n", z);
+                } else if (jn0->rtype && jn0->rtype->kind == TY_BOOL) {
+                    fprintf(c->out, "  call void @tk_json_print_bool(i64 %%t%d)\n", args[0]);
+                } else {
+                    fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
+                }
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
@@ -5486,7 +5760,7 @@ static int emit_expr(Ctx *c, const Node *n)
             else if (!strcmp(tn, "i16"))  { dst_ty = "i16"; }
             else if (!strcmp(tn, "u16"))  { dst_ty = "i16"; dst_signed = 0; }
             else if (!strcmp(tn, "i8"))   { dst_ty = "i8"; }
-            else if (!strcmp(tn, "u8") || !strcmp(tn, "Byte"))
+            else if (!strcmp(tn, "u8") || !strcmp(tn, "Byte") || !strcmp(tn, "byte"))
                                           { dst_ty = "i8"; dst_signed = 0; }
             else if (!strcmp(tn, "bool")) { dst_ty = "i1"; }
             if (dst_ty) {
@@ -5539,7 +5813,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     else if (!strcmp(dst_ty, "i8")) db = 8;
                     else if (!strcmp(dst_ty, "i1")) db = 1;
                     if (db > sb) {
-                        int use_zext = (!strcmp(src_ty, "i1") || !dst_signed);
+                        /* 127.217: widening follows the SOURCE's signedness
+                         * too — `e as i64` on a u8 holding 200 is 200. */
+                        int use_zext = (!strcmp(src_ty, "i1") || !dst_signed ||
+                                        type_is_unsigned(n->children[0]->rtype));
                         if (use_zext)
                             fprintf(c->out, "  %%t%d = zext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
                         else
@@ -5574,10 +5851,24 @@ static int emit_expr(Ctx *c, const Node *n)
             if (!strcmp(tn2, "str") || !strcmp(tn2, "$str")) {
                 int src_is_float = (!strcmp(src_ty, "double") || !strcmp(src_ty, "float"));
                 if (src_is_float) {
-                    /* float -> str: bitcast double to i64 then call fromfloat */
+                    /* float -> str: bitcast double to i64 then call fromfloat.
+                     * 127.218: the result is a string, i8* — expr_llvm_type
+                     * says so — but this branch returned the raw i64, so
+                     * every use (`io.println(x as str)`, a `let`, a match
+                     * arm's result slot) was invalid IR (E9003).  An f32 is
+                     * widened first; `bitcast double` on a float was also
+                     * invalid. */
+                    if (!strcmp(src_ty, "float")) {
+                        int ext = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, v);
+                        v = ext;
+                    }
                     int bc = next_tmp(c);
                     fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, v);
                     fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", t, bc);
+                    int sp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", sp, t);
+                    t = sp;
                 } else if (!strcmp(src_ty, "i8*")) {
                     /* str -> str: identity */
                     fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
@@ -5594,11 +5885,10 @@ static int emit_expr(Ctx *c, const Node *n)
                      * left undefined, which is legal for named values. */
                     t = emit_bool_to_str(c, v);
                 } else {
-                    /* int -> str */
-                    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", t, v);
-                    int bc = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", bc, t);
-                    t = bc;
+                    /* int -> str.  127.217: a narrow source is widened first
+                     * (`u8 as str` handed an i8 to an i64 parameter: invalid
+                     * IR), and by its own signedness. */
+                    t = emit_int_to_str(c, v, src_ty, type_is_unsigned(n->children[0]->rtype));
                 }
                 return t;
             }
@@ -7286,7 +7576,55 @@ static const char *tki_declared_tag(Ctx *c, const char *alias, const char *metho
     return NULL;
 }
 
+/*
+ * 127.52: the backend tag for a checker Type — the translation that lets
+ * expr_struct_type consume Node.rtype instead of re-deriving it from the
+ * shape of the source.  NULL when the type carries no tag (scalars) or when
+ * the checker's answer is not specific enough to stand in for the backend's
+ * (unknown, nested arrays, element types the tags do not spell), in which
+ * case the string inference below keeps deciding.
+ */
+static const char *type_backend_tag(Ctx *c, const Type *t) {
+    if (!t) return NULL;
+    switch (t->kind) {
+    case TY_STR: return "$str";
+    case TY_ARRAY: {
+        const Type *e = t->elem;
+        if (!e) return NULL;
+        switch (e->kind) {
+        case TY_STR:  return "@str";
+        case TY_F64: case TY_F32: return "@f64";
+        case TY_BOOL: return "@bool";
+        case TY_I64:  return "@i64";
+        case TY_STRUCT:
+            return (e->name && lookup_struct(c, e->name)) ? array_struct_tag(e->name) : NULL;
+        default: return NULL;
+        }
+    }
+    case TY_MAP: {
+        const Type *k = t->elem;
+        const Type *v = (t->field_count > 0 && t->field_types) ? t->field_types[0] : NULL;
+        if (!k || !v || k->kind == TY_UNKNOWN || v->kind == TY_UNKNOWN) return NULL;
+        return map_tag(k->kind != TY_STR, v->kind == TY_STR);
+    }
+    case TY_STRUCT:
+        return (t->name && lookup_struct(c, t->name)) ? t->name : NULL;
+    default: return NULL;
+    }
+}
+
+static const char *expr_struct_type_legacy(Ctx *c, const Node *n);
+/* 127.52: the checker's type first; the legacy string inference only where
+ * the checker left the node untyped or its type has no tag. */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
+    if (n && n->rtype) {
+        const char *tag = type_backend_tag(c, n->rtype);
+        if (tag) return tag;
+    }
+    return expr_struct_type_legacy(c, n);
+}
+
+static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
     if (!n) return NULL;
     /* Bug 111.10: string literals must be marked "$str" so that locals
      * bound to one (`let s="hello"`) aren't misidentified by the
@@ -7789,8 +8127,6 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             /* 136.28: a function returning an array of structs */
             if (sig2) { const char *es = array_elem_struct_name(c, sig2->ret_type_name);
                         if (es) return array_struct_tag(es); }
-            /* 127.28 (+127.39/127.41 suffixes: "__map__i" / "__map__S") */
-            if (sig2 && !strncmp(sig2->ret_type_name, "__map__", 7)) return sig2->ret_type_name;
             /* 114.56: a cross-module user fn returning a scalar string — tag
              * "$str" so the result is recognised as a string (the ABI lowers
              * str returns to i64, erasing the i8* type), routing `<`/`<=`/`>`/
@@ -7825,7 +8161,6 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         /* 136.28: a function returning an array of structs */
         if (sig) { const char *es = array_elem_struct_name(c, sig->ret_type_name);
                    if (es) return array_struct_tag(es); }
-        if (sig && !strncmp(sig->ret_type_name, "__map__", 7)) return sig->ret_type_name; /* 127.28 */
         /* 114.56: a user fn returning a scalar string — tag "$str" so the
          * comparison and var-to-var `=` codegen route to strcmp, not a
          * pointer-address compare (the str return is lowered to i64 at the ABI,
@@ -8098,6 +8433,36 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return "i64";
     case NODE_CALL_EXPR: {
         if (n->child_count < 1) return "i64";
+        /* 124.0c: an indirect call yields its target's return type — a
+         * closure literal applied directly, a closure-bound local, or a
+         * function-reference local.  Answering i64 for an f64 closure made
+         * the caller mis-type the SSA value (invalid IR). Same lookups as the
+         * lowering in emit_expr. */
+        {
+            const Node *callee = n->children[0];
+            const Node *clos = callee->kind == NODE_CLOSURE ? callee : NULL;
+            if (!clos && callee->kind == NODE_IDENT) {
+                char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
+                clos = clos_local_lookup(c, cnm);
+                if (!clos) {
+                    const Node *fr = NULL;
+                    for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
+                        if (!strcmp(c->fref_lname[i], cnm)) fr = c->fref_lnode[i];
+                    if (fr && fr->child_count == 0) {
+                        char rn[256]; tok_cp(c->src, fr, rn, sizeof rn);
+                        if (!strcmp(rn, "main")) strcpy(rn, "tk_main");
+                        mangle_fn_name(c, rn, sizeof rn);
+                        const FnSig *ref = lookup_fn(c, rn);
+                        if (ref) return strcmp(ref->ret, "void") ? ref->ret : "i64";
+                    }
+                }
+            }
+            if (clos) {
+                char fpty[256]; const char *cret = "i64";
+                closure_sig(c, clos, fpty, sizeof fpty, &cret);
+                return strcmp(cret, "void") ? cret : "i64";
+            }
+        }
         /* 127.56: `$variant(payload)` on a known sum type builds a tagged box
          * (an i8* malloc), exactly like the `$T{$variant:payload}` literal. */
         if (variant_ctor_sum(c, n)) return "i8*";
@@ -8227,7 +8592,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
              * (the trunc + re-extend happens inside emit_expr). 80.2.1 */
             if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i64";
             if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i64";
-            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte")) return "i64";
+            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte") || !strcmp(tn, "byte")) return "i64";
             if (!strcmp(tn, "bool")) return "i1";
         }
         return "i8*"; /* array / unknown cast → inttoptr */
@@ -9014,7 +9379,17 @@ static void emit_stmt(Ctx *c, const Node *n)
                 strncpy(c->clos_lname[c->clos_lcount], tb, NAME_BUF - 1);
                 c->clos_lname[c->clos_lcount][NAME_BUF - 1] = '\0';
                 c->clos_lnode[c->clos_lcount] = init_node;
+                c->clos_lser[c->clos_lcount] = c->fn_serial;
                 c->clos_lcount++;
+            }
+            /* 124.0c: `let g=&add` — remember the reference so `g(1;2)`
+             * becomes an indirect call.  Latest binding wins (a re-bind of
+             * the same name to another reference shadows the first). */
+            if (init_node->kind == NODE_FUNC_REF && c->fref_lcount < 64) {
+                strncpy(c->fref_lname[c->fref_lcount], tb, NAME_BUF - 1);
+                c->fref_lname[c->fref_lcount][NAME_BUF - 1] = '\0';
+                c->fref_lnode[c->fref_lcount] = init_node;
+                c->fref_lcount++;
             }
             const char *vty;
             if (has_ann)
@@ -9204,6 +9579,7 @@ static void emit_stmt(Ctx *c, const Node *n)
                     iv = coerce_value(c, iv, expr_llvm_type(c, rhs->children[1]), "i64");
                     int ev = emit_expr(c, rhs->children[2]);
                     ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[2]), "i64");
+                    emit_set_bounds_check(c, recv, iv);
                     res = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @tk_array_set_inplace_w(i64 %%t%d, i64 %%t%d, i64 %%t%d) ; 114.18 in-place set\n",
                             res, recv, iv, ev);
@@ -9734,6 +10110,52 @@ static IrDecl *g_ir_decls;
 static int     g_ir_decl_n, g_ir_decl_cap;
 static char    g_ir_cur_ll[PATH_BUF];
 
+/* 127.218: every stdlib call site, by the glue symbol it lowered to.  A call
+ * to an export its .tki declares but no C file defines (the quarantine in
+ * scripts/check_tki_skiplist.txt) type-checks, and then failed at `ld` with a
+ * bare mangled symbol, reported as E9003 at the enclosing declaration.  When
+ * the linker names an undefined symbol that a recorded call lowered to, the
+ * failure is reported at that call instead, naming the toke function.  Only
+ * consulted after ld has actually failed, so it cannot reject a program that
+ * links. */
+typedef struct {
+    char sym[NAME_BUF];    /* glue symbol, without the @                     */
+    char call[NAME_BUF];   /* toke spelling, "alias.member"                  */
+    char module[NAME_BUF]; /* "std.<mod>"                                    */
+    char file[PATH_BUF];
+    int  off, line, col;
+} IrCall;
+static IrCall *g_ir_calls;
+static int     g_ir_call_n, g_ir_call_cap;
+
+static void ir_call_record(const char *sym, const char *alias, const char *member,
+                           const char *module, const Node *n)
+{
+    if (!sym || !n) return;
+    for (int i = 0; i < g_ir_call_n; i++)       /* the first call site is the one reported */
+        if (!strcmp(g_ir_calls[i].sym, sym)) return;
+    if (g_ir_call_n == g_ir_call_cap) {
+        int ncap = g_ir_call_cap ? g_ir_call_cap * 2 : 64;
+        IrCall *p = (IrCall *)realloc(g_ir_calls, (size_t)ncap * sizeof *p);
+        if (!p) return;          /* bookkeeping only: never fail the build */
+        g_ir_calls = p; g_ir_call_cap = ncap;
+    }
+    IrCall *d = &g_ir_calls[g_ir_call_n++];
+    snprintf(d->sym, sizeof d->sym, "%s", sym);
+    snprintf(d->call, sizeof d->call, "%s.%s", alias, member);
+    snprintf(d->module, sizeof d->module, "%s", module ? module : "");
+    snprintf(d->file, sizeof d->file, "%s", diag_get_source_file());
+    d->off = n->tok_start; d->line = n->line; d->col = n->col;
+}
+
+static const IrCall *ir_call_by_sym(const char *sym, size_t len)
+{
+    for (int i = 0; i < g_ir_call_n; i++)
+        if (strlen(g_ir_calls[i].sym) == len && !strncmp(g_ir_calls[i].sym, sym, len))
+            return &g_ir_calls[i];
+    return NULL;
+}
+
 static void ir_decl_record(const char *sym, const char *name, const Node *n, int is_fn)
 {
     if (!sym || !n) return;
@@ -9749,6 +10171,111 @@ static void ir_decl_record(const char *sym, const char *name, const Node *n, int
     snprintf(d->name, sizeof d->name, "%s", name);
     snprintf(d->file, sizeof d->file, "%s", diag_get_source_file());
     d->off = n->tok_start; d->line = n->line; d->col = n->col; d->is_fn = is_fn;
+}
+
+/*
+ * 127.185: every error exit of a fallible function sets @tk_current_error.
+ *
+ * The caller of a `T!$E` function learns of failure only through that slot
+ * (114.55): an ok return must clear it and an error return must set it, or
+ * the caller's `mt` decodes whatever an EARLIER call left there — 127.112 was
+ * exactly that, found by accident.  The invariant, checked on each fallible
+ * function as it is finished (fallible_exits_ok) and, independently, over
+ * every test program's .ll by test/conform/V002:
+ *
+ *   every `ret` is preceded IN ITS BLOCK by a store to @tk_current_error,
+ *   unless the block is the error target of a branch on
+ *   `icmp eq (load @tk_current_error), 0` — a `!$E` propagation exit, which
+ *   deliberately keeps the callee's flag.
+ *
+ * i.e. a per-block "flag written" bit, reset at every label, set by a store
+ * and on entry to a propagation error target; an unset bit at a `ret` is an
+ * internal error (E9002: no user program can cause it, no user change fixes
+ * it).  Returns 1 when the body satisfies the rule, else 0 and the offending
+ * block's label in `blk`.
+ */
+#define TKC_ERREXIT_NAMES 4096
+static int ir_tok_eq(const char *a, size_t al, const char *b, size_t bl) {
+    return al == bl && !memcmp(a, b, al);
+}
+/* the `%name` token starting at p (p points at '%'); returns its length */
+static size_t ir_local_len(const char *p, const char *e) {
+    size_t k = 1;
+    while (p + k < e && (isalnum((unsigned char)p[k]) || p[k] == '_' || p[k] == '.')) k++;
+    return k;
+}
+static int fallible_exits_ok(const char *b, size_t n, char *blk, size_t blksz)
+{
+    const char *end = b + n;
+    /* pass 1: flag loads -> their icmp-eq-0 -> the false targets of the br */
+    const char **ld = (const char **)calloc(TKC_ERREXIT_NAMES, sizeof *ld);
+    size_t *ldl = (size_t *)calloc(TKC_ERREXIT_NAMES, sizeof *ldl);
+    const char **cm = (const char **)calloc(TKC_ERREXIT_NAMES, sizeof *cm);
+    size_t *cml = (size_t *)calloc(TKC_ERREXIT_NAMES, sizeof *cml);
+    const char **et = (const char **)calloc(TKC_ERREXIT_NAMES, sizeof *et);
+    size_t *etl = (size_t *)calloc(TKC_ERREXIT_NAMES, sizeof *etl);
+    int nld = 0, ncm = 0, net = 0, ok = 1;
+    if (!ld || !ldl || !cm || !cml || !et || !etl) goto done;   /* bookkeeping only */
+    for (const char *l = b; l < end; ) {
+        const char *e = memchr(l, '\n', (size_t)(end - l)); if (!e) e = end;
+        const char *q = l; while (q < e && *q == ' ') q++;
+        if (*q == '%' && nld < TKC_ERREXIT_NAMES) {
+            size_t k = ir_local_len(q, e);
+            const char *r = q + k;
+            static const char LD[] = " = load i64, i64* @tk_current_error";
+            static const char CM[] = " = icmp eq i64 ";
+            if ((size_t)(e - r) >= sizeof LD - 1 && !memcmp(r, LD, sizeof LD - 1)) {
+                ld[nld] = q; ldl[nld++] = k;
+            } else if ((size_t)(e - r) > sizeof CM - 1 && !memcmp(r, CM, sizeof CM - 1) &&
+                       ncm < TKC_ERREXIT_NAMES) {
+                const char *o = r + sizeof CM - 1;
+                size_t ok2 = (*o == '%') ? ir_local_len(o, e) : 0;
+                if (ok2 && o + ok2 + 3 <= e && !memcmp(o + ok2, ", 0", 3) &&
+                    (o + ok2 + 3 == e || o[ok2 + 3] == ' ' || o[ok2 + 3] == ';'))
+                    for (int i = 0; i < nld; i++)
+                        if (ir_tok_eq(o, ok2, ld[i], ldl[i])) { cm[ncm] = q; cml[ncm++] = k; break; }
+            }
+        } else if (!strncmp(q, "br i1 %", 7) && net < TKC_ERREXIT_NAMES) {
+            const char *o = q + 6; size_t k = ir_local_len(o, e);
+            for (int i = 0; i < ncm; i++)
+                if (ir_tok_eq(o, k, cm[i], cml[i])) {
+                    const char *f = strstr(o, ", label %");
+                    f = f ? strstr(f + 9, ", label %") : NULL;
+                    if (f && f < e) { f += 9; size_t fl = 0;
+                        while (f + fl < e && (isalnum((unsigned char)f[fl]) || f[fl] == '_' || f[fl] == '.')) fl++;
+                        et[net] = f; etl[net++] = fl; }
+                    break;
+                }
+        }
+        l = e + 1;
+    }
+    /* pass 2: the per-block bit */
+    int bit = 0; const char *lab = "bb.entry"; size_t labl = 8;
+    for (const char *l = b; l < end; ) {
+        const char *e = memchr(l, '\n', (size_t)(end - l)); if (!e) e = end;
+        size_t ll = (size_t)(e - l);
+        if (ll > 1 && l[0] != ' ' && l[0] != ';' && l[ll - 1] == ':') {
+            lab = l; labl = ll - 1; bit = 0;
+            for (int i = 0; i < net; i++)
+                if (ir_tok_eq(l, labl, et[i], etl[i])) { bit = 1; break; }
+        } else {
+            const char *q = l; while (q < e && *q == ' ') q++;
+            if (!strncmp(q, "store ", 6)) {
+                const char *m = strstr(q, "@tk_current_error");
+                if (m && m < e) bit = 1;
+            } else if (!strncmp(q, "ret ", 4) || (e - q == 3 && !strncmp(q, "ret", 3))) {
+                if (!bit) {
+                    ok = 0;
+                    snprintf(blk, blksz, "%.*s", (int)(labl < 100 ? labl : 100), lab);
+                    goto done;
+                }
+            }
+        }
+        l = e + 1;
+    }
+done:
+    free(ld); free(ldl); free(cm); free(cml); free(et); free(etl);
+    return ok;
 }
 
 static void emit_toplevel(Ctx *c, const Node *n)
@@ -9857,10 +10384,13 @@ static void emit_toplevel(Ctx *c, const Node *n)
         }
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
         c->fall_count = 0;  /* 135.16: let-bound fallible values are per-function */
+        c->fref_lcount = 0; /* 124.0c: function-reference locals are per-function */
+        c->fn_serial++;     /* closure-bound locals of earlier functions no longer match */
         c->local_count = 0; /* reset local type tracking */
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
         c->cur_fn_ret = ret;
         strncpy(c->cur_fn_name, tb, NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
+        long fn_ir_off = ftell(c->out);   /* 127.185: the body is re-read below */
         fprintf(c->out, "\ndefine dso_local fastcc %s @%s(", ret, tb);
         int first = 1;
         for (int i = 1; i < n->child_count; i++) {
@@ -9897,6 +10427,9 @@ static void emit_toplevel(Ctx *c, const Node *n)
         } else {
             fputs(") nounwind #0 {\nbb.entry:\n", c->out);
         }
+        /* 127.185: mark a fallible body so test/conform/V002 can find the
+         * functions the error-exit invariant applies to. */
+        if (c->cur_fn_err[0]) fprintf(c->out, "  ; tk.fallible !$%s\n", c->cur_fn_err);
         /* Spill params */
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
@@ -9904,84 +10437,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             const char *pty = "i64";
             if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                 pty = resolve_llvm_type(c, n->children[i]->children[1]);
-            if (!strcmp(pty, "i8*")) {
-                const Node *tyn = (n->children[i]->child_count > 1) ? n->children[i]->children[1] : NULL;
-                if (tyn && tyn->kind == NODE_MAP_TYPE) {
-                    /* 127.39: a declared map param carries its key/value kinds
-                     * (`f=g(m:@(str:str))` → `\(m.get(k))` is a string). */
-                    int pk_int = 0, pv_str = 0;
-                    if (tyn->child_count > 0) {
-                        char kt[64]; tok_cp(c->src, tyn->children[0], kt, sizeof kt);
-                        pk_int = !strstr(kt, "str");
-                    }
-                    if (tyn->child_count > 1) {
-                        char vt[64]; tok_cp(c->src, tyn->children[1], vt, sizeof vt);
-                        pv_str = strstr(vt, "str") != NULL;
-                    }
-                    mark_ptr_with_type(c, pn, map_tag(pk_int, pv_str));
-                } else if (tyn && tyn->kind == NODE_ARRAY_TYPE &&
-                           tyn->child_count >= 1 && tyn->children[0]) {
-                    /* Bug 110.9: propagate @$f64/@$f32 element-type marker to
-                     * parameter so 102.29b's .get() bitcast (i64→double) fires
-                     * for float arrays passed as function arguments. */
-                    char et[64] = ""; tok_cp(c->src, tyn->children[0], et, sizeof et);
-                    if (!strcmp(et, "f64") || !strcmp(et, "$f64"))
-                        mark_ptr_with_type(c, pn, "@f64");
-                    else if (!strcmp(et, "f32") || !strcmp(et, "$f32"))
-                        mark_ptr_with_type(c, pn, "@f32");
-                    else {
-                        char pty_name[128] = "";
-                        tok_cp(c->src, tyn, pty_name, sizeof pty_name);
-                        const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
-                        /* Story 114.21: a non-float array param (@byte, @$i64,
-                         * @$str, …) that isn't a registered struct must still get
-                         * an `@`-prefixed marker so array-aware codegen treats it
-                         * as an array. Without it the param was marked NULL and
-                         * `a+b` fell to tk_str_concat (NUL-truncating) — corrupting
-                         * binary byte-array concatenation across @byte boundaries. */
-                        if (!stype) {
-                            char et2[96] = "";
-                            tok_cp(c->src, tyn->children[0], et2, sizeof et2);
-                            static char arr_marker_buf[2048];
-                            static int arr_marker_off = 0;
-                            int w = snprintf(arr_marker_buf + arr_marker_off,
-                                             sizeof(arr_marker_buf) - arr_marker_off,
-                                             "@%s", et2);
-                            if (w > 0 && arr_marker_off + w < (int)sizeof(arr_marker_buf)) {
-                                stype = arr_marker_buf + arr_marker_off;
-                                arr_marker_off += w + 1;
-                            }
-                        }
-                        mark_ptr_with_type(c, pn, stype);
-                    }
-                } else {
-                    char pty_name[128] = "";
-                    if (tyn) tok_cp(c->src, tyn, pty_name, sizeof pty_name);
-                    const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
-                    /* Bug 111.10: any scalar pointer param that isn't a struct
-                     * or map must still be marked with SOMETHING (typically
-                     * "$str") so the NODE_ARRAY_LIT spread detector excludes
-                     * it. Without a marker, the spread logic reads `ptr[-1]`
-                     * expecting an array length header — on a NUL-terminated
-                     * string this returns adjacent-memory garbage and either
-                     * segfaults or mallocs an absurd amount. tok_cp strips
-                     * the `$` sigil so we synthesize "$<name>" to keep the
-                     * marker shape distinct from array markers (which start
-                     * with `@`). */
-                    if (!stype && pty_name[0] && pty_name[0] != '@') {
-                        static char marker_buf[2048];
-                        static int marker_off = 0;
-                        int wrote = snprintf(marker_buf + marker_off,
-                                              sizeof(marker_buf) - marker_off,
-                                              "$%s", pty_name);
-                        if (wrote > 0 && marker_off + wrote < (int)sizeof(marker_buf)) {
-                            stype = marker_buf + marker_off;
-                            marker_off += wrote + 1;
-                        }
-                    }
-                    mark_ptr_with_type(c, pn, stype);
-                }
-            }
+            if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, n->children[i]);
             set_local_type(c, pn, pty);
             fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
         }
@@ -10008,6 +10464,28 @@ static void emit_toplevel(Ctx *c, const Node *n)
             else fprintf(c->out, "  ret %s 0 ; implicit return\n", ret);
         }
         fputs("}\n", c->out);
+        /* 127.185: check the finished body against the error-exit rule. */
+        if (c->cur_fn_err[0] && fn_ir_off >= 0) {
+            long fn_end = ftell(c->out);
+            if (fn_end > fn_ir_off && fflush(c->out) == 0 &&
+                fseek(c->out, fn_ir_off, SEEK_SET) == 0) {
+                size_t blen = (size_t)(fn_end - fn_ir_off);
+                char *body = (char *)malloc(blen + 1);
+                size_t got = body ? fread(body, 1, blen, c->out) : 0;
+                char blk[128] = "";
+                if (body && got == blen && !fallible_exits_ok(body, blen, blk, sizeof blk)) {
+                    char msg[512];
+                    snprintf(msg, sizeof msg,
+                             "internal compiler error: an exit of fallible function "
+                             "f=%s returns without setting @tk_current_error (block "
+                             "'%s'), so its caller would read a stale error flag "
+                             "(127.185)", toke_nm, blk);
+                    diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col, msg, (void *)0);
+                }
+                free(body);
+            }
+            fseek(c->out, 0, SEEK_END);
+        }
         c->cur_fn_ret = NULL;
         c->cur_fn_name[0] = '\0';
         break;
@@ -10039,6 +10517,9 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_bounds_trap", "declare void @tk_bounds_trap(i64, i64)", 0},  /* 124.2a: RT003 OOB */
     {"tk_nil_trap", "declare void @tk_nil_trap(i32)", 0},  /* 124.2d: RT005 nil-deref */
     {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
+    {"llvm.uadd.with.overflow.i64", "declare {i64, i1} @llvm.uadd.with.overflow.i64(i64, i64)", 0}, /* 127.217: u64 */
+    {"llvm.usub.with.overflow.i64", "declare {i64, i1} @llvm.usub.with.overflow.i64(i64, i64)", 0},
+    {"llvm.umul.with.overflow.i64", "declare {i64, i1} @llvm.umul.with.overflow.i64(i64, i64)", 0},
     {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
     {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},
     /* libc */
@@ -10046,6 +10527,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"puts", "declare i32 @puts(i8*)", 0},
     {"strcmp", "declare i32 @strcmp(i8*, i8*)", 0},
     {"malloc", "declare i8* @malloc(i64)", 0},
+    {"free", "declare void @free(i8*)", 0},  /* 124.0c: a directly-applied closure's env */
     /* 127.109: the per-thread error box.  Error-union boxes come from here,
      * not malloc — one buffer per thread, reused, never leaked. */
     {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
@@ -10503,6 +10985,90 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
  *
  * Returns 0 on success, -1 on I/O error (with diagnostic emitted).
  */
+/* mark_param_ptr_tag — the backend tag for a pointer-typed parameter `pn`
+ * (map key/value kinds, array element kind, struct name, or a "$<type>"
+ * marker).  Shared by function declarations and, since 124.0c, lifted
+ * closures, whose parameters were spilled untagged (an `@f64` closure
+ * parameter read its elements as integers). */
+static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param) {
+    const Node *tyn = (param->child_count > 1) ? param->children[1] : NULL;
+    if (tyn && tyn->kind == NODE_MAP_TYPE) {
+        /* 127.39: a declared map param carries its key/value kinds
+         * (`f=g(m:@(str:str))` → `\(m.get(k))` is a string). */
+        int pk_int = 0, pv_str = 0;
+        if (tyn->child_count > 0) {
+            char kt[64]; tok_cp(c->src, tyn->children[0], kt, sizeof kt);
+            pk_int = !strstr(kt, "str");
+        }
+        if (tyn->child_count > 1) {
+            char vt[64]; tok_cp(c->src, tyn->children[1], vt, sizeof vt);
+            pv_str = strstr(vt, "str") != NULL;
+        }
+        mark_ptr_with_type(c, pn, map_tag(pk_int, pv_str));
+    } else if (tyn && tyn->kind == NODE_ARRAY_TYPE &&
+               tyn->child_count >= 1 && tyn->children[0]) {
+        /* Bug 110.9: propagate @$f64/@$f32 element-type marker to
+         * parameter so 102.29b's .get() bitcast (i64→double) fires
+         * for float arrays passed as function arguments. */
+        char et[64] = ""; tok_cp(c->src, tyn->children[0], et, sizeof et);
+        if (!strcmp(et, "f64") || !strcmp(et, "$f64"))
+            mark_ptr_with_type(c, pn, "@f64");
+        else if (!strcmp(et, "f32") || !strcmp(et, "$f32"))
+            mark_ptr_with_type(c, pn, "@f32");
+        else {
+            char pty_name[128] = "";
+            tok_cp(c->src, tyn, pty_name, sizeof pty_name);
+            const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+            /* Story 114.21: a non-float array param (@byte, @$i64,
+             * @$str, …) that isn't a registered struct must still get
+             * an `@`-prefixed marker so array-aware codegen treats it
+             * as an array. Without it the param was marked NULL and
+             * `a+b` fell to tk_str_concat (NUL-truncating) — corrupting
+             * binary byte-array concatenation across @byte boundaries. */
+            if (!stype) {
+                char et2[96] = "";
+                tok_cp(c->src, tyn->children[0], et2, sizeof et2);
+                static char arr_marker_buf[2048];
+                static int arr_marker_off = 0;
+                int w = snprintf(arr_marker_buf + arr_marker_off,
+                                 sizeof(arr_marker_buf) - arr_marker_off,
+                                 "@%s", et2);
+                if (w > 0 && arr_marker_off + w < (int)sizeof(arr_marker_buf)) {
+                    stype = arr_marker_buf + arr_marker_off;
+                    arr_marker_off += w + 1;
+                }
+            }
+            mark_ptr_with_type(c, pn, stype);
+        }
+    } else {
+        char pty_name[128] = "";
+        if (tyn) tok_cp(c->src, tyn, pty_name, sizeof pty_name);
+        const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+        /* Bug 111.10: any scalar pointer param that isn't a struct
+         * or map must still be marked with SOMETHING (typically
+         * "$str") so the NODE_ARRAY_LIT spread detector excludes
+         * it. Without a marker, the spread logic reads `ptr[-1]`
+         * expecting an array length header — on a NUL-terminated
+         * string this returns adjacent-memory garbage and either
+         * segfaults or mallocs an absurd amount. tok_cp strips
+         * the `$` sigil so we synthesize "$<name>" to keep the
+         * marker shape distinct from array markers (which start
+         * with `@`). */
+        if (!stype && pty_name[0] && pty_name[0] != '@') {
+            static char marker_buf[2048];
+            static int marker_off = 0;
+            int wrote = snprintf(marker_buf + marker_off,
+                                  sizeof(marker_buf) - marker_off,
+                                  "$%s", pty_name);
+            if (wrote > 0 && marker_off + wrote < (int)sizeof(marker_buf)) {
+                stype = marker_buf + marker_off;
+                marker_off += wrote + 1;
+            }
+        }
+        mark_ptr_with_type(c, pn, stype);
+    }
+}
+
 /* 124.0a: emit the lifted top-level function for one closure, at module tail.
  *   define internal fastcc <ret> @__tk_closure_N(i8* %__env, <ptys> %p.arg)
  * Captured vars are loaded from the env box (slots 1..ncap; slot 0 is the fn
@@ -10511,6 +11077,7 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
  * globals-init ctor (both reset per-function state and write to c->out). */
 static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->ptr_count = 0; c->local_count = 0; c->alias_count = 0; c->fall_count = 0;
+    c->fref_lcount = 0;
     c->name_scope = 0; c->term = 0;
     const char *ret; char fpty[256];
     closure_sig(c, clos, fpty, sizeof fpty, &ret); (void)fpty;
@@ -10544,8 +11111,13 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, envb, i + 1);
         int lv = next_tmp(c);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", lv, gi);
-        set_local_type(c, caps[i], "i64");
-        fprintf(c->out, "  %%%s = alloca i64\n  store i64 %%t%d, i64* %%%s\n", caps[i], lv, caps[i]);
+        /* 124.0c: restore the capture's own type and tag (see g_cap_info). */
+        const char *cty = (i < TKC_CAP_TYPED && g_cap_info[cid].ty[i]) ? g_cap_info[cid].ty[i] : "i64";
+        int cv = coerce_value(c, lv, "i64", cty);
+        set_local_type(c, caps[i], cty);
+        if (i < TKC_CAP_TYPED && g_cap_info[cid].tag[i][0])
+            mark_ptr_with_type(c, caps[i], g_cap_info[cid].tag[i]);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", caps[i], cty, cty, cv, cty, caps[i]);
     }
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind != NODE_PARAM) continue;
@@ -10553,6 +11125,7 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         const char *pty = "i64";
         if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
             pty = resolve_llvm_type(c, clos->children[i]->children[1]);
+        if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, clos->children[i]);  /* 124.0c */
         set_local_type(c, pn, pty);
         fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
     }
@@ -10567,8 +11140,10 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
 
 /* Drain the pending-closure list; nested closures append during emission. */
 static void emit_lifted_closures(Ctx *c) {
+    c->in_lifted = 1;
     for (int i = 0; i < c->pend_clos_count; i++)
         emit_lifted_closure(c, c->pend_clos[i], i);
+    c->in_lifted = 0;
 }
 
 int emit_llvm_ir(const Node *ast, const char *src,
@@ -11478,6 +12053,31 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
             char msg[1024], why[256] = "";
             const IrDecl *undef = NULL;
             const IrDecl *d = cerr ? ir_map_failure(cerr, lls, nll, why, sizeof why, &undef) : NULL;
+            /* 127.218: an undefined symbol that a stdlib CALL lowered to is
+             * an export with no implementation: report it at the call. */
+            const IrCall *uc = NULL;
+            if (!strncmp(why, "undefined symbol '", 18)) {
+                const char *us = why + 18, *ue = strchr(us, '\'');
+                if (ue) uc = ir_call_by_sym(us, (size_t)(ue - us));
+            }
+            if (uc) {
+                char cmsg[1024];
+                const char *mod = uc->module;
+                if (!strncmp(mod, "std.", 4)) mod += 4;
+                snprintf(cmsg, sizeof cmsg,
+                         "'%s' has no implementation: std.%s declares it in %s.tki, "
+                         "but no stdlib C source defines its glue symbol '%s', so the "
+                         "program cannot link (quarantined interface exports are listed "
+                         "in docs/reference/tki-quarantine.md)",
+                         uc->call, mod, mod, uc->sym);
+                if (strcmp(diag_get_source_file(), uc->file)) {
+                    diag_set_source(NULL, 0);
+                    diag_set_source_file(uc->file);
+                }
+                diag_emit(DIAG_ERROR, E4027, uc->off, uc->line, uc->col, cmsg, (void *)0);
+                free(cerr);
+                return -1;
+            }
             int n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
             if (why[0] && n > 0 && (size_t)n < sizeof msg)
                 n += snprintf(msg + n, sizeof msg - (size_t)n, ": %s", why);

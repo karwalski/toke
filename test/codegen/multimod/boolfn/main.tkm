@@ -1,6 +1,6 @@
-(* 123.6 multi-module WITNESS (quarantined; new defect found by 123.6): a bool
- * returned by a function in ANOTHER module interpolates as 1/0, while the same
- * function declared in this module renders true/false (127.94).  Expected
+(* 123.6 multi-module certificate (a witness until 127.217 fixed it): a bool
+ * returned by a function in ANOTHER module interpolated as 1/0, while the same
+ * function declared in this module rendered true/false (127.94).  Expected
  * output below is the correct one. *)
 m=cgmm.boolmain;
 i=io:std.io;

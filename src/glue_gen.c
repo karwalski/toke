@@ -20,6 +20,7 @@
  */
 
 #include "glue_gen.h"
+#include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -259,18 +260,16 @@ char *glue_gen_from_tki(const char *tki_path, const char *module_name) {
                   module_name);
 
     /* Scan for each "kind":"func" entry */
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        char *kv = strstr(p, "\"func\"");
-        char *next_kind = strstr(p + 6, "\"kind\"");
-        if (!kv || (next_kind && kv > next_kind)) {
-            p = next_kind ? next_kind : p + 6;
-            continue;
-        }
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
+        if (strcmp(tkind, "func") != 0) continue;
 
         /* Extract name (e.g. "str.concat") */
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -283,7 +282,7 @@ char *glue_gen_from_tki(const char *tki_path, const char *module_name) {
 
         /* Split "module.method" */
         char *dot = strchr(fname, '.');
-        if (!dot) { p = next_kind ? next_kind : p + 6; continue; }
+        if (!dot) { continue; }
         char mod[64], meth[64];
         int mlen = (int)(dot - fname);
         if (mlen >= (int)sizeof(mod)) mlen = (int)sizeof(mod) - 1;
@@ -335,8 +334,6 @@ char *glue_gen_from_tki(const char *tki_path, const char *module_name) {
         }
 
         emit_wrapper(&gb, mod, meth, ret, pc, (const char (*)[64])params_arr);
-
-        p = next_kind ? next_kind : p + 6;
     }
 
     free(buf);

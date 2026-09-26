@@ -497,7 +497,13 @@ void tk_overflow_trap(int32_t op_code) {
 /* 124.2b: RT004 — division/remainder by zero. `a/0` and `a%%0` are undefined
  * behaviour at the machine level; toke traps deterministically instead. */
 void tk_div_trap(int32_t op_code) {
-    fprintf(stderr, "RT004: %s by zero\n", op_code == 1 ? "remainder" : "division");
+    /* 121.36: codes 2/3 are the other invalid division — the most negative
+     * value over -1, whose quotient does not fit (ADR-0012 b). */
+    if (op_code >= 2)
+        fprintf(stderr, "RT004: invalid %s: overflow (most negative value by -1)\n",
+                op_code == 3 ? "remainder" : "division");
+    else
+        fprintf(stderr, "RT004: %s by zero\n", op_code == 1 ? "remainder" : "division");
     exit(1);
 }
 

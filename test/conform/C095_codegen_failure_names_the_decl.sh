@@ -19,8 +19,11 @@
 # position in pos/line/col/offset.  An unmappable failure stays at line 0.
 #
 # HOW IT FORCES THE FAILURES.  Real toke programs, no injected IR:
-#   * `let g=&add; g(1;2)` (124.0c) lowers to a call on an undefined IR value,
-#     which clang rejects with a line number;
+#   * `let q=2.5 as bool` lowers to an i64 stored into an i1 slot, which clang
+#     rejects with a line number.  This is a live codegen defect used as a
+#     fixture (filed by Batch BB, 2026-09-26); when it is fixed, swap in the
+#     next construct that yields invalid IR.  Until 2026-09-26 the fixture was
+#     `let g=&add; g(1;2)`, which 124.0c fixed.
 #   * an extern `f=nosuchcfn(x:i64):i64;` that nothing defines fails in ld;
 #   * `-o` into a directory that does not exist fails with no IR involved.
 
@@ -49,8 +52,8 @@ cat > fp.tk <<'EOF'
 m=fp;
 f=add(a:i64;b:i64):i64{<a+b};
 f=helper():i64{
-  let g=&add;
-  <g(1;2)
+  let q=2.5 as bool;
+  <add(1;2)
 };
 f=main():i64{<helper()};
 EOF
@@ -66,8 +69,8 @@ cat > lib.tk <<'EOF'
 m=pair.lib;
 f=add(a:i64;b:i64):i64{<a+b};
 f=twice(x:i64):i64{
-  let g=&add;
-  <g(x;x)
+  let q=(x as f64) as bool;
+  <add(x;x)
 };
 EOF
 cat > app.tk <<'EOF'
@@ -80,7 +83,7 @@ m=cl;
 f=add(a:i64;b:i64):i64{<a+b};
 f=main():i64{
   let k=5;
-  let h=fn(x:i64):i64{let g=&add;<g(x;k)};
+  let h=fn(x:i64):i64{let q=2.5 as bool;<add(x;k)};
   <h(1)
 };
 EOF
@@ -124,11 +127,11 @@ case_() {   # NAME LOG FILE LINE COL SUBSTR...
 # ── 1. clang rejects an IR line: mapped to the enclosing f= ───────────────
 "${TKC}" fp.tk -o fpb > fp.log 2>&1
 case_ "clang IR error names f=helper at fp.tk:3" fp.log fp.tk 3 1 \
-      "while compiling f=helper at fp.tk:3" "use of undefined value"
+      "while compiling f=helper at fp.tk:3" "defined with type 'i64' but expected 'i1'"
 if grep -q '"source_line":"f=helper():i64{"' fp.log; then
     echo "  PASS: source_line is the declaration's line"; PASS=$((PASS + 1))
 else echo "  FAIL: source_line is not the declaration's line"; FAIL=$((FAIL + 1)); fi
-if grep -q "error: use of undefined value" fp.log; then
+if grep -q "error: '%t[0-9]*' defined with type 'i64' but expected 'i1'" fp.log; then
     echo "  PASS: clang's own message still reaches stderr"; PASS=$((PASS + 1))
 else echo "  FAIL: clang's own message no longer reaches stderr"; FAIL=$((FAIL + 1)); fi
 

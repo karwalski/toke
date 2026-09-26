@@ -68,11 +68,5 @@ test/standalone/test_io_eof.tk            # 2026-09-24 prints 2 FAIL lines under
 # moment it passes. The multimod/ entries are directories: diff-codegen never
 # builds them (it compiles one .tk at a time), and ignores these lines; only
 # test/codegen/run_codegen.sh reads them.
-test/codegen/cg_interp_bool_shapes.tk     # 2026-09-25 bool array element, bool field of an array element, and .contains interpolate as 1/0 (FAIL x5) 127.194
-test/codegen/cg_trap_div_intmin.tk        # 2026-09-25 INT64_MIN / -1 is not guarded (ADR-0012 b): -O0 gives INT64_MIN, -O2 gives 0 121.36
-test/codegen/cg_trap_set_oob.tk           # 2026-09-25 .set out of range is a silent no-op, not RT003 (ADR-0012 a); new defect, to be filed 123.6
-test/codegen/cg_unsigned.tk               # 2026-09-25 u8/u16/u32/u64 print and compare as signed; u64 add traps RT002 past 2^63; new defect, to be filed 123.6
-test/codegen/cg_unsigned_as_str.tk        # 2026-09-25 `u8 as str` checks clean, build fails E9003 (invalid IR); new defect, to be filed 123.6
-test/codegen/cg_interp_byte.tk            # 2026-09-25 interpolating a byte is killed by SIGSEGV; new defect, to be filed 123.6
-test/codegen/cg_recv_field_receiver.tk    # 2026-09-25 @str / map receivers that are struct fields (or bound from one) dispatch wrong: address printed, contains false, len 0 (FAIL x4); new defect, to be filed 123.6
-test/codegen/multimod/boolfn              # 2026-09-25 a bool returned from another module interpolates as 1/0; new defect, to be filed 123.6
+test/codegen/cg_unsigned.tk               # 2026-09-25 unsigned kinds printed/compared signed; 2026-09-26 127.217 fixed codegen (outside interpolation all six pass) — what remains needs the CHECKER: interpolation operands (the STR_LIT children) are never typed, and `let s=a+a` on u64 binds untyped, so `\(e)`/`\(e>small)`/`\(s>a)` still lower signed (BA, types.c) 127.217
+test/codegen/cg_recv_field_receiver.tk    # 2026-09-25 @str / map receivers that are struct fields (or bound from one) dispatch wrong (FAIL x4); needs the checker to type interpolation operands AND `let ws=b.words` (bind_init_type FIELD_EXPR) — types.c 127.217

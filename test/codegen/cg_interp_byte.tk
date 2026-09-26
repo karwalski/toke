@@ -1,6 +1,7 @@
-(* 123.6 WITNESS (quarantined; new defect found by 123.6): interpolating a
- * `byte` value compiles clean and the binary is killed by SIGSEGV before
- * printing anything; `\(b as i64)` on the same value prints 65.  The byte
+(* 123.6 certificate (a witness until 127.217 fixed it): interpolating a
+ * `byte` value compiled clean and the binary was killed by SIGSEGV before
+ * printing anything — codegen did not know the lower-case `byte` spelling,
+ * so `65 as byte` became an inttoptr and the "string" was address 65; `\(b as i64)` on the same value prints 65.  The byte
  * type has no written rendering, so the only assertion is the one both
  * possible renderings share: the program must not crash, and the line
  * printed after it must appear. *)

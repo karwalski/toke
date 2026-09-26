@@ -14,10 +14,25 @@
   0,
   "074cca32d04e4d01"
  ],
+ "test/codegen/cg_interp_bool_shapes.tk": [
+  true,
+  0,
+  "e3257064664e8509"
+ ],
+ "test/codegen/cg_interp_byte.tk": [
+  true,
+  0,
+  "3b15b20d9e60e316"
+ ],
  "test/codegen/cg_interp_scalars.tk": [
   true,
   0,
   "f8fb9145bca3fa2b"
+ ],
+ "test/codegen/cg_json_print_str.tk": [
+  true,
+  0,
+  "e1392d3a92c97bf2"
  ],
  "test/codegen/cg_map.tk": [
   true,
@@ -54,6 +69,11 @@
   1,
   "00ebd11b17cf29d6"
  ],
+ "test/codegen/cg_trap_div_intmin.tk": [
+  true,
+  1,
+  "fe8f71c14d2dbfb4"
+ ],
  "test/codegen/cg_trap_nil.tk": [
   true,
   1,
@@ -64,10 +84,20 @@
   1,
   "bcb2630962c36bb6"
  ],
+ "test/codegen/cg_trap_set_oob.tk": [
+  true,
+  1,
+  "a493d4db068b975b"
+ ],
  "test/codegen/cg_typed_empty.tk": [
   true,
   0,
   "ca97e6e04da10f7b"
+ ],
+ "test/codegen/cg_unsigned_as_str.tk": [
+  true,
+  0,
+  "c11e3f4837efde24"
  ],
  "test/codegen/cg_wide_struct.tk": [
   true,
