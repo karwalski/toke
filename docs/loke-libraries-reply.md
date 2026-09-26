@@ -219,6 +219,12 @@ been available in the C for longer than the interface suggested.
 Still missing, and now tracked: **TIFF CCITT G3/G4 decode**, which matters specifically for
 fax-derived documents.
 
+> **Update 2026-09-27 (story 135.19):** CCITT G3/G4 decode has since shipped —
+> `image.tiffdecode` and `image.decode` read Modified Huffman, Group 3 (1-D and
+> 2-D) and Group 4 pages (story 135.5a, conformance suite C156;
+> `docs/stdlib/image.md` § TIFF). The
+> paragraph above is kept as what this reply said on its date.
+
 ---
 
 ## Not requested, shipped anyway, because Section 2 and 4 could not have worked without them
