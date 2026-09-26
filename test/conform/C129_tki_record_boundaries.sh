@@ -13,8 +13,11 @@
 # array structurally (src/tki_scan.h).
 #
 # WHAT THIS DRIVES.  A private copy of the stdlib tree whose math.tki gains a
-# field named `kind` — first in linregresult, and in a second copy in the
-# middle — then `--check` and `--out` on a program reading `.r2`.  Both must
+# field named `kind` — first in linregresult, in the middle, and behind a
+# top-level free-text string holding escaped quotes (the shape gen_tki.py
+# writes into eleven stdlib interfaces; an escape-blind scan lost its place
+# there and found no exports at all) — then `--check` and `--out` on a
+# program reading `.r2`.  Both must
 # accept it.  (The value printed is not asserted: the decoy field shifts the
 # declared layout away from the C glue's, which is the decoy's doing.)  The
 # unmodified interface must give the same verdicts.
@@ -73,6 +76,15 @@ if mode == "first":
     a = '      "name": "linregresult",\n      "fields": [\n'
 elif mode == "middle":
     a = '          "name": "slope",\n          "type": "f64"\n        },\n'
+elif mode == "escaped":
+    # a free-text top-level string with escaped quotes before "exports", the
+    # shape scripts/gen_tki.py writes into eleven stdlib interfaces; plus the
+    # decoy, so the record must be found AND delimited correctly
+    m = '  "module": "std.math",\n'
+    if s.count(m) != 1:
+        sys.exit("module anchor not found")
+    s = s.replace(m, m + '  "note": "a \\"kind\\":\\"type\\" b",\n')
+    a = '      "name": "linregresult",\n      "fields": [\n'
 else:
     a = None
 if a is not None:
@@ -85,7 +97,7 @@ open(p, "w").write(s)
 PY
 }
 
-for mode in plain first middle; do
+for mode in plain first middle escaped; do
     if ! mktree "${mode}" "${mode}"; then fail "${mode}: could not build the stdlib copy"; continue; fi
     export TKC_STDLIB_DIR="${WORK}/${mode}/src/stdlib"
     "${TKC}" --check "${WORK}/lr.tk" >"${WORK}/${mode}.chk" 2>&1; crc=$?

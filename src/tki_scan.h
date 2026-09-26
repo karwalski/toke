@@ -11,9 +11,10 @@
  * a record's extent and its kind come from the JSON structure, never from a
  * token that happens to appear inside it.
  *
- * The .tki grammar is a small machine-generated JSON subset (no escaped
- * quotes in names or type spellings), so a quote- and depth-aware scan is
- * exact and keeps the frontend free of a JSON dependency (AGENTS.md §6).
+ * The .tki grammar is a small machine-generated JSON subset, so a quote-,
+ * escape- and depth-aware scan is exact and keeps the frontend free of a JSON
+ * dependency (AGENTS.md §6).  Names and type spellings carry no escapes, but
+ * free-text values do (see tki_str_close).
  * These were names.c's private helpers (127.66); they live here so every
  * scanner shares one definition.  `static inline` so a translation unit that
  * uses only some of them draws no unused-function warning.
@@ -23,19 +24,32 @@
 
 #include <string.h>
 
+/* The closing quote of the JSON string whose opening quote is at p, or NULL.
+ * Escape-aware: 127.134a found that scripts/gen_tki.py writes a top-level
+ * "generated" note containing \"gen\":\"abi\" into eleven stdlib
+ * interfaces (io, array, http, ...), and a plain quote scan ended that string
+ * early, lost its place and found no "exports" at all — for every scanner
+ * built on these helpers, including 127.66's tki_record_exports. */
+static inline const char *tki_str_close(const char *p, const char *end) {
+    for (const char *q = p + 1; q < end; q++) {
+        if (*q == '\\') { q++; continue; }
+        if (*q == '"') return q;
+    }
+    return NULL;
+}
+
 /* The position just past the JSON value starting at p, or NULL. */
 static inline const char *tki_scan_value(const char *p, const char *end) {
     if (!p || p >= end) return NULL;
     if (*p == '"') {
-        const char *q = (const char *)memchr(p + 1, '"', (size_t)(end - p - 1));
+        const char *q = tki_str_close(p, end);
         return q ? q + 1 : NULL;
     }
     if (*p == '{' || *p == '[') {
         int depth = 0;
         while (p < end) {
             if (*p == '"') {
-                const char *q = (const char *)memchr(p + 1, '"',
-                                                     (size_t)(end - p - 1));
+                const char *q = tki_str_close(p, end);
                 if (!q) return NULL;
                 p = q + 1;
                 continue;
@@ -66,7 +80,7 @@ static inline const char *tki_obj_key(const char *obj, const char *end,
         if (p >= end || *p == '}') return NULL;
         if (*p != '"') return NULL;
         const char *k1 = p + 1;
-        const char *k2 = (const char *)memchr(k1, '"', (size_t)(end - k1));
+        const char *k2 = tki_str_close(p, end);
         if (!k2) return NULL;
         p = k2 + 1;
         while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
@@ -102,7 +116,7 @@ static inline int tki_str_value(const char *p, const char *end, char *out, int o
     while (p < end && (*p == ' ' || *p == '\t')) p++;
     if (p >= end || *p != '"') return 0;
     const char *q1 = p + 1;
-    const char *q2 = (const char *)memchr(q1, '"', (size_t)(end - q1));
+    const char *q2 = tki_str_close(p, end);
     if (!q2) return 0;
     int len = (int)(q2 - q1);
     if (len >= outsz) len = outsz - 1;
