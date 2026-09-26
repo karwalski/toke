@@ -4300,6 +4300,35 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 && (int_widens_to(l,r)||int_widens_to(r,l))) {
                 return cmp?mk_type(A,TY_BOOL):(int_widens_to(l,r)?r:l);
             }
+            /* 127.224 item 5: an arithmetic operand that is not numeric at
+             * all (`true+false`, `b+1` on a bool) went through emit_mm below,
+             * which formats the two OPERAND types — "expected 'bool', got
+             * 'bool'" — and offered "cast RHS to bool using 'as'", which does
+             * not make `+` legal on a bool.  Same repair 127.140 made for
+             * str + str: say what the operator requires and what it got.  No
+             * `fix`: whether the author meant a count, a logical operator or
+             * a numeric field is not decidable here. */
+            if (arith && (!is_numeric(l) || !is_numeric(r))) {
+                Type *bad = !is_numeric(l) ? l : r;
+                const char *opn = node->op==TK_PLUS ? "+" : node->op==TK_MINUS ? "-"
+                                : node->op==TK_STAR ? "*" : "/";
+                if (tc_can_emit(cx)) {
+                    char msg[256];
+                    if (!is_numeric(l) && !is_numeric(r))
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: both sides are "
+                                 "'%s'", opn, type_name(bad));
+                    else
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: the %s side is "
+                                 "'%s'", opn, !is_numeric(l) ? "left" : "right",
+                                 type_name(bad));
+                    diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col,
+                              msg, "expected", "a numeric type",
+                              "got", type_name(bad), (const char *)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[96];
                 /* 127.64: toke has no implicit int->float promotion (ADR: "no
