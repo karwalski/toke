@@ -136,6 +136,8 @@ Returns `0` on success, `-1` if the log file cannot be opened (e.g. the director
 | `max_files` | `i64` | Keep at most N compressed `.gz` rotation files; `0` means no limit |
 | `max_age_days` | `i64` | Delete files older than N days; `0` disables age-based deletion; when `> 0` this takes priority over `max_files` |
 
+`max_lines` counts the lines in the **file**, not the lines this process wrote: lines already in the file when it is opened count, and so do lines written by every other process sharing it. The pre-fork workers of `http.serveworkers` therefore rotate one shared log once, at the right line, and none of them writes into a file another worker has just rotated away. Rotation is serialised by an `flock` on a hidden sidecar file, `.<name>.lock`, in the log's directory. Archives are named `<stem>.<YYYYMMDD-HHMMSS>.<microseconds>-<pid>.<ext>.gz`; an archive name is never reused, so two rotations in the same second both survive.
+
 ```toke
 m=example;
 i=log:std.log;
@@ -144,6 +146,21 @@ f=openlogfile():i64{
   log.openaccess("logs/access.log"; 10000; 0; 30);
   log.openaccess("logs/access.log"; 0; 0; 0);
   < 0
+};
+```
+
+### log.accessformat(fmt: $str): i64
+
+Selects the line format of the access and error logs: `"combined"` (Combined Log Format, the default) or `"json"` (one JSON object per line). Returns `0` if the format was recognised. Any other value is rejected: a message naming the accepted formats is written to stderr, the format is left unchanged, and `-1` is returned.
+
+```toke
+m=example;
+i=log:std.log;
+
+f=accessfmt():i64{
+  let ok = log.accessformat("json");
+  let bad = log.accessformat("jsno");
+  < ok
 };
 ```
 

@@ -93,6 +93,31 @@ void *tk_err_box(int64_t nbytes)
     return err_buf;
 }
 
+/* ── 127.103: a let-bound error keeps its own copy of the box ────────────
+ * The slot holds a pointer into the ONE reused per-thread box (127.109), so a
+ * binding that spilled the pointer (135.16) captured nothing: the next raise
+ * on the thread rewrote the box, and `let a=f(0); let b=f(-1); mt a{…}` read
+ * b's payload.  The binding now copies the box into a buffer of its own at
+ * the `let` (tk_err_keep), and the `$err` arm copies it back into the thread
+ * box (tk_err_rebox) so the bound `e` has exactly the lifetime the direct
+ * spelling's has — valid until the next raise — and never points into a
+ * frame.  0 (ok) and 1 (payload-less) are not pointers and pass through. */
+int64_t tk_err_keep(int64_t v, void *keep, int64_t nbytes)
+{
+    if (v == 0 || v == 1 || !keep || nbytes <= 0) return v;
+    memcpy(keep, (const void *)(intptr_t)v, (size_t)nbytes);
+    return (int64_t)(intptr_t)keep;
+}
+
+int64_t tk_err_rebox(int64_t v, int64_t nbytes)
+{
+    if (v == 0 || v == 1 || nbytes <= 0) return v;
+    if ((void *)(intptr_t)v == err_buf) return v;   /* already the thread box */
+    void *b = tk_err_box(nbytes);
+    memmove(b, (const void *)(intptr_t)v, (size_t)nbytes);
+    return (int64_t)(intptr_t)b;
+}
+
 /* ── Global argv storage ─────────────────────────────────────────── */
 
 static int    g_argc;

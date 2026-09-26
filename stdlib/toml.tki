@@ -3,7 +3,7 @@
   "module": "std.toml",
   "exports": [
     {"kind": "opaque", "name": "tomlval"},
-    {"kind": "record", "name": "tomlerr",  "fields": [{"name": "msg", "type": "str"}]},
+    {"kind": "type",   "name": "tomlerr",  "fields": [{"name": "msg", "type": "str"}]},
     {"kind": "func",   "name": "toml.load",     "params": ["str"],              "return": "tomlval!tomlerr"},
     {"kind": "func",   "name": "toml.loadfile",  "params": ["str"],              "return": "tomlval!tomlerr"},
     {"kind": "func",   "name": "toml.str",       "params": ["tomlval", "str"],   "return": "str!tomlerr"},

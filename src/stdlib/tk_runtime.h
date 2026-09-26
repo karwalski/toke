@@ -43,11 +43,9 @@ extern TK_TLS int64_t tk_current_error;
  *
  * OWNERSHIP RULE (127.109).  Each thread owns exactly ONE error-box buffer,
  * grown on demand and REUSED by every raise on that thread.  A box is valid
- * until the next raise on the same thread — which is exactly the validity
- * window runtime-abi.md §7.5 restriction 1 already documents for the `$err`
- * arm's binding ("the slot is a single global and any call between the `let`
- * and the `mt` overwrites it").  So this adds no restriction: it makes the
- * allocation's lifetime equal to the reference's already-documented lifetime.
+ * until the next raise on the same thread, and so is the `$err` arm's binding
+ * of it.  A `let`-bound fallible value, which must outlive later raises, keeps
+ * its own copy (tk_err_keep / tk_err_rebox, 127.103).
  *
  * Before this, every error return and every `!` propagation called malloc()
  * and the emitted code contained no free at all: 16 bytes per error EVER
@@ -66,6 +64,12 @@ void   *tk_err_box(int64_t nbytes);
  * main thread; a worker that raises leaves one buffer behind at thread exit,
  * which is constant, not workload-proportional. */
 void    tk_err_release(void);
+
+/* 127.103: copy a let-bound error's box into the binding's own buffer
+ * (returns a pointer to the copy, or v itself for 0 / 1), and copy it back
+ * into the thread box for the $err arm.  See tk_runtime.c. */
+int64_t tk_err_keep(int64_t v, void *keep, int64_t nbytes);
+int64_t tk_err_rebox(int64_t v, int64_t nbytes);
 
 /* Store argc/argv for later access by tk_str_argv. */
 void    tk_runtime_init(int argc, char **argv);

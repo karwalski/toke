@@ -46,6 +46,18 @@ _Thread_local int64_t tk_current_error = 0;
 __thread int64_t tk_current_error = 0;
 #endif
 
+/* 127.182: a failure now stores a one-slot {msg} box built by tk_err_box
+ * (tk_runtime.c) — stood in for here like the slot itself.  A raised error is
+ * recognised by the slot pointing at this box with a non-empty message. */
+static int64_t g_errbox[8];
+void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
+static int raised(void)
+{
+    if (tk_current_error != (int64_t)(intptr_t)g_errbox) return 0;
+    const char *m = (const char *)(intptr_t)g_errbox[0];
+    return m && m[0];
+}
+
 int64_t tk_toml_load_w   (int64_t src);
 int64_t tk_toml_section_w(int64_t tab, int64_t key);
 int64_t tk_toml_str_w    (int64_t tab, int64_t key);
@@ -85,7 +97,9 @@ int main(void)
     POISON();
     int64_t bad = tk_toml_load_w(S("this is = = not toml\n["));
     ASSERT(bad == 0,               "toml.load of a malformed document returns 0");
-    ASSERT(tk_current_error == 1,  "toml.load failure sets tk_current_error");
+    ASSERT(raised(), "toml.load failure sets tk_current_error");
+    ASSERT(raised() && strstr((const char *)(intptr_t)g_errbox[0], "line") != NULL,
+                                   "127.182 toml.load failure carries the parser's own message");
 
     /* ── toml.bool: the reported P0 ────────────────────────────────── */
     POISON();
@@ -105,11 +119,11 @@ int main(void)
 
     POISON();
     (void)tk_toml_bool_w(cfg, S("absent"));
-    ASSERT(tk_current_error == 1,  "toml.bool of a missing key IS an error");
+    ASSERT(raised(), "toml.bool of a missing key IS an error");
 
     POISON();
     (void)tk_toml_bool_w(cfg, S("port"));
-    ASSERT(tk_current_error == 1,  "toml.bool of a non-boolean value IS an error");
+    ASSERT(raised(), "toml.bool of a non-boolean value IS an error");
 
     /* ── toml.i64: the same defect on the integer accessor ─────────── */
     POISON();
@@ -124,7 +138,7 @@ int main(void)
 
     POISON();
     (void)tk_toml_i64_w(cfg, S("absent"));
-    ASSERT(tk_current_error == 1,  "toml.i64 of a missing key IS an error");
+    ASSERT(raised(), "toml.i64 of a missing key IS an error");
 
     /* ── toml.str: sentinel already correct, protocol now explicit ─── */
     POISON();
@@ -136,7 +150,7 @@ int main(void)
     POISON();
     ASSERT(tk_toml_str_w(cfg, S("absent")) == 0,
                                    "toml.str of a missing key returns 0");
-    ASSERT(tk_current_error == 1,  "toml.str of a missing key sets tk_current_error");
+    ASSERT(raised(), "toml.str of a missing key sets tk_current_error");
 
     /* ── toml.section: a missing section must not resolve to the parent ── */
     POISON();
@@ -150,7 +164,7 @@ int main(void)
     int64_t missing = tk_toml_section_w(cfg, S("nosuch"));
     ASSERT(missing != cfg,         "toml.section of a missing key does NOT return the parent table");
     ASSERT(missing == 0,           "toml.section of a missing key returns the error sentinel");
-    ASSERT(tk_current_error == 1,  "toml.section of a missing key sets tk_current_error");
+    ASSERT(raised(), "toml.section of a missing key sets tk_current_error");
 
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);

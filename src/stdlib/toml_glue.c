@@ -21,30 +21,35 @@
  * The fix is the same one str.toint/str.tofloat use (114.53/114.54): set the
  * @tk_current_error global and always return the real value.  These wrappers
  * now maintain that global truthfully.  Consuming it at a match site is the
- * codegen's half: llvm.c's is_num_parse_wrapper() lists the wrappers whose
- * $ok/$err arm is chosen from @tk_current_error instead of the 0 sentinel,
- * and tk_toml_bool_w / tk_toml_i64_w still need to be added there.
+ * codegen's half: llvm.c's is_num_parse_wrapper() (bool, i64) and
+ * is_stdlib_slot_wrapper() (load, loadfile, str, section — 127.182) list the
+ * wrappers whose $ok/$err arm is chosen from @tk_current_error instead of the
+ * 0 sentinel, and whose $err arm binds the {msg} payload.
  */
 
 #include "toml.h"
+#include "tk_runtime.h"   /* 127.182: tk_err_box (127.109) */
 #include <stdint.h>
 
-/* Set to 1 by a wrapper that failed, 0 by one that succeeded.  Defined in
- * tk_runtime.c; see str_glue.c for the same protocol on str.toint. */
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
+/* 127.182 — the error carries the parser's message.  stdlib/toml.tki
+ * declares `tomlerr` as a record {msg:str}; a failure stores a one-slot box
+ * of exactly that layout (runtime-abi.md §7.3), so `e.msg` in the $err arm
+ * reads it.  Until 127.182 every failure stored the payload-less flag 1, and
+ * `e.msg` was E4034 at compile time (the type was not registered) or RT005
+ * at run time (the payload was nil).  An ok return stores 0 (127.123). */
+static int64_t toml_raise(const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box((int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)(msg && msg[0] ? msg : "toml error");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
 
 int64_t tk_toml_load_w(int64_t src) {
-    if (!src) { tk_current_error = 1; return 0; }
+    if (!src) { return toml_raise("toml: null argument"); }
     TomlResult r = toml_load((const char *)(intptr_t)src);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }
 
 /*
@@ -54,34 +59,38 @@ int64_t tk_toml_load_w(int64_t src) {
  * error sentinel instead so the $err arm actually fires.
  */
 int64_t tk_toml_section_w(int64_t tab, int64_t key) {
-    if (!tab || !key) { tk_current_error = 1; return 0; }
+    if (!tab || !key) { return toml_raise("toml: null argument"); }
     TomlResult r = toml_get_section((void *)(intptr_t)tab, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }
 
 int64_t tk_toml_str_w(int64_t tab, int64_t key) {
-    if (!tab || !key) { tk_current_error = 1; return 0; }
+    if (!tab || !key) { return toml_raise("toml: null argument"); }
     TomlStrResult r = toml_get_str((void *)(intptr_t)tab, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }
 
 /* 127.67: `retries = 0` is a value, not an error — report it through
  * tk_current_error and return the real 0. */
 int64_t tk_toml_i64_w(int64_t tab, int64_t key) {
-    if (!tab || !key) { tk_current_error = 1; return 0; }
+    if (!tab || !key) { return toml_raise("toml: null argument"); }
     TomlI64Result r = toml_get_i64((void *)(intptr_t)tab, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : r.ok;
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    return r.ok;
 }
 
 /* 127.67: `minify = false` is a value, not an error. */
 int64_t tk_toml_bool_w(int64_t tab, int64_t key) {
-    if (!tab || !key) { tk_current_error = 1; return 0; }
+    if (!tab || !key) { return toml_raise("toml: null argument"); }
     TomlBoolResult r = toml_get_bool((void *)(intptr_t)tab, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    return (int64_t)r.ok;
 }
 
 /*
@@ -94,8 +103,9 @@ int64_t tk_toml_bool_w(int64_t tab, int64_t key) {
  * tk_toml_load_w above.
  */
 int64_t tk_toml_loadfile_w(int64_t path) {
-    if (!path) { tk_current_error = 1; return 0; }
+    if (!path) { return toml_raise("toml: null argument"); }
     TomlResult r = toml_load_file((const char *)(intptr_t)path);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }

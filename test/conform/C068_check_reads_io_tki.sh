@@ -38,6 +38,10 @@ expect() {
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}/root/src/stdlib" "${WORK}/root/stdlib"
 cp "${REPO_ROOT}/stdlib/io.tki" "${WORK}/root/stdlib/io.tki"
+# 127.179: tkc recognises a stdlib directory by its tk_runtime.c (E9022
+# otherwise), so the private root must carry it for this test to reach
+# the interface loading it is about.
+cp "${REPO_ROOT}/src/stdlib/tk_runtime.c" "${WORK}/root/src/stdlib/tk_runtime.c"
 errs() { TKC_STDLIB_DIR="${WORK}/root/src/stdlib" "${TKC}" --check "$1" 2>&1 | awk '/"severity":"error"/ && match($0,/"error_code":"[A-Z][0-9]+"/){printf "%s ",substr($0,RSTART+14,RLENGTH-15)}'; }
 
 cat > "${WORK}/p.tk" <<'EOF'

@@ -30,6 +30,15 @@ extern _Thread_local int64_t tk_current_error;
 extern __thread int64_t tk_current_error;
 #endif
 
+/* 135.5b — a `T!str` error carries its message.  runtime-abi.md §7.3: for an
+ * error type of plain `str` the slot holds the message pointer itself (never
+ * 0 or 1 — a real pointer), and the $err arm binds it as the str.  Before
+ * this every failure stored the payload-less flag 1, so "not a TIFF" and
+ * "unsupported compression" were indistinguishable to a toke caller. */
+static void img_raise(const char *msg) {
+    tk_current_error = (int64_t)(intptr_t)(msg && msg[0] ? msg : "image: operation failed");
+}
+
 /* Slot offsets from stdlib/image.tki's $imgbuf field order. */
 #define IMG_W 0
 #define IMG_H 1
@@ -71,8 +80,8 @@ int64_t tk_image_decode_w(int64_t bytes) {
     uint64_t n = tk_bytes_unpack(bytes, &buf);
     ImgResult r = image_decode(buf, n);
     free(buf);
-    tk_current_error = r.is_err ? 1 : 0;
-    if (r.is_err) return 0;
+    if (r.is_err) { img_raise(r.err_msg); return 0; }
+    tk_current_error = 0;
     int64_t out = imgbuf_to_toke(r.ok);
     image_buf_free(&r.ok);
     return out;
@@ -84,8 +93,8 @@ int64_t tk_image_encode_w(int64_t buf, int64_t fmt, int64_t quality) {
     TkImgBuf b = imgbuf_from_toke(buf, &owned);
     ImgEncResult r = image_encode(b, (TkImgFmt)fmt, (uint8_t)quality);
     free(owned);
-    tk_current_error = r.is_err ? 1 : 0;
-    if (r.is_err) return tk_arr_alloc(0, 0);
+    if (r.is_err) { img_raise(r.err_msg); return tk_arr_alloc(0, 0); }
+    tk_current_error = 0;
     int64_t out = tk_bytes_pack(r.ok, r.ok_len);
     free(r.ok);
     return out;
@@ -125,8 +134,8 @@ int64_t tk_image_crop_w(int64_t buf, int64_t x, int64_t y, int64_t w, int64_t h)
     TkImgBuf b = imgbuf_from_toke(buf, &owned);
     ImgResult r = image_crop(b, (uint32_t)x, (uint32_t)y, (uint32_t)w, (uint32_t)h);
     free(owned);
-    tk_current_error = r.is_err ? 1 : 0;
-    if (r.is_err) return 0;
+    if (r.is_err) { img_raise(r.err_msg); return 0; }
+    tk_current_error = 0;
     int64_t out = imgbuf_to_toke(r.ok);
     image_buf_free(&r.ok);
     return out;
@@ -138,8 +147,8 @@ int64_t tk_image_pixelat_w(int64_t buf, int64_t x, int64_t y) {
     TkImgBuf b = imgbuf_from_toke(buf, &owned);
     PixelResult r = image_pixel_at(b, (uint32_t)x, (uint32_t)y);
     free(owned);
-    tk_current_error = r.is_err ? 1 : 0;
-    if (r.is_err) return tk_arr_alloc(0, 0);
+    if (r.is_err) { img_raise(r.err_msg); return tk_arr_alloc(0, 0); }
+    tk_current_error = 0;
     int64_t out = tk_bytes_pack(r.ok, r.ok_len);
     free(r.ok);
     return out;
@@ -167,21 +176,18 @@ int64_t tk_image_fromraw_w(int64_t bytes, int64_t width, int64_t height,
  * The other two — image_adaptive_threshold and image_convolve — are new, as
  * is the TIFF decoder behind tiffpages / tiffdecode.
  *
- * ON ERROR MESSAGES.  These wrappers follow the module's existing convention:
- * a failure sets tk_current_error to the payload-less flag 1.  The `!str` in
- * the interface cannot carry the C err_msg, because llvm.c only boxes an
- * error payload when the error type is a discriminated sum (see the
- * eu_err_type branch in resolve of `mt`); a plain `str` error binds nil.  So
- * image.c's messages are reachable from the C tests but not from toke, which
- * is a module-wide gap that predates this story and is reported with it.
+ * ON ERROR MESSAGES.  A failure stores the C err_msg in the slot (img_raise,
+ * 135.5b), and the $err arm of a `!str` call binds it, so image.c's messages
+ * reach toke.  Until 135.5b every failure stored the payload-less flag 1 and
+ * the arm bound nil.
  * ========================================================================= */
 
 static double img_i64_to_f64(int64_t i) { double d; memcpy(&d, &i, sizeof(d)); return d; }
 
 /* ImgResult -> ($imgbuf, tk_current_error) for the `imgbuf!str` returns. */
 static int64_t imgres_to_toke(ImgResult r) {
-    tk_current_error = r.is_err ? 1 : 0;
-    if (r.is_err) return 0;
+    if (r.is_err) { img_raise(r.err_msg); return 0; }
+    tk_current_error = 0;
     int64_t out = imgbuf_to_toke(r.ok);
     image_buf_free(&r.ok);
     return out;
@@ -236,7 +242,7 @@ int64_t tk_image_convolve_w(int64_t buf, int64_t kern, int64_t ksize,
     if (!kern || klen <= 0 || ksize <= 0 ||
         klen != (int64_t)ksize * (int64_t)ksize) {
         free(owned);
-        tk_current_error = 1;
+        img_raise("image.convolve: kernel length must be ksize*ksize and non-empty");
         return 0;
     }
 
@@ -254,8 +260,12 @@ int64_t tk_image_tiffpages_w(int64_t bytes) {
     uint64_t n = tk_bytes_unpack(bytes, &buf);
     int64_t pages = image_tiff_pages(buf, n);
     free(buf);
-    tk_current_error = (pages < 0) ? 1 : 0;
-    return (pages < 0) ? 0 : pages;
+    if (pages < 0) {
+        img_raise("image.tiffpages: not a TIFF file, or its IFD chain is malformed");
+        return 0;
+    }
+    tk_current_error = 0;
+    return pages;
 }
 
 /* image.tiffdecode(bytes; page) : $imgbuf!$str — one 0-based page. */
