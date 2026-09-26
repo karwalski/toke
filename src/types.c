@@ -1810,8 +1810,9 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
  *   - a call to a user function whose declared return is a scalar;
  *   - a module-form call whose interface record states a scalar return with
  *     no "error" key, and is not a `"gen":"abi"` placeholder record;
- *   - a parameter annotated with a scalar type, or a `let` annotated with
- *     one or bound to one of the above.
+ *   - a parameter annotated with a scalar type, or an immutable `let`
+ *     annotated with one or bound to one of the above (a `mut` binding is
+ *     never judged: an assignment may give it an error channel, C067).
  * Deliberately NOT judged: bool — the zero test IS the truth test, so
  * `mt file.exists(p) {$ok:v v;$err:e false}` yields exactly the bool (toke-ooke
  * test_cli.tk writes this three times); pointer-typed values (str, arrays, structs) —
@@ -1877,7 +1878,11 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
             return pt && kind_is_scalar(pt->kind) ? type_name(pt) : NULL;
         }
         const Node *bn = local_in_force(cx, nb, nlen, scr);
-        if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT))
+        /* Not a `mut` binding: one later assigned a fallible call carries
+         * that call's error channel (C067 — `let r=mut.0; r=s.toint("0");
+         * mt r {..}` takes $ok with 0), so its initialiser does not say
+         * what the match meets. */
+        if (!bn || bn->kind != NODE_BIND_STMT)
             return NULL;
         if (bn->child_count > 2 && bn->children[1]) {
             Type *lt = resolve_type(cx, bn->children[1]);
