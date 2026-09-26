@@ -1,0 +1,8 @@
+id: T011
+series: T
+description: "valid: map literal keyed by i64 with str values checks clean"
+input: |
+  m=t;
+  f=nm(k:i64):str{let m=@(1:"one";2:"two");let m2=m.set(3;"three");<m2.get(k)};
+expected_exit_code: 0
+expected_error_codes: []

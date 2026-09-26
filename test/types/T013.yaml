@@ -1,0 +1,8 @@
+id: T013
+series: T
+description: "invalid: returning str from an i64 function is E4031"
+input: |
+  m=t;
+  f=g():i64{<"x"};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

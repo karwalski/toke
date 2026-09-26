@@ -1,0 +1,8 @@
+id: T029
+series: T
+description: "invalid: m.values() is E4036 (a map has no values member)"
+input: |
+  m=t;
+  f=g():i64{let m=@("a":1);let v=m.values();<0};
+expected_exit_code: 1
+expected_error_codes: ["E4036"]

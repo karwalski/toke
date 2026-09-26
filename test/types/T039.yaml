@@ -1,0 +1,9 @@
+id: T039
+series: T
+description: "invalid: a nested interpolation is E4073"
+input: |
+  m=t;
+  f=tag(s:str):str{<"<\(s)>"};
+  f=show(n:i64):str{<"\(tag("\(n)"))"};
+expected_exit_code: 1
+expected_error_codes: ["E4073"]

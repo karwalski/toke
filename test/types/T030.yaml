@@ -1,0 +1,8 @@
+id: T030
+series: T
+description: "invalid: m.size is E4035 (a map has only len and keys)"
+input: |
+  m=t;
+  f=g():i64{let m=@("a":1);<m.size};
+expected_exit_code: 1
+expected_error_codes: ["E4035"]

@@ -1,0 +1,16 @@
+(* 123.6 / ADR-0012 (a): an array read past the end traps RT003 and exits 1.
+ * The index comes from a function call so no pass can fold it away; the
+ * line printed before the read proves the program ran up to the fault and
+ * the absence of the line after it proves the trap stopped it there.
+ * expect-exit: 1
+ * expect-stderr: RT003: index 5 out of bounds for length 3 *)
+m=cgtrapboundshigh;
+i=io:std.io;
+f=idx(n:i64):i64{<n+4};
+f=main():i64{
+  let a=@(10;20;30);
+  io.println("in range \(a.get(2))");
+  let v=a.get(idx(1));
+  io.println("FAIL read past the end returned \(v)");
+  <0
+};

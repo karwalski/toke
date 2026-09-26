@@ -1,0 +1,9 @@
+id: T007
+series: T
+description: "valid: exhaustive sum-type match with a payload per arm checks clean"
+input: |
+  m=t;
+  t=$shape{$circle:f64;$sq:f64;$named:str};
+  f=area(s:$shape):f64{<mt s {$circle:r r*r*3.0;$sq:w w*w;$named:n 0.0}};
+expected_exit_code: 0
+expected_error_codes: []

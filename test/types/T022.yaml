@@ -1,0 +1,8 @@
+id: T022
+series: T
+description: "invalid: assigning to an immutable binding is E4070"
+input: |
+  m=t;
+  f=g():i64{let x=1;x=2;<x};
+expected_exit_code: 1
+expected_error_codes: ["E4070"]

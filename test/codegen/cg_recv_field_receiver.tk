@@ -1,0 +1,33 @@
+(* 123.6 WITNESS (quarantined; new defect found by 123.6): a receiver that is
+ * a struct FIELD — or a local bound from one — dispatches to the wrong glue.
+ * `b.words.get(1)` interpolated directly prints a heap address instead of
+ * "q"; so does `ws.get(1)` after `let ws=b.words`; `.contains` on that @str
+ * answers false for a present element; `\(b.idx.len)` on a map field
+ * prints 0 although `b.idx.len==1` holds.  The
+ * same calls on a plain local (cg_recv_dispatch.tk) are right.  FAIL lines
+ * here deliberately do not print the value got: it is an address and would
+ * make the output, and so the diff-codegen signature, nondeterministic. *)
+m=cgrecvfieldreceiver;
+i=io:std.io;
+t=$bag{nums:@i64;words:@str;idx:@(str:i64)};
+f=pass(n:str;ok:bool):i64{
+  if(ok){io.println("ok \(n)")}el{io.println("FAIL \(n)")};
+  <0
+};
+f=main():i64{
+  let b=$bag{nums:@(4;5;6);words:@("p";"q");idx:@("k":9)};
+  pass("@i64 field get";b.nums.get(2)==6);
+  pass("map field get";b.idx.get("k")==9);
+  let g=b.words.get(1);
+  pass("@str field get bound first";g=="q");
+  pass("@str field get interpolated";"\(b.words.get(1))"=="q");
+  let ws=b.words;
+  pass("@str local-from-field get interpolated";"\(ws.get(1))"=="q");
+  let c:bool=ws.contains("q");
+  pass("@str local-from-field contains";c);
+  pass("map field len";b.idx.len==1);
+  pass("map field len interpolated";"\(b.idx.len)"=="1");
+  let ix=b.idx;
+  pass("map local-from-field len";ix.len==1);
+  <0
+};

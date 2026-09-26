@@ -1,0 +1,14 @@
+(* 123.6 / ADR-0012 (a): the classic off-by-one, `i<=a.len`. -O2 may drop
+ * the checks it can prove in range; it must keep the one it cannot, so the
+ * three in-range iterations run and the fourth traps.
+ * expect-exit: 1
+ * expect-stderr: RT003: index 3 out of bounds for length 3 *)
+m=cgtrapboundsloop;
+i=io:std.io;
+f=main():i64{
+  let a=@(1;2;3);
+  let s=mut.0;
+  lp(let i=0;i<=a.len as i64;i=i+1){ s=s+a.get(i); io.println("sum \(s)"); };
+  io.println("FAIL loop ran past the end");
+  <0
+};

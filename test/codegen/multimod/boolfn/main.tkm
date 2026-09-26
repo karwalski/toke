@@ -1,0 +1,17 @@
+(* 123.6 multi-module WITNESS (quarantined; new defect found by 123.6): a bool
+ * returned by a function in ANOTHER module interpolates as 1/0, while the same
+ * function declared in this module renders true/false (127.94).  Expected
+ * output below is the correct one. *)
+m=cgmm.boolmain;
+i=io:std.io;
+i=p:cgmm.pred;
+f=local(n:i64):bool{<n>100};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=main():i64{
+  cs("same-module bool fn";"\(local(500)) \(local(5))";"true false");
+  cs("cross-module bool fn";"\(p.isbig(500)) \(p.isbig(5)) \(p.always())";"true false true");
+  <0
+};

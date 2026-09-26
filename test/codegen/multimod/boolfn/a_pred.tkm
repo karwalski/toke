@@ -1,0 +1,4 @@
+(* 123.6 multi-module WITNESS, module 1 of 2: bool-returning functions. *)
+m=cgmm.pred;
+f=isbig(n:i64):bool{<n>100};
+f=always():bool{<true};

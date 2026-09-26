@@ -1,0 +1,9 @@
+id: T006
+series: T
+description: "valid: interpolation of i64, f64, bool, str and a struct field checks clean"
+input: |
+  m=t;
+  t=$r{on:bool;n:i64};
+  f=show(a:i64;x:f64;b:bool;s:str;r:$r):str{<"\(a) \(x) \(b) \(s) \(r.on) \(r.n) \(a>1)"};
+expected_exit_code: 0
+expected_error_codes: []

@@ -228,7 +228,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -857,7 +857,8 @@ TEST_CI_GREEN = \
 	test-stdlib-web-server-integration test-stdlib-ws-handshake-integration \
 	test-pkg \
 	test-stdlib-infer test-stdlib-template-email-integration \
-	test-stdlib-http test-stdlib-ws-client-tk
+	test-stdlib-http test-stdlib-ws-client-tk \
+	test-codegen
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
@@ -1208,6 +1209,13 @@ diff-codegen: $(BIN)
 	TOKE=./$(BIN) python3 scripts/diff_codegen.py --baseline test/codegen-baseline.json $(DIFF_CODEGEN_DIRS)
 diff-codegen-record: $(BIN)
 	TOKE=./$(BIN) python3 scripts/diff_codegen.py --record test/codegen-baseline.json $(DIFF_CODEGEN_DIRS)
+
+# 123.6 — the C-series codegen cases in test/codegen/ with their PINNED expected
+# results: exact stdout, exit code, and the trap line on stderr, at -O0 and -O2,
+# plus the multi-module programs diff-codegen cannot build (test/codegen/multimod).
+# diff-codegen hashes stdout at -O2 only, so it cannot tell RT003 from RT004.
+test-codegen: $(BIN)
+	TKC=./$(BIN) bash test/codegen/run_codegen.sh
 
 test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \

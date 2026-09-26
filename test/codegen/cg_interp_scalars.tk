@@ -1,0 +1,42 @@
+(* 123.6: interpolation of every signed scalar kind, floats, str, and bool in
+ * each shape 127.94 made render as true/false: literal, local, comparison,
+ * negation, && / ||, a user function's return, a struct field, and a cast.
+ * The unsigned kinds, byte, and the bool shapes still open (127.194) are
+ * witnessed separately so this program stays a clean certificate.  Floats
+ * are pinned only at exactly-representable values: the rendering of 1/3 is
+ * not specified anywhere, so no digit count is asserted here. *)
+m=cginterpscalars;
+i=io:std.io;
+t=$rec{on:bool;n:i64;f:f64;s:str};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=yes():bool{<true};
+f=gt(a:i64;b:i64):bool{<a>b};
+f=main():i64{
+  let a:i8=0-5 as i8;
+  let b:i16=300 as i16;
+  let c:i32=70000 as i32;
+  let d:i64=0-9000000000;
+  cs("signed";"\(a) \(b) \(c) \(d)";"-5 300 70000 -9000000000");
+  let big:i64=9223372036854775807;
+  cs("i64 max";"\(big)";"9223372036854775807");
+  let x:f64=2.5;
+  let y:f32=0.25 as f32;
+  cs("floats";"\(x) \(y) \(0.0-x)";"2.5 0.25 -2.5");
+  let t=true;
+  let fl=false;
+  cs("bool literal";"\(true) \(false)";"true false");
+  cs("bool local";"\(t) \(fl)";"true false");
+  cs("bool compare";"\(1<2) \(2<1) \(d==d)";"true false true");
+  cs("bool negation";"\(!t) \(!fl)";"false true");
+  cs("bool logic";"\(t&&fl) \(t||fl)";"false true");
+  cs("bool user fn";"\(yes()) \(gt(1;2)) \(gt(3;2))";"true false true");
+  let r=$rec{on:true;n:3;f:1.5;s:"hi"};
+  cs("struct fields";"\(r.on) \(r.n) \(r.f) \(r.s)";"true 3 1.5 hi");
+  cs("as str";"\(t as str) \(d as str)";"true -9000000000");
+  cs("single value is its own string";"\(r.s)";"hi");
+  cs("adjacent segments";"[\(a)\(b)\(t)]";"[-5300true]");
+  <0
+};

@@ -1,0 +1,6 @@
+ok u8 prints
+ok u16 prints
+ok u32 prints
+ok u8 compares unsigned
+ok u32 compares unsigned
+ok u64 add past 2^63

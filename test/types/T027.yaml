@@ -1,0 +1,8 @@
+id: T027
+series: T
+description: "invalid: a map get with the wrong key type is E4031"
+input: |
+  m=t;
+  f=g():i64{let m=@("a":1);<m.get(1)};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

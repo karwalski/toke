@@ -1,0 +1,10 @@
+id: T015
+series: T
+description: "invalid: too many arguments is E4026"
+input: |
+  m=t;
+  f=h(n:i64):i64{<n};
+  f=g():i64{<h(1;2)};
+expected_exit_code: 1
+expected_error_codes: ["E4026"]
+expected_absent_codes: ["E4031"]

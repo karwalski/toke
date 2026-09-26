@@ -1,0 +1,62 @@
+(* 123.6: array codegen on both lowering paths ADR-0006 D2 / 127.108 created:
+ * the IN-PLACE path for a linearly-owned accumulator (append/set in a loop)
+ * and the COPYING path whenever another binding can see the array (an alias,
+ * a user-function argument, a stored element).  The property both must keep
+ * is value semantics: no write through one binding is visible through
+ * another.  Expected values are hand-derived (sum 1..999 = 499500, etc.). *)
+m=cgarraypaths;
+i=io:std.io;
+i=s:std.str;
+f=ck(n:str;got:i64;want:i64):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got \(got) want \(want)")};
+  <0
+};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=sum(a:@i64):i64{
+  let t=mut.0;
+  lp(let i=0;i<a.len as i64;i=i+1){ t=t+a.get(i); };
+  <t
+};
+f=bump(a:@i64):@i64{ <a.set(0;a.get(0)+100) };
+f=push3(a:@i64):@i64{ let b=mut.a; b=b.append(7); b=b.append(8); b=b.append(9); <b };
+f=main():i64{
+  let a=mut.@(1;2;3);
+  let alias=a;
+  a=a.append(4);
+  a=a.set(0;50);
+  cs("alias unchanged by append and set";"\(alias.len) \(alias.get(0))";"3 1");
+  cs("original changed";"\(a.len) \(a.get(0)) \(a.get(3))";"4 50 4");
+  let b=bump(a);
+  cs("set inside a user fn copies";"\(b.get(0)) \(a.get(0))";"150 50");
+  let c=push3(a);
+  cs("append inside a user fn copies";"\(c.len) \(c.get(6)) \(a.len)";"7 9 4");
+  let acc=mut.@(0);
+  lp(let i=1;i<1000;i=i+1){ acc=acc.append(i); };
+  ck("linear append loop";sum(acc);499500);
+  ck("linear append loop len";acc.len as i64;1000);
+  lp(let i=0;i<1000;i=i+1){ acc=acc.set(i;acc.get(i)*2); };
+  ck("linear set loop";sum(acc);999000);
+  let keep=acc;
+  lp(let i=0;i<10;i=i+1){ acc=acc.set(i;0); };
+  cs("set loop after aliasing copies once";"\(sum(keep)) \(sum(acc))";"999000 998910");
+  let grow=mut.@(5;5);
+  lp(let i=0;i<3;i=i+1){ let t=sum(grow); grow=grow.append(t); };
+  cs("pass to fn then append in the same loop";"\(grow.len) \(grow.get(4))";"5 40");
+  let ss=mut.@("x");
+  ss=ss.append("y");
+  let ss2=ss;
+  ss=ss.set(0;"z");
+  cs("str array value semantics";"\(s.join("";ss)) \(s.join("";ss2))";"zy xy");
+  let cat=a+@(9;9);
+  cs("concat makes a new array";"\(cat.len) \(a.len) \(cat.get(5))";"6 4 9");
+  let nest=mut.@(@(1);@(2;3));
+  let inner=mut.nest.get(1);
+  inner=inner.append(4);
+  ck("element copy leaves the container alone";nest.get(1).len as i64;2);
+  nest=nest.set(1;inner);
+  ck("storing it back";nest.get(1).len as i64;3);
+  <0
+};

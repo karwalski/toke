@@ -1,0 +1,10 @@
+id: T017
+series: T
+description: "invalid: ! inside a function that is not fallible is E3020"
+input: |
+  m=t;
+  t=$e{$a:i64};
+  f=h(n:i64):i64!$e{<n};
+  f=g():i64{let v=h(1)!$e;<v};
+expected_exit_code: 1
+expected_error_codes: ["E3020"]

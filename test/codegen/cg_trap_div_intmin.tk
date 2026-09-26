@@ -1,0 +1,20 @@
+(* 123.6 WITNESS for 121.36 (quarantined): ADR-0012 (b) requires a guard on
+ * INT64_MIN / -1 as well as on a zero divisor.  There is none: the quotient
+ * is machine UB, and the build is not even self-consistent — measured
+ * 2026-09-25, -O0 prints -9223372036854775808 and -O2 prints 0.  Expected
+ * behaviour below is the trap; only the RT004 code is pinned, since the ADR
+ * words its message "invalid division" and the runtime today only knows
+ * "division by zero".  The FAIL line does not print the quotient, because
+ * it differs by optimisation level.
+ * expect-exit: 1
+ * expect-stderr: RT004: *)
+m=cgtrapdivintmin;
+i=io:std.io;
+f=mn():i64{<0-9223372036854775807-1};
+f=m1(n:i64):i64{<n-n-1};
+f=main():i64{
+  io.println("min \(mn()) divisor \(m1(3))");
+  let q=mn()/m1(3);
+  if(q==q){io.println("FAIL INT64_MIN / -1 did not trap")};
+  <0
+};

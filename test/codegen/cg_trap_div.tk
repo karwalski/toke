@@ -1,0 +1,13 @@
+(* 123.6 / ADR-0012 (b): integer division by a runtime zero traps RT004.
+ * expect-exit: 1
+ * expect-stderr: RT004: division by zero *)
+m=cgtrapdiv;
+i=io:std.io;
+f=zero(n:i64):i64{<n-n};
+f=main():i64{
+  let z=zero(5);
+  io.println("nonzero \(100/(z+4))");
+  let q=100/z;
+  io.println("FAIL division by zero returned \(q)");
+  <0
+};

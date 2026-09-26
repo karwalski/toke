@@ -1,0 +1,9 @@
+id: T035
+series: T
+description: "invalid: .append of i64 onto a typed-empty @($pt) is E4031 (127.164)"
+input: |
+  m=t;
+  t=$pt{x:i64};
+  f=mk():@($pt){let ps=mut.@($pt);ps=ps.append(3);<ps};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

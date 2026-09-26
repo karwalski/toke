@@ -1,0 +1,27 @@
+(* 123.6 WITNESS for 127.194 (quarantined): the two bool shapes 127.94 did not
+ * reach still interpolate as 1/0 — an element of a bool array, a bool field
+ * of a struct read off an array element (found by 123.6, same array-element
+ * root), and a bool-returning receiver method (str/array/map .contains).  Every other bool
+ * shape renders true/false (cg_interp_scalars.tk), so one program prints the
+ * same value two ways.  Expected output below is the correct one. *)
+m=cginterpboolshapes;
+i=io:std.io;
+t=$flag{on:bool;n:i64};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=main():i64{
+  let bs=@(true;false);
+  cs("bool array element";"\(bs.get(0)) \(bs.get(1))";"true false");
+  let fl=@($flag{on:true;n:1};$flag{on:false;n:2});
+  let f0=fl.get(0);
+  cs("bool field of an array element";"\(f0.on) \(fl.get(1).on)";"true false");
+  let s="hello";
+  cs("str contains";"\(s.contains("ell")) \(s.contains("z"))";"true false");
+  let m=@("a":1);
+  cs("map contains";"\(m.contains("a")) \(m.contains("b"))";"true false");
+  let a=@(1;2);
+  cs("array contains";"\(a.contains(2)) \(a.contains(3))";"true false");
+  <0
+};

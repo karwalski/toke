@@ -1,0 +1,5 @@
+ok f64
+ok str
+ok i64
+ok bool
+ok struct, returned empty and non-empty

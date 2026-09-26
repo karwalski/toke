@@ -1,0 +1,8 @@
+id: T025
+series: T
+description: "invalid: unary minus on u64 is E4031"
+input: |
+  m=t;
+  f=g(a:u64):u64{<-a};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

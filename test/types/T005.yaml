@@ -1,0 +1,10 @@
+id: T005
+series: T
+description: "valid: a 20-field struct built, read past slot 16 and returned checks clean (127.190)"
+input: |
+  m=t;
+  t=$w{f0:i64;f1:i64;f2:i64;f3:i64;f4:i64;f5:i64;f6:i64;f7:i64;f8:i64;f9:i64;f10:i64;f11:i64;f12:i64;f13:i64;f14:i64;f15:i64;f16:i64;f17:str;f18:f64;f19:bool};
+  f=mk():$w{<$w{f0:0;f1:1;f2:2;f3:3;f4:4;f5:5;f6:6;f7:7;f8:8;f9:9;f10:10;f11:11;f12:12;f13:13;f14:14;f15:15;f16:16;f17:"s";f18:1.5;f19:true}};
+  f=rd(w:$w):str{<"\(w.f16) \(w.f17) \(w.f18) \(w.f19)"};
+expected_exit_code: 0
+expected_error_codes: []

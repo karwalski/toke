@@ -1,0 +1,8 @@
+id: T036
+series: T
+description: "invalid: returning @str where @i64 is declared is E4031"
+input: |
+  m=t;
+  f=g():@i64{<@("a")};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

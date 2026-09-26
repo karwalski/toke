@@ -1,4 +1,79 @@
 {
+ "test/codegen/cg_array_paths.tk": [
+  true,
+  0,
+  "28802aecbbe1ca37"
+ ],
+ "test/codegen/cg_err_letbound_payload.tk": [
+  true,
+  0,
+  "63c6a18fd1970fdb"
+ ],
+ "test/codegen/cg_err_union.tk": [
+  true,
+  0,
+  "074cca32d04e4d01"
+ ],
+ "test/codegen/cg_interp_scalars.tk": [
+  true,
+  0,
+  "f8fb9145bca3fa2b"
+ ],
+ "test/codegen/cg_map.tk": [
+  true,
+  0,
+  "5eeb416b25841028"
+ ],
+ "test/codegen/cg_recv_dispatch.tk": [
+  true,
+  0,
+  "42a671f148af48e7"
+ ],
+ "test/codegen/cg_trap_bounds_high.tk": [
+  true,
+  1,
+  "a812a40b8d91c315"
+ ],
+ "test/codegen/cg_trap_bounds_loop.tk": [
+  true,
+  1,
+  "3ea8adea173e0514"
+ ],
+ "test/codegen/cg_trap_bounds_neg.tk": [
+  true,
+  1,
+  "0dfcfa7f24d90f75"
+ ],
+ "test/codegen/cg_trap_bounds_struct.tk": [
+  true,
+  1,
+  "d2fc0add216de0f2"
+ ],
+ "test/codegen/cg_trap_div.tk": [
+  true,
+  1,
+  "00ebd11b17cf29d6"
+ ],
+ "test/codegen/cg_trap_nil.tk": [
+  true,
+  1,
+  "346090f0504e439c"
+ ],
+ "test/codegen/cg_trap_rem.tk": [
+  true,
+  1,
+  "bcb2630962c36bb6"
+ ],
+ "test/codegen/cg_typed_empty.tk": [
+  true,
+  0,
+  "ca97e6e04da10f7b"
+ ],
+ "test/codegen/cg_wide_struct.tk": [
+  true,
+  0,
+  "149b06d8bd1a76bd"
+ ],
  "test/e2e/e2e_add.tk": [
   true,
   7,

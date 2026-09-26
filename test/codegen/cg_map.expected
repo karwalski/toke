@@ -1,0 +1,14 @@
+ok len
+ok get
+ok get miss is 0
+ok contains
+ok set new and overwrite len
+ok overwritten value
+ok keys keep insertion order
+ok value semantics: snapshot unchanged
+ok sum of values via keys
+ok user fn returns a new map, caller's is intact
+ok i64 keys
+ok accumulator through a user fn
+ok growth keeps every key
+ok growth keeps values

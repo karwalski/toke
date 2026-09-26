@@ -1,0 +1,15 @@
+(* 123.6 / ADR-0012 (a): the bounds check also guards an array of structs,
+ * where the element is a pointer and a wild read would be a wild pointer.
+ * expect-exit: 1
+ * expect-stderr: RT003: index 1 out of bounds for length 1 *)
+m=cgtrapboundsstruct;
+i=io:std.io;
+t=$pt{x:i64;y:i64};
+f=idx(n:i64):i64{<n+1};
+f=main():i64{
+  let a=@($pt{x:1;y:2});
+  io.println("in range \(a.get(0).y)");
+  let p=a.get(idx(0));
+  io.println("FAIL read past the end returned x=\(p.x)");
+  <0
+};

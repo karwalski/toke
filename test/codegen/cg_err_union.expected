@@ -1,0 +1,17 @@
+ok direct ok
+ok direct ok zero
+ok direct neg payload
+ok direct big payload
+ok direct str payload
+ok propagate ok
+ok propagate inner fails
+ok propagate outer fails
+ok propagate str payload
+ok let-bound ok
+ok let-bound err
+ok let-bound ok zero survives a later failing call
+ok record error fields
+ok record ok
+ok let-bound record error
+ok mut assigned err
+ok mut assigned ok zero

@@ -1,0 +1,8 @@
+id: T008
+series: T
+description: "valid: expression-if and else-if chains of one type check clean"
+input: |
+  m=t;
+  f=grade(n:i64):str{let g=if(n>90){"a"}el if(n>80){"b"}el{"c"};<g};
+expected_exit_code: 0
+expected_error_codes: []

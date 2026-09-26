@@ -1,0 +1,6 @@
+ok struct across modules
+ok i64 through two modules
+ok fallible ok
+ok propagated $neg
+ok propagated $far with str payload
+ok array of structs in, array of str out

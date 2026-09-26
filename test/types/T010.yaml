@@ -1,0 +1,17 @@
+id: T010
+series: T
+description: "valid: let-bound and mut-assigned fallible values matched later check clean (135.16/135.16a)"
+input: |
+  m=t;
+  t=$e{$bad:i64};
+  f=g(n:i64):i64!$e{if(n<0){<$e{$bad:n}};<n};
+  f=use():i64{
+    let r=g(1);
+    let acc=mut.0;
+    acc=g(0-1);
+    let a=mt r {$ok:v v;$err:e 0};
+    let b=mt acc {$ok:v v;$err:e 0};
+    <a+b
+  };
+expected_exit_code: 0
+expected_error_codes: []

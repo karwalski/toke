@@ -1,0 +1,8 @@
+id: T034
+series: T
+description: "invalid: .set storing str into an @i64 is E4031"
+input: |
+  m=t;
+  f=g():i64{let a=mut.@(1;2);a=a.set(0;"x");<0};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

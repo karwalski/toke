@@ -1,0 +1,11 @@
+(* 123.6 WITNESS (quarantined; new defect found by 123.6): `x as str` on a u8
+ * passes the checker and fails the build with E9003 (clang rejects the
+ * emitted IR); the same cast on an i64 or a bool works (cg_interp_scalars.tk).
+ * Expected output below is the correct rendering. *)
+m=cgunsignedasstr;
+i=io:std.io;
+f=main():i64{
+  let e:u8=200 as u8;
+  io.println(e as str);
+  <0
+};
