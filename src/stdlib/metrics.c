@@ -221,8 +221,12 @@ typedef struct {
     volatile uint64_t hist_inf;
     volatile double   duration_sum;
     volatile uint64_t duration_count;
-    /* Upstream latency (66.2.4) */
-    volatile double   upstream_sum;
+    /* Upstream latency (66.2.4).  135.3f: the sum is kept in integer
+     * MICROseconds so it can be updated with the same lock-free
+     * __sync_fetch_and_add as every other field (there is no atomic add on a
+     * double); it is rendered in seconds.  It used to be a `double` that
+     * nothing ever wrote, so the latency a caller passed in was discarded. */
+    volatile uint64_t upstream_sum_us;
     volatile uint64_t upstream_count;
 } Metrics;
 
@@ -256,8 +260,18 @@ void metrics_record_request(uint32_t status, size_t bytes, double latency_ms)
     __sync_fetch_and_add(&g_metrics.duration_count, 1);
 }
 
+/* 135.3f: this used to increment the counter and never read latency_ms, so a
+ * caller instrumenting upstream latency got a request COUNT and believed it
+ * had timings.  The latency is now accumulated and exported as
+ * http_upstream_latency_seconds_{sum,count}.  A negative or non-finite
+ * latency is a caller bug; it is counted but contributes nothing to the sum
+ * rather than wrapping the unsigned accumulator. */
 void metrics_record_upstream(double latency_ms)
 {
+    if (latency_ms > 0.0 && latency_ms < 1.0e12) {
+        uint64_t us = (uint64_t)(latency_ms * 1000.0 + 0.5);
+        __sync_fetch_and_add(&g_metrics.upstream_sum_us, us);
+    }
     __sync_fetch_and_add(&g_metrics.upstream_count, 1);
 }
 
@@ -340,11 +354,21 @@ char *metrics_prometheus(void)
     off += snprintf(buf + off, cap - (size_t)off,
         "# HELP http_upstream_requests_total Upstream requests\n"
         "# TYPE http_upstream_requests_total counter\n"
-        "http_upstream_requests_total %llu\n",
+        "http_upstream_requests_total %llu\n"
+        "# HELP http_upstream_latency_seconds Upstream latency\n"
+        "# TYPE http_upstream_latency_seconds summary\n"
+        "http_upstream_latency_seconds_sum %llu.%06llu\n"
+        "http_upstream_latency_seconds_count %llu\n",
+        (unsigned long long)g_metrics.upstream_count,
+        (unsigned long long)(g_metrics.upstream_sum_us / 1000000u),
+        (unsigned long long)(g_metrics.upstream_sum_us % 1000000u),
         (unsigned long long)g_metrics.upstream_count);
 
     #undef PM
 
+    /* The text is fixed-shape and well under cap, but a truncated exposition
+     * is a wrong answer, not a short one: refuse rather than return it. */
+    if (off < 0 || (size_t)off >= cap) { free(buf); return NULL; }
     return buf;
 }
 

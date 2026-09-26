@@ -53,7 +53,6 @@
 # ════════════════════════════════════════════════════════════════════════════
 
 compile src/stdlib/tls.c           # 2026-09-23 <openssl/ssl.h> is not on this host, so the file cannot be analysed or compiled here at all. NOT a warning backlog -- a coverage hole. Needs a -DTK_HAVE_OPENSSL-style guard or a documented build dependency. [135.3e]
-compile src/stdlib/metrics.c       # 2026-09-23 DEFECT, not noise: metrics_record_upstream(double latency_ms) at metrics.c:259 increments a counter and never reads latency_ms, so upstream latency is measured and thrown away. -Wunused-parameter is telling the truth. [135.3f]
 compile src/stdlib/soap.c          # 2026-09-23 static safe_len() at soap.c:20 is never called -- dead code that no gate saw. [135.3g]
 compile src/stdlib/tk_web_glue.c   # 2026-09-23 six unused statics: i64_to_f64:75, f64_to_i64:80, call_closure_2:97, decode_bytearray:1332, encode_bytearray:1344, tk_cache_hash:1445. This file is bundled into EVERY compiled toke program. [135.3g]
 
@@ -69,7 +68,6 @@ compile src/stdlib/tk_web_glue.c   # 2026-09-23 six unused statics: i64_to_f64:7
 nonhost src/stdlib/log.c           # 2026-09-23 TECHNIQUE, not a defect: -U__APPLE__ makes the macOS SDK's own <dirent.h> fail to parse (its __DARWIN_* alias macros are keyed on __APPLE__). Nothing in log.c is implicated. Needs a real cross-compile to cover. [135.3h]
 nonhost src/stdlib/sys_glue.c      # 2026-09-23 TECHNIQUE, not a defect: the non-Apple branch includes <sys/sysinfo.h>, a Linux header that does not exist on this host. Correct code, unbuildable here. Needs a real cross-compile to cover. [135.3h]
 nonhost src/stdlib/tls.c           # 2026-09-23 same openssl gap as the compile entry above. [135.3e]
-nonhost src/stdlib/metrics.c       # 2026-09-23 same unused-parameter defect as the compile entry above; it is not platform-conditional. [135.3f]
 nonhost src/stdlib/soap.c          # 2026-09-23 same dead safe_len() as the compile entry above; not platform-conditional. [135.3g]
 nonhost src/stdlib/tk_web_glue.c   # 2026-09-23 same six unused statics as the compile entry above; not platform-conditional. [135.3g]
 
@@ -125,7 +123,6 @@ analyze src/stdlib/llm_tool_glue.c::unix.Malloc              1   # 2026-09-23 le
 analyze src/stdlib/log.c::unix.Stream                        2   # 2026-09-23 stream used after a failed op / at EOF; needs a read of the error paths [135.3c]
 analyze src/stdlib/md.c::unix.Errno                          1   # 2026-09-23 errno read after a call that may clobber it (malloc); mechanical but must not be guessed [135.3c]
 analyze src/stdlib/md.c::unix.cstring.NullArg                1   # 2026-09-23 NULL may reach a mem/str function's pointer argument [135.3c]
-analyze src/stdlib/metrics.c::deadcode.DeadStores            1   # 2026-09-23 stored value never read [135.3c]
 analyze src/stdlib/ml_glue.c::unix.Malloc                    2   # 2026-09-23 leak/use-after-free path found by the analyzer; needs a read of the error paths [135.3c]
 analyze src/stdlib/ocr.c::osx.cocoa.RetainCount              1   # 2026-09-23 unbalanced CoreFoundation/Cocoa reference count [135.3c]
 analyze src/stdlib/pdf.c::unix.Errno                         1   # 2026-09-23 errno read after a call that may clobber it (malloc); mechanical but must not be guessed [135.3c]
