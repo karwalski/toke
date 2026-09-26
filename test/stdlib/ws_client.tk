@@ -7,10 +7,9 @@
    shape; they need a live server, so main() does not call them. main()
    checks the parts that need none: the wsconn/wsmsg record shapes.
 
-   ws.sendbytes is NOT exercised: std.ws declares it but it has no _w
-   glue, so any program naming it fails at ld with a bare
-   _tk_ws_sendbytes_w (scripts/check_tki_skiplist.txt, 131.38-followup).
-   Add it back here when that lands.
+   ws.sendbytes is named by binaryroundtrip below, so this program only
+   links while tk_ws_sendbytes_w exists (127.150). Its behaviour on the
+   wire is tested by test/conform/C107_ws_sendbytes.sh.
 
    Built, linked and run by `make test-stdlib-ws-client-tk`. *)
 m=wsclienttest;
@@ -24,6 +23,14 @@ f=echoroundtrip(url:$str):bool{
   let n=mt ws.recv(conn){$ok:m m.payload.len;$err:e 0};
   ws.close(conn);
   <n==5
+};
+
+f=binaryroundtrip(url:$str):bool{
+  let conn=mt ws.connect(url){$ok:c c;$err:e <false};
+  mt ws.sendbytes(conn;@(0;1;2;255)){$ok:v v;$err:e <false};
+  let op=mt ws.recv(conn){$ok:m m.opcode;$err:e 0};
+  ws.close(conn);
+  <op==2
 };
 
 f=recvuntilclose(url:$str):i64{

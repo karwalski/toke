@@ -1514,23 +1514,8 @@ static int64_t encode_bytearray(ByteArray ba) {
 
 
 
-/* ── chart/dashboard bridge wrappers (chart.* names, dashboard.h bodies) ──
- * chart.new / chart.bar / chart.tojson moved to chart_glue.c in 136.22 so a
- * standalone `i=chart:std.chart` links. These two call dashboard_*, so they
- * stay with the http/dashboard translation unit. */
-int64_t tk_chart_addchart_w(int64_t dash, int64_t chart) {
-    if (!dash || !chart) return 0;
-    dashboard_addchart((TkDashboard *)(intptr_t)dash, NULL, NULL,
-                        (TkChartSpec *)(intptr_t)chart, 0, 0, 1, 1);
-    return dash;
-}
-
-int64_t tk_chart_serve_w(int64_t dash, int64_t port) {
-    if (!dash) return -1;
-    TkRouterErr err = dashboard_serve((TkDashboard *)(intptr_t)dash,
-                                       (uint64_t)port);
-    return err.failed ? -1 : 0;
-}
+/* 136.33: chart.addchart / chart.serve moved to dashboard_glue.c; std.chart
+ * now lists dashboard as a dependency, since both bodies are dashboard_* calls. */
 
 /* 136.40 — the dataframe wrappers that lived here are now in
  * src/stdlib/dataframe_glue.c. Registered against std.http, they only
@@ -1739,40 +1724,7 @@ int64_t tk_validate_range_w(int64_t val, int64_t lo, int64_t hi) {
 
 
 
-/* ── auth wrappers (auth.h) ───────────────────────────────────────── */
-int64_t tk_auth_hash_w(int64_t pw) {
-    if (!pw) return 0;
-    AuthStrResult r = auth_password_hash((const char *)(intptr_t)pw);
-    if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
-
-int64_t tk_auth_verify_w(int64_t pw, int64_t hash) {
-    if (!pw || !hash) return 0;
-    return (int64_t)auth_password_verify((const char *)(intptr_t)pw,
-                                          (const char *)(intptr_t)hash);
-}
-
-int64_t tk_auth_jwt_w(int64_t claims, int64_t secret) {
-    if (!claims || !secret) return 0;
-    /* Simple JWT: treat claims as a subject string, secret as a key string */
-    JwtClaims c;
-    memset(&c, 0, sizeof(c));
-    c.subject = (const char *)(intptr_t)claims;
-    const char *sec = (const char *)(intptr_t)secret;
-    ByteArray sec_ba = { (uint8_t *)sec, strlen(sec) };
-    JwtResult r = auth_jwtsign(c, sec_ba);
-    if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
-
-int64_t tk_auth_verifyjwt_w(int64_t token, int64_t secret) {
-    if (!token || !secret) return 0;
-    const char *sec = (const char *)(intptr_t)secret;
-    ByteArray sec_ba = { (uint8_t *)sec, strlen(sec) };
-    JwtVerifyResult r = auth_jwtverify((const char *)(intptr_t)token, sec_ba);
-    return r.is_err ? 0 : 1;
-}
+/* 136.33: the auth.hash/jwt/verify/verifyjwt wrappers moved to auth_glue.c. */
 
 /* ── rate limit — token bucket with per-key partitioning ───────────── */
 
@@ -1946,11 +1898,7 @@ int64_t tk_tool_call_w(int64_t name, int64_t args) {
     return 0; /* tool not found */
 }
 
-/* ── fmt wrapper ──────────────────────────────────────────────────── */
-int64_t tk_fmt_print_w(int64_t v) {
-    printf("%lld", (long long)v);
-    return 0;
-}
+/* 136.33: fmt.print moved to fmt_glue.c. */
 
 /* ── task wrappers (task.h) ───────────────────────────────────────── */
 int64_t tk_task_scope_w(void) { return tk_task_scope(); }

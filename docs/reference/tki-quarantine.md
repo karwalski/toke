@@ -18,8 +18,8 @@ An entry below is declared as a `func` export in a `stdlib/*.tki` interface file
 
 | `.tki` func exports | 929 |
 |---|---|
-| Resolve to a defined symbol | 881 |
-| **Quarantined (no defined symbol)** | **48** |
+| Resolve to a defined symbol | 882 |
+| **Quarantined (no defined symbol)** | **47** |
 | Stale skips (quarantined but now resolving) | 0 |
 
 A stale skip fails `make check-tki`, so the skiplist cannot silently outlive the gap it records: the moment an export gets its glue, the gate demands the line be deleted.
@@ -143,9 +143,3 @@ An export whose symbol **exists** but whose declared **arity** disagrees with th
 | Export | Expected symbol | Reason |
 |---|---|---|
 | `tpl.html` | `tk_template_html_w` | 2026-09-19 no _w glue for tpl.html; no C impl [131.38-followup] |
-
-### `ws` (1)
-
-| Export | Expected symbol | Reason |
-|---|---|---|
-| `ws.sendbytes` | `tk_ws_sendbytes_w` | 2026-09-19 no _w glue; core=ws_sendbytes [131.38-followup] |

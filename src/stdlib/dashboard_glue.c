@@ -46,3 +46,24 @@ int64_t tk_dashboard_serve_w(int64_t dash, int64_t port) {
                                        (uint64_t)port);
     return err.failed ? -1 : 0;
 }
+
+/* ── chart.addchart / chart.serve (136.33) ────────────────────────────
+ * chart.* names with dashboard_* bodies. 136.22 left them in tk_web_glue.c
+ * (registered under std.http) so a plain chart import would not drag in the
+ * dashboard link set -- which meant `i=chart:std.chart` calling either one
+ * failed at link unless the program also imported std.http. They live with
+ * the dashboard code they call, and src/stdlib_deps.c lists dashboard as a
+ * dependency of chart. Bodies unchanged. */
+int64_t tk_chart_addchart_w(int64_t dash, int64_t chart) {
+    if (!dash || !chart) return 0;
+    dashboard_addchart((TkDashboard *)(intptr_t)dash, NULL, NULL,
+                        (TkChartSpec *)(intptr_t)chart, 0, 0, 1, 1);
+    return dash;
+}
+
+int64_t tk_chart_serve_w(int64_t dash, int64_t port) {
+    if (!dash) return -1;
+    TkRouterErr err = dashboard_serve((TkDashboard *)(intptr_t)dash,
+                                       (uint64_t)port);
+    return err.failed ? -1 : 0;
+}

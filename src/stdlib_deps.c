@@ -95,7 +95,10 @@ static const StdlibModule stdlib_table[] = {
     { "sys",           "sys.c sys_glue.c",                       "",                                                                 "" },
     { "image",         "image.c image_glue.c",                  "",                                                                 "" },  /* 136.32 */
     { "canvas",        "canvas.c canvas_glue.c",                              "",                                                                 "" },
-    { "chart",         "chart.c chart_glue.c",                  "",                                                                 "" },
+    /* 136.33: chart.addchart / chart.serve are dashboard_* calls, so their
+     * wrappers live in dashboard_glue.c and chart depends on dashboard. The
+     * cycle (dashboard lists chart) is harmless: the closure is a set. */
+    { "chart",         "chart.c chart_glue.c",                  "dashboard",                                                        "" },
     { "html",          "html.c html_glue.c",                                "",                                                                 "" },
     { "svg",           "svg.c svg_glue.c",                                 "",                                                                 "-lm" },
     { "llm",           "llm.c llm_glue.c",                      "",                                                                 "" },

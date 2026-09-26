@@ -1533,7 +1533,19 @@ static int is_num_parse_wrapper(const char *name) {
            !strcmp(name, "tk_str_toi64_w")      ||
            !strcmp(name, "tk_str_toint64_w")    ||
            !strcmp(name, "tk_toml_bool_w")      ||  /* 127.67 */
-           !strcmp(name, "tk_toml_i64_w");          /* 127.67 */
+           !strcmp(name, "tk_toml_i64_w")       ||  /* 127.67 */
+           /* 136.30: the same collision in the other two serialisation
+            * modules. toon_glue.c (136.16) and yaml_glue.c (136.32) already
+            * keep tk_current_error truthful and return the real value, but a
+            * `n: 0`, `b: false` or `x: 0.0` still took the $err arm because
+            * the match tested the value. f64 belongs here too: 0.0's bit
+            * pattern IS the 0 sentinel. */
+           !strcmp(name, "tk_toon_i64_w")       ||
+           !strcmp(name, "tk_toon_bool_w")      ||
+           !strcmp(name, "tk_toon_f64_w")       ||
+           !strcmp(name, "tk_yaml_i64_w")       ||
+           !strcmp(name, "tk_yaml_bool_w")      ||
+           !strcmp(name, "tk_yaml_f64_w");
 }
 
 /*

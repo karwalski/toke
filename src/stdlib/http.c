@@ -1512,11 +1512,13 @@ static int bind_listen(const char *host, uint64_t port)
         return -1;
     }
 
+    /* 127.203: SO_REUSEADDR only. SO_REUSEPORT let a second server on a busy
+     * port bind it and silently split its connections with the first. The
+     * pre-fork pool never needed it: the supervisor binds once here and every
+     * worker (and every SIGHUP respawn) accept()s on the inherited fd.
+     * REUSEADDR stays so a restart can rebind a port held in TIME_WAIT. */
     int opt = 1;
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#ifdef SO_REUSEPORT
-    setsockopt(srv, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
-#endif
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));

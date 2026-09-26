@@ -9,12 +9,21 @@
 #include <stdint.h>
 #include <stdio.h>
 
+/*
+ * Story 136.30 — test.assert marks the test failed.
+ *
+ * This wrapper reimplemented the check instead of calling tk_test_assert, so
+ * a false condition printed "ASSERT FAILED" and returned 0 but never called
+ * mark_current_test_failed(): inside test.run the test was still counted as
+ * PASS and test.report exited 0. That is the family of 127.68 and 134.17 --
+ * an assertion that cannot fail. The core already does the whole job (the
+ * structured DIAGNOSTIC line and the mark), so delegate, as 136.21 did for
+ * asserteq/assertne.
+ */
 int64_t tk_test_assert_w(int64_t cond, int64_t msg) {
-    if (!cond) {
-        const char *m = msg ? (const char *)(intptr_t)msg : "assertion failed";
-        fprintf(stderr, "ASSERT FAILED: %s\n", m);
-    }
-    return cond ? 1 : 0;
+    return tk_test_assert(cond ? 1 : 0,
+                          msg ? (const char *)(intptr_t)msg
+                              : "assertion failed") ? 1 : 0;
 }
 /*
  * Story 136.21 — asserteq / assertne take the message and compare the strings.

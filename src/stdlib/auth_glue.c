@@ -107,3 +107,42 @@ int64_t tk_auth_passwordverify_w(int64_t pw_i64, int64_t hash_i64) {
     if (!p || !h) return 0;
     return (int64_t)auth_password_verify(p, h);
 }
+
+/* ── i64-shaped auth wrappers (136.33) ───────────────────────────────
+ * auth.hash / auth.verify / auth.jwt / auth.verifyjwt lived in tk_web_glue.c,
+ * which src/stdlib_deps.c registers under std.http, so `i=auth:std.auth` alone
+ * type-checked and then failed at link on tk_auth_hash_w. Moved here
+ * verbatim; no behaviour changes. */
+int64_t tk_auth_hash_w(int64_t pw) {
+    if (!pw) return 0;
+    AuthStrResult r = auth_password_hash((const char *)(intptr_t)pw);
+    if (r.is_err || !r.ok) return 0;
+    return (int64_t)(intptr_t)r.ok;
+}
+
+int64_t tk_auth_verify_w(int64_t pw, int64_t hash) {
+    if (!pw || !hash) return 0;
+    return (int64_t)auth_password_verify((const char *)(intptr_t)pw,
+                                          (const char *)(intptr_t)hash);
+}
+
+int64_t tk_auth_jwt_w(int64_t claims, int64_t secret) {
+    if (!claims || !secret) return 0;
+    /* Simple JWT: treat claims as a subject string, secret as a key string */
+    JwtClaims c;
+    memset(&c, 0, sizeof(c));
+    c.subject = (const char *)(intptr_t)claims;
+    const char *sec = (const char *)(intptr_t)secret;
+    ByteArray sec_ba = { (uint8_t *)sec, strlen(sec) };
+    JwtResult r = auth_jwtsign(c, sec_ba);
+    if (r.is_err || !r.ok) return 0;
+    return (int64_t)(intptr_t)r.ok;
+}
+
+int64_t tk_auth_verifyjwt_w(int64_t token, int64_t secret) {
+    if (!token || !secret) return 0;
+    const char *sec = (const char *)(intptr_t)secret;
+    ByteArray sec_ba = { (uint8_t *)sec, strlen(sec) };
+    JwtVerifyResult r = auth_jwtverify((const char *)(intptr_t)token, sec_ba);
+    return r.is_err ? 0 : 1;
+}

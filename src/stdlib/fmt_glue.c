@@ -15,6 +15,7 @@
 #include "fmt.h"
 #include "tk_array.h"
 #include <stdint.h>
+#include <stdio.h>
 
 static int64_t ret_str(char *s) {
     return (int64_t)(intptr_t)(s ? s : "");
@@ -36,4 +37,11 @@ int64_t tk_fmt_strs_w(int64_t xs, int64_t sep) {
 
 int64_t tk_fmt_pad_w(int64_t s, int64_t width, int64_t left) {
     return ret_str(fmt_pad((const char *)(intptr_t)s, width, left != 0));
+}
+
+/* fmt.print (136.33): moved verbatim from tk_web_glue.c, where it only linked
+ * when a program also imported std.http. */
+int64_t tk_fmt_print_w(int64_t v) {
+    printf("%lld", (long long)v);
+    return 0;
 }
