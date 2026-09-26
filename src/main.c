@@ -73,6 +73,7 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
 #include "lint.h"
 #include "tkir.h"
 #include "stdlib_deps.h"
+#include "diag.h"    /* 123.12c: diag_set_keep, diag_error_offsets */
 
 /* Forward declarations for stubs not yet exported by their headers */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -819,6 +820,107 @@ static int source_needs_migration(const char *sbuf, long slen, const RunOpts *o)
     return needs;
 }
 
+/* ── 123.12c: type-check after name-resolution errors ─────────────────
+ *
+ * Before 123.12c a file with any name-resolution error stopped there, so a
+ * type error in an unrelated function was reported only on the NEXT compile.
+ * Continuing into the type checker is safe only where no name error can
+ * cascade, so the rule is narrow and every clause is conservative:
+ *
+ *   1. Every name error must be placed (diag_error_offsets complete) and must
+ *      lie inside the BODY of a top-level function -- at or after its first
+ *      statement.  An error in a signature, a type declaration, a
+ *      constant, an import or a duplicate definition changes what other
+ *      declarations see, so any such error means no continuation at all.
+ *   2. A function containing a name error is TAINTED.  Its signature is intact
+ *      (rule 1), so callers still type-check against it; its body is not
+ *      trusted, so every diagnostic inside it is dropped.
+ *   3. Only ERRORS located inside an untainted top-level function are kept.
+ *      Warnings, and anything outside a function (module-level constants and
+ *      types), are dropped: a file with name errors reports what it reported
+ *      before plus type errors in functions the name errors never touched.
+ *
+ * The exit status is ECOMPILE either way; this changes only what is reported.
+ * Measured against the tree and a corpus sample in the 123.12 report: a
+ * single injected name error in an otherwise clean program must gain no
+ * diagnostic.  Declaration region = [start of decl, start of next top-level
+ * decl), since Node carries no end offset. */
+typedef struct {
+    const Node *ast;
+    int         src_len;
+    const char *taint;      /* per top-level child: 1 = tainted */
+} RecoverCtx;
+
+static int decl_region_end(const Node *ast, int i, int src_len)
+{
+    for (int j = i + 1; j < ast->child_count; j++)
+        if (ast->children[j]) return ast->children[j]->start;
+    return src_len + 1;
+}
+
+/* Index of the top-level decl whose region holds `off`, or -1. */
+static int decl_index_at(const Node *ast, int off, int src_len)
+{
+    for (int i = 0; i < ast->child_count; i++) {
+        const Node *d = ast->children[i];
+        if (!d) continue;
+        if (off >= d->start && off < decl_region_end(ast, i, src_len)) return i;
+    }
+    return -1;
+}
+
+/* Offset of the first statement of a function body, or -1.  The
+ * NODE_STMT_LIST itself carries the FUNCTION's start offset (the parser
+ * stamps it with the decl's first token), so it cannot mark where the body
+ * begins; the first statement can.  An empty body has no statement and
+ * therefore cannot hold a name error, so -1 there is also the safe answer. */
+static int fn_body_start(const Node *fn)
+{
+    for (int k = 0; k < fn->child_count; k++) {
+        const Node *b = fn->children[k];
+        if (b && b->kind == NODE_STMT_LIST)
+            return (b->child_count > 0 && b->children[0]) ? b->children[0]->start : -1;
+    }
+    return -1;
+}
+
+static int recover_keep(DiagSeverity sev, int code, int off, void *vctx)
+{
+    const RecoverCtx *c = (const RecoverCtx *)vctx;
+    (void)code;
+    if (sev != DIAG_ERROR) return 0;
+    int i = decl_index_at(c->ast, off, c->src_len);
+    if (i < 0 || c->taint[i]) return 0;
+    return c->ast->children[i]->kind == NODE_FUNC_DECL;
+}
+
+/* Returns 1 if the type checker was run in recovery mode, 0 if the name
+ * errors are not all safely placed (the caller then stops as before). */
+static int typecheck_after_name_errors(Node *ast, const char *sbuf, int slen,
+                                       NameEnv *ne, Arena *arena)
+{
+    const int *offs = NULL; int n = 0;
+    if (!ast || ast->child_count <= 0) return 0;
+    if (!diag_error_offsets(&offs, &n) || n <= 0) return 0;
+    char *taint = (char *)calloc((size_t)ast->child_count, 1);
+    if (!taint) return 0;
+    for (int e = 0; e < n; e++) {
+        int i = decl_index_at(ast, offs[e], slen);
+        const Node *d = (i >= 0) ? ast->children[i] : NULL;
+        int bs = (d && d->kind == NODE_FUNC_DECL) ? fn_body_start(d) : -1;
+        if (bs < 0 || offs[e] < bs) { free(taint); return 0; }  /* rule 1 */
+        taint[i] = 1;
+    }
+    RecoverCtx ctx = { ast, slen, taint };
+    TypeEnv te;
+    diag_set_keep(recover_keep, &ctx);
+    (void)type_check(ast, sbuf, ne, arena, &te);
+    diag_set_keep(NULL, NULL);
+    free(taint);
+    return 1;
+}
+
+
 /*
  * process_file — run ONE source file through the pipeline in the mode
  * selected by `o`. This is the single per-file dispatch: every positional
@@ -1021,6 +1123,7 @@ static int process_file(const char *src, const RunOpts *o)
     /* Resolve names */
     NameEnv ne;
     if (resolve_names(ast, sbuf, &st, arena, &ne, search_paths, search_path_count) < 0 || diag_error_count() > 0) {
+        (void)typecheck_after_name_errors(ast, sbuf, (int)slen, &ne, arena);
         symtab_free(&st); rc = ECOMPILE; goto done;
     }
     progress_update(50);
