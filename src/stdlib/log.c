@@ -92,51 +92,6 @@ void tk_log_set_level(const char *level)
 }
 
 /* -------------------------------------------------------------------------
- * JSON escaping
- *
- * Writes the JSON-escaped form of src into dst (which must be large enough).
- * Returns the number of bytes written (not counting the NUL terminator).
- * ---------------------------------------------------------------------- */
-
-static int json_escape(char *dst, size_t dst_size, const char *src)
-{
-    int written = 0;
-    if (!src) {
-        /* Write JSON null literal */
-        if (dst_size >= 5) {
-            memcpy(dst, "null", 4);
-            dst[4] = '\0';
-            return 4;
-        }
-        return 0;
-    }
-    for (const char *p = src; *p; p++) {
-        unsigned char c = (unsigned char)*p;
-        /* Ensure there is always room for the longest escape (6 bytes) + NUL */
-        if ((size_t)written + 8 >= dst_size) break;
-        switch (c) {
-        case '"':  dst[written++] = '\\'; dst[written++] = '"';  break;
-        case '\\': dst[written++] = '\\'; dst[written++] = '\\'; break;
-        case '\n': dst[written++] = '\\'; dst[written++] = 'n';  break;
-        case '\r': dst[written++] = '\\'; dst[written++] = 'r';  break;
-        case '\t': dst[written++] = '\\'; dst[written++] = 't';  break;
-        default:
-            if (c < 0x20) {
-                /* ASCII control character → \uXXXX */
-                written += snprintf(dst + written,
-                                    dst_size - (size_t)written,
-                                    "\\u%04x", c);
-            } else {
-                dst[written++] = (char)c;
-            }
-            break;
-        }
-    }
-    dst[written] = '\0';
-    return written;
-}
-
-/* -------------------------------------------------------------------------
  * Timestamp helper
  *
  * Writes an ISO-8601 UTC timestamp with millisecond precision into buf.
@@ -162,95 +117,400 @@ static void current_iso8601(char *buf, size_t buf_size)
     snprintf(buf, buf_size, "%s.%03dZ", date_buf, ms);
 }
 
-/* -------------------------------------------------------------------------
- * Core emit function
+/* =========================================================================
+ * 122.8 — sink-safe encoding, redaction, and the security-event stream
+ *
+ * ENCODING.  Every byte a caller supplies reaches a log sink through one of
+ * three encoders, so no sink ever receives a raw control byte:
+ *   enc_json      JSON string body: " \ and every byte < 0x20 escaped (\n \r
+ *                 \t, else \u00XX), plus 0x7f.  Used by the JSON line format
+ *                 and the NDJSON access log.
+ *   enc_text      text-format fields, logfmt-style: a value that is empty or
+ *                 holds a space, '=', '"', '\' or a control byte is written
+ *                 in double quotes with \" \\ \n \r \t \xHH escapes; anything
+ *                 else is written bare.  The message itself is written bare
+ *                 with the same control/backslash escapes (no quoting).
+ *   enc_clf       Combined Log Format, as Apache's ap_escape_logitem: " and \
+ *                 backslash-escaped, control bytes as \n \r \t or \xHH; in
+ *                 the unquoted positions (ip, method) a space is \x20 too.
+ * Before 122.8 the text format wrote msg/key/value raw, the combined access
+ * log wrote path/referer/user-agent raw inside its quotes, and the NDJSON
+ * access log escaped only " and \: a request path or User-Agent carrying
+ * "\r\n" wrote a second, forged line into every one of them.
+ *
+ * REDACTION.  A field whose KEY names a secret has its value replaced by
+ * [REDACTED] in every format; bearer/basic credentials and JWTs are masked
+ * wherever they appear in a message or value; and in the access log the
+ * values of secret-named query parameters in the path and referer are
+ * masked.  A key matches when, lower-cased with '_' '-' '.' removed, it
+ * CONTAINS one of the configured names.  Defaults: password passwd secret
+ * token apikey authorization cookie session credential privatekey.
+ * TK_LOG_REDACT in the environment replaces the list (comma-separated) and
+ * TK_LOG_REDACT=off disables key redaction; tk_log_redact_keys() does the
+ * same from C.  Credential/JWT masking is always on.
+ *
+ * SECURITY STREAM.  tk_log_security(event, fields, n) writes one line with
+ * level "security" and an "event" field.  It is never filtered by the log
+ * level, and tk_log_security_set_output() can send it to its own file.
  * ---------------------------------------------------------------------- */
 
-/* -------------------------------------------------------------------------
- * emit_json — write a JSON-format log line
- * ---------------------------------------------------------------------- */
+#include "strbuf.h"
 
-static int emit_json(const char *level_str,
-                     const char *msg, const char **fields, int field_count)
+#define TK_REDACTED "[REDACTED]"
+#define TK_REDACT_MAX 32
+
+static const char *k_redact_default[] = {
+    "password", "passwd", "secret", "token", "apikey", "authorization",
+    "cookie", "session", "credential", "privatekey", NULL
+};
+static char *g_redact_keys[TK_REDACT_MAX];  /* normalised; NULL-terminated */
+static int   g_redact_init = 0;             /* 0 = not yet read from env  */
+static int   g_redact_count = 0;
+
+/* normalise a key for matching: lower-case, drop '_' '-' '.' */
+static void redact_norm(TkStrBuf *b, const char *k)
 {
-    FILE *out = output_stream();
+    for (; k && *k; k++) {
+        unsigned char c = (unsigned char)*k;
+        if (c == '_' || c == '-' || c == '.') continue;
+        strbuf_putc(b, (char)((c >= 'A' && c <= 'Z') ? c + 32 : c));
+    }
+}
 
-    /* Timestamp */
+static void redact_clear(void)
+{
+    for (int i = 0; i < g_redact_count; i++) free(g_redact_keys[i]);
+    g_redact_count = 0;
+    g_redact_keys[0] = NULL;
+}
+
+static void redact_add(const char *k, size_t n)
+{
+    if (g_redact_count >= TK_REDACT_MAX - 1 || n == 0) return;
+    TkStrBuf raw = TK_STRBUF_INIT, nb = TK_STRBUF_INIT;
+    strbuf_appendn(&raw, k, n);
+    redact_norm(&nb, strbuf_cstr(&raw));
+    strbuf_free(&raw);
+    char *s = strbuf_take(&nb);
+    if (!s) return;
+    if (!*s) { free(s); return; }
+    g_redact_keys[g_redact_count++] = s;
+    g_redact_keys[g_redact_count] = NULL;
+}
+
+/* tk_log_redact_keys — replace the key list.  NULL restores the defaults;
+ * "" or "off" disables key-based redaction; otherwise a comma-separated
+ * list of names.  Returns the number of names now active. */
+int tk_log_redact_keys(const char *csv)
+{
+    redact_clear();
+    g_redact_init = 1;
+    if (!csv) {
+        for (int i = 0; k_redact_default[i]; i++)
+            redact_add(k_redact_default[i], strlen(k_redact_default[i]));
+        return g_redact_count;
+    }
+    if (strcmp(csv, "off") == 0) return 0;
+    const char *p = csv;
+    while (*p) {
+        const char *e = strchr(p, ',');
+        size_t n = e ? (size_t)(e - p) : strlen(p);
+        while (n && (*p == ' ')) { p++; n--; }
+        while (n && p[n - 1] == ' ') n--;
+        redact_add(p, n);
+        if (!e) break;
+        p = e + 1;
+    }
+    return g_redact_count;
+}
+
+static void redact_ensure(void)
+{
+    if (!g_redact_init) tk_log_redact_keys(getenv("TK_LOG_REDACT"));
+}
+
+static int redact_key_matches(const char *k)
+{
+    redact_ensure();
+    if (!k || g_redact_count == 0) return 0;
+    TkStrBuf nb = TK_STRBUF_INIT;
+    redact_norm(&nb, k);
+    int hit = 0;
+    for (int i = 0; i < g_redact_count && !hit; i++)
+        if (strstr(strbuf_cstr(&nb), g_redact_keys[i])) hit = 1;
+    strbuf_free(&nb);
+    return hit;
+}
+
+static int is_tokch(unsigned char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
+           c == '~' || c == '+' || c == '/' || c == '=';
+}
+
+static int is_b64url(unsigned char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '-' || c == '_';
+}
+
+/* length of a JWT (three non-empty base64url segments, the first starting
+ * "eyJ") at s, or 0 */
+static size_t jwt_len(const char *s)
+{
+    if (strncmp(s, "eyJ", 3) != 0) return 0;
+    size_t i = 0;
+    for (int seg = 0; seg < 3; seg++) {
+        size_t st = i;
+        while (is_b64url((unsigned char)s[i])) i++;
+        if (i == st) return 0;
+        if (seg < 2) { if (s[i] != '.') return 0; i++; }
+    }
+    return i;
+}
+
+/* redact_value — the value with credentials masked (malloc'd).  `mask_all`
+ * replaces the whole value. */
+static char *redact_value(const char *v, int mask_all)
+{
+    if (!v) return NULL;
+    if (mask_all) return strdup(TK_REDACTED);
+    TkStrBuf b = TK_STRBUF_INIT;
+    const char *p = v;
+    while (*p) {
+        size_t jl;
+        if ((strncmp(p, "Bearer ", 7) == 0 || strncmp(p, "bearer ", 7) == 0 ||
+             strncmp(p, "Basic ", 6) == 0 || strncmp(p, "basic ", 6) == 0) &&
+            (p == v || !is_tokch((unsigned char)p[-1]))) {
+            size_t sp = (p[1] == 'e' || p[1] == 'E') ? 7 : 6;
+            size_t t = 0;
+            while (is_tokch((unsigned char)p[sp + t])) t++;
+            if (t > 0) {
+                strbuf_appendn(&b, p, sp);
+                strbuf_append(&b, TK_REDACTED);
+                p += sp + t;
+                continue;
+            }
+        }
+        if ((p == v || !is_b64url((unsigned char)p[-1])) && (jl = jwt_len(p)) > 0) {
+            strbuf_append(&b, TK_REDACTED);
+            p += jl;
+            continue;
+        }
+        strbuf_putc(&b, *p++);
+    }
+    return strbuf_take(&b);
+}
+
+/* redact_query — mask the values of secret-named query parameters in a
+ * request target or URL, then apply redact_value to the result. */
+static char *redact_query(const char *target)
+{
+    if (!target) return NULL;
+    const char *q = strchr(target, '?');
+    if (!q) return redact_value(target, 0);
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_appendn(&b, target, (size_t)(q - target) + 1);
+    const char *p = q + 1;
+    while (*p) {
+        const char *amp = strchr(p, '&');
+        const char *end = amp ? amp : p + strlen(p);
+        const char *eq = memchr(p, '=', (size_t)(end - p));
+        if (eq) {
+            TkStrBuf k = TK_STRBUF_INIT;
+            strbuf_appendn(&k, p, (size_t)(eq - p));
+            int hit = redact_key_matches(strbuf_cstr(&k));
+            strbuf_free(&k);
+            strbuf_appendn(&b, p, (size_t)(eq - p) + 1);
+            if (hit) strbuf_append(&b, TK_REDACTED);
+            else     strbuf_appendn(&b, eq + 1, (size_t)(end - eq - 1));
+        } else {
+            strbuf_appendn(&b, p, (size_t)(end - p));
+        }
+        if (!amp) break;
+        strbuf_putc(&b, '&');
+        p = amp + 1;
+    }
+    char *s = strbuf_take(&b);
+    if (!s) return NULL;
+    char *r = redact_value(s, 0);
+    free(s);
+    return r;
+}
+
+static void enc_json(TkStrBuf *b, const char *s)
+{
+    if (!s) { strbuf_append(b, "null"); return; }
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        switch (*p) {
+        case '"':  strbuf_append(b, "\\\""); break;
+        case '\\': strbuf_append(b, "\\\\"); break;
+        case '\n': strbuf_append(b, "\\n");  break;
+        case '\r': strbuf_append(b, "\\r");  break;
+        case '\t': strbuf_append(b, "\\t");  break;
+        default:
+            if (*p < 0x20 || *p == 0x7f) strbuf_appendf(b, "\\u%04x", *p);
+            else                         strbuf_putc(b, (char)*p);
+        }
+    }
+}
+
+/* control bytes, and backslash, escaped; `quote` also escapes '"'; `space`
+ * also escapes ' ' (unquoted CLF positions). */
+static void enc_ctl(TkStrBuf *b, const char *s, int quote, int space)
+{
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        unsigned char c = *p;
+        if (c == '\\')                 strbuf_append(b, "\\\\");
+        else if (c == '"' && quote)    strbuf_append(b, "\\\"");
+        else if (c == '\n')            strbuf_append(b, "\\n");
+        else if (c == '\r')            strbuf_append(b, "\\r");
+        else if (c == '\t')            strbuf_append(b, "\\t");
+        else if (c < 0x20 || c == 0x7f || (c == ' ' && space))
+                                       strbuf_appendf(b, "\\x%02x", c);
+        else                           strbuf_putc(b, (char)c);
+    }
+}
+
+/* logfmt value: bare when unambiguous, else quoted and escaped */
+static void enc_text(TkStrBuf *b, const char *s)
+{
+    int q = (*s == '\0');
+    for (const unsigned char *p = (const unsigned char *)s; *p && !q; p++)
+        if (*p <= ' ' || *p == '=' || *p == '"' || *p == '\\' || *p == 0x7f) q = 1;
+    if (!q) { strbuf_append(b, s); return; }
+    strbuf_putc(b, '"');
+    enc_ctl(b, s, 1, 0);
+    strbuf_putc(b, '"');
+}
+
+static void enc_clf(TkStrBuf *b, const char *s, int quoted)
+{
+    if (!s) { strbuf_putc(b, '-'); return; }
+    enc_ctl(b, s, 1, !quoted);
+}
+
+/* The security stream's own sink (NULL → the main log output). */
+static FILE *g_secfile = NULL;
+
+int tk_log_security_set_output(const char *path)
+{
+    if (g_secfile) { fclose(g_secfile); g_secfile = NULL; }
+    if (!path) return 1;
+    g_secfile = fopen(path, "a");
+    return g_secfile ? 1 : 0;
+}
+
+/* write one finished line with a single fwrite, so concurrent writers to the
+ * same file never interleave inside a line */
+static int write_line(FILE *out, TkStrBuf *b)
+{
+    if (b->oom) { strbuf_free(b); return 0; }
+    fwrite(strbuf_cstr(b), 1, b->len, out);
+    fflush(out);
+    strbuf_free(b);
+    return 1;
+}
+
+/* -------------------------------------------------------------------------
+ * emit_json / emit_text — one line in the configured format.  `level_str` is
+ * the level name; `event` (security stream only) adds an "event" field.
+ * ---------------------------------------------------------------------- */
+
+static int emit_json_to(FILE *out, const char *level_str, const char *event,
+                        const char *msg, const char **fields, int field_count)
+{
     char ts_buf[32];
     current_iso8601(ts_buf, sizeof(ts_buf));
 
-    /* Escaped message */
-    size_t msg_esc_size = msg ? (strlen(msg) * 6 + 8) : 8;
-    char *msg_esc = malloc(msg_esc_size);
-    if (!msg_esc) return 0;
-    json_escape(msg_esc, msg_esc_size, msg);
-
-    /* Begin JSON line: level and msg */
-    fprintf(out, "{\"level\":\"%s\",\"msg\":\"%s\"", level_str, msg_esc);
-    free(msg_esc);
+    TkStrBuf b = TK_STRBUF_INIT;
+    char *m = redact_value(msg, 0);
+    strbuf_appendf(&b, "{\"level\":\"%s\",\"msg\":\"", level_str);
+    enc_json(&b, msg ? m : NULL);
+    strbuf_putc(&b, '"');
+    free(m);
+    if (event) {
+        strbuf_append(&b, ",\"event\":\"");
+        enc_json(&b, event);
+        strbuf_putc(&b, '"');
+    }
 
     /* Inline fields as top-level keys */
     int pairs = (field_count >= 2) ? (field_count / 2) : 0;
     for (int i = 0; i < pairs; i++) {
         const char *k = fields[i * 2];
         const char *v = fields[i * 2 + 1];
-
-        size_t k_esc_size = k ? (strlen(k) * 6 + 8) : 8;
-        size_t v_esc_size = v ? (strlen(v) * 6 + 8) : 8;
-
-        char *k_esc = malloc(k_esc_size);
-        char *v_esc = malloc(v_esc_size);
-        if (!k_esc || !v_esc) {
-            free(k_esc);
-            free(v_esc);
-            break;
-        }
-        json_escape(k_esc, k_esc_size, k);
-        json_escape(v_esc, v_esc_size, v);
-
-        fprintf(out, ",\"%s\":\"%s\"", k_esc, v_esc);
-
-        free(k_esc);
-        free(v_esc);
+        char *rv = redact_value(v, redact_key_matches(k));
+        strbuf_append(&b, ",\"");
+        enc_json(&b, k);
+        strbuf_append(&b, "\":\"");
+        enc_json(&b, v ? rv : NULL);
+        strbuf_putc(&b, '"');
+        free(rv);
     }
 
-    fprintf(out, ",\"ts\":\"%s\"}\n", ts_buf);
-    fflush(out);
-    return 1;
+    strbuf_appendf(&b, ",\"ts\":\"%s\"}\n", ts_buf);
+    return write_line(out, &b);
 }
 
-/* -------------------------------------------------------------------------
- * emit_text — write a human-readable text log line
- * ---------------------------------------------------------------------- */
-
-static int emit_text(const char *level_str,
-                     const char *msg, const char **fields, int field_count)
+static int emit_text_to(FILE *out, const char *level_str, const char *event,
+                        const char *msg, const char **fields, int field_count)
 {
-    FILE *out = output_stream();
+    TkStrBuf b = TK_STRBUF_INIT;
 
-    /* Convert level string to uppercase tag, e.g. "info" → "[INFO]" */
-    char tag[16];
-    int ti = 0;
-    tag[ti++] = '[';
-    for (const char *p = level_str; *p && ti < 13; p++) {
+    /* level string to an upper-case tag, e.g. "info" → "[INFO]" */
+    strbuf_putc(&b, '[');
+    for (const char *p = level_str; *p; p++) {
         unsigned char c = (unsigned char)*p;
-        tag[ti++] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : (char)c;
+        strbuf_putc(&b, (c >= 'a' && c <= 'z') ? (char)(c - 32) : (char)c);
     }
-    tag[ti++] = ']';
-    tag[ti]   = '\0';
+    strbuf_append(&b, "] ");
 
-    fprintf(out, "%s %s", tag, msg ? msg : "");
+    char *m = redact_value(msg ? msg : "", 0);
+    enc_ctl(&b, m ? m : "", 0, 0);
+    free(m);
+    if (event) {
+        strbuf_append(&b, " event=");
+        enc_text(&b, event);
+    }
 
     int pairs = (field_count >= 2) ? (field_count / 2) : 0;
     for (int i = 0; i < pairs; i++) {
         const char *k = fields[i * 2];
         const char *v = fields[i * 2 + 1];
-        fprintf(out, " %s=%s", k ? k : "", v ? v : "");
+        char *rv = redact_value(v ? v : "", redact_key_matches(k));
+        strbuf_putc(&b, ' ');
+        enc_text(&b, k ? k : "");
+        strbuf_putc(&b, '=');
+        enc_text(&b, rv ? rv : "");
+        free(rv);
     }
 
-    fprintf(out, "\n");
-    fflush(out);
-    return 1;
+    strbuf_putc(&b, '\n');
+    return write_line(out, &b);
+}
+
+static int emit_json(const char *level_str,
+                     const char *msg, const char **fields, int field_count)
+{
+    return emit_json_to(output_stream(), level_str, NULL, msg, fields, field_count);
+}
+
+static int emit_text(const char *level_str,
+                     const char *msg, const char **fields, int field_count)
+{
+    return emit_text_to(output_stream(), level_str, NULL, msg, fields, field_count);
+}
+
+/* tk_log_security — one security-event line; never filtered by level. */
+int tk_log_security(const char *event, const char **fields, int field_count)
+{
+    FILE *out = g_secfile ? g_secfile : output_stream();
+    const char *ev = event ? event : "unspecified";
+    if (g_format == TK_LOG_FMT_TEXT)
+        return emit_text_to(out, "security", ev, "security event", fields, field_count);
+    return emit_json_to(out, "security", ev, "security event", fields, field_count);
 }
 
 /* -------------------------------------------------------------------------
@@ -339,11 +599,13 @@ int tk_log_with_context(const char *msg, const char *context_json)
     /* Maximum number of context key/value pairs we support. */
 #define MAX_CTX_PAIRS 32
 
-    const char *keys[MAX_CTX_PAIRS];
-    const char *vals[MAX_CTX_PAIRS];
-    /* Buffers to hold the unescaped strings (generous sizes). */
-    char key_bufs[MAX_CTX_PAIRS][256];
-    char val_bufs[MAX_CTX_PAIRS][512];
+    /* 122.8: keys and values were copied into char[256]/char[512] stack
+     * buffers and the copy loop simply STOPPED at the limit without
+     * consuming the rest of the string, so the parser resumed mid-key and
+     * read the remainder as further pairs -- a long key could forge fields.
+     * Each string is now read whole into a TkStrBuf. */
+    char *keys[MAX_CTX_PAIRS];
+    char *vals[MAX_CTX_PAIRS];
     int pair_count = 0;
 
     if (!context_json) {
@@ -369,18 +631,17 @@ int tk_log_with_context(const char *msg, const char *context_json)
 
         /* --- parse key --- */
         p++; /* consume opening '"' */
-        int ki = 0;
-        while (*p && *p != '"' && ki < 255) {
+        TkStrBuf kb = TK_STRBUF_INIT;
+        while (*p && *p != '"') {
             if (*p == '\\' && *(p + 1)) {
                 p++; /* skip backslash, copy next char literally */
             }
-            key_bufs[pair_count][ki++] = *p++;
+            strbuf_putc(&kb, *p++);
         }
-        key_bufs[pair_count][ki] = '\0';
         if (*p == '"') p++; /* consume closing '"' */
 
         SKIP_WS(p);
-        if (*p != ':') continue; /* malformed; skip */
+        if (*p != ':') { strbuf_free(&kb); continue; } /* malformed; skip */
         p++; /* consume ':' */
         SKIP_WS(p);
 
@@ -398,23 +659,27 @@ int tk_log_with_context(const char *msg, const char *context_json)
                 p++;
             }
             if (*p == ',') p++;
+            strbuf_free(&kb);
             continue;
         }
 
         /* --- parse string value --- */
         p++; /* consume opening '"' */
-        int vi = 0;
-        while (*p && *p != '"' && vi < 511) {
+        TkStrBuf vb = TK_STRBUF_INIT;
+        while (*p && *p != '"') {
             if (*p == '\\' && *(p + 1)) {
                 p++; /* skip backslash, copy next char literally */
             }
-            val_bufs[pair_count][vi++] = *p++;
+            strbuf_putc(&vb, *p++);
         }
-        val_bufs[pair_count][vi] = '\0';
         if (*p == '"') p++; /* consume closing '"' */
 
-        keys[pair_count] = key_bufs[pair_count];
-        vals[pair_count] = val_bufs[pair_count];
+        keys[pair_count] = strbuf_take(&kb);
+        vals[pair_count] = strbuf_take(&vb);
+        if (!keys[pair_count] || !vals[pair_count]) {
+            free(keys[pair_count]); free(vals[pair_count]);
+            break;
+        }
         pair_count++;
 
         SKIP_WS(p);
@@ -431,7 +696,9 @@ int tk_log_with_context(const char *msg, const char *context_json)
         flat[i * 2 + 1] = vals[i];
     }
 
-    return emit(TK_LOG_INFO, "info", msg, flat, pair_count * 2);
+    int rc = emit(TK_LOG_INFO, "info", msg, flat, pair_count * 2);
+    for (int i = 0; i < pair_count; i++) { free(keys[i]); free(vals[i]); }
+    return rc;
 }
 
 /* ==========================================================================
@@ -852,26 +1119,6 @@ int tk_access_log_set_format(const char *fmt)
     return -1;
 }
 
-/*
- * access_json_escape — minimal JSON escaping for access log string fields.
- * Escapes only " and \.  dst must be at least dst_size bytes.
- * Returns number of bytes written (excluding NUL).
- *
- * Story: 47.1.3
- */
-static int access_json_escape(char *dst, size_t dst_size, const char *src)
-{
-    int w = 0;
-    if (!src) { dst[0] = '\0'; return 0; }
-    for (const char *p = src; *p && (size_t)(w + 3) < dst_size; p++) {
-        if (*p == '"')       { dst[w++] = '\\'; dst[w++] = '"'; }
-        else if (*p == '\\') { dst[w++] = '\\'; dst[w++] = '\\'; }
-        else                 { dst[w++] = *p; }
-    }
-    dst[w] = '\0';
-    return w;
-}
-
 void tk_access_log_write(TkAccessLog *log,
                           const char *ip,
                           const char *method,
@@ -888,29 +1135,31 @@ void tk_access_log_write(TkAccessLog *log,
     else if (!log->fp) alog_reopen(log);
     if (!log->fp) { if (locked) alog_unlock(log); return; }
 
+    /* 122.8: every caller-supplied field goes through an encoder (enc_json
+     * or enc_clf) -- before, the combined format wrote path, referer and
+     * user-agent raw and the NDJSON format escaped only '"' and '\\', so a
+     * "\r\n" in a request path forged a second line -- and the path and
+     * referer have secret-named query parameters masked.  The line is
+     * built whole and written with one fwrite. */
+    char *rpath = path ? redact_query(path) : NULL;
+    char *rref  = referer ? redact_query(referer) : NULL;
+    char *rua   = ua ? redact_value(ua, 0) : NULL;
+    TkStrBuf b = TK_STRBUF_INIT;
     if (g_access_format == TK_ACCESS_FMT_JSON) {
         /* NDJSON format (Story 47.1.3) */
         char ts[32];
         current_iso8601(ts, sizeof ts);
-
-        char ip_esc[256], path_esc[2048], ua_esc[1024], ref_esc[2048];
-        access_json_escape(ip_esc,   sizeof ip_esc,   ip);
-        access_json_escape(path_esc, sizeof path_esc, path);
-        access_json_escape(ua_esc,   sizeof ua_esc,   ua);
-        access_json_escape(ref_esc,  sizeof ref_esc,  referer);
-
-        fprintf(log->fp,
-                "{\"ts\":\"%s\",\"ip\":\"%s\",\"method\":\"%s\","
-                "\"path\":\"%s\",\"status\":%d,\"size\":%zu,"
-                "\"ua\":\"%s\",\"ref\":\"%s\"}\n",
-                ts,
-                ip      ? ip_esc   : "-",
-                method  ? method   : "-",
-                path    ? path_esc : "-",
-                status,
-                bytes,
-                ua      ? ua_esc   : "-",
-                referer ? ref_esc  : "-");
+        strbuf_appendf(&b, "{\"ts\":\"%s\",\"ip\":\"", ts);
+        if (ip) enc_json(&b, ip); else strbuf_putc(&b, '-');
+        strbuf_append(&b, "\",\"method\":\"");
+        if (method) enc_json(&b, method); else strbuf_putc(&b, '-');
+        strbuf_append(&b, "\",\"path\":\"");
+        if (path) enc_json(&b, rpath ? rpath : ""); else strbuf_putc(&b, '-');
+        strbuf_appendf(&b, "\",\"status\":%d,\"size\":%zu,\"ua\":\"", status, bytes);
+        if (ua) enc_json(&b, rua ? rua : ""); else strbuf_putc(&b, '-');
+        strbuf_append(&b, "\",\"ref\":\"");
+        if (referer) enc_json(&b, rref ? rref : ""); else strbuf_putc(&b, '-');
+        strbuf_append(&b, "\"}\n");
     } else {
         /* Combined Log Format timestamp: [06/Apr/2026:15:23:01 +0000] */
         time_t now = time(NULL);
@@ -920,21 +1169,23 @@ void tk_access_log_write(TkAccessLog *log,
                  tm->tm_mday, k_month_names[tm->tm_mon], 1900 + tm->tm_year,
                  tm->tm_hour, tm->tm_min, tm->tm_sec);
 
-        char bytes_str[24];
-        if (bytes > 0) snprintf(bytes_str, sizeof bytes_str, "%zu", bytes);
-        else           strcpy(bytes_str, "-");
-
-        fprintf(log->fp,
-                "%s - - [%s] \"%s %s HTTP/1.1\" %d %s \"%s\" \"%s\"\n",
-                ip      ? ip      : "-",
-                ts,
-                method  ? method  : "-",
-                path    ? path    : "-",
-                status,
-                bytes_str,
-                referer ? referer : "-",
-                ua      ? ua      : "-");
+        enc_clf(&b, ip, 0);
+        strbuf_appendf(&b, " - - [%s] \"", ts);
+        enc_clf(&b, method, 0);
+        strbuf_putc(&b, ' ');
+        enc_clf(&b, path ? (rpath ? rpath : "") : NULL, 1);
+        strbuf_appendf(&b, " HTTP/1.1\" %d ", status);
+        if (bytes > 0) strbuf_appendf(&b, "%zu", bytes);
+        else           strbuf_putc(&b, '-');
+        strbuf_append(&b, " \"");
+        enc_clf(&b, referer ? (rref ? rref : "") : NULL, 1);
+        strbuf_append(&b, "\" \"");
+        enc_clf(&b, ua ? (rua ? rua : "") : NULL, 1);
+        strbuf_append(&b, "\"\n");
     }
+    free(rpath); free(rref); free(rua);
+    if (!b.oom) fwrite(strbuf_cstr(&b), 1, b.len, log->fp);
+    strbuf_free(&b);
     fflush(log->fp);
     if (!locked) return;       /* no lock, no shared count: never rotate blind */
 
