@@ -105,6 +105,16 @@ static inline void strbuf_putc(TkStrBuf *b, char c)
     strbuf_appendn(b, &c, 1);
 }
 
+/* strbuf_insertn — insert n bytes at offset pos (pos > len is clamped to len). */
+static inline void strbuf_insertn(TkStrBuf *b, size_t pos, const char *s, size_t n)
+{
+    if (strbuf_reserve(b, n) < 0) return;
+    if (pos > b->len) pos = b->len;
+    memmove(b->buf + pos + n, b->buf + pos, b->len - pos + 1);   /* +1: the NUL */
+    if (n) memcpy(b->buf + pos, s, n);
+    b->len += n;
+}
+
 static inline void strbuf_vappendf(TkStrBuf *b, const char *fmt, va_list ap)
 {
     if (b->oom) return;
