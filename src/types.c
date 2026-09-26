@@ -972,6 +972,75 @@ static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
 }
 
 /*
+ * cast_src_nonneg (127.189 / 127.204) — 1 when the i64 operand of an
+ * `as u64` cast is provably non-negative, so W1001 "lossy cast" is false:
+ *
+ *   * an integer literal.  The grammar has no negative literal — `-1` is a
+ *     unary minus over `1` — so every NODE_INT_LIT is >= 0 (`args.get(1 as
+ *     u64)`, 127.204);
+ *   * a loop counter `lp(let v=<literal>;..;v=v+<literal>)` that nothing else
+ *     in the function assigns: it starts >= 0 and only ever grows (127.189).
+ *     Reaching a negative value would take 2^63 / step iterations of the
+ *     loop, and the step is the only write.  A parameter or `mt` arm binding
+ *     of the same name answers first in infer(), so either one disqualifies.
+ *
+ * Anything else — a computed value, a `let`, a counter with a non-literal
+ * start or step, or one the body also assigns — keeps the warning.
+ */
+static const Node *parent_of(const Node *r, const Node *n) {
+    if (!r) return NULL;
+    for (int i = 0; i < r->child_count; i++) {
+        if (r->children[i] == n) return r;
+        const Node *p = parent_of(r->children[i], n);
+        if (p) return p;
+    }
+    return NULL;
+}
+static int assigns_name(const Node *r, const char *src, const Node *id,
+                        const Node *except) {
+    if (!r) return 0;
+    if (r != except && (r->kind == NODE_ASSIGN_STMT
+                        || (r->kind == NODE_LOOP_INIT && r->op != TK_KW_LET))
+        && r->child_count > 0 && r->children[0]
+        && r->children[0]->tok_len == id->tok_len
+        && memcmp(src + r->children[0]->tok_start, src + id->tok_start,
+                  (size_t)id->tok_len) == 0) return 1;
+    for (int i = 0; i < r->child_count; i++)
+        if (assigns_name(r->children[i], src, id, except)) return 1;
+    return 0;
+}
+static int same_ident(const char *src, const Node *a, const Node *b) {
+    return a && b && a->kind == NODE_IDENT && a->tok_len == b->tok_len
+        && memcmp(src + a->tok_start, src + b->tok_start, (size_t)a->tok_len) == 0;
+}
+static int cast_src_nonneg(Ctx *cx, const Node *e) {
+    if (!e) return 0;
+    if (e->kind == NODE_INT_LIT) return 1;
+    if (e->kind != NODE_IDENT || !cx->fn_node) return 0;
+    const char *nm = cx->src + e->tok_start;
+    int nl = e->tok_len;
+    if (is_param(cx, nm, nl)) return 0;
+    if (cx->armb_count > 0 && arm_bind_lookup(cx, nm, nl, e)) return 0;
+    const Node *bn = find_binding_before(cx->fn_node, cx->src, nm, nl, e);
+    if (!bn || bn->kind != NODE_LOOP_INIT || bn->op != TK_KW_LET
+        || bn->child_count < 2 || !bn->children[1]
+        || bn->children[1]->kind != NODE_INT_LIT) return 0;
+    const Node *lp = parent_of(cx->fn_node, bn);
+    if (!lp || lp->kind != NODE_LOOP_STMT || lp->child_count < 3) return 0;
+    const Node *step = lp->children[2];
+    if (!step || step->kind != NODE_ASSIGN_STMT || step->child_count < 2
+        || !same_ident(cx->src, step->children[0], e)) return 0;
+    const Node *rhs = step->children[1];
+    if (!rhs || rhs->kind != NODE_BINARY_EXPR || rhs->op != TK_PLUS
+        || rhs->child_count < 2) return 0;
+    const Node *x = rhs->children[0], *y = rhs->children[1];
+    if (!((same_ident(cx->src, x, e) && y && y->kind == NODE_INT_LIT)
+          || (same_ident(cx->src, y, e) && x && x->kind == NODE_INT_LIT)))
+        return 0;
+    return !assigns_name(cx->fn_node, cx->src, e, step);
+}
+
+/*
  * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
  *
  * Used to enforce the E2010 rule: pointer types (*T) are only valid in
@@ -4259,7 +4328,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (src_t->kind!=TY_UNKNOWN&&dst_t->kind!=TY_UNKNOWN) {
                 int lossy=0;
                 if (src_t->kind==TY_F64&&(dst_t->kind==TY_I64||dst_t->kind==TY_U64)) lossy=1;
-                if (src_t->kind==TY_I64&&dst_t->kind==TY_U64) lossy=1;
+                if (src_t->kind==TY_I64&&dst_t->kind==TY_U64
+                    &&!cast_src_nonneg(cx,node->children[0])) lossy=1;
                 if (src_t->kind==TY_U64&&dst_t->kind==TY_I64) lossy=1;
                 /* 127.129: bind_init_type() now re-enters a cast initialiser
                  * on every reference to the binding, and infer() has no memo,
