@@ -510,7 +510,7 @@ static CGImageRef image_from_bytes(const uint8_t *bytes, uint64_t len)
 }
 
 /* CGDataProvider's release callback: the buffer handed to
- * CGDataProviderCreateWithData is malloc'd by image_from_raw and freed here,
+ * CGDataProviderCreateWithData is malloc'd by image_create_from_raw and freed here,
  * once, when CoreGraphics drops its last reference. */
 static void free_owned(void *info, const void *data, size_t size)
 {
@@ -527,8 +527,14 @@ static void free_owned(void *info, const void *data, size_t size)
  * three-channel case has no 24-bit bitmap layout in CoreGraphics, so it is
  * widened to RGBA here rather than handed over in a layout CGBitmapContext
  * would reject.
+ *
+ * Returns a +1 CGImageRef the caller releases.  135.3c: the name carries
+ * "create" for CoreFoundation's Create Rule -- as `image_from_raw` the
+ * analyzer read the result as +0 and flagged the caller's CGImageRelease()
+ * as an over-release (osx.cocoa.RetainCount).  The code was right; the name
+ * said otherwise to every reader, human or tool.
  */
-static CGImageRef image_from_raw(const uint8_t *px, uint32_t w, uint32_t h,
+static CGImageRef image_create_from_raw(const uint8_t *px, uint32_t w, uint32_t h,
                                  uint32_t ch)
 {
     CGColorSpaceRef cs;
@@ -849,7 +855,7 @@ TkOcrPage *ocr_recognize_raw(const uint8_t *pixels, uint32_t width,
         set_err(OCR_ERR_BADIMAGE, "channels must be 1, 3 or 4");
         return NULL;
     }
-    img  = image_from_raw(pixels, width, height, channels);
+    img  = image_create_from_raw(pixels, width, height, channels);
     page = recognize_cgimage(img);
     if (img) CGImageRelease(img);
     return page;
