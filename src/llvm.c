@@ -10085,6 +10085,111 @@ static void ir_decl_record(const char *sym, const char *name, const Node *n, int
     d->off = n->tok_start; d->line = n->line; d->col = n->col; d->is_fn = is_fn;
 }
 
+/*
+ * 127.185: every error exit of a fallible function sets @tk_current_error.
+ *
+ * The caller of a `T!$E` function learns of failure only through that slot
+ * (114.55): an ok return must clear it and an error return must set it, or
+ * the caller's `mt` decodes whatever an EARLIER call left there — 127.112 was
+ * exactly that, found by accident.  The invariant, checked on each fallible
+ * function as it is finished (fallible_exits_ok) and, independently, over
+ * every test program's .ll by test/conform/V002:
+ *
+ *   every `ret` is preceded IN ITS BLOCK by a store to @tk_current_error,
+ *   unless the block is the error target of a branch on
+ *   `icmp eq (load @tk_current_error), 0` — a `!$E` propagation exit, which
+ *   deliberately keeps the callee's flag.
+ *
+ * i.e. a per-block "flag written" bit, reset at every label, set by a store
+ * and on entry to a propagation error target; an unset bit at a `ret` is an
+ * internal error (E9002: no user program can cause it, no user change fixes
+ * it).  Returns 1 when the body satisfies the rule, else 0 and the offending
+ * block's label in `blk`.
+ */
+#define TKC_ERREXIT_NAMES 4096
+static int ir_tok_eq(const char *a, size_t al, const char *b, size_t bl) {
+    return al == bl && !memcmp(a, b, al);
+}
+/* the `%name` token starting at p (p points at '%'); returns its length */
+static size_t ir_local_len(const char *p, const char *e) {
+    size_t k = 1;
+    while (p + k < e && (isalnum((unsigned char)p[k]) || p[k] == '_' || p[k] == '.')) k++;
+    return k;
+}
+static int fallible_exits_ok(const char *b, size_t n, char *blk, size_t blksz)
+{
+    const char *end = b + n;
+    /* pass 1: flag loads -> their icmp-eq-0 -> the false targets of the br */
+    const char **ld = (const char **)calloc(TKC_ERREXIT_NAMES, sizeof *ld);
+    size_t *ldl = (size_t *)calloc(TKC_ERREXIT_NAMES, sizeof *ldl);
+    const char **cm = (const char **)calloc(TKC_ERREXIT_NAMES, sizeof *cm);
+    size_t *cml = (size_t *)calloc(TKC_ERREXIT_NAMES, sizeof *cml);
+    const char **et = (const char **)calloc(TKC_ERREXIT_NAMES, sizeof *et);
+    size_t *etl = (size_t *)calloc(TKC_ERREXIT_NAMES, sizeof *etl);
+    int nld = 0, ncm = 0, net = 0, ok = 1;
+    if (!ld || !ldl || !cm || !cml || !et || !etl) goto done;   /* bookkeeping only */
+    for (const char *l = b; l < end; ) {
+        const char *e = memchr(l, '\n', (size_t)(end - l)); if (!e) e = end;
+        const char *q = l; while (q < e && *q == ' ') q++;
+        if (*q == '%' && nld < TKC_ERREXIT_NAMES) {
+            size_t k = ir_local_len(q, e);
+            const char *r = q + k;
+            static const char LD[] = " = load i64, i64* @tk_current_error";
+            static const char CM[] = " = icmp eq i64 ";
+            if ((size_t)(e - r) >= sizeof LD - 1 && !memcmp(r, LD, sizeof LD - 1)) {
+                ld[nld] = q; ldl[nld++] = k;
+            } else if ((size_t)(e - r) > sizeof CM - 1 && !memcmp(r, CM, sizeof CM - 1) &&
+                       ncm < TKC_ERREXIT_NAMES) {
+                const char *o = r + sizeof CM - 1;
+                size_t ok2 = (*o == '%') ? ir_local_len(o, e) : 0;
+                if (ok2 && o + ok2 + 3 <= e && !memcmp(o + ok2, ", 0", 3) &&
+                    (o + ok2 + 3 == e || o[ok2 + 3] == ' ' || o[ok2 + 3] == ';'))
+                    for (int i = 0; i < nld; i++)
+                        if (ir_tok_eq(o, ok2, ld[i], ldl[i])) { cm[ncm] = q; cml[ncm++] = k; break; }
+            }
+        } else if (!strncmp(q, "br i1 %", 7) && net < TKC_ERREXIT_NAMES) {
+            const char *o = q + 6; size_t k = ir_local_len(o, e);
+            for (int i = 0; i < ncm; i++)
+                if (ir_tok_eq(o, k, cm[i], cml[i])) {
+                    const char *f = strstr(o, ", label %");
+                    f = f ? strstr(f + 9, ", label %") : NULL;
+                    if (f && f < e) { f += 9; size_t fl = 0;
+                        while (f + fl < e && (isalnum((unsigned char)f[fl]) || f[fl] == '_' || f[fl] == '.')) fl++;
+                        et[net] = f; etl[net++] = fl; }
+                    break;
+                }
+        }
+        l = e + 1;
+    }
+    /* pass 2: the per-block bit */
+    int bit = 0; const char *lab = "bb.entry"; size_t labl = 8;
+    for (const char *l = b; l < end; ) {
+        const char *e = memchr(l, '\n', (size_t)(end - l)); if (!e) e = end;
+        size_t ll = (size_t)(e - l);
+        if (ll > 1 && l[0] != ' ' && l[0] != ';' && l[ll - 1] == ':') {
+            lab = l; labl = ll - 1; bit = 0;
+            for (int i = 0; i < net; i++)
+                if (ir_tok_eq(l, labl, et[i], etl[i])) { bit = 1; break; }
+        } else {
+            const char *q = l; while (q < e && *q == ' ') q++;
+            if (!strncmp(q, "store ", 6)) {
+                const char *m = strstr(q, "@tk_current_error");
+                if (m && m < e) bit = 1;
+            } else if (!strncmp(q, "ret ", 4) || (e - q == 3 && !strncmp(q, "ret", 3))) {
+                if (!bit) {
+                    ok = 0;
+                    snprintf(blk, blksz, "%.*s", (int)(labl < 100 ? labl : 100), lab);
+                    goto done;
+                }
+            }
+        }
+        l = e + 1;
+    }
+done:
+    free(ld); free(ldl); free(cm); free(cml); free(et); free(etl);
+    return ok;
+}
+
 static void emit_toplevel(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -10196,6 +10301,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
         c->cur_fn_ret = ret;
         strncpy(c->cur_fn_name, tb, NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
+        long fn_ir_off = ftell(c->out);   /* 127.185: the body is re-read below */
         fprintf(c->out, "\ndefine dso_local fastcc %s @%s(", ret, tb);
         int first = 1;
         for (int i = 1; i < n->child_count; i++) {
@@ -10232,6 +10338,9 @@ static void emit_toplevel(Ctx *c, const Node *n)
         } else {
             fputs(") nounwind #0 {\nbb.entry:\n", c->out);
         }
+        /* 127.185: mark a fallible body so test/conform/V002 can find the
+         * functions the error-exit invariant applies to. */
+        if (c->cur_fn_err[0]) fprintf(c->out, "  ; tk.fallible !$%s\n", c->cur_fn_err);
         /* Spill params */
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
@@ -10266,6 +10375,28 @@ static void emit_toplevel(Ctx *c, const Node *n)
             else fprintf(c->out, "  ret %s 0 ; implicit return\n", ret);
         }
         fputs("}\n", c->out);
+        /* 127.185: check the finished body against the error-exit rule. */
+        if (c->cur_fn_err[0] && fn_ir_off >= 0) {
+            long fn_end = ftell(c->out);
+            if (fn_end > fn_ir_off && fflush(c->out) == 0 &&
+                fseek(c->out, fn_ir_off, SEEK_SET) == 0) {
+                size_t blen = (size_t)(fn_end - fn_ir_off);
+                char *body = (char *)malloc(blen + 1);
+                size_t got = body ? fread(body, 1, blen, c->out) : 0;
+                char blk[128] = "";
+                if (body && got == blen && !fallible_exits_ok(body, blen, blk, sizeof blk)) {
+                    char msg[512];
+                    snprintf(msg, sizeof msg,
+                             "internal compiler error: an exit of fallible function "
+                             "f=%s returns without setting @tk_current_error (block "
+                             "'%s'), so its caller would read a stale error flag "
+                             "(127.185)", toke_nm, blk);
+                    diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col, msg, (void *)0);
+                }
+                free(body);
+            }
+            fseek(c->out, 0, SEEK_END);
+        }
         c->cur_fn_ret = NULL;
         c->cur_fn_name[0] = '\0';
         break;
