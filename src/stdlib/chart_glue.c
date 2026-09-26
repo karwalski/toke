@@ -12,6 +12,7 @@
  * and http link set behind a plain chart import.
  */
 #include "chart.h"
+#include "bytes_rt.h"  /* 135.19: tk_bytes_pack */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,8 +82,15 @@ int64_t tk_chart_bar_w(int64_t labels_i64, int64_t data_i64, int64_t title_i64) 
                title_i64 ? (const char *)(intptr_t)title_i64 : NULL);
 }
 
+/* 135.19 (3): chart.tojson is declared `[byte]` (stdlib/chart.tki,
+ * docs/stdlib/chart.md) but returned the C string itself, so `.len` read the
+ * eight bytes before the malloc'd text and `str.frombytes` of it was empty.
+ * It now returns a real [byte] block of the JSON text. */
 int64_t tk_chart_tojson_w(int64_t chart) {
-    if (!chart) return 0;
+    if (!chart) return tk_bytes_pack(NULL, 0);
     const char *s = chart_tojson((TkChartSpec *)(intptr_t)chart);
-    return (int64_t)(intptr_t)s;
+    if (!s) return tk_bytes_pack(NULL, 0);
+    int64_t h = tk_bytes_pack((const uint8_t *)s, (uint64_t)strlen(s));
+    free((void *)s);
+    return h;
 }

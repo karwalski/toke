@@ -18,6 +18,7 @@
 
 #include "http.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "bytes_rt.h"   /* 135.19: tk_bytes_pack */
 /* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
  * returns the real value; defined in tk_runtime.c. */
 /* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
@@ -1252,13 +1253,14 @@ int64_t tk_http_streamnext_w(int64_t stream) {
     if (!stream) return 0;
     HttpStream *s = (HttpStream *)(intptr_t)stream;
     HttpChunkResult r = http_streamnext(s);
-    if (r.is_err || !r.data || r.len == 0) return 0;
-    char *str = (char *)malloc(r.len + 1);
-    if (!str) { free(r.data); return 0; }
-    memcpy(str, r.data, r.len);
-    str[r.len] = '\0';
+    /* 135.19 (3): declared `[byte]!httperr` (stdlib/http.tki) but returned a
+     * malloc'd C string, so `.len` read the eight bytes before it and
+     * `str.frombytes` of a chunk was empty.  A chunk is now a real [byte];
+     * a graceful close is the empty [byte] docs/stdlib/http.md promises. */
+    if (r.is_err) { free(r.data); free(r.err_msg); return 0; }
+    int64_t h = tk_bytes_pack((const uint8_t *)r.data, r.data ? (uint64_t)r.len : 0);
     free(r.data);
-    return (int64_t)(intptr_t)str;
+    return h;
 }
 int64_t tk_http_downloadfile_w(int64_t client, int64_t url, int64_t dest) {
     return (int64_t)http_downloadfile(
