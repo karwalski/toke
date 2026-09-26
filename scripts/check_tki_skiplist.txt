@@ -62,10 +62,6 @@ http.tki::http.res.ok                  # 2026-09-19 spec spelling http.res.* is 
 http.tki::http.res.json                # 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup]
 http.tki::http.res.bad                 # 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup]
 http.tki::http.res.err                 # 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup]
-# ── image ──
-image.tki::image.tograyscale            # 2026-09-19 C core image_* in image.c, no _w glue; core=image_to_grayscale [131.38-followup]
-image.tki::image.fliph                  # 2026-09-19 C core image_* in image.c, no _w glue; core=image_flip_h [131.38-followup]
-image.tki::image.flipv                  # 2026-09-19 C core image_* in image.c, no _w glue; core=image_flip_v [131.38-followup]
 # ── json ──
 json.tki::json.streamparser            # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_streamparser [102.16]
 json.tki::json.streamnext              # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_streamnext [102.16]
