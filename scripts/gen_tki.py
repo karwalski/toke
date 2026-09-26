@@ -275,7 +275,20 @@ def reachable_methods(mod: str, explicit, patterns, defs) -> dict[str, str]:
 
 # ── merge ───────────────────────────────────────────────────────────────────
 
-def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread):
+def new_export(mod: str, method: str, sym: str, ps, ret, defs) -> dict:
+    """A generated export.  136.54: glue defined in ANOTHER module's file is
+    reachable plumbing until someone decides otherwise, so it is added as
+    `"internal": true` -- callable and checked, but listed only on
+    docs/reference/stdlib-internal.md.  Publishing it is a deliberate edit to
+    `"internal": false`, which check-tki requires for every such export."""
+    e = {"kind": "func", "name": f"{mod}.{method}", "params": ps,
+         "return": ret, "gen": "abi"}
+    if C.is_cross_module(mod, sym, defs):
+        e["internal"] = True
+    return e
+
+
+def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread, defs):
     """Return (new_json_text_or_None, actions) for one .tki file."""
     data = json.loads(path.read_text())
     exports = data.get("exports", [])
@@ -325,8 +338,7 @@ def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread):
             continue
         sym = reach[method]
         ps, ret = types.get(sym, ([], "i64"))
-        exports.append({"kind": "func", "name": f"{mod}.{method}",
-                        "params": ps, "return": ret, "gen": "abi"})
+        exports.append(new_export(mod, method, sym, ps, ret, defs))
         actions.append(f"ADD     {mod}.{method} -> {sym}")
 
     # An EXEMPT action changes nothing on disk -- it records a disagreement
@@ -371,8 +383,7 @@ def main() -> int:
             if not ADDABLE.match(method):
                 continue
             ps, ret = types.get(reach[method], ([], "i64"))
-            exports.append({"kind": "func", "name": f"{mod}.{method}",
-                            "params": ps, "return": ret, "gen": "abi"})
+            exports.append(new_export(mod, method, reach[method], ps, ret, defs))
         if not exports:
             # A registered module with no reachable surface at all. Writing an
             # empty interface would only make the gate green over a module
@@ -398,7 +409,7 @@ def main() -> int:
         if mod not in registered:
             continue  # no glue table entry; nothing to derive from
         reach = reachable_methods(mod, explicit, patterns, defs)
-        text, actions = merge(path, mod, reach, arity, types, nopread)
+        text, actions = merge(path, mod, reach, arity, types, nopread, defs)
         all_actions += actions
         if text is None:
             continue

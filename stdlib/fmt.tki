@@ -54,7 +54,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "internal": true
     },
     {
       "kind": "func",
@@ -64,7 +65,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "internal": true
     }
   ]
 }

@@ -479,6 +479,181 @@ def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
+# ── reachable but not public (stories 136.54 and 136.34) ────────────────────
+#
+# 137.12 generates the interfaces from the builtin table, which publishes the
+# ACTUAL reachable surface -- including plumbing never meant to be API: glue
+# living in another module's file (`std.http` <- tk_web_glue.c, `std.string`
+# <- str_glue.c).  Until now there was no way to say "callable, but not
+# public".  There is now one, and it is a key on the export itself, so the
+# compiler (which ignores keys it does not read) keeps checking and emitting
+# the call exactly as before:
+#
+#     "internal": true    reachable, NOT public API: may change or go without
+#                         notice; listed on docs/reference/stdlib-internal.md
+#                         and nowhere else
+#     "internal": false   reviewed and kept public
+#
+# The gate: a generated (`"gen":"abi"`) export whose glue is defined outside
+# its own module's file must carry one or the other -- it is the class 136.54
+# found published by accident.  gen_tki.py adds any new one as
+# `"internal": true`, so generation can no longer publish plumbing: making it
+# public is a deliberate one-word edit, reviewed in the diff.
+INTERNAL_MD = REPO_ROOT / "docs" / "reference" / "stdlib-internal.md"
+
+
+def glue_home(symbol: str, defs: dict[str, str]) -> str:
+    """The module stem of the file defining `symbol` ('' if not a tk_ def)."""
+    f = defs.get(symbol, "")
+    if not f:
+        return ""
+    return f[:-len("_glue.c")] if f.endswith("_glue.c") else f.rsplit(".", 1)[0]
+
+
+def is_cross_module(mod: str, symbol: str, defs: dict[str, str]) -> bool:
+    home = glue_home(symbol, defs)
+    return bool(home) and home != mod
+
+
+_C_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+_DECL_ROW = re.compile(r'\{"tk_\w+",\s*"declare[^"]*"[^}]*\}')
+_C_TYPES = r"(?:int64_t|int32_t|uint64_t|uint32_t|void|double|float|int|char|long|size_t|bool)"
+
+
+def classify_unpublished(defs: dict[str, str], resolved: set[str],
+                         explicit, patterns) -> list[tuple[str, str, str, str]]:
+    """Every defined tk_* symbol no `.tki` export resolves to, classified.
+
+    136.34: "456 runtime glue symbols have no interface entry at all".  The
+    count is re-derived on every run rather than restated.  Each is exactly one
+    of, first match wins:
+
+      emitted     the compiler emits a call to it by name (src/*.c outside the
+                  g_stdlib_decls rows): a lowering target, internal by
+                  construction
+      c-internal  other C in src/stdlib calls it (a helper, or the body behind
+                  a published spelling)
+      alias       toke source can reach it, but only under a spelling that
+                  generation will not publish (`time.add_days`, `str.charAt`,
+                  `task.spawn_w`): a legacy alias of a published name
+      dead        nothing in src/ calls it and no toke spelling reaches it
+                  (a unit test under test/ may)
+
+    Returns (symbol, file, class, detail).  "Publish it" is not a class: a
+    symbol reachable under a publishable spelling is already exported by
+    gen_tki.py, so by construction none is left here.
+    """
+    import gen_tki  # late: gen_tki imports this module
+    reach: dict[str, list[str]] = {}
+    for mod in registered_modules():
+        for meth, sym in gen_tki.reachable_methods(mod, explicit, patterns, defs).items():
+            reach.setdefault(sym, []).append(f"{mod}.{meth}")
+    for (mod, meth), sym in explicit.items():
+        spelled = f"{mod}.{meth}"
+        if spelled not in reach.get(sym, []):
+            reach.setdefault(sym, []).append(spelled)
+
+    compiler = "".join(_DECL_ROW.sub("", _C_COMMENT.sub("", p.read_text(errors="replace")))
+                       for p in sorted((REPO_ROOT / "src").glob("*.c")))
+    glue = {p.name: _C_COMMENT.sub("", p.read_text(errors="replace"))
+            for p in sorted(C_DIR.glob("*.c"))}
+
+    out = []
+    for sym in sorted(defs):
+        if sym in resolved:
+            continue
+        word = re.compile(r"\b" + re.escape(sym) + r"\b")
+        proto = re.compile(r"\b" + _C_TYPES + r"\s*\**\s*" + re.escape(sym) + r"\s*\(")
+        if word.search(compiler):
+            out.append((sym, defs[sym], "emitted", ""))
+            continue
+        callers = []
+        for name, text in glue.items():
+            uses = len(word.findall(text)) - len(proto.findall(text))
+            if uses > 0:
+                callers.append(name)
+        if callers:
+            out.append((sym, defs[sym], "c-internal", ", ".join(callers)))
+        elif reach.get(sym):
+            out.append((sym, defs[sym], "alias", ", ".join(sorted(reach[sym]))))
+        else:
+            out.append((sym, defs[sym], "dead", ""))
+    return out
+
+
+UNPUBLISHED_CLASSES = [
+    ("emitted", "the compiler emits a call to it by name: a lowering target"),
+    ("c-internal", "called only from other C in `src/stdlib/`"),
+    ("alias", "reachable from toke only under a spelling generation will not "
+              "publish -- a legacy alias of a published name"),
+    ("dead", "nothing in `src/` calls it and no toke spelling reaches it "
+             "(a unit test under `test/` may)"),
+]
+
+
+def render_internal_md(internal_exports, unpublished) -> str:
+    """docs/reference/stdlib-internal.md, derived from the .tki and the glue."""
+    out = ["---", "title: Stdlib Symbols That Are Not API", "slug: stdlib-internal",
+           "section: reference", "order: 22", "---", "",
+           "<!-- GENERATED by scripts/check_tki_coverage.py --internal-md. "
+           "Do not edit by hand. -->",
+           "<!-- Regenerate with `make render-stdlib-internal`; `make check-tki` "
+           "fails on drift. -->", "",
+           "# Stdlib symbols that are not API", "",
+           "Two kinds of runtime symbol are **not** part of the standard "
+           "library's public interface, and are listed here so that nothing "
+           "else has to list them. Do not build on anything on this page: it "
+           "may change or disappear without notice.", "",
+           "**This page is generated** from `stdlib/*.tki` and "
+           "`src/stdlib/*.c`, and `make check-tki` fails when it drifts.", ""]
+
+    by_mod: dict[str, list[tuple[str, str, str]]] = {}
+    for mod, name, sym, home in internal_exports:
+        by_mod.setdefault(mod, []).append((name, sym, home))
+    out += ["## Callable, but internal", "",
+            "These are declared in a `.tki` with `\"internal\": true`: toke source "
+            "can call them and the compiler checks the call, but they are "
+            "plumbing that interface generation reached (story 136.54), not "
+            "API. Each is either a duplicate of a documented function or a "
+            "piece of another module's implementation.", ""]
+    if not by_mod:
+        out += ["None.", ""]
+    for mod in sorted(by_mod):
+        rows = sorted(by_mod[mod])
+        out += [f"### `std.{mod}` ({len(rows)})", "",
+                "| Export | Glue symbol | Defined in |", "|---|---|---|"]
+        out += [f"| `{n}` | `{s}` | `{h}` |" for n, s, h in rows]
+        out.append("")
+
+    counts = {c: 0 for c, _ in UNPUBLISHED_CLASSES}
+    for _, _, c, _ in unpublished:
+        counts[c] += 1
+    out += ["## Defined, with no interface entry", "",
+            "Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` "
+            "export resolves to (story 136.34). None of them can be named from "
+            "toke under a publishable spelling -- any that could is exported "
+            "by `scripts/gen_tki.py` -- so this is the runtime's private half, "
+            "classified by what reaches it:", "",
+            "| Class | Meaning | Symbols |", "|---|---|---|"]
+    for c, meaning in UNPUBLISHED_CLASSES:
+        out.append(f"| `{c}` | {meaning} | {counts[c]} |")
+    out.append(f"| | **total** | **{len(unpublished)}** |")
+    out.append("")
+    out += ["A `dead` symbol is finished or half-finished code with no way in: "
+            "wiring it up is an interface decision, and deleting it is a glue "
+            "decision. Neither is made by this page.", ""]
+    for c, _ in UNPUBLISHED_CLASSES:
+        rows = [(s, f, d) for s, f, cc, d in unpublished if cc == c]
+        if not rows:
+            continue
+        out += [f"### `{c}` ({len(rows)})", "", "| Symbol | Defined in | Detail |",
+                "|---|---|---|"]
+        out += [f"| `{s}` | `{f}` | {d.replace('|', chr(92) + '|') or '-'} |"
+                for s, f, d in rows]
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
 # ── main ────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -566,6 +741,8 @@ def main() -> int:
     seen_keys: set[str] = set()
     all_names: dict[tuple[str, str], list[str]] = {}
     bad_kinds: list[str] = []
+    undecided: list[str] = []
+    internal_exports: list[tuple[str, str, str, str]] = []
 
     for tki_file in tki_files:
         try:
@@ -596,6 +773,18 @@ def main() -> int:
 
             symbol = expected_symbol(mod, prefix, method, explicit, patterns, subns)
             resolved_symbols.add(symbol)
+
+            # 136.54: a generated export over another module's glue must say
+            # whether it is public.
+            if "internal" in export and not isinstance(export["internal"], bool):
+                undecided.append(f"{tki_file.name} :: {name}: \"internal\" must be "
+                                 f"true or false, not {export['internal']!r}")
+            elif export.get("internal") is True:
+                internal_exports.append((mod, name, symbol, defs.get(symbol, "-")))
+            elif ("internal" not in export and export.get("gen") == "abi"
+                  and is_cross_module(mod, symbol, defs)):
+                undecided.append(f"{tki_file.name} :: {name} -> {symbol} "
+                                 f"(defined in {defs[symbol]})")
             total += 1
 
             # ── 135.17: the `.tki`'s own declared arity ─────────────────────
@@ -687,6 +876,23 @@ def main() -> int:
         for k in duplicates:
             print(f"  {k}")
         print()
+    if "--internal-md" in sys.argv or "--internal-md-check" in sys.argv:
+        md = render_internal_md(internal_exports, classify_unpublished(
+            defs, resolved_symbols, explicit, patterns))
+        rel = INTERNAL_MD.relative_to(REPO_ROOT)
+        if "--internal-md" in sys.argv:
+            INTERNAL_MD.write_text(md, encoding="utf-8")
+            print(f"wrote {rel}")
+            return 0
+        live = INTERNAL_MD.read_text(encoding="utf-8") if INTERNAL_MD.exists() else ""
+        if live != md:
+            print(f"FAIL drift: {rel} does not match stdlib/*.tki and "
+                  f"src/stdlib/*.c. Run `make render-stdlib-internal`.")
+            return 1
+        print(f"internal report OK: {rel} matches the interfaces and the glue "
+              f"({len(internal_exports)} internal exports).")
+        return 0
+
     if "--quarantine-md" in sys.argv or "--quarantine-md-check" in sys.argv:
         md = render_quarantine_md(quarantined, total, passed, stale_skips)
         if "--quarantine-md" in sys.argv:
@@ -734,6 +940,15 @@ def main() -> int:
     # stops the next one.
     cross_kind = sorted(
         (f, n, kinds) for (f, n), kinds in all_names.items() if len(set(kinds)) > 1)
+    if undecided:
+        print("FAIL (a generated export over another module's glue has no")
+        print("      public/internal decision: add \"internal\": true (plumbing,")
+        print("      listed on docs/reference/stdlib-internal.md) or")
+        print("      \"internal\": false (reviewed, public) -- 136.54):")
+        for u in undecided:
+            print(f"  {u}")
+        print()
+
     if dummy_defs:
         print("FAIL (a glue function takes an ignored dummy parameter; a")
         print("      zero-argument toke function is a (void) C function, and its")
@@ -849,6 +1064,8 @@ def main() -> int:
           f"  (convention-only, exempt: {len(iface_no_funcs)})")
     print(f"  names declared under two kinds in one file: {len(cross_kind)}")
     print(f"  glue functions taking an ignored dummy parameter: {len(dummy_defs)}")
+    print(f"  exports marked internal: {len(internal_exports)}, cross-module "
+          f"generated exports with no decision: {len(undecided)}")
     print(f"  exports in a kind spelling no loader reads: {len(bad_kinds)}")
     print(f"  g_stdlib_decls entries disagreeing with the C definition: {len(decl_drift)}")
     print(f"  glue symbols declared twice in g_stdlib_decls: {len(decl_dupes)}")
@@ -861,7 +1078,7 @@ def main() -> int:
           f"with no g_stdlib_decls row: {len(arity_nodecl)}")
     print("=" * 60)
 
-    if (failures or stale_skips or undecl or cross_kind or bad_kinds or dummy_defs or no_iface
+    if (failures or stale_skips or undecl or cross_kind or bad_kinds or dummy_defs or undecided or no_iface
             or decl_drift or decl_dupes or arity_bad or stale_arity_skips
             or arity_noparams or arity_nodecl):
         return 1
