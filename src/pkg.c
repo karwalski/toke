@@ -86,6 +86,8 @@ typedef enum {
     SECT_PACKAGE,
     SECT_DEPENDENCIES,
     SECT_RESOLVED,
+    SECT_COMMIT,
+    SECT_HASH,
     SECT_OTHER
 } TomlSection;
 
@@ -102,6 +104,8 @@ parse_section(const char *line)
     if (len == 7 && strncmp(p, "package", 7) == 0) return SECT_PACKAGE;
     if (len == 12 && strncmp(p, "dependencies", 12) == 0) return SECT_DEPENDENCIES;
     if (len == 8 && strncmp(p, "resolved", 8) == 0) return SECT_RESOLVED;
+    if (len == 6 && strncmp(p, "commit", 6) == 0) return SECT_COMMIT;
+    if (len == 4 && strncmp(p, "hash", 4) == 0) return SECT_HASH;
     return SECT_OTHER;
 }
 
@@ -229,6 +233,12 @@ manifest_parse_lines(const char *text, PkgManifest *out,
 
         if (sect == SECT_PACKAGE) {
             if (strcmp(key, "name") == 0) {
+                if (!pkg_name_valid(val)) {
+                    errf(errbuf, errbufsz,
+                         "line %d: invalid package name '%s' "
+                         "(want [a-z][a-z0-9]*, not reserved)", lineno, val);
+                    return -1;
+                }
                 snprintf(out->name, sizeof(out->name), "%s", val);
             } else if (strcmp(key, "version") == 0) {
                 if (!pkg_version_parse(val, &out->version)) {
@@ -242,6 +252,12 @@ manifest_parse_lines(const char *text, PkgManifest *out,
                 errf(errbuf, errbufsz,
                      "line %d: too many dependencies (max %d)",
                      lineno, PKG_MAX_DEPS);
+                return -1;
+            }
+            if (!pkg_name_valid(key)) {
+                errf(errbuf, errbufsz,
+                     "line %d: invalid dependency name '%s' "
+                     "(want [a-z][a-z0-9]*, not reserved)", lineno, key);
                 return -1;
             }
             PkgDep *d = &out->deps[out->dep_count];
@@ -348,31 +364,191 @@ pkg_resolve(const PkgDep *deps, int dep_count, PkgLock *out)
     return 0;
 }
 
+/* ── Supply-chain checks (story 122.10) ───────────────────────────────────── */
+
+static bool
+all_lower_hex(const char *s, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        char c = s[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+
+bool
+pkg_name_valid(const char *name)
+{
+    static const char *const reserved[] = { "std", "pkg", "toke", "tkc", NULL };
+    if (!name || !(*name >= 'a' && *name <= 'z')) return false;
+    size_t n = 0;
+    for (const char *p = name; *p; p++, n++) {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9'))) return false;
+    }
+    if (n >= PKG_MAX_NAME) return false;
+    for (int i = 0; reserved[i]; i++)
+        if (strcmp(name, reserved[i]) == 0) return false;
+    return true;
+}
+
+bool
+pkg_commit_valid(const char *commit)
+{
+    if (!commit) return false;
+    size_t n = strlen(commit);
+    if (n != 40 && n != 64) return false;
+    if (!all_lower_hex(commit, n)) return false;
+    return strspn(commit, "0") != n;               /* the null object id */
+}
+
+bool
+pkg_hash_valid(const char *hash)
+{
+    if (!hash || strncmp(hash, "sha256:", 7) != 0) return false;
+    return strlen(hash + 7) == 64 && all_lower_hex(hash + 7, 64);
+}
+
+int
+pkg_lock_check_pinned(const PkgLock *lock, char *errbuf, int errbufsz)
+{
+    if (!lock) return -1;
+    for (int i = 0; i < lock->count; i++) {
+        const PkgResolved *e = &lock->entries[i];
+        if (!pkg_commit_valid(e->commit)) {
+            errf(errbuf, errbufsz, "pkg.lock: '%s' is not pinned to a commit",
+                 e->name);
+            return -1;
+        }
+        if (!pkg_hash_valid(e->hash)) {
+            errf(errbuf, errbufsz, "pkg.lock: '%s' has no content hash",
+                 e->name);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int
+pkg_lock_verify(const PkgResolved *want, const char *got_commit,
+                const char *got_hash, char *errbuf, int errbufsz)
+{
+    if (!want || !got_commit || !got_hash) return -1;
+    if (!pkg_commit_valid(want->commit) || !pkg_hash_valid(want->hash)) {
+        errf(errbuf, errbufsz, "pkg.lock: '%s' is not pinned", want->name);
+        return -1;
+    }
+    if (strcmp(want->commit, got_commit) != 0) {
+        errf(errbuf, errbufsz, "'%s': commit mismatch: lock has %s, fetched %s",
+             want->name, want->commit, got_commit);
+        return -1;
+    }
+    if (strcmp(want->hash, got_hash) != 0) {
+        errf(errbuf, errbufsz, "'%s': content hash mismatch: lock has %s, fetched %s",
+             want->name, want->hash, got_hash);
+        return -1;
+    }
+    return 0;
+}
+
 /* ── Lock file writer ──────────────────────────────────────────────────────── */
 
 int
 pkg_lock_write(const char *path, const PkgLock *lock)
 {
-    if (!path || !lock) return -1;
+    if (!path || !lock || lock->count < 0 || lock->count > PKG_MAX_DEPS)
+        return -1;
+
+    /* Validate everything before touching the file: a name is written
+     * unquoted as a TOML key, so a name with '"' or a newline would inject
+     * lock lines (122.10). */
+    for (int i = 0; i < lock->count; i++) {
+        const PkgResolved *e = &lock->entries[i];
+        if (!pkg_name_valid(e->name)) return -1;
+        if (e->commit[0] && !pkg_commit_valid(e->commit)) return -1;
+        if (e->hash[0] && !pkg_hash_valid(e->hash)) return -1;
+    }
 
     FILE *f = fopen(path, "w");
     if (!f) return -1;
 
     fprintf(f, "# pkg.lock — auto-generated by tkc pkg resolve\n");
-    fprintf(f, "# Do not edit manually.\n\n");
+    fprintf(f, "# Do not edit manually.\n");
+    fprintf(f, "lock-version = \"2\"\n\n");
     fprintf(f, "[resolved]\n");
 
+    int pinned_commits = 0, pinned_hashes = 0;
     for (int i = 0; i < lock->count; i++) {
         char vbuf[PKG_MAX_VERSION];
         pkg_version_fmt(lock->entries[i].version, vbuf, (int)sizeof(vbuf));
         fprintf(f, "%s = \"%s\"\n", lock->entries[i].name, vbuf);
+        if (lock->entries[i].commit[0]) pinned_commits++;
+        if (lock->entries[i].hash[0])   pinned_hashes++;
+    }
+    if (pinned_commits) {
+        fprintf(f, "\n[commit]\n");
+        for (int i = 0; i < lock->count; i++)
+            if (lock->entries[i].commit[0])
+                fprintf(f, "%s = \"%s\"\n", lock->entries[i].name,
+                        lock->entries[i].commit);
+    }
+    if (pinned_hashes) {
+        fprintf(f, "\n[hash]\n");
+        for (int i = 0; i < lock->count; i++)
+            if (lock->entries[i].hash[0])
+                fprintf(f, "%s = \"%s\"\n", lock->entries[i].name,
+                        lock->entries[i].hash);
     }
 
-    fclose(f);
-    return 0;
+    return fclose(f) == 0 ? 0 : -1;
 }
 
 /* ── Lock file reader ──────────────────────────────────────────────────────── */
+
+static PkgResolved *
+lock_find(PkgLock *lock, const char *name)
+{
+    for (int i = 0; i < lock->count; i++)
+        if (strcmp(lock->entries[i].name, name) == 0) return &lock->entries[i];
+    return NULL;
+}
+
+/* Apply one key = "value" line of the lock.  Returns 0, or -1 if malformed. */
+static int
+lock_apply(PkgLock *out, TomlSection sect, const char *key, const char *val)
+{
+    if (sect == SECT_NONE) {
+        /* only lock-version is defined at top level; 1 = no pins (pre-122.10) */
+        if (strcmp(key, "lock-version") == 0 &&
+            strcmp(val, "1") != 0 && strcmp(val, "2") != 0)
+            return -1;
+        return 0;
+    }
+    if (sect != SECT_RESOLVED && sect != SECT_COMMIT && sect != SECT_HASH)
+        return 0;
+    if (!pkg_name_valid(key)) return -1;
+
+    if (sect == SECT_RESOLVED) {
+        if (lock_find(out, key)) return -1;               /* duplicate */
+        if (out->count >= PKG_MAX_DEPS) return -1;
+        PkgResolved *r = &out->entries[out->count];
+        memset(r, 0, sizeof(*r));
+        snprintf(r->name, sizeof(r->name), "%s", key);
+        if (!pkg_version_parse(val, &r->version)) return -1;
+        out->count++;
+        return 0;
+    }
+
+    PkgResolved *r = lock_find(out, key);
+    if (!r) return -1;                        /* pin for an unresolved name */
+    if (sect == SECT_COMMIT) {
+        if (r->commit[0] || !pkg_commit_valid(val)) return -1;
+        snprintf(r->commit, sizeof(r->commit), "%s", val);
+    } else {
+        if (r->hash[0] || !pkg_hash_valid(val)) return -1;
+        snprintf(r->hash, sizeof(r->hash), "%s", val);
+    }
+    return 0;
+}
 
 int
 pkg_lock_read(const char *path, PkgLock *out)
@@ -390,6 +566,7 @@ pkg_lock_read(const char *path, PkgLock *out)
         /* strip newline */
         int len = (int)strlen(line);
         if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
+        else if (!feof(f)) { fclose(f); return -1; }   /* over-long line */
         if (len > 0 && line[len - 1] == '\r') line[--len] = '\0';
 
         const char *trimmed = skip_ws(line);
@@ -400,19 +577,17 @@ pkg_lock_read(const char *path, PkgLock *out)
             continue;
         }
 
-        if (sect != SECT_RESOLVED) continue;
-
         char key[PKG_MAX_NAME];
         char val[PKG_MAX_LINE];
-        if (!parse_kv(trimmed, key, (int)sizeof(key), val, (int)sizeof(val)))
+        if (!parse_kv(trimmed, key, (int)sizeof(key), val, (int)sizeof(val))) {
+            if (sect == SECT_RESOLVED || sect == SECT_COMMIT || sect == SECT_HASH) {
+                fclose(f);                     /* e.g. a key too long to hold */
+                return -1;
+            }
             continue;
+        }
 
-        if (out->count >= PKG_MAX_DEPS) { fclose(f); return -1; }
-
-        PkgResolved *r = &out->entries[out->count];
-        snprintf(r->name, sizeof(r->name), "%s", key);
-        if (!pkg_version_parse(val, &r->version)) { fclose(f); return -1; }
-        out->count++;
+        if (lock_apply(out, sect, key, val) != 0) { fclose(f); return -1; }
     }
 
     fclose(f);

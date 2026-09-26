@@ -19,6 +19,8 @@
 #define PKG_MAX_VERSION    32   /* max chars in a version string            */
 #define PKG_MAX_DEPS       64   /* max dependencies per manifest            */
 #define PKG_MAX_LINE      512   /* max line length in pkg.toml / pkg.lock   */
+#define PKG_MAX_COMMIT     65   /* 64 hex digits (SHA-256 git id) + NUL     */
+#define PKG_MAX_HASH       72   /* "sha256:" + 64 hex digits + NUL          */
 
 /* ── SemVer ────────────────────────────────────────────────────────────────── */
 
@@ -71,6 +73,8 @@ int pkg_manifest_parse_str(const char *toml, PkgManifest *out,
 typedef struct {
     char       name[PKG_MAX_NAME];
     PkgVersion version;
+    char       commit[PKG_MAX_COMMIT];  /* "" = not pinned yet (122.10)  */
+    char       hash[PKG_MAX_HASH];      /* "" = not pinned yet (122.10)  */
 } PkgResolved;
 
 typedef struct {
@@ -94,10 +98,50 @@ int pkg_resolve(const PkgDep *deps, int dep_count, PkgLock *out);
 
 /* ── Lock file I/O ─────────────────────────────────────────────────────────── */
 
-/* Write resolved versions to pkg.lock in TOML format. */
+/*
+ * Lock format 2 (story 122.10, ADR-0004 "Supply-chain security"):
+ *
+ *   lock-version = "2"
+ *   [resolved]  name = "x.y.z"
+ *   [commit]    name = "<40 or 64 lower-case hex>"
+ *   [hash]      name = "sha256:<64 lower-case hex>"
+ *
+ * [commit]/[hash] entries must name a package already in [resolved].
+ */
+
+/* Write pkg.lock.  Returns -1, writing nothing, if any entry has an invalid
+ * name or a non-empty commit/hash that is malformed. */
 int pkg_lock_write(const char *path, const PkgLock *lock);
 
-/* Read pkg.lock.  Returns 0 on success, -1 on error or missing file. */
+/* Read pkg.lock.  Returns 0 on success, -1 on error or missing file.  A
+ * malformed name, commit or hash, a duplicate entry, or a pin for a package
+ * not in [resolved] is an error. */
 int pkg_lock_read(const char *path, PkgLock *out);
+
+/* ── Supply-chain checks (story 122.10) ────────────────────────────────────── */
+
+/* Package name: [a-z][a-z0-9]{0,62}, and not std/pkg/toke/tkc. */
+bool pkg_name_valid(const char *name);
+
+/* Full git object id: exactly 40 or 64 lower-case hex digits, not all zero. */
+bool pkg_commit_valid(const char *commit);
+
+/* Content hash: "sha256:" + exactly 64 lower-case hex digits. */
+bool pkg_hash_valid(const char *hash);
+
+/*
+ * Refuse a lock that fetch/build cannot trust: every entry must carry a
+ * valid commit AND hash.  Returns 0 if all are pinned, else -1 with the
+ * first offending package named in errbuf.
+ */
+int pkg_lock_check_pinned(const PkgLock *lock, char *errbuf, int errbufsz);
+
+/*
+ * Compare what a fetch produced (commit it checked out, tree hash it
+ * computed) with the lock entry.  Exact match of both required.  Returns 0
+ * on match, else -1 with expected/actual in errbuf.
+ */
+int pkg_lock_verify(const PkgResolved *want, const char *got_commit,
+                    const char *got_hash, char *errbuf, int errbufsz);
 
 #endif /* TK_PKG_H */
