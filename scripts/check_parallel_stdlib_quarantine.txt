@@ -120,10 +120,10 @@ stdlib/yaml.md
 # 136.17 found resolved to nothing. So it was a DUPLICATE, not a unique copy,
 # and 135.13 deleted it rather than migrating it.
 #
-# Rule 2 will miss the next one the same way. A module renamed to drop an
-# underscore leaves its old doc invisible to the exact-basename check. The
-# fix is to compare against the docs/stdlib basename with `_` stripped as
-# well as verbatim; it is not made here because this file is data, not code.
+# Rule 2 would have missed the next one the same way. FIXED by story 135.11a
+# (2026-09-26): Rule 2 now compares against the docs/stdlib basename with `_`
+# stripped as well as verbatim; test/conform/C150 injects stdlib/llm_tool.md
+# and requires the gate to fail naming docs/stdlib/llmtool.md.
 #
 #   stdlib/CONTRIBUTING.md
 #   stdlib/README.md

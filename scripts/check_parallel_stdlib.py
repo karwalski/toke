@@ -80,7 +80,16 @@ def main():
         if not name.endswith(".md"):
             continue
         rel = "stdlib/" + name
-        if not os.path.exists(os.path.join(docs_dir, name)):
+        # A counterpart matches verbatim OR under the no-underscore spelling
+        # 113.2a mandated (135.11a): stdlib/llm_tool.md duplicates
+        # docs/stdlib/llmtool.md, and an exact-basename match missed it and
+        # classed the orphan as the only copy -- exactly backwards.
+        twin = None
+        for cand in (name, name.replace("_", "")):
+            if os.path.exists(os.path.join(docs_dir, cand)):
+                twin = cand
+                break
+        if twin is None:
             continue  # no counterpart: not a duplicate (see README note)
         if rel in quarantined:
             md_live += 1
@@ -88,7 +97,7 @@ def main():
         violations.append(
             "%s — duplicates docs/stdlib/%s, which is the gated copy. "
             "This one is outside docs/, so check-docs never reads it. "
-            "Delete it and keep docs/stdlib/%s." % (rel, name, name))
+            "Delete it and keep docs/stdlib/%s." % (rel, twin, twin))
 
     # Rule 3: a quarantine entry whose file is gone is stale — remove the line.
     for rel in sorted(quarantined):
