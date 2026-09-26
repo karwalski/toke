@@ -3727,6 +3727,35 @@ static Type *infer(Ctx *cx, const Node *node) {
     if (node) ((Node *)node)->rtype = t;
     return t;
 }
+/* 127.223 item 2 — the declared return type of a call whose callee is a
+ * local bound to a closure literal (`let sum=fn(x:@i64):i64{..}; sum(a)`),
+ * or NULL.  The call was TY_UNKNOWN, so the emitter fell back to its own
+ * name-keyed table and read a same-named MODULE function's return type:
+ * with `f=sum(a:$str):$str` in the module, `"\(sum(@(1;2)))"` inside a
+ * closure rendered the closure's i64 result as a string pointer (exit 139),
+ * and a str-returning closure interpolated as an address.  Only the return
+ * type is answered; argument checking against the closure's parameters is
+ * 124.0c item 2. */
+static Type *closure_local_call_ret(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1 || !call->children[0]
+        || call->children[0]->kind != NODE_IDENT) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, call->children[0]);
+    const Node *bn = local_in_force(cx, nb, (int)strlen(nb), call);
+    if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT))
+        return NULL;
+    const Node *init = bn->child_count == 2 ? bn->children[1]
+                     : bn->child_count > 2 ? bn->children[2] : NULL;
+    if (!init || init->kind != NODE_CLOSURE) return NULL;
+    for (int i = 0; i < init->child_count; i++) {
+        const Node *ch = init->children[i];
+        if (ch && ch->kind == NODE_RETURN_SPEC && ch->child_count > 0) {
+            Type *rt = resolve_return_spec(cx, ch);
+            return rt && rt->kind != TY_UNKNOWN ? rt : NULL;
+        }
+    }
+    return NULL;
+}
+
 static Type *infer_impl(Ctx *cx, const Node *node) {
     if (!node) return mk_type(cx->env->arena, TY_UNKNOWN);
     Arena *A = cx->env->arena;
@@ -4277,10 +4306,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             &&(local_in_force(cx,nb,(int)strlen(nb),node)
                ||arm_bind_lookup(cx,nb,(int)strlen(nb),node))) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
-            return mk_type(A,TY_UNKNOWN);
+            Type *crt=closure_local_call_ret(cx,node);
+            return crt?crt:mk_type(A,TY_UNKNOWN);
         }
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            { Type *crt=closure_local_call_ret(cx,node); if (crt) return crt; }
             /* 127.14: a `alias.method(...)` stdlib call the checker cannot
              * resolve — enforce the declared str parameters against the
              * argument types just inferred. */
@@ -5091,6 +5122,30 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         cx->bind_count=saved_bc; cx->scope_depth=saved_depth;
         cx->fn_node=saved_fn; cx->fn_ret=saved;
         return mk_type(A,TY_VOID);
+    }
+
+    /* ── Closure (127.224 item 3, 127.223 item 1) ────────────────────────
+     * A closure is walked like any other expression — its captures resolve
+     * against the enclosing function, so cx->fn_node stays put — but a `<`
+     * in its body returns from the CLOSURE.  With no case here the body was
+     * checked against the enclosing function's return type:
+     * `fn(s:str):str{<"x"}` inside `main():i64` was a false E4031, and after
+     * a nested closure the outer closure's `<` was judged the same way.
+     * A closure with no return spec has no declared type to check against,
+     * so its returns are left unjudged (TY_UNKNOWN).  The result is what the
+     * generic walk returned before, so the closure's own type is unchanged. */
+    case NODE_CLOSURE: {
+        Type *ret=mk_type(A,TY_UNKNOWN);
+        for (int i=0;i<node->child_count;i++) {
+            const Node *ch=node->children[i];
+            if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
+                ret=resolve_return_spec(cx,ch);
+        }
+        Type *saved=cx->fn_ret; cx->fn_ret=ret;
+        Type *last=mk_type(A,TY_VOID);
+        for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
+        cx->fn_ret=saved;
+        return last;
     }
 
     /* ── Statement list ──────────────────────────────────────────────────

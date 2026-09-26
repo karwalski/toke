@@ -8136,6 +8136,15 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                 return "$str";
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
+        /* 127.223 item 2: a local bound to a closure is what the call
+         * lowers to (emit_expr's indirect-call path), so a same-named module
+         * function's signature says nothing about the result.  Reading it
+         * tagged a closure's i64 result "$str" when the module declared
+         * `f=sum(..):$str`, and the interpolation dereferenced 3 (exit 139).
+         * The checker's rtype (closure_local_call_ret) carries a declared
+         * str/array/struct result; an untagged answer is the i64 default. */
+        if (n->children[0]->kind == NODE_IDENT && clos_local_lookup(c, fn))
+            return NULL;
         if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
         mangle_fn_name(c, fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
