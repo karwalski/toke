@@ -4424,7 +4424,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         if (def->kind==NODE_PARAM&&def->child_count>1&&def->children[1])
             return resolve_type(cx,def->children[1]);
-        if (def->kind==NODE_FUNC_DECL) return mk_type(A,TY_FUNC);
+        /* 124.0c item 2: a function named bare is a value of its signature
+         * (`ap(inc;5)` against a `(i64):i64` parameter). */
+        if (def->kind==NODE_FUNC_DECL) return params_sig(cx,def,0);
         return mk_type(A,TY_UNKNOWN);
     }
 
