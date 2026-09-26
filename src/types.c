@@ -652,6 +652,21 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
         int elen = j - (i + 2);
         if (elen <= 0) { i = j; continue; }
 
+        /* 127.224: the parser attached this segment's expression to the
+         * STR_LIT as a child (127.24), in the checked tree and in real
+         * coordinates; the emitter lowers THAT node and reads its rtype to
+         * pick unsigned/bool/str rendering and receiver glue.  Inferring a
+         * private re-parse left the child untyped, so `\(e)` on a u8 and
+         * `\(b.words.get(1))` lowered on the backend's guesses.  Infer the
+         * child itself; the re-parse is only the fallback for literals the
+         * parser did not attach (non-default profile, depth or segment cap). */
+        const Node *attached = NULL;
+        for (int q = 0; q < strnode->child_count; q++) {
+            const Node *ch = strnode->children[q];
+            if (!ch) continue;
+            int ts = ch->tok_start - strnode->tok_start;
+            if (ts >= i + 2 && ts < j) { attached = ch; break; }
+        }
         static const char WRAP_PREFIX[] = "m=i;f=e():$str{<";
         int wrap_cap = elen + 48;
         char *wrap = (char *)arena_alloc(A, wrap_cap);
@@ -664,11 +679,15 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
         Token *toks = (Token *)arena_alloc(A, (size_t)tcap * sizeof(Token));
         /* 127.186: a lex/parse error in the segment is reported inside the
          * literal, not at the wrapper's offset on line 1. */
-        diag_rebase_push((int)(sizeof(WRAP_PREFIX) - 1), strnode->tok_start + i + 2, elen);
-        int tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
-        Node *ast = tc > 0 ? parse(toks, tc, wrap, A, 0) : NULL;
-        diag_rebase_pop();
-        if (tc > 0) {
+        int tc = 0;
+        Node *ast = NULL;
+        if (!attached) {
+            diag_rebase_push((int)(sizeof(WRAP_PREFIX) - 1), strnode->tok_start + i + 2, elen);
+            tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
+            ast = tc > 0 ? parse(toks, tc, wrap, A, 0) : NULL;
+            diag_rebase_pop();
+        }
+        if (tc > 0 || attached) {
             Node *expr = NULL, *fn = NULL;
             if (ast) {
                 for (int k = 0; k < ast->child_count; k++) {
@@ -695,10 +714,12 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                         }
                 }
             }
-            if (expr) {
+            if (attached) expr = (Node *)attached;
+            else if (expr)
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
                 shift_tok_offsets(expr, delta, strnode);
+            if (expr) {
                 const Node *saved_host = cx->interp_host;
                 cx->interp_host = strnode;
                 Type *t = infer(cx, expr);
@@ -2101,9 +2122,35 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
         return NULL;
     }
-    case NODE_STRUCT_LIT: case NODE_FIELD_EXPR: case NODE_MAP_LIT: {
+    case NODE_STRUCT_LIT: case NODE_MAP_LIT: {
         Type *it = infer(cx, initN);
         if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT)) return it;
+        return NULL;
+    }
+    /* 127.224: a field read also binds an ARRAY (`let ws=b.words` on a
+     * `words:@str` field).  Leaving it out left `ws` untyped, so
+     * `ws.get(1)`/`ws.contains(..)` dispatched on the backend's guess.  A
+     * field's operand can name another binding, so this takes the depth
+     * guard like the other re-entrant cases. */
+    case NODE_FIELD_EXPR: {
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *it = infer(cx, initN);
+        cx->bind_infer_depth--;
+        if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT ||
+                   it->kind == TY_ARRAY)) return it;
+        return NULL;
+    }
+    /* 127.224 / 127.223 item 7: `let s=a+a` on u64, `let w=v-1`.  The
+     * binding was untyped, so `\(s>a)` compared signed and `w as u64` drew
+     * no W1001 while `(v-1) as u64` did.  Operands name other bindings, so
+     * this takes the depth guard. */
+    case NODE_BINARY_EXPR: {
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *it = infer(cx, initN);
+        cx->bind_infer_depth--;
+        if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
         return NULL;
     }
     /*

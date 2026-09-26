@@ -1,4 +1,4 @@
-(* 123.6 WITNESS (quarantined; new defect found by 123.6): a receiver that is
+(* 123.6 CERTIFICATE (was a quarantined witness; fixed by 127.224): a receiver that is
  * a struct FIELD — or a local bound from one — dispatches to the wrong glue.
  * `b.words.get(1)` interpolated directly prints a heap address instead of
  * "q"; so does `ws.get(1)` after `let ws=b.words`; `.contains` on that @str
