@@ -91,6 +91,42 @@ def require_population(what: str, got: int, floor: int, where: str) -> None:
     raise SystemExit(2)
 
 
+# ── export kinds the compiler reads (story 127.209) ────────────────────────
+#
+# The .tki loaders (register_tki_struct_types and the tki cache in llvm.c,
+# tki_record_exports in names.c) recognise exactly these kinds, and a sum
+# ONLY as `"kind":"type"` + `"is_sum": true` + `"fields"` of `$variant`
+# entries. Any other spelling is read as nothing at all -- no error, no
+# warning -- which is how `"sum_type"` (db, mdns, time, tls, vecstore),
+# `"sum"` (env, process), `"record"` (md) and the `"variants"` key (file,
+# json, image, http) came to sit in the interfaces while every payload they
+# typed bound nil and `mt e{$notfound:m ...}` failed E9005.
+KNOWN_KINDS = {"func", "type", "route", "convention"}
+VARIANT_NAME = re.compile(r"^\$[a-z][a-z0-9]*$")
+
+
+def kind_findings(tki_name: str, export: dict) -> list[str]:
+    """Why this export is spelled in a way no loader reads; [] if canonical."""
+    out = []
+    kind = export.get("kind")
+    name = export.get("name", "?")
+    if kind not in KNOWN_KINDS:
+        out.append(f"{tki_name} :: {name}: kind {kind!r} is not one of "
+                   f"{sorted(KNOWN_KINDS)}; nothing registers it")
+    for key in ("variants", "sum"):
+        if key in export:
+            out.append(f"{tki_name} :: {name}: key {key!r} is not read by any "
+                       f"loader; a sum is \"kind\":\"type\" + \"is_sum\": true "
+                       f"+ \"fields\" of $variants")
+    if export.get("is_sum"):
+        for f in export.get("fields") or []:
+            v = f.get("name", "") if isinstance(f, dict) else str(f)
+            if not VARIANT_NAME.match(v):
+                out.append(f"{tki_name} :: {name}: variant {v!r} is not "
+                           f"`$` + lowercase, so no match arm can name it")
+    return out
+
+
 # ── compiler tables (parsed from src/llvm.c) ────────────────────────────────
 
 def load_resolver_tables(llvm_path: Path):
@@ -544,6 +580,7 @@ def main() -> int:
     resolved_symbols: set[str] = set()
     seen_keys: set[str] = set()
     all_names: dict[tuple[str, str], list[str]] = {}
+    bad_kinds: list[str] = []
 
     for tki_file in tki_files:
         try:
@@ -555,6 +592,7 @@ def main() -> int:
         module = data.get("module", "")
         mod = module[4:] if module.startswith("std.") else module  # mirrors llvm.c
         for export in data.get("exports", []):
+            bad_kinds.extend(kind_findings(tki_file.name, export))
             if export.get("kind") != "func":
                 if export.get("name"):
                     all_names.setdefault(
@@ -719,6 +757,14 @@ def main() -> int:
             print(f"  {f} :: {n}  declared as {' + '.join(sorted(set(kinds)))}")
         print()
 
+    if bad_kinds:
+        print("FAIL (an export spelled in a way no .tki loader reads -- it is")
+        print("      silently ignored, so a type it declares is never registered")
+        print("      and a payload it types binds nil -- 127.209):")
+        for b in bad_kinds:
+            print(f"  {b}")
+        print()
+
     if no_iface:
         print("FAIL (registered in stdlib_table[] with no stdlib/<mod>.tki — the")
         print("      import is accepted and the generic tk_<mod>_<method>_w rule")
@@ -809,6 +855,7 @@ def main() -> int:
     print(f"  unregistered interfaces with a callable surface: {len(orphan_iface)}"
           f"  (convention-only, exempt: {len(iface_no_funcs)})")
     print(f"  names declared under two kinds in one file: {len(cross_kind)}")
+    print(f"  exports in a kind spelling no loader reads: {len(bad_kinds)}")
     print(f"  g_stdlib_decls entries disagreeing with the C definition: {len(decl_drift)}")
     print(f"  glue symbols declared twice in g_stdlib_decls: {len(decl_dupes)}")
     print(f"  .tki arities compared against g_stdlib_decls: {arity_compared}"
@@ -821,7 +868,7 @@ def main() -> int:
           f"with no g_stdlib_decls row: {len(arity_nodecl)}")
     print("=" * 60)
 
-    if (failures or stale_skips or undecl or cross_kind or no_iface
+    if (failures or stale_skips or undecl or cross_kind or bad_kinds or no_iface
             or decl_drift or decl_dupes or arity_bad or stale_arity_skips
             or arity_noparams or arity_nodecl):
         return 1
