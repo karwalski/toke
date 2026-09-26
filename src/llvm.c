@@ -4560,6 +4560,26 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  call void @tk_div_trap(i32 %d)\n", n->op == TK_PERCENT ? 1 : 0);
                 fprintf(c->out, "  unreachable\n");
                 fprintf(c->out, "dz_ok%d:\n", lc);
+                /* 121.36 / ADR-0012 (b): the other undefined sdiv/srem is the
+                 * most negative value divided by -1 — the quotient does not
+                 * fit, and measured -O0 and -O2 builds disagreed (INT64_MIN
+                 * vs 0).  Trap RT004 for both `/` and `%`, as the ADR says. */
+                {
+                    const char *mn = !strcmp(ity, "i8")  ? "-128"
+                                   : !strcmp(ity, "i16") ? "-32768"
+                                   : !strcmp(ity, "i32") ? "-2147483648"
+                                   : "-9223372036854775808";
+                    int ism = next_tmp(c), isn1 = next_tmp(c), ovf = next_tmp(c);
+                    int lt2 = next_lbl(c), lc2 = next_lbl(c);
+                    fprintf(c->out, "  %%t%d = icmp eq %s %%t%d, %s\n", ism, ity, lhs, mn);
+                    fprintf(c->out, "  %%t%d = icmp eq %s %%t%d, -1\n", isn1, ity, rhs);
+                    fprintf(c->out, "  %%t%d = and i1 %%t%d, %%t%d\n", ovf, ism, isn1);
+                    fprintf(c->out, "  br i1 %%t%d, label %%dv_trap%d, label %%dv_ok%d\n", ovf, lt2, lc2);
+                    fprintf(c->out, "dv_trap%d:\n", lt2);
+                    fprintf(c->out, "  call void @tk_div_trap(i32 %d)\n", n->op == TK_PERCENT ? 3 : 2);
+                    fprintf(c->out, "  unreachable\n");
+                    fprintf(c->out, "dv_ok%d:\n", lc2);
+                }
             }
             fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op_buf, lhs, rhs);
         }

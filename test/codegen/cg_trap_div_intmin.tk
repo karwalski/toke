@@ -1,11 +1,9 @@
-(* 123.6 WITNESS for 121.36 (quarantined): ADR-0012 (b) requires a guard on
- * INT64_MIN / -1 as well as on a zero divisor.  There is none: the quotient
- * is machine UB, and the build is not even self-consistent — measured
- * 2026-09-25, -O0 prints -9223372036854775808 and -O2 prints 0.  Expected
- * behaviour below is the trap; only the RT004 code is pinned, since the ADR
- * words its message "invalid division" and the runtime today only knows
- * "division by zero".  The FAIL line does not print the quotient, because
- * it differs by optimisation level.
+(* 123.6 certificate for 121.36 (a witness until 127.217 fixed it): ADR-0012
+ * (b) requires a guard on INT64_MIN / -1 as well as on a zero divisor.  There
+ * was none: the quotient is machine UB, and the build was not even
+ * self-consistent — measured 2026-09-25, -O0 printed -9223372036854775808 and
+ * -O2 printed 0.  Only the RT004 code is pinned.  The FAIL line does not
+ * print the quotient, because it differed by optimisation level.
  * expect-exit: 1
  * expect-stderr: RT004: *)
 m=cgtrapdivintmin;

@@ -59,6 +59,11 @@
   1,
   "00ebd11b17cf29d6"
  ],
+ "test/codegen/cg_trap_div_intmin.tk": [
+  true,
+  1,
+  "fe8f71c14d2dbfb4"
+ ],
  "test/codegen/cg_trap_nil.tk": [
   true,
   1,
