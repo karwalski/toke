@@ -66,43 +66,197 @@ Strings are **C strings**: null-terminated `ptr` (pointer to `i8`).
 
 ## 4. Array Layout
 
-Arrays use a **length-prefixed** layout where all elements are `i64`:
+> Rewritten 2026-09-26 (135.18). The version this replaces described the
+> pre-114.18 single-word header and stack-allocated literals; neither has been
+> true since ADR-0006. `src/stdlib/tk_array.h` is the normative source.
+
+Every array is a heap block with a three-word header and `i64` element slots:
 
 ```
-Memory: [ len | data[0] | data[1] | ... | data[len-1] ]
-         ^      ^
-         block   ptr (what toke code sees)
+Memory: [ rc | cap | len | data[0] | data[1] | ... | data[len-1] ]
+                           ^ handle (the i64 that crosses the toke ABI)
+handle[-1] == len    handle[-2] == cap    handle[-3] == rc
 ```
 
-- The pointer exposed to toke code points to `data[0]`.
-- The length is stored at `ptr[-1]` (i.e. one i64 before the data pointer).
-- Element type is `i64` (8 bytes). Non-integer values such as pointers
-  to strings or nested arrays are stored as `i64` via `ptrtoint`/`inttoptr`.
+- `len` and `cap` count elements. `rc` is a monotonic reference count used
+  only for copy-on-write (ADR-0006 D2): a mutation writes in place when
+  `rc == 1`, otherwise it copies. Blocks are never freed.
+- Every element is 8 bytes. `f64` elements are stored as their bit pattern;
+  `str`, struct and nested-array elements as a pointer (`ptrtoint`).
+- Construction goes through `tk_arr_alloc(cap, len)` in C and an inlined
+  `malloc((n + 3) * 8)` with the same header in codegen (array literals,
+  spread). There are no stack-allocated or header-less array blocks.
 
-**Stack-allocated array literals**:
-```llvm
-%t0 = alloca i64, i64 4          ; block: len + 3 elements
-%t1 = getelementptr inbounds i64, ptr %t0, i64 0
-store i64 3, ptr %t1             ; store length
-%t2 = getelementptr inbounds i64, ptr %t0, i64 1  ; data start
-; store elements at %t2 + offset...
-```
+**Length** (`.len`): `load i64, (gep i64, handle, -1)`.
+**Element read** (`a[i]`, after the RT003 bounds check against `handle[-1]`):
+`load i64, (gep i64, handle, i)`, then a `bitcast` to `double` for `[f64]`.
+Everything else (`append`, `set`, `slice`, `+`, `map`/`filter`/`reduce`/`sort`,
+`join`, `indexof`) is a runtime call into `collections_glue.c`, `str_glue.c` or
+`tk_runtime.c`.
 
-**Heap-allocated arrays** (runtime operations like concat): allocated
-via `malloc((len + 1) * sizeof(i64))` in the C runtime. The returned
-pointer points to `data[0]`.
+### 4.1 `[byte]` today: one i64 slot per byte
 
-**Length access** (`.len` property):
-```llvm
-%t0 = getelementptr inbounds i64, ptr %arr, i32 -1
-%t1 = load i64, ptr %t0
-```
+A `[byte]` is an ordinary array whose elements happen to be 0..255
+(`src/stdlib/bytes_rt.h`). Glue converts at the boundary with
+`tk_bytes_unpack` (block → malloc'd `uint8_t *`) and `tk_bytes_pack`
+(`uint8_t *` → block). This is binary-safe and needs no codegen support, and
+it costs **eight bytes of memory per byte of data** — which is why
+`file.readbytes` and `file.readrange` are capped at 64 MiB
+(`TK_FILE_MAX_BYTES`).
 
-**Element access** (indexing):
-```llvm
-%t0 = getelementptr i64, ptr %arr, i64 %idx
-%t1 = load i64, ptr %t0
-```
+Measured on this host (macOS 26.6.2 arm64, Apple clang 21.0.0;
+`test/perf/perfmeasure.sh`, peak RSS, 3 runs):
+
+| Program | Peak RSS |
+|---|---|
+| `file.readbytes` of a 64 MiB file (the cap) | 605,536,256 B (577 MiB) |
+| 64 × `file.readrange` 1 MiB windows over the same file | 543,719,424 B (518 MiB) |
+
+The second row is the leak-forever model (ADR-0006) multiplying the first:
+each 1 MiB window costs 8 MiB and is never returned.
+
+### 4.2 The compact-buffer plan (story 135.18) — not landed
+
+**Status: plan plus a measured prototype on branch `proto/cb-byte-compact`.
+Not merged, and deliberately so.** The row asked for one coherent change or
+none; the premise check below found the change is larger than the row
+assumed, and two of its prerequisites are open defects in codegen.
+
+#### What the premise check found
+
+1. **The saving is real.** The prototype (below) measures `readbytes` at the
+   cap at 135,757,824 B (129 MiB, down 4.5×) and the 64-window `readrange`
+   loop at 73,236,480 B (70 MiB, down 7.4×), wall 0.08 s → 0.03 s. The row's
+   "~576 MiB → ~128 MiB" is borne out.
+2. **`[byte]` is not a distinct type anywhere the layout could key on.** The
+   checker accepts every one of these, and all run correctly today:
+   ```toke
+   f=g(b:@byte):i64{<b.len};
+   let a = @(97;0;98);            (* an [i64] literal ... *)
+   g(a);                          (* ... passed as [byte] *)
+   let y:@i64 = s.bytes("abc");   (* a [byte] bound as [i64] *)
+   let x = @(1;2) + s.bytes("zz") (* mixed concatenation *)
+   ```
+   So codegen cannot choose an element width from the static type: the same
+   block reaches `[i64]` and `[byte]` code. The width has to travel **with the
+   block**, and every reader has to dispatch on it — or the type system has to
+   separate the two (see option B).
+3. **The consumer count is larger than recorded.** The row counted 79
+   pack/unpack call sites in 10 glue modules. Measured now: **96 in 13**
+   (`encrypt` 34, `crypto` 17, `encoding` 12, `image` 8, `csv` 7, `auth`,
+   `file`, `ocr`, `str` 3 each, `ws`, `zip` 2, `pdf`, `xlsx` 1). Those are the
+   *easy* ones — they go through the helpers. The hard ones read elements
+   directly: **88 raw `[-1]`/element reads in 20 stdlib C files** that treat an
+   array generically (`json_glue.c`, `csv_glue.c`, `template_glue.c`,
+   `db_glue.c`, `vecstore_glue.c`, …), **20 generic array functions** in
+   `collections_glue.c`/`str_glue.c`/`tk_runtime.c`, and the inline codegen
+   sites in `src/llvm.c` (element read, literal construction, spread copy
+   `len * 8`). Any one of them handed a compact block reads bytes as words
+   and returns a plausible wrong answer — the prototype shows exactly that for
+   `json.print`.
+4. **Two prerequisite codegen defects** (found here; both reproduce on main
+   with the current layout, so neither is caused by this plan):
+   - `let b = s.bytes("AB"); let e = b + b;` lowers `+` as
+     `llvm.sadd.with.overflow.i64` on the two **pointers**; `e.len` then reads
+     a wild address (garbage length, RT003 with a random length, or SIGBUS
+     across runs). With `let b:@byte = …` it concatenates correctly.
+   - `b.slice(1;2)` on a `[byte]` lowers to `tk_str_slice_w`, a string slice
+     over the array block — SIGSEGV. 127.45's array slice covers typed
+     receivers only.
+   Both mean codegen does not reliably know a `[byte]` is an array. A width
+   dispatch built on top of that inherits every place it guesses wrong.
+5. **Two producers declare `[byte]` and return a C string**:
+   `chart.tojson` (`chart_glue.c:84`) and `http.streamnext`
+   (`tk_web_glue.c:1251`). `.len` on either reads the 8 bytes before a
+   `malloc`'d string (0 in the reproduction), and `str.frombytes` of the result
+   is empty, so the JSON never reaches a toke caller. They must be fixed to
+   return real `[byte]` before any layout change, or they become over-reads
+   of a different shape.
+
+#### Option A (recommended): width travels with the block
+
+- **Encoding.** The top byte of the `cap` word is an element-width code:
+  `0` = `i64` slots (every block that exists today, bit-for-bit unchanged),
+  `1` = `u8`. `len` stays at `handle[-1]` as an element count, so `.len`
+  needs no change anywhere. Caps stay below 2^56 elements. A `u8` block keeps
+  the 3-word header and rounds its data up to a whole word.
+- **Readers.** One accessor pair, `tk_arr_ld(h, i)` / `tk_arr_st(h, i, v)` in
+  `tk_array.h`, and a rule: **nothing outside `tk_array.h` and `bytes_rt.h`
+  indexes an array block with a raw pointer.** Codegen's inline element read
+  becomes a width test and two loads (or a call; see cost).
+- **Mixed operations widen.** `u8 + u8` stays `u8`; any other `+`, an
+  `append`/`set` of a value outside 0..255, and every generic producer that
+  cannot prove its output fits, produce `i64` slots. Values are never
+  truncated: a `[byte]` that acquires a 300 simply becomes wide.
+- **Literals stay wide.** `@(97;0;98)` remains an `i64` block and is still
+  accepted wherever `[byte]` is, because `tk_bytes_unpack` reads both widths.
+  Only `tk_bytes_pack` produces compact blocks, which is where every large
+  `[byte]` comes from (files, network, crypto, codecs).
+- **Cost.** One extra load and branch on every element read of every array.
+  That must be measured by `perf-check` before it lands, not assumed.
+- **The gate that makes it safe.** A `check-array-access` script that fails on
+  any `(int64_t *)` element access or `[-1]`/`[-2]` read of an array handle
+  outside `tk_array.h`/`bytes_rt.h`, with a dated skiplist that starts at the
+  88 + 20 sites above and must reach zero before the producer flips. This is
+  what turns "silent wrong answer" into "red gate", and it is the reason the
+  change cannot be done piecemeal.
+
+#### Option B: make `[byte]` a distinct static type
+
+Give `[byte]` its own element width at compile time, with an explicit or
+checker-inserted conversion wherever an `[i64]` flows into it and back. Codegen
+then emits byte loads directly and no reader dispatches. It is cleaner and
+cheaper at run time, but it is a **language change**: every example above
+stops type-checking or changes meaning, corpus programs that treat bytes as
+`i64` arrays need migration, and it needs a spec amendment story and
+`types.c` work. Not recommended as the first step; it becomes cheap once A's
+accessor discipline exists, because the dispatch can then be specialised away
+where the type is known.
+
+#### Landing order (one branch, merged together)
+
+1. Fix the prerequisites: `[byte]` `+` and `.slice` lowering (item 4) and the
+   two string-returning producers (item 5), each with its own conformance
+   test. These are independent bug fixes and can merge on their own.
+2. Add the accessors and the width code with **every producer still emitting
+   width 0**. Behaviour identical, `make diff-codegen` 0 changes in stdout,
+   `perf-check` measures the dispatch cost.
+3. Convert every reader to the accessors; add `check-array-access`; drive its
+   skiplist to zero.
+4. Flip `tk_bytes_pack` to width 1. This is the only commit that changes the
+   layout of any live block, so it can be reverted alone.
+5. Conformance suite (C157 is reserved for it) exercising `.len`, `a[i]`,
+   `.get`, `.set`, `append`, `+`, `slice`, `map`/`filter`/`reduce`/`sort`,
+   `indexof`, `json.print`, interpolation, `str.bytes`/`str.frombytes` and one
+   consumer per glue module, each at lengths 0, 1 and 2^20 and with the values
+   0, 1 and 255, on both widths and on mixed pairs; ASan runs of the stdlib
+   tests that move bytes; `perfmeasure.sh` before/after on the two programs
+   in 4.1. Then, and only then, revisit the 64 MiB cap.
+
+Steps 2–4 touch the element-read and literal paths of `src/llvm.c`, so they
+need a window in which no other batch is editing those paths.
+
+#### The prototype (branch `proto/cb-byte-compact`, not for merge)
+
+Implements the encoding, `tk_arr_ld`/`tk_arr_st`/`tk_arr_alloc_u8`/`tk_arr_widen`,
+compact `tk_bytes_pack`, width-aware `tk_bytes_unpack`, an out-of-line
+`tk_arr_ld_w` for codegen's `a[i]`, and width dispatch in `append`,
+`append_inplace`, `set`, `set_inplace`, `get`, `pop`, `slice`, `indexof`,
+`map`/`filter`/`reduce`/`sort` and `tk_array_concat`. Nothing else is
+converted. What it proves and what it does not:
+
+- `test/standalone/test_bytes_crypto`, `test_encoding`, `test_encoding_full`,
+  `test_crypto_full`, `test_127_38` and `test_str_join` all pass on it, as do
+  mixed `[i64] + [byte]`, `@i64`-annotated `[byte]`, and an `[i64]` literal
+  passed to a `[byte]` parameter.
+- Memory as in item 1 above.
+- `json.print` of a compact `[byte]` prints `[16961,…]` — two bytes read as
+  one word — instead of `[65,66]`. That is the unconverted-reader failure
+  mode, observed, and it is why step 3's gate precedes step 4.
+- `make conform` was not run on the prototype: the machine-wide gate slots
+  were held by the other batches for the whole window, and the slot went to
+  this branch's own gate. The unconverted-reader inventory in item 3, not a
+  conformance count, is the measure of what is left.
 
 ---
 
