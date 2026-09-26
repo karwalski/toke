@@ -219,34 +219,6 @@ runs() {
     fi
 }
 
-# segfaults NAME SOURCE — the program builds and dies.  Asserted, not assumed:
-# this is the premise of 127.140, and if str.join's argument handling is ever
-# made order-tolerant this case turns red and the story should be revisited
-# rather than the `fix` text quietly becoming arbitrary again.
-segfaults() {
-    local name="$1" src="$2"
-    printf '%s\n' "${src}" > "x.tk"
-    rm -f x_bin
-    "${TKC}" --allow-all --out x_bin "x.tk" >/dev/null 2>&1
-    if [ ! -x x_bin ]; then
-        echo "  FAIL: ${name}: expected it to build (that is the defect)"
-        FAIL=$((FAIL + 1)); return
-    fi
-    # The crash is the expected result, so the shell's own "Segmentation
-    # fault" notice is suppressed: a scary line inside a PASSING gate is
-    # exactly the kind of noise that gets misread as a failure.
-    local rrc=0
-    ( ./x_bin >/dev/null 2>&1 ) 2>/dev/null || rrc=$?
-    if [ "${rrc}" -ge 128 ]; then
-        echo "  PASS: ${name} — built and died with signal exit ${rrc}"
-        PASS=$((PASS + 1))
-    else
-        echo "  NOTE: ${name}: exited ${rrc}, not a signal — see 127.140"
-        echo "  PASS: ${name} — (premise weakened, not a regression here)"
-        PASS=$((PASS + 1))
-    fi
-}
-
 # ── A. 127.140 — the fix field that pointed at a segfault ──────────────────
 echo ""
 echo "A. 127.140 (P0): the E4031 for str+str"
@@ -267,8 +239,10 @@ fixsays  "A3 the fix names the declared order s.join(sep;arr)" E4031 's.join(sep
 # A4 — position still names the operator, not the statement or the file.
 emits "A4 E4031 lands on line 3" E4031 3 - "${A_SRC}"
 
-# A5/A6 — EXECUTE both orders.  This is the assertion that would have caught
-# the defect; every string-reading gate in the tree missed it.
+# A5/A6 — both orders.  This is the assertion that would have caught the
+# defect; every string-reading gate in the tree missed it.  A6 asserted that
+# the retired order builds and dies; since 127.201 it no longer builds —
+# --check rejects the array in str.join's C-string slot — so A6 pins that.
 runs "A5 the fix's order s.join(sep;arr) runs and joins" 'a,b' \
 'm=t;
 i=s:std.str;
@@ -279,7 +253,7 @@ f=main():i64{
   <0
 };'
 
-segfaults "A6 the retired order s.join(arr;sep) still dies" \
+emits "A6 the retired order s.join(arr;sep) is E4031 at check (127.201)" E4031 6 - \
 'm=t;
 i=s:std.str;
 i=io:std.io;
