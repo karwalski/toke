@@ -80,9 +80,7 @@
     {
       "kind": "func",
       "name": "i18n.newstrarray",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },

@@ -353,12 +353,10 @@ int64_t tk_map_setint_w(int64_t map, int64_t key, int64_t val) {
 }
 
 /* array extras — allocate empty toke-format arrays */
-int64_t tk_array_newarray_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_array_newarray_w(void) {
     return tk_arr_alloc(0, 0);
 }
-int64_t tk_array_newstrarray_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_array_newstrarray_w(void) {
     return tk_arr_alloc(0, 0);
 }
 int64_t tk_array_strarrayappend_w(int64_t arr, int64_t s) { return tk_array_append_w(arr, s); }

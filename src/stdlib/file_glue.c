@@ -255,8 +255,7 @@ int64_t tk_fs_write_w(int64_t path, int64_t content) { return tk_file_write_w(pa
 int64_t tk_fs_writetext_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
 
 /* file.tempdir() — return a temporary directory path */
-int64_t tk_file_tempdir_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_file_tempdir_w(void) {
     const char *tmp = getenv("TMPDIR");
     if (!tmp) tmp = "/tmp";
     return (int64_t)(intptr_t)tmp;

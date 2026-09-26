@@ -83,8 +83,7 @@ int64_t tk_i18n_locale_w(void) {
     return (int64_t)(intptr_t)i18n_locale();
 }
 
-int64_t tk_i18n_newstrarray_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_i18n_newstrarray_w(void) {
     return 0; /* No standalone StrArray constructor in i18n.h */
 }
 

@@ -278,7 +278,7 @@ static int64_t str_array_append(int64_t arr_i64, int64_t elem) {
 }
 
 /* str newarray */
-int64_t tk_str_newarray_w(int64_t dummy) { (void)dummy; return str_make_empty_array(); }
+int64_t tk_str_newarray_w(void) { return str_make_empty_array(); }
 
 /* str extras */
 int64_t tk_str_emptyarr_w(void) { return str_make_empty_array(); }
@@ -606,11 +606,10 @@ int64_t tk_str_hexid_w(int64_t n) {
 int64_t tk_str_randhex_w(int64_t n) { return tk_str_hexid_w(n); }
 
 /* string.uuid() ��� generate 16 random bytes as hex (32 hex chars) */
-int64_t tk_string_uuid_w(int64_t dummy) { (void)dummy; return tk_str_hexid_w(16); }
+int64_t tk_string_uuid_w(void) { return tk_str_hexid_w(16); }
 
 /* str.nowiso8601() — current time as ISO 8601 string */
-int64_t tk_str_nowiso8601_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_str_nowiso8601_w(void) {
     extern int64_t tk_time_now_w(void);
     extern int64_t tk_time_format_w(int64_t, int64_t);
     int64_t ts = tk_time_now_w();
@@ -618,8 +617,7 @@ int64_t tk_str_nowiso8601_w(int64_t dummy) {
 }
 
 /* str.nowunix() — current Unix timestamp as string */
-int64_t tk_str_nowunix_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_str_nowunix_w(void) {
     extern int64_t tk_time_now_w(void);
     int64_t ms = tk_time_now_w();
     int64_t secs = ms / 1000;

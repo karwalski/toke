@@ -121,9 +121,7 @@
     {
       "kind": "func",
       "name": "chart.new",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },

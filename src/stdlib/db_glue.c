@@ -247,8 +247,7 @@ int64_t tk_db_rowstr_w(int64_t row, int64_t col) {
 }
 
 /* db.nowms() — convenience: current time in ms (delegates to time module) */
-int64_t tk_db_nowms_w(int64_t dummy) {
-    (void)dummy;
-    extern int64_t tk_time_nowms_w(int64_t);
-    return tk_time_nowms_w(0);
+int64_t tk_db_nowms_w(void) {
+    extern int64_t tk_time_nowms_w(void);
+    return tk_time_nowms_w();
 }

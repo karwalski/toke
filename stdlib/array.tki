@@ -122,18 +122,14 @@
     {
       "kind": "func",
       "name": "array.newarray",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },
     {
       "kind": "func",
       "name": "array.newstrarray",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },

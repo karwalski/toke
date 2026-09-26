@@ -164,9 +164,7 @@
     {
       "kind": "func",
       "name": "db.nowms",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },

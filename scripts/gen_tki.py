@@ -58,10 +58,12 @@ this script exists to end:
 
 That single rule covers all ten exemptions without naming one of them:
 `tk_infer_load_w(model_path)`, `tk_mlx_generate_w`, `tk_mdns_advertise_w` and
-`tk_tls_genselfsigned_w` (stubs, routed to 136.7/136.44) and
-`tk_mlx_isavailable_w`, `tk_securemem_isavailable_w`, `tk_securemem_sweep_w`
-(the dummy convention, routed to 136.14).  It generalises the one-parameter
-analysis in gen_stdlib_decls.py (127.61) to any arity.
+`tk_tls_genselfsigned_w` (stubs, routed to 136.7/136.44).  The dummy
+convention it also covered is gone (136.14/135.17b): the 23 glue functions
+that took an ignored `int64_t dummy` now take `(void)`, so their interfaces
+are corrected to zero parameters by rule (1) like any other arity, and
+check_tki_coverage.py fails on a reintroduced dummy.  It generalises the
+one-parameter analysis in gen_stdlib_decls.py (127.61) to any arity.
 
 It follows that this script MUST run after the builtin table agrees with the
 C sources -- see check_tki_coverage.py's decl-vs-C gate.  A wrong entry in

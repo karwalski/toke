@@ -62,20 +62,18 @@ int64_t tk_time_weekday_w(int64_t ts) {
 /* ── Linker-gap additions ───────────────────────────────────────────────── */
 
 /* time.nowms() — current Unix timestamp in milliseconds (same as time.now) */
-int64_t tk_time_nowms_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_time_nowms_w(void) {
     return (int64_t)tk_time_now();
 }
 
 /* time.nowunix() — current Unix timestamp in seconds */
-int64_t tk_time_nowunix_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_time_nowunix_w(void) {
     return (int64_t)(tk_time_now() / 1000);
 }
 
 /* time.unixnow() — alias for nowunix */
-int64_t tk_time_unixnow_w(int64_t dummy) {
-    return tk_time_nowunix_w(dummy);
+int64_t tk_time_unixnow_w(void) {
+    return tk_time_nowunix_w();
 }
 
 /* time.elapsedms(start) — milliseconds elapsed since start timestamp */

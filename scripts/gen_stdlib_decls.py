@@ -13,6 +13,9 @@ needs that fact to decide whether a zero-argument toke call into a
 one-parameter symbol is the benign `(void)dummy` convention (136.14) or a
 genuine arity error, and it must be *established from the source* rather than
 assumed — assuming it is what let `s.len()` and `io.println()` pass `--check`.
+Since 136.14 no glue function uses the dummy convention any more (a
+zero-argument toke function is a `(void)` C function), so every symbol in that
+set is an unimplemented stub whose named parameter is not read yet.
 
 Usage:
     python3 scripts/gen_stdlib_decls.py

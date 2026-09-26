@@ -336,18 +336,14 @@
     {
       "kind": "func",
       "name": "time.nowms",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },
     {
       "kind": "func",
       "name": "time.nowunix",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },
@@ -372,9 +368,7 @@
     {
       "kind": "func",
       "name": "time.unixnow",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     }
