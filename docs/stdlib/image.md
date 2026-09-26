@@ -8,7 +8,7 @@ order: 19
 **Status: Implemented** -- C runtime backing.
 
 The `std.image` module provides functions for decoding, encoding, and transforming raster
-images. It decodes PNG and TIFF and encodes PNG and BMP; JPEG and WebP encode and decode
+images. It decodes PNG and TIFF (including CCITT G3/G4 fax pages) and encodes PNG and BMP; JPEG and WebP encode and decode
 return an error naming the library that would be needed.
 
 Beyond the basic transforms it carries the pieces a document pipeline needs before OCR or
@@ -66,13 +66,19 @@ f=why():i64{
 | `image.flipv` | `img: $imgbuf` | `$imgbuf` | Flip vertically |
 | `image.pixelat` | `img: $imgbuf; x: u32; y: u32` | `@($byte)!$str` | Get pixel channel values at (x, y) |
 | `image.fromraw` | `data: @($byte); w: u32; h: u32; channels: u8` | `$imgbuf` | Construct an image buffer from raw pixel data |
-
 | `image.rotate` | `img: $imgbuf; angledeg: f64` | `$imgbuf` | Rotate by an arbitrary angle about the centre, bilinear |
 | `image.blur` | `img: $imgbuf; passes: u32` | `$imgbuf` | Apply the 1/2/1 Gaussian kernel `passes` times |
 | `image.convolve` | `img: $imgbuf; kernel: @($f64); ksize: u32; divisor: f64; offset: f64` | `$imgbuf!$str` | Apply an arbitrary odd-sized kernel |
 | `image.adaptivethreshold` | `img: $imgbuf; window: u32; k: f64` | `$imgbuf!$str` | Sauvola local thresholding to a 0/255 plane |
 | `image.tiffpages` | `data: @($byte)` | `u32!$str` | Number of pages (IFDs) in a TIFF |
 | `image.tiffdecode` | `data: @($byte); page: u32` | `$imgbuf!$str` | Decode one 0-based page of a TIFF |
+| `image.sharpen` | `img: $imgbuf` | `$imgbuf` | 3x3 sharpen (centre 5, cardinal neighbours -1), clamp-to-edge |
+| `image.brightness` | `img: $imgbuf; factor: f64` | `$imgbuf` | Multiply colour channels by `factor`, clamped; alpha kept |
+| `image.contrast` | `img: $imgbuf; factor: f64` | `$imgbuf` | `128 + (v - 128) * factor`, clamped; alpha kept |
+| `image.paste` | `dst: $imgbuf; src: $imgbuf; x: i64; y: i64` | `$imgbuf` | Composite `src` onto a copy of `dst` at (x, y), clipped |
+| `image.histogram` | `img: $imgbuf` | `@(i64)` | 1024 counts: r, g, b, a x 256 bins |
+| `image.quantize` | `img: $imgbuf; ncolors: u32` | `$imgbuf` | Median-cut palette reduction to at most `ncolors` (RGB/RGBA) |
+| `image.textdraw` | `img: $imgbuf; text: $str; x: i64; y: i64; size: u32; color: u32` | `$imgbuf` | Draw ASCII text in the built-in 5x7 font |
 
 ## Document preprocessing
 
@@ -139,9 +145,53 @@ Supported: both byte orders; compression 1 (none), 5 (LZW), 8 and 32946 (Deflate
 WhiteIsZero, BlackIsZero, RGB and Palette photometrics; and Predictor 2 (horizontal
 differencing) on 8-bit samples.
 
+**CCITT fax compression** — what scanners and fax gateways emit for bilevel pages — is
+supported on 1-bit, single-sample pages (story 135.5a): compression 2 (Modified Huffman),
+3 (T.4 / Group 3, 1-D or 2-D per `T4Options`, with or without EOL fill bits) and 4
+(T.6 / Group 4). Both FillOrders are read. As for an uncompressed bilevel page, the
+Photometric tag decides which bit value is black, so a page decodes to a one-channel image
+of 0 and 255. A corrupt or truncated strip fails with a message beginning
+`image_tiff_decode: CCITT strip:` that says what was wrong.
+
 Not supported, each rejected with a message naming what was found rather than a generic
-failure: **CCITT G3/G4 fax compression**, JPEG-in-TIFF, tiled layouts, PlanarConfiguration 2
-and BigTIFF.
+failure: CCITT uncompressed mode (an extension no mainstream encoder emits), JPEG-in-TIFF,
+tiled layouts, PlanarConfiguration 2 and BigTIFF.
+
+## Adjustments, compositing and text
+
+These seven were complete in the C runtime long before they were reachable from toke
+(story 135.5c). Like `resize`, `rotate` and `blur` they return `$imgbuf`, not `T!$str`:
+input the runtime refuses — a buffer whose `data` is shorter than
+`width * height * channels`, or out-of-range geometry — yields an empty `$imgbuf`
+(`width` 0), which a caller can test.
+
+- **`image.brightness` / `image.contrast`** leave the alpha channel of an RGBA image
+  unchanged. Results are rounded half-up and clamped to 0..255.
+- **`image.paste`** alpha-blends only when both images are RGBA
+  (`out = a*src + (1-a)*dst`); otherwise it copies `min(src.channels, dst.channels)`
+  channels. `x` and `y` may be negative; pixels outside `dst` are clipped. Offsets
+  beyond ±2^30 are clamped, which is further than any image extends, so a far-off
+  offset pastes nothing rather than wrapping.
+- **`image.histogram`** returns 1024 counts: `r[0..255]` at indices 0..255, then
+  `g`, `b` and `a`. A one-channel image fills `r` only; three channels fill `r`, `g`,
+  `b`; four fill all four; a two-channel (grey + alpha) image counts nothing.
+- **`image.quantize`** accepts RGB and RGBA only (one- and two-channel input yields
+  an empty `$imgbuf`). Each output pixel is the mean colour of its median-cut bucket.
+  `ncolors` above the pixel count is treated as the pixel count.
+- **`image.textdraw`** renders ASCII 32..126 (other bytes advance the cursor and draw
+  nothing) in a 5x7 font scaled by `size` (≥ 1), with a one-pixel gap between glyphs.
+  `color` is `0xRRGGBBAA`; an image with fewer channels takes the leading bytes, so a
+  grey image is drawn with the `RR` byte.
+
+```toke
+m=example;
+i=image:std.image;
+
+f=stamp(img:$imgbuf):$imgbuf{
+  let lifted = image.contrast(image.brightness(img; 1.1); 1.2);
+  <image.textdraw(lifted; "DRAFT"; 4; 4; 2; 4278190335)
+};
+```
 
 ## Usage
 

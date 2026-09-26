@@ -87,7 +87,6 @@ http_etag_fnv internal   # server-side ETag helper; belongs inside the static-fi
 http_form_get gap        # no wrapper, no .tki entry
 http_multipart_boundary internal   # Content-Type parsing step of the multipart reader; plumbing
 http_shutdown gap        # no wrapper, no .tki entry
-image_text_draw gap        # no wrapper, no .tki entry
 json_from_pairs gap        # no wrapper, no .tki entry
 json_pretty gap        # no wrapper, no .tki entry
 json_type gap        # no wrapper, no .tki entry
