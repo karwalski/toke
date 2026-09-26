@@ -721,7 +721,7 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
     if (!strcmp(tn, "f32"))  return "float";
     if (!strcmp(tn, "str"))  return "i8*";
     if (!strcmp(tn, "void")) return "void";
-    if (!strcmp(tn, "i8")  || !strcmp(tn, "u8")  || !strcmp(tn, "Byte")) return "i8";
+    if (!strcmp(tn, "i8")  || !strcmp(tn, "u8")  || !strcmp(tn, "Byte") || !strcmp(tn, "byte")) return "i8";
     if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i16";
     if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i32";
     return "i64";
@@ -2626,7 +2626,24 @@ static int call_declares_bool(Ctx *c, const Node *e) {
     tok_cp(c->src, cal->children[0], alias, sizeof alias);
     tok_cp(c->src, cal->children[1], method, sizeof method);
     const TkiCacheEntry *te = tki_entry_for(c, alias, method);
-    if (!te) return 0;
+    if (!te) {
+        /* 127.217: a function in another USER module.  Its signature was
+         * registered from that module's .tki under the mangled name
+         * <module path with '.'->'_'>_<method>, with the declared toke
+         * return type kept in ret_type_name; the i64 cross-module ABI made
+         * a `bool` from `p.isbig(500)` interpolate as 1/0. */
+        for (int ii = 0; ii < c->import_count; ii++) {
+            if (c->imports[ii].is_std || strcmp(c->imports[ii].alias, alias)) continue;
+            char mangled[512]; int ml = 0;
+            for (const char *mp = c->imports[ii].module; *mp && ml < 250; mp++)
+                mangled[ml++] = (*mp == '.') ? '_' : *mp;
+            mangled[ml] = '\0';
+            snprintf(mangled + ml, sizeof mangled - (size_t)ml, "_%s", method);
+            const FnSig *sig = lookup_fn(c, mangled);
+            return sig && !strcmp(sig->ret_type_name, "bool");
+        }
+        return 0;
+    }
     char b[64];
     tki_base_return_type(te->toke_ret, b, sizeof b);
     return !strcmp(b, "bool");
@@ -2728,6 +2745,202 @@ static void emit_if_branch_value(Ctx *c, const Node *blk, const char *res_ty,
  * establish?" — see the definition below expr_struct_type. */
 static int interp_operand_type_unknown(Ctx *c, const Node *e,
                                        const char *ety, const char *est);
+
+/* fwd_decl_once — append one `declare` line to the forward-declaration
+ * buffer unless a declaration of `sym` is already there. */
+static void fwd_decl_once(Ctx *c, const char *sym, const char *decl) {
+    if (strstr(c->fwd_decls, sym)) return;
+    int dl = (int)strlen(decl);
+    if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+        memcpy(c->fwd_decls + c->fwd_decls_len, decl, (size_t)dl);
+        c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+    }
+}
+
+/* 127.217: is `t` one of the unsigned integer kinds?  The checker's type is
+ * the only place signedness lives: u8 and i8 are both `i8` in the IR. */
+static int type_is_unsigned(const Type *t) {
+    return t && (t->kind == TY_U8 || t->kind == TY_U16 ||
+                 t->kind == TY_U32 || t->kind == TY_U64);
+}
+
+/* binop_is_unsigned — lower this integer binary operation with unsigned
+ * semantics (icmp u*, udiv/urem, lshr, u*.with.overflow)?  Only when the
+ * checker typed BOTH operands unsigned, or one unsigned and the other an
+ * integer literal.  A u64 meeting an i64 widens to i64 (127.114), so that
+ * mix stays signed. */
+static int binop_is_unsigned(const Node *n) {
+    if (!n || n->child_count < 2) return 0;
+    const Node *a = n->children[0], *b = n->children[1];
+    int ua = a && type_is_unsigned(a->rtype), ub = b && type_is_unsigned(b->rtype);
+    if (ua && ub) return 1;
+    if (ua && b && b->kind == NODE_INT_LIT) return 1;
+    if (ub && a && a->kind == NODE_INT_LIT) return 1;
+    return 0;
+}
+
+/* emit_int_to_str — an integer value of LLVM type `ity` (i1 excluded) as a
+ * decimal i8* string.  127.217: a narrow value is widened by ITS OWN
+ * signedness (a u8 holding 200 printed -56 through sext), and a u64 at or
+ * above 2^63 — negative when read as i64 — is rendered as (v udiv 10)
+ * followed by (v urem 10), both of which fit in i64, so no unsigned
+ * formatter is needed in the runtime. */
+static int emit_int_to_str(Ctx *c, int v, const char *ity, int is_uns) {
+    if (ity && (!strcmp(ity, "i8") || !strcmp(ity, "i16") || !strcmp(ity, "i32"))) {
+        int zx = next_tmp(c);
+        fprintf(c->out, "  %%t%d = %s %s %%t%d to i64\n", zx, is_uns ? "zext" : "sext", ity, v);
+        v = zx;
+        is_uns = 0;   /* now non-negative as an i64 when it was unsigned */
+    }
+    fwd_decl_once(c, "@tk_str_fromi64_w(", "declare i64 @tk_str_fromi64_w(i64)\n");
+    int cv = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", cv, v);
+    int z = next_tmp(c);
+    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
+    if (!is_uns) return z;
+    int q = next_tmp(c), r = next_tmp(c);
+    fprintf(c->out, "  %%t%d = udiv i64 %%t%d, 10\n", q, v);
+    fprintf(c->out, "  %%t%d = urem i64 %%t%d, 10\n", r, v);
+    int qs = next_tmp(c), rs = next_tmp(c), qp = next_tmp(c), rp = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", qs, q);
+    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", rs, r);
+    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", qp, qs);
+    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", rp, rs);
+    int cat = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i8* (i64, ...) @tk_str_join_n(i64 2, i8* %%t%d, i8* %%t%d) ; u64 >= 2^63\n",
+            cat, qp, rp);
+    int neg = next_tmp(c), sel = next_tmp(c);
+    fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", neg, v);
+    fprintf(c->out, "  %%t%d = select i1 %%t%d, i8* %%t%d, i8* %%t%d\n", sel, neg, cat, z);
+    return sel;
+}
+
+/* interp_child_at — the interpolated expression the parser attached to the
+ * STR_LIT `n` (127.24) for the segment at [seg_start, seg_end) of its token
+ * text, or NULL.  Unlike the wrapper re-parse below, this node is part of the
+ * checked tree, so it carries the checker's type wherever the checker
+ * assigned one. */
+static const Node *interp_child_at(const Node *n, int seg_start, int seg_end) {
+    for (int q = 0; q < n->child_count; q++) {
+        const Node *ch = n->children[q];
+        if (!ch) continue;
+        int ts = ch->tok_start - n->tok_start;
+        if (ts >= seg_start && ts < seg_end) return ch;
+    }
+    return NULL;
+}
+
+/* interp_render — turn one lowered interpolation operand into an i8* string.
+ * `rt` is the operand's checker type when known (NULL otherwise); it decides
+ * over the backend's guesses for bool, str and unsigned integers (127.217).
+ * `rebase` says the operand's positions are wrapper offsets (the re-parse
+ * path) and a diagnostic must be re-homed (127.186). */
+static int interp_render(Ctx *c, const Node *n, const Node *expr_node, int seg_val,
+                         const char *ety, const char *est, int unknown_ret,
+                         int abi_bool, const Type *rt, int rebase,
+                         int rb_prefix, int rb_base, int elen) {
+    int is_uns = type_is_unsigned(rt);
+    if (rt && rt->kind == TY_BOOL && ety && !strcmp(ety, "i64")) abi_bool = 1;
+    if (rt && rt->kind != TY_UNKNOWN) unknown_ret = 0;
+    /* 114.32: interpolation of a non-string value. Previously
+     * any i64 was inttoptr'd to i8* on the assumption it
+     * carried a string pointer (true for s.fromint/format),
+     * so a raw `\(n)` (n:i64/f64/bool) deref'd a bogus pointer
+     * → segfault. Detect strings vs numbers and auto-convert
+     * numbers/bools to their string form. */
+    /* 123.5: a genuine string and a composite (array/struct/
+     * map) are BOTH i8*. Using a composite's heap pointer as a
+     * NUL-terminated C string reads garbage — a silent-wrong-
+     * value bug. `est` (expr_struct_type) discriminates:
+     * "$str"=string, "@…"=array, "$X"(≠$str)=struct. Fail loud
+     * on known composites; treat est==NULL+i8* as a string
+     * (preserves interp of strings the tracker didn't tag). */
+    int est_is_str = (est && (!strcmp(est, "$str") || !strcmp(est, "str"))) ||
+                     (rt && rt->kind == TY_STR);
+    int est_is_composite = est && (est[0] == '@' ||
+                                   (est[0] == '$' && strcmp(est, "$str") != 0));
+    if (ety && !strcmp(ety, "i8*") && est_is_composite) {
+        /* expr_node's position is in the wrapper (127.186) */
+        if (rebase) diag_rebase_push(rb_prefix, rb_base, elen);
+        diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
+                  "cannot interpolate a composite value (array/struct/map) into a string",
+                  "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
+                  NULL);
+        if (rebase) diag_rebase_pop();
+        /* Emit an empty-string placeholder so the IR stays
+         * well-formed (compilation has already failed). */
+        int alenc = 1;
+        int sic = emit_str_global(c, "\"\"", 2, &alenc);
+        seg_val = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                seg_val, alenc, alenc, c->module_prefix, sic);
+    } else if (est_is_str || (ety && !strcmp(ety, "i8*"))) {
+        if (ety && !strcmp(ety, "i64")) {
+            int z = next_tmp(c);
+            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
+            seg_val = z;
+        }
+        /* else already i8* */
+    } else if (ety && (!strcmp(ety, "double") || !strcmp(ety, "float"))) {
+        if (!strcmp(ety, "float")) {
+            int ext = next_tmp(c);
+            fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, seg_val);
+            seg_val = ext;
+        }
+        if (!strstr(c->fwd_decls, "@tk_str_fromfloat_w(")) {
+            const char *d = "declare i64 @tk_str_fromfloat_w(i64)\n";
+            int dl = (int)strlen(d);
+            if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+                memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
+                c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+            }
+        }
+        int bc = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, seg_val);
+        int cv = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", cv, bc);
+        int z = next_tmp(c);
+        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
+        seg_val = z;
+    } else if (unknown_ret) {
+        /*
+         * 127.80: the last resort used to be "assume it is
+         * an integer and print it in decimal".  For a
+         * stdlib call the compiler has no declared return
+         * type for, that assumption is a coin flip, and
+         * when it loses it prints a heap address as a
+         * plausible-looking number at exit 0 — the exact
+         * failure this story exists to remove.  If the
+         * type cannot be established, say so.
+         */
+        /* position from the enclosing literal: expr_node's
+         * offsets index the synthetic wrapper buffer, not
+         * the user's file. */
+        diag_emit(DIAG_ERROR, E4032, n->start, n->line, n->col,
+                  "cannot interpolate a value whose type the compiler cannot determine",
+                  "this stdlib call declares no return type in its .tki interface; "
+                  "bind it to a typed local first, or add the `return` entry to the interface file",
+                  NULL);
+        int alenu = 1;
+        int siu = emit_str_global(c, "\"\"", 2, &alenu);
+        seg_val = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                seg_val, alenu, alenu, c->module_prefix, siu);
+    } else if (ety && !strcmp(ety, "i1")) {
+        /* 127.15/127.94: a bool prints true/false */
+        seg_val = emit_bool_to_str(c, seg_val);
+    } else if (abi_bool) {
+        /* the same, for a bool that crossed the i64 ABI */
+        int nz = next_tmp(c);
+        fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, seg_val);
+        seg_val = emit_bool_to_str(c, nz);
+    } else {
+        /* raw int → decimal string (127.217: by its own signedness) */
+    seg_val = emit_int_to_str(c, seg_val, ety, is_uns);
+    }
+    return seg_val;
+}
+
 
 /* True when a match arm's body is exactly its own binding ident (`$ok:v v`),
  * i.e. the arm yields the bound ok value unchanged. Used by result-type
@@ -3665,7 +3878,27 @@ static int emit_expr(Ctx *c, const Node *n)
         int seg_vals[MAX_SEGS]; int nvals = 0;
         for (int p = 0; p < nsegs; p++) {
             int seg_val;
-            if (segs[p].is_expr) {
+            const Node *ich = segs[p].is_expr
+                ? interp_child_at(n, segs[p].start, segs[p].end) : NULL;
+            if (ich) {
+                /* 127.217: lower the parser's attached operand (127.24)
+                 * rather than a fresh re-parse: it is the node the checker
+                 * saw, so it and its sub-expressions carry the checker's
+                 * types — which decide bool/str/unsigned rendering, and the
+                 * signedness of any comparison inside the operand.  Its
+                 * positions are real source offsets, so no rebase. */
+                seg_val = emit_expr(c, ich);
+                const char *ety = expr_llvm_type(c, ich);
+                const char *est = expr_struct_type(c, ich);
+                int unknown_ret = interp_operand_type_unknown(c, ich, ety, est);
+                int abi_bool = ety && !strcmp(ety, "i64")
+                               && (call_declares_bool(c, ich)
+                                   || field_declares_bool(c, ich)
+                                   || recv_call_is_bool(c, ich));
+                seg_val = interp_render(c, n, ich, seg_val, ety, est,
+                                        unknown_ret, abi_bool, ich->rtype,
+                                        0, 0, 0, 0);
+            } else if (segs[p].is_expr) {
                 /* Build a synthetic wrapper program and parse it. The
                  * wrapper is allocated in the compiler arena so its
                  * source text outlives the parse — emit_expr below
@@ -3754,118 +3987,9 @@ static int emit_expr(Ctx *c, const Node *n)
                                            || recv_call_is_bool(c, expr_node));
                         diag_rebase_pop();
                         c->src = saved_src;
-                        /* 114.32: interpolation of a non-string value. Previously
-                         * any i64 was inttoptr'd to i8* on the assumption it
-                         * carried a string pointer (true for s.fromint/format),
-                         * so a raw `\(n)` (n:i64/f64/bool) deref'd a bogus pointer
-                         * → segfault. Detect strings vs numbers and auto-convert
-                         * numbers/bools to their string form. */
-                        /* 123.5: a genuine string and a composite (array/struct/
-                         * map) are BOTH i8*. Using a composite's heap pointer as a
-                         * NUL-terminated C string reads garbage — a silent-wrong-
-                         * value bug. `est` (expr_struct_type) discriminates:
-                         * "$str"=string, "@…"=array, "$X"(≠$str)=struct. Fail loud
-                         * on known composites; treat est==NULL+i8* as a string
-                         * (preserves interp of strings the tracker didn't tag). */
-                        int est_is_str = est && (!strcmp(est, "$str") || !strcmp(est, "str"));
-                        int est_is_composite = est && (est[0] == '@' ||
-                                                       (est[0] == '$' && strcmp(est, "$str") != 0));
-                        if (ety && !strcmp(ety, "i8*") && est_is_composite) {
-                            /* expr_node's position is in the wrapper (127.186) */
-                            diag_rebase_push(rb_prefix, rb_base, elen);
-                            diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
-                                      "cannot interpolate a composite value (array/struct/map) into a string",
-                                      "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
-                                      NULL);
-                            diag_rebase_pop();
-                            /* Emit an empty-string placeholder so the IR stays
-                             * well-formed (compilation has already failed). */
-                            int alenc = 1;
-                            int sic = emit_str_global(c, "\"\"", 2, &alenc);
-                            seg_val = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
-                                    seg_val, alenc, alenc, c->module_prefix, sic);
-                        } else if (est_is_str || (ety && !strcmp(ety, "i8*"))) {
-                            if (ety && !strcmp(ety, "i64")) {
-                                int z = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
-                                seg_val = z;
-                            }
-                            /* else already i8* */
-                        } else if (ety && (!strcmp(ety, "double") || !strcmp(ety, "float"))) {
-                            if (!strcmp(ety, "float")) {
-                                int ext = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, seg_val);
-                                seg_val = ext;
-                            }
-                            if (!strstr(c->fwd_decls, "@tk_str_fromfloat_w(")) {
-                                const char *d = "declare i64 @tk_str_fromfloat_w(i64)\n";
-                                int dl = (int)strlen(d);
-                                if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
-                                    memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
-                                    c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
-                                }
-                            }
-                            int bc = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, seg_val);
-                            int cv = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", cv, bc);
-                            int z = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
-                            seg_val = z;
-                        } else if (unknown_ret) {
-                            /*
-                             * 127.80: the last resort used to be "assume it is
-                             * an integer and print it in decimal".  For a
-                             * stdlib call the compiler has no declared return
-                             * type for, that assumption is a coin flip, and
-                             * when it loses it prints a heap address as a
-                             * plausible-looking number at exit 0 — the exact
-                             * failure this story exists to remove.  If the
-                             * type cannot be established, say so.
-                             */
-                            /* position from the enclosing literal: expr_node's
-                             * offsets index the synthetic wrapper buffer, not
-                             * the user's file. */
-                            diag_emit(DIAG_ERROR, E4032, n->start, n->line, n->col,
-                                      "cannot interpolate a value whose type the compiler cannot determine",
-                                      "this stdlib call declares no return type in its .tki interface; "
-                                      "bind it to a typed local first, or add the `return` entry to the interface file",
-                                      NULL);
-                            int alenu = 1;
-                            int siu = emit_str_global(c, "\"\"", 2, &alenu);
-                            seg_val = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
-                                    seg_val, alenu, alenu, c->module_prefix, siu);
-                        } else if (ety && !strcmp(ety, "i1")) {
-                            /* 127.15/127.94: a bool prints true/false */
-                            seg_val = emit_bool_to_str(c, seg_val);
-                        } else if (abi_bool) {
-                            /* the same, for a bool that crossed the i64 ABI */
-                            int nz = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, seg_val);
-                            seg_val = emit_bool_to_str(c, nz);
-                        } else {
-                            /* raw int → decimal string */
-                            if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
-                                int zx = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", zx, ety, seg_val);
-                                seg_val = zx;
-                            }
-                            if (!strstr(c->fwd_decls, "@tk_str_fromi64_w(")) {
-                                const char *d = "declare i64 @tk_str_fromi64_w(i64)\n";
-                                int dl = (int)strlen(d);
-                                if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
-                                    memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
-                                    c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
-                                }
-                            }
-                            int cv = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", cv, seg_val);
-                            int z = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
-                            seg_val = z;
-                        }
+                        seg_val = interp_render(c, n, expr_node, seg_val, ety, est,
+                                                unknown_ret, abi_bool, NULL,
+                                                1, rb_prefix, rb_base, elen);
                     }
                 }
             } else {
@@ -4470,14 +4594,17 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         /* Determine the integer type string for operations */
         const char *ity = lty; /* e.g. "i64", "i32", "i16", "i8" */
+        /* 127.217: u8..u64 share the signed types' IR widths; signedness
+         * comes from the checker. */
+        const int uns = binop_is_unsigned(n);
         /* Checked arithmetic for +, -, * (D2=E) — only for i64 */
         if ((n->op == TK_PLUS || n->op == TK_MINUS || n->op == TK_STAR) && !strcmp(ity, "i64")) {
             const char *intrinsic;
             int op_code;
             switch (n->op) {
-            case TK_PLUS:  intrinsic = "@llvm.sadd.with.overflow.i64"; op_code = 0; break;
-            case TK_MINUS: intrinsic = "@llvm.ssub.with.overflow.i64"; op_code = 1; break;
-            default:       intrinsic = "@llvm.smul.with.overflow.i64"; op_code = 2; break;
+            case TK_PLUS:  intrinsic = uns ? "@llvm.uadd.with.overflow.i64" : "@llvm.sadd.with.overflow.i64"; op_code = 0; break;
+            case TK_MINUS: intrinsic = uns ? "@llvm.usub.with.overflow.i64" : "@llvm.ssub.with.overflow.i64"; op_code = 1; break;
+            default:       intrinsic = uns ? "@llvm.umul.with.overflow.i64" : "@llvm.smul.with.overflow.i64"; op_code = 2; break;
             }
             int r = next_tmp(c);
             fprintf(c->out, "  %%t%d = call {i64, i1} %s(i64 %%t%d, i64 %%t%d)\n", r, intrinsic, lhs, rhs);
@@ -4519,7 +4646,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = select i1 %%t%d, %s %d, %s %%t%d\n",
                         cl, ge, ity, width - 1, ity, rhs);
                 t = next_tmp(c);
-                fprintf(c->out, "  %%t%d = ashr %s %%t%d, %%t%d\n", t, ity, lhs, cl);
+                fprintf(c->out, "  %%t%d = %s %s %%t%d, %%t%d\n", t, uns ? "lshr" : "ashr", ity, lhs, cl);
             } else {
                 int mask = next_tmp(c), sh = next_tmp(c), ge = next_tmp(c);
                 fprintf(c->out, "  %%t%d = and %s %%t%d, %d\n", mask, ity, rhs, width - 1);
@@ -4533,19 +4660,19 @@ static int emit_expr(Ctx *c, const Node *n)
             t = next_tmp(c);
             char op_buf[32];
             switch (n->op) {
-            case TK_SLASH:   snprintf(op_buf, sizeof op_buf, "sdiv %s", ity); break;
-            case TK_LT:     snprintf(op_buf, sizeof op_buf, "icmp slt %s", ity); break;
-            case TK_GT:     snprintf(op_buf, sizeof op_buf, "icmp sgt %s", ity); break;
+            case TK_SLASH:   snprintf(op_buf, sizeof op_buf, "%s %s", uns ? "udiv" : "sdiv", ity); break;
+            case TK_LT:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "ult" : "slt", ity); break;
+            case TK_GT:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "ugt" : "sgt", ity); break;
             case TK_EQ:     snprintf(op_buf, sizeof op_buf, "icmp eq %s", ity); break;
-            case TK_LE:     snprintf(op_buf, sizeof op_buf, "icmp sle %s", ity); break;
-            case TK_GE:     snprintf(op_buf, sizeof op_buf, "icmp sge %s", ity); break;
+            case TK_LE:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "ule" : "sle", ity); break;
+            case TK_GE:     snprintf(op_buf, sizeof op_buf, "icmp %s %s", uns ? "uge" : "sge", ity); break;
             case TK_NE:     snprintf(op_buf, sizeof op_buf, "icmp ne %s", ity); break;
             case TK_AMP:    snprintf(op_buf, sizeof op_buf, "and %s", ity); break;
             case TK_PIPE:   snprintf(op_buf, sizeof op_buf, "or %s", ity); break;
             case TK_CARET:  snprintf(op_buf, sizeof op_buf, "xor %s", ity); break;
             case TK_SHL:    snprintf(op_buf, sizeof op_buf, "shl %s", ity); break;
             case TK_SHR:    snprintf(op_buf, sizeof op_buf, "ashr %s", ity); break;
-            case TK_PERCENT:snprintf(op_buf, sizeof op_buf, "srem %s", ity); break;
+            case TK_PERCENT:snprintf(op_buf, sizeof op_buf, "%s %s", uns ? "urem" : "srem", ity); break;
             default:       snprintf(op_buf, sizeof op_buf, "add %s", ity);
                 fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
             }
@@ -4564,7 +4691,7 @@ static int emit_expr(Ctx *c, const Node *n)
                  * most negative value divided by -1 — the quotient does not
                  * fit, and measured -O0 and -O2 builds disagreed (INT64_MIN
                  * vs 0).  Trap RT004 for both `/` and `%`, as the ADR says. */
-                {
+                if (!uns) {
                     const char *mn = !strcmp(ity, "i8")  ? "-128"
                                    : !strcmp(ity, "i16") ? "-32768"
                                    : !strcmp(ity, "i32") ? "-2147483648"
@@ -5519,7 +5646,7 @@ static int emit_expr(Ctx *c, const Node *n)
             else if (!strcmp(tn, "i16"))  { dst_ty = "i16"; }
             else if (!strcmp(tn, "u16"))  { dst_ty = "i16"; dst_signed = 0; }
             else if (!strcmp(tn, "i8"))   { dst_ty = "i8"; }
-            else if (!strcmp(tn, "u8") || !strcmp(tn, "Byte"))
+            else if (!strcmp(tn, "u8") || !strcmp(tn, "Byte") || !strcmp(tn, "byte"))
                                           { dst_ty = "i8"; dst_signed = 0; }
             else if (!strcmp(tn, "bool")) { dst_ty = "i1"; }
             if (dst_ty) {
@@ -5572,7 +5699,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     else if (!strcmp(dst_ty, "i8")) db = 8;
                     else if (!strcmp(dst_ty, "i1")) db = 1;
                     if (db > sb) {
-                        int use_zext = (!strcmp(src_ty, "i1") || !dst_signed);
+                        /* 127.217: widening follows the SOURCE's signedness
+                         * too — `e as i64` on a u8 holding 200 is 200. */
+                        int use_zext = (!strcmp(src_ty, "i1") || !dst_signed ||
+                                        type_is_unsigned(n->children[0]->rtype));
                         if (use_zext)
                             fprintf(c->out, "  %%t%d = zext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
                         else
@@ -5627,11 +5757,10 @@ static int emit_expr(Ctx *c, const Node *n)
                      * left undefined, which is legal for named values. */
                     t = emit_bool_to_str(c, v);
                 } else {
-                    /* int -> str */
-                    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", t, v);
-                    int bc = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", bc, t);
-                    t = bc;
+                    /* int -> str.  127.217: a narrow source is widened first
+                     * (`u8 as str` handed an i8 to an i64 parameter: invalid
+                     * IR), and by its own signedness. */
+                    t = emit_int_to_str(c, v, src_ty, type_is_unsigned(n->children[0]->rtype));
                 }
                 return t;
             }
@@ -8244,7 +8373,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
              * (the trunc + re-extend happens inside emit_expr). 80.2.1 */
             if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i64";
             if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i64";
-            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte")) return "i64";
+            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte") || !strcmp(tn, "byte")) return "i64";
             if (!strcmp(tn, "bool")) return "i1";
         }
         return "i8*"; /* array / unknown cast → inttoptr */
@@ -10057,6 +10186,9 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_bounds_trap", "declare void @tk_bounds_trap(i64, i64)", 0},  /* 124.2a: RT003 OOB */
     {"tk_nil_trap", "declare void @tk_nil_trap(i32)", 0},  /* 124.2d: RT005 nil-deref */
     {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
+    {"llvm.uadd.with.overflow.i64", "declare {i64, i1} @llvm.uadd.with.overflow.i64(i64, i64)", 0}, /* 127.217: u64 */
+    {"llvm.usub.with.overflow.i64", "declare {i64, i1} @llvm.usub.with.overflow.i64(i64, i64)", 0},
+    {"llvm.umul.with.overflow.i64", "declare {i64, i1} @llvm.umul.with.overflow.i64(i64, i64)", 0},
     {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
     {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},
     /* libc */

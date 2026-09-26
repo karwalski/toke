@@ -14,6 +14,11 @@
   0,
   "074cca32d04e4d01"
  ],
+ "test/codegen/cg_interp_byte.tk": [
+  true,
+  0,
+  "3b15b20d9e60e316"
+ ],
  "test/codegen/cg_interp_scalars.tk": [
   true,
   0,
@@ -83,6 +88,11 @@
   true,
   0,
   "ca97e6e04da10f7b"
+ ],
+ "test/codegen/cg_unsigned_as_str.tk": [
+  true,
+  0,
+  "c11e3f4837efde24"
  ],
  "test/codegen/cg_wide_struct.tk": [
   true,
