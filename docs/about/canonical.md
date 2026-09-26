@@ -13,7 +13,7 @@ order: 12
 to describe toke in public. The home page, `/llms.txt`, the README of every toke repo, the
 Hugging Face model card and the PyPI, npm, VS Code and Ollama descriptions copy the blocks
 in §9 **word for word**. The machine-readable copy is
-[`canonical.json`](canonical.json) beside this file, and `make check-canonical`
+[`canonical.json`](https://github.com/karwalski/toke/blob/main/docs/about/canonical.json) beside this file, and `make check-canonical`
 (`scripts/check_canonical.py`) fails CI when a copy has drifted.
 
 **Four rules.**
@@ -21,7 +21,7 @@ in §9 **word for word**. The machine-readable copy is
 1. Copy the blocks in §9 verbatim. Do not paraphrase, do not drop a qualifier, do not
    re-wrap a number.
 2. No number appears without its tokenizer and its N, and numbers come from
-   [`docs/metrics-baseline.md`](/docs/metrics-baseline/) only.
+   [`docs/metrics-baseline.md`](https://github.com/karwalski/toke/blob/main/docs/metrics-baseline.md) only.
 3. The name is `toke`, lower case, always. "Token-Optimised Language" is a descriptor,
    never the name.
 4. If a fact changes, change it **here and in `canonical.json` first**, then re-copy

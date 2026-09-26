@@ -146,3 +146,16 @@ Returned by all `std.toml` functions when an operation fails.
 | Field | Type | Meaning |
 |-------|------|---------|
 | msg   | $str | Human-readable description of the error |
+
+`msg` is the parser's own message (for a malformed document, e.g. `line 1: syntax error`) or the accessor's reason (`key not found or not an integer`). It is readable in the `$err` arm, and it survives `!` propagation into a function whose error type has the same layout — `$tomlerr` itself, or a record such as `t=$cfgerr{msg:$str}`. Propagated into any other error type it arrives without a payload (story 127.182; see `docs/runtime-abi.md` §7.3).
+
+```toke
+m=example;
+i=toml:std.toml;
+i=io:std.io;
+
+f=report():i64{
+  mt toml.load("x = = 1") {$ok:v io.println("ok");$err:e io.println(e.msg)};
+  < 0
+};
+```

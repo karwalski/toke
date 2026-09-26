@@ -55,6 +55,14 @@ int emit_llvm_ir(const Node *ast, const char *src,
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug);
 
+/* compile_binary_multi: as compile_binary, for several .ll modules linked into
+ * one binary (114.40's multi-source build).  Each path in lls[0..nll) is ONE
+ * clang argument (127.76: they were once space-joined into a single argument,
+ * which clang read as one nonexistent file name). */
+int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
+                         const char *target, int opt_level,
+                         const SymbolTable *st, int debug);
+
 /*
  * stdlib_glue_arity — the parameter count of a stdlib/runtime glue symbol the
  * compiler knows how to declare, or -1 when no such symbol is known (136.1).

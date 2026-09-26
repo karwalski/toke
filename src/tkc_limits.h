@@ -94,9 +94,11 @@
 #endif
 
 /*
- * TKC_MAX_PARAMS — maximum number of parameters per function and fields
- * per struct in codegen.  Also sizes FnSig.param_tys[] and
- * StructInfo.field_names[].
+ * TKC_MAX_PARAMS — maximum number of parameters per function in codegen.
+ * Also sizes FnSig.param_tys[].  It no longer bounds struct fields: since
+ * 127.190 StructInfo's field arrays are sized per struct (src/llvm.c), so
+ * the field limit is the type checker's MAX_STRUCT_FIELDS.  src/tkir.c's
+ * .tkir writer sizes its field tables per struct too (127.207).
  * Safe range: >= 4.
  * Configurable: per-session (--max-params=N) or project-wide (tkc.toml).
  */

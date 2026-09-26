@@ -1,7 +1,7 @@
 # toke Capability Model [N]
 
 **Status:** implemented (Epic 124.4a–d, 2026-07-06); default is `allow-all` until the
-deny-by-default flip (124.4g). ADR: [ADR-0010](../decisions/ADR-0010.md).
+deny-by-default flip (124.4g). ADR: [ADR-0010](/docs/decisions/ADR-0010/).
 
 toke compiles to native code with no language-level sandbox. Without a capability
 model, any program that reaches a `std` filesystem / network / environment /
@@ -103,6 +103,6 @@ Enforcement is fully functional today via `--cap-enforce` (baked) or any runtime
 
 ## References
 
-- [ADR-0010 — Ambient authority and the toke capability model](../decisions/ADR-0010.md)
-- [memory-model.md §6.6/§6.7](memory-model.md) — spatial safety, injection resistance
+- [ADR-0010 — Ambient authority and the toke capability model](/docs/decisions/ADR-0010/)
+- [memory-model.md §6.6/§6.7](/docs/spec/memory-model/) — spatial safety, injection resistance
 - Implementation: `src/stdlib/capabilities.{h,c}`, `src/config.c`, `src/main.c`, `src/llvm.c`

@@ -345,7 +345,7 @@ f=e():@($rec){ <@(1) };
 f=main():i64{<0};'
 
 notselfidentical "B1 array-vs-array names both element types" E4031 "${B_SRC}"
-fixsays "B2 an array return mismatch offers no cast fix" E4031 '"fix":""' "${B_SRC}"
+fixlacks "B2 an array return mismatch offers no cast fix" E4031 '"fix":' "${B_SRC}"
 
 # B3 — a map mismatch must be readable for the same reason.
 notselfidentical "B3 map-vs-map is not 'map' vs 'map'" E4031 \

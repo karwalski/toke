@@ -145,7 +145,13 @@ TkAccessLog *tk_access_log_open(const char *path,
  * referer:  Referer header value         (NULL → "-")
  * ua:       User-Agent header value      (NULL → "-")
  *
- * Rotates the file automatically when max_lines is reached.
+ * Rotates the file automatically when max_lines is reached.  The count is
+ * of the FILE — every line in it, from every process writing to it,
+ * including lines already there at open — and is kept under an flock on a
+ * sidecar dir/.stem.ext.lock, so pre-fork workers sharing one log rotate it
+ * once, at the right line, and none of them writes into a rotated inode.
+ * Archives are named stem.YYYYMMDD-HHMMSS.uuuuuu-PID[-N].ext.gz and a name
+ * is never reused (127.191).
  */
 void tk_access_log_write(TkAccessLog *log,
                           const char *ip,
@@ -169,11 +175,13 @@ void tk_access_log_close(TkAccessLog *log);
  * fmt == "json": newline-delimited JSON (NDJSON), one object per request.
  *
  * Applies to both access and error logs (they share the write path).
- * Unknown fmt strings are silently ignored.
+ * Returns 0 on success.  An unknown (or NULL) fmt is rejected: a message
+ * naming the accepted formats goes to stderr, the format is left unchanged,
+ * and -1 is returned (127.191 — it used to be ignored silently).
  *
- * Story: 47.1.3
+ * Story: 47.1.3, 127.191
  */
-void tk_access_log_set_format(const char *fmt);
+int tk_access_log_set_format(const char *fmt);
 
 /*
  * tk_access_log_set_global / tk_access_log_get_global

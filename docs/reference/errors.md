@@ -137,7 +137,7 @@ Emitted when an uppercase-cased keyword is used where the default (lowercase) pr
 Emitted when a `\(` interpolation appears in a string literal while compiling in the
 **legacy (80-column) profile**, which does not support interpolation. In the default
 profile, `\(expr)` interpolation **is** supported for scalar values (interpolating a
-composite value is the compile error `E4032` — see [types](types.md)).
+composite value is the compile error `E4032` — see [types](/docs/reference/types/)).
 
 **Fix:** in legacy-profile code, build the string with `str.concat()`; or use the
 default profile, where `\(expr)` works.
@@ -1067,7 +1067,19 @@ Code generation could not emit valid LLVM IR (also emitted when a build-time pat
 | Severity | error |
 | Stage    | codegen |
 
-The clang/linker sub-process returned a non-zero exit status.
+The clang/linker sub-process returned a non-zero exit status. clang's own
+output is printed first, unchanged; the record follows it.
+
+When the failure can be traced to a toke declaration, the message ends
+`— while compiling f=<name> at <file>:<line>` (or `closure at <file>:<line>`
+for a lifted closure), and the record's `file` and `pos` are that
+declaration's. It is traced when clang reports a line of the emitted IR (the
+line is looked up in the `define` that contains it), or when the linker
+reports an undefined symbol (looked up in the first function whose IR
+references it; if the symbol is itself a toke extern, the message also says
+where it was declared). The message also carries clang's first error text or
+the undefined symbol's name. A failure with no such trace — an unwritable
+output path, a missing C library — stays at line 0 (137.13).
 
 ### E9004
 
@@ -1132,6 +1144,44 @@ The compiler could not write the `.tkir` artifact.
 | Stage    | codegen |
 
 The compiler could not read a `.tkir` artifact.
+
+### E9022
+
+**Stdlib directory not found**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The compiler could not find its standard library (a directory holding
+`tk_runtime.c`). It looks, in order, at `TKC_STDLIB_DIR` from the environment
+(which, when set, must be such a directory), the path built into the compiler
+if that path is absolute, and the paths beside the `tkc` executable
+(`<dir>/src/stdlib`, `<dir>/../src/stdlib`, or the built-in path taken
+relative to `<dir>`). Emitted once, before any source is read, instead of the
+unrelated undeclared-identifier errors a missing stdlib used to cause.
+Set `TKC_STDLIB_DIR` to the `src/stdlib` directory of a toke checkout or
+release (127.179).
+
+### E9023
+
+**No main function defined**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A build to an executable was requested for a program that declares no
+`f=main()`. Emitted before any IR is written, instead of the linker's
+"`_main` not found". Declare `f=main():i64{...};`, or use `--check` to
+type-check a library module that has no entry point. The diagnostic carries
+no `fix`: the only mechanical fix, an empty `main`, builds a program that does
+nothing.
+
+Before 127.208 this condition was reported as E9020, a code whose meaning is
+"failed to write .tkir file"; E9020 now means only that.
 
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 

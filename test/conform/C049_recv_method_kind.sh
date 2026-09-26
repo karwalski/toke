@@ -82,7 +82,7 @@ prog typedparam '  let s:str="hello";
   s.push(1);'
 expect "1-annotated-str-push-is-E4036" "$(codes "${WORK}/typedparam.tk")" "E4036 "
 expect "1-fix-field-empty" \
-    "$("${TKC}" --check "${WORK}/typedparam.tk" 2>&1 | grep -c '"fix":""' || true)" "1"
+    "$("${TKC}" --check "${WORK}/typedparam.tk" 2>&1 | grep '"error_code"' | grep -vc '"fix":' || true)" "1"
 
 # ── 2. right kind: checks clean and runs ─────────────────────────────────
 cat > "${WORK}/good.tk" <<'EOF'

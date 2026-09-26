@@ -1,0 +1,11 @@
+id: D097
+series: D
+description: "127.183: a diagnostic with no fix carries no `fix` key at all — the convention of the schema (optional field), docs/spec/errors.md (\"Fix field: absent\"), AGENTS.md §3.1 and the lint emitter. E4036 on an unknown receiver method is the reported case; before 127.183 every code with no fix emitted `\"fix\":\"\"`"
+input: |
+  m=t;
+  f=main():i64{
+    <"a".nosuch()
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4036"]
+expected_fix_absent: true

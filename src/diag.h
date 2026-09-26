@@ -63,6 +63,8 @@ void diag_set_format(DiagFormat fmt);
 
 /* Set the source filename for SARIF location reporting. */
 void diag_set_source_file(const char *path);
+/* The path last passed to diag_set_source_file ("" if none). */
+const char *diag_get_source_file(void);
 
 /* Store a pointer to the source text so diagnostics can include source lines.
  * The pointer must remain valid for the lifetime of the compilation unit. */
@@ -71,5 +73,15 @@ void diag_set_source(const char *src, size_t len);
 /* Flush buffered SARIF output. Call before exit when DIAG_FMT_SARIF is active.
  * No-op in other modes. Writes the complete SARIF v2.1.0 envelope to stdout. */
 void diag_flush_sarif(void);
+
+/* 127.186: rebase diagnostics raised while parsing a SYNTHETIC wrapper buffer
+ * (the `m=i;f=e():$str{<EXPR;};` an interpolation segment is parsed inside)
+ * onto the real source.  Between push and pop, an offset `o` in the wrapper
+ * is reported at src_offset + clamp(o - wrap_prefix_len, 0, expr_len), with
+ * line and col recomputed from the registered source.  src_offset is in the
+ * coordinates of the ENCLOSING buffer: pushes nest (an interpolation inside
+ * an interpolation) and each maps through the one below it. */
+void diag_rebase_push(int wrap_prefix_len, int src_offset, int expr_len);
+void diag_rebase_pop(void);
 
 #endif /* TK_DIAG_H */

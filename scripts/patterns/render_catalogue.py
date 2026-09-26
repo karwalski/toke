@@ -56,7 +56,7 @@ OUT_SPEC = os.path.join("docs", "spec", "patterns-v0.4.md")
 OUT_GUIDE = os.path.join("docs", "guide", "11-patterns-and-efficiency.md")
 OUT_CARD = os.path.join("patterns", "card_snippet.md")
 CARD_MAX_LINES = 20
-PROGRESS_URL = "/docs/progress/"  # where 127.x stories are tracked
+PROGRESS_URL = "https://github.com/karwalski/toke/blob/main/docs/progress.md"  # where 127.x stories are tracked (132.94: the site serves no /docs/progress/)
 
 # protocol §2 — order and one-line intent per family
 FAMILIES: list[tuple[str, str, str]] = [

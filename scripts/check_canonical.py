@@ -62,8 +62,11 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # sibling repos live beside the MAIN checkout; from a worktree `dirname(ROOT)`
-# is ~/tk/tmpwork, so the Makefile passes the real workspace (132.68)
-WORKSPACE = os.environ.get("TOKE_WORKSPACE") or os.path.dirname(ROOT)
+# is ~/tk/tmpwork. 132.68 taught the Makefile to pass the real workspace; 132.95
+# makes it this script's own default, resolved as check-claims-all does.
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+from verify_project_facts import workspace_root  # noqa: E402
+WORKSPACE = workspace_root(ROOT)
 CANON_JSON = os.path.join(ROOT, "docs", "about", "canonical.json")
 CANON_MD = "docs/about/canonical.md"
 CORRECTION_LINES = 1                       # how far a correction marker may sit
@@ -762,9 +765,48 @@ def selftest_rule1():
     return bad
 
 
+def selftest_workspace():
+    """132.95: a worktree resolves its siblings beside the MAIN checkout.
+
+    Builds <tmp>/ws/toke (a git repo) with a worktree at <tmp>/ws/tmpwork/wt;
+    from the worktree, dirname(ROOT) is <tmp>/ws/tmpwork -- the answer both
+    scripts used to give -- and the workspace is <tmp>/ws."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        ws = os.path.realpath(os.path.join(tmp, "ws"))
+        main = os.path.join(ws, "toke")
+        wt = os.path.join(ws, "tmpwork", "wt")
+        os.makedirs(main)
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        env.pop("GIT_INDEX_FILE", None)
+        env.pop("GIT_DIR", None)
+        for cmd in (["git", "init", "-q", main],
+                    ["git", "-C", main, "commit", "-q", "--allow-empty", "-m", "x"],
+                    ["git", "-C", main, "worktree", "add", "-q", "--detach", wt]):
+            if subprocess.run(cmd, env=env, capture_output=True).returncode:
+                print("SELFTEST FAIL [workspace] could not build the fixture: %s"
+                      % " ".join(cmd))
+                return 1
+        saved = os.environ.pop("TOKE_WORKSPACE", None)
+        try:
+            got = {"main": workspace_root(main), "worktree": workspace_root(wt)}
+        finally:
+            if saved is not None:
+                os.environ["TOKE_WORKSPACE"] = saved
+        bad = 0
+        for where, val in got.items():
+            if os.path.realpath(val) != ws:
+                bad += 1
+                print("SELFTEST FAIL [workspace] from the %s the workspace resolved "
+                      "to %s, not %s" % (where, val, ws))
+        return bad
+
+
 def selftest():
     import tempfile
-    bad = selftest_rule1()
+    bad = selftest_rule1() + selftest_workspace()
     for accept, name, text in SELFTEST:
         with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
                                          delete=False) as fh:
@@ -780,14 +822,14 @@ def selftest():
             print("SELFTEST FAIL [%s] %s: %s"
                   % ("accept" if accept else "reject", name,
                      "flagged: %s" % found[0][2] if found else "not flagged"))
-    total = len(SELFTEST) + len(SELFTEST_RULE1)
+    total = len(SELFTEST) + len(SELFTEST_RULE1) + 1
     if bad:
         print("\nselftest: %d of %d cases wrong — the canonical-facts gate is not "
               "behaving as documented." % (bad, total))
         return 1
     print("selftest: %d cases OK — %d Rule 2 (%d corrections accepted, %d stale "
           "claims still rejected) and %d Rule 1 (%d faithful copies matched, "
-          "%d re-wordings still caught)."
+          "%d re-wordings still caught), plus worktree workspace resolution (132.95)."
           % (total, len(SELFTEST),
              sum(1 for c in SELFTEST if c[0]), sum(1 for c in SELFTEST if not c[0]),
              len(SELFTEST_RULE1),

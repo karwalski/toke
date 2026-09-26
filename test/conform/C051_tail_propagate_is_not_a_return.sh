@@ -50,7 +50,7 @@ t=$storeerr{$io:str};'
 printf '%s\nf=find(p:str):@(str)!$storeerr{\n  (file.listall(p)!$storeerr)\n};\n' "$HDR" > "${WORK}/u1.tk"
 expect "1-paren-stdlib-propagate-is-E4071" "$(codes "${WORK}/u1.tk")" "E4071 "
 expect "1-fix-field-empty" \
-    "$("${TKC}" --check "${WORK}/u1.tk" 2>&1 | grep -c '"fix":""' || true)" "1"
+    "$("${TKC}" --check "${WORK}/u1.tk" 2>&1 | grep '"error_code"' | grep -vc '"fix":' || true)" "1"
 printf '%s\nf=find(p:str):@(str)!$storeerr{\n  file.listall(p)!$storeerr\n};\n' "$HDR" > "${WORK}/u2.tk"
 expect "1-bare-stdlib-propagate-is-E4071" "$(codes "${WORK}/u2.tk")" "E4071 "
 

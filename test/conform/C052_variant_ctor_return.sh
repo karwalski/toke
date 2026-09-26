@@ -38,7 +38,7 @@ expect() {
     else echo "FAIL $1"; echo "        expected: $3"; echo "        got:      $2"; FAIL=$((FAIL + 1)); fi
 }
 codes() { "${TKC}" --check "$1" 2>&1 | awk '/"severity":"error"/ && match($0,/"error_code":"[A-Z][0-9]+"/){printf "%s ",substr($0,RSTART+14,RLENGTH-15)}'; }
-nofix() { "${TKC}" --check "$1" 2>&1 | grep '"severity":"error"' | grep -vc '"fix":""' || true; }
+nofix() { "${TKC}" --check "$1" 2>&1 | grep '"severity":"error"' | grep -c '"fix":' || true; }
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 one='m=t;
 i=io:std.io;

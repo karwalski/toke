@@ -1,0 +1,13 @@
+id: D096
+series: D
+description: "127.184: a '[' after a value is an index, and no single rewrite is correct for every index (`nums[i]` reads as `nums.get(i)`, a store or a map index does not), so neither the '[' nor its ']' carries a fix (AGENTS.md §6). Before 127.184 both carried the array-literal fix, which turns `nums[i]` into `nums@(i)`"
+input: |
+  m=t;
+  f=main():i64{
+    let nums=@(1;2;3);
+    let i=1;
+    <nums[i]
+  };
+expected_exit_code: 1
+expected_error_codes: ["E1003"]
+expected_fix_absent: true

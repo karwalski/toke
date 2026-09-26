@@ -1,0 +1,12 @@
+id: D095
+series: D
+description: "127.184: the ']' closing a literal '[' (D094) gets the closing half of the rewrite; the fix value is pinned exactly (AGENTS.md §6)"
+input: |
+  m=t;
+  f=main():i64{
+    let nums=[1;2;3];
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E1003"]
+expected_fix: "replace ']' with ')' to close @() array/map literal"

@@ -266,7 +266,9 @@ run_test() {
 
     # ── Check fix field ──────────────────────────────────────────────────────
     if [ "${expected_fix_absent}" = "true" ]; then
-        # The fix field must be absent (null, missing, or empty string) in ALL emitted diagnostics
+        # The fix field must be absent in ALL emitted diagnostics.  127.183:
+        # absent means the key is missing -- the emitter no longer writes an
+        # empty "fix":"", so an empty string is now a defect, not "no fix".
         if echo "${diag_json_output}" | python3 -c "
 import sys, json
 output = sys.stdin.read()
@@ -278,9 +280,8 @@ for line in output.splitlines():
         rec = json.loads(line)
     except json.JSONDecodeError:
         continue
-    fix = rec.get('fix')
-    if fix is not None and fix != '':
-        print('FIX_PRESENT: ' + repr(fix))
+    if 'fix' in rec:
+        print('FIX_PRESENT: ' + repr(rec['fix']))
         sys.exit(1)
 sys.exit(0)
 " 2>/dev/null; then
@@ -290,7 +291,12 @@ sys.exit(0)
             fail_reasons+=("fix field expected absent but was present in diagnostic output")
         fi
     elif [ -n "${expected_fix}" ]; then
-        if ! echo "${diag_json_output}" | grep -q "\"fix\".*\"${expected_fix}\""; then
+        # 127.184: a fixed-string match on the whole `"fix":"<value>"` pair.
+        # The old pattern was a regex with `.*` between the key and the value,
+        # so it matched the value in any later field, and a fix containing a
+        # bracket (E1003's "replace '[' ...") was an unbalanced-bracket regex
+        # error that could never pass.
+        if ! printf '%s\n' "${diag_json_output}" | grep -qF "\"fix\":\"${expected_fix}\""; then
             pass=false
             fail_reasons+=("fix field expected \"${expected_fix}\" not found in diagnostic output")
         fi
@@ -315,9 +321,8 @@ for line in sys.stdin.read().splitlines():
         continue
     if rec.get('rule') != code and rec.get('error_code') != code:
         continue
-    fix = rec.get('fix')
-    if fix is not None and fix != '':
-        print('FIX_PRESENT on ' + code + ': ' + repr(fix))
+    if 'fix' in rec:   # 127.183: absent means no key
+        print('FIX_PRESENT on ' + code + ': ' + repr(rec['fix']))
         sys.exit(1)
 sys.exit(0)
 " 2>/dev/null; then
