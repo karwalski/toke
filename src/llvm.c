@@ -178,7 +178,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char fref_lname[64][NAME_BUF]; const Node *fref_lnode[64]; int fref_lcount; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -2727,6 +2727,19 @@ static int emit_bool_to_str(Ctx *c, int v) {
     return sel;
 }
 
+static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param);
+/* 124.0c: the LLVM type and backend tag of each closure capture, recorded
+ * where the env box is built (the only place the outer local's type is in
+ * scope) and read back where the closure is lifted.  Captures travel as i64
+ * slots; without this an f64 capture was reloaded as an integer and
+ * `sitofp`'d, so `x*k` with k=2.5 computed with k's bit pattern. */
+#define TKC_CAP_TYPED 16
+static struct { const char *ty[TKC_CAP_TYPED]; char tag[TKC_CAP_TYPED][NAME_BUF]; } g_cap_info[512];
+static const char *canon_llvm_ty(const char *t) {
+    static const char *k[] = { "i64", "double", "float", "i1", "i8*", "i8", "i16", "i32", NULL };
+    for (int i = 0; t && k[i]; i++) if (!strcmp(t, k[i])) return k[i];
+    return "i64";
+}
 /* ── Expression emission ───────────────────────────────────────────── */
 
 /* Forward declarations — needed because emit_expr and emit_stmt are
@@ -4129,6 +4142,12 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, base, i + 1);
             const char *ln = get_llvm_name(c, caps[i]);
             const char *lty = get_local_type(c, caps[i]);
+            if (i < TKC_CAP_TYPED) {
+                g_cap_info[cid].ty[i] = canon_llvm_ty(lty);
+                const char *tg = ln ? ptr_local_struct_type(c, ln) : NULL;
+                if (!tg) tg = ptr_local_struct_type(c, caps[i]);
+                snprintf(g_cap_info[cid].tag[i], NAME_BUF, "%s", tg ? tg : "");
+            }
             if (ln && lty) {
                 int lv = next_tmp(c);
                 fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", lv, lty, lty, ln);
@@ -4818,6 +4837,67 @@ static int emit_expr(Ctx *c, const Node *n)
                 for (int i = 0; i < na; i++)
                     fprintf(c->out, ", %s %%t%d", argt[i], argv[i]);
                 fputs(")\n", c->out);
+                /* 124.0c (memory-model §2.5): the env of a closure literal
+                 * applied on the spot, `fn(x){..}(7)`, has exactly one
+                 * reference — this call — and captures are copies, so the
+                 * result cannot point into it.  Release it here.  A closure
+                 * bound to a local may be copied, passed or returned, and
+                 * still needs the reference tracking the spec describes. */
+                if (callee->kind == NODE_CLOSURE)
+                    fprintf(c->out, "  call void @free(i8* %%t%d) ; 124.0c env released\n", box);
+                return t;
+            }
+        }
+        /* 124.0c: a call of a local bound to a function reference
+         * (`let g=&add; g(1;2)`).  The local holds the function's address as
+         * an i64 (NODE_FUNC_REF lowering); codegen used to emit `call @g`,
+         * a global that does not exist, and clang rejected the module.
+         * Resolve the referenced function's signature the same way the
+         * reference itself does, and call through the pointer. */
+        if (n->children[0]->kind == NODE_IDENT && c->fref_lcount > 0) {
+            char fnm[128]; tok_cp(c->src, n->children[0], fnm, sizeof fnm);
+            const Node *fr = NULL;
+            for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
+                if (!strcmp(c->fref_lname[i], fnm)) fr = c->fref_lnode[i];
+            const FnSig *ref = NULL;
+            if (fr && fr->child_count == 0) {
+                char rn[256]; tok_cp(c->src, fr, rn, sizeof rn);
+                if (!strcmp(rn, "main")) strcpy(rn, "tk_main");
+                mangle_fn_name(c, rn, sizeof rn);
+                ref = lookup_fn(c, rn);
+            }
+            if (fr && ref) {
+                int fpi = emit_expr(c, n->children[0]);   /* the stored i64 address */
+                const char *fty = expr_llvm_type(c, n->children[0]);
+                fpi = coerce_value(c, fpi, fty, "i64");
+                int na = n->child_count - 1;
+                if (na > ref->param_count) na = ref->param_count;  /* arity is the checker's */
+                int argv[TKC_MAX_PARAMS];
+                for (int i = 0; i < na && i < TKC_MAX_PARAMS; i++) {
+                    int av = emit_expr(c, n->children[i + 1]);
+                    argv[i] = coerce_value(c, av, expr_llvm_type(c, n->children[i + 1]),
+                                           ref->param_tys[i]);
+                }
+                int fp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to %s (", fp, fpi, ref->ret);
+                for (int i = 0; i < ref->param_count; i++)
+                    fprintf(c->out, "%s%s", i ? ", " : "", ref->param_tys[i]);
+                fputs(")*\n", c->out);
+                const char *cc = ref->is_internal ? "fastcc " : "";
+                if (!strcmp(ref->ret, "void")) {
+                    fprintf(c->out, "  call %svoid %%t%d(", cc, fp);
+                    t = -1;
+                } else {
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call %s%s %%t%d(", t, cc, ref->ret, fp);
+                }
+                for (int i = 0; i < na; i++)
+                    fprintf(c->out, "%s%s %%t%d", i ? ", " : "", ref->param_tys[i], argv[i]);
+                fputs(")\n", c->out);
+                if (t < 0) {
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                }
                 return t;
             }
         }
@@ -8248,6 +8328,37 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return "i64";
     case NODE_CALL_EXPR: {
         if (n->child_count < 1) return "i64";
+        /* 124.0c: an indirect call yields its target's return type — a
+         * closure literal applied directly, a closure-bound local, or a
+         * function-reference local.  Answering i64 for an f64 closure made
+         * the caller mis-type the SSA value (invalid IR). Same lookups as the
+         * lowering in emit_expr. */
+        {
+            const Node *callee = n->children[0];
+            const Node *clos = callee->kind == NODE_CLOSURE ? callee : NULL;
+            if (!clos && callee->kind == NODE_IDENT) {
+                char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
+                for (int i = 0; i < c->clos_lcount && !clos; i++)
+                    if (!strcmp(c->clos_lname[i], cnm)) clos = c->clos_lnode[i];
+                if (!clos) {
+                    const Node *fr = NULL;
+                    for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
+                        if (!strcmp(c->fref_lname[i], cnm)) fr = c->fref_lnode[i];
+                    if (fr && fr->child_count == 0) {
+                        char rn[256]; tok_cp(c->src, fr, rn, sizeof rn);
+                        if (!strcmp(rn, "main")) strcpy(rn, "tk_main");
+                        mangle_fn_name(c, rn, sizeof rn);
+                        const FnSig *ref = lookup_fn(c, rn);
+                        if (ref) return strcmp(ref->ret, "void") ? ref->ret : "i64";
+                    }
+                }
+            }
+            if (clos) {
+                char fpty[256]; const char *cret = "i64";
+                closure_sig(c, clos, fpty, sizeof fpty, &cret);
+                return strcmp(cret, "void") ? cret : "i64";
+            }
+        }
         /* 127.56: `$variant(payload)` on a known sum type builds a tagged box
          * (an i8* malloc), exactly like the `$T{$variant:payload}` literal. */
         if (variant_ctor_sum(c, n)) return "i8*";
@@ -9162,6 +9273,15 @@ static void emit_stmt(Ctx *c, const Node *n)
                 c->clos_lnode[c->clos_lcount] = init_node;
                 c->clos_lcount++;
             }
+            /* 124.0c: `let g=&add` — remember the reference so `g(1;2)`
+             * becomes an indirect call.  Latest binding wins (a re-bind of
+             * the same name to another reference shadows the first). */
+            if (init_node->kind == NODE_FUNC_REF && c->fref_lcount < 64) {
+                strncpy(c->fref_lname[c->fref_lcount], tb, NAME_BUF - 1);
+                c->fref_lname[c->fref_lcount][NAME_BUF - 1] = '\0';
+                c->fref_lnode[c->fref_lcount] = init_node;
+                c->fref_lcount++;
+            }
             const char *vty;
             if (has_ann)
                 vty = resolve_llvm_type(c, n->children[1]);
@@ -10004,6 +10124,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         }
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
         c->fall_count = 0;  /* 135.16: let-bound fallible values are per-function */
+        c->fref_lcount = 0; /* 124.0c: function-reference locals are per-function */
         c->local_count = 0; /* reset local type tracking */
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
         c->cur_fn_ret = ret;
@@ -10051,84 +10172,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             const char *pty = "i64";
             if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                 pty = resolve_llvm_type(c, n->children[i]->children[1]);
-            if (!strcmp(pty, "i8*")) {
-                const Node *tyn = (n->children[i]->child_count > 1) ? n->children[i]->children[1] : NULL;
-                if (tyn && tyn->kind == NODE_MAP_TYPE) {
-                    /* 127.39: a declared map param carries its key/value kinds
-                     * (`f=g(m:@(str:str))` → `\(m.get(k))` is a string). */
-                    int pk_int = 0, pv_str = 0;
-                    if (tyn->child_count > 0) {
-                        char kt[64]; tok_cp(c->src, tyn->children[0], kt, sizeof kt);
-                        pk_int = !strstr(kt, "str");
-                    }
-                    if (tyn->child_count > 1) {
-                        char vt[64]; tok_cp(c->src, tyn->children[1], vt, sizeof vt);
-                        pv_str = strstr(vt, "str") != NULL;
-                    }
-                    mark_ptr_with_type(c, pn, map_tag(pk_int, pv_str));
-                } else if (tyn && tyn->kind == NODE_ARRAY_TYPE &&
-                           tyn->child_count >= 1 && tyn->children[0]) {
-                    /* Bug 110.9: propagate @$f64/@$f32 element-type marker to
-                     * parameter so 102.29b's .get() bitcast (i64→double) fires
-                     * for float arrays passed as function arguments. */
-                    char et[64] = ""; tok_cp(c->src, tyn->children[0], et, sizeof et);
-                    if (!strcmp(et, "f64") || !strcmp(et, "$f64"))
-                        mark_ptr_with_type(c, pn, "@f64");
-                    else if (!strcmp(et, "f32") || !strcmp(et, "$f32"))
-                        mark_ptr_with_type(c, pn, "@f32");
-                    else {
-                        char pty_name[128] = "";
-                        tok_cp(c->src, tyn, pty_name, sizeof pty_name);
-                        const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
-                        /* Story 114.21: a non-float array param (@byte, @$i64,
-                         * @$str, …) that isn't a registered struct must still get
-                         * an `@`-prefixed marker so array-aware codegen treats it
-                         * as an array. Without it the param was marked NULL and
-                         * `a+b` fell to tk_str_concat (NUL-truncating) — corrupting
-                         * binary byte-array concatenation across @byte boundaries. */
-                        if (!stype) {
-                            char et2[96] = "";
-                            tok_cp(c->src, tyn->children[0], et2, sizeof et2);
-                            static char arr_marker_buf[2048];
-                            static int arr_marker_off = 0;
-                            int w = snprintf(arr_marker_buf + arr_marker_off,
-                                             sizeof(arr_marker_buf) - arr_marker_off,
-                                             "@%s", et2);
-                            if (w > 0 && arr_marker_off + w < (int)sizeof(arr_marker_buf)) {
-                                stype = arr_marker_buf + arr_marker_off;
-                                arr_marker_off += w + 1;
-                            }
-                        }
-                        mark_ptr_with_type(c, pn, stype);
-                    }
-                } else {
-                    char pty_name[128] = "";
-                    if (tyn) tok_cp(c->src, tyn, pty_name, sizeof pty_name);
-                    const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
-                    /* Bug 111.10: any scalar pointer param that isn't a struct
-                     * or map must still be marked with SOMETHING (typically
-                     * "$str") so the NODE_ARRAY_LIT spread detector excludes
-                     * it. Without a marker, the spread logic reads `ptr[-1]`
-                     * expecting an array length header — on a NUL-terminated
-                     * string this returns adjacent-memory garbage and either
-                     * segfaults or mallocs an absurd amount. tok_cp strips
-                     * the `$` sigil so we synthesize "$<name>" to keep the
-                     * marker shape distinct from array markers (which start
-                     * with `@`). */
-                    if (!stype && pty_name[0] && pty_name[0] != '@') {
-                        static char marker_buf[2048];
-                        static int marker_off = 0;
-                        int wrote = snprintf(marker_buf + marker_off,
-                                              sizeof(marker_buf) - marker_off,
-                                              "$%s", pty_name);
-                        if (wrote > 0 && marker_off + wrote < (int)sizeof(marker_buf)) {
-                            stype = marker_buf + marker_off;
-                            marker_off += wrote + 1;
-                        }
-                    }
-                    mark_ptr_with_type(c, pn, stype);
-                }
-            }
+            if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, n->children[i]);
             set_local_type(c, pn, pty);
             fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
         }
@@ -10196,6 +10240,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"puts", "declare i32 @puts(i8*)", 0},
     {"strcmp", "declare i32 @strcmp(i8*, i8*)", 0},
     {"malloc", "declare i8* @malloc(i64)", 0},
+    {"free", "declare void @free(i8*)", 0},  /* 124.0c: a directly-applied closure's env */
     /* 127.109: the per-thread error box.  Error-union boxes come from here,
      * not malloc — one buffer per thread, reused, never leaked. */
     {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
@@ -10656,6 +10701,90 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
  *
  * Returns 0 on success, -1 on I/O error (with diagnostic emitted).
  */
+/* mark_param_ptr_tag — the backend tag for a pointer-typed parameter `pn`
+ * (map key/value kinds, array element kind, struct name, or a "$<type>"
+ * marker).  Shared by function declarations and, since 124.0c, lifted
+ * closures, whose parameters were spilled untagged (an `@f64` closure
+ * parameter read its elements as integers). */
+static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param) {
+    const Node *tyn = (param->child_count > 1) ? param->children[1] : NULL;
+    if (tyn && tyn->kind == NODE_MAP_TYPE) {
+        /* 127.39: a declared map param carries its key/value kinds
+         * (`f=g(m:@(str:str))` → `\(m.get(k))` is a string). */
+        int pk_int = 0, pv_str = 0;
+        if (tyn->child_count > 0) {
+            char kt[64]; tok_cp(c->src, tyn->children[0], kt, sizeof kt);
+            pk_int = !strstr(kt, "str");
+        }
+        if (tyn->child_count > 1) {
+            char vt[64]; tok_cp(c->src, tyn->children[1], vt, sizeof vt);
+            pv_str = strstr(vt, "str") != NULL;
+        }
+        mark_ptr_with_type(c, pn, map_tag(pk_int, pv_str));
+    } else if (tyn && tyn->kind == NODE_ARRAY_TYPE &&
+               tyn->child_count >= 1 && tyn->children[0]) {
+        /* Bug 110.9: propagate @$f64/@$f32 element-type marker to
+         * parameter so 102.29b's .get() bitcast (i64→double) fires
+         * for float arrays passed as function arguments. */
+        char et[64] = ""; tok_cp(c->src, tyn->children[0], et, sizeof et);
+        if (!strcmp(et, "f64") || !strcmp(et, "$f64"))
+            mark_ptr_with_type(c, pn, "@f64");
+        else if (!strcmp(et, "f32") || !strcmp(et, "$f32"))
+            mark_ptr_with_type(c, pn, "@f32");
+        else {
+            char pty_name[128] = "";
+            tok_cp(c->src, tyn, pty_name, sizeof pty_name);
+            const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+            /* Story 114.21: a non-float array param (@byte, @$i64,
+             * @$str, …) that isn't a registered struct must still get
+             * an `@`-prefixed marker so array-aware codegen treats it
+             * as an array. Without it the param was marked NULL and
+             * `a+b` fell to tk_str_concat (NUL-truncating) — corrupting
+             * binary byte-array concatenation across @byte boundaries. */
+            if (!stype) {
+                char et2[96] = "";
+                tok_cp(c->src, tyn->children[0], et2, sizeof et2);
+                static char arr_marker_buf[2048];
+                static int arr_marker_off = 0;
+                int w = snprintf(arr_marker_buf + arr_marker_off,
+                                 sizeof(arr_marker_buf) - arr_marker_off,
+                                 "@%s", et2);
+                if (w > 0 && arr_marker_off + w < (int)sizeof(arr_marker_buf)) {
+                    stype = arr_marker_buf + arr_marker_off;
+                    arr_marker_off += w + 1;
+                }
+            }
+            mark_ptr_with_type(c, pn, stype);
+        }
+    } else {
+        char pty_name[128] = "";
+        if (tyn) tok_cp(c->src, tyn, pty_name, sizeof pty_name);
+        const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+        /* Bug 111.10: any scalar pointer param that isn't a struct
+         * or map must still be marked with SOMETHING (typically
+         * "$str") so the NODE_ARRAY_LIT spread detector excludes
+         * it. Without a marker, the spread logic reads `ptr[-1]`
+         * expecting an array length header — on a NUL-terminated
+         * string this returns adjacent-memory garbage and either
+         * segfaults or mallocs an absurd amount. tok_cp strips
+         * the `$` sigil so we synthesize "$<name>" to keep the
+         * marker shape distinct from array markers (which start
+         * with `@`). */
+        if (!stype && pty_name[0] && pty_name[0] != '@') {
+            static char marker_buf[2048];
+            static int marker_off = 0;
+            int wrote = snprintf(marker_buf + marker_off,
+                                  sizeof(marker_buf) - marker_off,
+                                  "$%s", pty_name);
+            if (wrote > 0 && marker_off + wrote < (int)sizeof(marker_buf)) {
+                stype = marker_buf + marker_off;
+                marker_off += wrote + 1;
+            }
+        }
+        mark_ptr_with_type(c, pn, stype);
+    }
+}
+
 /* 124.0a: emit the lifted top-level function for one closure, at module tail.
  *   define internal fastcc <ret> @__tk_closure_N(i8* %__env, <ptys> %p.arg)
  * Captured vars are loaded from the env box (slots 1..ncap; slot 0 is the fn
@@ -10664,6 +10793,7 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
  * globals-init ctor (both reset per-function state and write to c->out). */
 static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->ptr_count = 0; c->local_count = 0; c->alias_count = 0; c->fall_count = 0;
+    c->fref_lcount = 0;
     c->name_scope = 0; c->term = 0;
     const char *ret; char fpty[256];
     closure_sig(c, clos, fpty, sizeof fpty, &ret); (void)fpty;
@@ -10697,8 +10827,13 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, envb, i + 1);
         int lv = next_tmp(c);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", lv, gi);
-        set_local_type(c, caps[i], "i64");
-        fprintf(c->out, "  %%%s = alloca i64\n  store i64 %%t%d, i64* %%%s\n", caps[i], lv, caps[i]);
+        /* 124.0c: restore the capture's own type and tag (see g_cap_info). */
+        const char *cty = (i < TKC_CAP_TYPED && g_cap_info[cid].ty[i]) ? g_cap_info[cid].ty[i] : "i64";
+        int cv = coerce_value(c, lv, "i64", cty);
+        set_local_type(c, caps[i], cty);
+        if (i < TKC_CAP_TYPED && g_cap_info[cid].tag[i][0])
+            mark_ptr_with_type(c, caps[i], g_cap_info[cid].tag[i]);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", caps[i], cty, cty, cv, cty, caps[i]);
     }
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind != NODE_PARAM) continue;
@@ -10706,6 +10841,7 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         const char *pty = "i64";
         if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
             pty = resolve_llvm_type(c, clos->children[i]->children[1]);
+        if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, clos->children[i]);  /* 124.0c */
         set_local_type(c, pn, pty);
         fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
     }
