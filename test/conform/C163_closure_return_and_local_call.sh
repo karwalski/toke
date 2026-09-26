@@ -14,10 +14,10 @@
 #     i64 result as a string pointer — clean --check, exit 139.  And a closure
 #     declared `:str` interpolated as an address.
 #
-# Negative control: TKC built from main at a705c93 — all six red (case 3:
+# Negative control: TKC built from main at a705c93 — all seven red (case 3:
 # main checked the closure's `<3` against main's i64 and accepted it).
 #
-# Story: 127.224, 127.223
+# Story: 127.224 (items 3 and 8), 127.223
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,6 +99,23 @@ f=main():i64{
 };
 EOF
 expect "6-str-closure-interp" "$(runs "${WORK}/p6.tk")" "[a][a] rc=0"
+
+# 7. (127.224 item 8) more than 64 closure-bound locals in one module: the
+#    table was a fixed 64, the 65th binding was dropped, and its call lowered
+#    as its own argument — g4 below returned 56 instead of 125, exit 0.
+python3 - "${WORK}/p7.tk" <<'PY'
+import sys
+L = ["m=t;", "i=io:std.io;"]
+for k in range(5):
+    L.append("f=g%d(x:i64):i64{" % k)
+    for i in range(14):
+        L.append("  let c%d=fn(y:i64):i64{<y+%d};" % (i, k * 14 + i))
+    L.append("  <c0(x)+c13(x)")
+    L.append("};")
+L += ["f=main():i64{", '  io.println("\\(g0(0)) \\(g4(0))");', "  <0", "};"]
+open(sys.argv[1], "w").write("\n".join(L) + "\n")
+PY
+expect "7-closure-table-past-64" "$(runs "${WORK}/p7.tk")" "13 125 rc=0"
 
 echo "C163: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

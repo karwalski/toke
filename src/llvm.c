@@ -179,7 +179,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char fref_lname[64][NAME_BUF]; const Node *fref_lnode[64]; int fref_lcount; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int clos_lser[64]; int fn_serial; int in_lifted; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -9403,7 +9403,26 @@ static void emit_stmt(Ctx *c, const Node *n)
         if (init_node) {
             /* 124.0a: remember closure-bound locals so a later `f(args)` lowers
              * as an indirect call. Record the toke name before make_unique_name. */
-            if (init_node->kind == NODE_CLOSURE && c->clos_lcount < 64) {
+            if (init_node->kind == NODE_CLOSURE &&
+                c->clos_lcount == c->clos_lcap) {
+                /* 127.224 item 8: grow (arena; the Ctx lives for one module) */
+                int ncap = c->clos_lcap ? c->clos_lcap * 2 : 64;
+                char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(
+                    c->arena, ncap * (int)sizeof(*nn));
+                const Node **nd = (const Node **)arena_alloc(
+                    c->arena, ncap * (int)sizeof(*nd));
+                int *ns = (int *)arena_alloc(c->arena, ncap * (int)sizeof(*ns));
+                if (nn && nd && ns) {
+                    if (c->clos_lcount) {
+                        memcpy(nn, c->clos_lname, (size_t)c->clos_lcount * sizeof(*nn));
+                        memcpy(nd, c->clos_lnode, (size_t)c->clos_lcount * sizeof(*nd));
+                        memcpy(ns, c->clos_lser, (size_t)c->clos_lcount * sizeof(*ns));
+                    }
+                    c->clos_lname = nn; c->clos_lnode = nd; c->clos_lser = ns;
+                    c->clos_lcap = ncap;
+                }
+            }
+            if (init_node->kind == NODE_CLOSURE && c->clos_lcount < c->clos_lcap) {
                 strncpy(c->clos_lname[c->clos_lcount], tb, NAME_BUF - 1);
                 c->clos_lname[c->clos_lcount][NAME_BUF - 1] = '\0';
                 c->clos_lnode[c->clos_lcount] = init_node;
@@ -9413,7 +9432,22 @@ static void emit_stmt(Ctx *c, const Node *n)
             /* 124.0c: `let g=&add` — remember the reference so `g(1;2)`
              * becomes an indirect call.  Latest binding wins (a re-bind of
              * the same name to another reference shadows the first). */
-            if (init_node->kind == NODE_FUNC_REF && c->fref_lcount < 64) {
+            if (init_node->kind == NODE_FUNC_REF &&
+                c->fref_lcount == c->fref_lcap) {
+                int ncap = c->fref_lcap ? c->fref_lcap * 2 : 64;
+                char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(
+                    c->arena, ncap * (int)sizeof(*nn));
+                const Node **nd = (const Node **)arena_alloc(
+                    c->arena, ncap * (int)sizeof(*nd));
+                if (nn && nd) {
+                    if (c->fref_lcount) {
+                        memcpy(nn, c->fref_lname, (size_t)c->fref_lcount * sizeof(*nn));
+                        memcpy(nd, c->fref_lnode, (size_t)c->fref_lcount * sizeof(*nd));
+                    }
+                    c->fref_lname = nn; c->fref_lnode = nd; c->fref_lcap = ncap;
+                }
+            }
+            if (init_node->kind == NODE_FUNC_REF && c->fref_lcount < c->fref_lcap) {
                 strncpy(c->fref_lname[c->fref_lcount], tb, NAME_BUF - 1);
                 c->fref_lname[c->fref_lcount][NAME_BUF - 1] = '\0';
                 c->fref_lnode[c->fref_lcount] = init_node;
