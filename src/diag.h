@@ -74,6 +74,24 @@ void diag_set_source(const char *src, size_t len);
  * No-op in other modes. Writes the complete SARIF v2.1.0 envelope to stdout. */
 void diag_flush_sarif(void);
 
+/* 123.12c: cross-phase recovery support.
+ *
+ * diag_set_keep installs a predicate consulted for every diagnostic after
+ * position rebasing: when it returns 0 the diagnostic is dropped -- neither
+ * printed nor counted, exactly like diag_suppress.  NULL removes it.  main.c
+ * uses it to run the type checker after name-resolution errors while keeping
+ * only diagnostics located in declarations the name errors did not touch.
+ *
+ * diag_error_offsets returns the byte offsets (after rebasing) of the errors
+ * counted so far, up to DIAG_ERR_OFF_MAX; *out_count is the number recorded
+ * and the return value is 1 when every counted error was recorded, 0 when the
+ * record overflowed (a caller must then assume an error it cannot place). */
+typedef int (*DiagKeepFn)(DiagSeverity sev, int code, int byte_offset,
+                          void *ctx);
+void diag_set_keep(DiagKeepFn keep, void *ctx);
+#define DIAG_ERR_OFF_MAX 64
+int  diag_error_offsets(const int **out, int *out_count);
+
 /* 127.186: rebase diagnostics raised while parsing a SYNTHETIC wrapper buffer
  * (the `m=i;f=e():$str{<EXPR;};` an interpolation segment is parsed inside)
  * onto the real source.  Between push and pop, an offset `o` in the wrapper

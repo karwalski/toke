@@ -15,15 +15,20 @@
  * =========================================================================
  * Three formats are supported, selectable via diag_set_format():
  *
- *   JSON  (default when stdout is not a TTY)
+ *   JSON  (the default, whatever stdout is -- 123.12b)
  *     One JSON object per line on stderr.  Fields include schema_version,
  *     diagnostic_id (D0000..D9999), error_code (E/W + 4-digit code),
  *     severity, stage (derived from code range), message, file, position,
  *     span, and optional "fix" hint.
  *
- *   Text  (default when stdout is a TTY)
- *     Human-readable two-line format: "severity[CODE]: message" followed
- *     by "  --> line N, col N".
+ *   Text  (--diag-text only)
+ *     Rust/Clang style: "severity[CODE]: message", " --> file:line:col",
+ *     the source line, and a '^' under the column with '~' across the span.
+ *     Until 123.12b this was the default whenever stdout was a TTY, so a
+ *     tool or agent driving tkc through a pseudo-terminal got prose instead
+ *     of records.  Diagnostics must be machine-readable at all times
+ *     (AGENTS.md §3.1; workspace AGENTS.md §6), so text is now opt-in
+ *     and JSON never depends on the terminal.
  *
  *   SARIF v2.1.0  (--diag-sarif flag)
  *     Diagnostics are buffered in memory (up to SARIF_MAX_DIAGS) and
@@ -68,6 +73,11 @@ static int         s_suppress    = 0;  /* when nonzero, emit_* functions are no-
 static const char *s_source_file = "";
 static const char *s_source_buf  = NULL;
 static size_t      s_source_len  = 0;
+/* 123.12c: keep-predicate and the offsets of counted errors. */
+static DiagKeepFn s_keep     = NULL;
+static void      *s_keep_ctx = NULL;
+static int        s_err_off[DIAG_ERR_OFF_MAX];
+static int        s_err_off_n = 0;
 
 /* ── SARIF buffer ──────────────────────────────────────────────────── */
 #define SARIF_MAX_DIAGS 4096
@@ -212,6 +222,7 @@ void diag_reset(void)
     s_error_count = 0;
     s_warn_count  = 0;
     s_seq         = 0;
+    s_err_off_n   = 0;
 }
 
 /*
@@ -231,7 +242,7 @@ void diag_reset(void)
  * happen, so it cannot decide the exit status.
  */
 void diag_suppress(int on) { s_suppress = on; }
-void diag_reset_counts(void) { s_error_count = 0; s_warn_count = 0; }
+void diag_reset_counts(void) { s_error_count = 0; s_warn_count = 0; s_err_off_n = 0; }
 
 /* Extracted key/value fields from the variadic tail of diag_emit(). */
 typedef struct {
@@ -439,12 +450,26 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
     }
 }
 
+void diag_set_keep(DiagKeepFn keep, void *ctx) { s_keep = keep; s_keep_ctx = ctx; }
+
+int diag_error_offsets(const int **out, int *out_count)
+{
+    if (out) *out = s_err_off;
+    if (out_count) *out_count = s_err_off_n;
+    return s_err_off_n == s_error_count;
+}
+
 /* update_counters — Bump the error or warning counter and the sequence id. */
 static void
-update_counters(DiagSeverity sev)
+update_counters(DiagSeverity sev, int byte_offset)
 {
-    if (sev == DIAG_ERROR) ++s_error_count;
-    else                   ++s_warn_count;
+    if (sev == DIAG_ERROR) {
+        if (s_err_off_n == s_error_count && s_err_off_n < DIAG_ERR_OFF_MAX)
+            s_err_off[s_err_off_n++] = byte_offset;
+        ++s_error_count;
+    } else {
+        ++s_warn_count;
+    }
     ++s_seq;
 }
 
@@ -493,7 +518,8 @@ diag_emit(DiagSeverity sev, int code,
 
     if (s_suppress) return;
     rebase_pos(&byte_offset, &line, &col);
-    update_counters(sev);
+    if (s_keep && !s_keep(sev, code, byte_offset, s_keep_ctx)) return;
+    update_counters(sev, byte_offset);
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, 0, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
@@ -514,7 +540,8 @@ diag_emit_span(DiagSeverity sev, int code,
 
     if (s_suppress) return;
     rebase_pos(&byte_offset, &line, &col);
-    update_counters(sev);
+    if (s_keep && !s_keep(sev, code, byte_offset, s_keep_ctx)) return;
+    update_counters(sev, byte_offset);
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, span_len, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)

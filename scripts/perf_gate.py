@@ -44,6 +44,22 @@ THRESHOLDS (a metric fails when current > baseline * (1 + pct) + abs):
 An improvement never fails; improvements beyond the threshold are reported so
 the baseline can be re-recorded deliberately (--record).
 
+NEGATIVE CONTROLS (both sides now shown red, then green):
+  compile  a tkc with a 20M-iteration loop injected into main() ->
+           FAIL, compile_insns ~+90% (Batch P, 2026-09-24).
+  run      (2026-09-26, 123.11) a tkc built with compile_binary() forcing
+           clang to -O0 whatever -O was asked for (codegen-level injection;
+           tkc's own work unchanged) -> "FAIL -- 11 regression(s)", every one
+           run_insns, +53.7% (large_expr) to +674.1% (chained_calls).  The
+           same injection at -O1 -> "FAIL -- 1 regression(s)", chained_calls
+           run_insns +46.1%.  The unmodified tkc -> "OK -- 48 comparison(s)".
+           struct_ops did not move even at -O0 (16.25M -> 16.55M): it is
+           start-up-dominated, so the gate cannot see codegen in it.
+  Do NOT use a wrapper executable as the control: exec'ing through any
+  wrapper, even an identity one, adds ~16M instructions to compile_insns, which
+  put nested_loops (~46M) falsely red at +34.5%.  A shell-script wrapper is
+  worse: SIP strips DYLD_INSERT_LIBRARIES, so the alloc counter sees nothing.
+
 THE BASELINE IS HOST-SPECIFIC: instruction counts depend on the CPU, OS, and
 the C compiler tkc drives.  The baseline records a fingerprint; on a host whose
 fingerprint differs the gate prints a named SKIP and exits 0 (use
