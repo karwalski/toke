@@ -21,7 +21,7 @@
 # check fires only when the element type is KNOWN and is not str.
 #
 # WHAT IS ASSERTED:
-#   1. The four shapes above are E4036 with an empty `fix`.
+#   1. The four shapes above are E4036 with no `fix`.
 #   2. The right-kind controls on literals check clean and run to the right
 #      answer: @str.join on a literal, a variable and a separator receiver;
 #      array-literal contains/len/indexof; a map-literal getor.
@@ -62,8 +62,12 @@ expect "1-int-array-var-join-is-E4036" "$(codes "${WORK}/var_join.tk")" "E4036 "
 prog sep_join '  let xs=@(1;2);
   io.println(",".join(xs));'
 expect "1-sep-join-int-array-is-E4036" "$(codes "${WORK}/sep_join.tk")" "E4036 "
-expect "1-fix-field-empty" \
-    "$("${TKC}" --check "${WORK}/lit_join.tk" 2>&1 | grep -c '"fix":""' || true)" "1"
+# An absent fix is omitted from the record since Batch W (no "fix" key at
+# all); the E4036 record must be present and carry none.
+expect "1-fix-field-absent" \
+    "$("${TKC}" --check "${WORK}/lit_join.tk" 2>&1 | grep '"E4036"' | grep -c '"fix"' || true)" "0"
+expect "1-e4036-record-present" \
+    "$("${TKC}" --check "${WORK}/lit_join.tk" 2>&1 | grep -c '"E4036"' || true)" "1"
 
 # ── 2. right kind: checks clean and runs ─────────────────────────────────
 cat > "${WORK}/good.tk" <<'EOF'
