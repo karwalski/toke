@@ -560,8 +560,19 @@ const char *dashboard_export_json(TkDashboard *d)
     if (!buf) return NULL;
     buf[0] = '\0';
 
+    /* 135.3c: the escaped copies live at function scope so that an append
+     * failing mid-widget frees them too; the early return used to leak
+     * whichever were in hand (clang unix.Malloc, 13 reports). */
+    char *theme_esc = NULL, *id_esc = NULL, *title_esc = NULL,
+         *val_esc = NULL, *unit_esc = NULL, *content_esc = NULL;
+#define DJSON_FREE_ESC() \
+    do { free(theme_esc); free(id_esc); free(title_esc); free(val_esc); \
+         free(unit_esc); free(content_esc); \
+         theme_esc = id_esc = title_esc = val_esc = unit_esc = content_esc = NULL; \
+    } while (0)
 #define DJSON_APPEND(s) \
-    do { if (buf_append(&buf, &size, &used, (s)) != 0) { free(buf); return NULL; } } while (0)
+    do { if (buf_append(&buf, &size, &used, (s)) != 0) { \
+             DJSON_FREE_ESC(); free(buf); return NULL; } } while (0)
 
     char tmp[128];
 
@@ -569,11 +580,11 @@ const char *dashboard_export_json(TkDashboard *d)
     DJSON_APPEND("{");
 
     /* theme */
-    char *theme_esc = json_escape(d->theme ? d->theme : "light");
+    theme_esc = json_escape(d->theme ? d->theme : "light");
     DJSON_APPEND("\"theme\":\"");
     DJSON_APPEND(theme_esc ? theme_esc : "light");
     DJSON_APPEND("\",");
-    free(theme_esc);
+    DJSON_FREE_ESC();
 
     /* refresh_interval_ms */
     snprintf(tmp, sizeof(tmp), "\"refresh_interval_ms\":%llu,",
@@ -589,10 +600,10 @@ const char *dashboard_export_json(TkDashboard *d)
         if (i > 0) DJSON_APPEND(",");
 
         if (w->type == DASH_WIDGET_STAT) {
-            char *id_esc    = json_escape(w->id);
-            char *title_esc = json_escape(w->title);
-            char *val_esc   = json_escape(w->stat_value ? w->stat_value : "");
-            char *unit_esc  = json_escape(w->stat_unit  ? w->stat_unit  : "");
+            id_esc    = json_escape(w->id);
+            title_esc = json_escape(w->title);
+            val_esc   = json_escape(w->stat_value ? w->stat_value : "");
+            unit_esc  = json_escape(w->stat_unit  ? w->stat_unit  : "");
             DJSON_APPEND("{\"type\":\"stat\",\"id\":\"");
             DJSON_APPEND(id_esc    ? id_esc    : "");
             DJSON_APPEND("\",\"title\":\"");
@@ -602,11 +613,11 @@ const char *dashboard_export_json(TkDashboard *d)
             DJSON_APPEND("\",\"unit\":\"");
             DJSON_APPEND(unit_esc  ? unit_esc  : "");
             DJSON_APPEND("\"}");
-            free(id_esc); free(title_esc); free(val_esc); free(unit_esc);
+            DJSON_FREE_ESC();
 
         } else if (w->type == DASH_WIDGET_GAUGE) {
-            char *id_esc    = json_escape(w->id);
-            char *title_esc = json_escape(w->title);
+            id_esc    = json_escape(w->id);
+            title_esc = json_escape(w->title);
             DJSON_APPEND("{\"type\":\"gauge\",\"id\":\"");
             DJSON_APPEND(id_esc    ? id_esc    : "");
             DJSON_APPEND("\",\"title\":\"");
@@ -615,44 +626,45 @@ const char *dashboard_export_json(TkDashboard *d)
             snprintf(tmp, sizeof(tmp), "\"value\":%g,\"min\":%g,\"max\":%g}",
                      w->gauge_value, w->gauge_min, w->gauge_max);
             DJSON_APPEND(tmp);
-            free(id_esc); free(title_esc);
+            DJSON_FREE_ESC();
 
         } else if (w->type == DASH_WIDGET_MARKDOWN) {
-            char *id_esc      = json_escape(w->id);
-            char *content_esc = json_escape(w->markdown_content ? w->markdown_content : "");
+            id_esc      = json_escape(w->id);
+            content_esc = json_escape(w->markdown_content ? w->markdown_content : "");
             DJSON_APPEND("{\"type\":\"markdown\",\"id\":\"");
             DJSON_APPEND(id_esc      ? id_esc      : "");
             DJSON_APPEND("\",\"content\":\"");
             DJSON_APPEND(content_esc ? content_esc : "");
             DJSON_APPEND("\"}");
-            free(id_esc); free(content_esc);
+            DJSON_FREE_ESC();
 
         } else if (w->type == DASH_WIDGET_CHART) {
-            char *id_esc    = json_escape(w->id);
-            char *title_esc = json_escape(w->title);
+            id_esc    = json_escape(w->id);
+            title_esc = json_escape(w->title);
             DJSON_APPEND("{\"type\":\"chart\",\"id\":\"");
             DJSON_APPEND(id_esc    ? id_esc    : "");
             DJSON_APPEND("\",\"title\":\"");
             DJSON_APPEND(title_esc ? title_esc : "");
             DJSON_APPEND("\"}");
-            free(id_esc); free(title_esc);
+            DJSON_FREE_ESC();
 
         } else {
             /* DASH_WIDGET_TABLE */
-            char *id_esc    = json_escape(w->id);
-            char *title_esc = json_escape(w->title);
+            id_esc    = json_escape(w->id);
+            title_esc = json_escape(w->title);
             DJSON_APPEND("{\"type\":\"table\",\"id\":\"");
             DJSON_APPEND(id_esc    ? id_esc    : "");
             DJSON_APPEND("\",\"title\":\"");
             DJSON_APPEND(title_esc ? title_esc : "");
             DJSON_APPEND("\"}");
-            free(id_esc); free(title_esc);
+            DJSON_FREE_ESC();
         }
     }
 
     DJSON_APPEND("]}");
 
 #undef DJSON_APPEND
+#undef DJSON_FREE_ESC
 
     /* Store in dashboard so it lives long enough for caller to use */
     free(d->export_json_buf);
