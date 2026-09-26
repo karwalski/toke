@@ -1,0 +1,18 @@
+(* 127.224 multi-module certificate: a map returned by a function in ANOTHER
+ * user module was left untyped by the checker, and the emitter (which decides
+ * map vs array from the checker's type since 127.52) lowered `.get(k)` as an
+ * array index: RT003 with the key's address as the index.  Bound to a `let`
+ * and used in place.  Expected output below is the correct one. *)
+m=cgmm.mapmain;
+i=io:std.io;
+i=ml:cgmm.maplib;
+f=main():i64{
+  let c=ml.counts();
+  io.println("\(c.len) \(c.get("a")) \(c.get("b"))");
+  let k=c.keys;
+  io.println("\(k.len)");
+  io.println("\(ml.counts().get("b"))");
+  let n=ml.names();
+  io.println("\(n.get("y")) \(ml.names().get("x"))");
+  <0
+};

@@ -652,6 +652,21 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
         int elen = j - (i + 2);
         if (elen <= 0) { i = j; continue; }
 
+        /* 127.224: the parser attached this segment's expression to the
+         * STR_LIT as a child (127.24), in the checked tree and in real
+         * coordinates; the emitter lowers THAT node and reads its rtype to
+         * pick unsigned/bool/str rendering and receiver glue.  Inferring a
+         * private re-parse left the child untyped, so `\(e)` on a u8 and
+         * `\(b.words.get(1))` lowered on the backend's guesses.  Infer the
+         * child itself; the re-parse is only the fallback for literals the
+         * parser did not attach (non-default profile, depth or segment cap). */
+        const Node *attached = NULL;
+        for (int q = 0; q < strnode->child_count; q++) {
+            const Node *ch = strnode->children[q];
+            if (!ch) continue;
+            int ts = ch->tok_start - strnode->tok_start;
+            if (ts >= i + 2 && ts < j) { attached = ch; break; }
+        }
         static const char WRAP_PREFIX[] = "m=i;f=e():$str{<";
         int wrap_cap = elen + 48;
         char *wrap = (char *)arena_alloc(A, wrap_cap);
@@ -664,6 +679,9 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
         Token *toks = (Token *)arena_alloc(A, (size_t)tcap * sizeof(Token));
         /* 127.186: a lex/parse error in the segment is reported inside the
          * literal, not at the wrapper's offset on line 1. */
+        /* The segment is still lexed and parsed here even when the parser
+         * attached it: the parser's own sub-parse reports nothing, so this
+         * is where a lex/parse error inside `\(..)` is diagnosed (C078). */
         diag_rebase_push((int)(sizeof(WRAP_PREFIX) - 1), strnode->tok_start + i + 2, elen);
         int tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
         Node *ast = tc > 0 ? parse(toks, tc, wrap, A, 0) : NULL;
@@ -695,10 +713,12 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                         }
                 }
             }
-            if (expr) {
+            if (expr && attached) expr = (Node *)attached;
+            else if (expr)
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
                 shift_tok_offsets(expr, delta, strnode);
+            if (expr) {
                 const Node *saved_host = cx->interp_host;
                 cx->interp_host = strnode;
                 Type *t = infer(cx, expr);
@@ -1699,6 +1719,8 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
  * such as `io.println(...)` resolve to no module-scope Decl) or declares no
  * return spec (a void call carries no value).
  */
+static const char *import_module_path(Ctx *cx, const char *alias,
+                                      char *buf, size_t bufsz);
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -1719,6 +1741,41 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
             if (ret && !strchr(ret, '!')) {
                 Type *ist = imported_struct_type(cx, ret, 0);
                 if (ist) return ist;
+                /* 127.224 item 7: a MAP returned from another user module.
+                 * Left unknown, `let m=lib.mk()` bound an untyped value; the
+                 * emitter decides map vs array from the rtype since 127.52
+                 * retired its __map__ tag, so `m.get("b")` lowered as an
+                 * array index and trapped RT003.  The interface spells it
+                 * `[K:V]` (ir.c); only scalar K and V are adopted, and only
+                 * across a user-module boundary — std interfaces are a
+                 * hand-written, drifted surface (check_tki_call) and stay as
+                 * they were. */
+                char pb[256];
+                const char *mp = import_module_path(cx, ab, pb, sizeof pb);
+                size_t rl = strlen(ret);
+                const char *colon = strchr(ret, ':');
+                if (mp && strncmp(mp, "std.", 4) != 0 && rl > 4
+                    && ret[0] == '[' && ret[rl - 1] == ']' && colon
+                    && !strchr(colon + 1, ':')) {
+                    char kb[64], vb[64];
+                    size_t kl = (size_t)(colon - ret - 1);
+                    size_t vl = (size_t)(ret + rl - 1 - (colon + 1));
+                    if (kl > 0 && kl < sizeof kb && vl > 0 && vl < sizeof vb) {
+                        memcpy(kb, ret + 1, kl); kb[kl] = '\0';
+                        memcpy(vb, colon + 1, vl); vb[vl] = '\0';
+                        Arena *A = cx->env->arena;
+                        Type *kt = tki_scalar_type(A, kb), *vt = tki_scalar_type(A, vb);
+                        Type *mt = (kt && vt) ? mk_type(A, TY_MAP) : NULL;
+                        Type **fts = mt ? (Type **)arena_alloc(A, (int)sizeof(Type *)) : NULL;
+                        if (mt && fts) {
+                            mt->elem = kt;
+                            mt->field_count = 1;
+                            mt->field_types = fts;
+                            fts[0] = vt;
+                            return mt;
+                        }
+                    }
+                }
             }
             return NULL;
         }
@@ -2101,9 +2158,43 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
         return NULL;
     }
-    case NODE_STRUCT_LIT: case NODE_FIELD_EXPR: case NODE_MAP_LIT: {
+    case NODE_STRUCT_LIT: case NODE_MAP_LIT: {
         Type *it = infer(cx, initN);
         if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT)) return it;
+        return NULL;
+    }
+    /* 127.224: a field read also binds an ARRAY (`let ws=b.words` on a
+     * `words:@str` field).  Leaving it out left `ws` untyped, so
+     * `ws.get(1)`/`ws.contains(..)` dispatched on the backend's guess.  A
+     * field's operand can name another binding, so this takes the depth
+     * guard like the other re-entrant cases. */
+    case NODE_FIELD_EXPR: {
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *it = infer(cx, initN);
+        cx->bind_infer_depth--;
+        if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT ||
+                   it->kind == TY_ARRAY)) return it;
+        return NULL;
+    }
+    /* 127.224 / 127.223 item 7: `let s=a+a` on u64, `let w=v-1`.  The
+     * binding was untyped, so `\(s>a)` compared signed and `w as u64` drew
+     * no W1001 while `(v-1) as u64` did.  Operands name other bindings, so
+     * this takes the depth guard. */
+    case NODE_BINARY_EXPR: {
+        /* The binding statement inferred its initialiser already (and
+         * reported anything wrong with it there); re-walking it on every
+         * reference repeated those diagnostics — `let s=a+"x"` drew its
+         * E4031 once per use of `s` (C043).  Use the memoised type; infer
+         * only when the statement has not been walked yet. */
+        Type *it = initN->rtype;
+        if (!it) {
+            if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+            cx->bind_infer_depth++;
+            it = infer(cx, initN);
+            cx->bind_infer_depth--;
+        }
+        if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
         return NULL;
     }
     /*
@@ -2573,6 +2664,22 @@ static const char *tki_closest_member(const NameEnv *env, const char *alias,
     return best;
 }
 
+/* 127.224 item 4 (127.218's remainder) — the glue symbols of quarantined
+ * interface exports that no stdlib C source names, generated from
+ * scripts/check_tki_skiplist.txt by scripts/gen_tki_quarantine_h.py (see its
+ * header for why the skiplist alone is not taken as proof). */
+typedef struct { const char *sym, *module, *member; } QuarantinedExport;
+static const QuarantinedExport s_quarantined[] = {
+#include "stdlib_quarantine_gen.h"
+    { NULL, NULL, NULL }
+};
+static const QuarantinedExport *quarantined_export(const char *sym) {
+    if (!sym) return NULL;
+    for (int i = 0; s_quarantined[i].sym; i++)
+        if (strcmp(s_quarantined[i].sym, sym) == 0) return &s_quarantined[i];
+    return NULL;
+}
+
 static void check_tki_call(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1) return;
     const Node *callee = call->children[0];
@@ -2744,6 +2851,33 @@ static void check_tki_call(Ctx *cx, const Node *call) {
             tki_arity_error(call, "implementation", mpath, member,
                             NULL, abi, actual);
         return;
+    }
+
+    /* 1b. 127.224: an export the interface declares and the runtime does not
+     *     implement — quarantined, and its symbol named by no C source.  The
+     *     build already stops at ld (127.218 reports it there, located); saying
+     *     so at --check puts the same diagnostic where the repair loop looks.
+     *     This is not the "blame the consumer" case branch 2 declines below:
+     *     the message names the stdlib as the missing side.  No `fix` —
+     *     nothing the caller can change supplies the implementation. */
+    {
+        const QuarantinedExport *q = is_std ? quarantined_export(sym) : NULL;
+        if (q && strcmp(q->module, mpath) == 0) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            const char *mod = mpath + 4;
+            char msg[640];
+            snprintf(msg, sizeof msg,
+                     "'%s.%s' has no implementation: %s declares it in %s.tki, "
+                     "but no stdlib C source defines its glue symbol '%s', so "
+                     "the program cannot link (quarantined interface exports "
+                     "are listed in docs/reference/tki-quarantine.md)",
+                     alias, member, mpath, mod, sym);
+            /* At the alias, as the link-time report (127.218) places it. */
+            const Node *at = callee->children[0];
+            diag_emit(DIAG_ERROR, E4027, at->start, at->line, at->col, msg,
+                      "got", member, (const char *)NULL);
+            return;
+        }
     }
 
     /* An alias with no recorded exports is an absence of knowledge for the
@@ -3658,6 +3792,25 @@ static void check_array_store_elem(Ctx *cx, const Node *call) {
     else return;
     if (call->child_count != vi + 1) return;      /* arity is E4026's business */
     const Type *rt = recv_value_type(cx, callee->children[0]);
+    /* 127.98 (v): the INDEX of an array `.set` was never checked, so
+     * `a.set("x";5)` passed --check and aborted RT003 at run time with the
+     * string's address as the index.  An array index is an integer. */
+    if (vi == 2 && rt && rt->kind == TY_ARRAY) {
+        const Node *ixn = call->children[1];
+        const Type *it = ixn ? ixn->rtype : NULL;
+        if (it && it->kind != TY_UNKNOWN && !is_integer(it)) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char in_[64], msg[200];
+            snprintf(in_, sizeof in_, "%s", type_name(it));
+            snprintf(msg, sizeof msg,
+                     "type mismatch: '.set' indexes an array with a '%s'; an "
+                     "array index is an integer", in_);
+            diag_emit(DIAG_ERROR, E4031, ixn->start, ixn->line, ixn->col, msg,
+                      "expected", "an integer index", "got", in_,
+                      (const char *)NULL);
+            return;
+        }
+    }
     if (!rt || rt->kind != TY_ARRAY || !rt->elem ||
         rt->elem->kind == TY_UNKNOWN || rt->elem->kind == TY_VOID) return;
     const Node *vn = call->children[vi];
@@ -3680,6 +3833,35 @@ static Type *infer(Ctx *cx, const Node *node) {
     if (node) ((Node *)node)->rtype = t;
     return t;
 }
+/* 127.223 item 2 — the declared return type of a call whose callee is a
+ * local bound to a closure literal (`let sum=fn(x:@i64):i64{..}; sum(a)`),
+ * or NULL.  The call was TY_UNKNOWN, so the emitter fell back to its own
+ * name-keyed table and read a same-named MODULE function's return type:
+ * with `f=sum(a:$str):$str` in the module, `"\(sum(@(1;2)))"` inside a
+ * closure rendered the closure's i64 result as a string pointer (exit 139),
+ * and a str-returning closure interpolated as an address.  Only the return
+ * type is answered; argument checking against the closure's parameters is
+ * 124.0c item 2. */
+static Type *closure_local_call_ret(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1 || !call->children[0]
+        || call->children[0]->kind != NODE_IDENT) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, call->children[0]);
+    const Node *bn = local_in_force(cx, nb, (int)strlen(nb), call);
+    if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT))
+        return NULL;
+    const Node *init = bn->child_count == 2 ? bn->children[1]
+                     : bn->child_count > 2 ? bn->children[2] : NULL;
+    if (!init || init->kind != NODE_CLOSURE) return NULL;
+    for (int i = 0; i < init->child_count; i++) {
+        const Node *ch = init->children[i];
+        if (ch && ch->kind == NODE_RETURN_SPEC && ch->child_count > 0) {
+            Type *rt = resolve_return_spec(cx, ch);
+            return rt && rt->kind != TY_UNKNOWN ? rt : NULL;
+        }
+    }
+    return NULL;
+}
+
 static Type *infer_impl(Ctx *cx, const Node *node) {
     if (!node) return mk_type(cx->env->arena, TY_UNKNOWN);
     Arena *A = cx->env->arena;
@@ -4181,6 +4363,35 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 && (int_widens_to(l,r)||int_widens_to(r,l))) {
                 return cmp?mk_type(A,TY_BOOL):(int_widens_to(l,r)?r:l);
             }
+            /* 127.224 item 5: an arithmetic operand that is not numeric at
+             * all (`true+false`, `b+1` on a bool) went through emit_mm below,
+             * which formats the two OPERAND types — "expected 'bool', got
+             * 'bool'" — and offered "cast RHS to bool using 'as'", which does
+             * not make `+` legal on a bool.  Same repair 127.140 made for
+             * str + str: say what the operator requires and what it got.  No
+             * `fix`: whether the author meant a count, a logical operator or
+             * a numeric field is not decidable here. */
+            if (arith && (!is_numeric(l) || !is_numeric(r))) {
+                Type *bad = !is_numeric(l) ? l : r;
+                const char *opn = node->op==TK_PLUS ? "+" : node->op==TK_MINUS ? "-"
+                                : node->op==TK_STAR ? "*" : "/";
+                if (tc_can_emit(cx)) {
+                    char msg[256];
+                    if (!is_numeric(l) && !is_numeric(r))
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: both sides are "
+                                 "'%s'", opn, type_name(bad));
+                    else
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: the %s side is "
+                                 "'%s'", opn, !is_numeric(l) ? "left" : "right",
+                                 type_name(bad));
+                    diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col,
+                              msg, "expected", "a numeric type",
+                              "got", type_name(bad), (const char *)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[96];
                 /* 127.64: toke has no implicit int->float promotion (ADR: "no
@@ -4230,10 +4441,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             &&(local_in_force(cx,nb,(int)strlen(nb),node)
                ||arm_bind_lookup(cx,nb,(int)strlen(nb),node))) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
-            return mk_type(A,TY_UNKNOWN);
+            Type *crt=closure_local_call_ret(cx,node);
+            return crt?crt:mk_type(A,TY_UNKNOWN);
         }
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            { Type *crt=closure_local_call_ret(cx,node); if (crt) return crt; }
             /* 127.14: a `alias.method(...)` stdlib call the checker cannot
              * resolve — enforce the declared str parameters against the
              * argument types just inferred. */
@@ -4254,6 +4467,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             check_recv_method_call(cx,node);
             /* and an array store must match the element type. */
             check_array_store_elem(cx,node);
+            /* 127.224 item 7: a map from another user module, used in place
+             * (`lib.mk().get("a")`) — the same answer the `let` binding gets
+             * from bind_init_type.  Maps only: see call_decl_ret_type. */
+            if (node->children[0]->kind==NODE_FIELD_EXPR) {
+                Type *mrt=call_decl_ret_type(cx,node);
+                if (mrt&&mrt->kind==TY_MAP) return mrt;
+            }
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;
@@ -4341,7 +4561,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                              type_name(src_t),type_name(dst_t));
                     diag_emit(DIAG_WARNING,W1001,node->start,node->line,node->col,
                               msg,"expected",type_name(dst_t),"got",type_name(src_t),
-                              "fix","ensure the value fits in the target type or handle truncation",
+                              /* 127.223 item 4: no fix — "ensure the value
+                               * fits" is guidance, not a repair, and
+                               * errors.md specifies the field absent */
                               (const char*)NULL);
                 }
             }
@@ -5044,6 +5266,30 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         cx->bind_count=saved_bc; cx->scope_depth=saved_depth;
         cx->fn_node=saved_fn; cx->fn_ret=saved;
         return mk_type(A,TY_VOID);
+    }
+
+    /* ── Closure (127.224 item 3, 127.223 item 1) ────────────────────────
+     * A closure is walked like any other expression — its captures resolve
+     * against the enclosing function, so cx->fn_node stays put — but a `<`
+     * in its body returns from the CLOSURE.  With no case here the body was
+     * checked against the enclosing function's return type:
+     * `fn(s:str):str{<"x"}` inside `main():i64` was a false E4031, and after
+     * a nested closure the outer closure's `<` was judged the same way.
+     * A closure with no return spec has no declared type to check against,
+     * so its returns are left unjudged (TY_UNKNOWN).  The result is what the
+     * generic walk returned before, so the closure's own type is unchanged. */
+    case NODE_CLOSURE: {
+        Type *ret=mk_type(A,TY_UNKNOWN);
+        for (int i=0;i<node->child_count;i++) {
+            const Node *ch=node->children[i];
+            if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
+                ret=resolve_return_spec(cx,ch);
+        }
+        Type *saved=cx->fn_ret; cx->fn_ret=ret;
+        Type *last=mk_type(A,TY_VOID);
+        for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
+        cx->fn_ret=saved;
+        return last;
     }
 
     /* ── Statement list ──────────────────────────────────────────────────

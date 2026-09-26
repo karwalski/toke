@@ -272,7 +272,8 @@ static int lex_number(Lexer *l, int start, int line, int col)
                 while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
                 diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
                           "identifier must not start with a digit",
-                          "fix", "identifiers must start with a-z or A-Z",
+                          /* 127.223 item 3: no fix — guidance, not a repair;
+                           * errors.md specifies none */
                           "expected", "letter (a-z, A-Z) to start an identifier", NULL);
                 return -1;
             }
@@ -294,7 +295,8 @@ static int lex_number(Lexer *l, int start, int line, int col)
                 while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
                 diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
                           "identifier must not start with a digit",
-                          "fix", "identifiers must start with a-z or A-Z",
+                          /* 127.223 item 3: no fix — guidance, not a repair;
+                           * errors.md specifies none */
                           "expected", "letter (a-z, A-Z) to start an identifier", NULL);
                 return -1;
             }
@@ -627,7 +629,9 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                      "identifier '%s' starts with underscore (v0.2 syntax); "
                      "run `toke --migrate` to convert to v0.3", ubuf);
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, umsg,
-                      "fix", "remove underscores: identifiers must start with a letter (a-z, A-Z)",
+                      /* 127.223 item 3: no fix — dropping the underscore can
+                       * collide with another name (`_x` beside `x`), and
+                       * docs/spec/errors.md specifies none; --migrate owns it */
                       "got", ubuf,
                       "expected", "identifier starting with a letter (a-z, A-Z)", NULL);
             if (record_error(&l)) break;

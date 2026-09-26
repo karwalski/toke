@@ -1,4 +1,4 @@
-(* 123.6 WITNESS (quarantined; new defect found by 123.6): the unsigned
+(* 123.6 CERTIFICATE (was a quarantined witness; fixed by 127.224): the unsigned
  * integer types are lowered with signed semantics.  A u8 holding 200 prints
  * -56 and compares LESS than 100; a u32 of 3e9 compares less than 1e9; u64
  * addition traps RT002 on crossing 2^63, which is in range for u64.  Expected

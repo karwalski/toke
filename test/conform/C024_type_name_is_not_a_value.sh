@@ -38,7 +38,7 @@
 # `thing{...}` are all E2005/E2003 parse errors both before and after — so the
 # fix cannot reach a legitimate spelling.  Cases 5-10 pin that.
 #
-# Stories: 137.4, 127.116, 127.117, 127.90, 136.36
+# Stories: 137.4, 127.116, 127.117, 127.90, 136.36, 127.98
 
 set -uo pipefail
 
@@ -330,6 +330,54 @@ runs "a module alias is not a type name" "hi" \
 'm=main;
 i=io:std.io;
 f=main():i64{io.println("hi");<0};'
+
+# ── D (127.98 (i), 2026-09-27) — the BUILT-IN type names ────────────────
+# names.c seeds bool/i64/u64/f64/str/void as DECL_PREDEFINED, and the 137.4
+# check above applied to DECL_TYPE only, so `let x=str;` passed --check and
+# failed in clang on `%str`; `mut.@(str:str)` built a map keyed by the
+# "value" str (E9003).  Negative control: main at a705c93 — the three
+# diag_at cases below report 0x E4033.
+diag_at E4033 1 4 "a bare built-in type name bound as a value" \
+'m=t;
+i=io:std.io;
+f=main():i64{
+  let x=str;
+  <0
+};'
+diag_at E4033 2 4 "built-in type names as the key and value of a map literal" \
+'m=t;
+i=io:std.io;
+f=main():i64{
+  let m=mut.@(str:str);
+  <0
+};'
+diag_at E4033 1 4 "a built-in type name as an argument" \
+'m=t;
+i=io:std.io;
+f=main():i64{
+  io.println(i64);
+  <0
+};'
+runs "built-in type names stay legal in type positions" "a 1 2" \
+'m=t;
+i=io:std.io;
+f=f(a:str):str{<a};
+f=main():i64{
+  let y:str=f("a");
+  let t:@(str:i64)=@("k":1);
+  let e=@($str:$str);
+  let q=(2.0 as f64) as i64;
+  io.println("\(y) \(t.get("k")) \(q)");
+  <0
+};'
+runs "a local named like a built-in type is a value" "3" \
+'m=t;
+i=io:std.io;
+f=main():i64{
+  let str="abc";
+  io.println("\(str.len)");
+  <0
+};'
 
 echo "----------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

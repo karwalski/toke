@@ -23,6 +23,11 @@
 # Negative control: remove the `if (uc) { ... }` block in compile_binary_multi
 # — case 1 reports E9003 at line 4 (f=main) and fails.
 #
+# 127.224 (2026-09-27): the type checker now reports the same E4027 at the
+# same position before codegen runs (C164), so case 1 passes through that
+# path first; the link-time report remains the backstop for an export the
+# checker's generated table does not cover.
+#
 # Story: 127.218
 
 set -uo pipefail
