@@ -1008,6 +1008,16 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
     const char *bufend = buf + strlen(buf);
     const char *ex = strstr(buf, "\"exports\"");
     if (!ex) return;
+    /* 127.226: the std interfaces are hand-written and drifted; the checker
+     * adopts compound field types only from a generated user interface. */
+    int is_std = 0;
+    {
+        char mod[128] = {0};
+        const char *top = strchr(buf, '{');
+        if (top && tki_str_value(tki_obj_key(top, bufend, "module"), bufend,
+                                 mod, (int)sizeof mod)
+            && strncmp(mod, "std.", 4) == 0) is_std = 1;
+    }
     const char *arr = (const char *)memchr(ex, '[', (size_t)(bufend - ex));
     if (!arr) return;
     const char *p = arr + 1;
@@ -1103,6 +1113,7 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
         ImportedType it;
         it.name        = arena_intern(arena, name, (int)strlen(name));
         it.is_sum      = 0;
+        it.is_std      = is_std;
         it.field_count = 0;
         it.field_names = NULL;
         it.field_types = NULL;

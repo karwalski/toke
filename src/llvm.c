@@ -5015,15 +5015,20 @@ static int emit_expr(Ctx *c, const Node *n)
             /* 113.B.15: map.keys() → tk_map_keys_w(map) → toke array of keys.
              * Gated on a map receiver so a user .keys() on a non-map is
              * unaffected. tk_map_keys_w takes the map as i64. */
+            /* 127.226: or any other receiver the checker typed a map — a
+             * struct field `c.entries.keys()` linked against `_keys` too. */
             if (!is_mod_im && !strcmp(method_im, "keys") &&
-                n->children[0]->children[0]->kind == NODE_IDENT) {
-                char mkb[128]; tok_cp(c->src, n->children[0]->children[0], mkb, sizeof mkb);
+                (n->children[0]->children[0]->kind == NODE_IDENT ||
+                 recv_is_map(c, n->children[0]->children[0]))) {
+                char mkb[128]; mkb[0] = '\0';
+                if (n->children[0]->children[0]->kind == NODE_IDENT)
+                    tok_cp(c->src, n->children[0]->children[0], mkb, sizeof mkb);
                 /* 127.28: a map returned by a user function is not a registered
                  * map var, but the checker's rtype (via len_recv_kind) knows it
                  * is a map; without this the call fell through to the
                  * user-function path and linked against a non-existent `_keys`. */
                 const char *mrk = len_recv_kind(c, n->children[0]->children[0]);
-                if (is_map_var(c, mkb) || (mrk && !strcmp(mrk, "map"))) {
+                if ((mkb[0] && is_map_var(c, mkb)) || (mrk && !strcmp(mrk, "map"))) {
                     int mv = emit_expr(c, n->children[0]->children[0]);
                     const char *mvty = expr_llvm_type(c, n->children[0]->children[0]);
                     if (!strcmp(mvty, "i8*")) {

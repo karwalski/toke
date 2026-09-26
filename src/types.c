@@ -1152,6 +1152,51 @@ static Type *tki_scalar_type(Arena *A, const char *s) {
  * needs, and leaving those types unknown keeps the change to the hole.
  * `depth` caps the recursion for a type whose field names its own type.
  */
+static Type *imported_struct_type(Ctx *cx, const char *tname, int depth);
+/* 127.226: a generated .tki type spelling (ir.c) of `len` bytes — a scalar,
+ * `[T]`, `[K:V]` (nested to any depth the spelling carries, bounded by
+ * `depth`), or an imported struct name.  NULL for anything else, so an
+ * unrecognised spelling stays TY_UNKNOWN as before. */
+static Type *tki_compound_type(Ctx *cx, const char *s, size_t len, int depth) {
+    Arena *A = cx->env->arena;
+    char b[128];
+    if (!s || len == 0 || len >= sizeof b || depth > 6) return NULL;
+    memcpy(b, s, len); b[len] = '\0';
+    Type *t = tki_scalar_type(A, b);
+    if (t) return t;
+    if (b[0] != '[') {
+        if (strchr(b, '!') || strchr(b, '.') || strchr(b, ':') ||
+            strchr(b, ']')) return NULL;
+        return imported_struct_type(cx, b, depth);
+    }
+    if (len < 3 || b[len - 1] != ']') return NULL;
+    /* the ':' of a map is the one at bracket depth 1 */
+    size_t colon = 0; int d = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (b[i] == '[') d++;
+        else if (b[i] == ']') d--;
+        else if (b[i] == ':' && d == 1 && !colon) colon = i;
+    }
+    if (d != 0) return NULL;
+    if (!colon) {
+        Type *el = tki_compound_type(cx, s + 1, len - 2, depth + 1);
+        Type *at = el ? mk_type(A, TY_ARRAY) : NULL;
+        if (!at) return NULL;
+        at->elem = el;
+        return at;
+    }
+    Type *kt = tki_compound_type(cx, s + 1, colon - 1, depth + 1);
+    Type *vt = tki_compound_type(cx, s + colon + 1, len - colon - 2, depth + 1);
+    Type *mt = (kt && vt) ? mk_type(A, TY_MAP) : NULL;
+    Type **fts = mt ? (Type **)arena_alloc(A, (int)sizeof(Type *)) : NULL;
+    if (!mt || !fts) return NULL;
+    mt->elem = kt;
+    mt->field_count = 1;
+    mt->field_types = fts;
+    fts[0] = vt;
+    return mt;
+}
+
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     Arena *A = cx->env->arena;
     if (!tname || !*tname || !cx->env->names) return NULL;
@@ -1176,6 +1221,11 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                                    ? it->field_names[i] : "";
                 const char *sp = it->field_types ? it->field_types[i] : NULL;
                 Type *ft = tki_scalar_type(A, sp);
+                /* 127.226: `[T]` / `[K:V]` from a generated user interface.
+                 * Left TY_UNKNOWN, a map field of an imported struct lowered
+                 * `.set` / `.len` / `.contains` as the array glue. */
+                if (!ft && sp && sp[0] == '[' && !it->is_std)
+                    ft = tki_compound_type(cx, sp, strlen(sp), depth + 1);
                 if (!ft && sp && *sp && depth < 4 && sp[0] != '[' &&
                     sp[0] != '@' && !strchr(sp, '!') && !strchr(sp, '.'))
                     ft = imported_struct_type(cx, sp, depth + 1);
@@ -4462,6 +4512,29 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 127.201: and a str/array representation clash against the
              * parameter kinds read out of the glue. */
             check_stdlib_param_kinds(cx,node);
+            /* 127.226: type a struct-FIELD receiver (`c.entries.set(k;v)`).
+             * Nothing inferred the callee of a method call, so the field node
+             * reached the emitter with no rtype, and recv_is_map (which reads
+             * the rtype) lowered a map field's `.set` / `.contains` / `.keys()`
+             * as the array or str glue: `.set` was a silent no-op until
+             * 25e55f5 made an out-of-range array `.set` trap RT003, and ooke's
+             * template cache never stored an entry.  A module sub-path
+             * (`http.res.ok(..)`) is not a value and is left alone. */
+            {
+                const Node *cal=node->children[0];
+                const Node *rv=(cal->kind==NODE_FIELD_EXPR&&cal->child_count>=2)
+                               ?cal->children[0]:NULL;
+                if (rv&&rv->kind==NODE_FIELD_EXPR&&rv->child_count>=2&&rv->children[0]) {
+                    int is_mod=0;
+                    if (rv->children[0]->kind==NODE_IDENT) {
+                        char ab[128]; TOKSTR(ab,cx->src,rv->children[0]);
+                        char mb[256];
+                        if (!alias_shadowed(cx,rv->children[0])
+                            &&import_module_path(cx,ab,mb,sizeof mb)) is_mod=1;
+                    }
+                    if (!is_mod&&rv->children[0]->kind!=NODE_TYPE_IDENT) infer(cx,rv);
+                }
+            }
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
             check_recv_method_call(cx,node);
