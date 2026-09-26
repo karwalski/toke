@@ -49,7 +49,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | Code | Severity | Stage | Short description | Conformance test(s) |
 |------|----------|-------|-------------------|---------------------|
 | E1001 | error | lex | Invalid escape sequence | D001, D006, D007, D008, D010, D011, D012 |
-| W1001 | warning | lex | Lossy cast | -- |
+| W1001 | warning | type_check | Lossy cast | -- |
 | E1002 | error | lex | Unterminated string literal | D002 |
 | E1003 | error | lex | Character outside permitted character set | D003 |
 | E1004 | error | lex | Digit-leading or unterminated identifier | -- |
@@ -262,7 +262,7 @@ f=a():i64{<0x};
 | Field | Value |
 |-------|-------|
 | **Code** | W1001 |
-| **Stage** | lex (emitted by the type checker) |
+| **Stage** | type_check (the number is in the lexer range for historical reasons; 127.223) |
 | **Severity** | warning |
 | **Message** | `potentially truncating cast from '<T1>' to '<T2>'` |
 | **Fix field** | absent |

@@ -155,7 +155,7 @@ def render_spec_table(existing_rows, live, defined, emitted, facts):
         old = existing_rows.get(code)
         # 123.12a: Stage is the `stage` every JSON diagnostic for this code
         # carries (src/diag.c phase_for_code), not a hand-kept column.
-        stage = stage_of(int(code[1:]))
+        stage = stage_of(int(code[1:]), code[0])
         conf = old[3] if old and old[3] else "n/s"
         sev = "error" if code.startswith("E") else "warning"
         lines.append(f"| {code} | {sev} | {stage} | {title} | {conf} |")
@@ -272,17 +272,26 @@ PHASE_RE = re.compile(r"if\s*\(code\s*>=\s*(\d+)\s*&&\s*code\s*<=\s*(\d+)\)"
 def emitted_stage_fn():
     """Build code-number -> stage from phase_for_code() in src/diag.c."""
     txt = read(DIAG_C)
-    body = re.search(r"phase_for_code\(int code\)\s*\{(.*?)\n\}", txt, re.S)
+    # The signature grew a severity parameter (127.223: W1001 shares its
+    # number with E1001 but is raised by the type checker), so match any
+    # parameter list and read per-severity overrides as well as ranges.
+    body = re.search(r"phase_for_code\([^)]*\)\s*\{(.*?)\n\}", txt, re.S)
     if not body:
         raise SystemExit("check_error_codes: phase_for_code() not found in "
                          "src/diag.c -- the gate cannot derive `stage`")
     ranges = [(int(a), int(b), st) for a, b, st in PHASE_RE.findall(body.group(1))]
+    overrides = {(int(n), 'W' if sv == 'WARNING' else 'E'): st
+                 for n, sv, st in re.findall(
+                     r"if\s*\(code\s*==\s*(\d+)\s*&&\s*sev\s*==\s*DIAG_(WARNING|ERROR)\)\s*return\s*\"(\w+)\"",
+                     body.group(1))}
     tail = re.findall(r"return\s*\"(\w+)\";\s*$", body.group(1).rstrip())
     fallback = tail[-1] if tail else ""
     if not ranges:
         raise SystemExit("check_error_codes: no ranges parsed from phase_for_code()")
 
-    def stage(n):
+    def stage(n, kind='E'):
+        if (n, kind) in overrides:
+            return overrides[(n, kind)]
         for a, b, st in ranges:
             if a <= n <= b:
                 return st
@@ -306,7 +315,7 @@ def check_fields(live):
             st = re.search(r"^\|\s*(?:\*\*)?Stage(?:\*\*)?\s*\|\s*([^|]*?)\s*\|",
                            body, re.M)
             want_sev = "error" if code[0] == "E" else "warning"
-            want_st = stage_of(int(code[1:]))
+            want_st = stage_of(int(code[1:]), code[0])
             if not sv or sv.group(1) != want_sev:
                 errs.append(f"{rel} {code}: Severity is "
                             f"{sv.group(1) if sv else 'missing'!r}, the "

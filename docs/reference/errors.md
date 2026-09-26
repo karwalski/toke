@@ -159,7 +159,7 @@ default profile, where `\(expr)` works.
 | Field    | Value |
 |----------|-------|
 | Severity | warning |
-| Stage    | lex |
+| Stage    | type_check |
 
 Warns that a cast loses information (e.g. `f64` to `i64`).
 
