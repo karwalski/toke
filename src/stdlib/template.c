@@ -847,9 +847,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 for (uint64_t j = 0; j < nitems; j++) {
                     /* Build index string */
                     char idx_buf[32];
-                    int idx_len = snprintf(idx_buf, sizeof(idx_buf),
-                                           "%" PRIu64, j);
-                    if (idx_len < 0) idx_len = 0;
+                    snprintf(idx_buf, sizeof(idx_buf), "%" PRIu64, j);
 
                     TkTmplVar item_vars[2];
                     item_vars[0].key   = ".";
