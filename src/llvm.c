@@ -179,7 +179,8 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; } Ctx;
+#define TKC_CREL_MAX 32   /* 124.0c: tracked releasable closure envs per f= */
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -9318,6 +9319,145 @@ static int rhs_proves_str_array(Ctx *c, const Node *rhs) {
  * 127.10: first collects c->str_loc (let-bound names whose RHS is a string by
  * shape) so `let line="\(i)"; a=a.append(line)` proves `a`; both sets are
  * grown to a fixed point because a binding may name an earlier one. */
+/*
+ * ── 124.0c item 3: releasing a bound closure's environment ─────────────
+ *
+ * memory-model §2.5: a closure's environment is malloc'd and "freed when the
+ * last reference to the closure is released".  124.0c released only a
+ * closure applied on the spot; a closure bound to a local leaked its box
+ * until exit — once per execution of the `let`, so a closure bound inside a
+ * loop leaked once per iteration.
+ *
+ * The references a toke closure value can acquire are the binding itself,
+ * a copy into another local, an argument, a return value, a container slot,
+ * a struct field and a capture by another closure.  This pass proves, per
+ * `let g=fn..` in an f= body, that the binding is the ONLY one: every other
+ * occurrence of the name in the function is the callee of a call, outside
+ * any nested closure or spawn.  Then the reference is released exactly
+ * when the binding is — when the `let` runs again (the previous iteration's
+ * value is dead: nothing else holds it) and when the function returns.
+ * Any other occurrence of the name, anywhere in the function — a parameter,
+ * another binding, a field, a string interpolation the parser did not
+ * attach — disqualifies it, and it keeps today's behaviour (a leak, never a
+ * use-after-free).  A closure that escapes still needs the reference count
+ * the spec describes; that is not done here.
+ *
+ * Mechanics: each tracked binding gets a slot `%__crel.K` (hoisted alloca,
+ * nulled at entry); the `let` frees the slot's previous box and stores the
+ * new one; release_closure_envs() inserts a load+free of every slot before
+ * each `ret` of the function, after the return value has been computed.
+ */
+static const char *ll_next_line(const char *p, const char *end);
+static int crel_word_in(const char *s, int len, const char *w) {
+    int wl = (int)strlen(w);
+    for (int i = 0; i + wl <= len; i++) {
+        if (memcmp(s + i, w, (size_t)wl)) continue;
+        int b = i == 0 || !(isalnum((unsigned char)s[i - 1]) || s[i - 1] == '_');
+        int a = i + wl == len || !(isalnum((unsigned char)s[i + wl]) || s[i + wl] == '_');
+        if (a && b) return 1;
+    }
+    return 0;
+}
+static int crel_uses_ok(const Ctx *c, const Node *n, const Node *parent,
+                        const char *nm, const Node *bind_name, int in_clos) {
+    if (!n) return 1;
+    if (n->kind == NODE_IDENT && n->child_count == 0) {
+        char tb[NAME_BUF]; tok_cp(c->src, n, tb, sizeof tb);
+        if (strcmp(tb, nm)) return 1;
+        if (n == bind_name) return 1;
+        return !in_clos && parent && parent->kind == NODE_CALL_EXPR &&
+               parent->child_count > 0 && parent->children[0] == n;
+    }
+    if (n->kind == NODE_STR_LIT && n->tok_len > 2) {
+        const char *raw = c->src + n->tok_start;
+        int ni = 0;
+        for (int i = 0; i + 1 < n->tok_len; i++)
+            if (raw[i] == '\\' && raw[i + 1] == '(') { ni++; i++; }
+            else if (raw[i] == '\\') i++;
+        if (ni != n->child_count && crel_word_in(raw, n->tok_len, nm)) return 0;
+    }
+    int ic = in_clos || n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR;
+    for (int i = 0; i < n->child_count; i++)
+        if (!crel_uses_ok(c, n->children[i], n, nm, bind_name, ic)) return 0;
+    return 1;
+}
+static void crel_collect(Ctx *c, const Node *fn, const Node *n) {
+    if (!n || n->kind == NODE_CLOSURE) return;
+    if (n->kind == NODE_BIND_STMT && n->child_count >= 2 && n->children[0]) {
+        const Node *init = n->child_count >= 3 && n->children[2] ? n->children[2]
+                                                                   : n->children[1];
+        if (init && init->kind == NODE_CLOSURE && c->crel_count < TKC_CREL_MAX) {
+            char nm[NAME_BUF]; tok_cp(c->src, n->children[0], nm, sizeof nm);
+            if (nm[0] && crel_uses_ok(c, fn, NULL, nm, n->children[0], 0))
+                c->crel_init[c->crel_count++] = init;
+        }
+    }
+    for (int i = 0; i < n->child_count; i++) crel_collect(c, fn, n->children[i]);
+}
+static void compute_closure_releases(Ctx *c, const Node *fn) {
+    c->crel_count = 0;
+    crel_collect(c, fn, fn);
+    for (int k = 0; k < c->crel_count; k++)
+        fprintf(c->out, "  %%__crel.%d = alloca i8*\n"
+                        "  store i8* null, i8** %%__crel.%d ; 124.0c releasable closure env\n", k, k);
+}
+static int crel_index(const Ctx *c, const Node *init) {
+    for (int k = 0; k < c->crel_count; k++) if (c->crel_init[k] == init) return k;
+    return -1;
+}
+
+/*
+ * release_closure_envs — the textual half of the pass above: in every
+ * function that declares `%__crel.K` slots, insert before each `  ret ` line
+ * a load and free of each slot.  Returns a new malloc'd buffer (and its
+ * length), or NULL when nothing needed inserting or on allocation failure
+ * (then the input is used unchanged: a leak, as before).
+ */
+static char *release_closure_envs(const char *buf, long len, long *out_len) {
+    if (!strstr(buf, "%__crel.")) return NULL;
+    long cap = len * 2 + 4096, w = 0;
+    char *out = (char *)malloc((size_t)cap + 1);
+    if (!out) return NULL;
+    int nslots = 0, seq = 0;
+    const char *p = buf, *end = buf + len;
+    while (p < end) {
+        const char *eol = ll_next_line(p, end);
+        long ll = (long)(eol - p);
+        if (ll >= 7 && !memcmp(p, "define ", 7)) {
+            /* count this function's slots */
+            nslots = 0;
+            for (const char *q = eol; q < end; ) {
+                const char *e2 = ll_next_line(q, end);
+                if (q[0] == '}') break;
+                if (e2 - q > 18 && !memcmp(q, "  %__crel.", 10) &&
+                    strstr(q, " = alloca i8*") && strstr(q, " = alloca i8*") < e2) nslots++;
+                q = e2;
+            }
+        }
+        int is_ret = nslots > 0 && ll >= 6 && !memcmp(p, "  ret ", 6);
+        long need = ll + (is_ret ? (long)nslots * 96 : 0);
+        if (w + need >= cap) {
+            cap = (w + need) * 2;
+            char *nb = (char *)realloc(out, (size_t)cap + 1);
+            if (!nb) { free(out); return NULL; }
+            out = nb;
+        }
+        if (is_ret)
+            for (int k = 0; k < nslots; k++) {
+                w += snprintf(out + w, (size_t)(cap - w),
+                              "  %%__crelv.%d = load i8*, i8** %%__crel.%d\n"
+                              "  call void @free(i8* %%__crelv.%d)\n", seq, k, seq);
+                seq++;
+            }
+        memcpy(out + w, p, (size_t)ll); w += ll;
+        p = eol;
+        if (ll >= 1 && p[-ll] == '}') nslots = 0;
+    }
+    out[w] = '\0';
+    *out_len = w;
+    return out;
+}
+
 static void compute_str_arrays(Ctx *c, const Node *fn) {
     c->str_arr_count = 0;
     c->str_loc_count = 0;
@@ -9473,6 +9613,16 @@ static void emit_stmt(Ctx *c, const Node *n)
              * 127.86: a stated type standing in for an established one. */
             const char *init_ty = expr_llvm_type(c, init_node);
             int v = emit_expr(c, init_node);
+            /* 124.0c item 3: a releasable closure binding — the previous
+             * execution's box (a loop's last iteration) has no other
+             * reference, so free it, and keep the new one for the exits. */
+            { int ck = crel_index(c, init_node);
+              if (ck >= 0) {
+                  int ov = next_tmp(c);
+                  fprintf(c->out, "  %%t%d = load i8*, i8** %%__crel.%d\n", ov, ck);
+                  fprintf(c->out, "  call void @free(i8* %%t%d) ; 124.0c env released on re-bind\n", ov);
+                  fprintf(c->out, "  store i8* %%t%d, i8** %%__crel.%d\n", v, ck);
+              } }
             /* 135.16: the error channel belongs to THIS call, so read it
              * before anything else runs.  Taken after emit_expr and before
              * coerce_value because coerce_value can emit a call
@@ -10507,6 +10657,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         /* 114.18: identify linearly-owned array locals for in-place mutation. */
         compute_linear_arrays(c, n);
         compute_str_arrays(c, n);
+        compute_closure_releases(c, n);   /* 124.0c item 3 */
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
         if (!c->term) {
             /* 127.112: the IMPLICIT return is an ok return, and 114.55 says
@@ -10526,6 +10677,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             else fprintf(c->out, "  ret %s 0 ; implicit return\n", ret);
         }
         fputs("}\n", c->out);
+        c->crel_count = 0;   /* 124.0c: lifted closure bodies track nothing */
         /* 127.185: check the finished body against the error-exit rule. */
         if (c->cur_fn_err[0] && fn_ir_off >= 0) {
             long fn_end = ftell(c->out);
@@ -11495,6 +11647,10 @@ timeparts_done:
      * including a read of the outer binding it shadows — made the module
      * invalid ("Instruction does not dominate all uses!").  Line-permuting,
      * so body_len is unchanged and the reference scan below is unaffected. */
+    /* 124.0c item 3: free each releasable closure env before every ret of
+     * the function that owns it (compute_closure_releases). */
+    { long nl = 0; char *nb = release_closure_envs(body_buf, body_len, &nl);
+      if (nb) { free(body_buf); body_buf = nb; body_len = nl; } }
     hoist_allocas(body_buf, body_len);
 
     /* Emit only the declarations whose symbols are referenced in the body
