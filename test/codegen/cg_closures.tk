@@ -1,0 +1,70 @@
+(* 124.0c CERTIFICATE: calls through function values, wherever the value came
+ * from, and closure environments that outlive the scope that made them.
+ * Until 124.0c item 3 a call through a closure that was copied, passed,
+ * returned, captured, taken out of an array or a struct field, or chosen by
+ * an if-expression lowered as its first argument (`h(1)` -> 1) — a silent
+ * wrong value at exit 0 — and every such environment leaked.  Each line
+ * checks one flow; the expected values are derived by hand in the comments.
+ * A premature release shows as a wrong value here and as a use-after-free
+ * under ASan / GuardMalloc (C192). *)
+m=cgclosures;
+i=io:std.io;
+t=$h{f:(i64):i64;n:i64};
+f=ck(n:str;got:i64;want:i64):i64{
+  if(got==want){io.println("ok \(n) \(got)");<0};
+  io.println("FAIL \(n): got \(got) want \(want)");
+  <1
+};
+f=inc(x:i64):i64{<x+1};
+f=ap(g:(i64):i64;x:i64):i64{<g(x)};
+f=mk(n:i64):(i64):i64{<fn(x:i64):i64{<x+n}};
+f=keep(g:(i64):i64):(i64):i64{<g};
+f=compose(f1:(i64):i64;f2:(i64):i64):(i64):i64{<fn(x:i64):i64{<f2(f1(x))}};
+f=copyret(n:i64):(i64):i64{let g=fn(x:i64):i64{<x*n};let h=g;<h};
+f=rep(g:(i64):i64;n:i64;x:i64):i64{ if(n==0){<x}; <rep(g;n-1;g(x)) };
+f=chain(n:i64):(i64):i64{
+  let cur=mut.fn(x:i64):i64{<x};
+  lp(let i=0;i<n;i=i+1){ let prev=cur; cur=fn(x:i64):i64{<prev(x)+1} };
+  <cur
+};
+f=main():i64{
+  let bad=mut.0;
+  let n=4;
+  let g=fn(x:i64):i64{<x+n};
+  let h=g;
+  bad=bad+ck("copy";h(1);5);                              (* 1+4 *)
+  bad=bad+ck("pass";ap(g;1);5);                           (* 1+4 *)
+  let m=mk(4);
+  bad=bad+ck("return";m(1);5);                            (* 1+4 *)
+  bad=bad+ck("pass-returned";ap(mk(10);1);11);            (* 1+10 *)
+  let k=fn(x:i64):i64{<g(x)*2};
+  bad=bad+ck("capture";k(1);10);                          (* (1+4)*2 *)
+  let kp=keep(g);
+  bad=bad+ck("returned-param";kp(2);6);                   (* 2+4 *)
+  let a=@(mk(1);fn(x:i64):i64{<x*n});
+  let q=a.get(1);
+  bad=bad+ck("array-elem";q(3);12);                       (* 3*4 *)
+  let s=$h{f:mk(3);n:1};
+  let sf=s.f;
+  bad=bad+ck("struct-field";sf(1);4);                     (* 1+3 *)
+  bad=bad+ck("fref-param";ap(&inc;5);6);                  (* 5+1 *)
+  let r=&inc;
+  let r2=r;
+  bad=bad+ck("fref-copy";r2(1);2);                        (* 1+1 *)
+  let c=compose(copyret(3);mk(2));
+  bad=bad+ck("compose";c(1);5);                           (* 1*3+2 *)
+  let c2=compose(&inc;c);
+  bad=bad+ck("compose-fref";c2(1);8);                     (* c(2)=2*3+2 *)
+  let pick=true;
+  let ie=if(pick){mk(1)}el{mk(2)};
+  bad=bad+ck("if-expr";ie(1);2);                          (* 1+1 *)
+  bad=bad+ck("rep";rep(mk(2);100;0);200);                 (* 100 steps of +2 *)
+  let v=mut.mk(0);
+  let tot=mut.0;
+  lp(let i=0;i<100;i=i+1){ v=mk(i); tot=tot+v(0) };
+  bad=bad+ck("mut-assign";tot;4950);                      (* 0+1+..+99 *)
+  let ch=chain(1000);
+  bad=bad+ck("capture-chain";ch(0);1000);                 (* 1000 links of +1 *)
+  io.println("bad=\(bad)");
+  <bad
+};

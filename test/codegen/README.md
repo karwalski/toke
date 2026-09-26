@@ -52,4 +52,5 @@ be removed with the fix.
 | typed-empty arrays (127.164) | `cg_typed_empty` |
 | structs over 16 fields (127.190) | `cg_wide_struct` |
 | receiver dispatch | `cg_recv_dispatch`, witness `cg_recv_field_receiver` |
+| closures and function values: copy, pass, return, capture, containers, refcounted release (124.0c) | `cg_closures` |
 | multi-module (127.76) | `multimod/geom`, `multimod/boolfn` (127.217) |
