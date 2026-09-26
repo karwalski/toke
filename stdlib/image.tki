@@ -27,12 +27,24 @@
     {
       "kind": "type",
       "name": "imgfmt",
-      "sum": true,
-      "variants": [
-        "Png",
-        "Jpeg",
-        "Webp",
-        "Bmp"
+      "is_sum": true,
+      "fields": [
+        {
+          "name": "$png",
+          "type": "void"
+        },
+        {
+          "name": "$jpeg",
+          "type": "void"
+        },
+        {
+          "name": "$webp",
+          "type": "void"
+        },
+        {
+          "name": "$bmp",
+          "type": "void"
+        }
       ]
     },
     {

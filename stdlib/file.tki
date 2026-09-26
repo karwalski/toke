@@ -5,18 +5,18 @@
     {
       "kind": "type",
       "name": "FileErr",
-      "sum": true,
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "NotFound",
+          "name": "$notfound",
           "type": "str"
         },
         {
-          "name": "Permission",
+          "name": "$permission",
           "type": "str"
         },
         {
-          "name": "IO",
+          "name": "$io",
           "type": "str"
         }
       ]

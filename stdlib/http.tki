@@ -49,21 +49,22 @@
     {
       "kind": "type",
       "name": "httprouteerr",
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "badrequest",
+          "name": "$badrequest",
           "type": "str"
         },
         {
-          "name": "notfound",
+          "name": "$notfound",
           "type": "str"
         },
         {
-          "name": "internal",
+          "name": "$internal",
           "type": "str"
         },
         {
-          "name": "timeout",
+          "name": "$timeout",
           "type": "u32"
         }
       ]

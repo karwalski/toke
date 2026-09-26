@@ -1109,6 +1109,11 @@ static void register_tki_struct_types(Ctx *c) {
                 if (flen >= 128) flen = 127;
                 memcpy(si->field_names[fc], fq1 + 1, (size_t)flen);
                 si->field_names[fc][flen] = '\0';
+                /* 127.209: a sum variant is spelled `$notfound` in the .tki;
+                 * match and construction sites use the bare name. */
+                if (si->field_names[fc][0] == '$')
+                    memmove(si->field_names[fc], si->field_names[fc] + 1,
+                            strlen(si->field_names[fc]));
                 si->field_types[fc][0] = '\0';
                 si->field_is_map[fc] = 0;
                 char *ft = strstr(fq2, "\"type\"");
@@ -1126,6 +1131,14 @@ static void register_tki_struct_types(Ctx *c) {
                 fp = fq2 + 1;
             }
             si->field_count = fc;
+            /* 127.209: carry the discriminated-union marker, as the user-
+             * module loader does (114.41).  Without it a stdlib sum such as
+             * FileErr was registered as a RECORD of its variants, so a
+             * payload typed by it could never be matched on. */
+            { char *sk = strstr(p, "\"is_sum\"");
+              char *sv = sk ? strchr(sk + 8, ':') : NULL;
+              while (sv && (*sv == ':' || *sv == ' ')) sv++;
+              si->is_sum = (sk && sk < bound && sv && !strncmp(sv, "true", 4)) ? 1 : 0; }
             c->struct_count++;
             p = next_kind ? next_kind : p + 6;
         }
@@ -1615,14 +1628,21 @@ static int is_stdlib_slot_wrapper(const char *name) {
  * was invisible.  Only a wrapper in is_stdlib_slot_wrapper() qualifies: its
  * glue stores a payload of exactly the declared shape on every failure, and
  * the slot is never stale.  "str" is returned as the literal "str" and bound
- * as an i8*; a record is returned only if the .tki registered its layout.
- * A sum-typed stdlib error (JsonErr, FileErr) is not registered from a .tki
- * today, so it binds nil as before.
+ * as an i8*; a record or sum is returned only if the .tki registered its
+ * layout.
+ *
+ * 127.209: a sum-typed stdlib error (JsonErr, FileErr) binds too.  Its glue
+ * stores a {variant index, msg} box (json_raise, file_raise) -- the layout
+ * of a user sum -- so `mt e{$notfound:m ...}` dispatches on the tag.  It
+ * used to bind nil because the .tki spelled the sum with a `"variants"` key
+ * that register_tki_struct_types() never read.  std.file's two box-raising
+ * wrappers (is_file_errbox_wrapper) qualify on the same ground as the slot
+ * wrappers: every failure stores the box, every success clears the slot.
  */
 static const char *stdlib_err_payload_type(Ctx *c, const char *prv,
                                            char *buf, size_t bufsz)
 {
-    if (!is_stdlib_slot_wrapper(prv)) return NULL;
+    if (!is_stdlib_slot_wrapper(prv) && !is_file_errbox_wrapper(prv)) return NULL;
     ensure_tki_cache_loaded();
     for (int i = 0; i < g_tki_cache_count; i++) {
         if (strcmp(g_tki_cache[i].wrapper_name, prv)) continue;
@@ -1633,7 +1653,7 @@ static const char *stdlib_err_payload_type(Ctx *c, const char *prv,
         snprintf(buf, bufsz, "%s", bang);
         if (!strcmp(buf, "str")) return "str";
         const StructInfo *si = lookup_struct(c, buf);
-        return (si && !si->is_sum) ? si->name : NULL;
+        return si ? si->name : NULL;
     }
     return NULL;
 }

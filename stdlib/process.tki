@@ -48,12 +48,22 @@
       "fields": []
     },
     {
-      "kind": "sum",
+      "kind": "type",
       "name": "ProcessErr",
-      "variants": [
-        "NotFound",
-        "Permission",
-        "IO"
+      "is_sum": true,
+      "fields": [
+        {
+          "name": "$notfound",
+          "type": "str"
+        },
+        {
+          "name": "$permission",
+          "type": "str"
+        },
+        {
+          "name": "$io",
+          "type": "str"
+        }
       ]
     },
     {

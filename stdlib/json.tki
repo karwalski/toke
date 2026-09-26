@@ -15,18 +15,18 @@
     {
       "kind": "type",
       "name": "JsonErr",
-      "sum": true,
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "Parse",
+          "name": "$parse",
           "type": "str"
         },
         {
-          "name": "Type",
+          "name": "$type",
           "type": "str"
         },
         {
-          "name": "Missing",
+          "name": "$missing",
           "type": "str"
         }
       ]
@@ -141,54 +141,54 @@
     {
       "kind": "type",
       "name": "JsonToken",
-      "sum": true,
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "ObjectStart",
+          "name": "$objectstart",
           "type": "void"
         },
         {
-          "name": "ObjectEnd",
+          "name": "$objectend",
           "type": "void"
         },
         {
-          "name": "ArrayStart",
+          "name": "$arraystart",
           "type": "void"
         },
         {
-          "name": "ArrayEnd",
+          "name": "$arrayend",
           "type": "void"
         },
         {
-          "name": "Key",
+          "name": "$key",
           "type": "str"
         },
         {
-          "name": "Str",
+          "name": "$str",
           "type": "str"
         },
         {
-          "name": "U64",
+          "name": "$u64",
           "type": "u64"
         },
         {
-          "name": "I64",
+          "name": "$i64",
           "type": "i64"
         },
         {
-          "name": "F64",
+          "name": "$f64",
           "type": "f64"
         },
         {
-          "name": "Bool",
+          "name": "$bool",
           "type": "bool"
         },
         {
-          "name": "Null",
+          "name": "$null",
           "type": "void"
         },
         {
-          "name": "End",
+          "name": "$end",
           "type": "void"
         }
       ]
@@ -196,18 +196,18 @@
     {
       "kind": "type",
       "name": "JsonStreamErr",
-      "sum": true,
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "Truncated",
+          "name": "$truncated",
           "type": "str"
         },
         {
-          "name": "Invalid",
+          "name": "$invalid",
           "type": "str"
         },
         {
-          "name": "Overflow",
+          "name": "$overflow",
           "type": "str"
         }
       ]

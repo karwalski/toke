@@ -69,11 +69,11 @@ Represents one result from a similarity search.
 
 A sum type for errors returned by `vecstore.open` and `vecstore.collection`.
 
-| Variant      | Field Type | Meaning                                          |
-|--------------|------------|--------------------------------------------------|
-| `IoErr`      | `str`      | File or directory could not be read or written   |
-| `DimMismatch`| `str`      | Upsert dimension differs from collection's first |
-| `NotFound`   | `str`      | Requested entry or resource does not exist       |
+| Variant        | Field Type | Meaning                                          |
+|----------------|------------|--------------------------------------------------|
+| `$ioerr`       | `str`      | File or directory could not be read or written   |
+| `$dimmismatch` | `str`      | Upsert dimension differs from collection's first |
+| `$notfound`    | `str`      | Requested entry or resource does not exist       |
 
 ---
 

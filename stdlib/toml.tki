@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "module": "std.toml",
   "exports": [
-    {"kind": "opaque", "name": "tomlval"},
+    {"kind": "type",   "name": "tomlval", "opaque": true},
     {"kind": "type",   "name": "tomlerr",  "fields": [{"name": "msg", "type": "str"}]},
     {"kind": "func",   "name": "toml.load",     "params": ["str"],              "return": "tomlval!tomlerr"},
     {"kind": "func",   "name": "toml.loadfile",  "params": ["str"],              "return": "tomlval!tomlerr"},

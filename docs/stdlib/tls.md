@@ -48,7 +48,7 @@ A freshly generated certificate (`certpem`) and its private key (`keypem`). Opaq
 
 ### TlsErr
 
-The error side of the fallible calls: `CertErr` (generation, parsing or verification), `ConnErr` (handshake or peer rejection), `PinErr` (the peer presented a different certificate), `IoErr` (socket failure).
+The error side of the fallible calls: `$certerr` (generation, parsing or verification), `$connerr` (handshake or peer rejection), `$pinerr` (the peer presented a different certificate), `$ioerr` (socket failure).
 
 ## Key and certificate generation
 

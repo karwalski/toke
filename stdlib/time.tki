@@ -292,15 +292,16 @@
       "return": "f64"
     },
     {
-      "kind": "sum_type",
+      "kind": "type",
       "name": "TimeErr",
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "ParseErr",
+          "name": "$parseerr",
           "type": "str"
         },
         {
-          "name": "RangeErr",
+          "name": "$rangeerr",
           "type": "str"
         }
       ]

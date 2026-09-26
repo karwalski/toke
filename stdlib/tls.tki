@@ -28,13 +28,14 @@
       ]
     },
     {
-      "kind": "sum_type",
+      "kind": "type",
       "name": "TlsErr",
-      "variants": [
-        {"name": "CertErr",    "type": "str"},
-        {"name": "ConnErr",    "type": "str"},
-        {"name": "PinErr",     "type": "str"},
-        {"name": "IoErr",      "type": "str"}
+      "is_sum": true,
+      "fields": [
+        {"name": "$certerr",   "type": "str"},
+        {"name": "$connerr",   "type": "str"},
+        {"name": "$pinerr",    "type": "str"},
+        {"name": "$ioerr",     "type": "str"}
       ]
     },
     {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "TlsKeypair!TlsErr"},
