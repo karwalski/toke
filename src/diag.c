@@ -15,15 +15,20 @@
  * =========================================================================
  * Three formats are supported, selectable via diag_set_format():
  *
- *   JSON  (default when stdout is not a TTY)
+ *   JSON  (the default, whatever stdout is -- 123.12b)
  *     One JSON object per line on stderr.  Fields include schema_version,
  *     diagnostic_id (D0000..D9999), error_code (E/W + 4-digit code),
  *     severity, stage (derived from code range), message, file, position,
  *     span, and optional "fix" hint.
  *
- *   Text  (default when stdout is a TTY)
- *     Human-readable two-line format: "severity[CODE]: message" followed
- *     by "  --> line N, col N".
+ *   Text  (--diag-text only)
+ *     Rust/Clang style: "severity[CODE]: message", " --> file:line:col",
+ *     the source line, and a '^' under the column with '~' across the span.
+ *     Until 123.12b this was the default whenever stdout was a TTY, so a
+ *     tool or agent driving tkc through a pseudo-terminal got prose instead
+ *     of records.  Diagnostics must be machine-readable at all times
+ *     (AGENTS.md §3.1; workspace AGENTS.md §6), so text is now opt-in
+ *     and JSON never depends on the terminal.
  *
  *   SARIF v2.1.0  (--diag-sarif flag)
  *     Diagnostics are buffered in memory (up to SARIF_MAX_DIAGS) and

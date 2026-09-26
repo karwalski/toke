@@ -132,8 +132,9 @@ static const char HELP[] =
     "  --legacy            Legacy mode (86-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
     "  --profile2          Deprecated alias for default mode\n"
-    "  --diag-json         Emit diagnostics as JSON (default when not a tty)\n"
-    "  --diag-text         Emit diagnostics as human-readable text\n"
+    "  --diag-json         Emit diagnostics as JSON (the default)\n"
+    "  --diag-text         Emit diagnostics as human-readable text with the\n"
+    "                      source line and a caret under the span\n"
     "  --diag-sarif        Emit diagnostics as SARIF v2.1.0 JSON to stdout\n"
     "\n"
     "Limit overrides (per-session):\n"
@@ -952,8 +953,7 @@ static int process_file(const char *src, const RunOpts *o)
 
     diag_set_format(dsarif ? DIAG_FMT_SARIF :
                     djson  ? DIAG_FMT_JSON  :
-                    dtext  ? DIAG_FMT_TEXT  :
-                    isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
+                    dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
     diag_set_source_file(src);
 
     /* Progress bar: skip for fast-path modes */
@@ -1686,8 +1686,7 @@ int main(int argc, char **argv)
     if (!(fmt_only || pretty || expand || min_only || dump_ast)) {
         diag_set_format(dsarif ? DIAG_FMT_SARIF :
                         djson  ? DIAG_FMT_JSON  :
-                        dtext  ? DIAG_FMT_TEXT  :
-                        isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
+                        dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
         if (resolve_stdlib_dir() < 0) { diag_flush_sarif(); return EINTERNAL; }
     }
 
