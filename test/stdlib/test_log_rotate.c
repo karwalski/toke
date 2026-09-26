@@ -239,8 +239,20 @@ static void test_set_format(void)
     ASSERT(tk_access_log_set_format(NULL) == -1, "D: null format rejected");
 }
 
+/* E: a log whose sidecar lock cannot be created must still open (plain
+ * append, never rotating).  /dev/stderr is the default ooke access log: its
+ * lock would be /dev/.stderr.lock, and 127.191 as first landed returned
+ * NULL for it -- ooke serve refused to start. */
+static void test_unlockable_path(void)
+{
+    TkAccessLog *l = tk_access_log_open("/dev/stderr", 5, 0, 0);
+    ASSERT(l != NULL, "E: /dev/stderr opens without a sidecar lock");
+    if (l) tk_access_log_close(l);
+}
+
 int main(void)
 {
+    test_unlockable_path();
     test_same_second();
     test_prefork();
     test_reopen();

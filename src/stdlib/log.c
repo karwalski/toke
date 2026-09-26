@@ -651,6 +651,7 @@ static void apply_retention(TkAccessLog *log)
 
 static int alog_lock(TkAccessLog *log)
 {
+    if (!log->lock_path) return -1;      /* stream mode: never locked */
     if (log->lock_fd >= 0 && log->lock_pid != getpid()) {
         /* Inherited across fork: the description (and so the lock) is shared
          * with the parent.  Drop our copy and open our own. */
@@ -789,6 +790,19 @@ TkAccessLog *tk_access_log_open(const char *path,
     log->max_age_days = max_age_days;
     log->lock_fd      = -1;
 
+    /* A path that exists and is not a regular file (a tty, /dev/stderr, a
+     * FIFO) cannot be rotated, counted or given a sidecar lock beside it --
+     * "/dev/.stderr.lock" cannot be created, which made 127.191's open fail
+     * for the stderr access log ooke uses by default.  Open it for plain
+     * append; with no lock_path the writer never takes the lock and so
+     * never rotates (tk_access_log_write's unlocked path). */
+    struct stat pst;
+    if (stat(path, &pst) == 0 && !S_ISREG(pst.st_mode)) {
+        log->fp = fopen(path, "a");
+        if (!log->fp) { tk_access_log_close(log); return NULL; }
+        return log;
+    }
+
     split_path(path, &log->dir, &log->stem, &log->ext);
     mkdir_single(log->dir);
 
@@ -799,7 +813,17 @@ TkAccessLog *tk_access_log_open(const char *path,
     if (!log->path || !log->lock_path) { tk_access_log_close(log); return NULL; }
     snprintf(log->lock_path, ll, "%s/.%s%s.lock", log->dir, log->stem, log->ext);
 
-    if (alog_lock(log) != 0) { tk_access_log_close(log); return NULL; }
+    if (alog_lock(log) != 0) {
+        /* No sidecar lock can be made beside this path (/dev/stderr, even
+         * when it resolves to a redirected regular file; a read-only dir).
+         * A log that cannot rotate safely must still log: drop to plain
+         * append with no lock_path, which never rotates. */
+        free(log->lock_path);
+        log->lock_path = NULL;
+        log->fp = fopen(path, "a");
+        if (!log->fp) { tk_access_log_close(log); return NULL; }
+        return log;
+    }
     alog_reopen(log);
     alog_count(log);           /* 127.191(3): the file's lines count */
     alog_unlock(log);
