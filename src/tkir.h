@@ -19,7 +19,11 @@
 
 /* ── File format constants ───────────────────────────────────────────── */
 
-#define TKIR_MAGIC          0x544B4952u  /* "TKIR" in ASCII, little-endian */
+/* The file starts with the four ASCII bytes "TKIR" (the encoder writes them
+ * as bytes).  The reader loads them as a little-endian u32, which is
+ * 0x52494B54.  Until 127.211 this was 0x544B4952 -- the bytes read
+ * big-endian -- so every file the encoder wrote failed "invalid magic". */
+#define TKIR_MAGIC          0x52494B54u  /* "TKIR" read as a little-endian u32 */
 #define TKIR_VERSION_MAJOR  1
 #define TKIR_VERSION_MINOR  0
 
