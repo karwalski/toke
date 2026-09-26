@@ -709,7 +709,7 @@ Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a 
 | Severity | error |
 | Stage    | type_check |
 
-Emitted when a declared type's name stands in a value position. Three spellings
+Emitted when a declared type's name stands in a value position. Four spellings
 reach it, from three stages:
 
 - **`$Type.member`** (typecheck, 127.90) — member access on a type rather than
@@ -741,6 +741,15 @@ reach it, from three stages:
   clean `E9004` naming the missing import, so the one case with no diagnostic
   at all was the correct-looking mistake — calling a real member of a module
   you forgot to import.
+
+- **a type as a key or value of a map literal entry** (typecheck, 127.226) —
+  `@($str:1)`, `@("a":$str)`, or a type entry alongside real ones. The one
+  legitimate shape is the typed EMPTY map, a single entry with a type as its
+  key and, as its value, a type or another typed-empty literal:
+  `@($str:$i64)`, `@($str:@($tok))` — the map counterpart of the typed-empty
+  array `@($f64)`. Before 127.226 every one of these built a map holding a
+  junk entry keyed by `""`, so the empty form answered `.len` 1. No `fix`: the
+  checker cannot tell whether an empty map or a real key was meant.
 
 A name that is not also a type is still `E3011` (undefined identifier), and
 the legitimate bare-type positions — `as Type` casts, `$Type{…}` struct

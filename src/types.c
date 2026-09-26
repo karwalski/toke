@@ -3878,6 +3878,27 @@ static void check_array_store_elem(Ctx *cx, const Node *call) {
               "expected", en, "got", vn_, (const char *)NULL);
 }
 
+/* 127.226: a type node standing where a literal element would be. */
+static int map_type_node(const Node *n) {
+    return n && (n->kind == NODE_TYPE_IDENT || n->kind == NODE_TYPE_EXPR ||
+                 n->kind == NODE_ARRAY_TYPE || n->kind == NODE_MAP_TYPE ||
+                 n->kind == NODE_FUNC_TYPE  || n->kind == NODE_PTR_TYPE);
+}
+/* 127.226: is this literal typed-EMPTY — `@($t)` (an array literal whose only
+ * child is a type) or `@($k:V)` (a map literal whose only entry has a type as
+ * its key and, as its value, a type or another typed-empty literal)?  Shared
+ * with llvm.c, which must build these as empty collections. */
+int map_lit_typed_empty(const Node *n) {
+    if (!n) return 0;
+    if (n->kind == NODE_ARRAY_LIT)
+        return n->child_count == 1 && map_type_node(n->children[0]);
+    if (n->kind != NODE_MAP_LIT || n->child_count != 1) return 0;
+    const Node *e = n->children[0];
+    if (!e || e->kind != NODE_MAP_ENTRY || e->child_count != 2) return 0;
+    if (!map_type_node(e->children[0])) return 0;
+    return map_type_node(e->children[1]) || map_lit_typed_empty(e->children[1]);
+}
+
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
     if (node) ((Node *)node)->rtype = t;
@@ -4022,6 +4043,50 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         Type *mt = mk_type(A, TY_MAP);
         if (!mt) return mk_type(A, TY_UNKNOWN);
         Type *kt = NULL, *vt = NULL;
+        /* 127.226: the typed-EMPTY map `@($str:$i64)` / `@($str:@($tok))`,
+         * the map counterpart of the typed-empty array `@($f64)` (see the
+         * NODE_ARRAY_LIT case above): one entry whose key is a type and whose
+         * value is a type or itself a typed-empty literal.  It used to build
+         * a ONE-entry map keyed by whatever a type node lowers to, typed
+         * @(void:void).  The key and value nodes get their resolved types as
+         * rtype so the emitter's int-key / str-value tags read them. */
+        if (map_lit_typed_empty(node)) {
+            Node *e0 = node->children[0];
+            Node *k0 = e0->children[0], *v0 = e0->children[1];
+            kt = resolve_type(cx, k0);
+            k0->rtype = kt;
+            if (map_type_node(v0)) { vt = resolve_type(cx, v0); v0->rtype = vt; }
+            else vt = infer(cx, v0);
+            mt->elem = kt ? kt : mk_type(A, TY_UNKNOWN);
+            mt->field_count = 1;
+            mt->field_types = (Type **)arena_alloc(A, (int)sizeof(Type *));
+            if (mt->field_types) mt->field_types[0] = vt ? vt : mk_type(A, TY_UNKNOWN);
+            return mt;
+        }
+        /* Anywhere else a type in a map entry is not a value: `@($str:1)`
+         * keyed the map by an undefined value and typed the key 'void'. */
+        for (int i = 0; i < node->child_count; i++) {
+            const Node *entry = node->children[i];
+            if (!entry || entry->kind != NODE_MAP_ENTRY) continue;
+            for (int j = 0; j < entry->child_count && j < 2; j++) {
+                const Node *tn = entry->children[j];
+                if (!map_type_node(tn)) continue;
+                if (tc_first_report(cx, tn) && tc_can_emit(cx)) {
+                    char tb[128]; TOKSTR(tb, cx->src, tn);
+                    char msg[320];
+                    snprintf(msg, sizeof msg,
+                             "'%s%s' is a type, not a value, in the %s "
+                             "position of a map literal entry (an empty typed "
+                             "map puts a type on both sides: @($str:$i64))",
+                             tn->kind == NODE_TYPE_IDENT ? "$" : "", tb,
+                             j == 0 ? "key" : "value");
+                    diag_emit(DIAG_ERROR, E4033, tn->start, tn->line, tn->col,
+                              msg, "expected", "a value", "got", tb,
+                              (const char *)NULL);
+                }
+                return mk_type(A, TY_UNKNOWN);
+            }
+        }
         for (int i = 0; i < node->child_count; i++) {
             const Node *entry = node->children[i];
             if (!entry || entry->kind != NODE_MAP_ENTRY) continue;

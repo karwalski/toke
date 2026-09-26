@@ -6693,6 +6693,9 @@ static int emit_expr(Ctx *c, const Node *n)
         int int_keys = map_lit_int_keys(c, n);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = call i8* @%s()\n", t, int_keys ? "tk_map_new_int" : "tk_map_new");
+        /* 127.226: `@($k:$v)` is the typed-EMPTY map (types.c); its one
+         * "entry" is the type annotation, not a key/value pair. */
+        if (map_lit_typed_empty(n)) return t;
         for (int i = 0; i < n->child_count; i++) {
             const Node *entry = n->children[i];
             if (entry->child_count >= 2) {
