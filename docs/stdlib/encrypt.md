@@ -271,7 +271,7 @@ if(ok){
 ## Quantum-safety posture
 
 Summary; the full posture, HNDL guidance and deprecation track are in
-[`docs/security/threat-model.md`, Part III](../security/threat-model.md).
+[`docs/security/threat-model.md`, Part III](https://github.com/karwalski/toke/blob/main/docs/security/threat-model.md).
 
 | Functions | Quantum status |
 |---|---|
