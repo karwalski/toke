@@ -39,6 +39,11 @@
   0,
   "5eeb416b25841028"
  ],
+ "test/codegen/cg_map_field_set.tk": [
+  true,
+  0,
+  "3b62591049c64776"
+ ],
  "test/codegen/cg_recv_dispatch.tk": [
   true,
   0,

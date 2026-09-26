@@ -1,0 +1,10 @@
+(* 127.226 multi-module certificate, module 1 of 2: a struct with a map field
+ * whose value type is compound (`[str:[tok]]` in the .tki). *)
+m=cgmm.cachelib;
+t=$tok{v:i64};
+t=$cache{entries:@(str:@$tok);hits:i64};
+f=newcache():$cache{ <$cache{entries:@($str:@($tok));hits:0} };
+f=put(c:$cache;k:str;v:i64):$cache{
+  <$cache{entries:c.entries.set(k;@($tok{v:v}));hits:c.hits}
+};
+f=one(v:i64):@$tok{ <@($tok{v:v}) };
