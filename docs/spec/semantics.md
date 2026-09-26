@@ -500,6 +500,9 @@ Extern functions:
 - Are the ONLY context where pointer types `*T` are permitted.
   Use of `*T` in a function with a body: `[errors.md E2010]`.
 - Are assumed to be implemented externally (linked at compile time via clang).
+- Keep their declared name as the linked symbol: `m=ab; f=labs(x:i64):i64;`
+  calls the C `labs`. The module-path prefix that toke functions receive
+  (`ab_twice`) is not applied to a declaration without a body (127.212).
 - Have their parameter and return types checked at call sites like any other
   function.
 

@@ -244,6 +244,8 @@ static void mangle_fn_name(const Ctx *c, char *buf, int sz) {
         snprintf(prefixed, sizeof prefixed, "%s%s", c->module_prefix, buf);
         sig = lookup_fn((Ctx *)(uintptr_t)c, prefixed);
         if (!sig) return; /* Not a local function — don't mangle */
+    } else if (!sig->is_internal) {
+        return; /* 127.212: an extern keeps its C name (prepass_funcs) */
     }
     char tmp[256];
     snprintf(tmp, sizeof tmp, "%s%s", c->module_prefix, buf);
@@ -867,7 +869,14 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     /* Directly prepend module prefix instead of calling mangle_fn_name(),
      * which requires the function to already be registered (chicken-and-egg).
      * All local function declarations should be prefixed with the module path. */
-    if (c->module_prefix[0] && strcmp(tb, "tk_main") != 0 &&
+    /* 127.212: an extern (a declaration with no body) names a C symbol
+     * (semantics.md §7.2: linked by clang), so it keeps its bare name.
+     * Prefixing bound `m=ab; f=labs(x:i64):i64;` to `ab_labs`, which no C
+     * library defines, so no user extern could ever link. */
+    int decl_has_body = 0;
+    for (int i = 1; i < n->child_count; i++)
+        if (n->children[i]->kind == NODE_STMT_LIST) { decl_has_body = 1; break; }
+    if (decl_has_body && c->module_prefix[0] && strcmp(tb, "tk_main") != 0 &&
         strncmp(tb, "tk_", 3) != 0 &&
         strcmp(tb, "ok") != 0 && strcmp(tb, "err") != 0 && strcmp(tb, "none") != 0) {
         char tmp[256];
