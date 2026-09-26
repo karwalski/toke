@@ -2620,6 +2620,22 @@ static const char *tki_closest_member(const NameEnv *env, const char *alias,
     return best;
 }
 
+/* 127.224 item 4 (127.218's remainder) — the glue symbols of quarantined
+ * interface exports that no stdlib C source names, generated from
+ * scripts/check_tki_skiplist.txt by scripts/gen_tki_quarantine_h.py (see its
+ * header for why the skiplist alone is not taken as proof). */
+typedef struct { const char *sym, *module, *member; } QuarantinedExport;
+static const QuarantinedExport s_quarantined[] = {
+#include "stdlib_quarantine_gen.h"
+    { NULL, NULL, NULL }
+};
+static const QuarantinedExport *quarantined_export(const char *sym) {
+    if (!sym) return NULL;
+    for (int i = 0; s_quarantined[i].sym; i++)
+        if (strcmp(s_quarantined[i].sym, sym) == 0) return &s_quarantined[i];
+    return NULL;
+}
+
 static void check_tki_call(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1) return;
     const Node *callee = call->children[0];
@@ -2791,6 +2807,33 @@ static void check_tki_call(Ctx *cx, const Node *call) {
             tki_arity_error(call, "implementation", mpath, member,
                             NULL, abi, actual);
         return;
+    }
+
+    /* 1b. 127.224: an export the interface declares and the runtime does not
+     *     implement — quarantined, and its symbol named by no C source.  The
+     *     build already stops at ld (127.218 reports it there, located); saying
+     *     so at --check puts the same diagnostic where the repair loop looks.
+     *     This is not the "blame the consumer" case branch 2 declines below:
+     *     the message names the stdlib as the missing side.  No `fix` —
+     *     nothing the caller can change supplies the implementation. */
+    {
+        const QuarantinedExport *q = is_std ? quarantined_export(sym) : NULL;
+        if (q && strcmp(q->module, mpath) == 0) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            const char *mod = mpath + 4;
+            char msg[640];
+            snprintf(msg, sizeof msg,
+                     "'%s.%s' has no implementation: %s declares it in %s.tki, "
+                     "but no stdlib C source defines its glue symbol '%s', so "
+                     "the program cannot link (quarantined interface exports "
+                     "are listed in docs/reference/tki-quarantine.md)",
+                     alias, member, mpath, mod, sym);
+            /* At the alias, as the link-time report (127.218) places it. */
+            const Node *at = callee->children[0];
+            diag_emit(DIAG_ERROR, E4027, at->start, at->line, at->col, msg,
+                      "got", member, (const char *)NULL);
+            return;
+        }
     }
 
     /* An alias with no recorded exports is an absence of knowledge for the

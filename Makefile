@@ -296,6 +296,10 @@ src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h src/stdlib_paramkind_gen.h: $(w
 src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 # 127.201: the checker reads each glue wrapper's parameter kinds.
 src/types.o: src/stdlib_paramkind_gen.h
+# 127.224: and the quarantined exports no C source implements.
+src/stdlib_quarantine_gen.h: scripts/check_tki_skiplist.txt $(wildcard src/stdlib/*.c) $(wildcard stdlib/*.tki) scripts/gen_tki_quarantine_h.py scripts/check_tki_coverage.py
+	python3 scripts/gen_tki_quarantine_h.py
+src/types.o: src/stdlib_quarantine_gen.h
 
 %.o: %.c
 	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
