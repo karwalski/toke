@@ -2721,6 +2721,8 @@ static int emit_bool_to_str(Ctx *c, int v) {
 }
 
 static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param);
+static void ir_call_record(const char *sym, const char *alias, const char *member,
+                           const char *module, const Node *n);   /* 127.218 */
 /* 124.0c: the LLVM type and backend tag of each closure capture, recorded
  * where the env box is built (the only place the outer local's type is in
  * scope) and read back where the closure is lifted.  Captures travel as i64
@@ -5360,6 +5362,18 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
         } else if (!callee && resolved_fn && !is_cross_module_user) {
+            /* 127.218: remember where each std call is, by glue symbol. */
+            if (n->children[0]->kind == NODE_FIELD_EXPR && n->children[0]->child_count >= 2 &&
+                n->children[0]->children[0] && n->children[0]->children[0]->kind == NODE_IDENT) {
+                char ra[128], rm[128];
+                tok_cp(c->src, n->children[0]->children[0], ra, sizeof ra);
+                tok_cp(c->src, n->children[0]->children[1], rm, sizeof rm);
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (c->imports[ii].is_std && !strcmp(c->imports[ii].alias, ra)) {
+                        ir_call_record(tb, ra, rm, c->imports[ii].module, n->children[0]->children[0]);
+                        break;
+                    }
+            }
             /* Story 7.5.5 Phase 1: resolve return type from .tki cache first,
              * then fall back to hardcoded mappings for special cases (libc math,
              * json print, str.argv) that don't follow the tk_<mod>_<meth>_w
@@ -9994,6 +10008,52 @@ static IrDecl *g_ir_decls;
 static int     g_ir_decl_n, g_ir_decl_cap;
 static char    g_ir_cur_ll[PATH_BUF];
 
+/* 127.218: every stdlib call site, by the glue symbol it lowered to.  A call
+ * to an export its .tki declares but no C file defines (the quarantine in
+ * scripts/check_tki_skiplist.txt) type-checks, and then failed at `ld` with a
+ * bare mangled symbol, reported as E9003 at the enclosing declaration.  When
+ * the linker names an undefined symbol that a recorded call lowered to, the
+ * failure is reported at that call instead, naming the toke function.  Only
+ * consulted after ld has actually failed, so it cannot reject a program that
+ * links. */
+typedef struct {
+    char sym[NAME_BUF];    /* glue symbol, without the @                     */
+    char call[NAME_BUF];   /* toke spelling, "alias.member"                  */
+    char module[NAME_BUF]; /* "std.<mod>"                                    */
+    char file[PATH_BUF];
+    int  off, line, col;
+} IrCall;
+static IrCall *g_ir_calls;
+static int     g_ir_call_n, g_ir_call_cap;
+
+static void ir_call_record(const char *sym, const char *alias, const char *member,
+                           const char *module, const Node *n)
+{
+    if (!sym || !n) return;
+    for (int i = 0; i < g_ir_call_n; i++)       /* the first call site is the one reported */
+        if (!strcmp(g_ir_calls[i].sym, sym)) return;
+    if (g_ir_call_n == g_ir_call_cap) {
+        int ncap = g_ir_call_cap ? g_ir_call_cap * 2 : 64;
+        IrCall *p = (IrCall *)realloc(g_ir_calls, (size_t)ncap * sizeof *p);
+        if (!p) return;          /* bookkeeping only: never fail the build */
+        g_ir_calls = p; g_ir_call_cap = ncap;
+    }
+    IrCall *d = &g_ir_calls[g_ir_call_n++];
+    snprintf(d->sym, sizeof d->sym, "%s", sym);
+    snprintf(d->call, sizeof d->call, "%s.%s", alias, member);
+    snprintf(d->module, sizeof d->module, "%s", module ? module : "");
+    snprintf(d->file, sizeof d->file, "%s", diag_get_source_file());
+    d->off = n->tok_start; d->line = n->line; d->col = n->col;
+}
+
+static const IrCall *ir_call_by_sym(const char *sym, size_t len)
+{
+    for (int i = 0; i < g_ir_call_n; i++)
+        if (strlen(g_ir_calls[i].sym) == len && !strncmp(g_ir_calls[i].sym, sym, len))
+            return &g_ir_calls[i];
+    return NULL;
+}
+
 static void ir_decl_record(const char *sym, const char *name, const Node *n, int is_fn)
 {
     if (!sym || !n) return;
@@ -11760,6 +11820,31 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
             char msg[1024], why[256] = "";
             const IrDecl *undef = NULL;
             const IrDecl *d = cerr ? ir_map_failure(cerr, lls, nll, why, sizeof why, &undef) : NULL;
+            /* 127.218: an undefined symbol that a stdlib CALL lowered to is
+             * an export with no implementation: report it at the call. */
+            const IrCall *uc = NULL;
+            if (!strncmp(why, "undefined symbol '", 18)) {
+                const char *us = why + 18, *ue = strchr(us, '\'');
+                if (ue) uc = ir_call_by_sym(us, (size_t)(ue - us));
+            }
+            if (uc) {
+                char cmsg[1024];
+                const char *mod = uc->module;
+                if (!strncmp(mod, "std.", 4)) mod += 4;
+                snprintf(cmsg, sizeof cmsg,
+                         "'%s' has no implementation: std.%s declares it in %s.tki, "
+                         "but no stdlib C source defines its glue symbol '%s', so the "
+                         "program cannot link (quarantined interface exports are listed "
+                         "in docs/reference/tki-quarantine.md)",
+                         uc->call, mod, mod, uc->sym);
+                if (strcmp(diag_get_source_file(), uc->file)) {
+                    diag_set_source(NULL, 0);
+                    diag_set_source_file(uc->file);
+                }
+                diag_emit(DIAG_ERROR, E4027, uc->off, uc->line, uc->col, cmsg, (void *)0);
+                free(cerr);
+                return -1;
+            }
             int n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
             if (why[0] && n > 0 && (size_t)n < sizeof msg)
                 n += snprintf(msg + n, sizeof msg - (size_t)n, ": %s", why);
