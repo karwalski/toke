@@ -17,6 +17,7 @@
  */
 
 #include "html.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -26,54 +27,9 @@
  * Internal helper: growable string buffer
  * ----------------------------------------------------------------------- */
 
-typedef struct {
-    char   *data;
-    size_t  len;
-    size_t  cap;
-} Buf;
-
-static void buf_init(Buf *b)
-{
-    b->cap  = 256;
-    b->len  = 0;
-    b->data = (char *)malloc(b->cap);
-    if (b->data) b->data[0] = '\0';
-}
-
-static void buf_grow(Buf *b, size_t needed)
-{
-    while (b->len + needed + 1 > b->cap) {
-        b->cap *= 2;
-        b->data = (char *)realloc(b->data, b->cap);
-    }
-}
-
-static void buf_append(Buf *b, const char *s)
-{
-    if (!s) return;
-    size_t slen = strlen(s);
-    buf_grow(b, slen);
-    memcpy(b->data + b->len, s, slen);
-    b->len += slen;
-    b->data[b->len] = '\0';
-}
-
-static void buf_appendc(Buf *b, char c)
-{
-    buf_grow(b, 1);
-    b->data[b->len++] = c;
-    b->data[b->len]   = '\0';
-}
-
-/* Return ownership of buffer's data (caller must free). */
-static char *buf_take(Buf *b)
-{
-    char *p = b->data;
-    b->data = NULL;
-    b->len  = 0;
-    b->cap  = 0;
-    return p;
-}
+/* 122.2: html.c's private Buf (realloc unchecked: a failure left data NULL
+ * and the next memcpy wrote through it) is the shared TkStrBuf now. */
+typedef TkStrBuf Buf;
 
 /* -----------------------------------------------------------------------
  * TkHtmlNode
@@ -207,10 +163,10 @@ static void buf_append_rawtext(Buf *b, const char *s, const char *closetag) {
     if (!s) return;
     for (const char *p = s; *p; ) {
         if (*p == '<' && ci_starts(p + 1, closetag)) {
-            buf_append(b, "<\\");   /* emit "<\" then let "/tag" append normally */
+            strbuf_append(b, "<\\");   /* emit "<\" then let "/tag" append normally */
             p++;
         } else {
-            buf_appendc(b, *p);
+            strbuf_putc(b, *p);
             p++;
         }
     }
@@ -220,9 +176,9 @@ static void render_attrs(TkHtmlNode *node, Buf *b)
 {
     TkAttr *a = node->attrs;
     while (a) {
-        buf_appendc(b, ' ');
-        buf_append(b, a->name);
-        buf_append(b, "=\"");
+        strbuf_putc(b, ' ');
+        strbuf_append(b, a->name);
+        strbuf_append(b, "=\"");
         /* 124.3 (ADR-0011): context-aware escaping — attribute values are emitted
          * in a double-quoted attribute context. A raw value containing `"` would
          * break out of the attribute and inject further attributes / event
@@ -233,9 +189,9 @@ static void render_attrs(TkHtmlNode *node, Buf *b)
         if (is_url_attr(a->name) && is_dangerous_url(val))
             val = "";
         const char *esc = html_escape(val);
-        buf_append(b, esc ? esc : val);
+        strbuf_append(b, esc ? esc : val);
         free((void *)esc);
-        buf_appendc(b, '"');
+        strbuf_putc(b, '"');
         a = a->next;
     }
 }
@@ -252,21 +208,21 @@ static void render_children(TkHtmlNode *node, Buf *b)
 static void render_node(TkHtmlNode *node, Buf *b)
 {
     if (!node) return;
-    buf_appendc(b, '<');
-    buf_append(b, node->tag);
+    strbuf_putc(b, '<');
+    strbuf_append(b, node->tag);
     render_attrs(node, b);
     if (node->void_element) {
-        buf_append(b, ">");
+        strbuf_append(b, ">");
         return;
     }
-    buf_appendc(b, '>');
+    strbuf_putc(b, '>');
     if (node->text_content) {
-        buf_append(b, node->text_content);
+        strbuf_append(b, node->text_content);
     }
     render_children(node, b);
-    buf_append(b, "</");
-    buf_append(b, node->tag);
-    buf_appendc(b, '>');
+    strbuf_append(b, "</");
+    strbuf_append(b, node->tag);
+    strbuf_putc(b, '>');
 }
 
 /* -----------------------------------------------------------------------
@@ -349,42 +305,41 @@ const char *html_render(TkHtmlDoc *doc)
     free(doc->rendered);
     doc->rendered = NULL;
 
-    Buf b;
-    buf_init(&b);
+    Buf b = TK_STRBUF_INIT;
 
-    buf_append(&b, "<!DOCTYPE html>\n<html>\n<head>\n");
+    strbuf_append(&b, "<!DOCTYPE html>\n<html>\n<head>\n");
 
     if (doc->title) {
-        buf_append(&b, "<title>");
+        strbuf_append(&b, "<title>");
         { const char *te = html_escape(doc->title);   /* title is HTML text */
-          buf_append(&b, te ? te : doc->title); free((void *)te); }
-        buf_append(&b, "</title>\n");
+          strbuf_append(&b, te ? te : doc->title); free((void *)te); }
+        strbuf_append(&b, "</title>\n");
     }
 
     if (doc->style) {
-        buf_append(&b, "<style>");
+        strbuf_append(&b, "<style>");
         buf_append_rawtext(&b, doc->style, "/style");
-        buf_append(&b, "</style>\n");
+        strbuf_append(&b, "</style>\n");
     }
 
     if (doc->script) {
-        buf_append(&b, "<script>");
+        strbuf_append(&b, "<script>");
         buf_append_rawtext(&b, doc->script, "/script");
-        buf_append(&b, "</script>\n");
+        strbuf_append(&b, "</script>\n");
     }
 
-    buf_append(&b, "</head>\n<body>\n");
+    strbuf_append(&b, "</head>\n<body>\n");
 
     TkBodyEntry *entry = doc->body_head;
     while (entry) {
         render_node(entry->node, &b);
-        buf_appendc(&b, '\n');
+        strbuf_putc(&b, '\n');
         entry = entry->next;
     }
 
-    buf_append(&b, "</body>\n</html>");
+    strbuf_append(&b, "</body>\n</html>");
 
-    doc->rendered = buf_take(&b);
+    doc->rendered = strbuf_take(&b);
     return doc->rendered;
 }
 
@@ -564,10 +519,9 @@ const char *html_escape(const char *s)
 const char *html_node_render(TkHtmlNode *node)
 {
     if (!node) return NULL;
-    Buf b;
-    buf_init(&b);
+    Buf b = TK_STRBUF_INIT;
     render_node(node, &b);
-    return buf_take(&b);
+    return strbuf_take(&b);
 }
 
 /* -----------------------------------------------------------------------
@@ -579,7 +533,7 @@ static void buf_append_u64(Buf *b, uint64_t v)
     char tmp[24];
     int  len = 0;
     if (v == 0) {
-        buf_appendc(b, '0');
+        strbuf_putc(b, '0');
         return;
     }
     while (v > 0) {
@@ -588,7 +542,7 @@ static void buf_append_u64(Buf *b, uint64_t v)
     }
     /* tmp is reversed */
     for (int i = len - 1; i >= 0; i--) {
-        buf_appendc(b, tmp[i]);
+        strbuf_putc(b, tmp[i]);
     }
 }
 
@@ -599,120 +553,113 @@ static void buf_append_u64(Buf *b, uint64_t v)
 const char *html_form(const char *action, const char *method,
                       const char *const *children, uint64_t nchild)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<form action=\"");
-    if (action) buf_append(&b, action);
-    buf_append(&b, "\" method=\"");
-    if (method) buf_append(&b, method);
-    buf_append(&b, "\">\n");
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<form action=\"");
+    if (action) strbuf_append(&b, action);
+    strbuf_append(&b, "\" method=\"");
+    if (method) strbuf_append(&b, method);
+    strbuf_append(&b, "\">\n");
     for (uint64_t i = 0; i < nchild; i++) {
         if (children && children[i]) {
-            buf_append(&b, children[i]);
-            buf_appendc(&b, '\n');
+            strbuf_append(&b, children[i]);
+            strbuf_putc(&b, '\n');
         }
     }
-    buf_append(&b, "</form>");
-    return buf_take(&b);
+    strbuf_append(&b, "</form>");
+    return strbuf_take(&b);
 }
 
 const char *html_input(const char *type, const char *name, const char *value)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<input type=\"");
-    if (type)  buf_append(&b, type);
-    buf_append(&b, "\" name=\"");
-    if (name)  buf_append(&b, name);
-    buf_append(&b, "\" value=\"");
-    if (value) buf_append(&b, value);
-    buf_append(&b, "\">");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<input type=\"");
+    if (type)  strbuf_append(&b, type);
+    strbuf_append(&b, "\" name=\"");
+    if (name)  strbuf_append(&b, name);
+    strbuf_append(&b, "\" value=\"");
+    if (value) strbuf_append(&b, value);
+    strbuf_append(&b, "\">");
+    return strbuf_take(&b);
 }
 
 const char *html_select(const char *name,
                         const char *const *options, uint64_t nopts,
                         const char *selected)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<select name=\"");
-    if (name) buf_append(&b, name);
-    buf_append(&b, "\">\n");
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<select name=\"");
+    if (name) strbuf_append(&b, name);
+    strbuf_append(&b, "\">\n");
     for (uint64_t i = 0; i < nopts; i++) {
         const char *opt = (options && options[i]) ? options[i] : "";
-        buf_append(&b, "<option value=\"");
-        buf_append(&b, opt);
-        buf_appendc(&b, '"');
+        strbuf_append(&b, "<option value=\"");
+        strbuf_append(&b, opt);
+        strbuf_putc(&b, '"');
         if (selected && strcmp(opt, selected) == 0) {
-            buf_append(&b, " selected");
+            strbuf_append(&b, " selected");
         }
-        buf_appendc(&b, '>');
-        buf_append(&b, opt);
-        buf_append(&b, "</option>\n");
+        strbuf_putc(&b, '>');
+        strbuf_append(&b, opt);
+        strbuf_append(&b, "</option>\n");
     }
-    buf_append(&b, "</select>");
-    return buf_take(&b);
+    strbuf_append(&b, "</select>");
+    return strbuf_take(&b);
 }
 
 const char *html_textarea(const char *name, const char *content,
                            uint64_t rows, uint64_t cols)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<textarea name=\"");
-    if (name) buf_append(&b, name);
-    buf_append(&b, "\" rows=\"");
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<textarea name=\"");
+    if (name) strbuf_append(&b, name);
+    strbuf_append(&b, "\" rows=\"");
     buf_append_u64(&b, rows);
-    buf_append(&b, "\" cols=\"");
+    strbuf_append(&b, "\" cols=\"");
     buf_append_u64(&b, cols);
-    buf_append(&b, "\">");
-    if (content) buf_append(&b, content);
-    buf_append(&b, "</textarea>");
-    return buf_take(&b);
+    strbuf_append(&b, "\">");
+    if (content) strbuf_append(&b, content);
+    strbuf_append(&b, "</textarea>");
+    return strbuf_take(&b);
 }
 
 const char *html_button(const char *text, const char *type)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<button type=\"");
-    if (type) buf_append(&b, type);
-    buf_append(&b, "\">");
-    if (text) buf_append(&b, text);
-    buf_append(&b, "</button>");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<button type=\"");
+    if (type) strbuf_append(&b, type);
+    strbuf_append(&b, "\">");
+    if (text) strbuf_append(&b, text);
+    strbuf_append(&b, "</button>");
+    return strbuf_take(&b);
 }
 
 const char *html_label(const char *for_id, const char *text)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<label for=\"");
-    if (for_id) buf_append(&b, for_id);
-    buf_append(&b, "\">");
-    if (text) buf_append(&b, text);
-    buf_append(&b, "</label>");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<label for=\"");
+    if (for_id) strbuf_append(&b, for_id);
+    strbuf_append(&b, "\">");
+    if (text) strbuf_append(&b, text);
+    strbuf_append(&b, "</label>");
+    return strbuf_take(&b);
 }
 
 static const char *list_build(const char *tag,
                                const char *const *items, uint64_t n)
 {
-    Buf b;
-    buf_init(&b);
-    buf_appendc(&b, '<');
-    buf_append(&b, tag);
-    buf_append(&b, ">\n");
+    Buf b = TK_STRBUF_INIT;
+    strbuf_putc(&b, '<');
+    strbuf_append(&b, tag);
+    strbuf_append(&b, ">\n");
     for (uint64_t i = 0; i < n; i++) {
-        buf_append(&b, "<li>");
-        if (items && items[i]) buf_append(&b, items[i]);
-        buf_append(&b, "</li>\n");
+        strbuf_append(&b, "<li>");
+        if (items && items[i]) strbuf_append(&b, items[i]);
+        strbuf_append(&b, "</li>\n");
     }
-    buf_append(&b, "</");
-    buf_append(&b, tag);
-    buf_appendc(&b, '>');
-    return buf_take(&b);
+    strbuf_append(&b, "</");
+    strbuf_append(&b, tag);
+    strbuf_putc(&b, '>');
+    return strbuf_take(&b);
 }
 
 const char *html_ul(const char *const *items, uint64_t n)
@@ -737,22 +684,20 @@ const char *html_hr(void)
 
 const char *html_pre(const char *content)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<pre>");
-    if (content) buf_append(&b, content);
-    buf_append(&b, "</pre>");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<pre>");
+    if (content) strbuf_append(&b, content);
+    strbuf_append(&b, "</pre>");
+    return strbuf_take(&b);
 }
 
 const char *html_code(const char *content)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<code>");
-    if (content) buf_append(&b, content);
-    buf_append(&b, "</code>");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<code>");
+    if (content) strbuf_append(&b, content);
+    strbuf_append(&b, "</code>");
+    return strbuf_take(&b);
 }
 
 /* -----------------------------------------------------------------------
@@ -873,22 +818,20 @@ const char *html_id(const char *node, const char *id)
 
 const char *html_meta(const char *name, const char *content)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<meta name=\"");
-    if (name)    buf_append(&b, name);
-    buf_append(&b, "\" content=\"");
-    if (content) buf_append(&b, content);
-    buf_append(&b, "\">");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<meta name=\"");
+    if (name)    strbuf_append(&b, name);
+    strbuf_append(&b, "\" content=\"");
+    if (content) strbuf_append(&b, content);
+    strbuf_append(&b, "\">");
+    return strbuf_take(&b);
 }
 
 const char *html_link_stylesheet(const char *href)
 {
-    Buf b;
-    buf_init(&b);
-    buf_append(&b, "<link rel=\"stylesheet\" href=\"");
-    if (href) buf_append(&b, href);
-    buf_append(&b, "\">");
-    return buf_take(&b);
+    Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<link rel=\"stylesheet\" href=\"");
+    if (href) strbuf_append(&b, href);
+    strbuf_append(&b, "\">");
+    return strbuf_take(&b);
 }
