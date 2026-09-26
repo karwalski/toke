@@ -3792,6 +3792,25 @@ static void check_array_store_elem(Ctx *cx, const Node *call) {
     else return;
     if (call->child_count != vi + 1) return;      /* arity is E4026's business */
     const Type *rt = recv_value_type(cx, callee->children[0]);
+    /* 127.98 (v): the INDEX of an array `.set` was never checked, so
+     * `a.set("x";5)` passed --check and aborted RT003 at run time with the
+     * string's address as the index.  An array index is an integer. */
+    if (vi == 2 && rt && rt->kind == TY_ARRAY) {
+        const Node *ixn = call->children[1];
+        const Type *it = ixn ? ixn->rtype : NULL;
+        if (it && it->kind != TY_UNKNOWN && !is_integer(it)) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char in_[64], msg[200];
+            snprintf(in_, sizeof in_, "%s", type_name(it));
+            snprintf(msg, sizeof msg,
+                     "type mismatch: '.set' indexes an array with a '%s'; an "
+                     "array index is an integer", in_);
+            diag_emit(DIAG_ERROR, E4031, ixn->start, ixn->line, ixn->col, msg,
+                      "expected", "an integer index", "got", in_,
+                      (const char *)NULL);
+            return;
+        }
+    }
     if (!rt || rt->kind != TY_ARRAY || !rt->elem ||
         rt->elem->kind == TY_UNKNOWN || rt->elem->kind == TY_VOID) return;
     const Node *vn = call->children[vi];

@@ -18,9 +18,12 @@
 # the 1xxx range, which it shares with the lexer's E1001) and carried "ensure
 # the value fits ...", also specified absent.  Case 10 guards E1001.
 #
-# Negative control: TKC built from main at a705c93 — cases 1-3 and 6-9 red.
+# Cases 11-14 (127.98 (v)): an array `.set` index must be an integer.
 #
-# Story: 127.224, 127.223
+# Negative control: TKC built from main at a705c93 — cases 1-3, 6-9, 11 and
+# 12 red.
+#
+# Story: 127.224, 127.223, 127.98
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,6 +58,18 @@ expect "7-E1004-hex-letter-nofix"         "$(lexdiag 'm=t;f=main():i64{let a=0x1
 expect "8-E1004-bin-letter-nofix"         "$(lexdiag 'm=t;f=main():i64{let a=0b1z;<0};')" "E1004|lex|nofix"
 expect "9-W1001-stage-type-check-nofix"   "$(lexdiag 'm=t;f=main():i64{let a:f64=1.5;let b=a as i64;<b};')" "W1001|type_check|nofix"
 expect "10-E1001-stage-still-lex"         "$(lexdiag 'm=t;f=main():str{<"\q"};')" "E1001|lex|nofix"
+
+# 127.98 (v): the INDEX of an array `.set` was never type-checked, so
+# `a.set("x";5)` passed --check and aborted RT003 at run time (the string's
+# address as the index).  Map `.set` keys and integer indices are unchanged.
+setdiag() {
+    printf 'm=t;i=io:std.io;\nf=main():i64{\n  %s\n  <0\n};\n' "$1" > "${WORK}/s.tk"
+    "${TKC}" --check "${WORK}/s.tk" 2>&1 | awk 'match($0,/"error_code":"[A-Z][0-9]+"/){c=substr($0,RSTART+14,RLENGTH-15); match($0,/"got":"[^"]*"/); g=substr($0,RSTART+7,RLENGTH-8); f=index($0,"\"fix\":")?"fix":"nofix"; printf "%s|%s|%s ",c,g,f}'
+}
+expect "11-array-set-str-index"  "$(setdiag 'let a=mut.@(1;2); a=a.set("x";5);')" "E4031|str|nofix "
+expect "12-array-set-f64-index"  "$(setdiag 'let a=mut.@(1;2); a=a.set(1.5;5);')" "E4031|f64|nofix "
+expect "13-array-set-int-index-ok" "$(setdiag 'let a=mut.@(1;2); a=a.set(1;5); a=a.set(0 as u64;6);')" ""
+expect "14-map-set-str-key-ok"   "$(setdiag 'let m=mut.@("k":1); m=m.set("x";5);')" ""
 
 echo "C165: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
