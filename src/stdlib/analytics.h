@@ -12,14 +12,14 @@
  *
  * malloc is permitted; callers own returned pointers.
  *
- * No external dependencies beyond libc, dataframe.h, and math.h.
+ * No external dependencies beyond libc, dataframe.h, and tkmath.h.
  *
  * Story: 16.1.4
  */
 
 #include <stdint.h>
 #include "dataframe.h"
-#include "math.h"
+#include "tkmath.h"
 
 /* -------------------------------------------------------------------------
  * analytics.describe — per-column summary statistics

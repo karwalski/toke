@@ -3,13 +3,13 @@
  *
  * Implements describe, timeseries, anomalies, and corr using the dataframe
  * and math stdlib modules.  All heavy statistical lifting is delegated to
- * math.h functions (math_mean, math_stddev, math_min, math_max,
+ * tkmath.h functions (math_mean, math_stddev, math_min, math_max,
  * math_percentile) so this file stays thin and testable.
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code.  Callers own the returned structs and their heap members.
  *
- * No external dependencies beyond libc, dataframe.h, and math.h.
+ * No external dependencies beyond libc, dataframe.h, and tkmath.h.
  *
  * Story: 16.1.4
  */

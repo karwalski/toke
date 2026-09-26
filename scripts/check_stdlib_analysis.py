@@ -138,6 +138,40 @@ def rel(path):
         return path
 
 
+# ── 135.3b: no header in src/stdlib/ may take a standard header's name ─────
+#
+# src/stdlib/math.h did, and any compile carrying `-I src/stdlib` turned
+# `#include <math.h>` into toke's module header -- sqrt() then became an
+# implicit declaration, a numeric bug rather than a missing include.  The
+# header is now tkmath.h; this keeps the trap from being re-armed.  The list
+# is ISO C99/C11 plus the POSIX headers this tree includes by bare name.
+STD_HEADERS = {
+    "assert", "complex", "ctype", "errno", "fenv", "float", "inttypes",
+    "iso646", "limits", "locale", "math", "setjmp", "signal", "stdalign",
+    "stdarg", "stdatomic", "stdbool", "stddef", "stdint", "stdio", "stdlib",
+    "stdnoreturn", "string", "tgmath", "threads", "time", "uchar", "wchar",
+    "wctype",
+    # POSIX, bare-name only (sys/*, netinet/* live in subdirectories)
+    "aio", "arpa", "cpio", "dirent", "dlfcn", "fcntl", "fnmatch", "glob",
+    "grp", "iconv", "langinfo", "libgen", "monetary", "netdb", "nl_types",
+    "poll", "pthread", "pwd", "regex", "sched", "search", "semaphore",
+    "spawn", "strings", "syslog", "tar", "termios", "ulimit", "unistd",
+    "utime", "utmpx", "wordexp",
+}
+
+
+def shadowing_headers(stdlib_dir=None):
+    """Headers in src/stdlib/ whose basename is a standard header's."""
+    d = stdlib_dir or os.path.join(REPO_ROOT, "src", "stdlib")
+    try:
+        names = os.listdir(d)
+    except OSError as e:
+        return ["cannot list %s: %s" % (d, e)]
+    return sorted("src/stdlib/%s shadows <%s> under -I src/stdlib -- rename it"
+                  % (n, n) for n in names
+                  if n.endswith(".h") and n[:-2] in STD_HEADERS)
+
+
 # ── skiplist ─────────────────────────────────────────────────────────────────
 
 def load_skiplist():
@@ -247,6 +281,8 @@ def main():
 
     skips, skip_errors = load_skiplist()
     failures = list(skip_errors)
+    if "compile" in modes:
+        failures += ["COMPILE: %s" % m for m in shadowing_headers()]
     stale = []
     proposed = []
     used = set()

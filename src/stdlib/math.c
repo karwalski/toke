@@ -13,7 +13,7 @@
  */
 
 #include <math.h>   /* system math — must be angle brackets, not quotes */
-#include "math.h"
+#include "tkmath.h"
 #include <stdlib.h>
 #include <string.h>
 

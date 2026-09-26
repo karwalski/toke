@@ -13,7 +13,7 @@
 
 #include <stdio.h>
 #include <math.h>
-#include "../../src/stdlib/math.h"
+#include "../../src/stdlib/tkmath.h"
 
 static int failures = 0;
 
