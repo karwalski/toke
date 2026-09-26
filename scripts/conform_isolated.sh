@@ -161,7 +161,11 @@ if [ "${MODE}" = all ] || [ "${MODE}" = yaml ]; then
 fi
 
 if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
-    pass=0; fail=0
+    # 127.166: a suite that cannot run because an optional external tool is
+    # missing exits 0 and prints a line starting `CONFORM-SKIP: <reason>`.
+    # It is counted and printed as SKIP -- neither a pass nor a failure --
+    # unless TKC_CONFORM_NO_SKIP=1 (CI), where every skip is a failure.
+    pass=0; fail=0; skip=0
     log="${PRIV}/suite.log"
     for s in test/conform/*.sh; do
         name="$(basename "${s}" .sh)"
@@ -171,7 +175,18 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
             wait_lock "the serial lock for ${name}" "${LOCKROOT}/serial" || { fail=$((fail+1)); echo "FAIL ${s}: serial lock not acquired"; continue; }
         fi
         if bash "${s}" > "${log}" 2>&1; then
-            pass=$((pass+1)); echo "PASS ${s}: $(grep -E '^Results:' "${log}" | tail -1)"
+            why=""
+            if [ -n "$(sed -n '/^CONFORM-SKIP:/=' "${log}")" ]; then
+                why="$(sed -n 's/^CONFORM-SKIP: *//p' "${log}" | head -1)"
+                [ -n "${why}" ] || why="(no reason given)"
+            fi
+            if [ -n "${why}" ] && [ "${TKC_CONFORM_NO_SKIP:-0}" = 1 ]; then
+                fail=$((fail+1)); echo "FAIL ${s}: skipped, and TKC_CONFORM_NO_SKIP=1: ${why}"
+            elif [ -n "${why}" ]; then
+                skip=$((skip+1)); echo "SKIP ${s}: ${why}"
+            else
+                pass=$((pass+1)); echo "PASS ${s}: $(grep -E '^Results:' "${log}" | tail -1)"
+            fi
         else
             fail=$((fail+1)); echo "FAIL ${s}"; tail -25 "${log}" | sed 's/^/    /'
         fi
@@ -180,7 +195,7 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
             [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && rm -rf "${d}"
         fi
     done
-    echo "conform-sh: ${pass} scripts passed, ${fail} failed"
+    echo "conform-sh: ${pass} scripts passed, ${fail} failed, ${skip} skipped"
     [ "${fail}" -eq 0 ] || rc=1
 fi
 
