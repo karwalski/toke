@@ -2307,20 +2307,23 @@ ImgResult image_convolve(TkImgBuf buf, const double *kernel, uint32_t ksize,
  * subset a document pipeline actually meets — an IFD chain, four
  * compressions, four photometric interpretations — is the code below, and it
  * reuses the DEFLATE inflater this file already carries for PNG.  If a
- * consumer later needs the parts that are genuinely large (CCITT G4, JPEG in
- * TIFF), that is the point to reconsider, and ADR-0015 names the two routes.
+ * consumer later needs the parts that are genuinely large (JPEG in TIFF),
+ * that is the point to reconsider, and ADR-0015 names the two routes.  CCITT
+ * G3/G4 turned out not to be: its tables and 2-D modes are ~400 lines below
+ * (135.5a), checked against libtiff's encoder by C156.
  *
  * WHAT IS SUPPORTED
  *   byte order      II and MM
  *   pages           the full IFD chain, addressed by 0-based index
- *   compression     1 (none), 5 (LZW), 8 / 32946 (Deflate), 32773 (PackBits)
+ *   compression     1 (none), 2 / 3 / 4 (CCITT MH, G3 1-D/2-D, G4; 135.5a),
+ *                   5 (LZW), 8 / 32946 (Deflate), 32773 (PackBits)
  *   samples         1, 4, 8 and 16 bits; 16-bit is reduced to its high byte
  *   photometric     0 WhiteIsZero, 1 BlackIsZero, 2 RGB, 3 Palette
  *   predictor       1 (none) and 2 (horizontal differencing, 8-bit)
  *
  * WHAT IS REFUSED, BY NAME
- *   CCITT G3/G4 (2, 3, 4), JPEG (6, 7), tiled layouts, PlanarConfiguration 2
- *   and BigTIFF.  Each returns a message saying which, because "decode
+ *   JPEG (6, 7), tiled layouts, PlanarConfiguration 2, BigTIFF, and CCITT
+ *   uncompressed mode.  Each returns a message saying which, because "decode
  *   failed" on a fax-derived scan is the least useful answer available.
  * ========================================================================= */
 
@@ -2589,6 +2592,337 @@ static int tiff_inflate(const uint8_t *src, uint64_t srclen,
     return 0;
 }
 
+/* ---- CCITT G3 / G4 (compression 2, 3, 4) — story 135.5a -----------------
+ *
+ * The bilevel compressions scanners and fax gateways emit.  Three variants,
+ * one decoder:
+ *
+ *   2  CCITT RLE / Modified Huffman: T.4 one-dimensional code, no EOLs,
+ *      every row starts on a byte boundary.
+ *   3  T.4 ("Group 3"): rows may be preceded by an EOL (000000000001, with
+ *      fill zeros before it when T4Options bit 2 is set).  T4Options bit 0
+ *      selects 2-D coding, in which a tag bit after each EOL says whether the
+ *      row is 1-D (1) or 2-D (0).
+ *   4  T.6 ("Group 4", MMR): every row 2-D against the row above, no EOLs;
+ *      the row above the first is all white.
+ *
+ * Each strip is coded independently, so the reference row resets to white at
+ * every strip.  A row is decoded to its CHANGING ELEMENTS — the columns where
+ * the colour flips, starting from white — which is what 2-D coding refers
+ * back to, and then painted into the 1-bit row buffer the rest of the TIFF
+ * path already reads.  A "black" run is a 1 bit and a "white" run a 0 bit,
+ * whatever the Photometric tag says: the codec codes bit values, and the
+ * photometric interpretation below gives them a colour exactly as it does
+ * for an uncompressed bilevel page.  That is libtiff's reading too, and it
+ * matters: a BlackIsZero CCITT page (what libtiff writes by default) shows
+ * its "white" runs as black.  Painting by colour instead would invert every
+ * such page.
+ *
+ * Refused by name, not decoded: T.4/T.6 uncompressed mode (extension code
+ * 0000001xxx), which no mainstream encoder emits.
+ *
+ * Every read is bounded by the strip's byte count (a read past it is an
+ * error, never an over-read), every changing element by the row width, and
+ * the number of changing elements per row by width + 2, so a hostile stream
+ * costs at most O(strip bytes + rows * width).
+ */
+
+/* Every reason is a static string: ImgResult.err_msg is never freed. */
+#define FAXERR(s) ("image_tiff_decode: CCITT strip: " s)
+
+typedef struct { uint16_t code; uint8_t len; uint16_t run; } FaxCode;
+
+/* ITU-T T.4 Table 2 (terminating) and Table 3 (make-up), white. */
+static const FaxCode FAX_WHITE[] = {
+    {0x35,8,0},{0x07,6,1},{0x07,4,2},{0x08,4,3},{0x0B,4,4},{0x0C,4,5},
+    {0x0E,4,6},{0x0F,4,7},{0x13,5,8},{0x14,5,9},{0x07,5,10},{0x08,5,11},
+    {0x08,6,12},{0x03,6,13},{0x34,6,14},{0x35,6,15},{0x2A,6,16},{0x2B,6,17},
+    {0x27,7,18},{0x0C,7,19},{0x08,7,20},{0x17,7,21},{0x03,7,22},{0x04,7,23},
+    {0x28,7,24},{0x2B,7,25},{0x13,7,26},{0x24,7,27},{0x18,7,28},{0x02,8,29},
+    {0x03,8,30},{0x1A,8,31},{0x1B,8,32},{0x12,8,33},{0x13,8,34},{0x14,8,35},
+    {0x15,8,36},{0x16,8,37},{0x17,8,38},{0x28,8,39},{0x29,8,40},{0x2A,8,41},
+    {0x2B,8,42},{0x2C,8,43},{0x2D,8,44},{0x04,8,45},{0x05,8,46},{0x0A,8,47},
+    {0x0B,8,48},{0x52,8,49},{0x53,8,50},{0x54,8,51},{0x55,8,52},{0x24,8,53},
+    {0x25,8,54},{0x58,8,55},{0x59,8,56},{0x5A,8,57},{0x5B,8,58},{0x4A,8,59},
+    {0x4B,8,60},{0x32,8,61},{0x33,8,62},{0x34,8,63},
+    {0x1B,5,64},{0x12,5,128},{0x17,6,192},{0x37,7,256},{0x36,8,320},
+    {0x37,8,384},{0x64,8,448},{0x65,8,512},{0x68,8,576},{0x67,8,640},
+    {0xCC,9,704},{0xCD,9,768},{0xD2,9,832},{0xD3,9,896},{0xD4,9,960},
+    {0xD5,9,1024},{0xD6,9,1088},{0xD7,9,1152},{0xD8,9,1216},{0xD9,9,1280},
+    {0xDA,9,1344},{0xDB,9,1408},{0x98,9,1472},{0x99,9,1536},{0x9A,9,1600},
+    {0x18,6,1664},{0x9B,9,1728},
+};
+
+/* ITU-T T.4 Table 2 (terminating) and Table 3 (make-up), black. */
+static const FaxCode FAX_BLACK[] = {
+    {0x37,10,0},{0x02,3,1},{0x03,2,2},{0x02,2,3},{0x03,3,4},{0x03,4,5},
+    {0x02,4,6},{0x03,5,7},{0x05,6,8},{0x04,6,9},{0x04,7,10},{0x05,7,11},
+    {0x07,7,12},{0x04,8,13},{0x07,8,14},{0x18,9,15},{0x17,10,16},{0x18,10,17},
+    {0x08,10,18},{0x67,11,19},{0x68,11,20},{0x6C,11,21},{0x37,11,22},
+    {0x28,11,23},{0x17,11,24},{0x18,11,25},{0xCA,12,26},{0xCB,12,27},
+    {0xCC,12,28},{0xCD,12,29},{0x68,12,30},{0x69,12,31},{0x6A,12,32},
+    {0x6B,12,33},{0xD2,12,34},{0xD3,12,35},{0xD4,12,36},{0xD5,12,37},
+    {0xD6,12,38},{0xD7,12,39},{0x6C,12,40},{0x6D,12,41},{0xDA,12,42},
+    {0xDB,12,43},{0x54,12,44},{0x55,12,45},{0x56,12,46},{0x57,12,47},
+    {0x64,12,48},{0x65,12,49},{0x52,12,50},{0x53,12,51},{0x24,12,52},
+    {0x37,12,53},{0x38,12,54},{0x27,12,55},{0x28,12,56},{0x58,12,57},
+    {0x59,12,58},{0x2B,12,59},{0x2C,12,60},{0x5A,12,61},{0x66,12,62},
+    {0x67,12,63},
+    {0x0F,10,64},{0xC8,12,128},{0xC9,12,192},{0x5B,12,256},{0x33,12,320},
+    {0x34,12,384},{0x35,12,448},{0x6C,13,512},{0x6D,13,576},{0x4A,13,640},
+    {0x4B,13,704},{0x4C,13,768},{0x4D,13,832},{0x72,13,896},{0x73,13,960},
+    {0x74,13,1024},{0x75,13,1088},{0x76,13,1152},{0x77,13,1216},
+    {0x52,13,1280},{0x53,13,1344},{0x54,13,1408},{0x55,13,1472},
+    {0x5A,13,1536},{0x5B,13,1600},{0x64,13,1664},{0x65,13,1728},
+};
+
+/* T.4 Table 3 extended make-up codes, shared by both colours. */
+static const FaxCode FAX_EXT[] = {
+    {0x08,11,1792},{0x0C,11,1856},{0x0D,11,1920},{0x12,12,1984},
+    {0x13,12,2048},{0x14,12,2112},{0x15,12,2176},{0x16,12,2240},
+    {0x17,12,2304},{0x1C,12,2368},{0x1D,12,2432},{0x1E,12,2496},
+    {0x1F,12,2560},
+};
+
+typedef struct {
+    const uint8_t *p;
+    uint64_t       nbits;
+    uint64_t       pos;     /* next bit to read */
+    int            lsb;     /* FillOrder 2: bit 0 of each byte comes first */
+} FaxBits;
+
+static uint32_t fax_bit_at(const FaxBits *b, uint64_t i)
+{
+    if (i >= b->nbits) return 0;          /* past the end reads as 0 ... */
+    uint8_t byte = b->p[i >> 3];
+    return b->lsb ? (byte >> (i & 7)) & 1u : (byte >> (7 - (i & 7))) & 1u;
+}
+
+static uint32_t fax_peek(const FaxBits *b, int n)
+{
+    uint32_t v = 0;
+    for (int i = 0; i < n; i++) v = (v << 1) | fax_bit_at(b, b->pos + (uint64_t)i);
+    return v;
+}
+
+/* ... and consuming past the end is the error, so a zero-padded peek can
+ * never be mistaken for data. */
+static int fax_skip(FaxBits *b, int n)
+{
+    b->pos += (uint64_t)n;
+    return b->pos <= b->nbits ? 0 : -1;
+}
+
+static int fax_lookup(const FaxBits *b, const FaxCode *t, size_t nt)
+{
+    for (int len = 2; len <= 13; len++) {
+        uint32_t v = fax_peek(b, len);
+        for (size_t i = 0; i < nt; i++)
+            if (t[i].len == len && t[i].code == v) return (int)i;
+    }
+    return -1;
+}
+
+/* One run of `black` (0/1): make-up codes then a terminating code.  Returns
+ * the run length, or -1 on an invalid code or a run past `limit`. */
+static int64_t fax_run(FaxBits *b, int black, int64_t limit)
+{
+    const FaxCode *t = black ? FAX_BLACK : FAX_WHITE;
+    size_t nt = black ? sizeof(FAX_BLACK) / sizeof(FAX_BLACK[0])
+                      : sizeof(FAX_WHITE) / sizeof(FAX_WHITE[0]);
+    int64_t total = 0;
+    for (;;) {
+        const FaxCode *c;
+        int i = fax_lookup(b, t, nt);
+        if (i >= 0) c = &t[i];
+        else {
+            i = fax_lookup(b, FAX_EXT, sizeof(FAX_EXT) / sizeof(FAX_EXT[0]));
+            if (i < 0) return -1;
+            c = &FAX_EXT[i];
+        }
+        if (fax_skip(b, c->len) != 0) return -1;
+        total += c->run;
+        if (total > limit) return -1;
+        if (c->run < 64) return total;    /* a terminating code ends the run */
+    }
+}
+
+/* EOL = at least 11 zeros then a 1 (fill bits make it longer).  Consumed if
+ * present; returns 1 if one was consumed. */
+static int fax_eol(FaxBits *b)
+{
+    uint64_t z = 0;
+    while (b->pos + z < b->nbits && fax_bit_at(b, b->pos + z) == 0) z++;
+    if (z >= 11 && b->pos + z < b->nbits) {
+        b->pos += z + 1;
+        return 1;
+    }
+    return 0;
+}
+
+/* One 1-D (Modified Huffman) row.  cur receives the changing elements. */
+static const char *fax_row_1d(FaxBits *b, uint32_t w, uint32_t *cur, uint32_t *ncur)
+{
+    uint64_t a = 0;
+    int black = 0;
+    uint32_t n = 0;
+    while (a < w) {
+        int64_t r = fax_run(b, black, (int64_t)w);
+        if (r < 0) return FAXERR("invalid 1-D run code");
+        a += (uint64_t)r;
+        if (a > w) return FAXERR("a 1-D row runs past the image width");
+        if (n >= w + 2) return FAXERR("too many changing elements in a row");
+        cur[n++] = (uint32_t)a;
+        black ^= 1;
+    }
+    *ncur = n;
+    return NULL;
+}
+
+/* One 2-D (READ / MMR) row against the reference row `ref` (nref changing
+ * elements; the array has room for two sentinel entries after them). */
+static const char *fax_row_2d(FaxBits *b, uint32_t w, uint32_t *ref, uint32_t nref,
+                              uint32_t *cur, uint32_t *ncur)
+{
+    ref[nref] = w;
+    ref[nref + 1] = w;
+    int64_t a0 = -1;
+    int black = 0;
+    uint32_t n = 0, k = 0;
+    while (a0 < (int64_t)w) {
+        /* b1: the first changing element on the reference row to the right
+         * of a0 whose colour is opposite a0's colour — an even index means a
+         * change to black, so it is the first index > a0 with parity black. */
+        while (k < nref && (int64_t)ref[k] <= a0) k++;
+        uint32_t bi = k + (((k & 1u) != (uint32_t)black) ? 1u : 0u);
+        uint32_t b1 = bi < nref ? ref[bi] : w;
+        uint32_t b2 = bi + 1 < nref ? ref[bi + 1] : w;
+
+        uint32_t v = fax_peek(b, 7);
+        int64_t a1;
+        if (v & 0x40) {                           /* 1        V0 */
+            if (fax_skip(b, 1)) return FAXERR("truncated 2-D row");
+            a1 = b1;
+        } else if ((v >> 4) == 0x3) {             /* 011      VR1 */
+            if (fax_skip(b, 3)) return FAXERR("truncated 2-D row");
+            a1 = (int64_t)b1 + 1;
+        } else if ((v >> 4) == 0x2) {             /* 010      VL1 */
+            if (fax_skip(b, 3)) return FAXERR("truncated 2-D row");
+            a1 = (int64_t)b1 - 1;
+        } else if ((v >> 4) == 0x1) {             /* 001      horizontal */
+            if (fax_skip(b, 3)) return FAXERR("truncated 2-D row");
+            int64_t start = a0 < 0 ? 0 : a0;
+            int64_t r1 = fax_run(b, black, (int64_t)w);
+            if (r1 < 0) return FAXERR("invalid run code in horizontal mode");
+            int64_t r2 = fax_run(b, !black, (int64_t)w);
+            if (r2 < 0) return FAXERR("invalid run code in horizontal mode");
+            int64_t x1 = start + r1, x2 = x1 + r2;
+            if (x2 > (int64_t)w) return FAXERR("horizontal mode runs past the image width");
+            if (n + 2 > w + 2) return FAXERR("too many changing elements in a row");
+            cur[n++] = (uint32_t)x1;
+            cur[n++] = (uint32_t)x2;
+            a0 = x2;
+            continue;
+        } else if ((v >> 3) == 0x1) {             /* 0001     pass */
+            if (fax_skip(b, 4)) return FAXERR("truncated 2-D row");
+            a0 = b2;
+            continue;
+        } else if ((v >> 1) == 0x3) {             /* 000011   VR2 */
+            if (fax_skip(b, 6)) return FAXERR("truncated 2-D row");
+            a1 = (int64_t)b1 + 2;
+        } else if ((v >> 1) == 0x2) {             /* 000010   VL2 */
+            if (fax_skip(b, 6)) return FAXERR("truncated 2-D row");
+            a1 = (int64_t)b1 - 2;
+        } else if (v == 0x3) {                    /* 0000011  VR3 */
+            if (fax_skip(b, 7)) return FAXERR("truncated 2-D row");
+            a1 = (int64_t)b1 + 3;
+        } else if (v == 0x2) {                    /* 0000010  VL3 */
+            if (fax_skip(b, 7)) return FAXERR("truncated 2-D row");
+            a1 = (int64_t)b1 - 3;
+        } else if (v == 0x1) {                    /* 0000001  extension */
+            return FAXERR("T.4/T.6 uncompressed mode is not supported");
+        } else {                                  /* 0000000  EOL/EOFB here */
+            return FAXERR("unexpected EOL inside a 2-D row");
+        }
+        /* vertical modes */
+        if (a1 < (a0 < 0 ? 0 : a0) || a1 > (int64_t)w)
+            return FAXERR("vertical mode points outside the row");
+        if (n >= w + 2) return FAXERR("too many changing elements in a row");
+        cur[n++] = (uint32_t)a1;
+        a0 = a1;
+        black ^= 1;
+    }
+    *ncur = n;
+    return NULL;
+}
+
+/* Paint the changing elements into one packed 1-bit row: black runs are
+ * the 1 bits (see the block comment). */
+static void fax_paint(uint8_t *row, uint64_t row_len, uint32_t w,
+                      const uint32_t *cur, uint32_t n)
+{
+    uint32_t x = 0;
+    int black = 0;
+    for (uint32_t i = 0; i <= n; i++) {
+        uint32_t end = i < n ? cur[i] : w;
+        if (end > w) end = w;
+        if (black)
+            for (uint32_t p = x; p < end; p++)
+                if ((p >> 3) < row_len) row[p >> 3] |= (uint8_t)(0x80u >> (p & 7));
+        if (end > x) x = end;
+        black ^= 1;
+    }
+}
+
+/* Decode one CCITT strip of `rows` rows of width w into rowbuf (src_row
+ * bytes per row, already zeroed).  Returns NULL or a reason. */
+static const char *tiff_ccitt(const uint8_t *src, uint64_t srclen,
+                              uint8_t *rowbuf, uint64_t src_row,
+                              uint32_t rows, uint32_t w, uint32_t comp,
+                              uint32_t t4opt, int lsb)
+{
+    FaxBits b;
+    b.p = src; b.nbits = srclen * 8; b.pos = 0; b.lsb = lsb;
+    uint32_t *ref = (uint32_t *)malloc(((size_t)w + 4) * sizeof(uint32_t));
+    uint32_t *cur = (uint32_t *)malloc(((size_t)w + 4) * sizeof(uint32_t));
+    if (!ref || !cur) { free(ref); free(cur); return FAXERR("out of memory"); }
+    uint32_t nref = 0;                 /* the row above the first is white */
+    const char *err = NULL;
+
+    for (uint32_t y = 0; y < rows && !err; y++) {
+        uint32_t ncur = 0;
+        int two_d;
+        if (comp == 2) {
+            if (y > 0) b.pos = (b.pos + 7) & ~(uint64_t)7;   /* byte-aligned rows */
+            two_d = 0;
+        } else if (comp == 3) {
+            int had_eol = fax_eol(&b);
+            (void)had_eol;
+            if (t4opt & 1u) {          /* 2-D: a tag bit follows the EOL */
+                if (b.pos >= b.nbits) { err = FAXERR("strip ends before the last row"); break; }
+                two_d = fax_bit_at(&b, b.pos) == 0;
+                b.pos++;
+            } else {
+                two_d = 0;
+            }
+        } else {
+            two_d = 1;
+        }
+        err = two_d ? fax_row_2d(&b, w, ref, nref, cur, &ncur)
+                    : fax_row_1d(&b, w, cur, &ncur);
+        /* Past the end reads as zeros, so a truncated strip usually surfaces
+         * as a bogus EOL or code; name the real cause. */
+        if (err && b.pos + 13 >= b.nbits)
+            err = FAXERR("strip ends before the last row (truncated data)");
+        if (err) break;
+        fax_paint(rowbuf + (uint64_t)y * src_row, src_row, w, cur, ncur);
+        uint32_t *tmp = ref; ref = cur; cur = tmp;
+        nref = ncur;
+    }
+    free(ref); free(cur);
+    return err;
+}
+
 /* ---- sample extraction -------------------------------------------------- */
 
 static uint32_t tiff_sample(const uint8_t *row, uint64_t row_len,
@@ -2681,19 +3015,28 @@ ImgResult image_tiff_decode(const uint8_t *bytes, uint64_t len, uint32_t page)
         res.err_msg = "image_tiff_decode: page exceeds the 256-megapixel cap";
         return res;
     }
-    if (comp == 2 || comp == 3 || comp == 4) {
-        res.err_msg = "image_tiff_decode: CCITT G3/G4 fax compression is not "
-                      "supported; re-encode as LZW, Deflate or PackBits";
+    int ccitt = (comp == 2 || comp == 3 || comp == 4);
+    uint32_t t4opt = ccitt && comp == 3 ? tiff_tag1(&t, ifd, 292, 0) : 0;
+    uint32_t fillorder = tiff_tag1(&t, ifd, 266, 1);
+    if (ccitt && (bps != 1 || spp != 1 || photo > 1)) {
+        res.err_msg = "image_tiff_decode: CCITT compression requires a bilevel "
+                      "page (1 bit per sample, 1 sample, WhiteIsZero or "
+                      "BlackIsZero)";
+        return res;
+    }
+    if (ccitt && fillorder != 1 && fillorder != 2) {
+        res.err_msg = "image_tiff_decode: FillOrder must be 1 or 2";
         return res;
     }
     if (comp == 6 || comp == 7) {
         res.err_msg = "image_tiff_decode: JPEG-in-TIFF is not supported";
         return res;
     }
-    if (comp != 1 && comp != 5 && comp != 8 && comp != 32946 && comp != 32773) {
+    if (!ccitt && comp != 1 && comp != 5 && comp != 8 && comp != 32946 &&
+        comp != 32773) {
         res.err_msg = "image_tiff_decode: unrecognised compression "
-                      "(supported: 1 none, 5 LZW, 8/32946 Deflate, "
-                      "32773 PackBits)";
+                      "(supported: 1 none, 2/3/4 CCITT, 5 LZW, 8/32946 "
+                      "Deflate, 32773 PackBits)";
         return res;
     }
     if (planar != 1) {
@@ -2816,6 +3159,14 @@ ImgResult image_tiff_decode(const uint8_t *bytes, uint64_t len, uint32_t page)
             rc = tiff_packbits(sp, scnt, rowbuf, want);
         } else if (comp == 5) {
             rc = tiff_lzw(sp, scnt, rowbuf, want);
+        } else if (ccitt) {
+            const char *why = tiff_ccitt(sp, scnt, rowbuf, src_row, rows, w,
+                                         comp, t4opt, fillorder == 2);
+            if (why) {
+                free(out); free(rowbuf);
+                res.err_msg = why;
+                return res;
+            }
         } else {
             rc = tiff_inflate(sp, scnt, rowbuf, want);
         }

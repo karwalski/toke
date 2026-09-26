@@ -2,7 +2,7 @@
  * fuzz_image.c — libFuzzer entry point for std.image's decoders (122.9).
  *
  * image.c parses untrusted bytes with its own PNG chunk walker, its own
- * DEFLATE/Huffman inflater and a TIFF IFD/strip decoder (PackBits, LZW,
+ * DEFLATE/Huffman inflater and a TIFF IFD/strip decoder (PackBits, LZW, CCITT G3/G4 (135.5a),
  * Deflate).  This target drives all of them:
  *   - image_decode()       PNG (CRC gate, IHDR size cap, capped inflate,
  *                          unfilter) and, by signature, TIFF page 0

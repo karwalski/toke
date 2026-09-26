@@ -8,7 +8,7 @@ order: 19
 **Status: Implemented** -- C runtime backing.
 
 The `std.image` module provides functions for decoding, encoding, and transforming raster
-images. It decodes PNG and TIFF and encodes PNG and BMP; JPEG and WebP encode and decode
+images. It decodes PNG and TIFF (including CCITT G3/G4 fax pages) and encodes PNG and BMP; JPEG and WebP encode and decode
 return an error naming the library that would be needed.
 
 Beyond the basic transforms it carries the pieces a document pipeline needs before OCR or
@@ -145,9 +145,17 @@ Supported: both byte orders; compression 1 (none), 5 (LZW), 8 and 32946 (Deflate
 WhiteIsZero, BlackIsZero, RGB and Palette photometrics; and Predictor 2 (horizontal
 differencing) on 8-bit samples.
 
+**CCITT fax compression** — what scanners and fax gateways emit for bilevel pages — is
+supported on 1-bit, single-sample pages (story 135.5a): compression 2 (Modified Huffman),
+3 (T.4 / Group 3, 1-D or 2-D per `T4Options`, with or without EOL fill bits) and 4
+(T.6 / Group 4). Both FillOrders are read. As for an uncompressed bilevel page, the
+Photometric tag decides which bit value is black, so a page decodes to a one-channel image
+of 0 and 255. A corrupt or truncated strip fails with a message beginning
+`image_tiff_decode: CCITT strip:` that says what was wrong.
+
 Not supported, each rejected with a message naming what was found rather than a generic
-failure: **CCITT G3/G4 fax compression**, JPEG-in-TIFF, tiled layouts, PlanarConfiguration 2
-and BigTIFF.
+failure: CCITT uncompressed mode (an extension no mainstream encoder emits), JPEG-in-TIFF,
+tiled layouts, PlanarConfiguration 2 and BigTIFF.
 
 ## Adjustments, compositing and text
 
