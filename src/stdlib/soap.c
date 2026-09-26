@@ -16,11 +16,6 @@
 
 /* ── Internal helpers ──────────────────────────────────────────────────── */
 
-/* Safe strlen that treats NULL as "" */
-static size_t safe_len(const char *s) {
-    return s ? strlen(s) : 0;
-}
-
 /* Safe pointer that treats NULL as "" */
 static const char *safe_str(const char *s) {
     return s ? s : "";
@@ -126,7 +121,9 @@ static const char *build_envelope(const char *body_xml,
             "  <soap:Header>%s</soap:Header>\n", header_xml);
     }
 
-    pos += (size_t)snprintf(buf + pos, buf_size - pos,
+    /* Last write: buf_size was computed from the three lengths above, so
+     * nothing reads the final offset. */
+    (void)snprintf(buf + pos, buf_size - pos,
         "  <soap:Body>%s</soap:Body>\n"
         "</soap:Envelope>", body);
 
