@@ -438,6 +438,8 @@ typedef struct {
 /* 136.36: cap on the "already reported" set; beyond it a repeat may double-report,
  * which is far better than dropping a real diagnostic. */
 #define TKC_MAX_TYPE_REPORTED 512
+/* 127.195: nesting cap for `mt` arm bindings tracked while inferring bodies. */
+#define TKC_MAX_ARM_BINDS 32
 
 typedef struct { TypeEnv *env; const char *src;
                  Type *fn_ret; int had_error;
@@ -454,6 +456,13 @@ typedef struct { TypeEnv *env; const char *src;
                   * emitted twice.  Pre-existing checks never noticed because
                   * they sit on nodes the binding path does not re-enter. */
                  const Node *reported[TKC_MAX_TYPE_REPORTED]; int reported_count;
+                 /* 127.195: `mt` arm bindings in force while an arm body is
+                  * inferred (innermost last), and the match whose value is
+                  * discarded because it stands as a statement. */
+                 struct { const char *name; int len; Type *ty; const Node *body; }
+                     armb[TKC_MAX_ARM_BINDS];
+                 int armb_count;
+                 const Node *mt_discard;
                } Ctx;
 
 /* tc_first_report — 1 the first time `n` is reported on, 0 afterwards. */
@@ -517,6 +526,7 @@ static int is_param(const Ctx *cx, const char *name, int name_len) {
 
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
+static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use);
 /* Forward decl: local-binding lookup (defined below; used by the 123.11-fu
  * interp check to resolve a bare composite-local identifier). */
 static const Node *find_binding_node(const Node *root, const char *src,
@@ -701,9 +711,10 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                      * let s="abc"; "\(s)"` drew a false E4032 from the
                      * array binding.  The literal is the use: it is in the
                      * tree, so `let s="\(s)"` skips its own binding. */
-                    const Node *bn = find_binding_before(cx->fn_node, cx->src,
-                                                         nb, (int)strlen(nb),
-                                                         strnode);
+                    const Node *bn = arm_bind_lookup(cx, nb, (int)strlen(nb), strnode)
+                        ? NULL   /* 127.195: an `mt` arm binding, not a let */
+                        : find_binding_before(cx->fn_node, cx->src,
+                                              nb, (int)strlen(nb), strnode);
                     if (bn && (bn->kind == NODE_BIND_STMT || bn->kind == NODE_MUT_BIND_STMT)
                         && bn->child_count > 1 && bn->children[1]) {
                         NodeKind ik = bn->children[1]->kind;   /* [1]=init when un-annotated */
@@ -810,10 +821,11 @@ static const Node *find_binding_node(const Node *root, const char *src,
  * string second) was already one at 444a55c: `io.println(s)` after
  * `let s="abc"` was rejected as "expected 'str', got '@(i64)'".
  *
- * The binding in force is the nearest one that starts before the use and
- * does not contain it (`let x=x+1` must not resolve `x` to itself).  If no
- * binding precedes the use, the old first-found answer is kept, so nothing
- * that resolved before stops resolving.
+ * The binding in force is the nearest one that starts before the use, does
+ * not contain it (`let x=x+1` must not resolve `x` to itself), and is not in
+ * a block that closed before the use (127.206).  If no binding precedes the
+ * use, the old first-found answer is kept, so nothing that resolved before
+ * stops resolving.
  */
 static int node_contains(const Node *root, const Node *n) {
     if (!root) return 0;
@@ -836,13 +848,39 @@ static void find_binding_before_rec(const Node *root, const char *src,
             && !node_contains(root, use))
             *best = root;
     }
-    for (int i=0;i<root->child_count;i++)
-        find_binding_before_rec(root->children[i],src,name,nlen,use,best);
+    for (int i=0;i<root->child_count;i++) {
+        const Node *ch=root->children[i];
+        /* 127.206: a block that does not contain the use has closed by the
+         * time the use runs, and its bindings with it — codegen restores
+         * the outer binding on block exit (`let s="abc"; if(..){let
+         * s=@(1;2)}; "\(s)"` prints abc).  Only when no binding at all is
+         * in force does the first-found fallback below still answer. */
+        if (ch && ch->kind==NODE_STMT_LIST && !node_contains(ch,use)) continue;
+        find_binding_before_rec(ch,src,name,nlen,use,best);
+    }
+}
+/* The in-tree node that starts last at or before `pos` (the deepest on a
+ * tie) — nothing in the tree starts strictly between it and `pos`. */
+static void tree_anchor_rec(const Node *r, int pos, const Node **a) {
+    if (!r) return;
+    if (r->start <= pos && (!*a || r->start >= (*a)->start)) *a = r;
+    for (int i = 0; i < r->child_count; i++) tree_anchor_rec(r->children[i], pos, a);
 }
 static const Node *find_binding_before(const Node *root, const char *src,
                                        const char *name, int nlen,
                                        const Node *use) {
     const Node *best = NULL;
+    /* A use re-homed from a sub-parse (check_interp_composites re-parses
+     * each `\(..)` and shifts its offsets onto the real source) is not in
+     * `root`, so 127.206's closed-block test would find no block containing
+     * it and skip the whole body: `let s=@(1;2); ..; let s="abc"; "\(s)"`
+     * fell back to the array binding (C054).  Stand in the in-tree node
+     * that starts last at or before it — the literal's own position. */
+    if (use && root && !node_contains(root, use)) {
+        const Node *a = NULL;
+        tree_anchor_rec(root, use->start, &a);
+        if (a) use = a;
+    }
     if (use) find_binding_before_rec(root, src, name, nlen, use, &best);
     return best ? best : find_binding_node(root, src, name, nlen);
 }
@@ -886,6 +924,18 @@ static void local_in_force_rec(const Node *root, const char *src,
     for (int i=0;i<root->child_count;i++)
         local_in_force_rec(root->children[i],src,name,nlen,use,best);
 }
+/* closure_between — 1 when a NODE_CLOSURE inside `root` contains `n`. */
+static int closure_between(const Node *root, const Node *n) {
+    if (!root || root == n) return 0;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *c = root->children[i];
+        if (!c || !node_contains(c, n)) continue;
+        if (c->kind == NODE_CLOSURE) return 1;
+        return closure_between(c, n);
+    }
+    return 0;
+}
+
 static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
                                   const Node *use) {
     const Node *best = NULL;
@@ -1076,14 +1126,28 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
         if (nn) { char snb[128]; TOKSTR(snb,cx->src,nn); st->name=ty_intern(cx->env->arena,snb); }
         /* Collect NODE_FIELD children — they may be direct children of the
          * TYPE_DECL or wrapped in a NODE_STMT_LIST (from parse_field_list). */
-        const Node *fields[64]; int fc=0;
+        /* 127.205: no field cap.  A fixed 64-slot array dropped field 65
+         * onward, so `--check` reported E4025 "struct 'big' has no field
+         * 'f64'" for a field that exists, while codegen (127.190) handles
+         * any width.  Count, then size the array to the struct. */
+        int fcap=0;
         for (int i=1;i<decl->child_count;i++) {
             const Node *ci=decl->children[i]; if(!ci) continue;
-            if (ci->kind==NODE_FIELD) { if(fc<64)fields[fc++]=ci; }
+            if (ci->kind==NODE_FIELD) fcap++;
+            else if (ci->kind==NODE_STMT_LIST)
+                for (int j=0;j<ci->child_count;j++)
+                    if (ci->children[j]&&ci->children[j]->kind==NODE_FIELD) fcap++;
+        }
+        const Node **fields=fcap>0
+            ?(const Node**)arena_alloc(cx->env->arena,fcap*(int)sizeof(Node*)):NULL;
+        int fc=0;
+        for (int i=1;fields&&i<decl->child_count;i++) {
+            const Node *ci=decl->children[i]; if(!ci) continue;
+            if (ci->kind==NODE_FIELD) { if(fc<fcap)fields[fc++]=ci; }
             else if (ci->kind==NODE_STMT_LIST) {
                 for (int j=0;j<ci->child_count;j++) {
                     const Node *fj=ci->children[j];
-                    if (fj&&fj->kind==NODE_FIELD&&fc<64) fields[fc++]=fj;
+                    if (fj&&fj->kind==NODE_FIELD&&fc<fcap) fields[fc++]=fj;
                 }
             }
         }
@@ -1404,6 +1468,11 @@ static void check_variant_ctor_return(Ctx *cx, const Node *ret) {
 static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
     if (!cx->fn_ret || cx->fn_ret->kind==TY_VOID || cx->fn_ret->kind==TY_UNKNOWN)
         return;
+    /* 127.188: a `void!$e` function has no success value to return either;
+     * ending it on a propagation (`g(x)!$e`) is complete. */
+    if (cx->fn_ret->kind==TY_ERROR_TYPE && cx->fn_ret->elem
+        && cx->fn_ret->elem->kind==TY_VOID)
+        return;
 
     const Node *expr=NULL;
     int known = tail_ty && tail_ty->kind!=TY_VOID && tail_ty->kind!=TY_UNKNOWN;
@@ -1434,10 +1503,13 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
          * as a value (rc 139 on its first use).  Whatever the callee's ok
          * type, there is no reading under which that path returns: fire,
          * with no `fix` (the author may have meant the error, not the value).
-         * A propagation proven void is a missing return, not a discarded
-         * value, and stays out of scope exactly as a void tail call does. */
-        if (!known && expr->kind==NODE_PROPAGATE_EXPR
-            && !(tail_ty && tail_ty->kind==TY_VOID)) {
+         * 127.188: a propagation PROVEN void (`g()!$e` with g a `void!$e`
+         * function) is the same shape — the success path falls off the end
+         * of a non-void body — and was the one propagation left silent.  It
+         * takes the same diagnostic: E4071's propagation message already
+         * says exactly this ("on the success path nothing is returned").  A
+         * plain void tail CALL (no `!`) is still not judged here. */
+        if (!known && expr->kind==NODE_PROPAGATE_EXPR) {
             expr=NULL;                     /* never a certain `<` repair */
             prop=1;
             break;
@@ -1474,7 +1546,9 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
             "function body ends in a value expression with no '<': the value is "
             "computed and discarded, and the function returns 0");
 
-    const char *got = known ? type_name(tail_ty) : "unknown";
+    const char *got = known ? type_name(tail_ty)
+                    : (prop && tail_ty && tail_ty->kind==TY_VOID) ? "void"   /* 127.188 */
+                    : "unknown";
     if (expr && tail_fix_is_certain(expr))
         diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
                   "expected",type_name(cx->fn_ret),"got",got,
@@ -1557,7 +1631,8 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;
     /* 127.169: a local closure of that name is what codegen calls. */
     if (call->children[0]->kind == NODE_IDENT
-        && local_in_force(cx, nb, (int)strlen(nb), call)) return NULL;
+        && (local_in_force(cx, nb, (int)strlen(nb), call)
+            || arm_bind_lookup(cx, nb, (int)strlen(nb), call))) return NULL;
     const Node *fn = d->def_node;
     for (int i = 0; i < fn->child_count; i++) {
         const Node *ch = fn->children[i];
@@ -1611,6 +1686,7 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
     if (scr->kind == NODE_IDENT) {
         if (!cx->fn_node) return NULL;
         char nb[128]; TOKSTR(nb, cx->src, scr);
+        if (arm_bind_lookup(cx, nb, (int)strlen(nb), scr)) return NULL;
         const Node *bn = find_binding_before(cx->fn_node, cx->src, nb,
                                              (int)strlen(nb), scr);
         if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT)
@@ -1658,6 +1734,167 @@ static Type *mt_bind_type(Ctx *cx, const Node *m) {
         return mt_ok_payload_type(cx, m->children[0], 0);
     }
     return NULL;
+}
+
+/* 127.195: E4011's null-filler tolerance (see NODE_MATCH_STMT). */
+static int ptr_kind(const Type *t) {
+    return t && (t->kind==TY_STR || t->kind==TY_ARRAY || t->kind==TY_MAP
+                 || t->kind==TY_STRUCT);
+}
+static int null_filler(Ctx *cx, const Node *b) {
+    if (!b) return 0;
+    char tb[8]; TOKSTR(tb, cx->src, b);
+    if (b->kind == NODE_INT_LIT) return strcmp(tb, "0") == 0;
+    if (b->kind == NODE_BOOL_LIT) return strcmp(tb, "false") == 0;
+    return 0;
+}
+
+/*
+ * 127.195 — the type of an `mt` arm's binding while its body is inferred.
+ *
+ * Only the `$ok:v` arm of a `T!E` scrutinee is answered, with the ok payload
+ * type `T` that 127.180 already reads for codegen's first-arm value
+ * (mt_ok_payload_type).  Every other binding — `$err:e`, a sum-type
+ * variant's payload, an ok payload whose type is not known — stays
+ * TY_UNKNOWN, which checks nothing about it but still shadows whatever else
+ * carries the name.
+ */
+static Type *arm_bind_type(Ctx *cx, const Node *m, const Node *arm) {
+    Type *u = mk_type(cx->env->arena, TY_UNKNOWN);
+    if (!arm->children[0] || m->child_count < 1) return u;
+    char tag[16]; TOKSTR(tag, cx->src, arm->children[0]);
+    if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0) return u;
+    Type *t = mt_ok_payload_type(cx, m->children[0], 0);
+    return t ? t : u;
+}
+
+/*
+ * 127.195 — resolve `use` to an `mt` arm binding in force, innermost first.
+ * Returns the binding's type, or NULL when the name is not an arm binding
+ * here: a `let` of the same name inside the arm body, before the use, is the
+ * one in force.  A use inside a closure in the arm body is answered
+ * TY_UNKNOWN — a closure parameter of the same name would shadow the
+ * binding, and the checker does not track closure parameters.
+ */
+static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use) {
+    for (int k = cx->armb_count - 1; k >= 0; k--) {
+        if (cx->armb[k].len != nlen || memcmp(cx->armb[k].name, nb, (size_t)nlen) != 0)
+            continue;
+        const Node *body = cx->armb[k].body;
+        /* A re-entered initialiser outside the arm is not in its scope. */
+        if (!node_contains(body, use)) continue;
+        if (cx->fn_node) {
+            const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, use);
+            if (bn && node_contains(body, bn) && bn->start < use->start) return NULL;
+        }
+        if (closure_between(body, use)) return mk_type(cx->env->arena, TY_UNKNOWN);
+        return cx->armb[k].ty;
+    }
+    return NULL;
+}
+
+/*
+ * 127.202 — a `$ok`/`$err` match over a value that is not an error union.
+ *
+ * Codegen lowers a result match as `value != 0 ? $ok : $err` (emit_expr,
+ * NODE_MATCH_STMT: "non-zero i64 = Ok, zero i64 = Err").  Over a real
+ * error union that is the fallible-call convention.  Over a plain scalar it
+ * is a test against zero: `mt process.wait(h) {$ok:v v;$err:e 1}` —
+ * process.wait returns an i32 exit status — takes `$err` exactly when the
+ * child SUCCEEDED, and printed 1 for an exit of 0.  That silently broke
+ * `ooke compile`.
+ *
+ * mt_nonunion_scalar answers the scalar type spelling when the scrutinee is
+ * KNOWN to be a non-union scalar (where 0 is an ordinary value), else NULL:
+ *   - a numeric or bool literal;
+ *   - a call to a user function whose declared return is a scalar;
+ *   - a module-form call whose interface record states a scalar return with
+ *     no "error" key, and is not a `"gen":"abi"` placeholder record;
+ *   - a parameter annotated with a scalar type, or an immutable `let`
+ *     annotated with one or bound to one of the above (a `mut` binding is
+ *     never judged: an assignment may give it an error channel, C067).
+ * Deliberately NOT judged: bool — the zero test IS the truth test, so
+ * `mt file.exists(p) {$ok:v v;$err:e false}` yields exactly the bool (toke-ooke
+ * test_cli.tk writes this three times); pointer-typed values (str, arrays, structs) —
+ * the zero test is then a null test, which is how every fallible stdlib
+ * pointer return signals failure, so an interface that omits its "error"
+ * key would be a false diagnostic; receiver calls and `.get` (optional
+ * results); anything the checker could not type.
+ */
+static const char *import_module_path(Ctx *cx, const char *alias,
+                                      char *buf, size_t bufsz);
+static int kind_is_scalar(TypeKind k) {
+    switch (k) {
+    case TY_I64: case TY_U64: case TY_F64: case TY_I8:
+    case TY_I16: case TY_I32: case TY_U8: case TY_U16: case TY_U32:
+    case TY_F32: return 1;
+    default: return 0;
+    }
+}
+static int spelling_is_scalar(const char *t) {
+    static const char *sc[] = { "i64", "u64", "f64", "i8", "i16",
+                                "i32", "u8", "u16", "u32", "f32", "byte", NULL };
+    if (!t) return 0;
+    for (int i = 0; sc[i]; i++) if (strcmp(t, sc[i]) == 0) return 1;
+    return 0;
+}
+static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
+    if (!scr || depth > 2) return NULL;
+    switch (scr->kind) {
+    case NODE_INT_LIT:   return "i64";
+    case NODE_FLOAT_LIT: return "f64";
+    case NODE_CALL_EXPR: {
+        if (scr->child_count < 1 || !scr->children[0]) return NULL;
+        const Node *callee = scr->children[0];
+        if (callee->kind == NODE_FIELD_EXPR) {
+            if (callee->child_count < 2 || !callee->children[0]
+                || callee->children[0]->kind != NODE_IDENT || !callee->children[1])
+                return NULL;
+            char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+            char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+            char mbuf[256];
+            if (!import_module_path(cx, ab, mbuf, sizeof mbuf)) return NULL;
+            Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+            if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
+            const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+            if (!f || f->abi_ret || f->okret || !f->ret) return NULL;
+            return spelling_is_scalar(f->ret) ? f->ret : NULL;
+        }
+        if (callee->kind != NODE_IDENT) return NULL;
+        Type *rt = call_decl_ret_type(cx, scr);
+        return rt && kind_is_scalar(rt->kind) ? type_name(rt) : NULL;
+    }
+    case NODE_IDENT: {
+        if (!cx->fn_node) return NULL;
+        char nb[128]; TOKSTR(nb, cx->src, scr);
+        int nlen = (int)strlen(nb);
+        if (arm_bind_lookup(cx, nb, nlen, scr)) return NULL;
+        for (int pi = 0; pi < cx->fn_node->child_count; pi++) {
+            const Node *pc = cx->fn_node->children[pi];
+            if (!pc || pc->kind != NODE_PARAM || pc->child_count < 2) continue;
+            char pn[128]; TOKSTR(pn, cx->src, pc->children[0]);
+            if (strcmp(pn, nb) != 0) continue;
+            Type *pt = resolve_type(cx, pc->children[1]);
+            return pt && kind_is_scalar(pt->kind) ? type_name(pt) : NULL;
+        }
+        const Node *bn = local_in_force(cx, nb, nlen, scr);
+        /* Not a `mut` binding: one later assigned a fallible call carries
+         * that call's error channel (C067 — `let r=mut.0; r=s.toint("0");
+         * mt r {..}` takes $ok with 0), so its initialiser does not say
+         * what the match meets. */
+        if (!bn || bn->kind != NODE_BIND_STMT)
+            return NULL;
+        if (bn->child_count > 2 && bn->children[1]) {
+            Type *lt = resolve_type(cx, bn->children[1]);
+            return lt && kind_is_scalar(lt->kind) ? type_name(lt) : NULL;
+        }
+        if (bn->child_count == 2 && bn->children[1])
+            return mt_nonunion_scalar(cx, bn->children[1], depth + 1);
+        return NULL;
+    }
+    default:
+        return NULL;
+    }
 }
 
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
@@ -1917,6 +2154,9 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
             }
             if (!at || at->kind == TY_UNKNOWN || at->kind == TY_STR) continue;
             if (!tc_can_emit(cx)) return;
+            /* 127.201's representation check runs after this one over the
+             * same argument; marking it reported keeps one E4031 per arg. */
+            if (!tc_first_report(cx, arg)) continue;
             char msg[256];
             snprintf(msg, sizeof(msg),
                      "type mismatch: expected 'str', got '%s'", type_name(at));
@@ -2406,6 +2646,126 @@ static void check_tki_call(Ctx *cx, const Node *call) {
     char decl[320]; tki_member_sig(f, alias, member, decl, sizeof decl);
     tki_arity_error(call, "interface", mpath, member, decl,
                     f->param_count, actual);
+}
+
+/* ── 127.201: module-form stdlib calls, argument REPRESENTATION ──────────
+ *
+ * `s.join(p;"-")` — `(@(str),str)` against `str.join(sep;arr)` — passed
+ * `--check`, built, and died with SIGSEGV: the glue read the array handle as
+ * a `char *` separator and the string literal as an array whose length word
+ * is at ptr[-1].  check_tki_call checks a std module call's arity against the
+ * glue and deliberately never its types, because a std module's `.tki`
+ * parameter types are ABI placeholders (`"gen":"abi"`, all `i64` — 127.165).
+ *
+ * So the types come from where 124.2f took them for `[byte]`: the glue
+ * bodies.  scripts/gen_stdlib_decls.py writes src/stdlib_paramkind_gen.h,
+ * one string per `tk_*_w` wrapper, one character per parameter:
+ *
+ *   S  the body reads it as a C string            -> a toke `str`;
+ *   A  the body reads it as an i64 array (ptr[-1]) -> a toke array;
+ *   .  neither, or both — not established, never judged.
+ *
+ * The rule fires only on a CERTAIN representation clash, with an argument
+ * type the checker established (arg->rtype; TY_UNKNOWN is never judged):
+ *
+ *   S parameter, argument an array, map or struct  -> a pointer read as text;
+ *   A parameter, argument a `str`                  -> a C string read as an
+ *                                                     array with a length word.
+ *
+ * Deliberately NOT judged, because a wrong diagnostic is worse than none:
+ *   - a scalar in an S or A slot — `0` is a legitimate null handle for
+ *     several wrappers (`if (!arr)`), and 127.14 already owns the print
+ *     family;
+ *   - a struct or map in an A slot — a wrapper may read a toke struct through
+ *     `int64_t *` (its fields are i64 slots);
+ *   - an A slot that 124.2f's [byte] table also covers — that check owns it
+ *     and carries the certain `str.bytes(...)` fix;
+ *   - a call whose argument count differs from the wrapper's — arity is
+ *     check_tki_call's diagnostic, and positions do not line up;
+ *   - a symbol codegen redirects by argument type (`json.enc`, below).
+ * No `fix`: swapping, converting or changing the callee are all possible
+ * repairs, and none is certain. */
+typedef struct { const char *sym; const char *kinds; } GlueParamKinds;
+static const GlueParamKinds s_glue_param_kinds[] = {
+#include "stdlib_paramkind_gen.h"
+    { NULL, NULL }
+};
+
+static const char *glue_param_kinds(const char *sym) {
+    if (!sym) return NULL;
+    for (int i = 0; s_glue_param_kinds[i].sym; i++)
+        if (strcmp(s_glue_param_kinds[i].sym, sym) == 0)
+            return s_glue_param_kinds[i].kinds;
+    return NULL;
+}
+
+static unsigned glue_byte_params(const char *sym);
+
+static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2)
+        return;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return;
+    if (!callee->children[1]) return;
+    if (!cx->env || !cx->env->names) return;
+
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath || strncmp(mpath, "std.", 4) != 0) return;
+    {   /* the same alias gate check_stdlib_byte_args applies */
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias,
+                            (int)strlen(alias));
+        if (d && d->kind != DECL_IMPORT_ALIAS) return;
+    }
+    const char *sym = stdlib_symbol_for(mpath, 1, member);
+    /* Symbols the emitter REDIRECTS by argument type before the call is
+     * lowered (emit_expr, NODE_CALL_EXPR): `j.enc(x)` becomes
+     * tk_json_encarr_w / encbool / encf64 / encnum for a non-str x, so the
+     * symbol's own parameter kind is not what the argument meets.  Keep in
+     * step with llvm.c; a redirect missing here is a false diagnostic. */
+    static const char *redirected[] = { "tk_json_enc_w", NULL };
+    for (int r = 0; sym && redirected[r]; r++)
+        if (strcmp(sym, redirected[r]) == 0) return;
+    const char *kinds = glue_param_kinds(sym);
+    if (!kinds) return;
+    int actual = call->child_count - 1;
+    if (actual != (int)strlen(kinds)) return;
+    unsigned bytemask = glue_byte_params(sym);
+
+    for (int a = 1; a < call->child_count; a++) {
+        int idx = a - 1;
+        char k = kinds[idx];
+        const Node *arg = call->children[a];
+        if (!arg || (k != 'S' && k != 'A')) continue;
+        Type *at = arg->rtype;
+        if (!at) continue;
+        int clash = 0;
+        if (k == 'S')
+            clash = at->kind == TY_ARRAY || at->kind == TY_MAP
+                 || at->kind == TY_STRUCT;
+        else
+            clash = at->kind == TY_STR
+                 && !(idx < 32 && (bytemask & (1u << idx)));
+        if (!clash) continue;
+        if (!tc_first_report(cx, arg) || !tc_can_emit(cx)) continue;
+        const char *want = k == 'S' ? "str" : "an array";
+        char msg[448];
+        snprintf(msg, sizeof msg,
+                 "type mismatch: expected %s%s%s, got '%s' — argument %d of "
+                 "'%s.%s' is read by the runtime as %s",
+                 k == 'S' ? "'" : "", want, k == 'S' ? "'" : "",
+                 type_name(at), idx + 1, mpath, member,
+                 k == 'S' ? "a C string, so a handle of another kind is "
+                            "read as text"
+                          : "an array whose length precedes its first "
+                            "element, which a str does not have");
+        diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
+                  "expected", want, "got", type_name(at),
+                  (const char *)NULL);
+    }
 }
 
 /* ── 124.2f: a `str` where the runtime unpacks a toke `[byte]` array ──────
@@ -3028,6 +3388,7 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
     char nb[128]; TOKSTR(nb, cx->src, recv);
     int nlen = (int)strlen(nb);
     if (!nlen || is_param(cx, nb, nlen)) return 0;
+    if (arm_bind_lookup(cx, nb, nlen, recv)) return 0;   /* 127.195 */
     const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, recv);
     if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return 0;
     const Node *init = bn->children[1];
@@ -3272,6 +3633,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);
         int nlen=(int)strlen(nb);
+        /* 127.195: an `mt` arm binding shadows everything outside its arm. */
+        if (cx->armb_count>0) {
+            Type *abt=arm_bind_lookup(cx,nb,nlen,node);
+            if (abt) return abt;
+        }
         /* 127.136 — PARAMETERS ARE LOOKED UP FIRST, before module scope.
          *
          * This lookup used to consult module scope first and fall back to the
@@ -3655,7 +4021,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * so the module function `sum` must not be the signature checked. */
         if (d&&d->def_node&&d->def_node->kind==NODE_FUNC_DECL
             &&node->children[0]->kind==NODE_IDENT
-            &&local_in_force(cx,nb,(int)strlen(nb),node)) {
+            &&(local_in_force(cx,nb,(int)strlen(nb),node)
+               ||arm_bind_lookup(cx,nb,(int)strlen(nb),node))) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
             return mk_type(A,TY_UNKNOWN);
         }
@@ -3673,6 +4040,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * to the digest of the empty string, and crashed on the second
              * call. */
             check_stdlib_byte_args(cx,node);
+            /* 127.201: and a str/array representation clash against the
+             * parameter kinds read out of the glue. */
+            check_stdlib_param_kinds(cx,node);
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
             check_recv_method_call(cx,node);
@@ -4221,6 +4591,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_MATCH_STMT: {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
+        int discarded=(cx->mt_discard==node);
+        const Node *arm_body=NULL;   /* 127.195: the arm that set arm_type */
+        int has_result_arm=0;   /* 127.202 */
         /* Collect match arm variant names for sum type exhaustiveness check */
         const char *arm_tags[64]; int arm_tag_count=0;
         for (int i=1;i<node->child_count;i++) {
@@ -4234,17 +4607,84 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (arm->child_count>0&&arm->children[0]&&arm->children[0]->kind==NODE_TYPE_IDENT) {
                 char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
                 if (arm_tag_count<64) arm_tags[arm_tag_count++]=ty_intern(A,tb);
+                if (!strcmp(tb,"ok")||!strcmp(tb,"Ok")||!strcmp(tb,"err")||!strcmp(tb,"Err"))
+                    has_result_arm=1;
             }
-            Type *at=arm->child_count>1&&arm->children[1]?infer(cx,arm->children[1]):mk_type(A,TY_VOID);
-            if (!arm_type) { arm_type=at; }
-            else if (at->kind!=TY_UNKNOWN&&arm_type->kind!=TY_UNKNOWN&&!types_equal(arm_type,at)) {
-                if (tc_can_emit(cx)) {
-                    char msg[256];
-                    snprintf(msg,sizeof(msg),"match arms have inconsistent types: '%s' vs '%s'",type_name(arm_type),type_name(at));
-                    diag_emit(DIAG_ERROR,E4011,arm->start,arm->line,arm->col,msg,
-                              "expected",type_name(arm_type),"got",type_name(at),
-                              "fix","ensure all match arms return the same type",(const char*)NULL);
-                }
+            /* 127.195: the arm's BODY is children[2]; children[1] is the
+             * binding name.  Until this was fixed only the binding was
+             * inferred, so no arm body was ever type-checked and E4011
+             * compared binding types.  The binding is in force while the
+             * body is inferred (arm_bind_type), shadowing any parameter,
+             * local or module name it collides with, as codegen binds it. */
+            if (arm->child_count<3||!arm->children[2]) continue;
+            const Node *body=arm->children[2];
+            int pushed=0;
+            if (arm->children[1]&&arm->children[1]->kind==NODE_IDENT
+                &&cx->armb_count<TKC_MAX_ARM_BINDS) {
+                int k=cx->armb_count++;
+                cx->armb[k].name=cx->src+arm->children[1]->tok_start;
+                cx->armb[k].len=arm->children[1]->tok_len;
+                cx->armb[k].ty=arm_bind_type(cx,node,arm);
+                cx->armb[k].body=body;
+                pushed=1;
+            }
+            /* An arm body of a discarded match is itself discarded. */
+            if (discarded&&body->kind==NODE_MATCH_STMT) cx->mt_discard=body;
+            Type *at=infer(cx,body);
+            if (pushed) cx->armb_count--;
+            /* An early-return arm leaves the function; it yields no value
+             * (codegen skips it for the same reason, 114.47).  An arm whose
+             * type is unresolved is tolerated, as before. */
+            if (body->kind==NODE_RETURN_STMT||!at||at->kind==TY_UNKNOWN) continue;
+            /* An `$err` arm whose body is a call is a call made for its
+             * effect on the failure path — `$err:e failret(e.msg)`, a test
+             * helper that records the failure and returns false (toke-ooke
+             * test_template.tk).  Its value is a filler, as `0` is below;
+             * it is not compared.  This misses a real conversion call of the
+             * wrong type in an `$err` arm. */
+            if (body->kind==NODE_CALL_EXPR&&arm->children[0]) {
+                char etag[8]; TOKSTR(etag,cx->src,arm->children[0]);
+                if (!strcmp(etag,"err")||!strcmp(etag,"Err")) continue;
+            }
+            if (!arm_type) { arm_type=at; arm_body=body; continue; }
+            /* The null filler: a literal `0` or `false` arm beside an arm of
+             * a pointer type (str, array, map, struct) is the idiom
+             * `let cfg=mt r {$ok:v v;$err:e 0}` — codegen stores a null
+             * pointer, which is what was written (toke-ooke's tests use it,
+             * guarded by an earlier ok/err check).  Tolerated, and the
+             * pointer type becomes the one later arms are compared with. */
+            if (ptr_kind(arm_type)&&null_filler(cx,body)) continue;
+            if (ptr_kind(at)&&null_filler(cx,arm_body)) { arm_type=at; arm_body=body; continue; }
+            /* E4011 only where the match's value is used.  A match standing
+             * as a statement discards its value, and its arms are free to be
+             * a void call in one arm and a value in another. */
+            if (discarded||types_equal(arm_type,at)) continue;
+            /* u64 beside i64 (`$ok:v v.len; $err:e 0`) is the widening
+             * types_compat already grants a value flow; bool is not. */
+            if ((at->kind==TY_U64&&arm_type->kind==TY_I64)
+                ||(at->kind==TY_I64&&arm_type->kind==TY_U64)) continue;
+            if (tc_first_report(cx,arm)&&tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),"match arms have inconsistent types: '%s' vs '%s'",type_name(arm_type),type_name(at));
+                /* No `fix`: which arm is wrong is not decidable (errors.md
+                 * E4011: fix field absent). */
+                diag_emit(DIAG_ERROR,E4011,body->start,body->line,body->col,msg,
+                          "expected",type_name(arm_type),"got",type_name(at),
+                          (const char*)NULL);
+            }
+        }
+        /* 127.202: a result match over a known non-union scalar. */
+        if (has_result_arm) {
+            const char *st=mt_nonunion_scalar(cx,node->children[0],0);
+            if (st&&tc_first_report(cx,node->children[0])&&tc_can_emit(cx)) {
+                const Node *sn=node->children[0];
+                char msg[384];
+                snprintf(msg,sizeof(msg),
+                    "type mismatch: expected an error union 'T!E', got '%s' — a "
+                    "'$ok'/'$err' match tests the value against 0, so a plain '%s' "
+                    "takes '$err' whenever it is 0",st,st);
+                diag_emit(DIAG_ERROR,E4031,sn->start,sn->line,sn->col,msg,
+                          "expected","T!E","got",st,(const char*)NULL);
             }
         }
         /* Bool exhaustiveness check */
@@ -4291,7 +4731,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 }
             }
         }
-        return arm_type?arm_type:mk_type(A,TY_VOID);
+        /* 127.195: no arm yielded a known type (every arm unresolved or an
+         * early return) — the match's type is unknown, not void. */
+        if (!arm_type) return mk_type(A,node->child_count>1?TY_UNKNOWN:TY_VOID);
+        return arm_type;
     }
 
     /* ── Arena statement ──────────────────────────────────────────────
@@ -4412,6 +4855,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     diag_emit(DIAG_ERROR,E5002,ch->start,ch->line,ch->col,
                         "unreachable code after return statement","fix",(const char*)NULL);
                 break; /* stop checking after first unreachable */
+            }
+            /* 127.195: a match standing as a statement discards its value,
+             * so E4011 (arm agreement) does not apply to it. */
+            {
+                const Node *ms=ch;
+                if (ms->kind==NODE_EXPR_STMT&&ms->child_count>0) ms=ms->children[0];
+                if (ms&&ms->kind==NODE_MATCH_STMT) cx->mt_discard=ms;
             }
             last=infer(cx,ch);
             tail=ch;
@@ -4534,6 +4984,7 @@ int type_check(const Node *ast, const char *src,
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
     cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
     cx.reported_count=0;
+    cx.armb_count=0; cx.mt_discard=NULL;
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;

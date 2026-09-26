@@ -1,16 +1,16 @@
 {
  "story": "131.2",
  "tkc_version": "toke 3.0.0",
- "tkc_sha": "c4625aeb421fee33f46741aeefb3aabb9cd4f17e",
- "tkc_bin_sha": "9eb3ef461b64c5bf2b0fb9f2ec0b8944562ff88a9c104aaab8701a317b4f2957",
+ "tkc_sha": "08c1bbd09971f8ab125f8f4d03120a5594083c2e",
+ "tkc_bin_sha": "87014cad7a5fd48a81c71546427418c84b3d48bc520319195c75c7c6f79da309",
  "tkc_path": "tkc",
  "generated": "2026-09-25",
  "summary": {
   "probes": 136,
-  "check_ok": 106,
-  "build_ok": 106,
+  "check_ok": 105,
+  "build_ok": 105,
   "run_ok": 105,
-  "correct": 108
+  "correct": 109
  },
  "results": [
   {
@@ -1297,23 +1297,23 @@
   {
    "probe": "join_swapped",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4031"
+    ]
    },
    "build": {
-    "exit": 0,
-    "ok": true,
-    "codes": [],
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4031"
+    ],
     "undefined_symbol": null
    },
-   "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
-   },
+   "run": null,
    "expected": "#checkfail",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "keys_method_direct",

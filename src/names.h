@@ -183,6 +183,9 @@ typedef struct {
                                  * an `mt` arm binds the ok payload */
     int          param_count;   /* declared arity                        */
     const char **param_types;   /* arena array of toke type spellings    */
+    int          abi_ret;       /* 127.202: the record is `"gen":"abi"`,
+                                 * so `ret` is an ABI placeholder (i64),
+                                 * not a declared toke type               */
 } ImportedFunc;
 
 typedef struct {

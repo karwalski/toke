@@ -36,9 +36,9 @@ and when a fresh probe run disagrees with the committed JSON
 |---|---|
 | measured | 2026-09-25 |
 | compiler | `toke 3.0.0` |
-| binary sha256 | `9eb3ef461b64c5bf2b0fb9f2ec0b8944562ff88a9c104aaab8701a317b4f2957` |
-| source tree | `c4625aeb421fee33f46741aeefb3aabb9cd4f17e` |
-| result | **108 of 136 probes correct** (check clean 106, build clean 106, ran clean 105) |
+| binary sha256 | `87014cad7a5fd48a81c71546427418c84b3d48bc520319195c75c7c6f79da309` |
+| source tree | `08c1bbd09971f8ab125f8f4d03120a5594083c2e` |
+| result | **109 of 136 probes correct** (check clean 105, build clean 105, ran clean 105) |
 
 The `toke` binary is an untracked local build artifact, so the source SHA
 identifies the tree the probes were **measured in**, not provably the tree the
@@ -168,7 +168,7 @@ build clean, binary dies; **WRONG** = runs, wrong output.
 | split | `s.split(x;",")` | ok | ok | ok | yes | element interpolation `"\(w.get(1))"` correct (tagged `@str`) |
 | fields | `s.fields(x)` | ok | ok | ok | yes | direct and interpolated reads both correct — **127.9 no longer reproduces**, corrected 136.53 |
 | join | `s.join("-";p)` | ok | ok | ok | yes | canonical (separator first) |
-| join | `s.join(p;"-")` (swapped) | ok | ok | **SIGSEGV** | no | **127.5 STILL OPEN** — no E4031 at check time; the binary dies at runtime (exit 139). **The one row in this document that still records a live defect** |
+| join | `s.join(p;"-")` (swapped) | **E4031** | – | – | yes | **127.201 (127.5's checker half)**: E4031 at check time on both arguments — the glue reads `sep` as a C string and `arr` as an array, and the arguments are the other way round. Before, it checked clean, built, and died at runtime (exit 139) |
 | startswith / endswith | `s.startswith(x;"a")` / `s.endswith(x;"b")` | ok | ok | ok | yes | bool renders `1` |
 | contains | `s.contains(x;"b")` | ok | ok | ok | yes | bool renders `1` |
 | indexof | `s.indexof(x;"c")` | ok | ok | ok | yes | |

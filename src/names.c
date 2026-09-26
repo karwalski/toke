@@ -907,10 +907,6 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
  *   name  — the predefined identifier as a C string literal.
  */
 
-/* Field cap for a .tki type record — matches the 64-field cap the type
- * checker applies to a local `t=` declaration (types.c resolve_type). */
-#define TKC_MAX_TKI_FIELDS 64
-
 /* 136.1: parameter cap for a .tki func record. Generously above
  * TKC_MAX_PARAMS (16) so a declaration the compiler would reject anyway is
  * still read in full rather than silently truncated into a false arity. */
@@ -1075,6 +1071,7 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
     }
     env->ifuncs[env->ifunc_count].param_types = ptypes;
     env->ifuncs[env->ifunc_count].param_count = ptypes ? pcount : 0;
+    env->ifuncs[env->ifunc_count].abi_ret = 0;
     env->ifunc_count++;
 }
 
@@ -1169,7 +1166,16 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     }
                 }
             }
+            int before = env->ifunc_count;
             nameenv_add_ifunc(env, arena, alias, name, ret, okret, ptypes, pcount);
+            {   /* 127.202: a generated ABI record's return is a placeholder */
+                char gen[16] = {0};
+                if (env->ifunc_count > before
+                    && tki_str_value(tki_obj_key(rec, end, "gen"), end,
+                                     gen, (int)sizeof gen)
+                    && strcmp(gen, "abi") == 0)
+                    env->ifuncs[env->ifunc_count - 1].abi_ret = 1;
+            }
             continue;
         }
         if (strcmp(kind, "type") != 0) continue;
@@ -1189,11 +1195,29 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
         if (fa && fa < end && *fa == '[') {
             const char *fe = tki_scan_value(fa, end);
             if (fe) {
-                const char *names_buf[TKC_MAX_TKI_FIELDS];
-                const char *types_buf[TKC_MAX_TKI_FIELDS];
+                /* 127.205: sized to the record, not capped at 64 — a wider
+                 * imported struct lost its high fields exactly as a local
+                 * one did in types.c.  Every field record is a `{`, so
+                 * counting the top-level objects bounds the count. */
+                int fcap = 0;
+                {
+                    const char *q = fa + 1;
+                    while (q < fe) {
+                        while (q < fe && *q != '{') q++;
+                        if (q >= fe) break;
+                        const char *qe = tki_scan_value(q, fe);
+                        if (!qe) break;
+                        fcap++;
+                        q = qe;
+                    }
+                }
+                const char **names_buf = fcap > 0 ? (const char **)arena_alloc(
+                    arena, fcap * (int)sizeof(const char *)) : NULL;
+                const char **types_buf = fcap > 0 ? (const char **)arena_alloc(
+                    arena, fcap * (int)sizeof(const char *)) : NULL;
                 int fc = 0;
                 const char *fp = fa + 1;
-                while (fp < fe && fc < TKC_MAX_TKI_FIELDS) {
+                while (names_buf && types_buf && fp < fe && fc < fcap) {
                     while (fp < fe && (*fp == ' ' || *fp == '\t' ||
                                        *fp == '\n' || *fp == '\r' ||
                                        *fp == ',')) fp++;
@@ -1218,19 +1242,9 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     fp = fend;
                 }
                 if (fc > 0) {
-                    const char **fn_arr = (const char **)arena_alloc(
-                        arena, fc * (int)sizeof(const char *));
-                    const char **ft_arr = (const char **)arena_alloc(
-                        arena, fc * (int)sizeof(const char *));
-                    if (fn_arr && ft_arr) {
-                        memcpy(fn_arr, names_buf,
-                               (size_t)fc * sizeof(const char *));
-                        memcpy(ft_arr, types_buf,
-                               (size_t)fc * sizeof(const char *));
-                        it.field_names = fn_arr;
-                        it.field_types = ft_arr;
-                        it.field_count = fc;
-                    }
+                    it.field_names = names_buf;
+                    it.field_types = types_buf;
+                    it.field_count = fc;
                 }
             }
         }
@@ -1368,6 +1382,41 @@ static const char *foreign_keyword_fix(const char *name) {
  *   scope     — the innermost scope at the point of reference.
  *   had_error — out-parameter; set to 1 if the identifier is unresolved.
  */
+/*
+ * 127.200 — which declarations E3011's "did you mean" may offer.
+ *
+ * s_markers holds the error markers resolve_ident inserts for undeclared
+ * names (DECL_PREDEFINED, no def_node — indistinguishable by kind from a
+ * real predefined).  Suggestions are only computed while fewer than
+ * MAX_NAME_ERRORS names have been reported, so no marker that could be a
+ * candidate falls outside the array.
+ *
+ * A `$name` (NODE_TYPE_IDENT) names a type or a variant: a declared type, or
+ * a seeded predefined (built-in and imported types, declared variants) other
+ * than true/false and the ok/err/none tags.  A bare name is a
+ * value: anything but a type, and of the predefineds only true/false —
+ * built-in type names, variant tags and imported type names are not values
+ * (137.4 / E4033).
+ */
+static const Decl *s_markers[MAX_NAME_ERRORS + 1];
+static int s_marker_count = 0;
+
+static int suggestion_fits(const Decl *d, int want_type) {
+    for (int i = 0; i < s_marker_count; i++)
+        if (s_markers[i] == d) return 0;
+    int is_bool_lit = strcmp(d->name, "true") == 0 || strcmp(d->name, "false") == 0;
+    if (want_type) {
+        if (d->kind == DECL_TYPE) return 1;
+        if (d->kind != DECL_PREDEFINED || is_bool_lit) return 0;
+        /* the result/option tags are seeded values of no declared type */
+        return strcmp(d->name, "ok") != 0 && strcmp(d->name, "err") != 0
+            && strcmp(d->name, "none") != 0;
+    }
+    if (d->kind == DECL_TYPE) return 0;
+    if (d->kind == DECL_PREDEFINED) return is_bool_lit;
+    return 1;
+}
+
 static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
     const char *name = src + node->tok_start;
@@ -1428,9 +1477,15 @@ static void resolve_ident(const Node *node, const char *src,
             if (!fix) {
                 const char *best_name = NULL;
                 int best_dist = 4; /* max distance 3 */
+                int want_type = (node->kind == NODE_TYPE_IDENT);
                 for (const Scope *sc = scope; sc; sc = sc->parent) {
                     for (const Decl *d = sc->head; d; d = d->next) {
                         if (!d->name) continue;
+                        /* 127.200: suggest only a name of the kind the
+                         * position needs.  `$iorec` was offered the module
+                         * alias 'io', `foox` the type 'bool', and a second
+                         * misspelling the first one's error marker. */
+                        if (!suggestion_fits(d, want_type)) continue;
                         int dist = tk_edit_distance(nbuf, d->name);
                         if (dist < best_dist) {
                             best_dist = dist;
@@ -1459,6 +1514,8 @@ static void resolve_ident(const Node *node, const char *src,
                 ed->name     = arena_intern(s_name_env->arena, name, len);
                 ed->name_len = len;
                 ed->kind     = DECL_PREDEFINED; /* treated as built-in "error" */
+                if (s_marker_count < MAX_NAME_ERRORS + 1)
+                    s_markers[s_marker_count++] = ed;
                 ed->def_node = NULL;
                 ed->next     = scope->head;
                 scope->head  = ed;
@@ -1994,6 +2051,7 @@ int resolve_names(const Node *ast, const char *src,
 
     /* Reset the multi-error counter (story 84.1.8) */
     s_name_error_count = 0;
+    s_marker_count = 0;   /* 127.200 */
 
     /* Seed predefined identifiers */
     static const char *predefined[] = {

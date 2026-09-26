@@ -5,4 +5,7 @@ input: |
   f=bad():i64{<0};
 expected_exit_code: 1
 expected_error_codes: ["E2001"]
-expected_fix: ""
+# 127.200: this file said expected_fix: "", which asserted nothing.  The fix
+# below is what the compiler emits; it is guidance, not a deterministic
+# repair (AGENTS §6) — reported as a defect, pinned here so it cannot drift.
+expected_fix: add 'm=modulename;' as the first declaration

@@ -31,6 +31,7 @@ TOKE_DIR = Path(__file__).resolve().parent.parent
 STDLIB_DIR = TOKE_DIR / "src" / "stdlib"
 OUTPUT = TOKE_DIR / "src" / "stdlib_decls_gen.h"
 DUMMY_OUTPUT = TOKE_DIR / "src" / "stdlib_dummyarg_gen.h"
+PARAMKIND_OUTPUT = TOKE_DIR / "src" / "stdlib_paramkind_gen.h"
 
 # Map C types to LLVM IR types
 TYPE_MAP = {
@@ -271,6 +272,158 @@ def generate_dummy_header(symbols: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ── story 127.201: which parameters a glue wrapper dereferences, and as what ──
+#
+# A module-form stdlib call (`s.join(p;"-")`) is checked for arity against the
+# glue (136.1/127.61) but its argument TYPES were not checked at all: the
+# `.tki` parameter types of a std module are ABI placeholders (`"gen":"abi"`,
+# every one `i64`, 127.165), so they cannot be trusted, and the swapped
+# `str.join` above passed `--check` and died with SIGSEGV.  124.2f grounded one
+# kind — a `[byte]` parameter — on the glue body; this grounds the two
+# representations every handle parameter actually has:
+#
+#   S  the body casts the parameter to `char *` / `const char *` (or the C
+#      parameter is declared `const char *`): a toke `str`;
+#   A  the body casts it to `int64_t *` / `uint64_t *` or hands it to
+#      tk_bytes_unpack: a toke array, whose length word is at ptr[-1];
+#   .  neither, or BOTH (a parameter read both ways is polymorphic and is
+#      not established) — never checked.
+#
+# A wrapper that passes a parameter straight on to another tk_*_w wrapper
+# inherits that wrapper's kind for it (to a fixpoint), so the thin aliases
+# (`tk_array_join_w` -> `tk_arr_join_w`) are grounded too.  A symbol defined
+# more than once (platform variants) takes the union, so a disagreement makes
+# the parameter `.`.  Nothing is read from the `.tki`.
+
+_WRAP_HEAD = re.compile(
+    r'(?:^|\n)(?:(?:static|inline)\s+)*int64_t\s+(tk_\w+_w)\s*\('
+)
+_CALL_W = re.compile(r'\b(tk_\w+_w)\s*\(')
+
+
+def _strip_c(body: str) -> str:
+    body = re.sub(r'/\*.*?\*/', ' ', body, flags=re.S)
+    body = re.sub(r'//[^\n]*', ' ', body)
+    return re.sub(r'"(?:\\.|[^"\\])*"', '""', body)
+
+
+def _call_args(text: str, popen: int) -> list[str]:
+    pclose = _balanced(text, popen, "(", ")")
+    if pclose < 0:
+        return []
+    out, depth, cur = [], 0, ""
+    for ch in text[popen + 1:pclose]:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+            continue
+        cur += ch
+    out.append(cur.strip())
+    return out
+
+
+def scan_param_kinds() -> dict[str, str]:
+    """Per tk_*_w wrapper, one of S/A/. per parameter (see above)."""
+    defs: dict[str, list[dict]] = {}
+    for path in sorted(STDLIB_DIR.glob("*.c")):
+        text = path.read_text(errors="replace")
+        for m in _WRAP_HEAD.finditer(text):
+            popen = text.index("(", m.end() - 1)
+            pclose = _balanced(text, popen, "(", ")")
+            if pclose < 0:
+                continue
+            if not text[pclose + 1:pclose + 64].lstrip().startswith("{"):
+                continue                      # a prototype, not a definition
+            bopen = text.index("{", pclose)
+            bclose = _balanced(text, bopen, "{", "}")
+            if bclose < 0:
+                continue
+            ptxt = text[popen + 1:pclose].strip()
+            params = [] if ptxt in ("", "void") else [p.strip() for p in ptxt.split(",")]
+            names, ctypes = [], []
+            for p in params:
+                pm = re.match(r'(.*?)(\w+)\s*$', p)
+                names.append(pm.group(2) if pm else "")
+                ctypes.append(pm.group(1).strip() if pm else "")
+            defs.setdefault(m.group(1), []).append(
+                {"names": names, "ctypes": ctypes,
+                 "body": _strip_c(text[bopen + 1:bclose])})
+    cast = r'\(\s*(?:const\s+)?%s\s*\*\s*\)\s*(?:\(\s*u?intptr_t\s*\)\s*)?\(?\s*%s\b'
+    kinds: dict[str, list[list[set]]] = {}
+    for sym, dl in defs.items():
+        kinds[sym] = []
+        for d in dl:
+            ks = []
+            for n, ct in zip(d["names"], d["ctypes"]):
+                k = set()
+                if re.match(r'(?:const\s+)?char\s*\*', ct):
+                    k.add("S")
+                elif re.sub(r'\s+', '', ct) != "int64_t":
+                    k.add("X")                # not a toke ABI slot: never judged
+                if n and re.search(cast % ("char", re.escape(n)), d["body"]):
+                    k.add("S")
+                if n and re.search(cast % ("u?int64_t", re.escape(n)), d["body"]):
+                    k.add("A")
+                if n and re.search(r'\btk_bytes_unpack\s*\(\s*%s\b' % re.escape(n), d["body"]):
+                    k.add("A")
+                ks.append(k)
+            kinds[sym].append(ks)
+    changed = True
+    while changed:
+        changed = False
+        for sym, dl in defs.items():
+            for di, d in enumerate(dl):
+                for m in _CALL_W.finditer(d["body"]):
+                    callee = m.group(1)
+                    if callee == sym or callee not in kinds:
+                        continue
+                    for pos, a in enumerate(_call_args(d["body"], m.end() - 1)):
+                        a = re.sub(r'^\(\s*int64_t\s*\)\s*(?:\(\s*intptr_t\s*\)\s*)?', '', a)
+                        if a not in d["names"]:
+                            continue
+                        i = d["names"].index(a)
+                        add = set()
+                        for ck in kinds[callee]:
+                            if pos < len(ck):
+                                add |= ck[pos] & {"S", "A"}
+                        if not add <= kinds[sym][di][i]:
+                            kinds[sym][di][i] |= add
+                            changed = True
+    out = {}
+    for sym, kl in kinds.items():
+        arity = {len(k) for k in kl}
+        if len(arity) != 1:
+            continue                          # variants disagree on arity
+        col = []
+        for i in range(arity.pop()):
+            u = set().union(*(k[i] for k in kl))
+            col.append("S" if u == {"S"} else "A" if u == {"A"} else ".")
+        if "S" in col or "A" in col:
+            out[sym] = "".join(col)
+    return out
+
+
+def generate_paramkind_header(kinds: dict[str, str]) -> str:
+    lines = [
+        "/* stdlib_paramkind_gen.h — AUTO-GENERATED by scripts/gen_stdlib_decls.py",
+        " * Do not edit manually. Regenerate with: python3 scripts/gen_stdlib_decls.py",
+        " *",
+        " * Story 127.201. Per glue wrapper, the representation the body reads each",
+        " * parameter as: S = a C string (toke str), A = an i64 array with its length",
+        " * at ptr[-1] (toke array), . = not established. Grounded on the glue bodies,",
+        f" * never on the .tki. {len(kinds)} symbols with at least one S or A.",
+        " */",
+        "",
+    ]
+    for sym in sorted(kinds):
+        lines.append(f'    {{ "{sym}", "{kinds[sym]}" }},')
+    return "\n".join(lines) + "\n"
+
+
 def load_manual_decls() -> set:
     """Read existing manual declarations from llvm.c to avoid duplicates."""
     llvm_path = TOKE_DIR / "src" / "llvm.c"
@@ -319,6 +472,10 @@ def main():
     dummies = scan_dummy_arg_symbols()
     DUMMY_OUTPUT.write_text(generate_dummy_header(dummies))
     print(f"Written to {DUMMY_OUTPUT} ({len(dummies)} ignored-parameter symbols)")
+
+    kinds = scan_param_kinds()
+    PARAMKIND_OUTPUT.write_text(generate_paramkind_header(kinds))
+    print(f"Written to {PARAMKIND_OUTPUT} ({len(kinds)} symbols with a grounded parameter)")
 
     # Also print stats by source file
     from collections import Counter
