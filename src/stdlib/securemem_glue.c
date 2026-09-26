@@ -49,8 +49,7 @@ int64_t tk_securemem_wipe_w(int64_t buf_ptr) {
 }
 
 /* securemem.sweep() — free all expired buffers, return count freed */
-int64_t tk_securemem_sweep_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_securemem_sweep_w(void) {
     return (int64_t)tk_securemem_sweep();
 }
 
@@ -58,7 +57,6 @@ int64_t tk_securemem_sweep_w(int64_t dummy) {
  * 136.5: the core has existed since 72.3.3 as tk_securemem_isavailable(); only
  * this wrapper was missing, so the .tki exported a name with no symbol behind
  * it. Same shape as keychain.isavailable in 136.3. */
-int64_t tk_securemem_isavailable_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_securemem_isavailable_w(void) {
     return (int64_t)tk_securemem_isavailable();
 }

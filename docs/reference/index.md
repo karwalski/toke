@@ -185,3 +185,9 @@ because a count repeated by hand is a count that drifts. That page is generated 
 `make check-tki` fails both on drift between the two and on a skiplist entry
 whose export has since been implemented. Do not restate the list here or
 anywhere else — link to the generated page (story 136.7).
+
+Some exports are callable but **not** API: plumbing that interface generation
+reached, marked `"internal": true` in the `.tki`. They, and every runtime
+symbol that no interface declares, are listed on the generated
+[Stdlib Symbols That Are Not API](/docs/reference/stdlib-internal/) page
+(stories 136.54, 136.34) — do not build on anything listed there.

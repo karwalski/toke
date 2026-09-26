@@ -171,8 +171,7 @@ int64_t tk_process_exec_w(int64_t cmd) {
 }
 
 /* process.homedir() — return user's home directory */
-int64_t tk_process_homedir_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_process_homedir_w(void) {
     const char *home = getenv("HOME");
     if (!home) home = "/tmp";
     return (int64_t)(intptr_t)strdup(home);
@@ -201,6 +200,6 @@ int64_t tk_process_spawndetached_w(int64_t cmd) {
 }
 
 /* std.homedir() — alias exposed at top level */
-int64_t tk_std_homedir_w(int64_t dummy) {
-    return tk_process_homedir_w(dummy);
+int64_t tk_std_homedir_w(void) {
+    return tk_process_homedir_w();
 }

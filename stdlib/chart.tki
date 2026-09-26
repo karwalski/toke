@@ -116,14 +116,13 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "internal": true
     },
     {
       "kind": "func",
       "name": "chart.new",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },
@@ -135,7 +134,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "internal": true
     }
   ]
 }

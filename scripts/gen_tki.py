@@ -58,10 +58,12 @@ this script exists to end:
 
 That single rule covers all ten exemptions without naming one of them:
 `tk_infer_load_w(model_path)`, `tk_mlx_generate_w`, `tk_mdns_advertise_w` and
-`tk_tls_genselfsigned_w` (stubs, routed to 136.7/136.44) and
-`tk_mlx_isavailable_w`, `tk_securemem_isavailable_w`, `tk_securemem_sweep_w`
-(the dummy convention, routed to 136.14).  It generalises the one-parameter
-analysis in gen_stdlib_decls.py (127.61) to any arity.
+`tk_tls_genselfsigned_w` (stubs, routed to 136.7/136.44).  The dummy
+convention it also covered is gone (136.14/135.17b): the 23 glue functions
+that took an ignored `int64_t dummy` now take `(void)`, so their interfaces
+are corrected to zero parameters by rule (1) like any other arity, and
+check_tki_coverage.py fails on a reintroduced dummy.  It generalises the
+one-parameter analysis in gen_stdlib_decls.py (127.61) to any arity.
 
 It follows that this script MUST run after the builtin table agrees with the
 C sources -- see check_tki_coverage.py's decl-vs-C gate.  A wrong entry in
@@ -273,7 +275,20 @@ def reachable_methods(mod: str, explicit, patterns, defs) -> dict[str, str]:
 
 # ── merge ───────────────────────────────────────────────────────────────────
 
-def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread):
+def new_export(mod: str, method: str, sym: str, ps, ret, defs) -> dict:
+    """A generated export.  136.54: glue defined in ANOTHER module's file is
+    reachable plumbing until someone decides otherwise, so it is added as
+    `"internal": true` -- callable and checked, but listed only on
+    docs/reference/stdlib-internal.md.  Publishing it is a deliberate edit to
+    `"internal": false`, which check-tki requires for every such export."""
+    e = {"kind": "func", "name": f"{mod}.{method}", "params": ps,
+         "return": ret, "gen": "abi"}
+    if C.is_cross_module(mod, sym, defs):
+        e["internal"] = True
+    return e
+
+
+def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread, defs):
     """Return (new_json_text_or_None, actions) for one .tki file."""
     data = json.loads(path.read_text())
     exports = data.get("exports", [])
@@ -323,8 +338,7 @@ def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread):
             continue
         sym = reach[method]
         ps, ret = types.get(sym, ([], "i64"))
-        exports.append({"kind": "func", "name": f"{mod}.{method}",
-                        "params": ps, "return": ret, "gen": "abi"})
+        exports.append(new_export(mod, method, sym, ps, ret, defs))
         actions.append(f"ADD     {mod}.{method} -> {sym}")
 
     # An EXEMPT action changes nothing on disk -- it records a disagreement
@@ -369,8 +383,7 @@ def main() -> int:
             if not ADDABLE.match(method):
                 continue
             ps, ret = types.get(reach[method], ([], "i64"))
-            exports.append({"kind": "func", "name": f"{mod}.{method}",
-                            "params": ps, "return": ret, "gen": "abi"})
+            exports.append(new_export(mod, method, reach[method], ps, ret, defs))
         if not exports:
             # A registered module with no reachable surface at all. Writing an
             # empty interface would only make the gate green over a module
@@ -396,7 +409,7 @@ def main() -> int:
         if mod not in registered:
             continue  # no glue table entry; nothing to derive from
         reach = reachable_methods(mod, explicit, patterns, defs)
-        text, actions = merge(path, mod, reach, arity, types, nopread)
+        text, actions = merge(path, mod, reach, arity, types, nopread, defs)
         all_actions += actions
         if text is None:
             continue

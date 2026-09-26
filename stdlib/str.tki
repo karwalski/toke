@@ -429,7 +429,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "internal": false
     },
     {
       "kind": "func",
@@ -786,27 +787,21 @@
     {
       "kind": "func",
       "name": "str.newarray",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },
     {
       "kind": "func",
       "name": "str.nowiso8601",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },
     {
       "kind": "func",
       "name": "str.nowunix",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },

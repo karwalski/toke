@@ -47,27 +47,28 @@
       ]
     },
     {
-      "kind": "sum_type",
+      "kind": "type",
       "name": "MdnsErr",
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "NotAvailable",
+          "name": "$notavailable",
           "type": "str"
         },
         {
-          "name": "AlreadyAdvertising",
+          "name": "$alreadyadvertising",
           "type": "str"
         },
         {
-          "name": "NotFound",
+          "name": "$notfound",
           "type": "str"
         },
         {
-          "name": "Timeout",
+          "name": "$timeout",
           "type": "str"
         },
         {
-          "name": "Internal",
+          "name": "$internal",
           "type": "str"
         }
       ]

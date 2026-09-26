@@ -36,12 +36,13 @@
       ]
     },
     {
-      "kind": "sum_type",
+      "kind": "type",
       "name": "VecErr",
-      "variants": [
-        {"name": "IoErr",      "type": "str"},
-        {"name": "DimMismatch","type": "str"},
-        {"name": "NotFound",   "type": "str"}
+      "is_sum": true,
+      "fields": [
+        {"name": "$ioerr",       "type": "str"},
+        {"name": "$dimmismatch", "type": "str"},
+        {"name": "$notfound",    "type": "str"}
       ]
     },
     {"kind": "func", "name": "vecstore.open",         "params": ["str"],                                     "return": "VecStore!VecErr"},

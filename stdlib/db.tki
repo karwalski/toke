@@ -13,23 +13,24 @@
       ]
     },
     {
-      "kind": "sum_type",
+      "kind": "type",
       "name": "DbErr",
-      "variants": [
+      "is_sum": true,
+      "fields": [
         {
-          "name": "Connection",
+          "name": "$connection",
           "type": "str"
         },
         {
-          "name": "Query",
+          "name": "$query",
           "type": "str"
         },
         {
-          "name": "NotFound",
+          "name": "$notfound",
           "type": "str"
         },
         {
-          "name": "Constraint",
+          "name": "$constraint",
           "type": "str"
         }
       ]
@@ -163,9 +164,7 @@
     {
       "kind": "func",
       "name": "db.nowms",
-      "params": [
-        "i64"
-      ],
+      "params": [],
       "return": "i64",
       "gen": "abi"
     },

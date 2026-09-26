@@ -48,10 +48,10 @@ f=why():i64{
 
 | Variant | Meaning |
 |---------|---------|
-| $Png | PNG format |
-| $Jpeg | JPEG format |
-| $Webp | WebP format |
-| $Bmp | BMP format |
+| $png | PNG format |
+| $jpeg | JPEG format |
+| $webp | WebP format |
+| $bmp | BMP format |
 
 ## Functions
 
@@ -154,7 +154,7 @@ f=main():i64{
   let raw = mt file.read("photo.jpg") {$ok:d d;$err:e ""};
   let img = mt image.decode(raw) {$ok:i i;$err:e $imgbuf{width:0;height:0;channels:0;data:@()}};
   let thumb = image.resize(img; 128; 128);
-  let out = mt image.encode(thumb; $imgfmt{$Png:true}; 90) {$ok:b b;$err:e @()};
+  let out = mt image.encode(thumb; $imgfmt{$png:true}; 90) {$ok:b b;$err:e @()};
   let res = file.write("thumb.png"; out);
   <0;
 }
@@ -192,7 +192,7 @@ f=main():i64{
   (* Sauvola: survives a page lit unevenly, which a global cut does not *)
   let bw = mt image.adaptivethreshold(smooth; 31; 0.2) {$ok:i i;$err:e empty};
 
-  let out = mt image.encode(bw; $imgfmt{$Png:true}; 90) {$ok:b b;$err:e @()};
+  let out = mt image.encode(bw; $imgfmt{$png:true}; 90) {$ok:b b;$err:e @()};
   let wrote = mt file.writebytes("page0.png"; out) {$ok:v v;$err:e false};
   <0
 }
@@ -219,7 +219,7 @@ f=main():i64{
   let lap = @(0.0;1.0;0.0; 1.0;0.0-4.0;1.0; 0.0;1.0;0.0);
   let out = mt image.convolve(grey; lap; 3; 0.0; 128.0) {$ok:i i;$err:e empty};
 
-  let png = mt image.encode(out; $imgfmt{$Png:true}; 90) {$ok:b b;$err:e @()};
+  let png = mt image.encode(out; $imgfmt{$png:true}; 90) {$ok:b b;$err:e @()};
   let wrote = mt file.writebytes("edges.png"; png) {$ok:v v;$err:e false};
   <0
 }

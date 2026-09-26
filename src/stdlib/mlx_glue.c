@@ -9,8 +9,7 @@
 #include <stdint.h>
 
 /* mlx.isavailable() — return 1 if MLX runtime is available */
-int64_t tk_mlx_isavailable_w(int64_t dummy) {
-    (void)dummy;
+int64_t tk_mlx_isavailable_w(void) {
 #if defined(__APPLE__) && defined(__arm64__)
     /* MLX is theoretically available on Apple Silicon,
      * but actual availability depends on linked framework.

@@ -16,10 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-int64_t tk_chart_new_w(int64_t dummy) {
+int64_t tk_chart_new_w(void) {
     /* Allocate an empty TkChartSpec (bar type, no labels/datasets).
      * Caller populates it via tk_chart_bar_w or similar. */
-    (void)dummy;
     TkChartSpec *spec = (TkChartSpec *)calloc(1, sizeof(TkChartSpec));
     if (!spec) return 0;
     spec->type = CHART_BAR;

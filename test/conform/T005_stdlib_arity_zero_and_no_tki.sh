@@ -181,7 +181,8 @@ f=main():i64{
 #      zero-argument toke function whose glue takes one ignored parameter.
 #      These are the calls the blanket exemption was protecting, and every one
 #      of them must still compile. tk_time_nowms_w, tk_sys_platform_w and
-#      tk_file_tempdir_w each open with `(void)dummy`. ──
+#      tk_file_tempdir_w used to open with `(void)dummy`; since 136.14 they
+#      take `(void)` and are declared with no parameters (C101). ──
 check_case "time.nowms() still compiles" 0 "" '
 m=t;
 i=io:std.io;

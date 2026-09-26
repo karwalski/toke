@@ -4,6 +4,6 @@
   "exports": [
     {"kind": "func", "name": "md.render",     "params": ["str"],  "return": "str"},
     {"kind": "func", "name": "md.renderfile", "params": ["str"],  "return": "str!MdErr"},
-    {"kind": "record", "name": "MdErr",       "fields": [{"name": "msg", "type": "str"}]}
+    {"kind": "type",   "name": "MdErr",       "fields": [{"name": "msg", "type": "str"}]}
   ]
 }
