@@ -859,10 +859,28 @@ static void find_binding_before_rec(const Node *root, const char *src,
         find_binding_before_rec(ch,src,name,nlen,use,best);
     }
 }
+/* The in-tree node that starts last at or before `pos` (the deepest on a
+ * tie) — nothing in the tree starts strictly between it and `pos`. */
+static void tree_anchor_rec(const Node *r, int pos, const Node **a) {
+    if (!r) return;
+    if (r->start <= pos && (!*a || r->start >= (*a)->start)) *a = r;
+    for (int i = 0; i < r->child_count; i++) tree_anchor_rec(r->children[i], pos, a);
+}
 static const Node *find_binding_before(const Node *root, const char *src,
                                        const char *name, int nlen,
                                        const Node *use) {
     const Node *best = NULL;
+    /* A use re-homed from a sub-parse (check_interp_composites re-parses
+     * each `\(..)` and shifts its offsets onto the real source) is not in
+     * `root`, so 127.206's closed-block test would find no block containing
+     * it and skip the whole body: `let s=@(1;2); ..; let s="abc"; "\(s)"`
+     * fell back to the array binding (C054).  Stand in the in-tree node
+     * that starts last at or before it — the literal's own position. */
+    if (use && root && !node_contains(root, use)) {
+        const Node *a = NULL;
+        tree_anchor_rec(root, use->start, &a);
+        if (a) use = a;
+    }
     if (use) find_binding_before_rec(root, src, name, nlen, use, &best);
     return best ? best : find_binding_node(root, src, name, nlen);
 }
