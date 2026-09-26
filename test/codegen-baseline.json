@@ -44,6 +44,11 @@
   0,
   "42a671f148af48e7"
  ],
+ "test/codegen/cg_recv_field_receiver.tk": [
+  true,
+  0,
+  "4c939d1c30e4bb71"
+ ],
  "test/codegen/cg_trap_bounds_high.tk": [
   true,
   1,
@@ -93,6 +98,11 @@
   true,
   0,
   "ca97e6e04da10f7b"
+ ],
+ "test/codegen/cg_unsigned.tk": [
+  true,
+  0,
+  "3fc377ca01f11701"
  ],
  "test/codegen/cg_unsigned_as_str.tk": [
   true,
