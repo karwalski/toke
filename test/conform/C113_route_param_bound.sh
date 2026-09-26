@@ -47,8 +47,8 @@ cat > "${WORK}/t.c" <<'C'
 #include "http.h"
 #include "router.h"
 
-static int fails = 0;
-#define CHECK(c, m) do { if (c) printf("  PASS: %s\n", m); \
+static int fails = 0, checks = 0;
+#define CHECK(c, m) do { checks++; if (c) printf("  PASS: %s\n", m); \
                          else { printf("  FAIL: %s\n", m); fails++; } } while (0)
 
 /* pattern "/:p0/:p1/..." and path "/v0/v1/..." with n segments */
@@ -120,7 +120,7 @@ int main(void) {
     CHECK(d.status == 200 && called == 1, "router: the 64-segment route still answers its own path");
     router_free(r);
 
-    printf("\nC113: %d failed\n", fails);
+    printf("\nResults: %d passed, %d failed\n", checks - fails, fails);
     return fails ? 1 : 0;
 }
 C
