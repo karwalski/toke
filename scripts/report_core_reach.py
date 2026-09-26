@@ -71,10 +71,13 @@ NOISE = re.compile(r'(_free|_init|_destroy|_cleanup|_release|_reset)$')
 # C header stem -> .tki stem, where they differ.  Without this the whole of
 # tk_test.h was reported as unsurfaced, including `test.assert`, which is
 # exported from stdlib/test.tki.
-# 135.3b renamed math.h -> tkmath.h (so it cannot shadow <math.h>); without
-# the alias the gate lost sight of every math core and called their triage
-# lines stale.
-TKI_ALIAS = {'tk_test': 'test', 'llm_tool': 'llmtool', 'tkmath': 'math'}
+TKI_ALIAS = {'tk_test': 'test', 'llm_tool': 'llmtool'}
+# Header file stem -> module stem, where a header is not named after its
+# module.  135.3b renamed math.h -> tkmath.h (so it cannot shadow <math.h>);
+# the scan keys the .c file, the function prefix and the .tki on the stem,
+# so without this the math cores became invisible and their triage lines
+# read as stale.
+HEADER_STEM = {'tkmath': 'math'}
 CLASSES = ('gap', 'internal', 'dup')
 
 
@@ -111,7 +114,7 @@ def findings(src):
 
     out = []
     for h in sorted(src.glob('*.h')):
-        mod = h.stem
+        mod = HEADER_STEM.get(h.stem, h.stem)
         if not (src / f'{mod}.c').exists():
             continue
         tmod = TKI_ALIAS.get(mod, mod)
