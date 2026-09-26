@@ -101,6 +101,37 @@ case_ capaf64 '3|' '  let ww=@(1.5;4.0);
 # 5. a closure applied on the spot: 7+5, and its env is released.
 case_ direct '12|' '  let k=5;
   io.println("\(fn(x:i64):i64{<x+k}(7))");'
+# 6. a closure-bound local in one f= must not capture a same-named local in
+#    another: `g` is a closure in one(), a function reference in main().
+#    (The binding table was module-wide and first-match: invalid IR.)
+#    one() = 1+1 = 2; g(1;2) = 3; and a closure calling a captured closure,
+#    (3+1)*2 = 8, still resolves inside the lifted body.
+cat > "${WORK}/scope.tk" <<'EOF'
+m=c128s;
+i=io:std.io;
+f=add(a:i64;b:i64):i64{<a+b};
+f=one():i64{
+  let g=fn(x:i64):i64{<x+1};
+  <g(1)
+};
+f=main():i64{
+  let g=&add;
+  io.println("\(one()) \(g(1;2))");
+  let f=fn(x:i64):i64{<x+1};
+  let h=fn(y:i64):i64{<f(y)*2};
+  io.println("\(h(3))");
+  <0
+};
+EOF
+for o in -O0 -O2; do
+    if "${TKC}" --allow-all "${o}" --out "${WORK}/scope" "${WORK}/scope.tk" >"${WORK}/scope.b" 2>&1; then
+        got="$("${WORK}/scope" </dev/null 2>&1 | tr '\n' '|')"
+        if [ "${got}" = "2 3|8|" ]; then pass "scope ${o}: ${got}"
+        else fail "scope ${o}: got [${got}] want [2 3|8|]"; fi
+    else
+        fail "scope ${o}: did not build: $(awk '/"severity":"error"/' "${WORK}/scope.b" | head -1 | cut -c1-240)"
+    fi
+done
 if "${TKC}" --allow-all --emit-llvm --out "${WORK}/direct.ll" "${WORK}/direct.tk" >/dev/null 2>&1 &&
    awk '/call void @free\(i8\* %t[0-9]+\) ; 124.0c env released/{f=1} END{exit !f}' "${WORK}/direct.ll"; then
     pass "direct: the applied closure's env is freed"

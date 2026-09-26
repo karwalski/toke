@@ -179,7 +179,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char fref_lname[64][NAME_BUF]; const Node *fref_lnode[64]; int fref_lcount; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char fref_lname[64][NAME_BUF]; const Node *fref_lnode[64]; int fref_lcount; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int clos_lser[64]; int fn_serial; int in_lifted; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -2720,6 +2720,19 @@ static const char *canon_llvm_ty(const char *t) {
     for (int i = 0; t && k[i]; i++) if (!strcmp(t, k[i])) return k[i];
     return "i64";
 }
+/* The closure literal a local of this name is bound to, or NULL.  The table
+ * was module-wide and first-match, so a closure-bound `g` in one f= captured
+ * a later f='s unrelated `g` (a function reference, say), which was then
+ * lowered as a closure box and failed as invalid IR.  Inside an f= only that
+ * function's bindings match, latest first; a lifted closure body (emitted at
+ * module tail) keeps the module-wide lookup its captures rely on. */
+static const Node *clos_local_lookup(Ctx *c, const char *nm) {
+    for (int i = c->clos_lcount - 1; i >= 0; i--)
+        if ((c->in_lifted || c->clos_lser[i] == c->fn_serial) &&
+            !strcmp(c->clos_lname[i], nm)) return c->clos_lnode[i];
+    return NULL;
+}
+
 /* ── Expression emission ───────────────────────────────────────────── */
 
 /* Forward declarations — needed because emit_expr and emit_stmt are
@@ -4779,8 +4792,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 clos = callee;
             } else if (callee->kind == NODE_IDENT) {
                 char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
-                for (int i = 0; i < c->clos_lcount; i++)
-                    if (!strcmp(c->clos_lname[i], cnm)) { clos = c->clos_lnode[i]; break; }
+                clos = clos_local_lookup(c, cnm);
             }
             if (clos) {
                 char fpty[256]; const char *cret;
@@ -8389,8 +8401,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             const Node *clos = callee->kind == NODE_CLOSURE ? callee : NULL;
             if (!clos && callee->kind == NODE_IDENT) {
                 char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
-                for (int i = 0; i < c->clos_lcount && !clos; i++)
-                    if (!strcmp(c->clos_lname[i], cnm)) clos = c->clos_lnode[i];
+                clos = clos_local_lookup(c, cnm);
                 if (!clos) {
                     const Node *fr = NULL;
                     for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
@@ -9322,6 +9333,7 @@ static void emit_stmt(Ctx *c, const Node *n)
                 strncpy(c->clos_lname[c->clos_lcount], tb, NAME_BUF - 1);
                 c->clos_lname[c->clos_lcount][NAME_BUF - 1] = '\0';
                 c->clos_lnode[c->clos_lcount] = init_node;
+                c->clos_lser[c->clos_lcount] = c->fn_serial;
                 c->clos_lcount++;
             }
             /* 124.0c: `let g=&add` — remember the reference so `g(1;2)`
@@ -10327,6 +10339,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
         c->fall_count = 0;  /* 135.16: let-bound fallible values are per-function */
         c->fref_lcount = 0; /* 124.0c: function-reference locals are per-function */
+        c->fn_serial++;     /* closure-bound locals of earlier functions no longer match */
         c->local_count = 0; /* reset local type tracking */
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
         c->cur_fn_ret = ret;
@@ -11084,8 +11097,10 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
 
 /* Drain the pending-closure list; nested closures append during emission. */
 static void emit_lifted_closures(Ctx *c) {
+    c->in_lifted = 1;
     for (int i = 0; i < c->pend_clos_count; i++)
         emit_lifted_closure(c, c->pend_clos[i], i);
+    c->in_lifted = 0;
 }
 
 int emit_llvm_ir(const Node *ast, const char *src,
