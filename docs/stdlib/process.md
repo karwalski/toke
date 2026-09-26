@@ -43,9 +43,9 @@ f=demo():void{
 };
 ```
 
-### process.wait(h: $handle): i32!$processerr
+### process.wait(h: $handle): i32
 
-Blocks until the child process exits and returns its integer exit code. Returns `$processerr.$io` if the underlying wait syscall fails.
+Blocks until the child process exits and returns its integer exit code, or `-1` if the handle is invalid or the underlying wait syscall fails. It is a plain `i32`, not an error union — compare the code; do not `mt` it with `$ok`/`$err` arms (that is E4031, 127.202: a `$ok`/`$err` match on an `i32` takes `$err` whenever the code is 0, i.e. on success).
 
 <!-- skip-check -->
 ```toke
@@ -54,7 +54,7 @@ i=process:std.process;
 
 f=demo():void{
   let h=mt process.spawn(@("echo";"hello toke")) {$ok:v v;$err:e process.badhandle()};
-  let code=mt process.wait(h) {$ok:c c;$err:e 0};
+  let code=process.wait(h);
 };
 ```
 
@@ -85,7 +85,7 @@ i=process:std.process;
 f=demo():void{
   let h=mt process.spawn(@("sleep";"60")) {$ok:v v;$err:e process.badhandle()};
   let ok=process.kill(h);
-  let code=mt process.wait(h) {$ok:c c;$err:e 0};
+  let code=process.wait(h);
 };
 ```
 
@@ -102,7 +102,7 @@ i=str:std.str;
 f=main():i64{
   let h=mt process.spawn(@("echo";"round trip")) {$ok:v v;$err:e process.badhandle()};
   let out=mt process.stdout(h) {$ok:s s;$err:e ""};
-  let code=mt process.wait(h) {$ok:c c;$err:e 0};
+  let code=process.wait(h);
   let msg=str.concat("exit: ";str.fromint(code as i64));
   log.info(msg;@());
   <0;
@@ -119,7 +119,7 @@ i=log:std.log;
 f=main():i64{
   let h=mt process.spawn(@("sleep";"30")) {$ok:v v;$err:e process.badhandle()};
   let killed=process.kill(h);
-  let code=mt process.wait(h) {$ok:c c;$err:e 0};
+  let code=process.wait(h);
   log.info("process cleaned up";@());
   <0;
 };

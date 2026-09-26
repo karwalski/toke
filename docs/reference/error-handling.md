@@ -42,9 +42,9 @@ i=file:std.file;
 t=$err{msg:$str};
 f=checkexists(path:$str):bool!$err{
   let stat=file.stat(path);
-  < mt stat {
-    $ok:info true;
-    $err:e $err{msg:"file not found"}
+  mt stat {
+    $ok:info <true;
+    $err:e <$err{msg:"file not found"}
   }
 };
 ```
