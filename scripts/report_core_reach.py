@@ -66,6 +66,17 @@ TKI_DIR = REPO / 'stdlib'
 TEST_DIR = REPO / 'test'
 
 DECL = re.compile(r'\b([a-z][a-z0-9_]{2,})\s*\([^;{]*\)\s*;', re.S)
+# 135.19 (4): DECL runs over comment-stripped header text.  `[^;{]*` spans
+# newlines, so over the raw text a doc comment above a declaration that
+# contained `word(` captured `word` instead of the declared name, and the
+# function itself was never seen -- 59 public functions (http 7, image 6,
+# ws 5, ...) were invisible to this gate.
+COMMENT = re.compile(r'/\*.*?\*/|//[^\n]*', re.S)
+
+
+def strip_comments(text):
+    """Header text with every C comment replaced by a single space."""
+    return COMMENT.sub(' ', text)
 # lifecycle names that are not capabilities
 NOISE = re.compile(r'(_free|_init|_destroy|_cleanup|_release|_reset)$')
 # C header stem -> .tki stem, where they differ.  Without this the whole of
@@ -123,7 +134,7 @@ def findings(src):
         if tki.exists():
             d = json.loads(tki.read_text())
             exports = {e['name'] for e in d.get('exports', []) or []}
-        declared = {n for n in DECL.findall(h.read_text(errors='replace'))
+        declared = {n for n in DECL.findall(strip_comments(h.read_text(errors='replace')))
                     if n.startswith(mod + '_')}
         for n in sorted(declared):
             if NOISE.search(n):
