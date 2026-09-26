@@ -228,7 +228,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -411,40 +411,97 @@ conform-check:
 # the two Linux triples need a sysroot this macOS host does not have
 # (`fatal error: 'stdio.h' file not found`).  The target has never
 # cross-compiled anything here.  build-preflight below says so by name rather
-# than letting it surface as a missing libc header; fixing it needs a real
-# sysroot (or a container), and per-triple object directories so the three
-# builds stop overwriting each other and the host build.  Reported, not
-# papered over.
+# than letting it surface as a missing libc header.  135.3i gave each triple
+# its own object tree and a sysroot variable (below); a sysroot itself is
+# still not on this host, and nothing here downloads one.
 .PHONY: build-preflight
+# 135.3i: the preflight is now the probe half of scripts/build_all.sh, with
+# the SAME per-triple flags (--target plus TK_SYSROOT_<triple>, and the
+# triple's link flags), so it cannot pass a triple the build would skip or
+# vice versa.  Fails, naming each triple and why, if any cannot be built.
 build-preflight:
-	@bad=""; d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_triple_probe.XXXXXX") || exit 1; \
-	for t in x86_64-linux-gnu aarch64-linux-gnu aarch64-apple-macos; do \
-	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > "$$d/p.c"; \
-	  $(CC) --target=$$t -c -o "$$d/p.o" "$$d/p.c" \
-	    >/dev/null 2>&1 || bad="$$bad $$t"; \
-	done; \
-	rm -rf "$$d"; \
-	if [ -n "$$bad" ]; then \
-	  echo "" >&2; \
-	  echo "ERROR: build-all cannot cross-compile for:$$bad" >&2; \
-	  echo "" >&2; \
-	  echo "  $(CC) accepts the --target flag but has no sysroot for these" >&2; \
-	  echo "  triples, so the build fails on the first system header." >&2; \
-	  echo "  This is not new: until story 136.62 nothing invalidated the" >&2; \
-	  echo "  objects between the three sub-makes, so build-all compiled" >&2; \
-	  echo "  NOTHING and exited 0.  Do not report 'build-all: success'" >&2; \
-	  echo "  from a host where this preflight fails." >&2; \
-	  echo "" >&2; \
-	  echo "  Needs a sysroot for each triple, and per-triple object dirs" >&2; \
-	  echo "  so the three builds stop overwriting each other." >&2; \
-	  echo "" >&2; \
-	  exit 1; \
-	fi
+	@CC='$(CC)' MAKE='$(MAKE)' CROSS_DIR='$(CROSS_DIR)' \
+	  bash scripts/build_all.sh --probe-only $(CROSS_TRIPLES)
 
-build-all: build-preflight
-	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=x86_64-linux-gnu"
-	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-linux-gnu"
-	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-apple-macos"
+# ── 135.3i: per-triple object directories, a sysroot per triple ─────────────
+#
+# build-all used to be three recursive makes that all wrote the SAME in-tree
+# objects -- and, now that objects remember their flags (136.62), a build-all
+# that could succeed would have left the host tree holding whichever triple
+# ran last.  It also passed CFLAGS="$(CFLAGS) ..." down, which loses the inner
+# quotes of -DTKC_STDLIB_DIR (see "How a sub-make changes the build flags").
+#
+# Now each triple builds into its own tree, build/cross/<triple>/, from rules
+# instantiated below -- no recursive CFLAGS round trip, and the in-tree host
+# objects are never touched.  scripts/build_all.sh drives it: it probes each
+# triple (compile AND link a hello-world with that triple's flags), builds
+# the ones that work, checks each binary's format with file(1), and names
+# every triple it could not build and why.
+#
+# PROVIDING A SYSROOT.  Nothing is downloaded.  Per triple, with the triple's
+# dashes as underscores:
+#
+#   TK_SYSROOT_x86_64_linux_gnu=/path/to/sysroot     (--sysroot=)
+#   TK_CROSS_LDFLAGS_x86_64_linux_gnu='-fuse-ld=lld' (default for *-linux-gnu)
+#
+# A Linux sysroot needs usr/include (libc6-dev, zlib1g-dev) and usr/lib with
+# crt*.o, libc, libm, libz and libpthread -- e.g. a Debian/Ubuntu tree made by
+# `debootstrap --variant=minbase --include=libc6-dev,zlib1g-dev --arch=amd64`
+# or copied out of a `docker run --platform linux/amd64 ubuntu` container
+# after `apt-get install libc6-dev zlib1g-dev`.  From macOS the link also
+# needs ld.lld (`brew install lld`); Apple's ld cannot write ELF.
+#
+# BUILD_ALL_ALLOW_SKIP=1 makes a skipped triple exit 0.  By default it does
+# not: a build-all that built one triple of three is not "build-all: success"
+# (AGENTS.md §14.3), and the final line says which triples were SKIPPED.
+CROSS_TRIPLES = x86_64-linux-gnu aarch64-linux-gnu aarch64-apple-macos
+CROSS_DIR     = build/cross
+cross_var       = $(subst -,_,$(1))
+cross_sysroot   = $(TK_SYSROOT_$(call cross_var,$(1)))
+cross_cflags    = --target=$(1) $(if $(call cross_sysroot,$(1)),--sysroot=$(call cross_sysroot,$(1)))
+cross_ldflags   = $(if $(filter undefined,$(origin TK_CROSS_LDFLAGS_$(call cross_var,$(1)))),$(if $(findstring linux,$(1)),-fuse-ld=lld),$(TK_CROSS_LDFLAGS_$(call cross_var,$(1))))
+
+define CROSS_template
+CROSS_OBJS_$(1) := $$(addprefix $(CROSS_DIR)/$(1)/,$$(SRCS:.c=.o))
+CROSS_FLAGS_TEXT_$(1) = $$(CC)|$$(CFLAGS)|$$(call cross_cflags,$(1))|$$(call cross_ldflags,$(1))|$$(REPRO_FLAGS)|$$(LDLIBS)
+
+$(CROSS_DIR)/$(1)/.build-flags: FORCE
+	@mkdir -p $$(@D)
+	@printf '%s\n' "$$$$TKC_CROSS_FLAGS" | cmp -s - $$@ 2>/dev/null \
+	  || printf '%s\n' "$$$$TKC_CROSS_FLAGS" > $$@
+$(CROSS_DIR)/$(1)/.build-flags: export TKC_CROSS_FLAGS = $$(CROSS_FLAGS_TEXT_$(1))
+
+$(CROSS_DIR)/$(1)/%.o: %.c $(CROSS_DIR)/$(1)/.build-flags
+	@mkdir -p $$(@D)
+	$$(BUILD_ENV) $$(CC) $$(CFLAGS) $$(call cross_cflags,$(1)) $$(REPRO_FLAGS) \
+	    $$(if $$(filter src/stdlib/encrypt.c,$$<),-Wno-pedantic) -c -o $$@ $$<
+
+$(CROSS_DIR)/$(1)/src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
+$(CROSS_DIR)/$(1)/src/types.o: src/stdlib_paramkind_gen.h
+
+$(CROSS_DIR)/$(1)/toke: $$(CROSS_OBJS_$(1))
+	$$(BUILD_ENV) $$(CC) $$(CFLAGS) $$(call cross_cflags,$(1)) $$(call cross_ldflags,$(1)) \
+	    $$(REPRO_FLAGS) -o $$@ $$^ $$(LDLIBS)
+
+.PHONY: build-cross-$(1)
+build-cross-$(1): vendor-check $(CROSS_DIR)/$(1)/toke
+
+-include $$(CROSS_OBJS_$(1):.o=.d)
+endef
+$(foreach t,$(CROSS_TRIPLES),$(eval $(call CROSS_template,$(t))))
+
+# The probe flags for one triple, printed for scripts/build_all.sh so that the
+# script and the build rules cannot disagree about what a triple's flags are.
+.PHONY: cross-flags-%
+cross-flags-%:
+	@printf 'CFLAGS=%s\nLDFLAGS=%s\nSYSROOT=%s\n' '$(call cross_cflags,$*)' '$(call cross_ldflags,$*)' '$(call cross_sysroot,$*)'
+
+build-all: vendor-check
+	@CC='$(CC)' MAKE='$(MAKE)' CROSS_DIR='$(CROSS_DIR)' \
+	  bash scripts/build_all.sh $(CROSS_TRIPLES)
+
+clean-cross:
+	rm -rf $(CROSS_DIR)
 
 test-e2e: $(BIN)
 	@bash test/e2e/run_e2e.sh
