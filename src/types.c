@@ -2183,10 +2183,18 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * no W1001 while `(v-1) as u64` did.  Operands name other bindings, so
      * this takes the depth guard. */
     case NODE_BINARY_EXPR: {
-        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
-        cx->bind_infer_depth++;
-        Type *it = infer(cx, initN);
-        cx->bind_infer_depth--;
+        /* The binding statement inferred its initialiser already (and
+         * reported anything wrong with it there); re-walking it on every
+         * reference repeated those diagnostics — `let s=a+"x"` drew its
+         * E4031 once per use of `s` (C043).  Use the memoised type; infer
+         * only when the statement has not been walked yet. */
+        Type *it = initN->rtype;
+        if (!it) {
+            if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+            cx->bind_infer_depth++;
+            it = infer(cx, initN);
+            cx->bind_infer_depth--;
+        }
         if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
         return NULL;
     }
