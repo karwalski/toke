@@ -29,6 +29,7 @@
 #include "stdlib_deps.h"   /* 127.42: std.* module existence gate */
 #include "types.h"        /* 137.4: E4033 — a type name is not a value */
 #include "tkc_limits.h"
+#include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
 #include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -929,89 +930,8 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
  * compiler frontend free of a JSON dependency (AGENTS.md §6).
  * ──────────────────────────────────────────────────────────────────────── */
 
-/*
- * tki_scan_value — the position just past the JSON value starting at p.
- *
- * Quote-aware and depth-aware.  The first cut of this scanner looked for the
- * next `]` to end a "fields" array, which truncated every type whose first
- * field is spelled with brackets (`"type": "[valerror]"`) and made the
- * checker believe a real field did not exist.  The .tki writer (ir.c) never
- * emits an escaped quote in a name or type spelling, so a plain quote scan is
- * exact here.
- */
-static const char *tki_scan_value(const char *p, const char *end) {
-    if (!p || p >= end) return NULL;
-    if (*p == '"') {
-        const char *q = (const char *)memchr(p + 1, '"', (size_t)(end - p - 1));
-        return q ? q + 1 : NULL;
-    }
-    if (*p == '{' || *p == '[') {
-        int depth = 0;
-        while (p < end) {
-            if (*p == '"') {
-                const char *q = (const char *)memchr(p + 1, '"',
-                                                     (size_t)(end - p - 1));
-                if (!q) return NULL;
-                p = q + 1;
-                continue;
-            }
-            if (*p == '{' || *p == '[') depth++;
-            else if (*p == '}' || *p == ']') {
-                depth--;
-                if (depth == 0) return p + 1;
-            }
-            p++;
-        }
-        return NULL;
-    }
-    while (p < end && *p != ',' && *p != '}' && *p != ']') p++;
-    return p;
-}
-
-/*
- * tki_obj_key — value position of `key` in the JSON object at [obj,end),
- * or NULL.  Only the object's own keys are considered: a nested object's
- * "name" can never be mistaken for the record's own.
- */
-static const char *tki_obj_key(const char *obj, const char *end,
-                               const char *key) {
-    if (!obj || obj >= end || *obj != '{') return NULL;
-    size_t klen = strlen(key);
-    const char *p = obj + 1;
-    while (p < end) {
-        while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' ||
-                           *p == '\r' || *p == ',')) p++;
-        if (p >= end || *p == '}') return NULL;
-        if (*p != '"') return NULL;
-        const char *k1 = p + 1;
-        const char *k2 = (const char *)memchr(k1, '"', (size_t)(end - k1));
-        if (!k2) return NULL;
-        p = k2 + 1;
-        while (p < end && (*p == ' ' || *p == '\t')) p++;
-        if (p >= end || *p != ':') return NULL;
-        p++;
-        while (p < end && (*p == ' ' || *p == '\t')) p++;
-        if ((size_t)(k2 - k1) == klen && memcmp(k1, key, klen) == 0) return p;
-        p = tki_scan_value(p, end);
-        if (!p) return NULL;
-    }
-    return NULL;
-}
-
-/* tki_str_value — copy the quoted string starting at p into out. */
-static int tki_str_value(const char *p, const char *end, char *out, int outsz) {
-    if (!p) return 0;
-    while (p < end && (*p == ' ' || *p == '\t')) p++;
-    if (p >= end || *p != '"') return 0;
-    const char *q1 = p + 1;
-    const char *q2 = (const char *)memchr(q1, '"', (size_t)(end - q1));
-    if (!q2) return 0;
-    int len = (int)(q2 - q1);
-    if (len >= outsz) len = outsz - 1;
-    memcpy(out, q1, (size_t)len);
-    out[len] = '\0';
-    return 1;
-}
+/* tki_scan_value / tki_obj_key / tki_str_value moved to tki_scan.h (127.134a)
+ * so every .tki scanner in the compiler shares one definition. */
 
 static void nameenv_add_itype(NameEnv *env, Arena *arena,
                               const ImportedType *it) {
@@ -2120,14 +2040,15 @@ int resolve_names(const Node *ast, const char *src,
          * import boundary instead of falling through to TY_UNKNOWN. */
         tki_record_exports(out, arena, ie->alias_name, tbuf);
         /* Parse type exports */
-        char *tp = tbuf;
-        while ((tp = strstr(tp, "\"kind\"")) != NULL) {
-            char *tk_type = strstr(tp, "\"type\"");
-            char *next_k = strstr(tp + 6, "\"kind\"");
-            if (!tk_type || (next_k && tk_type > next_k)) { tp = next_k ? next_k : tp + 6; continue; }
+        /* 127.134a: records by structure, not by the next "kind" substring. */
+        const char *tcur1 = NULL, *trec1 = NULL, *trend1 = NULL; char tkind1[32];
+        while (tki_next_record(tbuf, &tcur1, &trec1, &trend1, tkind1, (int)sizeof tkind1)) {
+            char *tp = (char *)trec1;
+            char *next_k = (char *)trend1;
+            if (strcmp(tkind1, "type") != 0) continue;
             /* Extract type name */
-            char *tnk = strstr(tp, "\"name\"");
-            if (!tnk || (next_k && tnk > next_k)) { tp += 6; continue; }
+            char *tnk = tki_keypos(tp, next_k, "name");
+            if (!tnk || (next_k && tnk > next_k)) { continue; }
             char *tq1 = strchr(tnk + 6, '"');
             if (!tq1) break;
             char *tq2 = strchr(tq1 + 1, '"');
@@ -2169,7 +2090,6 @@ int resolve_names(const Node *ast, const char *src,
                     }
                 }
             }
-            tp = next_k ? next_k : tp + 6;
         }
         free(tbuf);
     }
@@ -2223,12 +2143,13 @@ int resolve_names(const Node *ast, const char *src,
          * std.* files (it probes module-path/-I dirs, not TKC_STDLIB_DIR); this
          * loop finds them, so register type names here too. Mirrors 1500-1517. */
         {
-            char *typ = tki_buf;
-            while ((typ = strstr(typ, "\"kind\"")) != NULL) {
-                char *next_k2 = strstr(typ + 6, "\"kind\"");
-                char *is_type = strstr(typ, "\"type\"");
-                if (is_type && (!next_k2 || is_type < next_k2)) {
-                    char *nmk = strstr(typ, "\"name\"");
+            /* 127.134a: records by structure, not by the next "kind" substring. */
+            const char *tcur2 = NULL, *trec2 = NULL, *trend2 = NULL; char tkind2[32];
+            while (tki_next_record(tki_buf, &tcur2, &trec2, &trend2, tkind2, (int)sizeof tkind2)) {
+                char *typ = (char *)trec2;
+                char *next_k2 = (char *)trend2;
+                if (!strcmp(tkind2, "type")) {
+                    char *nmk = tki_keypos(typ, next_k2, "name");
                     if (nmk && (!next_k2 || nmk < next_k2)) {
                         char *a1 = strchr(nmk + 6, '"');
                         char *a2 = a1 ? strchr(a1 + 1, '"') : NULL;
@@ -2241,7 +2162,6 @@ int resolve_names(const Node *ast, const char *src,
                         }
                     }
                 }
-                typ = next_k2 ? next_k2 : typ + 6;
             }
         }
 

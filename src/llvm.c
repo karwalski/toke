@@ -29,6 +29,7 @@
  * in emit_llvm_ir and threaded through every function.
  */
 #include "llvm.h"
+#include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
 #include "parser.h"
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
 #include "diag.h"
@@ -1067,23 +1068,22 @@ static void register_tki_struct_types(Ctx *c) {
         fclose(f);
         buf[rd] = '\0';
 
-        char *p = buf;
-        while ((p = strstr(p, "\"kind\"")) != NULL) {
-            char *next_kind = strstr(p + 6, "\"kind\"");
-            /* Extract the kind value (first quoted string after "kind"). */
-            char *kc = strchr(p + 6, ':');
-            char *kq1 = kc ? strchr(kc, '"') : NULL;
-            char *kq2 = kq1 ? strchr(kq1 + 1, '"') : NULL;
-            int is_record = kq1 && kq2 && (size_t)(kq2 - kq1 - 1) == 4 &&
-                            !strncmp(kq1 + 1, "type", 4);
-            if (!is_record) { p = next_kind ? next_kind : p + 6; continue; }
+        /* 127.134a: one record at a time, bounded by its own braces (see
+         * tki_scan.h) — `next_kind` keeps its name but is now the record's
+         * end, not the next "kind" substring, which a field named `kind`
+         * produced mid-record. */
+        const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+        while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+            char *p = (char *)trec;
+            char *next_kind = (char *)trend;
+            if (strcmp(tkind, "type") != 0) continue;
 
-            /* Type name: first "name" after the kind, before next_kind. */
-            char *nk = strstr(kq2, "\"name\"");
-            if (!nk || (next_kind && nk > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+            /* Type name: the record's own "name" key. */
+            char *nk = tki_keypos(p, next_kind, "name");
+            if (!nk || (next_kind && nk > next_kind)) { continue; }
             char *nq1 = strchr(nk + 6, '"');
             char *nq2 = nq1 ? strchr(nq1 + 1, '"') : NULL;
-            if (!nq2) { p = next_kind ? next_kind : p + 6; continue; }
+            if (!nq2) { continue; }
             char tname[128];
             int tlen = (int)(nq2 - nq1 - 1);
             if (tlen >= (int)sizeof tname) tlen = (int)sizeof tname - 1;
@@ -1091,13 +1091,13 @@ static void register_tki_struct_types(Ctx *c) {
             tname[tlen] = '\0';
 
             if (lookup_struct(c, tname) || c->struct_count >= c->struct_cap) {
-                p = next_kind ? next_kind : p + 6; continue;
+                continue;
             }
 
             /* Fields: scan "name"/"type" pairs inside the "fields" array,
              * bounded by next_kind. */
             char *fields = strstr(nq2, "\"fields\"");
-            if (!fields || (next_kind && fields > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+            if (!fields || (next_kind && fields > next_kind)) { continue; }
             char *bound = next_kind ? next_kind : (buf + rd);
 
             StructInfo *si = &c->structs[c->struct_count];
@@ -1105,7 +1105,7 @@ static void register_tki_struct_types(Ctx *c) {
             /* 127.190: size the field arrays by the entries in this record. */
             int nf = 0;
             for (char *q = strstr(fields + 8, "\"name\""); q && q < bound; q = strstr(q + 6, "\"name\"")) nf++;
-            if (struct_alloc_fields(c, si, nf) < 0) { p = next_kind ? next_kind : p + 6; continue; }
+            if (struct_alloc_fields(c, si, nf) < 0) { continue; }
             int fc = 0;
             char *fp = fields + 8;
             while (fc < si->field_cap) {
@@ -1149,7 +1149,6 @@ static void register_tki_struct_types(Ctx *c) {
               while (sv && (*sv == ':' || *sv == ' ')) sv++;
               si->is_sum = (sk && sk < bound && sv && !strncmp(sv, "true", 4)) ? 1 : 0; }
             c->struct_count++;
-            p = next_kind ? next_kind : p + 6;
         }
         free(buf);
     }
@@ -1254,19 +1253,19 @@ static void load_stdlib_tki(const char *module) {
     fclose(f);
     buf[rd] = '\0';
 
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        char *next_kind = strstr(p + 6, "\"kind\"");
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
         /* Accept both "func" and "extern_c" kinds (Story 76.1.2b) */
-        char *kv_func = strstr(p, "\"func\"");
-        char *kv_extern = strstr(p, "\"extern_c\"");
-        int is_func = kv_func && (!next_kind || kv_func < next_kind);
-        int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
-        if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
+        int is_func = !strcmp(tkind, "func");
+        int is_extern_c = !strcmp(tkind, "extern_c");
+        if (!is_func && !is_extern_c) continue;
         if (g_tki_cache_count >= TKI_CACHE_MAX) { g_tki_cache_overflow = 1; break; }
 
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -1278,7 +1277,7 @@ static void load_stdlib_tki(const char *module) {
         fname[nlen] = '\0';
 
         char *dot = strchr(fname, '.');
-        if (!dot) { p = next_kind ? next_kind : p + 6; continue; }
+        if (!dot) { continue; }
         char mod_part[64], meth_part[64];
         int mlen = (int)(dot - fname);
         if (mlen >= (int)sizeof(mod_part)) mlen = (int)sizeof(mod_part) - 1;
@@ -1369,8 +1368,6 @@ static void load_stdlib_tki(const char *module) {
         if (!strcmp(e->llvm_ret, "void") && strchr(toke_ret, '!'))
             e->llvm_ret = "i64";
         g_tki_cache_count++;
-
-        p = next_kind ? next_kind : p + 6;
     }
     free(buf);
 }
@@ -1776,19 +1773,18 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
     }
 
     /* Scan for each "kind":"func" or "kind":"extern_c" entry (Story 76.1.2b) */
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        /* Check if this is a func or extern_c entry */
-        char *next_kind = strstr(p + 6, "\"kind\"");
-        char *kv_func = strstr(p, "\"func\"");
-        char *kv_extern = strstr(p, "\"extern_c\"");
-        int is_func = kv_func && (!next_kind || kv_func < next_kind);
-        int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
-        if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
+        int is_func = !strcmp(tkind, "func");
+        int is_extern_c = !strcmp(tkind, "extern_c");
+        if (!is_func && !is_extern_c) continue;
 
         /* Extract name */
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -1867,8 +1863,6 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
                 }
             }
         }
-
-        p = next_kind ? next_kind : p + 6;
     }
     free(buf);
 }
@@ -1890,15 +1884,16 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
     fclose(f);
     buf[rd] = '\0';
 
-    char *p = buf;
-    while ((p = strstr(p, "\"kind\"")) != NULL) {
-        char *kv = strstr(p, "\"type\"");
-        char *next_kind = strstr(p + 6, "\"kind\"");
-        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+    /* 127.134a: records by structure, not by the next "kind" substring. */
+    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
+    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
+        char *p = (char *)trec;
+        char *next_kind = (char *)trend;
+        if (strcmp(tkind, "type") != 0) continue;
 
         /* Extract name */
-        char *nk = strstr(p, "\"name\"");
-        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nk = tki_keypos(p, next_kind, "name");
+        if (!nk || (next_kind && nk > next_kind)) { continue; }
         char *nq1 = strchr(nk + 6, '"');
         if (!nq1) break;
         char *nq2 = strchr(nq1 + 1, '"');
@@ -1983,8 +1978,6 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                 }
             }
         }
-
-        p = next_kind ? next_kind : p + 6;
     }
     free(buf);
 }
