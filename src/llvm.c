@@ -5824,10 +5824,24 @@ static int emit_expr(Ctx *c, const Node *n)
             if (!strcmp(tn2, "str") || !strcmp(tn2, "$str")) {
                 int src_is_float = (!strcmp(src_ty, "double") || !strcmp(src_ty, "float"));
                 if (src_is_float) {
-                    /* float -> str: bitcast double to i64 then call fromfloat */
+                    /* float -> str: bitcast double to i64 then call fromfloat.
+                     * 127.218: the result is a string, i8* — expr_llvm_type
+                     * says so — but this branch returned the raw i64, so
+                     * every use (`io.println(x as str)`, a `let`, a match
+                     * arm's result slot) was invalid IR (E9003).  An f32 is
+                     * widened first; `bitcast double` on a float was also
+                     * invalid. */
+                    if (!strcmp(src_ty, "float")) {
+                        int ext = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, v);
+                        v = ext;
+                    }
                     int bc = next_tmp(c);
                     fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, v);
                     fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", t, bc);
+                    int sp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", sp, t);
+                    t = sp;
                 } else if (!strcmp(src_ty, "i8*")) {
                     /* str -> str: identity */
                     fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
