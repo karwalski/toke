@@ -1425,6 +1425,7 @@ static const char TY_FUNC_SIG[] = "(fn)";
 static int func_has_sig(const Type *t) {
     return t && t->kind == TY_FUNC && t->name == TY_FUNC_SIG;
 }
+int tk_type_is_fnval(const Type *t) { return func_has_sig(t); }
 static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
     Type *t = mk_type(cx->env->arena, TY_FUNC);
     if (!t) return NULL;
@@ -2487,6 +2488,13 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
+    /* 124.0c: a local bound to a closure or a function reference holds a
+     * function value of that signature (the emitter's indirect-call and
+     * reference-counting paths read it off every use of the name). */
+    case NODE_CLOSURE:
+        return params_sig(cx, initN, 1);
+    case NODE_FUNC_REF:
+        return func_ref_sig(cx, initN);
     /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
     case NODE_MATCH_STMT:
         return mt_bind_type(cx, initN);

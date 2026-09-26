@@ -89,6 +89,10 @@ typedef struct TypeEnv {
  */
 /* 127.226: a typed-empty literal — `@($t)` or `@($k:$v)` / `@($k:@($t))`. */
 int map_lit_typed_empty(const Node *n);
+/* 124.0c: 1 when `t` is a function VALUE's type with a known signature —
+ * parameter types in field_types[0..field_count), return type in elem.
+ * The emitter keys indirect calls and closure reference counting on it. */
+int tk_type_is_fnval(const Type *t);
 int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out);
 

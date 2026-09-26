@@ -179,8 +179,8 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-#define TKC_CREL_MAX 32   /* 124.0c: tracked releasable closure envs per f= */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; } Ctx;
+#define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -2739,7 +2739,7 @@ static void ir_call_record(const char *sym, const char *alias, const char *membe
  * slots; without this an f64 capture was reloaded as an integer and
  * `sitofp`'d, so `x*k` with k=2.5 computed with k's bit pattern. */
 #define TKC_CAP_TYPED 16
-static struct { const char *ty[TKC_CAP_TYPED]; char tag[TKC_CAP_TYPED][NAME_BUF]; } g_cap_info[512];
+static struct { const char *ty[TKC_CAP_TYPED]; char tag[TKC_CAP_TYPED][NAME_BUF]; unsigned char isfn[TKC_CAP_TYPED]; } g_cap_info[512];
 static const char *canon_llvm_ty(const char *t) {
     static const char *k[] = { "i64", "double", "float", "i1", "i8*", "i8", "i16", "i32", NULL };
     for (int i = 0; t && k[i]; i++) if (!strcmp(t, k[i])) return k[i];
@@ -2755,6 +2755,26 @@ static const Node *clos_local_lookup(Ctx *c, const char *nm) {
     for (int i = c->clos_lcount - 1; i >= 0; i--)
         if ((c->in_lifted || c->clos_lser[i] == c->fn_serial) &&
             !strcmp(c->clos_lname[i], nm)) return c->clos_lnode[i];
+    return NULL;
+}
+static int name_is_local(Ctx *c, const char *name);
+/* 124.0c: the closure literal a CALL through the local `callee` may assume.
+ * Inside a lifted closure body the table above is module-wide and matches by
+ * name only, so it can answer another function's same-named closure; when
+ * the checker has the callee's own signature (tk_type_is_fnval), the call
+ * takes the generic function-value path instead. */
+static const Node *clos_callee_lookup(Ctx *c, const Node *callee) {
+    char nm[NAME_BUF]; tok_cp(c->src, callee, nm, sizeof nm);
+    const Node *cl = clos_local_lookup(c, nm);
+    if (cl && c->in_lifted && tk_type_is_fnval(callee->rtype) && name_is_local(c, nm))
+        return NULL;
+    return cl;
+}
+/* 124.0c: the function reference a local of this name is bound to, latest
+ * binding first; NULL when none, or when a later binding shadows it. */
+static const Node *fref_local_lookup(Ctx *c, const char *nm) {
+    for (int i = c->fref_lcount - 1; i >= 0; i--)
+        if (!strcmp(c->fref_lname[i], nm)) return c->fref_lnode[i];
     return NULL;
 }
 
@@ -2989,6 +3009,124 @@ static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
 static const char *expr_struct_type(Ctx *c, const Node *n);
+
+/*
+ * ── 124.0c item 3: function values and closure reference counts ─────────
+ *
+ * memory-model §2.5.  A function value is one i64 (an i8* for a local bound
+ * to a closure literal): either a plain function address (`&add`, never
+ * counted) or a closure, represented as its environment pointer + 1 — see
+ * tk_clos_retain/tk_clos_release in tk_runtime.c for the layout.  A closure
+ * starts with one reference, held by whatever produced it.
+ *
+ * Ownership, as lowered here:
+ *   - an OWNED producer yields a reference the consumer must account for:
+ *     a closure literal, and a call of a user function or a function value
+ *     (every `<` of a function value retains unless its operand is itself
+ *     owned, so a return always hands one reference to the caller);
+ *   - everything else that yields a function value BORROWS it;
+ *   - storing into a binding (let, assignment), returning, and capturing
+ *     take a reference: retain a borrowed value, take over an owned one;
+ *   - a binding holding a function value has a slot (%__crel.K) whose
+ *     previous value is released when the binding is re-bound or assigned,
+ *     and whose value is released at every `ret` of the function;
+ *   - a call's callee and the arguments of a user-function or
+ *     function-value call borrow (the caller's reference outlives the
+ *     call); an owned argument is released after the call;
+ *   - any OTHER read of a function-valued name — a container element, a
+ *     struct field, a std call's argument — retains, and that reference is
+ *     never released: a leak, never a use-after-free.
+ */
+static int fnv_is_local(Ctx *c, const char *llvm_name) {
+    for (int i = c->fnv_count - 1; i >= 0; i--)
+        if (!strcmp(c->fnv_name[i], llvm_name)) return 1;
+    return 0;
+}
+static void fnv_mark_local(Ctx *c, const char *llvm_name) {
+    if (fnv_is_local(c, llvm_name)) return;
+    if (c->fnv_count == c->fnv_cap) {
+        int ncap = c->fnv_cap ? c->fnv_cap * 2 : 32;
+        char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(c->arena, ncap * (int)sizeof(*nn));
+        if (!nn) return;
+        if (c->fnv_count) memcpy(nn, c->fnv_name, (size_t)c->fnv_count * sizeof(*nn));
+        c->fnv_name = nn; c->fnv_cap = ncap;
+    }
+    snprintf(c->fnv_name[c->fnv_count++], NAME_BUF, "%s", llvm_name);
+}
+/* Does `n` evaluate to a function value? */
+static int fnv_expr(Ctx *c, const Node *n) {
+    if (!n) return 0;
+    if (n->kind == NODE_CLOSURE || n->kind == NODE_FUNC_REF) return 1;
+    if (tk_type_is_fnval(n->rtype)) return 1;
+    if (n->kind == NODE_IDENT) {
+        char nm[NAME_BUF]; tok_cp(c->src, n, nm, sizeof nm);
+        return name_is_local(c, nm) && fnv_is_local(c, get_llvm_name(c, nm));
+    }
+    return 0;
+}
+/* Does `n` yield a function value the consumer owns (+1)? */
+static int fnv_owned(Ctx *c, const Node *n) {
+    if (!n) return 0;
+    if (n->kind == NODE_CLOSURE) return 1;
+    if (n->kind != NODE_CALL_EXPR || !tk_type_is_fnval(n->rtype) || n->child_count < 1)
+        return 0;
+    const Node *callee = n->children[0];
+    if (callee->kind != NODE_IDENT) return 0;          /* a std/module call borrows */
+    char nm[NAME_BUF]; tok_cp(c->src, callee, nm, sizeof nm);
+    if (name_is_local(c, nm)) return 1;                /* a function-value call */
+    char mg[256]; snprintf(mg, sizeof mg, "%s", nm);
+    if (!strcmp(mg, "main")) strcpy(mg, "tk_main");
+    mangle_fn_name(c, mg, sizeof mg);
+    const FnSig *s = lookup_fn(c, mg);
+    return s && s->is_internal;                        /* a user function */
+}
+static int fnv_as_i64(Ctx *c, int v, const char *ty) {
+    if (ty && !strcmp(ty, "i8*")) {
+        int z = next_tmp(c);
+        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, v);
+        return z;
+    }
+    return v;
+}
+static void fnv_retain(Ctx *c, int v, const char *ty) {
+    fprintf(c->out, "  call void @tk_clos_retain(i64 %%t%d)\n", fnv_as_i64(c, v, ty));
+}
+static void fnv_release(Ctx *c, int v, const char *ty) {
+    fprintf(c->out, "  call void @tk_clos_release(i64 %%t%d)\n", fnv_as_i64(c, v, ty));
+}
+/* Emit `n` in a BORROWING position: a function-valued name read here does
+ * not retain (see the NODE_IDENT hook in emit_expr). */
+static int emit_expr(Ctx *c, const Node *n);
+static int emit_borrowed(Ctx *c, const Node *n) {
+    const Node *saved = c->fnv_borrow;
+    c->fnv_borrow = n;
+    int v = emit_expr(c, n);
+    c->fnv_borrow = saved;
+    return v;
+}
+/* Emit `n` in an OWNING position (a binding, a return): the result is a
+ * reference the consumer holds — retained here unless `n` is owned. */
+static int emit_owned(Ctx *c, const Node *n) {
+    if (!fnv_expr(c, n)) return emit_expr(c, n);
+    int v = emit_borrowed(c, n);
+    if (!fnv_owned(c, n)) fnv_retain(c, v, expr_llvm_type(c, n));
+    return v;
+}
+/* The LLVM type a checker type is passed as (resolve_llvm_type's mapping). */
+static const char *fnv_llvm_ty(const Type *t) {
+    if (!t) return "i64";
+    switch (t->kind) {
+    case TY_BOOL: return "i1";
+    case TY_F64: return "double";
+    case TY_F32: return "float";
+    case TY_VOID: return "void";
+    case TY_I8: case TY_U8: return "i8";
+    case TY_I16: case TY_U16: return "i16";
+    case TY_I32: case TY_U32: return "i32";
+    case TY_STR: case TY_ARRAY: case TY_MAP: case TY_STRUCT: case TY_PTR: return "i8*";
+    default: return "i64";
+    }
+}
 
 /* 127.8: classify the receiver of `.len` / `.len()`. Returns "str", "map", or
  * NULL (array / unknown → the legacy ptr[-1] header-word load). The checker's
@@ -4128,6 +4266,14 @@ static int emit_expr(Ctx *c, const Node *n)
             const char *ln = get_llvm_name(c, tb);
             const char *lty = get_local_type(c, ln);
             fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", t, lty, lty, ln);
+            /* 124.0c item 3: a function value read anywhere but a borrowing
+             * position (emit_borrowed) may be kept by whatever receives it —
+             * a container, a struct field, a std call — so it takes a
+             * reference, which nothing releases: a leak, never a
+             * use-after-free once this binding's slot lets go. */
+            if (n != c->fnv_borrow &&
+                (fnv_is_local(c, ln) || tk_type_is_fnval(n->rtype)))
+                fnv_retain(c, t, lty);
         }
         return t;
     case NODE_CLOSURE: {
@@ -4150,21 +4296,34 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
         char fpty[256]; const char *cret;
         closure_sig(c, n, fpty, sizeof fpty, &cret); (void)cret;
-        int box = next_tmp(c);
-        fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; closure %d\n", box, (1 + ncap) * 8, cid);
+        /* 124.0c item 3: the environment carries a reference count and a
+         * mask of the captures that are themselves closures, ahead of the
+         * function pointer (layout: tk_clos_retain in tk_runtime.c).  The
+         * lifted function is called with `env` = base+16, so its view —
+         * slot 0 the function, slot 1+i capture i — is unchanged. */
+        int basep = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; closure %d\n", basep, (3 + ncap) * 8, cid);
+        int hb = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", hb, basep);
+        fprintf(c->out, "  store i64 1, i64* %%t%d ; 124.0c reference count\n", hb);
+        int envp = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i8, i8* %%t%d, i64 16\n", envp, basep);
         int base = next_tmp(c);
-        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", base, box);
+        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", base, envp);
         int fp = next_tmp(c);
         fprintf(c->out, "  %%t%d = ptrtoint %s* @__tk_closure_%d to i64\n", fp, fpty, cid);
         int g0 = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", g0, base);
         fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", fp, g0);
+        unsigned long long capmask = 0;
         for (int i = 0; i < ncap; i++) {
             int gi = next_tmp(c);
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, base, i + 1);
             const char *ln = get_llvm_name(c, caps[i]);
             const char *lty = get_local_type(c, caps[i]);
+            int isfn = ln && name_is_local(c, caps[i]) && fnv_is_local(c, ln);
             if (i < TKC_CAP_TYPED) {
+                g_cap_info[cid].isfn[i] = 0;
                 g_cap_info[cid].ty[i] = canon_llvm_ty(lty);
                 const char *tg = ln ? ptr_local_struct_type(c, ln) : NULL;
                 if (!tg) tg = ptr_local_struct_type(c, caps[i]);
@@ -4175,11 +4334,27 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", lv, lty, lty, ln);
                 int cv = coerce_value(c, lv, lty, "i64");
                 fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", cv, gi);
+                /* 124.0c item 3: a captured closure is a reference this
+                 * environment holds; it is released with the environment. */
+                if (isfn && i < 62) {
+                    fnv_retain(c, cv, "i64");
+                    capmask |= 1ull << i;
+                    if (i < TKC_CAP_TYPED) g_cap_info[cid].isfn[i] = 1;
+                } else if (isfn) {
+                    fnv_retain(c, cv, "i64");   /* past the mask: held forever */
+                }
             } else {
                 fprintf(c->out, "  store i64 0, i64* %%t%d ; capture %s unresolved\n", gi, caps[i]);
             }
         }
-        return box;  /* i8* box pointer, used as the closure value */
+        int hm = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1\n", hm, hb);
+        fprintf(c->out, "  store i64 %lld, i64* %%t%d ; 124.0c closure-valued captures\n",
+                (long long)capmask, hm);
+        int box = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i8, i8* %%t%d, i64 17 ; 124.0c closure value = env+1\n",
+                box, basep);
+        return box;  /* i8* tagged closure value */
     }
     case NODE_FUNC_REF: {
         /* &name — emit ptrtoint of function pointer to i64 */
@@ -4820,18 +4995,31 @@ static int emit_expr(Ctx *c, const Node *n)
             if (callee->kind == NODE_CLOSURE) {
                 clos = callee;
             } else if (callee->kind == NODE_IDENT) {
-                char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
-                clos = clos_local_lookup(c, cnm);
+                clos = clos_callee_lookup(c, callee);
             }
             if (clos) {
                 char fpty[256]; const char *cret;
                 closure_sig(c, clos, fpty, sizeof fpty, &cret);
-                int box = emit_expr(c, callee);          /* i8* env box */
+                /* 124.0c item 3: the callee is borrowed for the call; the
+                 * value is env+1, the lifted function takes env. */
+                int box = emit_borrowed(c, callee);      /* i8* closure value */
+                const char *boxty = expr_llvm_type(c, callee);
+                if (strcmp(boxty, "i8*")) {
+                    int bp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr %s %%t%d to i8*\n", bp, boxty, box);
+                    box = bp;
+                }
+                int envp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i64 -1\n", envp, box);
                 int na = n->child_count - 1; if (na > 16) na = 16;
                 int argv[16]; const char *argt[16];
+                int rel[16], relv[16]; const char *relt[16]; int nrel = 0;
                 for (int i = 0; i < na; i++) {
-                    int av = emit_expr(c, n->children[i + 1]);
-                    const char *aty = expr_llvm_type(c, n->children[i + 1]);
+                    const Node *an = n->children[i + 1];
+                    int fa = fnv_expr(c, an);
+                    int av = fa ? emit_borrowed(c, an) : emit_expr(c, an);
+                    const char *aty = expr_llvm_type(c, an);
+                    if (fa && fnv_owned(c, an)) { rel[nrel] = i; relv[nrel] = av; relt[nrel] = aty; nrel++; }
                     const char *pty = "i64"; int pj = 0;
                     for (int k = 0; k < clos->child_count; k++) {
                         if (clos->children[k]->kind != NODE_PARAM) continue;
@@ -4846,7 +5034,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     argt[i] = pty;
                 }
                 int base = next_tmp(c);
-                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", base, box);
+                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", base, envp);
                 int g0 = next_tmp(c);
                 fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", g0, base);
                 int fpi = next_tmp(c);
@@ -4854,18 +5042,17 @@ static int emit_expr(Ctx *c, const Node *n)
                 int fp = next_tmp(c);
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to %s*\n", fp, fpi, fpty);
                 t = next_tmp(c);
-                fprintf(c->out, "  %%t%d = call fastcc %s %%t%d(i8* %%t%d", t, cret, fp, box);
+                fprintf(c->out, "  %%t%d = call fastcc %s %%t%d(i8* %%t%d", t, cret, fp, envp);
                 for (int i = 0; i < na; i++)
                     fprintf(c->out, ", %s %%t%d", argt[i], argv[i]);
                 fputs(")\n", c->out);
-                /* 124.0c (memory-model §2.5): the env of a closure literal
-                 * applied on the spot, `fn(x){..}(7)`, has exactly one
-                 * reference — this call — and captures are copies, so the
-                 * result cannot point into it.  Release it here.  A closure
-                 * bound to a local may be copied, passed or returned, and
-                 * still needs the reference tracking the spec describes. */
+                for (int r = 0; r < nrel; r++) { (void)rel[r]; fnv_release(c, relv[r], relt[r]); }
+                /* 124.0c (memory-model §2.5): a closure literal applied on
+                 * the spot, `fn(x){..}(7)`, holds its only reference in this
+                 * call, and captures are copies, so the result cannot point
+                 * into it.  Release it here. */
                 if (callee->kind == NODE_CLOSURE)
-                    fprintf(c->out, "  call void @free(i8* %%t%d) ; 124.0c env released\n", box);
+                    fnv_release(c, box, "i8*");
                 return t;
             }
         }
@@ -4877,9 +5064,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * reference itself does, and call through the pointer. */
         if (n->children[0]->kind == NODE_IDENT && c->fref_lcount > 0) {
             char fnm[128]; tok_cp(c->src, n->children[0], fnm, sizeof fnm);
-            const Node *fr = NULL;
-            for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
-                if (!strcmp(c->fref_lname[i], fnm)) fr = c->fref_lnode[i];
+            const Node *fr = fref_local_lookup(c, fnm);
             const FnSig *ref = NULL;
             if (fr && fr->child_count == 0) {
                 char rn[256]; tok_cp(c->src, fr, rn, sizeof rn);
@@ -4888,15 +5073,19 @@ static int emit_expr(Ctx *c, const Node *n)
                 ref = lookup_fn(c, rn);
             }
             if (fr && ref) {
-                int fpi = emit_expr(c, n->children[0]);   /* the stored i64 address */
+                int fpi = emit_borrowed(c, n->children[0]);   /* the stored i64 address */
                 const char *fty = expr_llvm_type(c, n->children[0]);
                 fpi = coerce_value(c, fpi, fty, "i64");
                 int na = n->child_count - 1;
                 if (na > ref->param_count) na = ref->param_count;  /* arity is the checker's */
                 int argv[TKC_MAX_PARAMS];
+                int relv[TKC_MAX_PARAMS]; const char *relt[TKC_MAX_PARAMS]; int nrel = 0;
                 for (int i = 0; i < na && i < TKC_MAX_PARAMS; i++) {
-                    int av = emit_expr(c, n->children[i + 1]);
-                    argv[i] = coerce_value(c, av, expr_llvm_type(c, n->children[i + 1]),
+                    const Node *an = n->children[i + 1];
+                    int fa = fnv_expr(c, an);
+                    int av = fa ? emit_borrowed(c, an) : emit_expr(c, an);
+                    if (fa && fnv_owned(c, an)) { relv[nrel] = av; relt[nrel] = expr_llvm_type(c, an); nrel++; }
+                    argv[i] = coerce_value(c, av, expr_llvm_type(c, an),
                                            ref->param_tys[i]);
                 }
                 int fp = next_tmp(c);
@@ -4915,10 +5104,94 @@ static int emit_expr(Ctx *c, const Node *n)
                 for (int i = 0; i < na; i++)
                     fprintf(c->out, "%s%s %%t%d", i ? ", " : "", ref->param_tys[i], argv[i]);
                 fputs(")\n", c->out);
+                for (int r = 0; r < nrel; r++) fnv_release(c, relv[r], relt[r]);
                 if (t < 0) {
                     t = next_tmp(c);
                     fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 }
+                return t;
+            }
+        }
+        /* 124.0c: a call through any other function value — a parameter of
+         * function type, a copy of a closure or a function reference, a
+         * returned closure, an element taken out of a container.  Codegen
+         * used to fall through to the plain-call path, which found no
+         * function of that name and lowered `g(x)` as `x`: a silent wrong
+         * value at exit 0 for every closure that was passed, returned or
+         * copied.  The checker records the value's signature on the callee
+         * (tk_type_is_fnval).  The value is either a closure (env+1, low
+         * bit set: call the lifted function with env) or a plain function
+         * address (call it directly); both are toke functions, fastcc. */
+        if (n->children[0]->kind == NODE_IDENT && tk_type_is_fnval(n->children[0]->rtype)) {
+            char vnm[128]; tok_cp(c->src, n->children[0], vnm, sizeof vnm);
+            if (name_is_local(c, vnm)) {
+                const Type *ft = n->children[0]->rtype;
+                int np = ft->field_count;
+                int na = n->child_count - 1;
+                if (na > np) na = np;
+                if (na > TKC_MAX_PARAMS) na = TKC_MAX_PARAMS;
+                const char *rty = fnv_llvm_ty(ft->elem);
+                if (!strcmp(rty, "i8*")) rty = "i64";       /* the i64 return ABI */
+                int fv = emit_borrowed(c, n->children[0]);
+                fv = coerce_value(c, fv, expr_llvm_type(c, n->children[0]), "i64");
+                int argv[TKC_MAX_PARAMS]; const char *pty[TKC_MAX_PARAMS];
+                int relv[TKC_MAX_PARAMS]; const char *relt[TKC_MAX_PARAMS]; int nrel = 0;
+                for (int i = 0; i < na; i++) {
+                    const Node *an = n->children[i + 1];
+                    int fa = fnv_expr(c, an);
+                    int av = fa ? emit_borrowed(c, an) : emit_expr(c, an);
+                    const char *aty = expr_llvm_type(c, an);
+                    if (fa && fnv_owned(c, an)) { relv[nrel] = av; relt[nrel] = aty; nrel++; }
+                    pty[i] = fnv_llvm_ty(ft->field_types[i]);
+                    argv[i] = coerce_value(c, av, aty, pty[i]);
+                }
+                int isv = !strcmp(rty, "void");
+                int res = -1;
+                if (!isv) {
+                    res = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = alloca %s\n", res, rty);
+                }
+                int lc = next_lbl(c), lr = next_lbl(c), lj = next_lbl(c);
+                int tg = next_tmp(c), isc = next_tmp(c);
+                fprintf(c->out, "  %%t%d = and i64 %%t%d, 1\n", tg, fv);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", isc, tg);
+                fprintf(c->out, "  br i1 %%t%d, label %%fnv_clos%d, label %%fnv_raw%d\n", isc, lc, lr);
+                /* closure: env = value - 1, env[0] = the lifted function */
+                fprintf(c->out, "fnv_clos%d:\n", lc);
+                int ei = next_tmp(c), ep = next_tmp(c), eb = next_tmp(c), fpi = next_tmp(c), fp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = sub i64 %%t%d, 1\n", ei, fv);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", ep, ei);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i64*\n", eb, ei);
+                fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", fpi, eb);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to %s (i8*", fp, fpi, rty);
+                for (int i = 0; i < na; i++) fprintf(c->out, ", %s", pty[i]);
+                fputs(")*\n", c->out);
+                int r1 = isv ? -1 : next_tmp(c);
+                if (isv) fprintf(c->out, "  call fastcc void %%t%d(i8* %%t%d", fp, ep);
+                else fprintf(c->out, "  %%t%d = call fastcc %s %%t%d(i8* %%t%d", r1, rty, fp, ep);
+                for (int i = 0; i < na; i++) fprintf(c->out, ", %s %%t%d", pty[i], argv[i]);
+                fputs(")\n", c->out);
+                if (!isv) fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", rty, r1, rty, res);
+                fprintf(c->out, "  br label %%fnv_join%d\n", lj);
+                /* a plain function address */
+                fprintf(c->out, "fnv_raw%d:\n", lr);
+                int rp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to %s (", rp, fv, rty);
+                for (int i = 0; i < na; i++) fprintf(c->out, "%s%s", i ? ", " : "", pty[i]);
+                fputs(")*\n", c->out);
+                int r2 = isv ? -1 : next_tmp(c);
+                if (isv) fprintf(c->out, "  call fastcc void %%t%d(", rp);
+                else fprintf(c->out, "  %%t%d = call fastcc %s %%t%d(", r2, rty, rp);
+                for (int i = 0; i < na; i++) fprintf(c->out, "%s%s %%t%d", i ? ", " : "", pty[i], argv[i]);
+                fputs(")\n", c->out);
+                if (!isv) fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", rty, r2, rty, res);
+                fprintf(c->out, "  br label %%fnv_join%d\n", lj);
+                fprintf(c->out, "fnv_join%d:\n", lj);
+                c->term = 0;
+                for (int r = 0; r < nrel; r++) fnv_release(c, relv[r], relt[r]);
+                t = next_tmp(c);
+                if (isv) fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                else fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, rty, rty, res);
                 return t;
             }
         }
@@ -5319,9 +5592,20 @@ static int emit_expr(Ctx *c, const Node *n)
 
         int args[TKC_MAX_PARAMS], na = n->child_count - 1;
         const char *arg_tys[TKC_MAX_PARAMS];
+        /* 124.0c item 3: a toke function borrows a function-valued argument
+         * for the call (its `<` retains if it keeps it); an owned one — a
+         * closure literal, a call returning a closure — is released after. */
+        const FnSig *pre_callee = lookup_fn(c, tb);
+        int fnv_borrow_args = (pre_callee && pre_callee->is_internal) || is_cross_module_user;
+        int fnv_relv[TKC_MAX_PARAMS]; const char *fnv_relt[TKC_MAX_PARAMS]; int fnv_nrel = 0;
         for (int i = 0; i < na; i++) {
-            args[i] = emit_expr(c, n->children[i+1]);
-            arg_tys[i] = expr_llvm_type(c, n->children[i+1]);
+            const Node *an = n->children[i+1];
+            int fa = fnv_borrow_args && fnv_expr(c, an);
+            args[i] = fa ? emit_borrowed(c, an) : emit_expr(c, an);
+            arg_tys[i] = expr_llvm_type(c, an);
+            if (fa && fnv_owned(c, an) && fnv_nrel < TKC_MAX_PARAMS) {
+                fnv_relv[fnv_nrel] = args[i]; fnv_relt[fnv_nrel] = arg_tys[i]; fnv_nrel++;
+            }
         }
         const FnSig *callee = lookup_fn(c, tb);
 
@@ -5714,6 +5998,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, " %s %%t%d", aty, args[i]);
             }
             fputs(")\n", c->out);
+            for (int r = 0; r < fnv_nrel; r++) fnv_release(c, fnv_relv[r], fnv_relt[r]);
             t = next_tmp(c);
             fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
             return t;
@@ -5735,6 +6020,7 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, " %s %%t%d", aty, args[i]);
         }
         fputs(")\n", c->out);
+        for (int r = 0; r < fnv_nrel; r++) fnv_release(c, fnv_relv[r], fnv_relt[r]);
         /* Bug 110.1: f64-returning _w wrappers carry the bit-pattern of a
          * double inside their i64 ABI return. Reinterpret the SSA result
          * as `double` so downstream arithmetic chooses fmul/fadd. */
@@ -8171,7 +8457,11 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
          * `f=sum(..):$str`, and the interpolation dereferenced 3 (exit 139).
          * The checker's rtype (closure_local_call_ret) carries a declared
          * str/array/struct result; an untagged answer is the i64 default. */
-        if (n->children[0]->kind == NODE_IDENT && clos_local_lookup(c, fn))
+        if (n->children[0]->kind == NODE_IDENT && clos_callee_lookup(c, n->children[0]))
+            return NULL;
+        /* 124.0c: likewise a call through any other local function value */
+        if (n->children[0]->kind == NODE_IDENT && tk_type_is_fnval(n->children[0]->rtype)
+            && name_is_local(c, fn))
             return NULL;
         if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
         mangle_fn_name(c, fn, sizeof fn);
@@ -8480,11 +8770,9 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             const Node *clos = callee->kind == NODE_CLOSURE ? callee : NULL;
             if (!clos && callee->kind == NODE_IDENT) {
                 char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
-                clos = clos_local_lookup(c, cnm);
+                clos = clos_callee_lookup(c, callee);
                 if (!clos) {
-                    const Node *fr = NULL;
-                    for (int i = c->fref_lcount - 1; i >= 0 && !fr; i--)
-                        if (!strcmp(c->fref_lname[i], cnm)) fr = c->fref_lnode[i];
+                    const Node *fr = fref_local_lookup(c, cnm);
                     if (fr && fr->child_count == 0) {
                         char rn[256]; tok_cp(c->src, fr, rn, sizeof rn);
                         if (!strcmp(rn, "main")) strcpy(rn, "tk_main");
@@ -8498,6 +8786,14 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                 char fpty[256]; const char *cret = "i64";
                 closure_sig(c, clos, fpty, sizeof fpty, &cret);
                 return strcmp(cret, "void") ? cret : "i64";
+            }
+            /* 124.0c: any other function value (emit_expr's generic path) */
+            if (callee->kind == NODE_IDENT && tk_type_is_fnval(callee->rtype)) {
+                char vnm[128]; tok_cp(c->src, callee, vnm, sizeof vnm);
+                if (name_is_local(c, vnm)) {
+                    const char *rty = fnv_llvm_ty(callee->rtype->elem);
+                    return (!strcmp(rty, "i8*") || !strcmp(rty, "void")) ? "i64" : rty;
+                }
             }
         }
         /* 127.56: `$variant(payload)` on a known sum type builds a tagged box
@@ -9328,86 +9624,54 @@ static int rhs_proves_str_array(Ctx *c, const Node *rhs) {
  * shape) so `let line="\(i)"; a=a.append(line)` proves `a`; both sets are
  * grown to a fixed point because a binding may name an earlier one. */
 /*
- * ── 124.0c item 3: releasing a bound closure's environment ─────────────
+ * ── 124.0c item 3: releasing a bound function value ────────────────────
  *
  * memory-model §2.5: a closure's environment is malloc'd and "freed when the
- * last reference to the closure is released".  124.0c released only a
- * closure applied on the spot; a closure bound to a local leaked its box
- * until exit — once per execution of the `let`, so a closure bound inside a
- * loop leaked once per iteration.
+ * last reference to the closure is released".  Every `let` in a function
+ * body (or a closure body) that binds a function value gets a slot
+ * `%__crel.K` (hoisted alloca, zeroed at entry) holding the reference the
+ * binding owns: the `let` releases the slot's previous value — a loop's last
+ * iteration — and stores the new one, an assignment does the same, and
+ * release_closure_envs() releases every slot before each `ret`, after the
+ * return value has been computed (and retained, if it is one of them).
  *
- * The references a toke closure value can acquire are the binding itself,
- * a copy into another local, an argument, a return value, a container slot,
- * a struct field and a capture by another closure.  This pass proves, per
- * `let g=fn..` in an f= body, that the binding is the ONLY one: every other
- * occurrence of the name in the function is the callee of a call, outside
- * any nested closure or spawn.  Then the reference is released exactly
- * when the binding is — when the `let` runs again (the previous iteration's
- * value is dead: nothing else holds it) and when the function returns.
- * Any other occurrence of the name, anywhere in the function — a parameter,
- * another binding, a field, a string interpolation the parser did not
- * attach — disqualifies it, and it keeps today's behaviour (a leak, never a
- * use-after-free).  A closure that escapes still needs the reference count
- * the spec describes; that is not done here.
- *
- * Mechanics: each tracked binding gets a slot `%__crel.K` (hoisted alloca,
- * nulled at entry); the `let` frees the slot's previous box and stores the
- * new one; release_closure_envs() inserts a load+free of every slot before
- * each `ret` of the function, after the return value has been computed.
+ * This replaces Batch CC's sole-reference proof (c6c101a), which freed a
+ * binding's box only when every other use of the name was a direct call
+ * and let everything else leak: with copies, arguments, returns and
+ * captures now counted (see the ownership notes above fnv_is_local), a
+ * sole-reference binding is simply the case where the count reaches zero
+ * at the slot's release — the same free, at the same point.
  */
 static const char *ll_next_line(const char *p, const char *end);
-static int crel_word_in(const char *s, int len, const char *w) {
-    int wl = (int)strlen(w);
-    for (int i = 0; i + wl <= len; i++) {
-        if (memcmp(s + i, w, (size_t)wl)) continue;
-        int b = i == 0 || !(isalnum((unsigned char)s[i - 1]) || s[i - 1] == '_');
-        int a = i + wl == len || !(isalnum((unsigned char)s[i + wl]) || s[i + wl] == '_');
-        if (a && b) return 1;
-    }
-    return 0;
-}
-static int crel_uses_ok(const Ctx *c, const Node *n, const Node *parent,
-                        const char *nm, const Node *bind_name, int in_clos) {
-    if (!n) return 1;
-    if (n->kind == NODE_IDENT && n->child_count == 0) {
-        char tb[NAME_BUF]; tok_cp(c->src, n, tb, sizeof tb);
-        if (strcmp(tb, nm)) return 1;
-        if (n == bind_name) return 1;
-        return !in_clos && parent && parent->kind == NODE_CALL_EXPR &&
-               parent->child_count > 0 && parent->children[0] == n;
-    }
-    if (n->kind == NODE_STR_LIT && n->tok_len > 2) {
-        const char *raw = c->src + n->tok_start;
-        int ni = 0;
-        for (int i = 0; i + 1 < n->tok_len; i++)
-            if (raw[i] == '\\' && raw[i + 1] == '(') { ni++; i++; }
-            else if (raw[i] == '\\') i++;
-        if (ni != n->child_count && crel_word_in(raw, n->tok_len, nm)) return 0;
-    }
-    int ic = in_clos || n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR;
-    for (int i = 0; i < n->child_count; i++)
-        if (!crel_uses_ok(c, n->children[i], n, nm, bind_name, ic)) return 0;
-    return 1;
-}
-static void crel_collect(Ctx *c, const Node *fn, const Node *n) {
+static void crel_collect(Ctx *c, const Node *n) {
     if (!n || n->kind == NODE_CLOSURE) return;
-    if (n->kind == NODE_BIND_STMT && n->child_count >= 2 && n->children[0]) {
-        const Node *init = n->child_count >= 3 && n->children[2] ? n->children[2]
-                                                                   : n->children[1];
-        if (init && init->kind == NODE_CLOSURE && c->crel_count < TKC_CREL_MAX) {
-            char nm[NAME_BUF]; tok_cp(c->src, n->children[0], nm, sizeof nm);
-            if (nm[0] && crel_uses_ok(c, fn, NULL, nm, n->children[0], 0))
-                c->crel_init[c->crel_count++] = init;
+    if ((n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT) &&
+        n->child_count >= 2 && n->children[0]) {
+        int has_ann = n->child_count >= 3 && n->children[2];
+        const Node *init = has_ann ? n->children[2] : n->children[1];
+        int fnv = init && (fnv_expr(c, init) ||
+                  (has_ann && n->children[1] && n->children[1]->kind == NODE_FUNC_TYPE));
+        if (fnv && c->crel_count < TKC_CREL_MAX) {
+            c->crel_lname[c->crel_count][0] = '\0';
+            c->crel_init[c->crel_count++] = init;
         }
     }
-    for (int i = 0; i < n->child_count; i++) crel_collect(c, fn, n->children[i]);
+    for (int i = 0; i < n->child_count; i++) crel_collect(c, n->children[i]);
 }
+/* `fn` is an f= declaration or, for a lifted closure, the closure itself:
+ * its own body is walked, closures nested in it are not (each is its own
+ * function and collects its own). */
 static void compute_closure_releases(Ctx *c, const Node *fn) {
     c->crel_count = 0;
-    crel_collect(c, fn, fn);
+    for (int i = 0; fn && i < fn->child_count; i++) crel_collect(c, fn->children[i]);
     for (int k = 0; k < c->crel_count; k++)
-        fprintf(c->out, "  %%__crel.%d = alloca i8*\n"
-                        "  store i8* null, i8** %%__crel.%d ; 124.0c releasable closure env\n", k, k);
+        fprintf(c->out, "  %%__crel.%d = alloca i64\n"
+                        "  store i64 0, i64* %%__crel.%d ; 124.0c function-value binding\n", k, k);
+}
+static int crel_slot_of(const Ctx *c, const char *llvm_name) {
+    for (int k = 0; k < c->crel_count; k++)
+        if (c->crel_lname[k][0] && !strcmp(c->crel_lname[k], llvm_name)) return k;
+    return -1;
 }
 static int crel_index(const Ctx *c, const Node *init) {
     for (int k = 0; k < c->crel_count; k++) if (c->crel_init[k] == init) return k;
@@ -9438,7 +9702,7 @@ static char *release_closure_envs(const char *buf, long len, long *out_len) {
                 const char *e2 = ll_next_line(q, end);
                 if (q[0] == '}') break;
                 if (e2 - q > 18 && !memcmp(q, "  %__crel.", 10) &&
-                    strstr(q, " = alloca i8*") && strstr(q, " = alloca i8*") < e2) nslots++;
+                    strstr(q, " = alloca i64") && strstr(q, " = alloca i64") < e2) nslots++;
                 q = e2;
             }
         }
@@ -9453,8 +9717,8 @@ static char *release_closure_envs(const char *buf, long len, long *out_len) {
         if (is_ret)
             for (int k = 0; k < nslots; k++) {
                 w += snprintf(out + w, (size_t)(cap - w),
-                              "  %%__crelv.%d = load i8*, i8** %%__crel.%d\n"
-                              "  call void @free(i8* %%__crelv.%d)\n", seq, k, seq);
+                              "  %%__crelv.%d = load i64, i64* %%__crel.%d\n"
+                              "  call void @tk_clos_release(i64 %%__crelv.%d)\n", seq, k, seq);
                 seq++;
             }
         memcpy(out + w, p, (size_t)ll); w += ll;
@@ -9601,6 +9865,24 @@ static void emit_stmt(Ctx *c, const Node *n)
                 c->fref_lnode[c->fref_lcount] = init_node;
                 c->fref_lcount++;
             }
+            /* 124.0c: a later binding of the same name to anything else
+             * shadows the closure / reference: `let g=fn..; let g=mk(3);
+             * g(1)` must not call the new value with the literal's
+             * signature, nor a closure as a bare function address.  A NULL
+             * entry ends the lookup; the call then takes the generic path. */
+            if (init_node->kind != NODE_CLOSURE && clos_local_lookup(c, tb) &&
+                c->clos_lcount < c->clos_lcap) {
+                snprintf(c->clos_lname[c->clos_lcount], NAME_BUF, "%s", tb);
+                c->clos_lnode[c->clos_lcount] = NULL;
+                c->clos_lser[c->clos_lcount] = c->fn_serial;
+                c->clos_lcount++;
+            }
+            if (init_node->kind != NODE_FUNC_REF && fref_local_lookup(c, tb) &&
+                c->fref_lcount < c->fref_lcap) {
+                snprintf(c->fref_lname[c->fref_lcount], NAME_BUF, "%s", tb);
+                c->fref_lnode[c->fref_lcount] = NULL;
+                c->fref_lcount++;
+            }
             const char *vty;
             if (has_ann)
                 vty = resolve_llvm_type(c, n->children[1]);
@@ -9620,17 +9902,20 @@ static void emit_stmt(Ctx *c, const Node *n)
              * only clang's verifier objected.  Same shape as 127.80 and
              * 127.86: a stated type standing in for an established one. */
             const char *init_ty = expr_llvm_type(c, init_node);
-            int v = emit_expr(c, init_node);
-            /* 124.0c item 3: a releasable closure binding — the previous
-             * execution's box (a loop's last iteration) has no other
-             * reference, so free it, and keep the new one for the exits. */
-            { int ck = crel_index(c, init_node);
-              if (ck >= 0) {
-                  int ov = next_tmp(c);
-                  fprintf(c->out, "  %%t%d = load i8*, i8** %%__crel.%d\n", ov, ck);
-                  fprintf(c->out, "  call void @free(i8* %%t%d) ; 124.0c env released on re-bind\n", ov);
-                  fprintf(c->out, "  store i8* %%t%d, i8** %%__crel.%d\n", v, ck);
-              } }
+            /* 124.0c item 3: a binding of a function value takes a reference
+             * (emit_owned); its slot releases the value it held before (a
+             * loop's previous iteration) and keeps this one for the exits. */
+            int let_fnv = fnv_expr(c, init_node) ||
+                          (has_ann && n->children[1] && n->children[1]->kind == NODE_FUNC_TYPE);
+            int let_ck = let_fnv ? crel_index(c, init_node) : -1;
+            int v = let_fnv ? emit_owned(c, init_node) : emit_expr(c, init_node);
+            if (let_ck >= 0) {
+                int nv = fnv_as_i64(c, v, init_ty);
+                int ov = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load i64, i64* %%__crel.%d\n", ov, let_ck);
+                fprintf(c->out, "  store i64 %%t%d, i64* %%__crel.%d\n", nv, let_ck);
+                fnv_release(c, ov, "i64");
+            }
             /* 135.16: the error channel belongs to THIS call, so read it
              * before anything else runs.  Taken after emit_expr and before
              * coerce_value because coerce_value can emit a call
@@ -9720,6 +10005,8 @@ static void emit_stmt(Ctx *c, const Node *n)
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
             fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", vty, v, vty, tb);
+            if (let_fnv) fnv_mark_local(c, tb);                 /* 124.0c item 3 */
+            if (let_ck >= 0) snprintf(c->crel_lname[let_ck], NAME_BUF, "%s", tb);
             /* 135.16: carry the fallible call's discrimination convention and
              * its captured error channel onto the binding, so `let r=f();
              * mt r` decides the arm on the same evidence as `mt f()`. */
@@ -9818,7 +10105,8 @@ static void emit_stmt(Ctx *c, const Node *n)
         {
             const char *ln = get_llvm_name(c, tb);
             const char *lty = get_local_type(c, ln);
-            int v = emit_expr(c, n->children[1]);
+            int as_ck = crel_slot_of(c, ln);          /* 124.0c item 3 */
+            int v = as_ck >= 0 ? emit_borrowed(c, n->children[1]) : emit_expr(c, n->children[1]);
             /* 135.16: a re-bind replaces the binding's error channel.  Without
              * this the assignment would leave the LET's snapshot in place and
              * a later `mt` would answer for the wrong call — a regression this
@@ -9845,6 +10133,16 @@ static void emit_stmt(Ctx *c, const Node *n)
                 }
             }
             const char *ety2 = expr_llvm_type(c, n->children[1]);
+            /* 124.0c item 3: assigning a function-value binding releases the
+             * value its slot held and takes a reference to the new one. */
+            if (as_ck >= 0) {
+                if (!fnv_owned(c, n->children[1])) fnv_retain(c, v, ety2);
+                int nv = fnv_as_i64(c, v, ety2);
+                int ov = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load i64, i64* %%__crel.%d\n", ov, as_ck);
+                fprintf(c->out, "  store i64 %%t%d, i64* %%__crel.%d\n", nv, as_ck);
+                fnv_release(c, ov, "i64");
+            }
             /* Coerce value to match the variable's declared type (Story 57.13.2) */
             v = coerce_value(c, v, ety2, lty);
             fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, v, lty, ln);
@@ -9905,7 +10203,11 @@ static void emit_stmt(Ctx *c, const Node *n)
                 }
             }
             /* Detect tail-recursive call: return expr is a call to the current function */
+            /* 124.0c item 3: not when this function holds function-value
+             * slots — their releases go before the `ret`, and nothing may
+             * sit between a musttail call and its `ret`. */
             if (n->children[0]->kind == NODE_CALL_EXPR && c->cur_fn_name[0] &&
+                c->crel_count == 0 &&
                 n->children[0]->children[0]->kind != NODE_FIELD_EXPR) {
                 char callee_name[256];
                 tok_cp(c->src, n->children[0]->children[0], callee_name, sizeof callee_name);
@@ -9955,7 +10257,10 @@ static void emit_stmt(Ctx *c, const Node *n)
                     fprintf(c->out, "  store i64 0, i64* @tk_current_error\n");
                 fputs("  ret void\n", c->out);
             } else {
-                int v = emit_expr(c, n->children[0]);
+                /* 124.0c item 3: a returned function value hands the caller
+                 * a reference (retained unless already owned), taken before
+                 * this function's slots are released at the `ret`. */
+                int v = emit_owned(c, n->children[0]);
                 const char *ety = expr_llvm_type(c, n->children[0]);
                 /* 114.55: an ok return from a T!$err fn clears tk_current_error
                  * (set after the return value is computed, so a sub-call in the
@@ -10605,6 +10910,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
         c->fall_count = 0;  /* 135.16: let-bound fallible values are per-function */
         c->fref_lcount = 0; /* 124.0c: function-reference locals are per-function */
+        c->fnv_count = 0;   /* 124.0c item 3: so are function-value locals */
         c->fn_serial++;     /* closure-bound locals of earlier functions no longer match */
         c->local_count = 0; /* reset local type tracking */
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
@@ -10660,6 +10966,10 @@ static void emit_toplevel(Ctx *c, const Node *n)
             if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, n->children[i]);
             set_local_type(c, pn, pty);
             fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+            /* 124.0c item 3: a function-typed parameter is borrowed */
+            if (n->children[i]->child_count > 1 && n->children[i]->children[1] &&
+                n->children[i]->children[1]->kind == NODE_FUNC_TYPE)
+                fnv_mark_local(c, pn);
         }
         c->term = 0;
         /* 114.18: identify linearly-owned array locals for in-place mutation. */
@@ -10749,7 +11059,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"puts", "declare i32 @puts(i8*)", 0},
     {"strcmp", "declare i32 @strcmp(i8*, i8*)", 0},
     {"malloc", "declare i8* @malloc(i64)", 0},
-    {"free", "declare void @free(i8*)", 0},  /* 124.0c: a directly-applied closure's env */
+    {"free", "declare void @free(i8*)", 0},
     /* 127.109: the per-thread error box.  Error-union boxes come from here,
      * not malloc — one buffer per thread, reused, never leaked. */
     {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
@@ -11299,7 +11609,7 @@ static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param) {
  * globals-init ctor (both reset per-function state and write to c->out). */
 static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->ptr_count = 0; c->local_count = 0; c->alias_count = 0; c->fall_count = 0;
-    c->fref_lcount = 0;
+    c->fref_lcount = 0; c->fnv_count = 0; c->crel_count = 0;
     c->name_scope = 0; c->term = 0;
     const char *ret; char fpty[256];
     closure_sig(c, clos, fpty, sizeof fpty, &ret); (void)fpty;
@@ -11340,6 +11650,8 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         if (i < TKC_CAP_TYPED && g_cap_info[cid].tag[i][0])
             mark_ptr_with_type(c, caps[i], g_cap_info[cid].tag[i]);
         fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", caps[i], cty, cty, cv, cty, caps[i]);
+        /* 124.0c item 3: a captured closure is held by the environment */
+        if (i < TKC_CAP_TYPED && g_cap_info[cid].isfn[i]) fnv_mark_local(c, caps[i]);
     }
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind != NODE_PARAM) continue;
@@ -11350,13 +11662,18 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, clos->children[i]);  /* 124.0c */
         set_local_type(c, pn, pty);
         fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+        if (clos->children[i]->child_count > 1 && clos->children[i]->children[1] &&
+            clos->children[i]->children[1]->kind == NODE_FUNC_TYPE)
+            fnv_mark_local(c, pn);                   /* 124.0c item 3: borrowed */
     }
+    compute_closure_releases(c, clos);               /* 124.0c item 3 */
     if (body) emit_stmt(c, body);
     if (!c->term) {
         if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
         else fprintf(c->out, "  ret %s 0 ; implicit\n", ret);
     }
     fputs("}\n", c->out);
+    c->crel_count = 0;
     c->cur_fn_ret = NULL; c->cur_fn_name[0] = '\0';
 }
 

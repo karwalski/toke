@@ -133,4 +133,8 @@ void    tk_json_print(int64_t val);
  * op_code: 0=add, 1=sub, 2=mul. Prints RT002 and exits. */
 void    tk_overflow_trap(int32_t op_code);
 
+/* 124.0c item 3: closure environment reference counting (tk_runtime.c). */
+void tk_clos_retain(int64_t v);
+void tk_clos_release(int64_t v);
+
 #endif /* TK_RUNTIME_H */

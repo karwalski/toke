@@ -522,3 +522,49 @@ void tk_nil_trap(int32_t code) {
     fprintf(stderr, "RT005: nil dereference\n");
     exit(1);
 }
+
+/* ── 124.0c item 3: closure environments are reference counted ──────────────
+ * memory-model §2.5: a closure's environment is malloc'd so it can outlive
+ * the scope that made it, and "is freed when the last reference to the
+ * closure is released".  The compiler lays each environment out as
+ *
+ *     base[0]  reference count
+ *     base[1]  capture mask: bit i set = capture i is itself a closure value,
+ *              owned by this environment and released with it
+ *     base[2]  the lifted function's address        <- env (what it is called with)
+ *     base[3+i] capture i
+ *
+ * and represents the closure VALUE as env + 1.  malloc'd storage is at least
+ * 8-aligned, so the low bit tells a closure apart from a plain function
+ * address (`&add`), which the same function-typed slot may hold and which is
+ * never counted.  0 (an unset binding) is neither.  The count is atomic: a
+ * closure value may reach another thread through std.task. */
+static int64_t *tk_clos_base(int64_t v)
+{
+    return (int64_t *)(intptr_t)((v - 1) - 2 * (int64_t)sizeof(int64_t));
+}
+
+void tk_clos_retain(int64_t v)
+{
+    if (!(v & 1)) return;
+    __atomic_fetch_add(&tk_clos_base(v)[0], 1, __ATOMIC_RELAXED);
+}
+
+void tk_clos_release(int64_t v)
+{
+    while (v & 1) {
+        int64_t *b = tk_clos_base(v);
+        if (__atomic_sub_fetch(&b[0], 1, __ATOMIC_ACQ_REL) != 0) return;
+        uint64_t mask = (uint64_t)b[1];
+        int64_t last = 0;
+        /* release every owned capture; the last one iteratively, so a long
+         * chain of closures capturing closures does not recurse per link */
+        for (int i = 0; mask; i++, mask >>= 1)
+            if (mask & 1u) {
+                if (last & 1) tk_clos_release(last);
+                last = b[3 + i];
+            }
+        free(b);
+        v = last;
+    }
+}
