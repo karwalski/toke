@@ -1720,6 +1720,8 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
  * such as `io.println(...)` resolve to no module-scope Decl) or declares no
  * return spec (a void call carries no value).
  */
+static const char *import_module_path(Ctx *cx, const char *alias,
+                                      char *buf, size_t bufsz);
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -1740,6 +1742,41 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
             if (ret && !strchr(ret, '!')) {
                 Type *ist = imported_struct_type(cx, ret, 0);
                 if (ist) return ist;
+                /* 127.224 item 7: a MAP returned from another user module.
+                 * Left unknown, `let m=lib.mk()` bound an untyped value; the
+                 * emitter decides map vs array from the rtype since 127.52
+                 * retired its __map__ tag, so `m.get("b")` lowered as an
+                 * array index and trapped RT003.  The interface spells it
+                 * `[K:V]` (ir.c); only scalar K and V are adopted, and only
+                 * across a user-module boundary — std interfaces are a
+                 * hand-written, drifted surface (check_tki_call) and stay as
+                 * they were. */
+                char pb[256];
+                const char *mp = import_module_path(cx, ab, pb, sizeof pb);
+                size_t rl = strlen(ret);
+                const char *colon = strchr(ret, ':');
+                if (mp && strncmp(mp, "std.", 4) != 0 && rl > 4
+                    && ret[0] == '[' && ret[rl - 1] == ']' && colon
+                    && !strchr(colon + 1, ':')) {
+                    char kb[64], vb[64];
+                    size_t kl = (size_t)(colon - ret - 1);
+                    size_t vl = (size_t)(ret + rl - 1 - (colon + 1));
+                    if (kl > 0 && kl < sizeof kb && vl > 0 && vl < sizeof vb) {
+                        memcpy(kb, ret + 1, kl); kb[kl] = '\0';
+                        memcpy(vb, colon + 1, vl); vb[vl] = '\0';
+                        Arena *A = cx->env->arena;
+                        Type *kt = tki_scalar_type(A, kb), *vt = tki_scalar_type(A, vb);
+                        Type *mt = (kt && vt) ? mk_type(A, TY_MAP) : NULL;
+                        Type **fts = mt ? (Type **)arena_alloc(A, (int)sizeof(Type *)) : NULL;
+                        if (mt && fts) {
+                            mt->elem = kt;
+                            mt->field_count = 1;
+                            mt->field_types = fts;
+                            fts[0] = vt;
+                            return mt;
+                        }
+                    }
+                }
             }
             return NULL;
         }
@@ -4404,6 +4441,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             check_recv_method_call(cx,node);
             /* and an array store must match the element type. */
             check_array_store_elem(cx,node);
+            /* 127.224 item 7: a map from another user module, used in place
+             * (`lib.mk().get("a")`) — the same answer the `let` binding gets
+             * from bind_init_type.  Maps only: see call_decl_ret_type. */
+            if (node->children[0]->kind==NODE_FIELD_EXPR) {
+                Type *mrt=call_decl_ret_type(cx,node);
+                if (mrt&&mrt->kind==TY_MAP) return mrt;
+            }
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;

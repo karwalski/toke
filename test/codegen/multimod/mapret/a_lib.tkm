@@ -1,0 +1,8 @@
+(* 127.224 multi-module certificate, module 1 of 2: map-returning functions. *)
+m=cgmm.maplib;
+f=counts():@(str:i64){
+  <@("a":1;"b":2)
+};
+f=names():@(str:str){
+  <@("x":"ex";"y":"why")
+};

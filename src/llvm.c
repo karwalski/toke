@@ -6255,6 +6255,12 @@ static int emit_expr(Ctx *c, const Node *n)
             /* Direct map variable */
             if (n->children[0]->kind == NODE_IDENT && recv_is_map(c, n->children[0]))
                 base_is_map = 1;  /* 127.46: uniquified LLVM names too */
+            /* 127.224 item 7: any other base the checker typed a map — a call
+             * into another user module used in place, `lib.mk().get("a")`,
+             * lowered as an array index and trapped RT003. */
+            if (!base_is_map && n->children[0]->kind != NODE_IDENT &&
+                n->children[0]->rtype && n->children[0]->rtype->kind == TY_MAP)
+                base_is_map = 1;
             /* Field access result: check if the field type starts with "@(" (map) */
             if (!base_is_map && n->children[0]->kind == NODE_FIELD_EXPR &&
                 n->children[0]->child_count >= 2) {
