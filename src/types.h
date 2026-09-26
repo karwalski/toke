@@ -90,4 +90,15 @@ typedef struct TypeEnv {
 int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out);
 
+/*
+ * tk_name_bound_at (127.214) — 1 when `name`, used at `use` inside `root`
+ * (or at `anchor` when `use` is a sub-parse node outside it), is bound
+ * lexically by a parameter, an enclosing block's earlier `let`/`mut`, an
+ * enclosing `lp` variable or an `mt` arm binding.  The type
+ * checker and the emitter both ask it whether `x.m(...)` with `x` spelled
+ * like an import alias is a receiver call on a value.
+ */
+int tk_name_bound_at(const Node *root, const char *src, const Node *use,
+                     const char *name, int nlen, const Node *anchor);
+
 #endif /* TK_TYPES_H */

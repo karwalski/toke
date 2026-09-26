@@ -385,6 +385,20 @@ static int name_is_local(Ctx *c, const char *name) {
     return 0;
 }
 static const char *expr_struct_type(Ctx *c, const Node *n); /* defined later */
+/* 127.214: `x.m(...)` where `x` is spelled like an import alias but is, where
+ * it stands, a parameter or a local in force (types.c tk_name_bound_at — the
+ * checker's own lexical answer) is a receiver call on that value, not a
+ * module call.  name_is_local first: the walk only runs on a collision. */
+static const Node *g_interp_host;   /* the STR_LIT whose \(..) is being lowered */
+static const char *g_interp_src;    /* ...and the source buffer it lives in */
+static int alias_is_value(Ctx *c, const Node *id) {
+    char nb[NAME_BUF];
+    if (!id || id->kind != NODE_IDENT) return 0;
+    tok_cp(c->src, id, nb, sizeof nb);
+    if (!name_is_local(c, nb)) return 0;
+    return tk_name_bound_at(c->la_prog, g_interp_host ? g_interp_src : c->src,
+                            id, nb, (int)strlen(nb), g_interp_host);
+}
 static const char *map_tag(int int_keys, int str_vals);     /* 127.39/127.41 */
 
 /* ── Struct type registry ──────────────────────────────────────────── */
@@ -2686,7 +2700,8 @@ static int recv_call_is_bool(Ctx *c, const Node *e) {
     tok_cp(c->src, cal->children[0], recv, sizeof recv);
     tok_cp(c->src, cal->children[1], member, sizeof member);
     for (int ii = 0; ii < c->import_count; ii++)
-        if (!strcmp(c->imports[ii].alias, recv)) return 0;   /* a module call */
+        if (!strcmp(c->imports[ii].alias, recv)
+            && !alias_is_value(c, cal->children[0])) return 0;   /* a module call (127.214) */
     if (!strcmp(member, "contains") || !strcmp(member, "starts") ||
         !strcmp(member, "ends") || !strcmp(member, "eq"))
         return recv_method_in_chain(member);
@@ -3719,6 +3734,9 @@ static int emit_expr(Ctx *c, const Node *n)
                                 seg_val, alen3, alen3, c->module_prefix, si3);
                     } else {
                         const char *saved_src = c->src;
+                        const Node *saved_host = g_interp_host;          /* 127.214 */
+                        const char *saved_hsrc = g_interp_src;
+                        g_interp_host = n; g_interp_src = saved_src;
                         c->src = wrap;
                         seg_val = emit_expr(c, expr_node);
                         const char *ety = expr_llvm_type(c, expr_node);
@@ -3733,6 +3751,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                            || recv_call_is_bool(c, expr_node));
                         diag_rebase_pop();
                         c->src = saved_src;
+                        g_interp_host = saved_host; g_interp_src = saved_hsrc;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
                          * carried a string pointer (true for s.fromint/format),
@@ -4662,6 +4681,7 @@ static int emit_expr(Ctx *c, const Node *n)
             int is_mod_im = 0;
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
+            if (alias_is_value(c, n->children[0]->children[0])) is_mod_im = 0;   /* 127.214 */
             /* Story 114.18 first-class Vec: if the receiver is a Vec-typed local/
              * param, instance methods dispatch to the tk_vec_* wrappers instead of
              * the array path (a Vec handle is a DynArr*, not a [count|data] block).
@@ -4933,7 +4953,9 @@ static int emit_expr(Ctx *c, const Node *n)
             char alias[128], method[128];
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
-            resolved_fn = resolve_stdlib_call(c, alias, method);
+            /* 127.214: a value named like an alias is a receiver. */
+            int av_fn = alias_is_value(c, n->children[0]->children[0]);
+            resolved_fn = av_fn ? NULL : resolve_stdlib_call(c, alias, method);
             /* 127.96: `http.res.ok(body)` — the sub-path spelling the stdlib
              * interfaces publish. Tried first because its receiver is itself
              * a field access, so `alias` above is not an alias at all. */
@@ -4970,7 +4992,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!resolved_fn) {
                     /* Check if alias is a module import */
                     for (int ii = 0; ii < c->import_count; ii++)
-                        if (!strcmp(c->imports[ii].alias, alias)) {
+                        if (!av_fn && !strcmp(c->imports[ii].alias, alias)) {
                             is_cross_module_user = 1; break;
                         }
                     /* Story 84.1.5: If alias matches a known stdlib module but
@@ -5784,7 +5806,8 @@ static int emit_expr(Ctx *c, const Node *n)
             int is_user_mod = 0;
             int is_std_mod = 0;
             for (int ii = 0; ii < c->import_count; ii++) {
-                if (!strcmp(c->imports[ii].alias, base_alias)) {
+                if (!strcmp(c->imports[ii].alias, base_alias)
+                    && !alias_is_value(c, n->children[0])) {        /* 127.214 */
                     if (c->imports[ii].is_std) is_std_mod = 1;
                     else is_user_mod = 1;
                     break;
@@ -5901,7 +5924,8 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 return t;
             }
-            const char *resolved_get = resolve_stdlib_call(c, base_alias, "get");
+            const char *resolved_get = alias_is_value(c, n->children[0]) ? NULL  /* 127.214 */
+                                     : resolve_stdlib_call(c, base_alias, "get");
             if (resolved_get) {
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
@@ -7375,7 +7399,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         n->children[0]->kind == NODE_IDENT) {
         char ma[128]; tok_cp(c->src, n->children[0], ma, sizeof ma);
         for (int ii = 0; ii < c->import_count; ii++) {
-            if (strcmp(c->imports[ii].alias, ma)) continue;
+            if (strcmp(c->imports[ii].alias, ma) || alias_is_value(c, n->children[0])) continue;
             const char *dt = tki_declared_tag(c, ma, "get");
             if (dt) return dt;
             break;
@@ -7495,6 +7519,8 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             char alias[128], method[128];
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
+            /* 127.214: a value named like an alias is a receiver call. */
+            int av = alias_is_value(c, n->children[0]->children[0]);
             /* Bug 113.B.21: `.get(i)` on a local typed "@str" (a str-array
              * element load, e.g. from str.split / str.chars) yields a single
              * string. Mark it "$str" so `let x = parts.get(i)` records x as a
@@ -7513,7 +7539,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (!strcmp(method, "get")) {
                 int _is_mod = 0;
                 for (int ii = 0; ii < c->import_count; ii++)
-                    if (!strcmp(c->imports[ii].alias, alias)) { _is_mod = 1; break; }
+                    if (!av && !strcmp(c->imports[ii].alias, alias)) { _is_mod = 1; break; }
                 if (!_is_mod) {
                     if (n->children[0]->children[0]->kind != NODE_IDENT) {
                         /* 127.7: `.get(i)` on a call result (`s.fields(x).get(0)`,
@@ -7528,7 +7554,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                 }
             }
             /* Well-known stdlib struct returns */
-            const char *resolved = resolve_stdlib_call(c, alias, method);
+            const char *resolved = av ? NULL : resolve_stdlib_call(c, alias, method);
             if (resolved && !strcmp(resolved, "tk_time_toparts_w"))
                 return "timeparts";
             /* Issue 112.2: mark string-returning stdlib calls so that
@@ -7615,7 +7641,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
              * reached lowering with no layout at all.  Gated on the alias
              * being an import, so an instance method is untouched.
              */
-            if (!resolved) {
+            if (!resolved && !av) {
                 for (int ii = 0; ii < c->import_count; ii++) {
                     if (strcmp(c->imports[ii].alias, alias)) continue;
                     const char *dt = tki_declared_tag(c, alias, method);
@@ -7633,7 +7659,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (!resolved) {
                 int _imp = 0;
                 for (int ii = 0; ii < c->import_count; ii++)
-                    if (!strcmp(c->imports[ii].alias, alias)) { _imp = 1; break; }
+                    if (!av && !strcmp(c->imports[ii].alias, alias)) { _imp = 1; break; }
                 if (!_imp) {
                     const Node *recv = n->children[0]->children[0];
                     /* 127.11: `a.slice(i;j)` on an array yields an ARRAY of the
@@ -7842,6 +7868,8 @@ static int interp_operand_type_unknown(Ctx *c, const Node *e,
     const char *mod = NULL;
     for (int i = 0; i < c->import_count; i++)
         if (!strcmp(c->imports[i].alias, alias)) { mod = c->imports[i].module; break; }
+    if (mod && alias_is_value(c, e->kind == NODE_INDEX_EXPR ? e->children[0]
+                                 : e->children[0]->children[0])) mod = NULL;   /* 127.214 */
     if (!mod) return 0;                            /* instance method, not a module */
     if (!strncmp(mod, "std.", 4)) mod += 4;
     const char *resolved = resolve_stdlib_call(c, alias, method);
@@ -8068,7 +8096,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             if (!strcmp(_gm, "get")) {
                 int _is_mod = 0;
                 for (int ii = 0; ii < c->import_count; ii++)
-                    if (!strcmp(c->imports[ii].alias, _ga)) { _is_mod = 1; break; }
+                    if (!strcmp(c->imports[ii].alias, _ga)
+                        && !alias_is_value(c, n->children[0]->children[0])) { _is_mod = 1; break; }
                 if (!_is_mod) {
                     const char *_ln = get_llvm_name(c, _ga);
                     const char *_st = ptr_local_struct_type(c, _ln);
@@ -8087,7 +8116,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             char alias[128], method[128];
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
-            const char *resolved = resolve_stdlib_call(c, alias, method);
+            /* 127.214: a value named like an alias is a receiver call —
+             * typed exactly as the same call on any other local. */
+            int av = alias_is_value(c, n->children[0]->children[0]);
+            const char *resolved = av ? NULL : resolve_stdlib_call(c, alias, method);
             /* 127.93: ask the same sub-namespace resolver emit_expr asks. */
             char sub_buf2[256];
             if (!resolved)
@@ -8114,7 +8146,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             /* Cross-module user call: check FnSig registry first */
             int is_mod = 0;
             for (int ii = 0; ii < c->import_count; ii++)
-                if (!strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
+                if (!av && !strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
             if (is_mod) {
                 /* Build mangled name for lookup (Story 81b.7) */
                 char mangled[256];
