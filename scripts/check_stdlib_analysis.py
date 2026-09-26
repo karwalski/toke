@@ -191,6 +191,36 @@ if OPENSSL_FLAGS is not None:
 # branch.  This is the C033 technique, generalised.
 HOST_MACRO = "__APPLE__" if sys.platform == "darwin" else "__linux__"
 
+# ── 135.3h: say which kind of --nonhost this was ─────────────────────────────
+#
+# By default --nonhost is an APPROXIMATION: -U<host macro> on the HOST SDK.
+# It reaches first-party #else branches, but a branch that needs a foreign
+# system header (log.c: the macOS SDK's own <dirent.h> will not parse without
+# __APPLE__; sys_glue.c: <sys/sysinfo.h> is Linux-only) cannot be built that
+# way.  Those files are `nonhost-uncoverable` on the skiplist -- a distinct
+# kind, so they are never read as code defects -- and the gate's final line
+# names them as NOT COVERED every time it passes.
+#
+# With TK_NONHOST_SYSROOT=<dir> (and optionally TK_NONHOST_TRIPLE, default
+# x86_64-linux-gnu on a macOS host, aarch64-apple-macos elsewhere) --nonhost
+# is a REAL cross-compile, --target=<triple> --sysroot=<dir>, with no macro
+# games; `nonhost-uncoverable` entries are then NOT honoured, because in that
+# mode those files can and must build.  The sysroot is the same kind
+# `make build-all` takes (TK_SYSROOT_<triple>, 135.3i).
+NONHOST_SYSROOT = os.environ.get("TK_NONHOST_SYSROOT", "")
+NONHOST_TRIPLE = os.environ.get(
+    "TK_NONHOST_TRIPLE",
+    "x86_64-linux-gnu" if sys.platform == "darwin" else "aarch64-apple-macos")
+NONHOST_CROSS = bool(NONHOST_SYSROOT)
+
+
+def nonhost_desc():
+    if NONHOST_CROSS:
+        return ("REAL cross-compile (--target=%s --sysroot=%s)"
+                % (NONHOST_TRIPLE, NONHOST_SYSROOT))
+    return ("APPROXIMATION (-U%s on the host SDK, not a cross-compile)"
+            % HOST_MACRO)
+
 WARN_RE = re.compile(r"^(.*?):(\d+):(\d+): warning: (.*?)\s*\[([A-Za-z0-9_.]+)\]\s*$")
 DIAG_RE = re.compile(r"^(.*?):(\d+):(\d+): (?:fatal )?error: (.*)$")
 
@@ -259,7 +289,7 @@ def load_skiplist():
                 continue
             parts = line.split()
             kind = parts[0]
-            if kind in ("compile", "nonhost"):
+            if kind in ("compile", "nonhost", "nonhost-uncoverable"):
                 if len(parts) != 2:
                     errors.append("%s:%d: %s takes exactly one path" % (SKIPLIST, lineno, kind))
                     continue
@@ -276,7 +306,7 @@ def load_skiplist():
                     continue
                 entries[(kind, parts[1])] = (n, reason, lineno)
             else:
-                errors.append("%s:%d: unknown record kind %r (compile|analyze|nonhost)"
+                errors.append("%s:%d: unknown record kind %r (compile|analyze|nonhost|nonhost-uncoverable)"
                               % (SKIPLIST, lineno, kind))
     return entries, errors
 
@@ -295,7 +325,10 @@ def run_cc(src, mode):
     else:
         flags.append("-fsyntax-only")
     if mode == "nonhost":
-        flags.append("-U" + HOST_MACRO)
+        if NONHOST_CROSS:
+            flags += ["--target=" + NONHOST_TRIPLE, "--sysroot=" + NONHOST_SYSROOT]
+        else:
+            flags.append("-U" + HOST_MACRO)
     r = subprocess.run([CC] + flags + [src], cwd=REPO_ROOT,
                        capture_output=True, text=True)
     return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
@@ -367,6 +400,7 @@ def main():
     stale = []
     proposed = []
     used = set()
+    uncovered = []
 
     for mode in modes:
         with ThreadPoolExecutor(max_workers=jobs) as ex:
@@ -375,13 +409,17 @@ def main():
         if mode in ("compile", "nonhost"):
             for src, ok, out in results:
                 key = (mode, src)
+                if (mode == "nonhost" and not NONHOST_CROSS and key not in skips
+                        and ("nonhost-uncoverable", src) in skips):
+                    key = ("nonhost-uncoverable", src)
+                    uncovered.append(src)
                 skipped = key in skips
                 if skipped:
                     used.add(key)
                 if ok and skipped:
                     stale.append("%s skip for %s is STALE — it now builds clean. "
                                  "Remove the line from %s."
-                                 % (mode, src, os.path.relpath(SKIPLIST, REPO_ROOT)))
+                                 % (key[0], src, os.path.relpath(SKIPLIST, REPO_ROOT)))
                 elif not ok and not skipped:
                     for e in first_errors(out):
                         failures.append("%s: %s" % (mode.upper(), e))
@@ -444,6 +482,10 @@ def main():
         if (kind, key) in used:
             continue
         path = key.split("::")[0]
+        if kind == "nonhost-uncoverable" and "nonhost" in modes and path not in sources:
+            stale.append("%s:%d: nonhost-uncoverable names %s, which is not in the "
+                         "analysed set — remove it." % (os.path.relpath(SKIPLIST, REPO_ROOT),
+                                                         lineno, path))
         if kind in ("compile", "nonhost") and kind in modes and path not in sources:
             stale.append("%s:%d: %s skip names %s, which is not in the analysed "
                          "set — remove it." % (os.path.relpath(SKIPLIST, REPO_ROOT),
@@ -455,11 +497,15 @@ def main():
             print(p)
         return 0
 
-    n_skips = sum(1 for k in skips if k[0] in modes)
+    n_skips = sum(1 for k in skips if k[0] in modes
+                  or (k[0] == "nonhost-uncoverable" and "nonhost" in modes
+                      and not NONHOST_CROSS))
     print("check_stdlib_analysis: %d sources, modes=%s, %d skiplist entries in play"
           % (len(sources), ",".join(modes), n_skips))
     if OPENSSL_FLAGS is not None:
         print("check_stdlib_analysis: OpenSSL headers via %s" % OPENSSL_HOW)
+    if "nonhost" in modes:
+        print("check_stdlib_analysis: nonhost = %s" % nonhost_desc())
     require_ssl = os.environ.get("TK_LINT_REQUIRE_OPENSSL") == "1"
     for n in named_skips:
         if require_ssl:
@@ -476,11 +522,15 @@ def main():
         print("check_stdlib_analysis: FAIL (%d unaccounted, %d stale)"
               % (len(set(failures)), len(set(stale))))
         return 1
+    notes = []
     if named_skips:
-        print("check_stdlib_analysis: OK, %d source(s) SKIPPED -- not checked: %s"
-              % (len(named_skips), ", ".join(n.split(":")[0] for n in named_skips)))
-        return 0
-    print("check_stdlib_analysis: OK")
+        notes.append("%d source(s) SKIPPED -- not checked: %s"
+                     % (len(named_skips), ", ".join(n.split(":")[0] for n in named_skips)))
+    if "nonhost" in modes and not NONHOST_CROSS:
+        notes.append("nonhost was an APPROXIMATION (-U%s, host SDK); NOT COVERED: %s "
+                     "-- set TK_NONHOST_SYSROOT for a real cross-compile"
+                     % (HOST_MACRO, ", ".join(sorted(set(uncovered))) or "none"))
+    print("check_stdlib_analysis: OK%s" % ("" if not notes else ", " + "; ".join(notes)))
     return 0
 
 
