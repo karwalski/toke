@@ -1337,6 +1337,9 @@ static int suggestion_fits(const Decl *d, int want_type) {
     return 1;
 }
 
+/* 127.98 (i): set while the base identifier of a member access is resolved */
+static int s_resolving_member_base = 0;
+
 static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
     const char *name = src + node->tok_start;
@@ -1362,6 +1365,36 @@ static void resolve_ident(const Node *node, const char *src,
      * reference and is resolved through this same function from type
      * positions, so applying it there would reject every annotation.
      */
+    /* 127.98 (i) — the BUILT-IN type names.  names.c seeds bool/i64/u64/
+     * f64/str/void into module scope as DECL_PREDEFINED, so the 137.4 check
+     * above them (DECL_TYPE only) let them through: `let x=str;` checked
+     * clean and failed in clang on `%str`, and `mut.@(str:str)` built a
+     * one-entry map keyed by the "value" str (E9003).  A bare built-in type
+     * name in a value position is E4033 too.  Not for the base of a member
+     * access (`str.len(s)` with std.str not imported): types.c reports that
+     * one with its own, certain fix (127.135).  No fix here: a string
+     * literal, a binding or a typed-empty `@($str:$str)` are all plausible. */
+    if (found && found->kind == DECL_PREDEFINED && node->kind == NODE_IDENT
+        && !s_resolving_member_base) {
+        static const char *const builtin_types[] = {
+            "bool", "i64", "u64", "f64", "str", "void", NULL };
+        for (int bi = 0; builtin_types[bi]; bi++) {
+            if ((int)strlen(builtin_types[bi]) != len ||
+                memcmp(builtin_types[bi], name, (size_t)len) != 0) continue;
+            s_name_error_count++;
+            if (s_name_error_count <= MAX_NAME_ERRORS) {
+                char msg[160];
+                snprintf(msg, sizeof msg,
+                         "'%s' is a built-in type name, not a value",
+                         builtin_types[bi]);
+                diag_emit(DIAG_ERROR, E4033, node->start, node->line, node->col,
+                          msg, "expected", "a value", "got", builtin_types[bi],
+                          (const char *)NULL);
+            }
+            *had_error = 1;
+            return;
+        }
+    }
     if (found && found->kind == DECL_TYPE && node->kind == NODE_IDENT) {
         s_name_error_count++;
         if (s_name_error_count <= MAX_NAME_ERRORS) {
@@ -1774,8 +1807,13 @@ static int resolve_node(const Node *node, const char *src,
          * child[1] is the field name (NODE_IDENT — do NOT resolve as an
          * identifier; it is a struct member name, resolved by the type checker).
          * When child[0] is a simple IDENT, verify it is declared. */
-        if (node->child_count > 0)
+        if (node->child_count > 0) {
+            int saved_mb = s_resolving_member_base;
+            s_resolving_member_base =
+                node->children[0] && node->children[0]->kind == NODE_IDENT;
             resolve_node(node->children[0], src, scope, arena, had_error);
+            s_resolving_member_base = saved_mb;
+        }
         /* child[1] (field name) intentionally skipped — not a standalone ref. */
         break;
     }
