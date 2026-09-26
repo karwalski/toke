@@ -3398,6 +3398,10 @@ static void fallible_local_premint(Ctx *c, const char *lname)
     c->fall_pre[i] = 1;
     snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
     fprintf(c->out, "  %%%s = alloca i64\n", c->fall_slot[i]);
+    /* 127.103's per-binding box copy: fallible_local_record() mints it only
+     * when it mints the slot, so a slot pre-minted here must carry it too, or
+     * the later fallible assignment's keep references an undefined value. */
+    fprintf(c->out, "  %%%s.keep = alloca [%d x i64]\n", c->fall_slot[i], TKC_MAX_PARAMS);
     fprintf(c->out, "  store i64 0, i64* %%%s ; 135.16a no error until a fallible assignment\n",
             c->fall_slot[i]);
 }
