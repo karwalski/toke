@@ -156,7 +156,7 @@ EOF
     fi
 fi
 
-echo "C134: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 # Positive assertion: at least the fixed checks ran (4 fixed + 1 per triple + 1).
 [ $((PASS + FAIL)) -ge 7 ] || { echo "C134: only $((PASS + FAIL)) checks ran"; exit 1; }
 [ "${FAIL}" -eq 0 ]

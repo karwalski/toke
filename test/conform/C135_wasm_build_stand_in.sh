@@ -128,7 +128,7 @@ r="$(json format 'm=main;f=main():i64{let x=1;<x};')"
 expect "format: success"   "$(field success "${r}")"   "true"
 expect "format: formatted" "$(field formatted "${r}")" 'm=main;\nf=main():i64 {\n  let x=1;\n  <x\n}\n'
 
-echo "C135: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 # Positive assertion: the build check and all nine API checks ran.
 [ $((PASS + FAIL)) -ge 10 ] || { echo "C135: only $((PASS + FAIL)) checks ran"; exit 1; }
 [ "${FAIL}" -eq 0 ]

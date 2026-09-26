@@ -80,7 +80,7 @@ check "http_upstream_latency_seconds_sum"   "$(value http_upstream_latency_secon
 check "http_upstream_latency_seconds_count" "$(value http_upstream_latency_seconds_count)" "3"
 check "http_upstream_requests_total"        "$(value http_upstream_requests_total)"        "3"
 
-echo "C133: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 # Positive assertion: exactly three checks ran.
 [ $((PASS+FAIL)) -eq 3 ] || { echo "C133: expected 3 checks, ran $((PASS+FAIL))"; exit 1; }
 [ "${FAIL}" -eq 0 ]
