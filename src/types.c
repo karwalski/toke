@@ -4535,7 +4535,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                              type_name(src_t),type_name(dst_t));
                     diag_emit(DIAG_WARNING,W1001,node->start,node->line,node->col,
                               msg,"expected",type_name(dst_t),"got",type_name(src_t),
-                              "fix","ensure the value fits in the target type or handle truncation",
+                              /* 127.223 item 4: no fix — "ensure the value
+                               * fits" is guidance, not a repair, and
+                               * errors.md specifies the field absent */
                               (const char*)NULL);
                 }
             }

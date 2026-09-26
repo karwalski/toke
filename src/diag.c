@@ -293,8 +293,14 @@ severity_str(DiagSeverity sev)
  * static string used as the "stage" field in JSON output.
  */
 static const char *
-phase_for_code(int code)
+phase_for_code(int code, DiagSeverity sev)
 {
+    /* 127.223 item 4: W1001 (lossy cast) sits in the 1xxx range for
+     * historical reasons but is raised by the type checker (types.c,
+     * NODE_CAST_EXPR); reporting it as "lex" pointed a consumer filtering by
+     * stage at the wrong pass.  The code is stable; only its stage is fixed.
+     * The number is shared with E1001 (a lexer error), hence the severity. */
+    if (code == 1001 && sev == DIAG_WARNING) return "type_check";
     if (code >= 1000 && code <= 1999) return "lex";
     if (code >= 2000 && code <= 2999) return "parse";
     if (code >= 3000 && code <= 3999) return "name_resolution";
@@ -331,7 +337,7 @@ emit_json(DiagSeverity sev, int code,
             "\"severity\":\"%s\","
             "\"stage\":\"%s\","
             "\"message\":\"",
-            diag_id, code_str, severity_str(sev), phase_for_code(code));
+            diag_id, code_str, severity_str(sev), phase_for_code(code, sev));
     json_escape(stderr, message);
     fprintf(stderr, "\",\"file\":\"");
     json_escape(stderr, s_source_file);
