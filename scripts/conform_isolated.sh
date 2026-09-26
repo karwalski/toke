@@ -156,8 +156,21 @@ if [ "${MODE}" = exec ]; then
     exit $?
 fi
 
+# 127.131: a raw NUL in a gate log makes the whole log "binary" to grep, so
+# a later `grep PASS` on it prints nothing (ugrep -I) or "Binary file
+# matches" (BSD/GNU grep) -- a passing run reads as one with no PASS lines.
+# L007's description did this to every log through `echo -e` until 127.131.
+# Refuse such a log rather than let it reach a reader.
+nul_bytes() { LC_ALL=C tr -dc '\000' < "$1" | wc -c | tr -d ' '; }
+
 if [ "${MODE}" = all ] || [ "${MODE}" = yaml ]; then
-    bash test/run_conform.sh || rc=1
+    ylog="${PRIV}/yaml.log"
+    bash test/run_conform.sh | tee "${ylog}" || rc=1
+    n="$(nul_bytes "${ylog}")"
+    if [ "${n}" -ne 0 ]; then
+        echo "conform: FAIL -- the conformance output contains ${n} NUL byte(s); grep would read it as binary (127.131)"
+        rc=1
+    fi
 fi
 
 if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
@@ -174,7 +187,7 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
         if [ "${serial}" -eq 1 ]; then
             wait_lock "the serial lock for ${name}" "${LOCKROOT}/serial" || { fail=$((fail+1)); echo "FAIL ${s}: serial lock not acquired"; continue; }
         fi
-        if bash "${s}" > "${log}" 2>&1; then
+        if bash "${s}" > "${log}" 2>&1 && [ "$(nul_bytes "${log}")" -eq 0 ]; then
             why=""
             if [ -n "$(sed -n '/^CONFORM-SKIP:/=' "${log}")" ]; then
                 why="$(sed -n 's/^CONFORM-SKIP: *//p' "${log}" | head -1)"
@@ -185,10 +198,16 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
             elif [ -n "${why}" ]; then
                 skip=$((skip+1)); echo "SKIP ${s}: ${why}"
             else
-                pass=$((pass+1)); echo "PASS ${s}: $(grep -E '^Results:' "${log}" | tail -1)"
+                # 127.131: awk, not grep -- a log carrying one control byte is
+                # "binary" to grep, which then prints "Binary file matches" (BSD)
+                # or nothing at all (ugrep -I) instead of the line.
+                pass=$((pass+1)); echo "PASS ${s}: $(awk '/^Results:/{l=$0} END{print l}' "${log}")"
             fi
         else
-            fail=$((fail+1)); echo "FAIL ${s}"; tail -25 "${log}" | sed 's/^/    /'
+            fail=$((fail+1)); echo "FAIL ${s}"
+            n="$(nul_bytes "${log}")"
+            [ "${n}" -eq 0 ] || echo "    (its output contains ${n} NUL byte(s) -- binary to grep; 127.131)"
+            tail -25 "${log}" | LC_ALL=C tr -d '\000' | sed 's/^/    /'
         fi
         if [ "${serial}" -eq 1 ]; then
             d="${LOCKROOT}/serial"
@@ -197,6 +216,10 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
     done
     echo "conform-sh: ${pass} scripts passed, ${fail} failed, ${skip} skipped"
     [ "${fail}" -eq 0 ] || rc=1
+    # 127.131: a sweep that ran nothing did not pass.
+    if [ $((pass + fail + skip)) -eq 0 ]; then
+        echo "conform-sh: NO suites ran -- that is not a pass" >&2; rc=1
+    fi
 fi
 
 exit "${rc}"
