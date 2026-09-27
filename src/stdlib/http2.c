@@ -566,6 +566,16 @@ static int hpack_insert(HpackTable *t, const char *name, const char *value)
 {
     size_t entry_size = strlen(name) + strlen(value) + 32;
 
+    /* 135.3j: the copies are made FIRST.  They were strdup'd into
+     * entries[0] after the shift, unchecked, so an allocation failure left
+     * a counted entry with a NULL name/value that the next lookup handed
+     * out and the encoder's strcmp dereferenced.  On failure the table is
+     * unchanged and the caller is told (-1), so encoder and decoder cannot
+     * silently disagree about the dynamic table. */
+    char *ncopy = strdup(name);
+    char *vcopy = strdup(value);
+    if (!ncopy || !vcopy) { free(ncopy); free(vcopy); return -1; }
+
     /* Entry too large for table — evict everything */
     if (entry_size > t->max_size) {
         for (size_t i = 0; i < t->count; i++) {
@@ -574,6 +584,7 @@ static int hpack_insert(HpackTable *t, const char *name, const char *value)
         }
         t->count = 0;
         t->size  = 0;
+        free(ncopy); free(vcopy);
         return 0;
     }
 
@@ -591,7 +602,7 @@ static int hpack_insert(HpackTable *t, const char *name, const char *value)
          * not realloc to zero bytes and then write entries[0]. */
         size_t new_cap = t->capacity ? t->capacity * 2 : 64;
         HpackEntry *ne = realloc(t->entries, new_cap * sizeof(HpackEntry));
-        if (!ne) return -1;
+        if (!ne) { free(ncopy); free(vcopy); return -1; }
         t->entries  = ne;
         t->capacity = new_cap;
     }
@@ -600,8 +611,8 @@ static int hpack_insert(HpackTable *t, const char *name, const char *value)
     if (t->count > 0)
         memmove(t->entries + 1, t->entries, t->count * sizeof(HpackEntry));
 
-    t->entries[0].name       = strdup(name);
-    t->entries[0].value      = strdup(value);
+    t->entries[0].name       = ncopy;
+    t->entries[0].value      = vcopy;
     t->entries[0].entry_size = entry_size;
     t->count++;
     t->size += entry_size;
@@ -831,7 +842,7 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
             }
             value = hpack_decode_string(buf, len, &pos);
             if (!name || !value) goto err;
-            hpack_insert(t, name, value);
+            if (hpack_insert(t, name, value) < 0) goto err;
         } else if (buf[pos] & 0x20) {
             /* Dynamic table size update (§6.3) */
             uint32_t new_size;
@@ -975,7 +986,7 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
             if (pos + vlen > out_cap) return -1;
             memcpy(out + pos, value, vlen);
             pos += vlen;
-            hpack_insert(t, name, value);
+            if (hpack_insert(t, name, value) < 0) return -1;
         } else {
             /* Literal with incremental indexing, new name (§6.2.1) */
             if (pos >= out_cap) return -1;
@@ -996,7 +1007,7 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
             if (pos + vlen > out_cap) return -1;
             memcpy(out + pos, value, vlen);
             pos += vlen;
-            hpack_insert(t, name, value);
+            if (hpack_insert(t, name, value) < 0) return -1;
         }
     }
 
