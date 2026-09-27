@@ -116,7 +116,8 @@ typedef struct {
     int       field_count;
     int       field_cap;
     uint32_t *field_type_idxs;
-    uint32_t  elem_type_idx;   /* ARRAY: element; FN_PTR: return (127.211) */
+    uint32_t  elem_type_idx;   /* ARRAY: element; FN_PTR: return (127.211); MAP: value */
+    uint32_t  key_type_idx;    /* MAP: key (127.219) */
 } EncTypeEntry;
 
 typedef struct {
@@ -153,6 +154,9 @@ typedef struct {
 #define ENC_MAX_DATA  1024
 /* The type section stores a struct's field count as a u16. */
 #define ENC_MAX_FIELDS 65535
+/* Pending `br` exits across all loops open at once; a body needing more is
+ * refused with E9010 rather than written with an unresolved label. */
+#define ENC_MAX_BREAKS 1024
 
 typedef struct {
     const char    *src;
@@ -174,6 +178,12 @@ typedef struct {
 
     uint16_t       reg;
     TkirBuf        code;
+    uint32_t       max_label;     /* 127.219: highest label the body targets */
+    /* 127.219: pending `br` exits of the enclosing loops (code offsets of
+     * their label immediates); brk_base marks where the innermost starts. */
+    size_t         brk[ENC_MAX_BREAKS];
+    int            brk_n, brk_base;
+    int            failed;        /* an E9010 was emitted mid-body */
     uint32_t       instr_count;   /* instructions in the current function */
     uint8_t        last_op;       /* opcode of the last one emitted       */
 } Enc;
@@ -211,6 +221,16 @@ static uint32_t enc_resolve_type_kind(const char *name)
         return TKIR_TY_STR;
     if (!strcmp(name, "void") || !strcmp(name, "Void"))
         return TKIR_TY_VOID;
+    /* 127.219: these fell through to "struct named u64". */
+    if (!strcmp(name, "i8"))  return TKIR_TY_I8;
+    if (!strcmp(name, "i16")) return TKIR_TY_I16;
+    if (!strcmp(name, "i32")) return TKIR_TY_I32;
+    if (!strcmp(name, "u8") || !strcmp(name, "byte") || !strcmp(name, "Byte"))
+        return TKIR_TY_U8;
+    if (!strcmp(name, "u16")) return TKIR_TY_U16;
+    if (!strcmp(name, "u32")) return TKIR_TY_U32;
+    if (!strcmp(name, "u64")) return TKIR_TY_U64;
+    if (!strcmp(name, "f32")) return TKIR_TY_F32;
     return 0;
 }
 
@@ -248,6 +268,24 @@ static uint32_t enc_compound(Enc *e, uint8_t kind, uint32_t elem)
     return (uint32_t)e->type_count++;
 }
 
+/* A MAP entry, keyed on both of its type indices. */
+static uint32_t enc_map(Enc *e, uint32_t key, uint32_t val)
+{
+    for (int i = 0; i < e->type_count; i++) {
+        const EncTypeEntry *t = &e->type_entries[i];
+        if (t->kind == TKIR_TY_MAP && t->key_type_idx == key && t->elem_type_idx == val)
+            return (uint32_t)i;
+    }
+    if (e->type_count >= ENC_MAX_TYPES) return 0;
+    EncTypeEntry *te = &e->type_entries[e->type_count];
+    te->kind = TKIR_TY_MAP;
+    te->name[0] = '\0';
+    te->field_count = 0;
+    te->key_type_idx = key;
+    te->elem_type_idx = val;
+    return (uint32_t)e->type_count++;
+}
+
 static uint32_t enc_type_idx_from_node(Enc *e, const Node *n)
 {
     if (!n) return enc_ensure_scalar(e, TKIR_TY_VOID);
@@ -266,6 +304,12 @@ static uint32_t enc_type_idx_from_node(Enc *e, const Node *n)
                                                : enc_ensure_scalar(e, TKIR_TY_VOID));
     if (n->kind == NODE_FUNC_TYPE)
         return enc_compound(e, TKIR_TY_FN_PTR, enc_ensure_scalar(e, TKIR_TY_VOID));
+    /* 127.219: a map type was written as void. */
+    if (n->kind == NODE_MAP_TYPE && n->child_count >= 2) {
+        uint32_t k = enc_type_idx_from_node(e, n->children[0]);
+        uint32_t v = enc_type_idx_from_node(e, n->children[1]);
+        return enc_map(e, k, v);
+    }
     return enc_ensure_scalar(e, TKIR_TY_VOID);
 }
 
@@ -351,6 +395,40 @@ static void enc_emit_ret(Enc *e, uint16_t src_reg)
 static void enc_emit_ret_void(Enc *e)
 {
     enc_ins(e, TKIR_OP_RET, 0, 0, 0);
+}
+
+/* 127.219: labels.  enc_branch writes BR / BR_IF with a placeholder label
+ * and returns the code offset of that u32; enc_patch later stores the
+ * instruction index the branch goes to (see tkir.h for the semantics). */
+static size_t enc_branch(Enc *e, uint8_t op, uint16_t cond)
+{
+    enc_ins(e, op, 0, cond, 0);
+    size_t at = e->code.len;
+    tkir_buf_u32(&e->code, 0);
+    return at;
+}
+
+static void enc_patch(Enc *e, size_t at, uint32_t label)
+{
+    if (!e->code.data || at + 4 > e->code.len) return;
+    e->code.data[at]     = (uint8_t)(label & 0xFF);
+    e->code.data[at + 1] = (uint8_t)((label >> 8) & 0xFF);
+    e->code.data[at + 2] = (uint8_t)((label >> 16) & 0xFF);
+    e->code.data[at + 3] = (uint8_t)((label >> 24) & 0xFF);
+    if (label > e->max_label) e->max_label = label;
+}
+
+/* 127.219: the index of `field` in the struct type of `base`, from the
+ * checker's type on the node; -1 when the base is not a known struct. */
+static int enc_field_index(Enc *e, const Node *base, const Node *field)
+{
+    const Type *t = base ? base->rtype : NULL;
+    if (!t || t->kind != TY_STRUCT || !t->field_names || !field) return -1;
+    char fname[NAME_BUF];
+    enc_tok_text(e->src, field, fname, NAME_BUF);
+    for (int i = 0; i < t->field_count; i++)
+        if (t->field_names[i] && !strcmp(t->field_names[i], fname)) return i;
+    return -1;
 }
 
 /* ── Encoder: prepass ────────────────────────────────────────────────── */
@@ -564,7 +642,10 @@ static uint16_t enc_emit_expr(Enc *e, const Node *n)
         uint16_t base = enc_emit_expr(e, n->children[0]);
         uint16_t dest = enc_next_reg(e);
         enc_ins(e, TKIR_OP_FIELD_GET, dest, base, 0);
-        tkir_buf_u16(&e->code, 0);   /* field index: not resolved yet */
+        /* 127.219: the real index; 0xFFFF when the checker gave the base no
+         * struct type (never a guess that names the wrong field). */
+        int fi = enc_field_index(e, n->children[0], n->children[1]);
+        tkir_buf_u16(&e->code, fi < 0 ? 0xFFFF : (uint16_t)fi);
         return dest;
     }
     case NODE_CAST_EXPR: {
@@ -611,18 +692,61 @@ static void enc_emit_stmt(Enc *e, const Node *n)
         }
         break;
     case NODE_IF_STMT:
+        /* 127.219: BR_IF c ->else ; then ; BR ->end ; else ; end */
         if (n->child_count >= 2) {
             uint16_t cond = enc_emit_expr(e, n->children[0]);
-            enc_ins(e, TKIR_OP_BR_IF, 0, cond, 0);
-            tkir_buf_u32(&e->code, 0);   /* label: not resolved yet */
+            size_t to_else = enc_branch(e, TKIR_OP_BR_IF, cond);
             enc_emit_stmt(e, n->children[1]);
-            if (n->child_count > 2) enc_emit_stmt(e, n->children[2]);
+            if (n->child_count > 2) {
+                size_t to_end = enc_branch(e, TKIR_OP_BR, 0);
+                enc_patch(e, to_else, e->instr_count);
+                enc_emit_stmt(e, n->children[2]);
+                enc_patch(e, to_end, e->instr_count);
+            } else {
+                enc_patch(e, to_else, e->instr_count);
+            }
         }
         break;
-    case NODE_LOOP_STMT:
-        enc_ins(e, TKIR_OP_BR, 0, 0, 0);
-        tkir_buf_u32(&e->code, 0);       /* label: not resolved yet */
-        for (int i = 0; i < n->child_count; i++) enc_emit_stmt(e, n->children[i]);
+    case NODE_LOOP_STMT: {
+        /* 127.219: [init] ; top: cond ; BR_IF ->end ; body ; [step] ;
+         * BR ->top ; end.  Four children for lp(init;cond;step){body},
+         * two for lp(cond){body}. */
+        int three = n->child_count == 4;
+        if (n->child_count != 4 && n->child_count != 2) break;
+        if (three) enc_emit_stmt(e, n->children[0]);
+        uint32_t top = e->instr_count;
+        uint16_t cond = enc_emit_expr(e, n->children[three ? 1 : 0]);
+        size_t to_end = enc_branch(e, TKIR_OP_BR_IF, cond);
+        int saved_base = e->brk_base;
+        e->brk_base = e->brk_n;
+        enc_emit_stmt(e, n->children[three ? 3 : 1]);
+        if (three) enc_emit_stmt(e, n->children[2]);
+        size_t back = enc_branch(e, TKIR_OP_BR, 0);
+        enc_patch(e, back, top);
+        enc_patch(e, to_end, e->instr_count);
+        for (int b = e->brk_base; b < e->brk_n; b++) enc_patch(e, e->brk[b], e->instr_count);
+        e->brk_n = e->brk_base;
+        e->brk_base = saved_base;
+        break;
+    }
+    case NODE_BREAK_STMT:
+        if (e->brk_n >= ENC_MAX_BREAKS) {
+            if (!e->failed)
+                diag_emit(DIAG_ERROR, E9010, n->start, n->line, n->col,
+                          "compiler limit exceeded: too many loop exits for .tkir", (void *)0);
+            e->failed = 1;
+            break;
+        }
+        e->brk[e->brk_n++] = enc_branch(e, TKIR_OP_BR, 0);
+        break;
+    case NODE_LOOP_INIT:
+        if (n->child_count >= 2) {
+            uint16_t val = enc_emit_expr(e, n->children[1]);
+            uint16_t slot = enc_next_reg(e);
+            enc_ins(e, TKIR_OP_ALLOCA, slot, 0, 0);
+            tkir_buf_u32(&e->code, 8);
+            enc_ins(e, TKIR_OP_STORE, slot, val, 0);
+        }
         break;
     case NODE_EXPR_STMT:
         if (n->child_count > 0) enc_emit_expr(e, n->children[0]);
@@ -640,8 +764,12 @@ static void enc_emit_func_body(Enc *e, int func_idx)
     fn->code_off = (uint32_t)e->code.len;
     e->instr_count = 0;
     e->last_op = 0;
+    e->max_label = 0;
+    e->brk_n = e->brk_base = 0;
     enc_emit_stmt(e, fn->body);
-    if (e->instr_count == 0 || e->last_op != TKIR_OP_RET)
+    /* 127.219: a label may point one past the last instruction (an `if`
+     * whose branches both return); the appended RET gives it a target. */
+    if (e->instr_count == 0 || e->last_op != TKIR_OP_RET || e->max_label >= e->instr_count)
         enc_emit_ret_void(e);
     /* RET's dst slot is register 0, so a body always owns at least one. */
     if (e->reg == 0) e->reg = 1;
@@ -678,6 +806,9 @@ static void enc_write_type_section(TkirBuf *out, Enc *e)
             for (int fld = 0; fld < te->field_count; fld++)
                 tkir_buf_u16(&sec, (uint16_t)te->field_type_idxs[fld]);
         } else if (te->kind == TKIR_TY_ARRAY || te->kind == TKIR_TY_ERR_UNION) {
+            tkir_buf_u16(&sec, (uint16_t)te->elem_type_idx);
+        } else if (te->kind == TKIR_TY_MAP) {                 /* 127.219 */
+            tkir_buf_u16(&sec, (uint16_t)te->key_type_idx);
             tkir_buf_u16(&sec, (uint16_t)te->elem_type_idx);
         } else if (te->kind == TKIR_TY_FN_PTR) {
             tkir_buf_u16(&sec, 0);                            /* name: none   */
@@ -833,6 +964,11 @@ int emit_tkir(const Node *ast, const char *src,
 
     for (int i = 0; i < e.func_count; i++)
         enc_emit_func_body(&e, i);
+    if (e.failed) {                     /* 127.219: E9010 already emitted */
+        enc_free_types(&e);
+        tkir_buf_free(&e.code);
+        return -1;
+    }
 
     TkirBuf out;
     tkir_buf_init(&out);
@@ -982,7 +1118,7 @@ static int parse_type_section(Cursor *c, size_t sec_end, TkirModule *mod,
         }
 
         /* Validate kind */
-        if (t->kind < 0x01 || t->kind > 0x09) {
+        if (t->kind < 0x01 || t->kind > TKIR_TY_MAX) {   /* 127.219 */
             char msg[128];
             snprintf(msg, sizeof(msg), "type section: unknown type kind 0x%02x at index %d", t->kind, i);
             set_err(errbuf, errbuf_len, msg);
@@ -1006,6 +1142,14 @@ static int parse_type_section(Cursor *c, size_t sec_end, TkirModule *mod,
                 set_err(errbuf, errbuf_len, "type section: truncated elem_type_idx");
                 return -1;
             }
+        }
+
+        /* 127.219: MAP carries key then value. */
+        t->key_type_idx = 0;
+        if (t->kind == TKIR_TY_MAP &&
+            (cur_read_u16(c, &t->key_type_idx) < 0 || cur_read_u16(c, &t->elem_type_idx) < 0)) {
+            set_err(errbuf, errbuf_len, "type section: truncated map key/value");
+            return -1;
         }
 
         /* Field types for struct */
@@ -1204,6 +1348,16 @@ static int parse_code_section(Cursor *c, size_t sec_end, TkirModule *mod,
                 /* BR/BR_IF: u32 label */
                 if (cur_read_u32(c, &ins->imm.u32) < 0) {
                     set_err(errbuf, errbuf_len, "code section: truncated branch imm");
+                    return -1;
+                }
+                /* 127.219: a label is an instruction index in this function. */
+                if (ins->imm.u32 >= instr_count) {
+                    char msg[160];
+                    snprintf(msg, sizeof(msg),
+                             "code section: branch label %u out of range in func '%s' "
+                             "instr %d (instr_count=%u)", ins->imm.u32, fn->name, i,
+                             (unsigned)instr_count);
+                    set_err(errbuf, errbuf_len, msg);
                     return -1;
                 }
             } else if (ins->opcode == TKIR_OP_CALL) {
@@ -1631,6 +1785,15 @@ const char *tkir_type_kind_name(uint8_t kind)
     case TKIR_TY_ARRAY:     return "array";
     case TKIR_TY_FN_PTR:    return "fn";
     case TKIR_TY_ERR_UNION: return "error_union";
+    case TKIR_TY_I8:        return "i8";      /* 127.219 */
+    case TKIR_TY_I16:       return "i16";
+    case TKIR_TY_I32:       return "i32";
+    case TKIR_TY_U8:        return "u8";
+    case TKIR_TY_U16:       return "u16";
+    case TKIR_TY_U32:       return "u32";
+    case TKIR_TY_U64:       return "u64";
+    case TKIR_TY_F32:       return "f32";
+    case TKIR_TY_MAP:       return "map";
     default:                return "UNKNOWN";
     }
 }
@@ -1657,6 +1820,8 @@ void tkir_dump(const TkirModule *mod, FILE *f)
             t->kind == TKIR_TY_FN_PTR) {
             fprintf(f, " elem=%u", t->elem_type_idx);
         }
+        if (t->kind == TKIR_TY_MAP)
+            fprintf(f, " key=%u val=%u", t->key_type_idx, t->elem_type_idx);
         if (t->field_count > 0) {
             fprintf(f, " fields=%u", t->field_count);
         }

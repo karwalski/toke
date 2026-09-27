@@ -64,7 +64,10 @@ entry_count: u32
 entries:
   kind:    u8   (0x01=i64, 0x02=f64, 0x03=bool, 0x04=str,
                  0x05=void, 0x06=struct, 0x07=array, 0x08=fn_ptr,
-                 0x09=error_union)
+                 0x09=error_union,
+                 0x0A=i8, 0x0B=i16, 0x0C=i32, 0x0D=u8, 0x0E=u16, 0x0F=u32,
+                 0x10=u64, 0x11=f32, 0x12=map  -- story 127.219, format 1.1)
+  // map:    key_type_idx, value_type_idx   (as the encoder writes them: u16 each)
   // struct: field_count:u32, (name_len:u16, name:utf8, type_idx:u32)*
   // array:  element_type_idx:u32
   // fn_ptr: param_count:u32, param_type_idx*, return_type_idx:u32
