@@ -1,9 +1,10 @@
 id: D101
 series: D
-description: "127.230 item 4: a let-annotation E4031 whose `as` cast is not a certain repair carries no fix. `@(1;256)` into `@(u8)` was offered \"cast RHS to @(u8) using 'as'\"; `as` does not convert an array's element type, and 256 does not fit a u8 (AGENTS §6)"
+description: "E1007 fix field is absent (comment open at end of file; where the missing '*)' goes is not decidable — 138.10 / T-27)"
 input: |
-  m=t;
-  f=main():i64{let a:@(u8)=@(1;256);<0};
+  m=test;
+  (* reads COUNT(*) from the table *)
+  f=main():i64{<1};
 expected_exit_code: 1
-expected_error_codes: ["E4031"]
+expected_error_codes: ["E1007"]
 expected_fix_absent: true

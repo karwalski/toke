@@ -55,11 +55,12 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E1004 | error | lex | Digit-leading or unterminated identifier | -- |
 | E1005 | error | lex | Invalid numeric literal | -- |
 | E1006 | error | lex | Uppercase keyword in default syntax mode | n/s |
+| E1007 | error | lex | Unterminated comment | D101, C325 |
 | W1010 | warning | lex | String interpolation `\(…)` not supported in the legacy profile | D005, D009 |
 | W1011 | warning | lex | Identifier starts with a keyword prefix | n/s |
-| W1020 | warning | lex | Foreign keyword detected | n/s |
+| W1020 | warning | lex | Foreign keyword detected | C328 |
 | E2001 | error | parse | Declaration ordering violation | G024 |
-| E2002 | error | parse | Unexpected token | -- |
+| E2002 | error | parse | Unexpected token | C326, C327 |
 | E2003 | error | parse | Missing semicolon | -- |
 | E2004 | error | parse | Unclosed delimiter | -- |
 | E2005 | error | parse | Unexpected token in type position | -- |
@@ -255,6 +256,34 @@ f=a():i64{<0x};
 
 ---
 
+### E1007 -- Unterminated comment
+
+| Field | Value |
+|-------|-------|
+| **Code** | E1007 |
+| **Stage** | lex |
+| **Severity** | error |
+| **Message** | `unterminated comment: the '(*' at L:C is never closed, so the rest of the file is comment` |
+| **Fix field** | absent (where the missing `*)` belongs, or whether the inner `(*` should go, is not decidable) |
+| **Conformance test** | D101, C325 |
+
+**Notes:** Comments nest (toke-spec-v0.3.md §8.10), so a `(*` inside a comment
+opens another level. `(* reads COUNT(*) from t *)` therefore leaves the outer
+comment open: its `*)` closes the nested level. Before story 138.10 the lexer
+stopped silently at end of file, so every declaration after such a comment
+vanished and `--emit-llvm` succeeded without them. The diagnostic sits on the
+outermost `(*` and its message names the nested `(*` that took the `*)` (or,
+when several levels are open, the innermost one).
+
+**Example trigger:**
+```text
+m=test;
+(* reads COUNT(*) from the table *)
+f=main():i64{<1};
+```
+
+---
+
 ## Warnings (W1xxx)
 
 ### W1001 -- Lossy cast
@@ -330,11 +359,23 @@ f=bad():i64{<0};
 | **Severity** | error |
 | **Message** | `unexpected token` |
 | **Fix field** | absent |
-| **Conformance test** | -- |
+| **Conformance test** | C326, C327 |
 
 **Notes:** The parser encountered a token it cannot consume in the current
 grammatical context. This is the general-purpose parse error for tokens that do
 not match any expected production.
+
+Two specific messages (story 138.10), both without a fix field:
+
+- `x.a=9;` -- a bare `=` after a field access at the head of a statement --
+  says a struct field cannot be assigned (the grammar's AssignStmt takes a
+  plain name) and shows rebuilding the value on a `mut.` binding. The
+  "use `==` for equality" advice is kept for conditions such as `if(n=1)`;
+  it was wrong for a field store, where following it produced a discarded
+  comparison. Conformance: C326.
+- a keyword or reserved literal used as an import alias (`i=sc:std.str;`)
+  says so, once; later `sc.name` uses parse as that alias rather than
+  cascading. Conformance: C327.
 
 **Example trigger:**
 ```text
@@ -1080,4 +1121,5 @@ zero.
 | D013 | D | E2010 | Pointer type in non-extern function |
 | D014 | D | E2035 | Malformed version string in import |
 | D015 | D | E4043 | Inconsistent map literal types |
+| D101 | D | E1007 | Fix field absent for unterminated comment |
 | G024 | G | E2001 | Missing module declaration |
