@@ -75,7 +75,7 @@ static void push_ws_tokens(char **argv, int *argc, int max, char *s) {
  *                    (declare).  Internal functions use fastcc calling
  *                    convention; extern functions use the default C convention.
  */
-typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; char err_type_name[NAME_BUF]; /* 114.41: T!$E error type, or "" */ const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; } FnSig;
+typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; char err_type_name[NAME_BUF]; /* 114.41: T!$E error type, or "" */ const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; unsigned char xmod_uns; /* 138.5: imported from another module's .tki with an UNSIGNED narrow return (u8/u16/u32): the call zero-extends it to i64 */ } FnSig;
 
 /*
  * PtrLocal — Tracks local variables that hold pointer values at the LLVM
@@ -778,6 +778,8 @@ static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     s->ret_type_name[0] = '\0';
     s->err_type_name[0] = '\0';
     s->param_count = 0;
+    s->is_internal = 0;
+    s->xmod_uns = 0;   /* 138.5 */
     c->fn_count++;
     return s;
 }
@@ -1560,11 +1562,33 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
             snprintf(mangled_fn, sizeof mangled_fn, "%s%s", tki_mod_prefix, fn_name);
         else
             strncpy(mangled_fn, fn_name, sizeof mangled_fn - 1);
-        /* Cross-module ABI: all non-void returns use i64 (pointers via
-         * ptrtoint, bools via zext, floats via bitcast). Only void stays void. */
-        FnSig *sig = register_fn(c, mangled_fn,
-                                  !strcmp(ret_type, "void") ? "void" : "i64");
+        /* 138.5 (T-20): the import must declare exactly the return type the
+         * DEFINING module gives the function, and that is
+         * resolve_llvm_type()'s mapping with i8* widened to i64 (the define
+         * path in emit_toplevel): pointers do cross as i64, but f64/f32 are
+         * returned as double/float and bool/narrow integers as i1/i8/i16/i32.
+         * This said "all non-void returns use i64 (floats via bitcast)", which
+         * the definer never did, so `lib.f64abs(-50.0)` was read out of the
+         * integer register (garbage), and a bool/i32 return was an i64 read of
+         * a narrower register that only happened to work. */
+        char ret_base[64];
+        tki_base_return_type(ret_toke_type, ret_base, sizeof ret_base);
+        const char *xret = "i64";
+        if (!strcmp(ret_type, "void") || !strcmp(ret_base, "void")) xret = "void";
+        else if (!strcmp(ret_base, "f64")) xret = "double";
+        else if (!strcmp(ret_base, "f32")) xret = "float";
+        else if (!strcmp(ret_base, "bool")) xret = "i1";
+        else if (!strcmp(ret_base, "i8") || !strcmp(ret_base, "u8") ||
+                 !strcmp(ret_base, "Byte") || !strcmp(ret_base, "byte")) xret = "i8";
+        else if (!strcmp(ret_base, "i16") || !strcmp(ret_base, "u16")) xret = "i16";
+        else if (!strcmp(ret_base, "i32") || !strcmp(ret_base, "u32")) xret = "i32";
+        FnSig *sig = register_fn(c, mangled_fn, xret);
         if (sig) {
+            /* 138.5: an unsigned narrow return is widened by ITS signedness
+             * at the call (the checker does not type the imported call, so
+             * nothing downstream could tell a u8 of 200 from an i8 of -56). */
+            sig->xmod_uns = (strcmp(xret, "i8") == 0 || strcmp(xret, "i16") == 0 ||
+                             strcmp(xret, "i32") == 0) && ret_base[0] == 'u';
             sig->is_internal = 1; /* use fastcc */
             /* Store toke return type name for struct type propagation */
             if (ret_toke_type[0])
@@ -5441,6 +5465,13 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         fputs(")\n", c->out);
         for (int r = 0; r < fnv_nrel; r++) fnv_release(c, fnv_relv[r], fnv_relt[r]);
+        /* 138.5: an imported unsigned narrow return, zero-extended here and
+         * typed i64 by expr_llvm_type. */
+        if (is_cross_module_user && callee && callee->xmod_uns) {
+            int zx = next_tmp(c);
+            fprintf(c->out, "  %%t%d = zext %s %%t%d to i64 ; 138.5 unsigned import\n", zx, callee_ret, t);
+            t = zx;
+        }
         /* Bug 110.1: f64-returning _w wrappers carry the bit-pattern of a
          * double inside their i64 ABI return. Reinterpret the SSA result
          * as `double` so downstream arithmetic chooses fmul/fadd. */
@@ -8454,7 +8485,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     }
                 }
                 const FnSig *msig = lookup_fn(c, mangled);
-                if (msig) return msig->ret;
+                if (msig) return msig->xmod_uns ? "i64" : msig->ret;   /* 138.5 */
                 return "i8*";
             }
         }
