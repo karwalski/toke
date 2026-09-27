@@ -8,35 +8,61 @@
  * the ml module.
  */
 #include "ml.h"
+#include "tk_array.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-int64_t tk_ml_linregfit_w(int64_t data, int64_t targets) {
-    if (!data || !targets) return 0;
-    /* Decode toke F64Array layout: ptr[-1] = count, ptr[0..] = doubles */
-    int64_t *dptr = (int64_t *)(intptr_t)data;
+/*
+ * ml.linregfit(rows:[row]; targets:[f64]) : $linearmodel!$mlerr and
+ * ml.linregpredict(model; features:[f64]) : f64 -- 135.30.
+ *
+ * The wrappers took two bare f64 arrays, fitted one slope, and returned a
+ * {slope; intercept} pair of doubles: `m.coef` read the slope's bits as an
+ * array handle (SIGSEGV), the documented @($row) argument was read as
+ * doubles, and linregpredict read its @(f64) features handle as a single
+ * double.  They now take what ml.tki and ml.md say -- one $row per sample,
+ * one coefficient per feature -- and the model is a TkLinearModelRec, so a
+ * $linearmodel literal predicts too.  The rows helpers are defined below.
+ */
+static F64Array *ml_cols_from_rows(int64_t rows, uint64_t *ncols_out,
+                                   uint64_t *nrows_out);
+static void ml_cols_free(F64Array *cols, uint64_t ncols);
+
+int64_t tk_ml_linregfit_w(int64_t rows, int64_t targets) {
+    if (!rows || !targets) return 0;
+    if (((int64_t *)(intptr_t)rows)[-1] <= 0) return 0;   /* no samples */
+    uint64_t ncols = 0, nrows = 0;
+    F64Array *cols = ml_cols_from_rows(rows, &ncols, &nrows);
+    if (!cols) return 0;
     int64_t *tptr = (int64_t *)(intptr_t)targets;
-    F64Array xs = { (const double *)dptr, (uint64_t)dptr[-1] };
-    F64Array ys = { (const double *)tptr, (uint64_t)tptr[-1] };
-    LinearModel m = ml_linregfit(xs, ys);
-    /* Pack slope + intercept into heap block */
-    double *block = (double *)malloc(2 * sizeof(double));
-    if (!block) return 0;
-    block[0] = m.slope;
-    block[1] = m.intercept;
-    return (int64_t)(intptr_t)block;
+    if (tptr[-1] < (int64_t)nrows) { ml_cols_free(cols, ncols); return 0; }
+    int64_t coef = tk_arr_alloc((int64_t)ncols, (int64_t)ncols);
+    TkLinearModelRec *m = (TkLinearModelRec *)malloc(sizeof *m);
+    double intercept = 0.0;
+    if (!coef || !m ||
+        ml_linregfit_multi(cols, ncols, (const double *)tptr, nrows,
+                           (double *)(intptr_t)coef, &intercept) != 0) {
+        ml_cols_free(cols, ncols);
+        free(m);
+        if (coef) free((int64_t *)(intptr_t)coef - TK_ARR_HDR);
+        return 0;
+    }
+    ml_cols_free(cols, ncols);
+    m->coef      = coef;
+    m->intercept = intercept;
+    return (int64_t)(intptr_t)m;
 }
 
 int64_t tk_ml_linregpredict_w(int64_t model, int64_t input) {
     if (!model) return 0;
-    double *block = (double *)(intptr_t)model;
-    LinearModel m;
-    m.slope = block[0];
-    m.intercept = block[1];
-    double x;
-    memcpy(&x, &input, sizeof(double));
-    double result = ml_linregpredict(m, x);
+    const TkLinearModelRec *m = (const TkLinearModelRec *)(intptr_t)model;
+    int64_t *xs = (int64_t *)(intptr_t)input;
+    int64_t nc = tk_arr_len(m->coef), nx = xs ? xs[-1] : 0;
+    const double *c = (const double *)(intptr_t)m->coef;
+    const double *x = (const double *)xs;
+    double result = m->intercept;
+    for (int64_t j = 0; j < nc && j < nx; j++) result += c[j] * x[j];
     int64_t r;
     memcpy(&r, &result, sizeof(r));
     return r;
@@ -92,8 +118,6 @@ int64_t tk_ml_accuracy_w(int64_t ytrue, int64_t ypred) {
  * rather than a number the caller would have to map back by hand.
  */
 
-#include "tk_array.h"
-
 /* Build one F64Array per column from an array of $row handles.
  * Returns a malloc'd F64Array[ncols] (caller frees, including each .data),
  * or NULL when the input is empty or ragged. */
@@ -104,7 +128,7 @@ static F64Array *ml_cols_from_rows(int64_t rows, uint64_t *ncols_out,
     if (nrows <= 0) return NULL;
     int64_t *rh = (int64_t *)(intptr_t)rows;
 
-    int64_t first = ((int64_t *)(intptr_t)rh[0])[0];   /* $row.vals */
+    int64_t first = rh[0] ? ((const TkMlRowRec *)(intptr_t)rh[0])->vals : 0;
     if (!first) return NULL;
     int64_t ncols = tk_arr_len(first);
     if (ncols <= 0) return NULL;
@@ -119,7 +143,7 @@ static F64Array *ml_cols_from_rows(int64_t rows, uint64_t *ncols_out,
             return NULL;
         }
         for (int64_t r = 0; r < nrows; r++) {
-            int64_t vals = rh[r] ? ((int64_t *)(intptr_t)rh[r])[0] : 0;
+            int64_t vals = rh[r] ? ((const TkMlRowRec *)(intptr_t)rh[r])->vals : 0;
             double v = 0.0;
             if (vals && tk_arr_len(vals) > c)
                 memcpy(&v, &((int64_t *)(intptr_t)vals)[c], sizeof v);
@@ -213,31 +237,31 @@ int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
         int64_t *cs = (int64_t *)(intptr_t)center;
         for (uint64_t d = 0; d < m.ndim; d++)
             memcpy(&cs[d], &m.centroids[c * m.ndim + d], sizeof(int64_t));
-        int64_t *cent = (int64_t *)malloc(2 * sizeof(int64_t));
+        TkCentroidRec *cent = (TkCentroidRec *)malloc(sizeof *cent);
         if (!cent) {   /* 135.3c: `center` leaked here */
             free((int64_t *)(intptr_t)center - TK_ARR_HDR);
             tk_arr_setlen(arr, (int64_t)c); break;
         }
-        cent[0] = (int64_t)c;      /* $centroid.id     */
-        cent[1] = center;          /* $centroid.center */
+        cent->id     = (int64_t)c;
+        cent->center = center;
         slots[c] = (int64_t)(intptr_t)cent;
     }
     ml_kmeans_free(&m);
 
-    int64_t *model = (int64_t *)malloc(2 * sizeof(int64_t));
+    TkKMeansModelRec *model = (TkKMeansModelRec *)malloc(sizeof *model);
     if (!model) {
         /* 135.3c: the centroid array and every centroid leaked here. */
         int64_t *sl = (int64_t *)(intptr_t)arr;
         for (int64_t c = 0; c < tk_arr_len(arr); c++) {
-            int64_t *cent = (int64_t *)(intptr_t)sl[c];
-            free((int64_t *)(intptr_t)cent[1] - TK_ARR_HDR);
+            TkCentroidRec *cent = (TkCentroidRec *)(intptr_t)sl[c];
+            free((int64_t *)(intptr_t)cent->center - TK_ARR_HDR);
             free(cent);
         }
         free((int64_t *)(intptr_t)arr - TK_ARR_HDR);
         return 0;
     }
-    model[0] = arr;                        /* $kmeansmodel.centroids */
-    model[1] = tk_arr_len(arr);            /* $kmeansmodel.k         */
+    model->centroids = arr;
+    model->k         = tk_arr_len(arr);
     return (int64_t)(intptr_t)model;
 }
 
@@ -245,20 +269,19 @@ int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
  * Reads the documented struct back, so a hand-built model works. */
 int64_t tk_ml_kmeansassign_w(int64_t model, int64_t point) {
     if (!model || !point) return 0;
-    int64_t *m = (int64_t *)(intptr_t)model;
-    int64_t arr = m[0];
+    int64_t arr = ((const TkKMeansModelRec *)(intptr_t)model)->centroids;
     int64_t k = tk_arr_len(arr);
     if (k <= 0) return 0;
     int64_t *cents = (int64_t *)(intptr_t)arr;
 
-    int64_t c0 = cents[0] ? ((int64_t *)(intptr_t)cents[0])[1] : 0;
+    int64_t c0 = cents[0] ? ((const TkCentroidRec *)(intptr_t)cents[0])->center : 0;
     int64_t ndim = tk_arr_len(c0);
     if (ndim <= 0) return 0;
 
     double *flat = (double *)malloc((size_t)(k * ndim) * sizeof(double));
     if (!flat) return 0;
     for (int64_t c = 0; c < k; c++) {
-        int64_t center = cents[c] ? ((int64_t *)(intptr_t)cents[c])[1] : 0;
+        int64_t center = cents[c] ? ((const TkCentroidRec *)(intptr_t)cents[c])->center : 0;
         int64_t *cs = (int64_t *)(intptr_t)center;
         for (int64_t d = 0; d < ndim; d++) {
             double v = 0.0;
@@ -304,11 +327,11 @@ int64_t tk_ml_dtreefit_w(int64_t rows, int64_t labels, int64_t maxdepth) {
     ml_cols_free(cols, ncols);
     free(codes);
 
-    int64_t *model = (int64_t *)malloc(3 * sizeof(int64_t));
+    TkDTreeModelRec *model = (TkDTreeModelRec *)malloc(sizeof *model);
     if (!model) { free(h); return 0; }
-    model[0] = (int64_t)h->tree.nnodes;   /* $dtreemodel.nodes    */
-    model[1] = maxdepth;                  /* $dtreemodel.maxdepth */
-    model[2] = (int64_t)(intptr_t)h;      /* $dtreemodel.arena    */
+    model->nodes    = (int64_t)h->tree.nnodes;
+    model->maxdepth = maxdepth;
+    model->arena    = (int64_t)(intptr_t)h;
     return (int64_t)(intptr_t)model;
 }
 
@@ -316,8 +339,7 @@ int64_t tk_ml_dtreefit_w(int64_t rows, int64_t labels, int64_t maxdepth) {
  * Returns "" for the empty `$dtreemodel{}` the docs use as an error arm. */
 int64_t tk_ml_dtreepredict_w(int64_t model, int64_t point) {
     if (!model || !point) return (int64_t)(intptr_t)"";
-    int64_t *m = (int64_t *)(intptr_t)model;
-    MlDTree *h = (MlDTree *)(intptr_t)m[2];
+    MlDTree *h = (MlDTree *)(intptr_t)((const TkDTreeModelRec *)(intptr_t)model)->arena;
     if (!h || h->tree.nnodes == 0) return (int64_t)(intptr_t)"";
     uint64_t pn = 0;
     double *p = ml_point(point, &pn);

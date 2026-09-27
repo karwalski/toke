@@ -62,7 +62,7 @@ Returned when a training function cannot complete, for example when the input da
 
 ### ml.linregfit(X: @($row); y: @(f64)): $linearmodel!$mlerr
 
-Fits a multivariate linear regression model to the training samples `X` and target values `y` using least squares. Returns `$mlerr` if `X` and `y` have different lengths or if the input is empty.
+Fits a multivariate linear regression model to the training samples `X` and target values `y` using least squares. Returns `$mlerr` if `y` has fewer values than `X` has samples, if the input is empty, if there are fewer samples than features plus one, or if the samples do not determine a unique fit (e.g. identical rows).
 
 ```toke
 m=example;
