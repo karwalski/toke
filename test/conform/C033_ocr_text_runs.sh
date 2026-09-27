@@ -145,7 +145,7 @@ runtext() {
 F_PAGE=1; F_X=2; F_Y=3; F_W=4; F_H=5; F_CONF=6
 
 if [ ! -x "${TKC}" ]; then
-    echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"
+    echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"
     exit 1
 fi
 
@@ -162,15 +162,19 @@ echo "--------------------------------------"
 #
 # std.ocr binds a platform recogniser and there is none on bare Linux.  That
 # is the accepted trade in the story row, not a defect, so a non-macOS host
-# SKIPS -- but it skips LOUDLY, with a non-zero exit, because a silent skip
-# of the only behavioural test for a module is how a module comes to be
-# believed working when it is not (131.79).
+# SKIPS -- but it skips LOUDLY, because a silent skip of the only behavioural
+# test for a module is how a module comes to be believed working when it is
+# not (131.79).  127.219: loud now means 127.166's protocol -- exit 0 with a
+# `CONFORM-SKIP:` line, which the runner counts and names as a SKIP (and
+# TKC_CONFORM_NO_SKIP=1 turns back into a failure).  It used to exit 1,
+# which the runner reported as a FAIL under a line that said SKIP.
 # ════════════════════════════════════════════════════════════════════════
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "SKIP: std.ocr has no engine on $(uname -s); macOS Vision only."
     echo "      Case 8 (the no-engine path) would still be meaningful here and"
     echo "      is the part to run first if this suite is ever ported."
-    exit 1
+    echo "CONFORM-SKIP: std.ocr has no engine on $(uname -s) (macOS Vision only)"
+    exit 0
 fi
 
 # ════════════════════════════════════════════════════════════════════════
@@ -200,7 +204,8 @@ if ! python3 -c "import PIL" >/dev/null 2>&1; then
     echo "SKIP: Pillow is not installed; it draws every fixture in this suite."
     echo "      Pillow is not a build dependency of this repository. Install it"
     echo "      with 'python3 -m pip install Pillow' to run these assertions."
-    exit 1
+    echo "CONFORM-SKIP: Pillow not installed (it draws every fixture)"
+    exit 0
 fi
 
 python3 - "${FIX}" "${FACTS}" > "${GEN_LOG}" 2>&1 <<'PYEOF'

@@ -47,7 +47,7 @@ PASS=0
 FAIL=0
 
 if [ ! -x "${TKC}" ]; then
-    echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"
+    echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"
     exit 1
 fi
 
@@ -68,7 +68,8 @@ elif command -v clang >/dev/null 2>&1; then
     VERIFY_KIND="clang"
 else
     echo "SKIP: no LLVM verifier found (need llvm-as+opt, or clang)"
-    exit 1
+    echo "CONFORM-SKIP: no LLVM verifier (llvm-as+opt or clang) on this host"   # 127.219
+    exit 0
 fi
 
 WORK="$(mktemp -d /tmp/tkc_irverify_XXXXXX)"

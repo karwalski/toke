@@ -34,7 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 PASS=0; FAIL=0
-if [ ! -x "${TKC}" ]; then echo "SKIP: tkc binary not found at ${TKC}"; exit 1; fi
+if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC}"; exit 1; fi
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 
 echo "C076: bool array elements and predicate receiver methods print true/false"
