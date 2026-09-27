@@ -165,6 +165,28 @@ open (138.6). `exec` runs every `;`-separated statement of its string or
 fails naming the one that failed; bind parameters with more than one
 statement are refused. Row values are read with `row.str/u64/i64/f64/bool`.
 
+### std.keychain
+
+```text
+f=isavailable():bool
+f=set(service:$str;account:$str;secret:$str):bool
+f=get(service:$str;account:$str):?($str)
+f=delete(service:$str;account:$str):bool
+f=exists(service:$str;account:$str):bool
+f=laststatus():i64
+f=lasterrkind():$str
+f=lasterr():$str
+f=create(path:$str;password:$str):bool
+f=use(path:$str):bool
+f=destroy(path:$str):bool
+```
+
+After a `false` or empty result, `lasterrkind` is `"notfound"` exactly when the
+item is absent; any other non-empty kind (`locked denied nokeychain badarg
+unavailable failed`) means the call failed. `create`/`use`/`destroy` name a
+throwaway keychain file (macOS); `use("")` returns to the default; `destroy`
+refuses the default keychain and any on the user's search list (138.4).
+
 ### std.file
 
 ```text

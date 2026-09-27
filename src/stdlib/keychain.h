@@ -39,7 +39,7 @@ int   keychain_set(const char *service, const char *account, const char *secret)
  * Retrieves the secret for the given service/account pair.
  * Returns a heap-allocated copy of the secret on success (caller must free).
  * Returns NULL if no matching entry exists, the keychain is locked,
- * or the platform is unsupported.
+ * or the platform is unsupported -- keychain_last_kind() says which (138.4).
  */
 char *keychain_get(const char *service, const char *account);
 
@@ -56,5 +56,34 @@ int   keychain_delete(const char *service, const char *account);
  * Does not retrieve or expose the secret value.
  */
 int   keychain_exists(const char *service, const char *account);
+
+/*
+ * 138.4 — what the calling thread's last keychain call did.
+ *   keychain_last_status : the platform status (macOS OSStatus, Windows
+ *                          GetLastError, -4 where there is no store); 0 = ok
+ *   keychain_last_kind   : "" on success, else one of notfound locked denied
+ *                          nokeychain badarg unavailable failed.  After a
+ *                          false / NULL result, "notfound" means the item is
+ *                          absent; any other kind means the call failed.
+ *   keychain_last_message: a description; never contains a secret.
+ */
+long        keychain_last_status(void);
+const char *keychain_last_kind(void);
+const char *keychain_last_message(void);
+
+/*
+ * 138.4 — named keychains, so tests (and programs that want isolation) never
+ * touch the login keychain.  macOS only; elsewhere they fail "unavailable".
+ *   keychain_create(path, password): make a new keychain file at the absolute
+ *     path, unlocked, NOT added to the user's search list.  Fails if it exists.
+ *   keychain_use(path): every later set/get/delete/exists goes to that
+ *     keychain alone, with user interaction disallowed (a locked keychain
+ *     fails "locked" rather than prompting).  "" returns to the default.
+ *   keychain_destroy(path): delete that keychain file.  Refuses the default
+ *     keychain and any keychain on the user's search list ("denied").
+ */
+int keychain_create(const char *path, const char *password);
+int keychain_use(const char *path);
+int keychain_destroy(const char *path);
 
 #endif /* TK_STDLIB_KEYCHAIN_H */
