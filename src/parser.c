@@ -79,7 +79,11 @@
  *   a    — arena allocator for all AST node memory
  *   errs — running count of emitted errors (used for the bail-out cap)
  */
-typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; Profile profile; int in_sc; } Parser;
+typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; Profile profile; int in_sc;
+    /* 138.10 / T-29: keywords already reported as an import alias, one bit
+     * per kind from TK_KW_F; a later `kw.name` use is parsed as that alias
+     * rather than reported again. */
+    unsigned kw_alias; } Parser;
 
 /* Maximum number of parse errors before the parser gives up. */
 #define MAX_PARSE_ERRORS 20
@@ -321,6 +325,44 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
                        "expected", w, NULL);
     }
     return NULL;
+}
+
+/*
+ * xp_alias — expect an import alias (138.10 / T-29).
+ *
+ * A keyword (`i=sc:std.str;`) or a reserved literal used as the alias drew
+ * "expected import alias, got 'sc'", which does not say why, and then a
+ * cascade: sync() stops on a statement keyword without consuming it, so the
+ * top-level loop reported the same token again, and every `sc.len(..)` in the
+ * body was "unexpected token in expression".  Now it is one E2002 naming the
+ * keyword.  The keyword is consumed as the alias so the declaration ends
+ * cleanly, and its later `kw.name` uses parse as that alias (kw_alias_use).
+ * No `fix`: the replacement name is the author's choice.
+ */
+static Token *xp_alias(Parser *p) {
+    TokenKind k = peek(p);
+    int is_kw = (k >= TK_KW_F && k <= TK_KW_MT);
+    if (!is_kw && k != TK_BOOL_LIT) return xp(p, TK_IDENT, "import alias");
+    Token *t = cur(p);
+    char word[64], msg[256];
+    tok_text_extract(p, t, word, (int)sizeof word);
+    snprintf(msg, sizeof msg,
+             "'%s' is a reserved %s and cannot be an import alias; "
+             "name the import something else", word, is_kw ? "keyword" : "literal");
+    p->errs++;
+    diag_emit_span(DIAG_ERROR, E2002, t->start, t->line, t->col, t->len, msg,
+                   "got", word,
+                   "expected", "an import alias that is not a keyword", NULL);
+    if (is_kw) p->kw_alias |= 1u << (unsigned)(k - TK_KW_F);
+    return adv(p);
+}
+
+/* kw_alias_use — the current token is a keyword xp_alias already reported as
+ * an import alias, used as one (`sc.len`): parse it as that alias. */
+static int kw_alias_use(Parser *p) {
+    TokenKind k = peek(p);
+    return k >= TK_KW_F && k <= TK_KW_MT && peek_at(p, 1) == TK_DOT &&
+           (p->kw_alias & (1u << (unsigned)(k - TK_KW_F)));
 }
 
 /* Forward declarations — these three functions participate in mutual
@@ -641,6 +683,7 @@ static Node *parse_literal(Parser *p) {
  */
 static Node *parse_primary(Parser *p) {
     Token *t=cur(p);
+    if(kw_alias_use(p)){adv(p);return mk(p,NODE_IDENT,t);}   /* 138.10 */
     /* Function reference: &name — unary prefix & followed by ident.
      * The & token in parse_primary is always a function reference. */
     if(peek(p)==TK_AMP&&peek_at(p,1)==TK_IDENT){
@@ -1173,9 +1216,9 @@ static Node *parse_expr(Parser *p) {
     /* A1: `if` in expression position — keyword-led, strict LL(1), no peek.
      * Statement-position `if` is dispatched by parse_stmt *before* parse_expr,
      * so this only fires for `if` as a sub-expression (bind/return/arg). */
-    if(peek(p)==TK_KW_IF) return parse_if_expr(p);
+    if(peek(p)==TK_KW_IF&&!kw_alias_use(p)) return parse_if_expr(p);
     /* mt expr { arms } — keyword-led match (strict LL(1), no peek) */
-    if(peek(p)==TK_KW_MT){
+    if(peek(p)==TK_KW_MT&&!kw_alias_use(p)){
         Token *t=adv(p);
         Node *scrutinee=parse_or(p);
         Node *n=mk(p,NODE_MATCH_STMT,t); ch(p,n,scrutinee);
@@ -1414,7 +1457,7 @@ static void check_stmt_keyword_prefix(Parser *p, Token *t) {
 /* parse_stmt — dispatches by lookahead */
 static Node *parse_stmt(Parser *p) {
     Token *t=cur(p);
-    switch(peek(p)){
+    switch(kw_alias_use(p)?TK_DOT:peek(p)){   /* 138.10: `sc.f();` is an ExprStmt */
     case TK_KW_LET:{
         adv(p); Token *nt=cur(p);
         /* Detect Rust-style 'let mut x = expr' and recover */
@@ -1624,7 +1667,7 @@ static Node *parse_import_decl(Parser *p) {
     Token *t=xp(p,TK_KW_I,"'I'"); if(!t) return NULL;
     Node *n=mk(p,NODE_IMPORT,t);
     if(!xp(p,TK_EQ,"'='")){ sync(p);return n;}
-    Token *at=cur(p); if(!xp(p,TK_IDENT,"import alias")){ sync(p);return n;}
+    Token *at=cur(p); if(!xp_alias(p)){ sync(p);return n;}
     ch(p,n,mk(p,NODE_IDENT,at));
     if(!xp(p,TK_COLON,"':'")){ sync(p);return n;}
     ch(p,n,parse_module_path(p));
@@ -1907,7 +1950,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
 {
     if(!tokens||count<=0||!arena) return NULL;
     Parser p;
-    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile; p.in_sc=0;
+    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile; p.in_sc=0; p.kw_alias=0;
     Token *first=cur(&p);
     Node *root=mk(&p,NODE_PROGRAM,first);
     /* Module declaration: M= or m= */
@@ -1948,7 +1991,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
             else { Token *it=consume_decl_kw(&p);Node *n=mk(&p,NODE_IMPORT,it);
                 if(!xp(&p,TK_EQ,"'='")){ sync(&p);d=n; }
                 else {
-                    Token *at=cur(&p); if(!xp(&p,TK_IDENT,"import alias")){ sync(&p);d=n; }
+                    Token *at=cur(&p); if(!xp_alias(&p)){ sync(&p);d=n; }
                     else { ch(&p,n,mk(&p,NODE_IDENT,at));
                         if(!xp(&p,TK_COLON,"':'")){ sync(&p);d=n; }
                         else { ch(&p,n,parse_module_path(&p));
