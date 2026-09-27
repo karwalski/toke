@@ -2684,11 +2684,17 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * as a pointer at run time (garbage or SIGBUS), and `let b=3; g(b)` into
      * a str parameter was clean while `g(3)` was E4031.  A negated literal
      * (`let d=-1`) is the same fact.  FLOAT_LIT / BOOL_LIT stay held out.
+     *
+     * Immutable `let` only.  A `let x=mut.0` is routinely re-assigned a
+     * value of another type -- an error union (`acc=check(0-2); mt acc
+     * {..}`, test/codegen/cg_err_union.tk, the C067 shape) or a u64 that a
+     * later `hi=mid-1` stores back -- so its initialiser does not state its
+     * type; typing it turned both into false E4031s in the tree sweep.
      */
     case NODE_INT_LIT:
-        return mk_type(cx->env->arena, TY_I64);
+        return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_I64) : NULL;
     case NODE_UNARY_EXPR:
-        if (initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
+        if (bn->kind == NODE_BIND_STMT && initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
             && initN->children[0]->kind == NODE_INT_LIT)
             return mk_type(cx->env->arena, TY_I64);
         return NULL;
