@@ -60,8 +60,17 @@ trap cleanup EXIT
 echo "C081: http.servetlsworkers forks the worker count it is given"
 echo "--------------------------------------"
 
-free_port() {
-    python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'
+# 135.24: the server binds port 0 and prints the port it got.  $1 = its log,
+# $2 = its pid; prints the port, or nothing if the server exits or never says.
+read_port() {
+    local p=""
+    for _ in $(seq 1 80); do
+        p="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "$1" | head -1)"
+        [ -n "${p}" ] && break
+        kill -0 "$2" 2>/dev/null || break
+        sleep 0.1
+    done
+    echo "${p}"
 }
 
 wait_up() {   # $1 = port, $2 = server pid: 0 up, 1 timed out, 2 server exited
@@ -104,14 +113,13 @@ fi
 
 run_case() {   # $1 = workers, $2 = expected children
     local w="$1" want="$2" port
-    port="$(free_port)"
     cat > "${WORK}/s${w}.tk" <<EOF
 m=srv;
 i=http:std.http;
 f=hi(req:i64):i64{<http.resok("hi")};
 f=main():i64{
   http.gethandler("/hi";&hi);
-  http.servetlsworkers(${port};"${WORK}/cert.pem";"${WORK}/key.pem";${w});
+  http.servetlsworkers(0;"${WORK}/cert.pem";"${WORK}/key.pem";${w});
   <0
 };
 EOF
@@ -124,7 +132,12 @@ EOF
     TK_HTTP_WORKERS=5 "${WORK}/s${w}.bin" >"${WORK}/s${w}.run" 2>&1 &
     SRV=$!
     local up
-    wait_up "${port}" "${SRV}"; up=$?
+    port="$(read_port "${WORK}/s${w}.run" "${SRV}")"
+    if [ -z "${port}" ]; then
+        kill -0 "${SRV}" 2>/dev/null && up=1 || up=2
+    else
+        wait_up "${port}" "${SRV}"; up=$?
+    fi
     if [ "${up}" != 0 ]; then
         if [ "${up}" = 2 ]; then
             wait "${SRV}" 2>/dev/null

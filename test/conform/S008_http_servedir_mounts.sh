@@ -67,7 +67,8 @@ echo "FILE-DEEP" > "${WORK}/rootB/b/deep/f.txt"
 mkdir -p "${WORK}/rootC/b/deep"
 echo "FILE-C" > "${WORK}/rootC/b/deep/f.txt"
 
-PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+# 135.24: the server binds port 0 and prints the port it got; no probe.
+PORT=""
 
 cat > "${WORK}/srv.tk" <<EOF
 m=srv;
@@ -76,7 +77,7 @@ f=main():i64{
   http.servedir("/a";"${WORK}/rootA");
   http.servedir("/b";"${WORK}/rootB");
   http.servedir("/b/deep";"${WORK}/rootC");
-  http.serveworkers(${PORT};1);
+  http.serveworkers(0;1);
   <0
 };
 EOF
@@ -89,8 +90,14 @@ if ! (cd "${WORK}" && "${TKC}" --allow-all -o srv.bin srv.tk >build.log 2>&1) \
     exit 1
 fi
 
-"${WORK}/srv.bin" >/dev/null 2>&1 &
+"${WORK}/srv.bin" >/dev/null 2>"${WORK}/srv.err" &
 SRV=$!
+for _ in $(seq 1 80); do
+    PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${WORK}/srv.err" | head -1)"
+    [ -n "${PORT}" ] && break
+    kill -0 "${SRV}" 2>/dev/null || break
+    sleep 0.1
+done
 up=0
 for _ in $(seq 1 80); do
     python3 -c "
