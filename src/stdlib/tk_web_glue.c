@@ -1396,42 +1396,13 @@ extern int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_);
 
 
 
-/* ── cache / kv — simple in-memory hash map ───────────────────────── */
-
-#define TK_CACHE_BUCKETS 256
-
-typedef struct TkCacheEntry {
-    const char *key;
-    int64_t     val;
-    struct TkCacheEntry *next;
-} TkCacheEntry;
-
-typedef struct {
-    TkCacheEntry *buckets[TK_CACHE_BUCKETS];
-} TkCache;
-
-int64_t tk_cache_new_w(void) {
-    TkCache *c = (TkCache *)calloc(1, sizeof(TkCache));
-    return (int64_t)(intptr_t)c;
-}
-
-int64_t tk_cache_set_w(int64_t cache, int64_t key_i64) {
-    /* ABI: tk_cache_set_w(cache, key, val) — but i64 wrapper gets 2 args.
-     * Encode val as the second arg via caller convention. For now, treat
-     * key_i64 as the key and store a simple flag. */
-    (void)cache; (void)key_i64;
-    return 0; /* See below for 3-arg version */
-}
-
-int64_t tk_cache_get_w(int64_t key) {
-    (void)key;
-    return 0; /* No global cache by default */
-}
-
-int64_t tk_cache_del_w(int64_t key) {
-    (void)key;
-    return 0;
-}
+/* 135.3j: a "cache / kv" block stood here -- tk_cache_{new,set,get,del}_w
+ * and a TkCache hash-map type.  new calloc'd a map nothing could fill; set,
+ * get and del were `(void)arg; return 0;` stubs; no .tki declared any of
+ * them and nothing called them (docs/reference/stdlib-internal.md listed
+ * all four as dead).  std.http's real response cache is cache.c.  Removed
+ * rather than finished: a toke-level kv store is a stdlib story, not a
+ * glue fix. */
 
 /* ── regex — POSIX regex wrappers (Story 78.4.3) ─────────────────────── */
 

@@ -630,7 +630,15 @@ Triggers E4043.
 | Severity | error      |
 | Stage    | type_check |
 
-Reserved. Planned for type mismatches at FFI boundaries.
+A body-less extern (`f=malloc(n:i64):i64;`) names a C function that the
+compiler itself declares and calls -- `malloc` (array literals, closure
+environments), and `fprintf` and `exit` (the `--max-iters` loop guard) --
+with a different signature.  A symbol has one declaration, so the compiler's
+own calls and the extern cannot both be right.  Emitted during code
+generation (story 127.219), so `--check` does not report it.  An extern that
+repeats the compiler's own declaration exactly is accepted.  No `fix`:
+changing the signature or binding a different symbol is the author's choice.
+Conformance: `test/conform/C211_extern_own_c_symbol.sh`.
 
 ---
 

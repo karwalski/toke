@@ -61,6 +61,7 @@ replaces; a skiplist that cannot rot is what keeps it honest.
 Usage:
     python3 scripts/check_stdlib_analysis.py [--compile] [--analyze]
                                              [--nonhost] [--report]
+                                             [--only]
                                              [--jobs N] [--verbose]
                                              <source.c> ...
 
@@ -72,6 +73,29 @@ Usage:
     it via $TK_OPENSSL_PREFIX, the default path, pkg-config or brew; failing
     that, tls.c is a NAMED SKIP in the final line, and
     TK_LINT_REQUIRE_OPENSSL=1 turns the skip into a failure (CI sets it).
+
+    122.13 (10), `--only`: check just the sources named, e.g. the file you
+    are editing (`make lint-file F=src/stdlib/http.c`).  Without it every
+    skiplist entry naming a file outside the source list is STALE -- which
+    is right for the full gate, where that means a module left
+    $(ANALYZE_SRCS), and made a one-file run fail on the other 150 files'
+    entries.  With it those entries are out of scope, not stale; everything
+    about the named files (their skips, counts and staleness) is checked
+    exactly as in the full run.  `make lint` never passes it.
+
+    135.3j (6), the OpenSSL branch: http.c, acme.c, http2.c, hooks.c and
+    tk_web_glue.c carry `#ifdef TK_HAVE_OPENSSL` code that tkc compiles into
+    every program that links OpenSSL (src/llvm.c adds -DTK_HAVE_OPENSSL),
+    and that nothing checked: the plain pass compiles the other branch.  When
+    the OpenSSL headers are found, --compile and --analyze run each of them a
+    second time with -DTK_HAVE_OPENSSL, reported as `<path>[TK_HAVE_OPENSSL]`
+    (skiplist keys take the same spelling).  An analyzer warning that the
+    plain pass also reports for that file is counted once, under the plain
+    key; the variant key counts only what the OpenSSL branch adds.  Without
+    the headers the variants are a NAMED SKIP, as tls.c is.  --nonhost does
+    not run them: -U__APPLE__ with -DTK_HAVE_OPENSSL fails inside the macOS
+    SDK's <sys/qos.h>, a header problem, not a code one; the final line says
+    so whenever --nonhost runs.
 
     `--report` prints skiplist lines for everything currently failing and
     exits 0.  It is a drafting aid: paste the lines in and write a real
@@ -142,6 +166,13 @@ EXTRA_FLAGS = {
 # on its own line and in the gate's final line -- never a silent pass, and
 # TK_LINT_REQUIRE_OPENSSL=1 (CI sets it) turns that skip into a failure.
 OPENSSL_SRCS = {"src/stdlib/tls.c"}
+
+# 135.3j (6): sources with an `#ifdef TK_HAVE_OPENSSL` branch, checked a
+# second time with the macro defined (see the header).
+OPENSSL_BRANCH_SRCS = {"src/stdlib/http.c", "src/stdlib/acme.c",
+                       "src/stdlib/http2.c", "src/stdlib/hooks.c",
+                       "src/stdlib/tk_web_glue.c"}
+OPENSSL_TAG = "[TK_HAVE_OPENSSL]"
 
 
 def _probe_openssl(flags):
@@ -317,8 +348,15 @@ def load_skiplist():
 # ── the three passes ─────────────────────────────────────────────────────────
 
 def run_cc(src, mode):
-    """Compile/analyse one source.  Returns (ok, combined_output)."""
+    """Compile/analyse one source.  Returns (ok, combined_output).
+
+    `src` may carry OPENSSL_TAG: the same file with -DTK_HAVE_OPENSSL."""
+    variant = src.endswith(OPENSSL_TAG)
+    if variant:
+        src = src[:-len(OPENSSL_TAG)]
     flags = list(BASE_FLAGS) + EXTRA_FLAGS.get(rel(src), [])
+    if variant:
+        flags += list(OPENSSL_FLAGS or []) + ["-DTK_HAVE_OPENSSL"]
     if mode == "analyze":
         # clang's --analyze ignores -Werror entirely (this is the whole reason
         # the old `make lint` could not fail).  Drop it so the exit status is
@@ -337,15 +375,29 @@ def run_cc(src, mode):
     return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
 
 
-def analyze_counts(output):
-    """{(path, checker): count} from analyzer text output."""
+def analyze_counts(output, tag="", exclude=frozenset()):
+    """{(path, checker): count} from analyzer text output.
+
+    tag is appended to each path (the OpenSSL variant's key); a warning whose
+    (path, line, col, checker) is in `exclude` -- the plain pass reported it
+    too -- is not counted."""
     counts = {}
+    for key in analyze_sites(output):
+        if key in exclude:
+            continue
+        k = (key[0] + tag, key[3])
+        counts[k] = counts.get(k, 0) + 1
+    return counts
+
+
+def analyze_sites(output):
+    """[(path, line, col, checker)] of every analyzer warning in the text."""
+    out = []
     for line in output.splitlines():
         m = WARN_RE.match(line.strip())
         if m:
-            key = (rel(m.group(1)), m.group(5))
-            counts[key] = counts.get(key, 0) + 1
-    return counts
+            out.append((rel(m.group(1)), m.group(2), m.group(3), m.group(5)))
+    return out
 
 
 def first_errors(output, limit=4):
@@ -365,6 +417,7 @@ def main():
     args = sys.argv[1:]
     modes = [m for m in ("compile", "analyze", "nonhost") if "--" + m in args]
     report = "--report" in args
+    only = "--only" in args
     verbose = "--verbose" in args
     jobs = 4
     if "--jobs" in args:
@@ -395,6 +448,15 @@ def main():
                                "or install them (brew install openssl@3 / "
                                "apt-get install libssl-dev)." % (src, OPENSSL_HOW))
         sources = [s for s in sources if s not in OPENSSL_SRCS]
+        branch = sorted(set(sources) & OPENSSL_BRANCH_SRCS)
+        if branch:
+            named_skips.append("%s: the -DTK_HAVE_OPENSSL branch NOT compiled or "
+                               "analysed -- OpenSSL headers unavailable: %s."
+                               % (", ".join(b + OPENSSL_TAG for b in branch), OPENSSL_HOW))
+    # 135.3j (6): the OpenSSL-branch variants, for --compile and --analyze.
+    variants = ([s + OPENSSL_TAG for s in sorted(set(sources) & OPENSSL_BRANCH_SRCS)]
+                if OPENSSL_FLAGS is not None else [])
+    in_scope = set(sources) | set(variants)
 
     skips, skip_errors = load_skiplist()
     failures = list(skip_errors)
@@ -406,8 +468,9 @@ def main():
     uncovered = []
 
     for mode in modes:
+        todo = sources + (variants if mode in ("compile", "analyze") else [])
         with ThreadPoolExecutor(max_workers=jobs) as ex:
-            results = list(ex.map(lambda s: (s,) + run_cc(s, mode), sources))
+            results = list(ex.map(lambda s: (s,) + run_cc(s, mode), todo))
 
         if mode in ("compile", "nonhost"):
             for src, ok, out in results:
@@ -424,8 +487,9 @@ def main():
                                  "Remove the line from %s."
                                  % (key[0], src, os.path.relpath(SKIPLIST, REPO_ROOT)))
                 elif not ok and not skipped:
+                    tag = OPENSSL_TAG if src.endswith(OPENSSL_TAG) else ""
                     for e in first_errors(out):
-                        failures.append("%s: %s" % (mode.upper(), e))
+                        failures.append("%s%s: %s" % (mode.upper(), tag, e))
                     proposed.append("%-8s %-44s # %s" % (mode, src, first_errors(out, 1)[0]))
                 elif verbose and ok:
                     print("  ok   %s %s" % (mode, src))
@@ -433,6 +497,8 @@ def main():
         else:  # analyze
             actual = {}
             unanalysable = set()
+            plain_sites = {src: set(analyze_sites(out))
+                           for src, ok, out in results if ok and not src.endswith(OPENSSL_TAG)}
             for src, ok, out in results:
                 if not ok:
                     unanalysable.add(src)
@@ -444,7 +510,13 @@ def main():
                     failures.append("ANALYZE: %s did not analyse: %s"
                                     % (src, first_errors(out, 1)[0]))
                     continue
-                for k, n in analyze_counts(out).items():
+                if src.endswith(OPENSSL_TAG):
+                    base = src[:-len(OPENSSL_TAG)]
+                    got = analyze_counts(out, OPENSSL_TAG,
+                                         frozenset(plain_sites.get(base, ())))
+                else:
+                    got = analyze_counts(out)
+                for k, n in got.items():
                     actual[k] = actual.get(k, 0) + n
             for (path, checker), n in sorted(actual.items()):
                 key = ("analyze", "%s::%s" % (path, checker))
@@ -476,6 +548,8 @@ def main():
                 path = key[1].split("::")[0]
                 if path in unanalysable:
                     continue
+                if only and path not in in_scope:
+                    continue        # --only: another file's entry, out of scope
                 stale.append("analyze skip %s is STALE — it reports nothing now. "
                              "Remove the line from %s."
                              % (key[1], os.path.relpath(SKIPLIST, REPO_ROOT)))
@@ -485,11 +559,13 @@ def main():
         if (kind, key) in used:
             continue
         path = key.split("::")[0]
+        if only and path not in in_scope:
+            continue                # --only: another file's entry, out of scope
         if kind == "nonhost-uncoverable" and "nonhost" in modes and path not in sources:
             stale.append("%s:%d: nonhost-uncoverable names %s, which is not in the "
                          "analysed set — remove it." % (os.path.relpath(SKIPLIST, REPO_ROOT),
                                                          lineno, path))
-        if kind in ("compile", "nonhost") and kind in modes and path not in sources:
+        if kind in ("compile", "nonhost") and kind in modes and path not in in_scope:
             stale.append("%s:%d: %s skip names %s, which is not in the analysed "
                          "set — remove it." % (os.path.relpath(SKIPLIST, REPO_ROOT),
                                                lineno, kind, path))
@@ -500,11 +576,16 @@ def main():
             print(p)
         return 0
 
-    n_skips = sum(1 for k in skips if k[0] in modes
+    n_skips = sum(1 for k in skips if (k[0] in modes
                   or (k[0] == "nonhost-uncoverable" and "nonhost" in modes
                       and not NONHOST_CROSS))
-    print("check_stdlib_analysis: %d sources, modes=%s, %d skiplist entries in play"
-          % (len(sources), ",".join(modes), n_skips))
+                  and (not only or k[1].split("::")[0] in in_scope))
+    n_var = len(variants) if set(modes) & {"compile", "analyze"} else 0
+    print("check_stdlib_analysis: %d sources%s, modes=%s, %d skiplist entries in play%s"
+          % (len(sources),
+             (" + %d %s variant(s)" % (n_var, OPENSSL_TAG)) if n_var else "",
+             ",".join(modes), n_skips,
+             " (--only: entries for other files out of scope)" if only else ""))
     if OPENSSL_FLAGS is not None:
         print("check_stdlib_analysis: OpenSSL headers via %s" % OPENSSL_HOW)
     if "nonhost" in modes:
@@ -529,6 +610,11 @@ def main():
     if named_skips:
         notes.append("%d source(s) SKIPPED -- not checked: %s"
                      % (len(named_skips), ", ".join(n.split(":")[0] for n in named_skips)))
+    if "nonhost" in modes and variants:
+        notes.append("the %s variant(s) of %s are NOT nonhost-checked (on macOS "
+                     "-U%s with -DTK_HAVE_OPENSSL fails inside <sys/qos.h>)"
+                     % (OPENSSL_TAG, ", ".join(v[:-len(OPENSSL_TAG)].split("/")[-1]
+                                               for v in variants), HOST_MACRO))
     if "nonhost" in modes and not NONHOST_CROSS:
         notes.append("nonhost was an APPROXIMATION (-U%s, host SDK); NOT COVERED: %s "
                      "-- set TK_NONHOST_SYSROOT for a real cross-compile"

@@ -29,18 +29,24 @@ The default minimum level when `TK_LOG_LEVEL` is unset is `info`.
 Each line is a single JSON object (NDJSON) written to stderr:
 
 ```
-{"level":"info","msg":"request received","request_id":"abc123","ts":1705322096000}
+{"level":"info","msg":"request received","request_id":"abc123","ts":"2024-01-15T12:34:56.000Z"}
 ```
+
+`ts` is the UTC wall-clock time in ISO 8601 with milliseconds, a string —
+not a number of milliseconds.
 
 ### Text
 
-When the format is set to `text`, output is human-readable:
+When the format is set to `text`, output is human-readable, and carries no
+timestamp:
 
 ```
-[INFO] request received request_id=abc123 ts=1705322096000
+[INFO] request received request_id=abc123
 ```
 
-The output format is controlled with `log.setformat` or by the `TK_LOG_FORMAT` environment variable (`"json"` or `"text"`).
+The output format is set with `log.setformat` (`"json"` or `"text"`). There is
+no environment variable for it: `TK_LOG_FORMAT` is not read (122.13 — earlier
+versions of this page said it was).
 
 ### Injection safety (122.8)
 
@@ -334,4 +340,4 @@ f=main():i64{
 ## See Also
 
 - [std.time](/docs/stdlib/time) -- for `time.now()` and timestamp formatting used in log context
-- [std.env](/docs/stdlib/env) -- `TK_LOG_LEVEL` and `TK_LOG_FORMAT` are read from the environment at startup
+- [std.env](/docs/stdlib/env) -- `TK_LOG_LEVEL` and `TK_LOG_REDACT` are read from the environment on the first log call

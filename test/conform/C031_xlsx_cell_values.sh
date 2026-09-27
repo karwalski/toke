@@ -114,7 +114,7 @@ line() {
 }
 
 if [ ! -x "${TKC}" ]; then
-    echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"
+    echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"
     exit 1
 fi
 

@@ -74,6 +74,8 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
 #include "tkir.h"
 #include "stdlib_deps.h"
 #include "diag.h"    /* 123.12c: diag_set_keep, diag_error_offsets */
+#include "version.h" /* 135.3j: TKC_VERSION, the one statement of it */
+#include "readall.h" /* 135.3j: tk_read_stream() — sources may be FIFOs */
 
 /* Forward declarations for stubs not yet exported by their headers */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -91,7 +93,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "toke 3.0.0"
+#define VERSION   "toke " TKC_VERSION   /* 135.3j: src/version.h */
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
@@ -640,6 +642,9 @@ static int resolve_stdlib_dir(void)
     return -1;
 }
 
+static int typecheck_after_name_errors(Node *ast, const char *sbuf, int slen,
+                                       NameEnv *ne, Arena *arena);   /* 123.12c, below */
+
 /* 114.40: compile several module source files into ONE linked binary.
  * Files must be listed in dependency order (imported modules before their
  * importers). Each is compiled to a temp .ll, with .tki interfaces emitted
@@ -671,11 +676,14 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         diag_reset(); diag_set_source_file(src);
         FILE *f = fopen(src, "rb");
         if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); rc = EUSAGE; goto cleanup; }
-        fseek(f, 0, SEEK_END); long slen = ftell(f); rewind(f);
-        char *sbuf = (char *)malloc((size_t)slen + 1);
-        if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
-            fclose(f); free(sbuf); fprintf(stderr, "tkc: failed to read '%s'\n", src); rc = EINTERNAL; goto cleanup; }
-        sbuf[slen] = '\0'; fclose(f); diag_set_source(sbuf, (size_t)slen);
+        size_t slen_z = 0; int big = 0;   /* 135.3j: never ftell — FIFOs */
+        char *sbuf = tk_read_stream(f, TK_SOURCE_MAX, &slen_z, &big);
+        fclose(f);
+        if (!sbuf) {
+            fprintf(stderr, big ? "tkc: '%s' is larger than the 64 MiB source limit\n"
+                                : "tkc: failed to read '%s'\n", src);
+            rc = big ? EUSAGE : EINTERNAL; goto cleanup; }
+        long slen = (long)slen_z; diag_set_source(sbuf, slen_z);
         Arena *arena = arena_init();
         Token *toks = arena_alloc(arena, (int)(slen + 16) * (int)sizeof(Token));
         int tc = lex(sbuf, (int)slen, toks, (int)(slen + 16), profile);
@@ -687,6 +695,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         NameEnv ne;
         if (resolve_names(ast, sbuf, &st, arena, &ne, sp, spc) < 0 || diag_error_count() > 0) {
+            /* 123.13: the same recovery as process_file (123.12c) */
+            (void)typecheck_after_name_errors(ast, sbuf, (int)slen, &ne, arena);
             symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         TypeEnv te;
         if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
@@ -963,18 +973,18 @@ static int process_file(const char *src, const RunOpts *o)
     /* Read source file — only malloc in the pipeline */
     FILE *f = fopen(src, "rb");
     if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE; }
-    fseek(f, 0, SEEK_END);
-    long slen = ftell(f);
-    rewind(f);
-    char *sbuf = malloc((size_t)slen + 1);
-    if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
-        fclose(f); free(sbuf);
-        fprintf(stderr, "tkc: failed to read '%s'\n", src);
-        return sbuf ? EUSAGE : EINTERNAL;
-    }
-    sbuf[slen] = '\0';
+    /* 135.3j: read the stream, never size it with ftell — on a FIFO or pipe
+     * ftell is -1, and malloc(0) + fread(SIZE_MAX) overflowed the heap. */
+    size_t slen_z = 0; int big = 0;
+    char *sbuf = tk_read_stream(f, TK_SOURCE_MAX, &slen_z, &big);
     fclose(f);
-    diag_set_source(sbuf, (size_t)slen);
+    if (!sbuf) {
+        fprintf(stderr, big ? "tkc: '%s' is larger than the 64 MiB source limit\n"
+                            : "tkc: failed to read '%s'\n", src);
+        return big ? EUSAGE : EINTERNAL;
+    }
+    long slen = (long)slen_z;
+    diag_set_source(sbuf, slen_z);
 
     Arena *arena = arena_init();
     if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }

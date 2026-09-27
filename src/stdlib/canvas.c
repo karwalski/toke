@@ -103,6 +103,20 @@ static void append_opf(TkCanvas *c, const char *fmt, ...)
     op_done(c);
 }
 
+/* 122.13: every caller string (colour, font, text, image src, canvas id)
+ * used to be written into its '...' JavaScript literal raw, so a text
+ * "');alert(1);('" closed the literal and ran code, and "</script>" closed
+ * the element canvas_to_html wraps it in.  Each now goes through
+ * strbuf_append_js (see strbuf.h), and the id through strbuf_append_xml in
+ * its HTML attribute.  NULL is written as the empty string (it was passed
+ * to %s, which is undefined behaviour). */
+static void js_lit(TkCanvas *c, const char *s)
+{
+    strbuf_putc(&c->ops, '\'');
+    strbuf_append_js(&c->ops, s);
+    strbuf_putc(&c->ops, '\'');
+}
+
 /* -----------------------------------------------------------------------
  * Drawing functions
  * ----------------------------------------------------------------------- */
@@ -110,16 +124,19 @@ static void append_opf(TkCanvas *c, const char *fmt, ...)
 TkCanvas *canvas_fill_rect(TkCanvas *c, double x, double y, double w, double h, const char *color)
 {
     if (!c) return NULL;
-    append_opf(c, "_c.fillStyle='%s'; _c.fillRect(%g,%g,%g,%g);\n",
-             color, x, y, w, h);
+    strbuf_append(&c->ops, "_c.fillStyle=");
+    js_lit(c, color);
+    append_opf(c, "; _c.fillRect(%g,%g,%g,%g);\n", x, y, w, h);
     return c;
 }
 
 TkCanvas *canvas_stroke_rect(TkCanvas *c, double x, double y, double w, double h, const char *color, double lw)
 {
     if (!c) return NULL;
-    append_opf(c, "_c.strokeStyle='%s'; _c.lineWidth=%g; _c.strokeRect(%g,%g,%g,%g);\n",
-             color, lw, x, y, w, h);
+    strbuf_append(&c->ops, "_c.strokeStyle=");
+    js_lit(c, color);
+    append_opf(c, "; _c.lineWidth=%g; _c.strokeRect(%g,%g,%g,%g);\n",
+             lw, x, y, w, h);
     return c;
 }
 
@@ -133,8 +150,13 @@ TkCanvas *canvas_clear_rect(TkCanvas *c, double x, double y, double w, double h)
 TkCanvas *canvas_fill_text(TkCanvas *c, const char *text, double x, double y, const char *font, const char *color)
 {
     if (!c) return NULL;
-    append_opf(c, "_c.font='%s'; _c.fillStyle='%s'; _c.fillText('%s',%g,%g);\n",
-             font, color, text, x, y);
+    strbuf_append(&c->ops, "_c.font=");
+    js_lit(c, font);
+    strbuf_append(&c->ops, "; _c.fillStyle=");
+    js_lit(c, color);
+    strbuf_append(&c->ops, "; _c.fillText(");
+    js_lit(c, text);
+    append_opf(c, ",%g,%g);\n", x, y);
     return c;
 }
 
@@ -176,23 +198,29 @@ TkCanvas *canvas_close_path(TkCanvas *c)
 TkCanvas *canvas_fill(TkCanvas *c, const char *color)
 {
     if (!c) return NULL;
-    append_opf(c, "_c.fillStyle='%s'; _c.fill();\n", color);
+    strbuf_append(&c->ops, "_c.fillStyle=");
+    js_lit(c, color);
+    append_op(c, "; _c.fill();\n");
     return c;
 }
 
 TkCanvas *canvas_stroke(TkCanvas *c, const char *color, double lw)
 {
     if (!c) return NULL;
-    append_opf(c, "_c.strokeStyle='%s'; _c.lineWidth=%g; _c.stroke();\n",
-             color, lw);
+    strbuf_append(&c->ops, "_c.strokeStyle=");
+    js_lit(c, color);
+    append_opf(c, "; _c.lineWidth=%g; _c.stroke();\n", lw);
     return c;
 }
 
 TkCanvas *canvas_draw_image(TkCanvas *c, const char *src, double x, double y, double w, double h)
 {
     if (!c) return NULL;
-    append_opf(c, "_c.drawImage(new Image()/* src=%s */,%g,%g,%g,%g);\n",
-             src, x, y, w, h);
+    /* src sits in a block comment: strbuf_append_js also escapes the '/'
+     * of a "*" "/" pair, so the comment cannot be closed from inside. */
+    strbuf_append(&c->ops, "_c.drawImage(new Image()/* src=");
+    strbuf_append_js(&c->ops, src);
+    append_opf(c, " */,%g,%g,%g,%g);\n", x, y, w, h);
     return c;
 }
 
@@ -214,9 +242,9 @@ const char *canvas_to_js(TkCanvas *c)
 
     /* preamble: "const _c = document.getElementById('{id}').getContext('2d');\n" */
     TkStrBuf o = TK_STRBUF_INIT;
-    strbuf_appendf(&o,
-             "const _c = document.getElementById('%s').getContext('2d');\n",
-             c->id);
+    strbuf_append(&o, "const _c = document.getElementById('");
+    strbuf_append_js(&o, c->id);
+    strbuf_append(&o, "').getContext('2d');\n");
     strbuf_appendn(&o, strbuf_cstr(&c->ops), c->ops.len);
     c->js_out = strbuf_take(&o);
     return c->js_out;
@@ -232,9 +260,10 @@ const char *canvas_to_html(TkCanvas *c)
 
     /* <canvas id="{id}" width="{w}" height="{h}"></canvas>\n<script>\n{js}\n</script> */
     TkStrBuf o = TK_STRBUF_INIT;
-    strbuf_appendf(&o,
-             "<canvas id=\"%s\" width=\"%u\" height=\"%u\"></canvas>\n<script>\n",
-             c->id, c->width, c->height);
+    strbuf_append(&o, "<canvas id=\"");
+    strbuf_append_xml(&o, c->id);
+    strbuf_appendf(&o, "\" width=\"%u\" height=\"%u\"></canvas>\n<script>\n",
+             c->width, c->height);
     strbuf_append(&o, js);
     strbuf_append(&o, "\n</script>");
     c->html_out = strbuf_take(&o);
@@ -284,13 +313,17 @@ void canvas_restore(TkCanvas *c)
 void canvas_fill_style(TkCanvas *c, const char *color)
 {
     if (!c || !color) return;
-    append_opf(c, "_c.fillStyle='%s';\n", color);
+    strbuf_append(&c->ops, "_c.fillStyle=");
+    js_lit(c, color);
+    append_op(c, ";\n");
 }
 
 void canvas_stroke_style(TkCanvas *c, const char *color)
 {
     if (!c || !color) return;
-    append_opf(c, "_c.strokeStyle='%s';\n", color);
+    strbuf_append(&c->ops, "_c.strokeStyle=");
+    js_lit(c, color);
+    append_op(c, ";\n");
 }
 
 void canvas_line_width(TkCanvas *c, double width)

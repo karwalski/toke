@@ -738,6 +738,113 @@ static void test_emit_read_roundtrip(void)
     (void)system(cmd);
 }
 
+/* 127.219: fixed-width scalars and maps have type codes, FIELD_GET carries
+ * the field's real index, and every branch label is resolved.  On main
+ * c8575da: u64/i32/u8/f32 came back as empty structs named after the type,
+ * the map as void, the FIELD_GET index as 0 and every label as 0. */
+static const TkirFuncDef *find_fn(const TkirModule *m, const char *name)
+{
+    for (int i = 0; i < m->func_count; i++)
+        if (!strcmp(m->funcs[i].name, name)) return &m->funcs[i];
+    return NULL;
+}
+
+static void test_widths_maps_fields_labels(void)
+{
+    char dir[] = "/tmp/tkir_w_XXXXXX";
+    char *made = mkdtemp(dir);
+    assert(made != NULL);
+    char src[512], out[512], cmd[2048];
+    snprintf(src, sizeof src, "%s/w.tk", dir);
+    snprintf(out, sizeof out, "%s/w.tkir", dir);
+    FILE *f = fopen(src, "w");
+    assert(f);
+    fputs("m=widths;\n"
+          "t=$pt{a:i64;b:u64;c:i32};\n"
+          "f=w(x:u64;y:i32;z:u8;q:f32;mm:@($str:i64)):i64{<0};\n"
+          "f=g(p:$pt):i64{<p.c as i64};\n"
+          "f=br2(n:i64):i64{if(n<1){<1}el{<2};<0};\n"
+          "f=lo(n:i64):i64{let s=mut.0;lp(let i=0;i<n;i=i+1){if(i>5){br};s=s+i;};<s};\n"
+          "f=main():i64{<0};\n", f);
+    fclose(f);
+    snprintf(cmd, sizeof cmd, "'%s' --emit-tkir '%s' --out '%s' >/dev/null 2>&1",
+             g_tkc, src, out);
+    assert(system(cmd) == 0);
+
+    TkirModule mod;
+    char err[256] = {0};
+    int rc = tkir_read(out, &mod, err, sizeof err);
+    if (rc != 0) fprintf(stderr, "\n    tkir_read: %s\n", err);
+    assert(rc == 0);
+    assert(mod.version_minor >= 1);
+
+    /* struct fields keep their widths */
+    const TkirTypeEntry *pt = NULL;
+    for (int i = 0; i < mod.type_count; i++)
+        if (mod.types[i].kind == TKIR_TY_STRUCT && !strcmp(mod.types[i].name, "pt"))
+            pt = &mod.types[i];
+    assert(pt && pt->field_count == 3);
+    assert(mod.types[pt->field_type_idxs[1]].kind == TKIR_TY_U64);
+    assert(mod.types[pt->field_type_idxs[2]].kind == TKIR_TY_I32);
+    /* no struct is named after a scalar */
+    for (int i = 0; i < mod.type_count; i++)
+        if (mod.types[i].kind == TKIR_TY_STRUCT)
+            assert(strcmp(mod.types[i].name, "u64") && strcmp(mod.types[i].name, "i32") &&
+                   strcmp(mod.types[i].name, "u8") && strcmp(mod.types[i].name, "f32"));
+    int k_u64 = 0, k_i32 = 0, k_u8 = 0, k_f32 = 0, maps = 0;
+    for (int i = 0; i < mod.type_count; i++) {
+        const TkirTypeEntry *t = &mod.types[i];
+        k_u64 += t->kind == TKIR_TY_U64; k_i32 += t->kind == TKIR_TY_I32;
+        k_u8 += t->kind == TKIR_TY_U8;   k_f32 += t->kind == TKIR_TY_F32;
+        if (t->kind == TKIR_TY_MAP) {
+            maps++;
+            assert(t->key_type_idx < mod.type_count && t->elem_type_idx < mod.type_count);
+            assert(mod.types[t->key_type_idx].kind == TKIR_TY_STR);
+            assert(mod.types[t->elem_type_idx].kind == TKIR_TY_I64);
+        }
+    }
+    assert(k_u64 == 1 && k_i32 == 1 && k_u8 == 1 && k_f32 == 1 && maps == 1);
+
+    /* p.c is field 2 of $pt */
+    const TkirFuncDef *g = find_fn(&mod, "g");
+    assert(g);
+    int fg = 0;
+    for (int j = 0; j < g->instr_count; j++)
+        if (g->instrs[j].opcode == TKIR_OP_FIELD_GET) { fg++; assert(g->instrs[j].imm.u32 == 2); }
+    assert(fg == 1);
+
+    /* if/el: BR_IF -> the else branch (past the then-RET), BR -> after it */
+    const TkirFuncDef *b2 = find_fn(&mod, "br2");
+    assert(b2);
+    int brif = -1, br = -1;
+    for (int j = 0; j < b2->instr_count; j++) {
+        if (b2->instrs[j].opcode == TKIR_OP_BR_IF && brif < 0) brif = j;
+        if (b2->instrs[j].opcode == TKIR_OP_BR && br < 0) br = j;
+    }
+    assert(brif >= 0 && br > brif);
+    assert(b2->instrs[brif].imm.u32 == (uint32_t)br + 1);      /* else starts after BR */
+    assert(b2->instrs[br].imm.u32 > (uint32_t)br + 1);        /* end is past the else */
+
+    /* loop: one backward BR, and every label in every function is in range
+     * and non-zero where it is a forward jump */
+    const TkirFuncDef *lo = find_fn(&mod, "lo");
+    assert(lo);
+    int back = 0, fwd = 0;
+    for (int j = 0; j < lo->instr_count; j++) {
+        uint8_t op = lo->instrs[j].opcode;
+        if (op != TKIR_OP_BR && op != TKIR_OP_BR_IF) continue;
+        uint32_t l = lo->instrs[j].imm.u32;
+        assert(l < (uint32_t)lo->instr_count);
+        if (l <= (uint32_t)j) back++; else fwd++;
+    }
+    assert(back == 1);      /* the loop's jump to its condition */
+    assert(fwd >= 3);       /* loop exit, the `br`, the inner if */
+
+    tkir_module_free(&mod);
+    snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
+    (void)system(cmd);
+}
+
 /* ── Main ───────────��────────────────────────────────────────────────── */
 
 int main(int argc, char **argv)
@@ -763,6 +870,8 @@ int main(int argc, char **argv)
     TEST(test_magic_is_ascii);
     if (g_tkc) TEST(test_emit_read_roundtrip);
     else fprintf(stderr, "  SKIP test_emit_read_roundtrip (no compiler path given)\n");
+    if (g_tkc) TEST(test_widths_maps_fields_labels);   /* 127.219 */
+    else fprintf(stderr, "  SKIP test_widths_maps_fields_labels (no compiler path given)\n");
 
     fprintf(stderr, "\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

@@ -21,7 +21,18 @@
 # machine delays the forks, it does not change how many there are, and the
 # check waits until the count is stable before reading it.
 #
-# Story: 127.192
+# THE FLAKE (127.220 item 3).  "workers=3: server never came up" was seen
+# under load and could not be diagnosed: the server's output went to
+# /dev/null and wait_up() kept polling a server that had already exited.
+# Not reproduced on 2026-09-27 (6 concurrent runs, 18/18 PASS, with a
+# corpus sweep running).  Measured and ruled out: a port taken between
+# free_port() and the bind -- by a client's source port or a bound,
+# non-listening socket, the server still binds (SO_REUSEADDR); by another
+# LISTENER, wait_up() connects to that one, so the failure would not read
+# "never came up".  So the case now records the server's output, stops
+# waiting when the server exits, and says which of the two happened.
+#
+# Story: 127.192, 127.220 (item 3)
 
 set -uo pipefail
 
@@ -33,7 +44,7 @@ PASS=0
 FAIL=0
 
 if [ ! -x "${TKC}" ]; then
-    echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"
+    echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"
     exit 1
 fi
 
@@ -53,8 +64,9 @@ free_port() {
     python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'
 }
 
-wait_up() {
+wait_up() {   # $1 = port, $2 = server pid: 0 up, 1 timed out, 2 server exited
     for _ in $(seq 1 80); do
+        kill -0 "$2" 2>/dev/null || return 2
         python3 -c "
 import socket,sys
 s=socket.socket(); s.settimeout(0.3)
@@ -109,10 +121,18 @@ EOF
         FAIL=$((FAIL + 1))
         return
     fi
-    TK_HTTP_WORKERS=5 "${WORK}/s${w}.bin" >/dev/null 2>&1 &
+    TK_HTTP_WORKERS=5 "${WORK}/s${w}.bin" >"${WORK}/s${w}.run" 2>&1 &
     SRV=$!
-    if ! wait_up "${port}"; then
-        echo "  FAIL: workers=${w}: server never came up"
+    local up
+    wait_up "${port}" "${SRV}"; up=$?
+    if [ "${up}" != 0 ]; then
+        if [ "${up}" = 2 ]; then
+            wait "${SRV}" 2>/dev/null
+            echo "  FAIL: workers=${w}: server never came up (it exited with status $?)"
+        else
+            echo "  FAIL: workers=${w}: server never came up (still running, not listening on ${port} after 80 polls)"
+        fi
+        sed 's/^/      /' "${WORK}/s${w}.run" | head -5
         FAIL=$((FAIL + 1))
     else
         local n got

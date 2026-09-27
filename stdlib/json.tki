@@ -298,7 +298,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -307,7 +307,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -316,7 +316,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -675,7 +675,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -684,7 +684,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {

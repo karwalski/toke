@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PASS=0; FAIL=0; SKIP=0
-if [ ! -x "${TKC}" ]; then echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
+if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 TKC="$(cd "$(dirname "${TKC}")" && pwd)/$(basename "${TKC}")"
 WORK="$(mktemp -d /tmp/tkc_c152_XXXXXX)"; trap 'rm -rf "${WORK}"' EXIT; cd "${WORK}"
 ok()  { echo "  PASS: $1"; PASS=$((PASS+1)); }

@@ -122,7 +122,7 @@
       "kind": "func",
       "name": "process.homedir",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {

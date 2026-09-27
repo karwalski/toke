@@ -115,7 +115,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 
-Codes **E2036**, **E4040**, **E4041**, **E4042**, **E4060**, **E9021** are defined in headers but not yet emitted by any `diag_emit` call -- they are reserved for planned functionality.
+Codes **E2036**, **E4040**, **E4041**, **E4042**, **E9021** are defined in headers but not yet emitted by any `diag_emit` call -- they are reserved for planned functionality.
 
 <!-- END error-code table -->
 
@@ -828,7 +828,9 @@ f=b():i64{<a(1;2)};
 **Notes:** The workhorse type error. Emitted for mismatched operands in binary
 expressions, mismatched function arguments, mismatched binding annotations,
 mismatched assignment sides, and mismatched return values. The fix field, when
-present, suggests an explicit `as` cast.
+present, suggests an explicit `as` cast. For a function argument it is present
+only when both types are numeric and the cast is not float to integer (story
+127.220): `as` does not convert an array, map or struct to `str`.
 
 ---
 

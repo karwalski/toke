@@ -380,6 +380,13 @@ int64_t tk_tls_pairingcode_w(int64_t conn)
     return (int64_t)(intptr_t)tls_pairing_code(conn_of(conn));
 }
 
+/* tls.group(conn) — the key-exchange group actually negotiated, e.g.
+ * "X25519MLKEM768", or the classical group a fallback settled on (122.13). */
+int64_t tk_tls_group_w(int64_t conn)
+{
+    return (int64_t)(intptr_t)tls_group(conn_of(conn));
+}
+
 /* tls.protocol(conn) — the protocol actually negotiated, e.g. "TLSv1.3".
  * Makes the version an observable fact rather than a claim about the source
  * (136.44). */

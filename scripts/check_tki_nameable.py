@@ -57,6 +57,17 @@ def offenders(text):
     return [w for w in WORD.findall(str(text)) if "_" in w]
 
 
+# 127.219 item 4: the default profile has no upper-case letters either, and
+# this gate checked only `_`.  A field or sum-variant name is written by the
+# caller as `.name` / `$name`, so `{"name": "Parse"}` in toon.tki, yaml.tki
+# and i18n.tki could not be matched from toke: `mt e{$parse:...}` failed at
+# codegen with E9005 ("sum type ... not established"), `$Parse` is E1003.
+# TYPE names are not checked for case here: stdlib types are spelled
+# `JsonErr` throughout and reach toke through names.c's own mapping.
+def upper_offenders(text):
+    return [w for w in WORD.findall(str(text)) if re.search(r"[A-Z]", w)]
+
+
 def check_file(path, out):
     text = path.read_text()
     try:
@@ -90,6 +101,10 @@ def check_file(path, out):
         for fld in exp.get("fields", []) or []:
             for w in offenders(fld.get("name", "")):
                 out.append(("NAME", path, "field %s.%s" % (name, fld.get("name")), w))
+                bad += 1
+            for w in upper_offenders(fld.get("name", "")):   # 127.219
+                out.append(("NAME", path, "%s %s.%s" % (
+                    "variant" if exp.get("is_sum") else "field", name, fld.get("name")), w))
                 bad += 1
             for w in offenders(fld.get("type", "")):
                 out.append(("NAME", path, "field type %s.%s" % (name, fld.get("name")), w))
@@ -153,8 +168,9 @@ def main():
             print("FAIL %s: %s" % (path.relative_to(root), what), file=sys.stderr)
         if names:
             print("\n%d unnameable identifier(s) across %d interface file(s). "
-                  "The default profile excludes '_': concatenate the words "
-                  "(peer_cert_pem -> peercertpem)."
+                  "The default profile excludes '_' and upper-case letters: "
+                  "concatenate the words and lower-case them (peer_cert_pem -> "
+                  "peercertpem, NotFound -> notfound)."
                   % (len(names), len({e[1] for e in names})), file=sys.stderr)
         if decoys:
             print("\n%d interface file(s) carry a '\"kind\"' token that is not a "

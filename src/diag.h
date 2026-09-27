@@ -102,4 +102,14 @@ int  diag_error_offsets(const int **out, int *out_count);
 void diag_rebase_push(int wrap_prefix_len, int src_offset, int expr_len);
 void diag_rebase_pop(void);
 
+/* 135.3j (7): a diagnostic sink.  While one is set, every diagnostic that
+ * survives suppression and the keep-predicate is counted as usual and handed
+ * to the sink INSTEAD of being written to stderr (or the SARIF buffer).  The
+ * WASM build uses it: a browser has no stderr to read, so tkc_check_source()
+ * collects the records here.  `fix` is NULL when the diagnostic has none. */
+typedef void (*DiagSinkFn)(DiagSeverity sev, int code, int byte_offset,
+                           int line, int col, const char *message,
+                           const char *fix, void *ctx);
+void diag_set_sink(DiagSinkFn sink, void *ctx);
+
 #endif /* TK_DIAG_H */

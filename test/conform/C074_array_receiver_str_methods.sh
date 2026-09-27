@@ -36,7 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 PASS=0; FAIL=0
-if [ ! -x "${TKC}" ]; then echo "SKIP: tkc binary not found at ${TKC}"; exit 1; fi
+if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC}"; exit 1; fi
 expect() {
     if [ "$2" = "$3" ]; then echo "PASS $1"; PASS=$((PASS + 1))
     else echo "FAIL $1"; echo "        expected: $3"; echo "        got:      $2"; FAIL=$((FAIL + 1)); fi

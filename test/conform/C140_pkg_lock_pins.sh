@@ -47,7 +47,7 @@ echo "---------------------------------"
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -g -O1 ${SAN} \
         -iquote "${REPO_ROOT}/src" -o "${WORK}/t" \
-        "${REPO_ROOT}/test/test_pkg.c" "${REPO_ROOT}/src/pkg.c" >"${WORK}/cc.log" 2>&1; then
+        "${REPO_ROOT}/test/test_pkg.c" "${REPO_ROOT}/src/pkg.c" "${REPO_ROOT}/src/sha256.c" >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     exit 1
 fi

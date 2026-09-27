@@ -295,8 +295,9 @@ webframework = "sha256:<64 lower-case hex digits>"
 | names enforced in manifests and locks | `pkg_manifest_parse*`, `pkg_lock_read`, `pkg_lock_write` | same |
 
 Not implemented, and needing the network or the fetch story: the fetch itself,
-the canonical tree hash computation (it needs a SHA-256 on the compiler side;
-`src/companion.c` has one, file-local), TLS/transport policy, signature
+the canonical tree hash computation (its SHA-256 is now shared as
+`src/sha256.c`, story 122.13, with known-answer tests in `test/test_pkg.c`;
+the tree walk is the fetch story's), TLS/transport policy, signature
 verification, the index, and the install sandbox.
 
 ## Consequences

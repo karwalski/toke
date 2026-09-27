@@ -932,6 +932,31 @@ char *tls_pairing_code(TlsConn conn)
  * tls_protocol (136.44)
  * ========================================================================= */
 
+/* =========================================================================
+ * tls_group (122.13)
+ * ========================================================================= */
+
+char *tls_group(TlsConn conn)
+{
+    if (!conn.id) return strdup("");
+
+    ConnEntry *e = registry_find(conn.id);
+    if (!e) return strdup("");
+
+    const char *g = NULL;
+#if OPENSSL_VERSION_NUMBER >= 0x30200000L
+    g = SSL_get0_group_name(e->ssl);
+#else
+    {
+        int nid = SSL_get_negotiated_group(e->ssl);
+        g = nid ? SSL_group_to_name(e->ssl, nid) : NULL;
+    }
+#endif
+    char *out = strdup(g ? g : "");
+    registry_unlock();
+    return out ? out : strdup("");
+}
+
 char *tls_protocol(TlsConn conn)
 {
     if (!conn.id) return strdup("");

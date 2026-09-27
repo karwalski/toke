@@ -91,6 +91,7 @@ DECLS_H = REPO_ROOT / "src" / "stdlib_decls_gen.h"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import check_tki_coverage as C  # noqa: E402  (resolver-table parser, single source)
+import gen_stdlib_decls as D  # noqa: E402  (glue-body analysis, single source)
 
 # ── coordination ────────────────────────────────────────────────────────────
 #
@@ -275,12 +276,14 @@ def reachable_methods(mod: str, explicit, patterns, defs) -> dict[str, str]:
 
 # ── merge ───────────────────────────────────────────────────────────────────
 
-def new_export(mod: str, method: str, sym: str, ps, ret, defs) -> dict:
+def new_export(mod: str, method: str, sym: str, ps, ret, defs, strret=frozenset()) -> dict:
     """A generated export.  136.54: glue defined in ANOTHER module's file is
     reachable plumbing until someone decides otherwise, so it is added as
     `"internal": true` -- callable and checked, but listed only on
     docs/reference/stdlib-internal.md.  Publishing it is a deliberate edit to
     `"internal": false`, which check-tki requires for every such export."""
+    if ret == "i64" and sym in strret:
+        ret = "str"   # 127.220 item 5: the glue provably returns a C string
     e = {"kind": "func", "name": f"{mod}.{method}", "params": ps,
          "return": ret, "gen": "abi"}
     if C.is_cross_module(mod, sym, defs):
@@ -288,7 +291,8 @@ def new_export(mod: str, method: str, sym: str, ps, ret, defs) -> dict:
     return e
 
 
-def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread, defs):
+def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread, defs,
+          strret=frozenset()):
     """Return (new_json_text_or_None, actions) for one .tki file."""
     data = json.loads(path.read_text())
     exports = data.get("exports", [])
@@ -332,19 +336,30 @@ def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread, de
         e["params"] = ps
         actions.append(f"ARITY   {mod}.{method}: {have} -> {want}")
 
+    # (1b) 127.220 item 5: a GENERATED record's `i64` return is an ABI
+    #      placeholder, not a declaration, so it is corrected to `str` when
+    #      the glue provably returns a C string (gen_stdlib_decls.
+    #      scan_str_returns).  A hand-written return is never touched.
+    for method, e in declared.items():
+        sym = reach.get(method)
+        if (sym in strret and e.get("gen") == "abi"
+                and e.get("return") == "i64"):
+            e["return"] = "str"
+            actions.append(f"RETURN  {mod}.{method}: i64 -> str ({sym})")
+
     # (2) add what the builtin table reaches and the interface omits.
     for method in sorted(reach):
         if method in spoken_for or not ADDABLE.match(method):
             continue
         sym = reach[method]
         ps, ret = types.get(sym, ([], "i64"))
-        exports.append(new_export(mod, method, sym, ps, ret, defs))
+        exports.append(new_export(mod, method, sym, ps, ret, defs, strret))
         actions.append(f"ADD     {mod}.{method} -> {sym}")
 
     # An EXEMPT action changes nothing on disk -- it records a disagreement
     # this script deliberately declines to resolve. Counting it as a pending
     # edit would make `--check` permanently red and train people to ignore it.
-    if not any(a.startswith(("ARITY", "ADD")) for a in actions):
+    if not any(a.startswith(("ARITY", "ADD", "RETURN")) for a in actions):
         return None, actions
     data["exports"] = exports
     return json.dumps(data, indent=2) + "\n", actions
@@ -357,6 +372,7 @@ def main() -> int:
     explicit, patterns, _subns = C.load_resolver_tables(LLVM_C)
     defs = C.load_c_definitions(C_DIR)
     arity, types, nopread = decl_arity(), decl_types(), symbols_reading_no_parameter()
+    strret = D.scan_str_returns()
     registered = set(registered_modules())
 
     changed, all_actions = [], []
@@ -383,7 +399,7 @@ def main() -> int:
             if not ADDABLE.match(method):
                 continue
             ps, ret = types.get(reach[method], ([], "i64"))
-            exports.append(new_export(mod, method, reach[method], ps, ret, defs))
+            exports.append(new_export(mod, method, reach[method], ps, ret, defs, strret))
         if not exports:
             # A registered module with no reachable surface at all. Writing an
             # empty interface would only make the gate green over a module
@@ -409,7 +425,7 @@ def main() -> int:
         if mod not in registered:
             continue  # no glue table entry; nothing to derive from
         reach = reachable_methods(mod, explicit, patterns, defs)
-        text, actions = merge(path, mod, reach, arity, types, nopread, defs)
+        text, actions = merge(path, mod, reach, arity, types, nopread, defs, strret)
         all_actions += actions
         if text is None:
             continue
@@ -424,6 +440,7 @@ def main() -> int:
           f"{len(all_actions)} action(s)")
     print(f"  added: {sum(1 for a in all_actions if a.startswith('ADD'))}"
           f"  arity-corrected: {sum(1 for a in all_actions if a.startswith('ARITY'))}"
+          f"  return-corrected: {sum(1 for a in all_actions if a.startswith('RETURN'))}"
           f"  exempt: {sum(1 for a in all_actions if a.startswith('EXEMPT'))}")
     print(f"  skipped by coordination: {', '.join(sorted(SKIP_FILES))}")
     print("=" * 60)

@@ -100,6 +100,7 @@ f=main():i64{
 
 **Not this** — mut-flag ladder of independent ifs (`patterns/cond-elif-chain/c.tk`):
 
+<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -158,6 +159,7 @@ f=main():i64{
 
 **Not this** — flag soup: two ifs setting one mut (`patterns/cond-bool-combine/b.tk`):
 
+<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -281,6 +283,7 @@ f=main():i64{
 
 **Not this** — mut string flag overwritten by an if (`patterns/cond-bool-render/c.tk`):
 
+<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -822,6 +825,7 @@ f=main():i64{
 
 **Not this** — nested `s.concat` chain (`patterns/str-interp-vs-join/c.tk`):
 
+<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;

@@ -1,0 +1,21 @@
+(* 127.227 item 2 multi-module certificate: a map whose VALUE is a collection,
+ * returned by a function in ANOTHER user module.  127.224 item 7 typed a
+ * `[K:V]` return only when K and V were scalars, so `[str:[tok]]` and
+ * `[str:[i64]]` stayed untyped and `.get(k)` lowered as an array index:
+ * RT003 with the key's address as the index.  Expected output below is the
+ * correct one. *)
+m=cgmm.tmain;
+i=io:std.io;
+i=tl:cgmm.tlib;
+f=main():i64{
+  let g=tl.groups();
+  let a=g.get("a");
+  io.println("\(g.len) \(a.len)");
+  let t=a.get(1);
+  io.println("\(t.k) \(t.n)");
+  let n=tl.nums();
+  let p=n.get("p");
+  io.println("\(p.len) \(p.get(2))");
+  io.println("\(tl.nums().get("q").len)");
+  <0
+};
