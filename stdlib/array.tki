@@ -43,7 +43,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "bool",
       "gen": "abi",
       "internal": false
     },
