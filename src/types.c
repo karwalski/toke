@@ -410,6 +410,22 @@ static int is_integer(const Type *t) {
 }
 
 /*
+ * cast_fix_certain (127.230 item 4) — may an E4031 between a value of type
+ * `from` and a destination of type `to` carry the fix "cast … to <to> using
+ * 'as'"?  AGENTS.md §6: only when the cast is the repair in every case, i.e.
+ * it compiles AND cannot change the value: any integer into i64, or f32 into
+ * f64.  This is the rule the return path has used since 886bdb0.  Narrowing
+ * (`300 as u8` is 44), int<->float (127.64) and every non-scalar (`as` does
+ * not turn an array into an array of another element type, nor anything into
+ * a str -- C218) have no certain repair, so no fix is offered.
+ */
+static int cast_fix_certain(const Type *from, const Type *to) {
+    if (!from || !to) return 0;
+    return (to->kind==TY_I64 && is_integer(from))
+        || (to->kind==TY_F64 && from->kind==TY_F32);
+}
+
+/*
  * lit_narrows (127.230 item 4) — an integer LITERAL (or a negated one) stands
  * where a narrower or unsigned integer type is declared when its value fits:
  * `let b:u8=5`, `let n:u64=0`, `f(7)` into an i32 parameter.  An integer
@@ -4799,14 +4815,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * fails the f64 parameter it feeds. Name the operand that has
                  * to widen instead. AGENTS.md §6: the `fix` field is populated
                  * only when it is correct in every case the error is emitted. */
+                /* 127.230 item 4: "cast RHS to <LHS type>" was offered for
+                 * every other pair -- `s=="x"` against an i64, a u8 against
+                 * an i32 -- where `as` is either not a conversion at all or
+                 * changes the value.  Offered now only where the cast is
+                 * certain (cast_fix_certain); otherwise no fix (AGENTS §6). */
+                int has_fix=1;
                 if (is_numeric(l)&&is_numeric(r)&&is_integer(l)&&!is_integer(r))
                     snprintf(fix,sizeof(fix),
                              "cast LHS to %s using 'as' "
                              "(toke has no implicit int/float promotion)",
                              type_name(r));
-                else
+                else if (cast_fix_certain(r,l))
                     snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(l));
-                emit_mm(cx,node,l,r,fix);
+                else has_fix=0;
+                emit_mm(cx,node,l,r,has_fix?fix:NULL);
                 return cmp?mk_type(A,TY_BOOL):mk_type(A,TY_UNKNOWN);
             }
         }
@@ -5344,7 +5367,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)
             &&!lit_narrows(cx->src,initN,ann)) {                 /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
-            emit_mm(cx,node,ann,init,fix);
+            emit_mm(cx,node,ann,init,cast_fix_certain(init,ann)?fix:NULL);
         }
         /* Record the scope depth at which this binding was created so that
          * escape analysis (E5001) can detect returns from deeper scopes. */
@@ -5412,7 +5435,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)
             &&!lit_narrows(cx->src,node->children[1],lhs)) {       /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(lhs));
-            emit_mm(cx,node,lhs,rhs,fix);
+            emit_mm(cx,node,lhs,rhs,cast_fix_certain(rhs,lhs)?fix:NULL);
         }
         return mk_type(A,TY_VOID);
     }
@@ -5469,8 +5492,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * value: any integer into i64, or f32 into f64.  Every
                  * other mismatch gets no fix — narrowing, int<->float
                  * (127.64) and non-scalars have no certain repair. */
-                int certain = (cx->fn_ret->kind==TY_I64 && is_integer(val))
-                           || (cx->fn_ret->kind==TY_F64 && val->kind==TY_F32);
+                int certain = cast_fix_certain(val,cx->fn_ret);
                 char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
                 emit_mm(cx,node,cx->fn_ret,val,certain?fix:NULL);
             }
