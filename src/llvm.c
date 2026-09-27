@@ -1372,38 +1372,26 @@ static int is_file_errbox_wrapper(const char *name) {
  * from a failure (runtime-abi.md §7.2: "the zero filler is not the
  * discriminant").  Same class and same cure as 114.53 (str.toint) and
  * 127.67 (toml.bool/i64).  Their glue now maintains the slot
- * (src/stdlib/json_glue.c); this list is what makes the slot authoritative.
- * A name belongs here only if its glue sets the slot on every path — a
- * wrapper that leaves it stale would read an earlier call's error.
+ * (src/stdlib/json_glue.c); being a slot wrapper is what makes the slot
+ * authoritative.  A wrapper qualifies only if its glue sets the slot on
+ * every path — one that leaves it stale would read an earlier call's error,
+ * and one that returns a bare 0 would read a failure as a success.
  */
 static int is_stdlib_slot_wrapper(const char *name) {
-    static const char *const names[] = {
-        "tk_json_bool_w", "tk_json_getbool_w",
-        "tk_json_i64_w", "tk_json_getint_w", "tk_json_geti64_w", "tk_json_geti32_w",
-        "tk_json_u64_w",
-        "tk_json_f64_w", "tk_json_getf32_w", "tk_json_getfloat_w",
-        /* 127.182: {msg} box of stdlib/toml.tki's `tomlerr` record */
-        "tk_toml_load_w", "tk_toml_loadfile_w", "tk_toml_str_w",
-        "tk_toml_section_w", "tk_toml_bool_w", "tk_toml_i64_w",
-        /* 135.5b: `T!str` — the slot holds the message pointer itself */
-        "tk_image_decode_w", "tk_image_encode_w", "tk_image_crop_w",
-        "tk_image_pixelat_w", "tk_image_adaptivethreshold_w",
-        "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
-        /* 127.104: `TlsKeypair!str` — the slot holds tls.c's message */
-        "tk_tls_genselfsigned_w", "tk_tls_genselfsignedalg_w",
-        /* 138.3 (B3): the typed http client calls return `T!$httperr` and
-         * leave an {msg; code} box in the slot; without these rows
-         * `$err:e e.msg` read a nil payload (RT005) */
-        "tk_http_clientget_w", "tk_http_clientpost_w", "tk_http_clientput_w",
-        "tk_http_clientdelete_w", "tk_http_geturl_w",
-        /* 138.6: std.db's scalar row accessors and exec (db_glue.c db_raise) */
-        "tk_row_str_w", "tk_row_i64_w", "tk_row_u64_w", "tk_row_f64_w", "tk_row_bool_w",
-        "tk_db_exec_w", "tk_db_execon_w",
+    /* 127.238: derived, not listed.  Every `T!E` export of a .tki (T not
+     * void) is a slot wrapper unless its glue is on the bare-glue exception
+     * list in stdlib_tables.c, which test/conform/C375 keeps exact. */
+    if (!name || is_err_slot_bare_glue(name)) return 0;
+    if (is_tki_value_err_union_wrapper(name)) return 1;
+    /* std.json's get* accessors keep the slot (json_glue.c) but their .tki
+     * declares a plain `i64`, so the derivation cannot see them. */
+    static const char *const undeclared[] = {
+        "tk_json_getbool_w", "tk_json_getint_w", "tk_json_geti64_w",
+        "tk_json_geti32_w", "tk_json_getf32_w", "tk_json_getfloat_w",
         NULL,
     };
-    if (!name) return 0;
-    for (int i = 0; names[i]; i++)
-        if (!strcmp(name, names[i])) return 1;
+    for (int i = 0; undeclared[i]; i++)
+        if (!strcmp(name, undeclared[i])) return 1;
     return 0;
 }
 
@@ -1435,19 +1423,18 @@ static const char *stdlib_err_payload_type(Ctx *c, const char *prv,
                                            char *buf, size_t bufsz)
 {
     if (!is_stdlib_slot_wrapper(prv) && !is_file_errbox_wrapper(prv)) return NULL;
-    ensure_tki_cache_loaded();
-    for (int i = 0; i < g_tki_cache_count; i++) {
-        if (strcmp(g_tki_cache[i].wrapper_name, prv)) continue;
-        const char *bang = strchr(g_tki_cache[i].toke_ret, '!');
-        if (!bang) return NULL;
-        bang++;
-        if (*bang == '$') bang++;
-        snprintf(buf, bufsz, "%s", bang);
-        if (!strcmp(buf, "str")) return "str";
-        const StructInfo *si = lookup_struct(c, buf);
-        return si ? si->name : NULL;
-    }
-    return NULL;
+    /* 127.238: by the entry the symbol implements, under either spelling
+     * (tk_df_… / tk_dataframe_…), not by the cache's own wrapper name. */
+    const TkiCacheEntry *te = tki_entry_for_symbol(prv);
+    if (!te) return NULL;
+    const char *bang = strchr(te->toke_ret, '!');
+    if (!bang) return NULL;
+    bang++;
+    if (*bang == '$') bang++;
+    snprintf(buf, bufsz, "%s", bang);
+    if (!strcmp(buf, "str")) return "str";
+    const StructInfo *si = lookup_struct(c, buf);
+    return si ? si->name : NULL;
 }
 
 /* 127.182: may a stdlib payload of type `from` pass through `!` into a

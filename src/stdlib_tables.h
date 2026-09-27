@@ -53,6 +53,9 @@ void ensure_tki_cache_loaded(void);
 void tki_base_return_type(const char *toke_ret, char *out, int out_sz);
 const char *tki_lookup_return_type(const char *wrapper_name);
 int is_void_err_union_wrapper(const char *name);
+int is_err_slot_bare_glue(const char *name);          /* 127.238 */
+int is_tki_value_err_union_wrapper(const char *name); /* 127.238 */
+const TkiCacheEntry *tki_entry_for_symbol(const char *sym); /* 127.238 */
 
 const char *stdlib_symbol_for(const char *mod, int is_std, const char *method);
 const char *stdlib_subpath_symbol(const char *mpath, int is_std,
