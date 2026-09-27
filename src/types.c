@@ -1982,35 +1982,22 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
                  * emitter decides map vs array from the rtype since 127.52
                  * retired its __map__ tag, so `m.get("b")` lowered as an
                  * array index and trapped RT003.  The interface spells it
-                 * `[K:V]` (ir.c); only scalar K and V are adopted, and only
-                 * across a user-module boundary — std interfaces are a
-                 * hand-written, drifted surface (check_tki_call) and stay as
-                 * they were. */
+                 * `[K:V]` (ir.c), and is adopted only across a user-module
+                 * boundary — std interfaces are a hand-written, drifted
+                 * surface (check_tki_call) and stay as they were.
+                 * 127.227 item 2: K and V are read by tki_compound_type, so a
+                 * compound value (`[str:[tok]]`, `[str:[i64]]`) is typed
+                 * too; the scalar-only reading left it unknown, and
+                 * `g.get("a")` on it lowered as an array index (RT003).
+                 * Only a map is adopted here; an array return stays unknown
+                 * as before. */
                 char pb[256];
                 const char *mp = import_module_path(cx, ab, pb, sizeof pb);
                 size_t rl = strlen(ret);
-                const char *colon = strchr(ret, ':');
                 if (mp && strncmp(mp, "std.", 4) != 0 && rl > 4
-                    && ret[0] == '[' && ret[rl - 1] == ']' && colon
-                    && !strchr(colon + 1, ':')) {
-                    char kb[64], vb[64];
-                    size_t kl = (size_t)(colon - ret - 1);
-                    size_t vl = (size_t)(ret + rl - 1 - (colon + 1));
-                    if (kl > 0 && kl < sizeof kb && vl > 0 && vl < sizeof vb) {
-                        memcpy(kb, ret + 1, kl); kb[kl] = '\0';
-                        memcpy(vb, colon + 1, vl); vb[vl] = '\0';
-                        Arena *A = cx->env->arena;
-                        Type *kt = tki_scalar_type(A, kb), *vt = tki_scalar_type(A, vb);
-                        Type *mt = (kt && vt) ? mk_type(A, TY_MAP) : NULL;
-                        Type **fts = mt ? (Type **)arena_alloc(A, (int)sizeof(Type *)) : NULL;
-                        if (mt && fts) {
-                            mt->elem = kt;
-                            mt->field_count = 1;
-                            mt->field_types = fts;
-                            fts[0] = vt;
-                            return mt;
-                        }
-                    }
+                    && ret[0] == '[' && ret[rl - 1] == ']') {
+                    Type *mt = tki_compound_type(cx, ret, rl, 0);
+                    if (mt && mt->kind == TY_MAP) return mt;
                 }
             }
             return NULL;
