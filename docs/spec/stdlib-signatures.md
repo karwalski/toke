@@ -129,6 +129,12 @@ http.post(path:$str;handler:func)
 http.put(path:$str;handler:func)
 http.delete(path:$str;handler:func)
 http.patch(path:$str;handler:func)
+(* testing a handler in-process (138.16): mockreq builds the request a
+   handler receives; the res* functions read the response it returned *)
+f=http.mockreq(method:$str;path:$str;headers:@(@($str));body:$str;params:@(@($str))):$req
+f=http.resstatus(res:$res):u64
+f=http.resbody(res:$res):$str
+f=http.resheader(res:$res;name:$str):$str
 (* server start: block until shut down (0); -1 and exit status 1 if the
    server cannot start.  Port 0 = any free port, reported on stderr.  The
    port-only forms bind all interfaces; the ...on forms bind host (an IPv4

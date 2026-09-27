@@ -222,6 +222,47 @@
     },
     {
       "kind": "func",
+      "name": "http.mockreq",
+      "params": [
+        "str",
+        "str",
+        "[[str]]",
+        "str",
+        "[[str]]"
+      ],
+      "return": "req",
+      "note": "method; path; headers; body; params -- build the request a route handler receives, to call the handler in a test; headers and params are @(@(name;value)...) (138.16)"
+    },
+    {
+      "kind": "func",
+      "name": "http.resstatus",
+      "params": [
+        "res"
+      ],
+      "return": "u64",
+      "note": "status of the response a handler returned; a null response reads as the server's 500 (138.16)"
+    },
+    {
+      "kind": "func",
+      "name": "http.resbody",
+      "params": [
+        "res"
+      ],
+      "return": "str",
+      "note": "body of the response a handler returned (138.16)"
+    },
+    {
+      "kind": "func",
+      "name": "http.resheader",
+      "params": [
+        "res",
+        "str"
+      ],
+      "return": "str",
+      "note": "a header of the response a handler returned, by name (case-insensitive); \"\" when absent (138.16)"
+    },
+    {
+      "kind": "func",
       "name": "http.res.ok",
       "params": [
         "str"
