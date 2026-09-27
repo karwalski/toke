@@ -89,13 +89,22 @@
  *
  * Returns an arena-allocated copy of `s`.  Used to persist type and field
  * names so they outlive any stack buffers they were extracted into.
- * If arena allocation fails, returns the original pointer `s` as a
- * best-effort fallback (the caller must tolerate this).
+ *
+ * 135.3j (3): on arena exhaustion this used to return `s` itself — and every
+ * caller passes a stack buffer (a TOKSTR copy), so the Type kept a pointer
+ * into a dead frame.  It now reports the exhaustion (E9010) and returns a
+ * static empty name, which is never a dangling pointer; the error stops the
+ * compile before anything reads the name for meaning.
  */
 static const char *ty_intern(Arena *arena, const char *s) {
     int len = (int)strlen(s);
     char *p = (char *)arena_alloc(arena, len + 1);
-    if (!p) return s;
+    if (!p) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: out of memory interning a type name",
+                  (void *)0);
+        return "";
+    }
     memcpy(p, s, (size_t)len + 1);
     return p;
 }
