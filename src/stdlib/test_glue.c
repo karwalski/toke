@@ -58,7 +58,18 @@ int64_t tk_test_assertne_w(int64_t a, int64_t b, int64_t msg) {
 int64_t tk_test_assertequal_w(int64_t a, int64_t b, int64_t msg) {
     return tk_test_asserteq_w(a, b, msg);
 }
-int64_t tk_test_ok_w(int64_t val) { return val ? 1 : 0; }
+/*
+ * 127.231 — test.ok(v) is an assertion that v is non-zero.
+ *
+ * It was `return val ? 1 : 0` from the day it was stubbed in (904a2d8), the
+ * same stub test.eq was until 127.68: a false value printed nothing and
+ * marked nothing, so test.ok could not fail at all.  It now fails the way
+ * every other assertion here does -- the DIAGNOSTIC line, the current test
+ * marked failed, and (tk_exitfail.h) a non-zero exit status.
+ */
+int64_t tk_test_ok_w(int64_t val) {
+    return tk_test_assert(val != 0, "test.ok: value is 0 (false)") ? 1 : 0;
+}
 /* 127.68: integer meaning unchanged (same compare, same 1/0), now reported
  * and marked on failure.  A str pair reaches tk_test_eqstr_w instead: the
  * backend rewrites test.eq to it when an argument is a str. */

@@ -9,6 +9,7 @@
 
 #include "os.h"
 #include "capabilities.h"   /* 124.4c2: fs/env capability gates */
+#include "tk_exitfail.h"    /* 127.231: os.exit(0) keeps a recorded failure */
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -135,6 +136,11 @@ int64_t tk_os_getpid(void) {
 }
 
 int64_t tk_os_exit(int64_t status) {
+    /* 127.231: os.exit is _exit() and skips atexit handlers, so a recorded
+     * failure (a failed test assertion, a server that did not start) would
+     * be lost by os.exit(0).  tk_exitfail_atexit() returns when there is
+     * none; otherwise it reports and exits 1. */
+    if (status == 0) tk_exitfail_atexit();
     _exit((int)status);
     return 0; /* unreachable */
 }

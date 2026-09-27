@@ -15,6 +15,7 @@
  */
 
 #include "tk_test.h"
+#include "tk_exitfail.h"   /* 127.231: a failed assertion fails the process */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +38,12 @@ static TkTestFn  g_teardown_fn        = NULL;
 static void mark_current_test_failed(void)
 {
     g_current_test_failed = 1;
+    /* 127.231: and the process fails.  A failed assertion used to print its
+     * DIAGNOSTIC line and change nothing else, so a test program exited 0
+     * unless it called test.report.  It now exits 1 when it finishes
+     * (tk_exitfail.h: at exit, not immediately, so every failure is still
+     * reported). */
+    tk_exitfail("std.test assertion failed");
 }
 
 int tk_test_assert(int cond, const char *msg)
