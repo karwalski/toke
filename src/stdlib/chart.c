@@ -15,9 +15,13 @@
  */
 
 #include "chart.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <float.h>
+#include <limits.h>
+#include <stdint.h>
 
 /* -----------------------------------------------------------------------
  * Default Chart.js colour palette (6 colours, cycled when color==NULL).
@@ -33,74 +37,37 @@ static const char *DEFAULT_COLORS[] = {
 #define NDEFAULT_COLORS 6
 
 /* -----------------------------------------------------------------------
- * Simple growable string builder.
+ * Output buffer: the shared TkStrBuf (122.13; chart.c's private SB was the
+ * last copy of the class 122.2 collapsed).  Appends are unchecked because
+ * an allocation failure is sticky and strbuf_take() then returns NULL, so a
+ * partial chart is never returned as if whole.
  * ----------------------------------------------------------------------- */
-typedef struct {
-    char    *buf;
-    size_t   len;   /* bytes written, excluding NUL */
-    size_t   cap;   /* bytes allocated */
-} SB;
 
-static int sb_init(SB *sb)
+/* A JSON string, quoted.  122.13: control bytes other than \n \r \t were
+ * copied raw, which is invalid JSON; NULL (a missing label) crashed. */
+static void sb_json_str(TkStrBuf *sb, const char *s)
 {
-    sb->cap = 256;
-    sb->len = 0;
-    sb->buf = (char *)malloc(sb->cap);
-    if (!sb->buf) return 0;
-    sb->buf[0] = '\0';
-    return 1;
+    strbuf_putc(sb, '"');
+    strbuf_append_json(sb, s);
+    strbuf_putc(sb, '"');
 }
 
-static int sb_grow(SB *sb, size_t need)
+/* isfinite() without <math.h> (a local math.h can shadow it under
+ * -Isrc/stdlib, see svg.c): NaN != NaN, and Inf - Inf is NaN. */
+static int chart_finite(double v) { return v == v && v - v == 0.0; }
+
+/* A JSON number.  122.13: NaN and +-Inf printed as "nan"/"inf", which is
+ * not JSON; they are written as null (Chart.js and Vega-Lite both read a
+ * null datum as a gap). */
+static void sb_double(TkStrBuf *sb, double v)
 {
-    if (sb->len + need + 1 <= sb->cap) return 1;
-    size_t newcap = sb->cap * 2;
-    while (newcap < sb->len + need + 1) newcap *= 2;
-    char *tmp = (char *)realloc(sb->buf, newcap);
-    if (!tmp) return 0;
-    sb->buf = tmp;
-    sb->cap = newcap;
-    return 1;
+    if (!chart_finite(v)) { strbuf_append(sb, "null"); return; }
+    strbuf_appendf(sb, "%.10g", v);
 }
 
-static int sb_append(SB *sb, const char *s)
-{
-    size_t slen = strlen(s);
-    if (!sb_grow(sb, slen)) return 0;
-    memcpy(sb->buf + sb->len, s, slen);
-    sb->len += slen;
-    sb->buf[sb->len] = '\0';
-    return 1;
-}
-
-/* Append a JSON-escaped string (with surrounding quotes). */
-static int sb_append_json_str(SB *sb, const char *s)
-{
-    if (!sb_append(sb, "\"")) return 0;
-    for (; *s; s++) {
-        char esc[7];
-        switch (*s) {
-            case '"':  if (!sb_append(sb, "\\\"")) return 0; break;
-            case '\\': if (!sb_append(sb, "\\\\")) return 0; break;
-            case '\n': if (!sb_append(sb, "\\n"))  return 0; break;
-            case '\r': if (!sb_append(sb, "\\r"))  return 0; break;
-            case '\t': if (!sb_append(sb, "\\t"))  return 0; break;
-            default:
-                esc[0] = *s; esc[1] = '\0';
-                if (!sb_append(sb, esc)) return 0;
-                break;
-        }
-    }
-    return sb_append(sb, "\"");
-}
-
-/* Append a double value as a JSON number. */
-static int sb_append_double(SB *sb, double v)
-{
-    char tmp[64];
-    snprintf(tmp, sizeof(tmp), "%.10g", v);
-    return sb_append(sb, tmp);
-}
+#define A(s)  strbuf_append(&sb, (s))
+#define AJ(s) sb_json_str(&sb, (s))
+#define AD(v) sb_double(&sb, (v))
 
 /* -----------------------------------------------------------------------
  * ChartType → string helpers.
@@ -198,12 +165,8 @@ const char *chart_tojson(TkChartSpec *spec)
 {
     if (!spec) return NULL;
 
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
-#define A(s)  do { if (!sb_append(&sb, (s))) { free(sb.buf); return NULL; } } while(0)
-#define AJ(s) do { if (!sb_append_json_str(&sb, (s))) { free(sb.buf); return NULL; } } while(0)
-#define AD(v) do { if (!sb_append_double(&sb, (v))) { free(sb.buf); return NULL; } } while(0)
 
     A("{");
     A("\"type\":");
@@ -260,11 +223,8 @@ const char *chart_tojson(TkChartSpec *spec)
 
     A("}");   /* end root */
 
-#undef A
-#undef AJ
-#undef AD
 
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -291,12 +251,8 @@ const char *chart_tovega(TkChartSpec *spec)
 {
     if (!spec) return NULL;
 
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
-#define A(s)  do { if (!sb_append(&sb, (s))) { free(sb.buf); return NULL; } } while(0)
-#define AJ(s) do { if (!sb_append_json_str(&sb, (s))) { free(sb.buf); return NULL; } } while(0)
-#define AD(v) do { if (!sb_append_double(&sb, (v))) { free(sb.buf); return NULL; } } while(0)
 
     A("{");
     A("\"$schema\":\"https://vega.github.io/schema/vega-lite/v5.json\"");
@@ -345,11 +301,8 @@ const char *chart_tovega(TkChartSpec *spec)
 
     A("}");   /* end root */
 
-#undef A
-#undef AJ
-#undef AD
 
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* =======================================================================
@@ -357,9 +310,6 @@ const char *chart_tovega(TkChartSpec *spec)
  * ======================================================================= */
 
 /* Convenience macros used throughout this section; undefined at section end. */
-#define A(s)   do { if (!sb_append(&sb, (s)))             { free(sb.buf); return NULL; } } while(0)
-#define AJ(s)  do { if (!sb_append_json_str(&sb, (s)))    { free(sb.buf); return NULL; } } while(0)
-#define AD(v)  do { if (!sb_append_double(&sb, (v)))      { free(sb.buf); return NULL; } } while(0)
 
 /* -----------------------------------------------------------------------
  * chart_stacked_bar
@@ -369,8 +319,7 @@ const char *chart_stacked_bar(const char *const *labels, uint64_t nlabels,
                                const double *const *data,
                                const char *title)
 {
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     A("{\"type\":\"bar\"");
 
@@ -412,7 +361,7 @@ const char *chart_stacked_bar(const char *const *labels, uint64_t nlabels,
     A("}}}");  /* end title / plugins / options */
 
     A("}");
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -421,8 +370,7 @@ const char *chart_stacked_bar(const char *const *labels, uint64_t nlabels,
 const char *chart_horizontal_bar(const char *const *labels, uint64_t n,
                                   const double *values, const char *title)
 {
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     A("{\"type\":\"bar\"");
     A(",\"data\":{\"labels\":[");
@@ -452,7 +400,7 @@ const char *chart_horizontal_bar(const char *const *labels, uint64_t n,
     A("}}}");  /* end title / plugins / options */
 
     A("}");
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -461,8 +409,7 @@ const char *chart_horizontal_bar(const char *const *labels, uint64_t n,
 const char *chart_area(const double *xs, const double *ys, uint64_t n,
                         const char *title)
 {
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     A("{\"type\":\"line\"");
 
@@ -494,7 +441,7 @@ const char *chart_area(const double *xs, const double *ys, uint64_t n,
     A("}}}");
 
     A("}");
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -503,8 +450,7 @@ const char *chart_area(const double *xs, const double *ys, uint64_t n,
 const char *chart_radar(const char *const *axes, uint64_t naxes,
                          const double *values, const char *title)
 {
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     A("{\"type\":\"radar\"");
 
@@ -534,7 +480,7 @@ const char *chart_radar(const char *const *axes, uint64_t naxes,
     A("}}}");
 
     A("}");
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -545,15 +491,23 @@ const char *chart_histogram(const double *values, uint64_t n,
 {
     if (nbins == 0 || n == 0) nbins = 1;
 
-    /* Find min / max */
-    double vmin = values[0], vmax = values[0];
-    for (uint64_t i = 1; i < n; i++) {
-        if (values[i] < vmin) vmin = values[i];
-        if (values[i] > vmax) vmax = values[i];
+    /* Find min / max over the FINITE values.  122.13 / 135.3j: this read
+     * values[0] even when n == 0 (past the input), and NaN or +-Inf reached
+     * the (uint64_t) conversion below, which is undefined behaviour.
+     * Non-finite values are not counted in any bin; with no finite value
+     * at all the chart is one empty bin at 0, the same as n == 0. */
+    int have = 0;
+    double vmin = 0.0, vmax = 0.0;
+    for (uint64_t i = 0; i < n; i++) {
+        double v = values[i];
+        if (!chart_finite(v)) continue;
+        if (!have) { vmin = vmax = v; have = 1; continue; }
+        if (v < vmin) vmin = v;
+        if (v > vmax) vmax = v;
     }
-    /* Guard against zero range */
+    /* Guard against zero range (and a range that overflows to Inf) */
     double range = vmax - vmin;
-    if (range == 0.0) range = 1.0;
+    if (range == 0.0 || !chart_finite(range)) range = range == 0.0 ? 1.0 : DBL_MAX;
 
     double bin_width = range / (double)nbins;
 
@@ -562,23 +516,13 @@ const char *chart_histogram(const double *values, uint64_t n,
     if (!counts) return NULL;
 
     for (uint64_t i = 0; i < n; i++) {
-        uint64_t idx = (uint64_t)((values[i] - vmin) / bin_width);
-        if (idx >= nbins) idx = nbins - 1;
+        if (!chart_finite(values[i])) continue;
+        double q = (values[i] - vmin) / bin_width;   /* >= 0, finite */
+        uint64_t idx = (q >= (double)nbins) ? nbins - 1 : (uint64_t)q;
         counts[idx]++;
     }
 
-    SB sb;
-    if (!sb_init(&sb)) { free(counts); return NULL; }
-
-    /* 135.3c: every append below can fail, and the section's macros returned
-     * without freeing `counts` (clang unix.Malloc).  Route them through one
-     * exit that does, for this function only. */
-#undef A
-#undef AJ
-#undef AD
-#define A(s)   do { if (!sb_append(&sb, (s)))          goto oom; } while(0)
-#define AJ(s)  do { if (!sb_append_json_str(&sb, (s))) goto oom; } while(0)
-#define AD(v)  do { if (!sb_append_double(&sb, (v)))   goto oom; } while(0)
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     A("{\"type\":\"bar\"");
 
@@ -614,19 +558,8 @@ const char *chart_histogram(const double *values, uint64_t n,
     A("}}}");
 
     A("}");
-    return sb.buf;
-
-oom:
-    free(counts);
-    free(sb.buf);
-    return NULL;
+    return strbuf_take(&sb);
 }
-#undef A
-#undef AJ
-#undef AD
-#define A(s)   do { if (!sb_append(&sb, (s)))             { free(sb.buf); return NULL; } } while(0)
-#define AJ(s)  do { if (!sb_append_json_str(&sb, (s)))    { free(sb.buf); return NULL; } } while(0)
-#define AD(v)  do { if (!sb_append_double(&sb, (v)))      { free(sb.buf); return NULL; } } while(0)
 
 /* -----------------------------------------------------------------------
  * chart_heatmap — SVG-based matrix visualisation (no native CJS heatmap).
@@ -641,56 +574,66 @@ const char *chart_heatmap(const char *const *rows, uint64_t nrows,
                             const double *matrix,
                             const char *title)
 {
-    if (nrows == 0 || ncols == 0) return NULL;
-
-    /* Find min / max for colour normalisation */
-    double vmin = matrix[0], vmax = matrix[0];
-    for (uint64_t i = 1; i < nrows * ncols; i++) {
-        if (matrix[i] < vmin) vmin = matrix[i];
-        if (matrix[i] > vmax) vmax = matrix[i];
-    }
-    double range = vmax - vmin;
-    if (range == 0.0) range = 1.0;
+    if (nrows == 0 || ncols == 0 || !matrix) return NULL;
 
     const int CELL_W  = 60;
     const int CELL_H  = 40;
     const int LPAD    = 80;   /* left padding for row labels */
     const int TPAD    = 60;   /* top padding for col labels + title */
 
+    /* 122.13: svg_w/svg_h and every cell coordinate are int, computed as
+     * (int)ncols * CELL_W -- signed overflow (undefined behaviour) once
+     * ncols passes ~35.8M, and nrows * ncols could wrap size_t.  Refuse
+     * any size whose pixel extent does not fit an int. */
+    if (ncols > (uint64_t)(INT_MAX - LPAD - 10) / (uint64_t)CELL_W ||
+        nrows > (uint64_t)(INT_MAX - TPAD - 10) / (uint64_t)CELL_H ||
+        nrows > SIZE_MAX / sizeof(double) / ncols)
+        return NULL;
+
+    /* Find min / max for colour normalisation, over the finite cells.
+     * 122.13: a NaN cell made t NaN and (int)NaN is undefined behaviour;
+     * non-finite cells are drawn in grey, labelled "n/a". */
+    int have = 0;
+    double vmin = 0.0, vmax = 0.0;
+    for (uint64_t i = 0; i < nrows * ncols; i++) {
+        double v = matrix[i];
+        if (!chart_finite(v)) continue;
+        if (!have) { vmin = vmax = v; have = 1; continue; }
+        if (v < vmin) vmin = v;
+        if (v > vmax) vmax = v;
+    }
+    double range = vmax - vmin;
+    if (range == 0.0 || !chart_finite(range)) range = range == 0.0 ? 1.0 : DBL_MAX;
+
     int svg_w = LPAD + (int)ncols * CELL_W + 10;
     int svg_h = TPAD + (int)nrows * CELL_H + 10;
 
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     /* SVG open */
-    {
-        char hdr[256];
-        snprintf(hdr, sizeof(hdr),
-                 "<svg xmlns=\"http://www.w3.org/2000/svg\" "
-                 "width=\"%d\" height=\"%d\">", svg_w, svg_h);
-        A(hdr);
-    }
+    strbuf_appendf(&sb,
+             "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+             "width=\"%d\" height=\"%d\">", svg_w, svg_h);
 
-    /* Title text */
+    /* Title and labels are XML text.  122.13: they were written raw (a
+     * title "</text><script>..." injected markup) and through fixed
+     * char[256]/char[512] buffers, so a long label was cut mid-element. */
     if (title) {
-        char ttl[512];
-        snprintf(ttl, sizeof(ttl),
+        strbuf_appendf(&sb,
                  "<text x=\"%d\" y=\"20\" text-anchor=\"middle\" "
-                 "font-size=\"14\" font-weight=\"bold\">%s</text>",
-                 svg_w / 2, title);
-        A(ttl);
+                 "font-size=\"14\" font-weight=\"bold\">", svg_w / 2);
+        strbuf_append_xml(&sb, title);
+        A("</text>");
     }
 
     /* Column labels */
     for (uint64_t c = 0; c < ncols; c++) {
         int cx = LPAD + (int)c * CELL_W + CELL_W / 2;
-        char lbl[256];
-        snprintf(lbl, sizeof(lbl),
+        strbuf_appendf(&sb,
                  "<text x=\"%d\" y=\"%d\" text-anchor=\"middle\" "
-                 "font-size=\"11\">%s</text>",
-                 cx, TPAD - 5, cols[c]);
-        A(lbl);
+                 "font-size=\"11\">", cx, TPAD - 5);
+        strbuf_append_xml(&sb, cols ? cols[c] : NULL);
+        A("</text>");
     }
 
     /* Row labels + cells */
@@ -698,27 +641,34 @@ const char *chart_heatmap(const char *const *rows, uint64_t nrows,
         int cy = TPAD + (int)r * CELL_H;
 
         /* Row label */
-        {
-            char lbl[256];
-            snprintf(lbl, sizeof(lbl),
-                     "<text x=\"%d\" y=\"%d\" text-anchor=\"end\" "
-                     "font-size=\"11\">%s</text>",
-                     LPAD - 5, cy + CELL_H / 2 + 4, rows[r]);
-            A(lbl);
-        }
+        strbuf_appendf(&sb,
+                 "<text x=\"%d\" y=\"%d\" text-anchor=\"end\" "
+                 "font-size=\"11\">", LPAD - 5, cy + CELL_H / 2 + 4);
+        strbuf_append_xml(&sb, rows ? rows[r] : NULL);
+        A("</text>");
 
         for (uint64_t c = 0; c < ncols; c++) {
             double v   = matrix[r * ncols + c];
+            int cx = LPAD + (int)c * CELL_W;
+            if (!chart_finite(v)) {
+                strbuf_appendf(&sb,
+                         "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" "
+                         "fill=\"rgb(204,204,204)\" stroke=\"#ccc\"/>"
+                         "<text x=\"%d\" y=\"%d\" text-anchor=\"middle\" "
+                         "font-size=\"10\">n/a</text>",
+                         cx, cy, CELL_W, CELL_H,
+                         cx + CELL_W / 2, cy + CELL_H / 2 + 4);
+                continue;
+            }
             double t   = (v - vmin) / range;   /* 0..1 */
+            if (!(t >= 0.0)) t = 0.0;
+            if (t > 1.0) t = 1.0;
             /* Interpolate white->steelblue (70,130,180) */
             int red   = (int)(255.0 * (1.0 - t) + 70.0  * t);
             int green = (int)(255.0 * (1.0 - t) + 130.0 * t);
             int blue  = (int)(255.0 * (1.0 - t) + 180.0 * t);
 
-            int cx = LPAD + (int)c * CELL_W;
-
-            char cell[512];
-            snprintf(cell, sizeof(cell),
+            strbuf_appendf(&sb,
                      "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" "
                      "fill=\"rgb(%d,%d,%d)\" stroke=\"#ccc\"/>"
                      "<text x=\"%d\" y=\"%d\" text-anchor=\"middle\" "
@@ -727,12 +677,11 @@ const char *chart_heatmap(const char *const *rows, uint64_t nrows,
                      red, green, blue,
                      cx + CELL_W / 2, cy + CELL_H / 2 + 4,
                      v);
-            A(cell);
         }
     }
 
     A("</svg>");
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -757,29 +706,24 @@ const char *chart_set_theme(const char *spec, const char *theme)
     while (last > 0 && spec[last - 1] != '}') last--;
     if (last == 0) return NULL;
 
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
+    TkStrBuf sb = TK_STRBUF_INIT;
 
     /* Copy everything up to (but not including) the last '}' */
-    if (!sb_grow(&sb, slen + 512)) { free(sb.buf); return NULL; }
-    memcpy(sb.buf, spec, last - 1);
-    sb.len = last - 1;
-    sb.buf[sb.len] = '\0';
+    strbuf_appendn(&sb, spec, last - 1);
 
-    /* Append theme meta block and close */
-    char block[512];
-    snprintf(block, sizeof(block),
-             ",\"theme_meta\":{"
-             "\"theme\":\"%s\","
-             "\"label_color\":\"%s\","
+    /* Append theme meta block and close.  122.13: the theme name was
+     * written into the JSON raw, so theme 'x","injected":"1' added keys. */
+    A(",\"theme_meta\":{\"theme\":");
+    AJ(theme);
+    strbuf_appendf(&sb,
+             ",\"label_color\":\"%s\","
              "\"backgroundColor\":\"%s\","
              "\"scales_x_ticks_color\":\"%s\","
              "\"scales_y_ticks_color\":\"%s\""
              "}}",
-             theme, color, bg_color, color, color);
-    A(block);
+             color, bg_color, color, color);
 
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -794,13 +738,8 @@ const char *chart_set_legend(const char *spec, const char *position, int display
     while (last > 0 && spec[last - 1] != '}') last--;
     if (last == 0) return NULL;
 
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
-
-    if (!sb_grow(&sb, slen + 256)) { free(sb.buf); return NULL; }
-    memcpy(sb.buf, spec, last - 1);
-    sb.len = last - 1;
-    sb.buf[sb.len] = '\0';
+    TkStrBuf sb = TK_STRBUF_INIT;
+    strbuf_appendn(&sb, spec, last - 1);
 
     A(",\"legend_meta\":{\"position\":");
     if (position) { AJ(position); } else { A("\"top\""); }
@@ -808,7 +747,7 @@ const char *chart_set_legend(const char *spec, const char *position, int display
     A(display ? "true" : "false");
     A("}}");
 
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
 /* -----------------------------------------------------------------------
@@ -824,13 +763,8 @@ const char *chart_set_tooltip(const char *spec, const char *const *fields,
     while (last > 0 && spec[last - 1] != '}') last--;
     if (last == 0) return NULL;
 
-    SB sb;
-    if (!sb_init(&sb)) return NULL;
-
-    if (!sb_grow(&sb, slen + 256 + (size_t)n * 64)) { free(sb.buf); return NULL; }
-    memcpy(sb.buf, spec, last - 1);
-    sb.len = last - 1;
-    sb.buf[sb.len] = '\0';
+    TkStrBuf sb = TK_STRBUF_INIT;
+    strbuf_appendn(&sb, spec, last - 1);
 
     A(",\"tooltip_meta\":{\"fields\":[");
     for (uint64_t i = 0; i < n; i++) {
@@ -839,9 +773,6 @@ const char *chart_set_tooltip(const char *spec, const char *const *fields,
     }
     A("]}}");
 
-    return sb.buf;
+    return strbuf_take(&sb);
 }
 
-#undef A
-#undef AJ
-#undef AD
