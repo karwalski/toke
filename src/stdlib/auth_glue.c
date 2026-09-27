@@ -5,9 +5,9 @@
  * These wrappers mirror encrypt_glue.c / file_glue.c: every value crosses the
  * boundary as int64_t. A toke str is a (const char*) reinterpreted as i64; a
  * [byte] is marshalled via bytes_rt.h; a record (JwtClaims) is a heap i64-slot
- * array (one slot per field, declaration order). Error unions (T!E) follow the
- * established convention: return the ok-value, or 0 on error (the Err payload
- * is dropped — same as file_glue.c).
+ * array (one slot per field, declaration order). Error unions (T!E) return
+ * the ok-value, or 0 on error with an AuthErr record in the error slot
+ * (127.238, auth_raise below).
  *
  * The .tki was reconciled to the C impl (auth.h): HS256-only sign (no JwtAlg),
  * the standard sub/iss/iat/exp/aud claim set (matching the C JwtClaims struct
