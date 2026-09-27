@@ -111,22 +111,25 @@ int64_t tk_image_resize_w(int64_t buf, int64_t width, int64_t height) {
     return h;
 }
 
-/* image.tograyscale / fliph / flipv — same one-buffer-in, one-buffer-out
- * shape, all exported by stdlib/image.tki and all previously unreachable. */
-#define TK_IMG_XFORM(name, fn)                                   \
-    int64_t name(int64_t buf) {                                  \
-        uint8_t *owned = NULL;                                   \
-        TkImgBuf b = imgbuf_from_toke(buf, &owned);              \
-        TkImgBuf out = fn(b);                                    \
-        free(owned);                                             \
-        int64_t h = imgbuf_to_toke(out);                         \
-        image_buf_free(&out);                                    \
-        return h;                                                \
-    }
-
-TK_IMG_XFORM(tk_image_tograyscale_w, image_to_grayscale)
-TK_IMG_XFORM(tk_image_fliph_w,       image_flip_h)
-TK_IMG_XFORM(tk_image_flipv_w,       image_flip_v)
+/* image.tograyscale / fliph / flipv — the same one-buffer-in,
+ * one-buffer-out shape, all exported by stdlib/image.tki.  135.19 (6): these
+ * were stamped out by a TK_IMG_XFORM macro, and gen_stdlib_decls.py /
+ * gen_tki.py / check_tki_coverage.py find a wrapper by its
+ * `int64_t tk_..._w(` definition line, so all three were invisible to the
+ * generators and linked only through the auto-declare fallback.  Written
+ * out, like image.sharpen below. */
+static int64_t img_xform(int64_t buf, TkImgBuf (*fn)(TkImgBuf)) {
+    uint8_t *owned = NULL;
+    TkImgBuf b = imgbuf_from_toke(buf, &owned);
+    TkImgBuf out = fn(b);
+    free(owned);
+    int64_t h = imgbuf_to_toke(out);
+    image_buf_free(&out);
+    return h;
+}
+int64_t tk_image_tograyscale_w(int64_t buf) { return img_xform(buf, image_to_grayscale); }
+int64_t tk_image_fliph_w(int64_t buf) { return img_xform(buf, image_flip_h); }
+int64_t tk_image_flipv_w(int64_t buf) { return img_xform(buf, image_flip_v); }
 
 /* image.crop(buf; x; y; w; h) : $imgbuf!$str */
 int64_t tk_image_crop_w(int64_t buf, int64_t x, int64_t y, int64_t w, int64_t h) {
@@ -324,9 +327,8 @@ static int img_clamp_off(int64_t v) {
 }
 
 /* image.sharpen(buf) : $imgbuf — 3x3 kernel, centre 5, cardinals -1.
- * Written out rather than through TK_IMG_XFORM: gen_stdlib_decls.py and
- * gen_tki.py find wrappers by their `int64_t tk_..._w(` definition line, and
- * a macro-generated one is invisible to both (see the 135.5c report). */
+ * Written out (not macro-generated): gen_stdlib_decls.py and gen_tki.py
+ * find wrappers by their `int64_t tk_..._w(` definition line (135.5c). */
 int64_t tk_image_sharpen_w(int64_t buf) {
     uint8_t *owned = NULL;
     TkImgBuf b = imgbuf_from_toke(buf, &owned);

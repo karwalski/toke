@@ -108,15 +108,15 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 
 | Class | Meaning | Symbols |
 |---|---|---|
-| `emitted` | the compiler emits a call to it by name: a lowering target | 69 |
-| `c-internal` | called only from other C in `src/stdlib/` | 148 |
+| `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
+| `c-internal` | called only from other C in `src/stdlib/` | 149 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 97 |
-| | **total** | **323** |
+| | **total** | **326** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
-### `emitted` (69)
+### `emitted` (71)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -138,6 +138,8 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_array_set_inplace_w` | `str_glue.c` | - |
 | `tk_base64_encode_w` | `encoding_glue.c` | - |
 | `tk_bounds_trap` | `tk_runtime.c` | - |
+| `tk_clos_release` | `tk_runtime.c` | - |
+| `tk_clos_retain` | `tk_runtime.c` | - |
 | `tk_crypto_to_hex_w` | `crypto_glue.c` | - |
 | `tk_div_trap` | `tk_runtime.c` | - |
 | `tk_env_get_or` | `env_glue.c` | - |
@@ -190,7 +192,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (148)
+### `c-internal` (149)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -205,6 +207,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_cap_init` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_is_grant_flag` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_mode` | `capabilities.c` | capabilities.c |
+| `tk_clos_base` | `tk_runtime.c` | tk_runtime.c |
 | `tk_delegate_class` | `webview.c` | webview.c |
 | `tk_delete_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
 | `tk_err_release` | `tk_runtime.c` | tk_runtime.c |

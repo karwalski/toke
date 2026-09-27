@@ -3261,6 +3261,13 @@ static int recv_is_array(Ctx *c, const Node *recv) {
     const char *st = expr_struct_type(c, recv);
     return st && st[0] == '@';
 }
+/* 135.19 (1): does a binary `+` have an operand known to be an array?  The
+ * same test the concat branch applies once inside, lifted so an i64-held
+ * array handle (every stdlib `[byte]`) reaches that branch at all. */
+static int plus_has_array_operand(Ctx *c, const Node *n) {
+    if (!n || n->child_count < 2) return 0;
+    return recv_is_array(c, n->children[0]) || recv_is_array(c, n->children[1]);
+}
 /* 127.11: does that array hold str elements (so membership must compare with
  * strcmp rather than by element word)? */
 static int arr_recv_is_str_elem(Ctx *c, const Node *recv) {
@@ -4502,7 +4509,12 @@ static int emit_expr(Ctx *c, const Node *n)
          *   "@<elem>"  → tk_array_concat (real array)
          *   anything else → internal error (127.172; was tk_str_concat)
          */
-        if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
+        /* 135.19 (1): `let b=s.bytes("AB"); b+b` holds both operands as i64
+         * handles (a `[byte]` crosses the ABI as i64), so the i8* test alone
+         * sent the sum to llvm.sadd on the two POINTERS.  An operand the
+         * checker or the backend tag knows is an array makes it a concat. */
+        if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*")
+                                 || plus_has_array_operand(c, n))) {
             /* 114.19c: adding a bare number/bool literal to an array or string
              * (`arr + @(2) + (3)`, the unwrapped-scalar-append typo) routed to
              * tk_str_concat / tk_array_concat which deref the scalar as a
@@ -7874,6 +7886,16 @@ static const char *tki_declared_tag(Ctx *c, const char *alias, const char *metho
     if (!strcmp(tbase, "str") || !strcmp(tbase, "$str")) return "$str";
     if (!strcmp(tbase, "[str]") || !strcmp(tbase, "@str") ||
         !strcmp(tbase, "@$str") || !strcmp(tbase, "[$str]")) return "@str";
+    /*
+     * 135.19 (1)(2): a declared `[byte]` return is an ARRAY.  Untagged, a
+     * local bound to `s.bytes(..)` looked like a scalar i64 to every
+     * array-vs-str dispatch: `b+b` lowered to llvm.sadd on the two handles
+     * (garbage `.len`, random RT003/SIGBUS) and `b.slice(a;b)` to
+     * tk_str_slice_w (SIGSEGV).  "@byte" is the tag a `:@byte` annotation
+     * already gives the same value, which both operations handle correctly.
+     */
+    if (!strcmp(tbase, "[byte]") || !strcmp(tbase, "@byte") ||
+        !strcmp(tbase, "[u8]")   || !strcmp(tbase, "@u8")) return "@byte";
     const StructInfo *vsi = lookup_struct(c, tbase);
     if (vsi) return vsi->name;
     /*
@@ -8731,6 +8753,9 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             const char *lt = expr_llvm_type(c, n->children[0]);
             const char *rt = expr_llvm_type(c, n->children[1]);
             if (!strcmp(lt, "i8*") || !strcmp(rt, "i8*")) return "i8*";
+            /* 135.19 (1): an array `+` over i64-held handles is a concat
+             * (see emit_expr) and yields the i8* tk_array_concat returns. */
+            if (n->op == TK_PLUS && plus_has_array_operand(c, n)) return "i8*";
             /* For narrow/float types, return the operand type */
             if (!strcmp(lt, "double") || !strcmp(lt, "float") ||
                 !strcmp(lt, "i32") || !strcmp(lt, "i16") || !strcmp(lt, "i8"))

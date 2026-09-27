@@ -18,8 +18,8 @@ An entry below is declared as a `func` export in a `stdlib/*.tki` interface file
 
 | `.tki` func exports | 933 |
 |---|---|
-| Resolve to a defined symbol | 886 |
-| **Quarantined (no defined symbol)** | **47** |
+| Resolve to a defined symbol | 889 |
+| **Quarantined (no defined symbol)** | **44** |
 | Stale skips (quarantined but now resolving) | 0 |
 
 A stale skip fails `make check-tki`, so the skiplist cannot silently outlive the gap it records: the moment an export gets its glue, the gate demands the line be deleted.
@@ -99,14 +99,6 @@ An export whose symbol **exists** but whose declared **arity** disagrees with th
 | `http.res.err` | `tk_http_res.err_w` | 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup] |
 | `http.res.json` | `tk_http_res.json_w` | 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup] |
 | `http.res.ok` | `tk_http_res.ok_w` | 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup] |
-
-### `image` (3)
-
-| Export | Expected symbol | Reason |
-|---|---|---|
-| `image.fliph` | `tk_image_fliph_w` | 2026-09-19 C core image_* in image.c, no _w glue; core=image_flip_h [131.38-followup] |
-| `image.flipv` | `tk_image_flipv_w` | 2026-09-19 C core image_* in image.c, no _w glue; core=image_flip_v [131.38-followup] |
-| `image.tograyscale` | `tk_image_tograyscale_w` | 2026-09-19 C core image_* in image.c, no _w glue; core=image_to_grayscale [131.38-followup] |
 
 ### `json` (5)
 

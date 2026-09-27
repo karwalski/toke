@@ -1,5 +1,18 @@
 # std.image -- Image Decode, Transform, and Encode
 
+> **Archived 2026-09-27 (story 135.19).** This page is a dated record of the
+> first `std.image` surface (story 12.6.1), not a current description. It is
+> superseded by **[`docs/stdlib/image.md`](../docs/stdlib/image.md)**, the only
+> maintained page for the module (`stdlib/README.md`). Superseded facts: it
+> claims JPEG and WebP decode/encode (they return an error naming the missing
+> library); it spells the functions with underscores (`to_grayscale`,
+> `flip_h`, `pixel_at`, `from_raw` -- the exports are `tograyscale`, `fliph`,
+> `pixelat`, `fromraw`); its examples use pre-v0.4 syntax (`++`, `match`,
+> `ok(..)`); and it omits everything added since -- `rotate`, `blur`,
+> `convolve`, `adaptivethreshold`, `sharpen`, `brightness`, `contrast`,
+> `paste`, `histogram`, `quantize`, `textdraw`, and TIFF decode (`tiffpages`,
+> `tiffdecode`, CCITT G3/G4 included).
+
 ## Overview
 
 The `std.image` module provides pixel-buffer operations for image processing in API handlers and data pipelines. It supports decoding PNG, JPEG, and WebP bytes into an in-memory pixel buffer (`imgbuf`), geometric transforms (resize, crop, flip), channel conversion, and re-encoding to any supported format. The implementation has no external runtime dependencies beyond libc. Decode and encode operations return `!str` on failure; purely geometric transforms are infallible.
