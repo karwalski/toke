@@ -2574,6 +2574,24 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
+    /*
+     * 127.229 item 1 / 127.230 item 2 — an integer literal initialiser is an
+     * i64 (the type infer() gives the literal itself, and the type a
+     * `lp(let i=0;..)` counter already gets, 127.178).
+     *
+     * Left out, `let x=5` was TY_UNKNOWN, so nothing downstream judged it:
+     * `x.len`, `x.slice(0;1)`, `x.charat(0)` passed --check and read an i64
+     * as a pointer at run time (garbage or SIGBUS), and `let b=3; g(b)` into
+     * a str parameter was clean while `g(3)` was E4031.  A negated literal
+     * (`let d=-1`) is the same fact.  FLOAT_LIT / BOOL_LIT stay held out.
+     */
+    case NODE_INT_LIT:
+        return mk_type(cx->env->arena, TY_I64);
+    case NODE_UNARY_EXPR:
+        if (initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
+            && initN->children[0]->kind == NODE_INT_LIT)
+            return mk_type(cx->env->arena, TY_I64);
+        return NULL;
     /* 124.0c: a local bound to a closure or a function reference holds a
      * function value of that signature (the emitter's indirect-call and
      * reference-counting paths read it off every use of the name). */
@@ -3954,6 +3972,27 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
     /* 127.151: the member exists, but does it exist on THIS receiver? */
     {
         const Type *rt = recv_value_type(cx, recv);
+        /* 127.229 item 1: a scalar receiver answers no receiver method at
+         * all -- every member of g_recv_methods lowers to str, array, map or
+         * Vec glue, which reads the i64 as a pointer: `let x=5;
+         * x.slice(0;1)` / `x.charat(0)` passed --check and read garbage or
+         * died with SIGBUS.  Judged only when recv_value_type() establishes
+         * the scalar; `j.parse(..)`'s untyped handle stays unjudged. */
+        if (rt && (is_numeric(rt) || rt->kind == TY_BOOL)) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char msg[640], got[160];
+            snprintf(msg, sizeof msg,
+                     "no receiver method '%s' on a '%s': a scalar value "
+                     "answers no receiver method%s",
+                     member, type_name(rt), note);
+            snprintf(got, sizeof got, "%s.%s", type_name(rt), member);
+            /* No `fix` (AGENTS.md §6), as below. */
+            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                      msg,
+                      "expected", "a str, array or map receiver",
+                      "got", got, (const char *)NULL);
+            return;
+        }
         unsigned rk = !rt ? 0u : rt->kind == TY_STR ? RK_S
                     : rt->kind == TY_ARRAY ? RK_A : rt->kind == TY_MAP ? RK_M : 0u;
         char kc = rk == RK_S ? 's' : rk == RK_A ? 'a' : rk == RK_M ? 'm' : 0;
@@ -5310,6 +5349,28 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           "expected","one of the map properties 'len' or 'keys'",
                           "got",fname,
                           (const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
+        }
+        /* 127.229 item 1: a scalar (an integer, float or bool) has no
+         * properties.  `let x=5; x.len` passed --check and lowered the i64 as
+         * a pointer to a length word (garbage or SIGBUS).  Judged only on a
+         * type the checker established -- an untyped handle such as
+         * `j.parse(..)`'s result stays TY_UNKNOWN and is not judged, because
+         * at run time it may well be an array or a str.  E4036, the receiver
+         * code, as for a method the receiver's kind does not answer.  No
+         * `fix`: whether the receiver or the member is wrong is not
+         * decidable here. */
+        if (is_numeric(base)||base->kind==TY_BOOL) {
+            if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                char msg[256], got[160];
+                snprintf(msg,sizeof(msg),
+                         "a '%s' has no property '%s': a scalar value has no "
+                         "members",type_name(base),fname);
+                snprintf(got,sizeof(got),"%s.%s",type_name(base),fname);
+                diag_emit(DIAG_ERROR,E4036,node->start,node->line,node->col,msg,
+                          "expected","a str, array, map or struct receiver",
+                          "got",got,(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
