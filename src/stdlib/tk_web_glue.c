@@ -1420,6 +1420,185 @@ int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) {
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
+/*
+ * 138.3 — client calls with their own names and result types.
+ *
+ * `http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` are
+ * ROUTE REGISTRATION (stdlib/http.tki, kind "route": path; handler).  The
+ * client calls the spec gave the same names -- `http.get(c;path)` and
+ * friends -- never had an implementation reachable from source: the
+ * two-argument `http.get(client;path)` registered a GET route whose "path"
+ * was the client handle (loke T-57: nothing sent, and the 257th call read
+ * $ok once the route table filled), `tk_http_delete_w` was reachable from
+ * nothing (R7), and the one-argument `http.get(url)` returned "" for a
+ * closed port with no way to tell it from an empty body (T-15).
+ *
+ * The client calls now have names of their own, typed in http.tki:
+ *
+ *   http.clientget(c; path)               -> httpresp!httperr
+ *   http.clientpost(c; path; body; ctype) -> httpresp!httperr
+ *   http.clientput(c; path; body; ctype)  -> httpresp!httperr
+ *   http.clientdelete(c; path)            -> httpresp!httperr
+ *   http.geturl(url)                      -> str!httperr
+ *
+ * $err is a transport failure -- no connection, a send or receive that
+ * failed, a URL that does not parse, HTTPS without TLS compiled in.  An HTTP
+ * status is not an error for the client* calls: 404 is a response, and
+ * `r.status` says so.  A `ctype` of "" sends application/octet-stream.
+ * http.geturl returns only a body, so it has nowhere to
+ * put a status and treats any status outside 200-299 as $err (code = the
+ * status).
+ *
+ * The error is an `httperr` {msg; code} box in tk_current_error (runtime-abi
+ * §7), set on every failure and cleared on every success, and the function
+ * returns 0 for $err and a non-null value for $ok, so both the value
+ * sentinel and the slot discriminate.
+ */
+void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#  define TK_WEB_TLS _Thread_local
+#else
+#  define TK_WEB_TLS __thread
+#endif
+static int64_t http_raise(const char *msg, uint64_t code)
+{
+    /* The message lives in a per-thread buffer, valid until the next raise
+     * on this thread -- the lifetime tk_err_box gives the box itself. */
+    static TK_WEB_TLS char msgbuf[256];
+    snprintf(msgbuf, sizeof msgbuf, "%s", msg ? msg : "");
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msgbuf;
+    box[1] = (int64_t)code;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static void client_resp_free(HttpClientResp *r)
+{
+    for (uint64_t i = 0; i < r->headers.len; i++) {
+        free((char *)r->headers.data[i].key);
+        free((char *)r->headers.data[i].val);
+    }
+    free(r->headers.data);
+    free(r->body);
+    free(r->err_msg);
+    memset(r, 0, sizeof *r);
+}
+
+/* The $httpresp block {status; headers:[[str]]; body:[byte]}, one i64 slot
+ * per field (136.4).  Takes the response apart: the header strings are
+ * handed to the program, everything else is freed. */
+static int64_t client_resp_block(HttpClientResp *r)
+{
+    int64_t *b = (int64_t *)malloc(3 * sizeof(int64_t));
+    int64_t hdrs = tk_arr_alloc((int64_t)r->headers.len, (int64_t)r->headers.len);
+    int64_t body = tk_bytes_pack(r->body ? r->body : (const uint8_t *)"", r->body_len);
+    if (!b || !hdrs || !body) {
+        free(b);
+        client_resp_free(r);
+        return http_raise("out of memory", 0);
+    }
+    int64_t n = 0;
+    for (uint64_t i = 0; i < r->headers.len; i++) {
+        int64_t pair = tk_arr_alloc(2, 2);
+        if (!pair) break;
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)r->headers.data[i].key;
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)r->headers.data[i].val;
+        r->headers.data[i].key = NULL;
+        r->headers.data[i].val = NULL;
+        ((int64_t *)(intptr_t)hdrs)[n++] = pair;
+    }
+    tk_arr_setlen(hdrs, n);
+    b[0] = (int64_t)r->status;
+    b[1] = hdrs;
+    b[2] = body;
+    client_resp_free(r);                 /* keys/vals already handed out */
+    tk_current_error = 0;                /* 127.123: an ok return clears it */
+    return (int64_t)(intptr_t)b;
+}
+
+static int64_t client_result(HttpClientResp r)
+{
+    if (r.is_err) {
+        int64_t z = http_raise(r.err_msg ? r.err_msg : "request failed", r.err_code);
+        client_resp_free(&r);
+        return z;
+    }
+    return client_resp_block(&r);
+}
+
+int64_t tk_http_clientget_w(int64_t client, int64_t path) {
+    if (!client) return http_raise("http.clientget: null client", 0);
+    return client_result(http_get((HttpClient *)(intptr_t)client,
+                                  path ? (const char *)(intptr_t)path : "/"));
+}
+
+int64_t tk_http_clientdelete_w(int64_t client, int64_t path) {
+    if (!client) return http_raise("http.clientdelete: null client", 0);
+    return client_result(http_delete((HttpClient *)(intptr_t)client,
+                                     path ? (const char *)(intptr_t)path : "/"));
+}
+
+/* body is a toke [byte]; ctype "" sends no Content-Type of our choosing. */
+static int64_t client_send(const char *fn, int is_put, int64_t client, int64_t path,
+                           int64_t body, int64_t ctype)
+{
+    if (!client) return http_raise(fn, 0);
+    uint8_t *buf = NULL;
+    uint64_t n = tk_bytes_unpack(body, &buf);
+    if (!buf) return http_raise("out of memory", 0);
+    const char *ct = ctype ? (const char *)(intptr_t)ctype : "";
+    const char *p = path ? (const char *)(intptr_t)path : "/";
+    HttpClientResp r = is_put
+        ? http_put((HttpClient *)(intptr_t)client, p, buf, n, ct[0] ? ct : NULL)
+        : http_post((HttpClient *)(intptr_t)client, p, buf, n, ct[0] ? ct : NULL);
+    free(buf);
+    return client_result(r);
+}
+
+int64_t tk_http_clientpost_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
+    return client_send("http.clientpost: null client", 0, client, path, body, ctype);
+}
+
+int64_t tk_http_clientput_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
+    return client_send("http.clientput: null client", 1, client, path, body, ctype);
+}
+
+/* http.geturl(url) -> str!httperr: the body of a 2xx response. */
+int64_t tk_http_geturl_w(int64_t url) {
+    if (!url) return http_raise("http.geturl: null url", 0);
+    const char *u = (const char *)(intptr_t)url;
+    const char *p = u;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    else return http_raise("http.geturl: the url must start with http:// or https://", 0);
+    const char *slash = strchr(p, '/');
+    size_t base_len = slash ? (size_t)(slash - u) : strlen(u);
+    char *base = (char *)malloc(base_len + 1);
+    if (!base) return http_raise("out of memory", 0);
+    memcpy(base, u, base_len); base[base_len] = '\0';
+    HttpClient *c = http_client(base);
+    free(base);
+    if (!c) return http_raise("out of memory", 0);
+    HttpClientResp r = http_get(c, slash ? slash : "/");
+    http_client_free(c);
+    if (r.is_err) return client_result(r);
+    if (r.status < 200 || r.status > 299) {
+        char m[64];
+        snprintf(m, sizeof m, "HTTP status %llu", (unsigned long long)r.status);
+        uint64_t st = r.status;
+        client_resp_free(&r);
+        return http_raise(m, st);
+    }
+    char *s = (char *)malloc(r.body_len + 1);
+    if (!s) { client_resp_free(&r); return http_raise("out of memory", 0); }
+    if (r.body_len) memcpy(s, r.body, r.body_len);
+    s[r.body_len] = '\0';
+    client_resp_free(&r);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)s;
+}
+
 /* tk_http_print_w — print an HTTP response body to stdout. */
 int64_t tk_http_print_w(int64_t resp) {
     if (!resp) return 0;

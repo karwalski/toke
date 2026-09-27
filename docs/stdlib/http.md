@@ -450,62 +450,79 @@ f=main():void{
 };
 ```
 
-### http.get(url: $str): $httpresp!$httperr
+### Client calls and route registration are different names
 
-> **Not exported.** `std.http`'s interface declares no `http.get`. A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case, not public API: its signature is not checked against any interface, no interface declares its result type (it is not `$httpresp!$httperr`), and with two arguments the same name registers a GET route instead. See `tk_http_get_w` under "Defined, with no interface entry" in [stdlib-internal](/docs/reference/stdlib-internal/).
+`http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` **register routes** — `http.get("/health"; &handler)` — and send nothing. The client calls have names of their own (story 138.3): before them, `http.get(client;"/health")` compiled and registered a GET route whose path was the client handle (nothing was sent; loke saw the call "succeed" from the 257th time on, once the route table was full), a client DELETE could not be reached at all, and `http.get(url)` returned `""` for a server that was not there. `http.get(url)` with one argument still compiles today to an untyped GET; use `http.geturl`, which has an error channel.
 
-Sends a `GET` request to the given URL and returns the response. Returns `$httperr` on network failure, timeout, or DNS error.
+A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse, HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
+
+### http.clientget(client: $httpclient; path: $str): $httpresp!$httperr
+
+Sends `GET path` relative to the client's base URL.
 
 ```toke
 i=http:std.http;
-f=main():void{
-  let resp=http.get("https://api.example.com/status");
+i=io:std.io;
+i=str:std.str;
+f=main():i64{
+  let c=http.client("http://127.0.0.1:8080");
+  let up=mt http.clientget(c;"/health") {$ok:r r.status=200; $err:e false};
+  io.println("up=\(up)");
+  <0
 };
 ```
+
+### http.clientpost(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
+
+Sends `POST path` with the given body and `Content-Type`. Use `str.bytes` for a string body. A `content_type` of `""` sends `application/octet-stream`.
+
+```toke
+i=http:std.http;
+i=str:std.str;
+f=main():i64{
+  let c=http.client("http://127.0.0.1:8080");
+  let r=mt http.clientpost(c;"/items";str.bytes("{\"name\":\"toke\"}");"application/json") {$ok:r r.status; $err:e 0};
+  <0
+};
+```
+
+### http.clientput(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
+
+`http.clientpost` with `PUT`.
+
+### http.clientdelete(client: $httpclient; path: $str): $httpresp!$httperr
+
+Sends `DELETE path`, with no body.
+
+### http.geturl(url: $str): $str!$httperr
+
+`GET` a full `http://` or `https://` URL and return the body. It has nowhere to put a status, so any status outside `200`–`299` is `$err`, with `code` set to the status; a transport failure is `$err` with `code` 0. Use `http.clientget` when you need the status or headers of an unsuccessful response.
+
+```toke
+i=http:std.http;
+i=io:std.io;
+f=main():i64{
+  let body=mt http.geturl("http://127.0.0.1:8080/health") {$ok:b b; $err:e ""};
+  io.println(body);
+  <0
+};
+```
+
+### http.get(url: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares `http.get` as route registration (`path; handler`). A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case: its result is untyped and it has no error channel. Use `http.geturl(url)`.
 
 ### http.post(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
 
-> **Not exported.** `std.http`'s interface declares no `http.post`. The compiler resolves the name to route registration (`http.post(path;handler)`, or `tk_http_posturl_w` for two non-function arguments), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client POST.
-
-Sends a `POST` request with the given byte-array body and `Content-Type` header. Use `str.bytes` to convert a string body. Returns `$httperr` on failure.
-
-```toke
-i=http:std.http;
-i=str:std.str;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let resp=http.post(c;"/items";str.bytes("{\"name\":\"toke\"}");"application/json");
-};
-```
+> **Not exported.** `http.post` is route registration (`http.post(path;handler)`, or `tk_http_posturl_w` for two non-function arguments), so the four-argument client call is rejected by `tkc --check` with E4026. Use `http.clientpost`.
 
 ### http.put(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
 
-> **Not exported.** `std.http`'s interface declares no `http.put`. The compiler resolves the name to route registration (`http.put(path;handler)`), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client PUT.
-
-Sends a `PUT` request with the given byte-array body and `Content-Type` header. Semantics mirror `http.post`; use for full-resource replacement.
-
-```toke
-i=http:std.http;
-i=str:std.str;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let resp=http.put(c;"/items/1";str.bytes("{\"name\":\"updated\"}");"application/json");
-};
-```
+> **Not exported.** `http.put` is route registration (`http.put(path;handler)`). Use `http.clientput`.
 
 ### http.delete(client: $httpclient; path: $str): $httpresp!$httperr
 
-> **Not exported.** `std.http`'s interface declares no `http.delete`, and the call below does **not** do what this section says: the compiler resolves `http.delete(c;path)` to route registration (`tk_http_delete_handler`), passing the client handle where a path belongs. It type-checks and does not send a request. There is no exported client DELETE.
-
-Sends a `DELETE` request to `path`. The request carries no body. Returns `$httperr` on network failure.
-
-```toke
-i=http:std.http;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let resp=http.delete(c;"/items/1");
-};
-```
+> **Not exported.** `http.delete` is route registration: `http.delete(c;path)` passes the client handle where a path belongs, type-checks, and sends nothing. Use `http.clientdelete`.
 
 ### http.stream(client: $httpclient; method: $str; path: $str): $httpstream!$httperr
 
@@ -578,7 +595,7 @@ A sum type representing request-accessor failures, returned by `http.param` and 
 
 ### $httperr
 
-A struct, not a sum type, returned by the client stream functions `http.stream` and `http.streamnext`.
+A struct, not a sum type: the `$err` of the client calls (`http.clientget`, `http.clientpost`, `http.clientput`, `http.clientdelete`, `http.geturl`) and of the stream functions `http.stream` and `http.streamnext`.
 
 | Field | Type | Meaning |
 |-------|------|---------|

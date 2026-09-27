@@ -365,6 +365,59 @@
     },
     {
       "kind": "func",
+      "name": "http.clientget",
+      "params": [
+        "httpclient",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path \u2014 send GET; $err only for a transport failure, a status is in the response (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.clientpost",
+      "params": [
+        "httpclient",
+        "str",
+        "[byte]",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path; body; content_type \u2014 send POST (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.clientput",
+      "params": [
+        "httpclient",
+        "str",
+        "[byte]",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path; body; content_type \u2014 send PUT (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.clientdelete",
+      "params": [
+        "httpclient",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path \u2014 send DELETE (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.geturl",
+      "params": [
+        "str"
+      ],
+      "return": "str!httperr",
+      "note": "url \u2014 GET a full http:// or https:// URL; the body of a 2xx response, $err for a transport failure or any other status (code = status) (138.3)"
+    },
+    {
+      "kind": "func",
       "name": "http.serve",
       "params": [
         "u64"
