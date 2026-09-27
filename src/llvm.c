@@ -2727,6 +2727,21 @@ static int recv_call_is_bool(Ctx *c, const Node *e) {
     return 0;
 }
 
+/* 127.229 (4) / 127.230 (1): is `e` a bool that reaches the backend as an
+ * i64 — a stdlib/cross-module call declared `bool`, a bool struct field, a
+ * predicate receiver method or a bool array element?  The checker leaves a
+ * stdlib call's result TY_UNKNOWN, so this is the backend's only evidence
+ * that the program has a bool here.  Interpolation asked it inline (127.94,
+ * 127.194); a binding and j.print did not, so `let b=a.contains(3)` stored
+ * the i64 in an i64 local and every later use saw a number (`\(b)` and
+ * `j.print(b)` printed 1), and `j.print(s.startswith(..))` printed 1.  One
+ * predicate for every site.  Same c->src rule as call_declares_bool. */
+static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
+    return ety && !strcmp(ety, "i64")
+           && (call_declares_bool(c, e) || field_declares_bool(c, e)
+               || recv_call_is_bool(c, e));
+}
+
 static int emit_bool_to_str(Ctx *c, int v) {
     int at = 1, af = 1;
     int st = emit_str_global(c, "\"true\"", 6, &at);
@@ -4163,10 +4178,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *ety = expr_llvm_type(c, ich);
                 const char *est = expr_struct_type(c, ich);
                 int unknown_ret = interp_operand_type_unknown(c, ich, ety, est);
-                int abi_bool = ety && !strcmp(ety, "i64")
-                               && (call_declares_bool(c, ich)
-                                   || field_declares_bool(c, ich)
-                                   || recv_call_is_bool(c, ich));
+                int abi_bool = expr_abi_bool(c, ich, ety);
                 seg_val = interp_render(c, n, ich, seg_val, ety, est,
                                         unknown_ret, abi_bool, ich->rtype,
                                         0, 0, 0, 0);
@@ -4256,10 +4268,7 @@ static int emit_expr(Ctx *c, const Node *n)
                          * the wrapper buffer — it reads the sub-expression's
                          * tokens. */
                         int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
-                        int abi_bool = ety && !strcmp(ety, "i64")
-                                       && (call_declares_bool(c, expr_node)
-                                           || field_declares_bool(c, expr_node)
-                                           || recv_call_is_bool(c, expr_node));
+                        int abi_bool = expr_abi_bool(c, expr_node, ety);
                         diag_rebase_pop();
                         c->src = saved_src;
                         g_interp_host = saved_host; g_interp_src = saved_hsrc;
@@ -5996,7 +6005,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     int z = next_tmp(c);
                     fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, args[0]);
                     fprintf(c->out, "  call void @tk_json_print_str(i8* %%t%d)\n", z);
-                } else if (jn0->rtype && jn0->rtype->kind == TY_BOOL) {
+                } else if ((jn0->rtype && jn0->rtype->kind == TY_BOOL)
+                           || expr_abi_bool(c, jn0, aty0)) {   /* 127.229 (4) */
                     fprintf(c->out, "  call void @tk_json_print_bool(i64 %%t%d)\n", args[0]);
                 } else {
                     fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
@@ -6051,7 +6061,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *est0 = expr_struct_type(c, en0);
                     e_is_str = est0 && (!strcmp(est0, "$str") || !strcmp(est0, "str"));
                 }
-                if (!e_is_str && en0->rtype && en0->rtype->kind == TY_BOOL)
+                if (!e_is_str && ((en0->rtype && en0->rtype->kind == TY_BOOL)
+                                  || expr_abi_bool(c, en0, ety0)))   /* 127.229 (4) */
                     efn = "tk_json_encbool_w";
                 else if (!e_is_str)
                     efn = "tk_json_encnum_w";
@@ -10254,10 +10265,17 @@ static void emit_stmt(Ctx *c, const Node *n)
                 c->fref_lcount++;
             }
             const char *vty;
+            int let_abi_bool = 0;   /* 127.230 (1) */
             if (has_ann)
                 vty = resolve_llvm_type(c, n->children[1]);
-            else
+            else {
                 vty = expr_llvm_type(c, init_node);
+                /* 127.230 (1): an unannotated binding of a bool that crosses
+                 * the i64 ABI is a bool local, exactly as `let b:bool=…`
+                 * is — its uses (interpolation, j.print, `as str`) then see
+                 * an i1 and render true/false instead of 1/0. */
+                if (expr_abi_bool(c, init_node, vty)) { vty = "i1"; let_abi_bool = 1; }
+            }
             if (!strcmp(vty, "void")) vty = "i64"; /* void fn result → store 0 */
             /* Story 80.2.8: Evaluate RHS BEFORE creating the new alloca,
              * so that shadowed name references resolve to the OLD binding.
@@ -10298,6 +10316,13 @@ static void emit_stmt(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error ; 135.16 capture\n",
                         fall_errv);
             }
+            if (let_abi_bool && !strcmp(init_ty, "i64")) {
+                /* nonzero is true: the glue answers 0/1, but a truncation
+                 * would read an even non-zero word as false */
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; 127.230 (1) abi bool\n", z, v);
+                v = z;
+            } else
             v = coerce_value(c, v, init_ty, vty);
             /* 126.7: remember the raw source name (pre-uniquification) — when a
              * name is re-bound (shadowed), the registry stores the new binding
