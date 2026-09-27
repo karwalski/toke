@@ -38,13 +38,15 @@ Configuration for either end of a connection. Treat it as opaque: build it with 
 
 These four were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` until story 136.46; no toke program could name them, so there are no callers to migrate.
 
+The fields read what the table says (135.30), and the connection calls read a configuration through them, so a `$tlsconfig{...}` literal works with `tls.connect` and `tls.listen`. `tls.freeconfig` frees only a configuration one of the constructors made; on a literal it returns `false` and frees nothing.
+
 ### TlsConn
 
-An opaque handle to an established connection, as an `i64`. `0` means no connection. Pass it to `tls.read`, `tls.write`, `tls.close`, `tls.protocol`, `tls.group`, `tls.peercert` and `tls.pairingcode`.
+A handle to an established connection. `0` means no connection. Pass it to `tls.read`, `tls.write`, `tls.close`, `tls.protocol`, `tls.group`, `tls.peercert` and `tls.pairingcode`. Its one field, `id` (`str`), is the connection's identifier.
 
 ### TlsKeypair
 
-A freshly generated certificate (`certpem`) and its private key (`keypem`). Opaque as an `i64` in practice; read the two halves with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair`.
+A freshly generated certificate (`certpem`) and its private key (`keypem`). Read the two halves as fields or with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair` (which frees only a keypair the generators made).
 
 ### Errors
 
