@@ -45,6 +45,13 @@ Opaque handle to a single canvas drawing operation.
 | `canvas.to_js` | `c: $canvas` | `$str` | Export drawing operations as JavaScript code |
 | `canvas.tohtml` | `c: $canvas` | `$str` | Export as a self-contained HTML page |
 
+## Escaping
+
+Colours, fonts, text and the canvas id are written into the generated
+JavaScript as escaped string literals (and the id into the `<canvas>` element
+as an escaped attribute), so a text such as `it's </script>` is drawn as that
+text and cannot end the string or the `<script>` element early.
+
 ## Usage
 
 ```toke

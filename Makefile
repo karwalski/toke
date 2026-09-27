@@ -231,7 +231,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -379,6 +379,14 @@ lint:
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
 lint-nonhost:
 	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS)
+
+# 122.13 (10): the same three passes over ONE file (or a few), with the
+# skiplist entries for every other file out of scope rather than stale.
+#   make lint-file F=src/stdlib/http.c
+lint-file:
+	@if [ -z "$(F)" ]; then echo "usage: make lint-file F=<source.c> [F=\"a.c b.c\"]" >&2; exit 2; fi
+	@python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)
+	@python3 scripts/check_stdlib_analysis.py --only --nonhost $(F)
 
 # Drafting aid: print proposed skiplist lines for everything now failing.
 # Writes nothing — paste the lines in and put a real reason and story on each.
@@ -2061,6 +2069,11 @@ FUZZ_SAN = -fsanitize=address,undefined -fno-sanitize-recover=undefined \
            -fno-omit-frame-pointer -g -O1
 FUZZ_STDLIB_CFLAGS = -std=c99 -D_GNU_SOURCE -iquote src/stdlib
 FUZZ_TARGETS_120_22 = json yaml toml toon xml template multipart ws_frame
+# 122.13 (11): test/fuzz/fuzz_image.c (122.9) had no target -- only C138
+# built it, by hand.  It joins the set here, so fuzz-120-22 builds it,
+# fuzz-smoke replays test/fuzz/seeds/image/ through it, and the nightly
+# fuzz-120-22-run fuzzes it.
+FUZZ_TARGETS = $(FUZZ_TARGETS_120_22) image
 fuzz_have_libfuzzer = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_fuzzprobe.XXXXXX") && \
     printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' > "$$d/p.c" && \
     $(CC) -fsanitize=fuzzer -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo libfuzzer || echo standalone; \
@@ -2081,7 +2094,7 @@ define fuzz_build_rule
 endef
 
 .PHONY: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
-	fuzz-multipart fuzz-ws-frame fuzz-120-22 fuzz-120-22-run fuzz-smoke
+	fuzz-multipart fuzz-ws-frame fuzz-image fuzz-120-22 fuzz-120-22-run fuzz-smoke
 
 fuzz-json:
 	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,)
@@ -2101,10 +2114,12 @@ fuzz-multipart:
 	$(call fuzz_build_rule,multipart,test/fuzz/fuzz_multipart.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz)
 fuzz-ws-frame:
 	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
+fuzz-image:
+	$(call fuzz_build_rule,image,test/fuzz/fuzz_image.c src/stdlib/image.c,-lm)
 
-# Build all eight (the name security-nightly.yml calls).
+# Build all nine (the name security-nightly.yml calls; image joined in 122.13).
 fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
-	fuzz-multipart fuzz-ws-frame
+	fuzz-multipart fuzz-ws-frame fuzz-image
 
 # Replay every seed and adversarial input through every harness, once.  Works
 # under either engine (libFuzzer's -runs=0 executes the given corpus and
@@ -2112,7 +2127,7 @@ fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
 # report, on a harness that replays nothing, or on a target with no seeds.
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
-	@fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	@fail=0; for t in $(FUZZ_TARGETS); do \
 	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
 	  [ -d test/fuzz/seeds/$$t ] && [ -n "$$(ls test/fuzz/seeds/$$t)" ] \
 	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
@@ -2127,7 +2142,7 @@ fuzz-smoke: fuzz-120-22
 	  else echo "  FAIL $$t (exit $$rc)"; \
 	    printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6 | sed 's/^/      /'; fail=1; fi; \
 	done; \
-	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS_120_22)) harnesses replayed clean" \
+	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS)) harnesses replayed clean" \
 	  || { echo "fuzz-smoke: FAILED"; exit 1; }
 
 # The nightly run.  libfuzzer: fuzz each target for FUZZ_SECONDS on a scratch
@@ -2141,7 +2156,7 @@ fuzz-120-22-run: fuzz-120-22
 	  echo "     so NO FUZZING RAN.  Replaying the corpora instead (make fuzz-smoke)."; \
 	  $(MAKE) --no-print-directory fuzz-smoke FUZZ_ENGINE=standalone; exit $$?; \
 	fi; \
-	fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	fail=0; for t in $(FUZZ_TARGETS); do \
 	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
 	  rm -rf $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
 	  mkdir -p $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \

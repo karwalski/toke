@@ -217,6 +217,33 @@ static int64_t args_pairs(const char *json) {
 }
 
 /* build a $toolcall block { name; args; id } */
+static int64_t toolcall_block(const TkToolCall *tc);
+
+/* 135.3j: the $toolcall for the FIRST call of a successful parse, taking
+ * ownership of the whole ToolCallResult.  Both callers used to return
+ * toolcall_block(&r.calls[0]) and drop everything else: calls[0].args_json
+ * (args_pairs copies out of it), every string of calls[1..n-1], and the
+ * calls array itself -- a leak on every successful tool-call parse.  The
+ * block keeps calls[0]'s name and id (the toke program owns them now);
+ * the rest is freed here. */
+static int64_t toolcall_block_take(ToolCallResult *r) {
+    int64_t h = toolcall_block(&r->calls[0]);
+    if (!h) {                                   /* nothing handed out: free all */
+        free((char *)r->calls[0].tool_name);
+        free((char *)r->calls[0].call_id);
+    }
+    free((char *)r->calls[0].args_json);
+    for (uint64_t i = 1; i < r->ncalls; i++) {
+        free((char *)r->calls[i].tool_name);
+        free((char *)r->calls[i].call_id);
+        free((char *)r->calls[i].args_json);
+    }
+    free(r->calls);
+    free((char *)r->err_msg);
+    r->calls = NULL; r->ncalls = 0; r->err_msg = NULL;
+    return h;
+}
+
 static int64_t toolcall_block(const TkToolCall *tc) {
     int64_t *b = (int64_t *)malloc(3 * sizeof(int64_t));
     if (!b) return 0;
@@ -279,7 +306,7 @@ int64_t tk_llmtool_chatwithtools_w(int64_t client, int64_t msgs_arr) {
         tk_current_error = 1; return 0;
     }
     tk_current_error = 0;
-    return toolcall_block(&r.calls[0]);
+    return toolcall_block_take(&r);
 }
 
 int64_t tk_llmtool_submitresult_w(int64_t client, int64_t msgs_arr, int64_t result) {
@@ -311,7 +338,7 @@ int64_t tk_llmtool_parsetoolcalls_w(int64_t raw) {
         tk_current_error = 1; return 0;
     }
     tk_current_error = 0;
-    return toolcall_block(&r.calls[0]);
+    return toolcall_block_take(&r);
 }
 
 int64_t tk_llmtool_resultmsgs_w(int64_t results_arr) {

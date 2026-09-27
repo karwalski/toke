@@ -18,8 +18,9 @@ name: Security nightly
 # its targets.  (123.10a had removed it rather than leave it red: it called
 # fuzz-120-22 / fuzz-120-22-run, which did not exist, and Section 2 of
 # ci-security.md named harnesses -- fuzz_md.c, fuzz_security.c -- that do not
-# exist either.)  The targets now build the eight harnesses that DO exist
-# (json, multipart, template, toml, toon, ws_frame, xml, yaml) in libFuzzer
+# exist either.)  The targets now build the nine harnesses that DO exist
+# (json, multipart, template, toml, toon, ws_frame, xml, yaml; image joined
+# in 122.13) in libFuzzer
 # mode on this Linux runner, fuzz each for FUZZ_SECONDS from the tracked seeds
 # in test/fuzz/seeds/<target>/, and minimise what they found into
 # build/fuzz/corpus-min/, uploaded below.  The job asserts the engine really
@@ -48,7 +49,7 @@ jobs:
 
       # A replay is not a fuzz run. Fail here if the libFuzzer runtime is
       # missing rather than let `auto` fall back to standalone replay.
-      - name: Build the eight harnesses in libFuzzer mode
+      - name: Build the nine harnesses in libFuzzer mode
         run: make CC=clang FUZZ_ENGINE=libfuzzer fuzz-120-22
 
       - name: Replay seeds and adversarial regressions

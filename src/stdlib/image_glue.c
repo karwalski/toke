@@ -233,7 +233,11 @@ int64_t tk_image_rotate_w(int64_t buf, int64_t angle) {
 int64_t tk_image_blur_w(int64_t buf, int64_t passes) {
     uint8_t *owned = NULL;
     TkImgBuf b = imgbuf_from_toke(buf, &owned);
-    TkImgBuf out = image_blur(b, (int)passes);
+    /* 122.13: (int)passes wrapped a large u32 to a negative, i.e. 1 pass;
+     * saturate so image_blur sees it as the over-limit count it is. */
+    int np = passes > (int64_t)IMG_BLUR_MAX_PASSES ? IMG_BLUR_MAX_PASSES + 1
+           : passes < 0 ? 0 : (int)passes;
+    TkImgBuf out = image_blur(b, np);
     free(owned);
     int64_t h = imgbuf_to_toke(out);
     image_buf_free(&out);

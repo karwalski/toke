@@ -45,6 +45,12 @@ The `std.chart` module provides a declarative API for building chart specificati
 | `chart.tojson` | `spec: $chartspec` | `@($byte)` | Serialize chart spec to JSON bytes |
 | `chart.tovega` | `spec: $chartspec` | `@($byte)` | Serialize chart spec to Vega-Lite JSON bytes |
 
+## Escaping
+
+Titles, labels and series names are JSON-escaped in the Chart.js and
+Vega-Lite output; a NaN or infinite data value is written as `null` (a gap),
+since neither is a JSON number.
+
 ## Usage
 
 ```toke

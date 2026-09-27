@@ -23,6 +23,7 @@
  */
 
 #include "template.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -686,48 +687,22 @@ fail:
  * render_nodes — forward declaration
  * ----------------------------------------------------------------------- */
 
-/* Appending output buffer */
-typedef struct {
-    char    *buf;
-    size_t   len;
-    size_t   cap;
-} Buf;
+/* Appending output buffer.  122.13: the shared TkStrBuf (template.c's
+ * private copy was one of the buffer duplicates 122.2 left); the escaper is
+ * strbuf_append_xml, the same five entities the private one wrote.  Both
+ * wrappers report failure once an allocation has failed (sticky). */
+typedef TkStrBuf Buf;
 
 static int buf_append(Buf *b, const char *s, size_t slen)
 {
-    if (slen == 0) return 1;
-    if (b->len + slen >= b->cap) {
-        size_t new_cap = b->cap ? b->cap : 64;
-        while (new_cap <= b->len + slen) new_cap *= 2;
-        char *tmp = (char *)realloc(b->buf, new_cap);
-        if (!tmp) return 0;
-        b->buf = tmp;
-        b->cap = new_cap;
-    }
-    memcpy(b->buf + b->len, s, slen);
-    b->len += slen;
-    return 1;
+    strbuf_appendn(b, s, slen);
+    return !b->oom;
 }
 
 static int buf_append_escaped(Buf *b, const char *s)
 {
-    for (const char *p = s; *p; p++) {
-        int ok;
-        switch (*p) {
-            case '&':  ok = buf_append(b, "&amp;",  5); break;
-            case '<':  ok = buf_append(b, "&lt;",   4); break;
-            case '>':  ok = buf_append(b, "&gt;",   4); break;
-            case '"':  ok = buf_append(b, "&quot;", 6); break;
-            case '\'': ok = buf_append(b, "&#39;",  5); break;
-            default: {
-                char c = *p;
-                ok = buf_append(b, &c, 1);
-                break;
-            }
-        }
-        if (!ok) return 0;
-    }
-    return 1;
+    strbuf_append_xml(b, s);
+    return !b->oom;
 }
 
 /* render_nodes — render node array into Buf, using vars for variable lookup.
@@ -881,24 +856,15 @@ static const char *render_internal(TkTmpl *t, const TkTmplVar *vars,
 {
     if (!t) return NULL;
 
-    Buf b;
-    b.buf = NULL;
-    b.len = 0;
-    b.cap = 0;
+    Buf b = TK_STRBUF_INIT;
 
     if (!render_nodes(t->nodes, t->nnode, NULL, 0, vars, nvar,
                       escape_values, &b)) {
-        free(b.buf);
+        strbuf_free(&b);
         return NULL;
     }
 
-    /* NUL-terminate */
-    if (!buf_append(&b, "\0", 1)) {
-        free(b.buf);
-        return NULL;
-    }
-
-    return b.buf;
+    return strbuf_take(&b);   /* NUL-terminated; NULL after any OOM */
 }
 
 /* -----------------------------------------------------------------------
@@ -1272,15 +1238,9 @@ static int parse_page_directives(const char *src, char **layout_name,
 static char *apply_yields(const char *layout_src, const TmplBlock *blocks,
                            int nblocks)
 {
-    /* Calculate output size: start with layout length, add block content */
-    size_t out_cap = strlen(layout_src) * 2 + 1;
-    for (int i = 0; i < nblocks; i++) {
-        if (blocks[i].content) out_cap += strlen(blocks[i].content);
-    }
-    char *out = (char *)malloc(out_cap);
-    if (!out) return NULL;
-
-    size_t out_len = 0;
+    /* 122.13: a TkStrBuf, not a hand-grown char* (the last private buffer
+     * in this file). */
+    TkStrBuf out = TK_STRBUF_INIT;
     const char *p = layout_src;
 
     while (*p) {
@@ -1307,18 +1267,7 @@ static char *apply_yields(const char *layout_src, const TmplBlock *blocks,
                                 break;
                             }
                         }
-                        if (replacement) {
-                            size_t rlen = strlen(replacement);
-                            /* Ensure capacity */
-                            while (out_len + rlen + 1 > out_cap) {
-                                out_cap *= 2;
-                                char *tmp = (char *)realloc(out, out_cap);
-                                if (!tmp) { free(out); return NULL; }
-                                out = tmp;
-                            }
-                            memcpy(out + out_len, replacement, rlen);
-                            out_len += rlen;
-                        }
+                        strbuf_append(&out, replacement);
                         p = tp;
                         continue;
                     }
@@ -1326,17 +1275,9 @@ static char *apply_yields(const char *layout_src, const TmplBlock *blocks,
             }
         }
 
-        /* Ensure capacity for one char */
-        if (out_len + 2 > out_cap) {
-            out_cap *= 2;
-            char *tmp = (char *)realloc(out, out_cap);
-            if (!tmp) { free(out); return NULL; }
-            out = tmp;
-        }
-        out[out_len++] = *p++;
+        strbuf_putc(&out, *p++);
     }
-    out[out_len] = '\0';
-    return out;
+    return strbuf_take(&out);
 }
 
 const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
@@ -1354,6 +1295,13 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     int nblocks = 0;
 
     if (!parse_page_directives(page_src, &layout_name, blocks, &nblocks)) {
+        /* A malformed directive after a layout() or a block() returned
+         * with those already allocated; they leaked here. */
+        free(layout_name);
+        for (int i = 0; i < nblocks; i++) {
+            free(blocks[i].name);
+            free(blocks[i].content);
+        }
         free(page_src);
         return NULL;
     }

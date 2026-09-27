@@ -837,7 +837,13 @@ static int compress_to_gz(const char *src_path, const char *dst_path)
     if (ferror(src)) ok = 0;
 
     fclose(src);
-    gzclose(gz);
+    /* 135.3j: gzclose() flushes the deflate stream's tail and the gzip
+     * trailer -- for a small log, ALL of the compressed data -- and its
+     * result was ignored.  A failed flush (disk full, EFBIG, EIO) still
+     * unlinked the source, so rotation deleted the only complete copy of
+     * the log and kept a truncated .gz.  Keep the source unless the .gz is
+     * known to be whole. */
+    if (gzclose(gz) != Z_OK) ok = 0;
 
     if (ok) {
         unlink(src_path);

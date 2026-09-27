@@ -14,6 +14,7 @@
 
 #include "dashboard.h"
 #include "router.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -88,20 +89,6 @@ static int ensure_cap(TkDashboard *d)
     d->widgets = buf;
     d->cap     = new_cap;
     return 0;
-}
-
-/* Concatenate two strings; caller must free result. */
-static char *strconcat2(const char *a, const char *b)
-{
-    if (!a) a = "";
-    if (!b) b = "";
-    size_t la = strlen(a), lb = strlen(b);
-    char *out = malloc(la + lb + 1);
-    if (!out) return NULL;
-    memcpy(out, a, la);
-    memcpy(out + la, b, lb);
-    out[la + lb] = '\0';
-    return out;
 }
 
 /* -----------------------------------------------------------------------
@@ -234,12 +221,16 @@ const char *dashboard_render(TkDashboard *d)
 
     /* 3. Build inline script accumulator for Chart.js init calls.
      * The Chart.js CDN <script src> tag is appended to the body after
-     * the widgets (step 6) using html_div with raw text content. */
-    char *inline_scripts = strdup("");   /* grows per chart widget */
-    if (!inline_scripts) {
-        html_free(doc);
-        return NULL;
-    }
+     * the widgets (step 6) using html_div with raw text content.
+     *
+     * 122.13: the widget markup was snprintf'd into char[512]/char[1024]
+     * buffers (a long title or markdown body was cut mid-element) and the
+     * script accumulator was re-concatenated per chart; all of it is
+     * TkStrBuf now.  html_div() writes its content as markup, so every
+     * caller string is escaped here for where it lands: titles, stat
+     * values and markdown as HTML text, ids as HTML attributes, and the
+     * chart id inside a JavaScript string. */
+    TkStrBuf scripts = TK_STRBUF_INIT;   /* grows per chart widget */
 
     /* 4. Open grid wrapper div */
     TkHtmlNode *grid_div = html_div("grid", NULL);
@@ -251,87 +242,75 @@ const char *dashboard_render(TkDashboard *d)
     for (uint64_t i = 0; i < d->nwidgets; i++) {
         TkDashWidget *w = &d->widgets[i];
         char *class_attr = widget_class_attr(w->colspan, w->rowspan);
+        TkStrBuf in = TK_STRBUF_INIT;
 
         if (w->type == DASH_WIDGET_CHART) {
             /* Build: <h2>title</h2><canvas id="id"></canvas> */
-            char inner[1024];
-            snprintf(inner, sizeof(inner),
-                     "<h2>%s</h2><canvas id=\"%s\"></canvas>",
-                     w->title, w->id);
-
-            TkHtmlNode *wdiv = html_div(class_attr, inner);
-            html_append(doc, wdiv);
+            strbuf_append(&in, "<h2>");
+            strbuf_append_xml(&in, w->title);
+            strbuf_append(&in, "</h2><canvas id=\"");
+            strbuf_append_xml(&in, w->id);
+            strbuf_append(&in, "\"></canvas>");
 
             /* Accumulate Chart.js init: new Chart(getElementById('id'), JSON) */
             const char *chart_json = chart_tojson(w->chart);
             if (chart_json) {
-                /* new Chart(document.getElementById('id'),JSON);\n */
-                size_t slen = strlen(w->id) + strlen(chart_json) + 64;
-                char *stmt = malloc(slen);
-                if (stmt) {
-                    snprintf(stmt, slen,
-                             "new Chart(document.getElementById('%s'),%s);\n",
-                             w->id, chart_json);
-                    char *combined = strconcat2(inline_scripts, stmt);
-                    free(stmt);
-                    if (combined) {
-                        free(inline_scripts);
-                        inline_scripts = combined;
-                    }
-                }
+                strbuf_append(&scripts, "new Chart(document.getElementById('");
+                strbuf_append_js(&scripts, w->id);
+                strbuf_append(&scripts, "'),");
+                strbuf_append(&scripts, chart_json);   /* html_render guards "</script" */
+                strbuf_append(&scripts, ");\n");
             }
 
         } else if (w->type == DASH_WIDGET_STAT) {
             /* Stat widget: big number display */
-            char inner[1024];
-            snprintf(inner, sizeof(inner),
-                     "<h2 id=\"%s\">%s</h2><p class=\"stat-value\">%s %s</p>",
-                     w->id, w->title,
-                     w->stat_value ? w->stat_value : "",
-                     w->stat_unit  ? w->stat_unit  : "");
-            TkHtmlNode *wdiv = html_div(class_attr, inner);
-            html_append(doc, wdiv);
+            strbuf_append(&in, "<h2 id=\"");
+            strbuf_append_xml(&in, w->id);
+            strbuf_append(&in, "\">");
+            strbuf_append_xml(&in, w->title);
+            strbuf_append(&in, "</h2><p class=\"stat-value\">");
+            strbuf_append_xml(&in, w->stat_value ? w->stat_value : "");
+            strbuf_putc(&in, ' ');
+            strbuf_append_xml(&in, w->stat_unit ? w->stat_unit : "");
+            strbuf_append(&in, "</p>");
 
         } else if (w->type == DASH_WIDGET_GAUGE) {
             /* Gauge widget: arc gauge placeholder */
-            char inner[1024];
-            snprintf(inner, sizeof(inner),
-                     "<h2 id=\"%s\">%s</h2>"
+            strbuf_append(&in, "<h2 id=\"");
+            strbuf_append_xml(&in, w->id);
+            strbuf_append(&in, "\">");
+            strbuf_append_xml(&in, w->title);
+            strbuf_appendf(&in, "</h2>"
                      "<p class=\"gauge-value\">%.4g / %.4g (max: %.4g)</p>",
-                     w->id, w->title,
                      w->gauge_value, w->gauge_max, w->gauge_max);
-            TkHtmlNode *wdiv = html_div(class_attr, inner);
-            html_append(doc, wdiv);
 
         } else if (w->type == DASH_WIDGET_MARKDOWN) {
             /* Markdown widget: render content as preformatted text */
-            char h2_buf[512];
-            snprintf(h2_buf, sizeof(h2_buf),
-                     "<span id=\"%s\"></span><pre>%s</pre>",
-                     w->id,
-                     w->markdown_content ? w->markdown_content : "");
-            TkHtmlNode *wdiv = html_div(class_attr, h2_buf);
-            html_append(doc, wdiv);
+            strbuf_append(&in, "<span id=\"");
+            strbuf_append_xml(&in, w->id);
+            strbuf_append(&in, "\"></span><pre>");
+            strbuf_append_xml(&in, w->markdown_content ? w->markdown_content : "");
+            strbuf_append(&in, "</pre>");
 
         } else {
             /* Table widget */
-            char h2_buf[512];
-            snprintf(h2_buf, sizeof(h2_buf), "<h2 id=\"%s\">%s</h2>",
-                     w->id, w->title);
+            strbuf_append(&in, "<h2 id=\"");
+            strbuf_append_xml(&in, w->id);
+            strbuf_append(&in, "\">");
+            strbuf_append_xml(&in, w->title);
+            strbuf_append(&in, "</h2>");
 
             TkHtmlNode *tbl = html_table(w->table_headers, w->table_ncols,
                                           w->table_cells, w->table_nrows);
             char *tbl_str = tbl ? (char *)html_node_render(tbl) : NULL;
-            char *inner = strconcat2(h2_buf, tbl_str ? tbl_str : "");
-
-            TkHtmlNode *wdiv = html_div(class_attr, inner ? inner : h2_buf);
-            html_append(doc, wdiv);
-
-            free(inner);
+            strbuf_append(&in, tbl_str);
             free(tbl_str);
             if (tbl) html_node_free(tbl);
         }
 
+        TkHtmlNode *wdiv = html_div(class_attr, strbuf_cstr(&in));
+        html_append(doc, wdiv);
+        strbuf_free(&in);
         free(class_attr);
     }
 
@@ -344,10 +323,10 @@ const char *dashboard_render(TkDashboard *d)
     html_append(doc, cdn_node);
 
     /* 7. Append accumulated inline Chart.js init scripts */
-    if (inline_scripts && inline_scripts[0] != '\0') {
-        html_script(doc, inline_scripts);
+    if (scripts.len > 0) {
+        html_script(doc, strbuf_cstr(&scripts));
     }
-    free(inline_scripts);
+    strbuf_free(&scripts);
 
     const char *rendered = html_render(doc);
     char *result = rendered ? strdup(rendered) : NULL;
@@ -503,168 +482,73 @@ void dashboard_set_refresh_interval(TkDashboard *d, uint64_t interval_ms)
     d->refresh_interval_ms = interval_ms;
 }
 
-/*
- * Escape a string for safe inclusion in a JSON string value.
- * Handles backslash, double-quote, and common control characters.
- * Returns a malloc'd string; caller must free.
- */
-static char *json_escape(const char *s)
+/* 122.13: export_json's private buffer (buf_append), its json_escape (which
+ * passed control bytes other than \n \r \t through: invalid JSON) and the
+ * per-field escaped copies are replaced by TkStrBuf + strbuf_append_json. */
+static void dj_str(TkStrBuf *b, const char *key, const char *val)
 {
-    if (!s) return strdup("");
-    size_t len = strlen(s);
-    /* Worst case: every char expands to 6 chars (e.g. \uXXXX) */
-    char *out = malloc(len * 6 + 1);
-    if (!out) return NULL;
-    char *p = out;
-    for (size_t i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if      (c == '"')  { *p++ = '\\'; *p++ = '"'; }
-        else if (c == '\\') { *p++ = '\\'; *p++ = '\\'; }
-        else if (c == '\n') { *p++ = '\\'; *p++ = 'n'; }
-        else if (c == '\r') { *p++ = '\\'; *p++ = 'r'; }
-        else if (c == '\t') { *p++ = '\\'; *p++ = 't'; }
-        else                { *p++ = (char)c; }
-    }
-    *p = '\0';
-    return out;
+    strbuf_putc(b, '"');
+    strbuf_append(b, key);
+    strbuf_append(b, "\":\"");
+    strbuf_append_json(b, val ? val : "");
+    strbuf_putc(b, '"');
 }
 
-/*
- * Append a string to a growing buffer.
- * *buf is realloc'd; *size tracks allocated bytes; *used tracks used bytes.
- * Returns 0 on success, -1 on OOM.
- */
-static int buf_append(char **buf, size_t *size, size_t *used, const char *s)
+/* A JSON number; NaN/Inf are not JSON, written as null. */
+static void dj_num(TkStrBuf *b, const char *key, double v)
 {
-    size_t slen = strlen(s);
-    if (*used + slen + 1 > *size) {
-        size_t new_size = (*size + slen + 1) * 2;
-        char *nb = realloc(*buf, new_size);
-        if (!nb) return -1;
-        *buf  = nb;
-        *size = new_size;
-    }
-    memcpy(*buf + *used, s, slen + 1);
-    *used += slen;
-    return 0;
+    strbuf_appendf(b, "\"%s\":", key);
+    if (v == v && v - v == 0.0) strbuf_appendf(b, "%g", v);
+    else strbuf_append(b, "null");
 }
 
 const char *dashboard_export_json(TkDashboard *d)
 {
     if (!d) return NULL;
 
-    /* Initial buffer */
-    size_t size = 512;
-    size_t used = 0;
-    char  *buf  = malloc(size);
-    if (!buf) return NULL;
-    buf[0] = '\0';
-
-    /* 135.3c: the escaped copies live at function scope so that an append
-     * failing mid-widget frees them too; the early return used to leak
-     * whichever were in hand (clang unix.Malloc, 13 reports). */
-    char *theme_esc = NULL, *id_esc = NULL, *title_esc = NULL,
-         *val_esc = NULL, *unit_esc = NULL, *content_esc = NULL;
-#define DJSON_FREE_ESC() \
-    do { free(theme_esc); free(id_esc); free(title_esc); free(val_esc); \
-         free(unit_esc); free(content_esc); \
-         theme_esc = id_esc = title_esc = val_esc = unit_esc = content_esc = NULL; \
-    } while (0)
-#define DJSON_APPEND(s) \
-    do { if (buf_append(&buf, &size, &used, (s)) != 0) { \
-             DJSON_FREE_ESC(); free(buf); return NULL; } } while (0)
-
-    char tmp[128];
-
-    /* Open object */
-    DJSON_APPEND("{");
-
-    /* theme */
-    theme_esc = json_escape(d->theme ? d->theme : "light");
-    DJSON_APPEND("\"theme\":\"");
-    DJSON_APPEND(theme_esc ? theme_esc : "light");
-    DJSON_APPEND("\",");
-    DJSON_FREE_ESC();
-
-    /* refresh_interval_ms */
-    snprintf(tmp, sizeof(tmp), "\"refresh_interval_ms\":%llu,",
-             (unsigned long long)d->refresh_interval_ms);
-    DJSON_APPEND(tmp);
-
-    /* widgets array */
-    DJSON_APPEND("\"widgets\":[");
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_putc(&b, '{');
+    dj_str(&b, "theme", d->theme ? d->theme : "light");
+    strbuf_appendf(&b, ",\"refresh_interval_ms\":%llu,",
+                   (unsigned long long)d->refresh_interval_ms);
+    strbuf_append(&b, "\"widgets\":[");
 
     for (uint64_t i = 0; i < d->nwidgets; i++) {
         TkDashWidget *w = &d->widgets[i];
-
-        if (i > 0) DJSON_APPEND(",");
+        if (i > 0) strbuf_putc(&b, ',');
 
         if (w->type == DASH_WIDGET_STAT) {
-            id_esc    = json_escape(w->id);
-            title_esc = json_escape(w->title);
-            val_esc   = json_escape(w->stat_value ? w->stat_value : "");
-            unit_esc  = json_escape(w->stat_unit  ? w->stat_unit  : "");
-            DJSON_APPEND("{\"type\":\"stat\",\"id\":\"");
-            DJSON_APPEND(id_esc    ? id_esc    : "");
-            DJSON_APPEND("\",\"title\":\"");
-            DJSON_APPEND(title_esc ? title_esc : "");
-            DJSON_APPEND("\",\"value\":\"");
-            DJSON_APPEND(val_esc   ? val_esc   : "");
-            DJSON_APPEND("\",\"unit\":\"");
-            DJSON_APPEND(unit_esc  ? unit_esc  : "");
-            DJSON_APPEND("\"}");
-            DJSON_FREE_ESC();
-
+            strbuf_append(&b, "{\"type\":\"stat\",");
+            dj_str(&b, "id", w->id);            strbuf_putc(&b, ',');
+            dj_str(&b, "title", w->title);      strbuf_putc(&b, ',');
+            dj_str(&b, "value", w->stat_value); strbuf_putc(&b, ',');
+            dj_str(&b, "unit", w->stat_unit);
+            strbuf_putc(&b, '}');
         } else if (w->type == DASH_WIDGET_GAUGE) {
-            id_esc    = json_escape(w->id);
-            title_esc = json_escape(w->title);
-            DJSON_APPEND("{\"type\":\"gauge\",\"id\":\"");
-            DJSON_APPEND(id_esc    ? id_esc    : "");
-            DJSON_APPEND("\",\"title\":\"");
-            DJSON_APPEND(title_esc ? title_esc : "");
-            DJSON_APPEND("\",");
-            snprintf(tmp, sizeof(tmp), "\"value\":%g,\"min\":%g,\"max\":%g}",
-                     w->gauge_value, w->gauge_min, w->gauge_max);
-            DJSON_APPEND(tmp);
-            DJSON_FREE_ESC();
-
+            strbuf_append(&b, "{\"type\":\"gauge\",");
+            dj_str(&b, "id", w->id);            strbuf_putc(&b, ',');
+            dj_str(&b, "title", w->title);      strbuf_putc(&b, ',');
+            dj_num(&b, "value", w->gauge_value); strbuf_putc(&b, ',');
+            dj_num(&b, "min", w->gauge_min);     strbuf_putc(&b, ',');
+            dj_num(&b, "max", w->gauge_max);
+            strbuf_putc(&b, '}');
         } else if (w->type == DASH_WIDGET_MARKDOWN) {
-            id_esc      = json_escape(w->id);
-            content_esc = json_escape(w->markdown_content ? w->markdown_content : "");
-            DJSON_APPEND("{\"type\":\"markdown\",\"id\":\"");
-            DJSON_APPEND(id_esc      ? id_esc      : "");
-            DJSON_APPEND("\",\"content\":\"");
-            DJSON_APPEND(content_esc ? content_esc : "");
-            DJSON_APPEND("\"}");
-            DJSON_FREE_ESC();
-
-        } else if (w->type == DASH_WIDGET_CHART) {
-            id_esc    = json_escape(w->id);
-            title_esc = json_escape(w->title);
-            DJSON_APPEND("{\"type\":\"chart\",\"id\":\"");
-            DJSON_APPEND(id_esc    ? id_esc    : "");
-            DJSON_APPEND("\",\"title\":\"");
-            DJSON_APPEND(title_esc ? title_esc : "");
-            DJSON_APPEND("\"}");
-            DJSON_FREE_ESC();
-
+            strbuf_append(&b, "{\"type\":\"markdown\",");
+            dj_str(&b, "id", w->id);            strbuf_putc(&b, ',');
+            dj_str(&b, "content", w->markdown_content);
+            strbuf_putc(&b, '}');
         } else {
-            /* DASH_WIDGET_TABLE */
-            id_esc    = json_escape(w->id);
-            title_esc = json_escape(w->title);
-            DJSON_APPEND("{\"type\":\"table\",\"id\":\"");
-            DJSON_APPEND(id_esc    ? id_esc    : "");
-            DJSON_APPEND("\",\"title\":\"");
-            DJSON_APPEND(title_esc ? title_esc : "");
-            DJSON_APPEND("\"}");
-            DJSON_FREE_ESC();
+            strbuf_append(&b, w->type == DASH_WIDGET_CHART
+                              ? "{\"type\":\"chart\"," : "{\"type\":\"table\",");
+            dj_str(&b, "id", w->id);            strbuf_putc(&b, ',');
+            dj_str(&b, "title", w->title);
+            strbuf_putc(&b, '}');
         }
     }
+    strbuf_append(&b, "]}");
 
-    DJSON_APPEND("]}");
-
-#undef DJSON_APPEND
-#undef DJSON_FREE_ESC
+    char *buf = strbuf_take(&b);
+    if (!buf) return NULL;
 
     /* Store in dashboard so it lives long enough for caller to use */
     free(d->export_json_buf);

@@ -53,6 +53,13 @@ Opaque handle to an SVG element.
 | `svg.style` | `fill: $str; stroke: $str; stroke_width: f64` | `$svgstyle` | Create a style with common defaults |
 | `svg.arrow` | `x1: f64; y1: f64; x2: f64; y2: f64; style: $svgstyle` | `$svgelem` | Create a line with an arrowhead |
 
+## Escaping
+
+Every string you pass is written as data, not markup: text content and every
+attribute value (colours, font family, path data, group transforms) are
+XML-escaped on output, so a label such as `a < b & "c"` renders as that text
+and cannot close its element or attribute.
+
 ## Usage
 
 ```toke

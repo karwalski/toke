@@ -36,17 +36,24 @@ typedef TkStrBuf Buf;
  * Style serialisation
  * ----------------------------------------------------------------------- */
 
+/* 122.13: every caller string below (fill, stroke, font-family, path d,
+ * transform, text content, ellipse style, gradient ids and stop colours,
+ * animate names/values) is written through strbuf_append_xml.  They were
+ * written raw, so a text label "</text><script>..." or a fill 'red"
+ * onload="...' closed its element or attribute and injected markup. */
 static void buf_append_style(Buf *b, TkSvgStyle s)
 {
     int any = 0;
     strbuf_append(b, " style=\"");
     if (s.fill) {
-        strbuf_appendf(b, "fill:%s", s.fill);
+        strbuf_append(b, "fill:");
+        strbuf_append_xml(b, s.fill);
         any = 1;
     }
     if (s.stroke) {
         if (any) strbuf_append(b, ";");
-        strbuf_appendf(b, "stroke:%s", s.stroke);
+        strbuf_append(b, "stroke:");
+        strbuf_append_xml(b, s.stroke);
         any = 1;
     }
     if (s.stroke_width != 0.0) {
@@ -66,7 +73,8 @@ static void buf_append_style(Buf *b, TkSvgStyle s)
     }
     if (s.font_family) {
         if (any) strbuf_append(b, ";");
-        strbuf_appendf(b, "font-family:%s", s.font_family);
+        strbuf_append(b, "font-family:");
+        strbuf_append_xml(b, s.font_family);
         /* any = 1; */
     }
     strbuf_append(b, "\"");
@@ -120,6 +128,13 @@ struct TkSvgElem {
     char       *transform;        /* may be NULL */
 
     TkSvgStyle style;
+
+    /* 122.13: strings svg_elem_set_style allocated.  style.fill/stroke/
+     * font_family otherwise point at CALLER-owned strings (svg_style stores
+     * its arguments as given), which set_style used to free() -- a crash on
+     * the first set_style after svg_style("red", ...).  Only these are
+     * freed, by set_style (on replacement) and svg_elem_free. */
+    char *own_fill, *own_stroke, *own_font_family;
 };
 
 /* -----------------------------------------------------------------------
@@ -254,6 +269,9 @@ void svg_elem_free(TkSvgElem *elem)
     free(elem->text_content);
     free(elem->pts);
     free(elem->transform);
+    free(elem->own_fill);
+    free(elem->own_stroke);
+    free(elem->own_font_family);
     if (elem->children) {
         for (uint64_t i = 0; i < elem->nchildren; i++) {
             svg_elem_free(elem->children[i]);
@@ -293,11 +311,13 @@ void svg_elem_set_style(TkSvgElem *elem, const char *css)
         memcpy(vbuf, val, vlen); vbuf[vlen] = '\0';
 
         if (strcmp(kbuf, "fill") == 0) {
-            free((void *)elem->style.fill);
-            elem->style.fill = strdup(vbuf);
+            free(elem->own_fill);
+            elem->own_fill = strdup(vbuf);
+            elem->style.fill = elem->own_fill;
         } else if (strcmp(kbuf, "stroke") == 0) {
-            free((void *)elem->style.stroke);
-            elem->style.stroke = strdup(vbuf);
+            free(elem->own_stroke);
+            elem->own_stroke = strdup(vbuf);
+            elem->style.stroke = elem->own_stroke;
         } else if (strcmp(kbuf, "stroke-width") == 0) {
             elem->style.stroke_width = strtod(vbuf, NULL);
         } else if (strcmp(kbuf, "opacity") == 0) {
@@ -305,8 +325,9 @@ void svg_elem_set_style(TkSvgElem *elem, const char *css)
         } else if (strcmp(kbuf, "font-size") == 0) {
             elem->style.font_size = strtod(vbuf, NULL);
         } else if (strcmp(kbuf, "font-family") == 0) {
-            free((void *)elem->style.font_family);
-            elem->style.font_family = strdup(vbuf);
+            free(elem->own_font_family);
+            elem->own_font_family = strdup(vbuf);
+            elem->style.font_family = elem->own_font_family;
         }
     }
 }
@@ -464,7 +485,11 @@ static void render_elem(Buf *b, TkSvgElem *e)
 
     case ELEM_PATH:
         strbuf_append(b, "<path");
-        if (e->path_d) strbuf_appendf(b, " d=\"%s\"", e->path_d);
+        if (e->path_d) {
+            strbuf_append(b, " d=\"");
+            strbuf_append_xml(b, e->path_d);
+            strbuf_append(b, "\"");
+        }
         buf_append_style(b, e->style);
         strbuf_append(b, "/>");
         break;
@@ -474,14 +499,16 @@ static void render_elem(Buf *b, TkSvgElem *e)
         strbuf_appendf(b, " x=\"%.2f\" y=\"%.2f\"", e->x, e->y);
         buf_append_style(b, e->style);
         strbuf_append(b, ">");
-        if (e->text_content) strbuf_append(b, e->text_content);
+        strbuf_append_xml(b, e->text_content);
         strbuf_append(b, "</text>");
         break;
 
     case ELEM_GROUP:
         if (e->transform) {
             strbuf_append(b, "<g");
-            strbuf_appendf(b, " transform=\"%s\"", e->transform);
+            strbuf_append(b, " transform=\"");
+            strbuf_append_xml(b, e->transform);
+            strbuf_append(b, "\"");
             strbuf_append(b, ">");
         } else {
             strbuf_append(b, "<g>");
@@ -547,12 +574,18 @@ static char *inject_animates(const char *src,
          * closing quote, so it matched any element whose id merely STARTED
          * with the truncated text. */
         Buf at = TK_STRBUF_INIT, nd = TK_STRBUF_INIT;
-        strbuf_appendf(&at,
-                 "<animate attributeName=\"%s\" from=\"%s\" to=\"%s\""
-                 " dur=\"%.2fs\" repeatCount=\"indefinite\"/>",
-                 anim[i].attr, anim[i].from_val, anim[i].to_val,
+        strbuf_append(&at, "<animate attributeName=\"");
+        strbuf_append_xml(&at, anim[i].attr);
+        strbuf_append(&at, "\" from=\"");
+        strbuf_append_xml(&at, anim[i].from_val);
+        strbuf_append(&at, "\" to=\"");
+        strbuf_append_xml(&at, anim[i].to_val);
+        strbuf_appendf(&at, "\" dur=\"%.2fs\" repeatCount=\"indefinite\"/>",
                  anim[i].duration_s);
-        strbuf_appendf(&nd, "id=\"%s\"", anim[i].target_id);
+        /* the id as it appears in markup, i.e. escaped the same way */
+        strbuf_append(&nd, "id=\"");
+        strbuf_append_xml(&nd, anim[i].target_id);
+        strbuf_append(&nd, "\"");
         const char *atag = strbuf_cstr(&at);
         const char *needle = strbuf_cstr(&nd);
         const char *data = strbuf_cstr(&out);
@@ -657,7 +690,7 @@ const char *svg_ellipse(TkSvgDoc *doc, double cx, double cy,
                 cx, cy, rx, ry);
     if (style && style[0] != '\0') {
         strbuf_append(&b, " style=\"");
-        strbuf_append(&b, style);
+        strbuf_append_xml(&b, style);
         strbuf_append(&b, "\"");
     }
     strbuf_append(&b, "/>");
@@ -680,11 +713,10 @@ static void buf_append_stops(Buf *b, const SvgStop *stops, uint64_t nstops)
 {
     uint64_t i;
     for (i = 0; i < nstops; i++) {
-        strbuf_appendf(b, "<stop offset=\"%.0f%%\" stop-color=\"%s\""
-                    " stop-opacity=\"%.2f\"/>",
-                    stops[i].offset * 100.0,
-                    stops[i].color ? stops[i].color : "black",
-                    stops[i].opacity);
+        strbuf_appendf(b, "<stop offset=\"%.0f%%\" stop-color=\"",
+                    stops[i].offset * 100.0);
+        strbuf_append_xml(b, stops[i].color ? stops[i].color : "black");
+        strbuf_appendf(b, "\" stop-opacity=\"%.2f\"/>", stops[i].opacity);
     }
 }
 
@@ -726,10 +758,12 @@ const char *svg_gradient_linear(TkSvgDoc *doc, const char *id,
     if (!doc || !id) return NULL;
 
     Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<linearGradient id=\"");
+    strbuf_append_xml(&b, id);
     strbuf_appendf(&b,
-                "<linearGradient id=\"%s\" x1=\"%.0f%%\" y1=\"%.0f%%\""
+                "\" x1=\"%.0f%%\" y1=\"%.0f%%\""
                 " x2=\"%.0f%%\" y2=\"%.0f%%\">",
-                id, x1 * 100.0, y1 * 100.0, x2 * 100.0, y2 * 100.0);
+                x1 * 100.0, y1 * 100.0, x2 * 100.0, y2 * 100.0);
     if (stops && nstops > 0) buf_append_stops(&b, stops, nstops);
     strbuf_append(&b, "</linearGradient>");
 
@@ -746,10 +780,12 @@ const char *svg_gradient_radial(TkSvgDoc *doc, const char *id,
     if (!doc || !id) return NULL;
 
     Buf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "<radialGradient id=\"");
+    strbuf_append_xml(&b, id);
     strbuf_appendf(&b,
-                "<radialGradient id=\"%s\" cx=\"%.0f%%\" cy=\"%.0f%%\""
+                "\" cx=\"%.0f%%\" cy=\"%.0f%%\""
                 " r=\"%.0f%%\">",
-                id, cx * 100.0, cy * 100.0, r * 100.0);
+                cx * 100.0, cy * 100.0, r * 100.0);
     if (stops && nstops > 0) buf_append_stops(&b, stops, nstops);
     strbuf_append(&b, "</radialGradient>");
 

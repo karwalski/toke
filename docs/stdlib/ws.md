@@ -64,11 +64,11 @@ not a terminator — `opcode` is 1 for a text frame and 2 for a binary one, and
 
 | Function | Parameters | Return | Description |
 |----------|-----------|--------|-------------|
-| `ws.connect` | `url: $str` | `$wsconn!$wserr` | Open a WebSocket connection to the given URL |
+| `ws.connect` | `url: $str` | `$wsconn!$wserr` | Open a WebSocket connection to the given `ws://` URL; a URL with a space or control character, or a port outside 1 to 65535, is `$err` |
 | `ws.send` | `conn: $wsconn; msg: $str` | `void!$wserr` | Send a text message |
 | `ws.sendbytes` | `conn: $wsconn; data: @($byte)` | `void!$wserr` | Send a binary message |
 | `ws.recv` | `conn: $wsconn` | `$wsmsg!$wserr` | Block until a message is received |
-| `ws.close` | `conn: $wsconn` | `void` | Close the connection |
+| `ws.close` | `conn: $wsconn` | `void` | Close the connection; the handle stays valid and every later call on it is `$err` |
 | `ws.broadcast` | `conns: @($wsconn); msg: $str` | `void` | Send a text message to all connections |
 
 ## Handling a failed connect

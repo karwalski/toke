@@ -3810,6 +3810,17 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             break;
         }
 
+        /* 135.3j (6): h2_frame_recv also returns NULL with hdr filled in --
+         * the payload read failed (the peer closed mid-frame), the frame was
+         * over the peer's size limit (GOAWAY already sent), or the buffer
+         * could not grow.  Each fell through to the frame handlers with a
+         * NULL payload: a HEADERS or CONTINUATION frame memcpy'd from NULL,
+         * a padded HEADERS or a WINDOW_UPDATE read payload[0] -- a peer that
+         * sent a 9-byte frame header and closed crashed the worker.  A NULL
+         * payload now always ends the connection; h2_frame_recv returns a
+         * non-NULL buffer for every frame it did read, empty ones included. */
+        if (!payload) goto done;
+
         last_activity = time(NULL);
         ping_outstanding = 0;
 

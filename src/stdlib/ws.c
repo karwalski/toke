@@ -598,6 +598,17 @@ static int ws_parse_url(const char *url, char **host_out,
     p = url + 5;
     host_start = p;
 
+    /* 122.13: the host and path are written verbatim into the upgrade
+     * request ("GET <path> HTTP/1.1\r\nHost: <host>..."), and nothing here
+     * refused CR, LF, space or any other control byte: a URL
+     * "ws://h/x HTTP/1.1\r\nX-Injected: 1\r\n..." sent headers (or a
+     * whole second request) of the caller's choosing.  A URL is printable
+     * ASCII without spaces (RFC 3986); anything else is refused. */
+    for (const char *q = p; *q; q++) {
+        unsigned char c = (unsigned char)*q;
+        if (c <= 0x20 || c >= 0x7f) return -1;
+    }
+
     /* Find end of host (: or / or end) */
     host_end = p;
     while (*host_end && *host_end != ':' && *host_end != '/')
@@ -627,7 +638,14 @@ static int ws_parse_url(const char *url, char **host_out,
         }
         memcpy(port_buf, port_start, port_len);
         port_buf[port_len] = '\0';
-        *port_out = (uint16_t)atoi(port_buf);
+        /* 122.13: "ws://h:99999/" became port 34463 by truncation */
+        long pv = strtol(port_buf, NULL, 10);
+        if (pv < 1 || pv > 65535 || (*p != '\0' && *p != '/')) {
+            free(*host_out);
+            *host_out = NULL;
+            return -1;
+        }
+        *port_out = (uint16_t)pv;
     }
 
     /* Path (default to "/") */
