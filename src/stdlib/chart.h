@@ -44,6 +44,37 @@ typedef struct {
     uint64_t     ndatasets;
 } TkChartSpec;
 
+/*
+ * The records toke sees (135.30).  tkc reads `x.f` as 8-byte slot <index of
+ * f in stdlib/chart.tki>, arrays are toke array handles, so a $chartspec is
+ * {type; labels; datasets; title} and a $dataset {label; data; color} --
+ * not TkChartSpec / TkDataset above, whose first slot is the ChartType enum
+ * (`spec.type` read it as a string: SIGSEGV).  chart.bar builds these, and
+ * every wrapper that takes a $chartspec (chart.tojson, dashboard.addchart)
+ * converts it with chart_spec_from_rec, so a $chartspec literal works
+ * too.  `make check-tki-layout` keeps them in step with the .tki.
+ */
+/* tki-record: chart.chartspec */
+typedef struct {
+    const char *type;       /* "bar", "line", "scatter", "pie" */
+    int64_t     labels;     /* [str] */
+    int64_t     datasets;   /* [dataset]: handles of TkDatasetRec * */
+    const char *title;
+} TkChartSpecRec;
+
+/* tki-record: chart.dataset */
+typedef struct {
+    const char *label;
+    int64_t     data;       /* [f64]: f64 bits per slot */
+    const char *color;      /* "" for none */
+} TkDatasetRec;
+
+/* chart_spec_from_rec — a heap TkChartSpec (and its label, dataset and
+ * value arrays) built from a $chartspec record handle; NULL for 0 or OOM.
+ * Strings are borrowed from the record.  Free with chart_spec_free_conv. */
+TkChartSpec *chart_spec_from_rec(int64_t rec);
+void         chart_spec_free_conv(TkChartSpec *spec);
+
 /* chart.bar(labels:[Str]; datasets:[TkDataset]; title:Str) : TkChartSpec*
  * Returns a heap-allocated TkChartSpec for a bar chart.
  * Caller owns the returned pointer; use chart_free() to release. */

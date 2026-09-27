@@ -54,6 +54,26 @@ typedef struct {
     const char     *markdown_content;
 } TkDashWidget;
 
+/*
+ * The records toke sees (135.30): tkc reads `x.f` as 8-byte slot <index of
+ * f in stdlib/dashboard.tki>.  A TkDashboard begins with a TkDashboardHead,
+ * so a $dashboard's `.id` is a process-unique number (it read the title
+ * pointer); dashboard.addchart returns a TkDashWidgetRec (it returned the
+ * dashboard itself, so `w.id` read the dashboard's title and `w.spec` its
+ * grid width as an array).  `make check-tki-layout` keeps them in step.
+ */
+/* tki-record: dashboard.dashboard */
+typedef struct {
+    int64_t     id;         /* u64, 1-based, unique per process */
+} TkDashboardHead;
+
+/* tki-record: dashboard.dashwidget */
+typedef struct {
+    const char *id;
+    const char *type;       /* "chart", "table", ... */
+    int64_t     spec;       /* [byte]: the widget's chart JSON */
+} TkDashWidgetRec;
+
 typedef struct TkDashboard TkDashboard;
 
 TkDashboard *dashboard_new(const char *title, uint32_t grid_cols);
