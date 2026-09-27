@@ -36,7 +36,7 @@ OUTPUT = REPO / "src" / "stdlib_quarantine_gen.h"
 
 def quarantined_symbols() -> tuple[list[tuple[str, str, str]], list[str]]:
     skips = ctc.load_skiplist(ctc.SKIPLIST)
-    explicit, patterns, subns = ctc.load_resolver_tables(REPO / "src" / "llvm.c")
+    explicit, patterns, subns = ctc.load_resolver_tables(REPO / "src" / "stdlib_tables.c")   # 135.21
     csrc = "\n".join(p.read_text(errors="replace")
                      for p in sorted((REPO / "src" / "stdlib").glob("*.c")))
     keep, dropped = [], []

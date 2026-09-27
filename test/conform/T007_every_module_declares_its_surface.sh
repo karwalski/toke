@@ -38,7 +38,7 @@
 # WHAT WAS FOUND WHILE FIXING IT, and is not in 137.10: the client-side glue
 # is real.  tk_http_get_w / tk_http_post_w / tk_http_put_w / tk_http_delete_w
 # all exist in tk_web_glue.c, alongside separate route wrappers
-# (tk_http_posthandler_w and friends).  The explicit table in llvm.c maps
+# (tk_http_posthandler_w and friends).  The explicit table in stdlib_tables.c (llvm.c before 135.21) maps
 # `http.post` to the ROUTE symbol, so the client wrappers are unreachable
 # under any spelling a caller can write.  Withdrawing the declarations states
 # that truthfully; giving the client surface names of its own is a separate

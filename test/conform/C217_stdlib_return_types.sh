@@ -92,7 +92,7 @@ expect "4 str-returning glue interpolates as text" "$(run "${WORK}/sr.tk")" "42!
 CP="${WORK}/repo"; mkdir -p "${CP}/src"
 cp -R "${REPO_ROOT}/scripts" "${REPO_ROOT}/stdlib" "${CP}/"
 cp -R "${REPO_ROOT}/src/stdlib" "${CP}/src/"
-cp "${REPO_ROOT}"/src/*.h "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_deps.c" "${CP}/src/"
+cp "${REPO_ROOT}"/src/*.h "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_tables.c" "${REPO_ROOT}/src/stdlib_deps.c" "${CP}/src/"   # 135.21
 python3 - "${CP}/stdlib/sys.tki" <<'PY'
 import json, sys
 p = sys.argv[1]; d = json.load(open(p))

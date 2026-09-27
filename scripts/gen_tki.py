@@ -85,7 +85,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TKI_DIR = REPO_ROOT / "stdlib"
 C_DIR = REPO_ROOT / "src" / "stdlib"
-LLVM_C = REPO_ROOT / "src" / "llvm.c"
+LLVM_C = REPO_ROOT / "src" / "stdlib_tables.c"   # 135.21: g_stdlib_decls moved here
 DEPS_C = REPO_ROOT / "src" / "stdlib_deps.c"
 DECLS_H = REPO_ROOT / "src" / "stdlib_decls_gen.h"
 
