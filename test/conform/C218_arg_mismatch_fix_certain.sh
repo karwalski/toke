@@ -8,15 +8,15 @@
 # types, never float -> integer (the 127.64 rule: truncation changes the
 # value).
 #
-# NOT fixed here: the message still says "got '@(?)'" for a [byte].  The
-# checker leaves lower-case `byte` unresolved; typing it u8 turns every
-# `let a:@byte=@(1;2)` into an E4031, because an integer literal does not
-# narrow (`let b:u8=5` is E4031 on main) -- it broke C183.  Case 1 pins the
-# current text so a change to it is deliberate.
+# The message half landed with 127.230 item 4: lower-case `byte` resolves to
+# u8, so a [byte] reads "got '@(u8)'" (it read '@(?)').  Resolving it had
+# been reverted (9581802) because an integer literal did not narrow and every
+# `let a:@byte=@(1;2)` became E4031 (C183 case 3); literals narrow now (C241).
 #
-# Negative control: TKC=<main's toke> -- cases 1, 2 and 4 fail.
+# Negative control: TKC=<the 127.220 toke> -- cases 1, 2 and 4 fail; the
+# toke before 127.230 item 4 fails case 1 alone ("@(?)").
 #
-# Story: 127.220 (item 4)
+# Story: 127.220 (item 4), 127.230 (item 4)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,7 +44,7 @@ prog() {  # $1 = binding, $2 = call
     diags "${WORK}/p.tk"; }
 
 expect "1 [byte] as str: no fix" \
-    "$(prog 'let b:@(byte)=s.bytes("hi");' 'g(b)')" "E4031|@(?)|ABSENT"
+    "$(prog 'let b:@(byte)=s.bytes("hi");' 'g(b)')" "E4031|@(u8)|ABSENT"
 expect "2 i64 as str: no fix (as is not a certain repair)" \
     "$(prog 'let b:i64=3;' 'g(b)')" "E4031|i64|ABSENT"
 expect "3 i64 as f64: the cast is the repair" \
