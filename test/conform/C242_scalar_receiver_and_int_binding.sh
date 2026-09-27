@@ -70,5 +70,8 @@ expect "11 a negated float-literal binding into an i64 parameter" \
 expect "12 a float binding used as a float stays clean" \
     "$(diags "${H}"'f=h(x:f64):f64{<x};f=main():i64{let a=2.5;let b=h(a)*2.0;<0};')" "rc=0"
 
+expect "13 a non-negative int-literal binding casts to u64 without W1001 (corpus P3-MIG-P2-A-A-ARR-0011v7)" \
+    "$(diags "${H}"'f=g(a:@i64):i64{let left=0;<a.get(left as u64)};f=main():i64{<0};')" "rc=0"
+
 echo "C242: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

@@ -1189,6 +1189,11 @@ static int cast_src_nonneg(Ctx *cx, const Node *e) {
     if (is_param(cx, nm, nl)) return 0;
     if (cx->armb_count > 0 && arm_bind_lookup(cx, nm, nl, e)) return 0;
     const Node *bn = find_binding_before(cx->fn_node, cx->src, nm, nl, e);
+    /* 127.230 item 2: an immutable `let left=0` is now typed i64, so
+     * `left as u64` reached the lossy-cast test; its value is the literal
+     * (corpus P3-MIG-P2-A-A-ARR-0011v7). */
+    if (bn && bn->kind == NODE_BIND_STMT && bn->child_count == 2
+        && bn->children[1] && bn->children[1]->kind == NODE_INT_LIT) return 1;
     if (!bn || bn->kind != NODE_LOOP_INIT || bn->op != TK_KW_LET
         || bn->child_count < 2 || !bn->children[1]
         || bn->children[1]->kind != NODE_INT_LIT) return 0;
