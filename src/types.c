@@ -2979,7 +2979,6 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
  * through llvm.h, which would put the codegen header in the type checker's
  * include graph for two functions. */
 int stdlib_glue_arity(const char *sym);
-int stdlib_glue_ignores_only_arg(const char *sym);   /* 127.61 */
 const char *stdlib_symbol_for(const char *mod, int is_std, const char *method);
 
 /*
@@ -3276,21 +3275,18 @@ static void check_tki_call(Ctx *cx, const Node *call) {
     const char *sym = NULL;
     int abi = tki_glue_arity_for(mpath, member, &sym);
     if (abi >= 0) {
-        /* A zero-argument toke function is written in glue as a single
-         * ignored `int64_t dummy` (tk_file_tempdir_w, tk_mlx_isavailable_w,
-         * tk_time_nowms_w, …), each opening with `(void)dummy`. The caller
-         * sets no register and the callee reads none, so it is a convention,
-         * not a disagreement, and flagging it would reject correct calls.
-         *
-         * 127.61: which symbols those are is now ESTABLISHED, from the glue
-         * sources, by scripts/gen_stdlib_decls.py. 136.1 had no such list and
-         * so exempted `actual == 0 && abi == 1` for every one-parameter
-         * symbol in the compiler — the default-for-an-unestablished-fact that
-         * let `s.len()`, `s.trim()`, `s.upper()`, `s.fromint()` and
-         * `io.println()` pass `--check` and then read an unset register. */
-        int dummy_param = (actual == 0 && abi == 1 &&
-                           stdlib_glue_ignores_only_arg(sym));
-        if (actual != abi && !dummy_param && tc_can_emit(cx))
+        /* 127.220 item 6: no zero-argument exemption.  136.1 exempted
+         * `actual == 0 && abi == 1` for every one-parameter symbol; 127.61
+         * narrowed it to the symbols whose glue body never reads its
+         * parameter (stdlib_dummyarg_gen.h).  136.14 then rewrote every
+         * genuinely zero-argument wrapper to take `(void)`, which left that
+         * list holding only STUBS of real one-parameter functions --
+         * `tk_infer_load_w(int64_t model_path)`, `tk_mdns_stopbrowse_w(
+         * int64_t handle)`, `tk_mlx_load_w`, ... -- whose parameter is
+         * ignored only because the stub is unimplemented.  `m.load()` and
+         * `d.stopbrowse()` passed --check on that exemption; they are calls
+         * with the argument missing, and are now E4026 like any other. */
+        if (actual != abi && tc_can_emit(cx))
             tki_arity_error(call, "implementation", mpath, member,
                             NULL, abi, actual);
         return;
