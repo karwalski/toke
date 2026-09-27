@@ -496,6 +496,39 @@ int resolve_imports(const Node *ast, const char *src,
     out->search_path = (search_paths && search_path_count > 0) ? search_paths[0] : ".";
 
     int err = 0;
+
+    /* 138.15 (loke T-56): the import cap, at --check.  Codegen's
+     * prepass_imports refuses the (max_imports+1)th NODE_IMPORT with an E9010
+     * that names neither the count, the limit nor how to raise it, and only
+     * when a binary is built -- `--check` said nothing.  Counted here the
+     * way prepass_imports counts (every NODE_IMPORT at program level), so the
+     * two cannot disagree about whether a program is over. */
+    {
+        int nimp = 0;
+        for (int i = 0; i < ast->child_count; i++)
+            if (ast->children[i] && ast->children[i]->kind == NODE_IMPORT) nimp++;
+        if (limits->max_imports > 0 && nimp > limits->max_imports) {
+            const Node *at = NULL;
+            int k = 0;
+            for (int i = 0; i < ast->child_count && !at; i++)
+                if (ast->children[i] && ast->children[i]->kind == NODE_IMPORT
+                    && ++k > limits->max_imports) at = ast->children[i];
+            char msg[320], fix[160], exp[32], got[32];
+            snprintf(msg, sizeof msg,
+                     "compiler limit exceeded: this module has %d imports and "
+                     "the limit is %d (max_imports)", nimp, limits->max_imports);
+            snprintf(fix, sizeof fix,
+                     "raise the limit: pass --max-imports=%d, or set "
+                     "max_imports = %d in tkc.toml", nimp, nimp);
+            snprintf(exp, sizeof exp, "%d", limits->max_imports);
+            snprintf(got, sizeof got, "%d", nimp);
+            diag_emit(DIAG_ERROR, E9010, at ? at->start : 0, at ? at->line : 0,
+                      at ? at->col : 0, msg, "expected", exp, "got", got,
+                      "fix", fix, (const char *)NULL);
+            err = 1;
+        }
+    }
+
     InFlight inf;
     inf.count = 0;
     inf.capacity = limits->max_imports_in_flight;
