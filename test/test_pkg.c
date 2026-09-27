@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "../src/pkg.h"
+#include "../src/sha256.h"   /* 122.13 item 9 */
 
 static int tests_run    = 0;
 static int tests_passed = 0;
@@ -538,6 +539,47 @@ test_lock_read_rejects(void)
 
 /* ── main ──────────────────────────────────────────────────────────────────── */
 
+/* ── Shared SHA-256 (122.13 item 9) ────────────────────────────────────────── */
+
+/* FIPS 180-2 appendix B known answers, plus the empty string.  The digest is
+ * the one the package content hash is built from, so a content hash formed
+ * from it must satisfy pkg_hash_valid. */
+static void
+test_sha256_known_answers(void)
+{
+    char hex[65];
+    tk_sha256_hex("", 0, hex);
+    ASSERT(!strcmp(hex, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+           "sha256(\"\")");
+    tk_sha256_hex("abc", 3, hex);
+    ASSERT(!strcmp(hex, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+           "sha256(\"abc\")");
+    const char *m2 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    tk_sha256_hex(m2, strlen(m2), hex);
+    ASSERT(!strcmp(hex, "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"),
+           "sha256(448-bit message)");
+    /* one million 'a', fed in uneven pieces through the streaming API */
+    TkSha256 ctx; unsigned char d[32]; char chunk[997];
+    memset(chunk, 'a', sizeof chunk);
+    tk_sha256_init(&ctx);
+    unsigned long left = 1000000;
+    while (left) {
+        unsigned long n = left < sizeof chunk ? left : (unsigned long)sizeof chunk;
+        tk_sha256_update(&ctx, (const unsigned char *)chunk, n);
+        left -= n;
+    }
+    tk_sha256_final(&ctx, d);
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < 32; i++) { hex[2*i] = hx[d[i] >> 4]; hex[2*i+1] = hx[d[i] & 15]; }
+    hex[64] = '\0';
+    ASSERT(!strcmp(hex, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"),
+           "sha256(10^6 x 'a') streamed");
+    char pin[PKG_MAX_HASH];
+    tk_sha256_hex("abc", 3, hex);
+    snprintf(pin, sizeof pin, "sha256:%s", hex);
+    ASSERT(pkg_hash_valid(pin), "a content hash formed from tk_sha256 is a valid pin");
+}
+
 int
 main(void)
 {
@@ -573,6 +615,9 @@ main(void)
     test_commit_hash_grammar();
     test_lock_pins();
     test_lock_read_rejects();
+
+    /* Shared SHA-256 (122.13 item 9) */
+    test_sha256_known_answers();
 
     printf("\n%d / %d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
