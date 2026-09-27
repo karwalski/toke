@@ -2742,6 +2742,45 @@ static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
                || recv_call_is_bool(c, e));
 }
 
+/* array_lit_spread_idx — the index of the element of array literal `n` that
+ * lowers as a SPREAD (`@(base;x;…)` copies base's elements), or -1; the
+ * number of value elements (type annotations excluded) goes to *elem_count.
+ * Factored out of the NODE_ARRAY_LIT lowering (127.229 (2)) so the in-place
+ * self-concat can decline exactly the literals that would spread. */
+static const char *get_local_type(Ctx *c, const char *name);
+static int array_lit_spread_idx(Ctx *c, const Node *n, int *elem_count) {
+    int spread_idx = -1; /* index of first spread (array-typed) element */
+    int count = 0;
+    for (int i = 0; i < n->child_count; i++) {
+        NodeKind ck = n->children[i]->kind;
+        if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+            ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+            ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
+            continue;
+        /* Detect if this element is an array variable to be spread:
+         * NODE_IDENT that is ptr_local, not a map, and not a struct. */
+        if (spread_idx < 0 && n->children[i]->kind == NODE_IDENT) {
+            char eid[128]; tok_cp(c->src, n->children[i], eid, sizeof eid);
+            /* 126.x: `is_ptr_local` is keyed on the raw source name and is
+             * never removed, so a shadowing re-bind to a scalar (e.g. an
+             * earlier `let l=io.readln()` — a $str ptr_local — followed by
+             * `let l=arr.get(i)` — an i64) leaves the stale ptr_local entry.
+             * Spreading such an `l` reads `l_value[-1]` off the integer as
+             * if it were an array pointer → SIGSEGV. Confirm the identifier's
+             * CURRENT binding is actually pointer-typed (via the uniquified
+             * name's local type) before treating `@(x)` as a spread. */
+            const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
+            if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
+                !ptr_local_struct_type(c, eid) &&
+                !strcmp(cur_ty, "i8*"))
+                spread_idx = i;
+        }
+        count++;
+    }
+    if (elem_count) *elem_count = count;
+    return spread_idx;
+}
+
 static int emit_bool_to_str(Ctx *c, int v) {
     int at = 1, af = 1;
     int st = emit_str_global(c, "\"true\"", 6, &at);
@@ -6930,33 +6969,7 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Count actual value elements — skip type-annotation children like
          * NODE_TYPE_IDENT (e.g. the $route in @($route) typed empty arrays). */
         int elem_count = 0;
-        int spread_idx = -1; /* index of first spread (array-typed) element */
-        for (int i = 0; i < n->child_count; i++) {
-            NodeKind ck = n->children[i]->kind;
-            if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
-                ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
-                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
-                continue;
-            /* Detect if this element is an array variable to be spread:
-             * NODE_IDENT that is ptr_local, not a map, and not a struct. */
-            if (spread_idx < 0 && n->children[i]->kind == NODE_IDENT) {
-                char eid[128]; tok_cp(c->src, n->children[i], eid, sizeof eid);
-                /* 126.x: `is_ptr_local` is keyed on the raw source name and is
-                 * never removed, so a shadowing re-bind to a scalar (e.g. an
-                 * earlier `let l=io.readln()` — a $str ptr_local — followed by
-                 * `let l=arr.get(i)` — an i64) leaves the stale ptr_local entry.
-                 * Spreading such an `l` reads `l_value[-1]` off the integer as
-                 * if it were an array pointer → SIGSEGV. Confirm the identifier's
-                 * CURRENT binding is actually pointer-typed (via the uniquified
-                 * name's local type) before treating `@(x)` as a spread. */
-                const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
-                if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
-                    !ptr_local_struct_type(c, eid) &&
-                    !strcmp(cur_ty, "i8*"))
-                    spread_idx = i;
-            }
-            elem_count++;
-        }
+        int spread_idx = array_lit_spread_idx(c, n, &elem_count);
 
         /* ── Spread path: @(base_arr; item1; item2; ...) ─────────────── */
         if (spread_idx >= 0) {
@@ -9613,12 +9626,14 @@ static int la_self_update_call(Ctx *c, const Node *call, const char *x, char *ou
 /* A fresh RHS for x: an array literal, or a self-update on x (append/set/push).
  * These are exactly the producers that yield an unshared block for x. */
 static int la_fresh_std_call(Ctx *c, const Node *rhs);
+static int la_self_concat(Ctx *c, const Node *rhs, const char *x);
 static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
     if (!rhs) return 0;
     /* 127.55: a map literal is a fresh container for exactly the same reason an
      * array literal is, so a map accumulator can be linearly owned too. */
     if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_MAP_LIT) return 1;
     if (la_fresh_std_call(c, rhs)) return 1;   /* 135.20 item 2 */
+    if (la_self_concat(c, rhs, x)) return 1;    /* 127.229 (2) */
     return la_self_update_call(c, rhs, x, NULL);
 }
 
@@ -9640,6 +9655,14 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
         if (!c->imports[i].is_std) return 0;
         const char *m = strrchr(c->imports[i].module, '.');
         m = m ? m + 1 : c->imports[i].module;
+        /* 127.229 (2): json.print only walks its argument to write it
+         * (tk_json_printarr_w / tk_json_print_*; json_glue.c keeps nothing),
+         * so `j.print(acc)` after the loop no longer demotes every append.
+         * Method by method: other std.json exports are not vouched for. */
+        if (!strcmp(m, "json")) {
+            char meth[NAME_BUF]; tok_cp(c->src, callee->children[1], meth, sizeof meth);
+            return !strcmp(meth, "print");
+        }
         return !strcmp(m, "str") || !strcmp(m, "io") || !strcmp(m, "fmt");
     }
     return 0;
@@ -9672,6 +9695,22 @@ static int la_fresh_std_call(Ctx *c, const Node *rhs) {
 }
 
 static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int depth);
+
+/* 127.229 (2): is `rhs` the self-concat `x + @(e1;…;ek)` — x on the left, an
+ * array LITERAL on the right?  That is an append of k elements, and it is
+ * the idiom the eval rewrites use (`r=r+@(i)`), which ADR-0006 D2 did not
+ * cover: every iteration copied the whole accumulator and never freed the
+ * old block (100k appends: 8-10 s, 6-8 GB).  Only the literal form: a
+ * general `x + y` reads y, which may alias x.  Whether a given literal
+ * element is a spread is decided at lowering time (array_lit_spread_idx);
+ * a spreading literal takes the copying path there, which is still fresh. */
+static int la_self_concat(Ctx *c, const Node *rhs, const char *x) {
+    if (!rhs || rhs->kind != NODE_BINARY_EXPR || rhs->op != TK_PLUS ||
+        rhs->child_count != 2) return 0;
+    if (!la_ident_is(c, rhs->children[0], x)) return 0;
+    const Node *lit = rhs->children[1];
+    return lit && lit->kind == NODE_ARRAY_LIT;
+}
 
 /* 127.108: does `blk` bind `name` anywhere — a param of the function under
  * analysis, or a let/mut binding in its body?  A call `name(…)` then may reach
@@ -9780,6 +9819,11 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
     if (n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR)
         return la_mentions(c, n, x);    /* any capture of x is unsafe */
+    /* 127.229 (2): `x = x + @(…)` — the left operand is the receiver of the
+     * append, as in `x = x.append(…)`; only the literal's elements are uses. */
+    if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
+        la_ident_is(c, n->children[0], x) && la_self_concat(c, n->children[1], x))
+        return la_bad_use(c, n->children[1]->children[1], x, strict, depth);
     int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0;
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
@@ -9821,7 +9865,20 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
 /* Every binding/assignment to x must have a fresh RHS, and there must be at
  * least one self-update (otherwise in-place buys nothing). Also reject shadow
  * (x bound more than once). Returns 1 if x passes these structural checks. */
-static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *self_updates) {
+/* 127.229 (7): a binding `let x=mut.y` of another array local/parameter is a
+ * BORROWED initialiser: x starts out sharing y's block.  It is accepted only
+ * for an array the checker has typed as one, and codegen then copies y's
+ * block once at the binding (la_borrowed_init), so every later in-place
+ * update writes x's own block.  One O(N) copy replaces the copy that every
+ * `x=x.set(i;v)` made (eval 0221's bubble sort: 1.1 GB at n=1000). */
+static int la_borrowed_init(Ctx *c, const Node *init, const char *x) {
+    (void)c;
+    return init && init->kind == NODE_IDENT && !la_ident_is(c, init, x) &&
+           init->rtype && init->rtype->kind == TY_ARRAY;
+}
+
+static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *self_updates,
+                         int *borrowed) {
     if (!n) return 1;
     if (n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT) {
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) {
@@ -9829,16 +9886,18 @@ static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *
             int has_ann = (n->child_count >= 3 && n->children[2]);
             const Node *init = has_ann ? n->children[2]
                                        : (n->child_count >= 2 ? n->children[1] : NULL);
-            if (!la_fresh_rhs(c, init, x)) return 0;
+            if (la_borrowed_init(c, init, x)) (*borrowed)++;   /* 127.229 (7) */
+            else if (!la_fresh_rhs(c, init, x)) return 0;
         }
     } else if (n->kind == NODE_ASSIGN_STMT) {
         if (n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
             if (!la_fresh_rhs(c, n->children[1], x)) return 0;
-            if (la_self_update_call(c, n->children[1], x, NULL)) (*self_updates)++;
+            if (la_self_update_call(c, n->children[1], x, NULL) ||
+                la_self_concat(c, n->children[1], x)) (*self_updates)++;   /* 127.229 (2) */
         }
     }
     for (int i = 0; i < n->child_count; i++)
-        if (!la_assigns_ok(c, n->children[i], x, binds, self_updates)) return 0;
+        if (!la_assigns_ok(c, n->children[i], x, binds, self_updates, borrowed)) return 0;
     return 1;
 }
 
@@ -9863,7 +9922,8 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
             if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
                 n->children[0]->kind == NODE_IDENT) {
                 char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
-                if (la_self_update_call(c, n->children[1], x, NULL)) {
+                if (la_self_update_call(c, n->children[1], x, NULL) ||
+                    la_self_concat(c, n->children[1], x)) {   /* 127.229 (2) */
                     /* candidate x — skip if already decided */
                     int known = 0;
                     for (int k = 0; k < c->linear_arr_count; k++)
@@ -9876,10 +9936,14 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
                             if (p->kind == NODE_PARAM && p->child_count > 0 &&
                                 la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
                         }
-                        int binds = 0, self_updates = 0;
+                        int binds = 0, self_updates = 0, borrowed = 0;
+                        /* 127.229 (7): a borrowed initialiser only as the
+                         * one binding of x, so the copy at it is the only
+                         * way x's block is ever obtained from another name. */
                         if (!is_param && !la_bad_use(c, body, x, 0, 0) &&
-                            la_assigns_ok(c, body, x, &binds, &self_updates) &&
-                            binds >= 1 && self_updates >= 1) {
+                            la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
+                            binds >= 1 && self_updates >= 1 &&
+                            (borrowed == 0 || binds == 1)) {
                             strncpy(c->linear_arr[c->linear_arr_count], x, NAME_BUF - 1);
                             c->linear_arr[c->linear_arr_count][NAME_BUF - 1] = '\0';
                             c->linear_arr_count++;
@@ -10324,6 +10388,29 @@ static void emit_stmt(Ctx *c, const Node *n)
                 v = z;
             } else
             v = coerce_value(c, v, init_ty, vty);
+            /* 127.229 (7): the borrowed initialiser of a linear array
+             * (`let r=mut.a`) is copied here, once, so the in-place updates
+             * that follow write r's own block and never a's.  A null handle
+             * stays null. */
+            if (is_linear_arr(c, tb) && la_borrowed_init(c, init_node, tb) &&
+                (!strcmp(vty, "i8*") || !strcmp(vty, "i64"))) {
+                int p = v;
+                if (!strcmp(vty, "i64")) {
+                    p = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", p, v);
+                }
+                int isn = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp eq i8* %%t%d, null\n", isn, p);
+                int cp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* null) ; 127.229 own copy of a borrowed init\n", cp, p);
+                int sel = next_tmp(c);
+                fprintf(c->out, "  %%t%d = select i1 %%t%d, i8* null, i8* %%t%d\n", sel, isn, cp);
+                v = sel;
+                if (!strcmp(vty, "i64")) {
+                    v = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", v, sel);
+                }
+            }
             /* 126.7: remember the raw source name (pre-uniquification) — when a
              * name is re-bound (shadowed), the registry stores the new binding
              * under a unique name (`c.1`) but expr_struct_type looks up the raw
@@ -10477,6 +10564,46 @@ static void emit_stmt(Ctx *c, const Node *n)
                 int rv = coerce_value(c, res, "i64", lty);
                 fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, rv, lty, ln);
                 break;
+            }
+            /* 127.229 (2): `x = x + @(e1;…;ek)` is k in-place appends.  The
+             * elements are lowered and widened exactly as the literal would
+             * store them (coerce_value to the i64 slot), all of them BEFORE
+             * the first append, so an element that reads x (`x+@(x.len)`)
+             * sees x as it was — the literal's semantics.  A literal that
+             * would spread (`@(arr)`) or carries a type annotation keeps the
+             * copying concat, whose result is fresh all the same. */
+            if (!mapv && la_self_concat(c, rhs, tb)) {
+                const Node *lit = rhs->children[1];
+                int ecount = 0, typed = 0;
+                int sidx = array_lit_spread_idx(c, lit, &ecount);
+                for (int i = 0; i < lit->child_count; i++) {
+                    NodeKind ck = lit->children[i]->kind;
+                    if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+                        ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+                        ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE) typed = 1;
+                }
+                if (sidx < 0 && !typed && ecount <= TKC_MAX_PARAMS) {
+                    const char *ln = get_llvm_name(c, tb);
+                    const char *lty = get_local_type(c, ln);
+                    int evs[TKC_MAX_PARAMS]; int ne = 0;
+                    for (int i = 0; i < lit->child_count; i++) {
+                        int ev = emit_expr(c, lit->children[i]);
+                        ev = coerce_value(c, ev, expr_llvm_type(c, lit->children[i]), "i64");
+                        evs[ne++] = ev;
+                    }
+                    const Node *recv_node = rhs->children[0];
+                    int res = emit_expr(c, recv_node);
+                    res = coerce_value(c, res, expr_llvm_type(c, recv_node), "i64");
+                    for (int i = 0; i < ne; i++) {
+                        int r2 = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = call i64 @tk_array_append_inplace_w(i64 %%t%d, i64 %%t%d) ; 127.229 in-place x=x+@(..)\n",
+                                r2, res, evs[i]);
+                        res = r2;
+                    }
+                    int rv = coerce_value(c, res, "i64", lty);
+                    fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, rv, lty, ln);
+                    break;
+                }
             }
             if (!mapv && la_self_update_call(c, rhs, tb, mname)) {
                 const char *ln = get_llvm_name(c, tb);
@@ -12128,6 +12255,11 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
             fnv_mark_local(c, pn);                   /* 124.0c item 3: borrowed */
     }
     compute_closure_releases(c, clos);               /* 124.0c item 3 */
+    /* 127.229: the linear-array set belongs to the f= it was computed for.
+     * Lifted closures are emitted after every function, so they inherited
+     * the LAST function's set: a closure local sharing a name with a linear
+     * accumulator there took the in-place path unproven. */
+    c->linear_arr_count = 0;
     if (body) emit_stmt(c, body);
     if (!c->term) {
         if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
