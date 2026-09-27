@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "module": "std",
+  "exports": [
+    {
+      "kind": "func",
+      "name": "std.homedir",
+      "params": [],
+      "return": "str",
+      "note": "the user's home directory ($HOME, else /tmp); the same value as process.homedir -- 138.11"
+    }
+  ]
+}

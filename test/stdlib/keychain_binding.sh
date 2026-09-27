@@ -17,6 +17,11 @@
 # no authorisation dialog is raised. Each run uses a fresh service name, so it
 # never touches an entry created by an earlier build.
 #
+# 138.4: and it never touches the user's LOGIN keychain. Every phase runs
+# after keychain.use(TKKCKEYCHAIN), a throwaway keychain the "create" phase
+# makes in this script's temp dir and the "destroy" phase deletes. On a
+# platform without named keychains (Windows) TKKCKEYCHAIN is left empty.
+#
 # Exit 0 = pass or skip (no credential store on this platform), 1 = fail.
 
 set -u
@@ -24,13 +29,15 @@ set -u
 TKC="${TKC:-./toke}"
 STDLIB="${TKC_STDLIB_DIR:-$PWD/src/stdlib}"
 SRC="test/stdlib/keychain_roundtrip.tk"
-BIN="$(mktemp -d)/keychain_roundtrip"
+TMPD="$(cd "$(mktemp -d)" && pwd -P)"
+BIN="$TMPD/keychain_roundtrip"
 SVC="toke.136.3.$$.$(date +%s)"
 ACCT="probe-account"
 
 export TKC_STDLIB_DIR="$STDLIB"
 export TKKCSERVICE="$SVC"
 export TKKCACCOUNT="$ACCT"
+if [ "$(uname -s)" = "Darwin" ]; then export TKKCKEYCHAIN="$TMPD/roundtrip.keychain"; else export TKKCKEYCHAIN=""; fi
 
 pass=0
 fail=0
@@ -38,7 +45,8 @@ fail=0
 cleanup() {
   # Never leave a probe entry behind, whatever happened above.
   [ -x "$BIN" ] && TKKCPHASE=cleanup "$BIN" >/dev/null 2>&1
-  rm -rf "$(dirname "$BIN")"
+  [ -x "$BIN" ] && [ -n "$TKKCKEYCHAIN" ] && TKKCPHASE=destroy "$BIN" >/dev/null 2>&1
+  rm -rf "$TMPD"
 }
 trap cleanup EXIT
 
@@ -69,11 +77,13 @@ if TKKCPHASE=all "$BIN" 2>&1 | grep -q '^SKIP'; then
   exit 0
 fi
 
+[ -n "$TKKCKEYCHAIN" ] && check "create throwaway keychain"   0 create
 check "write (process 1)"            0 write
 check "read back (process 2)"        0 check
 check "delete (process 3)"           0 cleanup
 check "absent after delete"          0 absent
 check "full lifecycle in one process" 0 all
+[ -n "$TKKCKEYCHAIN" ] && check "destroy throwaway keychain"  0 destroy
 
 # Known gap, deliberately not asserted here: keychain.get is declared ?(str) and
 # returns the documented NULL on a miss, but comparing that none-sentinel with

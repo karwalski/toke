@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "../../src/stdlib/keychain.h"
 
 static int failures = 0;
@@ -129,8 +130,25 @@ int main(void)
     test_null_args();
 
     if (keychain_is_available()) {
+        /* 138.4: never the login keychain -- a throwaway one in a temp dir. */
+        char dir[] = "/tmp/tk_test_keychain_XXXXXX", path[256];
+        int named = 0;
+#ifdef __APPLE__
+        if (mkdtemp(dir)) {
+            snprintf(path, sizeof path, "%s/test.keychain", dir);
+            named = keychain_create(path, "test") && keychain_use(path);
+        }
+        ASSERT(named, "138.4 created and selected a throwaway keychain");
+        if (!named) { fprintf(stderr, "refusing to run against the login keychain\n"); return 1; }
+#else
+        (void)dir; (void)path;
+#endif
         printf("--- keychain available: running functional tests ---\n");
         test_functional();
+        if (named) {
+            ASSERT(keychain_destroy(path), "138.4 destroyed the throwaway keychain");
+            rmdir(dir);
+        }
     } else {
         printf("--- keychain unavailable on this platform: skipping functional tests ---\n");
     }

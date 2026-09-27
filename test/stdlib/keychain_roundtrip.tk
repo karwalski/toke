@@ -42,8 +42,9 @@ f=phaseabsent(svc:str;acct:str):bool{
   let present=kc.exists(svc;acct);
   let got=kc.get(svc;acct);
   let empty=str.len(got)==0;
-  io.print(str.concat("absent: exists=";str.concat(str.fromint(present);str.concat(" getlen=";str.fromint(str.len(got))))));
-  <present==0&&empty
+  let kind=kc.lasterrkind();
+  io.print(str.concat("absent: exists=";str.concat(str.fromint(present);str.concat(" getlen=";str.concat(str.fromint(str.len(got));str.concat(" kind=";kind))))));
+  <present==0&&empty&&kind=="notfound"
 };
 
 f=phaseall(svc:str;acct:str):bool{
@@ -52,7 +53,19 @@ f=phaseall(svc:str;acct:str):bool{
   <before==0&&phasewrite(svc;acct)&&phasecheck(svc;acct)&&phaseoverwrite(svc;acct)&&phasecleanup(svc;acct)
 };
 
-f=run(phase:str;svc:str;acct:str):bool{
+f=run(phase:str;svc:str;acct:str;kcpath:str):bool{
+  if(phase=="create"){
+    <kc.create(kcpath;"roundtrip")
+  };
+  if(phase=="destroy"){
+    <kc.destroy(kcpath)
+  };
+  if(str.len(kcpath)>0){
+    if(kc.use(kcpath)==false){
+      io.print(str.concat("use failed: ";kc.lasterr()));
+      <false
+    }
+  };
   if(phase=="write"){
     <phasewrite(svc;acct)
   };
@@ -72,13 +85,14 @@ f=main():i64{
   let svc=env.getor("TKKCSERVICE";"toke.keychain.roundtrip.default");
   let acct=env.getor("TKKCACCOUNT";"probe-account");
   let phase=env.getor("TKKCPHASE";"all");
+  let kcpath=env.getor("TKKCKEYCHAIN";"");
 
   if(kc.isavailable()==0){
     io.print("SKIP: no OS credential store on this platform");
     <0
   };
 
-  if(run(phase;svc;acct)){
+  if(run(phase;svc;acct;kcpath)){
     io.print("PASS");
     <0
   }el{
