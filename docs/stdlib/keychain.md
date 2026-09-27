@@ -31,7 +31,7 @@ Call it first. The other four functions do not distinguish "no store on this pla
 
 Stores or replaces the secret for the service/account pair. Returns `true` on success, `false` on failure (permission denied, keychain locked, unsupported platform). An existing entry is updated in place rather than duplicated.
 
-### keychain.get(service: str; account: str): str
+### keychain.get(service: str; account: str): ?(str)
 
 Returns the stored secret, or an empty string if no entry exists, the keychain is locked, or the platform has no store.
 
