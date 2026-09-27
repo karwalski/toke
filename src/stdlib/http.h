@@ -480,9 +480,11 @@ typedef struct {
     uint64_t     err_code;
 } HttpClientResp;
 
+/* 138.18: `open` is a whole slot.  It was an int beside `int fd`, so toke's
+ * s.open read open | fd << 32, and a closed stream (open 0, fd -1) read true. */
 typedef struct {
     uint64_t id;
-    int      open;
+    int64_t  open;
     int      fd;         /* internal: socket file descriptor */
     char    *buf;        /* internal: leftover read buffer   */
     uint64_t buf_len;
