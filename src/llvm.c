@@ -336,9 +336,10 @@ static void clear_ptr_local(Ctx *c, const char *name) {
  * registry (127.71: every use inside the arm looks the raw name up), by
  * blanking the outer binding's entries and appending its own.  Nothing put
  * the outer tag back, so after the arm an outer `let v=2.5` was still "$str"
- * and `v<3.0` lowered to strcmp on a double (E9003).  The arm saves the raw name's entries before the
- * re-tag and restores them after its body; the arm's own raw-name entries
- * are retired (their name blanked — no lookup matches an empty name). */
+ * and `v<3.0` lowered to strcmp on a double (E9003).  The arm saves the raw
+ * name's entries before the re-tag and restores them after its body; the
+ * arm's own raw-name entries are retired (their name blanked — no lookup
+ * matches an empty name). */
 #define PTR_SHADOW_MAX 16   /* raw-name entries saved per arm; more stay blank (the old behaviour) */
 typedef struct {
     int active, pc0, n;
