@@ -3184,6 +3184,14 @@ static const QuarantinedExport *quarantined_export(const char *sym) {
     return NULL;
 }
 
+/* 138.3: the std.http members that are ROUTE registration, `(path;handler)`
+ * -- their .tki records are `"kind":"route"`.  Each has a client
+ * counterpart named http.client<member>. */
+static int http_route_member(const char *m) {
+    return m && (!strcmp(m, "get") || !strcmp(m, "post") || !strcmp(m, "put")
+              || !strcmp(m, "delete") || !strcmp(m, "patch"));
+}
+
 static void check_tki_call(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1) return;
     const Node *callee = call->children[0];
@@ -3348,6 +3356,32 @@ static void check_tki_call(Ctx *cx, const Node *call) {
          * ignored only because the stub is unimplemented.  `m.load()` and
          * `d.stopbrowse()` passed --check on that exemption; they are calls
          * with the argument missing, and are now E4026 like any other. */
+        if (actual != abi && is_std && strcmp(mpath, "std.http") == 0
+            && http_route_member(member) && abi == 2) {
+            /* 138.3 (b), loke T-10: `http.post(c;"/p";body;type)` read
+             * "takes 2 arguments" with nothing to say that http.post is a
+             * ROUTE REGISTRATION (path; handler), not a client call, nor
+             * where the client call is. */
+            if (!tc_can_emit(cx)) return;
+            char msg[512], got_str[16], client[64];
+            snprintf(got_str, sizeof got_str, "%d", actual);
+            if (strcmp(member, "patch") == 0)
+                snprintf(client, sizeof client, "std.http has no client PATCH");
+            else
+                snprintf(client, sizeof client, "the client call is http.client%s",
+                         member);
+            snprintf(msg, sizeof msg,
+                     "wrong number of arguments for 'std.http.%s': http.%s is "
+                     "route registration (path; handler), which takes 2 "
+                     "arguments, and the call passes %d -- it does not send a "
+                     "request; %s", member, member, actual, client);
+            /* No `fix`: whether a route or a request was meant is the
+             * program's call. */
+            diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
+                      "expected", "2", "got", got_str,
+                      (const char *)NULL);
+            return;
+        }
         if (actual != abi && tc_can_emit(cx))
             tki_arity_error(call, "implementation", mpath, member,
                             NULL, abi, actual);
@@ -3472,6 +3506,81 @@ static void check_tki_call(Ctx *cx, const Node *call) {
     char decl[320]; tki_member_sig(f, alias, member, decl, sizeof decl);
     tki_arity_error(call, "interface", mpath, member, decl,
                     f->param_count, actual);
+}
+
+/* ── 138.3: std-module argument TYPES against the typed .tki ─────────────
+ *
+ * check_tki_call judges arity and the member's existence, 127.201 judges a
+ * str/array REPRESENTATION clash read out of the glue -- and nothing
+ * compared an argument's type with the type the interface declares.
+ * `str.len(5)`, `str.len(true)`, `http.serveworkers(hc;2)` and
+ * `http.serveon(8080;"127.0.0.1")` all passed --check.
+ *
+ * Judged only where both sides are facts:
+ *   - a hand-written record: a `"gen":"abi"` record's `i64` parameters are
+ *     ABI placeholders (127.165), never types;
+ *   - the call's argument count equals the record's (arity is the other
+ *     check's, and positions do not line up otherwise);
+ *   - a parameter spelling the checker can read (a scalar, `[T]`, `[K:V]`,
+ *     an imported record) -- `funcdecl`, `fn(..)`, `?(T)` are skipped;
+ *   - an argument type the checker established (TY_UNKNOWN is not judged).
+ * An integer literal narrows as everywhere else.  E4031, no `fix`.
+ *
+ * 138.3 (a): the ROUTE registrations http.get/post/put/delete/patch are
+ * `"kind":"route"` records, `(str; funcdecl)`, which the .tki loader does
+ * not record as functions -- so they are judged here from that shape: the
+ * path must not be a non-str, and the handler must be a function
+ * reference.  `http.get(client;path)` registered a GET route and never sent a
+ * request (loke T-57, T-15); it is E4031 naming http.clientget. */
+static void check_tki_arg_types(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return;
+    if (alias_shadowed(cx, callee->children[0])) return;
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath || strncmp(mpath, "std.", 4) != 0) return;
+    Decl *ad = tc_lookup(cx->env->names->module_scope, alias, (int)strlen(alias));
+    if (ad && (ad->kind == DECL_FUNC || ad->kind == DECL_CONST ||
+               ad->kind == DECL_LET  || ad->kind == DECL_MUT ||
+               ad->kind == DECL_PARAM)) return;
+    int actual = call->child_count - 1;
+
+    if (strcmp(mpath, "std.http") == 0 && http_route_member(member) && actual == 2) {
+        const Node *pn = call->children[1], *hn = call->children[2];
+        const Type *pt = pn ? pn->rtype : NULL, *ht = hn ? hn->rtype : NULL;
+        int bad_path = pt && pt->kind != TY_UNKNOWN && pt->kind != TY_STR;
+        int bad_handler = hn && hn->kind != NODE_FUNC_REF
+                       && ht && ht->kind != TY_UNKNOWN && !func_has_sig(ht)
+                       && ht->kind != TY_FUNC;
+        if ((bad_path || bad_handler) && tc_first_report(cx, call) && tc_can_emit(cx)) {
+            const Node *at = bad_path ? pn : hn;
+            const Type *aty = bad_path ? pt : ht;
+            char msg[512], got[96], client[96];
+            snprintf(got, sizeof got, "%s", type_name(aty));
+            if (strcmp(member, "patch") == 0)
+                snprintf(client, sizeof client, "std.http has no client PATCH");
+            else
+                snprintf(client, sizeof client,
+                         "to send a request call http.client%s", member);
+            snprintf(msg, sizeof msg,
+                     "type mismatch: http.%s is route registration (path; "
+                     "handler) and its %s is %s, but this argument is a '%s' "
+                     "-- the call registers a route and sends nothing; %s",
+                     member, bad_path ? "first argument (the path)" : "second argument (the handler)",
+                     bad_path ? "a 'str'" : "a function reference ('&name')",
+                     got, client);
+            diag_emit(DIAG_ERROR, E4031, at->start, at->line, at->col, msg,
+                      "expected", bad_path ? "str" : "a function reference",
+                      "got", got, (const char *)NULL);
+        }
+        return;
+    }
+
 }
 
 /* ── 127.201: module-form stdlib calls, argument REPRESENTATION ──────────
@@ -5339,6 +5448,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 136.1: and enforce the .tki the alias was imported from —
              * arity and the member's existence, nothing wider. */
             check_tki_call(cx,node);
+            check_tki_arg_types(cx,node);   /* 138.3 */
             /* 124.2f: and reject a `str` in a parameter the runtime unpacks
              * as a toke [byte] array — the shape that made every string hash
              * to the digest of the empty string, and crashed on the second
