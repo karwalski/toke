@@ -78,6 +78,44 @@
     },
     {
       "kind": "func",
+      "name": "db.execon",
+      "params": [
+        "u64",
+        "str",
+        "[str]"
+      ],
+      "return": "u64!DbErr"
+    },
+    {
+      "kind": "func",
+      "name": "db.oneon",
+      "params": [
+        "u64",
+        "str",
+        "[str]"
+      ],
+      "return": "Row!DbErr"
+    },
+    {
+      "kind": "func",
+      "name": "db.manyon",
+      "params": [
+        "u64",
+        "str",
+        "[str]"
+      ],
+      "return": "[Row]!DbErr"
+    },
+    {
+      "kind": "func",
+      "name": "db.closeon",
+      "params": [
+        "u64"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
       "name": "row.str",
       "params": [
         "Row",

@@ -6,26 +6,72 @@
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
-static sqlite3 *g_db = NULL;
+/* 138.6: a table of connections, each with its own handle.
+ *
+ * THE DEFECT.  std.db kept one process-global `sqlite3 *`: a second db_open
+ * overwrote it (leaking the first), so every later query -- including ones
+ * the program meant for the first database -- went to the database opened
+ * last, and db.open's returned "handle" selected nothing (loke T-30/R8).
+ *
+ * Now every open gets a fresh id (1, 2, 3, ... never reused, so a stale
+ * handle cannot reach a later database), and conn_id 0 means "the default
+ * connection": the lowest-numbered one still open.  So the handle-less calls
+ * (db.one / db.many / db.exec / db.close) keep talking to the FIRST database
+ * a program opened, and opening a second one repoints nothing.  The *on
+ * forms (db.oneon / db.manyon / db.execon / db.closeon) name a handle. */
+typedef struct { int64_t id; sqlite3 *db; } DbSlot;
+static DbSlot  *g_conns = NULL;
+static int      g_nconns = 0, g_capconns = 0;
+static int64_t  g_next_id = 1;
 
 /* Forward declarations — defined later in this file. */
-static sqlite3 *conn_db(int conn_id);
+static sqlite3 *conn_db(int64_t conn_id);
 static int find_col(Row r, const char *col);
 
-int db_open(const char *dsn)
+int64_t db_connect(const char *dsn)
 {
     TK_REQUIRE(TK_CAP_FS_READ);
     TK_REQUIRE(TK_CAP_FS_WRITE);
-    if (sqlite3_open(dsn, &g_db) != SQLITE_OK) {
-        sqlite3_close(g_db); g_db = NULL; return -1;
+    if (!dsn) return -1;
+    if (g_nconns == g_capconns) {
+        int nc = g_capconns ? g_capconns * 2 : 8;
+        DbSlot *n = realloc(g_conns, (size_t)nc * sizeof(DbSlot));
+        if (!n) return -1;
+        g_conns = n; g_capconns = nc;
     }
-    return 0;
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dsn, &db) != SQLITE_OK) {
+        sqlite3_close(db); return -1;
+    }
+    g_conns[g_nconns].id = g_next_id++;
+    g_conns[g_nconns].db = db;
+    g_nconns++;
+    return g_conns[g_nconns - 1].id;
+}
+
+int db_open(const char *dsn)
+{
+    return db_connect(dsn) > 0 ? 0 : -1;
+}
+
+int db_close_conn(int64_t conn_id)
+{
+    if (g_nconns == 0) return 0;
+    int at = -1;
+    if (conn_id == 0) at = 0;   /* slots stay in id order: slot 0 is the default */
+    else for (int i = 0; i < g_nconns; i++) if (g_conns[i].id == conn_id) { at = i; break; }
+    if (at < 0) return 0;
+    sqlite3_close(g_conns[at].db);
+    memmove(&g_conns[at], &g_conns[at + 1], (size_t)(g_nconns - at - 1) * sizeof(DbSlot));
+    g_nconns--;
+    return 1;
 }
 
 void db_close(void)
 {
-    if (g_db) { sqlite3_close(g_db); g_db = NULL; }
+    (void)db_close_conn(0);
 }
 
 static DbErr make_err(DbErrKind kind, const char *msg)
@@ -78,9 +124,16 @@ static Row collect_row(sqlite3_stmt *stmt)
     return row;
 }
 
-RowResult db_one(const char *sql, StrArray params)
+RowResult db_one_on(int64_t conn_id, const char *sql, StrArray params)
 {
     RowResult res; res.is_err = 0;
+    sqlite3 *g_db = conn_db(conn_id);
+    if (!g_db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, conn_id ? "db: no open connection with that handle"
+                                                     : "db: no open connection (call db.open first)");
+        return res;
+    }
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
@@ -98,9 +151,16 @@ RowResult db_one(const char *sql, StrArray params)
     return res;
 }
 
-RowArrayResult db_many(const char *sql, StrArray params)
+RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params)
 {
     RowArrayResult res; res.is_err = 0;
+    sqlite3 *g_db = conn_db(conn_id);
+    if (!g_db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, conn_id ? "db: no open connection with that handle"
+                                                     : "db: no open connection (call db.open first)");
+        return res;
+    }
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
@@ -142,23 +202,107 @@ RowArrayResult db_many(const char *sql, StrArray params)
     return res;
 }
 
-U64Result db_exec(const char *sql, StrArray params)
+/* 138.6: skip whitespace and SQL comments; returns the first byte of the
+ * next statement, or of the terminating NUL when nothing but whitespace,
+ * comments and empty statements (";") is left. */
+static const char *skip_sql_blank(const char *p)
+{
+    for (;;) {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '\f' ||
+               *p == '\v' || *p == ';') p++;
+        if (p[0] == '-' && p[1] == '-') {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+        if (p[0] == '/' && p[1] == '*') {
+            const char *e = strstr(p + 2, "*/");
+            if (!e) return p + strlen(p);
+            p = e + 2;
+            continue;
+        }
+        return p;
+    }
+}
+
+/* One message buffer per thread for errors this file composes itself; a
+ * DbErr's msg is valid until the next db call on the same thread, as the
+ * sqlite3_errmsg pointers it otherwise carries always were. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+static _Thread_local char g_errbuf[512];
+#else
+static __thread char g_errbuf[512];
+#endif
+
+/* 138.6: db.exec runs EVERY statement it is given, or refuses.
+ *
+ * THE DEFECT.  sqlite3_prepare_v2 compiles only the first statement of its
+ * input and hands the rest back through its tail pointer, which db_exec
+ * passed as NULL: "CREATE TABLE x(a); CREATE INDEX ix_x ON x(a);" created x,
+ * silently dropped the index, and returned ok (loke T-40).
+ *
+ * Now each statement is prepared from the previous one's tail and run in
+ * turn.  A failure stops the run and is returned as $query naming the
+ * statement (1-based); the statements before it have been applied -- wrap
+ * the string in BEGIN; ... COMMIT; to make it all-or-nothing.  Bind
+ * parameters are refused, before anything runs, when the string holds more
+ * than one statement: which statement a `?` belongs to is ambiguous.
+ * The ok value is the number of rows the whole string inserted, updated or
+ * deleted (sqlite3_total_changes before and after). */
+U64Result db_exec_on(int64_t conn_id, const char *sql, StrArray params)
 {
     U64Result res; res.is_err = 0; res.ok = 0;
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+    sqlite3 *g_db = conn_db(conn_id);
+    if (!g_db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, conn_id ? "db: no open connection with that handle"
+                                                     : "db: no open connection (call db.open first)");
         return res;
     }
-    int rc = bind_and_step(stmt, params);
-    sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
-        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
-        return res;
+    int before = sqlite3_total_changes(g_db);
+    const char *p = skip_sql_blank(sql);
+    int n = 0;
+    while (*p) {
+        sqlite3_stmt *stmt = NULL;
+        const char *tail = NULL;
+        n++;
+        if (sqlite3_prepare_v2(g_db, p, -1, &stmt, &tail) != SQLITE_OK) {
+            snprintf(g_errbuf, sizeof g_errbuf, "db.exec: statement %d: %s", n,
+                     sqlite3_errmsg(g_db));
+            res.is_err = 1; res.err = make_err(DB_ERR_QUERY, g_errbuf);
+            return res;
+        }
+        const char *next = skip_sql_blank(tail ? tail : p + strlen(p));
+        if (n == 1 && params.len > 0 && *next) {
+            sqlite3_finalize(stmt);
+            res.is_err = 1;
+            res.err = make_err(DB_ERR_QUERY,
+                "db.exec: bind parameters with more than one statement are ambiguous; "
+                "nothing was run -- pass one statement per call");
+            return res;
+        }
+        if (stmt) {
+            int rc = bind_and_step(stmt, params);
+            /* A statement that returns rows (a pragma, a SELECT) is run to
+             * completion so its side effects happen. */
+            while (rc == SQLITE_ROW) rc = sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            if (rc != SQLITE_DONE) {
+                snprintf(g_errbuf, sizeof g_errbuf, "db.exec: statement %d: %s%s", n,
+                         sqlite3_errmsg(g_db),
+                         n > 1 ? " (the statements before it were applied)" : "");
+                res.is_err = 1; res.err = make_err(DB_ERR_QUERY, g_errbuf);
+                return res;
+            }
+        }
+        p = next;
     }
-    res.ok = (uint64_t)sqlite3_changes(g_db);
+    res.ok = (uint64_t)(sqlite3_total_changes(g_db) - before);
     return res;
 }
+
+RowResult      db_one(const char *sql, StrArray params)  { return db_one_on(0, sql, params); }
+RowArrayResult db_many(const char *sql, StrArray params) { return db_many_on(0, sql, params); }
+U64Result      db_exec(const char *sql, StrArray params) { return db_exec_on(0, sql, params); }
 
 /* ── metadata and result inspection (Story 29.2.2) ───────────────────────── */
 
@@ -225,10 +369,14 @@ struct TkStmt {
     sqlite3      *db;
 };
 
-/* Resolve conn_id to the global db handle (currently only conn 0 is valid). */
-static sqlite3 *conn_db(int conn_id)
+/* Resolve conn_id to its sqlite3 handle: 0 is the default connection (the
+ * lowest-numbered one still open), anything else must be an open id. */
+static sqlite3 *conn_db(int64_t conn_id)
 {
-    if (conn_id == 0) return g_db;
+    if (g_nconns == 0) return NULL;
+    if (conn_id == 0) return g_conns[0].db;
+    for (int i = 0; i < g_nconns; i++)
+        if (g_conns[i].id == conn_id) return g_conns[i].db;
     return NULL;
 }
 

@@ -148,11 +148,22 @@ f=http.streamnext(s:$httpstream):@$byte!$httperr
 ### std.db
 
 ```text
-f=open(path:$str):i64
-f=exec(db:i64;sql:$str):i64
-f=query(db:i64;sql:$str):$str
-f=close(db:i64):void
+f=open(path:$str):u64!$dberr
+f=close():i64
+f=exec(sql:$str;params:@($str)):u64!$dberr
+f=one(sql:$str;params:@($str)):$row!$dberr
+f=many(sql:$str;params:@($str)):@($row)!$dberr
+f=execon(h:u64;sql:$str;params:@($str)):u64!$dberr
+f=oneon(h:u64;sql:$str;params:@($str)):$row!$dberr
+f=manyon(h:u64;sql:$str;params:@($str)):@($row)!$dberr
+f=closeon(h:u64):bool
 ```
+
+Every `open` returns a new handle; the `*on` forms name one, and the
+handle-less forms use the default connection -- the lowest-numbered one still
+open (138.6). `exec` runs every `;`-separated statement of its string or
+fails naming the one that failed; bind parameters with more than one
+statement are refused. Row values are read with `row.str/u64/i64/f64/bool`.
 
 ### std.file
 
