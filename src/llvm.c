@@ -9529,8 +9529,25 @@ static const Node *la_find_user_fn(Ctx *c, const char *name) {
  * only accepted when THAT callee's parameter passes the same test.  Recursion
  * and deep call chains are cut off at a small depth and answered "retains",
  * which is the conservative answer. */
+/* 127.171: the (function, parameter) queries in progress on this path.  A
+ * query that meets itself again — `f` passing `p` straight back to `f` in the
+ * same position, or round a mutual cycle f→g→f — is answered "does not
+ * retain" on the assumption under test.  That is the greatest fixpoint, and
+ * it is sound here because the assumption is only ever discharged by the
+ * outer query: every OTHER use of the parameter in every body on the cycle is
+ * still checked, so any real retention (a `<p` return, a store, a capture, a
+ * pass to a retaining callee) still makes the outer answer "retains".  The
+ * depth cutoff remains for long non-recursive chains. */
+#define LA_INPROG_MAX 8
+static const Node *la_inprog_fn[LA_INPROG_MAX];
+static int la_inprog_idx[LA_INPROG_MAX];
+static int la_inprog_n;
+
 static int la_param_nonretaining(Ctx *c, const Node *fn, int idx, int depth) {
-    if (!fn || depth > 4) return 0;
+    if (!fn) return 0;
+    for (int k = 0; k < la_inprog_n; k++)
+        if (la_inprog_fn[k] == fn && la_inprog_idx[k] == idx) return 1;   /* 127.171 */
+    if (depth > 4 || la_inprog_n >= LA_INPROG_MAX) return 0;
     const Node *param = NULL, *body = NULL;
     int pi = 0;
     for (int i = 0; i < fn->child_count; i++) {
@@ -9543,7 +9560,9 @@ static int la_param_nonretaining(Ctx *c, const Node *fn, int idx, int depth) {
     char p[NAME_BUF]; tok_cp(c->src, param->children[0], p, sizeof p);
     const Node *saved = c->la_fn;
     c->la_fn = fn;
+    la_inprog_fn[la_inprog_n] = fn; la_inprog_idx[la_inprog_n] = idx; la_inprog_n++;
     int bad = la_bad_use(c, body, p, 1, depth + 1);
+    la_inprog_n--;
     c->la_fn = saved;
     return !bad;
 }
