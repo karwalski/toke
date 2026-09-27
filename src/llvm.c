@@ -9384,11 +9384,13 @@ static int la_self_update_call(Ctx *c, const Node *call, const char *x, char *ou
 
 /* A fresh RHS for x: an array literal, or a self-update on x (append/set/push).
  * These are exactly the producers that yield an unshared block for x. */
+static int la_fresh_std_call(Ctx *c, const Node *rhs);
 static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
     if (!rhs) return 0;
     /* 127.55: a map literal is a fresh container for exactly the same reason an
      * array literal is, so a map accumulator can be linearly owned too. */
     if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_MAP_LIT) return 1;
+    if (la_fresh_std_call(c, rhs)) return 1;   /* 135.20 item 2 */
     return la_self_update_call(c, rhs, x, NULL);
 }
 
@@ -9411,6 +9413,32 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
         const char *m = strrchr(c->imports[i].module, '.');
         m = m ? m + 1 : c->imports[i].module;
         return !strcmp(m, "str") || !strcmp(m, "io") || !strcmp(m, "fmt");
+    }
+    return 0;
+}
+
+/* 135.20 item 2: is `rhs` a call into std.str?  Every std.str export that
+ * returns an array (bytes/tobytes, split, fields, chars) builds its result in
+ * a block it has just allocated with tk_arr_alloc and keeps no reference to it
+ * (str_glue.c, bytes_rt.h tk_bytes_pack), and std.str takes no array it could
+ * hand back.  So its result is as fresh as an array literal, and
+ * `let big=mut.s.bytes(""); … big=big.append(v)` may take the in-place path
+ * rather than copying the whole block on every append (O(N²) time and, since
+ * the discarded copies are never freed, O(N²) live memory).  A non-array
+ * result (a str) never reaches the in-place lowering: that needs a
+ * self-update `x=x.append/set/push(…)`. */
+static int la_fresh_std_call(Ctx *c, const Node *rhs) {
+    if (!rhs || rhs->kind != NODE_CALL_EXPR || rhs->child_count < 1) return 0;
+    const Node *callee = rhs->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return 0;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return 0;
+    char al[NAME_BUF]; tok_cp(c->src, callee->children[0], al, sizeof al);
+    for (int i = 0; i < c->import_count; i++) {
+        if (strcmp(c->imports[i].alias, al)) continue;
+        if (!c->imports[i].is_std) return 0;
+        const char *m = strrchr(c->imports[i].module, '.');
+        m = m ? m + 1 : c->imports[i].module;
+        return !strcmp(m, "str");
     }
     return 0;
 }
