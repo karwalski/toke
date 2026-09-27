@@ -21,11 +21,23 @@
 
 #include <stdint.h>
 
-/* TkLlmClient — holds connection parameters for one LLM provider endpoint. */
+/*
+ * TkLlmClient — holds connection parameters for one LLM provider endpoint.
+ *
+ * The glue hands this struct to toke as the `$llmclient` record, and tkc
+ * reads `c.f` as 8-byte slot <index of f in stdlib/llm.tki>.  The .tki's
+ * record is {provider; model}, so those two come first, in that order; the
+ * rest are private to C and no toke field reaches them (135.30).  Before,
+ * base_url and api_key came first and `c.model` printed the API key.
+ * `make check-tki-layout` keeps the prefix in step with the .tki.
+ */
+/* tki-record-prefix: llm.llmclient */
 typedef struct {
+    const char *provider;    /* slot 0: "openai", "anthropic", "ollama" or the URL's host */
+    const char *model;       /* slot 1: e.g. "gpt-4o", "claude-3-5-sonnet-20241022" */
+    /* private: never reachable as a toke field */
     const char *base_url;    /* e.g. "https://api.openai.com/v1" or "http://localhost:11434/v1" */
     const char *api_key;     /* Bearer token, may be NULL for local */
-    const char *model;       /* e.g. "gpt-4o", "claude-3-5-sonnet-20241022" */
     uint32_t    timeout_ms;  /* 0 = 30000 */
     uint32_t    max_retries; /* 0 = 3 */
     /* Story 32.1.1 — retry backoff */
@@ -58,6 +70,25 @@ typedef struct {
     int          is_err;
     const char  *err_msg;  /* heap-allocated on error, NULL otherwise */
 } TkLlmStream;
+
+/*
+ * The records llm_glue.c hands to toke, laid out as tkc reads them: one
+ * 8-byte slot per field, in stdlib/llm.tki's order (135.30; checked by
+ * `make check-tki-layout`).  TkLlmResp above is the C result and is never
+ * handed over as it is: its is_err sits where toke reads the model.
+ */
+/* tki-record: llm.llmresp */
+typedef struct {
+    const char *content;
+    int64_t     tokensin;
+    int64_t     tokensout;
+    const char *model;
+} TkLlmRespRec;
+
+/* tki-record: llm.llmstream */
+typedef struct {
+    int64_t     id;         /* 1-based slot in llm_glue.c's stream table */
+} TkLlmStreamRec;
 
 /* llm_client — allocate a new TkLlmClient.  Caller must call llm_client_free. */
 TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *model);

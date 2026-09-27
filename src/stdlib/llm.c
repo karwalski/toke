@@ -477,10 +477,34 @@ const char *llm_parse_sse_chunk(const char *sse_data)
  * Public API
  * ----------------------------------------------------------------------- */
 
+/*
+ * provider_name — the `$llmclient.provider` string for a base URL (135.30).
+ * "ollama" by the same test llm_json_mode uses (port 11434 or "ollama" in
+ * the URL), "openai" / "anthropic" for their API hosts, and otherwise the
+ * URL's host, so the field always names where the client talks to.
+ */
+static char *provider_name(const char *base_url)
+{
+    if (!base_url) return strdup_safe("");
+    if (strstr(base_url, "11434") || strstr(base_url, "ollama"))
+        return strdup_safe("ollama");
+    if (strstr(base_url, "api.openai.com"))    return strdup_safe("openai");
+    if (strstr(base_url, "api.anthropic.com")) return strdup_safe("anthropic");
+    const char *h = strstr(base_url, "://");
+    h = h ? h + 3 : base_url;
+    size_t n = strcspn(h, ":/?#");
+    char *out = malloc(n + 1);
+    if (!out) return NULL;
+    memcpy(out, h, n);
+    out[n] = '\0';
+    return out;
+}
+
 TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *model)
 {
     TkLlmClient *c = malloc(sizeof(TkLlmClient));
     if (!c) return NULL;
+    c->provider               = provider_name(base_url);
     c->base_url               = strdup_safe(base_url);
     c->api_key                = strdup_safe(api_key);
     c->model                  = strdup_safe(model);
@@ -496,6 +520,7 @@ TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *m
 void llm_client_free(TkLlmClient *c)
 {
     if (!c) return;
+    free((void *)c->provider);
     free((void *)c->base_url);
     free((void *)c->api_key);
     free((void *)c->model);

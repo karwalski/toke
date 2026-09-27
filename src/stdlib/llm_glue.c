@@ -77,19 +77,18 @@ static TkLlmMsg *decode_llm_msgs(int64_t messages, uint64_t *out_n) {
 }
 
 /*
- * llmresp_block — a $llmresp as the compiler lays it out: one i64 slot per
- * field, { content:str, tokensin:u64, tokensout:u64, model:str }.  Handing
- * back the raw C TkLlmResp instead would have the consumer read is_err as
- * the model name (127.86).
+ * llmresp_block — a $llmresp as the compiler lays it out (TkLlmRespRec, one
+ * i64 slot per field).  Handing back the raw C TkLlmResp instead would have
+ * the consumer read is_err as the model name (127.86).
  */
 static int64_t llmresp_block(const char *content, uint64_t tin, uint64_t tout,
                              const char *model) {
-    int64_t *b = (int64_t *)malloc(4 * sizeof(int64_t));
+    TkLlmRespRec *b = (TkLlmRespRec *)malloc(sizeof *b);
     if (!b) return 0;
-    b[0] = (int64_t)(intptr_t)(content ? content : "");
-    b[1] = (int64_t)tin;
-    b[2] = (int64_t)tout;
-    b[3] = (int64_t)(intptr_t)(model ? model : "");
+    b->content   = content ? content : "";
+    b->tokensin  = (int64_t)tin;
+    b->tokensout = (int64_t)tout;
+    b->model     = model ? model : "";
     return (int64_t)(intptr_t)b;
 }
 
@@ -160,15 +159,15 @@ int64_t tk_llm_chatstream_w(int64_t client, int64_t messages) {
     g_llm_streams[idx].cursor = 0;
     g_llm_streams[idx].used   = 1;
 
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    TkLlmStreamRec *block = (TkLlmStreamRec *)malloc(sizeof *block);
     if (!block) { tk_current_error = 1; return 0; }
-    block[0] = (int64_t)idx + 1;          /* $llmstream.id, 1-based */
+    block->id = (int64_t)idx + 1;         /* $llmstream.id, 1-based */
     return (int64_t)(intptr_t)block;
 }
 
 int64_t tk_llm_streamnext_w(int64_t stream) {
     if (!stream) { tk_current_error = 1; return (int64_t)(intptr_t)""; }
-    int64_t id = ((int64_t *)(intptr_t)stream)[0];
+    int64_t id = ((const TkLlmStreamRec *)(intptr_t)stream)->id;
     if (id <= 0 || id > g_llm_nstreams || !g_llm_streams[id - 1].used) {
         /* the empty $llmstream{} of the documented $err arm: nothing to read */
         tk_current_error = 0;
