@@ -562,6 +562,27 @@ int main(void)
         free((void *)out);
     }
 
+    /* 40. 135.30: a node's leading fields are the $htmlnode record toke
+     *     reads -- tag, attrs as a toke [[str]] of @(name; value), content */
+    {
+        TkHtmlNode *n = html_div("card", "hello");
+        const int64_t *attrs = n ? (const int64_t *)(intptr_t)n->attrs : NULL;
+        ASSERT_STREQ(n ? n->tag : NULL, "div", "htmlnode: .tag");
+        ASSERT_STREQ(n ? n->content : NULL, "hello", "htmlnode: .content");
+        ASSERT(attrs && attrs[-1] == 1, "htmlnode: .attrs holds one pair");
+        const int64_t *pair = attrs ? (const int64_t *)(intptr_t)attrs[0] : NULL;
+        ASSERT(pair && pair[-1] == 2, "htmlnode: the pair has two elements");
+        ASSERT_STREQ(pair ? (const char *)(intptr_t)pair[0] : NULL, "class",
+                      "htmlnode: pair name");
+        ASSERT_STREQ(pair ? (const char *)(intptr_t)pair[1] : NULL, "card",
+                      "htmlnode: pair value");
+        TkHtmlNode *t = html_table(NULL, 0, NULL, 0);
+        ASSERT(t && t->content && t->content[0] == '\0',
+               "htmlnode: a node with no text has content \"\", not NULL");
+        html_node_free(n);
+        html_node_free(t);
+    }
+
     /* -------------------------------------------------------------------
      * Summary
      * ------------------------------------------------------------------- */
