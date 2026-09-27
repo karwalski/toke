@@ -21,8 +21,10 @@
 # terminal `<p` return is a retention there (the caller gets the block back),
 # a closure or spawn that mentions p is a retention, binding or storing p is
 # a retention, and passing p on is accepted only when THAT callee's
-# parameter passes too (transitively, depth-limited, recursion answered
-# "retains").  A call name that the caller also binds locally is not resolved
+# parameter passes too (transitively, depth-limited).  A recursive use is
+# answered on the assumption under test (127.171: a callee whose recursive
+# uses are themselves read-only is non-retaining; C224 holds the retaining
+# recursion control).  A call name that the caller also binds locally is not resolved
 # to the top-level function.
 #
 # WHY THE CONTROLS MATTER MORE THAN THE WIN.  A wrong non-retention proof
@@ -210,7 +212,7 @@ f=main():i64{
   <0
 };'
 
-case_ 'recursive callee is answered "retains"' copying '9 7' \
+case_ 'read-only recursive callee stays linear (127.171)' inplace '9 7' \
 'm=main;
 i=io:std.io;
 f=rec(a:@i64;n:i64):i64{if(n==0){<a.get(0)};<rec(a;n-1)};
