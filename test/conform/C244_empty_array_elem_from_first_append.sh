@@ -47,5 +47,9 @@ expect "5 a later append of another type is E4031" \
 expect "6 i64 elements are unchanged" \
     "$(run "${H}"'f=main():i64{let r=mut.@();r=r+@(7);r=r.append(8);j.print(r);<0};')" '[7,8] '
 
+printf 'm=q;f=sample():@u64{let r=mut.@();r=r.append(5);r=r+@(2;9);<r};f=main():i64{<0};\n' > "${WORK}/u.tk"
+expect "7 an int-literal first append does not fix the element type (corpus P3-A-SRT-0008v82)" \
+    "$("${TKC}" --check "${WORK}/u.tk" > /dev/null 2>&1; echo "rc=$?")" "rc=0"
+
 echo "C244: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

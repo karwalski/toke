@@ -2555,6 +2555,20 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
     int is_lit = 0;
     const Node *e = first_append_elem(cx->fn_node, cx->src, bn, nb, nl, &is_lit);
     if (!e) return NULL;
+    /* An integer LITERAL does not fix the element type -- it narrows to
+     * whatever the array meets later (`r=r.append(5); <r` from an `:@u64`
+     * function, corpus P3-A-SRT-0008v82).  Such an array keeps the unknown
+     * element it had, which renders as i64 exactly as before. */
+    {
+        int neg; unsigned long long mag;
+        if (!is_lit && lit_int_value(cx->src, e, &neg, &mag)) return NULL;
+        if (is_lit) {
+            int all = 1;
+            for (int i = 0; i < e->child_count; i++)
+                if (!e->children[i] || !lit_int_value(cx->src, e->children[i], &neg, &mag)) { all = 0; break; }
+            if (all) return NULL;
+        }
+    }
     /* the append must be to THIS binding, not a later shadow of the name */
     if (find_binding_before(cx->fn_node, cx->src, nb, nl, e) != bn) return NULL;
     cx->bind_infer_depth++;
