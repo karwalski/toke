@@ -63,5 +63,10 @@ expect "8 io.println(str.len(..)) -- a u64 where a str is read" \
 expect "9 io.println(str.trim(..)) stays clean" \
     "$(diags 'm=q;i=io:std.io;i=str:std.str;f=main():i64{io.println(str.trim(" a "));<0};')" "rc=0"
 
+# A record parameter receiving an integer is a handle (std callbacks hand
+# their record as an i64 -- conform C022's tls.listen handler).
+expect "10 an i64 handle into a record parameter is not judged" \
+    "$(diags 'm=q;i=tls:std.tls;f=onconn(conn:i64):i64{tls.close(conn);<0};f=main():i64{<0};')" "rc=0"
+
 echo "C295: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

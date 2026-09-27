@@ -3677,6 +3677,12 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * is, an array where a scalar is. */
         int ac = tki_arg_class(at), pc = tki_arg_class(pt);
         if (!ac || !pc || ac == pc) continue;
+        /* An integer where a RECORD is declared is a handle: std callbacks
+         * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
+         * then `tls.read(conn)` -- conform C022), and every record crosses
+         * the ABI as an i64 slot.  The reverse (a record where a number is
+         * read) stays judged. */
+        if (pc == 6 && ac == 2) continue;
         if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
             && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
         if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
