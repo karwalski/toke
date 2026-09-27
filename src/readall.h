@@ -47,9 +47,13 @@ static inline char *tk_read_stream(FILE *f, size_t max_len, size_t *out_len,
             if (!nb) { free(buf); return NULL; }
             buf = nb; cap = ncap;
         }
-        size_t n = fread(buf + len, 1, cap - len, f);
+        size_t want = cap - len;
+        size_t n = fread(buf + len, 1, want, f);
         len += n;
-        if (n == 0) break;
+        /* fread returns short only at end-of-file or on an error (it blocks
+         * on a pipe until it has `want` bytes or the writer closes), and
+         * reading again after either is undefined for the stream position. */
+        if (n < want) break;
     }
     if (ferror(f)) { free(buf); return NULL; }
     if (len > max_len) { free(buf); if (too_big) *too_big = 1; return NULL; }
