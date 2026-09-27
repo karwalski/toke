@@ -4077,6 +4077,27 @@ static int map_type_node(const Node *n) {
                  n->kind == NODE_ARRAY_TYPE || n->kind == NODE_MAP_TYPE ||
                  n->kind == NODE_FUNC_TYPE  || n->kind == NODE_PTR_TYPE);
 }
+/* 127.227 item 1: a type standing where a value is consumed -- the
+ * initialiser of a `let`, the right side of an assignment, a returned value
+ * or a call argument.  `let x=$str;` checked clean and lowered whatever a
+ * type node lowers to; `h($i64)` said "expected 'i64', got 'void'".  The
+ * sigil counterpart of 127.98 (i)'s bare `let x=str;` (names.c).  No fix: a
+ * literal, a binding or a typed-empty `@($str)` are all plausible.  Returns
+ * 1 when `n` is a type node (reported once). */
+static int type_as_value(Ctx *cx, const Node *n) {
+    if (!map_type_node(n)) return 0;
+    if (tc_first_report(cx, n) && tc_can_emit(cx)) {
+        char tb[128]; TOKSTR(tb, cx->src, n);
+        const char *sig = (n->kind == NODE_TYPE_IDENT && tb[0] != '$') ? "$" : "";
+        char got[140]; snprintf(got, sizeof got, "%s%s", sig, tb);
+        char msg[300];
+        snprintf(msg, sizeof msg, "'%s' is a type, not a value", got);
+        diag_emit(DIAG_ERROR, E4033, n->start, n->line, n->col, msg,
+                  "expected", "a value", "got", got, (const char *)NULL);
+    }
+    return 1;
+}
+
 /* 127.226: is this literal typed-EMPTY — `@($t)` (an array literal whose only
  * child is a type) or `@($k:V)` (a map literal whose only entry has a type as
  * its key and, as its value, a type or another typed-empty literal)?  Shared
@@ -4741,6 +4762,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_CALL_EXPR: {
         if (node->child_count<1) return mk_type(A,TY_UNKNOWN);
+        { int tv=0;                                   /* 127.227 item 1 */
+          for (int i=1;i<node->child_count;i++) tv|=type_as_value(cx,node->children[i]);
+          if (tv) return mk_type(A,TY_UNKNOWN); }
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
 
         /* 124.0c item 2: a call through a function VALUE — a parameter of
@@ -5200,6 +5224,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         Type *ann = has_ann ? resolve_type(cx, node->children[1]) : NULL;
         const Node *initN = has_ann ? node->children[2]
                           : (node->child_count >= 2 ? node->children[1] : NULL);
+        if (type_as_value(cx, initN)) {              /* 127.227 item 1 */
+            ((Node *)initN)->rtype = mk_type(A, TY_UNKNOWN);
+            return mk_type(A,TY_VOID);
+        }
         Type *init = initN ? infer(cx, initN) : NULL;
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
@@ -5264,6 +5292,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 return mk_type(A,TY_VOID);
             }
         }
+        if (node->child_count>1&&type_as_value(cx,node->children[1]))  /* 127.227 */
+            return mk_type(A,TY_VOID);
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)) {
@@ -5291,6 +5321,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * in the enclosing statement context).
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_RETURN_STMT: {
+        if (node->child_count>0&&type_as_value(cx,node->children[0]))  /* 127.227 */
+            return mk_type(A,TY_VOID);
         Type *val=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_VOID);
         check_variant_ctor_return(cx,node);   /* 127.59 */
         if (cx->fn_ret&&cx->fn_ret->kind==TY_VOID&&node->child_count>0
