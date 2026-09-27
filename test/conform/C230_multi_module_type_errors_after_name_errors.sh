@@ -33,7 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PASS=0; FAIL=0
-if [ ! -x "${TKC}" ]; then echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
+if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 WORK="$(mktemp -d /tmp/tkc_c230_XXXXXX)"; trap 'rm -rf "${WORK}"' EXIT; cd "${WORK}"
 
 echo "C230: multi-module driver recovers after name errors (123.13)"
