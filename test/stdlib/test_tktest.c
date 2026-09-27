@@ -7,13 +7,16 @@
  *
  * Note: several sub-tests intentionally trigger failing assertions to verify
  * that diagnostics are emitted to stderr and 0 is returned. Those failures
- * are expected and do NOT count toward this test's exit code.
+ * are expected and do NOT count toward this test's exit code: since 127.231
+ * each one records a process failure (tk_exitfail.h), which main() checks
+ * and then clears before it returns.
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 #include "../../src/stdlib/tk_test.h"
+#include "../../src/stdlib/tk_exitfail.h"   /* 127.231 */
 
 static int failures = 0;
 
@@ -285,6 +288,16 @@ int main(void)
         /* Verify the function pointer is non-NULL / callable. */
         void (*fp)(void) = tk_test_print_summary;
         ASSERT(fp != NULL, "tk_test_print_summary function is reachable");
+    }
+
+    /* --- 127.231: every failed assertion above recorded a process failure,
+     * so this program would exit 1 when it returns.  Assert the record, then
+     * clear it: those failures were intentional, and this binary's status
+     * must be decided by `failures`. --- */
+    {
+        ASSERT(tk_exitfail_count > 0,
+               "127.231: the intentional assertion failures recorded a process failure");
+        tk_exitfail_count = 0;
     }
 
     if (failures == 0) { printf("All test-module tests passed.\n"); return 0; }

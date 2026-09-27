@@ -199,6 +199,50 @@ static void test_print_str(void)
     free(null_out);
 }
 
+/* 127.229: json_parse decodes a string's escapes, and json_print_str writes
+ * every control byte escaped.  Before: \" ENDED the string ("a\"b" parsed as
+ * `a\`), \\ \n \uXXXX were kept as their escape text, and a string holding a
+ * real newline printed with the newline raw -- not JSON. */
+static void test_json_escapes(void)
+{
+    static const struct { const char *in; const char *want; const char *what; } cases[] = {
+        { "\"a\\\"b\"",              "a\"b",             "\\\" decodes to a quote and does not end the string" },
+        { "\"a\\\\b\"",              "a\\b",             "\\\\ decodes to one backslash" },
+        { "\"x\\ny\\tz\\r\\b\\f\\/\"", "x\ny\tz\r\b\f/",  "\\n \\t \\r \\b \\f \\/ decode" },
+        { "\"\\u00e9\\u0041\"",      "\xc3\xa9" "A",     "\\uXXXX decodes to UTF-8" },
+        { "\"\\ud83d\\ude00\"",      "\xf0\x9f\x98\x80", "a surrogate pair decodes to one 4-byte code point" },
+        { "\"q\\u0000z\"",           "q\xef\xbf\xbdz",   "\\u0000 becomes U+FFFD (a C string cannot hold NUL)" },
+        { "\"\\ud800x\"",            "\xef\xbf\xbdx",    "a lone surrogate becomes U+FFFD" },
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        char *got = (char *)(intptr_t)tk_json_parse(cases[i].in);
+        char msg[160];
+        snprintf(msg, sizeof msg, "127.229 json_parse: %s", cases[i].what);
+        ASSERT_STREQ(got, cases[i].want, msg);
+        free(got);
+    }
+
+    int64_t *arr = (int64_t *)(intptr_t)tk_json_parse("[\"a,b\",\"c\\\"]d\",\"e\"]");
+    ASSERT(arr && arr[-1] == 3, "127.229 json_parse: , and ] inside string elements are text (3 elements)");
+    if (arr && arr[-1] == 3) {
+        ASSERT_STREQ((const char *)(intptr_t)arr[0], "a,b",   "127.229 json_parse: element 0 == a,b");
+        ASSERT_STREQ((const char *)(intptr_t)arr[1], "c\"]d", "127.229 json_parse: element 1 decoded");
+        ASSERT_STREQ((const char *)(intptr_t)arr[2], "e",     "127.229 json_parse: element 2 == e");
+        for (int i = 0; i < 3; i++) free((void *)(intptr_t)arr[i]);
+    }
+    if (arr) free(arr - 3);
+
+    int64_t *one = (int64_t *)(intptr_t)tk_json_parse("[\"a,b\"]");
+    ASSERT(one && one[-1] == 1, "127.229 json_parse: [\"a,b\"] is ONE element");
+    if (one) { for (int64_t i = 0; i < one[-1]; i++) free((void *)(intptr_t)one[i]); free(one - 3); }
+
+    g_str_val = "q\"\\\n\t\x01z";
+    char *out = capture_stdout(do_print_str);
+    ASSERT_STREQ(out, "\"q\\\"\\\\\\n\\t\\u0001z\"\n",
+                 "127.229 json_print_str: quote, backslash and control bytes escaped");
+    free(out);
+}
+
 /* 10. json_print_f64 */
 static void test_print_f64(void)
 {
@@ -342,6 +386,7 @@ int main(void)
     test_print_i64();
     test_print_bool();
     test_print_str();
+    test_json_escapes();
     test_print_f64();
     test_print_arr();
     test_print_arr_bool();

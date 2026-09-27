@@ -82,6 +82,11 @@ int main(void) {
     /* --- json_enc stub --- */
     const char *enc = json_enc("hello");
     CHECK(strcmp(enc, "\"hello\"") == 0, "json_enc basic string");
+    /* 127.229: control bytes are escaped, not written raw */
+    const char *encc = json_enc("a\"b\\c\nd\x01" "e");
+    CHECK(encc && strcmp(encc, "\"a\\\"b\\\\c\\nd\\u0001e\"") == 0,
+          "127.229 json_enc escapes quote, backslash, \\n and \\u0001");
+    free((void *)encc);
 
     /* --- json_i64 --- */
     JsonResult ir = json_dec("{\"temp\":-42}");
