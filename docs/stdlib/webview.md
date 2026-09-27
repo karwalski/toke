@@ -7,6 +7,10 @@ order: 52
 
 # std.webview -- WITHDRAWN (story 136.2)
 
+> **Archived 2026-09-19 (story 136.2).** `std.webview` was withdrawn: it has no
+> interface and no glue, and cannot be imported. The function names and
+> signatures on this page are the 72.4 design record, not standard-library API.
+
 > **This module is not part of the standard library. It cannot be imported and
 > it never worked.** `stdlib/webview.tki` was deleted on 2026-09-19 and
 > `i=wv:std.webview;` now fails at the import with `E2030 standard-library

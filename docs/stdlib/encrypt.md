@@ -13,7 +13,7 @@ The `std.encrypt` module provides authenticated encryption (AES-256-GCM), Diffie
 
 ### $decryptresult
 
-Returned by `encrypt.aes256gcm_decrypt` to report success or authentication failure. This is a struct type, not a sum type — check the `err` field to detect failure.
+Returned by `encrypt.aes256gcmdecrypt` to report success or authentication failure. This is a struct type, not a sum type — check the `err` field to detect failure.
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -31,7 +31,7 @@ Holds the public and private key bytes for asymmetric key algorithms (X25519 and
 
 ## Functions
 
-### encrypt.aes256gcm_keygen(): @(byte)
+### encrypt.aes256gcmkeygen(): @(byte)
 
 Generates a fresh 32-byte (256-bit) AES key using a cryptographically secure random source. Always use this function rather than deriving keys by hand.
 
@@ -45,7 +45,7 @@ f=genkey():@(u8){
 };
 ```
 
-### encrypt.aes256gcm_noncegen(): @(byte)
+### encrypt.aes256gcmnoncegen(): @(byte)
 
 Generates a fresh 12-byte (96-bit) nonce using a cryptographically secure random source. A nonce must never be reused with the same key.
 
@@ -59,7 +59,7 @@ f=gennonce():@(u8){
 };
 ```
 
-### encrypt.aes256gcm_encrypt(key: @(byte); nonce: @(byte); plaintext: @(byte); aad: @(byte)): @(byte)
+### encrypt.aes256gcmencrypt(key: @(byte); nonce: @(byte); plaintext: @(byte); aad: @(byte)): @(byte)
 
 Encrypts `plaintext` using AES-256-GCM with the given `key` (32 bytes) and `nonce` (12 bytes), appending a 16-byte authentication tag to the returned ciphertext. The `aad` (additional authenticated data) parameter is included in the tag computation but not encrypted.
 
@@ -76,7 +76,7 @@ f=encryptdemo():@(u8){
 };
 ```
 
-### encrypt.aes256gcm_decrypt(key: @(byte); nonce: @(byte); ciphertext: @(byte); aad: @(byte)): $decryptresult
+### encrypt.aes256gcmdecrypt(key: @(byte); nonce: @(byte); ciphertext: @(byte); aad: @(byte)): $decryptresult
 
 Decrypts `ciphertext` using AES-256-GCM, verifying the embedded authentication tag in constant time before returning the plaintext. Returns a `$decryptresult` struct — check the `err` field (empty string means success) before using the plaintext in `ok`.
 
@@ -95,7 +95,7 @@ f=decryptdemo(key:@(u8);nonce:@(u8);ct:@(u8)):$str{
 };
 ```
 
-### encrypt.x25519_keypair(): $keypair
+### encrypt.x25519keypair(): $keypair
 
 Generates a fresh X25519 key pair. Both `pubkey` and `privkey` are 32 bytes, and the public key is safe to transmit to the other party.
 
@@ -110,9 +110,9 @@ f=genx25519():$keypair{
 };
 ```
 
-### encrypt.x25519_dh(privkey: @(byte); peerpub: @(byte)): @(byte)
+### encrypt.x25519dh(privkey: @(byte); peerpub: @(byte)): @(byte)
 
-Performs X25519 Diffie-Hellman scalar multiplication of `privkey` against `peerpub`, returning a 32-byte shared secret. Pass the result through `encrypt.hkdf_sha256` before use as an encryption key.
+Performs X25519 Diffie-Hellman scalar multiplication of `privkey` against `peerpub`, returning a 32-byte shared secret. Pass the result through `encrypt.hkdfsha256` before use as an encryption key.
 
 ```toke
 m=example;
@@ -126,7 +126,7 @@ f=dhdemo(myprivkey:@(u8);peerpubkey:@(u8)):@(u8){
 };
 ```
 
-### encrypt.ed25519_keypair(): $keypair
+### encrypt.ed25519keypair(): $keypair
 
 Generates a fresh Ed25519 key pair. `pubkey` is 32 bytes and `privkey` is 64 bytes (seed concatenated with public key).
 
@@ -141,7 +141,7 @@ f=gened25519():$keypair{
 };
 ```
 
-### encrypt.ed25519_sign(privkey: @(byte); msg: @(byte)): @(byte)
+### encrypt.ed25519sign(privkey: @(byte); msg: @(byte)): @(byte)
 
 Signs `msg` with the 64-byte Ed25519 `privkey` and returns a 64-byte deterministic signature.
 
@@ -156,7 +156,7 @@ f=signdemo(privkey:@(u8)):@(u8){
 };
 ```
 
-### encrypt.ed25519_verify(pubkey: @(byte); msg: @(byte); sig: @(byte)): bool
+### encrypt.ed25519verify(pubkey: @(byte); msg: @(byte); sig: @(byte)): bool
 
 Verifies that `sig` is a valid Ed25519 signature over `msg` made by the holder of the private key corresponding to `pubkey`.
 
@@ -171,7 +171,7 @@ f=verifydemo(pubkey:@(u8);sig:@(u8)):bool{
 };
 ```
 
-### encrypt.hkdf_sha256(ikm: @(byte); salt: @(byte); info: @(byte); outlen: u64): @(byte)
+### encrypt.hkdfsha256(ikm: @(byte); salt: @(byte); info: @(byte); outlen: u64): @(byte)
 
 Derives `outlen` bytes of keying material from the input key material `ikm` using HKDF-SHA-256 (RFC 5869) with the given `salt` and context `info`. Maximum output length is 8160 bytes. Returns an empty byte array on invalid input.
 
@@ -186,7 +186,7 @@ f=hkdfdemo(sharedsecret:@(u8);salt:@(u8)):@(u8){
 };
 ```
 
-### encrypt.tls_cert_fingerprint(pem_cert: $str): @(byte)
+### encrypt.tlscertfingerprint(pemcert: $str): @(byte)
 
 Parses a PEM-encoded TLS certificate, SHA-256 hashes the DER-encoded body, and returns the 32-byte fingerprint. Returns an empty byte array if the PEM cannot be parsed.
 

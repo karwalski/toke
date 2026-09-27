@@ -325,6 +325,46 @@ static void test_parse_tool_calls_one_call_args_json_nonempty(void)
     }
 }
 
+/* 122.14: the id, name and string-form arguments are DECODED.  Before, the
+ * bytes between the quotes were copied verbatim: the id below came back as
+ * `c\"q\\z` (so the tool-result message named a different call), and the
+ * arguments as `{\"location\":\"Sydney\"...}`, which is not a JSON object.
+ * The id's `\\` just before its closing quote also exercises the old
+ * closing-quote scan, which stopped one byte late on an escaped backslash. */
+static const char *RESPONSE_ESCAPED =
+    "{\"choices\":[{\"message\":{\"tool_calls\":[{"
+    "\"id\":\"c\\\"q\\\\z\\\\\","
+    "\"type\":\"function\","
+    "\"function\":{\"name\":\"get_\\u0077eather\","
+    "\"arguments\":\"{\\\"location\\\":\\\"Syd\\\\\\\"ney\\\"}\"}}]}}]}";
+
+static void test_parse_tool_calls_decodes_escapes(void)
+{
+    ToolCallResult r = llm_parse_tool_calls(RESPONSE_ESCAPED);
+    ASSERT(r.ncalls == 1 && r.calls, "122.14 parse_tool_calls escaped fixture: one call");
+    if (r.ncalls == 1 && r.calls) {
+        ASSERT_STREQ(r.calls[0].call_id, "c\"q\\z\\",
+                     "122.14 parse_tool_calls: call_id escapes decoded (\\\" and \\\\)");
+        ASSERT_STREQ(r.calls[0].tool_name, "get_weather",
+                     "122.14 parse_tool_calls: tool_name \\u escape decoded");
+        ASSERT_STREQ(r.calls[0].args_json, "{\"location\":\"Syd\\\"ney\"}",
+                     "122.14 parse_tool_calls: string-form arguments decode to the JSON object text");
+    }
+    for (uint64_t i = 0; i < r.ncalls; i++) {
+        free((char *)r.calls[i].call_id);
+        free((char *)r.calls[i].tool_name);
+        free((char *)r.calls[i].args_json);
+    }
+    free(r.calls);
+
+    ToolCallResult one = llm_parse_tool_calls(RESPONSE_ONE_TOOL_CALL);
+    if (one.ncalls >= 1 && one.calls)
+        ASSERT_STREQ(one.calls[0].args_json, "{\"location\":\"Sydney\",\"unit\":\"celsius\"}",
+                     "122.14 parse_tool_calls: OpenAI fixture arguments are a JSON object");
+    else
+        ASSERT(0, "122.14 parse_tool_calls: OpenAI fixture parsed no call");
+}
+
 /* -----------------------------------------------------------------------
  * Tests: llm_parse_tool_calls — no tool calls
  * ----------------------------------------------------------------------- */
@@ -576,6 +616,7 @@ int main(void)
     test_parse_tool_calls_one_call_name_correct();
     test_parse_tool_calls_one_call_id_matches();
     test_parse_tool_calls_one_call_args_json_nonempty();
+    test_parse_tool_calls_decodes_escapes();
 
     /* llm_parse_tool_calls — no tool calls */
     test_parse_tool_calls_no_tool_calls_ncalls_is_0();

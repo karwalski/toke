@@ -14,7 +14,7 @@ against equivalent C programs compiled with the system C compiler.
 | 5 | binary_search | Binary search on a sorted array (1M searches) — branching |
 | 6 | prime_sieve | Trial-division primality check up to 50K — integer arithmetic |
 | 7 | deep_recursion | Ackermann function ack(3,10) — deep recursion / stack pressure |
-| 8 | struct_ops | Vec3 add/dot/scale (1M iterations) — struct pass-by-value |
+| 8 | struct_ops | Vec3 add/dot/scale/wrap (1M iterations, components kept bounded so the loop never overflows) — struct pass-by-value |
 | 9 | large_expr | Large polynomial expression (5M iterations) — expression codegen |
 | 10 | chained_calls | 5-deep function call chain (10M iterations) — call/return overhead |
 | 11 | collatz | Collatz sequence lengths for 1..500K — branch-heavy loops |

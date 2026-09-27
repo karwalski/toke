@@ -11,6 +11,7 @@
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "args.h"
 #include "capabilities.h"  /* 124.4a: capability broker init */
+#include "strbuf.h"        /* 127.229: JSON string escape/unescape */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -194,6 +195,32 @@ static int64_t parse_int(const char **pp) {
     return neg ? -v : v;
 }
 
+/* 127.229: a JSON string, decoded.  *pp points at the opening quote; it is
+ * left just past the closing one.  The escapes (\" \\ \n \uXXXX ...) are
+ * decoded by strbuf_append_json_unescape; before this the bytes between the
+ * quotes were copied verbatim, so \" ENDED the string and \\, \n, \u00e9
+ * were kept as their escape text.  Returns a heap string ("" on OOM). */
+static char *parse_json_string(const char **pp) {
+    const char *p = *pp;
+    if (*p == '"') p++;
+    TkStrBuf b = TK_STRBUF_INIT;
+    (void)strbuf_append_json_unescape(&b, &p);
+    *pp = p;
+    char *s = strbuf_take(&b);
+    return s ? s : (char *)calloc(1, 1);
+}
+
+/* 127.229: skip a JSON string whose opening quote is at p; return the byte
+ * after its closing quote (or the NUL).  An escaped quote does not end it. */
+static const char *skip_json_string(const char *p) {
+    if (*p == '"') p++;
+    while (*p && *p != '"') {
+        if (*p == '\\' && p[1]) p++;
+        p++;
+    }
+    return *p == '"' ? p + 1 : p;
+}
+
 /* Allocate a toke-runtime array: [len | data...].
  * Returns pointer to data[0]; len stored at ptr[-1]. */
 static int64_t *alloc_array(int64_t len) {
@@ -215,6 +242,9 @@ static int64_t *parse_int_array(const char **pp) {
         count = 1;
         int depth = 0;
         while (*scan) {
+            /* 127.229: a ',' '[' or ']' inside a string element is text,
+             * not structure: ["a,b"] is one element. */
+            if (*scan == '"') { scan = skip_json_string(scan); continue; }
             if (*scan == '[') depth++;
             else if (*scan == ']') { if (depth == 0) break; depth--; }
             else if (*scan == ',' && depth == 0) count++;
@@ -233,16 +263,8 @@ static int64_t *parse_int_array(const char **pp) {
             int64_t *sub = parse_int_array(&p);
             data[i] = (int64_t)(intptr_t)sub;
         } else if (*p == '"') {
-            /* String element */
-            p++;
-            const char *start = p;
-            while (*p && *p != '"') p++;
-            size_t len = (size_t)(p - start);
-            char *s = (char *)malloc(len + 1);
-            memcpy(s, start, len);
-            s[len] = '\0';
-            if (*p == '"') p++;
-            data[i] = (int64_t)(intptr_t)s;
+            /* String element, escapes decoded (127.229) */
+            data[i] = (int64_t)(intptr_t)parse_json_string(&p);
         } else if (strncmp(p, "true", 4) == 0) {
             data[i] = 1; p += 4;
         } else if (strncmp(p, "false", 5) == 0) {
@@ -272,17 +294,9 @@ int64_t tk_json_parse(const char *json) {
     if (strncmp(p, "true", 4) == 0) return 1;
     if (strncmp(p, "false", 5) == 0) return 0;
 
-    /* String — return pointer to the unquoted content */
-    if (*p == '"') {
-        p++;
-        const char *start = p;
-        while (*p && *p != '"') p++;
-        size_t len = (size_t)(p - start);
-        char *s = (char *)malloc(len + 1);
-        memcpy(s, start, len);
-        s[len] = '\0';
-        return (int64_t)(intptr_t)s;
-    }
+    /* String — the decoded content (127.229) */
+    if (*p == '"')
+        return (int64_t)(intptr_t)parse_json_string(&p);
 
     /* Integer (including negative) */
     return parse_int(&p);
@@ -298,16 +312,22 @@ void tk_json_print_bool(int64_t val) {
     printf("%s\n", val ? "true" : "false");
 }
 
+/* 127.229: one JSON string literal to stdout, quoted and escaped by
+ * strbuf_append_json (", \\ and every control byte).  The printers below
+ * escaped '"' (and some '\\') by hand and wrote control characters raw, so
+ * a parsed "x\ny" printed as a string literal with a real newline in it. */
+static void put_json_string(const char *s) {
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_putc(&b, '"');
+    strbuf_append_json(&b, s);
+    strbuf_putc(&b, '"');
+    if (!b.oom) fwrite(b.buf, 1, b.len, stdout);
+    strbuf_free(&b);
+}
+
 void tk_json_print_str(const char *val) {
     if (!val) { printf("null\n"); return; }
-    putchar('"');
-    while (*val) {
-        if (*val == '"') fputs("\\\"", stdout);
-        else if (*val == '\\') fputs("\\\\", stdout);
-        else putchar(*val);
-        val++;
-    }
-    putchar('"');
+    put_json_string(val);
     putchar('\n');
 }
 
@@ -341,14 +361,8 @@ void tk_json_print_arr_str(const char **data, int64_t len) {
     putchar('[');
     for (int64_t i = 0; i < len; i++) {
         if (i) putchar(',');
-        putchar('"');
-        const char *s = data[i];
-        while (*s) {
-            if (*s == '"') fputs("\\\"", stdout);
-            else putchar(*s);
-            s++;
-        }
-        putchar('"');
+        if (data[i]) put_json_string(data[i]);
+        else fputs("null", stdout);
     }
     putchar(']');
     putchar('\n');
@@ -464,7 +478,8 @@ void tk_json_print(int64_t val) {
     unsigned char first = (unsigned char)s[0];
     if (first >= 32 && first <= 126) {
         /* Looks like a string */
-        printf("\"%s\"\n", s);
+        put_json_string(s);
+        putchar('\n');
         return;
     }
 

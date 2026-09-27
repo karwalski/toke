@@ -8,6 +8,7 @@
  */
 
 #include "json.h"
+#include "strbuf.h"   /* 127.229: json_enc escapes via strbuf_append_json */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -160,22 +161,17 @@ static int find_json_key(const char *raw, const char *key,
  * caller frees it.  135.3c: this used to return the string LITERAL "\"\""
  * for a NULL input and on OOM, so every caller's free() of the result was a
  * free() of a global (clang unix.Malloc at json.c json_from_pairs). */
+/* 127.229: every control byte is escaped as well as '"' and '\\' --
+ * strbuf_append_json, the one copy of the rule.  This wrote U+0000..U+001F
+ * raw, so json.enc("x\ny") (and j.print of an @str, which encodes each
+ * element here) produced a string literal with a real newline in it, which is
+ * not JSON. */
 const char *json_enc(const char *v) {
-    if (!v) v = "";
-    size_t n = strlen(v);
-    /* worst case: every char escaped + 2 quotes + NUL */
-    char *buf = malloc(2 * n + 3);
-    if (!buf) return NULL;
-    char *w = buf;
-    *w++ = '"';
-    for (size_t i = 0; i < n; i++) {
-        if (v[i] == '"')       { *w++ = '\\'; *w++ = '"'; }
-        else if (v[i] == '\\') { *w++ = '\\'; *w++ = '\\'; }
-        else                   { *w++ = v[i]; }
-    }
-    *w++ = '"';
-    *w   = '\0';
-    return buf;
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_putc(&b, '"');
+    strbuf_append_json(&b, v ? v : "");
+    strbuf_putc(&b, '"');
+    return strbuf_take(&b);   /* NULL on OOM, as before */
 }
 
 /* json_dec — validate and store raw JSON string */

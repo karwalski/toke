@@ -108,7 +108,7 @@ http.PATCH("/items/:id"; handler);
 
 ## Server Start Functions
 
-### http.serve(port: u16): void
+### http.serve(port: u16): i64
 
 Starts an HTTP server on the given port, blocking the current process until the server is shut down. Route handlers registered via `http.GET`, `http.POST`, etc. are dispatched automatically.
 
@@ -122,7 +122,7 @@ f=main():i64{
 };
 ```
 
-### http.serveworkers(port: u64; workers: u64): void
+### http.serveworkers(port: u64; workers: u64): i64
 
 Starts an HTTP server using a pre-fork worker pool. Passing `workers=1` runs in a single process with no fork at all; values greater than one fork that many worker processes before accepting connections, which improves throughput on multi-core systems. Passing `workers=0` auto-detects the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable.
 
@@ -135,7 +135,7 @@ f=main():void{
 };
 ```
 
-### http.servetls(port: u64; cert_path: $str; key_path: $str): void
+### http.servetls(port: u64; cert_path: $str; key_path: $str): i64
 
 Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down. It runs a pre-fork worker pool sized to the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable; use `http.servetlsworkers` to choose the count in the program.
 
@@ -234,7 +234,7 @@ shared-bucket bug with a one-header total bypass, which is worse than nothing.
 That is a subsystem to be specified and designed, not a default to be left in
 place because it exists.
 
-### http.getstatic(path: $str; html: $str): void
+### http.getstatic(path: $str; html: $str): i64
 
 Registers a static HTML response for the given path. When the server receives a request matching `path`, it returns the pre-rendered `html` string as a `200 OK` response with `Content-Type: text/html`. Use this for pages whose content is known at startup.
 
@@ -246,7 +246,7 @@ f=main():void{
 };
 ```
 
-### http.servedir(prefix: $str; dir: $str): void
+### http.servedir(prefix: $str; dir: $str): i64
 
 Mounts the local directory `dir` under the URL path prefix `prefix`. Any
 request to a path beginning with `prefix` is resolved against `dir`. Useful
@@ -295,18 +295,18 @@ message on stderr.
 
 ## Accessor Functions
 
-### http.param(req: $req; name: $str): $str!$httperr
+### http.param(req: $req; name: $str): $str!$httprouteerr
 
-Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httperr.$notfound` if no parameter with that name was captured for this request.
+Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httprouteerr.$notfound` if no parameter with that name was captured for this request.
 
 ```text
 let id = http.param(req; "id");
 -- id = ok("42") when path matched "/users/:id"
 ```
 
-### http.header(req: $req; name: $str): $str!$httperr
+### http.header(req: $req; name: $str): $str!$httprouteerr
 
-Extracts a request header value by name using case-insensitive lookup. Returns `$httperr.$notfound` if the header is not present in the request.
+Extracts a request header value by name using case-insensitive lookup. Returns `$httprouteerr.$notfound` if the header is not present in the request.
 
 ```text
 let ct = http.header(req; "content-type");
@@ -396,7 +396,7 @@ let r = http.$res.err("database unavailable");
 
 ### http.client(baseurl: $str): $httpclient
 
-Creates an HTTP client configured to send all requests relative to `baseurl`. The returned handle maintains a connection pool and a default timeout; pass it to `http.post`, `http.put`, `http.delete`, and other client functions.
+Creates an HTTP client configured to send all requests relative to `baseurl`. The returned handle maintains a connection pool and a default timeout; pass it to `http.stream`, `http.withproxy` and `http.downloadfile`, the exported functions that take one.
 
 ```toke
 i=http:std.http;
@@ -406,6 +406,8 @@ f=main():void{
 ```
 
 ### http.get(url: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares no `http.get`. A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case, not public API: its signature is not checked against any interface, no interface declares its result type (it is not `$httpresp!$httperr`), and with two arguments the same name registers a GET route instead. See `tk_http_get_w` under "Defined, with no interface entry" in [stdlib-internal](/docs/reference/stdlib-internal/).
 
 Sends a `GET` request to the given URL and returns the response. Returns `$httperr` on network failure, timeout, or DNS error.
 
@@ -417,6 +419,8 @@ f=main():void{
 ```
 
 ### http.post(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares no `http.post`. The compiler resolves the name to route registration (`http.post(path;handler)`, or `tk_http_posturl_w` for two non-function arguments), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client POST.
 
 Sends a `POST` request with the given byte-array body and `Content-Type` header. Use `str.bytes` to convert a string body. Returns `$httperr` on failure.
 
@@ -431,6 +435,8 @@ f=main():void{
 
 ### http.put(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
 
+> **Not exported.** `std.http`'s interface declares no `http.put`. The compiler resolves the name to route registration (`http.put(path;handler)`), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client PUT.
+
 Sends a `PUT` request with the given byte-array body and `Content-Type` header. Semantics mirror `http.post`; use for full-resource replacement.
 
 ```toke
@@ -443,6 +449,8 @@ f=main():void{
 ```
 
 ### http.delete(client: $httpclient; path: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares no `http.delete`, and the call below does **not** do what this section says: the compiler resolves `http.delete(c;path)` to route registration (`tk_http_delete_handler`), passing the client handle where a path belongs. It type-checks and does not send a request. There is no exported client DELETE.
 
 Sends a `DELETE` request to `path`. The request carries no body. Returns `$httperr` on network failure.
 
@@ -512,9 +520,9 @@ f=main():i64{
 
 ## Error Types
 
-### $httperr
+### $httprouteerr
 
-A sum type representing HTTP operation failures, returned by accessor functions and client request functions.
+A sum type representing request-accessor failures, returned by `http.param` and `http.header`.
 
 | Variant | Field Type | Meaning |
 |---------|------------|---------|
@@ -522,3 +530,12 @@ A sum type representing HTTP operation failures, returned by accessor functions 
 | $notfound | $str | The requested parameter, header, or resource was not found |
 | $internal | $str | An internal server or client error occurred |
 | $timeout | u32 | The operation timed out; value is the timeout in milliseconds |
+
+### $httperr
+
+A struct, not a sum type, returned by the client stream functions `http.stream` and `http.streamnext`.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| msg | $str | What failed |
+| code | u64 | Numeric error code |
