@@ -5005,6 +5005,34 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             emit_mm(cx,node,l,r,"modulo requires matching integer or float types");
             return mk_type(A,TY_UNKNOWN);
         }
+        /* 138.9 (T-14): `==` / `!=` on two struct or sum values.  The
+         * emitter has no structural equality for them: it compares the two
+         * handles (`x==$lvl{$restricted:0}` with x returned from a function
+         * was never true) or runs tk_str_cmp over the boxes, reading the tag
+         * word as a C string and ignoring the payload.  Both answers are
+         * wrong, so the comparison is refused rather than miscompiled.  An
+         * opaque .tki handle (a zero-field record) and `$none` keep their
+         * handle comparison.  No `fix`: matching on the variant, comparing a
+         * field, or writing an eq function are all plausible. */
+        if ((node->op==TK_EQ||node->op==TK_NE)
+            &&l->kind==TY_STRUCT&&r->kind==TY_STRUCT
+            &&!opaque_handle_type(l)&&!opaque_handle_type(r)
+            &&!(l->name&&strcmp(l->name,"none")==0)
+            &&!(r->name&&strcmp(r->name,"none")==0)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[320], tn[96];
+                snprintf(tn,sizeof tn,"%s",type_name(l));
+                snprintf(msg,sizeof msg,
+                         "'%s' does not compare struct or sum values ('%s'): "
+                         "toke has no structural equality for them; match on "
+                         "the variant or compare a field",
+                         node->op==TK_EQ?"==":"!=",tn);
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","a scalar or str operand","got",tn,
+                          (const char*)NULL);
+            }
+            return mk_type(A,TY_BOOL);
+        }
         if (arith||cmp) {
             /* Epic 111 / ADR-0004: + is strictly numeric. When str+str is
              * attempted, point the author at the three canonical string-
