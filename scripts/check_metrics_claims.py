@@ -826,6 +826,11 @@ def governing(lines, spans, i, is_html=False):
         if k + 1 < len(lines) and TABLE_SEP.match(lines[k + 1]):
             parts.append(lines[k])
             retiring = bool(RETIRING_HEADER.match(lines[k]))
+        # 132.99: each markdown row is its own unit, so "the note after the
+        # unit" was the next ROW for every row but the last, and a note below
+        # the table excused only the last row. The note follows the table.
+        while hi < len(lines) and lines[hi].strip().startswith("|"):
+            hi += 1
     elif LIST_ITEM.match(lines[lo]):
         k = lo
         while k > 0:
@@ -1410,6 +1415,12 @@ SELFTEST = [
      "| Historical ecosystem | Now |\n|---|---|\n| 57 stdlib modules | see facts |"),
     (True, "132.96: an era cue in the historical count's own cell",
      "| Spec | Corpus |\n|---|---|\n| grammar | v0.2-era: 46,754 validated programs |"),
+    (True, "132.99: a note below a markdown table excuses a count in a MIDDLE row",
+     "| Year | Ecosystem |\n|---|---|\n| 2026-05 | 57 stdlib modules |\n| 2026-06 | ok |\n\n"
+     "**Superseded.** The module count above is withdrawn; see the fact sheet."),
+    (False, "132.99: a plain paragraph below the table is not a note",
+     "| Year | Ecosystem |\n|---|---|\n| 2026-05 | 57 stdlib modules |\n| 2026-06 | ok |\n\n"
+     "The count was superseded, we think."),
 
     # -- 132.98: rule 3 gets the same unit -- a supersession cue excuses a
     # withdrawn headline only from its own cell, a status cell, its column's
