@@ -1495,6 +1495,9 @@ static int64_t client_resp_block(HttpClientResp *r)
     int64_t body = tk_bytes_pack(r->body ? r->body : (const uint8_t *)"", r->body_len);
     if (!b || !hdrs || !body) {
         free(b);
+        /* a block from tk_arr_alloc starts TK_ARR_HDR words before its handle */
+        if (hdrs) free((int64_t *)(intptr_t)hdrs - TK_ARR_HDR);
+        if (body) free((int64_t *)(intptr_t)body - TK_ARR_HDR);
         client_resp_free(r);
         return http_raise("out of memory", 0);
     }
