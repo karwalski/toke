@@ -5,7 +5,7 @@
 # 136.1 made `g_stdlib_decls` load-bearing: stdlib_glue_arity() answers out of
 # it, and types.c rejects any std call whose argument count disagrees.  That
 # table has two halves — the generated one (src/stdlib_decls_gen.h) and a
-# hand-written one in src/llvm.c — and gen_stdlib_decls.py EXCLUDES from
+# hand-written one in src/llvm.c (src/stdlib_tables.c since 135.21) — and gen_stdlib_decls.py EXCLUDES from
 # generation anything already declared by hand (load_manual_decls()).  So a
 # wrong hand-written entry is never regenerated, never corrected, and never
 # noticed.
@@ -189,7 +189,7 @@ mkdir -p "${NCDIR}/src" "${NCDIR}/scripts" "${NCDIR}/stdlib"
 # makes the gate red for a reason that has nothing to do with the defect this
 # control reintroduces, which would leave `NC_RC -ne 0` passing while the two
 # assertions below — the ones that check it names tk_os_read — fail.
-cp "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_decls_gen.h" \
+cp "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_tables.c" "${REPO_ROOT}/src/stdlib_decls_gen.h" \
    "${REPO_ROOT}/src/stdlib_deps.c" "${REPO_ROOT}/src/stdlib_dummyarg_gen.h" \
    "${NCDIR}/src/"
 cp -R "${REPO_ROOT}/src/stdlib" "${NCDIR}/src/stdlib"
@@ -197,12 +197,12 @@ cp "${REPO_ROOT}"/scripts/check_tki_coverage.py \
    "${REPO_ROOT}"/scripts/check_tki_skiplist.txt \
    "${REPO_ROOT}"/scripts/check_tki_arity_skiplist.txt "${NCDIR}/scripts/"
 cp "${REPO_ROOT}"/stdlib/*.tki "${NCDIR}/stdlib/"
-python3 - "${NCDIR}/src/llvm.c" <<'NCPY'
+python3 - "${NCDIR}/src/stdlib_tables.c" <<'NCPY'
 import sys
 p = sys.argv[1]
 t = open(p).read()
 anchor = '    {"tk_os_close", "declare i64 @tk_os_close(i64)", 0},'
-assert anchor in t, "T006 negative control lost its anchor in llvm.c"
+assert anchor in t, "T006 negative control lost its anchor in stdlib_tables.c"
 open(p, "w").write(t.replace(
     anchor,
     anchor + '\n    {"tk_os_read", "declare i64 @tk_os_read(i64, i64, i64)", 0},'))
@@ -217,11 +217,11 @@ else
     echo "  FAIL: the gate stayed GREEN with the 137.12 defect reintroduced"
     FAIL=$((FAIL + 1))
 fi
-if printf '%s' "${NC_OUT}" | grep -q "tk_os_read: declared 3 at src/llvm.c"; then
+if printf '%s' "${NC_OUT}" | grep -q "tk_os_read: declared 3 at src/stdlib_tables.c"; then
     echo "  PASS: it names tk_os_read, its arity and the hand-written row"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: the failure did not name tk_os_read at llvm.c"
+    echo "  FAIL: the failure did not name tk_os_read at stdlib_tables.c"
     printf '%s' "${NC_OUT}" | grep -A4 "disagrees with the C" | sed 's/^/      /'
     FAIL=$((FAIL + 1))
 fi

@@ -25,9 +25,20 @@ typedef struct {
 
 /* ── ResolvedDeps — output of resolve_stdlib_deps() ─────────────────── */
 
+/* 138.14 (N-1): the source list was a fixed 8192 bytes and a full buffer
+ * cut the last path mid-name, so from a checkout path of ~110+ characters
+ * every std.http program (70 sources) failed E9003 "no such file", and
+ * --emit-deps printed a truncated list.  The capacity is now 64 KB and a
+ * list that still does not fit is REPORTED (overflow = 1, resolve returns
+ * TKC_DEPS_OVERFLOW) — never handed to clang cut. */
+#ifndef TKC_DEPS_SOURCES_SIZE   /* overridable, so the overflow path can be exercised */
+#define TKC_DEPS_SOURCES_SIZE (64 * 1024)
+#endif
+#define TKC_DEPS_OVERFLOW (-2)
 typedef struct {
-    char sources[8192];     /* space-separated paths to .c files         */
+    char sources[TKC_DEPS_SOURCES_SIZE]; /* space-separated paths to .c files */
     char flags[512];        /* space-separated extra linker flags        */
+    int overflow;           /* 138.14: 1 when a path did not fit in sources */
 } ResolvedDeps;
 
 /* ── Public API ─────────────────────────────────────────────────────── */

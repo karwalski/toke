@@ -8,7 +8,7 @@
 # buildable for some time and nothing noticed, because nothing built it:
 #   * src/wasm_api.c called parse() with 4 arguments; it takes 5 (Profile);
 #   * the link lacked 8 symbols -- the type checker resolves stdlib calls
-#     through tables in llvm.c and stdlib_deps.c, which the WASM source list
+#     through tables then in llvm.c and stdlib_deps.c, which the WASM source list
 #     excluded "because there is no codegen in the browser".
 #
 # WHAT THIS SUITE DOES.  Reads Makefile.wasm's own source list and flags
@@ -32,8 +32,14 @@
 # WHAT IT DOES NOT PROVE.  That emcc accepts the code, or anything about the
 # .wasm/.js artefacts.  It is a stand-in for an emcc job, not a replacement.
 #
-# Negative control: C135_EXTRA_SRCS_DROP='src/llvm.c' removes one source from
-# the list and the link must fail (the pre-136.64 state).
+# 135.21: those tables moved out of llvm.c into src/stdlib_tables.c, and the
+# WASM list no longer carries the code generator: this suite now also fails if
+# src/llvm.c (or glue_gen.c, which only llvm.c's link step needed) comes back.
+#
+# Negative control: C135_EXTRA_SRCS_DROP='src/stdlib_tables.c' removes one
+# source from the list and the link must fail (the pre-136.64 state).  The
+# 135.21 assertion was red on main at c15dd11 (Makefile.wasm listed
+# src/llvm.c and src/glue_gen.c).
 
 set -uo pipefail
 
@@ -72,6 +78,12 @@ esac
 case " ${SRCS} " in
     *" src/wasm_api.c "*) ;;
     *) fail "Makefile.wasm SRCS no longer include src/wasm_api.c" ;;
+esac
+# 135.21: the browser build checks and formats; it must not link the emitter.
+case " ${SRCS} " in
+    *" src/llvm.c "*|*" src/glue_gen.c "*)
+        fail "Makefile.wasm links the code generator (src/llvm.c / src/glue_gen.c); the checker's tables are in src/stdlib_tables.c (135.21)" ;;
+    *) pass "Makefile.wasm does not link the code generator (135.21)" ;;
 esac
 
 cat > "${WORK}/drv.c" <<'CEOF'

@@ -5,7 +5,7 @@ Scans src/stdlib/*_glue.c and src/stdlib/io_glue.c for function definitions
 matching `<rettype> tk_*(<params>) {` and generates a C header with the
 g_stdlib_decls entries.
 
-Output: src/stdlib_decls_gen.h (included by llvm.c)
+Output: src/stdlib_decls_gen.h (included by stdlib_tables.c, 135.21)
 
 Also emits src/stdlib_dummyarg_gen.h (story 127.61): the set of one-parameter
 glue symbols whose body provably never reads that parameter.  The type checker
@@ -556,8 +556,12 @@ def generate_paramkind_header(kinds: dict[str, str]) -> str:
 
 
 def load_manual_decls() -> set:
-    """Read existing manual declarations from llvm.c to avoid duplicates."""
-    llvm_path = TOKE_DIR / "src" / "llvm.c"
+    """Read existing manual declarations from g_stdlib_decls to avoid duplicates.
+
+    135.21: the table moved from src/llvm.c to src/stdlib_tables.c.  Reading
+    the old path would find no rows and regenerate every hand-written symbol
+    a second time."""
+    llvm_path = TOKE_DIR / "src" / "stdlib_tables.c"
     if not llvm_path.exists():
         return set()
     manual = set()

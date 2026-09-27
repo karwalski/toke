@@ -1211,18 +1211,24 @@ static int process_file(const char *src, const RunOpts *o)
             symtab_free(&st); rc = EUSAGE; goto done;
         }
 
-        ResolvedDeps deps;
-        if (resolve_stdlib_deps_imports_only(stdlib_dir, &st, &deps) < 0) {
+        static ResolvedDeps deps;   /* 138.14: 64 KB, off the stack */
+        int drc = resolve_stdlib_deps_imports_only(stdlib_dir, &st, &deps);
+        if (drc == TKC_DEPS_OVERFLOW) {
+            /* 138.14 (N-1): never print a list with its last path cut */
+            fputs("tkc: the stdlib source list does not fit the compiler's buffer "
+                  "(very long stdlib directory path)\n", stderr);
+            symtab_free(&st); rc = EINTERNAL; goto done;
+        }
+        if (drc < 0) {
             fputs("tkc: failed to resolve stdlib dependencies\n", stderr);
             symtab_free(&st); rc = EINTERNAL; goto done;
         }
 
-        /* Print sources: one full path per line */
+        /* Print sources: one full path per line.  138.14: tokenised in place
+         * (deps is ours) — the copy into a fixed 8 KB buffer truncated it. */
         {
-            char buf[8192];
-            snprintf(buf, sizeof buf, "%s", deps.sources);
             char *save = NULL;
-            char *tok = strtok_r(buf, " ", &save);
+            char *tok = strtok_r(deps.sources, " ", &save);
             while (tok) {
                 puts(tok);
                 tok = strtok_r(NULL, " ", &save);
