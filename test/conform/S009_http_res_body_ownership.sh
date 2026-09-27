@@ -61,6 +61,9 @@ trap 'rm -rf "${WORK}"' EXIT
 echo "S009: a heap response body is released with the request"
 echo "--------------------------------------"
 
+# tk_runtime.c: since 138.3 the glue's client calls raise through
+# tk_current_error / tk_err_box, which every compiled program links from it
+# (with args.c, which tk_runtime.c calls).
 # tk_web_glue.c carries several helpers that are unused unless the whole glue
 # surface is linked, so -Wno-unused-function here; the production build of
 # this file is unchanged and still -Werror.
@@ -85,6 +88,8 @@ if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
         "${REPO_ROOT}/src/stdlib/chart.c" \
         "${REPO_ROOT}/src/stdlib/html.c" \
         "${REPO_ROOT}/src/stdlib/ws.c" \
+        "${REPO_ROOT}/src/stdlib/tk_runtime.c" \
+        "${REPO_ROOT}/src/stdlib/args.c" \
         "${REPO_ROOT}/stdlib/vendor/tomlc99/toml.c" \
         -lz -lpthread -lm >"${WORK}/build.log" 2>&1; then
     echo "  FAIL: harness did not build"
