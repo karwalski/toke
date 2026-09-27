@@ -551,6 +551,17 @@ static int struct_field_is_str(const StructInfo *si, int fidx) {
     return !strcmp(t, "$str") || !strcmp(t, "str");
 }
 
+/* 135.20 item 4: is the field at `fidx` DECLARED as an array of str
+ * (`@str`, `@$str`, `[str]`)?  Its element loads are strings, and without
+ * this a chain the checker left untyped — `q.get(0).fields.get(1)` on a
+ * `mut.@()` accumulator of structs — rendered the element's address. */
+static int struct_field_is_str_arr(const StructInfo *si, int fidx) {
+    if (!si || fidx < 0 || fidx >= si->field_count) return 0;
+    const char *t = si->field_types[fidx];
+    return !strcmp(t, "@str") || !strcmp(t, "@$str") || !strcmp(t, "[str]") ||
+           !strcmp(t, "[$str]") || !strcmp(t, "@(str)") || !strcmp(t, "@($str)");
+}
+
 /* Return the field index for a given field name in a struct, or 0 if not found. */
 static int struct_field_index(const StructInfo *si, const char *fname) {
     if (!si) return 0;
@@ -2821,6 +2832,58 @@ static int type_is_unsigned(const Type *t) {
  * checker typed BOTH operands unsigned, or one unsigned and the other an
  * integer literal.  A u64 meeting an i64 widens to i64 (127.114), so that
  * mix stays signed. */
+/* 135.20: the binding of identifier `e` in the function being emitted
+ * (c->la_fn), searched in source order — a parameter, or a let/mut — and
+ * whether it declares an unsigned narrow type: an annotation spelled
+ * u8/u16/u32/byte/Byte, or (unannotated) an initialiser the checker typed
+ * unsigned (`let v=i as byte`).  The checker leaves `let v:byte=…` locals
+ * untyped (its resolve_type knows `Byte` but not `byte`), so the identifier
+ * itself carries no rtype to ask. */
+static int ubind_find(Ctx *c, const Node *n, const char *name, int *out) {
+    if (!n) return 0;
+    if ((n->kind == NODE_PARAM || n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT)
+        && n->child_count > 0 && n->children[0] && n->children[0]->kind == NODE_IDENT) {
+        char b[NAME_BUF]; tok_cp(c->src, n->children[0], b, sizeof b);
+        if (!strcmp(b, name)) {
+            const Node *ann = NULL, *init = NULL;
+            if (n->kind == NODE_PARAM) ann = n->child_count > 1 ? n->children[1] : NULL;
+            else if (n->child_count >= 3 && n->children[2]) { ann = n->children[1]; init = n->children[2]; }
+            else init = n->child_count >= 2 ? n->children[1] : NULL;
+            if (ann) {
+                char tn[64]; tok_cp(c->src, ann, tn, sizeof tn);
+                *out = !strcmp(tn, "u8") || !strcmp(tn, "u16") || !strcmp(tn, "u32") ||
+                       !strcmp(tn, "byte") || !strcmp(tn, "Byte");
+            } else {
+                *out = init && type_is_unsigned(init->rtype);
+            }
+            return 1;
+        }
+    }
+    for (int i = 0; i < n->child_count; i++)
+        if (ubind_find(c, n->children[i], name, out)) return 1;
+    return 0;
+}
+
+/* 135.20: widen a narrow integer argument to the i64 array-element ABI by
+ * ITS OWN signedness.  A byte of 250 went through coerce_value's sext as -6,
+ * and the receiver-method path passed the raw i8 (E9003 at clang). */
+static int widen_elem_i64(Ctx *c, int v, const char *ty, const Node *e) {
+    if (!strcmp(ty, "i8") || !strcmp(ty, "i16") || !strcmp(ty, "i32")) {
+        int uns = e && type_is_unsigned(e->rtype);
+        if (!uns && e && e->kind == NODE_IDENT && c->la_fn) {
+            char b[NAME_BUF]; tok_cp(c->src, e, b, sizeof b);
+            int u = 0;
+            if (ubind_find(c, c->la_fn, b, &u)) uns = u;
+        }
+        if (uns) {
+            int z = next_tmp(c);
+            fprintf(c->out, "  %%t%d = zext %s %%t%d to i64\n", z, ty, v);
+            return z;
+        }
+    }
+    return coerce_value(c, v, ty, "i64");
+}
+
 static int binop_is_unsigned(const Node *n) {
     if (!n || n->child_count < 2) return 0;
     const Node *a = n->children[0], *b = n->children[1];
@@ -5485,6 +5548,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         int z = next_tmp(c);
                         fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, av);
                         av = z;
+                    } else if (!strcmp(aty, "i8") || !strcmp(aty, "i16") || !strcmp(aty, "i32")) {
+                        av = widen_elem_i64(c, av, aty, n->children[i+1]);   /* 135.20 */
                     }
                     coa[i+1] = av;
                 }
@@ -8058,6 +8123,20 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
         if (lookup_struct(c, sn)) return sn;
         return NULL;
     }
+    /* 135.20 item 3: an array concat the checker left untyped — `@(256;0) +
+     * s.bytes(..)`, whose element types differ (i64 and byte) — carries its
+     * operands' array tag.  Without one, `j.enc(a+b)` took the str encoder
+     * and returned "", and a `let` of it recorded no tag at all.  Elements
+     * are i64 words either way, so a byte operand yields to the other. */
+    if (n->kind == NODE_BINARY_EXPR && n->op == TK_PLUS && n->child_count >= 2 &&
+        plus_has_array_operand(c, n)) {
+        const char *lt = expr_struct_type(c, n->children[0]);
+        const char *rt = expr_struct_type(c, n->children[1]);
+        int la = lt && lt[0] == '@', ra = rt && rt[0] == '@';
+        if (la && ra && strcmp(lt, rt) && !strcmp(lt, "@byte")) return rt;
+        if (la) return lt;
+        if (ra) return rt;
+    }
     if (n->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
         /* 127.46: a local whose LLVM name was uniquified (`t2` → `t2.1`, because
@@ -8182,6 +8261,10 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                     !strcmp(si->field_names[fidx], fld) &&
                     struct_field_is_str(si, fidx))
                     return "$str";
+                if (fidx >= 0 && fidx < si->field_count &&
+                    !strcmp(si->field_names[fidx], fld) &&
+                    struct_field_is_str_arr(si, fidx))
+                    return "@str";                            /* 135.20 item 4 */
             } else {
                 /* 126.8: the base didn't resolve to a struct instance (e.g.
                  * `json.getobj(...).raw` — the stale getobj's Json return isn't
@@ -8193,6 +8276,16 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                 const StructInfo *osi = field_owner_unambiguous(c, fld, NULL);
                 if (osi && struct_field_is_str(osi, struct_field_index(osi, fld)))
                     return "$str";
+                if (osi) {                                    /* 135.20 item 4 */
+                    /* every declaring struct must agree it is a @str field —
+                     * field_owner_unambiguous only compares slot, float, str */
+                    int all = 1;
+                    for (int k = 0; k < c->struct_count && all; k++)
+                        if (struct_has_field(&c->structs[k], fld) &&
+                            !struct_field_is_str_arr(&c->structs[k],
+                                 struct_field_index(&c->structs[k], fld))) all = 0;
+                    if (all) return "@str";
+                }
             }
         }
     }
@@ -9365,11 +9458,13 @@ static int la_self_update_call(Ctx *c, const Node *call, const char *x, char *ou
 
 /* A fresh RHS for x: an array literal, or a self-update on x (append/set/push).
  * These are exactly the producers that yield an unshared block for x. */
+static int la_fresh_std_call(Ctx *c, const Node *rhs);
 static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
     if (!rhs) return 0;
     /* 127.55: a map literal is a fresh container for exactly the same reason an
      * array literal is, so a map accumulator can be linearly owned too. */
     if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_MAP_LIT) return 1;
+    if (la_fresh_std_call(c, rhs)) return 1;   /* 135.20 item 2 */
     return la_self_update_call(c, rhs, x, NULL);
 }
 
@@ -9392,6 +9487,32 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
         const char *m = strrchr(c->imports[i].module, '.');
         m = m ? m + 1 : c->imports[i].module;
         return !strcmp(m, "str") || !strcmp(m, "io") || !strcmp(m, "fmt");
+    }
+    return 0;
+}
+
+/* 135.20 item 2: is `rhs` a call into std.str?  Every std.str export that
+ * returns an array (bytes/tobytes, split, fields, chars) builds its result in
+ * a block it has just allocated with tk_arr_alloc and keeps no reference to it
+ * (str_glue.c, bytes_rt.h tk_bytes_pack), and std.str takes no array it could
+ * hand back.  So its result is as fresh as an array literal, and
+ * `let big=mut.s.bytes(""); … big=big.append(v)` may take the in-place path
+ * rather than copying the whole block on every append (O(N²) time and, since
+ * the discarded copies are never freed, O(N²) live memory).  A non-array
+ * result (a str) never reaches the in-place lowering: that needs a
+ * self-update `x=x.append/set/push(…)`. */
+static int la_fresh_std_call(Ctx *c, const Node *rhs) {
+    if (!rhs || rhs->kind != NODE_CALL_EXPR || rhs->child_count < 1) return 0;
+    const Node *callee = rhs->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return 0;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return 0;
+    char al[NAME_BUF]; tok_cp(c->src, callee->children[0], al, sizeof al);
+    for (int i = 0; i < c->import_count; i++) {
+        if (strcmp(c->imports[i].alias, al)) continue;
+        if (!c->imports[i].is_std) return 0;
+        const char *m = strrchr(c->imports[i].module, '.');
+        m = m ? m + 1 : c->imports[i].module;
+        return !strcmp(m, "str");
     }
     return 0;
 }
@@ -9443,8 +9564,25 @@ static const Node *la_find_user_fn(Ctx *c, const char *name) {
  * only accepted when THAT callee's parameter passes the same test.  Recursion
  * and deep call chains are cut off at a small depth and answered "retains",
  * which is the conservative answer. */
+/* 127.171: the (function, parameter) queries in progress on this path.  A
+ * query that meets itself again — `f` passing `p` straight back to `f` in the
+ * same position, or round a mutual cycle f→g→f — is answered "does not
+ * retain" on the assumption under test.  That is the greatest fixpoint, and
+ * it is sound here because the assumption is only ever discharged by the
+ * outer query: every OTHER use of the parameter in every body on the cycle is
+ * still checked, so any real retention (a `<p` return, a store, a capture, a
+ * pass to a retaining callee) still makes the outer answer "retains".  The
+ * depth cutoff remains for long non-recursive chains. */
+#define LA_INPROG_MAX 8
+static const Node *la_inprog_fn[LA_INPROG_MAX];
+static int la_inprog_idx[LA_INPROG_MAX];
+static int la_inprog_n;
+
 static int la_param_nonretaining(Ctx *c, const Node *fn, int idx, int depth) {
-    if (!fn || depth > 4) return 0;
+    if (!fn) return 0;
+    for (int k = 0; k < la_inprog_n; k++)
+        if (la_inprog_fn[k] == fn && la_inprog_idx[k] == idx) return 1;   /* 127.171 */
+    if (depth > 4 || la_inprog_n >= LA_INPROG_MAX) return 0;
     const Node *param = NULL, *body = NULL;
     int pi = 0;
     for (int i = 0; i < fn->child_count; i++) {
@@ -9457,7 +9595,9 @@ static int la_param_nonretaining(Ctx *c, const Node *fn, int idx, int depth) {
     char p[NAME_BUF]; tok_cp(c->src, param->children[0], p, sizeof p);
     const Node *saved = c->la_fn;
     c->la_fn = fn;
+    la_inprog_fn[la_inprog_n] = fn; la_inprog_idx[la_inprog_n] = idx; la_inprog_n++;
     int bad = la_bad_use(c, body, p, 1, depth + 1);
+    la_inprog_n--;
     c->la_fn = saved;
     return !bad;
 }
@@ -9847,6 +9987,33 @@ static void compute_str_arrays(Ctx *c, const Node *fn) {
     }
 }
 
+/* 135.20 item 4: the struct every self-append `x=x.append(E)` /
+ * `x=x.push(E)` of `x` in `n` stores, when each E is a struct literal of the
+ * same registered struct; "" when none is found, NULL on any disagreement or
+ * a non-literal element.  A `mut.@()` accumulator built this way is then
+ * tagged "@<Struct>" like an array literal of structs (136.28), so
+ * `q.get(0).fields` resolves its layout instead of falling to the
+ * field-owner search. */
+static const char *accum_struct_elem(Ctx *c, const Node *n, const char *x, const char *acc) {
+    if (!n || !acc) return acc;
+    if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
+        const Node *r = n->children[1];
+        char m[NAME_BUF];
+        if (la_self_update_call(c, r, x, m) && strcmp(m, "set") && r->child_count >= 2) {
+            const Node *e = r->children[1];
+            if (!e || e->kind != NODE_STRUCT_LIT) return NULL;
+            const char *sn = expr_struct_type(c, e);
+            const StructInfo *si = sn ? lookup_struct(c, sn) : NULL;
+            if (!si) return NULL;
+            if (acc[0] && strcmp(acc, si->name)) return NULL;
+            acc = si->name;
+        }
+    }
+    for (int i = 0; i < n->child_count && acc; i++)
+        acc = accum_struct_elem(c, n->children[i], x, acc);
+    return acc;
+}
+
 static int is_str_arr(Ctx *c, const char *name) {
     for (int i = 0; i < c->str_arr_count; i++)
         if (!strcmp(c->str_arr[i], name)) return 1;
@@ -10061,6 +10228,15 @@ static void emit_stmt(Ctx *c, const Node *n)
             if (is_str_arr(c, tb_raw)) {
                 const char *cur = ptr_local_struct_type(c, tb);
                 if (!cur || !strcmp(cur, "@i64")) { clear_ptr_local(c, tb); mark_ptr_with_type(c, tb, "@str"); }
+            } else if (init_node && init_node->kind == NODE_ARRAY_LIT &&
+                       init_node->child_count == 0 && c->la_fn) {
+                /* 135.20 item 4: an empty accumulator filled with struct literals */
+                const char *cur = ptr_local_struct_type(c, tb);
+                const char *es = accum_struct_elem(c, c->la_fn, tb_raw, "");
+                if (es && es[0] && (!cur || !strcmp(cur, "@i64"))) {
+                    clear_ptr_local(c, tb);
+                    mark_ptr_with_type(c, tb, array_struct_tag(es));
+                }
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
@@ -10145,14 +10321,14 @@ static void emit_stmt(Ctx *c, const Node *n)
                     int iv = emit_expr(c, rhs->children[1]);
                     iv = coerce_value(c, iv, expr_llvm_type(c, rhs->children[1]), "i64");
                     int ev = emit_expr(c, rhs->children[2]);
-                    ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[2]), "i64");
+                    ev = widen_elem_i64(c, ev, expr_llvm_type(c, rhs->children[2]), rhs->children[2]);
                     emit_set_bounds_check(c, recv, iv);
                     res = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @tk_array_set_inplace_w(i64 %%t%d, i64 %%t%d, i64 %%t%d) ; 114.18 in-place set\n",
                             res, recv, iv, ev);
                 } else { /* append / push */
                     int ev = emit_expr(c, rhs->children[1]);
-                    ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[1]), "i64");
+                    ev = widen_elem_i64(c, ev, expr_llvm_type(c, rhs->children[1]), rhs->children[1]);
                     res = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @tk_array_append_inplace_w(i64 %%t%d, i64 %%t%d) ; 114.18 in-place append\n",
                             res, recv, ev);
