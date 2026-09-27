@@ -51,5 +51,9 @@ printf 'm=q;f=sample():@u64{let r=mut.@();r=r.append(5);r=r+@(2;9);<r};f=main():
 expect "7 an int-literal first append does not fix the element type (corpus P3-A-SRT-0008v82)" \
     "$("${TKC}" --check "${WORK}/u.tk" > /dev/null 2>&1; echo "rc=$?")" "rc=0"
 
+printf 'm=q;f=n(x:str):u64{<5};f=lengths(xs:@str):@i64{let out=mut.@();lp(let i=0;i<xs.len;i=i+1){out=out.append(n(xs.get(i)))};<out};f=main():i64{<0};\n' > "${WORK}/w.tk"
+expect "8 an integer (u64) first append does not fix the element type (corpus P3-D-DAT-0012v123 shape)" \
+    "$("${TKC}" --check "${WORK}/w.tk" > /dev/null 2>&1; echo "rc=$?")" "rc=0"
+
 echo "C244: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

@@ -2597,6 +2597,12 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
             || t->elem->kind == TY_VOID) return NULL;
         t = t->elem;
     }
+    /* An INTEGER element (any width) adds nothing the i64 default does not
+     * render, and fixing it to u64 made `out=out.append(s.len(x)); <out`
+     * from an `:@i64` function E4031 (corpus P3-D-DAT-0012v123): arrays do
+     * not widen element types.  Only a representation-bearing element
+     * (str, bool, float, array, map, struct) is adopted. */
+    if (is_integer(t)) return NULL;
     return t;
 }
 
