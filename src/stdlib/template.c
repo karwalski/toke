@@ -1295,6 +1295,13 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     int nblocks = 0;
 
     if (!parse_page_directives(page_src, &layout_name, blocks, &nblocks)) {
+        /* A malformed directive after a layout() or a block() returned
+         * with those already allocated; they leaked here. */
+        free(layout_name);
+        for (int i = 0; i < nblocks; i++) {
+            free(blocks[i].name);
+            free(blocks[i].content);
+        }
         free(page_src);
         return NULL;
     }

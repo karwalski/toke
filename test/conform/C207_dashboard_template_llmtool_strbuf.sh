@@ -21,7 +21,9 @@
 #   - dashboard_render / dashboard_export_json with hostile titles, ids,
 #     values, markdown and a 3000-byte title;
 #   - tmpl_renderhtml escaping and tmpl_renderpage with a 20000-byte block
-#     yielded three times;
+#     yielded three times, and (a counting-allocator build of template.c)
+#     a page whose directive parse fails after a layout() and a block():
+#     nothing may be left allocated (main leaked 3);
 #   - llm_agentic_loop against a local mock server (python3) whose first
 #     reply is a tool call with an id of 80 double quotes; the second request
 #     is captured and its tool message content must parse as JSON carrying
@@ -228,7 +230,64 @@ check(content is not None and content.get("tool_call_id") == '\\"' * 80
 sys.exit(1 if bad else 0)
 PY
 prc=$?
+
+# ---- tmpl_renderpage frees what a failed directive parse left behind ----
+# A page whose layout() and first block() parse, followed by a block(" with
+# no closing quote: parse_page_directives returns 0 and tmpl_renderpage
+# leaked layout_name and the block (3 allocations; the analyzer's three
+# unix.Malloc warnings at template.c's parse call, unmasked by the strbuf
+# rewrite of apply_yields).  template.c is built with a counting allocator.
+cat > "${WORK}/cnt.h" <<'C'
+#include <stdlib.h>
+#include <string.h>
+void *cnt_malloc(size_t); void *cnt_calloc(size_t, size_t); void *cnt_realloc(void *, size_t);
+void cnt_free(void *); char *cnt_strdup(const char *);
+#define malloc(n)     cnt_malloc(n)
+#define calloc(a, b)  cnt_calloc(a, b)
+#define realloc(p, n) cnt_realloc(p, n)
+#define free(p)       cnt_free(p)
+#define strdup(s)     cnt_strdup(s)
+C
+cat > "${WORK}/cnt.c" <<'C'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "template.h"
+long cnt_live = 0;
+void *cnt_malloc(size_t n) { void *p = malloc(n); if (p) cnt_live++; return p; }
+void *cnt_calloc(size_t a, size_t b) { void *p = calloc(a, b); if (p) cnt_live++; return p; }
+void *cnt_realloc(void *o, size_t n) { void *p = realloc(o, n); if (p && !o) cnt_live++; return p; }
+void cnt_free(void *p) { if (p) cnt_live--; free(p); }
+char *cnt_strdup(const char *s) { char *p = strdup(s); if (p) cnt_live++; return p; }
+int main(int argc, char **argv) {
+    if (argc < 3) return 2;
+    long before = cnt_live;
+    const char *r = tmpl_renderpage(argv[1], argv[2], NULL, 0);
+    long left = cnt_live - before;
+    if (!r && left == 0) {
+        printf("  PASS: a malformed block() after layout()/block(): NULL, nothing left allocated\n");
+        return 0;
+    }
+    printf("  FAIL: a malformed block() after layout()/block(): %s, %ld allocation(s) left\n",
+           r ? "non-NULL" : "NULL", left);
+    return 1;
+}
+C
+mkdir -p "${WORK}/tl"
+printf '<p>{! yield("a") !}</p>' > "${WORK}/tl/base.tkt"
+printf '{! layout("base") !}{! block("a") !}xx{! end !}{! block("bad' > "${WORK}/tl/page.tkt"
+trc=1
+if "${CC}" -std=c11 -D_GNU_SOURCE -g ${SAN} -iquote "${S}" -c -include "${WORK}/cnt.h" \
+        -o "${WORK}/tmpl_cnt.o" "${S}/template.c" >"${WORK}/tcc.log" 2>&1 &&
+   "${CC}" -std=c11 -D_GNU_SOURCE -g ${SAN} -iquote "${S}" -o "${WORK}/tl_t" \
+        "${WORK}/cnt.c" "${WORK}/tmpl_cnt.o" >>"${WORK}/tcc.log" 2>&1; then
+    ASAN_OPTIONS="detect_leaks=0" "${WORK}/tl_t" "${WORK}/tl/page.tkt" "${WORK}/tl"
+    trc=$?
+else
+    echo "  FAIL: template leak driver does not build: $(head -c 600 "${WORK}/tcc.log")"
+fi
+
 echo ""
-if [ "${rc}" -eq 0 ] && [ "${prc}" -eq 0 ]; then echo "C207: PASS"; exit 0; fi
-echo "C207: FAIL (driver ${rc}, wire ${prc})"
+if [ "${rc}" -eq 0 ] && [ "${prc}" -eq 0 ] && [ "${trc}" -eq 0 ]; then echo "C207: PASS"; exit 0; fi
+echo "C207: FAIL (driver ${rc}, wire ${prc}, template-leak ${trc})"
 exit 1
