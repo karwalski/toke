@@ -17,6 +17,7 @@
 
 #include "canvas.h"
 #include "strbuf.h"
+#include "tk_array.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,19 +34,8 @@
  * the JS lost its closing "');" and swallowed the NEXT statement. */
 typedef TkStrBuf Buf;
 
-/* -----------------------------------------------------------------------
- * TkCanvas struct
- * ----------------------------------------------------------------------- */
-
-struct TkCanvas {
-    char    *id;
-    uint32_t width;
-    uint32_t height;
-    uint64_t op_count;
-    Buf      ops;     /* raw drawing JS statements (no context preamble) */
-    char    *js_out;  /* cached result of canvas_to_js  */
-    char    *html_out;/* cached result of canvas_to_html */
-};
+/* TkCanvas is declared in canvas.h: its leading fields are the $canvas
+ * record toke reads (135.30). */
 
 /* -----------------------------------------------------------------------
  * Lifecycle
@@ -56,10 +46,12 @@ TkCanvas *canvas_new(const char *id, uint32_t width, uint32_t height)
     TkCanvas *c = (TkCanvas *)malloc(sizeof(TkCanvas));
     if (!c) return NULL;
     c->id       = id ? strdup(id) : strdup("");
-    c->width    = width;
-    c->height   = height;
+    c->width    = (int64_t)width;
+    c->height   = (int64_t)height;
+    c->ops      = tk_arr_alloc(8, 0);   /* empty, never a null handle */
     c->op_count = 0;
-    strbuf_init(&c->ops);
+    c->op_start = 0;
+    strbuf_init(&c->js);
     c->js_out   = NULL;
     c->html_out = NULL;
     return c;
@@ -69,7 +61,7 @@ void canvas_free(TkCanvas *c)
 {
     if (!c) return;
     free(c->id);
-    strbuf_free(&c->ops);
+    strbuf_free(&c->js);
     free(c->js_out);
     free(c->html_out);
     free(c);
@@ -79,8 +71,39 @@ void canvas_free(TkCanvas *c)
  * Internal: append one JS line and increment op counter
  * ----------------------------------------------------------------------- */
 
+/* record_op — append the statement written since op_start to c->ops as a
+ * $canvasop (135.30).  tag is the identifier after the statement's last
+ * "_c." -- the Canvas 2D member the operation ends with. */
+static void record_op(TkCanvas *c)
+{
+    if (c->js.oom || c->js.len < c->op_start) return;
+    size_t n = c->js.len - c->op_start;
+    while (n && c->js.buf[c->op_start + n - 1] == '\n') n--;
+    char *data = (char *)malloc(n + 1);
+    TkCanvasOpRec *op = (TkCanvasOpRec *)malloc(sizeof *op);
+    if (!data || !op) { free(data); free(op); return; }
+    memcpy(data, c->js.buf + c->op_start, n);
+    data[n] = '\0';
+    const char *t = data, *p = data;
+    while ((p = strstr(p, "_c.")) != NULL) { t = p + 3; p += 3; }
+    size_t tn = 0;
+    if (t != data)
+        while ((t[tn] >= 'a' && t[tn] <= 'z') || (t[tn] >= 'A' && t[tn] <= 'Z')) tn++;
+    char *tag = (char *)malloc(tn + 1);
+    if (!tag) { free(data); free(op); return; }
+    memcpy(tag, t, tn);
+    tag[tn] = '\0';
+    op->tag  = tag;
+    op->data = data;
+    int64_t h = tk_arr_push(c->ops, (int64_t)(intptr_t)op);
+    if (h) c->ops = h;
+    else { free(tag); free(data); free(op); }
+}
+
 static void op_done(TkCanvas *c)
 {
+    record_op(c);
+    c->op_start = c->js.len;
     c->op_count++;
     /* invalidate cached outputs */
     free(c->js_out);   c->js_out   = NULL;
@@ -89,7 +112,7 @@ static void op_done(TkCanvas *c)
 
 static void append_op(TkCanvas *c, const char *stmt)
 {
-    strbuf_append(&c->ops, stmt);
+    strbuf_append(&c->js, stmt);
     op_done(c);
 }
 
@@ -98,7 +121,7 @@ static void append_opf(TkCanvas *c, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    strbuf_vappendf(&c->ops, fmt, ap);
+    strbuf_vappendf(&c->js, fmt, ap);
     va_end(ap);
     op_done(c);
 }
@@ -112,9 +135,9 @@ static void append_opf(TkCanvas *c, const char *fmt, ...)
  * to %s, which is undefined behaviour). */
 static void js_lit(TkCanvas *c, const char *s)
 {
-    strbuf_putc(&c->ops, '\'');
-    strbuf_append_js(&c->ops, s);
-    strbuf_putc(&c->ops, '\'');
+    strbuf_putc(&c->js, '\'');
+    strbuf_append_js(&c->js, s);
+    strbuf_putc(&c->js, '\'');
 }
 
 /* -----------------------------------------------------------------------
@@ -124,7 +147,7 @@ static void js_lit(TkCanvas *c, const char *s)
 TkCanvas *canvas_fill_rect(TkCanvas *c, double x, double y, double w, double h, const char *color)
 {
     if (!c) return NULL;
-    strbuf_append(&c->ops, "_c.fillStyle=");
+    strbuf_append(&c->js, "_c.fillStyle=");
     js_lit(c, color);
     append_opf(c, "; _c.fillRect(%g,%g,%g,%g);\n", x, y, w, h);
     return c;
@@ -133,7 +156,7 @@ TkCanvas *canvas_fill_rect(TkCanvas *c, double x, double y, double w, double h, 
 TkCanvas *canvas_stroke_rect(TkCanvas *c, double x, double y, double w, double h, const char *color, double lw)
 {
     if (!c) return NULL;
-    strbuf_append(&c->ops, "_c.strokeStyle=");
+    strbuf_append(&c->js, "_c.strokeStyle=");
     js_lit(c, color);
     append_opf(c, "; _c.lineWidth=%g; _c.strokeRect(%g,%g,%g,%g);\n",
              lw, x, y, w, h);
@@ -150,11 +173,11 @@ TkCanvas *canvas_clear_rect(TkCanvas *c, double x, double y, double w, double h)
 TkCanvas *canvas_fill_text(TkCanvas *c, const char *text, double x, double y, const char *font, const char *color)
 {
     if (!c) return NULL;
-    strbuf_append(&c->ops, "_c.font=");
+    strbuf_append(&c->js, "_c.font=");
     js_lit(c, font);
-    strbuf_append(&c->ops, "; _c.fillStyle=");
+    strbuf_append(&c->js, "; _c.fillStyle=");
     js_lit(c, color);
-    strbuf_append(&c->ops, "; _c.fillText(");
+    strbuf_append(&c->js, "; _c.fillText(");
     js_lit(c, text);
     append_opf(c, ",%g,%g);\n", x, y);
     return c;
@@ -198,7 +221,7 @@ TkCanvas *canvas_close_path(TkCanvas *c)
 TkCanvas *canvas_fill(TkCanvas *c, const char *color)
 {
     if (!c) return NULL;
-    strbuf_append(&c->ops, "_c.fillStyle=");
+    strbuf_append(&c->js, "_c.fillStyle=");
     js_lit(c, color);
     append_op(c, "; _c.fill();\n");
     return c;
@@ -207,7 +230,7 @@ TkCanvas *canvas_fill(TkCanvas *c, const char *color)
 TkCanvas *canvas_stroke(TkCanvas *c, const char *color, double lw)
 {
     if (!c) return NULL;
-    strbuf_append(&c->ops, "_c.strokeStyle=");
+    strbuf_append(&c->js, "_c.strokeStyle=");
     js_lit(c, color);
     append_opf(c, "; _c.lineWidth=%g; _c.stroke();\n", lw);
     return c;
@@ -218,8 +241,8 @@ TkCanvas *canvas_draw_image(TkCanvas *c, const char *src, double x, double y, do
     if (!c) return NULL;
     /* src sits in a block comment: strbuf_append_js also escapes the '/'
      * of a "*" "/" pair, so the comment cannot be closed from inside. */
-    strbuf_append(&c->ops, "_c.drawImage(new Image()/* src=");
-    strbuf_append_js(&c->ops, src);
+    strbuf_append(&c->js, "_c.drawImage(new Image()/* src=");
+    strbuf_append_js(&c->js, src);
     append_opf(c, " */,%g,%g,%g,%g);\n", x, y, w, h);
     return c;
 }
@@ -245,7 +268,7 @@ const char *canvas_to_js(TkCanvas *c)
     strbuf_append(&o, "const _c = document.getElementById('");
     strbuf_append_js(&o, c->id);
     strbuf_append(&o, "').getContext('2d');\n");
-    strbuf_appendn(&o, strbuf_cstr(&c->ops), c->ops.len);
+    strbuf_appendn(&o, strbuf_cstr(&c->js), c->js.len);
     c->js_out = strbuf_take(&o);
     return c->js_out;
 }
@@ -263,7 +286,7 @@ const char *canvas_to_html(TkCanvas *c)
     strbuf_append(&o, "<canvas id=\"");
     strbuf_append_xml(&o, c->id);
     strbuf_appendf(&o, "\" width=\"%u\" height=\"%u\"></canvas>\n<script>\n",
-             c->width, c->height);
+             (unsigned)c->width, (unsigned)c->height);
     strbuf_append(&o, js);
     strbuf_append(&o, "\n</script>");
     c->html_out = strbuf_take(&o);
@@ -313,7 +336,7 @@ void canvas_restore(TkCanvas *c)
 void canvas_fill_style(TkCanvas *c, const char *color)
 {
     if (!c || !color) return;
-    strbuf_append(&c->ops, "_c.fillStyle=");
+    strbuf_append(&c->js, "_c.fillStyle=");
     js_lit(c, color);
     append_op(c, ";\n");
 }
@@ -321,7 +344,7 @@ void canvas_fill_style(TkCanvas *c, const char *color)
 void canvas_stroke_style(TkCanvas *c, const char *color)
 {
     if (!c || !color) return;
-    strbuf_append(&c->ops, "_c.strokeStyle=");
+    strbuf_append(&c->js, "_c.strokeStyle=");
     js_lit(c, color);
     append_op(c, ";\n");
 }
