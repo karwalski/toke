@@ -34,6 +34,7 @@
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
 #include "diag.h"
 #include "tkc_limits.h"
+#include "version.h"   /* 135.3j: TKC_VERSION */
 #include "stdlib_deps.h"
 #include <stdint.h>
 #include "glue_gen.h"
@@ -11964,7 +11965,7 @@ timeparts_done:
                 ctx.dbg_file, ctx.dbg_source_file, ctx.dbg_source_dir);
         /* DICompileUnit */
         fprintf(body_file, "!%d = distinct !DICompileUnit(language: DW_LANG_C99, "
-                "file: !%d, producer: \"toke 0.3.0\", isOptimized: false, "
+                "file: !%d, producer: \"toke " TKC_VERSION "\", isOptimized: false, "   /* 135.3j */
                 "runtimeVersion: 0, emissionKind: FullDebug)\n",
                 ctx.dbg_cu, ctx.dbg_file);
         /* Module flags for DWARF version and Debug Info Version */

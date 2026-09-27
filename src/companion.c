@@ -25,6 +25,7 @@
 
 #include "companion.h"
 #include "tkc_limits.h"
+#include "version.h"      /* 135.3j: TKC_VERSION */
 #include "readall.h"      /* 135.3j: tk_read_stream() — no ftell on FIFOs */
 #include "stdlib/capabilities.h"   /* 124.4-fu: TK_CAP_* bits for the grant record */
 #include <string.h>
@@ -263,7 +264,7 @@ static void emit_frontmatter(FILE *out, const char *source_path,
     fprintf(out, "---\n");
     fprintf(out, "source_file: \"%s\"\n", basename);
     fprintf(out, "source_hash: \"%s\"\n", hex);
-    fprintf(out, "compiler_version: \"0.3.0\"\n");
+    fprintf(out, "compiler_version: \"%s\"\n", TKC_VERSION);   /* 135.3j */
     fprintf(out, "generated_at: \"%s\"\n", ts);
     fprintf(out, "format_version: \"1.0\"\n");
     fprintf(out, "---\n");

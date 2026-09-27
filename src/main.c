@@ -74,6 +74,7 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
 #include "tkir.h"
 #include "stdlib_deps.h"
 #include "diag.h"    /* 123.12c: diag_set_keep, diag_error_offsets */
+#include "version.h" /* 135.3j: TKC_VERSION, the one statement of it */
 #include "readall.h" /* 135.3j: tk_read_stream() — sources may be FIFOs */
 
 /* Forward declarations for stubs not yet exported by their headers */
@@ -92,7 +93,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "toke 3.0.0"
+#define VERSION   "toke " TKC_VERSION   /* 135.3j: src/version.h */
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE

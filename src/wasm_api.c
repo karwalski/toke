@@ -31,6 +31,7 @@
 #include "types.h"
 #include "fmt.h"
 #include "tkc_limits.h"
+#include "version.h"   /* 135.3j: TKC_VERSION */
 
 /* Forward declarations matching main.c */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -41,36 +42,29 @@ void *arena_alloc(Arena *arena, int size);
 Arena *arena_init(void);
 void   arena_free(Arena *arena);
 
-int  diag_error_count(void);
-void diag_reset(void);
-void diag_set_format(DiagFormat fmt);
-void diag_set_source_file(const char *path);
-void diag_flush_sarif(void);
+#include "diag.h"      /* 135.3j (7): diag_set_sink */
 
 int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile profile);
 
 /* ── Version ────────────────────────────────────────────────────────── */
 
-#define TKC_WASM_VERSION "tkc 0.3.0-wasm"
+/* 135.3j (7): was a hand-written literal that still said 0.3; src/version.h is the source. */
+#define TKC_WASM_VERSION "tkc " TKC_VERSION "-wasm"
 
 /* ── Diagnostic capture ─────────────────────────────────────────────
  *
- * The existing diag module writes to stderr.  For WASM we intercept
- * diagnostics after each pipeline stage by running the pipeline with
- * DIAG_FMT_JSON, then capturing stderr output would require EM_JS
- * hacks.  Instead we re-run the pipeline stages and build JSON from
- * the diag_error_count() plus re-lexing/re-parsing to collect line
- * info.
- *
- * A simpler approach: we run the full pipeline and record pass/fail
- * at each stage.  Detailed per-diagnostic JSON is captured by a small
- * ring buffer that hooks into diag_emit via a WASM-specific shim
- * compiled into diag.c (future enhancement).  For now, we return a
- * summary JSON with stage, success/fail, and error count.
+ * 135.3j (7): the compiler writes diagnostics to stderr, which a browser
+ * cannot read, and this file used to promise a capture shim as a "future
+ * enhancement" while returning "diagnostics":[] for every program — so the
+ * playground could say that a check failed but never why.  diag.c now takes a
+ * sink (diag_set_sink); run_pipeline installs capture_diag() for the length
+ * of a run, so each record lands in s_diags with its code, position, message
+ * and fix, and nothing is written to stderr.
  * ----------------------------------------------------------------- */
 
-#define DIAG_CAP 256
-#define DIAG_MSG_MAX 512
+#define DIAG_CAP 256        /* records kept per run; the count stays exact */
+#define DIAG_MSG_MAX 512    /* matches diag.c's own SARIF message buffer */
+#define DIAG_FIX_MAX 256    /* matches diag.c's own SARIF fix buffer */
 
 typedef struct {
     int  severity;  /* 0 = warning, 1 = error */
@@ -78,10 +72,25 @@ typedef struct {
     int  line;
     int  col;
     char message[DIAG_MSG_MAX];
+    char fix[DIAG_FIX_MAX];   /* "" when the diagnostic has no fix */
 } WasmDiag;
 
 static WasmDiag s_diags[DIAG_CAP];
 static int      s_diag_count = 0;
+
+/* diag_set_sink callback: record one diagnostic. */
+static void capture_diag(DiagSeverity sev, int code, int byte_offset,
+                         int line, int col, const char *message,
+                         const char *fix, void *ctx)
+{
+    (void)byte_offset; (void)ctx;
+    if (s_diag_count >= DIAG_CAP) return;
+    WasmDiag *d = &s_diags[s_diag_count++];
+    d->severity = sev == DIAG_ERROR ? 1 : 0;
+    d->code = code; d->line = line; d->col = col;
+    snprintf(d->message, sizeof d->message, "%s", message ? message : "");
+    snprintf(d->fix, sizeof d->fix, "%s", fix ? fix : "");
+}
 
 /* Reset captured diagnostics before each invocation. */
 static void wasm_diag_reset(void)
@@ -113,7 +122,9 @@ static void json_escape_to(char *buf, int *pos, int cap, const char *src)
 /* Build a JSON diagnostics result string.  Caller must free(). */
 static char *build_diagnostics_json(int success, const char *stage)
 {
-    int cap = 4096 + s_diag_count * 1024;
+    /* Per record: message and fix each escape to at most 6 bytes a byte,
+     * plus ~130 bytes of keys and numbers (135.3j: records now carry both). */
+    int cap = 4096 + s_diag_count * (6 * (DIAG_MSG_MAX + DIAG_FIX_MAX) + 160);
     char *buf = malloc((size_t)cap);
     if (!buf) return NULL;
 
@@ -131,7 +142,13 @@ static char *build_diagnostics_json(int success, const char *stage)
             s_diags[i].severity ? "error" : "warning",
             s_diags[i].code, s_diags[i].line, s_diags[i].col);
         json_escape_to(buf, &pos, cap, s_diags[i].message);
-        pos += snprintf(buf + pos, (size_t)(cap - pos), "\"}");
+        pos += snprintf(buf + pos, (size_t)(cap - pos), "\"");
+        if (s_diags[i].fix[0]) {   /* absent, not empty, when there is none (§6) */
+            pos += snprintf(buf + pos, (size_t)(cap - pos), ",\"fix\":\"");
+            json_escape_to(buf, &pos, cap, s_diags[i].fix);
+            pos += snprintf(buf + pos, (size_t)(cap - pos), "\"");
+        }
+        pos += snprintf(buf + pos, (size_t)(cap - pos), "}");
     }
 
     pos += snprintf(buf + pos, (size_t)(cap - pos), "]}");
@@ -166,6 +183,7 @@ static PipeResult run_pipeline(const char *source, const char *up_to)
     tkc_limits_defaults(&limits);
 
     wasm_diag_reset();
+    diag_set_sink(capture_diag, NULL);   /* 135.3j (7): records, not stderr */
     diag_set_format(DIAG_FMT_JSON);
     diag_set_source_file("<playground>");
 
