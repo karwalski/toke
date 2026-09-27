@@ -26,10 +26,9 @@
 typedef struct { int64_t key; int64_t val; } TkMapEntryT;
 typedef struct { TkMapEntryT *entries; int len; int cap; } TkMapImplT;
 
-/* Unpack a toke string→string map / $tmplvars bundle into a TkTmplVar[].
- * tpl.vars is the identity on the map (see tk_template_vars_w), so the same
- * unpack serves render and renderfile. Caller frees the returned array. */
-static TkTmplVar *unpack_tmplvars(int64_t data, uint64_t *nout) {
+/* Unpack a toke string→string map into a TkTmplVar[]. Caller frees the
+ * returned array. */
+static TkTmplVar *unpack_map(int64_t data, uint64_t *nout) {
     *nout = 0;
     if (!data) return NULL;
     const TkMapImplT *m = (const TkMapImplT *)(intptr_t)data;
@@ -45,14 +44,19 @@ static TkTmplVar *unpack_tmplvars(int64_t data, uint64_t *nout) {
     return vars;
 }
 
-static const char *template_render_impl(int64_t tpl, int64_t data) {
-    if (!tpl) return NULL;
-    const char *source = (const char *)(intptr_t)tpl;
+/* 135.30: a $tmplvars is a TkTmplVarsRec; its entries is the map. */
+static TkTmplVar *unpack_tmplvars(int64_t data, uint64_t *nout) {
+    *nout = 0;
+    if (!data) return NULL;
+    return unpack_map(((const TkTmplVarsRec *)(intptr_t)data)->entries, nout);
+}
+
+/* render `source` with the map `map` (both already unpacked from records) */
+static const char *template_render_src(const char *source, TkTmplVar *vars,
+                                       uint64_t nvar) {
+    if (!source) return NULL;
     TkTmpl *t = tmpl_compile(source);
     if (!t) return NULL;
-
-    uint64_t nvar = 0;
-    TkTmplVar *vars = unpack_tmplvars(data, &nvar);
 
     /* 124.3 (ADR-0011): escape slot values by default. `tpl.render` previously
      * mapped to tmpl_render (escape OFF), so `{{name}}` interpolated untrusted
@@ -61,18 +65,29 @@ static const char *template_render_impl(int64_t tpl, int64_t data) {
      * the template's own literal markup is preserved. Raw output must be an
      * explicit opt-in (follow-up: a `|raw` helper / tpl.renderraw). */
     const char *result = tmpl_renderhtml(t, vars, nvar);
-    free(vars);
     tmpl_free(t);
     return result;
 }
 
+/* tpl.render($tmpl; $tmplvars) -- 135.30: both are records (TkTmplRec,
+ * TkTmplVarsRec); the template is compiled from its src. */
 int64_t tk_template_render_w(int64_t tpl, int64_t data) {
-    return (int64_t)(intptr_t)template_render_impl(tpl, data);
+    if (!tpl) return 0;
+    uint64_t nvar = 0;
+    TkTmplVar *vars = unpack_tmplvars(data, &nvar);
+    const char *r = template_render_src(((const TkTmplRec *)(intptr_t)tpl)->src,
+                                        vars, nvar);
+    free(vars);
+    return (int64_t)(intptr_t)r;
 }
 
-/* tpl.vars(@($str:$str)) -> $tmplvars — the map already carries the key/value
- * pairs in the layout render/renderfile expect, so the bundle is the map. */
-int64_t tk_template_vars_w(int64_t map) { return map; }
+/* tpl.vars(@($str:$str)) -> $tmplvars, a TkTmplVarsRec holding the map. */
+int64_t tk_template_vars_w(int64_t map) {
+    TkTmplVarsRec *v = (TkTmplVarsRec *)malloc(sizeof *v);
+    if (!v) return 0;
+    v->entries = map;
+    return (int64_t)(intptr_t)v;
+}
 
 /* tpl.renderfile(path; $tmplvars) -> $str!$tmplerr — read+compile+render the
  * file with the bundle. Returns the rendered string, or 0 (err sentinel). */
@@ -85,10 +100,22 @@ int64_t tk_template_renderfile_w(int64_t path, int64_t data) {
     return (int64_t)(intptr_t)res;
 }
 
-/* tpl.compile(str) -> $tmpl!$tmplerr — compile to a handle (0 on error). */
+/* tpl.compile(str) -> $tmpl!$tmplerr -- 135.30: a TkTmplRec {id; src}
+ * (0 on error).  The source is compiled here to check it, and again by
+ * tpl.render, so a $tmpl literal behaves as a compiled one. */
 int64_t tk_template_compile_w(int64_t src) {
+    static int64_t next_id = 0;
     if (!src) return 0;
-    return (int64_t)(intptr_t)tmpl_compile((const char *)(intptr_t)src);
+    const char *s = (const char *)(intptr_t)src;
+    TkTmpl *t = tmpl_compile(s);
+    if (!t) return 0;
+    tmpl_free(t);
+    TkTmplRec *rec = (TkTmplRec *)malloc(sizeof *rec);
+    char *copy = strdup(s);
+    if (!rec || !copy) { free(rec); free(copy); return 0; }
+    rec->id  = ++next_id;
+    rec->src = copy;
+    return (int64_t)(intptr_t)rec;
 }
 
 /* tpl.escape(str) -> str — HTML-escape. */
@@ -125,9 +152,14 @@ int64_t tk_template_load_w(int64_t path) {
     return (int64_t)(intptr_t)t;
 }
 
-/* tpl_ aliases call the same implementations */
+/* tpl_ aliases (i64 ABI, not in template.tki): source text and a bare map,
+ * as they always took them. */
 int64_t tk_tpl_render_w(int64_t tpl, int64_t data) {
-    return (int64_t)(intptr_t)template_render_impl(tpl, data);
+    uint64_t nvar = 0;
+    TkTmplVar *vars = unpack_map(data, &nvar);
+    const char *r = template_render_src((const char *)(intptr_t)tpl, vars, nvar);
+    free(vars);
+    return (int64_t)(intptr_t)r;
 }
 
 int64_t tk_tpl_load_w(int64_t path) {
