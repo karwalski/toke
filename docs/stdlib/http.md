@@ -137,7 +137,7 @@ f=main():void{
 
 ### http.servetls(port: u64; cert_path: $str; key_path: $str): i64
 
-Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down. It runs a pre-fork worker pool sized to the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable; use `http.servetlsworkers` to choose the count in the program.
+Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down and then returns `0`; if it cannot start — the certificate or key cannot be loaded, the port cannot be bound — it returns `-1` at once and the process exits 1 (see [Starting, failing and the port](#starting-failing-and-the-port)). It runs a pre-fork worker pool sized to the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable; use `http.servetlsworkers` to choose the count in the program.
 
 ```toke
 i=http:std.http;
@@ -156,6 +156,51 @@ f=main():void{
   http.servetlsworkers(443;"/etc/certs/server.crt";"/etc/certs/server.key";4);
 };
 ```
+
+### http.serveon(host: $str; port: u64): i64
+
+`http.serve` bound to one address. `host` is an IPv4 literal such as `"127.0.0.1"`, or `"localhost"` (which means `127.0.0.1`), or `""`, `"*"` or `"0.0.0.0"` for all interfaces. Any other host — a name to resolve, an IPv6 address — is refused: the call returns `-1` and the start fails as described under [Starting, failing and the port](#starting-failing-and-the-port), rather than falling back to all interfaces. (Story 138.1.)
+
+```toke
+i=http:std.http;
+f=main():i64{
+  http.getstatic("/health"; "ok");
+  http.serveon("127.0.0.1";8080);
+  <0
+};
+```
+
+### http.serveworkerson(host: $str; port: u64; workers: u64): i64
+
+`http.serveworkers` bound to one address; `host` as for `http.serveon`.
+
+### http.servetlson(host: $str; port: u64; cert_path: $str; key_path: $str): i64
+
+`http.servetls` bound to one address; `host` as for `http.serveon`.
+
+### http.servetlsworkerson(host: $str; port: u64; cert_path: $str; key_path: $str; workers: u64): i64
+
+`http.servetlsworkers` bound to one address; `host` as for `http.serveon`.
+
+## Starting, failing and the port
+
+**Which address.** The port-only forms — `http.serve`, `http.serveworkers`, `http.servetls`, `http.servetlsworkers` — listen on **all interfaces**. That is a recorded decision (story 138.1), not an oversight: it is what every deployed toke server already relies on, and changing it would take those servers off the network with no compile error and no runtime message. A program that must be reachable only from its own machine says so at the call, with the `...on` form and `"127.0.0.1"`. `http.listen("127.0.0.1:8080"; handler)` binds the host in its address (before 138.1 the host was dropped and the server listened on every interface).
+
+**Port 0.** Port `0` asks the operating system for any free port. Once the server is listening it prints one line to stderr naming the port it got:
+
+```text
+DIAGNOSTIC: kind=server_listening port=54321
+```
+
+This is how a supervisor or a test learns the port without picking one first — picking a free port and then starting the server leaves a window in which another process can take it. A port outside `0`–`65535` is refused. (Story 135.24: before this, any port `<= 0` or `> 65535` silently became `8080`, or `8443` for TLS.)
+
+**A server that does not start fails the process.** Every server call returns `-1` if the server could not start — a host or port it refuses, a certificate or key it cannot load, a port it cannot bind, a worker it cannot fork — and returns only then; a server that started returns `0` when it is shut down with `SIGTERM` or `SIGINT`. A start failure also prints one structured line to stderr,
+
+```text
+DIAGNOSTIC: kind=server_start_failed fn="http.serveworkers" port=8080 stage="bind/fork"
+```
+
+where `stage` is `host`, `port`, `certificate/key` or `bind/fork`, and it makes the process **exit with status 1** however `main` ends — even a program that ignores the `-1` and returns `0`. To a supervisor, a server that never started must not look like a clean shutdown. (Stories 135.22 for the TLS forms, 135.24 for the plain ones; the exit rule is shared with failed `std.test` assertions, see `docs/stdlib/test.md`.)
 
 ## Abandoned requests
 

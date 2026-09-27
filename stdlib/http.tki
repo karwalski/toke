@@ -496,6 +496,52 @@
     },
     {
       "kind": "func",
+      "name": "http.serveon",
+      "params": [
+        "str",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "host; port \u2014 http.serve bound to one address: an IPv4 literal, \"localhost\", or \"\"/\"*\"/\"0.0.0.0\" for all interfaces (138.1)"
+    },
+    {
+      "kind": "func",
+      "name": "http.serveworkerson",
+      "params": [
+        "str",
+        "u64",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "host; port; workers \u2014 http.serveworkers bound to one address (138.1)"
+    },
+    {
+      "kind": "func",
+      "name": "http.servetlson",
+      "params": [
+        "str",
+        "u64",
+        "str",
+        "str"
+      ],
+      "return": "i64",
+      "note": "host; port; cert_path; key_path \u2014 http.servetls bound to one address (138.1)"
+    },
+    {
+      "kind": "func",
+      "name": "http.servetlsworkerson",
+      "params": [
+        "str",
+        "u64",
+        "str",
+        "str",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "host; port; cert_path; key_path; workers \u2014 http.servetlsworkers bound to one address (138.1)"
+    },
+    {
+      "kind": "func",
       "name": "http.body",
       "params": [
         "i64"

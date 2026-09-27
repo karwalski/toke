@@ -701,10 +701,11 @@ int64_t tk_http_patch_handler(int64_t path_ptr, int64_t handler_ptr) {
 /* forward declaration */
 int64_t tk_http_serveworkers_w(int64_t port, int64_t workers);
 
-static int64_t serveworkers_as(const char *fn, int64_t port, int64_t workers);
+static int64_t serveworkers_as(const char *fn, int64_t host, int64_t port,
+                               int64_t workers);
 
 int64_t tk_http_serve(int64_t port) {
-    return serveworkers_as("http.serve", port, 2);
+    return serveworkers_as("http.serve", 0, port, 2);
 }
 
 /*
@@ -757,18 +758,75 @@ static int server_port_ok(int64_t port)
     return port >= 0 && port <= 65535;
 }
 
-int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
-    if (!server_port_ok(port)) return tls_start_failed("http.servetls", port, "port");
+/*
+ * 138.1 — the address a server binds.
+ *
+ * Every server entry point took a port only and passed a NULL host, so every
+ * toke server listened on all interfaces; a program that must not be
+ * reachable from the network (loke's privacy proxy) could not say so.  The
+ * `...on` forms take the host first:
+ *
+ *   http.serveon(host; port)                http.serveworkerson(host; port; workers)
+ *   http.servetlson(host; port; cert; key)  http.servetlsworkerson(host; port; cert; key; workers)
+ *
+ * and http.listen("127.0.0.1:8080"; h) now binds the host it is given.
+ *
+ * DECIDED (138.1): the port-only forms keep binding all interfaces.  They
+ * are what every deployed toke server calls (ooke's site behind its proxy,
+ * the docs, the corpus), and moving them to loopback would take those
+ * servers off the network with no compile error and no runtime message.  A
+ * program chooses loopback by saying so, at the call, where a reviewer sees
+ * it.
+ *
+ * A host is an IPv4 literal (the listener is AF_INET), or "localhost"
+ * (127.0.0.1), or ""/"*"/"0.0.0.0" for all interfaces.  Anything else is a
+ * start failure at stage "host" -- never a silent fall back to all
+ * interfaces, which is the defect this exists to remove.  *out is NULL for
+ * all interfaces.
+ */
+static int server_host(int64_t host_ptr, const char **out)
+{
+    const char *h = (const char *)(intptr_t)host_ptr;
+    *out = NULL;
+    if (!h || !h[0] || !strcmp(h, "*") || !strcmp(h, "0.0.0.0")) return 0;
+    if (!strcmp(h, "localhost")) { *out = "127.0.0.1"; return 0; }
+    struct in_addr a;
+    if (inet_pton(AF_INET, h, &a) != 1) return -1;
+    *out = h;
+    return 0;
+}
+
+/* The TLS entry points.  workers < 0 is http.servetls's own sizing
+ * (http_serve_tls: CPU count, TK_HTTP_WORKERS overrides); 0 is the same
+ * auto-detection, as for http.serveworkers; 1 is single-process. */
+static int64_t servetls_as(const char *fn, int64_t host_ptr, int64_t port,
+                           int64_t cert_ptr, int64_t key_ptr, int64_t workers)
+{
+    const char *host;
+    if (server_host(host_ptr, &host) != 0) return tls_start_failed(fn, port, "host");
+    if (!server_port_ok(port)) return tls_start_failed(fn, port, "port");
     int p = (int)port;
     const char *cert = (const char *)(intptr_t)cert_ptr;
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
-    if (!tls) return tls_start_failed("http.servetls", p, "certificate/key");
+    if (!tls) return tls_start_failed(fn, p, "certificate/key");
     /* Pass NULL router — tls_worker_loop will use the global route_table. */
-    TkHttpErr err = http_serve_tls(NULL, NULL, (uint64_t)p, tls);
+    TkHttpErr err = workers > 0
+        ? http_serve_tls_workers(NULL, host, (uint64_t)p, tls, (uint64_t)workers)
+        : http_serve_tls(NULL, host, (uint64_t)p, tls);
     http_tls_ctx_free(tls);
-    if (err != TK_HTTP_OK) return tls_start_failed("http.servetls", p, "bind/fork");
+    if (err != TK_HTTP_OK) return tls_start_failed(fn, p, "bind/fork");
     return 0;
+}
+
+int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
+    return servetls_as("http.servetls", 0, port, cert_ptr, key_ptr, -1);
+}
+
+/* 138.1: http.servetlson(host; port; cert; key). */
+int64_t tk_http_servetlson_w(int64_t host, int64_t port, int64_t cert_ptr,
+                             int64_t key_ptr) {
+    return servetls_as("http.servetlson", host, port, cert_ptr, key_ptr, -1);
 }
 
 /*
@@ -786,20 +844,15 @@ int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
  */
 int64_t tk_http_servetlsworkers_w(int64_t port, int64_t cert_ptr, int64_t key_ptr,
                                   int64_t workers) {
-    if (!server_port_ok(port)) return tls_start_failed("http.servetlsworkers", port, "port");
-    int p = (int)port;
-    const char *cert = (const char *)(intptr_t)cert_ptr;
-    const char *key  = (const char *)(intptr_t)key_ptr;
-    TkTlsCtx *tls = http_tls_ctx_new(cert, key);
-    if (!tls) return tls_start_failed("http.servetlsworkers", p, "certificate/key");
-    /* workers=0 auto-detects, as http.serveworkers does: http_serve_tls()
-     * is exactly that sizing (CPU count, TK_HTTP_WORKERS overrides). */
-    TkHttpErr err = workers > 0
-        ? http_serve_tls_workers(NULL, NULL, (uint64_t)p, tls, (uint64_t)workers)
-        : http_serve_tls(NULL, NULL, (uint64_t)p, tls);
-    http_tls_ctx_free(tls);
-    if (err != TK_HTTP_OK) return tls_start_failed("http.servetlsworkers", p, "bind/fork");
-    return 0;
+    return servetls_as("http.servetlsworkers", 0, port, cert_ptr, key_ptr,
+                       workers > 0 ? workers : 0);
+}
+
+/* 138.1: http.servetlsworkerson(host; port; cert; key; workers). */
+int64_t tk_http_servetlsworkerson_w(int64_t host, int64_t port, int64_t cert_ptr,
+                                    int64_t key_ptr, int64_t workers) {
+    return servetls_as("http.servetlsworkerson", host, port, cert_ptr, key_ptr,
+                       workers > 0 ? workers : 0);
 }
 
 /* ── Static file directory handler ───────────────────────────────────── */
@@ -1165,19 +1218,30 @@ int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
  * was, and a program that discarded the -1 (every caller in the tree) exited
  * 0.  http.serve reaches this with workers=2 and is reported as itself.
  */
-static int64_t serveworkers_as(const char *fn, int64_t port, int64_t workers)
+static int64_t serveworkers_as(const char *fn, int64_t host_ptr, int64_t port,
+                               int64_t workers)
 {
+    const char *host;
+    if (server_host(host_ptr, &host) != 0) return plain_start_failed(fn, port, "host");
     if (!server_port_ok(port)) return plain_start_failed(fn, port, "port");
     int p = (int)port;
     /* Pass NULL router — worker_loop will use the global route_table
      * which already has all handlers registered via http_GET/http_POST. */
-    TkHttpErr err = http_serve_workers(NULL, NULL, (uint64_t)p, (int)workers);
+    TkHttpErr err = http_serve_workers(NULL, host, (uint64_t)p, (int)workers);
     if (err != TK_HTTP_OK) return plain_start_failed(fn, p, "bind/fork");
     return 0;
 }
 
 int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
-    return serveworkers_as("http.serveworkers", port, workers);
+    return serveworkers_as("http.serveworkers", 0, port, workers);
+}
+
+/* 138.1: http.serveon(host; port) and http.serveworkerson(host; port; workers). */
+int64_t tk_http_serveon_w(int64_t host, int64_t port) {
+    return serveworkers_as("http.serveon", host, port, 2);
+}
+int64_t tk_http_serveworkerson_w(int64_t host, int64_t port, int64_t workers) {
+    return serveworkers_as("http.serveworkerson", host, port, workers);
 }
 
 /* ── router wrappers moved to router_glue.c (114.48) so std.router links
@@ -1374,23 +1438,48 @@ static Res tk_http_listen_dispatch(Req req) {
     return http_Res_ok(body);
 }
 
+/* 138.1: the address is honoured.  "127.0.0.1:11442" used to bind
+ * *:11442 -- the host was parsed past and dropped, and http_serve() bound
+ * INADDR_ANY -- so a program that asked for loopback listened on every
+ * interface.  Forms: "host:port", ":port", "port", "host" (port 8080, as
+ * before).  The host follows the http.serveon rules (server_host); an
+ * explicit port 0 is any free port, reported on stderr, as for
+ * http.serveworkers (135.24).  The server is the single-process path
+ * (workers=1), which is what http_serve() was, and a start failure is
+ * reported and fails the process as for every other entry point. */
 int64_t tk_http_listen_w(int64_t addr, int64_t handler) {
     if (!handler) return -1;
-    /* Parse addr for port — supports ":8080", "localhost:8080", or "8080" */
-    uint16_t port = 8080;
+    char hostbuf[256] = "";
+    long port = 8080;
     if (addr) {
         const char *a = (const char *)(intptr_t)addr;
         const char *colon = strrchr(a, ':');
-        if (colon)
-            port = (uint16_t)strtol(colon + 1, NULL, 10);
-        else if (a[0] >= '0' && a[0] <= '9')
-            port = (uint16_t)strtol(a, NULL, 10);
+        const char *ps = NULL;
+        if (colon) {
+            size_t hl = (size_t)(colon - a);
+            if (hl >= sizeof hostbuf)
+                return plain_start_failed("http.listen", -1, "host");
+            memcpy(hostbuf, a, hl); hostbuf[hl] = '\0';
+            ps = colon + 1;
+        } else if (a[0] >= '0' && a[0] <= '9' && !strchr(a, '.')) {
+            ps = a;
+        } else {
+            size_t hl = strlen(a);
+            if (hl >= sizeof hostbuf)
+                return plain_start_failed("http.listen", -1, "host");
+            memcpy(hostbuf, a, hl + 1);
+        }
+        if (ps) {
+            char *end = NULL;
+            port = strtol(ps, &end, 10);
+            if (end == ps || *end != '\0')
+                return plain_start_failed("http.listen", -1, "port");
+        }
     }
-    if (port == 0) port = 8080;
     g_http_listen_handler = handler;
     http_GET("/*", tk_http_listen_dispatch);
     http_POST("/*", tk_http_listen_dispatch);
-    return (int64_t)http_serve(port);
+    return serveworkers_as("http.listen", (int64_t)(intptr_t)hostbuf, port, 1);
 }
 int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
     return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);

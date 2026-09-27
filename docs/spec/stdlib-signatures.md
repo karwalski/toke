@@ -129,6 +129,18 @@ http.post(path:$str;handler:func)
 http.put(path:$str;handler:func)
 http.delete(path:$str;handler:func)
 http.patch(path:$str;handler:func)
+(* server start: block until shut down (0); -1 and exit status 1 if the
+   server cannot start.  Port 0 = any free port, reported on stderr.  The
+   port-only forms bind all interfaces; the ...on forms bind host (an IPv4
+   literal, "localhost", or ""/"*"/"0.0.0.0" for all) -- 135.24, 138.1 *)
+f=http.serve(port:u64):i64
+f=http.serveworkers(port:u64;workers:u64):i64
+f=http.servetls(port:u64;cert:$str;key:$str):i64
+f=http.servetlsworkers(port:u64;cert:$str;key:$str;workers:u64):i64
+f=http.serveon(host:$str;port:u64):i64
+f=http.serveworkerson(host:$str;port:u64;workers:u64):i64
+f=http.servetlson(host:$str;port:u64;cert:$str;key:$str):i64
+f=http.servetlsworkerson(host:$str;port:u64;cert:$str;key:$str;workers:u64):i64
 (* client-side: types *)
 t=$httpclient{baseurl:$str;poolsize:u64;timeoutms:u64}
 t=$httpreq{method:$str;url:$str;headers:@($str:$str);body:@$byte}
