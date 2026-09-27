@@ -48,7 +48,9 @@ typedef struct {
     uint64_t    total_output_tokens;
 } TkLlmClient;
 
-/* TkLlmMsg — a single message in a conversation turn. */
+/* TkLlmMsg — a single message in a conversation turn.  Also the $llmmsg
+ * record toke reads ({role; content}, 135.30). */
+/* tki-record: llm.llmmsg */
 typedef struct {
     const char *role;     /* "system", "user", "assistant" */
     const char *content;
