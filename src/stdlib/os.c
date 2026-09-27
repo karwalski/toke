@@ -9,6 +9,7 @@
 
 #include "os.h"
 #include "capabilities.h"   /* 124.4c2: fs/env capability gates */
+#include "tk_exitfail.h"    /* 127.231: os.exit(0) keeps a recorded failure */
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -43,12 +44,15 @@ int64_t tk_os_close(int64_t fd) {
  * caller-supplied integer straight to a buffer pointer (arbitrary OOB read/write
  * primitive). Mirrors file.read. Returns "" on error. Note: NUL-terminated, so
  * embedded-NUL binary data is a known limitation (a [byte] variant is a follow-up). */
+/* 135.23: os.read is "ownership": "caller" too; its failure paths returned
+ * the string literal "", which a caller that frees its result cannot free. */
+static int64_t os_empty_owned(void);
 int64_t tk_os_read(int64_t fd, int64_t count) {
-    if (count < 0) return (int64_t)(intptr_t)"";
+    if (count < 0) return os_empty_owned();
     char *buf = malloc((size_t)count + 1);
-    if (!buf) return (int64_t)(intptr_t)"";
+    if (!buf) return os_empty_owned();
     ssize_t n = read((int)fd, buf, (size_t)count);
-    if (n < 0) { free(buf); return (int64_t)(intptr_t)""; }
+    if (n < 0) { free(buf); return os_empty_owned(); }
     buf[n] = '\0';
     return (int64_t)(intptr_t)buf;
 }
@@ -100,10 +104,29 @@ int64_t tk_os_access(int64_t path, int64_t amode) {
     return (int64_t)access((const char *)(intptr_t)path, (int)amode);
 }
 
+/* An empty caller-owned string: a caller that frees the result of a
+ * "ownership": "caller" function must be able to free every result, the
+ * failure results included (135.23). */
+static int64_t os_empty_owned(void) {
+    char *e = (char *)calloc(1, 1);
+    return (int64_t)(intptr_t)(e ? e : "");   /* "" only if calloc(1,1) fails */
+}
+
+/* 135.23: os.tki declares os.getcwd "ownership": "caller", and this returned
+ * `static char buf[4096]` — a caller that freed it freed a static buffer, two
+ * results aliased each other, and a working directory longer than 4095 bytes
+ * came back as "".  Each call now returns its own heap string, grown until
+ * the path fits; "" (also heap) when getcwd fails for any other reason. */
 int64_t tk_os_getcwd(void) {
-    static char buf[4096];
-    char *result = getcwd(buf, sizeof buf);
-    return (int64_t)(intptr_t)(result ? result : "");
+    size_t cap = 256;
+    for (;;) {
+        char *buf = (char *)malloc(cap);
+        if (!buf) return os_empty_owned();
+        if (getcwd(buf, cap)) return (int64_t)(intptr_t)buf;
+        free(buf);
+        if (errno != ERANGE || cap > ((size_t)1 << 20)) return os_empty_owned();
+        cap *= 2;
+    }
 }
 
 /* ── Process ─────────────────────────────────────────────────────── */
@@ -113,6 +136,11 @@ int64_t tk_os_getpid(void) {
 }
 
 int64_t tk_os_exit(int64_t status) {
+    /* 127.231: os.exit is _exit() and skips atexit handlers, so a recorded
+     * failure (a failed test assertion, a server that did not start) would
+     * be lost by os.exit(0).  tk_exitfail_atexit() returns when there is
+     * none; otherwise it reports and exits 1. */
+    if (status == 0) tk_exitfail_atexit();
     _exit((int)status);
     return 0; /* unreachable */
 }

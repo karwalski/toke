@@ -46,28 +46,7 @@
 #include <arpa/inet.h>
 #include "../../src/stdlib/http.h"
 
-#if defined(__APPLE__)
-#  include <malloc/malloc.h>
-#  define HAVE_HEAP_STATS 1
-static size_t heap_in_use(void)
-{
-    malloc_statistics_t st;
-    memset(&st, 0, sizeof st);
-    malloc_zone_statistics(NULL, &st);  /* NULL = all zones */
-    return (size_t)st.size_in_use;
-}
-#elif defined(__linux__) && defined(__GLIBC__)
-#  include <malloc.h>
-#  define HAVE_HEAP_STATS 1
-static size_t heap_in_use(void)
-{
-    struct mallinfo2 mi = mallinfo2();
-    return (size_t)mi.uordblks;
-}
-#else
-#  define HAVE_HEAP_STATS 0
-static size_t heap_in_use(void) { return 0; }
-#endif
+#include "heap_in_use.h"   /* 122.14: ASan-aware heap counter */
 
 /* Four bound parameters, so a leak is four key/value pairs per match rather
  * than one — well clear of allocator noise.
@@ -199,6 +178,7 @@ static double measure(const char *label)
         fprintf(stderr, "FAIL: %s: warm-up connection did not complete\n", label);
         return -1.0;
     }
+    printf("heap counter: %s\n", HEAP_STATS_SOURCE);
     size_t before = heap_in_use();
     for (int k = 0; k < MEASURE_CONNS; k++) {
         if (serve_one(MEASURE_REQUESTS) != 0) {

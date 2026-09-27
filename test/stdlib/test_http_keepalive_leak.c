@@ -31,28 +31,7 @@
 #include <arpa/inet.h>
 #include "../../src/stdlib/http.h"
 
-#if defined(__APPLE__)
-#  include <malloc/malloc.h>
-#  define HAVE_HEAP_STATS 1
-static size_t heap_in_use(void)
-{
-    malloc_statistics_t st;
-    memset(&st, 0, sizeof st);
-    malloc_zone_statistics(NULL, &st);  /* NULL = all zones */
-    return (size_t)st.size_in_use;
-}
-#elif defined(__linux__) && defined(__GLIBC__)
-#  include <malloc.h>
-#  define HAVE_HEAP_STATS 1
-static size_t heap_in_use(void)
-{
-    struct mallinfo2 mi = mallinfo2();
-    return (size_t)mi.uordblks;
-}
-#else
-#  define HAVE_HEAP_STATS 0
-static size_t heap_in_use(void) { return 0; }
-#endif
+#include "heap_in_use.h"   /* 122.14: ASan-aware heap counter */
 
 /* A request with a realistic header set — the header block is the bulk of
  * what the old code leaked. */
@@ -184,6 +163,7 @@ int main(void)
     long   delta     = (long)after - (long)before;
     double per_req   = (double)delta / (double)MEASURE_REQUESTS;
 
+    printf("heap counter: %s\n", HEAP_STATS_SOURCE);
     printf("heap in use: before=%zu after=%zu delta=%ld over %d requests\n",
            before, after, delta, MEASURE_REQUESTS);
     printf("per request: %.1f bytes (threshold %d)\n",
