@@ -1,0 +1,15 @@
+id: D111
+series: D
+description: "E2003 carries no fix: inserting ';' is not a deterministic repair (127.240)"
+# `let x=1 y` with ';' inserted before `y` is `let x=1;y`, which is E3011:
+# the author meant an operator, or nothing, and the parser cannot tell which.
+# got/expected stay -- they are facts, not advice.
+input: |
+  m=test;
+  f=main():i64{let x=1 y;<x};
+expected_exit_code: 1
+expected_error_codes: ["E2003"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: y
