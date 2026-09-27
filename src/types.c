@@ -360,6 +360,13 @@ static int int_widens_to(const Type *from, const Type *to) {
     if (!from||!to||to->kind!=TY_I64) return 0;
     switch (from->kind) {
     case TY_U64: case TY_BOOL: return 1;
+    /* 127.230 item 4: the narrower widths, the "strict superset" the note
+     * above anticipates.  Resolving lower-case `byte` to u8 made every
+     * `b.get(i)` on a `@byte` a u8, and `rem*256+work.get(i)` (bench
+     * CRY-041) an E4031 -- the evidence the note said was missing.  Each is
+     * value-preserving into i64 and occupies an i64 slot already. */
+    case TY_U8: case TY_U16: case TY_U32:
+    case TY_I8: case TY_I16: case TY_I32: return 1;
     default: return 0;
     }
 }
@@ -4839,6 +4846,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_BOOL);
         }
         if (bitwise) {
+            /* 127.230 item 4: the literal-adoption and widening rules the
+             * arithmetic path applies (`b.get(i)<<8` on a @byte, now a u8
+             * since `byte` resolves -- bench CRY-041). */
+            if (is_integer(l)&&is_integer(r)&&!types_equal(l,r)) {
+                int l_lit=node->children[0]&&node->children[0]->kind==NODE_INT_LIT;
+                int r_lit=node->children[1]&&node->children[1]->kind==NODE_INT_LIT;
+                if (l_lit^r_lit) return l_lit?r:l;
+                if (int_widens_to(l,r)) return r;
+                if (int_widens_to(r,l)) return l;
+            }
             if (!is_integer(l)||!is_integer(r)||!types_equal(l,r)) {
                 char fix[64];
                 snprintf(fix,sizeof(fix),"bitwise operators require matching integer types");
@@ -4948,6 +4965,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     if (l->elem && l->elem->kind!=TY_UNKNOWN) return l;
                     return r;
                 }
+                /* 127.230 item 4: `padded+@(128)` on a @byte -- the
+                 * literal side narrows to the typed side (lit_narrows). */
+                if (lit_narrows(cx->src,node->children[1],l)) return l;
+                if (lit_narrows(cx->src,node->children[0],r)) return r;
                 emit_mm(cx,node,l,r,
                         "array concatenation requires matching element types");
                 return mk_type(A,TY_UNKNOWN);

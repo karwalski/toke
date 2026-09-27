@@ -9,7 +9,8 @@
 # store) did not.  A literal that does NOT fit stays E4031, and the program
 # that does fit must print the values it wrote.
 #
-# Negative control: TKC=<main's toke> -- cases 1-6 fail (E4031).
+# Negative control: TKC=<main's toke> -- cases 1-6, 10 and 11 fail (E4031);
+# 12-14 pass on main only because `byte` was unresolved there (@(?)).
 #
 # Story: 127.230 (item 4)
 
@@ -60,6 +61,16 @@ expect "9 one element out of range: the array is still E4031" \
 expect "10 i8 lower bound -128 fits, -129 does not" \
     "$(diags 'm=q;f=main():i64{let a:i8=-128;let b:i8=-129;<0};')" "E4031|i64"
 
+# `byte` resolves to u8 (127.220 item 4), so a @byte's elements are u8: they
+# widen to i64 like u64 does, and take part in bitwise and concat operators
+# with literals (bench CRY-041).
+expect "12 u8 element into i64 arithmetic" \
+    "$(diags 'm=q;f=g(w:@byte;i:i64):i64{let r=w.get(i);<r*256+i};f=main():i64{<0};')" "rc=0"
+expect "13 bitwise on u8 elements and literals" \
+    "$(diags 'm=q;f=g(b:@byte;o:i64):i64{<(b.get(o)|(b.get(o+1)<<8))&255};f=main():i64{<0};')" "rc=0"
+expect "14 literal array concatenated onto a @byte" \
+    "$(diags 'm=q;f=g(b:@byte):@byte{let p=mut.b;p=p+@(128);<p};f=main():i64{<0};')" "rc=0"
+
 # The accepted program prints what it wrote.
 cat > "${WORK}/r.tk" <<'TK'
 m=q;i=io:std.io;i=j:std.json;
@@ -68,9 +79,9 @@ f=h():i32{<-5};
 f=main():i64{let b:u8=5;let a:@(u8)=@(1;255);let n:u64=0;j.print(a);io.println("\(b) \(g(200)) \(h()) \(n) \(a.get(1))");<0};
 TK
 if "${TKC}" "${WORK}/r.tk" -o "${WORK}/r.bin" >/dev/null 2>&1; then
-    expect "11 runtime values" "$("${WORK}/r.bin" | tr '\n' ' ')" "[1,255] 5 200 -5 0 255 "
+    expect "15 runtime values" "$("${WORK}/r.bin" | tr '\n' ' ')" "[1,255] 5 200 -5 0 255 "
 else
-    expect "11 runtime values" "build failed" "[1,255] 5 200 -5 0 255 "
+    expect "15 runtime values" "build failed" "[1,255] 5 200 -5 0 255 "
 fi
 
 echo "C241: ${PASS} passed, ${FAIL} failed"
