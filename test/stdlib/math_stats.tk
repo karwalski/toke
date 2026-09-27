@@ -1,68 +1,38 @@
 m=mathstatstest;
+i=io:std.io;
 i=math:std.math;
-i=test:std.test;
 
+(* 136.72 (6): built and run by test/stdlib/glue_contract.sh.  Until then this
+   file was only type-checked, and three of its assertions had been failing
+   unseen: it passed percentile a fraction where the scale is 0-100, and it
+   compared math.floor/ceil (f64 per math.tki) against i64 literals through
+   the i64-only test.eq.  Each value is printed as key=value for the harness. *)
 
-f=aggregates():bool{
-  let xs=@(1.0;2.0;3.0;4.0;5.0);
-  (test.eq(math.sum(xs);15.0));
-  (test.eq(math.mean(xs);3.0));
-  (test.eq(math.min(xs);1.0));
-  (test.eq(math.max(xs);5.0));
-  <true
-};
-
-
-f=medianodd():bool{
-  let xs=@(7.0;1.0;5.0;3.0;9.0);
-  (test.eq(math.median(xs);5.0));
-  <true
-};
-
-
-f=stddevknown():bool{
-  let xs=@(2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0);
-  let sd=math.stddev(xs);
-  
-  let diff=math.abs(sd-2.0);
-  <(diff<0.01)
-};
-
-
-f=percentilebounds():bool{
-  let xs=@(10.0;20.0;30.0;40.0;50.0);
-  (test.eq(math.percentile(xs;0.0);10.0));
-  (test.eq(math.percentile(xs;1.0);50.0));
-  <true
-};
-
-
-f=linregexact():bool{
-  let xs=@(0.0;1.0;2.0;3.0;4.0);
-  let ys=@(1.0;3.0;5.0;7.0;9.0);
-  let res=math.linreg(xs;ys);
-  let slopeok=math.abs(res.slope-2.0)<0.001;
-  let interceptok=math.abs(res.intercept-1.0)<0.001;
-  let r2ok=res.r2>0.999;
-  <(slopeok&interceptok&r2ok)
-};
-
-
-f=scalarops():bool{
-  (test.eq(math.abs(-3.5);3.5));
-  (test.eq(math.sqrt(9.0);3.0));
-  (test.eq(math.floor(3.7);3));
-  (test.eq(math.ceil(3.1);4));
-  (test.eq(math.pow(2.0;10.0);1024.0));
-  <true
+f=near(a:f64;b:f64):bool{
+  <math.abs(a-b)<0.000001
 };
 
 f=main():i64{
-  (test.ok(aggregates()));
-  (test.ok(medianodd()));
-  (test.ok(stddevknown()));
-  (test.ok(percentilebounds()));
-  (test.ok(linregexact()));
-  (test.ok(scalarops()));
+  let xs=@(1.0;2.0;3.0;4.0;5.0);
+  io.println("sum=\(math.sum(xs))");
+  io.println("mean=\(math.mean(xs))");
+  io.println("min=\(math.min(xs))");
+  io.println("max=\(math.max(xs))");
+  io.println("median.odd=\(math.median(@(7.0;1.0;5.0;3.0;9.0)))");
+  let sd=math.stddev(@(2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0));
+  io.println("stddev.near2=\(near(sd;2.0))");
+  let ps=@(10.0;20.0;30.0;40.0;50.0);
+  io.println("p0=\(math.percentile(ps;0.0))");
+  io.println("p50=\(math.percentile(ps;50.0))");
+  io.println("p100=\(math.percentile(ps;100.0))");
+  let res=math.linreg(@(0.0;1.0;2.0;3.0;4.0);@(1.0;3.0;5.0;7.0;9.0));
+  io.println("linreg.slope=\(near(res.slope;2.0))");
+  io.println("linreg.intercept=\(near(res.intercept;1.0))");
+  io.println("linreg.r2=\(res.r2>0.999)");
+  io.println("abs=\(math.abs(-3.5))");
+  io.println("sqrt=\(math.sqrt(9.0))");
+  io.println("floor=\(near(math.floor(3.7);3.0))");
+  io.println("ceil=\(near(math.ceil(3.1);4.0))");
+  io.println("pow=\(math.pow(2.0;10.0))");
   <0
 };

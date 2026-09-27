@@ -271,6 +271,32 @@ if build ml_accuracy test/stdlib/ml_accuracy.tk; then
 fi
 
 echo
+echo "=== 136.72 (6) -- std.math aggregates, percentile, linreg, scalars ==="
+# test/stdlib/math_stats.tk was type-checked by check-stdlib-tk and never
+# built, so three wrong assertions in it failed unseen. math.min(xs) is the
+# call T002 found passing an array into a two-argument C function.
+if build math_stats test/stdlib/math_stats.tk; then
+    out="$("$TMP/math_stats")"
+    expect "math.sum"                  "$(line "$out" sum)"              "15"
+    expect "math.mean"                 "$(line "$out" mean)"             "3"
+    expect "math.min over an array"    "$(line "$out" min)"              "1"
+    expect "math.max over an array"    "$(line "$out" max)"              "5"
+    expect "math.median, odd length"   "$(line "$out" median.odd)"       "5"
+    expect "math.stddev (population)"  "$(line "$out" stddev.near2)"     "true"
+    expect "math.percentile 0"         "$(line "$out" p0)"               "10"
+    expect "math.percentile 50"        "$(line "$out" p50)"              "30"
+    expect "math.percentile 100"       "$(line "$out" p100)"             "50"
+    expect "math.linreg slope"         "$(line "$out" linreg.slope)"     "true"
+    expect "math.linreg intercept"     "$(line "$out" linreg.intercept)" "true"
+    expect "math.linreg r2"            "$(line "$out" linreg.r2)"        "true"
+    expect "math.abs"                  "$(line "$out" abs)"              "3.5"
+    expect "math.sqrt"                 "$(line "$out" sqrt)"             "3"
+    expect "math.floor"                "$(line "$out" floor)"            "true"
+    expect "math.ceil"                 "$(line "$out" ceil)"             "true"
+    expect "math.pow"                  "$(line "$out" pow)"              "1024"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0
