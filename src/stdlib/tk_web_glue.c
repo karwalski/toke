@@ -30,6 +30,12 @@ extern _Thread_local int64_t tk_current_error;
 #else
 extern __thread int64_t tk_current_error;
 #endif
+void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#  define TK_WEB_TLS _Thread_local
+#else
+#  define TK_WEB_TLS __thread
+#endif
 #include "router.h"
 #include <netdb.h>
 #include <sys/socket.h>
@@ -106,6 +112,177 @@ static int           g_static_route_count = 0;
 static StrPair g_html_ct_hdr = { "Content-Type", "text/html; charset=utf-8" };
 static StrPair g_text_ct_hdr = { "Content-Type", "text/plain" };
 static StrPair g_json_ct_hdr = { "Content-Type", "application/json; charset=utf-8" };
+
+/* ── toke's $req / $res at the handler call (story 138.18) ───────────────
+ *
+ * A route handler is a toke function `(req:$req):$res`.  toke reads
+ * `req.body` as slot 3 of the record it is given (http.h, TkReqRec), so the
+ * dispatchers must hand it a TkReqRec -- not the server's C Req, whose third
+ * slot is the headers pointer.  Until 138.18 they handed it the C Req:
+ * `req.body` read the header array as a string, and `req.headers.len` read
+ * an unrelated word as an array header and crashed.  The accessor calls
+ * (http.reqbody, reqheader, ...) happened to work because they read the C
+ * Req too; now they read the TkReqRec, like a field access does.
+ *
+ * The same held for the answer: every $res constructor returned a C Res
+ * (status, body, {headers}), so `res.body` on http.res.ok("x") read the
+ * header pointer, and a `$res{status:..;headers:..;body:..}` literal
+ * returned from a handler was sent as status/garbage.  Now every
+ * constructor returns a TkResRec and the dispatcher converts it.
+ *
+ * Lifetimes.  The strings in a $req are the server's, freed with the
+ * request after the response is sent (http.c free_req), so a $req is
+ * request-scoped already; the record and its two arrays are freed as soon
+ * as the handler has returned and its $res has been converted.  (Toke does
+ * not count a field read as a new reference -- tk_arr_retain is not emitted
+ * for `let h=req.headers` -- so a handler that keeps req.headers past its
+ * return keeps an array of dangling strings either way.)  The $res record is
+ * freed after conversion, as the C Res was; its strings stay the program's.
+ *
+ * The three default Content-Type header arrays are static blocks with a
+ * refcount no program reaches, so a mutation through them copies
+ * (tk_array.h: write in place only at rc == 1) and they are never freed.
+ */
+#define TK_IMMORTAL_RC ((int64_t)1 << 40)
+typedef struct { int64_t rc, cap, len; const char *key; const char *val; } TkPairBlock;
+typedef struct { int64_t rc, cap, len; const void *elem; } TkOneElemBlock;
+#define TK_CT_BLOCKS(name, value)                                            \
+    static TkPairBlock name##_pair = { TK_IMMORTAL_RC, 2, 2, "Content-Type", \
+                                       value };                              \
+    static TkOneElemBlock name##_arr = { TK_IMMORTAL_RC, 1, 1,               \
+                                         &name##_pair.key };
+TK_CT_BLOCKS(g_html_ct, "text/html; charset=utf-8")
+TK_CT_BLOCKS(g_text_ct, "text/plain")
+TK_CT_BLOCKS(g_json_ct, "application/json; charset=utf-8")
+#define TK_CT_HANDLE(name) ((int64_t)(intptr_t)&name##_arr.elem)
+
+/* A [[str]] of @(key; value) pairs from the server's pair array. */
+static int64_t pairs_to_toke(const StrPairArray *a) {
+    int64_t n = (int64_t)a->len;
+    int64_t h = tk_arr_alloc(n, n);
+    if (!h) return 0;
+    for (int64_t i = 0; i < n; i++) {
+        int64_t pair = tk_arr_alloc(2, 2);
+        if (!pair) { tk_arr_setlen(h, i); return h; }
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)(a->data[i].key ? a->data[i].key : "");
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)(a->data[i].val ? a->data[i].val : "");
+        ((int64_t *)(intptr_t)h)[i] = pair;
+    }
+    return h;
+}
+
+/* Free an array pairs_to_toke built, and its pair blocks. */
+static void free_toke_pairs(int64_t h) {
+    if (!h) return;
+    int64_t n = tk_arr_len(h);
+    for (int64_t i = 0; i < n; i++) {
+        int64_t pair = ((int64_t *)(intptr_t)h)[i];
+        if (pair) free((int64_t *)(intptr_t)pair - TK_ARR_HDR);
+    }
+    free((int64_t *)(intptr_t)h - TK_ARR_HDR);
+}
+
+/* Element i of a [[str]] as a (key, value) pair; 0 if it is not @(k; v). */
+static int toke_pair_at(int64_t arr, int64_t i, const char **k, const char **v) {
+    int64_t pair = ((int64_t *)(intptr_t)arr)[i];
+    if (!pair || tk_arr_len(pair) != 2) return 0;
+    *k = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[0];
+    *v = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[1];
+    return 1;
+}
+
+/* The value of the first @(name; value) in arr whose name matches, or NULL.
+ * Header names compare case-insensitively (RFC 9110 §5.1), params exactly. */
+static const char *toke_pairs_find(int64_t arr, const char *name, int ci) {
+    int64_t n = tk_arr_len(arr);
+    for (int64_t i = 0; i < n; i++) {
+        const char *k, *v;
+        if (!toke_pair_at(arr, i, &k, &v) || !k) continue;
+        if (ci ? strcasecmp(k, name) == 0 : strcmp(k, name) == 0)
+            return v ? v : "";
+    }
+    return NULL;
+}
+
+/* A malloc'd TkResRec; 0 on OOM (the dispatcher answers 500). */
+static int64_t toke_res(int64_t status, int64_t headers, const char *body) {
+    TkResRec *r = (TkResRec *)malloc(sizeof *r);
+    if (!r) return 0;
+    r->status  = status;
+    r->headers = headers;
+    r->body    = body;
+    return (int64_t)(intptr_t)r;
+}
+
+/* A handler's TkResRec as the server's Res.  The pair array lives in a
+ * per-thread buffer until the next conversion on this thread: the server
+ * sends a response before it dispatches the next request (http.c). */
+static Res res_from_toke(const TkResRec *t) {
+    static TK_WEB_TLS StrPair *buf = NULL;
+    static TK_WEB_TLS int64_t  cap = 0;
+    Res r;
+    r.status       = (uint16_t)t->status;
+    r.body         = t->body ? t->body : "";
+    r.headers.data = NULL;
+    r.headers.len  = 0;
+    int64_t n = tk_arr_len(t->headers);
+    if (n > cap) {
+        StrPair *nb = (StrPair *)realloc(buf, (size_t)n * sizeof *nb);
+        if (!nb) return r;
+        buf = nb; cap = n;
+    }
+    for (int64_t i = 0; i < n; i++) {
+        const char *k, *v;
+        if (!toke_pair_at(t->headers, i, &k, &v) || !k) continue;
+        buf[r.headers.len].key = k;
+        buf[r.headers.len].val = v ? v : "";
+        r.headers.len++;
+    }
+    r.headers.data = buf;
+    return r;
+}
+
+static Res res_500(const char *msg) {
+    Res r;
+    r.status       = 500;
+    r.body         = msg;
+    r.headers.data = &g_text_ct_hdr;
+    r.headers.len  = 1;
+    return r;
+}
+
+typedef int64_t (*TkGetHandlerFn)(int64_t);
+
+/* Call a toke route handler on the server's request (its params already
+ * bound) and return its answer as the server's Res. */
+static Res call_toke_handler(TkGetHandlerFn fn, const Req *req) {
+    TkReqRec *t = (TkReqRec *)malloc(sizeof *t);
+    if (!t) return res_500("Internal Server Error");
+    t->method  = req->method ? req->method : "GET";
+    t->path    = req->path ? req->path : "/";
+    t->body    = req->body ? req->body : "";
+    t->headers = pairs_to_toke(&req->headers);
+    t->params  = pairs_to_toke(&req->params);
+    if (!t->headers || !t->params) {
+        free_toke_pairs(t->headers);
+        free_toke_pairs(t->params);
+        free(t);
+        return res_500("Internal Server Error");
+    }
+    int64_t res_ptr = fn((int64_t)(intptr_t)t);
+    Res r;
+    if (res_ptr) {
+        TkResRec *rp = (TkResRec *)(intptr_t)res_ptr;
+        r = res_from_toke(rp);  /* before the req arrays go: res may share them */
+        free(rp);
+    } else {
+        r = res_500("Handler returned null");
+    }
+    free_toke_pairs(t->headers);
+    free_toke_pairs(t->params);
+    free(t);
+    return r;
+}
 
 /* Custom 404 body set via http.setnotfound (Story 49.4.5) */
 static const char *g_notfound_body = NULL;
@@ -213,8 +390,6 @@ int64_t tk_http_set_cors(int64_t origins_ptr) {
 
 #define TK_MAX_GET_HANDLERS 256
 
-typedef int64_t (*TkGetHandlerFn)(int64_t);
-
 typedef struct {
     const char     *path;
     TkGetHandlerFn  handler;
@@ -235,34 +410,11 @@ static Res tk_get_handler_dispatch(Req req) {
             /* Populate request params from pattern match */
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
-            Req *heap_req = (Req *)malloc(sizeof(Req));
-            if (!heap_req) {
-                http_free_params(params, &pc);   /* 127.72 */
-                Res r;
-                r.status       = 500;
-                r.body         = "Internal Server Error";
-                r.headers.data = &g_text_ct_hdr;
-                r.headers.len  = 1;
-                return r;
-            }
-            *heap_req = req;
-            int64_t res_ptr = g_get_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
-            free(heap_req);
+            Res r = call_toke_handler(g_get_handler_routes[i].handler, &req);
             /* 127.72: the Res this dispatcher is about to return may carry
              * a :param value AS its body, and this block goes out of scope
              * on return — so the bindings are deferred, not freed. */
             http_defer_params(params, &pc);
-            if (res_ptr) {
-                Res *rp = (Res *)(intptr_t)res_ptr;
-                Res r = *rp;
-                free(rp);
-                return r;
-            }
-            Res r;
-            r.status       = 500;
-            r.body         = "Handler returned null";
-            r.headers.data = &g_text_ct_hdr;
-            r.headers.len  = 1;
             return r;
         }
         /* 127.72: was `pc = 0`, which dropped the bindings. */
@@ -282,66 +434,57 @@ int64_t tk_http_get_handler(int64_t path_ptr, int64_t handler_ptr) {
 
 /* ── Request/Response accessor helpers (Story 46.1.3) ──────────────── */
 
+/* 138.18: every accessor reads the TkReqRec a handler is given (http.h). */
+static const TkReqRec *req_rec(int64_t req_ptr) {
+    return (const TkReqRec *)(intptr_t)req_ptr;
+}
+
 int64_t tk_http_req_path(int64_t req_ptr) {
     if (!req_ptr) return 0;
-    Req *r = (Req *)(intptr_t)req_ptr;
-    return (int64_t)(intptr_t)(r->path ? r->path : "/");
+    const char *p = req_rec(req_ptr)->path;
+    return (int64_t)(intptr_t)(p ? p : "/");
 }
 
 int64_t tk_http_req_method(int64_t req_ptr) {
     if (!req_ptr) return 0;
-    Req *r = (Req *)(intptr_t)req_ptr;
-    return (int64_t)(intptr_t)(r->method ? r->method : "GET");
+    const char *m = req_rec(req_ptr)->method;
+    return (int64_t)(intptr_t)(m ? m : "GET");
 }
 
 int64_t tk_http_req_body(int64_t req_ptr) {
     if (!req_ptr) return 0;
-    Req *r = (Req *)(intptr_t)req_ptr;
-    return (int64_t)(intptr_t)(r->body ? r->body : "");
+    const char *b = req_rec(req_ptr)->body;
+    return (int64_t)(intptr_t)(b ? b : "");
 }
 
 int64_t tk_http_res_new(int64_t status, int64_t body_ptr) {
-    Res *r = (Res *)malloc(sizeof(Res));
-    if (!r) return 0;
-    r->status       = (uint16_t)status;
-    r->body         = (const char *)(intptr_t)body_ptr;
-    r->headers.data = &g_html_ct_hdr;
-    r->headers.len  = 1;
-    return (int64_t)(intptr_t)r;
+    return toke_res(status, TK_CT_HANDLE(g_html_ct), (const char *)(intptr_t)body_ptr);
 }
 
 int64_t tk_http_res_json_new(int64_t status, int64_t body_ptr) {
-    Res *r = (Res *)malloc(sizeof(Res));
-    if (!r) return 0;
-    r->status       = (uint16_t)status;
-    r->body         = (const char *)(intptr_t)body_ptr;
-    r->headers.data = &g_json_ct_hdr;
-    r->headers.len  = 1;
-    return (int64_t)(intptr_t)r;
+    return toke_res(status, TK_CT_HANDLE(g_json_ct), (const char *)(intptr_t)body_ptr);
+}
+
+/* A :param / header value, or NULL when the request has none by that name. */
+static const char *req_param_or_null(int64_t req_ptr, int64_t name_ptr) {
+    if (!req_ptr || !name_ptr) return NULL;
+    return toke_pairs_find(req_rec(req_ptr)->params,
+                           (const char *)(intptr_t)name_ptr, 0);
+}
+static const char *req_header_or_null(int64_t req_ptr, int64_t name_ptr) {
+    if (!req_ptr || !name_ptr) return NULL;
+    return toke_pairs_find(req_rec(req_ptr)->headers,
+                           (const char *)(intptr_t)name_ptr, 1);
 }
 
 int64_t tk_http_req_param(int64_t req_ptr, int64_t name_ptr) {
-    if (!req_ptr || !name_ptr) return (int64_t)(intptr_t)"";
-    Req *r = (Req *)(intptr_t)req_ptr;
-    const char *name = (const char *)(intptr_t)name_ptr;
-    for (uint64_t i = 0; i < r->params.len; i++) {
-        if (r->params.data[i].key && strcmp(r->params.data[i].key, name) == 0) {
-            return (int64_t)(intptr_t)(r->params.data[i].val ? r->params.data[i].val : "");
-        }
-    }
-    return (int64_t)(intptr_t)"";
+    const char *v = req_param_or_null(req_ptr, name_ptr);
+    return (int64_t)(intptr_t)(v ? v : "");
 }
 
 int64_t tk_http_req_header(int64_t req_ptr, int64_t name_ptr) {
-    if (!req_ptr || !name_ptr) return (int64_t)(intptr_t)"";
-    Req *r = (Req *)(intptr_t)req_ptr;
-    const char *name = (const char *)(intptr_t)name_ptr;
-    for (uint64_t i = 0; i < r->headers.len; i++) {
-        if (r->headers.data[i].key && strcasecmp(r->headers.data[i].key, name) == 0) {
-            return (int64_t)(intptr_t)(r->headers.data[i].val ? r->headers.data[i].val : "");
-        }
-    }
-    return (int64_t)(intptr_t)"";
+    const char *v = req_header_or_null(req_ptr, name_ptr);
+    return (int64_t)(intptr_t)(v ? v : "");
 }
 
 /* ── Calling a handler in a test (story 138.16, loke T-16) ─────────────
@@ -352,13 +495,14 @@ int64_t tk_http_req_header(int64_t req_ptr, int64_t name_ptr) {
  *   http.resheader(res; name) -> str
  *
  * A route handler is an ordinary toke function `(req:$req):$res` (or the
- * untyped `(req:i64):i64`).  The dispatchers above call it with a pointer
- * to a C `Req` and read back the `Res *` it returns.  mockreq builds that
- * same `Req`, so a test calls the handler directly -- `h(http.mockreq(...))`
- * -- and every accessor the handler uses (http.reqbody, reqparam,
- * reqheader, ...) reads exactly what it would read under the server.
+ * untyped `(req:i64):i64`).  The dispatchers above call it with a TkReqRec
+ * and read back the TkResRec it returns (138.18).  mockreq builds that
+ * same record, so a test calls the handler directly -- `h(http.mockreq(...))`
+ * -- and every field (req.body, req.headers, ...) and accessor
+ * (http.reqbody, reqparam, reqheader, ...) reads exactly what it would read
+ * under the server.
  *
- * The res* accessors read the `Res *` the handler returned the way the
+ * The res* accessors read the TkResRec the handler returned the way the
  * dispatchers do, including their rule for a handler that returns null:
  * status 500, body "Handler returned null", text/plain.  They see the
  * handler's response, not the bytes on the wire: the server adds its own
@@ -367,38 +511,26 @@ int64_t tk_http_req_header(int64_t req_ptr, int64_t name_ptr) {
  * headers and params are [[str]], each element @(name; value).  An element
  * of any other shape is a mistake in the test, and a test that carries on
  * past it would measure the wrong request, so it stops the program with
- * exit status 1 and says which argument was wrong.  The request and its
- * pair arrays are allocated here and never freed (a test builds a handful);
- * the strings stay the program's, as they are under the server. */
+ * exit status 1 and says which argument was wrong.  The record is allocated
+ * here and never freed (a test builds a handful); the arrays and strings are
+ * the program's own, so req.headers is the very array the test passed. */
 
-static StrPairArray mock_pairs(const char *what, int64_t arr) {
-    StrPairArray out = { NULL, 0 };
-    int64_t n = arr ? ((int64_t *)(intptr_t)arr)[-1] : 0;
-    if (n <= 0) return out;
-    out.data = (StrPair *)calloc((size_t)n, sizeof(StrPair));
-    if (!out.data) {
-        fprintf(stderr, "http.mockreq: out of memory\n");
-        exit(1);
-    }
+static int64_t mock_pairs(const char *what, int64_t arr) {
+    int64_t n = tk_arr_len(arr);
     for (int64_t i = 0; i < n; i++) {
-        int64_t pair = ((int64_t *)(intptr_t)arr)[i];
-        if (!pair || ((int64_t *)(intptr_t)pair)[-1] != 2) {
+        const char *k, *v;
+        if (!toke_pair_at(arr, i, &k, &v)) {
             fprintf(stderr, "http.mockreq: %s element %lld is not @(name; value)\n",
                     what, (long long)i);
             exit(1);
         }
-        const char *k = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[0];
-        const char *v = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[1];
-        out.data[i].key = k ? k : "";
-        out.data[i].val = v ? v : "";
     }
-    out.len = (uint64_t)n;
-    return out;
+    return arr ? arr : tk_arr_alloc(0, 0);
 }
 
 int64_t tk_http_mockreq_w(int64_t method, int64_t path, int64_t headers,
                           int64_t body, int64_t params) {
-    Req *r = (Req *)calloc(1, sizeof(Req));
+    TkReqRec *r = (TkReqRec *)calloc(1, sizeof *r);
     if (!r) {
         fprintf(stderr, "http.mockreq: out of memory\n");
         exit(1);
@@ -408,65 +540,46 @@ int64_t tk_http_mockreq_w(int64_t method, int64_t path, int64_t headers,
     r->body    = body ? (const char *)(intptr_t)body : "";
     r->headers = mock_pairs("headers", headers);
     r->params  = mock_pairs("params", params);
+    if (!r->headers || !r->params) {
+        fprintf(stderr, "http.mockreq: out of memory\n");
+        exit(1);
+    }
     return (int64_t)(intptr_t)r;
 }
 
-static const Res g_null_handler_res = {
-    500, "Handler returned null", { &g_text_ct_hdr, 1 }
-};
-
-static const Res *handler_res(int64_t res) {
-    return res ? (const Res *)(intptr_t)res : &g_null_handler_res;
+/* A null response reads as the dispatchers answer it: 500, text/plain. */
+static TkResRec handler_res(int64_t res) {
+    if (res) return *(const TkResRec *)(intptr_t)res;
+    TkResRec r = { 500, TK_CT_HANDLE(g_text_ct), "Handler returned null" };
+    return r;
 }
 
 int64_t tk_http_resstatus_w(int64_t res) {
-    return (int64_t)handler_res(res)->status;
+    return handler_res(res).status;
 }
 
 int64_t tk_http_resbody_w(int64_t res) {
-    const char *b = handler_res(res)->body;
+    const char *b = handler_res(res).body;
     return (int64_t)(intptr_t)(b ? b : "");
 }
 
 int64_t tk_http_resheader_w(int64_t res, int64_t name_ptr) {
-    const Res *r = handler_res(res);
     if (!name_ptr) return (int64_t)(intptr_t)"";
-    const char *name = (const char *)(intptr_t)name_ptr;
-    for (uint64_t i = 0; i < r->headers.len; i++) {
-        if (r->headers.data[i].key && strcasecmp(r->headers.data[i].key, name) == 0)
-            return (int64_t)(intptr_t)(r->headers.data[i].val ? r->headers.data[i].val : "");
-    }
-    return (int64_t)(intptr_t)"";
+    const char *v = toke_pairs_find(handler_res(res).headers,
+                                    (const char *)(intptr_t)name_ptr, 1);
+    return (int64_t)(intptr_t)(v ? v : "");
 }
 
 int64_t tk_http_res_ok(int64_t body_ptr) {
-    Res *r = (Res *)malloc(sizeof(Res));
-    if (!r) return 0;
-    r->status       = 200;
-    r->body         = (const char *)(intptr_t)body_ptr;
-    r->headers.data = &g_html_ct_hdr;
-    r->headers.len  = 1;
-    return (int64_t)(intptr_t)r;
+    return toke_res(200, TK_CT_HANDLE(g_html_ct), (const char *)(intptr_t)body_ptr);
 }
 
 int64_t tk_http_res_bad(int64_t msg_ptr) {
-    Res *r = (Res *)malloc(sizeof(Res));
-    if (!r) return 0;
-    r->status       = 400;
-    r->body         = (const char *)(intptr_t)msg_ptr;
-    r->headers.data = &g_text_ct_hdr;
-    r->headers.len  = 1;
-    return (int64_t)(intptr_t)r;
+    return toke_res(400, TK_CT_HANDLE(g_text_ct), (const char *)(intptr_t)msg_ptr);
 }
 
 int64_t tk_http_res_err(int64_t msg_ptr) {
-    Res *r = (Res *)malloc(sizeof(Res));
-    if (!r) return 0;
-    r->status       = 500;
-    r->body         = (const char *)(intptr_t)msg_ptr;
-    r->headers.data = &g_text_ct_hdr;
-    r->headers.len  = 1;
-    return (int64_t)(intptr_t)r;
+    return toke_res(500, TK_CT_HANDLE(g_text_ct), (const char *)(intptr_t)msg_ptr);
 }
 
 /* ── POST handler dispatch ────────────────────────────────────────────── */
@@ -579,34 +692,11 @@ static Res tk_post_handler_dispatch(Req req) {
             http_match_pattern(g_post_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
-            Req *heap_req = (Req *)malloc(sizeof(Req));
-            if (!heap_req) {
-                http_free_params(params, &pc);   /* 127.72 */
-                Res r;
-                r.status       = 500;
-                r.body         = "Internal Server Error";
-                r.headers.data = &g_text_ct_hdr;
-                r.headers.len  = 1;
-                return r;
-            }
-            *heap_req = req;
-            int64_t res_ptr = g_post_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
-            free(heap_req);
+            Res r = call_toke_handler(g_post_handler_routes[i].handler, &req);
             /* 127.72: the Res this dispatcher is about to return may carry
              * a :param value AS its body, and this block goes out of scope
              * on return — so the bindings are deferred, not freed. */
             http_defer_params(params, &pc);
-            if (res_ptr) {
-                Res *rp = (Res *)(intptr_t)res_ptr;
-                Res r = *rp;
-                free(rp);
-                return r;
-            }
-            Res r;
-            r.status       = 500;
-            r.body         = "Handler returned null";
-            r.headers.data = &g_text_ct_hdr;
-            r.headers.len  = 1;
             return r;
         }
         http_free_params(params, &pc);   /* 127.72: was `pc = 0` */
@@ -646,22 +736,12 @@ static Res tk_put_handler_dispatch(Req req) {
             http_match_pattern(g_put_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
-            Req *heap_req = (Req *)malloc(sizeof(Req));
-            if (!heap_req) {
-                http_free_params(params, &pc);   /* 127.72 */
-                Res r; r.status = 500; r.body = "Internal Server Error";
-                r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
-            }
-            *heap_req = req;
-            int64_t res_ptr = g_put_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
-            free(heap_req);
+            Res r = call_toke_handler(g_put_handler_routes[i].handler, &req);
             /* 127.72: the Res this dispatcher is about to return may carry
              * a :param value AS its body, and this block goes out of scope
              * on return — so the bindings are deferred, not freed. */
             http_defer_params(params, &pc);
-            if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
-            Res r; r.status = 500; r.body = "Handler returned null";
-            r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
+            return r;
         }
         /* 127.72: was `pc = 0`, which dropped the bindings. */
         http_free_params(params, &pc);
@@ -702,22 +782,12 @@ static Res tk_delete_handler_dispatch(Req req) {
             http_match_pattern(g_delete_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
-            Req *heap_req = (Req *)malloc(sizeof(Req));
-            if (!heap_req) {
-                http_free_params(params, &pc);   /* 127.72 */
-                Res r; r.status = 500; r.body = "Internal Server Error";
-                r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
-            }
-            *heap_req = req;
-            int64_t res_ptr = g_delete_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
-            free(heap_req);
+            Res r = call_toke_handler(g_delete_handler_routes[i].handler, &req);
             /* 127.72: the Res this dispatcher is about to return may carry
              * a :param value AS its body, and this block goes out of scope
              * on return — so the bindings are deferred, not freed. */
             http_defer_params(params, &pc);
-            if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
-            Res r; r.status = 500; r.body = "Handler returned null";
-            r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
+            return r;
         }
         /* 127.72: was `pc = 0`, which dropped the bindings. */
         http_free_params(params, &pc);
@@ -758,22 +828,12 @@ static Res tk_patch_handler_dispatch(Req req) {
             http_match_pattern(g_patch_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
-            Req *heap_req = (Req *)malloc(sizeof(Req));
-            if (!heap_req) {
-                http_free_params(params, &pc);   /* 127.72 */
-                Res r; r.status = 500; r.body = "Internal Server Error";
-                r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
-            }
-            *heap_req = req;
-            int64_t res_ptr = g_patch_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
-            free(heap_req);
+            Res r = call_toke_handler(g_patch_handler_routes[i].handler, &req);
             /* 127.72: the Res this dispatcher is about to return may carry
              * a :param value AS its body, and this block goes out of scope
              * on return — so the bindings are deferred, not freed. */
             http_defer_params(params, &pc);
-            if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
-            Res r; r.status = 500; r.body = "Handler returned null";
-            r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
+            return r;
         }
         /* 127.72: was `pc = 0`, which dropped the bindings. */
         http_free_params(params, &pc);
@@ -1549,12 +1609,6 @@ int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) {
  * returns 0 for $err and a non-null value for $ok, so both the value
  * sentinel and the slot discriminate.
  */
-void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-#  define TK_WEB_TLS _Thread_local
-#else
-#  define TK_WEB_TLS __thread
-#endif
 static int64_t http_raise(const char *msg, uint64_t code)
 {
     /* The message lives in a per-thread buffer, valid until the next raise
@@ -2251,21 +2305,21 @@ int64_t tk_http_resjson_w(int64_t status, int64_t body) { return tk_http_res_jso
 int64_t tk_http_resjsonnew_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_jsonresp_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_resp_w(int64_t status, int64_t body, int64_t ct) {
-    Res *r = (Res *)malloc(sizeof(Res));
-    if (!r) return 0;
-    r->status      = (uint16_t)status;
-    r->body        = (const char *)(intptr_t)body;
+    int64_t hdrs = TK_CT_HANDLE(g_html_ct);
     if (ct) {
-        StrPair *hdr = (StrPair *)malloc(sizeof(StrPair));
-        if (!hdr) { free(r); return 0; }
-        hdr->key   = "Content-Type";
-        hdr->val   = (const char *)(intptr_t)ct;
-        r->headers.data = hdr;
-    } else {
-        r->headers.data = &g_html_ct_hdr;
+        int64_t pair = tk_arr_alloc(2, 2);
+        hdrs = tk_arr_alloc(1, 1);
+        if (!pair || !hdrs) {
+            if (pair) free((int64_t *)(intptr_t)pair - TK_ARR_HDR);
+            if (hdrs) free((int64_t *)(intptr_t)hdrs - TK_ARR_HDR);
+            return 0;
+        }
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)"Content-Type";
+        const char *ctype = (const char *)(intptr_t)ct;
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)ctype;
+        ((int64_t *)(intptr_t)hdrs)[0] = pair;
     }
-    r->headers.len = 1;
-    return (int64_t)(intptr_t)r;
+    return toke_res(status, hdrs, (const char *)(intptr_t)body);
 }
 int64_t tk_http_resok_w(int64_t body) { return tk_http_res_ok(body); }
 int64_t tk_http_resbad_w(int64_t msg) { return tk_http_res_bad(msg); }

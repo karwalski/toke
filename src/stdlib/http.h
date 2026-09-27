@@ -5,8 +5,12 @@
  * http.h — C interface for the std.http standard library module.
  *
  * Type mappings (spec Section 17.2):
- *   [[Str]]      = StrPairArray   Req = struct Req   Res = struct Res
- *   Str!HttpErr  = HttpResult
+ *   [[Str]]      = StrPairArray   Str!HttpErr  = HttpResult
+ *
+ * Req and Res below are the SERVER's structs.  They are not what a toke
+ * program sees: toke's `$req` and `$res` are the records TkReqRec and
+ * TkResRec further down (138.18).  A toke program read its `$req` through
+ * the C Req until 138.18, and `req.body` read the headers pointer.
  *
  * Story: 1.3.2  Branch: feature/stdlib-http
  */
@@ -50,6 +54,54 @@ typedef struct {
     const char  *body;
     StrPairArray headers;
 } Res;
+
+/*
+ * ── The records a toke program sees (story 138.18) ─────────────────────
+ *
+ * tkc lays out a record as one 8-byte slot per field, in the order the .tki
+ * declares the fields, and reads `x.f` as slot <index of f>, whatever f's
+ * type: a str is a char *, an array is a toke array handle (tk_array.h:
+ * len at handle[-1]), a u16 is a whole slot.  So the struct a C wrapper
+ * hands to toke, or reads back from it, must have exactly that shape.
+ *
+ * Req and Res above do not, and cannot: their pair arrays are a {data, len}
+ * pair inline, 16 bytes, where toke has one slot holding an array handle.
+ * The .tki is the side a program is written against, so it is
+ * authoritative; the dispatchers convert between these records and the
+ * server's structs at the handler call (tk_web_glue.c, call_toke_handler).
+ *
+ * A `tki-record` marker names the .tki record a struct mirrors, and
+ * `make check-tki-layout` (scripts/check_tki_layout.py) fails if the
+ * fields differ in name, order, or size from that record's.
+ */
+/* tki-record: http.req */
+typedef struct {
+    const char *method;
+    const char *path;
+    int64_t     headers;    /* [[str]]: each element @(name; value) */
+    const char *body;
+    int64_t     params;     /* [[str]]: each element @(name; value) */
+} TkReqRec;
+
+/* tki-record: http.res */
+typedef struct {
+    int64_t     status;     /* u16 in the .tki: one whole slot */
+    int64_t     headers;    /* [[str]]: each element @(name; value) */
+    const char *body;
+} TkResRec;
+
+/* tki-record: http.httpresp */
+typedef struct {
+    int64_t     status;
+    int64_t     headers;    /* [[str]] */
+    int64_t     body;       /* [byte] */
+} TkHttpRespRec;
+
+/* tki-record: http.httperr */
+typedef struct {
+    const char *msg;
+    int64_t     code;
+} TkHttpErrRec;
 
 typedef enum {
     HTTP_ERR_BAD_REQUEST,
