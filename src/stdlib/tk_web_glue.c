@@ -2082,211 +2082,56 @@ int64_t tk_http_pathparam_w(int64_t req, int64_t name) {
     return tk_http_req_param(req, name);
 }
 
-/* http.postheaders(url, body, headers_json) — POST with custom headers.
- * headers is a JSON string like {"Authorization":"Bearer xxx","X-Custom":"val"}
- * which gets parsed and injected into the HTTP request headers. */
-int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64, int64_t extra) {
-    (void)extra;
-    if (!url_i64) return 0;
-    const char *url = (const char *)(intptr_t)url_i64;
+/*
+ * 138.8 — http.postheaders(url; body; headers) -> httpresp!httperr.
+ *
+ * It was `(i64, i64, i64, i64) -> i64 [abi]`: the glue read (url; body;
+ * headersjson) and ignored a fourth argument, parsed the headers out of a
+ * JSON string by hand (no escapes), always sent its own
+ * `Content-Type: application/json` and then the caller's as well (two
+ * Content-Type lines), returned the body or 0 with no status and no error,
+ * and opened its own TLS connection with no certificate verification.
+ *
+ * Now it is typed: `headers` is [[str]], each element a two-element
+ * @(name; value), the result is the response ($err for a transport failure,
+ * the status in r.status otherwise), and the request goes through the
+ * client every other call uses (http_request_headers), so https is verified
+ * (C279) and a Content-Type among `headers` replaces the default
+ * application/json instead of being sent twice.
+ */
+int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64) {
+    if (!url_i64) return http_raise("http.postheaders: null url", 0);
+    const char *u = (const char *)(intptr_t)url_i64;
     const char *body = body_i64 ? (const char *)(intptr_t)body_i64 : "";
-    const char *hdrs = headers_i64 ? (const char *)(intptr_t)headers_i64 : "";
-    size_t body_len = strlen(body);
+    const char *p = u;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    else return http_raise("http.postheaders: the url must start with http:// or https://", 0);
 
-    /* Parse URL into host:port + path */
-    const char *p = url;
-    int is_https = 0;
-    if (strncmp(p, "https://", 8) == 0) { is_https = 1; p += 8; }
-    else if (strncmp(p, "http://", 7) == 0) { p += 7; }
+    int64_t nh = headers_i64 ? ((int64_t *)(intptr_t)headers_i64)[-1] : 0;
+    if (nh < 0 || nh > 256) return http_raise("http.postheaders: too many headers", 0);
+    StrPair hv[256];
+    for (int64_t i = 0; i < nh; i++) {
+        int64_t pair = ((int64_t *)(intptr_t)headers_i64)[i];
+        if (!pair || ((int64_t *)(intptr_t)pair)[-1] != 2)
+            return http_raise("http.postheaders: each header must be @(name; value)", 0);
+        hv[i].key = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[0];
+        hv[i].val = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[1];
+    }
+
     const char *slash = strchr(p, '/');
-    char host[256] = "", port[16] = "80";
-    const char *path = "/";
-    if (slash) {
-        size_t hlen = (size_t)(slash - p);
-        if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
-        memcpy(host, p, hlen); host[hlen] = '\0';
-        path = slash;
-    } else {
-        strncpy(host, p, sizeof(host) - 1);
-    }
-    if (is_https) strcpy(port, "443");
-    char *colon = strchr(host, ':');
-    if (colon) { *colon = '\0'; strncpy(port, colon + 1, sizeof(port) - 1); }
-
-    /* Build custom header lines from JSON-like string.
-     * Simple parser: scan for "key":"value" pairs. */
-    char extra_hdrs[4096] = "";
-    size_t epos = 0;
-    if (hdrs[0] == '{') {
-        const char *hp = hdrs + 1;
-        while (*hp && *hp != '}') {
-            while (*hp && (*hp == ' ' || *hp == ',' || *hp == '\n')) hp++;
-            if (*hp == '"') {
-                hp++;
-                const char *ks = hp; while (*hp && *hp != '"') hp++;
-                size_t klen = (size_t)(hp - ks);
-                if (*hp == '"') hp++;
-                while (*hp && *hp != ':') hp++;
-                if (*hp == ':') hp++;
-                while (*hp == ' ') hp++;
-                if (*hp == '"') {
-                    hp++;
-                    const char *vs = hp; while (*hp && *hp != '"') hp++;
-                    size_t vlen = (size_t)(hp - vs);
-                    if (*hp == '"') hp++;
-                    if (epos + klen + 2 + vlen + 3 < sizeof(extra_hdrs)) {
-                        memcpy(extra_hdrs + epos, ks, klen); epos += klen;
-                        extra_hdrs[epos++] = ':'; extra_hdrs[epos++] = ' ';
-                        memcpy(extra_hdrs + epos, vs, vlen); epos += vlen;
-                        extra_hdrs[epos++] = '\r'; extra_hdrs[epos++] = '\n';
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-    }
-    extra_hdrs[epos] = '\0';
-
-    /* Connect */
-    struct addrinfo hints = {0}, *res;
-    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host, port, &hints, &res) != 0) return 0;
-    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (fd < 0) { freeaddrinfo(res); return 0; }
-    struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
-        freeaddrinfo(res); close(fd); return 0;
-    }
-    freeaddrinfo(res);
-
-    /* TLS handshake for HTTPS */
-#ifdef TK_HAVE_OPENSSL
-    SSL_CTX *ph_ssl_ctx = NULL;
-    SSL *ph_ssl = NULL;
-    if (is_https) {
-        ph_ssl_ctx = SSL_CTX_new(TLS_client_method());
-        if (!ph_ssl_ctx) { close(fd); return 0; }
-        ph_ssl = SSL_new(ph_ssl_ctx);
-        if (!ph_ssl) { SSL_CTX_free(ph_ssl_ctx); close(fd); return 0; }
-        SSL_set_fd(ph_ssl, fd);
-        SSL_set_tlsext_host_name(ph_ssl, host);
-        if (SSL_connect(ph_ssl) <= 0) {
-            SSL_free(ph_ssl); SSL_CTX_free(ph_ssl_ctx); close(fd); return 0;
-        }
-    }
-#define PH_SEND(buf, len) (is_https ? SSL_write(ph_ssl, buf, (int)(len)) : (int)send(fd, buf, len, 0))
-#define PH_RECV(buf, len) (is_https ? SSL_read(ph_ssl, buf, (int)(len)) : (int)recv(fd, buf, len, 0))
-#else
-    if (is_https) { close(fd); return 0; } /* no TLS support */
-#define PH_SEND(buf, len) (int)send(fd, buf, len, 0)
-#define PH_RECV(buf, len) (int)recv(fd, buf, len, 0)
-#endif
-
-    /* Build and send request */
-    char req_buf[8192];
-    int req_len = snprintf(req_buf, sizeof(req_buf),
-        "POST %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %zu\r\n"
-        "%s"
-        "Connection: close\r\n"
-        "\r\n",
-        path, host, body_len, extra_hdrs);
-    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
-#ifdef TK_HAVE_OPENSSL
-        if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
-        if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
-#endif
-        close(fd); return 0;
-    }
-    PH_SEND(req_buf, (size_t)req_len);
-    if (body_len > 0) PH_SEND(body, body_len);
-
-    /* Read response */
-    size_t cap = 65536, used = 0;
-    char *resp = malloc(cap);
-    if (!resp) {
-#ifdef TK_HAVE_OPENSSL
-        if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
-        if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
-#endif
-        close(fd); return 0;
-    }
-    int n;
-    while ((n = PH_RECV(resp + used, cap - used - 1)) > 0) {
-        used += (size_t)n;
-        if (used + 1 >= cap) { cap *= 2; char *tmp = realloc(resp, cap); if (!tmp) break; resp = tmp; }
-    }
-    resp[used] = '\0';
-#ifdef TK_HAVE_OPENSSL
-    if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
-    if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
-#endif
-#undef PH_SEND
-#undef PH_RECV
-    close(fd);
-
-    /* Extract body after \r\n\r\n, with chunked decoding */
-    const char *sep = strstr(resp, "\r\n\r\n");
-    if (!sep) { free(resp); return 0; }
-    sep += 4;
-    size_t raw_len = used - (size_t)(sep - resp);
-
-    /* Check for Transfer-Encoding: chunked in headers */
-    int is_chunked = 0;
-    {
-        const char *te = resp;
-        const char *hdr_end = sep - 4;
-        while ((te = strstr(te, "\r\n")) != NULL && te < hdr_end) {
-            te += 2;
-            if (strncasecmp(te, "Transfer-Encoding:", 18) == 0) {
-                const char *val = te + 18;
-                while (*val == ' ') val++;
-                if (strncasecmp(val, "chunked", 7) == 0) is_chunked = 1;
-                break;
-            }
-        }
-    }
-
-    char *result;
-    if (is_chunked && raw_len > 0) {
-        /* Decode chunked body */
-        result = malloc(raw_len + 1);
-        if (!result) { free(resp); return 0; }
-        size_t dpos = 0;
-        const char *cp = sep;
-        const char *raw_end = sep + raw_len;
-        while (cp < raw_end) {
-            char *nl = NULL;
-            unsigned long chunk_sz = strtoul(cp, &nl, 16);
-            if (!nl || nl == cp) break;
-            if (nl + 2 <= raw_end && nl[0] == '\r' && nl[1] == '\n') cp = nl + 2;
-            else if (nl + 1 <= raw_end && nl[0] == '\n') cp = nl + 1;
-            else break;
-            if (chunk_sz == 0) break;
-            size_t avail = (size_t)(raw_end - cp);
-            size_t to_copy = chunk_sz < avail ? (size_t)chunk_sz : avail;
-            memcpy(result + dpos, cp, to_copy);
-            dpos += to_copy;
-            cp += to_copy;
-            if (cp + 2 <= raw_end && cp[0] == '\r' && cp[1] == '\n') cp += 2;
-            else if (cp + 1 <= raw_end && cp[0] == '\n') cp += 1;
-        }
-        result[dpos] = '\0';
-    } else if (raw_len > 0) {
-        result = malloc(raw_len + 1);
-        if (!result) { free(resp); return 0; }
-        memcpy(result, sep, raw_len);
-        result[raw_len] = '\0';
-    } else {
-        free(resp); return 0;
-    }
-    free(resp);
-    return (int64_t)(intptr_t)result;
+    size_t base_len = slash ? (size_t)(slash - u) : strlen(u);
+    char *base = (char *)malloc(base_len + 1);
+    if (!base) return http_raise("out of memory", 0);
+    memcpy(base, u, base_len); base[base_len] = '\0';
+    HttpClient *c = http_client(base);
+    free(base);
+    if (!c) return http_raise("out of memory", 0);
+    HttpClientResp r = http_request_headers(c, "POST", slash ? slash : "/",
+                                            (const uint8_t *)body, strlen(body),
+                                            "application/json", hv, (uint64_t)nh);
+    http_client_free(c);
+    return client_result(r);
 }
 
 /* http.queryparam(req, name) — extract query string parameter */

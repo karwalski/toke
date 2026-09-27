@@ -508,6 +508,27 @@ f=main():i64{
 };
 ```
 
+### http.postheaders(url: $str; body: $str; headers: @(@($str))): $httpresp!$httperr
+
+`POST` `body` to a full `http://` or `https://` URL with the given headers, each an `@(name; value)` pair. The body is sent as `application/json` unless `headers` carries a `Content-Type`, which then replaces it (story 138.8: it used to be sent in addition, so the server saw two). `Content-Length` and `Host` are set by the client and may not be given; a header name or value containing a carriage return or line feed is refused (`$err`) rather than sent, because it would let the caller write a header of its own choosing. As for the other client calls, `$err` is a transport failure and a status such as `401` is a response.
+
+Over `https://` the server's certificate must verify against the trust store (the system default; `SSL_CERT_FILE` or `SSL_CERT_DIR` override it) and name the host or IP address in the URL. Before story 138.8 no certificate was verified by any `std.http` client call.
+
+```toke
+i=http:std.http;
+i=io:std.io;
+i=str:std.str;
+f=main():i64{
+  let h=@(@("x-api-key";"secret");@("content-type";"application/json"));
+  let r=mt http.postheaders("https://127.0.0.1:8443/v1/messages";"{\"n\":1}";h) {
+    $ok:r "\(r.status) \(str.frombytes(r.body))";
+    $err:e "request failed"
+  };
+  io.println(r);
+  <0
+};
+```
+
 ### http.get(url: $str): $httpresp!$httperr
 
 > **Not exported.** `std.http`'s interface declares `http.get` as route registration (`path; handler`). A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case: its result is untyped and it has no error channel. Use `http.geturl(url)`.

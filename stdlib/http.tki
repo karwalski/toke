@@ -714,14 +714,12 @@
       "kind": "func",
       "name": "http.postheaders",
       "params": [
-        "i64",
-        "i64",
-        "i64",
-        "i64"
+        "str",
+        "str",
+        "[[str]]"
       ],
-      "return": "i64",
-      "gen": "abi",
-      "internal": true
+      "return": "httpresp!httperr",
+      "note": "url; body; headers \u2014 POST body to a full URL with @(@(name;value)...) headers; a Content-Type among them replaces the default application/json; https is verified (138.8)"
     },
     {
       "kind": "func",

@@ -60,7 +60,7 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 |---|---|---|
 | `fs.writetext` | `tk_fs_writetext_w` | `file_glue.c` |
 
-### `std.http` (20)
+### `std.http` (19)
 
 | Export | Glue symbol | Defined in |
 |---|---|---|
@@ -74,7 +74,6 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `http.patchhandler` | `tk_http_patchhandler_w` | `tk_web_glue.c` |
 | `http.pathparam` | `tk_http_pathparam_w` | `tk_web_glue.c` |
 | `http.posthandler` | `tk_http_posthandler_w` | `tk_web_glue.c` |
-| `http.postheaders` | `tk_http_postheaders_w` | `tk_web_glue.c` |
 | `http.postroutejson` | `tk_http_postroutejson_w` | `tk_web_glue.c` |
 | `http.poststatic` | `tk_http_post_static` | `tk_web_glue.c` |
 | `http.posturl` | `tk_http_posturl_w` | `tk_web_glue.c` |

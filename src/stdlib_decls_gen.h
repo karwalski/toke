@@ -236,7 +236,7 @@
     {"tk_http_pathparam_w", "declare i64 @tk_http_pathparam_w(i64, i64)", 0},
     {"tk_http_postecho_w", "declare i64 @tk_http_postecho_w(i64)", 0},
     {"tk_http_posthandler_w", "declare i64 @tk_http_posthandler_w(i64, i64)", 0},
-    {"tk_http_postheaders_w", "declare i64 @tk_http_postheaders_w(i64, i64, i64, i64)", 0},
+    {"tk_http_postheaders_w", "declare i64 @tk_http_postheaders_w(i64, i64, i64)", 0},
     {"tk_http_postjson_w", "declare i64 @tk_http_postjson_w(i64, i64)", 0},
     {"tk_http_postroutejson_w", "declare i64 @tk_http_postroutejson_w(i64, i64)", 0},
     {"tk_http_poststatic_w", "declare i64 @tk_http_poststatic_w(i64, i64)", 0},

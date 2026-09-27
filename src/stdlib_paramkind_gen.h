@@ -171,7 +171,7 @@
     { "tk_http_geturl_w", "S" },
     { "tk_http_listen_w", "S." },
     { "tk_http_post_w", ".SS" },
-    { "tk_http_postheaders_w", "SSS." },
+    { "tk_http_postheaders_w", "SS." },
     { "tk_http_postjson_w", "SS" },
     { "tk_http_posturl_w", "SS" },
     { "tk_http_print_w", "S" },

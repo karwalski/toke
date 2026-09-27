@@ -2419,9 +2419,34 @@ static HttpClientResp client_do_request(HttpClient *c,
                                         const char *path,
                                         const uint8_t *body,
                                         uint64_t body_len,
-                                        const char *content_type)
+                                        const char *content_type,
+                                        const StrPair *xh,
+                                        uint64_t nxh)
 {
     if (!c || !c->base_url) return err_resp_client("null client", 0);
+
+    /* 138.8: caller-supplied headers.  A name or value carrying CR or LF
+     * would end the header early and let the caller write a second header
+     * or request (header injection), so it is refused; so is a Content-Length
+     * or Host of the caller's own, which would contradict the ones sent
+     * here.  A Content-Type among them REPLACES the default one -- it used
+     * to be sent in addition, so the server saw two. */
+    int caller_ct = 0;
+    size_t xh_len = 0;
+    for (uint64_t i = 0; i < nxh; i++) {
+        const char *k = xh[i].key ? xh[i].key : "";
+        const char *v = xh[i].val ? xh[i].val : "";
+        if (!k[0] || strpbrk(k, "\r\n:") || strpbrk(v, "\r\n"))
+            return err_resp_client("invalid header name or value (empty, or contains CR, LF or ':')", 0);
+        if (!strcasecmp(k, "content-length") || !strcasecmp(k, "host"))
+            return err_resp_client("Content-Length and Host are set by the client, not the caller", 0);
+        if (!strcasecmp(k, "content-type")) caller_ct = 1;
+        xh_len += strlen(k) + strlen(v) + 4;
+    }
+    char ct_line[512] = "";
+    if (body && body_len > 0 && !caller_ct)
+        snprintf(ct_line, sizeof ct_line, "Content-Type: %s\r\n",
+                 content_type ? content_type : "application/octet-stream");
 
 #ifndef TK_HAVE_OPENSSL
     if (strncmp(c->base_url, "https://", 8) == 0) {
@@ -2564,25 +2589,37 @@ static HttpClientResp client_do_request(HttpClient *c,
         snprintf(request_uri, sizeof(request_uri), "%s", full_path);
     }
 
+    /* 138.8: the caller's header lines, validated at the top. */
+    char *xh_buf = (char *)malloc(xh_len + 1);
+    if (!xh_buf) { CLIENT_CLOSE(); return err_resp_client("out of memory", 0); }
+    {
+        size_t o = 0;
+        for (uint64_t i = 0; i < nxh; i++)
+            o += (size_t)snprintf(xh_buf + o, xh_len + 1 - o, "%s: %s\r\n",
+                                  xh[i].key, xh[i].val ? xh[i].val : "");
+        xh_buf[o] = '\0';
+    }
     if (body && body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
-            "Content-Type: %s\r\n"
+            "%s"
             "Content-Length: %llu\r\n"
+            "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host,
-            content_type ? content_type : "application/octet-stream",
-            (unsigned long long)body_len);
+            method, request_uri, host, ct_line,
+            (unsigned long long)body_len, xh_buf);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
+            "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host);
+            method, request_uri, host, xh_buf);
     }
+    free(xh_buf);
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
         CLIENT_CLOSE();
@@ -2880,26 +2917,37 @@ HttpClient *http_withproxy(HttpClient *c, const char *proxy_url)
 
 HttpClientResp http_get(HttpClient *c, const char *path)
 {
-    return client_do_request(c, "GET", path, NULL, 0, NULL);
+    return client_do_request(c, "GET", path, NULL, 0, NULL, NULL, 0);
 }
 
 HttpClientResp http_post(HttpClient *c, const char *path,
                          const uint8_t *body, uint64_t body_len,
                          const char *content_type)
 {
-    return client_do_request(c, "POST", path, body, body_len, content_type);
+    return client_do_request(c, "POST", path, body, body_len, content_type, NULL, 0);
 }
 
 HttpClientResp http_put(HttpClient *c, const char *path,
                         const uint8_t *body, uint64_t body_len,
                         const char *content_type)
 {
-    return client_do_request(c, "PUT", path, body, body_len, content_type);
+    return client_do_request(c, "PUT", path, body, body_len, content_type, NULL, 0);
 }
 
 HttpClientResp http_delete(HttpClient *c, const char *path)
 {
-    return client_do_request(c, "DELETE", path, NULL, 0, NULL);
+    return client_do_request(c, "DELETE", path, NULL, 0, NULL, NULL, 0);
+}
+
+/* 138.8: any method, with caller headers (see client_do_request). */
+HttpClientResp http_request_headers(HttpClient *c, const char *method,
+                                    const char *path,
+                                    const uint8_t *body, uint64_t body_len,
+                                    const char *content_type,
+                                    const StrPair *headers, uint64_t nheaders)
+{
+    return client_do_request(c, method, path, body, body_len, content_type,
+                             headers, nheaders);
 }
 
 /* ── Streaming ─────────────────────────────────────────────────────── */

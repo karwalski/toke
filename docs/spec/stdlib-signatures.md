@@ -157,6 +157,7 @@ f=http.clientpost(c:$httpclient;path:$str;body:@$byte;ctype:$str):$httpresp!$htt
 f=http.clientput(c:$httpclient;path:$str;body:@$byte;ctype:$str):$httpresp!$httperr
 f=http.clientdelete(c:$httpclient;path:$str):$httpresp!$httperr
 f=http.geturl(url:$str):$str!$httperr
+f=http.postheaders(url:$str;body:$str;headers:@(@($str))):$httpresp!$httperr
 f=http.stream(c:$httpclient;req:$httpreq):$httpstream!$httperr
 f=http.streamnext(s:$httpstream):@$byte!$httperr
 ```
