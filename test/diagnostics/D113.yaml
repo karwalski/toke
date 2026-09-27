@@ -1,0 +1,12 @@
+id: D113
+series: D
+description: "E2003 after a module declaration carries no fix: there is no expression to insert after (127.240)"
+input: |
+  m=test i=s:std.str;
+  f=main():i64{<1};
+expected_exit_code: 1
+expected_error_codes: ["E2003"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: ";"
