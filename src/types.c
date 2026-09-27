@@ -410,6 +410,75 @@ static int is_integer(const Type *t) {
 }
 
 /*
+ * lit_narrows (127.230 item 4) — an integer LITERAL (or a negated one) stands
+ * where a narrower or unsigned integer type is declared when its value fits:
+ * `let b:u8=5`, `let n:u64=0`, `f(7)` into an i32 parameter.  An integer
+ * literal is i64 by default, and without this every one of those was E4031
+ * with a cast "fix", while the binary-operator path already let a literal
+ * adopt the other operand's integer type.  An array literal narrows when
+ * every element does (or already has the element type): `let a:@(u8)=@(1;2)`,
+ * nested arrays included.  A literal that does not fit (`let z:u8=300`,
+ * `let w:u64=-1`) is still E4031.  Every integer slot is a full i64 at the
+ * ABI (int_widens_to), so accepting a fitting literal changes no lowering.
+ */
+static int lit_int_value(const char *src, const Node *n, int *neg,
+                         unsigned long long *mag) {
+    if (!n) return 0;
+    *neg = 0;
+    if (n->kind == NODE_UNARY_EXPR && n->op == TK_MINUS && n->child_count == 1
+        && n->children[0] && n->children[0]->kind == NODE_INT_LIT) {
+        *neg = 1;
+        n = n->children[0];
+    }
+    if (n->kind != NODE_INT_LIT || n->tok_len <= 0 || n->tok_len > 20) return 0;
+    unsigned long long v = 0;
+    for (int i = 0; i < n->tok_len; i++) {
+        char ch = src[n->tok_start + i];
+        if (ch < '0' || ch > '9') return 0;
+        unsigned d = (unsigned)(ch - '0');
+        if (v > (0xFFFFFFFFFFFFFFFFULL - d) / 10ULL) return 0;
+        v = v * 10ULL + d;
+    }
+    *mag = v;
+    return 1;
+}
+static int lit_fits_int(const char *src, const Node *n, const Type *to) {
+    int neg; unsigned long long m;
+    if (!to || !is_integer(to) || !lit_int_value(src, n, &neg, &m)) return 0;
+    unsigned long long pmax, nmax;   /* largest magnitude, positive / negative */
+    switch (to->kind) {
+    case TY_I8:  pmax = 127ULL;                 nmax = 128ULL; break;
+    case TY_I16: pmax = 32767ULL;               nmax = 32768ULL; break;
+    case TY_I32: pmax = 2147483647ULL;          nmax = 2147483648ULL; break;
+    case TY_I64: pmax = 9223372036854775807ULL; nmax = 9223372036854775808ULL; break;
+    case TY_U8:  pmax = 255ULL;                 nmax = 0; break;
+    case TY_U16: pmax = 65535ULL;               nmax = 0; break;
+    case TY_U32: pmax = 4294967295ULL;          nmax = 0; break;
+    /* u64 stops at the i64 range: the literal is emitted as an i64 constant. */
+    case TY_U64: pmax = 9223372036854775807ULL; nmax = 0; break;
+    default: return 0;
+    }
+    return neg ? (m <= nmax) : (m <= pmax);
+}
+static int lit_narrows(const char *src, const Node *n, const Type *to) {
+    if (!n || !to) return 0;
+    if (is_integer(to)) return lit_fits_int(src, n, to);
+    if (to->kind == TY_ARRAY && to->elem && n->kind == NODE_ARRAY_LIT
+        && n->child_count > 0) {
+        for (int i = 0; i < n->child_count; i++) {
+            const Node *e = n->children[i];
+            if (!e) return 0;
+            if (lit_narrows(src, e, to->elem)) continue;
+            if (e->rtype && e->rtype->kind != TY_UNKNOWN
+                && types_compat(e->rtype, to->elem)) continue;
+            return 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/*
  * tc_lookup — look up a name in the scope chain.
  *
  * Walks from the innermost scope `s` outward through parent scopes,
@@ -4056,6 +4125,7 @@ static void check_array_store_elem(Ctx *cx, const Node *call) {
     const Type *vt = vn ? vn->rtype : NULL;
     if (!vt || vt->kind == TY_UNKNOWN) return;
     if (types_compat(vt, rt->elem)) return;
+    if (lit_narrows(cx->src, vn, rt->elem)) return;          /* 127.230 (4) */
     if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
     char en[64], vn_[64], msg[256];
     snprintf(en, sizeof en, "%s", type_name(rt->elem));
@@ -4792,7 +4862,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     Type *at=infer(cx,an);
                     Type *pt=(ft&&func_has_sig(ft))?ft->field_types[i-1]:NULL;
                     if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
-                        &&!types_compat(at,pt))
+                        &&!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
                         emit_mm(cx,an,pt,at,NULL);
                 }
             }
@@ -4833,7 +4903,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         Type *at=infer(cx,an);
                         Type *pt=ft->field_types[i];
                         if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
-                            &&!types_compat(at,pt))
+                            &&!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
                             emit_mm(cx,an,pt,at,NULL);
                     }
                 }
@@ -4945,7 +5015,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (ai<node->child_count) {
                 Type *at=infer(cx,node->children[ai]);
                 Type *pt=ch->child_count>1?resolve_type(cx,ch->children[1]):mk_type(A,TY_UNKNOWN);
-                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)) {
+                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)
+                    &&!lit_narrows(cx->src,node->children[ai],pt)) {   /* 127.230 (4) */
                     /* 127.220 item 4: "cast argument to str using 'as'" was
                      * offered for a [byte] (any array, map, struct) passed
                      * as str, and `as` does not convert those.  The cast is
@@ -5270,7 +5341,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_VOID);
         }
         Type *init = initN ? infer(cx, initN) : NULL;
-        if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)) {
+        if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)
+            &&!lit_narrows(cx->src,initN,ann)) {                 /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
             emit_mm(cx,node,ann,init,fix);
         }
@@ -5337,7 +5409,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_VOID);
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
-        if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)) {
+        if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)
+            &&!lit_narrows(cx->src,node->children[1],lhs)) {       /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(lhs));
             emit_mm(cx,node,lhs,rhs,fix);
         }
@@ -5375,12 +5448,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     "fix","remove the return value",(const char*)NULL);
             }
         } else if (cx->fn_ret&&cx->fn_ret->kind!=TY_UNKNOWN&&val->kind!=TY_UNKNOWN
-            &&!types_compat(val,cx->fn_ret)) {
+            &&!types_compat(val,cx->fn_ret)
+            &&!lit_narrows(cx->src,node->children[0],cx->fn_ret)) {   /* 127.230 (4) */
             /* In error-union functions (T!Err), allow returning either
              * the success type T or the error type Err. */
             int ok=0;
             if (cx->fn_ret->kind==TY_ERROR_TYPE) {
-                if (cx->fn_ret->elem&&types_compat(val,cx->fn_ret->elem)) ok=1;
+                if (cx->fn_ret->elem&&(types_compat(val,cx->fn_ret->elem)
+                    ||lit_narrows(cx->src,node->children[0],cx->fn_ret->elem))) ok=1;
                 if (val->kind==TY_STRUCT&&cx->fn_ret->name&&val->name
                     &&strcmp(cx->fn_ret->name,val->name)==0) ok=1;
             }
