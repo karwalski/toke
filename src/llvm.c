@@ -7255,7 +7255,7 @@ static int emit_expr(Ctx *c, const Node *n)
             }
         }
         if (num_arms >= 3 && !flat_ssi) {
-            char mmsg[320], mfix[320];
+            char mmsg[320];
             char t0[128] = "";
             if (n->children[1] && n->children[1]->child_count >= 1)
                 tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
@@ -7267,12 +7267,14 @@ static int emit_expr(Ctx *c, const Node *n)
                 snprintf(mmsg, sizeof mmsg,
                     "match has %d arms, but the sum type of the matched value is not established",
                     num_arms);
-            snprintf(mfix, sizeof mfix,
-                "annotate the matched value with its sum type, or match it in a "
-                "function that takes it as a typed parameter; a match of 3 or "
-                "more arms needs the type to dispatch on");
+            /* 127.237 (4): no `fix`.  It said "annotate the matched value
+             * with its sum type, or match it in a function that takes it as a
+             * typed parameter" — two alternatives, neither of them an edit,
+             * and wrong outright when the arms are not variants of any sum
+             * (the scrutinee's type is what is unknown, not the program's
+             * intent).  Not deterministically correct, so absent (AGENTS §6). */
             diag_emit(DIAG_ERROR, E9005,
-                      n->tok_start, n->line, n->col, mmsg, "fix", mfix, NULL);
+                      n->tok_start, n->line, n->col, mmsg, (void *)0);
             /* Emit nothing further for this match: the result slot is already
              * allocated, so load it and let the (failed) build stop here. */
             t = next_tmp(c);
