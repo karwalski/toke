@@ -545,7 +545,14 @@ verify-ir: $(BIN)
 stress: $(BIN)
 	@bash test/stress/run_stress.sh
 
-check-tki:
+# 138.18: a C struct marked `/* tki-record: mod.type */` in src/stdlib/*.h
+# (the records the glue hands to toke code, e.g. http's TkReqRec) must have
+# that .tki record's fields, in its order, one 8-byte slot each.
+.PHONY: check-tki-layout
+check-tki-layout:
+	python3 scripts/check_tki_layout.py --list
+
+check-tki: check-tki-layout
 	python3 scripts/check_tki_coverage.py
 	python3 scripts/check_tki_coverage.py --quarantine-md-check
 	python3 scripts/check_tki_coverage.py --internal-md-check
