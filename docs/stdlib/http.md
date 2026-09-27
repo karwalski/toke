@@ -206,7 +206,7 @@ This is how a supervisor or a test learns the port without picking one first —
 DIAGNOSTIC: kind=server_start_failed fn="http.serveworkers" port=8080 stage="bind/fork"
 ```
 
-where `stage` is `host`, `port`, `certificate/key` or `bind/fork`, and it makes the process **exit with status 1** however `main` ends — even a program that ignores the `-1` and returns `0`. To a supervisor, a server that never started must not look like a clean shutdown. (Stories 135.22 for the TLS forms, 135.24 for the plain ones; the exit rule is shared with failed `std.test` assertions, see `docs/stdlib/test.md`.)
+where `stage` is `host`, `port`, `certificate/key` or `bind/fork`, and it makes the process **exit non-zero** however `main` ends — with `main`'s own status if that is non-zero, otherwise `1`, so even a program that ignores the `-1` and returns `0` exits `1`. To a supervisor, a server that never started must not look like a clean shutdown. (Stories 135.22 for the TLS forms, 135.24 for the plain ones; the exit rule is shared with failed `std.test` assertions, see `docs/stdlib/test.md`; 135.29 keeps `main`'s non-zero status.)
 
 ## Abandoned requests
 
