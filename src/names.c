@@ -1526,7 +1526,7 @@ static void resolve_ident(const Node *node, const char *src,
          * (a) subsequent references to the same name do not re-report, and
          * (b) downstream phases see a declaration and can produce partial
          * results.  Story 84.1.8. */
-        if (s_name_env && s_name_env->arena) {
+        if (s_name_env && s_name_env->arena && scope) {   /* 138.9: analyzer */
             Decl *ed = (Decl *)arena_alloc(s_name_env->arena, (int)sizeof(Decl));
             if (ed) {
                 ed->name     = arena_intern(s_name_env->arena, name, len);
