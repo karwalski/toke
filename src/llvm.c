@@ -332,6 +332,37 @@ static void clear_ptr_local(Ctx *c, const char *name) {
             c->ptrs[i].struct_type[0] = '\0';
 }
 
+/* 127.237 (3): a shadowing match-arm binding re-tags the RAW name in the
+ * registry (127.71: every use inside the arm looks the raw name up), by
+ * blanking the outer binding's entries and appending its own.  Nothing put
+ * the outer tag back, so after the arm an outer `let v=2.5` was still "$str"
+ * and `v<3.0` lowered to strcmp on a double (E9003).  The arm saves the raw name's entries before the
+ * re-tag and restores them after its body; the arm's own raw-name entries
+ * are retired (their name blanked — no lookup matches an empty name). */
+#define PTR_SHADOW_MAX 16   /* raw-name entries saved per arm; more stay blank (the old behaviour) */
+typedef struct {
+    int active, pc0, n;
+    char name[NAME_BUF];
+    char ty[PTR_SHADOW_MAX][NAME_BUF];
+} PtrShadow;
+static void ptr_shadow_save(Ctx *c, PtrShadow *ps, const char *raw) {
+    ps->active = 1; ps->pc0 = c->ptr_count; ps->n = 0;
+    strncpy(ps->name, raw, NAME_BUF - 1); ps->name[NAME_BUF - 1] = '\0';
+    for (int i = 0; i < c->ptr_count && ps->n < PTR_SHADOW_MAX; i++)
+        if (!strcmp(c->ptrs[i].name, raw))
+            memcpy(ps->ty[ps->n++], c->ptrs[i].struct_type, NAME_BUF);
+}
+static void ptr_shadow_restore(Ctx *c, PtrShadow *ps) {
+    if (!ps->active) return;
+    ps->active = 0;
+    int k = 0;
+    for (int i = 0; i < c->ptr_count; i++) {
+        if (strcmp(c->ptrs[i].name, ps->name)) continue;
+        if (i < ps->pc0) { if (k < ps->n) memcpy(c->ptrs[i].struct_type, ps->ty[k++], NAME_BUF); }
+        else c->ptrs[i].name[0] = '\0';
+    }
+}
+
 /*
  * is_ptr_local — Return 1 if `name` was previously registered via
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
@@ -6932,6 +6963,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!arm || arm->child_count < 1) continue;
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
                 int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
+                PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
                 int vidx = struct_field_index(ssi, tag);
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -6948,6 +6980,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                     const char *uname = make_unique_name(c, vname);
                     int vshadow = (uname != vname);
+                    if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                     if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
                     const char *vty = ssi->field_types[vidx];
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
@@ -6980,6 +7013,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -7079,6 +7113,7 @@ static int emit_expr(Ctx *c, const Node *n)
 
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
                 int arm_saved_al = c->alias_count;   /* arm-scoped binding */
+                PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
 
                 /* Bind arm variable to scrutinee */
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -7095,6 +7130,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                     const char *uname = make_unique_name(c, vname);
                     int vshadow = (uname != vname);
+                    if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                     if (uname != vname) {
                         strncpy(vname, uname, sizeof vname - 1);
                         vname[sizeof vname - 1] = '\0';
@@ -7113,6 +7149,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
                 arm_i++;
             }
 
@@ -7311,6 +7348,7 @@ static int emit_expr(Ctx *c, const Node *n)
              * `let n=mt f(){$ok:n n;..}; let id=mt g(){$ok:n n;..}` every
              * later `n` read the SECOND arm's slot (n=7 for n=150, silent). */
             int arm_saved_al = c->alias_count;
+            PtrShadow psh; psh.active = 0;           /* 127.237 (3) */
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
             else if (!flat_ssi)
@@ -7394,6 +7432,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                 const char *uname = make_unique_name(c, vname);
                 int vshadow = (uname != vname);
+                if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                 if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
                 char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
                 const char *vty = flat_ssi->field_types[struct_field_index(flat_ssi, ftag)];
@@ -7432,6 +7471,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                 const char *uname = make_unique_name(c, vname);
                 int vshadow = (uname != vname);
+                if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                 if (uname != vname) {
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
@@ -7526,6 +7566,7 @@ static int emit_expr(Ctx *c, const Node *n)
             if (abody && abody->kind == NODE_RETURN_STMT) {
                 emit_match_arm_body(c, abody, res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
             } else {
                 /* Emit arm body expression */
                 int body_val = -1;
@@ -7548,6 +7589,7 @@ static int emit_expr(Ctx *c, const Node *n)
 
                 fprintf(c->out, "  br label %%rm_end%d\n", L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
             }
         }
 
