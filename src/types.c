@@ -1310,9 +1310,11 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     if (strcmp(nb,"u16") ==0) return mk_type(cx->env->arena, TY_U16);
     if (strcmp(nb,"u32") ==0) return mk_type(cx->env->arena, TY_U32);
     if (strcmp(nb,"f32") ==0) return mk_type(cx->env->arena, TY_F32);
-    /* 127.220 item 4: lower-case `byte` (the spelling the spec and the .tki
-     * use) resolved to nothing, so `@(byte)` printed as `@(?)`. */
-    if (strcmp(nb,"byte")==0||strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
+    /* 127.220 item 4: lower-case `byte` deliberately stays unresolved here
+     * (so `@(byte)` prints as `@(?)`).  Typing it u8 makes every
+     * `let a:@byte=@(1;2)` an E4031, because an integer literal does not
+     * narrow to u8 (`let b:u8=5` is E4031 too) -- C183 case 3. */
+    if (strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
     /* Built-in $none type: zero-field struct used as the error variant in
      * option types (T!$none).  Reuses existing error-union infrastructure
      * so that match arms work unchanged: expr|{$ok:v v;$none:_ default}.

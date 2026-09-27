@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# C218_arg_mismatch_fix_certain.sh — an argument E4031 names the array's
-# element type and offers `as` only where `as` is the repair
-# (story 127.220 item 4).
+# C218_arg_mismatch_fix_certain.sh — an argument E4031 offers `as` only
+# where `as` is the repair (story 127.220 item 4).
 #
-# A `[byte]` passed to a `str` parameter printed "got '@(?)'" — the checker's
-# resolve_type knew `Byte` but not the lower-case `byte` the spec and the
-# .tki files spell — and carried fix "cast argument to str using 'as'",
-# which `as` cannot do for an array.  AGENTS §6: a fix is present only when
+# A `[byte]` passed to a `str` parameter carried fix "cast argument to str
+# using 'as'", which `as` cannot do for an array.  AGENTS §6: a fix is present only when
 # it is correct in every case.  Now the fix is present only between numeric
 # types, never float -> integer (the 127.64 rule: truncation changes the
 # value).
+#
+# NOT fixed here: the message still says "got '@(?)'" for a [byte].  The
+# checker leaves lower-case `byte` unresolved; typing it u8 turns every
+# `let a:@byte=@(1;2)` into an E4031, because an integer literal does not
+# narrow (`let b:u8=5` is E4031 on main) -- it broke C183.  Case 1 pins the
+# current text so a change to it is deliberate.
 #
 # Negative control: TKC=<main's toke> -- cases 1, 2 and 4 fail.
 #
@@ -40,8 +43,8 @@ prog() {  # $1 = binding, $2 = call
     printf 'm=q;\ni=s:std.str;\nf=g(x:str):i64{<s.len(x)};\nf=h(x:f64):i64{<0};\nf=k(x:i64):i64{<0};\nf=main():i64{\n  %s\n  <%s\n};\n' "$1" "$2" > "${WORK}/p.tk"
     diags "${WORK}/p.tk"; }
 
-expect "1 [byte] as str: element type named, no fix" \
-    "$(prog 'let b:@(byte)=s.bytes("hi");' 'g(b)')" "E4031|@(u8)|ABSENT"
+expect "1 [byte] as str: no fix" \
+    "$(prog 'let b:@(byte)=s.bytes("hi");' 'g(b)')" "E4031|@(?)|ABSENT"
 expect "2 i64 as str: no fix (as is not a certain repair)" \
     "$(prog 'let b:i64=3;' 'g(b)')" "E4031|i64|ABSENT"
 expect "3 i64 as f64: the cast is the repair" \
