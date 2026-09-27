@@ -396,7 +396,7 @@ let r = http.$res.err("database unavailable");
 
 ### http.client(baseurl: $str): $httpclient
 
-Creates an HTTP client configured to send all requests relative to `baseurl`. The returned handle maintains a connection pool and a default timeout; pass it to `http.post`, `http.put`, `http.delete`, and other client functions.
+Creates an HTTP client configured to send all requests relative to `baseurl`. The returned handle maintains a connection pool and a default timeout; pass it to `http.stream`, `http.withproxy` and `http.downloadfile`, the exported functions that take one.
 
 ```toke
 i=http:std.http;
@@ -406,6 +406,8 @@ f=main():void{
 ```
 
 ### http.get(url: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares no `http.get`. A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case, not public API: its signature is not checked against any interface, no interface declares its result type (it is not `$httpresp!$httperr`), and with two arguments the same name registers a GET route instead. See `tk_http_get_w` under "Defined, with no interface entry" in [stdlib-internal](/docs/reference/stdlib-internal/).
 
 Sends a `GET` request to the given URL and returns the response. Returns `$httperr` on network failure, timeout, or DNS error.
 
@@ -417,6 +419,8 @@ f=main():void{
 ```
 
 ### http.post(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares no `http.post`. The compiler resolves the name to route registration (`http.post(path;handler)`, or `tk_http_posturl_w` for two non-function arguments), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client POST.
 
 Sends a `POST` request with the given byte-array body and `Content-Type` header. Use `str.bytes` to convert a string body. Returns `$httperr` on failure.
 
@@ -431,6 +435,8 @@ f=main():void{
 
 ### http.put(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
 
+> **Not exported.** `std.http`'s interface declares no `http.put`. The compiler resolves the name to route registration (`http.put(path;handler)`), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client PUT.
+
 Sends a `PUT` request with the given byte-array body and `Content-Type` header. Semantics mirror `http.post`; use for full-resource replacement.
 
 ```toke
@@ -443,6 +449,8 @@ f=main():void{
 ```
 
 ### http.delete(client: $httpclient; path: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares no `http.delete`, and the call below does **not** do what this section says: the compiler resolves `http.delete(c;path)` to route registration (`tk_http_delete_handler`), passing the client handle where a path belongs. It type-checks and does not send a request. There is no exported client DELETE.
 
 Sends a `DELETE` request to `path`. The request carries no body. Returns `$httperr` on network failure.
 

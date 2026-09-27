@@ -213,6 +213,8 @@ f=example():void{
 
 ### json.type(j: $json): $str!$jsonerr
 
+> **Not exported.** `std.json`'s interface declares no `json.type`, so `tkc --check` rejects a call to it (E4027). The C core has `json_type` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
+
 Returns a string literal describing the top-level type of `j`: one of `"null"`, `"object"`, `"array"`, `"string"`, `"number"`, or `"bool"`. Useful for dynamic dispatch before using the typed accessors.
 
 ```toke
@@ -230,6 +232,8 @@ f=example():void{
 
 ### json.pretty(j: $json): $str!$jsonerr
 
+> **Not exported.** `std.json`'s interface declares no `json.pretty`, so `tkc --check` rejects a call to it (E4027). The C core has `json_pretty` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
+
 Returns a new string containing the JSON value re-serialised with 2-space indentation. Useful for logging and debugging; the output is valid JSON that can be round-tripped through `json.dec`.
 
 ```toke
@@ -241,21 +245,23 @@ f=example():void{
 };
 ```
 
-### json.isnull(j: $json; key: $str): bool
+### json.isnullkey(j: $json; key: $str): i64
 
-Returns `true` if the value at `key` is JSON `null`, or if the key does not exist at all. Returns `false` if the key exists with any non-null value. This function is infallible.
+Returns `1` if the value at `key` is JSON `null`, or if the key does not exist at all; `0` if the key exists with any non-null value. This function is infallible. Its interface types are ABI placeholders (`"gen":"abi"`), so the result is typed `i64`, not `bool`.
 
 ```toke
 i=json:std.json;
 i=io:std.io;
 f=example():void{
   let j=mt json.dec("{\"name\":\"alice\"}") {$ok:v v;$err:e io.exit(1)};
-  let nilval=json.isnull(j;"optional");
-  let present=json.isnull(j;"name");
+  let nilval=json.isnullkey(j;"optional");
+  let present=json.isnullkey(j;"name");
 };
 ```
 
 ### json.at(j: $json; path: $str): $json!$jsonerr
+
+> **Not exported.** `std.json`'s interface declares no `json.at`, so `tkc --check` rejects a call to it (E4027). The C core has `json_at` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design. The exported `json.getobj` passes its key to the same path walker, over the untyped ABI.
 
 Traverses a dotted path through nested objects and arrays, where each segment is either an object key or a numeric array index. Returns `$jsonerr.$missing` if any segment along the path does not exist.
 
@@ -271,6 +277,8 @@ f=example():void{
 
 ### json.index(j: $json; i: u64): $json!$jsonerr
 
+> **Not exported.** `std.json`'s interface declares no `json.index`, so `tkc --check` rejects a call to it (E4027). The C core has `json_index` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
+
 Returns the element at position `i` in a JSON array. Returns `$jsonerr.$type` if `j` is not an array, and `$jsonerr.$missing` if `i` is out of bounds.
 
 ```toke
@@ -285,6 +293,8 @@ f=example():void{
 
 ### json.merge(j1: $json; j2: $json): $json!$jsonerr
 
+> **Not exported.** `std.json`'s interface declares no `json.merge`, so `tkc --check` rejects a call to it (E4027). The C core has `json_merge` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
+
 Produces a new JSON object that is a shallow merge of `j1` and `j2`, with keys from `j2` overriding those in `j1`. Returns `$jsonerr.$type` if either argument is not a JSON object.
 
 ```toke
@@ -298,6 +308,8 @@ f=example():void{
 ```
 
 ### json.frompairs(keys: @($str); values: @($str)): $json
+
+> **Not exported.** `std.json`'s interface declares no `json.frompairs`, so `tkc --check` rejects a call to it (E4027). The C core has `json_from_pairs` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
 
 Constructs a JSON object from parallel arrays of key and value strings. Each value string is JSON-encoded via `json.enc` before insertion. This function is infallible; mismatched array lengths produce an object truncated to the shorter length.
 
