@@ -1,13 +1,13 @@
-ok copy 5
+ok copy 11
 ok pass 5
 ok return 5
 ok pass-returned 11
 ok capture 10
 ok returned-param 6
-ok array-elem 12
-ok struct-field 4
+ok array-elem 16
+ok struct-field 9
 ok fref-param 6
-ok fref-copy 2
+ok fref-copy 5
 ok compose 5
 ok compose-fref 8
 ok if-expr 2
