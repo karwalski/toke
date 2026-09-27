@@ -606,9 +606,12 @@ int64_t tk_json_tryarr_w(int64_t obj, int64_t key) {
 }
 
 /* json.getregulations — loke-specific, stub returning empty array */
+/* json.getregulations(doc) — the array under "regulations" (json.getarr's
+ * shape), or an empty array.  138.11: this was a stub that ignored its
+ * argument and always returned an empty array (loke T-12). */
 int64_t tk_json_getregulations_w(int64_t obj) {
-    (void)obj;
-    return tk_arr_alloc(0, 0);
+    int64_t h = obj ? tk_json_getarr_w(obj, (int64_t)(intptr_t)"regulations") : 0;
+    return h ? h : tk_arr_alloc(0, 0);
 }
 
 /* ── 127.43: typed JSON number / bool encoding ──────────────────────────

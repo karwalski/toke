@@ -11,6 +11,8 @@ The `std.process` module provides functions for spawning child processes, readin
 
 > **Note:** `process.tki` exports four functions: `process.spawn`, `process.wait`, `process.stdout`, and `process.kill`. Additional functions (`process.stderr`, `process.stdin_write`, `process.exit_code`, `process.is_running`, `process.timeout`) are planned but not yet in the current tki -- do not use them.
 
+**The home directory.** `process.homedir()` returns `$HOME` (or `/tmp` when it is unset) as a `$str`. The same value is published at top level as `std.homedir()` (`i=std:std;`, interface `stdlib/std.tki`). Before 138.11 `std.homedir` had no interface, so it interpolated as a number (the string's address), and it linked only when `std.process` was imported as well; the `std` module now declares it and pulls in `std.process` itself.
+
 ## Types
 
 ### $handle
