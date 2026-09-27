@@ -7,7 +7,7 @@ order: 36
 
 **Status: Implemented** -- C runtime backing.
 
-The `std.test` module provides assertion functions for writing tests. The assertions return `bool` -- `true` (1) on pass, `false` (0) on fail (`test.ok` and `test.fail` return the same as `i64`). Failed assertions emit a structured diagnostic to stderr. These functions do not halt execution; the test continues after a failed assertion, so every failure in a run is reported -- and **a run with any failed assertion exits with status 1**, however `main` ends. See [Exit status](#exit-status).
+The `std.test` module provides assertion functions for writing tests. The assertions return `bool` -- `true` (1) on pass, `false` (0) on fail (`test.ok` and `test.fail` return the same as `i64`). Failed assertions emit a structured diagnostic to stderr. These functions do not halt execution; the test continues after a failed assertion, so every failure in a run is reported -- and **a run with any failed assertion exits non-zero**, however `main` ends: with `main`'s own status when that is non-zero, otherwise 1. See [Exit status](#exit-status).
 
 ## Functions
 
@@ -139,9 +139,9 @@ A test program fails through its **exit status**, not only through its output (s
 DIAGNOSTIC: kind=exit_status status=1 failures=2 first="std.test assertion failed"
 ```
 
-and exits with status **1**. A run with no failed assertion exits with whatever `main` returns. Stated so nobody has to rediscover them:
+and exits with status **1** -- or with `main`'s own status, when `main` returned a non-zero one (the line then says `status=3`, say). A run with no failed assertion exits with whatever `main` returns. Stated so nobody has to rediscover them:
 
-- The status is `1` whatever `main` returns: a program that returns `3` after a failed assertion exits `1`, not `3`. (Keeping main's own non-zero status would need the compiler's emitted `main`, not the stdlib; tracked as 135.24 item 4.)
+- A program that returns `3` after a failed assertion exits `3` (story 135.29). One that returns `0` exits `1`. A status whose low 8 bits are zero (`256`) would read as success, so it exits `1` too.
 - `os.exit(0)` after a failed assertion also exits `1`, with the same line. `os.exit` with a non-zero status exits with that status.
 - A process killed by a signal is unaffected.
 - The same rule applies to a server that does not start (`std.http`, see [Starting, failing and the port](/docs/stdlib/http/#starting-failing-and-the-port)).

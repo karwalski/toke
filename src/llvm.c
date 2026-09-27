@@ -11768,6 +11768,12 @@ timeparts_done:
             fprintf(body_file, "@__tk_cap_baked_enforce = constant i32 %d\n",
                     lim.cap_enforce ? 1 : 0);
         }
+        /* 135.29: main publishes its status for tk_exitfail.h's atexit
+         * handler, which otherwise could only exit 1 after a recorded
+         * failure (a failed test assertion, a server that did not start)
+         * whatever main returned.  The strong definition lives here, in the
+         * entry module only; the stdlib's is weak (capabilities.c pattern). */
+        fputs("@tk_exitfail_main_status = global i32 0\n", body_file);
         fputs("\ndefine i32 @main(i32 %argc, i8** %argv) #0 {\n", body_file);
         fputs("  call void @tk_runtime_init(i32 %argc, i8** %argv)\n", body_file);
         if (!strcmp(tkmain->ret, "void")) {
@@ -11776,6 +11782,7 @@ timeparts_done:
         } else {
             fputs("  %r = call fastcc i64 @tk_main()\n", body_file);
             fputs("  %rc = trunc i64 %r to i32\n", body_file);
+            fputs("  store volatile i32 %rc, i32* @tk_exitfail_main_status\n", body_file);
             fputs("  ret i32 %rc\n", body_file);
         }
         fputs("}\n", body_file);
