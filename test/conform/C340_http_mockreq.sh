@@ -24,7 +24,7 @@
 #   2. the handler's status and Content-Type come back (resnew, res.json,
 #      res.bad), and an absent header reads ""
 #   3. http.param / http.header on the built request take $ok (a missing
-#      one also takes $ok today -- a separate defect, reported, not asserted)
+#      one takes $err since 135.28 -- asserted in C362)
 #   4. NEGATIVE CONTROL -- the call reaches the handler: one handler, two
 #      requests that differ only in body, two different statuses and bodies;
 #      a canned response or a request that never arrived cannot pass it

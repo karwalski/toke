@@ -348,7 +348,9 @@ message on stderr.
 
 ### http.param(req: $req; name: $str): $str!$httprouteerr
 
-Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httprouteerr.$notfound` if no parameter with that name was captured for this request.
+Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httprouteerr.$notfound` if no parameter with that name was captured for this request. A parameter that is present and empty is `$ok ""`. (Until story 135.28 a missing parameter was also `$ok ""`.)
+
+Today the `$err` arm is taken but its payload cannot be matched on: `mt e {$notfound:m ...}` inside it is E9005, because the compiler does not yet bind a payload for this call. Use the arm itself as "missing". `http.reqparam` is the plain-`str` form: `""` when missing.
 
 ```text
 let id = http.param(req; "id");
@@ -357,7 +359,7 @@ let id = http.param(req; "id");
 
 ### http.header(req: $req; name: $str): $str!$httprouteerr
 
-Extracts a request header value by name using case-insensitive lookup. Returns `$httprouteerr.$notfound` if the header is not present in the request.
+Extracts a request header value by name using case-insensitive lookup. Returns `$httprouteerr.$notfound` if the header is not present in the request; a header present with an empty value is `$ok ""` (story 135.28). As for `http.param`, the `$err` payload cannot yet be matched on. `http.reqheader` is the plain-`str` form: `""` when missing.
 
 ```text
 let ct = http.header(req; "content-type");

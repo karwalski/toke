@@ -2209,9 +2209,39 @@ int64_t tk_http_gettimeout_w(int64_t client) {
     return 30000; /* default timeout */
 }
 
-/* http.header(req, name) — get request header by name (alias for req_header) */
+/*
+ * 135.28 item 1 — http.param(req; name) / http.header(req; name) ->
+ * str!httprouteerr take $err ($notfound) when the request has no such
+ * param / header, as http.md always said.  They returned "" instead, so a
+ * handler could not tell a missing value from an empty one.  (http.reqparam
+ * and http.reqheader keep returning "": their type is plain str.)
+ *
+ * The error is an httprouteerr {variant index, msg} box in tk_current_error
+ * -- the layout of a sum (127.209); $notfound is variant 1 in http.tki --
+ * set on every miss and cleared on every hit, and the value is 0 for $err,
+ * so the value sentinel decides the arm.  An empty value that is present is
+ * "" (non-null), so it is $ok "".
+ */
+static int64_t route_notfound(const char *what) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = 1;   /* $notfound */
+    box[1] = (int64_t)(intptr_t)what;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+int64_t tk_http_param_w(int64_t req, int64_t name) {
+    const char *v = req_param_or_null(req, name);
+    if (!v) return route_notfound("no such param");
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)v;
+}
+
 int64_t tk_http_header_w(int64_t req, int64_t name) {
-    return tk_http_req_header(req, name);
+    const char *v = req_header_or_null(req, name);
+    if (!v) return route_notfound("no such header");
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)v;
 }
 
 /* http.iserror(resp) — check if response indicates an error (status >= 400) */
@@ -2331,7 +2361,7 @@ int64_t tk_http_reqmethod_w(int64_t req) { return tk_http_req_method(req); }
 int64_t tk_http_reqbody_w(int64_t req) { return tk_http_req_body(req); }
 int64_t tk_http_body_w(int64_t req) { return tk_http_req_body(req); }
 int64_t tk_http_reqparam_w(int64_t req, int64_t name) { return tk_http_req_param(req, name); }
-int64_t tk_http_param_w(int64_t req, int64_t name) { return tk_http_req_param(req, name); }
+
 int64_t tk_http_reqheader_w(int64_t req, int64_t name) { return tk_http_req_header(req, name); }
 
 /* Route registration (static) */
