@@ -1,0 +1,9 @@
+id: D107
+series: D
+description: "E2002 fix field is absent at the parser's expect-token site (xp: \"expected ')', got 'barbaz'\"). The old generic text \"check syntax; see toke spec for valid constructs\" was not a deterministic fix (AGENTS §6; errors.md lists E2002's fix as absent) — 127.233"
+input: |
+  m=test;
+  f=foo(x:i64 barbaz):i64{<x};
+expected_exit_code: 1
+expected_error_codes: ["E2002"]
+expected_fix_absent_for: ["E2002"]

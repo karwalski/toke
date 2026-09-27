@@ -9,7 +9,12 @@
 # (eerr, eerr_got, E2003) was span-routed.
 #
 # Negative control: put xp()'s E2002 back on diag_emit -> both cases fail
-# (the caret line reads '^ check syntax' and span_end == span_start).
+# (the caret line holds a single '^' and span_end == span_start).
+#
+# 127.233: the record no longer carries a fix, so nothing follows the
+# underline on the caret line; the match accepts end of line as well as a
+# trailing space.  The property asserted -- all six characters underlined --
+# is unchanged.
 #
 # Story: 123.13
 set -uo pipefail
@@ -26,7 +31,7 @@ printf 'm=main;\nf=main():i64{\n  <0\n};\nf=foo(x:i64 barbaz):i64{<x};\n' > e.tk
 "${TKC}" --check --diag-text e.tk > text.out 2>&1
 # the first diagnostic is the xp() E2002 at 'barbaz' (col 13, 6 chars)
 caret="$(awk '/^error\[E2002\]: expected .\)., got .barbaz./{f=1} f&&/\^/{print; exit}' text.out)"
-if printf '%s\n' "${caret}" | grep -q '|             ^~~~~~ '; then
+if printf '%s\n' "${caret}" | grep -Eq '\|             \^~~~~~( |$)'; then
     echo "  PASS: text mode underlines all of 'barbaz'"; PASS=$((PASS+1))
 else
     echo "  FAIL: text mode caret line: '${caret}'"; FAIL=$((FAIL+1))
