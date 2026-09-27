@@ -1023,7 +1023,6 @@ static void router_send_response(int fd, TkRouteResp resp)
 
 TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
 {
-    (void)host; /* bind to all interfaces regardless for now */
     TkRouterErr ok_err;
     memset(&ok_err, 0, sizeof(ok_err));
 
@@ -1034,6 +1033,23 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
     if (port > 65535) {
         TkRouterErr e = {1, "port out of range"};
         return e;
+    }
+
+    /* 135.28 item 2: the host is honoured, by http.serveon's rules (138.1,
+     * tk_web_glue.c server_host).  It was ignored -- every router bound all
+     * interfaces, so router.serve(r;"127.0.0.1";p) was reachable from the
+     * network.  NULL, "", "*" and "0.0.0.0" are all interfaces; "localhost"
+     * is 127.0.0.1; any other host must be an IPv4 literal (the listener is
+     * AF_INET), else router.serve takes $err -- never a silent widening. */
+    struct in_addr bind_addr;
+    bind_addr.s_addr = htonl(INADDR_ANY);
+    if (host && host[0] && strcmp(host, "*") != 0 && strcmp(host, "0.0.0.0") != 0) {
+        const char *h = strcmp(host, "localhost") == 0 ? "127.0.0.1" : host;
+        if (inet_pton(AF_INET, h, &bind_addr) != 1) {
+            TkRouterErr e = {1, "host must be an IPv4 address, \"localhost\", "
+                                "or \"\", \"*\" or \"0.0.0.0\" for all interfaces"};
+            return e;
+        }
     }
 
     int srv = socket(AF_INET, SOCK_STREAM, 0);
@@ -1048,7 +1064,7 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr        = bind_addr;
     addr.sin_port        = htons((uint16_t)port);
 
     if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
