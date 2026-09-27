@@ -4111,6 +4111,49 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
     return ret && (strcmp(ret, "str") == 0 || strcmp(ret, "$str") == 0);
 }
 
+/*
+ * std_array_ret (127.230 item 5) — the ARRAY type a std/user interface
+ * declares for `alias.member(..)` (a `[T]` return, e.g. `str.bytes` ->
+ * `[byte]`), reached directly or through the immutable, un-annotated `let`
+ * in force for identifier `n`; NULL otherwise.
+ *
+ * stdlib returns are deliberately not typed by call_decl_ret_type (127.66),
+ * so `let b=s.bytes("x"); g(b)` -- and `g(s.bytes("x"))` itself -- passed a
+ * `[byte]` into a str parameter with no diagnostic, while the annotated
+ * `let b:@(byte)=..` form was E4031 (C218).  Like stdlib_str_bound (127.176)
+ * this is read by one check only and never stored on a node, so the emitter
+ * sees exactly the rtypes it saw before.
+ */
+static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
+    if (!n || depth > 2 || !cx->env || !cx->env->names) return NULL;
+    if (n->kind == NODE_IDENT) {
+        if (!cx->fn_node) return NULL;
+        char nb[128]; TOKSTR(nb, cx->src, n);
+        int nlen = (int)strlen(nb);
+        if (!nlen || is_param(cx, nb, nlen)) return NULL;
+        if (arm_bind_lookup(cx, nb, nlen, n)) return NULL;
+        const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, n);
+        if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return NULL;
+        return std_array_ret(cx, bn->children[1], depth + 1);
+    }
+    if (n->kind != NODE_CALL_EXPR || n->child_count < 1) return NULL;
+    const Node *callee = n->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return NULL;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    char pbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return NULL;
+    if (!import_module_path(cx, ab, pbuf, sizeof pbuf)) return NULL;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->def_node && d->def_node->kind != NODE_IMPORT) return NULL;
+    const char *ret = imported_func_ret(cx->env->names, ab, mb);
+    if (!ret || ret[0] != '[' || strchr(ret, '!')) return NULL;
+    Type *t = tki_compound_type(cx, ret, strlen(ret), 0);
+    return (t && t->kind == TY_ARRAY) ? t : NULL;
+}
+
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
     /* 127.168: an array or map LITERAL is as proven a receiver as a string
@@ -5078,6 +5121,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (ai<node->child_count) {
                 Type *at=infer(cx,node->children[ai]);
                 Type *pt=ch->child_count>1?resolve_type(cx,ch->children[1]):mk_type(A,TY_UNKNOWN);
+                /* 127.230 item 5: a [T] an interface declares, reaching a
+                 * str parameter untyped -- judged, never stored. */
+                if (at->kind==TY_UNKNOWN&&pt->kind==TY_STR) {
+                    Type *ar=std_array_ret(cx,node->children[ai],0);
+                    if (ar&&tc_first_report(cx,node->children[ai]))
+                        emit_mm(cx,node->children[ai],pt,ar,NULL);
+                }
                 if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)
                     &&!lit_narrows(cx->src,node->children[ai],pt)) {   /* 127.230 (4) */
                     /* 127.220 item 4: "cast argument to str using 'as'" was
