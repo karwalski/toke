@@ -2632,6 +2632,10 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
     const Node *initN = bn->children[1];
     switch (initN->kind) {
     case NODE_CALL_EXPR: {
+        /* 138.3: a std call's adopted scalar return types an IMMUTABLE let
+         * only -- the rule 127.176 set for std-str bindings, pinned by C055
+         * case 3 (`let t=mut.st.trim(..)` is not judged). */
+        if (bn->kind != NODE_BIND_STMT && std_scalar_ret(cx, initN)) return NULL;
         Type *rt = call_decl_ret_type(cx, initN);
         if (rt && rt->kind != TY_UNKNOWN && rt->kind != TY_VOID) return rt;
         return NULL;
@@ -6278,6 +6282,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_MATCH_STMT: {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
+        /* 138.3: a std call's adopted scalar return (std_scalar_ret) is not
+         * the scrutinee's type for a match: `mt file.exists(p) {$ok:v v;
+         * $err:e false}` is lowered as a RESULT match on the status channel
+         * (C087, 127.202), and a bool-typed scrutinee drew a false E4010 for
+         * missing true/false arms.  The scrutinee is judged as before the
+         * adoption -- unknown. */
+        if (node->children[0]&&node->children[0]->kind==NODE_CALL_EXPR
+            &&scr&&scr->kind!=TY_UNKNOWN&&std_scalar_ret(cx,node->children[0]))
+            scr=mk_type(A,TY_UNKNOWN);
         int discarded=(cx->mt_discard==node);
         const Node *arm_body=NULL;   /* 127.195: the arm that set arm_type */
         int has_result_arm=0;   /* 127.202 */
