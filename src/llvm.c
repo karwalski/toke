@@ -10829,6 +10829,39 @@ done:
     return ok;
 }
 
+static const char *own_c_decl(const char *sym);   /* after g_stdlib_decls */
+
+/*
+ * extern_clashes_own_decl (127.219 item 2) — E4060 when a user extern names
+ * a C function the compiler also declares and calls itself (malloc; the loop
+ * guard's fprintf and exit), with a different signature.
+ *
+ * One symbol gets one `declare`.  The body's declaration wins the dedup, so
+ * the compiler's own calls were checked against the user's signature:
+ * `f=malloc(a:i64;b:i64):i64;` built, and every array literal then called a
+ * two-argument malloc with one argument; `f=exit(n:i64):i64;` under
+ * --max-iters failed in clang ("invalid redefinition of function 'exit'")
+ * with no toke diagnostic.  An extern that repeats the compiler's own
+ * declaration is the same function and is accepted.
+ * No fix: whether to change the signature or bind another symbol is the
+ * author's choice (AGENTS.md §3.1).
+ */
+static void extern_clashes_own_decl(const char *sym, const char *dcl, const Node *n)
+{
+    const char *own = own_c_decl(sym);
+    if (!own) return;
+    size_t ol = strlen(own);
+    static const char nr[] = " noreturn";
+    if (ol > sizeof nr - 1 && !strcmp(own + ol - (sizeof nr - 1), nr)) ol -= sizeof nr - 1;
+    if (strlen(dcl) == ol && !strncmp(dcl, own, ol)) return;
+    char msg[1024];
+    snprintf(msg, sizeof msg,
+             "extern '%s' is declared as '%s', but the compiler itself declares and "
+             "calls the C function '%s' as '%.*s'; one symbol cannot carry both "
+             "signatures", sym, dcl, sym, (int)ol, own);
+    diag_emit(DIAG_ERROR, E4060, n->start, n->line, n->col, msg, (void *)0);
+}
+
 static void emit_toplevel(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -10908,19 +10941,23 @@ static void emit_toplevel(Ctx *c, const Node *n)
         }
         /* Map parameter types to LLVM types */
         if (body_i < 0) {
-            /* extern: emit declare */
-            fprintf(c->out, "\ndeclare %s @%s(", ret, tb);
+            /* extern: emit declare.  127.219: built in a buffer first so it
+             * can be compared with the compiler's own declaration of the
+             * same C symbol (extern_clashes_own_decl). */
+            char dcl[1024];
+            int dl = snprintf(dcl, sizeof dcl, "declare %s @%s(", ret, tb);
             int first = 1;
-            for (int i = 1; i < n->child_count; i++) {
+            for (int i = 1; i < n->child_count && dl < (int)sizeof dcl; i++) {
                 if (n->children[i]->kind != NODE_PARAM) continue;
-                if (!first) fputs(", ", c->out);
                 const char *pty = "i64";
                 if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                     pty = resolve_llvm_type(c, n->children[i]->children[1]);
-                fputs(pty, c->out);
+                dl += snprintf(dcl + dl, sizeof dcl - (size_t)dl, "%s%s", first ? "" : ", ", pty);
                 first = 0;
             }
-            fputs(")\n", c->out);
+            if (dl < (int)sizeof dcl) snprintf(dcl + dl, sizeof dcl - (size_t)dl, ")");
+            fprintf(c->out, "\n%s\n", dcl);
+            extern_clashes_own_decl(tb, dcl, n);
             /* Story 76.1.2d: warn about extern FFI declarations outside stdlib */
             if (strncmp(c->source_file, "std/", 4) != 0 &&
                 strncmp(c->source_file, "std.", 4) != 0) {
@@ -11463,6 +11500,26 @@ static int body_references_symbol(const char *body, long body_len, const char *n
         p++;
     }
     return 0;
+}
+
+/*
+ * own_c_decl (127.219) — the compiler's own declaration of a plain C symbol
+ * it calls itself, or NULL.
+ */
+static const char *own_c_decl(const char *sym)
+{
+    if (!sym) return NULL;
+    /* Only the C functions the emitter itself CALLS: malloc (array
+     * literals, closure environments) and the loop guard's fprintf and
+     * exit.  printf/puts/strcmp/free are in g_stdlib_decls too, but nothing
+     * the compiler emits calls them, so a user extern of another signature
+     * is the only declaration and the only caller: no clash (127.219). */
+    if (!strcmp(sym, "malloc"))
+        for (int i = 0; g_stdlib_decls[i].name; i++)
+            if (!strcmp(g_stdlib_decls[i].name, sym)) return g_stdlib_decls[i].decl;
+    if (!strcmp(sym, "exit"))    return "declare void @exit(i32) noreturn";
+    if (!strcmp(sym, "fprintf")) return "declare i32 @fprintf(i8*, i8*, ...)";
+    return NULL;
 }
 
 /*
@@ -12049,8 +12106,12 @@ timeparts_done:
 
     /* Loop-iteration guard declarations (only if loop guards are enabled) */
     if (ctx.max_iters > 0) {
-        fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
-        fputs("declare void @exit(i32) noreturn\n", f);
+        /* 127.219: an extern that repeats exit's declaration already put it
+         * in the body; a second `declare` is an invalid redefinition. */
+        if (!strstr(body_buf, "\ndeclare i32 @fprintf("))
+            fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
+        if (!strstr(body_buf, "\ndeclare void @exit("))
+            fputs("declare void @exit(i32) noreturn\n", f);
     }
     /* 114.41: thread-local side channel carrying a T!$E error's typed payload
      * (set on an error return, read by the matching $err arm).

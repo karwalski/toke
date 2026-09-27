@@ -115,7 +115,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 
-Codes **E2036**, **E4040**, **E4041**, **E4042**, **E4060**, **E9021** are defined in headers but not yet emitted by any `diag_emit` call -- they are reserved for planned functionality.
+Codes **E2036**, **E4040**, **E4041**, **E4042**, **E9021** are defined in headers but not yet emitted by any `diag_emit` call -- they are reserved for planned functionality.
 
 <!-- END error-code table -->
 
