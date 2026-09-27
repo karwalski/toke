@@ -1,0 +1,9 @@
+id: D108
+series: D
+description: "E2002 fix field is absent at the parser's unexpected-token site (eerr_got: \"unexpected token in expression, got ')'\"). The old generic text \"check syntax; see toke spec for valid constructs\" was not a deterministic fix (AGENTS §6) — 127.233"
+input: |
+  m=test;
+  f=main():i64{<)};
+expected_exit_code: 1
+expected_error_codes: ["E2002"]
+expected_fix_absent_for: ["E2002"]

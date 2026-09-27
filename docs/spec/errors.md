@@ -60,7 +60,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | W1011 | warning | lex | Identifier starts with a keyword prefix | n/s |
 | W1020 | warning | lex | Foreign keyword detected | C328 |
 | E2001 | error | parse | Declaration ordering violation | G024 |
-| E2002 | error | parse | Unexpected token | C326, C327 |
+| E2002 | error | parse | Unexpected token | C326, C327, C335, D107, D108 |
 | E2003 | error | parse | Missing semicolon | -- |
 | E2004 | error | parse | Unclosed delimiter | -- |
 | E2005 | error | parse | Unexpected token in type position | -- |
@@ -360,7 +360,7 @@ f=bad():i64{<0};
 | **Severity** | error |
 | **Message** | `unexpected token` |
 | **Fix field** | absent |
-| **Conformance test** | C326, C327 |
+| **Conformance test** | C326, C327, C335, D107, D108 |
 
 **Notes:** The parser encountered a token it cannot consume in the current
 grammatical context. This is the general-purpose parse error for tokens that do

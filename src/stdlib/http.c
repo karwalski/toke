@@ -2407,6 +2407,45 @@ static int client_tcp_connect(const char *host, const char *port,
     return fd;
 }
 
+/*
+ * proxy_connect_tunnel — ask the http proxy on `fd` for a tunnel to
+ * host:port (135.26).  Returns NULL once the proxy has answered 2xx, or a
+ * message for err_resp_client.  It must run before any TLS state touches
+ * the socket.
+ *
+ * The reply is read one byte at a time up to its blank line: a proxy may
+ * send the status line and the rest of its header block in separate writes
+ * (the old single recv() then left the tail in the socket for the TLS
+ * handshake to read as garbage), and nothing past the blank line may be
+ * consumed, because it belongs to the origin.  The socket's receive timeout
+ * (client_tcp_connect) bounds each read.
+ */
+static const char *proxy_connect_tunnel(int fd, const char *host, const char *port)
+{
+    char req[600];
+    int n = snprintf(req, sizeof req,
+                     "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n",
+                     host, port, host, port);
+    if (n < 0 || (size_t)n >= sizeof req)
+        return "proxy CONNECT: host name too long";
+    if (http_write_all(fd, req, (size_t)n) < 0)
+        return "proxy CONNECT send failed";
+    char rep[8192];
+    size_t got = 0;
+    for (;;) {
+        if (got + 1 >= sizeof rep) return "proxy CONNECT reply too long";
+        ssize_t r = recv(fd, rep + got, 1, 0);
+        if (r <= 0) return "proxy CONNECT recv failed";
+        got++;
+        if (got >= 4 && memcmp(rep + got - 4, "\r\n\r\n", 4) == 0) break;
+    }
+    rep[got] = '\0';
+    /* "HTTP/1.x 2xx" -- any 2xx opens the tunnel (RFC 9110 9.3.6) */
+    if (got < 12 || strncmp(rep, "HTTP/1.", 7) != 0 || rep[8] != ' ' || rep[9] != '2')
+        return "proxy CONNECT rejected";
+    return NULL;
+}
+
 /* ── Raw HTTP request helper ───────────────────────────────────────── */
 
 /*
@@ -2490,6 +2529,17 @@ static HttpClientResp client_do_request(HttpClient *c,
     }
     if (fd < 0) return err_resp_client("TCP connect failed", 0);
 
+    /* HTTPS through a proxy: open the CONNECT tunnel on the bare socket,
+     * THEN negotiate TLS with the origin inside it (135.26).  This block
+     * used to sit after the TLS setup below, so SSL_connect sent its
+     * ClientHello to the proxy -- which speaks plain HTTP -- and every https
+     * request through http.withproxy failed.  Measured by C341 against a
+     * local proxy: the proxy's first line was TLS bytes, never CONNECT. */
+    if (use_proxy && is_https) {
+        const char *cerr = proxy_connect_tunnel(fd, host, port);
+        if (cerr) { close(fd); return err_resp_client(cerr, 0); }
+    }
+
 #ifdef TK_HAVE_OPENSSL
     SSL_CTX *ssl_ctx = NULL;
     SSL *ssl = NULL;
@@ -2546,35 +2596,6 @@ static HttpClientResp client_do_request(HttpClient *c,
 #define CLIENT_RECV(buf, len) (int)recv(fd, buf, len, 0)
 #define CLIENT_CLOSE() close(fd)
 #endif
-
-    /* For HTTPS through proxy: send CONNECT tunnel request */
-    if (use_proxy && is_https) {
-        char connect_buf[512];
-        int clen = snprintf(connect_buf, sizeof(connect_buf),
-            "CONNECT %s:%s HTTP/1.1\r\n"
-            "Host: %s:%s\r\n"
-            "\r\n",
-            host, port, host, port);
-        if (clen < 0 || (size_t)clen >= sizeof(connect_buf) ||
-            send(fd, connect_buf, (size_t)clen, 0) < 0) {
-            CLIENT_CLOSE();
-            return err_resp_client("proxy CONNECT send failed", 0);
-        }
-        /* Read proxy 200 response */
-        char cbuf[1024];
-        ssize_t cn = recv(fd, cbuf, sizeof(cbuf) - 1, 0);
-        if (cn <= 0) {
-            CLIENT_CLOSE();
-            return err_resp_client("proxy CONNECT recv failed", 0);
-        }
-        cbuf[cn] = '\0';
-        if (strncmp(cbuf, "HTTP/1.1 200", 12) != 0 &&
-            strncmp(cbuf, "HTTP/1.0 200", 12) != 0) {
-            CLIENT_CLOSE();
-            return err_resp_client("proxy CONNECT rejected", 0);
-        }
-        /* Tunnel established — subsequent I/O goes direct to target */
-    }
 
     /* build request header */
     char req_buf[4096];

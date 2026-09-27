@@ -154,7 +154,8 @@ static TkLlmMsg *decode_msgs(int64_t arr, uint64_t *out_n) {
  *
  * The C side carries the arguments as a raw JSON string, so this walks the
  * top-level "key": value pairs and emits each key with its value rendered as
- * text (a string value decoded, anything else verbatim). An unparseable or
+ * text (a string value decoded, anything else -- a nested object or array
+ * included, whole (135.26) -- verbatim). An unparseable or
  * absent object gives a zero-length array rather than a null the consumer
  * would then index.
  *
@@ -166,6 +167,32 @@ static TkLlmMsg *decode_msgs(int64_t arr, uint64_t *out_n) {
  * up front and dropped it whenever the object had keys; it is now allocated
  * only when it is the result.
  */
+/*
+ * json_value_end — the end of the non-string JSON value starting at p: the
+ * first ',' or '}' (or '\0') outside any nested object or array and outside
+ * any string (135.26 item 3).  The walker used to stop at the first ',' or
+ * '}' anywhere, so an argument {"a":{"x":1,"y":2}} reached the program as
+ * a = `{"x":1` followed by a bogus pair from the rest.  A nested object or
+ * array is now handed over whole, as its JSON text.
+ */
+static const char *json_value_end(const char *p) {
+    int depth = 0;
+    while (*p) {
+        char c = *p;
+        if (c == '"') {                       /* a string inside a nested value */
+            p++;
+            while (*p && *p != '"') { if (*p == '\\' && p[1]) p++; p++; }
+            if (*p) p++;
+            continue;
+        }
+        if (c == '{' || c == '[') depth++;
+        else if (c == '}' || c == ']') { if (depth == 0) break; depth--; }
+        else if (c == ',' && depth == 0) break;
+        p++;
+    }
+    return p;
+}
+
 static int64_t args_pairs(const char *json) {
     const char *p = json ? strchr(json, '{') : NULL;
     if (!p) return tk_arr_alloc(0, 0);
@@ -193,7 +220,7 @@ static int64_t args_pairs(const char *json) {
                 (void)strbuf_append_json_unescape(&vb, &q);   /* unterminated: what there is */
             } else {
                 const char *vs = q, *ve;
-                while (*q && *q != ',' && *q != '}') q++;
+                q = json_value_end(q);
                 ve = q;
                 while (ve > vs && (ve[-1] == ' ' || ve[-1] == '\t' ||
                                    ve[-1] == '\n' || ve[-1] == '\r')) ve--;

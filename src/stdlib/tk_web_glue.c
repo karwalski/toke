@@ -344,6 +344,101 @@ int64_t tk_http_req_header(int64_t req_ptr, int64_t name_ptr) {
     return (int64_t)(intptr_t)"";
 }
 
+/* ── Calling a handler in a test (story 138.16, loke T-16) ─────────────
+ *
+ *   http.mockreq(method; path; headers; body; params) -> $req
+ *   http.resstatus(res) -> u64
+ *   http.resbody(res)   -> str
+ *   http.resheader(res; name) -> str
+ *
+ * A route handler is an ordinary toke function `(req:$req):$res` (or the
+ * untyped `(req:i64):i64`).  The dispatchers above call it with a pointer
+ * to a C `Req` and read back the `Res *` it returns.  mockreq builds that
+ * same `Req`, so a test calls the handler directly -- `h(http.mockreq(...))`
+ * -- and every accessor the handler uses (http.reqbody, reqparam,
+ * reqheader, ...) reads exactly what it would read under the server.
+ *
+ * The res* accessors read the `Res *` the handler returned the way the
+ * dispatchers do, including their rule for a handler that returns null:
+ * status 500, body "Handler returned null", text/plain.  They see the
+ * handler's response, not the bytes on the wire: the server adds its own
+ * framing (Content-Length, Connection, CORS) when it sends.
+ *
+ * headers and params are [[str]], each element @(name; value).  An element
+ * of any other shape is a mistake in the test, and a test that carries on
+ * past it would measure the wrong request, so it stops the program with
+ * exit status 1 and says which argument was wrong.  The request and its
+ * pair arrays are allocated here and never freed (a test builds a handful);
+ * the strings stay the program's, as they are under the server. */
+
+static StrPairArray mock_pairs(const char *what, int64_t arr) {
+    StrPairArray out = { NULL, 0 };
+    int64_t n = arr ? ((int64_t *)(intptr_t)arr)[-1] : 0;
+    if (n <= 0) return out;
+    out.data = (StrPair *)calloc((size_t)n, sizeof(StrPair));
+    if (!out.data) {
+        fprintf(stderr, "http.mockreq: out of memory\n");
+        exit(1);
+    }
+    for (int64_t i = 0; i < n; i++) {
+        int64_t pair = ((int64_t *)(intptr_t)arr)[i];
+        if (!pair || ((int64_t *)(intptr_t)pair)[-1] != 2) {
+            fprintf(stderr, "http.mockreq: %s element %lld is not @(name; value)\n",
+                    what, (long long)i);
+            exit(1);
+        }
+        const char *k = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[0];
+        const char *v = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[1];
+        out.data[i].key = k ? k : "";
+        out.data[i].val = v ? v : "";
+    }
+    out.len = (uint64_t)n;
+    return out;
+}
+
+int64_t tk_http_mockreq_w(int64_t method, int64_t path, int64_t headers,
+                          int64_t body, int64_t params) {
+    Req *r = (Req *)calloc(1, sizeof(Req));
+    if (!r) {
+        fprintf(stderr, "http.mockreq: out of memory\n");
+        exit(1);
+    }
+    r->method  = method ? (const char *)(intptr_t)method : "GET";
+    r->path    = path ? (const char *)(intptr_t)path : "/";
+    r->body    = body ? (const char *)(intptr_t)body : "";
+    r->headers = mock_pairs("headers", headers);
+    r->params  = mock_pairs("params", params);
+    return (int64_t)(intptr_t)r;
+}
+
+static const Res g_null_handler_res = {
+    500, "Handler returned null", { &g_text_ct_hdr, 1 }
+};
+
+static const Res *handler_res(int64_t res) {
+    return res ? (const Res *)(intptr_t)res : &g_null_handler_res;
+}
+
+int64_t tk_http_resstatus_w(int64_t res) {
+    return (int64_t)handler_res(res)->status;
+}
+
+int64_t tk_http_resbody_w(int64_t res) {
+    const char *b = handler_res(res)->body;
+    return (int64_t)(intptr_t)(b ? b : "");
+}
+
+int64_t tk_http_resheader_w(int64_t res, int64_t name_ptr) {
+    const Res *r = handler_res(res);
+    if (!name_ptr) return (int64_t)(intptr_t)"";
+    const char *name = (const char *)(intptr_t)name_ptr;
+    for (uint64_t i = 0; i < r->headers.len; i++) {
+        if (r->headers.data[i].key && strcasecmp(r->headers.data[i].key, name) == 0)
+            return (int64_t)(intptr_t)(r->headers.data[i].val ? r->headers.data[i].val : "");
+    }
+    return (int64_t)(intptr_t)"";
+}
+
 int64_t tk_http_res_ok(int64_t body_ptr) {
     Res *r = (Res *)malloc(sizeof(Res));
     if (!r) return 0;
