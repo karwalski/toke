@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -23,10 +24,23 @@ int64_t tk_net_portavailable_w(int64_t port) {
     return (int64_t)net_portavailable((uint64_t)port);
 }
 
+/* net.listen(addr) — a listening TCP socket on "host:port" (IPv4), or 0.
+ *
+ * 138.13 (loke T-49): `net.listen(11444)` passed a port where the glue reads
+ * a C string, and strrchr() dereferenced address 11444 (SIGSEGV).  The
+ * interface now declares the parameter `str`; until the checker rejects an
+ * integer there (reported to GA), a value below 65536 -- never a valid
+ * pointer on a supported platform -- is taken as the PORT and bound to
+ * 127.0.0.1, the loopback address, never to every interface. */
 int64_t tk_net_listen_w(int64_t addr) {
     TK_REQUIRE(TK_CAP_NET);
+    char portaddr[32];
+    if (addr <= 0) return 0;              /* null, or no port / address at all */
+    if (addr < 65536) {
+        snprintf(portaddr, sizeof portaddr, "127.0.0.1:%d", (int)addr);
+        addr = (int64_t)(intptr_t)portaddr;
+    }
     const char *s = (const char *)(intptr_t)addr;
-    if (!s) return 0;
 
     /* Parse "host:port" — find last ':' to split. */
     const char *colon = strrchr(s, ':');
