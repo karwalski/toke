@@ -62,8 +62,8 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E2001 | error | parse | Declaration ordering violation | G024 |
 | E2002 | error | parse | Unexpected token | C326, C327, C335, D107, D108 |
 | E2003 | error | parse | Missing semicolon | -- |
-| E2004 | error | parse | Unclosed delimiter | -- |
-| E2005 | error | parse | Unexpected token in type position | -- |
+| E2004 | error | parse | Unclosed delimiter | C350, D109 |
+| E2005 | error | parse | Unexpected token in type position | C350, D110 |
 | E2010 | error | parse | Pointer type outside extern function | D013 |
 | E2015 | error | parse | Duplicate field name in struct declaration | -- |
 | W2020 | warning | parse | Identifier starts with a keyword | n/s |
@@ -417,7 +417,7 @@ f=bad():i64{let x=1 let y=2;<x};
 | **Severity** | error |
 | **Message** | `unclosed delimiter` |
 | **Fix field** | absent |
-| **Conformance test** | -- |
+| **Conformance test** | C350, D109 |
 
 **Notes:** A `(`, `[`, or `{` was opened but the matching `)`, `]`, or `}` was
 not found before EOF. Also emitted when `xp()` expects a closing delimiter and
@@ -439,11 +439,15 @@ f=bad():i64{<(1+2};
 | **Stage** | parse |
 | **Severity** | error |
 | **Message** | `unexpected token in type position, got '<tok>'` |
-| **Fix field** | informational text listing the type forms |
-| **Conformance test** | -- |
+| **Fix field** | absent |
+| **Conformance test** | C350, D110 |
 
 **Notes:** A token that cannot begin a type expression appears where a type is
 required, e.g. a missing parameter type.
+
+*Changed 2026-09-28 (story 127.235): the compiler used to put a list of the
+type forms in `fix`. That was advice, not a deterministic fix (AGENTS §6), and
+it is gone; E2004's "add the missing closing delimiter" went with it.*
 
 *Corrected 2026-09-24 (story 127.154): this entry previously described a duplicate module path across source files. The compiler has emitted this code only with the meaning below since the repository's first commit; the old text was never implemented.*
 
