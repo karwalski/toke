@@ -5,6 +5,9 @@
   "cpu": "Apple M2 Pro",
   "os": "Darwin"
  },
+ "partial_records": {
+  "struct_ops": "toke 3.0.0"
+ },
  "programs": {
   "binary_search": {
    "compile_allocs": 417,
@@ -77,11 +80,11 @@
    "run_insns": 36304587
   },
   "struct_ops": {
-   "compile_allocs": 417,
-   "compile_insns": 138326845,
-   "exit_status": 1,
-   "run_allocs": 235,
-   "run_insns": 16252446
+   "compile_allocs": 420,
+   "compile_insns": 117738037,
+   "exit_status": 165,
+   "run_allocs": 3000197,
+   "run_insns": 583289428
   },
   "sum_array": {
    "compile_allocs": 417,
