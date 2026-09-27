@@ -4293,6 +4293,33 @@ static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
     return (t && t->kind == TY_ARRAY) ? t : NULL;
 }
 
+/*
+ * std_scalar_ret (127.232 item 1) — the scalar return type an imported
+ * interface DECLARES for `alias.member(..)`: a hand-written record (not
+ * `"gen":"abi"`, whose `i64` is a placeholder -- 127.220 item 5), not an
+ * error union, spelled as a toke scalar.  NULL otherwise.
+ */
+static Type *std_scalar_ret(Ctx *cx, const Node *call) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1
+        || !cx->env || !cx->env->names) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return NULL;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    char pbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return NULL;
+    if (!import_module_path(cx, ab, pbuf, sizeof pbuf)) return NULL;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+    if (!f || f->abi_ret || f->okret || !f->ret || strchr(f->ret, '!')) return NULL;
+    Type *t = tki_scalar_type(cx->env->arena, f->ret);
+    if (!t || t->kind == TY_VOID) return NULL;
+    return t;
+}
+
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
     /* 127.168: an array or map LITERAL is as proven a receiver as a string
@@ -5636,6 +5663,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_VOID);
         }
         Type *init = initN ? infer(cx, initN) : NULL;
+        /* 127.232 item 1: an annotated `let` from an imported call whose
+         * interface DECLARES a scalar return (a hand-written record, not a
+         * `"gen":"abi"` placeholder).  stdlib returns are not typed here
+         * (127.66), so `let x:bool=math.floor(3.9)` was clean while
+         * `let x:bool=1.5` was E4031 -- yet the emitter lowers that very
+         * declaration (`math.floor` -> double), and `let y:str=math.floor(..)`
+         * failed the build with E9003.  Judged at this statement only; the
+         * declared type is not stored, so no other inference moves. */
+        if (ann&&ann->kind!=TY_UNKNOWN&&init&&init->kind==TY_UNKNOWN
+            &&initN&&initN->kind==NODE_CALL_EXPR) {
+            Type *dt=std_scalar_ret(cx,initN);
+            if (dt&&!types_compat(dt,ann)) {
+                char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
+                emit_mm(cx,node,ann,dt,cast_fix_certain(dt,ann)?fix:NULL);
+            }
+        }
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)
             &&!lit_narrows(cx->src,initN,ann)) {                 /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
