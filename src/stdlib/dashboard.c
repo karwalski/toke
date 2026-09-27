@@ -91,20 +91,6 @@ static int ensure_cap(TkDashboard *d)
     return 0;
 }
 
-/* Concatenate two strings; caller must free result. */
-static char *strconcat2(const char *a, const char *b)
-{
-    if (!a) a = "";
-    if (!b) b = "";
-    size_t la = strlen(a), lb = strlen(b);
-    char *out = malloc(la + lb + 1);
-    if (!out) return NULL;
-    memcpy(out, a, la);
-    memcpy(out + la, b, lb);
-    out[la + lb] = '\0';
-    return out;
-}
-
 /* -----------------------------------------------------------------------
  * Widget registration
  * ----------------------------------------------------------------------- */
@@ -272,7 +258,7 @@ const char *dashboard_render(TkDashboard *d)
                 strbuf_append(&scripts, "new Chart(document.getElementById('");
                 strbuf_append_js(&scripts, w->id);
                 strbuf_append(&scripts, "'),");
-                strbuf_append(&scripts, chart_json);
+                strbuf_append(&scripts, chart_json);   /* html_render guards "</script" */
                 strbuf_append(&scripts, ");\n");
             }
 
