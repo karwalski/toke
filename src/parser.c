@@ -216,11 +216,15 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
         snprintf(buf, sizeof buf, "%s", msg);
     const char *fix = NULL;
     if (code == E2005) fix = "expected a type: scalar ($i64, $f64, $str, $bool), struct ($name), array (@($t)), or function type (($t):$r)";
-    else if (code == E2002) fix = "check syntax; see toke spec for valid constructs";
+    /* 127.233: no fix for E2002 here.  The old "check syntax; see toke spec
+     * for valid constructs" is advice, not a deterministic fix (AGENTS §6),
+     * and docs/spec/errors.md lists E2002's fix as absent.  D108. */
     p->errs++;
+    /* "got" before "fix": a NULL value ends diag.c's key/value scan, so a
+     * NULL fix listed first would drop "got" too (127.233; C335). */
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, buf,
-                   "fix", fix,
-                   "got", tok_text, NULL);
+                   "got", tok_text,
+                   "fix", fix, NULL);
 }
 
 /*
@@ -322,8 +326,8 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         p->errs++;
         /* 123.13: span the offending token, so text mode underlines 'bar'
          * and JSON span_end covers it, as eerr_got already does. */
+        /* 127.233: no "fix" -- see eerr_got.  D107. */
         diag_emit_span(DIAG_ERROR, E2002, t->start, t->line, t->col, t->len, full_msg,
-                       "fix", "check syntax; see toke spec for valid constructs",
                        "got", tok_text,
                        "expected", w, NULL);
     }
