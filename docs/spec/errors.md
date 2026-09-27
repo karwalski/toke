@@ -311,12 +311,13 @@ warning, not an error -- the code is valid but potentially lossy.
 | **Stage** | lex |
 | **Severity** | warning |
 | **Message** | `string interpolation \( is not supported in the legacy profile; use str.concat() instead` |
-| **Fix field** | `"use str.concat() for string composition"` |
+| **Fix field** | absent (127.243: the compiler emitted "use str.concat() for string composition", which is advice -- the rewrite needs a std.str import, an alias and a conversion for each non-str piece; D005 pins the absence) |
 | **Conformance test** | D005, D009 |
 
 **Notes:** The `\(` sequence inside a string literal triggers this warning. The
-lexer consumes the parenthesised content as part of the string literal. The fix
-field is informational only -- there is no mechanical auto-fix.
+lexer consumes the parenthesised content as part of the string literal. There
+is no mechanical rewrite, so the diagnostic carries no `fix`; the message names
+`str.concat()`.
 
 **Example trigger:**
 ```text
