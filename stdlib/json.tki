@@ -102,6 +102,15 @@
       "return": "[Json]!JsonErr"
     },
     {
+      "kind": "func",
+      "name": "json.at",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "Json!JsonErr"
+    },
+    {
       "kind": "type",
       "name": "JsonWriter",
       "fields": [
@@ -498,11 +507,10 @@
       "kind": "func",
       "name": "json.getval",
       "params": [
-        "i64",
-        "i64"
+        "Json",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",

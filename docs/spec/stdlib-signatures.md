@@ -62,6 +62,8 @@ f=i64(s:$str;key:$str):i64
 f=f64(s:$str;key:$str):f64
 f=bool(s:$str;key:$str):bool
 f=arr(s:$str;key:$str):@$str
+f=at(j:$json;path:$str):$json!$jsonerr   (* 138.12: dotted path, e.g. "usage.input_tokens", "r.0" *)
+f=getval(j:$json;path:$str):$str        (* 138.12: the raw JSON text at path, "" if none *)
 f=parse(s:$str):i64
 f=print(val:i64):void
 

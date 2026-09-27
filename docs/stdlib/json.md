@@ -89,6 +89,8 @@ f=example():void{
 
 Extracts a string value from the JSON object by key, returning `$jsonerr.$missing` if the key does not exist or `$jsonerr.$type` if the value at that key is not a string.
 
+The JSON escapes are decoded (138.12): `\n` `\t` `\r` `\b` `\f` are their control characters, `\"` `\\` `\/` their byte, and `\uXXXX` (a surrogate pair included) the code point as UTF-8; `\u0000` becomes U+FFFD, because a `$str` cannot hold a NUL. Before 138.12 the byte after each backslash was copied, so `"a\nb"` read back as `anb`. `json.keys` decodes keys the same way.
+
 ```toke
 i=json:std.json;
 i=io:std.io;
@@ -261,17 +263,18 @@ f=example():void{
 
 ### json.at(j: $json; path: $str): $json!$jsonerr
 
-> **Not exported.** `std.json`'s interface declares no `json.at`, so `tkc --check` rejects a call to it (E4027). The C core has `json_at` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design. The exported `json.getobj` passes its key to the same path walker, over the untyped ABI.
+Traverses a dotted path through nested objects and arrays, where each segment is either an object key or a numeric array index, and returns the value there as a `$json` that the typed accessors (`json.str`, `json.i64`, ...) read. Returns `$jsonerr.$missing` if any segment along the path does not exist. A key that itself contains `.` cannot be named. **Exported since 138.12** -- this is the typed nested read; before it, the only path was the untyped `json.getobj`/`json.getval`.
 
-Traverses a dotted path through nested objects and arrays, where each segment is either an object key or a numeric array index. Returns `$jsonerr.$missing` if any segment along the path does not exist.
+`json.getval(j; path)` is the same walk returning the value's raw JSON **text** as a `$str` (`""` when there is none) -- text, not a `$json`: use `json.at` to read further.
 
 ```toke
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=mt json.dec("{\"user\":{\"address\":{\"city\":\"Auckland\"}}}") {$ok:v v;$err:e io.exit(1)};
-  let city=json.at(j;"user.address.city");
-  let item=json.at(j;"results.0.id");
+  let j=mt json.dec("{\"user\":{\"address\":{\"city\":\"Auckland\"}};\"results\":[{\"id\":7}]}") {$ok:v v;$err:e io.exit(1)};
+  let addr=mt json.at(j;"user.address") {$ok:a a;$err:e j};
+  let city=json.str(addr;"city");
+  let item=json.at(j;"results.0");
 };
 ```
 
