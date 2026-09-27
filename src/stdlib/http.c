@@ -29,6 +29,7 @@
 #ifdef TK_HAVE_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #endif
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
@@ -2470,13 +2471,46 @@ static HttpClientResp client_do_request(HttpClient *c,
     if (is_https) {
         ssl_ctx = SSL_CTX_new(TLS_client_method());
         if (!ssl_ctx) { close(fd); return err_resp_client("SSL_CTX_new failed", 0); }
+        /* 138.8: VERIFY THE SERVER.  This context used to be created and
+         * used with OpenSSL's default of SSL_VERIFY_NONE: any certificate
+         * was accepted for any host, so every https:// request -- API keys
+         * in headers included -- could be read by whoever answered the
+         * connection.  Measured 2026-09-27: a POST to a local server with a
+         * self-signed certificate nothing trusts succeeded.  Now the chain
+         * must verify against the trust store (the system default paths;
+         * SSL_CERT_FILE / SSL_CERT_DIR override them) and the certificate
+         * must name the host (DNS name) or address (IP literal). */
+        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+        if (SSL_CTX_set_default_verify_paths(ssl_ctx) != 1) {
+            SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: no trust store to verify the server against", 0);
+        }
         ssl = SSL_new(ssl_ctx);
         if (!ssl) { SSL_CTX_free(ssl_ctx); close(fd); return err_resp_client("SSL_new failed", 0); }
         SSL_set_fd(ssl, fd);
-        SSL_set_tlsext_host_name(ssl, host);
+        {
+            unsigned char ipbuf[16];
+            int is_ip = inet_pton(AF_INET, host, ipbuf) == 1
+                     || inet_pton(AF_INET6, host, ipbuf) == 1;
+            int named = is_ip
+                ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host)
+                : SSL_set1_host(ssl, host);
+            if (!is_ip) SSL_set_tlsext_host_name(ssl, host);   /* SNI: names only */
+            if (named != 1) {
+                SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+                return err_resp_client("TLS: cannot set the name to verify", 0);
+            }
+        }
         if (SSL_connect(ssl) <= 0) {
+            long vr = SSL_get_verify_result(ssl);
+            char m[200];
+            if (vr != X509_V_OK)
+                snprintf(m, sizeof m, "TLS certificate verification failed: %s",
+                         X509_verify_cert_error_string(vr));
+            else
+                snprintf(m, sizeof m, "SSL handshake failed");
             SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
-            return err_resp_client("SSL handshake failed", 0);
+            return err_resp_client(m, 0);
         }
     }
 #define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, 0))
