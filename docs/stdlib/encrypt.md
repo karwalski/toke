@@ -284,7 +284,8 @@ Do not rely on `x25519dh` alone for a key that protects data meant to stay
 confidential for years, and do not rely on Ed25519 for signatures that must still
 be trusted then. `std.encrypt` has no hybrid (X25519 + ML-KEM) or ML-DSA API yet
 (story 122.5); `std.tls` negotiates the hybrid `X25519MLKEM768` group when both
-sides support it, and `tls.genselfsignedalg` can issue ML-DSA-65 certificates.
+sides support it (`tls.group` says whether a given connection got it), and
+`tls.genselfsignedalg` can issue ML-DSA-65 certificates.
 The X25519 and Ed25519 functions are on the deprecation track for protecting
 long-lived data (stage 0, notice); they will be deprecated only once a
 replacement ships.

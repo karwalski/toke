@@ -16,6 +16,7 @@
 #include "auth.h"
 #include "encoding.h"
 #include "crypto.h"
+#include "strbuf.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -85,54 +86,54 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
     int64_t exp = claims.expires_at;
 
     /* Build payload JSON.  We keep it minimal and spec-correct.
-     * Allocate generously: field names + values + delimiters. */
-    size_t sub_len = claims.subject  ? strlen(claims.subject)  : 0;
-    size_t iss_len = claims.issuer   ? strlen(claims.issuer)   : 0;
-    size_t aud_len = claims.audience ? strlen(claims.audience) : 0;
+     *
+     * 135.3j: sub/iss/aud were written with "%s" unescaped, so a claim value
+     * could close its string and add claims: a subject
+     *   x","exp":99999999999,"sub":"x
+     * put an "exp" BEFORE the real one, and json_get_int64 (first match)
+     * read it back -- a caller that lets a user choose their subject minted
+     * a token that never expired, signed with the server's secret.  Each
+     * value is now JSON-escaped (strbuf_append_json), and the reader below
+     * unescapes; the payload is built in a TkStrBuf, so escaping cannot
+     * overrun a size estimated from the raw lengths. */
+    TkStrBuf pb = TK_STRBUF_INIT;
+    strbuf_putc(&pb, '{');
 
-    /* Max payload length estimate:
-     *   {"sub":"<sub>","iss":"<iss>","iat":<20d>,"exp":<20d>,"aud":"<aud>"}
-     *   plus some slack. */
-    size_t buf_size = 64 + sub_len + iss_len + aud_len + 128;
-    char  *payload_json = (char *)malloc(buf_size);
+    int need_comma = 0;
+
+    if (claims.subject) {
+        strbuf_append(&pb, "\"sub\":\"");
+        strbuf_append_json(&pb, claims.subject);
+        strbuf_putc(&pb, '"');
+        need_comma = 1;
+    }
+    if (claims.issuer) {
+        if (need_comma) strbuf_putc(&pb, ',');
+        strbuf_append(&pb, "\"iss\":\"");
+        strbuf_append_json(&pb, claims.issuer);
+        strbuf_putc(&pb, '"');
+        need_comma = 1;
+    }
+    /* iat is always emitted */
+    if (need_comma) strbuf_putc(&pb, ',');
+    strbuf_appendf(&pb, "\"iat\":%" PRId64, iat);
+    /* every later field writes its own leading comma */
+
+    if (exp != 0) {
+        strbuf_appendf(&pb, ",\"exp\":%" PRId64, exp);
+    }
+    if (claims.audience) {
+        strbuf_append(&pb, ",\"aud\":\"");
+        strbuf_append_json(&pb, claims.audience);
+        strbuf_putc(&pb, '"');
+    }
+    strbuf_putc(&pb, '}');
+    char *payload_json = strbuf_take(&pb);
     if (!payload_json) {
         free((void *)header_b64);
         result.err_msg = "out of memory";
         return result;
     }
-
-    int pos = 0;
-    pos += snprintf(payload_json + pos, buf_size - (size_t)pos, "{");
-
-    int need_comma = 0;
-
-    if (claims.subject) {
-        pos += snprintf(payload_json + pos, buf_size - (size_t)pos,
-                        "\"sub\":\"%s\"", claims.subject);
-        need_comma = 1;
-    }
-    if (claims.issuer) {
-        if (need_comma) pos += snprintf(payload_json + pos, buf_size - (size_t)pos, ",");
-        pos += snprintf(payload_json + pos, buf_size - (size_t)pos,
-                        "\"iss\":\"%s\"", claims.issuer);
-        need_comma = 1;
-    }
-    /* iat is always emitted */
-    if (need_comma) pos += snprintf(payload_json + pos, buf_size - (size_t)pos, ",");
-    pos += snprintf(payload_json + pos, buf_size - (size_t)pos,
-                    "\"iat\":%" PRId64, iat);
-    /* every later field writes its own leading comma */
-
-    if (exp != 0) {
-        pos += snprintf(payload_json + pos, buf_size - (size_t)pos,
-                        ",\"exp\":%" PRId64, exp);
-    }
-    if (claims.audience) {
-        pos += snprintf(payload_json + pos, buf_size - (size_t)pos,
-                        ",\"aud\":\"%s\"", claims.audience);
-    }
-    pos += snprintf(payload_json + pos, buf_size - (size_t)pos, "}");
-    (void)pos; /* suppress unused-variable warning */
 
     ByteArray   pj         = ba_of_str(payload_json);
     const char *payload_b64 = encoding_b64urlencode(pj);
@@ -268,13 +269,45 @@ static int json_get_str(const char *json, const char *key,
 
     p += strlen(pattern);  /* now points at first char of value */
 
-    const char *end = strchr(p, '"');
-    if (!end) return 0;
-
-    size_t val_len = (size_t)(end - p);
-    if (val_len >= out_size) val_len = out_size - 1;
-    memcpy(out, p, val_len);
-    out[val_len] = '\0';
+    /* 135.3j: the value ends at the first UNESCAPED quote, and escapes are
+     * decoded, so a value auth_jwtsign escaped reads back as it was given.
+     * (The first '"' used to end it, so sub a"b read back as a\.)  \uXXXX
+     * is decoded for XXXX < 0x80, which is every escape the signer emits;
+     * any other \u is refused rather than guessed at. */
+    size_t o = 0;
+    for (;;) {
+        char c = *p++;
+        if (c == '\0') return 0;
+        if (c == '"') break;
+        if (c == '\\') {
+            char e = *p++;
+            switch (e) {
+            case '"': case '\\': case '/': c = e; break;
+            case 'n': c = '\n'; break;
+            case 'r': c = '\r'; break;
+            case 't': c = '\t'; break;
+            case 'b': c = '\b'; break;
+            case 'f': c = '\f'; break;
+            case 'u': {
+                unsigned v = 0;
+                for (int i = 0; i < 4; i++) {
+                    char h = *p++;
+                    v <<= 4;
+                    if (h >= '0' && h <= '9') v |= (unsigned)(h - '0');
+                    else if (h >= 'a' && h <= 'f') v |= (unsigned)(h - 'a' + 10);
+                    else if (h >= 'A' && h <= 'F') v |= (unsigned)(h - 'A' + 10);
+                    else return 0;
+                }
+                if (v == 0 || v >= 0x80) return 0;
+                c = (char)v;
+                break;
+            }
+            default: return 0;
+            }
+        }
+        if (o + 1 < out_size) out[o++] = c;
+    }
+    out[o] = '\0';
     return 1;
 }
 

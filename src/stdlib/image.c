@@ -362,7 +362,12 @@ static void outbuf_push(OutBuf *ob, uint8_t byte)
 static void outbuf_push_backref(OutBuf *ob, uint32_t dist, uint32_t length)
 {
     if (ob->error) return;
-    if (dist > ob->len) { ob->error = 1; return; }
+    /* 135.3j: dist == 0 is not a DEFLATE distance (RFC 1951 codes start at
+     * 1) and would copy ob->buf[ob->len], the byte being written -- a read
+     * past the end whenever len == cap.  dist_base[] cannot produce it
+     * today; the check makes that a property of this function, not of its
+     * one caller. */
+    if (dist == 0 || dist > ob->len) { ob->error = 1; return; }
     for (uint32_t i = 0; i < length; i++)
         outbuf_push(ob, ob->buf[ob->len - dist]);
 }
@@ -750,6 +755,24 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
             ? "image_decode: decompressed data exceeds the size IHDR declares (decompression bomb)"
             : "image_decode: DEFLATE inflate failed";
         return res;
+    }
+
+    /* 122.13: the zlib trailer is the Adler-32 of the inflated data
+     * (RFC 1950 §2.2), big-endian, in the last four IDAT bytes.  It was
+     * stripped and never compared, so a stream corrupted in a way the
+     * chunk CRCs did not see (the CRC covers what was written, not what it
+     * decodes to) decoded to wrong pixels with no error. */
+    {
+        const uint8_t *t = idat_buf + idat_len - 4;
+        uint32_t want = ((uint32_t)t[0] << 24) | ((uint32_t)t[1] << 16) |
+                        ((uint32_t)t[2] << 8)  |  (uint32_t)t[3];
+        if (adler32_update(1, ob.buf, ob.len) != want) {
+            free(idat_buf);
+            free(ob.buf);
+            res.is_err  = 1;
+            res.err_msg = "image_decode: zlib Adler-32 checksum mismatch";
+            return res;
+        }
     }
     free(idat_buf);
 
@@ -1467,6 +1490,11 @@ TkImgBuf image_blur(TkImgBuf buf, int radius)
 
     if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
     if (radius < 1) radius = 1;
+    /* 122.13: each pass costs a full 3x3 pass over the image and the count
+     * was unbounded, so image.blur(img; 4000000000) pinned a CPU for hours.
+     * More passes than IMG_BLUR_MAX_PASSES are refused (an empty buffer,
+     * like any other input the runtime refuses). */
+    if (radius > IMG_BLUR_MAX_PASSES) return out;
 
     uint64_t len  = (uint64_t)buf.width * buf.height * buf.channels;
     uint8_t *cur  = (uint8_t *)malloc(len);

@@ -142,7 +142,10 @@ TkImgBuf     image_rotate(TkImgBuf buf, double angle_deg);
 
 /* image.blur(imgbuf, int) imgbuf
  * Box-approximate Gaussian blur.  The 3×3 kernel [1,2,1;2,4,2;1,2,1]/16 is
- * applied `radius` times.  Returns a zero TkImgBuf on OOM. */
+ * applied `radius` times (at least once).  Returns a zero TkImgBuf on OOM
+ * and when radius > IMG_BLUR_MAX_PASSES (122.13: the pass count bounds the
+ * CPU a caller-supplied value can spend). */
+#define IMG_BLUR_MAX_PASSES 256
 TkImgBuf     image_blur(TkImgBuf buf, int radius);
 
 /* image.sharpen(imgbuf) imgbuf

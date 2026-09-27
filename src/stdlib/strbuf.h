@@ -175,4 +175,82 @@ static inline char *strbuf_take(TkStrBuf *b)
     return s;
 }
 
+/* -----------------------------------------------------------------------
+ * Context escapers (122.13).  Each appends `s` escaped for ONE output
+ * context.  The stdlib's markup/script generators (svg, canvas, chart,
+ * dashboard) wrote caller strings into these contexts raw, so a value could
+ * close its attribute, element, string literal or comment and inject.  One
+ * copy of each rule, here, so the generators cannot drift apart again.
+ * NULL appends nothing.  Bytes >= 0x80 pass through unchanged (UTF-8).
+ * ----------------------------------------------------------------------- */
+
+/* XML/HTML text AND double- or single-quoted attribute values:
+ * & < > " ' become entities. */
+static inline void strbuf_append_xml(TkStrBuf *b, const char *s)
+{
+    if (!s) return;
+    for (; *s; s++) {
+        switch (*s) {
+        case '&':  strbuf_appendn(b, "&amp;", 5);  break;
+        case '<':  strbuf_appendn(b, "&lt;", 4);   break;
+        case '>':  strbuf_appendn(b, "&gt;", 4);   break;
+        case '"':  strbuf_appendn(b, "&quot;", 6); break;
+        case '\'': strbuf_appendn(b, "&#39;", 5);  break;
+        default:   strbuf_appendn(b, s, 1);        break;
+        }
+    }
+}
+
+/* The body of a JSON string (no surrounding quotes), RFC 8259: '"', '\' and
+ * every control byte (U+0000..U+001F, plus DEL) escaped. */
+static inline void strbuf_append_json(TkStrBuf *b, const char *s)
+{
+    if (!s) return;
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        switch (c) {
+        case '"':  strbuf_appendn(b, "\\\"", 2); break;
+        case '\\': strbuf_appendn(b, "\\\\", 2); break;
+        case '\n': strbuf_appendn(b, "\\n", 2);  break;
+        case '\r': strbuf_appendn(b, "\\r", 2);  break;
+        case '\t': strbuf_appendn(b, "\\t", 2);  break;
+        case '\b': strbuf_appendn(b, "\\b", 2);  break;
+        case '\f': strbuf_appendn(b, "\\f", 2);  break;
+        default:
+            if (c < 0x20 || c == 0x7f) strbuf_appendf(b, "\\u%04x", c);
+            else strbuf_appendn(b, s, 1);
+            break;
+        }
+    }
+}
+
+/* The body of a JavaScript string literal quoted with ' or " (no quotes
+ * appended), safe inside an HTML <script> element and inside a JS block
+ * comment: both quotes, '\', control bytes, U+2028/U+2029 (line terminators
+ * in JS source), '<' and '>' (so "</script>" and "<!--" cannot form) and
+ * '/' after '*' (so a comment cannot close) are escaped. */
+static inline void strbuf_append_js(TkStrBuf *b, const char *s)
+{
+    if (!s) return;
+    const unsigned char *p = (const unsigned char *)s;
+    for (; *p; p++) {
+        unsigned char c = *p;
+        if (c == '\'' || c == '"' || c == '\\') {
+            strbuf_putc(b, '\\'); strbuf_putc(b, (char)c);
+        } else if (c == '\n') { strbuf_appendn(b, "\\n", 2);
+        } else if (c == '\r') { strbuf_appendn(b, "\\r", 2);
+        } else if (c == '\t') { strbuf_appendn(b, "\\t", 2);
+        } else if (c < 0x20 || c == 0x7f || c == '<' || c == '>') {
+            strbuf_appendf(b, "\\x%02x", c);
+        } else if (c == '/' && p > (const unsigned char *)s && p[-1] == '*') {
+            strbuf_appendn(b, "\\/", 2);
+        } else if (c == 0xe2 && p[1] == 0x80 && (p[2] == 0xa8 || p[2] == 0xa9)) {
+            strbuf_appendf(b, "\\u%04x", p[2] == 0xa8 ? 0x2028 : 0x2029);
+            p += 2;
+        } else {
+            strbuf_putc(b, (char)c);
+        }
+    }
+}
+
 #endif /* TK_STRBUF_H */

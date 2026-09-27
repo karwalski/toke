@@ -15,6 +15,7 @@
 
 #include "llm_tool.h"
 #include "llm.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -23,56 +24,25 @@
  * Internal helpers
  * ----------------------------------------------------------------------- */
 
-/* buf_append — append src to *buf (which has capacity *cap and current length
- * *len), growing as needed.  Returns 0 on success, -1 on malloc failure. */
-static int buf_append(char **buf, size_t *len, size_t *cap, const char *src)
-{
-    size_t src_len = strlen(src);
-    size_t needed  = *len + src_len + 1;
-    if (needed > *cap) {
-        size_t new_cap = *cap * 2 + src_len + 64;
-        char  *nb      = realloc(*buf, new_cap);
-        if (!nb) return -1;
-        *buf = nb;
-        *cap = new_cap;
-    }
-    memcpy(*buf + *len, src, src_len);
-    *len            += src_len;
-    (*buf)[*len]     = '\0';
-    return 0;
-}
+/* 122.13: llm_tool.c's private buf_append and its hand-sized json_escape
+ * are replaced by the shared TkStrBuf and strbuf_append_json (the same
+ * escapes, plus DEL).  A NULL string still escapes to the text "null", as
+ * json_escape(NULL) did. */
 
-/* json_escape — return a heap-allocated JSON-escaped version of s (without the
- * surrounding quotes).  Caller must free.  Returns NULL on alloc failure. */
-static char *json_escape(const char *s)
+/* {"tool_call_id":"<id, escaped>","content":<content verbatim>} -- content
+ * is already a JSON value.  122.13: the two builders of this sized their
+ * buffer from the UNESCAPED id, so an id with quotes or control bytes was
+ * cut short by snprintf (invalid JSON), and one wrote the id raw when its
+ * escape allocation failed. */
+static char *tool_result_json(const char *id, const char *content)
 {
-    if (!s) return strdup("null");
-    /* worst case: every char expands to \uXXXX (6 chars) */
-    size_t n   = strlen(s);
-    char  *out = malloc(n * 6 + 1);
-    if (!out) return NULL;
-    size_t j = 0;
-    for (size_t i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)s[i];
-        switch (c) {
-        case '"':  out[j++] = '\\'; out[j++] = '"';  break;
-        case '\\': out[j++] = '\\'; out[j++] = '\\'; break;
-        case '\b': out[j++] = '\\'; out[j++] = 'b';  break;
-        case '\f': out[j++] = '\\'; out[j++] = 'f';  break;
-        case '\n': out[j++] = '\\'; out[j++] = 'n';  break;
-        case '\r': out[j++] = '\\'; out[j++] = 'r';  break;
-        case '\t': out[j++] = '\\'; out[j++] = 't';  break;
-        default:
-            if (c < 0x20) {
-                j += (size_t)snprintf(out + j, 7, "\\u%04x", c);
-            } else {
-                out[j++] = (char)c;
-            }
-            break;
-        }
-    }
-    out[j] = '\0';
-    return out;
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "{\"tool_call_id\":\"");
+    strbuf_append_json(&b, id ? id : "");
+    strbuf_append(&b, "\",\"content\":");
+    strbuf_append(&b, content ? content : "null");
+    strbuf_putc(&b, '}');
+    return strbuf_take(&b);
 }
 
 /* -----------------------------------------------------------------------
@@ -86,20 +56,9 @@ const char *llm_tool_build_tools_json(TkToolDecl *tools, uint64_t ntools)
 {
     if (!tools || ntools == 0) return strdup("[]");
 
-    size_t cap = 512;
-    size_t len = 0;
-    char  *buf = malloc(cap);
-    if (!buf) return NULL;
-    buf[0] = '\0';
-
-#define EMIT(s) do { if (buf_append(&buf, &len, &cap, (s)) != 0) { free(buf); return NULL; } } while (0)
-#define EMIT_ESC(s) do { \
-    char *_esc = json_escape(s); \
-    if (!_esc) { free(buf); return NULL; } \
-    int _r = buf_append(&buf, &len, &cap, _esc); \
-    free(_esc); \
-    if (_r != 0) { free(buf); return NULL; } \
-} while (0)
+    TkStrBuf b = TK_STRBUF_INIT;
+#define EMIT(s)     strbuf_append(&b, (s))
+#define EMIT_ESC(s) do { const char *_s = (s); strbuf_append_json(&b, _s ? _s : "null"); } while (0)
 
     EMIT("[");
     for (uint64_t i = 0; i < ntools; i++) {
@@ -152,7 +111,7 @@ const char *llm_tool_build_tools_json(TkToolDecl *tools, uint64_t ntools)
 #undef EMIT
 #undef EMIT_ESC
 
-    return buf;
+    return strbuf_take(&b);   /* NULL after any OOM */
 }
 
 /* -----------------------------------------------------------------------
@@ -370,23 +329,10 @@ TkLlmMsg *llm_tool_result_msgs(TkToolResult *results, uint64_t nresults,
     for (uint64_t i = 0; i < nresults; i++) {
         msgs[i].role = strdup("tool");
         /* Build content as JSON: {"tool_call_id":"...","content":...} */
-        const char *id      = results[i].call_id    ? results[i].call_id    : "";
-        const char *content = results[i].result_json ? results[i].result_json : "null";
-        char *esc_id        = json_escape(id);
-        if (!esc_id) {
-            /* partial cleanup and return error indicator */
-            for (uint64_t j = 0; j < i; j++) {
-                free((char *)msgs[j].role);
-                free((char *)msgs[j].content);
-            }
-            free(msgs);
-            return NULL;
-        }
         /* content may already be a JSON value; embed it verbatim */
-        size_t buflen = strlen(esc_id) + strlen(content) + 64;
-        char  *cbuf   = malloc(buflen);
+        char *cbuf = tool_result_json(results[i].call_id, results[i].result_json);
         if (!cbuf) {
-            free(esc_id);
+            free((char *)msgs[i].role);
             for (uint64_t j = 0; j < i; j++) {
                 free((char *)msgs[j].role);
                 free((char *)msgs[j].content);
@@ -394,10 +340,6 @@ TkLlmMsg *llm_tool_result_msgs(TkToolResult *results, uint64_t nresults,
             free(msgs);
             return NULL;
         }
-        snprintf(cbuf, buflen,
-                 "{\"tool_call_id\":\"%s\",\"content\":%s}",
-                 esc_id, content);
-        free(esc_id);
         msgs[i].content = cbuf;
     }
 
@@ -464,21 +406,9 @@ static char *tktool_tools_extra(TkTool *tools, uint64_t ntools)
 {
     if (!tools || ntools == 0) return NULL;
 
-    size_t cap = 512, len = 0;
-    char  *buf = malloc(cap);
-    if (!buf) return NULL;
-    buf[0] = '\0';
-
-#define XEMIT(str) do { \
-    if (buf_append(&buf, &len, &cap, (str)) != 0) { free(buf); return NULL; } \
-} while (0)
-#define XEMIT_ESC(str) do { \
-    char *_e = json_escape(str); \
-    if (!_e) { free(buf); return NULL; } \
-    int _r = buf_append(&buf, &len, &cap, _e); \
-    free(_e); \
-    if (_r != 0) { free(buf); return NULL; } \
-} while (0)
+    TkStrBuf b = TK_STRBUF_INIT;
+#define XEMIT(str)     strbuf_append(&b, (str))
+#define XEMIT_ESC(str) do { const char *_s = (str); strbuf_append_json(&b, _s ? _s : "null"); } while (0)
 
     XEMIT("\"tools\":[");
     for (uint64_t i = 0; i < ntools; i++) {
@@ -497,7 +427,7 @@ static char *tktool_tools_extra(TkTool *tools, uint64_t ntools)
     XEMIT("]");
 #undef XEMIT
 #undef XEMIT_ESC
-    return buf;
+    return strbuf_take(&b);
 }
 
 ToolCallResult llm_chatwithtools(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
@@ -960,22 +890,8 @@ const char *llm_agentic_loop(TkLlmClient *client,
 
             /* Build tool result message content:
              * {"tool_call_id":"...","content":...} */
-            const char *cid = call->call_id ? call->call_id : "";
-            const char *rc  = result_content ? result_content : "null";
-            size_t msglen   = strlen(cid) + strlen(rc) + 64;
-            char  *msg_cont = malloc(msglen);
+            char *msg_cont = tool_result_json(call->call_id, result_content);
             if (msg_cont) {
-                char *esc = json_escape(cid);
-                if (esc) {
-                    snprintf(msg_cont, msglen,
-                             "{\"tool_call_id\":\"%s\",\"content\":%s}",
-                             esc, rc);
-                    free(esc);
-                } else {
-                    snprintf(msg_cont, msglen,
-                             "{\"tool_call_id\":\"%s\",\"content\":%s}",
-                             cid, rc);
-                }
                 heap_contents[heap_count++] = msg_cont;
             }
             free((char *)result_content);

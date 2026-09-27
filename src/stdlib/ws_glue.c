@@ -127,11 +127,21 @@ int64_t tk_ws_recv_w(int64_t conn) {
 
 int64_t tk_ws_close_w(int64_t conn) {
     /* Without the validation this close()d fd 0 and then free()d a pointer
-     * the toke runtime owns — a documented example reached both. */
+     * the toke runtime owns — a documented example reached both.
+     *
+     * 135.20: it then free()d the WsConn itself (ws_conn_free), but the toke
+     * program still holds the handle, and the documented pattern -- close,
+     * then a send that must take the $err arm -- made ws_conn_valid() read
+     * conn->magic from freed memory (ASan heap-use-after-free, C107).  Freed
+     * memory cannot be validated: its contents are whatever the allocator
+     * or the next allocation left there, including a live WsConn's magic.
+     * So close leaves a CLOSED handle behind (fd -1, closed 1) that every
+     * later call rejects by its state, and does not free it.  The cost is
+     * the 16-byte struct per closed connection, for the program's lifetime;
+     * toke has no destructor that could free it safely. */
     WsConn *c = ws_handle(conn);
     if (!c) return 0;
     ws_close(c);
-    ws_conn_free(c);
     return 0;
 }
 

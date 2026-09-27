@@ -37,6 +37,7 @@
     {"kind": "func", "name": "tls.mutualconfig",     "params": ["str", "str", "str"],        "return": "TlsConfig"},
     {"kind": "func", "name": "tls.freeconfig",       "params": ["TlsConfig"],                "return": "bool"},
     {"kind": "func", "name": "tls.protocol",         "params": ["TlsConn"],                  "return": "str"},
+    {"kind": "func", "name": "tls.group",            "params": ["TlsConn"],                  "return": "str"},
     {"kind": "func", "name": "tls.listen",           "params": ["i32", "TlsConfig", "fn"],   "return": "bool"},
     {"kind": "func", "name": "tls.connect",          "params": ["str", "i32", "TlsConfig"],  "return": "?(TlsConn)"},
     {"kind": "func", "name": "tls.read",             "params": ["TlsConn"],                  "return": "?(str)"},

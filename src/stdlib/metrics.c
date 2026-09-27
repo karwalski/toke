@@ -219,7 +219,11 @@ typedef struct {
     volatile uint64_t hist_5s;
     volatile uint64_t hist_10s;
     volatile uint64_t hist_inf;
-    volatile double   duration_sum;
+    /* 135.3j: was `volatile double duration_sum`, which nothing wrote and
+     * nothing exported, so the histogram had no _sum and a request's latency
+     * reached only the buckets.  Integer microseconds, updated lock-free,
+     * exactly as upstream_sum_us below (135.3f). */
+    volatile uint64_t duration_sum_us;
     volatile uint64_t duration_count;
     /* Upstream latency (66.2.4).  135.3f: the sum is kept in integer
      * MICROseconds so it can be updated with the same lock-free
@@ -257,6 +261,10 @@ void metrics_record_request(uint32_t status, size_t bytes, double latency_ms)
     else if (latency_ms <= 10000.0) __sync_fetch_and_add(&g_metrics.hist_10s, 1);
     else __sync_fetch_and_add(&g_metrics.hist_inf, 1);
 
+    if (latency_ms > 0.0 && latency_ms < 1.0e12) {
+        uint64_t us = (uint64_t)(latency_ms * 1000.0 + 0.5);
+        __sync_fetch_and_add(&g_metrics.duration_sum_us, us);
+    }
     __sync_fetch_and_add(&g_metrics.duration_count, 1);
 }
 
@@ -330,6 +338,7 @@ char *metrics_prometheus(void)
         "http_request_duration_seconds_bucket{le=\"5\"} %llu\n"
         "http_request_duration_seconds_bucket{le=\"10\"} %llu\n"
         "http_request_duration_seconds_bucket{le=\"+Inf\"} %llu\n"
+        "http_request_duration_seconds_sum %llu.%06llu\n"
         "http_request_duration_seconds_count %llu\n",
         (unsigned long long)g_metrics.hist_1ms,
         (unsigned long long)(g_metrics.hist_1ms + g_metrics.hist_5ms),
@@ -343,6 +352,8 @@ char *metrics_prometheus(void)
         (unsigned long long)(g_metrics.hist_1ms + g_metrics.hist_5ms + g_metrics.hist_10ms + g_metrics.hist_25ms + g_metrics.hist_50ms + g_metrics.hist_100ms + g_metrics.hist_250ms + g_metrics.hist_500ms + g_metrics.hist_1s + g_metrics.hist_5s),
         (unsigned long long)(g_metrics.hist_1ms + g_metrics.hist_5ms + g_metrics.hist_10ms + g_metrics.hist_25ms + g_metrics.hist_50ms + g_metrics.hist_100ms + g_metrics.hist_250ms + g_metrics.hist_500ms + g_metrics.hist_1s + g_metrics.hist_5s + g_metrics.hist_10s),
         (unsigned long long)(g_metrics.total_requests),
+        (unsigned long long)(g_metrics.duration_sum_us / 1000000u),
+        (unsigned long long)(g_metrics.duration_sum_us % 1000000u),
         (unsigned long long)(g_metrics.duration_count));
 
     /* Cache metrics (66.2.5) */
