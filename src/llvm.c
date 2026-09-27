@@ -6990,10 +6990,39 @@ static int emit_expr(Ctx *c, const Node *n)
 
         /* Multi-arm string match: when scrutinee is a string (i8*) and
          * there are 3+ arms, emit a strcmp chain instead of ok/err bifurcation.
-         * Each arm tag is compared against the scrutinee as a string. (Story 80.2.7) */
-        if (!strcmp(scr_ty, "i8*") && num_arms >= 3) {
-            /* Ensure scrutinee is i8* (it should be since scr_ty is i8*) */
+         * Each arm tag is compared against the scrutinee as a string. (Story 80.2.7)
+         *
+         * 127.237 (1): the chain was gated on 3+ arms and an i8* scrutinee
+         * only.  A 2-arm string match (`mt s {$x:w 1;$y:w 2}`) therefore fell
+         * through to the RESULT lowering, which dispatches on value-vs-null —
+         * every non-null string took arm 0, so s="y" gave 1: a silent wrong
+         * arm.  A 1-arm match emitted a branch to a label that was never
+         * defined (clang error, E9003).  And a string scrutinee that arrives
+         * as an i64 word (a call: `mt g(s){…}`, `mt str.lower(s){…}`) missed
+         * the chain and died with E9005 at 3+ arms.  The checker's type says
+         * which it is: a plain `str` scrutinee (TY_STR — not an error union)
+         * whose arms are not the result tags is a string match at any arity. */
+        int str_res_tags = 0;
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm = n->children[i];
+            if (!arm || arm->child_count < 1) continue;
+            char rtag[128]; tok_cp(c->src, arm->children[0], rtag, sizeof rtag);
+            if (!strcmp(rtag, "ok") || !strcmp(rtag, "Ok") ||
+                !strcmp(rtag, "err") || !strcmp(rtag, "Err")) str_res_tags = 1;
+        }
+        int str_typed = (n->children[0]->rtype && n->children[0]->rtype->kind == TY_STR) ||
+                        (scr_sum && !strcmp(scr_sum, "$str"));   /* a std call's .tki `$str` */
+        int str_chain = (!strcmp(scr_ty, "i8*") && num_arms >= 3) ||
+                        ((str_typed || !strcmp(scr_ty, "i8*")) && num_arms >= 1 &&
+                         !str_res_tags &&
+                         (!strcmp(scr_ty, "i8*") || !strcmp(scr_ty, "i64")));
+        if (str_chain) {
             int str_val = sv;
+            if (strcmp(scr_ty, "i8*")) {   /* an i64-ABI string word */
+                str_val = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", str_val, sv);
+                scr_ty = "i8*";
+            }
 
             /* Emit strcmp chain: for each arm, compare tag string */
             int arm_labels[64];
