@@ -131,6 +131,20 @@ Emitted for a malformed number (e.g. a bad hex/float form).
 
 Emitted when an uppercase-cased keyword is used where the default (lowercase) profile expects it lowercase.
 
+### E1007
+
+**Unterminated comment**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | lex |
+
+Emitted when a `(*` comment is still open at end of file. Comments nest, so a
+`(*` inside a comment (e.g. `COUNT(*)`) opens another level and takes the `*)`
+meant for the outer one. Reported at the outermost `(*`, naming the nested
+opener. No fix field (story 138.10).
+
 ## Lexer Warnings (W1xxx)
 
 ### W1010

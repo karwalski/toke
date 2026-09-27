@@ -88,6 +88,7 @@
 #define LEX_E1004 1004   /* digit-starting identifier / unterminated str  */
 #define LEX_E1005 1005   /* invalid numeric literal                       */
 #define LEX_E1006 1006   /* uppercase keyword in default syntax mode      */
+#define LEX_E1007 1007   /* unterminated comment                          */
 #define LEX_W1010 1010   /* string interpolation not supported (warning)  */
 #define LEX_W1011 1011   /* identifier starts with keyword prefix (hint)  */
 #define LEX_W1020 1020   /* foreign keyword detected (cross-lang hint)    */
@@ -590,6 +591,68 @@ static int lex_ident(Lexer *l, int start, int line, int col)
 }
 
 /* -------------------------------------------------------------------------
+ * lex_comment — skip a `(* ... *)` comment; `l` is at its `(*`.
+ *
+ * Comments nest (toke-spec-v0.3.md §8.10: `(* outer (* inner *) *)` is one
+ * sequence), so a `(*` inside a comment opens another level.  A comment
+ * still open at end of file is E1007 (138.10 / T-27): the lexer used to
+ * stop silently, so `(* reads COUNT(*) from t *)` -- whose `(*` opens a
+ * level that its own `*)` then closes, leaving the outer one open --
+ * swallowed every declaration after it, and `--emit-llvm` succeeded with
+ * those functions missing.  The diagnostic sits on the outermost `(*`,
+ * where the swallowed text begins, and names the innermost level still
+ * open, which is usually the stray one.  No `fix`: where the missing `*)`
+ * belongs (or whether the inner `(*` should go) is not knowable here.
+ * Returns 0, or -1 after E1007 (the rest of the file is comment).
+ * ----------------------------------------------------------------------- */
+
+static int lex_comment(Lexer *l, int start, int line, int col)
+{
+    int st_line[64], st_col[64];        /* opener of each open level */
+    int nest_line = 0, nest_col = 0;    /* last nested '(*' seen */
+    int depth = 0;
+    const char *src = l->src;
+    for (;;) {
+        if (l->pos + 1 < l->len && src[l->pos] == '(' && src[l->pos + 1] == '*') {
+            if (depth < 64) { st_line[depth] = l->line; st_col[depth] = l->col; }
+            if (depth > 0) { nest_line = l->line; nest_col = l->col; }
+            depth++;
+            advance(l); advance(l);
+        } else if (l->pos + 1 < l->len && src[l->pos] == '*' && src[l->pos + 1] == ')') {
+            depth--;
+            advance(l); advance(l);
+            if (depth == 0) return 0;
+        } else if (l->pos < l->len) {
+            advance(l);
+        } else {
+            break;
+        }
+    }
+    char msg[384];
+    int n = snprintf(msg, sizeof msg,
+                     "unterminated comment: the '(*' at %d:%d is never closed, so "
+                     "the rest of the file is comment", line, col);
+    if (depth > 1 && depth <= 64)
+        snprintf(msg + n, sizeof msg - (size_t)n,
+                 ". Comments nest: %d levels are open at end of file, the "
+                 "innermost opened by the '(*' at %d:%d",
+                 depth, st_line[depth - 1], st_col[depth - 1]);
+    else if (depth > 1)
+        snprintf(msg + n, sizeof msg - (size_t)n,
+                 ". Comments nest: %d levels are open at end of file", depth);
+    else if (nest_line)
+        snprintf(msg + n, sizeof msg - (size_t)n,
+                 ". Comments nest: the '(*' at %d:%d inside it opened a nested "
+                 "comment, which took the '*)' meant to close this one",
+                 nest_line, nest_col);
+    diag_emit(DIAG_ERROR, LEX_E1007, start, line, col, msg,
+              "got", "end of file",
+              "expected", "'*)' closing every open '(*' (comments nest)", NULL);
+    record_error(l);
+    return -1;
+}
+
+/* -------------------------------------------------------------------------
  * lex — public entry point (multi-error recovery)
  * ----------------------------------------------------------------------- */
 
@@ -675,21 +738,8 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         switch (c) {
         case '(':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '*') {
-                advance(&l); advance(&l);
-                int depth = 1;
-                while (l.pos < l.len && depth > 0) {
-                    if (l.pos + 1 < l.len &&
-                        src[l.pos] == '(' && src[l.pos + 1] == '*') {
-                        advance(&l); advance(&l);
-                        depth++;
-                    } else if (l.pos + 1 < l.len &&
-                               src[l.pos] == '*' && src[l.pos + 1] == ')') {
-                        advance(&l); advance(&l);
-                        depth--;
-                    } else {
-                        advance(&l);
-                    }
-                }
+                /* at end of file after E1007, so the scan loop ends */
+                (void)lex_comment(&l, start, line, col);
                 continue;
             }
             sym = TK_LPAREN; break;

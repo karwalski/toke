@@ -55,6 +55,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E1004 | error | lex | Digit-leading or unterminated identifier | -- |
 | E1005 | error | lex | Invalid numeric literal | -- |
 | E1006 | error | lex | Uppercase keyword in default syntax mode | n/s |
+| E1007 | error | lex | Unterminated comment | D101, C325 |
 | W1010 | warning | lex | String interpolation `\(…)` not supported in the legacy profile | D005, D009 |
 | W1011 | warning | lex | Identifier starts with a keyword prefix | n/s |
 | W1020 | warning | lex | Foreign keyword detected | n/s |
@@ -251,6 +252,34 @@ digits after it.
 ```text
 m=t;
 f=a():i64{<0x};
+```
+
+---
+
+### E1007 -- Unterminated comment
+
+| Field | Value |
+|-------|-------|
+| **Code** | E1007 |
+| **Stage** | lex |
+| **Severity** | error |
+| **Message** | `unterminated comment: the '(*' at L:C is never closed, so the rest of the file is comment` |
+| **Fix field** | absent (where the missing `*)` belongs, or whether the inner `(*` should go, is not decidable) |
+| **Conformance test** | D101, C325 |
+
+**Notes:** Comments nest (toke-spec-v0.3.md §8.10), so a `(*` inside a comment
+opens another level. `(* reads COUNT(*) from t *)` therefore leaves the outer
+comment open: its `*)` closes the nested level. Before story 138.10 the lexer
+stopped silently at end of file, so every declaration after such a comment
+vanished and `--emit-llvm` succeeded without them. The diagnostic sits on the
+outermost `(*` and its message names the nested `(*` that took the `*)` (or,
+when several levels are open, the innermost one).
+
+**Example trigger:**
+```text
+m=test;
+(* reads COUNT(*) from the table *)
+f=main():i64{<1};
 ```
 
 ---
@@ -1075,4 +1104,5 @@ zero.
 | D013 | D | E2010 | Pointer type in non-extern function |
 | D014 | D | E2035 | Malformed version string in import |
 | D015 | D | E4043 | Inconsistent map literal types |
+| D101 | D | E1007 | Fix field absent for unterminated comment |
 | G024 | G | E2001 | Missing module declaration |
