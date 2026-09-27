@@ -2079,6 +2079,7 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
  */
 static const char *import_module_path(Ctx *cx, const char *alias,
                                       char *buf, size_t bufsz);
+static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -2099,6 +2100,17 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
             if (ret && !strchr(ret, '!')) {
                 Type *ist = imported_struct_type(cx, ret, 0);
                 if (ist) return ist;
+                /* 138.3 (c) / 138.11: a SCALAR return a hand-written record
+                 * declares (never a "gen":"abi" placeholder, never T!E) --
+                 * `let a=str.nowunix(); a/86400` (T-47b), `let c=str.charat(
+                 * s;1); str.isdigit(c)` (T-28), `let g=json.getval(o;k);
+                 * json.i64(g;..)` (T-32) were all untyped and unjudged.  The
+                 * emitter already lowers these returns from the same record
+                 * (tki_declared_tag, 127.80), so the checker now agrees. */
+                {
+                    Type *sst = std_scalar_ret(cx, call);
+                    if (sst) return sst;
+                }
                 /* 127.224 item 7: a MAP returned from another user module.
                  * Left unknown, `let m=lib.mk()` bound an untyped value; the
                  * emitter decides map vs array from the rtype since 127.52
@@ -2583,7 +2595,7 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
     if (is_lit) {
         if (t->kind != TY_ARRAY || !t->elem || t->elem->kind == TY_UNKNOWN
             || t->elem->kind == TY_VOID) return NULL;
-        return t->elem;
+        t = t->elem;
     }
     return t;
 }
@@ -4505,6 +4517,13 @@ static Type *std_scalar_ret(Ctx *cx, const Node *call) {
     if (!f || f->abi_ret || f->okret || !f->ret || strchr(f->ret, '!')) return NULL;
     Type *t = tki_scalar_type(cx->env->arena, f->ret);
     if (!t || t->kind == TY_VOID) return NULL;
+    /* 138.3: only returns whose spelling says something about the
+     * REPRESENTATION.  A `u64` / narrow-integer return is an i64 slot whose
+     * width claim the ABI does not honour (str.len is `u64`); adopting it
+     * turned `let plen=mut.s.len(x); plen=j` into E4031 in 15 corpus records
+     * and added ~670 W1001s on `s.len(x) as i64`, all on working code. */
+    if (t->kind != TY_STR && t->kind != TY_BOOL && t->kind != TY_F64
+        && t->kind != TY_F32 && t->kind != TY_I64) return NULL;
     return t;
 }
 
@@ -5551,6 +5570,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (node->children[0]->kind==NODE_FIELD_EXPR) {
                 Type *mrt=call_decl_ret_type(cx,node);
                 if (mrt&&mrt->kind==TY_MAP) return mrt;
+                /* 138.3: and a declared scalar return, in place too
+                 * (`str.nowunix()/86400`). */
+                Type *srt=std_scalar_ret(cx,node);
+                if (srt) return srt;
             }
             return mk_type(A,TY_UNKNOWN);
         }
