@@ -4728,6 +4728,7 @@ static Type *closure_local_call_ret(Ctx *cx, const Node *call) {
     return NULL;
 }
 
+static int type_as_value(Ctx *cx, const Node *n);
 static Type *infer_impl(Ctx *cx, const Node *node) {
     if (!node) return mk_type(cx->env->arena, TY_UNKNOWN);
     Arena *A = cx->env->arena;
@@ -4773,7 +4774,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         for (int i=0;i<node->child_count;i++) {
             const Node *fi = node->children[i];
             if (!fi || fi->kind != NODE_FIELD_INIT) continue;
-            if (fi->child_count > 0) infer(cx, fi->children[0]);
+            /* 138.13 (GB): `$w{l:$internal}` -- a type standing as a field
+             * VALUE.  Codegen rejects it with E4033 at build; say so at
+             * --check, as bind/assign/argument already do (127.227). */
+            if (fi->child_count > 0 && !type_as_value(cx, fi->children[0]))
+                infer(cx, fi->children[0]);
             if (is_sum_lit || !st || st->kind != TY_STRUCT || fi->tok_len <= 0) continue;
             char fnb[128]; TOKSTR(fnb,cx->src,fi);
             if (!fnb[0]) continue;
