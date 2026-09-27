@@ -2863,9 +2863,11 @@ static void tki_arity_error(const Node *call, const char *what,
  *     exports at the same distance means the compiler does not know which was
  *     meant, and the generic text is then the honest answer;
  *   - names shorter than 4 characters are not scored: at length 3 a distance
- *     of 2 relates almost any pair.
+ *     of 2 relates almost any pair;
+ *   - an export the interface marks `"internal": true` is never a candidate
+ *     (127.220 item 7): it exists for the glue, not for toke source.
  *
- * When no candidate clears all four, the caller keeps the generic text. The
+ * When no candidate clears all five, the caller keeps the generic text. The
  * suggestion is phrased as a question, matching E3011's existing
  * "did you mean 'io'?", and it reuses that diagnostic's edit-distance routine
  * (tk_edit_distance, names.c) rather than adding a second one.
@@ -2888,6 +2890,9 @@ static const char *tki_closest_member(const NameEnv *env, const char *alias,
         if (strcmp(f->alias, alias) != 0) continue;
         if (strlen(f->member) < 4) continue;
         if (strcmp(f->member, member) == 0) continue;   /* not a miss */
+        /* 127.220 item 7: an `"internal": true` export is a glue helper
+         * (`array.arrayappend`), not something to steer an author to. */
+        if (f->internal) continue;
         int d = tk_edit_distance(member, f->member);
         if (d < best_d) { best_d = d; best = f->member; best_ties = 1; }
         else if (d == best_d && best) best_ties++;

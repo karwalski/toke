@@ -187,6 +187,9 @@ typedef struct {
     int          abi_ret;       /* 127.202: the record is `"gen":"abi"`,
                                  * so `ret` is an ABI placeholder (i64),
                                  * not a declared toke type               */
+    int          internal;      /* 127.220 item 7: the record says
+                                 * `"internal": true` — a glue helper, not
+                                 * part of the module's public surface     */
 } ImportedFunc;
 
 typedef struct {
