@@ -497,6 +497,10 @@ f=main():void{
 };
 ```
 
+### http.withproxy(client: $httpclient; proxyurl: $str): $httpclient
+
+Returns a copy of `client` that sends its requests through the HTTP proxy at `proxyurl` (`http://host:port`); `client` itself is unchanged. The client calls (`http.clientget` and the rest) use it. A plain `http://` request goes to the proxy with the absolute URL in its request line. An `https://` request first asks the proxy for a tunnel (`CONNECT host:port`) and then negotiates TLS with the server through it. The server's certificate is verified exactly as without a proxy. A proxy that refuses the tunnel is `$err`. Before story 135.26 the client started TLS with the proxy itself, so every https request through a proxy failed.
+
 ### Client calls and route registration are different names
 
 `http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` **register routes** — `http.get("/health"; &handler)` — and send nothing. The client calls have names of their own (story 138.3): before them, `http.get(client;"/health")` compiled and registered a GET route whose path was the client handle (nothing was sent; loke saw the call "succeed" from the 257th time on, once the route table was full), a client DELETE could not be reached at all, and `http.get(url)` returned `""` for a server that was not there. `http.get(url)` with one argument still compiles today to an untyped GET; use `http.geturl`, which has an error channel.
