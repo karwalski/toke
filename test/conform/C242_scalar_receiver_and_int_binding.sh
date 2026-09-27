@@ -12,9 +12,9 @@
 # TY_UNKNOWN (at run time it may be an array or a str), so `x.len` and
 # `x.get(0)` on it remain clean -- case 7 pins that decision.
 #
-# Negative control: TKC=<main's toke> -- cases 1-6 fail (rc=0).
+# Negative control: TKC=<main's toke> -- cases 1-6 and 9-11 fail (rc=0).
 #
-# Story: 127.229 (item 1), 127.230 (item 2)
+# Story: 127.229 (item 1), 127.230 (items 2 and 7)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,6 +59,16 @@ expect "7 the untyped j.parse handle is not judged" \
     "$(diags "${H}"'f=main():i64{let x=j.parse(s.argv(1));j.print(x.len);j.print(x.get(0));<0};')" "rc=0"
 expect "8 an int binding used as an int stays clean" \
     "$(diags "${H}"'f=main():i64{let n=3;let a=@(1;2;3);let m=mut.0;m=m+n;lp(let i=0;i<a.len;i=i+1){m=m+a.get(i)};<m};')" "rc=0"
+
+# 127.230 item 7: the same hole for a float literal.
+expect "9 a float-literal binding into an i64 parameter" \
+    "$(diags "${H}"'f=g(x:i64):i64{<x};f=main():i64{let a=2.5;<g(a)};')" "E4031|f64|ABSENT"
+expect "10 a float-literal binding in an i64 initialiser" \
+    "$(diags "${H}"'f=main():i64{let a=2.5;let c:i64=a+1.0;<c};')" "E4031|f64|ABSENT"
+expect "11 a negated float-literal binding into an i64 parameter" \
+    "$(diags "${H}"'f=g(x:i64):i64{<x};f=main():i64{let d=-0.5;<g(d)};')" "E4031|f64|ABSENT"
+expect "12 a float binding used as a float stays clean" \
+    "$(diags "${H}"'f=h(x:f64):f64{<x};f=main():i64{let a=2.5;let b=h(a)*2.0;<0};')" "rc=0"
 
 echo "C242: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

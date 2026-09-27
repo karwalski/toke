@@ -2690,7 +2690,8 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * `x.len`, `x.slice(0;1)`, `x.charat(0)` passed --check and read an i64
      * as a pointer at run time (garbage or SIGBUS), and `let b=3; g(b)` into
      * a str parameter was clean while `g(3)` was E4031.  A negated literal
-     * (`let d=-1`) is the same fact.  FLOAT_LIT / BOOL_LIT stay held out.
+     * (`let d=-1`) is the same fact.  BOOL_LIT stays held out; FLOAT_LIT is
+     * below (127.230 item 7).
      *
      * Immutable `let` only.  A `let x=mut.0` is routinely re-assigned a
      * value of another type -- an error union (`acc=check(0-2); mt acc
@@ -2700,10 +2701,19 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      */
     case NODE_INT_LIT:
         return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_I64) : NULL;
+    /* 127.230 item 7: the same hole for a float literal -- `let a=2.5;
+     * g(a)` into an i64 parameter passed --check and handed over the raw
+     * f64 bits (4612811918334230528), and `let c:i64=a+1.0` was accepted.
+     * Same immutable-only rule. */
+    case NODE_FLOAT_LIT:
+        return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_F64) : NULL;
     case NODE_UNARY_EXPR:
         if (bn->kind == NODE_BIND_STMT && initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
             && initN->children[0]->kind == NODE_INT_LIT)
             return mk_type(cx->env->arena, TY_I64);
+        if (bn->kind == NODE_BIND_STMT && initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
+            && initN->children[0]->kind == NODE_FLOAT_LIT)
+            return mk_type(cx->env->arena, TY_F64);
         return NULL;
     /* 124.0c: a local bound to a closure or a function reference holds a
      * function value of that signature (the emitter's indirect-call and
