@@ -1093,7 +1093,7 @@ static const char *const g_err_slot_bare[] = {
     "tk_file_read_w", "tk_file_readbytes_w", "tk_file_write_w",
     "tk_file_writebytes_w",
     /* http */
-    "tk_http_header_w", "tk_http_param_w", "tk_http_stream_w",
+    "tk_http_stream_w",
     "tk_http_streamnext_w",
     /* infer */
     "tk_infer_embed_w", "tk_infer_generate_w", "tk_infer_load_w",
