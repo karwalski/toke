@@ -9177,6 +9177,8 @@ static int la_fresh_std_call(Ctx *c, const Node *rhs) {
 }
 
 static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int depth);
+static int la_borrowed_init(Ctx *c, const Node *init, const char *x);
+static int la_local_linear_in(Ctx *c, const Node *fn, const char *y, int depth);
 
 /* 127.229 (2): is `rhs` the self-concat `x + @(e1;…;ek)` — x on the left, an
  * array LITERAL on the right?  That is an append of k elements, and it is
@@ -9307,6 +9309,7 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         la_ident_is(c, n->children[0], x) && la_self_concat(c, n->children[1], x))
         return la_bad_use(c, n->children[1]->children[1], x, strict, depth);
     int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0;
+    int borrowed_init = 0;   /* 127.237 (2): child index of a copied init */
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
         if (la_ident_is(c, n->children[0], x)) skip0 = 1;     /* LHS */
@@ -9330,11 +9333,26 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
     case NODE_BIND_STMT:
     case NODE_MUT_BIND_STMT:
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* name slot */
+        else if (n->child_count >= 2 && n->children[0] && c->la_fn) {
+            /* 127.237 (2): `let y=mut.x` where y is a linear array of this
+             * function is a borrowed initialiser, copied once at the binding
+             * (127.229 (7)), so y never holds x's block: not a retention.
+             * Eval 0221's `sorthelper(evens)` binds its param this way, and
+             * counting it as retaining made every `evens=evens+@(e)` in the
+             * caller copy the accumulator. */
+            int has_ann = (n->child_count >= 3 && n->children[2]);
+            const Node *init = has_ann ? n->children[2] : n->children[1];
+            char y[NAME_BUF]; tok_cp(c->src, n->children[0], y, sizeof y);
+            if (la_ident_is(c, init, x) && la_borrowed_init(c, init, y) &&
+                la_local_linear_in(c, c->la_fn, y, depth))
+                borrowed_init = has_ann ? 2 : 1;
+        }
         break;
     default: break;
     }
     for (int i = 0; i < n->child_count; i++) {
         if (i == 0 && skip0) continue;
+        if (borrowed_init && i == borrowed_init) continue;   /* 127.237 (2) */
         if (i == 1 && skip_field_name) continue;
         if (i >= 1 && skip_bare_args && la_ident_is(c, n->children[i], x)) continue;
         if (i >= 1 && user_call && la_ident_is(c, n->children[i], x) &&
@@ -9383,60 +9401,102 @@ static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *
     return 1;
 }
 
-/* Populate c->linear_arr for the function node `fn` (its NODE_PARAM children
- * are params; its NODE_STMT_LIST child is the body). */
-static void compute_linear_arrays(Ctx *c, const Node *fn) {
-    c->linear_arr_count = 0;
+/* Collect the linearly-owned array locals of the function node `fn` (its
+ * NODE_PARAM children are params; its NODE_STMT_LIST child is the body) into
+ * out[0..*count).  `depth` is handed to la_bad_use: 0 for the function being
+ * emitted, deeper for a query made from inside another function's analysis
+ * (la_local_linear_in), where it bounds the recursion.  A deeper query only
+ * ever cuts off more callee chains, and every cutoff answers "retains", so a
+ * name it accepts is one the depth-0 run for the same function accepts too.
+ * Returns 0 when the 64-name cap was hit (the set may then be incomplete). */
+static int la_collect_linear(Ctx *c, const Node *fn, char (*out)[NAME_BUF], int *count,
+                             int depth) {
+    *count = 0;
+    int complete = 1;
     c->la_fn = fn;   /* 127.108: la_binds_name consults it */
     const Node *body = NULL;
     for (int i = 0; i < fn->child_count; i++)
         if (fn->children[i]->kind == NODE_STMT_LIST) { body = fn->children[i]; break; }
-    if (!body) return;
-    /* Candidate names: the LHS of any self-update assignment in the body. */
-    /* Walk and, for each distinct candidate, validate. */
-    /* Inline collection to avoid a separate visited-set structure. */
-    for (int pass = 0; pass < 1; pass++) { (void)pass;
-        /* depth-first scan for self-update assignments */
-        const Node *stack[512]; int sp = 0; stack[sp++] = body;
-        while (sp > 0) {
-            const Node *n = stack[--sp];
-            if (!n) continue;
-            if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
-                n->children[0]->kind == NODE_IDENT) {
-                char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
-                if (la_self_update_call(c, n->children[1], x, NULL) ||
-                    la_self_concat(c, n->children[1], x)) {   /* 127.229 (2) */
-                    /* candidate x — skip if already decided */
-                    int known = 0;
-                    for (int k = 0; k < c->linear_arr_count; k++)
-                        if (!strcmp(c->linear_arr[k], x)) { known = 1; break; }
-                    if (!known && c->linear_arr_count < 64) {
-                        /* x must not be a param */
-                        int is_param = 0;
-                        for (int pi = 0; pi < fn->child_count; pi++) {
-                            const Node *p = fn->children[pi];
-                            if (p->kind == NODE_PARAM && p->child_count > 0 &&
-                                la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
-                        }
-                        int binds = 0, self_updates = 0, borrowed = 0;
-                        /* 127.229 (7): a borrowed initialiser only as the
-                         * one binding of x, so the copy at it is the only
-                         * way x's block is ever obtained from another name. */
-                        if (!is_param && !la_bad_use(c, body, x, 0, 0) &&
-                            la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
-                            binds >= 1 && self_updates >= 1 &&
-                            (borrowed == 0 || binds == 1)) {
-                            strncpy(c->linear_arr[c->linear_arr_count], x, NAME_BUF - 1);
-                            c->linear_arr[c->linear_arr_count][NAME_BUF - 1] = '\0';
-                            c->linear_arr_count++;
-                        }
+    if (!body) return 1;
+    /* Candidate names: the LHS of any self-update assignment in the body;
+     * depth-first scan, each distinct candidate validated once. */
+    const Node *stack[512]; int sp = 0; stack[sp++] = body;
+    while (sp > 0) {
+        const Node *n = stack[--sp];
+        if (!n) continue;
+        if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
+            n->children[0]->kind == NODE_IDENT) {
+            char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
+            if (la_self_update_call(c, n->children[1], x, NULL) ||
+                la_self_concat(c, n->children[1], x)) {   /* 127.229 (2) */
+                /* candidate x — skip if already decided */
+                int known = 0;
+                for (int k = 0; k < *count; k++)
+                    if (!strcmp(out[k], x)) { known = 1; break; }
+                if (!known && *count >= 64) complete = 0;
+                if (!known && *count < 64) {
+                    /* x must not be a param */
+                    int is_param = 0;
+                    for (int pi = 0; pi < fn->child_count; pi++) {
+                        const Node *p = fn->children[pi];
+                        if (p->kind == NODE_PARAM && p->child_count > 0 &&
+                            la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
+                    }
+                    int binds = 0, self_updates = 0, borrowed = 0;
+                    /* 127.229 (7): a borrowed initialiser only as the
+                     * one binding of x, so the copy at it is the only
+                     * way x's block is ever obtained from another name. */
+                    if (!is_param && !la_bad_use(c, body, x, 0, depth) &&
+                        la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
+                        binds >= 1 && self_updates >= 1 &&
+                        (borrowed == 0 || binds == 1)) {
+                        strncpy(out[*count], x, NAME_BUF - 1);
+                        out[*count][NAME_BUF - 1] = '\0';
+                        (*count)++;
                     }
                 }
             }
-            for (int i = 0; i < n->child_count && sp < 510; i++)
-                if (n->children[i]) stack[sp++] = n->children[i];
         }
+        for (int i = 0; i < n->child_count && sp < 510; i++)
+            if (n->children[i]) stack[sp++] = n->children[i];
     }
+    return complete;
+}
+
+/* Populate c->linear_arr for the function node `fn`. */
+static void compute_linear_arrays(Ctx *c, const Node *fn) {
+    la_collect_linear(c, fn, c->linear_arr, &c->linear_arr_count, 0);
+}
+
+/* 127.237 (2): will the local `y` of user function `fn` be a linear array
+ * when `fn` is emitted?  Then its binding `let y=mut.p` copies p's block once
+ * (la_borrowed_init, emit_stmt) and y never shares it.  Asked from inside
+ * another function's analysis, so the analysis state it disturbs (la_fn and
+ * the in-progress stack) is saved and restored, and the in-progress stack is
+ * started empty — the query must answer as the real depth-0 run of `fn`
+ * would, not under an outer query's assumption.  Recursion is bounded by
+ * `depth` (la_bad_use's cutoff at 4); the cutoff answers "not linear". */
+static int la_local_linear_in(Ctx *c, const Node *fn, const char *y, int depth) {
+    /* One name buffer per depth: each nested query is strictly deeper. */
+    static char la_q_names[5][64][NAME_BUF];
+    if (!fn || depth < 0 || depth > 4) return 0;
+    char (*names)[NAME_BUF] = la_q_names[depth];
+    const Node *saved_fn = c->la_fn;
+    int saved_n = la_inprog_n;
+    const Node *saved_ifn[LA_INPROG_MAX]; int saved_iidx[LA_INPROG_MAX];
+    memcpy(saved_ifn, la_inprog_fn, sizeof saved_ifn);
+    memcpy(saved_iidx, la_inprog_idx, sizeof saved_iidx);
+    la_inprog_n = 0;
+    int count = 0;
+    int complete = la_collect_linear(c, fn, names, &count, depth + 1);
+    int found = 0;
+    for (int k = 0; k < count && complete; k++)
+        if (!strcmp(names[k], y)) { found = 1; break; }
+    memcpy(la_inprog_fn, saved_ifn, sizeof saved_ifn);
+    memcpy(la_inprog_idx, saved_iidx, sizeof saved_iidx);
+    la_inprog_n = saved_n;
+    c->la_fn = saved_fn;
+    return found;
 }
 
 /* 126.8: does RHS prove the assigned var holds strings? Covers `x = x + @("lit")`
