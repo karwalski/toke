@@ -17,8 +17,8 @@ The `std.svg` module provides a builder API for constructing SVG documents. Crea
 |-------|------|---------|
 | width | f64 | Document width |
 | height | f64 | Document height |
-| viewbox | $str | SVG viewBox attribute |
-| elements | @($svgelem) | Child elements |
+| viewbox | $str | SVG viewBox attribute, `"0 0 <width> <height>"` as `svg.render` writes it |
+| elements | @($svgelem) | Child elements, in the order `svg.append` added them |
 
 ### $svgelem
 
@@ -30,10 +30,10 @@ Opaque handle to an SVG element.
 |-------|------|---------|
 | fill | $str | Fill color |
 | stroke | $str | Stroke color |
-| stroke_width | f64 | Stroke width |
+| strokewidth | f64 | Stroke width |
 | opacity | f64 | Element opacity (0.0--1.0) |
-| font_size | f64 | Font size for text elements |
-| font_family | $str | Font family for text elements |
+| fontsize | f64 | Font size for text elements |
+| fontfamily | $str | Font family for text elements |
 
 ## Functions
 

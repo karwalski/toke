@@ -4,7 +4,7 @@
  * Story 127.201. Per glue wrapper, the representation the body reads each
  * parameter as: S = a C string (toke str), A = an i64 array with its length
  * at ptr[-1] (toke array), . = not established. Grounded on the glue bodies,
- * never on the .tki. 512 symbols with at least one S or A.
+ * never on the .tki. 513 symbols with at least one S or A.
  */
 
     { "tk_analytics_anomalies_w", ".S." },
@@ -417,6 +417,7 @@
     { "tk_string_trim_w", "S" },
     { "tk_svg_group_w", "AS" },
     { "tk_svg_path_w", "S." },
+    { "tk_svg_style_w", "SS." },
     { "tk_svg_text_w", "..S." },
     { "tk_sys_configdir_w", "S" },
     { "tk_sys_datadir_w", "S" },
