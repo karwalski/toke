@@ -1061,6 +1061,20 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
         TkRouterErr e = {1, "listen() failed"};
         return e;
     }
+    /* 135.26 item 2: port 0 asked the kernel for a free port.  Say which,
+     * once, now that it is listening -- the line http.serve prints for the
+     * same case (135.24), since router_serve does not return until
+     * shutdown and the caller has no other way to learn it. */
+    if (port == 0) {
+        struct sockaddr_in got;
+        socklen_t glen = sizeof got;
+        memset(&got, 0, sizeof got);
+        if (getsockname(srv, (struct sockaddr *)&got, &glen) == 0) {
+            fprintf(stderr, "DIAGNOSTIC: kind=server_listening port=%u\n",
+                    (unsigned)ntohs(got.sin_port));
+            fflush(stderr);
+        }
+    }
 
     for (;;) {
         struct sockaddr_in peer;
