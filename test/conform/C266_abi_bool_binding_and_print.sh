@@ -15,7 +15,9 @@
 # dispatches; the binding becomes an i1 local, as `let b:bool=…` is.
 #
 # Negative control: TKC built from main at d236e6f — cases 1-5 red (1/0),
-# case 6 (numeric control) green on both.
+# case 6 (numeric control) green on both.  Case 7 (a bool error union bound
+# and matched) is green on main and was red ("build-failed", invalid IR) on
+# this branch before call_is_err_union — found by the full conform run (C007).
 #
 # Story: 127.229 (4), 127.230 (1)
 
@@ -55,6 +57,14 @@ expect "5-jenc" \
 expect "6-numeric-control" \
   "$(run "$H f=main():i64{let n=s.len(\"abc\");j.print(n);io.println(\"\\(n)\");<0};")" \
   "3 3 "
+
+# 7. a bool ERROR UNION bound and matched keeps the ok/err convention
+#    (C007's `let w=file.writebytes(..); mt w {..}` — an i1 binding there was
+#    invalid IR; found by the full conform run)
+printf '%s\n' "$H f=main():i64{let w=f.writebytes(\"/nonexistent-dir-c266/x\";@(1 as byte));mt w {\$ok:v io.println(\"ok\");\$err:e io.println(\"err\")};<0};" | sed 's/^m=main;/m=main;i=f:std.file;/' > "${WORK}/p7.tk"
+rm -f "${WORK}/b7"
+"${TKC}" "${WORK}/p7.tk" -o "${WORK}/b7" >/dev/null 2>&1 && got7="$("${WORK}/b7" --allow-write 2>/dev/null | tr '\n' ' ')" || got7="build-failed"
+expect "7-bool-err-union-binding-matched" "${got7}" "err "
 
 echo "C266: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

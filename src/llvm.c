@@ -2232,6 +2232,33 @@ static int recv_call_is_bool(Ctx *c, const Node *e) {
  * the i64 in an i64 local and every later use saw a number (`\(b)` and
  * `j.print(b)` printed 1), and `j.print(s.startswith(..))` printed 1.  One
  * predicate for every site.  Same c->src rule as call_declares_bool. */
+/* 127.230 (1): is `e` a call whose declared return is an error union
+ * (`bool!$fileerr`)?  call_declares_bool answers for the BASE type, but such
+ * a value is matched on its ok/err convention, so a binding of it must keep
+ * the i64 the `mt` lowering tests (C007: `let w=file.writebytes(..); mt w`). */
+static int call_is_err_union(Ctx *c, const Node *e) {
+    if (!e || e->kind != NODE_CALL_EXPR || e->child_count < 1) return 0;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2) return 0;
+    if (!cal->children[0] || cal->children[0]->kind != NODE_IDENT) return 0;
+    char alias[128], method[128];
+    tok_cp(c->src, cal->children[0], alias, sizeof alias);
+    tok_cp(c->src, cal->children[1], method, sizeof method);
+    const TkiCacheEntry *te = tki_entry_for(c, alias, method);
+    if (te) return strchr(te->toke_ret, '!') != NULL;
+    for (int ii = 0; ii < c->import_count; ii++) {
+        if (c->imports[ii].is_std || strcmp(c->imports[ii].alias, alias)) continue;
+        char mangled[512]; int ml = 0;
+        for (const char *mp = c->imports[ii].module; *mp && ml < 250; mp++)
+            mangled[ml++] = (*mp == '.') ? '_' : *mp;
+        mangled[ml] = '\0';
+        snprintf(mangled + ml, sizeof mangled - (size_t)ml, "_%s", method);
+        const FnSig *sig = lookup_fn(c, mangled);
+        return sig && sig->err_type_name[0];
+    }
+    return 0;
+}
+
 static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
     return ety && !strcmp(ety, "i64")
            && (call_declares_bool(c, e) || field_declares_bool(c, e)
@@ -9655,7 +9682,9 @@ static void emit_stmt(Ctx *c, const Node *n)
                  * the i64 ABI is a bool local, exactly as `let b:bool=…`
                  * is — its uses (interpolation, j.print, `as str`) then see
                  * an i1 and render true/false instead of 1/0. */
-                if (expr_abi_bool(c, init_node, vty)) { vty = "i1"; let_abi_bool = 1; }
+                if (expr_abi_bool(c, init_node, vty) && !call_is_err_union(c, init_node)) {
+                    vty = "i1"; let_abi_bool = 1;
+                }
             }
             if (!strcmp(vty, "void")) vty = "i64"; /* void fn result → store 0 */
             /* Story 80.2.8: Evaluate RHS BEFORE creating the new alloca,
