@@ -43,6 +43,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 LLVM_C="${LLVM_C:-${REPO_ROOT}/src/llvm.c}"
+# 135.21: g_recv_methods moved to stdlib_tables.c; the dispatch chain stayed
+# in llvm.c, so the table and the chain are now read from two files.
+TABLES_C="${TABLES_C:-${REPO_ROOT}/src/stdlib_tables.c}"
 PASS=0; FAIL=0
 expect() {
     if [ "$2" = "$3" ]; then echo "PASS $1"; PASS=$((PASS + 1))
@@ -76,7 +79,7 @@ plus_block() {
 }
 check_all() {   # FILE PREFIX
     local f="$1" pfx="$2"
-    table_chain_members "$f" > "${WORK}/tbl.txt"
+    table_chain_members "${TABLES_C}" > "${WORK}/tbl.txt"
     chain_branches "$f" > "${WORK}/br.txt"
     expect "${pfx}1-table-read" "$([ "$(wc -l < "${WORK}/tbl.txt" | tr -d ' ')" -ge 25 ] && echo ok || echo short)" "ok"
     expect "${pfx}1-every-chain-member-has-a-branch" "$(comm -23 "${WORK}/tbl.txt" "${WORK}/br.txt" | tr '\n' ' ')" ""
@@ -121,7 +124,7 @@ expect "4b-call-result-arrays-concatenate" "$("${WORK}/cat_bin" 2>&1)" "5 1 9 6"
 # ── 5. negative controls ────────────────────────────────────────────────
 sed 's/^\( *\)else if (!strcmp(method_im, "charat"))  fn_im = "tk_str_charat_w";/\1\/\* deleted \*\//' "${LLVM_C}" > "${WORK}/nobranch.c"
 expect "5a-branch-deletion-landed" "$(grep -c 'strcmp(method_im, "charat")' "${WORK}/nobranch.c" | tr -d ' ')" "0"
-table_chain_members "${WORK}/nobranch.c" > "${WORK}/t5.txt"; chain_branches "${WORK}/nobranch.c" > "${WORK}/b5.txt"
+table_chain_members "${TABLES_C}" > "${WORK}/t5.txt"; chain_branches "${WORK}/nobranch.c" > "${WORK}/b5.txt"
 expect "5a-missing-branch-detected" "$(comm -23 "${WORK}/t5.txt" "${WORK}/b5.txt" | tr '\n' ' ')" "charat "
 
 awk '/^                else if \(!strcmp\(method_im, "eq"\)\)/{print "                else                                    fn_im = \"tk_str_eq_w\";"; skip=1; next}

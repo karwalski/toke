@@ -47,6 +47,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TKI_DIR = REPO_ROOT / "stdlib"
 C_DIR = REPO_ROOT / "src" / "stdlib"
 LLVM_C = REPO_ROOT / "src" / "llvm.c"
+# 135.21: stdlib_symbol_for() and g_stdlib_decls[] moved here from llvm.c;
+# sub_namespaces[] (resolve_sub_namespace_call) stayed in llvm.c.
+TABLES_C = REPO_ROOT / "src" / "stdlib_tables.c"
 SKIPLIST = REPO_ROOT / "scripts" / "check_tki_skiplist.txt"
 ARITY_SKIPLIST = REPO_ROOT / "scripts" / "check_tki_arity_skiplist.txt"
 
@@ -152,7 +155,7 @@ def load_resolver_tables(llvm_path: Path):
     # the symbol they really lower to has existed all along.
     m = re.search(r'^(?:static\s+)?const char \*stdlib_symbol_for\(', src, re.M)
     if not m:
-        print("ERROR: stdlib_symbol_for() not found in llvm.c; refusing to "
+        print(f"ERROR: stdlib_symbol_for() not found in {llvm_path.name}; refusing to "
               "fall back to the generic rule (that is how 136.39 hid 39 "
               "bogus failures and an unknown number of bogus passes)")
         raise SystemExit(2)
@@ -170,7 +173,8 @@ def load_resolver_tables(llvm_path: Path):
         if mm and cur:
             patterns[cur] = mm.group(1)
 
-    mm = re.search(r'sub_namespaces\[\]\s*=\s*\{([^}]*)\}', src)
+    sub_src = src + "\n" + (LLVM_C.read_text(errors="replace") if LLVM_C.exists() else "")
+    mm = re.search(r'sub_namespaces\[\]\s*=\s*\{([^}]*)\}', sub_src)
     if mm:
         subns = set(re.findall(r'"(\w+)"', mm.group(1)))
     return explicit, patterns, subns
@@ -208,7 +212,7 @@ def load_c_definitions(c_dir: Path) -> dict[str, str]:
 def load_compiler_declarations() -> set[str]:
     """Symbols the compiler has an IR declaration for (g_stdlib_decls)."""
     decls: set[str] = set()
-    for rel in ("src/llvm.c", "src/stdlib_decls_gen.h"):
+    for rel in ("src/stdlib_tables.c", "src/stdlib_decls_gen.h"):
         p = REPO_ROOT / rel
         if not p.exists():
             continue
@@ -314,7 +318,7 @@ def declared_arities() -> tuple[dict[str, tuple[int, str]], list[str]]:
     """
     out: dict[str, tuple[int, str]] = {}
     dupes: list[str] = []
-    for rel in ("src/llvm.c", "src/stdlib_decls_gen.h"):
+    for rel in ("src/stdlib_tables.c", "src/stdlib_decls_gen.h"):
         p = REPO_ROOT / rel
         if not p.exists():
             continue
@@ -679,7 +683,7 @@ def main() -> int:
         print(f"ERROR: No .tki files found in {tki_dir}")
         return 1
 
-    explicit, patterns, subns = load_resolver_tables(LLVM_C)
+    explicit, patterns, subns = load_resolver_tables(TABLES_C)
     defs = load_c_definitions(C_DIR)
     skips = load_skiplist(SKIPLIST)
     arity_skips = load_skiplist(ARITY_SKIPLIST)
@@ -688,7 +692,7 @@ def main() -> int:
 
     # 135.17 — floors on the parsed tables. See require_population().
     require_population("stdlib_symbol_for() explicit mappings",
-                       len(explicit), 10, "src/llvm.c")
+                       len(explicit), 10, "src/stdlib_tables.c")
     require_population("tk_* definitions", len(defs), 250, "src/stdlib/*.c")
 
     # 136.47 — a registered module with no interface.
@@ -721,7 +725,7 @@ def main() -> int:
     d_ar, decl_dupes = declared_arities()
     require_population("C definition arities", len(c_ar), 250, "src/stdlib/*.c")
     require_population("g_stdlib_decls rows", len(d_ar), 250,
-                       "src/llvm.c + src/stdlib_decls_gen.h")
+                       "src/stdlib_tables.c + src/stdlib_decls_gen.h")
     decl_drift = [(sym, d_ar[sym][0], n, d_ar[sym][1])
                   for sym, n in sorted(c_ar.items())
                   if sym in d_ar and d_ar[sym][0] != n]

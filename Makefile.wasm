@@ -18,15 +18,14 @@ CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
 # Excludes main.c (replaced by wasm_api.c) and ir.c (no codegen in the
 # browser — check and format only).
 #
-# 136.64: llvm.c, stdlib_deps.c and glue_gen.c ARE needed, although no code
-# is generated.  The type checker (types.c) resolves stdlib calls through
-# tables that live in llvm.c (stdlib_symbol_for, recv_method_*,
-# stdlib_glue_arity, ...) and stdlib_deps.c (stdlib_module_registered), and
-# llvm.c's link step references glue_gen.c.  Leaving them out made this build
-# fail to link with 8 undefined symbols -- which nobody saw, because nothing
-# built it.  Nothing in the check/format path calls codegen; its fork/exec of
-# clang is unreachable here.  Splitting the tables out of llvm.c so the
-# browser build does not carry the code generator is a follow-up.
+# 136.64: the type checker (types.c) resolves stdlib calls through the
+# stdlib lookup tables (stdlib_symbol_for, recv_method_*, stdlib_glue_arity,
+# ...) and stdlib_deps.c (stdlib_module_registered), so those must link.
+# Leaving them out made this build fail to link with 8 undefined symbols --
+# which nobody saw, because nothing built it.
+# 135.21: the tables moved out of llvm.c into stdlib_tables.c, so the browser
+# build no longer carries the code generator (llvm.c) or the glue generator
+# its link step pulled in (glue_gen.c).
 #
 # There is no emcc on the development hosts or in CI.  test/conform/
 # C135_wasm_build_stand_in.sh compiles exactly this source list (read via
@@ -35,7 +34,7 @@ CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
 # the C is valid and the API works; it does not prove emcc accepts it.
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/diag.c src/config.c src/fmt.c \
-          src/llvm.c src/stdlib_deps.c src/glue_gen.c \
+          src/stdlib_tables.c src/stdlib_deps.c \
           src/stdlib/str.c \
           src/wasm_api.c
 

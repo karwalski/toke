@@ -141,7 +141,7 @@ VENDOR_SENTINELS = stdlib/vendor/tomlc99/toml.c \
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
-          src/stdlib_deps.c src/glue_gen.c src/lint.c src/tkir.c \
+          src/stdlib_deps.c src/stdlib_tables.c src/glue_gen.c src/lint.c src/tkir.c \
           src/main.c src/stdlib/str.c
 
 # ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────
@@ -293,7 +293,8 @@ tkc: $(BIN)
 src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h src/stdlib_paramkind_gen.h: $(wildcard src/stdlib/*_glue.c) $(wildcard src/stdlib/*.c) scripts/gen_stdlib_decls.py
 	python3 scripts/gen_stdlib_decls.py
 
-src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
+# 135.21: the tables that include them moved to stdlib_tables.c
+src/stdlib_tables.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 # 127.201: the checker reads each glue wrapper's parameter kinds.
 src/types.o: src/stdlib_paramkind_gen.h
 # 127.224: and the quarantined exports no C source implements.
