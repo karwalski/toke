@@ -58,8 +58,18 @@ trap cleanup EXIT
 echo "S007: an abandoned request does not kill the server"
 echo "--------------------------------------"
 
-free_port() {
-    python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'
+# 135.24: each server binds port 0 and prints the port it got; read_port
+# sets PORT from that line (no probe-then-bind window).  $1 = the server's
+# stderr log.  Fails if the server exits or never says.
+read_port() {
+    PORT=""
+    for _ in $(seq 1 80); do
+        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "$1" | head -1)"
+        [ -n "${PORT}" ] && return 0
+        kill -0 "${SRV}" 2>/dev/null || return 1
+        sleep 0.1
+    done
+    return 1
 }
 
 wait_up() {   # $1 = port, $2 = "tls" | "plain"
@@ -109,7 +119,7 @@ PY
 BODY="hello world this is a response body long enough to matter"
 
 # ── Case 1: http.serveworkers(port;1) — the single-process path ──────────
-PORT="$(free_port)"
+PORT=""
 cat > "${WORK}/one.tk" <<EOF
 m=srv;
 i=http:std.http;
@@ -118,7 +128,7 @@ f=hello(req:i64):i64{
 };
 f=main():i64{
   http.gethandler("/hi";&hello);
-  http.serveworkers(${PORT};1);
+  http.serveworkers(0;1);
   <0
 };
 EOF
@@ -127,9 +137,9 @@ if ! (cd "${WORK}" && "${TKC}" --allow-all -o one.bin one.tk >one.log 2>&1); the
     sed 's/^/      /' "${WORK}/one.log" | head -6
     FAIL=$((FAIL + 1))
 else
-    "${WORK}/one.bin" >/dev/null 2>&1 &
+    "${WORK}/one.bin" >/dev/null 2>"${WORK}/one.err" &
     SRV=$!
-    if ! wait_up "${PORT}"; then
+    if ! read_port "${WORK}/one.err" || ! wait_up "${PORT}"; then
         echo "  FAIL: serveworkers server never came up"
         FAIL=$((FAIL + 1))
     else
@@ -154,7 +164,7 @@ else
 fi
 
 # ── Case 2: http.serve — the pre-fork path; a worker must not be lost ────
-PORT="$(free_port)"
+PORT=""
 cat > "${WORK}/many.tk" <<EOF
 m=srv;
 i=http:std.http;
@@ -163,7 +173,7 @@ f=hello(req:i64):i64{
 };
 f=main():i64{
   http.gethandler("/hi";&hello);
-  http.serve(${PORT});
+  http.serve(0);
   <0
 };
 EOF
@@ -172,9 +182,9 @@ if ! (cd "${WORK}" && "${TKC}" --allow-all -o many.bin many.tk >many.log 2>&1); 
     sed 's/^/      /' "${WORK}/many.log" | head -6
     FAIL=$((FAIL + 1))
 else
-    "${WORK}/many.bin" >/dev/null 2>&1 &
+    "${WORK}/many.bin" >/dev/null 2>"${WORK}/many.err" &
     SRV=$!
-    if ! wait_up "${PORT}"; then
+    if ! read_port "${WORK}/many.err" || ! wait_up "${PORT}"; then
         echo "  FAIL: http.serve server never came up"
         FAIL=$((FAIL + 1))
     else
@@ -213,7 +223,7 @@ else
         echo "  NOT RUN: servetls case — openssl could not make a test cert"
         sed 's/^/      /' "${WORK}/cert.log" | head -4
     else
-        PORT="$(free_port)"
+        PORT=""
         cat > "${WORK}/tls.tk" <<EOF
 m=srv;
 i=http:std.http;
@@ -224,7 +234,7 @@ f=big(req:i64):i64{
 };
 f=main():i64{
   http.gethandler("/big";&big);
-  http.servetls(${PORT};"${WORK}/cert.pem";"${WORK}/key.pem");
+  http.servetls(0;"${WORK}/cert.pem";"${WORK}/key.pem");
   <0
 };
 EOF
@@ -233,9 +243,9 @@ EOF
             sed 's/^/      /' "${WORK}/tls.log" | head -6
             FAIL=$((FAIL + 1))
         else
-            TK_HTTP_WORKERS=1 "${WORK}/tls.bin" >/dev/null 2>&1 &
+            TK_HTTP_WORKERS=1 "${WORK}/tls.bin" >/dev/null 2>"${WORK}/tls.err" &
             SRV=$!
-            if ! wait_up "${PORT}"; then
+            if ! read_port "${WORK}/tls.err" || ! wait_up "${PORT}"; then
                 echo "  FAIL: servetls server never came up"
                 FAIL=$((FAIL + 1))
             else

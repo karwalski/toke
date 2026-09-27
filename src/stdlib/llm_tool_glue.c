@@ -26,6 +26,7 @@
  */
 #include "llm_tool.h"
 #include "tk_array.h"
+#include "strbuf.h"   /* 135.24: strbuf_append_json_unescape */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -153,15 +154,21 @@ static TkLlmMsg *decode_msgs(int64_t arr, uint64_t *out_n) {
  *
  * The C side carries the arguments as a raw JSON string, so this walks the
  * top-level "key": value pairs and emits each key with its value rendered as
- * text (quotes stripped for strings, verbatim otherwise). An unparseable or
+ * text (a string value decoded, anything else verbatim). An unparseable or
  * absent object gives a zero-length array rather than a null the consumer
  * would then index.
+ *
+ * 135.24 item 3: keys and string values are DECODED with
+ * strbuf_append_json_unescape, the decoder llm_tool.c and tk_json_parse use.
+ * They were copied verbatim, so an argument "a\"b" reached the program as
+ * the four bytes a\"b, "line\nbreak" kept its backslash-n, and "\u00e9"
+ * stayed six characters.  The walker also allocated its zero-length array
+ * up front and dropped it whenever the object had keys; it is now allocated
+ * only when it is the result.
  */
 static int64_t args_pairs(const char *json) {
-    int64_t empty = tk_arr_alloc(0, 0);
-    if (!json) return empty;
-    const char *p = strchr(json, '{');
-    if (!p) return empty;
+    const char *p = json ? strchr(json, '{') : NULL;
+    if (!p) return tk_arr_alloc(0, 0);
     p++;
 
     /* two passes: count, then build, so the array header is right first time */
@@ -172,48 +179,45 @@ static int64_t args_pairs(const char *json) {
         int64_t h = 0;
         if (pass == 1) {
             h = tk_arr_alloc(count, count);
-            if (!h) return empty;
+            if (!h) return tk_arr_alloc(0, 0);
         }
         while (*q && *q != '}') {
             while (*q && *q != '"' && *q != '}') q++;
             if (*q != '"') break;
-            const char *ks = ++q;
-            while (*q && *q != '"') q++;
-            if (*q != '"') break;
-            const char *ke = q++;
-            while (*q == ' ' || *q == ':' || *q == '\t') q++;
-            const char *vs, *ve;
+            q++;
+            TkStrBuf kb = TK_STRBUF_INIT, vb = TK_STRBUF_INIT;
+            if (strbuf_append_json_unescape(&kb, &q) != 0) { strbuf_free(&kb); break; }
+            while (*q == ' ' || *q == ':' || *q == '\t' || *q == '\n' || *q == '\r') q++;
             if (*q == '"') {
-                vs = ++q;
-                while (*q && *q != '"') { if (*q == '\\' && q[1]) q++; q++; }
-                ve = q;
-                if (*q == '"') q++;
+                q++;
+                (void)strbuf_append_json_unescape(&vb, &q);   /* unterminated: what there is */
             } else {
-                vs = q;
+                const char *vs = q, *ve;
                 while (*q && *q != ',' && *q != '}') q++;
                 ve = q;
-                while (ve > vs && (ve[-1] == ' ' || ve[-1] == '\t')) ve--;
+                while (ve > vs && (ve[-1] == ' ' || ve[-1] == '\t' ||
+                                   ve[-1] == '\n' || ve[-1] == '\r')) ve--;
+                strbuf_appendn(&vb, vs, (size_t)(ve - vs));
             }
             if (pass == 0) {
                 count++;
+                strbuf_free(&kb); strbuf_free(&vb);
             } else {
-                int64_t pair = tk_arr_alloc(2, 2);
-                if (!pair) break;
-                char *k = (char *)malloc((size_t)(ke - ks) + 1);
-                char *v = (char *)malloc((size_t)(ve - vs) + 1);
-                if (!k || !v) { free(k); free(v); break; }
-                memcpy(k, ks, (size_t)(ke - ks)); k[ke - ks] = '\0';
-                memcpy(v, vs, (size_t)(ve - vs)); v[ve - vs] = '\0';
+                int64_t pair = idx < count ? tk_arr_alloc(2, 2) : 0;
+                char *k = pair ? strbuf_take(&kb) : NULL;
+                char *v = pair ? strbuf_take(&vb) : NULL;
+                strbuf_free(&kb); strbuf_free(&vb);
+                if (!pair || !k || !v) { free(k); free(v); break; }
                 ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)k;
                 ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)v;
-                if (idx < count) ((int64_t *)(intptr_t)h)[idx++] = pair;
+                ((int64_t *)(intptr_t)h)[idx++] = pair;
             }
-            while (*q == ',' || *q == ' ' || *q == '\t') q++;
+            while (*q == ',' || *q == ' ' || *q == '\t' || *q == '\n' || *q == '\r') q++;
         }
         if (pass == 1) { tk_arr_setlen(h, idx); return h; }
-        if (count == 0) return empty;
+        if (count == 0) break;
     }
-    return empty;
+    return tk_arr_alloc(0, 0);
 }
 
 /* build a $toolcall block { name; args; id } */

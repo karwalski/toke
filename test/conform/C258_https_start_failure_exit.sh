@@ -25,7 +25,7 @@
 # Negative control: C258_STDLIB=<dir> builds against another stdlib tree; a
 # copy with main's tk_web_glue.c fails cases 1-3 (exit 0, no structured line).
 #
-# Story: 135.22
+# Story: 135.22; case 4 binds port 0 since 135.24 (item 2)
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -117,21 +117,21 @@ elif build busy "http.servetls(${BUSY};\"${WORK}/cert.pem\";\"${WORK}/key.pem\")
 fi
 kill -9 "${HOLD}" 2>/dev/null; wait "${HOLD}" 2>/dev/null; HOLD=""
 
-# 4. a server that starts and is shut down cleanly still exits 0.  The port
-#    is the one case 3 just released.  A window remains in which another
-#    process could bind it; if one does, this case reads "never answered"
-#    (a FAIL), never a false PASS.
-if [ -n "${BUSY}" ] && build clean "http.servetlsworkers(${BUSY};\"${WORK}/cert.pem\";\"${WORK}/key.pem\";1)"; then
+# 4. a server that starts and is shut down cleanly still exits 0.  It binds
+#    port 0 and the port is read back from its `server_listening` line
+#    (135.24 item 2), so no other process can take it first.
+if build clean "http.servetlsworkers(0;\"${WORK}/cert.pem\";\"${WORK}/key.pem\";1)"; then
     ./clean_bin > clean.out 2> clean.err &
     SRV=$!
-    up=1
+    up=1; CPORT=""
     for _ in $(seq 1 80); do
         kill -0 "${SRV}" 2>/dev/null || break
-        if [ "$(curl -sk --max-time 2 "https://127.0.0.1:${BUSY}/ok" 2>/dev/null)" = "ok" ]; then up=0; break; fi
+        [ -n "${CPORT}" ] || CPORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' clean.err | head -1)"
+        if [ -n "${CPORT}" ] && [ "$(curl -sk --max-time 2 "https://127.0.0.1:${CPORT}/ok" 2>/dev/null)" = "ok" ]; then up=0; break; fi
         sleep 0.1
     done
     if [ "${up}" -ne 0 ]; then
-        echo "  FAIL: the clean-shutdown server never answered on ${BUSY}"
+        echo "  FAIL: the clean-shutdown server never answered (port read back: '${CPORT}')"
         sed 's/^/        | /' clean.err | head -4; FAIL=$((FAIL + 1))
     else
         kill -TERM "${SRV}"; wait "${SRV}"; RC=$?; SRV=""

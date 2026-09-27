@@ -53,19 +53,9 @@ echo "--------------------------------------"
 
 # Everything here is served over loopback on an ephemeral port.  No CDN is
 # involved: requesting a URL through one before it exists caches the 404.
-PORT=0
-for _try in $(seq 1 10); do
-    CAND=$(( 20000 + RANDOM % 20000 ))
-    if ! (exec 3<>"/dev/tcp/127.0.0.1/${CAND}") 2>/dev/null; then
-        PORT="${CAND}"
-        break
-    fi
-done
-if [ "${PORT}" -eq 0 ]; then
-    echo "  FAIL: could not find a free port"
-    echo "Results: 0 passed, 1 failed"
-    exit 1
-fi
+# 135.24: the server binds port 0 and prints the port it got (read back
+# below), so there is no probe-then-bind window for another process.
+PORT=""
 
 CSS_BODY='body{color:#e2b714}'
 STATIC_BODY='getstatic-served-body'
@@ -93,7 +83,7 @@ f=main():i64{
   http.getstaticmime("/mime.txt";"${MIME_BODY}";"text/plain; charset=utf-8");
   http.servepages("templates";"templates");
   http.servedir("/";"build");
-  http.serveworkers(${PORT};2);
+  http.serveworkers(0;2);
   < 0
 };
 TOKE
@@ -107,6 +97,18 @@ fi
 
 ./srv_bin >server.log 2>&1 &
 SRV_PID=$!
+for _i in $(seq 1 100); do
+    PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' server.log | head -1)"
+    [ -n "${PORT}" ] && break
+    kill -0 "${SRV_PID}" 2>/dev/null || break
+    sleep 0.1
+done
+if [ -z "${PORT}" ]; then
+    echo "  FAIL: the server never reported the port it bound"
+    sed 's/^/      /' server.log | head -5
+    echo "Results: 0 passed, 1 failed"
+    exit 1
+fi
 
 UP=0
 for _i in $(seq 1 100); do
