@@ -231,7 +231,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -549,6 +549,23 @@ check-tki:
 	python3 scripts/check_tki_coverage.py
 	python3 scripts/check_tki_coverage.py --quarantine-md-check
 	python3 scripts/check_tki_coverage.py --internal-md-check
+	python3 scripts/check_stdlib_doc_quarantine.py
+	python3 scripts/check_stdlib_doc_exports.py
+
+# 132.102: 45 documented function entries were not .tki exports (encrypt's
+# pre-113.2a underscored spellings, json/http designs no interface declares,
+# the withdrawn webview) and math.md typed floor/ceil i64 against math.tki's
+# f64. check_stdlib_doc_exports.py (run by check-tki above) fails on any entry
+# that is not an export and not marked **Not exported.**, and on a documented
+# return type that differs from the .tki's (gen:abi exports exempt).
+
+# 127.230 (6): docs/stdlib/*.md documented quarantined calls (canvas.arc,
+# canvas.fill, ...) as ordinary functions; the pages never consulted the
+# skiplist. check_stdlib_doc_quarantine.py (run by check-tki above) fails when
+# a documented function's [quarantined] marker disagrees with the skiplist, in
+# either direction; this target rewrites the markers from it.
+render-stdlib-doc-quarantine:
+	python3 scripts/check_stdlib_doc_quarantine.py --fix
 
 # 136.7 — the quarantine population had two hand-maintained records (this
 # skiplist and a prose list in the tracker) and they diverged: the prose named
@@ -939,6 +956,7 @@ TEST_CI_GREEN = \
 	test-pkg \
 	test-stdlib-infer test-stdlib-template-email-integration \
 	test-stdlib-http test-stdlib-ws-client-tk \
+	test-stdlib-zip \
 	test-codegen
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
@@ -977,7 +995,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #                              Chart.js" then SIGTRAP.
 #   test-stdlib-crypto         runtime failures
 #   test-stdlib-file           runtime failures
-#   test-stdlib-zip            runtime failures
 #   test-compress-schema       22/23; CSV compression ratio over threshold
 #   test-e2e / test-e2e-check  11 of 48 fixtures still use `=` for equality
 #                              and are rejected with E2002. Stale fixtures.
@@ -1006,6 +1023,11 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #                              tamper of a DECODED byte, or of a character
 #                              in the middle of the segment.
 #
+#   test-stdlib-zip was listed here as "runtime failures". By 2026-09-27 its
+#   one failure was the script's own inline program, whose body ended in a
+#   bare `mt` (E4071, 35bd23e); zip_consumer.tk and all seven hostile
+#   archives passed. 136.72 (6) fixed the script (19/19 on macOS/arm64) and
+#   promoted it, so zip_consumer.tk is built and run on the gating path.
 #   test-stdlib-infer and test-stdlib-template-email-integration were
 #   listed here by 136.56 with assertions that were wrong, not the modules;
 #   136.66 corrected both assertions and promoted them to -green.
@@ -1016,7 +1038,7 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
 TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
-	test-stdlib-zip test-compress-schema test-e2e test-e2e-check \
+	test-compress-schema test-e2e test-e2e-check \
 	test-standalone
 
 # Run a list of targets, one log each, never stopping at the first failure --

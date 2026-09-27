@@ -53,8 +53,18 @@ NEGATIVE CONTROLS (both sides now shown red, then green):
            run_insns, +53.7% (large_expr) to +674.1% (chained_calls).  The
            same injection at -O1 -> "FAIL -- 1 regression(s)", chained_calls
            run_insns +46.1%.  The unmodified tkc -> "OK -- 48 comparison(s)".
-           struct_ops did not move even at -O0 (16.25M -> 16.55M): it is
-           start-up-dominated, so the gate cannot see codegen in it.
+           struct_ops did not move even at -O0 (16.25M -> 16.55M).  The
+           cause (123.13 (3), 2026-09-27) was not start-up as such: the old
+           program overflowed i64 on about iteration 40 of 1M and died with
+           RT002, so it measured start-up plus 40 iterations.  It now keeps
+           its components bounded and runs all 1M (~580M run_insns), and a
+           program that ends in a runtime trap fails the gate (KNOWN_TRAPS).
+           Control, the same -O0 injection (not committed): struct_ops
+           run_insns 583.3M -> 848.4M, "+45.5%" red (the old program under
+           it: 17.8M -> 17.0M, blind); the unmodified tkc -> "OK -- 48
+           comparison(s)".  A subtler injection -- `noinline` on every toke
+           function (llvm.c attributes #0) -- moves struct_ops +6.9%, under
+           the 8% threshold, and turns chained_calls red (+197.9%).
   Do NOT use a wrapper executable as the control: exec'ing through any
   wrapper, even an identity one, adds ~16M instructions to compile_insns, which
   put nested_loops (~46M) falsely red at +34.5%.  A shell-script wrapper is
@@ -70,7 +80,9 @@ compare the head compiler against it).
 
 Usage:
   perf_gate.py [--tkc PATH] [--baseline FILE] [--runs N] [--only NAME ...]
-  perf_gate.py --record [--baseline FILE]
+  perf_gate.py --record [--baseline FILE] [--only NAME ...]
+    (--record --only replaces just the named entries of an existing
+     same-host baseline; entries so recorded are listed in partial_records)
 Exit: 0 green or SKIP, 1 regression, 2 harness failure.
 """
 import argparse
@@ -89,6 +101,20 @@ PROGRAMS = ROOT / "bench" / "programs"
 DEFAULT_BASELINE = ROOT / "bench" / "perf-baseline.json"
 ALLOC_DIR = ROOT / "bench" / "patterns"
 ALLOC_LIB = ALLOC_DIR / "liballoccount.dylib"
+
+# 123.13 (3): a bench program must run to completion.  struct_ops used to
+# overflow i64 on about its 40th of 1M iterations and die with RT002, so its
+# "checksum" was the trap's exit status and its run_insns (~16M) was process
+# start-up plus 40 iterations -- the gate could not see codegen in it.  A
+# program whose run ends in a runtime trap now fails the gate, recording
+# included.  The two below trap the same way on main and are carried as known
+# until they are rewritten (their baseline entries must be re-recorded then);
+# an entry here that stops trapping also fails, so the list only shrinks.
+KNOWN_TRAPS = {
+    "chained_calls": "123.13 (3) residue: RT002 integer overflow in addition",
+    "large_expr": "123.13 (3) residue: RT002 integer overflow in addition",
+}
+TRAP_RE = re.compile(r"^(RT\d{3}:.*)$", re.M)
 
 THRESHOLDS = {
     "compile_insns": (0.15, 0),
@@ -178,7 +204,7 @@ def measure(tkc, names, runs, count, lib):
     pinned = work / "tkc"
     shutil.copy2(os.path.realpath(tkc), pinned)
     env = os.environ.copy()
-    out = {}
+    out, traps = {}, {}
     try:
         for name in names:
             src = PROGRAMS / (name + ".tk")
@@ -194,6 +220,9 @@ def measure(tkc, names, runs, count, lib):
             if len(codes) != 1:
                 raise Harness("%s: exit status varies between runs: %s" % (name, sorted(codes)))
             ri = min(n for n, _ in rr)
+            trap = TRAP_RE.search(rr[0][1].stderr or "")
+            if trap:
+                traps[name] = trap.group(1).strip()
             rec = {"compile_insns": ci, "run_insns": ri, "exit_status": codes.pop()}
             if lib:
                 rec["compile_allocs"] = alloc_calls(comp, work, lib)
@@ -205,8 +234,22 @@ def measure(tkc, names, runs, count, lib):
                 "%s=%d" % kv for kv in sorted(rec.items()))), flush=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    return out, subprocess.run([str(tkc), "--version"], capture_output=True,
-                               text=True).stdout.strip()
+    return out, traps, subprocess.run([str(tkc), "--version"], capture_output=True,
+                                      text=True).stdout.strip()
+
+
+def trap_problems(names, traps):
+    """A program that dies in a runtime trap measures nothing (123.13 (3))."""
+    bad = []
+    for name in names:
+        if name in traps and name not in KNOWN_TRAPS:
+            bad.append("  %-16s run ends in a runtime trap (%s): its loop does not run "
+                       "to completion, so run_insns cannot see codegen and exit_status "
+                       "is the trap's, not a checksum" % (name, traps[name]))
+        elif name in KNOWN_TRAPS and name not in traps:
+            bad.append("  %-16s no longer traps: delete it from KNOWN_TRAPS in %s"
+                       % (name, pathlib.Path(__file__).name))
+    return bad
 
 
 def main():
@@ -258,21 +301,49 @@ def main():
     print("perf-gate: %d program(s), min of %d run(s), counts not wall time%s"
           % (len(names), a.runs, "" if lib else " (no alloc counter on this OS)"))
     try:
-        cur, ver = measure(a.tkc, names, a.runs, count, lib)
+        cur, traps, ver = measure(a.tkc, names, a.runs, count, lib)
     except Harness as e:
         print("perf-gate: harness failure: %s" % e)
         return 2
+    trapped = trap_problems(names, traps)
 
     if a.record:
+        if trapped:
+            print("perf-gate: refusing to record -- %d program(s) do not measure what "
+                  "they claim:" % len(trapped))
+            print("\n".join(trapped))
+            return 1
+        programs = cur
+        if a.only:
+            # 123.13 (3): --record --only used to write a baseline holding only
+            # the selected programs, silently dropping every other entry.  It
+            # now replaces just those entries, and only on the same host.
+            try:
+                old = json.loads(pathlib.Path(a.baseline).read_text())
+            except (OSError, ValueError):
+                old = None
+            if old is not None:
+                if old.get("host") != fp:
+                    print("perf-gate: --record --only into a baseline from another host "
+                          "would mix incomparable counts; record all programs instead")
+                    return 2
+                programs = dict(old.get("programs", {}))
+                programs.update(cur)
         doc = {"story": "123.11", "host": fp, "tkc_version": ver,
                "runs": a.runs, "thresholds": {k: {"pct": v[0], "abs": v[1]}
                                               for k, v in THRESHOLDS.items()},
-               "programs": cur}
+               "programs": programs}
+        if programs is not cur:
+            # say which entries came from a different compiler than the rest
+            doc["tkc_version"] = old.get("tkc_version", ver)
+            partial = dict(old.get("partial_records", {}))
+            partial.update({n: ver for n in cur})
+            doc["partial_records"] = partial
         pathlib.Path(a.baseline).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
         print("recorded %d program(s) into %s" % (len(cur), a.baseline))
         return 0
 
-    bad, better, compared = [], [], 0
+    bad, better, compared = list(trapped), [], 0
     for name, rec in cur.items():
         b = base["programs"].get(name)
         if b is None:

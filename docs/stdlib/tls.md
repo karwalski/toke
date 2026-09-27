@@ -147,11 +147,11 @@ Binds a TCP socket on `port` and accepts TLS connections in a loop, invoking `cb
 
 Returns `false` at once if the socket cannot be bound or the TLS context cannot be created. Otherwise it does not return: it runs until the process exits.
 
-### tls.connect(host: str; port: i32; cfg: TlsConfig): TlsConn
+### tls.connect(host: str; port: i32; cfg: TlsConfig): ?(TlsConn)
 
 Connects to `host:port` and performs a TLS 1.3 handshake. Returns the connection handle, or `0` if the connection, the handshake or the pin check fails.
 
-### tls.read(conn: TlsConn): str
+### tls.read(conn: TlsConn): ?(str)
 
 Reads available data. Returns `0` (the none sentinel) when the peer has closed the connection or an error occurred, so test with `==0` before use.
 
@@ -171,7 +171,7 @@ The protocol **negotiated on the wire**, read back through `SSL_get_version` -- 
 
 The key-exchange group **negotiated on the wire**: `"X25519MLKEM768"` when the post-quantum hybrid was agreed, or the classical group the handshake fell back to (`"x25519"`, `"secp256r1"`, ...) when the peer did not offer the hybrid or the linked OpenSSL is older than 3.5. Empty for a handle that is not an open connection. The context prefers the hybrid but keeps classical groups for interoperability, and does not report a fallback on its own; a program that must not run over a classical key exchange compares it with `"X25519MLKEM768"` and closes the connection when it differs.
 
-### tls.peercert(conn: TlsConn): str
+### tls.peercert(conn: TlsConn): ?(str)
 
 The peer's PEM certificate as presented during the handshake, or `0` if the peer presented none.
 

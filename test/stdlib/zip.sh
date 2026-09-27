@@ -73,7 +73,7 @@ m=zonly;
 i=zip:std.zip;
 f=main():i64{
   let a=zip.openfile("/nonexistent/none.zip");
-  mt a { $ok:z 1; $err:e 0 }
+  <mt a { $ok:z 1; $err:e 0 }
 };
 EOF
 if "${TKC}" --out "${WORK}/zonly" "${WORK}/zonly.tk" > "${WORK}/zonly.log" 2>&1; then

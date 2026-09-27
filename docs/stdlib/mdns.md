@@ -15,8 +15,8 @@ Measured against the built compiler, not read off the interface.
 
 | Published call | `.tki` signature | Glue signature | Reachable | Behaviour |
 |---|---|---|---|---|
-| `mdns.isavailable` | `(): bool` | — | **no** | `E9003`, undefined symbol `_tk_mdns_isavailable_w` |
-| `mdns.resolve` | `(str; str): ?($discovered)` | — | **no** | `E9003`, undefined symbol `_tk_mdns_resolve_w` |
+| `mdns.isavailable` [quarantined](/docs/reference/tki-quarantine/) | `(): bool` | — | **no** | `E9003`, undefined symbol `_tk_mdns_isavailable_w` |
+| `mdns.resolve` [quarantined](/docs/reference/tki-quarantine/) | `(str; str): ?($discovered)` | — | **no** | `E9003`, undefined symbol `_tk_mdns_resolve_w` |
 | `mdns.advertise` | `($servicerecord): bool` | `(i64; i64; i64)` | at **3** args | returns 0 |
 | `mdns.browse` | `(str; fn($discovered): void): bool` | `(i64)` | at **1** arg | **the callback parameter does not exist in the implementation**; returns an empty array |
 | `mdns.stopadvertise` | `(str): bool` | `(i64)` | links | returns 0 |
@@ -83,6 +83,8 @@ A service instance found on the network: `name`, `host` (resolved), `port`, and 
 
 #### mdns.isavailable(): bool
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Whether mDNS is supported here. Intended to be `true` on macOS via the system `dns_sd` API, `false` on Linux (Avahi support planned) and Windows. Has no wrapper.
 
 #### mdns.advertise(svc: servicerecord): bool
@@ -102,6 +104,8 @@ Starts browsing for instances of `type`, invoking `cb` for each one discovered. 
 Stops a browse started for `type`.
 
 #### mdns.resolve(name: str; type: str): ?($discovered)
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Resolves one named instance to a host and port without browsing. Has no wrapper.
 

@@ -30,15 +30,15 @@ Opaque handle to an HTML document being constructed.
 | `html.doc` | | `$htmldoc` | Create a new empty HTML document |
 | `html.title` | `doc: $htmldoc; title: $str` | `void` | Set the document title |
 | `html.style` | `doc: $htmldoc; css: $str` | `void` | Add an inline `<style>` block |
-| `html.script` | `doc: $htmldoc; js: $str` | `void` | Add an inline `<script>` block |
-| `html.div` | `attrs: @(@($str)); children: @($htmlnode)` | `$htmlnode` | Create a `<div>` with attributes and children |
-| `html.p` | `text: $str` | `$htmlnode` | Create a `<p>` element |
+| `html.script` [quarantined](/docs/reference/tki-quarantine/) | `doc: $htmldoc; js: $str` | `void` | Add an inline `<script>` block |
+| `html.div` [quarantined](/docs/reference/tki-quarantine/) | `attrs: @(@($str)); children: @($htmlnode)` | `$htmlnode` | Create a `<div>` with attributes and children |
+| `html.p` [quarantined](/docs/reference/tki-quarantine/) | `text: $str` | `$htmlnode` | Create a `<p>` element |
 | `html.h1` | `text: $str` | `$htmlnode` | Create an `<h1>` element |
-| `html.h2` | `text: $str` | `$htmlnode` | Create an `<h2>` element |
+| `html.h2` [quarantined](/docs/reference/tki-quarantine/) | `text: $str` | `$htmlnode` | Create an `<h2>` element |
 | `html.table` | `headers: @($str); rows: @(@($str))` | `$htmlnode` | Create an HTML table from headers and row data |
 | `html.append` | `doc: $htmldoc; node: $htmlnode` | `void` | Append a node to the document body |
 | `html.render` | `doc: $htmldoc` | `$str` | Render the document to an HTML string |
-| `html.escape` | `s: $str` | `$str` | HTML-escape a string |
+| `html.escape` [quarantined](/docs/reference/tki-quarantine/) | `s: $str` | `$str` | HTML-escape a string |
 
 ## Escaping
 

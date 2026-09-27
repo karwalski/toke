@@ -30,19 +30,19 @@ Opaque handle to a single canvas drawing operation.
 |----------|-----------|--------|-------------|
 | `canvas.new` | `id: $str; w: u32; h: u32` | `$canvas` | Create a new canvas |
 | `canvas.fillrect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64; color: $str` | `$canvas` | Draw a filled rectangle |
-| `canvas.stroke_rect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64; color: $str; line_width: f64` | `$canvas` | Draw a stroked rectangle |
-| `canvas.clear_rect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64` | `$canvas` | Clear a rectangular area |
+| `canvas.strokerect` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; x: f64; y: f64; w: f64; h: f64; color: $str; line_width: f64` | `$canvas` | Draw a stroked rectangle |
+| `canvas.clearrect` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; x: f64; y: f64; w: f64; h: f64` | `$canvas` | Clear a rectangular area |
 | `canvas.filltext` | `c: $canvas; text: $str; x: f64; y: f64; font: $str; color: $str` | `$canvas` | Draw filled text |
-| `canvas.begin_path` | `c: $canvas` | `$canvas` | Begin a new path |
-| `canvas.move_to` | `c: $canvas; x: f64; y: f64` | `$canvas` | Move the path cursor |
-| `canvas.line_to` | `c: $canvas; x: f64; y: f64` | `$canvas` | Add a line segment to the path |
-| `canvas.arc` | `c: $canvas; x: f64; y: f64; r: f64; start: f64; end: f64` | `$canvas` | Add an arc to the path |
-| `canvas.close_path` | `c: $canvas` | `$canvas` | Close the current path |
-| `canvas.fill` | `c: $canvas; color: $str` | `$canvas` | Fill the current path |
-| `canvas.stroke` | `c: $canvas; color: $str; line_width: f64` | `$canvas` | Stroke the current path |
-| `canvas.draw_image` | `c: $canvas; src: $str; x: f64; y: f64; w: f64; h: f64` | `$canvas` | Draw an image from a URL or data URI |
-| `canvas.set_alpha` | `c: $canvas; alpha: f64` | `$canvas` | Set global alpha (0.0--1.0) |
-| `canvas.to_js` | `c: $canvas` | `$str` | Export drawing operations as JavaScript code |
+| `canvas.beginpath` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas` | `$canvas` | Begin a new path |
+| `canvas.moveto` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; x: f64; y: f64` | `$canvas` | Move the path cursor |
+| `canvas.lineto` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; x: f64; y: f64` | `$canvas` | Add a line segment to the path |
+| `canvas.arc` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; x: f64; y: f64; r: f64; start: f64; end: f64` | `$canvas` | Add an arc to the path |
+| `canvas.closepath` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas` | `$canvas` | Close the current path |
+| `canvas.fill` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; color: $str` | `$canvas` | Fill the current path |
+| `canvas.stroke` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; color: $str; line_width: f64` | `$canvas` | Stroke the current path |
+| `canvas.drawimage` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; src: $str; x: f64; y: f64; w: f64; h: f64` | `$canvas` | Draw an image from a URL or data URI |
+| `canvas.setalpha` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas; alpha: f64` | `$canvas` | Set global alpha (0.0--1.0) |
+| `canvas.tojs` [quarantined](/docs/reference/tki-quarantine/) | `c: $canvas` | `$str` | Export drawing operations as JavaScript code |
 | `canvas.tohtml` | `c: $canvas` | `$str` | Export as a self-contained HTML page |
 
 ## Escaping

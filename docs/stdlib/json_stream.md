@@ -68,6 +68,8 @@ A sum type representing streaming errors.
 
 ### json.streamparser(input: @($byte)): $jsonstream
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Create a streaming parser handle over `input`. The byte slice is referenced in
 place — no copy is made. The parser is single-pass and not thread-safe.
 
@@ -78,6 +80,8 @@ let parser=json.streamparser(data);
 ```
 
 ### json.streamnext(parser: $jsonstream): $jsontoken!$jsonstreamerr
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 
 Advance the parser by one token and return it. Returns `$jsontoken.$end` once all
@@ -95,6 +99,8 @@ let tok=json.streamnext(parser)?;
 
 ### json.streamemit(writer: $jsonwriter; val: $json): void!$jsonstreamerr
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Write the JSON representation of `val` into `writer`. Flushes incrementally so
 that the writer buffer can be sized to a fixed bound and flushed by the caller.
 Returns `$jsonstreamerr.$overflow` if the buffer is exhausted before the value is
@@ -108,11 +114,15 @@ let bytes=json.writerbytes(w);
 file.write("/tmp/out.json";str.frombytes(bytes)?)?;
 ```
 
-### json.newwriter(capacity: u64): $writer
+### json.newwriter(capacity: u64): $jsonwriter
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Allocate a `$jsonwriter` with the given byte capacity.
 
-### json.writerbytes(writer: $writer): @byte
+### json.writerbytes(writer: $jsonwriter): @(byte)
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Return a slice of the bytes written so far (from offset 0 to `writer.pos`).
 
