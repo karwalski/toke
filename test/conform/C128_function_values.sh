@@ -133,8 +133,10 @@ for o in -O0 -O2; do
     fi
 done
 if "${TKC}" --allow-all --emit-llvm --out "${WORK}/direct.ll" "${WORK}/direct.tk" >/dev/null 2>&1 &&
-   awk '/call void @free\(i8\* %t[0-9]+\) ; 124.0c env released/{f=1} END{exit !f}' "${WORK}/direct.ll"; then
-    pass "direct: the applied closure's env is freed"
+   awk '/call void @tk_clos_release\(i64 %t[0-9]+\)/{f=1} END{exit !f}' "${WORK}/direct.ll"; then
+    # 124.0c item 3: the env is reference counted now; the applied closure's
+    # one reference is released (count 1 -> 0 frees it) after the call.
+    pass "direct: the applied closure's env is released"
 else
     fail "direct: no free of the env box in the emitted IR"
 fi

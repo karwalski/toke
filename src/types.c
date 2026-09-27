@@ -146,6 +146,7 @@ static Type *mk_type(Arena *arena, TypeKind k) {
 #define TN_LEN   192
 
 static const char *type_name(const Type *t);
+static int func_has_sig(const Type *t);   /* 124.0c item 2 */
 
 /* Render `t` into `buf`.  `depth` bounds recursion: a malformed or cyclic
  * Type must not take the compiler down inside its own error path. */
@@ -178,6 +179,21 @@ static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
         return;
     }
     case TY_FUNC: {
+        if (func_has_sig(t)) {           /* 124.0c item 2: `(i64;str):bool` */
+            int w = snprintf(buf, n, "(");
+            for (int i = 0; i < t->field_count && w < (int)n; i++) {
+                char p[TN_LEN];
+                type_name_into(t->field_types[i], p, sizeof p, depth + 1);
+                w += snprintf(buf + w, n - (size_t)w, "%s%s", i ? ";" : "", p);
+            }
+            if (w < (int)n) {
+                char r[TN_LEN];
+                if (t->elem) type_name_into(t->elem, r, sizeof r, depth + 1);
+                else snprintf(r, sizeof r, "?");
+                snprintf(buf + w, n - (size_t)w, "):%s", r);
+            }
+            return;
+        }
         /* TY_FUNC carries its return type in ->elem and nothing else, so the
          * parameter list cannot be rendered.  Naming the return type still
          * separates two func types the checker treats as different. */
@@ -274,6 +290,16 @@ static int types_equal(const Type *a, const Type *b) {
         if (!av||!bv) return av==bv;
         if ((av->kind==TY_UNKNOWN)||(bv->kind==TY_UNKNOWN)) return 1;
         return types_equal(av,bv);
+    }
+    /* 124.0c item 2: two known signatures agree parameter by parameter
+     * (TY_UNKNOWN matching anything, as for elements below). */
+    if (func_has_sig(a)&&func_has_sig(b)) {
+        if (a->field_count!=b->field_count) return 0;
+        for (int i=0;i<a->field_count;i++) {
+            const Type *x=a->field_types[i], *y=b->field_types[i];
+            if (!x||!y||x->kind==TY_UNKNOWN||y->kind==TY_UNKNOWN) continue;
+            if (!types_equal(x,y)) return 0;
+        }
     }
     if (a->kind==TY_ARRAY||a->kind==TY_FUNC||a->kind==TY_ERROR_TYPE) {
         /* TY_UNKNOWN elem is compatible with any elem (e.g. empty array literal []). */
@@ -1236,6 +1262,7 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     return st;
 }
 
+static Type *func_type_sig(Ctx *cx, const Node *n);   /* 124.0c item 2 */
 static Type *resolve_type(Ctx *cx, const Node *n) {
     if (!n) return mk_type(cx->env->arena, TY_UNKNOWN);
     char nb[128]; TOKSTR(nb, cx->src, n);
@@ -1260,6 +1287,7 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
         }
         return mt;
     }
+    if (n->kind == NODE_FUNC_TYPE) return func_type_sig(cx, n);   /* 124.0c item 2 */
     if (strcmp(nb,"void")==0) return mk_type(cx->env->arena, TY_VOID);
     if (strcmp(nb,"bool")==0) return mk_type(cx->env->arena, TY_BOOL);
     if (strcmp(nb,"i64") ==0) return mk_type(cx->env->arena, TY_I64);
@@ -1379,6 +1407,155 @@ static Type *resolve_return_spec(Ctx *cx, const Node *rspec) {
     et->field_names = err ? err->field_names : NULL;
     et->field_types = err ? err->field_types : NULL;
     return et;
+}
+
+/*
+ * ── 124.0c item 2: function values carry their signature ───────────────
+ *
+ * TY_FUNC used to carry only a return type, and only for a module function
+ * named bare.  A call through a function VALUE — a closure-bound local, a
+ * `(i64):i64` parameter, a copy, a returned closure — was never checked:
+ * `let g=fn(a:i64;b:i64):i64{..}; g(1;2;3;4)` compiled clean, and so did
+ * `g("x";2)`.  A TY_FUNC built here also records its parameter types in
+ * field_types/field_count and is marked by TY_FUNC_SIG in ->name, so a
+ * signature-less TY_FUNC (a module function, whose checks live elsewhere)
+ * is told apart from a zero-parameter one.
+ */
+static const char TY_FUNC_SIG[] = "(fn)";
+static int func_has_sig(const Type *t) {
+    return t && t->kind == TY_FUNC && t->name == TY_FUNC_SIG;
+}
+int tk_type_is_fnval(const Type *t) { return func_has_sig(t); }
+static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
+    Type *t = mk_type(cx->env->arena, TY_FUNC);
+    if (!t) return NULL;
+    t->name = TY_FUNC_SIG; t->elem = ret;
+    t->field_count = np; t->field_types = pts;
+    return t;
+}
+/* `(T1;T2):R` */
+static Type *func_type_sig(Ctx *cx, const Node *n) {
+    Arena *A = cx->env->arena;
+    int np = n->child_count > 0 ? n->child_count - 1 : 0;
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, np * (int)sizeof(Type *)) : NULL;
+    if (np > 0 && !pts) return mk_type(A, TY_UNKNOWN);
+    for (int i = 0; i < np; i++) pts[i] = resolve_type(cx, n->children[i]);
+    Type *ret = n->child_count > 0 ? resolve_type(cx, n->children[n->child_count - 1])
+                                   : mk_type(A, TY_UNKNOWN);
+    return mk_func_sig(cx, np, pts, ret);
+}
+/* The signature of a closure literal or a declared function: its NODE_PARAM
+ * children and its return spec (none: TY_VOID for a function, TY_UNKNOWN for
+ * a closure, whose body type is not declared). */
+static Type *params_sig(Ctx *cx, const Node *fn, int is_closure) {
+    Arena *A = cx->env->arena;
+    int np = 0;
+    for (int i = 0; i < fn->child_count; i++)
+        if (fn->children[i] && fn->children[i]->kind == NODE_PARAM) np++;
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, np * (int)sizeof(Type *)) : NULL;
+    if (np > 0 && !pts) return mk_type(A, TY_UNKNOWN);
+    Type *ret = is_closure ? mk_type(A, TY_UNKNOWN) : mk_type(A, TY_VOID);
+    int k = 0;
+    for (int i = 0; i < fn->child_count; i++) {
+        const Node *ch = fn->children[i];
+        if (!ch) continue;
+        if (ch->kind == NODE_PARAM)
+            pts[k++] = ch->child_count > 1 && ch->children[1]
+                     ? resolve_type(cx, ch->children[1]) : mk_type(A, TY_UNKNOWN);
+        else if (ch->kind == NODE_RETURN_SPEC && ch->child_count > 0)
+            ret = resolve_return_spec(cx, ch);
+    }
+    return mk_func_sig(cx, np, pts, ret);
+}
+/* `&name` of a function declared in this module (a qualified `&alias.m`
+ * is not resolved here). */
+static Type *func_ref_sig(Ctx *cx, const Node *n) {
+    if (!n || n->child_count > 0) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, n);
+    Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
+    if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;
+    return params_sig(cx, d->def_node, 0);
+}
+
+/* The innermost binding of `nm` in force at `use`, searched LEXICALLY from
+ * `a`: a parameter of an enclosing function or closure, or the latest
+ * `let`/`mut` before `use` in an enclosing block.  *kind_out says which
+ * (NODE_PARAM / NODE_BIND_STMT / NODE_MUT_BIND_STMT); a loop variable or an
+ * `mt` arm binding answers the node with *kind_out = 0 (not a function
+ * value).  Mirrors ident_bound_rec (127.214), returning the node. */
+static const Node *fnval_bind_rec(const Node *a, const char *src, const Node *use,
+                                  const char *nm, int nl, int *found) {
+    if (!a) return NULL;
+    if (a == use) { *found = 1; return NULL; }
+    for (int i = 0; i < a->child_count; i++) {
+        int f = 0;
+        const Node *b = fnval_bind_rec(a->children[i], src, use, nm, nl, &f);
+        if (!f) continue;
+        *found = 1;
+        if (b) return b;
+        if (a->kind == NODE_FUNC_DECL || a->kind == NODE_CLOSURE)
+            for (int j = 0; j < a->child_count; j++) {
+                const Node *pc = a->children[j];
+                if (pc && pc->kind == NODE_PARAM && pc->child_count > 0
+                    && pc->children[0] && pc->children[0]->tok_len == nl
+                    && memcmp(src + pc->children[0]->tok_start, nm, (size_t)nl) == 0)
+                    return pc;
+            }
+        if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
+            && a->children[0]->kind == NODE_LOOP_INIT
+            && a->children[0]->child_count > 0 && a->children[0]->children[0]
+            && a->children[0]->children[0]->tok_len == nl
+            && memcmp(src + a->children[0]->children[0]->tok_start, nm, (size_t)nl) == 0)
+            return a->children[0];
+        if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1 && a->children[1]
+            && a->children[1]->tok_len == nl
+            && memcmp(src + a->children[1]->tok_start, nm, (size_t)nl) == 0)
+            return a;
+        for (int j = i - 1; j >= 0; j--) {
+            const Node *st = a->children[j];
+            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+                && st->child_count > 0 && st->children[0]
+                && st->children[0]->tok_len == nl
+                && memcmp(src + st->children[0]->tok_start, nm, (size_t)nl) == 0)
+                return st;
+        }
+        return NULL;
+    }
+    return NULL;
+}
+static const Node *in_tree_use(const Ctx *cx, const Node *use);
+static const Node *fnval_binding(Ctx *cx, const Node *ident) {
+    if (!cx->fn_node || !ident || ident->kind != NODE_IDENT) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, ident);
+    int found = 0;
+    const Node *use = in_tree_use(cx, ident);
+    return fnval_bind_rec(cx->fn_node, cx->src, use, nb, (int)strlen(nb), &found);
+}
+/* The signature a function-value binding holds, or NULL. */
+static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
+    if (!b || depth > 8) return NULL;
+    if (b->kind == NODE_PARAM) {
+        const Node *tn = b->child_count > 1 ? b->children[1] : NULL;
+        Type *t = tn && tn->kind == NODE_FUNC_TYPE ? resolve_type(cx, tn) : NULL;
+        return func_has_sig(t) ? t : NULL;
+    }
+    if (b->kind != NODE_BIND_STMT && b->kind != NODE_MUT_BIND_STMT) return NULL;
+    if (b->child_count > 2 && b->children[1]) {
+        Type *t = b->children[1]->kind == NODE_FUNC_TYPE ? resolve_type(cx, b->children[1]) : NULL;
+        return func_has_sig(t) ? t : NULL;
+    }
+    const Node *init = b->child_count > 2 ? b->children[2]
+                     : b->child_count > 1 ? b->children[1] : NULL;
+    if (!init) return NULL;
+    if (init->kind == NODE_CLOSURE) return params_sig(cx, init, 1);
+    if (init->kind == NODE_FUNC_REF) return func_ref_sig(cx, init);
+    if (init->kind == NODE_IDENT) {
+        int found = 0;
+        char nb[128]; TOKSTR(nb, cx->src, init);
+        const Node *ib = fnval_bind_rec(cx->fn_node, cx->src, init, nb, (int)strlen(nb), &found);
+        return fnval_bind_sig(cx, ib, depth + 1);
+    }
+    return func_has_sig(init->rtype) ? init->rtype : NULL;
 }
 
 /*
@@ -2311,6 +2488,13 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
+    /* 124.0c: a local bound to a closure or a function reference holds a
+     * function value of that signature (the emitter's indirect-call and
+     * reference-counting paths read it off every use of the name). */
+    case NODE_CLOSURE:
+        return params_sig(cx, initN, 1);
+    case NODE_FUNC_REF:
+        return func_ref_sig(cx, initN);
     /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
     case NODE_MATCH_STMT:
         return mt_bind_type(cx, initN);
@@ -4240,7 +4424,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         if (def->kind==NODE_PARAM&&def->child_count>1&&def->children[1])
             return resolve_type(cx,def->children[1]);
-        if (def->kind==NODE_FUNC_DECL) return mk_type(A,TY_FUNC);
+        /* 124.0c item 2: a function named bare is a value of its signature
+         * (`ap(inc;5)` against a `(i64):i64` parameter). */
+        if (def->kind==NODE_FUNC_DECL) return params_sig(cx,def,0);
         return mk_type(A,TY_UNKNOWN);
     }
 
@@ -4547,6 +4733,47 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_CALL_EXPR: {
         if (node->child_count<1) return mk_type(A,TY_UNKNOWN);
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
+
+        /* 124.0c item 2: a call through a function VALUE — a parameter of
+         * function type, or a local bound to a closure, a function
+         * reference, a copy of either, or a call that returns one — is
+         * checked against that value's signature: the argument count
+         * (E4026) and each argument's type (E4031).  Neither diagnostic
+         * carries a `fix`: whether an argument is missing, surplus or
+         * mistyped is not decidable from the call.  The callee's rtype is
+         * recorded, which is what the emitter keys the indirect call on. */
+        if (node->children[0]->kind==NODE_IDENT) {
+            const Node *fb=fnval_binding(cx,node->children[0]);
+            Type *ft=fnval_bind_sig(cx,fb,0);
+            if (ft) {
+                ((Node *)node->children[0])->rtype=ft;
+                int actual=node->child_count-1;
+                if (actual!=ft->field_count) {
+                    if (tc_can_emit(cx)) {
+                        char msg[256], es[16], gs[16];
+                        snprintf(msg,sizeof msg,
+                                 "wrong number of arguments: '%s' is a function value "
+                                 "of type '%s', which takes %d, got %d",
+                                 nb,type_name(ft),ft->field_count,actual);
+                        snprintf(es,sizeof es,"%d",ft->field_count);
+                        snprintf(gs,sizeof gs,"%d",actual);
+                        diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
+                                  "expected",es,"got",gs,(const char*)NULL);
+                    }
+                    for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+                } else {
+                    for (int i=0;i<actual;i++) {
+                        const Node *an=node->children[i+1];
+                        Type *at=infer(cx,an);
+                        Type *pt=ft->field_types[i];
+                        if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
+                            &&!types_compat(at,pt))
+                            emit_mm(cx,an,pt,at,NULL);
+                    }
+                }
+                return ft->elem?ft->elem:mk_type(A,TY_UNKNOWN);
+            }
+        }
 
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
         /* 127.169: `let sum=fn..; sum(a)` calls the local closure in codegen,
@@ -5416,6 +5643,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * A closure with no return spec has no declared type to check against,
      * so its returns are left unjudged (TY_UNKNOWN).  The result is what the
      * generic walk returned before, so the closure's own type is unchanged. */
+    case NODE_FUNC_REF: {                   /* 124.0c item 2 */
+        Type *ft=func_ref_sig(cx,node);
+        return ft?ft:mk_type(A,TY_UNKNOWN);
+    }
     case NODE_CLOSURE: {
         Type *ret=mk_type(A,TY_UNKNOWN);
         for (int i=0;i<node->child_count;i++) {
@@ -5424,10 +5655,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 ret=resolve_return_spec(cx,ch);
         }
         Type *saved=cx->fn_ret; cx->fn_ret=ret;
-        Type *last=mk_type(A,TY_VOID);
-        for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
+        for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
         cx->fn_ret=saved;
-        return last;
+        /* 124.0c item 2: a closure's value is a function of its declared
+         * signature (it was the type of the body's last statement). */
+        return params_sig(cx,node,1);
     }
 
     /* ── Statement list ──────────────────────────────────────────────────

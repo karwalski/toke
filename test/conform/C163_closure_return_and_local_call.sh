@@ -192,7 +192,11 @@ if "${TKC}" -O0 "${WORK}/p9.tk" -o "${WORK}/b9" >/dev/null 2>&1; then
     else
         got="$(MALLOC_PERTURB_=85 MALLOC_CHECK_=3 "${WORK}/b9" 2>/dev/null | tr '\n' ' '; echo "rc=${PIPESTATUS[0]}")"
     fi
-    expect "9-released-envs-no-use-after-free" "${got}" "11 6 -2 625 rc=0"
+    # mk(4): h is a COPY of g, so h(1)=1+4=5, and k(1)=g(1)*2=10 -> 15.
+    # This line read "11" until 124.0c item 3 (Batch EB): a call through a
+    # copied closure lowered as its argument (h(1) -> 1), and the expectation
+    # had been recorded from that output.
+    expect "9-released-envs-no-use-after-free" "${got}" "15 6 -2 625 rc=0"
 else echo "FAIL 9-released-envs-no-use-after-free (build failed)"; FAIL=$((FAIL + 1)); fi
 
 echo "C163: ${PASS} passed, ${FAIL} failed"

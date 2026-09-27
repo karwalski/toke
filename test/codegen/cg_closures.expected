@@ -1,0 +1,17 @@
+ok copy 11
+ok pass 5
+ok return 5
+ok pass-returned 11
+ok capture 10
+ok returned-param 6
+ok array-elem 16
+ok struct-field 9
+ok fref-param 6
+ok fref-copy 5
+ok compose 5
+ok compose-fref 8
+ok if-expr 2
+ok rep 200
+ok mut-assign 4950
+ok capture-chain 1000
+bad=0

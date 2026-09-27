@@ -4,6 +4,11 @@
   0,
   "28802aecbbe1ca37"
  ],
+ "test/codegen/cg_closures.tk": [
+  true,
+  0,
+  "1709252b826034f3"
+ ],
  "test/codegen/cg_err_letbound_payload.tk": [
   true,
   0,
