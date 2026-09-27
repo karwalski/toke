@@ -62,6 +62,8 @@ f=i64(s:$str;key:$str):i64
 f=f64(s:$str;key:$str):f64
 f=bool(s:$str;key:$str):bool
 f=arr(s:$str;key:$str):@$str
+f=at(j:$json;path:$str):$json!$jsonerr   (* 138.12: dotted path, e.g. "usage.input_tokens", "r.0" *)
+f=getval(j:$json;path:$str):$str        (* 138.12: the raw JSON text at path, "" if none *)
 f=parse(s:$str):i64
 f=print(val:i64):void
 
@@ -165,11 +167,44 @@ f=http.streamnext(s:$httpstream):@$byte!$httperr
 ### std.db
 
 ```text
-f=open(path:$str):i64
-f=exec(db:i64;sql:$str):i64
-f=query(db:i64;sql:$str):$str
-f=close(db:i64):void
+f=open(path:$str):u64!$dberr
+f=close():i64
+f=exec(sql:$str;params:@($str)):u64!$dberr
+f=one(sql:$str;params:@($str)):$row!$dberr
+f=many(sql:$str;params:@($str)):@($row)!$dberr
+f=execon(h:u64;sql:$str;params:@($str)):u64!$dberr
+f=oneon(h:u64;sql:$str;params:@($str)):$row!$dberr
+f=manyon(h:u64;sql:$str;params:@($str)):@($row)!$dberr
+f=closeon(h:u64):bool
 ```
+
+Every `open` returns a new handle; the `*on` forms name one, and the
+handle-less forms use the default connection -- the lowest-numbered one still
+open (138.6). `exec` runs every `;`-separated statement of its string or
+fails naming the one that failed; bind parameters with more than one
+statement are refused. Row values are read with `row.str/u64/i64/f64/bool`.
+
+### std.keychain
+
+```text
+f=isavailable():bool
+f=set(service:$str;account:$str;secret:$str):bool
+f=get(service:$str;account:$str):?($str)
+f=delete(service:$str;account:$str):bool
+f=exists(service:$str;account:$str):bool
+f=laststatus():i64
+f=lasterrkind():$str
+f=lasterr():$str
+f=create(path:$str;password:$str):bool
+f=use(path:$str):bool
+f=destroy(path:$str):bool
+```
+
+After a `false` or empty result, `lasterrkind` is `"notfound"` exactly when the
+item is absent; any other non-empty kind (`locked denied nokeychain badarg
+unavailable failed`) means the call failed. `create`/`use`/`destroy` name a
+throwaway keychain file (macOS); `use("")` returns to the default; `destroy`
+refuses the default keychain and any on the user's search list (138.4).
 
 ### std.file
 

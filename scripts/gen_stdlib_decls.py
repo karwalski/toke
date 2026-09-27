@@ -456,14 +456,39 @@ def scan_str_returns() -> set[str]:
         return [body[m.end():body.find(";", m.end())].strip()
                 for m in re.finditer(r'\breturn\b', body)]
 
-    def is_str(expr: str, charvars: set[str], known: set[str]) -> bool:
-        cast = re.match(_I64_CAST, expr) is not None
+    def split_ternary(e: str):
+        """`c ? a : b` at nesting depth 0 -> (a, b), else None (138.11)."""
+        depth, q = 0, -1
+        for i, ch in enumerate(e):
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            elif depth == 0 and ch == "?" and q < 0:
+                q = i
+            elif depth == 0 and ch == ":" and q >= 0:
+                return e[q + 1:i].strip(), e[i + 1:].strip()
+        return None
+
+    def is_str(expr: str, charvars: set[str], known: set[str],
+               strparams: set[str] = frozenset(), cast: bool = False) -> bool:
+        cast = cast or re.match(_I64_CAST, expr) is not None
         e = re.sub('^' + _I64_CAST, '', expr).strip()
         while e.startswith("(") and _balanced(e, 0, "(", ")") == len(e) - 1:
             e = e[1:-1].strip()
+        # 138.11: `(int64_t)(intptr_t)(b ? "true" : "false")` (str.frombool)
+        # -- a string when both arms are, under the outer cast.
+        tern = split_ternary(e)
+        if tern:
+            return all(is_str(x, charvars, known, strparams, cast) for x in tern)
         if e == '""':
             return cast
         if re.fullmatch(r'\w+', e):
+            # 138.11: returning a parameter the body reads as a C string
+            # (scan_param_kinds "S") returns that string -- str.replace's
+            # `if (!s || !old) return s;`.
+            if e in strparams:
+                return True
             return cast and e in charvars
         m = re.fullmatch(r'(\w+)\s*\(.*\)', e, re.S)
         if not m or _balanced(e, e.index("("), "(", ")") != len(e) - 1:
@@ -471,6 +496,26 @@ def scan_str_returns() -> set[str]:
         if m.group(1) in known:
             return True
         return cast and m.group(1) in char_fns
+
+    # 138.11: the parameters each wrapper reads as a C string, by name.
+    pkinds = scan_param_kinds()
+    pnames: dict[str, list[str]] = {}
+    for path in sorted(STDLIB_DIR.glob("*.c")):
+        text = path.read_text(errors="replace")
+        for m in _WRAP_HEAD.finditer(text):
+            popen = text.index("(", m.end() - 1)
+            pclose = _balanced(text, popen, "(", ")")
+            if pclose < 0:
+                continue
+            ptxt = text[popen + 1:pclose].strip()
+            ns = [] if ptxt in ("", "void") else [
+                (re.match(r'.*?(\w+)\s*$', x.strip()) or re.match(r'()', '')).group(1)
+                for x in ptxt.split(",")]
+            pnames.setdefault(m.group(1), ns)
+
+    def strparams_of(sym: str) -> set[str]:
+        k, ns = pkinds.get(sym, ""), pnames.get(sym, [])
+        return {n for n, c in zip(ns, k) if c == "S" and n}
 
     known: set[str] = set()
     changed = True
@@ -480,10 +525,11 @@ def scan_str_returns() -> set[str]:
             if sym in known:
                 continue
             ok = True
+            sp = strparams_of(sym)
             for b in bl:
                 cv = set(re.findall(r'\b(?:const\s+)?char\s*\*\s*(\w+)', b))
                 rs = returns(b)
-                if not rs or not all(is_str(r, cv, known) for r in rs):
+                if not rs or not all(is_str(r, cv, known, sp) for r in rs):
                     ok = False
                     break
             if ok:

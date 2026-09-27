@@ -77,6 +77,11 @@ static const StdlibModule stdlib_table[] = {
     { "path",          "path.c path_glue.c",                    "",                                                                 "" },
     { "args",          "args.c args_glue.c",                    "",                                                                 "" },
     { "process",       "process.c process_glue.c",              "",                                                                 "" },
+    /* 138.11: `i=std:std;` -- std.homedir (stdlib/std.tki) is an alias whose
+     * glue lives in process_glue.c, so the module is its dependency and
+     * links nothing of its own.  Without this row nothing was linked for it
+     * and std.homedir failed at link time unless std.process was imported. */
+    { "std",           "",                                      "process",                                                          "" },
     { "crypto",        "crypto.c crypto_glue.c",                "str",                                                              "" },
     { "csv",           "csv.c csv_glue.c",                      "",                                                                 "" },
     { "fmt",           "fmt.c fmt_glue.c",                      "",                                                                 "" },  /* 131.30 */
@@ -426,9 +431,12 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
     for (int i = 0; i < st->count; i++) {
         const char *path = st->entries[i].module_path;
         if (!path) continue;
-        /* module_path is "std.json", "std.str", etc. */
-        if (strncmp(path, "std.", 4) != 0) continue;
-        const char *mod = path + 4;
+        /* module_path is "std.json", "std.str", etc.  138.11: or the bare
+         * "std" of `i=std:std;`, whose row pulls in std.process. */
+        const char *mod;
+        if (!strcmp(path, "std")) mod = "std";
+        else if (strncmp(path, "std.", 4) == 0) mod = path + 4;
+        else continue;
         if (!word_in_list(needed, mod)) {
             size_t cur = strlen(needed);
             snprintf(needed + cur, sizeof needed - cur, " %s", mod);
@@ -514,8 +522,10 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
     for (int i = 0; i < st->count; i++) {
         const char *path = st->entries[i].module_path;
         if (!path) continue;
-        if (strncmp(path, "std.", 4) != 0) continue;
-        const char *mod = path + 4;
+        const char *mod;   /* 138.11: the bare "std" too, as above */
+        if (!strcmp(path, "std")) mod = "std";
+        else if (strncmp(path, "std.", 4) == 0) mod = path + 4;
+        else continue;
         if (!word_in_list(needed, mod)) {
             size_t cur = strlen(needed);
             snprintf(needed + cur, sizeof needed - cur,

@@ -1799,8 +1799,10 @@ test-stdlib-webview:
 	    -framework WebKit -framework Cocoa
 	$(RUN_TEST) ./test/stdlib/test_webview
 
-# macOS only, and it WRITES TO THE USER'S LOGIN KEYCHAIN. The C-core sibling
-# of test-stdlib-keychain (which drives the toke binding).
+# macOS only. The C-core sibling of test-stdlib-keychain (which drives the
+# toke binding). 138.4: it works in a throwaway keychain it creates and
+# destroys itself, and refuses to run if it cannot -- it no longer writes to
+# the user's login keychain.
 test-stdlib-keychain-core:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_keychain \
 	    test/stdlib/test_keychain.c src/stdlib/keychain.c \

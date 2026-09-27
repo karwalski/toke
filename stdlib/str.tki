@@ -512,11 +512,11 @@
       "kind": "func",
       "name": "str.compare",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
       "return": "i64",
-      "gen": "abi"
+      "note": "strcmp order: negative if a sorts before b, 0 if equal, positive after -- 138.11"
     },
     {
       "kind": "func",
@@ -627,7 +627,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -734,10 +734,10 @@
       "kind": "func",
       "name": "str.isdigit",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "bool",
+      "note": "true if s is non-empty and every byte is 0-9; takes a str, not a byte code -- 138.11"
     },
     {
       "kind": "func",
@@ -803,7 +803,7 @@
       "name": "str.nowunix",
       "params": [],
       "return": "str",
-      "gen": "abi"
+      "note": "seconds since the Unix epoch, as decimal text -- 138.11"
     },
     {
       "kind": "func",
@@ -820,23 +820,23 @@
       "kind": "func",
       "name": "str.padleft",
       "params": [
-        "i64",
+        "str",
         "i64",
         "i64"
       ],
       "return": "str",
-      "gen": "abi"
+      "note": "pad on the left to width with the byte code pad (0 = space) -- 138.11"
     },
     {
       "kind": "func",
       "name": "str.padright",
       "params": [
-        "i64",
+        "str",
         "i64",
         "i64"
       ],
       "return": "str",
-      "gen": "abi"
+      "note": "pad on the right to width with the byte code pad (0 = space) -- 138.11"
     },
     {
       "kind": "func",
@@ -851,10 +851,10 @@
       "kind": "func",
       "name": "str.parsefloat",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "f64!ParseErr",
+      "note": "alias of str.tofloat -- 138.11"
     },
     {
       "kind": "func",
@@ -901,7 +901,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -923,7 +923,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -954,7 +954,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -974,7 +974,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -1013,7 +1013,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -1040,19 +1040,19 @@
       "kind": "func",
       "name": "str.tof32",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "f64!ParseErr",
+      "note": "alias of str.tofloat -- 138.11"
     },
     {
       "kind": "func",
       "name": "str.tof64",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "f64!ParseErr",
+      "note": "alias of str.tofloat -- 138.11"
     },
     {
       "kind": "func",

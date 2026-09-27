@@ -32,10 +32,10 @@
       "kind": "func",
       "name": "net.listen",
       "params": [
-        "i64"
+        "str"
       ],
       "return": "i64",
-      "gen": "abi"
+      "note": "a listening TCP socket on \"host:port\" (IPv4), or 0 on failure -- 138.13"
     },
     {
       "kind": "func",

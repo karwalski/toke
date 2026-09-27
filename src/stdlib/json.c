@@ -204,17 +204,15 @@ StrJsonResult json_str(Json j, const char *key) {
     if (*vs != '"') {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not a string"); return r;
     }
-    /* copy string content (without surrounding quotes, basic unescape) */
-    size_t cap = (size_t)(ve - vs);
-    char *buf = malloc(cap);
-    if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+    /* 138.12: decode the escapes (strbuf_append_json_unescape, the one copy
+     * of the rule -- 127.229).  This copied the byte after every backslash,
+     * so "\\n" came back as the letter n and "\\u0041" as "u0041" (loke
+     * T-44, T-47a); only \\" and \\\\ were right, by accident. */
+    TkStrBuf b = TK_STRBUF_INIT;
     const char *p = vs + 1;
-    char *w = buf;
-    while (p < ve - 1) {
-        if (*p == '\\') { p++; *w++ = *p++; }
-        else            { *w++ = *p++; }
-    }
-    *w = '\0';
+    (void)strbuf_append_json_unescape(&b, &p);   /* skip_value proved it terminated */
+    char *buf = strbuf_take(&b);   /* NULL only on OOM */
+    if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
     r.is_err = 0; r.ok = buf; return r;
 }
 
@@ -392,22 +390,17 @@ StrArrayJsonResult json_keys(Json j) {
         const char *ks = q + 1;
         const char *ke = skip_string(q);
         /* ke points past closing quote */
-        size_t klen = (size_t)((ke - 1) - ks);
-        char *buf = malloc(klen + 1);
+        /* 138.12: decode escapes as json_str does (this copied the byte
+         * after each backslash). */
+        TkStrBuf kb = TK_STRBUF_INIT;
+        const char *src = ks;
+        (void)strbuf_append_json_unescape(&kb, &src);
+        char *buf = strbuf_take(&kb);        /* NULL only on OOM */
         if (!buf) {
-            /* free already-allocated keys */
             for (uint64_t x = 0; x < i; x++) free((void *)keys[x]);
             free(keys);
             r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r;
         }
-        /* basic unescape */
-        const char *src = ks;
-        char *dst = buf;
-        while (src < ke - 1) {
-            if (*src == '\\') { src++; *dst++ = *src++; }
-            else               { *dst++ = *src++; }
-        }
-        *dst = '\0';
         keys[i] = buf;
         /* advance past value and comma */
         ke = skip_ws(ke); /* skip past ':' */

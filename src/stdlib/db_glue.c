@@ -7,6 +7,7 @@
 
 #include "db.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "tk_runtime.h" /* 138.6: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,33 +41,80 @@ static StrArray toke_arr_to_strarray(int64_t arr_i64) {
     return sa;
 }
 
-/* 125.1: db.open(dsn) -> u64!DbErr. Follows the db error-union ABI convention
- * (0 = $err, non-zero = $ok): db_open returns 0 on success, so return 1 on
- * success and 0 on failure. db_open is capability-gated (fs.read + fs.write). */
-int64_t tk_db_open_w(int64_t dsn) {
-    if (!dsn) return 0;
-    return db_open((const char *)(intptr_t)dsn) == 0 ? 1 : 0;
+/*
+ * 138.6 — the error channel.  Every fallible wrapper below keeps
+ * @tk_current_error truthful on every return, the way json_glue.c does
+ * (127.193): 0 on success, and on failure a {tag, msg} box whose tag is the
+ * DbErr variant index ($connection, $query, $notfound, $constraint -- the
+ * order of stdlib/db.tki and of DbErrKind).  The returned value still keeps
+ * the 0/null sentinel on failure, so a compiler that decides these calls by
+ * value keeps working; one that lists the wrapper in llvm.c's
+ * is_stdlib_slot_wrapper() decides by the slot, which is what makes a stored
+ * 0, 0.0 or false read as a value rather than as $err (loke T-22, N-5).
+ */
+static int64_t db_raise(DbErr e) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)e.kind;
+    box[1] = (int64_t)(intptr_t)(e.msg ? e.msg : "");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+static int64_t db_raise_msg(DbErrKind kind, const char *msg) {
+    DbErr e; e.kind = kind; e.msg = msg; return db_raise(e);
 }
 
-/* 125.1: db.close() closes the process-global connection. */
+/* 125.1 / 138.6: db.open(dsn) -> u64!DbErr.  Returns the new connection's
+ * handle (>= 1, a fresh one on every call) or 0 on failure.  db_connect is
+ * capability-gated (fs.read + fs.write). */
+int64_t tk_db_open_w(int64_t dsn) {
+    if (!dsn) return 0;
+    int64_t id = db_connect((const char *)(intptr_t)dsn);
+    return id > 0 ? id : 0;
+}
+
+/* 125.1: db.close() closes the default connection (the lowest-numbered one
+ * still open). */
 int64_t tk_db_close_w(void) {
     db_close();
     return 1;
 }
 
-int64_t tk_db_exec_w(int64_t sql, int64_t params) {
-    if (!sql) return 0;
+/* 138.6: db.closeon(h) -> bool: true if h was open and is now closed. */
+int64_t tk_db_closeon_w(int64_t h) {
+    if (h <= 0) return 0;
+    return (int64_t)db_close_conn(h);
+}
+
+/* 138.6: a handle of 0 would silently mean "the default connection" to
+ * db.c; from source it is always a mistake (db.open never returns 0 on
+ * success), so the *on wrappers refuse it. */
+static int64_t exec_on(int64_t h, int64_t sql, int64_t params) {
+    if (!sql) return db_raise_msg(DB_ERR_QUERY, "db.exec: null sql");
     StrArray sa = toke_arr_to_strarray(params);
-    U64Result res = db_exec((const char *)(intptr_t)sql, sa);
+    U64Result res = db_exec_on(h, (const char *)(intptr_t)sql, sa);
     free((void *)sa.data);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
+    tk_current_error = 0;
+    /* Under the value sentinel a count of 0 (every CREATE, every UPDATE that
+     * matched nothing) would read as $err, so 0 is reported as 1 until
+     * llvm.c lists this wrapper as a slot wrapper; then it can return
+     * res.ok as it is. */
     return res.ok > 0 ? (int64_t)res.ok : 1;
 }
 
-int64_t tk_db_one_w(int64_t sql, int64_t params) {
+int64_t tk_db_exec_w(int64_t sql, int64_t params) {
+    return exec_on(0, sql, params);
+}
+
+int64_t tk_db_execon_w(int64_t h, int64_t sql, int64_t params) {
+    if (h <= 0) return db_raise_msg(DB_ERR_CONNECTION, "db.execon: not a connection handle");
+    return exec_on(h, sql, params);
+}
+
+static int64_t one_on(int64_t h, int64_t sql, int64_t params) {
     if (!sql) return 0;
     StrArray sa = toke_arr_to_strarray(params);
-    RowResult res = db_one((const char *)(intptr_t)sql, sa);
+    RowResult res = db_one_on(h, (const char *)(intptr_t)sql, sa);
     free((void *)sa.data);
     if (res.is_err) return 0;
     Row *heap_row = (Row *)malloc(sizeof(Row));
@@ -75,27 +123,45 @@ int64_t tk_db_one_w(int64_t sql, int64_t params) {
     return (int64_t)(intptr_t)heap_row;
 }
 
-int64_t tk_db_many_w(int64_t sql, int64_t params) {
+int64_t tk_db_one_w(int64_t sql, int64_t params) {
+    return one_on(0, sql, params);
+}
+
+int64_t tk_db_oneon_w(int64_t h, int64_t sql, int64_t params) {
+    if (h <= 0) return 0;
+    return one_on(h, sql, params);
+}
+
+static int64_t many_on(int64_t h, int64_t sql, int64_t params) {
     if (!sql) return 0;
     StrArray sa = toke_arr_to_strarray(params);
-    RowArrayResult res = db_many((const char *)(intptr_t)sql, sa);
+    RowArrayResult res = db_many_on(h, (const char *)(intptr_t)sql, sa);
     free((void *)sa.data);
     if (res.is_err) return 0;
     uint64_t count = res.ok.len;
-    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!h) return 0;
-    int64_t *block = (int64_t *)(intptr_t)h;
+    int64_t out = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!out) return 0;
+    int64_t *block = (int64_t *)(intptr_t)out;
     for (uint64_t i = 0; i < count; i++) {
         Row *heap_row = (Row *)malloc(sizeof(Row));
         if (!heap_row) {
-            tk_arr_setlen(h, (int64_t)i);
+            tk_arr_setlen(out, (int64_t)i);
             break;
         }
         *heap_row = res.ok.data[i];
         block[i] = (int64_t)(intptr_t)heap_row;
     }
     free(res.ok.data);
-    return h;
+    return out;
+}
+
+int64_t tk_db_many_w(int64_t sql, int64_t params) {
+    return many_on(0, sql, params);
+}
+
+int64_t tk_db_manyon_w(int64_t h, int64_t sql, int64_t params) {
+    if (h <= 0) return 0;
+    return many_on(h, sql, params);
 }
 
 int64_t tk_db_tableexists_w(int64_t conn, int64_t table) {
@@ -148,44 +214,52 @@ int64_t tk_db_print_w(int64_t rows) {
     return 0;
 }
 
-/* row accessor wrappers */
+/* row accessor wrappers.  138.6: the scalar ones (i64, u64, f64, bool) keep
+ * the error slot truthful -- see db_raise above.  row.str's value is a
+ * pointer, never 0 on success (an empty column is ""), so the sentinel
+ * already tells it apart; it sets the slot too, for one rule everywhere. */
 int64_t tk_row_str_w(int64_t row, int64_t col) {
-    if (!row || !col) return 0;
+    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.str: null row or column name");
     Row *rp = (Row *)(intptr_t)row;
     StrResult res = row_str(*rp, (const char *)(intptr_t)col);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
+    tk_current_error = 0;
     return (int64_t)(intptr_t)res.ok;
 }
 
 int64_t tk_row_i64_w(int64_t row, int64_t col) {
-    if (!row || !col) return 0;
+    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.i64: null row or column name");
     Row *rp = (Row *)(intptr_t)row;
     I64Result res = row_i64(*rp, (const char *)(intptr_t)col);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
+    tk_current_error = 0;
     return res.ok;
 }
 
 int64_t tk_row_u64_w(int64_t row, int64_t col) {
-    if (!row || !col) return 0;
+    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.u64: null row or column name");
     Row *rp = (Row *)(intptr_t)row;
     U64Result res = row_u64(*rp, (const char *)(intptr_t)col);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
+    tk_current_error = 0;
     return (int64_t)res.ok;
 }
 
 int64_t tk_row_f64_w(int64_t row, int64_t col) {
-    if (!row || !col) return 0;
+    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.f64: null row or column name");
     Row *rp = (Row *)(intptr_t)row;
     F64Result res = row_f64(*rp, (const char *)(intptr_t)col);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
+    tk_current_error = 0;
     return f64_to_i64(res.ok);
 }
 
 int64_t tk_row_bool_w(int64_t row, int64_t col) {
-    if (!row || !col) return 0;
+    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.bool: null row or column name");
     Row *rp = (Row *)(intptr_t)row;
     BoolResult res = row_bool(*rp, (const char *)(intptr_t)col);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
+    tk_current_error = 0;
     return (int64_t)res.ok;
 }
 
