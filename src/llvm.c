@@ -550,6 +550,17 @@ static int struct_field_is_str(const StructInfo *si, int fidx) {
     return !strcmp(t, "$str") || !strcmp(t, "str");
 }
 
+/* 135.20 item 4: is the field at `fidx` DECLARED as an array of str
+ * (`@str`, `@$str`, `[str]`)?  Its element loads are strings, and without
+ * this a chain the checker left untyped — `q.get(0).fields.get(1)` on a
+ * `mut.@()` accumulator of structs — rendered the element's address. */
+static int struct_field_is_str_arr(const StructInfo *si, int fidx) {
+    if (!si || fidx < 0 || fidx >= si->field_count) return 0;
+    const char *t = si->field_types[fidx];
+    return !strcmp(t, "@str") || !strcmp(t, "@$str") || !strcmp(t, "[str]") ||
+           !strcmp(t, "[$str]") || !strcmp(t, "@(str)") || !strcmp(t, "@($str)");
+}
+
 /* Return the field index for a given field name in a struct, or 0 if not found. */
 static int struct_field_index(const StructInfo *si, const char *fname) {
     if (!si) return 0;
@@ -8216,6 +8227,10 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                     !strcmp(si->field_names[fidx], fld) &&
                     struct_field_is_str(si, fidx))
                     return "$str";
+                if (fidx >= 0 && fidx < si->field_count &&
+                    !strcmp(si->field_names[fidx], fld) &&
+                    struct_field_is_str_arr(si, fidx))
+                    return "@str";                            /* 135.20 item 4 */
             } else {
                 /* 126.8: the base didn't resolve to a struct instance (e.g.
                  * `json.getobj(...).raw` — the stale getobj's Json return isn't
@@ -8227,6 +8242,16 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                 const StructInfo *osi = field_owner_unambiguous(c, fld, NULL);
                 if (osi && struct_field_is_str(osi, struct_field_index(osi, fld)))
                     return "$str";
+                if (osi) {                                    /* 135.20 item 4 */
+                    /* every declaring struct must agree it is a @str field —
+                     * field_owner_unambiguous only compares slot, float, str */
+                    int all = 1;
+                    for (int k = 0; k < c->struct_count && all; k++)
+                        if (struct_has_field(&c->structs[k], fld) &&
+                            !struct_field_is_str_arr(&c->structs[k],
+                                 struct_field_index(&c->structs[k], fld))) all = 0;
+                    if (all) return "@str";
+                }
             }
         }
     }
@@ -9908,6 +9933,33 @@ static void compute_str_arrays(Ctx *c, const Node *fn) {
     }
 }
 
+/* 135.20 item 4: the struct every self-append `x=x.append(E)` /
+ * `x=x.push(E)` of `x` in `n` stores, when each E is a struct literal of the
+ * same registered struct; "" when none is found, NULL on any disagreement or
+ * a non-literal element.  A `mut.@()` accumulator built this way is then
+ * tagged "@<Struct>" like an array literal of structs (136.28), so
+ * `q.get(0).fields` resolves its layout instead of falling to the
+ * field-owner search. */
+static const char *accum_struct_elem(Ctx *c, const Node *n, const char *x, const char *acc) {
+    if (!n || !acc) return acc;
+    if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
+        const Node *r = n->children[1];
+        char m[NAME_BUF];
+        if (la_self_update_call(c, r, x, m) && strcmp(m, "set") && r->child_count >= 2) {
+            const Node *e = r->children[1];
+            if (!e || e->kind != NODE_STRUCT_LIT) return NULL;
+            const char *sn = expr_struct_type(c, e);
+            const StructInfo *si = sn ? lookup_struct(c, sn) : NULL;
+            if (!si) return NULL;
+            if (acc[0] && strcmp(acc, si->name)) return NULL;
+            acc = si->name;
+        }
+    }
+    for (int i = 0; i < n->child_count && acc; i++)
+        acc = accum_struct_elem(c, n->children[i], x, acc);
+    return acc;
+}
+
 static int is_str_arr(Ctx *c, const char *name) {
     for (int i = 0; i < c->str_arr_count; i++)
         if (!strcmp(c->str_arr[i], name)) return 1;
@@ -10122,6 +10174,15 @@ static void emit_stmt(Ctx *c, const Node *n)
             if (is_str_arr(c, tb_raw)) {
                 const char *cur = ptr_local_struct_type(c, tb);
                 if (!cur || !strcmp(cur, "@i64")) { clear_ptr_local(c, tb); mark_ptr_with_type(c, tb, "@str"); }
+            } else if (init_node && init_node->kind == NODE_ARRAY_LIT &&
+                       init_node->child_count == 0 && c->la_fn) {
+                /* 135.20 item 4: an empty accumulator filled with struct literals */
+                const char *cur = ptr_local_struct_type(c, tb);
+                const char *es = accum_struct_elem(c, c->la_fn, tb_raw, "");
+                if (es && es[0] && (!cur || !strcmp(cur, "@i64"))) {
+                    clear_ptr_local(c, tb);
+                    mark_ptr_with_type(c, tb, array_struct_tag(es));
+                }
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
