@@ -102,6 +102,7 @@ void tkir_buf_str(TkirBuf *b, const char *s, size_t len)
 
 #include "diag.h"
 #include "tkc_limits.h"
+#include "readall.h"   /* 135.3j */
 
 /* 127.207: a struct's field-type table is allocated to its width.  It was
  * `field_type_idxs[TKC_MAX_PARAMS]`, so a struct of more than 16 fields was
@@ -1515,32 +1516,22 @@ int tkir_read(const char *path, TkirModule *out,
         return -1;
     }
 
-    fseek(f, 0, SEEK_END);
-    long flen = ftell(f);
-    rewind(f);
-
-    if (flen <= 0) {
-        fclose(f);
+    /* 135.3j: read the stream — ftell/rewind are unchecked and fail on a
+     * FIFO or pipe.  A .tkir is bounded at 4x the source limit. */
+    size_t flen = 0; int big = 0;
+    uint8_t *buf = (uint8_t *)tk_read_stream(f, TK_SOURCE_MAX * 4, &flen, &big);
+    fclose(f);
+    if (!buf) {
+        set_err(errbuf, errbuf_len, big ? "file too large" : "failed to read file");
+        return -1;
+    }
+    if (flen == 0) {
+        free(buf);
         set_err(errbuf, errbuf_len, "empty or unreadable file");
         return -1;
     }
 
-    uint8_t *buf = malloc((size_t)flen);
-    if (!buf) {
-        fclose(f);
-        set_err(errbuf, errbuf_len, "out of memory reading file");
-        return -1;
-    }
-
-    if ((long)fread(buf, 1, (size_t)flen, f) != flen) {
-        free(buf);
-        fclose(f);
-        set_err(errbuf, errbuf_len, "failed to read file");
-        return -1;
-    }
-    fclose(f);
-
-    int rc = tkir_decode(buf, (size_t)flen, out, errbuf, errbuf_len);
+    int rc = tkir_decode(buf, flen, out, errbuf, errbuf_len);
     free(buf);
     return rc;
 }

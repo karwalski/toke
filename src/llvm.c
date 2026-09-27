@@ -11821,7 +11821,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     FILE *body_file = tmpfile();
     if (!body_file) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot create temp file", (void*)0);
         return -1;
@@ -11975,19 +11975,31 @@ timeparts_done:
     }
 
     /* ── Pass 2: read body, scan for references, emit only needed decls ── */
-    fflush(body_file);
-    long body_len = ftell(body_file);
-    rewind(body_file);
-
+    /* 135.3j: ftell/rewind/fread were unchecked — a failed tmpfile write
+     * (disk full) gave body_len -1 and malloc(0) + fread(SIZE_MAX). */
+    long body_len = (fflush(body_file) == 0) ? ftell(body_file) : -1;
+    if (body_len < 0 || fseek(body_file, 0, SEEK_SET) != 0) {
+        fclose(body_file); fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
+                  "LLVM IR emission failed: cannot re-read the temp file", (void*)0);
+        return -1;
+    }
     char *body_buf = (char *)malloc((size_t)body_len + 1);
     if (!body_buf) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: out of memory for body scan", (void*)0);
         return -1;
     }
-    fread(body_buf, 1, (size_t)body_len, body_file);
+    if (fread(body_buf, 1, (size_t)body_len, body_file) != (size_t)body_len) {
+        free(body_buf); fclose(body_file); fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
+                  "LLVM IR emission failed: short read of the temp file", (void*)0);
+        return -1;
+    }
     body_buf[body_len] = '\0';
     fclose(body_file);
 
@@ -12053,12 +12065,12 @@ timeparts_done:
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: I/O error writing .ll file", (void*)0);
         return -1;
     }
-    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
     fclose(f);
     /* A DIAG_ERROR emitted during codegen (e.g. 114.19c array+scalar concat)
      * must fail the build — the .ll is written but callers treat <0 as failure

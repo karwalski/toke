@@ -25,6 +25,7 @@
 
 #include "companion.h"
 #include "tkc_limits.h"
+#include "readall.h"      /* 135.3j: tk_read_stream() — no ftell on FIFOs */
 #include "stdlib/capabilities.h"   /* 124.4-fu: TK_CAP_* bits for the grant record */
 #include <string.h>
 #include <stdlib.h>
@@ -627,22 +628,13 @@ int verify_companion(const char *companion_path)
                 companion_path);
         return 2;
     }
-    fseek(cf, 0, SEEK_END);
-    long clen = ftell(cf);
-    rewind(cf);
-    char *cbuf = malloc((size_t)clen + 1);
+    /* 135.3j: read the stream; ftell is -1 on a FIFO (heap overflow). */
+    char *cbuf = tk_read_stream(cf, TK_SOURCE_MAX, NULL, NULL);
+    fclose(cf);
     if (!cbuf) {
-        fclose(cf);
-        fprintf(stderr, "tkc: out of memory reading '%s'\n", companion_path);
-        return 2;
-    }
-    if ((long)fread(cbuf, 1, (size_t)clen, cf) != clen) {
-        fclose(cf); free(cbuf);
         fprintf(stderr, "tkc: failed to read '%s'\n", companion_path);
         return 2;
     }
-    cbuf[clen] = '\0';
-    fclose(cf);
 
     /* Extract source_file and source_hash from frontmatter */
     char source_file[PATH_BUF];
@@ -687,21 +679,13 @@ int verify_companion(const char *companion_path)
         fprintf(stderr, "tkc: cannot open source file '%s'\n", source_path);
         return 2;
     }
-    fseek(sf, 0, SEEK_END);
-    long slen = ftell(sf);
-    rewind(sf);
-    char *sbuf = malloc((size_t)slen + 1);
+    size_t slen = 0;   /* 135.3j: see above */
+    char *sbuf = tk_read_stream(sf, TK_SOURCE_MAX, &slen, NULL);
+    fclose(sf);
     if (!sbuf) {
-        fclose(sf);
-        fprintf(stderr, "tkc: out of memory reading '%s'\n", source_path);
-        return 2;
-    }
-    if ((long)fread(sbuf, 1, (size_t)slen, sf) != slen) {
-        fclose(sf); free(sbuf);
         fprintf(stderr, "tkc: failed to read '%s'\n", source_path);
         return 2;
     }
-    fclose(sf);
 
     /* Compute SHA-256 of the source file */
     Sha256 ctx;
@@ -924,23 +908,13 @@ int companion_diff(const char *source_path, const char *source,
                 companion_path);
         return 2;
     }
-    fseek(cf, 0, SEEK_END);
-    long clen = ftell(cf);
-    rewind(cf);
-    char *cbuf = malloc((size_t)clen + 1);
+    /* 135.3j: read the stream; ftell is -1 on a FIFO (heap overflow). */
+    char *cbuf = tk_read_stream(cf, TK_SOURCE_MAX, NULL, NULL);
+    fclose(cf);
     if (!cbuf) {
-        fclose(cf);
-        fprintf(stderr, "tkc: out of memory reading '%s'\n",
-                companion_path);
-        return 2;
-    }
-    if ((long)fread(cbuf, 1, (size_t)clen, cf) != clen) {
-        fclose(cf); free(cbuf);
         fprintf(stderr, "tkc: failed to read '%s'\n", companion_path);
         return 2;
     }
-    cbuf[clen] = '\0';
-    fclose(cf);
 
     int divergences = 0;
 
