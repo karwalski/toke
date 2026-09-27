@@ -62,6 +62,210 @@ Strings are **C strings**: null-terminated `ptr` (pointer to `i8`).
 %t0 = getelementptr inbounds [K x i8], ptr @.str.0, i32 0, i32 0
 ```
 
+### 3.1 Strings carry no length (story 127.170) — plan, not landed
+
+**Status: plan plus a measured prototype on branch `proto/fe-strlen`. Not
+merged, and not for merge.** Nothing in this section describes the tree as it
+is except the premise check; the layout above is still the only one.
+
+#### What the premise check found
+
+Measured on this host (macOS 26.6.2 arm64, Apple clang 21.0.0) at `c8575da`.
+Instructions retired come from `/usr/bin/time -l`, the minimum of three runs;
+they are the figure to read, because the load average was 11–38 throughout and
+the wall times are upper bounds. Programs: `test/perf/strlen/*.tk` on the
+prototype branch.
+
+1. **The row is right about `str.indexfrom`, and the cost is the bounds check
+   alone.** The 127.91 comma scanner over `"tok<i>,"` × 64,000 (a 564,890-byte
+   string) retires 7,897,192,102 instructions (0.41 s). Deleting only the
+   `memchr` that proves `start` lies inside the string takes it to 118,463,353
+   (0.01 s). The remaining time is the check.
+2. **`indexfrom` is the smallest of the cases.** Every per-call operation that
+   needs the length rescans the whole string, so the ordinary character loop is
+   quadratic twice over:
+   - `.len` on a `$str` lowers to a call to `tk_str_len_w`, which is `strlen`.
+     The call is declared with no attributes (`llvm.c` decl table), so LLVM
+     cannot hoist it out of a loop condition. `lp(let k=0;k<t.len;k=k+1){…}`
+     over the same string: **79,944,497,433 instructions, 6.19 s.**
+   - `t.charat(k)` (`tk_str_charat_w`) calls `strlen` to bounds-check `k`, and
+     so does `slice`/`substr` (`str_slice`). The loop above with
+     `if(t.charat(k)==44)` in its body: **159,789,335,911 instructions,
+     12.36 s** — the lexer loop every tokenizer in the language is written as.
+   - Scaling 16,000 → 64,000 tokens (4×) multiplies instructions by 16.1
+     (scanner), 17.9 (`.len`) and 18.0 (`.len` + `charat`). Quadratic.
+3. **A pointer-keyed length cache is refuted by the tree.** Caching `strlen`
+   by address needs a string's bytes never to change under the same pointer.
+   They do: `os.getcwd` returns `static char buf[4096]` (`os.c:104`) while its
+   `.tki` declares `"ownership": "caller"`; `ocr` returns `g_lang_list` and
+   `pdf` returns `s_errmsg`, both rewritten in place (12 `static char` buffers
+   in `src/stdlib`); `os.getenv` is borrowed from `environ`. A stale entry is
+   the over-read the check exists to prevent.
+4. **The type system cannot help here, unlike 135.18.** Every `$str` is the
+   same type, so the choice cannot be made statically; a length has to travel
+   with the bytes or be recomputed.
+5. **Strings are never freed today**, in the runtime or in any generated code
+   (§3: "the runtime does not track or free them"). `docs/spec/memory-model.md`
+   §1 describes per-scope arenas with bulk release; the implementation has
+   never had them. Every option below that allocates differently inherits that
+   gap rather than causing it.
+
+#### Consumer inventory
+
+Counted on `c8575da` with `/usr/bin/grep -a` (the `grep` shim skips files with
+a NUL byte).
+
+| Class | Count | What each needs |
+|---|---|---|
+| Codegen `.len` on `$str` | 3 sites in `src/llvm.c` (method map, receiver table, the 127.8 emitter), one runtime call each | nothing for correctness; see S0 for hoisting |
+| Codegen string literals | 1 emission site (`@.str.N`, `llvm.c` ~2578) | nothing: a literal's length is bounded by the source text, not the input |
+| Runtime symbols `tk_str_*` that `llvm.c` calls | 55 distinct | nothing |
+| Core string readers: `strlen(` in `str.c` / `str_glue.c` / `tk_runtime.c` | 60 lines (41 / 14 / 5) | the per-call O(len) ones — `.len`, `charat`, `char_at`, the `indexfrom` bound, `slice`/`substr`, `setat`, `endswith`, `trimsuffix`, concat and interpolation parts, builder `add` — convert first |
+| All other stdlib C readers | 414 more `strlen(` lines; 474 in 78 of 200 `src/stdlib` C/H files | correct unconverted; convert by profile |
+| Producers visible to toke | 97 of 933 exported functions return `str`; 54 more return a type containing `str` | correct unconverted; convert by profile |
+| Producer allocation sites in C | 313 `strdup`/`strndup` | each an unconverted producer until converted |
+| Strings that must never carry a header | 86 `(intptr_t)"…"` literal returns, 12 `static char` buffers, `os.getenv` (borrowed), argv | excluded by construction (below) |
+| C that `free()`s a string that reached toke | 0 in `src/stdlib` for the core producers; `test/stdlib/test_tk_runtime.c` frees three `tk_str_concat` results | must stop — see ABI impact |
+| C that writes into a string after returning it | 0 found statically (the three `strtok_r` calls work on private copies) | forbidden; enforced dynamically (the gate) |
+| Native C in `toke-ooke`, `toke-mcp` | 0 files | nothing |
+
+#### Options
+
+- **S0 — codegen attributes only.** Declare `tk_str_len_w` (and the other
+  pure readers) `nounwind willreturn memory(read)` so LLVM hoists `.len` out of
+  a loop whose body writes no memory. Measured by editing the declarations in
+  the emitted `.ll`: the `.len` loop goes from 79,944,497,433 to 110,836,136
+  instructions — but the `charat` loop only halves (80,005,707,024), because
+  `charat` rescans inside the body, and `indexfrom` is untouched. Any loop that
+  appends or builds (every real scanner) blocks the hoist. **A cheap
+  complement, not a fix.**
+- **S1 — sealed string heap (recommended).** A string stays a NUL-terminated
+  `char *`; nothing that reads one today changes. Converted producers allocate
+  from one reserved address range and write the byte length in the 8 bytes
+  before the first byte:
+  ```text
+  [ len:i64 | b0 b1 … b(len-1) \0 | pad to 16 ]
+              ^ the pointer toke sees: 16-aligned + 8
+  ```
+  A side bitmap holds one bit per 16-byte granule, set by `tks_seal()` after
+  the bytes are final. A reader trusts `p[-8..-1]` **only** if `p` lies in the
+  range, sits at a granule's +8 and its bit is set; otherwise it calls
+  `strlen`. So:
+  - an **unconverted producer** is slow and correct (no bit, `strlen`);
+  - an **unconverted reader** is slow and correct (the bytes are still a C
+    string);
+  - literals, argv, `getenv`, static buffers and **interior pointers** (a
+    pointer into the middle of a sealed string has no bit) are excluded by
+    construction, with no list to maintain.
+
+  The migration can therefore stop at any commit and be right. That is the
+  property 135.18 did not have, and the reason S1 is recommended over S2.
+  Its one new rule: **a sealed string is never written, freed or reallocated.**
+  Writing is caught by the gate below; `free`/`realloc` of an address malloc
+  did not return aborts loudly on macOS and glibc, never silently.
+- **S2 — a header on every string, trusted unconditionally.** The array
+  model: `.len` is one load. But the reader cannot tell a header from the
+  8 bytes before a literal, an argv string or a static buffer, so **every**
+  producer — 313 allocation sites, 86 literal returns, 12 static buffers,
+  argv, `getenv`, codegen literals (a layout change to `{i64, [K x i8]}`) —
+  must convert before the first reader flips, and a missed one reads malloc
+  metadata as a length: the silent wrong answer, at a larger surface than
+  135.18. Not recommended; S1 can later specialise to it where codegen knows
+  the producer.
+- **S3 — a header marked by a magic word.** Probabilistic, and reading 8 bytes
+  before a literal at the start of a page can fault. Rejected.
+- **S4 — a fat `{ptr, len}` string.** Changes the signature of every function
+  that takes or returns `$str` and every glue wrapper; rejected for the reason
+  §7.6 rejected the two-word error return.
+- **S5 — a pointer-keyed length cache.** Refuted by premise 3.
+- **S6 — a cursor/scanner type in `std.str`.** Fixes `indexfrom` only, and is
+  a stdlib addition needing a spec amendment. Not recommended alone.
+
+#### ABI impact (S1)
+
+- **Glue:** no signature changes. One header, `tk_strhdr.h`: `tks_alloc(n)`,
+  `tks_seal(p, n)`, `tks_dup(s, n)` for producers, `tk_strlen(p)` and
+  `tks_hdrlen(p)` for readers. The header's length **must equal `strlen(p)`**:
+  a producer whose output can contain a 0 byte (`str.addbyte(b; 0)`,
+  `str.setat(s; i; 0)`, `str.frombytes` of a buffer with a 0) seals with the
+  C-string length, not the computed one. The prototype's `tk_str_done_w` does
+  exactly this.
+- **Codegen:** nothing required. Optional, separately: S0's attributes; an
+  inline fast path for `.len` (range, bit, load) in place of the call; constant
+  `.len` for a literal.
+- **Tests:** `test/stdlib/test_tk_runtime.c` must stop `free()`ing
+  `tk_str_concat` results once `tk_str_concat` is converted.
+- **Memory:** 16 GiB of address space reserved at the first sealed string, plus
+  a 128 MiB bitmap, both committed only as touched. A program that makes one
+  string pays +32 KiB peak RSS. Bump allocation drops malloc's per-block
+  overhead, which pays for the 8-byte header on small strings (below).
+- **Threads:** allocation is an atomic bump; `tks_seal` publishes the bit with
+  release ordering and readers load it with acquire, so a reader on another
+  thread sees either the header or `strlen`, never half of one.
+- **Targets without `mmap`** (`Makefile.wasm`): `tks_init` fails and
+  `tks_alloc` falls back to `malloc` — every string unsealed, behaviour
+  identical to today.
+- **Future freeing:** if strings ever get the arenas `memory-model.md` §1
+  describes (or ADR-0006's release), the region must become per-arena and
+  release must clear its bits. S1 does not make that harder; it makes the
+  current never-free behaviour explicit.
+- **135.18 (`fix/ea-bytes`, held):** independent — arrays and strings share no
+  code path in this plan.
+
+#### Landing order
+
+1. Add `tk_strhdr.h`, `TK_STR_VERIFY`, the scaling gate and the census, with
+   **no producer converted**. Behaviour identical; `make diff-codegen`
+   0 changes.
+2. Convert the core producers (interpolation, concat, `slice`, builder
+   `build`, then `replace`, `join`, `split` elements, `file.read`, the readers
+   of stdin and sockets) and the core readers listed above. Each commit is
+   independently correct.
+3. Stop the three test frees; run `make conform`, the stdlib tests and a corpus
+   sample with `TK_STR_VERIFY=1`.
+4. S0's attributes and the inline `.len`, as their own codegen change with
+   their own conformance case.
+5. The remaining 414 readers and 313 producers by profile, under the ratchet.
+
+Steps 1–3 touch no `src/*.c`; step 4 touches only the `llvm.c` declaration
+table and the `.len` emitter.
+
+#### The gates
+
+Under S1 an unconverted reader is correct, so "every reader converted" is a
+performance claim, not a safety one; the safety gate is on writers. Three:
+
+1. **`TK_STR_VERIFY` (safety).** Compiled in, every trusted read asserts
+   `header == strlen(p)` and aborts on a mismatch. Run over `make conform`,
+   the stdlib tests and a corpus sample. Shown on the prototype: a planted
+   write into a sealed `slice` result (`out[n/2] = 0`) makes
+   `s.slice("abcdef";0;4)` print `len=4 text=ab` with the check off — the
+   silent wrong answer — and abort with
+   `TK_STR_VERIFY: header 4 != strlen 2` with it on; without the plant it
+   prints `len=4 text=abcd`.
+2. **Scaling (performance).** `test/perf/strlen/scaling.sh` runs the scanner,
+   the `.len` loop and the `.len`+`charat` loop at N and 4N and fails if
+   instructions retired grow more than 6× (linear ≈ 4, quadratic ≈ 16).
+   Instructions, not wall time, so load cannot flip it.
+3. **Reader ratchet.** A `check-str-strlen` script: every `strlen(` in
+   `src/stdlib` is on a dated skiplist that only shrinks, and the core readers
+   above may not be on it. It says which readers are left, not whether the
+   tree is correct — gate 1 says that.
+
+#### The prototype (branch `proto/fe-strlen`, not for merge)
+
+Implements `tk_strhdr.h` and converts four producers (`tk_str_join_n` —
+interpolation —, `tk_str_concat`/`str_concat`, `str_slice`, `tk_str_done_w`)
+and the readers `str_len`, `tk_str_len`, `tk_str_charat_w`,
+`tk_str_char_at`, the `indexfrom` bound, `str_slice`, the concat and
+interpolation part lengths and the builder's `add`. Nothing else.
+
+PROTO_TABLE
+
+What it proves and what it does not:
+
+PROTO_NOTES
+
 ---
 
 ## 4. Array Layout
