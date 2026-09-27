@@ -149,24 +149,26 @@ static const char __attribute__((unused)) *find_key(const char *json, const char
 }
 
 /* extract_string — given pointer to the opening '"' of a JSON string, return a
- * heap-allocated copy of its unescaped content and advance *ptr past the closing '"'.
- * Returns NULL on error. */
+ * heap-allocated copy of its DECODED content and advance *ptr past the closing
+ * '"'.  Returns NULL on error.
+ *
+ * 122.14: this said "unescaped" and did not unescape.  It copied the bytes
+ * between the quotes verbatim, so a tool-call id arrived with its JSON escapes
+ * still in it (an id of `"` came back as `\"`, and went back to the model in
+ * the tool-result message as a different id), and the OpenAI string form of
+ * "arguments" -- "{\"city\":\"Paris\"}" -- arrived as `{\"city\":...}`,
+ * which is not a JSON object.  Its closing-quote scan also stopped at `\\"`
+ * (an escaped backslash before the real closing quote) one byte late.  The
+ * decoder is strbuf_append_json_unescape, shared with tk_json_parse. */
 static char *extract_string(const char **ptr)
 {
     const char *p = *ptr;
     if (*p != '"') return NULL;
     p++; /* skip opening quote */
-    const char *start = p;
-    /* find closing quote (simple scan; handles \" escape) */
-    while (*p && !(*p == '"' && *(p - 1) != '\\')) p++;
-    size_t n   = (size_t)(p - start);
-    char  *out = malloc(n + 1);
-    if (!out) return NULL;
-    memcpy(out, start, n);
-    out[n] = '\0';
-    if (*p == '"') p++;
+    TkStrBuf b = TK_STRBUF_INIT;
+    (void)strbuf_append_json_unescape(&b, &p);
     *ptr = p;
-    return out;
+    return strbuf_take(&b);   /* "" for an empty string; NULL only on OOM */
 }
 
 /* extract_object — given pointer to the opening '{' of a JSON object, return a
@@ -182,9 +184,13 @@ static char *extract_object(const char **ptr)
         if (*p == '{') depth++;
         else if (*p == '}') { depth--; if (depth == 0) { p++; break; } }
         else if (*p == '"') {
-            /* skip string */
+            /* skip string.  122.14: an escape consumes the byte after the
+             * backslash, so `\\"` ends the string (the old "previous byte is
+             * not a backslash" test did not), and an unterminated string stops
+             * at the NUL instead of stepping past it. */
             p++;
-            while (*p && !(*p == '"' && *(p - 1) != '\\')) p++;
+            while (*p && *p != '"') { if (*p == '\\' && p[1]) p++; p++; }
+            if (!*p) break;
         }
         p++;
     }

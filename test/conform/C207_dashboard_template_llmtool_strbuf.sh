@@ -221,12 +221,12 @@ if tool:
     except Exception as e:
         print("  info: tool content does not parse: %r" % tool[-1]["content"][:200])
 check(content is not None, "the tool-result message sent back to the model is valid JSON")
-# llm_parse_tool_calls hands the id on with its JSON escapes undecoded
-# (80 x backslash-quote, a separate defect); what matters here is that
-# all of it survives the round trip.
-check(content is not None and content.get("tool_call_id") == '\\"' * 80
+# 122.14: llm_parse_tool_calls now decodes the id, so the id sent back is
+# exactly the one the model sent: 80 double quotes (it used to come back as
+# 80 x backslash-quote, the escapes undecoded).  All of it must survive.
+check(content is not None and content.get("tool_call_id") == '"' * 80
       and content.get("content") == {"ok": 1},
-      "it carries the whole 160-byte call id and the tool's result")
+      "it carries the whole 80-quote call id, decoded, and the tool's result")
 sys.exit(1 if bad else 0)
 PY
 prc=$?
