@@ -5597,8 +5597,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * at run time it may well be an array or a str.  E4036, the receiver
          * code, as for a method the receiver's kind does not answer.  No
          * `fix`: whether the receiver or the member is wrong is not
-         * decidable here. */
-        if (is_numeric(base)||base->kind==TY_BOOL) {
+         * decidable here.
+         *
+         * Only the collection properties (`len`, `keys`).  Any other name
+         * on an i64 is the "bare i64 handle" shape the struct-layout work
+         * owns (127.86/127.89): codegen answers it with E4034 naming the
+         * struct offsets that disagree, or no struct declaring the field
+         * (T003), which says more than "a scalar has no members" would. */
+        if ((is_numeric(base)||base->kind==TY_BOOL)
+            &&(strcmp(fname,"len")==0||strcmp(fname,"keys")==0)) {
             if (tc_first_report(cx,node) && tc_can_emit(cx)) {
                 char msg[256], got[160];
                 snprintf(msg,sizeof(msg),
