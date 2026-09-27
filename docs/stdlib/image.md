@@ -67,7 +67,7 @@ f=why():i64{
 | `image.pixelat` | `img: $imgbuf; x: u32; y: u32` | `@($byte)!$str` | Get pixel channel values at (x, y) |
 | `image.fromraw` | `data: @($byte); w: u32; h: u32; channels: u8` | `$imgbuf` | Construct an image buffer from raw pixel data |
 | `image.rotate` | `img: $imgbuf; angledeg: f64` | `$imgbuf` | Rotate by an arbitrary angle about the centre, bilinear |
-| `image.blur` | `img: $imgbuf; passes: u32` | `$imgbuf` | Apply the 1/2/1 Gaussian kernel `passes` times |
+| `image.blur` | `img: $imgbuf; passes: u32` | `$imgbuf` | Apply the 1/2/1 Gaussian kernel `passes` times (1 to 256; more is refused with an empty `$imgbuf`) |
 | `image.convolve` | `img: $imgbuf; kernel: @($f64); ksize: u32; divisor: f64; offset: f64` | `$imgbuf!$str` | Apply an arbitrary odd-sized kernel |
 | `image.adaptivethreshold` | `img: $imgbuf; window: u32; k: f64` | `$imgbuf!$str` | Sauvola local thresholding to a 0/255 plane |
 | `image.tiffpages` | `data: @($byte)` | `u32!$str` | Number of pages (IFDs) in a TIFF |
