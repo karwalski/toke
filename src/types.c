@@ -4761,6 +4761,43 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         { int tv=0;                                   /* 127.227 item 1 */
           for (int i=1;i<node->child_count;i++) tv|=type_as_value(cx,node->children[i]);
           if (tv) return mk_type(A,TY_UNKNOWN); }
+        /* 127.230 item 3: an immediately-invoked closure, `(fn():T{..})()`.
+         * Every path below infers the ARGUMENTS (children 1..n) and never
+         * the callee, so the closure's body was not type-checked at all:
+         * `(fn():i64{<1+true})()` was clean, while the same closure bound
+         * with `let` was E4031.  The row found it inside an interpolation,
+         * but the interpolation is incidental -- the hole was every IIFE.
+         * Walk the closure (its body, against its own return type, via the
+         * NODE_CLOSURE case) and judge the call against its signature,
+         * exactly as a call through a closure-valued local is judged. */
+        if (node->children[0]->kind==NODE_CLOSURE) {
+            Type *ft=infer(cx,node->children[0]);
+            int actual=node->child_count-1;
+            if (ft&&func_has_sig(ft)&&actual!=ft->field_count) {
+                if (tc_can_emit(cx)) {
+                    char msg[256], es[16], gs[16];
+                    snprintf(msg,sizeof msg,
+                             "wrong number of arguments: the closure is a function "
+                             "of type '%s', which takes %d, got %d",
+                             type_name(ft),ft->field_count,actual);
+                    snprintf(es,sizeof es,"%d",ft->field_count);
+                    snprintf(gs,sizeof gs,"%d",actual);
+                    diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
+                              "expected",es,"got",gs,(const char*)NULL);
+                }
+                for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            } else {
+                for (int i=1;i<node->child_count;i++) {
+                    const Node *an=node->children[i];
+                    Type *at=infer(cx,an);
+                    Type *pt=(ft&&func_has_sig(ft))?ft->field_types[i-1]:NULL;
+                    if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
+                        &&!types_compat(at,pt))
+                        emit_mm(cx,an,pt,at,NULL);
+                }
+            }
+            return (ft&&ft->elem)?ft->elem:mk_type(A,TY_UNKNOWN);
+        }
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
 
         /* 124.0c item 2: a call through a function VALUE — a parameter of
