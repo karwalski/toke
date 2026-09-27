@@ -233,7 +233,9 @@ f=main():i64{
 #   ...and a module with NO interface file at all (std.array is native glue)
 #   must NOT be diagnosed: absence of a .tki is not evidence of anything, and
 #   a false error here would break correct programs.
-run_case "no-interface module (std.array) is not falsely diagnosed" "has=1 at=2" '
+#   (127.220 item 2: `has=` printed 1 because array.tki typed contains i64;
+#   it is a bool, and the module form now prints true like the receiver form.)
+run_case "no-interface module (std.array) is not falsely diagnosed" "has=true at=2" '
 m=t;
 i=io:std.io;
 i=a:std.array;
