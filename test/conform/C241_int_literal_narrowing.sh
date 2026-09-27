@@ -10,7 +10,7 @@
 # that does fit must print the values it wrote.
 #
 # Negative control: TKC=<main's toke> -- cases 1-6, 10 and 11 fail (E4031);
-# 12-14 pass on main only because `byte` was unresolved there (@(?)).
+# 12-14 and 16 pass on main only because `byte` was unresolved there (@(?)).
 #
 # Story: 127.230 (item 4)
 
@@ -70,6 +70,10 @@ expect "13 bitwise on u8 elements and literals" \
     "$(diags 'm=q;f=g(b:@byte;o:i64):i64{<(b.get(o)|(b.get(o+1)<<8))&255};f=main():i64{<0};')" "rc=0"
 expect "14 literal array concatenated onto a @byte" \
     "$(diags 'm=q;f=g(b:@byte):@byte{let p=mut.b;p=p+@(128);<p};f=main():i64{<0};')" "rc=0"
+expect "16 a u8 element returned from an i64 function" \
+    "$(diags 'm=q;f=g(b:@byte):i64{<b.get(0)};f=main():i64{<0};')" "rc=0"
+expect "17 an i32 returned from an i64 function stays E4031 (D027)" \
+    "$(diags 'm=q;f=g(a:i32):i64{<a};f=main():i64{<0};')" "E4031|i32"
 
 # The accepted program prints what it wrote.
 cat > "${WORK}/r.tk" <<'TK'

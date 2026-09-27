@@ -360,11 +360,31 @@ static int int_widens_to(const Type *from, const Type *to) {
     if (!from||!to||to->kind!=TY_I64) return 0;
     switch (from->kind) {
     case TY_U64: case TY_BOOL: return 1;
-    /* 127.230 item 4: the narrower widths, the "strict superset" the note
-     * above anticipates.  Resolving lower-case `byte` to u8 made every
-     * `b.get(i)` on a `@byte` a u8, and `rem*256+work.get(i)` (bench
-     * CRY-041) an E4031 -- the evidence the note said was missing.  Each is
-     * value-preserving into i64 and occupies an i64 slot already. */
+    /* 127.230 item 4: u8, and only u8, from the narrower widths -- held to
+     * what the evidence needs, the same method as the note above.
+     * Resolving lower-case `byte` to u8 made every element of a @byte a u8,
+     * and `<b.get(i)` from an i64 function (bench CRY-041) E4031.  The
+     * signed narrow widths stay out: D027/D042 pin `<a` of an i32 from an
+     * i64 function as E4031, and moving that is an owner decision. */
+    case TY_U8: return 1;
+    default: return 0;
+    }
+}
+
+/*
+ * int_operand_widens (127.230 item 4) — the OPERAND form of the widening rule,
+ * for binary arithmetic, comparison and bitwise operators only: int_widens_to
+ * plus the narrower integer widths into i64.  Resolving lower-case `byte` to
+ * u8 made every `b.get(i)` on a @byte a u8, and `rem*256+w.get(i)` /
+ * `b.get(o)<<8` (bench CRY-041) E4031.  Mixing a narrow operand into i64
+ * arithmetic is value-preserving.  Value flow (argument, return, binding)
+ * keeps int_widens_to unchanged -- D027/D042 pin `<a` of an i32 from an i64
+ * function as E4031, and that decision is not this story's.
+ */
+static int int_operand_widens(const Type *from, const Type *to) {
+    if (int_widens_to(from, to)) return 1;
+    if (!from || !to || to->kind != TY_I64) return 0;
+    switch (from->kind) {
     case TY_U8: case TY_U16: case TY_U32:
     case TY_I8: case TY_I16: case TY_I32: return 1;
     default: return 0;
@@ -4862,9 +4882,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (is_integer(l)&&is_integer(r)&&!types_equal(l,r)) {
                 int l_lit=node->children[0]&&node->children[0]->kind==NODE_INT_LIT;
                 int r_lit=node->children[1]&&node->children[1]->kind==NODE_INT_LIT;
-                if (l_lit^r_lit) return l_lit?r:l;
-                if (int_widens_to(l,r)) return r;
-                if (int_widens_to(r,l)) return l;
+                /* a literal adopts an i64/u64 operand's type; with a
+                 * narrower operand the result is i64 -- `b.get(o)<<8` does
+                 * not fit a u8, and every integer is an i64 slot. */
+                if (l_lit^r_lit) {
+                    Type *o=l_lit?r:l;
+                    if (o->kind==TY_I64||o->kind==TY_U64) return o;
+                    return mk_type(A,TY_I64);
+                }
+                if (int_operand_widens(l,r)) return r;
+                if (int_operand_widens(r,l)) return l;
             }
             if (!is_integer(l)||!is_integer(r)||!types_equal(l,r)) {
                 char fix[64];
@@ -4989,8 +5016,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * int_widens_to carries the reasoning and the direction. */
             if ((arith||cmp) && is_integer(l) && is_integer(r)
                 && !types_equal(l,r)
-                && (int_widens_to(l,r)||int_widens_to(r,l))) {
-                return cmp?mk_type(A,TY_BOOL):(int_widens_to(l,r)?r:l);
+                && (int_operand_widens(l,r)||int_operand_widens(r,l))) {
+                return cmp?mk_type(A,TY_BOOL):(int_operand_widens(l,r)?r:l);
             }
             /* 127.224 item 5: an arithmetic operand that is not numeric at
              * all (`true+false`, `b+1` on a bool) went through emit_mm below,
