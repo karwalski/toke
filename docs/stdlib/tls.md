@@ -40,7 +40,7 @@ These four were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` unti
 
 ### TlsConn
 
-An opaque handle to an established connection, as an `i64`. `0` means no connection. Pass it to `tls.read`, `tls.write`, `tls.close`, `tls.protocol`, `tls.peercert` and `tls.pairingcode`.
+An opaque handle to an established connection, as an `i64`. `0` means no connection. Pass it to `tls.read`, `tls.write`, `tls.close`, `tls.protocol`, `tls.group`, `tls.peercert` and `tls.pairingcode`.
 
 ### TlsKeypair
 
@@ -166,6 +166,10 @@ Clean TLS shutdown followed by socket close. The handle must not be used afterwa
 ### tls.protocol(conn: TlsConn): str
 
 The protocol **negotiated on the wire**, read back through `SSL_get_version` -- `"TLSv1.3"` on any successful connection. This is a fact about the session, not a claim about the source, which is why `C022` asserts on it.
+
+### tls.group(conn: TlsConn): str
+
+The key-exchange group **negotiated on the wire**: `"X25519MLKEM768"` when the post-quantum hybrid was agreed, or the classical group the handshake fell back to (`"x25519"`, `"secp256r1"`, ...) when the peer did not offer the hybrid or the linked OpenSSL is older than 3.5. Empty for a handle that is not an open connection. The context prefers the hybrid but keeps classical groups for interoperability, and does not report a fallback on its own; a program that must not run over a classical key exchange compares it with `"X25519MLKEM768"` and closes the connection when it differs.
 
 ### tls.peercert(conn: TlsConn): str
 

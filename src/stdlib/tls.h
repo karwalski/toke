@@ -185,6 +185,22 @@ char *tls_fingerprint(const char *pem);
 char *tls_protocol(TlsConn conn);
 
 /*
+ * tls.group(conn) -> str
+ *
+ * The key-exchange group NEGOTIATED on `conn`, as OpenSSL names it:
+ * "X25519MLKEM768" when the post-quantum hybrid was agreed, a classical
+ * name ("x25519", "secp256r1", ...) when the handshake fell back because
+ * the peer did not offer the hybrid, or because the linked OpenSSL (< 3.5)
+ * does not know it.  Empty string for an unknown id.  Heap-allocated;
+ * caller frees.
+ *
+ * Added by story 122.13: build_ssl_ctx prefers the hybrid but keeps
+ * classical groups for interop, and before this nothing could tell which
+ * one a connection actually got -- the fallback was silent.
+ */
+char *tls_group(TlsConn conn);
+
+/*
  * tls.pairingcode(conn) -> str
  *
  * Derives a 6-digit decimal code from the XOR of the local and peer

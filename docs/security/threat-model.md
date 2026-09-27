@@ -207,7 +207,7 @@ Checked against the source on 2026-09-26. "Toke-callable" means declared in a
 | `std.encrypt` KDF (`hkdfsha256`) | HKDF-SHA-256 | yes | adequate | |
 | `std.encrypt` key agreement (`x25519keypair`, `x25519dh`) | X25519 | yes | **vulnerable** (HNDL) | no hybrid or ML-KEM alternative in `std.encrypt` yet |
 | `std.encrypt` signatures (`ed25519*`) | Ed25519 | yes | **vulnerable** (forgery once a CRQC exists) | no ML-DSA alternative in `std.encrypt` yet |
-| `std.tls` key exchange | X25519MLKEM768 hybrid, then classical groups | yes (negotiated) | **hybrid when both sides support it** | `tls.c` prefers `X25519MLKEM768`; with OpenSSL older than 3.5, or a peer without the group, it falls back to classical X25519/ECDH **silently** |
+| `std.tls` key exchange | X25519MLKEM768 hybrid, then classical groups | yes (negotiated) | **hybrid when both sides support it** | `tls.c` prefers `X25519MLKEM768`; with OpenSSL older than 3.5, or a peer without the group, it falls back to classical X25519/ECDH. The fallback is not reported, but `tls.group(conn)` names the group each connection negotiated (122.13) |
 | `std.tls` self-signed certificates (`genselfsigned`, `genselfsignedalg`) | ECDSA P-384 by default; ML-DSA-65 opt-in | yes | default **vulnerable**; `ml-dsa-65` post-quantum | ML-DSA-65 certificates do not verify with classical-only peers |
 | `std.auth` JWT | HMAC-SHA-256 (HS256 only, allowlisted) | yes | adequate | symmetric |
 | ACME account key (`acme.c`) | ECDSA P-256 (ES256) | via `std.http` | **vulnerable** | bound by what ACME CAs accept |
@@ -217,9 +217,10 @@ Checked against the source on 2026-09-26. "Toke-callable" means declared in a
 ## Guidance for toke programs (HNDL)
 
 1. **Transport.** Use `std.tls` with an OpenSSL of 3.5 or later on both ends; the
-   hybrid group is then negotiated automatically. There is currently no API to
-   observe which group a connection negotiated, so a silent classical fallback is
-   not detectable from toke code (reported for triage with 122.6).
+   hybrid group is then negotiated automatically. `tls.group(conn)` returns the
+   group a connection actually negotiated (`"X25519MLKEM768"` for the hybrid),
+   so a program that must not run over a classical fallback can check it and
+   close the connection (122.13; before that the fallback was undetectable).
 2. **Data at rest.** Encrypt with `std.encrypt`'s AES-256-GCM under a key that is
    *not* derived solely from `x25519dh`. A key that only X25519 protects in transit
    or in storage is as long-lived as the ciphertext it unlocks.
