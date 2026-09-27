@@ -182,7 +182,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -2002,14 +2002,28 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
  * is full (TKC_STR_GLOBALS_SIZE).
  */
 static void str_buf_append(Ctx *c, const char *fmt, ...) {
-    va_list ap;
+    /* 138.14 (T-35): this buffer was a fixed TKC_STR_GLOBALS_SIZE (64 KB)
+     * and a full buffer "silently truncated": 670 string constants, or one
+     * 300,000-character literal, cut the module inside a constant, toke
+     * exited 0 and clang refused the IR.  It grows now; only an allocation
+     * failure can stop it, and that is reported (str_globals_oom). */
+    va_list ap, ap2;
     va_start(ap, fmt);
-    int rem = (int)sizeof(c->str_globals) - c->str_globals_len;
-    if (rem > 0) {
-        int n = vsnprintf(c->str_globals + c->str_globals_len, (size_t)rem, fmt, ap);
-        if (n > 0) c->str_globals_len += (n < rem) ? n : rem - 1;
-    }
+    va_copy(ap2, ap);
+    int need = vsnprintf(NULL, 0, fmt, ap);
     va_end(ap);
+    if (need > 0 && !c->str_globals_oom) {
+        if (c->str_globals_len + need + 1 > c->str_globals_cap) {
+            int ncap = c->str_globals_cap ? c->str_globals_cap : TKC_STR_GLOBALS_SIZE;
+            while (ncap < c->str_globals_len + need + 1) ncap *= 2;
+            char *nb = (char *)realloc(c->str_globals, (size_t)ncap);
+            if (!nb) { c->str_globals_oom = 1; va_end(ap2); return; }
+            c->str_globals = nb; c->str_globals_cap = ncap;
+        }
+        vsnprintf(c->str_globals + c->str_globals_len, (size_t)(need + 1), fmt, ap2);
+        c->str_globals_len += need;
+    }
+    va_end(ap2);
 }
 
 /*
@@ -6894,13 +6908,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.strtag.%d, i32 0, i32 0\n",
                             tag_tmp, tag_len, tag_len, str_g);
                     /* Add the string constant to globals buffer */
-                    int glen = c->str_globals_len;
-                    int wrote = snprintf(c->str_globals + glen,
-                                         TKC_STR_GLOBALS_SIZE - glen,
-                                         "@.strtag.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"\n",
-                                         str_g, tag_len, tag);
-                    if (wrote > 0 && glen + wrote < TKC_STR_GLOBALS_SIZE)
-                        c->str_globals_len += wrote;
+                    str_buf_append(c, "@.strtag.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"\n",
+                                   str_g, tag_len, tag);   /* 138.14 */
 
                     /* tk_str_cmp(scrutinee, tag) — 127.83: NULL-safe, because
                      * the scrutinee may be the `?(T)` miss sentinel. */
@@ -10798,8 +10807,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             fprintf(c->out, ") nounwind #0 !dbg !%d {\nbb.entry:\n", subprog_id);
             /* Buffer the metadata — emitted after all functions.
              * We append to str_globals since it is flushed at module scope. */
-            int n2 = snprintf(c->str_globals + c->str_globals_len,
-                              TKC_STR_GLOBALS_SIZE - c->str_globals_len,
+            str_buf_append(c,   /* 138.14 */
                               "!%d = !DISubroutineType(types: !{})\n"
                               "!%d = distinct !DISubprogram(name: \"%s\", file: !%d, line: %d, "
                               "type: !%d, unit: !%d, scopeLine: %d, "
@@ -10807,8 +10815,6 @@ static void emit_toplevel(Ctx *c, const Node *n)
                               subrt_id,
                               subprog_id, tb, c->dbg_file, fn_line,
                               subrt_id, c->dbg_cu, fn_line);
-            if (n2 > 0 && c->str_globals_len + n2 < TKC_STR_GLOBALS_SIZE)
-                c->str_globals_len += n2;
         } else {
             fputs(") nounwind #0 {\nbb.entry:\n", c->out);
         }
@@ -11356,7 +11362,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     FILE *body_file = tmpfile();
     if (!body_file) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot create temp file", (void*)0);
         return -1;
@@ -11453,6 +11459,10 @@ timeparts_done:
         fwrite(ctx.fwd_decls, 1, (size_t)ctx.fwd_decls_len, body_file);
 
     /* Flush buffered string globals (must appear at module scope, before main) */
+    if (ctx.str_globals_oom)   /* 138.14: never a silently shortened module */
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: out of memory while buffering the module's string constants",
+                  NULL);
     if (ctx.str_globals_len > 0)
         fwrite(ctx.str_globals, 1, (size_t)ctx.str_globals_len, body_file);
 
@@ -11515,7 +11525,7 @@ timeparts_done:
     long body_len = (fflush(body_file) == 0) ? ftell(body_file) : -1;
     if (body_len < 0 || fseek(body_file, 0, SEEK_SET) != 0) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot re-read the temp file", (void*)0);
         return -1;
@@ -11523,14 +11533,14 @@ timeparts_done:
     char *body_buf = (char *)malloc((size_t)body_len + 1);
     if (!body_buf) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: out of memory for body scan", (void*)0);
         return -1;
     }
     if (fread(body_buf, 1, (size_t)body_len, body_file) != (size_t)body_len) {
         free(body_buf); fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: short read of the temp file", (void*)0);
         return -1;
@@ -11604,12 +11614,12 @@ timeparts_done:
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: I/O error writing .ll file", (void*)0);
         return -1;
     }
-    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
     fclose(f);
     /* A DIAG_ERROR emitted during codegen (e.g. 114.19c array+scalar concat)
      * must fail the build — the .ll is written but callers treat <0 as failure
@@ -11715,7 +11725,9 @@ static const char *find_capabilities_source(void) {
  * file_read, md_render, …).
  */
 static const char *find_stdlib_sources(void) {
-    static char buf[4096];
+    /* 138.14: was 4096 with an unchecked `n +=` running past the end on a
+     * long path.  NULL now means "did not fit". */
+    static char buf[TKC_DEPS_SOURCES_SIZE];
     const char *dir = NULL;
     /* Search order: env var, compile-time macro, cwd-relative */
     const char *env_dir = getenv("TKC_STDLIB_DIR");
@@ -11740,7 +11752,7 @@ static const char *find_stdlib_sources(void) {
     /* Derive vendor directory: <dir>/../../stdlib/vendor/.
      * TKC_STDLIB_DIR points at <repo>/src/stdlib, so two ..-hops reach
      * <repo>, under which the vendored cmark + tomlc99 trees live. */
-    char vendor[512];
+    char vendor[4096];
     snprintf(vendor, sizeof vendor, "%s/../../stdlib/vendor", dir);
 
     /* Core stdlib .c files needed by tk_web_glue.c wrappers.
@@ -11761,6 +11773,7 @@ static const char *find_stdlib_sources(void) {
         dir);
 
     /* Vendored tomlc99 — backs src/stdlib/toml.c. */
+    if (n < 0 || (size_t)n >= sizeof buf) return NULL;   /* 138.14 */
     n += snprintf(buf + n, sizeof buf - (size_t)n,
         " %s/tomlc99/toml.c", vendor);
 
@@ -11774,10 +11787,11 @@ static const char *find_stdlib_sources(void) {
         "references.c", "render.c", "scanners.c", "utf8.c", "xml.c",
         NULL
     };
-    for (int i = 0; cmark_files[i]; i++) {
+    for (int i = 0; cmark_files[i] && n >= 0 && (size_t)n < sizeof buf; i++) {
         n += snprintf(buf + n, sizeof buf - (size_t)n,
             " %s/cmark/src/%s", vendor, cmark_files[i]);
     }
+    if (n < 0 || (size_t)n >= sizeof buf) return NULL;   /* 138.14 */
     return buf;
 }
 
@@ -11993,8 +12007,14 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     const char *env_link_all = getenv("TKC_LINK_ALL");
     if (env_link_all && env_link_all[0] == '1') link_all = 1;
 
-    char sources[8192];
+    /* 138.14 (N-1): was `char sources[8192]`, and a full buffer cut the last
+     * path mid-name: from a long checkout path every std.http program failed
+     * E9003 "no such file".  Static (not re-entered) at the resolver's size
+     * plus room for the glue file; anything that still does not fit is a
+     * located E9010, not a truncated clang command. */
+    static char sources[TKC_DEPS_SOURCES_SIZE + 8192];
     sources[0] = '\0';
+    int src_ovf = 0;
     char extra_flags[512];
     extra_flags[0] = '\0';
 
@@ -12017,8 +12037,11 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
                 if (f) { fclose(f); stdlib_dir = candidates[i]; }
             }
         }
-        ResolvedDeps deps;
-        if (stdlib_dir && resolve_stdlib_deps_imports_only(stdlib_dir, st, &deps) == 0) {
+        static ResolvedDeps deps;   /* 138.14: 64 KB, off the stack */
+        int drc = stdlib_dir ? resolve_stdlib_deps_imports_only(stdlib_dir, st, &deps) : -1;
+        if (drc == TKC_DEPS_OVERFLOW) {
+            src_ovf = 1;
+        } else if (drc == 0) {
             snprintf(sources, sizeof sources, " %s", deps.sources);
             if (deps.flags[0])
                 snprintf(extra_flags, sizeof extra_flags, "%s", deps.flags);
@@ -12036,12 +12059,22 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         const char *rt  = find_runtime_source();
         const char *cap = find_capabilities_source();
         const char *std = find_stdlib_sources();
-        if (rt  && rt[0])  { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                             strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
-        if (cap && cap[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                             strncat(sources, cap, sizeof sources - strlen(sources) - 1); }
-        if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                             strncat(sources, std, sizeof sources - strlen(sources) - 1); }
+        if (!std) src_ovf = 1;   /* 138.14: find_stdlib_sources could not fit its list */
+        const char *parts[3] = { rt, cap, std };
+        for (int pi = 0; pi < 3 && !src_ovf; pi++) {
+            if (!parts[pi] || !parts[pi][0]) continue;
+            size_t cur = strlen(sources);
+            int w = snprintf(sources + cur, sizeof sources - cur, " %s", parts[pi]);
+            if (w < 0 || (size_t)w >= sizeof sources - cur) { sources[cur] = '\0'; src_ovf = 1; }
+        }
+    }
+    if (src_ovf) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: the stdlib C source list for this program "
+                  "does not fit the compiler's buffer (a very long stdlib directory "
+                  "path); it was not passed to clang truncated",
+                  (void *)0);
+        return -1;
     }
 
     const char *vendor_inc = find_stdlib_vendor_includes();
@@ -12101,8 +12134,8 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         snprintf(tki_dir, sizeof tki_dir, "%s/../../stdlib", sdir);
         if (glue_gen_write_temp(tki_dir, glue_path, (int)sizeof glue_path) == 0
             && glue_path[0]) {
-            strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-            strncat(sources, glue_path, sizeof sources - strlen(sources) - 1);
+            size_t cur = strlen(sources);   /* 138.14: room reserved above */
+            snprintf(sources + cur, sizeof sources - cur, " %s", glue_path);
         }
     }
 

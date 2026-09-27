@@ -240,8 +240,25 @@ static int flag_in_list(const char *list, const char *flag) {
 
 /* ── Helper: append .c files for a module to the sources buffer ────── */
 
+/* 138.14: append " <word>" to buf, or set *ovf and leave buf as it was —
+ * never a word cut short. */
+static void append_word(char *buf, size_t bufsz, const char *word, int *ovf) {
+    size_t cur = strlen(buf);
+    int w = snprintf(buf + cur, bufsz - cur, " %s", word);
+    if (w < 0 || (size_t)w >= bufsz - cur) { buf[cur] = '\0'; *ovf = 1; }
+}
+
+/* 138.14: is `word` a whole space-separated word of `list`?  (Replaces a copy
+ * of the list into an 8 KB buffer, which itself truncated.) */
+static int list_has_word(const char *list, const char *word) {
+    size_t wl = strlen(word);
+    for (const char *p = strstr(list, word); p; p = strstr(p + 1, word))
+        if ((p == list || p[-1] == ' ') && (p[wl] == '\0' || p[wl] == ' ')) return 1;
+    return 0;
+}
+
 static void append_module_sources(char *buf, size_t bufsz, const char *dir,
-                                  const char *c_files) {
+                                  const char *c_files, int *ovf) {
     /* c_files is space-separated basenames like "str.c http.c" */
     char tmp[1024];
     snprintf(tmp, sizeof tmp, "%s", c_files);
@@ -251,15 +268,11 @@ static void append_module_sources(char *buf, size_t bufsz, const char *dir,
         /* De-dup: several modules share a .c file (e.g. stack/queue/set/vec all
          * map to collections.c, which the core also adds). Linking the same
          * source twice yields duplicate-symbol errors. Append each path once. */
-        char path[512];
-        snprintf(path, sizeof path, "%s/%s", dir, tok);
-        char hay[8192], needle[514];
-        snprintf(hay, sizeof hay, " %s ", buf);   /* space-pad both ends */
-        snprintf(needle, sizeof needle, " %s ", path);
-        if (!strstr(hay, needle)) {                /* append only if not present */
-            size_t cur = strlen(buf);
-            snprintf(buf + cur, bufsz - cur, " %s", path);
-        }
+        char path[4096];
+        int pw = snprintf(path, sizeof path, "%s/%s", dir, tok);
+        if (pw < 0 || (size_t)pw >= sizeof path) { *ovf = 1; return; }
+        if (!list_has_word(buf, path))             /* append only if not present */
+            append_word(buf, bufsz, path, ovf);
         tok = strtok_r(NULL, " ", &save);
     }
 }
@@ -337,25 +350,24 @@ static void require_vendor_file(const char *path, const char *lib,
 }
 
 static void append_vendor_sources(char *buf, size_t bufsz, const char *dir,
-                                  const char *module) {
-    char vendor[512];
-    snprintf(vendor, sizeof vendor, "%s/../../stdlib/vendor", dir);
+                                  const char *module, int *ovf) {
+    char vendor[4096];   /* 138.14: was 512 — a long checkout path cut it */
+    int vw = snprintf(vendor, sizeof vendor, "%s/../../stdlib/vendor", dir);
+    if (vw < 0 || (size_t)vw >= sizeof vendor) { *ovf = 1; return; }
 
     if (!strcmp(module, "toml")) {
-        size_t cur = strlen(buf);
-        char path[640];
+        char path[4200];
         snprintf(path, sizeof path, "%s/tomlc99/toml.c", vendor);
         require_vendor_file(path, "tomlc99", "toml");
-        snprintf(buf + cur, bufsz - cur, " %s", path);
+        append_word(buf, bufsz, path, ovf);
     } else if (!strcmp(module, "md")) {
         /* One probe is enough: the nineteen cmark sources ship together. */
-        char path[640];
+        char path[4200];
         snprintf(path, sizeof path, "%s/cmark/src/cmark.c", vendor);
         require_vendor_file(path, "cmark", "md");
         for (int i = 0; cmark_files[i]; i++) {
-            size_t cur = strlen(buf);
-            snprintf(buf + cur, bufsz - cur,
-                     " %s/cmark/src/%s", vendor, cmark_files[i]);
+            snprintf(path, sizeof path, "%s/cmark/src/%s", vendor, cmark_files[i]);
+            append_word(buf, bufsz, path, ovf);
         }
     } else if (!strcmp(module, "zip")) {
         /* 135.1: nothing is APPENDED here — src/stdlib/zip.c #includes the
@@ -366,7 +378,7 @@ static void append_vendor_sources(char *buf, size_t bufsz, const char *dir,
          * found` wrapped in E9003, which is exactly the opaque failure 127.85
          * was filed to remove.  Both files are probed because zip.c includes
          * the .c and the .c includes the .h. */
-        char path[640];
+        char path[4200];
         snprintf(path, sizeof path, "%s/miniz/miniz.c", vendor);
         require_vendor_file(path, "miniz", "zip");
         snprintf(path, sizeof path, "%s/miniz/miniz.h", vendor);
@@ -381,6 +393,7 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
     if (!stdlib_dir || !stdlib_dir[0]) return -1;
 
     out->sources[0] = '\0';
+    out->overflow = 0;   /* 138.14 */
     out->flags[0]   = '\0';
 
     /* Collect the set of needed module names via BFS/iterative closure.
@@ -459,6 +472,7 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
     snprintf(out->sources, sizeof out->sources,
              "%s/tk_runtime.c %s/capabilities.c",
              stdlib_dir, stdlib_dir);
+    if (strlen(out->sources) + 1 >= sizeof out->sources) out->overflow = 1;   /* 138.14 */
 
     /* For each needed module, append its .c files and vendor sources */
     {
@@ -470,16 +484,16 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
             const StdlibModule *m = find_module(tok);
             if (m) {
                 append_module_sources(out->sources, sizeof out->sources,
-                                      stdlib_dir, m->c_files);
+                                      stdlib_dir, m->c_files, &out->overflow);
                 append_flags(out->flags, sizeof out->flags, m->extra_flags);
                 append_vendor_sources(out->sources, sizeof out->sources,
-                                      stdlib_dir, tok);
+                                      stdlib_dir, tok, &out->overflow);
             }
             tok = strtok_r(NULL, " ", &save);
         }
     }
 
-    return 0;
+    return out->overflow ? TKC_DEPS_OVERFLOW : 0;   /* 138.14 */
 }
 
 /* ── resolve_stdlib_deps_imports_only ────────────────────────────────── */
@@ -490,6 +504,7 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
     if (!stdlib_dir || !stdlib_dir[0]) return -1;
 
     out->sources[0] = '\0';
+    out->overflow = 0;   /* 138.14 */
     out->flags[0]   = '\0';
 
     /* Collect only the modules actually imported by the program */
@@ -580,6 +595,7 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
     /* Always include tk_runtime.c + capabilities.c (universal deps, 124.4). */
     snprintf(out->sources, sizeof out->sources,
              "%s/tk_runtime.c %s/capabilities.c", stdlib_dir, stdlib_dir);
+    if (strlen(out->sources) + 1 >= sizeof out->sources) out->overflow = 1;   /* 138.14 */
 
     /* Append .c files and vendor sources for each needed module */
     {
@@ -591,16 +607,16 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
             const StdlibModule *m = find_module(tok);
             if (m) {
                 append_module_sources(out->sources, sizeof out->sources,
-                                      stdlib_dir, m->c_files);
+                                      stdlib_dir, m->c_files, &out->overflow);
                 append_flags(out->flags, sizeof out->flags, m->extra_flags);
                 append_vendor_sources(out->sources, sizeof out->sources,
-                                      stdlib_dir, tok);
+                                      stdlib_dir, tok, &out->overflow);
             }
             tok = strtok_r(NULL, " ", &save);
         }
     }
 
-    return 0;
+    return out->overflow ? TKC_DEPS_OVERFLOW : 0;   /* 138.14 */
 }
 
 /*
