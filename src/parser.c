@@ -83,7 +83,10 @@ typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int err
     /* 138.10 / T-29: keywords already reported as an import alias, one bit
      * per kind from TK_KW_F; a later `kw.name` use is parsed as that alias
      * rather than reported again. */
-    unsigned kw_alias; } Parser;
+    unsigned kw_alias;
+    /* 138.10 / T-26: token index where the ExprStmt being parsed starts, or
+     * -1; lets parse_compare tell `x.a=9;` (a field store) from `(x.a=9)`. */
+    int stmt_head; } Parser;
 
 /* Maximum number of parse errors before the parser gives up. */
 #define MAX_PARSE_ERRORS 20
@@ -1067,6 +1070,14 @@ static Node *parse_add(Parser *p) {
  * Note: '=' here is the equality comparison operator in expression
  * context, not the assignment operator (which is handled in parse_stmt).
  */
+/* field_store — `l`, followed by '=', is `name.f` (or `name.f.g`) standing at
+ * the head of an expression statement: a store to a field (138.10 / T-26). */
+static int field_store(Parser *p, const Node *l) {
+    if (!l || l->kind != NODE_FIELD_EXPR || p->stmt_head < 0) return 0;
+    while (l && l->kind == NODE_FIELD_EXPR && l->child_count > 0) l = l->children[0];
+    return l && l->kind == NODE_IDENT && l->start == p->toks[p->stmt_head].start;
+}
+
 /* 114.8: ShiftExpr = AddExpr (('<<'|'>>') AddExpr)* — above compare, below add */
 static Node *parse_shift(Parser *p) {
     Node *l=parse_add(p);
@@ -1087,7 +1098,21 @@ static Node *parse_compare(Parser *p) {
         Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_shift(p));return n;}
     /* A3: a bare '=' in expression position is assignment, not equality. */
     if(peek(p)==TK_EQ){
-        eerr(p,E2002,cur(p),"`=` is assignment; use `==` for equality");
+        if(field_store(p,l)){
+            /* 138.10 / T-26: `x.a=9;` is a store to a field, which the grammar
+             * has no form for (AssignStmt = IDENT '=' Expr).  The `==` advice
+             * was wrong for it: taken, it compiled to a comparison whose
+             * result is discarded.  No `fix`: the rebuilt value needs the
+             * struct's type and every other field. */
+            Token *et=cur(p); p->errs++;
+            diag_emit_span(DIAG_ERROR,E2002,et->start,et->line,et->col,et->len,
+                "a struct field cannot be assigned: toke has no field assignment "
+                "(only a plain name can be assigned, `name=expr;`). Bind a new "
+                "value with every field instead, e.g. `x=$type{a:9;b:x.b};` on a "
+                "`mut.` binding",
+                "got","=","expected","no '=' after a field access",NULL);
+        } else
+            eerr(p,E2002,cur(p),"`=` is assignment; use `==` for equality");
         Token *t=adv(p); /* consume '=' and the RHS to recover */
         Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=TK_EQ;ch(p,n,l);ch(p,n,parse_shift(p));return n;
     }
@@ -1543,7 +1568,9 @@ static Node *parse_stmt(Parser *p) {
             opt_semi(p);return n;}
         __attribute__((fallthrough));
     default:{Node *n=mk(p,NODE_EXPR_STMT,t);
+        int prev_head=p->stmt_head; p->stmt_head=p->pos;   /* 138.10 */
         Node *val=parse_expr(p);
+        p->stmt_head=prev_head;
         if(val) ch(p,n,val); else { sync(p); return n; }
         opt_semi(p);return n;}
     }
@@ -1950,7 +1977,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
 {
     if(!tokens||count<=0||!arena) return NULL;
     Parser p;
-    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile; p.in_sc=0; p.kw_alias=0;
+    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile; p.in_sc=0; p.kw_alias=0; p.stmt_head=-1;
     Token *first=cur(&p);
     Node *root=mk(&p,NODE_PROGRAM,first);
     /* Module declaration: M= or m= */
