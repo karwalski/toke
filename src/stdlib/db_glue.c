@@ -110,16 +110,69 @@ int64_t tk_db_execon_w(int64_t h, int64_t sql, int64_t params) {
     return exec_on(h, sql, params);
 }
 
+/* ── 135.30: $row is a TkRowRec {cols:[[str]]}, not the C Row ─────────── */
+
+/* row_rec — a C Row as the $row record; the strings are shared with it. */
+static int64_t row_rec(const Row *r) {
+    TkRowRec *rec = (TkRowRec *)malloc(sizeof *rec);
+    int64_t cols = tk_arr_alloc((int64_t)r->col_count, (int64_t)r->col_count);
+    if (!rec || !cols) { free(rec); return 0; }
+    for (uint64_t c = 0; c < r->col_count; c++) {
+        int64_t pair = tk_arr_alloc(2, 2);
+        if (!pair) { tk_arr_setlen(cols, (int64_t)c); break; }
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)(r->col_names[c] ? r->col_names[c] : "");
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)(r->col_values[c] ? r->col_values[c] : "");
+        ((int64_t *)(intptr_t)cols)[c] = pair;
+    }
+    rec->cols = cols;
+    return (int64_t)(intptr_t)rec;
+}
+
+/* row_drop_index — free a C Row's arrays once row_rec has taken its
+ * strings (the record now owns them). */
+static void row_drop_index(Row *r) {
+    free((void *)r->col_names);
+    free((void *)r->col_values);
+    free(r->col_nulls);
+}
+
+/* row_view — a C Row reading a $row record (built by db.one/db.many or a
+ * toke literal).  Its name/value arrays are malloc'd and the strings
+ * borrowed; release with row_view_free.  A pair with fewer than two
+ * elements reads "" for what it lacks. */
+static Row row_view(int64_t rec_h) {
+    Row r; r.col_names = NULL; r.col_values = NULL; r.col_nulls = NULL; r.col_count = 0;
+    const TkRowRec *rec = (const TkRowRec *)(intptr_t)rec_h;
+    int64_t n = rec ? tk_arr_len(rec->cols) : 0;
+    if (n <= 0) return r;
+    const char **names  = (const char **)malloc((size_t)n * sizeof(char *));
+    const char **values = (const char **)malloc((size_t)n * sizeof(char *));
+    if (!names || !values) { free((void *)names); free((void *)values); return r; }
+    const int64_t *cols = (const int64_t *)(intptr_t)rec->cols;
+    for (int64_t c = 0; c < n; c++) {
+        int64_t pl = tk_arr_len(cols[c]);
+        const int64_t *pair = (const int64_t *)(intptr_t)cols[c];
+        names[c]  = (pl >= 1 && pair[0]) ? (const char *)(intptr_t)pair[0] : "";
+        values[c] = (pl >= 2 && pair[1]) ? (const char *)(intptr_t)pair[1] : "";
+    }
+    r.col_names = names; r.col_values = values; r.col_count = (uint64_t)n;
+    return r;
+}
+
+static void row_view_free(Row *r) {
+    free((void *)r->col_names);
+    free((void *)r->col_values);
+}
+
 static int64_t one_on(int64_t h, int64_t sql, int64_t params) {
     if (!sql) return 0;
     StrArray sa = toke_arr_to_strarray(params);
     RowResult res = db_one_on(h, (const char *)(intptr_t)sql, sa);
     free((void *)sa.data);
     if (res.is_err) return 0;
-    Row *heap_row = (Row *)malloc(sizeof(Row));
-    if (!heap_row) return 0;
-    *heap_row = res.ok;
-    return (int64_t)(intptr_t)heap_row;
+    int64_t rec = row_rec(&res.ok);
+    if (rec) row_drop_index(&res.ok);
+    return rec;
 }
 
 int64_t tk_db_one_w(int64_t sql, int64_t params) {
@@ -142,13 +195,13 @@ static int64_t many_on(int64_t h, int64_t sql, int64_t params) {
     if (!out) return 0;
     int64_t *block = (int64_t *)(intptr_t)out;
     for (uint64_t i = 0; i < count; i++) {
-        Row *heap_row = (Row *)malloc(sizeof(Row));
-        if (!heap_row) {
+        int64_t rec = row_rec(&res.ok.data[i]);
+        if (!rec) {
             tk_arr_setlen(out, (int64_t)i);
             break;
         }
-        *heap_row = res.ok.data[i];
-        block[i] = (int64_t)(intptr_t)heap_row;
+        row_drop_index(&res.ok.data[i]);
+        block[i] = rec;
     }
     free(res.ok.data);
     return out;
@@ -186,11 +239,12 @@ int64_t tk_db_getrow_w(int64_t result, int64_t idx) {
     return ptr[idx];
 }
 
-/* tk_db_getfield_w — get a field value by column name from a Row pointer. */
+/* tk_db_getfield_w — get a field value by column name from a $row. */
 int64_t tk_db_getfield_w(int64_t row, int64_t name) {
     if (!row || !name) return 0;
-    Row *rp = (Row *)(intptr_t)row;
-    StrResult res = row_str(*rp, (const char *)(intptr_t)name);
+    Row r = row_view(row);
+    StrResult res = row_str(r, (const char *)(intptr_t)name);
+    row_view_free(&r);
     if (res.is_err) return 0;
     return (int64_t)(intptr_t)res.ok;
 }
@@ -201,13 +255,13 @@ int64_t tk_db_print_w(int64_t rows) {
     int64_t *ptr = (int64_t *)(intptr_t)rows;
     int64_t count = ptr[-1];
     for (int64_t i = 0; i < count; i++) {
-        Row *rp = (Row *)(intptr_t)ptr[i];
-        if (!rp) continue;
-        for (uint64_t c = 0; c < rp->col_count; c++) {
+        if (!ptr[i]) continue;
+        Row r = row_view(ptr[i]);
+        for (uint64_t c = 0; c < r.col_count; c++) {
             if (c > 0) printf("\t");
-            printf("%s=%s", rp->col_names[c] ? rp->col_names[c] : "",
-                            rp->col_values[c] ? rp->col_values[c] : "NULL");
+            printf("%s=%s", r.col_names[c], r.col_values[c]);
         }
+        row_view_free(&r);
         printf("\n");
     }
     return 0;
@@ -219,8 +273,9 @@ int64_t tk_db_print_w(int64_t rows) {
  * already tells it apart; it sets the slot too, for one rule everywhere. */
 int64_t tk_row_str_w(int64_t row, int64_t col) {
     if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.str: null row or column name");
-    Row *rp = (Row *)(intptr_t)row;
-    StrResult res = row_str(*rp, (const char *)(intptr_t)col);
+    Row r = row_view(row);
+    StrResult res = row_str(r, (const char *)(intptr_t)col);
+    row_view_free(&r);
     if (res.is_err) return db_raise(res.err);
     tk_current_error = 0;
     return (int64_t)(intptr_t)res.ok;
@@ -228,8 +283,9 @@ int64_t tk_row_str_w(int64_t row, int64_t col) {
 
 int64_t tk_row_i64_w(int64_t row, int64_t col) {
     if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.i64: null row or column name");
-    Row *rp = (Row *)(intptr_t)row;
-    I64Result res = row_i64(*rp, (const char *)(intptr_t)col);
+    Row r = row_view(row);
+    I64Result res = row_i64(r, (const char *)(intptr_t)col);
+    row_view_free(&r);
     if (res.is_err) return db_raise(res.err);
     tk_current_error = 0;
     return res.ok;
@@ -237,8 +293,9 @@ int64_t tk_row_i64_w(int64_t row, int64_t col) {
 
 int64_t tk_row_u64_w(int64_t row, int64_t col) {
     if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.u64: null row or column name");
-    Row *rp = (Row *)(intptr_t)row;
-    U64Result res = row_u64(*rp, (const char *)(intptr_t)col);
+    Row r = row_view(row);
+    U64Result res = row_u64(r, (const char *)(intptr_t)col);
+    row_view_free(&r);
     if (res.is_err) return db_raise(res.err);
     tk_current_error = 0;
     return (int64_t)res.ok;
@@ -246,8 +303,9 @@ int64_t tk_row_u64_w(int64_t row, int64_t col) {
 
 int64_t tk_row_f64_w(int64_t row, int64_t col) {
     if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.f64: null row or column name");
-    Row *rp = (Row *)(intptr_t)row;
-    F64Result res = row_f64(*rp, (const char *)(intptr_t)col);
+    Row r = row_view(row);
+    F64Result res = row_f64(r, (const char *)(intptr_t)col);
+    row_view_free(&r);
     if (res.is_err) return db_raise(res.err);
     tk_current_error = 0;
     return f64_to_i64(res.ok);
@@ -255,8 +313,9 @@ int64_t tk_row_f64_w(int64_t row, int64_t col) {
 
 int64_t tk_row_bool_w(int64_t row, int64_t col) {
     if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.bool: null row or column name");
-    Row *rp = (Row *)(intptr_t)row;
-    BoolResult res = row_bool(*rp, (const char *)(intptr_t)col);
+    Row r = row_view(row);
+    BoolResult res = row_bool(r, (const char *)(intptr_t)col);
+    row_view_free(&r);
     if (res.is_err) return db_raise(res.err);
     tk_current_error = 0;
     return (int64_t)res.ok;
