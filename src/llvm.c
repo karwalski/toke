@@ -7714,7 +7714,38 @@ static int emit_expr(Ctx *c, const Node *n)
          * report's own secondary suggestion and the condition that makes the
          * defect reachable at all — rather than emit IR for a dispatch that
          * cannot exist. */
-        if (num_arms >= 3) {
+        /* 127.231 (1): the FLAT error-variant spelling,
+         * `mt g(x) {$ok:v v;$a:p …;$b:q …}` over `T!$e` with `$e` a sum type.
+         * Every arm after `$ok` names a variant of the error sum, so the
+         * dispatch DOES exist: ok/err on the error channel (as the 2-arm form),
+         * then on the tag of the payload box the channel carries.  The checker
+         * accepts it; the build died with E9005 at 3+ arms, and at exactly 2
+         * (`{$ok:v v;$a:p p}`) the variant arm bound `p` to the BOX ADDRESS
+         * rather than the payload (a silent wrong value).  Recognised only when
+         * the error type resolves to a sum and every later arm is one of its
+         * variants; anything else takes the paths below unchanged. */
+        const StructInfo *flat_ssi = NULL;
+        {
+            const char *fe = bound_err_type;
+            if (!fe && n->children[0]->kind == NODE_CALL_EXPR) fe = call_err_payload_type;
+            if (fe && num_arms >= 2 && num_arms <= 64) {
+                const StructInfo *fs = lookup_struct(c, fe);
+                if (!fs && fe[0] == '$') fs = lookup_struct(c, fe + 1);
+                if (fs && fs->is_sum) {
+                    int fok = 1, fai = 0;
+                    for (int i = 1; i < n->child_count && fok; i++) {
+                        const Node *arm = n->children[i];
+                        if (!arm || arm->child_count < 1) continue;
+                        char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
+                        if (fai == 0) fok = !strcmp(ftag, "ok") || !strcmp(ftag, "Ok");
+                        else fok = struct_has_field(fs, ftag);
+                        fai++;
+                    }
+                    if (fok) flat_ssi = fs;
+                }
+            }
+        }
+        if (num_arms >= 3 && !flat_ssi) {
             char mmsg[320], mfix[320];
             char t0[128] = "";
             if (n->children[1] && n->children[1]->child_count >= 1)
@@ -7788,6 +7819,15 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!eu_err_type && n->children[0]->kind == NODE_CALL_EXPR)
             eu_err_type = call_err_payload_type;
 
+        /* 127.231 (1): one label per variant arm of a flat match, and the
+         * error payload's tag/value, defined once in the block that dominates
+         * every variant arm. */
+        int flat_lbl[64]; int flat_n = 0; int flat_tag = -1, flat_pay = -1;
+        if (flat_ssi)
+            for (int i = 2; i < n->child_count && flat_n < 64; i++)
+                if (n->children[i] && n->children[i]->child_count >= 1)
+                    flat_lbl[flat_n++] = next_lbl(c);
+
         int arm_idx = 0;
         for (int i = 1; i < n->child_count; i++) {
             const Node *arm = n->children[i];
@@ -7796,9 +7836,112 @@ static int emit_expr(Ctx *c, const Node *n)
             arm_idx++;
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
-            else
+            else if (!flat_ssi)
                 fprintf(c->out, "rm_err%d:\n", L);
+            else {
+                if (arm_idx == 2) {
+                    /* The err side of a flat match: read the channel exactly as
+                     * the `$err:e` binding below does (127.97 flag -> nil,
+                     * 127.103 rebox of a let-bound payload), then switch on the
+                     * box's tag.  A nil payload (the bare-flag convention) has
+                     * no tag: it takes the last arm with a zero payload, as the
+                     * sum-tag switch's last arm is its catch-all. */
+                    fprintf(c->out, "rm_err%d:\n", L);
+                    int ev = next_tmp(c);
+                    if (err_src_slot)
+                        fprintf(c->out, "  %%t%d = load i64, i64* %%%s ; 135.16 payload from the captured channel\n",
+                                ev, err_src_slot);
+                    else
+                        fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+                    int isflag = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 1 ; 127.97 payload-less error flag\n", isflag, ev);
+                    int boxed = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 0, i64 %%t%d\n", boxed, isflag, ev);
+                    ev = boxed;
+                    { int rb_nb = err_src_slot ? err_box_bytes(c, eu_err_type) : 0;
+                      if (rb_nb > 0) {
+                          int rb = next_tmp(c);
+                          fprintf(c->out, "  %%t%d = call i64 @tk_err_rebox(i64 %%t%d, i64 %d) ; 127.103\n",
+                                  rb, ev, rb_nb);
+                          ev = rb;
+                      } }
+                    int K = next_lbl(c);
+                    int isnil = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", isnil, ev);
+                    fprintf(c->out, "  br i1 %%t%d, label %%rmfn%d, label %%rmfl%d\n", isnil, K, K);
+                    fprintf(c->out, "rmfl%d:\n", K);
+                    int bp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i64*\n", bp, ev);
+                    int tg = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; sum tag\n", tg, bp);
+                    int pp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1\n", pp, bp);
+                    int pv = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; sum payload\n", pv, pp);
+                    fprintf(c->out, "  br label %%rmfj%d\n", K);
+                    fprintf(c->out, "rmfn%d:\n", K);
+                    fprintf(c->out, "  br label %%rmfj%d\n", K);
+                    fprintf(c->out, "rmfj%d:\n", K);
+                    flat_tag = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%rmfl%d ], [ -1, %%rmfn%d ]\n", flat_tag, tg, K, K);
+                    flat_pay = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%rmfl%d ], [ 0, %%rmfn%d ]\n", flat_pay, pv, K, K);
+                    int fj = 0;
+                    for (int q = 2; q < n->child_count && fj < flat_n; q++) {
+                        const Node *qa = n->children[q];
+                        if (!qa || qa->child_count < 1) continue;
+                        if (fj == flat_n - 1) {
+                            fprintf(c->out, "  br label %%rmfv%d\n", flat_lbl[fj]);
+                        } else {
+                            char qt[128]; tok_cp(c->src, qa->children[0], qt, sizeof qt);
+                            int eq = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, %d\n", eq, flat_tag,
+                                    struct_field_index(flat_ssi, qt));
+                            int nx = next_lbl(c);
+                            fprintf(c->out, "  br i1 %%t%d, label %%rmfv%d, label %%rmfc%d\n", eq, flat_lbl[fj], nx);
+                            fprintf(c->out, "rmfc%d:\n", nx);
+                        }
+                        fj++;
+                    }
+                }
+                if (arm_idx - 2 < flat_n)
+                    fprintf(c->out, "rmfv%d:\n", flat_lbl[arm_idx - 2]);
+            }
 
+            /* 127.231 (1): a variant arm of a flat match binds that variant's
+             * payload, typed as the sum declares it (the sum-tag switch's
+             * rule, 114.41). */
+            if (flat_ssi && !is_ok && arm->child_count >= 2 && arm->children[1]) {
+                char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                char vraw[NAME_BUF];
+                strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
+                const char *uname = make_unique_name(c, vname);
+                int vshadow = (uname != vname);
+                if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
+                char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
+                const char *vty = flat_ssi->field_types[struct_field_index(flat_ssi, ftag)];
+                int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
+                int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
+                const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                set_local_type(c, vname, slot_ty);
+                if (is_str) mark_ptr_with_type(c, vname, "$str");
+                if (vshadow) {
+                    clear_ptr_local(c, vraw);
+                    if (is_str) mark_ptr_with_type(c, vraw, "$str");
+                }
+                fprintf(c->out, "  %%%s = alloca %s\n", vname, slot_ty);
+                if (is_f) {
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", bc, flat_pay);
+                    fprintf(c->out, "  store double %%t%d, double* %%%s\n", bc, vname);
+                } else if (is_str) {
+                    int sp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", sp, flat_pay);
+                    fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", sp, vname);
+                } else {
+                    fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", flat_pay, vname);
+                }
+            } else
             /* Bind the arm variable: first arm gets sv, second arm gets the
              * typed error payload (114.41) or 0/null. */
             if (arm->child_count >= 2 && arm->children[1]) {
