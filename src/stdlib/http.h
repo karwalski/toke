@@ -72,7 +72,10 @@ typedef struct {
  *
  * A `tki-record` marker names the .tki record a struct mirrors, and
  * `make check-tki-layout` (scripts/check_tki_layout.py) fails if the
- * fields differ in name, order, or size from that record's.
+ * fields differ in name, order, or size from that record's.  A
+ * `tki-record-prefix` marker is for a C struct that carries private fields
+ * after the record's (HttpClient, HttpStream): only the leading fields are
+ * the record, and only they are checked.
  */
 /* tki-record: http.req */
 typedef struct {
@@ -455,6 +458,7 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 
 /* ── Client types (Story 35.1.2) ──────────────────────────────────── */
 
+/* tki-record-prefix: http.httpclient */
 typedef struct {
     char    *base_url;
     uint64_t pool_size;
@@ -480,7 +484,8 @@ typedef struct {
     uint64_t     err_code;
 } HttpClientResp;
 
-/* 138.18: `open` is a whole slot.  It was an int beside `int fd`, so toke's
+/* tki-record-prefix: http.httpstream
+ * 138.18: `open` is a whole slot.  It was an int beside `int fd`, so toke's
  * s.open read open | fd << 32, and a closed stream (open 0, fd -1) read true. */
 typedef struct {
     uint64_t id;

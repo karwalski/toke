@@ -13,12 +13,14 @@
 # and sizes by the C compiler.
 #
 # WHAT IS ASSERTED (each on a copy of the tree, never the tree itself):
-#   1. the tree as it is: OK, and it checked the four http records
+#   1. the tree as it is: OK, and it checked the six http records
 #   2. two fields swapped in the C struct: FAIL naming the struct
 #   3. two fields swapped in the .tki: FAIL naming the record
 #   4. an array field declared as the inline {data, len} pair: FAIL
 #   5. a u16 field declared uint16_t (a 2-byte slot): FAIL from the compiler
-#   6. the pre-138.18 state -- the server's Req marked as http.req: FAIL
+#   6. the pre-138.18 state -- the server's Req marked as http.req: FAIL;
+#      likewise HttpStream with `int open` beside `int fd`, and a prefix
+#      record (HttpClient) with two of its fields swapped
 #   7. no marker anywhere: FAIL (a check with nothing to check is not green)
 #
 # Story: 138.18
@@ -66,8 +68,8 @@ T="${WORK}/t/stdlib/http.tki"
 
 fresh
 expect "1  the tree: OK" "$(gate)" "0 OK --"
-expect "1b it checked the four http records" \
-    "$(python3 "${WORK}/t/scripts/check_tki_layout.py" --list | grep -c 'http\.h:.*= http\.\(req\|res\|httpresp\|httperr\) ')" "4"
+expect "1b it checked the six http records" \
+    "$(python3 "${WORK}/t/scripts/check_tki_layout.py" --list | grep -c 'http\.h:.*= http\.\(req\|res\|httpresp\|httperr\|httpclient\|httpstream\) ')" "6"
 
 fresh
 edit "${H}" 's.replace("    int64_t     headers;    /* [[str]]: each element @(name; value) */\n    const char *body;\n", "    const char *body;\n    int64_t     headers;\n", 1)'
@@ -92,7 +94,16 @@ edit "${H}" 's.replace("/* tki-record: http.req */\n", "", 1).replace("typedef s
 expect "6  the pre-138.18 C Req as http.req: FAIL" "$(gate)" "1 FAIL --"
 
 fresh
-for h in "${WORK}"/t/src/stdlib/*.h; do sed -i.bak 's/tki-record:/tki-rec0rd:/' "$h"; done
+edit "${H}" 's.replace("    int64_t  open;\n    int      fd;", "    int      open;\n    int      fd;", 1)'
+expect "6b the pre-138.18 HttpStream (int open beside int fd): FAIL" "$(gate)" "1 FAIL --"
+expect "6c ... the compiler names the slot" "$(grep -c 'C layout: HttpStream open is_slot_1 -- false' "${WORK}/last.out")" "1"
+
+fresh
+edit "${H}" 's.replace("    char    *base_url;\n    uint64_t pool_size;\n    uint64_t timeout_ms;", "    char    *base_url;\n    uint64_t timeout_ms;\n    uint64_t pool_size;", 1)'
+expect "6d a prefix record's fields swapped (HttpClient): FAIL" "$(gate)" "1 FAIL --"
+
+fresh
+for h in "${WORK}"/t/src/stdlib/*.h; do sed -i.bak 's/tki-record/tki-rec0rd/' "$h"; done
 rm -f "${WORK}"/t/src/stdlib/*.bak
 expect "7  no marker at all: FAIL" "$(gate)" "1 FAIL --"
 
