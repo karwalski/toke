@@ -2061,6 +2061,11 @@ FUZZ_SAN = -fsanitize=address,undefined -fno-sanitize-recover=undefined \
            -fno-omit-frame-pointer -g -O1
 FUZZ_STDLIB_CFLAGS = -std=c99 -D_GNU_SOURCE -iquote src/stdlib
 FUZZ_TARGETS_120_22 = json yaml toml toon xml template multipart ws_frame
+# 122.13 (11): test/fuzz/fuzz_image.c (122.9) had no target -- only C138
+# built it, by hand.  It joins the set here, so fuzz-120-22 builds it,
+# fuzz-smoke replays test/fuzz/seeds/image/ through it, and the nightly
+# fuzz-120-22-run fuzzes it.
+FUZZ_TARGETS = $(FUZZ_TARGETS_120_22) image
 fuzz_have_libfuzzer = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_fuzzprobe.XXXXXX") && \
     printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' > "$$d/p.c" && \
     $(CC) -fsanitize=fuzzer -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo libfuzzer || echo standalone; \
@@ -2081,7 +2086,7 @@ define fuzz_build_rule
 endef
 
 .PHONY: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
-	fuzz-multipart fuzz-ws-frame fuzz-120-22 fuzz-120-22-run fuzz-smoke
+	fuzz-multipart fuzz-ws-frame fuzz-image fuzz-120-22 fuzz-120-22-run fuzz-smoke
 
 fuzz-json:
 	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,)
@@ -2101,10 +2106,12 @@ fuzz-multipart:
 	$(call fuzz_build_rule,multipart,test/fuzz/fuzz_multipart.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz)
 fuzz-ws-frame:
 	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
+fuzz-image:
+	$(call fuzz_build_rule,image,test/fuzz/fuzz_image.c src/stdlib/image.c,-lm)
 
-# Build all eight (the name security-nightly.yml calls).
+# Build all nine (the name security-nightly.yml calls; image joined in 122.13).
 fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
-	fuzz-multipart fuzz-ws-frame
+	fuzz-multipart fuzz-ws-frame fuzz-image
 
 # Replay every seed and adversarial input through every harness, once.  Works
 # under either engine (libFuzzer's -runs=0 executes the given corpus and
@@ -2112,7 +2119,7 @@ fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
 # report, on a harness that replays nothing, or on a target with no seeds.
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
-	@fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	@fail=0; for t in $(FUZZ_TARGETS); do \
 	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
 	  [ -d test/fuzz/seeds/$$t ] && [ -n "$$(ls test/fuzz/seeds/$$t)" ] \
 	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
@@ -2127,7 +2134,7 @@ fuzz-smoke: fuzz-120-22
 	  else echo "  FAIL $$t (exit $$rc)"; \
 	    printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6 | sed 's/^/      /'; fail=1; fi; \
 	done; \
-	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS_120_22)) harnesses replayed clean" \
+	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS)) harnesses replayed clean" \
 	  || { echo "fuzz-smoke: FAILED"; exit 1; }
 
 # The nightly run.  libfuzzer: fuzz each target for FUZZ_SECONDS on a scratch
@@ -2141,7 +2148,7 @@ fuzz-120-22-run: fuzz-120-22
 	  echo "     so NO FUZZING RAN.  Replaying the corpora instead (make fuzz-smoke)."; \
 	  $(MAKE) --no-print-directory fuzz-smoke FUZZ_ENGINE=standalone; exit $$?; \
 	fi; \
-	fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	fail=0; for t in $(FUZZ_TARGETS); do \
 	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
 	  rm -rf $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
 	  mkdir -p $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
