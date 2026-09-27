@@ -7037,19 +7037,39 @@ static int emit_expr(Ctx *c, const Node *n)
          * the chain and died with E9005 at 3+ arms.  The checker's type says
          * which it is: a plain `str` scrutinee (TY_STR — not an error union)
          * whose arms are not the result tags is a string match at any arity. */
-        int str_res_tags = 0;
+        /* Not a string match: a fallible scrutinee (`$str!$e` — the result
+         * lowering below), or arms that name the result tags or a TYPE
+         * (`{$str:v v;$apperr:e …}` is the type-named spelling of ok/err). */
+        int str_not_plain = 0;
         for (int i = 1; i < n->child_count; i++) {
             const Node *arm = n->children[i];
             if (!arm || arm->child_count < 1) continue;
             char rtag[128]; tok_cp(c->src, arm->children[0], rtag, sizeof rtag);
+            char dtag[130]; snprintf(dtag, sizeof dtag, "$%s", rtag);
             if (!strcmp(rtag, "ok") || !strcmp(rtag, "Ok") ||
-                !strcmp(rtag, "err") || !strcmp(rtag, "Err")) str_res_tags = 1;
+                !strcmp(rtag, "err") || !strcmp(rtag, "Err") ||
+                !strcmp(rtag, "str") || !strcmp(rtag, "i64") || !strcmp(rtag, "f64") ||
+                !strcmp(rtag, "bool") || !strcmp(rtag, "u64") ||
+                lookup_struct(c, rtag) || lookup_struct(c, dtag)) str_not_plain = 1;
+        }
+        if (!str_not_plain) {
+            const Node *s0 = n->children[0];
+            if (s0->rtype && s0->rtype->kind == TY_ERROR_TYPE) str_not_plain = 1;
+            else if (s0->kind == NODE_CALL_EXPR) {
+                int fu = 0, fz = 0; const char *fe = NULL;
+                classify_fallible_call(c, s0, &fu, &fz, &fe);
+                if (fu || fz || fe) str_not_plain = 1;
+            } else if (s0->kind == NODE_IDENT) {
+                char sn0[NAME_BUF]; tok_cp(c->src, s0, sn0, sizeof sn0);
+                if (fallible_local_active(c, fallible_local_index(c, get_llvm_name(c, sn0))))
+                    str_not_plain = 1;
+            }
         }
         int str_typed = (n->children[0]->rtype && n->children[0]->rtype->kind == TY_STR) ||
                         (scr_sum && !strcmp(scr_sum, "$str"));   /* a std call's .tki `$str` */
         int str_chain = (!strcmp(scr_ty, "i8*") && num_arms >= 3) ||
                         ((str_typed || !strcmp(scr_ty, "i8*")) && num_arms >= 1 &&
-                         !str_res_tags &&
+                         !str_not_plain &&
                          (!strcmp(scr_ty, "i8*") || !strcmp(scr_ty, "i64")));
         if (str_chain) {
             int str_val = sv;

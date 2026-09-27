@@ -20,7 +20,7 @@
 # that names no arm takes the LAST arm (80.2.7 "Last arm: unconditional").
 #
 # Negative control: TKC built from main at 9f901bf — cases 2, 3, 5, 6 red
-# ("1 1 1", build-failed, build-failed, build-failed); 1, 4, 7 green.
+# ("1 1 1", build-failed, build-failed, build-failed); 1, 4, 7, 8 green.
 #
 # Story: 127.237 (1)
 
@@ -90,6 +90,20 @@ f=h(k:i64):$str!$e{ if(k>0){<"pos"}; <$e{$bad:k} };
 f=main():i64{
   let a=mt h(1) {$ok:v v;$err:e "err"};
   let b=mt h(0) {$ok:v v;$err:e "err"};
+  io.println("\(a) \(b)");
+  <0
+};')" "pos err "
+
+# 8. Control: a 2-arm match over `$str!$e` spelled with TYPE-named arms
+#    (`$str:v`/`$e:x`, the bench SOC-037 shape) is a result match, not a
+#    string compare against "str".  Red on the first cut of this fix, which
+#    keyed on the checker's str type alone (found by the corpus/tree sweep).
+expect "8-type-named-result-arms" "$(run 'm=main;i=io:std.io;
+t=$e{$bad:i64};
+f=h(k:i64):$str!$e{ if(k>0){<"pos"}; <$e{$bad:k} };
+f=main():i64{
+  let a=mt h(1) {$str:v v;$e:x "err"};
+  let b=mt h(0) {$str:v v;$e:x "err"};
   io.println("\(a) \(b)");
   <0
 };')" "pos err "
