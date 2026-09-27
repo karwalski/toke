@@ -701,8 +701,10 @@ int64_t tk_http_patch_handler(int64_t path_ptr, int64_t handler_ptr) {
 /* forward declaration */
 int64_t tk_http_serveworkers_w(int64_t port, int64_t workers);
 
+static int64_t serveworkers_as(const char *fn, int64_t port, int64_t workers);
+
 int64_t tk_http_serve(int64_t port) {
-    return tk_http_serveworkers_w(port, 2);
+    return serveworkers_as("http.serve", port, 2);
 }
 
 /*
@@ -722,18 +724,42 @@ int64_t tk_http_serve(int64_t port) {
  * immediately).  A server that started and later shut down on SIGTERM
  * returns 0 as before and records nothing.
  */
-static int64_t tls_start_failed(const char *fn, int port, const char *stage)
+static int64_t server_start_failed(const char *fn, long long port,
+                                   const char *stage, const char *reason)
 {
     fprintf(stderr,
-            "DIAGNOSTIC: kind=server_start_failed fn=\"%s\" port=%d stage=\"%s\"\n",
+            "DIAGNOSTIC: kind=server_start_failed fn=\"%s\" port=%lld stage=\"%s\"\n",
             fn, port, stage);
-    tk_exitfail("an HTTPS server did not start");
+    tk_exitfail(reason);
     return -1;
+}
+#define tls_start_failed(fn, port, stage) \
+    server_start_failed((fn), (long long)(port), (stage), "an HTTPS server did not start")
+#define plain_start_failed(fn, port, stage) \
+    server_start_failed((fn), (long long)(port), (stage), "an HTTP server did not start")
+
+/*
+ * 135.24 item 2 — the port argument of every server entry point.
+ *
+ * It used to be clamped: any port <= 0 or > 65535 silently became 8080
+ * (8443 for TLS), undocumented, so `serveworkers(0;...)` served on a port
+ * the caller never asked for and could not learn.  Now:
+ *   - 1..65535 is bound as given;
+ *   - 0 asks the kernel for a free ephemeral port, and bind_listen()
+ *     (http.c) prints `DIAGNOSTIC: kind=server_listening port=N` on stderr
+ *     once the socket is listening, so the caller (a supervisor, a test)
+ *     can read which port it got with no probe-then-bind race;
+ *   - anything else is a start failure at stage "port": -1 to the caller,
+ *     the structured line, and exit status 1, as for a failed bind.
+ */
+static int server_port_ok(int64_t port)
+{
+    return port >= 0 && port <= 65535;
 }
 
 int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
+    if (!server_port_ok(port)) return tls_start_failed("http.servetls", port, "port");
     int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8443;
     const char *cert = (const char *)(intptr_t)cert_ptr;
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
@@ -760,8 +786,8 @@ int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
  */
 int64_t tk_http_servetlsworkers_w(int64_t port, int64_t cert_ptr, int64_t key_ptr,
                                   int64_t workers) {
+    if (!server_port_ok(port)) return tls_start_failed("http.servetlsworkers", port, "port");
     int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8443;
     const char *cert = (const char *)(intptr_t)cert_ptr;
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
@@ -1129,13 +1155,29 @@ int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
     return (int64_t)g_page_count;
 }
 
-int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
+/*
+ * 135.24 item 1 — a plain HTTP server that does not start fails the process,
+ * exactly as 135.22 made the TLS entry points do: a port that cannot be
+ * bound (or a pool that cannot fork) still returns -1 to the caller, prints
+ * `DIAGNOSTIC: kind=server_start_failed fn=... port=... stage=...` and
+ * records the failure with tk_exitfail(), so the process exits 1 however
+ * main ends.  Before, the one-line "could not bind" message was all there
+ * was, and a program that discarded the -1 (every caller in the tree) exited
+ * 0.  http.serve reaches this with workers=2 and is reported as itself.
+ */
+static int64_t serveworkers_as(const char *fn, int64_t port, int64_t workers)
+{
+    if (!server_port_ok(port)) return plain_start_failed(fn, port, "port");
     int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8080;
     /* Pass NULL router — worker_loop will use the global route_table
      * which already has all handlers registered via http_GET/http_POST. */
     TkHttpErr err = http_serve_workers(NULL, NULL, (uint64_t)p, (int)workers);
-    return (err == TK_HTTP_OK) ? 0 : -1;
+    if (err != TK_HTTP_OK) return plain_start_failed(fn, p, "bind/fork");
+    return 0;
+}
+
+int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
+    return serveworkers_as("http.serveworkers", port, workers);
 }
 
 /* ── router wrappers moved to router_glue.c (114.48) so std.router links

@@ -1547,6 +1547,19 @@ static int bind_listen(const char *host, uint64_t port)
                 (unsigned long long)port, strerror(errno));
         close(srv); return -1;
     }
+    /* 135.24 item 2: port 0 asked the kernel for a free port.  Say which
+     * one, once, now that it is listening -- the only way the caller can
+     * learn it, since serve/serveworkers do not return until shutdown. */
+    if (port == 0) {
+        struct sockaddr_in got;
+        socklen_t glen = sizeof got;
+        memset(&got, 0, sizeof got);
+        if (getsockname(srv, (struct sockaddr *)&got, &glen) == 0) {
+            fprintf(stderr, "DIAGNOSTIC: kind=server_listening port=%u\n",
+                    (unsigned)ntohs(got.sin_port));
+            fflush(stderr);
+        }
+    }
     return srv;
 }
 
