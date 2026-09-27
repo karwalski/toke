@@ -2348,6 +2348,9 @@ int64_t tk_http_resp_w(int64_t status, int64_t body, int64_t ct) {
         const char *ctype = (const char *)(intptr_t)ct;
         ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)ctype;
         ((int64_t *)(intptr_t)hdrs)[0] = pair;
+        int64_t r = toke_res(status, hdrs, (const char *)(intptr_t)body);
+        if (!r) free_toke_pairs(hdrs);
+        return r;
     }
     return toke_res(status, hdrs, (const char *)(intptr_t)body);
 }
