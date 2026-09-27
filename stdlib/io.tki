@@ -51,7 +51,7 @@
       "kind": "func",
       "name": "io.readln",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     }
   ]

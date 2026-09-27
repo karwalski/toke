@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# C217_array_contains_is_bool.sh — module-form `arr.contains(a;x)` is a bool
-# (story 127.220 item 2).
+# C217_stdlib_return_types.sh — a std module call's return is typed by what
+# the glue returns (story 127.220 items 2 and 5).
 #
+# Item 2:
 # stdlib/array.tki declared `array.contains` as returning i64 (a gen_tki.py
 # ABI placeholder, "gen":"abi"), so the backend read the interface and printed
 # the module form as `1`/`0`, while the receiver form `a.contains(3)` printed
@@ -9,8 +10,18 @@
 # bool.  gen_tki.py keeps an existing record's hand-written types verbatim, so
 # the interface is the source of this type; `gen_tki.py --check` stays clean.
 #
+# Item 5: every export gen_tki.py generated was typed `i64` on return, the
+# ABI slot, including glue that returns a C string (`str.nowunix`,
+# `sys.platform`, `file.tempdir`, `str.fromi64`, ... 52 of them), so the
+# module form interpolated the POINTER as a number.  gen_stdlib_decls.py's
+# scan_str_returns() now establishes from the glue bodies which wrappers
+# return a C string on every path, and gen_tki.py corrects a generated
+# (`"gen":"abi"`) record's i64 return to str; hand-written returns are never
+# touched.  `gen_tki.py --check` fails on a record left i64 (case 5).
+#
 # Negative control: TKC=<main's toke> TKC_STDLIB_DIR=<main's src/stdlib> (the
-# interface is read beside the stdlib dir) -- case 1 prints "1 0|".
+# interface is read beside the stdlib dir) -- case 1 prints "1 0|", case 4
+# prints pointers.
 #
 # Not covered here (a separate defect, reported): an UNANNOTATED `let b=` of
 # any bool-returning call (`a.contains(3)`, `s.contains(x;"b")`) interpolates
@@ -62,6 +73,36 @@ expect "2 receiver form agrees; the module form still tests as a condition" \
 
 "${TKC}" --check "${WORK}/mf.tk" >/dev/null 2>&1
 expect "3 --check accepts the module form" "$?" "0"
+
+cat > "${WORK}/sr.tk" <<'EOF'
+m=q;
+i=io:std.io;
+i=s:std.str;
+i=sy:std.sys;
+f=main():i64{
+  io.println("\(s.fromi64(42))! \(s.len(s.nowunix())>5)");
+  io.println("[\(sy.platform())]");
+  <0
+};
+EOF
+case "$(uname -s)" in Darwin) PLAT=macos ;; Linux) PLAT=linux ;; *) PLAT=unknown ;; esac
+expect "4 str-returning glue interpolates as text" "$(run "${WORK}/sr.tk")" "42! true|[${PLAT}]|"
+
+# 5: the generator is the source -- revert one corrected record and --check fails.
+CP="${WORK}/repo"; mkdir -p "${CP}/src"
+cp -R "${REPO_ROOT}/scripts" "${REPO_ROOT}/stdlib" "${CP}/"
+cp -R "${REPO_ROOT}/src/stdlib" "${CP}/src/"
+cp "${REPO_ROOT}"/src/*.h "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_deps.c" "${CP}/src/"
+python3 - "${CP}/stdlib/sys.tki" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+for e in d["exports"]:
+    if e.get("name") == "sys.platform": e["return"] = "i64"
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+PY
+python3 "${CP}/scripts/gen_tki.py" --check > "${WORK}/g.log" 2>&1; rc=$?
+expect "5 gen_tki --check rejects a str glue typed i64" \
+    "${rc} $(grep -c 'RETURN  sys.platform: i64 -> str' "${WORK}/g.log")" "1 1"
 
 echo "C217: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

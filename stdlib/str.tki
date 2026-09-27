@@ -399,7 +399,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -618,7 +618,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -636,7 +636,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -645,7 +645,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -654,7 +654,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -663,7 +663,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -672,7 +672,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -681,7 +681,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -690,7 +690,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -699,7 +699,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -718,7 +718,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -795,14 +795,14 @@
       "kind": "func",
       "name": "str.nowiso8601",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
       "kind": "func",
       "name": "str.nowunix",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -813,7 +813,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -824,7 +824,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -835,7 +835,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -890,7 +890,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -932,7 +932,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -1002,7 +1002,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -1087,7 +1087,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -1096,7 +1096,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -1105,7 +1105,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {

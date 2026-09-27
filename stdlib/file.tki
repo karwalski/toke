@@ -247,7 +247,7 @@
       "kind": "func",
       "name": "file.tempdir",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
