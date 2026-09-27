@@ -3532,6 +3532,23 @@ static void check_tki_call(Ctx *cx, const Node *call) {
  * path must not be a non-str, and the handler must be a function
  * reference.  `http.get(client;path)` registered a GET route and never sent a
  * request (loke T-57, T-15); it is E4031 naming http.clientget. */
+/* 138.3: the representation class of a type, for check_tki_arg_types:
+ * 1 str, 2 integer or bool (an i64 slot), 3 float, 4 array, 5 map,
+ * 6 record/struct; 0 = not judged (function, pointer, error union, ...). */
+static int tki_arg_class(const Type *t) {
+    if (!t) return 0;
+    switch (t->kind) {
+    case TY_STR: return 1;
+    case TY_I64: case TY_U64: case TY_I8: case TY_I16: case TY_I32:
+    case TY_U8: case TY_U16: case TY_U32: case TY_BOOL: return 2;
+    case TY_F64: case TY_F32: return 3;
+    case TY_ARRAY: return 4;
+    case TY_MAP: return 5;
+    case TY_STRUCT: return opaque_handle_type(t) ? 0 : 6;
+    default: return 0;
+    }
+}
+
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3581,6 +3598,49 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         return;
     }
 
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
+    if (!f || f->abi_ret || !f->param_types || f->param_count != actual) return;
+    /* A symbol codegen redirects by argument type accepts every kind
+     * (`j.enc(x)` -> tk_json_encarr_w / encbool / encf64 / encnum): the same
+     * list 127.201 keeps. */
+    {
+        const char *sym = stdlib_symbol_for(mpath, 1, member);
+        if (sym && strcmp(sym, "tk_json_enc_w") == 0) return;
+    }
+    for (int i = 0; i < actual; i++) {
+        const Node *an = call->children[i + 1];
+        const char *ps = f->param_types[i];
+        if (!an || !ps || !ps[0]) continue;
+        /* `i64` is also the ABI-placeholder spelling, and hand-written
+         * records use it for handles and strings too (`http.resjson` spells
+         * its str body `i64`; examples/apihandler passes a str there and
+         * works) -- so an `i64` parameter says nothing and is not judged. */
+        if (strcmp(ps, "i64") == 0) continue;
+        const Type *at = an->rtype;
+        if (!at || at->kind == TY_UNKNOWN) continue;
+        Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
+        if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID) continue;
+        /* Judged by REPRESENTATION class, not width: a hand-written record
+         * spells `u64`/`u8` where the glue takes an i64 slot and programs
+         * pass an i64 (str.slice, mem.store8, s.addbyte -- 150+ call sites in
+         * the tree sweep), and an array's element width is not the glue's
+         * business either.  What is certain is a value of another KIND --
+         * a number where a str is read, a str or a record where a number
+         * is, an array where a scalar is. */
+        int ac = tki_arg_class(at), pc = tki_arg_class(pt);
+        if (!ac || !pc || ac == pc) continue;
+        if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
+            && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
+        if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+        char msg[512], en[96], gn[96];
+        snprintf(en, sizeof en, "%s", type_name(pt));
+        snprintf(gn, sizeof gn, "%s", type_name(at));
+        snprintf(msg, sizeof msg,
+                 "type mismatch: argument %d of '%s.%s' is declared '%s' "
+                 "(%s.tki), got '%s'", i + 1, alias, member, en, mpath + 4, gn);
+        diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col, msg,
+                  "expected", en, "got", gn, (const char *)NULL);
+    }
 }
 
 /* ── 127.201: module-form stdlib calls, argument REPRESENTATION ──────────
