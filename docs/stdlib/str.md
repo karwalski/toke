@@ -221,6 +221,30 @@ f=example():void{
 };
 ```
 
+### str.compare(a: $str; b: $str): i64
+
+Byte-wise ordering, as `strcmp`: negative if `a` sorts before `b`, `0` if they are equal, positive after (the value is `-1`, `0` or `1`). Before 138.11 it returned `0` for equal and `1` for anything else, so it could not order.
+
+### str.isdigit(s: $str): bool
+
+`true` if `s` is non-empty and every byte is `0`-`9`. It takes a string: `str.isdigit(str.charat(s;i))` passes a byte **code**, which the checker does not yet reject; since 138.11 the glue reads a code below 65536 as the byte it is instead of dereferencing it (it used to crash, SIGSEGV).
+
+### str.padleft(s: $str; width: i64; pad: i64): $str
+
+Pads `s` on the left to `width` bytes with the byte whose code is `pad` (`0` means a space): `str.padleft("7";3;48)` is `"007"`. A string passed as `pad` -- which the checker does not yet reject -- pads with its first byte since 138.11; it used to pad with the low byte of its address. `str.padright` is the same on the right.
+
+### str.padright(s: $str; width: i64; pad: i64): $str
+
+See `str.padleft`.
+
+### str.nowunix(): $str
+
+The current time in whole seconds since the Unix epoch, as decimal text (`"1790510572"`). It is a `$str`: for arithmetic use `time.now()` (milliseconds, `i64`).
+
+### str.tof32(s: $str): f64!$parseerr
+
+An alias of `str.tofloat` (so are `str.tof64` and `str.parsefloat`); 138.11 gave all three `str.tofloat`'s type. Before, they were untyped and `str.tof32(12345)` dereferenced address 12345 (rc 139).
+
 ## Usage Examples
 
 ```toke

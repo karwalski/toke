@@ -4,7 +4,7 @@
  * Story 127.201. Per glue wrapper, the representation the body reads each
  * parameter as: S = a C string (toke str), A = an i64 array with its length
  * at ptr[-1] (toke array), . = not established. Grounded on the glue bodies,
- * never on the .tki. 515 symbols with at least one S or A.
+ * never on the .tki. 511 symbols with at least one S or A.
  */
 
     { "tk_analytics_anomalies_w", ".S." },
@@ -78,18 +78,10 @@
     { "tk_dashboard_addchart_w", ".S." },
     { "tk_dashboard_new_w", "S." },
     { "tk_dataframe_fromrows_w", "AA" },
-    { "tk_db_exec_w", "S." },
-    { "tk_db_execparams_w", "S." },
     { "tk_db_getfield_w", ".S" },
     { "tk_db_getrow_w", "A." },
-    { "tk_db_many_w", "S." },
-    { "tk_db_manyparams_w", "S." },
-    { "tk_db_one_w", "S." },
     { "tk_db_open_w", "S" },
     { "tk_db_print_w", "A" },
-    { "tk_db_queryone_w", "S" },
-    { "tk_db_queryoneparams_w", "S." },
-    { "tk_db_queryparams_w", "S." },
     { "tk_db_rowbool_w", ".S" },
     { "tk_db_rowget_w", ".S" },
     { "tk_db_rowi32_w", ".S" },
@@ -203,6 +195,7 @@
     { "tk_json_arr_w", ".S" },
     { "tk_json_arrget_w", "A." },
     { "tk_json_arrlen_w", "A" },
+    { "tk_json_at_w", ".S" },
     { "tk_json_bool_w", ".S" },
     { "tk_json_dec_w", "S" },
     { "tk_json_decode_w", "S" },
@@ -251,10 +244,13 @@
     { "tk_json_trystr_w", ".S" },
     { "tk_json_trystrkey_w", ".S" },
     { "tk_json_u64_w", ".S" },
+    { "tk_keychain_create_w", "SS" },
     { "tk_keychain_delete_w", "SS" },
+    { "tk_keychain_destroy_w", "S" },
     { "tk_keychain_exists_w", "SS" },
     { "tk_keychain_get_w", "SS" },
     { "tk_keychain_set_w", "SSS" },
+    { "tk_keychain_use_w", "S" },
     { "tk_llm_client_w", "SSS" },
     { "tk_llm_complete_w", ".S" },
     { "tk_llm_countokens_w", ".S" },

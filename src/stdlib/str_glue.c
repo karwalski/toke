@@ -212,8 +212,31 @@ int64_t tk_str_charat_w(int64_t s, int64_t i) {
 int64_t tk_str_substr_w(int64_t s, int64_t start, int64_t end_) {
     return tk_str_slice_w(s, start, end_);
 }
+/* 138.11 — an i64 where a str is declared.  The checker does not yet reject
+ * an integer passed to a str parameter of a stdlib call (reported to GA), so
+ * `str.tof32(12345)` dereferenced address 12345 (loke T-36, rc 139) and
+ * `str.isdigit(str.charat(s;0))` a byte code (T-28, SIGSEGV).  No value below
+ * 65536 is a valid pointer on a supported platform (Linux's default
+ * vm.mmap_min_addr; macOS reserves the low 4 GiB), so such an argument is
+ * known not to be a string: the parse wrappers fail with the error slot set
+ * instead of crashing, and the byte predicates read it as the byte it is.
+ * This is damage limitation only -- a larger integer still reaches the
+ * dereference; the cure is the checker rejecting the call. */
+#define TK_NOT_A_STR(v) ((uint64_t)(v) < 65536u)
+
+/* 138.11: the pad is a byte code (0 = space).  A value that is not a byte
+ * is a str the checker let through (loke T-36/T-12 passed "0" and "*"): its
+ * first byte is the pad, where this used to pad with the pointer's low byte. */
+static char pad_byte(int64_t pad) {
+    if (pad == 0) return ' ';
+    if (pad > 0 && pad < 256) return (char)pad;
+    if (TK_NOT_A_STR(pad)) return ' ';
+    const char *p = (const char *)(intptr_t)pad;
+    return *p ? *p : ' ';
+}
+
 int64_t tk_str_padleft_w(int64_t s, int64_t width, int64_t pad) {
-    char ch = (char)(pad ? pad : ' ');
+    char ch = pad_byte(pad);
     return (int64_t)(intptr_t)str_pad_left(
         (const char *)(intptr_t)s, (uint64_t)width, ch);
 }
@@ -324,7 +347,7 @@ int64_t tk_str_append_w(int64_t s, int64_t t) {
 int64_t tk_str_newarr_w(void) { return str_make_empty_array(); }
 
 int64_t tk_str_padright_w(int64_t s, int64_t width, int64_t pad) {
-    char ch = (char)(pad ? pad : ' ');
+    char ch = pad_byte(pad);
     return (int64_t)(intptr_t)str_pad_right(
         (const char *)(intptr_t)s, (uint64_t)width, ch);
 }
@@ -397,8 +420,9 @@ int64_t tk_str_fromfloat_w(int64_t f) {
     return (int64_t)(intptr_t)str_from_float(i64_to_f64(f));
 }
 
+
 int64_t tk_str_tofloat_w(int64_t s) {
-    if (!s) { tk_current_error = 1; return f64_to_i64(0.0); }
+    if (TK_NOT_A_STR(s)) { tk_current_error = 1; return f64_to_i64(0.0); }
     FloatParseResult r = str_to_float((const char *)(intptr_t)s);
     tk_current_error = r.is_err ? 1 : 0;
     return f64_to_i64(r.is_err ? 0.0 : r.ok);
@@ -418,7 +442,7 @@ int64_t tk_str_isempty_w(int64_t s) {
 }
 
 int64_t tk_str_parsef64_w(int64_t s) {
-    if (!s) { tk_current_error = 1; return f64_to_i64(0.0); }
+    if (TK_NOT_A_STR(s)) { tk_current_error = 1; return f64_to_i64(0.0); }
     FloatParseResult r = str_to_float((const char *)(intptr_t)s);
     tk_current_error = r.is_err ? 1 : 0;
     return f64_to_i64(r.is_err ? 0.0 : r.ok);
@@ -544,10 +568,19 @@ int64_t tk_str_toi32_w(int64_t s) { return tk_str_toint_w(s); }
 int64_t tk_str_toi64_w(int64_t s) { return tk_str_toint_w(s); }
 int64_t tk_str_toint64_w(int64_t s) { return tk_str_toint_w(s); }
 int64_t tk_str_trimws_w(int64_t s) { return tk_str_trim_w(s); }
-int64_t tk_str_compare_w(int64_t a, int64_t b) { return tk_str_eq_w(a, b) ? 0 : 1; }
+/* str.compare(a, b) — 138.11: strcmp order, -1 / 0 / 1.  This returned
+ * "equal ? 0 : 1", so compare(a,b) and compare(b,a) were both 1 and nothing
+ * could sort with it (loke T-36). */
+int64_t tk_str_compare_w(int64_t a, int64_t b) {
+    const char *x = a ? (const char *)(intptr_t)a : "";
+    const char *y = b ? (const char *)(intptr_t)b : "";
+    int c = strcmp(x, y);
+    return c < 0 ? -1 : c > 0 ? 1 : 0;
+}
 int64_t tk_str_isdigit_w(int64_t s) {
+    if (TK_NOT_A_STR(s)) return (s >= '0' && s <= '9') ? 1 : 0;   /* 138.11: a byte code */
     const char *p = (const char *)(intptr_t)s;
-    if (!p || !*p) return 0;
+    if (!*p) return 0;
     while (*p) { if (*p < '0' || *p > '9') return 0; p++; }
     return 1;
 }

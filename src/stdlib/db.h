@@ -64,14 +64,23 @@ typedef struct DbConn DbConn;
 
 /* ── connection lifecycle ─────────────────────────────────────────────────── */
 
-int  db_open(const char *dsn);
-void db_close(void);
+/* 138.6: several connections.  db_connect returns a fresh handle (>= 1,
+ * never reused) or -1; conn_id 0 names the default connection, the
+ * lowest-numbered one still open.  db_open/db_close are the handle-less
+ * forms (db_open: 0 on success). */
+int64_t db_connect(const char *dsn);
+int     db_open(const char *dsn);
+int     db_close_conn(int64_t conn_id);   /* 1 if a connection was closed */
+void    db_close(void);
 
 /* ── query functions ──────────────────────────────────────────────────────── */
 
 RowResult      db_one(const char *sql,  StrArray params);
 RowArrayResult db_many(const char *sql, StrArray params);
 U64Result      db_exec(const char *sql, StrArray params);
+RowResult      db_one_on(int64_t conn_id, const char *sql,  StrArray params);
+RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params);
+U64Result      db_exec_on(int64_t conn_id, const char *sql, StrArray params);
 
 /* ── row accessor functions ───────────────────────────────────────────────── */
 

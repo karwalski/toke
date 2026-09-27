@@ -108,6 +108,29 @@ int64_t tk_json_bool_w(int64_t obj, int64_t key) {
     return (int64_t)res.ok;
 }
 
+/* json.at(doc, path) -> Json!JsonErr — 138.12, the typed nested read.
+ *
+ * std.json's typed accessors read one key of a flat object, so a nested
+ * value (loke T-32: usage.input_tokens) had no typed path at all, and the
+ * tempting workaround -- the untyped json.getval, whose i64 result the
+ * checker let into json.i64's Json parameter -- segfaulted, because getval
+ * hands back the value's raw TEXT, not a Json handle.  json.at walks a dotted
+ * path ("usage.input_tokens", "results.0.id": a segment on an array is a
+ * decimal index) through json_at and returns a Json the typed accessors take.
+ * A key that itself contains '.' cannot be named.  On failure it returns 0
+ * (the sentinel this wrapper is decided by) and also sets the error slot. */
+int64_t tk_json_at_w(int64_t obj, int64_t path) {
+    if (!obj || !path) return json_raise(JSON_ERR_MISSING, "json.at: null object or path");
+    Json *jp = (Json *)(intptr_t)obj;
+    JsonResult r = json_at(*jp, (const char *)(intptr_t)path);
+    if (r.is_err) return json_raise(r.err.kind, r.err.msg);
+    Json *heap = (Json *)malloc(sizeof(Json));
+    if (!heap) return json_raise(JSON_ERR_PARSE, "json.at: out of memory");
+    *heap = r.ok;
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)heap;
+}
+
 int64_t tk_json_parseobj_w(int64_t s) { return tk_json_dec_w(s); }
 int64_t tk_json_stringify_w(int64_t val) { return tk_json_enc_w(val); }
 int64_t tk_json_get_w(int64_t obj, int64_t key) { return tk_json_str_w(obj, key); }
@@ -330,12 +353,17 @@ int64_t tk_json_getopt_w(int64_t obj, int64_t key) {
 }
 
 /* json.getval(obj, key) — get raw JSON value at key as string */
+/* json.getval(doc, path) -> str — the raw JSON TEXT of the value at path
+ * ("" if there is none; a present value's text is never empty).  138.12:
+ * declared (Json;str)->str, it was an untyped (i64;i64)->i64, so its result
+ * -- a C string -- was accepted where json.i64 wants a Json handle and
+ * segfaulted there (loke T-32).  For a Json to read further, use json.at. */
 int64_t tk_json_getval_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
+    if (!obj || !key) return (int64_t)(intptr_t)"";
     Json *jp = (Json *)(intptr_t)obj;
     JsonResult r = json_at(*jp, (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return r.ok.raw ? (int64_t)(intptr_t)r.ok.raw : 0;
+    if (r.is_err || !r.ok.raw) return (int64_t)(intptr_t)"";
+    return (int64_t)(intptr_t)r.ok.raw;
 }
 
 /* json.isnullkey(obj, key) — return 1 if key is null or missing */
@@ -578,9 +606,12 @@ int64_t tk_json_tryarr_w(int64_t obj, int64_t key) {
 }
 
 /* json.getregulations — loke-specific, stub returning empty array */
+/* json.getregulations(doc) — the array under "regulations" (json.getarr's
+ * shape), or an empty array.  138.11: this was a stub that ignored its
+ * argument and always returned an empty array (loke T-12). */
 int64_t tk_json_getregulations_w(int64_t obj) {
-    (void)obj;
-    return tk_arr_alloc(0, 0);
+    int64_t h = obj ? tk_json_getarr_w(obj, (int64_t)(intptr_t)"regulations") : 0;
+    return h ? h : tk_arr_alloc(0, 0);
 }
 
 /* ── 127.43: typed JSON number / bool encoding ──────────────────────────
