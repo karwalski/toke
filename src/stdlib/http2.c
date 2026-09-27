@@ -157,7 +157,12 @@ uint8_t *h2_frame_recv(H2Conn *conn, int fd, void *ssl, H2FrameHeader *hdr)
             return NULL;
     }
 
-    return conn->frame_buf;
+    /* 135.3j (6): NULL means "failed", always.  frame_buf is NULL until the
+     * first non-empty frame, so a zero-length frame (SETTINGS ACK, an empty
+     * DATA) arriving first used to come back as NULL, indistinguishable from
+     * a failed read. */
+    static uint8_t h2_no_payload[1];
+    return conn->frame_buf ? conn->frame_buf : h2_no_payload;
 }
 
 /* ── Settings ─────────────────────────────────────────────────────────── */

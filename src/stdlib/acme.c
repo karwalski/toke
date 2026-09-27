@@ -274,6 +274,8 @@ static char *acme_get_nonce(AcmeClient *ac)
 
 /* ── ACME client lifecycle ───────────────────────────────────────────── */
 
+void acme_client_free(AcmeClient *ac);   /* below; acme_client_new cleans up with it */
+
 AcmeClient *acme_client_new(const char *directory_url)
 {
     if (!directory_url) return NULL;
@@ -338,7 +340,10 @@ AcmeClient *acme_client_new(const char *directory_url)
 
     if (!ac->new_nonce_url || !ac->new_account_url || !ac->new_order_url) {
         fprintf(stderr, "acme: incomplete directory response\n");
-        acme_client_new(NULL); /* will return NULL, just cleanup */
+        /* 135.3j (6): was `acme_client_new(NULL)`, which returns NULL at
+         * once and frees nothing -- the client, its HTTP client and every
+         * URL already parsed leaked on each incomplete directory. */
+        acme_client_free(ac);
         return NULL;
     }
 
@@ -555,7 +560,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
     /* Process each authorization — complete HTTP-01 challenges */
     for (int i = 0; i < nauth; i++) {
         nonce = acme_get_nonce(ac);
-        if (!nonce) continue;
+        if (!nonce) { free(auth_urls[i]); continue; }   /* 135.3j (6): leaked */
 
         jws = acme_jws(ac, auth_urls[i], "", nonce);
         free(nonce);
