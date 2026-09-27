@@ -61,6 +61,7 @@ replaces; a skiplist that cannot rot is what keeps it honest.
 Usage:
     python3 scripts/check_stdlib_analysis.py [--compile] [--analyze]
                                              [--nonhost] [--report]
+                                             [--only]
                                              [--jobs N] [--verbose]
                                              <source.c> ...
 
@@ -72,6 +73,15 @@ Usage:
     it via $TK_OPENSSL_PREFIX, the default path, pkg-config or brew; failing
     that, tls.c is a NAMED SKIP in the final line, and
     TK_LINT_REQUIRE_OPENSSL=1 turns the skip into a failure (CI sets it).
+
+    122.13 (10), `--only`: check just the sources named, e.g. the file you
+    are editing (`make lint-file F=src/stdlib/http.c`).  Without it every
+    skiplist entry naming a file outside the source list is STALE -- which
+    is right for the full gate, where that means a module left
+    $(ANALYZE_SRCS), and made a one-file run fail on the other 150 files'
+    entries.  With it those entries are out of scope, not stale; everything
+    about the named files (their skips, counts and staleness) is checked
+    exactly as in the full run.  `make lint` never passes it.
 
     `--report` prints skiplist lines for everything currently failing and
     exits 0.  It is a drafting aid: paste the lines in and write a real
@@ -365,6 +375,7 @@ def main():
     args = sys.argv[1:]
     modes = [m for m in ("compile", "analyze", "nonhost") if "--" + m in args]
     report = "--report" in args
+    only = "--only" in args
     verbose = "--verbose" in args
     jobs = 4
     if "--jobs" in args:
@@ -395,6 +406,7 @@ def main():
                                "or install them (brew install openssl@3 / "
                                "apt-get install libssl-dev)." % (src, OPENSSL_HOW))
         sources = [s for s in sources if s not in OPENSSL_SRCS]
+    in_scope = set(sources)
 
     skips, skip_errors = load_skiplist()
     failures = list(skip_errors)
@@ -476,6 +488,8 @@ def main():
                 path = key[1].split("::")[0]
                 if path in unanalysable:
                     continue
+                if only and path not in in_scope:
+                    continue        # --only: another file's entry, out of scope
                 stale.append("analyze skip %s is STALE — it reports nothing now. "
                              "Remove the line from %s."
                              % (key[1], os.path.relpath(SKIPLIST, REPO_ROOT)))
@@ -485,6 +499,8 @@ def main():
         if (kind, key) in used:
             continue
         path = key.split("::")[0]
+        if only and path not in in_scope:
+            continue                # --only: another file's entry, out of scope
         if kind == "nonhost-uncoverable" and "nonhost" in modes and path not in sources:
             stale.append("%s:%d: nonhost-uncoverable names %s, which is not in the "
                          "analysed set — remove it." % (os.path.relpath(SKIPLIST, REPO_ROOT),
@@ -500,11 +516,13 @@ def main():
             print(p)
         return 0
 
-    n_skips = sum(1 for k in skips if k[0] in modes
+    n_skips = sum(1 for k in skips if (k[0] in modes
                   or (k[0] == "nonhost-uncoverable" and "nonhost" in modes
                       and not NONHOST_CROSS))
-    print("check_stdlib_analysis: %d sources, modes=%s, %d skiplist entries in play"
-          % (len(sources), ",".join(modes), n_skips))
+                  and (not only or k[1].split("::")[0] in in_scope))
+    print("check_stdlib_analysis: %d sources, modes=%s, %d skiplist entries in play%s"
+          % (len(sources), ",".join(modes), n_skips,
+             " (--only: entries for other files out of scope)" if only else ""))
     if OPENSSL_FLAGS is not None:
         print("check_stdlib_analysis: OpenSSL headers via %s" % OPENSSL_HOW)
     if "nonhost" in modes:

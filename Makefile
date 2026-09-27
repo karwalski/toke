@@ -231,7 +231,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -379,6 +379,14 @@ lint:
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
 lint-nonhost:
 	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS)
+
+# 122.13 (10): the same three passes over ONE file (or a few), with the
+# skiplist entries for every other file out of scope rather than stale.
+#   make lint-file F=src/stdlib/http.c
+lint-file:
+	@if [ -z "$(F)" ]; then echo "usage: make lint-file F=<source.c> [F=\"a.c b.c\"]" >&2; exit 2; fi
+	@python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)
+	@python3 scripts/check_stdlib_analysis.py --only --nonhost $(F)
 
 # Drafting aid: print proposed skiplist lines for everything now failing.
 # Writes nothing — paste the lines in and put a real reason and story on each.
