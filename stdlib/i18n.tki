@@ -15,13 +15,14 @@
     {
       "kind": "type",
       "name": "I18nErr",
+      "is_sum": true,
       "fields": [
         {
-          "name": "NotFound",
+          "name": "$notfound",
           "type": "str"
         },
         {
-          "name": "Parse",
+          "name": "$parse",
           "type": "str"
         }
       ]
