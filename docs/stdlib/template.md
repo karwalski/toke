@@ -44,7 +44,7 @@ Template error with human-readable message and byte offset in source.
 | `tpl.compile` | `src: $str` | `$tmpl!$tmplerr` | Compile a template string with `{{slot}}` placeholders |
 | `tpl.render` | `t: $tmpl; vars: $tmplvars` | `$str!$tmplerr` | Render a compiled template with variable bindings |
 | `tpl.vars` | `pairs: @($str:$str)` | `$tmplvars` | Construct a variable bindings map from key-value pairs |
-| `tpl.html` | `tag: $str; attrs: @($str:$str); children: @($str)` | `$str` | Build an HTML element string from tag, attributes, and children |
+| `tpl.html` [quarantined](/docs/reference/tki-quarantine/) | `tag: $str; attrs: @($str:$str); children: @($str)` | `$str` | Build an HTML element string from tag, attributes, and children |
 | `tpl.escape` | `s: $str` | `$str` | HTML-escape a string (`&`, `<`, `>`, `"`, `'`) |
 | `tpl.renderfile` | `path: $str; vars: $tmplvars` | `$str!$tmplerr` | Load, compile, and render a template file |
 

@@ -197,12 +197,15 @@ if build test_asserts test/stdlib/test_asserts.tk; then
     out="$("$TMP/test_asserts" 2>"$TMP/asserts.err")"
     err="$(cat "$TMP/asserts.err")"
     # str.upper("hello") and the literal "HELLO" are equal bytes at DIFFERENT
-    # addresses. The old wrapper compared the two i64 pointers, so this was 0.
-    expect "asserteq on equal strings at different addresses" "$(line "$out" eq.same)"  "1"
-    expect "asserteq on two empty strings"                    "$(line "$out" eq.empty)" "1"
-    expect "asserteq on different strings fails"              "$(line "$out" eq.diff)"  "0"
-    expect "assertne on different strings"                    "$(line "$out" ne.diff)"  "1"
-    expect "assertne on equal strings fails"                  "$(line "$out" ne.same)"  "0"
+    # addresses. The old wrapper compared the two i64 pointers, so this was 0
+    # (now false). asserteq/assertne return bool (test.tki), and a declared-bool
+    # stdlib return interpolates as true/false since 127.220 item 2 (Batch FB),
+    # so these read true/false where they used to read 1/0.
+    expect "asserteq on equal strings at different addresses" "$(line "$out" eq.same)"  "true"
+    expect "asserteq on two empty strings"                    "$(line "$out" eq.empty)" "true"
+    expect "asserteq on different strings fails"              "$(line "$out" eq.diff)"  "false"
+    expect "assertne on different strings"                    "$(line "$out" ne.diff)"  "true"
+    expect "assertne on equal strings fails"                  "$(line "$out" ne.same)"  "false"
     # The message is the whole point of the story: it must reach stderr.
     expect "the asserteq message reaches stderr" \
            "$(printf '%s\n' "$err" | grep -c 'msg="foo is not bar"')" "1"
@@ -265,6 +268,32 @@ if build ml_accuracy test/stdlib/ml_accuracy.tk; then
     expect "none correct is 0"       "$(line "$out" none.right)"    "0"
     expect "1 of 2 correct is 0.5"   "$(line "$out" half)"          "0.5"
     expect "ragged lengths use the shorter" "$(line "$out" ragged)" "1"
+fi
+
+echo
+echo "=== 136.72 (6) -- std.math aggregates, percentile, linreg, scalars ==="
+# test/stdlib/math_stats.tk was type-checked by check-stdlib-tk and never
+# built, so three wrong assertions in it failed unseen. math.min(xs) is the
+# call T002 found passing an array into a two-argument C function.
+if build math_stats test/stdlib/math_stats.tk; then
+    out="$("$TMP/math_stats")"
+    expect "math.sum"                  "$(line "$out" sum)"              "15"
+    expect "math.mean"                 "$(line "$out" mean)"             "3"
+    expect "math.min over an array"    "$(line "$out" min)"              "1"
+    expect "math.max over an array"    "$(line "$out" max)"              "5"
+    expect "math.median, odd length"   "$(line "$out" median.odd)"       "5"
+    expect "math.stddev (population)"  "$(line "$out" stddev.near2)"     "true"
+    expect "math.percentile 0"         "$(line "$out" p0)"               "10"
+    expect "math.percentile 50"        "$(line "$out" p50)"              "30"
+    expect "math.percentile 100"       "$(line "$out" p100)"             "50"
+    expect "math.linreg slope"         "$(line "$out" linreg.slope)"     "true"
+    expect "math.linreg intercept"     "$(line "$out" linreg.intercept)" "true"
+    expect "math.linreg r2"            "$(line "$out" linreg.r2)"        "true"
+    expect "math.abs"                  "$(line "$out" abs)"              "3.5"
+    expect "math.sqrt"                 "$(line "$out" sqrt)"             "3"
+    expect "math.floor"                "$(line "$out" floor)"            "true"
+    expect "math.ceil"                 "$(line "$out" ceil)"             "true"
+    expect "math.pow"                  "$(line "$out" pow)"              "1024"
 fi
 
 echo

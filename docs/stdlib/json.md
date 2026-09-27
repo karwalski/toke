@@ -312,6 +312,8 @@ f=example():void{
 
 ### json.streamparser(buf: @($byte)): $jsonstream
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Creates a SAX-style streaming parser over a byte buffer without copying it. The returned `$jsonstream` must be advanced with `json.streamnext` until a `$jsontoken.$end` or error is returned.
 
 ```toke
@@ -324,6 +326,8 @@ f=example():void{
 ```
 
 ### json.streamnext(s: $jsonstream): $jsontoken!$jsonstreamerr
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Advances the streaming parser by one token and returns it. Returns `$jsonstreamerr.$truncated` if the input ends mid-value, `$jsonstreamerr.$invalid` for malformed input, or `$jsonstreamerr.$overflow` if nesting exceeds 256 levels.
 
@@ -341,6 +345,8 @@ f=example():void{
 
 ### json.newwriter(initial_cap: u64): $jsonwriter
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Allocates a new `$jsonwriter` with the given initial byte capacity. The writer grows automatically as tokens are emitted; passing `0` uses a default capacity.
 
 ```toke
@@ -351,6 +357,8 @@ f=example():void{
 ```
 
 ### json.streamemit(w: $jsonwriter; j: $json): void!$jsonstreamerr
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Emits the complete JSON value `j` into the writer `w` as a stream of bytes. Returns `$jsonstreamerr.$invalid` if `j` contains malformed JSON.
 
@@ -365,6 +373,8 @@ f=example():void{
 ```
 
 ### json.writerbytes(w: $jsonwriter): @($byte)
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Returns the bytes accumulated in the writer so far as a byte slice. The writer retains ownership; call after all `json.streamemit` calls are complete to obtain the final output.
 

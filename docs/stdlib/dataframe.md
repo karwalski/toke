@@ -72,6 +72,8 @@ let frame   = df.fromrows(headers; data);
 
 ### df.column(d: $dataframe; name: $str): @(f64)!$dferr
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Extracts a numeric column by name and returns its values as an `f64` array. Returns `$dferr` if the column is not found or was stored as `$str` rather than `f64`.
 
 <!-- skip-check -->
@@ -109,6 +111,8 @@ let groups = mt df.groupby(data; "region") {$ok:g g;$err:e <1};
 
 ### df.join(left: $dataframe; right: $dataframe; on: $str): $dataframe!$dferr
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Performs an inner hash join on the string column `on`, which must exist in both frames. Rows with matching key values are combined; unmatched rows are excluded. The key column appears exactly once in the result. Returns `$dferr` if `on` is absent from either frame or is not a `$str` column.
 
 <!-- skip-check -->
@@ -117,6 +121,8 @@ let combined = mt df.join(orders; customers; "customer_id") {$ok:d d;$err:e <1};
 ```
 
 ### df.head(d: $dataframe; n: u64): $dataframe
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Returns a new data frame containing at most the first `n` rows of `d`. If `n` is greater than or equal to the number of rows, the entire frame is returned. This function never fails.
 
@@ -146,6 +152,8 @@ mt file.write("output.csv"; text) {$ok:v ();$err:e <1};
 
 ### df.tojson(d: $dataframe): @($byte)!$dferr
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 Serialises the data frame as a JSON array of row objects, with numeric columns emitting number values and string columns emitting quoted strings. Returns `$dferr` only on allocation failure.
 
 <!-- skip-check -->
@@ -154,6 +162,8 @@ let json = mt df.tojson(summary) {$ok:b b;$err:e <1};
 ```
 
 ### df.schema(d: $dataframe): @($series)
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Returns an array of `$series` values describing every column in the frame -- its name, data type, and length. This function never fails; an empty frame returns an empty array.
 

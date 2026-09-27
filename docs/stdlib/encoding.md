@@ -24,7 +24,7 @@ The `std.encoding` module provides functions for encoding and decoding binary da
 | `encoding.b64encode` | `data: @($byte)` | `$str` | Encode bytes to standard Base64 |
 | `encoding.b64urlencode` | `data: @($byte)` | `$str` | Encode bytes to URL-safe Base64 |
 | `encoding.b64decode` | `s: $str` | `@($byte)!$encodingerr` | Decode standard Base64 to bytes |
-| `encoding.b64urldecode` | `s: $str` | `@($byte)!$encodingerr` | Decode URL-safe Base64 to bytes |
+| `encoding.b64urldecode` [quarantined](/docs/reference/tki-quarantine/) | `s: $str` | `@($byte)!$encodingerr` | Decode URL-safe Base64 to bytes |
 | `encoding.hexencode` | `data: @($byte)` | `$str` | Encode bytes to lowercase hex string |
 | `encoding.hexdecode` | `s: $str` | `@($byte)!$encodingerr` | Decode hex string to bytes |
 | `encoding.urlencode` | `s: $str` | `$str` | Percent-encode a string for use in URLs |
