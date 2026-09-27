@@ -1439,6 +1439,41 @@ static const Node *find_ref_ctx(const Node *n, const Node *parent, int idx,
     return NULL;
 }
 
+/* 127.228: is the use of `name` inside `n` the callee of a call (`name(...)`)?
+ * A binding that is called holds a function value, and inlining one is not a
+ * rewrite of the same program: `let sf=s.f; sf(1)` becomes `s.f(1)`, a method
+ * call (E4036); `let q=a.get(1); q(3)` becomes `a.get(1)(3)`. */
+static int ref_is_callee(const Node *n, const char *name, int len, const char *src)
+{
+    if (!n) return 0;
+    if (n->kind == NODE_CALL_EXPR && n->child_count > 0 && n->children[0] &&
+        n->children[0]->kind == NODE_IDENT && name_is(n->children[0], name, len, src))
+        return 1;
+    for (int i = 0; i < n->child_count; i++)
+        if (ref_is_callee(n->children[i], name, len, src)) return 1;
+    return 0;
+}
+
+/* 127.228: does the initialiser name a function value the linter can see
+ * without types -- a function this file declares, or a parameter of `fn`
+ * declared with a function type?  `let h=g; ...h...` is then a deliberate
+ * copy of a function value, and the fix is left absent (AGENTS §6). */
+static int init_is_fn_value(const PatCtx *c, const Node *init, const Node *fn)
+{
+    if (!init || init->kind != NODE_IDENT) return 0;
+    const char *nm = c->src + init->tok_start;
+    int nl = init->tok_len;
+    if (program_declares_fn(c->root, nm, nl, c->src)) return 1;
+    for (int i = 0; fn && i < fn->child_count; i++) {
+        const Node *p = fn->children[i];
+        if (p && p->kind == NODE_PARAM && p->child_count >= 2 &&
+            name_is(p->children[0], nm, nl, c->src) && p->children[1] &&
+            p->children[1]->kind == NODE_FUNC_TYPE)
+            return 1;
+    }
+    return 0;
+}
+
 static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *fn)
 {
     const Node *decl = list->children[i];
@@ -1467,7 +1502,9 @@ static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *
     int fixable = 0, fs = 0, fe = 0;
     Str rep = {0};
     if (nxt.ast_refs == 1 && is_pure_expr(init, c->src) &&
-        !stmt_writes_ident_of(next, init, c->src)) {
+        !stmt_writes_ident_of(next, init, c->src) &&
+        !ref_is_callee(next, name, len, c->src) &&        /* 127.228 */
+        !init_is_fn_value(c, init, fn)) {
         int unsafe = 0;
         const Node *use = find_ref_ctx(next, list, i + 1, name, len, c->src, 0, &unsafe);
         if (use && !unsafe) {
