@@ -4593,6 +4593,45 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             at->elem = infer(cx, c0);
         else
             at->elem = mk_type(A, TY_UNKNOWN);
+        /* 138.9 (T-24): only the FIRST element was ever inferred, so the
+         * rest were neither type-checked nor compared with it.
+         * `@(st.items;e)` -- an @($entry) and an $entry, written where an
+         * append was meant -- built a two-element array of mixed kinds that
+         * nothing rejected; its length was 2 whatever st.items held.  Every
+         * element is inferred now, and one whose established type the first
+         * element's does not admit is E4031 (an integer literal narrows as
+         * everywhere else; an unknown type is not judged).  No `fix`: an
+         * append, a wrap or a different element are all plausible. */
+        if (c0 && at->elem && at->elem->kind != TY_UNKNOWN
+            && !(c0->kind == NODE_TYPE_IDENT || c0->kind == NODE_TYPE_EXPR ||
+                 c0->kind == NODE_ARRAY_TYPE || c0->kind == NODE_MAP_TYPE ||
+                 c0->kind == NODE_FUNC_TYPE  || c0->kind == NODE_PTR_TYPE)) {
+            for (int i = 1; i < node->child_count; i++) {
+                const Node *ei = node->children[i];
+                if (!ei) continue;
+                Type *et = infer(cx, ei);
+                if (!et || et->kind == TY_UNKNOWN) continue;
+                if (types_compat(et, at->elem) || lit_narrows(cx->src, ei, at->elem))
+                    continue;
+                /* `@(1;x)` with x:u8 -- the literal first element adopts. */
+                if (lit_narrows(cx->src, c0, et)) { at->elem = et; continue; }
+                if (tc_first_report(cx, ei) && tc_can_emit(cx)) {
+                    char msg[320], en[96], gn[96];
+                    snprintf(en, sizeof en, "%s", type_name(at->elem));
+                    snprintf(gn, sizeof gn, "%s", type_name(et));
+                    snprintf(msg, sizeof msg,
+                             "array literal elements must share one type: "
+                             "element %d is '%s', the first is '%s'",
+                             i + 1, gn, en);
+                    diag_emit(DIAG_ERROR, E4031, ei->start, ei->line, ei->col, msg,
+                              "expected", en, "got", gn, (const char *)NULL);
+                }
+                break;
+            }
+        } else {
+            for (int i = 1; i < node->child_count; i++)
+                if (node->children[i]) infer(cx, node->children[i]);
+        }
         return at;
     }
 
