@@ -19,6 +19,7 @@
 #include "http.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "bytes_rt.h"   /* 135.19: tk_bytes_pack */
+#include "tk_exitfail.h" /* 135.22: a server that did not start fails the process */
 /* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
  * returns the real value; defined in tk_runtime.c. */
 /* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
@@ -704,17 +705,44 @@ int64_t tk_http_serve(int64_t port) {
     return tk_http_serveworkers_w(port, 2);
 }
 
+/*
+ * 135.22 — an HTTPS server that does not start fails the process.
+ *
+ * With a certificate or key it could not load, http.servetls printed
+ * "http_tls_ctx_new: failed to load cert: ..." and returned -1; every caller
+ * in the tree discards that value (ooke's serve.tk, the docs' own example),
+ * so main ran off its end and the process exited 0 -- to a supervisor, a
+ * server that never started looked like a clean shutdown.  The same held for
+ * a port that could not be bound.
+ *
+ * Now a start failure (a) still returns -1 to the caller, (b) prints one
+ * structured line naming the call, the port and the stage that failed, and
+ * (c) records the failure with tk_exitfail(), so the process exits 1 when it
+ * finishes however main ends (tk_exitfail.h explains why at exit rather than
+ * immediately).  A server that started and later shut down on SIGTERM
+ * returns 0 as before and records nothing.
+ */
+static int64_t tls_start_failed(const char *fn, int port, const char *stage)
+{
+    fprintf(stderr,
+            "DIAGNOSTIC: kind=server_start_failed fn=\"%s\" port=%d stage=\"%s\"\n",
+            fn, port, stage);
+    tk_exitfail("an HTTPS server did not start");
+    return -1;
+}
+
 int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
     int p = (int)port;
     if (p <= 0 || p > 65535) p = 8443;
     const char *cert = (const char *)(intptr_t)cert_ptr;
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
-    if (!tls) return -1;
+    if (!tls) return tls_start_failed("http.servetls", p, "certificate/key");
     /* Pass NULL router — tls_worker_loop will use the global route_table. */
     TkHttpErr err = http_serve_tls(NULL, NULL, (uint64_t)p, tls);
     http_tls_ctx_free(tls);
-    return (err == TK_HTTP_OK) ? 0 : -1;
+    if (err != TK_HTTP_OK) return tls_start_failed("http.servetls", p, "bind/fork");
+    return 0;
 }
 
 /*
@@ -737,14 +765,15 @@ int64_t tk_http_servetlsworkers_w(int64_t port, int64_t cert_ptr, int64_t key_pt
     const char *cert = (const char *)(intptr_t)cert_ptr;
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
-    if (!tls) return -1;
+    if (!tls) return tls_start_failed("http.servetlsworkers", p, "certificate/key");
     /* workers=0 auto-detects, as http.serveworkers does: http_serve_tls()
      * is exactly that sizing (CPU count, TK_HTTP_WORKERS overrides). */
     TkHttpErr err = workers > 0
         ? http_serve_tls_workers(NULL, NULL, (uint64_t)p, tls, (uint64_t)workers)
         : http_serve_tls(NULL, NULL, (uint64_t)p, tls);
     http_tls_ctx_free(tls);
-    return (err == TK_HTTP_OK) ? 0 : -1;
+    if (err != TK_HTTP_OK) return tls_start_failed("http.servetlsworkers", p, "bind/fork");
+    return 0;
 }
 
 /* ── Static file directory handler ───────────────────────────────────── */
