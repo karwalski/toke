@@ -1359,6 +1359,11 @@ static int is_stdlib_slot_wrapper(const char *name) {
         "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
         /* 127.104: `TlsKeypair!str` — the slot holds tls.c's message */
         "tk_tls_genselfsigned_w", "tk_tls_genselfsignedalg_w",
+        /* 138.3 (B3): the typed http client calls return `T!$httperr` and
+         * leave an {msg; code} box in the slot; without these rows
+         * `$err:e e.msg` read a nil payload (RT005) */
+        "tk_http_clientget_w", "tk_http_clientpost_w", "tk_http_clientput_w",
+        "tk_http_clientdelete_w", "tk_http_geturl_w",
         NULL,
     };
     if (!name) return 0;
@@ -4983,16 +4988,28 @@ static int emit_expr(Ctx *c, const Node *n)
                 && n->child_count == 3
                 && test_eq_args_are_str(c, n->children[1], n->children[2]))
                 resolved_fn = "tk_test_eqstr_w";
-            /* Disambiguate http.get/post by argument count:
-             * 1 arg = HTTP client request, 2 args = route registration */
-            if (resolved_fn) {
-                int call_argc = n->child_count - 1;
-                if (!strcmp(resolved_fn, "tk_http_get_handler") && call_argc == 1) {
-                    resolved_fn = "tk_http_get_w";
-                } else if (!strcmp(resolved_fn, "tk_http_post_handler") && call_argc == 2 &&
-                           n->child_count >= 3 && n->children[2]->kind != NODE_FUNC_REF) {
-                    resolved_fn = "tk_http_posturl_w";
-                }
+            /* 138.3 (B3): the argument-count disambiguation that turned a
+             * 1-argument `http.get(url)` into the client call tk_http_get_w
+             * and a 2-argument non-handler `http.post` into tk_http_posturl_w
+             * is retired.  Those spellings are route registrations in
+             * stdlib/http.tki; the client calls are published as http.geturl
+             * and http.clientpost, which carry an error channel.  A str
+             * where the route's handler goes is what the old 2-argument
+             * `http.post(url;body)` spelling now looks like, and it would
+             * register the string as a handler; the checker does not judge
+             * that parameter kind, so it is refused here.  No fix (the
+             * client POST is http.clientpost, a different call). */
+            if (resolved_fn && !strncmp(resolved_fn, "tk_http_", 8) &&
+                strlen(resolved_fn) > 16 &&
+                !strcmp(resolved_fn + strlen(resolved_fn) - 8, "_handler") &&
+                n->child_count == 3 && expr_is_str_value(c, n->children[2])) {
+                char hmsg[256];
+                snprintf(hmsg, sizeof hmsg,
+                         "%s.%s registers a route and takes a handler function as its "
+                         "second argument, not a str (a client POST is http.clientpost)",
+                         alias, method);
+                diag_emit(DIAG_ERROR, E4031, n->children[2]->start, n->children[2]->line,
+                          n->children[2]->col, hmsg, (void *)0);
             }
             if (!resolved_fn) {
                 /* Check if alias is a known sub-namespace (e.g. "row" from std.db).
@@ -5914,8 +5931,25 @@ static int emit_expr(Ctx *c, const Node *n)
             if (is_std_mod) {
                 const char *fn = resolve_stdlib_call(c, base_alias, "get");
                 if (fn) {
-                    /* Disambiguate: http.get with 1 arg = client GET */
-                    if (!strcmp(fn, "tk_http_get_handler")) fn = "tk_http_get_w";
+                    /* 138.3: no client-GET rewrite of http.get(url) here any more.
+                     * This spelling passes exactly ONE argument, so a glue
+                     * symbol declared with another arity would be called
+                     * short (http.get is the 2-argument route registration:
+                     * a 1-argument call built and read a garbage handler).
+                     * The checker does not arity-check the index spelling,
+                     * so say it here.  No fix: the client GET is a different
+                     * function with a different result (http.geturl). */
+                    int ga = stdlib_glue_arity(fn);
+                    if (ga >= 0 && ga != 1) {
+                        char amsg[256];
+                        snprintf(amsg, sizeof amsg,
+                                 "%s.get takes %d argument%s, got 1%s", base_alias, ga,
+                                 ga == 1 ? "" : "s",
+                                 !strcmp(fn, "tk_http_get_handler")
+                                     ? " (http.get registers a route: path; handler — "
+                                       "a client GET of a URL is http.geturl(url))" : "");
+                        diag_emit(DIAG_ERROR, E4026, n->start, n->line, n->col, amsg, (void *)0);
+                    }
                     int arg = emit_expr(c, n->children[1]);
                     const char *aty = expr_llvm_type(c, n->children[1]);
                     arg = coerce_value(c, arg, aty, "i64");
