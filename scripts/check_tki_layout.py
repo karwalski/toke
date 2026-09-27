@@ -165,37 +165,47 @@ def compare_fields(struct, mod, rec, cfields, tfields, prefix):
 
 
 def compile_layout(structs):
-    """Assert slot offsets/sizes with the C compiler; return error lines."""
-    headers = sorted({p for p, *_ in structs})
-    src = ["#include <stddef.h>", "#include <stdint.h>"]
-    src += ['#include "%s"' % os.path.basename(h) for h in headers]
-    for _, _, mod, rec, name, fields, prefix in structs:
-        tfields, err = tki_record(mod, rec)
-        if not err and prefix:
-            fields = fields[:len(tfields)]
-        for i, (_, f) in enumerate(fields):
-            src.append("typedef char tki_layout__%s__%s__is_slot_%d[(offsetof(%s, %s) "
-                       "== %d && sizeof(((%s *)0)->%s) == 8) ? 1 : -1];"
-                       % (name, f, i, name, f, 8 * i, name, f))
-        if not prefix:
-            src.append("typedef char tki_layout__%s__has_%d_slots[(sizeof(%s) == %d) ? 1 : -1];"
-                       % (name, len(fields), name, 8 * len(fields)))
-    cc = os.environ.get("CC", "cc")
-    with tempfile.TemporaryDirectory() as d:
-        tu = os.path.join(d, "tki_layout.c")
-        with open(tu, "w") as f:
-            f.write("\n".join(src) + "\n")
-        r = subprocess.run([cc, "-std=c99", "-D_GNU_SOURCE", "-fsyntax-only",
-                            "-I", STDLIB_C, tu],
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           universal_newlines=True)
-    if r.returncode == 0:
-        return []
-    names = sorted(set(re.findall(r"tki_layout__[A-Za-z0-9_]+", r.stdout)))
-    if not names:
-        return ["the layout translation unit did not compile:\n" + r.stdout]
-    return ["C layout: %s" % n.replace("tki_layout__", "").replace("__", " ")
-            + " -- false" for n in names]
+    """Assert slot offsets/sizes with the C compiler; return error lines.
+
+    One translation unit per header: two stdlib headers may each define a
+    helper type of the same name (db.h's and ml.h's F64Result), and are
+    never included together by the glue either (135.30)."""
+    errors = []
+    for header in sorted({p for p, *_ in structs}):
+        src = ["#include <stddef.h>", "#include <stdint.h>",
+               '#include "%s"' % os.path.basename(header)]
+        for path, _, mod, rec, name, fields, prefix in structs:
+            if path != header:
+                continue
+            tfields, err = tki_record(mod, rec)
+            if not err and prefix:
+                fields = fields[:len(tfields)]
+            for i, (_, f) in enumerate(fields):
+                src.append("typedef char tki_layout__%s__%s__is_slot_%d[(offsetof(%s, %s) "
+                           "== %d && sizeof(((%s *)0)->%s) == 8) ? 1 : -1];"
+                           % (name, f, i, name, f, 8 * i, name, f))
+            if not prefix:
+                src.append("typedef char tki_layout__%s__has_%d_slots[(sizeof(%s) == %d) ? 1 : -1];"
+                           % (name, len(fields), name, 8 * len(fields)))
+        cc = os.environ.get("CC", "cc")
+        with tempfile.TemporaryDirectory() as d:
+            tu = os.path.join(d, "tki_layout.c")
+            with open(tu, "w") as f:
+                f.write("\n".join(src) + "\n")
+            r = subprocess.run([cc, "-std=c99", "-D_GNU_SOURCE", "-fsyntax-only",
+                                "-I", STDLIB_C, tu],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               universal_newlines=True)
+        if r.returncode == 0:
+            continue
+        names = sorted(set(re.findall(r"tki_layout__[A-Za-z0-9_]+", r.stdout)))
+        if not names:
+            errors.append("the layout translation unit for %s did not compile:\n%s"
+                          % (rel(header), r.stdout))
+            continue
+        errors += ["C layout: %s" % n.replace("tki_layout__", "").replace("__", " ")
+                   + " -- false" for n in names]
+    return errors
 
 
 def main(argv):
