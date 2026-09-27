@@ -613,6 +613,10 @@ typedef struct { TypeEnv *env; const char *src;
                  /* 127.221: the string literal whose `\(..)` sub-parse
                   * is being inferred — its nodes are not in the tree. */
                  const Node *interp_host;
+                 /* 138.13 (T-52): the struct declarations resolve_type is
+                  * inside, so a field that names its own struct -- directly
+                  * or through @/pointer -- does not recurse forever. */
+                 const Node *resolving[32]; Type *resolving_ty[32]; int resolving_n;
                } Ctx;
 
 /* tc_first_report — 1 the first time `n` is reported on, 0 afterwards. */
@@ -1449,6 +1453,22 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
         if (!st) return mk_type(cx->env->arena, TY_UNKNOWN);
         const Node *nn = decl->child_count>0?decl->children[0]:NULL;
         if (nn) { char snb[128]; TOKSTR(snb,cx->src,nn); st->name=ty_intern(cx->env->arena,snb); }
+        /* 138.13 (T-52): `t=$n{v:i32;c:@$n}` -- resolving field c resolved
+         * $n, whose field c resolved $n, ... until the stack overflowed
+         * (tkc exit 139 at --check).  A cycle through an array or pointer
+         * field is a legal recursive type (a tree node), so the inner
+         * reference is answered with the struct's NAME and no field list:
+         * types_equal compares structs by name, so the cycle types the same
+         * as the outer declaration, and field access on an element resolves
+         * the declaration afresh from its own use. */
+        {
+            for (int ri = 0; ri < cx->resolving_n; ri++)
+                if (cx->resolving[ri] == decl) return cx->resolving_ty[ri];
+            if (cx->resolving_n >= (int)(sizeof cx->resolving / sizeof cx->resolving[0]))
+                return st;
+            cx->resolving[cx->resolving_n] = decl;
+            cx->resolving_ty[cx->resolving_n++] = st;
+        }
         /* Collect NODE_FIELD children — they may be direct children of the
          * TYPE_DECL or wrapped in a NODE_STMT_LIST (from parse_field_list). */
         /* 127.205: no field cap.  A fixed 64-slot array dropped field 65
@@ -1493,6 +1513,7 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
                 }
             }
         }
+        cx->resolving_n--;                                   /* 138.13 */
         return st;
     }
     /* 127.66: the name was not declared locally — it may name a type an
@@ -6658,7 +6679,7 @@ int type_check(const Node *ast, const char *src,
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
     cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
     cx.reported_count=0;
-    cx.armb_count=0; cx.mt_discard=NULL;
+    cx.armb_count=0; cx.mt_discard=NULL; cx.resolving_n=0;   /* 138.13 */
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
