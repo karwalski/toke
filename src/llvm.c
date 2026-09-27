@@ -7392,6 +7392,23 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
         return t;
     }
+    case NODE_TYPE_IDENT: {
+        /* 138.13 (T-13): a bare TYPE name in a value position — `$w{l:$internal}`
+         * with `$internal` a variant of a sum.  It reached the default below
+         * and was lowered as a silent 0, i.e. a null box, which the first
+         * `mt` over it dereferenced (SIGTRAP at run time, toke exit 0).  The
+         * checker says E4033 for the `let` spelling; whichever spelling gets
+         * here, the build stops with the same located diagnostic.  No fix:
+         * the payload the program meant is not known (AGENTS.md §6). */
+        char tn[128]; tok_cp(c->src, n, tn, sizeof tn);
+        char tmsg[256];
+        int dol = n->tok_start > 0 && c->src[n->tok_start - 1] == '$' && tn[0] != '$';
+        snprintf(tmsg, sizeof tmsg, "'%s%s' is a type, not a value", dol ? "$" : "", tn);
+        diag_emit(DIAG_ERROR, E4033, n->start, n->line, n->col, tmsg, (void *)0);
+        t = next_tmp(c);
+        fprintf(c->out, "  %%t%d = add i64 0, 0 ; 138.13 E4033 stub\n", t);
+        return t;
+    }
     default:
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = add i64 0, 0 ; unhandled expr %d\n", t, (int)n->kind);
