@@ -3011,6 +3011,38 @@ static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
 static const char *expr_struct_type(Ctx *c, const Node *n);
 
+/* 127.220 item 1: the value of a bare-binding arm (`$ok:v v`) of a match on a
+ * SUM-type value is that variant's payload, not the scrutinee.  Both result
+ * type inferences below took the scrutinee's type, so `let v=mt r{$ok:v v;..}`
+ * over `t=$res{$ok:i64;$err:str}` bound the i64 payload in a pointer-typed
+ * slot and `v+1` died E9002 (fixtures/roundtrip/struct_literal.tk).  Answers
+ * a scalar or str payload with the slot type the arm binding itself gets
+ * (sum_match, emit_expr); NULL for anything else, which keeps the old path. */
+static const char *sum_arm_bind_llvm_type(Ctx *c, const Node *m, const Node *arm) {
+    if (!m || m->child_count < 1 || !arm || arm->child_count < 1 || !arm->children[0])
+        return NULL;
+    const char *sn = expr_struct_type(c, m->children[0]);
+    const StructInfo *si = sn ? lookup_struct(c, sn) : NULL;
+    if ((!si || !si->is_sum) && m->children[0]->rtype &&
+        m->children[0]->rtype->kind == TY_STRUCT && m->children[0]->rtype->name) {
+        const char *rn = m->children[0]->rtype->name;       /* as 127.174 */
+        si = lookup_struct(c, rn);
+        if (!si && rn[0] == '$') si = lookup_struct(c, rn + 1);
+    }
+    if (!si || !si->is_sum) return NULL;
+    char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+    int vidx = struct_field_index(si, tag);
+    if (vidx < 0 || !si->field_types[vidx]) return NULL;
+    const char *vty = si->field_types[vidx];
+    if (vty[0] == '$') vty++;
+    if (!strcmp(vty, "f64") || !strcmp(vty, "f32")) return "double";
+    if (!strcmp(vty, "str")) return "i8*";
+    static const char *const ints[] = { "i64", "i32", "i16", "i8", "u64", "u32",
+                                        "u16", "u8", "bool", NULL };
+    for (int i = 0; ints[i]; i++) if (!strcmp(vty, ints[i])) return "i64";
+    return NULL;
+}
+
 /*
  * ── 124.0c item 3: function values and closure reference counts ─────────
  *
@@ -7259,9 +7291,10 @@ static int emit_expr(Ctx *c, const Node *n)
                  * registry, so reusing `v` across two matches would otherwise leak
                  * the first match's type into the second). */
                 if (ab->kind == NODE_IDENT && arm->children[1] &&
-                    match_arm_body_is_binding(c, ab, arm->children[1]))
-                    arm0_ty = expr_llvm_type(c, n->children[0]);
-                else
+                    match_arm_body_is_binding(c, ab, arm->children[1])) {
+                    const char *sty = sum_arm_bind_llvm_type(c, n, arm);  /* 127.220 */
+                    arm0_ty = sty ? sty : expr_llvm_type(c, n->children[0]);
+                } else
                     arm0_ty = expr_llvm_type(c, ab);
                 if (strcmp(arm0_ty, "i64")) { res_ty = arm0_ty; }
                 break;
@@ -8978,9 +9011,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             /* bare-binding ok arm → scrutinee's type, not the binding's stale
              * local type (see the matching note in emit_expr). */
             if (ab->kind == NODE_IDENT && arm0->children[1] &&
-                match_arm_body_is_binding(c, ab, arm0->children[1]))
-                mrt = expr_llvm_type(c, n->children[0]);
-            else
+                match_arm_body_is_binding(c, ab, arm0->children[1])) {
+                const char *sty = sum_arm_bind_llvm_type(c, n, arm0);  /* 127.220 */
+                mrt = sty ? sty : expr_llvm_type(c, n->children[0]);
+            } else
                 mrt = expr_llvm_type(c, ab);
             break;
         }
