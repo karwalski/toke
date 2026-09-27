@@ -27,7 +27,27 @@
 # case 2 fails (B is still running after the wait) and B's log shows no bind
 # error.
 #
-# Story: 127.203
+# THE PORT (127.231 item 4).  This used to probe a free port with bind(0),
+# close it, and hand the number to server A.  Under a full concurrent conform
+# run A once failed with "could not bind to port 54308": between the probe and
+# A's bind, another process took the port.  Every suite that probes the same
+# way draws from the kernel's ephemeral range, and a released port is handed
+# straight back out, so two probing suites can be given the same number.
+# The literal fix — A binds port 0 and the test reads the port back — is not
+# available: http.serveworkers maps port 0 to 8080 and reports nothing.  So:
+#   - the port is drawn from 20000-29999, BELOW every ephemeral range (macOS
+#     49152+, Linux 32768+): bind(0) probes and client source ports never
+#     land there, which removes the thief that was seen;
+#   - if A still cannot bind (some process listens there), that is visible in
+#     its log, and A is retried on a fresh port, up to 5 times.  A retry can
+#     only turn a bind failure into a start; it cannot turn a real defect into
+#     a pass, because cases 2-4 all run against the port A actually holds.
+#   Control for the retry: C108_STEAL_FIRST=1 puts a listener on the first
+#   port drawn before A starts (the thief, on demand).  With the default 5
+#   attempts the suite passes and says it retried; with C108_ATTEMPTS=1 (the
+#   old single shot) it fails "server A never answered", as it did under load.
+#
+# Story: 127.203, 127.231 (item 4)
 
 set -uo pipefail
 
@@ -52,7 +72,7 @@ stop() {
     kill -9 "$1" 2>/dev/null
     wait "$1" 2>/dev/null
 }
-cleanup() { stop "${A_PID}"; stop "${B_PID}"; stop "${C_PID}"; rm -rf "${WORK}"; }
+cleanup() { stop "${A_PID}"; stop "${B_PID}"; stop "${C_PID}"; stop "${THIEF:-}"; rm -rf "${WORK}"; }
 trap cleanup EXIT
 cd "${WORK}"
 
@@ -64,15 +84,28 @@ expect() {
 echo "C108: a busy port is a bind failure; the worker pool still serves"
 echo "-----------------------------------------------------------------"
 
-PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+# A port below the ephemeral ranges that is bindable right now (see header).
+pick_port() {
+    python3 -c '
+import random, socket
+for _ in range(200):
+    p = random.randint(20000, 29999)
+    s = socket.socket()
+    try:
+        s.bind(("", p)); print(p); break
+    except OSError:
+        pass
+    finally:
+        s.close()'
+}
 
-# main returns 3 when serveworkers returns at all: it only returns on failure.
+build_srv() {   # build_srv PORT -> srv_bin serving GET /ok on PORT
 cat > srv.tk <<TOKE
 m=busyport;
 i=http:std.http;
 f=main():i64{
   http.getstatic("/ok"; "ok");
-  let r=http.serveworkers(${PORT};2);
+  let r=http.serveworkers(${1};2);
   <3
 };
 TOKE
@@ -82,19 +115,42 @@ if ! "${TKC}" --allow-all --out srv_bin srv.tk > compile.log 2>&1; then
     echo "Results: 0 passed, 1 failed"
     exit 1
 fi
+}
 
-up() {   # up -> 0 once something answers GET /ok on PORT
+up() {   # up PID -> 0 once something answers GET /ok on PORT; 1 once PID exits
     for _i in $(seq 1 100); do
+        kill -0 "$1" 2>/dev/null || return 1
         curl -s -m 1 "http://127.0.0.1:${PORT}/ok" 2>/dev/null | grep -q '^ok$' && return 0
         sleep 0.1
     done
     return 1
 }
 
-# 1. A: a real pool, answering.
-./srv_bin > a.log 2>&1 &
-A_PID=$!
-if ! up; then
+# 1. A: a real pool, answering.  Retried on a fresh port only when A itself
+#    reports that it could not bind (see header).
+A_UP=""
+THIEF=""
+for attempt in $(seq 1 "${C108_ATTEMPTS:-5}"); do
+    PORT="$(pick_port)"
+    [ -n "${PORT}" ] || continue
+    build_srv "${PORT}"
+    if [ "${attempt}" = 1 ] && [ "${C108_STEAL_FIRST:-0}" = 1 ]; then
+        python3 -c 'import socket,sys,time
+s=socket.socket(); s.bind(("", int(sys.argv[1]))); s.listen(1); time.sleep(60)' "${PORT}" &
+        THIEF=$!
+        sleep 0.5
+    fi
+    ./srv_bin > a.log 2>&1 &
+    A_PID=$!
+    if up "${A_PID}"; then A_UP=1; break; fi
+    if grep -a -q "could not bind to port ${PORT}" a.log; then
+        echo "  info: port ${PORT} was taken before server A bound it; attempt ${attempt} of ${C108_ATTEMPTS:-5}"
+        stop "${A_PID}"; A_PID=""
+        continue
+    fi
+    break
+done
+if [ -z "${A_UP}" ]; then
     echo "  FAIL: server A never answered on port ${PORT}"
     sed 's/^/      /' a.log | head -4
     echo "Results: 0 passed, 1 failed"
@@ -134,7 +190,7 @@ for _i in $(seq 1 100); do kill -0 "${A_PID}" 2>/dev/null || break; sleep 0.05; 
 stop "${A_PID}"; A_PID=""
 ./srv_bin > c.log 2>&1 &
 C_PID=$!
-if up; then
+if up "${C_PID}"; then
     echo "  PASS: a new server binds the port as soon as A has exited"
     PASS=$((PASS + 1))
 else
@@ -143,6 +199,7 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+stop "${THIEF}"; THIEF=""
 echo "-----------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
