@@ -60,8 +60,10 @@ case "$(msg "${H}"'f=main():i64{let c=http.client("http://127.0.0.1:1");let r=ht
 esac
 expect "5 a real route registration stays clean" \
     "$(diags "${H}"'f=h(req:$req):$res{<http.res.ok("ok")};f=main():i64{http.get("/x";&h);http.post("/y";&h);<0};')" "rc=0"
-expect "6 the one-argument http.get(url) form is left alone" \
-    "$(diags "${H}"'f=main():i64{let r:str=http.get("http://127.0.0.1:1/");<0};')" "rc=0"
+# The one-argument client form was retired by GB (138.3); C299 owns its
+# message.  Here it is only required not to pass.
+expect "6 the retired one-argument http.get(url) form is E4026" \
+    "$(diags "${H}"'f=main():i64{let r:str=http.get("http://127.0.0.1:1/");<0};')" "E4026|1|ABSENT"
 
 echo "C294: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
