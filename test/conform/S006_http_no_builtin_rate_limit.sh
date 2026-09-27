@@ -62,8 +62,9 @@ cd "${WORK}"
 echo "S006: the server does not throttle a well-behaved client"
 echo "--------------------------------------"
 
-# An ephemeral port, so concurrent runs and leftover listeners cannot collide.
-PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+# 135.24: the server binds port 0 and prints the port it got, so concurrent
+# runs cannot collide and there is no probe-then-bind window.
+PORT=""
 
 cat > srv.tk <<EOF
 m=srv;
@@ -71,7 +72,7 @@ i=http:std.http;
 f=greet(req:i64):i64{ <http.resok("hi") };
 f=main():i64{
   http.gethandler("/api/greet/:name";&greet);
-  http.serve(${PORT});
+  http.serve(0);
   <0
 };
 EOF
@@ -83,8 +84,14 @@ if ! "${TKC}" --allow-all -o srv.bin srv.tk >build.log 2>&1 || [ ! -x srv.bin ];
     exit 1
 fi
 
-./srv.bin >/dev/null 2>&1 &
+./srv.bin >/dev/null 2>srv.err &
 SRV=$!
+for _ in $(seq 1 80); do
+    PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
+    [ -n "${PORT}" ] && break
+    kill -0 "${SRV}" 2>/dev/null || break
+    sleep 0.1
+done
 READY=0
 for _ in $(seq 1 80); do
     python3 -c "

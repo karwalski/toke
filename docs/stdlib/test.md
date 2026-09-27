@@ -7,7 +7,7 @@ order: 36
 
 **Status: Implemented** -- C runtime backing.
 
-The `std.test` module provides assertion functions for writing tests. All functions return `bool` -- `true` (1) on pass, `false` (0) on fail. Failed assertions emit a structured diagnostic to stderr. These functions do not halt execution; the test continues after a failed assertion.
+The `std.test` module provides assertion functions for writing tests. The assertions return `bool` -- `true` (1) on pass, `false` (0) on fail (`test.ok` and `test.fail` return the same as `i64`). Failed assertions emit a structured diagnostic to stderr. These functions do not halt execution; the test continues after a failed assertion, so every failure in a run is reported -- and **a run with any failed assertion exits with status 1**, however `main` ends. See [Exit status](#exit-status).
 
 ## Functions
 
@@ -21,8 +21,11 @@ i=test:std.test;
 i=str:std.str;
 i=file:std.file;
 f=main():i64{
+  let path=str.concat(file.tempdir();"/toke-test-example.txt");
+  let w=mt file.write(path;"data") {$ok:b b; $err:e false};
   let r1=test.assert(str.len("hi")==2;"length should be 2");
-  let r2=test.assert(file.exists("/tmp/data.txt");"file should exist");
+  let r2=test.assert(file.exists(path);"file should exist after it is written");
+  let d=mt file.delete(path) {$ok:b b; $err:e false};
   < 0
 };
 ```
@@ -87,6 +90,25 @@ f=main():i64{
 };
 ```
 
+### test.ok(v: i64): i64
+
+Passes if `v` is non-zero -- a `bool` condition or a count. On failure, emits `DIAGNOSTIC: kind=assertion_failed msg="test.ok: value is 0 (false)"` to stderr, marks the current test failed, and returns `0`; on success it returns `1`. (Before 127.231 it could not fail: a zero value printed and marked nothing.)
+
+```toke
+m=tests;
+i=test:std.test;
+i=str:std.str;
+f=main():i64{
+  let r1=test.ok(str.contains("foobar";"oba"));
+  let r2=test.ok(str.len("abc"));
+  < 0
+};
+```
+
+### test.fail(msg: $str): i64
+
+Fails unconditionally: prints `FAIL: msg` to stderr, marks the current test failed, and returns `0`. Use it on a branch that must not be reached.
+
 ## Usage Examples
 
 ```toke
@@ -108,3 +130,18 @@ f=main():i64{
 ## Diagnostic Output
 
 When an assertion fails, a structured diagnostic is written to stderr. This output is consumed by the toke test runner to produce formatted failure reports.
+
+## Exit status
+
+A test program fails through its **exit status**, not only through its output (story 127.231). The first failed assertion -- `test.assert`, `test.asserteq`, `test.assertne`, `test.eq`, `test.eqstr`, `test.ok` or `test.fail` -- records the failure; the run continues, so every later failure is still reported; and when the process exits, it prints
+
+```text
+DIAGNOSTIC: kind=exit_status status=1 failures=2 first="std.test assertion failed"
+```
+
+and exits with status **1**. A run with no failed assertion exits with whatever `main` returns. Stated so nobody has to rediscover them:
+
+- The status is `1` whatever `main` returns: a program that returns `3` after a failed assertion exits `1`, not `3`. (Keeping main's own non-zero status would need the compiler's emitted `main`, not the stdlib; tracked as 135.24 item 4.)
+- `os.exit(0)` after a failed assertion also exits `1`, with the same line. `os.exit` with a non-zero status exits with that status.
+- A process killed by a signal is unaffected.
+- The same rule applies to a server that does not start (`std.http`, see [Starting, failing and the port](/docs/stdlib/http/#starting-failing-and-the-port)).
