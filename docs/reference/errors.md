@@ -131,6 +131,20 @@ Emitted for a malformed number (e.g. a bad hex/float form).
 
 Emitted when an uppercase-cased keyword is used where the default (lowercase) profile expects it lowercase.
 
+### E1007
+
+**Unterminated comment**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | lex |
+
+Emitted when a `(*` comment is still open at end of file. Comments nest, so a
+`(*` inside a comment (e.g. `COUNT(*)`) opens another level and takes the `*)`
+meant for the outer one. Reported at the outermost `(*`, naming the nested
+opener. No fix field (story 138.10).
+
 ## Lexer Warnings (W1xxx)
 
 ### W1010
@@ -184,6 +198,13 @@ Hint that an identifier begins with a reserved keyword prefix.
 | Stage    | lex |
 
 Cross-language hint: a keyword from another language was detected.
+
+Not emitted where toke has a name spelled like the keyword (story 138.10):
+after `let`, before `=` or a `:` that does not end the line, and -- for the
+statement and declaration keywords (`def`, `return`, `class`, `var`, `else`,
+`while`, ...) -- before an operator or closing punctuation (`def.a`,
+`f(def)`). Value-like words (`None`, `null`, `nil`, `undefined`, `True`,
+`False`) and `print` / `printf` / `console` still warn in value position.
 
 ## Parser Errors (E2xxx)
 
