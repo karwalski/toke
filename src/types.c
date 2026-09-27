@@ -5247,6 +5247,34 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
             return (ft&&ft->elem)?ft->elem:mk_type(A,TY_UNKNOWN);
         }
+        /* 138.10 (N-3): `$name(..)` with no function `name` in the module is
+         * a variant constructor -- `$ok(v)`, `$err(e)`, `$circle(r)` -- and
+         * a constructor carries exactly one payload.  `<$ok()`, `$none()`
+         * and `$ok(1;2)` passed --check and reached clang as E9003 on an
+         * undefined `@ok`.  A `$foo()` that names a declared function
+         * (n3c, n3f) is a call and is judged below as one.  No `fix`: the
+         * missing or surplus payload is the program's to choose. */
+        if (node->children[0]->kind==NODE_TYPE_IDENT) {
+            char vb[128]; TOKSTR(vb,cx->src,node->children[0]);
+            Decl *vd=tc_lookup(cx->env->names->module_scope,vb,(int)strlen(vb));
+            int is_fn=vd&&vd->def_node&&vd->def_node->kind==NODE_FUNC_DECL;
+            int nargs=node->child_count-1;
+            if (!is_fn&&nargs!=1) {
+                for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+                if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                    char msg[320], gs[16];
+                    snprintf(msg,sizeof msg,
+                             "wrong number of arguments: '$%s(..)' is a variant "
+                             "constructor (no function '%s' is declared), and a "
+                             "constructor takes exactly one payload, got %d",
+                             vb,vb,nargs);
+                    snprintf(gs,sizeof gs,"%d",nargs);
+                    diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
+                              "expected","1","got",gs,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+        }
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
 
         /* 124.0c item 2: a call through a function VALUE — a parameter of
