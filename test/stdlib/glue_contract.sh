@@ -197,12 +197,15 @@ if build test_asserts test/stdlib/test_asserts.tk; then
     out="$("$TMP/test_asserts" 2>"$TMP/asserts.err")"
     err="$(cat "$TMP/asserts.err")"
     # str.upper("hello") and the literal "HELLO" are equal bytes at DIFFERENT
-    # addresses. The old wrapper compared the two i64 pointers, so this was 0.
-    expect "asserteq on equal strings at different addresses" "$(line "$out" eq.same)"  "1"
-    expect "asserteq on two empty strings"                    "$(line "$out" eq.empty)" "1"
-    expect "asserteq on different strings fails"              "$(line "$out" eq.diff)"  "0"
-    expect "assertne on different strings"                    "$(line "$out" ne.diff)"  "1"
-    expect "assertne on equal strings fails"                  "$(line "$out" ne.same)"  "0"
+    # addresses. The old wrapper compared the two i64 pointers, so this was 0
+    # (now false). asserteq/assertne return bool (test.tki), and a declared-bool
+    # stdlib return interpolates as true/false since 127.220 item 2 (Batch FB),
+    # so these read true/false where they used to read 1/0.
+    expect "asserteq on equal strings at different addresses" "$(line "$out" eq.same)"  "true"
+    expect "asserteq on two empty strings"                    "$(line "$out" eq.empty)" "true"
+    expect "asserteq on different strings fails"              "$(line "$out" eq.diff)"  "false"
+    expect "assertne on different strings"                    "$(line "$out" ne.diff)"  "true"
+    expect "assertne on equal strings fails"                  "$(line "$out" ne.same)"  "false"
     # The message is the whole point of the story: it must reach stderr.
     expect "the asserteq message reaches stderr" \
            "$(printf '%s\n' "$err" | grep -c 'msg="foo is not bar"')" "1"
