@@ -2820,6 +2820,58 @@ static int type_is_unsigned(const Type *t) {
  * checker typed BOTH operands unsigned, or one unsigned and the other an
  * integer literal.  A u64 meeting an i64 widens to i64 (127.114), so that
  * mix stays signed. */
+/* 135.20: the binding of identifier `e` in the function being emitted
+ * (c->la_fn), searched in source order — a parameter, or a let/mut — and
+ * whether it declares an unsigned narrow type: an annotation spelled
+ * u8/u16/u32/byte/Byte, or (unannotated) an initialiser the checker typed
+ * unsigned (`let v=i as byte`).  The checker leaves `let v:byte=…` locals
+ * untyped (its resolve_type knows `Byte` but not `byte`), so the identifier
+ * itself carries no rtype to ask. */
+static int ubind_find(Ctx *c, const Node *n, const char *name, int *out) {
+    if (!n) return 0;
+    if ((n->kind == NODE_PARAM || n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT)
+        && n->child_count > 0 && n->children[0] && n->children[0]->kind == NODE_IDENT) {
+        char b[NAME_BUF]; tok_cp(c->src, n->children[0], b, sizeof b);
+        if (!strcmp(b, name)) {
+            const Node *ann = NULL, *init = NULL;
+            if (n->kind == NODE_PARAM) ann = n->child_count > 1 ? n->children[1] : NULL;
+            else if (n->child_count >= 3 && n->children[2]) { ann = n->children[1]; init = n->children[2]; }
+            else init = n->child_count >= 2 ? n->children[1] : NULL;
+            if (ann) {
+                char tn[64]; tok_cp(c->src, ann, tn, sizeof tn);
+                *out = !strcmp(tn, "u8") || !strcmp(tn, "u16") || !strcmp(tn, "u32") ||
+                       !strcmp(tn, "byte") || !strcmp(tn, "Byte");
+            } else {
+                *out = init && type_is_unsigned(init->rtype);
+            }
+            return 1;
+        }
+    }
+    for (int i = 0; i < n->child_count; i++)
+        if (ubind_find(c, n->children[i], name, out)) return 1;
+    return 0;
+}
+
+/* 135.20: widen a narrow integer argument to the i64 array-element ABI by
+ * ITS OWN signedness.  A byte of 250 went through coerce_value's sext as -6,
+ * and the receiver-method path passed the raw i8 (E9003 at clang). */
+static int widen_elem_i64(Ctx *c, int v, const char *ty, const Node *e) {
+    if (!strcmp(ty, "i8") || !strcmp(ty, "i16") || !strcmp(ty, "i32")) {
+        int uns = e && type_is_unsigned(e->rtype);
+        if (!uns && e && e->kind == NODE_IDENT && c->la_fn) {
+            char b[NAME_BUF]; tok_cp(c->src, e, b, sizeof b);
+            int u = 0;
+            if (ubind_find(c, c->la_fn, b, &u)) uns = u;
+        }
+        if (uns) {
+            int z = next_tmp(c);
+            fprintf(c->out, "  %%t%d = zext %s %%t%d to i64\n", z, ty, v);
+            return z;
+        }
+    }
+    return coerce_value(c, v, ty, "i64");
+}
+
 static int binop_is_unsigned(const Node *n) {
     if (!n || n->child_count < 2) return 0;
     const Node *a = n->children[0], *b = n->children[1];
@@ -5452,6 +5504,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         int z = next_tmp(c);
                         fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, av);
                         av = z;
+                    } else if (!strcmp(aty, "i8") || !strcmp(aty, "i16") || !strcmp(aty, "i32")) {
+                        av = widen_elem_i64(c, av, aty, n->children[i+1]);   /* 135.20 */
                     }
                     coa[i+1] = av;
                 }
@@ -10110,14 +10164,14 @@ static void emit_stmt(Ctx *c, const Node *n)
                     int iv = emit_expr(c, rhs->children[1]);
                     iv = coerce_value(c, iv, expr_llvm_type(c, rhs->children[1]), "i64");
                     int ev = emit_expr(c, rhs->children[2]);
-                    ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[2]), "i64");
+                    ev = widen_elem_i64(c, ev, expr_llvm_type(c, rhs->children[2]), rhs->children[2]);
                     emit_set_bounds_check(c, recv, iv);
                     res = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @tk_array_set_inplace_w(i64 %%t%d, i64 %%t%d, i64 %%t%d) ; 114.18 in-place set\n",
                             res, recv, iv, ev);
                 } else { /* append / push */
                     int ev = emit_expr(c, rhs->children[1]);
-                    ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[1]), "i64");
+                    ev = widen_elem_i64(c, ev, expr_llvm_type(c, rhs->children[1]), rhs->children[1]);
                     res = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @tk_array_append_inplace_w(i64 %%t%d, i64 %%t%d) ; 114.18 in-place append\n",
                             res, recv, ev);
