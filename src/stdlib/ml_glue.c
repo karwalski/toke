@@ -12,8 +12,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!mlerr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0; every T here is a handle or pointer); every return now goes through
+ * ml_slot, which on 0 also stores a mlerr record {msg; …} — the other
+ * fields 0 — and on anything else clears the slot, so the wrapper is a slot
+ * wrapper (llvm.c derives them from the .tki). */
+static int64_t ml_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(1 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static const char tk_ml_linregfit_fail[] =
+    "ml.linregfit: the data or targets are missing";
 int64_t tk_ml_linregfit_w(int64_t data, int64_t targets) {
-    if (!data || !targets) return 0;
+    if (!data || !targets) return ml_slot(0, tk_ml_linregfit_fail);
     /* Decode toke F64Array layout: ptr[-1] = count, ptr[0..] = doubles */
     int64_t *dptr = (int64_t *)(intptr_t)data;
     int64_t *tptr = (int64_t *)(intptr_t)targets;
@@ -22,10 +41,10 @@ int64_t tk_ml_linregfit_w(int64_t data, int64_t targets) {
     LinearModel m = ml_linregfit(xs, ys);
     /* Pack slope + intercept into heap block */
     double *block = (double *)malloc(2 * sizeof(double));
-    if (!block) return 0;
+    if (!block) return ml_slot(0, tk_ml_linregfit_fail);
     block[0] = m.slope;
     block[1] = m.intercept;
-    return (int64_t)(intptr_t)block;
+    return ml_slot((int64_t)(intptr_t)block, tk_ml_linregfit_fail);
 }
 
 int64_t tk_ml_linregpredict_w(int64_t model, int64_t input) {
@@ -192,20 +211,22 @@ static int64_t ml_decode_label(const MlVocab *v, double code) {
  * pointer behind it, so the fields the page describes really are readable and
  * ml.kmeansassign can be handed a model the caller built itself.
  */
+static const char tk_ml_kmeanstrain_fail[] =
+    "ml.kmeanstrain: no model could be trained from these rows";
 int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
     uint64_t ncols = 0, nrows = 0;
     F64Array *cols = ml_cols_from_rows(rows, &ncols, &nrows);
-    if (!cols) return 0;
+    if (!cols) return ml_slot(0, tk_ml_kmeanstrain_fail);
     if (k <= 0) k = 1;
     if (maxiter <= 0) maxiter = 100;
 
     KMeansModel m = ml_kmeanstrain(cols, ncols, nrows,
                                    (uint64_t)k, (uint64_t)maxiter);
     ml_cols_free(cols, ncols);
-    if (!m.centroids || m.k == 0) return 0;
+    if (!m.centroids || m.k == 0) return ml_slot(0, tk_ml_kmeanstrain_fail);
 
     int64_t arr = tk_arr_alloc((int64_t)m.k, (int64_t)m.k);
-    if (!arr) { ml_kmeans_free(&m); return 0; }
+    if (!arr) { ml_kmeans_free(&m); return ml_slot(0, tk_ml_kmeanstrain_fail); }
     int64_t *slots = (int64_t *)(intptr_t)arr;
     for (uint64_t c = 0; c < m.k; c++) {
         int64_t center = tk_arr_alloc((int64_t)m.ndim, (int64_t)m.ndim);
@@ -234,11 +255,11 @@ int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
             free(cent);
         }
         free((int64_t *)(intptr_t)arr - TK_ARR_HDR);
-        return 0;
+        return ml_slot(0, tk_ml_kmeanstrain_fail);
     }
     model[0] = arr;                        /* $kmeansmodel.centroids */
     model[1] = tk_arr_len(arr);            /* $kmeansmodel.k         */
-    return (int64_t)(intptr_t)model;
+    return ml_slot((int64_t)(intptr_t)model, tk_ml_kmeanstrain_fail);
 }
 
 /* ml.kmeansassign(model; point) : u64 — index of the nearest centroid (L2).
@@ -285,31 +306,33 @@ int64_t tk_ml_kmeansassign_w(int64_t model, int64_t point) {
 typedef struct { DTreeModel tree; MlVocab vocab; } MlDTree;
 
 /* ml.dtreefit(rows; labels; maxdepth) : $dtreemodel!$mlerr */
+static const char tk_ml_dtreefit_fail[] =
+    "ml.dtreefit: no model could be trained from these rows and labels";
 int64_t tk_ml_dtreefit_w(int64_t rows, int64_t labels, int64_t maxdepth) {
     uint64_t ncols = 0, nrows = 0;
     F64Array *cols = ml_cols_from_rows(rows, &ncols, &nrows);
-    if (!cols) return 0;
+    if (!cols) return ml_slot(0, tk_ml_dtreefit_fail);
     MlVocab vocab = { NULL, 0 };
     double *codes = ml_encode_labels(labels, &vocab);
     if (!codes || tk_arr_len(labels) < (int64_t)nrows) {
         ml_cols_free(cols, ncols); free(codes); free((void *)vocab.names);
-        return 0;
+        return ml_slot(0, tk_ml_dtreefit_fail);
     }
     if (maxdepth <= 0) maxdepth = 1;
 
     MlDTree *h = (MlDTree *)malloc(sizeof(MlDTree));
-    if (!h) { ml_cols_free(cols, ncols); free(codes); free((void *)vocab.names); return 0; }
+    if (!h) { ml_cols_free(cols, ncols); free(codes); free((void *)vocab.names); return ml_slot(0, tk_ml_dtreefit_fail); }
     h->tree  = ml_dtreefit(cols, ncols, codes, nrows, (uint64_t)maxdepth);
     h->vocab = vocab;
     ml_cols_free(cols, ncols);
     free(codes);
 
     int64_t *model = (int64_t *)malloc(3 * sizeof(int64_t));
-    if (!model) { free(h); return 0; }
+    if (!model) { free(h); return ml_slot(0, tk_ml_dtreefit_fail); }
     model[0] = (int64_t)h->tree.nnodes;   /* $dtreemodel.nodes    */
     model[1] = maxdepth;                  /* $dtreemodel.maxdepth */
     model[2] = (int64_t)(intptr_t)h;      /* $dtreemodel.arena    */
-    return (int64_t)(intptr_t)model;
+    return ml_slot((int64_t)(intptr_t)model, tk_ml_dtreefit_fail);
 }
 
 /* ml.dtreepredict(model; point) : $str — the caller's own label string.

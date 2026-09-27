@@ -4,9 +4,10 @@
 
 set -e
 
-# 127.130: defaults kept as they were, but overridable so a worktree run can
-# point at the ooke build it actually produced rather than the main one.
-OOKE_DIR=${OOKE_DIR:-/Users/matthew.watt/tk/toke-ooke}
+# 127.130: overridable so a worktree run can point at the ooke build it
+# actually produced.  135.28: the default is the toke-ooke checkout beside
+# this toke checkout, not a hard-coded home directory.
+OOKE_DIR=${OOKE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)/../toke-ooke}
 OOKE_BIN=${OOKE_BIN:-$OOKE_DIR/ooke-toke}
 PORT=3000
 BASE="http://localhost:$PORT"

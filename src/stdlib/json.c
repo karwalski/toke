@@ -1034,51 +1034,31 @@ static char *stream_parse_string(JsonStream *s) {
     if (stream_eof(s) || stream_peek(s) != '"') return NULL;
     s->pos++; /* skip opening quote */
 
-    /* first pass: measure length */
+    /* find the closing quote */
     uint64_t start = s->pos;
-    uint64_t slen = 0;
     while (s->pos < s->len) {
         uint8_t c = s->buf[s->pos];
-        if (c == '\\') {
-            s->pos += 2;
-            slen++;
-        } else if (c == '"') {
-            break;
-        } else {
-            s->pos++;
-            slen++;
-        }
+        if (c == '\\') s->pos += 2;
+        else if (c == '"') break;
+        else s->pos++;
     }
     if (s->pos >= s->len) return NULL; /* unterminated */
 
-    /* allocate and second pass: copy with basic unescape */
-    char *buf = malloc(slen + 1);
-    if (!buf) return NULL;
-    uint64_t rp = start;
-    char *wp = buf;
-    while (rp < s->pos) {
-        uint8_t c = s->buf[rp];
-        if (c == '\\') {
-            rp++;
-            uint8_t esc = s->buf[rp];
-            switch (esc) {
-                case '"':  *wp++ = '"';  break;
-                case '\\': *wp++ = '\\'; break;
-                case '/':  *wp++ = '/';  break;
-                case 'b':  *wp++ = '\b'; break;
-                case 'f':  *wp++ = '\f'; break;
-                case 'n':  *wp++ = '\n'; break;
-                case 'r':  *wp++ = '\r'; break;
-                case 't':  *wp++ = '\t'; break;
-                default:   *wp++ = (char)esc; break;
-            }
-            rp++;
-        } else {
-            *wp++ = (char)c;
-            rp++;
-        }
-    }
-    *wp = '\0';
+    /* 135.27: decode with strbuf_append_json_unescape, the one copy of the
+     * rule (127.229).  This had its own table with no 'u' case, so "\\u00e9"
+     * came back as the five bytes "u00e9" (same class as T-47a).  The shared
+     * decoder reads a NUL-terminated string up to its closing quote, and the
+     * stream buffer is neither, so the body and its quote are copied out. */
+    size_t body = (size_t)(s->pos - start);
+    char *raw = malloc(body + 2);
+    if (!raw) return NULL;
+    memcpy(raw, s->buf + start, body + 1);   /* body + closing quote */
+    raw[body + 1] = '\0';
+    TkStrBuf b = TK_STRBUF_INIT;
+    const char *rp = raw;
+    (void)strbuf_append_json_unescape(&b, &rp);  /* an embedded NUL ends it early */
+    free(raw);
+    char *buf = strbuf_take(&b);   /* NULL only on OOM */
     s->pos++; /* skip closing quote */
     return buf;
 }

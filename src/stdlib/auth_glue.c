@@ -5,9 +5,9 @@
  * These wrappers mirror encrypt_glue.c / file_glue.c: every value crosses the
  * boundary as int64_t. A toke str is a (const char*) reinterpreted as i64; a
  * [byte] is marshalled via bytes_rt.h; a record (JwtClaims) is a heap i64-slot
- * array (one slot per field, declaration order). Error unions (T!E) follow the
- * established convention: return the ok-value, or 0 on error (the Err payload
- * is dropped — same as file_glue.c).
+ * array (one slot per field, declaration order). Error unions (T!E) return
+ * the ok-value, or 0 on error with an AuthErr record in the error slot
+ * (127.238, auth_raise below).
  *
  * The .tki was reconciled to the C impl (auth.h): HS256-only sign (no JwtAlg),
  * the standard sub/iss/iat/exp/aud claim set (matching the C JwtClaims struct
@@ -17,9 +17,27 @@
 
 #include "auth.h"
 #include "bytes_rt.h"   /* tk_bytes_unpack */
+#include "tk_runtime.h" /* 127.238: tk_current_error + tk_err_box */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  The `T!AuthErr` wrappers
+ * returned a bare 0 on failure and dropped the reason, so `$err:e e.msg` was
+ * RT005.  A failure now stores an AuthErr {msg; code} record (code 0) with
+ * auth.c's own message and returns the 0 filler; every ok return clears the
+ * slot, so these are slot wrappers (llvm.c, derived from the .tki). */
+static int64_t auth_raise(const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)(msg ? msg : "auth: failed");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+static int64_t auth_ok(int64_t v) {
+    if (!v) return auth_raise("auth: out of memory");
+    tk_current_error = 0;
+    return v;
+}
 
 static int64_t dup_str_i64(const char *s) {
     if (!s) s = "";
@@ -44,7 +62,7 @@ int64_t tk_auth_jwtsign_w(int64_t claims_i64, int64_t secret_i64) {
     ByteArray secret = { sb, sn };
     JwtResult r = auth_jwtsign(claims, secret);
     free(sb);
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    return r.is_err ? auth_raise(r.err_msg) : auth_ok((int64_t)(intptr_t)r.ok);
 }
 
 /* auth.jwtverify(str token, [byte] secret) -> JwtClaims!AuthErr.
@@ -55,15 +73,15 @@ int64_t tk_auth_jwtverify_w(int64_t token_i64, int64_t secret_i64) {
     ByteArray secret = { sb, sn };
     JwtVerifyResult r = auth_jwtverify(token ? token : "", secret);
     free(sb);
-    if (r.is_err) return 0;
+    if (r.is_err) return auth_raise(r.err_msg);
     int64_t *rec = (int64_t *)malloc(5 * sizeof(int64_t));
-    if (!rec) return 0;
+    if (!rec) return auth_raise("auth.jwtverify: out of memory");
     rec[0] = dup_str_i64(r.ok.subject);
     rec[1] = dup_str_i64(r.ok.issuer);
     rec[2] = (int64_t)r.ok.issued_at;
     rec[3] = (int64_t)r.ok.expires_at;
     rec[4] = dup_str_i64(r.ok.audience);
-    return (int64_t)(intptr_t)rec;
+    return auth_ok((int64_t)(intptr_t)rec);
 }
 
 /* auth.jwtexpired(str token) -> bool */
@@ -90,14 +108,14 @@ int64_t tk_auth_apikeyvalidate_w(int64_t provided_i64, int64_t stored_i64) {
 int64_t tk_auth_bearerextract_w(int64_t header_i64) {
     const char *h = (const char *)(intptr_t)header_i64;
     BearerResult r = auth_bearerextract(h ? h : "");
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    return r.is_err ? auth_raise(r.err_msg) : auth_ok((int64_t)(intptr_t)r.ok);
 }
 
 /* auth.passwordhash(str password) -> str!AuthErr (bcrypt) */
 int64_t tk_auth_passwordhash_w(int64_t pw_i64) {
     const char *p = (const char *)(intptr_t)pw_i64;
     AuthStrResult r = auth_password_hash(p ? p : "");
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    return r.is_err ? auth_raise(r.err_msg) : auth_ok((int64_t)(intptr_t)r.ok);
 }
 
 /* auth.passwordverify(str password, str hash) -> bool */

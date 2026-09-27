@@ -1052,3 +1052,115 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
         if (!strcmp(g_stdlib_dummy_arg[i], sym)) return 1;
     return 0;
 }
+
+/*
+ * 127.238: which `T!E` stdlib wrappers keep the error channel.
+ *
+ * A wrapper whose .tki declares `T!E` (T not void) is a SLOT WRAPPER: its
+ * glue stores the error in @tk_current_error on every failure (a payload box
+ * of E's layout, or the bare 1 "failed, no payload" — runtime-abi.md §7.2)
+ * and stores 0 on every success, so a `mt` decides ok/err on the slot and the
+ * $err arm binds the payload.  llvm.c used to keep that set as a hand list,
+ * patched one module at a time (138.3, 138.6), so every other module's
+ * error payload bound nil: `e.msg` was RT005 for auth, csv, dataframe, infer,
+ * ml, template, ws, http's param/header, ...  The set is now DERIVED from
+ * the interface files, minus the exceptions below.
+ *
+ * THE EXCEPTIONS are `T!E` exports whose glue does not write the slot: it
+ * returns a bare 0/null on failure, which only the value sentinel can see.
+ * Treating one of them as a slot wrapper would make a failure read as a
+ * success, so each stays on the sentinel until its glue is fixed.  The list
+ * is exact, and may only shrink: test/conform/C375_err_slot_glues.sh
+ * derives it from the .tki and the glue sources and fails on an entry that
+ * is missing (a new bare glue) or stale (a glue that now fills the slot).
+ * Keep one entry per line group, sorted by module; the gate reads the
+ * quoted names between the BEGIN/END markers.
+ */
+static const char *const g_err_slot_bare[] = {
+    /* BEGIN 127.238 bare-glue exceptions */
+    /* args */
+    "tk_args_get_w",
+    /* db */
+    "tk_db_many_w", "tk_db_manyon_w", "tk_db_one_w",
+    "tk_db_oneon_w", "tk_db_open_w",
+    /* encoding */
+    "tk_encoding_b64decode_w", "tk_encoding_hexdecode_w", "tk_encoding_urldecode_w",
+    /* env */
+    "tk_env_get_w",
+    /* file */
+    "tk_file_append_w", "tk_file_copy_w", "tk_file_delete_w",
+    "tk_file_list_w", "tk_file_listall_w", "tk_file_mkdir_w",
+    "tk_file_read_w", "tk_file_readbytes_w", "tk_file_write_w",
+    "tk_file_writebytes_w",
+    /* http */
+    "tk_http_stream_w",
+    "tk_http_streamnext_w",
+    /* infer */
+    "tk_infer_embed_w", "tk_infer_generate_w", "tk_infer_load_w",
+    "tk_infer_loadstreaming_w",
+    /* json */
+    "tk_json_arr_w", "tk_json_dec_w", "tk_json_str_w",
+    /* mlx */
+    "tk_mlx_generate_w", "tk_mlx_load_w",
+    /* ocr */
+    "tk_ocr_runs_w", "tk_ocr_runsfile_w", "tk_ocr_runsraw_w",
+    "tk_ocr_text_w", "tk_ocr_textfile_w",
+    /* pdf */
+    "tk_pdf_open_w", "tk_pdf_openfile_w", "tk_pdf_pagetext_w",
+    "tk_pdf_runs_w",
+    /* process */
+    "tk_process_spawn_w", "tk_process_stderr_w", "tk_process_stdout_w",
+    /* str */
+    "tk_str_frombytes_w", "tk_str_matchbracket_w", "tk_str_slice_w",
+    /* time */
+    "tk_time_parse_w", "tk_time_parseduration_w",
+    /* toon */
+    "tk_toon_dec_w",
+    /* vecstore */
+    "tk_vecstore_collection_w", "tk_vecstore_open_w",
+    /* xlsx */
+    "tk_xlsx_open_w", "tk_xlsx_openfile_w", "tk_xlsx_rows_w",
+    /* zip */
+    "tk_zip_open_w", "tk_zip_openfile_w", "tk_zip_read_w",
+    /* END 127.238 bare-glue exceptions */
+    NULL
+};
+
+/* 127.238: 1 when `name` is a `T!E` export whose glue does not fill the slot. */
+int is_err_slot_bare_glue(const char *name) {
+    if (!name) return 0;
+    for (int i = 0; g_err_slot_bare[i]; i++)
+        if (!strcmp(g_err_slot_bare[i], name)) return 1;
+    return 0;
+}
+
+/* 127.238: the .tki entry a resolved glue symbol implements, or NULL.  The
+ * cache names an export `tk_<prefix>_<method>_w` after its own prefix
+ * (`df.columnstr` -> tk_df_columnstr_w), but a call through the module's
+ * import resolves to `tk_<file>_<method>_w` (std.dataframe ->
+ * tk_dataframe_columnstr_w) whenever the interface file publishes a
+ * sub-namespace; both spellings are the same export. */
+const TkiCacheEntry *tki_entry_for_symbol(const char *sym) {
+    if (!sym) return NULL;
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++)
+        if (!strcmp(g_tki_cache[i].wrapper_name, sym)) return &g_tki_cache[i];
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        const TkiCacheEntry *e = &g_tki_cache[i];
+        if (!e->file_module[0] || !strcmp(e->file_module, e->module)) continue;
+        char alt[192];
+        snprintf(alt, sizeof alt, "tk_%s_%s_w", e->file_module, e->method);
+        if (!strcmp(alt, sym)) return e;
+    }
+    return NULL;
+}
+
+/* 127.238: 1 when the .tki declares `name` as `T!E` with T not void (void!E
+ * is the status-word convention, is_void_err_union_wrapper). */
+int is_tki_value_err_union_wrapper(const char *name) {
+    const TkiCacheEntry *e = tki_entry_for_symbol(name);
+    if (!e || !strchr(e->toke_ret, '!')) return 0;
+    char b[64];
+    tki_base_return_type(e->toke_ret, b, sizeof b);
+    return strcmp(b, "void") != 0;
+}

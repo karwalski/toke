@@ -164,7 +164,7 @@ i=http:std.http;
 i=log:std.log;
 
 f=fetch(url:$str):$str{
-  let result=http.get(url);
+  let result=http.geturl(url);
   < mt result {
     $ok:resp resp;
     $err:e ""

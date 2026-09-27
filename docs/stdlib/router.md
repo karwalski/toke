@@ -47,7 +47,7 @@ Opaque handle to a middleware function.
 | `router.put` | `r: $router; path: $str; h: $handler` | `void` | Register a PUT route |
 | `router.delete` | `r: $router; path: $str; h: $handler` | `void` | Register a DELETE route |
 | `router.use` | `r: $router; mw: $middleware` | `void` | Attach middleware to the router |
-| `router.serve` | `r: $router; host: $str; port: u64` | `void!$routererr` | Start serving HTTP on `port`. Port 0 binds a free port and prints `DIAGNOSTIC: kind=server_listening port=N` on stderr; a port above 65535, or one that cannot be bound, is `$err` (135.26). `host` is not honoured yet: the server listens on all interfaces |
+| `router.serve` | `r: $router; host: $str; port: u64` | `void!$routererr` | Start serving HTTP on `port`. Port 0 binds a free port and prints `DIAGNOSTIC: kind=server_listening port=N` on stderr; a port above 65535, or one that cannot be bound, is `$err` (135.26). `host` is the address to listen on, by `http.serveon`'s rules: an IPv4 literal, `"localhost"` (127.0.0.1), or `""`, `"*"` or `"0.0.0.0"` for all interfaces; any other host is `$err` before anything is bound (135.28) |
 
 ## Usage
 

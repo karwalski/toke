@@ -12,7 +12,8 @@
 # program keeps running, so every failure is still reported; when the process
 # exits, it exits 1 and says why in one DIAGNOSTIC kind=exit_status line.
 # os.exit(0) keeps the failure too.  A program that returns some other
-# non-zero status after a failure exits 1 (documented in tk_exitfail.h).
+# non-zero status after a failure exits with THAT status (135.29: the
+# emitted main publishes it to tk_exitfail.h's handler).
 #
 # WHAT IS ASSERTED (compiled toke programs):
 #   1. all assertions pass                 -> exit 0, no exit_status line
@@ -20,7 +21,8 @@
 #                                             exit_status line with failures=2
 #   3. test.ok(0)                          -> a DIAGNOSTIC, exit 1
 #   4. test.assert(false) then os.exit(0)  -> exit 1
-#   5. a failure, then main returns 3      -> exit 1 (the recorded status)
+#   5. a failure, then main returns 3      -> exit 3 (main's own status), and
+#                                             the exit_status line says 3
 #
 # Negative control: C257_STDLIB=<dir> builds against another stdlib tree; a
 # copy with main's tk_test.c, test_glue.c and os.c fails cases 2-5.
@@ -88,7 +90,8 @@ fi
 
 if prog ret3 '  test.eq(1;2);
   <3'; then
-    run ret3; expect "a failure then main returning 3 exits 1 (the recorded status)" "${RC}" "1"
+    run ret3; expect "a failure then main returning 3 exits 3 (main's own status, 135.29)" \
+        "${RC} $(grep -a -c 'kind=exit_status status=3 failures=1 ' ret3.err)" "3 1"
 fi
 
 echo "--------------------------------------------------------------"

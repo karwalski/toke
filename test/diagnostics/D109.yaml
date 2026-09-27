@@ -1,0 +1,9 @@
+id: D109
+series: D
+description: "E2004 fix field is absent at both parser sites: xp's end-of-file branch (\"expected '}', got end of file\") and eerr's \"unclosed delimiter\". The old text \"add the missing closing delimiter\" was advice, not a deterministic fix (AGENTS §6): the parser does not know where the delimiter belongs — 127.235"
+input: |
+  m=test;
+  f=main():i64{<0
+expected_exit_code: 1
+expected_error_codes: ["E2004"]
+expected_fix_absent_for: ["E2004"]

@@ -185,8 +185,10 @@ static int  teq(Parser *p, Token *t, const char *s) { int l=(int)strlen(s); retu
  */
 static void eerr(Parser *p, int code, Token *t, const char *msg) {
     const char *fix = NULL;
+    /* 127.235: no fix for E2004.  "add the missing closing delimiter" is
+     * advice, not a deterministic fix (AGENTS §6): the parser knows a
+     * delimiter is missing, not where it belongs.  D109. */
     if (code == E2003) fix = "insert ';' after expression";
-    else if (code == E2004) fix = "add the missing closing delimiter";
     else if (code == E2001) fix = "reorder declarations: m= first, then i=, t=, f=";
     p->errs++;
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, msg,
@@ -215,7 +217,8 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
     else
         snprintf(buf, sizeof buf, "%s", msg);
     const char *fix = NULL;
-    if (code == E2005) fix = "expected a type: scalar ($i64, $f64, $str, $bool), struct ($name), array (@($t)), or function type (($t):$r)";
+    /* 127.235: no fix for E2005 either.  The old list of type forms was
+     * advice, not a deterministic fix (AGENTS §6).  D110. */
     /* 127.233: no fix for E2002 here.  The old "check syntax; see toke spec
      * for valid constructs" is advice, not a deterministic fix (AGENTS §6),
      * and docs/spec/errors.md lists E2002's fix as absent.  D108. */
@@ -313,8 +316,8 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         char full_msg[256];
         snprintf(full_msg, sizeof full_msg, "%s, got end of file", msg);
         p->errs++;
+        /* 127.235: no "fix" -- see eerr.  D109. */
         diag_emit(DIAG_ERROR, E2004, t->start, t->line, t->col, full_msg,
-                  "fix", "add the missing closing delimiter",
                   "got", "end of file",
                   "expected", w, NULL);
     } else {

@@ -12,12 +12,31 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!wserr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0; every T here is a handle or pointer); every return now goes through
+ * ws_slot, which on 0 also stores a wserr record {msg; …} — the other
+ * fields 0 — and on anything else clears the slot, so the wrapper is a slot
+ * wrapper (llvm.c derives them from the .tki). */
+static int64_t ws_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(1 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static const char tk_ws_connect_fail[] =
+    "ws.connect: the connection could not be opened";
 int64_t tk_ws_connect_w(int64_t url) {
     TK_REQUIRE(TK_CAP_NET);
-    if (!url) return 0;
+    if (!url) return ws_slot(0, tk_ws_connect_fail);
     WsConnResult r = ws_connect((const char *)(intptr_t)url);
-    if (r.is_err || !r.conn) return 0;
-    return (int64_t)(intptr_t)r.conn;
+    if (r.is_err || !r.conn) return ws_slot(0, tk_ws_connect_fail);
+    return ws_slot((int64_t)(intptr_t)r.conn, tk_ws_connect_fail);
 }
 
 /*
@@ -95,18 +114,20 @@ int64_t tk_ws_sendbytes_w(int64_t conn, int64_t data) {
  *
  * Slot order is stdlib/ws.tki's field order: payload, fin, opcode.
  */
+static const char tk_ws_recv_fail[] =
+    "ws.recv: no message (the connection is closed, or the frame could not be read)";
 int64_t tk_ws_recv_w(int64_t conn) {
     WsConn *c = ws_handle(conn);
-    if (!c) return 0;
+    if (!c) return ws_slot(0, tk_ws_recv_fail);
     WsRecvResult r = ws_recv(c);
-    if (r.is_err || !r.frame) return 0;
+    if (r.is_err || !r.frame) return ws_slot(0, tk_ws_recv_fail);
 
     /* Binary-safe: a [byte] is an i64 array, so an embedded NUL is data.
      * A zero-length payload still yields a real, empty array handle — it is
      * an empty message, not an error. */
     int64_t payload = tk_bytes_pack(r.frame->payload,
                                     r.frame->payload ? r.frame->payload_len : 0);
-    if (!payload) { ws_frame_free(r.frame); return 0; }
+    if (!payload) { ws_frame_free(r.frame); return ws_slot(0, tk_ws_recv_fail); }
 
     int64_t msg = tk_arr_alloc(3, 3);
     if (!msg) {
@@ -114,7 +135,7 @@ int64_t tk_ws_recv_w(int64_t conn) {
          * leaving it behind on the OOM path. */
         free((int64_t *)(intptr_t)payload - TK_ARR_HDR);
         ws_frame_free(r.frame);
-        return 0;
+        return ws_slot(0, tk_ws_recv_fail);
     }
     int64_t *slot = (int64_t *)(intptr_t)msg;
     slot[0] = payload;                            /* payload : @($byte) */
@@ -122,7 +143,7 @@ int64_t tk_ws_recv_w(int64_t conn) {
     slot[2] = (int64_t)r.frame->opcode;           /* opcode  : u64      */
 
     ws_frame_free(r.frame);
-    return msg;
+    return ws_slot(msg, tk_ws_recv_fail);
 }
 
 int64_t tk_ws_close_w(int64_t conn) {
