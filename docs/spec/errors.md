@@ -828,7 +828,9 @@ f=b():i64{<a(1;2)};
 **Notes:** The workhorse type error. Emitted for mismatched operands in binary
 expressions, mismatched function arguments, mismatched binding annotations,
 mismatched assignment sides, and mismatched return values. The fix field, when
-present, suggests an explicit `as` cast.
+present, suggests an explicit `as` cast. For a function argument it is present
+only when both types are numeric and the cast is not float to integer (story
+127.220): `as` does not convert an array, map or struct to `str`.
 
 ---
 

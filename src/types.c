@@ -1310,7 +1310,9 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     if (strcmp(nb,"u16") ==0) return mk_type(cx->env->arena, TY_U16);
     if (strcmp(nb,"u32") ==0) return mk_type(cx->env->arena, TY_U32);
     if (strcmp(nb,"f32") ==0) return mk_type(cx->env->arena, TY_F32);
-    if (strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
+    /* 127.220 item 4: lower-case `byte` (the spelling the spec and the .tki
+     * use) resolved to nothing, so `@(byte)` printed as `@(?)`. */
+    if (strcmp(nb,"byte")==0||strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
     /* Built-in $none type: zero-field struct used as the error variant in
      * option types (T!$none).  Reuses existing error-union infrastructure
      * so that match arms work unchanged: expr|{$ok:v v;$none:_ default}.
@@ -4900,9 +4902,17 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 Type *at=infer(cx,node->children[ai]);
                 Type *pt=ch->child_count>1?resolve_type(cx,ch->children[1]):mk_type(A,TY_UNKNOWN);
                 if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)) {
+                    /* 127.220 item 4: "cast argument to str using 'as'" was
+                     * offered for a [byte] (any array, map, struct) passed
+                     * as str, and `as` does not convert those.  The cast is
+                     * the repair only between numeric types, and not
+                     * float -> integer (truncation changes the value, the
+                     * 127.64 rule).  Otherwise no fix (AGENTS §6). */
+                    int cast_fixes = is_numeric(at) && is_numeric(pt)
+                                     && !(!is_integer(at) && is_integer(pt));
                     char fix[128];
                     snprintf(fix,sizeof(fix),"cast argument to %s using 'as'",type_name(pt));
-                    emit_mm(cx,node->children[ai],pt,at,fix);
+                    emit_mm(cx,node->children[ai],pt,at,cast_fixes?fix:NULL);
                 }
             }
             pj++;
