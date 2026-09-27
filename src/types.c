@@ -5776,6 +5776,37 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * suppress cascading diagnostics.
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_INDEX_EXPR: {
+        /* 138.13 (GB) / 138.3: `alias.get(x)` on a std MODULE alias parses as
+         * an index expression, so check_tki_call never saw its arity:
+         * `http.get(url)` passed --check and failed the build with E4026
+         * (http.get is the 2-argument route registration).  Same judgement,
+         * same text as the emitter's, at --check.  No fix. */
+        if (node->child_count==2&&node->children[0]&&node->children[0]->kind==NODE_IDENT
+            &&!alias_shadowed(cx,node->children[0])) {
+            char ab[128]; TOKSTR(ab,cx->src,node->children[0]);
+            char mb[256];
+            const char *mp=import_module_path(cx,ab,mb,sizeof mb);
+            Decl *ad=mp?tc_lookup(cx->env->names->module_scope,ab,(int)strlen(ab)):NULL;
+            int shadow=ad&&(ad->kind==DECL_FUNC||ad->kind==DECL_CONST||ad->kind==DECL_LET
+                            ||ad->kind==DECL_MUT||ad->kind==DECL_PARAM);
+            if (mp&&!shadow&&strncmp(mp,"std.",4)==0) {
+                const char *gsym=NULL;
+                int ga=tki_glue_arity_for(mp,"get",&gsym);
+                infer(cx,node->children[1]);
+                if (ga>=0&&ga!=1&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                    char amsg[320];
+                    snprintf(amsg,sizeof amsg,"%s.get takes %d argument%s, got 1%s",ab,ga,
+                             ga==1?"":"s",
+                             strcmp(mp,"std.http")==0
+                               ?" (http.get registers a route: path; handler — "
+                                "a client GET of a URL is http.geturl(url))":"");
+                    char es[16]; snprintf(es,sizeof es,"%d",ga);
+                    diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,amsg,
+                              "expected",es,"got","1",(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+        }
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         /* 113.B.12: indexing a map (incl. a map stored in a struct field) by
