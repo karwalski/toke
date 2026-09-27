@@ -1553,7 +1553,16 @@ static Node *parse_stmt_list(Parser *p, Token *ref) {
  * allows uppercase module names like std.Http; names.c normalises them. */
 static Token *xp_seg(Parser *p) {
     if (peek(p)==TK_IDENT || peek(p)==TK_TYPE_IDENT) return adv(p);
-    eerr_got(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token in type declaration"); return NULL;
+    /* 127.219 item 5: `m=rt;` (or lp, if, mt, ...) produced twenty E2002s.
+     * The segment is a keyword; say so once, and consume it as the segment
+     * so the declaration ends cleanly instead of every later recovery
+     * stopping on the same keyword token.  (The message used to say "in
+     * type declaration" -- this is only ever a module path.) */
+    if (peek(p) >= TK_KW_F && peek(p) <= TK_KW_MT) {
+        eerr_got(p, E2002, cur(p), "a module path segment cannot be a keyword");
+        return adv(p);
+    }
+    eerr_got(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token in module path"); return NULL;
 }
 static Node *parse_module_path(Parser *p) {
     Token *t=cur(p); if(!xp_seg(p)) return NULL;
@@ -1922,7 +1931,13 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
         else if(peek(&p)==TK_IDENT&&di==0)   cp=3;
         else if(peek(&p)==TK_KW_LET)        cp=4; /* 114.44: module-level mutable global */
         else if(peek(&p)==TK_KW_F||(di==4)) cp=5;
-        else{eerr(&p,E2002,t,"unexpected token");sync(&p);if(p.errs>=MAX_PARSE_ERRORS)break;continue;}
+        else{eerr(&p,E2002,t,"unexpected token");
+            /* 127.219: sync() stops, unconsumed, on a statement keyword
+             * (rt, lp, if, ...), none of which starts a declaration, so at
+             * top level it could make no progress and the same token drew
+             * E2002 until MAX_PARSE_ERRORS.  Step over it. */
+            int at=p.pos; sync(&p); if(p.pos==at&&peek(&p)!=TK_EOF) adv(&p);
+            if(p.errs>=MAX_PARSE_ERRORS)break;continue;}
         if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix","reorder declarations: m= first, then i=, t=, f=",NULL);p.errs++;}
         else if(cp>phase) phase=cp;
         Node *d;
