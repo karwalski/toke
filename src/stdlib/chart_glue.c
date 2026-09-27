@@ -50,7 +50,11 @@ int64_t tk_chart_bar_w(int64_t labels_i64, int64_t data_i64, int64_t title_i64) 
     TkDatasetRec   *ds   = (TkDatasetRec *)malloc(sizeof *ds);
     TkChartSpecRec *spec = (TkChartSpecRec *)malloc(sizeof *spec);
     int64_t dss = tk_arr_alloc(1, 1);
-    if (!ds || !spec || !dss) { free(ds); free(spec); return 0; }
+    if (!ds || !spec || !dss) {
+        free(ds); free(spec);
+        if (dss) free((int64_t *)(intptr_t)dss - TK_ARR_HDR);
+        return 0;
+    }
     ds->label = "data";
     ds->data  = copy_arr((int64_t *)(intptr_t)data_i64);
     ds->color = "";

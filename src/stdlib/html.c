@@ -81,6 +81,7 @@ static void node_add_attr(TkHtmlNode *n, const char *name, const char *value)
         ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)a->value;
         int64_t h = tk_arr_push(n->attrs, pair);
         if (h) n->attrs = h;
+        else   free((int64_t *)(intptr_t)pair - TK_ARR_HDR);
     }
     /* Append to end so attributes appear in insertion order. */
     if (!n->attr_list) {

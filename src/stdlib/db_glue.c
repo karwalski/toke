@@ -116,7 +116,11 @@ int64_t tk_db_execon_w(int64_t h, int64_t sql, int64_t params) {
 static int64_t row_rec(const Row *r) {
     TkRowRec *rec = (TkRowRec *)malloc(sizeof *rec);
     int64_t cols = tk_arr_alloc((int64_t)r->col_count, (int64_t)r->col_count);
-    if (!rec || !cols) { free(rec); return 0; }
+    if (!rec || !cols) {
+        free(rec);
+        if (cols) free((int64_t *)(intptr_t)cols - TK_ARR_HDR);
+        return 0;
+    }
     for (uint64_t c = 0; c < r->col_count; c++) {
         int64_t pair = tk_arr_alloc(2, 2);
         if (!pair) { tk_arr_setlen(cols, (int64_t)c); break; }
