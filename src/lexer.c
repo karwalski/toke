@@ -512,6 +512,44 @@ static int check_foreign_keyword(const char *buf, int start, int line, int col)
     return 0;
 }
 
+/*
+ * foreign_word_is_toke_name — 138.10 / N-4: the word before `end` is spelled
+ * like a foreign keyword but stands where toke has a name, so W1020 would be
+ * wrong.  `let def:$shorthanddef=...` drew "Python keyword 'def' detected" at
+ * the binding and at every use -- 43 warnings in one loke module.
+ *
+ * Every word is a name at a binding site: after `let`, or before `=` (not
+ * `==`) or before a `:` that does not end the line (a parameter, field,
+ * annotation or import alias; `else:` / `def f():` end their line).  A word
+ * that is a statement or declaration keyword elsewhere (def, return, class,
+ * var, else, while, ...) is also a name when an operator or closing
+ * punctuation follows it -- `def.a`, `f(def)`, `<def;`, `def+1` -- since the
+ * foreign keyword is followed by a name, a '(' or a '{'.  The value-like
+ * words (None, nil, null, undefined, True, False) and the output calls
+ * (print, printf, console) are meant in exactly those value positions, so for
+ * them only the binding sites are exempt.
+ */
+static int foreign_word_is_toke_name(const Lexer *l, const char *w, int end)
+{
+    if (l->out_n > 0 && l->out[l->out_n - 1].kind == TK_KW_LET) return 1;
+    int i = end;
+    while (i < l->len && is_whitespace(l->src[i])) i++;
+    char nx = i < l->len ? l->src[i] : '\0';
+    if (nx == '=') return !(i + 1 < l->len && l->src[i + 1] == '=');
+    if (nx == ':') {
+        int j = i + 1;
+        while (j < l->len && (l->src[j] == ' ' || l->src[j] == '\t')) j++;
+        return j < l->len && l->src[j] != '\n' && l->src[j] != '\r';
+    }
+    static const char *const value_like[] = {
+        "None", "nil", "null", "undefined", "True", "False",
+        "print", "printf", "console", NULL
+    };
+    for (int k = 0; value_like[k]; k++)
+        if (!strcmp(w, value_like[k])) return 0;
+    return nx != '\0' && strchr(".;)}+-*/%<>!|&^,", nx) != NULL;
+}
+
 static int lex_ident(Lexer *l, int start, int line, int col)
 {
     while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
@@ -582,7 +620,7 @@ static int lex_ident(Lexer *l, int start, int line, int col)
              * Rust form has a name/space after `fn`, so it still warns). */
             int is_closure_fn = (!strcmp(py_buf, "fn") &&
                                  start + len < l->len && l->src[start + len] == '(');
-            if (!is_closure_fn)
+            if (!is_closure_fn && !foreign_word_is_toke_name(l, py_buf, start + len))
                 check_foreign_keyword(py_buf, start, line, col);
         }
     }

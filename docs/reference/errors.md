@@ -199,6 +199,13 @@ Hint that an identifier begins with a reserved keyword prefix.
 
 Cross-language hint: a keyword from another language was detected.
 
+Not emitted where toke has a name spelled like the keyword (story 138.10):
+after `let`, before `=` or a `:` that does not end the line, and -- for the
+statement and declaration keywords (`def`, `return`, `class`, `var`, `else`,
+`while`, ...) -- before an operator or closing punctuation (`def.a`,
+`f(def)`). Value-like words (`None`, `null`, `nil`, `undefined`, `True`,
+`False`) and `print` / `printf` / `console` still warn in value position.
+
 ## Parser Errors (E2xxx)
 
 ### E2001
