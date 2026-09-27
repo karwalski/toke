@@ -30,6 +30,7 @@
  */
 #include "llvm.h"
 #include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
+#include "stdlib_tables.h" /* 135.21: the stdlib lookup tables, moved out */
 #include "parser.h"
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
 #include "diag.h"
@@ -74,7 +75,7 @@ static void push_ws_tokens(char **argv, int *argc, int max, char *s) {
  *                    (declare).  Internal functions use fastcc calling
  *                    convention; extern functions use the default C convention.
  */
-typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; char err_type_name[NAME_BUF]; /* 114.41: T!$E error type, or "" */ const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; } FnSig;
+typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; char err_type_name[NAME_BUF]; /* 114.41: T!$E error type, or "" */ const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; unsigned char xmod_uns; /* 138.5: imported from another module's .tki with an UNSIGNED narrow return (u8/u16/u32): the call zero-extends it to i64 */ } FnSig;
 
 /*
  * PtrLocal — Tracks local variables that hold pointer values at the LLVM
@@ -181,7 +182,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -777,6 +778,8 @@ static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     s->ret_type_name[0] = '\0';
     s->err_type_name[0] = '\0';
     s->param_count = 0;
+    s->is_internal = 0;
+    s->xmod_uns = 0;   /* 138.5 */
     c->fn_count++;
     return s;
 }
@@ -1181,289 +1184,6 @@ static const char *tki_type_to_llvm(const char *toke_type) {
     return "i8*"; /* str, arrays, structs — all pointers */
 }
 
-/*
- * tki_type_to_llvm_abi — Same as tki_type_to_llvm but for stdlib _w wrappers
- * which use the uniform i64 ABI. Str→i64 (not i8*), bool→i64 (not i1).
- * 80.2.2: _w wrappers bitcast f64/f32 internally, so they also return i64.
- * Only void→void differs from i64.
- */
-static const char *tki_type_to_llvm_abi(const char *toke_type) {
-    if (!strcmp(toke_type, "void")) return "void";
-    return "i64"; /* everything including f64/f32 is i64 in the _w wrapper ABI */
-}
-
-/* ── Story 7.5.5: Stdlib .tki cache for ABI return-type inference ──── */
-
-/*
- * TkiCacheEntry — Cached function metadata from a stdlib .tki file.
- *   wrapper_name:  the tk_<module>_<method>_w symbol name.
- *   llvm_ret:      corresponding LLVM type ("i8*", "i64", "double", "void").
- */
-/* 127.80: the cache now holds every export of every stdlib interface file
- * (518 at the time of writing, and the directory grows), not the 26
- * hand-listed modules it used to.  512 was already under that total, and an
- * overflow silently drops the tail — which is how a return type goes missing
- * again. */
-#define TKI_CACHE_MAX 2048
-
-typedef struct {
-    char wrapper_name[128]; /* e.g. "tk_str_concat_w" */
-    char module[64];
-    char method[64];
-    char toke_ret[64];
-    char c_name[128];       /* extern_c: raw C symbol name, empty if none */
-    const char *llvm_ret;   /* e.g. "i8*", "i64", "double", "void" */
-    char ownership[16];     /* "static", "caller", "borrowed", or "" */
-    char file_module[64];   /* 124.2f-d: the interface FILE the entry came
-                             * from ("dataframe"), which differs from `module`
-                             * — the export's own prefix ("df") — whenever an
-                             * interface publishes a sub-namespace. */
-} TkiCacheEntry;
-
-static TkiCacheEntry g_tki_cache[TKI_CACHE_MAX];
-static int g_tki_cache_count = 0;
-static int g_tki_cache_loaded = 0;
-/* 127.80: set when TKI_CACHE_MAX was hit, so a missing return type can be
- * reported as "the cache overflowed" rather than guessed at. */
-static int g_tki_cache_overflow = 0;
-
-/*
- * tki_base_return_type — Strip error union suffix from a toke return type.
- * "str!FileErr" -> "str", "u64" -> "u64".
- */
-static void tki_base_return_type(const char *toke_ret, char *out, int out_sz) {
-    const char *bang = strchr(toke_ret, '!');
-    if (bang) {
-        int len = (int)(bang - toke_ret);
-        if (len >= out_sz) len = out_sz - 1;
-        memcpy(out, toke_ret, (size_t)len);
-        out[len] = '\0';
-    } else {
-        strncpy(out, toke_ret, (size_t)(out_sz - 1));
-        out[out_sz - 1] = '\0';
-    }
-}
-
-/*
- * load_stdlib_tki — Load a single stdlib .tki file into the global cache.
- */
-static void load_stdlib_tki(const char *module) {
-    char tki_path[512];
-    const char *env_dir = getenv("TKC_STDLIB_DIR");
-    const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
-    snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", base, module);
-
-    FILE *f = fopen(tki_path, "r");
-    if (!f) return;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    if (sz <= 0 || sz > 1000000) { fclose(f); return; }
-    fseek(f, 0, SEEK_SET);
-    char *buf = (char *)malloc((size_t)sz + 1);
-    if (!buf) { fclose(f); return; }
-    size_t rd = fread(buf, 1, (size_t)sz, f);
-    fclose(f);
-    buf[rd] = '\0';
-
-    /* 127.134a: records by structure, not by the next "kind" substring. */
-    const char *tcur = NULL, *trec = NULL, *trend = NULL; char tkind[32];
-    while (tki_next_record(buf, &tcur, &trec, &trend, tkind, (int)sizeof tkind)) {
-        char *p = (char *)trec;
-        char *next_kind = (char *)trend;
-        /* Accept both "func" and "extern_c" kinds (Story 76.1.2b) */
-        int is_func = !strcmp(tkind, "func");
-        int is_extern_c = !strcmp(tkind, "extern_c");
-        if (!is_func && !is_extern_c) continue;
-        if (g_tki_cache_count >= TKI_CACHE_MAX) { g_tki_cache_overflow = 1; break; }
-
-        char *nk = tki_keypos(p, next_kind, "name");
-        if (!nk || (next_kind && nk > next_kind)) { continue; }
-        char *nq1 = strchr(nk + 6, '"');
-        if (!nq1) break;
-        char *nq2 = strchr(nq1 + 1, '"');
-        if (!nq2) break;
-        char fname[128];
-        int nlen = (int)(nq2 - nq1 - 1);
-        if (nlen >= (int)sizeof(fname)) nlen = (int)sizeof(fname) - 1;
-        memcpy(fname, nq1 + 1, (size_t)nlen);
-        fname[nlen] = '\0';
-
-        char *dot = strchr(fname, '.');
-        if (!dot) { continue; }
-        char mod_part[64], meth_part[64];
-        int mlen = (int)(dot - fname);
-        if (mlen >= (int)sizeof(mod_part)) mlen = (int)sizeof(mod_part) - 1;
-        memcpy(mod_part, fname, (size_t)mlen);
-        mod_part[mlen] = '\0';
-        strncpy(meth_part, dot + 1, sizeof(meth_part) - 1);
-        meth_part[sizeof(meth_part) - 1] = '\0';
-
-        char *rk = strstr(nk, "\"return\"");
-        char toke_ret[64] = "void";
-        if (rk && (!next_kind || rk < next_kind)) {
-            char *rq1 = strchr(rk + 8, '"');
-            if (rq1) {
-                char *rq2 = strchr(rq1 + 1, '"');
-                if (rq2) {
-                    int rlen = (int)(rq2 - rq1 - 1);
-                    if (rlen >= (int)sizeof(toke_ret)) rlen = (int)sizeof(toke_ret) - 1;
-                    memcpy(toke_ret, rq1 + 1, (size_t)rlen);
-                    toke_ret[rlen] = '\0';
-                }
-            }
-        }
-
-        TkiCacheEntry *e = &g_tki_cache[g_tki_cache_count];
-        strncpy(e->module, mod_part, sizeof(e->module) - 1);
-        strncpy(e->method, meth_part, sizeof(e->method) - 1);
-        strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
-        strncpy(e->file_module, module, sizeof(e->file_module) - 1);
-        e->file_module[sizeof(e->file_module) - 1] = '\0';
-        e->c_name[0] = '\0';
-        e->ownership[0] = '\0';
-
-        /* Story 76.1.2c: parse optional "ownership" annotation */
-        {
-            char *ok = strstr(p, "\"ownership\"");
-            if (ok && (!next_kind || ok < next_kind)) {
-                char *oq1 = strchr(ok + 11, '"');
-                if (oq1) {
-                    char *oq2 = strchr(oq1 + 1, '"');
-                    if (oq2) {
-                        int olen = (int)(oq2 - oq1 - 1);
-                        if (olen >= (int)sizeof(e->ownership)) olen = (int)sizeof(e->ownership) - 1;
-                        memcpy(e->ownership, oq1 + 1, (size_t)olen);
-                        e->ownership[olen] = '\0';
-                    }
-                }
-            }
-        }
-
-        if (is_extern_c) {
-            /* extern_c: extract "c_name" and use it as the wrapper name */
-            char *ck = strstr(p, "\"c_name\"");
-            if (ck && (!next_kind || ck < next_kind)) {
-                char *cq1 = strchr(ck + 8, '"');
-                if (cq1) {
-                    char *cq2 = strchr(cq1 + 1, '"');
-                    if (cq2) {
-                        int clen = (int)(cq2 - cq1 - 1);
-                        if (clen >= (int)sizeof(e->c_name)) clen = (int)sizeof(e->c_name) - 1;
-                        memcpy(e->c_name, cq1 + 1, (size_t)clen);
-                        e->c_name[clen] = '\0';
-                    }
-                }
-            }
-            /* Use c_name directly as wrapper_name so resolve hits it */
-            if (e->c_name[0]) {
-                strncpy(e->wrapper_name, e->c_name, sizeof(e->wrapper_name) - 1);
-                e->wrapper_name[sizeof(e->wrapper_name) - 1] = '\0';
-            } else {
-                snprintf(e->wrapper_name, sizeof e->wrapper_name, "tk_%s_%s_w", mod_part, meth_part);
-            }
-        } else {
-            snprintf(e->wrapper_name, sizeof e->wrapper_name, "tk_%s_%s_w", mod_part, meth_part);
-        }
-
-        char base_ret[64];
-        tki_base_return_type(toke_ret, base_ret, sizeof base_ret);
-        e->llvm_ret = tki_type_to_llvm_abi(base_ret);
-        /* 127.95: `void!$err` is NOT void.  Stripping the error union left
-         * base "void", so the call was lowered as `call void @f(...)`, its
-         * result discarded, and a literal `add i64 0, 0` substituted for the
-         * discriminant the wrapper had just returned — the same shape as
-         * 127.80 and 127.86, a default standing in for an answer the compiler
-         * had and threw away.  Every void!$err wrapper in the tree returns
-         * 0 on success and -1 on failure (sse.emit/emitdata, ws.send,
-         * router.serve, dashboard.serve), so the ABI is i64 and the arm test
-         * is `== 0`, not `!= 0`. */
-        if (!strcmp(e->llvm_ret, "void") && strchr(toke_ret, '!'))
-            e->llvm_ret = "i64";
-        g_tki_cache_count++;
-    }
-    free(buf);
-}
-
-/*
- * ensure_tki_cache_loaded — Lazily load all stdlib .tki files into the cache.
- */
-static void ensure_tki_cache_loaded(void) {
-    if (g_tki_cache_loaded) return;
-    g_tki_cache_loaded = 1;
-    /*
-     * 127.80: scan stdlib/ for *.tki rather than consulting a hand-written
-     * list of module names.
-     *
-     * The list held 26 of the 54 interface files.  A module absent from it had
-     * no return types in the cache at all, so `\(path.join(a;b))` — a `"str"`
-     * return declared in stdlib/path.tki, sitting on disk, unread — fell
-     * through every type test to the integer default and printed the string's
-     * address as a decimal.  A name list that must be extended by hand every
-     * time a module is added is the same defect shape as the str_wrappers
-     * table in expr_struct_type: the authoritative answer exists, and the
-     * lookup key is a name somebody has to remember to add.
-     *
-     * The directory IS the list.  A new stdlib module is now typed correctly
-     * the moment its .tki lands.
-     */
-    char dir_path[512];
-    const char *env_dir = getenv("TKC_STDLIB_DIR");
-    const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
-    snprintf(dir_path, sizeof dir_path, "%s/../../stdlib", base);
-    DIR *d = opendir(dir_path);
-    if (!d) return;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        const char *nm = de->d_name;
-        size_t nl = strlen(nm);
-        if (nl < 5 || strcmp(nm + nl - 4, ".tki")) continue;
-        char mod[64];
-        size_t ml = nl - 4;
-        if (ml >= sizeof mod) continue;
-        memcpy(mod, nm, ml);
-        mod[ml] = '\0';
-        load_stdlib_tki(mod);
-    }
-    closedir(d);
-}
-
-/*
- * tki_lookup_return_type — Look up the LLVM return type for a resolved
- * stdlib wrapper function name from the .tki cache.
- * Returns the LLVM type string or NULL if not found.
- */
-static const char *tki_lookup_return_type(const char *wrapper_name) {
-    ensure_tki_cache_loaded();
-    for (int i = 0; i < g_tki_cache_count; i++) {
-        if (!strcmp(g_tki_cache[i].wrapper_name, wrapper_name))
-            return g_tki_cache[i].llvm_ret;
-    }
-    return NULL;
-}
-
-/*
- * is_void_err_union_wrapper — 1 if this resolved stdlib wrapper's DECLARED
- * toke return type is `void!<E>` (story 127.95).
- *
- * Such a call has no value to test: the i64 it returns is a pure status word,
- * 0 for success and -1 for failure, which is the inverse of the 0/null
- * sentinel every other error union uses.  A `mt` over one therefore tests
- * `== 0` for the $ok arm.  Asking the interface file rather than listing the
- * five wrappers by hand is deliberate — 127.80 is what a hand-written name
- * list costs.
- */
-static int is_void_err_union_wrapper(const char *name) {
-    if (!name) return 0;
-    ensure_tki_cache_loaded();
-    for (int i = 0; i < g_tki_cache_count; i++) {
-        if (strcmp(g_tki_cache[i].wrapper_name, name)) continue;
-        if (!strchr(g_tki_cache[i].toke_ret, '!')) return 0;
-        char b[64];
-        tki_base_return_type(g_tki_cache[i].toke_ret, b, sizeof b);
-        return !strcmp(b, "void");
-    }
-    return 0;
-}
 
 /*
  * resolve_sub_namespace_call — a stdlib SUB-namespace call (`row.f64(r;"p")`
@@ -1639,6 +1359,14 @@ static int is_stdlib_slot_wrapper(const char *name) {
         "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
         /* 127.104: `TlsKeypair!str` — the slot holds tls.c's message */
         "tk_tls_genselfsigned_w", "tk_tls_genselfsignedalg_w",
+        /* 138.3 (B3): the typed http client calls return `T!$httperr` and
+         * leave an {msg; code} box in the slot; without these rows
+         * `$err:e e.msg` read a nil payload (RT005) */
+        "tk_http_clientget_w", "tk_http_clientpost_w", "tk_http_clientput_w",
+        "tk_http_clientdelete_w", "tk_http_geturl_w",
+        /* 138.6: std.db's scalar row accessors and exec (db_glue.c db_raise) */
+        "tk_row_str_w", "tk_row_i64_w", "tk_row_u64_w", "tk_row_f64_w", "tk_row_bool_w",
+        "tk_db_exec_w", "tk_db_execon_w",
         NULL,
     };
     if (!name) return 0;
@@ -1842,11 +1570,33 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
             snprintf(mangled_fn, sizeof mangled_fn, "%s%s", tki_mod_prefix, fn_name);
         else
             strncpy(mangled_fn, fn_name, sizeof mangled_fn - 1);
-        /* Cross-module ABI: all non-void returns use i64 (pointers via
-         * ptrtoint, bools via zext, floats via bitcast). Only void stays void. */
-        FnSig *sig = register_fn(c, mangled_fn,
-                                  !strcmp(ret_type, "void") ? "void" : "i64");
+        /* 138.5 (T-20): the import must declare exactly the return type the
+         * DEFINING module gives the function, and that is
+         * resolve_llvm_type()'s mapping with i8* widened to i64 (the define
+         * path in emit_toplevel): pointers do cross as i64, but f64/f32 are
+         * returned as double/float and bool/narrow integers as i1/i8/i16/i32.
+         * This said "all non-void returns use i64 (floats via bitcast)", which
+         * the definer never did, so `lib.f64abs(-50.0)` was read out of the
+         * integer register (garbage), and a bool/i32 return was an i64 read of
+         * a narrower register that only happened to work. */
+        char ret_base[64];
+        tki_base_return_type(ret_toke_type, ret_base, sizeof ret_base);
+        const char *xret = "i64";
+        if (!strcmp(ret_type, "void") || !strcmp(ret_base, "void")) xret = "void";
+        else if (!strcmp(ret_base, "f64")) xret = "double";
+        else if (!strcmp(ret_base, "f32")) xret = "float";
+        else if (!strcmp(ret_base, "bool")) xret = "i1";
+        else if (!strcmp(ret_base, "i8") || !strcmp(ret_base, "u8") ||
+                 !strcmp(ret_base, "Byte") || !strcmp(ret_base, "byte")) xret = "i8";
+        else if (!strcmp(ret_base, "i16") || !strcmp(ret_base, "u16")) xret = "i16";
+        else if (!strcmp(ret_base, "i32") || !strcmp(ret_base, "u32")) xret = "i32";
+        FnSig *sig = register_fn(c, mangled_fn, xret);
         if (sig) {
+            /* 138.5: an unsigned narrow return is widened by ITS signedness
+             * at the call (the checker does not type the imported call, so
+             * nothing downstream could tell a u8 of 200 from an i8 of -56). */
+            sig->xmod_uns = (strcmp(xret, "i8") == 0 || strcmp(xret, "i16") == 0 ||
+                             strcmp(xret, "i32") == 0) && ret_base[0] == 'u';
             sig->is_internal = 1; /* use fastcc */
             /* Store toke return type name for struct type propagation */
             if (ret_toke_type[0])
@@ -2247,265 +1997,6 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     return stdlib_symbol_for(mod, is_std, method);
 }
 
-/*
- * stdlib_symbol_for (136.1) — the C symbol a `<module>.<method>` call lowers
- * to, or NULL when the module is not a stdlib module.
- *
- * This is the whole body resolve_stdlib_call() used to be; only the
- * alias → module lookup, which needs the codegen Ctx, stays behind.  Splitting
- * it makes the mapping answerable *before* codegen, so the type checker can
- * ask the same question the emitter will ask rather than re-deriving the name
- * and getting a different answer: roughly two hundred methods here map to a
- * symbol that the generic `tk_<module>_<method>_w` spelling would miss
- * (`json.parse` → tk_json_parse, `str.fromint` → tk_str_from_int,
- * `http.patch` → tk_http_patch_handler), and guessing those wrong is how a
- * member-existence check invents diagnostics on correct programs.
- */
-const char *stdlib_symbol_for(const char *mod, int is_std, const char *method) {
-    if (!mod || !method) return NULL;
-    /* Strip "std." prefix for stdlib imports (Story 49.4.5) */
-    if (!strncmp(mod, "std.", 4)) mod = mod + 4;
-
-    /* std.json functions */
-    if (!strcmp(mod, "json")) {
-        if (!strcmp(method, "parse"))  return "tk_json_parse";
-        if (!strcmp(method, "print"))  return "tk_json_print";
-        /* enc/dec fall through to generic tk_json_enc_w / tk_json_dec_w */
-    }
-    /* std.toon — falls through to generic tk_toon_<method>_w pattern */
-    /* std.yaml — falls through to generic tk_yaml_<method>_w pattern */
-    /* std.i18n — falls through to generic tk_i18n_<method>_w pattern */
-    /* std.llm.tool — falls through to generic tk_tool_<method>_w pattern */
-    /* std.str functions */
-    if (!strcmp(mod, "str")) {
-        if (!strcmp(method, "argv"))         return "tk_str_argv";
-        if (!strcmp(method, "len"))          return "tk_str_len_w";
-        if (!strcmp(method, "concat"))       return "tk_str_concat_w";
-        if (!strcmp(method, "split"))        return "tk_str_split_w";
-        if (!strcmp(method, "trim"))         return "tk_str_trim_w";
-        if (!strcmp(method, "upper"))        return "tk_str_upper_w";
-        if (!strcmp(method, "lower"))        return "tk_str_lower_w";
-        if (!strcmp(method, "from_int"))     return "tk_str_from_int";
-        if (!strcmp(method, "fromint"))      return "tk_str_from_int";
-        if (!strcmp(method, "to_int"))       return "tk_str_to_int";
-        /* Bug 110.1: register f64-returning string→number wrappers so
-         * expr_llvm_type sees `resolved` and routes through
-         * is_f64_returning_wrapper to return "double". Without these
-         * the call goes via the generic tk_<mod>_<method>_w fallback
-         * and downstream arithmetic lowers to integer multiplication. */
-        if (!strcmp(method, "tofloat"))      return "tk_str_tofloat_w";
-        if (!strcmp(method, "to_float"))     return "tk_str_to_float_w";
-        if (!strcmp(method, "tof64"))        return "tk_str_tof64_w";
-        if (!strcmp(method, "tof32"))        return "tk_str_tof32_w";
-        if (!strcmp(method, "parsefloat"))   return "tk_str_parsefloat_w";
-        if (!strcmp(method, "parsef64"))     return "tk_str_parsef64_w";
-        /* Epic 111 / ADR-0004: canonical builder names route to existing glue. */
-        if (!strcmp(method, "builder"))      return "tk_str_buf_w";
-        if (!strcmp(method, "build"))        return "tk_str_done_w";
-        if (!strcmp(method, "interpolate"))  return "tk_str_interpolate_w";
-        if (!strcmp(method, "indexof"))      return "tk_str_indexof_w";
-        if (!strcmp(method, "slice"))        return "tk_str_slice_w";
-        if (!strcmp(method, "replace"))      return "tk_str_replace_w";
-        if (!strcmp(method, "startswith"))   return "tk_str_startswith_w";
-        if (!strcmp(method, "endswith"))     return "tk_str_endswith_w";
-        if (!strcmp(method, "trimprefix"))   return "tk_str_trimprefix_w";
-        if (!strcmp(method, "trimsuffix"))   return "tk_str_trimsuffix_w";
-        if (!strcmp(method, "lastindex"))    return "tk_str_lastindex_w";
-        if (!strcmp(method, "matchbracket")) return "tk_str_matchbracket_w";
-        if (!strcmp(method, "contains"))     return "tk_str_contains_w";
-    }
-    /* std.env functions */
-    if (!strcmp(mod, "env")) {
-        if (!strcmp(method, "get_or"))  return "tk_env_get_or";
-        if (!strcmp(method, "getint")) return "tk_env_getint_w";
-        if (!strcmp(method, "set"))    return "tk_env_set_w";
-        if (!strcmp(method, "expand")) return "tk_env_expand_w";
-    }
-    /* std.file functions */
-    if (!strcmp(mod, "file")) {
-        if (!strcmp(method, "read"))    return "tk_file_read_w";
-        if (!strcmp(method, "write"))   return "tk_file_write_w";
-        if (!strcmp(method, "isdir"))   return "tk_file_isdir_w";
-        if (!strcmp(method, "mkdir"))   return "tk_file_mkdir_w";
-        if (!strcmp(method, "copy"))    return "tk_file_copy_w";
-        if (!strcmp(method, "listall")) return "tk_file_listall_w";
-        if (!strcmp(method, "exists"))  return "tk_file_exists_w";
-    }
-    /* std.path functions */
-    if (!strcmp(mod, "path")) {
-        if (!strcmp(method, "join")) return "tk_path_join_w";
-        if (!strcmp(method, "dir"))  return "tk_path_dir_w";
-        if (!strcmp(method, "ext"))  return "tk_path_ext_w";
-    }
-    /* std.toml functions */
-    if (!strcmp(mod, "toml")) {
-        if (!strcmp(method, "load"))    return "tk_toml_load_w";
-        if (!strcmp(method, "section")) return "tk_toml_section_w";
-        if (!strcmp(method, "str"))     return "tk_toml_str_w";
-        if (!strcmp(method, "i64"))     return "tk_toml_i64_w";
-        if (!strcmp(method, "bool"))    return "tk_toml_bool_w";
-    }
-    /* std.mem functions — direct tk_mem_* naming (no _w suffix) */
-    if (!strcmp(mod, "mem")) {
-        static char mem_buf[128];
-        snprintf(mem_buf, sizeof mem_buf, "tk_mem_%s", method);
-        return mem_buf;
-    }
-    /* std.task functions — direct tk_task_* naming (Story 76.1.1a) */
-    if (!strcmp(mod, "task")) {
-        static char task_buf[128];
-        snprintf(task_buf, sizeof task_buf, "tk_task_%s", method);
-        return task_buf;
-    }
-    /* std.math scalar functions — map directly to libc (linked via -lm) */
-    if (!strcmp(mod, "math")) {
-        if (!strcmp(method, "sin"))   return "sin";
-        if (!strcmp(method, "cos"))   return "cos";
-        if (!strcmp(method, "tan"))   return "tan";
-        if (!strcmp(method, "asin"))  return "asin";
-        if (!strcmp(method, "acos"))  return "acos";
-        if (!strcmp(method, "atan"))  return "atan";
-        if (!strcmp(method, "atan2")) return "atan2";
-        if (!strcmp(method, "fmod"))  return "fmod";
-        if (!strcmp(method, "fabs"))  return "fabs";
-        if (!strcmp(method, "log"))   return "log";
-        if (!strcmp(method, "log10")) return "log10";
-        if (!strcmp(method, "exp"))   return "exp";
-        if (!strcmp(method, "round")) return "round";
-        if (!strcmp(method, "sqrt"))  return "sqrt";
-        if (!strcmp(method, "floor")) return "floor";
-        if (!strcmp(method, "ceil"))  return "ceil";
-        if (!strcmp(method, "pow"))   return "pow";
-    }
-    /* std.args functions */
-    if (!strcmp(mod, "args")) {
-        if (!strcmp(method, "count")) return "tk_args_count_w";
-        if (!strcmp(method, "get"))   return "tk_args_get_w";
-    }
-    /* std.http functions */
-    if (!strcmp(mod, "http")) {
-        if (!strcmp(method, "getstatic"))      return "tk_http_get_static";
-        if (!strcmp(method, "getstaticmime"))  return "tk_http_get_static_mime";
-        if (!strcmp(method, "get"))            return "tk_http_get_handler";
-        if (!strcmp(method, "reqpath"))        return "tk_http_req_path";
-        if (!strcmp(method, "reqmethod"))      return "tk_http_req_method";
-        if (!strcmp(method, "reqbody"))        return "tk_http_req_body";
-        if (!strcmp(method, "reqparam"))       return "tk_http_req_param";
-        if (!strcmp(method, "reqheader"))      return "tk_http_req_header";
-        if (!strcmp(method, "resnew"))         return "tk_http_res_new";
-        if (!strcmp(method, "resjson"))        return "tk_http_res_json_new";
-        if (!strcmp(method, "resok"))          return "tk_http_res_ok";
-        if (!strcmp(method, "resbad"))         return "tk_http_res_bad";
-        if (!strcmp(method, "reserr"))         return "tk_http_res_err";
-        if (!strcmp(method, "post"))           return "tk_http_post_handler";
-        if (!strcmp(method, "put"))            return "tk_http_put_handler";
-        if (!strcmp(method, "delete"))         return "tk_http_delete_handler";
-        if (!strcmp(method, "patch"))          return "tk_http_patch_handler";
-        if (!strcmp(method, "postecho"))       return "tk_http_post_echo";
-        if (!strcmp(method, "poststatic"))     return "tk_http_post_static";
-        if (!strcmp(method, "postjson"))       return "tk_http_post_json";
-        if (!strcmp(method, "servedir"))       return "tk_http_serve_staticdir_w";
-        if (!strcmp(method, "servepages"))     return "tk_http_servepages_w";
-        if (!strcmp(method, "serve"))          return "tk_http_serve";
-        if (!strcmp(method, "servetls"))       return "tk_http_servetls";
-        if (!strcmp(method, "serveworkers"))   return "tk_http_serveworkers_w";
-        if (!strcmp(method, "setnotfound"))    return "tk_http_set_notfound";
-        if (!strcmp(method, "setcors"))        return "tk_http_set_cors";
-    }
-    /* std.log functions */
-    if (!strcmp(mod, "log")) {
-        if (!strcmp(method, "openaccess"))   return "tk_log_open_access_w";
-        if (!strcmp(method, "openerror"))    return "tk_log_open_error_w";
-        if (!strcmp(method, "accessformat")) return "tk_log_accessformat_w";
-        if (!strcmp(method, "info"))       return "tk_log_info_w";
-        if (!strcmp(method, "error"))      return "tk_log_error_w";
-        if (!strcmp(method, "warn"))       return "tk_log_warn_w";
-        if (!strcmp(method, "debug"))      return "tk_log_debug_w";
-    }
-    /* std.md functions */
-    if (!strcmp(mod, "md")) {
-        if (!strcmp(method, "render")) return "tk_md_render_w";
-    }
-    /* std.router functions */
-    if (!strcmp(mod, "router")) {
-        if (!strcmp(method, "new")) return "tk_router_new_w";
-    }
-    /* std.os functions — thin POSIX syscall bridge (Story 74.2.1) */
-    if (!strcmp(mod, "os")) {
-        if (!strcmp(method, "open"))      return "tk_os_open";
-        if (!strcmp(method, "close"))     return "tk_os_close";
-        if (!strcmp(method, "read"))      return "tk_os_read";
-        if (!strcmp(method, "write"))     return "tk_os_write";
-        if (!strcmp(method, "lseek"))     return "tk_os_lseek";
-        if (!strcmp(method, "stat"))      return "tk_os_stat";
-        if (!strcmp(method, "unlink"))    return "tk_os_unlink";
-        if (!strcmp(method, "rename"))    return "tk_os_rename";
-        if (!strcmp(method, "mkdir"))     return "tk_os_mkdir";
-        if (!strcmp(method, "rmdir"))     return "tk_os_rmdir";
-        if (!strcmp(method, "access"))    return "tk_os_access";
-        if (!strcmp(method, "getcwd"))    return "tk_os_getcwd";
-        if (!strcmp(method, "getpid"))    return "tk_os_getpid";
-        if (!strcmp(method, "exit"))      return "tk_os_exit";
-        if (!strcmp(method, "getenv"))    return "tk_os_getenv";
-        if (!strcmp(method, "setenv"))    return "tk_os_setenv";
-        if (!strcmp(method, "errno"))     return "tk_os_errno";
-        if (!strcmp(method, "strerror"))  return "tk_os_strerror";
-        if (!strcmp(method, "o_rdonly"))   return "tk_os_o_rdonly";
-        if (!strcmp(method, "o_wronly"))   return "tk_os_o_wronly";
-        if (!strcmp(method, "o_rdwr"))     return "tk_os_o_rdwr";
-        if (!strcmp(method, "o_creat"))    return "tk_os_o_creat";
-        if (!strcmp(method, "o_trunc"))    return "tk_os_o_trunc";
-        if (!strcmp(method, "o_append"))   return "tk_os_o_append";
-        if (!strcmp(method, "stdin_fd"))   return "tk_os_stdin_fd";
-        if (!strcmp(method, "stdout_fd"))  return "tk_os_stdout_fd";
-        if (!strcmp(method, "stderr_fd"))  return "tk_os_stderr_fd";
-    }
-    /* std.stack functions — LIFO container (Story 76.1.7b) */
-    if (!strcmp(mod, "stack")) {
-        static char stack_buf[128];
-        snprintf(stack_buf, sizeof stack_buf, "tk_stack_%s_w", method);
-        return stack_buf;
-    }
-    /* std.queue functions — FIFO container (Story 76.1.7b) */
-    if (!strcmp(mod, "queue")) {
-        static char queue_buf[128];
-        snprintf(queue_buf, sizeof queue_buf, "tk_queue_%s_w", method);
-        return queue_buf;
-    }
-    /* std.set functions — unique-element container (Story 76.1.7b) */
-    if (!strcmp(mod, "set")) {
-        static char set_buf[128];
-        snprintf(set_buf, sizeof set_buf, "tk_set_%s_w", method);
-        return set_buf;
-    }
-    if (!strcmp(mod, "vec")) { /* Story 114.18: mutable growable vector */
-        static char vec_buf[128];
-        snprintf(vec_buf, sizeof vec_buf, "tk_vec_%s_w", method);
-        return vec_buf;
-    }
-    /* Story 76.1.2b: check TKI cache for extern_c entries with c_name.
-     * If a .tki declares {"kind":"extern_c", "c_name":"open", ...} for
-     * this module+method, return the raw C symbol name directly. */
-    ensure_tki_cache_loaded();
-    for (int i = 0; i < g_tki_cache_count; i++) {
-        if (!strcmp(g_tki_cache[i].module, mod) &&
-            !strcmp(g_tki_cache[i].method, method) &&
-            g_tki_cache[i].c_name[0]) {
-            return g_tki_cache[i].wrapper_name; /* == c_name */
-        }
-    }
-    /* Generic fallback for unmapped std.* modules (Story 57.12.1):
-     * generate tk_<module>_<method>_w so all stdlib calls resolve to a
-     * consistent symbol name even before explicit wrappers exist.
-     * Only applies to std.* imports — user modules return NULL so the
-     * caller treats them as cross-module user-defined function calls. */
-    if (is_std) {
-        static char gen_buf[256];
-        snprintf(gen_buf, sizeof gen_buf, "tk_%s_%s_w", mod, method);
-        return gen_buf;
-    }
-    return NULL;
-}
 
 /*
  * str_buf_append — Append formatted text to the string globals buffer.
@@ -2519,14 +2010,28 @@ const char *stdlib_symbol_for(const char *mod, int is_std, const char *method) {
  * is full (TKC_STR_GLOBALS_SIZE).
  */
 static void str_buf_append(Ctx *c, const char *fmt, ...) {
-    va_list ap;
+    /* 138.14 (T-35): this buffer was a fixed TKC_STR_GLOBALS_SIZE (64 KB)
+     * and a full buffer "silently truncated": 670 string constants, or one
+     * 300,000-character literal, cut the module inside a constant, toke
+     * exited 0 and clang refused the IR.  It grows now; only an allocation
+     * failure can stop it, and that is reported (str_globals_oom). */
+    va_list ap, ap2;
     va_start(ap, fmt);
-    int rem = (int)sizeof(c->str_globals) - c->str_globals_len;
-    if (rem > 0) {
-        int n = vsnprintf(c->str_globals + c->str_globals_len, (size_t)rem, fmt, ap);
-        if (n > 0) c->str_globals_len += (n < rem) ? n : rem - 1;
-    }
+    va_copy(ap2, ap);
+    int need = vsnprintf(NULL, 0, fmt, ap);
     va_end(ap);
+    if (need > 0 && !c->str_globals_oom) {
+        if (c->str_globals_len + need + 1 > c->str_globals_cap) {
+            int ncap = c->str_globals_cap ? c->str_globals_cap : TKC_STR_GLOBALS_SIZE;
+            while (ncap < c->str_globals_len + need + 1) ncap *= 2;
+            char *nb = (char *)realloc(c->str_globals, (size_t)ncap);
+            if (!nb) { c->str_globals_oom = 1; va_end(ap2); return; }
+            c->str_globals = nb; c->str_globals_cap = ncap;
+        }
+        vsnprintf(c->str_globals + c->str_globals_len, (size_t)(need + 1), fmt, ap2);
+        c->str_globals_len += need;
+    }
+    va_end(ap2);
 }
 
 /*
@@ -2641,6 +2146,21 @@ static int call_declares_bool(Ctx *c, const Node *e) {
     tok_cp(c->src, cal->children[1], method, sizeof method);
     const TkiCacheEntry *te = tki_entry_for(c, alias, method);
     if (!te) {
+        /* 138.6: a stdlib SUB-namespace (`row.bool` from std.db): the export
+         * prefix is not an import alias, so look the export up by prefix
+         * in the interfaces of the imported std modules. */
+        ensure_tki_cache_loaded();
+        for (int ii = 0; ii < c->import_count && !te; ii++) {
+            if (!c->imports[ii].is_std) continue;
+            const char *fm = c->imports[ii].module;
+            if (!strncmp(fm, "std.", 4)) fm += 4;
+            for (int k = 0; k < g_tki_cache_count; k++)
+                if (!strcmp(g_tki_cache[k].file_module, fm) &&
+                    !strcmp(g_tki_cache[k].module, alias) &&
+                    !strcmp(g_tki_cache[k].method, method)) { te = &g_tki_cache[k]; break; }
+        }
+    }
+    if (!te) {
         /* 127.217: a function in another USER module.  Its signature was
          * registered from that module's .tki under the mangled name
          * <module path with '.'->'_'>_<method>, with the declared toke
@@ -2691,7 +2211,6 @@ static int field_declares_bool(Ctx *c, const Node *e) {
  * Interpolation printed both as `1` after 127.94 had made every other bool
  * print `true`.  Same c->src rule as call_declares_bool. */
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
-static int recv_method_in_chain(const char *m);
 static int arr_elem_is_bool(Ctx *c, const Node *r) {
     if (!r) return 0;
     if (r->rtype && r->rtype->kind == TY_ARRAY && r->rtype->elem &&
@@ -2725,6 +2244,108 @@ static int recv_call_is_bool(Ctx *c, const Node *e) {
     if (!strcmp(member, "get") && e->child_count == 2)
         return arr_elem_is_bool(c, cal->children[0]);
     return 0;
+}
+
+/* 127.229 (4) / 127.230 (1): is `e` a bool that reaches the backend as an
+ * i64 — a stdlib/cross-module call declared `bool`, a bool struct field, a
+ * predicate receiver method or a bool array element?  The checker leaves a
+ * stdlib call's result TY_UNKNOWN, so this is the backend's only evidence
+ * that the program has a bool here.  Interpolation asked it inline (127.94,
+ * 127.194); a binding and j.print did not, so `let b=a.contains(3)` stored
+ * the i64 in an i64 local and every later use saw a number (`\(b)` and
+ * `j.print(b)` printed 1), and `j.print(s.startswith(..))` printed 1.  One
+ * predicate for every site.  Same c->src rule as call_declares_bool. */
+/* 127.230 (1): is `e` a call whose declared return is an error union
+ * (`bool!$fileerr`)?  call_declares_bool answers for the BASE type, but such
+ * a value is matched on its ok/err convention, so a binding of it must keep
+ * the i64 the `mt` lowering tests (C007: `let w=file.writebytes(..); mt w`). */
+static int call_is_err_union(Ctx *c, const Node *e) {
+    if (!e || e->kind != NODE_CALL_EXPR || e->child_count < 1) return 0;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2) return 0;
+    if (!cal->children[0] || cal->children[0]->kind != NODE_IDENT) return 0;
+    char alias[128], method[128];
+    tok_cp(c->src, cal->children[0], alias, sizeof alias);
+    tok_cp(c->src, cal->children[1], method, sizeof method);
+    const TkiCacheEntry *te = tki_entry_for(c, alias, method);
+    if (te) return strchr(te->toke_ret, '!') != NULL;
+    for (int ii = 0; ii < c->import_count; ii++) {
+        if (c->imports[ii].is_std || strcmp(c->imports[ii].alias, alias)) continue;
+        char mangled[512]; int ml = 0;
+        for (const char *mp = c->imports[ii].module; *mp && ml < 250; mp++)
+            mangled[ml++] = (*mp == '.') ? '_' : *mp;
+        mangled[ml] = '\0';
+        snprintf(mangled + ml, sizeof mangled - (size_t)ml, "_%s", method);
+        const FnSig *sig = lookup_fn(c, mangled);
+        return sig && sig->err_type_name[0];
+    }
+    return 0;
+}
+
+static const char *expr_llvm_type(Ctx *c, const Node *n);
+static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
+    if (!ety || strcmp(ety, "i64")) return 0;
+    if (call_declares_bool(c, e) || field_declares_bool(c, e) || recv_call_is_bool(c, e))
+        return 1;
+    /* 127.230 (1): a match whose every value arm is a bool.  Its result slot
+     * is never i1 (the match lowering widens to i64), so
+     * `let c=mt s.toint(x){$ok:v s.contains(a;b);$err:e false}` printed 1. */
+    if (e && e->kind == NODE_MATCH_STMT && e->child_count >= 2) {
+        int seen = 0;
+        for (int i = 1; i < e->child_count; i++) {
+            const Node *arm = e->children[i];
+            if (!arm || arm->child_count < 3 || !arm->children[2]) return 0;
+            const Node *b = arm->children[2];
+            if (b->kind == NODE_RETURN_STMT) continue;
+            const char *bt = expr_llvm_type(c, b);
+            int isb = (bt && !strcmp(bt, "i1")) || b->kind == NODE_BOOL_LIT ||
+                      (b->rtype && b->rtype->kind == TY_BOOL) ||
+                      expr_abi_bool(c, b, bt);
+            if (!isb) return 0;
+            seen++;
+        }
+        return seen > 0;
+    }
+    return 0;
+}
+
+/* array_lit_spread_idx — the index of the element of array literal `n` that
+ * lowers as a SPREAD (`@(base;x;…)` copies base's elements), or -1; the
+ * number of value elements (type annotations excluded) goes to *elem_count.
+ * Factored out of the NODE_ARRAY_LIT lowering (127.229 (2)) so the in-place
+ * self-concat can decline exactly the literals that would spread. */
+static const char *get_local_type(Ctx *c, const char *name);
+static int array_lit_spread_idx(Ctx *c, const Node *n, int *elem_count) {
+    int spread_idx = -1; /* index of first spread (array-typed) element */
+    int count = 0;
+    for (int i = 0; i < n->child_count; i++) {
+        NodeKind ck = n->children[i]->kind;
+        if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+            ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+            ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
+            continue;
+        /* Detect if this element is an array variable to be spread:
+         * NODE_IDENT that is ptr_local, not a map, and not a struct. */
+        if (spread_idx < 0 && n->children[i]->kind == NODE_IDENT) {
+            char eid[128]; tok_cp(c->src, n->children[i], eid, sizeof eid);
+            /* 126.x: `is_ptr_local` is keyed on the raw source name and is
+             * never removed, so a shadowing re-bind to a scalar (e.g. an
+             * earlier `let l=io.readln()` — a $str ptr_local — followed by
+             * `let l=arr.get(i)` — an i64) leaves the stale ptr_local entry.
+             * Spreading such an `l` reads `l_value[-1]` off the integer as
+             * if it were an array pointer → SIGSEGV. Confirm the identifier's
+             * CURRENT binding is actually pointer-typed (via the uniquified
+             * name's local type) before treating `@(x)` as a spread. */
+            const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
+            if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
+                !ptr_local_struct_type(c, eid) &&
+                !strcmp(cur_ty, "i8*"))
+                spread_idx = i;
+        }
+        count++;
+    }
+    if (elem_count) *elem_count = count;
+    return spread_idx;
 }
 
 static int emit_bool_to_str(Ctx *c, int v) {
@@ -3423,204 +3044,6 @@ static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
     if (st && !strcmp(st, "__map__i")) return "@i64";
     return "@str";
 }
-/* 127.6's list (upper/lower/ends/replace/fields/join/pop/fold) used to live
- * here as is_127_6_method(): verbs that had glue but no dispatch entry, so
- * `x.upper()` fell through to the user-function path and failed at link
- * (E9003, undefined `_upper`). They are now rows of the table below, which
- * has the same property the separate list was kept for — one place the
- * dispatch gate and every reader of the method set agree on. Like the rest of
- * the table these take precedence over a same-named user function (UFCS to
- * user functions does not link, which is 127.1). */
-/* ── 127.1 / 127.96 / 127.115 / 127.128: the receiver-method set, as data ──
- *
- * `recv.member(args)` where `recv` is NOT a module alias lowers through the
- * dispatch chain in emit_expr below.  Falling off the end of that chain used
- * to mean emitting a call to a **bare, unmangled** symbol named after the
- * member (`snprintf(fn_buf, sizeof fn_buf, "%s", method)`).  A toke function
- * is mangled `<module>_<name>`, so that symbol never exists: `x.pair("A")`
- * with `f=pair(a:str;b:str):str` in scope passed `--check` with exit 0 and
- * then died at `ld` with `Undefined symbols: "_pair"`.  The same fallback
- * swallowed `a.nosuch()`, `s.nosuch()`, `m.values()`, `p.nosuch()` on a user
- * struct, and — via a receiver that is itself a field access — `http.res.ok`.
- *
- * This table names every member the chain can lower, and for each, every glue
- * symbol the chain may pick for it.  The pick depends on the receiver's kind
- * (`contains` is a hash lookup on a map, a linear scan on an array and a
- * substring search on a str), which is why a member has a *set* of symbols
- * and not one.
- *
- * It is a single registry with two readers, which is the shape this file keeps
- * having to be corrected back into (127.80, 127.93): the emitter's own
- * dispatch gate is `recv_method_in_chain()` below, and the type checker asks
- * `recv_method_known()` / `recv_method_arity()`.  Neither can drift from the
- * other, because there is only one list.
- *
- * `chain` distinguishes the members the big chain handles from the three that
- * a special case above it returns for (`len` inline or via tk_*_len_w, `keys`
- * on a map, `toarray` on a Vec).  Those must not enter the chain — its final
- * `else` is an internal-error diagnostic (127.167; it was `tk_str_eq_w`) —
- * but the checker must still accept them.
- *
- * ARITY IS NOT IN THIS TABLE.  It is read from g_stdlib_decls, the compiler's
- * record of the native side, and only when EVERY candidate symbol agrees; a
- * member whose variants disagree, or whose symbol the table does not declare,
- * is left unchecked rather than judged against a guess.  That is the same
- * ground 136.1/127.61 put the module-call arity check on.
- */
-/* Receiver kinds a member's dispatch handles (127.151, 127.177).  A kind is
- * set only where the chain below has a branch that picks glue for that kind:
- *   append/push/pop          → tk_array_*            (Vec is its own path)
- *   getor, keys              → tk_map_*
- *   set                      → recv_is_map ? tk_map_set_w : tk_array_set_w
- *   map/filter/reduce/fold/sort → tk_arr_*
- *   contains                 → map / array / str, each by its own test
- *   slice/find/indexof       → recv_is_array ? tk_arr_* : tk_str_*
- *   join                     → str receiver = separator, else tk_arr_join_w
- *   len                      → str / map / vec glue, arrays inline
- *   toarray                  → Vec only (no str/array/map kind)
- *   the rest                 → tk_str_* only
- * RK_UNJUDGED: `get`, whose one-argument form is an index expression; the
- * checker says nothing about its receiver kind.
- *
- * This column used to be a copy in types.c (s_recv_kinds), kept honest only
- * by C049's drift guard.  It lives here now, beside the dispatch it
- * describes, and the checker reads it through recv_method_on_kind(). */
-#define RK_S 1u
-#define RK_A 2u
-#define RK_M 4u
-#define RK_UNJUDGED 8u
-typedef struct {
-    const char *member;
-    int         chain;        /* 1 = dispatched by the big chain below */
-    unsigned    kinds;        /* RK_* — the receiver kinds the dispatch lowers */
-    const char *syms[5];      /* NULL-terminated; every symbol the chain may pick */
-} RecvMethod;
-
-static const RecvMethod g_recv_methods[] = {
-    /* handled by a special case ABOVE the chain */
-    {"len",       0, RK_S|RK_A|RK_M, {"tk_str_len_w", "tk_map_len_w", "tk_vec_len_w", NULL}},
-    {"keys",      0, RK_M, {"tk_map_keys_w", NULL}},
-    {"toarray",   0, 0, {"tk_vec_toarray_w", NULL}},
-    /* handled by the chain */
-    {"append",    1, RK_A, {"tk_array_append_w", NULL}},
-    {"push",      1, RK_A, {"tk_array_append_w", "tk_vec_push_w", NULL}},
-    {"pop",       1, RK_A, {"tk_array_pop_w", "tk_vec_pop_w", NULL}},
-    {"set",       1, RK_A|RK_M, {"tk_map_set_w", "tk_array_set_w", "tk_vec_set_w", NULL}},
-    {"get",       1, RK_UNJUDGED, {"tk_str_arrayget_w", "tk_vec_get_w", NULL}},
-    {"getor",     1, RK_M, {"tk_map_getor_w", NULL}},
-    {"map",       1, RK_A, {"tk_arr_map", NULL}},
-    {"filter",    1, RK_A, {"tk_arr_filter", NULL}},
-    {"reduce",    1, RK_A, {"tk_arr_reduce", NULL}},
-    {"fold",      1, RK_A, {"tk_arr_reduce", NULL}},
-    {"sort",      1, RK_A, {"tk_arr_sort", NULL}},
-    {"split",     1, RK_S, {"tk_str_split_w", NULL}},
-    {"trim",      1, RK_S, {"tk_str_trim_w", NULL}},
-    {"contains",  1, RK_S|RK_A|RK_M, {"tk_map_contains_w", "tk_str_contains_w",
-                      "tk_arr_contains_w", "tk_arr_containsstr_w", NULL}},
-    {"charat",    1, RK_S, {"tk_str_charat_w", NULL}},
-    {"slice",     1, RK_S|RK_A, {"tk_str_slice_w", "tk_arr_slice_w", NULL}},
-    {"find",      1, RK_S|RK_A, {"tk_str_find_w", "tk_arr_find_w", "tk_arr_findstr_w", NULL}},
-    {"starts",    1, RK_S, {"tk_str_starts_w", NULL}},
-    {"indexof",   1, RK_S|RK_A, {"tk_str_indexof_w", "tk_arr_indexof_w",
-                      "tk_arr_indexofstr_w", NULL}},
-    {"substr",    1, RK_S, {"tk_str_substr_w", NULL}},
-    {"substring", 1, RK_S, {"tk_str_substr_w", NULL}},
-    {"concat",    1, RK_S, {"tk_str_concat_w", NULL}},
-    {"chars",     1, RK_S, {"tk_str_chars_w", NULL}},
-    {"sub",       1, RK_S, {"tk_str_sub_w", NULL}},
-    {"eq",        1, RK_S, {"tk_str_eq_w", NULL}},
-    {"upper",     1, RK_S, {"tk_str_upper_w", NULL}},
-    {"lower",     1, RK_S, {"tk_str_lower_w", NULL}},
-    {"ends",      1, RK_S, {"tk_str_ends_w", NULL}},
-    {"replace",   1, RK_S, {"tk_str_replace_w", NULL}},
-    {"fields",    1, RK_S, {"tk_str_fields_w", NULL}},
-    {"join",      1, RK_S|RK_A, {"tk_str_join_w", "tk_arr_join_w", NULL}},
-    {NULL, 0, 0, {NULL}}
-};
-
-static const RecvMethod *recv_method_find(const char *m) {
-    if (!m) return NULL;
-    for (int i = 0; g_recv_methods[i].member; i++)
-        if (!strcmp(g_recv_methods[i].member, m)) return &g_recv_methods[i];
-    return NULL;
-}
-
-/* The emitter's own gate for the dispatch chain (was a 24-name `||` chain
- * plus is_127_6_method). */
-static int recv_method_in_chain(const char *m) {
-    const RecvMethod *r = recv_method_find(m);
-    return r && r->chain;
-}
-
-/* 127.115: does the receiver dispatch lower this member at all? */
-int recv_method_known(const char *m) { return recv_method_find(m) != NULL; }
-
-/*
- * recv_method_on_kind (127.151, 127.177) — does the dispatch lower member `m`
- * on a receiver of kind `k` ('s' str, 'a' array, 'm' map)?  1 yes, 0 no, -1
- * when there is nothing to judge: an unknown member, an unknown kind, or a
- * member marked RK_UNJUDGED.  The checker's receiver-kind check (types.c,
- * check_recv_method_call) reads this, so the kinds it refuses are the kinds
- * this table says the chain has no branch for.
- */
-int recv_method_on_kind(const char *m, char k) {
-    const RecvMethod *r = recv_method_find(m);
-    if (!r || (r->kinds & RK_UNJUDGED)) return -1;
-    unsigned bit = k == 's' ? RK_S : k == 'a' ? RK_A : k == 'm' ? RK_M : 0u;
-    if (!bit) return -1;
-    return (r->kinds & bit) ? 1 : 0;
-}
-
-/*
- * recv_method_arity — the call arity (receiver included) every glue symbol
- * this member may lower to agrees on, or -1 when they do not agree, when one
- * of them is not declared, or when the member is not a receiver method.
- *
- * -1 means "the compiler has no single established arity here", and the
- * checker must then say nothing: an unestablished fact is not a licence to
- * guess, and a wrong E4026 on a correct call is worse than a missing one
- * (AGENTS.md §2).
- */
-int recv_method_arity(const char *m) {
-    const RecvMethod *r = recv_method_find(m);
-    if (!r) return -1;
-    int a = -1;
-    for (int i = 0; r->syms[i]; i++) {
-        int n = stdlib_glue_arity(r->syms[i]);
-        if (n < 0) return -1;
-        if (a < 0) a = n;
-        else if (a != n) return -1;
-    }
-    return a;
-}
-
-/*
- * stdlib_subpath_symbol (127.96) — the glue symbol for the SUB-PATH spelling
- * a stdlib interface publishes: `http.res.ok(body)`, declared in
- * stdlib/http.tki as the export `http.res.ok`, is the same function as
- * `http.resok(body)`, and lowers through the `resok` mapping in
- * stdlib_symbol_for to tk_http_res_ok.
- *
- * Nothing resolved the three-segment spelling.  `alias.seg.member(...)` parses
- * as receiver dispatch on `alias.seg`, and the receiver path emitted a bare
- * `_ok` — which is why 127.96 was filed as a missing symbol when the symbol
- * it names has been declared all along.  (The row cites tk_http_resok_w; the
- * spelling the emitter picks is tk_http_res_ok.  Both are in the table.)
- *
- * Grounded on the glue table: the concatenated spelling is accepted only when
- * g_stdlib_decls actually declares the symbol it names, so this cannot invent
- * a call to something that does not exist.
- */
-const char *stdlib_subpath_symbol(const char *mpath, int is_std,
-                                  const char *seg, const char *member) {
-    if (!mpath || !seg || !member) return NULL;
-    char joined[256];
-    if (snprintf(joined, sizeof joined, "%s%s", seg, member) >= (int)sizeof joined)
-        return NULL;
-    const char *sym = stdlib_symbol_for(mpath, is_std, joined);
-    if (!sym || stdlib_glue_arity(sym) < 0) return NULL;
-    return sym;
-}
 /* 127.8: emit `tk_str_len_w` / `tk_map_len_w` on an already-evaluated
  * receiver value `v` of LLVM type `vty` (pointers are coerced to the i64 ABI). */
 static int emit_len_call(Ctx *c, int v, const char *vty, const char *rk) {
@@ -3770,6 +3193,18 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
  * immediately after the call returns, and the `mt` reads THAT.  Reading the
  * global at the `mt` would have traded one wrong answer for another.
  */
+/* 138.6: the resolver the emitter uses for a call, including the
+ * hard-coded sub-namespaces (`row.f64` -> tk_row_f64_w) that
+ * resolve_stdlib_call deliberately does not answer for. */
+static const char *resolve_call_symbol(Ctx *c, const char *al, const char *me,
+                                       char *buf, size_t bufsz)
+{
+    const char *p = resolve_stdlib_call(c, al, me);
+    if (p) return p;
+    if (resolve_sub_namespace_call(al, me, buf, bufsz)) return buf;   /* as emit_expr does */
+    return NULL;
+}
+
 static void classify_fallible_call(Ctx *c, const Node *call,
                                    int *out_uce, int *out_zok,
                                    const char **out_err_type)
@@ -3788,7 +3223,8 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         char pal[128], pme[128];
         tok_cp(c->src, sc->children[0], pal, sizeof pal);
         tok_cp(c->src, sc->children[1], pme, sizeof pme);
-        const char *prv = resolve_stdlib_call(c, pal, pme);
+        char subb[256];
+        const char *prv = resolve_call_symbol(c, pal, pme, subb, sizeof subb);
         if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
         if (is_num_parse_wrapper(prv)) *out_uce = 1;                 /* 114.53/54 */
         else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
@@ -3863,7 +3299,8 @@ static void classify_fallible_call(Ctx *c, const Node *call,
             char al[128], mth[128], wb[128], eb[128];
             tok_cp(c->src, sc->children[0], al, sizeof al);
             tok_cp(c->src, sc->children[1], mth, sizeof mth);
-            const char *prv = resolve_stdlib_call(c, al, mth);
+            char subb[256];
+            const char *prv = resolve_call_symbol(c, al, mth, subb, sizeof subb);
             if (prv) {
                 snprintf(wb, sizeof wb, "%s", prv);
                 *out_err_type = stdlib_err_payload_type(c, wb, eb, sizeof eb);
@@ -4163,10 +3600,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *ety = expr_llvm_type(c, ich);
                 const char *est = expr_struct_type(c, ich);
                 int unknown_ret = interp_operand_type_unknown(c, ich, ety, est);
-                int abi_bool = ety && !strcmp(ety, "i64")
-                               && (call_declares_bool(c, ich)
-                                   || field_declares_bool(c, ich)
-                                   || recv_call_is_bool(c, ich));
+                int abi_bool = expr_abi_bool(c, ich, ety);
                 seg_val = interp_render(c, n, ich, seg_val, ety, est,
                                         unknown_ret, abi_bool, ich->rtype,
                                         0, 0, 0, 0);
@@ -4256,10 +3690,7 @@ static int emit_expr(Ctx *c, const Node *n)
                          * the wrapper buffer — it reads the sub-expression's
                          * tokens. */
                         int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
-                        int abi_bool = ety && !strcmp(ety, "i64")
-                                       && (call_declares_bool(c, expr_node)
-                                           || field_declares_bool(c, expr_node)
-                                           || recv_call_is_bool(c, expr_node));
+                        int abi_bool = expr_abi_bool(c, expr_node, ety);
                         diag_rebase_pop();
                         c->src = saved_src;
                         g_interp_host = saved_host; g_interp_src = saved_hsrc;
@@ -5610,16 +5041,28 @@ static int emit_expr(Ctx *c, const Node *n)
                 && n->child_count == 3
                 && test_eq_args_are_str(c, n->children[1], n->children[2]))
                 resolved_fn = "tk_test_eqstr_w";
-            /* Disambiguate http.get/post by argument count:
-             * 1 arg = HTTP client request, 2 args = route registration */
-            if (resolved_fn) {
-                int call_argc = n->child_count - 1;
-                if (!strcmp(resolved_fn, "tk_http_get_handler") && call_argc == 1) {
-                    resolved_fn = "tk_http_get_w";
-                } else if (!strcmp(resolved_fn, "tk_http_post_handler") && call_argc == 2 &&
-                           n->child_count >= 3 && n->children[2]->kind != NODE_FUNC_REF) {
-                    resolved_fn = "tk_http_posturl_w";
-                }
+            /* 138.3 (B3): the argument-count disambiguation that turned a
+             * 1-argument `http.get(url)` into the client call tk_http_get_w
+             * and a 2-argument non-handler `http.post` into tk_http_posturl_w
+             * is retired.  Those spellings are route registrations in
+             * stdlib/http.tki; the client calls are published as http.geturl
+             * and http.clientpost, which carry an error channel.  A str
+             * where the route's handler goes is what the old 2-argument
+             * `http.post(url;body)` spelling now looks like, and it would
+             * register the string as a handler; the checker does not judge
+             * that parameter kind, so it is refused here.  No fix (the
+             * client POST is http.clientpost, a different call). */
+            if (resolved_fn && !strncmp(resolved_fn, "tk_http_", 8) &&
+                strlen(resolved_fn) > 16 &&
+                !strcmp(resolved_fn + strlen(resolved_fn) - 8, "_handler") &&
+                n->child_count == 3 && expr_is_str_value(c, n->children[2])) {
+                char hmsg[256];
+                snprintf(hmsg, sizeof hmsg,
+                         "%s.%s registers a route and takes a handler function as its "
+                         "second argument, not a str (a client POST is http.clientpost)",
+                         alias, method);
+                diag_emit(DIAG_ERROR, E4031, n->children[2]->start, n->children[2]->line,
+                          n->children[2]->col, hmsg, (void *)0);
             }
             if (!resolved_fn) {
                 /* Check if alias is a known sub-namespace (e.g. "row" from std.db).
@@ -5996,7 +5439,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     int z = next_tmp(c);
                     fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, args[0]);
                     fprintf(c->out, "  call void @tk_json_print_str(i8* %%t%d)\n", z);
-                } else if (jn0->rtype && jn0->rtype->kind == TY_BOOL) {
+                } else if ((jn0->rtype && jn0->rtype->kind == TY_BOOL)
+                           || expr_abi_bool(c, jn0, aty0)) {   /* 127.229 (4) */
                     fprintf(c->out, "  call void @tk_json_print_bool(i64 %%t%d)\n", args[0]);
                 } else {
                     fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
@@ -6051,7 +5495,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *est0 = expr_struct_type(c, en0);
                     e_is_str = est0 && (!strcmp(est0, "$str") || !strcmp(est0, "str"));
                 }
-                if (!e_is_str && en0->rtype && en0->rtype->kind == TY_BOOL)
+                if (!e_is_str && ((en0->rtype && en0->rtype->kind == TY_BOOL)
+                                  || expr_abi_bool(c, en0, ety0)))   /* 127.229 (4) */
                     efn = "tk_json_encbool_w";
                 else if (!e_is_str)
                     efn = "tk_json_encnum_w";
@@ -6131,6 +5576,13 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         fputs(")\n", c->out);
         for (int r = 0; r < fnv_nrel; r++) fnv_release(c, fnv_relv[r], fnv_relt[r]);
+        /* 138.5: an imported unsigned narrow return, zero-extended here and
+         * typed i64 by expr_llvm_type. */
+        if (is_cross_module_user && callee && callee->xmod_uns) {
+            int zx = next_tmp(c);
+            fprintf(c->out, "  %%t%d = zext %s %%t%d to i64 ; 138.5 unsigned import\n", zx, callee_ret, t);
+            t = zx;
+        }
         /* Bug 110.1: f64-returning _w wrappers carry the bit-pattern of a
          * double inside their i64 ABI return. Reinterpret the SSA result
          * as `double` so downstream arithmetic chooses fmul/fadd. */
@@ -6532,8 +5984,25 @@ static int emit_expr(Ctx *c, const Node *n)
             if (is_std_mod) {
                 const char *fn = resolve_stdlib_call(c, base_alias, "get");
                 if (fn) {
-                    /* Disambiguate: http.get with 1 arg = client GET */
-                    if (!strcmp(fn, "tk_http_get_handler")) fn = "tk_http_get_w";
+                    /* 138.3: no client-GET rewrite of http.get(url) here any more.
+                     * This spelling passes exactly ONE argument, so a glue
+                     * symbol declared with another arity would be called
+                     * short (http.get is the 2-argument route registration:
+                     * a 1-argument call built and read a garbage handler).
+                     * The checker does not arity-check the index spelling,
+                     * so say it here.  No fix: the client GET is a different
+                     * function with a different result (http.geturl). */
+                    int ga = stdlib_glue_arity(fn);
+                    if (ga >= 0 && ga != 1) {
+                        char amsg[256];
+                        snprintf(amsg, sizeof amsg,
+                                 "%s.get takes %d argument%s, got 1%s", base_alias, ga,
+                                 ga == 1 ? "" : "s",
+                                 !strcmp(fn, "tk_http_get_handler")
+                                     ? " (http.get registers a route: path; handler — "
+                                       "a client GET of a URL is http.geturl(url))" : "");
+                        diag_emit(DIAG_ERROR, E4026, n->start, n->line, n->col, amsg, (void *)0);
+                    }
                     int arg = emit_expr(c, n->children[1]);
                     const char *aty = expr_llvm_type(c, n->children[1]);
                     arg = coerce_value(c, arg, aty, "i64");
@@ -6919,33 +6388,7 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Count actual value elements — skip type-annotation children like
          * NODE_TYPE_IDENT (e.g. the $route in @($route) typed empty arrays). */
         int elem_count = 0;
-        int spread_idx = -1; /* index of first spread (array-typed) element */
-        for (int i = 0; i < n->child_count; i++) {
-            NodeKind ck = n->children[i]->kind;
-            if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
-                ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
-                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
-                continue;
-            /* Detect if this element is an array variable to be spread:
-             * NODE_IDENT that is ptr_local, not a map, and not a struct. */
-            if (spread_idx < 0 && n->children[i]->kind == NODE_IDENT) {
-                char eid[128]; tok_cp(c->src, n->children[i], eid, sizeof eid);
-                /* 126.x: `is_ptr_local` is keyed on the raw source name and is
-                 * never removed, so a shadowing re-bind to a scalar (e.g. an
-                 * earlier `let l=io.readln()` — a $str ptr_local — followed by
-                 * `let l=arr.get(i)` — an i64) leaves the stale ptr_local entry.
-                 * Spreading such an `l` reads `l_value[-1]` off the integer as
-                 * if it were an array pointer → SIGSEGV. Confirm the identifier's
-                 * CURRENT binding is actually pointer-typed (via the uniquified
-                 * name's local type) before treating `@(x)` as a spread. */
-                const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
-                if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
-                    !ptr_local_struct_type(c, eid) &&
-                    !strcmp(cur_ty, "i8*"))
-                    spread_idx = i;
-            }
-            elem_count++;
-        }
+        int spread_idx = array_lit_spread_idx(c, n, &elem_count);
 
         /* ── Spread path: @(base_arr; item1; item2; ...) ─────────────── */
         if (spread_idx >= 0) {
@@ -7153,7 +6596,8 @@ static int emit_expr(Ctx *c, const Node *n)
                 char pal[128], pme[128];
                 tok_cp(c->src, sc->children[0], pal, sizeof pal);
                 tok_cp(c->src, sc->children[1], pme, sizeof pme);
-                const char *prv = resolve_stdlib_call(c, pal, pme);
+                char subb[256];
+                const char *prv = resolve_call_symbol(c, pal, pme, subb, sizeof subb);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
                 else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
                 else if (is_stdlib_slot_wrapper(prv)) prop_cur_err = 1;  /* 127.193 */
@@ -7487,6 +6931,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const Node *arm = n->children[i];
                 if (!arm || arm->child_count < 1) continue;
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
+                int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
                 int vidx = struct_field_index(ssi, tag);
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -7534,6 +6979,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 /* 114.47: arm body may be an early-return (`<expr`). */
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
+                c->alias_count = arm_saved_al;
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -7579,13 +7025,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.strtag.%d, i32 0, i32 0\n",
                             tag_tmp, tag_len, tag_len, str_g);
                     /* Add the string constant to globals buffer */
-                    int glen = c->str_globals_len;
-                    int wrote = snprintf(c->str_globals + glen,
-                                         TKC_STR_GLOBALS_SIZE - glen,
-                                         "@.strtag.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"\n",
-                                         str_g, tag_len, tag);
-                    if (wrote > 0 && glen + wrote < TKC_STR_GLOBALS_SIZE)
-                        c->str_globals_len += wrote;
+                    str_buf_append(c, "@.strtag.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"\n",
+                                   str_g, tag_len, tag);   /* 138.14 */
 
                     /* tk_str_cmp(scrutinee, tag) — 127.83: NULL-safe, because
                      * the scrutinee may be the `?(T)` miss sentinel. */
@@ -7608,6 +7049,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!arm || arm->child_count < 1) continue;
 
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
+                int arm_saved_al = c->alias_count;   /* arm-scoped binding */
 
                 /* Bind arm variable to scrutinee */
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -7641,6 +7083,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 /* Emit arm body (114.47: may be an early-return `<expr`). */
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
+                c->alias_count = arm_saved_al;
                 arm_i++;
             }
 
@@ -7714,7 +7157,38 @@ static int emit_expr(Ctx *c, const Node *n)
          * report's own secondary suggestion and the condition that makes the
          * defect reachable at all — rather than emit IR for a dispatch that
          * cannot exist. */
-        if (num_arms >= 3) {
+        /* 127.231 (1): the FLAT error-variant spelling,
+         * `mt g(x) {$ok:v v;$a:p …;$b:q …}` over `T!$e` with `$e` a sum type.
+         * Every arm after `$ok` names a variant of the error sum, so the
+         * dispatch DOES exist: ok/err on the error channel (as the 2-arm form),
+         * then on the tag of the payload box the channel carries.  The checker
+         * accepts it; the build died with E9005 at 3+ arms, and at exactly 2
+         * (`{$ok:v v;$a:p p}`) the variant arm bound `p` to the BOX ADDRESS
+         * rather than the payload (a silent wrong value).  Recognised only when
+         * the error type resolves to a sum and every later arm is one of its
+         * variants; anything else takes the paths below unchanged. */
+        const StructInfo *flat_ssi = NULL;
+        {
+            const char *fe = bound_err_type;
+            if (!fe && n->children[0]->kind == NODE_CALL_EXPR) fe = call_err_payload_type;
+            if (fe && num_arms >= 2 && num_arms <= 64) {
+                const StructInfo *fs = lookup_struct(c, fe);
+                if (!fs && fe[0] == '$') fs = lookup_struct(c, fe + 1);
+                if (fs && fs->is_sum) {
+                    int fok = 1, fai = 0;
+                    for (int i = 1; i < n->child_count && fok; i++) {
+                        const Node *arm = n->children[i];
+                        if (!arm || arm->child_count < 1) continue;
+                        char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
+                        if (fai == 0) fok = !strcmp(ftag, "ok") || !strcmp(ftag, "Ok");
+                        else fok = struct_has_field(fs, ftag);
+                        fai++;
+                    }
+                    if (fok) flat_ssi = fs;
+                }
+            }
+        }
+        if (num_arms >= 3 && !flat_ssi) {
             char mmsg[320], mfix[320];
             char t0[128] = "";
             if (n->children[1] && n->children[1]->child_count >= 1)
@@ -7788,17 +7262,134 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!eu_err_type && n->children[0]->kind == NODE_CALL_EXPR)
             eu_err_type = call_err_payload_type;
 
+        /* 127.231 (1): one label per variant arm of a flat match, and the
+         * error payload's tag/value, defined once in the block that dominates
+         * every variant arm. */
+        int flat_lbl[64]; int flat_n = 0; int flat_tag = -1, flat_pay = -1;
+        if (flat_ssi)
+            for (int i = 2; i < n->child_count && flat_n < 64; i++)
+                if (n->children[i] && n->children[i]->child_count >= 1)
+                    flat_lbl[flat_n++] = next_lbl(c);
+
         int arm_idx = 0;
         for (int i = 1; i < n->child_count; i++) {
             const Node *arm = n->children[i];
             if (arm->child_count < 1) continue;
             int is_ok = (arm_idx == 0);
             arm_idx++;
+            /* An arm's binding is in scope for that arm only (names.c pushes
+             * a scope per arm).  Its alias was never popped, so after
+             * `let n=mt f(){$ok:n n;..}; let id=mt g(){$ok:n n;..}` every
+             * later `n` read the SECOND arm's slot (n=7 for n=150, silent). */
+            int arm_saved_al = c->alias_count;
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
-            else
+            else if (!flat_ssi)
                 fprintf(c->out, "rm_err%d:\n", L);
+            else {
+                if (arm_idx == 2) {
+                    /* The err side of a flat match: read the channel exactly as
+                     * the `$err:e` binding below does (127.97 flag -> nil,
+                     * 127.103 rebox of a let-bound payload), then switch on the
+                     * box's tag.  A nil payload (the bare-flag convention) has
+                     * no tag: it takes the last arm with a zero payload, as the
+                     * sum-tag switch's last arm is its catch-all. */
+                    fprintf(c->out, "rm_err%d:\n", L);
+                    int ev = next_tmp(c);
+                    if (err_src_slot)
+                        fprintf(c->out, "  %%t%d = load i64, i64* %%%s ; 135.16 payload from the captured channel\n",
+                                ev, err_src_slot);
+                    else
+                        fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+                    int isflag = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 1 ; 127.97 payload-less error flag\n", isflag, ev);
+                    int boxed = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 0, i64 %%t%d\n", boxed, isflag, ev);
+                    ev = boxed;
+                    { int rb_nb = err_src_slot ? err_box_bytes(c, eu_err_type) : 0;
+                      if (rb_nb > 0) {
+                          int rb = next_tmp(c);
+                          fprintf(c->out, "  %%t%d = call i64 @tk_err_rebox(i64 %%t%d, i64 %d) ; 127.103\n",
+                                  rb, ev, rb_nb);
+                          ev = rb;
+                      } }
+                    int K = next_lbl(c);
+                    int isnil = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", isnil, ev);
+                    fprintf(c->out, "  br i1 %%t%d, label %%rmfn%d, label %%rmfl%d\n", isnil, K, K);
+                    fprintf(c->out, "rmfl%d:\n", K);
+                    int bp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i64*\n", bp, ev);
+                    int tg = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; sum tag\n", tg, bp);
+                    int pp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1\n", pp, bp);
+                    int pv = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; sum payload\n", pv, pp);
+                    fprintf(c->out, "  br label %%rmfj%d\n", K);
+                    fprintf(c->out, "rmfn%d:\n", K);
+                    fprintf(c->out, "  br label %%rmfj%d\n", K);
+                    fprintf(c->out, "rmfj%d:\n", K);
+                    flat_tag = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%rmfl%d ], [ -1, %%rmfn%d ]\n", flat_tag, tg, K, K);
+                    flat_pay = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%rmfl%d ], [ 0, %%rmfn%d ]\n", flat_pay, pv, K, K);
+                    int fj = 0;
+                    for (int q = 2; q < n->child_count && fj < flat_n; q++) {
+                        const Node *qa = n->children[q];
+                        if (!qa || qa->child_count < 1) continue;
+                        if (fj == flat_n - 1) {
+                            fprintf(c->out, "  br label %%rmfv%d\n", flat_lbl[fj]);
+                        } else {
+                            char qt[128]; tok_cp(c->src, qa->children[0], qt, sizeof qt);
+                            int eq = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, %d\n", eq, flat_tag,
+                                    struct_field_index(flat_ssi, qt));
+                            int nx = next_lbl(c);
+                            fprintf(c->out, "  br i1 %%t%d, label %%rmfv%d, label %%rmfc%d\n", eq, flat_lbl[fj], nx);
+                            fprintf(c->out, "rmfc%d:\n", nx);
+                        }
+                        fj++;
+                    }
+                }
+                if (arm_idx - 2 < flat_n)
+                    fprintf(c->out, "rmfv%d:\n", flat_lbl[arm_idx - 2]);
+            }
 
+            /* 127.231 (1): a variant arm of a flat match binds that variant's
+             * payload, typed as the sum declares it (the sum-tag switch's
+             * rule, 114.41). */
+            if (flat_ssi && !is_ok && arm->child_count >= 2 && arm->children[1]) {
+                char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                char vraw[NAME_BUF];
+                strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
+                const char *uname = make_unique_name(c, vname);
+                int vshadow = (uname != vname);
+                if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
+                char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
+                const char *vty = flat_ssi->field_types[struct_field_index(flat_ssi, ftag)];
+                int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
+                int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
+                const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                set_local_type(c, vname, slot_ty);
+                if (is_str) mark_ptr_with_type(c, vname, "$str");
+                if (vshadow) {
+                    clear_ptr_local(c, vraw);
+                    if (is_str) mark_ptr_with_type(c, vraw, "$str");
+                }
+                fprintf(c->out, "  %%%s = alloca %s\n", vname, slot_ty);
+                if (is_f) {
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", bc, flat_pay);
+                    fprintf(c->out, "  store double %%t%d, double* %%%s\n", bc, vname);
+                } else if (is_str) {
+                    int sp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", sp, flat_pay);
+                    fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", sp, vname);
+                } else {
+                    fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", flat_pay, vname);
+                }
+            } else
             /* Bind the arm variable: first arm gets sv, second arm gets the
              * typed error payload (114.41) or 0/null. */
             if (arm->child_count >= 2 && arm->children[1]) {
@@ -7820,6 +7411,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 const int err_is_str = eu_err_type && !strcmp(eu_err_type, "str");
                 const char *bind_ty = (!is_ok && eu_err_type)
                                       ? (err_is_str ? "i8*" : "i64") : scr_ty;
+                /* 127.230 (1): the $ok payload of a stdlib call declared
+                 * `bool!E` (row.bool, keychain.*) crosses as an i64 0/1; bind
+                 * it as the bool it is, so `\(v)` says true/false. */
+                int ok_abi_bool = is_ok && !strcmp(scr_ty, "i64") &&
+                                  call_declares_bool(c, n->children[0]);
+                if (ok_abi_bool) bind_ty = "i1";
                 set_local_type(c, vname, bind_ty);
                 /* 127.71: the $ok arm binds the scrutinee's value, so it earns
                  * the scrutinee's tag ("$str", "@str", a struct name).  It was
@@ -7834,7 +7431,11 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (ok_st) mark_ptr_with_type(c, vraw, ok_st);
                 }
                 fprintf(c->out, "  %%%s = alloca %s\n", vname, bind_ty);
-                if (is_ok)
+                if (ok_abi_bool) {
+                    int bz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; 127.230 (1) abi bool\n", bz, sv);
+                    fprintf(c->out, "  store i1 %%t%d, i1* %%%s\n", bz, vname);
+                } else if (is_ok)
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, sv, scr_ty, vname);
                 else if (eu_err_type) {
                     /* 127.97: @tk_current_error is tri-valued (runtime-abi §7):
@@ -7895,6 +7496,7 @@ static int emit_expr(Ctx *c, const Node *n)
             const Node *abody = (arm->child_count >= 3) ? arm->children[2] : NULL;
             if (abody && abody->kind == NODE_RETURN_STMT) {
                 emit_match_arm_body(c, abody, res_ty, res_slot, L);
+                c->alias_count = arm_saved_al;
             } else {
                 /* Emit arm body expression */
                 int body_val = -1;
@@ -7916,6 +7518,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
 
                 fprintf(c->out, "  br label %%rm_end%d\n", L);
+                c->alias_count = arm_saved_al;
             }
         }
 
@@ -7923,6 +7526,23 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "rm_end%d:\n", L);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+        return t;
+    }
+    case NODE_TYPE_IDENT: {
+        /* 138.13 (T-13): a bare TYPE name in a value position — `$w{l:$internal}`
+         * with `$internal` a variant of a sum.  It reached the default below
+         * and was lowered as a silent 0, i.e. a null box, which the first
+         * `mt` over it dereferenced (SIGTRAP at run time, toke exit 0).  The
+         * checker says E4033 for the `let` spelling; whichever spelling gets
+         * here, the build stops with the same located diagnostic.  No fix:
+         * the payload the program meant is not known (AGENTS.md §6). */
+        char tn[128]; tok_cp(c->src, n, tn, sizeof tn);
+        char tmsg[256];
+        int dol = n->tok_start > 0 && c->src[n->tok_start - 1] == '$' && tn[0] != '$';
+        snprintf(tmsg, sizeof tmsg, "'%s%s' is a type, not a value", dol ? "$" : "", tn);
+        diag_emit(DIAG_ERROR, E4033, n->start, n->line, n->col, tmsg, (void *)0);
+        t = next_tmp(c);
+        fprintf(c->out, "  %%t%d = add i64 0, 0 ; 138.13 E4033 stub\n", t);
         return t;
     }
     default:
@@ -9027,7 +8647,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     }
                 }
                 const FnSig *msig = lookup_fn(c, mangled);
-                if (msig) return msig->ret;
+                if (msig) return msig->xmod_uns ? "i64" : msig->ret;   /* 138.5 */
                 return "i8*";
             }
         }
@@ -9459,12 +9079,14 @@ static int la_self_update_call(Ctx *c, const Node *call, const char *x, char *ou
 /* A fresh RHS for x: an array literal, or a self-update on x (append/set/push).
  * These are exactly the producers that yield an unshared block for x. */
 static int la_fresh_std_call(Ctx *c, const Node *rhs);
+static int la_self_concat(Ctx *c, const Node *rhs, const char *x);
 static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
     if (!rhs) return 0;
     /* 127.55: a map literal is a fresh container for exactly the same reason an
      * array literal is, so a map accumulator can be linearly owned too. */
     if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_MAP_LIT) return 1;
     if (la_fresh_std_call(c, rhs)) return 1;   /* 135.20 item 2 */
+    if (la_self_concat(c, rhs, x)) return 1;    /* 127.229 (2) */
     return la_self_update_call(c, rhs, x, NULL);
 }
 
@@ -9486,6 +9108,14 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
         if (!c->imports[i].is_std) return 0;
         const char *m = strrchr(c->imports[i].module, '.');
         m = m ? m + 1 : c->imports[i].module;
+        /* 127.229 (2): json.print only walks its argument to write it
+         * (tk_json_printarr_w / tk_json_print_*; json_glue.c keeps nothing),
+         * so `j.print(acc)` after the loop no longer demotes every append.
+         * Method by method: other std.json exports are not vouched for. */
+        if (!strcmp(m, "json")) {
+            char meth[NAME_BUF]; tok_cp(c->src, callee->children[1], meth, sizeof meth);
+            return !strcmp(meth, "print");
+        }
         return !strcmp(m, "str") || !strcmp(m, "io") || !strcmp(m, "fmt");
     }
     return 0;
@@ -9518,6 +9148,22 @@ static int la_fresh_std_call(Ctx *c, const Node *rhs) {
 }
 
 static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int depth);
+
+/* 127.229 (2): is `rhs` the self-concat `x + @(e1;…;ek)` — x on the left, an
+ * array LITERAL on the right?  That is an append of k elements, and it is
+ * the idiom the eval rewrites use (`r=r+@(i)`), which ADR-0006 D2 did not
+ * cover: every iteration copied the whole accumulator and never freed the
+ * old block (100k appends: 8-10 s, 6-8 GB).  Only the literal form: a
+ * general `x + y` reads y, which may alias x.  Whether a given literal
+ * element is a spread is decided at lowering time (array_lit_spread_idx);
+ * a spreading literal takes the copying path there, which is still fresh. */
+static int la_self_concat(Ctx *c, const Node *rhs, const char *x) {
+    if (!rhs || rhs->kind != NODE_BINARY_EXPR || rhs->op != TK_PLUS ||
+        rhs->child_count != 2) return 0;
+    if (!la_ident_is(c, rhs->children[0], x)) return 0;
+    const Node *lit = rhs->children[1];
+    return lit && lit->kind == NODE_ARRAY_LIT;
+}
 
 /* 127.108: does `blk` bind `name` anywhere — a param of the function under
  * analysis, or a let/mut binding in its body?  A call `name(…)` then may reach
@@ -9626,6 +9272,11 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
     if (n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR)
         return la_mentions(c, n, x);    /* any capture of x is unsafe */
+    /* 127.229 (2): `x = x + @(…)` — the left operand is the receiver of the
+     * append, as in `x = x.append(…)`; only the literal's elements are uses. */
+    if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
+        la_ident_is(c, n->children[0], x) && la_self_concat(c, n->children[1], x))
+        return la_bad_use(c, n->children[1]->children[1], x, strict, depth);
     int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0;
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
@@ -9667,7 +9318,20 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
 /* Every binding/assignment to x must have a fresh RHS, and there must be at
  * least one self-update (otherwise in-place buys nothing). Also reject shadow
  * (x bound more than once). Returns 1 if x passes these structural checks. */
-static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *self_updates) {
+/* 127.229 (7): a binding `let x=mut.y` of another array local/parameter is a
+ * BORROWED initialiser: x starts out sharing y's block.  It is accepted only
+ * for an array the checker has typed as one, and codegen then copies y's
+ * block once at the binding (la_borrowed_init), so every later in-place
+ * update writes x's own block.  One O(N) copy replaces the copy that every
+ * `x=x.set(i;v)` made (eval 0221's bubble sort: 1.1 GB at n=1000). */
+static int la_borrowed_init(Ctx *c, const Node *init, const char *x) {
+    (void)c;
+    return init && init->kind == NODE_IDENT && !la_ident_is(c, init, x) &&
+           init->rtype && init->rtype->kind == TY_ARRAY;
+}
+
+static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *self_updates,
+                         int *borrowed) {
     if (!n) return 1;
     if (n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT) {
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) {
@@ -9675,16 +9339,18 @@ static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *
             int has_ann = (n->child_count >= 3 && n->children[2]);
             const Node *init = has_ann ? n->children[2]
                                        : (n->child_count >= 2 ? n->children[1] : NULL);
-            if (!la_fresh_rhs(c, init, x)) return 0;
+            if (la_borrowed_init(c, init, x)) (*borrowed)++;   /* 127.229 (7) */
+            else if (!la_fresh_rhs(c, init, x)) return 0;
         }
     } else if (n->kind == NODE_ASSIGN_STMT) {
         if (n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
             if (!la_fresh_rhs(c, n->children[1], x)) return 0;
-            if (la_self_update_call(c, n->children[1], x, NULL)) (*self_updates)++;
+            if (la_self_update_call(c, n->children[1], x, NULL) ||
+                la_self_concat(c, n->children[1], x)) (*self_updates)++;   /* 127.229 (2) */
         }
     }
     for (int i = 0; i < n->child_count; i++)
-        if (!la_assigns_ok(c, n->children[i], x, binds, self_updates)) return 0;
+        if (!la_assigns_ok(c, n->children[i], x, binds, self_updates, borrowed)) return 0;
     return 1;
 }
 
@@ -9709,7 +9375,8 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
             if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
                 n->children[0]->kind == NODE_IDENT) {
                 char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
-                if (la_self_update_call(c, n->children[1], x, NULL)) {
+                if (la_self_update_call(c, n->children[1], x, NULL) ||
+                    la_self_concat(c, n->children[1], x)) {   /* 127.229 (2) */
                     /* candidate x — skip if already decided */
                     int known = 0;
                     for (int k = 0; k < c->linear_arr_count; k++)
@@ -9722,10 +9389,14 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
                             if (p->kind == NODE_PARAM && p->child_count > 0 &&
                                 la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
                         }
-                        int binds = 0, self_updates = 0;
+                        int binds = 0, self_updates = 0, borrowed = 0;
+                        /* 127.229 (7): a borrowed initialiser only as the
+                         * one binding of x, so the copy at it is the only
+                         * way x's block is ever obtained from another name. */
                         if (!is_param && !la_bad_use(c, body, x, 0, 0) &&
-                            la_assigns_ok(c, body, x, &binds, &self_updates) &&
-                            binds >= 1 && self_updates >= 1) {
+                            la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
+                            binds >= 1 && self_updates >= 1 &&
+                            (borrowed == 0 || binds == 1)) {
                             strncpy(c->linear_arr[c->linear_arr_count], x, NAME_BUF - 1);
                             c->linear_arr[c->linear_arr_count][NAME_BUF - 1] = '\0';
                             c->linear_arr_count++;
@@ -10111,10 +9782,19 @@ static void emit_stmt(Ctx *c, const Node *n)
                 c->fref_lcount++;
             }
             const char *vty;
+            int let_abi_bool = 0;   /* 127.230 (1) */
             if (has_ann)
                 vty = resolve_llvm_type(c, n->children[1]);
-            else
+            else {
                 vty = expr_llvm_type(c, init_node);
+                /* 127.230 (1): an unannotated binding of a bool that crosses
+                 * the i64 ABI is a bool local, exactly as `let b:bool=…`
+                 * is — its uses (interpolation, j.print, `as str`) then see
+                 * an i1 and render true/false instead of 1/0. */
+                if (expr_abi_bool(c, init_node, vty) && !call_is_err_union(c, init_node)) {
+                    vty = "i1"; let_abi_bool = 1;
+                }
+            }
             if (!strcmp(vty, "void")) vty = "i64"; /* void fn result → store 0 */
             /* Story 80.2.8: Evaluate RHS BEFORE creating the new alloca,
              * so that shadowed name references resolve to the OLD binding.
@@ -10155,7 +9835,37 @@ static void emit_stmt(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error ; 135.16 capture\n",
                         fall_errv);
             }
+            if (let_abi_bool && !strcmp(init_ty, "i64")) {
+                /* nonzero is true: the glue answers 0/1, but a truncation
+                 * would read an even non-zero word as false */
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; 127.230 (1) abi bool\n", z, v);
+                v = z;
+            } else
             v = coerce_value(c, v, init_ty, vty);
+            /* 127.229 (7): the borrowed initialiser of a linear array
+             * (`let r=mut.a`) is copied here, once, so the in-place updates
+             * that follow write r's own block and never a's.  A null handle
+             * stays null. */
+            if (is_linear_arr(c, tb) && la_borrowed_init(c, init_node, tb) &&
+                (!strcmp(vty, "i8*") || !strcmp(vty, "i64"))) {
+                int p = v;
+                if (!strcmp(vty, "i64")) {
+                    p = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", p, v);
+                }
+                int isn = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp eq i8* %%t%d, null\n", isn, p);
+                int cp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* null) ; 127.229 own copy of a borrowed init\n", cp, p);
+                int sel = next_tmp(c);
+                fprintf(c->out, "  %%t%d = select i1 %%t%d, i8* null, i8* %%t%d\n", sel, isn, cp);
+                v = sel;
+                if (!strcmp(vty, "i64")) {
+                    v = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", v, sel);
+                }
+            }
             /* 126.7: remember the raw source name (pre-uniquification) — when a
              * name is re-bound (shadowed), the registry stores the new binding
              * under a unique name (`c.1`) but expr_struct_type looks up the raw
@@ -10309,6 +10019,46 @@ static void emit_stmt(Ctx *c, const Node *n)
                 int rv = coerce_value(c, res, "i64", lty);
                 fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, rv, lty, ln);
                 break;
+            }
+            /* 127.229 (2): `x = x + @(e1;…;ek)` is k in-place appends.  The
+             * elements are lowered and widened exactly as the literal would
+             * store them (coerce_value to the i64 slot), all of them BEFORE
+             * the first append, so an element that reads x (`x+@(x.len)`)
+             * sees x as it was — the literal's semantics.  A literal that
+             * would spread (`@(arr)`) or carries a type annotation keeps the
+             * copying concat, whose result is fresh all the same. */
+            if (!mapv && la_self_concat(c, rhs, tb)) {
+                const Node *lit = rhs->children[1];
+                int ecount = 0, typed = 0;
+                int sidx = array_lit_spread_idx(c, lit, &ecount);
+                for (int i = 0; i < lit->child_count; i++) {
+                    NodeKind ck = lit->children[i]->kind;
+                    if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+                        ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+                        ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE) typed = 1;
+                }
+                if (sidx < 0 && !typed && ecount <= TKC_MAX_PARAMS) {
+                    const char *ln = get_llvm_name(c, tb);
+                    const char *lty = get_local_type(c, ln);
+                    int evs[TKC_MAX_PARAMS]; int ne = 0;
+                    for (int i = 0; i < lit->child_count; i++) {
+                        int ev = emit_expr(c, lit->children[i]);
+                        ev = coerce_value(c, ev, expr_llvm_type(c, lit->children[i]), "i64");
+                        evs[ne++] = ev;
+                    }
+                    const Node *recv_node = rhs->children[0];
+                    int res = emit_expr(c, recv_node);
+                    res = coerce_value(c, res, expr_llvm_type(c, recv_node), "i64");
+                    for (int i = 0; i < ne; i++) {
+                        int r2 = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = call i64 @tk_array_append_inplace_w(i64 %%t%d, i64 %%t%d) ; 127.229 in-place x=x+@(..)\n",
+                                r2, res, evs[i]);
+                        res = r2;
+                    }
+                    int rv = coerce_value(c, res, "i64", lty);
+                    fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, rv, lty, ln);
+                    break;
+                }
             }
             if (!mapv && la_self_update_call(c, rhs, tb, mname)) {
                 const char *ln = get_llvm_name(c, tb);
@@ -11212,8 +10962,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             fprintf(c->out, ") nounwind #0 !dbg !%d {\nbb.entry:\n", subprog_id);
             /* Buffer the metadata — emitted after all functions.
              * We append to str_globals since it is flushed at module scope. */
-            int n2 = snprintf(c->str_globals + c->str_globals_len,
-                              TKC_STR_GLOBALS_SIZE - c->str_globals_len,
+            str_buf_append(c,   /* 138.14 */
                               "!%d = !DISubroutineType(types: !{})\n"
                               "!%d = distinct !DISubprogram(name: \"%s\", file: !%d, line: %d, "
                               "type: !%d, unit: !%d, scopeLine: %d, "
@@ -11221,8 +10970,6 @@ static void emit_toplevel(Ctx *c, const Node *n)
                               subrt_id,
                               subprog_id, tb, c->dbg_file, fn_line,
                               subrt_id, c->dbg_cu, fn_line);
-            if (n2 > 0 && c->str_globals_len + n2 < TKC_STR_GLOBALS_SIZE)
-                c->str_globals_len += n2;
         } else {
             fputs(") nounwind #0 {\nbb.entry:\n", c->out);
         }
@@ -11304,272 +11051,6 @@ static void emit_toplevel(Ctx *c, const Node *n)
 
 /* ── Public API ────────────────────────────────────────────────────── */
 
-/*
- * g_stdlib_decls — Table of all stdlib/runtime/intrinsic declarations.
- *
- * Each entry has a symbol name and its full LLVM IR declaration line.
- * emit_llvm_ir emits the body to a tmpfile first, then scans the body
- * for @name references and only emits declarations for symbols actually
- * used.  Entries marked "always" are unconditionally emitted because
- * they are used by the main wrapper or overflow checking.
- */
-typedef struct { const char *name; const char *decl; int always; } StdlibDecl;
-static const StdlibDecl g_stdlib_decls[] = {
-    /* Always-needed: main wrapper and overflow checks */
-    {"tk_runtime_init", "declare void @tk_runtime_init(i32, i8**)", 1},
-    {"tk_overflow_trap", "declare void @tk_overflow_trap(i32)", 1},
-    {"tk_div_trap", "declare void @tk_div_trap(i32)", 0},  /* 124.2b: RT004 divide-by-zero */
-    {"tk_bounds_trap", "declare void @tk_bounds_trap(i64, i64)", 0},  /* 124.2a: RT003 OOB */
-    {"tk_nil_trap", "declare void @tk_nil_trap(i32)", 0},  /* 124.2d: RT005 nil-deref */
-    {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
-    {"llvm.uadd.with.overflow.i64", "declare {i64, i1} @llvm.uadd.with.overflow.i64(i64, i64)", 0}, /* 127.217: u64 */
-    {"llvm.usub.with.overflow.i64", "declare {i64, i1} @llvm.usub.with.overflow.i64(i64, i64)", 0},
-    {"llvm.umul.with.overflow.i64", "declare {i64, i1} @llvm.umul.with.overflow.i64(i64, i64)", 0},
-    {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
-    {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},
-    /* libc */
-    {"printf", "declare i32 @printf(i8*, ...)", 0},
-    {"puts", "declare i32 @puts(i8*)", 0},
-    {"strcmp", "declare i32 @strcmp(i8*, i8*)", 0},
-    {"malloc", "declare i8* @malloc(i64)", 0},
-    {"free", "declare void @free(i8*)", 0},
-    /* 127.109: the per-thread error box.  Error-union boxes come from here,
-     * not malloc — one buffer per thread, reused, never leaked. */
-    {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
-    /* 127.103: a let-bound error keeps its own copy of the box. */
-    {"tk_err_keep", "declare i64 @tk_err_keep(i64, i8*, i64)", 0},
-    {"tk_err_rebox", "declare i64 @tk_err_rebox(i64, i64)", 0},
-    /* Runtime: json/str */
-    {"tk_json_parse", "declare i64 @tk_json_parse(i8*)", 0},
-    {"tk_json_print", "declare void @tk_json_print(i64)", 0},
-    {"tk_str_argv", "declare i8* @tk_str_argv(i64)", 0},
-    {"tk_array_concat", "declare i8* @tk_array_concat(i8*, i8*)", 0},
-    {"tk_str_concat", "declare i8* @tk_str_concat(i8*, i8*)", 0},
-    {"tk_str_join_n", "declare i8* @tk_str_join_n(i64, ...)", 0},  /* 127.26: interpolation */
-    {"tk_str_len", "declare i64 @tk_str_len(i8*)", 0},
-    {"tk_str_cmp", "declare i64 @tk_str_cmp(i8*, i8*)", 0},  /* 127.83: NULL-safe ==/!=/ordering */
-    {"tk_str_char_at", "declare i64 @tk_str_char_at(i8*, i64)", 0},
-    {"tk_json_print_bool", "declare void @tk_json_print_bool(i64)", 0},
-    {"tk_json_print_arr", "declare void @tk_json_print_arr(i8*)", 0},
-    {"tk_json_print_str", "declare void @tk_json_print_str(i8*)", 0},
-    /* std.str wrappers */
-    {"tk_str_concat_w", "declare i64 @tk_str_concat_w(i64, i64)", 0},
-    {"tk_str_len_w", "declare i64 @tk_str_len_w(i64)", 0},
-    {"tk_map_len_w", "declare i64 @tk_map_len_w(i64)", 0},  /* 127.8: map.len */
-    {"tk_map_contains_w", "declare i64 @tk_map_contains_w(i64, i64)", 0},  /* 127.41: m.contains(k) */
-    {"tk_map_getor_w", "declare i64 @tk_map_getor_w(i64, i64, i64)", 0},   /* 127.41: m.getor(k;d) */
-    {"tk_str_trim_w", "declare i64 @tk_str_trim_w(i64)", 0},
-    {"tk_str_upper_w", "declare i64 @tk_str_upper_w(i64)", 0},
-    {"tk_str_lower_w", "declare i64 @tk_str_lower_w(i64)", 0},
-    {"tk_str_from_int", "declare i64 @tk_str_from_int(i64)", 0},
-    {"tk_str_fromi64_w", "declare i64 @tk_str_fromi64_w(i64)", 0},
-    {"tk_str_to_int", "declare i64 @tk_str_to_int(i64)", 0},
-    /* Instance method string functions (101.R3a) */
-    {"tk_str_charat_w", "declare i64 @tk_str_charat_w(i64, i64)", 0},
-    {"tk_str_find_w", "declare i64 @tk_str_find_w(i64, i64)", 0},
-    {"tk_str_starts_w", "declare i64 @tk_str_starts_w(i64, i64)", 0},
-    {"tk_str_substr_w", "declare i64 @tk_str_substr_w(i64, i64, i64)", 0},
-    {"tk_str_chars_w", "declare i64 @tk_str_chars_w(i64)", 0},
-    {"tk_str_sub_w", "declare i64 @tk_str_sub_w(i64, i64, i64)", 0},
-    {"tk_str_eq_w", "declare i64 @tk_str_eq_w(i64, i64)", 0},
-    {"tk_str_fromfloat_w", "declare i64 @tk_str_fromfloat_w(i64)", 0},
-    {"tk_http_servepages_w", "declare i64 @tk_http_servepages_w(i64, i64)", 0},
-    {"tk_json_print_f64", "declare void @tk_json_print_f64(double)", 0},
-    {"tk_str_get_w", "declare i64 @tk_str_get_w(i64, i64)", 0},
-    {"tk_io_printf_w", "declare i64 @tk_io_printf_w(i64, i64)", 0},
-    {"tk_fmt_sprintf_w", "declare i64 @tk_fmt_sprintf_w(i64, i64)", 0},
-    {"tk_str_equals_w", "declare i64 @tk_str_equals_w(i64, i64)", 0},
-    {"tk_str_split_w", "declare i64 @tk_str_split_w(i64, i64)", 0},
-    {"tk_str_indexof_w", "declare i64 @tk_str_indexof_w(i64, i64)", 0},
-    {"tk_str_slice_w", "declare i64 @tk_str_slice_w(i64, i64, i64)", 0},
-    {"tk_str_replace_w", "declare i64 @tk_str_replace_w(i64, i64, i64)", 0},
-    {"tk_str_startswith_w", "declare i64 @tk_str_startswith_w(i64, i64)", 0},
-    {"tk_str_endswith_w", "declare i64 @tk_str_endswith_w(i64, i64)", 0},
-    {"tk_str_trimprefix_w", "declare i64 @tk_str_trimprefix_w(i64, i64)", 0},
-    {"tk_str_trimsuffix_w", "declare i64 @tk_str_trimsuffix_w(i64, i64)", 0},
-    {"tk_str_lastindex_w", "declare i64 @tk_str_lastindex_w(i64, i64)", 0},
-    {"tk_str_matchbracket_w", "declare i64 @tk_str_matchbracket_w(i64)", 0},
-    {"tk_str_contains_w", "declare i64 @tk_str_contains_w(i64, i64)", 0},
-    /* std.env */
-    {"tk_env_get_or", "declare i64 @tk_env_get_or(i64, i64)", 0},
-    {"tk_env_getint_w", "declare i64 @tk_env_getint_w(i64, i64)", 0},
-    {"tk_env_set_w", "declare i64 @tk_env_set_w(i64, i64)", 0},
-    {"tk_env_expand_w", "declare i64 @tk_env_expand_w(i64)", 0},
-    /* std.file */
-    {"tk_file_read_w", "declare i64 @tk_file_read_w(i64)", 0},
-    {"tk_file_write_w", "declare i64 @tk_file_write_w(i64, i64)", 0},
-    {"tk_file_isdir_w", "declare i64 @tk_file_isdir_w(i64)", 0},
-    {"tk_file_mkdir_w", "declare i64 @tk_file_mkdir_w(i64)", 0},
-    {"tk_file_copy_w", "declare i64 @tk_file_copy_w(i64, i64)", 0},
-    {"tk_file_listall_w", "declare i64 @tk_file_listall_w(i64)", 0},
-    {"tk_file_exists_w", "declare i64 @tk_file_exists_w(i64)", 0},
-    /* std.path */
-    {"tk_path_join_w", "declare i64 @tk_path_join_w(i64, i64)", 0},
-    {"tk_path_dir_w", "declare i64 @tk_path_dir_w(i64)", 0},
-    {"tk_path_ext_w", "declare i64 @tk_path_ext_w(i64)", 0},
-    /* std.md, std.toml */
-    {"tk_md_render_w", "declare i64 @tk_md_render_w(i64)", 0},
-    {"tk_toml_load_w", "declare i64 @tk_toml_load_w(i64)", 0},
-    {"tk_toml_section_w", "declare i64 @tk_toml_section_w(i64, i64)", 0},
-    {"tk_toml_str_w", "declare i64 @tk_toml_str_w(i64, i64)", 0},
-    {"tk_toml_i64_w", "declare i64 @tk_toml_i64_w(i64, i64)", 0},
-    {"tk_toml_bool_w", "declare i64 @tk_toml_bool_w(i64, i64)", 0},
-    /* libc math */
-    {"sin", "declare double @sin(double)", 0},
-    {"cos", "declare double @cos(double)", 0},
-    {"tan", "declare double @tan(double)", 0},
-    {"asin", "declare double @asin(double)", 0},
-    {"acos", "declare double @acos(double)", 0},
-    {"atan", "declare double @atan(double)", 0},
-    {"atan2", "declare double @atan2(double, double)", 0},
-    {"fmod", "declare double @fmod(double, double)", 0},
-    {"fabs", "declare double @fabs(double)", 0},
-    {"log", "declare double @log(double)", 0},
-    {"log10", "declare double @log10(double)", 0},
-    {"exp", "declare double @exp(double)", 0},
-    {"round", "declare double @round(double)", 0},
-    {"sqrt", "declare double @sqrt(double)", 0},
-    {"floor", "declare double @floor(double)", 0},
-    {"ceil", "declare double @ceil(double)", 0},
-    {"pow", "declare double @pow(double, double)", 0},
-    /* std.mem */
-    {"tk_mem_alloc", "declare i64 @tk_mem_alloc(i64)", 0},
-    {"tk_mem_free", "declare void @tk_mem_free(i64)", 0},
-    {"tk_mem_realloc", "declare i64 @tk_mem_realloc(i64, i64)", 0},
-    {"tk_mem_copy", "declare void @tk_mem_copy(i64, i64, i64)", 0},
-    {"tk_mem_set", "declare void @tk_mem_set(i64, i64, i64)", 0},
-    {"tk_mem_cmp", "declare i64 @tk_mem_cmp(i64, i64, i64)", 0},
-    {"tk_mem_load8", "declare i64 @tk_mem_load8(i64, i64)", 0},
-    {"tk_mem_store8", "declare void @tk_mem_store8(i64, i64, i64)", 0},
-    /* std.args */
-    {"tk_args_count_w", "declare i64 @tk_args_count_w()", 0},
-    {"tk_args_get_w", "declare i64 @tk_args_get_w(i64)", 0},
-    /* std.http */
-    {"tk_http_get_static", "declare i64 @tk_http_get_static(i64, i64)", 0},
-    {"tk_http_get_static_mime", "declare i64 @tk_http_get_static_mime(i64, i64, i64)", 0},
-    {"tk_http_get_handler", "declare i64 @tk_http_get_handler(i64, i64)", 0},
-    {"tk_http_post_handler", "declare i64 @tk_http_post_handler(i64, i64)", 0},
-    {"tk_http_put_handler", "declare i64 @tk_http_put_handler(i64, i64)", 0},
-    {"tk_http_delete_handler", "declare i64 @tk_http_delete_handler(i64, i64)", 0},
-    {"tk_http_patch_handler", "declare i64 @tk_http_patch_handler(i64, i64)", 0},
-    {"tk_http_req_path", "declare i64 @tk_http_req_path(i64)", 0},
-    {"tk_http_req_method", "declare i64 @tk_http_req_method(i64)", 0},
-    {"tk_http_req_body", "declare i64 @tk_http_req_body(i64)", 0},
-    {"tk_http_req_param", "declare i64 @tk_http_req_param(i64, i64)", 0},
-    {"tk_http_req_header", "declare i64 @tk_http_req_header(i64, i64)", 0},
-    {"tk_http_res_new", "declare i64 @tk_http_res_new(i64, i64)", 0},
-    {"tk_http_res_json_new", "declare i64 @tk_http_res_json_new(i64, i64)", 0},
-    {"tk_http_res_ok", "declare i64 @tk_http_res_ok(i64)", 0},
-    {"tk_http_res_bad", "declare i64 @tk_http_res_bad(i64)", 0},
-    {"tk_http_res_err", "declare i64 @tk_http_res_err(i64)", 0},
-    {"tk_http_post_echo", "declare i64 @tk_http_post_echo(i64)", 0},
-    {"tk_http_post_static", "declare i64 @tk_http_post_static(i64, i64)", 0},
-    {"tk_http_post_json", "declare i64 @tk_http_post_json(i64, i64)", 0},
-    {"tk_http_serve_staticdir_w", "declare i64 @tk_http_serve_staticdir_w(i64, i64)", 0},
-    {"tk_http_serve", "declare i64 @tk_http_serve(i64)", 0},
-    {"tk_http_servetls", "declare i64 @tk_http_servetls(i64, i64, i64)", 0},
-    {"tk_http_serveworkers_w", "declare i64 @tk_http_serveworkers_w(i64, i64)", 0},
-    {"tk_http_set_notfound", "declare i64 @tk_http_set_notfound(i64)", 0},
-    {"tk_http_set_cors", "declare i64 @tk_http_set_cors(i64)", 0},
-    {"tk_http_client_w", "declare i64 @tk_http_client_w(i64)", 0},
-    {"tk_http_get_w", "declare i64 @tk_http_get_w(i64)", 0},
-    {"tk_http_post_w", "declare i64 @tk_http_post_w(i64, i64, i64)", 0},
-    {"tk_http_put_w", "declare i64 @tk_http_put_w(i64, i64, i64)", 0},
-    {"tk_http_delete_w", "declare i64 @tk_http_delete_w(i64, i64)", 0},
-    {"tk_http_withproxy_w", "declare i64 @tk_http_withproxy_w(i64, i64)", 0},
-    {"tk_http_stream_w", "declare i64 @tk_http_stream_w(i64)", 0},
-    {"tk_http_streamnext_w", "declare i64 @tk_http_streamnext_w(i64)", 0},
-    {"tk_http_listen_w", "declare i64 @tk_http_listen_w(i64, i64)", 0},
-    {"tk_http_print_w", "declare i64 @tk_http_print_w(i64)", 0},
-    /* std.log */
-    {"tk_log_open_access_w", "declare i64 @tk_log_open_access_w(i64, i64, i64, i64)", 0},
-    {"tk_log_open_error_w", "declare i64 @tk_log_open_error_w(i64, i64, i64, i64)", 0},
-    {"tk_log_accessformat_w", "declare i64 @tk_log_accessformat_w(i64)", 0},
-    {"tk_log_info_w", "declare i64 @tk_log_info_w(i64, i64)", 0},
-    {"tk_log_error_w", "declare i64 @tk_log_error_w(i64, i64)", 0},
-    {"tk_log_warn_w", "declare i64 @tk_log_warn_w(i64, i64)", 0},
-    {"tk_log_debug_w", "declare i64 @tk_log_debug_w(i64, i64)", 0},
-    /* std.router */
-    {"tk_router_new_w", "declare i64 @tk_router_new_w()", 0},
-    /* Array/map runtime */
-    {"tk_map_new", "declare i8* @tk_map_new()", 0},
-    {"tk_map_new_int", "declare i8* @tk_map_new_int()", 0}, /* 127.35: int-keyed map literal */
-    {"tk_map_put", "declare void @tk_map_put(i8*, i64, i64)", 0},
-    {"tk_map_get", "declare i64 @tk_map_get(i8*, i64)", 0},
-    {"tk_array_append_w", "declare i64 @tk_array_append_w(i64, i64)", 0},
-    {"tk_array_set_w", "declare i64 @tk_array_set_w(i64, i64, i64)", 0},
-    {"tk_map_set_w", "declare i64 @tk_map_set_w(i64, i64, i64)", 0},
-    /* Higher-order array functions */
-    {"tk_arr_map", "declare i64 @tk_arr_map(i64, i64)", 0},
-    {"tk_arr_filter", "declare i64 @tk_arr_filter(i64, i64)", 0},
-    {"tk_arr_reduce", "declare i64 @tk_arr_reduce(i64, i64, i64)", 0},
-    {"tk_arr_sort", "declare i64 @tk_arr_sort(i64, i64)", 0},
-    {"tk_arr_push_w", "declare i64 @tk_arr_push_w(i64, i64)", 0},
-    /* str glue extras (loke/moke) */
-    {"tk_str_push_w", "declare i64 @tk_str_push_w(i64, i64)", 0},
-    {"tk_str_arrayget_w", "declare i64 @tk_str_arrayget_w(i64, i64)", 0},
-    {"tk_str_arraylen_w", "declare i64 @tk_str_arraylen_w(i64)", 0},
-    {"tk_str_containsre_w", "declare i64 @tk_str_containsre_w(i64, i64)", 0},
-    {"tk_str_i64tof64_w", "declare i64 @tk_str_i64tof64_w(i64)", 0},
-    /* std.os — POSIX syscall bridge */
-    /* 137.12: tk_os_read and tk_os_write are NOT declared here. Both were,
-     * as (i64, i64, i64), over two-parameter definitions in stdlib/os.c —
-     * and because gen_stdlib_decls.py excludes whatever llvm.c already
-     * declares (load_manual_decls), the generator deferred to the wrong
-     * entry forever. 136.1 made this table the arity every std call is
-     * judged against, so `o.read(fd; n)` — matching os.tki AND os.c — was
-     * rejected E4026 claiming the implementation takes 3. Deleting the rows
-     * lets the generator derive both from the C, which is the fix; editing
-     * the counts would have left the hand-maintained row in place. The gate
-     * is scripts/check_tki_coverage.py (declared_arities vs
-     * c_definition_arities). Do not re-add a row here for a symbol that
-     * gen_stdlib_decls.py can see. */
-    {"tk_os_open", "declare i64 @tk_os_open(i64, i64, i64)", 0},
-    {"tk_os_close", "declare i64 @tk_os_close(i64)", 0},
-    {"tk_os_lseek", "declare i64 @tk_os_lseek(i64, i64, i64)", 0},
-    {"tk_os_stat", "declare i64 @tk_os_stat(i64)", 0},
-    {"tk_os_unlink", "declare i64 @tk_os_unlink(i64)", 0},
-    {"tk_os_rename", "declare i64 @tk_os_rename(i64, i64)", 0},
-    {"tk_os_mkdir", "declare i64 @tk_os_mkdir(i64, i64)", 0},
-    {"tk_os_rmdir", "declare i64 @tk_os_rmdir(i64)", 0},
-    {"tk_os_access", "declare i64 @tk_os_access(i64, i64)", 0},
-    {"tk_os_getcwd", "declare i64 @tk_os_getcwd()", 0},
-    {"tk_os_getpid", "declare i64 @tk_os_getpid()", 0},
-    {"tk_os_exit", "declare i64 @tk_os_exit(i64)", 0},
-    {"tk_os_getenv", "declare i64 @tk_os_getenv(i64)", 0},
-    {"tk_os_setenv", "declare i64 @tk_os_setenv(i64, i64)", 0},
-    {"tk_os_errno", "declare i64 @tk_os_errno()", 0},
-    {"tk_os_strerror", "declare i64 @tk_os_strerror(i64)", 0},
-    {"tk_os_o_rdonly", "declare i64 @tk_os_o_rdonly()", 0},
-    {"tk_os_o_wronly", "declare i64 @tk_os_o_wronly()", 0},
-    {"tk_os_o_rdwr", "declare i64 @tk_os_o_rdwr()", 0},
-    {"tk_os_o_creat", "declare i64 @tk_os_o_creat()", 0},
-    {"tk_os_o_trunc", "declare i64 @tk_os_o_trunc()", 0},
-    {"tk_os_o_append", "declare i64 @tk_os_o_append()", 0},
-    {"tk_os_stdin_fd", "declare i64 @tk_os_stdin_fd()", 0},
-    {"tk_os_stdout_fd", "declare i64 @tk_os_stdout_fd()", 0},
-    {"tk_os_stderr_fd", "declare i64 @tk_os_stderr_fd()", 0},
-    /* std.task */
-    {"tk_task_scope", "declare i64 @tk_task_scope()", 0},
-    {"tk_task_spawn", "declare i64 @tk_task_spawn(i64, i64)", 0},
-    {"tk_task_awaitall", "declare i64 @tk_task_awaitall(i64)", 0},
-    {"tk_task_result", "declare i64 @tk_task_result(i64)", 0},
-    {"tk_task_cancel", "declare i64 @tk_task_cancel(i64)", 0},
-    /* arr/clipboard/crypto extras (loke) */
-    {"tk_arr_join_w", "declare i64 @tk_arr_join_w(i64, i64)", 0},
-    {"tk_clipboard_read_w", "declare i64 @tk_clipboard_read_w()", 0},
-    {"tk_clipboard_write_w", "declare i64 @tk_clipboard_write_w(i64)", 0},
-    {"tk_crypto_randomhex_w", "declare i64 @tk_crypto_randomhex_w(i64)", 0},
-    {"tk_crypto_randombase64url_w", "declare i64 @tk_crypto_randombase64url_w(i64)", 0},
-
-    /* --- Auto-generated declarations from stdlib glue files (103.11) ---
-     * Regenerate with: python3 scripts/gen_stdlib_decls.py
-     * This ensures every tk_* function in any glue .c file has a matching
-     * LLVM IR declaration, preventing "undefined value" link errors. */
-#include "stdlib_decls_gen.h"
-
-    {NULL, NULL, 0}
-};
 
 /*
  * ── 137.6: hoist every alloca to its function's entry block ────────────
@@ -11732,64 +11213,6 @@ static const char *own_c_decl(const char *sym)
     return NULL;
 }
 
-/*
- * stdlib_glue_arity (136.1) — the parameter count declared for `sym` in
- * g_stdlib_decls, or -1 when the compiler knows no such symbol.
- *
- * The declaration text is LLVM IR ("declare i64 @tk_str_slice_w(i64, i64,
- * i64)"), so the arity is the comma count of the argument list, and an empty
- * list is zero. This table is the compiler's whole record of the native side:
- * the type checker uses it to judge a call against the implementation, which
- * is what actually decides whether the call corrupts, rather than against a
- * `.tki` that may itself be the side that drifted.
- */
-int stdlib_glue_arity(const char *sym) {
-    if (!sym || !*sym) return -1;
-    for (int i = 0; g_stdlib_decls[i].name; i++) {
-        if (strcmp(g_stdlib_decls[i].name, sym) != 0) continue;
-        const char *d = g_stdlib_decls[i].decl;
-        if (!d) return -1;
-        const char *open = strchr(d, '(');
-        if (!open) return -1;
-        const char *close = strrchr(open, ')');
-        if (!close || close <= open) return -1;
-        int n = 1, empty = 1;
-        for (const char *p = open + 1; p < close; p++) {
-            if (*p == ',') n++;
-            if (*p != ' ' && *p != '\t') empty = 0;
-        }
-        return empty ? 0 : n;
-    }
-    return -1;
-}
-
-/*
- * g_stdlib_dummy_arg (127.61) — the one-parameter glue symbols whose body
- * provably never reads that parameter, generated from the glue sources by
- * scripts/gen_stdlib_decls.py.
- *
- * A zero-argument toke function is written in glue as a single ignored
- * `int64_t`, so a zero-argument call into one of *these* symbols is the
- * convention (136.14), not a mistake. 136.1 could not name them and so
- * exempted every one-parameter symbol instead — which is why `s.len()` and
- * `io.println()` passed `--check` and then read an unset register. The set is
- * now established from the source rather than assumed.
- */
-static const char *g_stdlib_dummy_arg[] = {
-#include "stdlib_dummyarg_gen.h"
-    NULL
-};
-
-/*
- * stdlib_glue_ignores_only_arg (127.61) — 1 when `sym` takes exactly one
- * parameter and never reads it, so calling it with no arguments is safe.
- */
-int stdlib_glue_ignores_only_arg(const char *sym) {
-    if (!sym || !*sym) return 0;
-    for (int i = 0; g_stdlib_dummy_arg[i]; i++)
-        if (!strcmp(g_stdlib_dummy_arg[i], sym)) return 1;
-    return 0;
-}
 
 /*
  * emit_llvm_ir — Main entry point: emit a complete LLVM IR module (.ll file).
@@ -11960,6 +11383,11 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
             fnv_mark_local(c, pn);                   /* 124.0c item 3: borrowed */
     }
     compute_closure_releases(c, clos);               /* 124.0c item 3 */
+    /* 127.229: the linear-array set belongs to the f= it was computed for.
+     * Lifted closures are emitted after every function, so they inherited
+     * the LAST function's set: a closure local sharing a name with a linear
+     * accumulator there took the in-place path unproven. */
+    c->linear_arr_count = 0;
     if (body) emit_stmt(c, body);
     if (!c->term) {
         if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
@@ -12089,7 +11517,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     FILE *body_file = tmpfile();
     if (!body_file) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot create temp file", (void*)0);
         return -1;
@@ -12186,6 +11614,10 @@ timeparts_done:
         fwrite(ctx.fwd_decls, 1, (size_t)ctx.fwd_decls_len, body_file);
 
     /* Flush buffered string globals (must appear at module scope, before main) */
+    if (ctx.str_globals_oom)   /* 138.14: never a silently shortened module */
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: out of memory while buffering the module's string constants",
+                  NULL);
     if (ctx.str_globals_len > 0)
         fwrite(ctx.str_globals, 1, (size_t)ctx.str_globals_len, body_file);
 
@@ -12248,7 +11680,7 @@ timeparts_done:
     long body_len = (fflush(body_file) == 0) ? ftell(body_file) : -1;
     if (body_len < 0 || fseek(body_file, 0, SEEK_SET) != 0) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot re-read the temp file", (void*)0);
         return -1;
@@ -12256,14 +11688,14 @@ timeparts_done:
     char *body_buf = (char *)malloc((size_t)body_len + 1);
     if (!body_buf) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: out of memory for body scan", (void*)0);
         return -1;
     }
     if (fread(body_buf, 1, (size_t)body_len, body_file) != (size_t)body_len) {
         free(body_buf); fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: short read of the temp file", (void*)0);
         return -1;
@@ -12337,12 +11769,12 @@ timeparts_done:
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: I/O error writing .ll file", (void*)0);
         return -1;
     }
-    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
+    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ } free(ctx.str_globals); ctx.str_globals = NULL;   /* 138.14: heap, arena or not */
     fclose(f);
     /* A DIAG_ERROR emitted during codegen (e.g. 114.19c array+scalar concat)
      * must fail the build — the .ll is written but callers treat <0 as failure
@@ -12448,7 +11880,9 @@ static const char *find_capabilities_source(void) {
  * file_read, md_render, …).
  */
 static const char *find_stdlib_sources(void) {
-    static char buf[4096];
+    /* 138.14: was 4096 with an unchecked `n +=` running past the end on a
+     * long path.  NULL now means "did not fit". */
+    static char buf[TKC_DEPS_SOURCES_SIZE];
     const char *dir = NULL;
     /* Search order: env var, compile-time macro, cwd-relative */
     const char *env_dir = getenv("TKC_STDLIB_DIR");
@@ -12473,7 +11907,7 @@ static const char *find_stdlib_sources(void) {
     /* Derive vendor directory: <dir>/../../stdlib/vendor/.
      * TKC_STDLIB_DIR points at <repo>/src/stdlib, so two ..-hops reach
      * <repo>, under which the vendored cmark + tomlc99 trees live. */
-    char vendor[512];
+    char vendor[4096];
     snprintf(vendor, sizeof vendor, "%s/../../stdlib/vendor", dir);
 
     /* Core stdlib .c files needed by tk_web_glue.c wrappers.
@@ -12494,6 +11928,7 @@ static const char *find_stdlib_sources(void) {
         dir);
 
     /* Vendored tomlc99 — backs src/stdlib/toml.c. */
+    if (n < 0 || (size_t)n >= sizeof buf) return NULL;   /* 138.14 */
     n += snprintf(buf + n, sizeof buf - (size_t)n,
         " %s/tomlc99/toml.c", vendor);
 
@@ -12507,10 +11942,11 @@ static const char *find_stdlib_sources(void) {
         "references.c", "render.c", "scanners.c", "utf8.c", "xml.c",
         NULL
     };
-    for (int i = 0; cmark_files[i]; i++) {
+    for (int i = 0; cmark_files[i] && n >= 0 && (size_t)n < sizeof buf; i++) {
         n += snprintf(buf + n, sizeof buf - (size_t)n,
             " %s/cmark/src/%s", vendor, cmark_files[i]);
     }
+    if (n < 0 || (size_t)n >= sizeof buf) return NULL;   /* 138.14 */
     return buf;
 }
 
@@ -12726,8 +12162,14 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     const char *env_link_all = getenv("TKC_LINK_ALL");
     if (env_link_all && env_link_all[0] == '1') link_all = 1;
 
-    char sources[8192];
+    /* 138.14 (N-1): was `char sources[8192]`, and a full buffer cut the last
+     * path mid-name: from a long checkout path every std.http program failed
+     * E9003 "no such file".  Static (not re-entered) at the resolver's size
+     * plus room for the glue file; anything that still does not fit is a
+     * located E9010, not a truncated clang command. */
+    static char sources[TKC_DEPS_SOURCES_SIZE + 8192];
     sources[0] = '\0';
+    int src_ovf = 0;
     char extra_flags[512];
     extra_flags[0] = '\0';
 
@@ -12750,8 +12192,11 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
                 if (f) { fclose(f); stdlib_dir = candidates[i]; }
             }
         }
-        ResolvedDeps deps;
-        if (stdlib_dir && resolve_stdlib_deps_imports_only(stdlib_dir, st, &deps) == 0) {
+        static ResolvedDeps deps;   /* 138.14: 64 KB, off the stack */
+        int drc = stdlib_dir ? resolve_stdlib_deps_imports_only(stdlib_dir, st, &deps) : -1;
+        if (drc == TKC_DEPS_OVERFLOW) {
+            src_ovf = 1;
+        } else if (drc == 0) {
             snprintf(sources, sizeof sources, " %s", deps.sources);
             if (deps.flags[0])
                 snprintf(extra_flags, sizeof extra_flags, "%s", deps.flags);
@@ -12769,12 +12214,22 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         const char *rt  = find_runtime_source();
         const char *cap = find_capabilities_source();
         const char *std = find_stdlib_sources();
-        if (rt  && rt[0])  { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                             strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
-        if (cap && cap[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                             strncat(sources, cap, sizeof sources - strlen(sources) - 1); }
-        if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                             strncat(sources, std, sizeof sources - strlen(sources) - 1); }
+        if (!std) src_ovf = 1;   /* 138.14: find_stdlib_sources could not fit its list */
+        const char *parts[3] = { rt, cap, std };
+        for (int pi = 0; pi < 3 && !src_ovf; pi++) {
+            if (!parts[pi] || !parts[pi][0]) continue;
+            size_t cur = strlen(sources);
+            int w = snprintf(sources + cur, sizeof sources - cur, " %s", parts[pi]);
+            if (w < 0 || (size_t)w >= sizeof sources - cur) { sources[cur] = '\0'; src_ovf = 1; }
+        }
+    }
+    if (src_ovf) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: the stdlib C source list for this program "
+                  "does not fit the compiler's buffer (a very long stdlib directory "
+                  "path); it was not passed to clang truncated",
+                  (void *)0);
+        return -1;
     }
 
     const char *vendor_inc = find_stdlib_vendor_includes();
@@ -12834,8 +12289,8 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         snprintf(tki_dir, sizeof tki_dir, "%s/../../stdlib", sdir);
         if (glue_gen_write_temp(tki_dir, glue_path, (int)sizeof glue_path) == 0
             && glue_path[0]) {
-            strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-            strncat(sources, glue_path, sizeof sources - strlen(sources) - 1);
+            size_t cur = strlen(sources);   /* 138.14: room reserved above */
+            snprintf(sources + cur, sizeof sources - cur, " %s", glue_path);
         }
     }
 

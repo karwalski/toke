@@ -82,14 +82,16 @@ static int64_t strarr(const char **v, int n) {   /* a toke [str]: len at [-1] */
 static const char *str_of(int64_t row, const char *col) {
     int64_t v = tk_row_str_w(row, S(col)); return v ? (const char *)(intptr_t)v : "(err)";
 }
+/* 138.6 (GB): exec reports its row count, 0 included; success is the slot. */
+#define EXOK(call) ((void)(call), tk_current_error == 0)
 int main(void) {
     char *av[] = {"t", "--allow-all", NULL}; tk_cap_init(2, av);
     int64_t none = strarr(NULL, 0);
     int64_t a = tk_db_open_w(S("a.db")), b = tk_db_open_w(S("b.db"));
     CHECK(a > 0 && b > 0 && a != b, "two db.open calls return two different handles");
-    CHECK(tk_db_execon_w(a, S("CREATE TABLE ta(v INTEGER); INSERT INTO ta VALUES (7)"), none) != 0,
+    CHECK(EXOK(tk_db_execon_w(a, S("CREATE TABLE ta(v INTEGER); INSERT INTO ta VALUES (7)"), none)),
           "execon(a): create + insert");
-    CHECK(tk_db_execon_w(b, S("CREATE TABLE tb(v INTEGER)"), none) != 0, "execon(b): create");
+    CHECK(EXOK(tk_db_execon_w(b, S("CREATE TABLE tb(v INTEGER)"), none)), "execon(b): create");
     int64_t r = tk_db_oneon_w(a, S("SELECT v FROM ta"), none);
     CHECK(r && !strcmp(str_of(r, "v"), "7"), "oneon(a) reads a's table");
     CHECK(tk_db_oneon_w(b, S("SELECT v FROM ta"), none) == 0, "oneon(b) does not see a's table");
@@ -98,7 +100,7 @@ int main(void) {
     CHECK(tk_db_manyon_w(b, S("SELECT * FROM tb"), none) != 0, "manyon(b) on an empty table is ok");
 
     /* multi-statement exec */
-    int64_t n = tk_db_exec_w(S("CREATE TABLE x(a TEXT); CREATE INDEX ix_x ON x(a); -- tail\n"), none);
+    int64_t n = EXOK(tk_db_exec_w(S("CREATE TABLE x(a TEXT); CREATE INDEX ix_x ON x(a); -- tail\n"), none));
     int64_t q = tk_db_one_w(S("SELECT count(*) AS n FROM sqlite_master WHERE name='ix_x'"), none);
     CHECK(n != 0 && q && !strcmp(str_of(q, "n"), "1"), "exec runs the second statement (the index exists)");
     tk_current_error = 0;
@@ -114,12 +116,12 @@ int main(void) {
     q = tk_db_one_w(S("SELECT count(*) AS n FROM ta"), none);
     CHECK(n == 0 && q && !strcmp(str_of(q, "n"), "1"),
           "bind params with two statements are refused before anything runs");
-    n = tk_db_exec_w(S("BEGIN; INSERT INTO ta VALUES (9); ROLLBACK;"), none);
+    n = EXOK(tk_db_exec_w(S("BEGIN; INSERT INTO ta VALUES (9); ROLLBACK;"), none));
     q = tk_db_one_w(S("SELECT count(*) AS n FROM ta"), none);
     CHECK(n != 0 && q && !strcmp(str_of(q, "n"), "1"), "BEGIN; ...; ROLLBACK in one string rolls back");
-    n = tk_db_exec_w(S("BEGIN"), none);
-    n = n && tk_db_exec_w(S("INSERT INTO ta VALUES (10)"), none);
-    n = n && tk_db_exec_w(S("COMMIT"), none);
+    n = EXOK(tk_db_exec_w(S("BEGIN"), none));
+    n = n && EXOK(tk_db_exec_w(S("INSERT INTO ta VALUES (10)"), none));
+    n = n && EXOK(tk_db_exec_w(S("COMMIT"), none));
     q = tk_db_one_w(S("SELECT count(*) AS n FROM ta"), none);
     CHECK(n && q && !strcmp(str_of(q, "n"), "2"), "BEGIN / INSERT / COMMIT as three calls commits");
 
@@ -228,6 +230,38 @@ f=main():i64{
 };
 TOKE
 run_tk t40 "open-ok exec-ok index_ix_x=1"
+# 138.6 zero-value half (Batch GB, llvm.c): row.* and db.exec are slot
+# wrappers, so a stored 0 / 0.0 / false, COUNT(*)=0 and an exec that changed
+# no rows are $ok with that value (T-22, N-5).  Red before llvm.c listed them
+# (and while db_glue.c still reported an exec count of 0 as 1).
+cat > t22.tk <<'TOKE'
+m=main;i=io:std.io;i=db:std.db;
+f=main():i64{
+  let o=mt db.open(":memory:") { $ok:h 0; $err:e 1 };
+  let r=mt db.one("SELECT 2.5 AS x, 0.0 AS z, 0 AS i, 0 = 1 AS b";@()) { $ok:row row; $err:e 0 };
+  let a:str=mt row.f64(r;"x") { $ok:v "ok \((v*10.0) as i64)"; $err:e "err" };
+  let b:str=mt row.f64(r;"z") { $ok:v "ok \((v*10.0) as i64)"; $err:e "err" };
+  let c:str=mt row.f64(r;"nosuch") { $ok:v "ok"; $err:e "err" };
+  let d:str=mt row.i64(r;"i") { $ok:v "ok \(v)"; $err:e "err" };
+  let e:str=mt row.bool(r;"b") { $ok:v "ok \(v)"; $err:e "err" };
+  io.println("x: \(a) | zero: \(b) | nosuch: \(c) | i0: \(d) | bfalse: \(e)");
+  <o
+};
+TOKE
+run_tk t22 "x: ok 25 | zero: ok 0 | nosuch: err | i0: ok 0 | bfalse: ok false"
+cat > n5.tk <<'TOKE'
+m=main;i=io:std.io;i=db:std.db;
+f=main():i64{
+  let o=mt db.open(":memory:") { $ok:h 0; $err:e 1 };
+  let x=mt db.exec("CREATE TABLE t (v INTEGER)";@()) { $ok:n "ok \(n)"; $err:e "err" };
+  let u=mt db.exec("UPDATE t SET v=1 WHERE v=5";@()) { $ok:n "ok \(n)"; $err:e "err" };
+  let r=mt db.one("SELECT count(*) AS n FROM t";@()) { $ok:row row; $err:e 0 };
+  let k:str=mt row.i64(r;"n") { $ok:v "ok \(v)"; $err:e "err" };
+  io.println("create: \(x) | update0: \(u) | count0: \(k)");
+  <o
+};
+TOKE
+run_tk n5 "create: ok 0 | update0: ok 0 | count0: ok 0"
 
 echo "------------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

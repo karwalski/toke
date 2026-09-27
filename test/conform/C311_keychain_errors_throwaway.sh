@@ -172,7 +172,9 @@ f=main():i64{
   <0
 };
 TOKE
-want="create=11 set=1 exists-a=1 len-a=6 exists-b=0 kind=notfound status=-25300 del=1 del2=0 kind-del2=notfound destroy=11 use-gone=0 kind=nokeychain"
+# 127.230 (1) (Batch GB): keychain's bool results print true/false; this
+# line pinned the 1/0 rendering until then.
+want="create=truetrue set=true exists-a=true len-a=6 exists-b=false kind=notfound status=-25300 del=true del2=false kind-del2=notfound destroy=truetrue use-gone=false kind=nokeychain"
 if TKC_STDLIB_DIR="${S}" "${TKC}" --allow-all --out k k.tk > k.log 2>&1; then
     got="$(C311DIR="${WORK}/kc2" ./k --allow-all 2>&1)"
     if [ "${got}" = "${want}" ]; then

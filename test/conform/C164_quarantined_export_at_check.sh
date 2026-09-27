@@ -79,7 +79,7 @@ expect "4-header-in-sync" "$(python3 "${REPO_ROOT}/scripts/gen_tki_quarantine_h.
 
 # 5. the drift check can fail
 cp -R "${REPO_ROOT}/scripts" "${WORK}/scripts"; mkdir -p "${WORK}/src"
-cp -R "${REPO_ROOT}/src/stdlib" "${WORK}/src/stdlib"; cp "${REPO_ROOT}/src/llvm.c" "${WORK}/src/"
+cp -R "${REPO_ROOT}/src/stdlib" "${WORK}/src/stdlib"; cp "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_tables.c" "${WORK}/src/"   # 135.21
 cp -R "${REPO_ROOT}/stdlib" "${WORK}/stdlib"
 { cat "${REPO_ROOT}/src/stdlib_quarantine_gen.h"; echo '    { "tk_bogus_w", "std.bogus", "bogus" },'; } > "${WORK}/src/stdlib_quarantine_gen.h"
 expect "5-drift-detected" "$(python3 "${WORK}/scripts/gen_tki_quarantine_h.py" --check >/dev/null 2>&1; echo $?)" "1"
