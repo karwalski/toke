@@ -76,7 +76,7 @@ http.GET("/health"; handler);
 
 ### http.POST(pattern: $str; handler: f): void
 
-Registers `handler` for all `POST` requests matching `pattern`. The request body is available as `req.body`.
+Registers `handler` for all `POST` requests matching `pattern`. The handler reads the request body with `http.reqbody(req)`. (Reading it as the field `req.body` does not work today: the `$req` a handler receives is laid out differently from the declared type, so field access reads the wrong slot.)
 
 ```text
 http.POST("/items"; handler);
@@ -437,6 +437,53 @@ let r = http.$res.err("database unavailable");
 -- r.status = 500
 ```
 
+## Testing a Handler
+
+A route handler is an ordinary function, `(req:$req):$res`. A test calls it directly: `http.mockreq` builds the request the server would hand it, and `http.resstatus`, `http.resbody` and `http.resheader` read what it returned. No server starts and no socket opens (story 138.16).
+
+`http.mockreq` builds the same request the server's dispatchers build, so every accessor a handler calls (`http.reqmethod`, `http.reqpath`, `http.reqbody`, `http.reqparam`, `http.reqheader`, `http.param`, `http.header`) reads what it would read under the server. Two things are different:
+
+- **Route params are given, not matched.** The server binds `:id` from the route pattern; a test passes the bindings it wants in `params`.
+- **The response is the handler's, not the wire's.** The `res*` functions read the response the handler returned. The server adds `Content-Length`, `Connection` and any CORS header when it sends, and those are not in it.
+
+A handler declared `(req:i64):i64` cannot take the `$req` from `http.mockreq` (E4031); declare it `(req:$req):$res`. The route registration and the accessors accept both forms.
+
+### http.mockreq(method: $str; path: $str; headers: @(@($str)); body: $str; params: @(@($str))): $req
+
+Builds a request. `headers` and `params` are lists of `@(name; value)` pairs; pass `@()` for none. Header lookups are case-insensitive, as under the server. An element that is not a two-element `@(name; value)` stops the program with exit status 1 and a message naming the argument, because a test that carried on would be testing a different request from the one it wrote. The request is never freed.
+
+### http.resstatus(res: $res): u64
+
+The status the handler set.
+
+### http.resbody(res: $res): $str
+
+The body the handler set.
+
+### http.resheader(res: $res; name: $str): $str
+
+The value of the handler's header `name`, compared case-insensitively; `""` when the handler set no such header. The response constructors set `Content-Type`.
+
+```toke
+m=handlertest;
+i=http:std.http;
+i=io:std.io;
+f=greet(req:$req):$res{
+  let who=http.reqparam(req; "name");
+  if(who==""){ <http.res.bad("no name") };
+  <http.resnew(200; who)
+};
+f=main():i64{
+  let ok=greet(http.mockreq("GET"; "/hello/ada"; @(); ""; @(@("name"; "ada"))));
+  let bad=greet(http.mockreq("GET"; "/hello/"; @(); ""; @()));
+  if(http.resstatus(ok)!=200){ <1 };
+  if(http.resbody(ok)!="ada"){ <2 };
+  if(http.resstatus(bad)!=400){ <3 };
+  io.println(http.resheader(ok; "content-type"));
+  <0
+};
+```
+
 ## HTTP Client Functions
 
 ### http.client(baseurl: $str): $httpclient
@@ -449,6 +496,10 @@ f=main():void{
   let c=http.client("https://api.example.com");
 };
 ```
+
+### http.withproxy(client: $httpclient; proxyurl: $str): $httpclient
+
+Returns a copy of `client` that sends its requests through the HTTP proxy at `proxyurl` (`http://host:port`); `client` itself is unchanged. The client calls (`http.clientget` and the rest) use it. A plain `http://` request goes to the proxy with the absolute URL in its request line. An `https://` request first asks the proxy for a tunnel (`CONNECT host:port`) and then negotiates TLS with the server through it. The server's certificate is verified exactly as without a proxy. A proxy that refuses the tunnel is `$err`. Before story 135.26 the client started TLS with the proxy itself, so every https request through a proxy failed.
 
 ### Client calls and route registration are different names
 

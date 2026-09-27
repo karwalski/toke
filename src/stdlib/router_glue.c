@@ -158,9 +158,14 @@ int64_t tk_router_serve_w(int64_t router_i64, int64_t host, int64_t port) {
     const char *h = host ? (const char *)(intptr_t)host : NULL;
     /* Treat "", "0.0.0.0" and "*" as "bind all interfaces" (NULL host). */
     if (h && (h[0] == '\0' || !strcmp(h, "0.0.0.0") || !strcmp(h, "*"))) h = NULL;
-    uint64_t p = (uint64_t)port;
-    if (p == 0 || p > 65535) p = 8080;
-    TkRouterErr err = router_serve((TkRouter *)(intptr_t)router_i64, h, p);
+    /* 135.26 item 2, aligned with http.serve (135.24 item 2): the port is
+     * the caller's.  It used to be clamped -- 0 or anything above 65535
+     * silently served on 8080.  Now 0 is a kernel-chosen port, which
+     * router_serve reports on stderr (DIAGNOSTIC: kind=server_listening
+     * port=N) once listening, and a port above 65535 is router_serve's
+     * "port out of range" -- the $err arm of router.serve. */
+    TkRouterErr err = router_serve((TkRouter *)(intptr_t)router_i64, h,
+                                   (uint64_t)port);
     return err.failed ? -1 : 0;
 }
 
