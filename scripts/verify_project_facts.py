@@ -336,13 +336,26 @@ def check_version_sources():
         print("ERROR: VERSION is empty or missing")
         return 1
 
-    main_c = _read(os.path.join(ROOT, "src", "main.c"))
-    m = re.search(r'#define\s+VERSION\s+"toke\s+([^"]+)"', main_c)
+    # 135.3j: the C sources read the version from src/version.h.  Before it,
+    # main.c alone was checked, and the three other hand-written copies (the
+    # WASM tkc_version(), the companion frontmatter and the DWARF producer)
+    # all still said 0.3.0.
+    vh = _read(os.path.join(ROOT, "src", "version.h"))
+    m = re.search(r'#define\s+TKC_VERSION\s+"([^"]+)"', vh)
     if not m:
-        bad.append(('src/main.c', 'no `#define VERSION "toke <x>"` found'))
+        bad.append(('src/version.h', 'no `#define TKC_VERSION "<x>"` found'))
     elif m.group(1).strip() != version:
-        bad.append(('src/main.c',
+        bad.append(('src/version.h',
                     'states %r; VERSION says %r' % (m.group(1).strip(), version)))
+    main_c = _read(os.path.join(ROOT, "src", "main.c"))
+    if not re.search(r'#define\s+VERSION\s+"toke\s*"\s*TKC_VERSION\b', main_c):
+        bad.append(('src/main.c', 'VERSION is not `"toke " TKC_VERSION`'))
+    # A version literal anywhere else in these sources is a copy that will
+    # drift; each must spell it TKC_VERSION.
+    for rel in ("main.c", "companion.c", "llvm.c", "wasm_api.c"):
+        text = _read(os.path.join(ROOT, "src", rel))
+        for lit in re.findall(r'(?:toke|tkc|compiler_version: \\")\s*\d+\.\d+\.\d+', text):
+            bad.append(('src/' + rel, 'hard-codes the version: %r' % lit))
 
     wf = os.path.join(ROOT, ".github", "workflows", "release.yml")
     if os.path.exists(wf):
@@ -362,8 +375,9 @@ def check_version_sources():
               "never the file,\nand remember the built binary keeps the old "
               "string until `make` reruns.")
         return 1
-    print("version sources OK: VERSION, src/main.c and the release workflow "
-          "all state %s." % version)
+    print("version sources OK: VERSION, src/version.h (read by main.c, "
+          "companion.c, llvm.c, wasm_api.c) and the release workflow all "
+          "state %s." % version)
     return 0
 
 

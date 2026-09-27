@@ -237,11 +237,24 @@ static void ifl_pop (InFlight *f)                { if (f->count > 0) f->count--;
  *   resolved — 1 if the module was successfully located, 0 if not.
  *
  * Returns 0 on success, -1 on allocation failure.
+ *
+ * 135.3j (3): all five callers ignored the -1, so an import was silently
+ * dropped (its later uses then failed with an unrelated E2xxx) and its three
+ * strings leaked.  On failure st_push now frees them, reports E9010, and the
+ * callers fold the -1 into resolve_imports' error result.
  */
 static int st_push(SymbolTable *st, char *alias, char *path, char *version, int resolved) {
     ImportEntry *ne = (ImportEntry *)realloc(
         st->entries, (size_t)(st->count + 1) * sizeof(ImportEntry));
-    if (!ne) return -1;
+    if (!ne) {
+        char msg[TKC_MAX_PATH + 96];
+        snprintf(msg, sizeof msg,
+                 "compiler limit exceeded: out of memory recording import '%s'",
+                 path ? path : "?");
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, (void *)0);
+        free(alias); free(path); free(version);
+        return -1;
+    }
     st->entries = ne;
     ne[st->count].alias_name  = alias;
     ne[st->count].module_path = path;
@@ -578,7 +591,7 @@ int resolve_imports(const Node *ast, const char *src,
         if (strncmp(mpath, "std.", 4) == 0 || strcmp(mpath, "std") == 0) {
             const char *tail = (mpath[3] == '.') ? mpath + 4 : NULL;
             if (!tail || std_module_exists(tail, sp_list, sp_count)) {
-                st_push(out, alias, mpath, ver, 1);
+                if (st_push(out, alias, mpath, ver, 1) < 0) err = 1;
                 continue;
             }
             char msg[TKC_MAX_PATH + 128];
@@ -597,7 +610,7 @@ int resolve_imports(const Node *ast, const char *src,
                           msg, "fix", NULL);
             }
             err = 1;
-            st_push(out, alias, mpath, ver, 0);
+            (void)st_push(out, alias, mpath, ver, 0);   /* err already set */
             continue;
         }
 
@@ -607,7 +620,7 @@ int resolve_imports(const Node *ast, const char *src,
             snprintf(msg, sizeof(msg),
                      "circular import detected: '%s' is already being resolved", mpath);
             diag_emit(DIAG_ERROR, E2031, d->start, d->line, d->col, msg, "fix", NULL);
-            err = 1; st_push(out, alias, mpath, ver, 0); continue;
+            err = 1; (void)st_push(out, alias, mpath, ver, 0); continue;
         }
 
         /* File lookup — try versioned .tki first, then unversioned */
@@ -630,7 +643,7 @@ int resolve_imports(const Node *ast, const char *src,
         }
 
         if (found) {
-            st_push(out, alias, mpath, ver, 1);
+            if (st_push(out, alias, mpath, ver, 1) < 0) err = 1;
         } else {
             char *avail = build_avail_list(sp_list[0], limits->max_avail_modules);
             char msg[TKC_MAX_PATH + 512];
@@ -647,7 +660,7 @@ int resolve_imports(const Node *ast, const char *src,
             } else {
                 diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", NULL);
             }
-            err = 1; st_push(out, alias, mpath, ver, 0);
+            err = 1; (void)st_push(out, alias, mpath, ver, 0);
         }
 
         ifl_pop(&inf);
@@ -992,6 +1005,7 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
     env->ifuncs[env->ifunc_count].param_types = ptypes;
     env->ifuncs[env->ifunc_count].param_count = ptypes ? pcount : 0;
     env->ifuncs[env->ifunc_count].abi_ret = 0;
+    env->ifuncs[env->ifunc_count].internal = 0;
     env->ifunc_count++;
 }
 
@@ -1105,6 +1119,12 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                                      gen, (int)sizeof gen)
                     && strcmp(gen, "abi") == 0)
                     env->ifuncs[env->ifunc_count - 1].abi_ret = 1;
+            }
+            {   /* 127.220 item 7: `"internal": true` (a bare JSON literal) */
+                const char *iv = tki_obj_key(rec, end, "internal");
+                if (env->ifunc_count > before && iv && end - iv >= 4
+                    && memcmp(iv, "true", 4) == 0)
+                    env->ifuncs[env->ifunc_count - 1].internal = 1;
             }
             continue;
         }

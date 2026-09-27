@@ -89,13 +89,22 @@
  *
  * Returns an arena-allocated copy of `s`.  Used to persist type and field
  * names so they outlive any stack buffers they were extracted into.
- * If arena allocation fails, returns the original pointer `s` as a
- * best-effort fallback (the caller must tolerate this).
+ *
+ * 135.3j (3): on arena exhaustion this used to return `s` itself — and every
+ * caller passes a stack buffer (a TOKSTR copy), so the Type kept a pointer
+ * into a dead frame.  It now reports the exhaustion (E9010) and returns a
+ * static empty name, which is never a dangling pointer; the error stops the
+ * compile before anything reads the name for meaning.
  */
 static const char *ty_intern(Arena *arena, const char *s) {
     int len = (int)strlen(s);
     char *p = (char *)arena_alloc(arena, len + 1);
-    if (!p) return s;
+    if (!p) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: out of memory interning a type name",
+                  (void *)0);
+        return "";
+    }
     memcpy(p, s, (size_t)len + 1);
     return p;
 }
@@ -1301,6 +1310,10 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     if (strcmp(nb,"u16") ==0) return mk_type(cx->env->arena, TY_U16);
     if (strcmp(nb,"u32") ==0) return mk_type(cx->env->arena, TY_U32);
     if (strcmp(nb,"f32") ==0) return mk_type(cx->env->arena, TY_F32);
+    /* 127.220 item 4: lower-case `byte` deliberately stays unresolved here
+     * (so `@(byte)` prints as `@(?)`).  Typing it u8 makes every
+     * `let a:@byte=@(1;2)` an E4031, because an integer literal does not
+     * narrow to u8 (`let b:u8=5` is E4031 too) -- C183 case 3. */
     if (strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
     /* Built-in $none type: zero-field struct used as the error variant in
      * option types (T!$none).  Reuses existing error-union infrastructure
@@ -1973,35 +1986,22 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
                  * emitter decides map vs array from the rtype since 127.52
                  * retired its __map__ tag, so `m.get("b")` lowered as an
                  * array index and trapped RT003.  The interface spells it
-                 * `[K:V]` (ir.c); only scalar K and V are adopted, and only
-                 * across a user-module boundary — std interfaces are a
-                 * hand-written, drifted surface (check_tki_call) and stay as
-                 * they were. */
+                 * `[K:V]` (ir.c), and is adopted only across a user-module
+                 * boundary — std interfaces are a hand-written, drifted
+                 * surface (check_tki_call) and stay as they were.
+                 * 127.227 item 2: K and V are read by tki_compound_type, so a
+                 * compound value (`[str:[tok]]`, `[str:[i64]]`) is typed
+                 * too; the scalar-only reading left it unknown, and
+                 * `g.get("a")` on it lowered as an array index (RT003).
+                 * Only a map is adopted here; an array return stays unknown
+                 * as before. */
                 char pb[256];
                 const char *mp = import_module_path(cx, ab, pb, sizeof pb);
                 size_t rl = strlen(ret);
-                const char *colon = strchr(ret, ':');
                 if (mp && strncmp(mp, "std.", 4) != 0 && rl > 4
-                    && ret[0] == '[' && ret[rl - 1] == ']' && colon
-                    && !strchr(colon + 1, ':')) {
-                    char kb[64], vb[64];
-                    size_t kl = (size_t)(colon - ret - 1);
-                    size_t vl = (size_t)(ret + rl - 1 - (colon + 1));
-                    if (kl > 0 && kl < sizeof kb && vl > 0 && vl < sizeof vb) {
-                        memcpy(kb, ret + 1, kl); kb[kl] = '\0';
-                        memcpy(vb, colon + 1, vl); vb[vl] = '\0';
-                        Arena *A = cx->env->arena;
-                        Type *kt = tki_scalar_type(A, kb), *vt = tki_scalar_type(A, vb);
-                        Type *mt = (kt && vt) ? mk_type(A, TY_MAP) : NULL;
-                        Type **fts = mt ? (Type **)arena_alloc(A, (int)sizeof(Type *)) : NULL;
-                        if (mt && fts) {
-                            mt->elem = kt;
-                            mt->field_count = 1;
-                            mt->field_types = fts;
-                            fts[0] = vt;
-                            return mt;
-                        }
-                    }
+                    && ret[0] == '[' && ret[rl - 1] == ']') {
+                    Type *mt = tki_compound_type(cx, ret, rl, 0);
+                    if (mt && mt->kind == TY_MAP) return mt;
                 }
             }
             return NULL;
@@ -2865,9 +2865,11 @@ static void tki_arity_error(const Node *call, const char *what,
  *     exports at the same distance means the compiler does not know which was
  *     meant, and the generic text is then the honest answer;
  *   - names shorter than 4 characters are not scored: at length 3 a distance
- *     of 2 relates almost any pair.
+ *     of 2 relates almost any pair;
+ *   - an export the interface marks `"internal": true` is never a candidate
+ *     (127.220 item 7): it exists for the glue, not for toke source.
  *
- * When no candidate clears all four, the caller keeps the generic text. The
+ * When no candidate clears all five, the caller keeps the generic text. The
  * suggestion is phrased as a question, matching E3011's existing
  * "did you mean 'io'?", and it reuses that diagnostic's edit-distance routine
  * (tk_edit_distance, names.c) rather than adding a second one.
@@ -2890,6 +2892,9 @@ static const char *tki_closest_member(const NameEnv *env, const char *alias,
         if (strcmp(f->alias, alias) != 0) continue;
         if (strlen(f->member) < 4) continue;
         if (strcmp(f->member, member) == 0) continue;   /* not a miss */
+        /* 127.220 item 7: an `"internal": true` export is a glue helper
+         * (`array.arrayappend`), not something to steer an author to. */
+        if (f->internal) continue;
         int d = tk_edit_distance(member, f->member);
         if (d < best_d) { best_d = d; best = f->member; best_ties = 1; }
         else if (d == best_d && best) best_ties++;
@@ -4068,6 +4073,27 @@ static int map_type_node(const Node *n) {
                  n->kind == NODE_ARRAY_TYPE || n->kind == NODE_MAP_TYPE ||
                  n->kind == NODE_FUNC_TYPE  || n->kind == NODE_PTR_TYPE);
 }
+/* 127.227 item 1: a type standing where a value is consumed -- the
+ * initialiser of a `let`, the right side of an assignment, a returned value
+ * or a call argument.  `let x=$str;` checked clean and lowered whatever a
+ * type node lowers to; `h($i64)` said "expected 'i64', got 'void'".  The
+ * sigil counterpart of 127.98 (i)'s bare `let x=str;` (names.c).  No fix: a
+ * literal, a binding or a typed-empty `@($str)` are all plausible.  Returns
+ * 1 when `n` is a type node (reported once). */
+static int type_as_value(Ctx *cx, const Node *n) {
+    if (!map_type_node(n)) return 0;
+    if (tc_first_report(cx, n) && tc_can_emit(cx)) {
+        char tb[128]; TOKSTR(tb, cx->src, n);
+        const char *sig = (n->kind == NODE_TYPE_IDENT && tb[0] != '$') ? "$" : "";
+        char got[140]; snprintf(got, sizeof got, "%s%s", sig, tb);
+        char msg[300];
+        snprintf(msg, sizeof msg, "'%s' is a type, not a value", got);
+        diag_emit(DIAG_ERROR, E4033, n->start, n->line, n->col, msg,
+                  "expected", "a value", "got", got, (const char *)NULL);
+    }
+    return 1;
+}
+
 /* 127.226: is this literal typed-EMPTY — `@($t)` (an array literal whose only
  * child is a type) or `@($k:V)` (a map literal whose only entry has a type as
  * its key and, as its value, a type or another typed-empty literal)?  Shared
@@ -4732,6 +4758,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_CALL_EXPR: {
         if (node->child_count<1) return mk_type(A,TY_UNKNOWN);
+        { int tv=0;                                   /* 127.227 item 1 */
+          for (int i=1;i<node->child_count;i++) tv|=type_as_value(cx,node->children[i]);
+          if (tv) return mk_type(A,TY_UNKNOWN); }
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
 
         /* 124.0c item 2: a call through a function VALUE — a parameter of
@@ -4880,9 +4909,17 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 Type *at=infer(cx,node->children[ai]);
                 Type *pt=ch->child_count>1?resolve_type(cx,ch->children[1]):mk_type(A,TY_UNKNOWN);
                 if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)) {
+                    /* 127.220 item 4: "cast argument to str using 'as'" was
+                     * offered for a [byte] (any array, map, struct) passed
+                     * as str, and `as` does not convert those.  The cast is
+                     * the repair only between numeric types, and not
+                     * float -> integer (truncation changes the value, the
+                     * 127.64 rule).  Otherwise no fix (AGENTS §6). */
+                    int cast_fixes = is_numeric(at) && is_numeric(pt)
+                                     && !(!is_integer(at) && is_integer(pt));
                     char fix[128];
                     snprintf(fix,sizeof(fix),"cast argument to %s using 'as'",type_name(pt));
-                    emit_mm(cx,node->children[ai],pt,at,fix);
+                    emit_mm(cx,node->children[ai],pt,at,cast_fixes?fix:NULL);
                 }
             }
             pj++;
@@ -5191,6 +5228,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         Type *ann = has_ann ? resolve_type(cx, node->children[1]) : NULL;
         const Node *initN = has_ann ? node->children[2]
                           : (node->child_count >= 2 ? node->children[1] : NULL);
+        if (type_as_value(cx, initN)) {              /* 127.227 item 1 */
+            ((Node *)initN)->rtype = mk_type(A, TY_UNKNOWN);
+            return mk_type(A,TY_VOID);
+        }
         Type *init = initN ? infer(cx, initN) : NULL;
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
@@ -5255,6 +5296,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 return mk_type(A,TY_VOID);
             }
         }
+        if (node->child_count>1&&type_as_value(cx,node->children[1]))  /* 127.227 */
+            return mk_type(A,TY_VOID);
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)) {
@@ -5282,6 +5325,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * in the enclosing statement context).
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_RETURN_STMT: {
+        if (node->child_count>0&&type_as_value(cx,node->children[0]))  /* 127.227 */
+            return mk_type(A,TY_VOID);
         Type *val=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_VOID);
         check_variant_ctor_return(cx,node);   /* 127.59 */
         if (cx->fn_ret&&cx->fn_ret->kind==TY_VOID&&node->child_count>0

@@ -1,0 +1,12 @@
+(* 127.227 item 2 multi-module certificate, module 1 of 2: functions that
+ * return a map whose value type is an array. *)
+m=cgmm.tlib;
+t=$tok{k:str;n:i64};
+f=groups():@($str:@($tok)){
+  let a=@($tok{k:"x";n:1};$tok{k:"y";n:2});
+  let b=@($tok{k:"z";n:3});
+  <@("a":a;"b":b)
+};
+f=nums():@($str:@(i64)){
+  <@("p":@(1;2;3);"q":@(4))
+};

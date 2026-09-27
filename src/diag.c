@@ -78,6 +78,9 @@ static DiagKeepFn s_keep     = NULL;
 static void      *s_keep_ctx = NULL;
 static int        s_err_off[DIAG_ERR_OFF_MAX];
 static int        s_err_off_n = 0;
+/* 135.3j (7): optional sink that replaces the stderr/SARIF writers. */
+static DiagSinkFn s_sink     = NULL;
+static void      *s_sink_ctx = NULL;
 
 /* ── SARIF buffer ──────────────────────────────────────────────────── */
 #define SARIF_MAX_DIAGS 4096
@@ -457,6 +460,7 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
 }
 
 void diag_set_keep(DiagKeepFn keep, void *ctx) { s_keep = keep; s_keep_ctx = ctx; }
+void diag_set_sink(DiagSinkFn sink, void *ctx) { s_sink = sink; s_sink_ctx = ctx; }
 
 int diag_error_offsets(const int **out, int *out_count)
 {
@@ -526,7 +530,9 @@ diag_emit(DiagSeverity sev, int code,
     rebase_pos(&byte_offset, &line, &col);
     if (s_keep && !s_keep(sev, code, byte_offset, s_keep_ctx)) return;
     update_counters(sev, byte_offset);
-    if (s_int_mode == DIAG_INT_TEXT)
+    if (s_sink)
+        s_sink(sev, code, byte_offset, line, col, message, fields.fix, s_sink_ctx);
+    else if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, 0, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col, -1, -1, message, fields.fix);
@@ -548,7 +554,9 @@ diag_emit_span(DiagSeverity sev, int code,
     rebase_pos(&byte_offset, &line, &col);
     if (s_keep && !s_keep(sev, code, byte_offset, s_keep_ctx)) return;
     update_counters(sev, byte_offset);
-    if (s_int_mode == DIAG_INT_TEXT)
+    if (s_sink)
+        s_sink(sev, code, byte_offset, line, col, message, fields.fix, s_sink_ctx);
+    else if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, span_len, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col,

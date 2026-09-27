@@ -42,7 +42,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi",
       "internal": true
     },
@@ -63,7 +63,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi",
       "internal": true
     },
@@ -73,7 +73,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi",
       "internal": true
     },
@@ -116,7 +116,7 @@
       "params": [
         "i64"
       ],
-      "return": "i64",
+      "return": "str",
       "gen": "abi",
       "internal": true
     },
@@ -124,7 +124,7 @@
       "kind": "func",
       "name": "string.uuid",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi",
       "internal": true
     }

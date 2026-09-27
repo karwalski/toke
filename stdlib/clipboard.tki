@@ -7,7 +7,7 @@
       "kind": "func",
       "name": "clipboard.read",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {

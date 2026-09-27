@@ -15,17 +15,18 @@
     {
       "kind": "type",
       "name": "ToonErr",
+      "is_sum": true,
       "fields": [
         {
-          "name": "Parse",
+          "name": "$parse",
           "type": "str"
         },
         {
-          "name": "Type",
+          "name": "$type",
           "type": "str"
         },
         {
-          "name": "Missing",
+          "name": "$missing",
           "type": "str"
         }
       ]

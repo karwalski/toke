@@ -22,7 +22,7 @@
       "kind": "func",
       "name": "sys.chipname",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {
@@ -52,7 +52,7 @@
       "kind": "func",
       "name": "sys.platform",
       "params": [],
-      "return": "i64",
+      "return": "str",
       "gen": "abi"
     },
     {

@@ -65,7 +65,7 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 bad()  { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 if [ ! -x "${TKC}" ]; then
-    echo "SKIP: tkc binary not found at ${TKC} (run 'make' first)"
+    echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"
     exit 1
 fi
 

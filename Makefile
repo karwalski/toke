@@ -140,7 +140,7 @@ VENDOR_SENTINELS = stdlib/vendor/tomlc99/toml.c \
 
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
-          src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
+          src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
           src/stdlib_deps.c src/glue_gen.c src/lint.c src/tkir.c \
           src/main.c src/stdlib/str.c
 
@@ -1757,7 +1757,7 @@ test-stdlib-ws-handshake-integration:
 # src/pkg.c is the package registry, a compiler-side unit, so its test binary
 # sits beside its source in test/ rather than in test/stdlib/.
 test-pkg:
-	$(CC) $(CFLAGS) -iquote src -o test/test_pkg test/test_pkg.c src/pkg.c \
+	$(CC) $(CFLAGS) -iquote src -o test/test_pkg test/test_pkg.c src/pkg.c src/sha256.c \
 	    $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/test_pkg
 

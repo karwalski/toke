@@ -21,6 +21,13 @@
 #     a type error -> "success":false, stage "types"; a parse error ->
 #     "success":false, stage "parse";
 #   * tkc_format_source() returns the canonical formatting.
+#   * 135.3j (7): the diagnostics array is populated -- a type error carries
+#     its code (4031), line and message; tkc_get_diagnostics() agrees; a
+#     diagnostic with no fix has no "fix" key; nothing reaches stderr; and
+#     tkc_version() states VERSION, not the old literal "tkc 0.3.0-wasm".
+#     Until 135.3j every result carried "diagnostics":[] (measured on main
+#     c8575da: the E4031 case below returned error_count 1 and an empty
+#     array, and wrote the JSON record to stderr instead).
 #
 # WHAT IT DOES NOT PROVE.  That emcc accepts the code, or anything about the
 # .wasm/.js artefacts.  It is a stand-in for an emcc job, not a replacement.
@@ -73,6 +80,7 @@ cat > "${WORK}/drv.c" <<'CEOF'
 const char *tkc_check_source(const char *source);
 const char *tkc_format_source(const char *source);
 const char *tkc_version(void);
+const char *tkc_get_diagnostics(const char *source);
 void tkc_free(void *ptr);
 int main(int argc, char **argv)
 {
@@ -81,6 +89,7 @@ int main(int argc, char **argv)
     if (argc < 3) return 2;
     const char *r = strcmp(argv[1], "check") == 0 ? tkc_check_source(argv[2])
                   : strcmp(argv[1], "format") == 0 ? tkc_format_source(argv[2])
+                  : strcmp(argv[1], "diag") == 0 ? tkc_get_diagnostics(argv[2])
                   : NULL;
     if (!r) return 3;
     puts(r);
@@ -128,7 +137,42 @@ r="$(json format 'm=main;f=main():i64{let x=1;<x};')"
 expect "format: success"   "$(field success "${r}")"   "true"
 expect "format: formatted" "$(field formatted "${r}")" 'm=main;\nf=main():i64 {\n  let x=1;\n  <x\n}\n'
 
+# 135.3j (7): the diagnostics themselves.
+want_v="tkc $(tr -d '[:space:]' < VERSION)-wasm"
+expect "tkc_version() states VERSION" "${v}" "${want_v}"
+bad='m=main;f=main():i64{let x:bool=1;<0};'
+r="$(json check "${bad}")"
+expect "type error: first diagnostic code" "$(field code "${r}")" "4031"
+expect "type error: first diagnostic line" "$(field line "${r}")" "1"
+case "$(field message "${r}")" in
+    MISSING|"") fail "type error: diagnostic has no message" ;;
+    *) pass "type error: diagnostic carries its message" ;;
+esac
+# The fix is the CLI's fix, byte for byte, and absent where the CLI's is.
+TKC="${TKC:-${REPO_ROOT}/toke}"
+printf '%s' "${bad}" > "${WORK}/bad.tk"
+expect "type error: fix = the CLI's fix" "$(field fix "${r}")" \
+    "$("${TKC}" --check "${WORK}/bad.tk" 2>&1 | awk '{print; exit}' | awk -v f='"fix":' '{i=index($0,f); if(!i){print "MISSING"; exit} s=substr($0,i+length(f)+1); j=index(s,"\""); print substr(s,1,j-1)}')"
+nofix='m=main;f=main():i64{<"a"};'
+printf '%s' "${nofix}" > "${WORK}/nofix.tk"
+cli_nofix="$("${TKC}" --check "${WORK}/nofix.tk" 2>&1 | awk '/"fix":/{c++} END{print c+0}')"
+rn="$(json check "${nofix}")"
+case "${cli_nofix}:${rn}" in
+    0:*'"fix":'*) fail "no-fix E4031: a \"fix\" key the CLI does not emit" ;;
+    0:*)          pass "no-fix E4031: no fix key, as on the CLI" ;;
+    *)            fail "no-fix E4031: control case now has a CLI fix -- pick another" ;;
+esac
+r2="$(json diag "${bad}")"
+expect "tkc_get_diagnostics agrees with tkc_check_source" "${r2}" "${r}"
+err="$("${B}" check "${bad}" 2>&1 >/dev/null)"
+expect "nothing is written to stderr" "${err}" ""
+r="$(json check 'm=main;f=main():i64{<0')"
+case "$(field code "${r}")" in
+    MISSING) fail "parse error: diagnostics array is empty" ;;
+    *) pass "parse error: diagnostics array is populated" ;;
+esac
+
 echo "Results: ${PASS} passed, ${FAIL} failed"
-# Positive assertion: the build check and all nine API checks ran.
-[ $((PASS + FAIL)) -ge 10 ] || { echo "C135: only $((PASS + FAIL)) checks ran"; exit 1; }
+# Positive assertion: the build check and all API checks ran.
+[ $((PASS + FAIL)) -ge 19 ] || { echo "C135: only $((PASS + FAIL)) checks ran"; exit 1; }
 [ "${FAIL}" -eq 0 ]

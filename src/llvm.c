@@ -34,6 +34,7 @@
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
 #include "diag.h"
 #include "tkc_limits.h"
+#include "version.h"   /* 135.3j: TKC_VERSION */
 #include "stdlib_deps.h"
 #include <stdint.h>
 #include "glue_gen.h"
@@ -3009,6 +3010,38 @@ static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
 static const char *expr_struct_type(Ctx *c, const Node *n);
+
+/* 127.220 item 1: the value of a bare-binding arm (`$ok:v v`) of a match on a
+ * SUM-type value is that variant's payload, not the scrutinee.  Both result
+ * type inferences below took the scrutinee's type, so `let v=mt r{$ok:v v;..}`
+ * over `t=$res{$ok:i64;$err:str}` bound the i64 payload in a pointer-typed
+ * slot and `v+1` died E9002 (fixtures/roundtrip/struct_literal.tk).  Answers
+ * a scalar or str payload with the slot type the arm binding itself gets
+ * (sum_match, emit_expr); NULL for anything else, which keeps the old path. */
+static const char *sum_arm_bind_llvm_type(Ctx *c, const Node *m, const Node *arm) {
+    if (!m || m->child_count < 1 || !arm || arm->child_count < 1 || !arm->children[0])
+        return NULL;
+    const char *sn = expr_struct_type(c, m->children[0]);
+    const StructInfo *si = sn ? lookup_struct(c, sn) : NULL;
+    if ((!si || !si->is_sum) && m->children[0]->rtype &&
+        m->children[0]->rtype->kind == TY_STRUCT && m->children[0]->rtype->name) {
+        const char *rn = m->children[0]->rtype->name;       /* as 127.174 */
+        si = lookup_struct(c, rn);
+        if (!si && rn[0] == '$') si = lookup_struct(c, rn + 1);
+    }
+    if (!si || !si->is_sum) return NULL;
+    char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+    int vidx = struct_field_index(si, tag);
+    if (vidx < 0 || !si->field_types[vidx]) return NULL;
+    const char *vty = si->field_types[vidx];
+    if (vty[0] == '$') vty++;
+    if (!strcmp(vty, "f64") || !strcmp(vty, "f32")) return "double";
+    if (!strcmp(vty, "str")) return "i8*";
+    static const char *const ints[] = { "i64", "i32", "i16", "i8", "u64", "u32",
+                                        "u16", "u8", "bool", NULL };
+    for (int i = 0; ints[i]; i++) if (!strcmp(vty, ints[i])) return "i64";
+    return NULL;
+}
 
 /*
  * ── 124.0c item 3: function values and closure reference counts ─────────
@@ -7258,9 +7291,10 @@ static int emit_expr(Ctx *c, const Node *n)
                  * registry, so reusing `v` across two matches would otherwise leak
                  * the first match's type into the second). */
                 if (ab->kind == NODE_IDENT && arm->children[1] &&
-                    match_arm_body_is_binding(c, ab, arm->children[1]))
-                    arm0_ty = expr_llvm_type(c, n->children[0]);
-                else
+                    match_arm_body_is_binding(c, ab, arm->children[1])) {
+                    const char *sty = sum_arm_bind_llvm_type(c, n, arm);  /* 127.220 */
+                    arm0_ty = sty ? sty : expr_llvm_type(c, n->children[0]);
+                } else
                     arm0_ty = expr_llvm_type(c, ab);
                 if (strcmp(arm0_ty, "i64")) { res_ty = arm0_ty; }
                 break;
@@ -8977,9 +9011,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             /* bare-binding ok arm → scrutinee's type, not the binding's stale
              * local type (see the matching note in emit_expr). */
             if (ab->kind == NODE_IDENT && arm0->children[1] &&
-                match_arm_body_is_binding(c, ab, arm0->children[1]))
-                mrt = expr_llvm_type(c, n->children[0]);
-            else
+                match_arm_body_is_binding(c, ab, arm0->children[1])) {
+                const char *sty = sum_arm_bind_llvm_type(c, n, arm0);  /* 127.220 */
+                mrt = sty ? sty : expr_llvm_type(c, n->children[0]);
+            } else
                 mrt = expr_llvm_type(c, ab);
             break;
         }
@@ -10828,6 +10863,39 @@ done:
     return ok;
 }
 
+static const char *own_c_decl(const char *sym);   /* after g_stdlib_decls */
+
+/*
+ * extern_clashes_own_decl (127.219 item 2) — E4060 when a user extern names
+ * a C function the compiler also declares and calls itself (malloc; the loop
+ * guard's fprintf and exit), with a different signature.
+ *
+ * One symbol gets one `declare`.  The body's declaration wins the dedup, so
+ * the compiler's own calls were checked against the user's signature:
+ * `f=malloc(a:i64;b:i64):i64;` built, and every array literal then called a
+ * two-argument malloc with one argument; `f=exit(n:i64):i64;` under
+ * --max-iters failed in clang ("invalid redefinition of function 'exit'")
+ * with no toke diagnostic.  An extern that repeats the compiler's own
+ * declaration is the same function and is accepted.
+ * No fix: whether to change the signature or bind another symbol is the
+ * author's choice (AGENTS.md §3.1).
+ */
+static void extern_clashes_own_decl(const char *sym, const char *dcl, const Node *n)
+{
+    const char *own = own_c_decl(sym);
+    if (!own) return;
+    size_t ol = strlen(own);
+    static const char nr[] = " noreturn";
+    if (ol > sizeof nr - 1 && !strcmp(own + ol - (sizeof nr - 1), nr)) ol -= sizeof nr - 1;
+    if (strlen(dcl) == ol && !strncmp(dcl, own, ol)) return;
+    char msg[1024];
+    snprintf(msg, sizeof msg,
+             "extern '%s' is declared as '%s', but the compiler itself declares and "
+             "calls the C function '%s' as '%.*s'; one symbol cannot carry both "
+             "signatures", sym, dcl, sym, (int)ol, own);
+    diag_emit(DIAG_ERROR, E4060, n->start, n->line, n->col, msg, (void *)0);
+}
+
 static void emit_toplevel(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -10907,19 +10975,23 @@ static void emit_toplevel(Ctx *c, const Node *n)
         }
         /* Map parameter types to LLVM types */
         if (body_i < 0) {
-            /* extern: emit declare */
-            fprintf(c->out, "\ndeclare %s @%s(", ret, tb);
+            /* extern: emit declare.  127.219: built in a buffer first so it
+             * can be compared with the compiler's own declaration of the
+             * same C symbol (extern_clashes_own_decl). */
+            char dcl[1024];
+            int dl = snprintf(dcl, sizeof dcl, "declare %s @%s(", ret, tb);
             int first = 1;
-            for (int i = 1; i < n->child_count; i++) {
+            for (int i = 1; i < n->child_count && dl < (int)sizeof dcl; i++) {
                 if (n->children[i]->kind != NODE_PARAM) continue;
-                if (!first) fputs(", ", c->out);
                 const char *pty = "i64";
                 if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                     pty = resolve_llvm_type(c, n->children[i]->children[1]);
-                fputs(pty, c->out);
+                dl += snprintf(dcl + dl, sizeof dcl - (size_t)dl, "%s%s", first ? "" : ", ", pty);
                 first = 0;
             }
-            fputs(")\n", c->out);
+            if (dl < (int)sizeof dcl) snprintf(dcl + dl, sizeof dcl - (size_t)dl, ")");
+            fprintf(c->out, "\n%s\n", dcl);
+            extern_clashes_own_decl(tb, dcl, n);
             /* Story 76.1.2d: warn about extern FFI declarations outside stdlib */
             if (strncmp(c->source_file, "std/", 4) != 0 &&
                 strncmp(c->source_file, "std.", 4) != 0) {
@@ -11465,6 +11537,26 @@ static int body_references_symbol(const char *body, long body_len, const char *n
 }
 
 /*
+ * own_c_decl (127.219) — the compiler's own declaration of a plain C symbol
+ * it calls itself, or NULL.
+ */
+static const char *own_c_decl(const char *sym)
+{
+    if (!sym) return NULL;
+    /* Only the C functions the emitter itself CALLS: malloc (array
+     * literals, closure environments) and the loop guard's fprintf and
+     * exit.  printf/puts/strcmp/free are in g_stdlib_decls too, but nothing
+     * the compiler emits calls them, so a user extern of another signature
+     * is the only declaration and the only caller: no clash (127.219). */
+    if (!strcmp(sym, "malloc"))
+        for (int i = 0; g_stdlib_decls[i].name; i++)
+            if (!strcmp(g_stdlib_decls[i].name, sym)) return g_stdlib_decls[i].decl;
+    if (!strcmp(sym, "exit"))    return "declare void @exit(i32) noreturn";
+    if (!strcmp(sym, "fprintf")) return "declare i32 @fprintf(i8*, i8*, ...)";
+    return NULL;
+}
+
+/*
  * stdlib_glue_arity (136.1) — the parameter count declared for `sym` in
  * g_stdlib_decls, or -1 when the compiler knows no such symbol.
  *
@@ -11821,7 +11913,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     FILE *body_file = tmpfile();
     if (!body_file) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot create temp file", (void*)0);
         return -1;
@@ -11964,7 +12056,7 @@ timeparts_done:
                 ctx.dbg_file, ctx.dbg_source_file, ctx.dbg_source_dir);
         /* DICompileUnit */
         fprintf(body_file, "!%d = distinct !DICompileUnit(language: DW_LANG_C99, "
-                "file: !%d, producer: \"toke 0.3.0\", isOptimized: false, "
+                "file: !%d, producer: \"toke " TKC_VERSION "\", isOptimized: false, "   /* 135.3j */
                 "runtimeVersion: 0, emissionKind: FullDebug)\n",
                 ctx.dbg_cu, ctx.dbg_file);
         /* Module flags for DWARF version and Debug Info Version */
@@ -11975,19 +12067,31 @@ timeparts_done:
     }
 
     /* ── Pass 2: read body, scan for references, emit only needed decls ── */
-    fflush(body_file);
-    long body_len = ftell(body_file);
-    rewind(body_file);
-
+    /* 135.3j: ftell/rewind/fread were unchecked — a failed tmpfile write
+     * (disk full) gave body_len -1 and malloc(0) + fread(SIZE_MAX). */
+    long body_len = (fflush(body_file) == 0) ? ftell(body_file) : -1;
+    if (body_len < 0 || fseek(body_file, 0, SEEK_SET) != 0) {
+        fclose(body_file); fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
+                  "LLVM IR emission failed: cannot re-read the temp file", (void*)0);
+        return -1;
+    }
     char *body_buf = (char *)malloc((size_t)body_len + 1);
     if (!body_buf) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: out of memory for body scan", (void*)0);
         return -1;
     }
-    fread(body_buf, 1, (size_t)body_len, body_file);
+    if (fread(body_buf, 1, (size_t)body_len, body_file) != (size_t)body_len) {
+        free(body_buf); fclose(body_file); fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); }
+        diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
+                  "LLVM IR emission failed: short read of the temp file", (void*)0);
+        return -1;
+    }
     body_buf[body_len] = '\0';
     fclose(body_file);
 
@@ -12036,8 +12140,12 @@ timeparts_done:
 
     /* Loop-iteration guard declarations (only if loop guards are enabled) */
     if (ctx.max_iters > 0) {
-        fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
-        fputs("declare void @exit(i32) noreturn\n", f);
+        /* 127.219: an extern that repeats exit's declaration already put it
+         * in the body; a second `declare` is an invalid redefinition. */
+        if (!strstr(body_buf, "\ndeclare i32 @fprintf("))
+            fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
+        if (!strstr(body_buf, "\ndeclare void @exit("))
+            fputs("declare void @exit(i32) noreturn\n", f);
     }
     /* 114.41: thread-local side channel carrying a T!$E error's typed payload
      * (set on an error return, read by the matching $err arm).
@@ -12053,12 +12161,12 @@ timeparts_done:
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: I/O error writing .ll file", (void*)0);
         return -1;
     }
-    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); free(ctx.globals); /* 135.3j */ }
     fclose(f);
     /* A DIAG_ERROR emitted during codegen (e.g. 114.19c array+scalar concat)
      * must fail the build — the .ll is written but callers treat <0 as failure

@@ -25,7 +25,7 @@
  * big-endian -- so every file the encoder wrote failed "invalid magic". */
 #define TKIR_MAGIC          0x52494B54u  /* "TKIR" read as a little-endian u32 */
 #define TKIR_VERSION_MAJOR  1
-#define TKIR_VERSION_MINOR  0
+#define TKIR_VERSION_MINOR  1   /* 127.219: kinds 0x0A-0x12, resolved labels */
 
 /* ── Section type IDs (matching binary-ir-design.md) ─────────────────── */
 
@@ -47,6 +47,19 @@
 #define TKIR_TY_ARRAY       0x07
 #define TKIR_TY_FN_PTR      0x08
 #define TKIR_TY_ERR_UNION   0x09
+/* 127.219: the fixed-width scalars and maps had no code at all, so the
+ * encoder wrote `u64` as an empty struct named "u64" and a map as void.
+ * A MAP entry carries two u16 type indices: key, then value. */
+#define TKIR_TY_I8          0x0A
+#define TKIR_TY_I16         0x0B
+#define TKIR_TY_I32         0x0C
+#define TKIR_TY_U8          0x0D
+#define TKIR_TY_U16         0x0E
+#define TKIR_TY_U32         0x0F
+#define TKIR_TY_U64         0x10
+#define TKIR_TY_F32         0x11
+#define TKIR_TY_MAP         0x12
+#define TKIR_TY_MAX         0x12   /* highest kind the reader accepts */
 
 /* ── Opcodes ─────────────────────────────────────────────────────────── */
 
@@ -67,6 +80,13 @@
 #define TKIR_OP_GE          0x15
 
 /* Control flow */
+/* 127.219: a branch's u32 immediate is a label: the index, within the same
+ * function's instruction list, of the instruction to continue at (it may
+ * equal instr_count only if no instruction follows -- the encoder always
+ * appends a RET so it never does).  BR jumps unconditionally; BR_IF jumps
+ * when register `src` is ZERO and falls through otherwise, so
+ * `if(c){T}el{E}` is  BR_IF c ->E ; T ; BR ->end ; E ; end.  Until 127.219
+ * every label was written as 0. */
 #define TKIR_OP_BR          0x20
 #define TKIR_OP_BR_IF       0x21
 #define TKIR_OP_CALL        0x22
@@ -179,7 +199,8 @@ typedef struct {
 typedef struct {
     uint8_t  kind;           /* TKIR_TY_* constant                       */
     char     name[128];      /* struct name, empty for primitives         */
-    uint16_t elem_type_idx;  /* element/return type index                 */
+    uint16_t elem_type_idx;  /* element/return type index; MAP: value     */
+    uint16_t key_type_idx;   /* MAP: key type index (127.219)             */
     uint16_t field_count;
     uint16_t *field_type_idxs; /* heap-allocated                          */
 } TkirTypeEntry;
