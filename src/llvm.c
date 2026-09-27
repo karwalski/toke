@@ -332,6 +332,38 @@ static void clear_ptr_local(Ctx *c, const char *name) {
             c->ptrs[i].struct_type[0] = '\0';
 }
 
+/* 127.237 (3): a shadowing match-arm binding re-tags the RAW name in the
+ * registry (127.71: every use inside the arm looks the raw name up), by
+ * blanking the outer binding's entries and appending its own.  Nothing put
+ * the outer tag back, so after the arm an outer `let v=2.5` was still "$str"
+ * and `v<3.0` lowered to strcmp on a double (E9003).  The arm saves the raw
+ * name's entries before the re-tag and restores them after its body; the
+ * arm's own raw-name entries are retired (their name blanked — no lookup
+ * matches an empty name). */
+#define PTR_SHADOW_MAX 16   /* raw-name entries saved per arm; more stay blank (the old behaviour) */
+typedef struct {
+    int active, pc0, n;
+    char name[NAME_BUF];
+    char ty[PTR_SHADOW_MAX][NAME_BUF];
+} PtrShadow;
+static void ptr_shadow_save(Ctx *c, PtrShadow *ps, const char *raw) {
+    ps->active = 1; ps->pc0 = c->ptr_count; ps->n = 0;
+    strncpy(ps->name, raw, NAME_BUF - 1); ps->name[NAME_BUF - 1] = '\0';
+    for (int i = 0; i < c->ptr_count && ps->n < PTR_SHADOW_MAX; i++)
+        if (!strcmp(c->ptrs[i].name, raw))
+            memcpy(ps->ty[ps->n++], c->ptrs[i].struct_type, NAME_BUF);
+}
+static void ptr_shadow_restore(Ctx *c, PtrShadow *ps) {
+    if (!ps->active) return;
+    ps->active = 0;
+    int k = 0;
+    for (int i = 0; i < c->ptr_count; i++) {
+        if (strcmp(c->ptrs[i].name, ps->name)) continue;
+        if (i < ps->pc0) { if (k < ps->n) memcpy(c->ptrs[i].struct_type, ps->ty[k++], NAME_BUF); }
+        else c->ptrs[i].name[0] = '\0';
+    }
+}
+
 /*
  * is_ptr_local — Return 1 if `name` was previously registered via
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
@@ -1340,38 +1372,26 @@ static int is_file_errbox_wrapper(const char *name) {
  * from a failure (runtime-abi.md §7.2: "the zero filler is not the
  * discriminant").  Same class and same cure as 114.53 (str.toint) and
  * 127.67 (toml.bool/i64).  Their glue now maintains the slot
- * (src/stdlib/json_glue.c); this list is what makes the slot authoritative.
- * A name belongs here only if its glue sets the slot on every path — a
- * wrapper that leaves it stale would read an earlier call's error.
+ * (src/stdlib/json_glue.c); being a slot wrapper is what makes the slot
+ * authoritative.  A wrapper qualifies only if its glue sets the slot on
+ * every path — one that leaves it stale would read an earlier call's error,
+ * and one that returns a bare 0 would read a failure as a success.
  */
 static int is_stdlib_slot_wrapper(const char *name) {
-    static const char *const names[] = {
-        "tk_json_bool_w", "tk_json_getbool_w",
-        "tk_json_i64_w", "tk_json_getint_w", "tk_json_geti64_w", "tk_json_geti32_w",
-        "tk_json_u64_w",
-        "tk_json_f64_w", "tk_json_getf32_w", "tk_json_getfloat_w",
-        /* 127.182: {msg} box of stdlib/toml.tki's `tomlerr` record */
-        "tk_toml_load_w", "tk_toml_loadfile_w", "tk_toml_str_w",
-        "tk_toml_section_w", "tk_toml_bool_w", "tk_toml_i64_w",
-        /* 135.5b: `T!str` — the slot holds the message pointer itself */
-        "tk_image_decode_w", "tk_image_encode_w", "tk_image_crop_w",
-        "tk_image_pixelat_w", "tk_image_adaptivethreshold_w",
-        "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
-        /* 127.104: `TlsKeypair!str` — the slot holds tls.c's message */
-        "tk_tls_genselfsigned_w", "tk_tls_genselfsignedalg_w",
-        /* 138.3 (B3): the typed http client calls return `T!$httperr` and
-         * leave an {msg; code} box in the slot; without these rows
-         * `$err:e e.msg` read a nil payload (RT005) */
-        "tk_http_clientget_w", "tk_http_clientpost_w", "tk_http_clientput_w",
-        "tk_http_clientdelete_w", "tk_http_geturl_w",
-        /* 138.6: std.db's scalar row accessors and exec (db_glue.c db_raise) */
-        "tk_row_str_w", "tk_row_i64_w", "tk_row_u64_w", "tk_row_f64_w", "tk_row_bool_w",
-        "tk_db_exec_w", "tk_db_execon_w",
+    /* 127.238: derived, not listed.  Every `T!E` export of a .tki (T not
+     * void) is a slot wrapper unless its glue is on the bare-glue exception
+     * list in stdlib_tables.c, which test/conform/C375 keeps exact. */
+    if (!name || is_err_slot_bare_glue(name)) return 0;
+    if (is_tki_value_err_union_wrapper(name)) return 1;
+    /* std.json's get* accessors keep the slot (json_glue.c) but their .tki
+     * declares a plain `i64`, so the derivation cannot see them. */
+    static const char *const undeclared[] = {
+        "tk_json_getbool_w", "tk_json_getint_w", "tk_json_geti64_w",
+        "tk_json_geti32_w", "tk_json_getf32_w", "tk_json_getfloat_w",
         NULL,
     };
-    if (!name) return 0;
-    for (int i = 0; names[i]; i++)
-        if (!strcmp(name, names[i])) return 1;
+    for (int i = 0; undeclared[i]; i++)
+        if (!strcmp(name, undeclared[i])) return 1;
     return 0;
 }
 
@@ -1403,19 +1423,18 @@ static const char *stdlib_err_payload_type(Ctx *c, const char *prv,
                                            char *buf, size_t bufsz)
 {
     if (!is_stdlib_slot_wrapper(prv) && !is_file_errbox_wrapper(prv)) return NULL;
-    ensure_tki_cache_loaded();
-    for (int i = 0; i < g_tki_cache_count; i++) {
-        if (strcmp(g_tki_cache[i].wrapper_name, prv)) continue;
-        const char *bang = strchr(g_tki_cache[i].toke_ret, '!');
-        if (!bang) return NULL;
-        bang++;
-        if (*bang == '$') bang++;
-        snprintf(buf, bufsz, "%s", bang);
-        if (!strcmp(buf, "str")) return "str";
-        const StructInfo *si = lookup_struct(c, buf);
-        return si ? si->name : NULL;
-    }
-    return NULL;
+    /* 127.238: by the entry the symbol implements, under either spelling
+     * (tk_df_… / tk_dataframe_…), not by the cache's own wrapper name. */
+    const TkiCacheEntry *te = tki_entry_for_symbol(prv);
+    if (!te) return NULL;
+    const char *bang = strchr(te->toke_ret, '!');
+    if (!bang) return NULL;
+    bang++;
+    if (*bang == '$') bang++;
+    snprintf(buf, bufsz, "%s", bang);
+    if (!strcmp(buf, "str")) return "str";
+    const StructInfo *si = lookup_struct(c, buf);
+    return si ? si->name : NULL;
 }
 
 /* 127.182: may a stdlib payload of type `from` pass through `!` into a
@@ -6932,6 +6951,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!arm || arm->child_count < 1) continue;
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
                 int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
+                PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
                 int vidx = struct_field_index(ssi, tag);
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -6948,6 +6968,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                     const char *uname = make_unique_name(c, vname);
                     int vshadow = (uname != vname);
+                    if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                     if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
                     const char *vty = ssi->field_types[vidx];
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
@@ -6980,6 +7001,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -6990,10 +7012,59 @@ static int emit_expr(Ctx *c, const Node *n)
 
         /* Multi-arm string match: when scrutinee is a string (i8*) and
          * there are 3+ arms, emit a strcmp chain instead of ok/err bifurcation.
-         * Each arm tag is compared against the scrutinee as a string. (Story 80.2.7) */
-        if (!strcmp(scr_ty, "i8*") && num_arms >= 3) {
-            /* Ensure scrutinee is i8* (it should be since scr_ty is i8*) */
+         * Each arm tag is compared against the scrutinee as a string. (Story 80.2.7)
+         *
+         * 127.237 (1): the chain was gated on 3+ arms and an i8* scrutinee
+         * only.  A 2-arm string match (`mt s {$x:w 1;$y:w 2}`) therefore fell
+         * through to the RESULT lowering, which dispatches on value-vs-null —
+         * every non-null string took arm 0, so s="y" gave 1: a silent wrong
+         * arm.  A 1-arm match emitted a branch to a label that was never
+         * defined (clang error, E9003).  And a string scrutinee that arrives
+         * as an i64 word (a call: `mt g(s){…}`, `mt str.lower(s){…}`) missed
+         * the chain and died with E9005 at 3+ arms.  The checker's type says
+         * which it is: a plain `str` scrutinee (TY_STR — not an error union)
+         * whose arms are not the result tags is a string match at any arity. */
+        /* Not a string match: a fallible scrutinee (`$str!$e` — the result
+         * lowering below), or arms that name the result tags or a TYPE
+         * (`{$str:v v;$apperr:e …}` is the type-named spelling of ok/err). */
+        int str_not_plain = 0;
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm = n->children[i];
+            if (!arm || arm->child_count < 1) continue;
+            char rtag[128]; tok_cp(c->src, arm->children[0], rtag, sizeof rtag);
+            char dtag[130]; snprintf(dtag, sizeof dtag, "$%s", rtag);
+            if (!strcmp(rtag, "ok") || !strcmp(rtag, "Ok") ||
+                !strcmp(rtag, "err") || !strcmp(rtag, "Err") ||
+                !strcmp(rtag, "str") || !strcmp(rtag, "i64") || !strcmp(rtag, "f64") ||
+                !strcmp(rtag, "bool") || !strcmp(rtag, "u64") ||
+                lookup_struct(c, rtag) || lookup_struct(c, dtag)) str_not_plain = 1;
+        }
+        if (!str_not_plain) {
+            const Node *s0 = n->children[0];
+            if (s0->rtype && s0->rtype->kind == TY_ERROR_TYPE) str_not_plain = 1;
+            else if (s0->kind == NODE_CALL_EXPR) {
+                int fu = 0, fz = 0; const char *fe = NULL;
+                classify_fallible_call(c, s0, &fu, &fz, &fe);
+                if (fu || fz || fe) str_not_plain = 1;
+            } else if (s0->kind == NODE_IDENT) {
+                char sn0[NAME_BUF]; tok_cp(c->src, s0, sn0, sizeof sn0);
+                if (fallible_local_active(c, fallible_local_index(c, get_llvm_name(c, sn0))))
+                    str_not_plain = 1;
+            }
+        }
+        int str_typed = (n->children[0]->rtype && n->children[0]->rtype->kind == TY_STR) ||
+                        (scr_sum && !strcmp(scr_sum, "$str"));   /* a std call's .tki `$str` */
+        int str_chain = (!strcmp(scr_ty, "i8*") && num_arms >= 3) ||
+                        ((str_typed || !strcmp(scr_ty, "i8*")) && num_arms >= 1 &&
+                         !str_not_plain &&
+                         (!strcmp(scr_ty, "i8*") || !strcmp(scr_ty, "i64")));
+        if (str_chain) {
             int str_val = sv;
+            if (strcmp(scr_ty, "i8*")) {   /* an i64-ABI string word */
+                str_val = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", str_val, sv);
+                scr_ty = "i8*";
+            }
 
             /* Emit strcmp chain: for each arm, compare tag string */
             int arm_labels[64];
@@ -7050,6 +7121,7 @@ static int emit_expr(Ctx *c, const Node *n)
 
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
                 int arm_saved_al = c->alias_count;   /* arm-scoped binding */
+                PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
 
                 /* Bind arm variable to scrutinee */
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -7066,6 +7138,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                     const char *uname = make_unique_name(c, vname);
                     int vshadow = (uname != vname);
+                    if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                     if (uname != vname) {
                         strncpy(vname, uname, sizeof vname - 1);
                         vname[sizeof vname - 1] = '\0';
@@ -7084,6 +7157,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
                 arm_i++;
             }
 
@@ -7189,7 +7263,7 @@ static int emit_expr(Ctx *c, const Node *n)
             }
         }
         if (num_arms >= 3 && !flat_ssi) {
-            char mmsg[320], mfix[320];
+            char mmsg[320];
             char t0[128] = "";
             if (n->children[1] && n->children[1]->child_count >= 1)
                 tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
@@ -7201,12 +7275,14 @@ static int emit_expr(Ctx *c, const Node *n)
                 snprintf(mmsg, sizeof mmsg,
                     "match has %d arms, but the sum type of the matched value is not established",
                     num_arms);
-            snprintf(mfix, sizeof mfix,
-                "annotate the matched value with its sum type, or match it in a "
-                "function that takes it as a typed parameter; a match of 3 or "
-                "more arms needs the type to dispatch on");
+            /* 127.237 (4): no `fix`.  It said "annotate the matched value
+             * with its sum type, or match it in a function that takes it as a
+             * typed parameter" — two alternatives, neither of them an edit,
+             * and wrong outright when the arms are not variants of any sum
+             * (the scrutinee's type is what is unknown, not the program's
+             * intent).  Not deterministically correct, so absent (AGENTS §6). */
             diag_emit(DIAG_ERROR, E9005,
-                      n->tok_start, n->line, n->col, mmsg, "fix", mfix, NULL);
+                      n->tok_start, n->line, n->col, mmsg, (void *)0);
             /* Emit nothing further for this match: the result slot is already
              * allocated, so load it and let the (failed) build stop here. */
             t = next_tmp(c);
@@ -7282,6 +7358,7 @@ static int emit_expr(Ctx *c, const Node *n)
              * `let n=mt f(){$ok:n n;..}; let id=mt g(){$ok:n n;..}` every
              * later `n` read the SECOND arm's slot (n=7 for n=150, silent). */
             int arm_saved_al = c->alias_count;
+            PtrShadow psh; psh.active = 0;           /* 127.237 (3) */
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
             else if (!flat_ssi)
@@ -7365,6 +7442,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                 const char *uname = make_unique_name(c, vname);
                 int vshadow = (uname != vname);
+                if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                 if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
                 char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
                 const char *vty = flat_ssi->field_types[struct_field_index(flat_ssi, ftag)];
@@ -7403,6 +7481,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                 const char *uname = make_unique_name(c, vname);
                 int vshadow = (uname != vname);
+                if (vshadow) ptr_shadow_save(c, &psh, vraw);   /* 127.237 (3) */
                 if (uname != vname) {
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
@@ -7497,6 +7576,7 @@ static int emit_expr(Ctx *c, const Node *n)
             if (abody && abody->kind == NODE_RETURN_STMT) {
                 emit_match_arm_body(c, abody, res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
             } else {
                 /* Emit arm body expression */
                 int body_val = -1;
@@ -7519,6 +7599,7 @@ static int emit_expr(Ctx *c, const Node *n)
 
                 fprintf(c->out, "  br label %%rm_end%d\n", L);
                 c->alias_count = arm_saved_al;
+                ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
             }
         }
 
@@ -9148,6 +9229,8 @@ static int la_fresh_std_call(Ctx *c, const Node *rhs) {
 }
 
 static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int depth);
+static int la_borrowed_init(Ctx *c, const Node *init, const char *x);
+static int la_local_linear_in(Ctx *c, const Node *fn, const char *y, int depth);
 
 /* 127.229 (2): is `rhs` the self-concat `x + @(e1;…;ek)` — x on the left, an
  * array LITERAL on the right?  That is an append of k elements, and it is
@@ -9278,6 +9361,7 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         la_ident_is(c, n->children[0], x) && la_self_concat(c, n->children[1], x))
         return la_bad_use(c, n->children[1]->children[1], x, strict, depth);
     int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0;
+    int borrowed_init = 0;   /* 127.237 (2): child index of a copied init */
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
         if (la_ident_is(c, n->children[0], x)) skip0 = 1;     /* LHS */
@@ -9301,11 +9385,26 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
     case NODE_BIND_STMT:
     case NODE_MUT_BIND_STMT:
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* name slot */
+        else if (n->child_count >= 2 && n->children[0] && c->la_fn) {
+            /* 127.237 (2): `let y=mut.x` where y is a linear array of this
+             * function is a borrowed initialiser, copied once at the binding
+             * (127.229 (7)), so y never holds x's block: not a retention.
+             * Eval 0221's `sorthelper(evens)` binds its param this way, and
+             * counting it as retaining made every `evens=evens+@(e)` in the
+             * caller copy the accumulator. */
+            int has_ann = (n->child_count >= 3 && n->children[2]);
+            const Node *init = has_ann ? n->children[2] : n->children[1];
+            char y[NAME_BUF]; tok_cp(c->src, n->children[0], y, sizeof y);
+            if (la_ident_is(c, init, x) && la_borrowed_init(c, init, y) &&
+                la_local_linear_in(c, c->la_fn, y, depth))
+                borrowed_init = has_ann ? 2 : 1;
+        }
         break;
     default: break;
     }
     for (int i = 0; i < n->child_count; i++) {
         if (i == 0 && skip0) continue;
+        if (borrowed_init && i == borrowed_init) continue;   /* 127.237 (2) */
         if (i == 1 && skip_field_name) continue;
         if (i >= 1 && skip_bare_args && la_ident_is(c, n->children[i], x)) continue;
         if (i >= 1 && user_call && la_ident_is(c, n->children[i], x) &&
@@ -9354,60 +9453,102 @@ static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *
     return 1;
 }
 
-/* Populate c->linear_arr for the function node `fn` (its NODE_PARAM children
- * are params; its NODE_STMT_LIST child is the body). */
-static void compute_linear_arrays(Ctx *c, const Node *fn) {
-    c->linear_arr_count = 0;
+/* Collect the linearly-owned array locals of the function node `fn` (its
+ * NODE_PARAM children are params; its NODE_STMT_LIST child is the body) into
+ * out[0..*count).  `depth` is handed to la_bad_use: 0 for the function being
+ * emitted, deeper for a query made from inside another function's analysis
+ * (la_local_linear_in), where it bounds the recursion.  A deeper query only
+ * ever cuts off more callee chains, and every cutoff answers "retains", so a
+ * name it accepts is one the depth-0 run for the same function accepts too.
+ * Returns 0 when the 64-name cap was hit (the set may then be incomplete). */
+static int la_collect_linear(Ctx *c, const Node *fn, char (*out)[NAME_BUF], int *count,
+                             int depth) {
+    *count = 0;
+    int complete = 1;
     c->la_fn = fn;   /* 127.108: la_binds_name consults it */
     const Node *body = NULL;
     for (int i = 0; i < fn->child_count; i++)
         if (fn->children[i]->kind == NODE_STMT_LIST) { body = fn->children[i]; break; }
-    if (!body) return;
-    /* Candidate names: the LHS of any self-update assignment in the body. */
-    /* Walk and, for each distinct candidate, validate. */
-    /* Inline collection to avoid a separate visited-set structure. */
-    for (int pass = 0; pass < 1; pass++) { (void)pass;
-        /* depth-first scan for self-update assignments */
-        const Node *stack[512]; int sp = 0; stack[sp++] = body;
-        while (sp > 0) {
-            const Node *n = stack[--sp];
-            if (!n) continue;
-            if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
-                n->children[0]->kind == NODE_IDENT) {
-                char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
-                if (la_self_update_call(c, n->children[1], x, NULL) ||
-                    la_self_concat(c, n->children[1], x)) {   /* 127.229 (2) */
-                    /* candidate x — skip if already decided */
-                    int known = 0;
-                    for (int k = 0; k < c->linear_arr_count; k++)
-                        if (!strcmp(c->linear_arr[k], x)) { known = 1; break; }
-                    if (!known && c->linear_arr_count < 64) {
-                        /* x must not be a param */
-                        int is_param = 0;
-                        for (int pi = 0; pi < fn->child_count; pi++) {
-                            const Node *p = fn->children[pi];
-                            if (p->kind == NODE_PARAM && p->child_count > 0 &&
-                                la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
-                        }
-                        int binds = 0, self_updates = 0, borrowed = 0;
-                        /* 127.229 (7): a borrowed initialiser only as the
-                         * one binding of x, so the copy at it is the only
-                         * way x's block is ever obtained from another name. */
-                        if (!is_param && !la_bad_use(c, body, x, 0, 0) &&
-                            la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
-                            binds >= 1 && self_updates >= 1 &&
-                            (borrowed == 0 || binds == 1)) {
-                            strncpy(c->linear_arr[c->linear_arr_count], x, NAME_BUF - 1);
-                            c->linear_arr[c->linear_arr_count][NAME_BUF - 1] = '\0';
-                            c->linear_arr_count++;
-                        }
+    if (!body) return 1;
+    /* Candidate names: the LHS of any self-update assignment in the body;
+     * depth-first scan, each distinct candidate validated once. */
+    const Node *stack[512]; int sp = 0; stack[sp++] = body;
+    while (sp > 0) {
+        const Node *n = stack[--sp];
+        if (!n) continue;
+        if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
+            n->children[0]->kind == NODE_IDENT) {
+            char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
+            if (la_self_update_call(c, n->children[1], x, NULL) ||
+                la_self_concat(c, n->children[1], x)) {   /* 127.229 (2) */
+                /* candidate x — skip if already decided */
+                int known = 0;
+                for (int k = 0; k < *count; k++)
+                    if (!strcmp(out[k], x)) { known = 1; break; }
+                if (!known && *count >= 64) complete = 0;
+                if (!known && *count < 64) {
+                    /* x must not be a param */
+                    int is_param = 0;
+                    for (int pi = 0; pi < fn->child_count; pi++) {
+                        const Node *p = fn->children[pi];
+                        if (p->kind == NODE_PARAM && p->child_count > 0 &&
+                            la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
+                    }
+                    int binds = 0, self_updates = 0, borrowed = 0;
+                    /* 127.229 (7): a borrowed initialiser only as the
+                     * one binding of x, so the copy at it is the only
+                     * way x's block is ever obtained from another name. */
+                    if (!is_param && !la_bad_use(c, body, x, 0, depth) &&
+                        la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
+                        binds >= 1 && self_updates >= 1 &&
+                        (borrowed == 0 || binds == 1)) {
+                        strncpy(out[*count], x, NAME_BUF - 1);
+                        out[*count][NAME_BUF - 1] = '\0';
+                        (*count)++;
                     }
                 }
             }
-            for (int i = 0; i < n->child_count && sp < 510; i++)
-                if (n->children[i]) stack[sp++] = n->children[i];
         }
+        for (int i = 0; i < n->child_count && sp < 510; i++)
+            if (n->children[i]) stack[sp++] = n->children[i];
     }
+    return complete;
+}
+
+/* Populate c->linear_arr for the function node `fn`. */
+static void compute_linear_arrays(Ctx *c, const Node *fn) {
+    la_collect_linear(c, fn, c->linear_arr, &c->linear_arr_count, 0);
+}
+
+/* 127.237 (2): will the local `y` of user function `fn` be a linear array
+ * when `fn` is emitted?  Then its binding `let y=mut.p` copies p's block once
+ * (la_borrowed_init, emit_stmt) and y never shares it.  Asked from inside
+ * another function's analysis, so the analysis state it disturbs (la_fn and
+ * the in-progress stack) is saved and restored, and the in-progress stack is
+ * started empty — the query must answer as the real depth-0 run of `fn`
+ * would, not under an outer query's assumption.  Recursion is bounded by
+ * `depth` (la_bad_use's cutoff at 4); the cutoff answers "not linear". */
+static int la_local_linear_in(Ctx *c, const Node *fn, const char *y, int depth) {
+    /* One name buffer per depth: each nested query is strictly deeper. */
+    static char la_q_names[5][64][NAME_BUF];
+    if (!fn || depth < 0 || depth > 4) return 0;
+    char (*names)[NAME_BUF] = la_q_names[depth];
+    const Node *saved_fn = c->la_fn;
+    int saved_n = la_inprog_n;
+    const Node *saved_ifn[LA_INPROG_MAX]; int saved_iidx[LA_INPROG_MAX];
+    memcpy(saved_ifn, la_inprog_fn, sizeof saved_ifn);
+    memcpy(saved_iidx, la_inprog_idx, sizeof saved_iidx);
+    la_inprog_n = 0;
+    int count = 0;
+    int complete = la_collect_linear(c, fn, names, &count, depth + 1);
+    int found = 0;
+    for (int k = 0; k < count && complete; k++)
+        if (!strcmp(names[k], y)) { found = 1; break; }
+    memcpy(la_inprog_fn, saved_ifn, sizeof saved_ifn);
+    memcpy(la_inprog_idx, saved_iidx, sizeof saved_iidx);
+    la_inprog_n = saved_n;
+    c->la_fn = saved_fn;
+    return found;
 }
 
 /* 126.8: does RHS prove the assigned var holds strings? Covers `x = x + @("lit")`
@@ -11635,6 +11776,12 @@ timeparts_done:
             fprintf(body_file, "@__tk_cap_baked_enforce = constant i32 %d\n",
                     lim.cap_enforce ? 1 : 0);
         }
+        /* 135.29: main publishes its status for tk_exitfail.h's atexit
+         * handler, which otherwise could only exit 1 after a recorded
+         * failure (a failed test assertion, a server that did not start)
+         * whatever main returned.  The strong definition lives here, in the
+         * entry module only; the stdlib's is weak (capabilities.c pattern). */
+        fputs("@tk_exitfail_main_status = global i32 0\n", body_file);
         fputs("\ndefine i32 @main(i32 %argc, i8** %argv) #0 {\n", body_file);
         fputs("  call void @tk_runtime_init(i32 %argc, i8** %argv)\n", body_file);
         if (!strcmp(tkmain->ret, "void")) {
@@ -11643,6 +11790,7 @@ timeparts_done:
         } else {
             fputs("  %r = call fastcc i64 @tk_main()\n", body_file);
             fputs("  %rc = trunc i64 %r to i32\n", body_file);
+            fputs("  store volatile i32 %rc, i32* @tk_exitfail_main_status\n", body_file);
             fputs("  ret i32 %rc\n", body_file);
         }
         fputs("}\n", body_file);

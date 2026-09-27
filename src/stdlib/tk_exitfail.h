@@ -25,10 +25,15 @@
  * exit status changes.  (An immediate exit would report the first failure
  * and hide the rest.)  Consequences, stated so nobody has to rediscover them:
  *
- *   - the status is 1 whatever main returned: a program that returns 3 after
- *     a failed assertion exits 1.  An atexit handler cannot read the status
- *     exit() was given, and the place that could (the emitted `ret` of the
- *     C main in src/llvm.c) is outside the stdlib;
+ *   - the status is main's own when main returned a non-zero one, and 1
+ *     otherwise: a program that returns 3 after a failed assertion exits 3
+ *     (135.29).  An atexit handler cannot read the status exit() was given,
+ *     so the emitted C `main` (src/llvm.c) publishes it first: it stores the
+ *     truncated tk_main result in tk_exitfail_main_status just before its
+ *     `ret`.  The entry module carries the STRONG definition of that global
+ *     (as it does for the capability grants, capabilities.c); the weak one
+ *     here is what a unit test or a void main links against, and reads 0.
+ *     A status whose low 8 bits are 0 (256, …) would exit 0 and counts as 0;
  *   - os.exit(0) after a failure exits 1 as well, with the same line: os.exit
  *     is _exit() and skips atexit handlers, so tk_os_exit calls
  *     tk_exitfail_atexit() itself for a status of 0;
@@ -61,17 +66,22 @@
 TK_EXITFAIL_WEAK volatile long tk_exitfail_count = 0;
 /* The first failure's reason (a string literal the caller passes). */
 TK_EXITFAIL_WEAK const char *volatile tk_exitfail_reason = NULL;
+/* 135.29: the status main returned, published by the emitted C main just
+ * before its `ret` (strong definition in the entry module); 0 until then. */
+TK_EXITFAIL_WEAK volatile int tk_exitfail_main_status = 0;
 
 TK_EXITFAIL_WEAK void tk_exitfail_atexit(void)
 {
     if (tk_exitfail_count <= 0) return;
+    int ms = tk_exitfail_main_status;
+    int status = (ms & 0xff) ? (ms & 0xff) : 1;
     fflush(NULL);
     fprintf(stderr,
-            "DIAGNOSTIC: kind=exit_status status=1 failures=%ld first=\"%s\"\n",
-            (long)tk_exitfail_count,
+            "DIAGNOSTIC: kind=exit_status status=%d failures=%ld first=\"%s\"\n",
+            status, (long)tk_exitfail_count,
             tk_exitfail_reason ? tk_exitfail_reason : "(unknown)");
     fflush(stderr);
-    _exit(1);
+    _exit(status);
 }
 
 /* Record a failure.  `reason` must outlive the process (a literal). */

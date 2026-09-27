@@ -42,11 +42,11 @@
 # THE EXIT STATUS (135.24 item 1).  B's program returns 3 from main after
 # serveworkers returns, and this suite used to expect 3 — the only thing
 # that told "serveworkers returned" apart from "the process was killed".  A
-# start failure now records tk_exitfail(), which makes the process exit 1
-# however main ends (tk_exitfail.h), so 3 is no longer observable; case 2
-# expects 1 plus the structured `server_start_failed` line naming
-# http.serveworkers, stage "bind/fork".  That is the only expectation the
-# new contract changed.
+# start failure now records tk_exitfail(), which makes the process exit
+# non-zero however main ends (tk_exitfail.h): 1, or since 135.29 main's own
+# status when that is non-zero — so case 2 expects 3 again, now together
+# with the structured `server_start_failed` line naming http.serveworkers,
+# stage "bind/fork".
 #
 # Story: 127.203, 127.231 (item 4), 135.24 (items 1 and 2)
 
@@ -149,8 +149,8 @@ if kill -0 "${B_PID}" 2>/dev/null; then
     stop "${B_PID}"
 else
     rc=0; wait "${B_PID}" || rc=$?
-    expect "server B exits 1, says it could not bind, and prints the start-failure line" \
-        "${rc} $(grep -a -c "could not bind to port ${PORT}" b.log) $(grep -a -c "^DIAGNOSTIC: kind=server_start_failed fn=\"http.serveworkers\" port=${PORT} stage=\"bind/fork\"$" b.log)" "1 1 1"
+    expect "server B exits 3 (main's), says it could not bind, and prints the start-failure line" \
+        "${rc} $(grep -a -c "could not bind to port ${PORT}" b.log) $(grep -a -c "^DIAGNOSTIC: kind=server_start_failed fn=\"http.serveworkers\" port=${PORT} stage=\"bind/fork\"$" b.log)" "3 1 1"
 fi
 B_PID=""
 

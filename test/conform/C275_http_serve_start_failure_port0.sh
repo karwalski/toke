@@ -26,10 +26,11 @@
 #       port outside 0..65535 is a start failure at stage "port".
 #
 # WHAT IS ASSERTED:
-#   1. serveworkers on a held port: caller sees -1, stage bind/fork, exit 1
-#      (main returns 3; the start failure's 1 wins, tk_exitfail.h)
+#   1. serveworkers on a held port: caller sees -1, stage bind/fork, exit 3
+#      (main returns 3, and since 135.29 a recorded failure keeps main's own
+#      non-zero status; it would be 1 had main returned 0 — tk_exitfail.h)
 #   2. serve on a held port: the same, reported as http.serve
-#   3. serveworkers(70000;1): stage "port", exit 1 — not a server on 8080
+#   3. serveworkers(70000;1): stage "port", exit 3 (main's) — not a server on 8080
 #   4. serveworkers(0;2): reports a port that is not 8080, answers GET /ok
 #      on it, and on SIGTERM returns 0 to main, whose own status (3) is the
 #      exit status, with no failure lines
@@ -85,7 +86,7 @@ TOKE
 result() {
     printf '%s %s %s %s' "$RC" "$(grep -a '^r=' "$1.out")" \
         "$(grep -a -c "^DIAGNOSTIC: kind=server_start_failed fn=\"$2\" port=$3 stage=\"$4\"$" "$1.err")" \
-        "$(grep -a -c '^DIAGNOSTIC: kind=exit_status status=1' "$1.err")"
+        "$(grep -a -c '^DIAGNOSTIC: kind=exit_status status=3' "$1.err")"
 }
 
 # A port held by a listener that bound port 0 itself and printed it: there
@@ -105,13 +106,13 @@ if [ -z "${BUSY}" ]; then
 else
     if build busyw "http.serveworkers(${BUSY};2)"; then
         ./busyw_bin > busyw.out 2> busyw.err; RC=$?
-        expect "serveworkers on a held port: -1, stage bind/fork, exit 1 (main returned 3)" \
-            "$(result busyw http.serveworkers "${BUSY}" bind/fork)" "1 r=-1 1 1" busyw.err
+        expect "serveworkers on a held port: -1, stage bind/fork, exit 3 (main returned 3)" \
+            "$(result busyw http.serveworkers "${BUSY}" bind/fork)" "3 r=-1 1 1" busyw.err
     fi
     if build busys "http.serve(${BUSY})"; then
         ./busys_bin > busys.out 2> busys.err; RC=$?
-        expect "serve on a held port: -1, reported as http.serve, exit 1" \
-            "$(result busys http.serve "${BUSY}" bind/fork)" "1 r=-1 1 1" busys.err
+        expect "serve on a held port: -1, reported as http.serve, exit 3 (main's)" \
+            "$(result busys http.serve "${BUSY}" bind/fork)" "3 r=-1 1 1" busys.err
     fi
 fi
 stop "${HOLD}"; HOLD=""
@@ -125,8 +126,8 @@ if build range "http.serveworkers(70000;1)"; then
     for _ in $(seq 1 30); do kill -0 "${SRV}" 2>/dev/null || break; sleep 0.1; done
     if kill -0 "${SRV}" 2>/dev/null; then stop "${SRV}"; RC=137; else wait "${SRV}"; RC=$?; fi
     SRV=""
-    expect "serveworkers(70000;1): stage port, exit 1, no server on 8080" \
-        "$(result range http.serveworkers 70000 port)" "1 r=-1 1 1" range.err
+    expect "serveworkers(70000;1): stage port, exit 3 (main's), no server on 8080" \
+        "$(result range http.serveworkers 70000 port)" "3 r=-1 1 1" range.err
 fi
 
 # 4. port 0: a free port, reported, served, and a clean shutdown exits 0

@@ -21,6 +21,23 @@
 #include <string.h>
 #include "tk_array.h"
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!dferr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0; every T here is a handle or pointer); every return now goes through
+ * df_slot, which on 0 also stores a dferr record {msg; …} — the other
+ * fields 0 — and on anything else clears the slot, so the wrapper is a slot
+ * wrapper (llvm.c derives them from the .tki). */
+static int64_t df_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(1 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
 int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
     int64_t ncols = tk_arr_len(headers);
     int64_t nrows = tk_arr_len(rows);
@@ -140,16 +157,32 @@ static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {
     return (int64_t)(intptr_t)strs;
 }
 
-int64_t tk_df_fromcsv_w(int64_t csv) { return df_fromcsv_impl(csv); }
+static const char tk_df_fromcsv_fail[] =
+    "df.fromcsv: the CSV could not be read as a dataframe";
+int64_t tk_df_fromcsv_w(int64_t csv) { return df_slot(df_fromcsv_impl(csv), tk_df_fromcsv_fail); }
 int64_t tk_df_shape_w(int64_t df) { return df_shape_impl(df); }
-int64_t tk_df_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_filter_impl(df, col, op, val); }
-int64_t tk_df_groupby_w(int64_t df, int64_t col) { return df_groupby_impl(df, col); }
-int64_t tk_df_columnstr_w(int64_t df, int64_t col) { return df_columnstr_impl(df, col); }
-int64_t tk_dataframe_fromcsv_w(int64_t csv) { return df_fromcsv_impl(csv); }
+static const char tk_df_filter_fail[] =
+    "df.filter: the filter could not be applied (unknown column or operator)";
+int64_t tk_df_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_slot(df_filter_impl(df, col, op, val), tk_df_filter_fail); }
+static const char tk_df_groupby_fail[] =
+    "df.groupby: the column could not be grouped";
+int64_t tk_df_groupby_w(int64_t df, int64_t col) { return df_slot(df_groupby_impl(df, col), tk_df_groupby_fail); }
+static const char tk_df_columnstr_fail[] =
+    "df.columnstr: no such string column";
+int64_t tk_df_columnstr_w(int64_t df, int64_t col) { return df_slot(df_columnstr_impl(df, col), tk_df_columnstr_fail); }
+static const char tk_dataframe_fromcsv_fail[] =
+    "df.fromcsv: the CSV could not be read as a dataframe";
+int64_t tk_dataframe_fromcsv_w(int64_t csv) { return df_slot(df_fromcsv_impl(csv), tk_dataframe_fromcsv_fail); }
 int64_t tk_dataframe_shape_w(int64_t df) { return df_shape_impl(df); }
-int64_t tk_dataframe_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_filter_impl(df, col, op, val); }
-int64_t tk_dataframe_groupby_w(int64_t df, int64_t col) { return df_groupby_impl(df, col); }
-int64_t tk_dataframe_columnstr_w(int64_t df, int64_t col) { return df_columnstr_impl(df, col); }
+static const char tk_dataframe_filter_fail[] =
+    "df.filter: the filter could not be applied (unknown column or operator)";
+int64_t tk_dataframe_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_slot(df_filter_impl(df, col, op, val), tk_dataframe_filter_fail); }
+static const char tk_dataframe_groupby_fail[] =
+    "df.groupby: the column could not be grouped";
+int64_t tk_dataframe_groupby_w(int64_t df, int64_t col) { return df_slot(df_groupby_impl(df, col), tk_dataframe_groupby_fail); }
+static const char tk_dataframe_columnstr_fail[] =
+    "df.columnstr: no such string column";
+int64_t tk_dataframe_columnstr_w(int64_t df, int64_t col) { return df_slot(df_columnstr_impl(df, col), tk_dataframe_columnstr_fail); }
 int64_t tk_dataframe_tocsv_w(int64_t df) {
     if (!df) return 0;
     const char *s = df_tocsv((TkDataframe *)(intptr_t)df);
