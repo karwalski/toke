@@ -113,6 +113,28 @@ void           ws_encode_result_free(WsEncodeResult *r);
  */
 #define WS_CONN_MAGIC 0x57534b43u   /* 'WSKC' */
 
+/*
+ * The records ws_glue.c hands to toke (135.30).  tkc reads `x.f` as 8-byte
+ * slot <index of f in stdlib/ws.tki>.  ws.connect used to hand out the
+ * WsConn below, so `c.id` read magic|fd and `c.ready` mask|closed.  It now
+ * hands out a TkWsConnRec, and the glue finds the WsConn through a table of
+ * the records it issued -- by the record's address, so a `$wsconn{...}`
+ * literal is still refused (127.112).  ws.close clears `ready`.  $wsmsg is
+ * a TkWsMsgRec.  `make check-tki-layout` keeps both in step with the .tki.
+ */
+/* tki-record: ws.wsconn */
+typedef struct {
+    int64_t id;         /* u64, 1-based, unique per process */
+    int64_t ready;      /* bool: 1 until ws.close */
+} TkWsConnRec;
+
+/* tki-record: ws.wsmsg */
+typedef struct {
+    int64_t payload;    /* [byte] */
+    int64_t fin;        /* bool */
+    int64_t opcode;     /* u64: 1 text, 2 binary */
+} TkWsMsgRec;
+
 typedef struct {
     uint32_t magic;     /* WS_CONN_MAGIC — see ws_conn_valid()     */
     int      fd;        /* underlying TCP socket descriptor        */

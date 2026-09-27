@@ -12,12 +12,31 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 135.30: the records ws.connect issued, and the connection behind each.
+ * Looked up by the record's address, so only an issued $wsconn resolves. */
+typedef struct { TkWsConnRec *rec; WsConn *conn; } WsIssued;
+static WsIssued *g_ws_issued = NULL;
+static int64_t   g_ws_nissued = 0, g_ws_capissued = 0;
+
 int64_t tk_ws_connect_w(int64_t url) {
     TK_REQUIRE(TK_CAP_NET);
     if (!url) return 0;
     WsConnResult r = ws_connect((const char *)(intptr_t)url);
     if (r.is_err || !r.conn) return 0;
-    return (int64_t)(intptr_t)r.conn;
+    if (g_ws_nissued == g_ws_capissued) {
+        int64_t nc = g_ws_capissued ? 2 * g_ws_capissued : 8;
+        WsIssued *n = (WsIssued *)realloc(g_ws_issued, (size_t)nc * sizeof *n);
+        if (!n) { ws_close(r.conn); ws_conn_free(r.conn); return 0; }
+        g_ws_issued = n; g_ws_capissued = nc;
+    }
+    TkWsConnRec *rec = (TkWsConnRec *)malloc(sizeof *rec);
+    if (!rec) { ws_close(r.conn); ws_conn_free(r.conn); return 0; }
+    rec->id    = g_ws_nissued + 1;
+    rec->ready = 1;
+    g_ws_issued[g_ws_nissued].rec  = rec;
+    g_ws_issued[g_ws_nissued].conn = r.conn;
+    g_ws_nissued++;
+    return (int64_t)(intptr_t)rec;
 }
 
 /*
@@ -30,8 +49,14 @@ int64_t tk_ws_connect_w(int64_t url) {
  * caller of the C API gets it, and the wrappers below fail closed.
  */
 static WsConn *ws_handle(int64_t h) {
-    WsConn *c = (WsConn *)(intptr_t)h;
-    return ws_conn_valid(c) ? c : NULL;
+    /* 135.30: h is a TkWsConnRec; only one ws.connect issued resolves.
+     * Nothing is read through h unless it is found in the table. */
+    for (int64_t i = 0; h && i < g_ws_nissued; i++)
+        if ((int64_t)(intptr_t)g_ws_issued[i].rec == h) {
+            WsConn *c = g_ws_issued[i].conn;
+            return ws_conn_valid(c) ? c : NULL;
+        }
+    return NULL;
 }
 
 int64_t tk_ws_send_w(int64_t conn, int64_t msg) {
@@ -108,7 +133,7 @@ int64_t tk_ws_recv_w(int64_t conn) {
                                     r.frame->payload ? r.frame->payload_len : 0);
     if (!payload) { ws_frame_free(r.frame); return 0; }
 
-    int64_t msg = tk_arr_alloc(3, 3);
+    TkWsMsgRec *msg = (TkWsMsgRec *)malloc(sizeof *msg);
     if (!msg) {
         /* The payload block was never published, so release it rather than
          * leaving it behind on the OOM path. */
@@ -116,13 +141,12 @@ int64_t tk_ws_recv_w(int64_t conn) {
         ws_frame_free(r.frame);
         return 0;
     }
-    int64_t *slot = (int64_t *)(intptr_t)msg;
-    slot[0] = payload;                            /* payload : @($byte) */
-    slot[1] = r.frame->is_final ? 1 : 0;          /* fin     : bool     */
-    slot[2] = (int64_t)r.frame->opcode;           /* opcode  : u64      */
+    msg->payload = payload;
+    msg->fin     = r.frame->is_final ? 1 : 0;
+    msg->opcode  = (int64_t)r.frame->opcode;
 
     ws_frame_free(r.frame);
-    return msg;
+    return (int64_t)(intptr_t)msg;
 }
 
 int64_t tk_ws_close_w(int64_t conn) {
@@ -142,6 +166,7 @@ int64_t tk_ws_close_w(int64_t conn) {
     WsConn *c = ws_handle(conn);
     if (!c) return 0;
     ws_close(c);
+    ((TkWsConnRec *)(intptr_t)conn)->ready = 0;   /* 135.30: c.ready */
     return 0;
 }
 
