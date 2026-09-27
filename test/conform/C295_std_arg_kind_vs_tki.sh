@@ -12,7 +12,7 @@
 # is not judged (it is also the placeholder spelling), nor is json.enc, which
 # codegen redirects by argument type.
 #
-# Negative control: TKC=<main's toke> -- cases 1-4 fail (rc=0).
+# Negative control: TKC=<main's toke> -- cases 1-4 and 8 fail (rc=0).
 #
 # Story: 138.3 (c)
 
@@ -56,6 +56,12 @@ expect "6 json.enc takes any kind (redirected by codegen)" \
     "$(diags 'm=q;i=j:std.json;f=main():i64{let s=j.enc(5);let t=j.enc(true);<0};')" "rc=0"
 expect "7 matching kinds stay clean" \
     "$(diags 'm=q;i=s:std.str;i=h:std.http;f=main():i64{let n=s.len("ab");<h.serveon("127.0.0.1";8080)};')" "rc=0"
+
+# LH: a non-str std call result handed to the print family segfaulted.
+expect "8 io.println(str.len(..)) -- a u64 where a str is read" \
+    "$(diags 'm=q;i=io:std.io;i=str:std.str;f=main():i64{io.println(str.len("abc"));<0};')" "E4031|u64|wrap the argument in a string interpolation"
+expect "9 io.println(str.trim(..)) stays clean" \
+    "$(diags 'm=q;i=io:std.io;i=str:std.str;f=main():i64{io.println(str.trim(" a "));<0};')" "rc=0"
 
 echo "C295: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

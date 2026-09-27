@@ -2920,6 +2920,7 @@ static const StdStrSig *std_sig_for(Ctx *cx, const Node *call) {
  * pass has already stored, so no diagnostic is emitted twice; an argument that
  * is itself a modelled stdlib call is typed from its `ret`.
  */
+static Type *std_scalar_ret_any(Ctx *cx, const Node *call);   /* 138.3 */
 static void check_std_str_args(Ctx *cx, const Node *call) {
     const StdStrSig *sig = std_sig_for(cx, call);
     if (!sig) return;
@@ -2935,6 +2936,14 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
                 if (asig && asig->ret != TY_UNKNOWN)
                     at = mk_type(cx->env->arena, asig->ret);
             }
+            /* 138.3 (LH): any scalar a typed record declares, width types
+             * included -- `io.println(str.len("abc"))` passed a u64 to the
+             * print glue, which read it as a string and segfaulted.  The
+             * general return adoption leaves u64 out (it carries no
+             * representation, and adopting it everywhere was noise); here
+             * the question is only "is it a str", which a u64 answers. */
+            if ((!at || at->kind == TY_UNKNOWN) && arg->kind == NODE_CALL_EXPR)
+                at = std_scalar_ret_any(cx, arg);
             /* `.len` is the universal length property (arrays, maps, strings
              * all answer u64), so it is never a str — even on a receiver the
              * checker could not type. Applied here only: typing every `.len`
@@ -4505,7 +4514,14 @@ static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
  * `"gen":"abi"`, whose `i64` is a placeholder -- 127.220 item 5), not an
  * error union, spelled as a toke scalar.  NULL otherwise.
  */
+static Type *std_scalar_ret_impl(Ctx *cx, const Node *call, int any_width);
 static Type *std_scalar_ret(Ctx *cx, const Node *call) {
+    return std_scalar_ret_impl(cx, call, 0);
+}
+static Type *std_scalar_ret_any(Ctx *cx, const Node *call) {
+    return std_scalar_ret_impl(cx, call, 1);
+}
+static Type *std_scalar_ret_impl(Ctx *cx, const Node *call, int any_width) {
     if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1
         || !cx->env || !cx->env->names) return NULL;
     const Node *callee = call->children[0];
@@ -4528,7 +4544,7 @@ static Type *std_scalar_ret(Ctx *cx, const Node *call) {
      * width claim the ABI does not honour (str.len is `u64`); adopting it
      * turned `let plen=mut.s.len(x); plen=j` into E4031 in 15 corpus records
      * and added ~670 W1001s on `s.len(x) as i64`, all on working code. */
-    if (t->kind != TY_STR && t->kind != TY_BOOL && t->kind != TY_F64
+    if (!any_width && t->kind != TY_STR && t->kind != TY_BOOL && t->kind != TY_F64
         && t->kind != TY_F32 && t->kind != TY_I64) return NULL;
     return t;
 }
