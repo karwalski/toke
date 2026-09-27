@@ -640,6 +640,9 @@ static int resolve_stdlib_dir(void)
     return -1;
 }
 
+static int typecheck_after_name_errors(Node *ast, const char *sbuf, int slen,
+                                       NameEnv *ne, Arena *arena);   /* 123.12c, below */
+
 /* 114.40: compile several module source files into ONE linked binary.
  * Files must be listed in dependency order (imported modules before their
  * importers). Each is compiled to a temp .ll, with .tki interfaces emitted
@@ -687,6 +690,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         NameEnv ne;
         if (resolve_names(ast, sbuf, &st, arena, &ne, sp, spc) < 0 || diag_error_count() > 0) {
+            /* 123.13: the same recovery as process_file (123.12c) */
+            (void)typecheck_after_name_errors(ast, sbuf, (int)slen, &ne, arena);
             symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         TypeEnv te;
         if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
