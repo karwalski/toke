@@ -39,7 +39,17 @@
 
 #include <stdint.h>
 
-typedef struct { const char *data; } I18nBundle;
+/*
+ * I18nBundle is also the $I18nBundle record toke sees: tkc reads `b.data`
+ * as slot 0 of the block the handle points at, so the glue hands toke a
+ * pointer to one of these, never the data pointer itself (135.30: it did,
+ * and `b.data` read the bundle text's first 8 bytes as a pointer).
+ * `make check-tki-layout` keeps it in step with i18n.tki.
+ */
+/* tki-record: i18n.I18nBundle */
+typedef struct {
+    const char *data;
+} I18nBundle;
 
 typedef enum {
     I18N_ERR_NOT_FOUND = 0,
