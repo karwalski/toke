@@ -40,6 +40,26 @@ Opaque handle to an HTML document being constructed.
 | `html.render` | `doc: $htmldoc` | `$str` | Render the document to an HTML string |
 | `html.escape` | `s: $str` | `$str` | HTML-escape a string |
 
+## Escaping
+
+Text passed to the node constructors (`html.p`, `html.h1`, `html.h2`,
+`html.div` content, table headers and cells) is **markup, not text**: it is written
+into the document as given, so that a caller can nest elements. Pass anything
+that did not come from your own program through `html.escape` first.
+
+What the module escapes for you:
+
+- attribute values (a `div`'s class, for example) are HTML-escaped, and a
+  `javascript:`-style URL in a URL attribute is dropped;
+- the document title is HTML-escaped;
+- `html.style` and `html.script` content cannot close its own element early
+  (a `</style>` or `</script>` inside it is neutralised).
+
+The C-level string helpers that are not part of the toke surface
+(`html_textarea`, `html_pre`, `html_code`, `html_button`, `html_label`,
+`html_ul`/`html_ol`) follow the same rule for their content: it is markup, by
+design, not escaped (122.13).
+
 ## Usage
 
 ```toke
