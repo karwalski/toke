@@ -257,6 +257,13 @@ performance claim, not a safety one; the safety gate is on writers. Three:
    silent wrong answer — and abort with
    `TK_STR_VERIFY: header 4 != strlen 2` with it on; without the plant it
    prints `len=4 text=abcd`.
+   On the prototype, `TK_STR_VERIFY=1 make conform` passes in full (271 YAML
+   cases; 172 scripts, the two named SKIPs) with no abort, and so does
+   `test/stdlib/test_str.c`. Its limit: the switch fires only when a sealed
+   string's length is *read*. With the same plant, conform goes red through
+   ordinary value assertions (C035, C049 print a slice), not through the
+   switch — no conform case takes `.len` of a slice result. Landing step 3
+   should add one that does.
 2. **Scaling (performance).** `test/perf/strlen/scaling.sh` runs the scanner,
    the `.len` loop and the `.len`+`charat` loop at N and 4N and fails if
    instructions retired grow more than 6× (linear ≈ 4, quadratic ≈ 16).
