@@ -726,11 +726,16 @@ test-asan-compiler: asan-selftest
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN)
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" conform
 
-# The stdlib C unit tests, instrumented. These are where the known
-# use-after-free and free()-on-a-global live (json.c:670, json.c:941/949,
-# json_glue.c:718), so this target is EXPECTED TO BE RED until those are
-# fixed. A red result here is a true result: do not add suppressions to get
-# a tick.
+# The stdlib C unit tests, instrumented. A red result here is a true result:
+# do not add suppressions to get a tick.
+#
+# 135.24 item 5: this comment used to say the target was EXPECTED TO BE RED
+# because of json.c:670 (use after free) and json.c:941/949, json_glue.c:718
+# (free() of a global).  Those were clang --analyze findings (135.3a) on
+# error and OOM paths, fixed by 135.3c (5350fdc, pinned by conform C132's
+# counting allocator), and test-stdlib-json never reached them: built under
+# this configuration it runs clean at dbb254a, where the comment was written
+# (102/102), at 5350fdc~1 (110/110) and now (111/111), 0 sanitizer reports.
 ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \

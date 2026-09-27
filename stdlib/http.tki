@@ -365,6 +365,59 @@
     },
     {
       "kind": "func",
+      "name": "http.clientget",
+      "params": [
+        "httpclient",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path \u2014 send GET; $err only for a transport failure, a status is in the response (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.clientpost",
+      "params": [
+        "httpclient",
+        "str",
+        "[byte]",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path; body; content_type \u2014 send POST (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.clientput",
+      "params": [
+        "httpclient",
+        "str",
+        "[byte]",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path; body; content_type \u2014 send PUT (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.clientdelete",
+      "params": [
+        "httpclient",
+        "str"
+      ],
+      "return": "httpresp!httperr",
+      "note": "client; path \u2014 send DELETE (138.3)"
+    },
+    {
+      "kind": "func",
+      "name": "http.geturl",
+      "params": [
+        "str"
+      ],
+      "return": "str!httperr",
+      "note": "url \u2014 GET a full http:// or https:// URL; the body of a 2xx response, $err for a transport failure or any other status (code = status) (138.3)"
+    },
+    {
+      "kind": "func",
       "name": "http.serve",
       "params": [
         "u64"
@@ -496,6 +549,52 @@
     },
     {
       "kind": "func",
+      "name": "http.serveon",
+      "params": [
+        "str",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "host; port \u2014 http.serve bound to one address: an IPv4 literal, \"localhost\", or \"\"/\"*\"/\"0.0.0.0\" for all interfaces (138.1)"
+    },
+    {
+      "kind": "func",
+      "name": "http.serveworkerson",
+      "params": [
+        "str",
+        "u64",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "host; port; workers \u2014 http.serveworkers bound to one address (138.1)"
+    },
+    {
+      "kind": "func",
+      "name": "http.servetlson",
+      "params": [
+        "str",
+        "u64",
+        "str",
+        "str"
+      ],
+      "return": "i64",
+      "note": "host; port; cert_path; key_path \u2014 http.servetls bound to one address (138.1)"
+    },
+    {
+      "kind": "func",
+      "name": "http.servetlsworkerson",
+      "params": [
+        "str",
+        "u64",
+        "str",
+        "str",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "host; port; cert_path; key_path; workers \u2014 http.servetlsworkers bound to one address (138.1)"
+    },
+    {
+      "kind": "func",
       "name": "http.body",
       "params": [
         "i64"
@@ -615,14 +714,12 @@
       "kind": "func",
       "name": "http.postheaders",
       "params": [
-        "i64",
-        "i64",
-        "i64",
-        "i64"
+        "str",
+        "str",
+        "[[str]]"
       ],
-      "return": "i64",
-      "gen": "abi",
-      "internal": true
+      "return": "httpresp!httperr",
+      "note": "url; body; headers \u2014 POST body to a full URL with @(@(name;value)...) headers; a Content-Type among them replaces the default application/json; https is verified (138.8)"
     },
     {
       "kind": "func",

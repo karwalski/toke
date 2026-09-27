@@ -701,8 +701,11 @@ int64_t tk_http_patch_handler(int64_t path_ptr, int64_t handler_ptr) {
 /* forward declaration */
 int64_t tk_http_serveworkers_w(int64_t port, int64_t workers);
 
+static int64_t serveworkers_as(const char *fn, int64_t host, int64_t port,
+                               int64_t workers);
+
 int64_t tk_http_serve(int64_t port) {
-    return tk_http_serveworkers_w(port, 2);
+    return serveworkers_as("http.serve", 0, port, 2);
 }
 
 /*
@@ -722,27 +725,108 @@ int64_t tk_http_serve(int64_t port) {
  * immediately).  A server that started and later shut down on SIGTERM
  * returns 0 as before and records nothing.
  */
-static int64_t tls_start_failed(const char *fn, int port, const char *stage)
+static int64_t server_start_failed(const char *fn, long long port,
+                                   const char *stage, const char *reason)
 {
     fprintf(stderr,
-            "DIAGNOSTIC: kind=server_start_failed fn=\"%s\" port=%d stage=\"%s\"\n",
+            "DIAGNOSTIC: kind=server_start_failed fn=\"%s\" port=%lld stage=\"%s\"\n",
             fn, port, stage);
-    tk_exitfail("an HTTPS server did not start");
+    tk_exitfail(reason);
     return -1;
 }
+#define tls_start_failed(fn, port, stage) \
+    server_start_failed((fn), (long long)(port), (stage), "an HTTPS server did not start")
+#define plain_start_failed(fn, port, stage) \
+    server_start_failed((fn), (long long)(port), (stage), "an HTTP server did not start")
 
-int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
+/*
+ * 135.24 item 2 — the port argument of every server entry point.
+ *
+ * It used to be clamped: any port <= 0 or > 65535 silently became 8080
+ * (8443 for TLS), undocumented, so `serveworkers(0;...)` served on a port
+ * the caller never asked for and could not learn.  Now:
+ *   - 1..65535 is bound as given;
+ *   - 0 asks the kernel for a free ephemeral port, and bind_listen()
+ *     (http.c) prints `DIAGNOSTIC: kind=server_listening port=N` on stderr
+ *     once the socket is listening, so the caller (a supervisor, a test)
+ *     can read which port it got with no probe-then-bind race;
+ *   - anything else is a start failure at stage "port": -1 to the caller,
+ *     the structured line, and exit status 1, as for a failed bind.
+ */
+static int server_port_ok(int64_t port)
+{
+    return port >= 0 && port <= 65535;
+}
+
+/*
+ * 138.1 — the address a server binds.
+ *
+ * Every server entry point took a port only and passed a NULL host, so every
+ * toke server listened on all interfaces; a program that must not be
+ * reachable from the network (loke's privacy proxy) could not say so.  The
+ * `...on` forms take the host first:
+ *
+ *   http.serveon(host; port)                http.serveworkerson(host; port; workers)
+ *   http.servetlson(host; port; cert; key)  http.servetlsworkerson(host; port; cert; key; workers)
+ *
+ * and http.listen("127.0.0.1:8080"; h) now binds the host it is given.
+ *
+ * DECIDED (138.1): the port-only forms keep binding all interfaces.  They
+ * are what every deployed toke server calls (ooke's site behind its proxy,
+ * the docs, the corpus), and moving them to loopback would take those
+ * servers off the network with no compile error and no runtime message.  A
+ * program chooses loopback by saying so, at the call, where a reviewer sees
+ * it.
+ *
+ * A host is an IPv4 literal (the listener is AF_INET), or "localhost"
+ * (127.0.0.1), or ""/"*"/"0.0.0.0" for all interfaces.  Anything else is a
+ * start failure at stage "host" -- never a silent fall back to all
+ * interfaces, which is the defect this exists to remove.  *out is NULL for
+ * all interfaces.
+ */
+static int server_host(int64_t host_ptr, const char **out)
+{
+    const char *h = (const char *)(intptr_t)host_ptr;
+    *out = NULL;
+    if (!h || !h[0] || !strcmp(h, "*") || !strcmp(h, "0.0.0.0")) return 0;
+    if (!strcmp(h, "localhost")) { *out = "127.0.0.1"; return 0; }
+    struct in_addr a;
+    if (inet_pton(AF_INET, h, &a) != 1) return -1;
+    *out = h;
+    return 0;
+}
+
+/* The TLS entry points.  workers < 0 is http.servetls's own sizing
+ * (http_serve_tls: CPU count, TK_HTTP_WORKERS overrides); 0 is the same
+ * auto-detection, as for http.serveworkers; 1 is single-process. */
+static int64_t servetls_as(const char *fn, int64_t host_ptr, int64_t port,
+                           int64_t cert_ptr, int64_t key_ptr, int64_t workers)
+{
+    const char *host;
+    if (server_host(host_ptr, &host) != 0) return tls_start_failed(fn, port, "host");
+    if (!server_port_ok(port)) return tls_start_failed(fn, port, "port");
     int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8443;
     const char *cert = (const char *)(intptr_t)cert_ptr;
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
-    if (!tls) return tls_start_failed("http.servetls", p, "certificate/key");
+    if (!tls) return tls_start_failed(fn, p, "certificate/key");
     /* Pass NULL router — tls_worker_loop will use the global route_table. */
-    TkHttpErr err = http_serve_tls(NULL, NULL, (uint64_t)p, tls);
+    TkHttpErr err = workers > 0
+        ? http_serve_tls_workers(NULL, host, (uint64_t)p, tls, (uint64_t)workers)
+        : http_serve_tls(NULL, host, (uint64_t)p, tls);
     http_tls_ctx_free(tls);
-    if (err != TK_HTTP_OK) return tls_start_failed("http.servetls", p, "bind/fork");
+    if (err != TK_HTTP_OK) return tls_start_failed(fn, p, "bind/fork");
     return 0;
+}
+
+int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
+    return servetls_as("http.servetls", 0, port, cert_ptr, key_ptr, -1);
+}
+
+/* 138.1: http.servetlson(host; port; cert; key). */
+int64_t tk_http_servetlson_w(int64_t host, int64_t port, int64_t cert_ptr,
+                             int64_t key_ptr) {
+    return servetls_as("http.servetlson", host, port, cert_ptr, key_ptr, -1);
 }
 
 /*
@@ -760,20 +844,15 @@ int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
  */
 int64_t tk_http_servetlsworkers_w(int64_t port, int64_t cert_ptr, int64_t key_ptr,
                                   int64_t workers) {
-    int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8443;
-    const char *cert = (const char *)(intptr_t)cert_ptr;
-    const char *key  = (const char *)(intptr_t)key_ptr;
-    TkTlsCtx *tls = http_tls_ctx_new(cert, key);
-    if (!tls) return tls_start_failed("http.servetlsworkers", p, "certificate/key");
-    /* workers=0 auto-detects, as http.serveworkers does: http_serve_tls()
-     * is exactly that sizing (CPU count, TK_HTTP_WORKERS overrides). */
-    TkHttpErr err = workers > 0
-        ? http_serve_tls_workers(NULL, NULL, (uint64_t)p, tls, (uint64_t)workers)
-        : http_serve_tls(NULL, NULL, (uint64_t)p, tls);
-    http_tls_ctx_free(tls);
-    if (err != TK_HTTP_OK) return tls_start_failed("http.servetlsworkers", p, "bind/fork");
-    return 0;
+    return servetls_as("http.servetlsworkers", 0, port, cert_ptr, key_ptr,
+                       workers > 0 ? workers : 0);
+}
+
+/* 138.1: http.servetlsworkerson(host; port; cert; key; workers). */
+int64_t tk_http_servetlsworkerson_w(int64_t host, int64_t port, int64_t cert_ptr,
+                                    int64_t key_ptr, int64_t workers) {
+    return servetls_as("http.servetlsworkerson", host, port, cert_ptr, key_ptr,
+                       workers > 0 ? workers : 0);
 }
 
 /* ── Static file directory handler ───────────────────────────────────── */
@@ -1129,13 +1208,40 @@ int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
     return (int64_t)g_page_count;
 }
 
-int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
+/*
+ * 135.24 item 1 — a plain HTTP server that does not start fails the process,
+ * exactly as 135.22 made the TLS entry points do: a port that cannot be
+ * bound (or a pool that cannot fork) still returns -1 to the caller, prints
+ * `DIAGNOSTIC: kind=server_start_failed fn=... port=... stage=...` and
+ * records the failure with tk_exitfail(), so the process exits 1 however
+ * main ends.  Before, the one-line "could not bind" message was all there
+ * was, and a program that discarded the -1 (every caller in the tree) exited
+ * 0.  http.serve reaches this with workers=2 and is reported as itself.
+ */
+static int64_t serveworkers_as(const char *fn, int64_t host_ptr, int64_t port,
+                               int64_t workers)
+{
+    const char *host;
+    if (server_host(host_ptr, &host) != 0) return plain_start_failed(fn, port, "host");
+    if (!server_port_ok(port)) return plain_start_failed(fn, port, "port");
     int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8080;
     /* Pass NULL router — worker_loop will use the global route_table
      * which already has all handlers registered via http_GET/http_POST. */
-    TkHttpErr err = http_serve_workers(NULL, NULL, (uint64_t)p, (int)workers);
-    return (err == TK_HTTP_OK) ? 0 : -1;
+    TkHttpErr err = http_serve_workers(NULL, host, (uint64_t)p, (int)workers);
+    if (err != TK_HTTP_OK) return plain_start_failed(fn, p, "bind/fork");
+    return 0;
+}
+
+int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
+    return serveworkers_as("http.serveworkers", 0, port, workers);
+}
+
+/* 138.1: http.serveon(host; port) and http.serveworkerson(host; port; workers). */
+int64_t tk_http_serveon_w(int64_t host, int64_t port) {
+    return serveworkers_as("http.serveon", host, port, 2);
+}
+int64_t tk_http_serveworkerson_w(int64_t host, int64_t port, int64_t workers) {
+    return serveworkers_as("http.serveworkerson", host, port, workers);
 }
 
 /* ── router wrappers moved to router_glue.c (114.48) so std.router links
@@ -1314,6 +1420,188 @@ int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) {
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
+/*
+ * 138.3 — client calls with their own names and result types.
+ *
+ * `http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` are
+ * ROUTE REGISTRATION (stdlib/http.tki, kind "route": path; handler).  The
+ * client calls the spec gave the same names -- `http.get(c;path)` and
+ * friends -- never had an implementation reachable from source: the
+ * two-argument `http.get(client;path)` registered a GET route whose "path"
+ * was the client handle (loke T-57: nothing sent, and the 257th call read
+ * $ok once the route table filled), `tk_http_delete_w` was reachable from
+ * nothing (R7), and the one-argument `http.get(url)` returned "" for a
+ * closed port with no way to tell it from an empty body (T-15).
+ *
+ * The client calls now have names of their own, typed in http.tki:
+ *
+ *   http.clientget(c; path)               -> httpresp!httperr
+ *   http.clientpost(c; path; body; ctype) -> httpresp!httperr
+ *   http.clientput(c; path; body; ctype)  -> httpresp!httperr
+ *   http.clientdelete(c; path)            -> httpresp!httperr
+ *   http.geturl(url)                      -> str!httperr
+ *
+ * $err is a transport failure -- no connection, a send or receive that
+ * failed, a URL that does not parse, HTTPS without TLS compiled in.  An HTTP
+ * status is not an error for the client* calls: 404 is a response, and
+ * `r.status` says so.  A `ctype` of "" sends application/octet-stream.
+ * http.geturl returns only a body, so it has nowhere to
+ * put a status and treats any status outside 200-299 as $err (code = the
+ * status).
+ *
+ * The error is an `httperr` {msg; code} box in tk_current_error (runtime-abi
+ * §7), set on every failure and cleared on every success, and the function
+ * returns 0 for $err and a non-null value for $ok, so both the value
+ * sentinel and the slot discriminate.
+ */
+void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#  define TK_WEB_TLS _Thread_local
+#else
+#  define TK_WEB_TLS __thread
+#endif
+static int64_t http_raise(const char *msg, uint64_t code)
+{
+    /* The message lives in a per-thread buffer, valid until the next raise
+     * on this thread -- the lifetime tk_err_box gives the box itself. */
+    static TK_WEB_TLS char msgbuf[256];
+    snprintf(msgbuf, sizeof msgbuf, "%s", msg ? msg : "");
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msgbuf;
+    box[1] = (int64_t)code;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static void client_resp_free(HttpClientResp *r)
+{
+    for (uint64_t i = 0; i < r->headers.len; i++) {
+        free((char *)r->headers.data[i].key);
+        free((char *)r->headers.data[i].val);
+    }
+    free(r->headers.data);
+    free(r->body);
+    free(r->err_msg);
+    memset(r, 0, sizeof *r);
+}
+
+/* The $httpresp block {status; headers:[[str]]; body:[byte]}, one i64 slot
+ * per field (136.4).  Takes the response apart: the header strings are
+ * handed to the program, everything else is freed. */
+static int64_t client_resp_block(HttpClientResp *r)
+{
+    int64_t *b = (int64_t *)malloc(3 * sizeof(int64_t));
+    int64_t hdrs = tk_arr_alloc((int64_t)r->headers.len, (int64_t)r->headers.len);
+    int64_t body = tk_bytes_pack(r->body ? r->body : (const uint8_t *)"", r->body_len);
+    if (!b || !hdrs || !body) {
+        free(b);
+        /* a block from tk_arr_alloc starts TK_ARR_HDR words before its handle */
+        if (hdrs) free((int64_t *)(intptr_t)hdrs - TK_ARR_HDR);
+        if (body) free((int64_t *)(intptr_t)body - TK_ARR_HDR);
+        client_resp_free(r);
+        return http_raise("out of memory", 0);
+    }
+    int64_t n = 0;
+    for (uint64_t i = 0; i < r->headers.len; i++) {
+        int64_t pair = tk_arr_alloc(2, 2);
+        if (!pair) break;
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)r->headers.data[i].key;
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)r->headers.data[i].val;
+        r->headers.data[i].key = NULL;
+        r->headers.data[i].val = NULL;
+        ((int64_t *)(intptr_t)hdrs)[n++] = pair;
+    }
+    tk_arr_setlen(hdrs, n);
+    b[0] = (int64_t)r->status;
+    b[1] = hdrs;
+    b[2] = body;
+    client_resp_free(r);                 /* keys/vals already handed out */
+    tk_current_error = 0;                /* 127.123: an ok return clears it */
+    return (int64_t)(intptr_t)b;
+}
+
+static int64_t client_result(HttpClientResp r)
+{
+    if (r.is_err) {
+        int64_t z = http_raise(r.err_msg ? r.err_msg : "request failed", r.err_code);
+        client_resp_free(&r);
+        return z;
+    }
+    return client_resp_block(&r);
+}
+
+int64_t tk_http_clientget_w(int64_t client, int64_t path) {
+    if (!client) return http_raise("http.clientget: null client", 0);
+    return client_result(http_get((HttpClient *)(intptr_t)client,
+                                  path ? (const char *)(intptr_t)path : "/"));
+}
+
+int64_t tk_http_clientdelete_w(int64_t client, int64_t path) {
+    if (!client) return http_raise("http.clientdelete: null client", 0);
+    return client_result(http_delete((HttpClient *)(intptr_t)client,
+                                     path ? (const char *)(intptr_t)path : "/"));
+}
+
+/* body is a toke [byte]; ctype "" sends no Content-Type of our choosing. */
+static int64_t client_send(const char *fn, int is_put, int64_t client, int64_t path,
+                           int64_t body, int64_t ctype)
+{
+    if (!client) return http_raise(fn, 0);
+    uint8_t *buf = NULL;
+    uint64_t n = tk_bytes_unpack(body, &buf);
+    if (!buf) return http_raise("out of memory", 0);
+    const char *ct = ctype ? (const char *)(intptr_t)ctype : "";
+    const char *p = path ? (const char *)(intptr_t)path : "/";
+    HttpClientResp r = is_put
+        ? http_put((HttpClient *)(intptr_t)client, p, buf, n, ct[0] ? ct : NULL)
+        : http_post((HttpClient *)(intptr_t)client, p, buf, n, ct[0] ? ct : NULL);
+    free(buf);
+    return client_result(r);
+}
+
+int64_t tk_http_clientpost_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
+    return client_send("http.clientpost: null client", 0, client, path, body, ctype);
+}
+
+int64_t tk_http_clientput_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
+    return client_send("http.clientput: null client", 1, client, path, body, ctype);
+}
+
+/* http.geturl(url) -> str!httperr: the body of a 2xx response. */
+int64_t tk_http_geturl_w(int64_t url) {
+    if (!url) return http_raise("http.geturl: null url", 0);
+    const char *u = (const char *)(intptr_t)url;
+    const char *p = u;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    else return http_raise("http.geturl: the url must start with http:// or https://", 0);
+    const char *slash = strchr(p, '/');
+    size_t base_len = slash ? (size_t)(slash - u) : strlen(u);
+    char *base = (char *)malloc(base_len + 1);
+    if (!base) return http_raise("out of memory", 0);
+    memcpy(base, u, base_len); base[base_len] = '\0';
+    HttpClient *c = http_client(base);
+    free(base);
+    if (!c) return http_raise("out of memory", 0);
+    HttpClientResp r = http_get(c, slash ? slash : "/");
+    http_client_free(c);
+    if (r.is_err) return client_result(r);
+    if (r.status < 200 || r.status > 299) {
+        char m[64];
+        snprintf(m, sizeof m, "HTTP status %llu", (unsigned long long)r.status);
+        uint64_t st = r.status;
+        client_resp_free(&r);
+        return http_raise(m, st);
+    }
+    char *s = (char *)malloc(r.body_len + 1);
+    if (!s) { client_resp_free(&r); return http_raise("out of memory", 0); }
+    if (r.body_len) memcpy(s, r.body, r.body_len);
+    s[r.body_len] = '\0';
+    client_resp_free(&r);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)s;
+}
+
 /* tk_http_print_w — print an HTTP response body to stdout. */
 int64_t tk_http_print_w(int64_t resp) {
     if (!resp) return 0;
@@ -1332,23 +1620,48 @@ static Res tk_http_listen_dispatch(Req req) {
     return http_Res_ok(body);
 }
 
+/* 138.1: the address is honoured.  "127.0.0.1:11442" used to bind
+ * *:11442 -- the host was parsed past and dropped, and http_serve() bound
+ * INADDR_ANY -- so a program that asked for loopback listened on every
+ * interface.  Forms: "host:port", ":port", "port", "host" (port 8080, as
+ * before).  The host follows the http.serveon rules (server_host); an
+ * explicit port 0 is any free port, reported on stderr, as for
+ * http.serveworkers (135.24).  The server is the single-process path
+ * (workers=1), which is what http_serve() was, and a start failure is
+ * reported and fails the process as for every other entry point. */
 int64_t tk_http_listen_w(int64_t addr, int64_t handler) {
     if (!handler) return -1;
-    /* Parse addr for port — supports ":8080", "localhost:8080", or "8080" */
-    uint16_t port = 8080;
+    char hostbuf[256] = "";
+    long port = 8080;
     if (addr) {
         const char *a = (const char *)(intptr_t)addr;
         const char *colon = strrchr(a, ':');
-        if (colon)
-            port = (uint16_t)strtol(colon + 1, NULL, 10);
-        else if (a[0] >= '0' && a[0] <= '9')
-            port = (uint16_t)strtol(a, NULL, 10);
+        const char *ps = NULL;
+        if (colon) {
+            size_t hl = (size_t)(colon - a);
+            if (hl >= sizeof hostbuf)
+                return plain_start_failed("http.listen", -1, "host");
+            memcpy(hostbuf, a, hl); hostbuf[hl] = '\0';
+            ps = colon + 1;
+        } else if (a[0] >= '0' && a[0] <= '9' && !strchr(a, '.')) {
+            ps = a;
+        } else {
+            size_t hl = strlen(a);
+            if (hl >= sizeof hostbuf)
+                return plain_start_failed("http.listen", -1, "host");
+            memcpy(hostbuf, a, hl + 1);
+        }
+        if (ps) {
+            char *end = NULL;
+            port = strtol(ps, &end, 10);
+            if (end == ps || *end != '\0')
+                return plain_start_failed("http.listen", -1, "port");
+        }
     }
-    if (port == 0) port = 8080;
     g_http_listen_handler = handler;
     http_GET("/*", tk_http_listen_dispatch);
     http_POST("/*", tk_http_listen_dispatch);
-    return (int64_t)http_serve(port);
+    return serveworkers_as("http.listen", (int64_t)(intptr_t)hostbuf, port, 1);
 }
 int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
     return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
@@ -1772,211 +2085,56 @@ int64_t tk_http_pathparam_w(int64_t req, int64_t name) {
     return tk_http_req_param(req, name);
 }
 
-/* http.postheaders(url, body, headers_json) — POST with custom headers.
- * headers is a JSON string like {"Authorization":"Bearer xxx","X-Custom":"val"}
- * which gets parsed and injected into the HTTP request headers. */
-int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64, int64_t extra) {
-    (void)extra;
-    if (!url_i64) return 0;
-    const char *url = (const char *)(intptr_t)url_i64;
+/*
+ * 138.8 — http.postheaders(url; body; headers) -> httpresp!httperr.
+ *
+ * It was `(i64, i64, i64, i64) -> i64 [abi]`: the glue read (url; body;
+ * headersjson) and ignored a fourth argument, parsed the headers out of a
+ * JSON string by hand (no escapes), always sent its own
+ * `Content-Type: application/json` and then the caller's as well (two
+ * Content-Type lines), returned the body or 0 with no status and no error,
+ * and opened its own TLS connection with no certificate verification.
+ *
+ * Now it is typed: `headers` is [[str]], each element a two-element
+ * @(name; value), the result is the response ($err for a transport failure,
+ * the status in r.status otherwise), and the request goes through the
+ * client every other call uses (http_request_headers), so https is verified
+ * (C279) and a Content-Type among `headers` replaces the default
+ * application/json instead of being sent twice.
+ */
+int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64) {
+    if (!url_i64) return http_raise("http.postheaders: null url", 0);
+    const char *u = (const char *)(intptr_t)url_i64;
     const char *body = body_i64 ? (const char *)(intptr_t)body_i64 : "";
-    const char *hdrs = headers_i64 ? (const char *)(intptr_t)headers_i64 : "";
-    size_t body_len = strlen(body);
+    const char *p = u;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    else return http_raise("http.postheaders: the url must start with http:// or https://", 0);
 
-    /* Parse URL into host:port + path */
-    const char *p = url;
-    int is_https = 0;
-    if (strncmp(p, "https://", 8) == 0) { is_https = 1; p += 8; }
-    else if (strncmp(p, "http://", 7) == 0) { p += 7; }
+    int64_t nh = headers_i64 ? ((int64_t *)(intptr_t)headers_i64)[-1] : 0;
+    if (nh < 0 || nh > 256) return http_raise("http.postheaders: too many headers", 0);
+    StrPair hv[256];
+    for (int64_t i = 0; i < nh; i++) {
+        int64_t pair = ((int64_t *)(intptr_t)headers_i64)[i];
+        if (!pair || ((int64_t *)(intptr_t)pair)[-1] != 2)
+            return http_raise("http.postheaders: each header must be @(name; value)", 0);
+        hv[i].key = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[0];
+        hv[i].val = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[1];
+    }
+
     const char *slash = strchr(p, '/');
-    char host[256] = "", port[16] = "80";
-    const char *path = "/";
-    if (slash) {
-        size_t hlen = (size_t)(slash - p);
-        if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
-        memcpy(host, p, hlen); host[hlen] = '\0';
-        path = slash;
-    } else {
-        strncpy(host, p, sizeof(host) - 1);
-    }
-    if (is_https) strcpy(port, "443");
-    char *colon = strchr(host, ':');
-    if (colon) { *colon = '\0'; strncpy(port, colon + 1, sizeof(port) - 1); }
-
-    /* Build custom header lines from JSON-like string.
-     * Simple parser: scan for "key":"value" pairs. */
-    char extra_hdrs[4096] = "";
-    size_t epos = 0;
-    if (hdrs[0] == '{') {
-        const char *hp = hdrs + 1;
-        while (*hp && *hp != '}') {
-            while (*hp && (*hp == ' ' || *hp == ',' || *hp == '\n')) hp++;
-            if (*hp == '"') {
-                hp++;
-                const char *ks = hp; while (*hp && *hp != '"') hp++;
-                size_t klen = (size_t)(hp - ks);
-                if (*hp == '"') hp++;
-                while (*hp && *hp != ':') hp++;
-                if (*hp == ':') hp++;
-                while (*hp == ' ') hp++;
-                if (*hp == '"') {
-                    hp++;
-                    const char *vs = hp; while (*hp && *hp != '"') hp++;
-                    size_t vlen = (size_t)(hp - vs);
-                    if (*hp == '"') hp++;
-                    if (epos + klen + 2 + vlen + 3 < sizeof(extra_hdrs)) {
-                        memcpy(extra_hdrs + epos, ks, klen); epos += klen;
-                        extra_hdrs[epos++] = ':'; extra_hdrs[epos++] = ' ';
-                        memcpy(extra_hdrs + epos, vs, vlen); epos += vlen;
-                        extra_hdrs[epos++] = '\r'; extra_hdrs[epos++] = '\n';
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-    }
-    extra_hdrs[epos] = '\0';
-
-    /* Connect */
-    struct addrinfo hints = {0}, *res;
-    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host, port, &hints, &res) != 0) return 0;
-    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (fd < 0) { freeaddrinfo(res); return 0; }
-    struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
-        freeaddrinfo(res); close(fd); return 0;
-    }
-    freeaddrinfo(res);
-
-    /* TLS handshake for HTTPS */
-#ifdef TK_HAVE_OPENSSL
-    SSL_CTX *ph_ssl_ctx = NULL;
-    SSL *ph_ssl = NULL;
-    if (is_https) {
-        ph_ssl_ctx = SSL_CTX_new(TLS_client_method());
-        if (!ph_ssl_ctx) { close(fd); return 0; }
-        ph_ssl = SSL_new(ph_ssl_ctx);
-        if (!ph_ssl) { SSL_CTX_free(ph_ssl_ctx); close(fd); return 0; }
-        SSL_set_fd(ph_ssl, fd);
-        SSL_set_tlsext_host_name(ph_ssl, host);
-        if (SSL_connect(ph_ssl) <= 0) {
-            SSL_free(ph_ssl); SSL_CTX_free(ph_ssl_ctx); close(fd); return 0;
-        }
-    }
-#define PH_SEND(buf, len) (is_https ? SSL_write(ph_ssl, buf, (int)(len)) : (int)send(fd, buf, len, 0))
-#define PH_RECV(buf, len) (is_https ? SSL_read(ph_ssl, buf, (int)(len)) : (int)recv(fd, buf, len, 0))
-#else
-    if (is_https) { close(fd); return 0; } /* no TLS support */
-#define PH_SEND(buf, len) (int)send(fd, buf, len, 0)
-#define PH_RECV(buf, len) (int)recv(fd, buf, len, 0)
-#endif
-
-    /* Build and send request */
-    char req_buf[8192];
-    int req_len = snprintf(req_buf, sizeof(req_buf),
-        "POST %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %zu\r\n"
-        "%s"
-        "Connection: close\r\n"
-        "\r\n",
-        path, host, body_len, extra_hdrs);
-    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
-#ifdef TK_HAVE_OPENSSL
-        if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
-        if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
-#endif
-        close(fd); return 0;
-    }
-    PH_SEND(req_buf, (size_t)req_len);
-    if (body_len > 0) PH_SEND(body, body_len);
-
-    /* Read response */
-    size_t cap = 65536, used = 0;
-    char *resp = malloc(cap);
-    if (!resp) {
-#ifdef TK_HAVE_OPENSSL
-        if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
-        if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
-#endif
-        close(fd); return 0;
-    }
-    int n;
-    while ((n = PH_RECV(resp + used, cap - used - 1)) > 0) {
-        used += (size_t)n;
-        if (used + 1 >= cap) { cap *= 2; char *tmp = realloc(resp, cap); if (!tmp) break; resp = tmp; }
-    }
-    resp[used] = '\0';
-#ifdef TK_HAVE_OPENSSL
-    if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
-    if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
-#endif
-#undef PH_SEND
-#undef PH_RECV
-    close(fd);
-
-    /* Extract body after \r\n\r\n, with chunked decoding */
-    const char *sep = strstr(resp, "\r\n\r\n");
-    if (!sep) { free(resp); return 0; }
-    sep += 4;
-    size_t raw_len = used - (size_t)(sep - resp);
-
-    /* Check for Transfer-Encoding: chunked in headers */
-    int is_chunked = 0;
-    {
-        const char *te = resp;
-        const char *hdr_end = sep - 4;
-        while ((te = strstr(te, "\r\n")) != NULL && te < hdr_end) {
-            te += 2;
-            if (strncasecmp(te, "Transfer-Encoding:", 18) == 0) {
-                const char *val = te + 18;
-                while (*val == ' ') val++;
-                if (strncasecmp(val, "chunked", 7) == 0) is_chunked = 1;
-                break;
-            }
-        }
-    }
-
-    char *result;
-    if (is_chunked && raw_len > 0) {
-        /* Decode chunked body */
-        result = malloc(raw_len + 1);
-        if (!result) { free(resp); return 0; }
-        size_t dpos = 0;
-        const char *cp = sep;
-        const char *raw_end = sep + raw_len;
-        while (cp < raw_end) {
-            char *nl = NULL;
-            unsigned long chunk_sz = strtoul(cp, &nl, 16);
-            if (!nl || nl == cp) break;
-            if (nl + 2 <= raw_end && nl[0] == '\r' && nl[1] == '\n') cp = nl + 2;
-            else if (nl + 1 <= raw_end && nl[0] == '\n') cp = nl + 1;
-            else break;
-            if (chunk_sz == 0) break;
-            size_t avail = (size_t)(raw_end - cp);
-            size_t to_copy = chunk_sz < avail ? (size_t)chunk_sz : avail;
-            memcpy(result + dpos, cp, to_copy);
-            dpos += to_copy;
-            cp += to_copy;
-            if (cp + 2 <= raw_end && cp[0] == '\r' && cp[1] == '\n') cp += 2;
-            else if (cp + 1 <= raw_end && cp[0] == '\n') cp += 1;
-        }
-        result[dpos] = '\0';
-    } else if (raw_len > 0) {
-        result = malloc(raw_len + 1);
-        if (!result) { free(resp); return 0; }
-        memcpy(result, sep, raw_len);
-        result[raw_len] = '\0';
-    } else {
-        free(resp); return 0;
-    }
-    free(resp);
-    return (int64_t)(intptr_t)result;
+    size_t base_len = slash ? (size_t)(slash - u) : strlen(u);
+    char *base = (char *)malloc(base_len + 1);
+    if (!base) return http_raise("out of memory", 0);
+    memcpy(base, u, base_len); base[base_len] = '\0';
+    HttpClient *c = http_client(base);
+    free(base);
+    if (!c) return http_raise("out of memory", 0);
+    HttpClientResp r = http_request_headers(c, "POST", slash ? slash : "/",
+                                            (const uint8_t *)body, strlen(body),
+                                            "application/json", hv, (uint64_t)nh);
+    http_client_free(c);
+    return client_result(r);
 }
 
 /* http.queryparam(req, name) — extract query string parameter */

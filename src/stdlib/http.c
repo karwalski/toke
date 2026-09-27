@@ -29,6 +29,7 @@
 #ifdef TK_HAVE_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #endif
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
@@ -1547,6 +1548,19 @@ static int bind_listen(const char *host, uint64_t port)
                 (unsigned long long)port, strerror(errno));
         close(srv); return -1;
     }
+    /* 135.24 item 2: port 0 asked the kernel for a free port.  Say which
+     * one, once, now that it is listening -- the only way the caller can
+     * learn it, since serve/serveworkers do not return until shutdown. */
+    if (port == 0) {
+        struct sockaddr_in got;
+        socklen_t glen = sizeof got;
+        memset(&got, 0, sizeof got);
+        if (getsockname(srv, (struct sockaddr *)&got, &glen) == 0) {
+            fprintf(stderr, "DIAGNOSTIC: kind=server_listening port=%u\n",
+                    (unsigned)ntohs(got.sin_port));
+            fflush(stderr);
+        }
+    }
     return srv;
 }
 
@@ -2405,9 +2419,34 @@ static HttpClientResp client_do_request(HttpClient *c,
                                         const char *path,
                                         const uint8_t *body,
                                         uint64_t body_len,
-                                        const char *content_type)
+                                        const char *content_type,
+                                        const StrPair *xh,
+                                        uint64_t nxh)
 {
     if (!c || !c->base_url) return err_resp_client("null client", 0);
+
+    /* 138.8: caller-supplied headers.  A name or value carrying CR or LF
+     * would end the header early and let the caller write a second header
+     * or request (header injection), so it is refused; so is a Content-Length
+     * or Host of the caller's own, which would contradict the ones sent
+     * here.  A Content-Type among them REPLACES the default one -- it used
+     * to be sent in addition, so the server saw two. */
+    int caller_ct = 0;
+    size_t xh_len = 0;
+    for (uint64_t i = 0; i < nxh; i++) {
+        const char *k = xh[i].key ? xh[i].key : "";
+        const char *v = xh[i].val ? xh[i].val : "";
+        if (!k[0] || strpbrk(k, "\r\n:") || strpbrk(v, "\r\n"))
+            return err_resp_client("invalid header name or value (empty, or contains CR, LF or ':')", 0);
+        if (!strcasecmp(k, "content-length") || !strcasecmp(k, "host"))
+            return err_resp_client("Content-Length and Host are set by the client, not the caller", 0);
+        if (!strcasecmp(k, "content-type")) caller_ct = 1;
+        xh_len += strlen(k) + strlen(v) + 4;
+    }
+    char ct_line[512] = "";
+    if (body && body_len > 0 && !caller_ct)
+        snprintf(ct_line, sizeof ct_line, "Content-Type: %s\r\n",
+                 content_type ? content_type : "application/octet-stream");
 
 #ifndef TK_HAVE_OPENSSL
     if (strncmp(c->base_url, "https://", 8) == 0) {
@@ -2457,13 +2496,46 @@ static HttpClientResp client_do_request(HttpClient *c,
     if (is_https) {
         ssl_ctx = SSL_CTX_new(TLS_client_method());
         if (!ssl_ctx) { close(fd); return err_resp_client("SSL_CTX_new failed", 0); }
+        /* 138.8: VERIFY THE SERVER.  This context used to be created and
+         * used with OpenSSL's default of SSL_VERIFY_NONE: any certificate
+         * was accepted for any host, so every https:// request -- API keys
+         * in headers included -- could be read by whoever answered the
+         * connection.  Measured 2026-09-27: a POST to a local server with a
+         * self-signed certificate nothing trusts succeeded.  Now the chain
+         * must verify against the trust store (the system default paths;
+         * SSL_CERT_FILE / SSL_CERT_DIR override them) and the certificate
+         * must name the host (DNS name) or address (IP literal). */
+        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+        if (SSL_CTX_set_default_verify_paths(ssl_ctx) != 1) {
+            SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: no trust store to verify the server against", 0);
+        }
         ssl = SSL_new(ssl_ctx);
         if (!ssl) { SSL_CTX_free(ssl_ctx); close(fd); return err_resp_client("SSL_new failed", 0); }
         SSL_set_fd(ssl, fd);
-        SSL_set_tlsext_host_name(ssl, host);
+        {
+            unsigned char ipbuf[16];
+            int is_ip = inet_pton(AF_INET, host, ipbuf) == 1
+                     || inet_pton(AF_INET6, host, ipbuf) == 1;
+            int named = is_ip
+                ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host)
+                : SSL_set1_host(ssl, host);
+            if (!is_ip) SSL_set_tlsext_host_name(ssl, host);   /* SNI: names only */
+            if (named != 1) {
+                SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+                return err_resp_client("TLS: cannot set the name to verify", 0);
+            }
+        }
         if (SSL_connect(ssl) <= 0) {
+            long vr = SSL_get_verify_result(ssl);
+            char m[200];
+            if (vr != X509_V_OK)
+                snprintf(m, sizeof m, "TLS certificate verification failed: %s",
+                         X509_verify_cert_error_string(vr));
+            else
+                snprintf(m, sizeof m, "SSL handshake failed");
             SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
-            return err_resp_client("SSL handshake failed", 0);
+            return err_resp_client(m, 0);
         }
     }
 #define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, 0))
@@ -2517,25 +2589,37 @@ static HttpClientResp client_do_request(HttpClient *c,
         snprintf(request_uri, sizeof(request_uri), "%s", full_path);
     }
 
+    /* 138.8: the caller's header lines, validated at the top. */
+    char *xh_buf = (char *)malloc(xh_len + 1);
+    if (!xh_buf) { CLIENT_CLOSE(); return err_resp_client("out of memory", 0); }
+    {
+        size_t o = 0;
+        for (uint64_t i = 0; i < nxh; i++)
+            o += (size_t)snprintf(xh_buf + o, xh_len + 1 - o, "%s: %s\r\n",
+                                  xh[i].key, xh[i].val ? xh[i].val : "");
+        xh_buf[o] = '\0';
+    }
     if (body && body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
-            "Content-Type: %s\r\n"
+            "%s"
             "Content-Length: %llu\r\n"
+            "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host,
-            content_type ? content_type : "application/octet-stream",
-            (unsigned long long)body_len);
+            method, request_uri, host, ct_line,
+            (unsigned long long)body_len, xh_buf);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
+            "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host);
+            method, request_uri, host, xh_buf);
     }
+    free(xh_buf);
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
         CLIENT_CLOSE();
@@ -2833,26 +2917,37 @@ HttpClient *http_withproxy(HttpClient *c, const char *proxy_url)
 
 HttpClientResp http_get(HttpClient *c, const char *path)
 {
-    return client_do_request(c, "GET", path, NULL, 0, NULL);
+    return client_do_request(c, "GET", path, NULL, 0, NULL, NULL, 0);
 }
 
 HttpClientResp http_post(HttpClient *c, const char *path,
                          const uint8_t *body, uint64_t body_len,
                          const char *content_type)
 {
-    return client_do_request(c, "POST", path, body, body_len, content_type);
+    return client_do_request(c, "POST", path, body, body_len, content_type, NULL, 0);
 }
 
 HttpClientResp http_put(HttpClient *c, const char *path,
                         const uint8_t *body, uint64_t body_len,
                         const char *content_type)
 {
-    return client_do_request(c, "PUT", path, body, body_len, content_type);
+    return client_do_request(c, "PUT", path, body, body_len, content_type, NULL, 0);
 }
 
 HttpClientResp http_delete(HttpClient *c, const char *path)
 {
-    return client_do_request(c, "DELETE", path, NULL, 0, NULL);
+    return client_do_request(c, "DELETE", path, NULL, 0, NULL, NULL, 0);
+}
+
+/* 138.8: any method, with caller headers (see client_do_request). */
+HttpClientResp http_request_headers(HttpClient *c, const char *method,
+                                    const char *path,
+                                    const uint8_t *body, uint64_t body_len,
+                                    const char *content_type,
+                                    const StrPair *headers, uint64_t nheaders)
+{
+    return client_do_request(c, method, path, body, body_len, content_type,
+                             headers, nheaders);
 }
 
 /* ── Streaming ─────────────────────────────────────────────────────── */

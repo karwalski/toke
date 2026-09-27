@@ -471,6 +471,14 @@ HttpClientResp http_put   (HttpClient *c, const char *path,
                            const uint8_t *body, uint64_t body_len,
                            const char *content_type);
 HttpClientResp http_delete(HttpClient *c, const char *path);
+/* 138.8: any method with caller-supplied headers.  A header named
+ * Content-Type replaces the default; Content-Length and Host, and any name
+ * or value containing CR/LF, are refused (is_err). */
+HttpClientResp http_request_headers(HttpClient *c, const char *method,
+                                    const char *path,
+                                    const uint8_t *body, uint64_t body_len,
+                                    const char *content_type,
+                                    const StrPair *headers, uint64_t nheaders);
 
 /* Streaming */
 HttpStreamResult http_stream    (HttpClient *c, HttpClientReq req);

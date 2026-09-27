@@ -137,7 +137,7 @@ f=main():void{
 
 ### http.servetls(port: u64; cert_path: $str; key_path: $str): i64
 
-Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down. It runs a pre-fork worker pool sized to the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable; use `http.servetlsworkers` to choose the count in the program.
+Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down and then returns `0`; if it cannot start — the certificate or key cannot be loaded, the port cannot be bound — it returns `-1` at once and the process exits 1 (see [Starting, failing and the port](#starting-failing-and-the-port)). It runs a pre-fork worker pool sized to the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable; use `http.servetlsworkers` to choose the count in the program.
 
 ```toke
 i=http:std.http;
@@ -156,6 +156,51 @@ f=main():void{
   http.servetlsworkers(443;"/etc/certs/server.crt";"/etc/certs/server.key";4);
 };
 ```
+
+### http.serveon(host: $str; port: u64): i64
+
+`http.serve` bound to one address. `host` is an IPv4 literal such as `"127.0.0.1"`, or `"localhost"` (which means `127.0.0.1`), or `""`, `"*"` or `"0.0.0.0"` for all interfaces. Any other host — a name to resolve, an IPv6 address — is refused: the call returns `-1` and the start fails as described under [Starting, failing and the port](#starting-failing-and-the-port), rather than falling back to all interfaces. (Story 138.1.)
+
+```toke
+i=http:std.http;
+f=main():i64{
+  http.getstatic("/health"; "ok");
+  http.serveon("127.0.0.1";8080);
+  <0
+};
+```
+
+### http.serveworkerson(host: $str; port: u64; workers: u64): i64
+
+`http.serveworkers` bound to one address; `host` as for `http.serveon`.
+
+### http.servetlson(host: $str; port: u64; cert_path: $str; key_path: $str): i64
+
+`http.servetls` bound to one address; `host` as for `http.serveon`.
+
+### http.servetlsworkerson(host: $str; port: u64; cert_path: $str; key_path: $str; workers: u64): i64
+
+`http.servetlsworkers` bound to one address; `host` as for `http.serveon`.
+
+## Starting, failing and the port
+
+**Which address.** The port-only forms — `http.serve`, `http.serveworkers`, `http.servetls`, `http.servetlsworkers` — listen on **all interfaces**. That is a recorded decision (story 138.1), not an oversight: it is what every deployed toke server already relies on, and changing it would take those servers off the network with no compile error and no runtime message. A program that must be reachable only from its own machine says so at the call, with the `...on` form and `"127.0.0.1"`. `http.listen("127.0.0.1:8080"; handler)` binds the host in its address (before 138.1 the host was dropped and the server listened on every interface).
+
+**Port 0.** Port `0` asks the operating system for any free port. Once the server is listening it prints one line to stderr naming the port it got:
+
+```text
+DIAGNOSTIC: kind=server_listening port=54321
+```
+
+This is how a supervisor or a test learns the port without picking one first — picking a free port and then starting the server leaves a window in which another process can take it. A port outside `0`–`65535` is refused. (Story 135.24: before this, any port `<= 0` or `> 65535` silently became `8080`, or `8443` for TLS.)
+
+**A server that does not start fails the process.** Every server call returns `-1` if the server could not start — a host or port it refuses, a certificate or key it cannot load, a port it cannot bind, a worker it cannot fork — and returns only then; a server that started returns `0` when it is shut down with `SIGTERM` or `SIGINT`. A start failure also prints one structured line to stderr,
+
+```text
+DIAGNOSTIC: kind=server_start_failed fn="http.serveworkers" port=8080 stage="bind/fork"
+```
+
+where `stage` is `host`, `port`, `certificate/key` or `bind/fork`, and it makes the process **exit with status 1** however `main` ends — even a program that ignores the `-1` and returns `0`. To a supervisor, a server that never started must not look like a clean shutdown. (Stories 135.22 for the TLS forms, 135.24 for the plain ones; the exit rule is shared with failed `std.test` assertions, see `docs/stdlib/test.md`.)
 
 ## Abandoned requests
 
@@ -405,62 +450,100 @@ f=main():void{
 };
 ```
 
-### http.get(url: $str): $httpresp!$httperr
+### Client calls and route registration are different names
 
-> **Not exported.** `std.http`'s interface declares no `http.get`. A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case, not public API: its signature is not checked against any interface, no interface declares its result type (it is not `$httpresp!$httperr`), and with two arguments the same name registers a GET route instead. See `tk_http_get_w` under "Defined, with no interface entry" in [stdlib-internal](/docs/reference/stdlib-internal/).
+`http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` **register routes** — `http.get("/health"; &handler)` — and send nothing. The client calls have names of their own (story 138.3): before them, `http.get(client;"/health")` compiled and registered a GET route whose path was the client handle (nothing was sent; loke saw the call "succeed" from the 257th time on, once the route table was full), a client DELETE could not be reached at all, and `http.get(url)` returned `""` for a server that was not there. `http.get(url)` with one argument still compiles today to an untyped GET; use `http.geturl`, which has an error channel.
 
-Sends a `GET` request to the given URL and returns the response. Returns `$httperr` on network failure, timeout, or DNS error.
+A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse, HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
+
+### http.clientget(client: $httpclient; path: $str): $httpresp!$httperr
+
+Sends `GET path` relative to the client's base URL.
 
 ```toke
 i=http:std.http;
-f=main():void{
-  let resp=http.get("https://api.example.com/status");
+i=io:std.io;
+i=str:std.str;
+f=main():i64{
+  let c=http.client("http://127.0.0.1:8080");
+  let up=mt http.clientget(c;"/health") {$ok:r r.status=200; $err:e false};
+  io.println("up=\(up)");
+  <0
 };
 ```
+
+### http.clientpost(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
+
+Sends `POST path` with the given body and `Content-Type`. Use `str.bytes` for a string body. A `content_type` of `""` sends `application/octet-stream`.
+
+```toke
+i=http:std.http;
+i=str:std.str;
+f=main():i64{
+  let c=http.client("http://127.0.0.1:8080");
+  let r=mt http.clientpost(c;"/items";str.bytes("{\"name\":\"toke\"}");"application/json") {$ok:r r.status; $err:e 0};
+  <0
+};
+```
+
+### http.clientput(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
+
+`http.clientpost` with `PUT`.
+
+### http.clientdelete(client: $httpclient; path: $str): $httpresp!$httperr
+
+Sends `DELETE path`, with no body.
+
+### http.geturl(url: $str): $str!$httperr
+
+`GET` a full `http://` or `https://` URL and return the body. It has nowhere to put a status, so any status outside `200`–`299` is `$err`, with `code` set to the status; a transport failure is `$err` with `code` 0. Use `http.clientget` when you need the status or headers of an unsuccessful response.
+
+```toke
+i=http:std.http;
+i=io:std.io;
+f=main():i64{
+  let body=mt http.geturl("http://127.0.0.1:8080/health") {$ok:b b; $err:e ""};
+  io.println(body);
+  <0
+};
+```
+
+### http.postheaders(url: $str; body: $str; headers: @(@($str))): $httpresp!$httperr
+
+`POST` `body` to a full `http://` or `https://` URL with the given headers, each an `@(name; value)` pair. The body is sent as `application/json` unless `headers` carries a `Content-Type`, which then replaces it (story 138.8: it used to be sent in addition, so the server saw two). `Content-Length` and `Host` are set by the client and may not be given; a header name or value containing a carriage return or line feed is refused (`$err`) rather than sent, because it would let the caller write a header of its own choosing. As for the other client calls, `$err` is a transport failure and a status such as `401` is a response.
+
+Over `https://` the server's certificate must verify against the trust store (the system default; `SSL_CERT_FILE` or `SSL_CERT_DIR` override it) and name the host or IP address in the URL. Before story 138.8 no certificate was verified by any `std.http` client call.
+
+```toke
+i=http:std.http;
+i=io:std.io;
+i=str:std.str;
+f=main():i64{
+  let h=@(@("x-api-key";"secret");@("content-type";"application/json"));
+  let r=mt http.postheaders("https://127.0.0.1:8443/v1/messages";"{\"n\":1}";h) {
+    $ok:r "\(r.status) \(str.frombytes(r.body))";
+    $err:e "request failed"
+  };
+  io.println(r);
+  <0
+};
+```
+
+### http.get(url: $str): $httpresp!$httperr
+
+> **Not exported.** `std.http`'s interface declares `http.get` as route registration (`path; handler`). A one-argument `http.get(url)` does compile today -- `src/llvm.c` rewrites it to `tk_http_get_w` -- but that is a compiler special case: its result is untyped and it has no error channel. Use `http.geturl(url)`.
 
 ### http.post(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
 
-> **Not exported.** `std.http`'s interface declares no `http.post`. The compiler resolves the name to route registration (`http.post(path;handler)`, or `tk_http_posturl_w` for two non-function arguments), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client POST.
-
-Sends a `POST` request with the given byte-array body and `Content-Type` header. Use `str.bytes` to convert a string body. Returns `$httperr` on failure.
-
-```toke
-i=http:std.http;
-i=str:std.str;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let resp=http.post(c;"/items";str.bytes("{\"name\":\"toke\"}");"application/json");
-};
-```
+> **Not exported.** `http.post` is route registration (`http.post(path;handler)`, or `tk_http_posturl_w` for two non-function arguments), so the four-argument client call is rejected by `tkc --check` with E4026. Use `http.clientpost`.
 
 ### http.put(client: $httpclient; path: $str; body: @(byte); content_type: $str): $httpresp!$httperr
 
-> **Not exported.** `std.http`'s interface declares no `http.put`. The compiler resolves the name to route registration (`http.put(path;handler)`), so the four-argument client call below is rejected by `tkc --check` with E4026. There is no exported client PUT.
-
-Sends a `PUT` request with the given byte-array body and `Content-Type` header. Semantics mirror `http.post`; use for full-resource replacement.
-
-```toke
-i=http:std.http;
-i=str:std.str;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let resp=http.put(c;"/items/1";str.bytes("{\"name\":\"updated\"}");"application/json");
-};
-```
+> **Not exported.** `http.put` is route registration (`http.put(path;handler)`). Use `http.clientput`.
 
 ### http.delete(client: $httpclient; path: $str): $httpresp!$httperr
 
-> **Not exported.** `std.http`'s interface declares no `http.delete`, and the call below does **not** do what this section says: the compiler resolves `http.delete(c;path)` to route registration (`tk_http_delete_handler`), passing the client handle where a path belongs. It type-checks and does not send a request. There is no exported client DELETE.
-
-Sends a `DELETE` request to `path`. The request carries no body. Returns `$httperr` on network failure.
-
-```toke
-i=http:std.http;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let resp=http.delete(c;"/items/1");
-};
-```
+> **Not exported.** `http.delete` is route registration: `http.delete(c;path)` passes the client handle where a path belongs, type-checks, and sends nothing. Use `http.clientdelete`.
 
 ### http.stream(client: $httpclient; method: $str; path: $str): $httpstream!$httperr
 
@@ -533,7 +616,7 @@ A sum type representing request-accessor failures, returned by `http.param` and 
 
 ### $httperr
 
-A struct, not a sum type, returned by the client stream functions `http.stream` and `http.streamnext`.
+A struct, not a sum type: the `$err` of the client calls (`http.clientget`, `http.clientpost`, `http.clientput`, `http.clientdelete`, `http.geturl`) and of the stream functions `http.stream` and `http.streamnext`.
 
 | Field | Type | Meaning |
 |-------|------|---------|

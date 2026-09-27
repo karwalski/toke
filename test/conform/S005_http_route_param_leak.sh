@@ -99,7 +99,8 @@ if [ ! -x "${TKC}" ]; then
     echo "  FAIL: tkc not found at ${TKC} — cannot run the dangling-body case"
     FAIL=$((FAIL + 1))
 else
-    PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+    # 135.24: the server binds port 0 and says which port it got; no probe.
+    PORT=""
     cat > "${WORK}/srv.tk" <<EOF
 m=srv;
 i=http:std.http;
@@ -108,7 +109,7 @@ f=greet(req:i64):i64{
 };
 f=main():i64{
   http.gethandler("/api/greet/:name";&greet);
-  http.serveworkers(${PORT};1);
+  http.serveworkers(0;1);
   <0
 };
 EOF
@@ -118,8 +119,14 @@ EOF
         sed 's/^/      /' "${WORK}/srvbuild.log" | head -6
         FAIL=$((FAIL + 1))
     else
-        "${WORK}/srv.bin" >/dev/null 2>&1 &
+        "${WORK}/srv.bin" >/dev/null 2>"${WORK}/srv.err" &
         SRV=$!
+        for _ in $(seq 1 80); do
+            PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${WORK}/srv.err" | head -1)"
+            [ -n "${PORT}" ] && break
+            kill -0 "${SRV}" 2>/dev/null || break
+            sleep 0.1
+        done
         for _ in $(seq 1 80); do
             python3 -c "
 import socket,sys
