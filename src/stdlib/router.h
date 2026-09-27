@@ -102,7 +102,9 @@ TkRouteResp router_dispatch_ex(TkRouter *r,
 
 /* Start an HTTP server using this router for dispatch.
  * Binds to the given host:port and blocks, serving requests.
- * host may be NULL or "" to bind to all interfaces.
+ * host is an IPv4 literal or "localhost" (127.0.0.1); NULL, "", "*" or
+ * "0.0.0.0" bind all interfaces; anything else fails before binding
+ * (135.28 item 2).  Port 0 is a kernel-chosen port, reported on stderr.
  * Returns TkRouterErr (failed==0 on clean shutdown). */
 TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port);
 

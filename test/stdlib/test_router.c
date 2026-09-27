@@ -417,7 +417,10 @@ int main(void)
         router_post(r, "/b", handler_beta);
         TkRouteResp resp = router_dispatch(r, "GET", "/nonexistent", NULL, NULL);
         ASSERT_INTEQ(resp.status, 404, "T22: unmatched path returns 404");
-        ASSERT_STREQ(resp.body, "Not Found", "T22: 404 body='Not Found'");
+        /* 135.28: the 404 page has been HTML since 89ff542 (router_resp_404) */
+        ASSERT(resp.body && strstr(resp.body, "<h1>404 Not Found</h1>") != NULL,
+               "T22: 404 body is the HTML 404 page");
+        ASSERT_STREQ(resp.content_type, "text/html", "T22: 404 content_type='text/html'");
         router_free(r);
     }
 
@@ -485,10 +488,11 @@ int main(void)
         /* Test 27: serve file — status 200, correct Content-Type           */
         /* ---------------------------------------------------------------- */
         {
-            TkRouteResp resp = router_static_serve(tmpdir, "hello.html", NULL);
+            TkRouteResp resp = router_static_serve(tmpdir, "hello.html", NULL, NULL);
             ASSERT_INTEQ(resp.status, 200, "T27: static serve status=200");
-            ASSERT_STREQ(resp.content_type, "text/html",
-                         "T27: static serve content_type='text/html'");
+            /* 135.28: the MIME table has carried charset=utf-8 since 02db709 */
+            ASSERT_STREQ(resp.content_type, "text/html; charset=utf-8",
+                         "T27: static serve content_type='text/html; charset=utf-8'");
             ASSERT_STREQ(resp.body, "<h1>Hello</h1>",
                          "T27: static serve body correct");
             /* Clean up heap allocations */
@@ -506,7 +510,7 @@ int main(void)
         /* Test 28: path traversal /../secret → 403                          */
         /* ---------------------------------------------------------------- */
         {
-            TkRouteResp resp = router_static_serve(tmpdir, "/../secret", NULL);
+            TkRouteResp resp = router_static_serve(tmpdir, "/../secret", NULL, NULL);
             ASSERT_INTEQ(resp.status, 403, "T28: path traversal → 403");
         }
 
@@ -514,7 +518,7 @@ int main(void)
         /* Test 29: missing file → 404                                       */
         /* ---------------------------------------------------------------- */
         {
-            TkRouteResp resp = router_static_serve(tmpdir, "nosuchfile.txt", NULL);
+            TkRouteResp resp = router_static_serve(tmpdir, "nosuchfile.txt", NULL, NULL);
             ASSERT_INTEQ(resp.status, 404, "T29: missing file → 404");
         }
 
@@ -522,7 +526,7 @@ int main(void)
         /* Test 30: ETag header present in 200 response                      */
         /* ---------------------------------------------------------------- */
         {
-            TkRouteResp resp = router_static_serve(tmpdir, "hello.html", NULL);
+            TkRouteResp resp = router_static_serve(tmpdir, "hello.html", NULL, NULL);
             ASSERT_INTEQ(resp.status, 200, "T30: ETag test — status=200");
             ASSERT(resp.nheaders >= 1, "T30: at least one extra header");
             int etag_found = 0;
@@ -549,14 +553,14 @@ int main(void)
         /* ---------------------------------------------------------------- */
         {
             /* First request to get the real ETag */
-            TkRouteResp r1 = router_static_serve(tmpdir, "hello.html", NULL);
+            TkRouteResp r1 = router_static_serve(tmpdir, "hello.html", NULL, NULL);
             ASSERT_INTEQ(r1.status, 200, "T31: first request status=200");
 
             if (r1.status == 200 && r1.nheaders > 0 && r1.header_values[0]) {
                 char *etag = strdup(r1.header_values[0]);
 
                 /* Second request with matching ETag → 304 */
-                TkRouteResp r2 = router_static_serve(tmpdir, "hello.html", etag);
+                TkRouteResp r2 = router_static_serve(tmpdir, "hello.html", etag, NULL);
                 ASSERT_INTEQ(r2.status, 304, "T31: matching If-None-Match → 304");
 
                 free(etag);
@@ -584,8 +588,8 @@ int main(void)
             TkRouteResp resp = router_dispatch(r, "GET", "/assets/hello.html",
                                                NULL, NULL);
             ASSERT_INTEQ(resp.status, 200, "T32: router_static dispatch status=200");
-            ASSERT_STREQ(resp.content_type, "text/html",
-                         "T32: router_static dispatch content_type='text/html'");
+            ASSERT_STREQ(resp.content_type, "text/html; charset=utf-8",
+                         "T32: router_static dispatch content_type='text/html; charset=utf-8'");
             if (resp.status == 200) {
                 free((char *)resp.body);
                 if (resp.nheaders > 0) {

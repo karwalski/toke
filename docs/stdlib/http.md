@@ -23,6 +23,10 @@ Represents an incoming HTTP request received by a server route handler.
 | body | $str | Request body (empty string if none) |
 | params | @(@($str)) | URL parameters extracted from the route pattern |
 
+Every field can be read directly, `req.body`, `req.headers.len`, `req.params.get(0).get(1)`, as well as through the accessor functions below. Each element of `headers` and `params` is a two-element `@(name; value)`; header names keep the case the client sent, so compare them case-insensitively (`http.header` and `http.reqheader` do). A `$req` and every string in it belong to the request: they are released after the response is sent, so a handler that keeps one past its return keeps dangling strings.
+
+Until story 138.18 a field read went wrong: the server handed a handler its internal C request, whose fields are in a different order and whose pair lists are a different shape, so `req.body` read the header list and `req.headers.len` crashed. The accessor functions were not affected.
+
 ### $res
 
 Represents an outgoing HTTP response returned by a server route handler.
@@ -32,6 +36,8 @@ Represents an outgoing HTTP response returned by a server route handler.
 | status | u16 | HTTP status code |
 | headers | @(@($str)) | Key-value pairs of response headers |
 | body | $str | Response body |
+
+A handler may build its response as a literal, `$res{status:201;headers:@(@("Location";"/items/7"));body:""}`, and the server sends exactly that status, those headers and that body. The fields of a `$res` from a constructor (`http.res.ok`, `http.resnew`, ...) read back what was passed, `r.status` and `r.body`, with the constructor's `Content-Type` in `r.headers` (story 138.18).
 
 ### $httpclient
 
@@ -76,7 +82,7 @@ http.GET("/health"; handler);
 
 ### http.POST(pattern: $str; handler: f): void
 
-Registers `handler` for all `POST` requests matching `pattern`. The handler reads the request body with `http.reqbody(req)`. (Reading it as the field `req.body` does not work today: the `$req` a handler receives is laid out differently from the declared type, so field access reads the wrong slot.)
+Registers `handler` for all `POST` requests matching `pattern`. The handler reads the request body as the field `req.body` or with `http.reqbody(req)`; both read the same value (story 138.18).
 
 ```text
 http.POST("/items"; handler);
@@ -342,7 +348,9 @@ message on stderr.
 
 ### http.param(req: $req; name: $str): $str!$httprouteerr
 
-Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httprouteerr.$notfound` if no parameter with that name was captured for this request.
+Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httprouteerr.$notfound` if no parameter with that name was captured for this request. A parameter that is present and empty is `$ok ""`. (Until story 135.28 a missing parameter was also `$ok ""`.)
+
+Today the `$err` arm is taken but its payload cannot be matched on: `mt e {$notfound:m ...}` inside it is E9005, because the compiler does not yet bind a payload for this call. Use the arm itself as "missing". `http.reqparam` is the plain-`str` form: `""` when missing.
 
 ```text
 let id = http.param(req; "id");
@@ -351,7 +359,7 @@ let id = http.param(req; "id");
 
 ### http.header(req: $req; name: $str): $str!$httprouteerr
 
-Extracts a request header value by name using case-insensitive lookup. Returns `$httprouteerr.$notfound` if the header is not present in the request.
+Extracts a request header value by name using case-insensitive lookup. Returns `$httprouteerr.$notfound` if the header is not present in the request; a header present with an empty value is `$ok ""` (story 135.28). As for `http.param`, the `$err` payload cannot yet be matched on. `http.reqheader` is the plain-`str` form: `""` when missing.
 
 ```text
 let ct = http.header(req; "content-type");
@@ -403,7 +411,7 @@ This only concerns code that writes a handler in C. A toke handler returning
 
 ### http.$res.ok(body: $str): $res
 
-Creates a 200 OK response with the given plain-text body. Sets no explicit `Content-Type` header; add one via the `headers` field if needed.
+Creates a 200 OK response with the given body and `Content-Type: text/html; charset=utf-8`. For another content type build the `$res` as a literal.
 
 ```text
 let r = http.$res.ok("hello");
@@ -441,7 +449,7 @@ let r = http.$res.err("database unavailable");
 
 A route handler is an ordinary function, `(req:$req):$res`. A test calls it directly: `http.mockreq` builds the request the server would hand it, and `http.resstatus`, `http.resbody` and `http.resheader` read what it returned. No server starts and no socket opens (story 138.16).
 
-`http.mockreq` builds the same request the server's dispatchers build, so every accessor a handler calls (`http.reqmethod`, `http.reqpath`, `http.reqbody`, `http.reqparam`, `http.reqheader`, `http.param`, `http.header`) reads what it would read under the server. Two things are different:
+`http.mockreq` builds the same request the server's dispatchers build, so every field a handler reads (`req.body`, `req.headers`, ...) and every accessor it calls (`http.reqmethod`, `http.reqpath`, `http.reqbody`, `http.reqparam`, `http.reqheader`, `http.param`, `http.header`) reads what it would read under the server. Two things are different:
 
 - **Route params are given, not matched.** The server binds `:id` from the route pattern; a test passes the bindings it wants in `params`.
 - **The response is the handler's, not the wire's.** The `res*` functions read the response the handler returned. The server adds `Content-Length`, `Connection` and any CORS header when it sends, and those are not in it.
@@ -450,7 +458,7 @@ A handler declared `(req:i64):i64` cannot take the `$req` from `http.mockreq` (E
 
 ### http.mockreq(method: $str; path: $str; headers: @(@($str)); body: $str; params: @(@($str))): $req
 
-Builds a request. `headers` and `params` are lists of `@(name; value)` pairs; pass `@()` for none. Header lookups are case-insensitive, as under the server. An element that is not a two-element `@(name; value)` stops the program with exit status 1 and a message naming the argument, because a test that carried on would be testing a different request from the one it wrote. The request is never freed.
+Builds a request. `headers` and `params` are lists of `@(name; value)` pairs; pass `@()` for none. Header lookups are case-insensitive, as under the server. An element that is not a two-element `@(name; value)` stops the program with exit status 1 and a message naming the argument, because a test that carried on would be testing a different request from the one it wrote. The request keeps the arrays it was given, so `req.headers` is the very list the test passed. The request is never freed.
 
 ### http.resstatus(res: $res): u64
 

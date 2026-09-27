@@ -4,11 +4,11 @@
 
 set -e
 
-# 127.130: default to the main checkout, as before, but overridable.  This was
-# a hard absolute path, so running from a git worktree silently measured the
-# MAIN checkout's compiler and reported a pass for a binary the branch had
-# never built.  Unset, the behaviour below is byte-identical to before.
-TOKE_ROOT=${TOKE_ROOT:-/Users/matthew.watt/tk/toke}
+# 127.130: overridable.  135.28 item 4: the default is the checkout this
+# script lives in (two levels up), not a hard-coded home directory -- that was
+# one developer's absolute path in a public repo, and from a git worktree it
+# measured the MAIN checkout's compiler, not the branch's.
+TOKE_ROOT=${TOKE_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}
 TOKE=${TOKE:-$TOKE_ROOT/toke}
 # 135.26 item 4: a private work dir and a kernel-chosen port.  This used a
 # fixed port (18923) and fixed /tmp paths, so a second run, or anything else
