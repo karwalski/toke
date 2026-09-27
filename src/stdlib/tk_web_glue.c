@@ -1615,9 +1615,9 @@ static int64_t http_raise(const char *msg, uint64_t code)
      * on this thread -- the lifetime tk_err_box gives the box itself. */
     static TK_WEB_TLS char msgbuf[256];
     snprintf(msgbuf, sizeof msgbuf, "%s", msg ? msg : "");
-    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
-    box[0] = (int64_t)(intptr_t)msgbuf;
-    box[1] = (int64_t)code;
+    TkHttpErrRec *box = (TkHttpErrRec *)tk_err_box((int64_t)sizeof *box);
+    box->msg  = msgbuf;
+    box->code = (int64_t)code;
     tk_current_error = (int64_t)(intptr_t)box;
     return 0;
 }
@@ -1634,12 +1634,12 @@ static void client_resp_free(HttpClientResp *r)
     memset(r, 0, sizeof *r);
 }
 
-/* The $httpresp block {status; headers:[[str]]; body:[byte]}, one i64 slot
- * per field (136.4).  Takes the response apart: the header strings are
- * handed to the program, everything else is freed. */
+/* The $httpresp record {status; headers:[[str]]; body:[byte]}, TkHttpRespRec
+ * in http.h (136.4, 138.18).  Takes the response apart: the header strings
+ * are handed to the program, everything else is freed. */
 static int64_t client_resp_block(HttpClientResp *r)
 {
-    int64_t *b = (int64_t *)malloc(3 * sizeof(int64_t));
+    TkHttpRespRec *b = (TkHttpRespRec *)malloc(sizeof *b);
     int64_t hdrs = tk_arr_alloc((int64_t)r->headers.len, (int64_t)r->headers.len);
     int64_t body = tk_bytes_pack(r->body ? r->body : (const uint8_t *)"", r->body_len);
     if (!b || !hdrs || !body) {
@@ -1661,9 +1661,9 @@ static int64_t client_resp_block(HttpClientResp *r)
         ((int64_t *)(intptr_t)hdrs)[n++] = pair;
     }
     tk_arr_setlen(hdrs, n);
-    b[0] = (int64_t)r->status;
-    b[1] = hdrs;
-    b[2] = body;
+    b->status  = (int64_t)r->status;
+    b->headers = hdrs;
+    b->body    = body;
     client_resp_free(r);                 /* keys/vals already handed out */
     tk_current_error = 0;                /* 127.123: an ok return clears it */
     return (int64_t)(intptr_t)b;
