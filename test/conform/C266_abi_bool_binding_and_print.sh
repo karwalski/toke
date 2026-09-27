@@ -18,6 +18,7 @@
 # case 6 (numeric control) green on both.  Case 7 (a bool error union bound
 # and matched) is green on main and was red ("build-failed", invalid IR) on
 # this branch before call_is_err_union — found by the full conform run (C007).
+# Case 8 (Batch LS's report) red on main and before the match rule ("1").
 #
 # Story: 127.229 (4), 127.230 (1)
 
@@ -65,6 +66,12 @@ printf '%s\n' "$H f=main():i64{let w=f.writebytes(\"/nonexistent-dir-c266/x\";@(
 rm -f "${WORK}/b7"
 "${TKC}" "${WORK}/p7.tk" -o "${WORK}/b7" >/dev/null 2>&1 && got7="$("${WORK}/b7" --allow-write 2>/dev/null | tr '\n' ' ')" || got7="build-failed"
 expect "7-bool-err-union-binding-matched" "${got7}" "err "
+
+# 8. a match whose arms are all bools, bound by let, interpolates as a bool
+#    (its result slot is i64)
+expect "8-bool-match-let" \
+  "$(run "$H f=main():i64{let c=mt s.toint(\"5\") {\$ok:v s.contains(\"a5\";\"5\"); \$err:e false};io.println(\"\\(c)\");<0};")" \
+  "true "
 
 echo "C266: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

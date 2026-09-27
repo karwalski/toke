@@ -1364,6 +1364,9 @@ static int is_stdlib_slot_wrapper(const char *name) {
          * `$err:e e.msg` read a nil payload (RT005) */
         "tk_http_clientget_w", "tk_http_clientpost_w", "tk_http_clientput_w",
         "tk_http_clientdelete_w", "tk_http_geturl_w",
+        /* 138.6: std.db's scalar row accessors and exec (db_glue.c db_raise) */
+        "tk_row_str_w", "tk_row_i64_w", "tk_row_u64_w", "tk_row_f64_w", "tk_row_bool_w",
+        "tk_db_exec_w", "tk_db_execon_w",
         NULL,
     };
     if (!name) return 0;
@@ -2143,6 +2146,21 @@ static int call_declares_bool(Ctx *c, const Node *e) {
     tok_cp(c->src, cal->children[1], method, sizeof method);
     const TkiCacheEntry *te = tki_entry_for(c, alias, method);
     if (!te) {
+        /* 138.6: a stdlib SUB-namespace (`row.bool` from std.db): the export
+         * prefix is not an import alias, so look the export up by prefix
+         * in the interfaces of the imported std modules. */
+        ensure_tki_cache_loaded();
+        for (int ii = 0; ii < c->import_count && !te; ii++) {
+            if (!c->imports[ii].is_std) continue;
+            const char *fm = c->imports[ii].module;
+            if (!strncmp(fm, "std.", 4)) fm += 4;
+            for (int k = 0; k < g_tki_cache_count; k++)
+                if (!strcmp(g_tki_cache[k].file_module, fm) &&
+                    !strcmp(g_tki_cache[k].module, alias) &&
+                    !strcmp(g_tki_cache[k].method, method)) { te = &g_tki_cache[k]; break; }
+        }
+    }
+    if (!te) {
         /* 127.217: a function in another USER module.  Its signature was
          * registered from that module's .tki under the mangled name
          * <module path with '.'->'_'>_<method>, with the declared toke
@@ -2264,10 +2282,31 @@ static int call_is_err_union(Ctx *c, const Node *e) {
     return 0;
 }
 
+static const char *expr_llvm_type(Ctx *c, const Node *n);
 static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
-    return ety && !strcmp(ety, "i64")
-           && (call_declares_bool(c, e) || field_declares_bool(c, e)
-               || recv_call_is_bool(c, e));
+    if (!ety || strcmp(ety, "i64")) return 0;
+    if (call_declares_bool(c, e) || field_declares_bool(c, e) || recv_call_is_bool(c, e))
+        return 1;
+    /* 127.230 (1): a match whose every value arm is a bool.  Its result slot
+     * is never i1 (the match lowering widens to i64), so
+     * `let c=mt s.toint(x){$ok:v s.contains(a;b);$err:e false}` printed 1. */
+    if (e && e->kind == NODE_MATCH_STMT && e->child_count >= 2) {
+        int seen = 0;
+        for (int i = 1; i < e->child_count; i++) {
+            const Node *arm = e->children[i];
+            if (!arm || arm->child_count < 3 || !arm->children[2]) return 0;
+            const Node *b = arm->children[2];
+            if (b->kind == NODE_RETURN_STMT) continue;
+            const char *bt = expr_llvm_type(c, b);
+            int isb = (bt && !strcmp(bt, "i1")) || b->kind == NODE_BOOL_LIT ||
+                      (b->rtype && b->rtype->kind == TY_BOOL) ||
+                      expr_abi_bool(c, b, bt);
+            if (!isb) return 0;
+            seen++;
+        }
+        return seen > 0;
+    }
+    return 0;
 }
 
 /* array_lit_spread_idx — the index of the element of array literal `n` that
@@ -3154,6 +3193,18 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
  * immediately after the call returns, and the `mt` reads THAT.  Reading the
  * global at the `mt` would have traded one wrong answer for another.
  */
+/* 138.6: the resolver the emitter uses for a call, including the
+ * hard-coded sub-namespaces (`row.f64` -> tk_row_f64_w) that
+ * resolve_stdlib_call deliberately does not answer for. */
+static const char *resolve_call_symbol(Ctx *c, const char *al, const char *me,
+                                       char *buf, size_t bufsz)
+{
+    const char *p = resolve_stdlib_call(c, al, me);
+    if (p) return p;
+    if (resolve_sub_namespace_call(al, me, buf, bufsz)) return buf;   /* as emit_expr does */
+    return NULL;
+}
+
 static void classify_fallible_call(Ctx *c, const Node *call,
                                    int *out_uce, int *out_zok,
                                    const char **out_err_type)
@@ -3172,7 +3223,8 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         char pal[128], pme[128];
         tok_cp(c->src, sc->children[0], pal, sizeof pal);
         tok_cp(c->src, sc->children[1], pme, sizeof pme);
-        const char *prv = resolve_stdlib_call(c, pal, pme);
+        char subb[256];
+        const char *prv = resolve_call_symbol(c, pal, pme, subb, sizeof subb);
         if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
         if (is_num_parse_wrapper(prv)) *out_uce = 1;                 /* 114.53/54 */
         else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
@@ -3247,7 +3299,8 @@ static void classify_fallible_call(Ctx *c, const Node *call,
             char al[128], mth[128], wb[128], eb[128];
             tok_cp(c->src, sc->children[0], al, sizeof al);
             tok_cp(c->src, sc->children[1], mth, sizeof mth);
-            const char *prv = resolve_stdlib_call(c, al, mth);
+            char subb[256];
+            const char *prv = resolve_call_symbol(c, al, mth, subb, sizeof subb);
             if (prv) {
                 snprintf(wb, sizeof wb, "%s", prv);
                 *out_err_type = stdlib_err_payload_type(c, wb, eb, sizeof eb);
@@ -6543,7 +6596,8 @@ static int emit_expr(Ctx *c, const Node *n)
                 char pal[128], pme[128];
                 tok_cp(c->src, sc->children[0], pal, sizeof pal);
                 tok_cp(c->src, sc->children[1], pme, sizeof pme);
-                const char *prv = resolve_stdlib_call(c, pal, pme);
+                char subb[256];
+                const char *prv = resolve_call_symbol(c, pal, pme, subb, sizeof subb);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
                 else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
                 else if (is_stdlib_slot_wrapper(prv)) prop_cur_err = 1;  /* 127.193 */
@@ -7348,6 +7402,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 const int err_is_str = eu_err_type && !strcmp(eu_err_type, "str");
                 const char *bind_ty = (!is_ok && eu_err_type)
                                       ? (err_is_str ? "i8*" : "i64") : scr_ty;
+                /* 127.230 (1): the $ok payload of a stdlib call declared
+                 * `bool!E` (row.bool, keychain.*) crosses as an i64 0/1; bind
+                 * it as the bool it is, so `\(v)` says true/false. */
+                int ok_abi_bool = is_ok && !strcmp(scr_ty, "i64") &&
+                                  call_declares_bool(c, n->children[0]);
+                if (ok_abi_bool) bind_ty = "i1";
                 set_local_type(c, vname, bind_ty);
                 /* 127.71: the $ok arm binds the scrutinee's value, so it earns
                  * the scrutinee's tag ("$str", "@str", a struct name).  It was
@@ -7362,7 +7422,11 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (ok_st) mark_ptr_with_type(c, vraw, ok_st);
                 }
                 fprintf(c->out, "  %%%s = alloca %s\n", vname, bind_ty);
-                if (is_ok)
+                if (ok_abi_bool) {
+                    int bz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; 127.230 (1) abi bool\n", bz, sv);
+                    fprintf(c->out, "  store i1 %%t%d, i1* %%%s\n", bz, vname);
+                } else if (is_ok)
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, sv, scr_ty, vname);
                 else if (eu_err_type) {
                     /* 127.97: @tk_current_error is tri-valued (runtime-abi §7):

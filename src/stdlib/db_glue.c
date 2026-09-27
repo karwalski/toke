@@ -95,11 +95,10 @@ static int64_t exec_on(int64_t h, int64_t sql, int64_t params) {
     free((void *)sa.data);
     if (res.is_err) return db_raise(res.err);
     tk_current_error = 0;
-    /* Under the value sentinel a count of 0 (every CREATE, every UPDATE that
-     * matched nothing) would read as $err, so 0 is reported as 1 until
-     * llvm.c lists this wrapper as a slot wrapper; then it can return
-     * res.ok as it is. */
-    return res.ok > 0 ? (int64_t)res.ok : 1;
+    /* 138.6: llvm.c lists tk_db_exec_w/tk_db_execon_w as slot wrappers, so
+     * `mt` discriminates on tk_current_error (cleared above) and a count of
+     * 0 — every CREATE, an UPDATE that matched nothing — is $ok 0. */
+    return (int64_t)res.ok;
 }
 
 int64_t tk_db_exec_w(int64_t sql, int64_t params) {
