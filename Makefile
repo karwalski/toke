@@ -726,19 +726,21 @@ test-asan-compiler: asan-selftest
 ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \
-                      test-stdlib-yaml
+                      test-stdlib-yaml \
+                      test-stdlib-http-leak test-stdlib-http-route-param-leak
+#
+# test-stdlib-http-leak and test-stdlib-http-route-param-leak were excluded
+# until 122.14: they measured retention with malloc_zone_statistics() /
+# mallinfo2(), the SYSTEM allocator's count, and under ASan that reads ASan's
+# shadow and quarantine bookkeeping (~1500 bytes "retained" per request on a
+# tree that retains none).  test/stdlib/heap_in_use.h now asks ASan itself
+# (__sanitizer_get_current_allocated_bytes) when built with it, and each run
+# prints which counter it used.  Measured 2026-09-27: 0.0 bytes/request both
+# ways on this tree; with free_req() removed from the keep-alive loop, 285.6
+# bytes/request without ASan and 190.9 with it -- red both ways.
 #
 # EXCLUDED, with the reason, because "we left it out" and "it is clean" must
 # never look the same in a report:
-#
-#   test-stdlib-http-leak, test-stdlib-http-route-param-leak
-#       Incompatible with ASan BY CONSTRUCTION, not broken. Both measure
-#       retention with malloc_zone_statistics()/mallinfo2() -- the SYSTEM
-#       allocator's in-use byte count -- and ASan replaces the allocator, so
-#       they end up measuring its shadow and quarantine bookkeeping. Measured
-#       2026-09-24: both pass clean without ASan and both report ~1500 bytes
-#       retained per request with it. That is a false positive, and a false
-#       positive in a security job is how a security job gets ignored.
 #
 #   test-stdlib-csv
 #       Does not COMPILE under the sanitizer build, for a real reason worth
