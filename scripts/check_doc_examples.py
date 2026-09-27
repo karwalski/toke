@@ -254,9 +254,18 @@ CANARY_LINK_ONLY = [
 #
 # The rule set is read from docs/lint-rules-v1.md ("## Pattern rules"), the
 # normative list, so a new pattern rule is picked up without editing this.
+#
+# 132.99: a page that shows a deliberate "Not this" counter-example (guide/11's
+# before/after pairs) marks the block with ALLOW_MARK on one of the three lines
+# above its opening fence. An allowed block is still built by the build gate
+# and is still listed here (as ALLOW, never silently); it just is not counted
+# as a would-fail. A marker on a block with no gated hit is listed as STALE.
+# `make check-doc-patterns` runs this report.
 LINT_RULES_MD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "docs", "lint-rules-v1.md")
 JUDGE_GATE = ("error", "warning")     # idiom_judge.GATE_SEVERITIES
+ALLOW_MARK = "<!-- pattern-report: counter-example -->"
+ALLOW_LOOKBACK = 3                    # lines above the opening fence
 CANARY_PATTERN = """m=canary;
 i=io:std.io;
 f=main():i64{
@@ -300,7 +309,18 @@ def lint_one(src, rules):
         shutil.rmtree(d, ignore_errors=True)
 
 
-def pattern_report(work, jobs):
+def fenced_blocks(text):
+    """[(block_index, body, allowed)] for every ```toke / ```tk fence. `allowed`
+    is True when ALLOW_MARK sits on one of the ALLOW_LOOKBACK lines above it."""
+    out = []
+    for i, m in enumerate(FENCE.finditer(text)):
+        start = m.start() + (1 if text[m.start()] == "\n" else 0)
+        above = text[:start].split("\n")[-(ALLOW_LOOKBACK + 1):]
+        out.append((i, m.group(1), any(ALLOW_MARK in ln for ln in above)))
+    return out
+
+
+def pattern_report(work, jobs, allowed=frozenset()):
     rules = pattern_rules()
     if len(rules) < 6:
         print(f"pattern report: only {len(rules)} pattern rules found in "
@@ -308,7 +328,11 @@ def pattern_report(work, jobs):
         return 2
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         hits = list(pool.map(lambda w: lint_one(w[2], rules), work))
-    gated = [(w, h) for w, h in zip(work, hits) if any(sv in JUDGE_GATE for _, sv, _ in h)]
+    gated_all = [(w, h) for w, h in zip(work, hits) if any(sv in JUDGE_GATE for _, sv, _ in h)]
+    allow = [(w, h) for w, h in gated_all if (w[0], w[1]) in allowed]
+    gated = [(w, h) for w, h in gated_all if (w[0], w[1]) not in allowed]
+    stale = sorted(k for k in allowed
+                   if k not in {(w[0], w[1]) for w, _ in gated_all})
     hinted = [(w, h) for w, h in zip(work, hits) if h and not any(sv in JUDGE_GATE for _, sv, _ in h)]
     by_rule = {}
     for h in hits:
@@ -317,13 +341,20 @@ def pattern_report(work, jobs):
     print(f"doc pattern report (132.43) -- Reported, not asserted: "
           f"{len(gated)}/{len(work)} documented full programs would fail the idiom "
           f"judge's hard gate (a pattern rule at error/warning); {len(hinted)} more "
-          f"carry hints only; {len(work) - len(gated) - len(hinted)} are clean. "
+          f"carry hints only; {len(work) - len(gated_all) - len(hinted)} are clean; "
+          f"{len(allow)} are marked deliberate counter-examples. "
           f"Rules: {', '.join(sorted(rules))}.")
     for (rule, sv), n in sorted(by_rule.items()):
         print(f"  {n:4d}  {rule:<24s} {sv}")
     for (rel, i, _), h in gated:
         desc = ", ".join(f"{r}@{ln}" for r, sv, ln in h if sv in JUDGE_GATE)
         print(f"  GATE {rel} [block {i}]: {desc}")
+    for (rel, i, _), h in allow:
+        desc = ", ".join(f"{r}@{ln}" for r, sv, ln in h if sv in JUDGE_GATE)
+        print(f"  ALLOW {rel} [block {i}] (counter-example): {desc}")
+    for rel, i in stale:
+        print(f"  STALE {rel} [block {i}]: marked counter-example, but no gated "
+              f"pattern hit -- remove the marker")
     return 0
 
 
@@ -340,6 +371,17 @@ def self_test():
     else:
         print(f"  self-test: the pattern report reads {len(rules)} pattern rules and "
               f"flags the mut-flag-if canary")
+    # 132.99: the allow marker must be seen directly above a fence, and must
+    # not leak onto a block further down.
+    md = ("x\n\n" + ALLOW_MARK + "\n\n```toke\na\n```\n\ntext\n\n```toke\nb\n```\n")
+    flags = [a for _, _, a in fenced_blocks(md)]
+    if flags != [True, False]:
+        print(f"  SELF-TEST FAIL: the counter-example marker was read as {flags}, "
+              f"expected [True, False]")
+        ok = False
+    else:
+        print("  self-test: the counter-example marker allows the block below it "
+              "and only that block")
     good = build_one(CANARY_GOOD, link=True)
     if good is not None:
         print(f"  SELF-TEST FAIL: the known-good canary does not build: {good}")
@@ -409,18 +451,20 @@ def main():
     jobs = jobs or min(12, (os.cpu_count() or 4))
     docs = args[0] if args else os.path.join(os.getcwd(), "docs")
 
-    work = []
+    work, allowed = [], set()
     for md in sorted(glob.glob(os.path.join(docs, "**", "*.md"), recursive=True)):
         rel = os.path.relpath(md, docs)
         if any(rel.endswith(s) for s in SKIP):
             continue
         text = open(md, encoding="utf-8").read()
-        for i, block in enumerate(FENCE.findall(text)):
+        for i, block, allow in fenced_blocks(text):
             if is_full_program(block):
                 work.append((rel, i, block))
+                if allow:
+                    allowed.add((rel, i))
 
     if "--pattern-report" in sys.argv:
-        sys.exit(pattern_report(work, jobs))
+        sys.exit(pattern_report(work, jobs, allowed))
 
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=jobs) as pool:

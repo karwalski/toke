@@ -231,7 +231,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -1078,6 +1078,17 @@ ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki che
 check-docs: $(BIN)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
+
+# 132.99 — the idiom half of the docs gate, REPORT mode (132.43): runs the
+# compiler's pattern rules (the idiom judge's hard gate) over every documented
+# full program and prints what would fail. It exits 0 on hits -- the docs
+# predate the pattern catalogue -- and non-zero only if it cannot read its rule
+# list. Deliberate "Not this" examples carry
+# `<!-- pattern-report: counter-example -->` above their fence and are listed
+# as ALLOW, not hidden. The self-test proves the marker and the rule list.
+check-doc-patterns: $(BIN)
+	python3 scripts/check_doc_examples.py --self-test
+	python3 scripts/check_doc_examples.py docs --pattern-report
 
 # 127.87 — the shipped examples/ compile. Nothing read examples/ before this,
 # and a multi-module example could not even be type-checked from a fresh clone
