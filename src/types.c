@@ -2454,6 +2454,94 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
     }
 }
 
+/*
+ * empty_arr_first_elem (127.229 item 6) — the element type of an un-annotated
+ * `let r=mut.@()`, taken from the first append to it in source order:
+ * `r=r+@(e;..)` (the literal's element type) or `r=r.append(e)` /
+ * `r=r.push(e)` / a bare `r.append(e)` (the type of e).  NULL when there is
+ * no such append, when it names another binding of `r` (a shadow), or when
+ * the element's type is not established.
+ *
+ * Left untyped, `let r=mut.@(); r=r+@(@(i;j))` printed its inner arrays as
+ * addresses: the emitter reads the checker's rtype to pick the element
+ * rendering (json_arr_shape), and an unknown element is rendered as i64.
+ * `:@@i64` fixed it; inferring what the first append stores gives the
+ * binding the type that annotation states.  A later append of another type
+ * is then E4031 through the ordinary array-concatenation rule, as for an
+ * annotated binding.
+ *
+ * Runs under the caller's bind_infer_depth guard: the append's element may
+ * name `r` itself (`r=r+@(r.len)`), which re-enters bind_init_type.
+ */
+static const Node *first_append_elem(const Node *a, const char *src,
+                                     const Node *bn, const char *nm, int nl,
+                                     int *is_lit) {
+    if (!a) return NULL;
+    const Node *tgt = NULL, *rhs = NULL, *call = NULL;
+    if (a->kind == NODE_ASSIGN_STMT && a->child_count >= 2 && a->children[0]
+        && a->children[0]->kind == NODE_IDENT
+        && ident_same(a->children[0], src, nm, nl)
+        && a->tok_start > bn->tok_start) {
+        tgt = a->children[0]; rhs = a->children[1];
+    } else if (a->kind == NODE_CALL_EXPR && a->tok_start > bn->tok_start) {
+        call = a;
+    }
+    if (rhs && rhs->kind == NODE_BINARY_EXPR && rhs->op == TK_PLUS
+        && rhs->child_count == 2 && rhs->children[0]
+        && rhs->children[0]->kind == NODE_IDENT
+        && ident_same(rhs->children[0], src, nm, nl)
+        && rhs->children[1] && rhs->children[1]->kind == NODE_ARRAY_LIT
+        && rhs->children[1]->child_count > 0) {
+        (void)tgt;
+        *is_lit = 1;
+        return rhs->children[1];
+    }
+    if (rhs && rhs->kind == NODE_CALL_EXPR) call = rhs;
+    if (call && call->child_count == 2 && call->children[0]
+        && call->children[0]->kind == NODE_FIELD_EXPR
+        && call->children[0]->child_count >= 2
+        && call->children[0]->children[0]
+        && call->children[0]->children[0]->kind == NODE_IDENT
+        && ident_same(call->children[0]->children[0], src, nm, nl)
+        && call->children[0]->children[1]) {
+        const Node *m = call->children[0]->children[1];
+        int ml = m->tok_len;
+        const char *ms = src + m->tok_start;
+        if ((ml == 6 && !strncmp(ms, "append", 6)) ||
+            (ml == 4 && !strncmp(ms, "push", 4))) {
+            *is_lit = 0;
+            return call->children[1];
+        }
+    }
+    for (int i = 0; i < a->child_count; i++) {
+        const Node *r = first_append_elem(a->children[i], src, bn, nm, nl, is_lit);
+        if (r) return r;
+    }
+    return NULL;
+}
+static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
+    if (!cx->fn_node || !bn || bn->child_count < 1 || !bn->children[0]) return NULL;
+    if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, bn->children[0]);
+    int nl = (int)strlen(nb);
+    if (!nl) return NULL;
+    int is_lit = 0;
+    const Node *e = first_append_elem(cx->fn_node, cx->src, bn, nb, nl, &is_lit);
+    if (!e) return NULL;
+    /* the append must be to THIS binding, not a later shadow of the name */
+    if (find_binding_before(cx->fn_node, cx->src, nb, nl, e) != bn) return NULL;
+    cx->bind_infer_depth++;
+    Type *t = e->rtype ? e->rtype : infer(cx, e);
+    cx->bind_infer_depth--;
+    if (!t || t->kind == TY_UNKNOWN || t->kind == TY_VOID) return NULL;
+    if (is_lit) {
+        if (t->kind != TY_ARRAY || !t->elem || t->elem->kind == TY_UNKNOWN
+            || t->elem->kind == TY_VOID) return NULL;
+        return t->elem;
+    }
+    return t;
+}
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -2541,7 +2629,19 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         cx->bind_infer_depth--;
         /* An empty literal `@()` infers elem TY_UNKNOWN; that is still a
          * useful array type, so only the kind is required here. */
-        if (it && it->kind == TY_ARRAY) return it;
+        if (it && it->kind == TY_ARRAY) {
+            /* 127.229 item 6: a `mut` empty `@()` takes its element type
+             * from its first append (empty_arr_first_elem). */
+            if ((!it->elem || it->elem->kind == TY_UNKNOWN)
+                && initN->child_count == 0 && bn->kind == NODE_MUT_BIND_STMT) {
+                Type *et = empty_arr_first_elem(cx, bn);
+                if (et) {
+                    Type *at = mk_type(cx->env->arena, TY_ARRAY);
+                    if (at) { at->elem = et; return at; }
+                }
+            }
+            return it;
+        }
         return NULL;
     }
     case NODE_CAST_EXPR: case NODE_INDEX_EXPR: {
