@@ -92,5 +92,5 @@ if prog ret3 '  test.eq(1;2);
 fi
 
 echo "--------------------------------------------------------------"
-echo "C257: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

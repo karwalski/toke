@@ -105,5 +105,5 @@ else
 fi
 
 echo "------------------------------------------------------"
-echo "C256: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

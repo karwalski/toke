@@ -143,5 +143,5 @@ if [ -n "${BUSY}" ] && build clean "http.servetlsworkers(${BUSY};\"${WORK}/cert.
 fi
 
 echo "------------------------------------------------------------------"
-echo "C258: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

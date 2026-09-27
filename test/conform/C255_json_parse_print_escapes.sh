@@ -66,5 +66,5 @@ case_ s_bin "\"${BS}ud83d${BS}ude00\""  "4|\"$(printf '\360\237\230\200')\"" 'a 
 case_ a_bin '["a,b","c\"]d","x\ny"]' '3|["a,b","c\"]d","x\ny"]' '@str: , ] and escapes inside elements are text; control bytes escaped'
 
 echo "-----------------------------------------------------------------------"
-echo "C255: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
