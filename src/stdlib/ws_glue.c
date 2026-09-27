@@ -12,12 +12,32 @@
 #include <stdlib.h>
 #include <string.h>
 
-int64_t tk_ws_connect_w(int64_t url) {
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!wserr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0, every T here is a handle or pointer); it now also stores a wserr
+ * record {msg; …} — the other fields 0 — and every ok return clears the
+ * slot, so the wrapper is a slot wrapper (llvm.c, derived from the .tki). */
+static int64_t ws_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(1 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static int64_t tk_ws_connect_impl(int64_t url) {
     TK_REQUIRE(TK_CAP_NET);
     if (!url) return 0;
     WsConnResult r = ws_connect((const char *)(intptr_t)url);
     if (r.is_err || !r.conn) return 0;
     return (int64_t)(intptr_t)r.conn;
+}
+int64_t tk_ws_connect_w(int64_t url) {
+    return ws_slot(tk_ws_connect_impl(url),
+        "ws.connect: the connection could not be opened");
 }
 
 /*
@@ -95,7 +115,7 @@ int64_t tk_ws_sendbytes_w(int64_t conn, int64_t data) {
  *
  * Slot order is stdlib/ws.tki's field order: payload, fin, opcode.
  */
-int64_t tk_ws_recv_w(int64_t conn) {
+static int64_t tk_ws_recv_impl(int64_t conn) {
     WsConn *c = ws_handle(conn);
     if (!c) return 0;
     WsRecvResult r = ws_recv(c);
@@ -123,6 +143,10 @@ int64_t tk_ws_recv_w(int64_t conn) {
 
     ws_frame_free(r.frame);
     return msg;
+}
+int64_t tk_ws_recv_w(int64_t conn) {
+    return ws_slot(tk_ws_recv_impl(conn),
+        "ws.recv: no message (the connection is closed, or the frame could not be read)");
 }
 
 int64_t tk_ws_close_w(int64_t conn) {

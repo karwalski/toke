@@ -12,6 +12,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!csverr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0, every T here is a handle or pointer); it now also stores a csverr
+ * record {msg; …} — the other fields 0 — and every ok return clears the
+ * slot, so the wrapper is a slot wrapper (llvm.c, derived from the .tki). */
+static int64_t csv_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
 /*
  * tk_csv_parse_w — parse a CSV string and return a pointer to an array of
  * StrArrays (one per row).  The toke runtime receives this as an opaque
@@ -20,7 +36,7 @@
  * Layout returned: heap block where [0] = nrows (as int64_t), followed by
  * nrows StrArray structs.  The caller (toke runtime) knows this layout.
  */
-int64_t tk_csv_parse_w(int64_t data) {
+static int64_t tk_csv_parse_impl(int64_t data) {
     if (!data) return 0;
     /* The argument is a toke [byte] (packed), not a C string — unpack it. */
     uint8_t *bytes = NULL;
@@ -56,6 +72,10 @@ int64_t tk_csv_parse_w(int64_t data) {
     }
     free(rows);
     return outer_h;
+}
+int64_t tk_csv_parse_w(int64_t data) {
+    return csv_slot(tk_csv_parse_impl(data),
+        "csv.parse: no rows (the input is empty or could not be parsed)");
 }
 
 /*
@@ -110,7 +130,7 @@ int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
 }
 
 /* csv.next(csvreader) -> csvrow!csverr — 0 (err sentinel) at end of data. */
-int64_t tk_csv_next_w(int64_t reader) {
+static int64_t tk_csv_next_impl(int64_t reader) {
     if (!reader) return 0;
     TkCsvReader *r = (TkCsvReader *)(intptr_t)reader;
     /* 135.2: no has_next() short-circuit.  Going through csv_reader_next is
@@ -124,13 +144,21 @@ int64_t tk_csv_next_w(int64_t reader) {
     cr[0] = fields;
     return (int64_t)(intptr_t)cr;
 }
+int64_t tk_csv_next_w(int64_t reader) {
+    return csv_slot(tk_csv_next_impl(reader),
+        "csv.next: no more rows (end of input, or a row could not be read)");
+}
 
 /* csv.header(csvreader) -> [str]!csverr */
-int64_t tk_csv_header_w(int64_t reader) {
+static int64_t tk_csv_header_impl(int64_t reader) {
     if (!reader) return 0;
     StrArray h = csv_reader_header((TkCsvReader *)(intptr_t)reader);
     if (!h.data) return 0;
     return strarray_to_tokearr(h);
+}
+int64_t tk_csv_header_w(int64_t reader) {
+    return csv_slot(tk_csv_header_impl(reader),
+        "csv.header: the reader has no header row");
 }
 
 /* csv.writer(u8 sep) -> csvwriter */
@@ -213,7 +241,7 @@ static int64_t dialect_to_block(const TkCsvDialect *d) {
  *
  * 0 on refusal, which is what the compiled error-union ABI lowers `$err` to;
  * csv.lasterrkind / csv.lasterr / csv.lasterrline carry the reason (127.97). */
-int64_t tk_csv_sniff_w(int64_t data) {
+static int64_t tk_csv_sniff_impl(int64_t data) {
     uint8_t *bytes = NULL;
     uint64_t len = tk_bytes_unpack(data, &bytes);
     TkCsvDialect d;
@@ -221,6 +249,10 @@ int64_t tk_csv_sniff_w(int64_t data) {
     free(bytes);
     if (!ok) return 0;
     return dialect_to_block(&d);
+}
+int64_t tk_csv_sniff_w(int64_t data) {
+    return csv_slot(tk_csv_sniff_impl(data),
+        "csv.sniff: no dialect could be detected");
 }
 
 /* csv.opts(delim; quote; encoding; bom; ragged; hasheader) -> $csvopts
@@ -242,7 +274,7 @@ int64_t tk_csv_opts_w(int64_t delim, int64_t quote, int64_t encoding, int64_t bo
 }
 
 /* csv.readeropts(data:@(byte); opts:$csvopts) -> $csvreader!$csverr */
-int64_t tk_csv_readeropts_w(int64_t data, int64_t opts) {
+static int64_t tk_csv_readeropts_impl(int64_t data, int64_t opts) {
     uint8_t *bytes = NULL;
     uint64_t len = tk_bytes_unpack(data, &bytes);
     TkCsvOpts o;
@@ -261,6 +293,10 @@ int64_t tk_csv_readeropts_w(int64_t data, int64_t opts) {
     TkCsvReader *r = csv_reader_open((const char *)bytes, bytes ? len : 0, &o);
     free(bytes);
     return (int64_t)(intptr_t)r;
+}
+int64_t tk_csv_readeropts_w(int64_t data, int64_t opts) {
+    return csv_slot(tk_csv_readeropts_impl(data, opts),
+        "csv.readeropts: the reader could not be opened with these options");
 }
 
 /* csv.dialect(r:$csvreader) -> $csvdialect — including a SNIFFED delimiter,
