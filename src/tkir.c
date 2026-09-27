@@ -173,7 +173,10 @@ typedef struct {
     EncDataEntry   data_entries[ENC_MAX_DATA];
     int            data_count;
 
-    EncImportEntry enc_imports[TKC_MAX_IMPORTS];
+    /* 127.235: sized from the module's own import count, not the default
+     * cap: a fixed [TKC_MAX_IMPORTS] array dropped every import past 32
+     * even when --max-imports (or tkc.toml) raised the cap.  C351. */
+    EncImportEntry *enc_imports;
     int            import_count;
 
     uint16_t       reg;
@@ -464,6 +467,8 @@ static void enc_free_types(Enc *e)
         free(e->type_entries[i].field_type_idxs);
         e->type_entries[i].field_type_idxs = NULL;
     }
+    free(e->enc_imports);               /* 127.235: heap-sized now */
+    e->enc_imports = NULL;
 }
 
 static int enc_prepass_types(Enc *e, const Node *ast)
@@ -546,12 +551,28 @@ static void enc_prepass_funcs(Enc *e, const Node *ast)
     }
 }
 
-static void enc_prepass_imports(Enc *e, const Node *ast)
+static int enc_prepass_imports(Enc *e, const Node *ast)
 {
+    int n = 0;
+    for (int i = 0; i < ast->child_count; i++)
+        if (ast->children[i]->kind == NODE_IMPORT) n++;
+    if (n == 0) return 0;
+    /* The import section stores its count as a u16. */
+    if (n > 65535) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "too many imports for the .tkir import section (limit 65535)",
+                  (void *)0);
+        return -1;
+    }
+    e->enc_imports = calloc((size_t)n, sizeof(*e->enc_imports));
+    if (!e->enc_imports) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "out of memory sizing the .tkir import section", (void *)0);
+        return -1;
+    }
     for (int i = 0; i < ast->child_count; i++) {
         const Node *decl = ast->children[i];
         if (decl->kind != NODE_IMPORT) continue;
-        if (e->import_count >= TKC_MAX_IMPORTS) continue;
         EncImportEntry *imp = &e->enc_imports[e->import_count];
         memset(imp, 0, sizeof(*imp));
         if (decl->child_count >= 2) {
@@ -564,6 +585,7 @@ static void enc_prepass_imports(Enc *e, const Node *ast)
         imp->type_idx = 0;
         e->import_count++;
     }
+    return 0;
 }
 
 /* ── Encoder: expression emitter ─────────────────────────────────────── */
@@ -960,7 +982,11 @@ int emit_tkir(const Node *ast, const char *src,
         return -1;
     }
     enc_prepass_funcs(&e, ast);
-    enc_prepass_imports(&e, ast);
+    if (enc_prepass_imports(&e, ast) < 0) {
+        enc_free_types(&e);
+        tkir_buf_free(&e.code);
+        return -1;
+    }
 
     for (int i = 0; i < e.func_count; i++)
         enc_emit_func_body(&e, i);

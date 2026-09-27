@@ -1,0 +1,9 @@
+id: D110
+series: D
+description: "E2005 fix field is absent (eerr_got: \"unexpected token in type position, got ';'\"). The old text listing the type forms was advice, not a deterministic fix (AGENTS §6); got stays — 127.235"
+input: |
+  m=test;
+  f=f(x:;):i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E2005"]
+expected_fix_absent_for: ["E2005"]
