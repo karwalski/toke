@@ -6931,6 +6931,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const Node *arm = n->children[i];
                 if (!arm || arm->child_count < 1) continue;
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
+                int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
                 int vidx = struct_field_index(ssi, tag);
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -6978,6 +6979,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 /* 114.47: arm body may be an early-return (`<expr`). */
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
+                c->alias_count = arm_saved_al;
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -7047,6 +7049,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!arm || arm->child_count < 1) continue;
 
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
+                int arm_saved_al = c->alias_count;   /* arm-scoped binding */
 
                 /* Bind arm variable to scrutinee */
                 if (arm->child_count >= 2 && arm->children[1]) {
@@ -7080,6 +7083,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 /* Emit arm body (114.47: may be an early-return `<expr`). */
                 emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
                                     res_ty, res_slot, L);
+                c->alias_count = arm_saved_al;
                 arm_i++;
             }
 
@@ -7273,6 +7277,11 @@ static int emit_expr(Ctx *c, const Node *n)
             if (arm->child_count < 1) continue;
             int is_ok = (arm_idx == 0);
             arm_idx++;
+            /* An arm's binding is in scope for that arm only (names.c pushes
+             * a scope per arm).  Its alias was never popped, so after
+             * `let n=mt f(){$ok:n n;..}; let id=mt g(){$ok:n n;..}` every
+             * later `n` read the SECOND arm's slot (n=7 for n=150, silent). */
+            int arm_saved_al = c->alias_count;
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
             else if (!flat_ssi)
@@ -7487,6 +7496,7 @@ static int emit_expr(Ctx *c, const Node *n)
             const Node *abody = (arm->child_count >= 3) ? arm->children[2] : NULL;
             if (abody && abody->kind == NODE_RETURN_STMT) {
                 emit_match_arm_body(c, abody, res_ty, res_slot, L);
+                c->alias_count = arm_saved_al;
             } else {
                 /* Emit arm body expression */
                 int body_val = -1;
@@ -7508,6 +7518,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
 
                 fprintf(c->out, "  br label %%rm_end%d\n", L);
+                c->alias_count = arm_saved_al;
             }
         }
 
