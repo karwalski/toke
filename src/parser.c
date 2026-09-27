@@ -313,10 +313,12 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         else
             snprintf(full_msg, sizeof full_msg, "%s", msg);
         p->errs++;
-        diag_emit(DIAG_ERROR, E2002, t->start, t->line, t->col, full_msg,
-                  "fix", "check syntax; see toke spec for valid constructs",
-                  "got", tok_text,
-                  "expected", w, NULL);
+        /* 123.13: span the offending token, so text mode underlines 'bar'
+         * and JSON span_end covers it, as eerr_got already does. */
+        diag_emit_span(DIAG_ERROR, E2002, t->start, t->line, t->col, t->len, full_msg,
+                       "fix", "check syntax; see toke spec for valid constructs",
+                       "got", tok_text,
+                       "expected", w, NULL);
     }
     return NULL;
 }
