@@ -970,7 +970,7 @@ TEST_CI_GREEN = \
 	test-pkg \
 	test-stdlib-infer test-stdlib-template-email-integration \
 	test-stdlib-http test-stdlib-ws-client-tk \
-	test-stdlib-zip \
+	test-stdlib-zip test-stdlib-router \
 	test-codegen
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
@@ -1002,9 +1002,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 # .github/workflows/ci.yml.  They are listed rather than omitted because a
 # target nobody runs is how the four unlinkable http rules survived.
 #
-#   test-stdlib-router         test/stdlib/test_router.c calls a router entry
-#                              point with 3 args where it now takes 4, at 6
-#                              call sites. Stale TEST source, not a recipe.
 #   test-stdlib-viz-integration links now; "FAIL: test3: rendered contains
 #                              Chart.js" then SIGTRAP.
 #   test-stdlib-crypto         runtime failures
@@ -1045,12 +1042,17 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   test-stdlib-infer and test-stdlib-template-email-integration were
 #   listed here by 136.56 with assertions that were wrong, not the modules;
 #   136.66 corrected both assertions and promoted them to -green.
+#   test-stdlib-router was listed here: test_router.c called
+#   router_static_serve with 3 args where it takes 4, and three assertions
+#   predated the HTML 404 page and the charset in the MIME table. 135.28
+#   fixed the TEST (6 call sites, 3 assertions); 125 pass on macOS/arm64
+#   2026-09-28; promoted.
 #   test-stdlib-http was listed here as "exits 1 with no diagnostic inside
 #   http_get()". The diagnostic was CAP001 (net not granted; the harness
 #   never called tk_cap_init), and behind it sat two stale assertions of
 #   behaviour removed on purpose (NULL-router guard, 27096b4; 30 s default
 #   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
-TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router \
+TEST_CI_KNOWN_RED = test-stdlib-auth \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
 	test-compress-schema test-e2e test-e2e-check \
 	test-standalone
