@@ -939,6 +939,7 @@ TEST_CI_GREEN = \
 	test-pkg \
 	test-stdlib-infer test-stdlib-template-email-integration \
 	test-stdlib-http test-stdlib-ws-client-tk \
+	test-stdlib-zip \
 	test-codegen
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
@@ -977,7 +978,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #                              Chart.js" then SIGTRAP.
 #   test-stdlib-crypto         runtime failures
 #   test-stdlib-file           runtime failures
-#   test-stdlib-zip            runtime failures
 #   test-compress-schema       22/23; CSV compression ratio over threshold
 #   test-e2e / test-e2e-check  11 of 48 fixtures still use `=` for equality
 #                              and are rejected with E2002. Stale fixtures.
@@ -1006,6 +1006,11 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #                              tamper of a DECODED byte, or of a character
 #                              in the middle of the segment.
 #
+#   test-stdlib-zip was listed here as "runtime failures". By 2026-09-27 its
+#   one failure was the script's own inline program, whose body ended in a
+#   bare `mt` (E4071, 35bd23e); zip_consumer.tk and all seven hostile
+#   archives passed. 136.72 (6) fixed the script (19/19 on macOS/arm64) and
+#   promoted it, so zip_consumer.tk is built and run on the gating path.
 #   test-stdlib-infer and test-stdlib-template-email-integration were
 #   listed here by 136.56 with assertions that were wrong, not the modules;
 #   136.66 corrected both assertions and promoted them to -green.
@@ -1016,7 +1021,7 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
 TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
-	test-stdlib-zip test-compress-schema test-e2e test-e2e-check \
+	test-compress-schema test-e2e test-e2e-check \
 	test-standalone
 
 # Run a list of targets, one log each, never stopping at the first failure --
