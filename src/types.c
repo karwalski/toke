@@ -6304,6 +6304,27 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             last=infer(cx,ch);
             tail=ch;
             if (ch->kind==NODE_RETURN_STMT) saw_return=1;
+            /* 137.14 / 138.10 (loke T-26): a comparison standing as a
+             * statement computes a bool and drops it.  `x.a==9;` (meant as
+             * the assignment `x.a=9`) compiled as a silent no-op, and `<` being
+             * both return and less-than makes `g()<$ok(1)` a comparison too.
+             * The LAST statement of a list is left alone: it may be the value
+             * of an expression-if or arm, and a function body's tail is
+             * E4071's.  No `fix`: `=` for `==` is the likely repair for `==`
+             * alone, and not for the other five operators. */
+            if (i<node->child_count-1&&ch->kind==NODE_EXPR_STMT&&ch->child_count>0
+                &&ch->children[0]&&ch->children[0]->kind==NODE_BINARY_EXPR) {
+                const Node *be=ch->children[0];
+                int op=be->op;
+                if ((op==TK_EQ||op==TK_NE||op==TK_LT||op==TK_GT||op==TK_LE||op==TK_GE)
+                    &&tc_first_report(cx,ch)&&tc_can_emit(cx)) {
+                    diag_emit(DIAG_ERROR,E4074,be->start,be->line,be->col,
+                              "a comparison stands as a statement: its result is "
+                              "computed and discarded, so the statement does nothing",
+                              "expected","an assignment, a call or a return",
+                              "got","a discarded comparison",(const char*)NULL);
+                }
+            }
         }
         if (!saw_return && tail && is_fn_body(cx,node))
             check_tail_expr(cx,tail,last);
