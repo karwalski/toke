@@ -224,6 +224,107 @@ static inline void strbuf_append_json(TkStrBuf *b, const char *s)
     }
 }
 
+/* strbuf_append_utf8 — append code point cp as UTF-8 (cp <= 0x10FFFF). */
+static inline void strbuf_append_utf8(TkStrBuf *b, uint32_t cp)
+{
+    char u[4];
+    if (cp < 0x80) {
+        u[0] = (char)cp;
+        strbuf_appendn(b, u, 1);
+    } else if (cp < 0x800) {
+        u[0] = (char)(0xC0 | (cp >> 6));
+        u[1] = (char)(0x80 | (cp & 0x3F));
+        strbuf_appendn(b, u, 2);
+    } else if (cp < 0x10000) {
+        u[0] = (char)(0xE0 | (cp >> 12));
+        u[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        u[2] = (char)(0x80 | (cp & 0x3F));
+        strbuf_appendn(b, u, 3);
+    } else {
+        u[0] = (char)(0xF0 | (cp >> 18));
+        u[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+        u[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        u[3] = (char)(0x80 | (cp & 0x3F));
+        strbuf_appendn(b, u, 4);
+    }
+}
+
+/* Four hex digits at p as a value, or -1 if any of them is not hex. */
+static inline long strbuf_hex4_(const char *p)
+{
+    long v = 0;
+    for (int i = 0; i < 4; i++) {
+        char c = p[i];
+        int d;
+        if (c >= '0' && c <= '9')      d = c - '0';
+        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+        else return -1;                 /* also stops at the NUL */
+        v = v * 16 + d;
+    }
+    return v;
+}
+
+/* strbuf_append_json_unescape — the decoding inverse of strbuf_append_json
+ * (127.229, 122.14).
+ *
+ * *pp points at the first byte AFTER a JSON string's opening quote.  The
+ * string body is decoded into b up to the closing quote, and *pp is left just
+ * past that quote.  Returns 0 for a terminated string, -1 if the input ended
+ * first (*pp then points at the NUL; b holds what was decoded).
+ *
+ *   \" \\ \/ \b \f \n \r \t   the byte they name
+ *   \uXXXX                    the code point, as UTF-8; a surrogate pair
+ *                             \uD8xx\uDCxx is combined into one code point
+ *   \u0000, a lone surrogate  U+FFFD: a C string cannot carry a NUL, and a
+ *                             lone surrogate has no UTF-8 encoding
+ *   \ followed by anything    that byte (lenient: not valid JSON, but the
+ *   else, or bad hex          only safe reading is to drop the backslash)
+ *
+ * Before this existed, tk_json_parse and llm_tool.c's extract_string copied
+ * the bytes between the quotes verbatim: `\"` ENDED the string in one and
+ * survived as two bytes in the other, and `\\`, `\n`, `\u00e9` were all kept
+ * as their escape text. */
+static inline int strbuf_append_json_unescape(TkStrBuf *b, const char **pp)
+{
+    const char *p = *pp;
+    for (;;) {
+        const char *run = p;
+        while (*p && *p != '"' && *p != '\\') p++;
+        if (p > run) strbuf_appendn(b, run, (size_t)(p - run));
+        if (*p == '\0') { *pp = p; return -1; }
+        if (*p == '"')  { *pp = p + 1; return 0; }
+        /* backslash */
+        p++;
+        char e = *p;
+        if (e == '\0') { *pp = p; return -1; }
+        p++;
+        switch (e) {
+        case 'b': strbuf_putc(b, '\b'); break;
+        case 'f': strbuf_putc(b, '\f'); break;
+        case 'n': strbuf_putc(b, '\n'); break;
+        case 'r': strbuf_putc(b, '\r'); break;
+        case 't': strbuf_putc(b, '\t'); break;
+        case 'u': {
+            long cp = strbuf_hex4_(p);
+            if (cp < 0) { strbuf_putc(b, 'u'); break; }
+            p += 4;
+            if (cp >= 0xD800 && cp <= 0xDBFF && p[0] == '\\' && p[1] == 'u') {
+                long lo = strbuf_hex4_(p + 2);
+                if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    p += 6;
+                }
+            }
+            if (cp == 0 || (cp >= 0xD800 && cp <= 0xDFFF)) cp = 0xFFFD;
+            strbuf_append_utf8(b, (uint32_t)cp);
+            break;
+        }
+        default:  strbuf_putc(b, e); break;   /* \" \\ \/ and the lenient rest */
+        }
+    }
+}
+
 /* The body of a JavaScript string literal quoted with ' or " (no quotes
  * appended), safe inside an HTML <script> element and inside a JS block
  * comment: both quotes, '\', control bytes, U+2028/U+2029 (line terminators
