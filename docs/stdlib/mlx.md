@@ -18,8 +18,8 @@ Measured against the built compiler, not read off the interface.
 | `mlx.isavailable` | 0 | 0 | links | hard-coded `return 0` on **every** platform, Apple Silicon included -- the sysctl and health probe in `mlx.c` are never called |
 | `mlx.load` | 1 | 1 | links | hard-coded `return 0`; `mlx_load` in the core is never called |
 | `mlx.generate` | 3 | **2** | links at 2 args | drops `maxtokens` entirely and returns the literal string `"[mlx: not available]"` |
-| `mlx.unload` | 1 | — | **no** | `E9003`, undefined symbol `_tk_mlx_unload_w` |
-| `mlx.embed` | 2 | — | **no** | `E9003`, undefined symbol `_tk_mlx_embed_w` |
+| `mlx.unload` [quarantined](/docs/reference/tki-quarantine/) | 1 | — | **no** | `E9003`, undefined symbol `_tk_mlx_unload_w` |
+| `mlx.embed` [quarantined](/docs/reference/tki-quarantine/) | 2 | — | **no** | `E9003`, undefined symbol `_tk_mlx_embed_w` |
 
 A program that calls `mlx.generate(h; prompt; 256)` as this page used to document it is rejected before it reaches the linker:
 
@@ -84,6 +84,8 @@ POSTs `{"model_path": "..."}` to `/load` and returns a handle. `mlx_load` in the
 
 #### mlx.unload(m: mlxmodel): bool
 
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
+
 POSTs `{"id": "..."}` to `/unload`. `mlx_unload` exists in the core. **No wrapper exists**, so a call fails at link.
 
 #### mlx.generate(m: mlxmodel; prompt: str; maxtokens: i32): str!mlxerr
@@ -91,6 +93,8 @@ POSTs `{"id": "..."}` to `/unload`. `mlx_unload` exists in the core. **No wrappe
 POSTs `{"id": ..., "prompt": ..., "max_tokens": N}` to `/generate`. `mlx_generate` in the core takes the token limit. The wrapper takes two arguments and ignores it, so even a two-argument call that compiles silently loses the bound.
 
 #### mlx.embed(m: mlxmodel; text: str): @(f32)!mlxerr
+
+> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 POSTs `{"id": ..., "text": ...}` to `/embed`. `mlx_embed` exists in the core, complete with the JSON float-array parser. **No wrapper exists**, so a call fails at link.
 

@@ -39,11 +39,11 @@ The `std.chart` module provides a declarative API for building chart specificati
 | Function | Parameters | Return | Description |
 |----------|-----------|--------|-------------|
 | `chart.bar` | `labels: @($str); values: @(f64); title: $str` | `$chartspec` | Create a bar chart with one series |
-| `chart.line` | `labels: @($str); datasets: @($dataset); title: $str` | `$chartspec` | Create a line chart with multiple series |
-| `chart.scatter` | `x: @(f64); y: @(f64); title: $str` | `$chartspec` | Create a scatter plot |
-| `chart.pie` | `labels: @($str); values: @(f64); title: $str` | `$chartspec` | Create a pie chart |
+| `chart.line` [quarantined](/docs/reference/tki-quarantine/) | `labels: @($str); datasets: @($dataset); title: $str` | `$chartspec` | Create a line chart with multiple series |
+| `chart.scatter` [quarantined](/docs/reference/tki-quarantine/) | `x: @(f64); y: @(f64); title: $str` | `$chartspec` | Create a scatter plot |
+| `chart.pie` [quarantined](/docs/reference/tki-quarantine/) | `labels: @($str); values: @(f64); title: $str` | `$chartspec` | Create a pie chart |
 | `chart.tojson` | `spec: $chartspec` | `@($byte)` | Serialize chart spec to JSON bytes |
-| `chart.tovega` | `spec: $chartspec` | `@($byte)` | Serialize chart spec to Vega-Lite JSON bytes |
+| `chart.tovega` [quarantined](/docs/reference/tki-quarantine/) | `spec: $chartspec` | `@($byte)` | Serialize chart spec to Vega-Lite JSON bytes |
 
 ## Escaping
 
