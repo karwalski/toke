@@ -8078,6 +8078,20 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
         if (lookup_struct(c, sn)) return sn;
         return NULL;
     }
+    /* 135.20 item 3: an array concat the checker left untyped — `@(256;0) +
+     * s.bytes(..)`, whose element types differ (i64 and byte) — carries its
+     * operands' array tag.  Without one, `j.enc(a+b)` took the str encoder
+     * and returned "", and a `let` of it recorded no tag at all.  Elements
+     * are i64 words either way, so a byte operand yields to the other. */
+    if (n->kind == NODE_BINARY_EXPR && n->op == TK_PLUS && n->child_count >= 2 &&
+        plus_has_array_operand(c, n)) {
+        const char *lt = expr_struct_type(c, n->children[0]);
+        const char *rt = expr_struct_type(c, n->children[1]);
+        int la = lt && lt[0] == '@', ra = rt && rt[0] == '@';
+        if (la && ra && strcmp(lt, rt) && !strcmp(lt, "@byte")) return rt;
+        if (la) return lt;
+        if (ra) return rt;
+    }
     if (n->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
         /* 127.46: a local whose LLVM name was uniquified (`t2` → `t2.1`, because
