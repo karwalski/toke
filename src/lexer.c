@@ -88,6 +88,7 @@
 #define LEX_E1004 1004   /* digit-starting identifier / unterminated str  */
 #define LEX_E1005 1005   /* invalid numeric literal                       */
 #define LEX_E1006 1006   /* uppercase keyword in default syntax mode      */
+#define LEX_E1007 1007   /* unterminated comment                          */
 #define LEX_W1010 1010   /* string interpolation not supported (warning)  */
 #define LEX_W1011 1011   /* identifier starts with keyword prefix (hint)  */
 #define LEX_W1020 1020   /* foreign keyword detected (cross-lang hint)    */
@@ -511,6 +512,44 @@ static int check_foreign_keyword(const char *buf, int start, int line, int col)
     return 0;
 }
 
+/*
+ * foreign_word_is_toke_name — 138.10 / N-4: the word before `end` is spelled
+ * like a foreign keyword but stands where toke has a name, so W1020 would be
+ * wrong.  `let def:$shorthanddef=...` drew "Python keyword 'def' detected" at
+ * the binding and at every use -- 43 warnings in one loke module.
+ *
+ * Every word is a name at a binding site: after `let`, or before `=` (not
+ * `==`) or before a `:` that does not end the line (a parameter, field,
+ * annotation or import alias; `else:` / `def f():` end their line).  A word
+ * that is a statement or declaration keyword elsewhere (def, return, class,
+ * var, else, while, ...) is also a name when an operator or closing
+ * punctuation follows it -- `def.a`, `f(def)`, `<def;`, `def+1` -- since the
+ * foreign keyword is followed by a name, a '(' or a '{'.  The value-like
+ * words (None, nil, null, undefined, True, False) and the output calls
+ * (print, printf, console) are meant in exactly those value positions, so for
+ * them only the binding sites are exempt.
+ */
+static int foreign_word_is_toke_name(const Lexer *l, const char *w, int end)
+{
+    if (l->out_n > 0 && l->out[l->out_n - 1].kind == TK_KW_LET) return 1;
+    int i = end;
+    while (i < l->len && is_whitespace(l->src[i])) i++;
+    char nx = i < l->len ? l->src[i] : '\0';
+    if (nx == '=') return !(i + 1 < l->len && l->src[i + 1] == '=');
+    if (nx == ':') {
+        int j = i + 1;
+        while (j < l->len && (l->src[j] == ' ' || l->src[j] == '\t')) j++;
+        return j < l->len && l->src[j] != '\n' && l->src[j] != '\r';
+    }
+    static const char *const value_like[] = {
+        "None", "nil", "null", "undefined", "True", "False",
+        "print", "printf", "console", NULL
+    };
+    for (int k = 0; value_like[k]; k++)
+        if (!strcmp(w, value_like[k])) return 0;
+    return nx != '\0' && strchr(".;)}+-*/%<>!|&^,", nx) != NULL;
+}
+
 static int lex_ident(Lexer *l, int start, int line, int col)
 {
     while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
@@ -581,12 +620,74 @@ static int lex_ident(Lexer *l, int start, int line, int col)
              * Rust form has a name/space after `fn`, so it still warns). */
             int is_closure_fn = (!strcmp(py_buf, "fn") &&
                                  start + len < l->len && l->src[start + len] == '(');
-            if (!is_closure_fn)
+            if (!is_closure_fn && !foreign_word_is_toke_name(l, py_buf, start + len))
                 check_foreign_keyword(py_buf, start, line, col);
         }
     }
 
     return emit(l, kind, start, len, line, col);
+}
+
+/* -------------------------------------------------------------------------
+ * lex_comment — skip a `(* ... *)` comment; `l` is at its `(*`.
+ *
+ * Comments nest (toke-spec-v0.3.md §8.10: `(* outer (* inner *) *)` is one
+ * sequence), so a `(*` inside a comment opens another level.  A comment
+ * still open at end of file is E1007 (138.10 / T-27): the lexer used to
+ * stop silently, so `(* reads COUNT(*) from t *)` -- whose `(*` opens a
+ * level that its own `*)` then closes, leaving the outer one open --
+ * swallowed every declaration after it, and `--emit-llvm` succeeded with
+ * those functions missing.  The diagnostic sits on the outermost `(*`,
+ * where the swallowed text begins, and names the innermost level still
+ * open, which is usually the stray one.  No `fix`: where the missing `*)`
+ * belongs (or whether the inner `(*` should go) is not knowable here.
+ * Returns 0, or -1 after E1007 (the rest of the file is comment).
+ * ----------------------------------------------------------------------- */
+
+static int lex_comment(Lexer *l, int start, int line, int col)
+{
+    int st_line[64], st_col[64];        /* opener of each open level */
+    int nest_line = 0, nest_col = 0;    /* last nested '(*' seen */
+    int depth = 0;
+    const char *src = l->src;
+    for (;;) {
+        if (l->pos + 1 < l->len && src[l->pos] == '(' && src[l->pos + 1] == '*') {
+            if (depth < 64) { st_line[depth] = l->line; st_col[depth] = l->col; }
+            if (depth > 0) { nest_line = l->line; nest_col = l->col; }
+            depth++;
+            advance(l); advance(l);
+        } else if (l->pos + 1 < l->len && src[l->pos] == '*' && src[l->pos + 1] == ')') {
+            depth--;
+            advance(l); advance(l);
+            if (depth == 0) return 0;
+        } else if (l->pos < l->len) {
+            advance(l);
+        } else {
+            break;
+        }
+    }
+    char msg[384];
+    int n = snprintf(msg, sizeof msg,
+                     "unterminated comment: the '(*' at %d:%d is never closed, so "
+                     "the rest of the file is comment", line, col);
+    if (depth > 1 && depth <= 64)
+        snprintf(msg + n, sizeof msg - (size_t)n,
+                 ". Comments nest: %d levels are open at end of file, the "
+                 "innermost opened by the '(*' at %d:%d",
+                 depth, st_line[depth - 1], st_col[depth - 1]);
+    else if (depth > 1)
+        snprintf(msg + n, sizeof msg - (size_t)n,
+                 ". Comments nest: %d levels are open at end of file", depth);
+    else if (nest_line)
+        snprintf(msg + n, sizeof msg - (size_t)n,
+                 ". Comments nest: the '(*' at %d:%d inside it opened a nested "
+                 "comment, which took the '*)' meant to close this one",
+                 nest_line, nest_col);
+    diag_emit(DIAG_ERROR, LEX_E1007, start, line, col, msg,
+              "got", "end of file",
+              "expected", "'*)' closing every open '(*' (comments nest)", NULL);
+    record_error(l);
+    return -1;
 }
 
 /* -------------------------------------------------------------------------
@@ -675,21 +776,8 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         switch (c) {
         case '(':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '*') {
-                advance(&l); advance(&l);
-                int depth = 1;
-                while (l.pos < l.len && depth > 0) {
-                    if (l.pos + 1 < l.len &&
-                        src[l.pos] == '(' && src[l.pos + 1] == '*') {
-                        advance(&l); advance(&l);
-                        depth++;
-                    } else if (l.pos + 1 < l.len &&
-                               src[l.pos] == '*' && src[l.pos + 1] == ')') {
-                        advance(&l); advance(&l);
-                        depth--;
-                    } else {
-                        advance(&l);
-                    }
-                }
+                /* at end of file after E1007, so the scan loop ends */
+                (void)lex_comment(&l, start, line, col);
                 continue;
             }
             sym = TK_LPAREN; break;

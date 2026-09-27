@@ -1,0 +1,10 @@
+id: D101
+series: D
+description: "E1007 fix field is absent (comment open at end of file; where the missing '*)' goes is not decidable — 138.10 / T-27)"
+input: |
+  m=test;
+  (* reads COUNT(*) from the table *)
+  f=main():i64{<1};
+expected_exit_code: 1
+expected_error_codes: ["E1007"]
+expected_fix_absent: true

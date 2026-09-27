@@ -1,0 +1,9 @@
+id: L036
+series: L
+description: "comments nest (toke-spec-v0.3.md §8.10); a nested comment that closes leaves the declarations after it intact (138.10)"
+input: |
+  m=test;
+  (* outer (* inner *) still outer *)
+  f=main():i64{<0};
+expected_exit_code: 0
+expected_error_codes: []
