@@ -550,6 +550,14 @@ check-tki:
 	python3 scripts/check_tki_coverage.py --quarantine-md-check
 	python3 scripts/check_tki_coverage.py --internal-md-check
 	python3 scripts/check_stdlib_doc_quarantine.py
+	python3 scripts/check_stdlib_doc_exports.py
+
+# 132.102: 45 documented function entries were not .tki exports (encrypt's
+# pre-113.2a underscored spellings, json/http designs no interface declares,
+# the withdrawn webview) and math.md typed floor/ceil i64 against math.tki's
+# f64. check_stdlib_doc_exports.py (run by check-tki above) fails on any entry
+# that is not an export and not marked **Not exported.**, and on a documented
+# return type that differs from the .tki's (gen:abi exports exempt).
 
 # 127.230 (6): docs/stdlib/*.md documented quarantined calls (canvas.arc,
 # canvas.fill, ...) as ordinary functions; the pages never consulted the

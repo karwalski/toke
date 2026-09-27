@@ -162,9 +162,9 @@ f=example():void{
 };
 ```
 
-### math.floor(x: f64): i64
+### math.floor(x: f64): f64
 
-Returns the largest integer less than or equal to `x`, rounded toward negative infinity.
+Returns the largest integer less than or equal to `x`, rounded toward negative infinity, as an `f64` (`math.floor(3.9)` is `3.0`). The result is not converted to an integer type.
 
 ```toke
 m=test;
@@ -175,9 +175,9 @@ f=example():void{
 };
 ```
 
-### math.ceil(x: f64): i64
+### math.ceil(x: f64): f64
 
-Returns the smallest integer greater than or equal to `x`, rounded toward positive infinity.
+Returns the smallest integer greater than or equal to `x`, rounded toward positive infinity, as an `f64` (`math.ceil(3.1)` is `4.0`). The result is not converted to an integer type.
 
 ```toke
 m=test;

@@ -40,7 +40,7 @@ Allocates a locked region of `sizebytes` bytes with a TTL of `ttlseconds` second
 
 Copies `data` into the buffer. Returns `true` on success; `false` if the buffer has expired, has been wiped, or `data` is longer than the buffer. The write is bounds-checked and truncated to `sizebytes - 1` so a NUL terminator fits.
 
-### securemem.read(buf: SecureBuf): str
+### securemem.read(buf: SecureBuf): ?(str)
 
 Returns the buffer contents. The interface declares this as `?(str)`; it yields the none sentinel when the buffer has expired, been wiped, or never existed. Reading does not reset the expiry clock.
 

@@ -114,13 +114,13 @@ let bytes=json.writerbytes(w);
 file.write("/tmp/out.json";str.frombytes(bytes)?)?;
 ```
 
-### json.newwriter(capacity: u64): $writer
+### json.newwriter(capacity: u64): $jsonwriter
 
 > [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
 Allocate a `$jsonwriter` with the given byte capacity.
 
-### json.writerbytes(writer: $writer): @byte
+### json.writerbytes(writer: $jsonwriter): @(byte)
 
 > [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 
