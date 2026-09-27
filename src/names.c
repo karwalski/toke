@@ -1461,7 +1461,8 @@ static void resolve_ident(const Node *node, const char *src,
             if (!fix) {
                 const char *best_name = NULL;
                 int best_dist = 4; /* max distance 3 */
-                int want_type = (node->kind == NODE_TYPE_IDENT);
+                int want_type = (node->kind == NODE_TYPE_IDENT ||
+                                 node->kind == NODE_STRUCT_LIT);   /* 138.9 */
                 for (const Scope *sc = scope; sc; sc = sc->parent) {
                     for (const Decl *d = sc->head; d; d = d->next) {
                         if (!d->name) continue;
@@ -1969,6 +1970,20 @@ static int resolve_node(const Node *node, const char *src,
             resolve_node(node->children[i], src, sc_scope, arena, had_error);
         break;
     }
+
+    case NODE_STRUCT_LIT:
+        /* 138.9 (T-42): the literal's own token is its TYPE name, and nothing
+         * resolved it -- `$ghost{name:"a"}`, a type declared nowhere, was
+         * accepted, typed unknown, and read positionally through whatever
+         * struct the value later met (`r.label` printed the ghost's first
+         * field).  Resolve it as a type reference, exactly as a `$name` in a
+         * type position is; a qualified `mod.$t{..}` is left to the module
+         * (story 75.5), as for NODE_TYPE_IDENT. */
+        if (node->op != TK_DOT && node->tok_len > 0)
+            resolve_ident(node, src, scope, had_error);
+        for (int i = 0; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        break;
 
     default:
         /* Generic: walk all children */
