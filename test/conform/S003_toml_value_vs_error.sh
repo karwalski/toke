@@ -52,6 +52,7 @@ if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
         "${REPO_ROOT}/test/stdlib/test_toml_glue.c" \
         "${REPO_ROOT}/src/stdlib/toml.c" \
         "${REPO_ROOT}/src/stdlib/toml_glue.c" \
+        "${REPO_ROOT}/src/stdlib/capabilities.c" \
         "${REPO_ROOT}/stdlib/vendor/tomlc99/toml.c" \
         >"${WORK}/build.log" 2>&1; then
     echo "  FAIL: wrapper harness did not build"

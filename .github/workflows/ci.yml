@@ -246,11 +246,27 @@ jobs:
       - name: Every test source is built by something
         run: make check-test-orphans
 
-      # 123.10 — the eight 120.22 fuzz harnesses build and replay their seed
-      # and adversarial corpora clean under ASAN+UBSAN. A replay, not a fuzz
-      # run (that is security-nightly.yml); `auto` picks libFuzzer here.
+      # 123.10 — every harness in test/fuzz/ (thirteen since 121.30) builds
+      # and replays its seed and adversarial corpora clean under ASAN+UBSAN.
+      # A replay, not a fuzz run (that is security-nightly.yml); `auto` picks
+      # libFuzzer here.
       - name: Fuzz harnesses build and replay clean
         run: make CC=clang fuzz-smoke
+
+      # 121.30 — the secret scan 120.24 specified and nothing ran: gitleaks
+      # over the checkout with the committed .gitleaks.toml. `make
+      # secrets-scan` FAILS when gitleaks is missing under CI=true, so this
+      # step cannot pass by skipping. Pinned release, installed from the
+      # project's own GitHub release asset.
+      - name: Install gitleaks
+        run: |
+          v=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Secret scan
+        run: make secrets-scan
 
       # 127.126 — the stdlib's own toke sources (m= files) type-check.
       - name: stdlib toke sources type-check

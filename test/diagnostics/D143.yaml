@@ -1,0 +1,13 @@
+id: D143
+series: D
+description: "E4075: a nested bounded repeat that expands past the state cap is rejected at compile time (121.35; regcomp took 1.2 GB for it)"
+input: |
+  m=test;
+  i=str:std.str;
+  f=main():i64{
+    <str.countre("aaaa";"(a{1,255}){1,255}")
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4075"]
+expected_fix_absent: true
+expected_diag_has_pos: true

@@ -26,6 +26,7 @@
 #define DASH_INITIAL_CAP 8
 
 struct TkDashboard {
+    TkDashboardHead head;           /* first: the $dashboard record (135.30) */
     char         *title;
     uint32_t      grid_cols;
     TkDashWidget *widgets;
@@ -43,9 +44,11 @@ struct TkDashboard {
 
 TkDashboard *dashboard_new(const char *title, uint32_t grid_cols)
 {
+    static int64_t next_id = 0;
     TkDashboard *d = malloc(sizeof(TkDashboard));
     if (!d) return NULL;
 
+    d->head.id             = ++next_id;
     d->title               = title ? strdup(title) : strdup("Dashboard");
     d->grid_cols           = grid_cols > 0 ? grid_cols : 1;
     d->widgets             = malloc(sizeof(TkDashWidget) * DASH_INITIAL_CAP);

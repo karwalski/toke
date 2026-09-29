@@ -1,0 +1,10 @@
+id: D104
+series: D
+description: "127.230 item 4: the cast fix survives where it IS certain -- an i32 into an i64 binding widens without changing the value"
+input: |
+  m=t;
+  f=g(q:i32):i64{let r:i64=q;<r};
+  f=main():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix: "cast RHS to i64 using 'as'"

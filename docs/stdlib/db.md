@@ -21,7 +21,7 @@ Represents a single row returned from a query. Column values are accessed by nam
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| cols | @(@($str)) | Column values as a 2D string array |
+| cols | @(@($str)) | One `@(name; value)` pair per column, in the query's column order; SQL NULL reads as `""`. The `row.*` accessors read this field, so a `$row{cols:@(...)}` literal works with them too |
 
 ### $dberr
 

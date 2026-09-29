@@ -47,7 +47,7 @@ The `std.auth` module provides authentication primitives: JWT creation and valid
 | Function | Parameters | Return | Description |
 |----------|-----------|--------|-------------|
 | `auth.jwtsign` | `claims: $jwtclaims; secret: @($byte); alg: $jwtalg` | `$str!$autherr` | Sign claims into a JWT string |
-| `auth.jwtverify` | `token: $str; secret: @($byte)` | `$jwtclaims!$autherr` | Verify a JWT and extract its claims |
+| `auth.jwtverify` | `token: $str; secret: @($byte)` | `$jwtclaims!$autherr` | Verify a JWT's signature and validity window and extract its claims. Fails when the current time is at or after `exp`, before `nbf`, or when either claim is present but not an integer |
 | `auth.jwtexpired` | `claims: $jwtclaims` | `bool` | Check whether a JWT's claims have expired |
 | `auth.apikeygenerate` | (none) | `$str` | Generate a random API key (32 random bytes, base64url-encoded) |
 | `auth.apikeyvalidate` | `provided: $str; stored: $str` | `bool` | Compare a presented API key with the stored one; `true` when they match |

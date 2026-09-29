@@ -19,21 +19,16 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <poll.h>
+#include <time.h>
 
 #ifdef TK_HAVE_OPENSSL
 #include <openssl/ssl.h>
 #endif
 
 /* ── I/O helpers ──────────────────────────────────────────────────────── */
-
-static ssize_t h2_read(int fd, void *ssl, uint8_t *buf, size_t len)
-{
-#ifdef TK_HAVE_OPENSSL
-    if (ssl) return SSL_read((SSL *)ssl, buf, (int)len);
-#endif
-    (void)ssl;
-    return read(fd, buf, len);
-}
 
 static ssize_t h2_write(int fd, void *ssl, const uint8_t *buf, size_t len)
 {
@@ -47,16 +42,109 @@ static ssize_t h2_write(int fd, void *ssl, const uint8_t *buf, size_t len)
     return http_write_all(fd, buf, len);
 }
 
-/* Read exactly n bytes. Returns 0 on success, -1 on error/EOF. */
-static int h2_read_exact(int fd, void *ssl, uint8_t *buf, size_t n)
+/* ── Reading against a clock (121.44) ─────────────────────────────────
+ *
+ * The only clock on this path used to be SO_RCVTIMEO, which restarts on
+ * every byte: a peer that trickled the preface, one frame, or a header block
+ * of small CONTINUATION frames held the worker for as long as it kept going,
+ * and over TLS a record trickled a byte at a time blocked inside SSL_read.
+ * Every read now waits with poll() against an absolute deadline, and the TLS
+ * socket is non-blocking while it does, so SSL_read cannot sit inside a
+ * record (the HTTP/1.1 reader, http_read_request, does the same). */
+
+#define H2_RD_TIMEOUT (-2)   /* the deadline passed                     */
+#define H2_RD_IDLE    (-3)   /* no deadline, and no byte within the idle */
+
+long h2_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000L + (long)(ts.tv_nsec / 1000000L);
+}
+
+static ssize_t h2_read_dl_(H2Conn *c, int fd, void *ssl, uint8_t *buf,
+                           size_t len, long deadline_ms)
+{
+    for (;;) {
+        long wait;
+        if (deadline_ms) {
+            wait = deadline_ms - h2_now_ms();
+            if (wait <= 0) return H2_RD_TIMEOUT;
+        } else {
+            wait = (long)c->idle_timeout_ms;
+        }
+        short ev = POLLIN;
+#ifdef TK_HAVE_OPENSSL
+        if (ssl) {
+            int r = SSL_read((SSL *)ssl, buf, (int)(len > INT_MAX ? INT_MAX : len));
+            if (r > 0) return r;
+            int e = SSL_get_error((SSL *)ssl, r);
+            if (e == SSL_ERROR_ZERO_RETURN) return 0;
+            if (e == SSL_ERROR_WANT_WRITE) ev = POLLOUT;
+            else if (e != SSL_ERROR_WANT_READ) return r == 0 ? 0 : -1;
+        }
+#endif
+        struct pollfd p;
+        p.fd = fd; p.events = ev; p.revents = 0;
+        int w = poll(&p, 1, (int)(wait > INT_MAX ? INT_MAX : wait));
+        if (w < 0) { if (errno == EINTR) continue; return -1; }
+        if (w == 0) {
+            if (deadline_ms) continue;          /* re-checked above */
+            return H2_RD_IDLE;
+        }
+        if (!ssl) {
+            ssize_t r = read(fd, buf, len);
+            if (r < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+                continue;
+            return r;
+        }
+    }
+}
+
+/* h2_read_dl — read at most len bytes by deadline_ms (0: wait for the first
+ * byte at most idle_timeout_ms).  Returns bytes read, 0 at end of stream,
+ * -1 on error, H2_RD_TIMEOUT or H2_RD_IDLE. */
+static ssize_t h2_read_dl(H2Conn *c, int fd, void *ssl, uint8_t *buf,
+                          size_t len, long deadline_ms)
+{
+    int fl = -1;
+    if (ssl) {
+        fl = fcntl(fd, F_GETFL, 0);
+        if (fl >= 0 && !(fl & O_NONBLOCK)) fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+        else fl = -1;                           /* nothing to restore */
+    }
+    ssize_t r = h2_read_dl_(c, fd, ssl, buf, len, deadline_ms);
+    if (fl >= 0) {
+        int saved = errno;
+        fcntl(fd, F_SETFL, fl);
+        errno = saved;
+    }
+    return r;
+}
+
+/* Read exactly n bytes by deadline_ms (never 0 here).  Returns 0 on
+ * success, -1 on error or end of stream (errno ETIMEDOUT for a deadline). */
+static int h2_read_exact(H2Conn *c, int fd, void *ssl, uint8_t *buf, size_t n,
+                         long deadline_ms)
 {
     size_t done = 0;
     while (done < n) {
-        ssize_t r = h2_read(fd, ssl, buf + done, n - done);
-        if (r <= 0) return -1;
+        ssize_t r = h2_read_dl(c, fd, ssl, buf + done, n - done, deadline_ms);
+        if (r <= 0) {
+            errno = (r == H2_RD_TIMEOUT || r == H2_RD_IDLE) ? ETIMEDOUT
+                  : (r == 0 ? 0 : (errno == EAGAIN ? EIO : errno));
+            return -1;
+        }
         done += (size_t)r;
     }
     return 0;
+}
+
+int h2_conn_read(H2Conn *conn, int fd, void *ssl, uint8_t *buf, size_t n)
+{
+    long dl = conn->deadline_ms ? conn->deadline_ms
+                                : h2_now_ms() + (long)conn->read_timeout_ms;
+    return h2_read_exact(conn, fd, ssl, buf, n, dl);
 }
 
 /* Write exactly n bytes. Returns 0 on success, -1 on error. */
@@ -132,12 +220,33 @@ int h2_frame_send(H2Conn *conn, int fd, void *ssl,
 uint8_t *h2_frame_recv(H2Conn *conn, int fd, void *ssl, H2FrameHeader *hdr)
 {
     uint8_t hdr_buf[H2_FRAME_HEADER_SIZE];
-    if (h2_read_exact(fd, ssl, hdr_buf, H2_FRAME_HEADER_SIZE) < 0)
+    /* 121.44: the first byte is waited for until the open phase's deadline,
+     * or -- with none open -- for the idle timeout, which is not an error.
+     * From that byte on the whole frame must arrive within read_timeout_ms
+     * (and within the phase deadline, if that is sooner). */
+    long phase = conn->deadline_ms;
+    ssize_t got = h2_read_dl(conn, fd, ssl, hdr_buf, H2_FRAME_HEADER_SIZE, phase);
+    if (got <= 0) {
+        errno = got == H2_RD_IDLE ? EAGAIN
+              : got == H2_RD_TIMEOUT ? ETIMEDOUT
+              : (got == 0 ? 0 : (errno == EAGAIN ? EIO : errno));
+        return NULL;
+    }
+    long frame_dl = h2_now_ms() + (long)conn->read_timeout_ms;
+    if (phase && phase < frame_dl) frame_dl = phase;
+    if ((size_t)got < H2_FRAME_HEADER_SIZE &&
+        h2_read_exact(conn, fd, ssl, hdr_buf + got,
+                      H2_FRAME_HEADER_SIZE - (size_t)got, frame_dl) < 0)
         return NULL;
 
     h2_frame_header_read(hdr_buf, hdr);
 
-    if (hdr->length > conn->peer_settings.max_frame_size) {
+    /* 121.17 (HTT-05): a frame we RECEIVE is bounded by the size WE
+     * advertised (RFC 9113 4.2), not by the peer's own SETTINGS value.  The
+     * peer may raise its max_frame_size to 16 MiB, and this used to let it
+     * send us 16 MiB frames -- a buffer realloc'd to fit before the
+     * connection loop's own local-limit check ran. */
+    if (hdr->length > conn->local_settings.max_frame_size) {
         /* Frame size error — send GOAWAY */
         h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                         H2_ERR_FRAME_SIZE);
@@ -153,7 +262,8 @@ uint8_t *h2_frame_recv(H2Conn *conn, int fd, void *ssl, H2FrameHeader *hdr)
             conn->frame_buf = nb;
             conn->frame_buf_cap = new_cap;
         }
-        if (h2_read_exact(fd, ssl, conn->frame_buf, hdr->length) < 0)
+        if (h2_read_exact(conn, fd, ssl, conn->frame_buf, hdr->length,
+                          frame_dl) < 0)
             return NULL;
     }
 
@@ -284,6 +394,9 @@ H2Conn *h2_conn_new(void)
     c->conn_window_recv = H2_DEFAULT_INITIAL_WINDOW_SIZE;
     c->conn_window_send = H2_DEFAULT_INITIAL_WINDOW_SIZE;
     c->next_stream_id   = 2; /* server issues even-numbered streams */
+    c->read_timeout_ms  = H2_DEFAULT_READ_TIMEOUT_MS;   /* 121.44 */
+    c->idle_timeout_ms  = H2_DEFAULT_IDLE_TIMEOUT_MS;
+    c->deadline_ms      = 0;
 
     c->frame_buf_cap = H2_DEFAULT_MAX_FRAME_SIZE + 256;
     c->frame_buf = malloc(c->frame_buf_cap);
@@ -541,6 +654,7 @@ void hpack_table_init(HpackTable *t, size_t max_size)
 {
     memset(t, 0, sizeof(*t));
     t->max_size = max_size;
+    t->limit    = max_size;
     t->capacity = 64;
     t->entries  = calloc(t->capacity, sizeof(HpackEntry));
 }
@@ -834,6 +948,9 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
             if (hpack_lookup(t, index, &n, &v) < 0) goto err;
             name  = strdup(n);
             value = strdup(v);
+            /* 121.17 (HTT-08): an unchecked strdup here put NULL into the
+             * header list the caller strcasecmp()s. */
+            if (!name || !value) goto err;
         } else if (buf[pos] & 0x40) {
             /* Literal with incremental indexing (§6.2.1) */
             uint32_t index;
@@ -852,6 +969,11 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
             /* Dynamic table size update (§6.3) */
             uint32_t new_size;
             if (hpack_decode_int(buf, len, &pos, 5, &new_size) < 0) goto err;
+            /* 121.17 (HTT-05): RFC 7541 6.3 -- an update above the size this
+             * side advertised is a decoding error.  It was applied as sent
+             * (up to ~2^32), so the peer could grow our table past the limit
+             * we told it. */
+            if ((size_t)new_size > t->limit) goto err;
             hpack_table_resize(t, new_size);
             continue;
         } else {

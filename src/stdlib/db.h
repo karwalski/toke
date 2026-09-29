@@ -37,6 +37,21 @@ typedef struct {
 
 typedef struct { Row *data; uint64_t len; } RowArray;
 
+/*
+ * TkRowRec — the $row record toke sees (135.30).  tkc reads `r.cols` as
+ * slot 0 of db.tki's Row {cols:[[str]]}: a toke array with one @(name;
+ * value) pair per column (value "" for SQL NULL, as row.str gives it).
+ * db.one/db.many hand these out instead of the C Row above, whose slot 0
+ * is the col_names pointer (`r.cols.len` read 0 or garbage), and every
+ * row.* accessor reads the record, so a `$row{cols:@(...)}` literal -- as
+ * in db.md's own error arms -- is read the same way.  `make
+ * check-tki-layout` keeps it in step with the .tki.
+ */
+/* tki-record: db.Row */
+typedef struct {
+    int64_t cols;       /* [[str]]: @(name; value) per column */
+} TkRowRec;
+
 /* ── error sum type ───────────────────────────────────────────────────────── */
 
 typedef enum {

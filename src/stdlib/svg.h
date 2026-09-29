@@ -18,6 +18,34 @@
 typedef struct TkSvgDoc  TkSvgDoc;
 typedef struct TkSvgElem TkSvgElem;
 
+/*
+ * The records toke sees (135.30).  tkc reads `x.f` as 8-byte slot <index of
+ * f in stdlib/svg.tki>.  A TkSvgDoc begins with a TkSvgDocHead, the
+ * $svgdoc record {width; height; viewbox; elements}, kept current by
+ * svg_doc and svg_append; before, slot 2 was the C element array (`.viewbox`
+ * printed garbage) and slot 3 its count (`.elements.len` crashed).  A
+ * $svgstyle is a TkSvgStyleRec, whether svg.style or a literal built it.
+ * $svgelem has no fields, so no toke code reads into a TkSvgElem.
+ * `make check-tki-layout` keeps them in step with the .tki.
+ */
+/* tki-record: svg.svgdoc */
+typedef struct {
+    double      width;
+    double      height;
+    char       *viewbox;    /* "0 0 <width> <height>", as svg_render writes it */
+    int64_t     elements;   /* [svgelem]: handles of the appended TkSvgElem * */
+} TkSvgDocHead;
+
+/* tki-record: svg.svgstyle */
+typedef struct {
+    const char *fill;
+    const char *stroke;
+    double      strokewidth;
+    double      opacity;
+    double      fontsize;
+    const char *fontfamily;
+} TkSvgStyleRec;
+
 /* Gradient stop descriptor (Story 34.5.1) */
 typedef struct {
     double      offset;  /* 0.0–1.0 */

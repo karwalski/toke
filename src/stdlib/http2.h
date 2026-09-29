@@ -68,6 +68,8 @@
 #define H2_MAX_FRAME_SIZE_LIMIT         16777215  /* 2^24 - 1 */
 #define H2_DEFAULT_MAX_CONCURRENT       128
 #define H2_MAX_WINDOW_SIZE              2147483647 /* 2^31 - 1 */
+#define H2_DEFAULT_READ_TIMEOUT_MS      10000      /* 121.44: see H2Conn */
+#define H2_DEFAULT_IDLE_TIMEOUT_MS      30000
 
 #define H2_CONNECTION_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 #define H2_CONNECTION_PREFACE_LEN 24
@@ -134,6 +136,9 @@ typedef struct {
     size_t      capacity;
     size_t      size;        /* current total size */
     size_t      max_size;    /* SETTINGS_HEADER_TABLE_SIZE */
+    size_t      limit;       /* 121.17 (HTT-05): the most a dynamic table
+                                size update from the peer may set -- the
+                                size this side advertised (RFC 7541 6.3) */
 } HpackTable;
 
 /* ── Connection state ─────────────────────────────────────────────────── */
@@ -155,6 +160,16 @@ typedef struct {
     HpackTable  hpack_encode;      /* encoder dynamic table */
     uint8_t    *frame_buf;         /* reusable frame buffer */
     size_t      frame_buf_cap;
+    /* 121.44: clocks (monotonic milliseconds).  A frame, once its first
+     * byte has arrived, must be whole within read_timeout_ms.  deadline_ms,
+     * when not 0, bounds a phase that spans frames -- the preface and first
+     * SETTINGS, or a header block up to END_HEADERS -- and applies to the
+     * wait for a frame's first byte as well.  With no phase open, a frame's
+     * first byte is waited for idle_timeout_ms, and h2_frame_recv then
+     * returns NULL with errno EAGAIN (the connection is idle, not late). */
+    uint32_t    read_timeout_ms;
+    uint32_t    idle_timeout_ms;
+    long        deadline_ms;
 } H2Conn;
 
 /* ── Frame serialisation / parsing ────────────────────────────────────── */
@@ -172,8 +187,18 @@ int h2_frame_send(H2Conn *conn, int fd, void *ssl,
                   const uint8_t *payload, uint32_t length);
 
 /* Read one complete frame from fd/SSL into conn->frame_buf.
- * Populates hdr. Returns payload pointer or NULL on error. */
+ * Populates hdr. Returns payload pointer or NULL on error.  121.44: NULL
+ * with hdr untouched and errno EAGAIN means no frame began within
+ * idle_timeout_ms; errno ETIMEDOUT means a deadline passed (see H2Conn). */
 uint8_t *h2_frame_recv(H2Conn *conn, int fd, void *ssl, H2FrameHeader *hdr);
+
+/* 121.44: read exactly n bytes by conn->deadline_ms (or read_timeout_ms from
+ * now, when no phase deadline is set) -- for the connection preface.
+ * Returns 0, or -1 on error, end of stream or timeout. */
+int h2_conn_read(H2Conn *conn, int fd, void *ssl, uint8_t *buf, size_t n);
+
+/* 121.44: monotonic clock in milliseconds, the clock of H2Conn deadlines. */
+long h2_now_ms(void);
 
 /* ── Connection lifecycle ─────────────────────────────────────────────── */
 

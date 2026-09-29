@@ -16,7 +16,10 @@
 #include "dashboard.h"
 #include "chart.h"
 #include "router.h"
+#include "bytes_rt.h"
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* ── dashboard wrappers (dashboard.h) ─────────────────────────────── */
 /* 136.70: dashboard.new(title:str; cols:u64) -- the documented signature and
@@ -31,13 +34,26 @@ int64_t tk_dashboard_new_w(int64_t title, int64_t cols) {
 }
 
 /* 136.70: addchart(d; id; spec), as documented and as dashboard_addchart()
- * takes it; the wrapper dropped the widget id. */
+ * takes it; the wrapper dropped the widget id.
+ *
+ * 135.30: `chart` is the $chartspec record (TkChartSpecRec), converted to
+ * the TkChartSpec the dashboard keeps (it lives as long as the dashboard);
+ * the result is a $dashwidget {id; type; spec}, where it used to be the
+ * dashboard pointer. */
 int64_t tk_dashboard_addchart_w(int64_t dash, int64_t id, int64_t chart) {
     if (!dash || !chart) return 0;
-    dashboard_addchart((TkDashboard *)(intptr_t)dash,
-                        id ? (const char *)(intptr_t)id : NULL, NULL,
-                        (TkChartSpec *)(intptr_t)chart, 0, 0, 1, 1);
-    return dash;
+    TkChartSpec *spec = chart_spec_from_rec(chart);
+    TkDashWidgetRec *w = (TkDashWidgetRec *)malloc(sizeof *w);
+    if (!spec || !w) { chart_spec_free_conv(spec); free(w); return 0; }
+    const char *wid = id ? (const char *)(intptr_t)id : "";
+    dashboard_addchart((TkDashboard *)(intptr_t)dash, wid, NULL,
+                        spec, 0, 0, 1, 1);
+    const char *json = chart_tojson(spec);
+    w->id   = wid;
+    w->type = "chart";
+    w->spec = tk_bytes_pack((const uint8_t *)json, json ? (uint64_t)strlen(json) : 0);
+    free((void *)json);
+    return (int64_t)(intptr_t)w;
 }
 
 int64_t tk_dashboard_serve_w(int64_t dash, int64_t port) {

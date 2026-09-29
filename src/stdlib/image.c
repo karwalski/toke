@@ -182,6 +182,11 @@ static uint32_t bs_peek(BitStream *bs, uint32_t n)
 static uint32_t bs_read(BitStream *bs, uint32_t n)
 {
     uint32_t v = bs_peek(bs, n);
+    /* 121.33: an exhausted stream consumes nothing.  It used to subtract n
+     * from bits_avail anyway, wrapping it to ~2^32, after which every read
+     * "succeeded" on stale bits; callers checked the sticky error, so this
+     * was never an over-read, but the state is now honest. */
+    if (bs->error) return 0;
     bs->bits       >>= n;
     bs->bits_avail  -= n;
     return v;
@@ -216,8 +221,17 @@ typedef struct {
 } HuffTree;
 
 /* Build a canonical Huffman tree from code lengths.
- * Returns 0 on success, -1 on error. */
+ * Returns 0 on success, -1 on error.  *left (when not NULL) receives the
+ * number of unused codes: < 0 over-subscribed, 0 complete, > 0 incomplete
+ * (121.33; see huff_dynamic_ok). */
+static int hufftree_build_left(HuffTree *tree, const uint8_t *lengths, int n,
+                               int *left);
 static int hufftree_build(HuffTree *tree, const uint8_t *lengths, int n)
+{
+    return hufftree_build_left(tree, lengths, n, NULL);
+}
+static int hufftree_build_left(HuffTree *tree, const uint8_t *lengths, int n,
+                               int *left)
 {
     int i;
     uint16_t offsets[INFLATE_MAXBITS + 1];
@@ -232,6 +246,16 @@ static int hufftree_build(HuffTree *tree, const uint8_t *lengths, int n)
         tree->counts[lengths[i]]++;
 
     tree->counts[0] = 0;
+
+    if (left) {
+        int l = 1;                     /* one code of length 0 */
+        for (i = 1; i <= INFLATE_MAXBITS; i++) {
+            l <<= 1;                   /* twice as many codes one bit longer */
+            l -= tree->counts[i];
+            if (l < 0) break;          /* over-subscribed */
+        }
+        *left = l;
+    }
 
     offsets[0] = 0;
     for (i = 1; i <= INFLATE_MAXBITS; i++)
@@ -437,6 +461,24 @@ static int inflate_huffman(BitStream *bs, OutBuf *ob,
     return 0;
 }
 
+/* 121.33: RFC 1951 codes must be prefix codes that a real encoder can
+ * produce.  The builder used to accept any set of lengths, so an
+ * over-subscribed code (more codes of some length than the tree has room
+ * for) decoded to whatever its symbol table happened to say, and a stream
+ * zlib rejects decoded here.  zlib's rule (and puff's): the code-length code
+ * must be complete; a literal/length or distance code must not be
+ * over-subscribed, and may be incomplete only when it is a single code of
+ * length 1. */
+static int huff_dynamic_ok(const HuffTree *t, int left, int complete_only)
+{
+    if (left < 0) return 0;
+    if (left == 0) return 1;
+    if (complete_only) return 0;
+    int used = 0;
+    for (int i = 1; i <= INFLATE_MAXBITS; i++) used += t->counts[i];
+    return used == 1 && t->counts[1] == 1;
+}
+
 static int inflate_dynamic(BitStream *bs, OutBuf *ob)
 {
     uint32_t hlit  = bs_read(bs, 5) + 257;
@@ -456,7 +498,9 @@ static int inflate_dynamic(BitStream *bs, OutBuf *ob)
     if (bs->error) return -1;
 
     HuffTree cl_tree;
-    if (hufftree_build(&cl_tree, cl_lengths, 19) != 0) return -1;
+    int left = 0;
+    if (hufftree_build_left(&cl_tree, cl_lengths, 19, &left) != 0) return -1;
+    if (!huff_dynamic_ok(&cl_tree, left, 1)) return -1;
 
     /* Decode literal/length + distance code lengths */
     uint32_t total = hlit + hdist;
@@ -488,8 +532,14 @@ static int inflate_dynamic(BitStream *bs, OutBuf *ob)
     }
 
     HuffTree litlen_tree, dist_tree;
-    if (hufftree_build(&litlen_tree, ll_lengths,        (int)hlit)  != 0) return -1;
-    if (hufftree_build(&dist_tree,   ll_lengths + hlit, (int)hdist) != 0) return -1;
+    if (ll_lengths[256] == 0) return -1;   /* no end-of-block code */
+    if (hufftree_build_left(&litlen_tree, ll_lengths, (int)hlit, &left) != 0) return -1;
+    if (!huff_dynamic_ok(&litlen_tree, left, 0)) return -1;
+    if (hufftree_build_left(&dist_tree, ll_lengths + hlit, (int)hdist, &left) != 0) return -1;
+    /* a block of literals only may carry an all-zero distance code */
+    int dist_used = 0;
+    for (uint32_t k = 0; k < hdist; k++) dist_used += ll_lengths[hlit + k] != 0;
+    if (dist_used && !huff_dynamic_ok(&dist_tree, left, 0)) return -1;
 
     return inflate_huffman(bs, ob, &litlen_tree, &dist_tree);
 }
@@ -630,10 +680,30 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
     uint64_t  idat_cap  = 0;
 
     uint64_t pos = 8;
+    int      nchunk = 0;
     while (pos + 12 <= len) {
         uint32_t chunk_len  = read_u32_be(bytes + pos);       pos += 4;
         uint8_t  chunk_type[4];
         memcpy(chunk_type, bytes + pos, 4);                    pos += 4;
+        nchunk++;
+
+        /* 121.33: PNG chunk lengths are at most 2^31-1 (PNG §5.3), IHDR is
+         * the first chunk and occurs once (§5.6).  A second IHDR after the
+         * IDAT used to replace the geometry the IDAT was checked against. */
+        if (chunk_len > 0x7FFFFFFFu) {
+            free(idat_buf);
+            res.is_err  = 1;
+            res.err_msg = "image_decode: PNG chunk length exceeds 2^31-1";
+            return res;
+        }
+        if ((nchunk == 1) != (memcmp(chunk_type, "IHDR", 4) == 0)) {
+            free(idat_buf);
+            res.is_err  = 1;
+            res.err_msg = nchunk == 1
+                ? "image_decode: first PNG chunk is not IHDR"
+                : "image_decode: PNG has more than one IHDR";
+            return res;
+        }
 
         if (pos + chunk_len + 4 > len) {
             free(idat_buf);
@@ -674,6 +744,26 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
                 free(idat_buf);
                 res.is_err  = 1;
                 res.err_msg = "image_decode: only 8-bit PNG is supported";
+                return res;
+            }
+            /* 121.33: compression and filter method must be 0 (the only
+             * ones defined), and Adam7 interlacing is not decoded.  The
+             * interlace byte was never read: an interlaced image whose
+             * passes happen to add up to the non-interlaced size (1x3 is
+             * one) decoded with its rows in pass order -- wrong pixels, no
+             * error. */
+            if (chunk_data[10] != 0 || chunk_data[11] != 0) {
+                free(idat_buf);
+                res.is_err  = 1;
+                res.err_msg = "image_decode: unknown PNG compression or filter method";
+                return res;
+            }
+            if (chunk_data[12] != 0) {
+                free(idat_buf);
+                res.is_err  = 1;
+                res.err_msg = chunk_data[12] == 1
+                    ? "image_decode: interlaced (Adam7) PNG is not supported"
+                    : "image_decode: unknown PNG interlace method";
                 return res;
             }
             if      (color_type == 0) channels = 1;
@@ -736,6 +826,22 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
         res.is_err  = 1;
         res.err_msg = "image_decode: IDAT zlib data too short";
         return res;
+    }
+
+    /* 121.33: the zlib header (RFC 1950 §2.2): method 8 (deflate), window
+     * at most 32 KiB, FCHECK consistent, no preset dictionary.  It was
+     * skipped unread, so a stream with a dictionary (whose first four
+     * bytes are the dictionary id, not deflate data) was inflated as if
+     * they were. */
+    {
+        uint8_t cmf = idat_buf[0], flg = idat_buf[1];
+        if ((cmf & 0x0F) != 8 || (cmf >> 4) > 7 ||
+            (((unsigned)cmf << 8) | flg) % 31 != 0 || (flg & 0x20)) {
+            free(idat_buf);
+            res.is_err  = 1;
+            res.err_msg = "image_decode: invalid zlib header in IDAT";
+            return res;
+        }
     }
 
     const uint8_t *deflate_data = idat_buf + 2;

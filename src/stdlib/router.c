@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <zlib.h>
+#include "tk_bind.h"   /* 135.33 */
 
 /* ----------------------------------------------------------------------- */
 /* Internal route entry                                                      */
@@ -312,8 +313,14 @@ static const char *cors_match_origin(const TkCorsOpts *opts, const char *origin)
     if (!opts->allowed_origins || !origin) return NULL;
     for (int i = 0; opts->allowed_origins[i]; i++) {
         if (strcmp(opts->allowed_origins[i], "*") == 0) {
-            /* Wildcard: if credentials requested, echo origin; otherwise "*" */
-            return opts->allow_credentials ? origin : "*";
+            /* 121.18 (audit-120 WEB-05): a wildcard answers "*", always.
+             * With allow_credentials it used to ECHO the caller's Origin and
+             * add Allow-Credentials: true -- i.e. let every site on the web
+             * read credentialed responses.  "*" with credentials is refused
+             * by browsers, which is the safe outcome; a credentialed CORS
+             * policy needs its origins listed (the middleware then also
+             * leaves Allow-Credentials off for "*"). */
+            return "*";
         }
         if (strcmp(opts->allowed_origins[i], origin) == 0) {
             return origin;
@@ -405,8 +412,8 @@ static TkRouteResp cors_middleware(TkRouteCtx ctx, TkRouteHandler next)
                                     "Access-Control-Max-Age", max_age_buf);
         }
 
-        /* Access-Control-Allow-Credentials */
-        if (opts->allow_credentials) {
+        /* Access-Control-Allow-Credentials (never alongside "*": 121.18) */
+        if (opts->allow_credentials && strcmp(echo_origin, "*") != 0) {
             nh = cors_append_header(hnames, hvals, nh, MAX_CORS_HEADERS,
                                     "Access-Control-Allow-Credentials", "true");
         }
@@ -453,8 +460,8 @@ static TkRouteResp cors_middleware(TkRouteCtx ctx, TkRouteHandler next)
                                 "Access-Control-Expose-Headers", expose_buf);
     }
 
-    /* Access-Control-Allow-Credentials */
-    if (opts->allow_credentials) {
+    /* Access-Control-Allow-Credentials (never alongside "*": 121.18) */
+    if (opts->allow_credentials && strcmp(echo_origin, "*") != 0) {
         nh = cors_append_header(hnames, hvals, nh, MAX_CORS_HEADERS,
                                 "Access-Control-Allow-Credentials", "true");
     }
@@ -634,7 +641,13 @@ static int hex_digit(char c)
     return -1;
 }
 
-/* URL-decode src into a newly malloc'd string.  Returns NULL on alloc failure. */
+/* URL-decode src into a newly malloc'd string.  Returns NULL on alloc failure.
+ *
+ * 121.18 (audit-120 WEB-06): %00 is dropped, not decoded.  This decoder
+ * emitted a NUL byte for it, so a query value could carry an embedded NUL and
+ * silently truncate when later used as a C-string path -- while http.c's
+ * decoder and encoding.c already drop %00 (the 57.4.3 null-byte hardening).
+ * The three now agree. */
 static char *url_decode(const char *src, size_t len)
 {
     char *out = malloc(len + 1);
@@ -648,7 +661,8 @@ static char *url_decode(const char *src, size_t len)
             int hi = hex_digit(src[i + 1]);
             int lo = hex_digit(src[i + 2]);
             if (hi >= 0 && lo >= 0) {
-                out[j++] = (char)((hi << 4) | lo);
+                int c = (hi << 4) | lo;
+                if (c != 0) out[j++] = (char)c;
                 i += 3;
             } else {
                 out[j++] = src[i++];
@@ -1052,24 +1066,20 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
         }
     }
 
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) {
-        TkRouterErr e = {1, "socket() failed"};
-        return e;
-    }
-
-    int opt = 1;
-    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr        = bind_addr;
     addr.sin_port        = htons((uint16_t)port);
 
-    if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(srv);
-        TkRouterErr e = {1, "bind() failed"};
+    /* 135.33: SO_REUSEADDR only after a probe finds no live listener -- on
+     * macOS it let this bind shadow another server on the same port and
+     * take its loopback traffic.  See tk_bind.h. */
+    int srv = tk_bind_exclusive(&addr);
+    if (srv < 0) {
+        TkRouterErr e = {1, errno == EADDRINUSE
+                               ? "bind() failed: address already in use"
+                               : "bind() failed"};
         return e;
     }
     if (listen(srv, 8) < 0) {
@@ -1253,6 +1263,25 @@ static TkRouteResp static_resp_with_body(int status, char *body,
     return resp;
 }
 
+/* static_confine — resolve `full` (in place) and require it to lie under the
+ * resolved root dir_path.  Returns 0, 404 (it does not exist) or 403.  One
+ * copy of the check for the requested path and for a directory's index. */
+static int static_confine(const char *dir_path, char *full, size_t cap)
+{
+    char resolved_root[PATH_MAX];
+    char resolved_full[PATH_MAX];
+    if (!realpath(dir_path, resolved_root)) return 403;
+    if (!realpath(full, resolved_full))
+        return (errno == ENOENT || errno == ENOTDIR) ? 404 : 403;
+    size_t root_len = strlen(resolved_root);
+    if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
+        (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
+        return 403;
+    int n = snprintf(full, cap, "%s", resolved_full);
+    if (n < 0 || (size_t)n >= cap) return 403;
+    return 0;
+}
+
 /* router_static_serve — public entry point for serving a single file.
  * dir_path: filesystem directory root (e.g. "/var/www/static")
  * rel_path: relative URL path after the prefix (e.g. "style.css" or "")
@@ -1291,24 +1320,8 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
         return router_resp_status(403, "Forbidden");
 
     /* Resolve symlinks and validate the path stays under dir_path */
-    {
-        char resolved_root[PATH_MAX];
-        char resolved_full[PATH_MAX];
-        if (!realpath(dir_path, resolved_root))
-            return router_resp_status(403, "Forbidden");
-        if (!realpath(full, resolved_full))
-            return (errno == ENOENT || errno == ENOTDIR)
-                ? router_resp_404()
-                : router_resp_status(403, "Forbidden");
-        size_t root_len = strlen(resolved_root);
-        if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
-            (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
-            return router_resp_status(403, "Forbidden");
-        /* Use the resolved path for all subsequent operations */
-        n = snprintf(full, sizeof(full), "%s", resolved_full);
-        if (n < 0 || (size_t)n >= sizeof(full))
-            return router_resp_status(403, "Forbidden");
-    }
+    int rc = static_confine(dir_path, full, sizeof full);
+    if (rc) return rc == 404 ? router_resp_404() : router_resp_status(403, "Forbidden");
 
     /* stat the path */
     struct stat st;
@@ -1320,9 +1333,20 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
 
     /* If directory, append /index.html */
     if (S_ISDIR(st.st_mode)) {
-        int m = snprintf(full, sizeof(full), "%s/%s/index.html", dir_path, rel);
+        /* 121.44: built from the directory's RESOLVED path, which the check
+         * above has just confined to the root -- not re-joined from the
+         * unresolved dir_path and rel.  The index file then gets the same
+         * check (121.18: an index.html symlinked out of the tree served its
+         * target). */
+        char dir[PATH_MAX];
+        int m = snprintf(dir, sizeof dir, "%s", full);
+        if (m < 0 || (size_t)m >= sizeof dir)
+            return router_resp_status(403, "Forbidden");
+        m = snprintf(full, sizeof(full), "%s/index.html", dir);
         if (m < 0 || (size_t)m >= sizeof(full))
             return router_resp_status(403, "Forbidden");
+        rc = static_confine(dir_path, full, sizeof full);
+        if (rc) return rc == 404 ? router_resp_404() : router_resp_status(403, "Forbidden");
         if (stat(full, &st) != 0)
             return router_resp_404();
     }

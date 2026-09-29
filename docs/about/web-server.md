@@ -49,7 +49,7 @@ A production-grade HTTP server built into the toke standard library. Single stat
 
 **URL-encoded form parsing** -- `http_form_parse` handles `application/x-www-form-urlencoded` bodies with `http_form_get` for field lookup.
 
-**Chunked transfer encoding** -- `http_chunked_write` and `http_chunked_read` for streaming large payloads.
+**Chunked transfer encoding** -- `http_chunked_write` writes a body in chunked encoding; the server decodes chunked request bodies itself (see "How a request is framed" in `docs/stdlib/http.md`).
 
 **Request size limits** -- configurable via `http_set_limits`: max header size (default 8 KiB), max body size (default 1 MiB), and per-socket timeout (default 10s).
 

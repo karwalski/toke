@@ -37,13 +37,15 @@ extern __thread int64_t tk_current_error;
  * bundle per locale, could not be expressed: a second load silently
  * repointed the first one's handle.
  *
- * The handle that crosses the ABI is the bundle's `data` pointer, which is
- * what tk_i18n_load_w already returned; I18nBundle has exactly one field, so
- * reconstructing it here is faithful rather than an offset-0 accident.
+ * 135.30: the handle that crosses the ABI is a pointer to an I18nBundle --
+ * the $I18nBundle record, whose `.data` toke reads as slot 0 -- whether
+ * i18n.load or a toke literal built it.  It used to be the bundle's `data`
+ * pointer itself, so `b.data` read the text as a pointer (SIGSEGV).  0 (the
+ * i64-ABI i18n.empty) is the empty bundle.
  */
 static I18nBundle bundle_of(int64_t h) {
     I18nBundle b;
-    b.data = (const char *)(intptr_t)h;
+    b.data = h ? ((const I18nBundle *)(intptr_t)h)->data : NULL;
     return b;
 }
 
@@ -63,8 +65,11 @@ int64_t tk_i18n_load_w(int64_t path, int64_t locale) {
     if (!loc || !*loc) loc = i18n_locale();       /* only when none was asked for */
     I18nBundleResult r = i18n_load(p, loc ? loc : "en");
     if (r.is_err) { tk_current_error = 1; return 0; }
+    I18nBundle *b = (I18nBundle *)malloc(sizeof *b);
+    if (!b) { tk_current_error = 1; return 0; }
+    *b = r.ok;
     tk_current_error = 0;
-    return (int64_t)(intptr_t)r.ok.data;
+    return (int64_t)(intptr_t)b;
 }
 
 int64_t tk_i18n_get_w(int64_t bundle, int64_t key) {

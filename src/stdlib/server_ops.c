@@ -20,6 +20,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include "tk_bind.h"   /* 135.33 */
 
 /* ── Forward declarations for metrics.c log rotation ────────────────── */
 extern void metrics_reopen_logs(void);
@@ -208,24 +209,23 @@ int proc_config_test(const ProcConfig *cfg)
 
     /* Check port availability */
     if (cfg->port > 0 && cfg->port <= 65535) {
-        int s = socket(AF_INET, SOCK_STREAM, 0);
-        if (s >= 0) {
-            int opt = 1;
-            setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-            struct sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port   = htons((uint16_t)cfg->port);
-            if (cfg->host && cfg->host[0])
-                inet_pton(AF_INET, cfg->host, &addr.sin_addr);
-            else
-                addr.sin_addr.s_addr = INADDR_ANY;
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port   = htons((uint16_t)cfg->port);
+        if (cfg->host && cfg->host[0])
+            inet_pton(AF_INET, cfg->host, &addr.sin_addr);
+        else
+            addr.sin_addr.s_addr = INADDR_ANY;
 
-            if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-                fprintf(stderr, "config-test: port %llu not available: %s\n",
-                        (unsigned long long)cfg->port, strerror(errno));
-                ok = 0;
-            }
+        /* 135.33: never SO_REUSEADDR up front -- on macOS it made a port a
+         * live server holds look available (tk_bind.h). */
+        int s = tk_bind_exclusive(&addr);
+        if (s < 0) {
+            fprintf(stderr, "config-test: port %llu not available: %s\n",
+                    (unsigned long long)cfg->port, strerror(errno));
+            ok = 0;
+        } else {
             close(s);
         }
     }

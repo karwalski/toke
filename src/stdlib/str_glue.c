@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <regex.h>
+#include "tk_regex.h" /* 137.9/121.35: the one pattern language (no POSIX regex.h) */
 
 /* 114.53/114.54: the string→number parse wrappers signal parse failure via
  * tk_current_error (0 = ok, 1 = err) and always return the real value — the 0
@@ -527,16 +527,85 @@ int64_t tk_str_arraylen_w(int64_t arr) {
     return ptr[-1];
 }
 
-/* str.containsre — regex match using POSIX extended regex */
+/* ── regex entry points (137.9, 121.35) ────────────────────────────────
+ * One engine (tk_regex.h), one language, and two loud failures in place of
+ * the silent "no match" regcomp failure used to produce:
+ *   RT008  the pattern is not in the language (the compiler reports a
+ *          literal pattern as E4075 at --check; this catches computed ones)
+ *   RT009  a call spent its step budget (tkre_budget: 8 full passes over the
+ *          subject plus a fixed 2^26 steps) -- only the find-next loops of
+ *          countre/findall/replacere can, by re-scanning the tail
+ * Both print to stderr and exit(1), like the other RT traps
+ * (docs/runtime-abi.md section 9). */
+static void regex_trap_invalid(const char *fn, const char *pat, const TkReErr *e) {
+    fprintf(stderr, "RT008: invalid regex pattern in str.%s: %s (at byte %d of \"%.80s%s\")\n",
+            fn, e->msg, e->pos, pat, strlen(pat) > 80 ? "..." : "");
+    exit(1);
+}
+
+static void regex_trap_budget(const char *fn, const char *pat, size_t len) {
+    fprintf(stderr, "RT009: regex step budget exceeded in str.%s (pattern \"%.80s%s\", subject %zu bytes)\n",
+            fn, pat, strlen(pat) > 80 ? "..." : "", len);
+    exit(1);
+}
+
+static void regex_compile_or_trap(const char *fn, const char *pat, TkRe *re) {
+    TkReErr e;
+    if (tkre_compile(re, pat, &e) != 0) regex_trap_invalid(fn, pat, &e);
+}
+
+static int64_t regex_find1(const char *fn, const char *str, const char *pat, int full) {
+    if (!str || !pat) return 0;
+    TkRe re;
+    regex_compile_or_trap(fn, pat, &re);
+    size_t len = strlen(str), ms, me;
+    uint64_t budget = tkre_budget(&re, len);
+    int rc = tkre_search(&re, str, len, 0, full, &budget, &ms, &me);
+    tkre_free(&re);
+    if (rc == TKRE_BUDGET) regex_trap_budget(fn, pat, len);
+    if (rc == TKRE_NOMEM) { fprintf(stderr, "str.%s: out of memory\n", fn); exit(1); }
+    return rc == TKRE_FOUND ? 1 : 0;
+}
+
+/* Find-next over one subject with one budget for the whole call.  After an
+ * empty match the next search starts one byte on, and an empty match right
+ * where the previous match ended is skipped (RE2/Go rule), so "x*" over "abc"
+ * matches at 0, 1, 2 and 3. */
+typedef struct {
+    const TkRe *re; const char *s; size_t len, from, ms, me;
+    uint64_t budget; int prev_end_valid; size_t prev_end;
+} RegexIter;
+
+static void regex_iter_init(RegexIter *it, const TkRe *re, const char *s) {
+    memset(it, 0, sizeof *it);
+    it->re = re; it->s = s; it->len = strlen(s);
+    it->budget = tkre_budget(re, it->len);
+}
+
+static int regex_next(const char *fn, RegexIter *it, const char *pat) {
+    while (it->from <= it->len) {
+        size_t ms, me;
+        int rc = tkre_search(it->re, it->s, it->len, it->from, 0, &it->budget, &ms, &me);
+        if (rc == TKRE_BUDGET) regex_trap_budget(fn, pat, it->len);
+        if (rc == TKRE_NOMEM) { fprintf(stderr, "str.%s: out of memory\n", fn); exit(1); }
+        if (rc != TKRE_FOUND) return 0;
+        if (ms == me && it->prev_end_valid && ms == it->prev_end) {
+            it->from = ms + 1;           /* empty match glued to the last one */
+            continue;
+        }
+        it->ms = ms; it->me = me;
+        it->from = me > ms ? me : me + 1;
+        it->prev_end_valid = 1; it->prev_end = me;
+        return 1;
+    }
+    return 0;
+}
+
+/* str.containsre — 1 if the pattern matches anywhere in s (tk_regex.h). */
 int64_t tk_str_containsre_w(int64_t s, int64_t pattern) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
-    if (!str || !pat) return 0;
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) return 0;
-    int match = regexec(&re, str, 0, NULL, 0) == 0 ? 1 : 0;
-    regfree(&re);
-    return match;
+    return regex_find1("containsre", str, pat, 0);
 }
 
 /* str.i64tof64 — integer to float conversion */
@@ -641,60 +710,45 @@ int64_t tk_str_containsignorecase_w(int64_t s, int64_t sub) {
     return 0;
 }
 
-/* str.countre(s, pattern) — count regex matches */
+/* str.countre(s, pattern) — number of non-overlapping matches. */
 int64_t tk_str_countre_w(int64_t s, int64_t pattern) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
     if (!str || !pat) return 0;
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) return 0;
-    int count = 0;
-    regmatch_t m;
-    const char *p = str;
-    while (regexec(&re, p, 1, &m, 0) == 0) {
-        count++;
-        if (m.rm_eo == 0) { p++; if (!*p) break; continue; }
-        p += m.rm_eo;
-    }
-    regfree(&re);
-    return (int64_t)count;
+    TkRe re;
+    regex_compile_or_trap("countre", pat, &re);
+    RegexIter it; regex_iter_init(&it, &re, str);
+    int64_t count = 0;
+    while (regex_next("countre", &it, pat)) count++;
+    tkre_free(&re);
+    return count;
 }
 
-/* str.findall(s, pattern) — return array of all regex matches */
+/* str.findall(s, pattern) — array of every non-overlapping match. */
 int64_t tk_str_findall_w(int64_t s, int64_t pattern) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
     if (!str || !pat) return 0;
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) return 0;
-
-    /* Collect matches into a dynamic array */
+    TkRe re;
+    regex_compile_or_trap("findall", pat, &re);
     size_t cap = 16, len = 0;
     int64_t *items = (int64_t *)malloc(cap * sizeof(int64_t));
-    if (!items) { regfree(&re); return 0; }
-
-    regmatch_t m;
-    const char *p = str;
-    while (regexec(&re, p, 1, &m, 0) == 0) {
-        size_t mlen = (size_t)(m.rm_eo - m.rm_so);
+    if (!items) { tkre_free(&re); return 0; }
+    RegexIter it; regex_iter_init(&it, &re, str);
+    while (regex_next("findall", &it, pat)) {
+        size_t mlen = it.me - it.ms;
         char *match = (char *)malloc(mlen + 1);
-        if (match) {
-            memcpy(match, p + m.rm_so, mlen);
-            match[mlen] = '\0';
-        }
+        if (!match) break;
+        memcpy(match, str + it.ms, mlen);
+        match[mlen] = '\0';
         if (len == cap) {
-            cap *= 2;
-            int64_t *tmp = (int64_t *)realloc(items, cap * sizeof(int64_t));
-            if (!tmp) break;
-            items = tmp;
+            int64_t *tmp = (int64_t *)realloc(items, cap * 2 * sizeof(int64_t));
+            if (!tmp) { free(match); break; }
+            items = tmp; cap *= 2;
         }
         items[len++] = (int64_t)(intptr_t)match;
-        if (m.rm_eo == 0) { p++; if (!*p) break; continue; }
-        p += m.rm_eo;
     }
-    regfree(&re);
-
-    /* Build toke array: [len, items...] */
+    tkre_free(&re);
     int64_t h = tk_arr_alloc((int64_t)len, (int64_t)len);
     if (!h) { free(items); return 0; }
     memcpy((int64_t *)(intptr_t)h, items, len * sizeof(int64_t));
@@ -702,75 +756,48 @@ int64_t tk_str_findall_w(int64_t s, int64_t pattern) {
     return h;
 }
 
-/* str.matches(s, pattern) — return 1 if entire string matches regex */
+/* str.matches(s, pattern) — 1 if the pattern matches the WHOLE of s.
+ * 137.9: the whole-string rule is applied by the matcher, not by pasting the
+ * pattern into "^(" ... ")$" -- that rewrite let an unbalanced pattern such as
+ * `a)(b` compile as `^(a)(b)$` and hid the user's pattern from the error. */
 int64_t tk_str_matches_w(int64_t s, int64_t pattern) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
-    if (!str || !pat) return 0;
-    /* Anchor the pattern: ^(pattern)$ */
-    size_t plen = strlen(pat);
-    char *anchored = (char *)malloc(plen + 3);
-    if (!anchored) return 0;
-    anchored[0] = '^';
-    memcpy(anchored + 1, pat, plen);
-    anchored[plen + 1] = '$';
-    anchored[plen + 2] = '\0';
-    regex_t re;
-    int result = 0;
-    if (regcomp(&re, anchored, REG_EXTENDED | REG_NOSUB) == 0) {
-        result = (regexec(&re, str, 0, NULL, 0) == 0) ? 1 : 0;
-        regfree(&re);
-    }
-    free(anchored);
-    return (int64_t)result;
+    return regex_find1("matches", str, pat, 1);
 }
 
-/* str.replacere(s, pattern, replacement) — regex replace all */
+/* str.replacere(s, pattern, replacement) — replace every non-overlapping
+ * match with `replacement`, taken literally. */
 int64_t tk_str_replacere_w(int64_t s, int64_t pattern, int64_t replacement) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
     const char *rep = (const char *)(intptr_t)replacement;
     if (!str || !pat) return s;
     if (!rep) rep = "";
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) return s;
-
-    size_t rlen = strlen(rep);
-    size_t cap = strlen(str) * 2 + 64;
+    TkRe re;
+    regex_compile_or_trap("replacere", pat, &re);
+    size_t rlen = strlen(rep), slen = strlen(str), opos = 0, done = 0;
+    size_t cap = slen + 64;
     char *out = (char *)malloc(cap);
-    if (!out) { regfree(&re); return s; }
-    size_t opos = 0;
-    const char *p = str;
-    regmatch_t m;
-
-    while (regexec(&re, p, 1, &m, 0) == 0) {
-        /* Copy text before match */
-        size_t prefix_len = (size_t)m.rm_so;
-        while (opos + prefix_len + rlen + 1 > cap) {
-            cap *= 2;
+    if (!out) { tkre_free(&re); return s; }
+    RegexIter it; regex_iter_init(&it, &re, str);
+    for (;;) {
+        int more = regex_next("replacere", &it, pat);
+        size_t upto = more ? it.ms : slen;          /* copy s[done..upto) */
+        size_t need = opos + (upto - done) + (more ? rlen : 0) + 1;
+        if (need > cap) {
+            while (need > cap) cap *= 2;
             char *tmp = (char *)realloc(out, cap);
-            if (!tmp) { free(out); regfree(&re); return s; }
+            if (!tmp) { free(out); tkre_free(&re); return s; }
             out = tmp;
         }
-        memcpy(out + opos, p, prefix_len);
-        opos += prefix_len;
-        memcpy(out + opos, rep, rlen);
-        opos += rlen;
-        if (m.rm_eo == 0) { out[opos++] = *p; p++; if (!*p) break; continue; }
-        p += m.rm_eo;
+        memcpy(out + opos, str + done, upto - done); opos += upto - done;
+        if (!more) break;
+        memcpy(out + opos, rep, rlen); opos += rlen;
+        done = it.me;
     }
-    /* Copy remaining text */
-    size_t tail = strlen(p);
-    while (opos + tail + 1 > cap) {
-        cap *= 2;
-        char *tmp = (char *)realloc(out, cap);
-        if (!tmp) { free(out); regfree(&re); return s; }
-        out = tmp;
-    }
-    memcpy(out + opos, p, tail);
-    opos += tail;
     out[opos] = '\0';
-    regfree(&re);
+    tkre_free(&re);
     return (int64_t)(intptr_t)out;
 }
 

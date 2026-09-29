@@ -11,6 +11,7 @@
 #include "log.h"
 #include "encoding.h"
 #include "capabilities.h"   /* 124.4c2: net capability gate (server + client) */
+#include "tk_bind.h"       /* 135.32/135.33: tk_bind_exclusive() */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -620,109 +621,12 @@ int http_chunked_write(int fd, const char *data, size_t len, size_t chunk_size)
     return 0;
 }
 
-/*
- * http_chunked_read — read a chunked-encoded body from fd.
- *
- * Parses the sequence:
- *   <hex-len>[chunk-ext]\r\n
- *   <data>\r\n
- *   ...
- *   0\r\n\r\n
- *
- * Chunk extensions after the hex length (e.g. ";name=value") are ignored.
- *
- * Returns a malloc'd buffer containing the reassembled body, and sets
- * *out_len to its length.  Returns NULL on allocation failure or protocol
- * error.  Caller owns the returned buffer.
- */
-char *http_chunked_read(int fd, size_t *out_len)
-{
-    size_t  buf_cap = 4096;
-    size_t  buf_len = 0;
-    char   *buf     = malloc(buf_cap);
-    if (!buf) return NULL;
-
-    /* Line-reading buffer: holds at most one "hex\r\n" line */
-    char line[128];
-
-    for (;;) {
-        /* Read chunk-size line byte-by-byte until \r\n */
-        size_t li = 0;
-        for (;;) {
-            if (li + 1 >= sizeof(line)) { free(buf); return NULL; }
-            ssize_t n = read(fd, line + li, 1);
-            if (n <= 0) { free(buf); return NULL; }
-            li++;
-            if (li >= 2 && line[li - 2] == '\r' && line[li - 1] == '\n')
-                break;
-        }
-        line[li - 2] = '\0'; /* trim \r\n */
-
-        /* Ignore chunk extensions: truncate at first ';' */
-        char *semi = strchr(line, ';');
-        if (semi) *semi = '\0';
-
-        /* Parse hex length */
-        size_t csz = 0;
-        {
-            const char *endp = line;
-            while (*endp) {
-                char c = *endp;
-                size_t nibble;
-                if      (c >= '0' && c <= '9') nibble = (size_t)(c - '0');
-                else if (c >= 'a' && c <= 'f') nibble = (size_t)(c - 'a' + 10);
-                else if (c >= 'A' && c <= 'F') nibble = (size_t)(c - 'A' + 10);
-                else { free(buf); return NULL; }
-                /* 121.7 (HTT-01): reject a chunk-size that would overflow csz. */
-                if (csz > (SIZE_MAX - 15) / 16) { free(buf); return NULL; }
-                csz = csz * 16u + nibble;
-                endp++;
-            }
-        }
-
-        if (csz == 0) {
-            /* Last chunk: consume trailing \r\n */
-            char tail[2];
-            ssize_t n = read(fd, tail, 2);
-            (void)n;
-            break;
-        }
-
-        /* 121.7 (HTT-01): enforce max_body across chunk accumulation — without
-         * this a stream of chunks grows the buffer without bound (memory-
-         * exhaustion DoS), bypassing the Content-Length ceiling. */
-        if (csz > (size_t)srv_limits.max_body ||
-            buf_len + csz > (size_t)srv_limits.max_body) {
-            free(buf); return NULL;
-        }
-
-        /* Grow output buffer if needed (+1 for NUL terminator) */
-        if (buf_len + csz + 1 > buf_cap) {
-            while (buf_cap < buf_len + csz + 1) buf_cap *= 2;
-            char *tmp = realloc(buf, buf_cap);
-            if (!tmp) { free(buf); return NULL; }
-            buf = tmp;
-        }
-
-        /* Read csz bytes of chunk data */
-        size_t rread = 0;
-        while (rread < csz) {
-            ssize_t n = read(fd, buf + buf_len + rread, csz - rread);
-            if (n <= 0) { free(buf); return NULL; }
-            rread += (size_t)n;
-        }
-        buf_len += csz;
-
-        /* Consume trailing \r\n after chunk data */
-        char crlf[2];
-        ssize_t n = read(fd, crlf, 2);
-        if (n < 2) { free(buf); return NULL; }
-    }
-
-    buf[buf_len] = '\0';
-    *out_len = buf_len;
-    return buf;
-}
+/* 121.44: http_chunked_read(fd) was here.  It read a chunked body FRESH
+ * from the socket, so it could not see body bytes already buffered with the
+ * headers (audit-120 HTT-02), and it read the peer's stream a byte at a time
+ * with no deadline.  No server path had called it since 121.17; it is gone
+ * from http.h so no C caller picks it up.  The server decodes chunked bodies
+ * in place with http_read_chunked(), below. */
 
 /* ── Response serialisation ─────────────────────────────────────────── */
 
@@ -740,6 +644,7 @@ static const char *reason(uint16_t s) {
         case 429: return "Too Many Requests";
         case 431: return "Request Header Fields Too Large";
         case 500: return "Internal Server Error";
+        case 501: return "Not Implemented";
         case 502: return "Bad Gateway"; case 503: return "Service Unavailable";
         case 504: return "Gateway Timeout";
         default:  return "Unknown";
@@ -972,6 +877,413 @@ static void send_error(int fd, uint16_t status, const char *client_ip)
     }
 }
 
+/* ── Request framing, shared by the plain and TLS loops (121.17) ─────────
+ *
+ * audit-120 HTT-02 / HTT-03 / HTT-06.  Both connection loops used to frame a
+ * request with their own copy of the same scan, and the copies were wrong in
+ * the same ways:
+ *
+ *   - The header read pulls whatever the socket has.  A chunked body that
+ *     arrived in the same segment as its headers was discarded, because the
+ *     decoder then read FRESH from the socket, mid-body; a failed decode kept
+ *     the connection alive, so the rest of the chunk stream was parsed as the
+ *     next request.  The bytes of a pipelined request that shared a segment
+ *     with the one before it were thrown away the same way.  The TLS loop did
+ *     not decode chunked bodies at all: over TLS the chunk stream WAS the next
+ *     request.
+ *   - Content-Length was the first matching line only, needed the colon
+ *     straight after the name, and went through atoll() ("5x" is 5, "+5" is
+ *     5).  Transfer-Encoding was the first header's prefix only, so
+ *     "gzip, chunked" was a request with no body.  Each is a place where this
+ *     server and a proxy in front of it can disagree about where a request
+ *     ends, which is request smuggling.
+ *   - The only clock was SO_RCVTIMEO, which restarts on every byte, so one
+ *     byte every (timeout - 1) seconds held a worker for max_header x timeout.
+ *
+ * Now one reader frames every request on both loops.  Bytes past the end of a
+ * request stay in the buffer and start the next one.  The header block is
+ * validated as RFC 9112 requires (sections 5, 6.1, 6.3) before any byte of
+ * body is read, and every request has a deadline: the header block must
+ * arrive within timeout_secs of the request starting, and the body within
+ * timeout_secs plus one second per HTTP_MIN_BODY_BPS bytes it announced.
+ */
+
+/* The slowest body rate a request may use: its deadline grows by one second
+ * per this many bytes.  1 MiB (the default max_body) therefore gets 17
+ * minutes, and a 100-byte body gets the bare timeout. */
+#define HTTP_MIN_BODY_BPS   1024u
+
+/* Longest chunk-size line (hex + extensions) or trailer line accepted.  RFC
+ * 9112 sets no limit; 256 is well past any real chunk extension. */
+#define HTTP_CHUNK_LINE_MAX 256u
+
+/* Extra bytes in the per-connection buffer beyond max_header + max_body, so
+ * that chunk-size and trailer lines always have room to land. */
+#define HTTP_FRAME_SLACK    (2u * HTTP_CHUNK_LINE_MAX + 8u)
+
+/* http_read_request result: close the connection without answering. */
+#define HTTP_RR_CLOSE (-1)
+
+typedef struct {
+    int    fd;
+    void  *ssl;         /* SSL* on the TLS loop, NULL on the plain one      */
+    char  *raw;         /* max_header + max_body + HTTP_FRAME_SLACK bytes   */
+    size_t cap;
+    size_t used;        /* bytes held in raw                                */
+    size_t next_off;    /* where the next request's bytes start in raw      */
+    char   next_first;  /* raw[next_off] before the NUL terminator hid it   */
+    long   deadline_ms; /* monotonic; the current phase must end by then    */
+} HttpIn;
+
+static size_t http_frame_cap(void)
+{
+    return (size_t)srv_limits.max_header + (size_t)srv_limits.max_body
+         + HTTP_FRAME_SLACK;
+}
+
+static long http_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000L + (long)(ts.tv_nsec / 1000000L);
+}
+
+/* http_wait — wait until fd is readable (or writable) or wait_ms passes.
+ * Returns 1 ready, 0 timed out, -1 error. */
+static int http_wait(int fd, short events, long wait_ms)
+{
+    for (;;) {
+        struct pollfd p;
+        p.fd = fd; p.events = events; p.revents = 0;
+        int r = poll(&p, 1, (int)(wait_ms > 0 ? wait_ms : 0));
+        if (r < 0 && errno == EINTR) continue;
+        return r < 0 ? -1 : (r > 0 ? 1 : 0);
+    }
+}
+
+/* httpin_read — read at most n bytes before in->deadline_ms, and never wait
+ * longer than timeout_secs for any one read.
+ * Returns bytes read (> 0), 0 at end of stream, -1 on error, -2 on timeout. */
+static ssize_t httpin_read(HttpIn *in, char *buf, size_t n)
+{
+    for (;;) {
+        long left = in->deadline_ms - http_now_ms();
+        if (left <= 0) return -2;
+        long idle = (long)srv_limits.timeout_secs * 1000L;
+        long wait = left < idle ? left : idle;
+#ifdef TK_HAVE_OPENSSL
+        if (in->ssl) {
+            /* The socket is non-blocking for the whole read phase (see
+             * http_read_request), so SSL_read cannot sit inside a record
+             * that a client trickles one byte at a time. */
+            int r = SSL_read((SSL *)in->ssl, buf, (int)(n > 0x7fffffff ? 0x7fffffff : n));
+            if (r > 0) return r;
+            int e = SSL_get_error((SSL *)in->ssl, r);
+            if (e == SSL_ERROR_ZERO_RETURN) return 0;
+            short ev;
+            if (e == SSL_ERROR_WANT_READ)       ev = POLLIN;
+            else if (e == SSL_ERROR_WANT_WRITE) ev = POLLOUT;
+            else return (r == 0) ? 0 : -1;
+            int w = http_wait(in->fd, ev, wait);
+            if (w == 0) return -2;
+            if (w < 0)  return -1;
+            continue;
+        }
+#endif
+        int w = http_wait(in->fd, POLLIN, wait);
+        if (w == 0) return -2;
+        if (w < 0)  return -1;
+        ssize_t r = read(in->fd, buf, n);
+        if (r < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+            continue;
+        return r;
+    }
+}
+
+/* httpin_fill — append more bytes to raw.  Returns httpin_read's result. */
+static ssize_t httpin_fill(HttpIn *in, size_t limit)
+{
+    if (limit > in->cap - 1) limit = in->cap - 1;
+    if (in->used >= limit) return -1;
+    ssize_t r = httpin_read(in, in->raw + in->used, limit - in->used);
+    if (r > 0) { in->used += (size_t)r; in->raw[in->used] = '\0'; }
+    return r;
+}
+
+/* find_crlfcrlf — offset of the first "\r\n\r\n" in buf[0..len), or -1. */
+static long find_crlfcrlf(const char *buf, size_t len)
+{
+    for (size_t i = 0; i + 3 < len; i++)
+        if (buf[i] == '\r' && buf[i+1] == '\n' && buf[i+2] == '\r' && buf[i+3] == '\n')
+            return (long)i;
+    return -1;
+}
+
+/* find_crlf — offset of the first "\r\n" in buf[0..len), or -1. */
+static long find_crlf(const char *buf, size_t len)
+{
+    for (size_t i = 0; i + 1 < len; i++)
+        if (buf[i] == '\r' && buf[i+1] == '\n') return (long)i;
+    return -1;
+}
+
+static int is_ows(char c) { return c == ' ' || c == '\t'; }
+
+/* te_token — handle one Transfer-Encoding coding.  *nchunked counts
+ * "chunked"; *other is set by any other coding; *last_chunked says whether
+ * the most recent coding was "chunked". */
+static void te_token(const char *t, size_t n, int *nchunked, int *other,
+                     int *last_chunked)
+{
+    while (n && is_ows(*t)) { t++; n--; }
+    while (n && is_ows(t[n-1])) n--;
+    if (!n) return;                          /* empty list element: ignored */
+    if (n == 7 && strncasecmp(t, "chunked", 7) == 0) {
+        (*nchunked)++; *last_chunked = 1;
+    } else {
+        *other = 1; *last_chunked = 0;
+    }
+}
+
+/*
+ * http_frame_check — validate the framing headers of the header block
+ * raw[0..hlen) (hlen includes the blank line).  Sets *cl (-1 when absent)
+ * and *chunked.  Returns 0, or the status to answer with:
+ *
+ *   400  a header line with no colon, an empty name, or whitespace before
+ *        the colon (RFC 9112 5.1: MUST be rejected); a folded line (5.2);
+ *        a Content-Length that is not 1*DIGIT, or two that differ (6.3 p5);
+ *        Transfer-Encoding together with Content-Length (6.1: a server MAY
+ *        reject, and a proxy may have framed it by either); "chunked" that is
+ *        not the final coding, or applied twice (6.1: MUST respond 400)
+ *   413  a Content-Length above max_body
+ *   501  any transfer coding other than chunked -- none is implemented, and
+ *        reading such a body as if it were plain would be a framing guess
+ */
+static int http_frame_check(const char *raw, size_t hlen, long long *cl,
+                            int *chunked)
+{
+    *cl = -1; *chunked = 0;
+    int te_seen = 0, nchunked = 0, other = 0, last_chunked = 0;
+    unsigned long long clv = 0; int cl_seen = 0;
+    long rl = find_crlf(raw, hlen);
+    if (rl < 0) return 400;
+    size_t p = (size_t)rl + 2;
+    while (p < hlen) {
+        long e = find_crlf(raw + p, hlen - p);
+        if (e < 0) return 400;
+        size_t len = (size_t)e;
+        if (len == 0) break;                          /* the blank line */
+        const char *line = raw + p;
+        if (is_ows(line[0])) return 400;              /* obs-fold */
+        const char *colon = memchr(line, ':', len);
+        if (!colon || colon == line) return 400;
+        size_t nlen = (size_t)(colon - line);
+        for (size_t i = 0; i < nlen; i++) {
+            unsigned char c = (unsigned char)line[i];
+            if (c <= 0x20 || c == 0x7f) return 400;   /* space before colon */
+        }
+        const char *v = colon + 1;
+        size_t vlen = len - nlen - 1;
+        while (vlen && is_ows(*v)) { v++; vlen--; }
+        while (vlen && is_ows(v[vlen-1])) vlen--;
+        if (nlen == 14 && strncasecmp(line, "Content-Length", 14) == 0) {
+            if (vlen == 0 || vlen > 19) return 400;
+            unsigned long long n = 0;
+            for (size_t i = 0; i < vlen; i++) {
+                if (v[i] < '0' || v[i] > '9') return 400;
+                n = n * 10u + (unsigned)(v[i] - '0');
+            }
+            if (cl_seen && n != clv) return 400;
+            cl_seen = 1; clv = n;
+        } else if (nlen == 17 && strncasecmp(line, "Transfer-Encoding", 17) == 0) {
+            te_seen = 1;
+            size_t s = 0;
+            for (size_t i = 0; i <= vlen; i++) {
+                if (i == vlen || v[i] == ',') {
+                    te_token(v + s, i - s, &nchunked, &other, &last_chunked);
+                    s = i + 1;
+                }
+            }
+        }
+        p += len + 2;
+    }
+    if (te_seen) {
+        if (cl_seen) return 400;
+        if (nchunked == 0 && !other) return 400;       /* empty value */
+        if (!last_chunked || nchunked > 1) return 400;
+        if (other) return 501;
+        *chunked = 1;
+        return 0;
+    }
+    if (cl_seen) {
+        if (clv > (unsigned long long)srv_limits.max_body) return 413;
+        *cl = (long long)clv;
+    }
+    return 0;
+}
+
+/*
+ * http_read_chunked — decode the chunked body that starts at raw[hlen], in
+ * place: decoded bytes are written behind the read cursor, which the chunk
+ * framing always keeps ahead.  On success the body is raw[hlen..hlen+*out)
+ * and *next is where the bytes after the last CRLF begin.
+ * Returns 0 or the status to answer with (400, 408, 413; HTTP_RR_CLOSE when
+ * the peer went away).
+ */
+static int http_read_chunked(HttpIn *in, size_t hlen, size_t *out, size_t *next)
+{
+    enum { SIZE, DATA, DATA_CRLF, TRAILER } st = SIZE;
+    size_t pos = hlen, o = 0, csz = 0, trailer = 0;
+    for (;;) {
+        size_t avail = in->used - pos;
+        int need_more = 0;
+        if (st == SIZE || st == TRAILER) {
+            long e = find_crlf(in->raw + pos, avail);
+            if (e < 0) {
+                if (avail > HTTP_CHUNK_LINE_MAX) return 400;
+                need_more = 1;
+            } else if (st == TRAILER) {
+                if (e == 0) { *out = o; *next = pos + 2; return 0; }
+                trailer += (size_t)e + 2;
+                if ((size_t)e > HTTP_CHUNK_LINE_MAX ||
+                    trailer > (size_t)srv_limits.max_header) return 431;
+                pos += (size_t)e + 2;
+            } else {
+                const char *l = in->raw + pos;
+                size_t n = (size_t)e, i = 0;
+                if ((size_t)e > HTTP_CHUNK_LINE_MAX) return 400;
+                csz = 0;
+                for (; i < n && isxdigit((unsigned char)l[i]); i++) {
+                    if (i >= 16) return 413;           /* > 2^64 */
+                    csz = csz * 16u + (size_t)(isdigit((unsigned char)l[i])
+                          ? l[i] - '0' : (tolower((unsigned char)l[i]) - 'a' + 10));
+                }
+                if (i == 0) return 400;                 /* no chunk-size */
+                while (i < n && is_ows(l[i])) i++;
+                if (i < n && l[i] != ';') return 400;   /* junk after size */
+                if (csz > (size_t)srv_limits.max_body ||
+                    o + csz > (size_t)srv_limits.max_body) return 413;
+                pos += n + 2;
+                st = csz ? DATA : TRAILER;
+            }
+        } else if (st == DATA) {
+            if (avail == 0) need_more = 1;
+            else {
+                size_t take = avail < csz ? avail : csz;
+                memmove(in->raw + hlen + o, in->raw + pos, take);
+                o += take; pos += take; csz -= take;
+                if (!csz) st = DATA_CRLF;
+            }
+        } else {                                        /* DATA_CRLF */
+            if (avail < 2) need_more = 1;
+            else {
+                if (in->raw[pos] != '\r' || in->raw[pos+1] != '\n') return 400;
+                pos += 2; st = SIZE;
+            }
+        }
+        if (!need_more) continue;
+        /* Out of room: slide the unread input down onto the decoded body. */
+        if (in->used >= in->cap - 1 && pos > hlen + o) {
+            memmove(in->raw + hlen + o, in->raw + pos, in->used - pos);
+            in->used -= pos - (hlen + o);
+            pos = hlen + o;
+        }
+        ssize_t r = httpin_fill(in, in->cap - 1);
+        if (r == -2) return 408;
+        if (r <= 0) return HTTP_RR_CLOSE;
+    }
+}
+
+/*
+ * http_read_request — frame the next request into in->raw, carrying over any
+ * bytes of it that arrived with the previous one.  On success returns 0 and
+ * raw holds "<header block><body>\0" with a chunked body already decoded;
+ * otherwise the status to answer with before closing, or HTTP_RR_CLOSE to
+ * close without answering (the peer went away, or an idle keep-alive
+ * connection timed out).
+ */
+static int http_read_request_(HttpIn *in, int requests)
+{
+    /* Carry the bytes of this request that arrived with the last one. */
+    if (in->next_off < in->used) {
+        in->raw[in->next_off] = in->next_first;
+        memmove(in->raw, in->raw + in->next_off, in->used - in->next_off);
+        in->used -= in->next_off;
+    } else {
+        in->used = 0;
+    }
+    in->next_off = 0;
+    in->raw[in->used] = '\0';
+
+    size_t mh = (size_t)srv_limits.max_header;
+    long now = http_now_ms();
+    if (requests > 0 && in->used == 0) {
+        /* Idle keep-alive: wait for the first byte, then start the clock. */
+        in->deadline_ms = now + (long)KEEPALIVE_IDLE_TIMEOUT_S * 1000L;
+        ssize_t r = httpin_fill(in, mh);
+        if (r <= 0) return HTTP_RR_CLOSE;
+        now = http_now_ms();
+    }
+    in->deadline_ms = now + (long)srv_limits.timeout_secs * 1000L;
+
+    long term;
+    for (;;) {
+        term = find_crlfcrlf(in->raw, in->used < mh ? in->used : mh);
+        if (term >= 0) break;
+        if (in->used >= mh) return 431;
+        ssize_t r = httpin_fill(in, mh);
+        if (r == -2) return (requests == 0 || in->used > 0) ? 408 : HTTP_RR_CLOSE;
+        if (r <= 0) return HTTP_RR_CLOSE;
+    }
+    size_t hlen = (size_t)term + 4;
+
+    long long cl; int chunked;
+    int st = http_frame_check(in->raw, hlen, &cl, &chunked);
+    if (st) return st;
+
+    size_t expect = chunked ? (size_t)srv_limits.max_body
+                            : (cl > 0 ? (size_t)cl : 0);
+    in->deadline_ms = http_now_ms() + (long)srv_limits.timeout_secs * 1000L
+                    + (long)(expect / HTTP_MIN_BODY_BPS) * 1000L;
+
+    size_t body_end;
+    if (chunked) {
+        size_t out = 0, next = 0;
+        st = http_read_chunked(in, hlen, &out, &next);
+        if (st) return st;
+        body_end = hlen + out;
+        in->next_off = next;
+    } else {
+        body_end = hlen + (cl > 0 ? (size_t)cl : 0);
+        while (in->used < body_end) {
+            ssize_t r = httpin_fill(in, in->cap - 1);
+            if (r == -2) return 408;
+            if (r <= 0) return HTTP_RR_CLOSE;
+        }
+        in->next_off = body_end;
+    }
+    in->next_first = in->raw[in->next_off];
+    in->raw[body_end] = '\0';
+    return 0;
+}
+
+static int http_read_request(HttpIn *in, int requests)
+{
+#ifdef TK_HAVE_OPENSSL
+    int fl = 0;
+    if (in->ssl) {
+        fl = fcntl(in->fd, F_GETFL, 0);
+        if (fl >= 0) fcntl(in->fd, F_SETFL, fl | O_NONBLOCK);
+    }
+    int rc = http_read_request_(in, requests);
+    if (in->ssl && fl >= 0) fcntl(in->fd, F_SETFL, fl);
+    return rc;
+#else
+    return http_read_request_(in, requests);
+#endif
+}
+
 /* ── Rate limiting: removed, deliberately (Story 127.60) ──────────────────
  *
  * A fixed-size per-IP rate limiter used to live here: a 200-per-60-seconds
@@ -1021,11 +1333,6 @@ static void send_error(int fd, uint16_t status, const char *client_ip)
  * actually known.  See docs/stdlib/http.md, "Rate limiting".
  */
 
-#ifdef TK_HAVE_OPENSSL
-/* Forward declaration for h2c upgrade path (60.1.7) */
-static void handle_h2_connection(int fd, void *ssl, const char *client_ip);
-#endif
-
 static void handle_connection(int fd)
 {
     char client_ip[64];
@@ -1038,138 +1345,33 @@ static void handle_connection(int fd)
     /* 127.60: the per-IP rate limiter that stood here is gone — see the note
      * where it was defined.  Rate limiting belongs in front of the server. */
 
-    /* Apply the (possibly user-overridden) receive timeout. */
+    /* Apply the (possibly user-overridden) receive timeout.  121.17: the
+     * request reader waits with poll() against a per-request deadline, so
+     * this only bounds reads outside it. */
     struct timeval tv;
     tv.tv_sec  = (long)srv_limits.timeout_secs;
     tv.tv_usec = 0;
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    /*
-     * Allocate a per-connection read buffer large enough for the maximum
-     * allowed header block plus the maximum allowed body, plus a null byte.
-     */
-    size_t buf_cap = (size_t)srv_limits.max_header
-                   + (size_t)srv_limits.max_body + 8;
+    /* The per-connection buffer holds one whole request (headers + body),
+     * plus room for chunk-size lines and the next pipelined request. */
+    size_t buf_cap = http_frame_cap();
     char *raw = malloc(buf_cap);
     if (!raw) { close(fd); return; }
+    HttpIn in;
+    memset(&in, 0, sizeof in);
+    in.fd = fd; in.raw = raw; in.cap = buf_cap;
 
     int requests = 0;
 
     for (;;) {
-        memset(raw, 0, buf_cap);
-
-        /* Use a short timeout while waiting for keep-alive requests
-         * so idle connections don't block workers from accepting new ones */
-        if (requests > 0) {
-            struct timeval ka_tv;
-            ka_tv.tv_sec  = KEEPALIVE_IDLE_TIMEOUT_S;
-            ka_tv.tv_usec = 0;
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &ka_tv, sizeof(ka_tv));
-        }
-
-        /* ── Phase 1: read headers, enforcing max_header ── */
-        size_t hdr_used = 0;
-        int    hdr_ok   = 0; /* set to 1 when \r\n\r\n is found */
-
-        while (hdr_used < (size_t)srv_limits.max_header) {
-            size_t space = (size_t)srv_limits.max_header - hdr_used;
-            ssize_t n = read(fd, raw + hdr_used, space);
-            if (n <= 0) {
-                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                    /* Keep-alive idle timeout: silently close, not an error */
-                    if (requests > 0) { free(raw); close(fd); return; }
-                    send_error(fd, 408, client_ip);
-                }
-                free(raw); close(fd); return;
-            }
-            /* Restore full timeout once data is flowing */
-            if (hdr_used == 0 && requests > 0) {
-                struct timeval full_tv;
-                full_tv.tv_sec  = (long)srv_limits.timeout_secs;
-                full_tv.tv_usec = 0;
-                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &full_tv, sizeof(full_tv));
-            }
-            hdr_used += (size_t)n;
-            raw[hdr_used] = '\0';
-            if (strstr(raw, "\r\n\r\n")) { hdr_ok = 1; break; }
-        }
-
-        if (!hdr_ok) {
-            /* Filled max_header bytes without finding end-of-headers */
-            send_error(fd, 431, client_ip);
-            free(raw); close(fd); return;
-        }
-
-        /* ── Phase 2: enforce Content-Length limit ── */
-        const char *cl_hdr = NULL;
-        {
-            char *p = raw;
-            while (p && (size_t)(p - raw) < hdr_used) {
-                if (strncasecmp(p, "Content-Length:", 15) == 0) {
-                    cl_hdr = p + 15;
-                    break;
-                }
-                p = strstr(p, "\r\n");
-                if (p) p += 2;
-            }
-        }
-
-        /* ── Phase 2b: detect Transfer-Encoding: chunked ── */
-        int req_is_chunked = 0;
-        {
-            const char *p2 = raw;
-            while (p2 && (size_t)(p2 - raw) < hdr_used) {
-                if (strncasecmp(p2, "Transfer-Encoding:", 18) == 0) {
-                    const char *v = p2 + 18;
-                    while (*v == ' ') v++;
-                    if (strncasecmp(v, "chunked", 7) == 0)
-                        req_is_chunked = 1;
-                    break;
-                }
-                p2 = strstr(p2, "\r\n");
-                if (p2) p2 += 2;
-            }
-        }
-
-        /* Reject ambiguous CL + TE: chunked (request-smuggling defence) */
-        if (cl_hdr && req_is_chunked) {
-            send_error(fd, 400, client_ip);
-            free(raw); close(fd); return;
-        }
-
-        if (cl_hdr && !req_is_chunked) {
-            long long cl = atoll(cl_hdr);
-            if (cl < 0 ||
-                (unsigned long long)cl >
-                (unsigned long long)srv_limits.max_body) {
-                send_error(fd, 413, client_ip);
-                free(raw); close(fd); return;
-            }
-
-            /* ── Phase 3: read remaining body bytes ── */
-            const char *sep = strstr(raw, "\r\n\r\n");
-            if (sep) {
-                size_t hlen      = (size_t)(sep - raw) + 4;
-                size_t body_have = hdr_used - hlen;
-                size_t content_len = (size_t)cl;
-
-                while (body_have < content_len) {
-                    size_t need  = content_len - body_have;
-                    size_t space = buf_cap - hdr_used - 1;
-                    if (space == 0) break;
-                    ssize_t n = read(fd, raw + hdr_used,
-                                     need < space ? need : space);
-                    if (n <= 0) {
-                        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-                            send_error(fd, 408, client_ip);
-                        free(raw); close(fd); return;
-                    }
-                    hdr_used   += (size_t)n;
-                    body_have  += (size_t)n;
-                    raw[hdr_used] = '\0';
-                }
-            }
-        }
+        /* 121.17: one reader frames the request -- headers, then a
+         * Content-Length or chunked body -- and keeps any bytes of the next
+         * request.  Any status it returns is answered and the connection
+         * closed: after a framing error the stream position is unknown. */
+        int rr = http_read_request(&in, requests);
+        if (rr == HTTP_RR_CLOSE) break;
+        if (rr > 0) { send_error(fd, (uint16_t)rr, client_ip); break; }
 
         requests++;
 
@@ -1179,41 +1381,17 @@ static void handle_connection(int fd)
 
         Req req = parse_request(raw);
 
-        /* ── h2c cleartext upgrade (60.1.7) ── */
-#ifdef TK_HAVE_OPENSSL
-        {
-            const char *upgrade = NULL;
-            for (uint64_t i = 0; i < req.headers.len; i++) {
-                if (strcasecmp(req.headers.data[i].key, "Upgrade") == 0) {
-                    upgrade = req.headers.data[i].val;
-                    break;
-                }
-            }
-            if (upgrade && strcasecmp(upgrade, "h2c") == 0) {
-                const char *resp101 =
-                    "HTTP/1.1 101 Switching Protocols\r\n"
-                    "Connection: Upgrade\r\n"
-                    "Upgrade: h2c\r\n\r\n";
-                http_write_all(fd, resp101, strlen(resp101));
-                handle_h2_connection(fd, NULL, client_ip);
-                free_req(&req);                 /* 127.65 */
-                free(raw);
-                close(fd);
-                return;
-            }
-        }
-#endif
-
-        /* ── Phase 4: reassemble chunked request body ── */
-        if (req_is_chunked) {
-            size_t decoded_len = 0;
-            char  *decoded     = http_chunked_read(fd, &decoded_len);
-            if (decoded) {
-                /* Replace the parsed body with the decoded one */
-                free((void *)req.body);
-                req.body = decoded;
-            }
-        }
+        /* 121.44: no h2c upgrade.  An "Upgrade: h2c" request used to get a
+         * 101 and then handle_h2_connection(fd, NULL, ...), which read the
+         * connection preface with SSL_read() on a NULL SSL: the read failed
+         * at once and the connection closed.  So the path never served a
+         * request -- not even the upgrade request itself, which RFC 7540 3.2
+         * says is answered on stream 1 -- and any HTTP/2 bytes the reader
+         * had already buffered behind the request were dropped with it.
+         * RFC 9113 3.1 deprecates the h2c upgrade; RFC 9110 7.8 lets a
+         * server ignore Upgrade.  We do: the request is answered over
+         * HTTP/1.1 like any other, and bytes behind it stay in the reader.
+         * HTTP/2 is offered over TLS, via ALPN (handle_tls_connection). */
 
         /* ── CORS: match request Origin against allowed list ── */
         g_cors_matched = NULL;
@@ -1417,91 +1595,16 @@ static void serve_sighandler(int sig)
     g_shutdown_requested = 1;
 }
 
-/*
- * 135.32 -- bind a listening address without shadowing a live listener.
- *
- * On Darwin (and the BSDs) a socket that sets SO_REUSEADDR may bind
- * 127.0.0.1:P beside a live *:P listener, or *:P beside a live
- * 127.0.0.1:P, and the more specific socket then takes that address's
- * traffic.  Measured on Darwin 25.6 for every combination: without
- * SO_REUSEADDR each of those binds is EADDRINUSE; with it both succeed.
- * So a second toke server on a busy port could start "successfully" and
- * silently take loopback traffic from the first.  Linux refuses a bind
- * that overlaps a listening socket whether or not SO_REUSEADDR is set.
- *
- * SO_REUSEADDR is still needed for the ordinary restart: a port whose old
- * connections sit in TIME_WAIT is EADDRINUSE without it.  The two cases are
- * told apart by asking the port:
- *
- *   1. bind WITHOUT SO_REUSEADDR.  Success -> done.
- *   2. EADDRINUSE: connect to the address (127.0.0.1 for a wildcard bind).
- *      Something accepts -> a listener is live: fail, EADDRINUSE.
- *   3. Nothing accepts (refused, or no answer within the probe timeout):
- *      TIME_WAIT or a bound non-listening socket -> retry WITH SO_REUSEADDR,
- *      which is exactly what every bind did before.
- *
- * Linux is unchanged by construction: step 1 fails in a superset of the
- * cases the old bind failed in; where the probe answers, a listener
- * overlaps and Linux's SO_REUSEADDR bind would have failed too; everywhere
- * else step 3 is the old bind.
- *
- * Known gap: a wildcard bind probes loopback only, so a listener on one
- * specific non-loopback address is not detected (the wildcard then takes
- * the other addresses' traffic, not that one's).
- *
- * Returns a bound (not yet listening) fd, or -1 with errno set.
- */
-static int port_has_listener(const struct sockaddr_in *addr)
-{
-    struct sockaddr_in to = *addr;
-    if (to.sin_addr.s_addr == htonl(INADDR_ANY))
-        to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    int s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return 0;
-    int fl = fcntl(s, F_GETFL, 0);
-    if (fl >= 0) fcntl(s, F_SETFL, fl | O_NONBLOCK);
-    int answered = 0;
-    if (connect(s, (struct sockaddr *)&to, sizeof to) == 0) {
-        answered = 1;
-    } else if (errno == EINPROGRESS) {
-        struct pollfd pfd = { s, POLLOUT, 0 };
-        if (poll(&pfd, 1, 1000) == 1) {
-            int err = 0; socklen_t el = sizeof err;
-            if (getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &el) == 0 && err == 0)
-                answered = 1;
-        }
-    }
-    close(s);
-    return answered;
-}
-
-static int bind_exclusive(const struct sockaddr_in *addr)
-{
-    int opt = 1;
-    for (int pass = 0; pass < 2; pass++) {
-        int srv = socket(AF_INET, SOCK_STREAM, 0);
-        if (srv < 0) return -1;
-        if (pass == 1)
-            setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        if (bind(srv, (const struct sockaddr *)addr, sizeof(*addr)) == 0)
-            return srv;
-        int e = errno;
-        close(srv);
-        if (pass == 1 || e != EADDRINUSE || addr->sin_port == 0 ||
-            port_has_listener(addr)) {
-            errno = e;
-            return -1;
-        }
-    }
-    return -1;
-}
+/* 135.32 -- bind a listening address without shadowing a live listener:
+ * tk_bind_exclusive() in tk_bind.h (moved there by 135.33 so router.c,
+ * net.c, net_glue.c and server_ops.c share it). */
 
 int http_serve(uint16_t port) {
     TK_REQUIRE(TK_CAP_NET);
     struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET; addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
-    int srv = bind_exclusive(&addr);   /* 135.32 */
+    int srv = tk_bind_exclusive(&addr);   /* 135.32 */
     if (srv < 0) {
         fprintf(stderr, "error: could not bind to port %d: %s\n",
                 (int)port, strerror(errno));
@@ -1593,7 +1696,7 @@ static int bind_listen(const char *host, uint64_t port)
      * worker (and every SIGHUP respawn) accept()s on the inherited fd.
      * 135.32: SO_REUSEADDR only after a probe says no listener is live, so a
      * restart can rebind a port held in TIME_WAIT but a bind cannot shadow a
-     * live listener on macOS -- see bind_exclusive(). */
+     * live listener on macOS -- see tk_bind_exclusive() (tk_bind.h). */
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -1608,7 +1711,7 @@ static int bind_listen(const char *host, uint64_t port)
         }
     }
 
-    int srv = bind_exclusive(&addr);
+    int srv = tk_bind_exclusive(&addr);
     if (srv < 0) {
         fprintf(stderr, "error: could not bind to port %llu: %s\n",
                 (unsigned long long)port, strerror(errno));
@@ -3933,18 +4036,26 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
     H2Conn *conn = h2_conn_new();
     if (!conn) return;
 
+    /* Set idle timeout for HTTP/2 connection (60.2.3) */
+#define H2_IDLE_TIMEOUT_S       30
+#define H2_MAX_STREAMS_TOTAL   1000
+#define H2_PING_INTERVAL_S      15
+
+    /* 121.44: the HTTP/2 counterpart of HTT-06.  A frame must be whole
+     * within timeout_secs of its first byte, and two phases that span frames
+     * have a deadline of their own: the preface through the client's first
+     * SETTINGS frame, and a header block (HEADERS up to END_HEADERS).  The
+     * reads wait with poll() against these deadlines (http2.c); SO_RCVTIMEO,
+     * which restarts on every byte, no longer bounds anything here. */
+    conn->read_timeout_ms = srv_limits.timeout_secs * 1000u;
+    conn->idle_timeout_ms = H2_IDLE_TIMEOUT_S * 1000u;
+    conn->deadline_ms     = h2_now_ms() + (long)conn->read_timeout_ms;
+    int awaiting_settings = 1;
+
     /* Read and validate the 24-byte client connection preface */
     uint8_t preface[H2_CONNECTION_PREFACE_LEN];
-    {
-        size_t done = 0;
-        while (done < H2_CONNECTION_PREFACE_LEN) {
-            int r = SSL_read(ssl, preface + done,
-                             (int)(H2_CONNECTION_PREFACE_LEN - done));
-            if (r <= 0) { h2_conn_free(conn); return; }
-            done += (size_t)r;
-        }
-    }
-    if (h2_validate_preface(preface, H2_CONNECTION_PREFACE_LEN) != 0) {
+    if (h2_conn_read(conn, fd, ssl, preface, H2_CONNECTION_PREFACE_LEN) != 0 ||
+        h2_validate_preface(preface, H2_CONNECTION_PREFACE_LEN) != 0) {
         h2_conn_free(conn);
         return;
     }
@@ -3953,17 +4064,6 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
     if (h2_send_settings(conn, fd, ssl) < 0) {
         h2_conn_free(conn);
         return;
-    }
-
-    /* Set idle timeout for HTTP/2 connection (60.2.3) */
-#define H2_IDLE_TIMEOUT_S       30
-#define H2_MAX_STREAMS_TOTAL   1000
-#define H2_PING_INTERVAL_S      15
-    {
-        struct timeval tv;
-        tv.tv_sec  = H2_IDLE_TIMEOUT_S;
-        tv.tv_usec = 0;
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     }
 
     uint32_t total_streams = 0;
@@ -4016,6 +4116,18 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                            H2_ERR_FRAME_SIZE);
             goto done;
+        }
+
+        /* 121.44: the preface is followed by the client's SETTINGS frame
+         * (RFC 9113 3.4); that frame closes the preface phase. */
+        if (awaiting_settings) {
+            if (hdr.type != H2_FRAME_SETTINGS || (hdr.flags & H2_FLAG_ACK)) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            awaiting_settings = 0;
+            conn->deadline_ms = 0;
         }
 
         switch (hdr.type) {
@@ -4077,6 +4189,23 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 if (hblock_len < 5) goto done;
                 hblock += 5; /* skip 4-byte dep + 1-byte weight */
                 hblock_len -= 5;
+            }
+
+            /* 121.44: a header block is bounded in size by the
+             * SETTINGS_MAX_HEADER_LIST_SIZE we advertised, and in time by
+             * timeout_secs from its first frame. */
+            if ((size_t)stream->header_block_len + hblock_len >
+                    conn->local_settings.max_header_list_size) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_ENHANCE_YOUR_CALM);
+                goto done;
+            }
+            if (!(hdr.flags & H2_FLAG_END_HEADERS)) {
+                if (!conn->deadline_ms)
+                    conn->deadline_ms = h2_now_ms()
+                                      + (long)conn->read_timeout_ms;
+            } else {
+                conn->deadline_ms = 0;
             }
 
             /* Accumulate header block fragments */
@@ -4262,6 +4391,17 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
                                H2_ERR_PROTOCOL);
                 goto done;
             }
+            /* 121.44: the same ceiling as HEADERS -- this append had none,
+             * so a stream of CONTINUATION frames grew one header block
+             * without bound.  END_HEADERS closes the header-block phase. */
+            if (stream->header_block_len + hdr.length >
+                    conn->local_settings.max_header_list_size) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_ENHANCE_YOUR_CALM);
+                goto done;
+            }
+            if (hdr.flags & H2_FLAG_END_HEADERS) conn->deadline_ms = 0;
+
             /* Append to header block */
             size_t newlen = stream->header_block_len + hdr.length;
             if (newlen > stream->header_block_cap) {
@@ -4389,6 +4529,19 @@ static void ssl_shutdown_quick(SSL *ssl, int fd)
     SSL_free(ssl);
 }
 
+/* tls_send_error — answer a request the TLS loop could not frame, then the
+ * caller closes (121.17; send_error's counterpart for an SSL session). */
+static void tls_send_error(SSL *ssl, uint16_t status)
+{
+    char hb[160];
+    const char *why = reason(status);
+    int n = snprintf(hb, sizeof hb,
+        "HTTP/1.1 %u %s\r\nContent-Type: text/plain\r\n"
+        "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+        status, why, strlen(why), why);
+    if (n > 0 && (size_t)n < sizeof hb) SSL_write(ssl, hb, n);
+}
+
 static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 {
     char client_ip[64];
@@ -4443,130 +4596,23 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-    size_t buf_cap = (size_t)srv_limits.max_header
-                   + (size_t)srv_limits.max_body + 8;
+    size_t buf_cap = http_frame_cap();
     char *raw = malloc(buf_cap);
     if (!raw) { SSL_free(ssl); close(fd); return; }
+    HttpIn in;
+    memset(&in, 0, sizeof in);
+    in.fd = fd; in.ssl = ssl; in.raw = raw; in.cap = buf_cap;
 
     int requests = 0;
 
     for (;;) {
-        memset(raw, 0, buf_cap);
-
-        /* Use a short timeout while waiting for keep-alive requests
-         * so idle connections don't block workers from accepting new ones */
-        if (requests > 0) {
-            struct timeval ka_tv;
-            ka_tv.tv_sec  = KEEPALIVE_IDLE_TIMEOUT_S;
-            ka_tv.tv_usec = 0;
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &ka_tv, sizeof(ka_tv));
-        }
-
-        /* Phase 1: read headers over TLS */
-        size_t hdr_used = 0;
-        int    hdr_ok   = 0;
-
-        while (hdr_used < (size_t)srv_limits.max_header) {
-            size_t space = (size_t)srv_limits.max_header - hdr_used;
-            int n = SSL_read(ssl, raw + hdr_used, (int)space);
-            if (n <= 0) {
-                free(raw);
-                ssl_shutdown_quick(ssl, fd);
-                close(fd);
-                return;
-            }
-            /* Restore full timeout once data is flowing */
-            if (hdr_used == 0 && requests > 0) {
-                struct timeval full_tv;
-                full_tv.tv_sec  = (long)srv_limits.timeout_secs;
-                full_tv.tv_usec = 0;
-                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &full_tv, sizeof(full_tv));
-                setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &full_tv, sizeof(full_tv));
-            }
-            hdr_used += (size_t)n;
-            raw[hdr_used] = '\0';
-            if (strstr(raw, "\r\n\r\n")) { hdr_ok = 1; break; }
-        }
-
-        if (!hdr_ok) {
-            ssl_shutdown_quick(ssl, fd);
-            free(raw);
-            close(fd);
-            return;
-        }
-
-        /* Phase 2: Content-Length check */
-        const char *cl_hdr = NULL;
-        {
-            char *p = raw;
-            while (p && (size_t)(p - raw) < hdr_used) {
-                if (strncasecmp(p, "Content-Length:", 15) == 0) {
-                    cl_hdr = p + 15;
-                    break;
-                }
-                p = strstr(p, "\r\n");
-                if (p) p += 2;
-            }
-        }
-
-        /* Phase 2b: detect Transfer-Encoding: chunked */
-        int tls_req_chunked = 0;
-        {
-            const char *p2 = raw;
-            while (p2 && (size_t)(p2 - raw) < hdr_used) {
-                if (strncasecmp(p2, "Transfer-Encoding:", 18) == 0) {
-                    const char *v = p2 + 18;
-                    while (*v == ' ') v++;
-                    if (strncasecmp(v, "chunked", 7) == 0)
-                        tls_req_chunked = 1;
-                    break;
-                }
-                p2 = strstr(p2, "\r\n");
-                if (p2) p2 += 2;
-            }
-        }
-
-        /* Reject ambiguous CL + TE: chunked (request-smuggling defence) */
-        if (cl_hdr && tls_req_chunked) {
-            ssl_shutdown_quick(ssl, fd);
-            free(raw); close(fd); return;
-        }
-
-        if (cl_hdr) {
-            long long cl = atoll(cl_hdr);
-            if (cl < 0 ||
-                (unsigned long long)cl >
-                (unsigned long long)srv_limits.max_body) {
-                ssl_shutdown_quick(ssl, fd);
-                free(raw);
-                close(fd);
-                return;
-            }
-
-            const char *sep = strstr(raw, "\r\n\r\n");
-            if (sep) {
-                size_t hlen      = (size_t)(sep - raw) + 4;
-                size_t body_have = hdr_used - hlen;
-                size_t content_len = (size_t)cl;
-
-                while (body_have < content_len) {
-                    size_t need  = content_len - body_have;
-                    size_t space = buf_cap - hdr_used - 1;
-                    if (space == 0) break;
-                    int n = SSL_read(ssl, raw + hdr_used,
-                                     (int)(need < space ? need : space));
-                    if (n <= 0) {
-                        ssl_shutdown_quick(ssl, fd);
-                        free(raw);
-                        close(fd);
-                        return;
-                    }
-                    hdr_used   += (size_t)n;
-                    body_have  += (size_t)n;
-                    raw[hdr_used] = '\0';
-                }
-            }
-        }
+        /* 121.17: the same reader as the plain loop.  This loop used to
+         * detect chunked bodies and then never decode them, so the chunk
+         * stream was read as the next request; and it closed every framing
+         * error without a word.  Now the peer gets the status. */
+        int rr = http_read_request(&in, requests);
+        if (rr == HTTP_RR_CLOSE) break;
+        if (rr > 0) { tls_send_error(ssl, (uint16_t)rr); break; }
 
         requests++;
         int client_wants_close = req_wants_close(raw);

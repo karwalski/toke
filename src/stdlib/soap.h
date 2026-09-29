@@ -31,7 +31,8 @@ const char *soap12_envelope(const char *body_xml, const char *header_xml);
 /* Build a SOAP 1.1 Fault element.
  * faultcode: e.g. "Server", "Client".
  * faultstring: human-readable fault description.
- * detail: optional detail XML (NULL or "" to omit <detail>).
+ * detail: optional detail TEXT, XML-escaped like the other two fields
+ *         (NULL or "" to omit <detail>).  121.16: it was embedded raw.
  * Returns a heap-allocated XML string. Caller owns the result. */
 const char *soap_fault(const char *faultcode, const char *faultstring,
                        const char *detail);

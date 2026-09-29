@@ -1,0 +1,9 @@
+m=demo;
+i=io:std.io;
+f=add(a:i64;b:i64):i64{<a+b};
+f=main():i64{
+  let x=add(1;2);
+  if(x>2){io.println("big \(x)")}el{io.println("small")};
+  lp(let i=0;i<3;i=i+1){x=x+i};
+  <0
+};

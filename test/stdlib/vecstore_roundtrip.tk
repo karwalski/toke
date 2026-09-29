@@ -28,7 +28,7 @@ f=phasewrite(dir:str):bool{
   let ok1=vs.upsert(c;"doc-1";veca();"payload-one");
   let ok2=vs.upsert(c;"doc-2";vecb();"payload-two");
   let n=vs.count(c);
-  io.println(str.concat("write: upserts=";str.concat(str.fromint(ok1+ok2);str.concat(" count=";str.fromint(n)))));
+  io.println(str.concat("write: upserts=";str.concat(str.fromint((ok1 as i64)+(ok2 as i64));str.concat(" count=";str.fromint(n)))));
   vs.close(s);
   <ok1&&ok2&&n==2
 };
