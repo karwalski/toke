@@ -411,9 +411,8 @@ H2Conn *h2_conn_new(void)
 void h2_conn_free(H2Conn *conn)
 {
     if (!conn) return;
-    for (size_t i = 0; i < conn->stream_count; i++) {
-        free(conn->streams[i].header_block);
-    }
+    for (size_t i = 0; i < conn->stream_count; i++)
+        h2_stream_release(&conn->streams[i]);
     hpack_table_free(&conn->hpack_decode);
     hpack_table_free(&conn->hpack_encode);
     free(conn->frame_buf);
@@ -500,10 +499,18 @@ H2Stream *h2_stream_get(H2Conn *conn, uint32_t stream_id)
             return &conn->streams[i];
     }
 
-    /* Create new stream */
-    if (conn->stream_count >= H2_MAX_STREAMS) return NULL;
-
-    H2Stream *s = &conn->streams[conn->stream_count++];
+    /* Create new stream -- in a closed, empty slot if there is one */
+    H2Stream *s = NULL;
+    for (size_t i = 0; i < conn->stream_count && !s; i++) {
+        H2Stream *c = &conn->streams[i];
+        if (c->state == H2_STREAM_CLOSED && !c->header_block &&
+            !c->hnames && !c->body)
+            s = c;
+    }
+    if (!s) {
+        if (conn->stream_count >= H2_MAX_STREAMS) return NULL;
+        s = &conn->streams[conn->stream_count++];
+    }
     memset(s, 0, sizeof(*s));
     s->id     = stream_id;
     s->state  = H2_STREAM_IDLE;
@@ -513,6 +520,37 @@ H2Stream *h2_stream_get(H2Conn *conn, uint32_t stream_id)
         conn->last_stream_id = stream_id;
 
     return s;
+}
+
+H2Stream *h2_stream_find(H2Conn *conn, uint32_t stream_id)
+{
+    for (size_t i = 0; i < conn->stream_count; i++)
+        if (conn->streams[i].id == stream_id &&
+            conn->streams[i].state != H2_STREAM_CLOSED)
+            return &conn->streams[i];
+    return NULL;
+}
+
+void h2_stream_release(H2Stream *s)
+{
+    free(s->header_block);
+    s->header_block = NULL;
+    s->header_block_len = s->header_block_cap = 0;
+    for (int i = 0; i < s->hcount; i++) {
+        free(s->hnames[i]);
+        free(s->hvalues[i]);
+    }
+    free(s->hnames);
+    free(s->hvalues);
+    s->hnames = s->hvalues = NULL;
+    s->hcount = 0;
+    free(s->body);
+    s->body = NULL;
+    s->body_len = s->body_cap = 0;
+    s->receiving = 0;
+    s->block_end_stream = s->block_trailers = 0;
+    s->deadline_ms = 0;
+    s->state = H2_STREAM_CLOSED;
 }
 
 int h2_stream_transition(H2Stream *stream, uint8_t frame_type,

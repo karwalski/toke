@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
 EOF
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! ASAN_OPTIONS=detect_leaks=0 "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" \
-        -o "${WORK}/r" "${WORK}/r.c" "${S}/router.c" "${S}/str.c" "${S}/ws.c" -lz >"${WORK}/r.cc" 2>&1; then
+        -o "${WORK}/r" "${WORK}/r.c" "${S}/router.c" "${S}/str.c" "${S}/ws.c" "${S}/capabilities.c" -lz >"${WORK}/r.cc" 2>&1; then
     fail "router harness build: $(grep -a -m2 error "${WORK}/r.cc" | head -c 300)"
 else
     ASAN_OPTIONS=detect_leaks=0 "${WORK}/r" "${WORK}/root/s" >"${WORK}/r.out" 2>&1

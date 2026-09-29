@@ -204,7 +204,8 @@ int main(void) {
 }
 EOF
 if "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/rt" \
-        "${WORK}/rt.c" "${ROUTER_SRC}" "${REPO_ROOT}/src/stdlib/ws.c" -lz 2> "${WORK}/cc3.err"; then
+        "${WORK}/rt.c" "${ROUTER_SRC}" "${REPO_ROOT}/src/stdlib/ws.c" \
+        "${REPO_ROOT}/src/stdlib/capabilities.c" -lz 2> "${WORK}/cc3.err"; then
     "${WORK}/rt" > "${WORK}/rt.out" 2>&1; rc=$?
     expect "router-ws-param-miss" "${rc} $(awk '/^survived$/{n++} END{print n+0}' "${WORK}/rt.out")" "0 1"
 else
