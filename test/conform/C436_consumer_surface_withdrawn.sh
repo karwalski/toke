@@ -109,5 +109,5 @@ if "${TKC}" canon.tk -o canon > canon.log 2>&1 && [ "$(./canon)" = "7 x 3 ab**" 
 else bad "canonical spellings: $(head -c 300 canon.log) / $(./canon 2>&1)"; fi
 
 echo "---------------------------------------------------"
-echo "C436: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

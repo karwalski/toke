@@ -128,7 +128,7 @@ TOKE
 if ! "${TKC}" vf.tk -o vf > build.out 2>&1; then
     bad "compile+link (vecstore.flush must exist): $(head -c 400 build.out)"
     echo "--------------------------------------------------------------"
-    echo "C435: ${PASS} passed, ${FAIL} failed"; exit 1
+    echo "Results: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
 ok "compile+link"
 
@@ -171,5 +171,5 @@ if [ "$rc" -eq 0 ]; then ok "flush with nothing dirty returns true ($(echo "$out
 else bad "flush with nothing dirty (exit $rc): $out"; fi
 
 echo "--------------------------------------------------------------"
-echo "C435: ${PASS} passed, ${FAIL} failed"
+echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
