@@ -1,0 +1,13 @@
+id: D191
+series: D
+description: "E4071: the 137.14 tail trap (a call, then '<0' on the next line with the ';' forgotten, parsed as 'call < 0') carries no fix: the repair is the ';', and prefixing '<' would return the comparison (127.248 (2), AGENTS §6)"
+input: |
+  m=test;
+  i=io:std.io;
+  f=main():i64{
+    io.println("x")
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4071"]
+expected_fix_absent: true

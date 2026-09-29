@@ -72,11 +72,27 @@ TkVecStore *vecstore_open(const char *data_dir);
 
 /* vecstore.close(vs:VecStore) -> void
  *
- * Flushes all dirty collections to disk and frees all resources.  Each
+ * Flushes all dirty collections to disk (as vecstore_flush) and frees all
+ * resources.  Each
  * collection is written to {data_dir}/{name}.vecs.  After this call the
  * TkVecStore pointer and all TkVecCollection pointers derived from it are
  * invalid. */
 void vecstore_close(TkVecStore *vs);
+
+/* vecstore.flush(vs:VecStore) -> bool
+ *
+ * 136.15: writes every dirty collection to disk now, without closing.  Each
+ * file is written to {path}.tmp, fsynced and renamed over {path}, so a crash
+ * during the write leaves the previous complete file.  Returns 1 when every
+ * dirty collection was written (or none was dirty), 0 if any write failed;
+ * a failed collection stays dirty and is retried by the next flush or close.
+ * Nothing else writes to disk: between a write and the next flush or close,
+ * a process that dies loses that write. */
+int vecstore_flush(TkVecStore *vs);
+
+/* 1 if any collection of vs has changes not yet on disk, else 0 -- i.e.
+ * whether vecstore_flush / vecstore_close would write. */
+int vecstore_dirty(TkVecStore *vs);
 
 /* -------------------------------------------------------------------------
  * Collection operations

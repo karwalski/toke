@@ -20,6 +20,7 @@
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "bytes_rt.h"   /* 135.19: tk_bytes_pack */
 #include "tk_exitfail.h" /* 135.22: a server that did not start fails the process */
+#include "capabilities.h" /* 121.42: servedir/servepages take fs.read */
 /* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
  * returns the real value; defined in tk_runtime.c. */
 /* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
@@ -1205,6 +1206,10 @@ int64_t tk_http_serve_staticdir_w(int64_t prefix_i64, int64_t root_i64) {
     const char *prefix = (const char *)(intptr_t)prefix_i64;
     const char *root   = (const char *)(intptr_t)root_i64;
     if (!prefix || !root) return -1;
+    /* 121.42 (4): the mount hands staticdir_handler the authority to read
+     * any file under root, per request (stat, realpath, fopen) -- fs.read,
+     * taken here at registration, where the program asks for it. */
+    TK_REQUIRE(TK_CAP_FS_READ);
 
     /* 127.75: re-mounting the same prefix replaces its root; a new prefix
      * adds a mount; the wildcard route is registered once, not per call. */
@@ -1388,6 +1393,9 @@ int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
     const char *pages_dir = (const char *)(intptr_t)pages_dir_i64;
     const char *templates_dir = (const char *)(intptr_t)templates_dir_i64;
     if (!pages_dir || !templates_dir) return -1;
+    /* 121.42 (4): the scan below reads pages_dir now, and tk_page_dispatch
+     * re-reads the pages and templates on every request -- fs.read. */
+    TK_REQUIRE(TK_CAP_FS_READ);
 
     /* Scan directory for .tkt files and register routes */
     scan_pages_recursive(pages_dir, "", templates_dir);

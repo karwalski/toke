@@ -109,7 +109,7 @@ typedef struct TkZipArchive TkZipArchive;
  * zip_open_mem — validate and open an archive held in memory.
  *
  * Copies `data` (the caller keeps ownership of theirs).  Returns NULL if any
- * check above fails; the reason is always available from zip_lasterr().
+ * check above fails; the reason is in zip_lasterr() / zip_lasterr_kind().
  */
 TkZipArchive *zip_open_mem(const uint8_t *data, uint64_t len);
 
@@ -144,15 +144,34 @@ const TkZipEntry *zip_entry_at(const TkZipArchive *a, uint32_t i);
 uint8_t *zip_read_entry(TkZipArchive *a, const char *name, uint64_t *out_len);
 
 /*
- * zip_lasterr — why the most recent zip_* call in this process failed.
- *
- * The compiled error-union ABI carries no payload: `T!E` lowers to a null
- * check (docs/runtime-abi.md §7 is still unwritten), so the `$err` arm binds
- * nothing a consumer can read.  Without this, "the archive was rejected" and
- * "which of six rules rejected it" would be indistinguishable — and telling
- * them apart is the whole point of having six separate rules.  Returns "" when
- * nothing has failed.
+ * The $ziperr variant a failure belongs to.  The values ARE the variant
+ * indices stdlib/zip.tki declares, in order, because zip_glue.c stores them
+ * as the tag of the {tag, msg} error box (runtime-abi.md §7.3); keep the two
+ * in step.  ZIP_E_NONE (-1) is "nothing has failed" and is never raised.
  */
-const char *zip_lasterr(void);
+typedef enum {
+    ZIP_E_NONE        = -1,
+    ZIP_E_BADARCHIVE  = 0,   /* not a zip, empty, or a corrupt central directory */
+    ZIP_E_BADENTRY    = 1,   /* an entry's name or contents were rejected        */
+    ZIP_E_NOTFOUND    = 2,   /* zip_read_entry: no entry of that name            */
+    ZIP_E_TOOLARGE    = 3,   /* a size, count or ratio cap above was exceeded    */
+    ZIP_E_UNSUPPORTED = 4,   /* encryption, or a method other than Store/Deflate */
+    ZIP_E_IO          = 5    /* the file could not be read, or memory ran out    */
+} TkZipErrKind;
+
+/*
+ * zip_lasterr / zip_lasterr_kind — why, and in which $ziperr variant, the
+ * most recent zip_* call in this process failed ("" / ZIP_E_NONE when it did
+ * not).  The message is always a string literal, so it never dangles.
+ *
+ * These are the C side only.  toke code reads the same two facts from the
+ * `$err` arm's payload: zip_glue.c raises a {tag, msg} box from them, and the
+ * zip.lasterr() accessor that used to carry the message was retired by
+ * 127.102c (an owner-authorised break, landed with 127.102a and 127.102b).
+ * std.xlsx still reads zip_lasterr() to name the rule that rejected a
+ * workbook's container.
+ */
+const char  *zip_lasterr(void);
+TkZipErrKind zip_lasterr_kind(void);
 
 #endif /* TK_STDLIB_ZIP_H */

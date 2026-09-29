@@ -47,6 +47,7 @@
     },
     {"kind": "func", "name": "vecstore.open",         "params": ["str"],                                     "return": "VecStore!VecErr"},
     {"kind": "func", "name": "vecstore.close",        "params": ["VecStore"],                                "return": "void"},
+    {"kind": "func", "name": "vecstore.flush",        "params": ["VecStore"],                                "return": "bool"},
     {"kind": "func", "name": "vecstore.collection",   "params": ["VecStore", "str"],                         "return": "VecCollection!VecErr"},
     {"kind": "func", "name": "vecstore.upsert",       "params": ["VecCollection", "str", "@(f64)", "str"],   "return": "bool"},
     {"kind": "func", "name": "vecstore.search",       "params": ["VecCollection", "@(f64)", "i32", "f64"],   "return": "@(SearchResult)"},

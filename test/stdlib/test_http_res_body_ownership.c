@@ -59,6 +59,9 @@
 
 /* tk_web_glue.c's i64-ABI wrappers are not declared in any header. */
 extern int64_t tk_http_serve_staticdir_w(int64_t prefix, int64_t root);
+/* 121.42: http.servedir takes fs.read at registration; this harness is the
+ * program, so it grants itself read as a compiled program's --allow-read. */
+extern void tk_cap_init(int argc, char **argv);
 
 #if defined(__APPLE__)
 #  include <malloc/malloc.h>
@@ -190,6 +193,10 @@ int main(void)
     }
 
     /* ── the route under test: a real http.servedir mount ── */
+    {
+        char *cap_argv[] = { "test_http_res_body_ownership", "--allow-read", NULL };
+        tk_cap_init(2, cap_argv);
+    }
     if (tk_http_serve_staticdir_w((int64_t)(intptr_t)"/assets",
                                   (int64_t)(intptr_t)g_root) != 0) {
         fprintf(stderr, "FAIL: http.servedir mount was rejected\n");

@@ -653,29 +653,29 @@ int64_t tk_str_i64tof64_w(int64_t i) {
     return f64_to_i64(d);
 }
 
-/* ── Aliases for type-specific str conversion names (loke uses these) ── */
-int64_t tk_str_fromu16_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_str_fromu32_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_str_fromu64_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_str_fromint64_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_str_fromi32_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_str_fromf32_w(int64_t n) { return tk_str_fromfloat_w(n); }
+/* ── Aliases for type-specific str conversion names ─────────────────────
+ * 136.45 (owner decision 2026-09-22: withdraw, do not promote): this block
+ * held wrappers that existed only because one downstream project (loke)
+ * called them.  Withdrawn: fromu16 fromu32 fromu64 fromint64 fromi32 fromf32
+ * (-> str.fromint / str.fromfloat), bytelen (-> str.len), pad (-> str.padright),
+ * strip trimws (-> str.trim), splitwhitespace (-> str.split(s;" ")),
+ * splitfirst and wordcount (no alias; compose from str.split / str.index).
+ * Kept, because a later story published them with a type, a doc and a test
+ * (138.11, C313): frombool replaceall compare isdigit, and tof32/tof64/
+ * parsefloat above.  Kept for another batch's decision: toi32 toi64 toint64
+ * parseint (aliases of toint, which 127.30 retypes). */
 int64_t tk_str_frombool_w(int64_t b) {
     return (int64_t)(intptr_t)(b ? "true" : "false");
 }
-int64_t tk_str_bytelen_w(int64_t s) { return tk_str_len_w(s); }
 int64_t tk_str_lastindexof_w(int64_t s, int64_t sub) { return tk_str_lastindex_w(s, sub); }
-int64_t tk_str_pad_w(int64_t s, int64_t w, int64_t ch) { return tk_str_padright_w(s, w, ch); }
 int64_t tk_str_parsefloat_w(int64_t s) { return tk_str_tofloat_w(s); }
 int64_t tk_str_parseint_w(int64_t s) { return tk_str_toint_w(s); }
 int64_t tk_str_replaceall_w(int64_t s, int64_t old, int64_t new_) { return tk_str_replace_w(s, old, new_); }
-int64_t tk_str_strip_w(int64_t s) { return tk_str_trim_w(s); }
 int64_t tk_str_tof64_w(int64_t s) { return tk_str_tofloat_w(s); }
 int64_t tk_str_tof32_w(int64_t s) { return tk_str_tofloat_w(s); }
 int64_t tk_str_toi32_w(int64_t s) { return tk_str_toint_w(s); }
 int64_t tk_str_toi64_w(int64_t s) { return tk_str_toint_w(s); }
 int64_t tk_str_toint64_w(int64_t s) { return tk_str_toint_w(s); }
-int64_t tk_str_trimws_w(int64_t s) { return tk_str_trim_w(s); }
 /* str.compare(a, b) — 138.11: strcmp order, -1 / 0 / 1.  This returned
  * "equal ? 0 : 1", so compare(a,b) and compare(b,a) were both 1 and nothing
  * could sort with it (loke T-36). */
@@ -692,45 +692,8 @@ int64_t tk_str_isdigit_w(int64_t s) {
     while (*p) { if (*p < '0' || *p > '9') return 0; p++; }
     return 1;
 }
-int64_t tk_str_wordcount_w(int64_t s) {
-    const char *p = (const char *)(intptr_t)s;
-    if (!p) return 0;
-    int count = 0, in_word = 0;
-    while (*p) {
-        if (*p == ' ' || *p == '\t' || *p == '\n') in_word = 0;
-        else if (!in_word) { in_word = 1; count++; }
-        p++;
-    }
-    return count;
-}
-int64_t tk_str_splitfirst_w(int64_t s, int64_t sep) {
-    const char *str = (const char *)(intptr_t)s;
-    const char *sp = (const char *)(intptr_t)sep;
-    if (!str || !sp) return s;
-    char *pos = strstr((char*)str, sp);
-    if (!pos) return s;
-    size_t len = (size_t)(pos - str);
-    char *result = malloc(len + 1);
-    if (!result) return s;
-    memcpy(result, str, len);
-    result[len] = '\0';
-    return (int64_t)(intptr_t)result;
-}
-int64_t tk_str_splitwhitespace_w(int64_t s) {
-    return tk_str_split_w(s, (int64_t)(intptr_t)" ");
-}
-/* tk_string_* aliases (loke uses std.string instead of std.str) */
-int64_t tk_string_arrayget_w(int64_t a, int64_t i) { return tk_str_arrayget_w(a, i); }
-int64_t tk_string_arraylen_w(int64_t a) { return tk_str_arraylen_w(a); }
-int64_t tk_string_charat_w(int64_t s, int64_t i) { return tk_str_charat_w(s, i); }
-int64_t tk_string_concat_w(int64_t a, int64_t b) { return tk_str_concat_w(a, b); }
-int64_t tk_string_contains_w(int64_t s, int64_t sub) { return tk_str_contains_w(s, sub); }
-int64_t tk_string_fromi32_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_string_fromi64_w(int64_t n) { return tk_str_fromi64_w(n); }
-int64_t tk_string_len_w(int64_t s) { return tk_str_len_w(s); }
-int64_t tk_string_startswith_w(int64_t s, int64_t p) { return tk_str_startswith_w(s, p); }
-int64_t tk_string_substr_w(int64_t s, int64_t a, int64_t b) { return tk_str_slice_w(s, a, b); }
-int64_t tk_string_trim_w(int64_t s) { return tk_str_trim_w(s); }
+/* 136.45: the tk_string_* aliases (std.string, a second name for std.str
+ * that one downstream project imported) are withdrawn with the module. */
 
 /* ── New implementations for linker-gaps ────────────────────────────────── */
 
@@ -746,8 +709,6 @@ int64_t tk_str_hexid_w(int64_t n) {
 /* str.randhex(n) — alias for hexid */
 int64_t tk_str_randhex_w(int64_t n) { return tk_str_hexid_w(n); }
 
-/* string.uuid() ��� generate 16 random bytes as hex (32 hex chars) */
-int64_t tk_string_uuid_w(void) { return tk_str_hexid_w(16); }
 
 /* str.nowiso8601() — current time as ISO 8601 string */
 int64_t tk_str_nowiso8601_w(void) {

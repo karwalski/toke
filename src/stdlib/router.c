@@ -33,6 +33,7 @@
 #include <limits.h>
 #include <zlib.h>
 #include "tk_bind.h"   /* 135.33 */
+#include "capabilities.h"   /* 121.42: router.serve takes the net grant */
 
 /* ----------------------------------------------------------------------- */
 /* Internal route entry                                                      */
@@ -1075,6 +1076,10 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
     /* 135.33: SO_REUSEADDR only after a probe finds no live listener -- on
      * macOS it let this bind shadow another server on the same port and
      * take its loopback traffic.  See tk_bind.h. */
+    /* 121.42 (1): binding is net authority (ADR-0010).  router.serve --
+     * and chart.serve and dashboard.serve, which serve through here -- bound
+     * and listened in a --cap-enforce binary granted nothing. */
+    TK_REQUIRE(TK_CAP_NET);
     int srv = tk_bind_exclusive(&addr);
     if (srv < 0) {
         TkRouterErr e = {1, errno == EADDRINUSE

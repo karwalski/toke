@@ -365,6 +365,43 @@ static void ptr_shadow_restore(Ctx *c, PtrShadow *ps) {
     }
 }
 
+/* 127.246 (4): release the registry entries a match arm made that die with
+ * it -- its own binding (`bname`, the uniquified name) and the raw-name
+ * entries ptr_shadow_restore retired (name blanked) -- so a function with
+ * many matches does not run out of pointer-local slots.  Ten inline 10-arm
+ * matches over a str-payload sum took 100 slots for bindings no later code
+ * can name, and the 65th was E9010 "too many pointer locals".  Entries the
+ * arm body made for OUTER names (a re-tag of an enclosing `mut`) are kept,
+ * in order.  Called after ptr_shadow_restore, from index `pc0` (the count
+ * when the arm began). */
+static void ptr_arm_release(Ctx *c, int pc0, int lc0, const char *bname)
+{
+    if (pc0 >= 0 && pc0 <= c->ptr_count) {
+        int w = pc0;
+        for (int i = pc0; i < c->ptr_count; i++) {
+            if (!c->ptrs[i].name[0]) continue;
+            if (bname && bname[0] && !strcmp(c->ptrs[i].name, bname)) continue;
+            if (w != i) c->ptrs[w] = c->ptrs[i];
+            w++;
+        }
+        c->ptr_count = w;
+    }
+    /* The local-type entry too (the same budget, "too many local
+     * variables") -- but only a UNIQUIFIED binding's.  make_unique_name()
+     * decides "first use" by looking the raw name up in this table, so the
+     * raw name's entry must stay or a later arm would mint a second
+     * `%x = alloca`.  A suffixed name is unique by its counter. */
+    if (bname && strchr(bname, '.') && lc0 >= 0 && lc0 <= c->local_count) {
+        int w = lc0;
+        for (int i = lc0; i < c->local_count; i++) {
+            if (!strcmp(c->locals[i].name, bname)) continue;
+            if (w != i) c->locals[w] = c->locals[i];
+            w++;
+        }
+        c->local_count = w;
+    }
+}
+
 /*
  * is_ptr_local — Return 1 if `name` was previously registered via
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
@@ -1360,9 +1397,9 @@ static int is_num_parse_wrapper(const char *name) {
 /*
  * is_file_errbox_wrapper — 135.12.
  *
- * std.file's byte calls signal failure with a value sentinel: 0 means it
- * failed, and file.lasterrkind() says which failure it was.  file.readrange
- * and file.size do not, because for file.size the sentinel is WRONG, not
+ * std.file's byte calls signalled failure with a value sentinel: 0 meant it
+ * failed, and file.lasterrkind() said which failure it was.  file.readrange
+ * and file.size did not, because for file.size the sentinel is WRONG, not
  * merely weak: an empty file's size IS 0, so `mt file.size(p)` on an empty
  * file would take the $err arm every time.  That is runtime-abi.md §7.2 in
  * one line — "the zero filler is not the discriminant" — and the C005 family
@@ -1375,11 +1412,11 @@ static int is_num_parse_wrapper(const char *name) {
  * tests the returned value, and file.size of an empty file is still reported
  * as a failure.  C029 asserts exactly that, in both directions.
  *
- * The rest of the module is deliberately NOT listed here.  Migrating it is
- * 127.102b — a breaking API change the owner scheduled to land in ONE release
- * across three modules — and adding file.read or file.readbytes to this list
- * without also retiring the accessors would ship a third of that break out of
- * band.
+ * 127.102b migrated the rest of the module the same way and retired
+ * file.lasterr()/file.lasterrkind().  Every `T!FileErr` wrapper is now a
+ * derived slot wrapper (is_stdlib_slot_wrapper), these two included, so this
+ * list is redundant with the derivation; it is kept rather than deleted so
+ * that the two predicates' call sites stay byte-identical in this change.
  */
 static int is_file_errbox_wrapper(const char *name) {
     if (!name) return 0;
@@ -3403,6 +3440,30 @@ static const char *resolve_call_symbol(Ctx *c, const char *al, const char *me,
     return NULL;
 }
 
+static const char *scalar_err_type(const char *t);   /* 127.249 (1) */
+/* 127.249 (3): `args.get(n)` / `env.get(k)` parse as NODE_INDEX_EXPR
+ * (parse_get_postfix lowers every one-argument `.get`), so nothing that
+ * classified a qualified CALL ever saw them: their `mt` decided on the value
+ * sentinel and `$err:e` bound nil (`e.msg` RT005).  When the base is an
+ * import alias (not a value that shadows it) the expression IS the call
+ * `alias.get(k)`; answer its alias and member so every site can treat it as
+ * one.  A map/array/Vec base answers 0 and keeps its own path. */
+static int index_as_qualified_get(Ctx *c, const Node *n, char *al, size_t alsz,
+                                  char *me, size_t mesz)
+{
+    if (!n || n->kind != NODE_INDEX_EXPR || n->child_count < 2 || !n->children[0]
+        || n->children[0]->kind != NODE_IDENT) return 0;
+    const Node *base = n->children[0];
+    char nb[128]; tok_cp(c->src, base, nb, sizeof nb);
+    for (int ii = 0; ii < c->import_count; ii++)
+        if (!strcmp(c->imports[ii].alias, nb) && !alias_is_value(c, base)) {
+            snprintf(al, alsz, "%s", nb);
+            snprintf(me, mesz, "get");
+            return 1;
+        }
+    return 0;
+}
+
 static void classify_fallible_call(Ctx *c, const Node *call,
                                    int *out_uce, int *out_zok,
                                    const char **out_err_type)
@@ -3410,22 +3471,32 @@ static void classify_fallible_call(Ctx *c, const Node *call,
     *out_uce = 0;
     *out_zok = 0;
     *out_err_type = NULL;
+    /* The callee as alias + member when it is qualified: `a.m(..)`, or the
+     * index spelling `a.get(k)` of an import alias (127.249 (3)). */
+    char qal[128] = "", qme[128] = "";
+    int qual = 0;
     /* 127.30: `m.get(k)` is a fallible lookup on the error channel. */
     if (call && call->kind == NODE_INDEX_EXPR) {
-        if (index_is_map_get(c, call)) *out_uce = 1;
-        return;
+        if (index_is_map_get(c, call)) { *out_uce = 1; return; }
+        if (!index_as_qualified_get(c, call, qal, sizeof qal, qme, sizeof qme)) return;
+        qual = 1;
+    } else {
+        if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return;
+        const Node *sc0 = call->children[0];
+        if (!sc0) return;
+        if (sc0->kind == NODE_FIELD_EXPR && sc0->child_count >= 2) {
+            tok_cp(c->src, sc0->children[0], qal, sizeof qal);
+            tok_cp(c->src, sc0->children[1], qme, sizeof qme);
+            qual = 1;
+        }
     }
-    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return;
-    const Node *sc = call->children[0];
-    if (!sc) return;
+    const Node *sc = call->kind == NODE_CALL_EXPR ? call->children[0] : NULL;
 
     /* (a) which discriminant.  Verbatim the gate that has always run for a
      *     direct-call scrutinee; kept in one place so the two spellings
      *     cannot drift apart again. */
-    if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
-        char pal[128], pme[128];
-        tok_cp(c->src, sc->children[0], pal, sizeof pal);
-        tok_cp(c->src, sc->children[1], pme, sizeof pme);
+    if (qual) {
+        const char *pal = qal, *pme = qme;
         char subb[256];
         const char *prv = resolve_call_symbol(c, pal, pme, subb, sizeof subb);
         if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
@@ -3450,7 +3521,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
             }
             if (ucs && ucs->err_type_name[0]) *out_uce = 1;
         }
-    } else if (sc->kind == NODE_IDENT) {                             /* 114.55 */
+    } else if (sc && sc->kind == NODE_IDENT) {                       /* 114.55 */
         char cn[256]; tok_cp(c->src, sc, cn, sizeof cn);
         if (strcmp(cn, "main")) {
             mangle_fn_name(c, cn, sizeof cn);
@@ -3466,15 +3537,13 @@ static void classify_fallible_call(Ctx *c, const Node *call,
      *     unifying it would change what the DIRECT spelling does. */
     {
         char cn[256] = ""; const FnSig *cs = NULL;
-        if (sc->kind == NODE_IDENT) {
+        if (!qual && sc && sc->kind == NODE_IDENT) {
             tok_cp(c->src, sc, cn, sizeof cn);
             if (!strcmp(cn, "main")) strcpy(cn, "tk_main");
             mangle_fn_name(c, cn, sizeof cn);
             cs = lookup_fn(c, cn);
-        } else if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
-            char al[128], mth[128];
-            tok_cp(c->src, sc->children[0], al, sizeof al);
-            tok_cp(c->src, sc->children[1], mth, sizeof mth);
+        } else if (qual) {
+            const char *al = qal, *mth = qme;
             cs = lookup_fn(c, mth); /* same-module fallback */
             if (!cs || !cs->err_type_name[0]) {
                 for (int ii = 0; ii < c->import_count; ii++) {
@@ -3495,13 +3564,22 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         if (cs && cs->err_type_name[0] && strcmp(cs->err_type_name, "none")) {
             const StructInfo *esi = lookup_struct(c, cs->err_type_name);
             if (esi) *out_err_type = cs->err_type_name;
+            /* 127.249 (1): a user `T!str` / `T!i64` / ... payload is not a
+             * struct, so it was never bound: `$err:e` read 0.  A str payload
+             * is the message pointer; a scalar one is boxed (see
+             * scalar_err_type). */
+            else {
+                const char *en = cs->err_type_name[0] == '$' ? cs->err_type_name + 1
+                                                             : cs->err_type_name;
+                if (!strcmp(en, "str")) *out_err_type = "str";
+                else if (scalar_err_type(en)) *out_err_type = scalar_err_type(en);
+            }
         }
         /* 135.5b / 127.182: a stdlib call has no FnSig; its payload type is
          * the one its .tki declares. */
-        if (!*out_err_type && sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
-            char al[128], mth[128], wb[128], eb[128];
-            tok_cp(c->src, sc->children[0], al, sizeof al);
-            tok_cp(c->src, sc->children[1], mth, sizeof mth);
+        if (!*out_err_type && qual) {
+            const char *al = qal, *mth = qme;
+            char wb[128], eb[128];
             char subb[256];
             const char *prv = resolve_call_symbol(c, al, mth, subb, sizeof subb);
             if (prv) {
@@ -3548,9 +3626,75 @@ static void fallible_local_forget(Ctx *c, const char *lname)
  * for a record, 0 for no box at all (no payload type, or a `str` payload,
  * which is the message pointer itself and is never reused).
  */
+/*
+ * scalar_err_type — 127.249 (1).  The canonical name of a SCALAR error type
+ * (`T!i64`, `T!bool`, `T!f64`, ...; a leading `$` ignored), or NULL.  A str
+ * error type is not scalar here: its payload is the message pointer itself.
+ *
+ * A scalar payload cannot cross @tk_current_error as a bare word: the channel
+ * is tri-valued (0 = ok, 1 = failed with no payload, else a payload), so a
+ * `<$err(0)` read as success and `<$err(1)` as the payload-less flag.  It is
+ * raised in an 8-byte error box (emit_err_payload_word) and the $err arm
+ * loads it from there.
+ */
+static const char *scalar_err_type(const char *t)
+{
+    static const char *const sc[] = { "i64", "i32", "i16", "i8", "u64", "u32",
+        "u16", "u8", "byte", "bool", "f64", "f32", NULL };
+    if (!t) return NULL;
+    if (*t == '$') t++;
+    for (int i = 0; sc[i]; i++) if (!strcmp(t, sc[i])) return sc[i];
+    return NULL;
+}
+
+/*
+ * emit_err_payload_word — 127.249 (1).  The @tk_current_error word for a
+ * `<$err(x)` payload that is not the error box: `v` holds x as `vty`.
+ *   - the current function's error type is scalar: an 8-byte error box
+ *     (tk_err_box, 127.109) holding x's bits, so every value survives;
+ *   - otherwise (a str message, or an error type with no box): x itself,
+ *     with a zero word carried as the 127.97 flag 1 (the arm binds nil).
+ */
+static int emit_err_payload_word(Ctx *c, int v, const char *vty)
+{
+    int w = v;
+    if (!strcmp(vty, "double")) {
+        w = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", w, v);
+    } else if (!strcmp(vty, "float")) {
+        int d = next_tmp(c);
+        fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", d, v);
+        w = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", w, d);
+    } else if (!strcmp(vty, "i8*")) {
+        w = next_tmp(c);
+        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", w, v);
+    } else if (!strcmp(vty, "i1")) {
+        w = next_tmp(c);
+        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", w, v);
+    } else if (strcmp(vty, "i64")) {
+        w = coerce_value(c, v, vty, "i64");
+    }
+    if (scalar_err_type(c->cur_fn_err)) {
+        int bx = next_tmp(c), bp = next_tmp(c), bw = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i8* @tk_err_box(i64 8) ; 127.249 (1) scalar $%s payload\n",
+                bx, c->cur_fn_err);
+        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", bp, bx);
+        fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", w, bp);
+        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", bw, bx);
+        return bw;
+    }
+    int z = next_tmp(c), sel = next_tmp(c);
+    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", z, w);
+    fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d ; 138.2 $err(x) payload\n",
+            sel, z, w);
+    return sel;
+}
+
 static int err_box_bytes(Ctx *c, const char *err_type)
 {
     if (!err_type || !strcmp(err_type, "str")) return 0;
+    if (scalar_err_type(err_type)) return 8;          /* 127.249 (1) */
     const StructInfo *si = lookup_struct(c, err_type);
     if (!si) return 0;
     if (si->is_sum) return 16;
@@ -6757,12 +6901,22 @@ static int emit_expr(Ctx *c, const Node *n)
         /* 127.182: a stdlib payload re-raised payload-less unless its layout
          * is the one the enclosing function's error type declares. */
         int prop_reraise = 0;
-        if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
-            const Node *sc = n->children[0]->children[0];
-            if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+        /* 127.249 (3): `args.get(n)!$e` is the qualified call `args.get`
+         * written in its index spelling. */
+        char iqal[128], iqme[128];
+        int iqual = index_as_qualified_get(c, n->children[0], iqal, sizeof iqal,
+                                           iqme, sizeof iqme);
+        if (iqual || (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1)) {
+            const Node *sc = iqual ? n->children[0] : n->children[0]->children[0];
+            if (iqual || (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2)) {
                 char pal[128], pme[128];
-                tok_cp(c->src, sc->children[0], pal, sizeof pal);
-                tok_cp(c->src, sc->children[1], pme, sizeof pme);
+                if (iqual) {
+                    snprintf(pal, sizeof pal, "%s", iqal);
+                    snprintf(pme, sizeof pme, "%s", iqme);
+                } else {
+                    tok_cp(c->src, sc->children[0], pal, sizeof pal);
+                    tok_cp(c->src, sc->children[1], pme, sizeof pme);
+                }
                 char subb[256];
                 const char *prv = resolve_call_symbol(c, pal, pme, subb, sizeof subb);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
@@ -7074,6 +7228,22 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pp, sv);
                 fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, pp);
             }
+            /* 121.51 (2): a nil sum value (an `$err:e` payload the callee
+             * never boxed, handed on as a typed parameter) had its tag read
+             * through a null pointer: SIGSEGV at -O0, and at -O2 the
+             * optimiser took the undefined load as unreachable and printed
+             * the $ok arm's text for every failure.  Trap RT005, as the
+             * 124.2d field-read guard does. */
+            {
+                int nz = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp eq i64* %%t%d, null\n", nz, sbase);
+                int lt = next_lbl(c), lc = next_lbl(c);
+                fprintf(c->out, "  br i1 %%t%d, label %%nil_trap%d, label %%nil_ok%d\n", nz, lt, lc);
+                fprintf(c->out, "nil_trap%d:\n", lt);
+                fprintf(c->out, "  call void @tk_nil_trap(i32 0)\n");
+                fprintf(c->out, "  unreachable\n");
+                fprintf(c->out, "nil_ok%d:\n", lc);
+            }
             int tagp = next_tmp(c);
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", tagp, sbase);
             int tagv = next_tmp(c);
@@ -7107,6 +7277,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
                 mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
+                int arm_pc0 = c->ptr_count, arm_lc0 = c->local_count; char arm_bn[NAME_BUF]; arm_bn[0] = '\0';   /* 127.246 (4) */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
                 int vidx = struct_field_index(ssi, tag);
@@ -7130,6 +7301,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
                     int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
                     const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                    snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                     set_local_type(c, vname, slot_ty);
                     if (is_str) mark_ptr_with_type(c, vname, "$str");
                     if (vshadow) {
@@ -7158,6 +7330,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -7278,6 +7451,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
                 mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* arm-scoped binding */
+                int arm_pc0 = c->ptr_count, arm_lc0 = c->local_count; char arm_bn[NAME_BUF]; arm_bn[0] = '\0';   /* 127.246 (4) */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
 
                 /* Bind arm variable to scrutinee */
@@ -7300,6 +7474,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         strncpy(vname, uname, sizeof vname - 1);
                         vname[sizeof vname - 1] = '\0';
                     }
+                    snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                     set_local_type(c, vname, scr_ty);
                     if (!strcmp(scr_ty, "i8*")) mark_ptr_with_type(c, vname, "$str");
                     if (vshadow) {
@@ -7315,6 +7490,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
                 arm_i++;
             }
 
@@ -7403,7 +7579,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * in source order (mt_arm_order).  Every loop below walks ord[], so
          * `{$err:e ..; $ok:v ..}` dispatches exactly as its ok-first twin. */
         const char *ord_err_ty = bound_err_type;
-        if (!ord_err_ty && n->children[0]->kind == NODE_CALL_EXPR)
+        if (!ord_err_ty && (n->children[0]->kind == NODE_CALL_EXPR ||
+                            n->children[0]->kind == NODE_INDEX_EXPR))   /* 127.249 (3) */
             ord_err_ty = call_err_payload_type;
         int ord[64];
         int nord = mt_arm_order(c, n, ord_err_ty, ord, 64);
@@ -7460,10 +7637,21 @@ static int emit_expr(Ctx *c, const Node *n)
             char t0[128] = "";
             if (n->children[1] && n->children[1]->child_count >= 1)
                 tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
-            if (scr_sum)
+            /* 127.242 (3): scr_sum is the scrutinee's backend TAG, which is
+             * not always a sum: "$str" for a string, "@..." for an array, a
+             * record's name.  "not a variant of sum type '$str'" named a
+             * string a sum type.  Say "sum type" only of a sum. */
+            const StructInfo *msi = scr_sum ? lookup_struct(c, scr_sum) : NULL;
+            if (!msi && scr_sum && scr_sum[0] == '$') msi = lookup_struct(c, scr_sum + 1);
+            if (scr_sum && msi && msi->is_sum)
                 snprintf(mmsg, sizeof mmsg,
                     "match has %d arms, but '$%s' is not a variant of sum type '%s'",
                     num_arms, t0, scr_sum);
+            else if (scr_sum)
+                snprintf(mmsg, sizeof mmsg,
+                    "match has %d arms, but the matched value is a '%s', not a sum type, "
+                    "so '$%s' names no variant of it",
+                    num_arms, scr_sum[0] == '$' ? scr_sum + 1 : scr_sum, t0);
             else
                 snprintf(mmsg, sizeof mmsg,
                     "match has %d arms, but the sum type of the matched value is not established",
@@ -7528,7 +7716,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * and the discriminant above disagreed for five stories because each
          * had its own copy of "which function is being called". */
         const char *eu_err_type = bound_err_type;   /* 135.16: let-bound */
-        if (!eu_err_type && n->children[0]->kind == NODE_CALL_EXPR)
+        if (!eu_err_type && (n->children[0]->kind == NODE_CALL_EXPR ||
+                             n->children[0]->kind == NODE_INDEX_EXPR))  /* 127.249 (3) */
             eu_err_type = call_err_payload_type;
 
         /* 127.231 (1): one label per variant arm of a flat match, and the
@@ -7570,6 +7759,7 @@ static int emit_expr(Ctx *c, const Node *n)
              * `let n=mt f(){$ok:n n;..}; let id=mt g(){$ok:n n;..}` every
              * later `n` read the SECOND arm's slot (n=7 for n=150, silent). */
             int arm_saved_al = c->alias_count;
+            int arm_pc0 = c->ptr_count, arm_lc0 = c->local_count; char arm_bn[NAME_BUF]; arm_bn[0] = '\0';   /* 127.246 (4) */
             PtrShadow psh; psh.active = 0;           /* 127.237 (3) */
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
@@ -7661,6 +7851,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
                 int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
                 const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                 set_local_type(c, vname, slot_ty);
                 if (is_str) mark_ptr_with_type(c, vname, "$str");
                 if (vshadow) {
@@ -7700,14 +7891,21 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 /* 135.5b: a `T!str` payload is the message pointer itself. */
                 const int err_is_str = eu_err_type && !strcmp(eu_err_type, "str");
+                /* 127.249 (1): a scalar payload binds as its own type. */
+                const char *err_sc = scalar_err_type(eu_err_type);
+                const char *sc_ty = !err_sc ? NULL
+                                  : !strcmp(err_sc, "bool") ? "i1"
+                                  : !strcmp(err_sc, "f64") ? "double"
+                                  : !strcmp(err_sc, "f32") ? "float" : "i64";
                 const char *bind_ty = (!is_ok && eu_err_type)
-                                      ? (err_is_str ? "i8*" : "i64") : scr_ty;
+                                      ? (err_is_str ? "i8*" : sc_ty ? sc_ty : "i64") : scr_ty;
                 /* 127.230 (1): the $ok payload of a stdlib call declared
                  * `bool!E` (row.bool, keychain.*) crosses as an i64 0/1; bind
                  * it as the bool it is, so `\(v)` says true/false. */
                 int ok_abi_bool = is_ok && !strcmp(scr_ty, "i64") &&
                                   call_declares_bool(c, n->children[0]);
                 if (ok_abi_bool) bind_ty = "i1";
+                snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                 set_local_type(c, vname, bind_ty);
                 /* 127.71: the $ok arm binds the scrutinee's value, so it earns
                  * the scrutinee's tag ("$str", "@str", a struct name).  It was
@@ -7763,6 +7961,37 @@ static int emit_expr(Ctx *c, const Node *n)
                         int sp = next_tmp(c);
                         fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; 135.5b str payload\n", sp, ev);
                         fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", sp, vname);
+                    } else if (sc_ty) {
+                        /* 127.249 (1): the scalar lives in its 8-byte box;
+                         * a nil box (the payload-less flag) binds 0. */
+                        int K = next_lbl(c);
+                        int isnil = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", isnil, ev);
+                        fprintf(c->out, "  br i1 %%t%d, label %%sen%d, label %%sel%d\n", isnil, K, K);
+                        fprintf(c->out, "sel%d:\n", K);
+                        int bp = next_tmp(c), bv = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i64*\n", bp, ev);
+                        fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; 127.249 (1) scalar payload\n", bv, bp);
+                        fprintf(c->out, "  br label %%sej%d\n", K);
+                        fprintf(c->out, "sen%d:\n", K);
+                        fprintf(c->out, "  br label %%sej%d\n", K);
+                        fprintf(c->out, "sej%d:\n", K);
+                        int pv = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%sel%d ], [ 0, %%sen%d ]\n", pv, bv, K, K);
+                        int sv2 = pv;
+                        if (!strcmp(sc_ty, "i1")) {
+                            sv2 = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", sv2, pv);
+                        } else if (!strcmp(sc_ty, "double") || !strcmp(sc_ty, "float")) {
+                            sv2 = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", sv2, pv);
+                            if (!strcmp(sc_ty, "float")) {
+                                int ft = next_tmp(c);
+                                fprintf(c->out, "  %%t%d = fptrunc double %%t%d to float\n", ft, sv2);
+                                sv2 = ft;
+                            }
+                        }
+                        fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", sc_ty, sv2, sc_ty, vname);
                     } else {
                     fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", ev, vname);
                     mark_ptr_with_type(c, vname, eu_err_type);
@@ -7789,6 +8018,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 emit_match_arm_body(c, abody, res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
             } else {
                 /* Emit arm body expression */
                 int body_val = -1;
@@ -7812,6 +8042,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  br label %%rm_end%d\n", L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
             }
         }
 
@@ -7885,6 +8116,18 @@ static const TkiCacheEntry *tki_entry_for(Ctx *c, const char *alias,
     ensure_tki_cache_loaded();
     for (int ci = 0; ci < g_tki_cache_count; ci++)
         if (!strcmp(g_tki_cache[ci].module, mod) &&
+            !strcmp(g_tki_cache[ci].method, method))
+            return &g_tki_cache[ci];
+    /* 127.242 (1): an interface whose exports are prefixed by a name other
+     * than the module's -- std.template declares `tpl.render`, `tpl.escape`
+     * -- was never found under `i=tpl:std.template`, so every str such a
+     * call returns was untagged and interpolated as its address (`\(s)` in
+     * a `$ok:s` arm, `\(tpl.escape(x))`).  Match the export prefix against
+     * the alias, within the file the alias imports (138.6's rule for
+     * call_declares_bool). */
+    for (int ci = 0; ci < g_tki_cache_count; ci++)
+        if (!strcmp(g_tki_cache[ci].file_module, mod) &&
+            !strcmp(g_tki_cache[ci].module, alias) &&
             !strcmp(g_tki_cache[ci].method, method))
             return &g_tki_cache[ci];
     return NULL;
@@ -8318,7 +8561,7 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                     /* 127.38: tk_str_charat_w returns the byte value (i64), not a
                      * str — tagging it $str made `s.charat(x;i)` deref an int. */
                     "tk_str_substr_w","tk_str_chars_w","tk_str_sub_w",
-                    "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w","tk_str_fromf32_w",
+                    "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w",
                     "tk_str_format_w","tk_io_readln_w","tk_str_join_w","tk_str_interpolate_w",
                     /* 126.8: more scalar->string / string->string wrappers so a
                      * `\(s.fromint(x))` / `\(s.repeat(...))` interpolation and
@@ -10546,19 +10789,8 @@ static void emit_stmt(Ctx *c, const Node *n)
                         fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", fc, fl);
                         fprintf(c->out, "  br i1 %%t%d, label %%mtre%d, label %%mtro%d\n", fc, RL, RL);
                         fprintf(c->out, "mtre%d:\n", RL);
-                        int w = mv;
-                        if (!strcmp(mty, "i8*")) {
-                            w = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", w, mv);
-                        } else if (!strcmp(mty, "double")) {
-                            w = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", w, mv);
-                        } else if (strcmp(mty, "i64")) {
-                            w = coerce_value(c, mv, mty, "i64");
-                        }
-                        int wz = next_tmp(c), ws = next_tmp(c);
-                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", wz, w);
-                        fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d\n", ws, wz, w);
+                        /* 127.249 (1): one encoder for the payload word. */
+                        int ws = emit_err_payload_word(c, mv, mty);
                         fprintf(c->out, "  store i64 %%t%d, i64* @tk_current_error\n", ws);
                         if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
                         else if (!strcmp(rt, "double")) fputs("  ret double 0.0\n", c->out);
@@ -10599,24 +10831,11 @@ static void emit_stmt(Ctx *c, const Node *n)
                          * box (a str message, a scalar code) crosses as the
                          * i64 word the $err arm binds.  A zero word would
                          * read as "no error" — the 127.97 flag 1 carries it
-                         * instead (the arm binds nil, as for any flag). */
-                        if (!strcmp(bt, "double")) {
-                            int bc = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, box);
-                            box = bc; bt = "i64";
-                        } else if (strcmp(bt, "i8*")) {
-                            box = coerce_value(c, box, bt, "i64"); bt = "i64";
-                        }
-                        if (!strcmp(bt, "i8*")) {
-                            int iv = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
-                            box = iv; bt = "i64";
-                        }
-                        int z = next_tmp(c), sel = next_tmp(c);
-                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", z, box);
-                        fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d ; 138.2 $err(x) payload\n",
-                                sel, z, box);
-                        box = sel;
+                         * instead (the arm binds nil, as for any flag).
+                         * 127.249 (1): a SCALAR error type's payload is
+                         * boxed instead, so 0 and 1 survive. */
+                        box = emit_err_payload_word(c, box, bt);
+                        bt = "i64";
                     }
                     if (!strcmp(bt, "i8*")) {
                         int iv = next_tmp(c);

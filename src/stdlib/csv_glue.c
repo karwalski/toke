@@ -17,16 +17,56 @@
 /* 127.238: the error slot (runtime-abi.md §7.2).  These `T!csverr` wrappers
  * returned a bare 0 on failure, so only the value sentinel saw it and the
  * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
- * (0; every T here is a handle or pointer); every return now goes through
- * csv_slot, which on 0 also stores a csverr record {msg; …} — the other
- * fields 0 — and on anything else clears the slot, so the wrapper is a slot
- * wrapper (llvm.c derives them from the .tki). */
-static int64_t csv_slot(int64_t v, const char *msg) {
-    if (v) { tk_current_error = 0; return v; }
-    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
-    box[0] = (int64_t)(intptr_t)msg;
+ * (0; every T here is a handle or pointer); every return goes through
+ * csv_slot / csv_slot_core, which on 0 store a csverr record and on anything
+ * else clear the slot, so the wrapper is a slot wrapper (llvm.c derives them
+ * from the .tki).
+ *
+ * 127.102a: THE RECORD CARRIES WHAT THE ACCESSORS DID, so they could retire.
+ * stdlib/csv.tki declares csverr {msg:str; line:u64; kind:str} and the box
+ * is exactly those three slots, in that order (runtime-abi.md §7.3):
+ *
+ *     slot 0  msg   the core's message (it names the line), else the
+ *                   wrapper's own sentence            — was csv.lasterr()
+ *     slot 1  line  1-based physical line, 0 if none  — was csv.lasterrline()
+ *     slot 2  kind  the stable token: eof opts empty bom encoding delimiter
+ *                   quote ragged, plus badarg / nomem for a failure in
+ *                   this file                         — was csv.lasterrkind()
+ *
+ * `line` was always declared and always 0 until now; `kind` is new.  The
+ * message is copied out of csv.c's single static buffer through tk_err_msg()
+ * (tk_runtime.c), because a `let`-kept error keeps a copy of its BOX
+ * (127.103) and the box holds a pointer: without the copy the next csv call
+ * would rewrite a message the caller still holds.  No allocation per error
+ * (127.109). */
+static int64_t csv_raise(const char *msg, uint64_t line, const char *kind) {
+    const char *m = tk_err_msg("%s", msg ? msg : "");
+    int64_t *box = (int64_t *)tk_err_box(3 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)m;
+    box[1] = (int64_t)line;
+    box[2] = (int64_t)(intptr_t)(kind ? kind : "empty");
     tk_current_error = (int64_t)(intptr_t)box;
     return 0;
+}
+
+/* A wrapper whose C call does not record a reason (csv_parse): the
+ * wrapper's own sentence and kind. */
+static int64_t csv_slot(int64_t v, const char *msg, const char *kind) {
+    if (v) { tk_current_error = 0; return v; }
+    return csv_raise(msg, 0, kind);
+}
+
+/* A wrapper whose C call records its reason in csv.c's last-error state
+ * (the hardened reader, csv_sniff): the core's message, line and kind.  The
+ * core leaves the message empty for end of data (it is not a refusal) and
+ * the kind "ok" only on a path that records nothing, so both fall back to the
+ * wrapper's own sentence. */
+static int64_t csv_slot_core(int64_t v, const char *msg, const char *kind) {
+    if (v) { tk_current_error = 0; return v; }
+    const char *k = csv_lasterrkind();
+    const char *m = csv_lasterr();
+    if (!k || !strcmp(k, "ok")) return csv_raise(msg, 0, kind);
+    return csv_raise(m && *m ? m : msg, csv_lasterrline(), k);
 }
 
 /*
@@ -40,23 +80,23 @@ static int64_t csv_slot(int64_t v, const char *msg) {
 static const char tk_csv_parse_fail[] =
     "csv.parse: no rows (the input is empty or could not be parsed)";
 int64_t tk_csv_parse_w(int64_t data) {
-    if (!data) return csv_slot(0, tk_csv_parse_fail);
+    if (!data) return csv_slot(0, tk_csv_parse_fail, "empty");
     /* The argument is a toke [byte] (packed), not a C string — unpack it. */
     uint8_t *bytes = NULL;
     uint64_t len = tk_bytes_unpack(data, &bytes);
-    if (!bytes || len == 0) return csv_slot(0, tk_csv_parse_fail);
+    if (!bytes || len == 0) return csv_slot(0, tk_csv_parse_fail, "empty");
     char *s = (char *)malloc(len + 1);
-    if (!s) return csv_slot(0, tk_csv_parse_fail);
+    if (!s) return csv_slot(0, tk_csv_parse_fail, "empty");
     memcpy(s, bytes, len); s[len] = '\0';
     uint64_t nrows = 0;
     StrArray *rows = csv_parse(s, len, &nrows);
     free(s);
-    if (!rows || nrows == 0) { if (rows) free(rows); return csv_slot(0, tk_csv_parse_fail); }
+    if (!rows || nrows == 0) { if (rows) free(rows); return csv_slot(0, tk_csv_parse_fail, "empty"); }
     /* Return a toke-native [csvrow]: outer[-1]=nrows, outer[i]=*csvrow, where
      * a csvrow is a 1-field struct {fields:[str]} and [str] is the toke array
      * convention (block[-1]=len, block[i]=char*). */
     int64_t outer_h = tk_arr_alloc((int64_t)nrows, (int64_t)nrows);
-    if (!outer_h) { free(rows); return csv_slot(0, tk_csv_parse_fail); }
+    if (!outer_h) { free(rows); return csv_slot(0, tk_csv_parse_fail, "empty"); }
     int64_t *outer = (int64_t *)(intptr_t)outer_h;
     for (uint64_t i = 0; i < nrows; i++) {
         uint64_t fl = rows[i].len;
@@ -74,7 +114,7 @@ int64_t tk_csv_parse_w(int64_t data) {
         outer[i] = (int64_t)(intptr_t)cr;
     }
     free(rows);
-    return csv_slot(outer_h, tk_csv_parse_fail);
+    return csv_slot(outer_h, tk_csv_parse_fail, "empty");
 }
 
 /*
@@ -132,28 +172,28 @@ int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
 static const char tk_csv_next_fail[] =
     "csv.next: no more rows (end of input, or a row could not be read)";
 int64_t tk_csv_next_w(int64_t reader) {
-    if (!reader) return csv_slot(0, tk_csv_next_fail);
+    if (!reader) return csv_slot(0, "csv.next: null reader (an unchecked error value?)", "badarg");
     TkCsvReader *r = (TkCsvReader *)(intptr_t)reader;
     /* 135.2: no has_next() short-circuit.  Going through csv_reader_next is
      * what sets the last-error kind, so "eof" and a refusal stop being the
      * same silent 0 to the caller. */
     StrArray row = csv_reader_next(r);
-    if (!row.data || row.len == 0) return csv_slot(0, tk_csv_next_fail);
+    if (!row.data || row.len == 0) return csv_slot_core(0, tk_csv_next_fail, "eof");
     int64_t fields = strarray_to_tokearr(row);
     int64_t *cr = (int64_t *)malloc(sizeof(int64_t));   /* csvrow = {fields:[str]} */
-    if (!cr) return csv_slot(0, tk_csv_next_fail);
+    if (!cr) return csv_slot(0, "csv.next: out of memory", "nomem");
     cr[0] = fields;
-    return csv_slot((int64_t)(intptr_t)cr, tk_csv_next_fail);
+    return csv_slot_core((int64_t)(intptr_t)cr, tk_csv_next_fail, "eof");
 }
 
 /* csv.header(csvreader) -> [str]!csverr */
 static const char tk_csv_header_fail[] =
     "csv.header: the reader has no header row";
 int64_t tk_csv_header_w(int64_t reader) {
-    if (!reader) return csv_slot(0, tk_csv_header_fail);
+    if (!reader) return csv_slot(0, "csv.header: null reader (an unchecked error value?)", "badarg");
     StrArray h = csv_reader_header((TkCsvReader *)(intptr_t)reader);
-    if (!h.data) return csv_slot(0, tk_csv_header_fail);
-    return csv_slot(strarray_to_tokearr(h), tk_csv_header_fail);
+    if (!h.data) return csv_slot_core(0, tk_csv_header_fail, "eof");
+    return csv_slot_core(strarray_to_tokearr(h), tk_csv_header_fail, "eof");
 }
 
 /* csv.writer(u8 sep) -> csvwriter */
@@ -234,8 +274,8 @@ static int64_t dialect_to_block(const TkCsvDialect *d) {
 
 /* csv.sniff(data:@(byte)) -> $csvdialect!$csverr
  *
- * 0 on refusal, which is what the compiled error-union ABI lowers `$err` to;
- * csv.lasterrkind / csv.lasterr / csv.lasterrline carry the reason (127.97). */
+ * On refusal the $err arm binds a csverr carrying the reason, the line and
+ * the kind (127.102a). */
 static const char tk_csv_sniff_fail[] =
     "csv.sniff: no dialect could be detected";
 int64_t tk_csv_sniff_w(int64_t data) {
@@ -244,8 +284,8 @@ int64_t tk_csv_sniff_w(int64_t data) {
     TkCsvDialect d;
     int ok = csv_sniff((const char *)bytes, bytes ? len : 0, &d);
     free(bytes);
-    if (!ok) return csv_slot(0, tk_csv_sniff_fail);
-    return csv_slot(dialect_to_block(&d), tk_csv_sniff_fail);
+    if (!ok) return csv_slot_core(0, tk_csv_sniff_fail, "delimiter");
+    return csv_slot_core(dialect_to_block(&d), tk_csv_sniff_fail, "delimiter");
 }
 
 /* csv.opts(delim; quote; encoding; bom; ragged; hasheader) -> $csvopts
@@ -287,7 +327,7 @@ int64_t tk_csv_readeropts_w(int64_t data, int64_t opts) {
      * owns the copy, so the staging buffer is freed here. */
     TkCsvReader *r = csv_reader_open((const char *)bytes, bytes ? len : 0, &o);
     free(bytes);
-    return csv_slot((int64_t)(intptr_t)r, tk_csv_readeropts_fail);
+    return csv_slot_core((int64_t)(intptr_t)r, tk_csv_readeropts_fail, "opts");
 }
 
 /* csv.dialect(r:$csvreader) -> $csvdialect — including a SNIFFED delimiter,
@@ -299,7 +339,7 @@ int64_t tk_csv_dialect_w(int64_t reader) {
 
 /* csv.atend(r:$csvreader) -> bool — end of data, as distinct from a refusal.
  * Both make csv.next return the `$err` arm; only this tells them apart before
- * the call, and csv.lasterrkind tells them apart after it. */
+ * the call, and the csverr's kind ("eof" or the refusal) after it. */
 int64_t tk_csv_atend_w(int64_t reader) {
     return csv_reader_at_end((const TkCsvReader *)(intptr_t)reader) ? 1 : 0;
 }
@@ -328,22 +368,4 @@ int64_t tk_csv_raggedreport_w(int64_t reader) {
 int64_t tk_csv_close_w(int64_t reader) {
     csv_reader_free((TkCsvReader *)(intptr_t)reader);
     return 0;
-}
-
-/* csv.lasterr() -> str — the message, which NAMES THE LINE. */
-int64_t tk_csv_lasterr_w(void) {
-    const char *m = csv_lasterr();
-    return (int64_t)(intptr_t)(m ? m : "");
-}
-
-/* csv.lasterrkind() -> str — the stable token; this is the interface, the
- * wording of lasterr is not. */
-int64_t tk_csv_lasterrkind_w(void) {
-    const char *m = csv_lasterrkind();
-    return (int64_t)(intptr_t)(m ? m : "ok");
-}
-
-/* csv.lasterrline() -> u64 — 1-based physical line, 0 when not applicable. */
-int64_t tk_csv_lasterrline_w(void) {
-    return (int64_t)csv_lasterrline();
 }

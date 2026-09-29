@@ -34,7 +34,6 @@
     {"kind": "func", "name": "zip.openfile", "params": ["str"],               "return": "ziparchive!ziperr"},
     {"kind": "func", "name": "zip.entries",  "params": ["ziparchive"],        "return": "@(zipentry)"},
     {"kind": "func", "name": "zip.read",     "params": ["ziparchive", "str"], "return": "@(byte)!ziperr"},
-    {"kind": "func", "name": "zip.close",    "params": ["ziparchive"],        "return": "void"},
-    {"kind": "func", "name": "zip.lasterr",  "params": [],                    "return": "str"}
+    {"kind": "func", "name": "zip.close",    "params": ["ziparchive"],        "return": "void"}
   ]
 }

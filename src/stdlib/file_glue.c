@@ -14,18 +14,92 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ══ The error channel (135.12, then 127.102b for the whole module) ═══════
+ *
+ * Every `T!FileErr` wrapper in this file keeps @tk_current_error truthful on
+ * EVERY return (runtime-abi.md §7.2): a failure stores a {tag, msg} box of
+ * FileErr's sum layout (§7.3) and a success stores 0, so the compiler — which
+ * derives these as slot wrappers from stdlib/file.tki — decides ok/err on the
+ * slot and the $err arm binds the variant and its reason:
+ *
+ *     mt file.read(p) {$ok:t …; $err:e mt e {$notfound:m …; $isdir:m …}}
+ *
+ * THE TAG IS FileErrKind ITSELF.  stdlib/file.tki declares FileErr's ten
+ * variants in exactly the enum's order (file.h), which is what lets the
+ * accessor file.lasterrkind() retire without losing a case: until 127.102b
+ * FileErr carried three variants while file.c distinguished ten, so
+ * "is a directory", "is a symlink" and "over the cap" were reachable only
+ * through the accessor.  Keep the enum and the .tki in step.
+ *
+ * THE MESSAGE OUTLIVES THE NEXT CALL.  file.c formats its messages into one
+ * static buffer that the next failure overwrites, but a `let`-bound error
+ * keeps a copy of its BOX (127.103), and the box holds a pointer — so every
+ * raise copies its message through tk_err_msg() (tk_runtime.c), whose
+ * per-thread ring keeps it exact across the next seven raises, with no
+ * allocation per error (127.109). */
+/* The box: slot 0 = the FileErr variant index (== FileErrKind), slot 1 = the
+ * message.  tk_err_box never returns null (a null would be stored as 0, and 0
+ * is success), so there is no failure path to write here. */
+static int64_t file_raise(FileErrKind kind, const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)kind;
+    box[1] = (int64_t)(intptr_t)tk_err_msg("%s", msg ? msg : "");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+/* A failure reported by a FileResult, named for the call and the path —
+ * file.c's errno messages ("file not found") name neither. */
+static int64_t file_raise_op(const char *op, FileErr e, int64_t path) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)e.kind;
+    box[1] = (int64_t)(intptr_t)tk_err_msg("%s: %s: %s", op,
+                                         e.msg ? e.msg : "I/O error",
+                                         path ? (const char *)(intptr_t)path : "");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static int64_t file_badarg(const char *msg) {
+    file_setlasterr(FILE_ERR_BAD_ARG, msg);
+    return file_raise(FILE_ERR_BAD_ARG, msg);
+}
+
+static int64_t file_ok(int64_t v) {
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return v;
+}
+
+/* A [str] from a StrArray, or a nomem raise. */
+static int64_t file_strarray(const char *op, StrArray arr, int free_data) {
+    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
+    if (!h) {
+        if (free_data) free(arr.data);
+        return file_raise(FILE_ERR_NO_MEM,
+                          tk_err_msg("%s: array allocation failed", op));
+    }
+    int64_t *block = (int64_t *)(intptr_t)h;
+    for (uint64_t i = 0; i < arr.len; i++)
+        block[i] = (int64_t)(intptr_t)arr.data[i];
+    if (free_data) free(arr.data);
+    return file_ok(h);
+}
+
 int64_t tk_file_read_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) return 0;
+    if (!path) return file_badarg("file.read: null path");
     StrFileResult r = file_read((const char *)(intptr_t)path);
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return file_raise_op("file.read", r.err, path);
+    return file_ok((int64_t)(intptr_t)r.ok);
 }
 
 int64_t tk_file_write_w(int64_t path, int64_t content) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
-    if (!path || !content) return 0;
+    if (!path) return file_badarg("file.write: null path");
+    if (!content) return file_badarg("file.write: null content");
     BoolFileResult r = file_write((const char *)(intptr_t)path, (const char *)(intptr_t)content);
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return file_raise_op("file.write", r.err, path);
+    return file_ok((int64_t)r.ok);
 }
 
 int64_t tk_file_isdir_w(int64_t path) {
@@ -36,31 +110,30 @@ int64_t tk_file_isdir_w(int64_t path) {
 
 int64_t tk_file_mkdir_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
-    if (!path) return 0;
+    if (!path) return file_badarg("file.mkdir: null path");
     BoolFileResult r = file_mkdir_p((const char *)(intptr_t)path);
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return file_raise_op("file.mkdir", r.err, path);
+    return file_ok((int64_t)r.ok);
 }
 
 int64_t tk_file_copy_w(int64_t src, int64_t dst) {
     TK_REQUIRE(TK_CAP_FS_READ);   /* reads src */
     TK_REQUIRE(TK_CAP_FS_WRITE);  /* writes dst */
-    if (!src || !dst) return 0;
+    if (!src || !dst) return file_badarg("file.copy: null path");
     BoolFileResult r = file_copy((const char *)(intptr_t)src, (const char *)(intptr_t)dst);
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return file_raise_op("file.copy", r.err, src);
+    return file_ok((int64_t)r.ok);
 }
 
 int64_t tk_file_listall_w(int64_t dir) {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!dir) return 0;
+    if (!dir) return file_badarg("file.listall: null path");
     StrArrayFileResult r = file_listall((const char *)(intptr_t)dir);
-    if (r.is_err) return 0;
-    StrArray arr = r.ok;
-    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
-    if (!h) return 0;
-    int64_t *block = (int64_t *)(intptr_t)h;
-    for (uint64_t i = 0; i < arr.len; i++)
-        block[i] = (int64_t)(intptr_t)arr.data[i];
-    return h;
+    if (r.is_err) return file_raise_op("file.listall", r.err, dir);
+    /* The strings AND the pointer block are handed over as before: listall's
+     * data block was never freed here, and freeing it now is not this
+     * story's change. */
+    return file_strarray("file.listall", r.ok, 0);
 }
 
 int64_t tk_file_exists_w(int64_t path) {
@@ -73,17 +146,10 @@ int64_t tk_file_exists_w(int64_t path) {
 
 int64_t tk_file_list_w(int64_t dir) {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!dir) return 0;
+    if (!dir) return file_badarg("file.list: null path");
     StrArrayFileResult r = file_list((const char *)(intptr_t)dir);
-    if (r.is_err) return 0;
-    StrArray arr = r.ok;
-    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
-    if (!h) return 0;
-    int64_t *block = (int64_t *)(intptr_t)h;
-    for (uint64_t i = 0; i < arr.len; i++)
-        block[i] = (int64_t)(intptr_t)arr.data[i];
-    free(arr.data);
-    return h;
+    if (r.is_err) return file_raise_op("file.list", r.err, dir);
+    return file_strarray("file.list", r.ok, 1);
 }
 
 /*
@@ -97,16 +163,19 @@ int64_t tk_file_list_w(int64_t dir) {
  */
 int64_t tk_file_append_w(int64_t path, int64_t content) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
-    if (!path || !content) return 0;
+    if (!path) return file_badarg("file.append: null path");
+    if (!content) return file_badarg("file.append: null content");
     BoolFileResult r = file_append((const char *)(intptr_t)path, (const char *)(intptr_t)content);
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return file_raise_op("file.append", r.err, path);
+    return file_ok((int64_t)r.ok);
 }
 
 int64_t tk_file_delete_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
-    if (!path) return 0;
+    if (!path) return file_badarg("file.delete: null path");
     BoolFileResult r = file_delete((const char *)(intptr_t)path);
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return file_raise_op("file.delete", r.err, path);
+    return file_ok((int64_t)r.ok);
 }
 
 int64_t tk_file_rename_w(int64_t from, int64_t to) {
@@ -248,11 +317,9 @@ int64_t tk_file_remove_w(int64_t path) {
     return tk_file_delete_w(path);
 }
 
-/* ── fs module aliases (loke imports std.fs which maps to std.file) ───── */
-
-int64_t tk_fs_read_w(int64_t path) { return tk_file_read_w(path); }
-int64_t tk_fs_write_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
-int64_t tk_fs_writetext_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
+/* 136.45: the std.fs aliases (tk_fs_read_w / tk_fs_write_w / tk_fs_writetext_w,
+ * a second name for std.file that one downstream project imported) are
+ * withdrawn with the module. */
 
 /* file.tempdir() — return a temporary directory path */
 int64_t tk_file_tempdir_w(void) {
@@ -267,22 +334,18 @@ int64_t tk_file_tempdir_w(void) {
  * ABI (docs/runtime-abi.md): a `@(byte)` is an i64 array with ONE BYTE PER
  * I64 SLOT (bytes_rt.h), so the buffer is packed rather than handed over.
  *
- * The error arm of a compiled `T!E` is a bare 0 and binds no payload (127.97),
- * so these wrappers return 0 on failure and file.lasterrkind() / file.lasterr()
- * carry which of the nine outcomes it was.  0 is NOT reachable for a success:
- * tk_bytes_pack of an empty buffer returns a real zero-length array handle,
- * so "the file is empty" and "the file could not be read" are different
- * values — the whole point of the story.
+ * 0 is NOT reachable for a success: tk_bytes_pack of an empty buffer returns
+ * a real zero-length array handle, so "the file is empty" and "the file could
+ * not be read" are different values — the whole point of the story.  Since
+ * 127.102b the slot, not the value, is what the compiler decides on, and the
+ * $err arm binds which of the nine outcomes it was.
  */
 
 int64_t tk_file_readbytes_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) {
-        file_setlasterr(FILE_ERR_BAD_ARG, "file.readbytes: null path");
-        return 0;
-    }
+    if (!path) return file_badarg("file.readbytes: null path");
     BytesFileResult r = file_readbytes((const char *)(intptr_t)path);
-    if (r.is_err) return 0;
+    if (r.is_err) return file_raise(r.err.kind, r.err.msg);
 
     int64_t h = tk_bytes_pack(r.ok.data, r.ok.len);
     free(r.ok.data);
@@ -291,91 +354,47 @@ int64_t tk_file_readbytes_w(int64_t path) {
          * file that passed the cap.  Do not return an empty array for it. */
         file_setlasterr(FILE_ERR_NO_MEM,
                         "file.readbytes: byte array allocation failed");
-        return 0;
+        return file_raise(FILE_ERR_NO_MEM, file_lasterr());
     }
-    return h;
+    return file_ok(h);
 }
 
 int64_t tk_file_writebytes_w(int64_t path, int64_t data) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
-    if (!path) {
-        file_setlasterr(FILE_ERR_BAD_ARG, "file.writebytes: null path");
-        return 0;
-    }
+    if (!path) return file_badarg("file.writebytes: null path");
     if (!data) {
         /* A genuinely empty `@(byte)` is a real zero-length handle, never 0.
          * A 0 here is an unchecked error value from upstream, and writing an
          * empty file for it would turn someone else's failure into a
          * successful-looking truncation. */
-        file_setlasterr(FILE_ERR_BAD_ARG,
-                        "file.writebytes: null byte array (an unchecked error value?)");
-        return 0;
+        return file_badarg("file.writebytes: null byte array (an unchecked error value?)");
     }
     uint8_t *buf = NULL;
     uint64_t n = tk_bytes_unpack(data, &buf);
     if (!buf) {
         file_setlasterr(FILE_ERR_NO_MEM, "file.writebytes: staging buffer allocation failed");
-        return 0;
+        return file_raise(FILE_ERR_NO_MEM, file_lasterr());
     }
     BoolFileResult r = file_writebytes((const char *)(intptr_t)path, buf, n);
     free(buf);
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return file_raise(r.err.kind, r.err.msg);
+    return file_ok((int64_t)r.ok);
 }
 
-/* ══ 135.12 — the bounded read, and a real error box ═════════════════════
+/* ══ 135.12 — the bounded read and the size ══════════════════════════════
  *
- * These two wrappers do NOT signal failure with a value sentinel, and they
- * are the first in this module not to.  runtime-abi.md §7.2 states the reason
- * outright: "the zero filler is not the discriminant ... consumers must decide
- * on the slot, never on the value."
- *
- * For file.size that is not a style point, it is the whole call.  An EMPTY
- * FILE HAS SIZE 0, and 0 is what the sentinel convention means by "it
- * failed".  Under the sentinel, `mt file.size(p)` on an empty file takes the
- * $err arm — the C005 family of defect, and exactly the one 135.10 went out
- * of its way to avoid on the read side ("an empty file returns a real
- * zero-length array marked ok, never a bare zero").  No arrangement of the
- * return value fixes it; the answer has to move to the slot.
- *
- * So both wrappers store a real box built through tk_err_box() (127.109) on
- * failure, and store 0 on success.  The success store is not optional: it is
- * the 127.123 defect if it is missing — a call that plainly succeeds reports
- * failure because an EARLIER call left the slot set.  llvm.c's
- * is_file_errbox_wrapper() is the other half; without it the compiler still
- * discriminates on the value and the box is decoration.
- *
- * WHAT IS NOT DONE HERE, deliberately.  The box's payload is a {tag, msg}
- * pair whose tag is a FileErr variant index, and FileErr still carries only
- * three variants where file.c distinguishes ten.  Widening it and retiring
- * file.lasterr()/file.lasterrkind() is 127.102b — an owner-authorised
- * BREAKING stdlib API change that is to land in ONE release with 127.102a and
- * 127.102c.  Landing a third of it here would ship that break out of band.
- * These calls therefore set the slot AND keep the accessors, so the module
- * stays self-consistent and 127.102b inherits a working shape, not a design.
+ * These two were the first in this module to store a real box instead of a
+ * value sentinel, because for file.size the sentinel is WRONG, not merely
+ * weak: an EMPTY FILE HAS SIZE 0, and 0 is what the sentinel convention means
+ * by "it failed" (runtime-abi.md §7.2: "the zero filler is not the
+ * discriminant").  127.102b gave the rest of the module the same shape and
+ * retired file.lasterr() / file.lasterrkind(); these two are unchanged.
  */
-
-/* The box: slot 0 = FileErr variant index, slot 1 = the message pointer.
- * tk_err_box never returns null (a null would be stored as 0, and 0 is
- * success), so there is no failure path to write here. */
-static int64_t file_raise(FileErrKind kind, const char *msg) {
-    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
-    switch (kind) {
-        case FILE_ERR_NOT_FOUND:  box[0] = 0; break;   /* FileErr.NotFound   */
-        case FILE_ERR_PERMISSION: box[0] = 1; break;   /* FileErr.Permission */
-        default:                  box[0] = 2; break;   /* FileErr.IO         */
-    }
-    box[1] = (int64_t)(intptr_t)(msg ? msg : "");
-    tk_current_error = (int64_t)(intptr_t)box;
-    return 0;
-}
 
 /* file.readrange(path; offset; len) -> @(byte)!FileErr */
 int64_t tk_file_readrange_w(int64_t path, int64_t offset, int64_t len) {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) {
-        file_setlasterr(FILE_ERR_BAD_ARG, "file.readrange: null path");
-        return file_raise(FILE_ERR_BAD_ARG, file_lasterr());
-    }
+    if (!path) return file_badarg("file.readrange: null path");
     BytesFileResult r = file_readrange((const char *)(intptr_t)path, offset, len);
     if (r.is_err) return file_raise(r.err.kind, r.err.msg);
 
@@ -388,34 +407,14 @@ int64_t tk_file_readrange_w(int64_t path, int64_t offset, int64_t len) {
                         "file.readrange: byte array allocation failed");
         return file_raise(FILE_ERR_NO_MEM, file_lasterr());
     }
-    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
-    return h;
+    return file_ok(h);
 }
 
 /* file.size(path) -> i64!FileErr — 0 is a real size, never a failure. */
 int64_t tk_file_size_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) {
-        file_setlasterr(FILE_ERR_BAD_ARG, "file.size: null path");
-        return file_raise(FILE_ERR_BAD_ARG, file_lasterr());
-    }
+    if (!path) return file_badarg("file.size: null path");
     U64FileResult r = file_size((const char *)(intptr_t)path);
     if (r.is_err) return file_raise(r.err.kind, r.err.msg);
-    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
-    return (int64_t)r.ok;
-}
-
-/* file.lasterr() -> str  — the message for the last byte-call failure, "" if
- * the last one succeeded.  file.lasterrkind() -> str — one of the documented
- * tokens (ok notfound permission isdir notregular symlink toolarge nomem io
- * badarg), which is what a caller should branch on; the message is for
- * reporting, and its wording is not an interface. */
-int64_t tk_file_lasterr_w(void) {
-    const char *m = file_lasterr();
-    return (int64_t)(intptr_t)(m ? m : "");
-}
-
-int64_t tk_file_lasterrkind_w(void) {
-    const char *m = file_lasterrkind();
-    return (int64_t)(intptr_t)(m ? m : "io");
+    return file_ok((int64_t)r.ok);
 }

@@ -54,12 +54,6 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `fmt.print` | `tk_fmt_print_w` | `fmt_glue.c` |
 | `fmt.sprintf` | `tk_fmt_sprintf_w` | `str_glue.c` |
 
-### `std.fs` (1)
-
-| Export | Glue symbol | Defined in |
-|---|---|---|
-| `fs.writetext` | `tk_fs_writetext_w` | `file_glue.c` |
-
 ### `std.http` (19)
 
 | Export | Glue symbol | Defined in |
@@ -83,23 +77,6 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `http.resjsonnew` | `tk_http_resjsonnew_w` | `tk_web_glue.c` |
 | `http.resnew` | `tk_http_res_new` | `tk_web_glue.c` |
 | `http.resp` | `tk_http_resp_w` | `tk_web_glue.c` |
-
-### `std.string` (12)
-
-| Export | Glue symbol | Defined in |
-|---|---|---|
-| `string.arrayget` | `tk_string_arrayget_w` | `str_glue.c` |
-| `string.arraylen` | `tk_string_arraylen_w` | `str_glue.c` |
-| `string.charat` | `tk_string_charat_w` | `str_glue.c` |
-| `string.concat` | `tk_string_concat_w` | `str_glue.c` |
-| `string.contains` | `tk_string_contains_w` | `str_glue.c` |
-| `string.fromi32` | `tk_string_fromi32_w` | `str_glue.c` |
-| `string.fromi64` | `tk_string_fromi64_w` | `str_glue.c` |
-| `string.len` | `tk_string_len_w` | `str_glue.c` |
-| `string.startswith` | `tk_string_startswith_w` | `str_glue.c` |
-| `string.substr` | `tk_string_substr_w` | `str_glue.c` |
-| `string.trim` | `tk_string_trim_w` | `str_glue.c` |
-| `string.uuid` | `tk_string_uuid_w` | `str_glue.c` |
 
 ## Defined, with no interface entry
 
@@ -209,6 +186,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_clos_base` | `tk_runtime.c` | tk_runtime.c |
 | `tk_delegate_class` | `webview.c` | webview.c |
 | `tk_delete_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
+| `tk_err_msg` | `tk_runtime.c` | csv_glue.c, file_glue.c, ocr_glue.c, pdf_glue.c |
 | `tk_err_release` | `tk_runtime.c` | tk_runtime.c |
 | `tk_error_log_get_global` | `log.c` | http.c, log.c |
 | `tk_error_log_open` | `log.c` | log.c, log_glue.c |
@@ -260,7 +238,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_queue_push` | `collections.c` | collections_glue.c |
 | `tk_rec2` | `encrypt_glue.c` | encrypt_glue.c |
 | `tk_rl_hash` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_scheme_handler_class` | `webview.c` | webview.c |
 | `tk_securemem_alloc` | `securemem.c` | securemem.c, securemem_glue.c |
 | `tk_securemem_isavailable` | `securemem.c` | securemem_glue.c |
 | `tk_securemem_read` | `securemem.c` | securemem.c, securemem_glue.c |

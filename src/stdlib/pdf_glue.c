@@ -43,6 +43,7 @@
 #include "tk_array.h"
 #include "bytes_rt.h"
 #include "capabilities.h"
+#include "tk_runtime.h"   /* 127.241: tk_current_error, tk_err_box, tk_err_msg */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -50,6 +51,47 @@
 
 /* Number of i64 slots in a $textrun — keep in sync with stdlib/pdf.tki. */
 #define TK_TEXTRUN_SLOTS 7
+
+/* ── The error channel (127.241) ─────────────────────────────────────────
+ *
+ * Every `T!$pdferr` wrapper keeps @tk_current_error truthful on EVERY return
+ * (runtime-abi.md §7.2): a failure stores a {tag, msg} box of $pdferr's sum
+ * layout and a success stores 0, so the compiler — which derives these as
+ * slot wrappers from stdlib/pdf.tki — decides on the slot and the $err arm
+ * binds the variant, which is how an ENCRYPTED document is told apart
+ * (`mt e {$encrypted:m …}`) without matching prose.  The tag is the index of
+ * pdf_lasterr_kind()'s token in the .tki's variant order; the message is
+ * pdf.c's, copied out of its static buffer by tk_err_msg so a let-kept
+ * error keeps it.  Until 127.241 these returned a bare 0 and bound nil;
+ * pdf.lasterr()/lasterrkind() still exist and still agree. */
+static const char *const k_pdf_variants[] = {
+    TK_PDF_E_BADDOC, TK_PDF_E_ENCRYPTED, TK_PDF_E_NOPAGE,
+    TK_PDF_E_TOOLARGE, TK_PDF_E_UNSUPPORTED, TK_PDF_E_IO
+};
+
+static int64_t pdf_raise(int64_t tag, const char *msg)
+{
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = tag;
+    box[1] = (int64_t)(intptr_t)tk_err_msg("%s", msg && *msg ? msg : "pdf: failed");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+/* The failure the core recorded; `fallback` when it recorded none. */
+static int64_t pdf_raise_last(int64_t fallback, const char *fallback_msg)
+{
+    const char *k = pdf_lasterr_kind();
+    for (int64_t i = 0; k && i < 6; i++)
+        if (!strcmp(k, k_pdf_variants[i])) return pdf_raise(i, pdf_lasterr());
+    return pdf_raise(fallback, fallback_msg);
+}
+
+static int64_t pdf_ok(int64_t v)
+{
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return v;
+}
 
 static int64_t dup_str(const char *s)
 {
@@ -80,10 +122,11 @@ int64_t tk_pdf_open_w(int64_t data)
     uint8_t *buf = NULL;
     uint64_t n = tk_bytes_unpack(data, &buf);
     TkPdfDoc *doc;
-    if (!buf) return 0;
+    if (!buf) return pdf_raise(0, "pdf.open: empty document data");
     doc = pdf_open_mem(buf, n);
     free(buf);
-    return (int64_t)(intptr_t)doc;
+    if (!doc) return pdf_raise_last(0, "pdf.open: not a PDF");
+    return pdf_ok((int64_t)(intptr_t)doc);
 }
 
 /* pdf.openfile(path:str) -> $pdfdoc!$pdferr
@@ -95,8 +138,12 @@ int64_t tk_pdf_open_w(int64_t data)
 int64_t tk_pdf_openfile_w(int64_t path)
 {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) return 0;
-    return (int64_t)(intptr_t)pdf_open_file((const char *)(intptr_t)path);
+    if (!path) return pdf_raise(5, "pdf.openfile: null path");
+    {
+        TkPdfDoc *doc = pdf_open_file((const char *)(intptr_t)path);
+        if (!doc) return pdf_raise_last(5, "pdf.openfile: the file could not be opened");
+        return pdf_ok((int64_t)(intptr_t)doc);
+    }
 }
 
 /* pdf.pagecount(doc:$pdfdoc) -> i64 */
@@ -154,13 +201,13 @@ int64_t tk_pdf_runs_w(int64_t handle, int64_t page)
     int64_t arr;
     int64_t *block;
 
-    if (!doc) return 0;
+    if (!doc) return pdf_raise(0, "pdf.runs: null document");
     pg = pdf_page_runs(doc, (uint32_t)page);
-    if (!pg) return 0;
+    if (!pg) return pdf_raise_last(0, "pdf.runs: the page could not be read");
 
     n = pdf_run_count(pg);
     arr = tk_arr_alloc((int64_t)n, (int64_t)n);
-    if (!arr) { pdf_page_free(pg); return 0; }
+    if (!arr) { pdf_page_free(pg); return pdf_raise(3, "pdf.runs: out of memory"); }
     block = (int64_t *)(intptr_t)arr;
 
     for (uint32_t i = 0; i < n; i++) {
@@ -173,18 +220,21 @@ int64_t tk_pdf_runs_w(int64_t handle, int64_t page)
     }
     tk_arr_setlen(arr, (int64_t)built);
     pdf_page_free(pg);
-    return arr;
+    return pdf_ok(arr);
 }
 
 /* pdf.pagetext(doc:$pdfdoc; page:i64) -> $str!$pdferr — reading order. */
 int64_t tk_pdf_pagetext_w(int64_t handle, int64_t page)
 {
-    char *t = pdf_page_text((TkPdfDoc *)(intptr_t)handle, (uint32_t)page);
+    char *t;
     int64_t out;
-    if (!t) return 0;
+    if (!handle) return pdf_raise(0, "pdf.pagetext: null document");
+    t = pdf_page_text((TkPdfDoc *)(intptr_t)handle, (uint32_t)page);
+    if (!t) return pdf_raise_last(0, "pdf.pagetext: the page could not be read");
     out = dup_str(t);
     free(t);
-    return out;
+    if (!out) return pdf_raise(3, "pdf.pagetext: out of memory");
+    return pdf_ok(out);
 }
 
 /* pdf.hastext(doc:$pdfdoc; page:i64) -> bool

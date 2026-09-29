@@ -20,7 +20,7 @@ The `pkg.toml` file is the package manifest for toke projects. It declares the p
 | Field     | Type   | Required | Description |
 |-----------|--------|----------|-------------|
 | `name`    | string | yes      | Package name. Lowercase ASCII letters and digits only (`[a-z][a-z0-9]{0,62}`). No underscores, hyphens, or dots. `std`, `pkg`, `toke` and `tkc` are reserved. |
-| `version` | string | yes      | SemVer 2.0 version (`MAJOR.MINOR.PATCH`). Pre-release suffixes are permitted but ignored during dependency resolution. |
+| `version` | string | yes      | SemVer 2.0 version (`MAJOR.MINOR.PATCH`, no leading zeros). Pre-release (`-rc.1`) and build (`+sha.5114f85`) suffixes are permitted — checked against the SemVer 2.0 grammar — but ignored during dependency resolution. |
 
 **Example:**
 
@@ -65,7 +65,9 @@ The `git` field is optional. When omitted, the compiler resolves the package nam
 | `">=1.2.0"`            | Version 1.2.0 or any later version. |
 | `">=1.2.0 <2.0.0"`    | At least 1.2.0, strictly less than 2.0.0. |
 
-Tilde (`~`), caret (`^`), and wildcard (`*`) ranges are reserved for future versions and SHALL produce E9012 if used.
+Versions in a constraint are releases: a pre-release or build suffix in a constraint produces E9012, and so does anything after the version other than the `<` bound — an upper bound not above the lower bound (`">=2.0.0 <2.0.0"`) included. Tilde (`~`), caret (`^`), and wildcard (`*`) ranges are reserved for future versions and SHALL produce E9012 if used.
+
+Resolution takes, for each package, the highest minimum any constraint names (minimal version selection, ADR-0004) and then checks it against every constraint on that package: if it is not an exact version one of them names, or reaches an upper bound, no version satisfies the graph and resolution fails (E9010). Until story 121.46 the upper bound was never read — `">=1.2.0 <2.0.0"` meant `">=1.2.0"` — and an exact version acted as a minimum.
 
 ---
 

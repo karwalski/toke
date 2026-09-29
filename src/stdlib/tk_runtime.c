@@ -119,6 +119,33 @@ int64_t tk_err_rebox(int64_t v, int64_t nbytes)
     return (int64_t)(intptr_t)b;
 }
 
+/* ── 127.102/127.241: a raised message that outlives the next call ────────
+ * A stdlib error box holds a POINTER to its message.  Several C cores keep
+ * their last message in one static buffer that the next call overwrites
+ * (file.c, csv.c, ocr.c, pdf.c), and a let-bound error keeps a copy of its
+ * box, not of the string (127.103) — so a message pointing into that buffer
+ * would change under a binding the caller still holds.  tk_err_msg formats
+ * into the next slot of a small per-thread ring instead: a message stays
+ * exact across the next TK_ERR_MSG_RING - 1 raises on its thread, with no
+ * allocation per error (127.109).  A message that is a string literal needs
+ * none of this and should be stored directly. */
+#define TK_ERR_MSG_RING 8
+#define TK_ERR_MSG_LEN  1024
+static TK_TLS char err_msg_ring[TK_ERR_MSG_RING][TK_ERR_MSG_LEN];
+static TK_TLS int  err_msg_next;
+
+const char *tk_err_msg(const char *fmt, ...)
+{
+    char *m = err_msg_ring[err_msg_next];
+    err_msg_next = (err_msg_next + 1) % TK_ERR_MSG_RING;
+    va_list ap;
+    if (!fmt) { m[0] = '\0'; return m; }
+    va_start(ap, fmt);
+    vsnprintf(m, TK_ERR_MSG_LEN, fmt, ap);
+    va_end(ap);
+    return m;
+}
+
 /* ── Global argv storage ─────────────────────────────────────────── */
 
 static int    g_argc;

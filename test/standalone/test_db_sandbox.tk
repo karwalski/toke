@@ -2,7 +2,7 @@ m=test.dbsandbox;
 i=db:std.db;
 i=io:std.io;
 i=str:std.str;
-i=fs:std.fs;
+i=fs:std.file;
 
 f=main():i64{
   let dbpath="/tmp/toke_test_db_sandbox.db";

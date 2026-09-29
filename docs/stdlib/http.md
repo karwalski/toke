@@ -317,11 +317,27 @@ servers, through ALPN. The connection preface and the client's first
 `SETTINGS` frame must arrive within the server timeout of the connection
 starting; every frame must be whole within the timeout of its first byte; and
 a request's header block (`HEADERS` up to `END_HEADERS`) must be complete
-within the timeout of its first frame. A connection that misses one of these
-is closed. A header block larger than the 64 KiB header-list size the server
-advertises ends the connection with `GOAWAY` (`ENHANCE_YOUR_CALM`). Waiting
-between requests is not a request: an idle HTTP/2 connection is pinged after
-30 seconds, as before.
+within the timeout of its first frame, and its body on the HTTP/1.1 clock
+above. A connection that misses one of these is closed. A header block larger
+than the 64 KiB header-list size the server advertises ends the connection
+with `GOAWAY` (`ENHANCE_YOUR_CALM`). Waiting between requests is not a
+request, but it is not free either: a connection with no request in progress
+for 30 seconds is closed with `GOAWAY` (`NO_ERROR`), and `PING` frames do not
+count as activity (story 121.46 — the server used to ping an idle connection
+and take the answer as activity, so any client that answered held a worker
+for as long as it stayed connected).
+
+**An HTTP/2 request is the same request** (story 121.46). A header block that
+continues into `CONTINUATION` frames is dispatched when it ends; the request
+body arrives in `req.body`, as on HTTP/1.1, with the same body limit (`413`
+past it); and the response carries the handler's own headers (sent with
+lower-case names; `Connection`, `Keep-Alive`, `Transfer-Encoding`, `Upgrade`
+and `TE` are dropped, as RFC 9113 §8.2.2 requires, and `Content-Length` is
+always the length of the body sent), the security headers and
+`Strict-Transport-Security`, and the CORS headers when an allowed origin
+matched. Until then a request whose headers used `CONTINUATION` was never
+answered, `req.body` was always empty, and a response carried only its
+status, length and content type.
 
 **No cleartext upgrade to HTTP/2.** A request carrying `Upgrade: h2c` is
 answered over HTTP/1.1 like any other; the server ignores the header, as RFC
@@ -351,6 +367,13 @@ The request path is appended to `dir` **whole, including the prefix** — so
 `http.servedir("/static";"./public")` serves `/static/style.css` from
 `./public/static/style.css`, not from `./public/style.css`. Lay the directory
 out to match.
+
+**Capabilities.** The mount gives the server the authority to read any file
+under `dir` on every request, so `http.servedir` — and `http.servepages`,
+which reads its pages and templates on every request — takes `fs.read` when it
+is called, as well as the `net` the server takes to listen (story 121.42).
+`http.downloadfile` takes `fs.write` as well as `net`. Under enforcement a
+missing grant is `CAP001` at the call.
 
 ```toke
 i=http:std.http;

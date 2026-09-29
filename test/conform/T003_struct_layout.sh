@@ -107,7 +107,7 @@ run_case() {
         return
     fi
     local got
-    got="$(./run.bin 2>&1)"
+    got="$(./run.bin ${RUN_GRANT:-} 2>&1)"   # RUN_GRANT: a case that needs a capability
     rm -f run.bin
     if [ "${got}" != "${expected}" ]; then
         echo "  FAIL: ${name}: expected [${expected}], got [${got}]"
@@ -391,6 +391,8 @@ f=main():i64{
 #    the old compiler resolved the name against it — so `r.score` loaded the
 #    payload POINTER and printed it as a double.  Both are numbers; nothing
 #    looked wrong.
+# 136.15 x 121.22: vs.close writes the dirty store, so it takes fs.write.
+RUN_GRANT=--allow-write \
 run_case "a stdlib struct-array element resolves against its own record" \
     "$(printf 'id=a\nscore=1')" '
 m=t;

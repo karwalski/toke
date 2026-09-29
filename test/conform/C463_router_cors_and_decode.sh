@@ -100,7 +100,7 @@ EOF
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/h" "${WORK}/h.c" \
-        "${S}/router.c" "${S}/str.c" "${S}/ws.c" -lz >"${WORK}/cc" 2>&1; then
+        "${S}/router.c" "${S}/str.c" "${S}/ws.c" "${S}/capabilities.c" -lz >"${WORK}/cc" 2>&1; then
     fail "build: $(grep -a -m2 error "${WORK}/cc" | head -c 300)"
 else
     ASAN_OPTIONS=detect_leaks=0 "${WORK}/h" >"${WORK}/out" 2>&1

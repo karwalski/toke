@@ -145,18 +145,17 @@ int tk_webview_is_available(void);
  * Bridge trust policy (story 122.11)
  *
  * The native bridge -- window.toke.<name>() handlers, the reply and
- * tk_webview_eval_js() (both evaluateJavaScript:), and the loke:// scheme
- * -- is only honoured for a TRUSTED origin:
+ * tk_webview_eval_js() (both evaluateJavaScript:) -- is only honoured for
+ * a TRUSTED origin:
  *
- *   loke:  any loke:// document (the app's own content)
  *   file:  any file:// document (local content shipped with the app)
  *   other  only an origin added with tk_webview_allow_origin()
  *
  * Messages must also come from the MAIN frame: a message from any
  * sub-frame is dropped, whatever its origin.  Everything else (a remote
  * page reached by redirect or link, an ad iframe, about:blank) is
- * denied: its messages are dropped, eval_js returns 0, and loke://
- * requests it initiates fail.
+ * denied: its messages are dropped and eval_js returns 0.  (136.45
+ * withdrew the consumer-specific `loke:` scheme that was trusted here.)
  *
  * UNSAFE CASE: loading an untrusted or remote URL into a bridged webview
  * and then allowing its origin hands that page every registered handler.
@@ -193,7 +192,7 @@ int tk_webview_origin_trusted(const TkWebviewOrigin *o,
                               const TkWebviewOrigin *allow, int nallow);
 
 /* Handler names are spliced into JavaScript, so only [A-Za-z][A-Za-z0-9]{0,63}
- * is accepted (plus the reserved "loke_scheme").  Returns 1 if valid. */
+ * is accepted.  Returns 1 if valid. */
 int tk_webview_handler_name_ok(const char *name);
 
 /* Escape s for the inside of a double-quoted JavaScript string literal:

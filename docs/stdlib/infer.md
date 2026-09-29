@@ -7,19 +7,19 @@ order: 45
 
 > **Status: FAÇADE -- do not write against this page's API.** All six published functions have a `_w` wrapper, so a call links; every one of those wrappers is a stub that ignores its arguments. `infer.load` returns 0 unconditionally, so no handle is ever produced, so nothing else can do anything useful. `src/stdlib/infer.c` is 397 lines implementing `tk_infer_load`, `tk_infer_unload`, `tk_infer_generate` and `tk_infer_embed`; `src/stdlib/infer_glue.c` calls none of them. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`): a finished core behind glue that returns 0.
 
-`std.infer` is intended to provide in-process LLM inference via llama.cpp. Models are GGUF files (by convention under `~/.loke/models/`) reached through an opaque handle, with text generation, embedding extraction, and a disk-streaming loader for machines that cannot hold the whole model in RAM.
+`std.infer` is intended to provide in-process LLM inference via llama.cpp. Models are GGUF files, at whatever path the caller passes, reached through an opaque handle, with text generation, embedding extraction, and a disk-streaming loader for machines that cannot hold the whole model in RAM.
 
 ## What is actually reachable today
 
-Measured against the built compiler, not read off the interface. Every row links -- this module's failure mode is quieter than `std.mlx`'s, because nothing errors, it simply does nothing.
+Measured against the built compiler, not read off the interface. Every row links. Since 127.241 every fallible call says so: it takes the `$err` arm with an `infererr` whose `msg` says local inference is not linked into the build and whose `code` is 0 -- distinct from the core's own -1 ("llama.cpp not compiled in") and -2 ("not implemented"). Before 127.241 nothing errored and the module simply did nothing.
 
 | Published call | `.tki` arity | Glue arity | Behaviour today |
 |---|---|---|---|
-| `infer.load` | 2 | 2 | takes `inferopts` (135.31) and ignores it; returns 0, never a handle |
-| `infer.loadstreaming` | 2 | 2 | takes `streamopts` (135.31) and ignores it; returns 0 |
+| `infer.load` | 2 | 2 | takes `inferopts` (135.31) and ignores it; takes the `$err` arm, never a handle |
+| `infer.loadstreaming` | 2 | 2 | takes `streamopts` (135.31) and ignores it; takes the `$err` arm |
 | `infer.unload` | 1 | 1 | returns 0 |
-| `infer.generate` | 3 | **2** | drops the token limit; returns the literal `"[infer: not available]"` |
-| `infer.embed` | 2 | 2 | returns a zero-length array |
+| `infer.generate` | 3 | **2** | drops the token limit; takes the `$err` arm (until 127.241 it returned the literal `"[infer: not available]"` through `$ok`) |
+| `infer.embed` | 2 | 2 | takes the `$err` arm (until 127.241 it returned a zero-length array through `$ok`) |
 | `infer.isloaded` | 1 | 1 | returns 0. Added by 131.38, which found it declared with no wrapper at all -- and made it a stub consistent with the rest rather than a working function, because `load` never hands out a handle for it to check |
 
 A `generate` call written the way the interface publishes it is still rejected before the linker (`load` and `loadstreaming` were too, until 135.31 gave their wrappers the options slot):
@@ -96,7 +96,7 @@ Disk-streaming load (Epic 72.7): `ramceilinggb`, `prefetchlayers` ahead of the d
 
 #### infer.load(modelpath: str; opts: inferopts): modelhandle!infererr
 
-Loads a GGUF file into memory. `tk_infer_load` in the core does this and takes the options; the wrapper takes the path and the options (135.31) and returns 0.
+Loads a GGUF file into memory. `tk_infer_load` in the core does this and takes the options; the wrapper takes the path and the options (135.31) and always takes the `$err` arm.
 
 #### infer.unload(h: modelhandle): bool
 
@@ -104,11 +104,11 @@ Frees the model. `tk_infer_unload` exists; the wrapper returns 0.
 
 #### infer.generate(h: modelhandle; prompt: str; maxtokens: i32): str!infererr
 
-Autoregressive generation from `prompt`, at most `maxtokens` new tokens, returning only the continuation. `tk_infer_generate` in the core takes the limit and serialises generate and embed calls on one handle through a per-handle mutex. The wrapper takes two arguments and returns a literal.
+Autoregressive generation from `prompt`, at most `maxtokens` new tokens, returning only the continuation. `tk_infer_generate` in the core takes the limit and serialises generate and embed calls on one handle through a per-handle mutex. The wrapper takes two arguments and always takes the `$err` arm.
 
 #### infer.embed(h: modelhandle; text: str): @(f32)!infererr
 
-Runs `text` through the embedding layer. `tk_infer_embed` exists; the wrapper returns an empty array, which is indistinguishable from a model whose embedding dimension is zero.
+Runs `text` through the embedding layer. `tk_infer_embed` exists; the wrapper always takes the `$err` arm. (Until 127.241 it returned an empty array through `$ok`, indistinguishable from a model whose embedding dimension is zero.)
 
 #### infer.isloaded(h: modelhandle): bool
 

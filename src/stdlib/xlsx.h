@@ -231,4 +231,20 @@ int xlsx_serial_to_text(const char *serial, int date1904, int timeonly,
  */
 const char *xlsx_lasterr(void);
 
+/*
+ * xlsx_lasterr_kind — the $xlsxerr variant of that failure (127.241).  The
+ * values ARE the variant indices stdlib/xlsx.tki declares, in order, because
+ * xlsx_glue.c stores them as the tag of the {tag, msg} error box; keep the two
+ * in step.  XLSX_E_NONE (-1) means nothing has failed.
+ */
+typedef enum {
+    XLSX_E_NONE        = -1,
+    XLSX_E_BADWORKBOOK = 0,   /* not a workbook: the container or its manifest   */
+    XLSX_E_BADPART     = 1,   /* a part inside it is missing, unreadable or bad  */
+    XLSX_E_NOSHEET     = 2,   /* xlsx.rows: no sheet of that name                */
+    XLSX_E_TOOLARGE    = 3,   /* a cap was exceeded (xlsx's own, or zip's)       */
+    XLSX_E_IO          = 4    /* the file could not be read, or memory ran out   */
+} TkXlsxErrKind;
+TkXlsxErrKind xlsx_lasterr_kind(void);
+
 #endif /* TK_STDLIB_XLSX_H */

@@ -192,8 +192,10 @@ static const StdlibModule stdlib_table[] = {
     { "array",         "collections.c collections_glue.c",      "",                                                                 "" },  /* 127.42: tk_array_* glue, no .tki */
     { "task",          "task.c",                                "",                                                                 "-lpthread" },
     { "clipboard",     "clipboard_glue.c",                      "",                                                                 "" },
-    { "fs",            "file.c file_glue.c",                    "",                                                                 "" },
-    { "string",        "str.c str_glue.c",                      "",                                                                 "" },
+    /* 136.45: "fs" and "string" are withdrawn -- bare second names for
+     * std.file and std.str that existed only because one downstream project
+     * imported them.  `i=x:std.fs;` / `i=x:std.string;` now fail at the
+     * import (E2030); the consumer renames to std.file / std.str. */
     { NULL, NULL, NULL, NULL }  /* sentinel */
 };
 

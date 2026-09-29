@@ -16,10 +16,10 @@ An entry below is declared as a `func` export in a `stdlib/*.tki` interface file
 
 ## Population
 
-| `.tki` func exports | 959 |
+| `.tki` func exports | 926 |
 |---|---|
-| Resolve to a defined symbol | 915 |
-| **Quarantined (no defined symbol)** | **44** |
+| Resolve to a defined symbol | 884 |
+| **Quarantined (no defined symbol)** | **42** |
 | Stale skips (quarantined but now resolving) | 0 |
 
 A stale skip fails `make check-tki`, so the skiplist cannot silently outlive the gap it records: the moment an export gets its glue, the gate demands the line be deleted.
@@ -75,12 +75,6 @@ An export whose symbol **exists** but whose declared **arity** disagrees with th
 | `df.schema` | `tk_dataframe_schema_w` | 2026-09-19 no _w glue; no C impl [101.R3c] |
 | `df.tojson` | `tk_dataframe_tojson_w` | 2026-09-19 no _w glue; no C impl [101.R3c] |
 
-### `encoding` (1)
-
-| Export | Expected symbol | Reason |
-|---|---|---|
-| `encoding.b64urldecode` | `tk_encoding_b64urldecode_w` | 2026-09-19 C core encoding_b64urldecode lives in acme.c, no _w glue [131.38-followup] |
-
 ### `html` (5)
 
 | Export | Expected symbol | Reason |
@@ -123,11 +117,10 @@ An export whose symbol **exists** but whose declared **arity** disagrees with th
 | `mdns.isavailable` | `tk_mdns_isavailable_w` | 2026-09-19 no _w glue; core=mdns_is_available [131.38-followup] |
 | `mdns.resolve` | `tk_mdns_resolve_w` | 2026-09-19 no _w glue; core=mdns_resolve [131.38-followup] |
 
-### `mlx` (2)
+### `mlx` (1)
 
 | Export | Expected symbol | Reason |
 |---|---|---|
-| `mlx.embed` | `tk_mlx_embed_w` | 2026-09-19 no _w glue; core=mlx_embed [131.38-followup] |
 | `mlx.unload` | `tk_mlx_unload_w` | 2026-09-19 no _w glue; core=mlx_unload [131.38-followup] |
 
 ### `template` (1)

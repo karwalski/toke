@@ -6,15 +6,26 @@
  */
 
 #include "args.h"
+#include "tk_runtime.h"   /* 127.241: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 
 int64_t tk_args_count_w(void) {
     return (int64_t)args_count();
 }
 
+/* args.get(n) -> str!ArgsErr.  127.241: a failure stores an ArgsErr record
+ * {msg} (runtime-abi.md §7.3) and a success clears the slot, so the $err arm
+ * binds `e.msg`; until then it returned a bare 0 and `e.msg` was RT005. */
 int64_t tk_args_get_w(int64_t n) {
     StrArgsResult r = args_get((uint64_t)n);
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) {
+        int64_t *box = (int64_t *)tk_err_box((int64_t)sizeof(int64_t));
+        box[0] = (int64_t)(intptr_t)"args.get: index out of bounds";
+        tk_current_error = (int64_t)(intptr_t)box;
+        return 0;
+    }
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return (int64_t)(intptr_t)r.ok;
 }
 
 /*

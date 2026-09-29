@@ -1801,12 +1801,13 @@ Embedded vector store for similarity search.
 
 **Types:** `$VecStore{path:str}` `$VecCollection{name:str}` `$VecEntry{id:str;embedding:@(f64);payload:str;createdat:i64}` `$SearchResult{id:str;score:f64;payload:str}` `$VecErr{$IoErr:str;$DimMismatch:str;$NotFound:str}`
 
-Nothing is written to disk until `vecstore.close` runs; it is the only flush point.
+Nothing is written to disk until `vecstore.flush` or `vecstore.close` runs; there is no implicit write, so a process that dies loses every change since its last flush or close (136.15).
 
 **Functions:**
 
 - `vecstore.open(path:str):VecStore!VecErr` — open or create store
 - `vecstore.close(s:VecStore):void` — close store
+- `vecstore.flush(s:VecStore):bool` — write every changed collection to disk now (atomic, synced); false if any write failed
 - `vecstore.collection(s:VecStore;name:str):VecCollection!VecErr` — get or create collection
 - `vecstore.upsert(c:VecCollection;id:str;embedding:@(f64);payload:str):bool` — insert or update vector
 - `vecstore.search(c:VecCollection;query:@(f64);k:i32;minscore:f64):@(SearchResult)` — nearest-neighbour search

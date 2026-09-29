@@ -42,28 +42,66 @@ skip_ws(const char *s)
 
 /* ── SemVer ────────────────────────────────────────────────────────────────── */
 
+/* version_core — parse MAJOR.MINOR.PATCH at s (SemVer 2.0 section 2:
+ * non-negative integers without leading zeros).  Returns the first byte after
+ * it, or NULL.  121.46: each component is bounded, so a long digit run is
+ * refused rather than overflowing (it was signed overflow). */
+static const char *
+version_core(const char *p, PkgVersion *out)
+{
+    int part[3];
+    for (int i = 0; i < 3; i++) {
+        if (i > 0) {
+            if (*p != '.') return NULL;
+            p++;
+        }
+        if (!isdigit((unsigned char)*p)) return NULL;
+        if (p[0] == '0' && isdigit((unsigned char)p[1])) return NULL;
+        long long v = 0;
+        while (isdigit((unsigned char)*p)) {
+            v = v * 10 + (*p - '0');
+            if (v > PKG_VERSION_MAX) return NULL;
+            p++;
+        }
+        part[i] = (int)v;
+    }
+    out->major = part[0];
+    out->minor = part[1];
+    out->patch = part[2];
+    return p;
+}
+
+/* semver_idents — dot-separated non-empty identifiers of [0-9A-Za-z-]; a
+ * pre-release identifier that is numeric has no leading zero (SemVer 2.0
+ * sections 9 and 10).  Returns the first byte after them, or NULL. */
+static const char *
+semver_idents(const char *p, bool prerelease)
+{
+    for (;;) {
+        const char *b = p;
+        bool numeric = true;
+        while (isalnum((unsigned char)*p) || *p == '-') {
+            if (!isdigit((unsigned char)*p)) numeric = false;
+            p++;
+        }
+        if (p == b) return NULL;
+        if (prerelease && numeric && p - b > 1 && b[0] == '0') return NULL;
+        if (*p != '.') return p;
+        p++;
+    }
+}
+
 bool
 pkg_version_parse(const char *s, PkgVersion *out)
 {
     if (!s || !out) return false;
-    int maj = 0, min = 0, pat = 0;
-    int n = 0;
-    /* manual parse to avoid sscanf portability quirks */
-    const char *p = s;
-    if (!isdigit((unsigned char)*p)) return false;
-    while (isdigit((unsigned char)*p)) { maj = maj * 10 + (*p - '0'); p++; n++; }
-    if (*p != '.') return false; p++;
-    if (!isdigit((unsigned char)*p)) return false;
-    while (isdigit((unsigned char)*p)) { min = min * 10 + (*p - '0'); p++; n++; }
-    if (*p != '.') return false; p++;
-    if (!isdigit((unsigned char)*p)) return false;
-    while (isdigit((unsigned char)*p)) { pat = pat * 10 + (*p - '0'); p++; n++; }
-    if (*p != '\0' && *p != '"' && *p != '\n' && *p != '\r' && *p != ' ')
-        return false;
-    (void)n;
-    out->major = maj;
-    out->minor = min;
-    out->patch = pat;
+    PkgVersion v;
+    const char *p = version_core(s, &v);
+    if (!p) return false;
+    if (*p == '-' && !(p = semver_idents(p + 1, true))) return false;
+    if (*p == '+' && !(p = semver_idents(p + 1, false))) return false;
+    if (*p != '\0') return false;
+    *out = v;
     return true;
 }
 
@@ -171,20 +209,33 @@ parse_kv(const char *line, char *key, int keysz, char *val, int valsz)
 }
 
 /*
- * Parse a >=x.y.z constraint string.  Extracts the version after ">=".
- * Returns true on success.
+ * parse_constraint — one of the three documented forms (package-manifest.md,
+ * "Version Constraint Syntax"):  "x.y.z" (exactly), ">=x.y.z", and
+ * ">=x.y.z <a.b.c" with a.b.c above x.y.z.  Versions here are releases:
+ * no pre-release or build suffix.  121.46: anything else is refused -- the
+ * version used to be read up to the first space and the rest ignored, so
+ * the upper bound in ">=1.2.0 <2.0.0" was never seen.
  */
 static bool
-parse_constraint(const char *s, PkgVersion *out)
+parse_constraint(const char *s, PkgDep *d)
 {
     const char *p = skip_ws(s);
+    d->exact = false;
+    d->has_below = false;
     if (p[0] == '>' && p[1] == '=') {
-        p += 2;
-        p = skip_ws(p);
-        return pkg_version_parse(p, out);
+        p = skip_ws(p + 2);
+        if (!(p = version_core(p, &d->minimum))) return false;
+        const char *q = skip_ws(p);
+        if (*q == '<' && q != p) {
+            if (!(p = version_core(skip_ws(q + 1), &d->below))) return false;
+            if (pkg_version_cmp(d->below, d->minimum) <= 0) return false;
+            d->has_below = true;
+        }
+    } else {
+        if (!(p = version_core(p, &d->minimum))) return false;
+        d->exact = true;
     }
-    /* bare version: treat as exact minimum */
-    return pkg_version_parse(p, out);
+    return *skip_ws(p) == '\0';
 }
 
 /* ── Manifest parser ───────────────────────────────────────────────────────── */
@@ -348,14 +399,14 @@ manifest_parse_lines(const char *text, PkgManifest *out,
         } else if (sect == M_DEPS) {
             PkgDep *d = add_dep(out, key, lineno, errbuf, errbufsz);
             if (!d) return -1;
-            if (!parse_constraint(val, &d->minimum)) {
+            if (!parse_constraint(val, d)) {
                 errf(errbuf, errbufsz,
                      "line %d: invalid constraint '%s'", lineno, val);
                 return -1;
             }
         } else if (sect == M_DEPTABLE) {
             if (strcmp(key, "version") == 0 && !tbl.has_version) {
-                if (!parse_constraint(val, &tbl.dep->minimum)) {
+                if (!parse_constraint(val, tbl.dep)) {
                     errf(errbuf, errbufsz,
                          "line %d: invalid constraint '%s'", lineno, val);
                     return -1;
@@ -485,6 +536,20 @@ pkg_resolve(const PkgDep *deps, int dep_count, PkgLock *out)
             out->count++;
         }
     }
+
+    /* 121.46: MVS picked the highest minimum; it must now satisfy every
+     * constraint on that package -- equal to each exact version, below each
+     * upper bound.  If it does not, no version does (every other candidate
+     * is below some minimum): resolution fails. */
+    for (int i = 0; i < dep_count; i++)
+        for (int j = 0; j < out->count; j++) {
+            if (strcmp(out->entries[j].name, deps[i].name) != 0) continue;
+            PkgVersion v = out->entries[j].version;
+            if (deps[i].exact && pkg_version_cmp(v, deps[i].minimum) != 0)
+                return -1;
+            if (deps[i].has_below && pkg_version_cmp(v, deps[i].below) >= 0)
+                return -1;
+        }
 
     return 0;
 }
