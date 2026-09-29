@@ -112,6 +112,63 @@ else
     fail "CRY-01: build: $(grep -a -m3 -E 'error' "${WORK}/rng1.cc" "${WORK}/rng2.cc" | head -c 400)"
 fi
 
+# ── AUTH-01 ─────────────────────────────────────────────────────────────────
+cat > "${WORK}/jwt.c" <<'C'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include "auth.h"
+#include "crypto.h"
+#include "encoding.h"
+static const uint8_t K[] = "c452-c452-c452-c452-c452-c452-c4";
+static ByteArray key(void) { ByteArray b = { K, 32 }; return b; }
+/* An HS256 token over an arbitrary payload, signed with K. */
+static char *mint(const char *payload) {
+    const char *hj = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+    ByteArray hb = { (const uint8_t *)hj, strlen(hj) }, pb = { (const uint8_t *)payload, strlen(payload) };
+    const char *h = encoding_b64urlencode(hb), *p = encoding_b64urlencode(pb);
+    char *si = malloc(strlen(h) + strlen(p) + 2); sprintf(si, "%s.%s", h, p);
+    ByteArray sib = { (const uint8_t *)si, strlen(si) };
+    ByteArray mac = crypto_hmac_sha256(key(), sib);
+    const char *sg = encoding_b64urlencode(mac);
+    char *t = malloc(strlen(si) + strlen(sg) + 2); sprintf(t, "%s.%s", si, sg);
+    return t;
+}
+static void expect(const char *what, const char *payload, int want_ok, const char *want_msg) {
+    JwtVerifyResult v = auth_jwtverify(mint(payload), key());
+    int ok = want_ok ? !v.is_err : (v.is_err && v.err_msg && strstr(v.err_msg, want_msg));
+    printf("%s %s (%s)\n", ok ? "OK" : "BAD", what, v.is_err ? v.err_msg : "verified");
+}
+int main(void) {
+    long long now = (long long)time(NULL);
+    char b[256];
+    snprintf(b, sizeof b, "{\"sub\":\"a\",\"exp\":%lld}", now - 10);
+    expect("a token 10 s past exp is rejected", b, 0, "expired");
+    snprintf(b, sizeof b, "{\"sub\":\"a\",\"exp\":%lld}", now);
+    expect("a token at exactly exp is rejected (RFC 7519: on or after)", b, 0, "expired");
+    snprintf(b, sizeof b, "{\"sub\":\"a\",\"exp\":%lld}", now + 3600);
+    expect("a token an hour before exp verifies", b, 1, NULL);
+    expect("a token with no exp verifies", "{\"sub\":\"a\"}", 1, NULL);
+    snprintf(b, sizeof b, "{\"sub\":\"a\",\"nbf\":%lld}", now + 3600);
+    expect("a token before its nbf is rejected", b, 0, "not yet valid");
+    snprintf(b, sizeof b, "{\"sub\":\"a\",\"nbf\":%lld,\"exp\":%lld}", now - 60, now + 60);
+    expect("a token inside [nbf, exp) verifies", b, 1, NULL);
+    expect("a string exp is rejected, not read as 'never expires'", "{\"sub\":\"a\",\"exp\":\"soon\"}", 0, "malformed");
+    JwtClaims c = { "alice", "svc", 0, 1, NULL };            /* signed by jwtsign, exp 1970 */
+    JwtResult s = auth_jwtsign(c, key());
+    JwtVerifyResult v = auth_jwtverify(s.ok, key());
+    printf("%s a jwtsign token with exp 1 is rejected\n", v.is_err && strstr(v.err_msg, "expired") ? "OK" : "BAD");
+    return 0;
+}
+C
+if "${CC}" ${CF} -o "${WORK}/jwt" "${WORK}/jwt.c" "${S}/auth.c" "${S}/encoding.c" "${S}/crypto.c" "${S}/str.c" >"${WORK}/jwt.cc" 2>&1; then
+    "${WORK}/jwt" >"${WORK}/jwt.out" 2>&1
+    report "AUTH-01" "${WORK}/jwt.out" $?
+else
+    fail "AUTH-01: build: $(grep -a -m3 -E 'error' "${WORK}/jwt.cc" | head -c 400)"
+fi
+
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ] && [ "${PASS}" -gt 0 ]

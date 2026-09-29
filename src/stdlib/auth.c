@@ -452,7 +452,32 @@ JwtVerifyResult auth_jwtverify(const char *token, ByteArray secret)
     int has_iss = json_get_str(payload_json, "iss", iss_buf, sizeof(iss_buf));
     json_get_int64(payload_json, "iat", &iat_val);
     int has_exp = json_get_int64(payload_json, "exp", &exp_val);
+
+    /* 121.20 (AUTH-01): enforce the token's validity window.  exp was
+     * parsed and returned but never compared with the clock, so a token
+     * verified forever after it expired; callers had to remember a
+     * separate auth_jwtexpired().  RFC 7519 4.1.4/4.1.5: reject on or
+     * after exp, and before nbf.  A claim that is present but not an
+     * integer is rejected too -- reading it as absent would mean "never
+     * expires".  No leeway: the clock is the verifier's. */
+    int64_t nbf_val = 0;
+    int has_nbf = json_get_int64(payload_json, "nbf", &nbf_val);
+    int bad_exp = !has_exp && strstr(payload_json, "\"exp\":") != NULL;
+    int bad_nbf = !has_nbf && strstr(payload_json, "\"nbf\":") != NULL;
     free(payload_json);
+    int64_t now = (int64_t)time(NULL);
+    if (bad_exp || bad_nbf) {
+        result.err_msg = "malformed exp or nbf claim";
+        return result;
+    }
+    if (has_exp && now >= exp_val) {
+        result.err_msg = "token expired";
+        return result;
+    }
+    if (has_nbf && now < nbf_val) {
+        result.err_msg = "token not yet valid (nbf)";
+        return result;
+    }
 
     JwtClaims claims;
     memset(&claims, 0, sizeof(claims));

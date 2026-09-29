@@ -72,9 +72,12 @@ int main(int argc, char **argv) {
     printf("%s iss round-trips exactly (quote, backslash, newline, control byte)\n",
            !d.is_err && d.ok.iss && !strcmp(d.ok.iss, ISS) ? "OK" : "BAD");
     printf("%s aud round-trips exactly\n", !d.is_err && d.ok.aud && !strcmp(d.ok.aud, AUD) ? "OK" : "BAD");
+    /* 121.20 (AUTH-01): jwtverify now enforces exp, so this token -- exp
+     * 2000 -- is rejected as expired.  Had the injected exp 99999999999
+     * won, it would verify; so rejection is the injection check too. */
     JwtVerifyResult v = auth_jwtverify(s.ok, secret);
-    printf("%s verify: signature valid, exp read back as 2000\n",
-           !v.is_err && v.ok.expires_at == 2000 ? "OK" : "BAD");
+    printf("%s verify: the exp-2000 token is rejected as expired (the injected exp did not win)\n",
+           v.is_err && v.err_msg && strstr(v.err_msg, "expired") ? "OK" : "BAD");
     printf("%s auth_jwtexpired: the token signed with exp 2000 is expired\n",
            auth_jwtexpired(s.ok) == 1 ? "OK" : "BAD");
     /* control: the same claims, sane values, a future exp */
