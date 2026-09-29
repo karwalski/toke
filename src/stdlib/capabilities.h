@@ -15,10 +15,13 @@
  *     union of the baked set and the runtime flags.
  *
  * This file is 124.4a: the broker + grant model + runtime flag parse. The
- * default mode is ALLOW_ALL, so nothing is enforced yet and behaviour is
- * unchanged — the sink wiring (124.4c) and the flip to deny-by-default
- * (124.4g) come later. The compile-time baking + tkc.toml [capabilities]
- * parse is 124.4b.
+ * compile-time baking + tkc.toml [capabilities] parse is 124.4b, the sink
+ * wiring 124.4c, and 124.4g flipped the default to ENFORCE (deny-by-default).
+ *
+ * Which entries reach a sink, and whether each passes a TK_REQUIRE of the
+ * right class, is checked by scripts/check_capability_sinks.py (conform case
+ * C470, story 121.22). A new wrapper that opens a file, a socket, a process
+ * or the environment without TK_REQUIRE fails that gate.
  */
 #ifndef TK_CAPABILITIES_H
 #define TK_CAPABILITIES_H
@@ -35,7 +38,7 @@
 
 /* Broker enforcement mode. */
 typedef enum {
-    TK_CAP_MODE_ALLOW_ALL = 0,  /* default today: ambient, nothing gated */
+    TK_CAP_MODE_ALLOW_ALL = 0,  /* only after an explicit --allow-all */
     TK_CAP_MODE_ENFORCE   = 1   /* deny-by-default: only granted classes pass */
 } TkCapMode;
 

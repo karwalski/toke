@@ -1,0 +1,140 @@
+# check_capability_sinks_skiplist.txt -- read by scripts/check_capability_sinks.py
+# (conform case test/conform/C470_capability_sinks_gated.sh).
+#
+# Filed 2026-09-29 by story 121.22.
+#
+# WHAT THE GATE ASKS.  Every stdlib entry a toke program can call that reaches
+# an fs / net / env-write / process-spawn primitive must pass a
+# TK_REQUIRE(TK_CAP_<class>) of that class on the way (ADR-0010; the broker is
+# deny-by-default since 124.4g).  This file is what it already knows about.
+#
+# THIS FILE IS SELF-FAILING.  A finding not listed here fails the gate; a
+# line that no longer matches any finding is STALE and fails the gate too.
+# When you gate an entry, delete its lines in the same commit.
+#
+# Two kinds of line, `|`-separated, every field required:
+#
+#   exempt  | file.c:function | primitive | date | story | reason
+#       A sink that is not the PROGRAM's authority: it applies to every entry
+#       that reaches it.  Keep these few and specific.
+#
+#   ungated | entry | file.c:function | primitive | date | story | reason
+#       A known gap -- the entry really does reach the primitive with no gate.
+#       Every one of these is a defect to fix, not a decision.
+
+# ── exempt: not the program's authority ────────────────────────────────────
+
+# Entropy.  A fixed path, read-only, and the only way to get random bytes on
+# a platform without arc4random/getentropy.  Granting fs.read to call
+# crypto.randombytes would be a capability that means nothing.
+exempt | crypto.c:arc4random_buf | fopen | 2026-09-29 | 121.22 | /dev/urandom fallback (non-BSD, glibc < 2.36); fixed path, entropy only
+exempt | encrypt.c:random_bytes | fopen | 2026-09-29 | 121.22 | /dev/urandom fallback; fixed path, entropy only
+exempt | auth.c:auth_apikeygenerate | fopen | 2026-09-29 | 121.22 | /dev/urandom fallback (non-BSD); fixed path, entropy only
+
+# The server's own worker processes.  http.serveworkers et al. bind under the
+# net gate (http.c bind_listen) and then fork copies of THIS program to accept
+# on that socket; nothing else is executed.  Not process.spawn.
+exempt | http.c:http_serve_workers | fork | 2026-09-29 | 121.22 | pre-fork workers of the same image after a net-gated bind; no exec
+exempt | http.c:http_serve_tls_workers | fork | 2026-09-29 | 121.22 | pre-fork TLS workers of the same image after a net-gated bind; no exec
+
+# Spawn's own PATH resolution.  process.spawn is gated process.spawn; the
+# access(X_OK) probes over the startup PATH snapshot (AMB-03, 124.4h) are how
+# it finds the program it has been granted to run.
+exempt | process.c:exec_no_ambient_path | access | 2026-09-29 | 121.22 | X_OK probe of the PATH snapshot inside a process.spawn-gated spawn
+
+# A log file's life after it was opened.  log.openaccess / log.openerror take
+# fs.write when they open the file (log_glue.c, 121.22); every request then
+# writes it, and rotation renames, gzips and prunes its siblings in the same
+# directory.  That is the authority the open acquired (124.4c: gate once, at
+# acquisition), reached from every http.serve* entry through log_request.
+exempt | log.c:alog_lock | open | 2026-09-29 | 121.22 | sidecar lock of a log opened under fs.write
+exempt | log.c:alog_reopen | fopen | 2026-09-29 | 121.22 | reopen of a log opened under fs.write
+exempt | log.c:alog_sync_inode | stat | 2026-09-29 | 121.22 | inode check of a log opened under fs.write
+exempt | log.c:apply_retention | opendir | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:apply_retention | stat | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:apply_retention | unlink | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:compress_to_gz | fopen | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:compress_to_gz | unlink | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:path_exists | stat | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:rotate_access_log_locked | rename | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+exempt | log.c:tk_access_log_open | stat | 2026-09-29 | 121.22 | is-it-a-regular-file check on the path being opened under fs.write (or on /dev/stderr, which needs no grant)
+
+# TZ.  time.parse / time.withtz / time.utcoffset set TZ, call tzset/mktime, and
+# restore it.  Not a grantable authority -- the program never chooses what the
+# environment ends up holding.  (It IS a process-global mutation that races
+# with any other thread reading the environment; reported separately.)
+exempt | tk_time.c:tk_time_parse | setenv | 2026-09-29 | 121.22 | temporary TZ=UTC, restored before return
+exempt | tk_time.c:tk_time_parse | unsetenv | 2026-09-29 | 121.22 | restores an absent TZ
+exempt | tk_time.c:tk_time_utc_offset | setenv | 2026-09-29 | 121.22 | temporary TZ, restored before return
+exempt | tk_time.c:tk_time_utc_offset | unsetenv | 2026-09-29 | 121.22 | restores an absent TZ
+exempt | tk_time.c:tk_time_with_tz | setenv | 2026-09-29 | 121.22 | temporary TZ, restored before return
+exempt | tk_time.c:tk_time_with_tz | unsetenv | 2026-09-29 | 121.22 | restores an absent TZ
+
+# ── ungated: known gaps, each one a defect ─────────────────────────────────
+# Found by this gate on its first run (2026-09-29).  Each sits in a file
+# another batch held at the time, so each was reported for filing rather than
+# fixed here.  The story column names 121.22 until the follow-up is filed.
+
+# router.serve binds and listens with no net grant.  Measured on main: a
+# program compiled --cap-enforce with no grants listens on 127.0.0.1:P.
+# chart.serve and dashboard.serve are router.serve underneath.
+ungated | tk_router_serve_w | tk_bind.h:tk_bind_exclusive | bind | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_router_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_router_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_router_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_chart_serve_w | tk_bind.h:tk_bind_exclusive | bind | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_chart_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_chart_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_chart_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_dashboard_serve_w | tk_bind.h:tk_bind_exclusive | bind | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_dashboard_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_dashboard_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | via router_serve (no net gate)
+ungated | tk_dashboard_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
+
+# std.llm opens its own TCP connections (llm.c tcp_connect) instead of going
+# through http.c's gated client_tcp_connect.
+ungated | tk_llm_chat_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_chat_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_chat_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_chatstream_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_chatstream_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_chatstream_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_complete_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_complete_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llm_complete_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+
+# http.downloadfile writes the body to a program-chosen path under the net
+# grant alone.
+ungated | tk_http_downloadfile_w | http.c:http_downloadfile | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_WRITE) as well as net
+ungated | tk_http_downloadfile_w | http.c:http_downloadfile | remove | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_WRITE) as well as net
+ungated | tk_http_downloadfile_w | http.c:http_downloadfile | rename | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_WRITE) as well as net
+
+# http.servedir / http.servepages serve files off disk on every request; the
+# program registering them holds no fs.read (the serve call takes net only).
+ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_handler | fopen | 2026-09-29 | 121.22 | registration should take fs.read (the handler reads files under net only)
+ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_handler | stat | 2026-09-29 | 121.22 | registration should take fs.read
+ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_handler | fopen | 2026-09-29 | 121.22 | registration should take fs.read
+ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_handler | stat | 2026-09-29 | 121.22 | registration should take fs.read
+ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | opendir | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | stat | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_http_servepages_w | template.c:tmpl_readfile | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+
+# File readers that bypass file.read's gate by calling file.c / fopen directly.
+ungated | tk_toon_load_w | file.c:fopen_nofollow | fopen | 2026-09-29 | 121.22 | toon_glue.c calls file_read(), not the gated tk_file_read_w
+ungated | tk_toon_load_w | file.c:fopen_nofollow | open | 2026-09-29 | 121.22 | toon_glue.c calls file_read(), not the gated tk_file_read_w
+ungated | tk_yaml_load_w | file.c:fopen_nofollow | fopen | 2026-09-29 | 121.22 | yaml.c tk_yaml_load_w calls file_read(), not the gated tk_file_read_w
+ungated | tk_yaml_load_w | file.c:fopen_nofollow | open | 2026-09-29 | 121.22 | yaml.c tk_yaml_load_w calls file_read(), not the gated tk_file_read_w
+ungated | tk_i18n_load_w | i18n.c:read_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_md_renderfile_w | md.c:md_render_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_template_load_w | template_glue.c:tk_template_load_w | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_crypto_sha256file_w | crypto.c:crypto_sha256file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_crypto_sha256verify_w | crypto.c:crypto_sha256file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_vecstore_collection_w | vecstore.c:collection_load | fopen | 2026-09-29 | 121.22 | loads a collection file; needs TK_REQUIRE(TK_CAP_FS_READ)
+ungated | tk_vecstore_close_w | vecstore.c:collection_save | fopen | 2026-09-29 | 121.22 | saves a collection file; needs TK_REQUIRE(TK_CAP_FS_WRITE)
