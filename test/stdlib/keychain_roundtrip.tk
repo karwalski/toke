@@ -35,7 +35,7 @@ f=phasecleanup(svc:str;acct:str):bool{
   let removed=kc.delete(svc;acct);
   let present=kc.exists(svc;acct);
   io.print(str.concat("cleanup: delete=";str.concat(str.fromint(removed);str.concat(" exists=";str.fromint(present)))));
-  <removed&&present==0
+  <removed&&present==false
 };
 
 f=phaseabsent(svc:str;acct:str):bool{
@@ -44,13 +44,13 @@ f=phaseabsent(svc:str;acct:str):bool{
   let empty=str.len(got)==0;
   let kind=kc.lasterrkind();
   io.print(str.concat("absent: exists=";str.concat(str.fromint(present);str.concat(" getlen=";str.concat(str.fromint(str.len(got));str.concat(" kind=";kind))))));
-  <present==0&&empty&&kind=="notfound"
+  <present==false&&empty&&kind=="notfound"
 };
 
 f=phaseall(svc:str;acct:str):bool{
   let before=kc.exists(svc;acct);
   io.print(str.concat("all: exists-before=";str.fromint(before)));
-  <before==0&&phasewrite(svc;acct)&&phasecheck(svc;acct)&&phaseoverwrite(svc;acct)&&phasecleanup(svc;acct)
+  <before==false&&phasewrite(svc;acct)&&phasecheck(svc;acct)&&phaseoverwrite(svc;acct)&&phasecleanup(svc;acct)
 };
 
 f=run(phase:str;svc:str;acct:str;kcpath:str):bool{
@@ -87,7 +87,7 @@ f=main():i64{
   let phase=env.getor("TKKCPHASE";"all");
   let kcpath=env.getor("TKKCKEYCHAIN";"");
 
-  if(kc.isavailable()==0){
+  if(kc.isavailable()==false){
     io.print("SKIP: no OS credential store on this platform");
     <0
   };

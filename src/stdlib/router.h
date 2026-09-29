@@ -72,7 +72,9 @@ void        router_use(TkRouter *r, TkMiddleware mw);
  * Pass allowed_origins={"*",NULL} to allow any origin.
  * Set max_age=-1 to omit Access-Control-Max-Age.
  * Set allow_credentials=1 to send Access-Control-Allow-Credentials: true
- * (incompatible with wildcard origin — per RFC 6454 / Fetch spec). */
+ * (incompatible with wildcard origin — per RFC 6454 / Fetch spec).  121.18:
+ * with {"*",NULL} the origin is answered "*" and Allow-Credentials is not
+ * sent; credentials need the origins listed. */
 typedef struct {
     const char **allowed_origins;  /* NULL-terminated; {"*",NULL} for all  */
     const char **allowed_methods;  /* e.g. {"GET","POST","PUT","DELETE",NULL} */

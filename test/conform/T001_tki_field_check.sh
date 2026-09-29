@@ -110,8 +110,9 @@ f=main():i64{
   <0
 };'
 
-# ── 3: the diagnostic names the type and the field, and carries the `fix`
-#      documented in errors.md verbatim (AGENTS.md §6). ──
+# ── 3: the diagnostic names the type and the field, and carries no `fix`,
+#      as errors.md documents: "check the struct definition" was advice, not
+#      a rewrite (AGENTS.md §6, 127.243). ──
 check_case "E4025 names the imported struct" 1 "struct 'Config' has no field 'logaccess'" '
 m=t;
 i=io:std.io;
@@ -121,7 +122,21 @@ f=main():i64{
   io.println(cfg.logaccess);
   <0
 };'
-check_case "E4025 fix field is the documented one" 1 '"fix":"check the struct definition for available fields"' '
+check_nofix() {
+    local name="$1" src="$2"
+    printf '%s\n' "${src}" > case.tk
+    local out rc=0
+    out="$("${TKC}" --check --diag-json -I . case.tk 2>&1)" || rc=$?
+    if [ "${rc}" != 1 ] || ! printf '%s' "${out}" | grep -q '"error_code":"E4025"' \
+       || printf '%s' "${out}" | grep -q '"fix":'; then
+        echo "  FAIL: ${name}: want exit 1, E4025 and no fix; got exit ${rc}"
+        echo "${out}" | sed 's/^/      /' | head -5
+        FAIL=$((FAIL + 1)); return
+    fi
+    echo "  PASS: ${name}"
+    PASS=$((PASS + 1))
+}
+check_nofix "E4025 carries no fix field" '
 m=t;
 i=io:std.io;
 i=c:cfgmod;

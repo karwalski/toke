@@ -16,8 +16,8 @@ Exactly five classes gate the ambient surface:
 
 | Class | Grants | Example sinks |
 |-------|--------|---------------|
-| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open` |
-| `fs.write` | create / modify / delete files & dirs | `file.write`, `file.mkdir`, `file.delete`, `os.open` (write), `db.open` |
+| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile` |
+| `fs.write` | create / modify / delete files & dirs | `file.write`, `file.mkdir`, `file.delete`, `os.open` (write), `db.open`, `log.openaccess` / `log.openerror` (not for `/dev/stderr` or `/dev/stdout`) |
 | `net` | listen / connect / send / receive | `http.get`/`serve*`, `net.listen`, `ws.connect`, `tls.*`, `db` (pg/mysql) |
 | `env.write` | mutate the process environment | `env.set`, `os.setenv` |
 | `process.spawn` | fork/exec other programs | `process.exec`, `process.spawn`, `process.spawndetached` |
@@ -25,6 +25,29 @@ Exactly five classes gate the ambient surface:
 Environment **reads**, closing a handle, and reads/writes on an *already-acquired*
 handle are ungated: the check fires once, at the **acquisition** point (open file /
 listen / connect / spawn / setenv), matching the Deno model.
+
+### 1.1 Which entries are gated, and how that is kept true [I]
+
+The sink list is not maintained by hand. `scripts/check_capability_sinks.py` walks
+every stdlib entry a program can call (each `.tki` function's wrapper, and the
+symbols `src/stdlib_tables.c` and `src/llvm.c` name) through the C call graph to
+every fs / net / env-write / spawn primitive it can reach, and fails when one is
+reached with no `TK_REQUIRE` of its class on the path. Conformance case
+`C470_capability_sinks_gated.sh` runs it, and shows it failing when a gate is
+removed (story 121.22).
+
+What it cannot yet pass is listed, entry by entry, in
+`scripts/check_capability_sinks_skiplist.txt`: sinks that are not the program's
+authority (entropy from `/dev/urandom`, the server's own pre-forked workers, a log
+file's rotation after it was opened under a grant), and **known gaps**. The known
+gaps, as of 2026-09-29, are entries that reach a primitive with no grant under
+enforcement: `router.serve` (and `chart.serve` / `dashboard.serve`, which use it)
+binds without `net`; `llm.*` connects without `net`; `http.downloadfile` writes a
+file under `net` alone; `http.servedir` / `http.servepages` read files under `net`
+alone; `toon.load`, `yaml.load`, `i18n.load`, `md.renderfile`, `template.load`,
+`crypto.sha256file` and the `vecstore` load/save read or write files with no grant.
+The skiplist is self-failing: a line whose gap is fixed must be deleted in the same
+commit.
 
 ## 2. Grant channels [N]
 
@@ -92,14 +115,13 @@ generate-compile-repair loop can repair a missing grant mechanically:
 
 The broker has two modes:
 
-- `ALLOW_ALL` — nothing is gated (today's default; preserves ambient behaviour).
+- `ALLOW_ALL` — nothing is gated. Reached only by an explicit `--allow-all`
+  (baked or at run time).
 - `ENFORCE` — only granted classes pass; everything else fails closed.
 
-The default is `ALLOW_ALL` until Epic **124.4g** flips it to `ENFORCE`, bundled
-atomically with the first-party manifests (ooke, website) and a grant-aware
-corpus/eval harness so training/eval Pass@1 is not destroyed by the change.
-Enforcement is fully functional today via `--cap-enforce` (baked) or any runtime
-`--allow-*` flag.
+The default is `ENFORCE`: Epic **124.4g** flipped it (2026-07-06), together with
+the first-party manifests (ooke, website) and grant-aware run harnesses, which
+compile with `--allow-all` so that measurement is unaffected.
 
 ## References
 

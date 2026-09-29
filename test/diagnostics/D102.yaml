@@ -1,0 +1,9 @@
+id: D102
+series: D
+description: "127.230 item 4: a binary-operator E4031 between a str and an i64 carries no fix. It was offered \"cast RHS to str using 'as'\", which is not the repair for comparing a string with a number (AGENTS §6)"
+input: |
+  m=t;
+  f=main():i64{let s:str="x";let c=s==1;<0};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true

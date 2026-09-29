@@ -146,15 +146,21 @@ const char *soap_fault(const char *faultcode, const char *faultstring,
     const char *fs = safe_str(faultstring);
     int has_detail = !is_empty(detail);
 
+    /* 121.16 (PAR-11): detail is escaped like the other two fields.  It
+     * went in raw, so a detail carrying request data could close <detail>
+     * and inject elements into the fault (ADR-0011: the safe form is the
+     * default). */
     char *esc_fc = xml_escape(fc);
     char *esc_fs = xml_escape(fs);
+    char *esc_dt = has_detail ? xml_escape(detail) : NULL;
 
     size_t buf_size = 256 + strlen(esc_fc) + strlen(esc_fs)
-                    + (has_detail ? strlen(detail) : 0);
+                    + (esc_dt ? strlen(esc_dt) : 0);
     char *buf = (char *)malloc(buf_size);
     if (!buf) {
         free(esc_fc);
         free(esc_fs);
+        free(esc_dt);
         return strdup("");
     }
 
@@ -164,15 +170,16 @@ const char *soap_fault(const char *faultcode, const char *faultstring,
         "  <faultcode>%s</faultcode>\n"
         "  <faultstring>%s</faultstring>\n", esc_fc, esc_fs);
 
-    if (has_detail) {
+    if (esc_dt) {
         pos += (size_t)snprintf(buf + pos, buf_size - pos,
-            "  <detail>%s</detail>\n", detail);
+            "  <detail>%s</detail>\n", esc_dt);
     }
 
     snprintf(buf + pos, buf_size - pos, "</soap:Fault>");
 
     free(esc_fc);
     free(esc_fs);
+    free(esc_dt);
     return buf;
 }
 

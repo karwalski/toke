@@ -19,7 +19,7 @@
     {"kind": "func", "name": "os.getenv",    "params": ["str"],               "return": "str",  "ownership": "borrowed"},
     {"kind": "func", "name": "os.setenv",    "params": ["str", "str"],        "return": "i64"},
     {"kind": "func", "name": "os.errno",     "params": [],                    "return": "i64"},
-    {"kind": "func", "name": "os.strerror",  "params": ["i64"],               "return": "str",  "ownership": "static"},
+    {"kind": "func", "name": "os.strerror",  "params": ["i64"],               "return": "str",  "ownership": "caller"},
     {"kind": "func", "name": "os.ordonly",   "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.owronly",   "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.ordwr",     "params": [],                   "return": "i64"},

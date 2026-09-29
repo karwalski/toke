@@ -164,8 +164,27 @@ int64_t tk_os_errno(void) {
     return (int64_t)errno;
 }
 
+/* 121.22 (AMB-11): each call returns its own heap copy.  This returned
+ * strerror()'s pointer, and for an errno the C library has no text for,
+ * strerror() formats "Unknown error: N" into ONE static buffer: measured on
+ * main (macOS), a = os.strerror(9999); b = os.strerror(9998) left a reading
+ * "Unknown error: 9998" -- the second call rewrote the first result, and two
+ * threads calling it race on that buffer.  strerror_r writes into ours.
+ * Its two signatures: glibc with _GNU_SOURCE returns the text (which may not
+ * be the buffer); POSIX/XSI (macOS, musl, BSD) returns 0 or an error. */
 int64_t tk_os_strerror(int64_t errnum) {
-    return (int64_t)(intptr_t)strerror((int)errnum);
+    char buf[256];
+    const char *text = buf;
+    buf[0] = '\0';
+#if defined(__GLIBC__) && defined(_GNU_SOURCE)
+    text = strerror_r((int)errnum, buf, sizeof buf);
+    if (!text) text = "";
+#else
+    if (strerror_r((int)errnum, buf, sizeof buf) != 0 && buf[0] == '\0')
+        snprintf(buf, sizeof buf, "Unknown error: %lld", (long long)errnum);
+#endif
+    char *out = strdup(text);
+    return out ? (int64_t)(intptr_t)out : os_empty_owned();
 }
 
 /* ── Constants ───────────────────────────────────────────────────── */
