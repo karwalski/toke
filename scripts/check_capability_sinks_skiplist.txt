@@ -92,23 +92,8 @@ ungated | tk_dashboard_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-
 ungated | tk_dashboard_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | via router_serve (no net gate)
 ungated | tk_dashboard_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
 
-# std.llm opens its own TCP connections (llm.c tcp_connect) instead of going
-# through http.c's gated client_tcp_connect.
-ungated | tk_llm_chat_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chat_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chat_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chatstream_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chatstream_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chatstream_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_complete_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_complete_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_complete_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+# std.llm's own TCP connect (llm.c tcp_connect): gated by TK_REQUIRE(net)
+# since 2026-09-30 (121.42 (2)); its 15 lines were deleted.
 
 # http.downloadfile writes the body to a program-chosen path under the net
 # grant alone.

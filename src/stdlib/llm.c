@@ -17,6 +17,7 @@
  */
 
 #include "llm.h"
+#include "capabilities.h"   /* 121.42 (2): tcp_connect is a net sink */
 
 #include <stdlib.h>
 #include <string.h>
@@ -146,6 +147,12 @@ static int parse_url(const char *base_url, const char *path_suffix,
  * Returns a connected fd >= 0, or -1 on error. */
 static int tcp_connect(const char *host, const char *port, uint32_t timeout_ms)
 {
+    /* 121.42 (2): every std.llm request (chat, chatstream, complete, and
+     * llmtool's chatwithtools/submitresult) connects through here, and it
+     * opened TCP with no grant -- a --cap-enforce binary with no net grant
+     * reached the model server.  Denied without the net grant, as http.c's
+     * client connect is. */
+    TK_REQUIRE(TK_CAP_NET);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
