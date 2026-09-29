@@ -121,6 +121,8 @@ ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_handler | fopen | 2026-09
 ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_handler | stat | 2026-09-29 | 121.22 | registration should take fs.read
 ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_handler | fopen | 2026-09-29 | 121.22 | registration should take fs.read
 ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_handler | stat | 2026-09-29 | 121.22 | registration should take fs.read
+ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_resolve | realpath | 2026-09-29 | 121.42 | same gap via 121.18's symlink containment (realpath); registration should take fs.read
+ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_resolve | realpath | 2026-09-29 | 121.42 | same gap via 121.18's symlink containment (realpath); registration should take fs.read
 ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | opendir | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | stat | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
