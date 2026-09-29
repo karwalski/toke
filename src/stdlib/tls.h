@@ -56,7 +56,7 @@ typedef struct {
 /* TlsConn is also the $TlsConn record toke sees, {id}: the glue hands toke
  * a pointer to one (135.30; it handed out the id string itself, so `c.id`
  * read the string's bytes as a pointer). */
-/* tki-record: tls.TlsConn */
+/* tki-record: tls.tlsconn */
 typedef struct {
     char *id;   /* opaque identifier; caller owns; free with tls_conn_free_id */
 } TlsConn;
@@ -68,7 +68,7 @@ typedef struct {
  * glue builds it from a TkTlsCfgRec (or a $TlsConfig literal).
  * `make check-tki-layout` keeps these in step with the .tki.
  */
-/* tki-record: tls.TlsConfig */
+/* tki-record: tls.tlsconfig */
 typedef struct {
     const char *certpem;
     const char *keypem;
@@ -76,7 +76,7 @@ typedef struct {
     int64_t     requiremutual;  /* bool */
 } TkTlsCfgRec;
 
-/* tki-record: tls.TlsKeypair */
+/* tki-record: tls.tlskeypair */
 typedef struct {
     char *certpem;
     char *keypem;               /* secret: tls.freekeypair wipes it */

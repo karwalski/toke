@@ -19,13 +19,13 @@ Before 136.44 none of this was reachable. `src/stdlib/tls.c` was ~910 lines of w
 
 That history explains two things about the interface below that otherwise look redundant.
 
-**Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig` and `tls.mutualconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `TlsConfig` and `TlsKeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$TlsConfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
+**Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig` and `tls.mutualconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `tlsconfig` and `tlskeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$tlsconfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
 
-**The handles are opaque i64.** A `TlsConn` or `TlsKeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
+**The handles are opaque i64.** A `tlsconn` or `tlskeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
 
 ## Types
 
-### TlsConfig
+### tlsconfig
 
 Configuration for either end of a connection. Treat it as opaque: build it with `tls.tlsconfig`, `tls.pinconfig` or `tls.mutualconfig`, and release it with `tls.freeconfig`.
 
@@ -40,11 +40,11 @@ These four were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` unti
 
 The fields read what the table says (135.30), and the connection calls read a configuration through them, so a `$tlsconfig{...}` literal works with `tls.connect` and `tls.listen`. `tls.freeconfig` frees only a configuration one of the constructors made; on a literal it returns `false` and frees nothing.
 
-### TlsConn
+### tlsconn
 
 A handle to an established connection. `0` means no connection. Pass it to `tls.read`, `tls.write`, `tls.close`, `tls.protocol`, `tls.group`, `tls.peercert` and `tls.pairingcode`. Its one field, `id` (`str`), is the connection's identifier.
 
-### TlsKeypair
+### tlskeypair
 
 A freshly generated certificate (`certpem`) and its private key (`keypem`). Read the two halves as fields or with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair` (which frees only a keypair the generators made).
 
@@ -58,11 +58,11 @@ Until story 127.104 this page and `tls.tki` declared a `TlsErr` sum with four va
 
 ## Key and certificate generation
 
-### tls.genselfsigned(commonname: str; validdays: i32): TlsKeypair!str
+### tls.genselfsigned(commonname: str; validdays: i32): tlskeypair!str
 
 Generates a P-384 EC keypair and a self-signed X.509 certificate with `commonname` as both subject and issuer CN, valid for `validdays` days from now. On failure the error is the reason (see [Errors](#errors)) and the value is `0`.
 
-### tls.genselfsignedalg(commonname: str; validdays: i32; keyalg: str): TlsKeypair!str
+### tls.genselfsignedalg(commonname: str; validdays: i32; keyalg: str): tlskeypair!str
 
 As `tls.genselfsigned`, but chooses the certificate's signing key:
 
@@ -88,15 +88,15 @@ f=main():i64{
 
 ML-DSA certificates are opt-in for a reason: they will not verify against a classical-only peer. Use them where you control both ends.
 
-### tls.certof(kp: TlsKeypair): str
+### tls.certof(kp: tlskeypair): str
 
 The PEM-encoded certificate from a keypair.
 
-### tls.keyof(kp: TlsKeypair): str
+### tls.keyof(kp: tlskeypair): str
 
 The PEM-encoded private key from a keypair. This is secret material.
 
-### tls.freekeypair(kp: TlsKeypair): bool
+### tls.freekeypair(kp: tlskeypair): bool
 
 Releases the keypair and zeroes the key. The handle is dangling afterwards.
 
@@ -125,55 +125,55 @@ f=main():i64{
 
 ## Building a configuration
 
-### tls.tlsconfig(certpem: str; keypem: str): TlsConfig
+### tls.tlsconfig(certpem: str; keypem: str): tlsconfig
 
 A plain endpoint configuration: present this certificate and key, pin nothing, require nothing of the peer.
 
-### tls.pinconfig(certpem: str; keypem: str; peercertpem: str): TlsConfig
+### tls.pinconfig(certpem: str; keypem: str; peercertpem: str): tlsconfig
 
 As above, plus: accept the peer **only** if it presents exactly `peercertpem`. A client may pass `""` for its own certificate and key and still pin the server.
 
-### tls.mutualconfig(certpem: str; keypem: str; peercertpem: str): TlsConfig
+### tls.mutualconfig(certpem: str; keypem: str; peercertpem: str): tlsconfig
 
 As `pinconfig`, and additionally demands a certificate from the peer. A peer that presents none never reaches your handler -- the handshake fails first. That is the fail-closed behaviour `C022` witnesses with an independent TLS implementation.
 
-### tls.freeconfig(cfg: TlsConfig): bool
+### tls.freeconfig(cfg: tlsconfig): bool
 
 Releases the configuration and zeroes any key material in it.
 
 ## Connections
 
-### tls.listen(port: i32; cfg: TlsConfig; cb: fn): bool
+### tls.listen(port: i32; cfg: tlsconfig; cb: fn): bool
 
-Binds a TCP socket on `port` and accepts TLS connections in a loop, invoking `cb` with each accepted `TlsConn`. Pass the callback by reference, `&handler`.
+Binds a TCP socket on `port` and accepts TLS connections in a loop, invoking `cb` with each accepted `tlsconn`. Pass the callback by reference, `&handler`.
 
 Returns `false` at once if the socket cannot be bound or the TLS context cannot be created. Otherwise it does not return: it runs until the process exits.
 
-### tls.connect(host: str; port: i32; cfg: TlsConfig): ?(TlsConn)
+### tls.connect(host: str; port: i32; cfg: tlsconfig): ?(tlsconn)
 
 Connects to `host:port` and performs a TLS 1.3 handshake. Returns the connection handle, or `0` if the connection, the handshake or the pin check fails.
 
-### tls.read(conn: TlsConn): ?(str)
+### tls.read(conn: tlsconn): ?(str)
 
 Reads available data. Returns `0` (the none sentinel) when the peer has closed the connection or an error occurred, so test with `==0` before use.
 
-### tls.write(conn: TlsConn; data: str): bool
+### tls.write(conn: tlsconn; data: str): bool
 
 Writes `data`. `false` if the write failed, typically because the connection is closed.
 
-### tls.close(conn: TlsConn): bool
+### tls.close(conn: tlsconn): bool
 
 Clean TLS shutdown followed by socket close. The handle must not be used afterwards.
 
-### tls.protocol(conn: TlsConn): str
+### tls.protocol(conn: tlsconn): str
 
 The protocol **negotiated on the wire**, read back through `SSL_get_version` -- `"TLSv1.3"` on any successful connection. This is a fact about the session, not a claim about the source, which is why `C022` asserts on it.
 
-### tls.group(conn: TlsConn): str
+### tls.group(conn: tlsconn): str
 
 The key-exchange group **negotiated on the wire**: `"X25519MLKEM768"` when the post-quantum hybrid was agreed, or the classical group the handshake fell back to (`"x25519"`, `"secp256r1"`, ...) when the peer did not offer the hybrid or the linked OpenSSL is older than 3.5. Empty for a handle that is not an open connection. The context prefers the hybrid but keeps classical groups for interoperability, and does not report a fallback on its own; a program that must not run over a classical key exchange compares it with `"X25519MLKEM768"` and closes the connection when it differs.
 
-### tls.peercert(conn: TlsConn): ?(str)
+### tls.peercert(conn: tlsconn): ?(str)
 
 The peer's PEM certificate as presented during the handshake, or `0` if the peer presented none.
 
@@ -181,7 +181,7 @@ The peer's PEM certificate as presented during the handshake, or `0` if the peer
 
 SHA-256 of the DER encoding of a PEM certificate, as 64 lowercase hex characters. Empty string if `pem` cannot be parsed. This is the same value as `openssl x509 -fingerprint -sha256`.
 
-### tls.pairingcode(conn: TlsConn): str
+### tls.pairingcode(conn: tlsconn): str
 
 A six-digit decimal code derived from the XOR of the local and peer certificate fingerprints. Both ends of a correctly established connection compute the same code, so it can be read aloud or displayed to confirm out of band that nobody is in the middle. Returns `"000000"` if either certificate is unavailable.
 

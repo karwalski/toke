@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "TlsConfig",
+      "name": "tlsconfig",
       "fields": [
         {"name": "certpem",       "type": "str"},
         {"name": "keypem",        "type": "str"},
@@ -14,37 +14,37 @@
     },
     {
       "kind": "type",
-      "name": "TlsConn",
+      "name": "tlsconn",
       "fields": [
         {"name": "id", "type": "str"}
       ]
     },
     {
       "kind": "type",
-      "name": "TlsKeypair",
+      "name": "tlskeypair",
       "fields": [
         {"name": "certpem", "type": "str"},
         {"name": "keypem",  "type": "str"}
       ]
     },
-    {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "TlsKeypair!str"},
-    {"kind": "func", "name": "tls.genselfsignedalg", "params": ["str", "i32", "str"], "return": "TlsKeypair!str"},
-    {"kind": "func", "name": "tls.certof",           "params": ["TlsKeypair"],               "return": "str"},
-    {"kind": "func", "name": "tls.keyof",            "params": ["TlsKeypair"],               "return": "str"},
-    {"kind": "func", "name": "tls.freekeypair",      "params": ["TlsKeypair"],               "return": "bool"},
-    {"kind": "func", "name": "tls.tlsconfig",        "params": ["str", "str"],               "return": "TlsConfig"},
-    {"kind": "func", "name": "tls.pinconfig",        "params": ["str", "str", "str"],        "return": "TlsConfig"},
-    {"kind": "func", "name": "tls.mutualconfig",     "params": ["str", "str", "str"],        "return": "TlsConfig"},
-    {"kind": "func", "name": "tls.freeconfig",       "params": ["TlsConfig"],                "return": "bool"},
-    {"kind": "func", "name": "tls.protocol",         "params": ["TlsConn"],                  "return": "str"},
-    {"kind": "func", "name": "tls.group",            "params": ["TlsConn"],                  "return": "str"},
-    {"kind": "func", "name": "tls.listen",           "params": ["i32", "TlsConfig", "fn"],   "return": "bool"},
-    {"kind": "func", "name": "tls.connect",          "params": ["str", "i32", "TlsConfig"],  "return": "?(TlsConn)"},
-    {"kind": "func", "name": "tls.read",             "params": ["TlsConn"],                  "return": "?(str)"},
-    {"kind": "func", "name": "tls.write",            "params": ["TlsConn", "str"],            "return": "bool"},
-    {"kind": "func", "name": "tls.close",            "params": ["TlsConn"],                  "return": "bool"},
-    {"kind": "func", "name": "tls.peercert",        "params": ["TlsConn"],                  "return": "?(str)"},
+    {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "tlskeypair!str"},
+    {"kind": "func", "name": "tls.genselfsignedalg", "params": ["str", "i32", "str"], "return": "tlskeypair!str"},
+    {"kind": "func", "name": "tls.certof",           "params": ["tlskeypair"],               "return": "str"},
+    {"kind": "func", "name": "tls.keyof",            "params": ["tlskeypair"],               "return": "str"},
+    {"kind": "func", "name": "tls.freekeypair",      "params": ["tlskeypair"],               "return": "bool"},
+    {"kind": "func", "name": "tls.tlsconfig",        "params": ["str", "str"],               "return": "tlsconfig"},
+    {"kind": "func", "name": "tls.pinconfig",        "params": ["str", "str", "str"],        "return": "tlsconfig"},
+    {"kind": "func", "name": "tls.mutualconfig",     "params": ["str", "str", "str"],        "return": "tlsconfig"},
+    {"kind": "func", "name": "tls.freeconfig",       "params": ["tlsconfig"],                "return": "bool"},
+    {"kind": "func", "name": "tls.protocol",         "params": ["tlsconn"],                  "return": "str"},
+    {"kind": "func", "name": "tls.group",            "params": ["tlsconn"],                  "return": "str"},
+    {"kind": "func", "name": "tls.listen",           "params": ["i32", "tlsconfig", "fn"],   "return": "bool"},
+    {"kind": "func", "name": "tls.connect",          "params": ["str", "i32", "tlsconfig"],  "return": "?(tlsconn)"},
+    {"kind": "func", "name": "tls.read",             "params": ["tlsconn"],                  "return": "?(str)"},
+    {"kind": "func", "name": "tls.write",            "params": ["tlsconn", "str"],            "return": "bool"},
+    {"kind": "func", "name": "tls.close",            "params": ["tlsconn"],                  "return": "bool"},
+    {"kind": "func", "name": "tls.peercert",        "params": ["tlsconn"],                  "return": "?(str)"},
     {"kind": "func", "name": "tls.fingerprint",      "params": ["str"],                       "return": "str"},
-    {"kind": "func", "name": "tls.pairingcode",     "params": ["TlsConn"],                  "return": "str"}
+    {"kind": "func", "name": "tls.pairingcode",     "params": ["tlsconn"],                  "return": "str"}
   ]
 }
