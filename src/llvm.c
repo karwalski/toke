@@ -8561,7 +8561,7 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                     /* 127.38: tk_str_charat_w returns the byte value (i64), not a
                      * str — tagging it $str made `s.charat(x;i)` deref an int. */
                     "tk_str_substr_w","tk_str_chars_w","tk_str_sub_w",
-                    "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w","tk_str_fromf32_w",
+                    "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w",
                     "tk_str_format_w","tk_io_readln_w","tk_str_join_w","tk_str_interpolate_w",
                     /* 126.8: more scalar->string / string->string wrappers so a
                      * `\(s.fromint(x))` / `\(s.repeat(...))` interpolation and

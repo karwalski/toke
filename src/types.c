@@ -3102,9 +3102,10 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
  *   * Any USER alias whose interface recorded no function exports at all: a
  *     missing or export-less `.tki` is an absence of knowledge about the
  *     interface.  127.61 narrowed this: it is not an absence of knowledge
- *     about the *runtime*, and six std modules (std.io, std.array,
- *     std.collections, std.fs, std.soap, std.xml) ship no `.tki` at all, so
- *     the branches grounded on the glue table now run for them too.
+ *     about the *runtime*, and the std modules that shipped no `.tki` when
+ *     it landed (std.io, std.array, std.collections, std.soap, std.xml;
+ *     each has a generated one since 137.12) needed the branches grounded
+ *     on the glue table, which now run for any alias without exports.
  *
  * Two exemptions 136.1 recorded here were removed by 127.61, both of them
  * defaults standing in for facts that turned out to be establishable:
@@ -3503,10 +3504,11 @@ static void check_tki_call(Ctx *cx, const Node *call) {
 
     /* An alias with no recorded exports is an absence of knowledge for the
      * INTERFACE, not for the runtime — so it does not disqualify branch 2,
-     * which asks only whether the runtime declares the member. Six std
-     * modules ship no `.tki` at all (std.io, std.array, std.collections,
-     * std.fs, std.soap, std.xml), and gating branch 2 on the interface meant
-     * every member name on all six was unchecked: `io.printline("x")` passed
+     * which asks only whether the runtime declares the member.  When 127.61
+     * landed, std modules shipped with no `.tki` at all (std.io, std.array,
+     * std.collections, std.soap, std.xml -- generated since 137.12), and
+     * gating branch 2 on the interface left every member name on them
+     * unchecked: `io.printline("x")` passed
      * `--check` and failed at link with an undefined `tk_io_printline_w`,
      * which is the 127.62 / 127.77 symptom exactly. */
     int have_iface = imported_alias_has_funcs(cx->env->names, alias);
