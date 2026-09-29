@@ -19,6 +19,7 @@
 #include "encrypt.h"
 #include "crypto.h"
 #include "encoding.h"
+#include "tk_secure.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -28,21 +29,12 @@
  * Random bytes
  * ========================================================================= */
 
+/* 121.20 (CRY-01): the OS CSPRNG or abort -- never a zero-filled buffer.
+ * This used to memset(buf, 0, n) when /dev/urandom failed on every
+ * non-Apple/BSD platform; see tk_secure.h. */
 static void random_bytes(uint8_t *buf, size_t n)
 {
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
-    arc4random_buf(buf, n);
-#else
-    /* POSIX fallback */
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        size_t rd = fread(buf, 1, n, f);
-        fclose(f);
-        if (rd == n) return;
-    }
-    /* last-resort: zero fill (insecure, should not happen) */
-    memset(buf, 0, n);
-#endif
+    tk_random_bytes(buf, n);
 }
 
 /* =========================================================================

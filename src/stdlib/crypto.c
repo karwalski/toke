@@ -20,16 +20,11 @@
 #include <stdio.h>    /* fopen, fread, fclose */
 #include <ctype.h>    /* tolower */
 
-/* Portable arc4random_buf — macOS/BSD and glibc ≥2.36 have it natively.
- * Older Linux uses /dev/urandom fallback. */
-#if defined(__linux__) && !defined(__GLIBC__) || \
-    (defined(__GLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 36)))
-#include <stdio.h>
-static void arc4random_buf(void *buf, size_t n) {
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) { fread(buf, 1, n, f); fclose(f); }
-}
-#endif
+/* 121.20 (CRY-01): randomness comes from tk_random_bytes (tk_secure.h),
+ * which fills the buffer or aborts.  The glibc<2.36 arc4random_buf shim
+ * that stood here ignored fread's result, so a failed read left bcrypt
+ * salts and crypto.randombytes output uninitialised. */
+#include "tk_secure.h"
 
 /* -----------------------------------------------------------------------
  * SHA-256 core (FIPS 180-4)
@@ -599,7 +594,7 @@ ByteArray crypto_randombytes(uint64_t n)
     buf = malloc((size_t)n);
     if (!buf) return result;
 
-    arc4random_buf(buf, (size_t)n);
+    tk_random_bytes(buf, (size_t)n);
     result.data = buf;
     result.len  = n;
     return result;
@@ -1218,7 +1213,7 @@ CryptoStrResult crypto_bcrypt_hash(const char *password, int cost)
     if (cost > 31) cost = 31;
 
     /* Generate random salt */
-    arc4random_buf(salt, 16);
+    tk_random_bytes(salt, 16);
 
     /* Encode salt as 22 bcrypt base64 chars */
     bf_b64_encode(salt, 16, salt_b64);
