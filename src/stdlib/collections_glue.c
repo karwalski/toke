@@ -14,6 +14,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if !(defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__))
+#include <unistd.h>      /* getentropy (glibc >= 2.25, musl) */
+#endif
 
 /*
  * tk_array_retain — bump the refcount on an array-typed handle (ADR-0006 D2).
@@ -97,8 +100,8 @@ typedef struct {
  *
  * THE FIX.  SipHash-1-3 (Aumasson & Bernstein; the variant Python and Rust
  * use for exactly this purpose) under a 128-bit key drawn once per process
- * from the OS CSPRNG.  Without the key the attacker cannot predict which
- * slot a key takes, so the colliding set above spreads like random keys.
+ * from the OS CSPRNG (arc4random_buf, or getentropy(3) elsewhere).  Without
+ * the key the attacker cannot predict which slot a key takes, so the colliding set above spreads like random keys.
  * The int-key hash goes through the same function over the eight bytes of
  * the i64: an unkeyed bijection like splitmix64 is invertible, so int keys
  * parsed from input could be aimed at one slot just as easily.
@@ -124,16 +127,15 @@ static void tk_map_key_fill(uint64_t k[2]) {
 #ifdef TK_MAP_HAVE_ARC4RANDOM
     arc4random_buf(k, 2 * sizeof(uint64_t));
 #else
-    size_t got = 0;
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) { got = fread(k, 1, 2 * sizeof(uint64_t), f); fclose(f); }
-    if (got != 2 * sizeof(uint64_t)) {
-        /* No CSPRNG reachable (a chroot without /dev): the key is then only
-         * as unpredictable as the clock and the address space layout, which
+    /* getentropy(3): a syscall, not a file -- it works in a chroot without
+     * /dev and is not a filesystem sink (check_capability_sinks, 121.22). */
+    if (getentropy(k, 2 * sizeof(uint64_t)) != 0) {
+        /* No kernel entropy reachable: the key is then only as
+         * unpredictable as the clock and the address space layout, which
          * still defeats a precomputed collision set but not an adaptive
          * attacker who can time the process.  Documented, not hidden. */
         uint64_t a = (uint64_t)time(NULL), b = (uint64_t)clock();
-        uint64_t c = (uint64_t)(uintptr_t)&got, d = (uint64_t)(uintptr_t)k;
+        uint64_t c = (uint64_t)(uintptr_t)&a, d = (uint64_t)(uintptr_t)k;
         k[0] = (a * 0x9e3779b97f4a7c15ULL) ^ c ^ (b << 32);
         k[1] = (c * 0xbf58476d1ce4e5b9ULL) ^ d ^ b;
     }
