@@ -285,6 +285,33 @@ shared-bucket bug with a one-header total bypass, which is worse than nothing.
 That is a subsystem to be specified and designed, not a default to be left in
 place because it exists.
 
+## How a request is framed
+
+Every `http.serve*` and `http.servetls*` server frames an HTTP/1.1 request the
+same way, and answers a request it cannot frame with a status and a closed
+connection rather than a guess (story 121.17):
+
+| The request carries | Answer |
+|---|---|
+| a header name followed by whitespace before the colon, a header line with no colon, or a folded (indented) continuation line | `400` |
+| a `Content-Length` that is not plain digits (`5x`, `+5`, `5, 5`), or two `Content-Length` headers that differ | `400` |
+| both `Transfer-Encoding` and `Content-Length` | `400` |
+| `chunked` anywhere but last in `Transfer-Encoding`, or twice | `400` |
+| any transfer coding other than `chunked` (`gzip, chunked`) | `501` |
+| a chunk whose data is not followed by CRLF, or a chunk-size line with no hex digits | `400` |
+| a `Content-Length`, or a chunked body, larger than the body limit | `413` |
+
+A chunked body is decoded before the handler runs, on the TLS servers as well
+as the plain ones, so the handler's body is the decoded bytes. Requests that
+arrive back to back on one connection (pipelining) are answered in order.
+
+**Every request has a deadline.** The whole header block must arrive within
+the server timeout (10 seconds by default) of the request starting, and the
+body within the timeout plus one second per KiB it announced — a chunked body
+is allowed as long as the body limit would take at that rate. A client that
+trickles bytes to hold a worker open is answered `408` when its deadline
+passes; the timeout used to restart with every byte received.
+
 ### http.getstatic(path: $str; html: $str): i64
 
 Registers a static HTML response for the given path. When the server receives a request matching `path`, it returns the pre-rendered `html` string as a `200 OK` response with `Content-Type: text/html`. Use this for pages whose content is known at startup.
