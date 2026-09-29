@@ -30,6 +30,7 @@
  */
 #include "llvm.h"
 #include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
+#include "tkc_caps.h"     /* 138.15: the funcs/structs caps, one counting rule */
 #include "stdlib_tables.h" /* 135.21: the stdlib lookup tables, moved out */
 #include "parser.h"
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
@@ -506,9 +507,23 @@ static void free_structs(Ctx *c) {
     free(c->structs);
 }
 
+/* 138.15 (loke T-54): a full struct registry is never passed over in
+ * silence.  tkc_caps_check() refuses such a program before the prepass runs,
+ * so reaching this means tkc_caps.h and the prepass disagree -- still name
+ * the type, the limit and the flag, and fail the build. */
+static void struct_cap_full(Ctx *c, const char *name, const char *from) {
+    char msg[400];
+    snprintf(msg, sizeof msg,
+             "compiler limit exceeded: struct type '%s'%s%s does not fit: "
+             "the limit is %d (max_structs); raise it with --max-structs=N "
+             "or max_structs = N in tkc.toml", name, from ? " from " : "",
+             from ? from : "", c->struct_cap);
+    diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, "fix", NULL);
+}
+
 static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
     if (c->struct_count >= c->struct_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", NULL);
+        struct_cap_full(c, name, NULL);
         return;
     }
     StructInfo *si = &c->structs[c->struct_count];
@@ -798,7 +813,16 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
  */
 static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     if (c->fn_count >= c->fn_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many functions", "fix", NULL);
+        /* 138.15 (loke T-25): tkc_caps_check() refuses this program first;
+         * reaching here means it and the prepass disagree -- still say which
+         * function, the limit and the flag. */
+        char msg[400];
+        snprintf(msg, sizeof msg,
+                 "compiler limit exceeded: function '%s' does not fit: the "
+                 "limit is %d function signatures, imported ones included "
+                 "(max_funcs); raise it with --max-funcs=N or max_funcs = N "
+                 "in tkc.toml", name, c->fn_cap);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, "fix", NULL);
         return NULL;
     }
     FnSig *s = &c->fns[c->fn_count];
@@ -1137,7 +1161,9 @@ static void register_tki_struct_types(Ctx *c) {
             memcpy(tname, nq1 + 1, (size_t)tlen);
             tname[tlen] = '\0';
 
-            if (lookup_struct(c, tname) || c->struct_count >= c->struct_cap) {
+            if (lookup_struct(c, tname)) continue;
+            if (c->struct_count >= c->struct_cap) {   /* 138.15: never silent */
+                struct_cap_full(c, tname, full);
                 continue;
             }
 
@@ -1749,7 +1775,9 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                         cp = q2 + 1;
                     }
 
-                    if (fc > 0 && c->struct_count < c->struct_cap &&
+                    if (fc > 0 && c->struct_count >= c->struct_cap)   /* 138.15: never silent */
+                        struct_cap_full(c, sname, tki_path);
+                    else if (fc > 0 &&
                         struct_alloc_fields(c, &c->structs[c->struct_count], fc) == 0) {
                         StructInfo *si = &c->structs[c->struct_count];
                         int sl = (int)strlen(sname);
@@ -11548,6 +11576,16 @@ static void emit_lifted_closures(Ctx *c) {
 int emit_llvm_ir(const Node *ast, const char *src,
                  const CodegenEnv *env, const char *out_ll)
 {
+    /* 138.15 (loke T-25, T-54): the caps, by the same rule --check applies
+     * (tkc_caps.h), before anything is registered -- so a registry can only
+     * fill up here if that rule and the prepass below disagree. */
+    {
+        TkcLimits l0; tkc_limits_defaults(&l0);
+        if (env) l0 = env->limits;
+        if (tkc_caps_check(ast, src, env ? env->search_paths : NULL,
+                           env ? env->search_path_count : 0, &l0) > 0)
+            return -1;
+    }
     FILE *f = fopen(out_ll, "w");
     if (!f) {
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,

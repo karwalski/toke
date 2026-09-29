@@ -1,0 +1,12 @@
+id: D165
+series: D
+description: "E9010 for the function-signature cap carries the exact fix: raising max_funcs to the reported count always clears it (138.15, loke T-25)"
+input: |
+  m=t;
+  f=a():i64{<1};
+  f=b():i64{<2};
+  f=main():i64{<0};
+flags: --max-funcs=2
+expected_exit_code: 1
+expected_error_codes: ["E9010"]
+expected_fix: "raise the limit: pass --max-funcs=3, or set max_funcs = 3 in tkc.toml"
