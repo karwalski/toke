@@ -12,6 +12,7 @@
 
 #include "svg.h"
 #include "strbuf.h"
+#include "tk_array.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -349,8 +350,7 @@ typedef struct {
 } SvgAnimateRec;
 
 struct TkSvgDoc {
-    double      width;
-    double      height;
+    TkSvgDocHead head;    /* first: the $svgdoc record toke reads (135.30) */
     TkSvgElem **elems;
     uint64_t    nelems;
     uint64_t    cap;
@@ -379,8 +379,14 @@ TkSvgDoc *svg_doc(double width, double height)
 {
     TkSvgDoc *doc = (TkSvgDoc *)calloc(1, sizeof(TkSvgDoc));
     if (!doc) return NULL;
-    doc->width    = width;
-    doc->height   = height;
+    doc->head.width    = width;
+    doc->head.height   = height;
+    {
+        TkStrBuf vb = TK_STRBUF_INIT;
+        strbuf_appendf(&vb, "0 0 %.2f %.2f", width, height);
+        doc->head.viewbox  = strbuf_take(&vb);
+    }
+    doc->head.elements = tk_arr_alloc(8, 0);   /* empty, never a null handle */
     doc->cap      = 8;
     doc->elems    = (TkSvgElem **)malloc(doc->cap * sizeof(TkSvgElem *));
     doc->raw_cap  = 4;
@@ -401,6 +407,10 @@ TkSvgDoc *svg_append(TkSvgDoc *doc, TkSvgElem *elem)
                                             doc->cap * sizeof(TkSvgElem *));
     }
     doc->elems[doc->nelems++] = elem;
+    {   /* 135.30: the toke-visible $svgdoc.elements */
+        int64_t h = tk_arr_push(doc->head.elements, (int64_t)(intptr_t)elem);
+        if (h) doc->head.elements = h;
+    }
     return doc;
 }
 
@@ -637,8 +647,8 @@ const char *svg_render(TkSvgDoc *doc)
         "<svg xmlns=\"http://www.w3.org/2000/svg\""
         " width=\"%.2f\" height=\"%.2f\""
         " viewBox=\"0 0 %.2f %.2f\">",
-        doc->width, doc->height,
-        doc->width, doc->height);
+        doc->head.width, doc->head.height,
+        doc->head.width, doc->head.height);
 
     /* <defs> section (gradients + explicit defs content) */
     if (doc->defs_buf && doc->defs_buf[0] != '\0') {
@@ -847,6 +857,9 @@ void svg_free(TkSvgDoc *doc)
     }
     free(doc->elems);
     free(doc->rendered);
+    free(doc->head.viewbox);
+    if (doc->head.elements)   /* the toke array's whole block (tk_array.h) */
+        free((int64_t *)(intptr_t)doc->head.elements - TK_ARR_HDR);
 
     /* Story 34.5.1 */
     free(doc->defs_buf);

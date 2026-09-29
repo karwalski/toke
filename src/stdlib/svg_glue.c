@@ -19,36 +19,34 @@
 #include <string.h>
 
 static double i64_to_f64(int64_t i){ double d; memcpy(&d, &i, sizeof d); return d; }
-static int64_t f64_to_i64(double d){ int64_t i; memcpy(&i, &d, sizeof i); return i; }
 
-/* Decode a toke svgstyle handle (6-slot block) into a C TkSvgStyle. */
+/* Decode a $svgstyle (TkSvgStyleRec, 135.30) into a C TkSvgStyle. */
 static TkSvgStyle read_svgstyle(int64_t s) {
     TkSvgStyle st; st.fill = NULL; st.stroke = NULL; st.stroke_width = 0.0;
     st.opacity = 0.0; st.font_size = 0.0; st.font_family = NULL;
     if (!s) return st;
-    const int64_t *p = (const int64_t *)(intptr_t)s;
-    st.fill         = (const char *)(intptr_t)p[0];
-    st.stroke       = (const char *)(intptr_t)p[1];
-    st.stroke_width = i64_to_f64(p[2]);
-    st.opacity      = i64_to_f64(p[3]);
-    st.font_size    = i64_to_f64(p[4]);
-    st.font_family  = (const char *)(intptr_t)p[5];
+    const TkSvgStyleRec *p = (const TkSvgStyleRec *)(intptr_t)s;
+    st.fill         = p->fill;
+    st.stroke       = p->stroke;
+    st.stroke_width = p->strokewidth;
+    st.opacity      = p->opacity;
+    st.font_size    = p->fontsize;
+    st.font_family  = p->fontfamily;
     /* Empty strings mean "omit" for the optional text fields. */
     if (st.font_family && st.font_family[0] == '\0') st.font_family = NULL;
     return st;
 }
 
-/* svg.style(fill:str; stroke:str; width:f64) -> svgstyle.
- * Builds a 6-slot block matching the toke $svgstyle layout. */
+/* svg.style(fill:str; stroke:str; width:f64) -> svgstyle, a TkSvgStyleRec. */
 int64_t tk_svg_style_w(int64_t fill, int64_t stroke, int64_t width) {
-    int64_t *b = (int64_t *)malloc(6 * sizeof(int64_t));
+    TkSvgStyleRec *b = (TkSvgStyleRec *)malloc(sizeof *b);
     if (!b) return 0;
-    b[0] = fill;
-    b[1] = stroke;
-    b[2] = width;            /* already an f64 bit pattern (i64 ABI) */
-    b[3] = f64_to_i64(0.0);  /* opacity: omit */
-    b[4] = f64_to_i64(0.0);  /* font_size: omit */
-    b[5] = (int64_t)(intptr_t)""; /* font_family: omit */
+    b->fill        = (const char *)(intptr_t)fill;
+    b->stroke      = (const char *)(intptr_t)stroke;
+    b->strokewidth = i64_to_f64(width);   /* an f64 bit pattern (i64 ABI) */
+    b->opacity     = 0.0;                 /* omit */
+    b->fontsize    = 0.0;                 /* omit */
+    b->fontfamily  = "";                  /* omit */
     return (int64_t)(intptr_t)b;
 }
 

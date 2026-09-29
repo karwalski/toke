@@ -1,166 +1,31 @@
 /*
  * metrics.c — Observability, metrics, and distributed tracing for std.http.
  *
- * Epic 66: access log formats, error log separation, container logging,
- * request IDs, Prometheus metrics, histograms, upstream latency,
+ * Epic 66: request IDs, Prometheus metrics, histograms, upstream latency,
  * cache metrics, W3C Trace Context, B3 tracing.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <time.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <stdarg.h>
 
-/* ── Log format types (66.1.1) ───────────────────────────────────────── */
-
-typedef enum {
-    LOG_FORMAT_COMBINED,  /* Apache combined */
-    LOG_FORMAT_JSON,      /* JSON structured */
-    LOG_FORMAT_CUSTOM,    /* custom template */
-} LogFormat;
-
-typedef enum {
-    LOG_TARGET_FILE,
-    LOG_TARGET_STDOUT,
-    LOG_TARGET_STDERR,
-} LogTarget;
-
-static LogFormat g_log_format = LOG_FORMAT_COMBINED;
-static LogTarget g_log_target = LOG_TARGET_STDERR;
-static char     *g_log_template = NULL;
-static FILE     *g_access_log = NULL;
-static FILE     *g_error_log = NULL;
-static char     *g_access_log_path = NULL;
-static char     *g_error_log_path = NULL;
-
-void metrics_set_log_format(LogFormat fmt) { g_log_format = fmt; }
-
-void metrics_set_log_target(LogTarget target) { g_log_target = target; }
-
-void metrics_set_log_template(const char *tmpl)
-{
-    free(g_log_template);
-    g_log_template = tmpl ? strdup(tmpl) : NULL;
-}
-
-/* ── Log output helpers (66.1.3) ─────────────────────────────────────── */
-
-static FILE *log_get_output(void)
-{
-    switch (g_log_target) {
-    case LOG_TARGET_STDOUT: return stdout;
-    case LOG_TARGET_STDERR: return stderr;
-    case LOG_TARGET_FILE:   return g_access_log ? g_access_log : stderr;
-    }
-    return stderr;
-}
-
-void metrics_set_access_log(const char *path)
-{
-    if (g_access_log && g_access_log != stdout && g_access_log != stderr)
-        fclose(g_access_log);
-    free(g_access_log_path);
-    g_access_log_path = path ? strdup(path) : NULL;
-    g_access_log = path ? fopen(path, "a") : NULL;
-}
-
-/* Error log separation (66.1.2) */
-void metrics_set_error_log(const char *path)
-{
-    if (g_error_log && g_error_log != stdout && g_error_log != stderr)
-        fclose(g_error_log);
-    free(g_error_log_path);
-    g_error_log_path = path ? strdup(path) : NULL;
-    g_error_log = path ? fopen(path, "a") : NULL;
-}
-
-void metrics_log_error(const char *fmt, ...)
-{
-    FILE *out = g_error_log ? g_error_log : stderr;
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(out, fmt, ap);
-    va_end(ap);
-    fputc('\n', out);
-    fflush(out);
-}
-
-/* ── Access log formatting (66.1.1) ──────────────────────────────────── */
-
-void metrics_log_access(const char *ip, const char *method, const char *uri,
-                         uint32_t status, size_t bytes, double latency_ms,
-                         const char *referer, const char *user_agent,
-                         const char *request_id, const char *trace_id)
-{
-    FILE *out = log_get_output();
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    char timebuf[64];
-    strftime(timebuf, sizeof(timebuf), "%d/%b/%Y:%H:%M:%S %z", tm);
-
-    switch (g_log_format) {
-    case LOG_FORMAT_COMBINED:
-        fprintf(out, "%s - - [%s] \"%s %s HTTP/1.1\" %u %zu \"%.200s\" \"%.200s\"",
-                ip ? ip : "-", timebuf,
-                method ? method : "GET", uri ? uri : "/",
-                status, bytes,
-                referer ? referer : "-",
-                user_agent ? user_agent : "-");
-        if (request_id) fprintf(out, " rid=%s", request_id);
-        if (trace_id) fprintf(out, " tid=%s", trace_id);
-        fputc('\n', out);
-        break;
-
-    case LOG_FORMAT_JSON:
-        fprintf(out,
-                "{\"time\":\"%s\",\"ip\":\"%s\",\"method\":\"%s\","
-                "\"uri\":\"%s\",\"status\":%u,\"bytes\":%zu,"
-                "\"latency_ms\":%.2f",
-                timebuf, ip ? ip : "", method ? method : "GET",
-                uri ? uri : "/", status, bytes, latency_ms);
-        if (referer) fprintf(out, ",\"referer\":\"%s\"", referer);
-        if (user_agent) fprintf(out, ",\"user_agent\":\"%s\"", user_agent);
-        if (request_id) fprintf(out, ",\"request_id\":\"%s\"", request_id);
-        if (trace_id) fprintf(out, ",\"trace_id\":\"%s\"", trace_id);
-        fprintf(out, "}\n");
-        break;
-
-    case LOG_FORMAT_CUSTOM:
-        /* Simple template substitution — for now, fallback to combined */
-        fprintf(out, "%s - - [%s] \"%s %s\" %u %zu\n",
-                ip ? ip : "-", timebuf,
-                method ? method : "GET", uri ? uri : "/",
-                status, bytes);
-        break;
-    }
-
-    fflush(out);
-
-    /* Write to error log if 4xx/5xx (66.1.2) */
-    if (status >= 400 && g_error_log) {
-        fprintf(g_error_log, "[%s] %s %s %s %u %zu\n",
-                timebuf, ip ? ip : "-",
-                method ? method : "GET", uri ? uri : "/",
-                status, bytes);
-        fflush(g_error_log);
-    }
-}
-
-/* Log rotation signal handler (67.1.5) — reopen log files */
+/* ── Access / error log writers: removed (121.41) ──────────────────────
+ *
+ * metrics_log_access, metrics_log_error and their configuration setters
+ * (log format, target, template, access/error log paths) wrote the request
+ * path, User-Agent and Referer into the log raw -- a CR/LF or quote in any
+ * of them forged log lines or JSON fields -- and metrics_log_error took a
+ * caller format string.  Nothing called any of them: no stdlib module, no
+ * glue wrapper, no .tki entry.  They were deleted rather than fixed; access
+ * logging lives in log.c, whose writers escape every field.  Git history holds
+ * the code (story 121.41).
+ *
+ * metrics_reopen_logs stays because server_ops.c's SIGHUP path calls it.
+ * With no log files left here it has nothing to reopen. */
 void metrics_reopen_logs(void)
 {
-    if (g_access_log_path) {
-        if (g_access_log) fclose(g_access_log);
-        g_access_log = fopen(g_access_log_path, "a");
-    }
-    if (g_error_log_path) {
-        if (g_error_log) fclose(g_error_log);
-        g_error_log = fopen(g_error_log_path, "a");
-    }
 }
 
 /* ── Request ID generation (66.1.4) ──────────────────────────────────── */

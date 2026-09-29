@@ -18,7 +18,34 @@
 
 #include <stdint.h>
 
-typedef struct TkHtmlNode TkHtmlNode;
+/*
+ * The records toke sees (135.30).  tkc reads `x.f` as 8-byte slot <index of
+ * f in stdlib/html.tki>: a $htmlnode is {tag; attrs:[[str]]; content}, so a
+ * TkHtmlNode starts with exactly those -- attrs a toke array of @(name;
+ * value) pairs kept beside the C attribute list, content never NULL -- and
+ * the tree links after them.  Before, slot 1 was the C attribute list and
+ * `n.attrs.len` crashed.  A TkHtmlDoc starts with TkHtmlDocHead, so a
+ * $htmldoc's `.id` is a process-unique number, not the title pointer.
+ * `make check-tki-layout` keeps both in step with the .tki.
+ */
+/* tki-record-prefix: html.htmlnode */
+typedef struct TkHtmlNode {
+    char              *tag;           /* e.g. "div", "p", "table" */
+    int64_t            attrs;         /* [[str]]: @(name; value) per attribute */
+    char              *content;       /* text inside the element; "" if none */
+    /* private */
+    struct TkAttr     *attr_list;     /* the same attributes, as C renders them */
+    struct TkHtmlNode *first_child;
+    struct TkHtmlNode *last_child;    /* for O(1) append */
+    struct TkHtmlNode *next_sibling;
+    int                void_element;  /* 1 = self-closing (img, etc.) */
+} TkHtmlNode;
+
+/* tki-record: html.htmldoc */
+typedef struct {
+    int64_t            id;            /* u64, 1-based, unique per process */
+} TkHtmlDocHead;
+
 typedef struct TkHtmlDoc  TkHtmlDoc;
 
 /* Document */

@@ -1084,10 +1084,6 @@ static const char *const g_err_slot_bare[] = {
     /* http */
     "tk_http_stream_w",
     "tk_http_streamnext_w",
-    /* json */
-    "tk_json_arr_w", "tk_json_dec_w", "tk_json_str_w",
-    /* str */
-    "tk_str_frombytes_w", "tk_str_matchbracket_w", "tk_str_slice_w",
     /* vecstore */
     "tk_vecstore_collection_w", "tk_vecstore_open_w",
     /* END 127.238 bare-glue exceptions */

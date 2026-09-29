@@ -58,6 +58,7 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
 #include "parser.h"  /* Token, Node, parse(); Arena/diag_emit forwards */
 #include "names.h"   /* resolve_imports(), resolve_names(), SymbolTable, NameEnv */
 #include "types.h"   /* type_check(), TypeEnv */
+#include "regex_check.h" /* 137.9: E4075, literal regex patterns */
 #include "ir.h"      /* emit_interface() */
 #include "llvm.h"    /* emit_llvm_ir(), compile_binary(), CodegenEnv */
 #include "fmt.h"     /* tkc_format() */
@@ -699,7 +700,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             (void)typecheck_after_name_errors(ast, sbuf, (int)slen, &ne, arena);
             symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         TypeEnv te;
-        if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
+        if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0 ||
+            regex_check(ast, sbuf, (int)slen, &st) > 0) {
             symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         /* emit .tki so importers later in the list resolve this module */
         char mod_name[256];
@@ -1140,7 +1142,8 @@ static int process_file(const char *src, const RunOpts *o)
 
     /* Type check */
     TypeEnv te;
-    if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
+    if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0 ||
+        regex_check(ast, sbuf, (int)slen, &st) > 0) {
         symtab_free(&st); rc = ECOMPILE; goto done;
     }
 

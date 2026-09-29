@@ -17,7 +17,7 @@ The `std.chart` module provides a declarative API for building chart specificati
 |-------|------|---------|
 | label | $str | Series label |
 | data | @(f64) | Data points |
-| color | $str | CSS color string |
+| color | $str | CSS color string; `""` for the default palette (as `chart.bar` builds it, with label `"data"`) |
 
 ### $chartspec
 

@@ -31,23 +31,6 @@ int64_t tk_json_enc_w(int64_t val) {
     return (int64_t)(intptr_t)(e ? e : "\"\"");
 }
 
-int64_t tk_json_dec_w(int64_t s) {
-    if (!s) return 0;
-    JsonResult res = json_dec((const char *)(intptr_t)s);
-    if (res.is_err) return 0;
-    Json *heap_json = (Json *)malloc(sizeof(Json));
-    if (!heap_json) return 0;
-    *heap_json = res.ok;
-    return (int64_t)(intptr_t)heap_json;
-}
-
-int64_t tk_json_str_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
-    Json *jp = (Json *)(intptr_t)obj;
-    StrJsonResult res = json_str(*jp, (const char *)(intptr_t)key);
-    if (res.is_err) return 0;
-    return (int64_t)(intptr_t)res.ok;
-}
 
 /*
  * 127.193 — the scalar accessors keep @tk_current_error truthful.
@@ -70,6 +53,38 @@ static int64_t json_raise(JsonErrKind kind, const char *msg) {
     box[1] = (int64_t)(intptr_t)(msg ? msg : "");
     tk_current_error = (int64_t)(intptr_t)box;
     return 0;
+}
+
+/*
+ * 127.241 — json.dec and json.str fill the slot too.
+ *
+ * Both are declared `T!JsonErr` (Json!JsonErr, str!JsonErr), but until this
+ * story their glue returned a bare 0 on failure and never touched the slot,
+ * so they sat on stdlib_tables.c's bare-glue list and their `$err` arm bound
+ * nothing: the parser's own message ("json.dec: unexpected character ...")
+ * and the Missing / Type distinction were unreachable from toke.  Now every
+ * failure raises the same {JsonErr variant, msg} box as the scalar accessors
+ * and every success clears the slot, so is_stdlib_slot_wrapper() derives
+ * them as slot wrappers and `mt json.dec(s){$err:e mt e{$parse:m …}}` binds.
+ */
+int64_t tk_json_dec_w(int64_t s) {
+    if (!s) return json_raise(JSON_ERR_PARSE, "json.dec: null input");
+    JsonResult res = json_dec((const char *)(intptr_t)s);
+    if (res.is_err) return json_raise(res.err.kind, res.err.msg);
+    Json *heap_json = (Json *)malloc(sizeof(Json));
+    if (!heap_json) return json_raise(JSON_ERR_PARSE, "json.dec: out of memory");
+    *heap_json = res.ok;
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)heap_json;
+}
+
+int64_t tk_json_str_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return json_raise(JSON_ERR_MISSING, "json.str: null object or key");
+    Json *jp = (Json *)(intptr_t)obj;
+    StrJsonResult res = json_str(*jp, (const char *)(intptr_t)key);
+    if (res.is_err) return json_raise(res.err.kind, res.err.msg);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)res.ok;
 }
 
 int64_t tk_json_i64_w(int64_t obj, int64_t key) {
@@ -422,14 +437,16 @@ int64_t tk_json_obj_w(int64_t raw) {
  * An empty array is a valid non-zero handle of length 0, never `$err`.
  */
 int64_t tk_json_arr_w(int64_t obj, int64_t key) {
-    if (!obj) return 0;
+    /* 127.241: every failure raises a JsonErr box, every success clears the
+     * slot -- see tk_json_dec_w. */
+    if (!obj) return json_raise(JSON_ERR_MISSING, "json.arr: null object");
     Json *jp = (Json *)(intptr_t)obj;
     const char *k = key ? (const char *)(intptr_t)key : "";
     JsonArrayResult r = k[0] ? json_arr(*jp, k) : json_arr_top(*jp);
-    if (r.is_err) return 0;
+    if (r.is_err) return json_raise(r.err.kind, r.err.msg);
     uint64_t count = r.ok.len;
     int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!h) { free(r.ok.data); return 0; }
+    if (!h) { free(r.ok.data); return json_raise(JSON_ERR_PARSE, "json.arr: out of memory"); }
     int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         Json *elem = (Json *)malloc(sizeof(Json));
@@ -438,6 +455,7 @@ int64_t tk_json_arr_w(int64_t obj, int64_t key) {
         block[i] = (int64_t)(intptr_t)elem;
     }
     free(r.ok.data);
+    tk_current_error = 0;
     return h;
 }
 

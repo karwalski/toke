@@ -20,16 +20,11 @@
 #include <stdio.h>    /* fopen, fread, fclose */
 #include <ctype.h>    /* tolower */
 
-/* Portable arc4random_buf — macOS/BSD and glibc ≥2.36 have it natively.
- * Older Linux uses /dev/urandom fallback. */
-#if defined(__linux__) && !defined(__GLIBC__) || \
-    (defined(__GLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 36)))
-#include <stdio.h>
-static void arc4random_buf(void *buf, size_t n) {
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) { fread(buf, 1, n, f); fclose(f); }
-}
-#endif
+/* 121.20 (CRY-01): randomness comes from tk_random_bytes (tk_secure.h),
+ * which fills the buffer or aborts.  The glibc<2.36 arc4random_buf shim
+ * that stood here ignored fread's result, so a failed read left bcrypt
+ * salts and crypto.randombytes output uninitialised. */
+#include "tk_secure.h"
 
 /* -----------------------------------------------------------------------
  * SHA-256 core (FIPS 180-4)
@@ -509,6 +504,11 @@ ByteArray crypto_hmac_sha256(ByteArray key, ByteArray data)
     sha256_update_state(&s, inner, SHA256_DIGEST_SIZE);
     sha256_finish(&s, mac);
 
+    /* 121.20 (HYG-01): the key block and the keyed hash states. */
+    tk_secure_zero(k_block, sizeof k_block);
+    tk_secure_zero(inner, sizeof inner);
+    tk_secure_zero(&s, sizeof s);
+
     result.data = mac;
     result.len  = SHA256_DIGEST_SIZE;
     return result;
@@ -566,6 +566,12 @@ ByteArray crypto_hmac_sha512(ByteArray key, ByteArray data)
     sha512_update_state(&s, inner, SHA512_DIGEST_SIZE);
     sha512_finish(&s, mac);
 
+    /* 121.20 (HYG-01): the key block and the keyed hash states. */
+    tk_secure_zero(k_block, sizeof k_block);
+    tk_secure_zero(inner, sizeof inner);
+    tk_secure_zero(&s, sizeof s);
+
+
     result.data = mac;
     result.len  = SHA512_DIGEST_SIZE;
     return result;
@@ -599,7 +605,7 @@ ByteArray crypto_randombytes(uint64_t n)
     buf = malloc((size_t)n);
     if (!buf) return result;
 
-    arc4random_buf(buf, (size_t)n);
+    tk_random_bytes(buf, (size_t)n);
     result.data = buf;
     result.len  = n;
     return result;
@@ -1218,7 +1224,7 @@ CryptoStrResult crypto_bcrypt_hash(const char *password, int cost)
     if (cost > 31) cost = 31;
 
     /* Generate random salt */
-    arc4random_buf(salt, 16);
+    tk_random_bytes(salt, 16);
 
     /* Encode salt as 22 bcrypt base64 chars */
     bf_b64_encode(salt, 16, salt_b64);
@@ -1262,6 +1268,8 @@ CryptoStrResult crypto_bcrypt_hash(const char *password, int cost)
     /* Encode 23 bytes (drop last byte, spec says 31 b64 chars from 23 bytes) */
     bf_b64_encode(ctext, 23, hash_b64);
     hash_b64[31] = '\0';
+    /* 121.20 (HYG-01): the password-keyed Blowfish state. */
+    tk_secure_zero(&ctx, sizeof ctx);
 
     /* Format: "$2b$NN$<salt22><hash31>" = 7 + 22 + 31 = 60 chars */
     out = (char *)malloc(61);
@@ -1348,6 +1356,8 @@ int crypto_bcrypt_verify(const char *password, const char *hash)
 
     bf_b64_encode(ctext, 23, hash_b64);
     hash_b64[31] = '\0';
+    /* 121.20 (HYG-01): the password-keyed Blowfish state. */
+    tk_secure_zero(&ctx, sizeof ctx);
 
     /* Reconstruct full hash string for comparison */
     computed_hash[0] = '$'; computed_hash[1] = '2'; computed_hash[2] = 'b';

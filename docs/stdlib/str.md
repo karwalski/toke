@@ -245,6 +245,62 @@ The current time in whole seconds since the Unix epoch, as decimal text (`"17905
 
 An alias of `str.tofloat` (so are `str.tof64` and `str.parsefloat`); 138.11 gave all three `str.tofloat`'s type. Before, they were untyped and `str.tof32(12345)` dereferenced address 12345 (rc 139).
 
+## Regular expressions
+
+Five functions take a pattern. They share one engine (`src/stdlib/tk_regex.h`, stories 137.9 and 121.35) and one language, the same on every platform. Before 137.9 they called POSIX `regcomp`/`regexec`: a pattern `regcomp` rejected — `\S` on glibc, `*?`, `(?i)`, a malformed `[` — returned *no match* with no error, and on macOS `\s`, `\d`, `\w` and `\b` compiled as the literal letters `s`, `d`, `w` and `b`.
+
+### str.containsre(s: $str; pattern: $str): i64
+
+`1` if `pattern` matches anywhere in `s`, else `0`.
+
+### str.matches(s: $str; pattern: $str): i64
+
+`1` if `pattern` matches the **whole** of `s`, else `0` — `str.matches("x123";"[0-9]+")` is `0`; use `str.containsre` to search. The whole-string rule is applied by the matcher; before 137.9 it was applied by pasting `^(`…`)$` around the pattern text, undocumented, so an unbalanced pattern such as `a)(b` became valid and a search-style pattern silently never matched.
+
+### str.countre(s: $str; pattern: $str): i64
+
+The number of non-overlapping matches, scanning left to right.
+
+### str.findall(s: $str; pattern: $str): @($str)
+
+Every non-overlapping match, in order.
+
+### str.replacere(s: $str; pattern: $str; replacement: $str): $str
+
+`s` with every non-overlapping match replaced by `replacement`, which is taken literally (no `\1` group references).
+
+### The pattern language
+
+| Syntax | Meaning |
+|---|---|
+| `a`, `\.`, `\*`, `\{` … | a literal byte; `\` before any punctuation (or a space) makes it literal |
+| `.` | any byte |
+| `^` `$` | start / end of the whole string (not of a line) |
+| `[abc]` `[^abc]` `[a-z]` | a bracket expression; `]` first and `-` first or last are literal |
+| `[:alpha:]` `[:digit:]` `[:alnum:]` `[:upper:]` `[:lower:]` `[:space:]` `[:blank:]` `[:punct:]` `[:print:]` `[:graph:]` `[:cntrl:]` `[:xdigit:]` | POSIX classes, inside a bracket expression |
+| `\s` `\S` `\d` `\D` `\w` `\W` | ASCII space, digit and word (`[A-Za-z0-9_]`) classes and their complements; also inside brackets |
+| `\b` `\B` | word boundary / not a word boundary |
+| `\n` `\t` `\r` `\f` `\v` | control characters (inside brackets too) |
+| `(…)` `(?:…)` | grouping (there are no capture groups) |
+| `a\|b` | alternation |
+| `*` `+` `?` `{n}` `{n,}` `{n,m}` | greedy repetition, `n` and `m` at most 255 |
+| `(?i)` | at the very start only: ASCII case-insensitive matching |
+
+Anything else is **rejected**, never silently read as something else: lazy quantifiers (`*?` `+?` `??` `{n,m}?`), backreferences (`\1`), lookaround and every other `(?…)` form, a letter escape not in the table, a quantifier with nothing to repeat or following another quantifier, an unbalanced `(` `)` or `[`, a `{` that does not start a bound (write `\{`), an empty alternative (`a|`, `()`), and a pattern whose repeats expand past 2000 states (`(a{1,255}){1,255}`).
+
+A **literal** pattern is checked when the program is compiled — `toke --check` reports [E4075](../reference/errors.md#e4075) at the offending byte:
+
+<!-- skip-check -->
+```text
+error[E4075]: invalid regex pattern for str.replacere: lazy quantifiers (*? +? ?? {n,m}?) are not supported: …
+```
+
+A pattern **computed** at run time is checked when it is used; an invalid one stops the program with `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` and exit status 1. There is no call that returns the error as a value yet, so validate an untrusted pattern before relying on it.
+
+**Matching rule.** Matching is byte-wise. A search finds the leftmost match and, from that start, the longest one (POSIX leftmost-longest): `str.findall("ab";"a|ab")` is `["ab"]`. After a match the scan resumes at its end; after an empty match it moves one byte on, and an empty match directly after the previous match is skipped, so `str.replacere("abc";"x*";"-")` is `"-a-b-c-"`.
+
+**Cost.** Matching simulates the pattern's automaton without backtracking, so there is no exponential case: one search reads each byte once, at a cost proportional to the pattern's size after repeats are expanded (at most 2000 states). Each call has a step budget of eight full passes over the subject plus 2^26 steps. A single search never exhausts it; the scan-resume loop of `str.countre`, `str.findall` and `str.replacere` can — a pattern such as `a|a*b` re-reads the rest of the subject after every match, which is quadratic — and the program then stops with `RT009: regex step budget exceeded in str.<fn>` and exit status 1 rather than run on. Measured on an Apple M2 Pro (2026-09-29): about 450 million steps a second; that pattern over 16 000 bytes stops after about 0.15 s, and after about 0.2 s over 160 000 (POSIX `regexec` took 2.4 s over 16 000 and quadrupled with each doubling); a near-limit pattern of 1533 states searches about 4.5 µs per subject byte.
+
 ## Usage Examples
 
 ```toke

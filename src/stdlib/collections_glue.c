@@ -8,10 +8,15 @@
 
 #include "collections.h"
 #include "tk_array.h"
+#include "tk_runtime.h"   /* 127.30: tk_current_error (runtime-abi.md §7.2) */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#if !(defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__))
+#include <unistd.h>      /* getentropy (glibc >= 2.25, musl) */
+#endif
 
 /*
  * tk_array_retain — bump the refcount on an array-typed handle (ADR-0006 D2).
@@ -47,9 +52,11 @@ void tk_array_retain(int64_t h) {
  * Key kinds (127.20): codegen passes every key as a bare i64, so the glue can
  * only tell str keys from int keys by a per-map tag fixed at creation:
  *   TK_MAP_KEY_STR  (tk_map_new)      key is a NUL-terminated char*, compared
- *                                     by content, hashed with FNV-1a 64.
- *   TK_MAP_KEY_INT  (tk_map_new_int)  key is the i64 itself, hashed with the
- *                                     splitmix64 finaliser.
+ *                                     by content, hashed over its bytes.
+ *   TK_MAP_KEY_INT  (tk_map_new_int)  key is the i64 itself, hashed over its
+ *                                     eight bytes.
+ * Both hashes are keyed SipHash-1-3 under a per-process random key (121.32,
+ * see tk_map_hash_key below).
  * On a str-keyed map a key that cannot be a user-space pointer (negative, or
  * inside the unmapped zero page) traps as RT006 instead of being handed to
  * strcmp — that was the 2.8.0 `@(1:0); m=m.set(2;5)` segfault.
@@ -74,17 +81,119 @@ typedef struct {
     uint64_t *hashes;      /* hashes[i] == hash of entries[i].key */
 } TkMapImpl;
 
+/*
+ * 121.32: the hash is keyed, so a caller cannot choose colliding keys.
+ *
+ * THE DEFECT.  127.22 replaced the linear strcmp scan with open addressing,
+ * which removed the O(N) lookup the row was filed against but kept its
+ * consequence: the index hash was unkeyed FNV-1a 64 (str keys) and the
+ * unkeyed splitmix64 finaliser (int keys).  Both are public functions, so
+ * whoever supplies the keys chooses the hashes.  For FNV-1a the low k bits of
+ * the state depend only on the low k bits of the previous state, so 2^m keys
+ * sharing their low 24 hash bits are a minute's birthday search (m chained
+ * 5-byte block collisions), and under linear probing every one of them lands
+ * in the same probe run.  Measured at main 8efba9e with 75-byte keys:
+ * N=2048 0.004 s, 4096 0.019 s, 8192 0.065 s, 16384 0.28 s, 32768 1.09 s --
+ * x4 per doubling, O(N^2) -- against 0.006 s for 32768 random keys.  Any
+ * program that materialises untrusted keys into a map (JSON object keys,
+ * query parameters, form fields, headers) inherited that.
+ *
+ * THE FIX.  SipHash-1-3 (Aumasson & Bernstein; the variant Python and Rust
+ * use for exactly this purpose) under a 128-bit key drawn once per process
+ * from the OS CSPRNG (arc4random_buf, or getentropy(3) elsewhere).  Without
+ * the key the attacker cannot predict which slot a key takes, so the colliding set above spreads like random keys.
+ * The int-key hash goes through the same function over the eight bytes of
+ * the i64: an unkeyed bijection like splitmix64 is invertible, so int keys
+ * parsed from input could be aimed at one slot just as easily.
+ *
+ * ITERATION ORDER IS NOT AFFECTED.  keys() walks the dense entry array, which
+ * is insertion order (overwrite keeps the first position) -- the hash only
+ * chooses the slot a lookup starts from.  So output never depends on the key,
+ * the key cannot be read back out of iteration order, and two runs of one
+ * program print the same thing (semantics.md §10.2).
+ *
+ * The key is initialised on first use, once, under an atomic state word:
+ * maps are created on std.task pool threads too, and two threads that each
+ * drew their own key would hash one map's entries under two keys.
+ */
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#define TK_MAP_HAVE_ARC4RANDOM 1
+#endif
+
+static uint64_t tk_map_k0, tk_map_k1;
+static int tk_map_key_state;            /* 0 unset, 1 being set, 2 ready */
+
+static void tk_map_key_fill(uint64_t k[2]) {
+#ifdef TK_MAP_HAVE_ARC4RANDOM
+    arc4random_buf(k, 2 * sizeof(uint64_t));
+#else
+    /* getentropy(3): a syscall, not a file -- it works in a chroot without
+     * /dev and is not a filesystem sink (check_capability_sinks, 121.22). */
+    if (getentropy(k, 2 * sizeof(uint64_t)) != 0) {
+        /* No kernel entropy reachable: the key is then only as
+         * unpredictable as the clock and the address space layout, which
+         * still defeats a precomputed collision set but not an adaptive
+         * attacker who can time the process.  Documented, not hidden. */
+        uint64_t a = (uint64_t)time(NULL), b = (uint64_t)clock();
+        uint64_t c = (uint64_t)(uintptr_t)&a, d = (uint64_t)(uintptr_t)k;
+        k[0] = (a * 0x9e3779b97f4a7c15ULL) ^ c ^ (b << 32);
+        k[1] = (c * 0xbf58476d1ce4e5b9ULL) ^ d ^ b;
+    }
+#endif
+}
+
+static void tk_map_key_init(void) {
+    if (__atomic_load_n(&tk_map_key_state, __ATOMIC_ACQUIRE) == 2) return;
+    int expect = 0;
+    if (__atomic_compare_exchange_n(&tk_map_key_state, &expect, 1, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        uint64_t k[2] = {0, 0};
+        tk_map_key_fill(k);
+        tk_map_k0 = k[0]; tk_map_k1 = k[1];
+        __atomic_store_n(&tk_map_key_state, 2, __ATOMIC_RELEASE);
+        return;
+    }
+    while (__atomic_load_n(&tk_map_key_state, __ATOMIC_ACQUIRE) != 2) { /* another thread is drawing it */ }
+}
+
+#define TK_ROTL64(x, b) (((x) << (b)) | ((x) >> (64 - (b))))
+#define TK_SIPROUND                                                     \
+    do {                                                                \
+        v0 += v1; v1 = TK_ROTL64(v1, 13); v1 ^= v0; v0 = TK_ROTL64(v0, 32); \
+        v2 += v3; v3 = TK_ROTL64(v3, 16); v3 ^= v2;                     \
+        v0 += v3; v3 = TK_ROTL64(v3, 21); v3 ^= v0;                     \
+        v2 += v1; v1 = TK_ROTL64(v1, 17); v1 ^= v2; v2 = TK_ROTL64(v2, 32); \
+    } while (0)
+
+/* SipHash-1-3 of in[0..len) under (tk_map_k0, tk_map_k1). */
+static uint64_t tk_map_siphash(const unsigned char *in, size_t len) {
+    tk_map_key_init();
+    uint64_t v0 = 0x736f6d6570736575ULL ^ tk_map_k0;
+    uint64_t v1 = 0x646f72616e646f6dULL ^ tk_map_k1;
+    uint64_t v2 = 0x6c7967656e657261ULL ^ tk_map_k0;
+    uint64_t v3 = 0x7465646279746573ULL ^ tk_map_k1;
+    const unsigned char *end = in + (len & ~(size_t)7);
+    for (; in != end; in += 8) {
+        uint64_t m = 0;
+        for (int i = 0; i < 8; i++) m |= (uint64_t)in[i] << (8 * i);   /* little-endian, any host */
+        v3 ^= m; TK_SIPROUND; v0 ^= m;
+    }
+    uint64_t b = (uint64_t)len << 56;
+    for (int i = 0; i < (int)(len & 7); i++) b |= (uint64_t)in[i] << (8 * i);
+    v3 ^= b; TK_SIPROUND; v0 ^= b;
+    v2 ^= 0xff;
+    TK_SIPROUND; TK_SIPROUND; TK_SIPROUND;
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+
 static uint64_t tk_map_hash_str(const char *s) {
-    uint64_t h = 1469598103934665603ULL;               /* FNV-1a 64 */
-    if (!s) return h;
-    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
-    return h;
+    if (!s) return tk_map_siphash((const unsigned char *)"", 0);   /* NULL key: one fixed slot, as before */
+    return tk_map_siphash((const unsigned char *)s, strlen(s));
 }
 static uint64_t tk_map_hash_int(int64_t k) {
-    uint64_t z = (uint64_t)k + 0x9e3779b97f4a7c15ULL; /* splitmix64 finaliser */
-    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
-    return z ^ (z >> 31);
+    unsigned char b[8];
+    for (int i = 0; i < 8; i++) b[i] = (unsigned char)((uint64_t)k >> (8 * i));
+    return tk_map_siphash(b, 8);
 }
 static uint64_t tk_map_hash(const TkMapImpl *m, int64_t key) {
     return m->kind == TK_MAP_KEY_INT ? tk_map_hash_int(key)
@@ -179,12 +288,31 @@ void tk_map_put(void *m_ptr, int64_t key, int64_t val) {
     tk_map_slot_insert(m, e);
 }
 
+/*
+ * tk_map_get — `m.get(k)`, a fallible lookup (127.30, owner decision
+ * 2026-09-22: error unions, not a 0 sentinel).
+ *
+ * THE DEFECT.  A missing key returned 0 and so did a stored 0, and nothing
+ * else was returned: `mt m.get(k){$ok:v …;$err:e …}` decided on the value, so
+ * a key holding 0 (or "" or false) took the $err arm exactly as a missing
+ * key did — the substitute-a-default-for-an-unestablished-fact class.
+ *
+ * THE FIX.  The lookup keeps @tk_current_error truthful on every return,
+ * as the 127.193 stdlib slot wrappers do: 0 on a hit, 1 (failed, no
+ * payload — the key is the caller's own) on a miss.  llvm.c's
+ * classify_fallible_call() treats a map `.get` as a slot call, so the match,
+ * the let-bound match and `!` all decide on the slot, never the value.
+ * The value channel still carries 0 on a miss (runtime-abi.md §7.1: the zero
+ * filler), which is what an unconsumed `m.get(k)` evaluates to.
+ */
 int64_t tk_map_get(void *m_ptr, int64_t key) {
     TkMapImpl *m = (TkMapImpl *)m_ptr;
-    if (!m) return 0;
+    if (!m) { tk_current_error = 1; return 0; }
     tk_map_check_key(m, key);
     int e = tk_map_find(m, key, tk_map_hash(m, key));
-    return e >= 0 ? m->entries[e].val : 0;             /* missing -> 0, as on 2.8.0 */
+    if (e < 0) { tk_current_error = 1; return 0; }       /* miss: filler 0, slot says so */
+    tk_current_error = 0;
+    return m->entries[e].val;
 }
 
 /* ── Array/map instance method wrappers ──────────────────────────────── */

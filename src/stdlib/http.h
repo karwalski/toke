@@ -304,10 +304,9 @@ const char *http_set_cookie_header(const char *name, const char *value,
  * Returns 0 on success, -1 on write error. */
 int http_chunked_write(int fd, const char *data, size_t len, size_t chunk_size);
 
-/* http_chunked_read — read a chunked body from fd into a malloc'd buffer.
- * Returns heap-allocated buffer (caller owns) and sets *out_len.
- * Returns NULL on error. */
-char *http_chunked_read(int fd, size_t *out_len);
+/* 121.44: http_chunked_read(fd) is retired -- it read fresh from the
+ * socket, so it could not see bytes buffered with the headers.  The server
+ * decodes chunked request bodies with its shared request reader. */
 
 /* Keep-alive defaults (Story 27.1.3) */
 #define HTTP_KEEPALIVE_IDLE_TIMEOUT_S 30

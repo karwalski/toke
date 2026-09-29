@@ -13,7 +13,7 @@ The `std.dashboard` module provides a high-level API for building live dashboard
 
 ### $dashboard
 
-Opaque handle to a dashboard instance.
+Opaque handle to a dashboard instance. Its one field, `id` (u64), is a number unique within the process.
 
 ### $dashwidget
 
@@ -21,7 +21,7 @@ Opaque handle to a dashboard instance.
 |-------|------|---------|
 | id | $str | Widget identifier |
 | type | $str | Widget type (`"chart"` or `"table"`) |
-| spec | @($byte) | Serialized widget specification |
+| spec | @($byte) | Serialized widget specification (for a chart, its Chart.js JSON as `chart.tojson` gives it) |
 
 ### $dasherr
 

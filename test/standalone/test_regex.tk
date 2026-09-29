@@ -2,55 +2,41 @@ m=test.regex;
 i=io:std.io;
 i=str:std.str;
 
+(* 137.9: this file was named for regex and asserted only startswith,
+   contains and endswith (story 79.2.5's list). It now tests the regex
+   entry points: str.containsre, str.matches, str.countre, str.findall and
+   str.replacere, over the language in docs/stdlib/str.md. Every pattern
+   here is a literal, so each is also checked by E4075 at compile time. *)
+
+f=check(name:$str;got:$str;want:$str):i64{
+  if(str.eq(got;want)){
+    io.println(str.concat("PASS ";name));
+    <0
+  };
+  io.println(str.concat("FAIL ";str.concat(name;str.concat(" got: ";got))));
+  <1
+};
+
+f=n(v:i64):$str{<str.fromint(v)};
+
 f=main():i64{
-  let pass=mut.0;
   let fail=mut.0;
-
-  let m1=str.startswith("hello world";"hello");
-  if(m1){
-    io.println("PASS str.startswith hello world starts with hello");
-    pass=pass+1
-  }el{
-    io.println("FAIL str.startswith hello world starts with hello");
-    fail=fail+1
-  };
-
-  let m2=str.startswith("hello world";"world");
-  if(m2){
-    io.println("FAIL str.startswith hello world does not start with world");
-    fail=fail+1
-  }el{
-    io.println("PASS str.startswith hello world does not start with world");
-    pass=pass+1
-  };
-
-  let rep=str.replace("hello world";"world";"toke");
-  if(str.eq(rep;"hello toke")){
-    io.println("PASS str.replace world with toke");
-    pass=pass+1
-  }el{
-    io.println(str.concat("FAIL str.replace world with toke (got: ";str.concat(rep;")")));
-    fail=fail+1
-  };
-
-  let has=str.contains("hello world";"world");
-  if(has){
-    io.println("PASS str.contains finds world in hello world");
-    pass=pass+1
-  }el{
-    io.println("FAIL str.contains finds world in hello world");
-    fail=fail+1
-  };
-
-  let hasnot=str.contains("hello world";"xyz");
-  if(hasnot){
-    io.println("FAIL str.contains does not find xyz in hello world");
-    fail=fail+1
-  }el{
-    io.println("PASS str.contains does not find xyz in hello world");
-    pass=pass+1
-  };
-
-  io.println(str.concat("regex: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  fail=fail+check("containsre finds \\d+";n(str.containsre("ab123";"[0-9]+"));"1");
+  fail=fail+check("containsre misses";n(str.containsre("abc";"[0-9]+"));"0");
+  fail=fail+check("matches is whole-string";n(str.matches("123";"[0-9]+"));"1");
+  fail=fail+check("matches does not search";n(str.matches("x123";"[0-9]+"));"0");
+  fail=fail+check("countre \\w+";n(str.countre("one two  three";"\\w+"));"3");
+  fail=fail+check("countre ^ anchors once";n(str.countre("aaa";"^a"));"1");
+  fail=fail+check("replacere \\s";str.replacere("a b\tc";"\\s";"_");"a_b_c");
+  fail=fail+check("replacere \\S";str.replacere("a b";"\\S";"_");"_ _");
+  fail=fail+check("replacere (?i)";str.replacere("xABCx";"(?i)abc";"Z");"xZx");
+  fail=fail+check("replacere \\b";str.replacere("foo afoo foo";"\\bfoo\\b";"X");"X afoo X");
+  fail=fail+check("replacere negated class";str.replacere("<x>y<z>";"<[^>]*>";"[t]");"[t]y[t]");
+  fail=fail+check("replacere empty matches";str.replacere("abc";"x*";"-");"-a-b-c-");
+  fail=fail+check("replacere leftmost-longest";str.replacere("ab";"a|ab";"X");"X");
+  fail=fail+check("replacere bound";str.replacere("aaaaa";"a{2,3}";".");"..");
+  let all=str.findall("k1=v1;k2=v2";"[a-z][0-9]");
+  fail=fail+check("findall count";n(all.len);"4");
+  io.println(str.concat("regex: ";str.concat(n(fail);" failed")));
   <fail
 };

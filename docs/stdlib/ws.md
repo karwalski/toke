@@ -18,11 +18,15 @@ functions; do not construct one and do not rely on its fields.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| id | u64 | Connection identifier |
-| ready | bool | Whether the connection is open and ready |
+| id | u64 | Connection identifier: 1 for the process's first `ws.connect`, then 2, ... |
+| ready | bool | `true` until `ws.close` is called on this handle |
 
-> **Never build a `$wsconn` yourself.** The value that crosses into the
-> runtime is a live socket handle, not the two fields above. A hand-written
+The two fields are readable (135.30; before, they read the runtime's socket
+state as numbers). The handle is still only valid as `ws.connect` issued it:
+the runtime recognises the handles it issued, not their field values.
+
+> **Never build a `$wsconn` yourself.** The runtime accepts only a handle
+> `ws.connect` issued, whatever its fields say. A hand-written
 > `$wsconn{id:0;ready:false}` is a zeroed block, and until story 127.112 the
 > runtime read it as an *open connection on file descriptor 0* — `ws.send`
 > wrote a real RFC 6455 frame to the caller's terminal and returned success,

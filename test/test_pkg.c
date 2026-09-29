@@ -450,6 +450,11 @@ test_lock_pins(void)
     orig.entries[1].version = (PkgVersion){1, 2, 0};
     snprintf(orig.entries[1].commit, sizeof(orig.entries[1].commit), "%s", C64);
     snprintf(orig.entries[1].hash, sizeof(orig.entries[1].hash), "%s", H2);
+    /* 121.39: a pinned entry also records its https/ssh source */
+    snprintf(orig.entries[0].source, sizeof(orig.entries[0].source),
+             "https://github.com/example/toke-webframework.git");
+    snprintf(orig.entries[1].source, sizeof(orig.entries[1].source),
+             "git@github.com:example/jsonparser.git");
 
     const char *path = write_tmp("");
     ASSERT(pkg_lock_write(path, &orig) == 0, "write pinned lock");
@@ -460,6 +465,8 @@ test_lock_pins(void)
     ASSERT(strcmp(back.entries[0].hash, H1) == 0, "hash[0] round-trips");
     ASSERT(strcmp(back.entries[1].commit, C64) == 0, "commit[1] round-trips");
     ASSERT(strcmp(back.entries[1].hash, H2) == 0, "hash[1] round-trips");
+    ASSERT(strcmp(back.entries[0].source, orig.entries[0].source) == 0, "source[0] round-trips");
+    ASSERT(strcmp(back.entries[1].source, orig.entries[1].source) == 0, "source[1] round-trips");
 
     char err[256] = {0};
     ASSERT(pkg_lock_check_pinned(&back, err, (int)sizeof(err)) == 0, "fully pinned lock accepted");
@@ -473,6 +480,23 @@ test_lock_pins(void)
     ASSERT(pkg_lock_verify(&back.entries[0], C40, H2, err, (int)sizeof(err)) == -1,
            "verify: tampered content (other hash) refused");
     ASSERT(strstr(err, "content hash mismatch") != NULL, "verify names the hash mismatch");
+
+    /* 121.39: no source, no fetch */
+    {
+        PkgLock nosrc = back;
+        nosrc.entries[1].source[0] = '\0';
+        err[0] = '\0';
+        ASSERT(pkg_lock_check_pinned(&nosrc, err, (int)sizeof(err)) == -1,
+               "entry with no source refused");
+        ASSERT(strstr(err, "jsonparser") && strstr(err, "source"),
+               "no-source error names the package and the source");
+        ASSERT(pkg_lock_verify(&nosrc.entries[1], C64, H2, err, (int)sizeof(err)) == -1,
+               "verify against an entry with no source refused");
+        nosrc.entries[1] = back.entries[1];
+        snprintf(nosrc.entries[1].source, sizeof(nosrc.entries[1].source),
+                 "http://github.com/example/jsonparser.git");
+        ASSERT(pkg_lock_write(path, &nosrc) == -1, "writer refuses an http source");
+    }
 
     /* unpinned entries */
     back.entries[1].hash[0] = '\0';
