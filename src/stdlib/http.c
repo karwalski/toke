@@ -4036,18 +4036,26 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
     H2Conn *conn = h2_conn_new();
     if (!conn) return;
 
+    /* Set idle timeout for HTTP/2 connection (60.2.3) */
+#define H2_IDLE_TIMEOUT_S       30
+#define H2_MAX_STREAMS_TOTAL   1000
+#define H2_PING_INTERVAL_S      15
+
+    /* 121.44: the HTTP/2 counterpart of HTT-06.  A frame must be whole
+     * within timeout_secs of its first byte, and two phases that span frames
+     * have a deadline of their own: the preface through the client's first
+     * SETTINGS frame, and a header block (HEADERS up to END_HEADERS).  The
+     * reads wait with poll() against these deadlines (http2.c); SO_RCVTIMEO,
+     * which restarts on every byte, no longer bounds anything here. */
+    conn->read_timeout_ms = srv_limits.timeout_secs * 1000u;
+    conn->idle_timeout_ms = H2_IDLE_TIMEOUT_S * 1000u;
+    conn->deadline_ms     = h2_now_ms() + (long)conn->read_timeout_ms;
+    int awaiting_settings = 1;
+
     /* Read and validate the 24-byte client connection preface */
     uint8_t preface[H2_CONNECTION_PREFACE_LEN];
-    {
-        size_t done = 0;
-        while (done < H2_CONNECTION_PREFACE_LEN) {
-            int r = SSL_read(ssl, preface + done,
-                             (int)(H2_CONNECTION_PREFACE_LEN - done));
-            if (r <= 0) { h2_conn_free(conn); return; }
-            done += (size_t)r;
-        }
-    }
-    if (h2_validate_preface(preface, H2_CONNECTION_PREFACE_LEN) != 0) {
+    if (h2_conn_read(conn, fd, ssl, preface, H2_CONNECTION_PREFACE_LEN) != 0 ||
+        h2_validate_preface(preface, H2_CONNECTION_PREFACE_LEN) != 0) {
         h2_conn_free(conn);
         return;
     }
@@ -4056,17 +4064,6 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
     if (h2_send_settings(conn, fd, ssl) < 0) {
         h2_conn_free(conn);
         return;
-    }
-
-    /* Set idle timeout for HTTP/2 connection (60.2.3) */
-#define H2_IDLE_TIMEOUT_S       30
-#define H2_MAX_STREAMS_TOTAL   1000
-#define H2_PING_INTERVAL_S      15
-    {
-        struct timeval tv;
-        tv.tv_sec  = H2_IDLE_TIMEOUT_S;
-        tv.tv_usec = 0;
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     }
 
     uint32_t total_streams = 0;
@@ -4119,6 +4116,18 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                            H2_ERR_FRAME_SIZE);
             goto done;
+        }
+
+        /* 121.44: the preface is followed by the client's SETTINGS frame
+         * (RFC 9113 3.4); that frame closes the preface phase. */
+        if (awaiting_settings) {
+            if (hdr.type != H2_FRAME_SETTINGS || (hdr.flags & H2_FLAG_ACK)) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            awaiting_settings = 0;
+            conn->deadline_ms = 0;
         }
 
         switch (hdr.type) {
@@ -4180,6 +4189,23 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 if (hblock_len < 5) goto done;
                 hblock += 5; /* skip 4-byte dep + 1-byte weight */
                 hblock_len -= 5;
+            }
+
+            /* 121.44: a header block is bounded in size by the
+             * SETTINGS_MAX_HEADER_LIST_SIZE we advertised, and in time by
+             * timeout_secs from its first frame. */
+            if ((size_t)stream->header_block_len + hblock_len >
+                    conn->local_settings.max_header_list_size) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_ENHANCE_YOUR_CALM);
+                goto done;
+            }
+            if (!(hdr.flags & H2_FLAG_END_HEADERS)) {
+                if (!conn->deadline_ms)
+                    conn->deadline_ms = h2_now_ms()
+                                      + (long)conn->read_timeout_ms;
+            } else {
+                conn->deadline_ms = 0;
             }
 
             /* Accumulate header block fragments */
@@ -4365,6 +4391,17 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
                                H2_ERR_PROTOCOL);
                 goto done;
             }
+            /* 121.44: the same ceiling as HEADERS -- this append had none,
+             * so a stream of CONTINUATION frames grew one header block
+             * without bound.  END_HEADERS closes the header-block phase. */
+            if (stream->header_block_len + hdr.length >
+                    conn->local_settings.max_header_list_size) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_ENHANCE_YOUR_CALM);
+                goto done;
+            }
+            if (hdr.flags & H2_FLAG_END_HEADERS) conn->deadline_ms = 0;
+
             /* Append to header block */
             size_t newlen = stream->header_block_len + hdr.length;
             if (newlen > stream->header_block_cap) {
