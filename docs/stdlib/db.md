@@ -34,6 +34,8 @@ A sum type representing database operation failures.
 | $notfound | $str | No matching row or column found |
 | $constraint | $str | A database constraint was violated (e.g., unique, foreign key) |
 
+**The message is for your logs, not your users (121.21).** A `$dberr`'s text is usually the database driver's own message, and it can quote the SQL, table and column names and constraint names. Log it on the server; send a client a fixed message of your own. Returning it in an HTTP response hands an attacker your schema.
+
 ## Functions
 
 ### db.open(path: $str): u64!$dberr

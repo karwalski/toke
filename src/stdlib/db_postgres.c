@@ -29,6 +29,7 @@ static char *rewrite_placeholders(const char *sql)
     /* Each $N can be up to 6 chars ($99999) — allocate generously */
     size_t len = strlen(sql) + (size_t)count * 6 + 1;
     char *out = malloc(len);
+    if (!out) return NULL;   /* 121.21: was unchecked */
     char *wp = out;
     int idx = 0;
     for (const char *rp = sql; *rp; rp++) {
@@ -43,10 +44,18 @@ static char *rewrite_placeholders(const char *sql)
     return out;
 }
 
+/* 121.21 (DAT-06): TLS unless the DSN says otherwise.  PQconnectdb(dsn)
+ * took libpq's default sslmode, "prefer", which falls back to plaintext --
+ * password and queries -- whenever the server does not offer TLS, silently.
+ * sslmode=require is now the default; the DSN is expanded AFTER it
+ * (expand_dbname), so a DSN that names its own sslmode (verify-full, or
+ * disable for a local socket) still decides. */
 static int pg_open(const char *dsn)
 {
     TK_REQUIRE(TK_CAP_NET);
-    g_pg = PQconnectdb(dsn);
+    static const char *const keys[] = { "sslmode", "dbname", NULL };
+    const char *vals[] = { "require", dsn, NULL };
+    g_pg = PQconnectdbParams(keys, vals, 1);
     if (PQstatus(g_pg) != CONNECTION_OK) {
         PQfinish(g_pg); g_pg = NULL; return -1;
     }
