@@ -67,7 +67,7 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  if(sm.isavailable()==0){
+  if(!sm.isavailable()){
     io.println("mlock unavailable: secrets may be paged to disk")
   };
 
