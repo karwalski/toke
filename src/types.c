@@ -6424,6 +6424,32 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           "expected","T!E","got",st,(const char*)NULL);
             }
         }
+        /* 127.249 (2): a result match whose VALUE is used must have both
+         * sides.  `let a=mt g() {$ok:v v}` was accepted and the missing
+         * side lowered as the zero value of the result type (138.2's empty
+         * side), so a failure read as 0 or "" -- a silent wrong value.  A
+         * match standing as a statement is left alone: there an `$err` arm
+         * alone runs only on failure and an `$ok` arm alone only on success
+         * (C400 case 7), which is complete.  Any label other than ok counts
+         * as the error side (`$err`, or a variant of a flat error sum).
+         * No `fix`: the arm's body is not decidable here. */
+        if (has_result_arm&&!discarded) {
+            int has_ok=0,has_other=0;
+            for (int ai=0;ai<arm_tag_count;ai++) {
+                if (!strcmp(arm_tags[ai],"ok")||!strcmp(arm_tags[ai],"Ok")) has_ok=1;
+                else has_other=1;
+            }
+            if (has_ok!=has_other&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),
+                    "non-exhaustive match: missing arm for '%s' -- the match's value "
+                    "is used, and without that arm it is the zero value when %s",
+                    has_ok?"$err":"$ok",has_ok?"the call fails":"the call succeeds");
+                diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,msg,
+                    "expected",has_ok?"an '$err' arm":"an '$ok' arm","got","missing",
+                    (const char*)NULL);
+            }
+        }
         /* Bool exhaustiveness check */
         if (scr->kind==TY_BOOL&&!has_t) {
             if (tc_can_emit(cx))

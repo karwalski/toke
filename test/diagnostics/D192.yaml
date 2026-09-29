@@ -1,0 +1,14 @@
+id: D192
+series: D
+description: "E4010: a result match whose value is used, with only an '$ok' arm, is non-exhaustive and carries no fix -- the missing arm's body is not decidable (127.249 (2))"
+input: |
+  m=test;
+  t=$ue{$bad:str};
+  f=g(n:i64):i64!$ue{ if(n<0){ <$bad("x") }; <n };
+  f=main():i64{
+    let a=mt g(0-1) {$ok:v v};
+    <a
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4010"]
+expected_fix_absent: true

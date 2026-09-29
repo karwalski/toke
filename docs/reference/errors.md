@@ -513,6 +513,18 @@ f=bad(): i64 { < mt true {$true:v 1} };
 
 Triggers E4010 (non-exhaustive match: missing arm for `false`).
 
+A result match whose value is used must have both an `$ok` arm and an
+error arm (`$err`, or the variants of the error sum); without one, that side
+would yield the zero value of the result type.  A result match standing as a
+statement may have just one: `mt g() {$err:e io.println("failed")};` runs only
+on failure.
+<!-- skip-check -->
+```text
+let a=mt g() {$ok:v v};
+```
+
+Triggers E4010 (non-exhaustive match: missing arm for `$err`), with no `fix`.
+
 **Fix:** Add the missing match arm(s) to cover all cases.
 
 ---
