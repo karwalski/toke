@@ -1087,11 +1087,6 @@ static const char *const g_err_slot_bare[] = {
     "tk_encoding_b64decode_w", "tk_encoding_hexdecode_w", "tk_encoding_urldecode_w",
     /* env */
     "tk_env_get_w",
-    /* file */
-    "tk_file_append_w", "tk_file_copy_w", "tk_file_delete_w",
-    "tk_file_list_w", "tk_file_listall_w", "tk_file_mkdir_w",
-    "tk_file_read_w", "tk_file_readbytes_w", "tk_file_write_w",
-    "tk_file_writebytes_w",
     /* http */
     "tk_http_stream_w",
     "tk_http_streamnext_w",

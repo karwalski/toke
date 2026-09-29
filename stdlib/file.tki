@@ -18,6 +18,34 @@
         {
           "name": "$io",
           "type": "str"
+        },
+        {
+          "name": "$invalid",
+          "type": "str"
+        },
+        {
+          "name": "$isdir",
+          "type": "str"
+        },
+        {
+          "name": "$notregular",
+          "type": "str"
+        },
+        {
+          "name": "$symlink",
+          "type": "str"
+        },
+        {
+          "name": "$toolarge",
+          "type": "str"
+        },
+        {
+          "name": "$nomem",
+          "type": "str"
+        },
+        {
+          "name": "$badarg",
+          "type": "str"
         }
       ]
     },
@@ -138,18 +166,6 @@
         "str"
       ],
       "return": "i64!FileErr"
-    },
-    {
-      "kind": "func",
-      "name": "file.lasterr",
-      "params": [],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "file.lasterrkind",
-      "params": [],
-      "return": "str"
     },
     {
       "kind": "func",

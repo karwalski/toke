@@ -234,18 +234,16 @@ f=readbytes(path:$str):@(byte)!$fileerr
 f=writebytes(path:$str;data:@(byte)):bool!$fileerr
 f=readrange(path:$str;offset:i64;len:i64):@(byte)!$fileerr
 f=size(path:$str):i64!$fileerr
-f=lasterr():$str
-f=lasterrkind():$str
 ```
 
 `read` and `write` carry a `$str`, which is NUL-terminated: they truncate at
 the first zero byte and are therefore **text-only**. `readbytes`/`writebytes`
 (135.10) are the byte-exact pair and are what every binary format — archives,
 PDFs, images, spreadsheets — must use. An empty `@(byte)` means an empty file,
-never a failure; the `$err` arm carries no payload (the compiled `T!E` ABI has
-none), so `file.lasterrkind` reports which of `notfound permission isdir
-notregular symlink toolarge nomem io badarg` occurred and `file.lasterr` gives
-the message. `readbytes` refuses a file over 64 MiB rather than attempting it,
+never a failure; the `$err` arm binds a `$fileerr` whose variant says which of
+`$notfound $permission $io $invalid $isdir $notregular $symlink $toolarge
+$nomem $badarg` occurred and whose payload is the message (127.102b retired
+`file.lasterr`/`file.lasterrkind`, which carried the same two facts). `readbytes` refuses a file over 64 MiB rather than attempting it,
 because a `@(byte)` costs one i64 per byte.
 
 `readrange`/`size` (135.12) are how a file bigger than that is read. The cap is

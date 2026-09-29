@@ -234,7 +234,7 @@ f=main():i64{
   let r=file.readbytes(fix("large.bin"));
   mt r {
     $ok:b io.println(s.concat("cap=ok|";s.fromint(b.len)));
-    $err:e io.println(s.concat("cap=err|";file.lasterrkind()))
+    $err:e io.println(s.concat("cap=err|";mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -291,12 +291,14 @@ f=bytesline(b:@(byte)):str{
 };
 
 (* Every outcome prints exactly one line, and a failure prints its KIND —
-   never an empty value, which is the defect this family exists to remove. *)
+   never an empty value, which is the defect this family exists to remove.
+   Since 127.102b the kind is the FileErr variant the $err arm binds, not
+   the retired file.lasterrkind(). *)
 f=rd(label:str;path:str;off:i64;n:i64):i64{
   let r=file.readrange(path;off;n);
   mt r {
-    $ok:b io.println(s.concat(s.concat(s.concat(label;"=ok|");digest(b));s.concat("|";file.lasterrkind())));
-    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+    $ok:b io.println(s.concat(s.concat(s.concat(label;"=ok|");digest(b));"|ok"));
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -305,7 +307,7 @@ f=rdexact(label:str;path:str;off:i64;n:i64):i64{
   let r=file.readrange(path;off;n);
   mt r {
     $ok:b io.println(s.concat(s.concat(label;"=ok|");bytesline(b)));
-    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -322,7 +324,7 @@ f=rdexact(label:str;path:str;off:i64;n:i64):i64{
 f=szd(label:str;path:str):i64{
   mt file.size(path) {
     $ok:n io.println(s.concat(s.concat(label;"=ok|");s.fromint(n)));
-    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -331,7 +333,7 @@ f=sz(label:str;path:str):i64{
   let r=file.size(path);
   mt r {
     $ok:n io.println(s.concat(s.concat(label;"=ok|");s.fromint(n)));
-    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -382,7 +384,7 @@ f=walk(label:str;path:str;win:i64):i64{
   let r=walkinner(path;win);
   mt r {
     $ok:d io.println(s.concat(s.concat(label;"=ok|");d));
-    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+    $err:e io.println(s.concat(label;"=err"))
   };
   <0
 };

@@ -20,11 +20,11 @@ typedef enum {
     FILE_ERR_PERMISSION,
     FILE_ERR_IO,
     FILE_ERR_INVALID,
-    /* 135.10 — the byte calls distinguish more cases than the three the
-     * $fileerr sum type can carry.  The compiled T!E ABI has no payload
-     * (127.97), so the $err arm is a bare 0 and these kinds are readable
-     * only through file.lasterrkind(); they exist so that "could not read
-     * it" is never returned as an empty byte array. */
+    /* 135.10 — the byte calls distinguish these cases so that "could not
+     * read it" is never returned as an empty byte array.  127.102b: THE
+     * ORDER OF THIS ENUM IS FileErr's VARIANT ORDER in stdlib/file.tki —
+     * file_glue.c stores the kind as the error box's tag — so a new kind is
+     * appended here AND there, never inserted. */
     FILE_ERR_IS_DIR,       /* the path is a directory                      */
     FILE_ERR_NOT_REGULAR,  /* fifo, socket, device — not a readable file   */
     FILE_ERR_SYMLINK,      /* final component is a symlink (AMB-07)        */

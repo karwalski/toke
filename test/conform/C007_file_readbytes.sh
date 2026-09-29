@@ -223,12 +223,19 @@ f=digest(b:@(byte)):str{
 };
 
 (* Every outcome prints exactly one line, and an error prints its KIND — never
-   an empty value, which is the defect this story exists to remove. *)
+   an empty value, which is the defect this story exists to remove. Since
+   127.102b the kind and the message are the $err arm's own payload: the
+   FileErr variant (ten of them, one per kind) and its string. A success
+   prints the literal "ok" where it used to print file.lasterrkind(), which
+   was retired; that the slot is clear after a success is what the $ok arm
+   being taken at all now proves. The FileErr type cannot be named in a
+   parameter (127.102b report: an upper-case .tki type), so each call site
+   matches the variants inline. *)
 f=rd(label:str;path:str):i64{
   let r=file.readbytes(path);
   mt r {
-    $ok:b io.println(s.concat(s.concat(s.concat(label;"=ok|");digest(b));s.concat("|";file.lasterrkind())));
-    $err:e io.println(s.concat(s.concat(s.concat(label;"=err|");file.lasterrkind());s.concat("|";file.lasterr())))
+    $ok:b io.println(s.concat(s.concat(s.concat(label;"=ok|");digest(b));"|ok"));
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m s.concat("notfound|";m);$permission:m s.concat("permission|";m);$io:m s.concat("io|";m);$invalid:m s.concat("invalid|";m);$isdir:m s.concat("isdir|";m);$notregular:m s.concat("notregular|";m);$symlink:m s.concat("symlink|";m);$toolarge:m s.concat("toolarge|";m);$nomem:m s.concat("nomem|";m);$badarg:m s.concat("badarg|";m)}))
   };
   <0
 };
@@ -237,7 +244,7 @@ f=rdexact(label:str;path:str):i64{
   let r=file.readbytes(path);
   mt r {
     $ok:b io.println(s.concat(s.concat(label;"=ok|");bytesline(b)));
-    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -257,7 +264,7 @@ f=wr(label:str;path:str;src:str):i64{
   let r=file.readbytes(src);
   mt r {
     $ok:b wrbytes(label;path;b);
-    $err:e io.println(s.concat(s.concat(label;"=srcerr|");file.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(label;"=srcerr|");mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
@@ -265,8 +272,8 @@ f=wr(label:str;path:str;src:str):i64{
 f=wrbytes(label:str;path:str;b:@(byte)):i64{
   let w=file.writebytes(path;b);
   mt w {
-    $ok:v io.println(s.concat(s.concat(label;"=ok|");file.lasterrkind()));
-    $err:e io.println(s.concat(s.concat(s.concat(label;"=err|");file.lasterrkind());s.concat("|";file.lasterr())))
+    $ok:v io.println(s.concat(label;"=ok|ok"));
+    $err:e io.println(s.concat(s.concat(label;"=err|");mt e {$notfound:m s.concat("notfound|";m);$permission:m s.concat("permission|";m);$io:m s.concat("io|";m);$invalid:m s.concat("invalid|";m);$isdir:m s.concat("isdir|";m);$notregular:m s.concat("notregular|";m);$symlink:m s.concat("symlink|";m);$toolarge:m s.concat("toolarge|";m);$nomem:m s.concat("nomem|";m);$badarg:m s.concat("badarg|";m)}))
   };
   <0
 };
@@ -314,7 +321,7 @@ f=archvia():i64{
   let rb=file.readbytes(fix("good.zip"));
   mt rb {
     $ok:b archfrombytes(b);
-    $err:e io.println(s.concat("viabytes-count=ERR|";file.lasterrkind()))
+    $err:e io.println(s.concat("viabytes-count=ERR|";mt e {$notfound:m "notfound";$permission:m "permission";$io:m "io";$invalid:m "invalid";$isdir:m "isdir";$notregular:m "notregular";$symlink:m "symlink";$toolarge:m "toolarge";$nomem:m "nomem";$badarg:m "badarg"}))
   };
   <0
 };
