@@ -1,105 +1,83 @@
 /*
- * fuzz_http_parse.c — libFuzzer entry point for HTTP request parsing.
+ * fuzz_http_parse.c — libFuzzer entry point for the HTTP/1.1 server's
+ * request framing and parsing, driven through the REAL connection loop.
  *
- * Embeds a copy of the parse_request logic from http.c to test it
- * in isolation without requiring OpenSSL or networking dependencies.
+ * Build:  make fuzz-http-parse   (FUZZ_ENGINE=libfuzzer|standalone|auto)
+ * Story:  57.4.6; rewritten for 121.30
  *
- * Build:  make fuzz-http-parse   (requires clang with -fsanitize=fuzzer)
- * Story:  57.4.6
+ * 121.30: this harness used to embed its own COPY of an old parse_request
+ * and fuzz that -- src/stdlib/http.c was not compiled into it at all, so no
+ * finding it could make was a finding about the server, and every fix to
+ * http.c (121.7's chunked limits, 121.17's framing) was invisible to it.  It
+ * now feeds the input to http_handle_fd() over a socketpair: the bytes are
+ * the whole client stream (one request or several, pipelined), the server
+ * frames them with http_read_request(), dispatches, and answers; a thread
+ * drains the answers so a long pipeline cannot deadlock the socket.
+ * test/fuzz/corpus-adversarial/http_parse_* are replayed through it by
+ * fuzz-smoke.
  */
 
 #include <stdint.h>
 #include <stddef.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <fcntl.h>
+#include "http.h"
 
-/* Minimal struct matching http.c's Req for parsing */
-typedef struct {
-    const char *key;
-    const char *val;
-} FuzzStrPair;
+static Res echo(Req r) { return http_Res_ok(r.body ? r.body : ""); }
+static Res hello(Req r) { (void)r; return http_Res_ok("hello"); }
 
-typedef struct {
-    char *method;
-    char *path;
-    char *body;
-    struct { FuzzStrPair *data; uint64_t len; } headers;
-} FuzzReq;
-
-static FuzzReq fuzz_parse_request(const char *raw)
+static void *drain(void *arg)
 {
-    FuzzReq req;
-    memset(&req, 0, sizeof(req));
-    if (!raw) return req;
-
-    char *buf = malloc(strlen(raw) + 1);
-    if (!buf) return req;
-    strcpy(buf, raw);
-
-    char *nl = strstr(buf, "\r\n");
-    if (!nl) { free(buf); return req; }
-    *nl = '\0';
-
-    char *sp1 = strchr(buf, ' ');
-    if (!sp1) { free(buf); return req; }
-    *sp1 = '\0';
-    req.method = strdup(buf);
-
-    char *sp2 = strchr(sp1 + 1, ' ');
-    if (sp2) *sp2 = '\0';
-    req.path = strdup(sp1 + 1);
-
-    FuzzStrPair *hdrs = malloc(64 * sizeof(FuzzStrPair));
-    int hc = 0;
-    char *p = nl + 2;
-    while (1) {
-        char *e = strstr(p, "\r\n");
-        if (!e || e == p) break;
-        *e = '\0';
-        char *col = strchr(p, ':');
-        if (col && hc < 64) {
-            *col = '\0';
-            hdrs[hc].key = strdup(p);
-            hdrs[hc].val = strdup(col + 1 + (*(col + 1) == ' ' ? 1 : 0));
-            hc++;
-        }
-        p = e + 2;
-    }
-    req.headers.data = hdrs;
-    req.headers.len = (uint64_t)hc;
-
-    const char *bs = strstr(raw, "\r\n\r\n");
-    req.body = bs ? strdup(bs + 4) : strdup("");
-
-    free(buf);
-    return req;
-}
-
-static void fuzz_free_req(FuzzReq *req)
-{
-    free(req->method);
-    free(req->path);
-    free(req->body);
-    for (uint64_t i = 0; i < req->headers.len; i++) {
-        free((char *)req->headers.data[i].key);
-        free((char *)req->headers.data[i].val);
-    }
-    free(req->headers.data);
+    int fd = *(int *)arg;
+    char buf[4096];
+    while (read(fd, buf, sizeof buf) > 0) { }
+    return NULL;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    /* Limit input size */
-    if (size > 8192) return 0;
-
-    /* Null-terminate */
-    char *input = malloc(size + 1);
-    if (!input) return 0;
-    memcpy(input, data, size);
-    input[size] = '\0';
-
-    FuzzReq req = fuzz_parse_request(input);
-    fuzz_free_req(&req);
-    free(input);
+    static int init;
+    if (!init) {
+        signal(SIGPIPE, SIG_IGN);
+        /* A small body limit keeps the per-connection buffer small; a 1 s
+         * timeout bounds any wait (the stream is closed after the input, so
+         * a well-behaved server never waits at all). */
+        http_set_limits(0, 16384, 1);
+        http_GET("/", hello);
+        http_POST("/echo", echo);
+        http_GET("/users/:id", hello);
+        init = 1;
+    }
+    if (size > 65536) return 0;
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) return 0;
+    int big = 1 << 17;
+    setsockopt(sv[0], SOL_SOCKET, SO_SNDBUF, &big, sizeof big);
+    setsockopt(sv[1], SOL_SOCKET, SO_RCVBUF, &big, sizeof big);
+    /* Queue the input without blocking (the server is not running yet); an
+     * input bigger than the socket buffer is cut there, which is still a
+     * valid, shorter, client stream.  Then half-close, so the server sees
+     * the end of the stream after the last byte. */
+    int fl = fcntl(sv[0], F_GETFL, 0);
+    fcntl(sv[0], F_SETFL, fl | O_NONBLOCK);
+    size_t off = 0;
+    while (off < size) {
+        ssize_t w = write(sv[0], data + off, size - off);
+        if (w <= 0) break;
+        off += (size_t)w;
+    }
+    fcntl(sv[0], F_SETFL, fl);
+    shutdown(sv[0], SHUT_WR);
+    pthread_t t;
+    int client = sv[0];
+    pthread_create(&t, NULL, drain, &client);
+    http_handle_fd(sv[1]);            /* closes sv[1] */
+    pthread_join(t, NULL);
+    close(sv[0]);
     return 0;
 }

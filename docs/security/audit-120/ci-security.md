@@ -51,6 +51,20 @@ Both are fast (seconds): `sast` reuses the analyzer already in `lint` and adds
 a scoped cppcheck pass; `secrets-scan` is a single gitleaks invocation against
 the committed `.gitleaks.toml`.
 
+> **121.30 (2026-09-29): landed in part, not as proposed.**
+> `secrets-scan` is in the `Makefile` and in `make ci`, and CI's ci-gates job
+> installs a pinned gitleaks and runs it; like `sbom`/`cve-scan`, a missing
+> gitleaks is a named SKIP locally and a FAIL under `CI=true`.  The first run
+> over the tree found 22 matches, every one a published example or test
+> vector (RFC 6455 sample nonces, jwt.io's sample token, a NIST GCM key, doc
+> placeholders); each is allowlisted by value in `.gitleaks.toml`, on the
+> line, not by switching a rule off.  **`sast` was not added:** SAST is
+> already enforced on every push by ci.yml's lint job (`make lint`'s
+> analyzer, cppcheck `--enable=all`, clang-tidy), and the proposed target is
+> a weaker cppcheck pass that could not be run, and so not watched to fail,
+> on a host without cppcheck.  A gate nobody has seen red is not added.
+> The text below is the original proposal.
+
 ### Paste-ready Makefile text
 
 ```makefile

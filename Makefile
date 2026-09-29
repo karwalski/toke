@@ -748,7 +748,17 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \
                       test-stdlib-yaml \
-                      test-stdlib-http-leak test-stdlib-http-route-param-leak
+                      test-stdlib-http-leak test-stdlib-http-route-param-leak \
+                      test-stdlib-http test-stdlib-http2 test-stdlib-router \
+                      test-stdlib-http-multipart test-stdlib-http-cookies \
+                      test-stdlib-http-form test-stdlib-http-json-integration \
+                      test-stdlib-web-server-integration
+#
+# 121.30: the HTTP/router C tests join the sanitizer run -- the request
+# framing, HTTP/2, routing, static serving, multipart, cookie and form paths
+# had never run under ASan in CI.  Measured 2026-09-29 on this tree, each
+# built with SAN_FLAGS: 0 sanitizer reports.  test-stdlib-http-multipart
+# needed its test helper moved off sprintf() first (the csv reason below).
 #
 # test-stdlib-http-leak and test-stdlib-http-route-param-leak were excluded
 # until 122.14: they measured retention with malloc_zone_statistics() /
@@ -1105,7 +1115,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -2062,27 +2072,33 @@ clean:
 	    test/stdlib/test_tls test/tkir/test_tkir_reader \
 	    fuzz-lexer fuzz-parser
 
-FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
-
-fuzz-lexer: test/fuzz/fuzz_lexer.c src/lexer.o src/diag.o src/arena.o
-	$(CC) $(FUZZ_FLAGS) -o fuzz-lexer $^
-
-fuzz-parser: test/fuzz/fuzz_parser.c src/lexer.o src/parser.o src/diag.o src/arena.o src/names.o src/types.o
-	$(CC) $(FUZZ_FLAGS) -o fuzz-parser $^
-
-fuzz-http-parse: test/fuzz/fuzz_http_parse.c
-	$(CC) $(FUZZ_FLAGS) -o fuzz-http-parse $^
-
-fuzz-url-route: test/fuzz/fuzz_url_route.c src/stdlib/router.o src/stdlib/str.o
-	$(CC) $(FUZZ_FLAGS) -iquote src/stdlib -o fuzz-url-route $^ -lz
-
+# ── 121.30: the four original harnesses, folded into the machinery below ──
+#
+# fuzz-lexer, fuzz-parser, fuzz-http-parse and fuzz-url-route had rules of
+# their own, libFuzzer-only, linked from the unsanitised shipping .o files,
+# and NONE of the four worked:
+#   fuzz-lexer / fuzz-parser  did not compile -- the lexer harness declared a
+#       four-argument lex() (lexer.h's takes a Profile too) and the parser
+#       harness put the opaque Arena on the stack.  nightly.yml built exactly
+#       these two, so the nightly fuzz job was red at its compile step (it
+#       is retired; security-nightly.yml fuzzes every FUZZ_TARGET).
+#   fuzz-url-route  did not link (router.c needs ws.c), and the harness
+#       free()d the string-literal body of every non-200 answer, so the first
+#       403 aborted it.
+#   fuzz-http-parse  fuzzed its own embedded COPY of an old parse_request;
+#       src/stdlib/http.c was not in it at all.
+# No workflow and no make ci target ran the last two, and nothing replayed
+# the http adversarial input (test/fuzz/corpus-adversarial/http_chunked_
+# malformed.txt, now http_parse_chunked_malformed.txt).  All four are now
+# FUZZ_TARGETS, built by the same rule under either engine, replayed by
+# fuzz-smoke (make ci and CI's ci-gates job) and fuzzed by the security
+# nightly; `fuzz` and `fuzz-http` remain as names for the old groupings.
 fuzz: fuzz-lexer fuzz-parser
-	./fuzz-lexer -max_total_time=60 test/fuzz/corpus/
-	./fuzz-parser -max_total_time=60 test/fuzz/corpus/
+	$(MAKE) --no-print-directory fuzz-120-22-run FUZZ_TARGETS="lexer parser"
 
-fuzz-http: fuzz-http-parse fuzz-url-route
-	./fuzz-http-parse -max_total_time=120
-	./fuzz-url-route -max_total_time=120
+fuzz-http: fuzz-http-parse fuzz-url-route fuzz-multipart fuzz-ws-frame
+	$(MAKE) --no-print-directory fuzz-120-22-run \
+	    FUZZ_TARGETS="http_parse url_route multipart ws_frame"
 
 # ── 123.10: the eight 120.22 stdlib harnesses, wired ─────────────────────────
 #
@@ -2126,7 +2142,7 @@ FUZZ_TARGETS_120_22 = json yaml toml toon xml template multipart ws_frame
 # built it, by hand.  It joins the set here, so fuzz-120-22 builds it,
 # fuzz-smoke replays test/fuzz/seeds/image/ through it, and the nightly
 # fuzz-120-22-run fuzzes it.
-FUZZ_TARGETS = $(FUZZ_TARGETS_120_22) image
+FUZZ_TARGETS = $(FUZZ_TARGETS_120_22) image lexer parser http_parse url_route
 fuzz_have_libfuzzer = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_fuzzprobe.XXXXXX") && \
     printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' > "$$d/p.c" && \
     $(CC) -fsanitize=fuzzer -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo libfuzzer || echo standalone; \
@@ -2169,10 +2185,22 @@ fuzz-ws-frame:
 	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
 fuzz-image:
 	$(call fuzz_build_rule,image,test/fuzz/fuzz_image.c src/stdlib/image.c,-lm)
+# 121.30: the compiler front end, compiled from source like the rest.
+fuzz-lexer:
+	$(call fuzz_build_rule,lexer,test/fuzz/fuzz_lexer.c src/lexer.c src/diag.c src/arena.c,)
+fuzz-parser:
+	$(call fuzz_build_rule,parser,test/fuzz/fuzz_parser.c src/lexer.c src/parser.c src/diag.c src/arena.c,)
+# The real server loop (http_handle_fd) over a socketpair, not a copy of it.
+fuzz-http-parse:
+	$(call fuzz_build_rule,http_parse,test/fuzz/fuzz_http_parse.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz -lpthread)
+fuzz-url-route:
+	$(call fuzz_build_rule,url_route,test/fuzz/fuzz_url_route.c src/stdlib/router.c src/stdlib/str.c src/stdlib/ws.c,-lz)
 
-# Build all nine (the name security-nightly.yml calls; image joined in 122.13).
+# Build all of them (the name security-nightly.yml calls; image joined in
+# 122.13; lexer, parser, http_parse and url_route in 121.30).
 fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
-	fuzz-multipart fuzz-ws-frame fuzz-image
+	fuzz-multipart fuzz-ws-frame fuzz-image \
+	fuzz-lexer fuzz-parser fuzz-http-parse fuzz-url-route
 
 # Replay every seed and adversarial input through every harness, once.  Works
 # under either engine (libFuzzer's -runs=0 executes the given corpus and
@@ -2267,6 +2295,29 @@ cve-scan: sbom
 	  GRYPE_DB_AUTO_UPDATE=false GRYPE_CHECK_FOR_APP_UPDATE=false \
 	    grype sbom:tkc-sbom.spdx.json --fail-on high --output table; \
 	fi
+
+# ── 121.30: secret scan (Section 1 of docs/security/audit-120/ci-security.md) ─
+# gitleaks over the working tree with the committed .gitleaks.toml (default
+# rules + the reviewed allowlist).  It was specified in 120.24 and never
+# landed: no secret scan ran in `make ci` or on any push.  Same convention as
+# sbom/cve-scan: locally a missing gitleaks is a named SKIP; in CI (CI=true)
+# it FAILS, so the step there is real or it is red.  No network either way.
+# Only the rule id, file and line of a finding are printed (--redact).
+secrets-scan:
+	@if ! command -v gitleaks >/dev/null 2>&1; then \
+	  if [ "$(SBOM_CI)" = 1 ]; then echo "secrets-scan: FAIL -- gitleaks is not installed (CI must install it)" >&2; exit 1; fi; \
+	  echo "SKIP secrets-scan: gitleaks is not installed -- NO SECRET SCAN RAN (local run; CI installs it)"; \
+	  exit 0; \
+	fi; \
+	r=$$(mktemp "$${TMPDIR:-/tmp}/tkc_gitleaks.XXXXXX"); \
+	gitleaks dir . --config .gitleaks.toml --redact --no-banner --log-level error \
+	    --exit-code 1 --report-format csv --report-path "$$r"; rc=$$?; \
+	if [ $$rc -eq 0 ]; then echo "secrets-scan: gitleaks found nothing (.gitleaks.toml)"; \
+	else echo "secrets-scan: FAIL -- gitleaks findings (rule, file, line):" >&2; \
+	  awk -F, 'NR>1 {print "  " $$1 "  " $$3 ":" $$7}' "$$r" >&2; fi; \
+	rm -f "$$r"; exit $$rc
+
+.PHONY: secrets-scan
 
 # ── Man page ────────────────────────────────────────────────────────────
 MANDIR ?= /usr/local/share/man/man1

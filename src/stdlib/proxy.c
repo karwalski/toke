@@ -119,6 +119,28 @@ static int is_hop_by_hop(const char *name)
     return 0;
 }
 
+/*
+ * 121.18 (audit-120 WEB-03): headers the proxy sets itself, so a client's
+ * copy is dropped rather than forwarded.  proxy_build_request copied every
+ * non-hop-by-hop header, so a client could send its own X-Forwarded-For (or
+ * Forwarded, X-Real-IP) and a backend that trusts it saw whatever source
+ * address the client chose; and the client's Content-Length went through
+ * beside the one the proxy writes -- two Content-Length headers, a desync
+ * primitive against a lenient backend.
+ */
+static const char *proxy_owned[] = {
+    "Host", "Content-Length", "X-Forwarded-For", "X-Forwarded-Proto",
+    "X-Forwarded-Host", "X-Forwarded-Port", "Forwarded", "X-Real-IP", NULL
+};
+
+static int is_proxy_owned(const char *name)
+{
+    for (int i = 0; proxy_owned[i]; i++) {
+        if (strcasecmp(name, proxy_owned[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 /* ── Connection pool (62.1.2) ────────────────────────────────────────── */
 
 static void pool_init(void)
@@ -306,18 +328,20 @@ static char *proxy_build_request(Req *req, const char *host, int port,
     /* Host header */
     strbuf_appendf(&b, "Host: %s:%d\r\n", host, port);
 
-    /* Forwarding metadata headers (62.1.4) */
-    strbuf_appendf(&b,
-                   "X-Forwarded-For: %s\r\n"
-                   "X-Forwarded-Proto: https\r\n",
+    /* Forwarding metadata headers (62.1.4).  121.18: X-Forwarded-For is
+     * the peer this proxy saw, and nothing the client said; no
+     * X-Forwarded-Proto, which was hardcoded "https" for every connection
+     * and this function has no way to know the inbound scheme. */
+    strbuf_appendf(&b, "X-Forwarded-For: %s\r\n",
                    client_ip ? client_ip : "unknown");
 
-    /* Copy non-hop-by-hop headers */
+    /* Copy the client's headers, minus hop-by-hop ones and the ones this
+     * proxy writes itself (121.18). */
     for (uint64_t i = 0; i < req->headers.len; i++) {
         const char *name = req->headers.data[i].key;
         const char *val  = req->headers.data[i].val;
-        if (is_hop_by_hop(name)) continue;
-        if (strcasecmp(name, "Host") == 0) continue; /* already set */
+        if (!name || !val) continue;
+        if (is_hop_by_hop(name) || is_proxy_owned(name)) continue;
         strbuf_appendf(&b, "%s: %s\r\n", name, val);
     }
 

@@ -69,6 +69,8 @@ void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <errno.h>    /* 121.18: staticdir_resolve */
+#include <limits.h>   /* 121.18: PATH_MAX */
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -1090,6 +1092,40 @@ static Res mk404(void) {
     r.headers.data = NULL; r.headers.len = 0; return r;
 }
 
+static Res mk403(void) {
+    Res r; r.status = 403; r.body = "Forbidden";
+    r.headers.data = NULL; r.headers.len = 0; return r;
+}
+
+/*
+ * staticdir_resolve — resolve `path` (already root + request path) and the
+ * mount root with realpath(), and require the file to lie under the root.
+ * On success `out` holds the resolved file path.  Returns 0, 403 or 404.
+ *
+ * 121.18 (audit-120 WEB-02): this handler's only traversal defence was
+ * strstr("..") on the joined path.  That stops a literal `../`, but a
+ * symlink inside the served tree that points outside it was followed
+ * silently -- `<root>/link -> /etc` served /etc/passwd as /prefix/link/passwd
+ * -- and so was a directory's `index.html` symlinked out of the tree.  The
+ * router's static server (router_static_serve) had the realpath check all
+ * along; this is the same check.  A symlink that stays inside the root still
+ * works.
+ */
+static int staticdir_resolve(const char *root, const char *path,
+                             char *out, size_t cap)
+{
+    char rroot[PATH_MAX], rfull[PATH_MAX];
+    if (!realpath(root, rroot)) return 404;
+    if (!realpath(path, rfull))
+        return (errno == ENOENT || errno == ENOTDIR) ? 404 : 403;
+    size_t rl = strlen(rroot);
+    if (strncmp(rfull, rroot, rl) != 0 ||
+        (rfull[rl] != '\0' && rfull[rl] != '/' && !(rl == 1 && rroot[0] == '/')))
+        return 403;
+    int n = snprintf(out, cap, "%s", rfull);
+    return (n < 0 || (size_t)n >= cap) ? 403 : 0;
+}
+
 static Res staticdir_handler(Req req) {
     if (!req.path) return mk404();
     /* 127.100: a versioned asset URL — /static/css/style.css?v=<hash> — is
@@ -1102,19 +1138,22 @@ static Res staticdir_handler(Req req) {
      * "whichever root http.servedir was called with last". */
     const TkStaticMount *mnt = staticdir_find(rpath);
     if (!mnt) return mk404();
-    char filepath[2048];
-    snprintf(filepath, sizeof filepath, "%s%s", mnt->root, rpath);
-    if (strstr(filepath, "..")) {
-        Res r; r.status = 403; r.body = "Forbidden";
-        r.headers.data = NULL; r.headers.len = 0; return r;
-    }
+    char joined[PATH_MAX], filepath[PATH_MAX];
+    int jn = snprintf(joined, sizeof joined, "%s%s", mnt->root, rpath);
+    if (jn < 0 || (size_t)jn >= sizeof joined) return mk404();
+    if (strstr(joined, "..")) return mk403();
+    int rc = staticdir_resolve(mnt->root, joined, filepath, sizeof filepath);
+    if (rc) return rc == 403 ? mk403() : mk404();
     struct stat st;
     if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
+        /* The directory's index.html is resolved and checked again: it may
+         * itself be a symlink out of the tree. */
         size_t fplen = strlen(filepath);
-        if (fplen > 0 && filepath[fplen-1] == '/')
-            snprintf(filepath + fplen, sizeof(filepath) - fplen, "index.html");
-        else
-            snprintf(filepath + fplen, sizeof(filepath) - fplen, "/index.html");
+        jn = snprintf(joined, sizeof joined, "%s%sindex.html", filepath,
+                      (fplen > 0 && filepath[fplen-1] == '/') ? "" : "/");
+        if (jn < 0 || (size_t)jn >= sizeof joined) return mk404();
+        rc = staticdir_resolve(mnt->root, joined, filepath, sizeof filepath);
+        if (rc) return rc == 403 ? mk403() : mk404();
     }
     FILE *f = fopen(filepath, "rb");
     if (!f) return mk404();
