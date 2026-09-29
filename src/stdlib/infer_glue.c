@@ -13,16 +13,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* infer.load(model_path) — load a local model, return handle or 0 */
-int64_t tk_infer_load_w(int64_t model_path) {
+/* infer.load(model_path; opts) — load a local model, return handle or 0.
+ * 135.31 (1): takes the $inferopts record the .tki publishes; the wrapper had
+ * no slot for it, so `infer.load(path;opts)` was E4026 and the options could
+ * never be passed.  Still a stub: local inference is not linked. */
+int64_t tk_infer_load_w(int64_t model_path, int64_t opts) {
     (void)model_path;
-    /* Stub: local inference not linked */
+    (void)opts;
     return 0;
 }
 
-/* infer.loadstreaming(model_path) — load model for streaming, return handle */
-int64_t tk_infer_loadstreaming_w(int64_t model_path) {
+/* infer.loadstreaming(model_dir; opts) — load model for streaming, return
+ * handle.  135.31 (1): takes the $streamopts record, as published. */
+int64_t tk_infer_loadstreaming_w(int64_t model_path, int64_t opts) {
     (void)model_path;
+    (void)opts;
     return 0;
 }
 
