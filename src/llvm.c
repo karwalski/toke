@@ -8070,6 +8070,18 @@ static const TkiCacheEntry *tki_entry_for(Ctx *c, const char *alias,
         if (!strcmp(g_tki_cache[ci].module, mod) &&
             !strcmp(g_tki_cache[ci].method, method))
             return &g_tki_cache[ci];
+    /* 127.242 (1): an interface whose exports are prefixed by a name other
+     * than the module's -- std.template declares `tpl.render`, `tpl.escape`
+     * -- was never found under `i=tpl:std.template`, so every str such a
+     * call returns was untagged and interpolated as its address (`\(s)` in
+     * a `$ok:s` arm, `\(tpl.escape(x))`).  Match the export prefix against
+     * the alias, within the file the alias imports (138.6's rule for
+     * call_declares_bool). */
+    for (int ci = 0; ci < g_tki_cache_count; ci++)
+        if (!strcmp(g_tki_cache[ci].file_module, mod) &&
+            !strcmp(g_tki_cache[ci].module, alias) &&
+            !strcmp(g_tki_cache[ci].method, method))
+            return &g_tki_cache[ci];
     return NULL;
 }
 
