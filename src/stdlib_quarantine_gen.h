@@ -3,7 +3,7 @@
  *
  * Story 127.224. Glue symbols of quarantined interface exports
  * (scripts/check_tki_skiplist.txt) that no stdlib C source names at all.
- * 40 symbols; 0 skiplist entries dropped because a C source names
+ * 38 symbols; 0 skiplist entries dropped because a C source names
  * their symbol (a macro-instantiated definition the coverage scan misses):
  */
 
@@ -30,7 +30,6 @@
     { "tk_dataframe_join_w", "std.dataframe", "join" },
     { "tk_dataframe_schema_w", "std.dataframe", "schema" },
     { "tk_dataframe_tojson_w", "std.dataframe", "tojson" },
-    { "tk_encoding_b64urldecode_w", "std.encoding", "b64urldecode" },
     { "tk_html_div_w", "std.html", "div" },
     { "tk_html_escape_w", "std.html", "escape" },
     { "tk_html_h2_w", "std.html", "h2" },
@@ -44,6 +43,5 @@
     { "tk_math_hypot_w", "std.math", "hypot" },
     { "tk_mdns_isavailable_w", "std.mdns", "isavailable" },
     { "tk_mdns_resolve_w", "std.mdns", "resolve" },
-    { "tk_mlx_embed_w", "std.mlx", "embed" },
     { "tk_mlx_unload_w", "std.mlx", "unload" },
     { "tk_template_html_w", "std.template", "html" },

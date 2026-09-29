@@ -79,13 +79,30 @@ int64_t tk_toon_enc_w(int64_t v) {
     return (int64_t)(intptr_t)s;
 }
 
+/* toon.dec(s) -> Toon!ToonErr.  127.241: a failure stores a {tag, msg} box
+ * of ToonErr's sum layout — the tag is ToonErrKind itself ($parse 0, $type 1,
+ * $missing 2; toon.h) — and a success clears the slot, so the $err arm binds
+ * the variant; until 127.241 it returned a bare 0 and bound nil.  toon.c's
+ * messages are string literals, so the box never dangles.  (tk_err_box is
+ * declared by hand: this file spells the slot itself rather than including
+ * tk_runtime.h, see above.) */
+void *tk_err_box(int64_t nbytes);
+static int64_t toon_raise(ToonErrKind kind, const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)kind;
+    box[1] = (int64_t)(intptr_t)(msg && *msg ? msg : "toon: parse error");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
 int64_t tk_toon_dec_w(int64_t s) {
-    if (!s) return 0;
+    if (!s) return toon_raise(TOON_ERR_PARSE, "toon.dec: null input");
     ToonResult r = toon_dec((const char *)(intptr_t)s);
-    if (r.is_err) return 0;
+    if (r.is_err) return toon_raise(r.err.kind, r.err.msg);
     Toon *heap = (Toon *)malloc(sizeof(Toon));
-    if (!heap) return 0;
+    if (!heap) return toon_raise(TOON_ERR_PARSE, "toon.dec: out of memory");
     *heap = r.ok;
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
     return (int64_t)(intptr_t)heap;
 }
 

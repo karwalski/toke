@@ -97,7 +97,7 @@ It is spelled `celltype` and not `kind` for a reason worth knowing: a `.tki` typ
 
 ### $xlsxerr
 
-The error side of every fallible call: `$badworkbook`, `$badpart`, `$nosheet`, `$toolarge`, `$io`.
+The error side of every fallible call: `$badworkbook`, `$badpart`, `$nosheet`, `$toolarge`, `$io`. The `$err` arm binds it (127.241): the variant is the class of failure -- a cap is `$toolarge` whether the workbook's own or the archive's fired, and a part that is missing or malformed is `$badpart` -- and every variant carries the reason as a `$str`.
 
 ## Functions
 
@@ -143,7 +143,7 @@ Releases the workbook and its archive.
 
 Why the most recent `xlsx.*` call failed, or `""` if none has.
 
-The same workaround `zip.lasterr` is, for the same reason: the compiled error-union ABI lowers `T!E` to a null check, so the `$err` arm binds nothing a consumer can read, and "the workbook was rejected" would otherwise be indistinguishable from "sheet 'Ledger' is not in this workbook". A rejection that came from the archive rather than the workbook is passed through **verbatim from `zip.lasterr`**, so the rule that fired is still the one reported.
+The same message the `$err` arm's `$xlsxerr` carries. It was the only way to read the reason until 127.241, when the arm began binding a payload; it still agrees with it. A rejection that came from the archive rather than the workbook is passed through **verbatim from std.zip**, so the rule that fired is still the one reported. (`zip.lasterr` itself was retired by 127.102c.)
 
 ## Usage Example
 

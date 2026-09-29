@@ -51,10 +51,49 @@
 #include "tk_array.h"
 #include "bytes_rt.h"
 #include "capabilities.h"
+#include "tk_runtime.h"   /* 127.241: tk_current_error, tk_err_box, tk_err_msg */
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* ── The error channel (127.241) ─────────────────────────────────────────
+ *
+ * Every `T!$ocrerr` wrapper keeps @tk_current_error truthful on EVERY return
+ * (runtime-abi.md §7.2): a failure stores a {tag, msg} box of $ocrerr's sum
+ * layout and a success stores 0, so the compiler — which derives these as
+ * slot wrappers from stdlib/ocr.tki — decides on the slot and the $err arm
+ * binds the variant:
+ *
+ *     mt ocr.text(b) {$ok:t …; $err:e mt e {$noengine:m …; $badimage:m …}}
+ *
+ * The tag is TkOcrErr - 1: ocr.tki declares $noengine $badimage $toosmall
+ * $nolanguage $failed $io in exactly the enum's order after OCR_ERR_NONE
+ * (ocr.h).  The message is ocr.c's, copied out of its static buffer by
+ * tk_err_msg so a let-kept error keeps it.  Until 127.241 these returned a
+ * bare 0 and bound nil; ocr.lasterr()/lasterrkind() still exist and still
+ * agree (retiring them was not authorised with 127.102's three). */
+static int64_t ocr_raise(TkOcrErr code, const char *msg)
+{
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (code >= OCR_ERR_NOENGINE && code <= OCR_ERR_IO)
+                 ? (int64_t)code - 1 : (int64_t)OCR_ERR_FAILED - 1;
+    box[1] = (int64_t)(intptr_t)tk_err_msg("%s", msg && *msg ? msg : "ocr: recognition failed");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+/* The failure the core recorded. */
+static int64_t ocr_raise_last(void)
+{
+    return ocr_raise(ocr_lasterr_code(), ocr_lasterr());
+}
+
+static int64_t ocr_ok(int64_t v)
+{
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return v;
+}
 
 /* Number of i64 slots in an $ocrrun — keep in sync with stdlib/ocr.tki. */
 #define TK_OCRRUN_SLOTS 7
@@ -179,11 +218,15 @@ int64_t tk_ocr_runs_w(int64_t data)
     uint64_t n = tk_bytes_unpack(data, &buf);
     TkOcrPage *page;
 
-    if (!buf) return 0;
+    if (!buf) return ocr_raise(OCR_ERR_BADIMAGE, "ocr.runs: empty image data");
     page = ocr_recognize_mem(buf, n);
     free(buf);
-    if (!page) return 0;
-    return build_runs(page);
+    if (!page) return ocr_raise_last();
+    {
+        int64_t arr = build_runs(page);
+        if (!arr) return ocr_raise(OCR_ERR_FAILED, "ocr.runs: out of memory");
+        return ocr_ok(arr);
+    }
 }
 
 /* ocr.runsfile(path:str) -> @($ocrrun)!$ocrerr
@@ -194,11 +237,14 @@ int64_t tk_ocr_runs_w(int64_t data)
 int64_t tk_ocr_runsfile_w(int64_t path)
 {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) return 0;
+    if (!path) return ocr_raise(OCR_ERR_IO, "ocr.runsfile: null path");
     {
         TkOcrPage *page = ocr_recognize_file((const char *)(intptr_t)path);
-        if (!page) return 0;
-        return build_runs(page);
+        int64_t arr;
+        if (!page) return ocr_raise_last();
+        arr = build_runs(page);
+        if (!arr) return ocr_raise(OCR_ERR_FAILED, "ocr.runsfile: out of memory");
+        return ocr_ok(arr);
     }
 }
 
@@ -216,19 +262,24 @@ int64_t tk_ocr_runsraw_w(int64_t px, int64_t width, int64_t height,
     uint64_t n = tk_bytes_unpack(px, &buf);
     TkOcrPage *page;
 
-    if (!buf) return 0;
+    if (!buf) return ocr_raise(OCR_ERR_BADIMAGE, "ocr.runsraw: empty pixel data");
     /* Refuse a buffer that cannot hold the stated geometry rather than
      * reading off the end of it. */
     if (width <= 0 || height <= 0 || channels <= 0 ||
         (uint64_t)width * (uint64_t)height * (uint64_t)channels > n) {
         free(buf);
-        return 0;
+        return ocr_raise(OCR_ERR_BADIMAGE,
+                         "ocr.runsraw: the pixel buffer does not hold width x height x channels bytes");
     }
     page = ocr_recognize_raw(buf, (uint32_t)width, (uint32_t)height,
                              (uint32_t)channels);
     free(buf);
-    if (!page) return 0;
-    return build_runs(page);
+    if (!page) return ocr_raise_last();
+    {
+        int64_t arr = build_runs(page);
+        if (!arr) return ocr_raise(OCR_ERR_FAILED, "ocr.runsraw: out of memory");
+        return ocr_ok(arr);
+    }
 }
 
 /* ocr.text(data:@(byte)) -> str!$ocrerr
@@ -244,34 +295,36 @@ int64_t tk_ocr_text_w(int64_t data)
     char *t;
     int64_t out;
 
-    if (!buf) return 0;
+    if (!buf) return ocr_raise(OCR_ERR_BADIMAGE, "ocr.text: empty image data");
     page = ocr_recognize_mem(buf, n);
     free(buf);
-    if (!page) return 0;
+    if (!page) return ocr_raise_last();
     t = ocr_page_text(page);
     ocr_page_free(page);
-    if (!t) return 0;
+    if (!t) return ocr_raise(OCR_ERR_FAILED, "ocr.text: out of memory");
     out = dup_str(t);
     free(t);
-    return out;
+    if (!out) return ocr_raise(OCR_ERR_FAILED, "ocr.text: out of memory");
+    return ocr_ok(out);
 }
 
 /* ocr.textfile(path:str) -> str!$ocrerr */
 int64_t tk_ocr_textfile_w(int64_t path)
 {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) return 0;
+    if (!path) return ocr_raise(OCR_ERR_IO, "ocr.textfile: null path");
     {
         TkOcrPage *page = ocr_recognize_file((const char *)(intptr_t)path);
         char *t;
         int64_t out;
-        if (!page) return 0;
+        if (!page) return ocr_raise_last();
         t = ocr_page_text(page);
         ocr_page_free(page);
-        if (!t) return 0;
+        if (!t) return ocr_raise(OCR_ERR_FAILED, "ocr.textfile: out of memory");
         out = dup_str(t);
         free(t);
-        return out;
+        if (!out) return ocr_raise(OCR_ERR_FAILED, "ocr.textfile: out of memory");
+        return ocr_ok(out);
     }
 }
 

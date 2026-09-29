@@ -35,10 +35,19 @@
  * ════════════════════════════════════════════════════════════════════════ */
 
 static const char *g_xlsx_err = "";
+/* 127.241: the $xlsxerr variant of the most recent failure, beside its
+ * message, so the glue can raise a real {tag, msg} box. */
+static TkXlsxErrKind g_xlsx_kind = XLSX_E_NONE;
 
 const char *xlsx_lasterr(void) { return g_xlsx_err; }
+TkXlsxErrKind xlsx_lasterr_kind(void) { return g_xlsx_kind; }
 
-static void *xfail(const char *why) { g_xlsx_err = why; return NULL; }
+static void *xfail(TkXlsxErrKind kind, const char *why)
+{
+    g_xlsx_err  = why;
+    g_xlsx_kind = kind;
+    return NULL;
+}
 
 /* A growable byte buffer.  Every accumulation in this file goes through it so
  * that a malformed part costs a failed realloc rather than a stack overrun. */
@@ -696,7 +705,7 @@ static int load_shared(TkXlsxBook *wb)
 
     size_t len = 0;
     char *xml = read_part(wb, path, &len);
-    if (!xml) { xfail("xlsx: sharedStrings.xml could not be read"); return 0; }
+    if (!xml) { xfail(XLSX_E_BADPART, "xlsx: sharedStrings.xml could not be read"); return 0; }
 
     char   **arr = NULL;
     uint32_t n = 0, cap = 0;
@@ -734,7 +743,7 @@ static int load_shared(TkXlsxBook *wb)
         if (!close) continue;
 
         if (n >= TK_XLSX_MAX_SHARED) {
-            xfail("xlsx: shared-string count cap exceeded");
+            xfail(XLSX_E_TOOLARGE, "xlsx: shared-string count cap exceeded");
             ok = 0;
             break;
         }
@@ -756,7 +765,7 @@ static int load_shared(TkXlsxBook *wb)
     if (!ok) {
         for (uint32_t i = 0; i < n; i++) free(arr[i]);
         free(arr);
-        if (!*g_xlsx_err) xfail("xlsx: sharedStrings.xml is malformed");
+        if (!*g_xlsx_err) xfail(XLSX_E_BADPART, "xlsx: sharedStrings.xml is malformed");
         return 0;
     }
     wb->shared = arr;
@@ -778,7 +787,7 @@ static int load_styles(TkXlsxBook *wb)
 
     size_t len = 0;
     char *xml = read_part(wb, path, &len);
-    if (!xml) { xfail("xlsx: styles.xml could not be read"); return 0; }
+    if (!xml) { xfail(XLSX_E_BADPART, "xlsx: styles.xml could not be read"); return 0; }
 
     CustomFmt *cust = NULL;
     uint32_t   ncust = 0, ccap = 0;
@@ -842,7 +851,7 @@ static int load_styles(TkXlsxBook *wb)
             for (uint32_t i = 0; i < ncust; i++)
                 if (cust[i].id == id) { k = cust[i].kind; break; }
 
-            if (nxf >= TK_XLSX_MAX_XF) { xfail("xlsx: cellXfs cap exceeded"); ok = 0; break; }
+            if (nxf >= TK_XLSX_MAX_XF) { xfail(XLSX_E_TOOLARGE, "xlsx: cellXfs cap exceeded"); ok = 0; break; }
             if (nxf == xcap) {
                 uint32_t nc = xcap ? xcap * 2 : 32;
                 unsigned char *nn = (unsigned char *)realloc(xf, nc);
@@ -857,7 +866,7 @@ static int load_styles(TkXlsxBook *wb)
     free(xml);
     if (!ok) {
         free(xf);
-        if (!*g_xlsx_err) xfail("xlsx: styles.xml is malformed");
+        if (!*g_xlsx_err) xfail(XLSX_E_BADPART, "xlsx: styles.xml is malformed");
         return 0;
     }
     wb->xfkind = xf;
@@ -955,11 +964,11 @@ static int load_workbook(TkXlsxBook *wb)
     const char *path = "xl/workbook.xml";
     if (!has_entry(wb, path)) {
         path = find_entry_ending(wb, "workbook.xml");
-        if (!path) { xfail("xlsx: no xl/workbook.xml — not an XLSX workbook"); return 0; }
+        if (!path) { xfail(XLSX_E_BADWORKBOOK, "xlsx: no xl/workbook.xml — not an XLSX workbook"); return 0; }
     }
     size_t len = 0;
     char *xml = read_part(wb, path, &len);
-    if (!xml) { xfail("xlsx: xl/workbook.xml could not be read"); return 0; }
+    if (!xml) { xfail(XLSX_E_BADPART, "xlsx: xl/workbook.xml could not be read"); return 0; }
 
     uint32_t nrel = 0;
     Rel *rels = load_rels(wb, &nrel);
@@ -1016,7 +1025,7 @@ static int load_workbook(TkXlsxBook *wb)
             if (!pt) { free(nm); ok = 0; break; }
 
             if (n >= TK_XLSX_MAX_SHEETS) {
-                xfail("xlsx: sheet count cap exceeded");
+                xfail(XLSX_E_TOOLARGE, "xlsx: sheet count cap exceeded");
                 free(nm); free(pt); ok = 0; break;
             }
             if (n == cap) {
@@ -1042,12 +1051,12 @@ static int load_workbook(TkXlsxBook *wb)
     if (!ok) {
         for (uint32_t i = 0; i < n; i++) { free(names[i]); free(paths[i]); }
         free(names); free(paths);
-        if (!*g_xlsx_err) xfail("xlsx: xl/workbook.xml is malformed");
+        if (!*g_xlsx_err) xfail(XLSX_E_BADPART, "xlsx: xl/workbook.xml is malformed");
         return 0;
     }
     if (n == 0) {
         free(names); free(paths);
-        xfail("xlsx: workbook declares no sheets");
+        xfail(XLSX_E_BADWORKBOOK, "xlsx: workbook declares no sheets");
         return 0;
     }
     wb->sheetname = names;
@@ -1156,7 +1165,7 @@ static int resolve_cell(TkXlsxBook *wb, const char *tattr, size_t tlen,
         char *end = NULL;
         long idx = strtol(raw, &end, 10);
         if (end == raw || (end && *end) || idx < 0 || (uint32_t)idx >= wb->nshared) {
-            xfail("xlsx: shared-string index out of range");
+            xfail(XLSX_E_BADPART, "xlsx: shared-string index out of range");
             return 0;
         }
         *celltype = TK_XLSX_STR;
@@ -1209,16 +1218,17 @@ static int resolve_cell(TkXlsxBook *wb, const char *tattr, size_t tlen,
 TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
 {
     g_xlsx_err = "";
-    if (!wb || !sheet) return (TkXlsxSheet *)xfail("xlsx: null argument");
+    g_xlsx_kind = XLSX_E_NONE;
+    if (!wb || !sheet) return (TkXlsxSheet *)xfail(XLSX_E_IO, "xlsx: null argument");
 
     const char *path = NULL;
     for (uint32_t i = 0; i < wb->nsheets; i++)
         if (!strcmp(wb->sheetname[i], sheet)) { path = wb->sheetpath[i]; break; }
-    if (!path) return (TkXlsxSheet *)xfail("xlsx: no such sheet in this workbook");
+    if (!path) return (TkXlsxSheet *)xfail(XLSX_E_NOSHEET, "xlsx: no such sheet in this workbook");
 
     size_t len = 0;
     char *xml = read_part(wb, path, &len);
-    if (!xml) return (TkXlsxSheet *)xfail("xlsx: worksheet part could not be read");
+    if (!xml) return (TkXlsxSheet *)xfail(XLSX_E_BADPART, "xlsx: worksheet part could not be read");
 
     RawCell *cells = NULL;
     uint32_t n = 0, cap = 0;
@@ -1345,7 +1355,7 @@ TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
     if (ok) {
         uint64_t total = (uint64_t)maxrow * (uint64_t)maxcol;
         if (total > TK_XLSX_MAX_CELLS) {
-            xfail("xlsx: sheet cell cap exceeded (rows x columns)");
+            xfail(XLSX_E_TOOLARGE, "xlsx: sheet cell cap exceeded (rows x columns)");
             ok = 0;
         } else {
             sh = (TkXlsxSheet *)calloc(1, sizeof *sh);
@@ -1404,7 +1414,7 @@ TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
 
     if (!ok) {
         xlsx_sheet_free(sh);
-        if (!*g_xlsx_err) xfail("xlsx: worksheet could not be parsed");
+        if (!*g_xlsx_err) xfail(XLSX_E_BADPART, "xlsx: worksheet could not be parsed");
         return NULL;
     }
     return sh;
@@ -1439,10 +1449,18 @@ static TkXlsxBook *xlsx_from_zip(TkZipArchive *z)
          * restating it as "xlsx: bad archive" would throw that away. */
         g_xlsx_err = zip_lasterr();
         if (!g_xlsx_err || !*g_xlsx_err) g_xlsx_err = "xlsx: archive rejected";
+        /* 127.241: and its class — a cap is a cap and an unreadable file is
+         * I/O whichever layer refused; anything else means the container is
+         * not a workbook. */
+        switch (zip_lasterr_kind()) {
+            case ZIP_E_TOOLARGE: g_xlsx_kind = XLSX_E_TOOLARGE;    break;
+            case ZIP_E_IO:       g_xlsx_kind = XLSX_E_IO;          break;
+            default:             g_xlsx_kind = XLSX_E_BADWORKBOOK; break;
+        }
         return NULL;
     }
     TkXlsxBook *wb = (TkXlsxBook *)calloc(1, sizeof *wb);
-    if (!wb) { zip_close(z); return (TkXlsxBook *)xfail("xlsx: out of memory"); }
+    if (!wb) { zip_close(z); return (TkXlsxBook *)xfail(XLSX_E_IO, "xlsx: out of memory"); }
     wb->z = z;
 
     if (!load_shared(wb) || !load_styles(wb) || !load_workbook(wb)) {
@@ -1455,13 +1473,15 @@ static TkXlsxBook *xlsx_from_zip(TkZipArchive *z)
 TkXlsxBook *xlsx_open_mem(const uint8_t *data, uint64_t len)
 {
     g_xlsx_err = "";
+    g_xlsx_kind = XLSX_E_NONE;
     return xlsx_from_zip(zip_open_mem(data, len));
 }
 
 TkXlsxBook *xlsx_open_file(const char *path)
 {
     g_xlsx_err = "";
-    if (!path || !*path) return (TkXlsxBook *)xfail("xlsx: empty path");
+    g_xlsx_kind = XLSX_E_NONE;
+    if (!path || !*path) return (TkXlsxBook *)xfail(XLSX_E_IO, "xlsx: empty path");
     return xlsx_from_zip(zip_open_file(path));
 }
 
