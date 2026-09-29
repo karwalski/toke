@@ -895,16 +895,16 @@ mismatched assignment sides, and mismatched return values. The fix field, when
 present, suggests an explicit `as` cast. For a function argument it is present
 only when both types are numeric and the cast is not float to integer (story
 127.220): `as` does not convert an array, map or struct to `str`. For a
-binding annotation, an assignment, a binary operand and a return value it is
-present only when the cast cannot change the value -- any integer into `i64`,
-or `f32` into `f64` (story 127.230); a narrowing, a non-numeric pair and an
-array of another element type get no fix. An integer literal that fits the
-declared integer type is not a mismatch at all (`let b:u8=5`). For a
 scalar (integer, float or bool) passed where a stdlib parameter is `str`, the
 fix is `"wrap the argument in a string interpolation"` -- `x` becomes
 `"\(x)"`, which is a `str` for every scalar type (story 127.14; kept by
 127.243 as deterministic); a composite argument gets no fix, since
 interpolating it is E4032.
+For a binding annotation, an assignment, a binary operand and a return value it is
+present only when the cast cannot change the value -- any integer into `i64`,
+or `f32` into `f64` (story 127.230); a narrowing, a non-numeric pair and an
+array of another element type get no fix. An integer literal that fits the
+declared integer type is not a mismatch at all (`let b:u8=5`).
 
 ---
 

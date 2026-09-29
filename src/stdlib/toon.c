@@ -72,7 +72,10 @@ static int parse_schema(const char **pp, char ***fields, int *nfields, int *rowc
     }
     if (*scan != '}') return 0;
 
+    /* 121.16 (PAR-10): every allocation here is checked; a failure frees
+     * what was built and fails the parse (was: memcpy through NULL). */
     char **flds = (char **)malloc((size_t)count * sizeof(char *));
+    if (!flds) return 0;
     const char *start = p;
     int idx = 0;
     while (*p && *p != '}') {
@@ -81,6 +84,7 @@ static int parse_schema(const char **pp, char ***fields, int *nfields, int *rowc
             if (*p == ',') {
                 size_t len = (size_t)(p - start);
                 flds[idx] = (char *)malloc(len + 1);
+                if (!flds[idx]) goto oom;
                 memcpy(flds[idx], start, len);
                 flds[idx][len] = '\0';
                 idx++;
@@ -94,6 +98,7 @@ static int parse_schema(const char **pp, char ***fields, int *nfields, int *rowc
     if (idx < count && *p == '}') {
         size_t len = (size_t)(p - start);
         flds[idx] = (char *)malloc(len + 1);
+        if (!flds[idx]) goto oom;
         memcpy(flds[idx], start, len);
         flds[idx][len] = '\0';
         idx++;
@@ -107,6 +112,11 @@ static int parse_schema(const char **pp, char ***fields, int *nfields, int *rowc
     *nfields = idx;
     *pp = p;
     return 1;
+
+oom:
+    for (int i = 0; i < idx; i++) free(flds[i]);
+    free(flds);
+    return 0;
 }
 
 /*
@@ -300,18 +310,29 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
         if (*rp == '\n') rp++;
     }
 
-    if (rowcount == 0) rowcount = actual_rows;
+    /* 121.16 (PAR-06): the declared [count] is the sender's claim, not a
+     * fact.  It was trusted over the rows actually present: `d[100]{id}:\n1\n`
+     * returned a length-100 array whose elements 1..99 were uninitialised
+     * pointers, a negative count returned a length near 2^64 over a NULL
+     * array, and a blank line consumed a row slot as an empty value.  Now a
+     * declared count can only shorten the result (a count below the rows
+     * present keeps the first N, as before), blank lines are skipped, and
+     * `len` is the number of elements actually filled. */
+    int rows = actual_rows;
+    if (rowcount > 0 && rowcount < actual_rows) rows = rowcount;
 
-    Toon *arr = (Toon *)malloc((size_t)rowcount * sizeof(Toon));
-    if (!arr && rowcount > 0) {
+    Toon *arr = (Toon *)calloc(rows > 0 ? (size_t)rows : 1, sizeof(Toon));
+    if (!arr) {
         r.is_err = 1; r.err = make_err(TOON_ERR_PARSE, "oom"); return r;
     }
 
     /* Extract field from each row */
+    int filled = 0;
     rp = p;
-    for (int row = 0; row < rowcount && *rp; row++) {
+    while (filled < rows && *rp) {
         const char *line_start = rp;
         while (*rp && *rp != '\n') rp++;
+        if (rp == line_start) { rp++; continue; }   /* blank line */
         /* Find field_idx-th pipe-delimited value */
         const char *fp = line_start;
         int cur = 0;
@@ -323,15 +344,20 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
         while (fe < rp && *fe != '|') fe++;
         size_t len = (size_t)(fe - fp);
         char *val = (char *)malloc(len + 1);
+        if (!val) {                                  /* PAR-10 */
+            for (int i = 0; i < filled; i++) free((char *)arr[i].raw);
+            free(arr);
+            r.is_err = 1; r.err = make_err(TOON_ERR_PARSE, "oom"); return r;
+        }
         memcpy(val, fp, len);
         val[len] = '\0';
-        arr[row].raw = val;
+        arr[filled++].raw = val;
         if (*rp == '\n') rp++;
     }
 
     r.is_err = 0;
     r.ok.data = arr;
-    r.ok.len = (uint64_t)rowcount;
+    r.ok.len = (uint64_t)filled;
     return r;
 }
 
@@ -438,6 +464,11 @@ const char *toon_from_json(const char *json) {
         while (*kp && *kp != '"') kp++;
         size_t klen = (size_t)(kp - ks);
         keys[nkeys] = (char *)malloc(klen + 1);
+        if (!keys[nkeys]) {                          /* 121.16 (PAR-10) */
+            for (int i = 0; i < nkeys; i++) free(keys[i]);
+            strbuf_free(&ob);
+            return "";
+        }
         memcpy(keys[nkeys], ks, klen);
         keys[nkeys][klen] = '\0';
         nkeys++;

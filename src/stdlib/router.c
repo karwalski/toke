@@ -313,8 +313,14 @@ static const char *cors_match_origin(const TkCorsOpts *opts, const char *origin)
     if (!opts->allowed_origins || !origin) return NULL;
     for (int i = 0; opts->allowed_origins[i]; i++) {
         if (strcmp(opts->allowed_origins[i], "*") == 0) {
-            /* Wildcard: if credentials requested, echo origin; otherwise "*" */
-            return opts->allow_credentials ? origin : "*";
+            /* 121.18 (audit-120 WEB-05): a wildcard answers "*", always.
+             * With allow_credentials it used to ECHO the caller's Origin and
+             * add Allow-Credentials: true -- i.e. let every site on the web
+             * read credentialed responses.  "*" with credentials is refused
+             * by browsers, which is the safe outcome; a credentialed CORS
+             * policy needs its origins listed (the middleware then also
+             * leaves Allow-Credentials off for "*"). */
+            return "*";
         }
         if (strcmp(opts->allowed_origins[i], origin) == 0) {
             return origin;
@@ -406,8 +412,8 @@ static TkRouteResp cors_middleware(TkRouteCtx ctx, TkRouteHandler next)
                                     "Access-Control-Max-Age", max_age_buf);
         }
 
-        /* Access-Control-Allow-Credentials */
-        if (opts->allow_credentials) {
+        /* Access-Control-Allow-Credentials (never alongside "*": 121.18) */
+        if (opts->allow_credentials && strcmp(echo_origin, "*") != 0) {
             nh = cors_append_header(hnames, hvals, nh, MAX_CORS_HEADERS,
                                     "Access-Control-Allow-Credentials", "true");
         }
@@ -454,8 +460,8 @@ static TkRouteResp cors_middleware(TkRouteCtx ctx, TkRouteHandler next)
                                 "Access-Control-Expose-Headers", expose_buf);
     }
 
-    /* Access-Control-Allow-Credentials */
-    if (opts->allow_credentials) {
+    /* Access-Control-Allow-Credentials (never alongside "*": 121.18) */
+    if (opts->allow_credentials && strcmp(echo_origin, "*") != 0) {
         nh = cors_append_header(hnames, hvals, nh, MAX_CORS_HEADERS,
                                 "Access-Control-Allow-Credentials", "true");
     }
@@ -635,7 +641,13 @@ static int hex_digit(char c)
     return -1;
 }
 
-/* URL-decode src into a newly malloc'd string.  Returns NULL on alloc failure. */
+/* URL-decode src into a newly malloc'd string.  Returns NULL on alloc failure.
+ *
+ * 121.18 (audit-120 WEB-06): %00 is dropped, not decoded.  This decoder
+ * emitted a NUL byte for it, so a query value could carry an embedded NUL and
+ * silently truncate when later used as a C-string path -- while http.c's
+ * decoder and encoding.c already drop %00 (the 57.4.3 null-byte hardening).
+ * The three now agree. */
 static char *url_decode(const char *src, size_t len)
 {
     char *out = malloc(len + 1);
@@ -649,7 +661,8 @@ static char *url_decode(const char *src, size_t len)
             int hi = hex_digit(src[i + 1]);
             int lo = hex_digit(src[i + 2]);
             if (hi >= 0 && lo >= 0) {
-                out[j++] = (char)((hi << 4) | lo);
+                int c = (hi << 4) | lo;
+                if (c != 0) out[j++] = (char)c;
                 i += 3;
             } else {
                 out[j++] = src[i++];
@@ -1320,6 +1333,27 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
         int m = snprintf(full, sizeof(full), "%s/%s/index.html", dir_path, rel);
         if (m < 0 || (size_t)m >= sizeof(full))
             return router_resp_status(403, "Forbidden");
+        /* 121.18: the index file gets the same realpath check as the path
+         * that led to it.  It did not, so a directory whose index.html was
+         * a symlink out of the tree served the target (audit-120 WEB-02's
+         * sibling on this, the hardened, static path). */
+        {
+            char resolved_root[PATH_MAX];
+            char resolved_full[PATH_MAX];
+            if (!realpath(dir_path, resolved_root))
+                return router_resp_status(403, "Forbidden");
+            if (!realpath(full, resolved_full))
+                return (errno == ENOENT || errno == ENOTDIR)
+                    ? router_resp_404()
+                    : router_resp_status(403, "Forbidden");
+            size_t root_len = strlen(resolved_root);
+            if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
+                (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
+                return router_resp_status(403, "Forbidden");
+            m = snprintf(full, sizeof(full), "%s", resolved_full);
+            if (m < 0 || (size_t)m >= sizeof(full))
+                return router_resp_status(403, "Forbidden");
+        }
         if (stat(full, &st) != 0)
             return router_resp_404();
     }

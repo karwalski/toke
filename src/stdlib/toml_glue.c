@@ -29,6 +29,7 @@
 
 #include "toml.h"
 #include "tk_runtime.h"   /* 127.182: tk_err_box (127.109) */
+#include "capabilities.h" /* 121.22: toml.loadfile is an fs.read sink */
 #include <stdint.h>
 
 /* 127.182 — the error carries the parser's message.  stdlib/toml.tki
@@ -103,6 +104,11 @@ int64_t tk_toml_bool_w(int64_t tab, int64_t key) {
  * tk_toml_load_w above.
  */
 int64_t tk_toml_loadfile_w(int64_t path) {
+    /* 121.22 (ADR-0010): reading a file is fs.read.  This wrapper opened the
+     * path with no gate, so a --cap-enforce binary with no grants could read
+     * any TOML file (measured on main: exit 0).  file.read has been gated
+     * since 124.4c; this is the same check at the same place. */
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) { return toml_raise("toml: null argument"); }
     TomlResult r = toml_load_file((const char *)(intptr_t)path);
     if (r.is_err) return toml_raise(r.err_msg);

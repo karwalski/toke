@@ -31,7 +31,7 @@ t=$err{code:i64};
 f=loadnotes(path:$str):$str!$err{
   let raw=file.read(path)!$err;
   let notes=json.dec(raw)!$err;
-  < json.enc(notes)!$err
+  < json.enc(notes)
 };
 
 f=healthbody():$str{
@@ -57,9 +57,9 @@ f=main():i64!$err{
   http.getstatic("/404"; notfoundbody());
 
   log.info("routes registered: /health /api/notes /404"; @());
-  http.serveworkers(8080; 4)!$err;
+  let rc=http.serveworkers(8080; 4);
 
-  < 0
+  < rc
 };
 ```
 
@@ -77,7 +77,7 @@ f=main():i64!$err{
 2. Calls `loadnotes` and matches the result with `|{$ok:v …; $err:e …}`. On success `v` is the encoded notes JSON; on failure a literal JSON error string is used so the route still serves a valid response body rather than crashing.
 3. Registers all three routes with `http.getstatic`. Each call binds a path to the response string computed above.
 4. Logs the registered routes.
-5. Calls `http.serveworkers(8080; 4)` which blocks until the server exits, using 4 worker threads.
+5. Calls `http.serveworkers(8080; 4)`, which blocks until the server exits, using 4 worker threads, and returns its status (`-1` if the server could not start) as the program's exit status.
 
 ## Running the program
 
