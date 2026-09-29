@@ -377,6 +377,8 @@ message on stderr.
 
 Extracts a named URL parameter captured by the route pattern (e.g., the `id` from `"/users/:id"`). Returns `$httprouteerr.$notfound` if no parameter with that name was captured for this request. A parameter that is present and empty is `$ok ""`. (Until story 135.28 a missing parameter was also `$ok ""`.)
 
+The value is the path segment exactly as the client sent it: it is **not** percent-decoded, so `/users/a%20b` gives `a%20b` and `%2e%2e` stays `%2e%2e`. If you decode it, treat the result as untrusted before it reaches a file path or a query — a decoded value can contain `../` or a NUL byte that the raw one could not.
+
 Today the `$err` arm is taken but its payload cannot be matched on: `mt e {$notfound:m ...}` inside it is E9005, because the compiler does not yet bind a payload for this call. Use the arm itself as "missing". `http.reqparam` is the plain-`str` form: `""` when missing.
 
 ```text
