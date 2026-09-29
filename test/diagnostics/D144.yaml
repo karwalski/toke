@@ -1,0 +1,19 @@
+id: D144
+series: D
+description: "No E4075 for the supported language: \\s \\S \\d \\w \\b, classes, bounds, alternation and a leading (?i) all pass --check (137.9)"
+input: |
+  m=test;
+  i=str:std.str;
+  f=main():i64{
+    let a=str.countre("a b";"\\s");
+    let b=str.countre("a b";"\\S+");
+    let c=str.containsre("x12";"\\d{2}");
+    let d=str.matches("ab_9";"\\w+");
+    let e=str.replacere("a foo b";"\\bfoo\\b";"x");
+    let g=str.findall("ABC";"(?i)[a-c]|z");
+    let h=str.containsre("{x}";"\\{[[:alpha:]]\\}");
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_absent_codes: ["E4075"]

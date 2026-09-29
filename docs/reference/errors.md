@@ -1077,6 +1077,41 @@ f=main(): i64 { let x=mut.$r{a:1}; x.a==9; <x.a };
 
 ## Arena Errors (E5xxx)
 
+### E4075
+
+**Regex pattern literal is not in the supported regex language**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check (emitted by the regex_check pass that follows it) |
+
+A string-literal pattern passed to `str.containsre`, `str.countre`,
+`str.findall`, `str.matches` or `str.replacere` uses syntax outside toke's
+regex language — a lazy quantifier (`*?`), a backreference (`\1`),
+lookaround or an inline flag other than a leading `(?i)`, an unknown escape,
+an unbalanced `(`, `)` or `[`, a `{` that does not start a bound, an empty
+alternative, or repeats that expand past 2000 states. The diagnostic points
+at the offending byte inside the literal. Until 137.9 these patterns
+compiled and then matched nothing at run time, because a POSIX `regcomp`
+failure read as "no match". The supported language is in
+[str.md](../stdlib/str.md#regular-expressions); the same engine checks the
+pattern here and runs it in the program, so they cannot disagree. A pattern
+computed at run time is checked when it is used, and an invalid one traps
+`RT008`.
+
+<!-- skip-check -->
+```text
+m=test;
+i=str:std.str;
+f=main():i64{ <str.countre("<a><b>";"<.*?>") };
+```
+
+Rewrite the construct, e.g. `<[^>]*>` for `<.*?>`. There is no `fix` field:
+the intended pattern is not knowable from the rejected one.
+
+## Arena Errors (E5xxx)
+
 ### E5001
 
 **Value escapes arena scope**

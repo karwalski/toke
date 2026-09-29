@@ -134,7 +134,7 @@
         "i64"
       ],
       "return": "i64",
-      "note": "byte value at index i (0 when out of range); same as str.charcode \u2014 127.38"
+      "note": "byte value at index i (0 when out of range); same as str.charcode — 127.38"
     },
     {
       "kind": "func",
@@ -536,7 +536,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "note": "1 if pattern matches anywhere in s, else 0; pattern language: docs/stdlib/str.md 'Regular expressions'; a literal outside it is E4075 at --check, a computed one traps RT008; RT009 if the call spends its step budget -- 137.9, 121.35"
     },
     {
       "kind": "func",
@@ -546,7 +547,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "note": "number of non-overlapping leftmost-longest matches; pattern language: docs/stdlib/str.md 'Regular expressions'; a literal outside it is E4075 at --check, a computed one traps RT008; RT009 if the call spends its step budget -- 137.9, 121.35"
     },
     {
       "kind": "func",
@@ -609,7 +611,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "note": "every non-overlapping leftmost-longest match, in order; pattern language: docs/stdlib/str.md 'Regular expressions'; a literal outside it is E4075 at --check, a computed one traps RT008; RT009 if the call spends its step budget -- 137.9, 121.35"
     },
     {
       "kind": "func",
@@ -775,7 +778,8 @@
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
+      "gen": "abi",
+      "note": "1 if pattern matches the WHOLE of s (applied by the matcher, not by rewriting the pattern), else 0; pattern language: docs/stdlib/str.md 'Regular expressions'; a literal outside it is E4075 at --check, a computed one traps RT008; RT009 if the call spends its step budget -- 137.9, 121.35"
     },
     {
       "kind": "func",
@@ -924,7 +928,8 @@
         "i64"
       ],
       "return": "str",
-      "gen": "abi"
+      "gen": "abi",
+      "note": "every non-overlapping match replaced by the literal replacement; pattern language: docs/stdlib/str.md 'Regular expressions'; a literal outside it is E4075 at --check, a computed one traps RT008; RT009 if the call spends its step budget -- 137.9, 121.35"
     },
     {
       "kind": "func",

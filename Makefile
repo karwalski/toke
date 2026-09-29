@@ -142,7 +142,7 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
           src/stdlib_deps.c src/stdlib_tables.c src/glue_gen.c src/lint.c src/tkir.c \
-          src/main.c src/stdlib/str.c
+          src/regex_check.c src/main.c src/stdlib/str.c
 
 # ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────
 #
@@ -747,7 +747,7 @@ test-asan-compiler: asan-selftest
 ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \
-                      test-stdlib-yaml \
+                      test-stdlib-yaml test-stdlib-regex \
                       test-stdlib-http-leak test-stdlib-http-route-param-leak \
                       test-stdlib-http test-stdlib-http2 test-stdlib-router \
                       test-stdlib-http-multipart test-stdlib-http-cookies \
@@ -959,7 +959,7 @@ TEST_CI_GREEN = \
 	test-stdlib-image test-stdlib-json test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-map test-stdlib-math test-stdlib-md test-stdlib-ml \
 	test-stdlib-network-integration test-stdlib-path test-stdlib-process \
-	test-stdlib-runtime test-stdlib-securemem \
+	test-stdlib-regex test-stdlib-runtime test-stdlib-securemem \
 	test-stdlib-security-integration test-stdlib-sse test-stdlib-svg \
 	test-stdlib-template test-stdlib-test test-stdlib-time \
 	test-stdlib-toml test-stdlib-toml-glue test-stdlib-toon \
@@ -1362,6 +1362,12 @@ test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \
 	    test/stdlib/test_str.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_str
+
+# 137.9 / 121.35: the regex engine (src/stdlib/tk_regex.h) -- supported
+# language, rejected syntax with offsets, and the step budget.
+test-stdlib-regex:
+	$(CC) $(CFLAGS) -o test/stdlib/test_regex test/stdlib/test_regex.c
+	$(RUN_TEST) ./test/stdlib/test_regex
 
 test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
@@ -2042,7 +2048,7 @@ test-standalone: $(BIN)
 # include graph.  `clean` now means clean.
 clean:
 	rm -f $(OBJS:.o=.d) $(BUILD_FLAGS_STAMP)
-	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
+	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_regex test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
 	    test/stdlib/test_stdlib_coverage test/stdlib/bench_stdlib \
