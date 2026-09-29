@@ -21,6 +21,7 @@
 #define PKG_MAX_LINE      512   /* max line length in pkg.toml / pkg.lock   */
 #define PKG_MAX_COMMIT     65   /* 64 hex digits (SHA-256 git id) + NUL     */
 #define PKG_MAX_HASH       72   /* "sha256:" + 64 hex digits + NUL          */
+#define PKG_MAX_URL       256   /* max chars in a source URL (121.39)       */
 
 /* ── SemVer ────────────────────────────────────────────────────────────────── */
 
@@ -44,6 +45,8 @@ void pkg_version_fmt(PkgVersion v, char *buf, int bufsz);
 typedef struct {
     char       name[PKG_MAX_NAME];
     PkgVersion minimum;          /* from >=x.y.z constraint */
+    char       git[PKG_MAX_URL]; /* extended form's `git`; "" = via the
+                                    index (121.39: always pkg_source_valid) */
 } PkgDep;
 
 /* ── Manifest (pkg.toml) ──────────────────────────────────────────────────── */
@@ -58,6 +61,14 @@ typedef struct {
 /*
  * Parse a pkg.toml file into a PkgManifest.
  * Returns 0 on success, -1 on error (details in errbuf if non-NULL).
+ *
+ * 121.39: the schema is closed.  [package] (name, version), [dependencies]
+ * (name = "constraint") and [dependencies.<name>] (version, git) are the
+ * only tables and keys; anything else -- a [scripts] table, a `build` key, a
+ * line that is not key = "value" -- is an error, not ignored.  A package has
+ * no install hooks (ADR-0004 section 4), and a key ignored today is one a
+ * later version could start to honour.  A dependency may appear once; a
+ * `git` URL must pass pkg_source_valid.
  */
 int pkg_manifest_parse(const char *path, PkgManifest *out,
                        char *errbuf, int errbufsz);
@@ -75,6 +86,7 @@ typedef struct {
     PkgVersion version;
     char       commit[PKG_MAX_COMMIT];  /* "" = not pinned yet (122.10)  */
     char       hash[PKG_MAX_HASH];      /* "" = not pinned yet (122.10)  */
+    char       source[PKG_MAX_URL];     /* "" = not pinned yet (121.39)  */
 } PkgResolved;
 
 typedef struct {
@@ -109,8 +121,12 @@ int pkg_resolve(const PkgDep *deps, int dep_count, PkgLock *out);
  * [commit]/[hash] entries must name a package already in [resolved].
  */
 
+/* 121.39: and [source] name = "<https or ssh URL>" -- where the commit and
+ * hash came from, recorded once so a later fetch never asks the index again.
+ * Any other table in a lock is an error. */
+
 /* Write pkg.lock.  Returns -1, writing nothing, if any entry has an invalid
- * name or a non-empty commit/hash that is malformed. */
+ * name or a non-empty commit/hash/source that is malformed. */
 int pkg_lock_write(const char *path, const PkgLock *lock);
 
 /* Read pkg.lock.  Returns 0 on success, -1 on error or missing file.  A
@@ -130,9 +146,20 @@ bool pkg_commit_valid(const char *commit);
 bool pkg_hash_valid(const char *hash);
 
 /*
+ * Source URL policy (121.39, ADR-0004 section 2): an authenticated transport
+ * only -- https://host/path, ssh://[user@]host[:port]/path, or the scp form
+ * [user@]host:path.  Refused: http, git, file and every other scheme, local
+ * paths, git's "<transport>::" helper syntax (ext:: runs a command), any
+ * URL, host, user or path beginning with '-' (read by git or ssh as an
+ * option), credentials in an https URL, whitespace, control characters,
+ * quotes and backslashes.
+ */
+bool pkg_source_valid(const char *url);
+
+/*
  * Refuse a lock that fetch/build cannot trust: every entry must carry a
- * valid commit AND hash.  Returns 0 if all are pinned, else -1 with the
- * first offending package named in errbuf.
+ * valid source, commit AND hash.  Returns 0 if all are pinned, else -1 with
+ * the first offending package named in errbuf.
  */
 int pkg_lock_check_pinned(const PkgLock *lock, char *errbuf, int errbufsz);
 
@@ -143,5 +170,28 @@ int pkg_lock_check_pinned(const PkgLock *lock, char *errbuf, int errbufsz);
  */
 int pkg_lock_verify(const PkgResolved *want, const char *got_commit,
                     const char *got_hash, char *errbuf, int errbufsz);
+
+/*
+ * The canonical tree hash of ADR-0004 (121.39): "sha256:" + hex SHA-256 over
+ * every regular file under dir, sorted by '/'-separated path bytes, each
+ * contributing "path NUL size-in-decimal NUL bytes".  A .git entry at the
+ * root is skipped; a .git anywhere else, a symlink, or any file that is not
+ * regular or a directory makes the tree unhashable (-1, the path named in
+ * errbuf), as does a file that cannot be read.  Directories contribute only
+ * through their files.  Returns 0 and writes out.
+ */
+int pkg_tree_hash(const char *dir, char out[PKG_MAX_HASH],
+                  char *errbuf, int errbufsz);
+
+/*
+ * THE verification entry point for a fetched or cached package (121.39):
+ * the entry must be fully pinned (source, commit, hash), got_commit must
+ * equal the pin, and the tree at dir is hashed HERE and must equal the pin.
+ * A fetch or build hands over the directory, never a hash it computed, so
+ * there is no way to verify without hashing.  Returns 0, else -1 with the
+ * reason in errbuf.
+ */
+int pkg_verify_fetched(const PkgResolved *want, const char *got_commit,
+                       const char *dir, char *errbuf, int errbufsz);
 
 #endif /* TK_PKG_H */
