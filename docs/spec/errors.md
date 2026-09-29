@@ -99,6 +99,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4071 | error | type_check | Function body ends in a value expression with no `<` | n/s |
 | E4072 | error | type_check | Ambiguous variant constructor | n/s |
 | E4073 | error | type_check | Nested interpolation the interpolation lowering cannot delimit | n/s |
+| E4075 | error | type_check | Regex pattern literal is not in the supported regex language | n/s |
 | E5001 | error | arena_check | Value escapes arena scope | -- |
 | W5001 | warning | arena_check | Value may escape arena scope | n/s |
 | E5002 | error | arena_check | Unreachable code after return | -- |
