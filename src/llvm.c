@@ -2708,6 +2708,71 @@ static int match_arm_body_is_binding(Ctx *c, const Node *body, const Node *bind)
     tok_cp(c->src, bind, b2, sizeof b2);
     return !strcmp(b1, b2);
 }
+
+/*
+ * 138.2 (loke T-18, T-31, T-51) — a match binds its arms by LABEL.
+ *
+ * The result lowering (emit_expr, NODE_MATCH_STMT) dispatches once, ok/err,
+ * and until this story it sent the FIRST arm written to the ok side and every
+ * later arm to the err side, whatever they were called.  So
+ * `mt json.dec(s) {$jsonerr:e "err"; $ok:o "ok"}` ran "err" for a valid
+ * document and "ok" for an invalid one, and the result-type inferences
+ * (emit_expr, expr_llvm_type, expr_struct_type) typed the match from
+ * whichever arm came first.
+ *
+ * mt_arm_order fills ord[] with the child indices of n's arms (children with
+ * a label), the ok arm first and the rest in source order.  The ok arm is the
+ * one labelled `$ok`/`$Ok`.  With no such label, and `err_ty` (the error
+ * type, when the caller knows it) given, an arm labelled `$err`/`$Err`, the
+ * error type's own name or one of its sum's variants is on the err side, and
+ * the first arm that is none of these is the ok arm — the type-named spelling
+ * `{$str:v v;$apperr:e ..}` in either order.  Otherwise the first arm is the
+ * ok arm, as before.  An ok arm already written first gives the source order
+ * back unchanged, so every ok-first match lowers exactly as it did.
+ */
+static int mt_label_is(Ctx *c, const Node *arm, const char *a, const char *b) {
+    if (!arm || arm->child_count < 1 || !arm->children[0]) return 0;
+    char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+    return !strcmp(tag, a) || (b && !strcmp(tag, b));
+}
+static int mt_arm_is_err_side(Ctx *c, const Node *arm, const char *err_ty) {
+    if (mt_label_is(c, arm, "err", "Err")) return 1;
+    if (!err_ty || !err_ty[0]) return 0;
+    const char *en = err_ty[0] == '$' ? err_ty + 1 : err_ty;
+    if (mt_label_is(c, arm, en, NULL)) return 1;
+    const StructInfo *es = lookup_struct(c, err_ty);
+    if (!es && err_ty[0] == '$') es = lookup_struct(c, en);
+    if (es && es->is_sum) {
+        char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+        if (struct_has_field(es, tag)) return 1;
+    }
+    return 0;
+}
+static int mt_arm_order(Ctx *c, const Node *n, const char *err_ty,
+                        int *ord, int cap) {
+    int ok = -1, first = -1, k = 0;
+    for (int i = 1; i < n->child_count; i++) {
+        const Node *a = n->children[i];
+        if (!a || a->child_count < 1) continue;
+        if (first < 0) first = i;
+        if (mt_label_is(c, a, "ok", "Ok")) { ok = i; break; }
+    }
+    if (ok < 0 && err_ty && err_ty[0])
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *a = n->children[i];
+            if (!a || a->child_count < 1) continue;
+            if (!mt_arm_is_err_side(c, a, err_ty)) { ok = i; break; }
+        }
+    if (ok < 0) ok = first;
+    if (ok < 0) return 0;
+    ord[k++] = ok;
+    for (int i = 1; i < n->child_count && k < cap; i++) {
+        const Node *a = n->children[i];
+        if (i == ok || !a || a->child_count < 1) continue;
+        ord[k++] = i;
+    }
+    return k;
+}
 static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
@@ -6806,8 +6871,10 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         /* If no Ok arm found, infer from the first value-yielding arm body. */
         if (!strcmp(res_ty, "i64")) {
-            for (int i = 1; i < n->child_count; i++) {
-                const Node *arm = n->children[i];
+            /* 138.2: the ok arm first, by label (mt_arm_order). */
+            int rord[64]; int rn = mt_arm_order(c, n, NULL, rord, 64);
+            for (int ri = 0; ri < rn; ri++) {
+                const Node *arm = n->children[rord[ri]];
                 if (arm->child_count < 3 || !arm->children[2]) continue;
                 if (arm->children[2]->kind == NODE_RETURN_STMT) continue;
                 const Node *ab = arm->children[2];
@@ -7241,22 +7308,27 @@ static int emit_expr(Ctx *c, const Node *n)
          * rather than the payload (a silent wrong value).  Recognised only when
          * the error type resolves to a sum and every later arm is one of its
          * variants; anything else takes the paths below unchanged. */
+        /* 138.2: the arms in LABEL order — the ok arm first, then the rest
+         * in source order (mt_arm_order).  Every loop below walks ord[], so
+         * `{$err:e ..; $ok:v ..}` dispatches exactly as its ok-first twin. */
+        const char *ord_err_ty = bound_err_type;
+        if (!ord_err_ty && n->children[0]->kind == NODE_CALL_EXPR)
+            ord_err_ty = call_err_payload_type;
+        int ord[64];
+        int nord = mt_arm_order(c, n, ord_err_ty, ord, 64);
         const StructInfo *flat_ssi = NULL;
         {
-            const char *fe = bound_err_type;
-            if (!fe && n->children[0]->kind == NODE_CALL_EXPR) fe = call_err_payload_type;
+            const char *fe = ord_err_ty;
             if (fe && num_arms >= 2 && num_arms <= 64) {
                 const StructInfo *fs = lookup_struct(c, fe);
                 if (!fs && fe[0] == '$') fs = lookup_struct(c, fe + 1);
                 if (fs && fs->is_sum) {
-                    int fok = 1, fai = 0;
-                    for (int i = 1; i < n->child_count && fok; i++) {
-                        const Node *arm = n->children[i];
-                        if (!arm || arm->child_count < 1) continue;
+                    int fok = 1;
+                    for (int oi = 0; oi < nord && fok; oi++) {
+                        const Node *arm = n->children[ord[oi]];
                         char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
-                        if (fai == 0) fok = !strcmp(ftag, "ok") || !strcmp(ftag, "Ok");
+                        if (oi == 0) fok = !strcmp(ftag, "ok") || !strcmp(ftag, "Ok");
                         else fok = struct_has_field(fs, ftag);
-                        fai++;
                     }
                     if (fok) flat_ssi = fs;
                 }
@@ -7343,15 +7415,34 @@ static int emit_expr(Ctx *c, const Node *n)
          * every variant arm. */
         int flat_lbl[64]; int flat_n = 0; int flat_tag = -1, flat_pay = -1;
         if (flat_ssi)
-            for (int i = 2; i < n->child_count && flat_n < 64; i++)
-                if (n->children[i] && n->children[i]->child_count >= 1)
-                    flat_lbl[flat_n++] = next_lbl(c);
+            for (int oi = 1; oi < nord && flat_n < 64; oi++)
+                flat_lbl[flat_n++] = next_lbl(c);
 
         int arm_idx = 0;
-        for (int i = 1; i < n->child_count; i++) {
-            const Node *arm = n->children[i];
-            if (arm->child_count < 1) continue;
-            int is_ok = (arm_idx == 0);
+        /* 138.2: a match with no ok arm (`mt g() {$err:e ..}` alone) or no
+         * err arm (`{$ok:v ..}` alone) has an empty side.  The first arm was
+         * lowered as the ok arm whatever its label, and a missing rm_err
+         * label reached clang as an undefined value.  The empty side leaves
+         * the zero value of the result type and joins the merge. */
+        int ok_absent = nord > 0 && !mt_label_is(c, n->children[ord[0]], "ok", "Ok") &&
+                        mt_arm_is_err_side(c, n->children[ord[0]], ord_err_ty);
+        int ok_side = nord > 0 && !ok_absent;
+        if (!ok_side) {
+            fprintf(c->out, "rm_ok%d:\n", L);
+            fprintf(c->out, "  store %s zeroinitializer, %s* %%t%d ; 138.2 no ok arm\n",
+                    res_ty, res_ty, res_slot);
+            fprintf(c->out, "  br label %%rm_end%d\n", L);
+            arm_idx = 1;
+        }
+        if (nord - ok_side == 0) {
+            fprintf(c->out, "rm_err%d:\n", L);
+            fprintf(c->out, "  store %s zeroinitializer, %s* %%t%d ; 138.2 no err arm\n",
+                    res_ty, res_ty, res_slot);
+            fprintf(c->out, "  br label %%rm_end%d\n", L);
+        }
+        for (int oi = 0; oi < nord; oi++) {
+            const Node *arm = n->children[ord[oi]];
+            int is_ok = (arm_idx == 0);   /* 138.2: ord[0] is the ok arm */
             arm_idx++;
             /* An arm's binding is in scope for that arm only (names.c pushes
              * a scope per arm).  Its alias was never popped, so after
@@ -7412,9 +7503,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     flat_pay = next_tmp(c);
                     fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%rmfl%d ], [ 0, %%rmfn%d ]\n", flat_pay, pv, K, K);
                     int fj = 0;
-                    for (int q = 2; q < n->child_count && fj < flat_n; q++) {
-                        const Node *qa = n->children[q];
-                        if (!qa || qa->child_count < 1) continue;
+                    for (int qo = 1; qo < nord && fj < flat_n; qo++) {
+                        const Node *qa = n->children[ord[qo]];
                         if (fj == flat_n - 1) {
                             fprintf(c->out, "  br label %%rmfv%d\n", flat_lbl[fj]);
                         } else {
@@ -8009,8 +8099,10 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
      * the binding is not in scope yet when this runs.
      */
     if (n->kind == NODE_MATCH_STMT && n->child_count >= 1) {
-        for (int i = 1; i < n->child_count; i++) {
-            const Node *arm = n->children[i];
+        /* 138.2: the ok arm first, by label (mt_arm_order). */
+        int rord[64]; int rn = mt_arm_order(c, n, NULL, rord, 64);
+        for (int ri = 0; ri < rn; ri++) {
+            const Node *arm = n->children[rord[ri]];
             if (!arm || arm->child_count < 3 || !arm->children[2]) continue;
             const Node *ab = arm->children[2];
             if (ab->kind == NODE_RETURN_STMT) continue;  /* 114.47 */
@@ -8797,8 +8889,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
          * Previously this returned a hardcoded "i64" which caused ptr/i64
          * mismatches when the match body returned a struct pointer. */
         const char *mrt = "i64";
-        for (int i = 1; i < n->child_count; i++) {
-            const Node *arm0 = n->children[i];
+        /* 138.2: the ok arm first, by label, as emit_expr (mt_arm_order). */
+        int rord[64]; int rn = mt_arm_order(c, n, NULL, rord, 64);
+        for (int ri = 0; ri < rn; ri++) {
+            const Node *arm0 = n->children[rord[ri]];
             if (arm0->child_count < 3 || !arm0->children[2]) continue;
             if (arm0->children[2]->kind == NODE_RETURN_STMT) continue; /* 114.47 */
             const Node *ab = arm0->children[2];

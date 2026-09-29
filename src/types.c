@@ -2249,7 +2249,18 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
 
 static Type *mt_bind_type(Ctx *cx, const Node *m) {
     if (!m || m->kind != NODE_MATCH_STMT || m->child_count < 2) return NULL;
-    for (int i = 1; i < m->child_count; i++) {
+    /* 138.2: codegen types the match from its `$ok` arm first, wherever it
+     * is written (llvm.c mt_arm_order), so this looks there first too. */
+    int oka = 0;
+    for (int i = 1; i < m->child_count && !oka; i++) {
+        const Node *a = m->children[i];
+        if (!a || a->kind != NODE_MATCH_ARM || a->child_count < 1 || !a->children[0]) continue;
+        char tg[16]; TOKSTR(tg, cx->src, a->children[0]);
+        if (!strcmp(tg, "ok") || !strcmp(tg, "Ok")) oka = i;
+    }
+    for (int j = (oka ? 0 : 1); j < m->child_count; j++) {
+        int i = j == 0 ? oka : j;
+        if (oka && j == oka) continue;
         const Node *arm = m->children[i];
         if (!arm || arm->kind != NODE_MATCH_ARM || arm->child_count < 3
             || !arm->children[2])
