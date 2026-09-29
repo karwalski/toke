@@ -369,6 +369,7 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
     for (int row = 0; row < rowcount && *rp; row++) {
         const char *line_start = rp;
         while (*rp && *rp != '\n') rp++;
+        if (rp == line_start) { if (*rp == '\n') rp++; row--; continue; }
         const char *fp = line_start;
         for (int cur = 0; cur < field_idx; cur++) {
             fp = toon_val_end(fp);
@@ -389,6 +390,10 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
         filled++;
         if (*rp == '\n') rp++;
     }
+    /* A header count larger than the rows present no longer leaves
+     * uninitialised elements behind, and a blank line is not a row. */
+    rowcount = filled;
+
     r.is_err = 0;
     r.ok.data = arr;
     r.ok.len = (uint64_t)rowcount;

@@ -139,6 +139,16 @@ int main(void) {
     printf("%s toon.i64 finds an escaped field name\n", (!n.is_err && n.ok == 5) ? "OK" : "BAD");
     if (n.is_err || n.ok != 5) bad++;
 
+    /* ---- toon.arr: the header count cannot outrun the rows ----
+     * Before the fix, data[5] over two rows returned len 5 with three
+     * uninitialised elements, and a blank line took a row's slot. */
+    ToonResult ad = toon_dec("data[5]{a}:\n1\n\n2\n");
+    ToonArrayResult ar = toon_arr(ad.ok, "a");
+    int arr_ok = !ar.is_err && ar.ok.len == 2 &&
+                 !strcmp(ar.ok.data[0].raw, "1") && !strcmp(ar.ok.data[1].raw, "2");
+    printf("%s toon.arr: data[5] over two rows (one blank line) gives two elements\n", arr_ok ? "OK" : "BAD");
+    if (!arr_ok) bad++;
+
     /* ---- plain data is unchanged ---- */
     eq("plain: from_json array", toon_from_json("[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]"),
        "data[2]{id,name}:\n1|Alice\n2|Bob\n");
