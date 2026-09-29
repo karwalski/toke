@@ -196,6 +196,20 @@ int64_t tk_db_oneon_w(int64_t h, int64_t sql, int64_t params) {
     return one_on(h, sql, params);
 }
 
+/* Free rows [from, len) of a C RowArray that row_rec has not taken, and the
+ * array itself (the out-of-memory exits of many_on). */
+static void rows_free_from(RowArray *a, uint64_t from) {
+    for (uint64_t j = from; j < a->len; j++) {
+        Row *rw = &a->data[j];
+        for (uint64_t c = 0; c < rw->col_count; c++) {
+            free((void *)rw->col_names[c]);
+            free((void *)rw->col_values[c]);
+        }
+        row_drop_index(rw);
+    }
+    free(a->data);
+}
+
 static int64_t many_on(int64_t h, int64_t sql, int64_t params) {
     if (!sql) return db_raise_msg(DB_ERR_QUERY, "db.many: null sql");
     StrArray sa = toke_arr_to_strarray(params);
@@ -204,12 +218,19 @@ static int64_t many_on(int64_t h, int64_t sql, int64_t params) {
     if (res.is_err) return db_raise(res.err);
     uint64_t count = res.ok.len;
     int64_t out = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!out) return db_raise_msg(DB_ERR_QUERY, "db.many: out of memory");
+    if (!out) {
+        rows_free_from(&res.ok, 0);
+        return db_raise_msg(DB_ERR_QUERY, "db.many: out of memory");
+    }
     int64_t *block = (int64_t *)(intptr_t)out;
     for (uint64_t i = 0; i < count; i++) {
         int64_t rec = row_rec(&res.ok.data[i]);
-        if (!rec)   /* a short result read as the whole one would be a lie */
+        if (!rec) {   /* a short result read as the whole one would be a lie */
+            rows_free_from(&res.ok, i);
+            /* the records already built stay unfreed: out of memory */
+            free((int64_t *)(intptr_t)out - TK_ARR_HDR);
             return db_raise_msg(DB_ERR_QUERY, "db.many: out of memory");
+        }
         row_drop_index(&res.ok.data[i]);
         block[i] = rec;
     }
