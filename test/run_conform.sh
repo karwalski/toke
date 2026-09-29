@@ -76,6 +76,26 @@ if inline:
     print(val, end='')
     sys.exit(0)
 
+# 127.239: a dotted key names a child of a top-level mapping, e.g.
+# `expected_diag_field.field` in
+#   expected_diag_field:
+#     field: "schema_version"
+# The flat lookups above never match that shape, and an empty result reads
+# as "key absent", so the check that asked for it was silently skipped.
+if '.' in key:
+    parent, child = key.split('.', 1)
+    head = re.search(r'^' + re.escape(parent) + r':[ \t]*\n((?:[ \t]+.*\n?)*)',
+                     content, re.MULTILINE)
+    if head:
+        m = re.search(r'^[ \t]+' + re.escape(child) + r':[ \t]*(.+?)[ \t]*$',
+                      head.group(1), re.MULTILINE)
+        if m:
+            val = m.group(1)
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in '"\'':
+                val = val[1:-1]
+            print(val, end='')
+            sys.exit(0)
+
 sys.exit(0)  # key not found → empty output
 PYEOF
     else
@@ -344,13 +364,20 @@ sys.exit(0)
     local diag_field diag_value
     diag_field="$(yaml_get "${yaml_file}" "expected_diag_field.field" 2>/dev/null || true)"
     diag_value="$(yaml_get "${yaml_file}" "expected_diag_field.value" 2>/dev/null || true)"
+    # 127.239: a file that declares the block but yields no field/value is a
+    # broken assertion, not an absent one -- fail it rather than skip it.
+    if grep -Eq '^expected_diag_field:' "${yaml_file}" && \
+       { [ -z "${diag_field}" ] || [ -z "${diag_value}" ]; }; then
+        pass=false
+        fail_reasons+=("expected_diag_field is declared but its field/value could not be read")
+    fi
     if [ -n "${diag_field}" ] && [ -n "${diag_value}" ]; then
         # pos.line and pos.col are nested — handled by checking json path
         if ! echo "${diag_json_output}" | python3 -c "
 import sys, json
 
-field = '${diag_field}'
-expected = '${diag_value}'
+field = sys.argv[1]
+expected = sys.argv[2]
 output = sys.stdin.read()
 found = False
 for line in output.splitlines():
@@ -376,7 +403,7 @@ for line in output.splitlines():
 if not found:
     sys.exit(1)
 sys.exit(0)
-" 2>/dev/null; then
+" "${diag_field}" "${diag_value}" 2>/dev/null; then
             pass=false
             fail_reasons+=("diag field '${diag_field}' expected '${diag_value}' not found")
         fi

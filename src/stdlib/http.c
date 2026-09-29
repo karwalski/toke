@@ -23,6 +23,8 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <poll.h>     /* 135.32: bind probe */
+#include <fcntl.h>    /* 135.32: bind probe */
 #include <signal.h>
 #include <time.h>
 #include <zlib.h>
@@ -1415,21 +1417,95 @@ static void serve_sighandler(int sig)
     g_shutdown_requested = 1;
 }
 
+/*
+ * 135.32 -- bind a listening address without shadowing a live listener.
+ *
+ * On Darwin (and the BSDs) a socket that sets SO_REUSEADDR may bind
+ * 127.0.0.1:P beside a live *:P listener, or *:P beside a live
+ * 127.0.0.1:P, and the more specific socket then takes that address's
+ * traffic.  Measured on Darwin 25.6 for every combination: without
+ * SO_REUSEADDR each of those binds is EADDRINUSE; with it both succeed.
+ * So a second toke server on a busy port could start "successfully" and
+ * silently take loopback traffic from the first.  Linux refuses a bind
+ * that overlaps a listening socket whether or not SO_REUSEADDR is set.
+ *
+ * SO_REUSEADDR is still needed for the ordinary restart: a port whose old
+ * connections sit in TIME_WAIT is EADDRINUSE without it.  The two cases are
+ * told apart by asking the port:
+ *
+ *   1. bind WITHOUT SO_REUSEADDR.  Success -> done.
+ *   2. EADDRINUSE: connect to the address (127.0.0.1 for a wildcard bind).
+ *      Something accepts -> a listener is live: fail, EADDRINUSE.
+ *   3. Nothing accepts (refused, or no answer within the probe timeout):
+ *      TIME_WAIT or a bound non-listening socket -> retry WITH SO_REUSEADDR,
+ *      which is exactly what every bind did before.
+ *
+ * Linux is unchanged by construction: step 1 fails in a superset of the
+ * cases the old bind failed in; where the probe answers, a listener
+ * overlaps and Linux's SO_REUSEADDR bind would have failed too; everywhere
+ * else step 3 is the old bind.
+ *
+ * Known gap: a wildcard bind probes loopback only, so a listener on one
+ * specific non-loopback address is not detected (the wildcard then takes
+ * the other addresses' traffic, not that one's).
+ *
+ * Returns a bound (not yet listening) fd, or -1 with errno set.
+ */
+static int port_has_listener(const struct sockaddr_in *addr)
+{
+    struct sockaddr_in to = *addr;
+    if (to.sin_addr.s_addr == htonl(INADDR_ANY))
+        to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return 0;
+    int fl = fcntl(s, F_GETFL, 0);
+    if (fl >= 0) fcntl(s, F_SETFL, fl | O_NONBLOCK);
+    int answered = 0;
+    if (connect(s, (struct sockaddr *)&to, sizeof to) == 0) {
+        answered = 1;
+    } else if (errno == EINPROGRESS) {
+        struct pollfd pfd = { s, POLLOUT, 0 };
+        if (poll(&pfd, 1, 1000) == 1) {
+            int err = 0; socklen_t el = sizeof err;
+            if (getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &el) == 0 && err == 0)
+                answered = 1;
+        }
+    }
+    close(s);
+    return answered;
+}
+
+static int bind_exclusive(const struct sockaddr_in *addr)
+{
+    int opt = 1;
+    for (int pass = 0; pass < 2; pass++) {
+        int srv = socket(AF_INET, SOCK_STREAM, 0);
+        if (srv < 0) return -1;
+        if (pass == 1)
+            setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        if (bind(srv, (const struct sockaddr *)addr, sizeof(*addr)) == 0)
+            return srv;
+        int e = errno;
+        close(srv);
+        if (pass == 1 || e != EADDRINUSE || addr->sin_port == 0 ||
+            port_has_listener(addr)) {
+            errno = e;
+            return -1;
+        }
+    }
+    return -1;
+}
+
 int http_serve(uint16_t port) {
     TK_REQUIRE(TK_CAP_NET);
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) {
-        fprintf(stderr, "error: could not create socket: %s\n", strerror(errno));
-        return -1;
-    }
-    int opt = 1; setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET; addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
-    if (bind(srv,(struct sockaddr*)&addr,sizeof(addr))<0){
+    int srv = bind_exclusive(&addr);   /* 135.32 */
+    if (srv < 0) {
         fprintf(stderr, "error: could not bind to port %d: %s\n",
                 (int)port, strerror(errno));
-        close(srv);return -1;
+        return -1;
     }
     if (listen(srv, 8)<0){
         fprintf(stderr, "error: listen failed on port %d: %s\n",
@@ -1510,20 +1586,14 @@ static void workers_parent_sighandler(int sig)
 static int bind_listen(const char *host, uint64_t port)
 {
     TK_REQUIRE(TK_CAP_NET);
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) {
-        fprintf(stderr, "error: could not create socket: %s\n", strerror(errno));
-        return -1;
-    }
 
-    /* 127.203: SO_REUSEADDR only. SO_REUSEPORT let a second server on a busy
-     * port bind it and silently split its connections with the first. The
+    /* 127.203: never SO_REUSEPORT. It let a second server on a busy port
+     * bind it and silently split its connections with the first. The
      * pre-fork pool never needed it: the supervisor binds once here and every
      * worker (and every SIGHUP respawn) accept()s on the inherited fd.
-     * REUSEADDR stays so a restart can rebind a port held in TIME_WAIT. */
-    int opt = 1;
-    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
+     * 135.32: SO_REUSEADDR only after a probe says no listener is live, so a
+     * restart can rebind a port held in TIME_WAIT but a bind cannot shadow a
+     * live listener on macOS -- see bind_exclusive(). */
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -1534,14 +1604,15 @@ static int bind_listen(const char *host, uint64_t port)
     } else {
         if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
             fprintf(stderr, "error: invalid host address '%s'\n", host);
-            close(srv); return -1;
+            return -1;
         }
     }
 
-    if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    int srv = bind_exclusive(&addr);
+    if (srv < 0) {
         fprintf(stderr, "error: could not bind to port %llu: %s\n",
                 (unsigned long long)port, strerror(errno));
-        close(srv); return -1;
+        return -1;
     }
     if (listen(srv, 128) < 0) {
         fprintf(stderr, "error: listen failed on port %llu: %s\n",
