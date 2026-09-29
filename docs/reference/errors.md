@@ -1194,6 +1194,16 @@ basic block!" — a backend crash rather than a diagnostic.
 
 A fixed compiler capacity was exceeded (e.g. too many locals, functions, or imports).
 
+The import, function-signature and struct-type caps are met at `--check`, at
+the import or declaration that crosses them, with `expected` = the limit and
+`got` = the count. Imported signatures and types count: every function of an
+imported user module's `.tki`, every record of an imported `std` module, and
+the built-in `timeparts` and `none` types. The message lists what was counted.
+
+**Fix:** raise the limit to the count: `--max-imports=N` / `max_imports`,
+`--max-funcs=N` / `max_funcs`, `--max-structs=N` / `max_structs` (in
+`tkc.toml`). The `fix` field names the exact value (story 138.15).
+
 ### E9020
 
 **Failed to write .tkir file**
