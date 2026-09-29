@@ -7,7 +7,7 @@ order: 45
 
 > **Status: FAÇADE -- do not write against this page's API.** All six published functions have a `_w` wrapper, so a call links; every one of those wrappers is a stub that ignores its arguments. `infer.load` returns 0 unconditionally, so no handle is ever produced, so nothing else can do anything useful. `src/stdlib/infer.c` is 397 lines implementing `tk_infer_load`, `tk_infer_unload`, `tk_infer_generate` and `tk_infer_embed`; `src/stdlib/infer_glue.c` calls none of them. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`): a finished core behind glue that returns 0.
 
-`std.infer` is intended to provide in-process LLM inference via llama.cpp. Models are GGUF files (by convention under `~/.loke/models/`) reached through an opaque handle, with text generation, embedding extraction, and a disk-streaming loader for machines that cannot hold the whole model in RAM.
+`std.infer` is intended to provide in-process LLM inference via llama.cpp. Models are GGUF files, at whatever path the caller passes, reached through an opaque handle, with text generation, embedding extraction, and a disk-streaming loader for machines that cannot hold the whole model in RAM.
 
 ## What is actually reachable today
 
