@@ -24,7 +24,7 @@ under the harnesses' size caps and stays cheap for the fuzzer to mutate.
 | `xml_entity_expansion.xml` | `fuzz-xml` | Entity expansion (billion-laughs, scaled to 4 levels ×10) | Classic entity-blow-up DoS; probes whether the XML/SOAP surface (PAR-11) expands internal entities unboundedly. |
 | `xml_deep_unclosed.xml` | `fuzz-xml` | Deep nesting + unbalanced tags (1000 unclosed elements) | Recursion / unbalanced-tag handling on the flat/dotted-path element parser. |
 | `multipart_oversized_boundary.txt` | `fuzz-multipart` | Oversized boundary token (~4 KB) + body with no closing boundary | http-core body handling (120.6); stresses `mp_find` boundary scanning and the boundary length assumptions on the unauth file-upload path. First line = boundary per the harness split convention. |
-| `http_chunked_malformed.txt` | `fuzz-http-parse` | Malformed chunked body — chunk-size line `FFFFFFFFFFFFFFF0` far larger than the bytes supplied, plus a non-hex `ZZ` size | Chunk-size vs. actual-length mismatch and hex-parse handling in the request body path. |
+| `http_parse_chunked_malformed.txt` (renamed from `http_chunked_malformed.txt`, 121.30) | `fuzz-http-parse` | Malformed chunked body — chunk-size line `FFFFFFFFFFFFFFF0` far larger than the bytes supplied, plus a non-hex `ZZ` size | Chunk-size vs. actual-length mismatch and hex-parse handling in the request body path. Until 121.30 no target replayed it: fuzz-smoke picks up `<target>_*`, and `fuzz-http-parse` fuzzed an embedded copy of the parser rather than `http.c`. |
 | `ws_frame_overflow.bin` | `fuzz-ws-frame` | Crafted WS frame: FIN+binary, MASK set, 127 (64-bit ext len) = `0xFFFFFFFFFFFFFFFF`, no payload | HTT-04 — `ws_decode_frame` length/mask integer overflow → heap overflow via the 64-bit extended-length path. |
 | `ws_frame_short_payload.bin` | `fuzz-ws-frame` | WS frame claiming 16-bit ext length `0xFFF0` but only 2 payload bytes present | Truncated-frame handling: decoder must not read past the supplied buffer when the advertised length exceeds available bytes. |
 
@@ -46,6 +46,13 @@ under the harnesses' size caps and stays cheap for the fuzzer to mutate.
   vulnerable code path so coverage-guided mutation finds neighbouring bugs fast.
 
 ## Usage
+
+> **121.30:** the commands below are the original proposal.  What runs is
+> `make fuzz-smoke` (every `test/fuzz/corpus-adversarial/<target>_*` file is
+> replayed through `<target>`'s harness, in `make ci` and CI's ci-gates job)
+> and the security nightly's `make fuzz-120-22-run`, which fuzzes each target
+> from its seeds plus its adversarial files.  Binaries are built under
+> `build/fuzz/`.
 
 ```sh
 # Seed a target's in-memory corpus with the adversarial inputs:

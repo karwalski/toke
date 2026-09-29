@@ -2061,27 +2061,33 @@ clean:
 	    test/stdlib/test_tls test/tkir/test_tkir_reader \
 	    fuzz-lexer fuzz-parser
 
-FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
-
-fuzz-lexer: test/fuzz/fuzz_lexer.c src/lexer.o src/diag.o src/arena.o
-	$(CC) $(FUZZ_FLAGS) -o fuzz-lexer $^
-
-fuzz-parser: test/fuzz/fuzz_parser.c src/lexer.o src/parser.o src/diag.o src/arena.o src/names.o src/types.o
-	$(CC) $(FUZZ_FLAGS) -o fuzz-parser $^
-
-fuzz-http-parse: test/fuzz/fuzz_http_parse.c
-	$(CC) $(FUZZ_FLAGS) -o fuzz-http-parse $^
-
-fuzz-url-route: test/fuzz/fuzz_url_route.c src/stdlib/router.o src/stdlib/str.o
-	$(CC) $(FUZZ_FLAGS) -iquote src/stdlib -o fuzz-url-route $^ -lz
-
+# ── 121.30: the four original harnesses, folded into the machinery below ──
+#
+# fuzz-lexer, fuzz-parser, fuzz-http-parse and fuzz-url-route had rules of
+# their own, libFuzzer-only, linked from the unsanitised shipping .o files,
+# and NONE of the four worked:
+#   fuzz-lexer / fuzz-parser  did not compile -- the lexer harness declared a
+#       four-argument lex() (lexer.h's takes a Profile too) and the parser
+#       harness put the opaque Arena on the stack.  nightly.yml built exactly
+#       these two, so the nightly fuzz job was red at its compile step (it
+#       is retired; security-nightly.yml fuzzes every FUZZ_TARGET).
+#   fuzz-url-route  did not link (router.c needs ws.c), and the harness
+#       free()d the string-literal body of every non-200 answer, so the first
+#       403 aborted it.
+#   fuzz-http-parse  fuzzed its own embedded COPY of an old parse_request;
+#       src/stdlib/http.c was not in it at all.
+# No workflow and no make ci target ran the last two, and nothing replayed
+# the http adversarial input (test/fuzz/corpus-adversarial/http_chunked_
+# malformed.txt, now http_parse_chunked_malformed.txt).  All four are now
+# FUZZ_TARGETS, built by the same rule under either engine, replayed by
+# fuzz-smoke (make ci and CI's ci-gates job) and fuzzed by the security
+# nightly; `fuzz` and `fuzz-http` remain as names for the old groupings.
 fuzz: fuzz-lexer fuzz-parser
-	./fuzz-lexer -max_total_time=60 test/fuzz/corpus/
-	./fuzz-parser -max_total_time=60 test/fuzz/corpus/
+	$(MAKE) --no-print-directory fuzz-120-22-run FUZZ_TARGETS="lexer parser"
 
-fuzz-http: fuzz-http-parse fuzz-url-route
-	./fuzz-http-parse -max_total_time=120
-	./fuzz-url-route -max_total_time=120
+fuzz-http: fuzz-http-parse fuzz-url-route fuzz-multipart fuzz-ws-frame
+	$(MAKE) --no-print-directory fuzz-120-22-run \
+	    FUZZ_TARGETS="http_parse url_route multipart ws_frame"
 
 # ── 123.10: the eight 120.22 stdlib harnesses, wired ─────────────────────────
 #
@@ -2125,7 +2131,7 @@ FUZZ_TARGETS_120_22 = json yaml toml toon xml template multipart ws_frame
 # built it, by hand.  It joins the set here, so fuzz-120-22 builds it,
 # fuzz-smoke replays test/fuzz/seeds/image/ through it, and the nightly
 # fuzz-120-22-run fuzzes it.
-FUZZ_TARGETS = $(FUZZ_TARGETS_120_22) image
+FUZZ_TARGETS = $(FUZZ_TARGETS_120_22) image lexer parser http_parse url_route
 fuzz_have_libfuzzer = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_fuzzprobe.XXXXXX") && \
     printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' > "$$d/p.c" && \
     $(CC) -fsanitize=fuzzer -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo libfuzzer || echo standalone; \
@@ -2168,10 +2174,22 @@ fuzz-ws-frame:
 	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
 fuzz-image:
 	$(call fuzz_build_rule,image,test/fuzz/fuzz_image.c src/stdlib/image.c,-lm)
+# 121.30: the compiler front end, compiled from source like the rest.
+fuzz-lexer:
+	$(call fuzz_build_rule,lexer,test/fuzz/fuzz_lexer.c src/lexer.c src/diag.c src/arena.c,)
+fuzz-parser:
+	$(call fuzz_build_rule,parser,test/fuzz/fuzz_parser.c src/lexer.c src/parser.c src/diag.c src/arena.c,)
+# The real server loop (http_handle_fd) over a socketpair, not a copy of it.
+fuzz-http-parse:
+	$(call fuzz_build_rule,http_parse,test/fuzz/fuzz_http_parse.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz -lpthread)
+fuzz-url-route:
+	$(call fuzz_build_rule,url_route,test/fuzz/fuzz_url_route.c src/stdlib/router.c src/stdlib/str.c src/stdlib/ws.c,-lz)
 
-# Build all nine (the name security-nightly.yml calls; image joined in 122.13).
+# Build all of them (the name security-nightly.yml calls; image joined in
+# 122.13; lexer, parser, http_parse and url_route in 121.30).
 fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
-	fuzz-multipart fuzz-ws-frame fuzz-image
+	fuzz-multipart fuzz-ws-frame fuzz-image \
+	fuzz-lexer fuzz-parser fuzz-http-parse fuzz-url-route
 
 # Replay every seed and adversarial input through every harness, once.  Works
 # under either engine (libFuzzer's -runs=0 executes the given corpus and
