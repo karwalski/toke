@@ -322,7 +322,9 @@ const char *tk_time_format(uint64_t ts_ms, const char *fmt)
     if (!fmt) fmt = "%Y-%m-%dT%H:%M:%S";
 
     time_t secs = (time_t)(ts_ms / 1000ULL);
-    struct tm *tm_info = gmtime(&secs);
+    /* gmtime_r: gmtime's static buffer is shared by every thread */
+    struct tm tm_buf;
+    struct tm *tm_info = gmtime_r(&secs, &tm_buf);
     if (!tm_info) return NULL;
 
     /* strftime output is bounded; 256 bytes covers all practical formats. */
