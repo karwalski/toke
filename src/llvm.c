@@ -7074,6 +7074,22 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pp, sv);
                 fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, pp);
             }
+            /* 121.51 (2): a nil sum value (an `$err:e` payload the callee
+             * never boxed, handed on as a typed parameter) had its tag read
+             * through a null pointer: SIGSEGV at -O0, and at -O2 the
+             * optimiser took the undefined load as unreachable and printed
+             * the $ok arm's text for every failure.  Trap RT005, as the
+             * 124.2d field-read guard does. */
+            {
+                int nz = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp eq i64* %%t%d, null\n", nz, sbase);
+                int lt = next_lbl(c), lc = next_lbl(c);
+                fprintf(c->out, "  br i1 %%t%d, label %%nil_trap%d, label %%nil_ok%d\n", nz, lt, lc);
+                fprintf(c->out, "nil_trap%d:\n", lt);
+                fprintf(c->out, "  call void @tk_nil_trap(i32 0)\n");
+                fprintf(c->out, "  unreachable\n");
+                fprintf(c->out, "nil_ok%d:\n", lc);
+            }
             int tagp = next_tmp(c);
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", tagp, sbase);
             int tagv = next_tmp(c);
