@@ -585,7 +585,7 @@ TKRE_FN void tkre_add(const TkRe *re, TkReVm *vm, int pc0, size_t start,
     vm->stack[sp++] = pc0;
     while (sp > 0) {
         int pc = vm->stack[--sp];
-        if (vm->mark[pc] == vm->gen) continue;
+        if (pc < 0 || pc >= re->ninst || vm->mark[pc] == vm->gen) continue;
         vm->mark[pc] = vm->gen;
         (*steps)++;
         const TkReInst *in = &re->prog[pc];
@@ -615,6 +615,7 @@ TKRE_FN int tkre_search(const TkRe *re, const char *s, size_t len, size_t from,
     size_t bs = 0, be = 0, pos;
     int found = 0;
     uint64_t steps = 0;
+    if (n <= 0) return TKRE_NOMATCH;   /* tkre_compile always emits MATCH */
     vm.cl = (TkReThread *)malloc(sizeof(TkReThread) * (size_t)n);
     vm.nl = (TkReThread *)malloc(sizeof(TkReThread) * (size_t)n);
     vm.mark = (int *)malloc(sizeof(int) * (size_t)n);
