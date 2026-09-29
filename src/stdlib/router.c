@@ -1320,6 +1320,27 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
         int m = snprintf(full, sizeof(full), "%s/%s/index.html", dir_path, rel);
         if (m < 0 || (size_t)m >= sizeof(full))
             return router_resp_status(403, "Forbidden");
+        /* 121.18: the index file gets the same realpath check as the path
+         * that led to it.  It did not, so a directory whose index.html was
+         * a symlink out of the tree served the target (audit-120 WEB-02's
+         * sibling on this, the hardened, static path). */
+        {
+            char resolved_root[PATH_MAX];
+            char resolved_full[PATH_MAX];
+            if (!realpath(dir_path, resolved_root))
+                return router_resp_status(403, "Forbidden");
+            if (!realpath(full, resolved_full))
+                return (errno == ENOENT || errno == ENOTDIR)
+                    ? router_resp_404()
+                    : router_resp_status(403, "Forbidden");
+            size_t root_len = strlen(resolved_root);
+            if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
+                (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
+                return router_resp_status(403, "Forbidden");
+            m = snprintf(full, sizeof(full), "%s", resolved_full);
+            if (m < 0 || (size_t)m >= sizeof(full))
+                return router_resp_status(403, "Forbidden");
+        }
         if (stat(full, &st) != 0)
             return router_resp_404();
     }
