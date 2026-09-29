@@ -363,7 +363,6 @@ f=zip.openfile(path:$str):$ziparchive!$ziperr
 f=zip.entries(a:$ziparchive):@$zipentry
 f=zip.read(a:$ziparchive;name:$str):@$byte!$ziperr
 f=zip.close(a:$ziparchive):void
-f=zip.lasterr():$str
 ```
 
-Read-only; Store and Deflate only. `$ziparchive` is an opaque handle with no readable fields. Opening validates the whole central directory first, so a single bad entry rejects the archive: absolute or `..`-bearing or backslash-bearing names, a cumulative uncompressed size over 64 MiB, a ratio over 200:1, more than 65536 entries, an archive over 128 MiB, an encrypted entry, or any other compression method. `zip.openfile` and `zip.lasterr` are additions to the requested interface — the first because toke has no binary file read (`file.read` truncates at the first NUL), the second because the compiled `T!E` ABI carries no error payload, so the rule that rejected an archive would otherwise be unobservable. See [std.zip](/docs/stdlib/zip).
+Read-only; Store and Deflate only. `$ziparchive` is an opaque handle with no readable fields. Opening validates the whole central directory first, so a single bad entry rejects the archive: absolute or `..`-bearing or backslash-bearing names, a cumulative uncompressed size over 64 MiB, a ratio over 200:1, more than 65536 entries, an archive over 128 MiB, an encrypted entry, or any other compression method. `zip.openfile` is an addition to the requested interface, because toke has no binary file read (`file.read` truncates at the first NUL). Every failure raises a `$ziperr` whose variant names the class of rule that rejected the input and whose payload is the reason (`$err:e mt e {$toolarge:m …}`); `zip.lasterr` was retired by 127.102c. See [std.zip](/docs/stdlib/zip).

@@ -1120,8 +1120,6 @@ static const char *const g_err_slot_bare[] = {
     "tk_vecstore_collection_w", "tk_vecstore_open_w",
     /* xlsx */
     "tk_xlsx_open_w", "tk_xlsx_openfile_w", "tk_xlsx_rows_w",
-    /* zip */
-    "tk_zip_open_w", "tk_zip_openfile_w", "tk_zip_read_w",
     /* END 127.238 bare-glue exceptions */
     NULL
 };

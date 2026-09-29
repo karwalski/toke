@@ -277,6 +277,12 @@ f=wrempty(label:str;path:str):i64{
   <wrbytes(label;path;e)
 };
 
+(* The reason a zip call failed, from the $err payload (127.102c retired
+   zip.lasterr). *)
+f=zmsg(e:$ziperr):str{
+  <mt e {$badarchive:m m;$badentry:m m;$notfound:m m;$toolarge:m m;$unsupported:m m;$io:m m}
+};
+
 f=entryline(e:$zipentry):str{
   let d=if(e.isdir){"1"}el{"0"};
   <s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(e.name;"|");s.fromint(e.size));"|");s.fromint(e.compressedsize));"|");d)
@@ -291,7 +297,7 @@ f=archdump(tag:str;z:$ziparchive):i64{
   let r=zip.read(z;"bin/payload.dat");
   mt r {
     $ok:b io.println(s.concat(s.concat(tag;"-payload=");digest(b)));
-    $err:e io.println(s.concat(s.concat(tag;"-payload=ERR|");zip.lasterr()))
+    $err:e io.println(s.concat(s.concat(tag;"-payload=ERR|");zmsg(e)))
   };
   <0
 };
@@ -303,7 +309,7 @@ f=archvia():i64{
   let a=zip.openfile(fix("good.zip"));
   mt a {
     $ok:z archclose("viafile";z);
-    $err:e io.println(s.concat("viafile-count=ERR|";zip.lasterr()))
+    $err:e io.println(s.concat("viafile-count=ERR|";zmsg(e)))
   };
   let rb=file.readbytes(fix("good.zip"));
   mt rb {
@@ -317,7 +323,7 @@ f=archfrombytes(b:@(byte)):i64{
   let a=zip.open(b);
   mt a {
     $ok:z archclose("viabytes";z);
-    $err:e io.println(s.concat("viabytes-count=ERR|";zip.lasterr()))
+    $err:e io.println(s.concat("viabytes-count=ERR|";zmsg(e)))
   };
   <0
 };

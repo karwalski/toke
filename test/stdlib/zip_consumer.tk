@@ -12,13 +12,27 @@
        and then returns whatever sits at that offset (127.86);
      - each malicious fixture is opened and must be REJECTED BY NAME. An
        archive that is accepted is the failure mode here, so "it returned an
-       error" is not enough -- the script asserts WHICH rule fired, which is
-       why zip.lasterr() exists. *)
+       error" is not enough -- the script asserts WHICH rule fired. Since
+       127.102c that comes from the error itself: the $err arm binds a
+       $ziperr whose variant is the class of rule and whose payload is the
+       reason, and why(e) is retired. why() prints both. *)
 m=zipconsumer;
 i=io:std.io;
 i=s:std.str;
 i=env:std.env;
 i=zip:std.zip;
+
+(* variant|reason, from the $err arm's own payload (127.102c). *)
+f=why(e:$ziperr):str{
+  <mt e {
+    $badarchive:m s.concat("badarchive|";m);
+    $badentry:m s.concat("badentry|";m);
+    $notfound:m s.concat("notfound|";m);
+    $toolarge:m s.concat("toolarge|";m);
+    $unsupported:m s.concat("unsupported|";m);
+    $io:m s.concat("io|";m)
+  }
+};
 
 f=fixdir():str{
   <env.getor("ZIPFIX";"/tmp/zipfix")
@@ -35,7 +49,7 @@ f=mustreject(label:str;file:str):i64{
   let a=zip.openfile(fix(file));
   mt a {
     $ok:z io.println(s.concat(s.concat("reject-";label);"=ACCEPTED"));
-    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");zip.lasterr()))
+    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");why(e)))
   };
   <0
 };
@@ -51,7 +65,7 @@ f=readentry(a:$ziparchive;name:str):i64{
   let r=zip.read(a;name);
   mt r {
     $ok:b io.println(s.concat(s.concat(s.concat(s.concat(s.concat("read-";name);"=");s.fromint(b.len));"|");zipbytes(b)));
-    $err:e io.println(s.concat(s.concat(s.concat("read-";name);"=ERR|");zip.lasterr()))
+    $err:e io.println(s.concat(s.concat(s.concat("read-";name);"=ERR|");why(e)))
   };
   <0
 };
@@ -72,7 +86,7 @@ f=happy():i64{
   let a=zip.openfile(fix("good.zip"));
   mt a {
     $ok:z happybody(z);
-    $err:e io.println(s.concat("open-good=ERR|";zip.lasterr()))
+    $err:e io.println(s.concat("open-good=ERR|";why(e)))
   };
   <0
 };
