@@ -53,9 +53,34 @@ typedef struct {
  * The internal SSL* and socket fd are stored in a registry keyed by id.
  * ------------------------------------------------------------------------- */
 
+/* TlsConn is also the $TlsConn record toke sees, {id}: the glue hands toke
+ * a pointer to one (135.30; it handed out the id string itself, so `c.id`
+ * read the string's bytes as a pointer). */
+/* tki-record: tls.TlsConn */
 typedef struct {
     char *id;   /* opaque identifier; caller owns; free with tls_conn_free_id */
 } TlsConn;
+
+/*
+ * The other records tls_glue.c hands to toke (135.30), in stdlib/tls.tki's
+ * order, one 8-byte slot per field: a PEM absent is "" (never NULL), a bool
+ * a whole slot.  TlsConfig above is the C-side view the core takes; the
+ * glue builds it from a TkTlsCfgRec (or a $TlsConfig literal).
+ * `make check-tki-layout` keeps these in step with the .tki.
+ */
+/* tki-record: tls.TlsConfig */
+typedef struct {
+    const char *certpem;
+    const char *keypem;
+    const char *peercertpem;
+    int64_t     requiremutual;  /* bool */
+} TkTlsCfgRec;
+
+/* tki-record: tls.TlsKeypair */
+typedef struct {
+    char *certpem;
+    char *keypem;               /* secret: tls.freekeypair wipes it */
+} TkTlsKeypairRec;
 
 /* Free only the id string inside a TlsConn.  Does NOT close the connection. */
 void tls_conn_free_id(TlsConn conn);

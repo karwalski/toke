@@ -57,4 +57,28 @@ static inline int64_t tk_arr_alloc(int64_t cap, int64_t len) {
     return (int64_t)(intptr_t)(b + TK_ARR_HDR);
 }
 
+/*
+ * tk_arr_push — append v to the array h (0 = empty) and return the handle to
+ * use from now on.  Writes in place only when the block is unaliased
+ * (rc == 1) and has room; otherwise it copies into a new block with doubled
+ * capacity.  The old block is never freed (see the leak-forever note above),
+ * so a handle toke code still holds keeps its old length and contents.
+ * Returns 0 on OOM, leaving h untouched.  135.30: for glue that keeps a
+ * record's array field (e.g. $canvas.ops) as a real toke array.
+ */
+static inline int64_t tk_arr_push(int64_t h, int64_t v) {
+    int64_t len = tk_arr_len(h);
+    if (h && tk_arr_rc(h) == 1 && tk_arr_cap(h) > len) {
+        ((int64_t *)(intptr_t)h)[len] = v;
+        tk_arr_setlen(h, len + 1);
+        return h;
+    }
+    int64_t n = tk_arr_alloc(len < 4 ? 8 : 2 * len, len + 1);
+    if (!n) return 0;
+    if (len) memcpy((void *)(intptr_t)n, (const void *)(intptr_t)h,
+                    (size_t)len * sizeof(int64_t));
+    ((int64_t *)(intptr_t)n)[len] = v;
+    return n;
+}
+
 #endif /* TK_ARRAY_H */

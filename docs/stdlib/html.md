@@ -13,15 +13,15 @@ The `std.html` module provides an API for building HTML documents programmatical
 
 ### $htmldoc
 
-Opaque handle to an HTML document being constructed.
+Opaque handle to an HTML document being constructed. Its one field, `id` (u64), is a number unique within the process.
 
 ### $htmlnode
 
 | Field | Type | Meaning |
 |-------|------|---------|
 | tag | $str | HTML element tag name |
-| attrs | @(@($str)) | Attribute key-value pairs |
-| content | $str | Inner text content |
+| attrs | @(@($str)) | Attribute key-value pairs, each `@(name; value)`, in the order they were set |
+| content | $str | Inner text content; `""` for an element with none (e.g. a table) |
 
 ## Functions
 

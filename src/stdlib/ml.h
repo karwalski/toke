@@ -50,6 +50,45 @@ typedef struct {
     uint64_t nnodes;
 } DTreeModel;
 
+/*
+ * The records ml_glue.c hands to toke (and reads back), laid out as tkc
+ * reads them: one 8-byte slot per field in stdlib/ml.tki's order, arrays
+ * as toke array handles, f64 as the double itself (135.30).  ml.linregfit
+ * used to return a bare {slope; intercept} pair of doubles, so `m.coef`
+ * read the slope's bits as an array handle (SIGSEGV).  The k-means and
+ * decision-tree records were already built slot for slot; they are
+ * declared here so `make check-tki-layout` checks them too.
+ */
+/* tki-record: ml.row */
+typedef struct {
+    int64_t  vals;          /* [f64] */
+} TkMlRowRec;
+
+/* tki-record: ml.linearmodel */
+typedef struct {
+    int64_t  coef;          /* [f64]: one coefficient per feature */
+    double   intercept;
+} TkLinearModelRec;
+
+/* tki-record: ml.centroid */
+typedef struct {
+    int64_t  id;            /* u64, 0-based */
+    int64_t  center;        /* [f64] */
+} TkCentroidRec;
+
+/* tki-record: ml.kmeansmodel */
+typedef struct {
+    int64_t  centroids;     /* [centroid]: handles of TkCentroidRec * */
+    int64_t  k;             /* u64 */
+} TkKMeansModelRec;
+
+/* tki-record: ml.dtreemodel */
+typedef struct {
+    int64_t  nodes;         /* u64 */
+    int64_t  maxdepth;      /* u64 */
+    int64_t  arena;         /* u64: the glue's MlDTree * */
+} TkDTreeModelRec;
+
 /* Result type for operations that can fail (returns a single f64). */
 typedef struct {
     double      ok;
@@ -63,6 +102,16 @@ typedef struct {
 
 /* ml.linregfit: fit a simple (1-feature) linear model via least squares. */
 LinearModel ml_linregfit(F64Array xs, F64Array ys);
+
+/* ml_linregfit_multi — least-squares fit of y ~ coef . x + intercept over
+ * n samples of ncols features, given column-major (cols[j].data[i] is
+ * feature j of sample i).  Solves the normal equations with partial
+ * pivoting.  Writes ncols coefficients to coef and the intercept; returns
+ * 0, or -1 when n < ncols + 1, a column is short, or the system is
+ * singular (135.30: $linearmodel's coef, as ml.md documents it). */
+int ml_linregfit_multi(const F64Array *cols, uint64_t ncols,
+                       const double *y, uint64_t n,
+                       double *coef, double *intercept);
 
 /* ml.linregpredict: evaluate the model at x. */
 double      ml_linregpredict(LinearModel m, double x);

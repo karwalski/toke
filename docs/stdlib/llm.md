@@ -19,10 +19,10 @@ Holds all connection parameters for one LLM provider endpoint. Create with `llm.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| provider | $str | Provider name (e.g. `"openai"`, `"anthropic"`, `"ollama"`) |
+| provider | $str | Provider name, from the base URL: `"ollama"` when it names port 11434 or contains `ollama`, `"openai"` for `api.openai.com`, `"anthropic"` for `api.anthropic.com`, otherwise the URL's host (e.g. `"127.0.0.1"`) |
 | model | $str | Model identifier (e.g. `"gpt-4o"`, `"claude-3-5-sonnet-20241022"`) |
 
-The runtime also stores the API key, base URL, and timeout internally; these are not directly accessible as toke fields.
+The runtime also stores the API key, base URL, and timeout internally; these are not accessible as toke fields — no field of `$llmclient` reads the API key.
 
 ### $llmmsg
 
