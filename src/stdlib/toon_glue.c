@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include "file.h"
 #include "tk_array.h"
+#include "capabilities.h"   /* 121.42 (5): toon.load is an fs.read sink */
 static int64_t f64_to_i64(double d){int64_t i;memcpy(&i,&d,sizeof(i));return i;}
 
 /*
@@ -54,7 +55,9 @@ int64_t tk_toon_stringify_w(int64_t val) {
     return (int64_t)(intptr_t)s;
 }
 
+/* 121.42 (5): reads the file named by the program -- fs.read, like file.read. */
 int64_t tk_toon_load_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     StrFileResult fr = file_read((const char *)(intptr_t)path);
     if (fr.is_err || !fr.ok) return 0;

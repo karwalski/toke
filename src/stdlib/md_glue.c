@@ -6,6 +6,7 @@
  */
 
 #include "md.h"
+#include "capabilities.h"   /* 121.42 (5): md.renderfile is an fs.read sink */
 #include <stdint.h>
 
 int64_t tk_md_render_w(int64_t src) {
@@ -30,7 +31,9 @@ extern _Thread_local int64_t tk_current_error;
 extern __thread int64_t tk_current_error;
 #endif
 
+/* 121.42 (5): reads the file named by the program -- fs.read, like file.read. */
 int64_t tk_md_renderfile_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) { tk_current_error = 1; return (int64_t)(intptr_t)""; }
     MdFileResult r = md_render_file((const char *)(intptr_t)path);
     tk_current_error = r.is_err ? 1 : 0;

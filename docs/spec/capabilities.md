@@ -16,7 +16,7 @@ Exactly five classes gate the ambient surface:
 
 | Class | Grants | Example sinks |
 |-------|--------|---------------|
-| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile` |
+| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file` / `crypto.sha256verify` |
 | `fs.write` | create / modify / delete files & dirs | `file.write`, `file.mkdir`, `file.delete`, `os.open` (write), `db.open`, `log.openaccess` / `log.openerror` (not for `/dev/stderr` or `/dev/stdout`) |
 | `net` | listen / connect / send / receive | `http.get`/`serve*`, `net.listen`, `ws.connect`, `tls.*`, `db` (pg/mysql) |
 | `env.write` | mutate the process environment | `env.set`, `os.setenv` |
@@ -44,8 +44,9 @@ gaps, as of 2026-09-29, are entries that reach a primitive with no grant under
 enforcement: `router.serve` (and `chart.serve` / `dashboard.serve`, which use it)
 binds without `net`; `llm.*` connects without `net`; `http.downloadfile` writes a
 file under `net` alone; `http.servedir` / `http.servepages` read files under `net`
-alone; `toon.load`, `yaml.load`, `i18n.load`, `md.renderfile`, `template.load`,
-`crypto.sha256file` and the `vecstore` load/save read or write files with no grant.
+alone; `i18n.load`, `template.load` and the `vecstore` load/save read or write
+files with no grant. (`toon.load`, `yaml.load`, `md.renderfile` and
+`crypto.sha256file` / `sha256verify` take `fs.read` since 121.42.)
 The skiplist is self-failing: a line whose gap is fixed must be deleted in the same
 commit.
 

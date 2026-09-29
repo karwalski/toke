@@ -130,14 +130,7 @@ ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | stat | 202
 ungated | tk_http_servepages_w | template.c:tmpl_readfile | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 
 # File readers that bypass file.read's gate by calling file.c / fopen directly.
-ungated | tk_toon_load_w | file.c:fopen_nofollow | fopen | 2026-09-29 | 121.22 | toon_glue.c calls file_read(), not the gated tk_file_read_w
-ungated | tk_toon_load_w | file.c:fopen_nofollow | open | 2026-09-29 | 121.22 | toon_glue.c calls file_read(), not the gated tk_file_read_w
-ungated | tk_yaml_load_w | file.c:fopen_nofollow | fopen | 2026-09-29 | 121.22 | yaml.c tk_yaml_load_w calls file_read(), not the gated tk_file_read_w
-ungated | tk_yaml_load_w | file.c:fopen_nofollow | open | 2026-09-29 | 121.22 | yaml.c tk_yaml_load_w calls file_read(), not the gated tk_file_read_w
 ungated | tk_i18n_load_w | i18n.c:read_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_md_renderfile_w | md.c:md_render_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_template_load_w | template_glue.c:tk_template_load_w | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_crypto_sha256file_w | crypto.c:crypto_sha256file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_crypto_sha256verify_w | crypto.c:crypto_sha256file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_vecstore_collection_w | vecstore.c:collection_load | fopen | 2026-09-29 | 121.22 | loads a collection file; needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_vecstore_close_w | vecstore.c:collection_save | fopen | 2026-09-29 | 121.22 | saves a collection file; needs TK_REQUIRE(TK_CAP_FS_WRITE)

@@ -36,7 +36,7 @@ f=demo():i64{
 
 ### md.renderfile(path: $str): $str!$mderr
 
-Reads the file at `path` and renders its Markdown content to HTML. Returns `$mderr` if the file cannot be opened or read.
+Reads the file at `path` and renders its Markdown content to HTML. Needs the `fs.read` capability. Returns `$mderr` if the file cannot be opened or read.
 
 **Example:**
 ```toke
