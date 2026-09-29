@@ -199,11 +199,12 @@ f=load(name:str):@(byte){
 };
 
 (* Every refusal prints kind|line|message, so no case can pass by being
-   merely "an error". *)
-f=errline(label:str):i64{
-  io.println(s.concat(s.concat(s.concat(label;"=err|");csv.lasterrkind());
-             s.concat(s.concat("|";s.fromint(csv.lasterrline()));
-                      s.concat("|";csv.lasterr()))));
+   merely "an error". Since 127.102a all three are the fields of the csverr
+   the $err arm binds; csv.lasterrkind/lasterrline/lasterr are retired. *)
+f=errline(label:str;e:$csverr):i64{
+  io.println(s.concat(s.concat(s.concat(label;"=err|");e.kind);
+             s.concat(s.concat("|";s.fromint(e.line));
+                      s.concat("|";e.msg))));
   <0
 };
 
@@ -215,7 +216,7 @@ f=sniff(label:str;name:str):i64{
                      s.concat(s.concat("|";v.encoding);
                               s.concat("|";if(v.hasheader){"hdr"}el{"nohdr"})));
                      s.concat("|";if(v.bom){"bom"}el{"nobom"})));
-    $err:e errline(label)
+    $err:e errline(label;e)
   };
   <0
 };
@@ -225,7 +226,7 @@ f=onerow(label:str;i:i64;rd:$csvreader):i64{
   let row=csv.next(rd);
   <mt row {
     $ok:rr rowline(label;i;rr.fields);
-    $err:e errline(s.concat(s.concat(label;"-r");s.fromint(i)))
+    $err:e errline(s.concat(s.concat(label;"-r");s.fromint(i));e)
   }
 };
 
@@ -250,10 +251,9 @@ f=drain(label:str;rd:$csvreader):i64{
      answers with its own kind, because a refusal ends the reader and does not
      erase why. Those two were the same silent empty answer before 135.2. *)
   let past=csv.next(rd);
-  let kind=mt past { $ok:rr "UNEXPECTEDROW"; $err:e csv.lasterrkind() };
+  let kind=mt past { $ok:rr "UNEXPECTEDROW|0"; $err:e s.concat(s.concat(e.kind;"|");s.fromint(e.line)) };
   io.println(s.concat(s.concat(s.concat(label;"-rows=");s.fromint(n));
-             s.concat(s.concat("|";kind);
-                      s.concat("|";s.fromint(csv.lasterrline())))));
+             s.concat("|";kind)));
   reportragged(label;rd);
   <0
 };
@@ -271,7 +271,7 @@ f=open(label:str;name:str;o:$csvopts):i64{
   let r=csv.readeropts(load(name);o);
   <mt r {
     $ok:rd opened(label;rd);
-    $err:e errline(label)
+    $err:e errline(label;e)
   }
 };
 
@@ -291,7 +291,7 @@ f=openhdr(label:str;name:str;o:$csvopts):i64{
   let r=csv.readeropts(load(name);o);
   <mt r {
     $ok:rd hdrof(label;rd);
-    $err:e errline(label)
+    $err:e errline(label;e)
   }
 };
 
@@ -299,7 +299,7 @@ f=hdrof(label:str;rd:$csvreader):i64{
   let h=csv.header(rd);
   mt h {
     $ok:hh rowline(label;0;hh);
-    $err:e errline(label)
+    $err:e errline(label;e)
   };
   csv.close(rd);
   <0
@@ -316,7 +316,7 @@ f=lax(label:str;name:str;sep:u8):i64{
     n=n+onerow(label;i;rd)
   };
   let past=csv.next(rd);
-  let kind=mt past { $ok:rr "UNEXPECTEDROW"; $err:e csv.lasterrkind() };
+  let kind=mt past { $ok:rr "UNEXPECTEDROW"; $err:e e.kind };
   io.println(s.concat(s.concat(s.concat(label;"-rows=");s.fromint(n));
              s.concat("|";kind)));
   <0
@@ -409,7 +409,7 @@ f=main():i64{
   csv.writerow(w;@("Datum";"Betrag"));
   csv.writerow(w;@("2026-01-01";"4,20"));
   let d=csv.sniff(csv.flush(w));
-  <mt d { $ok:v (if(csv.lasterrkind()=="ok"){0}el{2}); $err:e 1 }
+  <mt d { $ok:v 0; $err:e (if(e.kind=="delimiter"){1}el{2}) }
 };
 ONLYEOF
 if "${TKC}" --out "${WORK}/only" "${WORK}/only.tk" > "${WORK}/only.log" 2>&1; then
