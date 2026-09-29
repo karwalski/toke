@@ -1105,7 +1105,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -2284,6 +2284,29 @@ cve-scan: sbom
 	  GRYPE_DB_AUTO_UPDATE=false GRYPE_CHECK_FOR_APP_UPDATE=false \
 	    grype sbom:tkc-sbom.spdx.json --fail-on high --output table; \
 	fi
+
+# ── 121.30: secret scan (Section 1 of docs/security/audit-120/ci-security.md) ─
+# gitleaks over the working tree with the committed .gitleaks.toml (default
+# rules + the reviewed allowlist).  It was specified in 120.24 and never
+# landed: no secret scan ran in `make ci` or on any push.  Same convention as
+# sbom/cve-scan: locally a missing gitleaks is a named SKIP; in CI (CI=true)
+# it FAILS, so the step there is real or it is red.  No network either way.
+# Only the rule id, file and line of a finding are printed (--redact).
+secrets-scan:
+	@if ! command -v gitleaks >/dev/null 2>&1; then \
+	  if [ "$(SBOM_CI)" = 1 ]; then echo "secrets-scan: FAIL -- gitleaks is not installed (CI must install it)" >&2; exit 1; fi; \
+	  echo "SKIP secrets-scan: gitleaks is not installed -- NO SECRET SCAN RAN (local run; CI installs it)"; \
+	  exit 0; \
+	fi; \
+	r=$$(mktemp "$${TMPDIR:-/tmp}/tkc_gitleaks.XXXXXX"); \
+	gitleaks dir . --config .gitleaks.toml --redact --no-banner --log-level error \
+	    --exit-code 1 --report-format csv --report-path "$$r"; rc=$$?; \
+	if [ $$rc -eq 0 ]; then echo "secrets-scan: gitleaks found nothing (.gitleaks.toml)"; \
+	else echo "secrets-scan: FAIL -- gitleaks findings (rule, file, line):" >&2; \
+	  awk -F, 'NR>1 {print "  " $$1 "  " $$3 ":" $$7}' "$$r" >&2; fi; \
+	rm -f "$$r"; exit $$rc
+
+.PHONY: secrets-scan
 
 # ── Man page ────────────────────────────────────────────────────────────
 MANDIR ?= /usr/local/share/man/man1
