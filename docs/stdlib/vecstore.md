@@ -20,7 +20,8 @@ Key properties:
 - **Brute-force flat index** — exact nearest-neighbour search via cosine
   similarity.  Suitable for collections up to tens of thousands of entries.
 - **File persistence** — each collection is saved to a binary `.vecs` file in
-  the configured data directory when the store is closed.
+  the configured data directory by `vecstore.flush` or `vecstore.close`, and
+  at no other time.
 - **Dimension-agnostic** — a collection accepts embeddings of any fixed
   dimension (e.g. 384 or 768).  The dimension is locked in on the first
   upsert and validated on every subsequent upsert.
@@ -104,9 +105,38 @@ after `vecstore.close` is undefined behaviour.
 vecstore.close(vs);
 ```
 
-`vecstore.close` is the **only** path to disk.  Nothing is persisted before it
-runs, so a long-lived process should close and reopen the store at the points
-where it needs its writes to survive a crash.
+### vecstore.flush(vs: VecStore): bool
+
+Writes every collection with unsaved changes to disk **now**, and keeps the
+store and its collections open.  Each file is written to
+`{data_dir}/{name}.vecs.tmp`, synced to storage, and renamed over
+`{data_dir}/{name}.vecs`, so a process that dies during the write leaves the
+previous complete file rather than a truncated one.
+
+Returns `true` when every changed collection was written (and when nothing had
+changed).  Returns `false` if any write failed; that collection keeps its
+unsaved changes, and the next `vecstore.flush` or `vecstore.close` tries again.
+
+**Example:**
+```toke
+let saved=vecstore.flush(vs);
+```
+
+## Durability: flush or close is required
+
+**Writes are not durable until `vecstore.flush` or `vecstore.close` returns.**
+`upsert`, `delete` and `deletebefore` change memory only.  There is no
+background writer, no write threshold and no timer: a process that crashes, is
+killed, or exits without closing loses every change made since its last
+`flush` or `close`.  That is deliberate (story 136.15) — durability happens at
+a call you can see in your own source, never at a moment you cannot predict.
+
+So: call `vecstore.flush` at each point where the writes so far must survive a
+crash, and call `vecstore.close` before the process ends.
+`test/conform/C435_vecstore_flush_durable.sh` kills a writer with `SIGKILL`
+after a flush and reads the store back in a new process: the flushed entry is
+there, and the entries written after the flush — or to a store never flushed —
+are not.
 
 ---
 
@@ -116,8 +146,8 @@ where it needs its writes to survive a crash.
 
 Returns a handle for the named collection within `vs`.  If a backing file
 `{data_dir}/{name}.vecs` exists it is loaded into memory.  If the file does
-not exist an empty collection is created in memory (it will be written to disk
-on `vecstore.close`).
+not exist an empty collection is created in memory (it is written to disk by
+the next `vecstore.flush` or `vecstore.close` after a change).
 
 Returns `VecErr.IoErr` if the backing file exists but cannot be parsed.
 
@@ -135,8 +165,8 @@ Inserts a new entry or replaces an existing entry with the given `id`.
 dimension is taken from the array and is **not** a parameter.  `payload` is an
 arbitrary string stored alongside the vector (typically serialised JSON).
 
-Entries are held in memory until `vecstore.close` writes them out — see
-Persistence Format below.  A consumer that never calls `vecstore.close` loses
+Entries are held in memory until `vecstore.flush` or `vecstore.close` writes
+them out — see Durability above.  A consumer that calls neither loses
 everything it wrote.
 
 The embedding is normalised to unit length on storage.  Cosine similarity
@@ -217,8 +247,8 @@ io.println(str.concat("collection has ";str.concat(str.fromint(n);" entries")));
 
 ## Persistence Format
 
-Each collection is persisted to `{data_dir}/{name}.vecs` when the store is
-closed.  The binary file layout is:
+Each collection is persisted to `{data_dir}/{name}.vecs` by `vecstore.flush`
+and `vecstore.close` (written to `{name}.vecs.tmp`, synced, then renamed).  The binary file layout is:
 
 ```
 Header (24 bytes):
@@ -272,7 +302,10 @@ f=main():i64{
     io.println(str.concat(r.id;str.concat(" score=";str.fromfloat(r.score))))
   };
 
-  (* Without this close nothing above reaches disk. *)
+  (* Nothing above is on disk until this flush returns true. *)
+  let saved=vs.flush(s);
+  io.println(str.concat("saved=";str.fromint(saved)));
+
   vs.close(s);
   <0
 };

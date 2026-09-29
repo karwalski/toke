@@ -72,6 +72,15 @@ int64_t tk_vecstore_close_w(int64_t store) {
     return 0;
 }
 
+/* vecstore.flush(store) — 136.15: write every dirty collection to disk now and
+ * keep the store open.  Owner decision 2026-09-22: durability is an explicit
+ * call, never a threshold or a timer, so a caller can see when its data is
+ * safe.  Returns true only when every dirty collection reached disk. */
+int64_t tk_vecstore_flush_w(int64_t store) {
+    if (!store) return 0;
+    return (int64_t)vecstore_flush((TkVecStore *)(intptr_t)store);
+}
+
 /* vecstore.count(collection) — number of entries currently in the collection */
 int64_t tk_vecstore_count_w(int64_t coll) {
     if (!coll) return 0;
