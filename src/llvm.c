@@ -5786,6 +5786,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 } else if (!strcmp(src_ty, "i8*")) {
                     /* str -> str: identity */
                     fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
+                } else if (!strcmp(src_ty, "i64") && expr_is_str_value(c, n->children[0])) {
+                    /* 127.229 (5): a string the checker typed str but that
+                     * crosses the i64 ABI (`t.slice(a;b)`, a str-returning
+                     * call, a let bound to one) is the same string -- it
+                     * is not an integer to print.  The int -> str branch
+                     * below printed its address. */
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", t, v);
                 } else if (!strcmp(src_ty, "i64")
                            && (call_declares_bool(c, n->children[0])
                                || field_declares_bool(c, n->children[0]))) {
