@@ -1,14 +1,13 @@
 /*
- * metrics.c — Observability, metrics, and distributed tracing for std.http.
+ * metrics.c — in-process request counters and their Prometheus rendering.
  *
- * Epic 66: request IDs, Prometheus metrics, histograms, upstream latency,
- * cache metrics, W3C Trace Context, B3 tracing.
+ * Epic 66: Prometheus metrics, histograms, upstream latency, cache metrics.
+ * (Request IDs and W3C/B3 tracing were removed unused in 121.43.)
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <stdint.h>
 
 /* ── Access / error log writers: removed (121.41) ──────────────────────
@@ -28,34 +27,17 @@ void metrics_reopen_logs(void)
 {
 }
 
-/* ── Request ID generation (66.1.4) ──────────────────────────────────── */
-
-/* Generate a UUID v4 string. Caller owns returned string. */
-char *metrics_gen_request_id(void)
-{
-    uint8_t bytes[16];
-    /* Use random bytes */
-    FILE *f = fopen("/dev/urandom", "r");
-    if (!f) return NULL;
-    size_t r = fread(bytes, 1, 16, f);
-    fclose(f);
-    if (r != 16) return NULL;
-
-    /* Set version (4) and variant (10xx) bits */
-    bytes[6] = (bytes[6] & 0x0F) | 0x40;
-    bytes[8] = (bytes[8] & 0x3F) | 0x80;
-
-    char *id = malloc(37);
-    if (!id) return NULL;
-    snprintf(id, 37,
-             "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
-             "%02x%02x%02x%02x%02x%02x",
-             bytes[0], bytes[1], bytes[2], bytes[3],
-             bytes[4], bytes[5], bytes[6], bytes[7],
-             bytes[8], bytes[9], bytes[10], bytes[11],
-             bytes[12], bytes[13], bytes[14], bytes[15]);
-    return id;
-}
+/* ── Request IDs, W3C Trace Context and B3 tracing: removed (121.43) ───
+ *
+ * metrics_gen_request_id, metrics_parse_traceparent, metrics_new_trace,
+ * metrics_build_traceparent and metrics_parse_b3 (66.1.4, 66.3.1, 66.3.2)
+ * had no caller: no stdlib module, no glue wrapper, no .tki entry, nothing in
+ * toke-ooke.  They read /dev/urandom through stdio rather than the runtime's
+ * tk_random_bytes, and parse_traceparent copied the trace and parent ids
+ * without checking they were hex.  Deleted rather than fixed, the way 121.41
+ * removed this file's log writers; git history holds the code.  What remains
+ * is the counter set metrics_prometheus renders (C133, C208) and the empty
+ * metrics_reopen_logs server_ops.c still calls. */
 
 /* ── In-process metrics counters (66.2.1) ────────────────────────────── */
 
@@ -246,125 +228,4 @@ char *metrics_prometheus(void)
      * is a wrong answer, not a short one: refuse rather than return it. */
     if (off < 0 || (size_t)off >= cap) { free(buf); return NULL; }
     return buf;
-}
-
-/* ── W3C Trace Context (66.3.1) ──────────────────────────────────────── */
-
-typedef struct {
-    char trace_id[33];  /* 16 bytes hex = 32 chars + NUL */
-    char span_id[17];   /* 8 bytes hex = 16 chars + NUL */
-    char parent_id[17];
-    int  sampled;
-} TraceContext;
-
-/* Parse traceparent header: version-trace_id-parent_id-flags */
-int metrics_parse_traceparent(const char *header, TraceContext *ctx)
-{
-    if (!header || !ctx) return -1;
-    memset(ctx, 0, sizeof(*ctx));
-
-    /* Format: 00-<32 hex trace-id>-<16 hex parent-id>-<2 hex flags> */
-    if (strlen(header) < 55) return -1;
-    if (header[2] != '-' || header[35] != '-' || header[52] != '-')
-        return -1;
-
-    memcpy(ctx->trace_id, header + 3, 32);
-    ctx->trace_id[32] = '\0';
-    memcpy(ctx->parent_id, header + 36, 16);
-    ctx->parent_id[16] = '\0';
-    ctx->sampled = (header[54] == '1');
-
-    /* Generate new span ID */
-    FILE *f = fopen("/dev/urandom", "r");
-    if (f) {
-        uint8_t bytes[8];
-        if (fread(bytes, 1, 8, f) == 8) {
-            snprintf(ctx->span_id, sizeof(ctx->span_id),
-                     "%02x%02x%02x%02x%02x%02x%02x%02x",
-                     bytes[0], bytes[1], bytes[2], bytes[3],
-                     bytes[4], bytes[5], bytes[6], bytes[7]);
-        }
-        fclose(f);
-    }
-
-    return 0;
-}
-
-/* Generate a new trace context */
-int metrics_new_trace(TraceContext *ctx)
-{
-    if (!ctx) return -1;
-    memset(ctx, 0, sizeof(*ctx));
-
-    FILE *f = fopen("/dev/urandom", "r");
-    if (!f) return -1;
-
-    uint8_t bytes[24]; /* 16 for trace, 8 for span */
-    if (fread(bytes, 1, 24, f) != 24) { fclose(f); return -1; }
-    fclose(f);
-
-    snprintf(ctx->trace_id, sizeof(ctx->trace_id),
-             "%02x%02x%02x%02x%02x%02x%02x%02x"
-             "%02x%02x%02x%02x%02x%02x%02x%02x",
-             bytes[0], bytes[1], bytes[2], bytes[3],
-             bytes[4], bytes[5], bytes[6], bytes[7],
-             bytes[8], bytes[9], bytes[10], bytes[11],
-             bytes[12], bytes[13], bytes[14], bytes[15]);
-
-    snprintf(ctx->span_id, sizeof(ctx->span_id),
-             "%02x%02x%02x%02x%02x%02x%02x%02x",
-             bytes[16], bytes[17], bytes[18], bytes[19],
-             bytes[20], bytes[21], bytes[22], bytes[23]);
-
-    ctx->sampled = 1;
-    return 0;
-}
-
-/* Build traceparent header value. Caller owns returned string. */
-char *metrics_build_traceparent(const TraceContext *ctx)
-{
-    if (!ctx) return NULL;
-    char *buf = malloc(64);
-    if (!buf) return NULL;
-    snprintf(buf, 64, "00-%s-%s-%02x",
-             ctx->trace_id, ctx->span_id, ctx->sampled ? 1 : 0);
-    return buf;
-}
-
-/* ── B3 trace support (66.3.2) ───────────────────────────────────────── */
-
-int metrics_parse_b3(const char *trace_id_hdr, const char *span_id_hdr,
-                      const char *parent_id_hdr, const char *sampled_hdr,
-                      TraceContext *ctx)
-{
-    if (!ctx) return -1;
-    memset(ctx, 0, sizeof(*ctx));
-
-    if (trace_id_hdr) {
-        strncpy(ctx->trace_id, trace_id_hdr, sizeof(ctx->trace_id) - 1);
-    }
-    if (span_id_hdr) {
-        strncpy(ctx->parent_id, span_id_hdr, sizeof(ctx->parent_id) - 1);
-    }
-    if (parent_id_hdr) {
-        /* parent_id from B3 becomes our reference */
-    }
-    if (sampled_hdr) {
-        ctx->sampled = (sampled_hdr[0] == '1');
-    }
-
-    /* Generate our own span ID */
-    FILE *f = fopen("/dev/urandom", "r");
-    if (f) {
-        uint8_t bytes[8];
-        if (fread(bytes, 1, 8, f) == 8) {
-            snprintf(ctx->span_id, sizeof(ctx->span_id),
-                     "%02x%02x%02x%02x%02x%02x%02x%02x",
-                     bytes[0], bytes[1], bytes[2], bytes[3],
-                     bytes[4], bytes[5], bytes[6], bytes[7]);
-        }
-        fclose(f);
-    }
-
-    return 0;
 }
