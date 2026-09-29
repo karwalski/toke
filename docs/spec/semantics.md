@@ -580,7 +580,28 @@ A map literal `@(k1:v1; k2:v2; ...)` is typed as follows:
    - If `type(vi) != V` and neither is `unknown`: `[errors.md E4043]`.
 4. The map literal type is `@($k:$v)`.
 
-### 10.1 Map iteration order
+### 10.1 Map lookup is fallible
+
+`m.get(k)` on a map `@($k:$v)` is a lookup that can fail (story 127.30,
+owner decision 2026-09-22: error unions, not a 0 sentinel). It produces its
+result on the two channels of an error union (runtime-abi.md §7):
+
+- **k present:** `$ok` with the stored value — including `0`, `0.0`, `false`
+  and `""`, which are values, not failures.
+- **k absent:** `$err`, with no payload (the key is the caller's own).
+
+`mt m.get(k){$ok:v …;$err:e …}` decides on the error channel, never on the
+value, and so does the let-bound spelling `let r=m.get(k); mt r{…}`. The
+non-matching spellings are `m.getor(k;d)` (the stored value, else `d`) and
+`m.contains(k)` (membership).
+
+As implemented, the checker gives `m.get(k)` the value type `$v`, as it does
+for every stdlib `T!Err` call: a use that does not consume the error channel
+(`m.get(k)+1`) type-checks and evaluates to the zero filler on a miss, and
+`!` on `m.get(k)` is `[errors.md E3020]`. Both are restrictions of the
+current checker, not of the lookup.
+
+### 10.2 Map iteration order
 
 `m.keys()` (and every other walk of a map's entries) visits keys in
 **insertion order**: the order in which each key was first stored, whether by

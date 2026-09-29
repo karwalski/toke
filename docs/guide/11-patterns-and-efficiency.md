@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `6dad9e907cfb`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `c42dcc38a16c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -100,7 +100,6 @@ f=main():i64{
 
 **Not this** — mut-flag ladder of independent ifs (`patterns/cond-elif-chain/c.tk`):
 
-<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -159,7 +158,6 @@ f=main():i64{
 
 **Not this** — flag soup: two ifs setting one mut (`patterns/cond-bool-combine/b.tk`):
 
-<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -283,7 +281,6 @@ f=main():i64{
 
 **Not this** — mut string flag overwritten by an if (`patterns/cond-bool-render/c.tk`):
 
-<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -825,7 +822,6 @@ f=main():i64{
 
 **Not this** — nested `s.concat` chain (`patterns/str-interp-vs-join/c.tk`):
 
-<!-- pattern-report: counter-example -->
 ```toke
 m=main;
 i=io:std.io;
@@ -2091,7 +2087,7 @@ This family covers collection queries.
 
 Read a map value, substituting a default when the key is missing.
 
-str-keyed maps. m.get(k) on a missing key returns 0 and mt treats the 0 sentinel as $err, so BOTH forms conflate a stored 0 with "missing"; there is no m.has (m.contains silently returns 0 for present keys) - 131.30 gap. The mt arm cannot appear inside a binary expression (t=t+mt ... is E2002); bind it with let first.
+str-keyed maps. m.get(k) is a fallible lookup (127.30): mt decides on the error slot, so form a takes $ok for a stored 0 and $err only for a missing key, while form b's v==0 test still conflates a stored 0 with "missing" (the bench stores no 0, so both print the same total). m.getor(k;d) is the non-mt spelling of form a and m.contains(k) the membership test. The mt arm cannot appear inside a binary expression (t=t+mt ... is E2002); bind it with let first.
 
 **Write this** — let v=mt m.get(k) {$ok:x x;$err:e d} (`patterns/coll-lookup-default/a.tk`):
 

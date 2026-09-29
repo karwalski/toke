@@ -598,7 +598,12 @@ through the i64 ABI like any other handle. Keys and values are i64-ABI words.
 
 The index hash is SipHash-1-3 under a per-process random key (121.32), so
 colliding key sets cannot be precomputed; iteration walks `entries` and never
-depends on it (semantics.md §10.1).
+depends on it (semantics.md §10.2).
+
+`tk_map_get` (`m.get(k)`) is a slot call (127.30): it stores `0` in
+`@tk_current_error` on a hit and `1` (failed, no payload) on a miss, returning
+the value or the `0` filler (§7.1–7.2). A match on it decides on the slot, so
+a stored `0` is `$ok` (semantics.md §10.1).
 
 ---
 

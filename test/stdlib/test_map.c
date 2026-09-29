@@ -9,7 +9,9 @@
  *          127.20 (int-keyed maps via tk_map_new_int; RT006 trap is exit(1)
  *          so it is covered by the standalone repro, not in-process here),
  *          121.32 (keyed hash: a set of keys built to collide under the old
- *          unkeyed FNV-1a builds in linear time, not quadratic)
+ *          unkeyed FNV-1a builds in linear time, not quadratic),
+ *          127.30 (tk_map_get keeps the error slot truthful: 0 on a hit,
+ *          including a stored 0, and 1 on a miss)
  */
 
 #include <stdio.h>
@@ -31,6 +33,13 @@ int64_t tk_array_append_w(int64_t arr, int64_t elem);
 /* collections_glue.c also defines tk_arr_join_w, which calls into str_glue.c;
  * the map runtime does not, so stub it to keep this test's link line short. */
 int64_t tk_str_join_w(int64_t sep, int64_t arr) { (void)sep; (void)arr; return 0; }
+
+/* 127.30: tk_map_get writes the error slot, which tk_runtime.c defines. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Thread_local int64_t tk_current_error = 0;
+#else
+__thread int64_t tk_current_error = 0;
+#endif
 
 static int failures = 0;
 
@@ -201,6 +210,20 @@ int main(void) {
            tk_map_contains_w(S(big), S("k100000")) == 0, "str contains after 100k-key growth");
     ASSERT(tk_map_contains_w(S(tk_map_new()), S("x")) == 0, "contains on empty map -> 0");
     ASSERT(tk_map_contains_w(0, S("x")) == 0, "NULL map contains -> 0");
+
+    /* ── 127.30: the slot, not the value, says whether the key was there ── */
+    tk_current_error = 0x5eed;
+    ASSERT(tk_map_get(gm, S("zero")) == 0 && tk_current_error == 0, "127.30 stored 0: value 0, slot clear");
+    tk_current_error = 0x5eed;
+    ASSERT(tk_map_get(gm, S("hit")) == 42 && tk_current_error == 0, "127.30 hit: slot clear");
+    tk_current_error = 0;
+    ASSERT(tk_map_get(gm, S("nope")) == 0 && tk_current_error == 1, "127.30 miss: filler 0, slot 1");
+    tk_current_error = 0x5eed;
+    ASSERT(tk_map_get(gim, 8) == 0 && tk_current_error == 0, "127.30 int stored 0: slot clear");
+    tk_current_error = 0;
+    ASSERT(tk_map_get(gim, 9) == 0 && tk_current_error == 1, "127.30 int miss: slot 1");
+    tk_current_error = 0;
+    ASSERT(tk_map_get(NULL, S("a")) == 0 && tk_current_error == 1, "127.30 NULL map: slot 1");
 
     /* ── NULL map handle ── */
     ASSERT(tk_map_get(NULL, S("a")) == 0, "NULL map get -> 0");

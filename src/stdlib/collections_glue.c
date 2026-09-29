@@ -8,6 +8,7 @@
 
 #include "collections.h"
 #include "tk_array.h"
+#include "tk_runtime.h"   /* 127.30: tk_current_error (runtime-abi.md §7.2) */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,7 +107,7 @@ typedef struct {
  * is insertion order (overwrite keeps the first position) -- the hash only
  * chooses the slot a lookup starts from.  So output never depends on the key,
  * the key cannot be read back out of iteration order, and two runs of one
- * program print the same thing (semantics.md, "Map iteration order").
+ * program print the same thing (semantics.md §10.2).
  *
  * The key is initialised on first use, once, under an atomic state word:
  * maps are created on std.task pool threads too, and two threads that each
@@ -285,12 +286,31 @@ void tk_map_put(void *m_ptr, int64_t key, int64_t val) {
     tk_map_slot_insert(m, e);
 }
 
+/*
+ * tk_map_get — `m.get(k)`, a fallible lookup (127.30, owner decision
+ * 2026-09-22: error unions, not a 0 sentinel).
+ *
+ * THE DEFECT.  A missing key returned 0 and so did a stored 0, and nothing
+ * else was returned: `mt m.get(k){$ok:v …;$err:e …}` decided on the value, so
+ * a key holding 0 (or "" or false) took the $err arm exactly as a missing
+ * key did — the substitute-a-default-for-an-unestablished-fact class.
+ *
+ * THE FIX.  The lookup keeps @tk_current_error truthful on every return,
+ * as the 127.193 stdlib slot wrappers do: 0 on a hit, 1 (failed, no
+ * payload — the key is the caller's own) on a miss.  llvm.c's
+ * classify_fallible_call() treats a map `.get` as a slot call, so the match,
+ * the let-bound match and `!` all decide on the slot, never the value.
+ * The value channel still carries 0 on a miss (runtime-abi.md §7.1: the zero
+ * filler), which is what an unconsumed `m.get(k)` evaluates to.
+ */
 int64_t tk_map_get(void *m_ptr, int64_t key) {
     TkMapImpl *m = (TkMapImpl *)m_ptr;
-    if (!m) return 0;
+    if (!m) { tk_current_error = 1; return 0; }
     tk_map_check_key(m, key);
     int e = tk_map_find(m, key, tk_map_hash(m, key));
-    return e >= 0 ? m->entries[e].val : 0;             /* missing -> 0, as on 2.8.0 */
+    if (e < 0) { tk_current_error = 1; return 0; }       /* miss: filler 0, slot says so */
+    tk_current_error = 0;
+    return m->entries[e].val;
 }
 
 /* ── Array/map instance method wrappers ──────────────────────────────── */

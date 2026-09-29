@@ -3178,6 +3178,77 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
  * (e.g. zext i1 to i64 for arithmetic, ptrtoint for comparisons).
  */
 /*
+ * index_base_is_map — 127.30.  1 when a NODE_INDEX_EXPR (`x.get(k)`) on this
+ * base lowers to tk_map_get in the emitter's general index path.  Moved here
+ * verbatim from emit_expr's NODE_INDEX_EXPR case so the emitter and
+ * classify_fallible_call() read one definition.
+ */
+static int index_base_is_map(Ctx *c, const Node *base)
+{
+    if (!base) return 0;
+    /* Direct map variable */
+    if (base->kind == NODE_IDENT && recv_is_map(c, base))
+        return 1;  /* 127.46: uniquified LLVM names too */
+    /* 127.224 item 7: any other base the checker typed a map — a call
+     * into another user module used in place, `lib.mk().get("a")`,
+     * lowered as an array index and trapped RT003. */
+    if (base->kind != NODE_IDENT && base->rtype && base->rtype->kind == TY_MAP)
+        return 1;
+    /* Field access result: check if the field type starts with "@(" (map) */
+    if (base->kind == NODE_FIELD_EXPR && base->child_count >= 2) {
+        char fn[128]; tok_cp(c->src, base->children[1], fn, sizeof fn);
+        const StructInfo *bsi = resolve_base_struct(c, base->children[0]);
+        if (bsi) {
+            for (int fi = 0; fi < bsi->field_count; fi++) {
+                if (!strcmp(bsi->field_names[fi], fn)) {
+                    /* Use the field_is_map flag set during struct registration.
+                     * Only locally-defined structs with NODE_MAP_TYPE get this.
+                     * Cross-module .tki imports don't distinguish @ (array vs map). */
+                    return bsi->field_is_map[fi] ? 1 : 0;
+                }
+            }
+        } else {
+            /* 113.B.20: base struct type untracked (item from col.get(i),
+             * a chained access, or a match result). Mirror the
+             * NODE_FIELD_EXPR heuristic fallback: search all registered
+             * structs for a map field named `fn`, so `item.meta.get(k)`
+             * lowers to tk_map_get instead of array-GEP (segfault).
+             * Correct when field names are unique across structs. */
+            for (int _si = 0; _si < c->struct_count; _si++)
+                for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
+                    if (!strcmp(c->structs[_si].field_names[_fi], fn))
+                        return c->structs[_si].field_is_map[_fi] ? 1 : 0;
+        }
+    }
+    return 0;
+}
+
+/*
+ * index_is_map_get — 127.30.  1 when `x.get(k)` (a NODE_INDEX_EXPR) lowers to
+ * a call of tk_map_get, which keeps @tk_current_error truthful (0 hit, 1
+ * miss).  Mirrors the order of emit_expr's NODE_INDEX_EXPR case: a Vec base
+ * and an import alias are routed elsewhere before the map test, so they are
+ * excluded here first.  Anything this answers 0 for stays on the value
+ * sentinel, exactly as before the story.
+ */
+static int index_is_map_get(Ctx *c, const Node *n)
+{
+    if (!n || n->kind != NODE_INDEX_EXPR || n->child_count < 2 || !n->children[0])
+        return 0;
+    const Node *base = n->children[0];
+    if (base->kind == NODE_IDENT) {
+        char nb[128]; tok_cp(c->src, base, nb, sizeof nb);
+        const char *vst = ptr_local_struct_type(c, get_llvm_name(c, nb));
+        if (vst && !strcmp(vst, "Vec")) return 0;
+        for (int ii = 0; ii < c->import_count; ii++)
+            if (!strcmp(c->imports[ii].alias, nb) && !alias_is_value(c, base))
+                return 0;
+        return recv_is_map(c, base);
+    }
+    return index_base_is_map(c, base);
+}
+
+/*
  * 135.16 — the fallible-call classification, and the registry that carries it
  * across a `let`.
  *
@@ -3231,6 +3302,11 @@ static void classify_fallible_call(Ctx *c, const Node *call,
     *out_uce = 0;
     *out_zok = 0;
     *out_err_type = NULL;
+    /* 127.30: `m.get(k)` is a fallible lookup on the error channel. */
+    if (call && call->kind == NODE_INDEX_EXPR) {
+        if (index_is_map_get(c, call)) *out_uce = 1;
+        return;
+    }
     if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return;
     const Node *sc = call->children[0];
     if (!sc) return;
@@ -6141,51 +6217,10 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Check if base is a map (field access on a struct whose field type is a map).
          * If so, emit tk_map_get instead of array GEP. */
         {
-            int base_is_map = 0;
-            /* Direct map variable */
-            if (n->children[0]->kind == NODE_IDENT && recv_is_map(c, n->children[0]))
-                base_is_map = 1;  /* 127.46: uniquified LLVM names too */
-            /* 127.224 item 7: any other base the checker typed a map — a call
-             * into another user module used in place, `lib.mk().get("a")`,
-             * lowered as an array index and trapped RT003. */
-            if (!base_is_map && n->children[0]->kind != NODE_IDENT &&
-                n->children[0]->rtype && n->children[0]->rtype->kind == TY_MAP)
-                base_is_map = 1;
-            /* Field access result: check if the field type starts with "@(" (map) */
-            if (!base_is_map && n->children[0]->kind == NODE_FIELD_EXPR &&
-                n->children[0]->child_count >= 2) {
-                char fn[128]; tok_cp(c->src, n->children[0]->children[1], fn, sizeof fn);
-                const StructInfo *bsi = resolve_base_struct(c, n->children[0]->children[0]);
-                if (bsi) {
-                    for (int fi = 0; fi < bsi->field_count; fi++) {
-                        if (!strcmp(bsi->field_names[fi], fn)) {
-                            /* Use the field_is_map flag set during struct registration.
-                             * Only locally-defined structs with NODE_MAP_TYPE get this.
-                             * Cross-module .tki imports don't distinguish @ (array vs map). */
-                            if (bsi->field_is_map[fi]) {
-                                base_is_map = 1;
-                            }
-                            break;
-                        }
-                    }
-                } else {
-                    /* 113.B.20: base struct type untracked (item from col.get(i),
-                     * a chained access, or a match result). Mirror the
-                     * NODE_FIELD_EXPR heuristic fallback: search all registered
-                     * structs for a map field named `fn`, so `item.meta.get(k)`
-                     * lowers to tk_map_get instead of array-GEP (segfault).
-                     * Correct when field names are unique across structs. */
-                    for (int _si = 0; _si < c->struct_count; _si++) {
-                        int _hit = 0;
-                        for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
-                            if (!strcmp(c->structs[_si].field_names[_fi], fn)) {
-                                if (c->structs[_si].field_is_map[_fi]) base_is_map = 1;
-                                _hit = 1; break;
-                            }
-                        if (_hit) break;
-                    }
-                }
-            }
+            /* 127.30: one predicate, shared with classify_fallible_call(),
+             * so the call that sets the slot and the match that reads it
+             * cannot disagree about which `.get` is a map lookup. */
+            int base_is_map = index_base_is_map(c, n->children[0]);
             if (base_is_map) {
                 int base_map = emit_expr(c, n->children[0]);
                 const char *mbty = expr_llvm_type(c, n->children[0]);
@@ -7042,7 +7077,7 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!str_not_plain) {
             const Node *s0 = n->children[0];
             if (s0->rtype && s0->rtype->kind == TY_ERROR_TYPE) str_not_plain = 1;
-            else if (s0->kind == NODE_CALL_EXPR) {
+            else if (s0->kind == NODE_CALL_EXPR || s0->kind == NODE_INDEX_EXPR) {   /* 127.30 */
                 int fu = 0, fz = 0; const char *fe = NULL;
                 classify_fallible_call(c, s0, &fu, &fz, &fe);
                 if (fu || fz || fe) str_not_plain = 1;
@@ -7193,7 +7228,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * derives this below, from the call. */
         const char *bound_err_type = NULL;
         const char *call_err_payload_type = NULL;
-        if (n->children[0]->kind == NODE_CALL_EXPR) {
+        if (n->children[0]->kind == NODE_CALL_EXPR ||
+            n->children[0]->kind == NODE_INDEX_EXPR) {                /* 127.30 */
             classify_fallible_call(c, n->children[0], &use_current_error,
                                    &zero_is_ok, &call_err_payload_type);
         } else if (n->children[0]->kind == NODE_IDENT) {
