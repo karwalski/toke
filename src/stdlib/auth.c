@@ -405,16 +405,26 @@ JwtVerifyResult auth_jwtverify(const char *token, ByteArray secret)
         return result;
     }
 
-    /* Decode provided signature */
-    ByteArray provided = encoding_b64urldecode(part[2]);
-
+    /* 121.43 (3): compare the signature as TEXT, against the canonical
+     * base64url encoding of the expected MAC.  This decoded part[2] and
+     * compared bytes, and the decoder ignores the low bits of the final
+     * character (43 chars carry 258 bits for a 256-bit MAC), so a token whose
+     * last character was changed only in those two padding bits -- a
+     * different string -- verified.  test_auth's "tampered signature" case
+     * flips bit 0 of that character and failed about one run in six.  RFC
+     * 7515 2 requires the unpadded canonical form, so there is exactly one
+     * accepted spelling of each signature. */
+    const char *expected_b64 = encoding_b64urlencode(expected);
     int sig_ok = 0;
-    if (provided.data && provided.len == expected.len) {
-        sig_ok = ct_memeq(provided.data, expected.data, (size_t)expected.len);
+    if (expected_b64) {
+        size_t el = strlen(expected_b64);
+        if (strlen(part[2]) == el)
+            sig_ok = ct_memeq((const uint8_t *)part[2],
+                              (const uint8_t *)expected_b64, el);
+        free((void *)expected_b64);
     }
 
     free((void *)expected.data);
-    free((void *)provided.data);
     free(part[0]);
     free(part[2]);
 
@@ -528,7 +538,10 @@ int auth_jwtexpired(const char *token)
 
     if (!has_exp) return 0;   /* no expiry → not expired */
 
-    return exp_val < (int64_t)time(NULL) ? 1 : 0;
+    /* 121.43 (7): expired ON or after exp, the rule auth_jwtverify applies
+     * (RFC 7519 4.1.4).  This was `exp < now`, so at exactly exp jwtverify
+     * rejected a token that jwtexpired still called live. */
+    return exp_val <= (int64_t)time(NULL) ? 1 : 0;
 }
 
 /* -----------------------------------------------------------------------
@@ -876,10 +889,21 @@ static void sha1_hash(const uint8_t *data, size_t len, uint8_t out[20])
  * Story: 30.2.2
  * ----------------------------------------------------------------------- */
 
-static void hmac_sha1(const uint8_t *key, size_t key_len,
-                      const uint8_t *data, size_t data_len,
-                      uint8_t out[20])
+/* 121.43 (4): the inner message is built on the stack, so there is no
+ * allocation to fail.  It was malloc'd, and on failure the function returned
+ * with `out` never written; auth_totpverify then truncated and compared
+ * twenty uninitialised stack bytes against the user's code.  The only caller
+ * hashes an 8-byte counter (RFC 4226 5.2); a longer message is refused with
+ * `out` zeroed and a non-zero return, and the caller fails closed. */
+#define HMAC_SHA1_MAX_MSG 64   /* > the 8-byte TOTP counter, one SHA-1 block */
+
+static int hmac_sha1(const uint8_t *key, size_t key_len,
+                     const uint8_t *data, size_t data_len,
+                     uint8_t out[20])
 {
+    memset(out, 0, 20);
+    if (data_len > HMAC_SHA1_MAX_MSG) return -1;
+
     uint8_t k_block[64];
     uint8_t k_hashed[20];
 
@@ -901,19 +925,12 @@ static void hmac_sha1(const uint8_t *key, size_t key_len,
     }
 
     /* inner = SHA1(ipad || data) */
+    uint8_t inner_msg[64 + HMAC_SHA1_MAX_MSG];
     size_t inner_len = 64 + data_len;
-    uint8_t *inner_msg = (uint8_t *)malloc(inner_len);
-    if (!inner_msg) {
-        tk_secure_zero(k_block, sizeof k_block); tk_secure_zero(k_hashed, sizeof k_hashed);
-        tk_secure_zero(ipad, sizeof ipad); tk_secure_zero(opad, sizeof opad);
-        return;
-    }
     memcpy(inner_msg, ipad, 64);
-    memcpy(inner_msg + 64, data, data_len);
+    if (data_len) memcpy(inner_msg + 64, data, data_len);
     uint8_t inner_hash[20];
     sha1_hash(inner_msg, inner_len, inner_hash);
-    tk_secure_zero(inner_msg, 64);
-    free(inner_msg);
 
     /* outer = SHA1(opad || inner_hash) */
     uint8_t outer_msg[64 + 20];
@@ -924,7 +941,9 @@ static void hmac_sha1(const uint8_t *key, size_t key_len,
     /* 121.20 (HYG-01): every copy of the TOTP secret. */
     tk_secure_zero(k_block, sizeof k_block); tk_secure_zero(k_hashed, sizeof k_hashed);
     tk_secure_zero(ipad, sizeof ipad); tk_secure_zero(opad, sizeof opad);
+    tk_secure_zero(inner_msg, sizeof inner_msg);
     tk_secure_zero(outer_msg, sizeof outer_msg); tk_secure_zero(inner_hash, sizeof inner_hash);
+    return 0;
 }
 
 /* -----------------------------------------------------------------------
@@ -1047,7 +1066,7 @@ int auth_totp_verify(const char *secret_b32, const char *token, int window)
 
         /* HMAC-SHA1(secret, counter). */
         uint8_t hmac[20];
-        hmac_sha1(key, key_len, msg, 8, hmac);
+        if (hmac_sha1(key, key_len, msg, 8, hmac) != 0) { matched = 0; break; }
 
         /* Dynamic truncation. */
         int offset = hmac[19] & 0x0F;

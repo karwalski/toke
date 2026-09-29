@@ -5,6 +5,7 @@
 
 #include "db.h"
 #include "capabilities.h"   /* 124.4c2: mysql connect is a net sink */
+#include "tk_secure.h"      /* 121.21: wipe the DSN password copy */
 #include <mysql/mysql.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,12 +76,27 @@ static int my_open(const char *dsn)
                     user, sizeof(user), pass, sizeof(pass),
                     db, sizeof(db));
 
-    if (!mysql_real_connect(g_mysql,
+    /* 121.21 (DAT-06): TLS is required.  No SSL option was set, so the
+     * client used TLS only when the server offered it and otherwise sent the
+     * DSN's credentials and every query in cleartext, with nothing to tell
+     * the operator.  A server without TLS is now refused.  (REQUIRED
+     * encrypts; it does not verify the server certificate -- the DSN has no
+     * CA setting yet.) */
+#if defined(MARIADB_BASE_VERSION) || defined(MARIADB_PACKAGE_VERSION_ID)
+    my_bool enforce = 1;
+    int opt_rc = mysql_options(g_mysql, MYSQL_OPT_SSL_ENFORCE, &enforce);
+#else
+    unsigned int ssl_mode = SSL_MODE_REQUIRED;
+    int opt_rc = mysql_options(g_mysql, MYSQL_OPT_SSL_MODE, &ssl_mode);
+#endif
+    MYSQL *ok = opt_rc == 0 ? mysql_real_connect(g_mysql,
             host[0] ? host : "localhost",
             user[0] ? user : NULL,
             pass[0] ? pass : NULL,
             db[0] ? db : NULL,
-            (unsigned)port, NULL, 0)) {
+            (unsigned)port, NULL, 0) : NULL;
+    tk_secure_zero(pass, sizeof pass);
+    if (!ok) {
         mysql_close(g_mysql); g_mysql = NULL;
         return -1;
     }
@@ -119,10 +135,64 @@ static Row my_collect_row(MYSQL_RES *res, MYSQL_ROW mysql_row)
     return row;
 }
 
+/* Internal struct for MySQL prepared statements, cast to/from TkStmt*. */
+typedef struct {
+    MYSQL_STMT   *stmt;
+    MYSQL_RES    *meta;       /* result metadata (column info)            */
+    unsigned int  col_count;  /* number of result columns                 */
+    MYSQL_BIND   *result_binds; /* bind structs for fetching results      */
+    char        **result_bufs;  /* buffers for column values              */
+    unsigned long *result_lens; /* actual lengths returned by fetch       */
+    my_bool      *result_nulls; /* null indicators for each column        */
+} MyStmt;
+
+/* 121.21 (DAT-03): a call with bind parameters goes through the prepared-
+ * statement path (my_prepare / my_bind / my_step below), so each value
+ * reaches the server out of band.  my_one / my_many / my_exec used to
+ * `(void)params` and send the SQL text alone through mysql_query(): the `?`s
+ * were never filled, and the parameterisation db.one / db.many / db.exec
+ * promise (ADR-0011) did not exist on MySQL.  A call with no parameters
+ * still uses mysql_query, so multi-statement text keeps working. */
+static StmtResult my_prepare(int conn_id, const char *sql);
+static BoolResult my_bind(TkStmt *stmt, StrArray params);
+static RowResult  my_step(TkStmt *stmt);
+static void       my_finalize(TkStmt *stmt);
+
+static void my_free_row(Row *row)
+{
+    for (uint64_t c = 0; c < row->col_count; c++) {
+        if (row->col_names)  free((void *)row->col_names[c]);
+        if (row->col_values) free((void *)row->col_values[c]);
+    }
+    free((void *)row->col_names);
+    free((void *)row->col_values);
+    free(row->col_nulls);
+}
+
+/* Prepare `sql`, bind `params` and execute.  NULL and *err set on failure. */
+static TkStmt *my_run_prepared(const char *sql, StrArray params, DbErr *err)
+{
+    StmtResult sr = my_prepare(0, sql);
+    if (sr.is_err) { *err = sr.err; return NULL; }
+    BoolResult br = my_bind(sr.ok, params);
+    if (br.is_err) { *err = br.err; my_finalize(sr.ok); return NULL; }
+    return sr.ok;
+}
+
 static RowResult my_one(const char *sql, StrArray params)
 {
     RowResult r; r.is_err = 0;
-    (void)params; /* TODO: use prepared statements for parameterised queries */
+    if (!g_mysql) { r.is_err = 1; r.err = my_err(DB_ERR_CONNECTION, "no connection"); return r; }
+
+    if (params.len > 0) {
+        TkStmt *st = my_run_prepared(sql, params, &r.err);
+        if (!st) { r.is_err = 1; return r; }
+        r = my_step(st);
+        my_finalize(st);
+        if (r.is_err && r.err.kind == DB_ERR_NOT_FOUND)
+            r.err = my_err(DB_ERR_NOT_FOUND, "no rows returned");
+        return r;
+    }
 
     if (mysql_query(g_mysql, sql) != 0) {
         r.is_err = 1;
@@ -153,7 +223,38 @@ static RowResult my_one(const char *sql, StrArray params)
 static RowArrayResult my_many(const char *sql, StrArray params)
 {
     RowArrayResult r; r.is_err = 0;
-    (void)params;
+    if (!g_mysql) { r.is_err = 1; r.err = my_err(DB_ERR_CONNECTION, "no connection"); return r; }
+
+    if (params.len > 0) {
+        TkStmt *st = my_run_prepared(sql, params, &r.err);
+        if (!st) { r.is_err = 1; return r; }
+        uint64_t cap = 8, n = 0;
+        Row *rows = malloc(cap * sizeof(Row));
+        if (!rows) { my_finalize(st); r.is_err = 1; r.err = my_err(DB_ERR_QUERY, "out of memory"); return r; }
+        for (;;) {
+            RowResult one = my_step(st);
+            if (one.is_err) {
+                if (one.err.kind == DB_ERR_NOT_FOUND) break;   /* done */
+                for (uint64_t i = 0; i < n; i++) my_free_row(&rows[i]);
+                free(rows); my_finalize(st);
+                r.is_err = 1; r.err = one.err; return r;
+            }
+            if (n == cap) {
+                Row *nr = realloc(rows, cap * 2 * sizeof(Row));
+                if (!nr) {
+                    my_free_row(&one.ok);
+                    for (uint64_t i = 0; i < n; i++) my_free_row(&rows[i]);
+                    free(rows); my_finalize(st);
+                    r.is_err = 1; r.err = my_err(DB_ERR_QUERY, "out of memory"); return r;
+                }
+                rows = nr; cap *= 2;
+            }
+            rows[n++] = one.ok;
+        }
+        my_finalize(st);
+        r.ok.data = rows; r.ok.len = n;
+        return r;
+    }
 
     if (mysql_query(g_mysql, sql) != 0) {
         r.is_err = 1;
@@ -169,10 +270,14 @@ static RowArrayResult my_many(const char *sql, StrArray params)
     }
 
     uint64_t nrows = mysql_num_rows(res);
-    Row *rows = malloc((size_t)nrows * sizeof(Row));
+    Row *rows = malloc((size_t)(nrows ? nrows : 1) * sizeof(Row));
+    if (!rows) {   /* 121.21: was unchecked */
+        mysql_free_result(res);
+        r.is_err = 1; r.err = my_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
     uint64_t i = 0;
     MYSQL_ROW row;
-    while ((row = mysql_fetch_row(res)) != NULL)
+    while (i < nrows && (row = mysql_fetch_row(res)) != NULL)
         rows[i++] = my_collect_row(res, row);
 
     r.ok.data = rows;
@@ -184,7 +289,15 @@ static RowArrayResult my_many(const char *sql, StrArray params)
 static U64Result my_exec(const char *sql, StrArray params)
 {
     U64Result r; r.is_err = 0; r.ok = 0;
-    (void)params;
+    if (!g_mysql) { r.is_err = 1; r.err = my_err(DB_ERR_CONNECTION, "no connection"); return r; }
+
+    if (params.len > 0) {
+        TkStmt *st = my_run_prepared(sql, params, &r.err);
+        if (!st) { r.is_err = 1; return r; }
+        r.ok = (uint64_t)mysql_stmt_affected_rows(((MyStmt *)st)->stmt);
+        my_finalize(st);
+        return r;
+    }
 
     if (mysql_query(g_mysql, sql) != 0) {
         r.is_err = 1;
@@ -241,31 +354,21 @@ static U64Result my_affected_rows(int conn_id)
     return r;
 }
 
+/* 121.21 (DAT-04): the name is a bound parameter, as in the SQLite and
+ * Postgres backends.  It was formatted into the SQL between quotes with no
+ * escaping, so `x' OR '1'='1` answered "exists" for any name. */
 static int my_table_exists(int conn_id, const char *name)
 {
     (void)conn_id;
-    if (!g_mysql) return 0;
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "SELECT 1 FROM information_schema.tables "
-        "WHERE table_schema=DATABASE() AND table_name='%s' LIMIT 1", name);
-    if (mysql_query(g_mysql, sql) != 0) return 0;
-    MYSQL_RES *res = mysql_store_result(g_mysql);
-    int exists = (res && mysql_num_rows(res) > 0);
-    if (res) mysql_free_result(res);
-    return exists;
+    if (!g_mysql || !name) return 0;
+    const char *one[1] = { name };
+    StrArray params = { one, 1 };
+    RowResult r = my_one("SELECT 1 FROM information_schema.tables "
+                         "WHERE table_schema=DATABASE() AND table_name=? LIMIT 1", params);
+    if (r.is_err) return 0;
+    my_free_row(&r.ok);
+    return 1;
 }
-
-/* Internal struct for MySQL prepared statements, cast to/from TkStmt*. */
-typedef struct {
-    MYSQL_STMT   *stmt;
-    MYSQL_RES    *meta;       /* result metadata (column info)            */
-    unsigned int  col_count;  /* number of result columns                 */
-    MYSQL_BIND   *result_binds; /* bind structs for fetching results      */
-    char        **result_bufs;  /* buffers for column values              */
-    unsigned long *result_lens; /* actual lengths returned by fetch       */
-    my_bool      *result_nulls; /* null indicators for each column        */
-} MyStmt;
 
 static StmtResult my_prepare(int conn_id, const char *sql)
 {
@@ -293,6 +396,11 @@ static StmtResult my_prepare(int conn_id, const char *sql)
     }
 
     MyStmt *s = calloc(1, sizeof(MyStmt));
+    if (!s) {   /* 121.21: was unchecked */
+        mysql_stmt_close(raw);
+        r.is_err = 1; r.err = my_err(DB_ERR_QUERY, "out of memory");
+        return r;
+    }
     s->stmt = raw;
 
     /* Prepare result binding metadata if this is a SELECT-style query. */
@@ -322,6 +430,12 @@ static StmtResult my_prepare(int conn_id, const char *sql)
     return r;
 }
 
+/* Bind `params` to the statement's placeholders and execute it.
+ * 121.21: the placeholder count must equal the parameter count (binding
+ * fewer makes libmysql read past the array); a failed bind is returned
+ * instead of executing anyway; and a statement with no parameters is
+ * executed too -- it used to return before mysql_stmt_execute, so a
+ * prepared statement without `?`s never ran. */
 static BoolResult my_bind(TkStmt *stmt, StrArray params)
 {
     BoolResult r; r.is_err = 0; r.ok = 1;
@@ -332,22 +446,36 @@ static BoolResult my_bind(TkStmt *stmt, StrArray params)
     }
     MyStmt *s = (MyStmt *)stmt;
 
-    if (params.len == 0) return r;
-
-    MYSQL_BIND *binds = calloc(params.len, sizeof(MYSQL_BIND));
-    unsigned long *lengths = calloc(params.len, sizeof(unsigned long));
-    for (uint64_t i = 0; i < params.len; i++) {
-        lengths[i] = (unsigned long)strlen(params.data[i]);
-        binds[i].buffer_type   = MYSQL_TYPE_STRING;
-        binds[i].buffer        = (void *)params.data[i];
-        binds[i].buffer_length = lengths[i];
-        binds[i].length        = &lengths[i];
-        binds[i].is_null       = NULL;
+    if ((uint64_t)mysql_stmt_param_count(s->stmt) != params.len) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, "parameter count does not match the statement's placeholders");
+        return r;
     }
 
-    if (mysql_stmt_bind_param(s->stmt, binds) != 0) {
-        r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+    MYSQL_BIND *binds = NULL;
+    unsigned long *lengths = NULL;
+    if (params.len > 0) {
+        binds = calloc(params.len, sizeof(MYSQL_BIND));
+        lengths = calloc(params.len, sizeof(unsigned long));
+        if (!binds || !lengths) {
+            free(binds); free(lengths);
+            r.is_err = 1; r.err = my_err(DB_ERR_QUERY, "out of memory");
+            return r;
+        }
+        for (uint64_t i = 0; i < params.len; i++) {
+            lengths[i] = (unsigned long)strlen(params.data[i]);
+            binds[i].buffer_type   = MYSQL_TYPE_STRING;
+            binds[i].buffer        = (void *)params.data[i];
+            binds[i].buffer_length = lengths[i];
+            binds[i].length        = &lengths[i];
+            binds[i].is_null       = NULL;
+        }
+        if (mysql_stmt_bind_param(s->stmt, binds) != 0) {
+            r.is_err = 1;
+            r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+            free(lengths); free(binds);
+            return r;
+        }
     }
 
     if (mysql_stmt_execute(s->stmt) != 0) {

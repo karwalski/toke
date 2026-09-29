@@ -74,6 +74,15 @@ void db_close(void)
     (void)db_close_conn(0);
 }
 
+/* One message buffer per thread for errors this file composes itself; a
+ * DbErr's msg is valid until the next db call on the same thread, as the
+ * sqlite3_errmsg pointers it otherwise carries always were. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+static _Thread_local char g_errbuf[512];
+#else
+static __thread char g_errbuf[512];
+#endif
+
 static DbErr make_err(DbErrKind kind, const char *msg)
 {
     DbErr e; e.kind = kind; e.msg = msg; return e;
@@ -173,8 +182,20 @@ RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params)
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, "out of memory");
         return res;
     }
-    for (uint64_t i = 0; i < params.len; i++)
-        sqlite3_bind_text(stmt, (int)(i + 1), params.data[i], -1, SQLITE_STATIC);
+    /* 121.21: a bind that fails (more params than `?`s: SQLITE_RANGE) is an
+     * error, as it is in db_one/db_exec's bind_and_step.  It was ignored, so
+     * db.many ran the query with the unbound placeholders as NULL. */
+    for (uint64_t i = 0; i < params.len; i++) {
+        if (sqlite3_bind_text(stmt, (int)(i + 1), params.data[i], -1,
+                              SQLITE_STATIC) != SQLITE_OK) {
+            snprintf(g_errbuf, sizeof g_errbuf, "db.many: parameter %llu: %s",
+                     (unsigned long long)(i + 1), sqlite3_errmsg(g_db));
+            sqlite3_finalize(stmt);
+            free(rows);
+            res.is_err = 1; res.err = make_err(DB_ERR_QUERY, g_errbuf);
+            return res;
+        }
+    }
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         if (count == cap) {
@@ -223,15 +244,6 @@ static const char *skip_sql_blank(const char *p)
         return p;
     }
 }
-
-/* One message buffer per thread for errors this file composes itself; a
- * DbErr's msg is valid until the next db call on the same thread, as the
- * sqlite3_errmsg pointers it otherwise carries always were. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-static _Thread_local char g_errbuf[512];
-#else
-static __thread char g_errbuf[512];
-#endif
 
 /* 138.6: db.exec runs EVERY statement it is given, or refuses.
  *
@@ -396,6 +408,12 @@ StmtResult db_prepare(int conn_id, const char *sql)
         return res;
     }
     TkStmt *s = malloc(sizeof(TkStmt));
+    if (!s) {   /* 121.21: was unchecked -- s->stmt through NULL */
+        sqlite3_finalize(raw);
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, "out of memory");
+        return res;
+    }
     s->stmt = raw;
     s->db   = db;
     res.ok = s;
@@ -465,12 +483,15 @@ static BoolResult exec_simple(int conn_id, const char *sql)
     }
     char *errmsg = NULL;
     if (sqlite3_exec(db, sql, NULL, NULL, &errmsg) != SQLITE_OK) {
+        /* 121.21 (DAT-08): copy the message and give sqlite its allocation
+         * back.  It was stored in the DbErr and never sqlite3_free'd, so
+         * every failed BEGIN/COMMIT/ROLLBACK leaked it.  The copy has the
+         * lifetime every other message from this file has (g_errbuf: valid
+         * until the next db call on this thread). */
+        snprintf(g_errbuf, sizeof g_errbuf, "%s", errmsg ? errmsg : sql);
+        sqlite3_free(errmsg);
         res.is_err = 1;
-        res.err = make_err(DB_ERR_QUERY, errmsg ? errmsg : sql);
-        /* errmsg must be freed with sqlite3_free — we copy it into a static
-           buffer to avoid leaking the pointer after this function returns.
-           For correctness in tests we store the pointer; callers must not
-           free it.  In production code a copy into a fixed arena is preferred. */
+        res.err = make_err(DB_ERR_QUERY, g_errbuf);
         return res;
     }
     return res;
