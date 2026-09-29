@@ -4026,31 +4026,442 @@ static void write_cors_headers_ssl(SSL *ssl)
 #include "http2.h"
 
 /*
+ * 121.46: an HTTP/2 connection with no request in progress is closed with
+ * GOAWAY(NO_ERROR) after H2_IDLE_TIMEOUT_S.  Only request frames (HEADERS,
+ * CONTINUATION, DATA) count as activity: the server used to PING an idle
+ * peer and take the ACK as activity, so any client that answered PINGs --
+ * every HTTP/2 client -- held a pre-fork worker for as long as it stayed
+ * connected.  30 s matches the old PING interval; a build may override it
+ * (C500 builds with 3).
+ */
+#ifndef H2_IDLE_TIMEOUT_S
+#define H2_IDLE_TIMEOUT_S       30
+#endif
+/* Streams one connection may open in its lifetime (60.2.3). */
+#define H2_MAX_STREAMS_TOTAL  1000
+
+/* h2_field_name — copy a handler's header name into out, lower-cased
+ * (RFC 9113 8.2.1: an upper-case field name makes the response malformed).
+ * Returns 0 for a name that is not a token, is too long, or is one HTTP/2
+ * forbids (connection-specific fields, RFC 9113 8.2.2) or computes itself
+ * (content-length, from the body actually sent). */
+static int h2_field_name(const char *k, char *out, size_t cap)
+{
+    static const char *const drop[] = {
+        "connection", "keep-alive", "proxy-connection", "transfer-encoding",
+        "upgrade", "te", "content-length", NULL
+    };
+    size_t n = strlen(k);
+    if (n == 0 || n >= cap) return 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)k[i];
+        if (c >= 'A' && c <= 'Z') c = (unsigned char)(c - 'A' + 'a');
+        if (!isalnum(c) && !strchr("!#$%&'*+-.^_`|~", (int)c)) return 0;
+        out[i] = (char)c;
+    }
+    out[n] = '\0';
+    for (int i = 0; drop[i]; i++)
+        if (strcmp(out, drop[i]) == 0) return 0;
+    return 1;
+}
+
+/* h2_field_value_ok — a field value may not carry CR or LF (RFC 9113 8.2.1). */
+static int h2_field_value_ok(const char *v)
+{
+    return strpbrk(v, "\r\n") == NULL;
+}
+
+static int h2_has_field(const char **names, size_t n, const char *name)
+{
+    for (size_t i = 0; i < n; i++)
+        if (strcmp(names[i], name) == 0) return 1;
+    return 0;
+}
+
+/* h2_send_header_block — send an encoded header block as one HEADERS frame
+ * and as many CONTINUATION frames as the peer's SETTINGS_MAX_FRAME_SIZE
+ * requires.  END_STREAM, when asked for, rides on the HEADERS frame. */
+static int h2_send_header_block(H2Conn *conn, int fd, void *ssl, uint32_t sid,
+                                const uint8_t *blk, size_t len, int end_stream)
+{
+    uint32_t maxf = conn->peer_settings.max_frame_size;
+    size_t off = 0;
+    int first = 1;
+    do {
+        size_t chunk = len - off;
+        if (chunk > maxf) chunk = maxf;
+        uint8_t flags = (off + chunk >= len) ? H2_FLAG_END_HEADERS : 0;
+        if (first && end_stream) flags |= H2_FLAG_END_STREAM;
+        if (h2_frame_send(conn, fd, ssl,
+                          first ? H2_FRAME_HEADERS : H2_FRAME_CONTINUATION,
+                          flags, sid, blk + off, (uint32_t)chunk) < 0)
+            return -1;
+        off += chunk;
+        first = 0;
+    } while (off < len);
+    return 0;
+}
+
+/*
+ * h2_send_response — answer stream sid with res.  121.46: the header block
+ * carries what HTTP/1.1 over TLS sends -- the handler's own headers, the
+ * security headers and HSTS (unless the handler set that field itself), and
+ * CORS when an allowed Origin matched -- where it used to carry :status,
+ * content-length and content-type only.  Returns 0, or -1 when the block
+ * could not be encoded (the HPACK encoder's table may then disagree with the
+ * peer's, so the caller must end the connection).
+ */
+static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
+                            Res res, int is_head)
+{
+    static const char *const sec[][2] = {
+        { "x-content-type-options",    "nosniff" },
+        { "x-frame-options",           "DENY" },
+        { "referrer-policy",           "strict-origin-when-cross-origin" },
+        { "strict-transport-security",
+          "max-age=63072000; includeSubDomains; preload" },
+    };
+    size_t body_len = res.body ? strlen(res.body) : 0;
+    int no_body = res.status < 200 || res.status == 204 || res.status == 304;
+    if (no_body) body_len = 0;
+    size_t cap = (size_t)res.headers.len + 16;
+    const char **nm = calloc(cap, sizeof *nm);
+    const char **vl = calloc(cap, sizeof *vl);
+    char **own = calloc(cap, sizeof *own);
+    uint8_t *blk = NULL;
+    int rc = -1;
+    if (!nm || !vl || !own) goto out;
+
+    char st[8], cl[32];
+    snprintf(st, sizeof st, "%u", res.status);
+    snprintf(cl, sizeof cl, "%zu", body_len);
+    size_t k = 0;
+    nm[k] = ":status"; vl[k++] = st;
+    if (!no_body) { nm[k] = "content-length"; vl[k++] = cl; }
+    for (uint64_t i = 0; i < res.headers.len; i++) {
+        const char *hk = res.headers.data[i].key;
+        const char *hv = res.headers.data[i].val;
+        char lname[256];
+        if (!hk || !hv || !h2_field_name(hk, lname, sizeof lname) ||
+            !h2_field_value_ok(hv))
+            continue;
+        if (!(own[k] = strdup(lname))) goto out;
+        nm[k] = own[k]; vl[k++] = hv;
+    }
+    if (!no_body && !h2_has_field(nm, k, "content-type")) {
+        nm[k] = "content-type"; vl[k++] = "text/html; charset=utf-8";
+    }
+    for (size_t i = 0; i < sizeof sec / sizeof sec[0]; i++)
+        if (!h2_has_field(nm, k, sec[i][0])) {
+            nm[k] = sec[i][0]; vl[k++] = sec[i][1];
+        }
+    if (g_cors_matched) {
+        nm[k] = "access-control-allow-origin"; vl[k++] = g_cors_matched;
+        nm[k] = "access-control-allow-methods";
+        vl[k++] = "GET, POST, PUT, DELETE, PATCH, OPTIONS";
+        nm[k] = "access-control-allow-headers";
+        vl[k++] = "Content-Type, Authorization";
+        nm[k] = "vary"; vl[k++] = "Origin";
+    }
+
+    /* Room for every field as a literal: a 1-byte prefix and two lengths of
+     * at most 5 bytes each (RFC 7541 5.1).  An encode that ran out of room
+     * would already have changed the encoder's dynamic table. */
+    size_t need = 16;
+    for (size_t i = 0; i < k; i++) need += strlen(nm[i]) + strlen(vl[i]) + 12;
+    if (!(blk = malloc(need))) goto out;
+    int hlen = hpack_encode(&conn->hpack_encode, nm, vl, k, blk, need);
+    if (hlen < 0) goto out;
+
+    int end_stream = is_head || body_len == 0;
+    if (h2_send_header_block(conn, fd, ssl, sid, blk, (size_t)hlen,
+                             end_stream) < 0)
+        goto out;
+    rc = 0;
+    if (!end_stream) {
+        uint32_t max_data = conn->peer_settings.max_frame_size;
+        size_t sent = 0;
+        while (sent < body_len) {
+            uint32_t chunk = (uint32_t)(body_len - sent);
+            if (chunk > max_data) chunk = max_data;
+            uint8_t dflags = (sent + chunk >= body_len) ? H2_FLAG_END_STREAM : 0;
+            if (h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, dflags, sid,
+                              (const uint8_t *)res.body + sent, chunk) < 0)
+                break;
+            sent += chunk;
+        }
+    }
+out:
+    if (own) for (size_t i = 0; i < cap; i++) free(own[i]);
+    free(own);
+    free(nm);
+    free(vl);
+    free(blk);
+    return rc;
+}
+
+/*
+ * h2_dispatch — build a Req from a whole request (decoded fields and body),
+ * route it the way the HTTP/1.1 TLS path does (Story 75.2: exact match over
+ * wildcard, HEAD falls back to GET, 405 for a path with no matching method,
+ * CORS preflight), and send the response.  Returns 0, or -1 when the
+ * connection must end.
+ */
+static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
+                       H2Stream *st)
+{
+    const char *method = NULL, *path = NULL, *authority = NULL;
+    StrPair req_headers[64];
+    int req_hcount = 0, have_host = 0;
+    char *cookie = NULL;   /* RFC 9113 8.2.3: crumbs rejoined with "; " */
+
+    for (int i = 0; i < st->hcount; i++) {
+        const char *n = st->hnames[i], *v = st->hvalues[i];
+        if (n[0] == ':') {
+            if (strcmp(n, ":method") == 0) method = v;
+            else if (strcmp(n, ":path") == 0) path = v;
+            else if (strcmp(n, ":authority") == 0) authority = v;
+            continue;
+        }
+        if (strcmp(n, "cookie") == 0 && cookie) {
+            size_t a = strlen(cookie), b = strlen(v);
+            char *j = realloc(cookie, a + b + 3);
+            if (!j) continue;
+            memcpy(j + a, "; ", 2); memcpy(j + a + 2, v, b + 1);
+            cookie = j;
+            continue;
+        }
+        if (strcmp(n, "cookie") == 0) { cookie = strdup(v); continue; }
+        if (strcmp(n, "host") == 0) have_host = 1;
+        if (req_hcount < 60) {
+            req_headers[req_hcount].key = n;
+            req_headers[req_hcount].val = v;
+            req_hcount++;
+        }
+    }
+    if (cookie) {
+        req_headers[req_hcount].key = "cookie";
+        req_headers[req_hcount].val = cookie;
+        req_hcount++;
+    }
+    if (authority && !have_host) {   /* RFC 9113 8.3.1: :authority is Host */
+        req_headers[req_hcount].key = "host";
+        req_headers[req_hcount].val = authority;
+        req_hcount++;
+    }
+    /* RFC 9113 8.3.1: a request without :method or :path is malformed.  It
+     * used to be served as GET /. */
+    if (!method || !path) {
+        free(cookie);
+        h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_PROTOCOL);
+        return 0;
+    }
+
+    Req req;
+    memset(&req, 0, sizeof(req));
+    req.method  = method;
+    req.path    = path;
+    req.body    = st->body ? st->body : "";
+    req.headers.data = req_headers;
+    req.headers.len  = (uint64_t)req_hcount;
+
+    g_cors_matched = NULL;
+    if (g_cors_origins)
+        for (int i = 0; i < req_hcount; i++)
+            if (strcasecmp(req_headers[i].key, "origin") == 0) {
+                g_cors_matched = cors_match_origin(req_headers[i].val);
+                break;
+            }
+
+    Res res = make_res(404, "Not Found");
+    int is_head = (strcmp(method, "HEAD") == 0);
+    if (strcmp(method, "OPTIONS") == 0 && g_cors_matched) {
+        res = make_res(204, NULL);                 /* CORS preflight (7.7.4) */
+    } else {
+        StrPair h2_params[HTTP_MAX_PARAMS]; int h2_pc = 0;
+        /* 127.100: :path carries the query string; route on the path. */
+        char pathbuf_h2[2048];
+        const char *rpath_h2 = http_path_only(path, pathbuf_h2, sizeof pathbuf_h2);
+        int matched = 0, called = 0, best = -1, have_params = 0; /* 127.72 */
+        for (int r = 0; r < route_count; r++) {
+            if (http_match_pattern(route_table[r].pattern, rpath_h2,
+                                   h2_params, &h2_pc)) {
+                matched = 1;
+                const char *cm = is_head ? "GET" : method;
+                if (strcmp(route_table[r].method, cm) == 0) {
+                    if (strcmp(route_table[r].pattern, "*") != 0) {
+                        best = r; have_params = 1; break;
+                    }
+                    if (best < 0) best = r;
+                }
+                http_free_params(h2_params, &h2_pc);   /* 127.72 */
+            }
+        }
+        if (best >= 0) {
+            if (!have_params)
+                http_match_pattern(route_table[best].pattern, rpath_h2,
+                                   h2_params, &h2_pc);
+            req.params.data = h2_params;
+            req.params.len  = (uint64_t)h2_pc;
+            res = route_table[best].h(req);
+            called = 1;
+        }
+        http_defer_params(h2_params, &h2_pc);          /* 127.72 */
+        req.params.data = NULL; req.params.len = 0;
+        if (matched && !called && res.status == 404)
+            res = make_res(405, "Method Not Allowed");
+    }
+
+    int rc = h2_send_response(conn, fd, ssl, st->id, res, is_head);
+    log_request(client_ip, &req, res.status, res.body ? strlen(res.body) : 0);
+    free(cookie);
+    /* 127.72: response written and logged -- the route bindings it may
+     * alias can go now. */
+    http_run_deferred_frees();
+    return rc;
+}
+
+/* h2_refuse_body — answer a stream whose body is over max_body with 413 and
+ * reset it with NO_ERROR, which asks the client to stop sending without
+ * treating the request as failed in transit (RFC 9113 8.1). */
+static int h2_refuse_body(H2Conn *conn, int fd, void *ssl, H2Stream *st)
+{
+    int rc = h2_send_response(conn, fd, ssl, st->id,
+                              make_res(413, "Payload Too Large"), 0);
+    h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_NONE);
+    h2_stream_release(st);
+    return rc;
+}
+
+/* h2_finish — the request on st is whole: check its content-length against
+ * the body received (RFC 9113 8.1.1: a mismatch is malformed), dispatch it,
+ * and release the stream. */
+static int h2_finish(H2Conn *conn, int fd, void *ssl, const char *client_ip,
+                     H2Stream *st)
+{
+    int rc = 0;
+    for (int i = 0; i < st->hcount; i++)
+        if (strcmp(st->hnames[i], "content-length") == 0) {
+            char *e = NULL;
+            unsigned long long v = strtoull(st->hvalues[i], &e, 10);
+            if (!e || *e || e == st->hvalues[i] || v != st->body_len) {
+                h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_PROTOCOL);
+                h2_stream_release(st);
+                return 0;
+            }
+        }
+    rc = h2_dispatch(conn, fd, ssl, client_ip, st);
+    h2_stream_release(st);
+    return rc;
+}
+
+/* h2_block_done — a header block ended (END_HEADERS).  Decode it; a request
+ * that also ended (END_STREAM) is dispatched, one with a body waits for it;
+ * trailers are decoded -- to keep the HPACK table in step -- and dropped.
+ * Returns 0, or -1 when the connection must end (GOAWAY already sent). */
+static int h2_block_done(H2Conn *conn, int fd, void *ssl,
+                         const char *client_ip, H2Stream *st)
+{
+    char **names = NULL, **values = NULL;
+    int n = hpack_decode(&conn->hpack_decode, st->header_block,
+                         st->header_block_len, &names, &values);
+    free(st->header_block);
+    st->header_block = NULL;
+    st->header_block_len = st->header_block_cap = 0;
+    if (n < 0) {
+        /* RFC 9113 4.3: a header block that cannot be decoded is a
+         * connection error -- the decoder's table is no longer the peer's. */
+        h2_send_goaway(conn, fd, ssl, conn->last_stream_id, H2_ERR_COMPRESSION);
+        return -1;
+    }
+    if (st->block_trailers) {
+        for (int i = 0; i < n; i++) { free(names[i]); free(values[i]); }
+        free(names); free(values);
+        return h2_finish(conn, fd, ssl, client_ip, st);
+    }
+    st->hnames = names; st->hvalues = values; st->hcount = n;
+    for (int i = 0; i < n; i++)
+        if (strcmp(names[i], "content-length") == 0) {
+            unsigned long long v = strtoull(values[i], NULL, 10);
+            if (v > (unsigned long long)srv_limits.max_body)
+                return h2_refuse_body(conn, fd, ssl, st);
+        }
+    if (st->block_end_stream)
+        return h2_finish(conn, fd, ssl, client_ip, st);
+    st->receiving = 1;
+    return 0;
+}
+
+/* h2_append_block — append a header-block fragment to st, within the
+ * SETTINGS_MAX_HEADER_LIST_SIZE we advertised (121.44). */
+static int h2_append_block(H2Conn *conn, H2Stream *st,
+                           const uint8_t *p, size_t n)
+{
+    size_t newlen = st->header_block_len + n;
+    if (newlen > conn->local_settings.max_header_list_size) return -1;
+    if (newlen > st->header_block_cap) {
+        uint8_t *nb = realloc(st->header_block, newlen ? newlen : 1);
+        if (!nb) return -1;
+        st->header_block = nb;
+        st->header_block_cap = newlen;
+    }
+    if (n) memcpy(st->header_block + st->header_block_len, p, n);
+    st->header_block_len = newlen;
+    return 0;
+}
+
+/* h2_body_buffered — request-body bytes held on the connection. */
+static size_t h2_body_buffered(const H2Conn *conn)
+{
+    size_t t = 0;
+    for (size_t i = 0; i < conn->stream_count; i++) t += conn->streams[i].body_len;
+    return t;
+}
+
+/* h2_open_streams — streams with a request in progress. */
+static uint32_t h2_open_streams(const H2Conn *conn)
+{
+    uint32_t n = 0;
+    for (size_t i = 0; i < conn->stream_count; i++)
+        if (conn->streams[i].state != H2_STREAM_CLOSED) n++;
+    return n;
+}
+
+/* h2_next_deadline — the earliest deadline in force: the preface phase's,
+ * or that of a request in progress (0 when none). */
+static long h2_next_deadline(const H2Conn *conn, long settings_dl)
+{
+    long dl = settings_dl;
+    for (size_t i = 0; i < conn->stream_count; i++) {
+        long s = conn->streams[i].deadline_ms;
+        if (conn->streams[i].state != H2_STREAM_CLOSED && s && (!dl || s < dl))
+            dl = s;
+    }
+    return dl;
+}
+
+/*
  * handle_h2_connection — process an HTTP/2 connection.
- * Validates connection preface, exchanges SETTINGS, then loops
- * reading frames. HEADERS frames are decoded via HPACK into Req
- * structs and dispatched through the existing route table.
+ * Validates connection preface, exchanges SETTINGS, then loops reading
+ * frames.  A request is dispatched through the route table when it is whole:
+ * its header block decoded (HEADERS [+ CONTINUATION]) and its body ended.
  */
 static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
 {
     H2Conn *conn = h2_conn_new();
     if (!conn) return;
 
-    /* Set idle timeout for HTTP/2 connection (60.2.3) */
-#define H2_IDLE_TIMEOUT_S       30
-#define H2_MAX_STREAMS_TOTAL   1000
-#define H2_PING_INTERVAL_S      15
-
     /* 121.44: the HTTP/2 counterpart of HTT-06.  A frame must be whole
      * within timeout_secs of its first byte, and two phases that span frames
      * have a deadline of their own: the preface through the client's first
-     * SETTINGS frame, and a header block (HEADERS up to END_HEADERS).  The
-     * reads wait with poll() against these deadlines (http2.c); SO_RCVTIMEO,
-     * which restarts on every byte, no longer bounds anything here. */
+     * SETTINGS frame, and (121.46) a request, from its first HEADERS frame
+     * to the end of its body.  The reads wait with poll() against these
+     * deadlines (http2.c); SO_RCVTIMEO, which restarts on every byte, no
+     * longer bounds anything here. */
     conn->read_timeout_ms = srv_limits.timeout_secs * 1000u;
-    conn->idle_timeout_ms = H2_IDLE_TIMEOUT_S * 1000u;
-    conn->deadline_ms     = h2_now_ms() + (long)conn->read_timeout_ms;
-    int awaiting_settings = 1;
+    long settings_dl = h2_now_ms() + (long)conn->read_timeout_ms;
+    conn->deadline_ms = settings_dl;
+    const long idle_ms = (long)H2_IDLE_TIMEOUT_S * 1000L;
 
     /* Read and validate the 24-byte client connection preface */
     uint8_t preface[H2_CONNECTION_PREFACE_LEN];
@@ -4067,49 +4478,38 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
     }
 
     uint32_t total_streams = 0;
-    time_t last_activity = time(NULL);
-    int ping_outstanding = 0;
+    uint32_t hb_sid = 0;          /* stream whose header block is open */
+    long last_request = h2_now_ms();
 
     /* Main frame processing loop */
     for (;;) {
-        H2FrameHeader hdr;
-        memset(&hdr, 0, sizeof(hdr));
-        uint8_t *payload = h2_frame_recv(conn, fd, ssl, &hdr);
-        if (!payload && hdr.length == 0 && hdr.type == 0) {
-            /* Timeout or connection closed — check if we should ping or close */
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                time_t now = time(NULL);
-                if (ping_outstanding) {
-                    /* No response to PING — peer is dead */
-                    break;
-                }
-                if (now - last_activity >= H2_IDLE_TIMEOUT_S) {
-                    /* Idle too long — send PING keepalive */
-                    uint8_t ping_data[8] = {0};
-                    h2_send_ping(conn, fd, ssl, ping_data, 0);
-                    ping_outstanding = 1;
-                    last_activity = now;
-                    continue;
-                }
-                continue;
+        conn->deadline_ms = h2_next_deadline(conn, settings_dl);
+        if (!conn->deadline_ms) {
+            /* 121.46: nothing in progress -- the connection is idle, and
+             * only a request ends that. */
+            long left = last_request + idle_ms - h2_now_ms();
+            if (left <= 0) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id, H2_ERR_NONE);
+                goto done;
             }
-            /* Real read error or connection closed */
-            break;
+            conn->idle_timeout_ms = (uint32_t)left;
         }
 
-        /* 135.3j (6): h2_frame_recv also returns NULL with hdr filled in --
-         * the payload read failed (the peer closed mid-frame), the frame was
-         * over the peer's size limit (GOAWAY already sent), or the buffer
-         * could not grow.  Each fell through to the frame handlers with a
-         * NULL payload: a HEADERS or CONTINUATION frame memcpy'd from NULL,
-         * a padded HEADERS or a WINDOW_UPDATE read payload[0] -- a peer that
-         * sent a 9-byte frame header and closed crashed the worker.  A NULL
-         * payload now always ends the connection; h2_frame_recv returns a
-         * non-NULL buffer for every frame it did read, empty ones included. */
-        if (!payload) goto done;
-
-        last_activity = time(NULL);
-        ping_outstanding = 0;
+        H2FrameHeader hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        errno = 0;
+        uint8_t *payload = h2_frame_recv(conn, fd, ssl, &hdr);
+        /* 135.3j (6): NULL is always the end of the connection -- the peer
+         * closed, a deadline passed, the frame was over our size limit
+         * (GOAWAY already sent) or the buffer could not grow -- except for
+         * EAGAIN with nothing read: no frame began within the idle wait,
+         * which the check above turns into a GOAWAY. */
+        if (!payload) {
+            if (errno == EAGAIN && !conn->goaway_sent &&
+                hdr.length == 0 && hdr.type == 0 && hdr.stream_id == 0)
+                continue;
+            goto done;
+        }
 
         /* Frame size validation (60.2.4) — reject oversized frames */
         if (hdr.length > conn->local_settings.max_frame_size) {
@@ -4120,15 +4520,30 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
 
         /* 121.44: the preface is followed by the client's SETTINGS frame
          * (RFC 9113 3.4); that frame closes the preface phase. */
-        if (awaiting_settings) {
+        if (settings_dl) {
             if (hdr.type != H2_FRAME_SETTINGS || (hdr.flags & H2_FLAG_ACK)) {
                 h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                                H2_ERR_PROTOCOL);
                 goto done;
             }
-            awaiting_settings = 0;
-            conn->deadline_ms = 0;
+            settings_dl = 0;
+            last_request = h2_now_ms();
         }
+
+        /* 121.46: RFC 9113 6.10 -- a header block is a contiguous sequence
+         * of frames.  Anything but a CONTINUATION on the same stream while
+         * one is open, or a CONTINUATION with none open, is a connection
+         * error. */
+        if ((hb_sid && (hdr.type != H2_FRAME_CONTINUATION ||
+                        hdr.stream_id != hb_sid)) ||
+            (!hb_sid && hdr.type == H2_FRAME_CONTINUATION)) {
+            h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                           H2_ERR_PROTOCOL);
+            goto done;
+        }
+        if (hdr.type == H2_FRAME_HEADERS || hdr.type == H2_FRAME_CONTINUATION ||
+            hdr.type == H2_FRAME_DATA)
+            last_request = h2_now_ms();
 
         switch (hdr.type) {
         case H2_FRAME_SETTINGS:
@@ -4150,293 +4565,181 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             break;
 
         case H2_FRAME_HEADERS: {
-            if (hdr.stream_id == 0) {
+            uint32_t sid = hdr.stream_id;
+            if (sid == 0) {
                 h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                                H2_ERR_PROTOCOL);
                 goto done;
             }
-
-            /* Enforce max total streams (60.2.3) */
-            total_streams++;
-            if (total_streams > H2_MAX_STREAMS_TOTAL) {
-                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
-                               H2_ERR_ENHANCE_YOUR_CALM);
-                goto done;
-            }
-
-            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
-            if (!stream) {
-                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
-                               H2_ERR_REFUSED_STREAM);
-                goto done;
-            }
-            h2_stream_transition(stream, H2_FRAME_HEADERS, hdr.flags, 0);
 
             /* Skip padding and priority if present */
             uint8_t *hblock = payload;
             uint32_t hblock_len = hdr.length;
-            uint8_t pad_len = 0;
-
             if (hdr.flags & H2_FLAG_PADDED) {
-                if (hblock_len < 1) goto done;
-                pad_len = hblock[0];
+                uint8_t pad_len = hblock_len ? hblock[0] : 0;
+                if (hblock_len < 1 || pad_len >= hblock_len) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_PROTOCOL);
+                    goto done;
+                }
                 hblock++;
-                hblock_len--;
-                if (pad_len >= hblock_len) goto done;
-                hblock_len -= pad_len;
+                hblock_len -= 1u + pad_len;
             }
             if (hdr.flags & H2_FLAG_PRIORITY) {
-                if (hblock_len < 5) goto done;
+                if (hblock_len < 5) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_PROTOCOL);
+                    goto done;
+                }
                 hblock += 5; /* skip 4-byte dep + 1-byte weight */
                 hblock_len -= 5;
             }
 
-            /* 121.44: a header block is bounded in size by the
-             * SETTINGS_MAX_HEADER_LIST_SIZE we advertised, and in time by
-             * timeout_secs from its first frame. */
-            if ((size_t)stream->header_block_len + hblock_len >
-                    conn->local_settings.max_header_list_size) {
+            H2Stream *stream = h2_stream_find(conn, sid);
+            if (stream) {
+                /* A second header block on a stream is trailers: only after
+                 * the request headers, and it must end the stream. */
+                if (!stream->receiving || !(hdr.flags & H2_FLAG_END_STREAM)) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_PROTOCOL);
+                    goto done;
+                }
+                stream->block_trailers = 1;
+                stream->block_end_stream = 1;
+            } else {
+                /* A new stream: client-initiated streams are odd and
+                 * increasing (RFC 9113 5.1.1); a lower one is closed. */
+                if (!(sid & 1u) || sid <= conn->last_stream_id) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   (sid & 1u) ? H2_ERR_STREAM_CLOSED
+                                              : H2_ERR_PROTOCOL);
+                    goto done;
+                }
+                /* Enforce max total streams (60.2.3) and the
+                 * MAX_CONCURRENT_STREAMS we advertised. */
+                if (++total_streams > H2_MAX_STREAMS_TOTAL) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_ENHANCE_YOUR_CALM);
+                    goto done;
+                }
+                if (h2_open_streams(conn) >=
+                        conn->local_settings.max_concurrent_streams ||
+                    !(stream = h2_stream_get(conn, sid))) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_REFUSED_STREAM);
+                    goto done;
+                }
+                h2_stream_transition(stream, H2_FRAME_HEADERS, hdr.flags, 0);
+                stream->block_end_stream = (hdr.flags & H2_FLAG_END_STREAM) != 0;
+                stream->deadline_ms = h2_now_ms() + (long)conn->read_timeout_ms;
+            }
+
+            if (h2_append_block(conn, stream, hblock, hblock_len) < 0) {
                 h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                                H2_ERR_ENHANCE_YOUR_CALM);
                 goto done;
             }
             if (!(hdr.flags & H2_FLAG_END_HEADERS)) {
-                if (!conn->deadline_ms)
-                    conn->deadline_ms = h2_now_ms()
-                                      + (long)conn->read_timeout_ms;
-            } else {
-                conn->deadline_ms = 0;
-            }
-
-            /* Accumulate header block fragments */
-            if (stream->header_block == NULL) {
-                stream->header_block = malloc(hblock_len);
-                if (!stream->header_block) goto done;
-                memcpy(stream->header_block, hblock, hblock_len);
-                stream->header_block_len = hblock_len;
-                stream->header_block_cap = hblock_len;
-            } else {
-                size_t newlen = stream->header_block_len + hblock_len;
-                if (newlen > stream->header_block_cap) {
-                    uint8_t *nb = realloc(stream->header_block, newlen);
-                    if (!nb) goto done;
-                    stream->header_block = nb;
-                    stream->header_block_cap = newlen;
-                }
-                memcpy(stream->header_block + stream->header_block_len,
-                       hblock, hblock_len);
-                stream->header_block_len = newlen;
-            }
-
-            if (!(hdr.flags & H2_FLAG_END_HEADERS)) {
-                /* Wait for CONTINUATION frames */
+                hb_sid = sid;            /* wait for CONTINUATION frames */
                 break;
             }
-
-            /* Decode HPACK header block into request */
-            char **names = NULL, **values = NULL;
-            int nheaders = hpack_decode(&conn->hpack_decode,
-                                        stream->header_block,
-                                        stream->header_block_len,
-                                        &names, &values);
-            free(stream->header_block);
-            stream->header_block = NULL;
-            stream->header_block_len = 0;
-
-            if (nheaders < 0) {
-                h2_send_rst_stream(conn, fd, ssl, hdr.stream_id,
-                                   H2_ERR_COMPRESSION);
-                break;
-            }
-
-            /* Build Req from pseudo-headers */
-            const char *method = "GET";
-            const char *path   = "/";
-            StrPair req_headers[64];
-            int req_hcount = 0;
-
-            for (int i = 0; i < nheaders; i++) {
-                if (names[i][0] == ':') {
-                    if (strcmp(names[i], ":method") == 0) method = values[i];
-                    else if (strcmp(names[i], ":path") == 0) path = values[i];
-                } else if (req_hcount < 64) {
-                    req_headers[req_hcount].key = names[i];
-                    req_headers[req_hcount].val = values[i];
-                    req_hcount++;
-                }
-            }
-
-            Req req;
-            memset(&req, 0, sizeof(req));
-            req.method  = method;
-            req.path    = path;
-            req.body    = "";
-            req.headers.data = req_headers;
-            req.headers.len  = (uint64_t)req_hcount;
-
-            /* Dispatch through route table — two-pass: exact match
-             * over wildcard, same logic as HTTP/1.1 TLS path (Story 75.2) */
-            Res res = make_res(404, "Not Found");
-            StrPair h2_params[HTTP_MAX_PARAMS]; int h2_pc = 0;
-            /* 127.100: :path carries the query string; route on the path. */
-            char pathbuf_h2[2048];
-            const char *rpath_h2 =
-                http_path_only(path, pathbuf_h2, sizeof pathbuf_h2);
-            int h2_path_matched = 0;
-            int h2_handler_called = 0;
-            int h2_is_head = (strcmp(method, "HEAD") == 0);
-            int h2_best = -1;
-            int h2_have_params = 0;   /* 127.72 */
-            for (int r = 0; r < route_count; r++) {
-                if (http_match_pattern(route_table[r].pattern,
-                                       rpath_h2, h2_params, &h2_pc)) {
-                    h2_path_matched = 1;
-                    const char *cm = h2_is_head ? "GET" : method;
-                    if (cm && strcmp(route_table[r].method, cm) == 0) {
-                        if (strcmp(route_table[r].pattern, "*") != 0) {
-                            h2_best = r; h2_have_params = 1; break;
-                        }
-                        if (h2_best < 0) h2_best = r;
-                    }
-                    http_free_params(h2_params, &h2_pc);   /* 127.72 */
-                }
-            }
-            if (h2_best >= 0) {
-                if (!h2_have_params)
-                    http_match_pattern(route_table[h2_best].pattern,
-                                       rpath_h2, h2_params, &h2_pc);
-                req.params.data = h2_params;
-                req.params.len  = (uint64_t)h2_pc;
-                res = route_table[h2_best].h(req);
-                h2_handler_called = 1;
-                if (h2_is_head) res.body = NULL;
-            }
-            http_defer_params(h2_params, &h2_pc);          /* 127.72 */
-            req.params.data = NULL; req.params.len = 0;
-            if (h2_path_matched && !h2_handler_called && res.status == 404) {
-                res = make_res(405, "Method Not Allowed");
-            }
-
-            /* Send response as HEADERS + DATA frames */
-            char status_str[4];
-            snprintf(status_str, sizeof(status_str), "%u", res.status);
-            size_t body_len = res.body ? strlen(res.body) : 0;
-            char cl_str[32];
-            snprintf(cl_str, sizeof(cl_str), "%zu", body_len);
-
-            /* Extract Content-Type from response headers if present */
-            const char *h2_ct = "text/html; charset=utf-8";
-            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
-                if (res.headers.data[hi].key &&
-                    strcasecmp(res.headers.data[hi].key, "Content-Type") == 0) {
-                    h2_ct = res.headers.data[hi].val;
-                    break;
-                }
-            }
-            const char *resp_names[]  = { ":status", "content-length",
-                                          "content-type" };
-            const char *resp_values[] = { status_str, cl_str, h2_ct };
-            uint8_t hbuf[4096];
-            int hlen = hpack_encode(&conn->hpack_encode,
-                                    resp_names, resp_values, 3,
-                                    hbuf, sizeof(hbuf));
-
-            if (hlen > 0) {
-                uint8_t flags = H2_FLAG_END_HEADERS;
-                if (body_len == 0) flags |= H2_FLAG_END_STREAM;
-                h2_frame_send(conn, fd, ssl, H2_FRAME_HEADERS, flags,
-                              hdr.stream_id, hbuf, (uint32_t)hlen);
-            }
-
-            /* Send body as DATA frame(s) */
-            if (body_len > 0) {
-                uint32_t max_data = conn->peer_settings.max_frame_size;
-                size_t sent = 0;
-                while (sent < body_len) {
-                    uint32_t chunk = (uint32_t)(body_len - sent);
-                    if (chunk > max_data) chunk = max_data;
-                    uint8_t dflags = (sent + chunk >= body_len)
-                                     ? H2_FLAG_END_STREAM : 0;
-                    h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, dflags,
-                                  hdr.stream_id,
-                                  (const uint8_t *)res.body + sent, chunk);
-                    sent += chunk;
-                }
-            }
-
-            log_request(client_ip, &req, res.status, body_len);
-
-            /* Clean up decoded headers */
-            for (int i = 0; i < nheaders; i++) {
-                free(names[i]);
-                free(values[i]);
-            }
-            free(names);
-            free(values);
-            /* 127.72: response written and logged — the route bindings it
-             * may alias can go now. */
-            http_run_deferred_frees();
+            if (h2_block_done(conn, fd, ssl, client_ip, stream) < 0) goto done;
             break;
         }
 
         case H2_FRAME_CONTINUATION: {
-            if (hdr.stream_id == 0) {
-                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
-                               H2_ERR_PROTOCOL);
-                goto done;
-            }
-            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
-            if (!stream || !stream->header_block) {
-                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
-                               H2_ERR_PROTOCOL);
-                goto done;
-            }
-            /* 121.44: the same ceiling as HEADERS -- this append had none,
-             * so a stream of CONTINUATION frames grew one header block
-             * without bound.  END_HEADERS closes the header-block phase. */
-            if (stream->header_block_len + hdr.length >
-                    conn->local_settings.max_header_list_size) {
+            /* hb_sid == hdr.stream_id here (checked above) */
+            H2Stream *stream = h2_stream_find(conn, hdr.stream_id);
+            if (!stream) goto done;
+            /* 121.44: the same ceiling as HEADERS. */
+            if (h2_append_block(conn, stream, payload, hdr.length) < 0) {
                 h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                                H2_ERR_ENHANCE_YOUR_CALM);
                 goto done;
             }
-            if (hdr.flags & H2_FLAG_END_HEADERS) conn->deadline_ms = 0;
-
-            /* Append to header block */
-            size_t newlen = stream->header_block_len + hdr.length;
-            if (newlen > stream->header_block_cap) {
-                uint8_t *nb = realloc(stream->header_block, newlen);
-                if (!nb) goto done;
-                stream->header_block = nb;
-                stream->header_block_cap = newlen;
-            }
-            memcpy(stream->header_block + stream->header_block_len,
-                   payload, hdr.length);
-            stream->header_block_len = newlen;
-
-            /* If END_HEADERS, process as if we just got the full HEADERS */
-            /* (would need to refactor — for now, only single-frame headers) */
+            if (!(hdr.flags & H2_FLAG_END_HEADERS)) break;
+            /* 121.46: the block is whole -- decode it, as a HEADERS frame
+             * with END_HEADERS would have been.  This used to stop here
+             * ("only single-frame headers") and the request was never
+             * answered. */
+            hb_sid = 0;
+            if (h2_block_done(conn, fd, ssl, client_ip, stream) < 0) goto done;
             break;
         }
 
         case H2_FRAME_DATA: {
-            if (hdr.stream_id == 0) {
+            uint32_t sid = hdr.stream_id;
+            if (sid == 0) {
                 h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                                H2_ERR_PROTOCOL);
                 goto done;
             }
-            /* Update flow control window */
+            /* The whole frame, padding included, counts against the
+             * connection window; give it back. */
             conn->conn_window_recv -= (int32_t)hdr.length;
-            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
-            if (stream) {
-                stream->window -= (int32_t)hdr.length;
-                h2_stream_transition(stream, H2_FRAME_DATA, hdr.flags, 0);
-            }
-            /* Send WINDOW_UPDATE to replenish */
             if (hdr.length > 0) {
                 h2_send_window_update(conn, fd, ssl, 0, hdr.length);
-                h2_send_window_update(conn, fd, ssl, hdr.stream_id,
-                                      hdr.length);
+                conn->conn_window_recv += (int32_t)hdr.length;
+            }
+            H2Stream *stream = h2_stream_find(conn, sid);
+            if (!stream) {
+                /* DATA on a stream never opened is a connection error; on
+                 * one already closed (answered, refused, reset) it is late
+                 * and dropped. */
+                if (!(sid & 1u) || sid > conn->last_stream_id) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_PROTOCOL);
+                    goto done;
+                }
+                break;
+            }
+            if (!stream->receiving) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            const uint8_t *data = payload;
+            uint32_t dlen = hdr.length;
+            if (hdr.flags & H2_FLAG_PADDED) {
+                uint8_t pad_len = dlen ? data[0] : 0;
+                if (dlen < 1 || pad_len >= dlen) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_PROTOCOL);
+                    goto done;
+                }
+                data++;
+                dlen -= 1u + pad_len;
+            }
+            /* 121.46: the body is kept for the handler (it was counted and
+             * dropped).  Over max_body is 413; over max_body buffered across
+             * the connection's streams is REFUSED_STREAM (safe to retry). */
+            if (stream->body_len + dlen > (size_t)srv_limits.max_body) {
+                if (h2_refuse_body(conn, fd, ssl, stream) < 0) goto done;
+                break;
+            }
+            if (h2_body_buffered(conn) + dlen > (size_t)srv_limits.max_body) {
+                h2_send_rst_stream(conn, fd, ssl, sid, H2_ERR_REFUSED_STREAM);
+                h2_stream_release(stream);
+                break;
+            }
+            if (stream->body_len + dlen + 1 > stream->body_cap) {
+                size_t nc = stream->body_cap ? stream->body_cap * 2 : 1024;
+                while (nc < stream->body_len + dlen + 1) nc *= 2;
+                if (nc > (size_t)srv_limits.max_body + 1)
+                    nc = (size_t)srv_limits.max_body + 1;
+                char *nb = realloc(stream->body, nc);
+                if (!nb) goto done;
+                stream->body = nb;
+                stream->body_cap = nc;
+            }
+            if (dlen) memcpy(stream->body + stream->body_len, data, dlen);
+            stream->body_len += dlen;
+            stream->body[stream->body_len] = '\0';
+
+            if (hdr.flags & H2_FLAG_END_STREAM) {
+                if (h2_finish(conn, fd, ssl, client_ip, stream) < 0) goto done;
+            } else if (hdr.length > 0) {
+                h2_send_window_update(conn, fd, ssl, sid, hdr.length);
             }
             break;
         }
@@ -4476,7 +4779,7 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             if (hdr.stream_id == 0) {
                 conn->conn_window_send += (int32_t)increment;
             } else {
-                H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
+                H2Stream *stream = h2_stream_find(conn, hdr.stream_id);
                 if (stream) stream->window += (int32_t)increment;
             }
             break;
@@ -4488,8 +4791,8 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
                                H2_ERR_PROTOCOL);
                 goto done;
             }
-            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
-            if (stream) stream->state = H2_STREAM_CLOSED;
+            H2Stream *stream = h2_stream_find(conn, hdr.stream_id);
+            if (stream) h2_stream_release(stream);
             break;
         }
 
@@ -4512,6 +4815,9 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             break;
         }
 
+        if (hdr.type == H2_FRAME_HEADERS || hdr.type == H2_FRAME_CONTINUATION ||
+            hdr.type == H2_FRAME_DATA)
+            last_request = h2_now_ms();   /* a handler's run time is not idle */
         if (conn->goaway_sent) break;
     }
 

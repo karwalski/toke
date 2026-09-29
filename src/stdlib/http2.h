@@ -120,6 +120,21 @@ typedef struct {
     uint8_t      *header_block;    /* accumulated HEADERS/CONTINUATION */
     size_t        header_block_len;
     size_t        header_block_cap;
+    /* 121.46: a request is dispatched when it is whole -- its header block
+     * decoded (END_HEADERS, on HEADERS or CONTINUATION) and its body ended
+     * (END_STREAM, on HEADERS, DATA or trailers).  Until then the decoded
+     * fields and the body wait here, and deadline_ms (monotonic; 0 = none)
+     * bounds the whole request from its first frame. */
+    int           block_end_stream; /* END_STREAM on the open header block */
+    int           block_trailers;   /* the open header block is trailers   */
+    int           receiving;        /* headers decoded, body not yet ended */
+    char        **hnames;           /* decoded request fields (owned)      */
+    char        **hvalues;
+    int           hcount;
+    char         *body;             /* request body so far, NUL-terminated */
+    size_t        body_len;
+    size_t        body_cap;
+    long          deadline_ms;
 } H2Stream;
 
 /* ── HPACK dynamic table entry ────────────────────────────────────────── */
@@ -245,8 +260,17 @@ int h2_send_window_update(H2Conn *conn, int fd, void *ssl,
 
 /* ── Stream management ────────────────────────────────────────────────── */
 
-/* Find or create a stream by ID. Returns NULL if too many streams. */
+/* Find or create a stream by ID. Returns NULL if too many streams.  121.46:
+ * a CLOSED slot holding nothing is reused, so the table bounds streams in
+ * progress, not streams per connection. */
 H2Stream *h2_stream_get(H2Conn *conn, uint32_t stream_id);
+
+/* 121.46: find a stream by ID without creating one; NULL if absent. */
+H2Stream *h2_stream_find(H2Conn *conn, uint32_t stream_id);
+
+/* 121.46: free what a stream holds (header block, decoded fields, body) and
+ * mark it CLOSED. */
+void h2_stream_release(H2Stream *stream);
 
 /* Transition stream state. Returns 0 on valid transition, -1 on error. */
 int h2_stream_transition(H2Stream *stream, uint8_t frame_type, uint8_t flags,
