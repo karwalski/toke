@@ -81,10 +81,10 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E3020 | error | name_resolution | `!` applied to non-error-union value | -- |
 | E4010 | error | type_check | Non-exhaustive match | -- |
 | E4011 | error | type_check | Match arms have inconsistent types | -- |
-| E4025 | error | type_check | Struct has no field with that name | -- |
+| E4025 | error | type_check | Struct has no field with that name | D092, T001 |
 | E4026 | error | type_check | Wrong argument count in function call | C035 |
-| E4027 | error | type_check | Module has no exported member with that name | n/s |
-| E4031 | error | type_check | Type mismatch | -- |
+| E4027 | error | type_check | Module has no exported member with that name | D093, C038, C219, T002 |
+| E4031 | error | type_check | Type mismatch | D086, C038 |
 | E4032 | error | type_check | Cannot interpolate a composite value into a string | n/s |
 | E4033 | error | type_check | A type name used where a value is required | T003 |
 | E4034 | error | type_check | Field access on a layout the compiler cannot establish | T003 |
@@ -824,8 +824,8 @@ f=bad():i64{<"hello"};
 | **Stage** | type_check |
 | **Severity** | error |
 | **Message** | `struct '<Name>' has no field '<field>'` |
-| **Fix field** | absent |
-| **Conformance test** | -- |
+| **Fix field** | absent (127.243: the compiler emitted "check the struct definition for available fields", which is advice, not a rewrite; D092 and T001 pin the absence) |
+| **Conformance test** | D092, T001 |
 
 **Notes:** A field access expression (`expr.field`) references a field name that
 does not exist in the struct type.
@@ -860,6 +860,23 @@ f=b():i64{<a(1;2)};
 
 ---
 
+### E4027 -- Module has no exported member with that name
+
+| Field | Value |
+|-------|-------|
+| **Code** | E4027 |
+| **Stage** | type_check |
+| **Severity** | error |
+| **Message** | `module '<path>' has no exported member '<member>'` (a `std.*` module: `... has no member '<member>': neither the interface nor the runtime declares it ...`) |
+| **Fix field** | present only for a near miss (`"did you mean '<alias>.<member>'?"`, story 127.122); otherwise absent (127.243: the generic "check the module's interface for the correct member name" was advice, not a rewrite) |
+| **Conformance test** | D093, C038, C219, T002 |
+
+**Notes:** Story 136.1. A call `alias.member(...)` names a member the
+module's interface (and, for `std.*`, the runtime) does not declare. The
+member is carried in the `got` field.
+
+---
+
 ### E4031 -- Type mismatch
 
 | Field | Value |
@@ -869,14 +886,19 @@ f=b():i64{<a(1;2)};
 | **Severity** | error |
 | **Message** | `type mismatch: expected '<T1>', got '<T2>'` |
 | **Fix field** | present (contextual, e.g. `"cast RHS to i64 using 'as'"`) |
-| **Conformance test** | -- |
+| **Conformance test** | D086, C038 |
 
 **Notes:** The workhorse type error. Emitted for mismatched operands in binary
 expressions, mismatched function arguments, mismatched binding annotations,
 mismatched assignment sides, and mismatched return values. The fix field, when
 present, suggests an explicit `as` cast. For a function argument it is present
 only when both types are numeric and the cast is not float to integer (story
-127.220): `as` does not convert an array, map or struct to `str`.
+127.220): `as` does not convert an array, map or struct to `str`. For a
+scalar (integer, float or bool) passed where a stdlib parameter is `str`, the
+fix is `"wrap the argument in a string interpolation"` -- `x` becomes
+`"\(x)"`, which is a `str` for every scalar type (story 127.14; kept by
+127.243 as deterministic); a composite argument gets no fix, since
+interpolating it is E4032.
 
 ---
 
@@ -1110,7 +1132,7 @@ zero.
 | D001 | D | E1001 | Fix field absent for unrecognised escape |
 | D002 | D | E1002 | Fix field absent for unterminated string |
 | D003 | D | E1003 | Fix field absent for out-of-set character |
-| D005 | D | W1010 | Fix field is informational string |
+| D005 | D | W1010 | Fix field absent (str.concat() advice dropped, 127.243) |
 | D006 | D | E1001 | schema_version field is "1.0" |
 | D007 | D | E1001 | Diagnostic has pos.line and pos.col |
 | D008 | D | E1001 | Severity field is "error" for E-codes |
@@ -1121,6 +1143,9 @@ zero.
 | D013 | D | E2010 | Pointer type in non-extern function |
 | D014 | D | E2035 | Malformed version string in import |
 | D015 | D | E4043 | Inconsistent map literal types |
+| D086 | D | E4031 | Interpolation fix for a scalar passed as str |
+| D092 | D | E4025 | Fix field absent for an undeclared struct field (127.243) |
+| D093 | D | E4027 | Fix field absent for a member with no near miss (127.243) |
 | D101 | D | E1007 | Fix field absent for unterminated comment |
 | D111 | D | E2003 | Fix field absent for missing semicolon |
 | D112 | D | E2001 | Fix field absent for declaration ordering violation |

@@ -3162,8 +3162,7 @@ static void check_tki_call(Ctx *cx, const Node *call) {
         /* diag.c records only "fix", "expected" and "got", so the member is
          * carried in "got" — that is the structured field a consumer greps. */
         char fixbuf[256];
-        const char *fixtext = "check the module's interface for the correct "
-                              "member name";
+        const char *fixtext = NULL;   /* 127.243: no advice fix, only a match */
         const char *sugg = tki_closest_member(cx->env->names, alias, member);
         if (sugg) {                                          /* 127.122 */
             snprintf(fixbuf, sizeof fixbuf, "did you mean '%s.%s'?",
@@ -3189,8 +3188,7 @@ static void check_tki_call(Ctx *cx, const Node *call) {
         snprintf(msg, sizeof msg,
                  "module '%s' has no exported member '%s'", mpath, member);
         char fixbuf[256];
-        const char *fixtext = "check the module's interface for the correct "
-                              "member name";
+        const char *fixtext = NULL;   /* 127.243: no advice fix, only a match */
         const char *sugg = tki_closest_member(cx->env->names, alias, member);
         if (sugg) {                                          /* 127.122 */
             snprintf(fixbuf, sizeof fixbuf, "did you mean '%s.%s'?",
@@ -4206,8 +4204,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                          st->name?st->name:"?",fnb);
                 diag_emit(DIAG_ERROR,E4025,fi->start,fi->line,fi->col,msg,
                           "expected","a valid field name","got",fnb,
-                          "fix","check the struct definition for available fields",
-                          (const char*)NULL);
+                          (const char*)NULL);   /* 127.243: no advice fix */
             }
         }
         return st;
@@ -5198,7 +5195,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                      base->name?base->name:"?",fname);
             diag_emit(DIAG_ERROR,E4025,node->start,node->line,node->col,msg,
                       "expected","a valid field name","got",fname,
-                      "fix","check the struct definition for available fields",(const char*)NULL);
+                      (const char*)NULL);   /* 127.243: no advice fix */
         }
         return mk_type(A,TY_UNKNOWN);
     }
