@@ -76,8 +76,8 @@ expect "1  the tree: OK" "$(gate)" "0 OK"
 n=0
 for r in llm.llmclient llm.llmresp canvas.canvas canvas.canvasop chart.chartspec \
          dashboard.dashwidget dashboard.dashboard db.Row html.htmlnode html.htmldoc \
-         i18n.I18nBundle ml.linearmodel svg.svgdoc svg.svgstyle template.tmpl \
-         template.tmplvars tls.TlsConn tls.TlsConfig tls.TlsKeypair ws.wsconn ws.wsmsg; do
+         i18n.i18nbundle ml.linearmodel svg.svgdoc svg.svgstyle template.tmpl \
+         template.tmplvars tls.tlsconn tls.tlsconfig tls.tlskeypair ws.wsconn ws.wsmsg; do
     grep -q "= ${r} (" "${WORK}/last.out" && n=$((n + 1))
 done
 expect "1b the 21 structs of the twelve modules are among those checked" "${n}" "21"

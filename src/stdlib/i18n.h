@@ -46,7 +46,7 @@
  * and `b.data` read the bundle text's first 8 bytes as a pointer).
  * `make check-tki-layout` keeps it in step with i18n.tki.
  */
-/* tki-record: i18n.I18nBundle */
+/* tki-record: i18n.i18nbundle */
 typedef struct {
     const char *data;
 } I18nBundle;
