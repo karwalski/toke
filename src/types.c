@@ -1788,6 +1788,21 @@ static int is_fn_body(Ctx *cx, const Node *sl) {
  * What is left — arithmetic, a literal, a binding, a field or index read,
  * a cast, a composite literal — computes a value and does nothing with it,
  * which has exactly one meaning. */
+/* 127.248 (2): 1 when a `<` comparison sits anywhere in this operator
+ * tree.  `<` is also toke's return operator, so `io.println("x")` then
+ * `<0` on the next line with the `;` forgotten parses as the comparison
+ * `io.println("x") < 0` — 137.14's tail trap.  The repair there is the
+ * `;`, and prefixing a `<` would return the comparison instead.  Two
+ * readings, so no `fix`. */
+static int expr_has_lt(const Node *e) {
+    if (!e) return 0;
+    if (e->kind != NODE_BINARY_EXPR && e->kind != NODE_UNARY_EXPR) return 0;
+    if (e->kind == NODE_BINARY_EXPR && e->op == TK_LT) return 1;
+    for (int i = 0; i < e->child_count; i++)
+        if (expr_has_lt(e->children[i])) return 1;
+    return 0;
+}
+
 static int tail_fix_is_certain(const Node *expr) {
     if (!expr) return 0;
     switch (expr->kind) {
@@ -2044,7 +2059,7 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
     const char *got = known ? type_name(tail_ty)
                     : (prop && tail_ty && tail_ty->kind==TY_VOID) ? "void"   /* 127.188 */
                     : "unknown";
-    if (expr && tail_fix_is_certain(expr))
+    if (expr && tail_fix_is_certain(expr) && !expr_has_lt(expr))   /* 127.248 (2) */
         diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
                   "expected",type_name(cx->fn_ret),"got",got,
                   "fix","prefix the expression with '<' to return it",

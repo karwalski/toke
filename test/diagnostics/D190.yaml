@@ -1,0 +1,13 @@
+id: D190
+series: D
+description: "E4071: a function body ending in a pure value expression with no '<' carries the one certain repair, prefixing '<' (127.113; fix pinned by 127.248 (2))"
+input: |
+  m=test;
+  f=g():i64{
+    let x=1;
+    x+2
+  };
+  f=main():i64{ <g() };
+expected_exit_code: 1
+expected_error_codes: ["E4071"]
+expected_fix: "prefix the expression with '<' to return it"
