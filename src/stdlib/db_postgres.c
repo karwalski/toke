@@ -41,9 +41,15 @@ static DbErr pg_err_copy(DbErrKind kind, const char *msg)
  *   -- ...       line comment, to end of line
  *   / * ... * /  block comment, nested as PostgreSQL nests them
  * An unterminated form runs to the end of the text, as the server would read
- * it.  Not handled: the jsonb operators ?, ?| and ?& are still rewritten --
- * there is no telling them from a placeholder lexically; use
- * jsonb_exists()/jsonb_exists_any()/jsonb_exists_all() instead.
+ * it.
+ *
+ * 121.51 (8): the jsonb operators ?, ?| and ?& cannot be told from a
+ * placeholder lexically, so a doubled `??` is the escape, as in JDBC: it is
+ * written to the server as one literal '?' and takes no parameter --
+ * `data ?? 'k'`, `data ??| array['a']`, `data ??& array['a']`.  A single `?`
+ * is always a placeholder.  (Before, `??` became `$1$2`, which no server
+ * accepts, so no working query changes meaning.)  jsonb_exists() and
+ * friends remain an alternative.
  * Returns NULL on allocation failure. */
 static int pg_ident_char(char c)
 {
@@ -128,6 +134,7 @@ static char *rewrite_placeholders(const char *sql)
     for (size_t i = 0; i < len; ) {
         size_t j = pg_skip_form(sql, i);
         if (j != i) { out_len += j - i; i = j; continue; }
+        if (sql[i] == '?' && sql[i + 1] == '?') { out_len++; i += 2; continue; }
         if (sql[i] == '?') out_len += (size_t)snprintf(num, sizeof num, "$%lu", ++idx);
         else out_len++;
         i++;
@@ -140,6 +147,7 @@ static char *rewrite_placeholders(const char *sql)
     for (size_t i = 0; i < len; ) {
         size_t j = pg_skip_form(sql, i);
         if (j != i) { memcpy(out + w, sql + i, j - i); w += j - i; i = j; continue; }
+        if (sql[i] == '?' && sql[i + 1] == '?') { out[w++] = '?'; i += 2; continue; }
         if (sql[i] == '?') {
             int n = snprintf(num, sizeof num, "$%lu", ++idx);
             memcpy(out + w, num, (size_t)n); w += (size_t)n;
@@ -173,30 +181,51 @@ static void pg_close(void)
     if (g_pg) { PQfinish(g_pg); g_pg = NULL; }
 }
 
-static Row pg_collect_row(PGresult *res, int row_idx)
+static void pg_free_row(Row *row)
+{
+    for (uint64_t c = 0; c < row->col_count; c++) {
+        free((void *)row->col_names[c]);
+        free((void *)row->col_values[c]);
+    }
+    free((void *)row->col_names);
+    free((void *)row->col_values);
+    free(row->col_nulls);
+}
+
+/* 121.51 (8): every allocation is checked (they were not: a NULL names/values
+ * array was written through).  Returns 0 on out-of-memory with nothing left
+ * allocated; *out is then empty. */
+static int pg_collect_row(PGresult *res, int row_idx, Row *out)
 {
     int n = PQnfields(res);
-    const char **names  = malloc((size_t)n * sizeof(char *));
-    const char **values = malloc((size_t)n * sizeof(char *));
-    int         *nulls  = malloc((size_t)n * sizeof(int));
-    for (int c = 0; c < n; c++) {
-        names[c]  = strdup(PQfname(res, c));
-        nulls[c]  = PQgetisnull(res, row_idx, c);
-        const char *v = PQgetvalue(res, row_idx, c);
-        values[c] = v ? strdup(v) : strdup("");
+    size_t cap = n > 0 ? (size_t)n : 1;
+    const char **names  = calloc(cap, sizeof(char *));
+    const char **values = calloc(cap, sizeof(char *));
+    int         *nulls  = calloc(cap, sizeof(int));
+    memset(out, 0, sizeof *out);
+    if (!names || !values || !nulls) {
+        free((void *)names); free((void *)values); free(nulls);
+        return 0;
     }
-    Row row;
-    row.col_names  = names;
-    row.col_values = values;
-    row.col_nulls  = nulls;
-    row.col_count  = (uint64_t)n;
-    return row;
+    out->col_names = names; out->col_values = values; out->col_nulls = nulls;
+    for (int c = 0; c < n; c++) {
+        const char *v = PQgetvalue(res, row_idx, c);
+        names[c]  = strdup(PQfname(res, c));
+        values[c] = strdup(v ? v : "");
+        nulls[c]  = PQgetisnull(res, row_idx, c);
+        out->col_count = (uint64_t)c + 1;
+        if (!names[c] || !values[c]) { pg_free_row(out); memset(out, 0, sizeof *out); return 0; }
+    }
+    return 1;
 }
 
 static RowResult pg_one(const char *sql, StrArray params)
 {
     RowResult r; r.is_err = 0;
     char *rewritten = rewrite_placeholders(sql);
+    if (!rewritten) {   /* 121.51 (8): a NULL went on to libpq as the query */
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
     PGresult *res = PQexecParams(g_pg, rewritten, (int)params.len,
                                  NULL, params.data, NULL, NULL, 0);
     free(rewritten);
@@ -212,7 +241,9 @@ static RowResult pg_one(const char *sql, StrArray params)
         PQclear(res);
         return r;
     }
-    r.ok = pg_collect_row(res, 0);
+    if (!pg_collect_row(res, 0, &r.ok)) {
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory");
+    }
     PQclear(res);
     return r;
 }
@@ -221,6 +252,9 @@ static RowArrayResult pg_many(const char *sql, StrArray params)
 {
     RowArrayResult r; r.is_err = 0;
     char *rewritten = rewrite_placeholders(sql);
+    if (!rewritten) {
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
     PGresult *res = PQexecParams(g_pg, rewritten, (int)params.len,
                                  NULL, params.data, NULL, NULL, 0);
     free(rewritten);
@@ -231,9 +265,19 @@ static RowArrayResult pg_many(const char *sql, StrArray params)
         return r;
     }
     int nrows = PQntuples(res);
-    Row *rows = malloc((size_t)nrows * sizeof(Row));
-    for (int i = 0; i < nrows; i++)
-        rows[i] = pg_collect_row(res, i);
+    Row *rows = malloc((size_t)(nrows > 0 ? nrows : 1) * sizeof(Row));
+    if (!rows) {
+        PQclear(res);
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
+    for (int i = 0; i < nrows; i++) {
+        if (!pg_collect_row(res, i, &rows[i])) {
+            for (int k = 0; k < i; k++) pg_free_row(&rows[k]);
+            free(rows);
+            PQclear(res);
+            r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+        }
+    }
     r.ok.data = rows;
     r.ok.len  = (uint64_t)nrows;
     PQclear(res);
@@ -244,6 +288,9 @@ static U64Result pg_exec(const char *sql, StrArray params)
 {
     U64Result r; r.is_err = 0; r.ok = 0;
     char *rewritten = rewrite_placeholders(sql);
+    if (!rewritten) {
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
     PGresult *res = PQexecParams(g_pg, rewritten, (int)params.len,
                                  NULL, params.data, NULL, NULL, 0);
     free(rewritten);
@@ -360,8 +407,13 @@ static StmtResult pg_prepare(int conn_id, const char *sql)
     }
 
     PgStmt *s = calloc(1, sizeof(PgStmt));
+    if (!s) { r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r; }
     snprintf(s->name, sizeof(s->name), "_tk_s%u", pg_stmt_counter++);
     s->sql = rewrite_placeholders(sql);
+    if (!s->sql) {   /* 121.51 (8): a NULL went on to PQprepare */
+        free(s);
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
 
     PGresult *res = PQprepare(g_pg, s->name, s->sql, 0, NULL);
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
@@ -427,7 +479,9 @@ static RowResult pg_step(TkStmt *stmt)
         return r;
     }
 
-    r.ok = pg_collect_row(s->result, s->row_idx);
+    if (!pg_collect_row(s->result, s->row_idx, &r.ok)) {
+        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
+    }
     s->row_idx++;
     return r;
 }
