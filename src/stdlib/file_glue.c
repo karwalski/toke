@@ -12,8 +12,6 @@
 #include "tk_runtime.h"     /* 135.12: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdarg.h>
-#include <stdio.h>
 #include <string.h>
 
 /* ══ The error channel (135.12, then 127.102b for the whole module) ═══════
@@ -35,34 +33,17 @@
  *
  * THE MESSAGE OUTLIVES THE NEXT CALL.  file.c formats its messages into one
  * static buffer that the next failure overwrites, but a `let`-bound error
- * keeps a copy of its BOX (127.103), and the box holds a pointer — so a
- * message pointing into that buffer would change under a binding the caller
- * still holds.  Each raise copies its message into the next slot of a small
- * per-thread ring instead: a binding's message stays exact across the next
- * TK_FILE_MSG_RING - 1 failures on its thread, with no allocation per error
- * (127.109). */
-#define TK_FILE_MSG_RING 8
-#define TK_FILE_MSG_LEN  1024
-static TK_TLS char g_file_msg_ring[TK_FILE_MSG_RING][TK_FILE_MSG_LEN];
-static TK_TLS int  g_file_msg_next;
-
-static const char *file_msg(const char *fmt, ...) {
-    char *m = g_file_msg_ring[g_file_msg_next];
-    g_file_msg_next = (g_file_msg_next + 1) % TK_FILE_MSG_RING;
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(m, TK_FILE_MSG_LEN, fmt, ap);
-    va_end(ap);
-    return m;
-}
-
+ * keeps a copy of its BOX (127.103), and the box holds a pointer — so every
+ * raise copies its message through tk_err_msg() (tk_runtime.c), whose
+ * per-thread ring keeps it exact across the next seven raises, with no
+ * allocation per error (127.109). */
 /* The box: slot 0 = the FileErr variant index (== FileErrKind), slot 1 = the
  * message.  tk_err_box never returns null (a null would be stored as 0, and 0
  * is success), so there is no failure path to write here. */
 static int64_t file_raise(FileErrKind kind, const char *msg) {
     int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
     box[0] = (int64_t)kind;
-    box[1] = (int64_t)(intptr_t)file_msg("%s", msg ? msg : "");
+    box[1] = (int64_t)(intptr_t)tk_err_msg("%s", msg ? msg : "");
     tk_current_error = (int64_t)(intptr_t)box;
     return 0;
 }
@@ -72,7 +53,7 @@ static int64_t file_raise(FileErrKind kind, const char *msg) {
 static int64_t file_raise_op(const char *op, FileErr e, int64_t path) {
     int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
     box[0] = (int64_t)e.kind;
-    box[1] = (int64_t)(intptr_t)file_msg("%s: %s: %s", op,
+    box[1] = (int64_t)(intptr_t)tk_err_msg("%s: %s: %s", op,
                                          e.msg ? e.msg : "I/O error",
                                          path ? (const char *)(intptr_t)path : "");
     tk_current_error = (int64_t)(intptr_t)box;
@@ -95,7 +76,7 @@ static int64_t file_strarray(const char *op, StrArray arr, int free_data) {
     if (!h) {
         if (free_data) free(arr.data);
         return file_raise(FILE_ERR_NO_MEM,
-                          file_msg("%s: array allocation failed", op));
+                          tk_err_msg("%s: array allocation failed", op));
     }
     int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < arr.len; i++)

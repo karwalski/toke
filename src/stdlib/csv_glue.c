@@ -14,8 +14,6 @@
 
 #include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
 
-#include <stdio.h>
-
 /* 127.238: the error slot (runtime-abi.md §7.2).  These `T!csverr` wrappers
  * returned a bare 0 on failure, so only the value sentinel saw it and the
  * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
@@ -36,20 +34,13 @@
  *                   this file                         — was csv.lasterrkind()
  *
  * `line` was always declared and always 0 until now; `kind` is new.  The
- * message is copied out of csv.c's single static buffer into a small
- * per-thread ring, because a `let`-kept error keeps a copy of its BOX
+ * message is copied out of csv.c's single static buffer through tk_err_msg()
+ * (tk_runtime.c), because a `let`-kept error keeps a copy of its BOX
  * (127.103) and the box holds a pointer: without the copy the next csv call
  * would rewrite a message the caller still holds.  No allocation per error
  * (127.109). */
-#define TK_CSV_MSG_RING 8
-#define TK_CSV_MSG_LEN  512
-static TK_TLS char g_csv_msg_ring[TK_CSV_MSG_RING][TK_CSV_MSG_LEN];
-static TK_TLS int  g_csv_msg_next;
-
 static int64_t csv_raise(const char *msg, uint64_t line, const char *kind) {
-    char *m = g_csv_msg_ring[g_csv_msg_next];
-    g_csv_msg_next = (g_csv_msg_next + 1) % TK_CSV_MSG_RING;
-    snprintf(m, TK_CSV_MSG_LEN, "%s", msg ? msg : "");
+    const char *m = tk_err_msg("%s", msg ? msg : "");
     int64_t *box = (int64_t *)tk_err_box(3 * (int64_t)sizeof(int64_t));
     box[0] = (int64_t)(intptr_t)m;
     box[1] = (int64_t)line;
