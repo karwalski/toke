@@ -621,117 +621,12 @@ int http_chunked_write(int fd, const char *data, size_t len, size_t chunk_size)
     return 0;
 }
 
-/*
- * http_chunked_read — read a chunked-encoded body from fd.
- *
- * Parses the sequence:
- *   <hex-len>[chunk-ext]\r\n
- *   <data>\r\n
- *   ...
- *   0\r\n\r\n
- *
- * Chunk extensions after the hex length (e.g. ";name=value") are ignored.
- *
- * Returns a malloc'd buffer containing the reassembled body, and sets
- * *out_len to its length.  Returns NULL on allocation failure or protocol
- * error.  Caller owns the returned buffer.
- *
- * 121.17: the server loops no longer call this -- it reads fresh from fd, so
- * it cannot see body bytes already buffered with the headers.  They use
- * http_read_chunked(), below.
- */
-char *http_chunked_read(int fd, size_t *out_len)
-{
-    size_t  buf_cap = 4096;
-    size_t  buf_len = 0;
-    char   *buf     = malloc(buf_cap);
-    if (!buf) return NULL;
-
-    /* Line-reading buffer: holds at most one "hex\r\n" line */
-    char line[128];
-
-    for (;;) {
-        /* Read chunk-size line byte-by-byte until \r\n */
-        size_t li = 0;
-        for (;;) {
-            if (li + 1 >= sizeof(line)) { free(buf); return NULL; }
-            ssize_t n = read(fd, line + li, 1);
-            if (n <= 0) { free(buf); return NULL; }
-            li++;
-            if (li >= 2 && line[li - 2] == '\r' && line[li - 1] == '\n')
-                break;
-        }
-        line[li - 2] = '\0'; /* trim \r\n */
-
-        /* Ignore chunk extensions: truncate at first ';' */
-        char *semi = strchr(line, ';');
-        if (semi) *semi = '\0';
-
-        /* Parse hex length.  121.17: at least one hex digit -- an empty
-         * line used to read as the last chunk. */
-        size_t csz = 0;
-        if (!isxdigit((unsigned char)line[0])) { free(buf); return NULL; }
-        {
-            const char *endp = line;
-            while (*endp) {
-                char c = *endp;
-                size_t nibble;
-                if      (c >= '0' && c <= '9') nibble = (size_t)(c - '0');
-                else if (c >= 'a' && c <= 'f') nibble = (size_t)(c - 'a' + 10);
-                else if (c >= 'A' && c <= 'F') nibble = (size_t)(c - 'A' + 10);
-                else { free(buf); return NULL; }
-                /* 121.7 (HTT-01): reject a chunk-size that would overflow csz. */
-                if (csz > (SIZE_MAX - 15) / 16) { free(buf); return NULL; }
-                csz = csz * 16u + nibble;
-                endp++;
-            }
-        }
-
-        if (csz == 0) {
-            /* Last chunk: consume trailing \r\n */
-            char tail[2];
-            ssize_t n = read(fd, tail, 2);
-            (void)n;
-            break;
-        }
-
-        /* 121.7 (HTT-01): enforce max_body across chunk accumulation — without
-         * this a stream of chunks grows the buffer without bound (memory-
-         * exhaustion DoS), bypassing the Content-Length ceiling. */
-        if (csz > (size_t)srv_limits.max_body ||
-            buf_len + csz > (size_t)srv_limits.max_body) {
-            free(buf); return NULL;
-        }
-
-        /* Grow output buffer if needed (+1 for NUL terminator) */
-        if (buf_len + csz + 1 > buf_cap) {
-            while (buf_cap < buf_len + csz + 1) buf_cap *= 2;
-            char *tmp = realloc(buf, buf_cap);
-            if (!tmp) { free(buf); return NULL; }
-            buf = tmp;
-        }
-
-        /* Read csz bytes of chunk data */
-        size_t rread = 0;
-        while (rread < csz) {
-            ssize_t n = read(fd, buf + buf_len + rread, csz - rread);
-            if (n <= 0) { free(buf); return NULL; }
-            rread += (size_t)n;
-        }
-        buf_len += csz;
-
-        /* Consume trailing \r\n after chunk data.  121.17: it must BE
-         * \r\n; any two bytes used to do, so a wrong chunk-size was read
-         * straight past. */
-        char crlf[2];
-        ssize_t n = read(fd, crlf, 2);
-        if (n < 2 || crlf[0] != '\r' || crlf[1] != '\n') { free(buf); return NULL; }
-    }
-
-    buf[buf_len] = '\0';
-    *out_len = buf_len;
-    return buf;
-}
+/* 121.44: http_chunked_read(fd) was here.  It read a chunked body FRESH
+ * from the socket, so it could not see body bytes already buffered with the
+ * headers (audit-120 HTT-02), and it read the peer's stream a byte at a time
+ * with no deadline.  No server path had called it since 121.17; it is gone
+ * from http.h so no C caller picks it up.  The server decodes chunked bodies
+ * in place with http_read_chunked(), below. */
 
 /* ── Response serialisation ─────────────────────────────────────────── */
 
@@ -1438,11 +1333,6 @@ static int http_read_request(HttpIn *in, int requests)
  * actually known.  See docs/stdlib/http.md, "Rate limiting".
  */
 
-#ifdef TK_HAVE_OPENSSL
-/* Forward declaration for h2c upgrade path (60.1.7) */
-static void handle_h2_connection(int fd, void *ssl, const char *client_ip);
-#endif
-
 static void handle_connection(int fd)
 {
     char client_ip[64];
@@ -1456,8 +1346,8 @@ static void handle_connection(int fd)
      * where it was defined.  Rate limiting belongs in front of the server. */
 
     /* Apply the (possibly user-overridden) receive timeout.  121.17: the
-     * request reader waits with poll() against a per-request deadline; this
-     * still bounds the h2c path, which reads the socket directly. */
+     * request reader waits with poll() against a per-request deadline, so
+     * this only bounds reads outside it. */
     struct timeval tv;
     tv.tv_sec  = (long)srv_limits.timeout_secs;
     tv.tv_usec = 0;
@@ -1491,30 +1381,17 @@ static void handle_connection(int fd)
 
         Req req = parse_request(raw);
 
-        /* ── h2c cleartext upgrade (60.1.7) ── */
-#ifdef TK_HAVE_OPENSSL
-        {
-            const char *upgrade = NULL;
-            for (uint64_t i = 0; i < req.headers.len; i++) {
-                if (strcasecmp(req.headers.data[i].key, "Upgrade") == 0) {
-                    upgrade = req.headers.data[i].val;
-                    break;
-                }
-            }
-            if (upgrade && strcasecmp(upgrade, "h2c") == 0) {
-                const char *resp101 =
-                    "HTTP/1.1 101 Switching Protocols\r\n"
-                    "Connection: Upgrade\r\n"
-                    "Upgrade: h2c\r\n\r\n";
-                http_write_all(fd, resp101, strlen(resp101));
-                handle_h2_connection(fd, NULL, client_ip);
-                free_req(&req);                 /* 127.65 */
-                free(raw);
-                close(fd);
-                return;
-            }
-        }
-#endif
+        /* 121.44: no h2c upgrade.  An "Upgrade: h2c" request used to get a
+         * 101 and then handle_h2_connection(fd, NULL, ...), which read the
+         * connection preface with SSL_read() on a NULL SSL: the read failed
+         * at once and the connection closed.  So the path never served a
+         * request -- not even the upgrade request itself, which RFC 7540 3.2
+         * says is answered on stream 1 -- and any HTTP/2 bytes the reader
+         * had already buffered behind the request were dropped with it.
+         * RFC 9113 3.1 deprecates the h2c upgrade; RFC 9110 7.8 lets a
+         * server ignore Upgrade.  We do: the request is answered over
+         * HTTP/1.1 like any other, and bytes behind it stay in the reader.
+         * HTTP/2 is offered over TLS, via ALPN (handle_tls_connection). */
 
         /* ── CORS: match request Origin against allowed list ── */
         g_cors_matched = NULL;

@@ -454,164 +454,59 @@ int main(void)
     /* ── Chunked transfer encoding (Story 27.1.4) ──────────────────── */
 
     /*
-     * Test 1: encode 1 KiB of data in 100-byte chunks, decode, verify match.
-     *
-     * Uses socketpair: one end writes via http_chunked_write, the other
-     * reads via http_chunked_read.
+     * http_chunked_write's output is checked byte for byte against the wire
+     * format RFC 9112 7.1 defines.  121.44: these tests used to decode it
+     * with http_chunked_read(), which is retired (it read fresh from the
+     * socket and could not see buffered bytes); the server's own chunked
+     * decoder, http_read_chunked(), is exercised end to end by conform C460.
      */
-    {
-        /* Build 1024-byte payload: repeating ASCII pattern */
+    struct { const char *name; size_t len; size_t chunk; } cw[] = {
+        { "chunked 1KB in 100-byte chunks", 1024, 100 },
+        { "chunked empty body",                0,   1 },
+        { "chunked single chunk",             12, 4096 },
+    };
+    for (size_t t = 0; t < sizeof cw / sizeof cw[0]; t++) {
         char payload[1024];
         for (size_t i = 0; i < sizeof(payload); i++)
             payload[i] = (char)('A' + (int)(i % 26));
 
-        int sv[2];
-        ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0,
-               "chunked 1KB: socketpair created");
+        /* expected: <hex>\r\n<data>\r\n ... 0\r\n\r\n */
+        static char want[4096];
+        size_t wn = 0;
+        for (size_t off = 0; off < cw[t].len; off += cw[t].chunk) {
+            size_t c = cw[t].len - off < cw[t].chunk ? cw[t].len - off : cw[t].chunk;
+            wn += (size_t)snprintf(want + wn, sizeof want - wn, "%zx\r\n", c);
+            memcpy(want + wn, payload + off, c); wn += c;
+            memcpy(want + wn, "\r\n", 2); wn += 2;
+        }
+        memcpy(want + wn, "0\r\n\r\n", 5); wn += 5;
 
+        int sv[2];
+        ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0, "chunked: socketpair created");
         pid_t pid = fork();
         if (pid == 0) {
-            /* Child: write encoded data then close the write end */
             close(sv[0]);
-            int rc = http_chunked_write(sv[1], payload, sizeof(payload), 100);
+            int rc = http_chunked_write(sv[1], payload, cw[t].len, cw[t].chunk);
             close(sv[1]);
             _exit(rc == 0 ? 0 : 1);
         }
-
-        /* Parent: read and reassemble */
         close(sv[1]);
-        size_t out_len = 0;
-        char *decoded = http_chunked_read(sv[0], &out_len);
-        close(sv[0]);
-
-        int wstatus = 0;
-        waitpid(pid, &wstatus, 0);
-
-        ASSERT(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0,
-               "chunked 1KB: writer exited cleanly");
-        ASSERT(decoded != NULL, "chunked 1KB: http_chunked_read returns non-NULL");
-        ASSERT(out_len == sizeof(payload),
-               "chunked 1KB: decoded length == 1024");
-        ASSERT(decoded != NULL && out_len == sizeof(payload) &&
-               memcmp(decoded, payload, sizeof(payload)) == 0,
-               "chunked 1KB: decoded data matches original");
-        free(decoded);
-    }
-
-    /*
-     * Test 2: empty body produces "0\r\n\r\n" and decodes back to empty.
-     */
-    {
-        int sv[2];
-        ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0,
-               "chunked empty: socketpair created");
-
-        pid_t pid = fork();
-        if (pid == 0) {
-            close(sv[0]);
-            /* chunk_size=1 (non-zero) with len=0: only terminator written */
-            int rc = http_chunked_write(sv[1], "", 0, 1);
-            close(sv[1]);
-            _exit(rc == 0 ? 0 : 1);
+        static char got[4096];
+        size_t gn = 0;
+        for (;;) {
+            ssize_t r = read(sv[0], got + gn, sizeof got - gn);
+            if (r <= 0) break;
+            gn += (size_t)r;
         }
-
-        close(sv[1]);
-        size_t out_len = 999; /* sentinel */
-        char *decoded = http_chunked_read(sv[0], &out_len);
         close(sv[0]);
-
         int wstatus = 0;
         waitpid(pid, &wstatus, 0);
 
-        ASSERT(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0,
-               "chunked empty: writer exited cleanly");
-        ASSERT(decoded != NULL, "chunked empty: http_chunked_read returns non-NULL");
-        ASSERT(out_len == 0, "chunked empty: decoded length == 0");
-        free(decoded);
-    }
-
-    /*
-     * Test 3: single chunk (chunk_size >= len).
-     */
-    {
-        const char *msg = "hello, world";
-        size_t mlen = strlen(msg);
-
-        int sv[2];
-        ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0,
-               "chunked single: socketpair created");
-
-        pid_t pid = fork();
-        if (pid == 0) {
-            close(sv[0]);
-            int rc = http_chunked_write(sv[1], msg, mlen, 4096);
-            close(sv[1]);
-            _exit(rc == 0 ? 0 : 1);
-        }
-
-        close(sv[1]);
-        size_t out_len = 0;
-        char *decoded = http_chunked_read(sv[0], &out_len);
-        close(sv[0]);
-
-        int wstatus = 0;
-        waitpid(pid, &wstatus, 0);
-
-        ASSERT(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0,
-               "chunked single: writer exited cleanly");
-        ASSERT(decoded != NULL && out_len == mlen &&
-               memcmp(decoded, msg, mlen) == 0,
-               "chunked single: decoded matches original");
-        free(decoded);
-    }
-
-    /*
-     * Test 4: chunk with extension (";name=value") is ignored on read.
-     *
-     * We write a raw chunked stream by hand that includes a chunk extension
-     * on the first chunk-size line, then verify http_chunked_read ignores it
-     * and returns the correct body.
-     */
-    {
-        /* Hand-craft a chunked stream:
-         *   5;ext=foo\r\n
-         *   hello\r\n
-         *   0\r\n\r\n
-         */
-        const char wire[] =
-            "5;ext=foo\r\n"
-            "hello\r\n"
-            "0\r\n\r\n";
-
-        int sv[2];
-        ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0,
-               "chunked ext: socketpair created");
-
-        pid_t pid = fork();
-        if (pid == 0) {
-            close(sv[0]);
-            size_t wlen = sizeof(wire) - 1; /* exclude NUL */
-            ssize_t n = write(sv[1], wire, wlen);
-            close(sv[1]);
-            _exit((n == (ssize_t)wlen) ? 0 : 1);
-        }
-
-        close(sv[1]);
-        size_t out_len = 0;
-        char *decoded = http_chunked_read(sv[0], &out_len);
-        close(sv[0]);
-
-        int wstatus = 0;
-        waitpid(pid, &wstatus, 0);
-
-        ASSERT(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0,
-               "chunked ext: writer exited cleanly");
-        ASSERT(decoded != NULL, "chunked ext: http_chunked_read returns non-NULL");
-        ASSERT(out_len == 5, "chunked ext: decoded length == 5");
-        ASSERT(decoded != NULL && out_len == 5 &&
-               memcmp(decoded, "hello", 5) == 0,
-               "chunked ext: decoded == \"hello\"");
-        free(decoded);
+        char msg[128];
+        snprintf(msg, sizeof msg, "%s: writer exited cleanly", cw[t].name);
+        ASSERT(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0, msg);
+        snprintf(msg, sizeof msg, "%s: %zu wire bytes match RFC 9112 7.1", cw[t].name, wn);
+        ASSERT(gn == wn && memcmp(got, want, wn) == 0, msg);
     }
 
     /* ── ETag generation and conditional requests (Story 27.1.13) ─────── */
