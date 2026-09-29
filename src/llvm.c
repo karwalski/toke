@@ -1382,17 +1382,10 @@ static int is_stdlib_slot_wrapper(const char *name) {
      * void) is a slot wrapper unless its glue is on the bare-glue exception
      * list in stdlib_tables.c, which test/conform/C375 keeps exact. */
     if (!name || is_err_slot_bare_glue(name)) return 0;
-    if (is_tki_value_err_union_wrapper(name)) return 1;
-    /* std.json's get* accessors keep the slot (json_glue.c) but their .tki
-     * declares a plain `i64`, so the derivation cannot see them. */
-    static const char *const undeclared[] = {
-        "tk_json_getbool_w", "tk_json_getint_w", "tk_json_geti64_w",
-        "tk_json_geti32_w", "tk_json_getf32_w", "tk_json_getfloat_w",
-        NULL,
-    };
-    for (int i = 0; undeclared[i]; i++)
-        if (!strcmp(name, undeclared[i])) return 1;
-    return 0;
+    /* 127.241: std.json's get* accessors are declared `T!JsonErr` in
+     * json.tki now, so the derivation sees them; the six-name list that
+     * stood in for the missing declaration is gone. */
+    return is_tki_value_err_union_wrapper(name);
 }
 
 /*

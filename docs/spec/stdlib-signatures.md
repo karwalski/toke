@@ -70,6 +70,16 @@ f=arr(j:$json;key:$str):@$json!$jsonerr
 f=at(j:$json;path:$str):$json!$jsonerr   (* 138.12: dotted path, e.g. "usage.input_tokens", "r.0" *)
 f=getval(j:$json;path:$str):$str        (* 138.12: the raw JSON text at path, "" if none *)
 
+(* 127.241: the typed get* spellings -- aliases of i64 / bool / f64 above.
+   Their parameters are still the ABI's i64 (a json handle, a str key); the
+   result is the declared union, so a match decides on the error slot. *)
+f=getint(j:i64;key:i64):i64!$jsonerr
+f=geti64(j:i64;key:i64):i64!$jsonerr
+f=geti32(j:i64;key:i64):i64!$jsonerr
+f=getbool(j:i64;key:i64):bool!$jsonerr
+f=getf32(j:i64;key:i64):f64!$jsonerr
+f=getfloat(j:i64;key:i64):f64!$jsonerr
+
 (* Streaming API — 12.1.1.  Declared in json.tki but quarantined: no glue
    reaches the C core yet, so a call is refused at check with E4027
    (docs/reference/tki-quarantine.md; 102.16) *)
@@ -87,7 +97,7 @@ f=json.writerbytes(writer:$jsonwriter):@$byte
 ABI helpers. `json.tki` exports these with `"gen":"abi"`: their parameter and
 return types are `i64` placeholders, so only the name and arity are
 established, and they are listed that way (`name/arity`):
-`arrget/2`, `arrlen/1`, `decode/1`, `encarr/3`, `encbool/1`, `encf64/1`, `encnum/1`, `encode/1`, `encstr/1`, `entries/1`, `err/1`, `get/2`, `getarr/2`, `getarray/2`, `getbool/2`, `getf32/2`, `getfloat/2`, `geti32/2`, `geti64/2`, `getint/2`, `getobj/2`, `getopt/2`, `getregulations/1`, `getstr/2`, `getstring/2`, `has/2`, `haskey/2`, `isnullkey/2`, `keys/1`, `kv/2`, `len/1`, `obj/1`, `ok/1`, `parse/1`, `parsearray/1`, `parseobj/1`, `print/1`, `printarr/3`, `quote/1`, `serialize/1`, `set/3`, `setint/3`, `strarr/1`, `strarray/1`, `stringify/1`, `tryarr/2`, `trybool/2`, `tryboolkey/2`, `tryfloat/2`, `tryfloatkey/2`, `tryint/2`, `tryintkey/2`, `trystr/2`, `trystrkey/2`, `values/1`.
+`arrget/2`, `arrlen/1`, `decode/1`, `encarr/3`, `encbool/1`, `encf64/1`, `encnum/1`, `encode/1`, `encstr/1`, `entries/1`, `err/1`, `get/2`, `getarr/2`, `getarray/2`, `getobj/2`, `getopt/2`, `getregulations/1`, `getstr/2`, `getstring/2`, `has/2`, `haskey/2`, `isnullkey/2`, `keys/1`, `kv/2`, `len/1`, `obj/1`, `ok/1`, `parse/1`, `parsearray/1`, `parseobj/1`, `print/1`, `printarr/3`, `quote/1`, `serialize/1`, `set/3`, `setint/3`, `strarr/1`, `strarray/1`, `stringify/1`, `tryarr/2`, `trybool/2`, `tryboolkey/2`, `tryfloat/2`, `tryfloatkey/2`, `tryint/2`, `tryintkey/2`, `trystr/2`, `trystrkey/2`, `values/1`.
 
 ### std.toon
 

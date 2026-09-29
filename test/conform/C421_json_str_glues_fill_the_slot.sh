@@ -109,6 +109,18 @@ run_case "json.dec let-bound keeps its own slot" "err" \
   let p2=json.dec("{}");
   mt p1{$ok:v io.println("ok");$err:e io.println("err")};'
 
+# json.get* (127.241): declared T!JsonErr in json.tki, so the payload binds
+# through the derivation instead of llvm.c's six-name hand list (E9005 on
+# main 8efba9e, where the .tki said plain i64).
+run_case "json.getint missing binds Missing + key" "missing q" \
+'  mt json.getint(o;"q"){$ok:v io.println("ok");$err:e mt e{$parse:m io.println("parse");$type:m io.println("type");$missing:m io.println(str.concat("missing ";m))}};'
+
+run_case "json.getfloat of a string binds Type" "type" \
+'  mt json.getfloat(o;"t"){$ok:v io.println("ok");$err:e mt e{$parse:m io.println("parse");$type:m io.println("type");$missing:m io.println("missing")}};'
+
+run_case "json.getint of 0 after a failure is ok" "ok 0" \
+'  mt json.getint(o;"n"){$ok:v io.println(str.concat("ok ";str.fromint(v)));$err:e io.println("err")};'
+
 run_case "str.slice out of range binds SliceErr.msg" "slice index out of range" \
 '  io.println(mt str.slice("abc";5;9){$ok:v v;$err:e e.msg});'
 
