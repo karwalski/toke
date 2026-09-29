@@ -248,11 +248,9 @@ int64_t tk_file_remove_w(int64_t path) {
     return tk_file_delete_w(path);
 }
 
-/* ── fs module aliases (loke imports std.fs which maps to std.file) ───── */
-
-int64_t tk_fs_read_w(int64_t path) { return tk_file_read_w(path); }
-int64_t tk_fs_write_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
-int64_t tk_fs_writetext_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
+/* 136.45: the std.fs aliases (tk_fs_read_w / tk_fs_write_w / tk_fs_writetext_w,
+ * a second name for std.file that one downstream project imported) are
+ * withdrawn with the module. */
 
 /* file.tempdir() — return a temporary directory path */
 int64_t tk_file_tempdir_w(void) {

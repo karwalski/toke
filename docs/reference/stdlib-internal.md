@@ -54,12 +54,6 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `fmt.print` | `tk_fmt_print_w` | `fmt_glue.c` |
 | `fmt.sprintf` | `tk_fmt_sprintf_w` | `str_glue.c` |
 
-### `std.fs` (1)
-
-| Export | Glue symbol | Defined in |
-|---|---|---|
-| `fs.writetext` | `tk_fs_writetext_w` | `file_glue.c` |
-
 ### `std.http` (19)
 
 | Export | Glue symbol | Defined in |
@@ -84,23 +78,6 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `http.resnew` | `tk_http_res_new` | `tk_web_glue.c` |
 | `http.resp` | `tk_http_resp_w` | `tk_web_glue.c` |
 
-### `std.string` (12)
-
-| Export | Glue symbol | Defined in |
-|---|---|---|
-| `string.arrayget` | `tk_string_arrayget_w` | `str_glue.c` |
-| `string.arraylen` | `tk_string_arraylen_w` | `str_glue.c` |
-| `string.charat` | `tk_string_charat_w` | `str_glue.c` |
-| `string.concat` | `tk_string_concat_w` | `str_glue.c` |
-| `string.contains` | `tk_string_contains_w` | `str_glue.c` |
-| `string.fromi32` | `tk_string_fromi32_w` | `str_glue.c` |
-| `string.fromi64` | `tk_string_fromi64_w` | `str_glue.c` |
-| `string.len` | `tk_string_len_w` | `str_glue.c` |
-| `string.startswith` | `tk_string_startswith_w` | `str_glue.c` |
-| `string.substr` | `tk_string_substr_w` | `str_glue.c` |
-| `string.trim` | `tk_string_trim_w` | `str_glue.c` |
-| `string.uuid` | `tk_string_uuid_w` | `str_glue.c` |
-
 ## Defined, with no interface entry
 
 Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves to (story 136.34). None of them can be named from toke under a publishable spelling -- any that could is exported by `scripts/gen_tki.py` -- so this is the runtime's private half, classified by what reaches it:
@@ -108,10 +85,10 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
-| `c-internal` | called only from other C in `src/stdlib/` | 149 |
+| `c-internal` | called only from other C in `src/stdlib/` | 148 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 92 |
-| | **total** | **321** |
+| | **total** | **320** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -191,7 +168,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (149)
+### `c-internal` (148)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -257,7 +234,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_queue_push` | `collections.c` | collections_glue.c |
 | `tk_rec2` | `encrypt_glue.c` | encrypt_glue.c |
 | `tk_rl_hash` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_scheme_handler_class` | `webview.c` | webview.c |
 | `tk_securemem_alloc` | `securemem.c` | securemem.c, securemem_glue.c |
 | `tk_securemem_isavailable` | `securemem.c` | securemem_glue.c |
 | `tk_securemem_read` | `securemem.c` | securemem.c, securemem_glue.c |

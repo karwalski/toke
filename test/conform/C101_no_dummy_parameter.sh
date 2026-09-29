@@ -22,7 +22,10 @@
 # for them; and a call that passes the old dummy slot is now an arity error,
 # because that slot is not part of the function.
 #
-# Stories: 136.14, 135.17b
+# string.uuid was one of the 22 until 136.45 withdrew std.string (a second
+# name for std.str that one downstream imported); 21 remain.
+#
+# Stories: 136.14, 135.17b, 136.45
 
 set -uo pipefail
 
@@ -55,7 +58,7 @@ from pathlib import Path
 want = {"array.newarray", "array.newstrarray", "chart.new", "db.nowms",
         "file.tempdir", "i18n.newstrarray", "mlx.isavailable",
         "process.homedir", "securemem.isavailable", "securemem.sweep",
-        "str.newarray", "str.nowiso8601", "str.nowunix", "string.uuid",
+        "str.newarray", "str.nowiso8601", "str.nowunix",
         "sys.chipname", "sys.cpucount", "sys.isarm64", "sys.platform",
         "sys.totalramgb", "time.nowms", "time.nowunix", "time.unixnow"}
 seen = {}
@@ -69,7 +72,7 @@ print(" ".join(bad))
 PY
 )"
 if [ -z "${missing}" ]; then
-    pass "22 zero-argument functions are declared with no parameters"
+    pass "21 zero-argument functions are declared with no parameters"
 else
     fail "declared with a parameter (or absent): ${missing}"
 fi
@@ -83,7 +86,6 @@ i=tm:std.time;
 i=sy:std.sys;
 i=fl:std.file;
 i=pr:std.process;
-i=st:std.string;
 i=db:std.db;
 f=pos(label:$str;n:i64):i64{
   io.println(s.concat(label;if(n>0){" ok"}el{" zero"}));
@@ -99,7 +101,6 @@ f=main():i64{
   pos("sys.chipname";s.len(sy.chipname()));
   pos("file.tempdir";s.len(fl.tempdir()));
   pos("process.homedir";s.len(pr.homedir()));
-  pos("string.uuid";s.len(st.uuid()));
   pos("str.nowiso8601";s.len(s.nowiso8601()));
   <0
 };
@@ -111,7 +112,7 @@ else
     out="$(./z_bin 2>&1)"
     for n in time.nowms time.nowunix time.unixnow db.nowms sys.cpucount \
              sys.platform sys.chipname file.tempdir process.homedir \
-             string.uuid str.nowiso8601; do
+             str.nowiso8601; do
         if printf '%s\n' "${out}" | grep -qxF "${n} ok"; then
             pass "${n}() runs and returns a value"
         else
