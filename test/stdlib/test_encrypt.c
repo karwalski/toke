@@ -1230,6 +1230,111 @@ static void test_rsa_verify_wrong_message(void)
 }
 
 /* -------------------------------------------------------------------------
+ * RSA with a fixed key (121.48)
+ *
+ * RSA key generation is ~20-40 s at -O2 and several minutes under ASan, so
+ * the keygen block above SKIPs on a sanitizer build and nothing downstream
+ * of it -- OAEP, PSS, the private-key modpow -- ever ran under ASan.  These
+ * tests use a fixed 2048-bit key instead and so always run.
+ *
+ * THIS IS A PUBLISHED TEST KEY.  It was generated for this file with a
+ * seeded PRNG (Python random.Random(12148)) and protects nothing; never use
+ * it for anything else.  A decrypt that recovers the plaintext and a
+ * signature that verifies are the check that d matches (n, e).
+ * ------------------------------------------------------------------------- */
+static const char k_rsa_test_n[] =
+    "d6104e22cfdd63bc9b18512a51eaedcdaf829896d174fced4a97990e288d6fd9"
+    "46dae2f87cf7159a8e6260cab36439372e1077cb79b554a07c2183f79ab0498a"
+    "f3f9b7d79af2791d78a62fd9a8b9ab5d720b0b60fd75a54adbfc7c276d2cd043"
+    "e1f05156a5b54f449b75b51936fc8f12bc764195193fe42fa218a378d8a9a46a"
+    "c21c4a057aab4403fe95bc301a6392a441bb4cd3caa40547fa1933fcaf47e7d9"
+    "e758c87f966c9a9330e62300d37baaf91064caadd4d3ae0cf22cd65d35b9021e"
+    "bc68a56f76503854f494073aedce043d57f8943af925d30e7527a9c1bb219991"
+    "d30e11b2bc1de461dc96b33145479889571275a5211ee95e7fc6bce56be6db53";
+static const char k_rsa_test_d[] =
+    "ca0c05d431e2c31ae841218b125aee2e3034d215b889f5997bc86f3cbfe60fe6"
+    "434ca2e2ec00c3b168274f38c3ee1b5b0bed9b44c111f858aa1170602aefadda"
+    "abc1ce5680f7d07d92bd3978f61a99b6cfc7c0ebc11063fdae7a382d768ccfde"
+    "e2c953dcb6f7d563ea604599111f7d63afe2e6aff66f29d013edb18e84e24a3e"
+    "8683b08cb3ca5b3dafdae9443936af5865d8b0fbf1156a78e3922d2a600899af"
+    "49b42ba9ffafe0868ffd5fe9ae041663e0bb4e0b5984b11acb873526cf5e59ed"
+    "fdcd71ff54e0a333d26e967af8c416aaac4f6e465a07baa7e401ef77e049b140"
+    "277ca2bdae13fcd749291e0312e81cb9a4fa8279037a948185868a8cf05a04b1";
+static const char k_rsa_test_p[] =
+    "ff0848e371b42232cad2aac9ba3d4fe1e8bd06286dc64de61f4bef60b211a917"
+    "9944c4452051780dbe8e293342981bcec3114c68753b6cd6e082ff1e76fa1a1d"
+    "805d727380537d121fbbc7a845afaba9aeee37ee875eace747e2ea4f85016055"
+    "b65af60485b984d36f9e6d077a7b5c68f0e5840e087c5df500a89758f9870c85";
+static const char k_rsa_test_q[] =
+    "d6e03a2d33065969ecdde7dc71ffcdad1cb50bb9e16025c14bfe748e4b407c28"
+    "8db6d40177ed6da228529022590959b65e942ee87faf4105e0a7ba3371df49f4"
+    "243331ce4065d530e9c68e7ac39a25d3c523f9ba7c769600831a1b56a226ac5c"
+    "4c6379556e03d9e2ad6dfa0c063273076fd58ea3f13f0bebb3c6a2272e94dbf7";
+
+/* Serialise the fixed key in the stdlib's pub/priv layout:
+ * [4-byte len][bytes] for n, e (and d, p, q for the private key). */
+static uint8_t *rsa_test_put(uint8_t *w, const uint8_t *b, uint32_t len)
+{
+    w[0] = (uint8_t)(len >> 24); w[1] = (uint8_t)(len >> 16);
+    w[2] = (uint8_t)(len >> 8);  w[3] = (uint8_t)len;
+    memcpy(w + 4, b, len);
+    return w + 4 + len;
+}
+
+static uint8_t  s_fx_pub[4 + 256 + 4 + 3];
+static uint8_t  s_fx_priv[4 + 256 + 4 + 3 + 4 + 256 + 4 + 128 + 4 + 128];
+
+static void rsa_test_fixed_key(void)
+{
+    uint8_t n[256], d[256], p[128], q[128];
+    static const uint8_t e[3] = { 0x01, 0x00, 0x01 };
+    hex_decode(k_rsa_test_n, n, sizeof n);
+    hex_decode(k_rsa_test_d, d, sizeof d);
+    hex_decode(k_rsa_test_p, p, sizeof p);
+    hex_decode(k_rsa_test_q, q, sizeof q);
+    uint8_t *w = s_fx_pub;
+    w = rsa_test_put(w, n, 256); w = rsa_test_put(w, e, 3);
+    w = s_fx_priv;
+    w = rsa_test_put(w, n, 256); w = rsa_test_put(w, e, 3);
+    w = rsa_test_put(w, d, 256); w = rsa_test_put(w, p, 128);
+    w = rsa_test_put(w, q, 128);
+}
+
+static void test_rsa_fixed_key_roundtrip(void)
+{
+    ByteArray pt = ba_str("fixed-key oaep round trip");
+    RsaBytesResult enc = encrypt_rsa_encrypt(s_fx_pub, sizeof s_fx_pub, pt);
+    ASSERT(enc.is_err == 0 && enc.ok.len == 256, "rsa fixed key: encrypt gives 256 bytes");
+    if (enc.is_err) return;
+    RsaBytesResult dec = encrypt_rsa_decrypt(s_fx_priv, sizeof s_fx_priv, enc.ok);
+    ASSERT(dec.is_err == 0 && dec.ok.len == pt.len &&
+           memcmp(dec.ok.data, pt.data, (size_t)pt.len) == 0,
+           "rsa fixed key: decrypt recovers the plaintext");
+    ((uint8_t *)enc.ok.data)[100] ^= 0x40;
+    RsaBytesResult bad = encrypt_rsa_decrypt(s_fx_priv, sizeof s_fx_priv, enc.ok);
+    ASSERT(bad.is_err == 1, "rsa fixed key: a tampered ciphertext does not decrypt");
+    if (!dec.is_err) free((void *)dec.ok.data);
+    if (!bad.is_err) free((void *)bad.ok.data);
+    free((void *)enc.ok.data);
+}
+
+static void test_rsa_fixed_key_sign_verify(void)
+{
+    ByteArray msg = ba_str("fixed-key pss");
+    RsaBytesResult sr = encrypt_rsa_sign(s_fx_priv, sizeof s_fx_priv, msg);
+    ASSERT(sr.is_err == 0 && sr.ok.len == 256, "rsa fixed key: sign gives 256 bytes");
+    if (sr.is_err) return;
+    ASSERT(encrypt_rsa_verify(s_fx_pub, sizeof s_fx_pub, msg, sr.ok) == 1,
+           "rsa fixed key: verify accepts the signature");
+    ASSERT(encrypt_rsa_verify(s_fx_pub, sizeof s_fx_pub, ba_str("fixed-key PSS"), sr.ok) == 0,
+           "rsa fixed key: verify rejects another message");
+    ((uint8_t *)sr.ok.data)[7] ^= 0x01;
+    ASSERT(encrypt_rsa_verify(s_fx_pub, sizeof s_fx_pub, msg, sr.ok) == 0,
+           "rsa fixed key: verify rejects a tampered signature");
+    free((void *)sr.ok.data);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -1303,6 +1408,11 @@ int main(void)
 
     /* PBKDF2 (Story 30.1.1) */
     test_pbkdf2_rfc6070_vector1();
+
+    /* RSA with a fixed key (121.48) — runs on every build, ASan included */
+    rsa_test_fixed_key();
+    test_rsa_fixed_key_roundtrip();
+    test_rsa_fixed_key_sign_verify();
 
     /* RSA (Story 30.1.2) — 60-second timeout guards against slow bignum keygen */
     {

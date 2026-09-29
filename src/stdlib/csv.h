@@ -193,8 +193,9 @@ int csv_reader_at_end(const TkCsvReader *r);
 uint64_t     csv_reader_ragged_count(const TkCsvReader *r);
 const char  *csv_reader_ragged_at(const TkCsvReader *r, uint64_t i);
 
-/* Last-error state.  The compiled T!E ABI carries no payload (127.97), so the
- * $err arm binds nothing readable and these accessors ARE the error value.
+/* Last-error state, C side only.  csv_glue.c copies it into the csverr
+ * record {msg, line, kind} the $err arm binds (127.102a), which is why the
+ * toke accessors csv.lasterr / lasterrkind / lasterrline could retire.
  *
  * csv_lasterrkind returns one stable token:
  *   "ok"        nothing has failed

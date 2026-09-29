@@ -71,6 +71,12 @@ void    tk_err_release(void);
 int64_t tk_err_keep(int64_t v, void *keep, int64_t nbytes);
 int64_t tk_err_rebox(int64_t v, int64_t nbytes);
 
+/* 127.102/127.241: format a raised error's message into a per-thread ring
+ * slot that stays valid across the next 7 raises on the thread (tk_runtime.c).
+ * For a message from a C core's static last-error buffer, which the next
+ * call overwrites; a string literal needs no copy. */
+const char *tk_err_msg(const char *fmt, ...);
+
 /* Store argc/argv for later access by tk_str_argv. */
 void    tk_runtime_init(int argc, char **argv);
 

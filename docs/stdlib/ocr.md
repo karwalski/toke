@@ -95,7 +95,7 @@ The error side of every fallible call:
 | `$failed` | The engine itself returned an error |
 | `$io` | The file could not be read |
 
-Ask **`ocr.lasterrkind`** which one it was. The compiled error-union ABI lowers `T!E` to a null check, so the `$err` arm binds nothing a consumer can read. The kind is a closed, stable set and is meant to be switched on; `ocr.lasterr` is prose for a human and is not stable.
+The `$err` arm binds the `$ocrerr`, so match on the variant to tell which one it was (`mt e {$noengine:m …; $badimage:m …}`); every variant carries the engine's message, which is prose for a human and is not stable. Until 127.241 the arm bound nothing and **`ocr.lasterrkind`** was the only way to ask; it still answers, with the same closed set of tokens.
 
 **A blank page is not an error.** It succeeds with zero runs and `ocr.lasterrkind` of `"none"`. Blank, unavailable and failed are three different answers.
 

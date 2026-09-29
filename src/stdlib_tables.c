@@ -1078,46 +1078,13 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
  */
 static const char *const g_err_slot_bare[] = {
     /* BEGIN 127.238 bare-glue exceptions */
-    /* args */
-    "tk_args_get_w",
-    /* db */
-    "tk_db_many_w", "tk_db_manyon_w", "tk_db_one_w",
-    "tk_db_oneon_w", "tk_db_open_w",
-    /* encoding */
-    "tk_encoding_b64decode_w", "tk_encoding_hexdecode_w", "tk_encoding_urldecode_w",
-    /* env */
-    "tk_env_get_w",
-    /* file */
-    "tk_file_append_w", "tk_file_copy_w", "tk_file_delete_w",
-    "tk_file_list_w", "tk_file_listall_w", "tk_file_mkdir_w",
-    "tk_file_read_w", "tk_file_readbytes_w", "tk_file_write_w",
-    "tk_file_writebytes_w",
+    /* db (121.49: one/many/oneon/manyon fill the slot now) */
+    "tk_db_open_w",
     /* http */
     "tk_http_stream_w",
     "tk_http_streamnext_w",
-    /* infer */
-    "tk_infer_embed_w", "tk_infer_generate_w", "tk_infer_load_w",
-    "tk_infer_loadstreaming_w",
-    /* mlx */
-    "tk_mlx_generate_w", "tk_mlx_load_w",
-    /* ocr */
-    "tk_ocr_runs_w", "tk_ocr_runsfile_w", "tk_ocr_runsraw_w",
-    "tk_ocr_text_w", "tk_ocr_textfile_w",
-    /* pdf */
-    "tk_pdf_open_w", "tk_pdf_openfile_w", "tk_pdf_pagetext_w",
-    "tk_pdf_runs_w",
-    /* process */
-    "tk_process_spawn_w", "tk_process_stderr_w", "tk_process_stdout_w",
-    /* time */
-    "tk_time_parse_w", "tk_time_parseduration_w",
-    /* toon */
-    "tk_toon_dec_w",
     /* vecstore */
     "tk_vecstore_collection_w", "tk_vecstore_open_w",
-    /* xlsx */
-    "tk_xlsx_open_w", "tk_xlsx_openfile_w", "tk_xlsx_rows_w",
-    /* zip */
-    "tk_zip_open_w", "tk_zip_openfile_w", "tk_zip_read_w",
     /* END 127.238 bare-glue exceptions */
     NULL
 };

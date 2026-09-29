@@ -1397,9 +1397,9 @@ static int is_num_parse_wrapper(const char *name) {
 /*
  * is_file_errbox_wrapper — 135.12.
  *
- * std.file's byte calls signal failure with a value sentinel: 0 means it
- * failed, and file.lasterrkind() says which failure it was.  file.readrange
- * and file.size do not, because for file.size the sentinel is WRONG, not
+ * std.file's byte calls signalled failure with a value sentinel: 0 meant it
+ * failed, and file.lasterrkind() said which failure it was.  file.readrange
+ * and file.size did not, because for file.size the sentinel is WRONG, not
  * merely weak: an empty file's size IS 0, so `mt file.size(p)` on an empty
  * file would take the $err arm every time.  That is runtime-abi.md §7.2 in
  * one line — "the zero filler is not the discriminant" — and the C005 family
@@ -1412,11 +1412,11 @@ static int is_num_parse_wrapper(const char *name) {
  * tests the returned value, and file.size of an empty file is still reported
  * as a failure.  C029 asserts exactly that, in both directions.
  *
- * The rest of the module is deliberately NOT listed here.  Migrating it is
- * 127.102b — a breaking API change the owner scheduled to land in ONE release
- * across three modules — and adding file.read or file.readbytes to this list
- * without also retiring the accessors would ship a third of that break out of
- * band.
+ * 127.102b migrated the rest of the module the same way and retired
+ * file.lasterr()/file.lasterrkind().  Every `T!FileErr` wrapper is now a
+ * derived slot wrapper (is_stdlib_slot_wrapper), these two included, so this
+ * list is redundant with the derivation; it is kept rather than deleted so
+ * that the two predicates' call sites stay byte-identical in this change.
  */
 static int is_file_errbox_wrapper(const char *name) {
     if (!name) return 0;

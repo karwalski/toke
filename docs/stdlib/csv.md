@@ -29,12 +29,15 @@ An opaque writer handle created by `csv.writer`. It accumulates rows in an inter
 
 ### $csverr
 
-Returned by functions that may encounter malformed input.
+Returned by functions that may encounter malformed input, and bound by the `$err` arm of every fallible `csv.*` call.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| msg | $str | Human-readable description of the parse error |
-| line | u64 | 1-based line number where the error was detected |
+| msg | $str | Human-readable description of the refusal; it names the line where there is one. The wording is not an interface |
+| line | u64 | 1-based physical line where the refusal was detected, or 0 when none applies |
+| kind | $str | The stable token to branch on: `eof`, `opts`, `empty`, `bom`, `encoding`, `delimiter`, `quote`, `ragged`, `badarg` or `nomem` |
+
+`eof` is not a refusal: it is how `csv.next` reports that the rows ran out. Every other kind is. `csv.lasterr()`, `csv.lasterrkind()` and `csv.lasterrline()` used to carry these three facts, because the error ABI once bound no payload; it now does, and all three were retired by 127.102a — read `e.msg`, `e.kind` and `e.line` instead.
 
 ## Functions
 
@@ -93,7 +96,7 @@ f=headerdemo():i64{
 
 ### csv.next(r: $csvreader): $csvrow!$csverr
 
-Reads and returns the next row from the reader. Returns `$csverr` with an empty `msg` to signal clean end-of-file (check `err.msg` length to distinguish EOF from a real parse error). Advance through all rows by calling `csv.next` in a loop until the error path is taken.
+Reads and returns the next row from the reader. Returns `$csverr` with `kind` equal to `"eof"` to signal clean end-of-file; any other `kind` is a refusal, and `line` says where. Advance through all rows by calling `csv.next` in a loop until the error path is taken.
 
 ```toke
 m=example;
@@ -105,7 +108,7 @@ f=nextdemo():i64{
   let r=csv.reader(data;44);
   <mt csv.next(r) {
     $ok:row 0;
-    $err:e  1
+    $err:e  (if(e.kind=="eof"){1}el{2})
   }
 };
 ```

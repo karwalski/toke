@@ -96,7 +96,7 @@ An opaque handle. Release it with `pdf.close`; everything derived from it is dan
 
 The error side of every fallible call: `$baddoc`, `$encrypted`, `$nopage`, `$toolarge`, `$unsupported`, `$io`.
 
-Ask **`pdf.lasterrkind`** which one it was. The compiled error-union ABI lowers `T!E` to a null check, so the `$err` arm binds nothing a consumer can read -- and a password-protected statement that came back as "no text" would read as a statement with nothing in it. The kind is a closed, stable set and is meant to be switched on; `pdf.lasterr` is prose for a human and is not stable.
+The `$err` arm binds the `$pdferr`, so match on the variant to tell which one it was -- `mt e {$encrypted:m …}` is how a password-protected statement is told apart from one with nothing in it. Every variant carries the reader's message, which is prose for a human and is not stable. Until 127.241 the arm bound nothing and **`pdf.lasterrkind`** was the only way to ask; it still answers, with the same closed set of tokens.
 
 ## Functions
 

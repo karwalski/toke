@@ -133,4 +133,3 @@ ungated | tk_http_servepages_w | template.c:tmpl_readfile | fopen | 2026-09-29 |
 ungated | tk_i18n_load_w | i18n.c:read_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_template_load_w | template_glue.c:tk_template_load_w | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_vecstore_collection_w | vecstore.c:collection_load | fopen | 2026-09-29 | 121.22 | loads a collection file; needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_vecstore_close_w | vecstore.c:collection_save | fopen | 2026-09-29 | 121.22 | saves a collection file; needs TK_REQUIRE(TK_CAP_FS_WRITE)

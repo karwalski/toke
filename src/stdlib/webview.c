@@ -33,7 +33,8 @@
  * never looked at who sent the message, so any page the view reached -- a
  * redirect target, a clicked link, a third-party iframe -- could call every
  * native handler; tk_webview_eval_js ran into whatever page was loaded; and
- * the loke:// handler answered requests initiated by any page.  The policy
+ * a consumer-specific URL scheme handler answered requests initiated by any
+ * page (that handler was withdrawn by 136.45).  The policy
  * lives here, outside the __APPLE__ block, so it compiles and is unit-tested
  * on every host (test/conform/C139_webview_bridge_policy.sh).
  * ====================================================================== */
@@ -124,7 +125,10 @@ int tk_webview_origin_trusted(const TkWebviewOrigin *o,
                               const TkWebviewOrigin *allow, int nallow)
 {
     if (!o || o->scheme[0] == '\0') return 0;
-    if (!strcmp(o->scheme, "loke") || !strcmp(o->scheme, "file")) return 1;
+    /* 136.45: a `loke:` origin was trusted here too -- one downstream
+     * project's URL scheme hard-coded into the standard library.  Withdrawn
+     * with the scheme handler it served; `file:` is the only built-in. */
+    if (!strcmp(o->scheme, "file")) return 1;
     if (o->host[0] == '\0') return 0;                /* about:, data:, blob: */
     for (int i = 0; allow && i < nallow; i++) {
         if (!strcmp(o->scheme, allow[i].scheme) &&
@@ -138,7 +142,6 @@ int tk_webview_origin_trusted(const TkWebviewOrigin *o,
 int tk_webview_handler_name_ok(const char *name)
 {
     if (!name) return 0;
-    if (!strcmp(name, "loke_scheme")) return 1;      /* reserved, never spliced */
     if (!((*name >= 'a' && *name <= 'z') || (*name >= 'A' && *name <= 'Z')))
         return 0;
     size_t n = 0;
@@ -232,8 +235,6 @@ typedef id   (*ObjcMsgRect2)(id, SEL, CGRect, TkNSUInteger, TkNSUInteger, BOOL);
 typedef id   (*ObjcMsgRectCfg)(id, SEL, CGRect, id);
 typedef void (*ObjcVoidBool)(id, SEL, BOOL);
 typedef void (*ObjcVoidNSInt)(id, SEL, TkNSInteger);
-typedef id   (*ObjcMsgBytes)(id, SEL, const void *, TkNSUInteger);
-typedef id   (*ObjcMsgUrlMimeLen)(id, SEL, id, id, TkNSInteger, id);
 typedef id   (*ObjcMsgSrcTimeMain)(id, SEL, id, TkNSInteger, BOOL);
 
 static id ms_rect_cfg(id o, const char *s, CGRect r, id cfg)
@@ -245,16 +246,8 @@ static void mv_bool(id o, const char *s, BOOL v)
     { ((ObjcVoidBool)objc_msgSend)(o, sel_getUid(s), v); }
 static void mv_nsint(id o, const char *s, TkNSInteger v)
     { ((ObjcVoidNSInt)objc_msgSend)(o, sel_getUid(s), v); }
-static id ms_bytes(id o, const char *s, const void *b, TkNSUInteger len)
-    { return ((ObjcMsgBytes)objc_msgSend)(o, sel_getUid(s), b, len); }
-static id ms_url_mime_len_enc(id o, const char *s, id url, id mime,
-                               TkNSInteger len, id enc)
-    { return ((ObjcMsgUrlMimeLen)objc_msgSend)(o, sel_getUid(s), url, mime, len, enc); }
 static id ms_src_time_main(id o, const char *s, id src, TkNSInteger t, BOOL main_only)
     { return ((ObjcMsgSrcTimeMain)objc_msgSend)(o, sel_getUid(s), src, t, main_only); }
-typedef id   (*ObjcMsgErr)(id, SEL, id, TkNSInteger, id);
-static id ms_err(id o, const char *s, id domain, TkNSInteger code, id info)
-    { return ((ObjcMsgErr)objc_msgSend)(o, sel_getUid(s), domain, code, info); }
 
 /* ------------------------------------------------------------------
  * Internal handler registry
@@ -340,7 +333,6 @@ static void tk_inject_bootstrap(TkWebviewState *st)
     size_t pos = (size_t)snprintf(buf, cap, "%s", head);
 
     for (int i = 0; i < st->handler_count; i++) {
-        if (strcmp(st->handlers[i].name, "loke_scheme") == 0) continue;
         pos += (size_t)snprintf(buf + pos, cap - pos, per,
             st->handlers[i].name,
             st->handlers[i].name,
@@ -519,104 +511,12 @@ static Class tk_delegate_class(void)
     return cls;
 }
 
-/* ------------------------------------------------------------------
- * loke:// URL scheme handler
- * ------------------------------------------------------------------ */
-
-static void scheme_start(id self, SEL cmd, id webview, id task)
-{
-    (void)cmd; (void)webview;
-    TkWebviewState *st = NULL;
-    object_getInstanceVariable(self, "state", (void **)&st);
-
-    id request = ms0(task, "request");
-    id url_obj = ms0(request, "URL");
-    id abs_str = ms0(url_obj, "absoluteString");
-    const char *url_str = (const char *)ms0(abs_str, "UTF8String");
-
-    /* 122.11: a loke:// request is served only for a trusted initiator.
-     * mainDocumentURL is the document that caused the load; for the
-     * top-level loke:// navigation it is the loke:// URL itself.  With no
-     * mainDocumentURL, judge by the page currently in the view, and for the
-     * very first load (no page yet) by the request's own URL. */
-    int trusted = 0;
-    if (st) {
-        id mdu = ms0(request, "mainDocumentURL");
-        if (mdu)                               trusted = tk_nsurl_trusted(st, mdu);
-        else if (ms0(st->webview, "URL"))      trusted = tk_page_trusted(st);
-        else                                   trusted = tk_nsurl_trusted(st, url_obj);
-    }
-    if (!trusted) {
-        id err = ms_err((id)objc_getClass("NSError"),
-                        "errorWithDomain:code:userInfo:",
-                        ns_string("TkWebviewBridge"), (TkNSInteger)403, (id)nil);
-        mv1(task, "didFailWithError:", err);
-        return;
-    }
-
-    char *result = NULL;
-    if (st) {
-        for (int i = 0; i < st->handler_count; i++) {
-            if (strcmp(st->handlers[i].name, "loke_scheme") == 0) {
-                result = st->handlers[i].cb(url_str ? url_str : "",
-                                             st->handlers[i].userdata);
-                break;
-            }
-        }
-    }
-
-    const char *body    = result ? result : "";
-    TkNSUInteger blen   = strlen(body);
-
-    id data     = ms_bytes((id)objc_getClass("NSData"),
-                           "dataWithBytes:length:",
-                           body, blen);
-    id response = ms_url_mime_len_enc(
-        ms0((id)objc_getClass("NSURLResponse"), "alloc"),
-        "initWithURL:MIMEType:expectedContentLength:textEncodingName:",
-        url_obj,
-        ns_string("text/html"),
-        (TkNSInteger)blen,
-        ns_string("utf-8")
-    );
-
-    mv1(task, "didReceiveResponse:", response);
-    mv1(task, "didReceiveData:", data);
-    mv0(task, "didFinish");
-
-    if (result) free(result);
-}
-
-static void scheme_stop(id self, SEL cmd, id webview, id task)
-{
-    (void)self; (void)cmd; (void)webview; (void)task;
-}
-
-static Class tk_scheme_handler_class(void)
-{
-    static Class cls = NULL;
-    if (cls) return cls;
-
-    cls = objc_allocateClassPair(objc_getClass("NSObject"),
-                                  "TkLokeSchemeHandler", 0);
-    if (!cls) return NULL;
-
-    class_addIvar(cls, "state", sizeof(void *),
-                  (uint8_t)__builtin_ctz(sizeof(void *)), "^v");
-
-    Protocol *sp = objc_getProtocol("WKURLSchemeHandler");
-    if (sp) class_addProtocol(cls, sp);
-
-    class_addMethod(cls,
-        sel_getUid("webView:startURLSchemeTask:"),
-        (IMP)scheme_start, "v@:@@");
-    class_addMethod(cls,
-        sel_getUid("webView:stopURLSchemeTask:"),
-        (IMP)scheme_stop, "v@:@@");
-
-    objc_registerClassPair(cls);
-    return cls;
-}
+/* 136.45: the `loke://` URL scheme handler (WKURLSchemeHandler class
+ * TkLokeSchemeHandler, served by a handler registered under the reserved name
+ * "loke_scheme") was withdrawn.  It hard-coded one downstream project's
+ * identity into the standard library, in a module already withdrawn by 136.2.
+ * A consumer that needs a custom scheme restores it under its own name, in
+ * its own code. */
 
 /* ------------------------------------------------------------------
  * Recover state pointer from handle id string
@@ -655,11 +555,6 @@ TkWebviewHandle tk_webview_open(const char *url, const char *title,
     /* WKWebViewConfiguration */
     st->config = ms0(ms0((id)objc_getClass("WKWebViewConfiguration"), "alloc"), "init");
     st->ucc    = ms0(st->config, "userContentController");
-
-    /* loke:// scheme handler */
-    id sh = ms0(ms0((id)tk_scheme_handler_class(), "alloc"), "init");
-    object_setInstanceVariable(sh, "state", st);
-    mv2(st->config, "setURLSchemeHandler:forURLScheme:", sh, ns_string("loke"));
 
     /* Delegate */
     st->delegate = ms0(ms0((id)tk_delegate_class(), "alloc"), "init");
@@ -746,11 +641,9 @@ int tk_webview_register_handler(TkWebviewHandle *h, const char *name,
     entry->userdata = userdata;
     st->handler_count++;
 
-    if (strcmp(name, "loke_scheme") != 0) {
-        mv2(st->ucc, "addScriptMessageHandler:name:",
-            st->delegate, ns_string(name));
-        tk_inject_bootstrap(st);
-    }
+    mv2(st->ucc, "addScriptMessageHandler:name:",
+        st->delegate, ns_string(name));
+    tk_inject_bootstrap(st);
     return 1;
 }
 

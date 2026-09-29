@@ -65,6 +65,20 @@ are corrected to zero parameters by rule (1) like any other arity, and
 check_tki_coverage.py fails on a reintroduced dummy.  It generalises the
 one-parameter analysis in gen_stdlib_decls.py (127.61) to any arity.
 
+135.17a: A DERIVED EXEMPTION MUST STILL BE RECORDED
+─────────────────────────────────────────────────
+The rule above is sound for the one-parameter dummy convention it
+generalised, and that convention is gone.  Applied to any arity it also
+exempts real disagreements the convention never justified --
+`mdns.advertise` 1-vs-3, `mlx.generate` 3-vs-2 -- and a silent EXEMPT is
+indistinguishable from agreement.  So the rule now only NOMINATES a
+candidate; an exemption holds only when it is recorded, with its reason, in
+scripts/check_tki_arity_skiplist.txt (the file check_tki_coverage.py already
+reads, so there is one record, not two).  `--check` fails on an exemption
+that is not recorded there, and `--check`/`--report` print every exemption
+beside the reason recorded for it.  Clearing the record is an interface or
+implementation decision, never this script's.
+
 It follows that this script MUST run after the builtin table agrees with the
 C sources -- see check_tki_coverage.py's decl-vs-C gate.  A wrong entry in
 the hand-written half of `g_stdlib_decls` would otherwise be copied into the
@@ -88,6 +102,7 @@ C_DIR = REPO_ROOT / "src" / "stdlib"
 LLVM_C = REPO_ROOT / "src" / "stdlib_tables.c"   # 135.21: g_stdlib_decls moved here
 DEPS_C = REPO_ROOT / "src" / "stdlib_deps.c"
 DECLS_H = REPO_ROOT / "src" / "stdlib_decls_gen.h"
+ARITY_SKIPLIST = REPO_ROOT / "scripts" / "check_tki_arity_skiplist.txt"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import check_tki_coverage as C  # noqa: E402  (resolver-table parser, single source)
@@ -329,7 +344,8 @@ def merge(path: Path, mod: str, reach: dict[str, str], arity, types, nopread, de
             continue
         if sym in nopread:
             actions.append(f"EXEMPT  {mod}.{method}: tki={have} abi={want} "
-                           f"({sym} reads none of its parameters)")
+                           f"({sym} reads none of its parameters)"
+                           f"@@{path.name}::{mod}.{method}")
             continue
         ps = list(e.get("params", []))
         ps = (ps + ["i64"] * want)[:want] if want > have else ps[:want]
@@ -433,6 +449,24 @@ def main() -> int:
         if not (check or report):
             path.write_text(text)
 
+    # 135.17a: every exemption must be recorded with its reason.
+    recorded = C.load_skiplist(ARITY_SKIPLIST)
+    unrecorded: list[str] = []
+    shown: list[str] = []
+    for a in all_actions:
+        if a.startswith("EXEMPT") and "@@" in a:
+            text, key = a.split("@@", 1)
+            reason = recorded.get(key, "")
+            if not reason:
+                unrecorded.append(f"{text}  [{key} not in "
+                                  f"{ARITY_SKIPLIST.relative_to(REPO_ROOT)}]")
+                shown.append(f"{text}\n          UNRECORDED -- no entry {key}")
+            else:
+                shown.append(f"{text}\n          recorded: {reason}")
+        else:
+            shown.append(a)
+    all_actions = shown
+
     for a in sorted(all_actions):
         print(a)
     print("=" * 60)
@@ -445,12 +479,20 @@ def main() -> int:
     print(f"  skipped by coordination: {', '.join(sorted(SKIP_FILES))}")
     print("=" * 60)
 
+    rc = 0
+    if unrecorded:
+        print(f"FAIL: {len(unrecorded)} arity exemption(s) derived but not recorded. "
+              f"Record each in {ARITY_SKIPLIST.relative_to(REPO_ROOT)} with its "
+              f"reason, or reconcile the .tki with the glue (135.17a):")
+        for u in unrecorded:
+            print(f"  {u}")
+        rc = 1 if (check or report) else rc
     if check and changed:
         print("FAIL: regenerate with `python3 scripts/gen_tki.py`:")
         for n in changed:
             print(f"  stdlib/{n}")
         return 1
-    return 0
+    return rc
 
 
 if __name__ == "__main__":

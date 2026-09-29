@@ -7,9 +7,49 @@
 
 #include "encoding.h"
 #include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
+#include "tk_runtime.h" /* 127.241: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* 127.241: the error slot (runtime-abi.md §7.2).  The `T!EncodingErr`
+ * decoders returned an EMPTY ARRAY for input that is not valid base64 or
+ * hex — a real, non-zero handle, so `mt encoding.b64decode("!!")` took the
+ * $ok arm with zero bytes and a caller could not tell "decoded to nothing"
+ * from "was not base64 at all".  They now store an EncodingErr record {msg}
+ * (§7.3) on every failure and clear the slot on every success, so the $err
+ * arm is taken and binds `e.msg`.  The core signals invalid input with a NULL
+ * data pointer; a valid empty input is a non-NULL zero-length buffer.
+ *
+ * THE FAILURE VALUE IS UNCHANGED: still an empty array (or "" for
+ * urldecode), not 0.  The slot, not the value, is what a `mt` decides on,
+ * so the filler is free — and a program that uses a decoder's result bare,
+ * without a `mt` (test/standalone does), keeps reading an empty value on bad
+ * input rather than a null handle. */
+static int64_t enc_raise_v(const char *msg, int64_t filler) {
+    int64_t *box = (int64_t *)tk_err_box((int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return filler;
+}
+
+static int64_t enc_raise(const char *msg) {
+    return enc_raise_v(msg, tk_bytes_pack((const uint8_t *)"", 0));
+}
+
+static int64_t enc_raise_str(const char *msg) {
+    return enc_raise_v(msg, (int64_t)(intptr_t)"");
+}
+
+/* A decoded ByteArray as @(byte), or the failure `why`. */
+static int64_t enc_bytes(ByteArray d, const char *why) {
+    if (!d.data) return enc_raise(why);
+    int64_t out = tk_bytes_pack(d.data, d.len);
+    free((void *)d.data);
+    if (!out) return enc_raise("encoding: out of memory");
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return out;
+}
 
 /* Stage 5 (114.4): real [byte] <-> str/encoding marshalling (was identity
  * stubs). encode takes [byte] and returns a str; decode takes a str and
@@ -31,11 +71,9 @@ int64_t tk_encoding_hexencode_w(int64_t b) {
     return hex ? (int64_t)(intptr_t)hex : (int64_t)(intptr_t)"";
 }
 int64_t tk_encoding_hexdecode_w(int64_t s) {
-    if (!s) return tk_bytes_pack((const uint8_t *)"", 0);
-    ByteArray d = encoding_hexdecode((const char *)(intptr_t)s);
-    int64_t out = tk_bytes_pack(d.data, d.len);
-    if (d.data) free((void *)d.data);
-    return out;
+    if (!s) return enc_raise("encoding.hexdecode: null input");
+    return enc_bytes(encoding_hexdecode((const char *)(intptr_t)s),
+                     "encoding.hexdecode: not a hex string (odd length, or a non-hex character)");
 }
 /* 124.2f-a: these two were identity stubs from the 75.12 split and were
  * never wired to encoding.c, so `enc.urlencode("a b")` returned "a b"
@@ -45,8 +83,11 @@ int64_t tk_encoding_urlencode_w(int64_t s) {
     return out ? (int64_t)(intptr_t)out : (int64_t)(intptr_t)"";
 }
 int64_t tk_encoding_urldecode_w(int64_t s) {
-    const char *out = encoding_urldecode(s ? (const char *)(intptr_t)s : "");
-    return out ? (int64_t)(intptr_t)out : (int64_t)(intptr_t)"";
+    if (!s) return enc_raise_str("encoding.urldecode: null input");
+    const char *out = encoding_urldecode((const char *)(intptr_t)s);
+    if (!out) return enc_raise_str("encoding.urldecode: out of memory");
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return (int64_t)(intptr_t)out;
 }
 int64_t tk_encoding_base64encode_w(int64_t b) {
     uint8_t *buf; uint64_t n = tk_bytes_unpack(b, &buf);
@@ -73,11 +114,19 @@ int64_t tk_encoding_b64encode_w(int64_t data) {
     return enc ? (int64_t)(intptr_t)enc : (int64_t)(intptr_t)"";
 }
 int64_t tk_encoding_b64decode_w(int64_t data) {
-    if (!data) return tk_bytes_pack((const uint8_t *)"", 0);
-    ByteArray d = encoding_b64decode((const char *)(intptr_t)data);
-    int64_t out = tk_bytes_pack(d.data, d.len);
-    if (d.data) free((void *)d.data);
-    return out;
+    if (!data) return enc_raise("encoding.b64decode: null input");
+    return enc_bytes(encoding_b64decode((const char *)(intptr_t)data),
+                     "encoding.b64decode: not base64 (a character outside the standard alphabet)");
+}
+
+/* encoding.b64urldecode(s) -> [byte]!EncodingErr — 127.241.  Declared in
+ * stdlib/encoding.tki and implemented in encoding.c, but no wrapper existed,
+ * so the export was quarantined (scripts/check_tki_skiplist.txt) and a call
+ * failed to link.  URL-safe alphabet, padding optional. */
+int64_t tk_encoding_b64urldecode_w(int64_t data) {
+    if (!data) return enc_raise("encoding.b64urldecode: null input");
+    return enc_bytes(encoding_b64urldecode((const char *)(intptr_t)data),
+                     "encoding.b64urldecode: not base64url (a character outside the URL-safe alphabet)");
 }
 
 /* base64 (alias spelling) */

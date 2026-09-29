@@ -22,9 +22,6 @@
 #include <fcntl.h>
 #include "tk_bind.h"   /* 135.33 */
 
-/* ── Forward declarations for metrics.c log rotation ────────────────── */
-extern void metrics_reopen_logs(void);
-
 /* ── Process state ──────────────────────────────────────────────────── */
 
 typedef enum {
@@ -278,15 +275,11 @@ int proc_check_scale(void)
 
 /* ── Log rotation (67.1.5) ──────────────────────────────────────────── */
 
-/*
- * proc_reopen_logs — reopen all log file descriptors.
- * Hooks into metrics_reopen_logs() from metrics.c.
- * Called during SIGHUP reload to support logrotate.
- */
-void proc_reopen_logs(void)
-{
-    metrics_reopen_logs();
-}
+/* 121.49 (1): proc_reopen_logs() used to live here and call
+ * metrics_reopen_logs(), which has been empty since 121.41 deleted metrics.c's
+ * log files.  Nothing called proc_reopen_logs -- no stdlib module, no glue,
+ * no header, no .tki entry -- so it was removed with the call.  Reopening
+ * log.c's own files on SIGHUP is not implemented anywhere. */
 
 /* ── Health probe endpoints (67.2.1) ────────────────────────────────── */
 

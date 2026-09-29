@@ -784,9 +784,9 @@ These are limitations of the current lowering, not of the design:
    `std.task` tasks raising errors really did overwrite each other's.
 3. **Nothing enforces that every error exit sets the slot** (127.59).
 4. **The declared error type is not checked against what is
-   observable.** `FileErr` declares three variants while
-   `file.lasterrkind()` distinguishes ten; `MdnsErr` declares five and
-   no function returns it.
+   observable.** `MdnsErr` declares five variants and no function returns
+   it. (`FileErr` declared three while `file.lasterrkind()` distinguished
+   ten; 127.102b widened it to the ten and retired the accessor.)
 
 ### 7.6 Why this representation
 

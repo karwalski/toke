@@ -37,6 +37,7 @@
 #include "tk_array.h"
 #include "bytes_rt.h"
 #include "capabilities.h"
+#include "tk_runtime.h"   /* 127.241: tk_current_error + tk_err_box (127.109) */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -55,18 +56,46 @@ static int64_t dup_str(const char *s)
     return (int64_t)(intptr_t)p;
 }
 
+/* ── The error channel (127.241) ─────────────────────────────────────────
+ *
+ * Every `T!$xlsxerr` wrapper keeps @tk_current_error truthful on EVERY return
+ * (runtime-abi.md §7.2): a failure stores a {tag, msg} box of $xlsxerr's sum
+ * layout — the tag is xlsx_lasterr_kind() (xlsx.h), the msg xlsx_lasterr(),
+ * which is always a string literal (zip's, passed through, included) — and a
+ * success stores 0, so the $err arm binds the variant.  Until 127.241 these
+ * returned a bare 0 and bound nil; xlsx.lasterr() still exists and agrees. */
+static int64_t xlsx_raise(TkXlsxErrKind kind, const char *msg)
+{
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(kind == XLSX_E_NONE ? XLSX_E_BADWORKBOOK : kind);
+    box[1] = (int64_t)(intptr_t)(msg && *msg ? msg : "xlsx: failed");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static int64_t xlsx_raise_last(void)
+{
+    return xlsx_raise(xlsx_lasterr_kind(), xlsx_lasterr());
+}
+
+static int64_t xlsx_ok(int64_t v)
+{
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return v;
+}
+
 /* xlsx.open(data:@(byte)) -> $xlsxbook!$xlsxerr
  *
- * 0 on any rejection, which is what the compiled error-union ABI lowers the
- * `$err` arm to.  xlsx.lasterr() carries the reason. */
+ * On any rejection the $err arm binds the $xlsxerr (127.241). */
 int64_t tk_xlsx_open_w(int64_t data)
 {
     uint8_t *buf = NULL;
     uint64_t n = tk_bytes_unpack(data, &buf);
-    if (!buf) return 0;
+    if (!buf) return xlsx_raise(XLSX_E_BADWORKBOOK, "xlsx.open: empty workbook data");
     TkXlsxBook *wb = xlsx_open_mem(buf, n);
     free(buf);
-    return (int64_t)(intptr_t)wb;
+    if (!wb) return xlsx_raise_last();
+    return xlsx_ok((int64_t)(intptr_t)wb);
 }
 
 /* xlsx.openfile(path:str) -> $xlsxbook!$xlsxerr
@@ -79,8 +108,10 @@ int64_t tk_xlsx_open_w(int64_t data)
 int64_t tk_xlsx_openfile_w(int64_t path)
 {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) return 0;
-    return (int64_t)(intptr_t)xlsx_open_file((const char *)(intptr_t)path);
+    if (!path) return xlsx_raise(XLSX_E_IO, "xlsx.openfile: null path");
+    TkXlsxBook *wb = xlsx_open_file((const char *)(intptr_t)path);
+    if (!wb) return xlsx_raise_last();
+    return xlsx_ok((int64_t)(intptr_t)wb);
 }
 
 /* xlsx.sheets(wb:$xlsxbook) -> @(str)
@@ -144,14 +175,14 @@ static int64_t build_cell(const TkXlsxCell *c)
 int64_t tk_xlsx_rows_w(int64_t handle, int64_t sheet)
 {
     TkXlsxBook *wb = (TkXlsxBook *)(intptr_t)handle;
-    if (!wb || !sheet) return 0;
+    if (!wb || !sheet) return xlsx_raise(XLSX_E_IO, "xlsx.rows: null argument");
 
     TkXlsxSheet *sh = xlsx_read_sheet(wb, (const char *)(intptr_t)sheet);
-    if (!sh) return 0;
+    if (!sh) return xlsx_raise_last();
 
     uint32_t nr = xlsx_row_count(sh), nc = xlsx_col_count(sh);
     int64_t rows = tk_arr_alloc((int64_t)nr, (int64_t)nr);
-    if (!rows) { xlsx_sheet_free(sh); return 0; }
+    if (!rows) { xlsx_sheet_free(sh); return xlsx_raise(XLSX_E_IO, "xlsx.rows: out of memory"); }
     int64_t *rblock = (int64_t *)(intptr_t)rows;
 
     uint32_t built_rows = 0;
@@ -173,7 +204,7 @@ int64_t tk_xlsx_rows_w(int64_t handle, int64_t sheet)
     tk_arr_setlen(rows, (int64_t)built_rows);
 
     xlsx_sheet_free(sh);
-    return rows;
+    return xlsx_ok(rows);
 }
 
 /* xlsx.datesystem(wb:$xlsxbook) -> str — "1900" or "1904".

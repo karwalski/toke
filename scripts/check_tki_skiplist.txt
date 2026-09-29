@@ -49,8 +49,6 @@ dataframe.tki::df.join                      # 2026-09-19 no _w glue; no C impl [
 dataframe.tki::df.head                      # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.tojson                    # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.schema                    # 2026-09-19 no _w glue; no C impl [101.R3c]
-# ── encoding ──
-encoding.tki::encoding.b64urldecode        # 2026-09-19 C core encoding_b64urldecode lives in acme.c, no _w glue [131.38-followup]
 # ── html ──
 html.tki::html.script                  # 2026-09-19 no _w glue; core=html_script [131.38-followup]
 html.tki::html.div                     # 2026-09-19 no _w glue; core=html_div [131.38-followup]
@@ -75,7 +73,6 @@ mdns.tki::mdns.resolve                 # 2026-09-19 no _w glue; core=mdns_resolv
 mdns.tki::mdns.isavailable             # 2026-09-19 no _w glue; core=mdns_is_available [131.38-followup]
 # ── mlx ──
 mlx.tki::mlx.unload                   # 2026-09-19 no _w glue; core=mlx_unload [131.38-followup]
-mlx.tki::mlx.embed                    # 2026-09-19 no _w glue; core=mlx_embed [131.38-followup]
 # ── template ──
 template.tki::tpl.html                     # 2026-09-19 no _w glue for tpl.html; no C impl [131.38-followup]
 # ── ws ──
