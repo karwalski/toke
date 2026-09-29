@@ -13,13 +13,13 @@
 # NOW: an index expression whose base is an import alias (not a value that
 # shadows it) is classified as the call `alias.get` everywhere a qualified
 # call is.  args.get/env.get themselves stay on the value sentinel until
-# their glues fill the error slot (Batch E1, 127.241 removes them from the
-# bare-glue list); from then on they take this same path.  This script pins
-# the mechanism with a user module's `get`, which does not depend on E1.
+# their glues fill the error slot (Batch E1, 127.241, merged as 7748162f);
+# case 4 pins them.  Cases 1-2 pin the mechanism with a user module's `get`.
 #
 # Negative control: TKC=<main d3a083b8's toke> -- case 1 prints "err" for
 # the ok 0, and case 2 fails to build (E9005 x2).  Case 3 (a map's .get) is
-# green on both.
+# green on both.  Case 4 (added once E1's glues merged, main 7748162f): main
+# fails to build it (E9005 on the nested `mt e` over EnvErr).
 #
 # Story: 127.249
 set -uo pipefail
@@ -97,6 +97,31 @@ f=main():i64{
 };
 EOF2
 expect "3 control: a map's .get keeps the map path" "$(run m.tk)" "ok0 miss|rc=0"
+
+# 4. args.get / env.get themselves, now that their glues fill the error slot
+#    (127.241, Batch E1): the six shapes -- a nested `mt e` over EnvErr's
+#    variants, an ok value, `e.msg` on ArgsErr, an in-range index, a
+#    let-bound `mt r`, and `!` into a function declaring EnvErr.
+cat > ae.tk <<'EOF2'
+m=ae;
+i=io:std.io;
+i=env:std.env;
+i=args:std.args;
+f=g():str!EnvErr{ let v=env.get("C534_UNSET_VAR")!EnvErr; <v };
+f=main():i64{
+  let a=mt env.get("C534_UNSET_VAR") { $ok:v "ok:\(v)"; $err:e mt e { $notfound:m "nf:\(m)"; $invalid:m "inv:\(m)" } };
+  let b=mt env.get("HOME") { $ok:v "ok"; $err:e "err" };
+  let c=mt args.get(7 as u64) { $ok:v "ok:\(v)"; $err:e "err:\(e.msg)" };
+  let d=mt args.get(0 as u64) { $ok:v "ok"; $err:e "err:\(e.msg)" };
+  let r=args.get(9 as u64);
+  let x=mt r { $ok:v "ok"; $err:e "lerr:\(e.msg)" };
+  let y=mt g() { $ok:v "ok"; $err:e mt e { $notfound:m "pnf:\(m)"; $invalid:m "pinv" } };
+  io.println(a); io.println(b); io.println(c); io.println(d); io.println(x); io.println(y);
+  <0
+};
+EOF2
+expect "4 args.get / env.get bind their payload in all six shapes" "$(unset C534_UNSET_VAR; HOME="${HOME:-/}" run ae.tk)" \
+    "nf:env.get: environment variable not set|ok|err:args.get: index out of bounds|ok|lerr:args.get: index out of bounds|pnf:env.get: environment variable not set|rc=0"
 
 echo "C534: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
