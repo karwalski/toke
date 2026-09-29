@@ -120,6 +120,7 @@ static inline void tkc_caps_put(TkcCapNames *s, const char *nm) {
 }
 
 static inline void tkc_caps_tok(const char *src, const Node *n, char *buf, int sz) {
+    if (!n) { buf[0] = '\0'; return; }
     int len = n->tok_len < sz - 1 ? n->tok_len : sz - 1;
     memcpy(buf, src + n->tok_start, (size_t)len);
     buf[len] = '\0';
@@ -176,7 +177,7 @@ static inline char *tkc_caps_user_tki(const Node *imp, const char *src,
     for (char *d = dot; *d; d++) if (*d == '/' && d != dot) *d = '.';
     char *b = tkc_caps_slurp(rel);
     if (!b) b = tkc_caps_slurp(dot);
-    for (int i = 0; !b && i < spc; i++) {
+    for (int i = 0; !b && sp && i < spc; i++) {
         char p[1100];
         snprintf(p, sizeof p, "%s/%s", sp[i], rel);
         FILE *f = fopen(p, "r");
