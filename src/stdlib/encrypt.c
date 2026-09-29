@@ -337,7 +337,10 @@ EncryptResult encrypt_aes256gcm_encrypt(ByteArray key, ByteArray nonce,
     /* Allocate output: plaintext.len + 16 (tag) */
     uint64_t ctlen = plaintext.len;
     uint8_t *out = (uint8_t *)malloc(ctlen + 16);
-    if (!out) { res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res; }
+    if (!out) {
+        tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
+        res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res;
+    }
 
     /* Encrypt */
     gcm_ctr(&aes, J0, plaintext.data, out, ctlen);
@@ -364,6 +367,8 @@ EncryptResult encrypt_aes256gcm_encrypt(ByteArray key, ByteArray nonce,
     uint8_t *tag = out + ctlen;
     for (k = 0; k < 16; k++) tag[k] = X[k] ^ tag_keystream[k];
 
+    /* 121.20 (HYG-01): the key schedule and the GHASH key. */
+    tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
     res.ok     = out;
     res.ok_len = ctlen + 16;
     return res;
@@ -420,14 +425,21 @@ EncryptResult encrypt_aes256gcm_decrypt(ByteArray key, ByteArray nonce,
     uint8_t expected_tag[16];
     for (k = 0; k < 16; k++) expected_tag[k] = X[k] ^ tag_keystream[k];
 
+    /* 121.20 (HYG-01): every exit below wipes the key schedule and the
+     * GHASH key. */
     if (ct_memcmp(expected_tag, tag, 16) != 0) {
+        tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
         res.is_err = 1; res.err_msg = "aes256gcm: authentication failed"; return res;
     }
 
     uint8_t *plain = (uint8_t *)malloc(ctlen + 1); /* +1 for safety */
-    if (!plain) { res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res; }
+    if (!plain) {
+        tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
+        res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res;
+    }
 
     gcm_ctr(&aes, J0, ct, plain, ctlen);
+    tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
 
     res.ok     = plain;
     res.ok_len = ctlen;
@@ -815,6 +827,10 @@ static void x25519_scalarmult(uint8_t out[32], const uint8_t k[32],
 
     fe25519 res = fe_mul(x_2, fe_invert(z_2));
     fe_to_bytes(out, res);
+    /* 121.20 (HYG-01): the scalar copy and the ladder state. */
+    tk_secure_zero(clamped, sizeof clamped);
+    tk_secure_zero(&x_2, sizeof x_2); tk_secure_zero(&z_2, sizeof z_2);
+    tk_secure_zero(&x_3, sizeof x_3); tk_secure_zero(&z_3, sizeof z_3);
 }
 
 static const uint8_t X25519_BASEPOINT[32] = {9};
@@ -838,6 +854,7 @@ ByteArray encrypt_x25519_dh(ByteArray privkey, ByteArray peerpub)
     memcpy(priv, privkey.data, 32);
     x25519_clamp(priv);
     x25519_scalarmult(out, priv, peerpub.data);
+    tk_secure_zero(priv, sizeof priv);          /* 121.20 (HYG-01) */
     ByteArray r;
     r.data = out;
     r.len  = 32;
@@ -1553,6 +1570,8 @@ Ed25519Keypair encrypt_ed25519_keypair(void)
     memcpy(kp.pubkey, pubkey, 32);
     memcpy(kp.privkey,      seed,   32); /* first 32 = seed */
     memcpy(kp.privkey + 32, pubkey, 32); /* last  32 = pubkey */
+    /* 121.20 (HYG-01): the seed copy and the expanded scalar. */
+    tk_secure_zero(seed, sizeof seed); tk_secure_zero(h, sizeof h);
     return kp;
 }
 
@@ -1617,6 +1636,12 @@ ByteArray encrypt_ed25519_sign(ByteArray privkey, ByteArray msg)
 
     uint8_t S[32];
     sc_muladd(S, k_scalar, az_reduced, r_scalar);
+    /* 121.20 (HYG-01): the expanded private key, its reductions, the
+     * secret nonce and the hash state that held them. */
+    tk_secure_zero(az, sizeof az); tk_secure_zero(az_ext, sizeof az_ext);
+    tk_secure_zero(az_reduced, sizeof az_reduced);
+    tk_secure_zero(r_scalar, sizeof r_scalar); tk_secure_zero(nonce_hash, sizeof nonce_hash);
+    tk_secure_zero(&ctx, sizeof ctx);
 
     uint8_t *sig = (uint8_t *)malloc(64);
     if (!sig) return r_ba;
@@ -1693,7 +1718,7 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
 
     /* Expand */
     uint8_t *out = (uint8_t *)malloc(outlen);
-    if (!out) { free((void *)prk.data); return empty; }
+    if (!out) { tk_secure_zero((void *)prk.data, 32); free((void *)prk.data); return empty; }
 
     uint8_t T[32];
     memset(T, 0, 32);
@@ -1704,7 +1729,11 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
         /* HMAC-SHA256(PRK, T_prev || info || counter) */
         uint64_t msg_len = (counter == 1 ? 0 : 32) + info.len + 1;
         uint8_t *msg = (uint8_t *)malloc(msg_len);
-        if (!msg) { free(out); free((void *)prk.data); return empty; }
+        if (!msg) {
+            tk_secure_zero(out, (size_t)outlen); free(out);
+            tk_secure_zero((void *)prk.data, 32); free((void *)prk.data);
+            tk_secure_zero(T, sizeof T); return empty;
+        }
         uint64_t pos = 0;
         if (counter > 1) { memcpy(msg, T, 32); pos = 32; }
         if (info.len > 0) memcpy(msg + pos, info.data, info.len);
@@ -1715,9 +1744,15 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
         msg_ba.data = msg;
         msg_ba.len  = msg_len;
         ByteArray t_ba = crypto_hmac_sha256(prk, msg_ba);
+        tk_secure_zero(msg, (size_t)msg_len);
         free(msg);
-        if (!t_ba.data) { free(out); free((void *)prk.data); return empty; }
+        if (!t_ba.data) {
+            tk_secure_zero(out, (size_t)outlen); free(out);
+            tk_secure_zero((void *)prk.data, 32); free((void *)prk.data);
+            tk_secure_zero(T, sizeof T); return empty;
+        }
         memcpy(T, t_ba.data, 32);
+        tk_secure_zero((void *)t_ba.data, 32);
         free((void *)t_ba.data);
 
         uint64_t take = (outlen - done < 32) ? (outlen - done) : 32;
@@ -1726,7 +1761,10 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
         counter++;
     }
 
+    /* 121.20 (HYG-01): the pseudorandom key and the last block. */
+    tk_secure_zero((void *)prk.data, 32);
     free((void *)prk.data);
+    tk_secure_zero(T, sizeof T);
 
     ByteArray r;
     r.data = out;
@@ -2207,6 +2245,9 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
     /* Number of PRF output blocks needed */
     uint32_t l = (dklen + hlen - 1) / hlen;
 
+    /* 121.20 (HYG-01): every intermediate -- each U_j, the T_i
+     * accumulator, and dk on an error path -- is wiped before it is freed
+     * or goes out of scope. */
     uint8_t *dk = (uint8_t *)malloc((size_t)(l * hlen));
     if (!dk) return empty;
 
@@ -2238,10 +2279,11 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
         else
             u = crypto_hmac_sha512(pw_ba, sb_ba);
 
-        if (!u.data) { free(salt_block); free(dk); return empty; }
+        if (!u.data) { free(salt_block); tk_secure_zero(dk, (size_t)(l * hlen)); free(dk); return empty; }
 
         uint8_t t[64]; /* T_i accumulator, max hlen = 64 */
         memcpy(t, u.data, (size_t)hlen);
+        tk_secure_zero((void *)u.data, (size_t)hlen);
         free((void *)u.data);
 
         /* U_2 ... U_c */
@@ -2254,15 +2296,20 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
             else
                 u_next = crypto_hmac_sha512(pw_ba, prev_ba);
 
-            if (!u_next.data) { free(salt_block); free(dk); return empty; }
+            if (!u_next.data) {
+                tk_secure_zero(t, sizeof t);
+                free(salt_block); tk_secure_zero(dk, (size_t)(l * hlen)); free(dk); return empty;
+            }
 
             /* XOR into t */
             uint32_t k;
             for (k = 0; k < hlen; k++) t[k] ^= u_next.data[k];
+            tk_secure_zero((void *)u_next.data, (size_t)hlen);
             free((void *)u_next.data);
         }
 
         memcpy(dk + (i - 1) * hlen, t, (size_t)hlen);
+        tk_secure_zero(t, sizeof t);
     }
     free(salt_block);
 

@@ -504,6 +504,11 @@ ByteArray crypto_hmac_sha256(ByteArray key, ByteArray data)
     sha256_update_state(&s, inner, SHA256_DIGEST_SIZE);
     sha256_finish(&s, mac);
 
+    /* 121.20 (HYG-01): the key block and the keyed hash states. */
+    tk_secure_zero(k_block, sizeof k_block);
+    tk_secure_zero(inner, sizeof inner);
+    tk_secure_zero(&s, sizeof s);
+
     result.data = mac;
     result.len  = SHA256_DIGEST_SIZE;
     return result;
@@ -560,6 +565,12 @@ ByteArray crypto_hmac_sha512(ByteArray key, ByteArray data)
     sha512_update_state(&s, k_block, SHA512_BLOCK_SIZE);
     sha512_update_state(&s, inner, SHA512_DIGEST_SIZE);
     sha512_finish(&s, mac);
+
+    /* 121.20 (HYG-01): the key block and the keyed hash states. */
+    tk_secure_zero(k_block, sizeof k_block);
+    tk_secure_zero(inner, sizeof inner);
+    tk_secure_zero(&s, sizeof s);
+
 
     result.data = mac;
     result.len  = SHA512_DIGEST_SIZE;
@@ -1257,6 +1268,8 @@ CryptoStrResult crypto_bcrypt_hash(const char *password, int cost)
     /* Encode 23 bytes (drop last byte, spec says 31 b64 chars from 23 bytes) */
     bf_b64_encode(ctext, 23, hash_b64);
     hash_b64[31] = '\0';
+    /* 121.20 (HYG-01): the password-keyed Blowfish state. */
+    tk_secure_zero(&ctx, sizeof ctx);
 
     /* Format: "$2b$NN$<salt22><hash31>" = 7 + 22 + 31 = 60 chars */
     out = (char *)malloc(61);
@@ -1343,6 +1356,8 @@ int crypto_bcrypt_verify(const char *password, const char *hash)
 
     bf_b64_encode(ctext, 23, hash_b64);
     hash_b64[31] = '\0';
+    /* 121.20 (HYG-01): the password-keyed Blowfish state. */
+    tk_secure_zero(&ctx, sizeof ctx);
 
     /* Reconstruct full hash string for comparison */
     computed_hash[0] = '$'; computed_hash[1] = '2'; computed_hash[2] = 'b';

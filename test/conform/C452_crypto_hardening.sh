@@ -289,6 +289,44 @@ else
     fail "ENC-02: build: $(grep -a -m3 -E 'error' "${WORK}/oaep.cc" | head -c 400)"
 fi
 
+# ── HYG-01 ──────────────────────────────────────────────────────────────────
+# Structural: each routine that holds key material in a local or a scratch
+# allocation must wipe it with tk_secure_zero.  (Whether bytes are really
+# gone from a dead stack frame cannot be observed portably from a test; the
+# structural rule is what can be held.)  A function body runs from its
+# definition line at column 0 to the next "}" at column 0.
+hyg() {
+    local file="$1" fn="$2"
+    if [ ! -f "${S}/${file}" ]; then fail "HYG-01: ${file} missing"; return; fi
+    local body
+    body="$(awk -v fn="${fn}" '
+        !inb && $0 ~ ("^[A-Za-z].*[ *]" fn "\\(") && $0 !~ /;[ \t]*$/ { inb = 1 }
+        inb { print }
+        inb && /^}/ { exit }' "${S}/${file}")"
+    if [ -z "${body}" ]; then
+        fail "HYG-01: ${file}: ${fn} not found"
+    elif printf '%s\n' "${body}" | grep -a -q 'tk_secure_zero('; then
+        pass "HYG-01: ${file}: ${fn} wipes its key material"
+    else
+        fail "HYG-01: ${file}: ${fn} does not call tk_secure_zero"
+    fi
+}
+hyg crypto.c  crypto_hmac_sha256
+hyg crypto.c  crypto_hmac_sha512
+hyg crypto.c  crypto_bcrypt_hash
+hyg crypto.c  crypto_bcrypt_verify
+hyg encrypt.c encrypt_aes256gcm_encrypt
+hyg encrypt.c encrypt_aes256gcm_decrypt
+hyg encrypt.c x25519_scalarmult
+hyg encrypt.c encrypt_x25519_dh
+hyg encrypt.c encrypt_ed25519_keypair
+hyg encrypt.c encrypt_ed25519_sign
+hyg encrypt.c encrypt_pbkdf2
+hyg encrypt.c encrypt_hkdf_sha256
+hyg encrypt.c oaep_decode
+hyg auth.c    hmac_sha1
+hyg auth.c    auth_totp_verify
+
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ] && [ "${PASS}" -gt 0 ]
