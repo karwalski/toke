@@ -135,9 +135,10 @@ f=handleuser(params:@($str:$str)):$str{
 
 ### Other injection sinks
 
-- **XML/SOAP** — `soap_fault` embeds its detail argument without XML-escaping
-  (`PAR-11`). Escape `<`, `>`, `&`, `"`, `'` before placing any untrusted value in
-  XML you emit.
+- **XML/SOAP** — `soap.fault` XML-escapes all three of its arguments, detail
+  included (`PAR-11`, fixed in 121.16). `soap.envelope` takes its body and header as
+  XML and embeds them as given: escape `<`, `>`, `&`, `"`,
+  `'` before placing any untrusted value in XML you pass to them.
 - **CSP** — set a Content-Security-Policy header. A strict CSP is your last line
   of defense against an escaping miss. Do not rely on the built-in CSP builder in
   `security.c` (`RUN-07` overflow, `RUN-11` process-wide singleton); set the header

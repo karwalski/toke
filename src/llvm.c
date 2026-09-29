@@ -5848,7 +5848,6 @@ static int emit_expr(Ctx *c, const Node *n)
             snprintf(msg, sizeof msg, "struct '%s' has no field '%s'", si->name, fn);
             diag_emit(DIAG_ERROR, E4025, n->start, n->line, n->col, msg,
                       "expected", "a valid field name", "got", fn,
-                      "fix", "check the struct definition for available fields",
                       (const char *)NULL);
             si = NULL;
         } else if (si) {
@@ -6378,7 +6377,6 @@ static int emit_expr(Ctx *c, const Node *n)
                              si->name, fname);
                     diag_emit(DIAG_ERROR, E4025, fi->start, fi->line, fi->col, msg,
                               "expected", "a valid field name", "got", fname,
-                              "fix", "check the struct definition for available fields",
                               (const char *)NULL);
                 }
                 fidx = struct_field_index(si, fname);

@@ -9,7 +9,10 @@ order: 19
 
 The `std.image` module provides functions for decoding, encoding, and transforming raster
 images. It decodes PNG and TIFF (including CCITT G3/G4 fax pages) and encodes PNG and BMP; JPEG and WebP encode and decode
-return an error naming the library that would be needed.
+return an error naming the library that would be needed. PNG decode covers 8-bit
+greyscale, greyscale+alpha, RGB and RGBA without interlacing; a palette, 16-bit or
+Adam7-interlaced PNG returns an error that says which (interlaced images were
+decoded with their rows in pass order until story 121.33).
 
 Beyond the basic transforms it carries the pieces a document pipeline needs before OCR or
 analysis: arbitrary-angle rotation for deskew, adaptive thresholding for unevenly lit

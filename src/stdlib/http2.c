@@ -137,7 +137,12 @@ uint8_t *h2_frame_recv(H2Conn *conn, int fd, void *ssl, H2FrameHeader *hdr)
 
     h2_frame_header_read(hdr_buf, hdr);
 
-    if (hdr->length > conn->peer_settings.max_frame_size) {
+    /* 121.17 (HTT-05): a frame we RECEIVE is bounded by the size WE
+     * advertised (RFC 9113 4.2), not by the peer's own SETTINGS value.  The
+     * peer may raise its max_frame_size to 16 MiB, and this used to let it
+     * send us 16 MiB frames -- a buffer realloc'd to fit before the
+     * connection loop's own local-limit check ran. */
+    if (hdr->length > conn->local_settings.max_frame_size) {
         /* Frame size error — send GOAWAY */
         h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
                         H2_ERR_FRAME_SIZE);
@@ -541,6 +546,7 @@ void hpack_table_init(HpackTable *t, size_t max_size)
 {
     memset(t, 0, sizeof(*t));
     t->max_size = max_size;
+    t->limit    = max_size;
     t->capacity = 64;
     t->entries  = calloc(t->capacity, sizeof(HpackEntry));
 }
@@ -834,6 +840,9 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
             if (hpack_lookup(t, index, &n, &v) < 0) goto err;
             name  = strdup(n);
             value = strdup(v);
+            /* 121.17 (HTT-08): an unchecked strdup here put NULL into the
+             * header list the caller strcasecmp()s. */
+            if (!name || !value) goto err;
         } else if (buf[pos] & 0x40) {
             /* Literal with incremental indexing (§6.2.1) */
             uint32_t index;
@@ -852,6 +861,11 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
             /* Dynamic table size update (§6.3) */
             uint32_t new_size;
             if (hpack_decode_int(buf, len, &pos, 5, &new_size) < 0) goto err;
+            /* 121.17 (HTT-05): RFC 7541 6.3 -- an update above the size this
+             * side advertised is a decoding error.  It was applied as sent
+             * (up to ~2^32), so the peer could grow our table past the limit
+             * we told it. */
+            if ((size_t)new_size > t->limit) goto err;
             hpack_table_resize(t, new_size);
             continue;
         } else {

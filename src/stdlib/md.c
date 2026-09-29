@@ -82,6 +82,47 @@ static int md_is_separator(const char *line) {
     return has_dash;
 }
 
+/* 121.16 (PAR-05 residue): 124.3 moved cmark to SAFE mode, but pipe tables
+ * are rendered here and re-injected as trusted HTML after cmark has run, so
+ * cmark's URL filter never saw a table-cell link: `| [x](javascript:alert(1)) |`
+ * came out as `<a href="javascript:alert(1)">`.  This is cmark's rule
+ * (javascript:, vbscript:, file:, and data: other than image/png, gif, jpeg
+ * or webp, case-insensitively) applied the way a browser reads the
+ * attribute: leading C0 controls and spaces are skipped and ASCII tab/LF/CR
+ * inside the scheme are ignored (the WHATWG URL parser strips them), so
+ * " java\tscript:" is caught too.  A dangerous URL becomes href="", as
+ * cmark renders it. */
+static int md_url_dangerous(const char *u, size_t n) {
+    char sch[16];
+    size_t k = 0, i = 0;
+    while (i < n && (unsigned char)u[i] <= 0x20) i++;
+    for (; i < n; i++) {
+        unsigned char c = (unsigned char)u[i];
+        if (c == '\t' || c == '\n' || c == '\r') continue;
+        if (c == ':') break;
+        if (k + 1 >= sizeof sch) return 0;        /* longer than any we refuse */
+        sch[k++] = (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+    }
+    if (i >= n) return 0;                         /* no scheme: relative URL */
+    sch[k] = '\0';
+    if (!strcmp(sch, "javascript") || !strcmp(sch, "vbscript") || !strcmp(sch, "file"))
+        return 1;
+    if (strcmp(sch, "data") != 0) return 0;
+    /* data: -- only the image types cmark allows */
+    static const char *ok[] = { "image/png", "image/gif", "image/jpeg", "image/webp" };
+    const char *rest = u + i + 1;
+    size_t rn = n - i - 1;
+    for (size_t t = 0; t < sizeof ok / sizeof ok[0]; t++) {
+        size_t L = strlen(ok[t]);
+        if (rn >= L) {
+            size_t m = 0;
+            while (m < L && (char)((rest[m] >= 'A' && rest[m] <= 'Z') ? rest[m] + 32 : rest[m]) == ok[t][m]) m++;
+            if (m == L) return 0;
+        }
+    }
+    return 1;
+}
+
 /* Render inline markdown for a cell: `code`, **bold**, *italic*, [link](url) */
 static void md_inline_cell(MdBuf *b, const char *s, size_t len) {
     size_t i = 0;
@@ -131,7 +172,8 @@ static void md_inline_cell(MdBuf *b, const char *s, size_t len) {
                 while (k < len && s[k] != ')') k++;
                 if (k < len) {
                     mdb_cats(b, "<a href=\"");
-                    mdb_esc(b, s + j + 2, k - j - 2);
+                    if (!md_url_dangerous(s + j + 2, k - j - 2))
+                        mdb_esc(b, s + j + 2, k - j - 2);
                     mdb_cats(b, "\">");
                     md_inline_cell(b, s + i + 1, j - i - 1);
                     mdb_cats(b, "</a>");

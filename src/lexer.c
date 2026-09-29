@@ -364,7 +364,11 @@ static int lex_string(Lexer *l, int start, int line, int col)
                     diag_emit(DIAG_WARNING, LEX_W1010, l->pos - 1, l->line, l->col - 1,
                               "string interpolation \\( is not supported in Profile 1; "
                               "use str.concat() instead",
-                              "fix", "use str.concat() for string composition", NULL);
+                              /* 127.243: no fix -- "use str.concat() for string
+                               * composition" is advice; the rewrite needs a
+                               * std.str import, an alias and a conversion per
+                               * non-str piece, none of which the lexer knows. */
+                              NULL);
                 }
                 advance(l);
                 int depth = 1;

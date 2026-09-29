@@ -16,3 +16,27 @@ paths = [
   '''examples/.*''',
   '''vendor/.*''',
 ]
+
+# 121.30: the fixed values the default rules flag in this tree, each a
+# published example, a test vector or a doc placeholder.  Matched against
+# the whole LINE, so each value is allowed where it is written and no rule is
+# switched off.  Every one was read before it was listed here.
+regexTarget = "line"
+regexes = [
+  # RFC 6455 section 1.3 sample Sec-WebSocket-Key, and the other widely
+  # published example handshake nonce.
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
+  '''x3JJHMbDL1EzLkh9GBhXDw==''',
+  # jwt.io's public sample token, and an unsigned alg:none header.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ''',
+  '''eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0\.''',
+  # A sha256 digest recorded under a *_sha256 key.
+  '''"[a-z0-9_]*sha256"\s*:\s*"[0-9a-f]{64}"''',
+  # Doc placeholders written with a trailing ellipsis (stdlib/auth.md).
+  '''(pk_live|sk_test)\.[A-Za-z0-9]+\.\.\.''',
+  # test/http/test_auth_patterns.sh: base64("user:pass") and made-up keys.
+  '''Basic dXNlcjpwYXNz''',
+  '''(tok_live_abc123|sk_test_12345)''',
+  # NIST GCM test-vector key (test/stdlib/test_encrypt.c).
+  '''feffe9928665731c6d6a8f9467308308''',
+]

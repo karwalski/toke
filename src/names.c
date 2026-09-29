@@ -496,6 +496,39 @@ int resolve_imports(const Node *ast, const char *src,
     out->search_path = (search_paths && search_path_count > 0) ? search_paths[0] : ".";
 
     int err = 0;
+
+    /* 138.15 (loke T-56): the import cap, at --check.  Codegen's
+     * prepass_imports refuses the (max_imports+1)th NODE_IMPORT with an E9010
+     * that names neither the count, the limit nor how to raise it, and only
+     * when a binary is built -- `--check` said nothing.  Counted here the
+     * way prepass_imports counts (every NODE_IMPORT at program level), so the
+     * two cannot disagree about whether a program is over. */
+    {
+        int nimp = 0;
+        for (int i = 0; i < ast->child_count; i++)
+            if (ast->children[i] && ast->children[i]->kind == NODE_IMPORT) nimp++;
+        if (limits->max_imports > 0 && nimp > limits->max_imports) {
+            const Node *at = NULL;
+            int k = 0;
+            for (int i = 0; i < ast->child_count && !at; i++)
+                if (ast->children[i] && ast->children[i]->kind == NODE_IMPORT
+                    && ++k > limits->max_imports) at = ast->children[i];
+            char msg[320], fix[160], exp[32], got[32];
+            snprintf(msg, sizeof msg,
+                     "compiler limit exceeded: this module has %d imports and "
+                     "the limit is %d (max_imports)", nimp, limits->max_imports);
+            snprintf(fix, sizeof fix,
+                     "raise the limit: pass --max-imports=%d, or set "
+                     "max_imports = %d in tkc.toml", nimp, nimp);
+            snprintf(exp, sizeof exp, "%d", limits->max_imports);
+            snprintf(got, sizeof got, "%d", nimp);
+            diag_emit(DIAG_ERROR, E9010, at ? at->start : 0, at ? at->line : 0,
+                      at ? at->col : 0, msg, "expected", exp, "got", got,
+                      "fix", fix, (const char *)NULL);
+            err = 1;
+        }
+    }
+
     InFlight inf;
     inf.count = 0;
     inf.capacity = limits->max_imports_in_flight;
@@ -1461,7 +1494,8 @@ static void resolve_ident(const Node *node, const char *src,
             if (!fix) {
                 const char *best_name = NULL;
                 int best_dist = 4; /* max distance 3 */
-                int want_type = (node->kind == NODE_TYPE_IDENT);
+                int want_type = (node->kind == NODE_TYPE_IDENT ||
+                                 node->kind == NODE_STRUCT_LIT);   /* 138.9 */
                 for (const Scope *sc = scope; sc; sc = sc->parent) {
                     for (const Decl *d = sc->head; d; d = d->next) {
                         if (!d->name) continue;
@@ -1492,7 +1526,7 @@ static void resolve_ident(const Node *node, const char *src,
          * (a) subsequent references to the same name do not re-report, and
          * (b) downstream phases see a declaration and can produce partial
          * results.  Story 84.1.8. */
-        if (s_name_env && s_name_env->arena) {
+        if (s_name_env && s_name_env->arena && scope) {   /* 138.9: analyzer */
             Decl *ed = (Decl *)arena_alloc(s_name_env->arena, (int)sizeof(Decl));
             if (ed) {
                 ed->name     = arena_intern(s_name_env->arena, name, len);
@@ -1969,6 +2003,20 @@ static int resolve_node(const Node *node, const char *src,
             resolve_node(node->children[i], src, sc_scope, arena, had_error);
         break;
     }
+
+    case NODE_STRUCT_LIT:
+        /* 138.9 (T-42): the literal's own token is its TYPE name, and nothing
+         * resolved it -- `$ghost{name:"a"}`, a type declared nowhere, was
+         * accepted, typed unknown, and read positionally through whatever
+         * struct the value later met (`r.label` printed the ghost's first
+         * field).  Resolve it as a type reference, exactly as a `$name` in a
+         * type position is; a qualified `mod.$t{..}` is left to the module
+         * (story 75.5), as for NODE_TYPE_IDENT. */
+        if (node->op != TK_DOT && node->tok_len > 0)
+            resolve_ident(node, src, scope, had_error);
+        for (int i = 0; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        break;
 
     default:
         /* Generic: walk all children */

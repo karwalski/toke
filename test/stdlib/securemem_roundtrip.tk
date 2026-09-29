@@ -47,7 +47,7 @@ f=rejectsoversize():bool{
   let len=str.len(sm.read(b));
   io.println(str.concat("oversize: accepted=";str.concat(str.fromint(ok);str.concat(" len=";str.fromint(len)))));
   sm.wipe(b);
-  <ok==0&&len==0
+  <ok==false&&len==0
 };
 
 (* isavailable had no _w symbol until 136.5, so this call is itself the test. *)
@@ -55,7 +55,7 @@ f=availability():bool{
   let a=sm.isavailable();
   let swept=sm.sweep();
   io.println(str.concat("availability: isavailable=";str.concat(str.fromint(a);str.concat(" sweep=";str.fromint(swept)))));
-  <a==0||a==1
+  <a==false||a==true
 };
 
 f=main():i64{

@@ -134,7 +134,7 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  if(kc.isavailable()==0){
+  if(!kc.isavailable()){
     io.println("no OS credential store on this platform");
     <0
   };

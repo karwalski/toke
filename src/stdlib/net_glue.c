@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "tk_bind.h"   /* 135.33 */
 
 int64_t tk_net_portavailable_w(int64_t port) {
     TK_REQUIRE(TK_CAP_NET);
@@ -55,25 +56,16 @@ int64_t tk_net_listen_w(int64_t addr) {
     int port = atoi(colon + 1);
     if (port <= 0 || port > 65535) return 0;
 
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return 0;
-
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
     struct sockaddr_in sa;
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     sa.sin_port   = htons((uint16_t)port);
-    if (inet_pton(AF_INET, host, &sa.sin_addr) != 1) {
-        close(fd);
+    if (inet_pton(AF_INET, host, &sa.sin_addr) != 1)
         return 0;
-    }
 
-    if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-        close(fd);
-        return 0;
-    }
+    /* 135.33: never shadow a live listener on the same port (tk_bind.h). */
+    int fd = tk_bind_exclusive(&sa);
+    if (fd < 0) return 0;
 
     if (listen(fd, 128) < 0) {
         close(fd);

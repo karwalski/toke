@@ -21,7 +21,7 @@ If you need a full CMS with routing, templates, and content management, use ooke
 ```toke
 m=hello;
 i=http:std.http;
-f=home(req:http.$req):http.$res{ < http.resok("hello") };
+f=home(req:http.$req):http.$res{ < http.res.ok("hello") };
 f=main():i64{ http.get("/";home); < http.serve(8080 as u16) };
 ```
 
