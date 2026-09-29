@@ -31,8 +31,15 @@ typedef struct {
     int patch;
 } PkgVersion;
 
-/* Parse "1.2.3" into a PkgVersion.  Returns false on malformed input. */
+/* Parse a SemVer 2.0 version ("1.2.3", "1.2.3-rc.1", "1.2.3+build.5") into
+ * a PkgVersion.  Returns false on malformed input, leading zeros, or a
+ * component over PKG_VERSION_MAX.  121.46: a pre-release or build suffix is
+ * validated and then dropped -- it takes no part in resolution, as
+ * docs/reference/package-manifest.md documents. */
 bool pkg_version_parse(const char *s, PkgVersion *out);
+
+/* 121.46: the largest MAJOR, MINOR or PATCH accepted (fits an int). */
+#define PKG_VERSION_MAX 999999999
 
 /* Compare two versions.  Returns <0, 0, or >0. */
 int pkg_version_cmp(PkgVersion a, PkgVersion b);
@@ -44,7 +51,10 @@ void pkg_version_fmt(PkgVersion v, char *buf, int bufsz);
 
 typedef struct {
     char       name[PKG_MAX_NAME];
-    PkgVersion minimum;          /* from >=x.y.z constraint */
+    PkgVersion minimum;          /* "x.y.z" or ">=x.y.z" */
+    PkgVersion below;            /* 121.46: ">=x.y.z <a.b.c" -- exclusive */
+    bool       has_below;
+    bool       exact;            /* 121.46: bare "x.y.z" means exactly it */
     char       git[PKG_MAX_URL]; /* extended form's `git`; "" = via the
                                     index (121.39: always pkg_source_valid) */
 } PkgDep;
