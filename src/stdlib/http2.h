@@ -134,6 +134,9 @@ typedef struct {
     size_t      capacity;
     size_t      size;        /* current total size */
     size_t      max_size;    /* SETTINGS_HEADER_TABLE_SIZE */
+    size_t      limit;       /* 121.17 (HTT-05): the most a dynamic table
+                                size update from the peer may set -- the
+                                size this side advertised (RFC 7541 6.3) */
 } HpackTable;
 
 /* ── Connection state ─────────────────────────────────────────────────── */
