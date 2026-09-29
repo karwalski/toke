@@ -747,7 +747,7 @@ test-asan-compiler: asan-selftest
 ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \
-                      test-stdlib-yaml \
+                      test-stdlib-yaml test-stdlib-regex \
                       test-stdlib-http-leak test-stdlib-http-route-param-leak
 #
 # test-stdlib-http-leak and test-stdlib-http-route-param-leak were excluded
@@ -949,7 +949,7 @@ TEST_CI_GREEN = \
 	test-stdlib-image test-stdlib-json test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-map test-stdlib-math test-stdlib-md test-stdlib-ml \
 	test-stdlib-network-integration test-stdlib-path test-stdlib-process \
-	test-stdlib-runtime test-stdlib-securemem \
+	test-stdlib-regex test-stdlib-runtime test-stdlib-securemem \
 	test-stdlib-security-integration test-stdlib-sse test-stdlib-svg \
 	test-stdlib-template test-stdlib-test test-stdlib-time \
 	test-stdlib-toml test-stdlib-toml-glue test-stdlib-toon \
@@ -1352,6 +1352,12 @@ test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \
 	    test/stdlib/test_str.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_str
+
+# 137.9 / 121.35: the regex engine (src/stdlib/tk_regex.h) -- supported
+# language, rejected syntax with offsets, and the step budget.
+test-stdlib-regex:
+	$(CC) $(CFLAGS) -o test/stdlib/test_regex test/stdlib/test_regex.c
+	$(RUN_TEST) ./test/stdlib/test_regex
 
 test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
@@ -2031,7 +2037,7 @@ test-standalone: $(BIN)
 # include graph.  `clean` now means clean.
 clean:
 	rm -f $(OBJS:.o=.d) $(BUILD_FLAGS_STAMP)
-	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
+	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_regex test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
 	    test/stdlib/test_stdlib_coverage test/stdlib/bench_stdlib \
