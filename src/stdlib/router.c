@@ -1263,6 +1263,25 @@ static TkRouteResp static_resp_with_body(int status, char *body,
     return resp;
 }
 
+/* static_confine — resolve `full` (in place) and require it to lie under the
+ * resolved root dir_path.  Returns 0, 404 (it does not exist) or 403.  One
+ * copy of the check for the requested path and for a directory's index. */
+static int static_confine(const char *dir_path, char *full, size_t cap)
+{
+    char resolved_root[PATH_MAX];
+    char resolved_full[PATH_MAX];
+    if (!realpath(dir_path, resolved_root)) return 403;
+    if (!realpath(full, resolved_full))
+        return (errno == ENOENT || errno == ENOTDIR) ? 404 : 403;
+    size_t root_len = strlen(resolved_root);
+    if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
+        (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
+        return 403;
+    int n = snprintf(full, cap, "%s", resolved_full);
+    if (n < 0 || (size_t)n >= cap) return 403;
+    return 0;
+}
+
 /* router_static_serve — public entry point for serving a single file.
  * dir_path: filesystem directory root (e.g. "/var/www/static")
  * rel_path: relative URL path after the prefix (e.g. "style.css" or "")
@@ -1301,24 +1320,8 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
         return router_resp_status(403, "Forbidden");
 
     /* Resolve symlinks and validate the path stays under dir_path */
-    {
-        char resolved_root[PATH_MAX];
-        char resolved_full[PATH_MAX];
-        if (!realpath(dir_path, resolved_root))
-            return router_resp_status(403, "Forbidden");
-        if (!realpath(full, resolved_full))
-            return (errno == ENOENT || errno == ENOTDIR)
-                ? router_resp_404()
-                : router_resp_status(403, "Forbidden");
-        size_t root_len = strlen(resolved_root);
-        if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
-            (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
-            return router_resp_status(403, "Forbidden");
-        /* Use the resolved path for all subsequent operations */
-        n = snprintf(full, sizeof(full), "%s", resolved_full);
-        if (n < 0 || (size_t)n >= sizeof(full))
-            return router_resp_status(403, "Forbidden");
-    }
+    int rc = static_confine(dir_path, full, sizeof full);
+    if (rc) return rc == 404 ? router_resp_404() : router_resp_status(403, "Forbidden");
 
     /* stat the path */
     struct stat st;
@@ -1330,30 +1333,20 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
 
     /* If directory, append /index.html */
     if (S_ISDIR(st.st_mode)) {
-        int m = snprintf(full, sizeof(full), "%s/%s/index.html", dir_path, rel);
+        /* 121.44: built from the directory's RESOLVED path, which the check
+         * above has just confined to the root -- not re-joined from the
+         * unresolved dir_path and rel.  The index file then gets the same
+         * check (121.18: an index.html symlinked out of the tree served its
+         * target). */
+        char dir[PATH_MAX];
+        int m = snprintf(dir, sizeof dir, "%s", full);
+        if (m < 0 || (size_t)m >= sizeof dir)
+            return router_resp_status(403, "Forbidden");
+        m = snprintf(full, sizeof(full), "%s/index.html", dir);
         if (m < 0 || (size_t)m >= sizeof(full))
             return router_resp_status(403, "Forbidden");
-        /* 121.18: the index file gets the same realpath check as the path
-         * that led to it.  It did not, so a directory whose index.html was
-         * a symlink out of the tree served the target (audit-120 WEB-02's
-         * sibling on this, the hardened, static path). */
-        {
-            char resolved_root[PATH_MAX];
-            char resolved_full[PATH_MAX];
-            if (!realpath(dir_path, resolved_root))
-                return router_resp_status(403, "Forbidden");
-            if (!realpath(full, resolved_full))
-                return (errno == ENOENT || errno == ENOTDIR)
-                    ? router_resp_404()
-                    : router_resp_status(403, "Forbidden");
-            size_t root_len = strlen(resolved_root);
-            if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
-                (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
-                return router_resp_status(403, "Forbidden");
-            m = snprintf(full, sizeof(full), "%s", resolved_full);
-            if (m < 0 || (size_t)m >= sizeof(full))
-                return router_resp_status(403, "Forbidden");
-        }
+        rc = static_confine(dir_path, full, sizeof full);
+        if (rc) return rc == 404 ? router_resp_404() : router_resp_status(403, "Forbidden");
         if (stat(full, &st) != 0)
             return router_resp_404();
     }
