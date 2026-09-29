@@ -174,6 +174,7 @@ PY
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/t" "${WORK}/t.c" \
         "${S}/dashboard.c" "${S}/chart.c" "${S}/html.c" "${S}/router.c" "${S}/ws.c" \
+        "${S}/capabilities.c" \
         "${S}/template.c" "${S}/llm_tool.c" "${S}/llm.c" -lz -lm >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     echo "C207: FAIL (build)"

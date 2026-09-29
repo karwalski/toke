@@ -1600,7 +1600,7 @@ test-stdlib-sse:
 
 test-stdlib-router:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_router \
-	    test/stdlib/test_router.c src/stdlib/router.c src/stdlib/ws.c -lz
+	    test/stdlib/test_router.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
 	$(RUN_TEST) ./test/stdlib/test_router
 
 test-stdlib-template:
@@ -1640,7 +1640,7 @@ test-stdlib-html:
 
 test-stdlib-dashboard:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
-	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c src/stdlib/ws.c -lz
+	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
 	$(RUN_TEST) ./test/stdlib/test_dashboard
 
 test-stdlib-svg:
@@ -1684,7 +1684,7 @@ test-stdlib-security-integration:
 test-stdlib-network-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_network_integration \
 	    test/stdlib/test_network_integration.c \
-	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c -lz
+	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c src/stdlib/capabilities.c -lz
 	$(RUN_TEST) ./test/stdlib/test_network_integration
 
 # 123.8: could not LINK -- the live-dashboard path reaches ws.c
@@ -1695,7 +1695,8 @@ test-stdlib-viz-integration:
 	    test/stdlib/test_viz_integration.c \
 	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/svg.c src/stdlib/canvas.c \
 	    src/stdlib/dashboard.c src/stdlib/router.c src/stdlib/ws.c \
-	    src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/math.c src/stdlib/str.c -lm -lz
+	    src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/math.c src/stdlib/str.c \
+	    src/stdlib/capabilities.c -lm -lz
 	$(RUN_TEST) ./test/stdlib/test_viz_integration
 
 test-stdlib-data-pipeline:
@@ -1732,7 +1733,7 @@ test-stdlib-dashboard-integration:
 	    test/stdlib/test_dashboard_integration.c \
 	    src/stdlib/csv.c src/stdlib/dataframe.c src/stdlib/analytics.c \
 	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/dashboard.c \
-	    src/stdlib/math.c src/stdlib/router.c src/stdlib/ws.c $(ORPHAN_LIBS)
+	    src/stdlib/math.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_dashboard_integration
 
 test-stdlib-http-json-integration:
@@ -2200,7 +2201,7 @@ fuzz-parser:
 fuzz-http-parse:
 	$(call fuzz_build_rule,http_parse,test/fuzz/fuzz_http_parse.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz -lpthread)
 fuzz-url-route:
-	$(call fuzz_build_rule,url_route,test/fuzz/fuzz_url_route.c src/stdlib/router.c src/stdlib/str.c src/stdlib/ws.c,-lz)
+	$(call fuzz_build_rule,url_route,test/fuzz/fuzz_url_route.c src/stdlib/router.c src/stdlib/str.c src/stdlib/ws.c src/stdlib/capabilities.c,-lz)
 
 # Build all of them (the name security-nightly.yml calls; image joined in
 # 122.13; lexer, parser, http_parse and url_route in 121.30).

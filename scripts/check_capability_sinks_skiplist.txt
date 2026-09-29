@@ -76,22 +76,6 @@ exempt | tk_time.c:tk_time_with_tz | unsetenv | 2026-09-29 | 121.22 | restores a
 # another batch held at the time, so each was reported for filing rather than
 # fixed here.  The story column names 121.22 until the follow-up is filed.
 
-# router.serve binds and listens with no net grant.  Measured on main: a
-# program compiled --cap-enforce with no grants listens on 127.0.0.1:P.
-# chart.serve and dashboard.serve are router.serve underneath.
-ungated | tk_router_serve_w | tk_bind.h:tk_bind_exclusive | bind | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_router_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_router_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_router_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | router.c router_serve has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_chart_serve_w | tk_bind.h:tk_bind_exclusive | bind | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_chart_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_chart_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_chart_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_dashboard_serve_w | tk_bind.h:tk_bind_exclusive | bind | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_dashboard_serve_w | tk_bind.h:tk_bind_exclusive | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_dashboard_serve_w | tk_bind.h:tk_port_has_listener | connect | 2026-09-29 | 121.22 | via router_serve (no net gate)
-ungated | tk_dashboard_serve_w | tk_bind.h:tk_port_has_listener | socket | 2026-09-29 | 121.22 | via router_serve (no net gate)
-
 # std.llm opens its own TCP connections (llm.c tcp_connect) instead of going
 # through http.c's gated client_tcp_connect.
 ungated | tk_llm_chat_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
@@ -109,25 +93,6 @@ ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | socket | 2026-09-29 |
 ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
 ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
 ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-
-# http.downloadfile writes the body to a program-chosen path under the net
-# grant alone.
-ungated | tk_http_downloadfile_w | http.c:http_downloadfile | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_WRITE) as well as net
-ungated | tk_http_downloadfile_w | http.c:http_downloadfile | remove | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_WRITE) as well as net
-ungated | tk_http_downloadfile_w | http.c:http_downloadfile | rename | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_WRITE) as well as net
-
-# http.servedir / http.servepages serve files off disk on every request; the
-# program registering them holds no fs.read (the serve call takes net only).
-ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_handler | fopen | 2026-09-29 | 121.22 | registration should take fs.read (the handler reads files under net only)
-ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_handler | stat | 2026-09-29 | 121.22 | registration should take fs.read
-ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_handler | fopen | 2026-09-29 | 121.22 | registration should take fs.read
-ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_handler | stat | 2026-09-29 | 121.22 | registration should take fs.read
-ungated | tk_http_servedir_w | tk_web_glue.c:staticdir_resolve | realpath | 2026-09-29 | 121.42 | same gap via 121.18's symlink containment (realpath); registration should take fs.read
-ungated | tk_http_serve_staticdir_w | tk_web_glue.c:staticdir_resolve | realpath | 2026-09-29 | 121.42 | same gap via 121.18's symlink containment (realpath); registration should take fs.read
-ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | opendir | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_http_servepages_w | tk_web_glue.c:scan_pages_recursive | stat | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_http_servepages_w | template.c:tmpl_readfile | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 
 # File readers that bypass file.read's gate by calling file.c / fopen directly.
 ungated | tk_toon_load_w | file.c:fopen_nofollow | fopen | 2026-09-29 | 121.22 | toon_glue.c calls file_read(), not the gated tk_file_read_w

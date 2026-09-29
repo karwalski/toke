@@ -3529,6 +3529,10 @@ int http_downloadfile(HttpClient *c, const char *url,
                       const char *dest_path, HttpProgressFn progress_fn)
 {
     if (!c || !c->base_url || !url || !dest_path) return -1;
+    /* 121.42 (3): the download is written to dest_path -- fs.write, as well
+     * as the net grant client_tcp_connect takes.  Checked before anything
+     * is fetched, so a denied program has touched neither. */
+    TK_REQUIRE(TK_CAP_FS_WRITE);
 
     if (strncmp(c->base_url, "https://", 8) == 0) return -1;
 
