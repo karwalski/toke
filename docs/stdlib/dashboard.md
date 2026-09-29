@@ -37,7 +37,7 @@ Opaque handle to a dashboard instance. Its one field, `id` (u64), is a number un
 | `dashboard.addchart` | `d: $dashboard; id: $str; spec: chart.$chartspec` | `$dashwidget` | Add a chart widget |
 | `dashboard.addtable` [quarantined](/docs/reference/tki-quarantine/) | `d: $dashboard; id: $str; headers: @($str)` | `$dashwidget` | Add a table widget with column headers |
 | `dashboard.update` [quarantined](/docs/reference/tki-quarantine/) | `d: $dashboard; w: $dashwidget; data: @($byte)` | `void` | Push new data to a widget (triggers live refresh) |
-| `dashboard.serve` | `d: $dashboard; port: u64` | `void!$dasherr` | Start serving the dashboard on `port` |
+| `dashboard.serve` | `d: $dashboard; port: i64` | `void!$dasherr` | Start serving the dashboard on `port` |
 
 ## Usage
 

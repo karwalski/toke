@@ -112,7 +112,7 @@ where it needs its writes to survive a crash.
 
 ## Collection Operations
 
-### vecstore.collection(vs: VecStore, name: str): VecCollection!VecErr
+### vecstore.collection(vs: VecStore; name: str): VecCollection!VecErr
 
 Returns a handle for the named collection within `vs`.  If a backing file
 `{data_dir}/{name}.vecs` exists it is loaded into memory.  If the file does
@@ -128,7 +128,7 @@ Collection names must be non-empty and must not contain path separators.
 let col=vecstore.collection(vs;"documents");
 ```
 
-### vecstore.upsert(col: VecCollection, id: str, embedding: @(f64), payload: str): bool
+### vecstore.upsert(col: VecCollection; id: str; embedding: @(f64); payload: str): bool
 
 Inserts a new entry or replaces an existing entry with the given `id`.
 `embedding` is an `f64` array; toke arrays carry their own length, so the
@@ -157,7 +157,7 @@ let emb=@(0.1;0.9;0.4);
 let ok=vecstore.upsert(col;"doc-1";emb;"{\"title\":\"hello\"}");
 ```
 
-### vecstore.search(col: VecCollection, query: @(f64), topk: i32, minscore: f64): @(SearchResult)
+### vecstore.search(col: VecCollection; query: @(f64); topk: i32; minscore: f64): @(SearchResult)
 
 Performs a brute-force cosine similarity search over all entries in `col`.
 `query` is an `f64` array whose length must match the collection's dimension;
@@ -176,7 +176,7 @@ lp(let i=0;i<results.len();i=i+1){
 };
 ```
 
-### vecstore.delete(col: VecCollection, id: str): bool
+### vecstore.delete(col: VecCollection; id: str): bool
 
 Removes the entry with the given `id` from the collection.  Returns `true` if
 the entry existed and was removed, `false` if no entry with that `id` was
@@ -187,7 +187,7 @@ found.
 let removed=vecstore.delete(col;"doc-1");
 ```
 
-### vecstore.deletebefore(col: VecCollection, beforets: i64): i32
+### vecstore.deletebefore(col: VecCollection; beforets: i64): i32
 
 Removes all entries whose creation timestamp (Unix seconds) is strictly less
 than `beforets`.  Returns the number of entries removed.
