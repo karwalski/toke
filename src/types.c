@@ -2784,8 +2784,8 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * that diagnostic.  The literal is still inferred exactly once, at its
      * own binding statement.
      *
-     * Only STR_LIT: the rest of the literal group (INT/FLOAT/BOOL, listed
-     * below) is a separate blast radius and stays held out.
+     * Only STR_LIT here: the rest of the literal group (INT/FLOAT/BOOL) is
+     * below, each landed on its own blast radius.
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
@@ -2798,8 +2798,8 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * `x.len`, `x.slice(0;1)`, `x.charat(0)` passed --check and read an i64
      * as a pointer at run time (garbage or SIGBUS), and `let b=3; g(b)` into
      * a str parameter was clean while `g(3)` was E4031.  A negated literal
-     * (`let d=-1`) is the same fact.  BOOL_LIT stays held out; FLOAT_LIT is
-     * below (127.230 item 7).
+     * (`let d=-1`) is the same fact.  FLOAT_LIT and BOOL_LIT are below
+     * (127.230 item 7, 127.248 (1)).
      *
      * Immutable `let` only.  A `let x=mut.0` is routinely re-assigned a
      * value of another type -- an error union (`acc=check(0-2); mt acc
@@ -2815,6 +2815,14 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * Same immutable-only rule. */
     case NODE_FLOAT_LIT:
         return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_F64) : NULL;
+    /* 127.248 (1): the last of the literal group.  `let b=true; b.len()`
+     * passed --check -- 127.229 item 1's scalar-receiver rule never saw a
+     * bool it could judge -- and died in codegen (E9003, `'%t1' defined
+     * with type 'i1' but expected 'i64'`).  A bool PARAMETER and a bound
+     * comparison (`let b=1<2`) were already judged.  Same immutable-only
+     * rule as the int and float literals. */
+    case NODE_BOOL_LIT:
+        return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_BOOL) : NULL;
     case NODE_UNARY_EXPR:
         if (bn->kind == NODE_BIND_STMT && initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
             && initN->children[0]->kind == NODE_INT_LIT)
