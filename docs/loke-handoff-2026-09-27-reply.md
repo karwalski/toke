@@ -5,8 +5,8 @@
 **Date:** 2026-09-30
 **Re:** `loke/docs/upstream/handoff-2026-09-27.md` (branch `foundation/reset`) and its
 reproducers in `docs/upstream/repro-2026-09-27/`
-**Verified against:** toke **3.1.0**, branch `release/3.1.0` at `cff0278f` (toke main `b88090c3`
-plus the version bump; every later commit on the branch changes documentation only), and ooke
+**Verified against:** toke **3.1.0**, branch `release/3.1.0` (toke main as of 2026-09-30, with
+Batches X1 and X2; the reproducers were re-run on the final build), and ooke
 **3.0.0-rc.2**, branch `release/ooke-rc2` at `3cc4998`
 **Status:** every blocker (B0–B8) is fixed in 3.1.0. Four issues remain open and are named with
 their stories in [Still open](#still-open). **The `v3.1.0` and `v3.0.0-rc.2` tags are not created
@@ -99,7 +99,7 @@ runner's printed verdict is wrong for this build — see [loke's runner issues](
 | T-8 | FIXED | (before 3.0.0) | — | import kept, `--check` after fix rc 0 | |
 | T-9 regex syntax | FIXED-BY-DESIGN-CHANGE | 137.9 | merge `49d17163` | lazy `<.*?>` is **E4075** at `--check` (the message suggests `<[^>]*>`); without that line your repro prints `s: a_b S: _ _ ci: Z` | |
 | T-10 `http.post` | FIXED-BY-DESIGN-CHANGE | 138.3, 137.10 | merge `880b9b4b` | 4-arg call E4026 naming it route registration; `http.post(url;body)` E4031 "…to send a request call http.clientpost"; `clientpost` arrives (`POST /post body-p`) | runner cannot build |
-| T-11 stub modules | OPEN | 137.11 | — | load of a missing model takes `$err` for mlx and infer; `mlx.generate`/`infer.generate` `.tki` declare 3 arguments, the implementation takes 2 — the `.tki`-shaped call is E4026 | |
+| T-11 stub modules | OPEN | 137.11 | — | `mlx.load` of a missing model took `$err` (pre-X2 build; your variant no longer compiles); `infer.load` now takes its published `(path; opts)`, so your 1-argument variant is E4026; `mlx.generate`/`infer.generate` `.tki` declare 3 arguments, the implementation takes 2 — the `.tki`-shaped call is E4026 | |
 | T-12 `.tki` vs implementation | FIXED | 138.11 | `266eb17` | `padright str-arg=[ab***]`, `getregulations len=1` | |
 | T-13 `$internal` field | FIXED-BY-DESIGN-CHANGE | 138.13 | `4a62e7e`, `cfa07fa3` | both forms E4033 "'$internal' is a type, not a value" | |
 | T-14 `==` on sums | FIXED-BY-DESIGN-CHANGE | 138.9 | `85570be1` | E4031 "'==' does not compare struct or sum values"; match on the variant | RUNNER-BUG |
@@ -309,6 +309,14 @@ db.closeon(a);
   **`str.padleft/padright(s; width; pad:i64)` take the pad as a byte code**: `str.padleft("7";3;48)`
   is `"007"`. A string pad pads with its first byte, but pass the code.
 - `std.homedir()` returns a `str` and links with only `i=std:std;`.
+- **`llm.*` needs the `net` capability** (`--allow-net`, or `net = true` in `tkc.toml
+  [capabilities]`), like `http.client`: its connection used to bypass the grant (121.42).
+- **RSA**: key generation accepts 2048 bits only, and encrypt/decrypt/sign/verify refuse larger
+  moduli — they computed wrong results (121.51). 2048-bit key generation works (121.48).
+- `time.withtz`/`utcoffset` no longer `setenv TZ` (thread-safe); an unknown zone name is UTC.
+- A `std.db` error's `e.msg` is owned and stays valid after the next call or `db.close`.
+- `infer.load(path; opts)`, `infer.loadstreaming(dir; opts)` and `mdns.advertise(rec)` take the
+  arguments their `.tki` publishes.
 - `net.listen(addr:str)`: `net.listen(8080)` is E4031 — write `net.listen("127.0.0.1:8080")`.
   (Handed an integer at run time, it binds loopback only, never every interface.)
 
@@ -387,6 +395,9 @@ whole process; an error-as-value call is 121.45.
   or sum values (E4031), mixed array-literal element types (E4031), a struct literal of an
   undeclared type (E3011), a `$variant(..)` constructor without exactly one payload (E4026), and
   standard-library arguments of the wrong kind (E4031, checked against the typed `.tki`).
+- A result match whose value is used must have both arms (E4010), and `mt` on a nil sum value traps
+  RT005 instead of reading through a null pointer. User error payloads of type `str` or a scalar
+  bind in the err arm, as do `args.get`/`env.get` payloads.
 
 ### 12. ooke 3.0.0-rc.2
 
@@ -430,10 +441,10 @@ whole process; an error-as-value call is 121.45.
 |---|---|---|
 | **T-17** `json.parse` | 138.9 (blocked) | Not a mis-binding: `json.parse` is a separate, deliberately public parser for scalars and integer arrays (`tk_json_parse`). Given an object it returns a value `json.getstr` reads as empty. **Owner decision pending**: alias `parse` to `decode` (breaks its documented array/string use), or type it so an object handle is rejected. **Use `json.dec` / `json.decode` for objects.** |
 | **T-55** `str.charat` quadratic | 127.170 (blocked) | toke strings carry no length, so every offset check is O(N). The plan (`docs/runtime-abi.md` §3.1, a length-carrying string heap) is written and prototyped; it is an ABI change awaiting an owner decision. Measured on 3.1.0: doubling the input still costs ×4. |
-| **T-11** stub modules | 137.11 | `infer` has no backend compiled in (`TK_HAVE_LLAMACPP` is never defined); `mlx` is an HTTP bridge client; both now take `$err` on failure rather than returning a plausible value. The `.tki` arity of `mlx.generate`/`infer.generate` (3) still disagrees with the implementation (2) — the `.tki`-shaped call is E4026. |
+| **T-11** stub modules | 137.11 | `infer` has no backend compiled in (`TK_HAVE_LLAMACPP` is never defined); `mlx` is an HTTP bridge client; both now take `$err` on failure rather than returning a plausible value. `infer.load`/`loadstreaming` and `mdns.advertise` now take their published arguments, but the `.tki` arity of `mlx.generate`/`infer.generate` (3) still disagrees with the implementation (2) — the `.tki`-shaped call is E4026. |
 | **T-59 / B9** scoped capability grants | **not yet filed** | Not addressed in 3.1.0: a quoted path or host in `[capabilities]` still grants the whole class, listen and connect are one `net` grant, and a launcher can add `--allow-*`. (3.1.0 does close several gaps where a stdlib call reached the file system or network with no grant at all — 121.22, 121.42 — which is the other direction.) A story will be filed from your `toke-issues.md` T-59. |
 | `m.get` / `json.get*` / `str.toint` not forced to be matched | 127.244 | The error channel is set and matchable; the checker still types them as plain values. Enforcing it is breaking by design and awaits the owner. |
-| RSA keys over 2048 bits compute wrong products | 121.51 | RSA-2048 key generation works (121.48); do not use larger keys yet. |
+| RSA keys over 2048 bits | 121.51 | Refused in 3.1.0 (they computed wrong products); RSA-2048 works (121.48). Larger keys need a wider bignum. |
 
 ## loke's runner issues
 

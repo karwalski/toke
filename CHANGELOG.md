@@ -15,8 +15,8 @@ may no longer compile.
 ## 3.1.0 — loke's handoff, the typed standard library, and security fixes
 
 **Status: prepared on branch `release/3.1.0` (story 138.17). Not tagged, not
-published.** Built from main `b88090c3` (2026-09-30): 762 commits and 133 merges
-since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
+published.** Built from main as of 2026-09-30 (`b88090c3`, then Batches X1 and
+X2 merged in); more than 760 commits since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
 story in `docs/progress.md` and a commit, so a consumer can bisect.
 
 This is a minor version by the letter of semver, but read **Breaking changes**
@@ -47,7 +47,9 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
 | 13 | **Wider capability gates**: `log.openaccess`/`openerror` need `fs.write`; `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file`/`sha256verify` need `fs.read`; `router.serve`/`chart.serve`/`dashboard.serve` need `net`; `http.downloadfile` needs `fs.write`; `http.servedir`/`servepages` need `fs.read`. | 121.22 — `783e0848`; 121.42 — `9a9447ce`, merge `b88090c3` | Grant the capability in `tkc.toml [capabilities]` or with `--allow-*` |
 | 14 | **`std.db`**: every `db.open` returns a fresh handle; handle-less calls use the first still-open database (a second open no longer repoints them); `db.exec` runs every statement, names the failing one, and refuses bind parameters with several statements. | 138.6 — `0deb11d` | Use `db.execon/oneon/manyon/closeon(h;…)` for a second connection |
 | 15 | **Advice-only `fix` fields removed** from E2001, E2002 (generic), E2003, E2004, E2005, E4025, E4027 (the did-you-mean fix stays), W1010 and E9005. A repair loop reading `fix` finds it absent where it was never deterministically correct. | 127.233, 127.235, 127.240, 127.243, 127.237 | Read `message`/`got`/`expected` |
-| 16 | Behaviour changes in other modules: `soap.fault` escapes its detail; TOON escapes `\ \| \n \r` both ways; `jwtverify` rejects at/after `exp` and before `nbf`; `http.param`/`header` take `$err` when missing; the HTTP/2 `h2c` upgrade is retired (answered as HTTP/1.1); `pkg.toml` has a closed schema, a source allowlist and a strict lock. | 121.16 `7f95de9b`; 121.40 `b1f8c0da`; 121.20 `e53bf845`; 135.28 `2e667e9`; 121.44 `b90ca884`; 121.39 `3256a412` | — |
+| 16 | **`std.llm` needs the `net` capability** for its connection, like `http.client`; RSA key generation accepts 2048 bits only, and encrypt/decrypt/sign/verify refuse larger moduli (they computed wrong results); `infer.load(path;opts)`, `infer.loadstreaming(dir;opts)` and `mdns.advertise(rec)` take their published arguments; `router.ctx`/`$ctx`, `process_set_cwd` and the SIGHUP reload stubs are removed (unreachable before). | 121.42 (2) `ff2ef9d8`; 121.51 (1) `691550fb`; 135.31 (1) `c99ad497`; 121.42 (7) `8226aa6f`, 121.51 (3) `19cd98ae`, 135.31 (4) `bfcaabff` | `--allow-net` / `net = true` for programs that call `llm.*`; 2048-bit RSA keys |
+| 17 | **A one-sided result match whose value is used is E4010**; `mt` on a nil sum value traps RT005 (it read the tag through a null pointer). | 127.249 (2) `50a0bd83`; 121.51 (2) `d7eb72df` | Write both arms |
+| 18 | Behaviour changes in other modules: `soap.fault` escapes its detail; TOON escapes `\ \| \n \r` both ways; `jwtverify` rejects at/after `exp` and before `nbf`; `http.param`/`header` take `$err` when missing; the HTTP/2 `h2c` upgrade is retired (answered as HTTP/1.1); `pkg.toml` has a closed schema, a source allowlist and a strict lock. | 121.16 `7f95de9b`; 121.40 `b1f8c0da`; 121.20 `e53bf845`; 135.28 `2e667e9`; 121.44 `b90ca884`; 121.39 `3256a412` | — |
 
 ### Fixed for loke (the 2026-09-27 handoff, Epic 138)
 
@@ -95,7 +97,8 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
   two calls corrupted the heap); `str` into a `[byte]` parameter is fixed at the
   checker. 124.2f — merge `e1dcc7ca`.
 - **RSA key generation never terminated** (`bi_modinv` seeded the wrong
-  coefficient). 121.48 — `0a47c948`. RSA over 2048 bits is still wrong: 121.51.
+  coefficient). 121.48 — `0a47c948`. Keys over 2048 bits, which computed wrong
+  products, are now refused (121.51 — `691550fb`).
 - **Map hash flooding** — the map index is keyed SipHash-1-3. 121.32 — `fc7cbfb1`.
 - **HTTP** — one RFC 9112 request reader for plain and TLS (smuggling,
   pipelining, deadlines; 121.17 `32efd7b1`); `servedir` symlink escape (121.18
@@ -131,6 +134,17 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
   baselining it (127.139); `make lint` analyses the stdlib (135.3a); `make`
   rebuilds when flags change (136.62); the D-series `fix` checks are live
   (127.239).
+- **Batches X1/X2 (merged into this release)**: user `str`/scalar error payloads
+  bind, and `args.get`/`env.get` bind their payload (127.249 `cfb13887`); a
+  `str` from `tpl.render`/`tpl.escape` interpolates as text (127.242
+  `0c265416`); match-arm bindings release their slots, so many-arm matches in
+  one function build (127.246 (4) `2b001c27`); E3011's did-you-mean offers only
+  a writable name (127.246 (1)); `time.withtz`/`utcoffset` read the zone rules
+  themselves and never `setenv TZ` — thread-safe, and an unknown zone is UTC
+  (121.42 (6) `2688a0c8`); a db error's `e.msg` owns its text and survives the
+  next call or close (121.51 (5) `7124e466`); Postgres survives allocation
+  failure and `??` escapes a literal `?` for jsonb operators (121.51 (8)
+  `97511f30`).
 - **Runtime**: `http.servedir` mounts are a longest-prefix table (127.75); the
   per-IP rate limiter that silently returned 429 is removed (127.60); `ws.recv`
   returns a real message (127.145); `Res` bodies are owned (127.148); HTTP/2
