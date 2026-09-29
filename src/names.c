@@ -1408,6 +1408,17 @@ static int suggestion_fits(const Decl *d, int want_type) {
     return 1;
 }
 
+/* 127.246 (1): 1 when `nm` can be written in the position being repaired:
+ * no `_` (outside the default profile), and after a `$` sigil (a type or a
+ * variant) no upper-case letter either -- `$FileErr` is E2002. */
+static int name_spellable(const char *nm, int want_type) {
+    for (const char *p = nm; *p; p++) {
+        if (*p == '_') return 0;
+        if (want_type && *p >= 'A' && *p <= 'Z') return 0;
+    }
+    return 1;
+}
+
 /* 127.98 (i): set while the base identifier of a member access is resolved */
 static int s_resolving_member_base = 0;
 
@@ -1511,6 +1522,13 @@ static void resolve_ident(const Node *node, const char *src,
                          * alias 'io', `foox` the type 'bool', and a second
                          * misspelling the first one's error marker. */
                         if (!suggestion_fits(d, want_type)) continue;
+                        /* 127.246 (1): suggest only a name that can be
+                         * WRITTEN here.  `$fileerr` was offered 'FileErr',
+                         * and `$FileErr` does not lex (E2002: a `$` type
+                         * name is lower-case), so the fix could not be
+                         * applied.  `_` is outside the default profile
+                         * anywhere. */
+                        if (!name_spellable(d->name, want_type)) continue;
                         int dist = tk_edit_distance(nbuf, d->name);
                         if (dist < best_dist) {
                             best_dist = dist;

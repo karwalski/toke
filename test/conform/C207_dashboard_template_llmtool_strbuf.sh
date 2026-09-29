@@ -64,6 +64,7 @@ cat > "${WORK}/t.c" <<'C'
 #include "template.h"
 #include "llm.h"
 #include "llm_tool.h"
+#include "capabilities.h"
 static int fails = 0, checks = 0;
 #define CHECK(c, m) do { checks++; if (c) printf("  PASS: %s\n", m); \
                          else { printf("  FAIL: %s\n", m); fails++; } } while (0)
@@ -72,6 +73,8 @@ int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     if (argc < 3) return 2;
     const char *dir = argv[1], *url = argv[2];
+    char *grant[] = { argv[0], "--allow-net", NULL };   /* 121.42 (2): llm connect is gated */
+    tk_cap_init(2, grant);
 
     /* ---- dashboard_render ---- */
     char longt[3001]; memset(longt, 'T', 3000); longt[3000] = 0; longt[2999] = 'Z';

@@ -217,11 +217,12 @@ if "${CC}" -std=c11 -D_GNU_SOURCE -O1 -c -o "${WORK}/metrics.o" "${S}/metrics.c"
     dead="$(nm "${WORK}/metrics.o" 2>/dev/null | awk '$2 == "T" { sub(/^_/, "", $3); print $3 }' \
             | /usr/bin/grep -a -E '^metrics_(gen_request_id|parse_traceparent|new_trace|build_traceparent|parse_b3)$' | tr '\n' ' ')"
     kept="$(nm "${WORK}/metrics.o" 2>/dev/null | awk '$2 == "T" { sub(/^_/, "", $3); print $3 }' \
-            | /usr/bin/grep -a -c -E '^metrics_(reopen_logs|prometheus|record_request|record_upstream)$')"
-    if [ -z "${dead}" ] && [ "${kept}" -eq 4 ]; then
-        pass "(8) metrics.o defines no request-ID/trace/B3 function; reopen_logs and the counters remain"
+            | /usr/bin/grep -a -c -E '^metrics_(prometheus|record_request|record_upstream)$')"
+    # 121.51 (4): metrics_reopen_logs, empty and uncalled, was removed (C541).
+    if [ -z "${dead}" ] && [ "${kept}" -eq 3 ]; then
+        pass "(8) metrics.o defines no request-ID/trace/B3 function; the counters remain"
     else
-        fail "(8) metrics.o still defines: ${dead:-none}; kept ${kept}/4"
+        fail "(8) metrics.o still defines: ${dead:-none}; kept ${kept}/3"
     fi
 else
     fail "(8) metrics.c did not compile"; head -5 "${WORK}/m.cc" | sed 's/^/      | /'

@@ -11,6 +11,8 @@ The `std.llm` module provides a provider-agnostic client for large language mode
 
 > **Note:** `llm.tki` exports six functions: `llm.client`, `llm.chat`, `llm.chatstream`, `llm.streamnext`, `llm.complete`, and `llm.countokens`. Extended features (`llm.embedding`, `llm.json_mode`, `llm.vision`, `llm.retry_backoff`, `llm.usage`) are planned but not yet in the current tki -- do not use them.
 
+> **Capability:** every request (`llm.chat`, `llm.chatstream`, `llm.complete`, and `std.llmtool`'s `chatwithtools` / `submitresult`) opens a TCP connection and needs the **net** grant, like `http.client`: run the program with `--allow-net` or declare it in `tkc.toml [capabilities]`. Without it the program stops with `CAP001: capability 'net'` before connecting (121.42).
+
 ## Types
 
 ### $llmclient

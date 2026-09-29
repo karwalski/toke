@@ -15,15 +15,6 @@
     },
     {
       "kind": "type",
-      "name": "ctx",
-      "fields": [
-        {"name": "req",    "type": "http.Req"},
-        {"name": "params", "type": "[[str]]"},
-        {"name": "state",  "type": "[[str]]"}
-      ]
-    },
-    {
-      "kind": "type",
       "name": "handler",
       "opaque": true,
       "fields": [

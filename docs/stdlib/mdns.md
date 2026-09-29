@@ -5,7 +5,7 @@ section: reference/stdlib
 order: 47
 ---
 
-> **Status: FAÇADE -- do not write against this page's API.** `src/stdlib/mdns.c` is 788 lines of Bonjour/DNS-SD implementation. `src/stdlib/mdns_glue.c` is 46 lines and calls none of it: every wrapper is `(void)arg; return 0;`. Two published functions -- `mdns.isavailable` and `mdns.resolve` -- have **no wrapper at all** and fail at link. Two more are published with one arity and implemented with another, so the call you write is not the call the interface documents. Nothing on this page has ever discovered or advertised a service from a toke program. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`).
+> **Status: FAÇADE -- do not write against this page's API.** `src/stdlib/mdns.c` is 788 lines of Bonjour/DNS-SD implementation. `src/stdlib/mdns_glue.c` is 46 lines and calls none of it: every wrapper is `(void)arg; return 0;`. Two published functions -- `mdns.isavailable` and `mdns.resolve` -- have **no wrapper at all** and fail at link. One more, `mdns.browse`, is published with one arity and implemented with another, so the call you write is not the call the interface documents (`mdns.advertise` was the second until 135.31). Nothing on this page has ever discovered or advertised a service from a toke program. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`).
 
 `std.mdns` is intended to provide mDNS (Multicast DNS) service advertisement and discovery, compatible with Apple Bonjour and the wider zero-configuration networking ecosystem (RFC 6762 / RFC 6763).
 
@@ -17,7 +17,7 @@ Measured against the built compiler, not read off the interface.
 |---|---|---|---|---|
 | `mdns.isavailable` [quarantined](/docs/reference/tki-quarantine/) | `(): bool` | — | **no** | `E9003`, undefined symbol `_tk_mdns_isavailable_w` |
 | `mdns.resolve` [quarantined](/docs/reference/tki-quarantine/) | `(str; str): ?($discovered)` | — | **no** | `E9003`, undefined symbol `_tk_mdns_resolve_w` |
-| `mdns.advertise` | `($servicerecord): bool` | `(i64; i64; i64)` | at **3** args | returns 0 |
+| `mdns.advertise` | `($servicerecord): bool` | `(i64)` | links (135.31) | returns 0 |
 | `mdns.browse` | `(str; fn($discovered): void): bool` | `(i64)` | at **1** arg | **the callback parameter does not exist in the implementation**; returns an empty array |
 | `mdns.stopadvertise` | `(str): bool` | `(i64)` | links | returns 0 |
 | `mdns.stopbrowse` | `(str): bool` | `(i64)` | links | returns 0 |
@@ -27,7 +27,7 @@ Two of these are worse than a stub that returns the wrong answer.
 
 **`mdns.browse` has lost its callback.** The interface publishes `browse(type; cb)` where `cb` is invoked per discovered service. The wrapper takes the service type alone and returns an empty array. A program cannot register a discovery callback at all, so the module has no discovery path even in principle — and a caller writing the documented two-argument form gets `E4026` rather than a runtime surprise, which is the one mercy here.
 
-**`mdns.servicerecord` constructs nothing.** It exists because the record type could not be named in toke before 136.46 — see below — so it is the only way to build the argument `advertise` wants. It returns 0.
+**`mdns.servicerecord` constructs nothing.** It exists because the record type could not be named in toke before 136.46 — see below — and it returns 0. Since 136.46 the record can be written as a literal, `$servicerecord{name:"svc";type:"_http._tcp";port:8080;txt:@()}`, and since 135.31 `advertise` takes it (and, being a stub, ignores it).
 
 Because `isavailable` does not link, a toke program cannot even perform the availability check this page used to open with. The only compiling example is the shape a consumer must take today: assume no mDNS, and configure the host and port by hand.
 

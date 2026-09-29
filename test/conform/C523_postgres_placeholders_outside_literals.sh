@@ -60,7 +60,9 @@ static PGresult *c523_res(const char *sql, int n) {
     return (PGresult *)0;
 }
 static inline PGconn *PQconnectdb(const char *d) { (void)d; return (PGconn *)c523_last_sql; }
-static inline PGconn *PQconnectdbParams(const char *const *k, const char *const *v, int e) { (void)k; (void)v; (void)e; return (PGconn *)c523_last_sql; }
+/* 121.21 (main) opens through PQconnectdbParams (sslmode=require). */
+static inline PGconn *PQconnectdbParams(const char *const *k, const char *const *v, int e)
+    { (void)k; (void)v; (void)e; return (PGconn *)c523_last_sql; }
 static inline ConnStatusType PQstatus(const PGconn *c) { (void)c; return CONNECTION_OK; }
 static inline void PQfinish(PGconn *c) { (void)c; }
 static inline void PQclear(PGresult *r) { (void)r; }

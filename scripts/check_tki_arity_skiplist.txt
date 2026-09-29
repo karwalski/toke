@@ -36,13 +36,14 @@
 # proved the signature wrong.
 
 # ── infer (glue: src/stdlib/infer_glue.c — stub, returns 0) ──
-infer.tki::infer.load            # 2026-09-23 .tki 2 (str;infer_opts) vs glue 1 (model_path); the options record has no slot in tk_infer_load_w — 135.17
-infer.tki::infer.loadstreaming   # 2026-09-23 .tki 2 (str;stream_opts) vs glue 1 (model_path); same missing options record — 135.17
+# 2026-09-30 (135.31 (1)): infer.load and infer.loadstreaming cleared -- the
+# glue now takes the options record the .tki publishes.
 infer.tki::infer.generate        # 2026-09-23 .tki 3 (model_handle;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
 
 # ── mlx (glue: src/stdlib/mlx_glue.c — stub, MLX never integrated) ──
 mlx.tki::mlx.generate            # 2026-09-23 .tki 3 (mlx_model;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
 
 # ── mdns (glue: src/stdlib/mdns_glue.c — stub, no DNS-SD linked) ──
-mdns.tki::mdns.advertise         # 2026-09-23 .tki 1 ($service_record) vs glue 3 (service_type;name;port); the interface was written for the record form that mdns.servicerecord() builds, the glue for three scalars — a shape disagreement, not a count — 135.17
+# 2026-09-30 (135.31 (1)): mdns.advertise cleared -- the glue now takes the
+# one $servicerecord the .tki publishes.
 mdns.tki::mdns.browse            # 2026-09-23 .tki 2 (str;fn($discovered):void) vs glue 1 (service_type); tk_mdns_browse_w returns an array and has no callback slot — 135.17

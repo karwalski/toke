@@ -159,7 +159,7 @@ int main(void) {
 C
 if "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 -iquote "${S}" -c -o "${WORK}/cnt.o" "${WORK}/cnt.c" >"${WORK}/b.cc" 2>&1 \
    && "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 -iquote "${S}" -include "${WORK}/cnt.h" -o "${WORK}/b" "${WORK}/b.c" \
-        "${S}/llm_tool_glue.c" "${S}/llm_tool.c" "${S}/llm.c" "${WORK}/cnt.o" >>"${WORK}/b.cc" 2>&1; then
+        "${S}/llm_tool_glue.c" "${S}/llm_tool.c" "${S}/llm.c" "${S}/capabilities.c" "${WORK}/cnt.o" >>"${WORK}/b.cc" 2>&1; then
     run parsetoolcalls "${WORK}/b"
 else
     fail "parsetoolcalls driver does not build: $(head -c 400 "${WORK}/b.cc")"

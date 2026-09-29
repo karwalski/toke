@@ -18,6 +18,16 @@ static DbErr my_err(DbErrKind kind, const char *msg)
     DbErr e; e.kind = kind; e.msg = msg; return e;
 }
 
+/* 121.51 (5): a DbErr owns its text -- the driver's error buffer is
+ * overwritten by the next call on the connection and freed when it closes,
+ * so e.msg read later showed another error or freed memory.  Driver messages
+ * go through here: a heap copy, never freed, like every other str toke holds. */
+static DbErr my_err_copy(DbErrKind kind, const char *msg)
+{
+    char *c = strdup(msg ? msg : "");
+    return my_err(kind, c ? c : "db: out of memory copying the error message");
+}
+
 /* Parse mysql://user:pass@host:port/dbname */
 static int parse_mysql_dsn(const char *dsn,
     char *host, size_t hl, int *port,
@@ -196,14 +206,14 @@ static RowResult my_one(const char *sql, StrArray params)
 
     if (mysql_query(g_mysql, sql) != 0) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
         return r;
     }
 
     MYSQL_RES *res = mysql_store_result(g_mysql);
     if (!res) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
         return r;
     }
 
@@ -258,14 +268,14 @@ static RowArrayResult my_many(const char *sql, StrArray params)
 
     if (mysql_query(g_mysql, sql) != 0) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
         return r;
     }
 
     MYSQL_RES *res = mysql_store_result(g_mysql);
     if (!res) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
         return r;
     }
 
@@ -301,7 +311,7 @@ static U64Result my_exec(const char *sql, StrArray params)
 
     if (mysql_query(g_mysql, sql) != 0) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
         return r;
     }
     r.ok = (uint64_t)mysql_affected_rows(g_mysql);
@@ -313,7 +323,7 @@ static BoolResult my_begin(int conn_id)
     (void)conn_id;
     BoolResult r; r.is_err = 0; r.ok = 1;
     if (mysql_query(g_mysql, "START TRANSACTION") != 0) {
-        r.is_err = 1; r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.is_err = 1; r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
     }
     return r;
 }
@@ -323,7 +333,7 @@ static BoolResult my_commit(int conn_id)
     (void)conn_id;
     BoolResult r; r.is_err = 0; r.ok = 1;
     if (mysql_commit(g_mysql) != 0) {
-        r.is_err = 1; r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.is_err = 1; r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
     }
     return r;
 }
@@ -333,7 +343,7 @@ static BoolResult my_rollback(int conn_id)
     (void)conn_id;
     BoolResult r; r.is_err = 0; r.ok = 1;
     if (mysql_rollback(g_mysql) != 0) {
-        r.is_err = 1; r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.is_err = 1; r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
     }
     return r;
 }
@@ -384,13 +394,13 @@ static StmtResult my_prepare(int conn_id, const char *sql)
     MYSQL_STMT *raw = mysql_stmt_init(g_mysql);
     if (!raw) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
         return r;
     }
 
     if (mysql_stmt_prepare(raw, sql, (unsigned long)strlen(sql)) != 0) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(raw));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_stmt_error(raw));
         mysql_stmt_close(raw);
         return r;
     }
@@ -472,7 +482,7 @@ static BoolResult my_bind(TkStmt *stmt, StrArray params)
         }
         if (mysql_stmt_bind_param(s->stmt, binds) != 0) {
             r.is_err = 1;
-            r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+            r.err = my_err_copy(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
             free(lengths); free(binds);
             return r;
         }
@@ -480,7 +490,7 @@ static BoolResult my_bind(TkStmt *stmt, StrArray params)
 
     if (mysql_stmt_execute(s->stmt) != 0) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
     }
 
     free(lengths);
@@ -513,7 +523,7 @@ static RowResult my_step(TkStmt *stmt)
     }
     if (rc != 0 && rc != MYSQL_DATA_TRUNCATED) {
         r.is_err = 1;
-        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+        r.err = my_err_copy(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
         return r;
     }
 

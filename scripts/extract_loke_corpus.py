@@ -28,11 +28,15 @@ from typing import Optional
 
 # 127.130: hard absolute paths here meant a run from a git worktree read the
 # MAIN checkout's compiler and wrote to the MAIN output directory, whatever
-# tree it was launched from.  Overridable now; unset, behaviour is identical.
-LOKE_DIR = Path(os.environ.get("LOKE_DIR", "/Users/matthew.watt/loke/loke"))
-TOKE_BIN = Path(os.environ.get("TOKE_BIN", "/Users/matthew.watt/tk/toke/toke"))
+# tree it was launched from.  Overridable now.
+# 135.31 (3): the defaults no longer name one developer's home directory.
+# They are relative to this checkout (the compiler it builds, the sibling
+# toke-model repo) and to $HOME for the loke checkout.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+LOKE_DIR = Path(os.environ.get("LOKE_DIR", str(Path.home() / "loke" / "loke")))
+TOKE_BIN = Path(os.environ.get("TOKE_BIN", str(REPO_ROOT / "toke")))
 OUTPUT_DIR = Path(os.environ.get(
-    "LOKE_CORPUS_OUT", "/Users/matthew.watt/tk/toke-model/corpus-loke"))
+    "LOKE_CORPUS_OUT", str(REPO_ROOT.parent / "toke-model" / "corpus-loke")))
 OUTPUT_JSONL = OUTPUT_DIR / "extracted.jsonl"
 
 MIN_BODY_LINES = 3  # skip trivial one-liners

@@ -487,8 +487,7 @@ def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
 #
 # 137.12 generates the interfaces from the builtin table, which publishes the
 # ACTUAL reachable surface -- including plumbing never meant to be API: glue
-# living in another module's file (`std.http` <- tk_web_glue.c, `std.string`
-# <- str_glue.c).  Until now there was no way to say "callable, but not
+# living in another module's file (`std.http` <- tk_web_glue.c).  Until now there was no way to say "callable, but not
 # public".  There is now one, and it is a key on the export itself, so the
 # compiler (which ignores keys it does not read) keeps checking and emitting
 # the call exactly as before:

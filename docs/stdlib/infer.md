@@ -15,21 +15,21 @@ Measured against the built compiler, not read off the interface. Every row links
 
 | Published call | `.tki` arity | Glue arity | Behaviour today |
 |---|---|---|---|
-| `infer.load` | 2 | **1** | drops `inferopts`; takes the `$err` arm, never a handle |
-| `infer.loadstreaming` | 2 | **1** | drops `streamopts`; takes the `$err` arm |
+| `infer.load` | 2 | 2 | takes `inferopts` (135.31) and ignores it; takes the `$err` arm, never a handle |
+| `infer.loadstreaming` | 2 | 2 | takes `streamopts` (135.31) and ignores it; takes the `$err` arm |
 | `infer.unload` | 1 | 1 | returns 0 |
 | `infer.generate` | 3 | **2** | drops the token limit; takes the `$err` arm (until 127.241 it returned the literal `"[infer: not available]"` through `$ok`) |
 | `infer.embed` | 2 | 2 | takes the `$err` arm (until 127.241 it returned a zero-length array through `$ok`) |
 | `infer.isloaded` | 1 | 1 | returns 0. Added by 131.38, which found it declared with no wrapper at all -- and made it a stub consistent with the rest rather than a working function, because `load` never hands out a handle for it to check |
 
-A call written the way the interface publishes it is rejected before the linker:
+A `generate` call written the way the interface publishes it is still rejected before the linker (`load` and `loadstreaming` were too, until 135.31 gave their wrappers the options slot):
 
 ```
 E4026 wrong number of arguments for 'std.infer.generate':
       the implementation takes 2 arguments, the call passes 3
 ```
 
-The three arity drops are not cosmetic. `inferopts` carries the GPU-layer count, the thread count and the RNG seed; `streamopts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that kept the current wrapper signatures would compile every caller and honour none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
+The arity drops were not cosmetic, and `generate`'s still is. `inferopts` carries the GPU-layer count, the thread count and the RNG seed; `streamopts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that kept the current wrapper signatures would compile every caller and honour none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
 
 Because `isloaded` is the only call whose stub answer is *honest* (nothing is loaded, and that is true), the single compiling example below is a guard, and that is all it can be.
 
@@ -41,7 +41,8 @@ i=io:std.io;
 f=main():i64{
   (* load is a stub that returns 0, so this handle is never valid and
      isloaded is correspondingly false. The else branch is what runs. *)
-  let h=infer.load("/models/mistral-7b.Q4KM.gguf");
+  let o=$inferopts{ngpulayers:0;nthreads:0;seed:-1};
+  let h=infer.load("/models/mistral-7b.Q4KM.gguf";o);
   if(infer.isloaded(h)){
     io.println("model loaded")
   }el{
@@ -67,7 +68,7 @@ There were no call sites to migrate, because there could not be any.
 
 What 136.46 does **not** fix is the prose: this page previously documented `infer.load_streaming` and `infer.is_loaded`, which the interface has spelled `loadstreaming` and `isloaded` since 113.2a. That was a documentation defect independent of the glue, and it is corrected below.
 
-The options types remain unreachable for the other reason: no wrapper takes one. Restoring the module should follow the `std.tls` pattern from 136.44 and add constructor functions (`infer.opts(gpulayers; threads; seed)`) rather than relying on struct literals, keeping handles opaque as `i64`.
+Since 135.31 the options records can be built as literals (`$inferopts{ngpulayers:0;nthreads:1;seed:1}`) and passed to `load` / `loadstreaming`, whose wrappers take them -- and ignore them, being stubs. Restoring the module should follow the `std.tls` pattern from 136.44 and add constructor functions (`infer.opts(gpulayers; threads; seed)`) rather than relying on struct literals, keeping handles opaque as `i64`.
 
 ## The design, kept as the record
 
@@ -95,7 +96,7 @@ Disk-streaming load (Epic 72.7): `ramceilinggb`, `prefetchlayers` ahead of the d
 
 #### infer.load(modelpath: str; opts: inferopts): modelhandle!infererr
 
-Loads a GGUF file into memory. `tk_infer_load` in the core does this and takes the options; the wrapper takes the path alone and always takes the `$err` arm.
+Loads a GGUF file into memory. `tk_infer_load` in the core does this and takes the options; the wrapper takes the path and the options (135.31) and always takes the `$err` arm.
 
 #### infer.unload(h: modelhandle): bool
 

@@ -15,14 +15,6 @@ The `std.router` module provides a declarative HTTP router. Register routes by m
 
 Opaque handle to a router instance.
 
-### $ctx
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| req | http.$req | The incoming HTTP request |
-| params | @(@($str)) | Path parameters extracted from the route pattern |
-| state | @(@($str)) | Per-request state set by middleware |
-
 ### $handler
 
 Opaque handle to a route handler function.

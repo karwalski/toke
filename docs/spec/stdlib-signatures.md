@@ -140,8 +140,8 @@ f=locale():$str
 
 ```text
 (* server-side routing *)
-f=param(req:$req;key:$str):$str!$httperr
-f=header(req:$req;key:$str):$str!$httperr
+f=param(req:$req;key:$str):$str!$httprouteerr
+f=header(req:$req;key:$str):$str!$httprouteerr
 f=res.ok(body:$str):$res
 f=res.json(status:u16;body:$str):$res
 f=res.bad(msg:$str):$res
