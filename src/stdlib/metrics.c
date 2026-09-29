@@ -21,11 +21,9 @@
  * logging lives in log.c, whose writers escape every field.  Git history holds
  * the code (story 121.41).
  *
- * metrics_reopen_logs stays because server_ops.c's SIGHUP path calls it.
- * With no log files left here it has nothing to reopen. */
-void metrics_reopen_logs(void)
-{
-}
+ * metrics_reopen_logs, left empty then, is gone too: its one caller,
+ * server_ops.c's uncalled proc_reopen_logs, was removed by 121.49 (1), and
+ * nothing else named it (121.51 (4)). */
 
 /* ── Request IDs, W3C Trace Context and B3 tracing: removed (121.43) ───
  *
@@ -36,8 +34,7 @@ void metrics_reopen_logs(void)
  * tk_random_bytes, and parse_traceparent copied the trace and parent ids
  * without checking they were hex.  Deleted rather than fixed, the way 121.41
  * removed this file's log writers; git history holds the code.  What remains
- * is the counter set metrics_prometheus renders (C133, C208) and the empty
- * metrics_reopen_logs server_ops.c still calls. */
+ * is the counter set metrics_prometheus renders (C133, C208). */
 
 /* ── In-process metrics counters (66.2.1) ────────────────────────────── */
 

@@ -130,10 +130,13 @@ if "${CC}" -std=c11 -D_GNU_SOURCE -O1 -c -o "${WORK}/metrics.o" "${S}/metrics.c"
     else
         pass "metrics: metrics.o references no stdio writer"
     fi
+    # 121.51 (4): this used to require metrics_reopen_logs, for server_ops.c's
+    # SIGHUP path.  121.49 (1) removed that caller and 121.51 (4) the empty
+    # function; C541 checks nothing in the stdlib still names it.
     if printf '%s\n' "${defined}" | grep -a -q -E '^_?metrics_reopen_logs$'; then
-        pass "metrics: metrics_reopen_logs (server_ops.c's SIGHUP hook) still links"
+        fail "metrics: the empty metrics_reopen_logs is still defined (121.51 (4))"
     else
-        fail "metrics: metrics_reopen_logs is gone, server_ops.c will not link"
+        pass "metrics: the empty metrics_reopen_logs is gone"
     fi
 else
     fail "metrics: build: $(grep -a -m3 -E 'error' "${WORK}/mb.cc" | head -c 400)"

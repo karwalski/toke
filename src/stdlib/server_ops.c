@@ -32,10 +32,6 @@ typedef enum {
 } ProcPhase;
 
 static volatile sig_atomic_t g_proc_phase = PROC_PHASE_STARTING;
-static volatile sig_atomic_t g_proc_scale_up   = 0;
-static volatile sig_atomic_t g_proc_scale_down = 0;
-static volatile sig_atomic_t g_proc_reload = 0;
-static volatile sig_atomic_t g_proc_shutdown = 0;
 
 /* Grace period for SIGTERM shutdown (67.2.2) */
 static uint64_t g_grace_period_secs = 30;
@@ -45,27 +41,17 @@ typedef void (*ProcHook)(void);
 static ProcHook g_startup_hook  = NULL;
 static ProcHook g_shutdown_hook = NULL;
 
-/* ── Signal handlers (67.1.1, 67.1.4, 67.1.5) ──────────────────────── */
-
-static void proc_signal_handler(int sig)
-{
-    switch (sig) {
-    case SIGHUP:
-        g_proc_reload = 1;
-        break;
-    case SIGTERM:
-        g_proc_shutdown = 1;
-        break;
-    case SIGUSR1:
-        g_proc_scale_up = 1;
-        break;
-    case SIGUSR2:
-        g_proc_scale_down = 1;
-        break;
-    default:
-        break;
-    }
-}
+/* ── Signal handling: removed (121.51 (3)) ──────────────────────────
+ *
+ * proc_install_signals() set SIGHUP/SIGTERM/SIGUSR1/SIGUSR2 handlers that
+ * raised flags for proc_check_reload(), proc_check_shutdown() and
+ * proc_check_scale() to read "from the parent supervision loop".  Nothing
+ * called any of the four: no stdlib module, no glue, no header, no .tki
+ * entry, nothing in toke-ooke.  So SIGHUP never reached this file and the
+ * "graceful reload" / "log rotation on SIGHUP" it promised did not exist.
+ * The serving loop's signal handling is http.c's (workers mode: SIGHUP
+ * respawns the workers; an access log is not reopened -- see the 121.51
+ * report).  Removed rather than wired: git history holds the code. */
 
 /* ── Configuration API ──────────────────────────────────────────────── */
 
@@ -82,37 +68,6 @@ void proc_set_startup_hook(ProcHook hook)
 void proc_set_shutdown_hook(ProcHook hook)
 {
     g_shutdown_hook = hook;
-}
-
-/* ── Signal installation ────────────────────────────────────────────── */
-
-void proc_install_signals(void)
-{
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = proc_signal_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-
-    sigaction(SIGHUP,  &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGUSR1, &sa, NULL);
-    sigaction(SIGUSR2, &sa, NULL);
-}
-
-/* ── SIGHUP graceful reload (67.1.1) ────────────────────────────────── */
-
-/*
- * proc_check_reload — called from the parent supervision loop.
- * Returns 1 if a reload was requested (and clears the flag).
- */
-int proc_check_reload(void)
-{
-    if (g_proc_reload) {
-        g_proc_reload = 0;
-        return 1;
-    }
-    return 0;
 }
 
 /* ── Binary upgrade with socket inheritance (67.1.2) ────────────────── */
@@ -253,26 +208,6 @@ int proc_config_test(const ProcConfig *cfg)
     return ok ? 0 : -1;
 }
 
-/* ── Dynamic worker scaling (67.1.4) ────────────────────────────────── */
-
-/*
- * proc_check_scale — called from parent supervision loop.
- * Returns +1 if scale-up requested, -1 if scale-down, 0 if neither.
- * Clears the flag.
- */
-int proc_check_scale(void)
-{
-    if (g_proc_scale_up) {
-        g_proc_scale_up = 0;
-        return 1;
-    }
-    if (g_proc_scale_down) {
-        g_proc_scale_down = 0;
-        return -1;
-    }
-    return 0;
-}
-
 /* ── Log rotation (67.1.5) ──────────────────────────────────────────── */
 
 /* 121.49 (1): proc_reopen_logs() used to live here and call
@@ -351,11 +286,6 @@ void proc_set_phase(int phase) { g_proc_phase = phase; }
 int  proc_get_phase(void)      { return (int)g_proc_phase; }
 
 /* ── SIGTERM graceful shutdown (67.2.2) ─────────────────────────────── */
-
-int proc_check_shutdown(void)
-{
-    return g_proc_shutdown ? 1 : 0;
-}
 
 uint64_t proc_get_grace_period(void)
 {
