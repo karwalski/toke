@@ -4380,14 +4380,21 @@ static int h2_block_done(H2Conn *conn, int fd, void *ssl,
         return h2_finish(conn, fd, ssl, client_ip, st);
     }
     st->hnames = names; st->hvalues = values; st->hcount = n;
+    size_t expect = (size_t)srv_limits.max_body;
     for (int i = 0; i < n; i++)
         if (strcmp(names[i], "content-length") == 0) {
             unsigned long long v = strtoull(values[i], NULL, 10);
             if (v > (unsigned long long)srv_limits.max_body)
                 return h2_refuse_body(conn, fd, ssl, st);
+            expect = (size_t)v;
         }
     if (st->block_end_stream)
         return h2_finish(conn, fd, ssl, client_ip, st);
+    /* The body's clock is HTTP/1.1's (121.17): the timeout, plus one second
+     * per HTTP_MIN_BODY_BPS bytes announced -- or, with no content-length,
+     * as many as the body limit would take at that rate. */
+    st->deadline_ms = h2_now_ms() + (long)conn->read_timeout_ms
+                    + (long)(expect / HTTP_MIN_BODY_BPS) * 1000L;
     st->receiving = 1;
     return 0;
 }

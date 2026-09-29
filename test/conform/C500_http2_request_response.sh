@@ -26,9 +26,9 @@
 # middle of a header block is a connection error (RFC 9113 6.10).  A request
 # whose HEADERS frame lacks END_STREAM is dispatched when its body is whole
 # (DATA with END_STREAM, or trailers), with the body in req.body; a body over
-# max_body is answered 413 and the stream reset (RFC 9113 8.1); the whole
-# request -- header block and body -- must arrive within timeout_secs of its
-# first frame.  Responses carry the security headers, HSTS, CORS when
+# max_body is answered 413 and the stream reset (RFC 9113 8.1); the header
+# block must arrive within timeout_secs of its first frame, and the body on
+# HTTP/1.1's clock (timeout_secs + 1 s per KiB announced).  Responses carry the security headers, HSTS, CORS when
 # configured and the handler's own headers (lower-cased; connection-specific
 # fields dropped, RFC 9113 8.2.2), split into CONTINUATION frames when the
 # block is larger than the peer's frame size.  A connection with no request in
@@ -123,6 +123,7 @@ typedef struct {
     const char    *wantnot[4];   /* substrings it must not receive           */
     int            want_goaway;  /* 1: a GOAWAY frame must arrive            */
     int            want_code;    /* GOAWAY error code, when want_goaway      */
+    int            want_rst;     /* RST_STREAM error code required, +1 (0=none) */
     int            want_cont;    /* 1: a CONTINUATION frame must arrive, and
                                     no frame may exceed 16384 bytes          */
     int            max_ms;       /* 0 = no bound on how long the server took */
@@ -155,6 +156,9 @@ static const unsigned char PREFACE[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 static const unsigned char GETPING[] = { 0x82, 0x87, 0x44, 5, '/','p','i','n','g', 0x41, 1, 't' };
 /* :method POST, :scheme https, :path /echo, :authority t */
 static const unsigned char POSTECHO[] = { 0x83, 0x87, 0x44, 5, '/','e','c','h','o', 0x41, 1, 't' };
+/* the same with content-length: 10 (static name index 28, literal value) */
+static const unsigned char POSTECHO_CL10[] = { 0x83, 0x87, 0x44, 5, '/','e','c','h','o', 0x41, 1, 't',
+                                               0x5c, 2, '1', '0' };
 static const unsigned char GETCUSTOM[] = { 0x82, 0x87, 0x44, 7, '/','c','u','s','t','o','m', 0x41, 1, 't' };
 static const unsigned char GETBIG[] = { 0x82, 0x87, 0x44, 4, '/','b','i','g', 0x41, 1, 't' };
 static size_t hello(unsigned char *o) {
@@ -164,11 +168,11 @@ static size_t hello(unsigned char *o) {
 
 /* ── client ───────────────────────────────────────────────────────────── */
 typedef struct { const Case *c; unsigned char out[1 << 17]; size_t n; int goaway_code;
-                 int saw_cont; size_t max_frame; } Client;
+                 int saw_cont; size_t max_frame; int rst_code; } Client;
 
 static void *client(void *arg) {
     Client *cl = arg;
-    cl->goaway_code = -1;
+    cl->goaway_code = -1; cl->rst_code = -1;
     int s = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a; memset(&a, 0, sizeof a);
     a.sin_family = AF_INET; a.sin_port = htons((uint16_t)g_port);
@@ -206,6 +210,7 @@ static void *client(void *arg) {
             size_t L = ((size_t)f[0] << 16) | ((size_t)f[1] << 8) | f[2];
             if (scan + 9 + L > cl->n) break;
             if (f[3] == 9) cl->saw_cont = 1;
+            if (f[3] == 3 && L == 4) cl->rst_code = (f[9] << 24) | (f[10] << 16) | (f[11] << 8) | f[12];
             if (L > cl->max_frame) cl->max_frame = L;
             if (f[3] == 7) {
                 done = 1;
@@ -250,6 +255,9 @@ static int run(const Case *c) {
     if (c->want_goaway && cl.goaway_code != c->want_code)
         snprintf(why + strlen(why), sizeof why - strlen(why),
                  " GOAWAY code %d (want %d)", cl.goaway_code, c->want_code);
+    if (c->want_rst && cl.rst_code != c->want_rst - 1)
+        snprintf(why + strlen(why), sizeof why - strlen(why),
+                 " RST_STREAM code %d (want %d)", cl.rst_code, c->want_rst - 1);
     if (c->want_cont && (!cl.saw_cont || cl.max_frame > 16384))
         snprintf(why + strlen(why), sizeof why - strlen(why),
                  " no CONTINUATION or a frame of %zu bytes", cl.max_frame);
@@ -354,11 +362,22 @@ int main(int argc, char **argv) {
       n += frame(b + n, 0, 0x1, 1, big, sizeof big); }
     add(&C[k], b, n); k++;
 
-    /* (2) a body that never finishes is bounded by timeout_secs (2 s) */
+    /* (2) a body that never finishes is bounded by HTTP/1.1's body clock:
+     *     timeout_secs (2 s) + 1 s per KiB announced (10 bytes: + 0 s) */
     C[k].name = "post-body-stalls"; C[k].wantnot[0] = "echo["; C[k].max_ms = 3500;
     n = hello(b);
-    n += frame(b + n, 1, 0x4, 1, POSTECHO, sizeof POSTECHO);
+    n += frame(b + n, 1, 0x4, 1, POSTECHO_CL10, sizeof POSTECHO_CL10);
     n += frame(b + n, 0, 0, 1, (const unsigned char *)"part", 4);
+    add(&C[k], b, n); C[k].keepalive = 1; k++;
+
+    /* (2) a body shorter than its content-length is malformed (RFC 9113
+     *     8.1.1): RST_STREAM(PROTOCOL_ERROR), not dispatched */
+    C[k].name = "post-body-content-length-mismatch"; C[k].wantnot[0] = "echo[";
+    C[k].want_rst = 1 + 1 /* PROTOCOL_ERROR */;
+    n = hello(b);
+    n += frame(b + n, 1, 0x4, 1, POSTECHO_CL10, sizeof POSTECHO_CL10);
+    n += frame(b + n, 0, 0x1, 1, (const unsigned char *)"short", 5);
+    { unsigned char z[8] = {0}; n += frame(b + n, 6, 0, 0, z, 8); }
     add(&C[k], b, n); C[k].keepalive = 1; k++;
 
     /* (3) the handler's headers (lower-cased, connection-specific ones
