@@ -948,6 +948,50 @@ static long http_now_ms(void)
     return (long)ts.tv_sec * 1000L + (long)(ts.tv_nsec / 1000000L);
 }
 
+/* ── Lingering close (121.52) ─────────────────────────────────────────────
+ *
+ * When the server ends a connection because of what the peer sent -- an
+ * HTTP/1.1 400/413, an HTTP/2 GOAWAY -- the peer may still be writing: the
+ * rest of an oversized body, the rest of a CONTINUATION flood.  close() with
+ * unread bytes in the receive queue, or with more arriving after it, makes
+ * the kernel answer with a TCP RST, and an RST lets the peer's stack discard
+ * our final response or GOAWAY before its application reads it.  C491's
+ * continuation-flood case (1.6 MB unread) saw "closed" instead of GOAWAY in
+ * 6 of 20 runs under CPU load.
+ *
+ * So: half-close our side (the peer reads our last bytes, then EOF), then
+ * read and discard what the peer still sends until it closes too -- bounded
+ * in time and in bytes, so a peer that never stops cannot hold a worker.
+ * Not after a 408: that peer is slow by definition, it has at most a trickle
+ * in flight, and lingering would only extend the hold the deadline ended. */
+#define HTTP_LINGER_MS        1000L              /* whole linger, wall time */
+#define HTTP_LINGER_MAX_BYTES (8u * 1024u * 1024u)  /* then give up and RST  */
+
+static void http_linger_close(int fd)
+{
+    char sink[16384];
+    size_t got = 0;
+    long end = http_now_ms() + HTTP_LINGER_MS;
+
+    if (shutdown(fd, SHUT_WR) == 0) {
+        while (got < HTTP_LINGER_MAX_BYTES) {
+            long left = end - http_now_ms();
+            if (left <= 0) break;
+            struct pollfd p;
+            p.fd = fd; p.events = POLLIN; p.revents = 0;
+            int pr = poll(&p, 1, (int)left);
+            if (pr < 0 && errno == EINTR) continue;
+            if (pr <= 0) break;
+            ssize_t n = recv(fd, sink, sizeof sink, MSG_DONTWAIT);
+            if (n < 0 && (errno == EINTR || errno == EAGAIN ||
+                          errno == EWOULDBLOCK)) continue;
+            if (n <= 0) break;          /* peer closed, or an error */
+            got += (size_t)n;
+        }
+    }
+    close(fd);
+}
+
 /* http_wait — wait until fd is readable (or writable) or wait_ms passes.
  * Returns 1 ready, 0 timed out, -1 error. */
 static int http_wait(int fd, short events, long wait_ms)
@@ -1363,6 +1407,7 @@ static void handle_connection(int fd)
     in.fd = fd; in.raw = raw; in.cap = buf_cap;
 
     int requests = 0;
+    int linger = 0;   /* 121.52: closing on the peer's error -- see http_linger_close */
 
     for (;;) {
         /* 121.17: one reader frames the request -- headers, then a
@@ -1371,7 +1416,7 @@ static void handle_connection(int fd)
          * closed: after a framing error the stream position is unknown. */
         int rr = http_read_request(&in, requests);
         if (rr == HTTP_RR_CLOSE) break;
-        if (rr > 0) { send_error(fd, (uint16_t)rr, client_ip); break; }
+        if (rr > 0) { send_error(fd, (uint16_t)rr, client_ip); linger = rr != 408; break; }
 
         requests++;
 
@@ -1561,7 +1606,8 @@ static void handle_connection(int fd)
     }
 
     free(raw);
-    close(fd);
+    if (linger) http_linger_close(fd);
+    else        close(fd);
 }
 
 /* ── Server ─────────────────────────────────────────────────────────── */
@@ -4457,10 +4503,10 @@ static long h2_next_deadline(const H2Conn *conn, long settings_dl)
  * frames.  A request is dispatched through the route table when it is whole:
  * its header block decoded (HEADERS [+ CONTINUATION]) and its body ended.
  */
-static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
+static int handle_h2_connection(int fd, void *ssl, const char *client_ip)
 {
     H2Conn *conn = h2_conn_new();
-    if (!conn) return;
+    if (!conn) return 0;
 
     /* 121.44: the HTTP/2 counterpart of HTT-06.  A frame must be whole
      * within timeout_secs of its first byte, and two phases that span frames
@@ -4479,13 +4525,13 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
     if (h2_conn_read(conn, fd, ssl, preface, H2_CONNECTION_PREFACE_LEN) != 0 ||
         h2_validate_preface(preface, H2_CONNECTION_PREFACE_LEN) != 0) {
         h2_conn_free(conn);
-        return;
+        return 0;
     }
 
     /* Send our SETTINGS frame */
     if (h2_send_settings(conn, fd, ssl) < 0) {
         h2_conn_free(conn);
-        return;
+        return 0;
     }
 
     uint32_t total_streams = 0;
@@ -4832,8 +4878,10 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
         if (conn->goaway_sent) break;
     }
 
-done:
+done:;
+    int goaway = conn->goaway_sent;
     h2_conn_free(conn);
+    return goaway;
 }
 
 static void ssl_shutdown_quick(SSL *ssl, int fd)
@@ -4897,9 +4945,13 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         unsigned int alpn_len = 0;
         SSL_get0_alpn_selected(ssl, &alpn, &alpn_len);
         if (alpn_len == 2 && alpn[0] == 'h' && alpn[1] == '2') {
-            handle_h2_connection(fd, ssl, client_ip);
+            /* 121.52: after a GOAWAY the peer may still be sending (a
+             * CONTINUATION flood, an oversized frame); close lingering so
+             * the GOAWAY is not lost to a TCP reset. */
+            int goaway = handle_h2_connection(fd, ssl, client_ip);
             ssl_shutdown_quick(ssl, fd);
-            close(fd);
+            if (goaway) http_linger_close(fd);
+            else        close(fd);
             return;
         }
     }
@@ -4921,6 +4973,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     in.fd = fd; in.ssl = ssl; in.raw = raw; in.cap = buf_cap;
 
     int requests = 0;
+    int linger = 0;   /* 121.52: see http_linger_close */
 
     for (;;) {
         /* 121.17: the same reader as the plain loop.  This loop used to
@@ -4929,7 +4982,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
          * error without a word.  Now the peer gets the status. */
         int rr = http_read_request(&in, requests);
         if (rr == HTTP_RR_CLOSE) break;
-        if (rr > 0) { tls_send_error(ssl, (uint16_t)rr); break; }
+        if (rr > 0) { tls_send_error(ssl, (uint16_t)rr); linger = rr != 408; break; }
 
         requests++;
         int client_wants_close = req_wants_close(raw);
@@ -5143,7 +5196,8 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 
     free(raw);
     ssl_shutdown_quick(ssl, fd);
-    close(fd);
+    if (linger) http_linger_close(fd);
+    else        close(fd);
 }
 
 /*

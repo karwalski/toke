@@ -37,7 +37,20 @@
 # tree.  A copy of src/stdlib/ with main's http.c/http2.c/http2.h fails the
 # four deadline/cap cases and passes the two controls.
 #
-# Story: 121.44
+# 121.52 -- LINGERING CLOSE.  The server sends GOAWAY and closes while the
+# client's flood is still unread or still arriving; that close answers the
+# client with a TCP reset, and the reset can discard the GOAWAY before the
+# client reads it.  continuation-flood saw "closed" in 6 of 20 runs of this
+# script under CPU load on main (de0d95ba).  The server now half-closes after
+# a GOAWAY and reads and discards until the client closes, for at most 1 s
+# (http_linger_close).  flood-then-more keeps writing after the flood and
+# pauses before it reads, so the reset, if there is one, always lands first;
+# linger-bounded shows a client that never stops cannot hold the worker past
+# the linger.  Both flood cases also assert the GOAWAY code
+# (ENHANCE_YOUR_CALM).  Against main's http.c the flood cases fail in most
+# runs, not every run -- a reset loses the GOAWAY only when it overtakes it.
+#
+# Story: 121.44, 121.52
 
 set -uo pipefail
 
@@ -86,8 +99,10 @@ typedef struct {
     size_t         len[MAXSEG];
     int            nseg;
     int            gap_ms;       /* pause before every segment after the first */
-    const char    *want;         /* "served", "goaway" or "closed"             */
+    const char    *want;         /* "served", "goaway", "closed" or "any"      */
     int            max_ms;       /* 0 = no bound on how long the server took   */
+    int            code;         /* GOAWAY error code wanted (with "goaway")   */
+    int            read_delay_ms;/* pause after the last write, before reading */
 } Case;
 
 static int g_port, g_lfd;
@@ -142,6 +157,10 @@ static void *client(void *arg) {
         if (i > 0 && cl->c->gap_ms) usleep((useconds_t)cl->c->gap_ms * 1000);
         if (SSL_write(ssl, cl->c->seg[i], (int)cl->c->len[i]) <= 0) break;
     }
+    /* 121.52: a pause here lets any TCP reset from the server arrive before
+     * the first read, so a GOAWAY a reset would discard is lost every time
+     * rather than when the scheduler happens to allow it. */
+    if (cl->c->read_delay_ms) usleep((useconds_t)cl->c->read_delay_ms * 1000);
     /* Read frames until the response ends, a GOAWAY, EOF or 14 s. */
     for (;;) {
         size_t room = sizeof cl->out - cl->n;
@@ -173,6 +192,19 @@ static int saw(const Client *cl, int type) {
     }
     return 0;
 }
+/* the error code of the first GOAWAY frame, or -1 */
+static long goaway_code(const Client *cl) {
+    for (size_t p = 0; p + 9 <= cl->n; ) {
+        size_t L = ((size_t)cl->out[p] << 16) | ((size_t)cl->out[p+1] << 8) | cl->out[p+2];
+        if (p + 9 + L > cl->n) break;
+        if (cl->out[p+3] == 7 && L >= 8) {
+            const unsigned char *e = cl->out + p + 9 + 4;
+            return ((long)e[0] << 24) | ((long)e[1] << 16) | ((long)e[2] << 8) | e[3];
+        }
+        p += 9 + L;
+    }
+    return -1;
+}
 static int has_pong(const Client *cl) {
     for (size_t i = 0; i + 4 <= cl->n; i++)
         if (memcmp(cl->out + i, "pong", 4) == 0) return 1;
@@ -188,9 +220,12 @@ static int run(const Case *c) {
     long took = now_ms() - t0;
     pthread_join(t, NULL);
     const char *got = has_pong(&cl) ? "served" : saw(&cl, 7) ? "goaway" : "closed";
-    int ok = strcmp(got, c->want) == 0 && (!c->max_ms || took <= c->max_ms);
-    printf("%s %s: %s (want %s), server held the worker %ld ms%s\n",
-           ok ? "OK" : "BAD", c->name, got, c->want, took,
+    long code = goaway_code(&cl);
+    int ok = (strcmp(c->want, "any") == 0 || strcmp(got, c->want) == 0) &&
+             (!c->max_ms || took <= c->max_ms) &&
+             (strcmp(c->want, "goaway") != 0 || code == c->code);
+    printf("%s %s: %s (want %s), GOAWAY code %ld, server held the worker %ld ms%s\n",
+           ok ? "OK" : "BAD", c->name, got, c->want, code, took,
            c->max_ms ? " (bound checked)" : "");
     return ok;
 }
@@ -231,7 +266,7 @@ int main(int argc, char **argv) {
 
     static unsigned char b[1 << 15];
     size_t n;
-    static Case C[6];
+    static Case C[8];
     int k = 0;
 
     /* control: a whole request at once is served */
@@ -270,10 +305,47 @@ int main(int argc, char **argv) {
     /* HEADERS without END_HEADERS, then 100 x 16000-byte CONTINUATION frames
      * (1.6 MB) at once: past the 65536 we advertise -> GOAWAY */
     C[k].name = "continuation-flood"; C[k].want = "goaway"; C[k].max_ms = 0;
+    C[k].code = 0xb;   /* ENHANCE_YOUR_CALM */
+    C[k].read_delay_ms = 200;
     n = hello(b); n += frame(b + n, 1, 0x1, 1, GETPING, 1); add(&C[k], b, n);
     {
         static unsigned char pay[16000]; memset(pay, 0x86, sizeof pay);
         for (int i = 0; i < 100; i++) { n = frame(b, 9, 0, 1, pay, sizeof pay); add(&C[k], b, n); }
+    }
+    k++;
+
+    /* 121.52: the same flood, and then the client keeps writing -- three
+     * more CONTINUATION frames 100 ms apart -- before it reads.  The server
+     * has sent GOAWAY and wants to close; closing with the client's bytes
+     * still arriving answers them with a TCP reset, and the reset can
+     * discard the GOAWAY before the client reads it.  The server must close
+     * lingering: half-close, then read and discard until the client is done. */
+    C[k].name = "flood-then-more"; C[k].want = "goaway"; C[k].gap_ms = 100;
+    C[k].code = 0xb; C[k].max_ms = 0; C[k].read_delay_ms = 200;
+    {
+        static unsigned char pay[16000]; memset(pay, 0x86, sizeof pay);
+        size_t big = 64 + 101 * (9 + sizeof pay);
+        unsigned char *f = malloc(big);
+        n = hello(f); n += frame(f + n, 1, 0x1, 1, GETPING, 1);
+        for (int i = 0; i < 100; i++) n += frame(f + n, 9, 0, 1, pay, sizeof pay);
+        add(&C[k], f, n); free(f);
+        for (int i = 0; i < 3; i++) { n = frame(b, 9, 0, 1, pay, sizeof pay); add(&C[k], b, n); }
+    }
+    k++;
+
+    /* 121.52: the linger is bounded.  A client that floods (80 KB at once)
+     * and then never stops writing (a frame every 300 ms for 6 s) and never closes cannot
+     * hold the worker: the server gives up lingering and closes.  What the
+     * client sees after that is not the point -- only the bound is. */
+    C[k].name = "linger-bounded"; C[k].want = "any"; C[k].gap_ms = 300;
+    C[k].max_ms = 2500;   /* the 1 s linger, plus margin for a loaded host */
+    {
+        static unsigned char pay[16000]; memset(pay, 0x86, sizeof pay);
+        unsigned char *f = malloc(64 + 5 * (9 + sizeof pay));
+        n = hello(f); n += frame(f + n, 1, 0x1, 1, GETPING, 1);
+        for (int i = 0; i < 5; i++) n += frame(f + n, 9, 0, 1, pay, sizeof pay);
+        add(&C[k], f, n); free(f);
+        for (int i = 0; i < 20; i++) { n = frame(b, 9, 0, 1, pay, 1); add(&C[k], b, n); }
     }
     k++;
 
