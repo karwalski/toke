@@ -35,6 +35,8 @@ f=demo():i64{
 
 Reads the file at `path` and parses its contents as TOML. Returns `$tomlerr` if the file cannot be opened or the contents are not valid TOML.
 
+Requires the `fs.read` capability (`--allow-read`, or `fs_read = true` in `tkc.toml [capabilities]`); without it the program stops with `CAP001`. `toml.load` parses a string and needs no grant.
+
 **Example:**
 ```toke
 m=example;
