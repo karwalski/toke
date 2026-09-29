@@ -39,7 +39,6 @@ typedef struct {
     int     stdin_fd;    /* write end of stdin pipe; -1 if closed */
     int     exited;      /* 1 once waitpid has been called */
     int32_t exit_code;
-    char   *cwd;         /* working directory for spawn; NULL = inherit */
 } ProcessHandle;
 
 /* Result types */
@@ -110,13 +109,6 @@ I32ProcessResult   process_exit_code(ProcessHandle *h);
  * Story: 28.5.2
  */
 int                process_is_running(ProcessHandle *h);
-
-/*
- * process_set_cwd — set working directory for spawn.
- * No-op if the process has already been spawned.
- * Story: 28.5.2
- */
-void               process_set_cwd(ProcessHandle *h, const char *cwd);
 
 /*
  * process_timeout — wait up to timeout_ms for the process to exit.

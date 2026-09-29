@@ -32,10 +32,6 @@ typedef enum {
 } ProcPhase;
 
 static volatile sig_atomic_t g_proc_phase = PROC_PHASE_STARTING;
-static volatile sig_atomic_t g_proc_scale_up   = 0;
-static volatile sig_atomic_t g_proc_scale_down = 0;
-static volatile sig_atomic_t g_proc_reload = 0;
-static volatile sig_atomic_t g_proc_shutdown = 0;
 
 /* Grace period for SIGTERM shutdown (67.2.2) */
 static uint64_t g_grace_period_secs = 30;
@@ -45,27 +41,17 @@ typedef void (*ProcHook)(void);
 static ProcHook g_startup_hook  = NULL;
 static ProcHook g_shutdown_hook = NULL;
 
-/* ── Signal handlers (67.1.1, 67.1.4, 67.1.5) ──────────────────────── */
-
-static void proc_signal_handler(int sig)
-{
-    switch (sig) {
-    case SIGHUP:
-        g_proc_reload = 1;
-        break;
-    case SIGTERM:
-        g_proc_shutdown = 1;
-        break;
-    case SIGUSR1:
-        g_proc_scale_up = 1;
-        break;
-    case SIGUSR2:
-        g_proc_scale_down = 1;
-        break;
-    default:
-        break;
-    }
-}
+/* ── Signal handling: removed (121.51 (3)) ──────────────────────────
+ *
+ * proc_install_signals() set SIGHUP/SIGTERM/SIGUSR1/SIGUSR2 handlers that
+ * raised flags for proc_check_reload(), proc_check_shutdown() and
+ * proc_check_scale() to read "from the parent supervision loop".  Nothing
+ * called any of the four: no stdlib module, no glue, no header, no .tki
+ * entry, nothing in toke-ooke.  So SIGHUP never reached this file and the
+ * "graceful reload" / "log rotation on SIGHUP" it promised did not exist.
+ * The serving loop's signal handling is http.c's (workers mode: SIGHUP
+ * respawns the workers; an access log is not reopened -- see the 121.51
+ * report).  Removed rather than wired: git history holds the code. */
 
 /* ── Configuration API ──────────────────────────────────────────────── */
 
@@ -84,95 +70,15 @@ void proc_set_shutdown_hook(ProcHook hook)
     g_shutdown_hook = hook;
 }
 
-/* ── Signal installation ────────────────────────────────────────────── */
-
-void proc_install_signals(void)
-{
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = proc_signal_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-
-    sigaction(SIGHUP,  &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGUSR1, &sa, NULL);
-    sigaction(SIGUSR2, &sa, NULL);
-}
-
-/* ── SIGHUP graceful reload (67.1.1) ────────────────────────────────── */
-
-/*
- * proc_check_reload — called from the parent supervision loop.
- * Returns 1 if a reload was requested (and clears the flag).
- */
-int proc_check_reload(void)
-{
-    if (g_proc_reload) {
-        g_proc_reload = 0;
-        return 1;
-    }
-    return 0;
-}
-
-/* ── Binary upgrade with socket inheritance (67.1.2) ────────────────── */
-
-/*
- * proc_binary_upgrade — exec a new binary, passing the listening socket
- * fd via the TK_LISTEN_FD environment variable. The new process inherits
- * the socket and starts accepting connections; this process drains and
- * exits after the new process signals readiness.
+/* ── Binary upgrade with socket inheritance: removed (121.42 (7), AMB-10)
  *
- * binary_path: path to the new binary (NULL = re-exec current).
- * listen_fd:   the listening socket fd to pass.
- * argv:        argument vector for the new process (NULL = inherit).
- *
- * Returns 0 on success (old process should drain), -1 on error.
- */
-int proc_binary_upgrade(const char *binary_path, int listen_fd,
-                         char *const argv[])
-{
-    char fd_str[16];
-    snprintf(fd_str, sizeof(fd_str), "%d", listen_fd);
-    setenv("TK_LISTEN_FD", fd_str, 1);
-
-    /* Clear close-on-exec so the fd survives exec */
-    int flags = fcntl(listen_fd, F_GETFD);
-    if (flags >= 0)
-        fcntl(listen_fd, F_SETFD, flags & ~FD_CLOEXEC);
-
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-
-    if (pid == 0) {
-        /* Child: exec new binary */
-        const char *bin = binary_path ? binary_path : "/proc/self/exe";
-        if (argv)
-            execv(bin, argv);
-        else {
-            char *default_argv[] = { (char *)bin, NULL };
-            execv(bin, default_argv);
-        }
-        _exit(127); /* exec failed */
-    }
-
-    /* Parent: new process is running. Caller should drain and exit. */
-    return 0;
-}
-
-/*
- * proc_inherit_listen_fd — check if TK_LISTEN_FD is set.
- * Returns the inherited fd, or -1 if not set.
- */
-int proc_inherit_listen_fd(void)
-{
-    const char *env = getenv("TK_LISTEN_FD");
-    if (!env) return -1;
-    int fd = atoi(env);
-    if (fd <= 0) return -1;
-    unsetenv("TK_LISTEN_FD");
-    return fd;
-}
+ * proc_binary_upgrade() setenv'd TK_LISTEN_FD, cleared FD_CLOEXEC on the
+ * listening socket and fork+execv'd a binary; proc_inherit_listen_fd()
+ * trusted TK_LISTEN_FD from the environment.  Nothing called either -- no
+ * stdlib module, glue, header, .tki entry or toke-ooke source -- and neither
+ * passed a capability check (process spawn, env write).  Removed rather than
+ * gated: an upgrade path would need a surface decision first.  Git history
+ * holds the code. */
 
 /* ── Configuration validation / dry-run (67.1.3) ───────────────────── */
 
@@ -253,26 +159,6 @@ int proc_config_test(const ProcConfig *cfg)
     return ok ? 0 : -1;
 }
 
-/* ── Dynamic worker scaling (67.1.4) ────────────────────────────────── */
-
-/*
- * proc_check_scale — called from parent supervision loop.
- * Returns +1 if scale-up requested, -1 if scale-down, 0 if neither.
- * Clears the flag.
- */
-int proc_check_scale(void)
-{
-    if (g_proc_scale_up) {
-        g_proc_scale_up = 0;
-        return 1;
-    }
-    if (g_proc_scale_down) {
-        g_proc_scale_down = 0;
-        return -1;
-    }
-    return 0;
-}
-
 /* ── Log rotation (67.1.5) ──────────────────────────────────────────── */
 
 /* 121.49 (1): proc_reopen_logs() used to live here and call
@@ -351,11 +237,6 @@ void proc_set_phase(int phase) { g_proc_phase = phase; }
 int  proc_get_phase(void)      { return (int)g_proc_phase; }
 
 /* ── SIGTERM graceful shutdown (67.2.2) ─────────────────────────────── */
-
-int proc_check_shutdown(void)
-{
-    return g_proc_shutdown ? 1 : 0;
-}
 
 uint64_t proc_get_grace_period(void)
 {

@@ -41,14 +41,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <setjmp.h>
 #include <unistd.h>
 #include "../../src/stdlib/encrypt.h"
-
-/* RSA keygen timeout (pure-C bignum is slow; 60s is generous) */
-static jmp_buf  s_rsa_timeout_jmp;
-static void     s_rsa_timeout(int sig) { (void)sig; longjmp(s_rsa_timeout_jmp, 1); }
 
 static int failures = 0;
 
@@ -1140,93 +1134,28 @@ static void test_pbkdf2_rfc6070_vector1(void)
 }
 
 /* -------------------------------------------------------------------------
- * RSA tests (Story 30.1.2)
+ * RSA key generation (Story 30.1.2, 121.51 (7))
  *
- * Note: 2048-bit key generation involves Miller-Rabin primality tests over
- * 1024-bit random candidates and takes a few seconds — this is expected.
+ * A full 2048-bit keygen is not run here.  It takes ~20-50 s at -O2 and over
+ * 60 s at this target's -O0 build, so the 60 s in-test bound SKIPped it on
+ * every run (measured 2026-09-30: "SKIP: RSA tests timed out after 60s",
+ * "0 failure(s)") -- a test that reports success while testing nothing.
+ * The keygen gate is conform C520 (-O2, 240 s bound, key checked in Python);
+ * OAEP/PSS are covered below with a fixed key.  What runs here is fast: the
+ * sizes keygen must refuse (C540 has the reasons).
  * ------------------------------------------------------------------------- */
 
-/* Shared keypair populated by test_rsa_keypair_2048, reused by later tests. */
-static RsaKeyPair g_rsa_kp;
-static int        g_rsa_kp_valid = 0;
-
-static void test_rsa_keypair_2048(void)
+static void test_rsa_keygen_refuses_other_sizes(void)
 {
-    printf("note: generating 2048-bit RSA keypair (may take a few seconds)...\n");
-    RsaKeyPairResult r = encrypt_rsa_generate_keypair(2048);
-    ASSERT(r.is_err == 0, "rsa_generate_keypair(2048): is_err == 0");
-    ASSERT(r.ok.pub_len  > 0, "rsa_generate_keypair(2048): pub_len > 0");
-    ASSERT(r.ok.priv_len > 0, "rsa_generate_keypair(2048): priv_len > 0");
-    ASSERT(r.ok.pub_data  != NULL, "rsa_generate_keypair(2048): pub_data != NULL");
-    ASSERT(r.ok.priv_data != NULL, "rsa_generate_keypair(2048): priv_data != NULL");
-    if (!r.is_err) {
-        g_rsa_kp = r.ok;
-        g_rsa_kp_valid = 1;
-    } else {
-        free(r.ok.pub_data);
-        free(r.ok.priv_data);
+    static const uint32_t sizes[] = { 0, 1024, 2047, 2049, 3072, 4096 };
+    size_t i;
+    for (i = 0; i < sizeof sizes / sizeof sizes[0]; i++) {
+        RsaKeyPairResult r = encrypt_rsa_generate_keypair(sizes[i]);
+        char m[64];
+        snprintf(m, sizeof m, "rsa_generate_keypair(%u) is refused", (unsigned)sizes[i]);
+        ASSERT(r.is_err == 1 && r.ok.pub_data == NULL && r.ok.priv_data == NULL, m);
+        if (!r.is_err) { free(r.ok.pub_data); free(r.ok.priv_data); }
     }
-}
-
-static void test_rsa_encrypt_decrypt_roundtrip(void)
-{
-    if (!g_rsa_kp_valid) {
-        fprintf(stderr, "SKIP: rsa_encrypt_decrypt_roundtrip (no keypair)\n");
-        return;
-    }
-    const char *plaintext_str = "hello rsa oaep";
-    ByteArray pt = ba_str(plaintext_str);
-
-    RsaBytesResult enc = encrypt_rsa_encrypt(g_rsa_kp.pub_data, g_rsa_kp.pub_len, pt);
-    ASSERT(enc.is_err == 0, "rsa_encrypt: is_err == 0");
-    if (enc.is_err) return;
-    ASSERT(enc.ok.len == 256, "rsa_encrypt: ciphertext len == 256 (2048/8)");
-
-    RsaBytesResult dec = encrypt_rsa_decrypt(g_rsa_kp.priv_data, g_rsa_kp.priv_len,
-                                              enc.ok);
-    ASSERT(dec.is_err == 0, "rsa_decrypt: is_err == 0");
-    if (!dec.is_err) {
-        ASSERT(dec.ok.len == pt.len, "rsa_decrypt roundtrip: recovered length matches");
-        ASSERT(memcmp(dec.ok.data, pt.data, (size_t)pt.len) == 0,
-               "rsa_decrypt roundtrip: recovered bytes match plaintext");
-        free((void *)dec.ok.data);
-    }
-    free((void *)enc.ok.data);
-}
-
-static void test_rsa_sign_verify(void)
-{
-    if (!g_rsa_kp_valid) {
-        fprintf(stderr, "SKIP: rsa_sign_verify (no keypair)\n");
-        return;
-    }
-    ByteArray msg = ba_str("hello world");
-
-    RsaBytesResult sr = encrypt_rsa_sign(g_rsa_kp.priv_data, g_rsa_kp.priv_len, msg);
-    ASSERT(sr.is_err == 0, "rsa_sign: is_err == 0");
-    if (sr.is_err) return;
-    ASSERT(sr.ok.len == 256, "rsa_sign: signature len == 256");
-
-    int ok = encrypt_rsa_verify(g_rsa_kp.pub_data, g_rsa_kp.pub_len, msg, sr.ok);
-    ASSERT(ok == 1, "rsa_verify: valid signature returns 1");
-    free((void *)sr.ok.data);
-}
-
-static void test_rsa_verify_wrong_message(void)
-{
-    if (!g_rsa_kp_valid) {
-        fprintf(stderr, "SKIP: rsa_verify_wrong_message (no keypair)\n");
-        return;
-    }
-    ByteArray msg       = ba_str("hello world");
-    ByteArray wrong_msg = ba_str("hello WORLD");
-
-    RsaBytesResult sr = encrypt_rsa_sign(g_rsa_kp.priv_data, g_rsa_kp.priv_len, msg);
-    if (sr.is_err) { fprintf(stderr, "SKIP: rsa_verify_wrong_message (sign failed)\n"); return; }
-
-    int ok = encrypt_rsa_verify(g_rsa_kp.pub_data, g_rsa_kp.pub_len, wrong_msg, sr.ok);
-    ASSERT(ok == 0, "rsa_verify: wrong message returns 0");
-    free((void *)sr.ok.data);
 }
 
 /* -------------------------------------------------------------------------
@@ -1340,9 +1269,7 @@ static void test_rsa_fixed_key_sign_verify(void)
 
 int main(void)
 {
-    /* Layer-2 safety net: kill the whole binary if it runs longer than 150s.
-     * (Individual slow sections, e.g. RSA keygen, have their own tighter
-     * timeouts via setjmp/longjmp so they skip gracefully first.) */
+    /* Safety net: kill the whole binary if it runs longer than 150s. */
     alarm(150);
 
     printf("=== test_encrypt ===\n");
@@ -1414,31 +1341,8 @@ int main(void)
     test_rsa_fixed_key_roundtrip();
     test_rsa_fixed_key_sign_verify();
 
-    /* RSA (Story 30.1.2) — 60-second timeout guards against slow bignum keygen */
-    {
-        struct sigaction sa_new, sa_old;
-        sa_new.sa_handler = s_rsa_timeout;
-        sigemptyset(&sa_new.sa_mask);
-        sa_new.sa_flags = 0;
-        sigaction(SIGALRM, &sa_new, &sa_old);
-        if (setjmp(s_rsa_timeout_jmp) == 0) {
-            alarm(60);
-            test_rsa_keypair_2048();
-            test_rsa_encrypt_decrypt_roundtrip();
-            test_rsa_sign_verify();
-            test_rsa_verify_wrong_message();
-            alarm(0);
-        } else {
-            fprintf(stderr, "SKIP: RSA tests timed out after 60s\n");
-        }
-        sigaction(SIGALRM, &sa_old, NULL);
-    }
-
-    /* Free shared RSA keypair */
-    if (g_rsa_kp_valid) {
-        free(g_rsa_kp.pub_data);
-        free(g_rsa_kp.priv_data);
-    }
+    /* RSA keygen refuses every size but 2048 (121.51); keygen itself: C520 */
+    test_rsa_keygen_refuses_other_sizes();
 
     printf("=== %d failure(s) ===\n", failures);
     return (failures > 0) ? 1 : 0;

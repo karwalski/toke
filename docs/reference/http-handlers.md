@@ -53,18 +53,19 @@ Three request accessors have i64-ABI glue wrappers (Story 46.1.3):
 | `tk_http_req_method(req:i64)` | `i64 -> i64` | HTTP method as `$str` (defaults to `"GET"`) |
 | `tk_http_req_body(req:i64)` | `i64 -> i64` | Request body as `$str` (defaults to `""`) |
 
-Two additional accessors are declared in `http.tki` and implemented in `http.c`:
+Two fallible accessors are declared in `http.tki` and callable from toke
+handlers through their glue wrappers in `tk_web_glue.c`:
 
-| C function | tki name | Signature | Returns |
-|------------|----------|-----------|---------|
-| `http_param` | `http.param` | `(Req, str) -> str!HttpErr` | URL parameter value by name |
-| `http_header` | `http.header` | `(Req, str) -> str!HttpErr` | Header value by name |
+| Glue function | tki name | Signature | Returns |
+|---------------|----------|-----------|---------|
+| `tk_http_param_w(req:i64; name:i64)` | `http.param` | `(req; str) -> str!httprouteerr` | URL parameter value by name; `$notfound` when the route captured none by that name |
+| `tk_http_header_w(req:i64; name:i64)` | `http.header` | `(req; str) -> str!httprouteerr` | Header value by name (case-insensitive); `$notfound` when absent |
 
-> **Note:** `http.param` and `http.header` take a `Req` struct by value
-> (not an i64 pointer). They work at the C level but do not yet have
-> i64-ABI glue wrappers, so they are not callable from compiled toke
-> handler functions. The `Req` struct fields (`path`, `method`, `body`)
-> are accessible via the three glue wrappers above.
+`http.reqparam` / `http.reqheader` are the plain-`str` forms (`""` when
+missing).  See `docs/stdlib/http.md` for the full contract; conformance
+C340 and C362 drive both from compiled toke.  (This section used to say
+`http.param`/`http.header` had no glue and were not callable from toke, with
+an `HttpErr` error type; both were stale -- 135.31.)
 
 ---
 

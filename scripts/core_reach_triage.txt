@@ -143,7 +143,6 @@ ml_random_forest_fit gap        # no wrapper, no .tki entry (found 135.19: hidde
 ml_random_forest_predict gap        # no wrapper, no .tki entry
 ml_standardize gap        # no wrapper, no .tki entry
 ml_train_test_split gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-process_set_cwd gap        # no wrapper, no .tki entry
 process_stdin_write gap        # no wrapper, no .tki entry
 process_timeout gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 router_dispatch_ex internal   # server-loop plumbing: extended dispatch used by the serve loop (found 135.19: hidden by the comment-blind regex)

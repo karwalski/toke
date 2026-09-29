@@ -10,11 +10,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-/* mdns.advertise(service_type, name, port) — advertise a service */
-int64_t tk_mdns_advertise_w(int64_t service_type, int64_t name, int64_t port) {
-    (void)service_type;
-    (void)name;
-    (void)port;
+/* mdns.advertise(svc) — advertise a service.  135.31 (1): takes the one
+ * $servicerecord the .tki publishes (what mdns.servicerecord builds); it took
+ * three scalars, so the published call was E4026. */
+int64_t tk_mdns_advertise_w(int64_t svc) {
+    (void)svc;
     /* Return 0 = no handle (not available) */
     return 0;
 }

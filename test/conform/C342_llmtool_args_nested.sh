@@ -115,7 +115,7 @@ SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -c -o "${WORK}/cnt.o" "${WORK}/cnt.c" >"${WORK}/cc.log" 2>&1 \
    || ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -include "${WORK}/cnt.h" -o "${WORK}/d" "${WORK}/d.c" \
-        "${S}/llm_tool_glue.c" "${S}/llm_tool.c" "${S}/llm.c" "${WORK}/cnt.o" >>"${WORK}/cc.log" 2>&1; then
+        "${S}/llm_tool_glue.c" "${S}/llm_tool.c" "${S}/llm.c" "${S}/capabilities.c" "${WORK}/cnt.o" >>"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: the driver does not build"; sed 's/^/      /' "${WORK}/cc.log" | head -6
     echo "Results: 0 passed, 1 failed"; exit 1
 fi

@@ -172,8 +172,10 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
  * Encrypt/decrypt: OAEP-SHA256 padding.
  * Sign/verify:     PSS-SHA256 with salt length == 32.
  *
- * 2048-bit key generation takes a few seconds (Miller-Rabin primality test
- * over 1024-bit primes). 4096-bit generation will be significantly slower.
+ * Keys are 2048 bits, only (121.51 (1)): the bignum is 4096 bits wide, so a
+ * larger modulus would overflow its products.  Keygen refuses any other size,
+ * and every operation refuses a key whose modulus is over 2048 bits.
+ * 2048-bit key generation takes ~20 s (Miller-Rabin over 1024-bit primes).
  * ----------------------------------------------------------------------- */
 
 typedef struct {
@@ -184,7 +186,7 @@ typedef struct {
 typedef struct { RsaKeyPair ok; int is_err; const char *err_msg; } RsaKeyPairResult;
 typedef struct { ByteArray  ok; int is_err; const char *err_msg; } RsaBytesResult;
 
-/* Generate an RSA keypair. bits must be 2048 or 4096. */
+/* Generate an RSA keypair. bits must be 2048; any other size is an error. */
 RsaKeyPairResult encrypt_rsa_generate_keypair(uint32_t bits);
 
 /* Encrypt plaintext with the public key using OAEP-SHA256.

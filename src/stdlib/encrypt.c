@@ -2331,11 +2331,21 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
  * All multi-byte length fields are big-endian uint32.
  * All integer byte strings are big-endian (MSB first).
  *
- * Limitation: 4096-bit key generation is substantially slower than 2048.
+ * Key size: 2048 bits, and only 2048 (121.51 (1)).  A BigInt holds 4096
+ * bits, and bi_mul keeps only the low 4096 bits of a product, so a modulus
+ * n must fit in half the width: every modpow squares a value below n.  With
+ * a 2049..4096-bit modulus the products were silently truncated and every
+ * RSA operation computed garbage (measured against Python: 2048x2048-bit
+ * products right, 2049/3000/4096-bit products wrong), while keygen accepted
+ * 4096.  Widening the BigInt was not taken: keygen here divides bit by bit,
+ * and 2048-bit keygen already takes ~20 s; 4096 would take several minutes
+ * per key.  So keygen refuses any size but 2048, and every operation refuses
+ * a key whose modulus is over RSA_MAX_KEY_BITS rather than compute with it.
  * ========================================================================= */
 
-#define RSA_MAX_LIMBS   128    /* 128 * 32 bits = 4096 bits max */
+#define RSA_MAX_LIMBS   128    /* 128 * 32 bits = 4096 bits: a 2048x2048 product */
 #define RSA_MAX_BYTES   512
+#define RSA_MAX_KEY_BITS 2048  /* modulus bound: RSA_MAX_LIMBS*32/2 */
 
 typedef struct { uint32_t d[RSA_MAX_LIMBS]; uint32_t n; } BigInt;
 
@@ -2774,13 +2784,24 @@ static int pss_verify(const uint8_t *em, uint64_t em_len, uint64_t em_bits,
     free((void*)hv.data); return (!bad)&&eq;
 }
 
+/* Load a modulus field.  Returns 0 when it is zero or wider than
+ * RSA_MAX_KEY_BITS (see the key-size note above): such a key is refused, not
+ * computed with.  Leading zero bytes are ignored, as bi_from_bytes does. */
+static int rsa_load_modulus(BigInt *n, const uint8_t *nd, uint32_t fl)
+{
+    while (fl>0 && *nd==0) { nd++; fl--; }
+    if (fl==0 || fl>RSA_MAX_KEY_BITS/8) return 0;
+    bi_from_bytes(n,nd,fl);
+    return bi_bits(n)<=RSA_MAX_KEY_BITS;
+}
+
 /* Parse public key.  Returns key byte length on success, 0 on error. */
 static uint64_t rsa_parse_pub(const uint8_t *pub, uint64_t pub_len,
                                BigInt *n_out, BigInt *e_out)
 {
     const uint8_t *p=pub; uint64_t rem=pub_len; uint32_t fl;
     const uint8_t *nd=rsa_read_field(&p,&rem,&fl); if(!nd) return 0;
-    bi_from_bytes(n_out,nd,fl);
+    if (!rsa_load_modulus(n_out,nd,fl)) return 0;
     const uint8_t *ed=rsa_read_field(&p,&rem,&fl); if(!ed) return 0;
     bi_from_bytes(e_out,ed,fl);
     return (bi_bits(n_out)+7)/8;
@@ -2793,8 +2814,10 @@ static uint64_t rsa_parse_pub(const uint8_t *pub, uint64_t pub_len,
 RsaKeyPairResult encrypt_rsa_generate_keypair(uint32_t bits)
 {
     RsaKeyPairResult res; memset(&res,0,sizeof(res));
-    if (bits!=2048&&bits!=4096) {
-        res.is_err=1; res.err_msg="bits must be 2048 or 4096"; return res;
+    if (bits!=RSA_MAX_KEY_BITS) {
+        res.is_err=1;
+        res.err_msg="bits must be 2048 (keys over 2048 bits are not supported)";
+        return res;
     }
     uint32_t half=bits/2;
     BigInt p,q,n,p1,q1,phi,ebi,d,g,one,t1,t2;
@@ -2875,7 +2898,8 @@ RsaBytesResult encrypt_rsa_decrypt(const uint8_t *priv, uint64_t priv_len,
     const uint8_t *p=priv; uint64_t rem=priv_len; uint32_t fl;
     const uint8_t *nd=rsa_read_field(&p,&rem,&fl);
     if (!nd) { res.is_err=1; res.err_msg="invalid private key"; return res; }
-    BigInt n; bi_from_bytes(&n,nd,fl);
+    BigInt n;
+    if (!rsa_load_modulus(&n,nd,fl)) { res.is_err=1; res.err_msg="invalid private key (modulus zero or over 2048 bits)"; return res; }
     if (!rsa_read_field(&p,&rem,&fl)) { res.is_err=1; res.err_msg="invalid private key (e)"; return res; }
     const uint8_t *dd=rsa_read_field(&p,&rem,&fl);
     if (!dd) { res.is_err=1; res.err_msg="invalid private key (d)"; return res; }
@@ -2901,7 +2925,8 @@ RsaBytesResult encrypt_rsa_sign(const uint8_t *priv, uint64_t priv_len,
     const uint8_t *p=priv; uint64_t rem=priv_len; uint32_t fl;
     const uint8_t *nd=rsa_read_field(&p,&rem,&fl);
     if (!nd) { res.is_err=1; res.err_msg="invalid private key"; return res; }
-    BigInt n; bi_from_bytes(&n,nd,fl);
+    BigInt n;
+    if (!rsa_load_modulus(&n,nd,fl)) { res.is_err=1; res.err_msg="invalid private key (modulus zero or over 2048 bits)"; return res; }
     if (!rsa_read_field(&p,&rem,&fl)) { res.is_err=1; res.err_msg="invalid private key (e)"; return res; }
     const uint8_t *dd=rsa_read_field(&p,&rem,&fl);
     if (!dd) { res.is_err=1; res.err_msg="invalid private key (d)"; return res; }

@@ -60,39 +60,21 @@ exempt | log.c:path_exists | stat | 2026-09-29 | 121.22 | rotation of a log open
 exempt | log.c:rotate_access_log_locked | rename | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
 exempt | log.c:tk_access_log_open | stat | 2026-09-29 | 121.22 | is-it-a-regular-file check on the path being opened under fs.write (or on /dev/stderr, which needs no grant)
 
-# TZ.  time.parse / time.withtz / time.utcoffset set TZ, call tzset/mktime, and
-# restore it.  Not a grantable authority -- the program never chooses what the
-# environment ends up holding.  (It IS a process-global mutation that races
-# with any other thread reading the environment; reported separately.)
-exempt | tk_time.c:tk_time_parse | setenv | 2026-09-29 | 121.22 | temporary TZ=UTC, restored before return
-exempt | tk_time.c:tk_time_parse | unsetenv | 2026-09-29 | 121.22 | restores an absent TZ
-exempt | tk_time.c:tk_time_utc_offset | setenv | 2026-09-29 | 121.22 | temporary TZ, restored before return
-exempt | tk_time.c:tk_time_utc_offset | unsetenv | 2026-09-29 | 121.22 | restores an absent TZ
-exempt | tk_time.c:tk_time_with_tz | setenv | 2026-09-29 | 121.22 | temporary TZ, restored before return
-exempt | tk_time.c:tk_time_with_tz | unsetenv | 2026-09-29 | 121.22 | restores an absent TZ
+# TZ.  time.parse / time.withtz / time.utcoffset used to set TZ, call
+# tzset/mktime and restore it -- six exempt lines here until 121.42 (6)
+# (2026-09-30) made them read the zone rules themselves.  What they read now
+# is the system time-zone database, which libc's tzset read before with no
+# grant either: a relative zone name, no "..", under $TZDIR or
+# /usr/share/zoneinfo (tz_safe_name).  Not a program-chosen path.
+exempt | tk_time.c:tz_file_offset | fopen | 2026-09-30 | 121.42 | the system time-zone database ($TZDIR or /usr/share/zoneinfo), relative name, no ".."; replaces the six TZ setenv/unsetenv exemptions
 
 # ── ungated: known gaps, each one a defect ─────────────────────────────────
 # Found by this gate on its first run (2026-09-29).  Each sits in a file
 # another batch held at the time, so each was reported for filing rather than
 # fixed here.  The story column names 121.22 until the follow-up is filed.
 
-# std.llm opens its own TCP connections (llm.c tcp_connect) instead of going
-# through http.c's gated client_tcp_connect.
-ungated | tk_llm_chat_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chat_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chat_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chatstream_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chatstream_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_chatstream_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_complete_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_complete_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llm_complete_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_chatwithtools_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | connect | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | getaddrinfo | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
-ungated | tk_llmtool_submitresult_w | llm.c:tcp_connect | socket | 2026-09-29 | 121.22 | llm.c tcp_connect has no TK_REQUIRE(TK_CAP_NET)
+# std.llm's own TCP connect (llm.c tcp_connect): gated by TK_REQUIRE(net)
+# since 2026-09-30 (121.42 (2)); its 15 lines were deleted.
 
 # File readers that bypass file.read's gate by calling file.c / fopen directly.
 ungated | tk_i18n_load_w | i18n.c:read_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
