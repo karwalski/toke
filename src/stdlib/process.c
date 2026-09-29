@@ -234,7 +234,6 @@ SpawnResult process_spawn(const char **cmd)
     h->stdin_fd  = stdin_pipe[1];
     h->exited    = 0;
     h->exit_code = 0;
-    h->cwd       = NULL;
 
     r.ok = h;
     return r;
@@ -348,7 +347,6 @@ void process_handle_free(ProcessHandle *h)
     if (h->stdout_fd >= 0) { close(h->stdout_fd); h->stdout_fd = -1; }
     if (h->stderr_fd >= 0) { close(h->stderr_fd); h->stderr_fd = -1; }
     if (h->stdin_fd  >= 0) { close(h->stdin_fd);  h->stdin_fd  = -1; }
-    if (h->cwd) { free(h->cwd); h->cwd = NULL; }
     free(h);
 }
 
@@ -511,25 +509,12 @@ int process_is_running(ProcessHandle *h)
     return 0;
 }
 
-void process_set_cwd(ProcessHandle *h, const char *cwd)
-{
-    if (!h || h->exited) return;
-    /* No-op if already spawned (pid is set in a live handle).
-     * Since spawn always sets pid before returning, we can only call this
-     * before process_spawn. In practice callers set cwd on a handle that
-     * was pre-allocated, but with the current API the handle is created
-     * inside process_spawn. We therefore store the value and chdir in
-     * the child only when cwd is non-NULL at spawn time.
-     * If the handle has already been used (pid != 0 and not exited),
-     * this is documented as a no-op. */
-    if (h->pid != 0) return;
-    free(h->cwd);
-    if (!cwd) {
-        h->cwd = NULL;
-        return;
-    }
-    h->cwd = strdup(cwd);
-}
+/* process_set_cwd: removed (121.42 (7), AMB-09).  It could only store a
+ * directory on a handle that had not been spawned, but process_spawn creates
+ * the handle and sets its pid before returning, so it was always a no-op --
+ * and spawn never read the stored value anyway.  No wrapper, no .tki entry
+ * reached it.  A working-directory option belongs in spawn's own arguments,
+ * gated like spawn; git history holds the code. */
 
 I32ProcessResult process_timeout(ProcessHandle *h, uint64_t timeout_ms)
 {

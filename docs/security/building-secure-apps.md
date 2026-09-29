@@ -373,8 +373,9 @@ Caveats even with `spawn`:
   Pass an **absolute path** to the binary (`/usr/bin/convert`), and do not let the
   program's own `$PATH` be attacker-influenced (`AMB-04`: `env_file_load` will set
   arbitrary env vars — allowlist keys before loading a `.env`).
-- `process_set_cwd` is currently a no-op (`AMB-09`); do not rely on it to confine a
-  child's working directory.
+- There is no way to set a child's working directory: `process_set_cwd`, which
+  was a no-op (`AMB-09`), was removed (121.42). A child starts in the parent's
+  working directory.
 
 ### Filesystem: contain paths, refuse symlinks and traversal
 

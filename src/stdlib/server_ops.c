@@ -70,64 +70,15 @@ void proc_set_shutdown_hook(ProcHook hook)
     g_shutdown_hook = hook;
 }
 
-/* ── Binary upgrade with socket inheritance (67.1.2) ────────────────── */
-
-/*
- * proc_binary_upgrade — exec a new binary, passing the listening socket
- * fd via the TK_LISTEN_FD environment variable. The new process inherits
- * the socket and starts accepting connections; this process drains and
- * exits after the new process signals readiness.
+/* ── Binary upgrade with socket inheritance: removed (121.42 (7), AMB-10)
  *
- * binary_path: path to the new binary (NULL = re-exec current).
- * listen_fd:   the listening socket fd to pass.
- * argv:        argument vector for the new process (NULL = inherit).
- *
- * Returns 0 on success (old process should drain), -1 on error.
- */
-int proc_binary_upgrade(const char *binary_path, int listen_fd,
-                         char *const argv[])
-{
-    char fd_str[16];
-    snprintf(fd_str, sizeof(fd_str), "%d", listen_fd);
-    setenv("TK_LISTEN_FD", fd_str, 1);
-
-    /* Clear close-on-exec so the fd survives exec */
-    int flags = fcntl(listen_fd, F_GETFD);
-    if (flags >= 0)
-        fcntl(listen_fd, F_SETFD, flags & ~FD_CLOEXEC);
-
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-
-    if (pid == 0) {
-        /* Child: exec new binary */
-        const char *bin = binary_path ? binary_path : "/proc/self/exe";
-        if (argv)
-            execv(bin, argv);
-        else {
-            char *default_argv[] = { (char *)bin, NULL };
-            execv(bin, default_argv);
-        }
-        _exit(127); /* exec failed */
-    }
-
-    /* Parent: new process is running. Caller should drain and exit. */
-    return 0;
-}
-
-/*
- * proc_inherit_listen_fd — check if TK_LISTEN_FD is set.
- * Returns the inherited fd, or -1 if not set.
- */
-int proc_inherit_listen_fd(void)
-{
-    const char *env = getenv("TK_LISTEN_FD");
-    if (!env) return -1;
-    int fd = atoi(env);
-    if (fd <= 0) return -1;
-    unsetenv("TK_LISTEN_FD");
-    return fd;
-}
+ * proc_binary_upgrade() setenv'd TK_LISTEN_FD, cleared FD_CLOEXEC on the
+ * listening socket and fork+execv'd a binary; proc_inherit_listen_fd()
+ * trusted TK_LISTEN_FD from the environment.  Nothing called either -- no
+ * stdlib module, glue, header, .tki entry or toke-ooke source -- and neither
+ * passed a capability check (process spawn, env write).  Removed rather than
+ * gated: an upgrade path would need a surface decision first.  Git history
+ * holds the code. */
 
 /* ── Configuration validation / dry-run (67.1.3) ───────────────────── */
 
