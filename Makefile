@@ -559,6 +559,9 @@ check-tki: check-tki-layout
 	python3 scripts/check_tki_coverage.py --internal-md-check
 	python3 scripts/check_stdlib_doc_quarantine.py
 	python3 scripts/check_stdlib_doc_exports.py
+	@# 135.17a: the generator agrees with every .tki, and every arity
+	@# disagreement it declines to fix is recorded with its reason.
+	python3 scripts/gen_tki.py --check
 
 # 132.102: 45 documented function entries were not .tki exports (encrypt's
 # pre-113.2a underscored spellings, json/http designs no interface declares,
