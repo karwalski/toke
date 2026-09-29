@@ -163,6 +163,8 @@ Opens a rotating HTTP access log and registers it as the global access log used 
 
 Returns `0` on success, `-1` if the log file cannot be opened (e.g. the directory does not exist or permissions are denied).
 
+Requires the `fs.write` capability (`--allow-write`, or `fs_write = true` in `tkc.toml [capabilities]`); without it the program stops with `CAP001`. The paths `/dev/stderr` and `/dev/stdout` need no grant. `log.openerror` is the same. See [capabilities](/docs/spec/capabilities/).
+
 | Parameter | Type | Meaning |
 |-----------|------|---------|
 | `path` | `$str` | Path to the log file (e.g. `"logs/access.log"`) |

@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <zlib.h>
+#include "tk_bind.h"   /* 135.33 */
 
 /* ----------------------------------------------------------------------- */
 /* Internal route entry                                                      */
@@ -1052,24 +1053,20 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
         }
     }
 
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) {
-        TkRouterErr e = {1, "socket() failed"};
-        return e;
-    }
-
-    int opt = 1;
-    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr        = bind_addr;
     addr.sin_port        = htons((uint16_t)port);
 
-    if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(srv);
-        TkRouterErr e = {1, "bind() failed"};
+    /* 135.33: SO_REUSEADDR only after a probe finds no live listener -- on
+     * macOS it let this bind shadow another server on the same port and
+     * take its loopback traffic.  See tk_bind.h. */
+    int srv = tk_bind_exclusive(&addr);
+    if (srv < 0) {
+        TkRouterErr e = {1, errno == EADDRINUSE
+                               ? "bind() failed: address already in use"
+                               : "bind() failed"};
         return e;
     }
     if (listen(srv, 8) < 0) {

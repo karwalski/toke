@@ -123,6 +123,19 @@ f=main():i64{
   <0
 };'
 
+# ── 3b: 127.243 -- a member close to no export carries no `fix`.  The old
+#      "check the module's interface for the correct member name" was advice,
+#      not a rewrite (AGENTS.md §6); only a "did you mean" match is offered. ──
+printf '%s\n' 'm=t;' 'i=tpl:tplmod;' 'f=main():i64{' '  tpl.zzqqwwxx();' '  <0' '};' > case.tk
+out="$("${TKC}" --check --diag-json -I . case.tk 2>&1)"
+if printf '%s' "${out}" | grep -q '"error_code":"E4027"' \
+   && ! printf '%s' "${out}" | grep -q '"fix":'; then
+    echo "  PASS: E4027 with no near miss carries no fix"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: E4027 with no near miss carries no fix"
+    echo "${out}" | sed 's/^/      /' | head -5; FAIL=$((FAIL + 1))
+fi
+
 # ── 4: the guard that matters most — a correct call must keep compiling.  A
 #      check that fires wrongly is worse than one that is incomplete. ──
 check_case "correct calls still compile" 0 "" '

@@ -6,8 +6,10 @@
  */
 
 #include "log.h"
+#include "capabilities.h"   /* 121.22: log.openaccess/openerror are fs.write sinks */
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 /*
  * Decode a toke-format array of strings into a flat const char ** array.
@@ -38,10 +40,31 @@ static void decode_log_fields(int64_t fields_map,
     *out_count  = count;
 }
 
+/*
+ * 121.22 (ADR-0010).  log.openaccess and log.openerror create, append to,
+ * rotate, gzip and prune files at a path the PROGRAM chooses -- including
+ * the directory they sit in (mkdir_single) and every rotated sibling
+ * (apply_retention unlinks them).  124.4c gated file.write and os.open; these
+ * two were missed, so a binary baked with --cap-enforce and no grants at all
+ * wrote /any/path/access.log (measured on main: exit 0, the file and its
+ * .lock sidecar created).  The gate is fs.write, taken once here, at
+ * acquisition; the rotation that follows works on the file this acquired.
+ *
+ * The process's own standard streams are not filesystem authority: fds 1
+ * and 2 are held before main runs, and "/dev/stderr" is how ooke's default
+ * [log] access = "-" reaches them.  Those two paths need no grant.
+ */
+static int log_path_is_own_stream(const char *path)
+{
+    return path && (strcmp(path, "/dev/stderr") == 0 ||
+                    strcmp(path, "/dev/stdout") == 0);
+}
+
 int64_t tk_log_open_access_w(int64_t path_ptr, int64_t max_lines,
                                int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
+    if (!log_path_is_own_stream(path)) TK_REQUIRE(TK_CAP_FS_WRITE);
     TkAccessLog *al = tk_access_log_open(path, (int)max_lines,
                                           (int)max_files, (int)max_age_days);
     if (!al) return -1;
@@ -53,6 +76,7 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
                               int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
+    if (!log_path_is_own_stream(path)) TK_REQUIRE(TK_CAP_FS_WRITE);   /* 121.22 */
     TkAccessLog *el = tk_error_log_open(path, (int)max_lines,
                                          (int)max_files, (int)max_age_days);
     if (!el) return -1;

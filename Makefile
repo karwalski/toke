@@ -1935,7 +1935,8 @@ test-stdlib-toml:
 # from an error, and a missing section must not resolve to its parent.
 test-stdlib-toml-glue:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
-	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/toml_glue.c $(TOML_SRCS)
+	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/toml_glue.c \
+	    src/stdlib/capabilities.c $(TOML_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────

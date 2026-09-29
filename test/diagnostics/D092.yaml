@@ -1,6 +1,6 @@
 id: D092
 series: D
-description: "127.66: field access on a name the struct does not declare is E4025, and the documented `fix` is pinned exactly (AGENTS.md §6). The near-miss `logaccess` for the declared `logaccessformat` must not be silently accepted"
+description: "127.66: field access on a name the struct does not declare is E4025, and it carries no `fix`: \"check the struct definition\" was advice, not a rewrite (AGENTS.md §6, 127.243). The near-miss `logaccess` for the declared `logaccessformat` must not be silently accepted"
 input: |
   m=t;
   i=io:std.io;
@@ -15,7 +15,7 @@ input: |
   };
 expected_exit_code: 1
 expected_error_codes: ["E4025"]
-expected_fix: "check the struct definition for available fields"
+expected_fix_absent: true
 expected_diag_field:
   field: got
   value: logaccess

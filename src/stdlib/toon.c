@@ -355,21 +355,30 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
         if (*rp == '\n') rp++;
     }
 
-    if (rowcount == 0) rowcount = actual_rows;
+    /* 121.16 (PAR-06): the declared [count] is the sender's claim, not a
+     * fact.  It was trusted over the rows actually present: `d[100]{id}:\n1\n`
+     * returned a length-100 array whose elements 1..99 were uninitialised
+     * pointers, a negative count returned a length near 2^64 over a NULL
+     * array, and a blank line consumed a row slot as an empty value.  Now a
+     * declared count can only shorten the result (a count below the rows
+     * present keeps the first N, as before), blank lines are skipped, and
+     * `len` is the number of elements actually filled. */
+    int rows = actual_rows;
+    if (rowcount > 0 && rowcount < actual_rows) rows = rowcount;
 
-    Toon *arr = (Toon *)malloc((size_t)rowcount * sizeof(Toon));
-    if (!arr && rowcount > 0) {
+    Toon *arr = (Toon *)calloc(rows > 0 ? (size_t)rows : 1, sizeof(Toon));
+    if (!arr) {
         r.is_err = 1; r.err = make_err(TOON_ERR_PARSE, "oom"); return r;
     }
 
     /* Extract field from each row.  Splitting is escape-aware (121.40); the
      * element keeps the value's TOON text, escapes and all. */
-    rp = p;
     int filled = 0;
-    for (int row = 0; row < rowcount && *rp; row++) {
+    rp = p;
+    while (filled < rows && *rp) {
         const char *line_start = rp;
         while (*rp && *rp != '\n') rp++;
-        if (rp == line_start) { if (*rp == '\n') rp++; row--; continue; }
+        if (rp == line_start) { rp++; continue; }   /* blank line */
         const char *fp = line_start;
         for (int cur = 0; cur < field_idx; cur++) {
             fp = toon_val_end(fp);
@@ -379,24 +388,19 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
         const char *fe = toon_val_end(fp);
         size_t len = (size_t)(fe - fp);
         char *val = (char *)malloc(len + 1);
-        if (!val) {
+        if (!val) {                                  /* PAR-10 */
             for (int i = 0; i < filled; i++) free((char *)arr[i].raw);
             free(arr);
             r.is_err = 1; r.err = make_err(TOON_ERR_PARSE, "oom"); return r;
         }
         memcpy(val, fp, len);
         val[len] = '\0';
-        arr[row].raw = val;
-        filled++;
+        arr[filled++].raw = val;
         if (*rp == '\n') rp++;
     }
-    /* A header count larger than the rows present no longer leaves
-     * uninitialised elements behind, and a blank line is not a row. */
-    rowcount = filled;
-
     r.is_err = 0;
     r.ok.data = arr;
-    r.ok.len = (uint64_t)rowcount;
+    r.ok.len = (uint64_t)filled;
     return r;
 }
 
