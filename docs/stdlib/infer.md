@@ -41,7 +41,8 @@ i=io:std.io;
 f=main():i64{
   (* load is a stub that returns 0, so this handle is never valid and
      isloaded is correspondingly false. The else branch is what runs. *)
-  let h=infer.load("/models/mistral-7b.Q4KM.gguf");
+  let o=$inferopts{ngpulayers:0;nthreads:0;seed:-1};
+  let h=infer.load("/models/mistral-7b.Q4KM.gguf";o);
   if(infer.isloaded(h)){
     io.println("model loaded")
   }el{
