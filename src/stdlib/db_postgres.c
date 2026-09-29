@@ -17,29 +17,126 @@ static DbErr pg_err(DbErrKind kind, const char *msg)
     DbErr e; e.kind = kind; e.msg = msg; return e;
 }
 
-/* Rewrite ? placeholders to $1, $2, ... for libpq. */
-static char *rewrite_placeholders(const char *sql)
+/* Rewrite ? placeholders to $1, $2, ... for libpq.
+ *
+ * 121.49 (3): this rewrote every '?' byte, so `SELECT '?', ?` became
+ * `SELECT '$1', $2` -- the literal changed and the parameter count no longer
+ * matched the caller's.  A '?' is now a placeholder only outside every
+ * PostgreSQL lexical form that can contain one:
+ *   '...'        string literal, '' as an escaped quote; E'...' (and e'...')
+ *                also takes a backslash escape, so E'\'?' is one literal
+ *   "..."        quoted identifier, "" as an escaped quote
+ *   $tag$...$tag$  dollar-quoted string, tag empty or an identifier ($1 is
+ *                a parameter, not a tag: a tag cannot start with a digit)
+ *   -- ...       line comment, to end of line
+ *   / * ... * /  block comment, nested as PostgreSQL nests them
+ * An unterminated form runs to the end of the text, as the server would read
+ * it.  Not handled: the jsonb operators ?, ?| and ?& are still rewritten --
+ * there is no telling them from a placeholder lexically; use
+ * jsonb_exists()/jsonb_exists_any()/jsonb_exists_all() instead.
+ * Returns NULL on allocation failure. */
+static int pg_ident_char(char c)
 {
-    /* Count ? marks */
-    int count = 0;
-    for (const char *p = sql; *p; p++)
-        if (*p == '?') count++;
-    if (count == 0) return strdup(sql);
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_' || (unsigned char)c >= 0x80;
+}
 
-    /* Each $N can be up to 6 chars ($99999) — allocate generously */
-    size_t len = strlen(sql) + (size_t)count * 6 + 1;
-    char *out = malloc(len);
-    char *wp = out;
-    int idx = 0;
-    for (const char *rp = sql; *rp; rp++) {
-        if (*rp == '?') {
-            idx++;
-            wp += sprintf(wp, "$%d", idx);
-        } else {
-            *wp++ = *rp;
+/* Length of a dollar-quote tag "$tag$" starting at p (p[0] == '$'), or 0. */
+static size_t pg_dollar_tag(const char *p)
+{
+    size_t n = 1;
+    if (p[n] != '$') {
+        char c = p[n];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
+              (unsigned char)c >= 0x80))
+            return 0;
+        while (pg_ident_char(p[n]) && p[n] != '$') n++;
+        if (p[n] != '$') return 0;
+    }
+    return n + 1;
+}
+
+/* Index just past the lexical form that starts at sql[i], or i when no
+ * quoted/comment form starts there. */
+static size_t pg_skip_form(const char *sql, size_t i)
+{
+    char c = sql[i];
+    if (c == '\'') {
+        int esc = i > 0 && (sql[i - 1] == 'E' || sql[i - 1] == 'e') &&
+                  (i < 2 || !pg_ident_char(sql[i - 2]));
+        for (i++; sql[i]; i++) {
+            if (esc && sql[i] == '\\' && sql[i + 1]) { i++; continue; }
+            if (sql[i] == '\'') {
+                if (sql[i + 1] == '\'') { i++; continue; }
+                return i + 1;
+            }
+        }
+        return i;
+    }
+    if (c == '"') {
+        for (i++; sql[i]; i++) {
+            if (sql[i] == '"') {
+                if (sql[i + 1] == '"') { i++; continue; }
+                return i + 1;
+            }
+        }
+        return i;
+    }
+    if (c == '-' && sql[i + 1] == '-') {
+        while (sql[i] && sql[i] != '\n') i++;
+        return i;
+    }
+    if (c == '/' && sql[i + 1] == '*') {
+        size_t depth = 1;
+        for (i += 2; sql[i] && depth; ) {
+            if (sql[i] == '/' && sql[i + 1] == '*') { depth++; i += 2; }
+            else if (sql[i] == '*' && sql[i + 1] == '/') { depth--; i += 2; }
+            else i++;
+        }
+        return i;
+    }
+    if (c == '$' && (i == 0 || !pg_ident_char(sql[i - 1]))) {
+        size_t t = pg_dollar_tag(sql + i);
+        if (!t) return i;
+        const char *close = sql + i + t;
+        for (;;) {
+            const char *d = strchr(close, '$');
+            if (!d) return i + t + strlen(sql + i + t);
+            if (strncmp(d, sql + i, t) == 0) return (size_t)(d - sql) + t;
+            close = d + 1;
         }
     }
-    *wp = '\0';
+    return i;
+}
+
+static char *rewrite_placeholders(const char *sql)
+{
+    /* Pass 1 counts the placeholders and sizes the output exactly. */
+    size_t len = strlen(sql), out_len = 0;
+    unsigned long idx = 0;
+    char num[24];
+    for (size_t i = 0; i < len; ) {
+        size_t j = pg_skip_form(sql, i);
+        if (j != i) { out_len += j - i; i = j; continue; }
+        if (sql[i] == '?') out_len += (size_t)snprintf(num, sizeof num, "$%lu", ++idx);
+        else out_len++;
+        i++;
+    }
+    char *out = malloc(out_len + 1);
+    if (!out) return NULL;
+    /* Pass 2 writes it. */
+    size_t w = 0;
+    idx = 0;
+    for (size_t i = 0; i < len; ) {
+        size_t j = pg_skip_form(sql, i);
+        if (j != i) { memcpy(out + w, sql + i, j - i); w += j - i; i = j; continue; }
+        if (sql[i] == '?') {
+            int n = snprintf(num, sizeof num, "$%lu", ++idx);
+            memcpy(out + w, num, (size_t)n); w += (size_t)n;
+        } else out[w++] = sql[i];
+        i++;
+    }
+    out[w] = '\0';
     return out;
 }
 
