@@ -16,7 +16,11 @@
 #           and became the decoder table's size; 6.3 requires it to be a
 #           decoding error.
 #
-# Each check prints OK/BAD; the harness links http2.c under ASan+UBSan.
+#   hpack   (HTT-08 residue) the indexed-field path's two strdup()s were
+#           unchecked: with the value's allocation failing, the decode
+#           returned a header whose value was NULL.
+#
+# Each check prints OK/BAD; the harnesses link http2.c under ASan+UBSan.
 #
 # Negative control: C461_STDLIB=<dir> points the harness at another stdlib
 # tree; with main's http2.c and http2.h both checks fail.
@@ -141,6 +145,56 @@ else
     if [ "${rc}" -ne 0 ] && ! grep -a -q '^BAD ' "${WORK}/out"; then
         fail "exit ${rc} -- $(grep -a -m1 -E 'ERROR: AddressSanitizer|runtime error' "${WORK}/err" | head -c 300)"
     fi
+fi
+
+# ── HTT-08 residue: an indexed field whose strdup() fails ────────────────
+# http2.c is compiled with strdup renamed to a counting stub that fails on
+# the Nth call, so hpack_decode's own allocation failure is reachable.  On
+# main the indexed-field path stored the NULL and returned it as a header
+# value; it must fail the decode instead.
+cat > "${WORK}/oom.c" <<'EOF'
+#include "http2.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static int g_fail_at, g_calls;
+char *h3_strdup(const char *s) {
+    if (++g_calls == g_fail_at) return NULL;
+    size_t n = strlen(s) + 1; char *d = malloc(n);
+    if (d) memcpy(d, s, n);
+    return d;
+}
+int main(void) {
+    int bad = 0;
+    for (int at = 1; at <= 2; at++) {
+        HpackTable t; hpack_table_init(&t, 4096);
+        uint8_t blk[1] = { 0x82 };          /* indexed: ":method: GET" */
+        char **nm = NULL, **vl = NULL;
+        g_calls = 0; g_fail_at = at;
+        int r = hpack_decode(&t, blk, 1, &nm, &vl);
+        int has_null = 0;
+        for (int i = 0; i < r; i++) if (!nm[i] || !vl[i]) has_null = 1;
+        if (r < 0) printf("OK indexed field, strdup #%d fails: decode fails (%d)\n", at, r);
+        else { printf("BAD indexed field, strdup #%d fails: decode returned %d header(s)%s\n",
+                      at, r, has_null ? " holding a NULL" : ""); bad++; }
+        if (r > 0) { for (int i = 0; i < r; i++) { free(nm[i]); free(vl[i]); } free(nm); free(vl); }
+        hpack_table_free(&t);
+    }
+    return bad ? 1 : 0;
+}
+EOF
+if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -Dstrdup=h3_strdup \
+        -c -o "${WORK}/http2_oom.o" "${S}/http2.c" >"${WORK}/oom.cc" 2>&1 \
+   || ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
+        -o "${WORK}/oom" "${WORK}/oom.c" "${WORK}/http2_oom.o" "${S}/http.c" "${S}/capabilities.c" \
+        "${S}/encoding.c" "${S}/log.c" "${S}/str.c" -lz -lpthread >>"${WORK}/oom.cc" 2>&1; then
+    fail "oom build: $(grep -a -m3 error "${WORK}/oom.cc" | head -c 400)"
+else
+    "${WORK}/oom" >"${WORK}/oom.out" 2>&1
+    while IFS= read -r line; do
+        case "${line}" in OK\ *) pass "${line#OK }" ;; BAD\ *) fail "${line#BAD }" ;; esac
+    done < <(grep -a -E '^(OK|BAD) ' "${WORK}/oom.out")
+    grep -a -q -E '^(OK|BAD) ' "${WORK}/oom.out" || fail "oom harness produced nothing: $(head -c 300 "${WORK}/oom.out")"
 fi
 
 echo ""
