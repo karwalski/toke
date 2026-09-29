@@ -143,11 +143,15 @@ int main(void)
     ByteArray hmac512 = crypto_hmac_sha512(key, msg);
     ASSERT(hmac512.len == 64, "hmac_sha512 len==64");
     const char *hex_hmac512 = crypto_to_hex(hmac512);
+    /* The published value (Wikipedia's HMAC examples; Python's
+     * hmac.new(b"key", msg, hashlib.sha512)).  Until 121.20 this held a
+     * vector whose first 16 hex digits were right and the rest were not,
+     * so this assertion failed on every build. */
     ASSERT_STREQ(hex_hmac512,
-        "b42af09057bac1e2c215281b0a1a9156"
-        "0bd4d21b3ce7e9fc5e1cd96790cc1e25"
-        "db44b82c5aab0845e87ab0b41b757b43"
-        "97e652a06b65f2c73034e8acb5345741",
+        "b42af09057bac1e2d41708e48a902e09"
+        "b5ff7f12ab428a4fe86653c73dd248fb"
+        "82f948a549f7b791a5b41915ee4d1ec3"
+        "935357e4e2317250d0372afa2ebeeb3a",
         "hmac_sha512 known vector");
 
     /* --- hmac_sha512 differs when key differs --- */

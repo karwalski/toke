@@ -24,7 +24,7 @@
  *   T6.  CORS preflight: OPTIONS + Origin → 204 + CORS headers
  *   T7.  Gzip compression: Accept-Encoding: gzip → Content-Encoding: gzip
  *   T8.  ETag conditional: second GET with If-None-Match → 304
- *   T9.  Chunked response: http_chunked_write / http_chunked_read round-trip
+ *   T9.  Chunked response: http_chunked_write, decoded strictly here
  *   T10. Graceful shutdown: http_shutdown() sets flag
  *   T11. Access log: router_use_log writes entry to file
  *   T12. WebSocket handshake: Upgrade request over socketpair → 101
@@ -542,23 +542,43 @@ static void test_chunked_response(void)
         _exit(0);
     }
 
-    /* Parent: read chunked body */
+    /* Parent: read the wire bytes.  121.44: http_chunked_read() is
+     * retired, so the stream is decoded here, strictly: <hex>CRLF <data>
+     * CRLF ... 0 CRLF CRLF, and nothing after it. */
     close(sv[1]);
-    size_t out_len = 0;
-    char *received = http_chunked_read(sv[0], &out_len);
+    char wire[1024];
+    size_t wn = 0;
+    for (;;) {
+        ssize_t r = read(sv[0], wire + wn, sizeof wire - wn);
+        if (r <= 0) break;
+        wn += (size_t)r;
+    }
     close(sv[0]);
 
     int status_child = 0;
     waitpid(pid, &status_child, 0);
 
-    ASSERT(received != NULL, "T9: http_chunked_read returned non-NULL");
-    if (received) {
-        ASSERT_INTEQ((int)out_len, (int)plen,
-                     "T9: chunked round-trip preserves byte count");
-        ASSERT(memcmp(received, payload, plen) == 0,
-               "T9: chunked round-trip preserves content");
-        free(received);
+    char body[1024];
+    size_t bn = 0, p = 0;
+    int ok = 1, last = 0;
+    while (ok && !last) {
+        char *end = NULL;
+        unsigned long csz = strtoul(wire + p, &end, 16);
+        if (!end || end == wire + p || (size_t)(end - wire) + 2 > wn ||
+            end[0] != '\r' || end[1] != '\n') { ok = 0; break; }
+        p = (size_t)(end - wire) + 2;
+        if (csz == 0) { last = 1; break; }
+        if (p + csz + 2 > wn || bn + csz > sizeof body) { ok = 0; break; }
+        memcpy(body + bn, wire + p, csz); bn += csz; p += csz;
+        if (wire[p] != '\r' || wire[p + 1] != '\n') { ok = 0; break; }
+        p += 2;
     }
+    ok = ok && last && p + 2 == wn && wire[p] == '\r' && wire[p + 1] == '\n';
+
+    ASSERT(ok, "T9: chunked stream is well formed and ends at 0 CRLF CRLF");
+    ASSERT_INTEQ((int)bn, (int)plen, "T9: chunked round-trip preserves byte count");
+    ASSERT(bn == plen && memcmp(body, payload, plen) == 0,
+           "T9: chunked round-trip preserves content");
 }
 
 /* -------------------------------------------------------------------------

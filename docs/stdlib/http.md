@@ -312,6 +312,23 @@ is allowed as long as the body limit would take at that rate. A client that
 trickles bytes to hold a worker open is answered `408` when its deadline
 passes; the timeout used to restart with every byte received.
 
+**HTTP/2 has the same clock** (story 121.44). HTTP/2 is offered on the TLS
+servers, through ALPN. The connection preface and the client's first
+`SETTINGS` frame must arrive within the server timeout of the connection
+starting; every frame must be whole within the timeout of its first byte; and
+a request's header block (`HEADERS` up to `END_HEADERS`) must be complete
+within the timeout of its first frame. A connection that misses one of these
+is closed. A header block larger than the 64 KiB header-list size the server
+advertises ends the connection with `GOAWAY` (`ENHANCE_YOUR_CALM`). Waiting
+between requests is not a request: an idle HTTP/2 connection is pinged after
+30 seconds, as before.
+
+**No cleartext upgrade to HTTP/2.** A request carrying `Upgrade: h2c` is
+answered over HTTP/1.1 like any other; the server ignores the header, as RFC
+9110 §7.8 allows. The upgrade used to answer `101 Switching Protocols` and
+then close the connection without serving anything, and RFC 9113 §3.1
+deprecates it.
+
 ### http.getstatic(path: $str; html: $str): i64
 
 Registers a static HTML response for the given path. When the server receives a request matching `path`, it returns the pre-rendered `html` string as a `200 OK` response with `Content-Type: text/html`. Use this for pages whose content is known at startup.
