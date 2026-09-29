@@ -585,8 +585,25 @@ indices. Field order matches declaration order in the source.
 
 ## 6. Map Layout
 
-**[TODO]** -- Maps (`[K:V]`) are defined in the type system (`TY_MAP`)
-but do not yet have a codegen representation in `llvm.c`.
+A map value is an `i8*` to a `TkMapImpl` (`src/stdlib/collections_glue.c`),
+created by `tk_map_new` (str keys) or `tk_map_new_int` (i64 keys) and passed
+through the i64 ABI like any other handle. Keys and values are i64-ABI words.
+
+| Field | Meaning |
+|-------|---------|
+| `entries`, `len`, `cap` | dense `{key, val}` pairs in **insertion order** — a layout contract shared with `template_glue.c` and `tk_map_len_w`; do not reorder |
+| `kind` | str or int keys, fixed at creation |
+| `slots`, `nslots` | open-addressing index into `entries` (linear probing, load ≤ 0.7) |
+| `hashes` | the hash of each entry's key |
+
+The index hash is SipHash-1-3 under a per-process random key (121.32), so
+colliding key sets cannot be precomputed; iteration walks `entries` and never
+depends on it (semantics.md §10.2).
+
+`tk_map_get` (`m.get(k)`) is a slot call (127.30): it stores `0` in
+`@tk_current_error` on a hit and `1` (failed, no payload) on a miss, returning
+the value or the `0` filler (§7.1–7.2). A match on it decides on the slot, so
+a stored `0` is `$ok` (semantics.md §10.1).
 
 ---
 

@@ -1098,8 +1098,6 @@ static const char *const g_err_slot_bare[] = {
     /* infer */
     "tk_infer_embed_w", "tk_infer_generate_w", "tk_infer_load_w",
     "tk_infer_loadstreaming_w",
-    /* json */
-    "tk_json_arr_w", "tk_json_dec_w", "tk_json_str_w",
     /* mlx */
     "tk_mlx_generate_w", "tk_mlx_load_w",
     /* ocr */
@@ -1110,8 +1108,6 @@ static const char *const g_err_slot_bare[] = {
     "tk_pdf_runs_w",
     /* process */
     "tk_process_spawn_w", "tk_process_stderr_w", "tk_process_stdout_w",
-    /* str */
-    "tk_str_frombytes_w", "tk_str_matchbracket_w", "tk_str_slice_w",
     /* time */
     "tk_time_parse_w", "tk_time_parseduration_w",
     /* toon */

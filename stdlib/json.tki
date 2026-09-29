@@ -401,8 +401,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "bool!JsonErr"
     },
     {
       "kind": "func",
@@ -411,8 +410,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "f64!JsonErr"
     },
     {
       "kind": "func",
@@ -421,8 +419,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "f64!JsonErr"
     },
     {
       "kind": "func",
@@ -431,8 +428,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "i64!JsonErr"
     },
     {
       "kind": "func",
@@ -441,8 +437,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "i64!JsonErr"
     },
     {
       "kind": "func",
@@ -451,8 +446,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "i64!JsonErr"
     },
     {
       "kind": "func",

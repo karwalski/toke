@@ -4,7 +4,7 @@ slug: patterns-v0.4
 section: spec
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `6dad9e907cfb`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `c42dcc38a16c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Status:** normative (Epic 131). **Protocol:** `0.4` — [patterns-protocol-v0.4](/docs/spec/patterns-protocol-v0.4/) defines the schema (§3), the token (§4) and runtime (§5) measurements, the verdict algorithm (§6) and how a verdict is enforced (§7). **Companion:** [idiom-v0.4](/docs/spec/idiom-v0.4/) (the prose rules these verdicts measure), [Lesson 11 — Patterns and Efficiency](/docs/learn/11-patterns-and-efficiency/) (the teaching view of the same data).
 
@@ -2201,7 +2201,7 @@ f=pat(xs:@i64):i64{
 
 **Intent.** Read a map value, substituting a default when the key is missing.
 
-**Applicability.** str-keyed maps. m.get(k) on a missing key returns 0 and mt treats the 0 sentinel as $err, so BOTH forms conflate a stored 0 with "missing"; there is no m.has (m.contains silently returns 0 for present keys) - 131.30 gap. The mt arm cannot appear inside a binary expression (t=t+mt ... is E2002); bind it with let first.
+**Applicability.** str-keyed maps. m.get(k) is a fallible lookup (127.30): mt decides on the error slot, so form a takes $ok for a stored 0 and $err only for a missing key, while form b's v==0 test still conflates a stored 0 with "missing" (the bench stores no 0, so both print the same total). m.getor(k;d) is the non-mt spelling of form a and m.contains(k) the membership test. The mt arm cannot appear inside a binary expression (t=t+mt ... is E2002); bind it with let first.
 
 | form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|

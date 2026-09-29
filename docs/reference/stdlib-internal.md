@@ -108,10 +108,10 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
-| `c-internal` | called only from other C in `src/stdlib/` | 149 |
+| `c-internal` | called only from other C in `src/stdlib/` | 152 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 92 |
-| | **total** | **321** |
+| | **total** | **324** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -191,7 +191,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (149)
+### `c-internal` (152)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -237,9 +237,12 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_map_hash_int` | `collections_glue.c` | collections_glue.c |
 | `tk_map_hash_str` | `collections_glue.c` | collections_glue.c |
 | `tk_map_key_eq` | `collections_glue.c` | collections_glue.c |
+| `tk_map_key_fill` | `collections_glue.c` | collections_glue.c |
+| `tk_map_key_init` | `collections_glue.c` | collections_glue.c |
 | `tk_map_new_kind` | `collections_glue.c` | collections_glue.c |
 | `tk_map_put_w` | `collections_glue.c` | collections_glue.c |
 | `tk_map_rehash` | `collections_glue.c` | collections_glue.c |
+| `tk_map_siphash` | `collections_glue.c` | collections_glue.c |
 | `tk_map_slot_insert` | `collections_glue.c` | collections_glue.c |
 | `tk_message_trusted` | `webview.c` | webview.c |
 | `tk_nsurl_trusted` | `webview.c` | webview.c |
