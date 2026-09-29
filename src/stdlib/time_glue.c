@@ -7,10 +7,26 @@
 
 #include "tk_time.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "tk_runtime.h" /* 127.241: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+/* 127.241: the error slot (runtime-abi.md §7.2).  time.parse and
+ * time.parseduration are `T!TimeErr` and returned a bare 0 on failure — and
+ * for time.parse, whose value is epoch milliseconds, 0 IS a real answer:
+ * "1970-01-01" parsed to 0 and took the $err arm, the C005 family of defect.
+ * A failure now stores a {tag, msg} box of TimeErr's sum layout ($parseerr 0,
+ * $rangeerr 1) and a success clears the slot, so the slot decides and the
+ * $err arm binds the variant.  tk_time.c's messages are string literals. */
+static int64_t time_raise(int tag, const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = tag;
+    box[1] = (int64_t)(intptr_t)(msg && *msg ? msg : "time: parse error");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
 
 int64_t tk_time_now_w(void) {
     return (int64_t)tk_time_now();
@@ -22,11 +38,17 @@ int64_t tk_time_format_w(int64_t ts, int64_t fmt) {
     return (int64_t)(intptr_t)result;
 }
 int64_t tk_time_parse_w(int64_t s, int64_t fmt) {
-    if (!s || !fmt) return 0;
+    if (!s || !fmt) return time_raise(0, "time.parse: null argument");
     const char *sstr = (const char *)(intptr_t)s;
     const char *fstr = (const char *)(intptr_t)fmt;
     TimeParseResult r = tk_time_parse(sstr, fstr);
-    if (r.is_err) return 0;
+    if (r.is_err) {
+        /* The one failure that is not a mismatch between the input and the
+         * format: a well-formed date the platform cannot convert. */
+        int range = r.err_msg && !strcmp(r.err_msg, "time conversion failed");
+        return time_raise(range ? 1 : 0, r.err_msg);
+    }
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
     return (int64_t)r.ok;
 }
 int64_t tk_time_elapsed_w(int64_t start) {
@@ -202,11 +224,11 @@ int64_t tk_time_start_of_year_w(int64_t ts) {
 
 /* time.parse_duration(s) — returns toke array [years,months,days,hours,minutes,seconds] */
 int64_t tk_time_parse_duration_w(int64_t s) {
-    if (!s) return 0;
+    if (!s) return time_raise(0, "time.parseduration: null argument");
     TkDurationParseResult r = tk_time_parse_duration((const char *)(intptr_t)s);
-    if (r.is_err) return 0;
+    if (r.is_err) return time_raise(0, r.err_msg);
     int64_t h = tk_arr_alloc(6, 6);
-    if (!h) return 0;
+    if (!h) return time_raise(1, "time.parseduration: out of memory");
     int64_t *block = (int64_t *)(intptr_t)h;
     block[0] = (int64_t)r.ok.years;
     block[1] = (int64_t)r.ok.months;
@@ -214,6 +236,7 @@ int64_t tk_time_parse_duration_w(int64_t s) {
     block[3] = (int64_t)r.ok.hours;
     block[4] = (int64_t)r.ok.minutes;
     block[5] = (int64_t)r.ok.seconds;
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
     return h;
 }
 

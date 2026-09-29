@@ -35,6 +35,7 @@
 #include "tk_array.h"
 #include "bytes_rt.h"
 #include "capabilities.h"
+#include "tk_runtime.h"   /* 127.102c: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,18 +43,52 @@
 /* Number of i64 slots in a $zipentry — keep in sync with stdlib/zip.tki. */
 #define TK_ZIPENTRY_SLOTS 4
 
-/* zip.open(data:@(byte)) -> $ziparchive!$ziperr
+/* ── The error channel (127.102c) ───────────────────────────────────────
  *
- * Returns 0 on any rejection, which is what the compiled error-union ABI
- * lowers the `$err` arm to.  zip.lasterr() carries the reason. */
+ * Every `T!$ziperr` wrapper keeps @tk_current_error truthful on EVERY return
+ * (runtime-abi.md §7.2): a failure stores a {tag, msg} box of $ziperr's sum
+ * layout (§7.3) — the tag is the variant index zip_lasterr_kind() names, the
+ * msg is zip_lasterr()'s literal — and a success stores 0, so an earlier
+ * failure can never leak into a later call's `mt` (127.123).  The `$err` arm
+ * therefore binds the variant and its reason:
+ *
+ *     mt zip.read(a;"x") {$ok:b …; $err:e mt e {$notfound:m …; $toolarge:m …}}
+ *
+ * Until 127.102c these wrappers returned a bare 0, the arm bound nil, and the
+ * reason was reachable only through zip.lasterr(), which is now retired.
+ * The failure value is still 0: every T here is a handle or an array, and a
+ * genuinely empty entry is a real zero-length array, never 0. */
+static int64_t zip_raise(TkZipErrKind kind, const char *msg)
+{
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(kind == ZIP_E_NONE ? ZIP_E_IO : kind);
+    box[1] = (int64_t)(intptr_t)(msg && *msg ? msg : "zip: unknown error");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+/* The failure recorded by the C core, as the box. */
+static int64_t zip_raise_last(void)
+{
+    return zip_raise(zip_lasterr_kind(), zip_lasterr());
+}
+
+static int64_t zip_ok(int64_t v)
+{
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return v;
+}
+
+/* zip.open(data:@(byte)) -> $ziparchive!$ziperr */
 int64_t tk_zip_open_w(int64_t data)
 {
     uint8_t *buf = NULL;
     uint64_t n = tk_bytes_unpack(data, &buf);
-    if (!buf) return 0;
+    if (!buf) return zip_raise(ZIP_E_BADARCHIVE, "zip: empty archive");
     TkZipArchive *a = zip_open_mem(buf, n);
     free(buf);
-    return (int64_t)(intptr_t)a;
+    if (!a) return zip_raise_last();
+    return zip_ok((int64_t)(intptr_t)a);
 }
 
 /* zip.openfile(path:str) -> $ziparchive!$ziperr
@@ -65,8 +100,10 @@ int64_t tk_zip_open_w(int64_t data)
 int64_t tk_zip_openfile_w(int64_t path)
 {
     TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) return 0;
-    return (int64_t)(intptr_t)zip_open_file((const char *)(intptr_t)path);
+    if (!path) return zip_raise(ZIP_E_IO, "zip: empty path");
+    TkZipArchive *a = zip_open_file((const char *)(intptr_t)path);
+    if (!a) return zip_raise_last();
+    return zip_ok((int64_t)(intptr_t)a);
 }
 
 /* zip.entries(a:$ziparchive) -> @($zipentry)
@@ -108,18 +145,19 @@ int64_t tk_zip_entries_w(int64_t handle)
 
 /* zip.read(a:$ziparchive; name:str) -> @(byte)!$ziperr
  *
- * 0 on failure (the `$err` arm).  A genuinely empty entry returns a
- * zero-length array, which is a distinct value from 0. */
+ * A genuinely empty entry returns a zero-length array, which is a distinct
+ * value from the failure filler 0 — and the slot, not the value, decides. */
 int64_t tk_zip_read_w(int64_t handle, int64_t name)
 {
     TkZipArchive *a = (TkZipArchive *)(intptr_t)handle;
-    if (!a || !name) return 0;
+    if (!a || !name) return zip_raise(ZIP_E_IO, "zip: invalid argument");
     uint64_t len = 0;
     uint8_t *buf = zip_read_entry(a, (const char *)(intptr_t)name, &len);
-    if (!buf) return 0;
+    if (!buf) return zip_raise_last();
     int64_t out = tk_bytes_pack(buf, len);
     free(buf);
-    return out;
+    if (!out) return zip_raise(ZIP_E_IO, "zip: out of memory");
+    return zip_ok(out);
 }
 
 /* zip.close(a:$ziparchive) -> void — releases the archive and its names. */
@@ -127,11 +165,4 @@ int64_t tk_zip_close_w(int64_t handle)
 {
     zip_close((TkZipArchive *)(intptr_t)handle);
     return 0;
-}
-
-/* zip.lasterr() -> str — why the last zip call failed; "" if none has. */
-int64_t tk_zip_lasterr_w(void)
-{
-    const char *m = zip_lasterr();
-    return (int64_t)(intptr_t)(m ? m : "");
 }

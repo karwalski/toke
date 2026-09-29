@@ -56,7 +56,23 @@ One validated central-directory record.
 
 ### $ziperr
 
-The error side of every fallible call: `$badarchive`, `$badentry`, `$notfound`, `$toolarge`, `$unsupported`, `$io`.
+The error side of every fallible call. The `$err` arm binds it; the variant says which class of rule refused the input, and every variant carries the reason as a `$str`.
+
+| Variant | Raised for |
+|---|---|
+| `$badarchive` | not a zip archive, an empty archive, or an unreadable central directory |
+| `$badentry` | an entry name that breaks a rule above, a directory record passed to `zip.read`, or an entry that fails to decompress |
+| `$notfound` | `zip.read` of a name the archive does not contain |
+| `$toolarge` | the archive size, entry count, cumulative size or ratio cap |
+| `$unsupported` | an encrypted entry, or a method other than Store or Deflate |
+| `$io` | the file could not be opened or read, or memory ran out |
+
+```toke
+let why=mt zip.openfile("book.epub") {
+  $ok:z "";
+  $err:e mt e {$toolarge:m m;$badentry:m m;$badarchive:m m;$notfound:m m;$unsupported:m m;$io:m m}
+};
+```
 
 ## Functions
 
@@ -84,11 +100,11 @@ An entry that is genuinely empty returns a zero-length array; a missing name and
 
 Releases the archive.
 
-### zip.lasterr(): $str
+### Reading why a call failed
 
-Why the most recent `zip.*` call failed, or `""` if none has.
+The reason is the error itself: `$err:e` binds the `$ziperr`, whose variant is the class of rule and whose payload is the rule's own message (`zip: compression ratio cap exceeded`). A success clears it, so a failure never leaks into a later call.
 
-This is the second addition to the requested interface, and it is a workaround for the platform rather than a design preference. The compiled error-union ABI lowers `T!E` to a null check: the `$err` arm binds nothing a consumer can read, so without `zip.lasterr` "the archive was rejected" and "which of eight rules rejected it" would be the same answer. Telling them apart is the entire point of having eight separate rules. When the ABI grows an error payload this should become that payload.
+`zip.lasterr()` used to carry the message, as a workaround for an error ABI that bound no payload. That ABI now carries one, and the accessor was retired in the same release as `csv`'s and `file`'s (127.102a/b/c) — replace `zip.lasterr()` with a match on the bound error.
 
 ## Usage Example
 
@@ -103,11 +119,15 @@ f=show(e:$zipentry):i64{
   <0
 };
 
+f=reason(e:$ziperr):str{
+  <mt e {$badarchive:m m;$badentry:m m;$notfound:m m;$toolarge:m m;$unsupported:m m;$io:m m}
+};
+
 f=main():i64{
   let a=zip.openfile("book.epub");
   mt a {
     $ok:z listing(z);
-    $err:e io.println(s.concat("rejected: ";zip.lasterr()))
+    $err:e io.println(s.concat("rejected: ";reason(e)))
   };
   <0
 };
@@ -120,7 +140,7 @@ f=listing(z:$ziparchive):i64{
   let r=zip.read(z;"mimetype");
   mt r {
     $ok:b io.println(s.concat("mimetype bytes: ";s.fromint(b.len)));
-    $err:e io.println(s.concat("read failed: ";zip.lasterr()))
+    $err:e io.println(s.concat("read failed: ";reason(e)))
   };
   zip.close(z);
   <0

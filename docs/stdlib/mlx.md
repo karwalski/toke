@@ -16,10 +16,10 @@ Measured against the built compiler, not read off the interface.
 | Published call | `.tki` arity | Glue arity | Reachable | What happens |
 |---|---|---|---|---|
 | `mlx.isavailable` | 0 | 0 | links | hard-coded `return 0` on **every** platform, Apple Silicon included -- the sysctl and health probe in `mlx.c` are never called |
-| `mlx.load` | 1 | 1 | links | hard-coded `return 0`; `mlx_load` in the core is never called |
-| `mlx.generate` | 3 | **2** | links at 2 args | drops `maxtokens` entirely and returns the literal string `"[mlx: not available]"` |
+| `mlx.load` | 1 | 1 | links | always takes the `$err` arm with an `mlxerr` saying MLX is not available; `mlx_load` in the core is never called |
+| `mlx.generate` | 3 | **2** | links at 2 args | drops `maxtokens` entirely and always takes the `$err` arm (until 127.241 it returned the literal string `"[mlx: not available]"` through `$ok`) |
 | `mlx.unload` [quarantined](/docs/reference/tki-quarantine/) | 1 | — | **no** | `E9003`, undefined symbol `_tk_mlx_unload_w` |
-| `mlx.embed` [quarantined](/docs/reference/tki-quarantine/) | 2 | — | **no** | `E9003`, undefined symbol `_tk_mlx_embed_w` |
+| `mlx.embed` | 2 | 2 | links | always takes the `$err` arm with an `mlxerr` saying MLX is not available (127.241 added the wrapper; before it the call failed to link) |
 
 A program that calls `mlx.generate(h; prompt; 256)` as this page used to document it is rejected before it reaches the linker:
 
@@ -80,7 +80,7 @@ Intended to be `true` only when both hold:
 
 #### mlx.load(modelpath: str): mlxmodel!mlxerr
 
-POSTs `{"model_path": "..."}` to `/load` and returns a handle. `mlx_load` in the core does this; the glue returns 0.
+POSTs `{"model_path": "..."}` to `/load` and returns a handle. `mlx_load` in the core does this; the glue does not call it, and every call takes the `$err` arm with an `mlxerr` whose `msg` says so.
 
 #### mlx.unload(m: mlxmodel): bool
 
@@ -94,9 +94,7 @@ POSTs `{"id": ..., "prompt": ..., "max_tokens": N}` to `/generate`. `mlx_generat
 
 #### mlx.embed(m: mlxmodel; text: str): @(f32)!mlxerr
 
-> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
-
-POSTs `{"id": ..., "text": ...}` to `/embed`. `mlx_embed` exists in the core, complete with the JSON float-array parser. **No wrapper exists**, so a call fails at link.
+POSTs `{"id": ..., "text": ...}` to `/embed`. `mlx_embed` exists in the core, complete with the JSON float-array parser. The wrapper (127.241) is a stub like the rest: it does not call the core, and every call takes the `$err` arm.
 
 ### Bridge protocol
 

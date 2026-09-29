@@ -7,6 +7,7 @@
 
 #include "process.h"
 #include "capabilities.h"   /* 124.4c: process.spawn capability gate */
+#include "tk_runtime.h"     /* 127.241: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -53,25 +54,48 @@ static int64_t spawn_cmdstr(const char *cmdstr) {
     return (int64_t)(intptr_t)r.ok;
 }
 
+/* 127.241: the error slot (runtime-abi.md §7.2).  process.spawn, stdout and
+ * stderr are `T!ProcessErr` and returned a bare 0 on failure, so the $err arm
+ * bound nil.  A failure now stores a {tag, msg} box of ProcessErr's sum
+ * layout — tag = ProcessErrKind - 1 ($notfound 0, $permission 1, $io 2;
+ * process.h) — and a success clears the slot.  process.c's messages are all
+ * string literals, so the box never dangles. */
+static int64_t proc_raise(ProcessErrKind kind, const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    switch (kind) {
+        case PROCESS_ERR_NOT_FOUND:  box[0] = 0; break;
+        case PROCESS_ERR_PERMISSION: box[0] = 1; break;
+        default:                     box[0] = 2; break;   /* $io */
+    }
+    box[1] = (int64_t)(intptr_t)(msg && *msg ? msg : "process: I/O error");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static int64_t proc_ok(int64_t v) {
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return v;
+}
+
 /* process.spawn(cmd:[str]) — honours the .tki [str] argv contract: the toke
  * array pointer has block[-1] == element count and block[i] == char* (as i64),
  * matching the runtime array layout (cf. tk_str_split_w in str_glue.c).
  * We decode it into a real NULL-terminated argv[] and execvp directly. */
 int64_t tk_process_spawn_w(int64_t cmd) {
     TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
-    if (!cmd) return 0;
+    if (!cmd) return proc_raise(PROCESS_ERR_IO, "process.spawn: null command array");
     const int64_t *block = (const int64_t *)(intptr_t)cmd;
     int64_t n = block[-1];
-    if (n <= 0) return 0;
+    if (n <= 0) return proc_raise(PROCESS_ERR_IO, "process.spawn: empty command");
     const char **argv = (const char **)malloc((size_t)(n + 1) * sizeof(char *));
-    if (!argv) return 0;
+    if (!argv) return proc_raise(PROCESS_ERR_IO, "process.spawn: allocation failed");
     for (int64_t i = 0; i < n; i++)
         argv[i] = (const char *)(intptr_t)block[i];
     argv[n] = NULL;
     SpawnResult r = process_spawn(argv);
     free(argv);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return proc_raise(r.err_kind, r.err_msg);
+    return proc_ok((int64_t)(intptr_t)r.ok);
 }
 int64_t tk_process_isalive_w(int64_t pid) {
     ProcessHandle *h = (ProcessHandle *)(intptr_t)pid;
@@ -84,17 +108,17 @@ int64_t tk_process_exit_w(int64_t code) {
 }
 int64_t tk_process_stdout_w(int64_t p) {
     ProcessHandle *h = (ProcessHandle *)(intptr_t)p;
-    if (!h) return 0;
+    if (!h) return proc_raise(PROCESS_ERR_IO, "process.stdout: null handle");
     StdoutResult r = process_stdout(h);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return proc_raise(r.err_kind, r.err_msg);
+    return proc_ok((int64_t)(intptr_t)r.ok);
 }
 int64_t tk_process_stderr_w(int64_t p) {
     ProcessHandle *h = (ProcessHandle *)(intptr_t)p;
-    if (!h) return 0;
+    if (!h) return proc_raise(PROCESS_ERR_IO, "process.stderr: null handle");
     StrProcessResult r = process_stderr(h);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return proc_raise(r.err_kind, r.err_msg);
+    return proc_ok((int64_t)(intptr_t)r.ok);
 }
 int64_t tk_process_kill_w(int64_t p) {
     ProcessHandle *h = (ProcessHandle *)(intptr_t)p;

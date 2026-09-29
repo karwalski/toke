@@ -16,7 +16,11 @@
 # WHAT THIS GATE CHECKS, statically, over stdlib/*.tki and src/stdlib/*.c:
 #   a wrapper FILLS THE SLOT when its body — or a function it calls, to any
 #   depth — assigns tk_current_error a non-zero value (a raise) AND assigns
-#   it 0 (the ok-path clear); `x ? 1 : 0` counts as both.  Then:
+#   it 0 (the ok-path clear); `x ? 1 : 0` counts as both.  A wrapper that
+#   has no ok path at all — a stub that always fails, like std.infer's and
+#   std.mlx's (127.241) — fills it too when EVERY `return` in its body
+#   returns the result of a raising function: there is no success to clear
+#   for.  Then:
 #     1. every `T!E` export that does not fill the slot is on the list
 #        (a new bare glue fails here: fix the glue or list it, dated);
 #     2. every list entry is a `T!E` export that does NOT fill the slot
@@ -29,9 +33,11 @@
 #
 # Negative controls (each shown red, then restored): deleting one list entry
 # (tk_csv_parse_w) -> check 1 red naming it; adding a filling wrapper
-# (tk_toml_str_w) -> check 2 red naming it.
+# (tk_toml_str_w) -> check 2 red naming it.  127.241: an always-raising stub
+# given one bare `return 0` path (tk_infer_embed_w) -> check 1 red naming
+# it; without the always-raise rule the seven infer/mlx stubs were red.
 #
-# Story: 127.238
+# Story: 127.238, 127.241
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,6 +76,16 @@ def closure(seed):
 raises = closure({n for n, b in bodies.items() if kinds(b)[0]})
 clears = closure({n for n, b in bodies.items() if kinds(b)[1]})
 fills = raises & clears
+# 127.241: an always-failing wrapper — every return is `return <raiser>(…)`.
+RET = re.compile(r'\breturn\b\s*([^;]*);')
+def always_raises(b):
+    rets = RET.findall(b)
+    if not rets: return False
+    for r in rets:
+        m = re.match(r'(\w+)\s*\(', r.strip())
+        if not m or m.group(1) not in raises: return False
+    return True
+fills |= {n for n, b in bodies.items() if n in raises and always_raises(b)}
 
 te = {}
 for t in sorted(glob.glob(os.path.join(root, 'stdlib', '*.tki'))):

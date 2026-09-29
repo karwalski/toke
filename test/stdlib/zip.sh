@@ -131,24 +131,24 @@ expect "read-binary"    "$(line "$OUT" read-nested/deep.bin)" "${deep_size}|${de
 # An empty entry is empty bytes, NOT an error — the two must stay distinct.
 expect "read-empty"     "$(line "$OUT" read-empty.txt)" "0|"
 # And the two ways of having no content to return must both be errors.
-expect "read-absent"    "$(line "$OUT" read-absent.txt)" "ERR|zip: no such entry"
-expect "read-dir"       "$(line "$OUT" read-nested/)"    "ERR|zip: entry is a directory"
+expect "read-absent"    "$(line "$OUT" read-absent.txt)" "ERR|notfound|zip: no such entry"
+expect "read-dir"       "$(line "$OUT" read-nested/)"    "ERR|badentry|zip: entry is a directory"
 
 # ── 3. Each security rule, rejected by name ──────────────────────────────
 expect "reject-traversal" "$(line "$OUT" reject-traversal)" \
-       "zip: path traversal in entry name"
+       "badentry|zip: path traversal in entry name"
 expect "reject-absolute"  "$(line "$OUT" reject-absolute)" \
-       "zip: absolute path in entry name"
+       "badentry|zip: absolute path in entry name"
 expect "reject-backslash" "$(line "$OUT" reject-backslash)" \
-       "zip: backslash in entry name"
+       "badentry|zip: backslash in entry name"
 expect "reject-sizecap"   "$(line "$OUT" reject-size)" \
-       "zip: uncompressed size cap exceeded"
+       "toolarge|zip: uncompressed size cap exceeded"
 expect "reject-ratiocap"  "$(line "$OUT" reject-ratio)" \
-       "zip: compression ratio cap exceeded"
+       "toolarge|zip: compression ratio cap exceeded"
 expect "reject-countcap"  "$(line "$OUT" reject-count)" \
-       "zip: entry count cap exceeded"
+       "toolarge|zip: entry count cap exceeded"
 expect "reject-notazip"   "$(line "$OUT" reject-notzip)" \
-       "zip: not a zip archive, or its central directory is corrupt"
+       "badarchive|zip: not a zip archive, or its central directory is corrupt"
 
 echo "------------------------------------------"
 echo "Results: ${pass} passed, ${fail} failed"
