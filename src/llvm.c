@@ -7594,10 +7594,21 @@ static int emit_expr(Ctx *c, const Node *n)
             char t0[128] = "";
             if (n->children[1] && n->children[1]->child_count >= 1)
                 tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
-            if (scr_sum)
+            /* 127.242 (3): scr_sum is the scrutinee's backend TAG, which is
+             * not always a sum: "$str" for a string, "@..." for an array, a
+             * record's name.  "not a variant of sum type '$str'" named a
+             * string a sum type.  Say "sum type" only of a sum. */
+            const StructInfo *msi = scr_sum ? lookup_struct(c, scr_sum) : NULL;
+            if (!msi && scr_sum && scr_sum[0] == '$') msi = lookup_struct(c, scr_sum + 1);
+            if (scr_sum && msi && msi->is_sum)
                 snprintf(mmsg, sizeof mmsg,
                     "match has %d arms, but '$%s' is not a variant of sum type '%s'",
                     num_arms, t0, scr_sum);
+            else if (scr_sum)
+                snprintf(mmsg, sizeof mmsg,
+                    "match has %d arms, but the matched value is a '%s', not a sum type, "
+                    "so '$%s' names no variant of it",
+                    num_arms, scr_sum[0] == '$' ? scr_sum + 1 : scr_sum, t0);
             else
                 snprintf(mmsg, sizeof mmsg,
                     "match has %d arms, but the sum type of the matched value is not established",
