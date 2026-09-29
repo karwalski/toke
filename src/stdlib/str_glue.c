@@ -554,9 +554,7 @@ static void tk_re_compile_or_trap(const char *fn, const char *pat, TkRe *re) {
     if (tkre_compile(re, pat, &e) != 0) tk_re_trap_invalid(fn, pat, &e);
 }
 
-static int64_t tk_re_find1(const char *fn, int64_t s, int64_t pattern, int full) {
-    const char *str = (const char *)(intptr_t)s;
-    const char *pat = (const char *)(intptr_t)pattern;
+static int64_t tk_re_find1(const char *fn, const char *str, const char *pat, int full) {
     if (!str || !pat) return 0;
     TkRe re;
     tk_re_compile_or_trap(fn, pat, &re);
@@ -605,7 +603,9 @@ static int tk_re_next(const char *fn, TkReIter *it, const char *pat) {
 
 /* str.containsre — 1 if the pattern matches anywhere in s (tk_regex.h). */
 int64_t tk_str_containsre_w(int64_t s, int64_t pattern) {
-    return tk_re_find1("containsre", s, pattern, 0);
+    const char *str = (const char *)(intptr_t)s;
+    const char *pat = (const char *)(intptr_t)pattern;
+    return tk_re_find1("containsre", str, pat, 0);
 }
 
 /* str.i64tof64 — integer to float conversion */
@@ -800,7 +800,9 @@ int64_t tk_str_findall_w(int64_t s, int64_t pattern) {
  * pattern into "^(" ... ")$" -- that rewrite let an unbalanced pattern such as
  * `a)(b` compile as `^(a)(b)$` and hid the user's pattern from the error. */
 int64_t tk_str_matches_w(int64_t s, int64_t pattern) {
-    return tk_re_find1("matches", s, pattern, 1);
+    const char *str = (const char *)(intptr_t)s;
+    const char *pat = (const char *)(intptr_t)pattern;
+    return tk_re_find1("matches", str, pat, 1);
 }
 
 /* str.replacere(s, pattern, replacement) — replace every non-overlapping
