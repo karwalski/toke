@@ -56,12 +56,15 @@ f=main():i64{<pick(0)};')" "1 0 match has 3 arms, but the sum type of the matche
 
 # 2. The other message form: a type resolved, but the first arm names none
 #    of its variants (a std call's `$str` result, first arm `$ok`, so the
-#    string chain declines — see C370).
+#    string chain declines — see C370).  127.242 (3): a str is not a sum
+#    type, and the message no longer calls it one ("... is not a variant of
+#    sum type '$str'" until then).
 expect "2-not-a-variant" "$(e9005 'm=main;i=str:std.str;
 f=pick(s:$str):i64{
   <mt str.lower(s) {$ok:w 1;$x:w 2;$y:w 3}
 };
-f=main():i64{<pick("x")};')" "1 0 match has 3 arms, but '\$ok' is not a variant of sum type '\$str'"
+f=main():i64{<pick("x")};')" "1 0 match has 3 arms, but the matched value is a 'str', not a sum type, so '\$ok' names no variant of it"
+
 
 echo "C373: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

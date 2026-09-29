@@ -1788,6 +1788,21 @@ static int is_fn_body(Ctx *cx, const Node *sl) {
  * What is left — arithmetic, a literal, a binding, a field or index read,
  * a cast, a composite literal — computes a value and does nothing with it,
  * which has exactly one meaning. */
+/* 127.248 (2): 1 when a `<` comparison sits anywhere in this operator
+ * tree.  `<` is also toke's return operator, so `io.println("x")` then
+ * `<0` on the next line with the `;` forgotten parses as the comparison
+ * `io.println("x") < 0` — 137.14's tail trap.  The repair there is the
+ * `;`, and prefixing a `<` would return the comparison instead.  Two
+ * readings, so no `fix`. */
+static int expr_has_lt(const Node *e) {
+    if (!e) return 0;
+    if (e->kind != NODE_BINARY_EXPR && e->kind != NODE_UNARY_EXPR) return 0;
+    if (e->kind == NODE_BINARY_EXPR && e->op == TK_LT) return 1;
+    for (int i = 0; i < e->child_count; i++)
+        if (expr_has_lt(e->children[i])) return 1;
+    return 0;
+}
+
 static int tail_fix_is_certain(const Node *expr) {
     if (!expr) return 0;
     switch (expr->kind) {
@@ -2044,7 +2059,7 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
     const char *got = known ? type_name(tail_ty)
                     : (prop && tail_ty && tail_ty->kind==TY_VOID) ? "void"   /* 127.188 */
                     : "unknown";
-    if (expr && tail_fix_is_certain(expr))
+    if (expr && tail_fix_is_certain(expr) && !expr_has_lt(expr))   /* 127.248 (2) */
         diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
                   "expected",type_name(cx->fn_ret),"got",got,
                   "fix","prefix the expression with '<' to return it",
@@ -2769,8 +2784,8 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * that diagnostic.  The literal is still inferred exactly once, at its
      * own binding statement.
      *
-     * Only STR_LIT: the rest of the literal group (INT/FLOAT/BOOL, listed
-     * below) is a separate blast radius and stays held out.
+     * Only STR_LIT here: the rest of the literal group (INT/FLOAT/BOOL) is
+     * below, each landed on its own blast radius.
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
@@ -2783,8 +2798,8 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * `x.len`, `x.slice(0;1)`, `x.charat(0)` passed --check and read an i64
      * as a pointer at run time (garbage or SIGBUS), and `let b=3; g(b)` into
      * a str parameter was clean while `g(3)` was E4031.  A negated literal
-     * (`let d=-1`) is the same fact.  BOOL_LIT stays held out; FLOAT_LIT is
-     * below (127.230 item 7).
+     * (`let d=-1`) is the same fact.  FLOAT_LIT and BOOL_LIT are below
+     * (127.230 item 7, 127.248 (1)).
      *
      * Immutable `let` only.  A `let x=mut.0` is routinely re-assigned a
      * value of another type -- an error union (`acc=check(0-2); mt acc
@@ -2800,6 +2815,14 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * Same immutable-only rule. */
     case NODE_FLOAT_LIT:
         return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_F64) : NULL;
+    /* 127.248 (1): the last of the literal group.  `let b=true; b.len()`
+     * passed --check -- 127.229 item 1's scalar-receiver rule never saw a
+     * bool it could judge -- and died in codegen (E9003, `'%t1' defined
+     * with type 'i1' but expected 'i64'`).  A bool PARAMETER and a bound
+     * comparison (`let b=1<2`) were already judged.  Same immutable-only
+     * rule as the int and float literals. */
+    case NODE_BOOL_LIT:
+        return bn->kind == NODE_BIND_STMT ? mk_type(cx->env->arena, TY_BOOL) : NULL;
     case NODE_UNARY_EXPR:
         if (bn->kind == NODE_BIND_STMT && initN->op == TK_MINUS && initN->child_count == 1 && initN->children[0]
             && initN->children[0]->kind == NODE_INT_LIT)
@@ -3079,9 +3102,10 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
  *   * Any USER alias whose interface recorded no function exports at all: a
  *     missing or export-less `.tki` is an absence of knowledge about the
  *     interface.  127.61 narrowed this: it is not an absence of knowledge
- *     about the *runtime*, and six std modules (std.io, std.array,
- *     std.collections, std.fs, std.soap, std.xml) ship no `.tki` at all, so
- *     the branches grounded on the glue table now run for them too.
+ *     about the *runtime*, and the std modules that shipped no `.tki` when
+ *     it landed (std.io, std.array, std.collections, std.soap, std.xml;
+ *     each has a generated one since 137.12) needed the branches grounded
+ *     on the glue table, which now run for any alias without exports.
  *
  * Two exemptions 136.1 recorded here were removed by 127.61, both of them
  * defaults standing in for facts that turned out to be establishable:
@@ -3480,10 +3504,11 @@ static void check_tki_call(Ctx *cx, const Node *call) {
 
     /* An alias with no recorded exports is an absence of knowledge for the
      * INTERFACE, not for the runtime — so it does not disqualify branch 2,
-     * which asks only whether the runtime declares the member. Six std
-     * modules ship no `.tki` at all (std.io, std.array, std.collections,
-     * std.fs, std.soap, std.xml), and gating branch 2 on the interface meant
-     * every member name on all six was unchecked: `io.printline("x")` passed
+     * which asks only whether the runtime declares the member.  When 127.61
+     * landed, std modules shipped with no `.tki` at all (std.io, std.array,
+     * std.collections, std.soap, std.xml -- generated since 137.12), and
+     * gating branch 2 on the interface left every member name on them
+     * unchecked: `io.printline("x")` passed
      * `--check` and failed at link with an undefined `tk_io_printline_w`,
      * which is the 127.62 / 127.77 symptom exactly. */
     int have_iface = imported_alias_has_funcs(cx->env->names, alias);
@@ -6399,6 +6424,32 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     "takes '$err' whenever it is 0",st,st);
                 diag_emit(DIAG_ERROR,E4031,sn->start,sn->line,sn->col,msg,
                           "expected","T!E","got",st,(const char*)NULL);
+            }
+        }
+        /* 127.249 (2): a result match whose VALUE is used must have both
+         * sides.  `let a=mt g() {$ok:v v}` was accepted and the missing
+         * side lowered as the zero value of the result type (138.2's empty
+         * side), so a failure read as 0 or "" -- a silent wrong value.  A
+         * match standing as a statement is left alone: there an `$err` arm
+         * alone runs only on failure and an `$ok` arm alone only on success
+         * (C400 case 7), which is complete.  Any label other than ok counts
+         * as the error side (`$err`, or a variant of a flat error sum).
+         * No `fix`: the arm's body is not decidable here. */
+        if (has_result_arm&&!discarded) {
+            int has_ok=0,has_other=0;
+            for (int ai=0;ai<arm_tag_count;ai++) {
+                if (!strcmp(arm_tags[ai],"ok")||!strcmp(arm_tags[ai],"Ok")) has_ok=1;
+                else has_other=1;
+            }
+            if (has_ok!=has_other&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),
+                    "non-exhaustive match: missing arm for '%s' -- the match's value "
+                    "is used, and without that arm it is the zero value when %s",
+                    has_ok?"$err":"$ok",has_ok?"the call fails":"the call succeeds");
+                diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,msg,
+                    "expected",has_ok?"an '$err' arm":"an '$ok' arm","got","missing",
+                    (const char*)NULL);
             }
         }
         /* Bool exhaustiveness check */
