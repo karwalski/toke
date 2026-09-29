@@ -11,6 +11,23 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!tmplerr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0; every T here is a handle or pointer); every return now goes through
+ * tpl_slot, which on 0 also stores a tmplerr record {msg; …} — the other
+ * fields 0 — and on anything else clears the slot, so the wrapper is a slot
+ * wrapper (llvm.c derives them from the .tki). */
+static int64_t tpl_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
 /*
  * tk_template_render_w — compile the template source string (tpl) and
  * render it with the variable bindings packed in data.
@@ -71,14 +88,16 @@ static const char *template_render_src(const char *source, TkTmplVar *vars,
 
 /* tpl.render($tmpl; $tmplvars) -- 135.30: both are records (TkTmplRec,
  * TkTmplVarsRec); the template is compiled from its src. */
+static const char tk_template_render_fail[] =
+    "tpl.render: the template is missing or could not be compiled";
 int64_t tk_template_render_w(int64_t tpl, int64_t data) {
-    if (!tpl) return 0;
+    if (!tpl) return tpl_slot(0, tk_template_render_fail);
     uint64_t nvar = 0;
     TkTmplVar *vars = unpack_tmplvars(data, &nvar);
     const char *r = template_render_src(((const TkTmplRec *)(intptr_t)tpl)->src,
                                         vars, nvar);
     free(vars);
-    return (int64_t)(intptr_t)r;
+    return tpl_slot((int64_t)(intptr_t)r, tk_template_render_fail);
 }
 
 /* tpl.vars(@($str:$str)) -> $tmplvars, a TkTmplVarsRec holding the map. */
@@ -91,31 +110,38 @@ int64_t tk_template_vars_w(int64_t map) {
 
 /* tpl.renderfile(path; $tmplvars) -> $str!$tmplerr — read+compile+render the
  * file with the bundle. Returns the rendered string, or 0 (err sentinel). */
+static const char tk_template_renderfile_fail[] =
+    "tpl.renderfile: the template file could not be read or rendered";
 int64_t tk_template_renderfile_w(int64_t path, int64_t data) {
-    if (!path) return 0;
+    if (!path) return tpl_slot(0, tk_template_renderfile_fail);
     uint64_t nvar = 0;
     TkTmplVar *vars = unpack_tmplvars(data, &nvar);
     const char *res = tmpl_renderfile((const char *)(intptr_t)path, vars, nvar);
     free(vars);
-    return (int64_t)(intptr_t)res;
+    return tpl_slot((int64_t)(intptr_t)res, tk_template_renderfile_fail);
 }
 
 /* tpl.compile(str) -> $tmpl!$tmplerr -- 135.30: a TkTmplRec {id; src}
  * (0 on error).  The source is compiled here to check it, and again by
  * tpl.render, so a $tmpl literal behaves as a compiled one. */
+static const char tk_template_compile_fail[] =
+    "tpl.compile: the template could not be compiled";
 int64_t tk_template_compile_w(int64_t src) {
     static int64_t next_id = 0;
-    if (!src) return 0;
+    if (!src) return tpl_slot(0, tk_template_compile_fail);
     const char *s = (const char *)(intptr_t)src;
     TkTmpl *t = tmpl_compile(s);
-    if (!t) return 0;
+    if (!t) return tpl_slot(0, tk_template_compile_fail);
     tmpl_free(t);
     TkTmplRec *rec = (TkTmplRec *)malloc(sizeof *rec);
     char *copy = strdup(s);
-    if (!rec || !copy) { free(rec); free(copy); return 0; }
+    if (!rec || !copy) {
+        free(rec); free(copy);
+        return tpl_slot(0, tk_template_compile_fail);
+    }
     rec->id  = ++next_id;
     rec->src = copy;
-    return (int64_t)(intptr_t)rec;
+    return tpl_slot((int64_t)(intptr_t)rec, tk_template_compile_fail);
 }
 
 /* tpl.escape(str) -> str — HTML-escape. */
@@ -154,12 +180,14 @@ int64_t tk_template_load_w(int64_t path) {
 
 /* tpl_ aliases (i64 ABI, not in template.tki): source text and a bare map,
  * as they always took them. */
+static const char tk_tpl_render_fail[] =
+    "tpl.render: the template is missing or could not be compiled";
 int64_t tk_tpl_render_w(int64_t tpl, int64_t data) {
     uint64_t nvar = 0;
     TkTmplVar *vars = unpack_map(data, &nvar);
     const char *r = template_render_src((const char *)(intptr_t)tpl, vars, nvar);
     free(vars);
-    return (int64_t)(intptr_t)r;
+    return tpl_slot((int64_t)(intptr_t)r, tk_tpl_render_fail);
 }
 
 int64_t tk_tpl_load_w(int64_t path) {

@@ -64,6 +64,15 @@ int64_t tk_ws_send_w(int64_t conn, int64_t msg);
 int64_t tk_ws_sendbytes_w(int64_t conn, int64_t data);
 int64_t tk_ws_recv_w(int64_t conn);
 
+/* 127.238: ws_glue.c now fills the error slot (tk_current_error +
+ * tk_err_box, tk_runtime.c), which this standalone build does not link —
+ * stood in for here, as test/stdlib/test_toml_glue.c does.  Thread-local to
+ * match tk_runtime.h's declaration. */
+#include "tk_runtime.h"
+TK_TLS int64_t tk_current_error = 0;
+static int64_t g_errbox[8];
+void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
+
 static int fails = 0, checks = 0;
 #define CHECK(c, m) do { checks++; if (c) printf("  PASS: %s\n", m); \
                          else { printf("  FAIL: %s\n", m); fails++; } } while (0)

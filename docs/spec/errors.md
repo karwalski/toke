@@ -59,9 +59,9 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | W1010 | warning | lex | String interpolation `\(…)` not supported in the legacy profile | D005, D009 |
 | W1011 | warning | lex | Identifier starts with a keyword prefix | n/s |
 | W1020 | warning | lex | Foreign keyword detected | C328 |
-| E2001 | error | parse | Declaration ordering violation | G024 |
+| E2001 | error | parse | Declaration ordering violation | G024, D112 |
 | E2002 | error | parse | Unexpected token | C326, C327, C335, D107, D108 |
-| E2003 | error | parse | Missing semicolon | -- |
+| E2003 | error | parse | Missing semicolon | D111, D113 |
 | E2004 | error | parse | Unclosed delimiter | C350, D109 |
 | E2005 | error | parse | Unexpected token in type position | C350, D110 |
 | E2010 | error | parse | Pointer type outside extern function | D013 |
@@ -336,8 +336,8 @@ f=interp():$str{<"hello \(name)"};
 | **Stage** | parse |
 | **Severity** | error |
 | **Message** | `declaration ordering violation` or `module declaration must appear first` |
-| **Fix field** | absent |
-| **Conformance test** | G024 |
+| **Fix field** | absent (127.240: the compiler emitted "reorder declarations: m= first, then i=, t=, f=", which named no declaration or target and omitted constants and `let` globals; D112 pins the absence) |
+| **Conformance test** | G024, D112 |
 
 **Notes:** A toke source file must follow the declaration order:
 `m` (module) then `i` (import) then `t` (type) then constants then `f` (function).
@@ -393,8 +393,8 @@ f=bad():i64{<1 @};
 | **Stage** | parse |
 | **Severity** | error |
 | **Message** | `missing semicolon` |
-| **Fix field** | absent |
-| **Conformance test** | -- |
+| **Fix field** | absent (127.240: the compiler emitted "insert ';' after expression", which is advice -- `let x=1 y` with ';' inserted is E3011; D111, D113 pin the absence; `got` and `expected` carry the facts) |
+| **Conformance test** | D111, D113 |
 
 **Notes:** A semicolon was expected between statements. Semicolons may be elided
 before `}` or `EOF` (trailing-semicolon elision), but are required between
@@ -1121,4 +1121,7 @@ zero.
 | D014 | D | E2035 | Malformed version string in import |
 | D015 | D | E4043 | Inconsistent map literal types |
 | D101 | D | E1007 | Fix field absent for unterminated comment |
+| D111 | D | E2003 | Fix field absent for missing semicolon |
+| D112 | D | E2001 | Fix field absent for declaration ordering violation |
+| D113 | D | E2003 | Fix field absent after a module declaration |
 | G024 | G | E2001 | Missing module declaration |

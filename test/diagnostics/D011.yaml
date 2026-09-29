@@ -7,5 +7,5 @@ input: |
 expected_exit_code: 1
 expected_error_codes: ["E1001"]
 expected_diag_field:
-  field: "code"
+  field: "error_code"
   value: "E1001"

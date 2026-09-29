@@ -188,8 +188,8 @@ static void eerr(Parser *p, int code, Token *t, const char *msg) {
     /* 127.235: no fix for E2004.  "add the missing closing delimiter" is
      * advice, not a deterministic fix (AGENTS §6): the parser knows a
      * delimiter is missing, not where it belongs.  D109. */
-    if (code == E2003) fix = "insert ';' after expression";
-    else if (code == E2001) fix = "reorder declarations: m= first, then i=, t=, f=";
+    /* 127.240: nor for E2003 or E2001 (neither reaches eerr; see opt_semi
+     * and the declaration-order check in parse()). */
     p->errs++;
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, msg,
                    "fix", fix, NULL);
@@ -288,8 +288,12 @@ static void opt_semi(Parser *p) {
     char tok_text[64];
     tok_text_extract(p, t, tok_text, (int)sizeof(tok_text));
     p->errs++;
+    /* 127.240: no fix.  "insert ';' after expression" is advice (AGENTS §6):
+     * the parser knows the statement did not end, not why.  `let x=1 y`
+     * with ';' inserted is `let x=1;y`, which is E3011 -- the author meant
+     * an operator, or nothing.  And after `m=test` there is no expression.
+     * `got` and `expected` stay: they are facts.  D111. */
     diag_emit_span(DIAG_ERROR, E2003, t->start, t->line, t->col, t->len, "missing semicolon",
-                   "fix", "insert ';' after expression",
                    "got", tok_text,
                    "expected", ";", NULL);
 }
@@ -2017,7 +2021,10 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
              * E2002 until MAX_PARSE_ERRORS.  Step over it. */
             int at=p.pos; sync(&p); if(p.pos==at&&peek(&p)!=TK_EOF) adv(&p);
             if(p.errs>=MAX_PARSE_ERRORS)break;continue;}
-        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix","reorder declarations: m= first, then i=, t=, f=",NULL);p.errs++;}
+        /* 127.240: no fix.  "reorder declarations: m= first, then i=, t=, f="
+         * names neither the declaration to move nor where to, and leaves out
+         * constants and `let` globals, which the order also covers.  D112. */
+        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation",NULL);p.errs++;}
         else if(cp>phase) phase=cp;
         Node *d;
         if(cp==1){

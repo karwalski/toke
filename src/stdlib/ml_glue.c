@@ -13,6 +13,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!mlerr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0; every T here is a handle or pointer); every return now goes through
+ * ml_slot, which on 0 also stores a mlerr record {msg; …} — the other
+ * fields 0 — and on anything else clears the slot, so the wrapper is a slot
+ * wrapper (llvm.c derives them from the .tki). */
+static int64_t ml_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(1 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static const char tk_ml_linregfit_fail[] =
+    "ml.linregfit: the rows or targets are missing, empty or could not be fitted";
 /*
  * ml.linregfit(rows:[row]; targets:[f64]) : $linearmodel!$mlerr and
  * ml.linregpredict(model; features:[f64]) : f64 -- 135.30.
@@ -30,13 +49,13 @@ static F64Array *ml_cols_from_rows(int64_t rows, uint64_t *ncols_out,
 static void ml_cols_free(F64Array *cols, uint64_t ncols);
 
 int64_t tk_ml_linregfit_w(int64_t rows, int64_t targets) {
-    if (!rows || !targets) return 0;
-    if (((int64_t *)(intptr_t)rows)[-1] <= 0) return 0;   /* no samples */
+    if (!rows || !targets) return ml_slot(0, tk_ml_linregfit_fail);
+    if (((int64_t *)(intptr_t)rows)[-1] <= 0) return ml_slot(0, tk_ml_linregfit_fail);   /* no samples */
     uint64_t ncols = 0, nrows = 0;
     F64Array *cols = ml_cols_from_rows(rows, &ncols, &nrows);
-    if (!cols) return 0;
+    if (!cols) return ml_slot(0, tk_ml_linregfit_fail);
     int64_t *tptr = (int64_t *)(intptr_t)targets;
-    if (tptr[-1] < (int64_t)nrows) { ml_cols_free(cols, ncols); return 0; }
+    if (tptr[-1] < (int64_t)nrows) { ml_cols_free(cols, ncols); return ml_slot(0, tk_ml_linregfit_fail); }
     int64_t coef = tk_arr_alloc((int64_t)ncols, (int64_t)ncols);
     TkLinearModelRec *m = (TkLinearModelRec *)malloc(sizeof *m);
     double intercept = 0.0;
@@ -46,12 +65,12 @@ int64_t tk_ml_linregfit_w(int64_t rows, int64_t targets) {
         ml_cols_free(cols, ncols);
         free(m);
         if (coef) free((int64_t *)(intptr_t)coef - TK_ARR_HDR);
-        return 0;
+        return ml_slot(0, tk_ml_linregfit_fail);
     }
     ml_cols_free(cols, ncols);
     m->coef      = coef;
     m->intercept = intercept;
-    return (int64_t)(intptr_t)m;
+    return ml_slot((int64_t)(intptr_t)m, tk_ml_linregfit_fail);
 }
 
 int64_t tk_ml_linregpredict_w(int64_t model, int64_t input) {
@@ -216,20 +235,22 @@ static int64_t ml_decode_label(const MlVocab *v, double code) {
  * pointer behind it, so the fields the page describes really are readable and
  * ml.kmeansassign can be handed a model the caller built itself.
  */
+static const char tk_ml_kmeanstrain_fail[] =
+    "ml.kmeanstrain: no model could be trained from these rows";
 int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
     uint64_t ncols = 0, nrows = 0;
     F64Array *cols = ml_cols_from_rows(rows, &ncols, &nrows);
-    if (!cols) return 0;
+    if (!cols) return ml_slot(0, tk_ml_kmeanstrain_fail);
     if (k <= 0) k = 1;
     if (maxiter <= 0) maxiter = 100;
 
     KMeansModel m = ml_kmeanstrain(cols, ncols, nrows,
                                    (uint64_t)k, (uint64_t)maxiter);
     ml_cols_free(cols, ncols);
-    if (!m.centroids || m.k == 0) return 0;
+    if (!m.centroids || m.k == 0) return ml_slot(0, tk_ml_kmeanstrain_fail);
 
     int64_t arr = tk_arr_alloc((int64_t)m.k, (int64_t)m.k);
-    if (!arr) { ml_kmeans_free(&m); return 0; }
+    if (!arr) { ml_kmeans_free(&m); return ml_slot(0, tk_ml_kmeanstrain_fail); }
     int64_t *slots = (int64_t *)(intptr_t)arr;
     for (uint64_t c = 0; c < m.k; c++) {
         int64_t center = tk_arr_alloc((int64_t)m.ndim, (int64_t)m.ndim);
@@ -258,11 +279,11 @@ int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
             free(cent);
         }
         free((int64_t *)(intptr_t)arr - TK_ARR_HDR);
-        return 0;
+        return ml_slot(0, tk_ml_kmeanstrain_fail);
     }
     model->centroids = arr;
     model->k         = tk_arr_len(arr);
-    return (int64_t)(intptr_t)model;
+    return ml_slot((int64_t)(intptr_t)model, tk_ml_kmeanstrain_fail);
 }
 
 /* ml.kmeansassign(model; point) : u64 — index of the nearest centroid (L2).
@@ -308,31 +329,33 @@ int64_t tk_ml_kmeansassign_w(int64_t model, int64_t point) {
 typedef struct { DTreeModel tree; MlVocab vocab; } MlDTree;
 
 /* ml.dtreefit(rows; labels; maxdepth) : $dtreemodel!$mlerr */
+static const char tk_ml_dtreefit_fail[] =
+    "ml.dtreefit: no model could be trained from these rows and labels";
 int64_t tk_ml_dtreefit_w(int64_t rows, int64_t labels, int64_t maxdepth) {
     uint64_t ncols = 0, nrows = 0;
     F64Array *cols = ml_cols_from_rows(rows, &ncols, &nrows);
-    if (!cols) return 0;
+    if (!cols) return ml_slot(0, tk_ml_dtreefit_fail);
     MlVocab vocab = { NULL, 0 };
     double *codes = ml_encode_labels(labels, &vocab);
     if (!codes || tk_arr_len(labels) < (int64_t)nrows) {
         ml_cols_free(cols, ncols); free(codes); free((void *)vocab.names);
-        return 0;
+        return ml_slot(0, tk_ml_dtreefit_fail);
     }
     if (maxdepth <= 0) maxdepth = 1;
 
     MlDTree *h = (MlDTree *)malloc(sizeof(MlDTree));
-    if (!h) { ml_cols_free(cols, ncols); free(codes); free((void *)vocab.names); return 0; }
+    if (!h) { ml_cols_free(cols, ncols); free(codes); free((void *)vocab.names); return ml_slot(0, tk_ml_dtreefit_fail); }
     h->tree  = ml_dtreefit(cols, ncols, codes, nrows, (uint64_t)maxdepth);
     h->vocab = vocab;
     ml_cols_free(cols, ncols);
     free(codes);
 
     TkDTreeModelRec *model = (TkDTreeModelRec *)malloc(sizeof *model);
-    if (!model) { free(h); return 0; }
+    if (!model) { free(h); return ml_slot(0, tk_ml_dtreefit_fail); }
     model->nodes    = (int64_t)h->tree.nnodes;
     model->maxdepth = maxdepth;
     model->arena    = (int64_t)(intptr_t)h;
-    return (int64_t)(intptr_t)model;
+    return ml_slot((int64_t)(intptr_t)model, tk_ml_dtreefit_fail);
 }
 
 /* ml.dtreepredict(model; point) : $str — the caller's own label string.

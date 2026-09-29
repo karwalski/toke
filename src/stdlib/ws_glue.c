@@ -18,25 +18,44 @@ typedef struct { TkWsConnRec *rec; WsConn *conn; } WsIssued;
 static WsIssued *g_ws_issued = NULL;
 static int64_t   g_ws_nissued = 0, g_ws_capissued = 0;
 
+#include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+
+/* 127.238: the error slot (runtime-abi.md §7.2).  These `T!wserr` wrappers
+ * returned a bare 0 on failure, so only the value sentinel saw it and the
+ * $err arm bound nil (`e.msg` was RT005).  The failure value is unchanged
+ * (0; every T here is a handle or pointer); every return now goes through
+ * ws_slot, which on 0 also stores a wserr record {msg; …} — the other
+ * fields 0 — and on anything else clears the slot, so the wrapper is a slot
+ * wrapper (llvm.c derives them from the .tki). */
+static int64_t ws_slot(int64_t v, const char *msg) {
+    if (v) { tk_current_error = 0; return v; }
+    int64_t *box = (int64_t *)tk_err_box(1 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)msg;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+static const char tk_ws_connect_fail[] =
+    "ws.connect: the connection could not be opened";
 int64_t tk_ws_connect_w(int64_t url) {
     TK_REQUIRE(TK_CAP_NET);
-    if (!url) return 0;
+    if (!url) return ws_slot(0, tk_ws_connect_fail);
     WsConnResult r = ws_connect((const char *)(intptr_t)url);
-    if (r.is_err || !r.conn) return 0;
+    if (r.is_err || !r.conn) return ws_slot(0, tk_ws_connect_fail);
     if (g_ws_nissued == g_ws_capissued) {
         int64_t nc = g_ws_capissued ? 2 * g_ws_capissued : 8;
         WsIssued *n = (WsIssued *)realloc(g_ws_issued, (size_t)nc * sizeof *n);
-        if (!n) { ws_close(r.conn); ws_conn_free(r.conn); return 0; }
+        if (!n) { ws_close(r.conn); ws_conn_free(r.conn); return ws_slot(0, tk_ws_connect_fail); }
         g_ws_issued = n; g_ws_capissued = nc;
     }
     TkWsConnRec *rec = (TkWsConnRec *)malloc(sizeof *rec);
-    if (!rec) { ws_close(r.conn); ws_conn_free(r.conn); return 0; }
+    if (!rec) { ws_close(r.conn); ws_conn_free(r.conn); return ws_slot(0, tk_ws_connect_fail); }
     rec->id    = g_ws_nissued + 1;
     rec->ready = 1;
     g_ws_issued[g_ws_nissued].rec  = rec;
     g_ws_issued[g_ws_nissued].conn = r.conn;
     g_ws_nissued++;
-    return (int64_t)(intptr_t)rec;
+    return ws_slot((int64_t)(intptr_t)rec, tk_ws_connect_fail);
 }
 
 /*
@@ -120,18 +139,20 @@ int64_t tk_ws_sendbytes_w(int64_t conn, int64_t data) {
  *
  * Slot order is stdlib/ws.tki's field order: payload, fin, opcode.
  */
+static const char tk_ws_recv_fail[] =
+    "ws.recv: no message (the connection is closed, or the frame could not be read)";
 int64_t tk_ws_recv_w(int64_t conn) {
     WsConn *c = ws_handle(conn);
-    if (!c) return 0;
+    if (!c) return ws_slot(0, tk_ws_recv_fail);
     WsRecvResult r = ws_recv(c);
-    if (r.is_err || !r.frame) return 0;
+    if (r.is_err || !r.frame) return ws_slot(0, tk_ws_recv_fail);
 
     /* Binary-safe: a [byte] is an i64 array, so an embedded NUL is data.
      * A zero-length payload still yields a real, empty array handle — it is
      * an empty message, not an error. */
     int64_t payload = tk_bytes_pack(r.frame->payload,
                                     r.frame->payload ? r.frame->payload_len : 0);
-    if (!payload) { ws_frame_free(r.frame); return 0; }
+    if (!payload) { ws_frame_free(r.frame); return ws_slot(0, tk_ws_recv_fail); }
 
     TkWsMsgRec *msg = (TkWsMsgRec *)malloc(sizeof *msg);
     if (!msg) {
@@ -139,14 +160,14 @@ int64_t tk_ws_recv_w(int64_t conn) {
          * leaving it behind on the OOM path. */
         free((int64_t *)(intptr_t)payload - TK_ARR_HDR);
         ws_frame_free(r.frame);
-        return 0;
+        return ws_slot(0, tk_ws_recv_fail);
     }
     msg->payload = payload;
     msg->fin     = r.frame->is_final ? 1 : 0;
     msg->opcode  = (int64_t)r.frame->opcode;
 
     ws_frame_free(r.frame);
-    return (int64_t)(intptr_t)msg;
+    return ws_slot((int64_t)(intptr_t)msg, tk_ws_recv_fail);
 }
 
 int64_t tk_ws_close_w(int64_t conn) {
