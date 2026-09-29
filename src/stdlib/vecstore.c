@@ -393,6 +393,17 @@ int vecstore_flush(TkVecStore *vs)
     return ok;
 }
 
+int vecstore_dirty(TkVecStore *vs)
+{
+    if (!vs) return 0;
+    int d = 0;
+    pthread_mutex_lock(&vs->mutex);
+    for (int32_t i = 0; i < vs->ncol && !d; i++)
+        if (vs->collections[i] && vs->collections[i]->dirty) d = 1;
+    pthread_mutex_unlock(&vs->mutex);
+    return d;
+}
+
 void vecstore_close(TkVecStore *vs)
 {
     if (!vs) return;

@@ -140,4 +140,3 @@ ungated | tk_template_load_w | template_glue.c:tk_template_load_w | fopen | 2026
 ungated | tk_crypto_sha256file_w | crypto.c:crypto_sha256file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_crypto_sha256verify_w | crypto.c:crypto_sha256file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
 ungated | tk_vecstore_collection_w | vecstore.c:collection_load | fopen | 2026-09-29 | 121.22 | loads a collection file; needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_vecstore_close_w | vecstore.c:collection_save | fopen | 2026-09-29 | 121.22 | saves a collection file; needs TK_REQUIRE(TK_CAP_FS_WRITE)

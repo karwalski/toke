@@ -132,7 +132,10 @@ killed, or exits without closing loses every change made since its last
 a call you can see in your own source, never at a moment you cannot predict.
 
 So: call `vecstore.flush` at each point where the writes so far must survive a
-crash, and call `vecstore.close` before the process ends.
+crash, and call `vecstore.close` before the process ends.  Both write under the
+`fs.write` capability (`--allow-write`): `flush` always takes it, and `close`
+takes it only when there are unsaved changes, so a read-only consumer closes
+without the grant.
 `test/conform/C435_vecstore_flush_durable.sh` kills a writer with `SIGKILL`
 after a flush and reads the store back in a new process: the flushed entry is
 there, and the entries written after the flush — or to a store never flushed —

@@ -6,6 +6,7 @@
  */
 
 #include "vecstore.h"
+#include "capabilities.h"   /* 136.15 x 121.22: flush/close take fs.write */
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
@@ -68,6 +69,9 @@ int64_t tk_vecstore_upsert_w(int64_t coll, int64_t id, int64_t embedding, int64_
  * collection handle derived from it are dangling, exactly as documented. */
 int64_t tk_vecstore_close_w(int64_t store) {
     if (!store) return 0;
+    /* 121.22: close writes only when something is dirty, so only then does it
+     * take fs.write -- a read-only consumer closes without the grant. */
+    if (vecstore_dirty((TkVecStore *)(intptr_t)store)) TK_REQUIRE(TK_CAP_FS_WRITE);
     vecstore_close((TkVecStore *)(intptr_t)store);
     return 0;
 }
@@ -78,6 +82,7 @@ int64_t tk_vecstore_close_w(int64_t store) {
  * safe.  Returns true only when every dirty collection reached disk. */
 int64_t tk_vecstore_flush_w(int64_t store) {
     if (!store) return 0;
+    TK_REQUIRE(TK_CAP_FS_WRITE);   /* writing is the call's whole purpose */
     return (int64_t)vecstore_flush((TkVecStore *)(intptr_t)store);
 }
 

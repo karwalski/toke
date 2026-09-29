@@ -90,6 +90,10 @@ void vecstore_close(TkVecStore *vs);
  * a process that dies loses that write. */
 int vecstore_flush(TkVecStore *vs);
 
+/* 1 if any collection of vs has changes not yet on disk, else 0 -- i.e.
+ * whether vecstore_flush / vecstore_close would write. */
+int vecstore_dirty(TkVecStore *vs);
+
 /* -------------------------------------------------------------------------
  * Collection operations
  * ------------------------------------------------------------------------- */

@@ -23,6 +23,7 @@
 #   4. flush returns FALSE when the write cannot happen (a directory squats on
 #      the temporary path), and the previous complete file is left intact.
 #   5. flush on a store with nothing dirty returns true.
+#   6. flush without the fs.write grant is CAP001 (capability gate, 121.22).
 #
 # Negative control: C435_STDLIB=<a stdlib whose tk_vecstore_flush_w returns 1
 # without writing> -- assertion 2 fails (A reads back 0 entries).  On main
@@ -159,16 +160,24 @@ else ok "no .vecs.tmp left behind"; fi
 # 4. a failed write is reported, and the previous complete file survives it.
 before="$(cksum < A/docs.vecs)"
 mkdir A/docs.vecs.tmp
-out="$(VFPHASE=fail ./vf 2>&1)"; rc=$?
+out="$(VFPHASE=fail ./vf --allow-write 2>&1)"; rc=$?
 after="$(cksum < A/docs.vecs)"
 if [ "$rc" -eq 0 ] && [ "$before" = "$after" ]; then ok "flush returns false when it cannot write; the previous file is untouched"
 else bad "flush over an unwritable temp path (exit $rc, file changed: $([ "$before" = "$after" ] && echo no || echo yes)): $out"; fi
 rmdir A/docs.vecs.tmp
 
 # 5. flush with nothing dirty is a successful no-op.
-out="$(VFPHASE=clean ./vf 2>&1)"; rc=$?
+out="$(VFPHASE=clean ./vf --allow-write 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "flush with nothing dirty returns true ($(echo "$out" | head -1))"
 else bad "flush with nothing dirty (exit $rc): $out"; fi
+
+# 6. flush takes fs.write authority (121.22): without the grant it is CAP001,
+#    and nothing reaches disk.
+before="$(cksum < A/docs.vecs)"
+out="$(VFPHASE=fail ./vf 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | /usr/bin/grep -a -q "CAP001" && [ "$before" = "$(cksum < A/docs.vecs)" ]; then
+    ok "flush without --allow-write is CAP001 and writes nothing"
+else bad "flush without the fs.write grant (exit $rc): $out"; fi
 
 echo "--------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
