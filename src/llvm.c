@@ -365,6 +365,43 @@ static void ptr_shadow_restore(Ctx *c, PtrShadow *ps) {
     }
 }
 
+/* 127.246 (4): release the registry entries a match arm made that die with
+ * it -- its own binding (`bname`, the uniquified name) and the raw-name
+ * entries ptr_shadow_restore retired (name blanked) -- so a function with
+ * many matches does not run out of pointer-local slots.  Ten inline 10-arm
+ * matches over a str-payload sum took 100 slots for bindings no later code
+ * can name, and the 65th was E9010 "too many pointer locals".  Entries the
+ * arm body made for OUTER names (a re-tag of an enclosing `mut`) are kept,
+ * in order.  Called after ptr_shadow_restore, from index `pc0` (the count
+ * when the arm began). */
+static void ptr_arm_release(Ctx *c, int pc0, int lc0, const char *bname)
+{
+    if (pc0 >= 0 && pc0 <= c->ptr_count) {
+        int w = pc0;
+        for (int i = pc0; i < c->ptr_count; i++) {
+            if (!c->ptrs[i].name[0]) continue;
+            if (bname && bname[0] && !strcmp(c->ptrs[i].name, bname)) continue;
+            if (w != i) c->ptrs[w] = c->ptrs[i];
+            w++;
+        }
+        c->ptr_count = w;
+    }
+    /* The local-type entry too (the same budget, "too many local
+     * variables") -- but only a UNIQUIFIED binding's.  make_unique_name()
+     * decides "first use" by looking the raw name up in this table, so the
+     * raw name's entry must stay or a later arm would mint a second
+     * `%x = alloca`.  A suffixed name is unique by its counter. */
+    if (bname && strchr(bname, '.') && lc0 >= 0 && lc0 <= c->local_count) {
+        int w = lc0;
+        for (int i = lc0; i < c->local_count; i++) {
+            if (!strcmp(c->locals[i].name, bname)) continue;
+            if (w != i) c->locals[w] = c->locals[i];
+            w++;
+        }
+        c->local_count = w;
+    }
+}
+
 /*
  * is_ptr_local — Return 1 if `name` was previously registered via
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
@@ -7240,6 +7277,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
                 mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
+                int arm_pc0 = c->ptr_count, arm_lc0 = c->local_count; char arm_bn[NAME_BUF]; arm_bn[0] = '\0';   /* 127.246 (4) */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
                 int vidx = struct_field_index(ssi, tag);
@@ -7263,6 +7301,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
                     int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
                     const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                    snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                     set_local_type(c, vname, slot_ty);
                     if (is_str) mark_ptr_with_type(c, vname, "$str");
                     if (vshadow) {
@@ -7291,6 +7330,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -7411,6 +7451,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
                 mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* arm-scoped binding */
+                int arm_pc0 = c->ptr_count, arm_lc0 = c->local_count; char arm_bn[NAME_BUF]; arm_bn[0] = '\0';   /* 127.246 (4) */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
 
                 /* Bind arm variable to scrutinee */
@@ -7433,6 +7474,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         strncpy(vname, uname, sizeof vname - 1);
                         vname[sizeof vname - 1] = '\0';
                     }
+                    snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                     set_local_type(c, vname, scr_ty);
                     if (!strcmp(scr_ty, "i8*")) mark_ptr_with_type(c, vname, "$str");
                     if (vshadow) {
@@ -7448,6 +7490,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                     res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
                 arm_i++;
             }
 
@@ -7716,6 +7759,7 @@ static int emit_expr(Ctx *c, const Node *n)
              * `let n=mt f(){$ok:n n;..}; let id=mt g(){$ok:n n;..}` every
              * later `n` read the SECOND arm's slot (n=7 for n=150, silent). */
             int arm_saved_al = c->alias_count;
+            int arm_pc0 = c->ptr_count, arm_lc0 = c->local_count; char arm_bn[NAME_BUF]; arm_bn[0] = '\0';   /* 127.246 (4) */
             PtrShadow psh; psh.active = 0;           /* 127.237 (3) */
             if (is_ok)
                 fprintf(c->out, "rm_ok%d:\n", L);
@@ -7807,6 +7851,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
                 int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
                 const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                 set_local_type(c, vname, slot_ty);
                 if (is_str) mark_ptr_with_type(c, vname, "$str");
                 if (vshadow) {
@@ -7860,6 +7905,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 int ok_abi_bool = is_ok && !strcmp(scr_ty, "i64") &&
                                   call_declares_bool(c, n->children[0]);
                 if (ok_abi_bool) bind_ty = "i1";
+                snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                 set_local_type(c, vname, bind_ty);
                 /* 127.71: the $ok arm binds the scrutinee's value, so it earns
                  * the scrutinee's tag ("$str", "@str", a struct name).  It was
@@ -7972,6 +8018,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 emit_match_arm_body(c, abody, res_ty, res_slot, L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
             } else {
                 /* Emit arm body expression */
                 int body_val = -1;
@@ -7995,6 +8042,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  br label %%rm_end%d\n", L);
                 c->alias_count = arm_saved_al;
                 ptr_shadow_restore(c, &psh);   /* 127.237 (3) */
+                ptr_arm_release(c, arm_pc0, arm_lc0, arm_bn);   /* 127.246 (4) */
             }
         }
 
