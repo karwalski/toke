@@ -49,6 +49,24 @@ Opaque handle to a middleware function.
 | `router.use` | `r: $router; mw: $middleware` | `void` | Attach middleware to the router |
 | `router.serve` | `r: $router; host: $str; port: u64` | `void!$routererr` | Start serving HTTP on `port`. Port 0 binds a free port and prints `DIAGNOSTIC: kind=server_listening port=N` on stderr; a port above 65535, or one that cannot be bound, is `$err` (135.26). `host` is the address to listen on, by `http.serveon`'s rules: an IPv4 literal, `"localhost"` (127.0.0.1), or `""`, `"*"` or `"0.0.0.0"` for all interfaces; any other host is `$err` before anything is bound (135.28) |
 
+### A port that is already in use
+
+`router.serve` will not start beside a live listener on the same port: if
+another server already listens on `port` -- at the same address, or at
+`127.0.0.1` when you asked for all interfaces, or at all interfaces when you
+asked for `127.0.0.1` -- it returns `$err` ("bind() failed: address already
+in use"). On macOS such a bind used to succeed and silently take that
+address's traffic from the first server (135.33). A port whose previous
+server has exited, with old connections still closing (TIME_WAIT), binds as
+before.
+
+**Limit:** for an all-interfaces bind (`""`, `"*"`, `"0.0.0.0"`) the check
+asks `127.0.0.1` only. A server listening on one other specific address alone
+(say `192.168.1.5:8080`) is not detected there: on macOS the new server
+starts, and that address's traffic keeps going to the first server while
+every other address's goes to the new one. On Linux the bind fails either
+way.
+
 ## Usage
 
 ```toke

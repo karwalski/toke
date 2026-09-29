@@ -1,10 +1,17 @@
 id: D005
 series: D
-description: "W1010 fix field is informational string (string interpolation warning, legacy profile)"
+description: "W1010 carries no fix: the str.concat() suggestion is advice, not a rewrite (127.243)"
+# The warning names no rewrite a tool could apply: turning `"hello \(name)"`
+# into a str.concat() call needs the module to import std.str under some
+# alias, a nested call per piece, and a str conversion for a non-str piece --
+# none of which the lexer knows. The message still says str.concat().
 input: |
   M=test;
   F=interp():Str{<"hello \(name)"};
 flags: --legacy
 expected_exit_code: 0
 expected_error_codes: ["W1010"]
-expected_fix: "use str.concat() for string composition"
+expected_fix_absent: true
+expected_diag_field:
+  field: severity
+  value: warning

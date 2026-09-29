@@ -7,7 +7,7 @@
 # `arr.arrayappnd(...)` was told "did you mean 'arr.arrayappend'?" —
 # array.arrayappend is a glue helper (`"internal": true` in array.tki), not a
 # member to steer an author to.  names.c now records the flag and the
-# suggestion skips it; with no other candidate the generic text stands.
+# suggestion skips it; with no other candidate there is no fix (127.243).
 #
 # Negative control: TKC=<main's toke> -- case 1 fails.
 #
@@ -35,7 +35,7 @@ for l in sys.stdin:
     print("%s|%s" % (d.get("error_code"), d.get("fix", "ABSENT"))); break'; }
 
 expect "1 an internal export is not suggested" \
-    "$(fixof 'arr.arrayappnd(0;0)')" "E4027|check the module's interface for the correct member name"
+    "$(fixof 'arr.arrayappnd(0;0)')" "E4027|ABSENT"
 expect "2 a public export still is" \
     "$(fixof 'arr.indxof(0;0)')" "E4027|did you mean 'arr.indexof'?"
 

@@ -376,11 +376,11 @@ f=main():i64{
 emits   "D1 E4027 still fires for a misspelled member" E4027 4 - "${D_SRC}"
 fixsays "D2 and now names the candidate" E4027 "did you mean 'str.concat'?" "${D_SRC}"
 
-# D3 — the guard.  A member that is not close to any real one must keep the
-# generic text: AGENTS.md §3.1 forbids a `fix` that is a guess, and 131.78 is
-# the case study of an "obvious" suggestion that was wrong.
-fixsays "D3 an unrelated member keeps the generic fix" E4027 \
-    "check the module's interface for the correct member name" \
+# D3 — the guard.  A member that is not close to any real one gets no guess:
+# AGENTS.md §3.1 forbids a `fix` that is a guess, and 131.78 is the case
+# study of an "obvious" suggestion that was wrong.  Since 127.243 it gets no
+# fix at all -- the old generic text was advice, not a rewrite.
+fixlacks "D3 an unrelated member carries no fix" E4027 '"fix":' \
 'm=t;
 i=str:std.str;
 f=main():i64{
