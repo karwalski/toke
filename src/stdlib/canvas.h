@@ -14,9 +14,43 @@
  * Story: 18.1.5
  */
 
+#include <stddef.h>
 #include <stdint.h>
+#include "strbuf.h"
 
-typedef struct TkCanvas TkCanvas;
+/*
+ * TkCanvas is handed to toke as the `$canvas` record, and tkc reads `c.f`
+ * as 8-byte slot <index of f in stdlib/canvas.tki>: {id; width; height;
+ * ops}.  So those four come first, in that order, each a whole slot (u32
+ * width/height included), and ops is a real toke array of $canvasop; the
+ * rest is private to canvas.c (135.30).  Before, width and height were two
+ * uint32_t sharing slot 1, `c.height` read the op count and `c.ops` the
+ * JS buffer.  `make check-tki-layout` keeps the prefix in step.
+ */
+/* tki-record-prefix: canvas.canvas */
+typedef struct TkCanvas {
+    char    *id;
+    int64_t  width;     /* u32 */
+    int64_t  height;    /* u32 */
+    int64_t  ops;       /* [canvasop]: toke array handle of TkCanvasOpRec * */
+    /* private */
+    uint64_t op_count;
+    size_t   op_start;  /* js.len when the current op began */
+    TkStrBuf js;        /* raw drawing JS statements (no context preamble) */
+    char    *js_out;    /* cached result of canvas_to_js  */
+    char    *html_out;  /* cached result of canvas_to_html */
+} TkCanvas;
+
+/*
+ * One element of $canvas.ops: tag is the Canvas 2D member the operation
+ * ends with ("fillRect", "fillText", "globalAlpha", ...), data the
+ * JavaScript statement it adds to canvas.tojs's output.
+ */
+/* tki-record: canvas.canvasop */
+typedef struct {
+    const char *tag;
+    const char *data;
+} TkCanvasOpRec;
 
 TkCanvas   *canvas_new(const char *id, uint32_t width, uint32_t height);
 void        canvas_free(TkCanvas *c);

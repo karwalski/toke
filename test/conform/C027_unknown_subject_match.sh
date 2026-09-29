@@ -39,10 +39,11 @@
 #            delete the language feature.
 # Case 4:    2-arm `$ok`/`$err` matches — the shape the binary lowering is
 #            actually for — are untouched, on both arms.
-# Case 5:    a 2-arm match over an unknown subject is still allowed.  The
-#            diagnostic is about arity exceeding what the lowering can
-#            dispatch, not about unknown subjects as such; widening it to all
-#            unknown subjects would break case 4's stdlib shapes.
+# Case 5:    a 2-arm match over an unknown subject whose arms name no side
+#            (`$circle`/`$square`, not `$ok`/`$err`) is E9005 too (138.2).
+#            It used to build, and chose on value-vs-zero: every non-null
+#            box took arm 1, so a `$square` answered 10.  Case 4's stdlib
+#            shapes are labelled `$ok`/`$err` and still build.
 # Case 6:    a 2-arm match over an indexed element the checker DOES type as
 #            the sum is E4010 (non-exhaustive) -- see the note at case 5.
 #
@@ -210,11 +211,10 @@ f=main():i64{
   <0
 };'
 
-# ── Case 5: a 2-arm match on an unknown subject is still allowed ─────────
-# The rule is about arity exceeding what the lowering can dispatch, not about
-# unknown subjects as such.  Widening it to every unknown subject would
-# reject the stdlib error-union shapes in case 4, whose scrutinee type is
-# likewise not a registered sum.
+# ── Case 5: a 2-arm match on an unknown subject, arms naming no side ─────
+# The rule is still not about unknown subjects as such: the stdlib
+# error-union shapes in case 4 have a scrutinee that is not a registered sum
+# either, and build, because their arms say which side is which.
 #
 # CHANGED 2026-09-24 (Batch E2).  This case used to take its subject from
 # `xs.get(0)` on `let xs=@(mk(0))`.  Since 127.129/127.152 (886bdb0) the
@@ -224,13 +224,22 @@ f=main():i64{
 # is correct (case 6 now pins that).  The fixture therefore no longer tested
 # "don't fire on an unknown subject".  The subject now arrives through an
 # i64-typed parameter, case 2's shape, which nothing can establish.
-run_case "2-arm match on an unestablished subject still builds" "10" \
+#
+# CHANGED 2026-09-29 (Batch B2, 138.2).  This case asserted that the match
+# below builds and prints 10 for `mk(0)`.  It did print 10 -- and printed 10
+# for `mk(1)`, a `$square`, as well (measured on main at 1346588): with no
+# `$ok`/`$err` label the result lowering has one value-vs-zero condition and
+# no tag, so it cannot choose between two variants.  It is now E9005, the
+# 3+-arm rule applied where the same impossibility holds at 2 arms.  The
+# concern this case guarded -- that case 4's labelled stdlib shapes keep
+# building -- is still what case 4 asserts.
+reject_build "2-arm match on an unestablished subject with unlabelled arms" \
 "${SUM}
 f=pick(sh:i64):i64{
   <mt(sh){\$circle:x 10;\$square:x 20}
 };
 f=main():i64{
-  io.println(\"\\(pick(mk(0) as i64))\");
+  io.println(\"\\(pick(mk(0) as i64)) \\(pick(mk(1) as i64))\");
   <0
 };"
 

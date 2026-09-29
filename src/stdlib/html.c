@@ -18,6 +18,7 @@
 
 #include "html.h"
 #include "strbuf.h"
+#include "tk_array.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -42,23 +43,27 @@ typedef struct TkAttr {
     struct TkAttr *next;
 } TkAttr;
 
-struct TkHtmlNode {
-    char          *tag;           /* e.g. "div", "p", "table" */
-    TkAttr        *attrs;         /* linked list of attributes */
-    char          *text_content;  /* text inside element (may be NULL) */
-    TkHtmlNode    *first_child;   /* first child node */
-    TkHtmlNode    *last_child;    /* last child node (for O(1) append) */
-    TkHtmlNode    *next_sibling;  /* next sibling in parent */
-    int            void_element;  /* 1 = self-closing (img, etc.) */
-};
+/* struct TkHtmlNode is in html.h: its first three fields are the
+ * $htmlnode record toke reads (135.30). */
 
 static TkHtmlNode *node_new(const char *tag, int void_element)
 {
     TkHtmlNode *n = (TkHtmlNode *)calloc(1, sizeof(TkHtmlNode));
     if (!n) return NULL;
     n->tag         = strdup(tag);
+    n->attrs       = tk_arr_alloc(4, 0);   /* empty, never a null handle */
+    n->content     = strdup("");
     n->void_element = void_element;
     return n;
+}
+
+/* node_set_text — the element's text (the $htmlnode content field). */
+static void node_set_text(TkHtmlNode *n, const char *text)
+{
+    char *t = strdup(text ? text : "");
+    if (!t) return;
+    free(n->content);
+    n->content = t;
 }
 
 static void node_add_attr(TkHtmlNode *n, const char *name, const char *value)
@@ -69,11 +74,20 @@ static void node_add_attr(TkHtmlNode *n, const char *name, const char *value)
     a->name  = strdup(name);
     a->value = strdup(value);
     a->next  = NULL;
+    /* 135.30: mirror it into the toke-visible attrs, as @(name; value) */
+    int64_t pair = tk_arr_alloc(2, 2);
+    if (pair) {
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)a->name;
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)a->value;
+        int64_t h = tk_arr_push(n->attrs, pair);
+        if (h) n->attrs = h;
+        else   free((int64_t *)(intptr_t)pair - TK_ARR_HDR);
+    }
     /* Append to end so attributes appear in insertion order. */
-    if (!n->attrs) {
-        n->attrs = a;
+    if (!n->attr_list) {
+        n->attr_list = a;
     } else {
-        TkAttr *cur = n->attrs;
+        TkAttr *cur = n->attr_list;
         while (cur->next) cur = cur->next;
         cur->next = a;
     }
@@ -102,9 +116,9 @@ void html_node_free(TkHtmlNode *node)
         html_node_free(child);
         child = next;
     }
-    attr_free(node->attrs);
+    attr_free(node->attr_list);
     free(node->tag);
-    free(node->text_content);
+    free(node->content);
     free(node);
 }
 
@@ -174,7 +188,7 @@ static void buf_append_rawtext(Buf *b, const char *s, const char *closetag) {
 
 static void render_attrs(TkHtmlNode *node, Buf *b)
 {
-    TkAttr *a = node->attrs;
+    TkAttr *a = node->attr_list;
     while (a) {
         strbuf_putc(b, ' ');
         strbuf_append(b, a->name);
@@ -216,8 +230,8 @@ static void render_node(TkHtmlNode *node, Buf *b)
         return;
     }
     strbuf_putc(b, '>');
-    if (node->text_content) {
-        strbuf_append(b, node->text_content);
+    if (node->content) {
+        strbuf_append(b, node->content);
     }
     render_children(node, b);
     strbuf_append(b, "</");
@@ -236,6 +250,7 @@ typedef struct TkBodyEntry {
 } TkBodyEntry;
 
 struct TkHtmlDoc {
+    TkHtmlDocHead head;       /* first: the $htmldoc record (135.30) */
     char        *title;       /* NULL if not set */
     char        *style;       /* NULL if not set */
     char        *script;      /* NULL if not set */
@@ -246,7 +261,9 @@ struct TkHtmlDoc {
 
 TkHtmlDoc *html_doc(void)
 {
+    static int64_t next_id = 0;
     TkHtmlDoc *doc = (TkHtmlDoc *)calloc(1, sizeof(TkHtmlDoc));
+    if (doc) doc->head.id = ++next_id;
     return doc;
 }
 
@@ -369,7 +386,7 @@ TkHtmlNode *html_div(const char *class_, const char *content)
     TkHtmlNode *n = node_new("div", 0);
     if (!n) return NULL;
     if (class_) node_add_attr(n, "class", class_);
-    if (content) n->text_content = strdup(content);
+    if (content) node_set_text(n, content);
     return n;
 }
 
@@ -377,7 +394,7 @@ TkHtmlNode *html_p(const char *content)
 {
     TkHtmlNode *n = node_new("p", 0);
     if (!n) return NULL;
-    if (content) n->text_content = strdup(content);
+    if (content) node_set_text(n, content);
     return n;
 }
 
@@ -385,7 +402,7 @@ TkHtmlNode *html_h1(const char *content)
 {
     TkHtmlNode *n = node_new("h1", 0);
     if (!n) return NULL;
-    if (content) n->text_content = strdup(content);
+    if (content) node_set_text(n, content);
     return n;
 }
 
@@ -393,7 +410,7 @@ TkHtmlNode *html_h2(const char *content)
 {
     TkHtmlNode *n = node_new("h2", 0);
     if (!n) return NULL;
-    if (content) n->text_content = strdup(content);
+    if (content) node_set_text(n, content);
     return n;
 }
 
@@ -402,7 +419,7 @@ TkHtmlNode *html_span(const char *class_, const char *content)
     TkHtmlNode *n = node_new("span", 0);
     if (!n) return NULL;
     if (class_) node_add_attr(n, "class", class_);
-    if (content) n->text_content = strdup(content);
+    if (content) node_set_text(n, content);
     return n;
 }
 
@@ -411,7 +428,7 @@ TkHtmlNode *html_a(const char *href, const char *text)
     TkHtmlNode *n = node_new("a", 0);
     if (!n) return NULL;
     if (href) node_add_attr(n, "href", href);
-    if (text) n->text_content = strdup(text);
+    if (text) node_set_text(n, text);
     return n;
 }
 
@@ -442,7 +459,7 @@ TkHtmlNode *html_table(const char **headers, uint64_t ncols,
     for (uint64_t c = 0; c < ncols; c++) {
         TkHtmlNode *th = node_new("th", 0);
         if (!th) { html_node_free(table); return NULL; }
-        if (headers && headers[c]) th->text_content = strdup(headers[c]);
+        if (headers && headers[c]) node_set_text(th, headers[c]);
         html_append_child(hrow, th);
     }
 
@@ -461,7 +478,7 @@ TkHtmlNode *html_table(const char **headers, uint64_t ncols,
             if (!td) { html_node_free(table); return NULL; }
             if (rows) {
                 const char *cell = rows[r * ncols + c];
-                if (cell) td->text_content = strdup(cell);
+                if (cell) node_set_text(td, cell);
             }
             html_append_child(tr, td);
         }

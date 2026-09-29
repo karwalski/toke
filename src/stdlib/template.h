@@ -21,6 +21,27 @@
 /* Opaque compiled template handle. */
 typedef struct TkTmpl TkTmpl;
 
+/*
+ * The records toke sees (135.30).  tkc reads `x.f` as 8-byte slot <index of
+ * f in stdlib/template.tki>.  tpl.compile hands out a TkTmplRec {id; src}
+ * (it handed out the compiled TkTmpl *, so `t.src` read its internals and
+ * tpl.render then compiled that pointer AS SOURCE TEXT); tpl.render
+ * compiles the record's src, so a `$tmpl{...}` literal renders too.
+ * tpl.vars hands out a TkTmplVarsRec whose entries is the toke map (it
+ * returned the map itself, so `v.entries` read the map's internals).
+ * `make check-tki-layout` keeps both in step with the .tki.
+ */
+/* tki-record: template.tmpl */
+typedef struct {
+    int64_t     id;         /* u64, 1-based, unique per process */
+    const char *src;        /* the template source, as compiled */
+} TkTmplRec;
+
+/* tki-record: template.tmplvars */
+typedef struct {
+    int64_t     entries;    /* @($str:$str): a toke map handle */
+} TkTmplVarsRec;
+
 /* A single key/value variable binding. */
 typedef struct {
     const char *key;

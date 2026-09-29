@@ -114,7 +114,7 @@ http.PATCH("/items/:id"; handler);
 
 ## Server Start Functions
 
-### http.serve(port: u16): i64
+### http.serve(port: u64): i64
 
 Starts an HTTP server on the given port, blocking the current process until the server is shut down. Route handlers registered via `http.GET`, `http.POST`, etc. are dispatched automatically.
 
@@ -673,17 +673,11 @@ f=main():i64{
 
 > **Not exported.** `http.delete` is route registration: `http.delete(c;path)` passes the client handle where a path belongs, type-checks, and sends nothing. Use `http.clientdelete`.
 
-### http.stream(client: $httpclient; method: $str; path: $str): $httpstream!$httperr
+### http.stream(client: $httpclient): $httpstream!$httperr
 
-Opens a streaming HTTP connection for server-sent events or chunked transfer responses. Returns an `$httpstream` handle on success; use `http.streamnext` to read successive chunks. The connection remains open until `open` is `false` or an error is returned.
+Opens a streaming HTTP connection for server-sent events or chunked transfer responses. Returns an `$httpstream` handle on success; use `http.streamnext` to read successive chunks. The connection remains open until `open` is `false` or an error is returned. The interface takes the client alone: there is no method or path argument, and the request is a `GET`.
 
-```toke
-i=http:std.http;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let s=http.stream(c;"GET";"/events");
-};
-```
+> The glue behind it (`tk_http_stream_w`) reads its one argument as a URL string, not a client handle, and returns 0 rather than `$httperr` on failure; the interface and the glue disagree (reported with 127.232).
 
 ### http.streamnext(stream: $httpstream): @(byte)!$httperr
 

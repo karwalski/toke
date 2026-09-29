@@ -15,9 +15,11 @@
  * interface; these are internal C symbols with no callers outside this file.
  *
  * HANDLES CROSSING THE ABI
- *   TlsConfig   -> pointer to a heap TkTlsCfg that owns copies of its PEMs
- *   TlsKeypair  -> pointer to a heap TkTlsKeypair that owns both PEMs
- *   TlsConn     -> the connection's id string (char *), as tls.c mints it
+ *   TlsConfig   -> pointer to a heap TkTlsCfgRec (tls.h) owning its PEMs
+ *   TlsKeypair  -> pointer to a heap TkTlsKeypairRec (tls.h) owning both PEMs
+ *   TlsConn     -> pointer to a TlsConn {id}, the id as tls.c mints it
+ *   (135.30: each is the .tki record, slot for slot; they were a struct
+ *   with a C-typed tail, and the bare id string, before)
  *   str         -> char *, 0 for none
  *   bool        -> 1 / 0
  *
@@ -28,7 +30,9 @@
  * toke program cannot name them at all (136.46).  Mutual-auth configuration is
  * therefore surfaced as a constructor — tls.mutualconfig(cert; key; peercert)
  * — and the keypair through tls.certof/tls.keyof accessors, so that no caller
- * ever has to spell an unspellable field.
+ * ever has to spell an unspellable field.  (113.2a has since renamed the
+ * fields certpem/keypem/peercertpem/requiremutual, which a program can read;
+ * 135.30 made them read what they say.)
  */
 
 #include "tls.h"
@@ -48,23 +52,39 @@ extern __thread int64_t tk_current_error;
 
 /* ── handle plumbing ─────────────────────────────────────────────────────── */
 
-typedef struct {
-    TlsConfig cfg;      /* points into the three fields below */
-    char     *cert;
-    char     *key;
-    char     *peer;
-} TkTlsCfg;
+/* 135.30: the records this file issued (configs and keypairs), so that
+ * tls.freeconfig / tls.freekeypair free only what the glue allocated -- a
+ * $TlsConfig or $TlsKeypair literal is not the glue's to free.  An issued
+ * handle leaves the set when it is freed, so a second free is refused. */
+static void **g_tls_issued = NULL;
+static size_t g_tls_nissued = 0, g_tls_capissued = 0;
 
-typedef struct {
-    char *cert;
-    char *key;
-} TkTlsKeypair;
+static int tls_issue(void *p)
+{
+    if (g_tls_nissued == g_tls_capissued) {
+        size_t nc = g_tls_capissued ? 2 * g_tls_capissued : 16;
+        void **n = realloc(g_tls_issued, nc * sizeof *n);
+        if (!n) return 0;
+        g_tls_issued = n; g_tls_capissued = nc;
+    }
+    g_tls_issued[g_tls_nissued++] = p;
+    return 1;
+}
+
+static int tls_unissue(const void *p)
+{
+    for (size_t i = 0; p && i < g_tls_nissued; i++)
+        if (g_tls_issued[i] == p) {
+            g_tls_issued[i] = g_tls_issued[--g_tls_nissued];
+            return 1;
+        }
+    return 0;
+}
 
 static char *dup_arg(int64_t s)
 {
     const char *p = (const char *)(intptr_t)s;
-    if (!p || *p == '\0') return NULL;
-    return strdup(p);
+    return strdup(p ? p : "");
 }
 
 static const char *as_str(int64_t s)
@@ -72,38 +92,55 @@ static const char *as_str(int64_t s)
     return (const char *)(intptr_t)s;
 }
 
+/* A $TlsConn handle (a TlsConn *, 135.30) as the core's TlsConn value. */
 static TlsConn conn_of(int64_t h)
 {
     TlsConn c;
-    c.id = (char *)(intptr_t)h;
+    c.id = h ? ((const TlsConn *)(intptr_t)h)->id : NULL;
     return c;
+}
+
+/* box_conn — the $TlsConn record for a connection id; 0 on OOM. */
+static int64_t box_conn(char *id)
+{
+    TlsConn *b = malloc(sizeof *b);
+    if (!b) return 0;
+    b->id = id;
+    return (int64_t)(intptr_t)b;
+}
+
+static const char *nonempty(const char *s)
+{
+    return (s && *s) ? s : NULL;
 }
 
 /* An absent config handle is a valid, empty configuration: no local
  * certificate, no pin, no mutual auth.  That is what tls.connect against a
- * public server wants. */
+ * public server wants.  135.30: read from the $TlsConfig record, whether
+ * a constructor below or a literal built it; "" means absent. */
 static TlsConfig cfg_of(int64_t h)
 {
-    TlsConfig empty;
-    empty.cert_pem       = NULL;
-    empty.key_pem        = NULL;
-    empty.peer_cert_pem  = NULL;
-    empty.require_mutual = 0;
-    if (!h) return empty;
-    return ((TkTlsCfg *)(intptr_t)h)->cfg;
+    TlsConfig c;
+    const TkTlsCfgRec *r = (const TkTlsCfgRec *)(intptr_t)h;
+    c.cert_pem       = r ? nonempty(r->certpem) : NULL;
+    c.key_pem        = r ? nonempty(r->keypem) : NULL;
+    c.peer_cert_pem  = r ? nonempty(r->peercertpem) : NULL;
+    c.require_mutual = (r && r->requiremutual) ? 1 : 0;
+    return c;
 }
 
 static int64_t make_cfg(int64_t cert, int64_t key, int64_t peer, int mutual)
 {
-    TkTlsCfg *c = calloc(1, sizeof *c);
-    if (!c) return 0;
-    c->cert = dup_arg(cert);
-    c->key  = dup_arg(key);
-    c->peer = dup_arg(peer);
-    c->cfg.cert_pem       = c->cert;
-    c->cfg.key_pem        = c->key;
-    c->cfg.peer_cert_pem  = c->peer;
-    c->cfg.require_mutual = mutual;
+    TkTlsCfgRec *c = calloc(1, sizeof *c);
+    char *ce = dup_arg(cert), *ke = dup_arg(key), *pe = dup_arg(peer);
+    if (!c || !ce || !ke || !pe || !tls_issue(c)) {
+        free(c); free(ce); free(ke); free(pe);
+        return 0;
+    }
+    c->certpem       = ce;
+    c->keypem        = ke;
+    c->peercertpem   = pe;
+    c->requiremutual = mutual ? 1 : 0;
     return (int64_t)(intptr_t)c;
 }
 
@@ -142,11 +179,11 @@ int64_t tk_tls_pinconfig_w(int64_t cert_pem, int64_t key_pem,
 /* tls.freeconfig(cfg) — release a configuration handle. */
 int64_t tk_tls_freeconfig_w(int64_t cfg)
 {
-    TkTlsCfg *c = (TkTlsCfg *)(intptr_t)cfg;
-    if (!c) return 0;
-    free(c->cert);
-    free(c->key);
-    free(c->peer);
+    TkTlsCfgRec *c = (TkTlsCfgRec *)(intptr_t)cfg;
+    if (!c || !tls_unissue(c)) return 0;   /* 135.30: not ours to free */
+    free((void *)c->certpem);
+    free((void *)c->keypem);
+    free((void *)c->peercertpem);
     free(c);
     return 1;
 }
@@ -176,14 +213,14 @@ static int64_t tls_keypair_or_raise(TlsKeypairResult r)
                                                : "tls: key generation failed");
         return 0;
     }
-    TkTlsKeypair *kp = calloc(1, sizeof *kp);
-    if (!kp) {
-        free(r.cert_pem); free(r.key_pem);
+    TkTlsKeypairRec *kp = calloc(1, sizeof *kp);
+    if (!kp || !tls_issue(kp)) {
+        free(kp); free(r.cert_pem); free(r.key_pem);
         tk_current_error = (int64_t)(intptr_t)"tls: out of memory";
         return 0;
     }
-    kp->cert = r.cert_pem;
-    kp->key  = r.key_pem;
+    kp->certpem = r.cert_pem ? r.cert_pem : strdup("");
+    kp->keypem  = r.key_pem ? r.key_pem : strdup("");
     tk_current_error = 0;
     return (int64_t)(intptr_t)kp;
 }
@@ -249,33 +286,33 @@ int64_t tk_tls_genselfsignedalg_w(int64_t common_name, int64_t valid_days,
 /* tls.certof(keypair) — the certificate PEM (public material). */
 int64_t tk_tls_certof_w(int64_t keypair)
 {
-    TkTlsKeypair *kp = (TkTlsKeypair *)(intptr_t)keypair;
-    if (!kp || !kp->cert) return (int64_t)(intptr_t)"";
-    return (int64_t)(intptr_t)kp->cert;
+    TkTlsKeypairRec *kp = (TkTlsKeypairRec *)(intptr_t)keypair;
+    if (!kp || !kp->certpem) return (int64_t)(intptr_t)"";
+    return (int64_t)(intptr_t)kp->certpem;
 }
 
 /* tls.keyof(keypair) — the private key PEM.  Secret: do not log it. */
 int64_t tk_tls_keyof_w(int64_t keypair)
 {
-    TkTlsKeypair *kp = (TkTlsKeypair *)(intptr_t)keypair;
-    if (!kp || !kp->key) return (int64_t)(intptr_t)"";
-    return (int64_t)(intptr_t)kp->key;
+    TkTlsKeypairRec *kp = (TkTlsKeypairRec *)(intptr_t)keypair;
+    if (!kp || !kp->keypem) return (int64_t)(intptr_t)"";
+    return (int64_t)(intptr_t)kp->keypem;
 }
 
 /* tls.freekeypair(keypair) — wipe and release the keypair, private key
  * included. */
 int64_t tk_tls_freekeypair_w(int64_t keypair)
 {
-    TkTlsKeypair *kp = (TkTlsKeypair *)(intptr_t)keypair;
-    if (!kp) return 0;
-    if (kp->key) {
+    TkTlsKeypairRec *kp = (TkTlsKeypairRec *)(intptr_t)keypair;
+    if (!kp || !tls_unissue(kp)) return 0;   /* 135.30: not ours to free */
+    if (kp->keypem) {
         /* Overwrite through a volatile view so the store is not elided. */
-        volatile char *w = (volatile char *)kp->key;
-        size_t n = strlen(kp->key);
+        volatile char *w = (volatile char *)kp->keypem;
+        size_t n = strlen(kp->keypem);
         while (n--) *w++ = 0;
-        free(kp->key);
+        free(kp->keypem);
     }
-    free(kp->cert);
+    free(kp->certpem);
     free(kp);
     return 1;
 }
@@ -296,7 +333,7 @@ int64_t tk_tls_connect_w(int64_t host, int64_t port, int64_t cfg)
 
     TlsConnResult r = tls_connect(h, (int32_t)port, cfg_of(cfg));
     if (r.is_none) return 0;
-    return (int64_t)(intptr_t)r.conn.id;
+    return box_conn(r.conn.id);   /* 135.30: a $TlsConn record */
 }
 
 /* call_tls_handler — invoke a toke connection handler with the conn id.
@@ -314,7 +351,8 @@ static void tls_handler_trampoline(TlsConn conn)
 {
     int64_t fn = g_tls_handler;
     if (!fn) return;
-    ((TlsConnFn1)(intptr_t)fn)((int64_t)(intptr_t)conn.id);
+    int64_t rec = box_conn(conn.id);   /* 135.30: the handler takes $TlsConn */
+    if (rec) ((TlsConnFn1)(intptr_t)fn)(rec);
 }
 
 /* tls.listen(port; cfg; handler) — bind, accept, handshake, dispatch.

@@ -1,0 +1,12 @@
+id: D166
+series: D
+description: "E9010 for the struct-type cap carries the exact fix, and counts the built-in timeparts and none: raising max_structs to the reported count always clears it (138.15, loke T-54)"
+input: |
+  m=t;
+  t=$a{x:i64};
+  t=$b{y:i64};
+  f=main():i64{<0};
+flags: --max-structs=3
+expected_exit_code: 1
+expected_error_codes: ["E9010"]
+expected_fix: "raise the limit: pass --max-structs=4, or set max_structs = 4 in tkc.toml"

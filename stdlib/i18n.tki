@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "I18nBundle",
+      "name": "i18nbundle",
       "fields": [
         {
           "name": "data",
@@ -34,13 +34,13 @@
         "str",
         "str"
       ],
-      "return": "I18nBundle!I18nErr"
+      "return": "i18nbundle!I18nErr"
     },
     {
       "kind": "func",
       "name": "i18n.get",
       "params": [
-        "I18nBundle",
+        "i18nbundle",
         "str"
       ],
       "return": "str"
@@ -49,7 +49,7 @@
       "kind": "func",
       "name": "i18n.fmt",
       "params": [
-        "I18nBundle",
+        "i18nbundle",
         "str",
         "str"
       ],

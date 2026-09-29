@@ -37,6 +37,9 @@ int64_t tk_json_getbool_w(int64_t obj, int64_t key);
 int64_t tk_json_i64_w(int64_t obj, int64_t key);
 int64_t tk_json_f64_w(int64_t obj, int64_t key);
 int64_t tk_json_u64_w(int64_t obj, int64_t key);
+int64_t tk_json_dec_w(int64_t s);                  /* 127.241 */
+int64_t tk_json_str_w(int64_t obj, int64_t key);
+int64_t tk_json_arr_w(int64_t obj, int64_t key);
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -654,6 +657,33 @@ int main(void) {
         tk_current_error = 0;
         v = tk_json_bool_w(0, K("off"));
         CHECK(tk_current_error != 0, "127.193 bool of a null object: slot set");
+
+        /* 127.241: dec / str / arr were bare glues (0 on failure, slot
+         * untouched); they now raise the same {JsonErr, msg} box. */
+        tk_current_error = 0x5eed;
+        int64_t d = tk_json_dec_w(K("{\"a\":[]}"));
+        CHECK(d != 0 && tk_current_error == 0, "127.241 dec ok: slot clear");
+        tk_current_error = 0;
+        d = tk_json_dec_w(K("{bad"));
+        box = (int64_t *)(intptr_t)tk_current_error;
+        CHECK(d == 0 && box == g_errbox && box[0] == JSON_ERR_PARSE && box[1] != 0,
+              "127.241 dec of malformed text: {Parse, msg} box");
+        tk_current_error = 0x5eed;
+        v = tk_json_str_w(o, K("s"));
+        CHECK(v != 0 && tk_current_error == 0, "127.241 str ok: slot clear");
+        tk_current_error = 0;
+        v = tk_json_str_w(o, K("absent"));
+        box = (int64_t *)(intptr_t)tk_current_error;
+        CHECK(v == 0 && box == g_errbox && box[0] == JSON_ERR_MISSING,
+              "127.241 str of a missing key: {Missing, msg} box");
+        tk_current_error = 0x5eed;
+        v = tk_json_arr_w(tk_json_dec_w(K("{\"a\":[]}")), K("a"));
+        CHECK(v != 0 && tk_current_error == 0, "127.241 arr of []: a handle, slot clear");
+        tk_current_error = 0;
+        v = tk_json_arr_w(o, K("s"));
+        box = (int64_t *)(intptr_t)tk_current_error;
+        CHECK(v == 0 && box == g_errbox && box[0] == JSON_ERR_TYPE,
+              "127.241 arr of a string: {Type, msg} box");
 #undef K
     }
 

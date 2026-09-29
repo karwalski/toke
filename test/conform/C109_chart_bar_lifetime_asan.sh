@@ -17,7 +17,10 @@
 #      built with the same harness and flags, MUST be reported by ASan as a
 #      use-after-free / use-after-return.  Without this, "no finding" and
 #      "the instrumentation never ran" look the same.
-#   2. The shipped src/stdlib/chart_glue.c under ASan+UBSan: clean exit, no
+#   2. The shipped src/stdlib/chart_glue.c under ASan+UBSan (135.30: its
+#      result is the $chartspec record, read through chart_spec_from_rec as
+#      chart.tojson reads it -- casting it to TkChartSpec * is the layout
+#      confusion 135.30 removed): clean exit, no
 #      sanitizer report, and chart_tojson carries the labels, the values and
 #      the title after other allocations have churned the heap and stack.
 #
@@ -88,7 +91,14 @@ static int64_t build(void) {
 int main(void) {
     int64_t spec = build();
     churn();
-    const char *j = chart_tojson((TkChartSpec *)(intptr_t)spec);
+#ifdef SPEC_IS_REC
+    /* 135.30: tk_chart_bar_w returns the $chartspec record; chart.tojson
+     * (tk_chart_tojson_w) converts it exactly like this before serialising */
+    TkChartSpec *s = chart_spec_from_rec(spec);
+#else
+    TkChartSpec *s = (TkChartSpec *)(intptr_t)spec;   /* pre-135.30 bodies */
+#endif
+    const char *j = chart_tojson(s);
     printf("%s\n", j ? j : "(null)");
     return 0;
 }
@@ -162,7 +172,7 @@ else
 fi
 
 # ── 2. the shipped wrapper ─────────────────────────────────────────────
-if ! ${CC} ${SAN} -I"${SL}" -o "${WORK}/new" "${WORK}/harness.c" \
+if ! ${CC} ${SAN} -DSPEC_IS_REC -I"${SL}" -o "${WORK}/new" "${WORK}/harness.c" \
         "${SL}/chart_glue.c" "${SL}/chart.c" > "${WORK}/new.build" 2>&1; then
     echo "  FAIL: the shipped chart_glue.c did not build under ASan"
     sed 's/^/        /' "${WORK}/new.build" | head -6

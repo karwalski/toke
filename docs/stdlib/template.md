@@ -17,8 +17,8 @@ An opaque compiled template handle. Slots are `{{varname}}` atoms that survive c
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| id | u64 | Opaque compiled template handle |
-| src | $str | Original template source |
+| id | u64 | A number unique within the process (`tpl.compile` numbers from 1) |
+| src | $str | Original template source. `tpl.render` compiles this, so a `$tmpl{id:0;src:"..."}` literal renders the same as `tpl.compile`'s result |
 
 ### $tmplvars
 
@@ -26,7 +26,7 @@ Variable bindings map: string key to string value.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| entries | @($str:$str) | Variable bindings map: key to value |
+| entries | @($str:$str) | Variable bindings map: key to value. Build a `$tmplvars` with `tpl.vars` (or a literal); `tpl.render` and `tpl.renderfile` do not take the bare map |
 
 ### $tmplerr
 

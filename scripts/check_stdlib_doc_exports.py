@@ -33,6 +33,14 @@ imported, not copied): a table row whose first cell is `mod.name`, or a `##`-
      `"gen":"abi"`, whose types gen_tki.py marks as ABI placeholders (every
      one `i64`; only the arity is established), so there is no declared type
      to hold the page to.
+  3. PARAMETERS (127.232 item 4).  Where the entry states a parameter list --
+     the balanced `( ... )` of a heading, the cell under a `Parameters` /
+     `Params` / `Arguments` column of the row's table, or a `(...)` inside a
+     row's first-cell code span -- it must have as many parameters as the
+     export's `"params"`, and each stated type (`name: T`, or a bare `T`)
+     must equal the export's type under rule 2's normalisation.  `(none)`,
+     `none`, `-` and an empty cell state an empty list.  For a `"gen":"abi"`
+     export only the count is held (its types are placeholders).
 
 A page that opens with the workspace archive banner (`**Archived
 YYYY-MM-DD ...**` in its first 40 lines -- check_canonical.ARCHIVE_BANNER, the
@@ -81,6 +89,8 @@ def norm(t):
     prev = None
     while prev != t:
         prev, t = t, re.sub(r"@\(([^()]*)\)", r"[\1]", t)
+        # 127.232 (4): the bare spelling `@i64` / `@@str` is `[i64]` / `[[str]]`
+        t = re.sub(r"@([A-Za-z_][A-Za-z0-9_]*|\[[^\[\]]*\])", r"[\1]", t)
     return QUALIFIER.sub("", t).lower()
 
 
@@ -98,19 +108,86 @@ def heading_return(rest):
     return ""
 
 
+PARAMCOLS = ("parameters", "params", "arguments", "args")
+NO_PARAMS = ("", "(none)", "none", "-", "\u2014", "()")
+
+
+def heading_params(rest):
+    """The text inside the balanced argument list, None when unbalanced."""
+    depth = 0
+    for i, c in enumerate(rest):
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return rest[1:i]
+    return None
+
+
+def split_top(text, sep):
+    """Split on `sep` outside brackets."""
+    out, depth, cur = [], 0, ""
+    for c in text:
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if c == sep and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += c
+    out.append(cur)
+    return out
+
+
+def split_params(text):
+    """Stated parameter types, in order: `a: T; b: U` -> [T, U]."""
+    text = text.strip().strip("`").strip()
+    if text.lower() in NO_PARAMS:
+        return []
+    types = []
+    for item in split_top(text, ";"):
+        item = item.strip().strip("`").strip()
+        parts = split_top(item, ":")
+        types.append(":".join(parts[1:]).strip() if len(parts) > 1 else item)
+    return types
+
+
+def check_params(doc, exp):
+    """A problem string, or None when the stated list agrees with the .tki."""
+    want = exp.get("params") or []
+    got = split_params(doc)
+    wanttxt = "(" + "; ".join(want) + ")"
+    if len(got) != len(want):
+        return ("is documented with %d parameter%s (%s); the .tki declares %d %s"
+                % (len(got), "" if len(got) == 1 else "s", "; ".join(got) or "none",
+                   len(want), wanttxt))
+    if exp.get("gen") == "abi":
+        return None
+    for k, (g, w) in enumerate(zip(got, want)):
+        if norm(g) != norm(w):
+            return ("documents parameter %d as `%s`; the .tki declares `%s` %s"
+                    % (k + 1, g, w, wanttxt))
+    return None
+
+
 def cells(line):
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
 def scan(lines, exports):
-    """Yield (lineno, name, problem) and count (entries, abi_exempt)."""
-    problems, entries, abi = [], 0, 0
-    retcol = None
+    """(problems, entries, abi_exempt, parameter lists checked)."""
+    problems, entries, abi, params = [], 0, 0, 0
+    retcol = parcol = None
     for i, line in enumerate(lines):
         is_row = line.startswith("|")
         if is_row and (i == 0 or not lines[i - 1].startswith("|")):
             retcol = next((k for k, c in enumerate(cells(line))
                            if c.lower() in ("return", "returns")), None)
+            parcol = next((k for k, c in enumerate(cells(line))
+                           if c.lower() in PARAMCOLS), None)
             continue
         m = ROW.match(line) if is_row else HEAD.match(line)
         if not m:
@@ -133,6 +210,23 @@ def scan(lines, exports):
         if marked:
             problems.append((i + 1, name, "is marked " + NOT_EXPORTED +
                              " but IS an export -- drop the marker"))
+        # parameter list (rule 3)
+        if is_row:
+            cs = cells(line)
+            first = cs[0].split("`")[1] if cs and cs[0].count("`") >= 2 else ""
+            if parcol is not None and parcol < len(cs):
+                pdoc = cs[parcol]
+            elif "(" in first:
+                pdoc = heading_params(first[first.index("("):])
+            else:
+                pdoc = None
+        else:
+            pdoc = heading_params(HEAD_SIG.match(line).group(1))
+        if pdoc is not None:
+            params += 1
+            why = check_params(pdoc, exp)
+            if why:
+                problems.append((i + 1, name, why))
         # return type
         if is_row:
             if retcol is None:
@@ -152,7 +246,7 @@ def scan(lines, exports):
         elif norm(doc) != norm(want):
             problems.append((i + 1, name, "is documented as returning `%s`; the "
                              ".tki declares `%s`" % (doc.strip(), want)))
-    return problems, entries, abi
+    return problems, entries, abi, params
 
 
 def main():
@@ -169,15 +263,16 @@ def main():
               " -- refusing to report a pass" % (len(exports), len(pages)))
         return 2
 
-    bad, entries, abi, archived = [], 0, 0, []
+    bad, entries, abi, plists, archived = [], 0, 0, 0, []
     for page in pages:
         lines = page.read_text().splitlines()
         if ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])):
             archived.append(page.name)
             continue
-        problems, n, k = scan(lines, exports)
+        problems, n, k, np = scan(lines, exports)
         entries += n
         abi += k
+        plists += np
         rel = page.relative_to(REPO) if page.is_relative_to(REPO) else page
         bad += ["  %s:%d  %s  %s" % (rel, ln, name, why) for ln, name, why in problems]
 
@@ -185,6 +280,11 @@ def main():
         print("check-stdlib-doc-exports: only %d documented entries found -- the "
               "entry patterns have stopped matching; refusing to report a pass"
               % entries)
+        return 2
+    if plists < 400:
+        print("check-stdlib-doc-exports: only %d parameter lists found -- the "
+              "parameter patterns have stopped matching; refusing to report a "
+              "pass" % plists)
         return 2
     if bad:
         print("check-stdlib-doc-exports: FAIL -- %d documented entr%s disagree%s "
@@ -196,10 +296,11 @@ def main():
               "stdlib function to make a page true)" % NOT_EXPORTED)
         return 1
     print("check-stdlib-doc-exports: OK -- %d page(s), %d documented entr%s, all "
-          "exports or marked %s; %d return type(s) exempt as \"gen\":\"abi\"; "
+          "exports or marked %s; %d parameter list(s) match the .tki; "
+          "%d return type(s) exempt as \"gen\":\"abi\"; "
           "%d archived page(s) skipped%s"
           % (len(pages) - len(archived), entries, "y" if entries == 1 else "ies",
-             NOT_EXPORTED, abi, len(archived),
+             NOT_EXPORTED, plists, abi, len(archived),
              (" (" + ", ".join(archived) + ")") if archived else ""))
     return 0
 

@@ -13,7 +13,7 @@ The `std.dashboard` module provides a high-level API for building live dashboard
 
 ### $dashboard
 
-Opaque handle to a dashboard instance.
+Opaque handle to a dashboard instance. Its one field, `id` (u64), is a number unique within the process.
 
 ### $dashwidget
 
@@ -21,7 +21,7 @@ Opaque handle to a dashboard instance.
 |-------|------|---------|
 | id | $str | Widget identifier |
 | type | $str | Widget type (`"chart"` or `"table"`) |
-| spec | @($byte) | Serialized widget specification |
+| spec | @($byte) | Serialized widget specification (for a chart, its Chart.js JSON as `chart.tojson` gives it) |
 
 ### $dasherr
 
@@ -37,7 +37,7 @@ Opaque handle to a dashboard instance.
 | `dashboard.addchart` | `d: $dashboard; id: $str; spec: chart.$chartspec` | `$dashwidget` | Add a chart widget |
 | `dashboard.addtable` [quarantined](/docs/reference/tki-quarantine/) | `d: $dashboard; id: $str; headers: @($str)` | `$dashwidget` | Add a table widget with column headers |
 | `dashboard.update` [quarantined](/docs/reference/tki-quarantine/) | `d: $dashboard; w: $dashwidget; data: @($byte)` | `void` | Push new data to a widget (triggers live refresh) |
-| `dashboard.serve` | `d: $dashboard; port: u64` | `void!$dasherr` | Start serving the dashboard on `port` |
+| `dashboard.serve` | `d: $dashboard; port: i64` | `void!$dasherr` | Start serving the dashboard on `port` |
 
 ## Usage
 

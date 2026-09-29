@@ -70,6 +70,55 @@ LinearModel ml_linregfit(F64Array xs, F64Array ys)
     return m;
 }
 
+int ml_linregfit_multi(const F64Array *cols, uint64_t ncols,
+                       const double *y, uint64_t n,
+                       double *coef, double *intercept)
+{
+    if (!cols || !y || !coef || !intercept || ncols == 0 || n < ncols + 1)
+        return -1;
+    for (uint64_t j = 0; j < ncols; j++)
+        if (!cols[j].data || cols[j].len < n) return -1;
+    uint64_t m = ncols + 1;               /* unknowns: coef[0..ncols-1], b */
+    double *a = (double *)calloc((size_t)(m * (m + 1)), sizeof(double));
+    if (!a) return -1;
+    /* A = X'X, rhs = X'y, where X has a trailing column of ones */
+    for (uint64_t i = 0; i < n; i++) {
+        for (uint64_t r = 0; r < m; r++) {
+            double xr = r < ncols ? cols[r].data[i] : 1.0;
+            for (uint64_t c = 0; c < m; c++) {
+                double xc = c < ncols ? cols[c].data[i] : 1.0;
+                a[r * (m + 1) + c] += xr * xc;
+            }
+            a[r * (m + 1) + m] += xr * y[i];
+        }
+    }
+    for (uint64_t k = 0; k < m; k++) {    /* elimination, partial pivoting */
+        uint64_t piv = k;
+        for (uint64_t r = k + 1; r < m; r++)
+            if (fabs(a[r * (m + 1) + k]) > fabs(a[piv * (m + 1) + k])) piv = r;
+        if (fabs(a[piv * (m + 1) + k]) < 1e-12) { free(a); return -1; }
+        if (piv != k)
+            for (uint64_t c = 0; c <= m; c++) {
+                double t = a[k * (m + 1) + c];
+                a[k * (m + 1) + c] = a[piv * (m + 1) + c];
+                a[piv * (m + 1) + c] = t;
+            }
+        for (uint64_t r = k + 1; r < m; r++) {
+            double f = a[r * (m + 1) + k] / a[k * (m + 1) + k];
+            for (uint64_t c = k; c <= m; c++) a[r * (m + 1) + c] -= f * a[k * (m + 1) + c];
+        }
+    }
+    for (uint64_t k = m; k-- > 0; ) {     /* back substitution */
+        double v = a[k * (m + 1) + m];
+        for (uint64_t c = k + 1; c < m; c++) v -= a[k * (m + 1) + c] * a[c * (m + 1) + m];
+        a[k * (m + 1) + m] = v / a[k * (m + 1) + k];
+    }
+    for (uint64_t j = 0; j < ncols; j++) coef[j] = a[j * (m + 1) + m];
+    *intercept = a[ncols * (m + 1) + m];
+    free(a);
+    return 0;
+}
+
 /* ml_linregpredict — evaluate the fitted line at x. */
 double ml_linregpredict(LinearModel m, double x)
 {

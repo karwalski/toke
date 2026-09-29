@@ -95,7 +95,7 @@ Registers a service for advertisement, which persists until `mdns.stopadvertise`
 
 Withdraws a service previously advertised under `name`.
 
-#### mdns.browse(type: str; cb: fn): bool
+#### mdns.browse(type: str; cb: fn($discovered):void): bool
 
 Starts browsing for instances of `type`, invoking `cb` for each one discovered. Browsing continues until `mdns.stopbrowse`. The wrapper has no callback parameter.
 

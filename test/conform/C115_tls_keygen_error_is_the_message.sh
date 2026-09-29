@@ -91,12 +91,12 @@ l() { sed -n "${1}p" "${WORK}/out"; }
 TKI="${REPO_ROOT}/stdlib/tls.tki"
 MD="${REPO_ROOT}/docs/stdlib/tls.md"
 if ! /usr/bin/grep -a -q 'TlsErr' "${TKI}" &&
-   [ "$(/usr/bin/grep -a -c '"return": "TlsKeypair!str"' "${TKI}")" -eq 2 ]; then
-    pass "tls.tki: both keygen calls return TlsKeypair!str, no TlsErr"
+   [ "$(/usr/bin/grep -a -c '"return": "tlskeypair!str"' "${TKI}")" -eq 2 ]; then
+    pass "tls.tki: both keygen calls return tlskeypair!str, no TlsErr"
 else
     fail "tls.tki still declares TlsErr or a different return"
 fi
-if [ "$(/usr/bin/grep -a -c '^### tls.genselfsigned.*: TlsKeypair!str$' "${MD}")" -eq 2 ] &&
+if [ "$(/usr/bin/grep -a -c '^### tls.genselfsigned.*: tlskeypair!str$' "${MD}")" -eq 2 ] &&
    ! /usr/bin/grep -a -q '!TlsErr' "${MD}"; then
     pass "tls.md: signatures match the interface"
 else

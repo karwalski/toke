@@ -16,7 +16,7 @@ Exactly five classes gate the ambient surface:
 
 | Class | Grants | Example sinks |
 |-------|--------|---------------|
-| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile` |
+| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file` / `crypto.sha256verify` |
 | `fs.write` | create / modify / delete files & dirs | `file.write`, `file.mkdir`, `file.delete`, `os.open` (write), `db.open`, `log.openaccess` / `log.openerror` (not for `/dev/stderr` or `/dev/stdout`) |
 | `net` | listen / connect / send / receive | `http.get`/`serve*`, `net.listen`, `ws.connect`, `tls.*`, `db` (pg/mysql) |
 | `env.write` | mutate the process environment | `env.set`, `os.setenv` |
@@ -41,14 +41,15 @@ What it cannot yet pass is listed, entry by entry, in
 authority (entropy from `/dev/urandom`, the server's own pre-forked workers, a log
 file's rotation after it was opened under a grant), and **known gaps**. The known
 gaps, as of 2026-09-29, are entries that reach a primitive with no grant under
-enforcement: `llm.*` connects without `net`; `toon.load`, `yaml.load`,
-`i18n.load`, `md.renderfile`, `template.load`, `crypto.sha256file` and the
-`vecstore` load/save read or write files with no grant. Story 121.42 closed
-three more: `router.serve` (and `chart.serve` / `dashboard.serve`, which serve
-through it) now takes `net` before it binds; `http.downloadfile` takes
-`fs.write` as well as `net`, before it fetches anything; and `http.servedir` /
-`http.servepages` take `fs.read` when they register, since the mount hands the
-server the authority to read files under it on every request.
+enforcement: `llm.*` connects without `net`; `i18n.load`, `template.load` and the
+`vecstore` load/save read or write files with no grant. Story 121.42 closed the
+rest: `toon.load`, `yaml.load`, `md.renderfile` and `crypto.sha256file` /
+`sha256verify` take `fs.read`; `router.serve` (and `chart.serve` /
+`dashboard.serve`, which serve through it) takes `net` before it binds;
+`http.downloadfile` takes `fs.write` as well as `net`, before it fetches
+anything; and `http.servedir` / `http.servepages` take `fs.read` when they
+register, since the mount hands the server the authority to read files under it
+on every request.
 The skiplist is self-failing: a line whose gap is fixed must be deleted in the same
 commit.
 

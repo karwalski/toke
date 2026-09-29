@@ -13,7 +13,12 @@ The `std.canvas` module provides a chainable API for constructing HTML5 Canvas d
 
 ### $canvasop
 
-Opaque handle to a single canvas drawing operation.
+One drawing operation, as recorded in `$canvas.ops`.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| tag | $str | The Canvas 2D member the operation ends with, e.g. `"fillRect"`, `"fillText"` |
+| data | $str | The JavaScript statement the operation adds to `canvas.tojs`'s output |
 
 ### $canvas
 

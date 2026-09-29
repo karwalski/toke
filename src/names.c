@@ -30,6 +30,7 @@
 #include "types.h"        /* 137.4: E4033 — a type name is not a value */
 #include "tkc_limits.h"
 #include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
+#include "tkc_caps.h"     /* 138.15: the funcs/structs caps, one counting rule */
 #include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -699,6 +700,12 @@ int resolve_imports(const Node *ast, const char *src,
         ifl_pop(&inf);
     }
     free(inf.paths);
+
+    /* 138.15 (loke T-25, T-54): the function-signature and struct-type caps,
+     * at --check, counted by the one rule codegen also applies (tkc_caps.h):
+     * imported .tki signatures and types count toward them. */
+    if (!err && tkc_caps_check(ast, src, search_paths, search_path_count, limits) > 0)
+        err = 1;
     return err ? -1 : 0;
 }
 

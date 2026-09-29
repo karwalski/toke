@@ -248,6 +248,23 @@ BoolYamlResult yaml_bool(Yaml y, const char *key) {
     r.is_err = 1; r.err = make_err(YAML_ERR_TYPE, "not a bool"); return r;
 }
 
+/* 121.43 (5): one predicate for "this line is a sequence item", used by
+ * both passes of yaml_arr.  The counting pass took only "- " and "-\n"; the
+ * extraction pass took ANY line starting with '-'.  So a block such as
+ *     -5
+ *     - a
+ *     - b
+ * was counted as two items and extracted as "5" and "a" -- a value that was
+ * never an item, and the last real item dropped.  A '-' starts an item only
+ * when followed by a space, a tab, a line end or the end of the block (YAML
+ * 1.2 8.2.1); "-5" and "--x" are scalars and are not items. */
+static int yaml_is_seq_item(const char *line, const char *end) {
+    if (line >= end || *line != '-') return 0;
+    if (line + 1 >= end) return 1;
+    char c = line[1];
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\0';
+}
+
 /* yaml_arr — extract a YAML sequence as YamlArray */
 YamlArrayResult yaml_arr(Yaml y, const char *key) {
     YamlArrayResult r;
@@ -256,14 +273,12 @@ YamlArrayResult yaml_arr(Yaml y, const char *key) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;
     }
 
-    /* Count sequence items (lines starting with "- ") */
+    /* Count sequence items */
     uint64_t count = 0;
     const char *p = vs;
     while (p < ve) {
         const char *line = skip_inline_ws(p);
-        if (line < ve && *line == '-' && (*(line + 1) == ' ' || *(line + 1) == '\n')) {
-            count++;
-        }
+        if (yaml_is_seq_item(line, ve)) count++;
         const char *eol = find_eol(line);
         p = skip_newline(eol);
     }
@@ -273,18 +288,18 @@ YamlArrayResult yaml_arr(Yaml y, const char *key) {
         r.is_err = 1; r.err = make_err(YAML_ERR_PARSE, "oom"); return r;
     }
 
-    /* Extract items */
+    /* Extract items -- the same predicate, so idx reaches exactly count */
     p = vs;
     uint64_t idx = 0;
     while (p < ve && idx < count) {
         const char *line = skip_inline_ws(p);
-        if (line < ve && *line == '-') {
+        if (yaml_is_seq_item(line, ve)) {
             const char *item = skip_inline_ws(line + 1);
-            if (*item == ' ') item++;
             const char *eol = find_eol(item);
+            if (eol > ve) eol = ve;
             /* Trim trailing whitespace */
             while (eol > item && (*(eol - 1) == ' ' || *(eol - 1) == '\t')) eol--;
-            size_t len = (size_t)(eol - item);
+            size_t len = eol > item ? (size_t)(eol - item) : 0;
             char *val = (char *)malloc(len + 1);
             if (!val) {
                 /* 121.41: this was unchecked -- memcpy through NULL. */
@@ -309,7 +324,7 @@ YamlArrayResult yaml_arr(Yaml y, const char *key) {
 
     r.is_err = 0;
     r.ok.data = arr;
-    r.ok.len = count;
+    r.ok.len = idx;
     return r;
 }
 

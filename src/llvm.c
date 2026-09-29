@@ -30,6 +30,7 @@
  */
 #include "llvm.h"
 #include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
+#include "tkc_caps.h"     /* 138.15: the funcs/structs caps, one counting rule */
 #include "stdlib_tables.h" /* 135.21: the stdlib lookup tables, moved out */
 #include "parser.h"
 #include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
@@ -182,7 +183,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -506,9 +507,23 @@ static void free_structs(Ctx *c) {
     free(c->structs);
 }
 
+/* 138.15 (loke T-54): a full struct registry is never passed over in
+ * silence.  tkc_caps_check() refuses such a program before the prepass runs,
+ * so reaching this means tkc_caps.h and the prepass disagree -- still name
+ * the type, the limit and the flag, and fail the build. */
+static void struct_cap_full(Ctx *c, const char *name, const char *from) {
+    char msg[400];
+    snprintf(msg, sizeof msg,
+             "compiler limit exceeded: struct type '%s'%s%s does not fit: "
+             "the limit is %d (max_structs); raise it with --max-structs=N "
+             "or max_structs = N in tkc.toml", name, from ? " from " : "",
+             from ? from : "", c->struct_cap);
+    diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, "fix", NULL);
+}
+
 static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
     if (c->struct_count >= c->struct_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", NULL);
+        struct_cap_full(c, name, NULL);
         return;
     }
     StructInfo *si = &c->structs[c->struct_count];
@@ -798,7 +813,16 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
  */
 static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     if (c->fn_count >= c->fn_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many functions", "fix", NULL);
+        /* 138.15 (loke T-25): tkc_caps_check() refuses this program first;
+         * reaching here means it and the prepass disagree -- still say which
+         * function, the limit and the flag. */
+        char msg[400];
+        snprintf(msg, sizeof msg,
+                 "compiler limit exceeded: function '%s' does not fit: the "
+                 "limit is %d function signatures, imported ones included "
+                 "(max_funcs); raise it with --max-funcs=N or max_funcs = N "
+                 "in tkc.toml", name, c->fn_cap);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, "fix", NULL);
         return NULL;
     }
     FnSig *s = &c->fns[c->fn_count];
@@ -1137,7 +1161,9 @@ static void register_tki_struct_types(Ctx *c) {
             memcpy(tname, nq1 + 1, (size_t)tlen);
             tname[tlen] = '\0';
 
-            if (lookup_struct(c, tname) || c->struct_count >= c->struct_cap) {
+            if (lookup_struct(c, tname)) continue;
+            if (c->struct_count >= c->struct_cap) {   /* 138.15: never silent */
+                struct_cap_full(c, tname, full);
                 continue;
             }
 
@@ -1382,17 +1408,10 @@ static int is_stdlib_slot_wrapper(const char *name) {
      * void) is a slot wrapper unless its glue is on the bare-glue exception
      * list in stdlib_tables.c, which test/conform/C375 keeps exact. */
     if (!name || is_err_slot_bare_glue(name)) return 0;
-    if (is_tki_value_err_union_wrapper(name)) return 1;
-    /* std.json's get* accessors keep the slot (json_glue.c) but their .tki
-     * declares a plain `i64`, so the derivation cannot see them. */
-    static const char *const undeclared[] = {
-        "tk_json_getbool_w", "tk_json_getint_w", "tk_json_geti64_w",
-        "tk_json_geti32_w", "tk_json_getf32_w", "tk_json_getfloat_w",
-        NULL,
-    };
-    for (int i = 0; undeclared[i]; i++)
-        if (!strcmp(name, undeclared[i])) return 1;
-    return 0;
+    /* 127.241: std.json's get* accessors are declared `T!JsonErr` in
+     * json.tki now, so the derivation sees them; the six-name list that
+     * stood in for the missing declaration is gone. */
+    return is_tki_value_err_union_wrapper(name);
 }
 
 /*
@@ -1749,7 +1768,9 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                         cp = q2 + 1;
                     }
 
-                    if (fc > 0 && c->struct_count < c->struct_cap &&
+                    if (fc > 0 && c->struct_count >= c->struct_cap)   /* 138.15: never silent */
+                        struct_cap_full(c, sname, tki_path);
+                    else if (fc > 0 &&
                         struct_alloc_fields(c, &c->structs[c->struct_count], fc) == 0) {
                         StructInfo *si = &c->structs[c->struct_count];
                         int sl = (int)strlen(sname);
@@ -2708,6 +2729,93 @@ static int match_arm_body_is_binding(Ctx *c, const Node *body, const Node *bind)
     tok_cp(c->src, bind, b2, sizeof b2);
     return !strcmp(b1, b2);
 }
+
+/*
+ * 138.2 (loke T-18, T-31, T-51) — a match binds its arms by LABEL.
+ *
+ * The result lowering (emit_expr, NODE_MATCH_STMT) dispatches once, ok/err,
+ * and until this story it sent the FIRST arm written to the ok side and every
+ * later arm to the err side, whatever they were called.  So
+ * `mt json.dec(s) {$jsonerr:e "err"; $ok:o "ok"}` ran "err" for a valid
+ * document and "ok" for an invalid one, and the result-type inferences
+ * (emit_expr, expr_llvm_type, expr_struct_type) typed the match from
+ * whichever arm came first.
+ *
+ * mt_arm_order fills ord[] with the child indices of n's arms (children with
+ * a label), the ok arm first and the rest in source order.  The ok arm is the
+ * one labelled `$ok`/`$Ok`.  With no such label, and `err_ty` (the error
+ * type, when the caller knows it) given, an arm labelled `$err`/`$Err`, the
+ * error type's own name or one of its sum's variants is on the err side, and
+ * the first arm that is none of these is the ok arm — the type-named spelling
+ * `{$str:v v;$apperr:e ..}` in either order.  Otherwise the first arm is the
+ * ok arm, as before.  An ok arm already written first gives the source order
+ * back unchanged, so every ok-first match lowers exactly as it did.
+ */
+static int mt_label_is(Ctx *c, const Node *arm, const char *a, const char *b) {
+    if (!arm || arm->child_count < 1 || !arm->children[0]) return 0;
+    char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+    return !strcmp(tag, a) || (b && !strcmp(tag, b));
+}
+static int mt_arm_is_err_side(Ctx *c, const Node *arm, const char *err_ty) {
+    if (mt_label_is(c, arm, "err", "Err")) return 1;
+    if (!err_ty || !err_ty[0]) return 0;
+    const char *en = err_ty[0] == '$' ? err_ty + 1 : err_ty;
+    if (mt_label_is(c, arm, en, NULL)) return 1;
+    const StructInfo *es = lookup_struct(c, err_ty);
+    if (!es && err_ty[0] == '$') es = lookup_struct(c, en);
+    if (es && es->is_sum) {
+        char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+        if (struct_has_field(es, tag)) return 1;
+    }
+    return 0;
+}
+static int mt_arm_order(Ctx *c, const Node *n, const char *err_ty,
+                        int *ord, int cap) {
+    int ok = -1, first = -1, k = 0;
+    for (int i = 1; i < n->child_count; i++) {
+        const Node *a = n->children[i];
+        if (!a || a->child_count < 1) continue;
+        if (first < 0) first = i;
+        if (mt_label_is(c, a, "ok", "Ok")) { ok = i; break; }
+    }
+    if (ok < 0 && err_ty && err_ty[0])
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *a = n->children[i];
+            if (!a || a->child_count < 1) continue;
+            if (!mt_arm_is_err_side(c, a, err_ty)) { ok = i; break; }
+        }
+    if (ok < 0) ok = first;
+    if (ok < 0) return 0;
+    ord[k++] = ok;
+    for (int i = 1; i < n->child_count && k < cap; i++) {
+        const Node *a = n->children[i];
+        if (i == ok || !a || a->child_count < 1) continue;
+        ord[k++] = i;
+    }
+    return k;
+}
+/* 127.245: an arm body that yields this function's ERROR value — a literal
+ * of the error type, a value of it (`$bad(x)`), or `$err(x)`. */
+static int mt_body_is_err_value(Ctx *c, const Node *b) {
+    if (!b || !c->cur_fn_err[0] || b->kind == NODE_RETURN_STMT) return 0;
+    if (b->kind == NODE_CALL_EXPR && b->child_count == 2 && b->children[0] &&
+        b->children[0]->kind == NODE_TYPE_IDENT) {
+        char wn[NAME_BUF]; tok_cp(c->src, b->children[0], wn, sizeof wn);
+        char mb[NAME_BUF]; snprintf(mb, sizeof mb, "%s", wn);
+        mangle_fn_name(c, mb, sizeof mb);
+        if ((!strcmp(wn, "err") || !strcmp(wn, "Err")) && !lookup_fn(c, mb)) return 1;
+    }
+    char rsn[NAME_BUF] = "";
+    if (b->kind == NODE_STRUCT_LIT) tok_cp(c->src, b, rsn, sizeof rsn);
+    else { const char *est = expr_struct_type(c, b); if (est) snprintf(rsn, sizeof rsn, "%s", est); }
+    return rsn[0] && !strcmp(rsn, c->cur_fn_err);
+}
+/* 127.245: at an arm's entry, mark the returned match's error path. */
+static void mt_ret_mark(Ctx *c, int slot, const Node *arm) {
+    if (slot < 0 || !arm || arm->child_count < 3) return;
+    if (mt_body_is_err_value(c, arm->children[2]))
+        fprintf(c->out, "  store i64 1, i64* %%t%d ; 127.245 error-valued arm\n", slot);
+}
 static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
@@ -3178,6 +3286,77 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
  * (e.g. zext i1 to i64 for arithmetic, ptrtoint for comparisons).
  */
 /*
+ * index_base_is_map — 127.30.  1 when a NODE_INDEX_EXPR (`x.get(k)`) on this
+ * base lowers to tk_map_get in the emitter's general index path.  Moved here
+ * verbatim from emit_expr's NODE_INDEX_EXPR case so the emitter and
+ * classify_fallible_call() read one definition.
+ */
+static int index_base_is_map(Ctx *c, const Node *base)
+{
+    if (!base) return 0;
+    /* Direct map variable */
+    if (base->kind == NODE_IDENT && recv_is_map(c, base))
+        return 1;  /* 127.46: uniquified LLVM names too */
+    /* 127.224 item 7: any other base the checker typed a map — a call
+     * into another user module used in place, `lib.mk().get("a")`,
+     * lowered as an array index and trapped RT003. */
+    if (base->kind != NODE_IDENT && base->rtype && base->rtype->kind == TY_MAP)
+        return 1;
+    /* Field access result: check if the field type starts with "@(" (map) */
+    if (base->kind == NODE_FIELD_EXPR && base->child_count >= 2) {
+        char fn[128]; tok_cp(c->src, base->children[1], fn, sizeof fn);
+        const StructInfo *bsi = resolve_base_struct(c, base->children[0]);
+        if (bsi) {
+            for (int fi = 0; fi < bsi->field_count; fi++) {
+                if (!strcmp(bsi->field_names[fi], fn)) {
+                    /* Use the field_is_map flag set during struct registration.
+                     * Only locally-defined structs with NODE_MAP_TYPE get this.
+                     * Cross-module .tki imports don't distinguish @ (array vs map). */
+                    return bsi->field_is_map[fi] ? 1 : 0;
+                }
+            }
+        } else {
+            /* 113.B.20: base struct type untracked (item from col.get(i),
+             * a chained access, or a match result). Mirror the
+             * NODE_FIELD_EXPR heuristic fallback: search all registered
+             * structs for a map field named `fn`, so `item.meta.get(k)`
+             * lowers to tk_map_get instead of array-GEP (segfault).
+             * Correct when field names are unique across structs. */
+            for (int _si = 0; _si < c->struct_count; _si++)
+                for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
+                    if (!strcmp(c->structs[_si].field_names[_fi], fn))
+                        return c->structs[_si].field_is_map[_fi] ? 1 : 0;
+        }
+    }
+    return 0;
+}
+
+/*
+ * index_is_map_get — 127.30.  1 when `x.get(k)` (a NODE_INDEX_EXPR) lowers to
+ * a call of tk_map_get, which keeps @tk_current_error truthful (0 hit, 1
+ * miss).  Mirrors the order of emit_expr's NODE_INDEX_EXPR case: a Vec base
+ * and an import alias are routed elsewhere before the map test, so they are
+ * excluded here first.  Anything this answers 0 for stays on the value
+ * sentinel, exactly as before the story.
+ */
+static int index_is_map_get(Ctx *c, const Node *n)
+{
+    if (!n || n->kind != NODE_INDEX_EXPR || n->child_count < 2 || !n->children[0])
+        return 0;
+    const Node *base = n->children[0];
+    if (base->kind == NODE_IDENT) {
+        char nb[128]; tok_cp(c->src, base, nb, sizeof nb);
+        const char *vst = ptr_local_struct_type(c, get_llvm_name(c, nb));
+        if (vst && !strcmp(vst, "Vec")) return 0;
+        for (int ii = 0; ii < c->import_count; ii++)
+            if (!strcmp(c->imports[ii].alias, nb) && !alias_is_value(c, base))
+                return 0;
+        return recv_is_map(c, base);
+    }
+    return index_base_is_map(c, base);
+}
+
+/*
  * 135.16 — the fallible-call classification, and the registry that carries it
  * across a `let`.
  *
@@ -3231,6 +3410,11 @@ static void classify_fallible_call(Ctx *c, const Node *call,
     *out_uce = 0;
     *out_zok = 0;
     *out_err_type = NULL;
+    /* 127.30: `m.get(k)` is a fallible lookup on the error channel. */
+    if (call && call->kind == NODE_INDEX_EXPR) {
+        if (index_is_map_get(c, call)) *out_uce = 1;
+        return;
+    }
     if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return;
     const Node *sc = call->children[0];
     if (!sc) return;
@@ -5758,6 +5942,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 } else if (!strcmp(src_ty, "i8*")) {
                     /* str -> str: identity */
                     fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
+                } else if (!strcmp(src_ty, "i64") && expr_is_str_value(c, n->children[0])) {
+                    /* 127.229 (5): a string the checker typed str but that
+                     * crosses the i64 ABI (`t.slice(a;b)`, a str-returning
+                     * call, a let bound to one) is the same string -- it
+                     * is not an integer to print.  The int -> str branch
+                     * below printed its address. */
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", t, v);
                 } else if (!strcmp(src_ty, "i64")
                            && (call_declares_bool(c, n->children[0])
                                || field_declares_bool(c, n->children[0]))) {
@@ -6140,51 +6331,10 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Check if base is a map (field access on a struct whose field type is a map).
          * If so, emit tk_map_get instead of array GEP. */
         {
-            int base_is_map = 0;
-            /* Direct map variable */
-            if (n->children[0]->kind == NODE_IDENT && recv_is_map(c, n->children[0]))
-                base_is_map = 1;  /* 127.46: uniquified LLVM names too */
-            /* 127.224 item 7: any other base the checker typed a map — a call
-             * into another user module used in place, `lib.mk().get("a")`,
-             * lowered as an array index and trapped RT003. */
-            if (!base_is_map && n->children[0]->kind != NODE_IDENT &&
-                n->children[0]->rtype && n->children[0]->rtype->kind == TY_MAP)
-                base_is_map = 1;
-            /* Field access result: check if the field type starts with "@(" (map) */
-            if (!base_is_map && n->children[0]->kind == NODE_FIELD_EXPR &&
-                n->children[0]->child_count >= 2) {
-                char fn[128]; tok_cp(c->src, n->children[0]->children[1], fn, sizeof fn);
-                const StructInfo *bsi = resolve_base_struct(c, n->children[0]->children[0]);
-                if (bsi) {
-                    for (int fi = 0; fi < bsi->field_count; fi++) {
-                        if (!strcmp(bsi->field_names[fi], fn)) {
-                            /* Use the field_is_map flag set during struct registration.
-                             * Only locally-defined structs with NODE_MAP_TYPE get this.
-                             * Cross-module .tki imports don't distinguish @ (array vs map). */
-                            if (bsi->field_is_map[fi]) {
-                                base_is_map = 1;
-                            }
-                            break;
-                        }
-                    }
-                } else {
-                    /* 113.B.20: base struct type untracked (item from col.get(i),
-                     * a chained access, or a match result). Mirror the
-                     * NODE_FIELD_EXPR heuristic fallback: search all registered
-                     * structs for a map field named `fn`, so `item.meta.get(k)`
-                     * lowers to tk_map_get instead of array-GEP (segfault).
-                     * Correct when field names are unique across structs. */
-                    for (int _si = 0; _si < c->struct_count; _si++) {
-                        int _hit = 0;
-                        for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
-                            if (!strcmp(c->structs[_si].field_names[_fi], fn)) {
-                                if (c->structs[_si].field_is_map[_fi]) base_is_map = 1;
-                                _hit = 1; break;
-                            }
-                        if (_hit) break;
-                    }
-                }
-            }
+            /* 127.30: one predicate, shared with classify_fallible_call(),
+             * so the call that sets the slot and the match that reads it
+             * cannot disagree about which `.get` is a map lookup. */
+            int base_is_map = index_base_is_map(c, n->children[0]);
             if (base_is_map) {
                 int base_map = emit_expr(c, n->children[0]);
                 const char *mbty = expr_llvm_type(c, n->children[0]);
@@ -6787,6 +6937,11 @@ static int emit_expr(Ctx *c, const Node *n)
          *   6. Merge label: load result slot, return loaded value.
          */
         int L = next_lbl(c);
+        /* 127.245: this match is the operand of a `<` whose arms may yield
+         * the function's error value (see NODE_RETURN_STMT); a match nested
+         * in its arms is not. */
+        const int ret_slot = (c->mt_ret_match == n) ? c->mt_ret_slot : -1;
+        if (c->mt_ret_match == n) c->mt_ret_match = NULL;
 
         /* Infer result type from Ok arm body, falling back to first arm */
         const char *res_ty = "i64";
@@ -6804,8 +6959,10 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         /* If no Ok arm found, infer from the first value-yielding arm body. */
         if (!strcmp(res_ty, "i64")) {
-            for (int i = 1; i < n->child_count; i++) {
-                const Node *arm = n->children[i];
+            /* 138.2: the ok arm first, by label (mt_arm_order). */
+            int rord[64]; int rn = mt_arm_order(c, n, NULL, rord, 64);
+            for (int ri = 0; ri < rn; ri++) {
+                const Node *arm = n->children[rord[ri]];
                 if (arm->child_count < 3 || !arm->children[2]) continue;
                 if (arm->children[2]->kind == NODE_RETURN_STMT) continue;
                 const Node *ab = arm->children[2];
@@ -6948,6 +7105,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const Node *arm = n->children[i];
                 if (!arm || arm->child_count < 1) continue;
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
+                mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
@@ -7040,7 +7198,7 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!str_not_plain) {
             const Node *s0 = n->children[0];
             if (s0->rtype && s0->rtype->kind == TY_ERROR_TYPE) str_not_plain = 1;
-            else if (s0->kind == NODE_CALL_EXPR) {
+            else if (s0->kind == NODE_CALL_EXPR || s0->kind == NODE_INDEX_EXPR) {   /* 127.30 */
                 int fu = 0, fz = 0; const char *fe = NULL;
                 classify_fallible_call(c, s0, &fu, &fz, &fe);
                 if (fu || fz || fe) str_not_plain = 1;
@@ -7118,6 +7276,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!arm || arm->child_count < 1) continue;
 
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
+                mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* arm-scoped binding */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
 
@@ -7191,7 +7350,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * derives this below, from the call. */
         const char *bound_err_type = NULL;
         const char *call_err_payload_type = NULL;
-        if (n->children[0]->kind == NODE_CALL_EXPR) {
+        if (n->children[0]->kind == NODE_CALL_EXPR ||
+            n->children[0]->kind == NODE_INDEX_EXPR) {                /* 127.30 */
             classify_fallible_call(c, n->children[0], &use_current_error,
                                    &zero_is_ok, &call_err_payload_type);
         } else if (n->children[0]->kind == NODE_IDENT) {
@@ -7239,26 +7399,61 @@ static int emit_expr(Ctx *c, const Node *n)
          * rather than the payload (a silent wrong value).  Recognised only when
          * the error type resolves to a sum and every later arm is one of its
          * variants; anything else takes the paths below unchanged. */
+        /* 138.2: the arms in LABEL order — the ok arm first, then the rest
+         * in source order (mt_arm_order).  Every loop below walks ord[], so
+         * `{$err:e ..; $ok:v ..}` dispatches exactly as its ok-first twin. */
+        const char *ord_err_ty = bound_err_type;
+        if (!ord_err_ty && n->children[0]->kind == NODE_CALL_EXPR)
+            ord_err_ty = call_err_payload_type;
+        int ord[64];
+        int nord = mt_arm_order(c, n, ord_err_ty, ord, 64);
         const StructInfo *flat_ssi = NULL;
         {
-            const char *fe = bound_err_type;
-            if (!fe && n->children[0]->kind == NODE_CALL_EXPR) fe = call_err_payload_type;
+            const char *fe = ord_err_ty;
             if (fe && num_arms >= 2 && num_arms <= 64) {
                 const StructInfo *fs = lookup_struct(c, fe);
                 if (!fs && fe[0] == '$') fs = lookup_struct(c, fe + 1);
                 if (fs && fs->is_sum) {
-                    int fok = 1, fai = 0;
-                    for (int i = 1; i < n->child_count && fok; i++) {
-                        const Node *arm = n->children[i];
-                        if (!arm || arm->child_count < 1) continue;
+                    int fok = 1;
+                    for (int oi = 0; oi < nord && fok; oi++) {
+                        const Node *arm = n->children[ord[oi]];
                         char ftag[128]; tok_cp(c->src, arm->children[0], ftag, sizeof ftag);
-                        if (fai == 0) fok = !strcmp(ftag, "ok") || !strcmp(ftag, "Ok");
+                        if (oi == 0) fok = !strcmp(ftag, "ok") || !strcmp(ftag, "Ok");
                         else fok = struct_has_field(fs, ftag);
-                        fai++;
                     }
                     if (fok) flat_ssi = fs;
                 }
             }
+        }
+        /* 138.2 (E1 C411 case 5): at 2 arms the same holds when NEITHER arm
+         * says which side it is: no `$ok`/`$err` label, no label of the error
+         * type or one of its variants, no type-named label (`$str:v ..`).
+         * `mt e {$notfound:m ..;$invalid:m ..}` over a payload whose sum type
+         * was not established dispatched on value-vs-zero: arm 2, m = 0,
+         * silently.  The one condition cannot choose between two variants. */
+        int side_known = 0;
+        for (int oi = 0; oi < nord && !side_known; oi++) {
+            const Node *a = n->children[ord[oi]];
+            if (mt_label_is(c, a, "ok", "Ok") || mt_arm_is_err_side(c, a, ord_err_ty)) {
+                side_known = 1; break;
+            }
+            char lt[128]; tok_cp(c->src, a->children[0], lt, sizeof lt);
+            char dl[130]; snprintf(dl, sizeof dl, "$%s", lt);
+            static const char *const prim[] = { "str", "i64", "i32", "i16", "i8", "u64",
+                "u32", "u16", "u8", "f64", "f32", "bool", "byte", "none", "some", NULL };
+            for (int q = 0; prim[q]; q++) if (!strcmp(lt, prim[q])) side_known = 1;
+            if (lookup_struct(c, lt) || lookup_struct(c, dl)) side_known = 1;
+        }
+        if (num_arms == 2 && !flat_ssi && !side_known) {
+            char mmsg[320];
+            snprintf(mmsg, sizeof mmsg,
+                "match has 2 arms, neither of them '$ok' or '$err', and the sum type "
+                "of the matched value is not established");
+            /* No `fix`, as below (127.237 (4)). */
+            diag_emit(DIAG_ERROR, E9005, n->tok_start, n->line, n->col, mmsg, (void *)0);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+            return t;
         }
         if (num_arms >= 3 && !flat_ssi) {
             char mmsg[320];
@@ -7341,15 +7536,34 @@ static int emit_expr(Ctx *c, const Node *n)
          * every variant arm. */
         int flat_lbl[64]; int flat_n = 0; int flat_tag = -1, flat_pay = -1;
         if (flat_ssi)
-            for (int i = 2; i < n->child_count && flat_n < 64; i++)
-                if (n->children[i] && n->children[i]->child_count >= 1)
-                    flat_lbl[flat_n++] = next_lbl(c);
+            for (int oi = 1; oi < nord && flat_n < 64; oi++)
+                flat_lbl[flat_n++] = next_lbl(c);
 
         int arm_idx = 0;
-        for (int i = 1; i < n->child_count; i++) {
-            const Node *arm = n->children[i];
-            if (arm->child_count < 1) continue;
-            int is_ok = (arm_idx == 0);
+        /* 138.2: a match with no ok arm (`mt g() {$err:e ..}` alone) or no
+         * err arm (`{$ok:v ..}` alone) has an empty side.  The first arm was
+         * lowered as the ok arm whatever its label, and a missing rm_err
+         * label reached clang as an undefined value.  The empty side leaves
+         * the zero value of the result type and joins the merge. */
+        int ok_absent = nord > 0 && !mt_label_is(c, n->children[ord[0]], "ok", "Ok") &&
+                        mt_arm_is_err_side(c, n->children[ord[0]], ord_err_ty);
+        int ok_side = nord > 0 && !ok_absent;
+        if (!ok_side) {
+            fprintf(c->out, "rm_ok%d:\n", L);
+            fprintf(c->out, "  store %s zeroinitializer, %s* %%t%d ; 138.2 no ok arm\n",
+                    res_ty, res_ty, res_slot);
+            fprintf(c->out, "  br label %%rm_end%d\n", L);
+            arm_idx = 1;
+        }
+        if (nord - ok_side == 0) {
+            fprintf(c->out, "rm_err%d:\n", L);
+            fprintf(c->out, "  store %s zeroinitializer, %s* %%t%d ; 138.2 no err arm\n",
+                    res_ty, res_ty, res_slot);
+            fprintf(c->out, "  br label %%rm_end%d\n", L);
+        }
+        for (int oi = 0; oi < nord; oi++) {
+            const Node *arm = n->children[ord[oi]];
+            int is_ok = (arm_idx == 0);   /* 138.2: ord[0] is the ok arm */
             arm_idx++;
             /* An arm's binding is in scope for that arm only (names.c pushes
              * a scope per arm).  Its alias was never popped, so after
@@ -7410,9 +7624,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     flat_pay = next_tmp(c);
                     fprintf(c->out, "  %%t%d = phi i64 [ %%t%d, %%rmfl%d ], [ 0, %%rmfn%d ]\n", flat_pay, pv, K, K);
                     int fj = 0;
-                    for (int q = 2; q < n->child_count && fj < flat_n; q++) {
-                        const Node *qa = n->children[q];
-                        if (!qa || qa->child_count < 1) continue;
+                    for (int qo = 1; qo < nord && fj < flat_n; qo++) {
+                        const Node *qa = n->children[ord[qo]];
                         if (fj == flat_n - 1) {
                             fprintf(c->out, "  br label %%rmfv%d\n", flat_lbl[fj]);
                         } else {
@@ -7430,6 +7643,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (arm_idx - 2 < flat_n)
                     fprintf(c->out, "rmfv%d:\n", flat_lbl[arm_idx - 2]);
             }
+            mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
 
             /* 127.231 (1): a variant arm of a flat match binds that variant's
              * payload, typed as the sum declares it (the sum-tag switch's
@@ -8007,8 +8221,10 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
      * the binding is not in scope yet when this runs.
      */
     if (n->kind == NODE_MATCH_STMT && n->child_count >= 1) {
-        for (int i = 1; i < n->child_count; i++) {
-            const Node *arm = n->children[i];
+        /* 138.2: the ok arm first, by label (mt_arm_order). */
+        int rord[64]; int rn = mt_arm_order(c, n, NULL, rord, 64);
+        for (int ri = 0; ri < rn; ri++) {
+            const Node *arm = n->children[rord[ri]];
             if (!arm || arm->child_count < 3 || !arm->children[2]) continue;
             const Node *ab = arm->children[2];
             if (ab->kind == NODE_RETURN_STMT) continue;  /* 114.47 */
@@ -8795,8 +9011,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
          * Previously this returned a hardcoded "i64" which caused ptr/i64
          * mismatches when the match body returned a struct pointer. */
         const char *mrt = "i64";
-        for (int i = 1; i < n->child_count; i++) {
-            const Node *arm0 = n->children[i];
+        /* 138.2: the ok arm first, by label, as emit_expr (mt_arm_order). */
+        int rord[64]; int rn = mt_arm_order(c, n, NULL, rord, 64);
+        for (int ri = 0; ri < rn; ri++) {
+            const Node *arm0 = n->children[rord[ri]];
             if (arm0->child_count < 3 || !arm0->children[2]) continue;
             if (arm0->children[2]->kind == NODE_RETURN_STMT) continue; /* 114.47 */
             const Node *ab = arm0->children[2];
@@ -10284,22 +10502,122 @@ static void emit_stmt(Ctx *c, const Node *n)
              * keeping the ok-or-0 ABI while carrying the payload to the
              * matching $err arm. */
             if (c->cur_fn_err[0]) {
+                /* 138.2 (loke T-18): `<$err(x)` is an ERROR return whose
+                 * payload is x.  `$err(..)` names no sum type, so the
+                 * constructor lowered as a pass-through of x and — unless x
+                 * was itself the error box — this return was read as an ok
+                 * return: @tk_current_error cleared, the caller's `mt` on the
+                 * $ok arm.  Unwrap it; x is then judged as a bare `<x` is. */
+                const Node *rex = n->children[0];
+                int err_wrap = 0;
+                if (rex->kind == NODE_CALL_EXPR && rex->child_count == 2 &&
+                    rex->children[0] && rex->children[0]->kind == NODE_TYPE_IDENT) {
+                    char wn[NAME_BUF]; tok_cp(c->src, rex->children[0], wn, sizeof wn);
+                    if (!strcmp(wn, "err") || !strcmp(wn, "Err")) {
+                        char mb[NAME_BUF]; snprintf(mb, sizeof mb, "%s", wn);
+                        mangle_fn_name(c, mb, sizeof mb);
+                        if (!lookup_fn(c, mb)) { rex = rex->children[1]; err_wrap = 1; }
+                    }
+                }
+                /* 127.245: `<mt f() {$ok:v v+100; $err:e $e{..}}` — a match
+                 * whose arms yield the ok value on one path and the ERROR
+                 * value on another.  The whole match was judged by its struct
+                 * type (the error type, from the error arm), so every path
+                 * returned as an error: the ok value was stored as an error
+                 * box.  Each error-valued arm now marks a flag at its entry
+                 * (mt_ret_mark) and the return decides on it. */
+                if (!err_wrap && rex->kind == NODE_MATCH_STMT) {
+                    int any_err = 0;
+                    for (int i = 1; i < rex->child_count && !any_err; i++) {
+                        const Node *a = rex->children[i];
+                        if (a && a->child_count >= 3 && mt_body_is_err_value(c, a->children[2]))
+                            any_err = 1;
+                    }
+                    if (any_err) {
+                        int fslot = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = alloca i64\n", fslot);
+                        fprintf(c->out, "  store i64 0, i64* %%t%d ; 127.245 error-valued arm taken\n", fslot);
+                        c->mt_ret_match = rex; c->mt_ret_slot = fslot;
+                        int mv = emit_expr(c, rex);
+                        c->mt_ret_match = NULL;
+                        const char *mty = expr_llvm_type(c, rex);
+                        int fl = next_tmp(c), fc = next_tmp(c), RL = next_lbl(c);
+                        fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", fl, fslot);
+                        fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", fc, fl);
+                        fprintf(c->out, "  br i1 %%t%d, label %%mtre%d, label %%mtro%d\n", fc, RL, RL);
+                        fprintf(c->out, "mtre%d:\n", RL);
+                        int w = mv;
+                        if (!strcmp(mty, "i8*")) {
+                            w = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", w, mv);
+                        } else if (!strcmp(mty, "double")) {
+                            w = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", w, mv);
+                        } else if (strcmp(mty, "i64")) {
+                            w = coerce_value(c, mv, mty, "i64");
+                        }
+                        int wz = next_tmp(c), ws = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", wz, w);
+                        fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d\n", ws, wz, w);
+                        fprintf(c->out, "  store i64 %%t%d, i64* @tk_current_error\n", ws);
+                        if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
+                        else if (!strcmp(rt, "double")) fputs("  ret double 0.0\n", c->out);
+                        else if (!strcmp(rt, "float")) fputs("  ret float 0.0\n", c->out);
+                        else if (!strcmp(rt, "i1")) fputs("  ret i1 0\n", c->out);
+                        else if (!strcmp(rt, "i8*")) fputs("  ret i8* null\n", c->out);
+                        else fprintf(c->out, "  ret %s 0\n", rt);
+                        fprintf(c->out, "mtro%d:\n", RL);
+                        fprintf(c->out, "  store i64 0, i64* @tk_current_error\n");
+                        if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
+                        else {
+                            int rv = coerce_value(c, mv, mty, rt);
+                            fprintf(c->out, "  ret %s %%t%d\n", rt, rv);
+                        }
+                        c->term = 1;
+                        break;
+                    }
+                }
                 char rsn[128] = "";
-                if (n->children[0]->kind == NODE_STRUCT_LIT)
-                    tok_cp(c->src, n->children[0], rsn, sizeof rsn);
+                if (rex->kind == NODE_STRUCT_LIT)
+                    tok_cp(c->src, rex, rsn, sizeof rsn);
                 else {
-                    const char *est = expr_struct_type(c, n->children[0]);
+                    const char *est = expr_struct_type(c, rex);
                     if (est) { strncpy(rsn, est, sizeof rsn - 1); rsn[sizeof rsn - 1] = '\0'; }
                 }
-                if (rsn[0] && !strcmp(rsn, c->cur_fn_err)) {
+                int is_box = rsn[0] && !strcmp(rsn, c->cur_fn_err);
+                if (is_box || err_wrap) {
                     /* 127.109: this literal IS the error box.  Tell the
                      * literal sites to take it from the thread's reused error
                      * buffer instead of malloc; box_alloc() consumes the flag
                      * at the first (outermost) allocation it reaches. */
-                    c->err_box_pending = 1;
-                    int box = emit_expr(c, n->children[0]);
+                    c->err_box_pending = is_box;
+                    int box = emit_expr(c, rex);
                     c->err_box_pending = 0;   /* not a literal after all */
-                    const char *bt = expr_llvm_type(c, n->children[0]);
+                    const char *bt = expr_llvm_type(c, rex);
+                    if (!is_box) {
+                        /* 138.2: a `<$err(x)` payload that is not the error
+                         * box (a str message, a scalar code) crosses as the
+                         * i64 word the $err arm binds.  A zero word would
+                         * read as "no error" — the 127.97 flag 1 carries it
+                         * instead (the arm binds nil, as for any flag). */
+                        if (!strcmp(bt, "double")) {
+                            int bc = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, box);
+                            box = bc; bt = "i64";
+                        } else if (strcmp(bt, "i8*")) {
+                            box = coerce_value(c, box, bt, "i64"); bt = "i64";
+                        }
+                        if (!strcmp(bt, "i8*")) {
+                            int iv = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
+                            box = iv; bt = "i64";
+                        }
+                        int z = next_tmp(c), sel = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", z, box);
+                        fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d ; 138.2 $err(x) payload\n",
+                                sel, z, box);
+                        box = sel;
+                    }
                     if (!strcmp(bt, "i8*")) {
                         int iv = next_tmp(c);
                         fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
@@ -11548,6 +11866,16 @@ static void emit_lifted_closures(Ctx *c) {
 int emit_llvm_ir(const Node *ast, const char *src,
                  const CodegenEnv *env, const char *out_ll)
 {
+    /* 138.15 (loke T-25, T-54): the caps, by the same rule --check applies
+     * (tkc_caps.h), before anything is registered -- so a registry can only
+     * fill up here if that rule and the prepass below disagree. */
+    {
+        TkcLimits l0; tkc_limits_defaults(&l0);
+        if (env) l0 = env->limits;
+        if (tkc_caps_check(ast, src, env ? env->search_paths : NULL,
+                           env ? env->search_path_count : 0, &l0) > 0)
+            return -1;
+    }
     FILE *f = fopen(out_ll, "w");
     if (!f) {
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,

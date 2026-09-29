@@ -17,8 +17,11 @@
 #   2. the call itself as the scrutinee                          -> E4025
 #   3. an imported (.tki) `T!E` export, the ooke shape           -> E4025
 #   4. a real field of the payload checks clean and runs
+#   5. the `$ok` arm written second  -> E4025 (138.2: codegen types an
+#      `mt` by its `$ok` arm wherever it is written, and so does the checker;
+#      until 138.2 this case asserted no diagnostic, because codegen then
+#      typed the match by the `$err` arm written first)
 # and leaves every other shape unknown, as before (no new diagnostic):
-#   5. the first arm is `$err`       (codegen types it by that arm)
 #   6. the ok arm is not the bare binding
 #
 # Negative control: TKC built from d25ba32 — 1, 2 and 3 check clean (red).
@@ -72,7 +75,7 @@ expect "4-real-field-checks" "$(errs p4.tk)" ""
 expect "4-real-field-runs" "$(./p4 2>/dev/null)" "42"
 
 printf '%s\nf=main():i64{\n  let c=mt mk(1) {$err:e 0;$ok:v v};\n  <c.nosuchfield\n};\n' "$HDR" > p5.tk
-expect "5-err-arm-first-stays-unknown" "$(errs p5.tk)" ""
+expect "5-err-arm-first-typed-by-ok-arm" "$(errs p5.tk)" "E4025 "
 
 printf '%s\nf=main():i64{\n  let c=mt mk(1) {$ok:v v.port;$err:e 0};\n  <c\n};\n' "$HDR" > p6.tk
 expect "6-non-bare-ok-arm-stays-unknown" "$(errs p6.tk)" ""
