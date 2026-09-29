@@ -537,32 +537,32 @@ int64_t tk_str_arraylen_w(int64_t arr) {
  *          countre/findall/replacere can, by re-scanning the tail
  * Both print to stderr and exit(1), like the other RT traps
  * (docs/runtime-abi.md section 9). */
-static void tk_re_trap_invalid(const char *fn, const char *pat, const TkReErr *e) {
+static void regex_trap_invalid(const char *fn, const char *pat, const TkReErr *e) {
     fprintf(stderr, "RT008: invalid regex pattern in str.%s: %s (at byte %d of \"%.80s%s\")\n",
             fn, e->msg, e->pos, pat, strlen(pat) > 80 ? "..." : "");
     exit(1);
 }
 
-static void tk_re_trap_budget(const char *fn, const char *pat, size_t len) {
+static void regex_trap_budget(const char *fn, const char *pat, size_t len) {
     fprintf(stderr, "RT009: regex step budget exceeded in str.%s (pattern \"%.80s%s\", subject %zu bytes)\n",
             fn, pat, strlen(pat) > 80 ? "..." : "", len);
     exit(1);
 }
 
-static void tk_re_compile_or_trap(const char *fn, const char *pat, TkRe *re) {
+static void regex_compile_or_trap(const char *fn, const char *pat, TkRe *re) {
     TkReErr e;
-    if (tkre_compile(re, pat, &e) != 0) tk_re_trap_invalid(fn, pat, &e);
+    if (tkre_compile(re, pat, &e) != 0) regex_trap_invalid(fn, pat, &e);
 }
 
-static int64_t tk_re_find1(const char *fn, const char *str, const char *pat, int full) {
+static int64_t regex_find1(const char *fn, const char *str, const char *pat, int full) {
     if (!str || !pat) return 0;
     TkRe re;
-    tk_re_compile_or_trap(fn, pat, &re);
+    regex_compile_or_trap(fn, pat, &re);
     size_t len = strlen(str), ms, me;
     uint64_t budget = tkre_budget(&re, len);
     int rc = tkre_search(&re, str, len, 0, full, &budget, &ms, &me);
     tkre_free(&re);
-    if (rc == TKRE_BUDGET) tk_re_trap_budget(fn, pat, len);
+    if (rc == TKRE_BUDGET) regex_trap_budget(fn, pat, len);
     if (rc == TKRE_NOMEM) { fprintf(stderr, "str.%s: out of memory\n", fn); exit(1); }
     return rc == TKRE_FOUND ? 1 : 0;
 }
@@ -574,19 +574,19 @@ static int64_t tk_re_find1(const char *fn, const char *str, const char *pat, int
 typedef struct {
     const TkRe *re; const char *s; size_t len, from, ms, me;
     uint64_t budget; int prev_end_valid; size_t prev_end;
-} TkReIter;
+} RegexIter;
 
-static void tk_re_iter_init(TkReIter *it, const TkRe *re, const char *s) {
+static void regex_iter_init(RegexIter *it, const TkRe *re, const char *s) {
     memset(it, 0, sizeof *it);
     it->re = re; it->s = s; it->len = strlen(s);
     it->budget = tkre_budget(re, it->len);
 }
 
-static int tk_re_next(const char *fn, TkReIter *it, const char *pat) {
+static int regex_next(const char *fn, RegexIter *it, const char *pat) {
     while (it->from <= it->len) {
         size_t ms, me;
         int rc = tkre_search(it->re, it->s, it->len, it->from, 0, &it->budget, &ms, &me);
-        if (rc == TKRE_BUDGET) tk_re_trap_budget(fn, pat, it->len);
+        if (rc == TKRE_BUDGET) regex_trap_budget(fn, pat, it->len);
         if (rc == TKRE_NOMEM) { fprintf(stderr, "str.%s: out of memory\n", fn); exit(1); }
         if (rc != TKRE_FOUND) return 0;
         if (ms == me && it->prev_end_valid && ms == it->prev_end) {
@@ -605,7 +605,7 @@ static int tk_re_next(const char *fn, TkReIter *it, const char *pat) {
 int64_t tk_str_containsre_w(int64_t s, int64_t pattern) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
-    return tk_re_find1("containsre", str, pat, 0);
+    return regex_find1("containsre", str, pat, 0);
 }
 
 /* str.i64tof64 — integer to float conversion */
@@ -755,10 +755,10 @@ int64_t tk_str_countre_w(int64_t s, int64_t pattern) {
     const char *pat = (const char *)(intptr_t)pattern;
     if (!str || !pat) return 0;
     TkRe re;
-    tk_re_compile_or_trap("countre", pat, &re);
-    TkReIter it; tk_re_iter_init(&it, &re, str);
+    regex_compile_or_trap("countre", pat, &re);
+    RegexIter it; regex_iter_init(&it, &re, str);
     int64_t count = 0;
-    while (tk_re_next("countre", &it, pat)) count++;
+    while (regex_next("countre", &it, pat)) count++;
     tkre_free(&re);
     return count;
 }
@@ -769,12 +769,12 @@ int64_t tk_str_findall_w(int64_t s, int64_t pattern) {
     const char *pat = (const char *)(intptr_t)pattern;
     if (!str || !pat) return 0;
     TkRe re;
-    tk_re_compile_or_trap("findall", pat, &re);
+    regex_compile_or_trap("findall", pat, &re);
     size_t cap = 16, len = 0;
     int64_t *items = (int64_t *)malloc(cap * sizeof(int64_t));
     if (!items) { tkre_free(&re); return 0; }
-    TkReIter it; tk_re_iter_init(&it, &re, str);
-    while (tk_re_next("findall", &it, pat)) {
+    RegexIter it; regex_iter_init(&it, &re, str);
+    while (regex_next("findall", &it, pat)) {
         size_t mlen = it.me - it.ms;
         char *match = (char *)malloc(mlen + 1);
         if (!match) break;
@@ -802,7 +802,7 @@ int64_t tk_str_findall_w(int64_t s, int64_t pattern) {
 int64_t tk_str_matches_w(int64_t s, int64_t pattern) {
     const char *str = (const char *)(intptr_t)s;
     const char *pat = (const char *)(intptr_t)pattern;
-    return tk_re_find1("matches", str, pat, 1);
+    return regex_find1("matches", str, pat, 1);
 }
 
 /* str.replacere(s, pattern, replacement) — replace every non-overlapping
@@ -814,14 +814,14 @@ int64_t tk_str_replacere_w(int64_t s, int64_t pattern, int64_t replacement) {
     if (!str || !pat) return s;
     if (!rep) rep = "";
     TkRe re;
-    tk_re_compile_or_trap("replacere", pat, &re);
+    regex_compile_or_trap("replacere", pat, &re);
     size_t rlen = strlen(rep), slen = strlen(str), opos = 0, done = 0;
     size_t cap = slen + 64;
     char *out = (char *)malloc(cap);
     if (!out) { tkre_free(&re); return s; }
-    TkReIter it; tk_re_iter_init(&it, &re, str);
+    RegexIter it; regex_iter_init(&it, &re, str);
     for (;;) {
-        int more = tk_re_next("replacere", &it, pat);
+        int more = regex_next("replacere", &it, pat);
         size_t upto = more ? it.ms : slen;          /* copy s[done..upto) */
         size_t need = opos + (upto - done) + (more ? rlen : 0) + 1;
         if (need > cap) {
