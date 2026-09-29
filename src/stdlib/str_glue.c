@@ -15,7 +15,8 @@
 #include <regex.h>
 
 /* 114.53/114.54: the string→number parse wrappers signal parse failure via
- * tk_current_error (0 = ok, 1 = err) and always return the real value — the 0
+ * tk_current_error (0 = ok, else a ParseErr box -- 127.241) and always return
+ * the real value — the 0
  * sentinel can't distinguish a legitimately-parsed 0/0.0 from failure. The
  * match-decode discriminates ok/err on this flag for those calls. */
 /* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
@@ -26,6 +27,29 @@ extern _Thread_local int64_t tk_current_error;
 #else
 extern __thread int64_t tk_current_error;
 #endif
+
+/* 127.241: the per-thread error box (tk_runtime.c, 127.109). */
+void *tk_err_box(int64_t nbytes);
+
+/*
+ * str_raise — 127.241.  Fail a `T!SliceErr` / `T!ParseErr` / `T!EncodingErr`
+ * / `T!BracketErr` call with a payload of the declared shape.
+ *
+ * All four error types are the record {msg:str} (stdlib/str.tki), so the box
+ * is one word, the message pointer, and `mt f(){$err:e e.msg}` reads it
+ * (runtime-abi.md §7.3, "a record: a tk_err_box of the record's layout").
+ * Before this, slice / matchbracket / frombytes returned a bare 0 and never
+ * set the slot (the bare-glue list in stdlib_tables.c), and the parse
+ * wrappers stored the payload-less 1 -- so `e.msg` on a failed str.toint was
+ * a nil dereference (RT005) although the .tki declares the field.  Returns
+ * 0 so a caller can `return str_raise(...)` for a pointer-valued result.
+ */
+static int64_t str_raise(const char *msg) {
+    const char **box = (const char **)tk_err_box((int64_t)sizeof(const char *));
+    box[0] = msg ? msg : "";
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
 
 /* --- bitcast helpers for f64 <-> i64 ------------------------------------ */
 static double i64_to_f64(int64_t i) { double d; memcpy(&d, &i, sizeof(d)); return d; }
@@ -152,9 +176,11 @@ int64_t tk_str_indexfrom_w(int64_t s, int64_t sub, int64_t start) {
 }
 
 int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_) {
-    if (!s) return 0;
+    if (!s) return str_raise("str.slice: null string");
     StrSliceResult r = str_slice((const char *)(intptr_t)s, (uint64_t)start, (uint64_t)end_);
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return str_raise(r.err_msg);                  /* 127.241 */
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }
 
 int64_t tk_str_replace_w(int64_t s, int64_t old_val, int64_t new_val) {
@@ -191,9 +217,11 @@ int64_t tk_str_lastindex_w(int64_t s, int64_t sub) {
 }
 
 int64_t tk_str_matchbracket_w(int64_t s) {
-    if (!s) return 0;
+    if (!s) return str_raise("str.matchbracket: null string");
     StrBracketResult r = str_matchbracket((const char *)(intptr_t)s);
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return str_raise(r.err_msg);                  /* 127.241 */
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }
 
 int64_t tk_str_contains_w(int64_t s, int64_t sub) {
@@ -259,8 +287,9 @@ int64_t tk_str_toint_w(int64_t s) {
      * tk_current_error and return the real value (see 114.53 for f64). */
     const char *p = s ? (const char *)(intptr_t)s : "";
     IntParseResult r = str_to_int(p);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : r.ok;
+    if (r.is_err) return str_raise(r.err_msg);                  /* 127.241: ParseErr{msg} */
+    tk_current_error = 0;
+    return r.ok;
 }
 
 /* str extras (tobytes, frombytes, bytes, print) — Stage 5: real [byte] rep.
@@ -274,10 +303,18 @@ int64_t tk_str_bytes_w(int64_t s) {
     return tk_bytes_pack((const uint8_t *)str, (uint64_t)strlen(str));
 }
 int64_t tk_str_tobytes_w(int64_t s) { return tk_str_bytes_w(s); }
+/* 127.241: str!EncodingErr, as declared and as str.md documents -- bytes that
+ * are not valid UTF-8 fail with EncodingErr{msg}.  The value channel still
+ * carries the decoded bytes on that path (it always did, and a caller that
+ * does not match on the result keeps getting them); only the slot is new. */
 int64_t tk_str_frombytes_w(int64_t b) {
     uint8_t *buf; uint64_t n = tk_bytes_unpack(b, &buf);
-    (void)n;                       /* buf is already NUL-terminated by unpack */
-    return buf ? (int64_t)(intptr_t)buf : (int64_t)(intptr_t)"";
+    if (!buf) { str_raise("str.frombytes: out of memory"); return (int64_t)(intptr_t)""; }
+    ByteArray ba = { buf, n };
+    StrEncResult v = str_from_bytes(ba);
+    if (v.is_err) str_raise(v.err_msg);
+    else { free((void *)v.ok); tk_current_error = 0; }
+    return (int64_t)(intptr_t)buf;  /* buf is already NUL-terminated by unpack */
 }
 int64_t tk_str_print_w(int64_t s) {
     if (s) printf("%s", (const char *)(intptr_t)s);
@@ -422,10 +459,11 @@ int64_t tk_str_fromfloat_w(int64_t f) {
 
 
 int64_t tk_str_tofloat_w(int64_t s) {
-    if (TK_NOT_A_STR(s)) { tk_current_error = 1; return f64_to_i64(0.0); }
+    if (TK_NOT_A_STR(s)) { str_raise("argument is not a str"); return f64_to_i64(0.0); }
     FloatParseResult r = str_to_float((const char *)(intptr_t)s);
-    tk_current_error = r.is_err ? 1 : 0;
-    return f64_to_i64(r.is_err ? 0.0 : r.ok);
+    if (r.is_err) { str_raise(r.err_msg); return f64_to_i64(0.0); }   /* 127.241: ParseErr{msg} */
+    tk_current_error = 0;
+    return f64_to_i64(r.ok);
 }
 
 int64_t tk_str_fromf64_w(int64_t f) {
@@ -442,10 +480,11 @@ int64_t tk_str_isempty_w(int64_t s) {
 }
 
 int64_t tk_str_parsef64_w(int64_t s) {
-    if (TK_NOT_A_STR(s)) { tk_current_error = 1; return f64_to_i64(0.0); }
+    if (TK_NOT_A_STR(s)) { str_raise("argument is not a str"); return f64_to_i64(0.0); }
     FloatParseResult r = str_to_float((const char *)(intptr_t)s);
-    tk_current_error = r.is_err ? 1 : 0;
-    return f64_to_i64(r.is_err ? 0.0 : r.ok);
+    if (r.is_err) { str_raise(r.err_msg); return f64_to_i64(0.0); }   /* 127.241: ParseErr{msg} */
+    tk_current_error = 0;
+    return f64_to_i64(r.ok);
 }
 
 int64_t tk_str_emptyof_w(int64_t type) {
