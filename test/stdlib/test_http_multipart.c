@@ -69,18 +69,21 @@ static char *build_body(const char *boundary,
     char *buf = malloc(total);
     if (!buf) return NULL;
 
+    /* 121.30: snprintf, bounded by the size computed above -- sprintf is
+     * deprecated in the SDK once ASan sets _FORTIFY_SOURCE=0, which kept
+     * this test out of test-asan-stdlib. */
     char *p = buf;
     for (size_t i = 0; i < nparts; i++) {
-        p += sprintf(p, "--%s\r\n", boundary);
-        p += sprintf(p, "%s", part_hdrs[i]);
-        p += sprintf(p, "\r\n\r\n");
+        p += snprintf(p, total - (size_t)(p - buf), "--%s\r\n", boundary);
+        p += snprintf(p, total - (size_t)(p - buf), "%s", part_hdrs[i]);
+        p += snprintf(p, total - (size_t)(p - buf), "\r\n\r\n");
         size_t dlen = strlen(part_data[i]);
         memcpy(p, part_data[i], dlen);
         p += dlen;
         memcpy(p, "\r\n", 2);
         p += 2;
     }
-    p += sprintf(p, "--%s--\r\n", boundary);
+    p += snprintf(p, total - (size_t)(p - buf), "--%s--\r\n", boundary);
 
     *len_out = (size_t)(p - buf);
     return buf;

@@ -748,7 +748,17 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \
                       test-stdlib-yaml \
-                      test-stdlib-http-leak test-stdlib-http-route-param-leak
+                      test-stdlib-http-leak test-stdlib-http-route-param-leak \
+                      test-stdlib-http test-stdlib-http2 test-stdlib-router \
+                      test-stdlib-http-multipart test-stdlib-http-cookies \
+                      test-stdlib-http-form test-stdlib-http-json-integration \
+                      test-stdlib-web-server-integration
+#
+# 121.30: the HTTP/router C tests join the sanitizer run -- the request
+# framing, HTTP/2, routing, static serving, multipart, cookie and form paths
+# had never run under ASan in CI.  Measured 2026-09-29 on this tree, each
+# built with SAN_FLAGS: 0 sanitizer reports.  test-stdlib-http-multipart
+# needed its test helper moved off sprintf() first (the csv reason below).
 #
 # test-stdlib-http-leak and test-stdlib-http-route-param-leak were excluded
 # until 122.14: they measured retention with malloc_zone_statistics() /
