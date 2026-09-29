@@ -89,10 +89,15 @@ int64_t tk_toon_dec_w(int64_t s) {
     return (int64_t)(intptr_t)heap;
 }
 
+/* 121.43 (1): toon.tojson(t:$str):$str -- stdlib/toon.tki, docs/stdlib/toon.md
+ * and both documented examples pass TOON *text*, the string toon.fromjson
+ * returns.  This wrapper read its argument as a `Toon *` handle and loaded
+ * t->raw from the first eight bytes of the string, so the documented call
+ * `toon.tojson("data[2]{id,name}:...")` segfaulted.  It takes the string, as
+ * declared -- the same shape as its twin tk_toon_fromjson_w below. */
 int64_t tk_toon_tojson_w(int64_t v) {
     if (!v) return 0;
-    Toon *t = (Toon *)(intptr_t)v;
-    const char *json = toon_to_json(t->raw);
+    const char *json = toon_to_json((const char *)(intptr_t)v);
     return (int64_t)(intptr_t)json;
 }
 
