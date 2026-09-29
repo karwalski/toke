@@ -69,7 +69,7 @@ Executes SQL that does not return rows (e.g., `INSERT`, `UPDATE`, `DELETE`, `CRE
 
 **Every statement runs, or the call fails (138.6).** A string of several `;`-separated statements runs each in turn. If one fails, the call returns `$dberr.$query` naming the statement (`db.exec: statement 2: ...`); the statements before it have already been applied, so wrap a migration in `BEGIN; ... COMMIT;` to make it all-or-nothing. Bind parameters with more than one statement are refused before anything runs, because which statement a `?` belongs to is ambiguous. Before 138.6 only the first statement ran and the call reported success. Transactions are ordinary statements: `db.exec("BEGIN";@())`, `COMMIT`, `ROLLBACK`.
 
-A count of 0 is currently reported as 1: under the value-sentinel ABI a 0 would read as `$err`. It will be reported as 0 once the compiler reads std.db's error slot (see 138.6).
+A count of 0 is `$ok 0` -- every `CREATE`, and an `UPDATE` that matched nothing. (Until the compiler read std.db's error slot, 138.6, a 0 was reported as 1, because under the value-sentinel ABI it would have read as `$err`.)
 
 ```toke
 m=app;
