@@ -225,6 +225,70 @@ else
     fail "AUTH-02: build: $(grep -a -m3 -E 'error' "${WORK}/totp.cc" | head -c 400)"
 fi
 
+# ── ENC-02 ──────────────────────────────────────────────────────────────────
+# encrypt.c is #included so the harness can drive the static oaep_decode on
+# hand-built encoded messages, one per failure class, with every
+# crypto_sha256 call counted.  A decoder with early returns does less
+# hashing on the classes it rejects first; the fixed one does the same
+# work for all of them.
+cat > "${WORK}/oaep.c" <<'C'
+#define crypto_sha256 c452_sha256
+C
+printf '#include "%s/encrypt.c"\n' "${S}" >> "${WORK}/oaep.c"
+cat >> "${WORK}/oaep.c" <<'C'
+#undef crypto_sha256
+ByteArray crypto_sha256(ByteArray data);
+static int n_sha = 0;
+ByteArray c452_sha256(ByteArray d) { n_sha++; return crypto_sha256(d); }
+enum { EM = 256, H = 32, DB = EM - H - 1 };
+/* em = 0x00 || seed^MGF(maskedDB) || db^MGF(seed), for a chosen db. */
+static void build(uint8_t em[EM], const uint8_t db[DB]) {
+    uint8_t seed[H], dbm[DB], sm[H];
+    for (int i = 0; i < H; i++) seed[i] = (uint8_t)(0x5a + i);
+    mgf1_sha256(dbm, DB, seed, H);
+    em[0] = 0;
+    for (int i = 0; i < DB; i++) em[1 + H + i] = db[i] ^ dbm[i];
+    mgf1_sha256(sm, H, em + 1 + H, DB);
+    for (int i = 0; i < H; i++) em[1 + i] = seed[i] ^ sm[i];
+}
+static void lh(uint8_t out[H]) { ByteArray e = { (const uint8_t *)"", 0 }; ByteArray h = crypto_sha256(e); memcpy(out, h.data, H); }
+int main(void) {
+    uint8_t db[DB], em[EM], out[EM];
+    const char *msg = "attack at dawn";
+    size_t ml = strlen(msg);
+    int n[6]; uint64_t r[6];
+    /* 0 valid */
+    memset(db, 0, DB); lh(db); db[DB - ml - 1] = 1; memcpy(db + DB - ml, msg, ml);
+    build(em, db); n_sha = 0; r[0] = oaep_decode(em, EM, out, EM, NULL, 0); n[0] = n_sha;
+    int valid_ok = r[0] == ml && !memcmp(out, msg, ml);
+    /* 1 leading byte not zero */
+    em[0] = 1; n_sha = 0; r[1] = oaep_decode(em, EM, out, EM, NULL, 0); n[1] = n_sha; em[0] = 0;
+    /* 2 label hash wrong */
+    db[3] ^= 1; build(em, db); db[3] ^= 1; n_sha = 0; r[2] = oaep_decode(em, EM, out, EM, NULL, 0); n[2] = n_sha;
+    /* 3 no 0x01 separator */
+    memset(db, 0, DB); lh(db); build(em, db); n_sha = 0; r[3] = oaep_decode(em, EM, out, EM, NULL, 0); n[3] = n_sha;
+    /* 4 a nonzero byte before the separator */
+    memset(db, 0, DB); lh(db); db[H + 4] = 2; db[DB - ml - 1] = 1; memcpy(db + DB - ml, msg, ml);
+    build(em, db); n_sha = 0; r[4] = oaep_decode(em, EM, out, EM, NULL, 0); n[4] = n_sha;
+    /* 5 separator first, i.e. a valid message right after lHash */
+    memset(db, 0, DB); lh(db); db[H] = 1; memcpy(db + H + 1, msg, ml);
+    build(em, db); n_sha = 0; r[5] = oaep_decode(em, EM, out, EM, NULL, 0); n[5] = n_sha;
+    printf("%s a valid encoding decodes to its message\n", valid_ok ? "OK" : "BAD");
+    printf("%s every malformed class is rejected\n", (!r[1] && !r[2] && !r[3] && !r[4]) ? "OK" : "BAD");
+    printf("%s separator right after lHash decodes (%llu bytes)\n", r[5] == DB - H - 1 ? "OK" : "BAD", (unsigned long long)r[5]);
+    int same = 1; for (int i = 1; i < 6; i++) if (n[i] != n[0]) same = 0;
+    printf("%s the same hashing for every class: valid %d, lead %d, lhash %d, nosep %d, junk %d, early-sep %d\n",
+           same ? "OK" : "BAD", n[0], n[1], n[2], n[3], n[4], n[5]);
+    return 0;
+}
+C
+if "${CC}" ${CF} -Wno-unused-function -o "${WORK}/oaep" "${WORK}/oaep.c" "${S}/crypto.c" "${S}/encoding.c" "${S}/str.c" >"${WORK}/oaep.cc" 2>&1; then
+    "${WORK}/oaep" >"${WORK}/oaep.out" 2>&1
+    report "ENC-02" "${WORK}/oaep.out" $?
+else
+    fail "ENC-02: build: $(grep -a -m3 -E 'error' "${WORK}/oaep.cc" | head -c 400)"
+fi
+
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ] && [ "${PASS}" -gt 0 ]

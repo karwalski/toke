@@ -2599,35 +2599,83 @@ static int oaep_encode(uint8_t *em, uint64_t em_len,
     em[0]=0x00; return 1;
 }
 
+/* Constant-time helpers for oaep_decode: all-ones (0xFF..) when true. */
+static uint64_t ct_is_zero_u64(uint64_t x) { return (uint64_t)0 - (((x | ((uint64_t)0 - x)) >> 63) ^ 1); }
+static uint64_t ct_eq_u64(uint64_t a, uint64_t b) { return ct_is_zero_u64(a ^ b); }
+
+/*
+ * 121.20 (ENC-02): OAEP decoding without a padding oracle.
+ *
+ * This returned early on the leading byte, then on the separator scan, then
+ * on the label hash -- three failure classes with three amounts of work,
+ * which is the shape Manger's attack on RSA-OAEP measures.  Now every check
+ * after the public length test is folded into one mask with no
+ * data-dependent branch or early return: the seed and DB are unmasked, the
+ * label hash is compared, and the whole DB is scanned for the 0x01
+ * separator, for every input.  Success or failure is decided once, at the
+ * end.  Allocation failures are the only other exits; they do not depend on
+ * the ciphertext.  (RSA's own modpow is a separate matter: bi_modpow is not
+ * constant-time either -- see the 121.20 report.)
+ */
 static uint64_t oaep_decode(const uint8_t *em, uint64_t em_len,
                              uint8_t *out, uint64_t out_max,
                              const uint8_t *label, uint64_t llen)
 {
-    uint64_t hlen=32;
-    if (em_len<2*hlen+2||em[0]!=0x00) return 0;
-    const uint8_t *seed=em+1, *db=em+hlen+1;
-    uint64_t db_len=em_len-hlen-1;
-    uint8_t rs[32]; memcpy(rs,seed,hlen);
-    uint8_t sm[32]; if (!mgf1_sha256(sm,hlen,db,db_len)) return 0;
-    uint64_t i; for (i=0;i<hlen;i++) rs[i]^=sm[i];
-    uint8_t *rdb=(uint8_t*)malloc((size_t)db_len); if(!rdb) return 0;
-    memcpy(rdb,db,(size_t)db_len);
-    uint8_t *dbm=(uint8_t*)malloc((size_t)db_len);
-    if (!dbm) { free(rdb); return 0; }
-    if (!mgf1_sha256(dbm,db_len,rs,hlen)) { free(dbm); free(rdb); return 0; }
-    for (i=0;i<db_len;i++) rdb[i]^=dbm[i]; free(dbm);
+    const uint64_t hlen = 32;
+    if (em_len < 2 * hlen + 2) return 0;                  /* public */
+    const uint8_t *seed = em + 1, *db = em + hlen + 1;
+    uint64_t db_len = em_len - hlen - 1;
+
     uint8_t lhash[32];
-    ByteArray lba; lba.data=label; lba.len=llen;
-    ByteArray lh=crypto_sha256(lba);
-    if (!lh.data) { free(rdb); return 0; }
-    memcpy(lhash,lh.data,32); free((void*)lh.data);
-    int bad=0; for (i=0;i<hlen;i++) bad|=(rdb[i]^lhash[i]);
-    uint64_t pos=hlen; while (pos<db_len&&rdb[pos]==0x00) pos++;
-    if (pos>=db_len||rdb[pos]!=0x01) { free(rdb); return 0; }
-    if (bad) { free(rdb); return 0; }
-    uint64_t ml=db_len-pos-1;
-    if (ml>out_max) { free(rdb); return 0; }
-    memcpy(out,rdb+pos+1,(size_t)ml); free(rdb); return ml;
+    ByteArray lba; lba.data = label; lba.len = llen;
+    ByteArray lh = crypto_sha256(lba);
+    if (!lh.data) return 0;
+    memcpy(lhash, lh.data, 32); free((void *)lh.data);
+
+    uint8_t *rdb = (uint8_t *)malloc((size_t)db_len);
+    uint8_t *dbm = (uint8_t *)calloc((size_t)db_len, 1);
+    if (!rdb || !dbm) { free(rdb); free(dbm); return 0; }
+
+    uint8_t rs[32], sm[32] = {0};
+    int mgf_ok = mgf1_sha256(sm, hlen, db, db_len);
+    uint64_t i;
+    for (i = 0; i < hlen; i++) rs[i] = (uint8_t)(seed[i] ^ sm[i]);
+    mgf_ok &= mgf1_sha256(dbm, db_len, rs, hlen);
+    for (i = 0; i < db_len; i++) rdb[i] = (uint8_t)(db[i] ^ dbm[i]);
+
+    /* good: all-ones while every check has passed */
+    uint64_t good = ct_is_zero_u64(em[0]);
+    good &= (uint64_t)0 - (uint64_t)(mgf_ok != 0);
+    uint64_t diff = 0;
+    for (i = 0; i < hlen; i++) diff |= (uint64_t)(rdb[i] ^ lhash[i]);
+    good &= ct_is_zero_u64(diff);
+
+    /* The first 0x01 after the label hash, preceded only by 0x00. */
+    uint64_t found = 0, pos = 0, junk = 0;
+    for (i = hlen; i < db_len; i++) {
+        uint64_t is1 = ct_eq_u64(rdb[i], 1), is0 = ct_is_zero_u64(rdb[i]);
+        uint64_t first = is1 & ~found;
+        pos = (first & i) | (~first & pos);
+        junk |= ~found & ~is0 & ~is1;
+        found |= is1;
+    }
+    good &= found & ~junk;
+
+    uint64_t ml = db_len - pos - 1;                       /* garbage if !good */
+    uint64_t fits = (uint64_t)0 - (uint64_t)(ml <= out_max);
+    good &= fits;
+
+    uint64_t ret = 0;
+    if (good) {                                           /* the one decision */
+        memcpy(out, rdb + pos + 1, (size_t)ml);
+        ret = ml;
+    }
+    tk_secure_zero(rdb, (size_t)db_len);
+    tk_secure_zero(dbm, (size_t)db_len);
+    tk_secure_zero(rs, sizeof rs);
+    tk_secure_zero(sm, sizeof sm);
+    free(rdb); free(dbm);
+    return ret;
 }
 
 /* ---- PSS-SHA256 (sLen = hLen = 32) ---- */
