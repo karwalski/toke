@@ -19,11 +19,10 @@
 #   T-12  json.getregulations was a stub that always returned an empty array.
 #   T-28  str.isdigit(str.charat(s;i)) dereferenced a byte code (SIGSEGV).
 #
-# NOT ASSERTED HERE, because they are the checker's (src/types.c) and not
-# this suite's: that `str.nowunix()/86400` (T-47b), `str.tof32(12345)`,
-# `str.isdigit(<i64>)` and a str pad are REJECTED at --check.  The .tki now
-# declares them (str.nowunix -> str, tof32 (str), isdigit (str), pad i64);
-# the checker does not yet enforce a .tki param/return type on these calls.
+# The checker now enforces the .tki (138.3 (c), Batch GA): `str.tof32(12345)`
+# and `str.isdigit(<i64>)` are E4031 at --check (case t28 below) --
+# `str.nowunix()/86400` (T-47b) is pinned by C296.  A str pad is not: the pad
+# is declared `i64`, the placeholder spelling, which is never judged.
 #
 # Negative control: C313_STDLIB=<dir>/src/stdlib builds against another tree
 # (the compiler reads that tree's <dir>/stdlib/*.tki too).  Measured
@@ -91,16 +90,35 @@ run_tk pad "[007] [007] [ab***] [ab***] [  x]"
 cat > crash.tk <<'TOKE'
 m=crash;i=io:std.io;i=str:std.str;
 f=main():i64{
-  let d7:bool=str.isdigit(str.charat("7x";0));
-  let dx:bool=str.isdigit(str.charat("7x";1));
   let ds:bool=str.isdigit("123");
-  let t=mt str.tof32(12345) { $ok:v "ok"; $err:e "err" };
+  let dn:bool=str.isdigit("1x");
   let u=mt str.tof32("1.5") { $ok:v "ok \(v)"; $err:e "err" };
-  io.println("isdigit7=\(d7) isdigitx=\(dx) isdigit123=\(ds) tof32(int)=\(t) tof32(str)=\(u)");
+  io.println("isdigit123=\(ds) isdigit1x=\(dn) tof32(str)=\(u)");
   <0
 };
 TOKE
-run_tk crash "isdigit7=true isdigitx=false isdigit123=true tof32(int)=err tof32(str)=ok 1.5"
+run_tk crash "isdigit123=true isdigit1x=false tof32(str)=ok 1.5"
+
+# T-28's shape, and tof32 of an integer: an integer where the .tki declares
+# `str` is E4031 at --check since 138.3 (c) (Batch GA) -- the glue's
+# below-65536 guard stays as a defence but no toke source reaches it.
+cat > t28.tk <<'TOKE'
+m=t28;i=str:std.str;
+f=main():i64{
+  let d:bool=str.isdigit(str.charat("7x";0));
+  let t=mt str.tof32(12345) { $ok:v 1; $err:e 0 };
+  <t
+};
+TOKE
+TKC_STDLIB_DIR="${S}" "${TKC}" --check t28.tk > t28.log 2>&1; rc=$?
+got="$(python3 -c '
+import json,sys
+print(" ".join(sorted(json.loads(l)["error_code"]+":"+str(json.loads(l)["pos"]["line"]) for l in open(sys.argv[1]) if l.startswith("{"))))' t28.log 2>/dev/null)"
+if [ "${rc}" -ne 0 ] && [ "${got}" = "E4031:3 E4031:4" ]; then
+    echo "  PASS: t28: isdigit(<i64>) and tof32(<i64>) are E4031 at --check"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: t28 (rc=${rc}): expected 'E4031:3 E4031:4', got '${got}'"; FAIL=$((FAIL + 1))
+fi
 
 cat > home.tk <<'TOKE'
 m=home;i=io:std.io;i=std:std;i=str:std.str;

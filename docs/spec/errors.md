@@ -99,6 +99,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4071 | error | type_check | Function body ends in a value expression with no `<` | n/s |
 | E4072 | error | type_check | Ambiguous variant constructor | n/s |
 | E4073 | error | type_check | Nested interpolation the interpolation lowering cannot delimit | n/s |
+| E4074 | error | type_check | A comparison stands as a statement: its result is discarded | n/s |
 | E5001 | error | arena_check | Value escapes arena scope | -- |
 | W5001 | warning | arena_check | Value may escape arena scope | n/s |
 | E5002 | error | arena_check | Unreachable code after return | -- |
@@ -899,6 +900,11 @@ fix is `"wrap the argument in a string interpolation"` -- `x` becomes
 `"\(x)"`, which is a `str` for every scalar type (story 127.14; kept by
 127.243 as deterministic); a composite argument gets no fix, since
 interpolating it is E4032.
+For a binding annotation, an assignment, a binary operand and a return value it is
+present only when the cast cannot change the value -- any integer into `i64`,
+or `f32` into `f64` (story 127.230); a narrowing, a non-numeric pair and an
+array of another element type get no fix. An integer literal that fits the
+declared integer type is not a mismatch at all (`let b:u8=5`).
 
 ---
 
