@@ -20,6 +20,19 @@ users[3]{id,name,active}:
 3|Carol|true
 ```
 
+### Escaping
+
+`\` is TOON's escape character. Inside a value, `\\`, `\|`, `\n` and `\r`
+stand for a backslash, a pipe, a newline and a carriage return, so a value can
+contain the column and row separators. Inside a field name `\,`, `\{` and `\}`
+do too. A backslash before any other character is kept as written.
+
+`toon.enc` and `toon.fromjson` write these escapes; `toon.str` and
+`toon.tojson` read them. `toon.tojson` writes every field name and string value
+as an escaped JSON string, and writes a value bare only when it is a JSON
+number, `true`, `false` or `null`, so no TOON text can add a member to the JSON
+it produces.
+
 ## Types
 
 ### $toon

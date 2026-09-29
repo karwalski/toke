@@ -27,8 +27,9 @@
 # Entropy.  A fixed path, read-only, and the only way to get random bytes on
 # a platform without arc4random/getentropy.  Granting fs.read to call
 # crypto.randombytes would be a capability that means nothing.
-exempt | crypto.c:arc4random_buf | fopen | 2026-09-29 | 121.22 | /dev/urandom fallback (non-BSD, glibc < 2.36); fixed path, entropy only
-exempt | encrypt.c:random_bytes | fopen | 2026-09-29 | 121.22 | /dev/urandom fallback; fixed path, entropy only
+# 121.20 (CRY-01) moved crypto.c's and encrypt.c's fallbacks into the shared
+# tk_secure.h:tk_random_bytes, which aborts instead of returning unfilled.
+exempt | tk_secure.h:tk_random_bytes | fopen | 2026-09-29 | 121.20 | /dev/urandom fallback (no arc4random/getrandom); fixed path, entropy only, aborts on failure
 exempt | auth.c:auth_apikeygenerate | fopen | 2026-09-29 | 121.22 | /dev/urandom fallback (non-BSD); fixed path, entropy only
 
 # The server's own worker processes.  http.serveworkers et al. bind under the

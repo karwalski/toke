@@ -17,6 +17,7 @@
 #include "encoding.h"
 #include "crypto.h"
 #include "strbuf.h"
+#include "tk_secure.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -452,7 +453,32 @@ JwtVerifyResult auth_jwtverify(const char *token, ByteArray secret)
     int has_iss = json_get_str(payload_json, "iss", iss_buf, sizeof(iss_buf));
     json_get_int64(payload_json, "iat", &iat_val);
     int has_exp = json_get_int64(payload_json, "exp", &exp_val);
+
+    /* 121.20 (AUTH-01): enforce the token's validity window.  exp was
+     * parsed and returned but never compared with the clock, so a token
+     * verified forever after it expired; callers had to remember a
+     * separate auth_jwtexpired().  RFC 7519 4.1.4/4.1.5: reject on or
+     * after exp, and before nbf.  A claim that is present but not an
+     * integer is rejected too -- reading it as absent would mean "never
+     * expires".  No leeway: the clock is the verifier's. */
+    int64_t nbf_val = 0;
+    int has_nbf = json_get_int64(payload_json, "nbf", &nbf_val);
+    int bad_exp = !has_exp && strstr(payload_json, "\"exp\":") != NULL;
+    int bad_nbf = !has_nbf && strstr(payload_json, "\"nbf\":") != NULL;
     free(payload_json);
+    int64_t now = (int64_t)time(NULL);
+    if (bad_exp || bad_nbf) {
+        result.err_msg = "malformed exp or nbf claim";
+        return result;
+    }
+    if (has_exp && now >= exp_val) {
+        result.err_msg = "token expired";
+        return result;
+    }
+    if (has_nbf && now < nbf_val) {
+        result.err_msg = "token not yet valid (nbf)";
+        return result;
+    }
 
     JwtClaims claims;
     memset(&claims, 0, sizeof(claims));
@@ -877,11 +903,16 @@ static void hmac_sha1(const uint8_t *key, size_t key_len,
     /* inner = SHA1(ipad || data) */
     size_t inner_len = 64 + data_len;
     uint8_t *inner_msg = (uint8_t *)malloc(inner_len);
-    if (!inner_msg) return;
+    if (!inner_msg) {
+        tk_secure_zero(k_block, sizeof k_block); tk_secure_zero(k_hashed, sizeof k_hashed);
+        tk_secure_zero(ipad, sizeof ipad); tk_secure_zero(opad, sizeof opad);
+        return;
+    }
     memcpy(inner_msg, ipad, 64);
     memcpy(inner_msg + 64, data, data_len);
     uint8_t inner_hash[20];
     sha1_hash(inner_msg, inner_len, inner_hash);
+    tk_secure_zero(inner_msg, 64);
     free(inner_msg);
 
     /* outer = SHA1(opad || inner_hash) */
@@ -889,6 +920,11 @@ static void hmac_sha1(const uint8_t *key, size_t key_len,
     memcpy(outer_msg, opad, 64);
     memcpy(outer_msg + 64, inner_hash, 20);
     sha1_hash(outer_msg, 64 + 20, out);
+
+    /* 121.20 (HYG-01): every copy of the TOTP secret. */
+    tk_secure_zero(k_block, sizeof k_block); tk_secure_zero(k_hashed, sizeof k_hashed);
+    tk_secure_zero(ipad, sizeof ipad); tk_secure_zero(opad, sizeof opad);
+    tk_secure_zero(outer_msg, sizeof outer_msg); tk_secure_zero(inner_hash, sizeof inner_hash);
 }
 
 /* -----------------------------------------------------------------------
@@ -990,8 +1026,16 @@ int auth_totp_verify(const char *secret_b32, const char *token, int window)
     int64_t now     = (int64_t)time(NULL);
     int64_t counter = now / 30;
 
+    /* 121.20 (AUTH-02): the token is compared in constant time, and every
+     * step of the window is computed whether or not an earlier one matched.
+     * This was strcmp() inside a loop that stopped at the first match --
+     * the one credential comparison in the module that was not
+     * constant-time.  Only the token's length (public: six) can end early. */
+    size_t tlen = strlen(token);
+    if (tlen != 6) { tk_secure_zero((void *)dec.ok.data, (size_t)dec.ok.len); free((void *)dec.ok.data); return 0; }
+
     int matched = 0;
-    for (int step = -window; step <= window && !matched; step++) {
+    for (int step = -window; step <= window; step++) {
         int64_t c = counter + step;
 
         /* Pack counter as 8-byte big-endian. */
@@ -1016,9 +1060,10 @@ int auth_totp_verify(const char *secret_b32, const char *token, int window)
         /* Format as 6-digit zero-padded string and compare. */
         char expected[7];
         snprintf(expected, sizeof(expected), "%06u", (unsigned int)code);
-        if (strcmp(expected, token) == 0) matched = 1;
+        matched |= ct_memeq((const uint8_t *)expected, (const uint8_t *)token, 6);
     }
 
+    tk_secure_zero((void *)dec.ok.data, (size_t)dec.ok.len);   /* 121.20 (HYG-01) */
     free((void *)dec.ok.data);
     return matched;
 }

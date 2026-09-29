@@ -105,6 +105,8 @@ f=verifymac(keystr:$str;paystr:$str;providedstr:$str):bool{
 
 Returns `n` cryptographically secure random bytes sourced from the operating system. Suitable for generating nonces, salts, session tokens, and other secrets.
 
+If the operating system has no usable random source (`arc4random_buf` on macOS and the BSDs; `getrandom` and then `/dev/urandom` on Linux), the program aborts with a message on stderr rather than return predictable bytes. Every key, nonce and salt generator in `std.crypto` and `std.encrypt` behaves the same way; `std.auth`'s API-key and TOTP-secret generators return an error instead.
+
 ```toke
 m=example;
 i=crypto:std.crypto;

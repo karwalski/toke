@@ -19,6 +19,7 @@
 #include "encrypt.h"
 #include "crypto.h"
 #include "encoding.h"
+#include "tk_secure.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -28,21 +29,12 @@
  * Random bytes
  * ========================================================================= */
 
+/* 121.20 (CRY-01): the OS CSPRNG or abort -- never a zero-filled buffer.
+ * This used to memset(buf, 0, n) when /dev/urandom failed on every
+ * non-Apple/BSD platform; see tk_secure.h. */
 static void random_bytes(uint8_t *buf, size_t n)
 {
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
-    arc4random_buf(buf, n);
-#else
-    /* POSIX fallback */
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        size_t rd = fread(buf, 1, n, f);
-        fclose(f);
-        if (rd == n) return;
-    }
-    /* last-resort: zero fill (insecure, should not happen) */
-    memset(buf, 0, n);
-#endif
+    tk_random_bytes(buf, n);
 }
 
 /* =========================================================================
@@ -345,7 +337,10 @@ EncryptResult encrypt_aes256gcm_encrypt(ByteArray key, ByteArray nonce,
     /* Allocate output: plaintext.len + 16 (tag) */
     uint64_t ctlen = plaintext.len;
     uint8_t *out = (uint8_t *)malloc(ctlen + 16);
-    if (!out) { res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res; }
+    if (!out) {
+        tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
+        res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res;
+    }
 
     /* Encrypt */
     gcm_ctr(&aes, J0, plaintext.data, out, ctlen);
@@ -372,6 +367,8 @@ EncryptResult encrypt_aes256gcm_encrypt(ByteArray key, ByteArray nonce,
     uint8_t *tag = out + ctlen;
     for (k = 0; k < 16; k++) tag[k] = X[k] ^ tag_keystream[k];
 
+    /* 121.20 (HYG-01): the key schedule and the GHASH key. */
+    tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
     res.ok     = out;
     res.ok_len = ctlen + 16;
     return res;
@@ -428,14 +425,21 @@ EncryptResult encrypt_aes256gcm_decrypt(ByteArray key, ByteArray nonce,
     uint8_t expected_tag[16];
     for (k = 0; k < 16; k++) expected_tag[k] = X[k] ^ tag_keystream[k];
 
+    /* 121.20 (HYG-01): every exit below wipes the key schedule and the
+     * GHASH key. */
     if (ct_memcmp(expected_tag, tag, 16) != 0) {
+        tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
         res.is_err = 1; res.err_msg = "aes256gcm: authentication failed"; return res;
     }
 
     uint8_t *plain = (uint8_t *)malloc(ctlen + 1); /* +1 for safety */
-    if (!plain) { res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res; }
+    if (!plain) {
+        tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
+        res.is_err = 1; res.err_msg = "aes256gcm: malloc failed"; return res;
+    }
 
     gcm_ctr(&aes, J0, ct, plain, ctlen);
+    tk_secure_zero(&aes, sizeof aes); tk_secure_zero(H, sizeof H);
 
     res.ok     = plain;
     res.ok_len = ctlen;
@@ -823,6 +827,10 @@ static void x25519_scalarmult(uint8_t out[32], const uint8_t k[32],
 
     fe25519 res = fe_mul(x_2, fe_invert(z_2));
     fe_to_bytes(out, res);
+    /* 121.20 (HYG-01): the scalar copy and the ladder state. */
+    tk_secure_zero(clamped, sizeof clamped);
+    tk_secure_zero(&x_2, sizeof x_2); tk_secure_zero(&z_2, sizeof z_2);
+    tk_secure_zero(&x_3, sizeof x_3); tk_secure_zero(&z_3, sizeof z_3);
 }
 
 static const uint8_t X25519_BASEPOINT[32] = {9};
@@ -846,6 +854,7 @@ ByteArray encrypt_x25519_dh(ByteArray privkey, ByteArray peerpub)
     memcpy(priv, privkey.data, 32);
     x25519_clamp(priv);
     x25519_scalarmult(out, priv, peerpub.data);
+    tk_secure_zero(priv, sizeof priv);          /* 121.20 (HYG-01) */
     ByteArray r;
     r.data = out;
     r.len  = 32;
@@ -1561,6 +1570,8 @@ Ed25519Keypair encrypt_ed25519_keypair(void)
     memcpy(kp.pubkey, pubkey, 32);
     memcpy(kp.privkey,      seed,   32); /* first 32 = seed */
     memcpy(kp.privkey + 32, pubkey, 32); /* last  32 = pubkey */
+    /* 121.20 (HYG-01): the seed copy and the expanded scalar. */
+    tk_secure_zero(seed, sizeof seed); tk_secure_zero(h, sizeof h);
     return kp;
 }
 
@@ -1625,6 +1636,12 @@ ByteArray encrypt_ed25519_sign(ByteArray privkey, ByteArray msg)
 
     uint8_t S[32];
     sc_muladd(S, k_scalar, az_reduced, r_scalar);
+    /* 121.20 (HYG-01): the expanded private key, its reductions, the
+     * secret nonce and the hash state that held them. */
+    tk_secure_zero(az, sizeof az); tk_secure_zero(az_ext, sizeof az_ext);
+    tk_secure_zero(az_reduced, sizeof az_reduced);
+    tk_secure_zero(r_scalar, sizeof r_scalar); tk_secure_zero(nonce_hash, sizeof nonce_hash);
+    tk_secure_zero(&ctx, sizeof ctx);
 
     uint8_t *sig = (uint8_t *)malloc(64);
     if (!sig) return r_ba;
@@ -1701,7 +1718,7 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
 
     /* Expand */
     uint8_t *out = (uint8_t *)malloc(outlen);
-    if (!out) { free((void *)prk.data); return empty; }
+    if (!out) { tk_secure_zero((void *)prk.data, 32); free((void *)prk.data); return empty; }
 
     uint8_t T[32];
     memset(T, 0, 32);
@@ -1712,7 +1729,11 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
         /* HMAC-SHA256(PRK, T_prev || info || counter) */
         uint64_t msg_len = (counter == 1 ? 0 : 32) + info.len + 1;
         uint8_t *msg = (uint8_t *)malloc(msg_len);
-        if (!msg) { free(out); free((void *)prk.data); return empty; }
+        if (!msg) {
+            tk_secure_zero(out, (size_t)outlen); free(out);
+            tk_secure_zero((void *)prk.data, 32); free((void *)prk.data);
+            tk_secure_zero(T, sizeof T); return empty;
+        }
         uint64_t pos = 0;
         if (counter > 1) { memcpy(msg, T, 32); pos = 32; }
         if (info.len > 0) memcpy(msg + pos, info.data, info.len);
@@ -1723,9 +1744,15 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
         msg_ba.data = msg;
         msg_ba.len  = msg_len;
         ByteArray t_ba = crypto_hmac_sha256(prk, msg_ba);
+        tk_secure_zero(msg, (size_t)msg_len);
         free(msg);
-        if (!t_ba.data) { free(out); free((void *)prk.data); return empty; }
+        if (!t_ba.data) {
+            tk_secure_zero(out, (size_t)outlen); free(out);
+            tk_secure_zero((void *)prk.data, 32); free((void *)prk.data);
+            tk_secure_zero(T, sizeof T); return empty;
+        }
         memcpy(T, t_ba.data, 32);
+        tk_secure_zero((void *)t_ba.data, 32);
         free((void *)t_ba.data);
 
         uint64_t take = (outlen - done < 32) ? (outlen - done) : 32;
@@ -1734,7 +1761,10 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
         counter++;
     }
 
+    /* 121.20 (HYG-01): the pseudorandom key and the last block. */
+    tk_secure_zero((void *)prk.data, 32);
     free((void *)prk.data);
+    tk_secure_zero(T, sizeof T);
 
     ByteArray r;
     r.data = out;
@@ -2215,6 +2245,9 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
     /* Number of PRF output blocks needed */
     uint32_t l = (dklen + hlen - 1) / hlen;
 
+    /* 121.20 (HYG-01): every intermediate -- each U_j, the T_i
+     * accumulator, and dk on an error path -- is wiped before it is freed
+     * or goes out of scope. */
     uint8_t *dk = (uint8_t *)malloc((size_t)(l * hlen));
     if (!dk) return empty;
 
@@ -2246,10 +2279,11 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
         else
             u = crypto_hmac_sha512(pw_ba, sb_ba);
 
-        if (!u.data) { free(salt_block); free(dk); return empty; }
+        if (!u.data) { free(salt_block); tk_secure_zero(dk, (size_t)(l * hlen)); free(dk); return empty; }
 
         uint8_t t[64]; /* T_i accumulator, max hlen = 64 */
         memcpy(t, u.data, (size_t)hlen);
+        tk_secure_zero((void *)u.data, (size_t)hlen);
         free((void *)u.data);
 
         /* U_2 ... U_c */
@@ -2262,15 +2296,20 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
             else
                 u_next = crypto_hmac_sha512(pw_ba, prev_ba);
 
-            if (!u_next.data) { free(salt_block); free(dk); return empty; }
+            if (!u_next.data) {
+                tk_secure_zero(t, sizeof t);
+                free(salt_block); tk_secure_zero(dk, (size_t)(l * hlen)); free(dk); return empty;
+            }
 
             /* XOR into t */
             uint32_t k;
             for (k = 0; k < hlen; k++) t[k] ^= u_next.data[k];
+            tk_secure_zero((void *)u_next.data, (size_t)hlen);
             free((void *)u_next.data);
         }
 
         memcpy(dk + (i - 1) * hlen, t, (size_t)hlen);
+        tk_secure_zero(t, sizeof t);
     }
     free(salt_block);
 
@@ -2607,35 +2646,83 @@ static int oaep_encode(uint8_t *em, uint64_t em_len,
     em[0]=0x00; return 1;
 }
 
+/* Constant-time helpers for oaep_decode: all-ones (0xFF..) when true. */
+static uint64_t ct_is_zero_u64(uint64_t x) { return (uint64_t)0 - (((x | ((uint64_t)0 - x)) >> 63) ^ 1); }
+static uint64_t ct_eq_u64(uint64_t a, uint64_t b) { return ct_is_zero_u64(a ^ b); }
+
+/*
+ * 121.20 (ENC-02): OAEP decoding without a padding oracle.
+ *
+ * This returned early on the leading byte, then on the separator scan, then
+ * on the label hash -- three failure classes with three amounts of work,
+ * which is the shape Manger's attack on RSA-OAEP measures.  Now every check
+ * after the public length test is folded into one mask with no
+ * data-dependent branch or early return: the seed and DB are unmasked, the
+ * label hash is compared, and the whole DB is scanned for the 0x01
+ * separator, for every input.  Success or failure is decided once, at the
+ * end.  Allocation failures are the only other exits; they do not depend on
+ * the ciphertext.  (RSA's own modpow is a separate matter: bi_modpow is not
+ * constant-time either -- see the 121.20 report.)
+ */
 static uint64_t oaep_decode(const uint8_t *em, uint64_t em_len,
                              uint8_t *out, uint64_t out_max,
                              const uint8_t *label, uint64_t llen)
 {
-    uint64_t hlen=32;
-    if (em_len<2*hlen+2||em[0]!=0x00) return 0;
-    const uint8_t *seed=em+1, *db=em+hlen+1;
-    uint64_t db_len=em_len-hlen-1;
-    uint8_t rs[32]; memcpy(rs,seed,hlen);
-    uint8_t sm[32]; if (!mgf1_sha256(sm,hlen,db,db_len)) return 0;
-    uint64_t i; for (i=0;i<hlen;i++) rs[i]^=sm[i];
-    uint8_t *rdb=(uint8_t*)malloc((size_t)db_len); if(!rdb) return 0;
-    memcpy(rdb,db,(size_t)db_len);
-    uint8_t *dbm=(uint8_t*)malloc((size_t)db_len);
-    if (!dbm) { free(rdb); return 0; }
-    if (!mgf1_sha256(dbm,db_len,rs,hlen)) { free(dbm); free(rdb); return 0; }
-    for (i=0;i<db_len;i++) rdb[i]^=dbm[i]; free(dbm);
+    const uint64_t hlen = 32;
+    if (em_len < 2 * hlen + 2) return 0;                  /* public */
+    const uint8_t *seed = em + 1, *db = em + hlen + 1;
+    uint64_t db_len = em_len - hlen - 1;
+
     uint8_t lhash[32];
-    ByteArray lba; lba.data=label; lba.len=llen;
-    ByteArray lh=crypto_sha256(lba);
-    if (!lh.data) { free(rdb); return 0; }
-    memcpy(lhash,lh.data,32); free((void*)lh.data);
-    int bad=0; for (i=0;i<hlen;i++) bad|=(rdb[i]^lhash[i]);
-    uint64_t pos=hlen; while (pos<db_len&&rdb[pos]==0x00) pos++;
-    if (pos>=db_len||rdb[pos]!=0x01) { free(rdb); return 0; }
-    if (bad) { free(rdb); return 0; }
-    uint64_t ml=db_len-pos-1;
-    if (ml>out_max) { free(rdb); return 0; }
-    memcpy(out,rdb+pos+1,(size_t)ml); free(rdb); return ml;
+    ByteArray lba; lba.data = label; lba.len = llen;
+    ByteArray lh = crypto_sha256(lba);
+    if (!lh.data) return 0;
+    memcpy(lhash, lh.data, 32); free((void *)lh.data);
+
+    uint8_t *rdb = (uint8_t *)malloc((size_t)db_len);
+    uint8_t *dbm = (uint8_t *)calloc((size_t)db_len, 1);
+    if (!rdb || !dbm) { free(rdb); free(dbm); return 0; }
+
+    uint8_t rs[32], sm[32] = {0};
+    int mgf_ok = mgf1_sha256(sm, hlen, db, db_len);
+    uint64_t i;
+    for (i = 0; i < hlen; i++) rs[i] = (uint8_t)(seed[i] ^ sm[i]);
+    mgf_ok &= mgf1_sha256(dbm, db_len, rs, hlen);
+    for (i = 0; i < db_len; i++) rdb[i] = (uint8_t)(db[i] ^ dbm[i]);
+
+    /* good: all-ones while every check has passed */
+    uint64_t good = ct_is_zero_u64(em[0]);
+    good &= (uint64_t)0 - (uint64_t)(mgf_ok != 0);
+    uint64_t diff = 0;
+    for (i = 0; i < hlen; i++) diff |= (uint64_t)(rdb[i] ^ lhash[i]);
+    good &= ct_is_zero_u64(diff);
+
+    /* The first 0x01 after the label hash, preceded only by 0x00. */
+    uint64_t found = 0, pos = 0, junk = 0;
+    for (i = hlen; i < db_len; i++) {
+        uint64_t is1 = ct_eq_u64(rdb[i], 1), is0 = ct_is_zero_u64(rdb[i]);
+        uint64_t first = is1 & ~found;
+        pos = (first & i) | (~first & pos);
+        junk |= ~found & ~is0 & ~is1;
+        found |= is1;
+    }
+    good &= found & ~junk;
+
+    uint64_t ml = db_len - pos - 1;                       /* garbage if !good */
+    uint64_t fits = (uint64_t)0 - (uint64_t)(ml <= out_max);
+    good &= fits;
+
+    uint64_t ret = 0;
+    if (good) {                                           /* the one decision */
+        memcpy(out, rdb + pos + 1, (size_t)ml);
+        ret = ml;
+    }
+    tk_secure_zero(rdb, (size_t)db_len);
+    tk_secure_zero(dbm, (size_t)db_len);
+    tk_secure_zero(rs, sizeof rs);
+    tk_secure_zero(sm, sizeof sm);
+    free(rdb); free(dbm);
+    return ret;
 }
 
 /* ---- PSS-SHA256 (sLen = hLen = 32) ---- */

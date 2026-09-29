@@ -286,6 +286,12 @@ YamlArrayResult yaml_arr(Yaml y, const char *key) {
             while (eol > item && (*(eol - 1) == ' ' || *(eol - 1) == '\t')) eol--;
             size_t len = (size_t)(eol - item);
             char *val = (char *)malloc(len + 1);
+            if (!val) {
+                /* 121.41: this was unchecked -- memcpy through NULL. */
+                for (uint64_t i = 0; i < idx; i++) free((char *)arr[i].raw);
+                free(arr);
+                r.is_err = 1; r.err = make_err(YAML_ERR_PARSE, "oom"); return r;
+            }
             memcpy(val, item, len);
             val[len] = '\0';
             /* Strip quotes */
