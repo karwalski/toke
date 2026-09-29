@@ -4227,7 +4227,8 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             else if (strcmp(n, ":authority") == 0) authority = v;
             continue;
         }
-        if (strcmp(n, "cookie") == 0 && cookie) {
+        if (strcmp(n, "cookie") == 0) {
+            if (!cookie) { cookie = strdup(v); continue; }
             size_t a = strlen(cookie), b = strlen(v);
             char *j = realloc(cookie, a + b + 3);
             if (!j) continue;
@@ -4235,7 +4236,6 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             cookie = j;
             continue;
         }
-        if (strcmp(n, "cookie") == 0) { cookie = strdup(v); continue; }
         if (strcmp(n, "host") == 0) have_host = 1;
         if (req_hcount < 60) {
             req_headers[req_hcount].key = n;

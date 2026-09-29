@@ -101,6 +101,16 @@ static Res custom(Req r) {
     res.headers.data = g_hdrs; res.headers.len = 3;
     return res;
 }
+static char g_ck[512];
+static Res cookies(Req r) {
+    const char *ck = "-", *host = "-";
+    for (uint64_t i = 0; i < r.headers.len; i++) {
+        if (strcmp(r.headers.data[i].key, "cookie") == 0) ck = r.headers.data[i].val;
+        if (strcmp(r.headers.data[i].key, "host") == 0) host = r.headers.data[i].val;
+    }
+    snprintf(g_ck, sizeof g_ck, "cookie=[%s] host=[%s]", ck, host);
+    return make_res(200, g_ck);
+}
 static char g_big[40000];
 static StrPair g_bighdr[1];
 static Res bighdr(Req r) {
@@ -161,6 +171,9 @@ static const unsigned char POSTECHO_CL10[] = { 0x83, 0x87, 0x44, 5, '/','e','c',
                                                0x5c, 2, '1', '0' };
 static const unsigned char GETCUSTOM[] = { 0x82, 0x87, 0x44, 7, '/','c','u','s','t','o','m', 0x41, 1, 't' };
 static const unsigned char GETBIG[] = { 0x82, 0x87, 0x44, 4, '/','b','i','g', 0x41, 1, 't' };
+/* GET /ck with :authority t and two cookie fields (static name index 32) */
+static const unsigned char GETCK[] = { 0x82, 0x87, 0x44, 3, '/','c','k', 0x41, 1, 't',
+                                       0x60, 3, 'a','=','1', 0x60, 3, 'b','=','2' };
 static size_t hello(unsigned char *o) {
     memcpy(o, PREFACE, 24);
     return 24 + frame(o + 24, 4, 0, 0, NULL, 0);
@@ -297,6 +310,7 @@ int main(int argc, char **argv) {
     http_POST("/echo", echo);
     http_GET("/custom", custom);
     http_GET("/big", bighdr);
+    http_GET("/ck", cookies);
     g_lfd = socket(AF_INET, SOCK_STREAM, 0);
     int one = 1; setsockopt(g_lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     struct sockaddr_in a; memset(&a, 0, sizeof a);
@@ -379,6 +393,12 @@ int main(int argc, char **argv) {
     n += frame(b + n, 0, 0x1, 1, (const unsigned char *)"short", 5);
     { unsigned char z[8] = {0}; n += frame(b + n, 6, 0, 0, z, 8); }
     add(&C[k], b, n); C[k].keepalive = 1; k++;
+
+    /* (2) the handler sees the request as HTTP/1.1 would: cookie crumbs
+     *     rejoined with "; " (RFC 9113 8.2.3), :authority as host */
+    C[k].name = "cookie-crumbs-and-authority"; C[k].max_ms = 3000;
+    C[k].want[0] = "cookie=[a=1; b=2] host=[t]";
+    n = hello(b); n += frame(b + n, 1, 0x5, 1, GETCK, sizeof GETCK); add(&C[k], b, n); k++;
 
     /* (3) the handler's headers (lower-cased, connection-specific ones
      *     dropped) and the security headers + HSTS */
