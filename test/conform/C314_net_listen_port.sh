@@ -6,17 +6,18 @@
 # was the untyped (i64) -> i64 [abi], so `net.listen(11444)` compiled and the
 # glue's strrchr() dereferenced address 11444: SIGSEGV, rc 139.
 #
-# THE FIX.  stdlib/net.tki declares the parameter `str`.  The checker does not
-# yet reject an integer there (reported separately), so the glue takes a value
-# below 65536 -- never a valid pointer on a supported platform -- as a PORT
-# and binds it to 127.0.0.1 only.
+# THE FIX.  stdlib/net.tki declares the parameter `str`, and since 138.3 (c)
+# (Batch GA) the checker rejects an integer there (E4031 at --check).  As a
+# defence the glue still takes a value below 65536 -- never a valid pointer
+# on a supported platform -- as a PORT and binds it to 127.0.0.1 only.
 #
 # WHAT IS ASSERTED (C driver under ASan+UBSan, then a toke program):
 #   - tk_net_listen_w(<port>) returns a listening fd bound to 127.0.0.1:<port>
 #     (getsockname), not to every interface
 #   - tk_net_listen_w("127.0.0.1:<port>") still works; "nonsense", 0 and a
 #     negative value return 0
-#   - T-49's program shape runs to completion (rc 0) and prints a positive fd
+#   - T-49's program shape is E4031 at --check, naming net.listen's str
+#     parameter; with the address as a str it runs and prints a positive fd
 #
 # Negative control: C314_STDLIB=<dir>.  Measured 2026-09-27 against main's
 # net_glue.c (c15dd11): the driver dies with SIGSEGV on the first case.
@@ -103,15 +104,30 @@ f=main():i64{
   <0
 };
 TOKE
-if TKC_STDLIB_DIR="${S}" "${TKC}" --out t49 t49.tk > t49.log 2>&1; then
-    got="$(./t49 --allow-net 2>&1)"; rc=$?
+TKC_STDLIB_DIR="${S}" "${TKC}" --check t49.tk > t49.log 2>&1; rc=$?
+if [ "${rc}" -ne 0 ] && grep -a -q '"error_code":"E4031".*argument 1 of .net.listen. is declared .str.' t49.log; then
+    echo "  PASS: T-49's program: net.listen(<i64>) is E4031 at --check"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: T-49's program (rc=${rc}): expected E4031 on net.listen's str parameter"
+    sed 's/^/        /' t49.log | head -4; FAIL=$((FAIL + 1))
+fi
+cat > t49s.tk <<TOKE
+m=t49s;i=io:std.io;i=net:std.net;
+f=main():i64{
+  let fd=net.listen("127.0.0.1:${P1}");
+  io.println("listen returned \(fd)");
+  <0
+};
+TOKE
+if TKC_STDLIB_DIR="${S}" "${TKC}" --out t49s t49s.tk > t49s.log 2>&1; then
+    got="$(./t49s --allow-net 2>&1)"; rc=$?
     if [ "${rc}" -eq 0 ] && printf '%s' "${got}" | grep -a -q '^listen returned [1-9]'; then
-        echo "  PASS: T-49's program: rc 0, ${got}"; PASS=$((PASS + 1))
+        echo "  PASS: net.listen(\"127.0.0.1:<port>\"): rc 0, ${got}"; PASS=$((PASS + 1))
     else
-        echo "  FAIL: T-49's program: rc=${rc} out='${got}'"; FAIL=$((FAIL + 1))
+        echo "  FAIL: net.listen(str): rc=${rc} out='${got}'"; FAIL=$((FAIL + 1))
     fi
 else
-    echo "  FAIL: t49.tk did not compile"; sed 's/^/        /' t49.log | head -4; FAIL=$((FAIL + 1))
+    echo "  FAIL: t49s.tk did not compile"; sed 's/^/        /' t49s.log | head -4; FAIL=$((FAIL + 1))
 fi
 
 echo "---------------------------------------------------"

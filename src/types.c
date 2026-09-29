@@ -3612,6 +3612,7 @@ static int tki_arg_class(const Type *t) {
     }
 }
 
+static const char *glue_param_kinds(const char *sym);
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3666,10 +3667,9 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
     /* A symbol codegen redirects by argument type accepts every kind
      * (`j.enc(x)` -> tk_json_encarr_w / encbool / encf64 / encnum): the same
      * list 127.201 keeps. */
-    {
-        const char *sym = stdlib_symbol_for(mpath, 1, member);
-        if (sym && strcmp(sym, "tk_json_enc_w") == 0) return;
-    }
+    const char *sym = stdlib_symbol_for(mpath, 1, member);
+    if (sym && strcmp(sym, "tk_json_enc_w") == 0) return;
+    const char *gk = glue_param_kinds(sym);
     for (int i = 0; i < actual; i++) {
         const Node *an = call->children[i + 1];
         const char *ps = f->param_types[i];
@@ -3698,6 +3698,12 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * the ABI as an i64 slot.  The reverse (a record where a number is
          * read) stays judged. */
         if (pc == 6 && ac == 2) continue;
+        /* A str where the glue body reads a C string ('S' in
+         * stdlib_paramkind_gen.h) is what runs, whatever the record says:
+         * http.stream is declared `(httpclient)` while tk_http_stream_w takes
+         * a URL (conform C181, C364) -- that .tki/glue disagreement is
+         * 135.31's, and judging the record would reject working programs. */
+        if (ac == 1 && gk && (int)strlen(gk) > i && gk[i] == 'S') continue;
         if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
             && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
         if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;

@@ -12,7 +12,8 @@
 # is not judged (it is also the placeholder spelling), nor is json.enc, which
 # codegen redirects by argument type.
 #
-# Negative control: TKC=<main's toke> -- cases 1-4 and 8 fail (rc=0).
+# Negative control: TKC=<main's toke> -- cases 1-4 and 8 fail (rc=0);
+# case 11 fails on the build before the C-string exemption (E4031).
 #
 # Story: 138.3 (c)
 
@@ -67,6 +68,12 @@ expect "9 io.println(str.trim(..)) stays clean" \
 # their record as an i64 -- conform C022's tls.listen handler).
 expect "10 an i64 handle into a record parameter is not judged" \
     "$(diags 'm=q;i=tls:std.tls;f=onconn(conn:i64):i64{tls.close(conn);<0};f=main():i64{<0};')" "rc=0"
+
+# A str where the glue body reads a C string runs, whatever the record says:
+# http.stream is declared (httpclient) but tk_http_stream_w takes a URL
+# (135.31 owns the .tki; conform C181 and C364 call it so).
+expect "11 a str into a record the glue reads as a C string is not judged" \
+    "$(diags 'm=q;i=h:std.http;f=main():i64{let s=mt h.stream("http://x") {$ok:v 1;$err:e 0};<s};')" "rc=0"
 
 echo "C295: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
