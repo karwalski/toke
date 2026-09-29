@@ -168,14 +168,22 @@ static void row_view_free(Row *r) {
     free((void *)r->col_values);
 }
 
+/* 121.49 (4): db.one / db.many / db.oneon / db.manyon keep the error slot
+ * the way exec does (138.6): 0 on success, a {DbErr tag, msg} box on every
+ * failure.  They returned a bare 0 and never wrote the slot, so they sat on
+ * stdlib_tables.c's bare-glue list and `$err:e` bound nil -- `e.msg` or
+ * `mt e {$notfound:m ...}` on a query that found no row had no payload to
+ * read.  A handle of 0 or less is refused as $connection, as execon does. */
 static int64_t one_on(int64_t h, int64_t sql, int64_t params) {
-    if (!sql) return 0;
+    if (!sql) return db_raise_msg(DB_ERR_QUERY, "db.one: null sql");
     StrArray sa = toke_arr_to_strarray(params);
     RowResult res = db_one_on(h, (const char *)(intptr_t)sql, sa);
     free((void *)sa.data);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
     int64_t rec = row_rec(&res.ok);
-    if (rec) row_drop_index(&res.ok);
+    if (!rec) return db_raise_msg(DB_ERR_QUERY, "db.one: out of memory");
+    row_drop_index(&res.ok);
+    tk_current_error = 0;
     return rec;
 }
 
@@ -184,30 +192,50 @@ int64_t tk_db_one_w(int64_t sql, int64_t params) {
 }
 
 int64_t tk_db_oneon_w(int64_t h, int64_t sql, int64_t params) {
-    if (h <= 0) return 0;
+    if (h <= 0) return db_raise_msg(DB_ERR_CONNECTION, "db.oneon: not a connection handle");
     return one_on(h, sql, params);
 }
 
+/* Free rows [from, len) of a C RowArray that row_rec has not taken, and the
+ * array itself (the out-of-memory exits of many_on). */
+static void rows_free_from(RowArray *a, uint64_t from) {
+    for (uint64_t j = from; j < a->len; j++) {
+        Row *rw = &a->data[j];
+        for (uint64_t c = 0; c < rw->col_count; c++) {
+            free((void *)rw->col_names[c]);
+            free((void *)rw->col_values[c]);
+        }
+        row_drop_index(rw);
+    }
+    free(a->data);
+}
+
 static int64_t many_on(int64_t h, int64_t sql, int64_t params) {
-    if (!sql) return 0;
+    if (!sql) return db_raise_msg(DB_ERR_QUERY, "db.many: null sql");
     StrArray sa = toke_arr_to_strarray(params);
     RowArrayResult res = db_many_on(h, (const char *)(intptr_t)sql, sa);
     free((void *)sa.data);
-    if (res.is_err) return 0;
+    if (res.is_err) return db_raise(res.err);
     uint64_t count = res.ok.len;
     int64_t out = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!out) return 0;
+    if (!out) {
+        rows_free_from(&res.ok, 0);
+        return db_raise_msg(DB_ERR_QUERY, "db.many: out of memory");
+    }
     int64_t *block = (int64_t *)(intptr_t)out;
     for (uint64_t i = 0; i < count; i++) {
         int64_t rec = row_rec(&res.ok.data[i]);
-        if (!rec) {
-            tk_arr_setlen(out, (int64_t)i);
-            break;
+        if (!rec) {   /* a short result read as the whole one would be a lie */
+            rows_free_from(&res.ok, i);
+            /* the records already built stay unfreed: out of memory */
+            free((int64_t *)(intptr_t)out - TK_ARR_HDR);
+            return db_raise_msg(DB_ERR_QUERY, "db.many: out of memory");
         }
         row_drop_index(&res.ok.data[i]);
         block[i] = rec;
     }
     free(res.ok.data);
+    tk_current_error = 0;
     return out;
 }
 
@@ -216,7 +244,7 @@ int64_t tk_db_many_w(int64_t sql, int64_t params) {
 }
 
 int64_t tk_db_manyon_w(int64_t h, int64_t sql, int64_t params) {
-    if (h <= 0) return 0;
+    if (h <= 0) return db_raise_msg(DB_ERR_CONNECTION, "db.manyon: not a connection handle");
     return many_on(h, sql, params);
 }
 

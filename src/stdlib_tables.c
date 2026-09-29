@@ -1080,9 +1080,8 @@ static const char *const g_err_slot_bare[] = {
     /* BEGIN 127.238 bare-glue exceptions */
     /* args */
     "tk_args_get_w",
-    /* db */
-    "tk_db_many_w", "tk_db_manyon_w", "tk_db_one_w",
-    "tk_db_oneon_w", "tk_db_open_w",
+    /* db (121.49: one/many/oneon/manyon fill the slot now) */
+    "tk_db_open_w",
     /* encoding */
     "tk_encoding_b64decode_w", "tk_encoding_hexdecode_w", "tk_encoding_urldecode_w",
     /* env */

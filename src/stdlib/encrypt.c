@@ -2490,12 +2490,16 @@ static void bi_gcd(BigInt *g, const BigInt *a, const BigInt *b)
     memcpy(g,&u,sizeof(BigInt));
 }
 
+/* Extended Euclid on (a, m), tracking the coefficient of a: it starts at
+ * 1 for a and 0 for m.  121.48: this seeded m's coefficient (0, then -1),
+ * which yields -inv -- inv(3 mod 7) came back as 6 -- so keygen's e*d == 1
+ * check always failed and RSA key generation never terminated. */
 static int bi_modinv(BigInt *inv, const BigInt *a, const BigInt *m)
 {
     BigInt or2,r,ot,t,q,qt,t1,t2;
-    int o_neg=0, t_neg=1;
+    int o_neg=0, t_neg=0;
     memcpy(&or2,a,sizeof(BigInt)); memcpy(&r,m,sizeof(BigInt));
-    bi_from_u32(&ot,0); bi_from_u32(&t,1);
+    bi_from_u32(&ot,1); bi_from_u32(&t,0);
     while (!bi_is_zero(&r)) {
         BigInt rem; memcpy(&t1,&or2,sizeof(BigInt));
         bi_divmod(&q,&rem,&t1,&r);

@@ -146,6 +146,59 @@ static int md_url_dangerous(const char *u, size_t n) {
     return 1;
 }
 
+/* 121.49 (2): a table-cell link destination, scanned the way CommonMark
+ * (and so cmark, outside a table) scans it.  This stopped at the first ')',
+ * so `[x](https://e.org/Foo_(bar))` got href ".../Foo_(bar" and a stray ")"
+ * after the link.  Now:
+ *   <...>   the destination runs to the '>' (no '<' or newline inside) and
+ *           ')' must follow;
+ *   bare    unescaped parentheses must balance, and the link ends at the
+ *           first ')' at depth 0 -- `[x](a(b) tail` is not a link at all;
+ *   either  a backslash before ASCII punctuation is an escape: `a\)b` is
+ *           "a)b".
+ * The unescaped destination is written to *out (NUL-terminated, at most
+ * len - k bytes; the caller frees it) and is what the scheme filter checks,
+ * so `javascript\:x` cannot slip past it.  Returns the index of the closing
+ * ')' or (size_t)-1 when s[k..len) does not start a link destination (or on
+ * allocation failure).  Not handled, as before: link titles and whitespace
+ * inside a bare destination (both stay part of the href). */
+static int md_ascii_punct(unsigned char c) {
+    return (c >= 33 && c <= 47) || (c >= 58 && c <= 64) ||
+           (c >= 91 && c <= 96) || (c >= 123 && c <= 126);
+}
+
+static size_t md_link_dest(const char *s, size_t len, size_t k, char **out, size_t *out_len) {
+    const size_t NONE = (size_t)-1;
+    char *d = malloc(len - k + 1);
+    size_t n = 0;
+    *out = NULL; *out_len = 0;
+    if (!d) return NONE;
+    if (k < len && s[k] == '<') {
+        for (k++; k < len && s[k] != '>'; k++) {
+            if (s[k] == '<' || s[k] == '\n') { free(d); return NONE; }
+            if (s[k] == '\\' && k + 1 < len && md_ascii_punct((unsigned char)s[k + 1])) k++;
+            d[n++] = s[k];
+        }
+        if (k + 1 >= len || s[k + 1] != ')') { free(d); return NONE; }
+        k++;
+    } else {
+        size_t depth = 0;
+        for (; k < len; k++) {
+            if (s[k] == '\\' && k + 1 < len && md_ascii_punct((unsigned char)s[k + 1])) {
+                d[n++] = s[++k];
+                continue;
+            }
+            if (s[k] == '(') depth++;
+            else if (s[k] == ')') { if (depth == 0) break; depth--; }
+            d[n++] = s[k];
+        }
+        if (k >= len) { free(d); return NONE; }
+    }
+    d[n] = '\0';
+    *out = d; *out_len = n;
+    return k;
+}
+
 /* Render inline markdown for a cell: `code`, **bold**, *italic*, [link](url) */
 static void md_inline_cell(MdBuf *b, const char *s, size_t len) {
     size_t i = 0;
@@ -191,12 +244,13 @@ static void md_inline_cell(MdBuf *b, const char *s, size_t len) {
             size_t j = i + 1;
             while (j < len && s[j] != ']') j++;
             if (j < len && j + 1 < len && s[j+1] == '(') {
-                size_t k = j + 2;
-                while (k < len && s[k] != ')') k++;
-                if (k < len) {
+                char *dest; size_t dlen;
+                size_t k = md_link_dest(s, len, j + 2, &dest, &dlen);
+                if (k != (size_t)-1) {
                     mdb_cats(b, "<a href=\"");
-                    if (!md_url_dangerous(s + j + 2, k - j - 2))
-                        mdb_esc(b, s + j + 2, k - j - 2);
+                    if (!md_url_dangerous(dest, dlen))
+                        mdb_esc(b, dest, dlen);
+                    free(dest);
                     mdb_cats(b, "\">");
                     md_inline_cell(b, s + i + 1, j - i - 1);
                     mdb_cats(b, "</a>");
