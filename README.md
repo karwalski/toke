@@ -75,7 +75,7 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 
 ## Project status
 
-Current compiler: **toke 3.0.0** (`tkc --version`). Spec: **v0.4** —
+Current compiler: **toke 3.1.0** (`tkc --version`). Spec: **v0.4** —
 [`docs/spec/toke-spec-v0.4.md`](docs/spec/toke-spec-v0.4.md) is the authority; v0.3 is
 historical.
 
@@ -99,7 +99,7 @@ re-delivery is **hand-written, not model-generated** — 27 ids are pure `--migr
 and 33 were hand-repaired — so it measures what the *language* can express, not what a
 *model* produces, and it may not be quoted as a model result or as a Pass@1.
 
-**What works:** the compiler is stable at 3.0.0, the conformance suite passes, and
+**What works:** the compiler is stable at 3.1.0, the conformance suite passes, and
 compile-checking removes an entire error class cheaply. **What does not yet:** functional
 correctness is the open weakness on every honest number in
 [`docs/metrics-baseline.md`](docs/metrics-baseline.md), and no toke tokenizer currently
