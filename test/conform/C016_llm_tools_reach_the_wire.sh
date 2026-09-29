@@ -155,7 +155,8 @@ if ! "$TKC" --out "$TMP/c016" "$TMP/c016.tk" >"$TMP/build.log" 2>&1; then
     exit 1
 fi
 
-C016URL="http://127.0.0.1:$PORT/v1" "$TMP/c016" >"$TMP/out.txt" 2>&1
+# 121.42 (2): std.llm connects only with the net grant, as http.client does.
+C016URL="http://127.0.0.1:$PORT/v1" "$TMP/c016" --allow-net >"$TMP/out.txt" 2>&1
 run_status=$?
 OUT="$(cat "$TMP/out.txt")"
 WIRE="$(cat "$LOG")"
@@ -203,6 +204,7 @@ expect "submitresult took the ok arm" "${sub:-<empty>}" "<empty>"
 # per-iteration tools JSON is checked at the same time.
 cat > "$TMP/probe.c" <<'CEOF'
 #include "llm_tool.h"
+#include "capabilities.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -214,6 +216,8 @@ static const char *weather(const char *args_json) {
 
 int main(int argc, char **argv) {
     if (argc < 2) return 2;
+    char *grant[] = { argv[0], "--allow-net", NULL };   /* 121.42 (2): llm connect is gated */
+    tk_cap_init(2, grant);
     TkLlmClient c;
     memset(&c, 0, sizeof c);
     c.base_url = argv[1];
@@ -260,7 +264,7 @@ CEOF
 CC_BIN="${CC:-cc}"
 if "$CC_BIN" -std=c99 -D_GNU_SOURCE -g -fsanitize=address \
         -iquote "$STDLIB" -o "$TMP/probe" "$TMP/probe.c" \
-        "$STDLIB/llm_tool.c" "$STDLIB/llm.c" >"$TMP/probe.build.log" 2>&1; then
+        "$STDLIB/llm_tool.c" "$STDLIB/llm.c" "$STDLIB/capabilities.c" >"$TMP/probe.build.log" 2>&1; then
     : > "$LOG"
     "$TMP/probe" "http://127.0.0.1:$PORT/v1" >"$TMP/probe.out" 2>&1
     probe_status=$?
