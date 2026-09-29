@@ -1,9 +1,10 @@
 # Changelog — toke
 
 All notable changes to the toke language and its reference compiler `tkc`.
-The version printed by `tkc --version` is defined in `src/main.c` (`VERSION`)
-and mirrored in the repository-root `VERSION` file; those two are the only
-places a downstream should read it from.
+The version printed by `tkc --version` is the repository-root `VERSION` file,
+mirrored in `src/version.h` (`TKC_VERSION`, which `src/main.c` prints);
+`python3 scripts/verify_project_facts.py --check` fails when they disagree.
+Those are the only places a downstream should read it from.
 
 This project uses semantic versioning **for the language and the compiler CLI
 together**. A major bump means source that compiled under the previous major
@@ -11,10 +12,145 @@ may no longer compile.
 
 ---
 
+## 3.1.0 — loke's handoff, the typed standard library, and security fixes
+
+**Status: prepared on branch `release/3.1.0` (story 138.17). Not tagged, not
+published.** Built from main `b88090c3` (2026-09-30): 762 commits and 133 merges
+since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
+story in `docs/progress.md` and a commit, so a consumer can bisect.
+
+This is a minor version by the letter of semver, but read **Breaking changes**
+first: most of the release is the checker learning to reject programs that
+3.0.0 compiled and then ran wrongly, and several standard-library calls changed
+shape. A program that 3.0.0 compiled *and ran correctly* mostly still compiles;
+the migrations below cover the ones that do not.
+
+The loke reply `docs/loke-handoff-2026-09-27-reply.md` has a per-issue verdict
+for every item of loke's 2026-09-27 handoff, measured against this build.
+
+### Breaking changes (with migration)
+
+| # | Change | Story, commit | Migration |
+|---|---|---|---|
+| 1 | **HTTP client calls are separate from route registration.** `http.get/post/put/delete(path; &handler)` register routes and are type-checked as such: `http.get(client;path)` is E4031 ("the call registers a route and sends nothing"). The 1-argument `http.get(url)` and 2-argument `http.post(url;body)` client forms are retired (E4026/E4031). | 138.3 — `0d48bda`, `06a7dca`, `109db36`, merge `880b9b4b` | `http.clientget(c;path)`, `http.clientpost(c;path;bytes;ctype)`, `http.clientput(...)`, `http.clientdelete(c;path)` → `httpresp!httperr`; `http.geturl(url)` → `str!httperr` (errs on transport failure and on non-2xx, `code` = status) |
+| 2 | **`http.postheaders` is typed and takes 3 arguments**: `(url:str; body:str; headers:[[str]]) -> httpresp!httperr`. The 4-argument `[abi]` form is gone (E4026). A caller's Content-Type replaces the default; CR/LF in a header is refused; the `net` capability is enforced. | 138.8 — `ce65291` | `http.postheaders(url;body;@(@("x-api-key";k);@("content-type";"application/json")))`, matched as a result |
+| 3 | **The https client verifies server certificates** (peer and host name, default trust store; `SSL_CERT_FILE`/`SSL_CERT_DIR` override). A call to a host with an untrusted or mismatched certificate now takes `$err`. | 135.25 — `6b82978` | Install the CA, or point `SSL_CERT_FILE` at it; there is no opt-out |
+| 4 | **Standard-library calls are checked against the typed `.tki`** — argument kinds and scalar returns. A wrong argument that used to compile (and print an address, or crash) is E4031 at `--check`: `str.tof32(12345)`, `str.isdigit(str.charat(..))`, `net.listen(8080)`, `json.i64(<str>;..)`, arithmetic on `str.nowunix()`. | 138.3, 138.11, 138.12, 138.13 — merge `880b9b4b` | Pass the declared type (`str.tof32("12345")`, `net.listen("127.0.0.1:8080")`) |
+| 5 | **Retyped string and std functions.** `str.frombool/replaceall/replacere/setat/splitfirst/sub` and `json.encode/encstr/quote/stringify` return `str` (they printed an address); `str.padleft/padright` take the pad as an `i64` byte code (`48` for `'0'`); `str.compare` returns -1/0/1; `json.getval(Json;str) -> str`; `std.homedir` links without importing `std.process`. | 138.11 — `266eb17`; 138.12 — `641b129` | Interpolate the results directly; pass pad as a byte code |
+| 6 | **Withdrawn modules and aliases**: `std.string`, `std.fs`, and 13 `str` aliases (`fromu16 fromu32 fromu64 fromint64 fromi32 fromf32 bytelen pad strip trimws wordcount splitfirst splitwhitespace`). The `loke://` scheme and `~/.loke/models/` are removed from the stdlib. | 136.45 — merge `07c267aa` | `std.string`→`std.str`, `std.fs`→`std.file`; `from{i32,u32,u16,int64}`→`str.fromint`; `fromf32`→`str.fromfloat`; `bytelen`→`str.len`; `strip`/`trimws`→`str.trim`; `splitwhitespace`→`str.split(s;" ")`; `splitfirst`→`str.split` then `.get(0)` |
+| 7 | **`csv`, `file` and `zip` errors are real error boxes**; their `lasterr`/`lasterrkind` accessors are retired. `FileErr` widens from 3 to 10 variants (`$invalid $isdir $notregular $symlink $toolarge $nomem $badarg` appended; the first three keep their tags); `csverr` gains `kind` and a real `line`. | 127.102a/b/c — `85080971`, `6e5b9868`, `47c5ad55` | Match `$err:e` and read `e`; a `FileErr` match that listed three variants needs the new ones or a catch-all arm |
+| 8 | **`mt` binds a result's arms by label**, not by position; `<$err(x)` is an error return. A program whose err arm was written first used to take it for a valid input. | 138.2 — `f4840c41`, `1def6f04` | None needed; drop any "ok arm first" convention |
+| 9 | **New rejections for silent-wrong programs**: `==`/`!=` on struct and sum values (E4031; toke has no structural equality); array-literal elements of different types (E4031 — `@(arr;elem)` used to nest); a struct literal of an undeclared type (E3011); a comparison standing as a statement (**E4074**, new); a `$variant(..)` constructor with other than one payload (E4026). | 138.9 — `85570be1`, `c439fea2`, `b88f882b`; 138.10 — `4c44c669`, `17b9a7c4` | Match on the variant or compare a field; append with `x=x+@(v)`; declare the type; `x=$t{a:9;b:x.b}` for a field update |
+| 10 | **Lexer/parser diagnostics**: a comment still open at end of file is **E1007** (new), naming the nested `(*` that consumed its `*)` (comments nest, spec §8.10); `x.a=9` is E2002 "a struct field cannot be assigned"; a reserved keyword as an import alias is one E2002. | 138.10 — `093e81d`, `549eb2b`, `ba91e32` | Close the comment; rebuild the struct |
+| 11 | **Compiler caps are met at `--check`** and name the count, the limit and the flag (E9010: `--max-funcs`, `--max-structs`, `--max-imports`, or `tkc.toml`). A program over 64 struct types that 3.0.0 compiled by silently dropping types is now E9010. | 138.15 — `6586136f`, merge `fd0a0e88` | Pass the flag the diagnostic names |
+| 12 | **One regex engine** for the checker and the runtime. `\s\S\d\D\w\W`, `\b\B`, `(?:…)`, a leading `(?i)` and POSIX classes are supported (on macOS `\s` etc. used to be literal letters); unsupported syntax (lazy quantifiers, backreferences, lookaround, unbalanced brackets, …) is **E4075** at `--check` for a literal pattern and traps **RT008** for a computed one; a step budget traps **RT009**. `str.matches` is whole-string. | 137.9, 121.35 — merge `49d17163` | Rewrite `.*?` as a negated class (`<[^>]*>`) |
+| 13 | **Wider capability gates**: `log.openaccess`/`openerror` need `fs.write`; `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file`/`sha256verify` need `fs.read`; `router.serve`/`chart.serve`/`dashboard.serve` need `net`; `http.downloadfile` needs `fs.write`; `http.servedir`/`servepages` need `fs.read`. | 121.22 — `783e0848`; 121.42 — `9a9447ce`, merge `b88090c3` | Grant the capability in `tkc.toml [capabilities]` or with `--allow-*` |
+| 14 | **`std.db`**: every `db.open` returns a fresh handle; handle-less calls use the first still-open database (a second open no longer repoints them); `db.exec` runs every statement, names the failing one, and refuses bind parameters with several statements. | 138.6 — `0deb11d` | Use `db.execon/oneon/manyon/closeon(h;…)` for a second connection |
+| 15 | **Advice-only `fix` fields removed** from E2001, E2002 (generic), E2003, E2004, E2005, E4025, E4027 (the did-you-mean fix stays), W1010 and E9005. A repair loop reading `fix` finds it absent where it was never deterministically correct. | 127.233, 127.235, 127.240, 127.243, 127.237 | Read `message`/`got`/`expected` |
+| 16 | Behaviour changes in other modules: `soap.fault` escapes its detail; TOON escapes `\ \| \n \r` both ways; `jwtverify` rejects at/after `exp` and before `nbf`; `http.param`/`header` take `$err` when missing; the HTTP/2 `h2c` upgrade is retired (answered as HTTP/1.1); `pkg.toml` has a closed schema, a source allowlist and a strict lock. | 121.16 `7f95de9b`; 121.40 `b1f8c0da`; 121.20 `e53bf845`; 135.28 `2e667e9`; 121.44 `b90ca884`; 121.39 `3256a412` | — |
+
+### Fixed for loke (the 2026-09-27 handoff, Epic 138)
+
+- **B1 bind address** — `http.serveon(host;port)`, `serveworkerson`,
+  `servetlson`, `servetlsworkerson`; `http.listen("h:p";…)` binds its host. The
+  port-only forms keep binding every interface (owner-reversible decision,
+  recorded in `docs/stdlib/http.md`). 138.1 — `e743005`.
+- **B2 `mt` by label** (above, #8). 138.2.
+- **B3 client calls** (above, #1); a client DELETE is reachable. 138.3.
+- **B4 keychain** — `keychain.laststatus/lasterrkind/lasterr` tell "no item"
+  from "locked/denied/failed"; `keychain.create/use/destroy` give a throwaway
+  keychain file off the search list. 138.4 — `a1e0b97`.
+- **B5 f64 across modules** — the importer declares the defining module's return
+  type (double/float and narrow integers, zero-extended when unsigned). 138.5 —
+  `ffe9b4f`.
+- **B6 `std.db`** (above, #14) and zero values: `row.i64`/`row.f64` of 0, and a
+  `COUNT` of 0, are `$ok 0`. 138.6 — `0deb11d`, `9d9544c`.
+- **B8 typed `postheaders`** (above, #2). 138.8.
+- **T-16** `http.mockreq(method;path;headers;body;params) -> $req` and
+  `http.resstatus/resbody/resheader` test a handler in-process. 138.16 —
+  `e2fcb3d`, `e08c2fd`.
+- **`$req`/`$res` layout** — handler records are laid out in `.tki` order, so
+  `req.body`, `req.headers`, `req.params` and a `$res{…}` literal read and
+  write the right memory; `make check-tki-layout` gates it. 138.18 — `c662484`.
+- **JSON** — `json.str` unescapes correctly; `json.at(Json;str) -> Json!JsonErr`
+  reads nested objects. 138.12 — `641b129`.
+- **Crashes** — `net.listen`, `str.isdigit`, a struct with a field of its own
+  type (`@$self`), a `$internal` struct field. 138.13 — `3af398c`, `266eb17`,
+  `5c9bd31e`, `4a62e7e`, `cfa07fa3`.
+- **No silent truncation** — string constants of any size; the stdlib source
+  list handed to clang is 64 KB and E9010 when it does not fit, so a long
+  checkout path builds. 138.14 — `2075fa9`.
+- **Diagnostics** — W1020 no longer fires on a binding named like a foreign
+  keyword (`let def=…`). 138.10 — `574a491`.
+- **Still open for loke**: T-17 `json.parse` (owner decision, 138.9), T-55
+  quadratic `str.charat` (127.170, owner decision), T-11 stub modules (137.11).
+
+### Security fixes
+
+- **https certificate verification** (above, #3). 135.25.
+- **`llm.llmclient`'s `.model` read the API key**; every stdlib record now
+  matches its C struct slot for slot, gated by `scripts/check_tki_layout.py`.
+  135.30 — `9088da12`.
+- **`crypto.sha256` of a `str` returned the digest of the empty string** (and
+  two calls corrupted the heap); `str` into a `[byte]` parameter is fixed at the
+  checker. 124.2f — merge `e1dcc7ca`.
+- **RSA key generation never terminated** (`bi_modinv` seeded the wrong
+  coefficient). 121.48 — `0a47c948`. RSA over 2048 bits is still wrong: 121.51.
+- **Map hash flooding** — the map index is keyed SipHash-1-3. 121.32 — `fc7cbfb1`.
+- **HTTP** — one RFC 9112 request reader for plain and TLS (smuggling,
+  pipelining, deadlines; 121.17 `32efd7b1`); `servedir` symlink escape (121.18
+  `b8bd3b2d`); a single abandoned request no longer kills the server (127.144,
+  merge `1ed358e1`); HTTP/2 frame limits and deadlines (121.17, 121.44).
+- **Injection** — Markdown table-cell `javascript:` links (121.16 `d7875c47`);
+  TOON ↔ JSON field and value escaping (121.40 `b1f8c0da`); header CR/LF in
+  `postheaders` (138.8).
+- **Decoders and crypto** — forbidden PNG variants refused (121.33 `013ee0a3`);
+  RNG aborts rather than return zero keys, JWT `exp`/`nbf`, constant-time TOTP,
+  key wiping (121.20 `0ee70589`); database TLS required by default for
+  MySQL/Postgres and bound parameters for MySQL (121.21 `91691a21`).
+- **Ambient authority** — a capability-sink gate follows every callable entry to
+  its fs/net/spawn primitives (121.22 `783e0848`); the gaps it found are gated
+  (above, #13).
+
+### Everything else
+
+- **Checker**: receiver dispatch — a call to a method that does not exist is a
+  diagnostic, not a link failure (127.115, 127.96); an unimported alias is E4033
+  (127.135); parameters shadow top-level functions (127.136); E4027 suggests a
+  near member (127.122); `m.get` and `json.get*` set the error channel and can be
+  matched (127.30 `3f167aea`, 127.241) — the checker does not yet force the
+  match (127.244).
+- **Codegen**: a later `mt` binder no longer overwrites an outer binding
+  (127.234); a string `mt` binds the right arm (127.237); stdlib error payloads
+  bind (127.238, 127.241); in-place appends and non-retaining callees
+  (135.20, 127.171, 127.229); `as str` on a slice is the string (127.229).
+- **Tooling**: `--lint` exits non-zero on an error (127.137); `--fix` says when
+  it stops short of its fixpoint (127.158); `--migrate` keeps v0.4 source and
+  comments (127.57); `--emit-tkir` keeps every import (127.235).
+- **Gates**: `make diff-codegen` fails on a crashing program instead of
+  baselining it (127.139); `make lint` analyses the stdlib (135.3a); `make`
+  rebuilds when flags change (136.62); the D-series `fix` checks are live
+  (127.239).
+- **Runtime**: `http.servedir` mounts are a longest-prefix table (127.75); the
+  per-IP rate limiter that silently returned 429 is removed (127.60); `ws.recv`
+  returns a real message (127.145); `Res` bodies are owned (127.148); HTTP/2
+  CONTINUATION, request bodies and response headers (merge `b88090c3`);
+  `vecstore.flush` with atomic saves (136.15); `os.getcwd` returns an owned
+  string (135.23); failed server starts exit 1 (135.22, 135.24).
+
+### Publishing
+
+Nothing here is tagged or published. For the owner: tag `v3.1.0` on this
+branch's tip (the release workflow takes the version from the tag), then bump
+ooke's `ooke.toml [requires]` floor to the tag and re-run its packager (ooke
+branch `release/ooke-rc2` already declares `mintoke = "3.1.0"`).
+
+---
+
 ## 3.0.0 — the v0.4 language boundary
 
-**Status: cut in-repo. Not tagged, not released, not published.** See
-"Publishing" at the end of this entry.
+**Status: tagged `v3.0.0` (`0b0bc4e`, 2026-09-23).** The rest of this entry,
+"Publishing" included, is the record as written when the version was cut.
 
 ### Why this is a major version
 
