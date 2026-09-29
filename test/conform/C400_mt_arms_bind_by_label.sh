@@ -22,7 +22,8 @@
 # statement match "stmt-err"/"stmt-jerr"), 4-6 fail to build with E9005 on
 # their flat matches, 7 fails at clang on an undefined `%rm_err` label.
 # Case 8, ok-first everywhere, is green on both: an ok-first match lowers
-# exactly as it did.
+# exactly as it did.  Case 9 (two arms that name no side) builds on main and
+# prints "inv:0"; it is E9005 now.
 #
 # Story: 138.2
 
@@ -213,6 +214,20 @@ f=main():i64{
 };
 EOF
 expect "8-control-ok-first" "$(run k1.tk)" "ok err 4 -1|rc=0"
+
+# 9. Two arms, neither `$ok`/`$err` nor a variant of an established sum:
+#    there is no dispatch to lower, so the build stops with E9005 (as it does
+#    at 3+ arms) instead of choosing on value-vs-zero.  Main at 8efba9e built
+#    this and printed "inv:0" (Batch E1, C411 case 5).
+cat > a1.tk <<'EOF'
+m=a1;
+i=io:std.io;
+t=$ue{$notfound:str;$invalid:str};
+f=h(x:i64):str{ let e=x; <mt e {$notfound:m "nf:\(m)";$invalid:m "inv:\(m)"} };
+f=main():i64{ io.println(h(0)); <0 };
+EOF
+expect "9-two-unlabelled-arms-E9005" \
+    "$("${TKC}" --out b a1.tk 2>&1 | grep -o '"error_code":"E9005"' | head -1)" '"error_code":"E9005"'
 
 echo "C400: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

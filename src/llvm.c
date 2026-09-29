@@ -7361,6 +7361,36 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
         }
+        /* 138.2 (E1 C411 case 5): at 2 arms the same holds when NEITHER arm
+         * says which side it is: no `$ok`/`$err` label, no label of the error
+         * type or one of its variants, no type-named label (`$str:v ..`).
+         * `mt e {$notfound:m ..;$invalid:m ..}` over a payload whose sum type
+         * was not established dispatched on value-vs-zero: arm 2, m = 0,
+         * silently.  The one condition cannot choose between two variants. */
+        int side_known = 0;
+        for (int oi = 0; oi < nord && !side_known; oi++) {
+            const Node *a = n->children[ord[oi]];
+            if (mt_label_is(c, a, "ok", "Ok") || mt_arm_is_err_side(c, a, ord_err_ty)) {
+                side_known = 1; break;
+            }
+            char lt[128]; tok_cp(c->src, a->children[0], lt, sizeof lt);
+            char dl[130]; snprintf(dl, sizeof dl, "$%s", lt);
+            static const char *const prim[] = { "str", "i64", "i32", "i16", "i8", "u64",
+                "u32", "u16", "u8", "f64", "f32", "bool", "byte", "none", "some", NULL };
+            for (int q = 0; prim[q]; q++) if (!strcmp(lt, prim[q])) side_known = 1;
+            if (lookup_struct(c, lt) || lookup_struct(c, dl)) side_known = 1;
+        }
+        if (num_arms == 2 && !flat_ssi && !side_known) {
+            char mmsg[320];
+            snprintf(mmsg, sizeof mmsg,
+                "match has 2 arms, neither of them '$ok' or '$err', and the sum type "
+                "of the matched value is not established");
+            /* No `fix`, as below (127.237 (4)). */
+            diag_emit(DIAG_ERROR, E9005, n->tok_start, n->line, n->col, mmsg, (void *)0);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+            return t;
+        }
         if (num_arms >= 3 && !flat_ssi) {
             char mmsg[320];
             char t0[128] = "";
