@@ -1,0 +1,16 @@
+id: D140
+series: D
+description: "E4075: a lazy quantifier in a literal str.replacere pattern is rejected at compile time, with no fix (137.9; loke T-9 matched nothing)"
+input: |
+  m=test;
+  i=str:std.str;
+  f=main():i64{
+    let c:str=str.replacere("<x>y<z>";"<.*?>";"[x]");
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4075"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "<.*?>"
