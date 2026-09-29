@@ -41,11 +41,14 @@ What it cannot yet pass is listed, entry by entry, in
 authority (entropy from `/dev/urandom`, the server's own pre-forked workers, a log
 file's rotation after it was opened under a grant), and **known gaps**. The known
 gaps, as of 2026-09-29, are entries that reach a primitive with no grant under
-enforcement: `router.serve` (and `chart.serve` / `dashboard.serve`, which use it)
-binds without `net`; `llm.*` connects without `net`; `http.downloadfile` writes a
-file under `net` alone; `http.servedir` / `http.servepages` read files under `net`
-alone; `toon.load`, `yaml.load`, `i18n.load`, `md.renderfile`, `template.load`,
-`crypto.sha256file` and the `vecstore` load/save read or write files with no grant.
+enforcement: `llm.*` connects without `net`; `toon.load`, `yaml.load`,
+`i18n.load`, `md.renderfile`, `template.load`, `crypto.sha256file` and the
+`vecstore` load/save read or write files with no grant. Story 121.42 closed
+three more: `router.serve` (and `chart.serve` / `dashboard.serve`, which serve
+through it) now takes `net` before it binds; `http.downloadfile` takes
+`fs.write` as well as `net`, before it fetches anything; and `http.servedir` /
+`http.servepages` take `fs.read` when they register, since the mount hands the
+server the authority to read files under it on every request.
 The skiplist is self-failing: a line whose gap is fixed must be deleted in the same
 commit.
 

@@ -368,6 +368,13 @@ The request path is appended to `dir` **whole, including the prefix** — so
 `./public/static/style.css`, not from `./public/style.css`. Lay the directory
 out to match.
 
+**Capabilities.** The mount gives the server the authority to read any file
+under `dir` on every request, so `http.servedir` — and `http.servepages`,
+which reads its pages and templates on every request — takes `fs.read` when it
+is called, as well as the `net` the server takes to listen (story 121.42).
+`http.downloadfile` takes `fs.write` as well as `net`. Under enforcement a
+missing grant is `CAP001` at the call.
+
 ```toke
 i=http:std.http;
 f=main():void{
