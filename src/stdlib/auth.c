@@ -1015,8 +1015,16 @@ int auth_totp_verify(const char *secret_b32, const char *token, int window)
     int64_t now     = (int64_t)time(NULL);
     int64_t counter = now / 30;
 
+    /* 121.20 (AUTH-02): the token is compared in constant time, and every
+     * step of the window is computed whether or not an earlier one matched.
+     * This was strcmp() inside a loop that stopped at the first match --
+     * the one credential comparison in the module that was not
+     * constant-time.  Only the token's length (public: six) can end early. */
+    size_t tlen = strlen(token);
+    if (tlen != 6) { free((void *)dec.ok.data); return 0; }
+
     int matched = 0;
-    for (int step = -window; step <= window && !matched; step++) {
+    for (int step = -window; step <= window; step++) {
         int64_t c = counter + step;
 
         /* Pack counter as 8-byte big-endian. */
@@ -1041,7 +1049,7 @@ int auth_totp_verify(const char *secret_b32, const char *token, int window)
         /* Format as 6-digit zero-padded string and compare. */
         char expected[7];
         snprintf(expected, sizeof(expected), "%06u", (unsigned int)code);
-        if (strcmp(expected, token) == 0) matched = 1;
+        matched |= ct_memeq((const uint8_t *)expected, (const uint8_t *)token, 6);
     }
 
     free((void *)dec.ok.data);

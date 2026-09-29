@@ -169,6 +169,62 @@ else
     fail "AUTH-01: build: $(grep -a -m3 -E 'error' "${WORK}/jwt.cc" | head -c 400)"
 fi
 
+# ── AUTH-02 ─────────────────────────────────────────────────────────────────
+# auth.c is #included so the harness can reach its static hmac_sha1 (to
+# compute the right code) and count, during auth_totp_verify, the calls to
+# strcmp and to the "%06u" formatting that happens once per window step.
+cat > "${WORK}/totp.c" <<'C'
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+static int n_strcmp = 0, n_fmt = 0;
+static int c452_strcmp(const char *a, const char *b) { n_strcmp++; return strcmp(a, b); }
+static int c452_snprintf(char *d, size_t n, const char *f, ...) {
+    if (!strcmp(f, "%06u")) n_fmt++;
+    va_list ap; va_start(ap, f); int r = vsnprintf(d, n, f, ap); va_end(ap); return r;
+}
+#undef snprintf
+#define snprintf c452_snprintf
+#define strcmp c452_strcmp
+C
+printf '#include "%s/auth.c"\n' "${S}" >> "${WORK}/totp.c"
+cat >> "${WORK}/totp.c" <<'C'
+#undef strcmp
+#undef snprintf
+static void code_at(const char *b32, int64_t c, char out[7]) {
+    EncBytesResult d = encoding_base32_decode(b32);
+    uint8_t msg[8]; for (int i = 7; i >= 0; i--) { msg[i] = (uint8_t)(c & 0xFF); c >>= 8; }
+    uint8_t h[20]; hmac_sha1(d.ok.data, (size_t)d.ok.len, msg, 8, h);
+    int o = h[19] & 0x0F;
+    uint32_t v = ((uint32_t)(h[o] & 0x7F) << 24) | ((uint32_t)h[o+1] << 16) | ((uint32_t)h[o+2] << 8) | h[o+3];
+    snprintf(out, 7, "%06u", (unsigned)(v % 1000000U));
+}
+int main(void) {
+    const char *sec = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+    char now[7], far[7];
+    code_at(sec, (int64_t)time(NULL) / 30, now);
+    code_at(sec, (int64_t)time(NULL) / 30 + 1000, far);
+    n_strcmp = n_fmt = 0;
+    int ok = auth_totp_verify(sec, now, 1);
+    printf("%s the current code verifies\n", ok ? "OK" : "BAD");
+    printf("%s no strcmp on the code (%d calls)\n", n_strcmp == 0 ? "OK" : "BAD", n_strcmp);
+    printf("%s all 3 steps of window 1 computed after a match at step 0 (%d)\n", n_fmt == 3 ? "OK" : "BAD", n_fmt);
+    n_fmt = 0;
+    printf("%s a code from another period is rejected\n", !auth_totp_verify(sec, far, 1) ? "OK" : "BAD");
+    printf("%s ...after the same 3 steps (%d)\n", n_fmt == 3 ? "OK" : "BAD", n_fmt);
+    char longer[16]; snprintf(longer, sizeof longer, "%sx", now);
+    printf("%s the code plus a trailing byte is rejected\n", !auth_totp_verify(sec, longer, 1) ? "OK" : "BAD");
+    printf("%s five digits are rejected\n", !auth_totp_verify(sec, now + 1, 1) ? "OK" : "BAD");
+    return 0;
+}
+C
+if "${CC}" ${CF} -Wno-unused-function -o "${WORK}/totp" "${WORK}/totp.c" "${S}/encoding.c" "${S}/crypto.c" "${S}/str.c" >"${WORK}/totp.cc" 2>&1; then
+    "${WORK}/totp" >"${WORK}/totp.out" 2>&1
+    report "AUTH-02" "${WORK}/totp.out" $?
+else
+    fail "AUTH-02: build: $(grep -a -m3 -E 'error' "${WORK}/totp.cc" | head -c 400)"
+fi
+
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ] && [ "${PASS}" -gt 0 ]
