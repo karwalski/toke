@@ -10380,22 +10380,64 @@ static void emit_stmt(Ctx *c, const Node *n)
              * keeping the ok-or-0 ABI while carrying the payload to the
              * matching $err arm. */
             if (c->cur_fn_err[0]) {
+                /* 138.2 (loke T-18): `<$err(x)` is an ERROR return whose
+                 * payload is x.  `$err(..)` names no sum type, so the
+                 * constructor lowered as a pass-through of x and — unless x
+                 * was itself the error box — this return was read as an ok
+                 * return: @tk_current_error cleared, the caller's `mt` on the
+                 * $ok arm.  Unwrap it; x is then judged as a bare `<x` is. */
+                const Node *rex = n->children[0];
+                int err_wrap = 0;
+                if (rex->kind == NODE_CALL_EXPR && rex->child_count == 2 &&
+                    rex->children[0] && rex->children[0]->kind == NODE_TYPE_IDENT) {
+                    char wn[NAME_BUF]; tok_cp(c->src, rex->children[0], wn, sizeof wn);
+                    if (!strcmp(wn, "err") || !strcmp(wn, "Err")) {
+                        char mb[NAME_BUF]; snprintf(mb, sizeof mb, "%s", wn);
+                        mangle_fn_name(c, mb, sizeof mb);
+                        if (!lookup_fn(c, mb)) { rex = rex->children[1]; err_wrap = 1; }
+                    }
+                }
                 char rsn[128] = "";
-                if (n->children[0]->kind == NODE_STRUCT_LIT)
-                    tok_cp(c->src, n->children[0], rsn, sizeof rsn);
+                if (rex->kind == NODE_STRUCT_LIT)
+                    tok_cp(c->src, rex, rsn, sizeof rsn);
                 else {
-                    const char *est = expr_struct_type(c, n->children[0]);
+                    const char *est = expr_struct_type(c, rex);
                     if (est) { strncpy(rsn, est, sizeof rsn - 1); rsn[sizeof rsn - 1] = '\0'; }
                 }
-                if (rsn[0] && !strcmp(rsn, c->cur_fn_err)) {
+                int is_box = rsn[0] && !strcmp(rsn, c->cur_fn_err);
+                if (is_box || err_wrap) {
                     /* 127.109: this literal IS the error box.  Tell the
                      * literal sites to take it from the thread's reused error
                      * buffer instead of malloc; box_alloc() consumes the flag
                      * at the first (outermost) allocation it reaches. */
-                    c->err_box_pending = 1;
-                    int box = emit_expr(c, n->children[0]);
+                    c->err_box_pending = is_box;
+                    int box = emit_expr(c, rex);
                     c->err_box_pending = 0;   /* not a literal after all */
-                    const char *bt = expr_llvm_type(c, n->children[0]);
+                    const char *bt = expr_llvm_type(c, rex);
+                    if (!is_box) {
+                        /* 138.2: a `<$err(x)` payload that is not the error
+                         * box (a str message, a scalar code) crosses as the
+                         * i64 word the $err arm binds.  A zero word would
+                         * read as "no error" — the 127.97 flag 1 carries it
+                         * instead (the arm binds nil, as for any flag). */
+                        if (!strcmp(bt, "double")) {
+                            int bc = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, box);
+                            box = bc; bt = "i64";
+                        } else if (strcmp(bt, "i8*")) {
+                            box = coerce_value(c, box, bt, "i64"); bt = "i64";
+                        }
+                        if (!strcmp(bt, "i8*")) {
+                            int iv = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
+                            box = iv; bt = "i64";
+                        }
+                        int z = next_tmp(c), sel = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", z, box);
+                        fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d ; 138.2 $err(x) payload\n",
+                                sel, z, box);
+                        box = sel;
+                    }
                     if (!strcmp(bt, "i8*")) {
                         int iv = next_tmp(c);
                         fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
