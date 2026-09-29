@@ -17,6 +17,16 @@ static DbErr pg_err(DbErrKind kind, const char *msg)
     DbErr e; e.kind = kind; e.msg = msg; return e;
 }
 
+/* 121.51 (5): a DbErr owns its text -- the driver's error buffer is
+ * overwritten by the next call on the connection and freed when it closes,
+ * so e.msg read later showed another error or freed memory.  Driver messages
+ * go through here: a heap copy, never freed, like every other str toke holds. */
+static DbErr pg_err_copy(DbErrKind kind, const char *msg)
+{
+    char *c = strdup(msg ? msg : "");
+    return pg_err(kind, c ? c : "db: out of memory copying the error message");
+}
+
 /* Rewrite ? placeholders to $1, $2, ... for libpq.
  *
  * 121.49 (3): this rewrote every '?' byte, so `SELECT '?', ?` became
@@ -192,7 +202,7 @@ static RowResult pg_one(const char *sql, StrArray params)
     free(rewritten);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         r.is_err = 1;
-        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
         PQclear(res);
         return r;
     }
@@ -216,7 +226,7 @@ static RowArrayResult pg_many(const char *sql, StrArray params)
     free(rewritten);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         r.is_err = 1;
-        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
         PQclear(res);
         return r;
     }
@@ -240,7 +250,7 @@ static U64Result pg_exec(const char *sql, StrArray params)
     ExecStatusType status = PQresultStatus(res);
     if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
         r.is_err = 1;
-        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
         PQclear(res);
         return r;
     }
@@ -257,7 +267,7 @@ static BoolResult pg_begin(int conn_id)
     BoolResult r; r.is_err = 0; r.ok = 1;
     PGresult *res = PQexec(g_pg, "BEGIN");
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.is_err = 1; r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
     }
     PQclear(res);
     return r;
@@ -269,7 +279,7 @@ static BoolResult pg_commit(int conn_id)
     BoolResult r; r.is_err = 0; r.ok = 1;
     PGresult *res = PQexec(g_pg, "COMMIT");
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.is_err = 1; r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
     }
     PQclear(res);
     return r;
@@ -281,7 +291,7 @@ static BoolResult pg_rollback(int conn_id)
     BoolResult r; r.is_err = 0; r.ok = 1;
     PGresult *res = PQexec(g_pg, "ROLLBACK");
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.is_err = 1; r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
     }
     PQclear(res);
     return r;
@@ -356,7 +366,7 @@ static StmtResult pg_prepare(int conn_id, const char *sql)
     PGresult *res = PQprepare(g_pg, s->name, s->sql, 0, NULL);
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         r.is_err = 1;
-        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
         PQclear(res);
         free(s->sql);
         free(s);
@@ -390,7 +400,7 @@ static BoolResult pg_bind(TkStmt *stmt, StrArray params)
     ExecStatusType status = PQresultStatus(s->result);
     if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
         r.is_err = 1;
-        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
         PQclear(s->result);
         s->result = NULL;
         return r;

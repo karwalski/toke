@@ -74,9 +74,8 @@ void db_close(void)
     (void)db_close_conn(0);
 }
 
-/* One message buffer per thread for errors this file composes itself; a
- * DbErr's msg is valid until the next db call on the same thread, as the
- * sqlite3_errmsg pointers it otherwise carries always were. */
+/* Scratch for messages this file composes; never handed out -- err_copy()
+ * copies it (121.51 (5)). */
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 static _Thread_local char g_errbuf[512];
 #else
@@ -86,6 +85,19 @@ static __thread char g_errbuf[512];
 static DbErr make_err(DbErrKind kind, const char *msg)
 {
     DbErr e; e.kind = kind; e.msg = msg; return e;
+}
+
+/* 121.51 (5): a DbErr owns its text.  e.msg used to be sqlite3_errmsg()'s
+ * pointer, which the next call on the connection overwrites and
+ * sqlite3_close() frees, or g_errbuf, which the next composed error
+ * overwrites -- so a toke program that kept `e` and read e.msg after another
+ * db call saw the later error's text, and after db.close read freed memory
+ * (ASan: heap-use-after-free).  Every message that is not a literal now goes
+ * through here: a heap copy, never freed, like every other str toke holds. */
+static DbErr err_copy(DbErrKind kind, const char *msg)
+{
+    char *c = strdup(msg ? msg : "");
+    return make_err(kind, c ? c : "db: out of memory copying the error message");
 }
 
 /* Bind params array then step once. Returns SQLITE_ROW / SQLITE_DONE / err. */
@@ -145,7 +157,7 @@ RowResult db_one_on(int64_t conn_id, const char *sql, StrArray params)
     }
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+        res.is_err = 1; res.err = err_copy(DB_ERR_QUERY, sqlite3_errmsg(g_db));
         return res;
     }
     int rc = bind_and_step(stmt, params);
@@ -154,7 +166,7 @@ RowResult db_one_on(int64_t conn_id, const char *sql, StrArray params)
     } else if (rc == SQLITE_DONE) {
         res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, "no rows returned");
     } else {
-        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+        res.is_err = 1; res.err = err_copy(DB_ERR_QUERY, sqlite3_errmsg(g_db));
     }
     sqlite3_finalize(stmt);
     return res;
@@ -172,7 +184,7 @@ RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params)
     }
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+        res.is_err = 1; res.err = err_copy(DB_ERR_QUERY, sqlite3_errmsg(g_db));
         return res;
     }
     uint64_t cap = 8, count = 0;
@@ -192,7 +204,7 @@ RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params)
                      (unsigned long long)(i + 1), sqlite3_errmsg(g_db));
             sqlite3_finalize(stmt);
             free(rows);
-            res.is_err = 1; res.err = make_err(DB_ERR_QUERY, g_errbuf);
+            res.is_err = 1; res.err = err_copy(DB_ERR_QUERY, g_errbuf);
             return res;
         }
     }
@@ -212,8 +224,8 @@ RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params)
          * every row already collected (clang unix.Malloc). */
         sqlite3_finalize(stmt);   /* before errmsg, as before: it may reset it */
         res.is_err = 1;
-        res.err = make_err(DB_ERR_QUERY, rc == SQLITE_NOMEM ? "out of memory"
-                                                           : sqlite3_errmsg(g_db));
+        res.err = rc == SQLITE_NOMEM ? make_err(DB_ERR_QUERY, "out of memory")
+                                     : err_copy(DB_ERR_QUERY, sqlite3_errmsg(g_db));
         for (uint64_t i = 0; i < count; i++) free_row(&rows[i]);
         free(rows);
         return res;
@@ -280,7 +292,7 @@ U64Result db_exec_on(int64_t conn_id, const char *sql, StrArray params)
         if (sqlite3_prepare_v2(g_db, p, -1, &stmt, &tail) != SQLITE_OK) {
             snprintf(g_errbuf, sizeof g_errbuf, "db.exec: statement %d: %s", n,
                      sqlite3_errmsg(g_db));
-            res.is_err = 1; res.err = make_err(DB_ERR_QUERY, g_errbuf);
+            res.is_err = 1; res.err = err_copy(DB_ERR_QUERY, g_errbuf);
             return res;
         }
         const char *next = skip_sql_blank(tail ? tail : p + strlen(p));
@@ -302,7 +314,7 @@ U64Result db_exec_on(int64_t conn_id, const char *sql, StrArray params)
                 snprintf(g_errbuf, sizeof g_errbuf, "db.exec: statement %d: %s%s", n,
                          sqlite3_errmsg(g_db),
                          n > 1 ? " (the statements before it were applied)" : "");
-                res.is_err = 1; res.err = make_err(DB_ERR_QUERY, g_errbuf);
+                res.is_err = 1; res.err = err_copy(DB_ERR_QUERY, g_errbuf);
                 return res;
             }
         }
@@ -404,7 +416,7 @@ StmtResult db_prepare(int conn_id, const char *sql)
     sqlite3_stmt *raw = NULL;
     if (sqlite3_prepare_v2(db, sql, -1, &raw, NULL) != SQLITE_OK) {
         res.is_err = 1;
-        res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(db));
+        res.err = err_copy(DB_ERR_QUERY, sqlite3_errmsg(db));
         return res;
     }
     TkStmt *s = malloc(sizeof(TkStmt));
@@ -435,7 +447,7 @@ BoolResult db_bind(TkStmt *stmt, StrArray params)
                                    params.data[i], -1, SQLITE_STATIC);
         if (rc != SQLITE_OK) {
             res.is_err = 1;
-            res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(stmt->db));
+            res.err = err_copy(DB_ERR_QUERY, sqlite3_errmsg(stmt->db));
             return res;
         }
     }
@@ -458,7 +470,7 @@ RowResult db_step(TkStmt *stmt)
         res.err = make_err(DB_ERR_NOT_FOUND, "done");
     } else {
         res.is_err = 1;
-        res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(stmt->db));
+        res.err = err_copy(DB_ERR_QUERY, sqlite3_errmsg(stmt->db));
     }
     return res;
 }
@@ -485,13 +497,12 @@ static BoolResult exec_simple(int conn_id, const char *sql)
     if (sqlite3_exec(db, sql, NULL, NULL, &errmsg) != SQLITE_OK) {
         /* 121.21 (DAT-08): copy the message and give sqlite its allocation
          * back.  It was stored in the DbErr and never sqlite3_free'd, so
-         * every failed BEGIN/COMMIT/ROLLBACK leaked it.  The copy has the
-         * lifetime every other message from this file has (g_errbuf: valid
-         * until the next db call on this thread). */
+         * every failed BEGIN/COMMIT/ROLLBACK leaked it.  err_copy owns the
+         * text (121.51 (5)). */
         snprintf(g_errbuf, sizeof g_errbuf, "%s", errmsg ? errmsg : sql);
         sqlite3_free(errmsg);
         res.is_err = 1;
-        res.err = make_err(DB_ERR_QUERY, g_errbuf);
+        res.err = err_copy(DB_ERR_QUERY, g_errbuf);
         return res;
     }
     return res;
