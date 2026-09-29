@@ -492,15 +492,6 @@
     },
     {
       "kind": "func",
-      "name": "str.bytelen",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
       "name": "str.chars",
       "params": [
         "i64"
@@ -635,15 +626,6 @@
     },
     {
       "kind": "func",
-      "name": "str.fromf32",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
       "name": "str.fromf64",
       "params": [
         "i64"
@@ -653,52 +635,7 @@
     },
     {
       "kind": "func",
-      "name": "str.fromi32",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
       "name": "str.fromi64",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.fromint64",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.fromu16",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.fromu32",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.fromu64",
       "params": [
         "i64"
       ],
@@ -808,17 +745,6 @@
       "params": [],
       "return": "str",
       "note": "seconds since the Unix epoch, as decimal text -- 138.11"
-    },
-    {
-      "kind": "func",
-      "name": "str.pad",
-      "params": [
-        "i64",
-        "i64",
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
     },
     {
       "kind": "func",
@@ -974,40 +900,12 @@
     },
     {
       "kind": "func",
-      "name": "str.splitfirst",
-      "params": [
-        "i64",
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.splitwhitespace",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
       "name": "str.starts",
       "params": [
         "i64",
         "i64"
       ],
       "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.strip",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
       "gen": "abi"
     },
     {
@@ -1102,24 +1000,6 @@
         "i64"
       ],
       "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.trimws",
-      "params": [
-        "i64"
-      ],
-      "return": "str",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "str.wordcount",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
       "gen": "abi"
     }
   ]

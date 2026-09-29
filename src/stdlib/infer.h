@@ -87,8 +87,9 @@ typedef struct {
 
 /* infer.load(model_path:Str; opts:infer_opts) -> model_handle!infererr
  *
- * Loads a GGUF model from model_path.  By convention models live under
- * ~/.loke/models/.  Returns a heap-allocated TkModelHandle on success.
+ * Loads a GGUF model from model_path (any path; the standard library
+ * sets no model-directory convention -- 136.45 removed one that named a
+ * downstream project's home directory).  Returns a heap-allocated TkModelHandle on success.
  * The caller must eventually call tk_infer_unload to free resources. */
 TkModelHandleResult tk_infer_load(const char *model_path,
                                    TkInferOpts opts);

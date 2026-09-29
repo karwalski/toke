@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <pthread.h>
+#include <unistd.h>   /* 136.15: fsync */
 
 /* -------------------------------------------------------------------------
  * Internal constants
@@ -187,10 +188,37 @@ static void collection_free(TkVecCollection *col)
  *     floats   f32[dim]
  */
 
+static int collection_write(TkVecCollection *col, const char *tmp);
+
+/* 136.15: the save is atomic and synced.  It writes {path}.tmp, fsyncs it and
+ * renames it over {path}, so a process killed part-way through a flush (or a
+ * close) leaves the previous complete file, never a truncated one: fopen "wb"
+ * on the real path truncated it before the first byte was written.  Every
+ * early return below goes through save_fail, which removes the temporary. */
+static int save_fail(FILE *fp, const char *tmp)
+{
+    if (fp) fclose(fp);
+    remove(tmp);
+    return 0;
+}
+
 static int collection_save(TkVecCollection *col)
 {
     if (!col || !col->file_path) return 0;
-    FILE *fp = fopen(col->file_path, "wb");
+    size_t plen = strlen(col->file_path);
+    char *tmp = (char *)malloc(plen + 5);
+    if (!tmp) return 0;
+    memcpy(tmp, col->file_path, plen);
+    memcpy(tmp + plen, ".tmp", 5);
+    int ok = collection_write(col, tmp);
+    if (ok && rename(tmp, col->file_path) != 0) ok = save_fail(NULL, tmp);
+    free(tmp);
+    return ok;
+}
+
+static int collection_write(TkVecCollection *col, const char *tmp)
+{
+    FILE *fp = fopen(tmp, "wb");
     if (!fp) return 0;
 
     uint32_t magic   = VECS_MAGIC;
@@ -199,28 +227,29 @@ static int collection_save(TkVecCollection *col)
     uint32_t dim     = (uint32_t)(col->dim > 0 ? col->dim : 0);
     uint64_t pad     = 0;
 
-    if (fwrite(&magic,   sizeof magic,   1, fp) != 1) { fclose(fp); return 0; }
-    if (fwrite(&version, sizeof version, 1, fp) != 1) { fclose(fp); return 0; }
-    if (fwrite(&count,   sizeof count,   1, fp) != 1) { fclose(fp); return 0; }
-    if (fwrite(&dim,     sizeof dim,     1, fp) != 1) { fclose(fp); return 0; }
-    if (fwrite(&pad,     sizeof pad,     1, fp) != 1) { fclose(fp); return 0; }
+    if (fwrite(&magic,   sizeof magic,   1, fp) != 1) return save_fail(fp, tmp);
+    if (fwrite(&version, sizeof version, 1, fp) != 1) return save_fail(fp, tmp);
+    if (fwrite(&count,   sizeof count,   1, fp) != 1) return save_fail(fp, tmp);
+    if (fwrite(&dim,     sizeof dim,     1, fp) != 1) return save_fail(fp, tmp);
+    if (fwrite(&pad,     sizeof pad,     1, fp) != 1) return save_fail(fp, tmp);
 
     for (int32_t i = 0; i < col->count; i++) {
         VecEntry *e = &col->entries[i];
         uint32_t id_len  = (uint32_t)strlen(e->id);
         uint32_t pay_len = (uint32_t)strlen(e->payload);
 
-        if (fwrite(&id_len,     sizeof id_len,  1,        fp) != 1)         { fclose(fp); return 0; }
-        if (fwrite(e->id,       1,              id_len,   fp) != id_len)    { fclose(fp); return 0; }
-        if (fwrite(&pay_len,    sizeof pay_len, 1,        fp) != 1)         { fclose(fp); return 0; }
-        if (fwrite(e->payload,  1,              pay_len,  fp) != pay_len)   { fclose(fp); return 0; }
-        if (fwrite(&e->created_at, sizeof e->created_at, 1, fp) != 1)       { fclose(fp); return 0; }
+        if (fwrite(&id_len,     sizeof id_len,  1,        fp) != 1)         return save_fail(fp, tmp);
+        if (fwrite(e->id,       1,              id_len,   fp) != id_len)    return save_fail(fp, tmp);
+        if (fwrite(&pay_len,    sizeof pay_len, 1,        fp) != 1)         return save_fail(fp, tmp);
+        if (fwrite(e->payload,  1,              pay_len,  fp) != pay_len)   return save_fail(fp, tmp);
+        if (fwrite(&e->created_at, sizeof e->created_at, 1, fp) != 1)       return save_fail(fp, tmp);
         if (dim > 0) {
-            if (fwrite(e->embedding, sizeof(float), (size_t)dim, fp) != (size_t)dim) { fclose(fp); return 0; }
+            if (fwrite(e->embedding, sizeof(float), (size_t)dim, fp) != (size_t)dim) return save_fail(fp, tmp);
         }
     }
 
-    fclose(fp);
+    if (fflush(fp) != 0 || fsync(fileno(fp)) != 0) return save_fail(fp, tmp);
+    if (fclose(fp) != 0) return save_fail(NULL, tmp);
     return 1;
 }
 
@@ -340,6 +369,39 @@ TkVecStore *vecstore_open(const char *data_dir)
     }
 
     return vs;
+}
+
+/* 136.15 (owner decision 2026-09-22): the explicit durability point.  Writes
+ * every dirty collection with collection_save (atomic + fsync) and clears its
+ * dirty flag.  Returns 1 when every dirty collection reached disk (including
+ * when none was dirty), 0 if any save failed; a failed collection stays dirty,
+ * so a later flush or close retries it.  Nothing is written implicitly -- no
+ * threshold, no timer -- so a caller can see exactly when its data is safe. */
+int vecstore_flush(TkVecStore *vs)
+{
+    if (!vs) return 0;
+    int ok = 1;
+    pthread_mutex_lock(&vs->mutex);
+    for (int32_t i = 0; i < vs->ncol; i++) {
+        TkVecCollection *col = vs->collections[i];
+        if (col && col->dirty) {
+            if (collection_save(col)) col->dirty = 0;
+            else ok = 0;
+        }
+    }
+    pthread_mutex_unlock(&vs->mutex);
+    return ok;
+}
+
+int vecstore_dirty(TkVecStore *vs)
+{
+    if (!vs) return 0;
+    int d = 0;
+    pthread_mutex_lock(&vs->mutex);
+    for (int32_t i = 0; i < vs->ncol && !d; i++)
+        if (vs->collections[i] && vs->collections[i]->dirty) d = 1;
+    pthread_mutex_unlock(&vs->mutex);
+    return d;
 }
 
 void vecstore_close(TkVecStore *vs)

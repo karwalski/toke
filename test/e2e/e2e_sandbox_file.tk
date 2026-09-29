@@ -1,5 +1,5 @@
 m=test.sandbox.file;
-i=fs:std.fs;
+i=fs:std.file;
 i=str:std.str;
 f=main():i64{
   let fails=mut.0;

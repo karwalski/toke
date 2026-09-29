@@ -7,7 +7,7 @@
 # and the WKScriptMessageHandler never looked at who sent a message, so a
 # redirect target, a clicked link or a third-party iframe could call every
 # registered handler.  tk_webview_eval_js evaluated into whatever document was
-# loaded, and the loke:// scheme handler answered requests initiated by any
+# loaded, and a consumer-specific scheme handler answered requests initiated by any
 # page.  Handler names were spliced into JavaScript unchecked, the reply was
 # escaped for `"` and `\` only (a newline in a reply was a JS syntax error)
 # and cut at 8 KiB, and the bootstrap was built with the
@@ -19,17 +19,19 @@
 #     tk_webview_origin_parse    scheme/host/port, userinfo stripped at the
 #                                LAST '@', default ports normalised, IPv6,
 #                                malformed input refused;
-#     tk_webview_origin_trusted  loke:/file: trusted; about:/data:/remote
+#     tk_webview_origin_trusted  file: trusted; loke: (withdrawn by 136.45),
+#                                about:/data:/remote
 #                                denied unless allow-listed; exact
 #                                scheme+host+port match (no suffix match);
-#     tk_webview_handler_name_ok identifiers only (plus "loke_scheme");
+#     tk_webview_handler_name_ok identifiers only ("loke_scheme" is no
+#                                longer reserved: 136.45);
 #     tk_webview_js_escape       quote, backslash, controls, <, >, U+2028/9
 #                                escaped; a 100 KiB reply is not truncated;
 #   and tk_webview_allow_origin on an invalid handle.
 #
 # WHAT THIS CANNOT DRIVE: the WebKit side -- that a message from a sub-frame
-# or an untrusted origin is dropped, that eval_js returns 0 on a remote page,
-# that a loke:// load from a remote page fails -- needs a window, a display
+# or an untrusted origin is dropped, that eval_js returns 0 on a remote page
+# -- needs a window, a display
 # and an NSApplication run loop.  Those paths call exactly the functions
 # tested here (tk_message_trusted / tk_page_trusted / tk_nsurl_trusted);
 # they are compiled on macOS by this script and exercised by no test.
@@ -39,7 +41,7 @@
 # return 1 for any non-empty host -> "https://evil.example denied";
 # drop the `c < 0x20` escape -> "newline escaped".
 #
-# Story: 122.11
+# Story: 122.11, 136.45
 
 set -uo pipefail
 
@@ -112,7 +114,7 @@ int main(void) {
     TkWebviewOrigin allow[2];
     CHECK(tk_webview_origin_parse("https://app.example.com", &allow[0]), "allow entry parses");
     CHECK(tk_webview_origin_parse("http://localhost:5173/", &allow[1]), "allow entry 2 parses");
-    CHECK(trusted("loke://app/", NULL, 0), "loke:// trusted by default");
+    CHECK(!trusted("loke://app/", NULL, 0), "loke:// is not trusted: the consumer scheme is withdrawn (136.45)");
     CHECK(trusted("file:///tmp/x.html", NULL, 0), "file:// trusted by default");
     CHECK(!trusted("https://evil.example/", NULL, 0), "https://evil.example denied with no allowlist");
     CHECK(!trusted("https://app.example.com/", NULL, 0), "an unlisted https origin is denied");
@@ -133,7 +135,7 @@ int main(void) {
     /* ── handler names ── */
     CHECK(tk_webview_handler_name_ok("save"), "name 'save' ok");
     CHECK(tk_webview_handler_name_ok("readFile2"), "name 'readFile2' ok");
-    CHECK(tk_webview_handler_name_ok("loke_scheme"), "reserved 'loke_scheme' ok");
+    CHECK(!tk_webview_handler_name_ok("loke_scheme"), "'loke_scheme' is not reserved: refused like any underscore (136.45)");
     CHECK(!tk_webview_handler_name_ok("a'];alert(1);//"), "JS-breaking name refused");
     CHECK(!tk_webview_handler_name_ok("a_b"), "underscore refused");
     CHECK(!tk_webview_handler_name_ok(""), "empty name refused");

@@ -72,9 +72,8 @@ Independently of the missing glue, the retained design cannot be expressed in to
 | `webview.eval_js` | call-name |
 | `webview.run_event_loop` | call-name |
 | `webview.is_available` | call-name |
-| `"loke_scheme"` | handler name, in the `loke://` section |
 
-The deleted `.tki` had already dropped the underscores (113.2a); the prose below never did, so it documents eight names no toke program could have written even against a working module. A restoration should publish `settitle`, `onclose`, `registerhandler`, `evaljs`, `runeventloop`, `isavailable`, a `webviewhandle` kept opaque as an `i64`, and a scheme handler named without an underscore.
+The deleted `.tki` had already dropped the underscores (113.2a); the prose below never did, so it documented names no toke program could have written even against a working module. A restoration should publish `settitle`, `onclose`, `registerhandler`, `evaljs`, `runeventloop`, `isavailable`, and a `webviewhandle` kept opaque as an `i64`.
 
 The examples below also use `if cond { }` / `else { }` and `++` for concatenation, none of which is current toke syntax, and none of which was corrected because the module was withdrawn before anyone tried to compile them. They are left as the 72.4 record.
 
@@ -96,7 +95,6 @@ other calls.
 
 | Origin of the page | Trusted? |
 |---|---|
-| `loke://...` | yes: the app's own content |
 | `file://...` | yes: local content shipped with the app |
 | an origin added with `tk_webview_allow_origin(h, "https://host[:port]")` | yes, on an exact scheme + host + port match |
 | anything else: a remote page reached by redirect or link, `about:blank`, `data:`, a third-party iframe | **no** |
@@ -110,10 +108,8 @@ What the policy gates:
   is the gate.
 - **`evaluateJavaScript:`.** `tk_webview_eval_js` returns 0, and a handler's
   reply is not delivered, when the page in the view is not trusted.
-- **`loke://`.** A `loke://` request is answered only when the document that
-  initiated it is trusted; otherwise the scheme task fails.
 - **Handler names** are spliced into JavaScript, so only `[A-Za-z][A-Za-z0-9]*`
-  (at most 64 characters, plus the reserved `loke_scheme`) is accepted.
+  (at most 64 characters) is accepted.
 - **Replies** are escaped for a JavaScript string literal (quote, backslash,
   every control character, `<`, `>`, U+2028, U+2029) and are never truncated.
 
@@ -127,8 +123,7 @@ first, or the bridge stays closed to that page.
 **What is and is not tested.** `test/conform/C139_webview_bridge_policy.sh`
 drives the origin parser, the trust decision, the name check and the reply
 escaper under ASan and UBSan, headless, on every host. The WebKit side (that a
-sub-frame message is dropped, that `eval_js` refuses a remote page, that a
-`loke://` load from a remote page fails) needs a window, a display and a run
+sub-frame message is dropped, that `eval_js` refuses a remote page) needs a window, a display and a run
 loop, and no test exercises it.
 
 ---
@@ -243,9 +238,14 @@ if webview.is_available() {
 }
 ```
 
-## URL Scheme: loke://
+## URL Scheme: withdrawn (story 136.45)
 
-The module registers a custom `loke://` URL scheme handler when a window is opened. Requests to `loke://` URLs are routed to the registered handler named `"loke_scheme"` if present, enabling deep-link navigation from within the web view back to toke application logic.
+The 72.4 design registered a custom `loke://` URL scheme -- one downstream
+project's name -- and trusted it by default, served by a handler reserved as
+`"loke_scheme"`. Story 136.45 removed the scheme, its default trust and the
+reserved handler name from the C core: another project's identity does not
+belong in the standard library. A restored module that needs an app scheme
+takes its name from the caller, not from the library.
 
 ## Platform Notes
 
