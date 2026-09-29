@@ -182,7 +182,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -2772,6 +2772,28 @@ static int mt_arm_order(Ctx *c, const Node *n, const char *err_ty,
         ord[k++] = i;
     }
     return k;
+}
+/* 127.245: an arm body that yields this function's ERROR value — a literal
+ * of the error type, a value of it (`$bad(x)`), or `$err(x)`. */
+static int mt_body_is_err_value(Ctx *c, const Node *b) {
+    if (!b || !c->cur_fn_err[0] || b->kind == NODE_RETURN_STMT) return 0;
+    if (b->kind == NODE_CALL_EXPR && b->child_count == 2 && b->children[0] &&
+        b->children[0]->kind == NODE_TYPE_IDENT) {
+        char wn[NAME_BUF]; tok_cp(c->src, b->children[0], wn, sizeof wn);
+        char mb[NAME_BUF]; snprintf(mb, sizeof mb, "%s", wn);
+        mangle_fn_name(c, mb, sizeof mb);
+        if ((!strcmp(wn, "err") || !strcmp(wn, "Err")) && !lookup_fn(c, mb)) return 1;
+    }
+    char rsn[NAME_BUF] = "";
+    if (b->kind == NODE_STRUCT_LIT) tok_cp(c->src, b, rsn, sizeof rsn);
+    else { const char *est = expr_struct_type(c, b); if (est) snprintf(rsn, sizeof rsn, "%s", est); }
+    return rsn[0] && !strcmp(rsn, c->cur_fn_err);
+}
+/* 127.245: at an arm's entry, mark the returned match's error path. */
+static void mt_ret_mark(Ctx *c, int slot, const Node *arm) {
+    if (slot < 0 || !arm || arm->child_count < 3) return;
+    if (mt_body_is_err_value(c, arm->children[2]))
+        fprintf(c->out, "  store i64 1, i64* %%t%d ; 127.245 error-valued arm\n", slot);
 }
 static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
@@ -6852,6 +6874,11 @@ static int emit_expr(Ctx *c, const Node *n)
          *   6. Merge label: load result slot, return loaded value.
          */
         int L = next_lbl(c);
+        /* 127.245: this match is the operand of a `<` whose arms may yield
+         * the function's error value (see NODE_RETURN_STMT); a match nested
+         * in its arms is not. */
+        const int ret_slot = (c->mt_ret_match == n) ? c->mt_ret_slot : -1;
+        if (c->mt_ret_match == n) c->mt_ret_match = NULL;
 
         /* Infer result type from Ok arm body, falling back to first arm */
         const char *res_ty = "i64";
@@ -7015,6 +7042,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const Node *arm = n->children[i];
                 if (!arm || arm->child_count < 1) continue;
                 fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
+                mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* 138.x: arm-scoped binding */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
                 char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
@@ -7185,6 +7213,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!arm || arm->child_count < 1) continue;
 
                 fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
+                mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
                 int arm_saved_al = c->alias_count;   /* arm-scoped binding */
                 PtrShadow psh; psh.active = 0;       /* 127.237 (3) */
 
@@ -7520,6 +7549,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (arm_idx - 2 < flat_n)
                     fprintf(c->out, "rmfv%d:\n", flat_lbl[arm_idx - 2]);
             }
+            mt_ret_mark(c, ret_slot, arm);   /* 127.245 */
 
             /* 127.231 (1): a variant arm of a flat match binds that variant's
              * payload, typed as the sum declares it (the sum-tag switch's
@@ -10393,6 +10423,64 @@ static void emit_stmt(Ctx *c, const Node *n)
                         char mb[NAME_BUF]; snprintf(mb, sizeof mb, "%s", wn);
                         mangle_fn_name(c, mb, sizeof mb);
                         if (!lookup_fn(c, mb)) { rex = rex->children[1]; err_wrap = 1; }
+                    }
+                }
+                /* 127.245: `<mt f() {$ok:v v+100; $err:e $e{..}}` — a match
+                 * whose arms yield the ok value on one path and the ERROR
+                 * value on another.  The whole match was judged by its struct
+                 * type (the error type, from the error arm), so every path
+                 * returned as an error: the ok value was stored as an error
+                 * box.  Each error-valued arm now marks a flag at its entry
+                 * (mt_ret_mark) and the return decides on it. */
+                if (!err_wrap && rex->kind == NODE_MATCH_STMT) {
+                    int any_err = 0;
+                    for (int i = 1; i < rex->child_count && !any_err; i++) {
+                        const Node *a = rex->children[i];
+                        if (a && a->child_count >= 3 && mt_body_is_err_value(c, a->children[2]))
+                            any_err = 1;
+                    }
+                    if (any_err) {
+                        int fslot = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = alloca i64\n", fslot);
+                        fprintf(c->out, "  store i64 0, i64* %%t%d ; 127.245 error-valued arm taken\n", fslot);
+                        c->mt_ret_match = rex; c->mt_ret_slot = fslot;
+                        int mv = emit_expr(c, rex);
+                        c->mt_ret_match = NULL;
+                        const char *mty = expr_llvm_type(c, rex);
+                        int fl = next_tmp(c), fc = next_tmp(c), RL = next_lbl(c);
+                        fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", fl, fslot);
+                        fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", fc, fl);
+                        fprintf(c->out, "  br i1 %%t%d, label %%mtre%d, label %%mtro%d\n", fc, RL, RL);
+                        fprintf(c->out, "mtre%d:\n", RL);
+                        int w = mv;
+                        if (!strcmp(mty, "i8*")) {
+                            w = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", w, mv);
+                        } else if (!strcmp(mty, "double")) {
+                            w = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", w, mv);
+                        } else if (strcmp(mty, "i64")) {
+                            w = coerce_value(c, mv, mty, "i64");
+                        }
+                        int wz = next_tmp(c), ws = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", wz, w);
+                        fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 1, i64 %%t%d\n", ws, wz, w);
+                        fprintf(c->out, "  store i64 %%t%d, i64* @tk_current_error\n", ws);
+                        if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
+                        else if (!strcmp(rt, "double")) fputs("  ret double 0.0\n", c->out);
+                        else if (!strcmp(rt, "float")) fputs("  ret float 0.0\n", c->out);
+                        else if (!strcmp(rt, "i1")) fputs("  ret i1 0\n", c->out);
+                        else if (!strcmp(rt, "i8*")) fputs("  ret i8* null\n", c->out);
+                        else fprintf(c->out, "  ret %s 0\n", rt);
+                        fprintf(c->out, "mtro%d:\n", RL);
+                        fprintf(c->out, "  store i64 0, i64* @tk_current_error\n");
+                        if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
+                        else {
+                            int rv = coerce_value(c, mv, mty, rt);
+                            fprintf(c->out, "  ret %s %%t%d\n", rt, rv);
+                        }
+                        c->term = 1;
+                        break;
                     }
                 }
                 char rsn[128] = "";
