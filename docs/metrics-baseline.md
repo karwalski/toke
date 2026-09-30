@@ -53,14 +53,14 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **67** | `ls stdlib/*.tki \| wc -l` |
 | `conformance_cases_yaml` | **296** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 123, lexical 36) |
-| `conformance_cases_shell` | **343** | `ls test/conform/*.sh \| wc -l` |
-| `conformance_cases_total` | **639** | the two rows above; `make conform` runs both |
-| `diagnostic_codes_documented` | **67** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
-| `diagnostic_codes_in_src` | **67** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
+| `conformance_cases_shell` | **354** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **650** | the two rows above; `make conform` runs both |
+| `diagnostic_codes_documented` | **68** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
+| `diagnostic_codes_in_src` | **68** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |
 | `corpus_records_v02_2026_04` | **46,754** | `jq .total_entries ../toke-corpus/corpus/manifest.json` — the **v0.2-era** corpus of 2026-04-01, historical |
 | `epics` | **137** | `grep -oE '^#{2,3} Epic [0-9]+' docs/progress.md \| awk '{print $3}' \| sort -u \| wc -l` — *live, not gated: re-derive before citing* |
-| `stories` | **2,977** | `grep -oE '^\| [0-9]+\.[0-9]+[a-z0-9.]* \|' docs/progress.md \| sort -u \| wc -l` — *live, not gated: moves with every tracker commit, re-derive before citing* |
+| `stories` | **2,986** | `grep -oE '^\| [0-9]+\.[0-9]+[a-z0-9.]* \|' docs/progress.md \| sort -u \| wc -l` — *live, not gated: moves with every tracker commit, re-derive before citing* |
 
 <!-- PROJECT-FACTS END -->
 
