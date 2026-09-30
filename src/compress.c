@@ -947,7 +947,7 @@ int compress_stream_feed(CompressStreamCtx *ctx, const char *chunk, int len)
          * through verbatim too (ctx->oversize), exactly as emit_token would
          * have for a token with no abbreviation. */
         if (consumed == 0 && plen >= COMPRESS_STREAM_BUFSZ - 1 && ci < len) {
-            fwrite(p, 1, (size_t)plen, ctx->out);
+            for (int k = 0; k < plen; k++) fputc(p[k], ctx->out);
             emitted += plen;
             ctx->oversize = (p[0] == '$') ? 2 : 1;
             ctx->pending_len = 0;
