@@ -17,7 +17,7 @@
     {"kind": "func", "name": "os.getcwd",    "params": [],                    "return": "str",  "ownership": "caller"},
     {"kind": "func", "name": "os.getpid",    "params": [],                    "return": "i64"},
     {"kind": "func", "name": "os.exit",      "params": ["i64"],               "return": "i64"},
-    {"kind": "func", "name": "os.getenv",    "params": ["str"],               "return": "str",  "ownership": "borrowed"},
+    {"kind": "func", "name": "os.getenv",    "params": ["str"],               "return": "str",  "ownership": "caller"},
     {"kind": "func", "name": "os.setenv",    "params": ["str", "str"],        "return": "i64"},
     {"kind": "func", "name": "os.errno",     "params": [],                    "return": "i64"},
     {"kind": "func", "name": "os.strerror",  "params": ["i64"],               "return": "str",  "ownership": "caller"},
