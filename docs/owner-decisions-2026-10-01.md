@@ -69,6 +69,8 @@ language rows.
 | 4.6 | 136.72 (3) | Branch `fix/gc-residue` (`bfb0d46`) banks records without a differential test | **Merge, stamped compile-only** as 131.78 did. |
 | 4.7 | 128.23 | Retire Epic 116 and merge the duplicate Epic 128 rows (128.3→128.10, 128.5→128.11/128.14, 128.6→128.12/128.13) | **Approve**, before any other Epic 128 work. |
 | 4.8 | 128.4 | GPU EC2 spend for Gate 2 training — approve and lift the compute hold, or defer explicitly. | Owner call (cost). Nothing in Epic 128's lanes moves without it or local hardware. |
+| 4.10 | 128.1b / 128.1a | BENCH-128's G0 "all-PASS against pre131" needs the exact tkc the pre131 manifest pinned (`e31e45…`); that pinned copy lived in a temp directory and is probably gone. (a) re-pin pre131 to a rebuilt tkc at that commit; (b) accept only the v04 inputs for G0. | **(a) if the commit still builds reproducibly, else (b)** — a check against a compiler nobody can reproduce is not evidence. |
+| 4.11 | 132.24 | Batch Z23 (protocol K7) found the published Gate-2 "200 eval" set was *plausibly* the corpus-derived `tasks.jsonl` (now quarantined, 128.16). Unproven, so metrics-baseline.md and the HF card were left unchanged. | **Investigate under 132.24 before any Gate-2 figure is restated** — if confirmed, mark those figures as partly measured on corpus-derived tasks. |
 | 4.9 | 133.5 | Grade the classified solutions with `toke-eval/scripts/solutions_v04.py` — it reads hidden tests, so only the owner may run it. | Owner action. |
 
 ## 5. Repository hygiene and licensing
