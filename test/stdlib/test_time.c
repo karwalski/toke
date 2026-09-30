@@ -253,6 +253,22 @@ int main(void)
     ASSERT(dfmt != NULL && dfmt[0] != '\0', "format_duration non-empty");
     if (dfmt) free((void *)dfmt);
 
+    /* 127.246 (6): exact text, zero, and the widest fields (bounded writes) */
+    TkDuration dall = { 1, 2, 3, 4, 5, 6 };
+    const char *f1 = tk_time_format_duration(dall);
+    ASSERT_STREQ(f1, "1y 2mo 3d 4h 5m 6s", "format_duration all fields");
+    free((void *)f1);
+    TkDuration dz = { 0, 0, 0, 0, 0, 0 };
+    const char *f2 = tk_time_format_duration(dz);
+    ASSERT_STREQ(f2, "0s", "format_duration zero");
+    free((void *)f2);
+    TkDuration dmin = { -2147483647 - 1, -2147483647 - 1, -2147483647 - 1,
+                        -2147483647 - 1, -2147483647 - 1, -2147483647 - 1 };
+    const char *f3 = tk_time_format_duration(dmin);
+    ASSERT_STREQ(f3, "-2147483648y -2147483648mo -2147483648d -2147483648h "
+                     "-2147483648m -2147483648s", "format_duration INT_MIN fields");
+    free((void *)f3);
+
     /* === Story 57.11.5-57.11.7: Interplanetary time === */
 
     /* J2000 epoch: 2000-01-01 12:00:00 UTC ≈ JD 2451545.0 */
