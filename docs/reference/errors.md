@@ -525,6 +525,10 @@ let a=mt g() {$ok:v v};
 
 Triggers E4010 (non-exhaustive match: missing arm for `$err`), with no `fix`.
 
+The last statement of a branch of an expression-`if` is that `if`'s value, so
+a match there is used too (story 127.252): `let a=if(c){ mt g() {$ok:v v} }el{ 5 };`
+is E4010. An `if` standing as a statement discards its branches' values.
+
 **Fix:** Add the missing match arm(s) to cover all cases.
 
 ---
@@ -1250,6 +1254,14 @@ the built-in `timeparts` and `none` types. The message lists what was counted.
 **Fix:** raise the limit to the count: `--max-imports=N` / `max_imports`,
 `--max-funcs=N` / `max_funcs`, `--max-structs=N` / `max_structs` (in
 `tkc.toml`). The `fix` field names the exact value (story 138.15).
+
+The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
+by pointer locals, local types and shadowing aliases) is met in codegen, not at
+`--check`. It is reported once per function, closure or globals initialiser
+that crosses it, at that function, naming it, with `expected` = the limit and
+`got` = the count needed. That count is a lower bound -- a full registry stops
+recording, which can hide further demand -- so this E9010 carries no `fix`
+(story 127.252).
 
 ### E9020
 
