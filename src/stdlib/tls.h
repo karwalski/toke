@@ -46,9 +46,10 @@ typedef struct {
 /* -------------------------------------------------------------------------
  * TlsConn — opaque handle to an established TLS connection
  *
- * The id field is a heap-allocated string of the form "<fd>:<ptr>" that
- * uniquely identifies this connection within the process.  It is intended
- * for diagnostics only; callers must not parse it.
+ * The id field is a heap-allocated string of the form "<slot>:<generation>"
+ * that uniquely identifies this connection within the process (121.19
+ * TLS-06: it no longer embeds a heap pointer).  It is intended for
+ * diagnostics only; callers must not parse it.
  *
  * The internal SSL* and socket fd are stored in a registry keyed by id.
  * ------------------------------------------------------------------------- */

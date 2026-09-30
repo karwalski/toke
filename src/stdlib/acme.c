@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #ifdef TK_HAVE_OPENSSL
 #include <openssl/ssl.h>
@@ -56,11 +57,63 @@ typedef struct {
     char *key_auth;
 } AcmeChallenge;
 
+/* 121.19 (ACME-02): the table was two plain globals.  acme_order_certificate
+ * filled it, then freed every token/key_auth and reset the count while
+ * acme_challenge_handler -- on the web server's request threads -- read it
+ * unlocked and returned key_auth itself as the response body: a request
+ * racing the cleanup read, and could serve, freed memory.  Every access is
+ * now under g_challenge_mu, and the handler serves a per-thread copy. */
 static AcmeChallenge g_challenges[ACME_MAX_CHALLENGES];
 static int g_challenge_count = 0;
+static pthread_mutex_t g_challenge_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void acme_challenges_clear(void)
+{
+    pthread_mutex_lock(&g_challenge_mu);
+    for (int i = 0; i < g_challenge_count; i++) {
+        free(g_challenges[i].token);
+        free(g_challenges[i].key_auth);
+        g_challenges[i].token = NULL;
+        g_challenges[i].key_auth = NULL;
+    }
+    g_challenge_count = 0;
+    pthread_mutex_unlock(&g_challenge_mu);
+}
+
+static void acme_challenge_add(const char *token, const char *key_auth)
+{
+    char *t = strdup(token), *k = strdup(key_auth);
+    pthread_mutex_lock(&g_challenge_mu);
+    if (t && k && g_challenge_count < ACME_MAX_CHALLENGES) {
+        g_challenges[g_challenge_count].token = t;
+        g_challenges[g_challenge_count].key_auth = k;
+        g_challenge_count++;
+        t = k = NULL;
+    }
+    pthread_mutex_unlock(&g_challenge_mu);
+    free(t); free(k);
+}
+
+/* 121.19 (ACME-03): a domain is interpolated into the newOrder JSON and the
+ * CSR's "DNS:a,DNS:b" SAN list.  A '"' or '\\' broke out of the JSON string;
+ * a ',' added a SAN entry.  Only DNS-name bytes are accepted: letters,
+ * digits, '-', '.', and '*' for a wildcard label. */
+static int acme_domain_ok(const char *d)
+{
+    if (!d || !*d) return 0;
+    size_t n = 0;
+    for (const char *p = d; *p; p++, n++) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '*'))
+            return 0;
+    }
+    return n <= 253;
+}
 
 /* Forward declarations */
 static int acme_write_file(const char *path, const uint8_t *data, size_t len);
+static int acme_write_key(const char *path, EVP_PKEY *key);
 
 /* ── JWS / ES256 helpers ─────────────────────────────────────────────── */
 
@@ -370,26 +423,58 @@ int acme_load_account_key(AcmeClient *ac, const char *key_path)
 {
     if (!ac || !key_path) return -1;
 
-    FILE *f = fopen(key_path, "r");
-    if (f) {
+    /* 121.19 (ACME-07): an existing key was loaded whatever its mode.  A
+     * key readable by group or others is refused, as ssh refuses one: the
+     * account key authorises certificate issuance for every domain on the
+     * account.  O_NOFOLLOW: the key is not read through a symlink. */
+    int fd_in = open(key_path, O_RDONLY | O_NOFOLLOW);
+    if (fd_in >= 0) {
+        struct stat st;
+        if (fstat(fd_in, &st) != 0 || !S_ISREG(st.st_mode)) {
+            close(fd_in);
+            return -1;
+        }
+        if (st.st_mode & 077) {
+            fprintf(stderr, "acme: refusing account key %s: mode %03o is "
+                    "readable by group or others (chmod 600 it)\n",
+                    key_path, (unsigned)(st.st_mode & 0777));
+            close(fd_in);
+            return -1;
+        }
+        FILE *f = fdopen(fd_in, "r");
+        if (!f) { close(fd_in); return -1; }
         /* Load existing key */
         ac->account_key = PEM_read_PrivateKey(f, NULL, NULL, NULL);
         fclose(f);
         return ac->account_key ? 0 : -1;
     }
+    if (errno != ENOENT) return -1;   /* a symlink (ELOOP) or unreadable */
 
     /* Generate new key */
     ac->account_key = acme_gen_key();
     if (!ac->account_key) return -1;
 
-    /* Save with secure permissions (61.1.5) */
-    int fd_key = open(key_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd_key < 0) return -1;
-    f = fdopen(fd_key, "w");
-    if (!f) { close(fd_key); return -1; }
-    PEM_write_PrivateKey(f, ac->account_key, NULL, NULL, 0, NULL, NULL);
-    fclose(f);
-    return 0;
+    /* Save with secure permissions (61.1.5), atomically (121.19 ACME-05) */
+    return acme_write_key(key_path, ac->account_key);
+}
+
+/* acme_account_payload -- the newAccount request body.  122.2: was a
+ * char[512]; a long contact address was cut mid-JSON.  Returns malloc'd, or
+ * NULL on OOM. */
+static char *acme_account_payload(const char *email)
+{
+    TkStrBuf pb = TK_STRBUF_INIT;
+    if (email) {
+        /* 121.19 (ACME-03): JSON-escaped -- a '"' in the address closed the
+         * string and could add fields to the newAccount request. */
+        strbuf_append(&pb, "{\"termsOfServiceAgreed\":true,"
+                           "\"contact\":[\"mailto:");
+        strbuf_append_json(&pb, email);
+        strbuf_append(&pb, "\"]}");
+    } else {
+        strbuf_append(&pb, "{\"termsOfServiceAgreed\":true}");
+    }
+    return strbuf_take(&pb);
 }
 
 /* Register or find existing account */
@@ -400,16 +485,7 @@ int acme_register_account(AcmeClient *ac, const char *email)
     char *nonce = acme_get_nonce(ac);
     if (!nonce) return -1;
 
-    /* 122.2: was a char[512]; a long contact address was cut mid-JSON. */
-    TkStrBuf pb = TK_STRBUF_INIT;
-    if (email) {
-        strbuf_appendf(&pb,
-                 "{\"termsOfServiceAgreed\":true,"
-                 "\"contact\":[\"mailto:%s\"]}", email);
-    } else {
-        strbuf_append(&pb, "{\"termsOfServiceAgreed\":true}");
-    }
-    char *payload = strbuf_take(&pb);
+    char *payload = acme_account_payload(email);
     if (!payload) { free(nonce); return -1; }
 
     char *jws = acme_jws(ac, ac->new_account_url, payload, nonce);
@@ -453,6 +529,8 @@ int acme_register_account(AcmeClient *ac, const char *email)
  * NULL on OOM. */
 static char *acme_identifiers_json(const char **domains, int ndomain)
 {
+    for (int i = 0; i < ndomain; i++)
+        if (!acme_domain_ok(domains[i])) return NULL;   /* 121.19 ACME-03 */
     TkStrBuf b = TK_STRBUF_INIT;
     strbuf_append(&b, "{\"identifiers\":[");
     for (int i = 0; i < ndomain; i++) {
@@ -467,6 +545,8 @@ static char *acme_identifiers_json(const char **domains, int ndomain)
  * char[4096] + snprintf-offset overflow as acme_identifiers_json (122.2). */
 static char *acme_san_list(const char **domains, int ndomain)
 {
+    for (int i = 0; i < ndomain; i++)
+        if (!acme_domain_ok(domains[i])) return NULL;   /* 121.19 ACME-03 */
     TkStrBuf b = TK_STRBUF_INIT;
     for (int i = 0; i < ndomain; i++) {
         if (i > 0) strbuf_putc(&b, ',');
@@ -481,6 +561,11 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
                             const char *key_path)
 {
     if (!ac || !ac->account_url || !domains || ndomain <= 0) return -1;
+
+    /* 121.19 (ACME-02): a previous order that failed part-way left its
+     * challenges registered, and the table holds ACME_MAX_CHALLENGES; start
+     * this order from an empty one. */
+    acme_challenges_clear();
 
     /* Build identifiers JSON */
     char *identifiers = acme_identifiers_json(domains, ndomain);
@@ -622,11 +707,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
                 snprintf(key_auth, ka_len, "%s.%s", token, thumbprint);
 
                 /* Register challenge for HTTP-01 serving (61.1.2) */
-                if (g_challenge_count < ACME_MAX_CHALLENGES) {
-                    g_challenges[g_challenge_count].token = strdup(token);
-                    g_challenges[g_challenge_count].key_auth = strdup(key_auth);
-                    g_challenge_count++;
-                }
+                acme_challenge_add(token, key_auth);
 
                 /* Respond to challenge */
                 if (challenge_url) {
@@ -825,26 +906,15 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
 
     /* Save private key (61.1.5) */
     if (key_path && cert_key) {
-        int fd_key = open(key_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-        if (fd_key >= 0) {
-            FILE *f = fdopen(fd_key, "w");
-            if (f) {
-                PEM_write_PrivateKey(f, cert_key, NULL, NULL, 0, NULL, NULL);
-                fclose(f);
-            } else {
-                close(fd_key);
-            }
-        }
+        /* 121.19 (ACME-05): temp + O_EXCL + rename, as the certificate is
+         * written -- open(O_CREAT|O_TRUNC) followed a planted symlink. */
+        (void)acme_write_key(key_path, cert_key);
     }
 
     EVP_PKEY_free(cert_key);
 
     /* Clear challenges */
-    for (int i = 0; i < g_challenge_count; i++) {
-        free(g_challenges[i].token);
-        free(g_challenges[i].key_auth);
-    }
-    g_challenge_count = 0;
+    acme_challenges_clear();
 
     return 0;
 }
@@ -862,7 +932,13 @@ static int acme_write_file(const char *path, const uint8_t *data, size_t len)
     char *tmp = strbuf_take(&tb);
     if (!tmp) return -1;
 
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    /* 121.19 (ACME-05): the temp name is predictable, and O_CREAT|O_TRUNC
+     * followed whatever was already there -- a symlink planted at
+     * "<path>.tmp.<pid>" redirected the write to its target.  Remove any
+     * leftover, then create exclusively: if something reappears in between,
+     * O_EXCL fails and nothing is written. */
+    (void)unlink(tmp);
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (fd < 0) { free(tmp); return -1; }
 
     size_t written = 0;
@@ -883,6 +959,25 @@ static int acme_write_file(const char *path, const uint8_t *data, size_t len)
     return 0;
 }
 
+/* acme_write_key -- PEM-encode `key` and write it through acme_write_file
+ * (0600, temp + O_EXCL + rename). */
+static int acme_write_key(const char *path, EVP_PKEY *key)
+{
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio) return -1;
+    if (PEM_write_bio_PrivateKey(bio, key, NULL, NULL, 0, NULL, NULL) != 1) {
+        BIO_free(bio);
+        return -1;
+    }
+    BUF_MEM *bptr = NULL;
+    BIO_get_mem_ptr(bio, &bptr);
+    int rc = (bptr && bptr->length > 0)
+           ? acme_write_file(path, (const uint8_t *)bptr->data, bptr->length)
+           : -1;
+    BIO_free(bio);
+    return rc;
+}
+
 /* ── HTTP-01 challenge handler (61.1.2) ──────────────────────────────── */
 
 /* Route handler for /.well-known/acme-challenge/<token> */
@@ -901,12 +996,32 @@ Res acme_challenge_handler(Req req)
 
     const char *token = path + strlen(prefix);
 
+    /* 121.19 (ACME-02): look up and copy under the lock.  Res.body is not
+     * freed by the server, so the copy lives in a per-thread buffer that
+     * stays valid until this thread's next challenge request.  A key
+     * authorisation is token + "." + a 43-byte thumbprint. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+    static _Thread_local char served[1024];
+#else
+    static __thread char served[1024];
+#endif
+    int found = 0;
+    pthread_mutex_lock(&g_challenge_mu);
     for (int i = 0; i < g_challenge_count; i++) {
         if (strcmp(g_challenges[i].token, token) == 0) {
-            res.status = 200;
-            res.body = g_challenges[i].key_auth;
-            return res;
+            size_t n = strlen(g_challenges[i].key_auth);
+            if (n < sizeof served) {
+                memcpy(served, g_challenges[i].key_auth, n + 1);
+                found = 1;
+            }
+            break;
         }
+    }
+    pthread_mutex_unlock(&g_challenge_mu);
+    if (found) {
+        res.status = 200;
+        res.body = served;
+        return res;
     }
 
     res.status = 404;
@@ -927,8 +1042,12 @@ typedef struct {
     int          running;
 } AcmeRenewalCtx;
 
-/* Check certificate expiry — returns days until expiry, -1 on error */
-static int acme_cert_days_remaining(const char *cert_path)
+/* Check certificate expiry.  121.19 (ACME-04): this returned the day count
+ * and -1 for an error, and an expired certificate's count is negative too,
+ * so acme_check_renewal's `days < 0` read "expired" as "error" and never
+ * renewed a lapsed certificate.  Now: returns 0 and stores the (signed) day
+ * count in *days_out, or returns -1 if the certificate cannot be read. */
+static int acme_cert_days_remaining(const char *cert_path, int *days_out)
 {
     FILE *f = fopen(cert_path, "r");
     if (!f) return -1;
@@ -944,7 +1063,11 @@ static int acme_cert_days_remaining(const char *cert_path)
         return -1;
     }
     X509_free(cert);
-    return day;
+    /* ASN1_TIME_diff splits the delta into days and seconds of the same
+     * sign; expired by less than a day is day == 0, sec < 0. */
+    if (day == 0 && sec < 0) day = -1;
+    *days_out = day;
+    return 0;
 }
 
 /* Renewal check — call periodically (e.g. daily) */
@@ -952,8 +1075,9 @@ int acme_check_renewal(AcmeClient *ac, TkTlsCtx *tls,
                         const char *cert_path, const char *key_path,
                         const char **domains, int ndomain)
 {
-    int days = acme_cert_days_remaining(cert_path);
-    if (days < 0 || days > 30) return 0; /* no renewal needed */
+    int days = 0;
+    if (acme_cert_days_remaining(cert_path, &days) != 0) return 0; /* unreadable */
+    if (days > 30) return 0; /* no renewal needed; expired (< 0) renews */
 
     fprintf(stderr, "acme: certificate expires in %d days, renewing...\n", days);
 

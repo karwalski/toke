@@ -58,17 +58,44 @@
 
 #define TLS_MAX_CONNS 1024
 
+/* 121.19 (TLS-03, TLS-06).  The registry used to hand callers a pointer to
+ * an entry while holding ONE process-wide mutex, and every operation held it
+ * across its OpenSSL call -- including tls_read's blocking SSL_read.  Two
+ * defects followed, both measured on main (C590):
+ *   - tls_close read ssl/fd, dropped the lock, SSL_free'd, and only then
+ *     removed the entry, so a concurrent tls_read/tls_write on the same id
+ *     could find the entry and use the freed SSL* (the audit's UAF window);
+ *   - a tls_read waiting for data held the global mutex, so every other
+ *     connection's read/write/close -- and tls_close of the connection
+ *     being read -- blocked behind it until the peer spoke.
+ * Now: the global mutex guards the table only.  Each entry has its own `io`
+ * mutex serialising OpenSSL calls on that SSL* (an SSL object is not safe
+ * for concurrent use), and a reference count.  A caller acquires the entry
+ * (refs++), takes io, uses the SSL*, drops io, releases.  tls_close marks
+ * the entry closing -- no new acquire can find it -- wakes a blocked reader
+ * by shutting the socket down, and the LAST release frees the SSL* and the
+ * slot.  Nothing frees an SSL* another thread holds.
+ *
+ * The id was "%d:%p" -- the live SSL* address, a heap pointer disclosed to
+ * any caller that logs the id (TLS-06).  It is now the slot index and a
+ * process-wide generation counter, which also stops a stale id from naming
+ * a reused slot. */
 typedef struct {
     char   id[64];
     SSL   *ssl;
     int    fd;
     int    in_use;
+    int    closing;   /* tls_close has run; acquire refuses the entry */
+    int    refs;      /* acquirers currently holding the entry */
+    int    io_init;
+    pthread_mutex_t io;   /* serialises OpenSSL calls on ssl */
     /* Local cert PEM for pairing_code (may be NULL) */
     char  *local_cert_pem;
 } ConnEntry;
 
 static ConnEntry  g_conns[TLS_MAX_CONNS];
 static pthread_mutex_t g_conns_mu = PTHREAD_MUTEX_INITIALIZER;
+static unsigned long long g_conn_gen = 0;
 
 /* Register a new connection; returns a heap-allocated id string or NULL. */
 static char *registry_add(SSL *ssl, int fd, const char *local_cert_pem)
@@ -76,16 +103,25 @@ static char *registry_add(SSL *ssl, int fd, const char *local_cert_pem)
     pthread_mutex_lock(&g_conns_mu);
     for (int i = 0; i < TLS_MAX_CONNS; i++) {
         if (!g_conns[i].in_use) {
-            /* Build id from table index + ssl pointer */
+            if (!g_conns[i].io_init) {
+                if (pthread_mutex_init(&g_conns[i].io, NULL) != 0) break;
+                g_conns[i].io_init = 1;
+            }
             snprintf(g_conns[i].id, sizeof(g_conns[i].id),
-                     "%d:%p", i, (void *)ssl);
+                     "%d:%llu", i, ++g_conn_gen);
+            char *out = strdup(g_conns[i].id);
+            char *pem = local_cert_pem ? strdup(local_cert_pem) : NULL;
+            if (!out || (local_cert_pem && !pem)) {
+                free(out); free(pem);
+                memset(g_conns[i].id, 0, sizeof(g_conns[i].id));
+                break;
+            }
             g_conns[i].ssl      = ssl;
             g_conns[i].fd       = fd;
             g_conns[i].in_use   = 1;
-            g_conns[i].local_cert_pem =
-                local_cert_pem ? strdup(local_cert_pem) : NULL;
-
-            char *out = strdup(g_conns[i].id);
+            g_conns[i].closing  = 0;
+            g_conns[i].refs     = 0;
+            g_conns[i].local_cert_pem = pem;
             pthread_mutex_unlock(&g_conns_mu);
             return out;
         }
@@ -94,41 +130,46 @@ static char *registry_add(SSL *ssl, int fd, const char *local_cert_pem)
     return NULL;
 }
 
-/* Look up by id; returns the entry (locked), or NULL.
- * Caller must call registry_unlock() when done. */
-static ConnEntry *registry_find(const char *id)
+/* registry_acquire -- find a live (not closing) entry by id and take a
+ * reference.  Returns NULL if there is none.  The caller must pair it with
+ * registry_release(), and must hold e->io around any use of e->ssl. */
+static ConnEntry *registry_acquire(const char *id)
 {
     if (!id) return NULL;
+    ConnEntry *found = NULL;
     pthread_mutex_lock(&g_conns_mu);
     for (int i = 0; i < TLS_MAX_CONNS; i++) {
-        if (g_conns[i].in_use && strcmp(g_conns[i].id, id) == 0)
-            return &g_conns[i];
-    }
-    pthread_mutex_unlock(&g_conns_mu);
-    return NULL;
-}
-
-static void registry_unlock(void)
-{
-    pthread_mutex_unlock(&g_conns_mu);
-}
-
-/* Remove a connection from the registry (must NOT be called under the lock). */
-static void registry_remove(const char *id)
-{
-    if (!id) return;
-    pthread_mutex_lock(&g_conns_mu);
-    for (int i = 0; i < TLS_MAX_CONNS; i++) {
-        if (g_conns[i].in_use && strcmp(g_conns[i].id, id) == 0) {
-            free(g_conns[i].local_cert_pem);
-            g_conns[i].local_cert_pem = NULL;
-            memset(g_conns[i].id, 0, sizeof(g_conns[i].id));
-            g_conns[i].ssl    = NULL;
-            g_conns[i].fd     = -1;
-            g_conns[i].in_use = 0;
+        if (g_conns[i].in_use && !g_conns[i].closing &&
+            strcmp(g_conns[i].id, id) == 0) {
+            g_conns[i].refs++;
+            found = &g_conns[i];
             break;
         }
     }
+    pthread_mutex_unlock(&g_conns_mu);
+    return found;
+}
+
+/* Free the connection behind a closing entry and clear the slot.  Called
+ * with g_conns_mu held, by whoever drops the last reference. */
+static void registry_finalize_locked(ConnEntry *e)
+{
+    if (e->ssl) SSL_free(e->ssl);
+    if (e->fd >= 0) close(e->fd);
+    free(e->local_cert_pem);
+    e->local_cert_pem = NULL;
+    memset(e->id, 0, sizeof(e->id));
+    e->ssl     = NULL;
+    e->fd      = -1;
+    e->closing = 0;
+    e->refs    = 0;
+    e->in_use  = 0;
+}
+
+static void registry_release(ConnEntry *e)
+{
+    pthread_mutex_lock(&g_conns_mu);
+    if (--e->refs == 0 && e->closing) registry_finalize_locked(e);
     pthread_mutex_unlock(&g_conns_mu);
 }
 
@@ -722,15 +763,17 @@ TlsStrResult tls_read(TlsConn conn)
     TlsStrResult result = {NULL, 1};
     if (!conn.id) return result;
 
-    ConnEntry *e = registry_find(conn.id);
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return result;
 
     /* Read up to 64 KiB */
     char *buf = malloc(65536);
-    if (!buf) { registry_unlock(); return result; }
+    if (!buf) { registry_release(e); return result; }
 
+    pthread_mutex_lock(&e->io);
     int n = SSL_read(e->ssl, buf, 65535);
-    registry_unlock();
+    pthread_mutex_unlock(&e->io);
+    registry_release(e);
 
     if (n <= 0) {
         free(buf);
@@ -750,12 +793,14 @@ int tls_write(TlsConn conn, const char *data)
 {
     if (!conn.id || !data) return 0;
 
-    ConnEntry *e = registry_find(conn.id);
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return 0;
 
     size_t len = strlen(data);
+    pthread_mutex_lock(&e->io);
     int n = SSL_write(e->ssl, data, (int)len);
-    registry_unlock();
+    pthread_mutex_unlock(&e->io);
+    registry_release(e);
 
     return (n > 0) ? 1 : 0;
 }
@@ -768,18 +813,30 @@ int tls_close(TlsConn conn)
 {
     if (!conn.id) return 0;
 
-    ConnEntry *e = registry_find(conn.id);
+    /* 121.19 (TLS-03): mark the entry closing under the table lock, so no
+     * new acquire finds it, and keep a reference of our own. */
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return 0;
+    pthread_mutex_lock(&g_conns_mu);
+    if (e->closing) {                 /* a concurrent tls_close won */
+        pthread_mutex_unlock(&g_conns_mu);
+        registry_release(e);
+        return 0;
+    }
+    e->closing = 1;
+    pthread_mutex_unlock(&g_conns_mu);
 
-    SSL *ssl = e->ssl;
-    int  fd  = e->fd;
-    registry_unlock();
-
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
-    close(fd);
-
-    registry_remove(conn.id);
+    /* If nobody is inside an OpenSSL call on this connection, send
+     * close_notify.  If someone is -- a reader blocked waiting for the
+     * peer -- wake it by shutting the socket down; it returns, drops io
+     * and releases, and the last release frees the SSL*. */
+    if (pthread_mutex_trylock(&e->io) == 0) {
+        SSL_shutdown(e->ssl);
+        pthread_mutex_unlock(&e->io);
+    } else {
+        shutdown(e->fd, SHUT_RDWR);
+    }
+    registry_release(e);
     return 1;
 }
 
@@ -792,11 +849,13 @@ TlsStrResult tls_peer_cert(TlsConn conn)
     TlsStrResult result = {NULL, 1};
     if (!conn.id) return result;
 
-    ConnEntry *e = registry_find(conn.id);
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return result;
 
+    pthread_mutex_lock(&e->io);
     X509 *cert = SSL_get_peer_certificate(e->ssl);
-    registry_unlock();
+    pthread_mutex_unlock(&e->io);
+    registry_release(e);
 
     if (!cert) return result;
 
@@ -857,15 +916,16 @@ char *tls_pairing_code(TlsConn conn)
     if (!conn.id) return strdup(fallback);
 
     /* Get local cert PEM from registry */
-    ConnEntry *e = registry_find(conn.id);
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return strdup(fallback);
 
     char *local_pem = e->local_cert_pem ? strdup(e->local_cert_pem) : NULL;
-    SSL  *ssl       = e->ssl;
 
-    /* Get peer cert while still holding the lock */
-    X509 *peer_cert = SSL_get_peer_certificate(ssl);
-    registry_unlock();
+    /* Get peer cert while holding the connection's io lock */
+    pthread_mutex_lock(&e->io);
+    X509 *peer_cert = SSL_get_peer_certificate(e->ssl);
+    pthread_mutex_unlock(&e->io);
+    registry_release(e);
 
     /* Compute peer fingerprint */
     char peer_hex[65] = {0};
@@ -940,9 +1000,10 @@ char *tls_group(TlsConn conn)
 {
     if (!conn.id) return strdup("");
 
-    ConnEntry *e = registry_find(conn.id);
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return strdup("");
 
+    pthread_mutex_lock(&e->io);
     const char *g = NULL;
 #if OPENSSL_VERSION_NUMBER >= 0x30200000L
     g = SSL_get0_group_name(e->ssl);
@@ -953,7 +1014,8 @@ char *tls_group(TlsConn conn)
     }
 #endif
     char *out = strdup(g ? g : "");
-    registry_unlock();
+    pthread_mutex_unlock(&e->io);
+    registry_release(e);
     return out ? out : strdup("");
 }
 
@@ -961,11 +1023,13 @@ char *tls_protocol(TlsConn conn)
 {
     if (!conn.id) return strdup("");
 
-    ConnEntry *e = registry_find(conn.id);
+    ConnEntry *e = registry_acquire(conn.id);
     if (!e) return strdup("");
 
+    pthread_mutex_lock(&e->io);
     const char *v = SSL_get_version(e->ssl);
     char *out = strdup(v ? v : "");
-    registry_unlock();
+    pthread_mutex_unlock(&e->io);
+    registry_release(e);
     return out ? out : strdup("");
 }
