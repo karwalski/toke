@@ -1261,12 +1261,16 @@ defaults are 32 imports, 1024 function signatures and 1024 struct types
 (`tkc --show-limits`); the last two were 128 and 64 until story 127.250.
 
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
-by pointer locals, local types and shadowing aliases) is met in codegen, not at
-`--check`. It is reported once per function, closure or globals initialiser
-that crosses it, at that function, naming it, with `expected` = the limit and
-`got` = the count needed. That count is a lower bound -- a full registry stops
-recording, which can hide further demand -- so this E9010 carries no `fix`
-(story 127.252).
+by pointer locals, local types and shadowing aliases) is reported once per
+function, closure or globals initialiser that crosses it, at that function,
+naming it, with `expected` = the limit and `got` = the count needed. That
+count is a lower bound -- a full registry stops recording, which can hide
+further demand -- so this E9010 carries no `fix` (story 127.252). `--check`
+meets the part of it that is certain: the parameters, `let` bindings and
+`lp(let ..)` variables of a function's own body (match-arm subtrees and
+closure bodies are left to codegen, which may release or lift them), so a
+function the checker passes can still be refused by the build, never the
+reverse (127.252 residue).
 
 ### E9020
 
