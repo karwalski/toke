@@ -760,6 +760,7 @@ struct TkAccessLog {
     int   max_lines;     /* 0 = no rotation              */
     int   max_files;     /* 0 = no limit                 */
     int   max_age_days;  /* 0 = disabled; >0 wins over max_files */
+    int   is_stream;     /* 121.53: a tty/FIFO/device -- never reopened */
 };
 
 static TkAccessLog *g_access_log = NULL;
@@ -1071,6 +1072,7 @@ TkAccessLog *tk_access_log_open(const char *path,
      * never rotates (tk_access_log_write's unlocked path). */
     struct stat pst;
     if (stat(path, &pst) == 0 && !S_ISREG(pst.st_mode)) {
+        log->is_stream = 1;
         log->fp = fopen(path, "a");
         if (!log->fp) { tk_access_log_close(log); return NULL; }
         return log;
@@ -1116,12 +1118,14 @@ static void alog_reopen_path(TkAccessLog *log)
         alog_unlock(log);
         return;
     }
-    struct stat st;
-    if (stat(log->path, &st) == 0 && !S_ISREG(st.st_mode)) return;
-    FILE *fp = fopen(log->path, "a");
-    if (!fp) return;                     /* keep the old file over no file */
-    if (log->fp) fclose(log->fp);
-    log->fp = fp;
+    /* No lock: a stream (tty, FIFO, device), or a path beside which no lock
+     * could be made -- /dev/stderr among them, which must not be reopened
+     * (it may be a redirected write-only descriptor).  Any other path is a
+     * regular file in a directory we could not write: reopen it at its
+     * path.  alog_reopen is the same reopen the locked path uses; if it
+     * cannot open the file, tk_access_log_write retries on its next line. */
+    if (log->is_stream || strncmp(log->path, "/dev/", 5) == 0) return;
+    alog_reopen(log);
 }
 
 void tk_log_reopen_files(void)
