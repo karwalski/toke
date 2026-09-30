@@ -3476,6 +3476,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
      * index spelling `a.get(k)` of an import alias (127.249 (3)). */
     char qal[128] = "", qme[128] = "";
     int qual = 0;
+    const Node *qbase = NULL;
     /* 127.30: `m.get(k)` is a fallible lookup on the error channel. */
     if (call && call->kind == NODE_INDEX_EXPR) {
         if (index_is_map_get(c, call)) { *out_uce = 1; return; }
@@ -3488,9 +3489,20 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         if (sc0->kind == NODE_FIELD_EXPR && sc0->child_count >= 2) {
             tok_cp(c->src, sc0->children[0], qal, sizeof qal);
             tok_cp(c->src, sc0->children[1], qme, sizeof qme);
+            qbase = sc0->children[0];
             qual = 1;
         }
     }
+    /* 127.252 (3): the qualifier is a std import alias (not a value that
+     * shadows it).  A std member is resolved only against std: the
+     * same-module fallback `lookup_fn(member)` below found a user function
+     * (an extern keeps its bare name) spelled like the member -- `get`,
+     * `read` -- and took ITS error type as the payload of `env.get` /
+     * `args.get` / `file.read`, so the `$err` arm bound the wrong type. */
+    int qstd = 0;
+    if (qual && !(qbase && alias_is_value(c, qbase)))
+        for (int ii = 0; ii < c->import_count; ii++)
+            if (!strcmp(c->imports[ii].alias, qal)) { qstd = c->imports[ii].is_std; break; }
     const Node *sc = call->kind == NODE_CALL_EXPR ? call->children[0] : NULL;
 
     /* (a) which discriminant.  Verbatim the gate that has always run for a
@@ -3505,7 +3517,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
         else if (is_stdlib_slot_wrapper(prv)) *out_uce = 1;          /* 127.193 */
         else if (!prv) {                                             /* 114.55 */
-            const FnSig *ucs = lookup_fn(c, pme);
+            const FnSig *ucs = qstd ? NULL : lookup_fn(c, pme);      /* 127.252 (3) */
             if (!ucs || !ucs->err_type_name[0]) {
                 for (int ii = 0; ii < c->import_count; ii++) {
                     if (strcmp(c->imports[ii].alias, pal)) continue;
@@ -3545,7 +3557,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
             cs = lookup_fn(c, cn);
         } else if (qual) {
             const char *al = qal, *mth = qme;
-            cs = lookup_fn(c, mth); /* same-module fallback */
+            cs = qstd ? NULL : lookup_fn(c, mth); /* same-module fallback; 127.252 (3): never for std */
             if (!cs || !cs->err_type_name[0]) {
                 for (int ii = 0; ii < c->import_count; ii++) {
                     if (strcmp(c->imports[ii].alias, al)) continue;
