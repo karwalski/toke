@@ -57,7 +57,7 @@ fi
 cat > "${WORK}/sn.tk" <<'EOF'
 m=t;i=http:std.http;i=io:std.io;i=str:std.str;i=os:std.os;
 f=main():i64{
-  let s=mt http.stream(os.getenv("URL")) {$ok:v v;$err:e 0};
+  let s=mt http.stream(http.client(os.getenv("URL"))) {$ok:v v;$err:e 0};
   let chunk=mt http.streamnext(s) {$ok:v v;$err:e @()};
   io.println("\(chunk.len) \(str.frombytes(chunk))");
   <0

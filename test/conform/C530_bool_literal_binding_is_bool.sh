@@ -53,8 +53,9 @@ f=main():i64{ <h(true) as i64 };')" "E4036 rc=1"
 
 expect "4 control: mdns.browse is declared bool" "$(codes 'm=t;
 i=mdns:std.mdns;
+f=seen(d:$discovered):void{};
 f=main():i64{
-  let r=mdns.browse("_http._tcp");
+  let r=mdns.browse("_http._tcp";seen);
   <r.len() as i64
 };')" "E4036 rc=1"
 
