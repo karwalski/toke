@@ -18,6 +18,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.path](/docs/stdlib/path/) -- file path manipulation
 - [std.env](/docs/stdlib/env/) -- environment variables
 - [std.process](/docs/stdlib/process/) -- process management
+- [std.os](/docs/stdlib/os/) -- thin POSIX bridge: descriptors, errno
 - [std.args](/docs/stdlib/args/) -- command-line argument parsing
 - [std.log](/docs/stdlib/log/) -- structured logging
 - [std.test](/docs/stdlib/test/) -- test framework

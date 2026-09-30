@@ -42,6 +42,16 @@ imported, not copied): a table row whose first cell is `mod.name`, or a `##`-
      `none`, `-` and an empty cell state an empty list.  For a `"gen":"abi"`
      export only the count is held (its types are placeholders).
 
+  4. PAGE (121.70 (2)).  The rules above read every PAGE against the
+     interfaces, and nothing read the interfaces against the pages: a module
+     with no page at all had nothing to disagree with, so it passed.
+     std.os (27 exports) and std.io had no docs/stdlib page and this gate
+     said OK.  Now every stdlib/<stem>.tki with at least one func export not
+     marked `"internal": true` must have docs/stdlib/<stem>.md -- or be in
+     MISSING_PAGES below with the reason it has none.  That list only
+     shrinks: an entry whose page now exists, or whose .tki is gone, or that
+     has no public export, fails as stale.
+
 A page that opens with the workspace archive banner (`**Archived
 YYYY-MM-DD ...**` in its first 40 lines -- check_canonical.ARCHIVE_BANNER, the
 same test every claims guard uses) is a dated record, not a reference, and is
@@ -68,6 +78,61 @@ from check_canonical import ARCHIVE_BANNER, ARCHIVE_HEAD  # noqa: E402
 NOT_EXPORTED = "**Not exported.**"
 HEAD_SIG = re.compile(r"^#{2,4}\s+`?[a-z][a-z0-9_]*\.[a-z0-9_.]+(\(.*)$")
 QUALIFIER = re.compile(r"\b[a-z][a-z0-9]*\.(?=[a-z])")
+
+
+# 121.70 (2): modules whose interface has public func exports and no
+# docs/stdlib page, as of 2026-10-01, each with why.  Shrink-only (rule 4):
+# write the page, then delete the entry -- a stale entry fails.  Never add
+# one for a new module; a new module ships with its page.
+MISSING_PAGES = {
+    "array": "std.array: the array builtins' glue (127.42); the language guide covers arrays -- page pending",
+    "clipboard": "std.clipboard: two calls, no page written -- pending",
+    "collections": "std.collections: container helpers, no page written -- pending",
+    "mem": "std.mem: raw memory primitives (tk_mem_*), no page written -- pending",
+    "queue": "std.queue: FIFO container (76.1.7b), no page written -- pending",
+    "set": "std.set: unique-element container (76.1.7b), no page written -- pending",
+    "soap": "std.soap (131.46): no page written -- pending",
+    "stack": "std.stack: LIFO container (76.1.7b), no page written -- pending",
+    "std": "std.homedir (138.11): the one-function root module, no page -- pending",
+    "sys": "std.sys: no page written -- pending",
+    "task": "std.task: structured concurrency (76.1.1a), no page written -- pending",
+    "vec": "std.vec: growable vector (114.18), no page written -- pending",
+    "xml": "std.xml (131.46): no page written -- pending",
+}
+
+
+def public_modules(tki_dir):
+    """{stem: count of func exports not marked internal} for every .tki."""
+    out = {}
+    for f in sorted(pathlib.Path(tki_dir).glob("*.tki")):
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        out[f.stem] = sum(1 for e in data.get("exports") or []
+                          if e.get("kind") == "func" and not e.get("internal"))
+    return out
+
+
+def page_problems(tki_dir, docs_dir):
+    """Rule 4: (missing, stale) lists of human-readable lines."""
+    mods = public_modules(tki_dir)
+    have = {p.stem for p in pathlib.Path(docs_dir).glob("*.md")}
+    missing = ["  stdlib/%s.tki  %d public export%s, no docs/stdlib/%s.md"
+               % (m, n, "" if n == 1 else "s", m)
+               for m, n in sorted(mods.items())
+               if n and m not in have and m not in MISSING_PAGES]
+    stale = []
+    for m, why in sorted(MISSING_PAGES.items()):
+        if m not in mods:
+            stale.append("  MISSING_PAGES[%r]: stdlib/%s.tki is gone" % (m, m))
+        elif m in have:
+            stale.append("  MISSING_PAGES[%r]: docs/stdlib/%s.md exists now -- "
+                         "delete the entry" % (m, m))
+        elif not mods[m]:
+            stale.append("  MISSING_PAGES[%r]: no public export -- delete the "
+                         "entry" % m)
+    return missing, stale
 
 
 def load_exports(tki_dir):
@@ -286,6 +351,13 @@ def main():
               "parameter patterns have stopped matching; refusing to report a "
               "pass" % plists)
         return 2
+    missing, stale = page_problems(a.tki_dir, a.docs)
+    if missing or stale:
+        print("check-stdlib-doc-exports: FAIL -- rule 4 (every public module "
+              "has a page):")
+        print("\n".join(missing + stale))
+        print("  (write the page; MISSING_PAGES in this script only shrinks)")
+        return 1
     if bad:
         print("check-stdlib-doc-exports: FAIL -- %d documented entr%s disagree%s "
               "with stdlib/*.tki:" % (len(bad), "y" if len(bad) == 1 else "ies",
@@ -298,10 +370,12 @@ def main():
     print("check-stdlib-doc-exports: OK -- %d page(s), %d documented entr%s, all "
           "exports or marked %s; %d parameter list(s) match the .tki; "
           "%d return type(s) exempt as \"gen\":\"abi\"; "
-          "%d archived page(s) skipped%s"
+          "%d archived page(s) skipped%s; every public module has a page "
+          "but the %d in MISSING_PAGES"
           % (len(pages) - len(archived), entries, "y" if entries == 1 else "ies",
              NOT_EXPORTED, plists, abi, len(archived),
-             (" (" + ", ".join(archived) + ")") if archived else ""))
+             (" (" + ", ".join(archived) + ")") if archived else "",
+             len(MISSING_PAGES)))
     return 0
 
 
