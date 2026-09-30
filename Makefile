@@ -652,6 +652,16 @@ check-core-reach:
 check-test-orphans:
 	python3 scripts/check_test_orphans.py
 
+# 131.82 — every numbered test case (test/<dir>/<S><NNN>.yaml, <S><NNN>_<subject>.sh)
+# has a series-wide unique id, a yaml `id:` that matches its file, and a
+# subject.  Three agents once each wrote a C009 on the same day because each
+# took "the next free number" from its own tree; new ids come from
+#   python3 scripts/check_test_ids.py --claim C <subject>
+# which reserves one above every id in this tree, every worktree, every
+# unmerged branch and the shared claims registry in the git common dir.
+check-test-ids:
+	python3 scripts/check_test_ids.py
+
 # 132.43 — the website's published toke programs, compiled by THIS compiler.
 # The website checks its own examples, but only on a push to the website: when
 # stdlib/io.tki landed here and made `io.printi` a diagnosable error, every
@@ -1111,7 +1121,7 @@ define run_test_list
 	[ $$fail -eq 0 ]
 endef
 
-.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-site-compile check-examples check-stdlib-tk
+.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-test-ids check-site-compile check-examples check-stdlib-tk
 test-ci-green:
 	$(call run_test_list,$(TEST_CI_GREEN),test-ci-green)
 
@@ -1137,7 +1147,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).

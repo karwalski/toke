@@ -20,9 +20,14 @@ python3 bench/patterns/run_patterns.py --json-only               # prints only t
 Flags: `--pattern <id>` (repeatable), `--runs N` (default 15), `--warmup N`
 (default 2), `--bigo-runs N` (timed runs at 4N, default 3), `--no-alloc`,
 `--json-only`, `--max-load X` (default 2.0 — the run is refused when the 1-min
-loadavg is higher), `--allow-load` (run anyway; the results file then carries
-`meta.load_warning: true` and must not feed the catalogue). `meta.loadavg_1min`
-is recorded in every results file.
+loadavg is higher), `--allow-load` (run anyway). `--max-load` only decides
+whether the run starts: `meta.load_warning` is stamped against the fixed
+protocol §8 floor of 2.0 whatever `--max-load` says (131.65), from the 1-min
+loadavg sampled at start, halfway through the patterns and at the end
+(`meta.loadavg_1min_samples`, `meta.loadavg_1min_max`; `meta.loadavg_1min` is
+the start sample). The override is recorded beside it (`meta.max_load`,
+`meta.max_load_override`). A results file with `load_warning: true` must not
+feed the catalogue unaccepted.
 
 Exit status: 0 when every pattern has status `ok`, 1 otherwise, 2 on refusal.
 

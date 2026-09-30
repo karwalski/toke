@@ -58,6 +58,10 @@ DEFAULT_START_N = 1000
 DEFAULT_MAX_N = 1 << 30
 DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_MAX_LOAD = 2.0
+# 131.65: protocol §8's quiet-machine floor.  meta.load_warning is stamped against
+# THIS, never against --max-load: raising --max-load lets a run proceed on a busy
+# machine, it must not also erase the record that the machine was busy.
+LOAD_WARNING_FLOOR = 2.0
 
 
 # ─────────────────────────── helpers ────────────────────────────────────────
@@ -471,6 +475,26 @@ def apply_gate(entry):
 
 
 # ─────────────────────────── meta + output ──────────────────────────────────
+def load_stamp(samples, max_load):
+    """131.65: the load provenance for a results file.
+
+    `samples` maps a point in the run ("start", "mid", "end") to the 1-min
+    loadavg read there.  The warning is the maximum against the fixed protocol
+    floor (LOAD_WARNING_FLOOR), whatever --max-load was; the override is
+    recorded beside it, not folded into it.
+    """
+    peak = max(samples.values())
+    return {
+        "loadavg_1min": round(samples.get("start", peak), 2),   # kept: the field older readers use
+        "loadavg_1min_samples": {k: round(v, 2) for k, v in samples.items()},
+        "loadavg_1min_max": round(peak, 2),
+        "load_warning_floor": LOAD_WARNING_FLOOR,
+        "load_warning": peak > LOAD_WARNING_FLOOR,
+        "max_load": max_load,
+        "max_load_override": max_load != LOAD_WARNING_FLOOR,
+    }
+
+
 def collect_meta(args):
     therm = sh(["pmset", "-g", "therm"])
     git_sha = sh(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
@@ -481,9 +505,8 @@ def collect_meta(args):
         "hw_ncpu": os.cpu_count(),
         "os": f"{platform.system()} {platform.release()} ({platform.mac_ver()[0]})",
         "python": platform.python_version(),
-        "loadavg_1min": round(os.getloadavg()[0], 2),
-        "max_load": args.max_load,
-        "load_warning": os.getloadavg()[0] > args.max_load,
+        # loadavg_1min / load_warning / max_load: filled by load_stamp() once the run
+        # has sampled load at start, middle and end (131.65).
         "thermal": [ln.strip() for ln in therm.splitlines() if ln.strip()],
         "tkc_version": sh([str(TKC), "--version"]),
         "tkc_git_sha": git_sha,
@@ -548,7 +571,8 @@ def main():
     ap.add_argument("--max-load", type=float, default=DEFAULT_MAX_LOAD,
                     help=f"refuse to run if 1-min loadavg exceeds this (default {DEFAULT_MAX_LOAD})")
     ap.add_argument("--allow-load", action="store_true",
-                    help="run even above --max-load; the results file then carries load_warning: true")
+                    help="run even above --max-load (load_warning is stamped against the fixed protocol "
+                         f"floor {LOAD_WARNING_FLOOR} regardless, from start/middle/end samples)")
     args = ap.parse_args()
 
     if sys.platform != "darwin":
@@ -565,9 +589,10 @@ def main():
     if load > args.max_load and not args.allow_load:
         die(f"1-min loadavg {load:.2f} > {args.max_load} — machine busy; retry later, "
             f"raise --max-load, or pass --allow-load (results flagged load_warning)")
-    if load > args.max_load:
-        print(f"run_patterns: WARNING loadavg {load:.2f} > {args.max_load}; results will carry load_warning: true",
-              file=sys.stderr)
+    if load > LOAD_WARNING_FLOOR:
+        print(f"run_patterns: WARNING loadavg {load:.2f} > {LOAD_WARNING_FLOOR} (protocol floor); "
+              f"results will carry load_warning: true", file=sys.stderr)
+    load_samples = {"start": load}
 
     log = (lambda *a: None) if args.json_only else (lambda *a: print(*a, flush=True))
     pats = discover(set(args.pattern) if args.pattern else None)
@@ -578,9 +603,17 @@ def main():
     log(f"run_patterns: {results['meta']['tkc_version']} @ {results['meta']['tkc_git_sha'][:12]}"
         f"{' (dirty)' if results['meta']['tkc_git_dirty'] else ''}  {results['meta']['hw_model']}"
         f"  load {load:.2f}  runs {args.runs}")
-    for pid, pat in pats.items():
+    mid_after = (len(pats) - 1) // 2          # 131.65: sample again halfway through the patterns
+    for i, (pid, pat) in enumerate(pats.items()):
         log(f"\n[{pid}] forms: {' '.join(pat['forms'])}")
         results["patterns"][pid] = measure_pattern(pid, pat, args, log)
+        if i == mid_after:
+            load_samples["mid"] = os.getloadavg()[0]
+    load_samples["end"] = os.getloadavg()[0]
+    results["meta"].update(load_stamp(load_samples, args.max_load))
+    if results["meta"]["load_warning"]:
+        print(f"run_patterns: load_warning: true (peak 1-min loadavg {results['meta']['loadavg_1min_max']} "
+              f"> {LOAD_WARNING_FLOOR}; samples {results['meta']['loadavg_1min_samples']})", file=sys.stderr)
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
