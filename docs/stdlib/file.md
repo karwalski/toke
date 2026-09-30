@@ -53,6 +53,8 @@ which is retired along with `file.lasterr()`.
 
 Reads the entire contents of the file at `path` and returns it as a UTF-8 string. Returns `$fileerr.$notfound` if the file does not exist, `$fileerr.$permission` if access is denied, or `$fileerr.$io` on other I/O failures.
 
+A directory is `$fileerr.$isdir`, as it is for `file.readbytes` and `file.size`; until 121.65 `file.read` on a directory returned `$ok ""`. A final-component symlink is `$fileerr.$symlink` (AMB-07). An empty file is `$ok ""`, not an error.
+
 ```toke
 m=example;
 i=file:std.file;

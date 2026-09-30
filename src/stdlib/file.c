@@ -82,6 +82,18 @@ StrFileResult file_read(const char *path)
     FILE *f = fopen_nofollow(path, "rb");
     if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
 
+    /* 121.65: open(2) with O_RDONLY succeeds on a directory, and on Darwin
+     * the fseek/ftell/fread that follow do not fail either -- fread returns
+     * 0 -- so file.read(dir) came back `$ok ""` and a template renderer
+     * handed a directory path rendered an empty page with no error.  Ask the
+     * descriptor that was opened (no stat/open race) and refuse with the
+     * same $isdir the byte calls (file_open_for_read) already give. */
+    struct stat st;
+    if (fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode)) {
+        fclose(f);
+        r.is_err = 1; r.err = make_err(EISDIR, NULL); return r;
+    }
+
     if (fseek(f, 0, SEEK_END) != 0) {
         fclose(f);
         r.is_err = 1; r.err = make_err(errno, "seek failed"); return r;
