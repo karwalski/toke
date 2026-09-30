@@ -92,6 +92,7 @@
 #define LEX_W1010 1010   /* string interpolation not supported (warning)  */
 #define LEX_W1011 1011   /* identifier starts with keyword prefix (hint)  */
 #define LEX_W1020 1020   /* foreign keyword detected (cross-lang hint)    */
+#define LEX_W1021 1021   /* raw control byte in a string literal          */
 
 /* Maximum number of errors before the lexer stops scanning. */
 #define LEX_MAX_ERRORS 20
@@ -396,6 +397,22 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 advance(l);
             }
         } else {
+            unsigned char u = (unsigned char)c;
+            /* 131.32: a raw control byte in the literal's text -- the set the
+             * corpus control-byte guard rejects: C0 less tab, LF, CR and ESC.
+             * The spec permits any UTF-8 here (v0.4 §G), so this is a warning;
+             * the byte means what its \xHH escape means (same IR), so the fix
+             * is exact in every case. */
+            if (u < 0x20 && u != '\t' && u != '\n' && u != '\r' && u != 0x1b) {
+                char msg[96], fix[64], got[32];
+                snprintf(msg, sizeof msg,
+                         "raw control byte 0x%02X in string literal", u);
+                snprintf(fix, sizeof fix, "replace the raw byte with \\x%02X", u);
+                snprintf(got, sizeof got, "raw byte 0x%02X", u);
+                diag_emit_span(DIAG_WARNING, LEX_W1021, l->pos, l->line, l->col, 1, msg,
+                          "got", got, "expected", "an escape sequence (\\xHH)",
+                          "fix", fix, NULL);
+            }
             advance(l);
         }
     }
