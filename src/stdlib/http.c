@@ -4161,9 +4161,63 @@ static int h2_send_header_block(H2Conn *conn, int fd, void *ssl, uint32_t sid,
  * could not be encoded (the HPACK encoder's table may then disagree with the
  * peer's, so the caller must end the connection).
  */
-static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
+/* h2_flush_stream -- send as much of st's pending body as the peer's
+ * windows allow (121.50 (1)): each DATA frame is at most the peer's
+ * SETTINGS_MAX_FRAME_SIZE and at most what is left of both the stream's and
+ * the connection's send window, and the frames it sends are taken off both
+ * (RFC 9113 6.9.1).  END_STREAM rides on the last byte.  Returns 1 when the
+ * whole body is out, 0 when the window closed first (st keeps the rest),
+ * -1 on a write error. */
+static int h2_flush_stream(H2Conn *conn, int fd, void *ssl, H2Stream *st)
+{
+    int progressed = 0;
+    while (st->out_off < st->out_len) {
+        int64_t room = conn->conn_window_send;
+        if (st->window < room) room = st->window;
+        if (room <= 0) break;
+        size_t chunk = st->out_len - st->out_off;
+        if (chunk > (size_t)room) chunk = (size_t)room;
+        if (chunk > conn->peer_settings.max_frame_size)
+            chunk = conn->peer_settings.max_frame_size;
+        uint8_t flags = (st->out_off + chunk >= st->out_len)
+                      ? H2_FLAG_END_STREAM : 0;
+        if (h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, flags, st->id,
+                          st->out + st->out_off, (uint32_t)chunk) < 0)
+            return -1;
+        conn->conn_window_send -= (int32_t)chunk;
+        st->window -= (int32_t)chunk;
+        st->out_off += chunk;
+        progressed = 1;
+    }
+    if (st->out_off >= st->out_len) return 1;
+    /* A peer that never opens its window must not hold the worker: the
+     * wait for the next WINDOW_UPDATE is bounded like any other phase of a
+     * request, from the last byte that went out. */
+    if (progressed || !st->deadline_ms)
+        st->deadline_ms = h2_now_ms() + (long)conn->read_timeout_ms;
+    return 0;
+}
+
+/* h2_flush_pending -- after the peer opened a window (WINDOW_UPDATE or a
+ * larger SETTINGS_INITIAL_WINDOW_SIZE), send what the waiting streams can,
+ * and release each one whose body is now complete.  -1 on a write error. */
+static int h2_flush_pending(H2Conn *conn, int fd, void *ssl)
+{
+    for (size_t i = 0; i < conn->stream_count; i++) {
+        H2Stream *st = &conn->streams[i];
+        if (st->state == H2_STREAM_CLOSED || !st->out) continue;
+        if (conn->conn_window_send <= 0) break;
+        int r = h2_flush_stream(conn, fd, ssl, st);
+        if (r < 0) return -1;
+        if (r > 0) h2_stream_release(st);
+    }
+    return 0;
+}
+
+static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
                             Res res, int is_head)
 {
+    uint32_t sid = st->id;
     static const char *const sec[][2] = {
         { "x-content-type-options",    "nosniff" },
         { "x-frame-options",           "DENY" },
@@ -4182,11 +4236,11 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
     int rc = -1;
     if (!nm || !vl || !own) goto out;
 
-    char st[8], cl[32];
-    snprintf(st, sizeof st, "%u", res.status);
+    char stat[8], cl[32];
+    snprintf(stat, sizeof stat, "%u", res.status);
     snprintf(cl, sizeof cl, "%zu", body_len);
     size_t k = 0;
-    nm[k] = ":status"; vl[k++] = st;
+    nm[k] = ":status"; vl[k++] = stat;
     if (!no_body) { nm[k] = "content-length"; vl[k++] = cl; }
     for (uint64_t i = 0; i < res.headers.len; i++) {
         const char *hk = res.headers.data[i].key;
@@ -4229,16 +4283,24 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
         goto out;
     rc = 0;
     if (!end_stream) {
-        uint32_t max_data = conn->peer_settings.max_frame_size;
-        size_t sent = 0;
-        while (sent < body_len) {
-            uint32_t chunk = (uint32_t)(body_len - sent);
-            if (chunk > max_data) chunk = max_data;
-            uint8_t dflags = (sent + chunk >= body_len) ? H2_FLAG_END_STREAM : 0;
-            if (h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, dflags, sid,
-                              (const uint8_t *)res.body + sent, chunk) < 0)
-                break;
-            sent += chunk;
+        /* 121.50 (1): the body goes out as the peer's flow-control windows
+         * allow.  It used to be written whole, ignoring them, so a body over
+         * 64 KiB overran a client on the default window (RFC 9113 6.9: a
+         * FLOW_CONTROL_ERROR, and the stream failed).  What the window does
+         * not take now waits on the stream -- copied, since res.body is the
+         * handler's -- for the WINDOW_UPDATE frames that open it; the
+         * connection loop sends it (h2_flush_pending) and serves other
+         * streams meanwhile. */
+        free(st->out);
+        if (!(st->out = malloc(body_len))) { rc = -1; goto out; }
+        memcpy(st->out, res.body, body_len);
+        st->out_len = body_len;
+        st->out_off = 0;
+        st->deadline_ms = 0;
+        if (h2_flush_stream(conn, fd, ssl, st) > 0) {
+            free(st->out);
+            st->out = NULL;
+            st->out_len = st->out_off = 0;
         }
     }
 out:
@@ -4362,7 +4424,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             res = make_res(405, "Method Not Allowed");
     }
 
-    int rc = h2_send_response(conn, fd, ssl, st->id, res, is_head);
+    int rc = h2_send_response(conn, fd, ssl, st, res, is_head);
     log_request(client_ip, &req, res.status, res.body ? strlen(res.body) : 0);
     free(cookie);
     /* 127.72: response written and logged -- the route bindings it may
@@ -4376,7 +4438,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
  * treating the request as failed in transit (RFC 9113 8.1). */
 static int h2_refuse_body(H2Conn *conn, int fd, void *ssl, H2Stream *st)
 {
-    int rc = h2_send_response(conn, fd, ssl, st->id,
+    int rc = h2_send_response(conn, fd, ssl, st,
                               make_res(413, "Payload Too Large"), 0);
     h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_NONE);
     h2_stream_release(st);
@@ -4401,6 +4463,9 @@ static int h2_finish(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             }
         }
     rc = h2_dispatch(conn, fd, ssl, client_ip, st);
+    /* 121.50 (1): a stream whose body is still waiting for the peer's
+     * window stays open until the last byte is out (h2_flush_pending). */
+    if (st->out && rc == 0) return 0;
     h2_stream_release(st);
     return rc;
 }
@@ -4619,6 +4684,9 @@ static int handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 goto done;
             }
             h2_send_settings_ack(conn, fd, ssl);
+            /* 121.50 (1): a larger INITIAL_WINDOW_SIZE opens every stream's
+             * window. */
+            if (h2_flush_pending(conn, fd, ssl) < 0) goto done;
             break;
 
         case H2_FRAME_HEADERS: {
@@ -4833,12 +4901,32 @@ static int handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 }
                 break;
             }
+            /* 121.50 (1): a window may not pass 2^31-1 (RFC 9113 6.9.1):
+             * FLOW_CONTROL_ERROR for the connection's, RST_STREAM for a
+             * stream's.  The sum is taken wide -- it used to be a signed
+             * 32-bit overflow. */
             if (hdr.stream_id == 0) {
+                if ((int64_t)conn->conn_window_send + increment >
+                    (int64_t)H2_MAX_WINDOW_SIZE) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_FLOW_CONTROL);
+                    goto done;
+                }
                 conn->conn_window_send += (int32_t)increment;
             } else {
                 H2Stream *stream = h2_stream_find(conn, hdr.stream_id);
-                if (stream) stream->window += (int32_t)increment;
+                if (stream) {
+                    if ((int64_t)stream->window + increment >
+                        (int64_t)H2_MAX_WINDOW_SIZE) {
+                        h2_send_rst_stream(conn, fd, ssl, hdr.stream_id,
+                                           H2_ERR_FLOW_CONTROL);
+                        h2_stream_release(stream);
+                        break;
+                    }
+                    stream->window += (int32_t)increment;
+                }
             }
+            if (h2_flush_pending(conn, fd, ssl) < 0) goto done;
             break;
         }
 

@@ -135,6 +135,13 @@ typedef struct {
     size_t        body_len;
     size_t        body_cap;
     long          deadline_ms;
+    /* 121.50 (1): the response body not yet sent because the peer's
+     * flow-control window (the stream's or the connection's) is closed.
+     * It is sent as WINDOW_UPDATE frames open the window, and the stream
+     * is released when the last byte (END_STREAM) is out.  Owned. */
+    uint8_t      *out;
+    size_t        out_len;
+    size_t        out_off;
 } H2Stream;
 
 /* ── HPACK dynamic table entry ────────────────────────────────────────── */

@@ -349,11 +349,19 @@ int h2_apply_settings(H2Conn *conn, const uint8_t *payload, uint32_t len)
             if (val > H2_MAX_WINDOW_SIZE) return -1; /* FLOW_CONTROL_ERROR */
             /* Adjust existing stream windows by delta */
             {
-                int32_t delta = (int32_t)val
-                              - (int32_t)conn->peer_settings.initial_window_size;
-                for (size_t s = 0; s < conn->stream_count; s++) {
-                    conn->streams[s].window += delta;
-                }
+                /* 121.50 (1): the windows now gate DATA, so the adjustment
+                 * is checked -- a window pushed past 2^31-1 is a
+                 * FLOW_CONTROL_ERROR (RFC 9113 6.9.2), not a signed
+                 * overflow. */
+                int64_t delta = (int64_t)val
+                              - (int64_t)conn->peer_settings.initial_window_size;
+                for (size_t s = 0; s < conn->stream_count; s++)
+                    if ((int64_t)conn->streams[s].window + delta >
+                        (int64_t)H2_MAX_WINDOW_SIZE)
+                        return -1;
+                for (size_t s = 0; s < conn->stream_count; s++)
+                    conn->streams[s].window =
+                        (int32_t)((int64_t)conn->streams[s].window + delta);
             }
             conn->peer_settings.initial_window_size = val;
             break;
@@ -504,7 +512,7 @@ H2Stream *h2_stream_get(H2Conn *conn, uint32_t stream_id)
     for (size_t i = 0; i < conn->stream_count && !s; i++) {
         H2Stream *c = &conn->streams[i];
         if (c->state == H2_STREAM_CLOSED && !c->header_block &&
-            !c->hnames && !c->body)
+            !c->hnames && !c->body && !c->out)
             s = c;
     }
     if (!s) {
@@ -550,6 +558,9 @@ void h2_stream_release(H2Stream *s)
     s->receiving = 0;
     s->block_end_stream = s->block_trailers = 0;
     s->deadline_ms = 0;
+    free(s->out);
+    s->out = NULL;
+    s->out_len = s->out_off = 0;
     s->state = H2_STREAM_CLOSED;
 }
 
