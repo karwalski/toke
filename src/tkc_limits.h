@@ -75,12 +75,18 @@
 
 /*
  * TKC_MAX_FUNCS — maximum number of function signatures tracked during
- * codegen.  Programs with more functions than this will fail.
+ * codegen.  Programs with more functions than this will fail (E9010).
+ * 127.250: 128 -> 1024.  Measured (Batch LM, 138.15): ~2.6 KB RSS per FnSig
+ * slot, lookups linear in the number USED, not the cap, so the cost is
+ * ~2.3 MB of address space on every compile (--emit-llvm of hello: 3.6 MB ->
+ * 6.1 MB maxrss) and nothing per lookup; 128 was met by ordinary programs.
+ * Also sizes the .tkir writer's function table (src/tkir.c, on the stack of
+ * the main thread: ~240 KB at 1024).
  * Safe range: >= 16.
  * Configurable: per-session (--max-funcs=N) or project-wide (tkc.toml).
  */
 #ifndef TKC_MAX_FUNCS
-#define TKC_MAX_FUNCS 128
+#define TKC_MAX_FUNCS 1024
 #endif
 
 /*
@@ -131,12 +137,16 @@
 
 /*
  * TKC_MAX_STRUCT_TYPES — maximum number of struct type definitions
- * registered during codegen.
+ * registered during codegen (E9010 past it).
+ * 127.250: 64 -> 1024.  Every record of an imported std module counts, and
+ * 32 std imports alone need 75 (main used to hide that by dropping types).
+ * ~150 B RSS per StructInfo slot (~140 KB at 1024), lookups linear in the
+ * number used.
  * Safe range: >= 8.
  * Configurable: per-session (--max-structs=N) or project-wide (tkc.toml).
  */
 #ifndef TKC_MAX_STRUCT_TYPES
-#define TKC_MAX_STRUCT_TYPES 64
+#define TKC_MAX_STRUCT_TYPES 1024
 #endif
 
 /*

@@ -20,7 +20,14 @@
 # Negative control: TKC=<main's toke> -- cases 1-3, 5-7 and 9-11 fail
 # (main is rc 0 at --check; its build gives a bare E9010 or an E4034).
 #
-# Story: 138.15 (T-25, T-54)
+# 127.250: the defaults rose to 1024 function signatures and 1024 struct
+# types.  Cases 1-12 pin the rule at the OLD defaults by passing them
+# explicitly (--max-funcs=128 / --max-structs=64, or tkc.toml), so they test
+# what they always tested; cases 14-18 pin the new defaults, with no flag.
+# Negative control for 14-18: the compiler at this change's parent (old
+# defaults 128/64) passes 1-13 and fails all of 14-18 (13 passed, 5 failed).
+#
+# Story: 138.15 (T-25, T-54); 127.250
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,9 +68,9 @@ for l in sys.stdin:
   printf 'f=main():i64{<f1()};\n'; } > s25.tk
 FFIX="raise the limit: pass --max-funcs=130, or set max_funcs = 130 in tkc.toml"
 expect "1 T-25: imported signatures count, caught at --check, at the import" \
-    "$(diags --check s25.tk)" "E9010|2|128|130|${FFIX}"
+    "$(diags --check --max-funcs=128 s25.tk)" "E9010|2|128|130|${FFIX}"
 expect "2 the message names count, limit, key and what counted" \
-    "$(msg --check s25.tk)" \
+    "$(msg --check --max-funcs=128 s25.tk)" \
     "compiler limit exceeded: this module needs 130 function signatures and the limit is 128 (max_funcs); counted: 10 declared in this module, 120 imported from big"
 expect "3 one under the count is still refused, same count" \
     "$(diags --check --max-funcs=129 s25.tk)" \
@@ -88,9 +95,9 @@ f=main():i64{
 EOF
 SFIX="raise the limit: pass --max-structs=68, or set max_structs = 68 in tkc.toml"
 expect "5 T-54: never dropped silently -- caught at --check, at the std import" \
-    "$(diags --check t54.tk)" "E9010|3|64|68|${SFIX}"
+    "$(diags --check --max-structs=64 t54.tk)" "E9010|3|64|68|${SFIX}"
 expect "6 the message names every contributor" \
-    "$(msg --check t54.tk)" \
+    "$(msg --check --max-structs=64 t54.tk)" \
     "compiler limit exceeded: this module needs 68 struct types and the limit is 64 (max_structs); counted: 58 imported from t54lib, 2 built in (timeparts, none), 8 imported from std.http"
 expect "7 one under the count is still refused, same count" \
     "$(diags --check --max-structs=67 t54.tk)" "E9010|3|67|68|${SFIX}"
@@ -101,22 +108,45 @@ expect "8 raised to exactly the count: builds, no E4034 on r.body" \
 { printf 'm=lf;\n'; for i in $(seq 1 128); do printf 'f=f%d():i64{<%d};\n' "$i" "$i"; done
   printf 'f=main():i64{<0};\n'; } > lf.tk
 expect "9 129 functions declared here: located at the 129th (line 130)" \
-    "$(diags --check lf.tk)" \
+    "$(diags --check --max-funcs=128 lf.tk)" \
     "E9010|130|128|129|raise the limit: pass --max-funcs=129, or set max_funcs = 129 in tkc.toml"
 { printf 'm=ls;\n'; for i in $(seq 1 63); do printf 't=$r%d{a:i64};\n' "$i"; done
   printf 'f=main():i64{<0};\n'; } > ls.tk
 expect "10 63 types + the 2 built-ins: located at the last type declared" \
-    "$(diags --check ls.tk)" \
+    "$(diags --check --max-structs=64 ls.tk)" \
     "E9010|64|64|65|raise the limit: pass --max-structs=65, or set max_structs = 65 in tkc.toml"
 expect "11 a build is refused at the same place: no bare codegen E9010" \
-    "$(diags --emit-llvm --out ls.ll ls.tk)" \
+    "$(diags --max-structs=64 --emit-llvm --out ls.ll ls.tk)" \
     "E9010|64|64|65|raise the limit: pass --max-structs=65, or set max_structs = 65 in tkc.toml"
-expect "12 tkc.toml max_structs raises it" \
-    "$(printf 'max_structs = 65\n' > tkc.toml; diags --check ls.tk; rm -f tkc.toml)" "clean"
+expect "12 tkc.toml max_structs sets it: 64 refuses, 65 is clean" \
+    "$(printf 'max_structs = 64\n' > tkc.toml; diags --check ls.tk; printf 'max_structs = 65\n' > tkc.toml; diags --check ls.tk; rm -f tkc.toml)" \
+    "E9010|64|64|65|raise the limit: pass --max-structs=65, or set max_structs = 65 in tkc.toml
+clean"
 
 # ── under the caps ───────────────────────────────────────────────────────
 printf 'm=ok;\ni=io:std.io;\ni=http:std.http;\nt=$p{a:i64};\nf=main():i64{io.println("x");<0};\n' > ok.tk
 expect "13 a module under both caps is clean" "$(diags --check ok.tk)" "clean"
+
+# ── 127.250: the defaults (1024 / 1024), no flag ─────────────────────────
+# 14/15: the programs above that crossed the OLD defaults build unflagged.
+expect "14 130 signatures (120 imported): clean at the default" "$(diags --check s25.tk)" "clean"
+expect "15 68 struct types (std.http + t54lib): builds at the default" \
+    "$(diags --emit-llvm --out t54d.ll t54.tk)" "clean"
+# 16/17: 1023 functions + main = 1024 is at the cap; one more is refused at it.
+{ printf 'm=df;\n'; for i in $(seq 1 1023); do printf 'f=f%d():i64{<%d};\n' "$i" "$i"; done
+  printf 'f=main():i64{<0};\n'; } > df.tk
+expect "16 1024 functions declared here: clean at the default" "$(diags --check df.tk)" "clean"
+{ printf 'm=df2;\n'; for i in $(seq 1 1024); do printf 'f=f%d():i64{<%d};\n' "$i" "$i"; done
+  printf 'f=main():i64{<0};\n'; } > df2.tk
+expect "17 1025 functions: refused at the default, at the 1025th (line 1026)" \
+    "$(diags --check df2.tk)" \
+    "E9010|1026|1024|1025|raise the limit: pass --max-funcs=1025, or set max_funcs = 1025 in tkc.toml"
+# 18: 1022 types + the 2 built-ins is at the cap; the 1023rd type crosses it.
+{ printf 'm=ds;\n'; for i in $(seq 1 1023); do printf 't=$r%d{a:i64};\n' "$i"; done
+  printf 'f=main():i64{<0};\n'; } > ds.tk
+expect "18 1023 types + 2 built-ins: refused at the default, at the last type (line 1024)" \
+    "$(diags --check ds.tk)" \
+    "E9010|1024|1024|1025|raise the limit: pass --max-structs=1025, or set max_structs = 1025 in tkc.toml"
 
 echo "C480: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

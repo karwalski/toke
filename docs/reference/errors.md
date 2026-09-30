@@ -1249,7 +1249,9 @@ the built-in `timeparts` and `none` types. The message lists what was counted.
 
 **Fix:** raise the limit to the count: `--max-imports=N` / `max_imports`,
 `--max-funcs=N` / `max_funcs`, `--max-structs=N` / `max_structs` (in
-`tkc.toml`). The `fix` field names the exact value (story 138.15).
+`tkc.toml`). The `fix` field names the exact value (story 138.15). The
+defaults are 32 imports, 1024 function signatures and 1024 struct types
+(`tkc --show-limits`); the last two were 128 and 64 until story 127.250.
 
 ### E9020
 

@@ -55,8 +55,9 @@ expect "1 33 imports against the default cap of 32" \
 expect "2 the check fails, not just prints" \
     "$("${TKC}" --check "${WORK}/p.tk" >/dev/null 2>&1; echo "rc=$?")" "rc=1"
 # 138.15 (T-54): these 33 std modules declare 75 struct types between them,
-# over the default max_structs of 64 -- that cap is met at --check too now
-# (before, 11 of the records were dropped silently), so raise both.
+# over what was the default max_structs of 64 -- that cap is met at --check
+# too now (before, 11 of the records were dropped silently), so this raised
+# both.  127.250 made the default 1024; the explicit flag is kept.
 expect "3 --max-imports raises it at --check" "$(out --max-imports=40 --max-structs=75)" "clean"
 MODS="io str"; prog
 expect "4 a module under the cap is clean" "$(out)" "clean"
