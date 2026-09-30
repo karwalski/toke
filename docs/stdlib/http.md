@@ -339,6 +339,18 @@ matched. Until then a request whose headers used `CONTINUATION` was never
 answered, `req.body` was always empty, and a response carried only its
 status, length and content type.
 
+**HTTP/2 flow control and header compression** (story 121.50). A response
+body is sent within the client's flow-control windows (RFC 9113 §6.9): what
+the stream's or the connection's window does not take waits and is sent as
+the client's `WINDOW_UPDATE` frames open it, while other streams on the
+connection are served. A client that never opens its window is disconnected
+after `timeout_secs` from the last byte sent. A `WINDOW_UPDATE` that would
+take a window past 2^31−1 ends the connection with `FLOW_CONTROL_ERROR`. When
+the client changes `SETTINGS_HEADER_TABLE_SIZE`, the next response header
+block opens with the dynamic table size update RFC 7541 §4.2 requires, and
+the server's table never grows past 4096 bytes. Until then a body over 64 KiB
+overran a client on the default window, and the table size changed silently.
+
 **The handler's security headers win** (story 121.50). Every response
 carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
 `Referrer-Policy: strict-origin-when-cross-origin`, and over TLS
