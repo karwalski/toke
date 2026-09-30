@@ -15,8 +15,8 @@ may no longer compile.
 ## 3.1.0 — loke's handoff, the typed standard library, and security fixes
 
 **Status: prepared on branch `release/3.1.0` (story 138.17). Not tagged, not
-published.** Built from main as of 2026-09-30 (`b88090c3`, then Batches X1 and
-X2 and F491 merged in); more than 760 commits since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
+published.** Built from main as of 2026-09-30 (`b88090c3`, then Batches X1, X2,
+F491, F491b, Y1, Y2 and Y3 merged in, through main `f605aec9`); more than 760 commits since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
 story in `docs/progress.md` and a commit, so a consumer can bisect.
 
 This is a minor version by the letter of semver, but read **Breaking changes**
@@ -42,14 +42,14 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
 | 8 | **`mt` binds a result's arms by label**, not by position; `<$err(x)` is an error return. A program whose err arm was written first used to take it for a valid input. | 138.2 — `f4840c41`, `1def6f04` | None needed; drop any "ok arm first" convention |
 | 9 | **New rejections for silent-wrong programs**: `==`/`!=` on struct and sum values (E4031; toke has no structural equality); array-literal elements of different types (E4031 — `@(arr;elem)` used to nest); a struct literal of an undeclared type (E3011); a comparison standing as a statement (**E4074**, new); a `$variant(..)` constructor with other than one payload (E4026). | 138.9 — `85570be1`, `c439fea2`, `b88f882b`; 138.10 — `4c44c669`, `17b9a7c4` | Match on the variant or compare a field; append with `x=x+@(v)`; declare the type; `x=$t{a:9;b:x.b}` for a field update |
 | 10 | **Lexer/parser diagnostics**: a comment still open at end of file is **E1007** (new), naming the nested `(*` that consumed its `*)` (comments nest, spec §8.10); `x.a=9` is E2002 "a struct field cannot be assigned"; a reserved keyword as an import alias is one E2002. | 138.10 — `093e81d`, `549eb2b`, `ba91e32` | Close the comment; rebuild the struct |
-| 11 | **Compiler caps are met at `--check`** and name the count, the limit and the flag (E9010: `--max-funcs`, `--max-structs`, `--max-imports`, or `tkc.toml`). A program over 64 struct types that 3.0.0 compiled by silently dropping types is now E9010. | 138.15 — `6586136f`, merge `fd0a0e88` | Pass the flag the diagnostic names |
+| 11 | **Compiler caps are met at `--check`** and name the count, the limit and the flag (E9010: `--max-funcs`, `--max-structs`, `--max-imports`, or `tkc.toml`). A program over the struct cap that 3.0.0 compiled by silently dropping types is now E9010. **The default `max_funcs` and `max_structs` rise from 128 and 64 to 1024**; `max_imports` stays 32. The locals caps report one located E9010 per function instead of one unlocated record per local. | 138.15 — `6586136f`, merge `fd0a0e88`; 127.250 — `8e2bf425`; 127.252 — `eb24097f` | Most programs need no flag now; past 32 imports, pass the flag the diagnostic names |
 | 12 | **One regex engine** for the checker and the runtime. `\s\S\d\D\w\W`, `\b\B`, `(?:…)`, a leading `(?i)` and POSIX classes are supported (on macOS `\s` etc. used to be literal letters); unsupported syntax (lazy quantifiers, backreferences, lookaround, unbalanced brackets, …) is **E4075** at `--check` for a literal pattern and traps **RT008** for a computed one; a step budget traps **RT009**. `str.matches` is whole-string. | 137.9, 121.35 — merge `49d17163` | Rewrite `.*?` as a negated class (`<[^>]*>`) |
 | 13 | **Wider capability gates**: `log.openaccess`/`openerror` need `fs.write`; `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file`/`sha256verify` need `fs.read`; `router.serve`/`chart.serve`/`dashboard.serve` need `net`; `http.downloadfile` needs `fs.write`; `http.servedir`/`servepages` need `fs.read`. | 121.22 — `783e0848`; 121.42 — `9a9447ce`, merge `b88090c3` | Grant the capability in `tkc.toml [capabilities]` or with `--allow-*` |
 | 14 | **`std.db`**: every `db.open` returns a fresh handle; handle-less calls use the first still-open database (a second open no longer repoints them); `db.exec` runs every statement, names the failing one, and refuses bind parameters with several statements. | 138.6 — `0deb11d` | Use `db.execon/oneon/manyon/closeon(h;…)` for a second connection |
 | 15 | **Advice-only `fix` fields removed** from E2001, E2002 (generic), E2003, E2004, E2005, E4025, E4027 (the did-you-mean fix stays), W1010 and E9005. A repair loop reading `fix` finds it absent where it was never deterministically correct. | 127.233, 127.235, 127.240, 127.243, 127.237 | Read `message`/`got`/`expected` |
-| 16 | **`std.llm` needs the `net` capability** for its connection, like `http.client`; RSA key generation accepts 2048 bits only, and encrypt/decrypt/sign/verify refuse larger moduli (they computed wrong results); `infer.load(path;opts)`, `infer.loadstreaming(dir;opts)` and `mdns.advertise(rec)` take their published arguments; `router.ctx`/`$ctx`, `process_set_cwd` and the SIGHUP reload stubs are removed (unreachable before). | 121.42 (2) `ff2ef9d8`; 121.51 (1) `691550fb`; 135.31 (1) `c99ad497`; 121.42 (7) `8226aa6f`, 121.51 (3) `19cd98ae`, 135.31 (4) `bfcaabff` | `--allow-net` / `net = true` for programs that call `llm.*`; 2048-bit RSA keys |
-| 17 | **A one-sided result match whose value is used is E4010**; `mt` on a nil sum value traps RT005 (it read the tag through a null pointer). | 127.249 (2) `50a0bd83`; 121.51 (2) `d7eb72df` | Write both arms |
-| 18 | Behaviour changes in other modules: `soap.fault` escapes its detail; TOON escapes `\ \| \n \r` both ways; `jwtverify` rejects at/after `exp` and before `nbf`; `http.param`/`header` take `$err` when missing; the HTTP/2 `h2c` upgrade is retired (answered as HTTP/1.1); `pkg.toml` has a closed schema, a source allowlist and a strict lock. | 121.16 `7f95de9b`; 121.40 `b1f8c0da`; 121.20 `e53bf845`; 135.28 `2e667e9`; 121.44 `b90ca884`; 121.39 `3256a412` | — |
+| 16 | **`std.llm` needs the `net` capability** for its connection, like `http.client`; RSA key generation accepts 2048 bits only, and encrypt/decrypt/sign/verify refuse larger moduli (they computed wrong results); `infer.load(path;opts)`, `infer.loadstreaming(dir;opts)` and `mdns.advertise(rec)` take their published arguments, and so do `infer.generate(h;prompt;maxtokens)`, `mlx.generate(m;prompt;maxtokens)` and `mdns.browse(type;&callback)` (the 2-argument generate forms are E4026) — none of the stub modules reports false success; `http.stream(httpclient)` takes the client its `.tki` publishes (it read a URL string) and raises `httperr`; `router.ctx`/`$ctx`, `process_set_cwd` and the SIGHUP reload stubs are removed (unreachable before). | 121.42 (2) `ff2ef9d8`; 121.51 (1) `691550fb`; 135.31 (1) `c99ad497`; 121.42 (7) `8226aa6f`, 121.51 (3) `19cd98ae`, 135.31 (4) `bfcaabff`; 137.11 — `5a5f581b`; 121.53 — `c69c18a7` | `--allow-net` / `net = true` for programs that call `llm.*`; 2048-bit RSA keys; pass a token limit to `generate`; `http.stream(http.client(url))` |
+| 17 | **A one-sided result match whose value is used is E4010** — including as the value of an expression-`if` branch; `mt` on a nil sum value traps RT005 (it read the tag through a null pointer). | 127.249 (2) `50a0bd83`; 127.252 — `45a0fd28`; 121.51 (2) `d7eb72df` | Write both arms |
+| 18 | Behaviour changes in other modules: `soap.fault` escapes its detail; TOON escapes `\ \| \n \r` both ways; `jwtverify` rejects at/after `exp` and before `nbf`; `http.param`/`header` take `$err` when missing; the HTTP/2 `h2c` upgrade is retired (answered as HTTP/1.1); `pkg.toml` has a closed schema, a source allowlist and a strict lock; **`tpl` `layout()` takes a layout name, not a path** (a name holding `/`, `\`, `..` or empty is refused), and template block nesting (64) and render depth (128) are bounded; `toon.str/i64/f64/bool/arr` raise a `ToonErr` payload (`$err:e` bound nil before); `file` errors name `$isdir` and `$symlink` for EISDIR/ELOOP on every call. | 121.16 `7f95de9b`; 121.40 `b1f8c0da`; 121.20 `e53bf845`; 135.28 `2e667e9`; 121.44 `b90ca884`; 121.39 `3256a412`; 121.41 `ed228353`; 127.246 `53d46b3c`, `6e45ebb1` | Pass `layout("base")`, not a path |
 
 ### Fixed for loke (the 2026-09-27 handoff, Epic 138)
 
@@ -84,8 +84,16 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
   checkout path builds. 138.14 — `2075fa9`.
 - **Diagnostics** — W1020 no longer fires on a binding named like a foreign
   keyword (`let def=…`). 138.10 — `574a491`.
+- **T-11 stub modules** — `infer`/`mlx`/`mdns` take the arity their `.tki`
+  publishes and never report false success: a missing model takes `$err`,
+  `generate` on no model is `$err`, `isavailable` is `false`. 137.11 —
+  `5a5f581b`.
+- **Default caps** — `max_funcs` and `max_structs` default to 1024, so loke's
+  `--max-funcs`/`--max-structs` flags can go (`--max-imports` stays: default
+  32). 127.250 — `8e2bf425`.
 - **Still open for loke**: T-17 `json.parse` (owner decision, 138.9), T-55
-  quadratic `str.charat` (127.170, owner decision), T-11 stub modules (137.11).
+  quadratic `str.charat` (127.170, owner decision), T-59 scoped capability
+  grants (not yet filed).
 
 ### Security fixes
 
@@ -105,7 +113,14 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
   `b8bd3b2d`); a single abandoned request no longer kills the server (127.144,
   merge `1ed358e1`); HTTP/2 frame limits and deadlines (121.17, 121.44); a
   lingering close after GOAWAY and after an HTTP/1.1 error response, so the
-  peer reads the answer instead of a TCP reset (121.52 — `d742f29b`).
+  peer reads the answer instead of a TCP reset (121.52 — `d742f29b`; its
+  C391 test race fixed in `de559637`, `d572ab01`); `tls.listen` no longer
+  binds beside a live listener with an unconditional `SO_REUSEADDR` (135.34 —
+  `8eb44f6d`).
+- **Templates** — a self-including partial or deeply nested blocks blew the
+  stack; `layout()` read `templates_dir/../secret.tkt` (121.41 — `ed228353`).
+  An unreachable access-log writer that did not escape its fields is deleted
+  (121.41 — `00380854`).
 - **Injection** — Markdown table-cell `javascript:` links (121.16 `d7875c47`);
   TOON ↔ JSON field and value escaping (121.40 `b1f8c0da`); header CR/LF in
   `postheaders` (138.8).
@@ -129,6 +144,13 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
   (127.234); a string `mt` binds the right arm (127.237); stdlib error payloads
   bind (127.238, 127.241); in-place appends and non-retaining callees
   (135.20, 127.171, 127.229); `as str` on a slice is the string (127.229).
+- **Batches Y1–Y3**: a user function named like a std member (`get`,
+  `read`) is no longer taken as the std call's error payload (127.252
+  `0d086b66`); E4075 follows a pattern named by an immutable `let` of a
+  literal (121.45 `6c36fea9`); the unreachable POSIX `regcomp` wrappers are
+  deleted (121.45 `fa009569`); `capabilities.md` §2.2 says what the broker
+  does with `enforce` and scoped values (121.42 `a035e786`); bounded
+  `snprintf` in duration formatting (121.53 `ac955587`).
 - **Tooling**: `--lint` exits non-zero on an error (127.137); `--fix` says when
   it stops short of its fixpoint (127.158); `--migrate` keeps v0.4 source and
   comments (127.57); `--emit-tkir` keeps every import (127.235).
