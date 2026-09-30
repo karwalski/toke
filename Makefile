@@ -561,7 +561,10 @@ stress: $(BIN)
 check-tki-layout:
 	python3 scripts/check_tki_layout.py --list
 
-check-tki: check-tki-layout
+# 127.266: check-tki-names rides here too.  It was only in `make ci` and the
+# CI workflow, which batches do not run locally, so a stale rule in it failed
+# on stdlib/csv.tki for two days with nobody seeing it.
+check-tki: check-tki-layout check-tki-names
 	python3 scripts/check_tki_coverage.py
 	python3 scripts/check_tki_coverage.py --quarantine-md-check
 	python3 scripts/check_tki_coverage.py --internal-md-check
