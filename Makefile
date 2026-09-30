@@ -1281,8 +1281,8 @@ endif
 # 132.108 -- `--self` also scans THIS repository's docs/, README and
 # PROJECT_STATUS.  The sweep skips each sibling's mirror of toke's docs
 # (toke-website content/docs) as "scanned at the source", but the source was
-# never in the list: ecosystem.md said 68 stdlib modules against a fact sheet
-# of 67 and this target stayed green.
+# never in the list: ecosystem.md stated a stdlib module count that disagreed
+# with the fact sheet and this target stayed green (132.108).
 SIBLING_NAMES := toke-spec toke-corpus toke-model toke-eval toke-mcp \
                  toke-console toke-cloud toke-ooke toke-test-programs \
                  toke-tokenizer toke-website homebrew-toke \
