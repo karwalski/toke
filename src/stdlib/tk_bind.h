@@ -38,9 +38,9 @@
  *
  * Used by: http.c (serve and its forms, C-API http_serve), router.c
  * (router.serve), net_glue.c (net.listen), net.c (net.portavailable),
- * server_ops.c (proc_config_test).  Header-only and static, like
- * tk_exitfail.h, so every stdlib translation unit that includes it links
- * without a new object in any link line.
+ * server_ops.c (proc_config_test), tls.c (tls.listen, 135.34).  Header-only
+ * and static, like tk_exitfail.h, so every stdlib translation unit that
+ * includes it links without a new object in any link line.
  */
 #ifndef TK_BIND_H
 #define TK_BIND_H

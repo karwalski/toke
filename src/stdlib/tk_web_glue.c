@@ -76,7 +76,6 @@ void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
-#include <regex.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -1966,95 +1965,11 @@ extern int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_);
  * rather than finished: a toke-level kv store is a stdlib story, not a
  * glue fix. */
 
-/* ── regex — POSIX regex wrappers (Story 78.4.3) ─────────────────────── */
-
-int64_t tk_regex_match_w(int64_t pattern, int64_t s) {
-    const char *pat = (const char *)(intptr_t)pattern;
-    const char *str = (const char *)(intptr_t)s;
-    if (!pat || !str) return 0;
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) return 0;
-    int match = regexec(&re, str, 0, NULL, 0) == 0 ? 1 : 0;
-    regfree(&re);
-    return match;
-}
-
-int64_t tk_regex_replace_w(int64_t pattern, int64_t s, int64_t repl) {
-    const char *pat  = (const char *)(intptr_t)pattern;
-    const char *str  = (const char *)(intptr_t)s;
-    const char *rep  = (const char *)(intptr_t)repl;
-    if (!pat || !str) return s;
-    if (!rep) rep = "";
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) return s;
-    regmatch_t m;
-    if (regexec(&re, str, 1, &m, 0) != 0) {
-        regfree(&re);
-        /* no match — return copy of original */
-        char *copy = strdup(str);
-        return (int64_t)(intptr_t)(copy ? copy : str);
-    }
-    /* build: prefix + replacement + suffix */
-    size_t prefix_len = (size_t)m.rm_so;
-    size_t suffix_len = strlen(str + m.rm_eo);
-    size_t rep_len    = strlen(rep);
-    char *out = malloc(prefix_len + rep_len + suffix_len + 1);
-    if (!out) { regfree(&re); return s; }
-    memcpy(out, str, prefix_len);
-    memcpy(out + prefix_len, rep, rep_len);
-    memcpy(out + prefix_len + rep_len, str + m.rm_eo, suffix_len + 1);
-    regfree(&re);
-    return (int64_t)(intptr_t)out;
-}
-
-int64_t tk_regex_findall_w(int64_t pattern, int64_t s) {
-    const char *pat = (const char *)(intptr_t)pattern;
-    const char *str = (const char *)(intptr_t)s;
-    /* allocate empty toke array */
-    if (!pat || !str) {
-        return tk_arr_alloc(0, 0);
-    }
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) {
-        return tk_arr_alloc(0, 0);
-    }
-    /* collect matches into a temporary buffer */
-    size_t cap = 16;
-    size_t count = 0;
-    int64_t *items = (int64_t *)malloc(cap * sizeof(int64_t));
-    if (!items) { regfree(&re); return 0; }
-
-    const char *cursor = str;
-    regmatch_t m;
-    while (regexec(&re, cursor, 1, &m, 0) == 0) {
-        size_t mlen = (size_t)(m.rm_eo - m.rm_so);
-        char *piece = malloc(mlen + 1);
-        if (!piece) break;
-        memcpy(piece, cursor + m.rm_so, mlen);
-        piece[mlen] = '\0';
-        if (count >= cap) {
-            cap *= 2;
-            int64_t *tmp = (int64_t *)realloc(items, cap * sizeof(int64_t));
-            if (!tmp) { free(piece); break; }
-            items = tmp;
-        }
-        items[count++] = (int64_t)(intptr_t)piece;
-        cursor += m.rm_eo;
-        if (m.rm_eo == m.rm_so) {
-            /* zero-length match — advance by one byte to avoid infinite loop */
-            if (*cursor == '\0') break;
-            cursor++;
-        }
-    }
-    regfree(&re);
-
-    /* build toke-format array: handle[-1]=len, handle[0..N-1]=elements */
-    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!h) { free(items); return 0; }
-    if (count > 0) memcpy((int64_t *)(intptr_t)h, items, count * sizeof(int64_t));
-    free(items);
-    return h;
-}
+/* 121.45 (2): the POSIX regex wrappers tk_regex_{match,replace,findall}_w
+ * (Story 78.4.3) were deleted on 2026-09-30.  No .tki declared a std.regex
+ * module (`i=re:std.regex;` is E2030), so no toke program could call them;
+ * they compiled with regcomp and read an invalid pattern as "no match".
+ * toke's regex surface is str.* over tk_regex.h (str_glue.c). */
 
 /* ── validation wrappers (basic regex-free checks) ────────────────── */
 int64_t tk_validate_email_w(int64_t s) {

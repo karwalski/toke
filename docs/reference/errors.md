@@ -1113,8 +1113,11 @@ compiled and then matched nothing at run time, because a POSIX `regcomp`
 failure read as "no match". The supported language is in
 [str.md](../stdlib/str.md#regular-expressions); the same engine checks the
 pattern here and runs it in the program, so they cannot disagree. A pattern
-computed at run time is checked when it is used, and an invalid one traps
-`RT008`.
+held by an immutable `let` bound to a string literal is checked the same way
+(121.45) when that `let` is provably the binding the call reads: it is the
+name's only binder in the function, and the call follows it in its block. A
+pattern that is shadowed, `mut.`-bound, a parameter, or computed at run time
+is checked when it is used, and an invalid one traps `RT008`.
 
 <!-- skip-check -->
 ```text

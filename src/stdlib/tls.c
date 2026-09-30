@@ -23,6 +23,7 @@
 
 #include "tls.h"
 #include "capabilities.h"   /* 124.4c2: net capability gate */
+#include "tk_bind.h"       /* 135.34 (3): bind without shadowing a live listener */
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -572,20 +573,19 @@ int tls_listen(int32_t port, TlsConfig cfg, TlsConnCallback cb)
     SSL_CTX *ctx = build_ssl_ctx(1, cfg);
     if (!ctx) return 0;
 
-    int listenfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (listenfd < 0) { SSL_CTX_free(ctx); return 0; }
-
-    int optval = 1;
-    setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port        = htons((uint16_t)port);
 
-    if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
-        listen(listenfd, SOMAXCONN) != 0) {
+    /* 135.34 (3): tk_bind_exclusive, not an unconditional SO_REUSEADDR --
+     * on Darwin that let *:P bind beside a live 127.0.0.1:P listener and
+     * take its traffic (tk_bind.h; http.c, router.c and net.c since
+     * 135.32/135.33).  A port in TIME_WAIT still binds. */
+    int listenfd = tk_bind_exclusive(&addr);
+    if (listenfd < 0) { SSL_CTX_free(ctx); return 0; }
+    if (listen(listenfd, SOMAXCONN) != 0) {
         close(listenfd);
         SSL_CTX_free(ctx);
         return 0;

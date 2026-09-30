@@ -1,7 +1,7 @@
 # toke Capability Model [N]
 
-**Status:** implemented (Epic 124.4a–d, 2026-07-06); default is `allow-all` until the
-deny-by-default flip (124.4g). ADR: [ADR-0010](/docs/decisions/ADR-0010/).
+**Status:** implemented (Epic 124.4a–d, 2026-07-06); deny-by-default since the
+124.4g flip (§4). ADR: [ADR-0010](/docs/decisions/ADR-0010/).
 
 toke compiles to native code with no language-level sandbox. Without a capability
 model, any program that reaches a `std` filesystem / network / environment /
@@ -66,36 +66,57 @@ Passed to the compiled binary itself:
       --allow-env --allow-run[=PATH] --allow-all
 ```
 
-A specific grant opts the program into enforcement; `--allow-all` is the deliberately
-broad, greppable escape hatch. (Scoped values `=PATH`/`=HOST` are accepted today and
-coarsened to the whole class; per-path/per-host scoping is a planned refinement.)
+Every class is denied unless granted (§4); `--allow-all` is the deliberately broad,
+greppable escape hatch. A scoped value `=PATH`/`=HOST` is accepted and **ignored**:
+`--allow-read=/srv/www` grants `fs.read` for every path (§2.2). Per-path/per-host
+scoping is not implemented.
 
 ### 2.2 Compile-time baking
 
 Grants declared at compile time are baked into the binary so a shipped artifact
 carries its own authority (no manifest needs to travel with it):
 
-- CLI: `tkc app.tk --allow-net --allow-read --cap-enforce -o app`
-- `tkc.toml` `[capabilities]` table:
+- CLI: `tkc app.tk --allow-net --allow-read -o app`
+- `tkc.toml` `[capabilities]` table (read from `./tkc.toml`, or `--config=PATH`):
 
 ```toml
 [capabilities]
 net = true
-fs_read = "/srv/www"     # quoted path/host = grant (coarsened to the class)
+fs_read = true
 fs_write = false
 process_spawn = false
 env_write = false
-enforce = true           # bake deny-by-default into this binary
 ```
 
 Keys: `fs_read`/`read`, `fs_write`/`write`, `net`, `env_write`/`env`,
-`process_spawn`/`run`, `all`, `enforce`. Precedence: CLI `--allow-*` unions with the
-`tkc.toml` set.
+`process_spawn`/`run`, `all`, and `enforce` (below). A value is `true`/`1`,
+`false`/`0`, or a quoted string. Precedence: CLI `--allow-*` unions with the
+`tkc.toml` set, and the runtime flags of §2.1 union with both.
+
+What the broker does with each value (`src/config.c`, `src/stdlib/capabilities.c`;
+121.42 (8), measured 2026-09-30):
+
+- **Every grant is a whole class.** There is no per-path or per-host scoping. A
+  non-empty quoted string is read as `true`: `fs_read = "/srv/www"` grants
+  `fs.read` for **every** path — the program can read `/etc/hosts` — not only
+  `/srv/www`. An empty string `""` is read as `false`. Write `true`, not a path,
+  so the manifest does not claim a restriction the binary does not have.
+- **`enforce` does not switch enforcement.** Enforcement is the default (§4),
+  so `enforce = true` and `--cap-enforce` change nothing, and `enforce = false`
+  does **not** turn enforcement off: a program compiled with only
+  `enforce = false` still stops with CAP001 at its first gated call. The key and
+  flag are accepted for compatibility and recorded (`cap-enforce` in
+  `--show-limits`); the runtime no longer reads the value.
+- **The only way out of enforcement is `all = true`** (or `--allow-all`, at
+  compile or run time), which puts the broker in `ALLOW_ALL`. Granting each of
+  the five classes one by one passes every gate as well, but the broker stays in
+  `ENFORCE`.
 
 Mechanism: the compiler emits strong `@__tk_cap_baked_{grants,present,enforce}`
-globals into the entry module, overriding the weak `allow-all` defaults in the runtime
-broker (`capabilities.c`). `--show-limits` reports the baked set (`cap-present`,
-`cap-grants`, `cap-enforce`).
+globals into the entry module, overriding the weak defaults in the runtime broker
+(`capabilities.c`: no grants, not present). `__tk_cap_baked_enforce` is emitted but
+vestigial. `--show-limits` reports the baked set (`cap-present`, `cap-grants`,
+`cap-enforce`).
 
 ## 3. Enforcement & diagnostics [N]
 
