@@ -686,14 +686,39 @@ static void write_res_headers(int fd, Res res)
     }
 }
 
-/* write_security_headers — emit hardened security headers on every response. */
-static void write_security_headers(int fd)
+/* The hardened headers every response carries, as "Name: value\r\n" lines;
+ * the last (HSTS) only over TLS. */
+static const char *const sec_hdr_lines[] = {
+    "X-Content-Type-Options: nosniff\r\n",
+    "X-Frame-Options: DENY\r\n",
+    "Referrer-Policy: strict-origin-when-cross-origin\r\n",
+    "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload\r\n",
+};
+
+/* res_sets_header — 1 when the handler's response (res may be NULL) already
+ * carries the field that the line "Name: ..." sets (names compare without
+ * regard to case, RFC 9110 5.1). */
+static int res_sets_header(const Res *res, const char *line)
 {
-    static const char hdrs[] =
-        "X-Content-Type-Options: nosniff\r\n"
-        "X-Frame-Options: DENY\r\n"
-        "Referrer-Policy: strict-origin-when-cross-origin\r\n";
-    http_write_all(fd, hdrs, sizeof(hdrs) - 1);
+    if (!res) return 0;
+    size_t n = (size_t)(strchr(line, ':') - line);
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        if (k && strlen(k) == n && strncasecmp(k, line, n) == 0) return 1;
+    }
+    return 0;
+}
+
+/* write_security_headers — emit hardened security headers on every response.
+ * 121.50 (3): a field the handler set itself is not sent again -- the
+ * handler's value wins, as it does on HTTP/2 (h2_send_response).  It used to
+ * be sent twice (e.g. X-Frame-Options: SAMEORIGIN then DENY), and a browser
+ * facing two X-Frame-Options values applies neither. */
+static void write_security_headers(int fd, const Res *res)
+{
+    for (size_t i = 0; i < 3; i++)
+        if (!res_sets_header(res, sec_hdr_lines[i]))
+            http_write_all(fd, sec_hdr_lines[i], strlen(sec_hdr_lines[i]));
 }
 
 /*
@@ -750,7 +775,7 @@ static void send_response(int fd, Res res, int keep_alive) {
             res.status, reason(res.status), conn_hdr);
         http_write_all(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
-        write_security_headers(fd);
+        write_security_headers(fd, &res);
         write_cors_headers(fd);
         http_write_all(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
@@ -766,7 +791,7 @@ static void send_response(int fd, Res res, int keep_alive) {
             res.status, reason(res.status), bl, conn_hdr);
         http_write_all(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
-        write_security_headers(fd);
+        write_security_headers(fd, &res);
         write_cors_headers(fd);
         http_write_all(fd, "\r\n", 2);
         if (bl) http_write_all(fd, res.body, bl);
@@ -1557,7 +1582,7 @@ static void handle_connection(int fd)
                 res.status, reason(res.status), head_body_len, conn_hdr);
             http_write_all(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
-            write_security_headers(fd);
+            write_security_headers(fd, &res);
             write_cors_headers(fd);
             http_write_all(fd, "\r\n", 2);
             /* No body for HEAD */
@@ -1581,7 +1606,7 @@ static void handle_connection(int fd)
                 res.status, reason(res.status), gz_len, conn_hdr);
             http_write_all(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
-            write_security_headers(fd);
+            write_security_headers(fd, &res);
             write_cors_headers(fd);
             http_write_all(fd, "\r\n", 2);
             http_write_all(fd, gz_buf, gz_len);
@@ -4039,14 +4064,12 @@ int http_tls_reload_cert(TkTlsCtx *ctx, const char *cert_path,
 /*
  * write_security_headers_ssl — emit hardened headers via SSL_write.
  */
-static void write_security_headers_ssl(SSL *ssl)
+static void write_security_headers_ssl(SSL *ssl, const Res *res)
 {
-    static const char hdrs[] =
-        "X-Content-Type-Options: nosniff\r\n"
-        "X-Frame-Options: DENY\r\n"
-        "Referrer-Policy: strict-origin-when-cross-origin\r\n"
-        "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload\r\n";
-    SSL_write(ssl, hdrs, (int)(sizeof(hdrs) - 1));
+    /* 121.50 (3): the handler's own value wins, as over plain HTTP. */
+    for (size_t i = 0; i < 4; i++)
+        if (!res_sets_header(res, sec_hdr_lines[i]))
+            SSL_write(ssl, sec_hdr_lines[i], (int)strlen(sec_hdr_lines[i]));
 }
 
 /* write_cors_headers_ssl — emit CORS headers over TLS when configured (Story 7.7.4).
@@ -5099,7 +5122,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 "HTTP/1.1 204 No Content\r\n"
                 "Content-Length: 0\r\nConnection: %s\r\n", ch);
             if (hl2 > 0) SSL_write(ssl, hb, hl2);
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, NULL);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             log_request(client_ip, &req, 204, 0);
@@ -5128,7 +5151,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                     "HTTP/1.1 405 Method Not Allowed\r\n"
                     "Content-Length: %zu\r\nConnection: %s\r\n", bl, ch);
                 if (hl2 > 0) SSL_write(ssl, hb, hl2);
-                write_security_headers_ssl(ssl);
+                write_security_headers_ssl(ssl, &bad);
                 write_cors_headers_ssl(ssl);
                 SSL_write(ssl, "\r\n", 2);
                 if (bl) SSL_write(ssl, bad.body, (int)bl);
@@ -5209,7 +5232,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             /* No body for HEAD */
@@ -5240,7 +5263,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             SSL_write(ssl, tls_gz_buf, (int)tls_gz_len);
@@ -5265,7 +5288,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);

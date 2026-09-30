@@ -339,6 +339,16 @@ matched. Until then a request whose headers used `CONTINUATION` was never
 answered, `req.body` was always empty, and a response carried only its
 status, length and content type.
 
+**The handler's security headers win** (story 121.50). Every response
+carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: strict-origin-when-cross-origin`, and over TLS
+`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` —
+except a field the handler set itself (the name compared without regard to
+case), which is sent once, with the handler's value. That is so on HTTP/1.1
+and HTTP/2 alike. Until then HTTP/1.1 sent the handler's value and then the
+default, so `X-Frame-Options: SAMEORIGIN` went out beside `DENY` — and a
+browser that sees two `X-Frame-Options` values applies neither.
+
 **No cleartext upgrade to HTTP/2.** A request carrying `Upgrade: h2c` is
 answered over HTTP/1.1 like any other; the server ignores the header, as RFC
 9110 §7.8 allows. The upgrade used to answer `101 Switching Protocols` and
