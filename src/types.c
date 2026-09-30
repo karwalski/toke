@@ -6062,9 +6062,36 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * diagnostic counts that feed published figures, and it invites the
          * repair loop to apply the same fix twice. */
         if (tc_first_report(cx,node) && tc_can_emit(cx)) {
-            char msg[256];
+            char msg[512];
             snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
                      base->name?base->name:"?",fname);
+            /* 127.259: `v.len` on a std.vec handle.  The spec gives `.len` to
+             * arrays and maps only and sends every other receiver to field
+             * lookup (semantics.md 9.1), so this stays E4025 -- but when an
+             * imported module exports `<alias>.<fname>` taking exactly this
+             * record, that function is what the program meant: name it. */
+            const char *falias = NULL;
+            if (base->name && cx->env->names) {
+                const NameEnv *ne = cx->env->names;
+                for (int k = 0; k < ne->ifunc_count && !falias; k++) {
+                    const ImportedFunc *f = &ne->ifuncs[k];
+                    if (f->internal || f->param_count != 1 || !f->param_types
+                        || !f->param_types[0] || !f->member || !f->alias) continue;
+                    if (strcmp(f->member, fname) != 0) continue;
+                    if (strcmp(f->param_types[0], base->name) != 0) continue;
+                    falias = f->alias;
+                }
+            }
+            if (falias) {
+                const Node *rn = node->children[0];
+                char recv[128] = "";
+                if (rn && rn->kind == NODE_IDENT) TOKSTR(recv,cx->src,rn);
+                size_t ml = strlen(msg);
+                snprintf(msg+ml,sizeof(msg)-ml,
+                         ": '%s' is a function of the module, not a field -- "
+                         "call %s.%s(%s)",
+                         fname,falias,fname,recv[0]?recv:"...");
+            }
             diag_emit(DIAG_ERROR,E4025,node->start,node->line,node->col,msg,
                       "expected","a valid field name","got",fname,
                       (const char*)NULL);   /* 127.243: no advice fix */
