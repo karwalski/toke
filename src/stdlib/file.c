@@ -21,6 +21,8 @@
 #include <glob.h>
 #include <ftw.h>
 #include <fcntl.h>   /* AMB-07: O_NOFOLLOW */
+#include <sys/select.h>  /* 121.73: FIFO reads wait in select(2) */
+#include <sys/time.h>
 
 /* Map errno to a FileErrKind after a failed POSIX call.
  *
@@ -76,11 +78,73 @@ static FILE *fopen_nofollow(const char *path, const char *mode)
     return f;
 }
 
+/*
+ * 121.73: read a FIFO to end-of-file with NON-BLOCKING read(2) calls, waiting
+ * between them in select(2) with a 100 ms bound -- the 127.254 pattern of
+ * src/readall.h's tk_read_fifo_fd (the stdlib does not include driver
+ * headers, so this is a copy of that loop, not a second design).  On Darwin
+ * under load the kernel can lose the wakeup for a writer's close, and a
+ * blocking read then sleeps for good; a non-blocking read re-asks the kernel
+ * each time.  poll(2) cannot stand in for select here: on Darwin it never
+ * reports a FIFO's end-of-file.  A FIFO no process has open for writing reads
+ * as end-of-file at once, so file.read of it returns "" instead of hanging.
+ * fd must already be O_NONBLOCK.  Returns the NUL-terminated buffer, or NULL
+ * with *err filled.
+ */
+static char *file_read_fifo(int fd, FileErr *err)
+{
+    size_t cap = 65536, len = 0;
+    char *buf = malloc(cap + 1);
+    if (!buf) { err->kind = FILE_ERR_IO; err->msg = "allocation failed"; return NULL; }
+    for (;;) {
+        if (len == cap) {
+            if (cap >= (size_t)TK_FILE_MAX_BYTES) {
+                free(buf);
+                err->kind = FILE_ERR_TOO_LARGE;
+                err->msg  = "fifo holds more than the file-size limit";
+                return NULL;
+            }
+            char *nb = realloc(buf, cap * 2 + 1);
+            if (!nb) { free(buf); err->kind = FILE_ERR_IO; err->msg = "allocation failed"; return NULL; }
+            buf = nb; cap *= 2;
+        }
+        ssize_t n = read(fd, buf + len, cap - len);
+        if (n > 0) { len += (size_t)n; continue; }
+        if (n == 0) break;                          /* end of file */
+        if (errno == EINTR) continue;
+        if ((errno != EAGAIN && errno != EWOULDBLOCK) || fd >= FD_SETSIZE) {
+            int e = errno;
+            free(buf);
+            *err = make_err(e, "read failed");
+            return NULL;
+        }
+        fd_set rd;
+        FD_ZERO(&rd);
+        FD_SET(fd, &rd);
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;                        /* bound, not a poll rate */
+        (void)select(fd + 1, &rd, NULL, NULL, &tv); /* then read again */
+    }
+    if (len > (size_t)TK_FILE_MAX_BYTES) {
+        free(buf);
+        err->kind = FILE_ERR_TOO_LARGE;
+        err->msg  = "fifo holds more than the file-size limit";
+        return NULL;
+    }
+    buf[len] = '\0';
+    return buf;
+}
+
 StrFileResult file_read(const char *path)
 {
     StrFileResult r = {NULL, 0, {0, NULL}};
-    FILE *f = fopen_nofollow(path, "rb");
-    if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
+    /* 121.73: opened as the byte calls' file_open_for_read opens -- with
+     * O_NONBLOCK, because open(2) on a FIFO with no writer BLOCKS FOREVER
+     * without it, and file.read of such a path hung the program.  O_NOFOLLOW
+     * is AMB-07, as before. */
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
 
     /* 121.65: open(2) with O_RDONLY succeeds on a directory, and on Darwin
      * the fseek/ftell/fread that follow do not fail either -- fread returns
@@ -89,9 +153,33 @@ StrFileResult file_read(const char *path)
      * descriptor that was opened (no stat/open race) and refuse with the
      * same $isdir the byte calls (file_open_for_read) already give. */
     struct stat st;
-    if (fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode)) {
-        fclose(f);
+    if (fstat(fd, &st) != 0) {
+        int e = errno;
+        close(fd);
+        r.is_err = 1; r.err = make_err(e, "fstat failed"); return r;
+    }
+    if (S_ISDIR(st.st_mode)) {
+        close(fd);
         r.is_err = 1; r.err = make_err(EISDIR, NULL); return r;
+    }
+    /* 121.73: a FIFO cannot be sized with fseek/ftell (it used to fail with
+     * "seek failed" when a writer was there, and hang in open when none was);
+     * read it to end-of-file instead. */
+    if (S_ISFIFO(st.st_mode)) {
+        char *fb = file_read_fifo(fd, &r.err);
+        close(fd);
+        if (!fb) { r.is_err = 1; return r; }
+        r.ok = fb;
+        return r;
+    }
+    /* Anything else is read with stdio in blocking mode, as before. */
+    int fl = fcntl(fd, F_GETFL);
+    if (fl >= 0) (void)fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
+    FILE *f = fdopen(fd, "rb");
+    if (!f) {
+        int e = errno;
+        close(fd);
+        r.is_err = 1; r.err = make_err(e, NULL); return r;
     }
 
     if (fseek(f, 0, SEEK_END) != 0) {
