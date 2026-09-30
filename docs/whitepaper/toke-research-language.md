@@ -457,12 +457,13 @@ project is exactly this: the negative results are load-bearing, and they are pub
 
 ### 6.2 Gate 3, and the reason there is no date on it
 
-Gate 3's criteria were locked on 2026-05-24 and are unchanged: functional Pass@1 >= 35% on a
+Gate 3's criteria were pre-registered on 2026-05-24: functional Pass@1 >= 35% on a
 500-task hidden benchmark; compile Pass@1 >= 95%; argv-generalisation >= 50%; multi-model
-coverage across >= 2 families; and demonstrated self-improvement (iteration N+1 beating
-iteration N by >= 5 percentage points on the identical benchmark, same base model, same
-decoding parameters). The failure mode is pre-registered too: functional Pass@1 < 15%
-triggers a post-mortem and a pivot evaluation.
+coverage across >= 2 families; and demonstrated self-improvement. Those absolute thresholds
+are **not carried forward**. They were set against a different benchmark, syntax version and
+harness, and the programme they belonged to never ran, so the Epic 128 protocol inherits the
+discipline of that pre-registration (strict Pass@1, binary scoring, a decision rule fixed
+before the run) and none of its numbers. The 2026-05 document is kept as a dated record.
 
 The original timeline said mid-August 2026. That date passed without a training run, because
 the corpus was not trustworthy enough to train on — which the audit and pattern sweeps
@@ -473,12 +474,14 @@ cost and energy per solved task, repair-loop convergence within 3 rounds, and fi
 validity under constrained decoding — with the rule that **no lane advances without beating
 the no-training baseline**.
 
-### 6.3 The dominant failure mode: hardcoding
+### 6.3 A known failure mode: hardcoding
 
-The failure mode Gate 3's argv criterion exists for: the model emits syntactically valid
+The failure mode Gate 3's argv criterion was written for: the model emits syntactically valid
 code that embeds a memorised expected output instead of implementing the algorithm — writing
-`<42` rather than reading argv, parsing and computing. 67% of Gate 2's functional failures
-had this shape, and 131.42 shows the same instinct applied to error-union tests. The fix is
+`<42` rather than reading argv, parsing and computing. Gate 2 showed this shape, and 131.42
+shows the same instinct applied to error-union tests. How often it caused Gate 2's functional
+failures is not known: the rate once published for it was withdrawn on 2026-09-19 (132.14)
+because no artefact reproduces it. The fix is
 not more syntax training; it is execution feedback and tests that cannot be satisfied by a
 literal. Both are now structural: the corpus driver executes, and a hard `return_type` gate
 blocks the gamed shape.
@@ -556,6 +559,12 @@ counts — were quoted without a source that survives re-checking. They are remo
 than re-quoted. Nothing in this paper is asserted unless `docs/metrics-baseline.md` carries
 it.
 
+This version had two errors of its own, corrected on 2026-10-01 (128.24). §6.3 stated a
+share of Gate 2's functional failures caused by hardcoding. That rate had been withdrawn on
+2026-09-19 (132.14) because no baseline row or script reproduces it, and it is removed here
+too. §6.2 said the Gate 3 thresholds "are unchanged". The Epic 128 protocol carries none of
+them forward.
+
 ---
 
 ## 10. What toke has not shown
@@ -617,7 +626,7 @@ would look like.
 7. v0.4 code samples, every tokenizer lane. `docs/about/samples-v04.md`
 8. Gate-1 60, v0.4 re-delivery. `toke-eval/docs/gate1-60-v04.md`
 9. Gate 2 decision (2026-05-22). `docs/spec/gate2-decision.md`
-10. Gate 3 pre-registration (2026-05-24). `docs/spec/gate3-criteria.md`
+10. Gate 3 pre-registration (2026-05-24; archived, thresholds not carried forward). `docs/spec/gate3-criteria.md`
 11. Liu et al. "SuperBPE: Space Travel for Language Models." arXiv 2503.13423, ICML 2025.
 12. Hwang, Wang and Gu. "Dynamic Chunking for End-to-End Hierarchical Sequence Modeling" (H-Net). arXiv 2507.07955.
 13. Pagnoni et al. "Byte Latent Transformer." arXiv 2412.09232, ACL 2025.

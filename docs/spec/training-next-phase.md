@@ -1,5 +1,29 @@
 # Training Next Phase — Specification and Options
 
+> **Archived 2026-10-01 (story 128.24).** This is the dated record of the
+> 2026-05-23 post-Gate-2 plan. Epic 128 explicitly reopened every decision it
+> marks **LOCKED**. Those decisions were locked for that v0.3 phase only, and
+> none binds current work. Superseded facts:
+>
+> - **"Design Decisions (locked for this phase)"** is reopened by the Epic 128
+>   preamble ("nothing previously decided is binding"). The live protocol is
+>   `toke-model/docs/training-reset-128.md`.
+> - **"v0.3 syntax and spec are locked; all training targets v0.3"** is wrong.
+>   The normative language is v0.4 (`docs/spec/toke-spec-v0.4.md`), and training
+>   targets the v0.4 corpus freeze.
+> - **"Purpose-built BPE, 16K vocab" (LOCKED)**: Gate 2 actually trained an
+>   8,192-entry tokenizer, and no shipped toke tokenizer beats cl100k_base on
+>   v0.4 text (`docs/metrics-baseline.md`; protocol K4). The tokenizer is an
+>   open lane (128.12, 116.9).
+> - **"Gate 3 Criteria (Proposed)"** (functional > 50%, argv > 80%) and the
+>   "≥ 50% on 2+ families" target are void. Epic 128 inherits no absolute
+>   threshold and scores relative to Lane A on BENCH-128 (protocol K3).
+> - **"v0.3 ... LOCKED — no changes"** in the Version Roadmap is stale.
+>
+> The research-review recommendations here (GRPO/RLVR, adaptive curriculum,
+> quality over quantity, the 3-round repair cap) are an input the protocol
+> consumes, not a live plan.
+
 **Status:** Planning (post-Gate 2)
 **Date:** 2026-05-23 (updated with research review recommendations)
 **Context:** Gate 2 passed with 100% compilation. Functional correctness originally reported as ~8% but corrected to 55.6% (272/489) on 2026-05-25 after fixing missing io.readln() C glue. Next phase targets further improving functional correctness and meeting all Gate 3 criteria (C1-C5).
