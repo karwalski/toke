@@ -1223,7 +1223,7 @@ check-canonical:
 # 132.15 — the same two gates, run across the sibling repos. Both guards scoped to
 # this repo plus toke-tokenizer until 132.15, so nothing else was ever swept:
 # toke-spec published "12.5% reduction vs Python (cl100k)", the toke-mcp server served
-# models a 56-character alphabet and 12 keywords, a Hugging Face Space synthesised a
+# models a stale alphabet size and keyword count, a Hugging Face Space synthesised a
 # Python token count by dividing by 0.875, and the console told users the toke BPE
 # count was "52% fewer". The guards take paths, so there is one copy of each rule here
 # rather than a fork per repo; a repo that is not checked out is skipped. Rule 4
