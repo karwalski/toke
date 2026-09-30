@@ -171,7 +171,16 @@ Default:
 .SS "Informational"
 .TP
 .B \-\-version
-Print version string and exit.
+Print the version and the git commit the binary was built from, and exit:
+.BR "toke <version> (git 1a2b3c4d5e6f)" ,
+with
+.B ", dirty"
+when the build tree had local changes under src/, the Makefile or VERSION, or
+.B "(git unknown)"
+when it was not built in a git checkout.
+With
+.BR \-\-json ,
+print one JSON object: name, version, git_sha, git_dirty.
 .TP
 .B \-\-help
 Print usage summary and exit.

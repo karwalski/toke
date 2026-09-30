@@ -1,5 +1,6 @@
 # Build outputs
 tkc
+src/build_info.h
 *.o
 *.a
 *.ll
