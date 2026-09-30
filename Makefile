@@ -1628,14 +1628,17 @@ test-stdlib-math:
 	    test/stdlib/test_math.c src/stdlib/math.c -lm
 	$(RUN_TEST) ./test/stdlib/test_math
 
+# 121.23: llm.c's tcp_connect calls tk_cap_check since 121.42, and neither
+# rule linked capabilities.c -- both failed at link on main (f605aec9).
 test-stdlib-llm:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm \
-	    test/stdlib/test_llm.c src/stdlib/llm.c
+	    test/stdlib/test_llm.c src/stdlib/llm.c src/stdlib/capabilities.c
 	$(RUN_TEST) ./test/stdlib/test_llm
 
 test-stdlib-llm-tool:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_tool \
-	    test/stdlib/test_llm_tool.c src/stdlib/llm_tool.c src/stdlib/llm.c
+	    test/stdlib/test_llm_tool.c src/stdlib/llm_tool.c src/stdlib/llm.c \
+	    src/stdlib/capabilities.c
 	$(RUN_TEST) ./test/stdlib/test_llm_tool
 
 test-stdlib-chart:

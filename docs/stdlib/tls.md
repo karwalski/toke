@@ -129,6 +129,8 @@ f=main():i64{
 
 A plain endpoint configuration: present this certificate and key, pin nothing, require nothing of the peer.
 
+**On a client this authenticates nothing.** `tls.connect` with a `tlsconfig` accepts whatever certificate the server presents: there is no CA-chain check and no hostname check, and `std.tls` has no route to either -- it never loads a system trust store. The connection is encrypted but not authenticated, so an on-path attacker can present any certificate and be accepted. Pin the server with `tls.pinconfig`, or verify out of band with `tls.pairingcode`, before trusting who is on the other end. (Story 121.19, finding TLS-02; a CA-verified client configuration needs a spec amendment and is not implemented.)
+
 ### tls.pinconfig(certpem: str; keypem: str; peercertpem: str): tlsconfig
 
 As above, plus: accept the peer **only** if it presents exactly `peercertpem`. A client may pass `""` for its own certificate and key and still pin the server.
@@ -275,6 +277,7 @@ f=main():i64{
 ## Security notes
 
 - **TLS 1.3 only**, enforced as a version floor and ceiling. No downgrade is reachable.
+- **A client with no pin does not authenticate the server.** `tls.tlsconfig` on the connecting side accepts any certificate (see `tls.tlsconfig` above). Use `tls.pinconfig` or `tls.mutualconfig` whenever the peer's identity matters.
 - **Pinning** (`tls.pinconfig`) gives an identity guarantee stronger than a CA chain, and is the right choice for device-to-device or service-to-service links where you control both ends.
 - **Mutual TLS** (`tls.mutualconfig`) authenticates both ends. Combined with pinning it is the strongest configuration here, and it fails closed: an unauthenticated peer never reaches your handler.
 - **Pairing codes** are six digits. They are a human-verification convenience, not a substitute for comparing full fingerprints where the stakes justify it.

@@ -34,11 +34,16 @@ typedef enum {
 /* Opaque handle wrapping pid + stdout read-end fd */
 typedef struct {
     pid_t   pid;
-    int     stdout_fd;   /* read end of stdout pipe; -1 if already drained */
-    int     stderr_fd;   /* read end of stderr pipe; -1 if already drained */
+    int     stdout_fd;   /* read end of stdout pipe; -1 once EOF is read */
+    int     stderr_fd;   /* read end of stderr pipe; -1 once EOF is read */
     int     stdin_fd;    /* write end of stdin pipe; -1 if closed */
     int     exited;      /* 1 once waitpid has been called */
     int32_t exit_code;
+    /* 121.29 (REL-03): output drained while waiting or writing stdin, kept
+     * until process_stdout / process_stderr return it.  *_done: that stream
+     * has been returned; later calls return "". */
+    char   *outbuf;  size_t outlen;  size_t outcap;  int out_done;
+    char   *errbuf;  size_t errlen;  size_t errcap;  int err_done;
 } ProcessHandle;
 
 /* Result types */
