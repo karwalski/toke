@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """check_stdlib_doc_exports.py -- every function docs/stdlib/*.md documents is
-a .tki export, with the return type the .tki declares (story 132.102).
+a .tki export, with the return type the .tki declares (story 132.102), and
+every type it documents is declared by its module's .tki (127.256).
 
 THE DEFECT.  The docs/stdlib pages were written by hand and never read back
 against the interfaces.  Batch GC (127.230 item 6) counted 45 documented
@@ -41,6 +42,17 @@ imported, not copied): a table row whose first cell is `mod.name`, or a `##`-
      must equal the export's type under rule 2's normalisation.  `(none)`,
      `none`, `-` and an empty cell state an empty list.  For a `"gen":"abi"`
      export only the count is held (its types are placeholders).
+  4. TYPES (127.256).  Every type the page documents must be declared (a
+     `{"kind":"type"}` export, case folded) by the .tki of a module the page
+     covers -- the module named by the page's file stem, and every module one
+     of its documented function entries is an export of -- or carry the
+     NOT_EXPORTED marker on the first non-blank line after it.  A documented
+     type is a `##`-`####` heading naming `$name` (`### $jwtclaims`,
+     `### $jwtalg (sum type)`), or a `###`/`####` heading that is one bare
+     identifier inside a `## ...Types` section (`### tlsconfig`), less the
+     sub-section words in TYPE_SECTION_WORDS.  Rules 1-3 read functions only,
+     so `$jwtalg`/`$keystore` -- a sum and a record no interface declares --
+     stayed on auth.md until Batch Z4 removed them by hand (127.250 (2)).
 
 A page that opens with the workspace archive banner (`**Archived
 YYYY-MM-DD ...**` in its first 40 lines -- check_canonical.ARCHIVE_BANNER, the
@@ -66,6 +78,13 @@ from check_stdlib_doc_quarantine import ROW, HEAD  # noqa: E402
 from check_canonical import ARCHIVE_BANNER, ARCHIVE_HEAD  # noqa: E402
 
 NOT_EXPORTED = "**Not exported.**"
+# rule 4: documented types
+TYPE_HEAD = re.compile(r"^#{2,4}\s+`?\$([A-Za-z_][A-Za-z0-9_]*)`?(\s.*)?$")
+BARE_TYPE_HEAD = re.compile(r"^#{3,4}\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$")
+TYPES_SECTION = re.compile(r"^##\s+.*\btypes?\b", re.I)
+# sub-section headings a Types section uses that are not type names
+TYPE_SECTION_WORDS = {"errors", "fields", "variants", "notes", "example",
+                      "examples", "usage"}
 HEAD_SIG = re.compile(r"^#{2,4}\s+`?[a-z][a-z0-9_]*\.[a-z0-9_.]+(\(.*)$")
 QUALIFIER = re.compile(r"\b[a-z][a-z0-9]*\.(?=[a-z])")
 
@@ -82,6 +101,61 @@ def load_exports(tki_dir):
             if e.get("kind") == "func" and e.get("name"):
                 out[e["name"]] = e
     return out
+
+
+def load_types(tki_dir):
+    """({module stem: {type name, case folded}}, {func name: {module stem}})."""
+    types, fmods = {}, {}
+    for f in sorted(pathlib.Path(tki_dir).glob("*.tki")):
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        types[f.stem] = {e["name"].lower() for e in data.get("exports") or []
+                         if e.get("kind") == "type" and e.get("name")}
+        for e in data.get("exports") or []:
+            if e.get("kind") == "func" and e.get("name"):
+                fmods.setdefault(e["name"], set()).add(f.stem)
+    return types, fmods
+
+
+def scan_types(stem, lines, types, fmods):
+    """Rule 4: (problems, documented types checked)."""
+    mods = {stem} if stem in types else set()
+    for line in lines:
+        m = ROW.match(line) if line.startswith("|") else HEAD.match(line)
+        if m and m.group(1) in fmods:
+            mods |= fmods[m.group(1)]
+    declared = set().union(*(types[x] for x in mods)) if mods else set()
+    problems, checked, in_types = [], 0, False
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            in_types = bool(TYPES_SECTION.match(line))
+            continue
+        m = TYPE_HEAD.match(line)
+        if not m and in_types:
+            m = BARE_TYPE_HEAD.match(line)
+            if m and m.group(1).lower() in TYPE_SECTION_WORDS:
+                m = None
+        if not m:
+            continue
+        checked += 1
+        name = m.group(1)
+        j = i + 1
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        marked = j < len(lines) and NOT_EXPORTED in lines[j]
+        where = ", ".join("%s.tki" % x for x in sorted(mods)) or "no module's .tki"
+        if name.lower() in declared:
+            if marked:
+                problems.append((i + 1, name, "is marked " + NOT_EXPORTED +
+                                 " but IS a type %s declares -- drop the marker"
+                                 % where))
+        elif not marked:
+            problems.append((i + 1, name, "is documented as a type but %s declares "
+                             "no such type, and it is not marked %s"
+                             % (where, NOT_EXPORTED)))
+    return problems, checked
 
 
 def norm(t):
@@ -257,19 +331,23 @@ def main():
     a = ap.parse_args()
 
     exports = load_exports(a.tki_dir)
+    types, fmods = load_types(a.tki_dir)
     pages = sorted(pathlib.Path(a.docs).glob("*.md"))
     if len(exports) < 100 or not pages:
         print("check-stdlib-doc-exports: nothing to compare (%d exports, %d pages)"
               " -- refusing to report a pass" % (len(exports), len(pages)))
         return 2
 
-    bad, entries, abi, plists, archived = [], 0, 0, 0, []
+    bad, entries, abi, plists, archived, tchecked = [], 0, 0, 0, [], 0
     for page in pages:
         lines = page.read_text().splitlines()
         if ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])):
             archived.append(page.name)
             continue
         problems, n, k, np = scan(lines, exports)
+        tprob, nt = scan_types(page.stem, lines, types, fmods)
+        problems += tprob
+        tchecked += nt
         entries += n
         abi += k
         plists += np
@@ -286,6 +364,11 @@ def main():
               "parameter patterns have stopped matching; refusing to report a "
               "pass" % plists)
         return 2
+    if tchecked < 100:
+        print("check-stdlib-doc-exports: only %d documented types found -- the "
+              "type patterns have stopped matching; refusing to report a pass"
+              % tchecked)
+        return 2
     if bad:
         print("check-stdlib-doc-exports: FAIL -- %d documented entr%s disagree%s "
               "with stdlib/*.tki:" % (len(bad), "y" if len(bad) == 1 else "ies",
@@ -297,10 +380,11 @@ def main():
         return 1
     print("check-stdlib-doc-exports: OK -- %d page(s), %d documented entr%s, all "
           "exports or marked %s; %d parameter list(s) match the .tki; "
+          "%d documented type(s) declared by their module's .tki; "
           "%d return type(s) exempt as \"gen\":\"abi\"; "
           "%d archived page(s) skipped%s"
           % (len(pages) - len(archived), entries, "y" if entries == 1 else "ies",
-             NOT_EXPORTED, plists, abi, len(archived),
+             NOT_EXPORTED, plists, tchecked, abi, len(archived),
              (" (" + ", ".join(archived) + ")") if archived else ""))
     return 0
 
