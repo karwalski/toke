@@ -52,7 +52,7 @@ Organisations building AI code generation pipelines face three recurring problem
 
 ### 3.1 Governance
 
-The toke project has a published governance document (see [governance.md](governance.md)) that defines the current BDFL model and the transition path to a Technical Steering Committee (TSC). The consortium formalises this transition:
+The toke project has a published governance document (see [governance.md](https://github.com/karwalski/toke/blob/main/docs/governance.md)) that defines the current BDFL model and the transition path to a Technical Steering Committee (TSC). The consortium formalises this transition:
 
 - The TSC shall have 3--7 members drawn from founding consortium members.
 - Decisions follow the existing process: Architecture Decision Records (ADRs) for design changes, gate reviews for milestones, and lazy consensus (72-hour window) for day-to-day decisions.
@@ -297,7 +297,7 @@ The toke Language Consortium is seeking founding members from the following cate
 ### How to Express Interest
 
 1. Review the project: [github.com/karwalski/toke](https://github.com/karwalski/toke)
-2. Read the specification: [toke-spec-v02.md](spec/toke-spec-v02.md)
+2. Read the specification: [toke-spec-v02.md](https://github.com/karwalski/toke-spec/blob/main/spec/toke-spec-v02.md)
 3. Run the conformance suite: `make conform`
 4. Contact: matt@tokelang.dev
 
@@ -309,12 +309,12 @@ We are looking for organisations willing to invest in the formation phase -- not
 
 | Document | Description |
 |----------|-------------|
-| [governance.md](governance.md) | Project governance model, decision-making, versioning policy |
-| [toke-spec-v02.md](spec/toke-spec-v02.md) | Language specification (v0.2, draft) |
-| [enterprise.md](about/enterprise.md) | Enterprise value proposition and integration guide |
-| [why.md](about/why.md) | Project thesis and design rationale |
-| [competitive-matrix.md](about/competitive-matrix.md) | Competitive positioning analysis |
-| [progress.md](../toke/docs/progress.md) | Project story tracker and gate status |
+| [governance.md](https://github.com/karwalski/toke/blob/main/docs/governance.md) | Project governance model, decision-making, versioning policy |
+| [toke-spec-v02.md](https://github.com/karwalski/toke-spec/blob/main/spec/toke-spec-v02.md) | Language specification (v0.2, draft) |
+| [enterprise.md](/docs/about/enterprise/) | Enterprise value proposition and integration guide |
+| [why.md](/docs/about/why/) | Project thesis and design rationale |
+| [competitive-matrix.md](/docs/about/competitive-matrix/) | Competitive positioning analysis |
+| [progress.md](https://github.com/karwalski/toke/blob/main/docs/progress.md) | Project story tracker and gate status |
 
 ## Appendix B: Key Metrics Summary
 
