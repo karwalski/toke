@@ -21,16 +21,21 @@ static int64_t mlx_unavailable(const char *msg) {
     return 0;
 }
 
-/* mlx.isavailable() — return 1 if MLX runtime is available */
+/* mlx.isavailable() — 137.11: false, on every platform, because nothing in
+ * this file reaches the core: load/generate/embed below are stubs that always
+ * fail, so reporting the bridge as available (mlx_is_available() in mlx.c)
+ * would promise a capability no call can deliver.  The two identical #if arms
+ * that said the same thing are gone; wire the core and this together. */
 int64_t tk_mlx_isavailable_w(void) {
-#if defined(__APPLE__) && defined(__arm64__)
-    /* MLX is theoretically available on Apple Silicon,
-     * but actual availability depends on linked framework.
-     * Return 0 until MLX is properly integrated. */
     return 0;
-#else
+}
+
+/* mlx.unload(m) -> bool — 137.11: declared in stdlib/mlx.tki with no wrapper,
+ * so a call failed at link (E9003).  load never hands out a model, so there is
+ * never anything to unload: false, not a claimed success. */
+int64_t tk_mlx_unload_w(int64_t handle) {
+    (void)handle;
     return 0;
-#endif
 }
 
 /* mlx.load(model_path) — load an MLX model, return handle or 0 */
@@ -39,10 +44,14 @@ int64_t tk_mlx_load_w(int64_t model_path) {
     return mlx_unavailable("mlx.load: MLX is not available (std.mlx's glue is a stub)");
 }
 
-/* mlx.generate(handle, prompt) — generate text */
-int64_t tk_mlx_generate_w(int64_t handle, int64_t prompt) {
+/* mlx.generate(handle; prompt; maxtokens) — generate text.
+ * 137.11 / 121.53 (5): takes the i32 token limit the .tki publishes (the core
+ * mlx_generate takes max_tokens and sends it to the bridge, so the interface
+ * was right and the wrapper had no slot).  Still a stub: always $err. */
+int64_t tk_mlx_generate_w(int64_t handle, int64_t prompt, int64_t maxtokens) {
     (void)handle;
     (void)prompt;
+    (void)maxtokens;
     return mlx_unavailable("mlx.generate: MLX is not available (std.mlx's glue is a stub)");
 }
 

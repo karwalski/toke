@@ -5,7 +5,7 @@ section: reference/stdlib
 order: 47
 ---
 
-> **Status: FAÇADE -- do not write against this page's API.** `src/stdlib/mdns.c` is 788 lines of Bonjour/DNS-SD implementation. `src/stdlib/mdns_glue.c` is 46 lines and calls none of it: every wrapper is `(void)arg; return 0;`. Two published functions -- `mdns.isavailable` and `mdns.resolve` -- have **no wrapper at all** and fail at link. One more, `mdns.browse`, is published with one arity and implemented with another, so the call you write is not the call the interface documents (`mdns.advertise` was the second until 135.31). Nothing on this page has ever discovered or advertised a service from a toke program. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`).
+> **Status: FAÇADE -- do not write against this page's API.** `src/stdlib/mdns.c` is 788 lines of Bonjour/DNS-SD implementation. `src/stdlib/mdns_glue.c` calls none of it: every wrapper is `(void)arg; return 0;`, so every `bool` call reports `false`. One published function, `mdns.resolve`, has **no wrapper at all** and fails at link. Every other call compiles at its published arity (`mdns.advertise` since 135.31; `mdns.browse` and `mdns.isavailable` since 137.11). Nothing on this page has ever discovered or advertised a service from a toke program. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`).
 
 `std.mdns` is intended to provide mDNS (Multicast DNS) service advertisement and discovery, compatible with Apple Bonjour and the wider zero-configuration networking ecosystem (RFC 6762 / RFC 6763).
 
@@ -15,21 +15,19 @@ Measured against the built compiler, not read off the interface.
 
 | Published call | `.tki` signature | Glue signature | Reachable | Behaviour |
 |---|---|---|---|---|
-| `mdns.isavailable` [quarantined](/docs/reference/tki-quarantine/) | `(): bool` | — | **no** | `E9003`, undefined symbol `_tk_mdns_isavailable_w` |
+| `mdns.isavailable` | `(): bool` | `()` | links (137.11) | `false` on every platform -- deliberately: `mdns_is_available()` in the core is 1 on macOS, but no wrapper reaches that backend |
 | `mdns.resolve` [quarantined](/docs/reference/tki-quarantine/) | `(str; str): ?($discovered)` | — | **no** | `E9003`, undefined symbol `_tk_mdns_resolve_w` |
 | `mdns.advertise` | `($servicerecord): bool` | `(i64)` | links (135.31) | returns 0 |
-| `mdns.browse` | `(str; fn($discovered): void): bool` | `(i64)` | at **1** arg | **the callback parameter does not exist in the implementation**; returns an empty array |
+| `mdns.browse` | `(str; fn($discovered): void): bool` | `(i64; i64)` | links (137.11) | returns `false`; the callback is never invoked. Until 137.11 it took no callback and returned an empty *array* into the `bool` slot, which read as `true` -- "browsing started" when nothing was browsed |
 | `mdns.stopadvertise` | `(str): bool` | `(i64)` | links | returns 0 |
 | `mdns.stopbrowse` | `(str): bool` | `(i64)` | links | returns 0 |
 | `mdns.servicerecord` | `(i64; i64; i64): i64` | `(i64; i64; i64)` | links | returns 0 -- it constructs nothing |
 
-Two of these are worse than a stub that returns the wrong answer.
-
-**`mdns.browse` has lost its callback.** The interface publishes `browse(type; cb)` where `cb` is invoked per discovered service. The wrapper takes the service type alone and returns an empty array. A program cannot register a discovery callback at all, so the module has no discovery path even in principle — and a caller writing the documented two-argument form gets `E4026` rather than a runtime surprise, which is the one mercy here.
+**`mdns.browse` takes its callback and never calls it.** The interface publishes `browse(type; cb)` where `cb` is invoked per discovered service. Since 137.11 the wrapper takes both and returns `false`; wiring the callback to the core still needs the per-handle trampoline decision described under *Restoring it*.
 
 **`mdns.servicerecord` constructs nothing.** It exists because the record type could not be named in toke before 136.46 — see below — and it returns 0. Since 136.46 the record can be written as a literal, `$servicerecord{name:"svc";type:"_http._tcp";port:8080;txt:@()}`, and since 135.31 `advertise` takes it (and, being a stub, ignores it).
 
-Because `isavailable` does not link, a toke program cannot even perform the availability check this page used to open with. The only compiling example is the shape a consumer must take today: assume no mDNS, and configure the host and port by hand.
+`isavailable` links since 137.11 and returns `false`, so the availability check is expressible but always takes the manual path. The example below is the shape a consumer must take today: assume no mDNS, and configure the host and port by hand.
 
 ```toke
 m=mdnsfallback;
@@ -37,9 +35,9 @@ i=io:std.io;
 i=env:std.env;
 i=str:std.str;
 
-(* std.mdns is not imported. isavailable() has no wrapper and fails at link,
-   so there is no way to ask whether discovery is possible -- a consumer has
-   to take the manual path unconditionally. *)
+(* std.mdns is not imported. isavailable() is false on every platform until
+   the glue reaches the core, so a consumer takes the manual path
+   unconditionally. *)
 f=main():i64{
   let host=env.getor("SERVICEHOST";"127.0.0.1");
   let port=env.getor("SERVICEPORT";"8080");
@@ -83,9 +81,7 @@ A service instance found on the network: `name`, `host` (resolved), `port`, and 
 
 #### mdns.isavailable(): bool
 
-> [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
-
-Whether mDNS is supported here. Intended to be `true` on macOS via the system `dns_sd` API, `false` on Linux (Avahi support planned) and Windows. Has no wrapper.
+Whether mDNS is supported here. Intended to be `true` on macOS via the system `dns_sd` API, `false` on Linux (Avahi support planned) and Windows. The wrapper (137.11) returns `false` everywhere until the other wrappers reach the core.
 
 #### mdns.advertise(svc: servicerecord): bool
 
@@ -97,7 +93,7 @@ Withdraws a service previously advertised under `name`.
 
 #### mdns.browse(type: str; cb: fn($discovered):void): bool
 
-Starts browsing for instances of `type`, invoking `cb` for each one discovered. Browsing continues until `mdns.stopbrowse`. The wrapper has no callback parameter.
+Starts browsing for instances of `type`, invoking `cb` for each one discovered. Browsing continues until `mdns.stopbrowse`. The wrapper takes the callback (137.11), never invokes it, and returns `false`.
 
 #### mdns.stopbrowse(type: str): bool
 
@@ -120,7 +116,7 @@ Constructs a `servicerecord`, the constructor that exists because the type could
 
 ## Restoring it
 
-A real `mdns_glue.c`: seven wrappers calling the core in `mdns.c`, at the published arities rather than the current ones; `_w` symbols for `isavailable` and `resolve`, which do not exist; a callback parameter on `browse`, which needs the same per-handle trampoline decision that blocked `std.webview`'s `registerhandler` and `onclose` (131.38); and a `servicerecord` that builds something. The type rename is already done (136.46). The core is written. The layer is not.
+A real `mdns_glue.c`: seven wrappers calling the core in `mdns.c`, (they now take the published arities, 135.31 / 137.11); a `_w` symbol for `resolve`, which does not exist; a real callback path for `browse`, which needs the same per-handle trampoline decision that blocked `std.webview`'s `registerhandler` and `onclose` (131.38); and a `servicerecord` that builds something. The type rename is already done (136.46). The core is written. The layer is not.
 
 ## See Also
 

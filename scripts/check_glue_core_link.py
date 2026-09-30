@@ -47,9 +47,12 @@ GLUE_DIR = os.path.join(ROOT, "src", "stdlib")
 # row — the gate FAILS on an exemption that is no longer needed, so this list
 # cannot rot into a permanent silence.
 KNOWN = {
-    "mdns": "137.11 — browse() returns an empty array; core is 788 lines",
-    "mlx": "137.11 — returns \"[mlx not available]\"; core is 647 lines",
-    "infer": "137.11 — returns \"[inference not available]\"; core is 397 lines",
+    # 2026-09-30 (137.11): the three are still unwired, but no longer lie —
+    # every bool call returns false and every T!err call takes $err; before,
+    # mdns.browse's empty array read as true and generate returned text.
+    "mdns": "137.11 — stub glue, reports false/unavailable; core is 788 lines",
+    "mlx": "137.11 — stub glue, reports $err/unavailable; core is 647 lines",
+    "infer": "137.11 — stub glue, reports $err; core is 397 lines (mostly #ifdef TK_HAVE_LLAMACPP)",
 }
 
 INCLUDE_RE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*[<"]([^">]+)[">]', re.M)

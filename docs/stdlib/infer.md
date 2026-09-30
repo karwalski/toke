@@ -5,7 +5,7 @@ section: reference/stdlib
 order: 45
 ---
 
-> **Status: FAÇADE -- do not write against this page's API.** All six published functions have a `_w` wrapper, so a call links; every one of those wrappers is a stub that ignores its arguments. `infer.load` returns 0 unconditionally, so no handle is ever produced, so nothing else can do anything useful. `src/stdlib/infer.c` is 397 lines implementing `tk_infer_load`, `tk_infer_unload`, `tk_infer_generate` and `tk_infer_embed`; `src/stdlib/infer_glue.c` calls none of them. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`): a finished core behind glue that returns 0.
+> **Status: FAÇADE -- do not write against this page's API.** All six published functions have a `_w` wrapper, so a call links; every one of those wrappers is a stub that ignores its arguments. `infer.load` always takes the `$err` arm, so no handle is ever produced, so nothing else can do anything useful. `src/stdlib/infer.c` is 397 lines implementing `tk_infer_load`, `tk_infer_unload`, `tk_infer_generate` and `tk_infer_embed`; `src/stdlib/infer_glue.c` calls none of them. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`): a finished core behind glue that returns 0.
 
 `std.infer` is intended to provide in-process LLM inference via llama.cpp. Models are GGUF files, at whatever path the caller passes, reached through an opaque handle, with text generation, embedding extraction, and a disk-streaming loader for machines that cannot hold the whole model in RAM.
 
@@ -18,18 +18,13 @@ Measured against the built compiler, not read off the interface. Every row links
 | `infer.load` | 2 | 2 | takes `inferopts` (135.31) and ignores it; takes the `$err` arm, never a handle |
 | `infer.loadstreaming` | 2 | 2 | takes `streamopts` (135.31) and ignores it; takes the `$err` arm |
 | `infer.unload` | 1 | 1 | returns 0 |
-| `infer.generate` | 3 | **2** | drops the token limit; takes the `$err` arm (until 127.241 it returned the literal `"[infer: not available]"` through `$ok`) |
+| `infer.generate` | 3 | 3 | takes the token limit (137.11) and ignores it; takes the `$err` arm (until 127.241 it returned the literal `"[infer: not available]"` through `$ok`) |
 | `infer.embed` | 2 | 2 | takes the `$err` arm (until 127.241 it returned a zero-length array through `$ok`) |
 | `infer.isloaded` | 1 | 1 | returns 0. Added by 131.38, which found it declared with no wrapper at all -- and made it a stub consistent with the rest rather than a working function, because `load` never hands out a handle for it to check |
 
-A `generate` call written the way the interface publishes it is still rejected before the linker (`load` and `loadstreaming` were too, until 135.31 gave their wrappers the options slot):
+Every call now compiles with the arguments the interface publishes. Until 135.31 (`load`, `loadstreaming`) and 137.11 (`generate`) the wrappers had no slot for the options record or the token limit, and a call written as published was rejected with `E4026 wrong number of arguments`.
 
-```
-E4026 wrong number of arguments for 'std.infer.generate':
-      the implementation takes 2 arguments, the call passes 3
-```
-
-The arity drops were not cosmetic, and `generate`'s still is. `inferopts` carries the GPU-layer count, the thread count and the RNG seed; `streamopts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that kept the current wrapper signatures would compile every caller and honour none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
+The arity drops were not cosmetic. `inferopts` carries the GPU-layer count, the thread count and the RNG seed; `streamopts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that had kept the old wrapper signatures would have compiled every caller and honoured none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
 
 Because `isloaded` is the only call whose stub answer is *honest* (nothing is loaded, and that is true), the single compiling example below is a guard, and that is all it can be.
 
@@ -104,7 +99,7 @@ Frees the model. `tk_infer_unload` exists; the wrapper returns 0.
 
 #### infer.generate(h: modelhandle; prompt: str; maxtokens: i32): str!infererr
 
-Autoregressive generation from `prompt`, at most `maxtokens` new tokens, returning only the continuation. `tk_infer_generate` in the core takes the limit and serialises generate and embed calls on one handle through a per-handle mutex. The wrapper takes two arguments and always takes the `$err` arm.
+Autoregressive generation from `prompt`, at most `maxtokens` new tokens, returning only the continuation. `tk_infer_generate` in the core takes the limit and serialises generate and embed calls on one handle through a per-handle mutex. The wrapper takes all three arguments (137.11; it had no slot for the limit before) and always takes the `$err` arm.
 
 #### infer.embed(h: modelhandle; text: str): @(f32)!infererr
 
@@ -126,7 +121,7 @@ Streams layers from disk so only the active window is resident, trading latency 
 
 ## Restoring it
 
-A real `infer_glue.c`: six wrappers calling the four core functions, widened to the published arities, plus constructor functions for the two options types. The type and field renames are already done (136.46). `loadstreaming` additionally needs a core. Nothing here is blocked on a language feature.
+A real `infer_glue.c`: six wrappers calling the four core functions (they already take the published arities, 135.31 / 137.11), plus constructor functions for the two options types. The type and field renames are already done (136.46). `loadstreaming` additionally needs a core. Nothing here is blocked on a language feature.
 
 ## See Also
 

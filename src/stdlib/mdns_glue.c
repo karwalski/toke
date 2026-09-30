@@ -25,11 +25,23 @@ int64_t tk_mdns_stopadvertise_w(int64_t handle) {
     return 0;
 }
 
-/* mdns.browse(service_type) — browse for services, return array of records */
-int64_t tk_mdns_browse_w(int64_t service_type) {
+/* mdns.browse(service_type; cb) -> bool — 137.11 / 121.53: takes the
+ * callback the .tki publishes.  It took the service type alone and returned
+ * an empty ARRAY into a bool slot: a non-null pointer, so the call read as
+ * true — "browsing started" — when nothing was browsed.  No DNS-SD call is
+ * made and cb is never invoked, so it now returns false. */
+int64_t tk_mdns_browse_w(int64_t service_type, int64_t cb) {
     (void)service_type;
-    /* Return empty array */
-    return tk_arr_alloc(0, 0);
+    (void)cb;
+    return 0;
+}
+
+/* mdns.isavailable() -> bool — 137.11: declared in stdlib/mdns.tki with no
+ * wrapper (E9003 at link).  false on every platform: mdns_is_available() in
+ * mdns.c is 1 on macOS, but no wrapper in this file reaches that backend, so
+ * true would promise advertise/browse that cannot happen. */
+int64_t tk_mdns_isavailable_w(void) {
+    return 0;
 }
 
 /* mdns.stopbrowse(handle) — stop browsing */
