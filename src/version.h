@@ -11,6 +11,6 @@
  * value disagrees with it, or when a semver literal reappears in a source
  * that should read it from here.
  */
-#define TKC_VERSION "3.0.0"
+#define TKC_VERSION "3.1.0"
 
 #endif /* TK_VERSION_H */

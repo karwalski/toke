@@ -15,7 +15,7 @@ The `std.net` module is planned for a future release. It will provide low-level 
 
 Opens a TCP socket listening on `addr`, an IPv4 `"host:port"` (`"127.0.0.1:8080"`), and returns its file descriptor, or `0` on failure (bad address, port in use, no capability).
 
-Before 138.13 the parameter was untyped and `net.listen(8080)` passed the port where a string is read: the program crashed (SIGSEGV). The checker does not yet reject an integer there, so the runtime now takes an integer below 65536 as a **port on the loopback address** (`127.0.0.1`) -- never every interface. Write the address you mean.
+Before 138.13 the parameter was untyped and `net.listen(8080)` passed the port where a string is read: the program crashed (SIGSEGV). Since 138.13 the checker rejects an integer there (E4031 at `--check`), and the runtime, if it is ever handed one, takes an integer below 65536 as a **port on the loopback address** (`127.0.0.1`) -- never every interface. Write the address you mean.
 
 `net.listen` returns `0` when another server already listens on the port --
 at the same address, or at `127.0.0.1` for a `0.0.0.0:port` listen, or at all
