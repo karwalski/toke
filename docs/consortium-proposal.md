@@ -268,7 +268,7 @@ This proposal is aspirational but grounded. Transparency about where the project
 - A validated training corpus: 23,382 audited v0.4 records today; 46,754 programs in the v0.2-era corpus on which Gate 1 was measured.
 - Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 **58.8%**, 588/1,000). The token-reduction threshold was exceeded; the >= 60% Pass@1 threshold was not, and on 2026-09-22 the owner decided Gate 1 NOT PASSED. *(Published as 63.7% = 588/923 until 2026-09-19 -- story 128.19.)*
 - Published governance, contribution, security, and licensing documents.
-- 68 standard library modules (`stdlib/*.tki`) with C runtime implementations.
+- 67 standard library modules (`stdlib/*.tki`) with C runtime implementations.
 - An MCP server, tree-sitter grammar, web playground, and evaluation harness.
 
 **What does not yet exist:**
