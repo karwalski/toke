@@ -66,7 +66,7 @@ f=main():i64{
 
 expect "3-infer-generate" "$(run 'm=main;i=io:std.io;i=infer:std.infer;i=s:std.str;
 f=main():i64{
-  io.println(mt infer.generate(0;"hi") {$ok:v s.concat("ok ";v);$err:e s.concat(s.concat(e.msg;" code=");s.fromint(e.code as i64))});
+  io.println(mt infer.generate(0;"hi";16) {$ok:v s.concat("ok ";v);$err:e s.concat(s.concat(e.msg;" code=");s.fromint(e.code as i64))});
   <0
 };')" "infer.generate: local inference is not linked into this build (std.infer's glue is a stub) code=0|"
 

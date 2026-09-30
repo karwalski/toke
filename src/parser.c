@@ -1982,13 +1982,102 @@ static Token *consume_decl_kw(Parser *p) {
     return t;
 }
 
+/* ── Nesting limits (121.28, audit-120 compiler-frontend COM-02) ──────────
+ *
+ * The parser is recursive descent and every later pass walks the tree
+ * recursively, so deeply nested input exhausted the C stack: measured,
+ * 10000 nested '(' (or prefix '-', or '@' type prefixes) was a SIGSEGV in
+ * the parser with no diagnostic, and a 3000-term `0+1+1+…` chain -- a
+ * left-deep tree with no brackets at all -- crashed the build.  Two checks,
+ * neither of which recurses:
+ *   - nest_prescan, on the tokens before parsing, bounds what the parser
+ *     recurses on (bracket depth, runs of prefix operators / type prefixes);
+ *   - ast_too_deep, on the finished tree, bounds its height for every pass
+ *     after the parser.
+ * Each reports ONE E9010 naming the limit, at the offending token or node.
+ * No fix: the program has to be restructured, which is not mechanical. */
+static int nest_limit_error(const Token *t, const char *what, int limit) {
+    char msg[256];
+    snprintf(msg, sizeof msg,
+             "compiler limit exceeded: %s deeper than %d; split the expression or "
+             "block into smaller functions or intermediate bindings", what, limit);
+    diag_emit(DIAG_ERROR, E9010, t->start, t->line, t->col, msg, (void *)0);
+    return -1;
+}
+
+static int nest_prescan(const Token *toks, int n) {
+    int depth = 0, run = 0, trun = 0;
+    for (int i = 0; i < n; i++) {
+        TokenKind k = toks[i].kind;
+        if (k == TK_LPAREN || k == TK_LBRACE || k == TK_LBRACKET) {
+            if (++depth > TKC_MAX_NEST_DEPTH)
+                return nest_limit_error(&toks[i], "brackets nested", TKC_MAX_NEST_DEPTH);
+        } else if (k == TK_RPAREN || k == TK_RBRACE || k == TK_RBRACKET) {
+            if (depth > 0) depth--;
+        }
+        run  = (k == TK_MINUS || k == TK_BANG || k == TK_TILDE) ? run + 1 : 0;
+        trun = (k == TK_AT || k == TK_STAR) ? trun + 1 : 0;
+        if (run > TKC_MAX_NEST_DEPTH)
+            return nest_limit_error(&toks[i], "prefix operators repeated", TKC_MAX_NEST_DEPTH);
+        if (trun > TKC_MAX_NEST_DEPTH)
+            return nest_limit_error(&toks[i], "type prefixes repeated", TKC_MAX_NEST_DEPTH);
+    }
+    return 0;
+}
+
+/* Height of the tree, by an explicit stack in the arena (no recursion).
+ * Reports E9010 at the first node found deeper than TKC_MAX_AST_DEPTH. */
+static int ast_too_deep(Arena *a, Node *root) {
+    int cap = 256, top = 0;
+    Node **ns = (Node **)arena_alloc(a, cap * (int)sizeof(Node *));
+    int *ds = (int *)arena_alloc(a, cap * (int)sizeof(int));
+    if (!ns || !ds || !root) return 0;
+    ns[top] = root; ds[top] = 1; top++;
+    while (top > 0) {
+        top--;
+        Node *n = ns[top]; int d = ds[top];
+        if (d > TKC_MAX_AST_DEPTH) {
+            Token t; memset(&t, 0, sizeof t);
+            t.start = n->start; t.line = n->line; t.col = n->col;
+            nest_limit_error(&t, "expression or statement nesting", TKC_MAX_AST_DEPTH);
+            return 1;
+        }
+        for (int i = 0; i < n->child_count; i++) {
+            if (!n->children[i]) continue;
+            if (top == cap) {
+                if (cap > (1 << 26)) return 0;   /* cannot grow further; not a depth verdict */
+                int nc = cap * 2;
+                Node **nn = (Node **)arena_alloc(a, nc * (int)sizeof(Node *));
+                int *nd = (int *)arena_alloc(a, nc * (int)sizeof(int));
+                if (!nn || !nd) return 0;
+                memcpy(nn, ns, (size_t)top * sizeof(Node *));
+                memcpy(nd, ds, (size_t)top * sizeof(int));
+                ns = nn; ds = nd; cap = nc;
+            }
+            ns[top] = n->children[i]; ds[top] = d + 1; top++;
+        }
+    }
+    return 0;
+}
+
 /* ── SourceFile = ModuleDecl ImportDecl* TypeDecl* ConstDecl* FuncDecl* EOF ── */
+static Node *parse_source(Parser *pp);
+
 Node *
 parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
 {
     if(!tokens||count<=0||!arena) return NULL;
+    if(nest_prescan(tokens, count) < 0) return NULL;
     Parser p;
     p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile; p.in_sc=0; p.kw_alias=0; p.stmt_head=-1;
+    Node *root = parse_source(&p);
+    if(root && ast_too_deep(arena, root)) return NULL;
+    return root;
+}
+
+static Node *parse_source(Parser *pp)
+{
+    Parser p = *pp;
     Token *first=cur(&p);
     Node *root=mk(&p,NODE_PROGRAM,first);
     /* Module declaration: M= or m= */

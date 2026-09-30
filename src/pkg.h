@@ -22,13 +22,14 @@
  * diagnostic takes one.  The manifest used to give "no version satisfies the
  * constraints" as E9010, which the compiler already uses for "compiler limit
  * exceeded"; codes are stable, so that condition gets a new code at the end of
- * the E9xxx series, E9024, and E9010 keeps its meaning.  E9011-E9014 and W9010
+ * the E9xxx series -- E9025, since E9024 went to the compiler first (121.28)
+ * -- and E9010 keeps its meaning.  E9011-E9014 and W9010
  * collided with nothing and keep their numbers. */
 #define E9011 9011 /* Package not found in the index and no git URL */
 #define E9012 9012 /* Malformed pkg.toml */
 #define E9013 9013 /* Git clone or fetch of a dependency failed */
 #define E9014 9014 /* No git tag matches the resolved version */
-#define E9024 9024 /* No version of a dependency satisfies every constraint */
+#define E9025 9025 /* No version of a dependency satisfies every constraint */
 #define W9010 9010 /* pkg.lock is out of date relative to pkg.toml */
 
 /* ── Limits ────────────────────────────────────────────────────────────────── */

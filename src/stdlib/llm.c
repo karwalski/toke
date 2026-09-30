@@ -5,10 +5,18 @@
  * over plain HTTP/1.1.  All TCP I/O is done with getaddrinfo + connect +
  * send/recv; no libcurl or other external HTTP library is used.
  *
- * HTTPS note: TLS wrapping (e.g. via OpenSSL BIO) is not implemented here.
- * If base_url begins with "https://" and TLS support is not compiled in,
- * llm_chat / llm_chatstream will return an is_err response.  For local
- * inference servers (http://localhost:…) plain HTTP works without TLS.
+ * HTTPS (121.23, INF-03): when built with OpenSSL (TK_HAVE_OPENSSL -- a toke
+ * program importing std.llm links it; src/stdlib_deps.c) an https:// base_url
+ * is spoken over TLS 1.2+ with the certificate chain verified against the
+ * default trust store (SSL_CERT_FILE / SSL_CERT_DIR override it, as for any
+ * OpenSSL client) and the host name (or IP literal) checked against the
+ * certificate.  Built without OpenSSL, https:// is refused, as before.
+ *
+ * Cleartext: an API key is never sent over http:// to a peer that is not a
+ * loopback address -- the request is refused before a byte is written.  A
+ * local model server (http://localhost:…) with or without a key works as
+ * before.  base_url and the key are operator configuration: a control byte in
+ * either (a CR/LF header injection) is refused (INF-06).
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code.  Callers own all returned heap pointers.
@@ -30,6 +38,33 @@
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#ifdef TK_HAVE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509v3.h>
+#define LLM_HTTPS_UNSUPPORTED(url) 0
+#else
+#define LLM_HTTPS_UNSUPPORTED(url) ((url) && strncmp((url), "https://", 8) == 0)
+#endif
+
+/* Why the last request on this thread failed before an HTTP status existed
+ * (a static string), and whether retrying could help.  Set by http_exchange;
+ * read by the callers that turn a NULL response into an error message. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LLM_TLS_VAR _Thread_local
+#else
+#define LLM_TLS_VAR __thread
+#endif
+static LLM_TLS_VAR const char *g_llm_neterr = NULL;
+static LLM_TLS_VAR int         g_llm_netfatal = 0;
+
+static const char *neterr_or(const char *fallback)
+{
+    return g_llm_neterr ? g_llm_neterr : fallback;
+}
 
 /* -----------------------------------------------------------------------
  * Internal helpers
@@ -187,22 +222,212 @@ static int tcp_connect(const char *host, const char *port, uint32_t timeout_ms)
  * HTTP request / response
  * ----------------------------------------------------------------------- */
 
-/* http_post — send a POST request and return the full response body.
- * Returns heap-allocated string (caller frees) or NULL on error.
- * http_status_out receives the numeric HTTP status code. */
-static char *http_post(const char *host, const char *port, const char *path,
-                        const char *api_key, const char *body,
-                        uint32_t timeout_ms, int *http_status_out)
+/* A connection: a socket, optionally wrapped in TLS. */
+typedef struct {
+    int   fd;
+#ifdef TK_HAVE_OPENSSL
+    SSL     *ssl;
+    SSL_CTX *ctx;
+#endif
+} LlmConn;
+
+static void conn_close(LlmConn *c)
 {
-    int fd = tcp_connect(host, port, timeout_ms);
-    if (fd < 0) return NULL;
+#ifdef TK_HAVE_OPENSSL
+    if (c->ssl) { SSL_shutdown(c->ssl); SSL_free(c->ssl); c->ssl = NULL; }
+    if (c->ctx) { SSL_CTX_free(c->ctx); c->ctx = NULL; }
+#endif
+    if (c->fd >= 0) { close(c->fd); c->fd = -1; }
+}
+
+/* Send all of buf.  The old code made one send() per buffer and treated a
+ * short write as success. */
+static int conn_send(LlmConn *c, const char *buf, size_t n)
+{
+    size_t off = 0;
+    while (off < n) {
+        ssize_t w;
+#ifdef TK_HAVE_OPENSSL
+        if (c->ssl) {
+            int chunk = (n - off) > 0x40000000u ? 0x40000000 : (int)(n - off);
+            int r = SSL_write(c->ssl, buf + off, chunk);
+            w = r > 0 ? (ssize_t)r : -1;
+        } else
+#endif
+        {
+            w = send(c->fd, buf + off, n - off, 0);
+            if (w < 0 && errno == EINTR) continue;
+        }
+        if (w <= 0) return -1;
+        off += (size_t)w;
+    }
+    return 0;
+}
+
+static ssize_t conn_recv(LlmConn *c, char *buf, size_t cap)
+{
+#ifdef TK_HAVE_OPENSSL
+    if (c->ssl) {
+        int want = cap > 0x40000000u ? 0x40000000 : (int)cap;
+        int r = SSL_read(c->ssl, buf, want);
+        return r > 0 ? (ssize_t)r : 0;   /* close_notify, EOF or error ends the body */
+    }
+#endif
+    ssize_t r;
+    do { r = recv(c->fd, buf, cap, 0); } while (r < 0 && errno == EINTR);
+    return r;
+}
+
+/* 1 if sa is a loopback address (127.0.0.0/8, ::1, or ::ffff:127.x). */
+static int addr_is_loopback(const struct sockaddr *sa)
+{
+    if (sa->sa_family == AF_INET) {
+        const struct sockaddr_in *a = (const struct sockaddr_in *)(const void *)sa;
+        return (ntohl(a->sin_addr.s_addr) >> 24) == 127;
+    }
+    if (sa->sa_family == AF_INET6) {
+        const struct sockaddr_in6 *a = (const struct sockaddr_in6 *)(const void *)sa;
+        if (IN6_IS_ADDR_LOOPBACK(&a->sin6_addr)) return 1;
+        if (IN6_IS_ADDR_V4MAPPED(&a->sin6_addr))
+            return a->sin6_addr.s6_addr[12] == 127;
+    }
+    return 0;
+}
+
+/* 1 if every address host:port resolves to is loopback (and it resolves). */
+static int host_is_loopback(const char *host, const char *port)
+{
+    TK_REQUIRE(TK_CAP_NET);   /* a name lookup is network use too */
+    struct addrinfo hints, *res, *rp;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, port, &hints, &res) != 0) return 0;
+    int all = res != NULL;
+    for (rp = res; rp; rp = rp->ai_next)
+        if (!addr_is_loopback(rp->ai_addr)) { all = 0; break; }
+    freeaddrinfo(res);
+    return all;
+}
+
+/* 1 if the connected peer is a loopback address. */
+static int peer_is_loopback(int fd)
+{
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof ss;
+    if (getpeername(fd, (struct sockaddr *)&ss, &len) != 0) return 0;
+    return addr_is_loopback((const struct sockaddr *)&ss);
+}
+
+/* 1 if s holds a control byte (C0 or DEL): CR/LF would inject a header. */
+static int has_ctl(const char *s)
+{
+    if (!s) return 0;
+    for (; *s; s++) {
+        unsigned char ch = (unsigned char)*s;
+        if (ch < 0x20 || ch == 0x7f) return 1;
+    }
+    return 0;
+}
+
+#define NETFAIL(msg, fatal) do { g_llm_neterr = (msg); g_llm_netfatal = (fatal); } while (0)
+
+/* http_exchange — POST body to host:port/path (over TLS when is_https) and
+ * return the whole raw response, headers included (caller frees), or NULL
+ * with g_llm_neterr / g_llm_netfatal set. */
+static char *http_exchange(const char *host, const char *port, const char *path,
+                           const char *api_key, const char *body,
+                           uint32_t timeout_ms, int is_https)
+{
+    g_llm_neterr = NULL;
+    g_llm_netfatal = 0;
+    int with_key = api_key && api_key[0];
+
+    /* 121.23 (INF-06): host/path come from base_url and are written into the
+     * request line and Host header, the key into Authorization. */
+    if (has_ctl(host) || has_ctl(path) || has_ctl(api_key)) {
+        NETFAIL("base_url or API key contains a control character (refused)", 1);
+        return NULL;
+    }
+#ifndef TK_HAVE_OPENSSL
+    if (is_https) {
+        NETFAIL("HTTPS requires TLS support (not compiled in); use http:// for local inference", 1);
+        return NULL;
+    }
+#endif
+
+    /* 121.23 (INF-03): the Bearer key went out in cleartext to whatever host
+     * base_url named.  With a key, http:// is for loopback only: every
+     * address the host resolves to must be loopback (checked before
+     * connecting, so nothing is attempted), and so must the peer actually
+     * reached (checked after, before a byte is written). */
+    static const char *const cleartext_key =
+        "refusing to send the API key over cleartext http:// to a "
+        "non-loopback host; use https://";
+    if (!is_https && with_key && !host_is_loopback(host, port)) {
+        NETFAIL(cleartext_key, 1);
+        return NULL;
+    }
+
+    LlmConn c;
+    memset(&c, 0, sizeof c);
+    c.fd = tcp_connect(host, port, timeout_ms);
+    if (c.fd < 0) { NETFAIL("TCP connect failed", 0); return NULL; }
+
+    if (!is_https && with_key && !peer_is_loopback(c.fd)) {
+        conn_close(&c);
+        NETFAIL(cleartext_key, 1);
+        return NULL;
+    }
+
+#ifdef TK_HAVE_OPENSSL
+    if (is_https) {
+        c.ctx = SSL_CTX_new(TLS_client_method());
+        if (!c.ctx ||
+            SSL_CTX_set_min_proto_version(c.ctx, TLS1_2_VERSION) != 1 ||
+            SSL_CTX_set_default_verify_paths(c.ctx) != 1) {
+            conn_close(&c);
+            NETFAIL("TLS: could not create a context with the default trust store", 1);
+            return NULL;
+        }
+        SSL_CTX_set_verify(c.ctx, SSL_VERIFY_PEER, NULL);
+        c.ssl = SSL_new(c.ctx);
+        if (!c.ssl || SSL_set_fd(c.ssl, c.fd) != 1) {
+            conn_close(&c);
+            NETFAIL("TLS: could not create a session", 1);
+            return NULL;
+        }
+        unsigned char ipbuf[16];
+        int is_ip = inet_pton(AF_INET, host, ipbuf) == 1 ||
+                    inet_pton(AF_INET6, host, ipbuf) == 1;
+        int ok = is_ip
+            ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(c.ssl), host) == 1
+            : (SSL_set_tlsext_host_name(c.ssl, host) == 1 &&
+               SSL_set1_host(c.ssl, host) == 1);
+        if (!ok) {
+            conn_close(&c);
+            NETFAIL("TLS: could not set the name to verify", 1);
+            return NULL;
+        }
+        if (SSL_connect(c.ssl) != 1) {
+            long vr = SSL_get_verify_result(c.ssl);
+            ERR_clear_error();
+            conn_close(&c);
+            if (vr != X509_V_OK)
+                NETFAIL("TLS: server certificate did not verify (chain or host name)", 1);
+            else
+                NETFAIL("TLS handshake failed", 0);
+            return NULL;
+        }
+    }
+#endif
 
     size_t body_len = body ? strlen(body) : 0;
 
     /* build request */
     char req_buf[8192];
     int req_len;
-    if (api_key && api_key[0]) {
+    if (with_key) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "POST %s HTTP/1.1\r\n"
             "Host: %s\r\n"
@@ -224,42 +449,58 @@ static char *http_post(const char *host, const char *port, const char *path,
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
-        close(fd); return NULL;
+        conn_close(&c);
+        NETFAIL("request header too large", 1);
+        return NULL;
     }
 
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0) { close(fd); return NULL; }
-    if (body && body_len > 0) {
-        if (send(fd, body, body_len, 0) < 0) { close(fd); return NULL; }
+    if (conn_send(&c, req_buf, (size_t)req_len) != 0 ||
+        (body_len > 0 && conn_send(&c, body, body_len) != 0)) {
+        conn_close(&c);
+        NETFAIL("send failed", 0);
+        return NULL;
     }
 
     /* read full response */
     size_t cap = 65536, used = 0;
     char *resp = malloc(cap);
-    if (!resp) { close(fd); return NULL; }
+    if (!resp) { conn_close(&c); NETFAIL("out of memory", 1); return NULL; }
 
     ssize_t n;
-    while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
+    while ((n = conn_recv(&c, resp + used, cap - used - 1)) > 0) {
         used += (size_t)n;
         if (used + 1 >= cap) {
             cap *= 2;
             char *tmp = realloc(resp, cap);
-            if (!tmp) { free(resp); close(fd); return NULL; }
+            if (!tmp) { free(resp); conn_close(&c); NETFAIL("out of memory", 1); return NULL; }
             resp = tmp;
         }
     }
     resp[used] = '\0';
-    close(fd);
+    conn_close(&c);
+    return resp;
+}
+
+/* http_post — send a POST request and return the response body.
+ * Returns heap-allocated string (caller frees) or NULL on error.
+ * http_status_out receives the numeric HTTP status code. */
+static char *http_post(const char *host, const char *port, const char *path,
+                        const char *api_key, const char *body,
+                        uint32_t timeout_ms, int is_https, int *http_status_out)
+{
+    if (http_status_out) *http_status_out = 0;
+    char *resp = http_exchange(host, port, path, api_key, body, timeout_ms, is_https);
+    if (!resp) return NULL;
 
     /* parse status line: "HTTP/1.x NNN ..." */
     if (http_status_out) {
-        *http_status_out = 0;
         const char *sp = strchr(resp, ' ');
         if (sp) *http_status_out = atoi(sp + 1);
     }
 
     /* find body after \r\n\r\n */
     const char *sep = strstr(resp, "\r\n\r\n");
-    if (!sep) { free(resp); return NULL; }
+    if (!sep) { free(resp); NETFAIL("malformed HTTP response", 0); return NULL; }
     char *body_copy = strdup_safe(sep + 4);
     free(resp);
     return body_copy;
@@ -552,7 +793,7 @@ TkLlmResp llm_chat_extra(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
     if (!c) return err_resp("null client");
 
     /* reject HTTPS when TLS is not compiled in */
-    if (c->base_url && strncmp(c->base_url, "https://", 8) == 0) {
+    if (LLM_HTTPS_UNSUPPORTED(c->base_url)) {
         return err_resp("HTTPS requires TLS support (not compiled in); use http:// for local inference");
     }
 
@@ -579,8 +820,8 @@ TkLlmResp llm_chat_extra(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
             sleep(1);
         }
         free(resp_body);
-        resp_body = http_post(host, port, path, c->api_key, body, timeout, &http_status);
-        if (!resp_body) continue;
+        resp_body = http_post(host, port, path, c->api_key, body, timeout, is_https, &http_status);
+        if (!resp_body) { if (g_llm_netfatal) break; continue; }
         /* retry on 5xx */
         if (http_status >= 500 && http_status < 600) continue;
         break;
@@ -589,7 +830,7 @@ TkLlmResp llm_chat_extra(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
     free((void *)body);
 
     if (!resp_body) {
-        return err_resp("HTTP request failed after retries");
+        return err_resp(neterr_or("HTTP request failed after retries"));
     }
 
     if (http_status >= 400) {
@@ -642,7 +883,7 @@ TkLlmStream llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, doubl
     if (!c) return err_stream("null client");
 
     /* reject HTTPS when TLS is not compiled in */
-    if (c->base_url && strncmp(c->base_url, "https://", 8) == 0) {
+    if (LLM_HTTPS_UNSUPPORTED(c->base_url)) {
         return err_stream("HTTPS requires TLS support (not compiled in); use http:// for local inference");
     }
 
@@ -657,61 +898,11 @@ TkLlmStream llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, doubl
     if (!body) return err_stream("failed to build request JSON");
 
     uint32_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
-    int fd = tcp_connect(host, port, timeout);
-    if (fd < 0) { free((void *)body); return err_stream("TCP connect failed"); }
-
-    /* send request */
-    size_t body_len = strlen(body);
-    char req_buf[8192];
-    int req_len;
-    if (c->api_key && c->api_key[0]) {
-        req_len = snprintf(req_buf, sizeof(req_buf),
-            "POST %s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Authorization: Bearer %s\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: %zu\r\n"
-            "Connection: close\r\n"
-            "\r\n",
-            path, host, c->api_key, body_len);
-    } else {
-        req_len = snprintf(req_buf, sizeof(req_buf),
-            "POST %s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: %zu\r\n"
-            "Connection: close\r\n"
-            "\r\n",
-            path, host, body_len);
-    }
-    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
-        free((void *)body);
-        close(fd); return err_stream("request header too large");
-    }
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0 ||
-        send(fd, body_len > 0 ? (char *)body : "", body_len, 0) < 0) {
-        free((void *)body);
-        close(fd); return err_stream("send failed");
-    }
+    /* 121.23: one transport for both paths, so chatstream gets TLS, the
+     * cleartext-key refusal and the control-byte check as chat does. */
+    char *resp = http_exchange(host, port, path, c->api_key, body, timeout, is_https);
     free((void *)body);
-
-    /* read full response */
-    size_t cap = 65536, used = 0;
-    char *resp = malloc(cap);
-    if (!resp) { close(fd); return err_stream("out of memory"); }
-
-    ssize_t n;
-    while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
-        used += (size_t)n;
-        if (used + 1 >= cap) {
-            cap *= 2;
-            char *tmp = realloc(resp, cap);
-            if (!tmp) { free(resp); close(fd); return err_stream("out of memory"); }
-            resp = tmp;
-        }
-    }
-    resp[used] = '\0';
-    close(fd);
+    if (!resp) return err_stream(neterr_or("request failed"));
 
     /* skip HTTP headers */
     const char *sep = strstr(resp, "\r\n\r\n");
@@ -838,7 +1029,7 @@ static void backoff_sleep_ms(uint64_t ms)
 static char *http_post_with_backoff(TkLlmClient *c,
                                      const char *host, const char *port,
                                      const char *path,  const char *body,
-                                     int *http_status_out)
+                                     int is_https, int *http_status_out)
 {
     uint32_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
 
@@ -867,8 +1058,8 @@ static char *http_post_with_backoff(TkLlmClient *c,
         }
 
         free(resp_body);
-        resp_body = http_post(host, port, path, c->api_key, body, timeout, &http_status);
-        if (!resp_body) continue;
+        resp_body = http_post(host, port, path, c->api_key, body, timeout, is_https, &http_status);
+        if (!resp_body) { if (g_llm_netfatal) break; continue; }
 
         /* retry on 429 (rate-limit) and 5xx server errors */
         if (http_status == 429) continue;
@@ -1017,8 +1208,8 @@ F64ArrayLlmResult llm_embedding(TkLlmClient *client, const char *text)
     if (!client) return err_f64("null client");
     if (!text)   return err_f64("null text");
 
-    /* reject HTTPS */
-    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+    /* reject HTTPS when TLS is not compiled in */
+    if (LLM_HTTPS_UNSUPPORTED(client->base_url))
         return err_f64("HTTPS requires TLS support (not compiled in)");
 
     char host[256], port[16], path[512];
@@ -1049,11 +1240,11 @@ F64ArrayLlmResult llm_embedding(TkLlmClient *client, const char *text)
     if (!body) return err_f64("failed to build embedding request");
 
     int http_status = 0;
-    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, is_https, &http_status);
     free(body);
 
     if (!resp_body)
-        return err_f64("HTTP request failed");
+        return err_f64(neterr_or("HTTP request failed"));
 
     if (http_status >= 400) {
         char errbuf[256];
@@ -1085,7 +1276,7 @@ F64ArraysLlmResult llm_embeddings_batch(TkLlmClient *client,
     if (!texts || n == 0) return err_f64s("empty texts array");
 
     /* reject HTTPS */
-    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+    if (LLM_HTTPS_UNSUPPORTED(client->base_url))
         return err_f64s("HTTPS requires TLS support (not compiled in)");
 
     char host[256], port[16], path[512];
@@ -1139,10 +1330,10 @@ F64ArraysLlmResult llm_embeddings_batch(TkLlmClient *client,
     if (!body) return err_f64s("failed to build embedding request");
 
     int http_status = 0;
-    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, is_https, &http_status);
     free(body);
 
-    if (!resp_body) return err_f64s("HTTP request failed");
+    if (!resp_body) return err_f64s(neterr_or("HTTP request failed"));
 
     if (http_status >= 400) {
         char errbuf[256];
@@ -1229,7 +1420,7 @@ TkLlmResp llm_json_mode(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
     if (!client) return err_resp("null client");
 
     /* reject HTTPS */
-    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+    if (LLM_HTTPS_UNSUPPORTED(client->base_url))
         return err_resp("HTTPS requires TLS support (not compiled in)");
 
     char host[256], port[16], path[512];
@@ -1254,10 +1445,10 @@ TkLlmResp llm_json_mode(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
     if (!body) return err_resp("failed to build request JSON");
 
     int http_status = 0;
-    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, is_https, &http_status);
     free((void *)body);
 
-    if (!resp_body) return err_resp("HTTP request failed after retries");
+    if (!resp_body) return err_resp(neterr_or("HTTP request failed after retries"));
 
     if (http_status >= 400) {
         char errbuf[256];
@@ -1394,7 +1585,7 @@ TkLlmResp llm_vision(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
     if (!client) return err_resp("null client");
 
     /* reject HTTPS */
-    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+    if (LLM_HTTPS_UNSUPPORTED(client->base_url))
         return err_resp("HTTPS requires TLS support (not compiled in)");
 
     char host[256], port[16], path[512];
@@ -1407,10 +1598,10 @@ TkLlmResp llm_vision(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
     if (!body) return err_resp("failed to build vision request JSON");
 
     int http_status = 0;
-    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, is_https, &http_status);
     free((void *)body);
 
-    if (!resp_body) return err_resp("HTTP request failed after retries");
+    if (!resp_body) return err_resp(neterr_or("HTTP request failed after retries"));
 
     if (http_status >= 400) {
         char errbuf[256];

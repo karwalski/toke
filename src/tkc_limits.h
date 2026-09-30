@@ -189,6 +189,26 @@
  */
 #ifndef TKC_ARENA_ALIGN
 #define TKC_ARENA_ALIGN 8
+
+/*
+ * Maximum source nesting and AST height (story 121.28, audit-120
+ * compiler-frontend COM-02).  The parser and every AST pass after it
+ * (names, types, llvm, fmt, lint) recurse on the tree, so nesting has to be
+ * bounded before any of them runs.  Measured on the default 8 MB stack
+ * without the limit: 10000 nested '(' or prefix '-' or '@' crashed the
+ * parser (SIGSEGV, no diagnostic); 2000 nested `if(..){` blocks crashed
+ * --check; a 3000-term `0+1+1+…` chain (a left-deep tree, no brackets)
+ * crashed the build.  Both caps sit well below those points and far above
+ * anything written by hand or found in the corpus (see C584).
+ *
+ * TKC_MAX_NEST_DEPTH bounds what the parser itself recurses on, measured on
+ * the token stream before parsing: open brackets, and a run of prefix
+ * operators ('-' '!' '~') or type prefixes ('@' '*').
+ * TKC_MAX_AST_DEPTH bounds the height of the finished tree, measured
+ * without recursion.
+ */
+#define TKC_MAX_NEST_DEPTH 256
+#define TKC_MAX_AST_DEPTH 1000
 #endif
 
 /* ── Buffer Sizes ─────────────────────────────────────────────────────── */

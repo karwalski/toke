@@ -60,7 +60,7 @@
         "$tmplvars"
       ],
       "return": "$str!$tmplerr",
-      "note": "Render template t with variable bindings vars. Substitutes each {{name}} with the corresponding value from vars. Returns $tmplerr if a slot name has no binding."
+      "note": "Render template t with variable bindings vars. Substitutes each {{name}} with the corresponding value from vars, escaped for the HTML context of its slot (text, attribute, URL, JS, CSS -- 121.37); {{name|raw}} is verbatim. Returns $tmplerr if the template cannot be compiled."
     },
     {
       "kind": "func",
@@ -99,7 +99,7 @@
         "$tmplvars"
       ],
       "return": "$str!$tmplerr",
-      "note": "Load a template from file at path, compile it, and render with vars. Returns $tmplerr if the file cannot be read or contains invalid slots."
+      "note": "Load a template from file at path, compile it, and render with vars, escaping as tpl.render does (121.37). Returns $tmplerr if the file cannot be read or contains invalid slots."
     },
     {
       "kind": "func",

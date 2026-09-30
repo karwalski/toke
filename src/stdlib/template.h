@@ -61,8 +61,11 @@ void        tmpl_free(TkTmpl *t);
  * Returns a heap-allocated string; caller owns it. */
 const char *tmpl_render(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar);
 
-/* tmpl_renderhtml — same as tmpl_render but HTML-escapes each variable value
- * before substitution.  Literal text segments are NOT escaped.
+/* tmpl_renderhtml — same as tmpl_render but escapes each variable value for
+ * the HTML context its slot lands in (text, attribute, URL, JavaScript, CSS,
+ * tag/attribute name -- 121.37; see "Contextual auto-escaping" in
+ * template.c).  {{key|raw}} values and literal text are NOT escaped.
+ * tpl.render, tpl.renderfile and tmpl_renderpage all render through this.
  * Returns a heap-allocated string; caller owns it. */
 const char *tmpl_renderhtml(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar);
 

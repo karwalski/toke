@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -70,18 +71,28 @@ arena_init(void)
  *
  * Rounds size up to TKC_ARENA_ALIGN boundary.  If the current head
  * block has insufficient room, a new block is prepended to the chain.
- * The returned memory is zero-initialised.  Returns NULL only if
- * malloc fails when allocating a new block.
+ * The returned memory is zero-initialised.  Returns NULL if malloc fails
+ * when allocating a new block, or if size is negative or too large to round
+ * up without overflow (121.29).
  */
 void *
 arena_alloc(Arena *arena, int size)
 {
-    if (size <= 0) size = 1;
+    /* 121.29 (REL-06): sizes are signed int.  A negative size -- a caller's
+     * `n * (int)sizeof(T)` that overflowed -- was silently turned into 1 and
+     * the caller then wrote n*sizeof(T) bytes into it; a size within
+     * TKC_ARENA_ALIGN of INT_MAX overflowed the rounding below (signed
+     * overflow, UB), came out negative, passed the capacity test and was
+     * memset for `size` bytes.  Both are now refused with NULL, the same
+     * answer as an allocation failure, which callers already handle. */
+    if (size < 0) return NULL;
+    if (size == 0) size = 1;
+    if (size > INT_MAX - (TKC_ARENA_ALIGN - 1)) return NULL;
     /* round up to alignment boundary */
     int aligned = (size + TKC_ARENA_ALIGN - 1) & ~(TKC_ARENA_ALIGN - 1);
 
     ArenaBlock *b = arena->head;
-    if (b->used + aligned > b->cap) {
+    if (aligned > b->cap - b->used) {   /* not used + aligned: no overflow */
         ArenaBlock *nb = block_new(aligned);
         if (!nb) return NULL;
         nb->next    = arena->head;

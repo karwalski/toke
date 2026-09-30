@@ -247,7 +247,24 @@ An alias of `str.tofloat` (so are `str.tof64` and `str.parsefloat`); 138.11 gave
 
 ## Regular expressions
 
-Five functions take a pattern. They share one engine (`src/stdlib/tk_regex.h`, stories 137.9 and 121.35) and one language, the same on every platform. Before 137.9 they called POSIX `regcomp`/`regexec`: a pattern `regcomp` rejected — `\S` on glibc, `*?`, `(?i)`, a malformed `[` — returned *no match* with no error, and on macOS `\s`, `\d`, `\w` and `\b` compiled as the literal letters `s`, `d`, `w` and `b`.
+Five functions match a pattern, and a sixth, `str.checkre`, checks one and returns the error as a value. They share one engine (`src/stdlib/tk_regex.h`, stories 137.9 and 121.35) and one language, the same on every platform. Before 137.9 they called POSIX `regcomp`/`regexec`: a pattern `regcomp` rejected — `\S` on glibc, `*?`, `(?i)`, a malformed `[` — returned *no match* with no error, and on macOS `\s`, `\d`, `\w` and `\b` compiled as the literal letters `s`, `d`, `w` and `b`.
+
+### str.checkre(pattern: $str): $str!$regexerr
+
+`pattern` unchanged if it is in the pattern language below, else a `$regexerr` — `{msg: $str; pos: i64}`, the reason and the byte offset into the pattern of the construct that failed (`-1` when the failure is not at a byte, such as running out of memory). It is decided by the same compiler the five matching calls use, so a pattern `str.checkre` accepts never stops them with `RT008`. It is never `RT008` itself, and a literal argument is not `E4075`: returning the error is its purpose. Use it for any pattern that comes from outside the program (story 121.45):
+
+```toke
+m=example;
+i=str:std.str;
+f=search(text:$str;userpattern:$str):$str{
+  <mt str.checkre(userpattern){
+    $ok:p str.fromint(str.countre(text;p));
+    $err:e str.concat("bad pattern: ";e.msg)
+  }
+};
+```
+
+`str.checkre` does not cover the step budget: a valid pattern can still stop `str.countre`, `str.findall` or `str.replacere` with `RT009` (see **Cost** below).
 
 ### str.containsre(s: $str; pattern: $str): i64
 
@@ -295,7 +312,7 @@ A **literal** pattern is checked when the program is compiled — `toke --check`
 error[E4075]: invalid regex pattern for str.replacere: lazy quantifiers (*? +? ?? {n,m}?) are not supported: …
 ```
 
-A pattern **computed** at run time is checked when it is used; an invalid one stops the program with `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` and exit status 1. There is no call that returns the error as a value yet, so validate an untrusted pattern before relying on it.
+A pattern **computed** at run time is checked when it is used; an invalid one stops the program with `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` and exit status 1. To get the error as a value instead, pass the pattern through `str.checkre` first and use the pattern it returns.
 
 **Matching rule.** Matching is byte-wise. A search finds the leftmost match and, from that start, the longest one (POSIX leftmost-longest): `str.findall("ab";"a|ab")` is `["ab"]`. After a match the scan resumes at its end; after an empty match it moves one byte on, and an empty match directly after the previous match is skipped, so `str.replacere("abc";"x*";"-")` is `"-a-b-c-"`.
 

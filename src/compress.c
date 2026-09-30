@@ -396,9 +396,13 @@ int decompress_text(const char *input, size_t len, char *out_buf, size_t out_cap
             size_t j = pos + 2;
             while (j < len && isdigit((unsigned char)input[j])) j++;
             /* Parse the index */
+            /* 121.28 (audit-120 compiler-codegen COM-04): the accumulation
+             * overflowed int (UB) on a long digit run, and in practice
+             * wrapped -- measured, `@R4294967297` expanded to dictionary
+             * word 1.  Saturate past dict_count: such an index is invalid. */
             int idx = 0;
             for (size_t k = pos + 2; k < j; k++)
-                idx = idx * 10 + (input[k] - '0');
+                idx = idx > dict_count ? idx : idx * 10 + (input[k] - '0');
             if (idx >= 1 && idx <= dict_count) {
                 const char *w = dict[idx - 1];
                 int wlen = (int)strlen(w);
@@ -815,6 +819,16 @@ void compress_stream_init(CompressStreamCtx *ctx, FILE *out)
     ctx->out         = out;
     ctx->total_in    = 0;
     ctx->total_out   = 0;
+    ctx->oversize    = 0;
+}
+
+/* 121.28: does c continue an oversize token of kind k (see ctx->oversize)? */
+static int oversize_continues(int k, char c)
+{
+    unsigned char u = (unsigned char)c;
+    return k == 1 ? isalnum(u) != 0
+         : k == 2 ? (isupper(u) || isdigit(u) || c == '_')
+         : 0;
 }
 
 /*
@@ -863,6 +877,15 @@ int compress_stream_feed(CompressStreamCtx *ctx, const char *chunk, int len)
     int ci = 0;
 
     while (ci < len || ctx->pending_len > 0) {
+        /* 121.28: the rest of an oversize token goes out verbatim. */
+        if (ctx->oversize && ctx->pending_len == 0) {
+            while (ci < len && oversize_continues(ctx->oversize, chunk[ci])) {
+                fputc(chunk[ci++], ctx->out);
+                emitted++;
+            }
+            if (ci >= len) break;          /* the token may go on in the next chunk */
+            ctx->oversize = 0;
+        }
         /* Fill pending buffer */
         while (ci < len && ctx->pending_len < COMPRESS_STREAM_BUFSZ - 1) {
             ctx->pending[ctx->pending_len++] = chunk[ci++];
@@ -913,6 +936,22 @@ int compress_stream_feed(CompressStreamCtx *ctx, const char *chunk, int len)
             fputc(p[consumed], ctx->out);
             emitted++;
             consumed++;
+        }
+
+        /* 121.28 (audit-120 compiler-codegen COM-02): a word or placeholder
+         * that fills the whole buffer was held forever -- nothing consumed,
+         * the buffer full so nothing more could be read, and `ci < len` kept
+         * the loop going: measured, a 100000-letter line hung
+         * --compress-stream.  No abbreviation or placeholder is that long,
+         * so emit what is buffered verbatim and pass the rest of that token
+         * through verbatim too (ctx->oversize), exactly as emit_token would
+         * have for a token with no abbreviation. */
+        if (consumed == 0 && plen >= COMPRESS_STREAM_BUFSZ - 1 && ci < len) {
+            for (int k = 0; k < plen; k++) fputc(p[k], ctx->out);
+            emitted += plen;
+            ctx->oversize = (p[0] == '$') ? 2 : 1;
+            ctx->pending_len = 0;
+            continue;
         }
 
         /* Shift unconsumed bytes to front of pending */

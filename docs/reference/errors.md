@@ -1261,12 +1261,23 @@ defaults are 32 imports, 1024 function signatures and 1024 struct types
 (`tkc --show-limits`); the last two were 128 and 64 until story 127.250.
 
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
-by pointer locals, local types and shadowing aliases) is met in codegen, not at
-`--check`. It is reported once per function, closure or globals initialiser
-that crosses it, at that function, naming it, with `expected` = the limit and
-`got` = the count needed. That count is a lower bound -- a full registry stops
-recording, which can hide further demand -- so this E9010 carries no `fix`
-(story 127.252).
+by pointer locals, local types and shadowing aliases) is reported once per
+function, closure or globals initialiser that crosses it, at that function,
+naming it, with `expected` = the limit and `got` = the count needed. That
+count is a lower bound -- a full registry stops recording, which can hide
+further demand -- so this E9010 carries no `fix` (story 127.252). `--check`
+meets the part of it that is certain: the parameters, `let` bindings and
+`lp(let ..)` variables of a function's own body (match-arm subtrees and
+closure bodies are left to codegen, which may release or lift them), so a
+function the checker passes can still be refused by the build, never the
+reverse (127.252 residue).
+
+Source nested too deeply for the compiler's recursive passes is refused
+before them, as one E9010 at the offending token or node, no `fix`: more
+than 256 open brackets, or a run of more than 256 prefix operators
+(`-` `!` `~`) or type prefixes (`@` `*`), or a syntax tree more than 1000
+levels high -- a long `a+b+c+...` chain is one level per operator. Before
+story 121.28 such input crashed the compiler with no diagnostic.
 
 ### E9020
 
@@ -1328,14 +1339,33 @@ nothing.
 Before 127.208 this condition was reported as E9020, a code whose meaning is
 "failed to write .tkir file"; E9020 now means only that.
 
-## Package Resolution (E9011--E9014, E9024, W9010 -- reserved)
+### E9024
+
+**Stdlib or runtime directory path contains whitespace**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A build to an executable was requested while `TKC_STDLIB_DIR` (as resolved by
+the compiler, see E9022) or `TKC_RUNTIME_DIR` names a directory whose path
+contains whitespace. The stdlib C sources and vendor include flags reach
+clang as whitespace-separated arguments, so such a path would be split into
+fragments — and a fragment that looks like a flag (`-v`, `-o`) would reach
+clang as one. Emitted before clang is run; `--check` is unaffected. Use a
+directory whose path has no whitespace (a symlink to it works: the compiler
+resolves `TKC_STDLIB_DIR` to its real path). No `fix`: the right path is not
+knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
+
+## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
 
 The codes `docs/reference/package-manifest.md` gives for package resolution.
 They are defined in `src/pkg.h` so that no compiler diagnostic takes one, but
 the resolver is not wired into a `tkc` command and nothing emits them yet
 (story 121.50). The unsatisfiable-constraints condition was documented as
 E9010 until then -- the compiler's "compiler limit exceeded" -- and moved to
-E9024.
+E9025 (E9024 went to the compiler in the meantime, 121.28).
 
 ### E9011
 
@@ -1381,7 +1411,7 @@ The repository of a dependency could not be cloned or fetched.
 
 A dependency's repository has no tag for the version resolution selected.
 
-### E9024
+### E9025
 
 **No version of a dependency satisfies every constraint**
 

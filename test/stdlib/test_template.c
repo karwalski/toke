@@ -46,6 +46,20 @@ static const char *helper_shout(const char *value)
 #define ASSERT_STREQ(a, b, msg) \
     ASSERT((a) && (b) && strcmp((a),(b)) == 0, msg)
 
+/* 121.37: render src with one binding v through the escaping renderer. */
+static void ctx_case(const char *src, const char *key, const char *val,
+                     const char *want, const char *msg)
+{
+    TkTmpl *t = tmpl_compile(src);
+    TkTmplVar vars[] = {{key, val}, {"x", "1"}};
+    const char *got = t ? tmpl_renderhtml(t, vars, 2) : NULL;
+    if (!got || strcmp(got, want) != 0)
+        fprintf(stderr, "  got:  %s\n  want: %s\n", got ? got : "(null)", want);
+    ASSERT_STREQ(got, want, msg);
+    free((void *)got);
+    tmpl_free(t);
+}
+
 int main(void)
 {
     /* ---- 1. No slots: literal passthrough ---- */
@@ -501,6 +515,106 @@ int main(void)
         }
         snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
         (void)system(cmd);
+    }
+
+    /* ---- 121.37 (ADR-0011 (b)): the escaper follows the slot's context ---- */
+    ctx_case("<p>{{v}}</p>", "v", "<b>", "<p>&lt;b&gt;</p>", "ctx: body");
+    ctx_case("<a title=\"{{v}}\">", "v", "\"><x", "<a title=\"&quot;&gt;&lt;x\">",
+             "ctx: double-quoted attribute");
+    ctx_case("<a title='{{v}}'>", "v", "'x", "<a title='&#39;x'>",
+             "ctx: single-quoted attribute");
+    ctx_case("<a title={{v}}>", "v", "a onmouseover=alert(1)",
+             "<a title=a&#32;onmouseover&#61;alert&#40;1&#41;>",
+             "ctx: unquoted attribute cannot add an attribute");
+    ctx_case("<a href=\"{{v}}\">", "v", "javascript:alert(1)", "<a href=\"#ZtokeZ\">",
+             "ctx: URL start refuses javascript:");
+    ctx_case("<a href=\"{{v}}\">", "v", " JavaScript:alert(1)", "<a href=\"#ZtokeZ\">",
+             "ctx: URL start refuses JavaScript: after whitespace");
+    ctx_case("<a href=\"  {{v}}\">", "v", "javascript:alert(1)", "<a href=\"  #ZtokeZ\">",
+             "ctx: literal leading whitespace is still the URL start");
+    ctx_case("<img src=\"{{v}}\">", "v", "data:text/html,<script>", "<img src=\"#ZtokeZ\">",
+             "ctx: URL start refuses data:");
+    ctx_case("<a href={{v}}>", "v", "javascript:alert(1)", "<a href=&#35;ZtokeZ>",
+             "ctx: unquoted URL refuses javascript:");
+    ctx_case("<a href=\"{{v}}\">", "v", "https://x.test/a b\"c",
+             "<a href=\"https://x.test/a%20b%22c\">", "ctx: https URL kept, normalised");
+    ctx_case("<a href=\"{{v}}\">", "v", "/p/q?r=1#s", "<a href=\"/p/q?r=1#s\">",
+             "ctx: relative URL kept");
+    ctx_case("<a href=\"{{v}}\">", "v", "mailto:a@b.test", "<a href=\"mailto:a@b.test\">",
+             "ctx: mailto kept");
+    ctx_case("<a href=\"/s?q={{v}}\">", "v", "a&b c\"=d", "<a href=\"/s?q=a%26b%20c%22%3Dd\">",
+             "ctx: URL query component encoded");
+    ctx_case("<a href=\"/u/{{v}}\">", "v", "javascript:x", "<a href=\"/u/javascript:x\">",
+             "ctx: URL path after the start is not a scheme");
+    ctx_case("<a onclick=\"f('{{v}}')\">", "v", "');alert(1);//",
+             "<a onclick=\"f('\\u0027\\u0029\\u003Balert\\u00281\\u0029\\u003B\\u002F\\u002F')\">",
+             "ctx: on* attribute, JS string: no quote survives entity decoding");
+    ctx_case("<a onclick=\"go({{v}})\">", "v", "1);alert(2",
+             "<a onclick=\"go(&quot;1\\u0029\\u003Balert\\u00282&quot;)\">",
+             "ctx: on* attribute, JS code: a quoted string literal");
+    ctx_case("<script>var a={{v}};</script>", "v", "1;alert(1)",
+             "<script>var a=\"1\\u003Balert\\u00281\\u0029\";</script>",
+             "ctx: script code: a quoted string literal");
+    ctx_case("<SCRIPT>var a='{{v}}';</SCRIPT>", "v", "</script><b>",
+             "<SCRIPT>var a='\\u003C\\u002Fscript\\u003E\\u003Cb\\u003E';</SCRIPT>",
+             "ctx: script (any case), JS string: no </script>");
+    ctx_case("<script>// {{v}}\nx=1</script>", "v", "a\nalert(1)",
+             "<script>// a\\u000Aalert\\u00281\\u0029\nx=1</script>",
+             "ctx: JS line comment cannot be ended by a newline");
+    ctx_case("<script>var a=\"{{v}}\";</script>", "v", "a\xE2\x80\xA8" "b",
+             "<script>var a=\"a\\u2028b\";</script>", "ctx: U+2028 escaped in a JS string");
+    ctx_case("<script>var a=\"</script>\";</script><p>{{v}}</p>", "v", "<i>",
+             "<script>var a=\"</script>\";</script><p>&lt;i&gt;</p>",
+             "ctx: </script> ends the element even inside a JS string");
+    ctx_case("<script>x()</script><p title=\"{{v}}\">", "v", "\"",
+             "<script>x()</script><p title=\"&quot;\">", "ctx: back to HTML after </script>");
+    ctx_case("<style>p{color:{{v}}}</style>", "v", "#f00", "<style>p{color:#f00}</style>",
+             "ctx: style code keeps a plain value");
+    ctx_case("<style>p{color:{{v}}}</style>", "v", "red;background:url(javascript:x)",
+             "<style>p{color:ZtokeZ}</style>", "ctx: style code refuses url(");
+    ctx_case("<style>p{font-family:\"{{v}}\"}</style>", "v", "a\"}",
+             "<style>p{font-family:\"a\\22 \\7D \"}</style>", "ctx: CSS string escaped");
+    ctx_case("<p style=\"color:{{v}}\">", "v", "expression(alert(1))",
+             "<p style=\"color:ZtokeZ\">", "ctx: style attribute refuses expression(");
+    ctx_case("<div {{v}}>", "v", "hidden", "<div hidden>", "ctx: attribute name kept");
+    ctx_case("<div {{v}}>", "v", "onclick=alert(1)", "<div ZtokeZ>",
+             "ctx: attribute name position refuses markup");
+    ctx_case("<div {{v}}=\"x\">", "v", "onload", "<div ZtokeZ=\"x\">",
+             "ctx: attribute name position refuses an event handler");
+    ctx_case("<!-- {{v}} -->", "v", "--><script>", "<!-- --&gt;&lt;script&gt; -->",
+             "ctx: comment");
+    ctx_case("<title>{{v}}</title>", "v", "</title><script>",
+             "<title>&lt;/title&gt;&lt;script&gt;</title>", "ctx: title (RCDATA)");
+    ctx_case("<a href=\"{{#if x}}{{v}}{{/if}}\">", "v", "javascript:alert(1)",
+             "<a href=\"#ZtokeZ\">", "ctx: context carries into {{#if}}");
+    ctx_case("{{v|raw}}<a href=\"{{x}}\">", "v", "<script>",
+             "<script><a href=\"1\">", "ctx: |raw stays raw");
+    ctx_case("<p>{{v|raw}}{{x}}</p>", "v", "<a href=\"",
+             "<p><a href=\"1</p>", "ctx: the tracker follows a |raw value");
+    {
+        TkTmpl *t = tmpl_compile("<a href=\"{{u}}\">");
+        TkTmplVar vars[] = {{"u", "javascript:x"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "<a href=\"javascript:x\">",
+                     "ctx: tmpl_render (escaping off) is unchanged");
+        free((void *)got);
+        tmpl_free(t);
+    }
+    {
+        const char *tmppath = "/tmp/test_tpl_renderfile_ctx.txt";
+        FILE *fp = fopen(tmppath, "w");
+        if (fp) {
+            fprintf(fp, "<a href=\"{{u}}\">{{b}}</a>");
+            fclose(fp);
+            TkTmplVar vars[] = {{"u", "javascript:x"}, {"b", "<b>"}};
+            const char *got = tmpl_renderfile(tmppath, vars, 2);
+            ASSERT_STREQ(got, "<a href=\"#ZtokeZ\">&lt;b&gt;</a>",
+                         "ctx: tmpl_renderfile escapes for context");
+            free((void *)got);
+            remove(tmppath);
+        } else {
+            ASSERT(0, "ctx: create renderfile temp file");
+        }
     }
 
     /* ---- report ---- */

@@ -14,9 +14,13 @@
 # record changes what the others need (case 6 shows it: shadowing reports 140
 # and needs 141).  So the fix field is absent (AGENTS.md §6).
 #
-# --check does not count these caps: they are codegen's own registries
-# (set_local_type / mark_ptr_with_type / make_unique_name), and their demand
-# depends on lowering details a checker-side count would have to duplicate.
+# --check counts a LOWER bound of these caps since the 127.252 residue
+# (tkc_caps_locals_check, C586): parameters, lets and loop lets of a
+# function's own body, in the same words.  For the plain functions below that
+# bound already reaches the count, so cases 1-6 and 8 are now refused by the
+# checker before codegen runs; codegen's own once-per-function report is
+# still what cases 7 (a closure body, which the checker leaves to codegen)
+# and C586's arm case see.  Case 9 used to pin "--check stays silent".
 #
 # Negative control: TKC=<main's toke> -- cases 1-3 and 5-8 fail (main
 # emits one unlocated record per overflowing local).
@@ -91,8 +95,8 @@ expect "7 a closure body: one record, at the closure" \
     "$(diags --emit-llvm --out o.ll cl.tk)" "E9010|3|128|142|ABSENT"
 expect "8 two functions: one record each, at each" \
     "$(diags --emit-llvm --out o.ll two.tk)" "E9010|2|128|130|ABSENT / E9010|${BL}|128|135|ABSENT"
-expect "9 --check stays silent (codegen registries; see header)" \
-    "$(diags --check loc.tk)" "clean"
+expect "9 --check reports the same record (lower bound, C586; see header)" \
+    "$(diags --check loc.tk)" "E9010|2|128|140|ABSENT"
 
 echo "C560: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

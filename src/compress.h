@@ -137,6 +137,10 @@ typedef struct {
     FILE  *out;                            /* output sink (set by init)    */
     int    total_in;                       /* bytes fed so far             */
     int    total_out;                      /* bytes emitted so far         */
+    int    oversize;                       /* 121.28: inside a token longer than
+                                              the buffer, emitted verbatim:
+                                              0 no, 1 word [A-Za-z0-9],
+                                              2 placeholder [A-Z0-9_]      */
 } CompressStreamCtx;
 
 /*

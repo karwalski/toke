@@ -275,6 +275,23 @@ static int collection_load(TkVecCollection *col)
 
     if (count == 0) { fclose(fp); return 1; }
 
+    /* 121.23 (INF-04): count, dim and every length below come from the
+     * file.  They drove the allocations unchecked: a count above INT32_MAX
+     * went negative as int32_t, was raised to INIT_CAPACITY, and the loop
+     * then wrote up to `count` entries into a 16-entry array -- a heap
+     * overflow on every target, not only 32-bit ones -- and any huge value
+     * forced a huge calloc/malloc.  Each is now bounded by the bytes the
+     * file actually has left: every record takes at least 16 bytes plus its
+     * embedding, and a length cannot exceed what remains. */
+    long hdr_end = ftell(fp);
+    if (hdr_end < 0 || fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return 0; }
+    long file_end = ftell(fp);
+    if (file_end < hdr_end || fseek(fp, hdr_end, SEEK_SET) != 0) { fclose(fp); return 0; }
+    uint64_t remain = (uint64_t)(file_end - hdr_end);
+    if (dim > INT32_MAX || (uint64_t)dim * sizeof(float) > remain) { fclose(fp); return 0; }
+    uint64_t min_rec = 4u + 4u + 8u + (uint64_t)dim * sizeof(float);
+    if (count > INT32_MAX || (uint64_t)count > remain / min_rec) { fclose(fp); return 0; }
+
     col->dim = (int32_t)dim;
 
     /* Allocate entry array */
@@ -289,6 +306,7 @@ static int collection_load(TkVecCollection *col)
         uint32_t pay_len = 0;
 
         if (fread(&id_len, sizeof id_len, 1, fp) != 1) goto load_err;
+        if ((uint64_t)id_len > remain) goto load_err;           /* INF-04 */
 
         char *id = (char *)malloc((size_t)id_len + 1);
         if (!id) goto load_err;
@@ -296,6 +314,7 @@ static int collection_load(TkVecCollection *col)
         id[id_len] = '\0';
 
         if (fread(&pay_len, sizeof pay_len, 1, fp) != 1) { free(id); goto load_err; }
+        if ((uint64_t)pay_len > remain) { free(id); goto load_err; }   /* INF-04 */
 
         char *payload = (char *)malloc((size_t)pay_len + 1);
         if (!payload) { free(id); goto load_err; }
@@ -307,7 +326,7 @@ static int collection_load(TkVecCollection *col)
 
         float *emb = NULL;
         if (dim > 0) {
-            emb = (float *)malloc(sizeof(float) * dim);
+            emb = (float *)malloc(sizeof(float) * (size_t)dim);
             if (!emb) { free(id); free(payload); goto load_err; }
             if (fread(emb, sizeof(float), (size_t)dim, fp) != (size_t)dim) { free(id); free(payload); free(emb); goto load_err; }
         }
@@ -545,17 +564,19 @@ int vecstore_upsert(TkVecCollection *col,
     /* Check for existing entry with same id → replace */
     for (int32_t i = 0; i < col->count; i++) {
         if (strcmp(col->entries[i].id, id) == 0) {
-            /* Replace in-place */
+            /* Replace in-place.  121.23 (INF-05): the old entry was freed
+             * before the new payload was allocated; on OOM the entry was
+             * left with a NULL embedding AND payload (normed leaked), and
+             * the next save did strlen(NULL).  Allocate first; on failure
+             * the entry is untouched. */
+            char *np = (char *)malloc(strlen(payload) + 1);
+            if (!np) { free(normed); return 0; }
+            strcpy(np, payload);
             free(col->entries[i].embedding);
             free(col->entries[i].payload);
             col->entries[i].embedding  = normed;
             col->entries[i].dim        = dim;
-            col->entries[i].payload    = (char *)malloc(strlen(payload) + 1);
-            if (!col->entries[i].payload) {
-                col->entries[i].embedding = NULL; /* best-effort */
-                return 0;
-            }
-            strcpy(col->entries[i].payload, payload);
+            col->entries[i].payload    = np;
             col->entries[i].created_at = (int64_t)time(NULL);
             col->dirty = 1;
             return 1;

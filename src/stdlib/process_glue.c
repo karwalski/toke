@@ -186,6 +186,11 @@ int64_t tk_process_exec_w(int64_t cmd) {
     int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     if (!handle) return 0;
     ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;
+    /* 121.29 (REL-03): exec gives the command no input -- close its stdin so
+     * a command that reads it (cat, sort, a filter) sees EOF instead of
+     * waiting forever; process_wait now drains stdout/stderr while it waits,
+     * so output larger than a pipe no longer deadlocks the pair. */
+    if (h->stdin_fd >= 0) { close(h->stdin_fd); h->stdin_fd = -1; }
     process_wait(h);
     StdoutResult r = process_stdout(h);
     if (r.is_err) { process_handle_free(h); return 0; }
