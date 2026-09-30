@@ -998,7 +998,7 @@ static void nameenv_add_itype(NameEnv *env, Arena *arena,
     if (env->itype_count >= env->itype_cap) {
         int nc = env->itype_cap == 0 ? 16 : env->itype_cap * 2;
         ImportedType *na = (ImportedType *)arena_alloc(
-            arena, nc * (int)sizeof(ImportedType));
+            arena, (size_t)nc * sizeof(ImportedType));
         if (!na) return;
         if (env->itypes && env->itype_count > 0)
             memcpy(na, env->itypes,
@@ -1017,7 +1017,7 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
     if (env->ifunc_count >= env->ifunc_cap) {
         int nc = env->ifunc_cap == 0 ? 32 : env->ifunc_cap * 2;
         ImportedFunc *na = (ImportedFunc *)arena_alloc(
-            arena, nc * (int)sizeof(ImportedFunc));
+            arena, (size_t)nc * sizeof(ImportedFunc));
         if (!na) return;
         if (env->ifuncs && env->ifunc_count > 0)
             memcpy(na, env->ifuncs,
@@ -1139,7 +1139,7 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     }
                     int slots = pcount > 0 ? pcount : 1;
                     const char **pa_arr = (const char **)arena_alloc(
-                        arena, slots * (int)sizeof(const char *));
+                        arena, (size_t)slots * sizeof(const char *));
                     if (pa_arr) {
                         if (pcount > 0)
                             memcpy(pa_arr, pbuf,
@@ -1203,9 +1203,9 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     }
                 }
                 const char **names_buf = fcap > 0 ? (const char **)arena_alloc(
-                    arena, fcap * (int)sizeof(const char *)) : NULL;
+                    arena, (size_t)fcap * sizeof(const char *)) : NULL;
                 const char **types_buf = fcap > 0 ? (const char **)arena_alloc(
-                    arena, fcap * (int)sizeof(const char *)) : NULL;
+                    arena, (size_t)fcap * sizeof(const char *)) : NULL;
                 int fc = 0;
                 const char *fp = fa + 1;
                 while (names_buf && types_buf && fp < fe && fc < fcap) {
@@ -1669,7 +1669,7 @@ static void nameenv_add_capture(NameEnv *env, Arena *arena,
     if (env->capture_count >= env->capture_cap) {
         int new_cap = env->capture_cap == 0 ? 8 : env->capture_cap * 2;
         CaptureInfo *new_arr = (CaptureInfo *)arena_alloc(
-            arena, new_cap * (int)sizeof(CaptureInfo));
+            arena, (size_t)new_cap * sizeof(CaptureInfo));
         if (!new_arr) return;
         if (env->captures && env->capture_count > 0) {
             memcpy(new_arr, env->captures,
@@ -1681,7 +1681,7 @@ static void nameenv_add_capture(NameEnv *env, Arena *arena,
 
     /* Copy the names array into the arena */
     const char **stored = (const char **)arena_alloc(
-        arena, cap_count * (int)sizeof(const char *));
+        arena, (size_t)cap_count * sizeof(const char *));
     if (!stored) return;
     memcpy(stored, cap_names, (size_t)cap_count * sizeof(const char *));
 

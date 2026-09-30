@@ -82,7 +82,7 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
 #ifndef TK_ARENA_TYPES_DEFINED
 #define TK_ARENA_TYPES_DEFINED
 typedef struct Arena Arena;
-void *arena_alloc(Arena *arena, int size);
+void *arena_alloc(Arena *arena, size_t size);
 #endif
 Arena *arena_init(void);
 void   arena_free(Arena *arena);
@@ -468,7 +468,7 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
         Arena *ar = arena_init();
         if (!ar) { ok = 0; rc = EINTERNAL; break; }
         int tcap = (int)(blen + 16);
-        Token *toks = arena_alloc(ar, tcap * (int)sizeof(Token));
+        Token *toks = arena_alloc(ar, (size_t)tcap * sizeof(Token));
         if (!toks) { arena_free(ar); ok = 0; rc = EINTERNAL; break; }
         diag_reset();
         diag_set_source(buf, (size_t)blen);
@@ -686,7 +686,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             rc = big ? EUSAGE : EINTERNAL; goto cleanup; }
         long slen = (long)slen_z; diag_set_source(sbuf, slen_z);
         Arena *arena = arena_init();
-        Token *toks = arena_alloc(arena, (int)(slen + 16) * (int)sizeof(Token));
+        Token *toks = arena_alloc(arena, (size_t)(slen + 16) * sizeof(Token));
         int tc = lex(sbuf, (int)slen, toks, (int)(slen + 16), profile);
         if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         Node *ast = parse(toks, tc, sbuf, arena, profile);
@@ -802,7 +802,7 @@ static int source_needs_migration(const char *sbuf, long slen, const RunOpts *o)
     if (!ar) return 1;                     /* cannot tell → let migrate run */
     int needs = 1;
     int tcap = (int)(slen + 16);
-    Token *toks = arena_alloc(ar, tcap * (int)sizeof(Token));
+    Token *toks = arena_alloc(ar, (size_t)tcap * sizeof(Token));
     if (toks) {
         diag_suppress(1);
         diag_reset();
@@ -995,7 +995,7 @@ static int process_file(const char *src, const RunOpts *o)
 
     /* Lex */
     int tcap = (int)(slen + 16);
-    Token *toks = arena_alloc(arena, tcap * (int)sizeof(Token));
+    Token *toks = arena_alloc(arena, (size_t)tcap * sizeof(Token));
     if (!toks) { rc = EINTERNAL; goto done; }
     int tc;
     if (migrate) {

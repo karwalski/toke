@@ -1,6 +1,8 @@
 #ifndef TK_ARENA_H
 #define TK_ARENA_H
 
+#include <stddef.h>
+
 /*
  * arena.h — opaque bump allocator used throughout the toke reference compiler.
  *
@@ -14,7 +16,7 @@
 #ifndef TK_ARENA_TYPES_DEFINED
 #define TK_ARENA_TYPES_DEFINED
 typedef struct Arena Arena;
-void *arena_alloc(Arena *arena, int size);
+void *arena_alloc(Arena *arena, size_t size);
 #endif
 
 /* Create a new arena.  Returns NULL on allocation failure. */
@@ -23,10 +25,11 @@ Arena *arena_init(void);
 /*
  * Allocate `size` bytes from the arena, aligned to 8 bytes.
  * The returned memory is zero-initialised.
- * Returns NULL on allocation failure, and for a negative size or one too
- * large to round up without overflowing int (121.29, REL-06).
+ * Returns NULL on allocation failure, and for a size too large for a block
+ * (more than INT_MAX once rounded up) (121.29 REL-06, 127.258).  Callers
+ * compute sizes in size_t: `(size_t)n * sizeof(T)`, never `n * (int)sizeof(T)`.
  */
-void *arena_alloc(Arena *arena, int size);
+void *arena_alloc(Arena *arena, size_t size);
 
 /* Free the arena and all memory allocated from it. */
 void arena_free(Arena *arena);

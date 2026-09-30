@@ -160,7 +160,7 @@ static void ch(Parser *p, Node *par, Node *c) {
     if (!par||!c) return;
     if (par->child_count>=par->child_cap) {
         int nc=par->child_cap*2;
-        Node **nb=(Node**)arena_alloc(p->a,(int)(nc*(int)sizeof(Node*)));
+        Node **nb=(Node**)arena_alloc(p->a,(size_t)nc * sizeof(Node*));
         if (!nb) return;
         memcpy(nb,par->children,(size_t)par->child_count*sizeof(Node*));
         par->children=nb;
@@ -617,7 +617,7 @@ static void attach_interp(Parser *p, Node *sn)
 
         int wrap_cap = elen + (int)sizeof(INTERP_WRAP) + 8;
         char *wrap = (char *)arena_alloc(p->a, wrap_cap);
-        Token *toks = (Token *)arena_alloc(p->a, (elen + 32) * (int)sizeof(Token));
+        Token *toks = (Token *)arena_alloc(p->a, (size_t)(elen + 32) * sizeof(Token));
         if (!wrap || !toks) break;
         int wlen = snprintf(wrap, (size_t)wrap_cap, "%s%.*s;};",
                             INTERP_WRAP, elen, raw + i + 2);
@@ -2029,8 +2029,8 @@ static int nest_prescan(const Token *toks, int n) {
  * Reports E9010 at the first node found deeper than TKC_MAX_AST_DEPTH. */
 static int ast_too_deep(Arena *a, Node *root) {
     int cap = 256, top = 0;
-    Node **ns = (Node **)arena_alloc(a, cap * (int)sizeof(Node *));
-    int *ds = (int *)arena_alloc(a, cap * (int)sizeof(int));
+    Node **ns = (Node **)arena_alloc(a, (size_t)cap * sizeof(Node *));
+    int *ds = (int *)arena_alloc(a, (size_t)cap * sizeof(int));
     if (!ns || !ds || !root) return 0;
     ns[top] = root; ds[top] = 1; top++;
     while (top > 0) {
@@ -2047,8 +2047,8 @@ static int ast_too_deep(Arena *a, Node *root) {
             if (top == cap) {
                 if (cap > (1 << 26)) return 0;   /* cannot grow further; not a depth verdict */
                 int nc = cap * 2;
-                Node **nn = (Node **)arena_alloc(a, nc * (int)sizeof(Node *));
-                int *nd = (int *)arena_alloc(a, nc * (int)sizeof(int));
+                Node **nn = (Node **)arena_alloc(a, (size_t)nc * sizeof(Node *));
+                int *nd = (int *)arena_alloc(a, (size_t)nc * sizeof(int));
                 if (!nn || !nd) return 0;
                 memcpy(nn, ns, (size_t)top * sizeof(Node *));
                 memcpy(nd, ds, (size_t)top * sizeof(int));

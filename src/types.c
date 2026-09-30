@@ -1372,9 +1372,9 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     st->name = it->name;
     if (it->field_count > 0 && it->field_names) {
         st->field_names = (const char **)arena_alloc(
-            A, it->field_count * (int)sizeof(char *));
+            A, (size_t)it->field_count * sizeof(char *));
         st->field_types = (Type **)arena_alloc(
-            A, it->field_count * (int)sizeof(Type *));
+            A, (size_t)it->field_count * sizeof(Type *));
         if (st->field_names && st->field_types) {
             st->field_count = it->field_count;
             for (int i = 0; i < it->field_count; i++) {
@@ -1489,7 +1489,7 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
                     if (ci->children[j]&&ci->children[j]->kind==NODE_FIELD) fcap++;
         }
         const Node **fields=fcap>0
-            ?(const Node**)arena_alloc(cx->env->arena,fcap*(int)sizeof(Node*)):NULL;
+            ?(const Node**)arena_alloc(cx->env->arena,(size_t)fcap * sizeof(Node*)):NULL;
         int fc=0;
         for (int i=1;fields&&i<decl->child_count;i++) {
             const Node *ci=decl->children[i]; if(!ci) continue;
@@ -1502,8 +1502,8 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
             }
         }
         if (fc>0) {
-            st->field_names=(const char**)arena_alloc(cx->env->arena,fc*(int)sizeof(char*));
-            st->field_types=(Type**)arena_alloc(cx->env->arena,fc*(int)sizeof(Type*));
+            st->field_names=(const char**)arena_alloc(cx->env->arena,(size_t)fc * sizeof(char*));
+            st->field_types=(Type**)arena_alloc(cx->env->arena,(size_t)fc * sizeof(Type*));
             if (st->field_names&&st->field_types) {
                 st->field_count=fc;
                 for (int fi=0;fi<fc;fi++) {
@@ -1594,7 +1594,7 @@ static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
 static Type *func_type_sig(Ctx *cx, const Node *n) {
     Arena *A = cx->env->arena;
     int np = n->child_count > 0 ? n->child_count - 1 : 0;
-    Type **pts = np > 0 ? (Type **)arena_alloc(A, np * (int)sizeof(Type *)) : NULL;
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, (size_t)np * sizeof(Type *)) : NULL;
     if (np > 0 && !pts) return mk_type(A, TY_UNKNOWN);
     for (int i = 0; i < np; i++) pts[i] = resolve_type(cx, n->children[i]);
     Type *ret = n->child_count > 0 ? resolve_type(cx, n->children[n->child_count - 1])
@@ -1609,7 +1609,7 @@ static Type *params_sig(Ctx *cx, const Node *fn, int is_closure) {
     int np = 0;
     for (int i = 0; i < fn->child_count; i++)
         if (fn->children[i] && fn->children[i]->kind == NODE_PARAM) np++;
-    Type **pts = np > 0 ? (Type **)arena_alloc(A, np * (int)sizeof(Type *)) : NULL;
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, (size_t)np * sizeof(Type *)) : NULL;
     if (np > 0 && !pts) return mk_type(A, TY_UNKNOWN);
     Type *ret = is_closure ? mk_type(A, TY_UNKNOWN) : mk_type(A, TY_VOID);
     int k = 0;
