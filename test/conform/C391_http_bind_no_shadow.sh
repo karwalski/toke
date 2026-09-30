@@ -41,7 +41,14 @@ elif command -v ss >/dev/null 2>&1; then TW=ss
 else echo "CONFORM-SKIP: neither netstat (Darwin) nor ss to see TIME_WAIT sockets"; exit 0; fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c391_XXXXXX")"
 PIDS=()
-stop() { [ -n "$1" ] || return 0; pkill -9 -P "$1" 2>/dev/null; kill -9 "$1" 2>/dev/null; wait "$1" 2>/dev/null; }
+# stop PID -- kill a server and its workers.  Freeze the supervisor FIRST:
+# serveon/serveworkers respawn a worker that dies by a signal, so killing the
+# workers while the supervisor still runs can fork a fresh worker between the
+# pkill and the kill of the parent.  That orphan keeps listening on P, and the
+# restart case's D then (correctly) refuses to bind beside a live listener --
+# the intermittent "could not bind ... Address already in use" of 121.52's
+# follow-up.  A stopped process cannot fork, and SIGKILL still reaches it.
+stop() { [ -n "$1" ] || return 0; kill -STOP "$1" 2>/dev/null; pkill -9 -P "$1" 2>/dev/null; kill -9 "$1" 2>/dev/null; wait "$1" 2>/dev/null; }
 cleanup() { for p in "${PIDS[@]+"${PIDS[@]}"}"; do stop "$p"; done; rm -rf "${WORK}"; }
 trap cleanup EXIT
 cd "${WORK}"
