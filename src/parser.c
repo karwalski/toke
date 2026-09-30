@@ -466,9 +466,12 @@ static Node *parse_type_expr(Parser *p) {
     if(peek(p)==TK_STAR){Token *t=adv(p);Node *n=mk(p,NODE_PTR_TYPE,t);ch(p,n,parse_type_expr(p));return n;}
     /* Qualified type: module.$typename (e.g., db.$conn, http.$req) */
     if(peek(p)==TK_IDENT&&peek_at(p,1)==TK_DOT&&peek_at(p,2)==TK_DOLLAR){
-        adv(p);adv(p);adv(p);Token *nt=cur(p);
+        Token *qa=adv(p);adv(p);adv(p);Token *nt=cur(p);
         if(!xp(p,TK_IDENT,"type name after '$'")){eerr(p,E2002,nt,"unexpected token");return NULL;}
-        Node *qn=mk(p,NODE_TYPE_IDENT,nt);if(qn)qn->op=TK_DOT;return qn;}
+        Node *qn=mk(p,NODE_TYPE_IDENT,nt);
+        /* 131.81: keep the alias -- it names the module the type comes from */
+        if(qn){qn->op=TK_DOT;qn->qual_start=qa->start;qn->qual_len=qa->len;}
+        return qn;}
     /* Default mode: $ident is a type reference */
     if(peek(p)==TK_DOLLAR){Token *dt=adv(p);Token *nt=cur(p);
         if(!xp(p,TK_IDENT,"type name after '$'")){eerr(p,E2002,dt,"unexpected token");return NULL;}

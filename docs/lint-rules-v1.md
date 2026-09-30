@@ -155,7 +155,7 @@ f=main():i64{
 
 - If an import alias appears only in a comment companion file (`.md`), it is still flagged — toke has no source-level comments, so the alias is unused from the compiler's perspective.
 - Wildcard or re-exported imports (if supported in future versions) are exempt.
-- **A type-only use counts as a use** (story 127.81). `f=g(r:c.$csvreader)` references `c`, but `parse_type_expr` lowers `alias.$rec` to a single `NODE_TYPE_IDENT` carrying the *type* token and discards the alias token, so the alias has no node in the AST. The rule recovers it from the source text preceding the type token; `test/conform/C009_lint_import_is_load_bearing.sh` pins this.
+- **A type-only use counts as a use** (story 127.81). `f=g(r:c.$csvreader)` references `c`, but `parse_type_expr` lowers `alias.$rec` to a single `NODE_TYPE_IDENT` carrying the *type* token, so the alias has no node of its own; the parser keeps it on that node (story 131.81) and the rule compares it there. It used to be recovered from the source text before the type token, which failed when a comment sat between the tokens. `test/conform/C009_lint_import_is_load_bearing.sh` and `C684_qualified_type_keeps_alias.sh` pin this.
 
 **Why a wrong answer here is dangerous.** The import list is the compiler's module manifest, not only a name-resolution scope, so deleting an import changes the emitted program:
 

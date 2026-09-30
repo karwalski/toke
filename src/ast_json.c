@@ -154,6 +154,14 @@ static void emit_node(const Node *n, const char *src, FILE *out, int depth)
         emit_json_string(out, src + n->tok_start, n->tok_len);
     }
 
+    /* 131.81: the import alias of a qualified type `alias.$name` */
+    if (n->kind == NODE_TYPE_IDENT && n->op == TK_DOT && n->qual_len > 0 && src) {
+        fputs(",\n", out);
+        indent(out, depth + 1);
+        fputs("\"qualifier\": ", out);
+        emit_json_string(out, src + n->qual_start, n->qual_len);
+    }
+
     /* value (for literals) */
     if (is_literal_node(n->kind) && n->tok_len > 0 && src) {
         fputs(",\n", out);

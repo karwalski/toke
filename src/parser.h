@@ -101,6 +101,11 @@ struct Node {
      * (MODULE, IMPORT, TYPE_DECL, CONST_DECL, FUNC_DECL); 0 = not recorded,
      * the extent is the node's own token (tok_start .. + tok_len). */
     int      end;
+    /* 131.81: a qualified type `alias.$name` (NODE_TYPE_IDENT, op == TK_DOT)
+     * keeps its import alias here -- byte offset and length of the alias
+     * token; tok_start/tok_len stay the type name.  qual_len 0 = none. */
+    int      qual_start;
+    int      qual_len;
     /* Type-flow redesign (Stage 0): the resolved Type* for this expression,
      * memoized by infer() during type checking. NULL before type-check / for
      * non-expression nodes. Arena-allocated, so it lives through codegen — the

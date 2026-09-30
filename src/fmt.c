@@ -301,17 +301,15 @@ static int fs_block_end(const Node *last)
     return -1;
 }
 
-/* emit_type_ident — a type name with its `$` sigil and, for a qualified
- * `mod.$name` (op == TK_DOT; the parser keeps only the name), its qualifier —
- * both recovered from the source bytes before the token. */
+/* emit_type_ident — a type name with its `$` sigil (recovered from the source
+ * byte before the token) and, for a qualified `mod.$name` (op == TK_DOT), the
+ * qualifier the parser keeps on the node (131.81). */
 static void emit_type_ident(Buf *b, const Node *n, const char *src)
 {
     int p = n->tok_start - 1;
     if (p >= 0 && src[p] == '$') {
-        if (n->op == TK_DOT && p >= 2 && src[p - 1] == '.') {
-            int e = p - 1, st = e;
-            while (st > 0 && fs_is_word(src[st - 1])) st--;
-            buf_put_span(b, src, st, e - st);
+        if (n->op == TK_DOT && n->qual_len > 0) {
+            buf_put_span(b, src, n->qual_start, n->qual_len);
             strbuf_putc(b, '.');
         }
         strbuf_putc(b, '$');
