@@ -15,7 +15,15 @@
 #include <string.h>
 #include <time.h>
 #if !(defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__))
-#include <unistd.h>      /* getentropy (glibc >= 2.25, musl) */
+#include <unistd.h>      /* getentropy (glibc >= 2.25 with _DEFAULT_SOURCE, musl) */
+/* 121.55: glibc declares getentropy in <unistd.h> only under _DEFAULT_SOURCE,
+ * which -std=c99 turns off; <sys/random.h> declares it unconditionally there
+ * (glibc >= 2.25), and on every other libc that ships the header. */
+#if defined(__has_include)
+#if __has_include(<sys/random.h>)
+#include <sys/random.h>
+#endif
+#endif
 #endif
 
 /*
