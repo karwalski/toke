@@ -36,6 +36,22 @@ WHAT A PASS PROVES
     branch of every platform conditional is syntax- and warning-clean, or is
     on the `nonhost` skiplist.
 
+HEADERS ARE TRANSLATION UNITS OF THEIR OWN (127.250 (3))
+--------------------------------------------------------
+clang's analyzer reports only on the MAIN file of a translation unit, so a
+header's inline functions were analysed through no .c file at all -- and a
+header nothing includes was not even compiled.  The null dereferences in
+src/tkc_caps.h were found only by analysing that header directly.  Every
+`.h` in the source list (the Makefile passes $(ANALYZE_HDRS): every header
+in src/ and src/stdlib/) is now compiled and analysed as its own translation
+unit (`-x c`), under the same flags, with three warnings that are about
+being a main file rather than about the code turned off for it:
+`-Wno-pragma-once-outside-header`, `-Wno-unused-function` (a header's static
+inline helpers are unused in a TU of their own; every includer still
+compiles under -Werror) and `-Wno-empty-translation-unit` (a header of only
+macros).  A header must therefore be SELF-CONTAINED -- it includes what it
+uses -- or it fails `--compile`.  Skiplist keys name the header's path.
+
 WHAT A PASS DOES NOT PROVE
 --------------------------
   * `--nonhost` undefines the host macro on the host SDK.  That reaches the
@@ -221,6 +237,11 @@ if OPENSSL_FLAGS is not None:
     for _s in OPENSSL_SRCS:
         EXTRA_FLAGS[_s] = EXTRA_FLAGS.get(_s, []) + OPENSSL_FLAGS
 
+# 127.250 (3): extra flags for a header compiled as its own translation unit
+# (see the docstring).  Only warnings about the file being a MAIN file.
+HEADER_FLAGS = ["-x", "c", "-Wno-pragma-once-outside-header",
+                "-Wno-unused-function", "-Wno-empty-translation-unit"]
+
 # Which macro identifies "this host".  Undefining it is what reaches the #else
 # branch.  This is the C033 technique, generalised.
 HOST_MACRO = "__APPLE__" if sys.platform == "darwin" else "__linux__"
@@ -355,6 +376,8 @@ def run_cc(src, mode):
     if variant:
         src = src[:-len(OPENSSL_TAG)]
     flags = list(BASE_FLAGS) + EXTRA_FLAGS.get(rel(src), [])
+    if src.endswith(".h"):
+        flags += HEADER_FLAGS
     if variant:
         flags += list(OPENSSL_FLAGS or []) + ["-DTK_HAVE_OPENSSL"]
     if mode == "analyze":

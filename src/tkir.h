@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>   /* FILE, for tkir_dump (127.250 (3): headers are self-contained) */
 #include "parser.h"
 #include "types.h"
 #include "names.h"

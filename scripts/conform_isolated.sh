@@ -34,8 +34,32 @@
 #       rather than starting.
 #
 # Locks live in TKC_GATE_LOCKDIR (default /tmp/tkc_gate_locks) -- deliberately
-# NOT per run: they exist to be seen by other runs.  A lock whose owner PID is
-# gone is reclaimed, so a killed run cannot wedge the next one.
+# NOT per run: they exist to be seen by other runs.
+#
+# 127.247 -- waiters are served in ARRIVAL ORDER.  Until then every waiter
+# retried mkdir every 2 s and whoever happened to poll first won, so with ~10
+# batches on 2 slots one run waited more than 6 h.  Now a waiter takes a
+# numbered ticket in ${LOCKROOT}/queue.<lock>/ and only the holder of the
+# lowest live ticket may take a slot; each waiter prints its queue position
+# when it starts waiting and whenever it moves.
+#
+# ABANDONED LOCKS.  Every lock and ticket directory records `pid` (its owner)
+# and `chain`: the owner and each of its ancestors up to (not including) pid
+# 1, with their start times.  The owner counts as live only while every
+# process in that chain still exists with the same start time, so:
+#   - a killed run's slot is released (as before);
+#   - an ORPHANED run -- still running, but the shell or agent that launched
+#     it is gone (a finished batch's run held a slot until killed by hand) --
+#     has its slot released too.  It is not killed: releasing only lets the
+#     next waiter start.  Start times guard against PID reuse.
+# A run launched to outlive its parent on purpose (nohup, disown, setsid) sets
+# TKC_GATE_DETACHED=1 so that only its own pid is recorded.  A lock written by
+# an older copy of this script has no `chain` and is judged by its pid alone.
+#
+# Knobs: TKC_GATE_SLOTS (2), TKC_GATE_WAIT_SECS (3600), TKC_GATE_POLL_SECS (2,
+# may be fractional), TKC_GATE_LOCKDIR, TKC_GATE_DETACHED, and
+# TKC_GATE_DEBUG=<file> (append each release's evidence: the lock's pid and
+# chain and the process snapshot it was judged against).  C620 tests this.
 
 set -uo pipefail
 
@@ -54,6 +78,7 @@ cd "${REPO_ROOT}" || exit 1
 LOCKROOT="${TKC_GATE_LOCKDIR:-/tmp/tkc_gate_locks}"
 SLOTS="${TKC_GATE_SLOTS:-2}"
 WAIT_MAX="${TKC_GATE_WAIT_SECS:-3600}"
+POLL="${TKC_GATE_POLL_SECS:-2}"   # seconds between polls; may be fractional
 # Suites that must not overlap with another copy of themselves, or with each
 # other, anywhere on the machine.  Add to this list with a story number.
 SERIAL_SUITES="S005_http_route_param_leak S006_http_no_builtin_rate_limit"
@@ -61,30 +86,99 @@ SERIAL_SUITES="S005_http_route_param_leak S006_http_no_builtin_rate_limit"
 mkdir -p "${LOCKROOT}" || { echo "conform: cannot create ${LOCKROOT}" >&2; exit 1; }
 
 HELD=()
+TICKET=""
+SNAP=""
 
-# try_lock DIR -> 0 if we now own DIR.  A lock is a directory holding the
-# owner's PID; mkdir is atomic, so exactly one contender wins.
-try_lock() {
+# snapshot -> SNAP: one line "PID PPID LSTART" per process on the machine.
+snapshot() { SNAP="$(ps -A -o pid= -o ppid= -o lstart= 2>/dev/null)"; }
+
+# stamp DIR: record our pid, then our chain, in DIR.  The pid goes first: it
+# shrinks the unstamped window (mkdir .. pid) to one echo, and until the chain
+# lands (renamed into place whole) a reader judges the owner by its pid alone.
+stamp() {
+    local d="$1"
+    echo "$$" > "${d}/pid"
+    snapshot
+    if [ "${TKC_GATE_DETACHED:-0}" = 1 ]; then
+        printf '%s\n' "${SNAP}" | awk -v me="$$" '$1==me {print $1, $3, $4, $5, $6, $7}'
+    else
+        printf '%s\n' "${SNAP}" | awk -v me="$$" '
+            { pp[$1] = $2; st[$1] = $3 " " $4 " " $5 " " $6 " " $7 }
+            END { p = me; n = 0
+                  while ((p in pp) && p > 1 && n++ < 64) { print p, st[p]; p = pp[p] } }'
+    fi > "${d}/chain.$$" && mv -f "${d}/chain.$$" "${d}/chain"
+}
+
+# chain_ok DIR -> 0 if every process in DIR's chain is in SNAP, same start.
+chain_ok() {
+    printf '%s\n' "${SNAP}" | awk '
+        NR == FNR { if (NF >= 7) live[$1] = $3 " " $4 " " $5 " " $6 " " $7; next }
+        NF >= 6 { if (!($1 in live) || live[$1] != $2 " " $3 " " $4 " " $5 " " $6) gone = 1 }
+        END { exit gone }' - "$1/chain"
+}
+
+# alive DIR -> 0 while DIR's owner is live (see ABANDONED LOCKS).  Uses SNAP,
+# and takes a fresh one before judging an owner gone: DIR may be newer than
+# SNAP (a waiter that arrived, or a slot taken, since it was taken).
+alive() {
     local d="$1" pid
+    pid="$(cat "${d}/pid" 2>/dev/null || true)"
+    if [ -z "${pid}" ]; then
+        # Created but not yet stamped.  Two minutes on, its owner died
+        # between mkdir and the pid write.
+        [ -z "$(find "${d}" -maxdepth 0 -mmin +2 2>/dev/null)" ]
+        return
+    fi
+    kill -0 "${pid}" 2>/dev/null || return 1
+    [ -s "${d}/chain" ] || return 0
+    chain_ok "${d}" && return 0
+    snapshot
+    chain_ok "${d}" && return 0
+    # Judged gone -- unless DIR changed under us (its owner releasing it, or a
+    # new owner stamping it): then it is not abandoned, and the next poll
+    # looks again.
+    [ -s "${d}/chain" ] && [ "$(cat "${d}/pid" 2>/dev/null)" = "${pid}" ] || return 0
+    return 1
+}
+
+# drop DIR: remove a lock or ticket by renaming it away first, so a reader
+# sees the whole directory or none of it -- never one half-deleted (127.247:
+# a waiter read a releasing lock whose chain was already unlinked as
+# abandoned).
+drop() {
+    local g="${1}.gone.$$.${RANDOM}"
+    mv "$1" "${g}" 2>/dev/null && rm -rf "${g}"
+}
+
+# The mutex serialises reclaim-and-take, so two waiters cannot both judge a
+# slot abandoned, and both remove it, and both take it.  Held for
+# milliseconds; one whose holder died is removed.
+MUTEX="${LOCKROOT}/mutex"
+mutex_on() {
+    until mkdir "${MUTEX}" 2>/dev/null; do
+        snapshot
+        alive "${MUTEX}" || drop "${MUTEX}"
+        sleep 0.2
+    done
+    echo "$$" > "${MUTEX}/pid"
+}
+mutex_off() { [ "$(cat "${MUTEX}/pid" 2>/dev/null)" = "$$" ] && drop "${MUTEX}"; return 0; }
+
+# try_lock DIR -> 0 if we now own DIR (call under the mutex, SNAP fresh).  A
+# lock is a directory; mkdir is atomic, so exactly one contender wins.
+try_lock() {
+    local d="$1"
+    if [ -d "${d}" ] && ! alive "${d}"; then
+        echo "conform: releasing ${d##*/}: its owner, pid $(cat "${d}/pid" 2>/dev/null || echo '?'), or the process that launched it is gone (127.247)"
+        if [ -n "${TKC_GATE_DEBUG:-}" ]; then
+            { echo "== $$ releasing ${d}"; ls -la "${d}"; cat "${d}/pid" "${d}/chain"; echo "-- snap"; printf '%s\n' "${SNAP}"; } >> "${TKC_GATE_DEBUG}" 2>&1
+        fi
+        drop "${d}"
+    fi
     if mkdir "${d}" 2>/dev/null; then
-        echo "$$" > "${d}/pid"
+        stamp "${d}"
         HELD+=("${d}")
         return 0
-    fi
-    pid="$(cat "${d}/pid" 2>/dev/null || true)"
-    if [ -n "${pid}" ] && ! kill -0 "${pid}" 2>/dev/null; then
-        # Owner is gone: reclaim.  rm then mkdir, so a racing reclaimer
-        # simply loses the mkdir.
-        rm -rf "${d}"
-        if mkdir "${d}" 2>/dev/null; then
-            echo "$$" > "${d}/pid"
-            HELD+=("${d}")
-            return 0
-        fi
-    elif [ -z "${pid}" ] && [ -n "$(find "${d}" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
-        # Created but never stamped, two minutes ago: its owner died between
-        # mkdir and the pid write.
-        rm -rf "${d}"
     fi
     return 1
 }
@@ -92,28 +186,74 @@ try_lock() {
 release_all() {
     local d
     for d in "${HELD[@]+"${HELD[@]}"}"; do
-        [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && rm -rf "${d}"
+        [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && drop "${d}"
     done
     HELD=()
+    [ -n "${TICKET}" ] && drop "${TICKET}"
+    TICKET=""
 }
 
-# wait_lock WHAT DIR... -> takes the first free DIR, waiting up to WAIT_MAX.
-wait_lock() {
-    local what="$1"; shift
-    local waited=0 announced=0 d
+# take_ticket QDIR: the next number in QDIR -- one above the highest ticket
+# present, so it is above every live waiter's; mkdir settles a tie.
+take_ticket() {
+    local q="$1" n t
+    mkdir -p "${q}" || return 1
     while :; do
-        for d in "$@"; do
-            try_lock "${d}" && return 0
-        done
-        if [ "${announced}" -eq 0 ]; then
-            echo "conform: waiting for ${what} (held by pid(s): $(for d in "$@"; do cat "${d}/pid" 2>/dev/null; done | tr '\n' ' '))"
-            announced=1
+        n="$(ls "${q}" 2>/dev/null | grep -E '^[0-9]{10}$' | tail -1)"
+        n=$(( 10#${n:-0} + 1 ))
+        t="${q}/$(printf '%010d' "${n}")"
+        if mkdir "${t}" 2>/dev/null; then
+            TICKET="${t}"
+            stamp "${t}"
+            return 0
         fi
-        if [ "${waited}" -ge "${WAIT_MAX}" ]; then
+    done
+}
+
+# queue_pos QDIR -> "AHEAD TOTAL": live tickets before ours, and all live
+# tickets.  Tickets whose owner is gone are removed.  Uses SNAP.
+queue_pos() {
+    local q="$1" t name mine="${TICKET##*/}" ahead=0 total=0
+    for t in "${q}"/*; do
+        name="${t##*/}"
+        case "${name}" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;; *) continue ;; esac
+        if [ "${name}" != "${mine}" ] && ! alive "${t}"; then drop "${t}"; continue; fi
+        total=$((total + 1))
+        [[ "${name}" < "${mine}" ]] && ahead=$((ahead + 1))
+    done
+    echo "${ahead} ${total}"
+}
+
+# wait_lock WHAT QNAME DIR... -> takes the first free DIR in arrival order
+# among the waiters for QNAME, waiting up to WAIT_MAX seconds.
+wait_lock() {
+    local what="$1" q="${LOCKROOT}/queue.$2"; shift 2
+    local start="${SECONDS}" last="" pos ahead total d
+    take_ticket "${q}" || { echo "conform: cannot create ${q}" >&2; return 1; }
+    while :; do
+        snapshot
+        pos="$(queue_pos "${q}")"; ahead="${pos% *}"; total="${pos#* }"
+        if [ "${ahead}" -eq 0 ]; then
+            mutex_on
+            for d in "$@"; do
+                if try_lock "${d}"; then
+                    mutex_off
+                    drop "${TICKET}"; TICKET=""
+                    return 0
+                fi
+            done
+            mutex_off
+        fi
+        if [ "${pos}" != "${last}" ]; then
+            echo "conform: waiting for ${what} -- queue position $((ahead + 1)) of ${total} (held by pid(s): $(for d in "$@"; do cat "${d}/pid" 2>/dev/null; done | tr '\n' ' '))"
+            last="${pos}"
+        fi
+        if [ $((SECONDS - start)) -ge "${WAIT_MAX}" ]; then
             echo "conform: gave up waiting ${WAIT_MAX}s for ${what}" >&2
+            drop "${TICKET}"; TICKET=""
             return 1
         fi
-        sleep 2; waited=$((waited + 2))
+        sleep "${POLL}"
     done
 }
 
@@ -129,7 +269,7 @@ trap 'exit 130' INT TERM
 if [ -z "${TKC_GATE_SLOT_HELD:-}" ]; then
     slot_dirs=()
     for i in $(seq 1 "${SLOTS}"); do slot_dirs+=("${LOCKROOT}/slot.${i}"); done
-    wait_lock "a gate slot (${SLOTS} machine-wide; TKC_GATE_SLOTS)" "${slot_dirs[@]}" || exit 1
+    wait_lock "a gate slot (${SLOTS} machine-wide; TKC_GATE_SLOTS)" slot "${slot_dirs[@]}" || exit 1
     export TKC_GATE_SLOT_HELD=1
 fi
 
@@ -185,7 +325,7 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
         serial=0
         case " ${SERIAL_SUITES} " in *" ${name} "*) serial=1 ;; esac
         if [ "${serial}" -eq 1 ]; then
-            wait_lock "the serial lock for ${name}" "${LOCKROOT}/serial" || { fail=$((fail+1)); echo "FAIL ${s}: serial lock not acquired"; continue; }
+            wait_lock "the serial lock for ${name}" serial "${LOCKROOT}/serial" || { fail=$((fail+1)); echo "FAIL ${s}: serial lock not acquired"; continue; }
         fi
         if bash "${s}" > "${log}" 2>&1 && [ "$(nul_bytes "${log}")" -eq 0 ]; then
             why=""
@@ -211,7 +351,7 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
         fi
         if [ "${serial}" -eq 1 ]; then
             d="${LOCKROOT}/serial"
-            [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && rm -rf "${d}"
+            [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && drop "${d}"
         fi
     done
     echo "conform-sh: ${pass} scripts passed, ${fail} failed, ${skip} skipped"
