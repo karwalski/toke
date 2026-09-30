@@ -69,11 +69,13 @@ expect "9 io.println(str.trim(..)) stays clean" \
 expect "10 an i64 handle into a record parameter is not judged" \
     "$(diags 'm=q;i=tls:std.tls;f=onconn(conn:i64):i64{tls.close(conn);<0};f=main():i64{<0};')" "rc=0"
 
-# A str where the glue body reads a C string runs, whatever the record says:
-# http.stream is declared (httpclient) but tk_http_stream_w takes a URL
-# (135.31 owns the .tki; conform C181 and C364 call it so).
-expect "11 a str into a record the glue reads as a C string is not judged" \
-    "$(diags 'm=q;i=h:std.http;f=main():i64{let s=mt h.stream("http://x") {$ok:v 1;$err:e 0};<s};')" "rc=0"
+# A str where the glue body reads a C string runs, whatever the record says
+# (the 'S' exemption, 138.3 (c)).  Its exemplar was http.stream, declared
+# (httpclient) while tk_http_stream_w read a URL; since 121.53 (c69c18a7) the
+# glue reads the client, so the exemption no longer applies and a str there is
+# judged like any other record argument.
+expect "11 a str into http.stream's httpclient is judged now its glue reads the client" \
+    "$(diags 'm=q;i=h:std.http;f=main():i64{let s=mt h.stream("http://x") {$ok:v 1;$err:e 0};<s};')" "E4031|str|ABSENT"
 
 echo "C295: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
