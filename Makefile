@@ -1142,7 +1142,11 @@ ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki che
 # program whose only fault is a call to a function that does not exist and
 # fails unless the gate rejects it. A gate nobody has watched fail is not a
 # gate. Reads nothing outside this repository (cf. 127.88).
+# 127.262: pass the built compiler, not the script's ./tkc default (a symlink only
+# the main checkout has), so check-docs works in a fresh worktree. TKC still wins.
+check-docs check-doc-patterns: export TKC ?= $(abspath $(BIN))
 check-docs: $(BIN)
+	TOKE_WORKSPACE="$(TOKE_WORKSPACE)" python3 scripts/check_doc_site_links.py --self-test  # 132.111
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
 

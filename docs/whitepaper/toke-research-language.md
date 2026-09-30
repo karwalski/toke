@@ -37,7 +37,7 @@ iterative human-AI collaboration. We disclose that up front: AI was used through
 design iteration, corpus generation, implementation, document drafting and multi-model
 review. The human provides direction, criteria and judgement.
 
-**Every number in this paper is sourced from [`docs/metrics-baseline.md`](../metrics-baseline.md)**,
+**Every number in this paper is sourced from [`docs/metrics-baseline.md`](https://github.com/karwalski/toke/blob/main/docs/metrics-baseline.md)**,
 which carries the metric, the basis, the caveat and the origin story for each. A number
 without its lane — which tokenizer measured which text against which baseline, at what N —
 is a misquotation of our own work.
@@ -59,7 +59,7 @@ It names the audience (LLM code generation), the three mechanical properties (sm
 structured, canonical), and the three things they buy (constrain, verify, compact). It does
 not depend on the BPE token being the unit of account, which is the property the first
 version of this paper lacked. The authoritative wording is
-[`docs/about/positioning-2026-09.md`](../about/positioning-2026-09.md); this paper quotes it
+[`docs/about/positioning-2026-09.md`](/docs/about/positioning-2026-09/); this paper quotes it
 rather than restating it.
 
 ### 1.2 What changed, and why
@@ -578,7 +578,7 @@ it.
 Everything above is reproducible from published artefacts, and the fastest way to help is to
 find an error in it.
 
-- **The numbers:** [`docs/metrics-baseline.md`](../metrics-baseline.md) — metric, basis,
+- **The numbers:** [`docs/metrics-baseline.md`](https://github.com/karwalski/toke/blob/main/docs/metrics-baseline.md) — metric, basis,
   caveat and origin for each. Cite the row and its caveat, never a headline.
 - **The v0.4 sample pairs:** `docs/about/samples-v04.md` and `samples-v04.json`; regenerate
   with `python3 scripts/about/samples_v04.py`. Every pair is execution-verified — the toke
