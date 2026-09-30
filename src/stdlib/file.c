@@ -22,18 +22,31 @@
 #include <ftw.h>
 #include <fcntl.h>   /* AMB-07: O_NOFOLLOW */
 
-/* Map errno to a FileErrKind after a failed POSIX call. */
+/* Map errno to a FileErrKind after a failed POSIX call.
+ *
+ * 127.246 (5) / 127.252 (4): EISDIR and ELOOP get the same kinds here as in
+ * file_open_kind() below (the byte calls) -- $isdir and $symlink.  Until
+ * 2026-09-30 this function put EISDIR under $invalid and ELOOP (an AMB-07
+ * refusal to follow a final-component symlink) under $io, so file.write on a
+ * directory and file.read on a symlink named a different variant from
+ * file.readbytes / file.writebytes on the same path. */
 static FileErr make_err(int err_no, const char *fallback)
 {
     FileErr e;
-    if (err_no == ENOENT) {
+    if (err_no == EISDIR) {
+        e.kind = FILE_ERR_IS_DIR;
+        e.msg  = "is a directory";
+    } else if (err_no == ELOOP) {
+        e.kind = FILE_ERR_SYMLINK;
+        e.msg  = "final path component is a symlink and std.file does not follow it (AMB-07)";
+    } else if (err_no == ENOENT) {
         e.kind = FILE_ERR_NOT_FOUND;
         e.msg  = "file not found";
     } else if (err_no == EACCES || err_no == EPERM) {
         e.kind = FILE_ERR_PERMISSION;
         e.msg  = "permission denied";
     } else if (err_no == EINVAL || err_no == EEXIST || err_no == ENOTEMPTY ||
-               err_no == ENOTDIR || err_no == EISDIR) {
+               err_no == ENOTDIR) {
         e.kind = FILE_ERR_INVALID;
         e.msg  = fallback ? fallback : "invalid operation";
     } else {
