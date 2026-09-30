@@ -169,6 +169,14 @@
     },
     {
       "kind": "func",
+      "name": "file.realpath",
+      "params": [
+        "str"
+      ],
+      "return": "str!FileErr"
+    },
+    {
+      "kind": "func",
       "name": "file.appendline",
       "params": [
         "i64",

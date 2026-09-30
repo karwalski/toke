@@ -268,6 +268,7 @@ f=readbytes(path:$str):@(byte)!$fileerr
 f=writebytes(path:$str;data:@(byte)):bool!$fileerr
 f=readrange(path:$str;offset:i64;len:i64):@(byte)!$fileerr
 f=size(path:$str):i64!$fileerr
+f=realpath(path:$str):$str!$fileerr
 ```
 
 `read` and `write` carry a `$str`, which is NUL-terminated: they truncate at
@@ -290,7 +291,12 @@ makes first, because a PDF's xref table and a zip's end-of-central-directory
 record both live at the *end* of the file. These two are also the first calls
 in the module to report failure through the error slot rather than a value
 sentinel — an empty file's `size` **is** `0`, so no value could have carried
-it. See [std.file](/docs/stdlib/file).
+it.
+
+`realpath` (121.60) is the absolute path with every `.`, `..` and symlink
+resolved (realpath(3)), or the `$fileerr` saying why not. It is the only
+`std.file` call that follows symlinks, because resolving them is its purpose;
+it needs the `fs.read` grant. See [std.file](/docs/stdlib/file).
 
 ### std.env
 
