@@ -394,11 +394,18 @@ int main(void)
 
             char la_a[256], la_b[256], la_c[256];
             snprintf(la_a, sizeof(la_a), "%s/a.txt", la_base);
-            snprintf(la_b, sizeof(la_b), "%s/sub/b.txt", la_sub);
-            snprintf(la_c, sizeof(la_c), "%s/sub/c.txt", la_sub);
-            file_write(la_a, "a");
-            file_write(la_b, "b");
-            file_write(la_c, "c");
+            /* 127.260: these were built from la_sub ("base/sub") plus
+             * "/sub/...", i.e. base/sub/sub/b.txt -- a directory that does not
+             * exist, so both writes failed unchecked and listall rightly
+             * found one file.  Build them from la_base, and check the writes
+             * so a fixture that did not land fails as a fixture. */
+            snprintf(la_b, sizeof(la_b), "%s/sub/b.txt", la_base);
+            snprintf(la_c, sizeof(la_c), "%s/sub/c.txt", la_base);
+            BoolFileResult la_wa = file_write(la_a, "a");
+            BoolFileResult la_wb = file_write(la_b, "b");
+            BoolFileResult la_wc = file_write(la_c, "c");
+            ASSERT(!la_wa.is_err && !la_wb.is_err && !la_wc.is_err,
+                   "file_listall: fixture files written");
 
             /* file_listall should return 3 entries */
             StrArrayFileResult la = file_listall(la_base);
