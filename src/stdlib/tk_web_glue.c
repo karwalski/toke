@@ -1569,20 +1569,37 @@ int64_t tk_http_delete_w(int64_t client, int64_t path) {
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
-/* tk_http_stream_w — open a streaming connection to the given URL. */
-int64_t tk_http_stream_w(int64_t url) {
-    if (!url) return 0;
-    HttpClient *c = http_client((const char *)(intptr_t)url);
-    if (!c) return 0;
+/* http_raise is defined with the client calls below. */
+static int64_t http_raise(const char *msg, uint64_t code);
+
+/* http.stream(c) -> httpstream!httperr — a GET of the client's base URL,
+ * streamed (121.53 (2)).  stdlib/http.tki publishes the $httpclient that
+ * http.client returns; this wrapper used to read its one argument as a URL
+ * string, so the published call handed an HttpClient* to http_client() as
+ * text, and every failure was a bare 0 with no httperr (e.msg was RT005).
+ * It now takes the client (borrowed: the caller keeps it, the stream owns
+ * only its socket and buffer) and raises an httperr on failure. */
+int64_t tk_http_stream_w(int64_t client) {
+    if (!client) return http_raise("http.stream: null client", 0);
     HttpClientReq req;
     memset(&req, 0, sizeof(req));
     req.method = "GET";
     req.url    = "";
-    HttpStreamResult r = http_stream(c, req);
-    if (r.is_err) { http_client_free(c); return 0; }
+    HttpStreamResult r = http_stream((HttpClient *)(intptr_t)client, req);
+    if (r.is_err) {
+        int64_t z = http_raise(r.err_msg ? r.err_msg : "http.stream: request failed",
+                               r.err_code);
+        free(r.err_msg);
+        return z;
+    }
     HttpStream *heap = (HttpStream *)malloc(sizeof(HttpStream));
-    if (!heap) { http_client_free(c); return 0; }
+    if (!heap) {
+        if (r.stream.fd >= 0) close(r.stream.fd);
+        free(r.stream.buf);
+        return http_raise("out of memory", 0);
+    }
     *heap = r.stream;
+    tk_current_error = 0;
     return (int64_t)(intptr_t)heap;
 }
 /* tk_http_streamnext_w — read the next chunk from a stream. */
@@ -1594,9 +1611,16 @@ int64_t tk_http_streamnext_w(int64_t stream) {
      * malloc'd C string, so `.len` read the eight bytes before it and
      * `str.frombytes` of a chunk was empty.  A chunk is now a real [byte];
      * a graceful close is the empty [byte] docs/stdlib/http.md promises. */
-    if (r.is_err) { free(r.data); free(r.err_msg); return 0; }
+    if (r.is_err) {
+        /* 121.53 (2): an httperr, not a bare 0 (e.msg was RT005). */
+        int64_t z = http_raise(r.err_msg ? r.err_msg : "http.streamnext: read failed", r.err_code);
+        free(r.data); free(r.err_msg);
+        return z;
+    }
     int64_t h = tk_bytes_pack((const uint8_t *)r.data, r.data ? (uint64_t)r.len : 0);
     free(r.data);
+    if (!h) return http_raise("out of memory", 0);
+    tk_current_error = 0;
     return h;
 }
 int64_t tk_http_downloadfile_w(int64_t client, int64_t url, int64_t dest) {

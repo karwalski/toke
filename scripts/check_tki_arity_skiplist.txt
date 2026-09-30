@@ -38,12 +38,15 @@
 # ── infer (glue: src/stdlib/infer_glue.c — stub, returns 0) ──
 # 2026-09-30 (135.31 (1)): infer.load and infer.loadstreaming cleared -- the
 # glue now takes the options record the .tki publishes.
-infer.tki::infer.generate        # 2026-09-23 .tki 3 (model_handle;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
+# 2026-09-30 (137.11 / 121.53 (5)): infer.generate cleared -- the glue takes
+# the i32 token limit (the core tk_infer_generate always did).
 
 # ── mlx (glue: src/stdlib/mlx_glue.c — stub, MLX never integrated) ──
-mlx.tki::mlx.generate            # 2026-09-23 .tki 3 (mlx_model;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
+# 2026-09-30 (137.11 / 121.53 (5)): mlx.generate cleared -- the glue takes
+# the i32 token limit (the core mlx_generate always did).
 
 # ── mdns (glue: src/stdlib/mdns_glue.c — stub, no DNS-SD linked) ──
 # 2026-09-30 (135.31 (1)): mdns.advertise cleared -- the glue now takes the
 # one $servicerecord the .tki publishes.
-mdns.tki::mdns.browse            # 2026-09-23 .tki 2 (str;fn($discovered):void) vs glue 1 (service_type); tk_mdns_browse_w returns an array and has no callback slot — 135.17
+# 2026-09-30 (137.11): mdns.browse cleared -- the glue takes the callback and
+# returns false (it returned an empty array, which read as true).

@@ -599,8 +599,9 @@ fi
 # 5. AVAILABILITY IS A PROBE, NOT A CONSTANT
 #
 # The recurring defect in this tree is an isavailable() that returns a
-# hard-coded 0 or 1: std.mlx's tk_mlx_isavailable_w() does exactly that in
-# BOTH arms of its #if, ignoring the real mlx_is_available() beside it.
+# hard-coded 0 or 1: std.mlx's tk_mlx_isavailable_w() did exactly that in
+# BOTH arms of its #if, ignoring the real mlx_is_available() beside it (137.11
+# kept the constant false on purpose -- its glue reaches no core -- and said so).
 #
 # A constant cannot pass these four together.  The language list is read
 # live out of the engine, so a compiled-in answer would have to hard-code

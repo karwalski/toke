@@ -53,7 +53,9 @@ fi
 # Test 3: Missing config file is not an error (use defaults)
 cd /tmp
 OUTPUT3=$("$TKC" --show-limits 2>&1)
-if echo "$OUTPUT3" | grep -q "max-funcs *= *128"; then
+# 127.250: the defaults are 1024 function signatures and 1024 struct types.
+if echo "$OUTPUT3" | grep -q "max-funcs *= *1024" \
+   && echo "$OUTPUT3" | grep -q "max-structs *= *1024"; then
     echo "  PASS: missing tkc.toml uses defaults"
 else
     echo "  FAIL: expected defaults without config"
