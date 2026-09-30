@@ -183,7 +183,8 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; } Ctx;
+#define TKC_LOV_NAMES 64   /* 127.252 (1): overflowing local names deduped per function */
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; /* 127.252 (1): demand past the max_locals caps (pointer locals, local types, name aliases) in the current function, reported ONCE at its end by locals_cap_flush -- previously one unlocated E9010 per overflowing local. lov_name dedupes overflowing local-type names so a re-set name is not counted twice; past TKC_LOV_NAMES distinct names the count stops growing, so the reported need stays a lower bound. */ int ptr_over, local_over, alias_over; char lov_name[TKC_LOV_NAMES][NAME_BUF]; int lov_count; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -304,7 +305,7 @@ static void extract_module_prefix(Ctx *c, const Node *ast) {
  */
 static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
     if (c->ptr_count >= c->ptr_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many pointer locals", "fix", NULL);
+        c->ptr_over++;   /* 127.252 (1): reported once, located, by locals_cap_flush */
         return;
     }
     int len = (int)strlen(name);
@@ -8939,7 +8940,7 @@ static const char *make_unique_name(Ctx *c, const char *toke_name) {
 
     /* Generate a unique name */
     if (c->alias_count >= c->alias_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many name aliases", "fix", NULL);
+        c->alias_over++;   /* 127.252 (1): reported once, located, by locals_cap_flush */
         return toke_name;
     }
     NameAlias *a = &c->aliases[c->alias_count++];
@@ -8961,13 +8962,58 @@ static void set_local_type(Ctx *c, const char *name, const char *ty) {
         if (!strcmp(c->locals[i].name, name)) { c->locals[i].ty = ty; return; }
     }
     if (c->local_count >= c->local_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many local variables", "fix", NULL);
+        /* 127.252 (1): count each overflowing name once; reported, located,
+         * by locals_cap_flush at the end of the function. */
+        for (int i = 0; i < c->lov_count; i++)
+            if (!strcmp(c->lov_name[i], name)) return;
+        if (c->lov_count < TKC_LOV_NAMES) {
+            snprintf(c->lov_name[c->lov_count++], NAME_BUF, "%s", name);
+            c->local_over++;
+        }
         return;
     }
     LocalType *lt = &c->locals[c->local_count++];
     strncpy(lt->name, name, 127); lt->name[127] = '\0';
     lt->ty = ty;
 }
+/*
+ * locals_cap_flush — 127.252 (1): report the max_locals caps once per function.
+ *
+ * The three per-function registries (pointer locals, local types, name
+ * aliases) share the max_locals budget.  Each overflowing entry used to emit
+ * its own E9010 "too many pointer locals / local variables" at line 0 -- for
+ * one cause, dozens of unlocated records naming no function, no count and no
+ * limit.  The overflow sites now only count; this emits one E9010 at the
+ * function (closure, or module-globals initialiser) that crossed the cap,
+ * naming it, the limit and the count, and resets the counters.
+ *
+ * The count is a LOWER bound ("at least"): a registry that is full stops
+ * recording, and what it does not record can change what the others need
+ * (a local type not recorded is not seen as a shadowed name, so no alias is
+ * counted for it).  So the fix field stays absent (AGENTS.md §6): raising
+ * the limit to the reported count is not guaranteed to be enough.
+ */
+static void locals_cap_flush(Ctx *c, const Node *at, const char *what) {
+    int over = c->ptr_over;
+    if (c->local_over > over) over = c->local_over;
+    if (c->alias_over > over) over = c->alias_over;
+    c->ptr_over = c->local_over = c->alias_over = 0;
+    c->lov_count = 0;
+    if (over <= 0) return;
+    int need = c->local_cap + over;
+    char msg[512], exp[32], got[32];
+    snprintf(msg, sizeof msg,
+             "compiler limit exceeded: %s needs at least %d local-variable "
+             "slots and the limit is %d (max_locals); raise it with "
+             "--max-locals=N or max_locals = N in tkc.toml",
+             what, need, c->local_cap);
+    snprintf(exp, sizeof exp, "%d", c->local_cap);
+    snprintf(got, sizeof got, "%d", need);
+    diag_emit(DIAG_ERROR, E9010, at ? at->start : 0, at ? at->line : 0,
+              at ? at->col : 0, msg, "expected", exp, "got", got,
+              (const char *)NULL);
+}
+
 /*
  * get_local_type — Look up the LLVM type for a local variable.
  *
@@ -11606,6 +11652,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             }
             break;
         }
+        locals_cap_flush(c, NULL, "the module's top level");   /* 127.252 (1): nothing pending belongs to this function */
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
         c->fall_count = 0;  /* 135.16: let-bound fallible values are per-function */
         c->fref_lcount = 0; /* 124.0c: function-reference locals are per-function */
@@ -11692,6 +11739,8 @@ static void emit_toplevel(Ctx *c, const Node *n)
         }
         fputs("}\n", c->out);
         c->crel_count = 0;   /* 124.0c: lifted closure bodies track nothing */
+        { char w[NAME_BUF + 16]; snprintf(w, sizeof w, "function '%s'", toke_nm);
+          locals_cap_flush(c, n, w); }   /* 127.252 (1): one located E9010 per function */
         /* 127.185: check the finished body against the error-exit rule. */
         if (c->cur_fn_err[0] && fn_ir_off >= 0) {
             long fn_end = ftell(c->out);
@@ -12000,6 +12049,7 @@ static void mark_param_ptr_tag(Ctx *c, const char *pn, const Node *param) {
  * so `<expr` returns from the lifted function. Mirrors NODE_FUNC_DECL + the
  * globals-init ctor (both reset per-function state and write to c->out). */
 static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
+    locals_cap_flush(c, NULL, "the module's top level");   /* 127.252 (1): nothing pending belongs to this closure */
     c->ptr_count = 0; c->local_count = 0; c->alias_count = 0; c->fall_count = 0;
     c->fref_lcount = 0; c->fnv_count = 0; c->crel_count = 0;
     c->name_scope = 0; c->term = 0;
@@ -12071,6 +12121,8 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     }
     fputs("}\n", c->out);
     c->crel_count = 0;
+    { char w[64]; snprintf(w, sizeof w, "a closure (lifted as __tk_closure_%d)", cid);
+      locals_cap_flush(c, clos, w); }   /* 127.252 (1) */
     c->cur_fn_ret = NULL; c->cur_fn_name[0] = '\0';
 }
 
@@ -12273,6 +12325,7 @@ timeparts_done:
         snprintf(ctor_name, sizeof ctor_name, "%sglobals_init_ctor",
                  ctx.module_prefix[0] ? ctx.module_prefix : "tk_");
         ctx.cur_fn_ret = "void"; ctx.cur_fn_err[0] = '\0';
+        locals_cap_flush(&ctx, NULL, "the module's top level");   /* 127.252 (1) */
         ctx.ptr_count = 0; ctx.local_count = 0; ctx.alias_count = 0; ctx.name_scope = 0;
         ctx.fall_count = 0;
         ctx.tmp = 0; ctx.term = 0;
@@ -12284,6 +12337,7 @@ timeparts_done:
             fprintf(body_file, "  store i64 %%t%d, i64* @%s\n", v, ctx.globals[gi].llvm_name);
         }
         fprintf(body_file, "  ret void\n}\n");
+        locals_cap_flush(&ctx, ctx.globals[0].init, "the module-globals initialiser");   /* 127.252 (1) */
         fprintf(body_file,
                 "@llvm.global_ctors = appending global [1 x { i32, void ()*, i8* }] "
                 "[{ i32, void ()*, i8* } { i32 65535, void ()* @%s, i8* null }]\n",
@@ -12294,6 +12348,7 @@ timeparts_done:
      * before the fwd-decl/string-global flushes so the forward-referenced
      * @__tk_closure_N symbols are defined at module scope). */
     emit_lifted_closures(&ctx);
+    locals_cap_flush(&ctx, NULL, "the module's top level");   /* 127.252 (1): anything left over */
 
     /* Flush forward declarations for cross-module user function calls */
     if (ctx.fwd_decls_len > 0)
