@@ -106,7 +106,9 @@ static const StdlibModule stdlib_table[] = {
     { "chart",         "chart.c chart_glue.c",                  "dashboard",                                                        "" },
     { "html",          "html.c html_glue.c",                                "",                                                                 "" },
     { "svg",           "svg.c svg_glue.c",                                 "",                                                                 "-lm" },
-    { "llm",           "llm.c llm_glue.c",                      "",                                                                 "" },
+    /* 121.23 (INF-03): llm.c speaks https:// over OpenSSL; -lssl is what
+     * makes llvm.c compile the module with TK_HAVE_OPENSSL. */
+    { "llm",           "llm.c llm_glue.c",                      "",                                                                 "-lssl -lcrypto" },
     { "llmtool",       "llm_tool.c llm_tool_glue.c",            "llm",                                                              "" },
     { "ml",            "ml.c ml_glue.c",                        "",                                                                 "-lm" },
     { "encrypt",       "encrypt.c encrypt_glue.c",              "crypto encoding str",                                              "" },

@@ -37,6 +37,10 @@
 /* Platform-specific storage detection */
 #if defined(__APPLE__)
 #  include <sys/mount.h>   /* statfs */
+#  include <spawn.h>       /* posix_spawn: diskutil_probe (121.23) */
+#  include <fcntl.h>
+#  include <sys/wait.h>
+extern char **environ;
 #endif
 
 /* =========================================================================
@@ -186,6 +190,69 @@ static const char *detect_linux(const char *path)
  *   Solid State:              Yes
  *   Protocol:                 Apple Fabric  (or NVMe, SATA, etc.)
  */
+
+/* diskutil_probe -- run `diskutil info <dev>` and scan its output.
+ *
+ * 121.23 (INF-01): this was popen("diskutil info '<dev>' 2>/dev/null"), a
+ * shell command line.  Single quotes do not neutralise a single quote: a
+ * mount source such as  x'; touch /tmp/pwned; '  (an SMB share or disk-image
+ * volume name reaches f_mntfromname) closed the quote and ran the rest as
+ * shell.  Now the device is one argv element to a direct posix_spawn of
+ * /usr/sbin/diskutil -- no shell, no PATH search -- with stdout on a pipe
+ * and stderr on /dev/null.  Returns 0 if the tool ran, -1 if it could not
+ * be started. */
+static int diskutil_probe(const char *dev, int *is_ssd, int *is_nvme)
+{
+    *is_ssd = 0;
+    *is_nvme = 0;
+    int pfd[2];
+    if (pipe(pfd) != 0) return -1;
+
+    posix_spawn_file_actions_t fa;
+    if (posix_spawn_file_actions_init(&fa) != 0) {
+        close(pfd[0]); close(pfd[1]);
+        return -1;
+    }
+    posix_spawn_file_actions_adddup2(&fa, pfd[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&fa, pfd[0]);
+    posix_spawn_file_actions_addclose(&fa, pfd[1]);
+    posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+
+    char *const argv[] = { "diskutil", "info", (char *)dev, NULL };
+    pid_t pid;
+    int rc = posix_spawn(&pid, "/usr/sbin/diskutil", &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    close(pfd[1]);
+    if (rc != 0) { close(pfd[0]); return -1; }
+
+    FILE *out = fdopen(pfd[0], "r");
+    if (!out) {
+        close(pfd[0]);
+        while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+        return -1;
+    }
+    char line[256];
+    while (fgets(line, sizeof(line), out) != NULL) {
+        /* "Solid State: Yes" indicates non-spinning media. */
+        if (strstr(line, "Solid State") && strstr(line, "Yes"))
+            *is_ssd = 1;
+
+        /*
+         * Protocol line examples:
+         *   Protocol:                 NVMe
+         *   Protocol:                 Apple Fabric   (also NVMe internally)
+         *   Protocol:                 SATA
+         */
+        if (strstr(line, "Protocol")) {
+            if (strstr(line, "NVMe") || strstr(line, "Apple Fabric"))
+                *is_nvme = 1;
+        }
+    }
+    fclose(out);
+    while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+    return 0;
+}
+
 static const char *detect_macos(const char *path)
 {
     struct stat st;
@@ -198,35 +265,9 @@ static const char *detect_macos(const char *path)
         return "unknown";
 
     /* sfs.f_mntfromname is e.g. "/dev/disk3s1" */
-    char cmd[TK_STREAM_PATH_MAX + 64];
-    snprintf(cmd, sizeof(cmd), "diskutil info '%s' 2>/dev/null",
-             sfs.f_mntfromname);
-
-    FILE *pipe = popen(cmd, "r");
-    if (!pipe)
+    int is_ssd = 0, is_nvme = 0;
+    if (diskutil_probe(sfs.f_mntfromname, &is_ssd, &is_nvme) != 0)
         return "unknown";
-
-    int    is_ssd   = 0;
-    int    is_nvme  = 0;
-    char   line[256];
-
-    while (fgets(line, sizeof(line), pipe) != NULL) {
-        /* "Solid State: Yes" indicates non-spinning media. */
-        if (strstr(line, "Solid State") && strstr(line, "Yes"))
-            is_ssd = 1;
-
-        /*
-         * Protocol line examples:
-         *   Protocol:                 NVMe
-         *   Protocol:                 Apple Fabric   (also NVMe internally)
-         *   Protocol:                 SATA
-         */
-        if (strstr(line, "Protocol")) {
-            if (strstr(line, "NVMe") || strstr(line, "Apple Fabric"))
-                is_nvme = 1;
-        }
-    }
-    pclose(pipe);
 
     if (is_nvme)  return "nvme";
     if (is_ssd)   return "ssd";

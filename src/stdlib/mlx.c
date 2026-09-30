@@ -18,6 +18,7 @@
  */
 
 #include "mlx.h"
+#include "strbuf.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -381,6 +382,51 @@ int mlx_is_available(void)
     return (status == 200) ? 1 : 0;
 }
 
+/* 121.23 (INF-02): the bridge requests were built with raw "%s" -- a '"' in a
+ * prompt, text or model path closed the JSON string and could set sibling
+ * fields ("max_tokens", ...) on the bridge.  Every string is now JSON-escaped
+ * into a growable buffer (the old fixed req_cap also assumed no expansion).
+ * Each returns malloc'd JSON, or NULL on OOM. */
+static char *mlx_req_load(const char *model_path)
+{
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "{\"model_path\":\"");
+    strbuf_append_json(&b, model_path);
+    strbuf_append(&b, "\"}");
+    return strbuf_take(&b);
+}
+
+static char *mlx_req_id(const char *id)
+{
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "{\"id\":\"");
+    strbuf_append_json(&b, id);
+    strbuf_append(&b, "\"}");
+    return strbuf_take(&b);
+}
+
+static char *mlx_req_generate(const char *id, const char *prompt, int max_tokens)
+{
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "{\"id\":\"");
+    strbuf_append_json(&b, id);
+    strbuf_append(&b, "\",\"prompt\":\"");
+    strbuf_append_json(&b, prompt);
+    strbuf_appendf(&b, "\",\"max_tokens\":%d}", max_tokens);
+    return strbuf_take(&b);
+}
+
+static char *mlx_req_embed(const char *id, const char *text)
+{
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "{\"id\":\"");
+    strbuf_append_json(&b, id);
+    strbuf_append(&b, "\",\"text\":\"");
+    strbuf_append_json(&b, text);
+    strbuf_append(&b, "\"}");
+    return strbuf_take(&b);
+}
+
 MlxModelResult mlx_load(const char *model_path)
 {
     MlxModelResult r;
@@ -398,15 +444,12 @@ MlxModelResult mlx_load(const char *model_path)
     }
 
     /* build request JSON */
-    size_t path_len = strlen(model_path);
-    size_t req_cap  = path_len + 32;
-    char *req = (char *)malloc(req_cap);
+    char *req = mlx_req_load(model_path);
     if (!req) {
         r.is_err  = 1;
         r.err_msg = strdup_mlx("mlx.load: out of memory");
         return r;
     }
-    snprintf(req, req_cap, "{\"model_path\":\"%s\"}", model_path);
 
     int status = -1;
     char *body = bridge_post("/load", req, &status);
@@ -448,11 +491,8 @@ int mlx_unload(const MlxModel *m)
     if (!m || !m->id) return 0;
     if (!is_apple_silicon()) return 0;
 
-    size_t id_len = strlen(m->id);
-    size_t req_cap = id_len + 16;
-    char *req = (char *)malloc(req_cap);
+    char *req = mlx_req_id(m->id);
     if (!req) return 0;
-    snprintf(req, req_cap, "{\"id\":\"%s\"}", m->id);
 
     int status = -1;
     char *body = bridge_post("/unload", req, &status);
@@ -484,19 +524,12 @@ MlxStrResult mlx_generate(const MlxModel *m, const char *prompt,
         return r;
     }
 
-    size_t id_len     = strlen(m->id);
-    size_t prompt_len = strlen(prompt);
-    /* extra bytes: {"id":"","prompt":"","max_tokens":2147483647} = ~40 chars */
-    size_t req_cap = id_len + prompt_len + 64;
-    char *req = (char *)malloc(req_cap);
+    char *req = mlx_req_generate(m->id, prompt, (int)max_tokens);
     if (!req) {
         r.is_err  = 1;
         r.err_msg = strdup_mlx("mlx.generate: out of memory");
         return r;
     }
-    snprintf(req, req_cap,
-             "{\"id\":\"%s\",\"prompt\":\"%s\",\"max_tokens\":%d}",
-             m->id, prompt, (int)max_tokens);
 
     int status = -1;
     char *body = bridge_post("/generate", req, &status);
@@ -551,16 +584,12 @@ MlxEmbedResult mlx_embed(const MlxModel *m, const char *text)
         return r;
     }
 
-    size_t id_len   = strlen(m->id);
-    size_t text_len = strlen(text);
-    size_t req_cap  = id_len + text_len + 24;
-    char *req = (char *)malloc(req_cap);
+    char *req = mlx_req_embed(m->id, text);
     if (!req) {
         r.is_err  = 1;
         r.err_msg = strdup_mlx("mlx.embed: out of memory");
         return r;
     }
-    snprintf(req, req_cap, "{\"id\":\"%s\",\"text\":\"%s\"}", m->id, text);
 
     int status = -1;
     char *body = bridge_post("/embed", req, &status);
