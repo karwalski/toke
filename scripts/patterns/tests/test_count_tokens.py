@@ -25,3 +25,25 @@ def test_missing_function_raises():
     m = ct.min_text_of(PROG)
     with pytest.raises(RuntimeError):
         ct.function_extent(m, "nope")
+
+
+def test_full_span_and_brace_fallback_agree(monkeypatch):
+    """131.31: a full FUNC_DECL span is used as is; an old tkc's one-token
+    span falls back to brace matching.  Both give the same extent."""
+    m = ct.min_text_of(PROG)
+    got = {n: ct.function_extent(m, n) for n in ("pat", "main")}
+    real = ct._dump_ast_text
+
+    def one_token_spans(text):
+        ast = real(text)
+
+        def cut(n):
+            if n.get("kind") == "FUNC_DECL":
+                n["span"]["end"] = n["span"]["start"] + 1
+            for c in n.get("children") or []:
+                cut(c)
+        cut(ast)
+        return ast
+    monkeypatch.setattr(ct, "_dump_ast_text", one_token_spans)
+    for n in ("pat", "main"):
+        assert ct.function_extent(m, n) == got[n]
