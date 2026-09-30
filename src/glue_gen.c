@@ -405,11 +405,21 @@ int glue_gen_write_temp(const char *stdlib_tki_dir, char *out_path, int out_path
         return 0; /* nothing to generate — not an error */
     }
 
-    snprintf(out_path, (size_t)out_path_sz, "/tmp/tk_glue_auto_%d.c", (int)getpid());
-    FILE *f = fopen(out_path, "w");
-    if (!f) { free(src); return -1; }
+    /* 121.28 (audit-120 compiler-toolchain COM-03): the name was
+     * /tmp/tk_glue_auto_<pid>.c, opened with fopen("w") — predictable and
+     * symlink-following, so a symlink planted at that name had its target
+     * truncated and overwritten by the compiler, and the file could be swapped
+     * for attacker C before clang read it.  mkstemps creates an unpredictable
+     * name with O_CREAT|O_EXCL (a planted name fails instead of being
+     * followed), mode 0600, and we write through that descriptor. */
+    if (out_path_sz < 32) { free(src); return -1; }
+    snprintf(out_path, (size_t)out_path_sz, "/tmp/tk_glue_auto_XXXXXX.c");
+    int fd = mkstemps(out_path, 2);
+    if (fd < 0) { free(src); out_path[0] = '\0'; return -1; }
+    FILE *f = fdopen(fd, "w");
+    if (!f) { close(fd); unlink(out_path); free(src); out_path[0] = '\0'; return -1; }
     fputs(src, f);
-    fclose(f);
+    if (fclose(f) != 0) { unlink(out_path); free(src); out_path[0] = '\0'; return -1; }
     free(src);
     return 0;
 }
