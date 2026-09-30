@@ -180,9 +180,11 @@ A conforming implementation **traps deterministically** — aborting with a diag
 | Code  | Condition                             | Guard |
 |-------|---------------------------------------|-------|
 | RT002 | Signed integer overflow (`+ - *`)     | Checked arithmetic (`llvm.*.with.overflow`), `tk_overflow_trap`. |
-| RT003 | Array subscript outside `[0, len)`    | Length read from the array header (`base[-1]`), `tk_bounds_trap`. Default-on; the optimizer elides provably-in-range checks at `-O2`. |
-| RT004 | Division or remainder by zero         | Divisor tested before `sdiv`/`srem`, `tk_div_trap`. |
+| RT003 | Array subscript outside `[0, len)` — `.get`, `.set`, and a `std.vec` handle's `get`/`set` | Length read from the array header (`base[-1]`), or from `tk_vec_len_w` for a `std.vec` handle, `tk_bounds_trap`. Default-on; the optimizer elides provably-in-range checks at `-O2`. |
+| RT004 | Division or remainder by zero, at every integer width; signed division or remainder of the most negative value by `-1` | Divisor tested before `sdiv`/`srem`/`udiv`/`urem`, and the (MIN, -1) pair before `sdiv`/`srem`, `tk_div_trap`. |
 | RT005 | Nil dereference of a struct field     | Struct base tested for null before the field GEP, `tk_nil_trap`. |
+
+**Narrow integers wrap (ADR-0012 c).** RT002 covers `i64` and `u64`. The sized types `i8`, `i16`, `i32`, `u8`, `u16` and `u32` do **not** trap on `+ - *` overflow: the result wraps in two's complement at the type's width, identically at `-O0` and `-O2` (`127 as i8 + 1` is `-128`; `255 as u8 + 1` is `0`). This is defined behaviour, not undefined behaviour. Division is the exception: RT004 above applies at every width.
 
 Every emitted function additionally carries a stack canary (`sspstrong`), so a stack-buffer overflow aborts rather than redirecting control flow.
 

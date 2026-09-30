@@ -105,11 +105,14 @@ NOT is needed, or verify `~` separately.
 
 ### 8. `@wrapping` overflow annotation not implemented
 
-Integer arithmetic uses checked overflow by default (traps on overflow via
-RT002). The `@wrapping` opt-out annotation is specified but not yet
-implemented.
+`i64` and `u64` arithmetic uses checked overflow by default (traps on
+overflow via RT002). The sized types `i8`/`i16`/`i32`/`u8`/`u16`/`u32` wrap
+in two's complement instead — defined behaviour per ADR-0012 (c) and
+`docs/spec/memory-model.md` §6.6 (corrected 2026-09-30, story 121.36: this
+section used to say all integer arithmetic is checked). The `@wrapping`
+opt-out annotation is specified but not yet implemented.
 
-**Workaround:** None. All integer arithmetic is checked.
+**Workaround:** None for `i64`/`u64`. For wrapping arithmetic, use a sized type.
 
 **Planned fix:** Deferred to a future story (noted in 10.3.1b).
 
