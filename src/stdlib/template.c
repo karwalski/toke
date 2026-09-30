@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <strings.h>   /* strncasecmp (121.37 URL scheme check) */
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -703,24 +704,513 @@ fail:
  * wrappers report failure once an allocation has failed (sticky). */
 typedef TkStrBuf Buf;
 
-static int buf_append(Buf *b, const char *s, size_t slen)
-{
-    strbuf_appendn(b, s, slen);
-    return !b->oom;
+/* -----------------------------------------------------------------------
+ * Contextual auto-escaping — 121.37 (ADR-0011 (b))
+ *
+ * THE DEFECT.  124.3 made tpl.render escape every value, but with ONE
+ * escaper, the HTML-body one, wherever the slot sat.  Measured on main
+ * f605aec9 with values u="javascript:alert(1)", x="');alert(1);//":
+ *   <a href="{{u}}">          -> href="javascript:alert(1)"      (runs)
+ *   onclick="f('{{x}}')"      -> f('&#39;);alert(1);//')  -- the browser
+ *                                decodes &#39; before the JS runs (runs)
+ *   <script>var s={{x}};      -> var s=&#39;);alert(1);//;  (wrong, and
+ *                                `1;alert(1)` would run as-is)
+ * and tpl.renderfile rendered with NO escaping at all.
+ *
+ * THE FIX.  The escaper is chosen per slot from where the slot sits in the
+ * HTML being produced, Go html/template style.  The context is read from the
+ * OUTPUT, not the template source: an HtmlCtx is fed every byte appended --
+ * literal text, escaped values and |raw values alike -- so a slot inside
+ * {{#if}}, {{#each}} or a partial gets the context its surroundings produce.
+ * The escaped values are built never to change the context they sit in
+ * (except that a JS value is a whole string literal, which leaves the JS
+ * state where it was), so feeding them keeps the tracker in step; a |raw
+ * value is trusted markup and the tracker simply follows it.
+ *
+ *   context                          escaper
+ *   text, comment, <title>/<textarea> HTML entities (& < > " ')
+ *   attribute value, quoted           HTML entities
+ *   attribute value, unquoted         every non-alphanumeric as &#N;
+ *   URL attribute, value start        scheme must be http/https/mailto or
+ *                                     absent, else "#ZtokeZ"; then
+ *                                     percent-normalised, then as above
+ *   URL attribute, after ? or #       percent-encoded as a component
+ *   <script>, on* attribute           in a JS string or comment: \uXXXX
+ *                                     for all but [A-Za-z0-9 _,.]; in code:
+ *                                     a quoted JS string literal
+ *   <style>, style attribute          in a CSS string or comment: \HH ;
+ *                                     in code: [A-Za-z0-9 #%.,_-] only,
+ *                                     else "ZtokeZ"
+ *   tag or attribute name             [A-Za-z0-9_-] naming a plain
+ *                                     attribute, else "ZtokeZ"
+ *
+ * Limits, stated: character references inside an attribute value are not
+ * decoded by the tracker, and a JS regular-expression literal is not
+ * recognised.  Either can only make the tracker believe it is inside a
+ * JS/CSS string when it is not, or the reverse; every JS/CSS escaper's
+ * output is inert in all of those states (no quote, slash, star, newline
+ * or angle bracket survives), so a mis-tracked slot is wrong text, not
+ * script.
+ * ----------------------------------------------------------------------- */
+
+typedef enum {
+    HC_TEXT, HC_TAG_OPEN, HC_END_TAG_OPEN, HC_TAG_NAME, HC_IN_TAG,
+    HC_ATTR_NAME, HC_AFTER_ATTR_NAME, HC_BEFORE_VALUE, HC_VALUE,
+    HC_MARKUP, HC_COMMENT, HC_RAWTEXT
+} HcState;
+typedef enum { AK_NORMAL, AK_URL, AK_JS, AK_CSS } HcAttrKind;
+typedef enum { EL_NONE, EL_SCRIPT, EL_STYLE, EL_RCDATA } HcElem;
+typedef enum { JS_CODE, JS_DQ, JS_SQ, JS_TPL, JS_LINE, JS_BLOCK } HcJs;
+typedef enum { CSS_CODE, CSS_DQ, CSS_SQ, CSS_CMT } HcCss;
+
+#define HC_NAME_MAX 32
+
+typedef struct {
+    HcState    st;
+    int        closing;      /* the tag being read is an end tag */
+    HcElem     el;           /* element named by the start tag being read */
+    HcElem     raw;          /* RAWTEXT: the element whose content this is */
+    char       rname[HC_NAME_MAX];  /* RAWTEXT: its name, for "</name" */
+    char       name[HC_NAME_MAX]; int nlen; int nover;  /* tag/attr name */
+    HcAttrKind ak;           /* kind of the attribute being read */
+    char       quote;        /* VALUE: '"' or '\'', 0 when unquoted */
+    size_t     vlen;         /* VALUE: bytes after leading whitespace */
+    int        urlpart;      /* VALUE+URL: a '?' or '#' was seen */
+    HcJs       js; HcCss css;
+    int        esc;          /* JS/CSS string: a backslash is pending */
+    int        slash, star;  /* JS/CSS: previous byte was '/' / '*' */
+    int        dashes;       /* COMMENT/MARKUP: run of '-' just read */
+    int        mcount;       /* MARKUP: bytes read after "<!" */
+    int        endlen;       /* RAWTEXT: bytes of "</name" matched */
+} HtmlCtx;
+
+typedef struct {
+    Buf     b;
+    HtmlCtx ctx;
+    int     escape;          /* 0: tmpl_render, values verbatim, no tracking */
+} Out;
+
+static int hc_space(int c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+}
+static int hc_alpha(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+static int hc_alnum(int c) { return hc_alpha(c) || (c >= '0' && c <= '9'); }
+
+static void hc_name_reset(HtmlCtx *h) { h->nlen = 0; h->nover = 0; h->name[0] = '\0'; }
+static void hc_name_add(HtmlCtx *h, int c) {
+    if (h->nlen < HC_NAME_MAX - 1) {
+        h->name[h->nlen++] = (char)tolower((unsigned char)c);
+        h->name[h->nlen] = '\0';
+    } else {
+        h->nover = 1;
+    }
 }
 
-static int buf_append_escaped(Buf *b, const char *s)
-{
-    strbuf_append_xml(b, s);
-    return !b->oom;
+static HcAttrKind hc_attr_kind(const char *n, int over) {
+    static const char *const url_attrs[] = {
+        "href", "src", "action", "formaction", "cite", "data", "poster",
+        "background", "codebase", "longdesc", "usemap", "manifest", "icon",
+        "profile", "classid", "archive", "srcset", "ping", "lowsrc",
+        "dynsrc", "xlink:href", "xmlns", NULL
+    };
+    if (n[0] == 'o' && n[1] == 'n') return AK_JS;         /* any length */
+    if (over) return AK_NORMAL;
+    if (!strcmp(n, "style")) return AK_CSS;
+    for (int i = 0; url_attrs[i]; i++)
+        if (!strcmp(n, url_attrs[i])) return AK_URL;
+    if (strstr(n, "url") || strstr(n, "uri")) return AK_URL;
+    return AK_NORMAL;
 }
 
-/* render_nodes — render node array into Buf, using vars for variable lookup.
+static HcElem hc_elem(const char *n, int over) {
+    if (over) return EL_NONE;
+    if (!strcmp(n, "script")) return EL_SCRIPT;
+    if (!strcmp(n, "style")) return EL_STYLE;
+    if (!strcmp(n, "title") || !strcmp(n, "textarea")) return EL_RCDATA;
+    return EL_NONE;
+}
+
+static void hc_js_byte(HtmlCtx *h, int c) {
+    switch (h->js) {
+        case JS_CODE:
+            if (h->slash && c == '/') { h->js = JS_LINE; h->slash = 0; return; }
+            if (h->slash && c == '*') { h->js = JS_BLOCK; h->slash = 0; h->star = 0; return; }
+            h->slash = (c == '/');
+            if (c == '"') h->js = JS_DQ;
+            else if (c == '\'') h->js = JS_SQ;
+            else if (c == '`') h->js = JS_TPL;
+            h->esc = 0;
+            return;
+        case JS_DQ: case JS_SQ: case JS_TPL: {
+            if (h->esc) { h->esc = 0; return; }
+            if (c == '\\') { h->esc = 1; return; }
+            char q = h->js == JS_DQ ? '"' : h->js == JS_SQ ? '\'' : '`';
+            if (c == q || (c == '\n' && h->js != JS_TPL)) h->js = JS_CODE;
+            h->slash = 0;
+            return;
+        }
+        case JS_LINE:
+            if (c == '\n') h->js = JS_CODE;
+            return;
+        case JS_BLOCK:
+            if (h->star && c == '/') { h->js = JS_CODE; h->star = 0; h->slash = 0; return; }
+            h->star = (c == '*');
+            return;
+    }
+}
+
+static void hc_css_byte(HtmlCtx *h, int c) {
+    switch (h->css) {
+        case CSS_CODE:
+            if (h->slash && c == '*') { h->css = CSS_CMT; h->slash = 0; h->star = 0; return; }
+            h->slash = (c == '/');
+            if (c == '"') h->css = CSS_DQ;
+            else if (c == '\'') h->css = CSS_SQ;
+            h->esc = 0;
+            return;
+        case CSS_DQ: case CSS_SQ: {
+            if (h->esc) { h->esc = 0; return; }
+            if (c == '\\') { h->esc = 1; return; }
+            char q = h->css == CSS_DQ ? '"' : '\'';
+            if (c == q || c == '\n') h->css = CSS_CODE;
+            return;
+        }
+        case CSS_CMT:
+            if (h->star && c == '/') { h->css = CSS_CODE; h->star = 0; return; }
+            h->star = (c == '*');
+            return;
+    }
+}
+
+static void hc_sub_reset(HtmlCtx *h) {
+    h->js = JS_CODE; h->css = CSS_CODE;
+    h->esc = h->slash = h->star = 0;
+}
+
+/* '>' closes the tag being read. */
+static void hc_tag_end(HtmlCtx *h) {
+    if (!h->closing && h->el != EL_NONE) {
+        h->st = HC_RAWTEXT; h->raw = h->el; h->endlen = 0;
+        memcpy(h->rname, h->name, sizeof h->rname);
+        hc_sub_reset(h);
+    } else {
+        h->st = HC_TEXT;
+    }
+    h->el = EL_NONE; h->closing = 0;
+}
+
+static void hc_attr_start(HtmlCtx *h, int c) {
+    hc_name_reset(h); hc_name_add(h, c);
+    h->st = HC_ATTR_NAME;
+}
+
+static void hc_value_start(HtmlCtx *h, char quote) {
+    h->st = HC_VALUE; h->quote = quote; h->vlen = 0; h->urlpart = 0;
+    hc_sub_reset(h);
+}
+
+static void hc_value_byte(HtmlCtx *h, int c) {
+    if (h->vlen == 0 && hc_space(c)) return;    /* browsers strip it */
+    h->vlen++;
+    if (h->ak == AK_URL && (c == '?' || c == '#')) h->urlpart = 1;
+    else if (h->ak == AK_JS) hc_js_byte(h, c);
+    else if (h->ak == AK_CSS) hc_css_byte(h, c);
+}
+
+static void hc_byte(HtmlCtx *h, int c) {
+    switch (h->st) {
+        case HC_TEXT:
+            if (c == '<') h->st = HC_TAG_OPEN;
+            return;
+        case HC_TAG_OPEN:
+            if (hc_alpha(c)) {
+                h->closing = 0; hc_name_reset(h); hc_name_add(h, c);
+                h->st = HC_TAG_NAME;
+            } else if (c == '/') {
+                h->st = HC_END_TAG_OPEN;
+            } else if (c == '!' || c == '?') {
+                h->st = HC_MARKUP; h->mcount = 0; h->dashes = 0;
+                if (c == '?') h->mcount = 2;             /* never a comment */
+            } else {
+                h->st = HC_TEXT;
+                if (c == '<') h->st = HC_TAG_OPEN;
+            }
+            return;
+        case HC_END_TAG_OPEN:
+            if (hc_alpha(c)) {
+                h->closing = 1; hc_name_reset(h); hc_name_add(h, c);
+                h->st = HC_TAG_NAME;
+            } else if (c == '>') {
+                h->st = HC_TEXT;
+            } else {
+                h->st = HC_MARKUP; h->mcount = 2; h->dashes = 0;
+            }
+            return;
+        case HC_TAG_NAME:
+            if (hc_space(c) || c == '/') {
+                h->el = h->closing ? EL_NONE : hc_elem(h->name, h->nover);
+                h->st = HC_IN_TAG;
+            } else if (c == '>') {
+                h->el = h->closing ? EL_NONE : hc_elem(h->name, h->nover);
+                hc_tag_end(h);
+            } else {
+                hc_name_add(h, c);
+            }
+            return;
+        case HC_IN_TAG:
+            if (hc_space(c) || c == '/') return;
+            if (c == '>') { hc_tag_end(h); return; }
+            hc_attr_start(h, c);
+            return;
+        case HC_ATTR_NAME:
+            if (hc_space(c)) {
+                h->ak = hc_attr_kind(h->name, h->nover);
+                h->st = HC_AFTER_ATTR_NAME;
+            } else if (c == '=') {
+                h->ak = hc_attr_kind(h->name, h->nover);
+                h->st = HC_BEFORE_VALUE;
+            } else if (c == '/') {
+                h->st = HC_IN_TAG;
+            } else if (c == '>') {
+                hc_tag_end(h);
+            } else {
+                hc_name_add(h, c);
+            }
+            return;
+        case HC_AFTER_ATTR_NAME:
+            if (hc_space(c)) return;
+            if (c == '=') { h->st = HC_BEFORE_VALUE; return; }
+            if (c == '/') { h->st = HC_IN_TAG; return; }
+            if (c == '>') { hc_tag_end(h); return; }
+            hc_attr_start(h, c);
+            return;
+        case HC_BEFORE_VALUE:
+            if (hc_space(c)) return;
+            if (c == '"' || c == '\'') { hc_value_start(h, (char)c); return; }
+            if (c == '>') { hc_tag_end(h); return; }
+            hc_value_start(h, 0);
+            hc_value_byte(h, c);
+            return;
+        case HC_VALUE:
+            if (h->quote ? c == h->quote : hc_space(c)) { h->st = HC_IN_TAG; return; }
+            if (!h->quote && c == '>') { hc_tag_end(h); return; }
+            hc_value_byte(h, c);
+            return;
+        case HC_MARKUP:
+            /* "<!--" opens a comment; any other "<!" / "<?" runs to '>' */
+            if (h->mcount < 2) {
+                h->mcount++;
+                if (c == '-') {
+                    if (h->mcount == 2) { h->st = HC_COMMENT; h->dashes = 0; }
+                    return;
+                }
+                h->mcount = 2;
+            }
+            if (c == '>') h->st = HC_TEXT;
+            return;
+        case HC_COMMENT:
+            if (c == '>' && h->dashes >= 2) { h->st = HC_TEXT; return; }
+            h->dashes = (c == '-') ? h->dashes + 1 : 0;
+            return;
+        case HC_RAWTEXT: {
+            /* "</script" (any case) followed by whitespace, '/' or '>' ends
+             * the element even inside a JS string -- that is how HTML parses
+             * it; likewise "</style", "</title", "</textarea". */
+            const char *want = h->rname;
+            int wlen = (int)strlen(want);
+            if (h->endlen == 2 + wlen) {                 /* "</name" read */
+                h->endlen = 0;
+                if (hc_space(c) || c == '/') {
+                    h->st = HC_IN_TAG; h->closing = 1; h->el = EL_NONE;
+                    h->raw = EL_NONE;
+                    return;
+                }
+                if (c == '>') { h->st = HC_TEXT; h->raw = EL_NONE; return; }
+            }
+            if (c == '<') h->endlen = 1;
+            else if (h->endlen == 1 && c == '/') h->endlen = 2;
+            else if (h->endlen >= 2 && tolower(c) == want[h->endlen - 2]) h->endlen++;
+            else h->endlen = 0;
+            if (h->raw == EL_SCRIPT) hc_js_byte(h, c);
+            else if (h->raw == EL_STYLE) hc_css_byte(h, c);
+            return;
+        }
+    }
+}
+
+static void hc_feed(HtmlCtx *h, const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) hc_byte(h, (unsigned char)s[i]);
+}
+
+/* ── escapers: each appends to b ─────────────────────────────────────── */
+
+static void esc_attr_unquoted(Buf *b, const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (hc_alnum(c) || c >= 0x80) strbuf_appendn(b, (const char *)&s[i], 1);
+        else strbuf_appendf(b, "&#%u;", (unsigned)c);
+    }
+}
+
+/* the attribute layer, applied to text already escaped for its sub-context */
+static void esc_attr(Buf *b, const HtmlCtx *h, const char *s) {
+    if (h->quote) strbuf_append_xml(b, s);
+    else esc_attr_unquoted(b, s, strlen(s));   /* unquoted, or starts one */
+}
+
+static int js_keep(unsigned char c) {
+    return hc_alnum(c) || c == ' ' || c == '_' || c == ',' || c == '.' || c >= 0x80;
+}
+
+static void esc_js_string_body(Buf *b, const char *s) {
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        /* U+2028/U+2029 end a line in pre-2019 JS strings */
+        if (p[0] == 0xE2 && p[1] == 0x80 && (p[2] == 0xA8 || p[2] == 0xA9)) {
+            strbuf_appendf(b, "\\u%04X", p[2] == 0xA8 ? 0x2028u : 0x2029u);
+            p += 2;
+            continue;
+        }
+        if (js_keep(*p)) strbuf_appendn(b, (const char *)p, 1);
+        else strbuf_appendf(b, "\\u%04X", (unsigned)*p);
+    }
+}
+
+static void esc_js(Buf *b, HcJs js, const char *s) {
+    if (js == JS_CODE) {
+        strbuf_putc(b, '"');
+        esc_js_string_body(b, s);
+        strbuf_putc(b, '"');
+    } else {
+        esc_js_string_body(b, s);
+    }
+}
+
+static void esc_css(Buf *b, HcCss css, const char *s) {
+    if (css == CSS_CODE) {
+        for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+            if (!(hc_alnum(*p) || *p == ' ' || *p == '#' || *p == '%' ||
+                  *p == '.' || *p == ',' || *p == '_' || *p == '-' || *p >= 0x80)) {
+                strbuf_append(b, "ZtokeZ");
+                return;
+            }
+        }
+        strbuf_append(b, s);
+        return;
+    }
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (hc_alnum(*p) || *p == ' ' || *p >= 0x80) strbuf_appendn(b, (const char *)p, 1);
+        else strbuf_appendf(b, "\\%X ", (unsigned)*p);
+    }
+}
+
+static int url_keep(unsigned char c, int component) {
+    if (hc_alnum(c) || c == '-' || c == '.' || c == '_' || c == '~') return 1;
+    if (component) return 0;
+    return strchr(":/?#[]@!$&'()*+,;=%", c) != NULL && c != '\0';
+}
+
+static void esc_url(Buf *b, const HtmlCtx *h, const char *s) {
+    if (h->vlen == 0 && !h->urlpart) {
+        /* value start: the scheme is decided here */
+        const char *p = s;
+        while (*p && hc_space((unsigned char)*p)) p++;
+        size_t i = 0;
+        while (p[i] && p[i] != ':' && p[i] != '/' && p[i] != '?' && p[i] != '#') i++;
+        if (p[i] == ':') {
+            int ok = (i == 4 && !strncasecmp(p, "http", 4)) ||
+                     (i == 5 && !strncasecmp(p, "https", 5)) ||
+                     (i == 6 && !strncasecmp(p, "mailto", 6));
+            if (!ok) { strbuf_append(b, "#ZtokeZ"); return; }
+        }
+    }
+    int component = h->urlpart;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (url_keep(*p, component)) strbuf_appendn(b, (const char *)p, 1);
+        else strbuf_appendf(b, "%%%02X", (unsigned)*p);
+    }
+}
+
+/* tag or attribute name position */
+static void esc_name(Buf *b, const char *s) {
+    char low[HC_NAME_MAX] = {0};
+    size_t n = 0;
+    int ok = s[0] != '\0';
+    for (const char *p = s; *p && ok; p++, n++) {
+        if (n >= sizeof low - 1 ||
+            !(hc_alnum((unsigned char)*p) || *p == '-' || *p == '_'))
+            ok = 0;
+        else
+            low[n] = (char)tolower((unsigned char)*p);
+    }
+    if (ok && hc_attr_kind(low, 0) != AK_NORMAL) ok = 0;
+    strbuf_append(b, ok ? s : "ZtokeZ");
+}
+
+/* Escape one slot value for the context the output is in. */
+static void ctx_escape(Buf *b, const HtmlCtx *h, const char *v) {
+    switch (h->st) {
+        case HC_TEXT: case HC_COMMENT: case HC_MARKUP:
+            strbuf_append_xml(b, v);
+            return;
+        case HC_RAWTEXT:
+            if (h->raw == EL_SCRIPT) esc_js(b, h->js, v);
+            else if (h->raw == EL_STYLE) esc_css(b, h->css, v);
+            else strbuf_append_xml(b, v);
+            return;
+        case HC_TAG_OPEN: case HC_END_TAG_OPEN: case HC_TAG_NAME:
+        case HC_IN_TAG: case HC_ATTR_NAME: case HC_AFTER_ATTR_NAME:
+            esc_name(b, v);
+            return;
+        case HC_BEFORE_VALUE: case HC_VALUE: {
+            /* BEFORE_VALUE: the slot starts an unquoted value */
+            HtmlCtx vh = *h;
+            if (vh.st == HC_BEFORE_VALUE) {
+                vh.st = HC_VALUE; vh.quote = 0; vh.vlen = 0; vh.urlpart = 0;
+                vh.js = JS_CODE; vh.css = CSS_CODE;
+            }
+            TkStrBuf inner = TK_STRBUF_INIT;
+            switch (vh.ak) {
+                case AK_URL: esc_url(&inner, &vh, v); break;
+                case AK_JS:  esc_js(&inner, vh.js, v); break;
+                case AK_CSS: esc_css(&inner, vh.css, v); break;
+                default:     strbuf_append(&inner, v); break;
+            }
+            if (inner.oom) { b->oom = 1; strbuf_free(&inner); return; }
+            esc_attr(b, &vh, inner.buf ? inner.buf : "");
+            strbuf_free(&inner);
+            return;
+        }
+    }
+}
+
+static int out_literal(Out *o, const char *s, size_t n)
+{
+    strbuf_appendn(&o->b, s, n);
+    if (o->escape) hc_feed(&o->ctx, s, n);
+    return !o->b.oom;
+}
+
+/* A slot value: escaped for its context unless raw, then fed to the tracker
+ * (the escaped text is what the browser will parse). */
+static int out_value(Out *o, const char *v, int raw)
+{
+    if (!v) v = "";
+    size_t before = o->b.len;
+    if (!o->escape || raw) strbuf_append(&o->b, v);
+    else ctx_escape(&o->b, &o->ctx, v);
+    if (o->b.oom) return 0;
+    if (o->escape) hc_feed(&o->ctx, o->b.buf + before, o->b.len - before);
+    return 1;
+}
+
+/* render_nodes — render node array into Out, using vars for variable lookup.
  * extra_vars / extra_nvar are prepended (used for EACH item vars). */
 static int render_nodes(const Node *nodes, uint64_t nnode,
                         const TkTmplVar *extra_vars, uint64_t extra_nvar,
                         const TkTmplVar *vars, uint64_t nvar,
-                        int escape_values, Buf *out, int depth);
+                        Out *out, int depth);
 
 static const char *lookup_combined(const TkTmplVar *extra, uint64_t nextra,
                                    const TkTmplVar *vars, uint64_t nvar,
@@ -737,14 +1227,14 @@ static const char *lookup_combined(const TkTmplVar *extra, uint64_t nextra,
 static int render_nodes(const Node *nodes, uint64_t nnode,
                         const TkTmplVar *extra_vars, uint64_t extra_nvar,
                         const TkTmplVar *vars, uint64_t nvar,
-                        int escape_values, Buf *out, int depth)
+                        Out *out, int depth)
 {
     if (depth > TMPL_MAX_RENDER_DEPTH) return 0;
     for (uint64_t i = 0; i < nnode; i++) {
         const Node *nd = &nodes[i];
         switch (nd->kind) {
             case NODE_LITERAL:
-                if (!buf_append(out, nd->text, strlen(nd->text))) return 0;
+                if (!out_literal(out, nd->text, strlen(nd->text))) return 0;
                 break;
 
             case NODE_SLOT: {
@@ -770,15 +1260,11 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 /* 124.3 (ADR-0011): escape-by-default, with an explicit `|raw`
                  * opt-out for trusted HTML (e.g. composing sub-templates). A
                  * slot written `{{key|raw}}` is emitted unescaped; every other
-                 * slot is HTML-escaped when escape_values is on. */
+                 * slot is escaped for its context (121.37) when escaping is
+                 * on. */
                 int is_raw = (nd->helper_name &&
                               strcmp(nd->helper_name, "raw") == 0);
-                int slot_ok;
-                if (escape_values && !is_raw) {
-                    slot_ok = buf_append_escaped(out, transformed);
-                } else {
-                    slot_ok = buf_append(out, transformed, strlen(transformed));
-                }
+                int slot_ok = out_value(out, transformed, is_raw);
                 if (helper_owned) free((void *)transformed);
                 if (!slot_ok) return 0;
                 break;
@@ -797,7 +1283,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                     /* Render the partial's nodes with the same variable bindings */
                     if (!render_nodes(partial->nodes, partial->nnode,
                                       extra_vars, extra_nvar,
-                                      vars, nvar, escape_values, out, depth + 1))
+                                      vars, nvar, out, depth + 1))
                         return 0;
                 }
                 /* If not found, render as empty string (per spec) */
@@ -809,7 +1295,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 if (val && val[0] != '\0') {
                     if (!render_nodes(nd->children, nd->nchild,
                                       extra_vars, extra_nvar,
-                                      vars, nvar, escape_values, out, depth + 1))
+                                      vars, nvar, out, depth + 1))
                         return 0;
                 }
                 break;
@@ -820,7 +1306,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 if (!val || val[0] == '\0') {
                     if (!render_nodes(nd->children, nd->nchild,
                                       extra_vars, extra_nvar,
-                                      vars, nvar, escape_values, out, depth + 1))
+                                      vars, nvar, out, depth + 1))
                         return 0;
                 }
                 break;
@@ -843,7 +1329,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
 
                     if (!render_nodes(nd->children, nd->nchild,
                                       item_vars, 2,
-                                      vars, nvar, escape_values, out, depth + 1)) {
+                                      vars, nvar, out, depth + 1)) {
                         for (uint64_t k = 0; k < nitems; k++) free(items[k]);
                         free(items);
                         return 0;
@@ -867,15 +1353,16 @@ static const char *render_internal(TkTmpl *t, const TkTmplVar *vars,
 {
     if (!t) return NULL;
 
-    Buf b = TK_STRBUF_INIT;
+    Out o;
+    memset(&o, 0, sizeof o);
+    o.escape = escape_values;       /* ctx zeroed: HC_TEXT */
 
-    if (!render_nodes(t->nodes, t->nnode, NULL, 0, vars, nvar,
-                      escape_values, &b, 0)) {
-        strbuf_free(&b);
+    if (!render_nodes(t->nodes, t->nnode, NULL, 0, vars, nvar, &o, 0)) {
+        strbuf_free(&o.b);
         return NULL;
     }
 
-    return strbuf_take(&b);   /* NUL-terminated; NULL after any OOM */
+    return strbuf_take(&o.b);   /* NUL-terminated; NULL after any OOM */
 }
 
 /* -----------------------------------------------------------------------
@@ -1084,7 +1571,10 @@ const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
     free(src);
     if (!t) return NULL;
 
-    const char *result = tmpl_render(t, vars, nvar);
+    /* 121.37: escaped for context like tpl.render.  Until 2026-09-30 this
+     * was tmpl_render -- no escaping at all -- so tpl.renderfile emitted
+     * every value verbatim. */
+    const char *result = tmpl_renderhtml(t, vars, nvar);
     tmpl_free(t);
     return result;
 }
@@ -1366,7 +1856,7 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     final_src = NULL;
     if (!t) goto cleanup;
 
-    const char *result = tmpl_render(t, vars, nvar);
+    const char *result = tmpl_renderhtml(t, vars, nvar);   /* 121.37 */
     tmpl_free(t);
 
     /* Cleanup blocks and page source */

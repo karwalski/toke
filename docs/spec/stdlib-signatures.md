@@ -52,6 +52,25 @@ f=starts(s:$str;prefix:$str):bool
 f=ends(s:$str;suffix:$str):bool
 ```
 
+Regular expressions (one pattern language, `docs/stdlib/str.md` "Regular
+expressions"; amended 2026-09-30, story 121.45: `checkre` and `$regexerr`):
+
+```text
+t=$regexerr{msg:$str;pos:i64}
+f=checkre(pattern:$str):$str!$regexerr
+f=containsre(s:$str;pattern:$str):i64
+f=matches(s:$str;pattern:$str):i64
+f=countre(s:$str;pattern:$str):i64
+f=findall(s:$str;pattern:$str):@$str
+f=replacere(s:$str;pattern:$str;replacement:$str):$str
+```
+
+`checkre` returns the pattern unchanged, or the reason it is not in the
+language and the byte offset (`-1` when not at a byte). A pattern it accepts
+never traps RT008 in the five matching calls, which is what they do with an
+invalid pattern computed at run time; a literal invalid pattern passed to one
+of them is E4075 at compile time.
+
 ### std.json
 
 Mirrors `stdlib/json.tki` (135.27; conform C353 holds the two together).

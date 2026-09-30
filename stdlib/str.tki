@@ -393,6 +393,20 @@
       ]
     },
     {
+      "kind": "type",
+      "name": "RegexErr",
+      "fields": [
+        {
+          "name": "msg",
+          "type": "str"
+        },
+        {
+          "name": "pos",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "kind": "func",
       "name": "str.append",
       "params": [
@@ -529,6 +543,15 @@
       "return": "i64",
       "gen": "abi",
       "note": "1 if pattern matches anywhere in s, else 0; pattern language: docs/stdlib/str.md 'Regular expressions'; a literal outside it is E4075 at --check, a computed one traps RT008; RT009 if the call spends its step budget -- 137.9, 121.35"
+    },
+    {
+      "kind": "func",
+      "name": "str.checkre",
+      "params": [
+        "str"
+      ],
+      "return": "str!RegexErr",
+      "note": "the pattern unchanged if it is in the pattern language (docs/stdlib/str.md 'Regular expressions'), else RegexErr{msg;pos}: the reason and the byte offset into the pattern (-1 when not at a byte); never RT008, never E4075 -- the error-as-value check for an untrusted pattern, 121.45"
     },
     {
       "kind": "func",
