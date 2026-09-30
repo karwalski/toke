@@ -169,19 +169,7 @@ void router_ws(TkRouter *r, const char *pattern,
  * compressed responses. */
 void router_use_gzip(TkRouter *r, size_t min_size);
 
-/* ── Access logging middleware (Story 27.1.11) ──────────────────────── */
-
-#define ROUTER_LOG_COMMON 0  /* Common Log Format */
-#define ROUTER_LOG_JSON   1  /* JSON format        */
-
-/* router_use_log — add access logging middleware.
- * format: ROUTER_LOG_COMMON or ROUTER_LOG_JSON
- * path:   file path for log output, or NULL for stderr
- * Log lines are written AFTER the response is produced.
- * Common Log Format:
- *   {ip} - - [{timestamp}] "{method} {path} HTTP/1.1" {status} {bytes}
- * JSON format:
- *   {"ts":"...","ip":"...","method":"...","path":"...","status":N,"bytes":N,"ms":N} */
-void router_use_log(TkRouter *r, int format, const char *path);
+/* ── Access logging middleware (Story 27.1.11): removed 2026-09-30 (121.41
+ * (2)) -- unreachable, and it wrote request fields unescaped.  Use log.c. */
 
 #endif /* TK_STDLIB_ROUTER_H */

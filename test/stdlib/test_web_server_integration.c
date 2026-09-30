@@ -26,7 +26,7 @@
  *   T8.  ETag conditional: second GET with If-None-Match → 304
  *   T9.  Chunked response: http_chunked_write, decoded strictly here
  *   T10. Graceful shutdown: http_shutdown() sets flag
- *   T11. Access log: router_use_log writes entry to file
+ *   T11. (removed: router_use_log, 121.41)
  *   T12. WebSocket handshake: Upgrade request over socketpair → 101
  */
 
@@ -609,72 +609,8 @@ static void test_graceful_shutdown(void)
            "T10: HTTP_DRAIN_TIMEOUT_SECS is within reason (<= 60s)");
 }
 
-/* -------------------------------------------------------------------------
- * T11: Access log
- * ---------------------------------------------------------------------- */
-
-static void test_access_log(void)
-{
-    char log_path[256];
-    snprintf(log_path, sizeof(log_path),
-             "/tmp/test_web_int_access_%d.log", (int)getpid());
-    remove(log_path);
-
-    TkRouter *r = router_new();
-    router_use_log(r, ROUTER_LOG_COMMON, log_path);
-    router_get(r, "/healthz", handler_hello);
-
-    TkRouteResp resp = router_dispatch(r, "GET", "/healthz", NULL, NULL);
-    ASSERT_INTEQ(resp.status, 200,
-                 "T11: access log dispatch status=200");
-    router_free(r);
-
-    /* Verify log file was created and has an entry */
-    FILE *f = fopen(log_path, "r");
-    ASSERT(f != NULL, "T11: access log file created");
-    if (f) {
-        char line[1024];
-        memset(line, 0, sizeof(line));
-        (void)fgets(line, sizeof(line), f);
-        fclose(f);
-        ASSERT(strlen(line) > 0,      "T11: log file contains at least one line");
-        ASSERT(strstr(line, "GET")    != NULL, "T11: log line contains method 'GET'");
-        ASSERT(strstr(line, "/healthz") != NULL,
-               "T11: log line contains path '/healthz'");
-        ASSERT(strstr(line, "200")    != NULL, "T11: log line contains status '200'");
-    }
-    remove(log_path);
-
-    /* Also verify JSON format writes a log entry */
-    char log_path_json[256];
-    snprintf(log_path_json, sizeof(log_path_json),
-             "/tmp/test_web_int_access_json_%d.log", (int)getpid());
-    remove(log_path_json);
-
-    TkRouter *r2 = router_new();
-    router_use_log(r2, ROUTER_LOG_JSON, log_path_json);
-    router_post(r2, "/api/log-test", handler_json_api);
-    TkRouteResp resp2 = router_dispatch(r2, "POST", "/api/log-test",
-                                         NULL, "{}");
-    ASSERT_INTEQ(resp2.status, 200,
-                 "T11: JSON log dispatch status=200");
-    router_free(r2);
-
-    FILE *fj = fopen(log_path_json, "r");
-    ASSERT(fj != NULL, "T11: JSON log file created");
-    if (fj) {
-        char line[1024];
-        memset(line, 0, sizeof(line));
-        (void)fgets(line, sizeof(line), fj);
-        fclose(fj);
-        ASSERT(line[0] == '{',                 "T11: JSON log line starts with '{'");
-        ASSERT(strstr(line, "\"method\"") != NULL, "T11: JSON log has 'method' key");
-        ASSERT(strstr(line, "\"path\"")   != NULL, "T11: JSON log has 'path' key");
-        ASSERT(strstr(line, "\"status\"") != NULL, "T11: JSON log has 'status' key");
-        ASSERT(strstr(line, "POST")       != NULL, "T11: JSON log contains 'POST'");
-    }
-    remove(log_path_json);
-}
+/* T11 (router_use_log access log) was removed with router_use_log itself
+ * (121.41 (2), 2026-09-30): no toke API or caller reached it. */
 
 /* -------------------------------------------------------------------------
  * T12: WebSocket handshake via socketpair
@@ -787,7 +723,6 @@ int main(void)
     test_graceful_shutdown();
 
     printf("\n-- T11: Access log --\n");
-    test_access_log();
 
     printf("\n-- T12: WebSocket handshake --\n");
     test_websocket_handshake();
