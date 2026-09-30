@@ -999,7 +999,7 @@ TEST_CI_GREEN = \
 	test-pkg \
 	test-stdlib-infer test-stdlib-template-email-integration \
 	test-stdlib-http test-stdlib-ws-client-tk \
-	test-stdlib-zip test-stdlib-router \
+	test-stdlib-zip test-stdlib-router test-stdlib-file \
 	test-codegen
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
@@ -1034,7 +1034,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   test-stdlib-viz-integration links now; "FAIL: test3: rendered contains
 #                              Chart.js" then SIGTRAP.
 #   test-stdlib-crypto         runtime failures
-#   test-stdlib-file           runtime failures
 #   test-compress-schema       22/23; CSV compression ratio over threshold
 #   test-e2e / test-e2e-check  11 of 48 fixtures still use `=` for equality
 #                              and are rejected with E2002. Stale fixtures.
@@ -1076,13 +1075,18 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   predated the HTML 404 page and the charset in the MIME table. 135.28
 #   fixed the TEST (6 call sites, 3 assertions); 125 pass on macOS/arm64
 #   2026-09-28; promoted.
+#   test-stdlib-file was listed here as "runtime failures": its one failure
+#   was the test's own fixture -- b.txt and c.txt were written under
+#   base/sub/sub/, which did not exist, unchecked, so file_listall rightly
+#   found one file where the test expected three. 127.260 fixed the TEST
+#   (paths, and the writes are now asserted); promoted.
 #   test-stdlib-http was listed here as "exits 1 with no diagnostic inside
 #   http_get()". The diagnostic was CAP001 (net not granted; the harness
 #   never called tk_cap_init), and behind it sat two stale assertions of
 #   behaviour removed on purpose (NULL-router guard, 27096b4; 30 s default
 #   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
 TEST_CI_KNOWN_RED = test-stdlib-auth \
-	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
+	test-stdlib-viz-integration test-stdlib-crypto \
 	test-compress-schema test-e2e test-e2e-check \
 	test-standalone
 
@@ -1235,7 +1239,7 @@ check-canonical:
 # 132.15 — the same two gates, run across the sibling repos. Both guards scoped to
 # this repo plus toke-tokenizer until 132.15, so nothing else was ever swept:
 # toke-spec published "12.5% reduction vs Python (cl100k)", the toke-mcp server served
-# models a 56-character alphabet and 12 keywords, a Hugging Face Space synthesised a
+# models a stale alphabet size and keyword count, a Hugging Face Space synthesised a
 # Python token count by dividing by 0.875, and the console told users the toke BPE
 # count was "52% fewer". The guards take paths, so there is one copy of each rule here
 # rather than a fork per repo; a repo that is not checked out is skipped. Rule 4

@@ -234,22 +234,38 @@ f=main():i64{
 # ════════════════════════════════════════════════════════════════════════
 # 6. THE NEGATIVE CONTROL.  A real handle must still send.  Without this,
 #    "ws.send always fails" passes every case above.
+#
+#    121.56: this case failed under load with "arm [], server received []":
+#    the server's 20 s accept() clock started BEFORE the client was compiled,
+#    and with three full conforms sharing the machine the build outlasted it,
+#    so the server had exited and ws.connect was refused (the empty arm is
+#    the `$err:e <1` exit).  Now the server writes its port to a file
+#    (write-then-rename, so a reader never sees half a number) only once it
+#    is listening; the script waits for that file, and the server's clocks
+#    are sized for a loaded machine (C036_SERVER_TIMEOUT, default 300 s) --
+#    listen() already queues the client's connect, so a slow build or a slow
+#    python start no longer loses the connection.  The script never blocks on
+#    the server for longer than that bound, and kills it on every exit path.
 # ════════════════════════════════════════════════════════════════════════
 if ! command -v python3 >/dev/null 2>&1; then
     echo "  FAIL: python3 not available — cannot run the negative control"
     FAIL=$((FAIL + 1))
 else
     cat > wsserver.py <<'PYEOF'
-import socket, hashlib, base64, struct, sys
+import socket, hashlib, base64, struct, sys, os
 GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", 0))
 srv.listen(1)
-sys.stdout.write("%d\n" % srv.getsockname()[1]); sys.stdout.flush()
-srv.settimeout(20)
+T = float(sys.argv[2])
+# Readiness: the port file appears only once the socket is listening.
+with open(sys.argv[1] + ".tmp", "w") as f:
+    f.write("%d\n" % srv.getsockname()[1])
+os.rename(sys.argv[1] + ".tmp", sys.argv[1])
+srv.settimeout(T)
 c, _ = srv.accept()
-c.settimeout(20)
+c.settimeout(T)
 req = b""
 while b"\r\n\r\n" not in req:
     d = c.recv(4096)
@@ -276,18 +292,30 @@ while len(pl) < ln:
 if masked: pl = bytes(b ^ mk[i % 4] for i, b in enumerate(pl))
 sys.stdout.write("%s\n" % pl.decode("utf-8", "replace")); sys.stdout.flush()
 PYEOF
-    python3 wsserver.py > srv.out 2>srv.err &
+    SRV_T="${C036_SERVER_TIMEOUT:-300}"
+    rm -f srv.port
+    python3 wsserver.py srv.port "${SRV_T}" > srv.out 2>srv.err &
     SRVPID=$!
+    # stop_server: wait for the server to finish on its own, at most SRV_T
+    # seconds, then kill it.  Never an unbounded `wait`.
+    stop_server() {
+        local t=0
+        while kill -0 "${SRVPID}" 2>/dev/null && [ "${t}" -lt $((SRV_T * 10)) ]; do
+            sleep 0.1; t=$((t + 1))
+        done
+        kill "${SRVPID}" 2>/dev/null; wait "${SRVPID}" 2>/dev/null
+    }
     PORT=""
-    for _ in $(seq 1 100); do
-        PORT="$(head -1 srv.out 2>/dev/null)"
-        [ -n "${PORT}" ] && break
-        sleep 0.1
+    t=0
+    while [ "${t}" -lt $((SRV_T * 10)) ] && kill -0 "${SRVPID}" 2>/dev/null; do
+        if [ -s srv.port ]; then PORT="$(head -1 srv.port)"; break; fi
+        sleep 0.1; t=$((t + 1))
     done
     if [ -z "${PORT}" ]; then
-        echo "  FAIL: loopback WebSocket server did not start"
+        echo "  FAIL: loopback WebSocket server did not start (no port file)"
         sed 's/^/      /' srv.err
         FAIL=$((FAIL + 1))
+        kill "${SRVPID}" 2>/dev/null; wait "${SRVPID}" 2>/dev/null
     elif ! build "
 m=t;
 i=ws:std.ws;
@@ -299,11 +327,13 @@ f=main():i64{
 };"; then
         echo "  FAIL: negative control did not compile"
         FAIL=$((FAIL + 1))
-        kill "${SRVPID}" 2>/dev/null
+        kill "${SRVPID}" 2>/dev/null; wait "${SRVPID}" 2>/dev/null
     else
-        arm="$(./run.bin < /dev/null 2>&1)"
-        wait "${SRVPID}" 2>/dev/null
-        got="$(sed -n '2p' srv.out)"
+        arm="$(./run.bin < /dev/null 2>&1)"; rc=$?
+        # An empty arm is the `$err:e <1` exit: ws.connect itself failed.
+        [ -z "${arm}" ] && arm="(no output, exit ${rc}: ws.connect failed)"
+        stop_server
+        got="$(head -1 srv.out)"
         rm -f run.bin
         if [ "${arm}" = 'ws.send -> $ok' ] && [ "${got}" = "REALSEND" ]; then
             echo "  PASS: a genuine connection still sends (server received REALSEND)"
