@@ -47,6 +47,7 @@ typedef struct {
     char    **fields;
     uint64_t  len;
     uint64_t  cap;
+    int       oom;   /* a field was lost to an allocation failure */
 } RowBuf;
 
 static void rowbuf_init(RowBuf *r)
@@ -54,13 +55,22 @@ static void rowbuf_init(RowBuf *r)
     r->fields = NULL;
     r->len    = 0;
     r->cap    = 0;
+    r->oom    = 0;
 }
 
+/* 121.41 (1): the growth realloc was assigned back to r->fields, so a failure
+ * leaked the array and the next store wrote through NULL.  A NULL field (a
+ * failed strbuf_dup) or a failed growth now marks the row oom instead, and
+ * every row-level caller refuses such a row rather than hand out a row with
+ * a field missing. */
 static void rowbuf_push(RowBuf *r, char *field)
 {
+    if (!field) { r->oom = 1; return; }
     if (r->len == r->cap) {
         uint64_t newcap = r->cap ? r->cap * 2 : 8;
-        r->fields = (char **)realloc(r->fields, newcap * sizeof(char *));
+        char **nf = (char **)realloc(r->fields, newcap * sizeof(char *));
+        if (!nf) { free(field); r->oom = 1; return; }
+        r->fields = nf;
         r->cap    = newcap;
     }
     r->fields[r->len++] = field;
@@ -108,8 +118,18 @@ typedef enum {
     RP_EOF,
     RP_UNTERMINATED,  /* quoted field never closed before EOF */
     RP_AFTERQUOTE,    /* text between a closing quote and the next delimiter */
-    RP_BAREQUOTE      /* quote character part-way through an unquoted field */
+    RP_BAREQUOTE,     /* quote character part-way through an unquoted field */
+    RP_NOMEM          /* 121.41 (1): an allocation failed; the row is freed */
 } RowParse;
+
+/* row_done — the row is complete: RP_OK, or RP_NOMEM (and the row freed) if
+ * any of its fields was lost to an allocation failure. */
+static RowParse row_done(RowBuf *row)
+{
+    if (!row->oom) return RP_OK;
+    rowbuf_free_fields(row);
+    return RP_NOMEM;
+}
 
 /* parse_row_ex — the one parser both paths use.
  *
@@ -198,13 +218,13 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
                 (*line)++;
                 rowbuf_push(row, strbuf_dup(&field));
                 strbuf_free(&field);
-                return RP_OK;
+                return row_done(row);
             } else if (c == '\n') {
                 (*pos)++;
                 (*line)++;
                 rowbuf_push(row, strbuf_dup(&field));
                 strbuf_free(&field);
-                return RP_OK;
+                return row_done(row);
             } else {
                 if (strict && just_closed) {
                     /* "abc"def — the lax parser appends def to abc and says
@@ -232,14 +252,15 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
     /* EOF: flush last field */
     rowbuf_push(row, strbuf_dup(&field));
     strbuf_free(&field);
-    return RP_OK;
+    return row_done(row);
 }
 
-static int parse_row(const char *data, uint64_t len, uint64_t *pos,
-                     RowBuf *row, char sep, char quote_char, int lazyquotes)
+/* parse_row — the lax parse: RP_OK, RP_EOF, or RP_NOMEM. */
+static RowParse parse_row(const char *data, uint64_t len, uint64_t *pos,
+                          RowBuf *row, char sep, char quote_char, int lazyquotes)
 {
     return parse_row_ex(data, len, pos, row, sep, quote_char, lazyquotes,
-                        0, NULL, NULL, NULL) == RP_OK;
+                        0, NULL, NULL, NULL);
 }
 /* -----------------------------------------------------------------------
  * TkCsvReader
@@ -363,8 +384,14 @@ StrArray csv_reader_next(TkCsvReader *r)
     if (r->pos >= r->len) { csv_err_eof(); return empty; }
 
     RowBuf row;
-    if (!parse_row(r->data, r->len, &r->pos, &row,
-                   r->sep, r->quote_char, r->lazyquotes)) {
+    RowParse rc = parse_row(r->data, r->len, &r->pos, &row,
+                            r->sep, r->quote_char, r->lazyquotes);
+    if (rc == RP_NOMEM) {
+        /* 121.41 (1): not the end of the rows -- a refusal, named. */
+        csv_fail("nomem", r->line_number + 1, "out of memory reading a row");
+        return empty;
+    }
+    if (rc != RP_OK) {
         csv_err_eof();
         return empty;
     }
@@ -490,13 +517,28 @@ StrArray *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out)
     uint64_t  rows_len  = 0;
     StrArray *rows      = (StrArray *)malloc(rows_cap * sizeof(StrArray));
     uint64_t  pos       = 0;
+    if (!rows) return NULL;
 
+    /* 121.41 (1): the growth realloc was assigned back to `rows`, so a
+     * failure leaked every row and the next store wrote through NULL.  Any
+     * allocation failure now frees what was built and returns NULL: a
+     * partial parse is never handed out as the whole document. */
     while (pos < len) {
         RowBuf row;
-        if (!parse_row(data, len, &pos, &row, ',', '"', 0)) break;
-        if (rows_len == rows_cap) {
-            rows_cap *= 2;
-            rows = (StrArray *)realloc(rows, rows_cap * sizeof(StrArray));
+        RowParse rc = parse_row(data, len, &pos, &row, ',', '"', 0);
+        if (rc == RP_EOF) break;
+        if (rc == RP_OK && rows_len == rows_cap) {
+            StrArray *nr = (StrArray *)realloc(rows, rows_cap * 2 * sizeof(StrArray));
+            if (!nr) { rowbuf_free_fields(&row); rc = RP_NOMEM; }
+            else     { rows = nr; rows_cap *= 2; }
+        }
+        if (rc != RP_OK) {
+            for (uint64_t i = 0; i < rows_len; i++) {
+                for (uint64_t j = 0; j < rows[i].len; j++) free((char *)rows[i].data[j]);
+                free((void *)rows[i].data);
+            }
+            free(rows);
+            return NULL;
         }
         rows[rows_len++] = rowbuf_to_strarray(&row);
     }
@@ -1165,6 +1207,9 @@ static StrArray csv_reader_next_strict(TkCsvReader *r)
                      "text after a closing quote; a quoted field must end at "
                      "the delimiter or the line break");
             break;
+        case RP_NOMEM:
+            csv_fail("nomem", start, "out of memory reading a row");
+            break;
         default:
             csv_fail("quote", errline,
                      "quote character part-way through an unquoted field; "
@@ -1193,11 +1238,17 @@ static StrArray csv_reader_next_strict(TkCsvReader *r)
     }
 
     if (r->ragged_policy == RAGGED_PAD && row.len < r->width) {
-        while (row.len < r->width) {
+        while (row.len < r->width && !row.oom) {
             char *e = (char *)malloc(1);
-            if (!e) break;
-            e[0] = '\0';
-            rowbuf_push(&row, e);
+            if (e) e[0] = '\0';
+            rowbuf_push(&row, e);           /* a NULL e marks the row oom */
+        }
+        if (row.oom) {
+            /* 121.41 (1): a short pad was handed out as if padded. */
+            rowbuf_free_fields(&row);
+            r->at_end = 1;
+            csv_fail("nomem", start, "out of memory padding a short row");
+            return empty;
         }
         ragged_record(r, start, row.len, r->width);  /* padded, and recorded */
         return rowbuf_to_strarray(&row);

@@ -308,6 +308,12 @@ static JsonArrayResult collect_array(const char *vs) {
         /* copy element substring as raw */
         size_t len = (size_t)(elem_e - elem_s);
         char *buf = malloc(len + 1);
+        if (!buf) {
+            /* 121.41 (1): this was an unchecked malloc + memcpy through NULL. */
+            for (uint64_t k = 0; k < i; k++) free((void *)arr[k].raw);
+            free(arr);
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r;
+        }
         memcpy(buf, elem_s, len);
         buf[len] = '\0';
         arr[i].raw = buf;
@@ -1350,7 +1356,9 @@ JsonWriter json_newwriter(uint64_t initial_cap) {
 
 static int writer_ensure(JsonWriter *w, uint64_t needed) {
     if (w->pos + needed <= w->cap) return 1;
-    uint64_t newcap = w->cap * 2;
+    /* 121.41 (1): cap is 0 when json_newwriter's malloc failed, and doubling
+     * 0 never reached `needed` -- the loop spun forever. */
+    uint64_t newcap = w->cap ? w->cap * 2 : 64;
     while (newcap < w->pos + needed) newcap *= 2;
     uint8_t *nb = realloc(w->buf, (size_t)newcap);
     if (!nb) return 0;
