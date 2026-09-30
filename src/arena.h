@@ -23,7 +23,8 @@ Arena *arena_init(void);
 /*
  * Allocate `size` bytes from the arena, aligned to 8 bytes.
  * The returned memory is zero-initialised.
- * Returns NULL on allocation failure.
+ * Returns NULL on allocation failure, and for a negative size or one too
+ * large to round up without overflowing int (121.29, REL-06).
  */
 void *arena_alloc(Arena *arena, int size);
 

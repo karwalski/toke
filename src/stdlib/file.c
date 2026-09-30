@@ -663,8 +663,16 @@ StrArrayFileResult file_glob(const char *pattern)
 
 /* ── 55.3.4: recursive directory listing ─ */
 
-/* thread-local accumulator for file_listall */
-static struct { const char **data; uint64_t len; uint64_t cap; const char *base_dir; size_t base_len; } _listall_acc;
+/* accumulator for file_listall.  121.29 (REL-05): nftw passes no user
+ * pointer, so the walk's state lives here -- and it said "thread-local" but
+ * was a plain static: two threads listing at once shared data/len/cap and
+ * realloc'd and freed each other's arrays.  It is thread-local now. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+static _Thread_local
+#else
+static __thread
+#endif
+struct { const char **data; uint64_t len; uint64_t cap; const char *base_dir; size_t base_len; } _listall_acc;
 
 static int _listall_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
     (void)sb; (void)ftwbuf;
@@ -678,7 +686,9 @@ static int _listall_cb(const char *fpath, const struct stat *sb, int typeflag, s
             if (!tmp) return -1;
             _listall_acc.data = tmp;
         }
-        _listall_acc.data[_listall_acc.len++] = strdup(rel);
+        char *copy = strdup(rel);
+        if (!copy) return -1;      /* 121.29: a NULL entry was stored */
+        _listall_acc.data[_listall_acc.len++] = copy;
     }
     return 0;
 }

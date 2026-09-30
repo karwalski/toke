@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <limits.h>
+#include <poll.h>
 #include "tk_runtime.h"   /* AMB-03: tk_path_snapshot() */
 
 /* Initial buffer size for stdout/stderr capture */
@@ -126,7 +127,19 @@ SpawnResult process_spawn(const char **cmd)
         r.err_msg  = "pipe() failed for error channel";
         return r;
     }
-    set_cloexec(err_pipe[1]);   /* write end: close on exec success */
+    /* 121.29 (REL-04): the result was ignored.  Without FD_CLOEXEC the
+     * exec'd program inherits the write end, the read below does not see
+     * EOF until that program exits, and spawn blocks for its whole life. */
+    if (set_cloexec(err_pipe[1]) != 0) {
+        close(stdout_pipe[0]); close(stdout_pipe[1]);
+        close(stderr_pipe[0]); close(stderr_pipe[1]);
+        close(stdin_pipe[0]);  close(stdin_pipe[1]);
+        close(err_pipe[0]);    close(err_pipe[1]);
+        r.is_err   = 1;
+        r.err_kind = PROCESS_ERR_IO;
+        r.err_msg  = "fcntl(FD_CLOEXEC) failed for error channel";
+        return r;
+    }
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -144,18 +157,21 @@ SpawnResult process_spawn(const char **cmd)
         /* Child: set up I/O, then exec */
         close(err_pipe[0]);  /* child doesn't read from error pipe */
 
-        /* Redirect stdin */
-        dup2(stdin_pipe[0], STDIN_FILENO);
+        /* Redirect stdin, stdout, stderr.  121.29 (REL-04): a failed dup2
+         * left the child on the parent's stream while the parent read an
+         * empty pipe; report it down the error pipe like a failed exec. */
+        if (dup2(stdin_pipe[0], STDIN_FILENO) < 0 ||
+            dup2(stdout_pipe[1], STDOUT_FILENO) < 0 ||
+            dup2(stderr_pipe[1], STDERR_FILENO) < 0) {
+            int e = errno;
+            ssize_t n;
+            do { n = write(err_pipe[1], &e, sizeof e); } while (n == -1 && errno == EINTR);
+            _exit(1);
+        }
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
-
-        /* Redirect stdout */
-        dup2(stdout_pipe[1], STDOUT_FILENO);
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
-
-        /* Redirect stderr */
-        dup2(stderr_pipe[1], STDERR_FILENO);
         close(stderr_pipe[0]);
         close(stderr_pipe[1]);
 
@@ -228,6 +244,7 @@ SpawnResult process_spawn(const char **cmd)
         return r;
     }
 
+    memset(h, 0, sizeof *h);
     h->pid       = pid;
     h->stdout_fd = stdout_pipe[0];
     h->stderr_fd = stderr_pipe[0];
@@ -237,6 +254,145 @@ SpawnResult process_spawn(const char **cmd)
 
     r.ok = h;
     return r;
+}
+
+/* =========================================================================
+ * 121.29 (REL-03): output pumping.
+ *
+ * The child's stdout and stderr are pipes of ~64 KiB.  Every call here that
+ * waits -- for exit, for stdin to drain, for one stream's EOF -- used to
+ * block on that one thing alone, so a child that filled the OTHER pipe
+ * stopped, and so did the parent:
+ *   - process.exec(cmd) did wait() then stdout(): any command printing more
+ *     than a pipe's worth hung forever (measured: `head -c 200000
+ *     /dev/zero`, both processes asleep);
+ *   - stdin_write wrote everything before anything read stdout;
+ *   - stdout() read to EOF while the child blocked on a full stderr.
+ * Now every wait also drains whichever output pipes are open into the
+ * handle, and stdout()/stderr() return what was drained plus the rest.
+ * ========================================================================= */
+
+static int buf_append(char **buf, size_t *len, size_t *cap, const char *src, size_t n)
+{
+    if (*len + n + 1 > *cap) {
+        size_t nc = *cap ? *cap : STDOUT_BUF_INIT;
+        while (*len + n + 1 > nc) nc *= 2;
+        char *nb = realloc(*buf, nc);
+        if (!nb) return -1;
+        *buf = nb;
+        *cap = nc;
+    }
+    memcpy(*buf + *len, src, n);
+    *len += n;
+    (*buf)[*len] = '\0';
+    return 0;
+}
+
+/* Read what is available on one output fd into its buffer; close it at EOF.
+ * Returns 0, or -1 on a read/alloc error. */
+static int drain_fd(int *fd, char **buf, size_t *len, size_t *cap)
+{
+    char tmp[16384];
+    ssize_t n;
+    do { n = read(*fd, tmp, sizeof tmp); } while (n < 0 && errno == EINTR);
+    if (n < 0) return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
+    if (n == 0) { close(*fd); *fd = -1; return 0; }
+    return buf_append(buf, len, cap, tmp, (size_t)n);
+}
+
+/* pump -- one poll over the open output fds (and, if `in` is non-NULL, the
+ * stdin fd for writability), draining output and writing as much of
+ * in[*in_off..in_len) as the pipe takes.  timeout_ms as for poll().
+ * Returns 0, or -1 on an I/O error (err_msg set). */
+static int pump(ProcessHandle *h, int timeout_ms,
+                const char *in, uint64_t in_len, uint64_t *in_off,
+                const char **err_msg)
+{
+    struct pollfd pf[3];
+    int n = 0, io = -1, ie = -1, ii = -1;
+    if (h->stdout_fd >= 0 && !h->out_done) { pf[n].fd = h->stdout_fd; pf[n].events = POLLIN; io = n++; }
+    if (h->stderr_fd >= 0 && !h->err_done) { pf[n].fd = h->stderr_fd; pf[n].events = POLLIN; ie = n++; }
+    if (in && h->stdin_fd >= 0 && *in_off < in_len) { pf[n].fd = h->stdin_fd; pf[n].events = POLLOUT; ii = n++; }
+    if (n == 0) return 0;
+
+    int rc;
+    do { rc = poll(pf, (nfds_t)n, timeout_ms); } while (rc < 0 && errno == EINTR);
+    if (rc < 0) { *err_msg = "poll() failed"; return -1; }
+    if (rc == 0) return 0;
+
+    if (io >= 0 && (pf[io].revents & (POLLIN | POLLHUP | POLLERR)) &&
+        drain_fd(&h->stdout_fd, &h->outbuf, &h->outlen, &h->outcap) != 0) {
+        *err_msg = "read() failed"; return -1;
+    }
+    if (ie >= 0 && (pf[ie].revents & (POLLIN | POLLHUP | POLLERR)) &&
+        drain_fd(&h->stderr_fd, &h->errbuf, &h->errlen, &h->errcap) != 0) {
+        *err_msg = "read() failed"; return -1;
+    }
+    if (ii >= 0 && (pf[ii].revents & (POLLOUT | POLLERR | POLLHUP))) {
+        /* Non-blocking for this write only: POLLOUT promises room for
+         * PIPE_BUF bytes, not for the whole remainder. */
+        int fl = fcntl(h->stdin_fd, F_GETFL);
+        if (fl >= 0) fcntl(h->stdin_fd, F_SETFL, fl | O_NONBLOCK);
+        ssize_t w;
+        do {
+            w = write(h->stdin_fd, in + *in_off, (size_t)(in_len - *in_off));
+        } while (w < 0 && errno == EINTR);
+        int e = errno;
+        if (fl >= 0) fcntl(h->stdin_fd, F_SETFL, fl);
+        if (w < 0 && e != EAGAIN && e != EWOULDBLOCK) { *err_msg = "write() failed"; return -1; }
+        if (w > 0) *in_off += (uint64_t)w;
+    }
+    return 0;
+}
+
+static void record_status(ProcessHandle *h, int status)
+{
+    h->exited = 1;
+    if (WIFEXITED(status)) {
+        h->exit_code = (int32_t)WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        h->exit_code = (int32_t)(-WTERMSIG(status));
+    }
+}
+
+/* wait_draining -- reap the child, draining its output meanwhile so a child
+ * blocked on a full pipe can finish.  deadline_ms < 0: no deadline.
+ * Returns 1 exited, 0 deadline passed, -1 error (err_msg set). */
+static int64_t now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static int wait_draining(ProcessHandle *h, int64_t timeout_ms, const char **err_msg)
+{
+    int64_t start = now_ms();
+    for (;;) {
+        int status = 0;
+        pid_t w;
+        int any_out = (h->stdout_fd >= 0 && !h->out_done) || (h->stderr_fd >= 0 && !h->err_done);
+        if (!any_out && timeout_ms < 0) {
+            do { w = waitpid(h->pid, &status, 0); } while (w == -1 && errno == EINTR);
+        } else {
+            do { w = waitpid(h->pid, &status, WNOHANG); } while (w == -1 && errno == EINTR);
+        }
+        if (w == -1) { *err_msg = "waitpid() failed"; return -1; }
+        if (w == h->pid) { record_status(h, status); return 1; }
+
+        int slice = 50;
+        if (timeout_ms >= 0) {
+            int64_t left = timeout_ms - (now_ms() - start);
+            if (left <= 0) return 0;
+            if (left < slice) slice = (int)left;
+        }
+        if (any_out) {
+            if (pump(h, slice, NULL, 0, NULL, err_msg) != 0) return -1;
+        } else {
+            struct timespec ts = { 0, (long)slice * 1000000L };
+            nanosleep(&ts, NULL);
+        }
+    }
 }
 
 WaitResult process_wait(ProcessHandle *h)
@@ -253,85 +409,61 @@ WaitResult process_wait(ProcessHandle *h)
         return r;
     }
 
-    int status = 0;
-    pid_t waited;
-    do {
-        waited = waitpid(h->pid, &status, 0);
-    } while (waited == -1 && errno == EINTR);
-
-    if (waited == -1) {
+    const char *em = NULL;
+    if (wait_draining(h, -1, &em) < 0) {
         r.is_err   = 1;
         r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "waitpid() failed";
+        r.err_msg  = em;
         return r;
-    }
-
-    h->exited = 1;
-    if (WIFEXITED(status)) {
-        h->exit_code = (int32_t)WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        h->exit_code = (int32_t)(-WTERMSIG(status));
     }
     r.ok = h->exit_code;
     return r;
 }
 
-StdoutResult process_stdout(ProcessHandle *h)
+/* take_stream -- pump until `fd` reaches EOF (draining the other stream
+ * meanwhile), then hand over its buffer.  Shared by stdout and stderr. */
+static StdoutResult take_stream(ProcessHandle *h, int is_err_stream)
 {
     StdoutResult r = {NULL, 0, PROCESS_ERR_NONE, NULL};
-    if (!h) {
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "null handle";
-        return r;
-    }
-    if (h->stdout_fd < 0) {
-        /* Already drained — return empty string */
+    int   *fd   = is_err_stream ? &h->stderr_fd : &h->stdout_fd;
+    int   *done = is_err_stream ? &h->err_done  : &h->out_done;
+    char **buf  = is_err_stream ? &h->errbuf    : &h->outbuf;
+    size_t *len = is_err_stream ? &h->errlen    : &h->outlen;
+    size_t *cap = is_err_stream ? &h->errcap    : &h->outcap;
+
+    if (*done) {
+        /* Already returned -- return empty string */
         r.ok = "";
         return r;
     }
-
-    size_t capacity = STDOUT_BUF_INIT;
-    size_t len      = 0;
-    char  *buf      = malloc(capacity);
-    if (!buf) {
+    while (*fd >= 0) {
+        const char *em = NULL;
+        if (pump(h, -1, NULL, 0, NULL, &em) != 0) {
+            r.is_err   = 1;
+            r.err_kind = PROCESS_ERR_IO;
+            r.err_msg  = em;
+            return r;
+        }
+    }
+    if (!*buf && buf_append(buf, len, cap, "", 0) != 0) {
         r.is_err   = 1;
         r.err_kind = PROCESS_ERR_IO;
         r.err_msg  = "allocation failed";
         return r;
     }
+    r.ok  = *buf;          /* ownership passes to the caller */
+    *buf  = NULL; *len = 0; *cap = 0;
+    *done = 1;
+    return r;
+}
 
-    ssize_t n;
-    while ((n = read(h->stdout_fd, buf + len, capacity - len - 1)) > 0) {
-        len += (size_t)n;
-        if (len + 1 >= capacity) {
-            capacity *= 2;
-            char *nb = realloc(buf, capacity);
-            if (!nb) {
-                free(buf);
-                r.is_err   = 1;
-                r.err_kind = PROCESS_ERR_IO;
-                r.err_msg  = "realloc failed";
-                return r;
-            }
-            buf = nb;
-        }
-    }
-
-    if (n < 0) {
-        free(buf);
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "read() failed";
+StdoutResult process_stdout(ProcessHandle *h)
+{
+    if (!h) {
+        StdoutResult r = {NULL, 1, PROCESS_ERR_IO, "null handle"};
         return r;
     }
-
-    buf[len] = '\0';
-    close(h->stdout_fd);
-    h->stdout_fd = -1;
-
-    r.ok = buf;
-    return r;
+    return take_stream(h, 0);
 }
 
 int process_kill(ProcessHandle *h)
@@ -347,6 +479,8 @@ void process_handle_free(ProcessHandle *h)
     if (h->stdout_fd >= 0) { close(h->stdout_fd); h->stdout_fd = -1; }
     if (h->stderr_fd >= 0) { close(h->stderr_fd); h->stderr_fd = -1; }
     if (h->stdin_fd  >= 0) { close(h->stdin_fd);  h->stdin_fd  = -1; }
+    free(h->outbuf);
+    free(h->errbuf);
     free(h);
 }
 
@@ -374,19 +508,18 @@ U64ProcessResult process_stdin_write(ProcessHandle *h, const char *data, uint64_
         return r;
     }
 
+    /* 121.29 (REL-03): write while draining stdout/stderr, so a child that
+     * answers before it has read all its input cannot fill its output pipe
+     * and stop reading -- which left both processes blocked for good. */
     uint64_t written = 0;
     while (written < len) {
-        ssize_t n;
-        do {
-            n = write(h->stdin_fd, data + written, (size_t)(len - written));
-        } while (n == -1 && errno == EINTR);
-        if (n < 0) {
+        const char *em = NULL;
+        if (pump(h, -1, data, len, &written, &em) != 0) {
             r.is_err   = 1;
             r.err_kind = PROCESS_ERR_IO;
-            r.err_msg  = "write() failed";
+            r.err_msg  = em;
             return r;
         }
-        written += (uint64_t)n;
     }
     r.ok = written;
     return r;
@@ -394,95 +527,18 @@ U64ProcessResult process_stdin_write(ProcessHandle *h, const char *data, uint64_
 
 StrProcessResult process_stderr(ProcessHandle *h)
 {
-    StrProcessResult r = {NULL, 0, PROCESS_ERR_NONE, NULL};
     if (!h) {
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "null handle";
+        StrProcessResult r = {NULL, 1, PROCESS_ERR_IO, "null handle"};
         return r;
     }
-    if (h->stderr_fd < 0) {
-        r.ok = "";
-        return r;
-    }
-
-    size_t capacity = STDOUT_BUF_INIT;
-    size_t len      = 0;
-    char  *buf      = malloc(capacity);
-    if (!buf) {
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "allocation failed";
-        return r;
-    }
-
-    ssize_t n;
-    while ((n = read(h->stderr_fd, buf + len, capacity - len - 1)) > 0) {
-        len += (size_t)n;
-        if (len + 1 >= capacity) {
-            capacity *= 2;
-            char *nb = realloc(buf, capacity);
-            if (!nb) {
-                free(buf);
-                r.is_err   = 1;
-                r.err_kind = PROCESS_ERR_IO;
-                r.err_msg  = "realloc failed";
-                return r;
-            }
-            buf = nb;
-        }
-    }
-
-    if (n < 0) {
-        free(buf);
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "read() failed";
-        return r;
-    }
-
-    buf[len] = '\0';
-    close(h->stderr_fd);
-    h->stderr_fd = -1;
-
-    r.ok = buf;
-    return r;
+    return take_stream(h, 1);
 }
 
 I32ProcessResult process_exit_code(ProcessHandle *h)
 {
     I32ProcessResult r = {0, 0, PROCESS_ERR_NONE, NULL};
-    if (!h) {
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "null handle";
-        return r;
-    }
-    if (h->exited) {
-        r.ok = h->exit_code;
-        return r;
-    }
-
-    int status = 0;
-    pid_t waited;
-    do {
-        waited = waitpid(h->pid, &status, 0);
-    } while (waited == -1 && errno == EINTR);
-
-    if (waited == -1) {
-        r.is_err   = 1;
-        r.err_kind = PROCESS_ERR_IO;
-        r.err_msg  = "waitpid() failed";
-        return r;
-    }
-
-    h->exited = 1;
-    if (WIFEXITED(status)) {
-        h->exit_code = (int32_t)WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        h->exit_code = (int32_t)(-WTERMSIG(status));
-    }
-    r.ok = h->exit_code;
+    WaitResult w = process_wait(h);
+    r.ok = w.ok; r.is_err = w.is_err; r.err_kind = w.err_kind; r.err_msg = w.err_msg;
     return r;
 }
 
@@ -532,27 +588,15 @@ I32ProcessResult process_timeout(ProcessHandle *h, uint64_t timeout_ms)
         return r;
     }
 
-    /* Poll loop: check every 1 ms */
-    uint64_t elapsed_ms = 0;
-    struct timespec sleep_req;
-    sleep_req.tv_sec  = 0;
-    sleep_req.tv_nsec = 1000000L; /* 1 ms */
-
-    while (elapsed_ms < timeout_ms) {
-        int status = 0;
-        pid_t result = waitpid(h->pid, &status, WNOHANG);
-        if (result == h->pid) {
-            h->exited = 1;
-            if (WIFEXITED(status)) {
-                h->exit_code = (int32_t)WEXITSTATUS(status);
-            } else if (WIFSIGNALED(status)) {
-                h->exit_code = (int32_t)(-WTERMSIG(status));
-            }
-            r.ok = h->exit_code;
-            return r;
-        }
-        nanosleep(&sleep_req, NULL);
-        elapsed_ms++;
+    /* 121.29 (REL-03): wait, draining output, until the deadline. */
+    const char *em = NULL;
+    int wr = wait_draining(h, (int64_t)(timeout_ms > INT64_MAX ? INT64_MAX : timeout_ms), &em);
+    if (wr == 1) { r.ok = h->exit_code; return r; }
+    if (wr < 0) {
+        r.is_err   = 1;
+        r.err_kind = PROCESS_ERR_IO;
+        r.err_msg  = em;
+        return r;
     }
 
     /* Timeout expired — kill and wait */
