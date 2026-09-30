@@ -115,6 +115,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9021 | error | codegen | Failed to read .tkir file | n/s |
 | E9022 | error | codegen | Stdlib directory not found | n/s |
 | E9023 | error | codegen | No main function defined | n/s |
+| E9024 | error | codegen | Stdlib or runtime directory path contains whitespace | n/s |
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 

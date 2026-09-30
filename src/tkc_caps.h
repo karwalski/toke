@@ -363,12 +363,63 @@ static inline int tkc_caps_report_one(const TkcCapCount *cc, const char *noun,
     return 1;
 }
 
+/* ── max_locals at --check (127.252 residue) ───────────────────────────
+ *
+ * Codegen's per-function local registries (local types, pointer locals,
+ * name aliases) share the max_locals budget and report overflow once per
+ * function (llvm.c locals_cap_flush), but only while emitting -- `--check`
+ * said nothing.  This is the part of that demand the checker can count
+ * exactly: every parameter, every `let` / `let x=mut.` binding and every
+ * `lp(let i=...)` of the function's own body -- each one takes a slot that
+ * stays taken for the rest of the function (measured: two sibling blocks of
+ * 70 lets each need 140 slots, even with the same names).  Two things are
+ * left out because codegen can give their slots back: everything under a
+ * match arm (arm bindings are released at the arm's end, 127.246 (4)) and
+ * closure bodies (lifted, counted as their own function).  So the count is
+ * a LOWER bound of codegen's -- the checker can only refuse a program the
+ * build would refuse too, and it uses codegen's wording ("needs at least").
+ * No fix, as in codegen: the full need is not known here. */
+static inline int tkc_caps_fn_locals(const Node *n) {
+    if (!n || n->kind == NODE_CLOSURE || n->kind == NODE_MATCH_ARM) return 0;
+    int k = (n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT ||
+             n->kind == NODE_PARAM ||
+             (n->kind == NODE_LOOP_INIT && n->op == TK_KW_LET)) ? 1 : 0;
+    for (int i = 0; i < n->child_count; i++) k += tkc_caps_fn_locals(n->children[i]);
+    return k;
+}
+
+static inline int tkc_caps_locals_check(const Node *n, const char *src, int cap) {
+    if (!n || cap <= 0) return 0;
+    if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
+        int e = 0;
+        for (int i = 0; i < n->child_count; i++)
+            e += tkc_caps_locals_check(n->children[i], src, cap);
+        return e;
+    }
+    if (n->kind != NODE_FUNC_DECL || n->child_count < 1) return 0;
+    int need = tkc_caps_fn_locals(n);
+    if (need <= cap) return 0;
+    char nm[128]; tkc_caps_tok(src, n->children[0], nm, sizeof nm);
+    char msg[512], exp[32], got[32];
+    snprintf(msg, sizeof msg,
+             "compiler limit exceeded: function '%s' needs at least %d local-variable "
+             "slots and the limit is %d (max_locals); raise it with "
+             "--max-locals=N or max_locals = N in tkc.toml",
+             nm, need, cap);
+    snprintf(exp, sizeof exp, "%d", cap);
+    snprintf(got, sizeof got, "%d", need);
+    diag_emit(DIAG_ERROR, E9010, n->start, n->line, n->col, msg,
+              "expected", exp, "got", got, (const char *)NULL);
+    return 1;
+}
+
 static inline int tkc_caps_check(const Node *ast, const char *src,
                                  const char **sp, int spc, const TkcLimits *lim) {
     TkcCapCount fc, sc;
     tkc_caps_count(ast, src, sp, spc, lim, &fc, &sc);
     return tkc_caps_report_one(&fc, "function signatures", "max_funcs", "--max-funcs")
-         + tkc_caps_report_one(&sc, "struct types", "max_structs", "--max-structs");
+         + tkc_caps_report_one(&sc, "struct types", "max_structs", "--max-structs")
+         + tkc_caps_locals_check(ast, src, lim ? lim->max_locals : 0);
 }
 
 #endif /* TKC_CAPS_H */

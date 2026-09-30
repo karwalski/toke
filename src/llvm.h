@@ -21,6 +21,7 @@
 #define E9003 9003  /* clang invocation failed                           */
 #define E9004 9004  /* unresolved stdlib call — missing import (84.1.5)   */
 #define E9005 9005  /* match on a value whose sum type is not established     */
+#define E9024 9024  /* stdlib/runtime directory path contains whitespace (121.28) */
 #define W8001 8001  /* extern function declaration — FFI unsafe (76.1.2d) */
 
 /* ── CodegenEnv ──────────────────────────────────────────────────────── */
