@@ -11,6 +11,11 @@
  * regex entry point, decodes the literal exactly as the lexer's escapes
  * define it, and compiles it with tk_regex.h -- the runtime's own engine, so
  * the compiler and the program can never disagree about what is valid.
+ *
+ * 121.45 (3): the pattern may also be an identifier bound by an immutable
+ * `let p="literal"` in the same function, when that is provably the binding
+ * the call reads -- see let_literal() for the (deliberately conservative)
+ * conditions.  Anything it cannot prove is left to the run-time check.
  */
 #include "regex_check.h"
 #include "diag.h"
@@ -85,7 +90,101 @@ static int decode(const char *src, int q, int end, char *out, int *at) {
     return n;
 }
 
-static void check_call(const Node *call, const char *src, int src_len, const SymbolTable *st, int *count) {
+/* ── 121.45 (3): a pattern named by an immutable `let` ─────────────────── */
+
+static int same_ident(const Node *a, const Node *b, const char *src) {
+    return a && b && a->kind == NODE_IDENT && b->kind == NODE_IDENT &&
+           a->tok_len == b->tok_len &&
+           memcmp(src + a->tok_start, src + b->tok_start, (size_t)a->tok_len) == 0;
+}
+
+/* An occurrence of the name whose parent is one of these is a READ of the
+ * variable.  Any other parent -- a parameter, a match-arm or loop binding, a
+ * `mut.` binding, an assignment, a closure, or a node kind added later -- may
+ * bind or rebind the name, so the whole lookup gives up. */
+static int is_read_context(const Node *parent, int idx) {
+    switch (parent->kind) {
+    case NODE_CALL_EXPR: case NODE_BINARY_EXPR: case NODE_UNARY_EXPR:
+    case NODE_CAST_EXPR: case NODE_INDEX_EXPR: case NODE_EXPR_STMT:
+    case NODE_RETURN_STMT: case NODE_ARRAY_LIT: case NODE_MAP_ENTRY:
+    case NODE_PROPAGATE_EXPR:
+        return 1;
+    case NODE_FIELD_EXPR:   return 1;         /* child 1 is a member name: not a binder */
+    case NODE_FIELD_INIT:   return idx >= 1;  /* child 0 is the field name */
+    case NODE_BIND_STMT:    return idx >= 1;  /* the value, not the name */
+    case NODE_MUT_BIND_STMT: case NODE_ASSIGN_STMT: case NODE_LOOP_INIT:
+        return idx >= 1;
+    case NODE_IF_STMT: case NODE_MATCH_STMT:  return idx == 0;
+    default:                return 0;
+    }
+}
+
+typedef struct {
+    const Node *name;       /* the identifier being resolved */
+    const char *src;
+    const Node *bind;       /* the one `let name=...` found */
+    const Node *bind_list;  /* the statement list that holds it */
+    int binders, bad;
+} LetScan;
+
+static void let_scan(const Node *n, const Node *parent, int idx, LetScan *ls) {
+    if (!n || ls->bad) return;
+    if (same_ident(n, ls->name, ls->src)) {
+        if (parent && parent->kind == NODE_BIND_STMT && idx == 0) {
+            ls->binders++;
+        } else if (!parent || !is_read_context(parent, idx)) {
+            ls->bad = 1; return;
+        }
+    }
+    if (n->kind == NODE_STMT_LIST) {
+        for (int i = 0; i < n->child_count; i++) {
+            const Node *c = n->children[i];
+            if (c && c->kind == NODE_BIND_STMT && c->child_count >= 2 &&
+                same_ident(c->children[0], ls->name, ls->src)) {
+                ls->bind = c; ls->bind_list = n;
+            }
+        }
+    }
+    for (int i = 0; i < n->child_count; i++) let_scan(n->children[i], n, i, ls);
+}
+
+/* One past the last source byte any node of the subtree spans. */
+static int subtree_end(const Node *n) {
+    if (!n) return 0;
+    int e = n->tok_start + n->tok_len;
+    if (n->start > e) e = n->start;
+    for (int i = 0; i < n->child_count; i++) {
+        int c = subtree_end(n->children[i]);
+        if (c > e) e = c;
+    }
+    return e;
+}
+
+/* The string literal an identifier pattern provably holds, or NULL.  Proved
+ * when, within the enclosing function: the name has exactly one binder, an
+ * immutable `let name="…"`; every other occurrence is a read; and the call
+ * comes after that `let`, inside the statement list that holds it. */
+static const Node *let_literal(const Node *fn, const Node *ident, const Node *call, const char *src) {
+    if (!fn || !ident || ident->kind != NODE_IDENT) return NULL;
+    LetScan ls = { ident, src, NULL, NULL, 0, 0 };
+    let_scan(fn, NULL, 0, &ls);
+    if (ls.bad || ls.binders != 1 || !ls.bind || !ls.bind_list) return NULL;
+    const Node *val = ls.bind->children[1];
+    if (!val || val->kind != NODE_STR_LIT) return NULL;
+    /* inside the list, after the binding (offsets: the let ends at its value) */
+    int after = val->tok_start + val->tok_len;
+    if (call->start < after) return NULL;
+    int list_end = subtree_end(ls.bind_list);
+    if (call->start >= list_end) return NULL;
+    return val;
+}
+
+/* Literals already reported through a `let` (one E4075 per literal, however
+ * many calls read it). */
+static int  g_seen[64];
+static int  g_nseen;
+
+static void check_call(const Node *call, const Node *fdecl, const char *src, int src_len, const SymbolTable *st, int *count) {
     if (call->child_count < 3) return;
     const Node *callee = call->children[0];
     if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return;
@@ -95,6 +194,14 @@ static void check_call(const Node *call, const char *src, int src_len, const Sym
         if (ident_is(callee->children[1], src, REGEX_FNS[i])) { fn = REGEX_FNS[i]; break; }
     if (!fn) return;
     const Node *lit = call->children[2];            /* (subject; pattern ...) */
+    int via_let = 0;
+    if (lit && lit->kind == NODE_IDENT) {
+        lit = let_literal(fdecl, lit, call, src);
+        via_let = 1;
+        if (lit) {
+            for (int i = 0; i < g_nseen; i++) if (g_seen[i] == lit->tok_start) return;
+        }
+    }
     if (!lit || lit->kind != NODE_STR_LIT) return;
     int q = lit->tok_start, end = lit->tok_start + lit->tok_len - 1;
     /* the node must span a "..." in this source buffer (lowered nodes may not) */
@@ -122,15 +229,18 @@ static void check_call(const Node *call, const char *src, int src_len, const Sym
                       "expected", "a pattern in toke's regex language (docs/stdlib/str.md, Regular expressions)",
                       NULL);
             (*count)++;
+            if (via_let && g_nseen < (int)(sizeof g_seen / sizeof g_seen[0]))
+                g_seen[g_nseen++] = lit->tok_start;
         }
     }
     free(pat); free(at);
 }
 
-static void walk(const Node *n, const char *src, int src_len, const SymbolTable *st, int *count) {
+static void walk(const Node *n, const Node *fn, const char *src, int src_len, const SymbolTable *st, int *count) {
     if (!n) return;
-    if (n->kind == NODE_CALL_EXPR) check_call(n, src, src_len, st, count);
-    for (int i = 0; i < n->child_count; i++) walk(n->children[i], src, src_len, st, count);
+    if (n->kind == NODE_FUNC_DECL) fn = n;
+    if (n->kind == NODE_CALL_EXPR) check_call(n, fn, src, src_len, st, count);
+    for (int i = 0; i < n->child_count; i++) walk(n->children[i], fn, src, src_len, st, count);
 }
 
 int regex_check(const Node *ast, const char *src, int src_len, const SymbolTable *st) {
@@ -139,6 +249,7 @@ int regex_check(const Node *ast, const char *src, int src_len, const SymbolTable
     int has_str = 0;
     for (int i = 0; i < st->count; i++)
         if (st->entries[i].module_path && !strcmp(st->entries[i].module_path, "std.str")) has_str = 1;
-    if (has_str) walk(ast, src, src_len, st, &count);
+    g_nseen = 0;
+    if (has_str) walk(ast, NULL, src, src_len, st, &count);
     return count;
 }

@@ -525,6 +525,10 @@ let a=mt g() {$ok:v v};
 
 Triggers E4010 (non-exhaustive match: missing arm for `$err`), with no `fix`.
 
+The last statement of a branch of an expression-`if` is that `if`'s value, so
+a match there is used too (story 127.252): `let a=if(c){ mt g() {$ok:v v} }el{ 5 };`
+is E4010. An `if` standing as a statement discards its branches' values.
+
 **Fix:** Add the missing match arm(s) to cover all cases.
 
 ---
@@ -1109,8 +1113,11 @@ compiled and then matched nothing at run time, because a POSIX `regcomp`
 failure read as "no match". The supported language is in
 [str.md](../stdlib/str.md#regular-expressions); the same engine checks the
 pattern here and runs it in the program, so they cannot disagree. A pattern
-computed at run time is checked when it is used, and an invalid one traps
-`RT008`.
+held by an immutable `let` bound to a string literal is checked the same way
+(121.45) when that `let` is provably the binding the call reads: it is the
+name's only binder in the function, and the call follows it in its block. A
+pattern that is shadowed, `mut.`-bound, a parameter, or computed at run time
+is checked when it is used, and an invalid one traps `RT008`.
 
 <!-- skip-check -->
 ```text
@@ -1249,7 +1256,17 @@ the built-in `timeparts` and `none` types. The message lists what was counted.
 
 **Fix:** raise the limit to the count: `--max-imports=N` / `max_imports`,
 `--max-funcs=N` / `max_funcs`, `--max-structs=N` / `max_structs` (in
-`tkc.toml`). The `fix` field names the exact value (story 138.15).
+`tkc.toml`). The `fix` field names the exact value (story 138.15). The
+defaults are 32 imports, 1024 function signatures and 1024 struct types
+(`tkc --show-limits`); the last two were 128 and 64 until story 127.250.
+
+The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
+by pointer locals, local types and shadowing aliases) is met in codegen, not at
+`--check`. It is reported once per function, closure or globals initialiser
+that crosses it, at that function, naming it, with `expected` = the limit and
+`got` = the count needed. That count is a lower bound -- a full registry stops
+recording, which can hide further demand -- so this E9010 carries no `fix`
+(story 127.252).
 
 ### E9020
 

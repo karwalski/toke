@@ -27,6 +27,11 @@
 #        (a fixed glue fails here: delete its entry — the list only shrinks);
 #     3. the json get* accessors llvm.c keeps by name (their .tki says plain
 #        i64) fill the slot.
+#     4. (127.246 (2)) every slot-filling `T!E` export whose raise stores a
+#        bare flag -- `tk_current_error = 1` or `c ? 1 : 0`, in its body or a
+#        callee -- is on PAYLOADLESS below: its $err arm binds nil (RT005 on
+#        `mt e {...}`).  Fix the glue to raise a box, or list it, dated;
+#     5. every PAYLOADLESS entry still raises a bare flag (the list shrinks).
 #   It is a static lower bound: "assigns on some path", not "on every
 #   path".  It cannot see a glue that raises on one failure path and returns
 #   bare 0 on another; the per-module conform suites carry that.
@@ -37,7 +42,11 @@
 # given one bare `return 0` path (tk_infer_embed_w) -> check 1 red naming
 # it; without the always-raise rule the seven infer/mlx stubs were red.
 #
-# Story: 127.238, 127.241
+# 127.246 (2) controls: main's toon_glue.c (C375_ROOT=<main tree>) -> check
+# 4 red naming tk_toon_{arr,bool,f64,i64,str}_w; adding tk_toon_str_w to
+# PAYLOADLESS on the fixed tree -> check 5 red naming it.
+#
+# Story: 127.238, 127.241, 127.246
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -125,6 +134,41 @@ for w in ['tk_json_getbool_w', 'tk_json_getint_w', 'tk_json_geti64_w',
           'tk_json_geti32_w', 'tk_json_getf32_w', 'tk_json_getfloat_w']:
     if w not in fills:
         print(f'FAIL 3: {w} is kept as a slot wrapper by name but does not fill the slot'); fail += 1
+# 4/5. 127.246 (2): a slot wrapper whose raise stores a bare flag (a literal
+# `tk_current_error = 1`, or `c ? 1 : 0`) takes the $err arm with nothing to
+# bind -- `$err:e` is nil and `mt e {...}` is RT005.  Every such T!E export
+# is on PAYLOADLESS (dated; it only shrinks); every entry still is one.
+FLAG = re.compile(r'tk_current_error\s*=(?!=)\s*(?:\(?\s*[1-9]\d*\s*\)?|[^;]*\?\s*[1-9]\d*\s*:\s*0)\s*;')
+flags = closure({n for n, b in bodies.items() if FLAG.search(b)})
+PAYLOADLESS = [  # 2026-09-30, 127.246 (2): measured on main at cde89021
+    'tk_analytics_anomalies_w',
+    'tk_analytics_corr_w',
+    'tk_analytics_describe_w',
+    'tk_analytics_groupstats_w',
+    'tk_analytics_pivot_w',
+    'tk_analytics_timeseries_w',
+    'tk_i18n_load_w',
+    'tk_llm_chat_w',
+    'tk_llm_chatstream_w',
+    'tk_llm_complete_w',
+    'tk_llm_streamnext_w',
+    'tk_llmtool_chatwithtools_w',
+    'tk_llmtool_parsetoolcalls_w',
+    'tk_llmtool_submitresult_w',
+    'tk_md_renderfile_w',
+    'tk_yaml_arr_w',
+    'tk_yaml_bool_w',
+    'tk_yaml_dec_w',
+    'tk_yaml_f64_w',
+    'tk_yaml_i64_w',
+    'tk_yaml_str_w',
+]
+for w, (f, ret) in sorted(te.items()):
+    if w in bodies and w in fills and w in flags and w not in PAYLOADLESS:
+        print(f'FAIL 4: {w} ({f}: {ret}) raises a payload-less flag ($err binds nil) and is not on PAYLOADLESS'); fail += 1
+for w in PAYLOADLESS:
+    if w not in te or w not in flags:
+        print(f'FAIL 5: {w} no longer raises a payload-less flag: delete its PAYLOADLESS entry'); fail += 1
 nofn = sorted(w for w in te if w not in bodies)
 derived = sorted(w for w in te if w in fills)
 print(f'C375: {len(te)} T!E exports; {len(derived)} fill the slot (derived slot wrappers); '

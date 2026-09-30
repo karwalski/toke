@@ -18,8 +18,8 @@ An entry below is declared as a `func` export in a `stdlib/*.tki` interface file
 
 | `.tki` func exports | 926 |
 |---|---|
-| Resolve to a defined symbol | 884 |
-| **Quarantined (no defined symbol)** | **42** |
+| Resolve to a defined symbol | 886 |
+| **Quarantined (no defined symbol)** | **40** |
 | Stale skips (quarantined but now resolving) | 0 |
 
 A stale skip fails `make check-tki`, so the skiplist cannot silently outlive the gap it records: the moment an export gets its glue, the gate demands the line be deleted.
@@ -110,18 +110,11 @@ An export whose symbol **exists** but whose declared **arity** disagrees with th
 |---|---|---|
 | `math.hypot` | `tk_math_hypot_w` | 2026-09-19 no _w glue and not in llvm.c libc map; core=math_hypot [131.38-followup] |
 
-### `mdns` (2)
+### `mdns` (1)
 
 | Export | Expected symbol | Reason |
 |---|---|---|
-| `mdns.isavailable` | `tk_mdns_isavailable_w` | 2026-09-19 no _w glue; core=mdns_is_available [131.38-followup] |
 | `mdns.resolve` | `tk_mdns_resolve_w` | 2026-09-19 no _w glue; core=mdns_resolve [131.38-followup] |
-
-### `mlx` (1)
-
-| Export | Expected symbol | Reason |
-|---|---|---|
-| `mlx.unload` | `tk_mlx_unload_w` | 2026-09-19 no _w glue; core=mlx_unload [131.38-followup] |
 
 ### `template` (1)
 

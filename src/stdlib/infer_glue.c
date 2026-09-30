@@ -55,10 +55,14 @@ int64_t tk_infer_unload_w(int64_t handle) {
     return 0;
 }
 
-/* infer.generate(handle, prompt) — generate text from prompt */
-int64_t tk_infer_generate_w(int64_t handle, int64_t prompt) {
+/* infer.generate(handle; prompt; maxtokens) — generate text from prompt.
+ * 137.11 / 121.53 (5): takes the i32 token limit the .tki publishes (the core
+ * tk_infer_generate takes max_tokens too, so the interface was right and the
+ * wrapper had no slot for it).  Still a stub: always the $err arm. */
+int64_t tk_infer_generate_w(int64_t handle, int64_t prompt, int64_t maxtokens) {
     (void)handle;
     (void)prompt;
+    (void)maxtokens;
     return infer_unavailable("infer.generate: local inference is not linked into this build (std.infer's glue is a stub)");
 }
 

@@ -186,7 +186,12 @@ f=http.clientput(c:$httpclient;path:$str;body:@$byte;ctype:$str):$httpresp!$http
 f=http.clientdelete(c:$httpclient;path:$str):$httpresp!$httperr
 f=http.geturl(url:$str):$str!$httperr
 f=http.postheaders(url:$str;body:$str;headers:@(@($str))):$httpresp!$httperr
-f=http.stream(c:$httpclient;req:$httpreq):$httpstream!$httperr
+f=http.stream(c:$httpclient):$httpstream!$httperr
+(* 121.53 (2), 2026-09-30: the implemented and published (http.tki) form is
+   the client alone -- a GET of its base URL.  The (c;req) form this file
+   used to list was never implemented: the glue read a URL, and the core
+   (http_stream in http.c) would send req's method, path and body but not its
+   headers, so restoring it needs an http.c change first. *)
 f=http.streamnext(s:$httpstream):@$byte!$httperr
 ```
 

@@ -76,7 +76,6 @@ void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
-#include <regex.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -1569,20 +1568,37 @@ int64_t tk_http_delete_w(int64_t client, int64_t path) {
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
-/* tk_http_stream_w — open a streaming connection to the given URL. */
-int64_t tk_http_stream_w(int64_t url) {
-    if (!url) return 0;
-    HttpClient *c = http_client((const char *)(intptr_t)url);
-    if (!c) return 0;
+/* http_raise is defined with the client calls below. */
+static int64_t http_raise(const char *msg, uint64_t code);
+
+/* http.stream(c) -> httpstream!httperr — a GET of the client's base URL,
+ * streamed (121.53 (2)).  stdlib/http.tki publishes the $httpclient that
+ * http.client returns; this wrapper used to read its one argument as a URL
+ * string, so the published call handed an HttpClient* to http_client() as
+ * text, and every failure was a bare 0 with no httperr (e.msg was RT005).
+ * It now takes the client (borrowed: the caller keeps it, the stream owns
+ * only its socket and buffer) and raises an httperr on failure. */
+int64_t tk_http_stream_w(int64_t client) {
+    if (!client) return http_raise("http.stream: null client", 0);
     HttpClientReq req;
     memset(&req, 0, sizeof(req));
     req.method = "GET";
     req.url    = "";
-    HttpStreamResult r = http_stream(c, req);
-    if (r.is_err) { http_client_free(c); return 0; }
+    HttpStreamResult r = http_stream((HttpClient *)(intptr_t)client, req);
+    if (r.is_err) {
+        int64_t z = http_raise(r.err_msg ? r.err_msg : "http.stream: request failed",
+                               r.err_code);
+        free(r.err_msg);
+        return z;
+    }
     HttpStream *heap = (HttpStream *)malloc(sizeof(HttpStream));
-    if (!heap) { http_client_free(c); return 0; }
+    if (!heap) {
+        if (r.stream.fd >= 0) close(r.stream.fd);
+        free(r.stream.buf);
+        return http_raise("out of memory", 0);
+    }
     *heap = r.stream;
+    tk_current_error = 0;
     return (int64_t)(intptr_t)heap;
 }
 /* tk_http_streamnext_w — read the next chunk from a stream. */
@@ -1594,9 +1610,16 @@ int64_t tk_http_streamnext_w(int64_t stream) {
      * malloc'd C string, so `.len` read the eight bytes before it and
      * `str.frombytes` of a chunk was empty.  A chunk is now a real [byte];
      * a graceful close is the empty [byte] docs/stdlib/http.md promises. */
-    if (r.is_err) { free(r.data); free(r.err_msg); return 0; }
+    if (r.is_err) {
+        /* 121.53 (2): an httperr, not a bare 0 (e.msg was RT005). */
+        int64_t z = http_raise(r.err_msg ? r.err_msg : "http.streamnext: read failed", r.err_code);
+        free(r.data); free(r.err_msg);
+        return z;
+    }
     int64_t h = tk_bytes_pack((const uint8_t *)r.data, r.data ? (uint64_t)r.len : 0);
     free(r.data);
+    if (!h) return http_raise("out of memory", 0);
+    tk_current_error = 0;
     return h;
 }
 int64_t tk_http_downloadfile_w(int64_t client, int64_t url, int64_t dest) {
@@ -1942,95 +1965,11 @@ extern int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_);
  * rather than finished: a toke-level kv store is a stdlib story, not a
  * glue fix. */
 
-/* ── regex — POSIX regex wrappers (Story 78.4.3) ─────────────────────── */
-
-int64_t tk_regex_match_w(int64_t pattern, int64_t s) {
-    const char *pat = (const char *)(intptr_t)pattern;
-    const char *str = (const char *)(intptr_t)s;
-    if (!pat || !str) return 0;
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) return 0;
-    int match = regexec(&re, str, 0, NULL, 0) == 0 ? 1 : 0;
-    regfree(&re);
-    return match;
-}
-
-int64_t tk_regex_replace_w(int64_t pattern, int64_t s, int64_t repl) {
-    const char *pat  = (const char *)(intptr_t)pattern;
-    const char *str  = (const char *)(intptr_t)s;
-    const char *rep  = (const char *)(intptr_t)repl;
-    if (!pat || !str) return s;
-    if (!rep) rep = "";
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) return s;
-    regmatch_t m;
-    if (regexec(&re, str, 1, &m, 0) != 0) {
-        regfree(&re);
-        /* no match — return copy of original */
-        char *copy = strdup(str);
-        return (int64_t)(intptr_t)(copy ? copy : str);
-    }
-    /* build: prefix + replacement + suffix */
-    size_t prefix_len = (size_t)m.rm_so;
-    size_t suffix_len = strlen(str + m.rm_eo);
-    size_t rep_len    = strlen(rep);
-    char *out = malloc(prefix_len + rep_len + suffix_len + 1);
-    if (!out) { regfree(&re); return s; }
-    memcpy(out, str, prefix_len);
-    memcpy(out + prefix_len, rep, rep_len);
-    memcpy(out + prefix_len + rep_len, str + m.rm_eo, suffix_len + 1);
-    regfree(&re);
-    return (int64_t)(intptr_t)out;
-}
-
-int64_t tk_regex_findall_w(int64_t pattern, int64_t s) {
-    const char *pat = (const char *)(intptr_t)pattern;
-    const char *str = (const char *)(intptr_t)s;
-    /* allocate empty toke array */
-    if (!pat || !str) {
-        return tk_arr_alloc(0, 0);
-    }
-    regex_t re;
-    if (regcomp(&re, pat, REG_EXTENDED) != 0) {
-        return tk_arr_alloc(0, 0);
-    }
-    /* collect matches into a temporary buffer */
-    size_t cap = 16;
-    size_t count = 0;
-    int64_t *items = (int64_t *)malloc(cap * sizeof(int64_t));
-    if (!items) { regfree(&re); return 0; }
-
-    const char *cursor = str;
-    regmatch_t m;
-    while (regexec(&re, cursor, 1, &m, 0) == 0) {
-        size_t mlen = (size_t)(m.rm_eo - m.rm_so);
-        char *piece = malloc(mlen + 1);
-        if (!piece) break;
-        memcpy(piece, cursor + m.rm_so, mlen);
-        piece[mlen] = '\0';
-        if (count >= cap) {
-            cap *= 2;
-            int64_t *tmp = (int64_t *)realloc(items, cap * sizeof(int64_t));
-            if (!tmp) { free(piece); break; }
-            items = tmp;
-        }
-        items[count++] = (int64_t)(intptr_t)piece;
-        cursor += m.rm_eo;
-        if (m.rm_eo == m.rm_so) {
-            /* zero-length match — advance by one byte to avoid infinite loop */
-            if (*cursor == '\0') break;
-            cursor++;
-        }
-    }
-    regfree(&re);
-
-    /* build toke-format array: handle[-1]=len, handle[0..N-1]=elements */
-    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!h) { free(items); return 0; }
-    if (count > 0) memcpy((int64_t *)(intptr_t)h, items, count * sizeof(int64_t));
-    free(items);
-    return h;
-}
+/* 121.45 (2): the POSIX regex wrappers tk_regex_{match,replace,findall}_w
+ * (Story 78.4.3) were deleted on 2026-09-30.  No .tki declared a std.regex
+ * module (`i=re:std.regex;` is E2030), so no toke program could call them;
+ * they compiled with regcomp and read an invalid pattern as "no match".
+ * toke's regex surface is str.* over tk_regex.h (str_glue.c). */
 
 /* ── validation wrappers (basic regex-free checks) ────────────────── */
 int64_t tk_validate_email_w(int64_t s) {

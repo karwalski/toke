@@ -755,7 +755,12 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
                       test-stdlib-http test-stdlib-http2 test-stdlib-router \
                       test-stdlib-http-multipart test-stdlib-http-cookies \
                       test-stdlib-http-form test-stdlib-http-json-integration \
-                      test-stdlib-web-server-integration
+                      test-stdlib-web-server-integration \
+                      test-stdlib-time
+#
+# 127.246 (6) / 121.53 (3): test-stdlib-time joins -- tk_time_format_duration
+# used sprintf(), which failed -Werror here (see the csv note below); it now
+# uses bounded snprintf.
 #
 # 121.30: the HTTP/router C tests join the sanitizer run -- the request
 # framing, HTTP/2, routing, static serving, multipart, cookie and form paths
@@ -783,9 +788,11 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
 #       -fsanitize=address sets it to 0, so -Wdeprecated-declarations fires
 #       there and -Werror stops the build. The ordinary fortified build never
 #       sees it. A sweep on 2026-09-24 found 7 more unbounded sprintf() calls
-#       in SHIPPING code -- src/stdlib/tk_time.c:423-428 and
-#       src/stdlib/db_postgres.c:37 -- which no gate in this repository looks
-#       at for the same reason. Re-add this target when they are dealt with.
+#       in SHIPPING code -- src/stdlib/tk_time.c (format_duration, now
+#       snprintf and in the list above, 127.246 (6)) and
+#       src/stdlib/db_postgres.c:37 (no sprintf there at 2026-09-30). Re-add
+#       this target when test_csv.c is
+#       dealt with.
 # The negative control, run FIRST and never behind a flag: a planted
 # heap-use-after-free that this build configuration must catch. Without it,
 # "0 findings" and "the instrumentation never made it into the binary" are

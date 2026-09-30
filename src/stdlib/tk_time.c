@@ -641,20 +641,30 @@ TkDurationParseResult tk_time_parse_duration(const char *s)
 
 const char *tk_time_format_duration(TkDuration d)
 {
-    char *buf = malloc(128);
+    /* 127.246 (6) / 121.53 (3): bounded writes.  Six fields of at most
+     * "-2147483648mo " (14 bytes) fit in 128, but snprintf keeps that a
+     * property of the code rather than of the arithmetic, and sprintf is
+     * deprecated (an error under -Werror) wherever _FORTIFY_SOURCE is 0 --
+     * HARDEN=0 and every ASan build. */
+    enum { CAP = 128 };
+    char *buf = malloc(CAP);
     if (!buf) return NULL;
-    char *wp = buf;
-    *wp = '\0';
+    size_t n = 0;
+    buf[0] = '\0';
 
-    if (d.years)   wp += sprintf(wp, "%dy ", d.years);
-    if (d.months)  wp += sprintf(wp, "%dmo ", d.months);
-    if (d.days)    wp += sprintf(wp, "%dd ", d.days);
-    if (d.hours)   wp += sprintf(wp, "%dh ", d.hours);
-    if (d.minutes) wp += sprintf(wp, "%dm ", d.minutes);
-    if (d.seconds) wp += sprintf(wp, "%ds ", d.seconds);
+    struct { int v; const char *unit; } f[] = {
+        { d.years, "y" }, { d.months, "mo" }, { d.days, "d" },
+        { d.hours, "h" }, { d.minutes, "m" }, { d.seconds, "s" },
+    };
+    for (size_t i = 0; i < sizeof f / sizeof f[0]; i++) {
+        if (!f[i].v || n >= CAP) continue;
+        int w = snprintf(buf + n, CAP - n, "%d%s ", f[i].v, f[i].unit);
+        if (w < 0) break;
+        n += (size_t)w < CAP - n ? (size_t)w : CAP - n - 1;
+    }
 
     /* Trim trailing space */
-    if (wp > buf && wp[-1] == ' ') wp[-1] = '\0';
+    if (n > 0 && buf[n - 1] == ' ') buf[n - 1] = '\0';
 
     /* Handle zero duration */
     if (buf[0] == '\0') { buf[0] = '0'; buf[1] = 's'; buf[2] = '\0'; }

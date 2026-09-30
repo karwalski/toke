@@ -610,6 +610,11 @@ typedef struct { TypeEnv *env; const char *src;
                      armb[TKC_MAX_ARM_BINDS];
                  int armb_count;
                  const Node *mt_discard;
+                 /* 127.252 (2): the `if` standing as a statement (its value
+                  * discarded), and the branch block of an expression-if whose
+                  * tail statement IS the if's value -- so a match there is
+                  * not a discarded statement. */
+                 const Node *if_discard; const Node *valued_block;
                  /* 127.221: the string literal whose `\(..)` sub-parse
                   * is being inferred — its nodes are not in the tree. */
                  const Node *interp_host;
@@ -6641,6 +6646,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         Type *last=mk_type(A,TY_VOID);
         const Node *tail=NULL;
         int saw_return=0;
+        /* 127.252 (2): this list is a branch of an expression-if, so its
+         * last statement is the if's value, not a discarded statement. */
+        int valued=(cx->valued_block==node);
+        if (valued) cx->valued_block=NULL;
+        int last_i=-1;
+        for (int i=0;i<node->child_count;i++) if (node->children[i]) last_i=i;
         for (int i=0;i<node->child_count;i++) {
             const Node *ch=node->children[i];
             if (!ch) continue;
@@ -6652,10 +6663,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
             /* 127.195: a match standing as a statement discards its value,
              * so E4011 (arm agreement) does not apply to it. */
-            {
+            /* 127.252 (2): an `if` standing as a statement discards its
+             * value too, so its branches' tails are statements.  Neither
+             * holds for the tail of an expression-if's branch: that match
+             * or if IS the value, so E4010/E4011 apply to it. */
+            if (!(valued&&i==last_i)) {
                 const Node *ms=ch;
                 if (ms->kind==NODE_EXPR_STMT&&ms->child_count>0) ms=ms->children[0];
                 if (ms&&ms->kind==NODE_MATCH_STMT) cx->mt_discard=ms;
+                if (ms&&ms->kind==NODE_IF_STMT) cx->if_discard=ms;
             }
             last=infer(cx,ch);
             tail=ch;
@@ -6712,8 +6728,17 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         int saved_bc=cx->bind_count;
         cx->scope_depth++;
         Type *then_ty=mk_type(A,TY_VOID);
+        /* 127.252 (2): an `if` not standing as a statement is an expression
+         * whose value is its branches' tails; an `el if` inherits the
+         * statement-ness of the if it continues. */
+        int if_discarded=(cx->if_discard==node);
+        if (if_discarded) cx->if_discard=NULL;
         for (int i=1;i<node->child_count;i++) {
+            const Node *br=node->children[i];
+            if (br&&br->kind==NODE_STMT_LIST&&!if_discarded) cx->valued_block=br;
+            if (br&&br->kind==NODE_IF_STMT&&if_discarded) cx->if_discard=br;
             Type *bt=infer(cx,node->children[i]);
+            cx->valued_block=NULL;
             if (i==1) then_ty=bt;   /* A1: expression-if yields the then-branch tail type */
         }
         cx->scope_depth--;
@@ -6800,6 +6825,7 @@ int type_check(const Node *ast, const char *src,
     cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
     cx.reported_count=0;
     cx.armb_count=0; cx.mt_discard=NULL; cx.resolving_n=0;   /* 138.13 */
+    cx.if_discard=NULL; cx.valued_block=NULL;               /* 127.252 (2) */
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;

@@ -1711,114 +1711,14 @@ void router_use_etag(TkRouter *r)
 }
 
 /* ----------------------------------------------------------------------- */
-/* Access logging middleware (Story 27.1.11)                                 */
+/* Access logging middleware (Story 27.1.11) -- removed                       */
 /* ----------------------------------------------------------------------- */
 
-/* Configuration for the log middleware.  One global slot — matches the
- * single-threaded, static-global pattern used throughout this file. */
-typedef struct {
-    int   format;       /* ROUTER_LOG_COMMON or ROUTER_LOG_JSON */
-    char  log_path[4096]; /* empty string → write to stderr */
-} LogMwCfg;
-
-static LogMwCfg log_mw_cfg;
-
-/* Write a log line to the configured destination.
- * Opens the file in append mode for every line (simple, safe). */
-static void log_write_line(const char *line)
-{
-    if (log_mw_cfg.log_path[0] == '\0') {
-        fputs(line, stderr);
-        fputs("\n", stderr);
-    } else {
-        FILE *f = fopen(log_mw_cfg.log_path, "a");
-        if (f) {
-            fputs(line, f);
-            fputs("\n", f);
-            fclose(f);
-        }
-    }
-}
-
-static TkRouteResp log_middleware(TkRouteCtx ctx, TkRouteHandler next)
-{
-    /* Capture start time (wall clock, millisecond resolution). */
-    struct timespec t0;
-#ifdef CLOCK_MONOTONIC
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-#else
-    t0.tv_sec  = 0;
-    t0.tv_nsec = 0;
-#endif
-
-    TkRouteResp resp = next(ctx);
-
-    /* Capture end time. */
-    struct timespec t1;
-#ifdef CLOCK_MONOTONIC
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-#else
-    t1.tv_sec  = 0;
-    t1.tv_nsec = 0;
-#endif
-    long ms = (long)((t1.tv_sec - t0.tv_sec) * 1000L +
-                     (t1.tv_nsec - t0.tv_nsec) / 1000000L);
-
-    /* Compute response body byte count. */
-    size_t bytes = resp.body ? strlen(resp.body) : 0;
-
-    /* Resolve client IP (fall back to "-" if unavailable). */
-    const char *ip = (ctx.ip && ctx.ip[0] != '\0') ? ctx.ip : "-";
-
-    /* Resolve method and path (guard against NULL). */
-    const char *method = ctx.method ? ctx.method : "-";
-    const char *path   = ctx.path   ? ctx.path   : "-";
-
-    /* Build timestamp string. */
-    char ts_buf[64];
-    time_t now = time(NULL);
-    struct tm *tm_info = gmtime(&now);
-    if (log_mw_cfg.format == ROUTER_LOG_JSON) {
-        strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%dT%H:%M:%SZ", tm_info);
-    } else {
-        /* Common Log Format timestamp: [day/mon/year:HH:MM:SS +0000] */
-        strftime(ts_buf, sizeof(ts_buf), "%d/%b/%Y:%H:%M:%S +0000", tm_info);
-    }
-
-    char line[4096];
-    if (log_mw_cfg.format == ROUTER_LOG_JSON) {
-        /* JSON format — escape method and path minimally (no control chars
-         * expected in practice; backslash and double-quote are the risk). */
-        snprintf(line, sizeof(line),
-                 "{\"ts\":\"%s\",\"ip\":\"%s\","
-                 "\"method\":\"%s\",\"path\":\"%s\","
-                 "\"status\":%d,\"bytes\":%zu,\"ms\":%ld}",
-                 ts_buf, ip, method, path,
-                 resp.status, bytes, ms);
-    } else {
-        /* Common Log Format */
-        snprintf(line, sizeof(line),
-                 "%s - - [%s] \"%s %s HTTP/1.1\" %d %zu",
-                 ip, ts_buf, method, path,
-                 resp.status, bytes);
-    }
-
-    log_write_line(line);
-    return resp;
-}
-
-void router_use_log(TkRouter *r, int format, const char *path)
-{
-    if (!r) return;
-    log_mw_cfg.format = format;
-    if (path) {
-        strncpy(log_mw_cfg.log_path, path, sizeof(log_mw_cfg.log_path) - 1);
-        log_mw_cfg.log_path[sizeof(log_mw_cfg.log_path) - 1] = '\0';
-    } else {
-        log_mw_cfg.log_path[0] = '\0'; /* NULL → stderr */
-    }
-    router_use(r, log_middleware);
-}
+/* 121.41 (2), 2026-09-30: router_use_log and its middleware were deleted.
+ * No .tki declared them and no C caller outside the unit tests existed, and
+ * they wrote the request path unescaped into a Common Log / JSON line (a
+ * path containing `"` or a newline forged fields or lines).  Access logging
+ * is log.c's (tk_access_log_*), which escapes every field. */
 
 /* ----------------------------------------------------------------------- */
 /* Gzip response compression middleware (Story 27.1.6)                      */

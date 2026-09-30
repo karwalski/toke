@@ -675,20 +675,26 @@ f=main():i64{
 
 ### http.stream(client: $httpclient): $httpstream!$httperr
 
-Opens a streaming HTTP connection for server-sent events or chunked transfer responses. Returns an `$httpstream` handle on success; use `http.streamnext` to read successive chunks. The connection remains open until `open` is `false` or an error is returned. The interface takes the client alone: there is no method or path argument, and the request is a `GET`.
+Opens a streaming HTTP connection for server-sent events or chunked transfer responses. Returns an `$httpstream` handle on success; use `http.streamnext` to read successive chunks. The connection remains open until `open` is `false` or an error is returned. The interface takes the client alone: there is no method or path argument, and the request is a `GET` of the client's base URL -- put the path in the URL you pass to `http.client`. The client is borrowed, not consumed. A failure to connect, send or read the response headers takes the `$err` arm with an `$httperr` whose `msg` says which (`TCP connect failed`, `HTTPS requires TLS (not compiled in)`, ...).
 
-> The glue behind it (`tk_http_stream_w`) reads its one argument as a URL string, not a client handle, and returns 0 rather than `$httperr` on failure; the interface and the glue disagree (reported with 127.232).
+> Until 121.53 the glue (`tk_http_stream_w`) read its one argument as a URL string rather than the client this interface publishes (so the published call was rejected at compile time), and `http.stream` / `http.streamnext` returned a bare 0 with no `$httperr` on failure, so `e.msg` was RT005. `docs/spec/stdlib-signatures.md` still records an unbuilt `(c; req)` form; see the note there.
 
 ### http.streamnext(stream: $httpstream): @(byte)!$httperr
 
 Reads the next available chunk of bytes from an open `$httpstream`. Returns an empty byte array when the server closes the connection gracefully; returns `$httperr` on network or protocol error. Call this in a loop until the returned byte array is empty or an error occurs.
 
 ```toke
+m=streamdemo;
 i=http:std.http;
-f=main():void{
-  let c=http.client("https://api.example.com");
-  let s=http.stream(c;"GET";"/events");
-  let chunk=mt http.streamnext(s) {$ok:v v;$err:e @()};
+i=io:std.io;
+f=main():i64{
+  let c=http.client("http://127.0.0.1:8080/events");
+  let n=mt http.stream(c) {
+    $ok:s mt http.streamnext(s) {$ok:v v.len;$err:e 0};
+    $err:e 0
+  };
+  io.println("first chunk: \(n) bytes");
+  <0
 };
 ```
 

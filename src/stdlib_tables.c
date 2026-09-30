@@ -1080,9 +1080,7 @@ static const char *const g_err_slot_bare[] = {
     /* BEGIN 127.238 bare-glue exceptions */
     /* db (121.49: one/many/oneon/manyon fill the slot now) */
     "tk_db_open_w",
-    /* http */
-    "tk_http_stream_w",
-    "tk_http_streamnext_w",
+    /* http: stream/streamnext left 2026-09-30 (121.53 (2)) -- they raise httperr */
     /* vecstore */
     "tk_vecstore_collection_w", "tk_vecstore_open_w",
     /* END 127.238 bare-glue exceptions */
