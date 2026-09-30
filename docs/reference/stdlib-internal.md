@@ -85,10 +85,10 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
-| `c-internal` | called only from other C in `src/stdlib/` | 152 |
+| `c-internal` | called only from other C in `src/stdlib/` | 153 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 89 |
-| | **total** | **321** |
+| | **total** | **322** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -168,7 +168,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (152)
+### `c-internal` (153)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -205,6 +205,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_log_error` | `log.c` | log_glue.c |
 | `tk_log_info` | `log.c` | log.c, log_glue.c |
 | `tk_log_redact_keys` | `log.c` | log.c |
+| `tk_log_reopen_files` | `log.c` | http.c |
 | `tk_log_set_format` | `log.c` | log_glue.c |
 | `tk_log_set_level` | `log.c` | log_glue.c |
 | `tk_log_warn` | `log.c` | log_glue.c |
