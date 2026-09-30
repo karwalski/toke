@@ -1260,6 +1260,11 @@ the built-in `timeparts` and `none` types. The message lists what was counted.
 defaults are 32 imports, 1024 function signatures and 1024 struct types
 (`tkc --show-limits`); the last two were 128 and 64 until story 127.250.
 
+A cap is a count: `0` allows none. Caps so large (or negative) that a
+registry sized from them cannot be one compiler allocation are refused at
+`--check` too, with the same E9010 as the build, naming the caps; lower them
+(story 127.264).
+
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
 by pointer locals, local types and shadowing aliases) is reported once per
 function, closure or globals initialiser that crosses it, at that function,

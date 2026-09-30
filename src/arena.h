@@ -31,6 +31,14 @@ Arena *arena_init(void);
  */
 void *arena_alloc(Arena *arena, size_t size);
 
+/*
+ * The largest size arena_alloc() can ever satisfy (127.264).  A request above
+ * it is refused whatever memory is free, so a caller can reject such a size
+ * up front, before any allocation -- `--check` sizes the codegen registries
+ * against it so that the check and the build refuse the same caps.
+ */
+size_t arena_max_alloc(void);
+
 /* Free the arena and all memory allocated from it. */
 void arena_free(Arena *arena);
 

@@ -694,6 +694,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         SymbolTable st;
         if (resolve_imports(ast, sbuf, sp, spc, &limits, &st) < 0 || diag_error_count() > 0) {
             rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
+        if (!llvm_caps_fit(&limits)) {     /* 127.264 (1); rc as above */
+            symtab_free(&st); rc = EINTERNAL; free(sbuf); arena_free(arena); goto cleanup; }
         NameEnv ne;
         if (resolve_names(ast, sbuf, &st, arena, &ne, sp, spc) < 0 || diag_error_count() > 0) {
             /* 123.13: the same recovery as process_file (123.12c) */
@@ -1131,6 +1133,12 @@ static int process_file(const char *src, const RunOpts *o)
     /* Resolve imports */
     SymbolTable st;
     if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+    /* 127.264 (1): caps whose codegen registries cannot be allocated are
+     * refused here, so --check refuses what the build would.  EINTERNAL is
+     * the exit status the build gave this E9010 (127.258, C641); whether a
+     * limit error should exit 1 instead is an open owner question
+     * (127.264 (2)), so both keep the build's status for now. */
+    if (!llvm_caps_fit(&limits)) { symtab_free(&st); rc = EINTERNAL; goto done; }
 
     /* Resolve names */
     NameEnv ne;

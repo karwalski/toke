@@ -55,7 +55,8 @@ static inline void tkc_caps_add(TkcCapCount *cc, const Node *at,
                                 const char *what, int k) {
     if (k <= 0) return;
     cc->last = at;
-    if (cc->cap > 0 && !cc->over_at && cc->n + k > cc->cap) cc->over_at = at;
+    /* 127.264: a cap of 0 is a cap of 0 -- codegen allocates no entries */
+    if (cc->cap >= 0 && !cc->over_at && cc->n + k > cc->cap) cc->over_at = at;
     cc->n += k;
     for (int i = 0; i < cc->nsrc; i++)
         if (!strcmp(cc->src[i].what, what)) { cc->src[i].k += k; return; }
@@ -336,7 +337,7 @@ static inline void tkc_caps_count(const Node *ast, const char *src,
  * exact.  Returns the number of errors emitted. */
 static inline int tkc_caps_report_one(const TkcCapCount *cc, const char *noun,
                                       const char *key, const char *flag) {
-    if (cc->cap <= 0 || cc->n <= cc->cap) return 0;
+    if (cc->cap < 0 || cc->n <= cc->cap) return 0;
     char parts[400]; parts[0] = '\0';
     for (int i = 0; i < cc->nsrc; i++) {
         char one[128];
@@ -389,7 +390,7 @@ static inline int tkc_caps_fn_locals(const Node *n) {
 }
 
 static inline int tkc_caps_locals_check(const Node *n, const char *src, int cap) {
-    if (!n || cap <= 0) return 0;
+    if (!n || cap < 0) return 0;
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
         int e = 0;
         for (int i = 0; i < n->child_count; i++)
@@ -419,7 +420,7 @@ static inline int tkc_caps_check(const Node *ast, const char *src,
     tkc_caps_count(ast, src, sp, spc, lim, &fc, &sc);
     return tkc_caps_report_one(&fc, "function signatures", "max_funcs", "--max-funcs")
          + tkc_caps_report_one(&sc, "struct types", "max_structs", "--max-structs")
-         + tkc_caps_locals_check(ast, src, lim ? lim->max_locals : 0);
+         + tkc_caps_locals_check(ast, src, lim ? lim->max_locals : -1);
 }
 
 #endif /* TKC_CAPS_H */

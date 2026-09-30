@@ -508,7 +508,7 @@ int resolve_imports(const Node *ast, const char *src,
         int nimp = 0;
         for (int i = 0; i < ast->child_count; i++)
             if (ast->children[i] && ast->children[i]->kind == NODE_IMPORT) nimp++;
-        if (limits->max_imports > 0 && nimp > limits->max_imports) {
+        if (limits->max_imports >= 0 && nimp > limits->max_imports) {   /* 127.264: 0 is 0 */
             const Node *at = NULL;
             int k = 0;
             for (int i = 0; i < ast->child_count && !at; i++)
