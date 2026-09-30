@@ -132,10 +132,19 @@ restart() {
     fi
     # The server must close first for ITS side to sit in TIME_WAIT: hold a
     # connection open, kill the server (its FIN goes first), then close ours.
+    # Ask for /who on it and read the status line, keeping it alive: a worker
+    # has then accepted it.  A connection still in the listen backlog when the
+    # server dies is reset instead, leaving no TIME_WAIT -- under CPU load the
+    # 0.2 s sleep alone did not guarantee the accept (0 TIME_WAIT, 1 in 20).
     exec 3<>"/dev/tcp/127.0.0.1/${port}"
+    printf 'GET /who HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n' >&3
+    local status=""; IFS= read -r -t 5 status <&3 || true
     sleep 0.2
     stop "${pid}"
     sleep 0.2
+    # Drain to the server's FIN before closing: closing with the response's
+    # unread bytes would send a reset and take the server's TIME_WAIT with it.
+    cat <&3 >/dev/null 2>&1
     exec 3<&-
     sleep 0.2
     local tw; tw="$(tw_count "${port}")"
