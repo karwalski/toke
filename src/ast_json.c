@@ -140,10 +140,11 @@ static void emit_node(const Node *n, const char *src, FILE *out, int depth)
     fprintf(out, "\"pos\": {\"line\": %d, \"col\": %d, \"offset\": %d},\n",
             n->line, n->col, n->start);
 
-    /* span (tok_start .. tok_start + tok_len) */
+    /* span (tok_start .. tok_start + tok_len, or n->end for a declaration) */
     indent(out, depth + 1);
+    /* 131.31: a declaration's span is its full extent (n->end) */
     fprintf(out, "\"span\": {\"start\": %d, \"end\": %d}",
-            n->tok_start, n->tok_start + n->tok_len);
+            n->tok_start, n->end > 0 ? n->end : n->tok_start + n->tok_len);
 
     /* name (for identifiers) */
     if (is_ident_node(n->kind) && n->tok_len > 0 && src) {

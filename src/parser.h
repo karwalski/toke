@@ -96,6 +96,11 @@ struct Node {
     int      tok_len;       /* length in bytes                  */
     /* Operator / keyword stored for binary/unary nodes */
     TokenKind op;
+    /* 131.31: byte offset one past a declaration's last token (its closing
+     * brace, not the optional ';'), set for the top-level declaration nodes
+     * (MODULE, IMPORT, TYPE_DECL, CONST_DECL, FUNC_DECL); 0 = not recorded,
+     * the extent is the node's own token (tok_start .. + tok_len). */
+    int      end;
     /* Type-flow redesign (Stage 0): the resolved Type* for this expression,
      * memoized by infer() during type checking. NULL before type-check / for
      * non-expression nodes. Arena-allocated, so it lives through codegen — the

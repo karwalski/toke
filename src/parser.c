@@ -2075,6 +2075,16 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
     return root;
 }
 
+/* 131.31: record a top-level declaration's full extent: from its first token
+ * to the last token its parse consumed, less an optional trailing ';'. */
+static void set_decl_end(Parser *p, Node *d, int first) {
+    if (!d) return;
+    int last = p->pos - 1;
+    if (last > first && p->toks[last].kind == TK_SEMICOLON) last--;
+    if (last < first || last >= p->n) return;
+    d->end = p->toks[last].start + p->toks[last].len;
+}
+
 static Node *parse_source(Parser *pp)
 {
     Parser p = *pp;
@@ -2082,6 +2092,7 @@ static Node *parse_source(Parser *pp)
     Node *root=mk(&p,NODE_PROGRAM,first);
     /* Module declaration: M= or m= */
     if(peek(&p)==TK_KW_M||(is_decl_ident(&p)==5)){
+        int m0=p.pos;
         if(peek(&p)==TK_KW_M){
             ch(&p,root,parse_module_decl(&p));
         } else {
@@ -2091,12 +2102,13 @@ static Node *parse_source(Parser *pp)
             if(!xp(&p,TK_EQ,"'='")){ sync(&p); ch(&p,root,n); }
             else { ch(&p,n,parse_module_path(&p)); opt_semi(&p); ch(&p,root,n); }
         }
+        if(root&&root->child_count>0) set_decl_end(&p,root->children[root->child_count-1],m0);
     }
     else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first",NULL); /* 127.221: no fix — the declaration may exist later (move, not add), and the name is the author's */ p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=global 5=func */
     while(peek(&p)!=TK_EOF){
         if(p.errs>=MAX_PARSE_ERRORS) break;
-        Token *t=cur(&p); int cp;
+        Token *t=cur(&p); int cp; int d0=p.pos;
         int di=is_decl_ident(&p);
         if(peek(&p)==TK_KW_I||(di==1))     cp=1;
         else if(peek(&p)==TK_KW_T||(di==2)) cp=2;
@@ -2175,6 +2187,7 @@ static Node *parse_source(Parser *pp)
             }
         }
         next_decl:
+        if(cp!=4) set_decl_end(&p,d,d0);   /* 131.31; cp 4 is a `let` statement */
         ch(&p,root,d);
     }
     return root;
