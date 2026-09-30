@@ -82,6 +82,18 @@ StrFileResult file_read(const char *path)
     FILE *f = fopen_nofollow(path, "rb");
     if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
 
+    /* 121.65: open(2) with O_RDONLY succeeds on a directory, and on Darwin
+     * the fseek/ftell/fread that follow do not fail either -- fread returns
+     * 0 -- so file.read(dir) came back `$ok ""` and a template renderer
+     * handed a directory path rendered an empty page with no error.  Ask the
+     * descriptor that was opened (no stat/open race) and refuse with the
+     * same $isdir the byte calls (file_open_for_read) already give. */
+    struct stat st;
+    if (fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode)) {
+        fclose(f);
+        r.is_err = 1; r.err = make_err(EISDIR, NULL); return r;
+    }
+
     if (fseek(f, 0, SEEK_END) != 0) {
         fclose(f);
         r.is_err = 1; r.err = make_err(errno, "seek failed"); return r;
@@ -505,6 +517,38 @@ const char *file_absolute(const char *path)
 {
     /* realpath() with a NULL buffer allocates the result (POSIX.1-2008). */
     return realpath(path, NULL);
+}
+
+/*
+ * file_realpath — 121.60: file.realpath(path):$str!$fileerr.
+ *
+ * file_absolute's realpath(3), with the reason kept: an absolute path with
+ * every `.`, `..` and symlink resolved, or the FileErr of why not.  This is
+ * the one std.file call that FOLLOWS symlinks, every component including the
+ * last, because resolving them is what it is for: a caller that must keep a
+ * read inside a directory resolves both and compares prefixes.  AMB-07 is
+ * about opening a path, and this opens nothing.
+ *
+ * ELOOP here is a symlink cycle (or too deep a chain), not the O_NOFOLLOW
+ * refusal make_err's message describes, so it carries its own message.
+ */
+StrFileResult file_realpath(const char *path)
+{
+    StrFileResult r = {NULL, 0, {0, NULL}};
+    char *out = realpath(path, NULL);
+    if (!out) {
+        int e = errno;
+        r.is_err = 1;
+        if (e == ELOOP) {
+            r.err.kind = FILE_ERR_SYMLINK;
+            r.err.msg  = "too many levels of symbolic links";
+        } else {
+            r.err = make_err(e, strerror(e));
+        }
+        return r;
+    }
+    r.ok = out;
+    return r;
 }
 
 /*

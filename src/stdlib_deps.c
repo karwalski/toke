@@ -186,7 +186,7 @@ static const StdlibModule stdlib_table[] = {
      * alongside webview_glue.c; the objc runtime symbols are not on the default
      * link line either. */
     { "mem",           "mem.c",                                 "",                                                                 "" },
-    { "os",            "os.c",                                  "",                                                                 "" },
+    { "os",            "os.c os_glue.c",                        "",                                                                 "" },
     { "stack",         "collections.c collections_glue.c",      "",                                                                 "" },
     { "queue",         "collections.c collections_glue.c",      "",                                                                 "" },
     { "set",           "collections.c collections_glue.c",      "",                                                                 "" },

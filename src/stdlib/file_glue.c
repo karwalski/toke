@@ -144,6 +144,17 @@ int64_t tk_file_exists_w(int64_t path) {
 
 /* ── wrappers for additional file operations ────────────────────────────── */
 
+/* 121.60: file.realpath(path):$str!$fileerr.  Resolving a path reads the
+ * directories on it (lstat/readlink of every component), so it is fs.read,
+ * like file.exists and file.isdir. */
+int64_t tk_file_realpath_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
+    if (!path) return file_badarg("file.realpath: null path");
+    StrFileResult r = file_realpath((const char *)(intptr_t)path);
+    if (r.is_err) return file_raise_op("file.realpath", r.err, path);
+    return file_ok((int64_t)(intptr_t)r.ok);
+}
+
 int64_t tk_file_list_w(int64_t dir) {
     TK_REQUIRE(TK_CAP_FS_READ);
     if (!dir) return file_badarg("file.list: null path");

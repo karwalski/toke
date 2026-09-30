@@ -31,6 +31,7 @@
 #include "tk_runtime.h"   /* 127.182: tk_err_box (127.109) */
 #include "capabilities.h" /* 121.22: toml.loadfile is an fs.read sink */
 #include <stdint.h>
+#include <string.h>   /* 121.68: memcpy for the f64 bit pattern */
 
 /* 127.182 — the error carries the parser's message.  stdlib/toml.tki
  * declares `tomlerr` as a record {msg:str}; a failure stores a one-slot box
@@ -114,4 +115,29 @@ int64_t tk_toml_loadfile_w(int64_t path) {
     if (r.is_err) return toml_raise(r.err_msg);
     tk_current_error = 0;
     return (int64_t)(intptr_t)r.ok;
+}
+
+/*
+ * Story 121.68 — toml.f64(v; key) : f64!$tomlerr and toml.has(v; key) : bool.
+ *
+ * ooke could not read a float-valued config key, nor tell a key that is
+ * absent from one whose value is an array or table (every typed accessor
+ * fails on both).  toml.f64 returns the double's bit pattern in the i64 ABI
+ * (the .tki's f64 return makes the compiler bitcast it back) and keeps the
+ * error slot truthful like toml.i64 (127.67): 0.0's bit pattern IS the 0
+ * sentinel, so only the slot can say whether it failed.  toml.has cannot
+ * fail: a null table or key is simply not present.
+ */
+int64_t tk_toml_f64_w(int64_t tab, int64_t key) {
+    if (!tab || !key) { return toml_raise("toml: null argument"); }
+    TomlF64Result r = toml_get_f64((void *)(intptr_t)tab, (const char *)(intptr_t)key);
+    if (r.is_err) return toml_raise(r.err_msg);
+    tk_current_error = 0;
+    int64_t bits;
+    memcpy(&bits, &r.ok, sizeof bits);
+    return bits;
+}
+
+int64_t tk_toml_has_w(int64_t tab, int64_t key) {
+    return (int64_t)toml_has((void *)(intptr_t)tab, (const char *)(intptr_t)key);
 }

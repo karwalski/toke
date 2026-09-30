@@ -57,13 +57,38 @@ int64_t tk_os_read(int64_t fd, int64_t count) {
     return (int64_t)(intptr_t)buf;
 }
 
-/* AMB-08: os.write(fd, data:str) -> bytes written. Writes the string's bytes; no
- * caller-supplied pointer. */
-int64_t tk_os_write(int64_t fd, int64_t data) {
-    const char *s = (const char *)(intptr_t)data;
-    if (!s) return 0;
-    ssize_t n = write((int)fd, s, strlen(s));
-    return (n < 0) ? 0 : (int64_t)n;
+/* AMB-08: os.write takes a str, never a caller-supplied pointer.
+ *
+ * 121.70 (3): os_write_all is the core; tk_os_write_w (os_glue.c) is the
+ * toke-facing wrapper that reports its failure through the error slot.  The
+ * old tk_os_write here made ONE write(2) and returned 0 on error, so:
+ *   - a short write (a pipe or socket taking part of the buffer, a write
+ *     interrupted after some bytes) silently dropped the rest; the caller
+ *     had to compare the count with the length and loop, and nothing told
+ *     it to;
+ *   - EINTR (a signal before any byte moved) was a failure, not a retry;
+ *   - a failure returned 0, which a write of "" also returns, so an error
+ *     was indistinguishable from a zero-byte write.
+ * This loops until every byte is written, retries EINTR, and reports the
+ * errno with the count that did reach the descriptor.  EAGAIN on a
+ * non-blocking descriptor is an error, not a retry: spinning on it would be
+ * a busy-wait the caller did not ask for. */
+OsWriteResult os_write_all(int fd, const char *s, size_t len) {
+    OsWriteResult r = {0, 0};
+    while ((size_t)r.written < len) {
+        ssize_t n = write(fd, s + r.written, len - (size_t)r.written);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            r.err = errno;
+            return r;
+        }
+        if (n == 0) {          /* no progress and no errno: do not spin */
+            r.err = EIO;
+            return r;
+        }
+        r.written += (int64_t)n;
+    }
+    return r;
 }
 
 int64_t tk_os_lseek(int64_t fd, int64_t offset, int64_t whence) {

@@ -17,7 +17,7 @@ The `std.file` module provides functions for reading, writing, and managing file
 > **`file.readbytes` / `file.writebytes`**, which carry an exact `@(byte)` with
 > the length beside the data.
 
-> **Implemented functions (from `file.tki`):** `file.read`, `file.write`, `file.append`, `file.exists`, `file.delete`, `file.list`, `file.isdir`, `file.mkdir`, `file.copy`, `file.listall`, `file.readbytes`, `file.writebytes`, `file.readrange`, `file.size`. Functions documented in earlier versions (`mkdir_p`, `rmdir`, `rmdir_r`, `is_file`, `move`, `mtime`, `join`, `basename`, `dirname`, `absolute`, `ext`, `readlines`, `glob`) are not in the current tki. (`size` returned to the interface in 135.12, with an implementation that refuses what it cannot measure.)
+> **Implemented functions (from `file.tki`):** `file.read`, `file.write`, `file.append`, `file.exists`, `file.delete`, `file.list`, `file.isdir`, `file.mkdir`, `file.copy`, `file.listall`, `file.readbytes`, `file.writebytes`, `file.readrange`, `file.size`, `file.realpath`. Functions documented in earlier versions (`mkdir_p`, `rmdir`, `rmdir_r`, `is_file`, `move`, `mtime`, `join`, `basename`, `dirname`, `absolute`, `ext`, `readlines`, `glob`) are not in the current tki. (`size` returned to the interface in 135.12, with an implementation that refuses what it cannot measure; `absolute` returned in 121.60 as `file.realpath`, with its failure reported.)
 
 ## Types
 
@@ -52,6 +52,8 @@ which is retired along with `file.lasterr()`.
 ### file.read(path: $str): $str!$fileerr
 
 Reads the entire contents of the file at `path` and returns it as a UTF-8 string. Returns `$fileerr.$notfound` if the file does not exist, `$fileerr.$permission` if access is denied, or `$fileerr.$io` on other I/O failures.
+
+A directory is `$fileerr.$isdir`, as it is for `file.readbytes` and `file.size`; until 121.65 `file.read` on a directory returned `$ok ""`. A final-component symlink is `$fileerr.$symlink` (AMB-07). An empty file is `$ok ""`, not an error.
 
 ```toke
 m=example;
@@ -386,6 +388,42 @@ allocated and nothing is read.
 > the answer. They still differ in how they report failure — `file.stat` keeps
 > the value sentinel, so it cannot tell an empty file from an error. Prefer
 > `file.size`.
+
+### file.realpath(path: $str): $str!$fileerr
+
+The absolute path `path` names, with every `.`, `..` and symlink resolved
+(realpath(3)). A relative `path` is resolved against the working directory.
+Every component must exist.
+
+This is the one `std.file` call that **follows symlinks**, the last component
+included: resolving them is what it is for. To keep a read inside a directory,
+resolve both and compare prefixes -- a lexical check (`std.path`) cannot see a
+symlinked directory that points outside. It opens nothing, so AMB-07 (which
+refuses to *open* through a final-component symlink) does not apply.
+
+| Variant | When |
+|---------|------|
+| `$notfound` | a component does not exist (the empty path included) |
+| `$invalid` | a non-final component is not a directory |
+| `$symlink` | a symlink cycle, or too long a chain ("too many levels of symbolic links") |
+| `$permission` | a directory on the path cannot be searched |
+| `$badarg` | a null path |
+
+Resolving reads the directories on the path, so the call needs the `fs.read`
+grant, as `file.exists` and `file.isdir` do.
+
+```toke
+m=example;
+i=file:std.file;
+i=s:std.str;
+
+f=inside(root:$str;p:$str):bool{
+  let r=mt file.realpath(root) {$ok:t t;$err:e ""};
+  let q=mt file.realpath(p) {$ok:t t;$err:e ""};
+  if(s.len(r)==0){<false};
+  <s.startswith(q;s.concat(r;"/"))
+};
+```
 
 ### Retired: file.lasterr() and file.lasterrkind()
 

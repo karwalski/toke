@@ -153,6 +153,7 @@ const char      *file_join(const char *a, const char *b);
 const char      *file_basename(const char *path);
 const char      *file_dirname(const char *path);
 const char      *file_absolute(const char *path);
+StrFileResult    file_realpath(const char *path);   /* 121.60: file.realpath */
 const char      *file_ext(const char *path);
 StrArrayFileResult file_readlines(const char *path);
 StrArrayFileResult file_glob(const char *pattern);

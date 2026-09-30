@@ -132,3 +132,40 @@ TomlResult toml_get_section(void *tab, const char *key)
     r.ok = sub;
     return r;
 }
+
+/*
+ * 121.68 — toml_get_f64: a float value from a table by key.
+ *
+ * TOML types its numbers: `ratio = 1.5` is a float, `ratio = 1` an integer.
+ * This reads floats only, as toml_get_i64 reads integers only, so a value is
+ * never silently converted; a caller that accepts either tries both.  The
+ * two failures say which they are -- absent, or present with another type --
+ * because "key not found or not a float" cannot tell a typo from a
+ * mistyped value, and the caller's fix differs.
+ */
+TomlF64Result toml_get_f64(void *tab, const char *key)
+{
+    TomlF64Result r = {0.0, 0, NULL};
+    if (!tab || !key) { r.is_err = 1; r.err_msg = "null argument"; return r; }
+    toml_datum_t d = toml_double_in((toml_table_t *)tab, key);
+    if (!d.ok) {
+        r.is_err = 1;
+        r.err_msg = toml_key_exists((toml_table_t *)tab, key)
+                        ? "key is not a float" : "key not found";
+        return r;
+    }
+    r.ok = d.u.d;
+    return r;
+}
+
+/*
+ * 121.68 — toml_has: is `key` present in this table, whatever its value --
+ * a string, number, bool, date, array or sub-table.  `key` is one key of
+ * this table, not a dotted path: `server.port` is found by
+ * toml.section(cfg; "server") then toml.has(server; "port").
+ */
+int toml_has(void *tab, const char *key)
+{
+    if (!tab || !key) return 0;
+    return toml_key_exists((toml_table_t *)tab, key) ? 1 : 0;
+}

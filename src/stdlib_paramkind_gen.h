@@ -4,7 +4,7 @@
  * Story 127.201. Per glue wrapper, the representation the body reads each
  * parameter as: S = a C string (toke str), A = an i64 array with its length
  * at ptr[-1] (toke array), . = not established. Grounded on the glue bodies,
- * never on the .tki. 493 symbols with at least one S or A.
+ * never on the .tki. 498 symbols with at least one S or A.
  */
 
     { "tk_analytics_anomalies_w", ".S." },
@@ -135,6 +135,7 @@
     { "tk_file_readbytes_w", "S" },
     { "tk_file_readlines_w", "S" },
     { "tk_file_readrange_w", "S.." },
+    { "tk_file_realpath_w", "S" },
     { "tk_file_remove_w", "S" },
     { "tk_file_rename_w", "SS" },
     { "tk_file_size_w", "S" },
@@ -187,6 +188,7 @@
     { "tk_image_textdraw_w", ".S...." },
     { "tk_image_tiffdecode_w", "A." },
     { "tk_image_tiffpages_w", "A" },
+    { "tk_io_eprint_w", "S" },
     { "tk_io_eprintln_w", "S" },
     { "tk_io_print_w", "S" },
     { "tk_io_printf_w", "SS" },
@@ -277,6 +279,7 @@
     { "tk_ocr_setlanguages_w", "S" },
     { "tk_ocr_text_w", "A" },
     { "tk_ocr_textfile_w", "S" },
+    { "tk_os_write_w", ".S" },
     { "tk_path_base_w", "S" },
     { "tk_path_dir_w", "S" },
     { "tk_path_ext_w", "S" },
@@ -429,6 +432,8 @@
     { "tk_time_with_tz_w", ".S" },
     { "tk_time_withtz_w", ".S" },
     { "tk_toml_bool_w", ".S" },
+    { "tk_toml_f64_w", ".S" },
+    { "tk_toml_has_w", ".S" },
     { "tk_toml_i64_w", ".S" },
     { "tk_toml_load_w", "S" },
     { "tk_toml_loadfile_w", "S" },

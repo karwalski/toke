@@ -268,6 +268,7 @@ f=readbytes(path:$str):@(byte)!$fileerr
 f=writebytes(path:$str;data:@(byte)):bool!$fileerr
 f=readrange(path:$str;offset:i64;len:i64):@(byte)!$fileerr
 f=size(path:$str):i64!$fileerr
+f=realpath(path:$str):$str!$fileerr
 ```
 
 `read` and `write` carry a `$str`, which is NUL-terminated: they truncate at
@@ -290,7 +291,95 @@ makes first, because a PDF's xref table and a zip's end-of-central-directory
 record both live at the *end* of the file. These two are also the first calls
 in the module to report failure through the error slot rather than a value
 sentinel — an empty file's `size` **is** `0`, so no value could have carried
-it. See [std.file](/docs/stdlib/file).
+it.
+
+`realpath` (121.60) is the absolute path with every `.`, `..` and symlink
+resolved (realpath(3)), or the `$fileerr` saying why not. It is the only
+`std.file` call that follows symlinks, because resolving them is its purpose;
+it needs the `fs.read` grant. See [std.file](/docs/stdlib/file).
+
+### std.io
+
+```text
+f=print(s:$str):i64
+f=println(s:$str):i64
+f=eprint(s:$str):void
+f=eprintln(s:$str):i64
+f=printf(fmt:$str;val:$str):i64
+f=readln():$str
+f=eof():i64
+```
+
+Console text: `print`/`println` to stdout, `eprint`/`eprintln` to stderr, the
+`ln` forms adding a newline. `eprint` (121.70) is the stderr write with no
+newline added, so a program no longer reaches into `std.os` for
+`os.write(os.stderrfd(); s)`. Every export but `eprint` is `"gen":"abi"` in
+io.tki (only its arity is established). `readln` returns `""` both for a blank
+line and at end of input; `eof` tells them apart. See [std.io](/docs/stdlib/io).
+
+### std.os
+
+```text
+t=$oserr{msg:$str;code:i64}
+f=open(path:$str;flags:i64;mode:i64):i64
+f=close(fd:i64):i64
+f=read(fd:i64;count:i64):$str
+f=write(fd:i64;data:$str):i64!$oserr
+f=lseek(fd:i64;offset:i64;whence:i64):i64
+f=stat(path:$str):i64
+f=unlink(path:$str):i64
+f=rename(from:$str;to:$str):i64
+f=mkdir(path:$str;mode:i64):i64
+f=rmdir(path:$str):i64
+f=access(path:$str;mode:i64):i64
+f=getcwd():$str
+f=getpid():i64
+f=exit(status:i64):i64
+f=getenv(name:$str):$str
+f=setenv(name:$str;value:$str):i64
+f=errno():i64
+f=strerror(code:i64):$str
+f=ordonly():i64
+f=owronly():i64
+f=ordwr():i64
+f=ocreat():i64
+f=otrunc():i64
+f=oappend():i64
+f=stdinfd():i64
+f=stdoutfd():i64
+f=stderrfd():i64
+```
+
+A thin POSIX bridge: each call returns what the syscall returns (`-1` on
+failure, with the reason in `errno()`), except `write`. `write` (121.70)
+writes every byte of `data`, retrying `EINTR` and continuing after a short
+write, and returns the byte count; a failure is the `$err` arm, whose `code`
+is the errno and whose `msg` names it and the bytes written before it. **This
+is a behaviour change:** until 121.70 `write` made one write(2) and returned
+`0` on error -- the same value a write of `""` returns. See
+[std.os](/docs/stdlib/os).
+
+### std.toml
+
+```text
+t=$tomlval{}
+t=$tomlerr{msg:$str}
+f=load(src:$str):$tomlval!$tomlerr
+f=loadfile(path:$str):$tomlval!$tomlerr
+f=str(v:$tomlval;key:$str):$str!$tomlerr
+f=i64(v:$tomlval;key:$str):i64!$tomlerr
+f=f64(v:$tomlval;key:$str):f64!$tomlerr
+f=bool(v:$tomlval;key:$str):bool!$tomlerr
+f=has(v:$tomlval;key:$str):bool
+f=section(v:$tomlval;key:$str):$tomlval!$tomlerr
+```
+
+`$tomlval` is an opaque table handle. Each accessor reads one key of the
+table it is given (not a dotted path); `section` descends. `f64` and `has`
+(121.68): `f64` reads a float, or a decimal integer as the nearest `f64`, and
+its `$err` says `key not found` or `key is not a float`; `has` is `true` for a
+key present with any value, arrays and tables included. `loadfile` needs the
+`fs.read` grant. See [std.toml](/docs/stdlib/toml).
 
 ### std.env
 

@@ -457,7 +457,13 @@ const char *stdlib_symbol_for(const char *mod, int is_std, const char *method) {
         if (!strcmp(method, "open"))      return "tk_os_open";
         if (!strcmp(method, "close"))     return "tk_os_close";
         if (!strcmp(method, "read"))      return "tk_os_read";
-        if (!strcmp(method, "write"))     return "tk_os_write";
+        /* 121.70 (3): "write" is not mapped here any more.  os.write is
+         * `i64!oserr` and its wrapper is tk_os_write_w (os_glue.c), reached
+         * by the generic tk_<mod>_<method>_w fallback below -- the name the
+         * .tki cache gives the export, so the error-slot derivation
+         * (is_stdlib_slot_wrapper) sees it.  Mapped to the bare tk_os_write
+         * it was invisible to that derivation and `mt` decided on the value:
+         * a successful write of "" (0 bytes) took the $err arm. */
         if (!strcmp(method, "lseek"))     return "tk_os_lseek";
         if (!strcmp(method, "stat"))      return "tk_os_stat";
         if (!strcmp(method, "unlink"))    return "tk_os_unlink";
