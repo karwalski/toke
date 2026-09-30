@@ -3084,9 +3084,14 @@ static int recv_is_map(Ctx *c, const Node *recv) {
  * array was a silent no-op. The length comes from tk_str_arraylen_w, which
  * reads base[-1] and answers 0 for a null (empty) handle, so an empty array
  * traps too. `arr` and `idx` are i64 temporaries. */
-static void emit_set_bounds_check(Ctx *c, int arr, int idx) {
+/* 121.31: the same check for a std.vec handle, whose length lives in the
+ * DynArr (tk_vec_len_w, 0 for a null handle), not at base[-1].  tk_vec_get
+ * answered 0 and tk_vec_set did nothing for an index outside [0, len) — the
+ * silent-default class 127.217 removed from arrays.  `lenfn` names the glue
+ * that yields the length of the i64 handle `arr`. */
+static void emit_len_bounds_check(Ctx *c, const char *lenfn, int arr, int idx) {
     int len = next_tmp(c);
-    fprintf(c->out, "  %%t%d = call i64 @tk_str_arraylen_w(i64 %%t%d) ; RT003 .set len\n", len, arr);
+    fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d) ; RT003 len\n", len, lenfn, arr);
     int lo = next_tmp(c), hi = next_tmp(c), oob = next_tmp(c);
     fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", lo, idx);
     fprintf(c->out, "  %%t%d = icmp sge i64 %%t%d, %%t%d\n", hi, idx, len);
@@ -3097,6 +3102,9 @@ static void emit_set_bounds_check(Ctx *c, int arr, int idx) {
     fprintf(c->out, "  call void @tk_bounds_trap(i64 %%t%d, i64 %%t%d)\n", idx, len);
     fprintf(c->out, "  unreachable\n");
     fprintf(c->out, "oob_ok%d:\n", lc);
+}
+static void emit_set_bounds_check(Ctx *c, int arr, int idx) {
+    emit_len_bounds_check(c, "tk_str_arraylen_w", arr, idx);
 }
 
 static int json_arr_shape(Ctx *c, const Node *n, int *kind_out) {
@@ -5153,6 +5161,8 @@ static int emit_expr(Ctx *c, const Node *n)
                             c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
                         }
                     }
+                    if ((!strcmp(vfn, "tk_vec_get_w") || !strcmp(vfn, "tk_vec_set_w")) && an >= 1)
+                        emit_len_bounds_check(c, "tk_vec_len_w", vbase, avals[0]);   /* 121.31 */
                     t = next_tmp(c);
                     fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d", t, vfn, vbase);
                     for (int ai = 0; ai < an; ai++) fprintf(c->out, ", i64 %%t%d", avals[ai]);
@@ -5918,6 +5928,11 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
             return t;
         }
+        /* 121.31: `vec.get(v;i)` / `vec.set(v;i;x)` — the module spelling of
+         * the handle subscript — checks bounds as the receiver spelling does. */
+        if (!callee && !is_cross_module_user && na >= 2 &&
+            (!strcmp(tb, "tk_vec_get_w") || !strcmp(tb, "tk_vec_set_w")))
+            emit_len_bounds_check(c, "tk_vec_len_w", args[0], args[1]);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = call%s %s @%s(", t, cc, callee_ret, tb);
         for (int i = 0; i < na; i++) {
@@ -6323,6 +6338,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
                     }
                 }
+                emit_len_bounds_check(c, "tk_vec_len_w", vb, ix);   /* 121.31 */
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_vec_get_w(i64 %%t%d, i64 %%t%d)\n", t, vb, ix);
                 return t;
