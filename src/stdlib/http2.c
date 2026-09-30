@@ -336,7 +336,12 @@ int h2_apply_settings(H2Conn *conn, const uint8_t *payload, uint32_t len)
         switch (id) {
         case H2_SETTINGS_HEADER_TABLE_SIZE:
             conn->peer_settings.header_table_size = val;
-            hpack_table_resize(&conn->hpack_encode, val);
+            /* 121.50 (2): resized AND signalled.  It used to be resized
+             * only, so a peer that lowered the size never saw the dynamic
+             * table size update RFC 7541 4.2 requires (strict decoders
+             * reject the next block), and one that raised it had our table
+             * grow past the 4096 bytes its decoder still used. */
+            hpack_encoder_set_limit(&conn->hpack_encode, val);
             break;
         case H2_SETTINGS_ENABLE_PUSH:
             if (val > 1) return -1; /* PROTOCOL_ERROR */
@@ -794,6 +799,20 @@ void hpack_table_resize(HpackTable *t, size_t new_max)
     hpack_evict(t);
 }
 
+void hpack_encoder_set_limit(HpackTable *t, size_t peer_max)
+{
+    size_t want = peer_max < H2_DEFAULT_HEADER_TABLE_SIZE
+                ? peer_max : H2_DEFAULT_HEADER_TABLE_SIZE;
+    if (!t->update_pending) {
+        if (want == t->max_size) return;
+        t->update_pending = 1;
+        t->update_min = want;
+    } else if (want < t->update_min) {
+        t->update_min = want;
+    }
+    hpack_table_resize(t, want);
+}
+
 /* Look up by index: 1–61 = static, 62+ = dynamic */
 static int hpack_lookup(HpackTable *t, size_t index,
                         const char **name, const char **value)
@@ -1112,6 +1131,18 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
                  size_t count, uint8_t *out, size_t out_cap)
 {
     size_t pos = 0;
+
+    /* 121.50 (2): a size change opens the block (RFC 7541 4.2). */
+    if (t->update_pending) {
+        if (t->update_min < t->max_size &&
+            hpack_encode_int(out, out_cap, &pos, (uint32_t)t->update_min,
+                             5, 0x20) < 0)
+            return -1;
+        if (hpack_encode_int(out, out_cap, &pos, (uint32_t)t->max_size,
+                             5, 0x20) < 0)
+            return -1;
+        t->update_pending = 0;
+    }
 
     for (size_t i = 0; i < count; i++) {
         const char *name  = names[i];
