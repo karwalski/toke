@@ -1272,6 +1272,13 @@ closure bodies are left to codegen, which may release or lift them), so a
 function the checker passes can still be refused by the build, never the
 reverse (127.252 residue).
 
+Source nested too deeply for the compiler's recursive passes is refused
+before them, as one E9010 at the offending token or node, no `fix`: more
+than 256 open brackets, or a run of more than 256 prefix operators
+(`-` `!` `~`) or type prefixes (`@` `*`), or a syntax tree more than 1000
+levels high -- a long `a+b+c+...` chain is one level per operator. Before
+story 121.28 such input crashed the compiler with no diagnostic.
+
 ### E9020
 
 **Failed to write .tkir file**
