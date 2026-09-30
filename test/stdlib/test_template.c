@@ -455,7 +455,7 @@ int main(void)
             free(src);
         }
         /* 38. 64 nested blocks (the cap) still compile and render */
-        char buf[64 * 16 + 1]; size_t n = 0;
+        char buf[64 * 9 + 1 + 64 * 7 + 1]; size_t n = 0;   /* opens, "y", closes, NUL */
         for (int i = 0; i < 64; i++) { memcpy(buf + n, "{{#if a}}", 9); n += 9; }
         buf[n++] = 'y';
         for (int i = 0; i < 64; i++) { memcpy(buf + n, "{{/if}}", 7); n += 7; }
