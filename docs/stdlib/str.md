@@ -305,7 +305,7 @@ Every non-overlapping match, in order.
 
 Anything else is **rejected**, never silently read as something else: lazy quantifiers (`*?` `+?` `??` `{n,m}?`), backreferences (`\1`), lookaround and every other `(?…)` form, a letter escape not in the table, a quantifier with nothing to repeat or following another quantifier, an unbalanced `(` `)` or `[`, a `{` that does not start a bound (write `\{`), an empty alternative (`a|`, `()`), and a pattern whose repeats expand past 2000 states (`(a{1,255}){1,255}`).
 
-A **literal** pattern is checked when the program is compiled — `toke --check` reports [E4075](../reference/errors.md#e4075) at the offending byte. So is a literal bound by an immutable `let` that is the name's only binder in the function, when the call follows it in its block (`let p="a(b"; s.containsre(x;p)` is E4075 at the `(`):
+A **literal** pattern is checked when the program is compiled — `toke --check` reports [E4075](/docs/reference/errors/#e4075) at the offending byte. So is a literal bound by an immutable `let` that is the name's only binder in the function, when the call follows it in its block (`let p="a(b"; s.containsre(x;p)` is E4075 at the `(`):
 
 <!-- skip-check -->
 ```text
