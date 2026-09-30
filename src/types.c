@@ -6374,6 +6374,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
             /* An arm body of a discarded match is itself discarded. */
             if (discarded&&body->kind==NODE_MATCH_STMT) cx->mt_discard=body;
+            /* 127.252 residue: so is an expression-if that is the arm body --
+             * its branches' tails are statements, as for a statement `if`.
+             * It was taken for a used value: a one-sided match in its branch
+             * tail drew E4010 "the match's value is used" although the
+             * whole outer match was discarded. */
+            if (discarded&&body->kind==NODE_IF_STMT) cx->if_discard=body;
             Type *at=infer(cx,body);
             if (pushed) cx->armb_count--;
             /* An early-return arm leaves the function; it yields no value
