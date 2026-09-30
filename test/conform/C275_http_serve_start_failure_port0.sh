@@ -70,6 +70,20 @@ expect() {
          FAIL=$((FAIL + 1)); fi
 }
 
+# run_bounded NAME -- run ./NAME_bin, which must fail to start and exit at
+# once.  121.54: this was a plain foreground run, and the port holder slept
+# only 120 s: on a loaded host the compile outlasted the holder, the port came
+# free, the server STARTED and the script waited on it forever (measured:
+# C275 hung 2 h 15 min under 6x `yes`).  A server still running after 20 s is
+# stopped and reads RC=137, which fails the case instead of hanging it.
+run_bounded() {
+    ./"$1"_bin > "$1.out" 2> "$1.err" &
+    SRV=$!
+    for _ in $(seq 1 200); do kill -0 "${SRV}" 2>/dev/null || break; sleep 0.1; done
+    if kill -0 "${SRV}" 2>/dev/null; then stop "${SRV}"; RC=137; else wait "${SRV}"; RC=$?; fi
+    SRV=""
+}
+
 build() {   # build NAME CALL
     cat > "$1.tk" <<TOKE
 m=srv;
@@ -100,7 +114,7 @@ python3 -c '
 import socket, time
 s = socket.socket(); s.bind(("", 0)); s.listen(8)
 print(s.getsockname()[1], flush=True)
-time.sleep(120)' > hold.port &
+time.sleep(3600)' > hold.port &   # killed by stop below / cleanup
 HOLD=$!
 for _ in $(seq 1 50); do [ -s hold.port ] && break; sleep 0.1; done
 BUSY="$(head -1 hold.port)"
@@ -110,12 +124,12 @@ if [ -z "${BUSY}" ]; then
     echo "  FAIL: could not hold a port for cases 1-2"; FAIL=$((FAIL + 2))
 else
     if build busyw "http.serveworkers(${BUSY};2)"; then
-        ./busyw_bin > busyw.out 2> busyw.err; RC=$?
+        run_bounded busyw
         expect "serveworkers on a held port: -1, stage bind/fork, exit 3 (main returned 3)" \
             "$(result busyw http.serveworkers "${BUSY}" bind/fork)" "3 r=-1 1 1" busyw.err
     fi
     if build busys "http.serve(${BUSY})"; then
-        ./busys_bin > busys.out 2> busys.err; RC=$?
+        run_bounded busys
         expect "serve on a held port: -1, reported as http.serve, exit 3 (main's)" \
             "$(result busys http.serve "${BUSY}" bind/fork)" "3 r=-1 1 1" busys.err
     fi
