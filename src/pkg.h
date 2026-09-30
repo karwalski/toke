@@ -13,6 +13,24 @@
 
 #include <stdbool.h>
 
+/* ── Diagnostic codes (reserved) ───────────────────────────────────────────── */
+
+/* 121.50 (4): the codes docs/reference/package-manifest.md publishes for
+ * package resolution.  Nothing emits them yet -- this module is not wired into
+ * any tkc command -- but they are defined here so the code registry
+ * (scripts/check_error_codes.py) lists them as reserved and no compiler
+ * diagnostic takes one.  The manifest used to give "no version satisfies the
+ * constraints" as E9010, which the compiler already uses for "compiler limit
+ * exceeded"; codes are stable, so that condition gets a new code at the end of
+ * the E9xxx series, E9024, and E9010 keeps its meaning.  E9011-E9014 and W9010
+ * collided with nothing and keep their numbers. */
+#define E9011 9011 /* Package not found in the index and no git URL */
+#define E9012 9012 /* Malformed pkg.toml */
+#define E9013 9013 /* Git clone or fetch of a dependency failed */
+#define E9014 9014 /* No git tag matches the resolved version */
+#define E9024 9024 /* No version of a dependency satisfies every constraint */
+#define W9010 9010 /* pkg.lock is out of date relative to pkg.toml */
+
 /* ── Limits ────────────────────────────────────────────────────────────────── */
 
 #define PKG_MAX_NAME       64   /* max chars in a package name              */
