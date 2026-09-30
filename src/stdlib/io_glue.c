@@ -20,6 +20,17 @@ int64_t tk_io_println_w(int64_t s) {
     return 0;
 }
 
+/* 121.70 (1): io.eprint(s) -- stderr, no added newline; the stderr twin of
+ * io.print.  Without it a program that builds a line in pieces on stderr
+ * (a progress bar, a prompt, a diagnostic assembled from parts) had to reach
+ * into std.os for os.write(os.stderrfd(); s).  stderr is unbuffered, so
+ * nothing needs flushing; stdout's buffer is not touched, which keeps the
+ * relative order of the two streams what it is for io.eprintln. */
+int64_t tk_io_eprint_w(int64_t s) {
+    if (s) fputs((const char *)(intptr_t)s, stderr);
+    return 0;
+}
+
 int64_t tk_io_eprintln_w(int64_t s) {
     if (s) fprintf(stderr, "%s\n", (const char *)(intptr_t)s);
     else fprintf(stderr, "\n");

@@ -11,6 +11,7 @@ API reference for every module in the toke standard library. Each page documents
 
 - [std.str](/docs/stdlib/str/) -- string manipulation
 - [std.fmt](/docs/stdlib/fmt/) -- value formatting for output
+- [std.io](/docs/stdlib/io/) -- console I/O: stdout, stderr, stdin lines
 - [std.math](/docs/stdlib/math/) -- mathematical functions
 - [std.time](/docs/stdlib/time/) -- date, time, and duration
 - [std.file](/docs/stdlib/file/) -- file system operations

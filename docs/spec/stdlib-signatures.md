@@ -298,6 +298,25 @@ resolved (realpath(3)), or the `$fileerr` saying why not. It is the only
 `std.file` call that follows symlinks, because resolving them is its purpose;
 it needs the `fs.read` grant. See [std.file](/docs/stdlib/file).
 
+### std.io
+
+```text
+f=print(s:$str):i64
+f=println(s:$str):i64
+f=eprint(s:$str):void
+f=eprintln(s:$str):i64
+f=printf(fmt:$str;val:$str):i64
+f=readln():$str
+f=eof():i64
+```
+
+Console text: `print`/`println` to stdout, `eprint`/`eprintln` to stderr, the
+`ln` forms adding a newline. `eprint` (121.70) is the stderr write with no
+newline added, so a program no longer reaches into `std.os` for
+`os.write(os.stderrfd(); s)`. Every export but `eprint` is `"gen":"abi"` in
+io.tki (only its arity is established). `readln` returns `""` both for a blank
+line and at end of input; `eof` tells them apart. See [std.io](/docs/stdlib/io).
+
 ### std.env
 
 ```text

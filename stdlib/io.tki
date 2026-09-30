@@ -12,6 +12,14 @@
     },
     {
       "kind": "func",
+      "name": "io.eprint",
+      "params": [
+        "str"
+      ],
+      "return": "void"
+    },
+    {
+      "kind": "func",
       "name": "io.eprintln",
       "params": [
         "i64"
