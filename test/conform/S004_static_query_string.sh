@@ -38,8 +38,11 @@ if [ ! -x "${TKC}" ]; then
 fi
 
 WORK="$(mktemp -d /tmp/tkc_qstring_XXXXXX)"
+# 121.54: freeze the supervisor before killing its workers (C391 de559637):
+# a running supervisor respawns a killed worker, and that orphan listens on.
 cleanup() {
     if [ -n "${SRV_PID:-}" ]; then
+        kill -STOP "${SRV_PID}" 2>/dev/null
         pkill -9 -P "${SRV_PID}" 2>/dev/null
         kill -9 "${SRV_PID}" 2>/dev/null
     fi

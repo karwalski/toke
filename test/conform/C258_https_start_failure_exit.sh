@@ -35,8 +35,10 @@ PASS=0; FAIL=0
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c258_XXXXXX")"
 SRV=""; HOLD=""
+# 121.54: freeze the supervisor before killing its workers (C391 de559637):
+# a running supervisor respawns a killed worker, and that orphan listens on.
 cleanup() {
-    [ -n "${SRV}" ] && { pkill -9 -P "${SRV}" 2>/dev/null; kill -9 "${SRV}" 2>/dev/null; }
+    [ -n "${SRV}" ] && { kill -STOP "${SRV}" 2>/dev/null; pkill -9 -P "${SRV}" 2>/dev/null; kill -9 "${SRV}" 2>/dev/null; }
     [ -n "${HOLD}" ] && kill -9 "${HOLD}" 2>/dev/null
     rm -rf "${WORK}"
 }
