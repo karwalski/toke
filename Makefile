@@ -195,6 +195,14 @@ OBJS    = $(SRCS:.c=.o)
 # in neither set otherwise; it is analysed with -DTKC_WASM_BUILD (the script's
 # EXTRA_FLAGS), since without it the file is a one-typedef stub.
 ANALYZE_SRCS = $(sort $(SRCS) $(wildcard src/stdlib/*.c) src/wasm_api.c)
+# 127.250 (3): every header is also analysed as a translation unit of its own
+# -- the analyzer reports only on a TU's main file, so a header's inline code
+# was checked through no .c file, and a header nothing includes was not even
+# compiled (tkc_caps.h's null dereferences were found only that way).  The
+# four src/stdlib_*_gen.h files are excluded: they are generated initializer
+# FRAGMENTS, #included inside an array's braces (stdlib_tables.c, types.c),
+# not headers, and hold data only.  src/glue_gen.h is a header and stays.
+ANALYZE_HDRS = $(sort $(filter-out src/stdlib_%_gen.h,$(wildcard src/*.h src/stdlib/*.h)))
 
 LDLIBS  = -lm -lz -lpthread
 BIN     = toke
@@ -374,12 +382,12 @@ src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
 # and FAILS on anything not accounted for on a checked-in, self-failing
 # skiplist.  See its header for what a pass does and does not prove.
 lint:
-	@python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS)
+	@python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
 lint-nonhost:
-	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS)
+	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 122.13 (10): the same three passes over ONE file (or a few), with the
 # skiplist entries for every other file out of scope rather than stale.
@@ -393,7 +401,7 @@ lint-file:
 # Writes nothing — paste the lines in and put a real reason and story on each.
 lint-report:
 	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
-	    --report $(ANALYZE_SRCS)
+	    --report $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 127.156 / 136.65: every conformance entry point goes through
 # scripts/conform_isolated.sh, which pins a private copy of the compiler,
