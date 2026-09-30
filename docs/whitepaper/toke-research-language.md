@@ -625,7 +625,8 @@ would look like.
 6. KERN review and reproduction. `docs/about/reviews/kern-2026-08.md`, `kern-2026-08.repro.py`
 7. v0.4 code samples, every tokenizer lane. `docs/about/samples-v04.md`
 8. Gate-1 60, v0.4 re-delivery. `toke-eval/docs/gate1-60-v04.md`
-9. Gate 2 decision (2026-05-22). `docs/spec/gate2-decision.md`
+9. Gate 2 decision (2026-05-22). Moved out of the tree on 2026-08-19 (130.3); last published at
+   [`docs/spec/gate2-decision.md` @ `1c5ffce`](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)
 10. Gate 3 pre-registration (2026-05-24; archived, thresholds not carried forward). `docs/spec/gate3-criteria.md`
 11. Liu et al. "SuperBPE: Space Travel for Language Models." arXiv 2503.13423, ICML 2025.
 12. Hwang, Wang and Gu. "Dynamic Chunking for End-to-End Hierarchical Sequence Modeling" (H-Net). arXiv 2507.07955.

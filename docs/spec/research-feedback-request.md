@@ -14,7 +14,7 @@ toke is a statically typed, compiled programming language designed from first pr
 
 - **Gate 1 (2026-04-03):** **58.8%** functional Pass@1 with legacy syntax (588 of 1,000 solutions generated); 92.3% compiled. *Published as "63.7% Pass@1 compilation rate" until 2026-09-19 (story 128.19) — wrong twice over: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator, and it is the functional rate, not the compilation rate. 58.8% is below Gate 1's own >= 60% minimum, and on 2026-09-22 the owner decided Gate 1 NOT PASSED.*
 - **Gate 2 (2026-05-22):** 100% Pass@1 compilation rate with default syntax (7B model)
-- **Functional correctness:** 55.6% (corrected from ~8% after stdlib fix — see gate2-decision.md)
+- **Functional correctness:** 55.6% (corrected from ~8% after stdlib fix — see [gate2-decision.md @ `1c5ffce`](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md))
 
 We are seeking feedback from researchers in code generation, curriculum learning, program synthesis, and AI safety on our next training phase design.
 
