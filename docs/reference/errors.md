@@ -1328,6 +1328,25 @@ nothing.
 Before 127.208 this condition was reported as E9020, a code whose meaning is
 "failed to write .tkir file"; E9020 now means only that.
 
+### E9024
+
+**Stdlib or runtime directory path contains whitespace**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A build to an executable was requested while `TKC_STDLIB_DIR` (as resolved by
+the compiler, see E9022) or `TKC_RUNTIME_DIR` names a directory whose path
+contains whitespace. The stdlib C sources and vendor include flags reach
+clang as whitespace-separated arguments, so such a path would be split into
+fragments — and a fragment that looks like a flag (`-v`, `-o`) would reach
+clang as one. Emitted before clang is run; `--check` is unaffected. Use a
+directory whose path has no whitespace (a symlink to it works: the compiler
+resolves `TKC_STDLIB_DIR` to its real path). No `fix`: the right path is not
+knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
+
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.

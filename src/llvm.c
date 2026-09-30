@@ -12930,6 +12930,29 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *dbg_flag = debug ? " -g" : "";
 
+    /* 121.28 (audit-120 compiler-toolchain COM-02): the stdlib source paths,
+     * vendor -I flags and glue path reach clang's argv through whitespace-
+     * joined strings (push_ws_tokens).  121.1b removed the shell, but a
+     * directory with a space in it was still split into several argv
+     * elements: measured, TKC_STDLIB_DIR='<dir>/std -v lib' passed `-v` to
+     * clang as a flag and the build failed on the fragments.  Refuse such a
+     * directory up front, by name, rather than pass fragments of it. */
+    {
+        const char *envs[] = { "TKC_STDLIB_DIR", "TKC_RUNTIME_DIR", NULL };
+        for (int ei = 0; envs[ei]; ei++) {
+            const char *v = getenv(envs[ei]);
+            if (!v || !strpbrk(v, " \t\n\r\v\f")) continue;
+            char msg[1024];
+            snprintf(msg, sizeof msg,
+                     "%s='%.700s' contains whitespace; the compiler passes stdlib "
+                     "source paths to clang as whitespace-separated arguments, so "
+                     "this directory cannot be used (move or link it to a path "
+                     "without whitespace)", envs[ei], v);
+            diag_emit(DIAG_ERROR, E9024, 0, 0, 0, msg, (void *)0);
+            return -1;
+        }
+    }
+
     /* Story 46.1.2: selective stdlib linking.
      * If st is provided and TKC_LINK_ALL is not set, resolve only the
      * stdlib modules actually imported.  Otherwise fall back to linking
