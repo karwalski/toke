@@ -88,6 +88,22 @@ int main(void)
     }
 
     /* -------------------------------------------------------------------
+     * 4a. 121.50 (5): a second html_style / html_script call adds to the
+     *     block; it used to replace the first.
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlDoc *doc = html_doc();
+        html_style(doc, "a{}");
+        html_style(doc, "b{}");
+        html_script(doc, "one();");
+        html_script(doc, "two();");
+        const char *out = html_render(doc);
+        ASSERT_CONTAINS(out, "<style>a{}\nb{}</style>", "style: both blocks, in order");
+        ASSERT_CONTAINS(out, "<script>one();\ntwo();</script>", "script: both blocks, in order");
+        html_free(doc);
+    }
+
+    /* -------------------------------------------------------------------
      * 4b. 124.3 (ADR-0011): raw-text/title breakout is neutralized.
      * ------------------------------------------------------------------- */
     {

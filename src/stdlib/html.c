@@ -274,18 +274,33 @@ void html_title(TkHtmlDoc *doc, const char *title)
     doc->title = strdup(title);
 }
 
+/* 121.50 (5): html.style and html.script ADD a block, as documented --
+ * each call's content is appended, a newline between, to the document's one
+ * <style> / <script> element.  Each call used to replace the last, so a page
+ * built from several script fragments rendered only the final one
+ * (test-stdlib-viz-integration: the Chart.js loader was dropped by the chart
+ * code that followed it). */
+static void doc_add_block(char **slot, const char *text)
+{
+    if (!*slot) { *slot = strdup(text); return; }
+    size_t a = strlen(*slot), b = strlen(text);
+    char *j = realloc(*slot, a + b + 2);
+    if (!j) return;                      /* OOM: keep what was there */
+    j[a] = '\n';
+    memcpy(j + a + 1, text, b + 1);
+    *slot = j;
+}
+
 void html_style(TkHtmlDoc *doc, const char *css)
 {
     if (!doc || !css) return;
-    free(doc->style);
-    doc->style = strdup(css);
+    doc_add_block(&doc->style, css);
 }
 
 void html_script(TkHtmlDoc *doc, const char *js)
 {
     if (!doc || !js) return;
-    free(doc->script);
-    doc->script = strdup(js);
+    doc_add_block(&doc->script, js);
 }
 
 void html_append(TkHtmlDoc *doc, TkHtmlNode *node)

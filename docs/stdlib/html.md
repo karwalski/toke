@@ -47,6 +47,11 @@ Text passed to the node constructors (`html.p`, `html.h1`, `html.h2`,
 into the document as given, so that a caller can nest elements. Pass anything
 that did not come from your own program through `html.escape` first.
 
+`html.style` and `html.script` add to the document's one `<style>` and one
+`<script>` element: a second call appends its content, after a newline, to
+the first's. Until story 121.50 each call replaced the last, so only the
+final fragment was rendered.
+
 What the module escapes for you:
 
 - attribute values (a `div`'s class, for example) are HTML-escaped, and a

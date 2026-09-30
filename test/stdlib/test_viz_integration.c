@@ -188,7 +188,7 @@ static void test_chart_to_html(void)
     ASSERT_CONTAINS(rendered, "Chart.js", "test3: rendered contains Chart.js");
     ASSERT_CONTAINS(rendered, "bar",      "test3: rendered contains chart type");
 
-    free((void *)rendered);
+    /* 121.50 (5): html_render's string belongs to the doc (html_free). */
     free(script_buf);
     free((void *)json);
     chart_free(spec);
@@ -260,7 +260,7 @@ static void test_full_pipeline(void)
            strstr(rendered, "sales"),
            "test4: contains chart data");
 
-    free((void *)rendered);
+    /* 121.50 (5): html_render's string belongs to the doc (html_free). */
     free(script_buf);
     free((void *)json);
     chart_free(spec);
@@ -314,7 +314,7 @@ static void test_vega_html(void)
     ASSERT_CONTAINS(rendered, "$schema",   "test5: rendered contains $schema");
     ASSERT_CONTAINS(rendered, "vega",      "test5: rendered contains vega cdn reference");
 
-    free((void *)rendered);
+    /* 121.50 (5): html_render's string belongs to the doc (html_free). */
     free(script_buf);
     free((void *)vega_json);
     chart_free(spec);
@@ -358,7 +358,7 @@ static void test_df_tojson_to_html(void)
     ASSERT_CONTAINS(rendered, "item",            "test6: rendered contains JSON data");
     ASSERT_CONTAINS(rendered, "<div",            "test6: rendered contains div element");
 
-    free((void *)rendered);
+    /* 121.50 (5): html_render's string belongs to the doc (html_free). */
     free((void *)json);
     df_free(df);
     html_free(doc);
@@ -429,7 +429,7 @@ static void test_multi_chart_dashboard(void)
     ASSERT_CONTAINS(rendered, "chartA", "test7: rendered contains chartA id");
     ASSERT_CONTAINS(rendered, "chartB", "test7: rendered contains chartB id");
 
-    free((void *)rendered);
+    /* 121.50 (5): html_render's string belongs to the doc (html_free). */
     free(script_a);
     free(script_b);
     free((void *)json_a);
