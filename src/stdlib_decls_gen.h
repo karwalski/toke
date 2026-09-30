@@ -496,7 +496,7 @@
     {"tk_os_stderrfd_w", "declare i64 @tk_os_stderrfd_w()", 0},
     {"tk_os_stdinfd_w", "declare i64 @tk_os_stdinfd_w()", 0},
     {"tk_os_stdoutfd_w", "declare i64 @tk_os_stdoutfd_w()", 0},
-    {"tk_os_write", "declare i64 @tk_os_write(i64, i64)", 0},
+    {"tk_os_write_w", "declare i64 @tk_os_write_w(i64, i64)", 0},
     {"tk_path_base_w", "declare i64 @tk_path_base_w(i64)", 0},
     {"tk_path_isabs_w", "declare i64 @tk_path_isabs_w(i64)", 0},
     {"tk_path_normalize_w", "declare i64 @tk_path_normalize_w(i64)", 0},

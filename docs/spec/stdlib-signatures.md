@@ -317,6 +317,48 @@ newline added, so a program no longer reaches into `std.os` for
 io.tki (only its arity is established). `readln` returns `""` both for a blank
 line and at end of input; `eof` tells them apart. See [std.io](/docs/stdlib/io).
 
+### std.os
+
+```text
+t=$oserr{msg:$str;code:i64}
+f=open(path:$str;flags:i64;mode:i64):i64
+f=close(fd:i64):i64
+f=read(fd:i64;count:i64):$str
+f=write(fd:i64;data:$str):i64!$oserr
+f=lseek(fd:i64;offset:i64;whence:i64):i64
+f=stat(path:$str):i64
+f=unlink(path:$str):i64
+f=rename(from:$str;to:$str):i64
+f=mkdir(path:$str;mode:i64):i64
+f=rmdir(path:$str):i64
+f=access(path:$str;mode:i64):i64
+f=getcwd():$str
+f=getpid():i64
+f=exit(status:i64):i64
+f=getenv(name:$str):$str
+f=setenv(name:$str;value:$str):i64
+f=errno():i64
+f=strerror(code:i64):$str
+f=ordonly():i64
+f=owronly():i64
+f=ordwr():i64
+f=ocreat():i64
+f=otrunc():i64
+f=oappend():i64
+f=stdinfd():i64
+f=stdoutfd():i64
+f=stderrfd():i64
+```
+
+A thin POSIX bridge: each call returns what the syscall returns (`-1` on
+failure, with the reason in `errno()`), except `write`. `write` (121.70)
+writes every byte of `data`, retrying `EINTR` and continuing after a short
+write, and returns the byte count; a failure is the `$err` arm, whose `code`
+is the errno and whose `msg` names it and the bytes written before it. **This
+is a behaviour change:** until 121.70 `write` made one write(2) and returned
+`0` on error -- the same value a write of `""` returns. See
+[std.os](/docs/stdlib/os).
+
 ### std.env
 
 ```text

@@ -16,7 +16,15 @@
 int64_t tk_os_open(int64_t path, int64_t flags, int64_t mode);
 int64_t tk_os_close(int64_t fd);
 int64_t tk_os_read(int64_t fd, int64_t count);        /* AMB-08: -> str (bytes read) */
-int64_t tk_os_write(int64_t fd, int64_t data);        /* AMB-08: data is str */
+/* 121.70 (3): os.write(fd; data):i64!oserr.  Its wrapper, tk_os_write_w, is
+ * in os_glue.c (it raises through the error slot, which needs tk_runtime);
+ * the loop is os_write_all: every byte or an errno, EINTR retried.  The
+ * `_w` name is what makes the .tki's `T!E` reach it: the error-slot
+ * derivation (127.238) matches the export by its wrapper name. */
+#include <stddef.h>
+typedef struct { int64_t written; int err; } OsWriteResult;  /* err: 0 or an errno */
+OsWriteResult os_write_all(int fd, const char *s, size_t len);
+int64_t tk_os_write_w(int64_t fd, int64_t data);      /* AMB-08: data is str */
 int64_t tk_os_lseek(int64_t fd, int64_t offset, int64_t whence);
 int64_t tk_os_stat(int64_t path);
 int64_t tk_os_unlink(int64_t path);

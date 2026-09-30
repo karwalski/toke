@@ -63,9 +63,13 @@ int main(void){
     /* AMB-08: os.read/os.write are str-based (no raw pointer). Round-trip via a temp file. */
     char of[256]; snprintf(of,sizeof of,"%s/os.txt",root);
     int fd = open(of, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-    int64_t nw = tk_os_write((int64_t)fd, (int64_t)(intptr_t)"hello os");
+    /* 121.70 (3): os.write's loop is os_write_all (os.c); its toke wrapper,
+     * which raises through the error slot, is in os_glue.c. */
+    OsWriteResult wr = os_write_all(fd, "hello os", 8);
     close(fd);
-    CHECK(nw==8, "AMB-08 os.write(str) wrote 8 bytes");
+    CHECK(wr.written==8 && wr.err==0, "AMB-08 os.write(str) wrote 8 bytes");
+    OsWriteResult wb = os_write_all(-1, "x", 1);
+    CHECK(wb.written==0 && wb.err==EBADF, "121.70 os.write on a bad fd reports EBADF, not 0 bytes");
     int fd2 = open(of, O_RDONLY);
     int64_t s = tk_os_read((int64_t)fd2, 8);
     close(fd2);

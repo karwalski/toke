@@ -2,10 +2,11 @@
   "schema_version": "1.0",
   "module": "std.os",
   "exports": [
+    {"kind": "type", "name": "oserr", "fields": [{"name": "msg", "type": "str"}, {"name": "code", "type": "i64"}]},
     {"kind": "func", "name": "os.open",      "params": ["str", "i64", "i64"], "return": "i64"},
     {"kind": "func", "name": "os.close",     "params": ["i64"],               "return": "i64"},
     {"kind": "func", "name": "os.read",      "params": ["i64", "i64"],        "return": "str", "ownership": "caller"},
-    {"kind": "func", "name": "os.write",     "params": ["i64", "str"],        "return": "i64"},
+    {"kind": "func", "name": "os.write",     "params": ["i64", "str"],        "return": "i64!oserr"},
     {"kind": "func", "name": "os.lseek",     "params": ["i64", "i64", "i64"], "return": "i64"},
     {"kind": "func", "name": "os.stat",      "params": ["str"],               "return": "i64"},
     {"kind": "func", "name": "os.unlink",    "params": ["str"],               "return": "i64"},
