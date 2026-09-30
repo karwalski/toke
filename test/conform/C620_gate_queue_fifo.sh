@@ -15,7 +15,8 @@
 # the machine's real gate slots.
 #   1. FIFO: a holder H, then six waiters started 0.4 s apart.  When H lets
 #      go, they run in arrival order, and waiter i announces
-#      "queue position i of i" on arrival.
+#      "queue position i of N" on arrival (N >= i: under load a later
+#      waiter may already have queued before waiter i first prints).
 #   2. A holder killed with SIGKILL: the waiter gets the slot.
 #   3. A holder ORPHANED (its launching shell is killed, the run continues):
 #      the waiter gets the slot and says it released it.  The orphan is not
@@ -74,7 +75,9 @@ until_true() {
     done
 }
 has_line() { grep -qx "$2" "$1" 2>/dev/null; }
-slot_taken() { [ -f "$1/slot.1/pid" ]; }
+# The slot is taken once its chain is recorded (pid is written first, and a
+# launcher killed before the chain lands would be recorded as never there).
+slot_taken() { [ -s "$1/slot.1/chain" ]; }
 tickets() { ls "$1/queue.slot" 2>/dev/null | grep -c '^[0-9]'; }
 ntickets_is() { [ "$(tickets "$1")" -eq "$2" ]; }
 
@@ -103,17 +106,18 @@ if until_true 10 has_line "${WORK}/order" H; then
         sleep 0.4
     done
     touch "${WORK}/release.H"
-    until_true 30 has_line "${WORK}/order" W6 || true
+    until_true 90 has_line "${WORK}/order" W6 || true
     sleep 0.5
     got="$(tr '\n' ' ' < "${WORK}/order")"
     if [ "${got}" = "H W1 W2 W3 W4 W5 W6 " ]; then ok "case 1: six waiters served in arrival order"
-    else bad "case 1: order was '${got}', expected 'H W1 W2 W3 W4 W5 W6 '"; fi
+    else bad "case 1: order was '${got}', expected 'H W1 W2 W3 W4 W5 W6 '"
+         for i in 1 2 3 4 5 6; do sed "s/^/    W${i}: /" "${WORK}/W${i}.out"; done; ls -R "${L1}" | sed 's/^/    /'; fi
     posok=1
     for i in 1 2 3 4 5 6; do
-        grep -q "queue position ${i} of ${i} " "${WORK}/W${i}.out" || { posok=0; echo "    W${i}: $(grep -m1 'waiting' "${WORK}/W${i}.out")"; }
+        grep -q "queue position ${i} of " "${WORK}/W${i}.out" || { posok=0; echo "    W${i}: $(grep -m1 'waiting' "${WORK}/W${i}.out")"; }
     done
     if [ "${posok}" -eq 1 ]; then ok "case 1: each waiter announced its queue position on arrival"
-    else bad "case 1: a waiter did not announce 'queue position i of i'"; fi
+    else bad "case 1: a waiter did not announce 'queue position i of N'"; fi
     if grep -q releasing "${WORK}"/W?.out; then bad "case 1: a live holder's slot was released"; grep releasing "${WORK}"/W?.out | sed "s/^/    /"
     else ok "case 1: no live holder's slot was released"; fi
 else

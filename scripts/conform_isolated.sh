@@ -133,7 +133,21 @@ alive() {
     [ -s "${d}/chain" ] || return 0
     chain_ok "${d}" && return 0
     snapshot
-    chain_ok "${d}"
+    chain_ok "${d}" && return 0
+    # Judged gone -- unless DIR changed under us (its owner releasing it, or a
+    # new owner stamping it): then it is not abandoned, and the next poll
+    # looks again.
+    [ -s "${d}/chain" ] && [ "$(cat "${d}/pid" 2>/dev/null)" = "${pid}" ] || return 0
+    return 1
+}
+
+# drop DIR: remove a lock or ticket by renaming it away first, so a reader
+# sees the whole directory or none of it -- never one half-deleted (127.247:
+# a waiter read a releasing lock whose chain was already unlinked as
+# abandoned).
+drop() {
+    local g="${1}.gone.$$.${RANDOM}"
+    mv "$1" "${g}" 2>/dev/null && rm -rf "${g}"
 }
 
 # The mutex serialises reclaim-and-take, so two waiters cannot both judge a
@@ -143,12 +157,12 @@ MUTEX="${LOCKROOT}/mutex"
 mutex_on() {
     until mkdir "${MUTEX}" 2>/dev/null; do
         snapshot
-        alive "${MUTEX}" || rm -rf "${MUTEX}"
+        alive "${MUTEX}" || drop "${MUTEX}"
         sleep 0.2
     done
     echo "$$" > "${MUTEX}/pid"
 }
-mutex_off() { [ "$(cat "${MUTEX}/pid" 2>/dev/null)" = "$$" ] && rm -rf "${MUTEX}"; return 0; }
+mutex_off() { [ "$(cat "${MUTEX}/pid" 2>/dev/null)" = "$$" ] && drop "${MUTEX}"; return 0; }
 
 # try_lock DIR -> 0 if we now own DIR (call under the mutex, SNAP fresh).  A
 # lock is a directory; mkdir is atomic, so exactly one contender wins.
@@ -159,7 +173,7 @@ try_lock() {
         if [ -n "${TKC_GATE_DEBUG:-}" ]; then
             { echo "== $$ releasing ${d}"; ls -la "${d}"; cat "${d}/pid" "${d}/chain"; echo "-- snap"; printf '%s\n' "${SNAP}"; } >> "${TKC_GATE_DEBUG}" 2>&1
         fi
-        rm -rf "${d}"
+        drop "${d}"
     fi
     if mkdir "${d}" 2>/dev/null; then
         stamp "${d}"
@@ -172,10 +186,10 @@ try_lock() {
 release_all() {
     local d
     for d in "${HELD[@]+"${HELD[@]}"}"; do
-        [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && rm -rf "${d}"
+        [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && drop "${d}"
     done
     HELD=()
-    [ -n "${TICKET}" ] && rm -rf "${TICKET}"
+    [ -n "${TICKET}" ] && drop "${TICKET}"
     TICKET=""
 }
 
@@ -203,7 +217,7 @@ queue_pos() {
     for t in "${q}"/*; do
         name="${t##*/}"
         case "${name}" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;; *) continue ;; esac
-        if [ "${name}" != "${mine}" ] && ! alive "${t}"; then rm -rf "${t}"; continue; fi
+        if [ "${name}" != "${mine}" ] && ! alive "${t}"; then drop "${t}"; continue; fi
         total=$((total + 1))
         [[ "${name}" < "${mine}" ]] && ahead=$((ahead + 1))
     done
@@ -224,7 +238,7 @@ wait_lock() {
             for d in "$@"; do
                 if try_lock "${d}"; then
                     mutex_off
-                    rm -rf "${TICKET}"; TICKET=""
+                    drop "${TICKET}"; TICKET=""
                     return 0
                 fi
             done
@@ -236,7 +250,7 @@ wait_lock() {
         fi
         if [ $((SECONDS - start)) -ge "${WAIT_MAX}" ]; then
             echo "conform: gave up waiting ${WAIT_MAX}s for ${what}" >&2
-            rm -rf "${TICKET}"; TICKET=""
+            drop "${TICKET}"; TICKET=""
             return 1
         fi
         sleep "${POLL}"
@@ -337,7 +351,7 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
         fi
         if [ "${serial}" -eq 1 ]; then
             d="${LOCKROOT}/serial"
-            [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && rm -rf "${d}"
+            [ "$(cat "${d}/pid" 2>/dev/null)" = "$$" ] && drop "${d}"
         fi
     done
     echo "conform-sh: ${pass} scripts passed, ${fail} failed, ${skip} skipped"
