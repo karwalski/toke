@@ -37,7 +37,7 @@
 #ifndef TK_ARENA_TYPES_DEFINED
 #define TK_ARENA_TYPES_DEFINED
 typedef struct Arena Arena;
-void *arena_alloc(Arena *arena, int size);
+void *arena_alloc(Arena *arena, size_t size);
 #endif
 Arena *arena_init(void);
 void   arena_free(Arena *arena);
@@ -189,7 +189,7 @@ static PipeResult run_pipeline(const char *source, const char *up_to)
 
     /* ── Lex ─────────────────────────────────────────────────────── */
     int tcap = slen + 16;
-    r.toks = arena_alloc(r.arena, tcap * (int)sizeof(Token));
+    r.toks = arena_alloc(r.arena, (size_t)tcap * sizeof(Token));
     if (!r.toks) { r.fail_stage = "lex"; return r; }
 
     r.tc = lex(source, slen, r.toks, tcap, PROFILE_DEFAULT);

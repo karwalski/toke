@@ -54,9 +54,8 @@ stdlib/time.tk
 stdlib/toml.tk
 stdlib/toon.tk
 
-# --- duplicate module docs superseded by docs/stdlib/ (34) ---
+# --- duplicate module docs superseded by docs/stdlib/ (33) ---
 stdlib/args.md
-stdlib/auth.md
 stdlib/canvas.md
 stdlib/chart.md
 stdlib/crypto.md

@@ -519,9 +519,9 @@ static int struct_alloc_fields(Ctx *c, StructInfo *si, int n) {
     if (n < 1) n = 1;
     size_t nb = (size_t)n * NAME_BUF;
     if (c->arena) {
-        si->field_names  = arena_alloc(c->arena, (int)nb);
-        si->field_types  = arena_alloc(c->arena, (int)nb);
-        si->field_is_map = arena_alloc(c->arena, n * (int)sizeof(int));
+        si->field_names  = arena_alloc(c->arena, nb);
+        si->field_types  = arena_alloc(c->arena, nb);
+        si->field_is_map = arena_alloc(c->arena, (size_t)n * sizeof(int));
     } else {
         si->field_names  = calloc((size_t)n, NAME_BUF);
         si->field_types  = calloc((size_t)n, NAME_BUF);
@@ -2928,7 +2928,7 @@ static void fnv_mark_local(Ctx *c, const char *llvm_name) {
     if (fnv_is_local(c, llvm_name)) return;
     if (c->fnv_count == c->fnv_cap) {
         int ncap = c->fnv_cap ? c->fnv_cap * 2 : 32;
-        char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(c->arena, ncap * (int)sizeof(*nn));
+        char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(c->arena, (size_t)ncap * sizeof(*nn));
         if (!nn) return;
         if (c->fnv_count) memcpy(nn, c->fnv_name, (size_t)c->fnv_count * sizeof(*nn));
         c->fnv_name = nn; c->fnv_cap = ncap;
@@ -3993,7 +3993,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 diag_rebase_push(rb_prefix, rb_base, elen);
                 /* Lex */
                 int tcap = elen + 32;
-                Token *sub_toks = (Token *)arena_alloc(c->arena, tcap * (int)sizeof(Token));
+                Token *sub_toks = (Token *)arena_alloc(c->arena, (size_t)tcap * sizeof(Token));
                 int sub_tc = lex(wrap, wlen, sub_toks, tcap, 0 /* PROFILE_DEFAULT */);
                 if (sub_tc <= 0) {
                     diag_rebase_pop();
@@ -10393,10 +10393,10 @@ static void emit_stmt(Ctx *c, const Node *n)
                 /* 127.224 item 8: grow (arena; the Ctx lives for one module) */
                 int ncap = c->clos_lcap ? c->clos_lcap * 2 : 64;
                 char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(
-                    c->arena, ncap * (int)sizeof(*nn));
+                    c->arena, (size_t)ncap * sizeof(*nn));
                 const Node **nd = (const Node **)arena_alloc(
-                    c->arena, ncap * (int)sizeof(*nd));
-                int *ns = (int *)arena_alloc(c->arena, ncap * (int)sizeof(*ns));
+                    c->arena, (size_t)ncap * sizeof(*nd));
+                int *ns = (int *)arena_alloc(c->arena, (size_t)ncap * sizeof(*ns));
                 if (nn && nd && ns) {
                     if (c->clos_lcount) {
                         memcpy(nn, c->clos_lname, (size_t)c->clos_lcount * sizeof(*nn));
@@ -10421,9 +10421,9 @@ static void emit_stmt(Ctx *c, const Node *n)
                 c->fref_lcount == c->fref_lcap) {
                 int ncap = c->fref_lcap ? c->fref_lcap * 2 : 64;
                 char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(
-                    c->arena, ncap * (int)sizeof(*nn));
+                    c->arena, (size_t)ncap * sizeof(*nn));
                 const Node **nd = (const Node **)arena_alloc(
-                    c->arena, ncap * (int)sizeof(*nd));
+                    c->arena, (size_t)ncap * sizeof(*nd));
                 if (nn && nd) {
                     if (c->fref_lcount) {
                         memcpy(nn, c->fref_lname, (size_t)c->fref_lcount * sizeof(*nn));
@@ -12215,13 +12215,13 @@ int emit_llvm_ir(const Node *ast, const char *src,
     ctx.alias_cap  = lim.max_locals;
     ctx.global_cap = lim.max_locals; /* 114.44: module-level mutable globals */
     if (ar) {
-        ctx.fns     = (FnSig *)arena_alloc(ar, ctx.fn_cap * (int)sizeof(FnSig));
-        ctx.ptrs    = (PtrLocal *)arena_alloc(ar, ctx.ptr_cap * (int)sizeof(PtrLocal));
-        ctx.structs = (StructInfo *)arena_alloc(ar, ctx.struct_cap * (int)sizeof(StructInfo));
-        ctx.imports = (ImportAlias *)arena_alloc(ar, ctx.import_cap * (int)sizeof(ImportAlias));
-        ctx.locals  = (LocalType *)arena_alloc(ar, ctx.local_cap * (int)sizeof(LocalType));
-        ctx.globals = (GlobalVar *)arena_alloc(ar, ctx.global_cap * (int)sizeof(GlobalVar));
-        ctx.aliases = (NameAlias *)arena_alloc(ar, ctx.alias_cap * (int)sizeof(NameAlias));
+        ctx.fns     = (FnSig *)arena_alloc(ar, (size_t)ctx.fn_cap * sizeof(FnSig));
+        ctx.ptrs    = (PtrLocal *)arena_alloc(ar, (size_t)ctx.ptr_cap * sizeof(PtrLocal));
+        ctx.structs = (StructInfo *)arena_alloc(ar, (size_t)ctx.struct_cap * sizeof(StructInfo));
+        ctx.imports = (ImportAlias *)arena_alloc(ar, (size_t)ctx.import_cap * sizeof(ImportAlias));
+        ctx.locals  = (LocalType *)arena_alloc(ar, (size_t)ctx.local_cap * sizeof(LocalType));
+        ctx.globals = (GlobalVar *)arena_alloc(ar, (size_t)ctx.global_cap * sizeof(GlobalVar));
+        ctx.aliases = (NameAlias *)arena_alloc(ar, (size_t)ctx.alias_cap * sizeof(NameAlias));
     } else {
         ctx.fns     = (FnSig *)calloc((size_t)ctx.fn_cap, sizeof(FnSig));
         ctx.ptrs    = (PtrLocal *)calloc((size_t)ctx.ptr_cap, sizeof(PtrLocal));
@@ -12230,6 +12230,28 @@ int emit_llvm_ir(const Node *ast, const char *src,
         ctx.locals  = (LocalType *)calloc((size_t)ctx.local_cap, sizeof(LocalType));
         ctx.globals = (GlobalVar *)calloc((size_t)ctx.global_cap, sizeof(GlobalVar));
         ctx.aliases = (NameAlias *)calloc((size_t)ctx.alias_cap, sizeof(NameAlias));
+    }
+    /* 127.258: a cap set so high its registry cannot be allocated in one
+     * block (`--max-funcs=1000000` is 2.6 GB of FnSig) came back NULL and
+     * was dereferenced at the first registration.  Refuse it here, naming
+     * the caps. */
+    if (!ctx.fns || !ctx.ptrs || !ctx.structs || !ctx.imports ||
+        !ctx.locals || !ctx.globals || !ctx.aliases) {
+        char msg[512];
+        snprintf(msg, sizeof msg,
+                 "compiler limit exceeded: the configured caps (max_funcs=%d, "
+                 "max_locals=%d, max_structs=%d, max_imports=%d) need more "
+                 "memory than one compiler allocation can hold; lower them "
+                 "(--max-funcs=N etc. or tkc.toml)",
+                 lim.max_funcs, lim.max_locals, lim.max_struct_types,
+                 lim.max_imports);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, (void *)0);
+        if (!ar) {
+            free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports);
+            free(ctx.locals); free(ctx.globals); free(ctx.aliases);
+        }
+        fclose(f);
+        return -1;
     }
     ctx.global_count = 0;
 

@@ -72,24 +72,26 @@ arena_init(void)
  * Rounds size up to TKC_ARENA_ALIGN boundary.  If the current head
  * block has insufficient room, a new block is prepended to the chain.
  * The returned memory is zero-initialised.  Returns NULL if malloc fails
- * when allocating a new block, or if size is negative or too large to round
- * up without overflow (121.29).
+ * when allocating a new block, or if size is too large for a block (more
+ * than INT_MAX once rounded up) (121.29, 127.258).
  */
 void *
-arena_alloc(Arena *arena, int size)
+arena_alloc(Arena *arena, size_t size)
 {
-    /* 121.29 (REL-06): sizes are signed int.  A negative size -- a caller's
-     * `n * (int)sizeof(T)` that overflowed -- was silently turned into 1 and
-     * the caller then wrote n*sizeof(T) bytes into it; a size within
-     * TKC_ARENA_ALIGN of INT_MAX overflowed the rounding below (signed
-     * overflow, UB), came out negative, passed the capacity test and was
-     * memset for `size` bytes.  Both are now refused with NULL, the same
-     * answer as an allocation failure, which callers already handle. */
-    if (size < 0) return NULL;
+    /* 121.29 (REL-06) / 127.258: the size is a size_t so a caller's product
+     * reaches this check whole.  With an `int` parameter a size_t product
+     * above INT_MAX was truncated at the call, and an `n * (int)sizeof(T)`
+     * overflowed in the caller: `--max-funcs=1000000` asked for 2.6 GB of
+     * FnSig, got a negative int (NULL, then a NULL dereference), and
+     * `--max-funcs=2000000` wrapped to a positive ~0.9 GB block the caller
+     * then indexed as if it held two million entries.  Callers now multiply
+     * in size_t, and anything a block cannot hold -- including a negative
+     * int converted to size_t -- is refused with NULL, the same answer as an
+     * allocation failure, which callers handle. */
     if (size == 0) size = 1;
-    if (size > INT_MAX - (TKC_ARENA_ALIGN - 1)) return NULL;
+    if (size > (size_t)INT_MAX - (TKC_ARENA_ALIGN - 1)) return NULL;
     /* round up to alignment boundary */
-    int aligned = (size + TKC_ARENA_ALIGN - 1) & ~(TKC_ARENA_ALIGN - 1);
+    int aligned = ((int)size + TKC_ARENA_ALIGN - 1) & ~(TKC_ARENA_ALIGN - 1);
 
     ArenaBlock *b = arena->head;
     if (aligned > b->cap - b->used) {   /* not used + aligned: no overflow */
@@ -102,7 +104,7 @@ arena_alloc(Arena *arena, int size)
 
     void *p = (void *)(b->data + b->used);
     b->used += aligned;
-    memset(p, 0, (size_t)size);
+    memset(p, 0, size);
     return p;
 }
 

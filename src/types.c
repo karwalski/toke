@@ -1372,9 +1372,9 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     st->name = it->name;
     if (it->field_count > 0 && it->field_names) {
         st->field_names = (const char **)arena_alloc(
-            A, it->field_count * (int)sizeof(char *));
+            A, (size_t)it->field_count * sizeof(char *));
         st->field_types = (Type **)arena_alloc(
-            A, it->field_count * (int)sizeof(Type *));
+            A, (size_t)it->field_count * sizeof(Type *));
         if (st->field_names && st->field_types) {
             st->field_count = it->field_count;
             for (int i = 0; i < it->field_count; i++) {
@@ -1489,7 +1489,7 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
                     if (ci->children[j]&&ci->children[j]->kind==NODE_FIELD) fcap++;
         }
         const Node **fields=fcap>0
-            ?(const Node**)arena_alloc(cx->env->arena,fcap*(int)sizeof(Node*)):NULL;
+            ?(const Node**)arena_alloc(cx->env->arena,(size_t)fcap * sizeof(Node*)):NULL;
         int fc=0;
         for (int i=1;fields&&i<decl->child_count;i++) {
             const Node *ci=decl->children[i]; if(!ci) continue;
@@ -1502,8 +1502,8 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
             }
         }
         if (fc>0) {
-            st->field_names=(const char**)arena_alloc(cx->env->arena,fc*(int)sizeof(char*));
-            st->field_types=(Type**)arena_alloc(cx->env->arena,fc*(int)sizeof(Type*));
+            st->field_names=(const char**)arena_alloc(cx->env->arena,(size_t)fc * sizeof(char*));
+            st->field_types=(Type**)arena_alloc(cx->env->arena,(size_t)fc * sizeof(Type*));
             if (st->field_names&&st->field_types) {
                 st->field_count=fc;
                 for (int fi=0;fi<fc;fi++) {
@@ -1594,7 +1594,7 @@ static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
 static Type *func_type_sig(Ctx *cx, const Node *n) {
     Arena *A = cx->env->arena;
     int np = n->child_count > 0 ? n->child_count - 1 : 0;
-    Type **pts = np > 0 ? (Type **)arena_alloc(A, np * (int)sizeof(Type *)) : NULL;
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, (size_t)np * sizeof(Type *)) : NULL;
     if (np > 0 && !pts) return mk_type(A, TY_UNKNOWN);
     for (int i = 0; i < np; i++) pts[i] = resolve_type(cx, n->children[i]);
     Type *ret = n->child_count > 0 ? resolve_type(cx, n->children[n->child_count - 1])
@@ -1609,7 +1609,7 @@ static Type *params_sig(Ctx *cx, const Node *fn, int is_closure) {
     int np = 0;
     for (int i = 0; i < fn->child_count; i++)
         if (fn->children[i] && fn->children[i]->kind == NODE_PARAM) np++;
-    Type **pts = np > 0 ? (Type **)arena_alloc(A, np * (int)sizeof(Type *)) : NULL;
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, (size_t)np * sizeof(Type *)) : NULL;
     if (np > 0 && !pts) return mk_type(A, TY_UNKNOWN);
     Type *ret = is_closure ? mk_type(A, TY_UNKNOWN) : mk_type(A, TY_VOID);
     int k = 0;
@@ -3640,7 +3640,6 @@ static int tki_arg_class(const Type *t) {
     }
 }
 
-static const char *glue_param_kinds(const char *sym);
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3697,7 +3696,6 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
      * list 127.201 keeps. */
     const char *sym = stdlib_symbol_for(mpath, 1, member);
     if (sym && strcmp(sym, "tk_json_enc_w") == 0) return;
-    const char *gk = glue_param_kinds(sym);
     for (int i = 0; i < actual; i++) {
         const Node *an = call->children[i + 1];
         const char *ps = f->param_types[i];
@@ -3726,12 +3724,6 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * the ABI as an i64 slot.  The reverse (a record where a number is
          * read) stays judged. */
         if (pc == 6 && ac == 2) continue;
-        /* A str where the glue body reads a C string ('S' in
-         * stdlib_paramkind_gen.h) is what runs, whatever the record says:
-         * http.stream is declared `(httpclient)` while tk_http_stream_w takes
-         * a URL (conform C181, C364) -- that .tki/glue disagreement is
-         * 135.31's, and judging the record would reject working programs. */
-        if (ac == 1 && gk && (int)strlen(gk) > i && gk[i] == 'S') continue;
         if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
             && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
         if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
@@ -6070,9 +6062,36 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * diagnostic counts that feed published figures, and it invites the
          * repair loop to apply the same fix twice. */
         if (tc_first_report(cx,node) && tc_can_emit(cx)) {
-            char msg[256];
+            char msg[512];
             snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
                      base->name?base->name:"?",fname);
+            /* 127.259: `v.len` on a std.vec handle.  The spec gives `.len` to
+             * arrays and maps only and sends every other receiver to field
+             * lookup (semantics.md 9.1), so this stays E4025 -- but when an
+             * imported module exports `<alias>.<fname>` taking exactly this
+             * record, that function is what the program meant: name it. */
+            const char *falias = NULL;
+            if (base->name && cx->env->names) {
+                const NameEnv *ne = cx->env->names;
+                for (int k = 0; k < ne->ifunc_count && !falias; k++) {
+                    const ImportedFunc *f = &ne->ifuncs[k];
+                    if (f->internal || f->param_count != 1 || !f->param_types
+                        || !f->param_types[0] || !f->member || !f->alias) continue;
+                    if (strcmp(f->member, fname) != 0) continue;
+                    if (strcmp(f->param_types[0], base->name) != 0) continue;
+                    falias = f->alias;
+                }
+            }
+            if (falias) {
+                const Node *rn = node->children[0];
+                char recv[128] = "";
+                if (rn && rn->kind == NODE_IDENT) TOKSTR(recv,cx->src,rn);
+                size_t ml = strlen(msg);
+                snprintf(msg+ml,sizeof(msg)-ml,
+                         ": '%s' is a function of the module, not a field -- "
+                         "call %s.%s(%s)",
+                         fname,falias,fname,recv[0]?recv:"...");
+            }
             diag_emit(DIAG_ERROR,E4025,node->start,node->line,node->col,msg,
                       "expected","a valid field name","got",fname,
                       (const char*)NULL);   /* 127.243: no advice fix */

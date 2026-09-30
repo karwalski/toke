@@ -142,7 +142,7 @@ void diag_emit(DiagSeverity severity, int code,
 #ifndef TK_ARENA_TYPES_DEFINED
 #define TK_ARENA_TYPES_DEFINED
 typedef struct Arena Arena;
-void *arena_alloc(Arena *arena, int size);
+void *arena_alloc(Arena *arena, size_t size);
 #endif
 
 /* ────────────────────────────────────────────────────────────────────────── */
