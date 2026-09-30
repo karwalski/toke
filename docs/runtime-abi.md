@@ -858,7 +858,7 @@ can prove the fault is impossible.
 | RT003 | array/collection index out of bounds | `tk_bounds_trap` | `RT003: index N out of bounds for length M` |
 | RT004 | divide-by-zero / `INT64_MIN / -1` | `tk_div_trap` | `RT004: <division|remainder> by zero` |
 | RT005 | nil struct-field dereference | `tk_nil_trap` | `RT005: nil dereference` |
-| RT008 | invalid regex pattern reached `str.containsre`/`countre`/`findall`/`matches`/`replacere` at run time (a literal one is E4075 at compile time; 137.9) | `regex_trap_invalid` (static, `str_glue.c`) | `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` |
+| RT008 | invalid regex pattern reached `str.containsre`/`countre`/`findall`/`matches`/`replacere` at run time (a literal one is E4075 at compile time; 137.9 — `str.checkre` returns the same error as a `RegexErr` value instead, 121.45) | `regex_trap_invalid` (static, `str_glue.c`) | `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` |
 | RT009 | a regex call spent its step budget (121.35; see [str.md](stdlib/str.md#regular-expressions)) | `regex_trap_budget` (static, `str_glue.c`) | `RT009: regex step budget exceeded in str.<fn> (pattern "<pattern>", subject N bytes)` |
 
 (See [memory-model.md §6.6](spec/memory-model.md) for the normative spatial/

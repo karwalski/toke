@@ -647,6 +647,39 @@ int64_t tk_str_containsre_w(int64_t s, int64_t pattern) {
     return regex_find1("containsre", str, pat, 0);
 }
 
+/* str.checkre(pattern) -> str!RegexErr  (121.45 item 1)
+ * The error-as-value door into the pattern language.  Every other regex
+ * call reads an invalid computed pattern as RT008 and exits, so a server
+ * that takes a pattern from a request had no way to refuse it and keep
+ * running.  This compiles the pattern with the same tkre_compile the five
+ * matching calls use -- so "checkre accepted it" and "they will not trap
+ * RT008 on it" are the same statement -- and returns the pattern unchanged
+ * on success, or a RegexErr {msg; pos} record: the engine's reason and the
+ * byte offset into the pattern (-1 when the failure is not at a byte, e.g.
+ * out of memory).  The message lives in tk_err_msg's per-thread ring
+ * (tk_runtime.c, 127.102), because TkReErr.msg is on this stack frame.
+ * Never RT008, and never E4075 at --check: returning the error is the point. */
+const char *tk_err_msg(const char *fmt, ...);
+static int64_t regex_raise(const char *msg, int64_t pos) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)(intptr_t)(msg ? msg : "");
+    box[1] = pos;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+int64_t tk_str_checkre_w(int64_t pattern) {
+    const char *pat = (const char *)(intptr_t)pattern;
+    if (!pat) return regex_raise("str.checkre: null pattern", -1);
+    TkRe re;
+    TkReErr e;
+    if (tkre_compile(&re, pat, &e) != 0)
+        return regex_raise(tk_err_msg("%s", e.msg), (int64_t)e.pos);
+    tkre_free(&re);
+    tk_current_error = 0;
+    return pattern;
+}
+
 /* str.i64tof64 — integer to float conversion */
 int64_t tk_str_i64tof64_w(int64_t i) {
     double d = (double)i;
