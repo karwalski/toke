@@ -17,6 +17,7 @@ typedef struct { void       *ok; int is_err; const char *err_msg; } TomlResult;
 typedef struct { const char *ok; int is_err; const char *err_msg; } TomlStrResult;
 typedef struct { int64_t     ok; int is_err; const char *err_msg; } TomlI64Result;
 typedef struct { int         ok; int is_err; const char *err_msg; } TomlBoolResult;
+typedef struct { double      ok; int is_err; const char *err_msg; } TomlF64Result;   /* 121.68 */
 
 TomlResult     toml_load(const char *src);
 TomlResult     toml_load_file(const char *path);
@@ -26,5 +27,7 @@ TomlStrResult  toml_get_str(void *tab, const char *key);
 TomlI64Result  toml_get_i64(void *tab, const char *key);
 TomlBoolResult toml_get_bool(void *tab, const char *key);
 TomlResult     toml_get_section(void *tab, const char *key);
+TomlF64Result  toml_get_f64(void *tab, const char *key);   /* 121.68 */
+int            toml_has(void *tab, const char *key);       /* 121.68: 1 present, 0 absent */
 
 #endif /* TK_STDLIB_TOML_H */

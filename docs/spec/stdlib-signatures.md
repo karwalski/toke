@@ -359,6 +359,28 @@ is a behaviour change:** until 121.70 `write` made one write(2) and returned
 `0` on error -- the same value a write of `""` returns. See
 [std.os](/docs/stdlib/os).
 
+### std.toml
+
+```text
+t=$tomlval{}
+t=$tomlerr{msg:$str}
+f=load(src:$str):$tomlval!$tomlerr
+f=loadfile(path:$str):$tomlval!$tomlerr
+f=str(v:$tomlval;key:$str):$str!$tomlerr
+f=i64(v:$tomlval;key:$str):i64!$tomlerr
+f=f64(v:$tomlval;key:$str):f64!$tomlerr
+f=bool(v:$tomlval;key:$str):bool!$tomlerr
+f=has(v:$tomlval;key:$str):bool
+f=section(v:$tomlval;key:$str):$tomlval!$tomlerr
+```
+
+`$tomlval` is an opaque table handle. Each accessor reads one key of the
+table it is given (not a dotted path); `section` descends. `f64` and `has`
+(121.68): `f64` reads a float, or a decimal integer as the nearest `f64`, and
+its `$err` says `key not found` or `key is not a float`; `has` is `true` for a
+key present with any value, arrays and tables included. `loadfile` needs the
+`fs.read` grant. See [std.toml](/docs/stdlib/toml).
+
 ### std.env
 
 ```text

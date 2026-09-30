@@ -96,6 +96,43 @@ f=main():i64{
 };
 ```
 
+### toml.f64(v: $tomlval; key: $str): f64!$tomlerr
+
+Retrieves the floating-point value associated with `key` in the TOML table `v` (121.68). A float (`ratio = 1.5`, `inf`, `nan`) is returned as is; a decimal integer (`ratio = 1`) is read as the nearest `f64`, so a config author need not write `1.0`. Returns `$tomlerr` with `msg` `key not found` if the key is absent, or `key is not a float` if its value is a string, boolean, date, array or table. A stored `0.0` is a success: the `$ok` arm is chosen from the error slot, not from the value.
+
+**Example:**
+```toke
+m=example;
+i=toml:std.toml;
+
+f=main():i64{
+  let cfg = mt toml.load("[render]
+scale = 1.5
+") {$ok:v v;$err:e < 1};
+  let r = mt toml.section(cfg; "render") {$ok:v v;$err:e < 1};
+  let scale = mt toml.f64(r; "scale") {$ok:v v;$err:e 1.0};
+  if(scale>1.0){<1};
+  < 0
+};
+```
+
+### toml.has(v: $tomlval; key: $str): bool
+
+`true` if `key` is present in the TOML table `v`, whatever its value -- a string, number, boolean, date, array or sub-table -- else `false` (121.68). It is the way to tell a key that is absent from one whose value an accessor does not read (an array, say): every accessor fails on both. `key` is one key of `v`, not a dotted path: for `[server] port = 80`, `toml.has(cfg; "server.port")` is `false`; use `toml.section(cfg; "server")` and then `toml.has(server; "port")`. Infallible.
+
+**Example:**
+```toke
+m=example;
+i=toml:std.toml;
+i=io:std.io;
+
+f=main():i64{
+  let cfg = mt toml.load("plugins = [\"a\", \"b\"]\n") {$ok:v v;$err:e < 1};
+  if(toml.has(cfg; "plugins")){io.println("plugins configured")};
+  < 0
+};
+```
+
 ### toml.section(v: $tomlval; key: $str): $tomlval!$tomlerr
 
 Returns a `$tomlval` handle for the sub-table identified by `key`. The returned handle is a non-owning view into the parent table -- do not use it after the parent has been released. Returns `$tomlerr` if the key does not exist or is not a table.
