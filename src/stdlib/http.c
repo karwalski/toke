@@ -1666,6 +1666,38 @@ static void serve_sighandler(int sig)
     g_shutdown_requested = 1;
 }
 
+/* 121.53 (1): SIGHUP in a serving process -- the single-process server, a
+ * worker, or the TLS supervisor -- asks for the logs to be reopened
+ * (logrotate's postrotate `kill -HUP`).  It used to have no handler there,
+ * so the default action killed a single-process server outright (and a TLS
+ * supervisor, orphaning its workers).  Installed WITH SA_RESTART, unlike the
+ * shutdown handlers: a log reopen must not cut short a read in progress, so
+ * the flag is acted on at the next accept(). */
+static volatile sig_atomic_t g_reopen_requested = 0;
+
+static void serve_sighup_handler(int sig)
+{
+    (void)sig;
+    g_reopen_requested = 1;
+}
+
+static void install_reopen_handler(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = serve_sighup_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGHUP, &sa, NULL);
+}
+
+static void reopen_logs_if_requested(void)
+{
+    if (!g_reopen_requested) return;
+    g_reopen_requested = 0;
+    tk_log_reopen_files();
+}
+
 /* 135.32 -- bind a listening address without shadowing a live listener:
  * tk_bind_exclusive() in tk_bind.h (moved there by 135.33 so router.c,
  * net.c, net_glue.c and server_ops.c share it). */
@@ -1689,6 +1721,7 @@ int http_serve(uint16_t port) {
 
     install_shutdown_handler(SIGTERM, serve_sighandler);   /* 127.69 */
     install_shutdown_handler(SIGINT,  serve_sighandler);   /* 127.69 */
+    install_reopen_handler();                              /* 121.53 */
 
     for (;;) {
         int fd = accept(srv, NULL, NULL);
@@ -1700,6 +1733,7 @@ int http_serve(uint16_t port) {
             continue;
         }
         if (g_shutdown_requested) { close(fd); break; }
+        reopen_logs_if_requested();
         handle_connection(fd);
     }
     close(srv); return 0;
@@ -1817,6 +1851,7 @@ static void worker_loop(int srv_fd, TkHttpRouter *r)
      * this loop in a process that never installed one. */
     install_shutdown_handler(SIGTERM, serve_sighandler);
     install_shutdown_handler(SIGINT,  serve_sighandler);
+    install_reopen_handler();                              /* 121.53 */
 
     /* If a router is provided, copy its routes into the global table.
      * If NULL, use the global route_table as-is (already populated by
@@ -1836,6 +1871,7 @@ static void worker_loop(int srv_fd, TkHttpRouter *r)
             continue;
         }
         if (g_shutdown_requested) { close(fd); break; }
+        reopen_logs_if_requested();
         handle_connection(fd);
     }
 }
@@ -1938,6 +1974,9 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                 rts.tv_sec = 0; rts.tv_nsec = 10000000;
                 nanosleep(&rts, NULL);
             }
+            /* 121.53 (1): reopen the logs here, so the new workers inherit
+             * the files now at the logs' paths (logrotate + SIGHUP). */
+            tk_log_reopen_files();
             /* Fork new workers */
             for (uint64_t i = 0; i < nworkers; i++) {
                 pid_t pid = fork();
@@ -5319,6 +5358,7 @@ static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
 {
     install_shutdown_handler(SIGTERM, serve_sighandler);   /* 127.69 */
     install_shutdown_handler(SIGINT,  serve_sighandler);   /* 127.69 */
+    install_reopen_handler();                              /* 121.53 */
 
     if (r) {
         route_count = r->count;
@@ -5335,6 +5375,7 @@ static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
             continue;
         }
         if (g_shutdown_requested) { close(fd); break; }
+        reopen_logs_if_requested();
         handle_tls_connection(fd, ssl_ctx);
     }
 }
@@ -5399,6 +5440,10 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 
     install_shutdown_handler(SIGTERM, workers_parent_sighandler);  /* 127.69 */
     install_shutdown_handler(SIGINT,  workers_parent_sighandler);  /* 127.69 */
+    /* 121.53 (1): SIGHUP killed the TLS supervisor (no handler), orphaning
+     * its workers on the port.  It now reopens the logs and passes the
+     * signal on, and each worker reopens its own at its next accept(). */
+    install_shutdown_handler(SIGHUP,  workers_parent_sighandler);
 
     pid_t tls_pids[TK_MAX_WORKERS];
     for (uint64_t i = 0; i < nworkers; i++) {
@@ -5428,6 +5473,13 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
             } else {
                 break;
             }
+        }
+
+        if (g_reload_requested) {                 /* 121.53 (1) */
+            g_reload_requested = 0;
+            tk_log_reopen_files();
+            for (uint64_t i = 0; i < nworkers; i++)
+                if (tls_pids[i] > 0) kill(tls_pids[i], SIGHUP);
         }
 
         if (g_shutdown_requested) {

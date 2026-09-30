@@ -1105,6 +1105,31 @@ TkAccessLog *tk_access_log_open(const char *path,
     return log;
 }
 
+/* 121.53 (1): reopen one log at its path -- see tk_log_reopen_files. */
+static void alog_reopen_path(TkAccessLog *log)
+{
+    if (!log || !log->path) return;
+    if (log->lock_path) {
+        if (alog_lock(log) != 0) return;
+        alog_reopen(log);
+        alog_count(log);
+        alog_unlock(log);
+        return;
+    }
+    struct stat st;
+    if (stat(log->path, &st) == 0 && !S_ISREG(st.st_mode)) return;
+    FILE *fp = fopen(log->path, "a");
+    if (!fp) return;                     /* keep the old file over no file */
+    if (log->fp) fclose(log->fp);
+    log->fp = fp;
+}
+
+void tk_log_reopen_files(void)
+{
+    alog_reopen_path(g_access_log);
+    alog_reopen_path(g_error_log);
+}
+
 /* ── Access log format selection (Story 47.1.3) ───────────────────────── */
 
 int tk_access_log_set_format(const char *fmt)

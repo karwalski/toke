@@ -208,6 +208,18 @@ DIAGNOSTIC: kind=server_start_failed fn="http.serveworkers" port=8080 stage="bin
 
 where `stage` is `host`, `port`, `certificate/key` or `bind/fork`, and it makes the process **exit non-zero** however `main` ends — with `main`'s own status if that is non-zero, otherwise `1`, so even a program that ignores the `-1` and returns `0` exits `1`. To a supervisor, a server that never started must not look like a clean shutdown. (Stories 135.22 for the TLS forms, 135.24 for the plain ones; the exit rule is shared with failed `std.test` assertions, see `docs/stdlib/test.md`; 135.29 keeps `main`'s non-zero status.)
 
+**`SIGHUP` reopens the logs; it does not stop the server** (story 121.53). A
+running server treats `SIGHUP` — what `logrotate` sends after renaming a log —
+as "reopen the access and error logs at their paths", in every mode: the
+single-process server and each worker reopen them at their next connection;
+the plain pre-fork supervisor reopens them and replaces its workers (its
+reload, story 59.4.8); the TLS supervisor reopens them and passes the signal to
+its workers. A log opened with `log.openaccess` in a directory the server can
+write follows a rename on its own, on the next line written; `SIGHUP` is what
+moves one opened where no lock file could be made beside it. Until then
+`SIGHUP` killed a single-process server, and killed a TLS supervisor while
+leaving its workers listening on the port.
+
 ## Abandoned requests
 
 A client that sends a request and goes away before reading the answer is
