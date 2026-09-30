@@ -16,7 +16,7 @@ may no longer compile.
 
 **Status: prepared on branch `release/3.1.0` (story 138.17). Not tagged, not
 published.** Built from main as of 2026-09-30 (`b88090c3`, then Batches X1 and
-X2 merged in); more than 760 commits since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
+X2 and F491 merged in); more than 760 commits since `v3.0.0` (`0b0bc4e`, 2026-09-23). Every entry below names the tracker
 story in `docs/progress.md` and a commit, so a consumer can bisect.
 
 This is a minor version by the letter of semver, but read **Breaking changes**
@@ -103,7 +103,9 @@ for every item of loke's 2026-09-27 handoff, measured against this build.
 - **HTTP** — one RFC 9112 request reader for plain and TLS (smuggling,
   pipelining, deadlines; 121.17 `32efd7b1`); `servedir` symlink escape (121.18
   `b8bd3b2d`); a single abandoned request no longer kills the server (127.144,
-  merge `1ed358e1`); HTTP/2 frame limits and deadlines (121.17, 121.44).
+  merge `1ed358e1`); HTTP/2 frame limits and deadlines (121.17, 121.44); a
+  lingering close after GOAWAY and after an HTTP/1.1 error response, so the
+  peer reads the answer instead of a TCP reset (121.52 — `d742f29b`).
 - **Injection** — Markdown table-cell `javascript:` links (121.16 `d7875c47`);
   TOON ↔ JSON field and value escaping (121.40 `b1f8c0da`); header CR/LF in
   `postheaders` (138.8).
