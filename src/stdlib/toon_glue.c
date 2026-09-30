@@ -214,6 +214,7 @@ int64_t tk_toon_arr_w(int64_t v, int64_t key) {
         Toon *elem = (Toon *)malloc(sizeof(Toon));
         if (!elem) {
             for (int64_t j = 0; j < i; j++) free((void *)(intptr_t)slots[j]);
+            free(slots - TK_ARR_HDR);   /* the block tk_arr_alloc returned */
             free(r.ok.data);
             return toon_raise(TOON_ERR_PARSE, "toon.arr: out of memory");
         }
