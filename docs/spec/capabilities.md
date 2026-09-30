@@ -23,7 +23,7 @@ Exactly five classes gate the ambient surface:
 
 | Class | Grants | Example sinks |
 |-------|--------|---------------|
-| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file` / `crypto.sha256verify` |
+| `fs.read` | read files / dirs / metadata | `file.read`, `file.list`, `file.stat`, `os.open` (read), `db.open`, `toml.loadfile`, `toon.load`, `yaml.load`, `md.renderfile`, `crypto.sha256file` / `crypto.sha256verify`, `i18n.load`, `template.load`, `vecstore.collection` |
 | `fs.write` | create / modify / delete files & dirs | `file.write`, `file.mkdir`, `file.delete`, `os.open` (write), `db.open`, `log.openaccess` / `log.openerror` (not for `/dev/stderr` or `/dev/stdout`) |
 | `net` | listen / connect / send / receive | `http.get`/`serve*`, `net.listen`, `ws.connect`, `tls.*`, `db` (pg/mysql) |
 | `env.write` | mutate the process environment | `env.set`, `os.setenv` |
@@ -46,11 +46,11 @@ removed (story 121.22).
 What it cannot yet pass is listed, entry by entry, in
 `scripts/check_capability_sinks_skiplist.txt`: sinks that are not the program's
 authority (entropy from `/dev/urandom`, the server's own pre-forked workers, a log
-file's rotation after it was opened under a grant), and **known gaps**. The known
-gaps, as of 2026-09-29, are entries that reach a primitive with no grant under
-enforcement: `llm.*` connects without `net`; `i18n.load`, `template.load` and the
-`vecstore` load/save read or write files with no grant. Story 121.42 closed the
-rest: `toon.load`, `yaml.load`, `md.renderfile` and `crypto.sha256file` /
+file's rotation after it was opened under a grant), and **known gaps**. There are
+no known gaps as of 2026-10-01. Story 121.42 closed them: `llm.*` takes `net`
+before it connects; `i18n.load`, `template.load` and `vecstore.collection` take
+`fs.read`, and `vecstore.flush` / `vecstore.close` take `fs.write`;
+`toon.load`, `yaml.load`, `md.renderfile` and `crypto.sha256file` /
 `sha256verify` take `fs.read`; `router.serve` (and `chart.serve` /
 `dashboard.serve`, which serve through it) takes `net` before it binds;
 `http.downloadfile` takes `fs.write` as well as `net`, before it fetches

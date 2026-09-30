@@ -21,6 +21,10 @@ int64_t tk_vecstore_open_w(int64_t path) {
 
 /* vecstore.collection(store, name) — get or create a named collection */
 int64_t tk_vecstore_collection_w(int64_t store, int64_t name) {
+    /* 121.42: opening a collection loads its file from the store's directory
+     * when one exists -- fs.read.  Taken on every call, not only when the
+     * file is there: asking first would itself probe the file system. */
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!store || !name) return 0;
     TkVecStore *vs = (TkVecStore *)(intptr_t)store;
     TkVecCollection *col = vecstore_collection(vs, (const char *)(intptr_t)name);

@@ -150,7 +150,9 @@ are not.
 Returns a handle for the named collection within `vs`.  If a backing file
 `{data_dir}/{name}.vecs` exists it is loaded into memory.  If the file does
 not exist an empty collection is created in memory (it is written to disk by
-the next `vecstore.flush` or `vecstore.close` after a change).
+the next `vecstore.flush` or `vecstore.close` after a change).  Needs the
+`fs.read` capability (`--allow-read`) on every call, whether or not the file
+exists yet.
 
 Returns `VecErr.IoErr` if the backing file exists but cannot be parsed.
 

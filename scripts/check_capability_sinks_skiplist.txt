@@ -76,7 +76,6 @@ exempt | tk_time.c:tz_file_offset | fopen | 2026-09-30 | 121.42 | the system tim
 # std.llm's own TCP connect (llm.c tcp_connect): gated by TK_REQUIRE(net)
 # since 2026-09-30 (121.42 (2)); its 15 lines were deleted.
 
-# File readers that bypass file.read's gate by calling file.c / fopen directly.
-ungated | tk_i18n_load_w | i18n.c:read_file | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_template_load_w | template_glue.c:tk_template_load_w | fopen | 2026-09-29 | 121.22 | needs TK_REQUIRE(TK_CAP_FS_READ)
-ungated | tk_vecstore_collection_w | vecstore.c:collection_load | fopen | 2026-09-29 | 121.22 | loads a collection file; needs TK_REQUIRE(TK_CAP_FS_READ)
+# File readers that bypassed file.read's gate: i18n.load, template.load and
+# vecstore.collection take fs.read since 2026-10-01 (121.42); their 3 lines
+# were deleted.

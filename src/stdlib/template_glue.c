@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "capabilities.h"   /* 121.42: template.load is an fs.read sink */
 #include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
 
 /* 127.238: the error slot (runtime-abi.md §7.2).  These `T!tmplerr` wrappers
@@ -157,6 +158,8 @@ int64_t tk_template_escape_w(int64_t s) {
  * For simplicity, we compile and return the handle.
  */
 int64_t tk_template_load_w(int64_t path) {
+    /* 121.42: reads the file named by the program -- fs.read, like file.read. */
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     const char *p = (const char *)(intptr_t)path;
     /* Read file contents, compile, and return handle */

@@ -5,6 +5,7 @@
  * tk_web_glue.c). Same fix class as 114.31 (net_glue.c).
  */
 #include "i18n.h"
+#include "capabilities.h"   /* 121.42: i18n.load is an fs.read sink */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,7 +59,9 @@ int64_t tk_i18n_str_w(int64_t bundle, int64_t key) {
     return (int64_t)(intptr_t)i18n_get(bundle_of(bundle), (const char *)(intptr_t)key);
 }
 
+/* 121.42: reads the files named by the program -- fs.read, like file.read. */
 int64_t tk_i18n_load_w(int64_t path, int64_t locale) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) { tk_current_error = 1; return 0; }
     const char *p = (const char *)(intptr_t)path;
     const char *loc = locale ? (const char *)(intptr_t)locale : NULL;

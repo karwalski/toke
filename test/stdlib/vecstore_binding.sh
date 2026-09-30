@@ -39,7 +39,7 @@ mkdir -p "$DATA"
 
 check() { # check <label> <phase>
   local label="$1" phase="$2" out rc
-  out=$(VSPHASE="$phase" "$BIN" --allow-write 2>&1); rc=$?  # 121.22: close writes under fs.write
+  out=$(VSPHASE="$phase" "$BIN" --allow-write --allow-read 2>&1); rc=$?  # 121.22: close writes under fs.write; 121.42: collection reads under fs.read
   if [ "$rc" -eq 0 ]; then
     printf "  PASS %-38s %s\n" "$label" "$(echo "$out" | head -1)"
     pass=$((pass+1))
