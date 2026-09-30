@@ -6,9 +6,9 @@
 **Re:** `loke/docs/upstream/handoff-2026-09-27.md` (branch `foundation/reset`) and its
 reproducers in `docs/upstream/repro-2026-09-27/`
 **Verified against:** toke **3.1.0**, branch `release/3.1.0` (toke main as of 2026-09-30, with
-Batches X1 and X2; the reproducers were re-run on the final build), and ooke
+Batches X1, X2, F491, F491b, Y1, Y2 and Y3; the reproducers were re-run on the final build), and ooke
 **3.0.0-rc.2**, branch `release/ooke-rc2` at `3cc4998`
-**Status:** every blocker (B0–B8) is fixed in 3.1.0. Four issues remain open and are named with
+**Status:** every blocker (B0–B8) is fixed in 3.1.0. Three issues remain open and are named with
 their stories in [Still open](#still-open). **The `v3.1.0` and `v3.0.0-rc.2` tags are not created
 yet** — the owner tags after reading this; pin the tag, not the branch.
 
@@ -23,9 +23,9 @@ runner could no longer build a reproducer (because the call it uses is now a com
 we wrote the smallest rewrite that exercises the same property and ran that too. The rewrites are
 in [Appendix A](#appendix-a--rewritten-reproducers).
 
-**Of 77 issues (T-1…T-59 with T-47 split, O-1…O-3, N-1…N-6, R1…R8): 60 FIXED, 13 FIXED BY A
+**Of 77 issues (T-1…T-59 with T-47 split, O-1…O-3, N-1…N-6, R1…R8): 61 FIXED, 13 FIXED BY A
 DESIGN CHANGE — the program you wrote is now a located compile error, and the table says which —
-and 4 OPEN.** Separately, **12 of your runner's verdicts are wrong about the build they ran on**;
+and 3 OPEN.** Separately, **11 of your runner's verdicts are wrong about the build they ran on**;
 [loke's runner issues](#lokes-runner-issues) lists each with the reason.
 
 **Three things change what loke must do, not only what it can stop doing:**
@@ -99,7 +99,7 @@ runner's printed verdict is wrong for this build — see [loke's runner issues](
 | T-8 | FIXED | (before 3.0.0) | — | import kept, `--check` after fix rc 0 | |
 | T-9 regex syntax | FIXED-BY-DESIGN-CHANGE | 137.9 | merge `49d17163` | lazy `<.*?>` is **E4075** at `--check` (the message suggests `<[^>]*>`); without that line your repro prints `s: a_b S: _ _ ci: Z` | |
 | T-10 `http.post` | FIXED-BY-DESIGN-CHANGE | 138.3, 137.10 | merge `880b9b4b` | 4-arg call E4026 naming it route registration; `http.post(url;body)` E4031 "…to send a request call http.clientpost"; `clientpost` arrives (`POST /post body-p`) | runner cannot build |
-| T-11 stub modules | OPEN | 137.11 | — | `mlx.load` of a missing model took `$err` (pre-X2 build; your variant no longer compiles); `infer.load` now takes its published `(path; opts)`, so your 1-argument variant is E4026; `mlx.generate`/`infer.generate` `.tki` declare 3 arguments, the implementation takes 2 — the `.tki`-shaped call is E4026 | |
+| T-11 stub modules | FIXED | 137.11, 121.53 | `5a5f581b` | `.tki`-arity calls: `mlx.isavailable=false mlx.load(/nonexistent) arm=err mlx.generate arm=load-err infer.generate arm=load-err` — no `"[… not available]"` success value; your implementation-arity (2-argument `generate`) call is now E4026 "the implementation takes 3 arguments" | |
 | T-12 `.tki` vs implementation | FIXED | 138.11 | `266eb17` | `padright str-arg=[ab***]`, `getregulations len=1` | |
 | T-13 `$internal` field | FIXED-BY-DESIGN-CHANGE | 138.13 | `4a62e7e`, `cfa07fa3` | both forms E4033 "'$internal' is a type, not a value" | |
 | T-14 `==` on sums | FIXED-BY-DESIGN-CHANGE | 138.9 | `85570be1` | E4031 "'==' does not compare struct or sum values"; match on the variant | RUNNER-BUG |
@@ -112,7 +112,7 @@ runner's printed verdict is wrong for this build — see [loke's runner issues](
 | T-22 / N-5 db zero values | FIXED | 138.6 | `9d9544c` | `x: ok 25 \| zero: ok 0 \| nosuch: err`; `COUNT(*)` of an empty table `ok 0` | |
 | T-23 | FIXED | (before 3.0.0) | — | E4031 on the reversed `str.join` | |
 | T-24 `@(array;elem)` | FIXED-BY-DESIGN-CHANGE | 138.9 | `c439fea2` | E4031 "array literal elements must share one type"; append with `x=x+@(v)` | |
-| T-25 `max_funcs` | FIXED | 138.15 | merge `fd0a0e88` | `--check` E9010 "needs 130 function signatures and the limit is 128 (max_funcs); counted: 10 declared in this module, 120 imported from big"; fix names `--max-funcs=130` | |
+| T-25 `max_funcs` | FIXED | 138.15, 127.250 | merge `fd0a0e88`, `8e2bf425` | 130 signatures now build with no flag (`--check` rc 0, `--emit-llvm` rc 0; default `max_funcs` 1024); over the cap, `--check` E9010 names the count, the limit and `--max-funcs` | |
 | T-26 field assignment | FIXED | 138.10 | `549eb2b`, `4c44c669` | `x.a=9` E2002 showing the rebuild; `x.a==9;` **E4074** | |
 | T-27 `(*` in a comment | FIXED | 138.10 | `093e81d` | **E1007** "the '(*' at 7:1 is never closed … the '(*' at 7:15 inside it opened a nested comment"; `--emit-llvm` rc 1 | RUNNER-BUG |
 | T-28 `isdigit(charat)` | FIXED-BY-DESIGN-CHANGE | 138.13 | `266eb17` | E4031 `str.isdigit` takes a `str`; no crash at run time either | |
@@ -138,7 +138,7 @@ runner's printed verdict is wrong for this build — see [loke's runner issues](
 | T-51 | FIXED | 138.2 | `f4840c41` | both arm orders: `dec arm=jsonerr read=dec-err` | |
 | T-52 `@$self` field | FIXED | 138.13 | `5c9bd31e` | `--emit-interface --check` exit 0 | |
 | T-53 | FIXED | (before 3.0.0) | — | fields unlimited (127.190) | |
-| T-54 65th struct type | FIXED | 138.15 | merge `fd0a0e88` | E9010 "needs 68 struct types and the limit is 64 (max_structs); counted: 58 imported from t54lib, …"; fix names `--max-structs` | RUNNER-BUG |
+| T-54 65th struct type | FIXED | 138.15, 127.250 | merge `fd0a0e88`, `8e2bf425` | default build `one=1` (default `max_structs` 1024); over the cap, E9010 names the count, the limit and `--max-structs` | |
 | T-55 `str.charat` quadratic | OPEN | 127.170 | — | `ratio_x10=40` (doubling the input costs ×4) | |
 | T-56 32-import cap | FIXED | 138.15 | `6586136f` | E9010 "this module has 36 imports and the limit is 32 (max_imports)", fix "pass --max-imports=36, or set max_imports = 36 in tkc.toml", at `--check` | RUNNER-BUG |
 | T-57 route registration | FIXED-BY-DESIGN-CHANGE | 138.3 | merge `880b9b4b` | `http.get(hc;"/health")` E4031 "…registers a route and sends nothing; to send a request call http.clientget"; `clientget` 300/300 arrive, 300 ok | runner cannot build |
@@ -154,7 +154,7 @@ runner's printed verdict is wrong for this build — see [loke's runner issues](
 | N-6 client DELETE | FIXED | 138.3 | `0d48bda` | `http.clientdelete(c;"/del")` → recorder `DELETE /del`, `$ok 200` | |
 | R1 bind address | FIXED | 138.1 | `e743005` | see B1 | |
 | R2 >32 imports | FIXED | 138.15 | `6586136f` | still a flag (default 32); now caught at `--check` naming it | |
-| R3 >64 structs / fields | FIXED | 138.15 | merge `fd0a0e88` | struct cap named with its flag; fields unlimited | |
+| R3 >64 structs / fields | FIXED | 138.15, 127.250 | merge `fd0a0e88`, `8e2bf425` | default `max_structs` is 1024 (run2: `default max-structs=1024`); fields unlimited | |
 | R4 keychain error kinds | FIXED | 138.4 | `a1e0b97` | C311 | |
 | R5 throwaway keychain | FIXED | 138.4 | `a1e0b97` | `keychain.create/use/destroy`; C311 | RUNNER-BUG |
 | R6 https POST with headers | FIXED | 138.8, 135.25 | `ce65291`, `6b82978` | C280 cases 7–8 (https trusted arrives; untrusted `$err`, nothing arrives) | |
@@ -315,8 +315,21 @@ db.closeon(a);
   moduli — they computed wrong results (121.51). 2048-bit key generation works (121.48).
 - `time.withtz`/`utcoffset` no longer `setenv TZ` (thread-safe); an unknown zone name is UTC.
 - A `std.db` error's `e.msg` is owned and stays valid after the next call or `db.close`.
-- `infer.load(path; opts)`, `infer.loadstreaming(dir; opts)` and `mdns.advertise(rec)` take the
-  arguments their `.tki` publishes.
+- `infer.load(path; opts)`, `infer.loadstreaming(dir; opts)`, `mdns.advertise(rec)`,
+  `infer.generate(h; prompt; maxtokens)`, `mlx.generate(m; prompt; maxtokens)` and
+  `mdns.browse(type; &callback)` take the arguments their `.tki` publishes; the 2-argument
+  `generate` is E4026. **None of them reports false success any more (T-11):** `infer` has no
+  backend compiled in and `mlx` is a bridge client, so a missing model takes `$err`, `generate`
+  with no model takes `$err`, and `isavailable()` is `false` — never the old
+  `"[infer: not available]"` text as an `$ok` value.
+- `http.stream(c)` takes the `httpclient` that `http.client(url)` returns (it read its argument
+  as a URL string, so the published call did not compile) and raises `httperr` on failure;
+  `http.streamnext` raises too. It GETs the client's base URL and does not send extra headers.
+- `tpl` layouts: `layout("base")` takes a layout **name**, not a path — a name holding `/`, `\`,
+  `..` or empty is refused (it read `templates_dir/../…`). Block nesting (64) and render depth
+  (128) are bounded, so a self-including partial is `$tmplerr` instead of a stack overflow.
+- `toon.str/i64/f64/bool/arr` raise a `ToonErr` you can bind (`$err:e` was nil); `file` errors
+  are `$isdir`/`$symlink` for a directory or a symlink on every call, as the byte calls were.
 - `net.listen(addr:str)`: `net.listen(8080)` is E4031 — write `net.listen("127.0.0.1:8080")`.
   (Handed an integer at run time, it binds loopback only, never every interface.)
 
@@ -390,12 +403,15 @@ whole process; an error-as-value call is 121.45.
   foreign-syntax use still warns.
 - **Compiler caps are caught at `--check`** and the diagnostic names the count, the limit and the
   flag: `--max-funcs`, `--max-structs`, `--max-imports` (or `max_funcs`/`max_structs`/`max_imports`
-  in `tkc.toml`). The defaults are unchanged (raising them is proposed in 127.250).
+  in `tkc.toml`). **The defaults for functions and struct types rise to 1024** (from 128 and 64,
+  127.250), so loke's `--max-funcs`/`--max-structs` flags can go; the import cap stays 32.
+  The locals caps (E9010) report once per function, located, naming the function.
 - New rejections that catch real loke defects rather than change working code: `==`/`!=` on struct
   or sum values (E4031), mixed array-literal element types (E4031), a struct literal of an
   undeclared type (E3011), a `$variant(..)` constructor without exactly one payload (E4026), and
   standard-library arguments of the wrong kind (E4031, checked against the typed `.tki`).
-- A result match whose value is used must have both arms (E4010), and `mt` on a nil sum value traps
+- A result match whose value is used must have both arms (E4010) — also when it is the value of
+  an expression-`if` branch (`let a=if(c){ mt g() {$ok:v v} }el{5}` is E4010) — and `mt` on a nil sum value traps
   RT005 instead of reading through a null pointer. User error payloads of type `str` or a scalar
   bind in the err arm, as do `args.get`/`env.get` payloads.
 
@@ -424,6 +440,7 @@ whole process; an error-as-value call is 121.45.
 |---|---|---|
 | Stay pinned at `0b0bc4e` until O-1 is fixed | O-1, B7 | Pin toke `v3.1.0` and ooke `v3.0.0-rc.2`; fix loke's §5 diagnostics |
 | `--max-imports` for moke's handler registry (MK6.5) | O-2 — for an ooke-generated registry only | ooke passes the flag itself; loke's own large modules still need it (default 32), and `--check` now names it |
+| `--max-funcs` / `--max-structs=256` on large builds (T-25, T-54, R3) | 127.250 (default caps 1024) | Drop both flags; `--check` names the flag if a build ever passes 1024 |
 | `http.postheaders` URL-first, pending B8 | B8 + B0 | Migrate to the 3-argument typed call ([3](#3-httppostheaders-and-https)); lift the non-loopback refusal |
 | Avoid `!$userErr` results across modules (sentinel structs + predicates) | B2 | Use user error types; drop the quality-gate check |
 | Format f64 to str before it crosses a module | B5 | Return the f64 |
@@ -441,7 +458,6 @@ whole process; an error-as-value call is 121.45.
 |---|---|---|
 | **T-17** `json.parse` | 138.9 (blocked) | Not a mis-binding: `json.parse` is a separate, deliberately public parser for scalars and integer arrays (`tk_json_parse`). Given an object it returns a value `json.getstr` reads as empty. **Owner decision pending**: alias `parse` to `decode` (breaks its documented array/string use), or type it so an object handle is rejected. **Use `json.dec` / `json.decode` for objects.** |
 | **T-55** `str.charat` quadratic | 127.170 (blocked) | toke strings carry no length, so every offset check is O(N). The plan (`docs/runtime-abi.md` §3.1, a length-carrying string heap) is written and prototyped; it is an ABI change awaiting an owner decision. Measured on 3.1.0: doubling the input still costs ×4. |
-| **T-11** stub modules | 137.11 | `infer` has no backend compiled in (`TK_HAVE_LLAMACPP` is never defined); `mlx` is an HTTP bridge client; both now take `$err` on failure rather than returning a plausible value. `infer.load`/`loadstreaming` and `mdns.advertise` now take their published arguments, but the `.tki` arity of `mlx.generate`/`infer.generate` (3) still disagrees with the implementation (2) — the `.tki`-shaped call is E4026. |
 | **T-59 / B9** scoped capability grants | **not yet filed** | Not addressed in 3.1.0: a quoted path or host in `[capabilities]` still grants the whole class, listen and connect are one `net` grant, and a launcher can add `--allow-*`. (3.1.0 does close several gaps where a stdlib call reached the file system or network with no grant at all — 121.22, 121.42 — which is the other direction.) A story will be filed from your `toke-issues.md` T-59. |
 | `m.get` / `json.get*` / `str.toint` not forced to be matched | 127.244 | The error channel is set and matchable; the checker still types them as plain values. Enforcing it is breaking by design and awaits the owner. |
 | RSA keys over 2048 bits | 121.51 | Refused in 3.1.0 (they computed wrong products); RSA-2048 works (121.48). Larger keys need a wider bignum. |
@@ -457,7 +473,6 @@ output above.
 | T-27 | DEFECT | It only counts `survived` in the emitted IR. Your header allows "an unclosed-comment error at EOF" — that is E1007, and with an error there is no IR. |
 | T-14 | DEFECT | It only accepts exit 11. `==` on sums is now a compile error (E4031) by design; there is no binary to exit. |
 | T-33 | CHANGED | It expects `bool(false)=ok:0`; booleans now print as `false`. |
-| T-54 | CHANGED | It knows only E4034 (the defect) or `one=1` (built). The fix is E9010 naming `max_structs` and the flag. |
 | T-56 | REPRODUCES | It calls any E9010 a reproduction. The ask was that the diagnostic name the flag, and it does (`pass --max-imports=36, or set max_imports = 36 in tkc.toml`). |
 | T-16 | OK | OK for the wrong reason: the 3-argument `mockreq` call is E4026 (it takes 5), which no longer contains "no member 'mockreq'". Use the rewritten T-16. |
 | T-36 | FIXED | FIXED by default: `repro_b.tk` no longer builds (`str.tof32(12345)` is E4031), so the compare check sees an empty string. The real values are in the table. |
