@@ -1,5 +1,28 @@
 # Gate 3 Success Criteria — Pre-Registration
 
+> **Archived 2026-10-01 (story 128.24).** This is the dated record of the
+> 2026-05-24 pre-registration. It is no longer a live gate. Superseded facts:
+>
+> - **The absolute thresholds are void.** C1 (functional Pass@1 ≥ 35%), C2
+>   (compile ≥ 95%), C3 (argv ≥ 50%) and the 15% failure line are not inherited
+>   by Epic 128 (`toke-model/docs/training-reset-128.md` K3). They were set
+>   against a different benchmark, syntax version and harness, and the Gate-3
+>   programme they belong to never ran. Epic 128 scores every lane relative to
+>   the no-training baseline (Lane A, 128.10) on BENCH-128, on the 128.15
+>   scorecard.
+> - **The "Context" line is void.** It says the Gate 2 result "already exceeds
+>   C1's 35% threshold". The threshold no longer exists, and the Gate-2 figure
+>   (55.6%, 272/489) was measured on the v0.3-era curated set, not on the
+>   benchmark this document names.
+> - **"500 hidden tasks (same set used in Gate 2)" and the "200-task held-out
+>   eval set" are replaced** by BENCH-128 (protocol §5). The 200-task set is
+>   corpus-derived and quarantined (128.16).
+> - **The "Status" line is stale.** It says PRE-REGISTERED and locked.
+>
+> The evaluation-protocol *shape* in §2 is still the precedent: strict Pass@1,
+> binary scoring and a pre-registered decision rule. The 128.1 protocol inherits
+> that shape (§6) and nothing else.
+
 **Pre-registration date:** 2026-05-24
 **Evaluator:** Automated pipeline (gate3_pipeline.py)
 **Status:** PRE-REGISTERED — criteria are locked once training begins

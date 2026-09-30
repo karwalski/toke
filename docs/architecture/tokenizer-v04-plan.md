@@ -1,6 +1,12 @@
 # toke v0.4 Tokenizer — Program Plan
 
-**Status:** Planned (2026-08-18)
+**Status (updated 2026-10-01, story 128.25):** Phase 0 **done**: 131.20 (harness repair and
+the pre-rewrite baseline, 2026-09-18), 131.23 (must-merge list) and 131.24 (provenance rule).
+Phase 1 is **in progress**. 131.22's curation script and its `pre131` run are done
+(2026-09-19). The final `v04` run waits on 131.19, and 131.21 (the post-rewrite baseline) is
+planned. Phases 2–4 stay with 116.9 and have not started. Phases 0–1 were absorbed by Epic
+131 on 2026-09-18.
+**Drafted:** 2026-08-18
 **Owns:** story 116.9 (Workstream D); consolidates 81.2d
 **Feeds:** Epic 128 (base-model decision), 118.4 (efficiency re-measure), 116.13-H4 (website token-viz), 81.4 (1B training)
 **Supersedes:** `toke-tokenizer/docs/tokenizer-design.md` (v0.3-era; 32k vocab / 2.5–4x goal, both contradicted by measurement)
@@ -48,7 +54,7 @@ Known wart: `AddedToken` matches anywhere, so `xi=5` → `x`+`i=`+`5` (lossless,
 
 ### D5 — Training corpus: regen_v04 + library programs, frozen first
 Include:
-- `corpus/regen_v04/` accepted records (`judge.accepted` + `compiler_exit_code==0`), **including** the 877 `test_fail` records (they compile; a tokenizer cares about surface statistics), **excluding** the 158 `build_fail` records (may not survive `--min`);
+- `corpus/regen_v04/` accepted records (`judge.accepted` + `compiler_exit_code==0`) whose audit bucket shows they compile. The rule is **by bucket, not by count**: exclude `build_fail`, `compile_fail` and `audit_error`, and include every other bucket (`pass`, `not_executable`, `driver_fail`, `test_fail`, `new_gate_only`). A tokenizer learns surface statistics, so a record that compiles but fails or skips its tests still belongs. *Correction 2026-10-01 (128.25):* this line used to name "the 877 `test_fail` records" to include and "the 158 `build_fail` records" to exclude. The 129 audit drove both populations to zero, so the rule as written selected nothing it meant to. The bucket rule above is what `toke-corpus/scripts/curate_tokenizer_set.py` implements. Its `pre131` run kept `pass` 14,727, `not_executable` 8,531 and `driver_fail` 124 (manifest `counts.audit_buckets_included`);
 - the 1,583 idiom-pass library programs and the 1,460 dual-verified Epic-126 library programs (dedup overlap after `--min`) — they carry library-usage idioms the regen corpus underrepresents;
 - a lightly-repeated synthetic doc of the stdlib **public surface** (module names, function names/signatures) — just enough repetitions that each identifier clears the merge-support threshold; not full stdlib internals at heavy weight.
 
@@ -58,8 +64,8 @@ No category reweighting — the natural A/D mix stands; per-category reduction i
 One program per line, single-line by construction (28.2% fewer tokens than readable source; 116.7/B2 designates `--min` as "the training target + tokenizer input"). This replaces both `scripts/canonicalise_tk_source.py` and `curate_tokenizer_set.py`'s `\n`→`\`+`n` escaping — the latter taught the v0.3 tokenizer a two-character artifact of the file format that collides with genuine `\n` escapes inside strings. The vocab is thereby **coupled to tkc's minifier**: pin the tkc version in the manifest and keep a canary test that re-`--min`s a sample and diffs, so a future tkc change cannot silently degrade the locked vocab.
 
 ### D7 — Evaluation: TEMSpec-governed, baseline-first
-- **Holdout** split by **base task family** (not record — the 22,914 unique sources contain near-variants; record-level splits leak structure), stratified by category × difficulty. Zero overlap with `data/holdout_task_ids.txt` benchmark IDs (verified clean 2026-08-18; re-verify at freeze).
-- **Gate target set from measurement, not aspiration.** v0.3's 12.5% same-tokenizer reduction is not a valid prior: `--min` also helps cl100k_base (indentation was a large share of the old advantage). Phase 0 runs v0.3-toke, cl100k_base, qwen2.5, and llama3 tokenizers over an identical `--min`+masked v0.4 sample; the Phase 3 gate is that measured baseline minus a margin. Both sides of every reduction metric see identical normalized text.
+- **Holdout** split by **base task family** (not record — the 22,914 unique sources contain near-variants; record-level splits leak structure), stratified by category × difficulty. Disjoint from every benchmark. *Correction 2026-10-01 (128.25):* this line used to say "verified clean 2026-08-18". That check was **vacuous** (131.22a). `data/holdout_task_ids.txt` holds 974 bare integers and 164 `HumanEval/N` ids, and neither namespace can meet a corpus id, so the assertion could not fail and verified nothing. Disjointness is now established by `toke-eval/scripts/check_bench_disjoint.py` (128.1b, checks D1–D8). It compares content hashes of the canonical text across namespaces, and it reports `VACUOUS`, never `PASS`, when the operands cannot overlap.
+- **Gate target set from measurement, not aspiration.** v0.3's 12.5% same-tokenizer reduction is not a valid prior: `--min` also helps cl100k_base (indentation was a large share of the old advantage). Phase 0 runs v0.3-toke, cl100k_base, qwen2.5, and llama3 tokenizers over an identical `--min`+masked v0.4 sample; the Phase 3 gate is set from that measured baseline. *Fixed 2026-09-18 (131.20):* the anchor is **cl100k_base = 242,427 tokens** on the 2,000-record baseline sample (`toke-tokenizer/data/baseline_sample_ids_v04.txt`, same `--min`+masked text on both sides; `docs/metrics-baseline.md`). Both sides of every reduction metric see identical normalized text.
 - TEMSpec rules stand: same-tokenizer reduction is the only pass/fail metric; cross-language density is informational (§6.2). TEMSpec gets a version bump in Phase 3 (define `--min`+mask normalization; qwen/llama required at Gate 2+; tokenizer ID updated to the sweep winner).
 
 ## 4. Phases
@@ -70,7 +76,7 @@ One program per line, single-line by construction (28.2% fewer tokens than reada
 3. Update `scripts/eval_syntax_tokens.py`: v0.4 `KEY_PATTERNS` (`==`, `!=`, expr-`if`, `mt`, `\(`, current sigils), add a CLI (currently hardcoded paths, no args). Run against the shipped G2/G3 models to quantify the v0.4 gap — the "before" number.
 4. HF-format spike: train a toy byte-level tokenizer; verify all three consumers load it (train_1b loader path, pip package runtime, a viz decode check — byte-level tokens need a decode mapping or base-256 range renders as garbage).
 5. Measure the D4 AddedToken substring wart frequency; decide AddedTokens vs seeded merges for `m= f= t= i=`.
-6. Baseline run per D7 → sets the Phase 3 gate number.
+6. Baseline run per D7 → sets the Phase 3 gate number. **Done (131.20):** cl100k_base = 242,427 tokens on the 2,000-record sample.
 
 **Exit:** metric bugs fixed with tests; v0.4-gap and baseline numbers recorded; spike passes on all three consumers.
 
@@ -82,7 +88,7 @@ One program per line, single-line by construction (28.2% fewer tokens than reada
 4. Regenerate `data/tokenizer_training.txt` + `docs/tokenizer_data_report.md` (both currently v0.3).
 5. Freeze the corpus manifest (SHAs, tkc version, counts, holdout spec).
 
-**Exit:** frozen manifest; data report shows v0.4-clean charset; holdout documented and benchmark-disjoint.
+**Exit:** frozen manifest; data report shows v0.4-clean charset; holdout documented and benchmark-disjoint. Disjointness is shown by `check_bench_disjoint.py` reporting `PASS` (128.1b), not by an assertion that cannot fail (131.22a).
 
 ### Phase 2 — Training & vocab sweep (toke-tokenizer)
 1. New `train_v04.py` (HF `tokenizers`): D1 config, D4 forced tokens, trains all sweep sizes from the frozen manifest.
@@ -93,7 +99,7 @@ One program per line, single-line by construction (28.2% fewer tokens than reada
 
 ### Phase 3 — Evaluation, gates, TEMSpec bump, lock (toke-tokenizer, toke-spec)
 1. Full TEMSpec eval on holdout: same-tokenizer reduction vs cl100k_base + qwen2.5 + llama3 (o200k informational), bootstrap CIs, per-category stratification, gate card with artifact SHA-256 and pinned library versions.
-2. Acceptance gates: all v0.4 syntax patterns single-token; **zero byte-fallback tokens on masked holdout code**; top-N stdlib identifiers ≤2 tokens; 100% roundtrip; reduction ≥ the Phase 0 baseline-derived target.
+2. Acceptance gates: all v0.4 syntax patterns single-token; **zero byte-fallback tokens on masked holdout code**; top-N stdlib identifiers ≤2 tokens; 100% roundtrip; **fewer tokens than cl100k_base = 242,427 on the 2,000-record baseline sample** (the Phase 0 anchor fixed by 131.20; same `--min`+masked text on both sides, per `docs/metrics-baseline.md`).
 3. TEMSpec v1.1: `--min`+mask normalization defined; qwen/llama baselines required; tokenizer ID updated (keep `toke-bpe-8k` only if 8k wins).
 4. Freeze canonical-program regression budgets (e.g. fibonacci ≤ N tokens) **at lock time** as regression tests — not pre-lock aspirations.
 
