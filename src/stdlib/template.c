@@ -338,9 +338,19 @@ static void free_nodes(Node *nodes, uint64_t nnode)
  * the close tag (if any).
  * On failure returns 0.
  * ----------------------------------------------------------------------- */
+/* 121.16 PAR-09 (121.41 (5)): bounds on the two recursions.  Before
+ * 2026-09-30 neither had one: a template of 100 000 nested `{{#if a}}` tags
+ * overflowed the stack in parse_nodes, and a partial that includes itself
+ * (`{{>self}}` registered as "self") recursed in render_nodes until the
+ * process died.  Exceeding either now fails the compile / render (NULL),
+ * which tpl.compile / tpl.render report as $tmplerr. */
+#define TMPL_MAX_NEST          64   /* nested if/unless/each blocks per template */
+#define TMPL_MAX_RENDER_DEPTH 128   /* blocks + partial expansions while rendering */
+
 static int parse_nodes(const char **pp, TagKind close_kind,
-                       Node **out_nodes, uint64_t *out_nnode)
+                       Node **out_nodes, uint64_t *out_nnode, int depth)
 {
+    if (depth > TMPL_MAX_NEST) return 0;
     Node    *arr = NULL;
     uint64_t n   = 0;
     uint64_t cap = 0;
@@ -409,7 +419,7 @@ static int parse_nodes(const char **pp, TagKind close_kind,
 
                     Node    *children = NULL;
                     uint64_t nchild   = 0;
-                    if (!parse_nodes(&p, expected_close, &children, &nchild)) {
+                    if (!parse_nodes(&p, expected_close, &children, &nchild, depth + 1)) {
                         free(key);
                         goto fail;
                     }
@@ -510,7 +520,7 @@ TkTmpl *tmpl_compile(const char *source)
     Node    *nodes = NULL;
     uint64_t nnode = 0;
 
-    if (!parse_nodes(&p, TAG_NONE, &nodes, &nnode)) {
+    if (!parse_nodes(&p, TAG_NONE, &nodes, &nnode, 0)) {
         free(t);
         return NULL;
     }
@@ -710,7 +720,7 @@ static int buf_append_escaped(Buf *b, const char *s)
 static int render_nodes(const Node *nodes, uint64_t nnode,
                         const TkTmplVar *extra_vars, uint64_t extra_nvar,
                         const TkTmplVar *vars, uint64_t nvar,
-                        int escape_values, Buf *out);
+                        int escape_values, Buf *out, int depth);
 
 static const char *lookup_combined(const TkTmplVar *extra, uint64_t nextra,
                                    const TkTmplVar *vars, uint64_t nvar,
@@ -727,8 +737,9 @@ static const char *lookup_combined(const TkTmplVar *extra, uint64_t nextra,
 static int render_nodes(const Node *nodes, uint64_t nnode,
                         const TkTmplVar *extra_vars, uint64_t extra_nvar,
                         const TkTmplVar *vars, uint64_t nvar,
-                        int escape_values, Buf *out)
+                        int escape_values, Buf *out, int depth)
 {
+    if (depth > TMPL_MAX_RENDER_DEPTH) return 0;
     for (uint64_t i = 0; i < nnode; i++) {
         const Node *nd = &nodes[i];
         switch (nd->kind) {
@@ -786,7 +797,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                     /* Render the partial's nodes with the same variable bindings */
                     if (!render_nodes(partial->nodes, partial->nnode,
                                       extra_vars, extra_nvar,
-                                      vars, nvar, escape_values, out))
+                                      vars, nvar, escape_values, out, depth + 1))
                         return 0;
                 }
                 /* If not found, render as empty string (per spec) */
@@ -798,7 +809,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 if (val && val[0] != '\0') {
                     if (!render_nodes(nd->children, nd->nchild,
                                       extra_vars, extra_nvar,
-                                      vars, nvar, escape_values, out))
+                                      vars, nvar, escape_values, out, depth + 1))
                         return 0;
                 }
                 break;
@@ -809,7 +820,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                 if (!val || val[0] == '\0') {
                     if (!render_nodes(nd->children, nd->nchild,
                                       extra_vars, extra_nvar,
-                                      vars, nvar, escape_values, out))
+                                      vars, nvar, escape_values, out, depth + 1))
                         return 0;
                 }
                 break;
@@ -832,7 +843,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
 
                     if (!render_nodes(nd->children, nd->nchild,
                                       item_vars, 2,
-                                      vars, nvar, escape_values, out)) {
+                                      vars, nvar, escape_values, out, depth + 1)) {
                         for (uint64_t k = 0; k < nitems; k++) free(items[k]);
                         free(items);
                         return 0;
@@ -859,7 +870,7 @@ static const char *render_internal(TkTmpl *t, const TkTmplVar *vars,
     Buf b = TK_STRBUF_INIT;
 
     if (!render_nodes(t->nodes, t->nnode, NULL, 0, vars, nvar,
-                      escape_values, &b)) {
+                      escape_values, &b, 0)) {
         strbuf_free(&b);
         return NULL;
     }
@@ -1309,6 +1320,14 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     char *final_src = NULL;
 
     if (layout_name) {
+        /* 121.16 PAR-09 (121.41 (5)): the layout name is a file NAME inside
+         * templates_dir -- not a path.  Until 2026-09-30 layout("../x")
+         * read templates_dir/../x.tkt.  Refuse a separator, a `..`, and an
+         * empty name, and fail the render. */
+        if (layout_name[0] == '\0' || strchr(layout_name, '/') ||
+            strchr(layout_name, '\\') || strstr(layout_name, "..")) {
+            goto cleanup;
+        }
         /* Build layout path: templates_dir/layout_name.tkt */
         size_t dir_len = strlen(templates_dir);
         size_t name_len = strlen(layout_name);

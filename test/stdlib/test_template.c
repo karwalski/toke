@@ -20,6 +20,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <unistd.h>     /* mkdtemp (PAR-09 layout test) */
+#include <sys/stat.h>   /* mkdir */
 #include "../../src/stdlib/template.h"
 
 static int failures = 0;
@@ -403,6 +405,102 @@ int main(void)
                      "helper: unregistered helper passes through value");
         free((void *)got);
         tmpl_free(t);
+    }
+
+    /* ---- 34-39. 121.16 PAR-09 (121.41 (5)): bounded recursion, layout names ---- */
+    {
+        /* 34. a self-including partial fails the render instead of recursing
+         *     until the stack is gone */
+        tmpl_register_partial("par09self", "x{{>par09self}}");
+        TkTmpl *t = tmpl_compile("{{>par09self}}");
+        ASSERT(t != NULL, "PAR-09: self-partial template compiles");
+        const char *got = tmpl_render(t, NULL, 0);
+        ASSERT(got == NULL, "PAR-09: self-including partial fails the render");
+        free((void *)got);
+        tmpl_free(t);
+
+        /* 35. a mutual cycle a -> b -> a fails too */
+        tmpl_register_partial("par09a", "{{>par09b}}");
+        tmpl_register_partial("par09b", "{{>par09a}}");
+        t = tmpl_compile("{{>par09a}}");
+        got = tmpl_render(t, NULL, 0);
+        ASSERT(got == NULL, "PAR-09: partial cycle a->b->a fails the render");
+        free((void *)got);
+        tmpl_free(t);
+
+        /* 36. a partial chain inside the cap still renders */
+        tmpl_register_partial("par09c1", "1{{>par09c2}}");
+        tmpl_register_partial("par09c2", "2{{>par09c3}}");
+        tmpl_register_partial("par09c3", "3");
+        t = tmpl_compile("{{>par09c1}}");
+        got = tmpl_render(t, NULL, 0);
+        ASSERT_STREQ(got, "123", "PAR-09: a 3-deep partial chain renders");
+        free((void *)got);
+        tmpl_free(t);
+    }
+    {
+        /* 37. 100000 nested blocks: compile fails, does not overflow */
+        const int N = 100000;
+        size_t cap = (size_t)N * 20 + 1;
+        char *src = (char *)malloc(cap);
+        ASSERT(src != NULL, "PAR-09: alloc deep source");
+        if (src) {
+            size_t n = 0;
+            for (int i = 0; i < N; i++) { memcpy(src + n, "{{#if a}}", 9); n += 9; }
+            for (int i = 0; i < N; i++) { memcpy(src + n, "{{/if}}", 7); n += 7; }
+            src[n] = '\0';
+            TkTmpl *t = tmpl_compile(src);
+            ASSERT(t == NULL, "PAR-09: 100000 nested blocks fail to compile");
+            tmpl_free(t);
+            free(src);
+        }
+        /* 38. 64 nested blocks (the cap) still compile and render */
+        char buf[64 * 16 + 1]; size_t n = 0;
+        for (int i = 0; i < 64; i++) { memcpy(buf + n, "{{#if a}}", 9); n += 9; }
+        buf[n++] = 'y';
+        for (int i = 0; i < 64; i++) { memcpy(buf + n, "{{/if}}", 7); n += 7; }
+        buf[n] = '\0';
+        TkTmpl *t = tmpl_compile(buf);
+        ASSERT(t != NULL, "PAR-09: 64 nested blocks compile");
+        TkTmplVar v[] = {{"a", "1"}};
+        const char *got = tmpl_render(t, v, 1);
+        ASSERT_STREQ(got, "y", "PAR-09: 64 nested blocks render");
+        free((void *)got);
+        tmpl_free(t);
+    }
+    {
+        /* 39. layout("<name>") is a name inside templates_dir, not a path */
+        char dir[] = "/tmp/tk_par09_XXXXXX";
+        ASSERT(mkdtemp(dir) != NULL, "PAR-09: mkdtemp");
+        char tdir[256], pth[320];
+        snprintf(tdir, sizeof tdir, "%s/templates", dir);
+        char cmd[512];
+        ASSERT(mkdir(tdir, 0755) == 0, "PAR-09: mkdir templates");
+        FILE *f;
+        snprintf(pth, sizeof pth, "%s/secret.tkt", dir);        /* outside */
+        f = fopen(pth, "w"); if (f) { fputs("SECRET", f); fclose(f); }
+        snprintf(pth, sizeof pth, "%s/base.tkt", tdir);         /* inside */
+        f = fopen(pth, "w"); if (f) { fputs("<{! yield(\"b\") !}>", f); fclose(f); }
+        const char *pages[][2] = {
+            { "{! layout(\"../secret\") !}", NULL },
+            { "{! layout(\"/etc/hosts\") !}", NULL },
+            { "{! layout(\"..\\\\secret\") !}", NULL },
+            { "{! layout(\"\") !}", NULL },
+            { "{! layout(\"base\") !}{! block(\"b\") !}ok{! end !}", "<ok>" },
+        };
+        for (size_t i = 0; i < sizeof pages / sizeof pages[0]; i++) {
+            snprintf(pth, sizeof pth, "%s/page%zu.tkt", dir, i);
+            f = fopen(pth, "w"); if (f) { fputs(pages[i][0], f); fclose(f); }
+            const char *got = tmpl_renderpage(pth, tdir, NULL, 0);
+            char msg[160];
+            snprintf(msg, sizeof msg, "PAR-09: layout page %zu -> %s", i,
+                     pages[i][1] ? pages[i][1] : "refused (NULL)");
+            if (pages[i][1]) ASSERT_STREQ(got, pages[i][1], msg);
+            else ASSERT(got == NULL, msg);
+            free((void *)got);
+        }
+        snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
+        (void)system(cmd);
     }
 
     /* ---- report ---- */
