@@ -3091,7 +3091,8 @@ static int recv_is_map(Ctx *c, const Node *recv) {
  * that yields the length of the i64 handle `arr`. */
 static void emit_len_bounds_check(Ctx *c, const char *lenfn, int arr, int idx) {
     int len = next_tmp(c);
-    fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d) ; RT003 len\n", len, lenfn, arr);
+    fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d) ; RT003 %s len\n", len, lenfn, arr,
+            strcmp(lenfn, "tk_vec_len_w") ? ".set" : "vec");
     int lo = next_tmp(c), hi = next_tmp(c), oob = next_tmp(c);
     fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", lo, idx);
     fprintf(c->out, "  %%t%d = icmp sge i64 %%t%d, %%t%d\n", hi, idx, len);
