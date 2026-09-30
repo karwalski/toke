@@ -1146,6 +1146,7 @@ ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki che
 # the main checkout has), so check-docs works in a fresh worktree. TKC still wins.
 check-docs check-doc-patterns: export TKC ?= $(abspath $(BIN))
 check-docs: $(BIN)
+	TOKE_WORKSPACE="$(TOKE_WORKSPACE)" python3 scripts/check_doc_site_links.py --self-test  # 132.111
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
 
