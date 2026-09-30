@@ -336,7 +336,12 @@ int h2_apply_settings(H2Conn *conn, const uint8_t *payload, uint32_t len)
         switch (id) {
         case H2_SETTINGS_HEADER_TABLE_SIZE:
             conn->peer_settings.header_table_size = val;
-            hpack_table_resize(&conn->hpack_encode, val);
+            /* 121.50 (2): resized AND signalled.  It used to be resized
+             * only, so a peer that lowered the size never saw the dynamic
+             * table size update RFC 7541 4.2 requires (strict decoders
+             * reject the next block), and one that raised it had our table
+             * grow past the 4096 bytes its decoder still used. */
+            hpack_encoder_set_limit(&conn->hpack_encode, val);
             break;
         case H2_SETTINGS_ENABLE_PUSH:
             if (val > 1) return -1; /* PROTOCOL_ERROR */
@@ -349,11 +354,19 @@ int h2_apply_settings(H2Conn *conn, const uint8_t *payload, uint32_t len)
             if (val > H2_MAX_WINDOW_SIZE) return -1; /* FLOW_CONTROL_ERROR */
             /* Adjust existing stream windows by delta */
             {
-                int32_t delta = (int32_t)val
-                              - (int32_t)conn->peer_settings.initial_window_size;
-                for (size_t s = 0; s < conn->stream_count; s++) {
-                    conn->streams[s].window += delta;
-                }
+                /* 121.50 (1): the windows now gate DATA, so the adjustment
+                 * is checked -- a window pushed past 2^31-1 is a
+                 * FLOW_CONTROL_ERROR (RFC 9113 6.9.2), not a signed
+                 * overflow. */
+                int64_t delta = (int64_t)val
+                              - (int64_t)conn->peer_settings.initial_window_size;
+                for (size_t s = 0; s < conn->stream_count; s++)
+                    if ((int64_t)conn->streams[s].window + delta >
+                        (int64_t)H2_MAX_WINDOW_SIZE)
+                        return -1;
+                for (size_t s = 0; s < conn->stream_count; s++)
+                    conn->streams[s].window =
+                        (int32_t)((int64_t)conn->streams[s].window + delta);
             }
             conn->peer_settings.initial_window_size = val;
             break;
@@ -504,7 +517,7 @@ H2Stream *h2_stream_get(H2Conn *conn, uint32_t stream_id)
     for (size_t i = 0; i < conn->stream_count && !s; i++) {
         H2Stream *c = &conn->streams[i];
         if (c->state == H2_STREAM_CLOSED && !c->header_block &&
-            !c->hnames && !c->body)
+            !c->hnames && !c->body && !c->out)
             s = c;
     }
     if (!s) {
@@ -550,6 +563,9 @@ void h2_stream_release(H2Stream *s)
     s->receiving = 0;
     s->block_end_stream = s->block_trailers = 0;
     s->deadline_ms = 0;
+    free(s->out);
+    s->out = NULL;
+    s->out_len = s->out_off = 0;
     s->state = H2_STREAM_CLOSED;
 }
 
@@ -781,6 +797,20 @@ void hpack_table_resize(HpackTable *t, size_t new_max)
 {
     t->max_size = new_max;
     hpack_evict(t);
+}
+
+void hpack_encoder_set_limit(HpackTable *t, size_t peer_max)
+{
+    size_t want = peer_max < H2_DEFAULT_HEADER_TABLE_SIZE
+                ? peer_max : H2_DEFAULT_HEADER_TABLE_SIZE;
+    if (!t->update_pending) {
+        if (want == t->max_size) return;
+        t->update_pending = 1;
+        t->update_min = want;
+    } else if (want < t->update_min) {
+        t->update_min = want;
+    }
+    hpack_table_resize(t, want);
 }
 
 /* Look up by index: 1–61 = static, 62+ = dynamic */
@@ -1101,6 +1131,18 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
                  size_t count, uint8_t *out, size_t out_cap)
 {
     size_t pos = 0;
+
+    /* 121.50 (2): a size change opens the block (RFC 7541 4.2). */
+    if (t->update_pending) {
+        if (t->update_min < t->max_size &&
+            hpack_encode_int(out, out_cap, &pos, (uint32_t)t->update_min,
+                             5, 0x20) < 0)
+            return -1;
+        if (hpack_encode_int(out, out_cap, &pos, (uint32_t)t->max_size,
+                             5, 0x20) < 0)
+            return -1;
+        t->update_pending = 0;
+    }
 
     for (size_t i = 0; i < count; i++) {
         const char *name  = names[i];

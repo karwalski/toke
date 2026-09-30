@@ -255,6 +255,17 @@ void tk_error_log_write(TkAccessLog *log,
                          const char *referer,
                          const char *ua);
 void tk_error_log_close(TkAccessLog *log);
+
+/*
+ * tk_log_reopen_files — reopen the global access and error logs at their
+ * paths (121.53 (1): what a server does on SIGHUP, after logrotate).  A log
+ * that rotates by its own lock follows a rename on its next write anyway; this
+ * matters for one opened without the lock (no sidecar could be made beside
+ * it), which otherwise keeps writing the renamed file.  A log on a tty, FIFO
+ * or /dev/stderr is left as it is.  Not async-signal-safe: call it from the
+ * serving loop, not from a handler.
+ */
+void tk_log_reopen_files(void);
 void         tk_error_log_set_global(TkAccessLog *log);
 TkAccessLog *tk_error_log_get_global(void);
 

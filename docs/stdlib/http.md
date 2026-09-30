@@ -208,6 +208,18 @@ DIAGNOSTIC: kind=server_start_failed fn="http.serveworkers" port=8080 stage="bin
 
 where `stage` is `host`, `port`, `certificate/key` or `bind/fork`, and it makes the process **exit non-zero** however `main` ends — with `main`'s own status if that is non-zero, otherwise `1`, so even a program that ignores the `-1` and returns `0` exits `1`. To a supervisor, a server that never started must not look like a clean shutdown. (Stories 135.22 for the TLS forms, 135.24 for the plain ones; the exit rule is shared with failed `std.test` assertions, see `docs/stdlib/test.md`; 135.29 keeps `main`'s non-zero status.)
 
+**`SIGHUP` reopens the logs; it does not stop the server** (story 121.53). A
+running server treats `SIGHUP` — what `logrotate` sends after renaming a log —
+as "reopen the access and error logs at their paths", in every mode: the
+single-process server and each worker reopen them at their next connection;
+the plain pre-fork supervisor reopens them and replaces its workers (its
+reload, story 59.4.8); the TLS supervisor reopens them and passes the signal to
+its workers. A log opened with `log.openaccess` in a directory the server can
+write follows a rename on its own, on the next line written; `SIGHUP` is what
+moves one opened where no lock file could be made beside it. Until then
+`SIGHUP` killed a single-process server, and killed a TLS supervisor while
+leaving its workers listening on the port.
+
 ## Abandoned requests
 
 A client that sends a request and goes away before reading the answer is
@@ -338,6 +350,28 @@ always the length of the body sent), the security headers and
 matched. Until then a request whose headers used `CONTINUATION` was never
 answered, `req.body` was always empty, and a response carried only its
 status, length and content type.
+
+**HTTP/2 flow control and header compression** (story 121.50). A response
+body is sent within the client's flow-control windows (RFC 9113 §6.9): what
+the stream's or the connection's window does not take waits and is sent as
+the client's `WINDOW_UPDATE` frames open it, while other streams on the
+connection are served. A client that never opens its window is disconnected
+after `timeout_secs` from the last byte sent. A `WINDOW_UPDATE` that would
+take a window past 2^31−1 ends the connection with `FLOW_CONTROL_ERROR`. When
+the client changes `SETTINGS_HEADER_TABLE_SIZE`, the next response header
+block opens with the dynamic table size update RFC 7541 §4.2 requires, and
+the server's table never grows past 4096 bytes. Until then a body over 64 KiB
+overran a client on the default window, and the table size changed silently.
+
+**The handler's security headers win** (story 121.50). Every response
+carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: strict-origin-when-cross-origin`, and over TLS
+`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` —
+except a field the handler set itself (the name compared without regard to
+case), which is sent once, with the handler's value. That is so on HTTP/1.1
+and HTTP/2 alike. Until then HTTP/1.1 sent the handler's value and then the
+default, so `X-Frame-Options: SAMEORIGIN` went out beside `DENY` — and a
+browser that sees two `X-Frame-Options` values applies neither.
 
 **No cleartext upgrade to HTTP/2.** A request carrying `Upgrade: h2c` is
 answered over HTTP/1.1 like any other; the server ignores the header, as RFC

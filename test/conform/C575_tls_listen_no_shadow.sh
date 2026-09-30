@@ -73,10 +73,14 @@ if ! "${TKC}" --allow-all --out srv srv.tk > build.log 2>&1; then
     echo "Results: 0 passed, 1 failed"; exit 1
 fi
 
-# run_srv -> "returned <rc>" if it exits within $1 s, else "running"
+# run_srv -> "returned <rc>" if it exits within $1 s, else "running".
+# 121.54: it runs in a command substitution, i.e. a subshell, so the SRVPID
+# and PIDS it set never reached this shell: a server left "running" was never
+# stopped and outlived the script, listening (one orphan per run, measured).
+# The pid now goes through a file; srv_pid reads it back here.
 run_srv() {
     ./srv "${P}" > srv.out 2> srv.err &
-    local pid=$!; PIDS+=("${pid}")
+    local pid=$!; echo "${pid}" > srv.pid
     for _ in $(seq 1 $(( $1 * 10 ))); do kill -0 "${pid}" 2>/dev/null || break; sleep 0.1; done
     if kill -0 "${pid}" 2>/dev/null; then
         SRVPID="${pid}"; echo "running"
@@ -84,6 +88,15 @@ run_srv() {
         local rc=0; wait "${pid}" || rc=$?; SRVPID=""
         echo "$(tr -d '\n' < srv.out) ${rc}"
     fi
+}
+# srv_pid -- after run_srv: register the server for cleanup; SRVPID = its pid
+# when it is still running, else empty
+srv_pid() {
+    local pid; pid="$(cat srv.pid 2>/dev/null)"; SRVPID=""
+    [ -n "${pid}" ] || return 0
+    PIDS+=("${pid}")
+    kill -0 "${pid}" 2>/dev/null && SRVPID="${pid}"
+    return 0
 }
 
 # ── 1: a live listener on 127.0.0.1:P ────────────────────────────────────
@@ -101,7 +114,7 @@ while True:
 PY
 PEER=$!; PIDS+=("${PEER}")
 for _ in $(seq 1 50); do grep -q up peer.out && break; sleep 0.1; done
-got="$(run_srv 5)"
+got="$(run_srv 5)"; srv_pid
 [ -n "${SRVPID:-}" ] && stop "${SRVPID}"
 reach="$(python3 -c "import socket,sys;s=socket.create_connection(('127.0.0.1',${P}),2);print('reached');s.close()" 2>/dev/null)"
 if [ "${got}" = "returned 3" ] && [ "${reach}" = "reached" ]; then
@@ -134,7 +147,7 @@ n_tw="$(tw "${P}")"
 if [ "${n_tw}" -lt 1 ]; then
     bad "2: precondition — a TIME_WAIT socket on local port ${P}" ">= 1" "${n_tw}"
 else
-    got="$(run_srv 2)"
+    got="$(run_srv 2)"; srv_pid
     reach=""
     [ "${got}" = "running" ] && reach="$(python3 -c "import socket;s=socket.create_connection(('127.0.0.1',${P}),2);print('reached');s.close()" 2>/dev/null)"
     [ -n "${SRVPID:-}" ] && stop "${SRVPID}"

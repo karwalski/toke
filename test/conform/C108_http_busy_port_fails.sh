@@ -67,8 +67,14 @@ fi
 
 WORK="$(mktemp -d /tmp/tkc_c108_XXXXXX)"
 A_PID=""; B_PID=""; C_PID=""
+# stop PID -- kill a server and its workers.  Freeze the supervisor FIRST
+# (121.54, as C391 de559637): serveworkers respawns a worker that dies by a
+# signal, so killing the workers while the supervisor still runs can fork a
+# fresh worker between the pkill and the kill of the parent -- an orphan that
+# keeps listening.  A stopped process cannot fork; SIGKILL still reaches it.
 stop() {
     [ -n "$1" ] || return 0
+    kill -STOP "$1" 2>/dev/null
     pkill -9 -P "$1" 2>/dev/null
     kill -9 "$1" 2>/dev/null
     wait "$1" 2>/dev/null

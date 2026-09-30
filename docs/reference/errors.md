@@ -1358,6 +1358,81 @@ directory whose path has no whitespace (a symlink to it works: the compiler
 resolves `TKC_STDLIB_DIR` to its real path). No `fix`: the right path is not
 knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
 
+## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
+
+The codes `docs/reference/package-manifest.md` gives for package resolution.
+They are defined in `src/pkg.h` so that no compiler diagnostic takes one, but
+the resolver is not wired into a `tkc` command and nothing emits them yet
+(story 121.50). The unsatisfiable-constraints condition was documented as
+E9010 until then -- the compiler's "compiler limit exceeded" -- and moved to
+E9025 (E9024 went to the compiler in the meantime, 121.28).
+
+### E9011
+
+**Package not found in the index and no git URL**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen (reserved for package resolution; not yet emitted) |
+
+A dependency names a package the central index does not have, and gives no `git` source.
+
+### E9012
+
+**Malformed pkg.toml**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen (reserved for package resolution; not yet emitted) |
+
+`pkg.toml` is missing a required field, is not the TOML subset the manifest allows, uses an unsupported constraint, names a dependency twice, or has an unknown table or key.
+
+### E9013
+
+**Git clone or fetch of a dependency failed**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen (reserved for package resolution; not yet emitted) |
+
+The repository of a dependency could not be cloned or fetched.
+
+### E9014
+
+**No git tag matches the resolved version**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen (reserved for package resolution; not yet emitted) |
+
+A dependency's repository has no tag for the version resolution selected.
+
+### E9025
+
+**No version of a dependency satisfies every constraint**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen (reserved for package resolution; not yet emitted) |
+
+Minimal version selection took the highest minimum any constraint names, and some constraint on that package does not admit it (an exact version it does not name, or an upper bound it reaches).
+
+### W9010
+
+**pkg.lock is out of date relative to pkg.toml**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | codegen (reserved for package resolution; not yet emitted) |
+
+`pkg.toml` changed after `pkg.lock` was written.
+
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.

@@ -52,7 +52,12 @@ if ! command -v openssl >/dev/null 2>&1; then
 fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c277_XXXXXX")"
 SRV=""
-stop() { [ -n "$1" ] || return 0; pkill -9 -P "$1" 2>/dev/null; kill -9 "$1" 2>/dev/null; wait "$1" 2>/dev/null; }
+# stop PID -- kill a server and its workers.  Freeze the supervisor FIRST
+# (121.54, as C391 de559637): serveworkers respawns a worker that dies by a
+# signal, so killing the workers while the supervisor still runs can fork a
+# fresh worker between the pkill and the kill of the parent -- an orphan that
+# keeps listening.  A stopped process cannot fork; SIGKILL still reaches it.
+stop() { [ -n "$1" ] || return 0; kill -STOP "$1" 2>/dev/null; pkill -9 -P "$1" 2>/dev/null; kill -9 "$1" 2>/dev/null; wait "$1" 2>/dev/null; }
 cleanup() { stop "${SRV}"; rm -rf "${WORK}"; }
 trap cleanup EXIT
 cd "${WORK}"

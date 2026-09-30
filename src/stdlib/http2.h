@@ -135,6 +135,13 @@ typedef struct {
     size_t        body_len;
     size_t        body_cap;
     long          deadline_ms;
+    /* 121.50 (1): the response body not yet sent because the peer's
+     * flow-control window (the stream's or the connection's) is closed.
+     * It is sent as WINDOW_UPDATE frames open the window, and the stream
+     * is released when the last byte (END_STREAM) is out.  Owned. */
+    uint8_t      *out;
+    size_t        out_len;
+    size_t        out_off;
 } H2Stream;
 
 /* ── HPACK dynamic table entry ────────────────────────────────────────── */
@@ -154,6 +161,12 @@ typedef struct {
     size_t      limit;       /* 121.17 (HTT-05): the most a dynamic table
                                 size update from the peer may set -- the
                                 size this side advertised (RFC 7541 6.3) */
+    /* 121.50 (2), encoder only: the size changed since the last header
+     * block, so the next one must open with a dynamic table size update --
+     * the smallest size it passed through first, then the current one
+     * (RFC 7541 4.2, 6.3). */
+    int         update_pending;
+    size_t      update_min;
 } HpackTable;
 
 /* ── Connection state ─────────────────────────────────────────────────── */
@@ -298,5 +311,11 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
 
 /* Resize HPACK dynamic table (on SETTINGS_HEADER_TABLE_SIZE change). */
 void hpack_table_resize(HpackTable *t, size_t new_max);
+
+/* 121.50 (2): the peer set SETTINGS_HEADER_TABLE_SIZE to peer_max.  The
+ * encoder's table becomes min(peer_max, 4096) -- it never grows past the
+ * default, so memory stays bounded -- and a change is signalled at the start
+ * of the next header block hpack_encode() writes. */
+void hpack_encoder_set_limit(HpackTable *t, size_t peer_max);
 
 #endif /* TK_STDLIB_HTTP2_H */

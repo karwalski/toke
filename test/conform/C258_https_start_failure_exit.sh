@@ -35,8 +35,24 @@ PASS=0; FAIL=0
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c258_XXXXXX")"
 SRV=""; HOLD=""
+# 121.54: freeze the supervisor before killing its workers (C391 de559637):
+# a running supervisor respawns a killed worker, and that orphan listens on.
+stop() { [ -n "$1" ] || return 0; kill -STOP "$1" 2>/dev/null; pkill -9 -P "$1" 2>/dev/null; kill -9 "$1" 2>/dev/null; wait "$1" 2>/dev/null; }
+# run_bounded NAME -- run ./NAME_bin, which must fail to start and exit at
+# once.  121.54: this was a plain foreground run, and the port holder slept
+# only 120 s: on a loaded host the compile outlasted the holder, the port came
+# free, the server STARTED and the script waited on it forever (measured:
+# C275 hung 2 h 15 min under 6x `yes`).  A server still running after 20 s is
+# stopped and reads RC=137, which fails the case instead of hanging it.
+run_bounded() {
+    ./"$1"_bin > "$1.out" 2> "$1.err" &
+    SRV=$!
+    for _ in $(seq 1 200); do kill -0 "${SRV}" 2>/dev/null || break; sleep 0.1; done
+    if kill -0 "${SRV}" 2>/dev/null; then stop "${SRV}"; RC=137; else wait "${SRV}"; RC=$?; fi
+    SRV=""
+}
 cleanup() {
-    [ -n "${SRV}" ] && { pkill -9 -P "${SRV}" 2>/dev/null; kill -9 "${SRV}" 2>/dev/null; }
+    [ -n "${SRV}" ] && { kill -STOP "${SRV}" 2>/dev/null; pkill -9 -P "${SRV}" 2>/dev/null; kill -9 "${SRV}" 2>/dev/null; }
     [ -n "${HOLD}" ] && kill -9 "${HOLD}" 2>/dev/null
     rm -rf "${WORK}"
 }
@@ -86,14 +102,14 @@ result() {
 
 # 1. missing certificate
 if build nocert 'http.servetls(18443;"/nonexistent/cert.pem";"/nonexistent/key.pem")'; then
-    ./nocert_bin > nocert.out 2> nocert.err; RC=$?
+    run_bounded nocert
     expect "servetls, missing certificate: caller sees -1, structured line, exit 1" \
         "$(result nocert http.servetls 18443 certificate/key)" "1 r=-1 1 1" nocert.err
 fi
 
 # 2. good certificate, missing key
 if build nokey "http.servetlsworkers(18444;\"${WORK}/cert.pem\";\"/nonexistent/key.pem\";2)"; then
-    ./nokey_bin > nokey.out 2> nokey.err; RC=$?
+    run_bounded nokey
     expect "servetlsworkers, missing key: caller sees -1, structured line, exit 1" \
         "$(result nokey http.servetlsworkers 18444 certificate/key)" "1 r=-1 1 1" nokey.err
 fi
@@ -104,14 +120,14 @@ python3 -c '
 import socket, sys, time
 s = socket.socket(); s.bind(("", 0)); s.listen(8)
 print(s.getsockname()[1], flush=True)
-time.sleep(120)' > hold.port &
+time.sleep(3600)' > hold.port &   # killed after case 3 / by cleanup
 HOLD=$!
 for _ in $(seq 1 50); do [ -s hold.port ] && break; sleep 0.1; done
 BUSY="$(head -1 hold.port)"
 if [ -z "${BUSY}" ]; then
     echo "  FAIL: could not hold a port for case 3"; FAIL=$((FAIL + 1))
 elif build busy "http.servetls(${BUSY};\"${WORK}/cert.pem\";\"${WORK}/key.pem\")"; then
-    ./busy_bin > busy.out 2> busy.err; RC=$?
+    run_bounded busy
     expect "servetls on a held port: caller sees -1, stage bind/fork, exit 1" \
         "$(result busy http.servetls "${BUSY}" bind/fork)" "1 r=-1 1 1" busy.err
 fi

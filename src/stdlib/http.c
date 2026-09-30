@@ -686,14 +686,39 @@ static void write_res_headers(int fd, Res res)
     }
 }
 
-/* write_security_headers — emit hardened security headers on every response. */
-static void write_security_headers(int fd)
+/* The hardened headers every response carries, as "Name: value\r\n" lines;
+ * the last (HSTS) only over TLS. */
+static const char *const sec_hdr_lines[] = {
+    "X-Content-Type-Options: nosniff\r\n",
+    "X-Frame-Options: DENY\r\n",
+    "Referrer-Policy: strict-origin-when-cross-origin\r\n",
+    "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload\r\n",
+};
+
+/* res_sets_header — 1 when the handler's response (res may be NULL) already
+ * carries the field that the line "Name: ..." sets (names compare without
+ * regard to case, RFC 9110 5.1). */
+static int res_sets_header(const Res *res, const char *line)
 {
-    static const char hdrs[] =
-        "X-Content-Type-Options: nosniff\r\n"
-        "X-Frame-Options: DENY\r\n"
-        "Referrer-Policy: strict-origin-when-cross-origin\r\n";
-    http_write_all(fd, hdrs, sizeof(hdrs) - 1);
+    if (!res) return 0;
+    size_t n = (size_t)(strchr(line, ':') - line);
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        if (k && strlen(k) == n && strncasecmp(k, line, n) == 0) return 1;
+    }
+    return 0;
+}
+
+/* write_security_headers — emit hardened security headers on every response.
+ * 121.50 (3): a field the handler set itself is not sent again -- the
+ * handler's value wins, as it does on HTTP/2 (h2_send_response).  It used to
+ * be sent twice (e.g. X-Frame-Options: SAMEORIGIN then DENY), and a browser
+ * facing two X-Frame-Options values applies neither. */
+static void write_security_headers(int fd, const Res *res)
+{
+    for (size_t i = 0; i < 3; i++)
+        if (!res_sets_header(res, sec_hdr_lines[i]))
+            http_write_all(fd, sec_hdr_lines[i], strlen(sec_hdr_lines[i]));
 }
 
 /*
@@ -750,7 +775,7 @@ static void send_response(int fd, Res res, int keep_alive) {
             res.status, reason(res.status), conn_hdr);
         http_write_all(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
-        write_security_headers(fd);
+        write_security_headers(fd, &res);
         write_cors_headers(fd);
         http_write_all(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
@@ -766,7 +791,7 @@ static void send_response(int fd, Res res, int keep_alive) {
             res.status, reason(res.status), bl, conn_hdr);
         http_write_all(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
-        write_security_headers(fd);
+        write_security_headers(fd, &res);
         write_cors_headers(fd);
         http_write_all(fd, "\r\n", 2);
         if (bl) http_write_all(fd, res.body, bl);
@@ -1557,7 +1582,7 @@ static void handle_connection(int fd)
                 res.status, reason(res.status), head_body_len, conn_hdr);
             http_write_all(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
-            write_security_headers(fd);
+            write_security_headers(fd, &res);
             write_cors_headers(fd);
             http_write_all(fd, "\r\n", 2);
             /* No body for HEAD */
@@ -1581,7 +1606,7 @@ static void handle_connection(int fd)
                 res.status, reason(res.status), gz_len, conn_hdr);
             http_write_all(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
-            write_security_headers(fd);
+            write_security_headers(fd, &res);
             write_cors_headers(fd);
             http_write_all(fd, "\r\n", 2);
             http_write_all(fd, gz_buf, gz_len);
@@ -1641,6 +1666,38 @@ static void serve_sighandler(int sig)
     g_shutdown_requested = 1;
 }
 
+/* 121.53 (1): SIGHUP in a serving process -- the single-process server, a
+ * worker, or the TLS supervisor -- asks for the logs to be reopened
+ * (logrotate's postrotate `kill -HUP`).  It used to have no handler there,
+ * so the default action killed a single-process server outright (and a TLS
+ * supervisor, orphaning its workers).  Installed WITH SA_RESTART, unlike the
+ * shutdown handlers: a log reopen must not cut short a read in progress, so
+ * the flag is acted on at the next accept(). */
+static volatile sig_atomic_t g_reopen_requested = 0;
+
+static void serve_sighup_handler(int sig)
+{
+    (void)sig;
+    g_reopen_requested = 1;
+}
+
+static void install_reopen_handler(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = serve_sighup_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGHUP, &sa, NULL);
+}
+
+static void reopen_logs_if_requested(void)
+{
+    if (!g_reopen_requested) return;
+    g_reopen_requested = 0;
+    tk_log_reopen_files();
+}
+
 /* 135.32 -- bind a listening address without shadowing a live listener:
  * tk_bind_exclusive() in tk_bind.h (moved there by 135.33 so router.c,
  * net.c, net_glue.c and server_ops.c share it). */
@@ -1664,6 +1721,7 @@ int http_serve(uint16_t port) {
 
     install_shutdown_handler(SIGTERM, serve_sighandler);   /* 127.69 */
     install_shutdown_handler(SIGINT,  serve_sighandler);   /* 127.69 */
+    install_reopen_handler();                              /* 121.53 */
 
     for (;;) {
         int fd = accept(srv, NULL, NULL);
@@ -1675,6 +1733,7 @@ int http_serve(uint16_t port) {
             continue;
         }
         if (g_shutdown_requested) { close(fd); break; }
+        reopen_logs_if_requested();
         handle_connection(fd);
     }
     close(srv); return 0;
@@ -1792,6 +1851,7 @@ static void worker_loop(int srv_fd, TkHttpRouter *r)
      * this loop in a process that never installed one. */
     install_shutdown_handler(SIGTERM, serve_sighandler);
     install_shutdown_handler(SIGINT,  serve_sighandler);
+    install_reopen_handler();                              /* 121.53 */
 
     /* If a router is provided, copy its routes into the global table.
      * If NULL, use the global route_table as-is (already populated by
@@ -1811,6 +1871,7 @@ static void worker_loop(int srv_fd, TkHttpRouter *r)
             continue;
         }
         if (g_shutdown_requested) { close(fd); break; }
+        reopen_logs_if_requested();
         handle_connection(fd);
     }
 }
@@ -1913,6 +1974,9 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                 rts.tv_sec = 0; rts.tv_nsec = 10000000;
                 nanosleep(&rts, NULL);
             }
+            /* 121.53 (1): reopen the logs here, so the new workers inherit
+             * the files now at the logs' paths (logrotate + SIGHUP). */
+            tk_log_reopen_files();
             /* Fork new workers */
             for (uint64_t i = 0; i < nworkers; i++) {
                 pid_t pid = fork();
@@ -4039,14 +4103,12 @@ int http_tls_reload_cert(TkTlsCtx *ctx, const char *cert_path,
 /*
  * write_security_headers_ssl — emit hardened headers via SSL_write.
  */
-static void write_security_headers_ssl(SSL *ssl)
+static void write_security_headers_ssl(SSL *ssl, const Res *res)
 {
-    static const char hdrs[] =
-        "X-Content-Type-Options: nosniff\r\n"
-        "X-Frame-Options: DENY\r\n"
-        "Referrer-Policy: strict-origin-when-cross-origin\r\n"
-        "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload\r\n";
-    SSL_write(ssl, hdrs, (int)(sizeof(hdrs) - 1));
+    /* 121.50 (3): the handler's own value wins, as over plain HTTP. */
+    for (size_t i = 0; i < 4; i++)
+        if (!res_sets_header(res, sec_hdr_lines[i]))
+            SSL_write(ssl, sec_hdr_lines[i], (int)strlen(sec_hdr_lines[i]));
 }
 
 /* write_cors_headers_ssl — emit CORS headers over TLS when configured (Story 7.7.4).
@@ -4161,9 +4223,63 @@ static int h2_send_header_block(H2Conn *conn, int fd, void *ssl, uint32_t sid,
  * could not be encoded (the HPACK encoder's table may then disagree with the
  * peer's, so the caller must end the connection).
  */
-static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
+/* h2_flush_stream -- send as much of st's pending body as the peer's
+ * windows allow (121.50 (1)): each DATA frame is at most the peer's
+ * SETTINGS_MAX_FRAME_SIZE and at most what is left of both the stream's and
+ * the connection's send window, and the frames it sends are taken off both
+ * (RFC 9113 6.9.1).  END_STREAM rides on the last byte.  Returns 1 when the
+ * whole body is out, 0 when the window closed first (st keeps the rest),
+ * -1 on a write error. */
+static int h2_flush_stream(H2Conn *conn, int fd, void *ssl, H2Stream *st)
+{
+    int progressed = 0;
+    while (st->out_off < st->out_len) {
+        int64_t room = conn->conn_window_send;
+        if (st->window < room) room = st->window;
+        if (room <= 0) break;
+        size_t chunk = st->out_len - st->out_off;
+        if (chunk > (size_t)room) chunk = (size_t)room;
+        if (chunk > conn->peer_settings.max_frame_size)
+            chunk = conn->peer_settings.max_frame_size;
+        uint8_t flags = (st->out_off + chunk >= st->out_len)
+                      ? H2_FLAG_END_STREAM : 0;
+        if (h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, flags, st->id,
+                          st->out + st->out_off, (uint32_t)chunk) < 0)
+            return -1;
+        conn->conn_window_send -= (int32_t)chunk;
+        st->window -= (int32_t)chunk;
+        st->out_off += chunk;
+        progressed = 1;
+    }
+    if (st->out_off >= st->out_len) return 1;
+    /* A peer that never opens its window must not hold the worker: the
+     * wait for the next WINDOW_UPDATE is bounded like any other phase of a
+     * request, from the last byte that went out. */
+    if (progressed || !st->deadline_ms)
+        st->deadline_ms = h2_now_ms() + (long)conn->read_timeout_ms;
+    return 0;
+}
+
+/* h2_flush_pending -- after the peer opened a window (WINDOW_UPDATE or a
+ * larger SETTINGS_INITIAL_WINDOW_SIZE), send what the waiting streams can,
+ * and release each one whose body is now complete.  -1 on a write error. */
+static int h2_flush_pending(H2Conn *conn, int fd, void *ssl)
+{
+    for (size_t i = 0; i < conn->stream_count; i++) {
+        H2Stream *st = &conn->streams[i];
+        if (st->state == H2_STREAM_CLOSED || !st->out) continue;
+        if (conn->conn_window_send <= 0) break;
+        int r = h2_flush_stream(conn, fd, ssl, st);
+        if (r < 0) return -1;
+        if (r > 0) h2_stream_release(st);
+    }
+    return 0;
+}
+
+static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
                             Res res, int is_head)
 {
+    uint32_t sid = st->id;
     static const char *const sec[][2] = {
         { "x-content-type-options",    "nosniff" },
         { "x-frame-options",           "DENY" },
@@ -4182,11 +4298,11 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
     int rc = -1;
     if (!nm || !vl || !own) goto out;
 
-    char st[8], cl[32];
-    snprintf(st, sizeof st, "%u", res.status);
+    char stat[8], cl[32];
+    snprintf(stat, sizeof stat, "%u", res.status);
     snprintf(cl, sizeof cl, "%zu", body_len);
     size_t k = 0;
-    nm[k] = ":status"; vl[k++] = st;
+    nm[k] = ":status"; vl[k++] = stat;
     if (!no_body) { nm[k] = "content-length"; vl[k++] = cl; }
     for (uint64_t i = 0; i < res.headers.len; i++) {
         const char *hk = res.headers.data[i].key;
@@ -4229,16 +4345,24 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, uint32_t sid,
         goto out;
     rc = 0;
     if (!end_stream) {
-        uint32_t max_data = conn->peer_settings.max_frame_size;
-        size_t sent = 0;
-        while (sent < body_len) {
-            uint32_t chunk = (uint32_t)(body_len - sent);
-            if (chunk > max_data) chunk = max_data;
-            uint8_t dflags = (sent + chunk >= body_len) ? H2_FLAG_END_STREAM : 0;
-            if (h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, dflags, sid,
-                              (const uint8_t *)res.body + sent, chunk) < 0)
-                break;
-            sent += chunk;
+        /* 121.50 (1): the body goes out as the peer's flow-control windows
+         * allow.  It used to be written whole, ignoring them, so a body over
+         * 64 KiB overran a client on the default window (RFC 9113 6.9: a
+         * FLOW_CONTROL_ERROR, and the stream failed).  What the window does
+         * not take now waits on the stream -- copied, since res.body is the
+         * handler's -- for the WINDOW_UPDATE frames that open it; the
+         * connection loop sends it (h2_flush_pending) and serves other
+         * streams meanwhile. */
+        free(st->out);
+        if (!(st->out = malloc(body_len))) { rc = -1; goto out; }
+        memcpy(st->out, res.body, body_len);
+        st->out_len = body_len;
+        st->out_off = 0;
+        st->deadline_ms = 0;
+        if (h2_flush_stream(conn, fd, ssl, st) > 0) {
+            free(st->out);
+            st->out = NULL;
+            st->out_len = st->out_off = 0;
         }
     }
 out:
@@ -4362,7 +4486,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             res = make_res(405, "Method Not Allowed");
     }
 
-    int rc = h2_send_response(conn, fd, ssl, st->id, res, is_head);
+    int rc = h2_send_response(conn, fd, ssl, st, res, is_head);
     log_request(client_ip, &req, res.status, res.body ? strlen(res.body) : 0);
     free(cookie);
     /* 127.72: response written and logged -- the route bindings it may
@@ -4376,7 +4500,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
  * treating the request as failed in transit (RFC 9113 8.1). */
 static int h2_refuse_body(H2Conn *conn, int fd, void *ssl, H2Stream *st)
 {
-    int rc = h2_send_response(conn, fd, ssl, st->id,
+    int rc = h2_send_response(conn, fd, ssl, st,
                               make_res(413, "Payload Too Large"), 0);
     h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_NONE);
     h2_stream_release(st);
@@ -4401,6 +4525,9 @@ static int h2_finish(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             }
         }
     rc = h2_dispatch(conn, fd, ssl, client_ip, st);
+    /* 121.50 (1): a stream whose body is still waiting for the peer's
+     * window stays open until the last byte is out (h2_flush_pending). */
+    if (st->out && rc == 0) return 0;
     h2_stream_release(st);
     return rc;
 }
@@ -4619,6 +4746,9 @@ static int handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 goto done;
             }
             h2_send_settings_ack(conn, fd, ssl);
+            /* 121.50 (1): a larger INITIAL_WINDOW_SIZE opens every stream's
+             * window. */
+            if (h2_flush_pending(conn, fd, ssl) < 0) goto done;
             break;
 
         case H2_FRAME_HEADERS: {
@@ -4833,12 +4963,32 @@ static int handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 }
                 break;
             }
+            /* 121.50 (1): a window may not pass 2^31-1 (RFC 9113 6.9.1):
+             * FLOW_CONTROL_ERROR for the connection's, RST_STREAM for a
+             * stream's.  The sum is taken wide -- it used to be a signed
+             * 32-bit overflow. */
             if (hdr.stream_id == 0) {
+                if ((int64_t)conn->conn_window_send + increment >
+                    (int64_t)H2_MAX_WINDOW_SIZE) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_FLOW_CONTROL);
+                    goto done;
+                }
                 conn->conn_window_send += (int32_t)increment;
             } else {
                 H2Stream *stream = h2_stream_find(conn, hdr.stream_id);
-                if (stream) stream->window += (int32_t)increment;
+                if (stream) {
+                    if ((int64_t)stream->window + increment >
+                        (int64_t)H2_MAX_WINDOW_SIZE) {
+                        h2_send_rst_stream(conn, fd, ssl, hdr.stream_id,
+                                           H2_ERR_FLOW_CONTROL);
+                        h2_stream_release(stream);
+                        break;
+                    }
+                    stream->window += (int32_t)increment;
+                }
             }
+            if (h2_flush_pending(conn, fd, ssl) < 0) goto done;
             break;
         }
 
@@ -5011,7 +5161,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 "HTTP/1.1 204 No Content\r\n"
                 "Content-Length: 0\r\nConnection: %s\r\n", ch);
             if (hl2 > 0) SSL_write(ssl, hb, hl2);
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, NULL);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             log_request(client_ip, &req, 204, 0);
@@ -5040,7 +5190,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                     "HTTP/1.1 405 Method Not Allowed\r\n"
                     "Content-Length: %zu\r\nConnection: %s\r\n", bl, ch);
                 if (hl2 > 0) SSL_write(ssl, hb, hl2);
-                write_security_headers_ssl(ssl);
+                write_security_headers_ssl(ssl, &bad);
                 write_cors_headers_ssl(ssl);
                 SSL_write(ssl, "\r\n", 2);
                 if (bl) SSL_write(ssl, bad.body, (int)bl);
@@ -5121,7 +5271,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             /* No body for HEAD */
@@ -5152,7 +5302,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             SSL_write(ssl, tls_gz_buf, (int)tls_gz_len);
@@ -5177,7 +5327,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
-            write_security_headers_ssl(ssl);
+            write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);
@@ -5208,6 +5358,7 @@ static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
 {
     install_shutdown_handler(SIGTERM, serve_sighandler);   /* 127.69 */
     install_shutdown_handler(SIGINT,  serve_sighandler);   /* 127.69 */
+    install_reopen_handler();                              /* 121.53 */
 
     if (r) {
         route_count = r->count;
@@ -5224,6 +5375,7 @@ static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
             continue;
         }
         if (g_shutdown_requested) { close(fd); break; }
+        reopen_logs_if_requested();
         handle_tls_connection(fd, ssl_ctx);
     }
 }
@@ -5288,6 +5440,10 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 
     install_shutdown_handler(SIGTERM, workers_parent_sighandler);  /* 127.69 */
     install_shutdown_handler(SIGINT,  workers_parent_sighandler);  /* 127.69 */
+    /* 121.53 (1): SIGHUP killed the TLS supervisor (no handler), orphaning
+     * its workers on the port.  It now reopens the logs and passes the
+     * signal on, and each worker reopens its own at its next accept(). */
+    install_shutdown_handler(SIGHUP,  workers_parent_sighandler);
 
     pid_t tls_pids[TK_MAX_WORKERS];
     for (uint64_t i = 0; i < nworkers; i++) {
@@ -5317,6 +5473,13 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
             } else {
                 break;
             }
+        }
+
+        if (g_reload_requested) {                 /* 121.53 (1) */
+            g_reload_requested = 0;
+            tk_log_reopen_files();
+            for (uint64_t i = 0; i < nworkers; i++)
+                if (tls_pids[i] > 0) kill(tls_pids[i], SIGHUP);
         }
 
         if (g_shutdown_requested) {

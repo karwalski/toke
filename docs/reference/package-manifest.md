@@ -67,7 +67,7 @@ The `git` field is optional. When omitted, the compiler resolves the package nam
 
 Versions in a constraint are releases: a pre-release or build suffix in a constraint produces E9012, and so does anything after the version other than the `<` bound — an upper bound not above the lower bound (`">=2.0.0 <2.0.0"`) included. Tilde (`~`), caret (`^`), and wildcard (`*`) ranges are reserved for future versions and SHALL produce E9012 if used.
 
-Resolution takes, for each package, the highest minimum any constraint names (minimal version selection, ADR-0004) and then checks it against every constraint on that package: if it is not an exact version one of them names, or reaches an upper bound, no version satisfies the graph and resolution fails (E9010). Until story 121.46 the upper bound was never read — `">=1.2.0 <2.0.0"` meant `">=1.2.0"` — and an exact version acted as a minimum.
+Resolution takes, for each package, the highest minimum any constraint names (minimal version selection, ADR-0004) and then checks it against every constraint on that package: if it is not an exact version one of them names, or reaches an upper bound, no version satisfies the graph and resolution fails (E9025). Until story 121.46 the upper bound was never read — `">=1.2.0 <2.0.0"` meant `">=1.2.0"` — and an exact version acted as a minimum.
 
 ---
 
@@ -147,9 +147,17 @@ jsonparser = "sha256:<64 lower-case hex digits>"
 
 | Code  | Condition |
 |-------|-----------|
-| E9010 | No version of a dependency satisfies all constraints in the transitive graph. |
+| E9025 | No version of a dependency satisfies all constraints in the transitive graph. |
 | E9011 | Package name not found in the central index and no `git` URL specified. |
 | E9012 | Malformed `pkg.toml`: missing required field, invalid TOML, or unsupported constraint syntax. |
 | E9013 | Git clone/fetch failed for a dependency repository. |
 | E9014 | No git tag matches the resolved version for a dependency. |
 | W9010 | `pkg.lock` is out of date relative to `pkg.toml`. |
+
+These codes are reserved in the compiler's code registry (`src/pkg.h`,
+`docs/reference/errors.md`) but not yet emitted: the resolver is not wired
+into a `tkc` command. Until story 121.50 the unsatisfiable-constraints
+condition was documented here as E9010, a code the compiler already uses for
+"compiler limit exceeded"; codes are stable, so it moved to E9025, the next
+free code at the end of the E9xxx series (story 121.50; E9024 is the
+compiler's, 121.28).
