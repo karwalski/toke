@@ -87,8 +87,8 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
 | `c-internal` | called only from other C in `src/stdlib/` | 152 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 92 |
-| | **total** | **324** |
+| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 89 |
+| | **total** | **321** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -186,7 +186,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_clos_base` | `tk_runtime.c` | tk_runtime.c |
 | `tk_delegate_class` | `webview.c` | webview.c |
 | `tk_delete_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_err_msg` | `tk_runtime.c` | csv_glue.c, file_glue.c, ocr_glue.c, pdf_glue.c |
+| `tk_err_msg` | `tk_runtime.c` | csv_glue.c, file_glue.c, ocr_glue.c, pdf_glue.c, toon_glue.c |
 | `tk_err_release` | `tk_runtime.c` | tk_runtime.c |
 | `tk_error_log_get_global` | `log.c` | http.c, log.c |
 | `tk_error_log_open` | `log.c` | log.c, log_glue.c |
@@ -339,7 +339,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `dead` (92)
+### `dead` (89)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -401,9 +401,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_os_o_nofollow` | `os.c` | - |
 | `tk_ratelimit_check_w` | `tk_web_glue.c` | - |
 | `tk_ratelimit_new_w` | `tk_web_glue.c` | - |
-| `tk_regex_findall_w` | `tk_web_glue.c` | - |
-| `tk_regex_match_w` | `tk_web_glue.c` | - |
-| `tk_regex_replace_w` | `tk_web_glue.c` | - |
 | `tk_soap12_envelope_w` | `soap_glue.c` | - |
 | `tk_sort_ints_w` | `collections_glue.c` | - |
 | `tk_sort_strs_w` | `collections_glue.c` | - |
