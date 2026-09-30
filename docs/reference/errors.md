@@ -1111,7 +1111,7 @@ alternative, or repeats that expand past 2000 states. The diagnostic points
 at the offending byte inside the literal. Until 137.9 these patterns
 compiled and then matched nothing at run time, because a POSIX `regcomp`
 failure read as "no match". The supported language is in
-[str.md](../stdlib/str.md#regular-expressions); the same engine checks the
+[str.md](/docs/stdlib/str/#regular-expressions); the same engine checks the
 pattern here and runs it in the program, so they cannot disagree. A pattern
 held by an immutable `let` bound to a string literal is checked the same way
 (121.45) when that `let` is provably the binding the call reads: it is the

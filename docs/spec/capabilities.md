@@ -1,3 +1,10 @@
+---
+title: toke Capability Model
+slug: capabilities
+section: spec
+order: 11
+---
+
 # toke Capability Model [N]
 
 **Status:** implemented (Epic 124.4a–d, 2026-07-06); deny-by-default since the

@@ -1262,6 +1262,11 @@ endif
 ifeq ($(strip $(TOKE_WORKSPACE)),)
 TOKE_WORKSPACE := $(abspath $(CURDIR)/..)
 endif
+# 132.108 -- `--self` also scans THIS repository's docs/, README and
+# PROJECT_STATUS.  The sweep skips each sibling's mirror of toke's docs
+# (toke-website content/docs) as "scanned at the source", but the source was
+# never in the list: ecosystem.md said 68 stdlib modules against a fact sheet
+# of 67 and this target stayed green.
 SIBLING_NAMES := toke-spec toke-corpus toke-model toke-eval toke-mcp \
                  toke-console toke-cloud toke-ooke toke-test-programs \
                  toke-tokenizer toke-website homebrew-toke \
@@ -1284,7 +1289,7 @@ check-claims-all:
 	  fi; \
 	fi; \
 	echo "checking claims across $$n of $(words $(SIBLING_NAMES)) sibling repositories:$$repos"; \
-	python3 scripts/check_metrics_claims.py $$repos --list && \
+	python3 scripts/check_metrics_claims.py $$repos --self --list && \
 	python3 scripts/check_canonical.py $$repos --list
 
 # 132.14 — project-facts gate. Every countable project-scale number (character

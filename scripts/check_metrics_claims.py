@@ -41,11 +41,15 @@ tokenizer_v03, proxy8k, the toke SentencePiece models) must never be named in a
 comparison alongside a non-toke baseline language. Sentences that *forbid* the
 practice are recognised and allowed.
 
-Usage:  python3 scripts/check_metrics_claims.py [paths...] [--strict] [--list]
+Usage:  python3 scripts/check_metrics_claims.py [paths...] [--self] [--strict] [--list]
         python3 scripts/check_metrics_claims.py --selftest
         A path argument resolves against the current directory, like any other
         command-line tool (story 132.79); with no path, the defaults below are
         scanned in this repository wherever the command is run from.
+        --self scans those defaults AS WELL AS the given paths (story 132.108):
+        `make check-claims-all` passes it, because it names only the sibling
+        repositories and skips their mirrors of toke's docs as "scanned at the
+        source" -- without --self the source was scanned by nothing.
 Exit:   0 clean (pending-story files warn only), 1 on a violation.
         --strict also fails on the pending-story files.
 
@@ -1498,6 +1502,17 @@ def selftest_structure():
             bad += 1
             print("SELFTEST FAIL [structure] a tree named toke-website/content/docs "
                   "with no build script was excluded by name")
+    # 132.108: --self keeps this repository's own docs in a sweep of siblings
+    sib = os.path.join(os.path.dirname(ROOT), "toke-mcp")
+    own_docs = os.path.join(ROOT, "docs")
+    if own_docs not in resolve_targets([sib], with_self=True):
+        bad += 1
+        print("SELFTEST FAIL [structure] --self dropped this repo's docs/ from a "
+              "sweep of sibling paths")
+    if own_docs in resolve_targets([sib]):
+        bad += 1
+        print("SELFTEST FAIL [structure] an explicit path pulled in this repo's "
+              "docs/ without --self")
     return bad
 
 
@@ -1534,6 +1549,24 @@ def selftest():
     return 0
 
 
+def resolve_targets(argv, with_self=False):
+    """The paths to scan. 132.79: an argument is the caller's path, so it
+    resolves against the cwd; only the DEFAULTS are this repository's own.
+
+    132.108: with_self (`--self`) adds the defaults to explicit paths. Until
+    then `make check-claims-all` passed only the siblings, whose mirror of
+    toke's docs (content/docs) is skipped as scanned at its source -- so a
+    wrong count in toke docs/ (ecosystem.md "68 modules" against a fact sheet
+    of 67) passed that sweep, and its synced copy on the site passed with it."""
+    own = [os.path.join(ROOT, t) for t in DEFAULT_TARGETS]
+    if not argv:
+        return own
+    targets = [os.path.abspath(t) for t in argv]
+    if with_self:
+        targets += [t for t in own if t not in targets]
+    return targets
+
+
 def main():
     if "--selftest" in sys.argv:
         return selftest()
@@ -1542,8 +1575,7 @@ def main():
     # 132.79: an argument is the caller's path, so it resolves against the cwd
     # (`test`, typed in toke-mcp, is toke-mcp's test/). Only the DEFAULTS are
     # this repository's own, so only they are joined to ROOT.
-    targets = ([os.path.abspath(t) for t in argv] if argv
-               else [os.path.join(ROOT, t) for t in DEFAULT_TARGETS])
+    targets = resolve_targets(argv, "--self" in sys.argv)
     for t in targets:
         if not os.path.exists(t):
             print("ERROR: no such path: %s" % t)

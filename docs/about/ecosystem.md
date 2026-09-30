@@ -56,6 +56,6 @@ Every tool in the toke ecosystem uses a single consonant prefix followed by `oke
 | Human experience | aoke | Reserved | UX, design systems, accessibility |
 | Intelligence | loke | **Production** | Privacy, token optimisation, routing |
 | Web | ooke | **Production** | Static site gen, web framework (builds tokelang.dev; std.http serves it); 3.0.0-rc.1, unpublished |
-| Language | toke | **Production** | Compiler, spec, stdlib (68 modules) |
+| Language | toke | **Production** | Compiler, spec, stdlib (67 modules) |
 | Data/demo | moke | **Active** | Analysis demo (in loke) |
 | Hardware | zoke | Reserved | Drivers, ISA, FPGA |
