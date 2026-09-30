@@ -98,6 +98,22 @@ static int64_t toon_raise(ToonErrKind kind, const char *msg) {
     return 0;
 }
 
+/* 127.246 (2): the typed accessors raise a real box too.  Until 2026-09-30
+ * toon.str/i64/f64/bool/arr stored the payload-less flag 1, so `$err:e` bound
+ * nil and a match on $parse/$type/$missing could not be written usefully.
+ * The message names the call and the key, and is copied through tk_err_msg's
+ * per-thread ring (tk_runtime.c) because the key is the caller's string. */
+const char *tk_err_msg(const char *fmt, ...);
+static int64_t toon_raise_at(const char *op, ToonErr e, int64_t key) {
+    const char *why = e.kind == TOON_ERR_MISSING ? "missing key"
+                    : (e.msg && *e.msg ? e.msg : "parse error");
+    return toon_raise(e.kind, tk_err_msg("%s: %s: %s", op, why,
+                          key ? (const char *)(intptr_t)key : ""));
+}
+static int64_t toon_raise_null(const char *op) {
+    return toon_raise(TOON_ERR_PARSE, tk_err_msg("%s: null toon or key", op));
+}
+
 int64_t tk_toon_dec_w(int64_t s) {
     if (!s) return toon_raise(TOON_ERR_PARSE, "toon.dec: null input");
     ToonResult r = toon_dec((const char *)(intptr_t)s);
@@ -122,11 +138,12 @@ int64_t tk_toon_tojson_w(int64_t v) {
 }
 
 int64_t tk_toon_i64_w(int64_t v, int64_t key) {
-    if (!v || !key) { tk_current_error = 1; return 0; }
+    if (!v || !key) return toon_raise_null("toon.i64");
     Toon *t = (Toon *)(intptr_t)v;
     I64ToonResult r = toon_i64(*t, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : r.ok;
+    if (r.is_err) return toon_raise_at("toon.i64", r.err, key);
+    tk_current_error = 0;
+    return r.ok;
 }
 
 int64_t tk_toon_getint_w(int64_t obj, int64_t key) {
@@ -151,11 +168,12 @@ int64_t tk_toon_fromstr_w(int64_t s) {
 }
 
 int64_t tk_toon_bool_w(int64_t v, int64_t key) {
-    if (!v || !key) { tk_current_error = 1; return 0; }
+    if (!v || !key) return toon_raise_null("toon.bool");
     Toon *t = (Toon *)(intptr_t)v;
     BoolToonResult r = toon_bool(*t, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)r.ok;
+    if (r.is_err) return toon_raise_at("toon.bool", r.err, key);
+    tk_current_error = 0;
+    return (int64_t)r.ok;
 }
 
 int64_t tk_toon_deserialize_w(int64_t s) {
@@ -180,40 +198,49 @@ int64_t tk_toon_tostr_w(int64_t v) {
  * calloc block.
  */
 int64_t tk_toon_arr_w(int64_t v, int64_t key) {
-    if (!v || !key) { tk_current_error = 1; return tk_arr_alloc(0, 0); }
+    if (!v || !key) return toon_raise_null("toon.arr");
     Toon *t = (Toon *)(intptr_t)v;
     ToonArrayResult r = toon_arr(*t, (const char *)(intptr_t)key);
-    if (r.is_err) { tk_current_error = 1; return tk_arr_alloc(0, 0); }
-    tk_current_error = 0;
+    if (r.is_err) return toon_raise_at("toon.arr", r.err, key);
 
     int64_t n = (int64_t)r.ok.len;
     int64_t h = tk_arr_alloc(n, n);
-    if (!h) { tk_current_error = 1; return tk_arr_alloc(0, 0); }
+    if (!h) {
+        free(r.ok.data);
+        return toon_raise(TOON_ERR_PARSE, "toon.arr: out of memory");
+    }
     int64_t *slots = (int64_t *)(intptr_t)h;
     for (int64_t i = 0; i < n; i++) {
         Toon *elem = (Toon *)malloc(sizeof(Toon));
-        if (!elem) { tk_arr_setlen(h, i); tk_current_error = 1; return h; }
+        if (!elem) {
+            for (int64_t j = 0; j < i; j++) free((void *)(intptr_t)slots[j]);
+            free(r.ok.data);
+            return toon_raise(TOON_ERR_PARSE, "toon.arr: out of memory");
+        }
         *elem = r.ok.data[i];
         slots[i] = (int64_t)(intptr_t)elem;
     }
     free(r.ok.data);
+    tk_current_error = 0;
     return h;
 }
 
 int64_t tk_toon_f64_w(int64_t v, int64_t key) {
-    if (!v || !key) { tk_current_error = 1; return f64_to_i64(0.0); }
+    if (!v || !key) { toon_raise_null("toon.f64"); return f64_to_i64(0.0); }
     Toon *t = (Toon *)(intptr_t)v;
     F64ToonResult r = toon_f64(*t, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return f64_to_i64(r.is_err ? 0.0 : r.ok);
+    if (r.is_err) { toon_raise_at("toon.f64", r.err, key); return f64_to_i64(0.0); }
+    tk_current_error = 0;
+    return f64_to_i64(r.ok);
 }
 
 int64_t tk_toon_str_w(int64_t v, int64_t key) {
-    if (!v || !key) { tk_current_error = 1; return 0; }
+    if (!v || !key) return toon_raise_null("toon.str");
     Toon *t = (Toon *)(intptr_t)v;
     StrToonResult r = toon_str(*t, (const char *)(intptr_t)key);
-    tk_current_error = r.is_err ? 1 : 0;
-    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+    if (r.is_err) return toon_raise_at("toon.str", r.err, key);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)r.ok;
 }
 
 /*
