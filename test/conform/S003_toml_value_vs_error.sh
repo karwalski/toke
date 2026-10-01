@@ -45,17 +45,22 @@ echo "S003: std.toml distinguishes a value of false/0 from an error"
 echo "--------------------------------------"
 
 # ── 1: the wrapper-level protocol ─────────────────────────────────────
+# 127.268: the link set is the one a program importing std.toml is linked
+# with, read from tkc's own dependency table (src/stdlib_deps.c via
+# --emit-deps): the real runtime, toml's cores, glue, vendored parser and
+# dependencies.  It used to be listed here by hand, and 121.74's toml.c ->
+# file.c dependency broke it at merge.  -DTK_TEST_REAL_RUNTIME retires the
+# test's own runtime stand-ins in favour of the real tk_runtime.c.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${REPO_ROOT}/src/stdlib" toml)" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
-        -Wno-misleading-indentation -g \
+        -Wno-misleading-indentation -g -DTK_TEST_REAL_RUNTIME \
         -I"${REPO_ROOT}/stdlib/vendor/tomlc99" \
         -o "${WORK}/test_toml_glue" \
         "${REPO_ROOT}/test/stdlib/test_toml_glue.c" \
-        "${REPO_ROOT}/src/stdlib/toml.c" \
-        "${REPO_ROOT}/src/stdlib/file.c" \
-        "${REPO_ROOT}/src/stdlib/toml_glue.c" \
-        "${REPO_ROOT}/src/stdlib/capabilities.c" \
-        "${REPO_ROOT}/stdlib/vendor/tomlc99/toml.c" \
-        >"${WORK}/build.log" 2>&1; then
+        "${LINK[@]}" \
+        -lm -lpthread >"${WORK}/build.log" 2>&1; then
     echo "  FAIL: wrapper harness did not build"
     sed 's/^/      /' "${WORK}/build.log"
     echo "Results: 0 passed, 1 failed"

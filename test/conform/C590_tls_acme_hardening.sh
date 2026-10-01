@@ -38,6 +38,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C590_STDLIB:-${REPO_ROOT}/src/stdlib}"
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  t_acme.c #includes acme.c itself, so
+# it is left out of the acme set.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" tls)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_TLS=(); while IFS= read -r l; do LINK_TLS+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except acme.c http)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_ACME=(); while IFS= read -r l; do LINK_ACME+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c590_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 PASS=0; FAIL=0
@@ -223,7 +233,7 @@ int main(void) {
 }
 C
 # shellcheck disable=SC2086
-case_run tls "${WORK}/t_tls.c" "${S}/tls.c" "${S}/capabilities.c" ${OSSL_LIBS} -lpthread
+case_run tls "${WORK}/t_tls.c" "${LINK_TLS[@]}" ${OSSL_LIBS} -lpthread
 
 # ── acme ────────────────────────────────────────────────────────────────────
 cat > "${WORK}/t_acme.c" <<C
@@ -354,9 +364,7 @@ int main(void) {
 }
 C
 # shellcheck disable=SC2086
-case_run acme "${WORK}/t_acme.c" "${S}/http.c" "${S}/http2.c" \
-    "${S}/encoding.c" "${S}/str.c" "${S}/log.c" "${S}/capabilities.c" "${S}/router.c" "${S}/ws.c" \
-    "${S}/crypto.c" "${S}/tk_time.c" ${OSSL_LIBS} -lz -lpthread
+case_run acme "${WORK}/t_acme.c" "${LINK_ACME[@]}" ${OSSL_LIBS} -lz -lpthread
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

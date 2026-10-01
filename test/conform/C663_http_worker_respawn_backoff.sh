@@ -146,9 +146,15 @@ scenario() {
     stop "${SRV}"; SRV=""
 }
 
+# 127.268: the rest of std.http's link set (h.c #includes http.c itself)
+# comes from tkc's dependency table, not a hand list.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http 2> "${WORK}/linkset.err")" \
+    || { fail "harness link set: $(head -c 400 "${WORK}/linkset.err")"; echo "Results: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 if ${CC} -std=c99 -D_GNU_SOURCE -g -O1 -iquote "${S}" -I"${S}" -o "${WORK}/plain" \
-        "${WORK}/h.c" "${S}/encoding.c" "${S}/str.c" "${S}/log.c" "${S}/capabilities.c" \
-        -lz -lpthread > "${WORK}/plain.cc" 2>&1; then
+        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" "${WORK}/h.c" "${LINK[@]}" \
+        -lz -lpthread -lm > "${WORK}/plain.cc" 2>&1; then
     scenario plain http "${WORK}/plain" plain
 else
     fail "plain: harness build: $(grep -a -m2 error "${WORK}/plain.cc" | head -c 300)"
@@ -165,8 +171,8 @@ elif ! openssl req -x509 -newkey rsa:2048 -keyout "${WORK}/key.pem" -out "${WORK
     fail "tls: could not generate a self-signed certificate"
 elif ${CC} -std=c99 -D_GNU_SOURCE -g -O1 -DTK_HAVE_OPENSSL -Wno-deprecated-declarations \
         -I"${OSSL_INC}" -iquote "${S}" -I"${S}" -o "${WORK}/tls" "${WORK}/h.c" \
-        "${S}/encoding.c" "${S}/str.c" "${S}/log.c" "${S}/capabilities.c" "${S}/http2.c" \
-        -L"$(dirname "${OSSL_INC}")/lib" -lssl -lcrypto -lz -lpthread > "${WORK}/tls.cc" 2>&1; then
+        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" "${LINK[@]}" \
+        -L"$(dirname "${OSSL_INC}")/lib" -lssl -lcrypto -lz -lpthread -lm > "${WORK}/tls.cc" 2>&1; then
     scenario tls https "${WORK}/tls" tls "${WORK}/cert.pem" "${WORK}/key.pem"
 else
     fail "tls: harness build: $(grep -a -m2 error "${WORK}/tls.cc" | head -c 300)"

@@ -147,12 +147,19 @@ int main(void) {
 }
 C
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+# http.c is #included into t.c above, so it is left out of the set.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http)" \
+    || { echo "  FAIL: stdlib link set: see stderr above"; echo "C209: FAIL (build)"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 # shellcheck disable=SC2086
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -DTK_HAVE_OPENSSL -g -O1 ${SAN} -iquote "${S}" ${OSSL_CFLAGS} \
         -Wno-deprecated-declarations -Wno-unused-function -o "${WORK}/t" "${WORK}/t.c" \
-        "${S}/http2.c" "${S}/encoding.c" "${S}/str.c" "${S}/log.c" "${S}/capabilities.c" \
-        ${OSSL_LIBS} -lz -lpthread >"${WORK}/cc.log" 2>&1; then
+        "${LINK[@]}" ${OSSL_LIBS} -lz -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     echo "C209: FAIL (build)"
     exit 1

@@ -43,7 +43,21 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 CF="-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote ${S} -I${S}"
-CORE="${S}/encrypt.c ${S}/crypto.c ${S}/encoding.c ${S}/str.c"
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  linkset NAME ARGS... fills array NAME;
+# --except names a file the driver #includes itself.
+linkset() {
+    local name="$1" out; shift
+    out="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" "$@")" \
+        || { echo "  FAIL: stdlib link set ($*): see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
+    eval "${name}=()"
+    while IFS= read -r l; do eval "${name}+=(\"\${l}\")"; done <<< "${out}"
+}
+linkset CORE encrypt
+linkset LINK_JWT auth
+linkset LINK_TOTP --except auth.c auth
+linkset LINK_OAEP --except encrypt.c encrypt
 
 echo "C452: crypto core hardening (120.9 CRY-01 AUTH-01 AUTH-02 ENC-02 HYG-01)"
 echo "-------------------------------------------------------------------------"
@@ -92,8 +106,8 @@ int main(int argc, char **argv) {
 }
 C
 if "${CC}" ${CF} -DTK_RNG_PORTABLE -DTK_URANDOM_PATH='"/nonexistent/tk-c452-urandom"' \
-        -o "${WORK}/rng_dead" "${WORK}/rng.c" ${CORE} >"${WORK}/rng1.cc" 2>&1 \
-   && "${CC}" ${CF} -DTK_RNG_PORTABLE -o "${WORK}/rng_live" "${WORK}/rng.c" ${CORE} >"${WORK}/rng2.cc" 2>&1; then
+        -o "${WORK}/rng_dead" "${WORK}/rng.c" "${CORE[@]}" >"${WORK}/rng1.cc" 2>&1 \
+   && "${CC}" ${CF} -DTK_RNG_PORTABLE -o "${WORK}/rng_live" "${WORK}/rng.c" "${CORE[@]}" >"${WORK}/rng2.cc" 2>&1; then
     for g in aeskey aesnonce chacha x25519 ed25519 randbytes bcrypt; do
         # (the group's stderr swallows bash's own "Abort trap" job notice)
         { "${WORK}/rng_dead" "${g}" >"${WORK}/rng_${g}.out" 2>&1; } 2>/dev/null
@@ -162,7 +176,7 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" ${CF} -o "${WORK}/jwt" "${WORK}/jwt.c" "${S}/auth.c" "${S}/encoding.c" "${S}/crypto.c" "${S}/str.c" >"${WORK}/jwt.cc" 2>&1; then
+if "${CC}" ${CF} -o "${WORK}/jwt" "${WORK}/jwt.c" "${LINK_JWT[@]}" >"${WORK}/jwt.cc" 2>&1; then
     "${WORK}/jwt" >"${WORK}/jwt.out" 2>&1
     report "AUTH-01" "${WORK}/jwt.out" $?
 else
@@ -218,7 +232,7 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" ${CF} -Wno-unused-function -o "${WORK}/totp" "${WORK}/totp.c" "${S}/encoding.c" "${S}/crypto.c" "${S}/str.c" >"${WORK}/totp.cc" 2>&1; then
+if "${CC}" ${CF} -Wno-unused-function -o "${WORK}/totp" "${WORK}/totp.c" "${LINK_TOTP[@]}" >"${WORK}/totp.cc" 2>&1; then
     "${WORK}/totp" >"${WORK}/totp.out" 2>&1
     report "AUTH-02" "${WORK}/totp.out" $?
 else
@@ -282,7 +296,7 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" ${CF} -Wno-unused-function -o "${WORK}/oaep" "${WORK}/oaep.c" "${S}/crypto.c" "${S}/encoding.c" "${S}/str.c" >"${WORK}/oaep.cc" 2>&1; then
+if "${CC}" ${CF} -Wno-unused-function -o "${WORK}/oaep" "${WORK}/oaep.c" "${LINK_OAEP[@]}" >"${WORK}/oaep.cc" 2>&1; then
     "${WORK}/oaep" >"${WORK}/oaep.out" 2>&1
     report "ENC-02" "${WORK}/oaep.out" $?
 else

@@ -61,37 +61,23 @@ trap 'rm -rf "${WORK}"' EXIT
 echo "S009: a heap response body is released with the request"
 echo "--------------------------------------"
 
-# tk_runtime.c: since 138.3 the glue's client calls raise through
-# tk_current_error / tk_err_box, which every compiled program links from it
-# (with args.c, which tk_runtime.c calls).
+# 127.268: the stdlib link set is the one a program importing std.http is
+# linked with, read from tkc's own dependency table (src/stdlib_deps.c via
+# --emit-deps) -- runtime, capabilities, http's cores and glue, and their
+# dependencies.  It used to be listed here by hand, and a stdlib dependency
+# change (121.74: toml.c -> file.c) broke the build at merge.
 # tk_web_glue.c carries several helpers that are unused unless the whole glue
 # surface is linked, so -Wno-unused-function here; the production build of
 # this file is unchanged and still -Werror.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${REPO_ROOT}/src/stdlib" http)" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
         -Wno-misleading-indentation -Wno-unused-function -g \
         -iquote "${REPO_ROOT}/src/stdlib" -I"${REPO_ROOT}/stdlib/vendor/tomlc99" \
         -o "${WORK}/test_http_res_body_ownership" \
         "${REPO_ROOT}/test/stdlib/test_http_res_body_ownership.c" \
-        "${REPO_ROOT}/src/stdlib/tk_web_glue.c" \
-        "${REPO_ROOT}/src/stdlib/http.c" \
-        "${REPO_ROOT}/src/stdlib/encoding.c" \
-        "${REPO_ROOT}/src/stdlib/str.c" \
-        "${REPO_ROOT}/src/stdlib/log.c" \
-        "${REPO_ROOT}/src/stdlib/capabilities.c" \
-        "${REPO_ROOT}/src/stdlib/auth.c" \
-        "${REPO_ROOT}/src/stdlib/crypto.c" \
-        "${REPO_ROOT}/src/stdlib/dashboard.c" \
-        "${REPO_ROOT}/src/stdlib/router.c" \
-        "${REPO_ROOT}/src/stdlib/task.c" \
-        "${REPO_ROOT}/src/stdlib/template.c" \
-        "${REPO_ROOT}/src/stdlib/toml.c" \
-        "${REPO_ROOT}/src/stdlib/file.c" \
-        "${REPO_ROOT}/src/stdlib/chart.c" \
-        "${REPO_ROOT}/src/stdlib/html.c" \
-        "${REPO_ROOT}/src/stdlib/ws.c" \
-        "${REPO_ROOT}/src/stdlib/tk_runtime.c" \
-        "${REPO_ROOT}/src/stdlib/args.c" \
-        "${REPO_ROOT}/stdlib/vendor/tomlc99/toml.c" \
+        "${LINK[@]}" \
         -lz -lpthread -lm >"${WORK}/build.log" 2>&1; then
     echo "  FAIL: harness did not build"
     sed 's/^/      /' "${WORK}/build.log" | head -20

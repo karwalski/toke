@@ -53,6 +53,20 @@ export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 echo "C136: shared strbuf; stdlib accumulators neither overflow nor truncate"
 echo "----------------------------------------------------------------------"
 
+# lset NAME [--except F]... MODULE... -- fill the array LS_<NAME> with the
+# stdlib link set for those modules.  127.268: the set comes from tkc's own
+# dependency table (src/stdlib_deps.c via --emit-deps), not a hand list that
+# a stdlib dependency change silently breaks.  A case whose set cannot be
+# resolved fails visibly and is not run.
+lset() {
+    local n="$1" out l; shift
+    if ! out="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" "$@")"; then
+        fail "${n}: stdlib link set: see stderr above"; return 1
+    fi
+    eval "LS_${n}=()"
+    while IFS= read -r l; do eval "LS_${n}+=(\"\${l}\")"; done <<< "${out}"
+}
+
 # case NAME SOURCE-FILE LINK-ARGS...  — build + run; the program prints
 # "OK <what>" lines for passes and "BAD <what>" for failures.
 case_run() {
@@ -136,7 +150,7 @@ int main(void) {
     return 0;
 }
 C
-case_run toon "${WORK}/t_toon.c" "${S}/toon.c" "${S}/file.c"
+lset toon toon && case_run toon "${WORK}/t_toon.c" "${LS_toon[@]}"
 
 # ── yaml ───────────────────────────────────────────────────────────────────
 cat > "${WORK}/t_yaml.c" <<'C'
@@ -161,7 +175,7 @@ int main(void) {
     return 0;
 }
 C
-case_run yaml "${WORK}/t_yaml.c" "${S}/yaml.c" "${S}/file.c" "${S}/str.c" "${S}/crypto.c" "${S}/tk_time.c" "${S}/encoding.c"
+lset yaml yaml && case_run yaml "${WORK}/t_yaml.c" "${LS_yaml[@]}"
 
 # ── proxy (static proxy_build_request, reached by including the file) ──────
 cat > "${WORK}/t_proxy.c" <<C
@@ -189,8 +203,9 @@ int main(void) {
     return 0;
 }
 C
-case_run proxy "${WORK}/t_proxy.c" "${S}/http.c" "${S}/encoding.c" "${S}/str.c" "${S}/log.c" \
-    "${S}/capabilities.c" "${S}/router.c" "${S}/ws.c" "${S}/crypto.c" "${S}/tk_time.c" -lz -lpthread
+# proxy.c is #included above, so it is left out of the set.
+lset proxy --except proxy.c http \
+    && case_run proxy "${WORK}/t_proxy.c" "${LS_proxy[@]}" -lz -lm -lpthread
 
 # ── ws_connect over loopback ───────────────────────────────────────────────
 cat > "${WORK}/t_ws.c" <<'C'
@@ -272,9 +287,10 @@ int main(void) {
 }
 C
     # shellcheck disable=SC2086
-    case_run acme "${WORK}/t_acme.c" -DTK_HAVE_OPENSSL ${OSSL_CFLAGS} "${S}/http.c" "${S}/http2.c" \
-        "${S}/encoding.c" "${S}/str.c" "${S}/log.c" "${S}/capabilities.c" "${S}/router.c" "${S}/ws.c" \
-        "${S}/crypto.c" "${S}/tk_time.c" ${OSSL_LIBS} -lz -lpthread
+    # acme.c is #included above, so it is left out of the set.
+    lset acme --except acme.c http \
+        && case_run acme "${WORK}/t_acme.c" -DTK_HAVE_OPENSSL ${OSSL_CFLAGS} "${LS_acme[@]}" \
+            ${OSSL_LIBS} -lz -lm -lpthread
 fi
 
 # ── svg ────────────────────────────────────────────────────────────────────

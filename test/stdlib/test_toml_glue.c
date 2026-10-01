@@ -32,14 +32,19 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Defined in src/stdlib/tk_runtime.c in a real program; provided here so the
- * unit test links without dragging the runtime in.  The wrappers declare it
- * extern and are the things under test.
+/* Defined in src/stdlib/tk_runtime.c in a real program.  `make
+ * test-stdlib-toml-glue` stands them in here so the unit test links without
+ * the runtime; test/conform/S003 links the real runtime instead (its link set
+ * comes from tkc's dependency table, 127.268) and builds with
+ * -DTK_TEST_REAL_RUNTIME so these stand-ins step aside.
  *
- * 127.101: this stand-in MUST use the same thread-local spelling as the real
+ * 127.101: the stand-in MUST use the same thread-local spelling as the real
  * definition.  A plain global here against toml_glue.c's thread-local extern
  * links with no diagnostic and then takes SIGBUS on the first wrapper call —
  * which is exactly how this test failed when the slot became thread-local. */
+#ifdef TK_TEST_REAL_RUNTIME
+#include "../../src/stdlib/tk_runtime.h"
+#else
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 _Thread_local int64_t tk_current_error = 0;
 #else
@@ -47,16 +52,24 @@ __thread int64_t tk_current_error = 0;
 #endif
 
 /* 127.182: a failure now stores a one-slot {msg} box built by tk_err_box
- * (tk_runtime.c) — stood in for here like the slot itself.  A raised error is
- * recognised by the slot pointing at this box with a non-empty message. */
+ * (tk_runtime.c) — stood in for here like the slot itself. */
 static int64_t g_errbox[8];
 void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
-static int raised(void)
+#endif
+
+#define POISON_VALUE 0x5eed
+
+/* The message of the raised error, or NULL.  A raised error is the slot
+ * pointing at a {msg} box with a non-empty message; the poison value (below)
+ * is "never touched", not an error. */
+static const char *raised_msg(void)
 {
-    if (tk_current_error != (int64_t)(intptr_t)g_errbox) return 0;
-    const char *m = (const char *)(intptr_t)g_errbox[0];
-    return m && m[0];
+    int64_t e = tk_current_error;
+    if (e == 0 || e == POISON_VALUE) return NULL;
+    const char *m = (const char *)(intptr_t)((const int64_t *)(intptr_t)e)[0];
+    return (m && m[0]) ? m : NULL;
 }
+static int raised(void) { return raised_msg() != NULL; }
 
 int64_t tk_toml_load_w   (int64_t src);
 int64_t tk_toml_section_w(int64_t tab, int64_t key);
@@ -74,7 +87,7 @@ static int failures = 0;
 
 /* Poison the error global so "the wrapper never touched it" is a failure and
  * not an accidental pass. */
-#define POISON() (tk_current_error = 0x5eed)
+#define POISON() (tk_current_error = POISON_VALUE)
 
 static const char *DOC =
     "minify = false\n"
@@ -98,7 +111,7 @@ int main(void)
     int64_t bad = tk_toml_load_w(S("this is = = not toml\n["));
     ASSERT(bad == 0,               "toml.load of a malformed document returns 0");
     ASSERT(raised(), "toml.load failure sets tk_current_error");
-    ASSERT(raised() && strstr((const char *)(intptr_t)g_errbox[0], "line") != NULL,
+    ASSERT(raised() && strstr(raised_msg(), "line") != NULL,
                                    "127.182 toml.load failure carries the parser's own message");
 
     /* ── toml.bool: the reported P0 ────────────────────────────────── */

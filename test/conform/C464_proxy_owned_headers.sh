@@ -37,6 +37,13 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 echo "C464: the proxy owns Content-Length and X-Forwarded-*"
 echo "------------------------------------------------------"
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.  h.c #includes proxy.c itself.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except proxy.c http)" \
+    || { fail "stdlib link set: see stderr above"; echo "C464: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 cat > "${WORK}/h.c" <<'EOF'
 #include "proxy.c"
 static int bad;
@@ -81,8 +88,8 @@ EOF
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-unused-function -iquote "${S}" -I"${S}" \
-        -o "${WORK}/h" "${WORK}/h.c" "${S}/http.c" "${S}/encoding.c" "${S}/str.c" \
-        "${S}/log.c" "${S}/capabilities.c" -lz -lpthread >"${WORK}/cc" 2>&1; then
+        -o "${WORK}/h" "${WORK}/h.c" \
+        "${LINK[@]}" -lz -lpthread -lm >"${WORK}/cc" 2>&1; then
     fail "build: $(grep -a -m2 error "${WORK}/cc" | head -c 300)"
 else
     ASAN_OPTIONS=detect_leaks=0 "${WORK}/h" >"${WORK}/out" 2>&1

@@ -115,8 +115,13 @@ int main(int argc, char **argv) {
 }
 C
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" svg chart)" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
-        -o "${WORK}/drv" "${WORK}/drv.c" "${S}/svg.c" "${S}/chart.c" -lm \
+        -o "${WORK}/drv" "${WORK}/drv.c" "${LINK[@]}" -lm -lz -lpthread \
         >"${WORK}/cc.log" 2>&1; then
     fail "driver does not build against ${S}"
     sed 's/^/      /' "${WORK}/cc.log" | head -20

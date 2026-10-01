@@ -203,9 +203,15 @@ int main(void) {
     return 0;
 }
 EOF
-if "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/rt" \
-        "${WORK}/rt.c" "${ROUTER_SRC}" "${REPO_ROOT}/src/stdlib/ws.c" \
-        "${REPO_ROOT}/src/stdlib/capabilities.c" -lz 2> "${WORK}/cc3.err"; then
+# 127.268: the rest of the link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.  router.c is ROUTER_SRC, supplied here.
+LINK_RT=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --except router.c router 2> "${WORK}/cc3.err")"; then
+    while IFS= read -r l; do LINK_RT+=("$l"); done <<< "${LINKSET}"
+fi
+if [ "${#LINK_RT[@]}" -gt 0 ] && "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/rt" \
+        "${WORK}/rt.c" "${ROUTER_SRC}" "${LINK_RT[@]}" -lz -lm -lpthread 2>> "${WORK}/cc3.err"; then
     "${WORK}/rt" > "${WORK}/rt.out" 2>&1; rc=$?
     expect "router-ws-param-miss" "${rc} $(awk '/^survived$/{n++} END{print n+0}' "${WORK}/rt.out")" "0 1"
 else
@@ -245,13 +251,17 @@ int main(void) {
     return 0;
 }
 EOF
-if "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" \
+# 127.268: the link set around the instrumented http2.o comes from tkc's own
+# dependency table; http2.c is HTTP2_SRC, compiled separately above it.
+LINK_HP=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --except http2.c http 2> "${WORK}/cc4.err")"; then
+    while IFS= read -r l; do LINK_HP+=("$l"); done <<< "${LINKSET}"
+fi
+if [ "${#LINK_HP[@]}" -gt 0 ] && "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" \
         -Dmalloc=fi_malloc -Dcalloc=fi_calloc -Drealloc=fi_realloc -Dfree=fi_free -Dstrdup=fi_strdup \
-        -c -o "${WORK}/http2.o" "${HTTP2_SRC}" 2> "${WORK}/cc4.err" \
+        -c -o "${WORK}/http2.o" "${HTTP2_SRC}" 2>> "${WORK}/cc4.err" \
    && "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/hp" \
-        "${WORK}/hp.c" "${WORK}/http2.o" "${REPO_ROOT}/src/stdlib/http.c" \
-        "${REPO_ROOT}/src/stdlib/capabilities.c" "${REPO_ROOT}/src/stdlib/encoding.c" \
-        "${REPO_ROOT}/src/stdlib/log.c" -lm -lz -lpthread 2>> "${WORK}/cc4.err"; then
+        "${WORK}/hp.c" "${WORK}/http2.o" "${LINK_HP[@]}" -lm -lz -lpthread 2>> "${WORK}/cc4.err"; then
     "${WORK}/hp" > "${WORK}/hp.out" 2>&1
     expect "hpack-bad-value-no-leak" "$(awk '$1=="hpack"{print $2, $3, $4}' "${WORK}/hp.out")" "-1 0 0"
 else

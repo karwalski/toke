@@ -275,8 +275,16 @@ int main(void) {
     return 0;
 }
 C
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" llm)" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK_LLM=(); while IFS= read -r l; do LINK_LLM+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" mlx)" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK_MLX=(); while IFS= read -r l; do LINK_MLX+=("$l"); done <<< "${LINKSET}"
 # shellcheck disable=SC2086
-CASE_CFLAGS="-DTK_HAVE_OPENSSL ${OSSL_CFLAGS}" case_run llm "${WORK}/t_llm.c" "${S}/llm.c" "${S}/capabilities.c" ${OSSL_LIBS} -lpthread
+CASE_CFLAGS="-DTK_HAVE_OPENSSL ${OSSL_CFLAGS}" case_run llm "${WORK}/t_llm.c" "${LINK_LLM[@]}" ${OSSL_LIBS} -lpthread -lm
 
 # ── e2e: a toke program through tkc ────────────────────────────────────────
 if [ -x "${TKC}" ]; then
@@ -330,7 +338,7 @@ int main(void) {
 }
 C
     CASE_CFLAGS="-DMLX_BRIDGE_PORT=${MLX_PORT}" "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DMLX_BRIDGE_PORT="${MLX_PORT}" \
-        -iquote "${S}" -I"${S}" -o t_mlx t_mlx.c "${S}/mlx.c" "${S}/capabilities.c" > t_mlx.cc 2>&1 \
+        -iquote "${S}" -I"${S}" -o t_mlx t_mlx.c "${LINK_MLX[@]}" -lm -lpthread > t_mlx.cc 2>&1 \
         || fail "mlx: build: $(grep -m2 error t_mlx.cc | head -c 300)"
     if [ -x t_mlx ]; then
         ./t_mlx > t_mlx.out 2>&1

@@ -160,12 +160,18 @@ priv = pub + fld(d, nb) + fld(p, (p.bit_length() + 7) // 8) + fld(q, (q.bit_leng
 open(out + ".pub", "wb").write(pub); open(out + ".priv", "wb").write(priv)
 EOF
 
-SRCS="${S}/crypto.c ${S}/encoding.c ${S}/str.c"
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.  d.c
+# #includes encrypt.c itself, so it is left out of the set.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c encrypt)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 # shellcheck disable=SC2086
 if ! ${CC} -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/d" \
-        "${WORK}/d.c" ${SRCS} > "${WORK}/cc.log" 2>&1; then
+        "${WORK}/d.c" "${LINK[@]}" > "${WORK}/cc.log" 2>&1; then
     fail "driver (ASan+UBSan) does not compile"; sed 's/^/    /' "${WORK}/cc.log" | head -20
     echo ""; echo "C540: ${PASS} passed, ${FAIL} failed"; exit 1
 fi

@@ -56,6 +56,18 @@ CF="-std=c99 -D_GNU_SOURCE -g -O1 ${SAN}"
 echo "C451: 121.41 residue -- yaml OOM, dead metrics log writers, md tables"
 echo "---------------------------------------------------------------------"
 
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  yaml.c itself is compiled separately
+# with the fault-injecting allocator, so the yaml set leaves it out; the md
+# set carries the vendored cmark sources.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except yaml.c yaml)" \
+    || { echo "  FAIL: stdlib link set (yaml): see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK_YAML=(); while IFS= read -r l; do LINK_YAML+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" md)" \
+    || { echo "  FAIL: stdlib link set (md): see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK_MD=(); while IFS= read -r l; do LINK_MD+=("$l"); done <<< "${LINKSET}"
+
 # run BIN NAME — report the program's OK/BAD lines; a crash is a failure.
 run() {
     local bin="$1" name="$2"
@@ -109,7 +121,7 @@ int main(void) {
 C
 if "${CC}" ${CF} -iquote "${S}" -I"${S}" -include "${WORK}/fault.h" -c -o "${WORK}/yaml.o" "${S}/yaml.c" >"${WORK}/yb.cc" 2>&1 \
    && "${CC}" ${CF} -iquote "${S}" -I"${S}" -o "${WORK}/t_yaml" "${WORK}/t_yaml.c" "${WORK}/yaml.o" \
-        "${S}/file.c" "${S}/str.c" "${S}/crypto.c" "${S}/tk_time.c" "${S}/encoding.c" >>"${WORK}/yb.cc" 2>&1; then
+        "${LINK_YAML[@]}" >>"${WORK}/yb.cc" 2>&1; then
     run "${WORK}/t_yaml" yaml
 else
     fail "yaml: build: $(grep -a -m3 -E 'error' "${WORK}/yb.cc" | head -c 400)"
@@ -182,8 +194,8 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" ${CF} -Wno-pedantic -I"${CMARK_DIR}" -iquote "${S}" -I"${S}" -o "${WORK}/t_md" "${WORK}/t_md.c" "${S}/md.c" \
-        $(ls "${CMARK_DIR}"/*.c | grep -a -v '/main\.c$') >"${WORK}/md.cc" 2>&1; then
+if "${CC}" ${CF} -Wno-pedantic -I"${CMARK_DIR}" -iquote "${S}" -I"${S}" -o "${WORK}/t_md" "${WORK}/t_md.c" \
+        "${LINK_MD[@]}" >"${WORK}/md.cc" 2>&1; then
     run "${WORK}/t_md" md
 else
     fail "md: build: $(grep -a -m3 -E 'error' "${WORK}/md.cc" | head -c 400)"

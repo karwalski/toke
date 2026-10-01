@@ -50,6 +50,13 @@ trap cleanup EXIT
 echo "C462: static serving does not follow symlinks out of its root"
 echo "--------------------------------------------------------------"
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" router)" \
+    || { fail "stdlib link set: see stderr above"; echo "C462: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 # ── the tree ──────────────────────────────────────────────────────────────
 mkdir -p "${WORK}/outside" "${WORK}/root/s/sub" "${WORK}/root/s/inner"
 echo "SECRET" > "${WORK}/outside/secret.txt"
@@ -144,7 +151,7 @@ int main(int argc, char **argv) {
 EOF
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! ASAN_OPTIONS=detect_leaks=0 "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" \
-        -o "${WORK}/r" "${WORK}/r.c" "${S}/router.c" "${S}/str.c" "${S}/ws.c" "${S}/capabilities.c" -lz >"${WORK}/r.cc" 2>&1; then
+        -o "${WORK}/r" "${WORK}/r.c" "${LINK[@]}" -lz >"${WORK}/r.cc" 2>&1; then
     fail "router harness build: $(grep -a -m2 error "${WORK}/r.cc" | head -c 300)"
 else
     ASAN_OPTIONS=detect_leaks=0 "${WORK}/r" "${WORK}/root/s" >"${WORK}/r.out" 2>&1

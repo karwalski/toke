@@ -125,10 +125,16 @@ int main(void) {
 }
 C
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" http)" \
+    || { echo "  FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/t" "${WORK}/t.c" \
-        "${S}/http.c" "${S}/encoding.c" "${S}/str.c" "${S}/log.c" "${S}/capabilities.c" \
-        "${S}/router.c" "${S}/ws.c" -lz -lpthread >"${WORK}/cc.log" 2>&1; then
+        "${LINK[@]}" -lz -lpthread -lm >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 "${WORK}/cc.log")"
     exit 1
 fi

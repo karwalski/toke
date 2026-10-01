@@ -261,10 +261,19 @@ int main(int argc, char **argv) {
 }
 CEOF
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINK=()
+if LINKSET="$("$PWD/scripts/stdlib_link_set.sh" --stdlib "$STDLIB" --tkc "$TKC" llmtool 2>"$TMP/linkset.err")"; then
+    while IFS= read -r l; do LINK+=("$l"); done <<< "$LINKSET"
+else
+    cat "$TMP/linkset.err" > "$TMP/probe.build.log"
+fi
 CC_BIN="${CC:-cc}"
-if "$CC_BIN" -std=c99 -D_GNU_SOURCE -g -fsanitize=address \
+if [ "${#LINK[@]}" -gt 0 ] && "$CC_BIN" -std=c99 -D_GNU_SOURCE -g -fsanitize=address \
         -iquote "$STDLIB" -o "$TMP/probe" "$TMP/probe.c" \
-        "$STDLIB/llm_tool.c" "$STDLIB/llm.c" "$STDLIB/capabilities.c" >"$TMP/probe.build.log" 2>&1; then
+        "${LINK[@]}" >"$TMP/probe.build.log" 2>&1; then
     : > "$LOG"
     "$TMP/probe" "http://127.0.0.1:$PORT/v1" >"$TMP/probe.out" 2>&1
     probe_status=$?

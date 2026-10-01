@@ -32,16 +32,21 @@ trap 'rm -rf "${WORK}"' EXIT
 echo "S001: the HTTP keep-alive loop frees the parsed request each iteration"
 echo "--------------------------------------"
 
+# 127.268: the stdlib link set is the one a program importing std.http is
+# linked with, read from tkc's own dependency table (src/stdlib_deps.c via
+# --emit-deps), not a hand list a stdlib dependency change silently breaks.
+# tk_web_glue.c carries helpers unused outside the full glue surface, hence
+# -Wno-unused-function.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${REPO_ROOT}/src/stdlib" http)" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
-        -Wno-misleading-indentation -g \
+        -Wno-misleading-indentation -Wno-unused-function -g \
+        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" \
         -o "${WORK}/test_http_keepalive_leak" \
         "${REPO_ROOT}/test/stdlib/test_http_keepalive_leak.c" \
-        "${REPO_ROOT}/src/stdlib/http.c" \
-        "${REPO_ROOT}/src/stdlib/encoding.c" \
-        "${REPO_ROOT}/src/stdlib/str.c" \
-        "${REPO_ROOT}/src/stdlib/log.c" \
-        "${REPO_ROOT}/src/stdlib/capabilities.c" \
-        -lz -lpthread >"${WORK}/build.log" 2>&1; then
+        "${LINK[@]}" \
+        -lz -lpthread -lm >"${WORK}/build.log" 2>&1; then
     echo "  FAIL: harness did not build"
     sed 's/^/      /' "${WORK}/build.log"
     echo "Results: 0 passed, 1 failed"

@@ -40,6 +40,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C601_STDLIB:-${REPO_ROOT}/src/stdlib}"
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c601_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -338,8 +344,7 @@ if ! openssl req -x509 -newkey rsa:2048 -keyout "${WORK}/key.pem" \
     fail "could not generate a self-signed certificate"
 elif ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DTK_HAVE_OPENSSL -DH2_IDLE_TIMEOUT_S=3 \
         -Wno-deprecated-declarations -Wno-macro-redefined -I"${OSSL_INC}" -iquote "${S}" -I"${S}" \
-        -o "${WORK}/h" "${WORK}/h.c" "${S}/http2.c" "${S}/encoding.c" "${S}/str.c" \
-        "${S}/log.c" "${S}/capabilities.c" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread \
+        -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread \
         >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
 else

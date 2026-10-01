@@ -170,17 +170,19 @@ int main(void)
     return 0;
 }
 C
-if ${CC} -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-function -g \
+# 127.268: the link set is the one a program importing std.http is linked
+# with, read from tkc's dependency table (scripts/stdlib_link_set.sh) -- the
+# hand-written list that stood here broke at merge on 121.74's toml.c ->
+# file.c dependency.
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" http 2>copy.log)" \
+   && LINK=() && while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}" \
+   && ${CC} -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-function -g \
         -iquote "${S}" -I"${REPO_ROOT}/stdlib/vendor/tomlc99" -o copy copy.c \
-        "${S}/tk_web_glue.c" "${S}/http.c" "${S}/encoding.c" "${S}/str.c" "${S}/log.c" \
-        "${S}/capabilities.c" "${S}/auth.c" "${S}/crypto.c" "${S}/dashboard.c" "${S}/router.c" \
-        "${S}/task.c" "${S}/template.c" "${S}/toml.c" "${S}/file.c" "${S}/chart.c" "${S}/html.c" "${S}/ws.c" \
-        "${S}/tk_runtime.c" "${S}/args.c" "${REPO_ROOT}/stdlib/vendor/tomlc99/toml.c" \
-        -lz -lpthread -lm > copy.log 2>&1; then
+        "${LINK[@]}" -lz -lpthread -lm >> copy.log 2>&1; then
     if out="$(./copy 2>&1)"; then pass "setnotfound copies the body: it survives the caller's free"
     else fail "setnotfound copy: exit $? ${out}"; fi
 else
-    fail "setnotfound copy: harness does not build/link: $(grep -m1 -E 'error|undefined' copy.log)"
+    fail "setnotfound copy: harness does not build/link: $(grep -m1 -E 'error|undefined|stdlib_link_set' copy.log)"
 fi
 
 echo ""
