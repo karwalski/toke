@@ -35,6 +35,7 @@
  */
 
 #include "ir.h"
+#include "readall.h"   /* 121.77: tk_read_stream() for interface_hash */
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -365,19 +366,38 @@ int emit_interface(const Node *ast, const char *src,
 /*
  * interface_hash — Compute a djb2 hash of an interface file.
  *
- * Reads the file at path byte-by-byte and feeds each byte through the
- * djb2 XOR variant (h = ((h << 5) + h) ^ c).  Returns 0 if the file
- * cannot be opened.  The hash is not cryptographic; it is intended for
- * fast change detection during incremental builds.
+ * Feeds each byte of the file at path through the djb2 XOR variant
+ * (h = ((h << 5) + h) ^ c).  Returns 0 if the file cannot be opened or
+ * read.  The hash is not cryptographic; it is intended for fast change
+ * detection during incremental builds.
+ *
+ * 121.77 (2): the file is read whole with tk_read_stream (readall.h), not an
+ * fgetc loop, so a .tki path that is a FIFO is read with the 127.254
+ * non-blocking loop instead of a blocking stdio read that can miss the
+ * writer's close on Darwin.  It is opened O_NONBLOCK (then switched back),
+ * because open(2) of a FIFO with no writer blocks forever; such a FIFO reads
+ * as empty.  The hash of any given byte sequence is unchanged.
  */
 uint32_t interface_hash(const char *path)
 {
+#ifdef TK_READALL_POSIX
+    int fd = open(path, O_RDONLY | O_NONBLOCK);
+    if (fd < 0) return 0;
+    int fl = fcntl(fd, F_GETFL);
+    if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) { close(fd); return 0; }
+    FILE *fp = fdopen(fd, "rb");
+    if (!fp) { close(fd); return 0; }
+#else
     FILE *fp = fopen(path, "rb");
     if (!fp) return 0;
-    uint32_t h = 5381u;
-    int c;
-    while ((c = fgetc(fp)) != EOF)
-        h = ((h << 5) + h) ^ (uint32_t)c;
+#endif
+    size_t len = 0;
+    char *buf = tk_read_stream(fp, SIZE_MAX / 8, &len, NULL);
     fclose(fp);
+    if (!buf) return 0;
+    uint32_t h = 5381u;
+    for (size_t i = 0; i < len; i++)
+        h = ((h << 5) + h) ^ (uint32_t)(unsigned char)buf[i];
+    free(buf);
     return h;
 }
