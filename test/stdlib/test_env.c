@@ -26,6 +26,7 @@ int main(void)
         EnvGetResult r = env_get("PATH");
         ASSERT(!r.is_err, "env_get(PATH) succeeds");
         ASSERT(r.ok != NULL, "env_get(PATH) returns non-NULL");
+        free((void *)r.ok);   /* 121.78: an owned copy */
     }
 
     /* --- Test 2: env_get on a missing variable returns EnvErr ------------- */
@@ -45,6 +46,10 @@ int main(void)
         EnvGetResult r = env_get("TOKE_TEST_VAR");
         ASSERT(!r.is_err, "env_get after set succeeds");
         ASSERT_STREQ(r.ok, "hello_env", "env_get returns set value");
+        /* 121.78: the value is a copy -- a later env_set does not touch it */
+        env_set("TOKE_TEST_VAR", "a-different-and-longer-value");
+        ASSERT_STREQ(r.ok, "hello_env", "env_get value survives a later env_set");
+        free((void *)r.ok);
     }
 
     /* --- Test 4: env_set overwrites existing value ------------------------ */
@@ -54,6 +59,7 @@ int main(void)
         EnvGetResult r = env_get("TOKE_TEST_OVR");
         ASSERT(!r.is_err, "env_get after overwrite succeeds");
         ASSERT_STREQ(r.ok, "second", "env_get returns overwritten value");
+        free((void *)r.ok);
     }
 
     /* --- Test 5: env_get_or returns value when key is present ------------- */
@@ -61,13 +67,19 @@ int main(void)
         env_set("TOKE_TEST_GETOR", "present");
         const char *val = env_get_or("TOKE_TEST_GETOR", "fallback");
         ASSERT_STREQ(val, "present", "env_get_or returns present value");
+        env_set("TOKE_TEST_GETOR", "changed-afterwards");
+        ASSERT_STREQ(val, "present", "env_get_or value survives a later env_set");
+        free((void *)val);   /* 121.78: an owned copy */
     }
 
     /* --- Test 6: env_get_or returns default when key is absent ------------ */
     {
         unsetenv("TOKE_TEST_ABSENT_ABC");
-        const char *val = env_get_or("TOKE_TEST_ABSENT_ABC", "my_default");
+        const char *dflt = "my_default";
+        const char *val = env_get_or("TOKE_TEST_ABSENT_ABC", dflt);
         ASSERT_STREQ(val, "my_default", "env_get_or returns default when absent");
+        ASSERT(val != dflt, "env_get_or returns a copy of the default, not the default itself");
+        free((void *)val);   /* 121.78: an owned copy */
     }
 
     /* --- Test 7: EnvErr Invalid for key containing '=' ------------------- */

@@ -33,14 +33,15 @@ typedef struct { const char *ok; int is_err; EnvErrKind err_kind; const char *er
 
 /*
  * env_get — look up an environment variable.
- * Returns EnvGetResult.ok (pointer into the live environ, do not free) on success,
- * or is_err=1 / err_kind=ENV_ERR_NOT_FOUND if the key is absent.
+ * Returns EnvGetResult.ok (a heap copy the caller owns and frees; 121.78) on
+ * success, or is_err=1 / err_kind=ENV_ERR_NOT_FOUND if the key is absent.
  */
 EnvGetResult env_get(const char *key);
 
 /*
  * env_get_or — look up a key; return default_val if the key is absent.
- * Never returns an error — missing key yields the default.
+ * Never returns an error — missing key yields the default.  The result is
+ * always a heap copy (of the value or of the default) the caller owns; 121.78.
  */
 const char  *env_get_or(const char *key, const char *default_val);
 

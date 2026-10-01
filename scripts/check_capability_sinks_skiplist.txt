@@ -72,6 +72,8 @@ exempt | log.c:tk_access_log_open | stat | 2026-09-29 | 121.22 | is-it-a-regular
 # is the system time-zone database, which libc's tzset read before with no
 # grant either: a relative zone name, no "..", under $TZDIR or
 # /usr/share/zoneinfo (tz_safe_name).  Not a program-chosen path.
+exempt | file.c:open_errno_refine | lstat | 2026-10-01 | 121.77 | classifies an ELOOP from an O_NOFOLLOW open of the same path the caller just tried under its fs.read or fs.write grant (final symlink vs directory vs parent loop); reads no content
+
 exempt | tk_time.c:tz_file_offset | fopen | 2026-09-30 | 121.42 | the system time-zone database ($TZDIR or /usr/share/zoneinfo), relative name, no ".."; replaces the six TZ setenv/unsetenv exemptions
 
 # ── ungated: known gaps, each one a defect ─────────────────────────────────

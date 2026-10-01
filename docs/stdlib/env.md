@@ -28,6 +28,9 @@ A sum type representing environment variable lookup failures.
 
 Looks up the environment variable `key` and returns its value on success. Returns `$enverr.$notfound` if the variable is not set, or `$enverr.$invalid` if the key is empty or contains `=` or a NUL character.
 
+The value is a copy the program owns: a later `env.set` of the same name does
+not change or invalidate it.
+
 ```toke
 m=example;
 i=env:std.env;
@@ -44,6 +47,9 @@ f=showpath():i64{
 ### env.getor(key: $str; default: $str): $str
 
 Looks up `key` and returns its value when the variable is set, or `default` when the variable is absent or the key is invalid. This function is always infallible.
+
+The result is always a copy the program owns (of the value, or of `default`):
+a later `env.set` of the same name does not change or invalidate it.
 
 ```toke
 m=example;

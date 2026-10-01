@@ -59,10 +59,63 @@ static FileErr make_err(int err_no, const char *fallback)
 }
 
 /*
+ * 121.77 (3): the errno of a failed open(2) with O_NOFOLLOW, refined by
+ * asking the path itself.  ELOOP does not only mean "the final component is
+ * a symlink": a symlink loop (or too long a chain) in a PARENT component
+ * gives it too, and every std.file call reported that as the AMB-07 refusal
+ * of a final-component symlink -- a message about a file that is not a
+ * symlink at all.  lstat(2) decides: a final symlink keeps ELOOP ($symlink),
+ * a directory becomes EISDIR ($isdir), and anything else is the parent-loop
+ * case, returned as TK_ELOOP_PARENT for the callers to report as $io.
+ * Every other errno passes through unchanged.
+ */
+#define TK_ELOOP_PARENT (-1)
+static int open_errno_refine(const char *path, int err_no)
+{
+    if (err_no != ELOOP || !path) return err_no;
+    struct stat ls;
+    if (lstat(path, &ls) == 0) {
+        if (S_ISLNK(ls.st_mode)) return ELOOP;
+        if (S_ISDIR(ls.st_mode)) return EISDIR;
+    }
+    return TK_ELOOP_PARENT;
+}
+
+/* make_err for the errno of a failed open(2) of `path` (see above), plus
+ * ENXIO: a non-blocking open of a FIFO for writing with no reader (121.77). */
+static FileErr make_open_err(const char *path, int err_no, const char *fallback)
+{
+    int e = open_errno_refine(path, err_no);
+    if (e == TK_ELOOP_PARENT) {
+        FileErr fe;
+        fe.kind = FILE_ERR_IO;
+        fe.msg  = "too many levels of symbolic links in the path (a symlink loop before the final component)";
+        return fe;
+    }
+    if (e == ENXIO) {
+        FileErr fe;
+        fe.kind = FILE_ERR_NOT_REGULAR;
+        fe.msg  = "a FIFO with no reader: no process has it open for reading";
+        return fe;
+    }
+    return make_err(e, fallback);
+}
+
+/*
  * AMB-07: open with O_NOFOLLOW so a symlink on the final path component is NOT
  * followed — prevents write-through-symlink and TOCTOU redirection. Behavioural
  * change: opening a symlinked path fails with ELOOP. Covers the fopen modes
  * file.c uses ("rb"/"wb"/"ab"/"w"/"a"/"r").
+ *
+ * 121.77 (1): opened O_NONBLOCK, then switched back to blocking.  open(2) of
+ * a FIFO blocks until the other end is opened: for writing, with no reader,
+ * forever -- file.write / file.append / file.copy into such a path hung the
+ * program.  Non-blocking, that open fails at once with ENXIO (reported by
+ * make_open_err as $notregular).  A FIFO opened for reading with no writer
+ * opens at once and reads as end-of-file.  O_NONBLOCK is cleared before the
+ * stream is used so stdio's writes are ordinary blocking writes: a write to a
+ * FIFO whose reader is slow waits for it instead of failing with EAGAIN after
+ * a short write.  On a regular file the flag changes nothing.
  */
 static FILE *fopen_nofollow(const char *path, const char *mode)
 {
@@ -71,8 +124,12 @@ static FILE *fopen_nofollow(const char *path, const char *mode)
     else if (mode[0] == 'w') flags = O_WRONLY | O_CREAT | O_TRUNC;
     else if (mode[0] == 'a') flags = O_WRONLY | O_CREAT | O_APPEND;
     else return fopen(path, mode);   /* unknown mode: fall back */
-    int fd = open(path, flags | O_NOFOLLOW, 0644);
-    if (fd < 0) return NULL;          /* errno set (ELOOP on symlink) */
+    int fd = open(path, flags | O_NOFOLLOW | O_NONBLOCK, 0644);
+    if (fd < 0) return NULL;          /* errno set (ELOOP on symlink, ENXIO on a readerless FIFO) */
+    int fl = fcntl(fd, F_GETFL);
+    if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) {
+        int e = errno; close(fd); errno = e; return NULL;
+    }
     FILE *f = fdopen(fd, mode);
     if (!f) { int e = errno; close(fd); errno = e; }
     return f;
@@ -144,7 +201,7 @@ StrFileResult file_read(const char *path)
      * without it, and file.read of such a path hung the program.  O_NOFOLLOW
      * is AMB-07, as before. */
     int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
-    if (fd < 0) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
+    if (fd < 0) { r.is_err = 1; r.err = make_open_err(path, errno, NULL); return r; }
 
     /* 121.65: open(2) with O_RDONLY succeeds on a directory, and on Darwin
      * the fseek/ftell/fread that follow do not fail either -- fread returns
@@ -214,7 +271,7 @@ BoolFileResult file_write(const char *path, const char *content)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
     FILE *f = fopen_nofollow(path, "w");
-    if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
+    if (!f) { r.is_err = 1; r.err = make_open_err(path, errno, NULL); return r; }
     if (fputs(content, f) == EOF) {
         int saved = errno; fclose(f);
         r.is_err = 1; r.err = make_err(saved, "write failed"); return r;
@@ -228,7 +285,7 @@ BoolFileResult file_append(const char *path, const char *content)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
     FILE *f = fopen_nofollow(path, "a");
-    if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
+    if (!f) { r.is_err = 1; r.err = make_open_err(path, errno, NULL); return r; }
     if (fputs(content, f) == EOF) {
         int saved = errno; fclose(f);
         r.is_err = 1; r.err = make_err(saved, "append failed"); return r;
@@ -421,12 +478,15 @@ BoolFileResult file_copy(const char *src, const char *dst)
     BoolFileResult r = {0, 0, {0, NULL}};
     FILE *in = fopen_nofollow(src, "rb");
     if (!in) {
-        r.is_err = 1; r.err = make_err(errno, "open source failed"); return r;
+        r.is_err = 1; r.err = make_open_err(src, errno, "open source failed"); return r;
     }
     FILE *out = fopen_nofollow(dst, "wb");
     if (!out) {
         int saved_errno = errno; fclose(in);
-        r.is_err = 1; r.err = make_err(saved_errno, "open dest failed"); return r;
+        r.is_err = 1; r.err = make_open_err(dst, saved_errno, "open dest failed");
+        if (saved_errno == ENXIO)   /* the glue names src; say which end */
+            r.err.msg = "destination is a FIFO with no reader: no process has it open for reading";
+        return r;
     }
 
     char buf[8192];
@@ -933,6 +993,19 @@ static FileErrKind file_open_kind(int err_no)
     }
 }
 
+/* 121.77 (3): file_open_kind for the errno of a failed open(2) of `path`,
+ * refined by open_errno_refine: ELOOP is $symlink only when the final
+ * component really is a symlink.  *msg_errno receives the errno whose
+ * strerror() describes the refined outcome. */
+static FileErrKind file_open_kind_at(const char *path, int err_no, int *msg_errno)
+{
+    int e = open_errno_refine(path, err_no);
+    if (e == TK_ELOOP_PARENT) { *msg_errno = ELOOP; return FILE_ERR_IO; }
+    *msg_errno = e;
+    if (e == ENXIO) return FILE_ERR_NOT_REGULAR;
+    return file_open_kind(e);
+}
+
 /*
  * file_readbytes — read a whole file as bytes, exactly, or say why not.
  *
@@ -1076,7 +1149,7 @@ BoolFileResult file_writebytes(const char *path, const uint8_t *data, uint64_t l
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_NONBLOCK, 0644);
     if (fd < 0) {
         int saved = errno;
-        FileErrKind k = (saved == ENXIO) ? FILE_ERR_NOT_REGULAR : file_open_kind(saved);
+        FileErrKind k = file_open_kind_at(path, errno, &saved);
         r.is_err = 1;
         r.err = file_fail(k, "file.writebytes: %s: %s",
                           k == FILE_ERR_SYMLINK
@@ -1186,7 +1259,7 @@ static int file_open_for_read(const char *path, const char *who,
     int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
     if (fd < 0) {
         int saved = errno;
-        FileErrKind k = file_open_kind(saved);
+        FileErrKind k = file_open_kind_at(path, errno, &saved);
         *err = file_fail(k, "%s: %s: %s", who,
                          k == FILE_ERR_SYMLINK
                              ? "final path component is a symlink and std.file does not follow it (AMB-07)"
