@@ -62,7 +62,6 @@ void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
 #include "toon.h"
 #include "llm.h"
 #include "llm_tool.h"
-#include "toml.h"
 #include "file.h"
 #include "crypto.h"
 #include "template.h"
@@ -2077,30 +2076,6 @@ int64_t tk_ratelimit_check_w(int64_t limiter, int64_t key) {
         return 1; /* allowed */
     }
     return 0; /* rate limited */
-}
-
-/* ── config wrappers (via toml.h) ─────────────────────────────────── */
-int64_t tk_config_load_w(int64_t path) {
-    if (!path) return 0;
-    TomlResult r = toml_load_file((const char *)(intptr_t)path);
-    if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok; /* opaque toml table handle */
-}
-
-int64_t tk_config_get_w(int64_t cfg, int64_t key) {
-    if (!cfg || !key) return 0;
-    TomlStrResult r = toml_get_str((void *)(intptr_t)cfg,
-                                    (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
-
-int64_t tk_config_getint_w(int64_t cfg, int64_t key) {
-    if (!cfg || !key) return 0;
-    TomlI64Result r = toml_get_i64((void *)(intptr_t)cfg,
-                                    (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)r.ok;
 }
 
 /* ── uuid v4 (RFC 4122) via crypto_randombytes ────────────────────── */

@@ -87,8 +87,8 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
 | `c-internal` | called only from other C in `src/stdlib/` | 153 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 89 |
-| | **total** | **322** |
+| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 86 |
+| | **total** | **319** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -340,7 +340,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `dead` (89)
+### `dead` (86)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -349,9 +349,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_cap_check` | `capabilities.c` | - |
 | `tk_cap_deny` | `capabilities.c` | - |
 | `tk_cap_grants` | `capabilities.c` | - |
-| `tk_config_get_w` | `tk_web_glue.c` | - |
-| `tk_config_getint_w` | `tk_web_glue.c` | - |
-| `tk_config_load_w` | `tk_web_glue.c` | - |
 | `tk_df_columnstr_w` | `dataframe_glue.c` | - |
 | `tk_df_filter_w` | `dataframe_glue.c` | - |
 | `tk_df_fromcsv_w` | `dataframe_glue.c` | - |
