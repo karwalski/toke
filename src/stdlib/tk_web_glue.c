@@ -62,7 +62,6 @@ void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
 #include "toon.h"
 #include "llm.h"
 #include "llm_tool.h"
-#include "toml.h"
 #include "file.h"
 #include "crypto.h"
 #include "template.h"
@@ -1088,8 +1087,24 @@ static const char *mime_for_ext(const char *path) {
     return "application/octet-stream";
 }
 
+/* mk404 -- a servedir / servepages miss.  121.81: the http.setnotfound
+ * body when one is set (404, text/html), as for an unrouted path (121.62);
+ * these handlers sit on the "*" route, so with a mount registered EVERY
+ * unrouted path ends here, and used to get the plain "Not Found" whatever
+ * setnotfound said. */
 static Res mk404(void) {
     Res r; r.status = 404; r.body = "Not Found";
+    r.headers.data = NULL; r.headers.len = 0;
+    if (http_notfound_body()) {
+        r.body = http_notfound_body();
+        r.headers.data = &g_html_ct_hdr;
+        r.headers.len  = 1;
+    }
+    return r;
+}
+
+static Res mk400(void) {
+    Res r; r.status = 400; r.body = "Bad Request";
     r.headers.data = NULL; r.headers.len = 0; return r;
 }
 
@@ -1127,6 +1142,47 @@ static int staticdir_resolve(const char *root, const char *path,
     return (n < 0 || (size_t)n >= cap) ? 403 : 0;
 }
 
+/*
+ * staticdir_decode -- percent-decode a request path for the filesystem
+ * (121.81).  Routing matches the raw path (see "How a request path is
+ * matched" in docs/stdlib/http.md), but a file is named by bytes, so
+ * `/a%20b.txt` must find `a b.txt`.  Returns 0; 404 for a path too long
+ * for out (as the join below would be); or 400 for what must not
+ * reach the filesystem: a `%` not followed by two hex digits, `%00` (it would
+ * cut the name short), and `%2F`/`%2f` (a slash the client escaped is part of
+ * a name, and no file name holds one; decoding it would let an escaped
+ * slash step between directories the raw path never named).  `+` is a plain
+ * character in a path.  The caller still refuses `..` -- now in the DECODED
+ * path, so `%2e%2e` is refused like `..`.
+ */
+static int hexval_c(char ch)
+{
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+static int staticdir_decode(const char *in, char *out, size_t cap)
+{
+    size_t o = 0;
+    for (size_t i = 0; in[i]; i++) {
+        unsigned char c = (unsigned char)in[i];
+        if (c == '%') {
+            int hi = hexval_c(in[i + 1]);
+            int lo = hi < 0 ? -1 : hexval_c(in[i + 2]);
+            if (hi < 0 || lo < 0) return 400;
+            c = (unsigned char)(hi * 16 + lo);
+            if (c == 0 || c == '/') return 400;
+            i += 2;
+        }
+        if (o + 1 >= cap) return 404;   /* longer than any name we join */
+        out[o++] = (char)c;
+    }
+    out[o] = '\0';
+    return 0;
+}
+
 static Res staticdir_handler(Req req) {
     if (!req.path) return mk404();
     /* 127.100: a versioned asset URL — /static/css/style.css?v=<hash> — is
@@ -1139,8 +1195,13 @@ static Res staticdir_handler(Req req) {
      * "whichever root http.servedir was called with last". */
     const TkStaticMount *mnt = staticdir_find(rpath);
     if (!mnt) return mk404();
+    /* 121.81: the mount is chosen on the raw path, as every route is; the
+     * file is named by the decoded one. */
+    char dpath[2048];
+    int drc = staticdir_decode(rpath, dpath, sizeof dpath);
+    if (drc) return drc == 400 ? mk400() : mk404();
     char joined[PATH_MAX], filepath[PATH_MAX];
-    int jn = snprintf(joined, sizeof joined, "%s%s", mnt->root, rpath);
+    int jn = snprintf(joined, sizeof joined, "%s%s", mnt->root, dpath);
     if (jn < 0 || (size_t)jn >= sizeof joined) return mk404();
     if (strstr(joined, "..")) return mk403();
     int rc = staticdir_resolve(mnt->root, joined, filepath, sizeof filepath);
@@ -2077,30 +2138,6 @@ int64_t tk_ratelimit_check_w(int64_t limiter, int64_t key) {
         return 1; /* allowed */
     }
     return 0; /* rate limited */
-}
-
-/* ── config wrappers (via toml.h) ─────────────────────────────────── */
-int64_t tk_config_load_w(int64_t path) {
-    if (!path) return 0;
-    TomlResult r = toml_load_file((const char *)(intptr_t)path);
-    if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok; /* opaque toml table handle */
-}
-
-int64_t tk_config_get_w(int64_t cfg, int64_t key) {
-    if (!cfg || !key) return 0;
-    TomlStrResult r = toml_get_str((void *)(intptr_t)cfg,
-                                    (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
-
-int64_t tk_config_getint_w(int64_t cfg, int64_t key) {
-    if (!cfg || !key) return 0;
-    TomlI64Result r = toml_get_i64((void *)(intptr_t)cfg,
-                                    (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)r.ok;
 }
 
 /* ── uuid v4 (RFC 4122) via crypto_randombytes ────────────────────── */

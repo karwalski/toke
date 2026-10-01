@@ -4045,9 +4045,15 @@ struct TkTlsCtx {
 
 /* ── ALPN callback (Story 60.1.5) ─────────────────────────────────────── */
 
-/* Preferred protocols: http/1.1 only — h2 has bugs with large responses
- * (CSS 24KB causes worker hang). Disable h2 until frame handling fixed. */
+/* Preferred protocols: h2, then http/1.1 (121.80).  h2 was taken out on
+ * 2026-05-16 ("CSS 24KB causes worker hang").  What made it hang is gone:
+ * 121.46 stopped an idle connection that answered PINGs from holding a
+ * worker for as long as it stayed connected, 121.50 put DATA inside the
+ * peer's flow-control windows, and 121.80 closes an idle HTTP/2 connection
+ * on the HTTP/1.1 keep-alive clock (H2_IDLE_TIMEOUT_S).  C697 serves 64 KiB,
+ * 1 MiB and 8 MiB bodies over a negotiated h2 connection. */
 static const uint8_t alpn_protos[] = {
+    2, 'h', '2',
     8, 'h', 't', 't', 'p', '/', '1', '.', '1',
 };
 
@@ -4379,11 +4385,18 @@ static void write_cors_headers_ssl(SSL *ssl)
  * CONTINUATION, DATA) count as activity: the server used to PING an idle
  * peer and take the ACK as activity, so any client that answered PINGs --
  * every HTTP/2 client -- held a pre-fork worker for as long as it stayed
- * connected.  30 s matches the old PING interval; a build may override it
- * (C500 builds with 3).
+ * connected.
+ *
+ * 121.80: the same clock as an idle HTTP/1.1 keep-alive connection.  A
+ * worker serves one connection at a time whichever protocol it speaks, so
+ * an idle connection costs the same either way.  It was 30 s: with h2
+ * offered in ALPN, one browser's idle connection kept a worker from every
+ * other client for 30 s (measured: a second client on a one-worker server
+ * waited 30.7 s, against 1.7 s for an idle HTTP/1.1 connection).  A build may
+ * override it (C500 builds with 3, C491 with 30).
  */
 #ifndef H2_IDLE_TIMEOUT_S
-#define H2_IDLE_TIMEOUT_S       30
+#define H2_IDLE_TIMEOUT_S       KEEPALIVE_IDLE_TIMEOUT_S
 #endif
 /* Streams one connection may open in its lifetime (60.2.3). */
 #define H2_MAX_STREAMS_TOTAL  1000

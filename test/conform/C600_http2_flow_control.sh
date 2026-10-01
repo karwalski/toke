@@ -24,6 +24,11 @@
 # open the window.  Needs OpenSSL headers and the openssl CLI; without them
 # the script prints a named SKIP line.
 #
+# 121.80: the server context uses http.c's own ALPN callback (alpn_select_cb)
+# and the client offers h2 and http/1.1, as a browser does; a case runs only
+# when h2 was really negotiated.  Against a stdlib whose ALPN offers only
+# http/1.1 (main before 121.80) every case fails "ALPN did not negotiate h2".
+#
 # Negative control: C600_STDLIB=<dir> points the harness at another stdlib
 # tree.  A copy of src/stdlib/ with main's http.c/http2.c/http2.h fails
 # default-window, initial-window-zero, multiplexed and window-overflow.
@@ -269,8 +274,17 @@ static void *client(void *arg) {
     sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (connect(c->s, (struct sockaddr *)&sa, sizeof sa) < 0) { bad(c, "connect"); return NULL; }
     c->ssl = SSL_new(g_cctx); SSL_set_fd(c->ssl, c->s);
-    SSL_set_alpn_protos(c->ssl, (const unsigned char *)"\x02h2", 3);
+    SSL_set_alpn_protos(c->ssl, (const unsigned char *)"\x02h2\x08http/1.1", 12);
     if (SSL_connect(c->ssl) != 1) { bad(c, "TLS"); return NULL; }
+    {   /* 121.80: the server's own ALPN choice (http.c alpn_select_cb), so
+         * these cases run only over a really negotiated h2 connection. */
+        const unsigned char *p = NULL; unsigned int pl = 0;
+        SSL_get0_alpn_selected(c->ssl, &p, &pl);
+        if (pl != 2 || memcmp(p, "h2", 2) != 0) {
+            bad(c, "ALPN did not negotiate h2");
+            SSL_free(c->ssl); close(c->s); return NULL;
+        }
+    }
     a->k->fn(c);
     SSL_free(c->ssl); close(c->s);
     return NULL;
@@ -296,16 +310,6 @@ static int run(const Case *k) {
     return ok;
 }
 
-static int alpn_h2(SSL *s, const unsigned char **out, unsigned char *outlen,
-                   const unsigned char *in, unsigned int inlen, void *arg) {
-    (void)s; (void)arg;
-    for (unsigned i = 0; i + 1 < inlen; i += 1u + in[i])
-        if (in[i] == 2 && memcmp(in + i + 1, "h2", 2) == 0) {
-            *out = in + i + 1; *outlen = 2; return SSL_TLSEXT_ERR_OK;
-        }
-    return SSL_TLSEXT_ERR_NOACK;
-}
-
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     if (argc < 3) return 2;
@@ -316,7 +320,7 @@ int main(int argc, char **argv) {
         SSL_CTX_use_PrivateKey_file(g_sctx, argv[2], SSL_FILETYPE_PEM) != 1) {
         printf("BAD tls setup\n"); return 1;
     }
-    SSL_CTX_set_alpn_select_cb(g_sctx, alpn_h2, NULL);
+    SSL_CTX_set_alpn_select_cb(g_sctx, alpn_select_cb, NULL);   /* http.c's (121.80) */
     g_cctx = SSL_CTX_new(TLS_client_method());
     SSL_CTX_set_verify(g_cctx, SSL_VERIFY_NONE, NULL);
 

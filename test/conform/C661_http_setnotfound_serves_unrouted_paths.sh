@@ -17,8 +17,9 @@
 #
 # WHAT IS ASSERTED:
 #   per mode (plain single(1), plain workers(2), TLS single, TLS workers,
-#   HTTP/2 over TLS when a curl negotiates it -- today the server offers only
-#   http/1.1 in ALPN, so that case SKIPs): GET /nope -> 404 with the set body and
+#   HTTP/2 over TLS when a curl that can negotiate h2 is present -- the
+#   server offers h2 in ALPN since 121.80, and every request in that mode must
+#   come back as HTTP/2): GET /nope -> 404 with the set body and
 #   Content-Type text/html; GET /ok -> 200 "ok"; PUT /ok -> 405;
 #   without setnotfound: GET /nope -> 404 "Not Found";
 #   copy: a C harness hands tk_http_set_notfound a heap string, scribbles over
@@ -104,6 +105,9 @@ mode() {
     fi
     local u="${scheme}://127.0.0.1:${PORT}"
     code="$("${CURL}" -sk "$@" --max-time 5 -o nope.body -D nope.hdr -w '%{http_code}' "${u}/nope")"
+    case " $* " in *" --http2 "*)   # 121.80: really HTTP/2, not a fallback
+        [ "$(head -1 nope.hdr | cut -d' ' -f1)" = "HTTP/2" ] || why="${why} /nope not HTTP/2: $(head -1 nope.hdr | tr -d '\r');" ;;
+    esac
     body="$(cat nope.body 2>/dev/null)"
     ct="$(tr -d '\r' < nope.hdr | grep -i '^content-type:' | head -1)"
     [ "${code}" = 404 ] || why="${why} /nope status ${code};"
@@ -134,7 +138,7 @@ if [ "${HAVE_TLS}" = 1 ]; then
     done
     stop "${SRV}"; SRV=""
     if [ -n "${H2CURL}" ]; then CURL="${H2CURL}"; mode "http/2 over tls" tlssingle https --http2; CURL=curl
-    else echo "  SKIP: HTTP/2 -- not negotiated (the server offers only http/1.1 in ALPN today, http.c alpn_protos)"; fi
+    else echo "  SKIP: HTTP/2 -- no curl here negotiated h2 (one built with OpenSSL and nghttp2 is needed)"; fi
 fi
 
 # default unchanged: no setnotfound -> plain "Not Found"
