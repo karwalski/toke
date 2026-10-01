@@ -104,8 +104,9 @@ prototype branch.
    They do: `os.getcwd` returns `static char buf[4096]` (`os.c:104`) while its
    `.tki` declares `"ownership": "caller"`; `ocr` returns `g_lang_list` and
    `pdf` returns `s_errmsg`, both rewritten in place (12 `static char` buffers
-   in `src/stdlib`); `os.getenv` is borrowed from `environ`. A stale entry is
-   the over-read the check exists to prevent.
+   in `src/stdlib`). (`os.getenv` was listed here as borrowed from `environ`;
+   since 121.75 it returns a caller-owned copy, and `env.get`/`env.getor`
+   since 121.78.) A stale entry is the over-read the check exists to prevent.
 4. **The type system cannot help here, unlike 135.18.** Every `$str` is the
    same type, so the choice cannot be made statically; a length has to travel
    with the bytes or be recomputed.
@@ -131,7 +132,7 @@ and `tls.group` added one `str`-returning export.
 | All other stdlib C readers | 399 more `strlen(` lines; 459 in 77 of 200 `src/stdlib` C/H files (474 in 78 at `c8575da`) | correct unconverted; convert by profile |
 | Producers visible to toke | 98 of 934 exported functions return `str`; 54 more return a type containing `str` | correct unconverted; convert by profile |
 | Producer allocation sites in C | 314 lines calling `strdup`/`strndup` | each an unconverted producer until converted |
-| Strings that must never carry a header | 86 `(intptr_t)"…"` literal returns, 12 `static char` buffers, `os.getenv` (borrowed), argv | excluded by construction (below) |
+| Strings that must never carry a header | 86 `(intptr_t)"…"` literal returns, 12 `static char` buffers, argv (`os.getenv` left this row in 121.75: it returns an owned copy, an ordinary producer) | excluded by construction (below) |
 | C that `free()`s a string that reached toke | 0 in `src/stdlib` for the core producers; `test/stdlib/test_tk_runtime.c` frees three `tk_str_concat` results | must stop — see ABI impact |
 | C that writes into a string after returning it | 0 found statically (the three `strtok_r` calls work on private copies) | forbidden; enforced dynamically (the gate) |
 | Native C in `toke-ooke`, `toke-mcp` | 0 files | nothing |
@@ -162,7 +163,7 @@ and `tls.group` added one `str`-returning export.
   - an **unconverted producer** is slow and correct (no bit, `strlen`);
   - an **unconverted reader** is slow and correct (the bytes are still a C
     string);
-  - literals, argv, `getenv`, static buffers and **interior pointers** (a
+  - literals, argv, static buffers and **interior pointers** (a
     pointer into the middle of a sealed string has no bit) are excluded by
     construction, with no list to maintain.
 
@@ -175,7 +176,7 @@ and `tls.group` added one `str`-returning export.
   model: `.len` is one load. But the reader cannot tell a header from the
   8 bytes before a literal, an argv string or a static buffer, so **every**
   producer — 313 allocation sites, 86 literal returns, 12 static buffers,
-  argv, `getenv`, codegen literals (a layout change to `{i64, [K x i8]}`) —
+  argv, codegen literals (a layout change to `{i64, [K x i8]}`) —
   must convert before the first reader flips, and a missed one reads malloc
   metadata as a length: the silent wrong answer, at a larger surface than
   135.18. Not recommended; S1 can later specialise to it where codegen knows
