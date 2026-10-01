@@ -479,19 +479,35 @@ static int count_req_headers(const char *raw)
     return n;
 }
 
-static Req parse_request(const char *raw) {
+static void free_req(Req *req);
+
+/*
+ * parse_request — split a framed request into a Req whose strings the caller
+ * owns (release with free_req).  Returns 0, or -1 when an allocation failed
+ * (121.29 REL-08): every strdup used to go unchecked, so under memory
+ * pressure a request reached the router with a NULL method, path, header key
+ * or value -- partial state the dispatchers and handlers do not expect.  On
+ * -1 everything already allocated is released and *out is zeroed; the caller
+ * answers 500 and closes.  A request line with no CRLF or no space is not an
+ * allocation failure: it returns 0 with method and path NULL, as before.
+ */
+static int parse_request(const char *raw, Req *out) {
     Req req; memset(&req, 0, sizeof(req));
-    char *buf = malloc(strlen(raw) + 1); if (!buf) return req;
+    memset(out, 0, sizeof(*out));
+    char *buf = malloc(strlen(raw) + 1); if (!buf) return -1;
     strcpy(buf, raw);
-    char *nl = strstr(buf, "\r\n"); if (!nl) { free(buf); return req; }
+    char *nl = strstr(buf, "\r\n"); if (!nl) { free(buf); return 0; }
     *nl = '\0';
-    char *sp1 = strchr(buf, ' '); if (!sp1) { free(buf); return req; }
+    char *sp1 = strchr(buf, ' '); if (!sp1) { free(buf); return 0; }
     *sp1 = '\0'; req.method = strdup(buf);
     char *sp2 = strchr(sp1+1, ' '); if (sp2) *sp2 = '\0';
     req.path = strdup(sp1+1);
+    if (!req.method || !req.path) goto oom;
     /* 127.65: size the header block to the headers that actually arrived. */
     int hmax = count_req_headers(raw);
     StrPair *hdrs = hmax > 0 ? malloc((size_t)hmax * sizeof(StrPair)) : NULL;
+    if (hmax > 0 && !hdrs) goto oom;
+    req.headers.data = hdrs; req.headers.len = 0;
     int hc = 0;
     char *p = nl + 2;
     while (hdrs) {
@@ -500,16 +516,25 @@ static Req parse_request(const char *raw) {
         char *col = strchr(p, ':');
         if (col && hc < hmax) {
             *col = '\0';
-            hdrs[hc].key = strdup(p);
-            hdrs[hc].val = strdup(col+1 + (*(col+1)==' ' ? 1 : 0));
+            char *k = strdup(p);
+            char *v = strdup(col+1 + (*(col+1)==' ' ? 1 : 0));
+            if (!k || !v) { free(k); free(v); goto oom; }
+            hdrs[hc].key = k; hdrs[hc].val = v;
             hc++;
+            req.headers.len = (uint64_t)hc;   /* free_req sees only whole pairs */
         }
         p = e + 2;
     }
-    req.headers.data = hdrs; req.headers.len = (uint64_t)hc;
     const char *bs = strstr(raw, "\r\n\r\n");
     req.body = bs ? strdup(bs+4) : strdup("");
-    free(buf); return req;
+    if (!req.body) goto oom;
+    free(buf);
+    *out = req;
+    return 0;
+oom:
+    free(buf);
+    free_req(&req);
+    return -1;
 }
 
 /*
@@ -1540,7 +1565,12 @@ static void handle_connection(int fd)
         int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
         int keep_alive         = (!client_wants_close && !max_reached);
 
-        Req req = parse_request(in.raw);
+        Req req;
+        if (parse_request(in.raw, &req) != 0) {
+            /* 121.29 REL-08: out of memory -- answer, close, no partial Req. */
+            send_error(fd, 500, client_ip);
+            break;
+        }
 
         /* 121.44: no h2c upgrade.  An "Upgrade: h2c" request used to get a
          * 101 and then handle_h2_connection(fd, NULL, ...), which read the
@@ -4479,6 +4509,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
     StrPair req_headers[64];
     int req_hcount = 0, have_host = 0;
     char *cookie = NULL;   /* RFC 9113 8.2.3: crumbs rejoined with "; " */
+    int oom = 0;           /* 121.29 REL-08: a crumb could not be kept */
 
     for (int i = 0; i < st->hcount; i++) {
         const char *n = st->hnames[i], *v = st->hvalues[i];
@@ -4489,10 +4520,11 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             continue;
         }
         if (strcmp(n, "cookie") == 0) {
-            if (!cookie) { cookie = strdup(v); continue; }
+            if (oom) continue;
+            if (!cookie) { cookie = strdup(v); if (!cookie) oom = 1; continue; }
             size_t a = strlen(cookie), b = strlen(v);
             char *j = realloc(cookie, a + b + 3);
-            if (!j) continue;
+            if (!j) { oom = 1; continue; }   /* was: dropped the crumb */
             memcpy(j + a, "; ", 2); memcpy(j + a + 2, v, b + 1);
             cookie = j;
             continue;
@@ -4575,6 +4607,13 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
         req.params.data = NULL; req.params.len = 0;
         if (matched && !called && res.status == 404)
             res = make_res(405, "Method Not Allowed");
+    }
+    /* 121.29 REL-08: a cookie that could not be rejoined whole fails the
+     * stream rather than reaching the handler with crumbs missing. */
+    if (oom) {
+        free(cookie);
+        h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_INTERNAL);
+        return 0;
     }
 
     int rc = h2_send_response(conn, fd, ssl, st, res, is_head);
@@ -5226,7 +5265,11 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
         int keep_alive         = (!client_wants_close && !max_reached);
 
-        Req req = parse_request(in.raw);
+        Req req;
+        if (parse_request(in.raw, &req) != 0) {
+            tls_send_error(ssl, 500);          /* 121.29 REL-08 */
+            break;
+        }
 
         /* ── CORS: match request Origin against allowed list (TLS path) ── */
         g_cors_matched = NULL;
