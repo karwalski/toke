@@ -64,14 +64,10 @@ int64_t tk_ws_send_w(int64_t conn, int64_t msg);
 int64_t tk_ws_sendbytes_w(int64_t conn, int64_t data);
 int64_t tk_ws_recv_w(int64_t conn);
 
-/* 127.238: ws_glue.c now fills the error slot (tk_current_error +
- * tk_err_box, tk_runtime.c), which this standalone build does not link —
- * stood in for here, as test/stdlib/test_toml_glue.c does.  Thread-local to
- * match tk_runtime.h's declaration. */
+/* 127.238: ws_glue.c fills the error slot (tk_current_error + tk_err_box).
+ * 127.268: those come from the real tk_runtime.c, which the link set below
+ * carries -- the stand-ins this file used to define would now collide. */
 #include "tk_runtime.h"
-TK_TLS int64_t tk_current_error = 0;
-static int64_t g_errbox[8];
-void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
 
 static int fails = 0, checks = 0;
 #define CHECK(c, m) do { checks++; if (c) printf("  PASS: %s\n", m); \
@@ -175,9 +171,16 @@ int main(void) {
 }
 C
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" ws)" \
+    || { echo "  FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/t" "${WORK}/t.c" \
-        "${S}/ws.c" "${S}/ws_glue.c" "${S}/capabilities.c" >"${WORK}/cc.log" 2>&1; then
+        "${LINK[@]}" -lz -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     exit 1
 fi

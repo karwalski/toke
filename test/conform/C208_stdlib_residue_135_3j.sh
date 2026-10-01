@@ -124,7 +124,7 @@ cat > "${WORK}/b.c" <<'C'
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-_Thread_local int64_t tk_current_error;
+/* tk_current_error comes from the real tk_runtime.c in the link set (127.268). */
 extern long cnt_live;
 int64_t tk_llmtool_parsetoolcalls_w(int64_t raw);
 static const char ONE[] =
@@ -157,9 +157,17 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 -iquote "${S}" -c -o "${WORK}/cnt.o" "${WORK}/cnt.c" >"${WORK}/b.cc" 2>&1 \
+# 127.268: the stdlib link sets below come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.
+LINK_B=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" llmtool 2>"${WORK}/b.cc")"; then
+    while IFS= read -r l; do LINK_B+=("$l"); done <<< "${LINKSET}"
+fi
+if [ "${#LINK_B[@]}" -gt 0 ] \
+   && "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 -iquote "${S}" -c -o "${WORK}/cnt.o" "${WORK}/cnt.c" >>"${WORK}/b.cc" 2>&1 \
    && "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 -iquote "${S}" -include "${WORK}/cnt.h" -o "${WORK}/b" "${WORK}/b.c" \
-        "${S}/llm_tool_glue.c" "${S}/llm_tool.c" "${S}/llm.c" "${S}/capabilities.c" "${WORK}/cnt.o" >>"${WORK}/b.cc" 2>&1; then
+        "${LINK_B[@]}" "${WORK}/cnt.o" -lm -lpthread >>"${WORK}/b.cc" 2>&1; then
     run parsetoolcalls "${WORK}/b"
 else
     fail "parsetoolcalls driver does not build: $(head -c 400 "${WORK}/b.cc")"
@@ -203,8 +211,13 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -Wno-unused-function -o "${WORK}/c" "${WORK}/c.c" \
-        "${S}/http.c" "${S}/capabilities.c" "${S}/encoding.c" "${S}/log.c" -lm -lz -lpthread >"${WORK}/c.cc" 2>&1; then
+# http2.c is #included into c.c above, so it is left out of the set.
+LINK_C=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http2.c http 2>"${WORK}/c.cc")"; then
+    while IFS= read -r l; do LINK_C+=("$l"); done <<< "${LINKSET}"
+fi
+if [ "${#LINK_C[@]}" -gt 0 ] && "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -Wno-unused-function -o "${WORK}/c" "${WORK}/c.c" \
+        "${LINK_C[@]}" -lm -lz -lpthread >>"${WORK}/c.cc" 2>&1; then
     run hpack "${WORK}/c"
 else
     fail "hpack driver does not build: $(head -c 400 "${WORK}/c.cc")"

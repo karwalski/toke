@@ -46,6 +46,12 @@ CC="${CC:-cc}"
 S="${C392_STDLIB:-${REPO_ROOT}/src/stdlib}"
 PASS=0; FAIL=0; SRV=""
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except server_ops.c net router http)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c392_XXXXXX")"
 cleanup() { [ -n "${SRV}" ] && kill -9 "${SRV}" 2>/dev/null; rm -rf "${WORK}"; }
 trap cleanup EXIT
@@ -207,8 +213,7 @@ int main(void) {
 }
 C
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -D_DARWIN_C_SOURCE -g -O1 -iquote "${S}" -o t t.c \
-        "${S}/net_glue.c" "${S}/net.c" "${S}/router.c" "${S}/ws.c" "${S}/capabilities.c" "${S}/metrics.c" \
-        -lz > cc.log 2>&1; then
+        "${LINK[@]}" -lz -lm -lpthread > cc.log 2>&1; then
     echo "  FAIL: driver build: $(head -c 800 cc.log)"; FAIL=$((FAIL + 1))
 else
     ./t > t.out 2>&1

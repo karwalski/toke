@@ -48,6 +48,17 @@ export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 echo "C461: HTTP/2 frames and HPACK updates bounded by our own SETTINGS"
 echo "------------------------------------------------------------------"
 
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  The OOM build compiles http2.c itself
+# (strdup renamed), so its set leaves http2.c out.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" http)" \
+    || { fail "stdlib link set: see stderr above"; echo "C461: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http2.c http)" \
+    || { fail "stdlib link set: see stderr above"; echo "C461: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK_OOM=(); while IFS= read -r l; do LINK_OOM+=("$l"); done <<< "${LINKSET}"
+
 cat > "${WORK}/h.c" <<'EOF'
 #include "http2.h"
 #include <stdio.h>
@@ -134,8 +145,8 @@ int main(void) {
 EOF
 
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
-        -o "${WORK}/h" "${WORK}/h.c" "${S}/http2.c" "${S}/http.c" "${S}/capabilities.c" \
-        "${S}/encoding.c" "${S}/log.c" "${S}/str.c" -lz -lpthread >"${WORK}/cc.log" 2>&1; then
+        -o "${WORK}/h" "${WORK}/h.c" \
+        "${LINK[@]}" -lz -lpthread -lm >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
 else
     "${WORK}/h" >"${WORK}/out" 2>"${WORK}/err"; rc=$?
@@ -186,8 +197,8 @@ EOF
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -Dstrdup=h3_strdup \
         -c -o "${WORK}/http2_oom.o" "${S}/http2.c" >"${WORK}/oom.cc" 2>&1 \
    || ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
-        -o "${WORK}/oom" "${WORK}/oom.c" "${WORK}/http2_oom.o" "${S}/http.c" "${S}/capabilities.c" \
-        "${S}/encoding.c" "${S}/log.c" "${S}/str.c" -lz -lpthread >>"${WORK}/oom.cc" 2>&1; then
+        -o "${WORK}/oom" "${WORK}/oom.c" "${WORK}/http2_oom.o" \
+        "${LINK_OOM[@]}" -lz -lpthread -lm >>"${WORK}/oom.cc" 2>&1; then
     fail "oom build: $(grep -a -m3 error "${WORK}/oom.cc" | head -c 400)"
 else
     "${WORK}/oom" >"${WORK}/oom.out" 2>&1

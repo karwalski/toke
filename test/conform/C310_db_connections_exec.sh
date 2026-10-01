@@ -50,6 +50,12 @@ CC="${CC:-cc}"
 S="${C310_STDLIB:-${REPO_ROOT}/src/stdlib}"
 PASS=0; FAIL=0
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" db)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c310_XXXXXX")"; trap 'rm -rf "${WORK}"' EXIT; cd "${WORK}"
 echo "C310: std.db connections, multi-statement exec, error slot (138.6)"
 echo "------------------------------------------------------------------"
@@ -69,7 +75,6 @@ int64_t tk_db_one_w(int64_t, int64_t);    int64_t tk_db_oneon_w(int64_t, int64_t
 int64_t tk_db_manyon_w(int64_t, int64_t, int64_t);
 int64_t tk_row_i64_w(int64_t, int64_t);   int64_t tk_row_f64_w(int64_t, int64_t);
 int64_t tk_row_bool_w(int64_t, int64_t);  int64_t tk_row_str_w(int64_t, int64_t);
-int64_t tk_time_nowms_w(void) { return 0; }   /* db.nowms's delegate; unused here */
 static int fails = 0;
 #define CHECK(c, m) do { if (c) printf("  PASS: %s\n", m); \
                          else { printf("  FAIL: %s\n", m); fails++; } } while (0)
@@ -161,8 +166,8 @@ int main(void) {
 }
 C
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c "${S}/db.c" "${S}/db_glue.c" \
-        "${S}/capabilities.c" "${S}/tk_runtime.c" "${S}/args.c" -lsqlite3 > cc.log 2>&1; then
+if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c \
+        "${LINK[@]}" -lsqlite3 > cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; FAIL=$((FAIL + 1))
 else
     ASAN_OPTIONS="detect_leaks=0:abort_on_error=0" ./t > t.out 2>&1

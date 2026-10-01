@@ -177,10 +177,18 @@ void diag_set_source(const char *src, size_t len) { s_source_buf = src; s_source
  * Scans backward from byte_offset to find the start of the line, then forward
  * to find the end.  Copies at most (buf_size - 1) characters and
  * NUL-terminates.  Returns 0 on success, -1 if no source is available.
+ *
+ * 127.267: *out_len is the number of bytes copied.  The line is NOT a C
+ * string: a raw NUL in a string literal is legal source (W1021 warns on it),
+ * so every consumer must write the line by length.  Before this the JSON
+ * source_line stopped at the NUL — the line of the very byte W1021 reports
+ * was cut short just before it.
  */
 static int
-extract_source_line(int byte_offset, int line, char *buf, size_t buf_size)
+extract_source_line(int byte_offset, int line, char *buf, size_t buf_size,
+                    size_t *out_len)
 {
+    *out_len = 0;
     if (!s_source_buf || s_source_len == 0 || byte_offset < 0 || buf_size == 0) {
         if (buf_size > 0) buf[0] = '\0';
         return -1;
@@ -208,6 +216,7 @@ extract_source_line(int byte_offset, int line, char *buf, size_t buf_size)
     if (line_len >= buf_size) line_len = buf_size - 1;
     memcpy(buf, s_source_buf + ls, line_len);
     buf[line_len] = '\0';
+    *out_len = line_len;
     return 0;
 }
 
@@ -289,6 +298,27 @@ json_escape(FILE *fp, const char *s)
         else if (c == '\r') fputs("\\r",  fp);
         else if (c == '\t') fputs("\\t",  fp);
         else if (c < 0x20)  fprintf(fp, "\\u%04x", (unsigned)c);
+        else                fputc(c, fp);
+    }
+}
+
+/*
+ * json_escape_n — json_escape for a counted byte string that may hold NULs
+ * (127.267: the source line).  Every byte below U+0020, and DEL, is written
+ * as \u00XX, so a raw control byte in source reaches a consumer as an
+ * escape instead of ending or corrupting the record.
+ */
+static void
+json_escape_n(FILE *fp, const char *s, size_t n)
+{
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char c = (unsigned char)s[i];
+        if      (c == '"')  fputs("\\\"", fp);
+        else if (c == '\\') fputs("\\\\", fp);
+        else if (c == '\n') fputs("\\n",  fp);
+        else if (c == '\r') fputs("\\r",  fp);
+        else if (c == '\t') fputs("\\t",  fp);
+        else if (c < 0x20 || c == 0x7f) fprintf(fp, "\\u%04x", (unsigned)c);
         else                fputc(c, fp);
     }
 }
@@ -391,9 +421,10 @@ emit_json(DiagSeverity sev, int code,
     /* source_line — the text of the line where the diagnostic occurred */
     {
         char sl_buf[1024];
-        if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf)) == 0) {
+        size_t sl_len;
+        if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf), &sl_len) == 0) {
             fputs(",\"source_line\":\"", stderr);
-            json_escape(stderr, sl_buf);
+            json_escape_n(stderr, sl_buf, sl_len);
             fputc('"', stderr);
         } else {
             fputs(",\"source_line\":\"\"", stderr);
@@ -425,7 +456,8 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
     fprintf(stderr, " --> %s:%d:%d\n", s_source_file[0] ? s_source_file : "<input>", line, col);
 
     char sl_buf[1024];
-    if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf)) == 0) {
+    size_t sl_len;
+    if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf), &sl_len) == 0) {
         /* Compute gutter width for the line number */
         char line_str[16];
         snprintf(line_str, sizeof(line_str), "%d", line);
@@ -434,8 +466,15 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
         /* Blank gutter line */
         fprintf(stderr, "%*s |\n", gutter, "");
 
-        /* Source line with line number */
-        fprintf(stderr, "%d | %s\n", line, sl_buf);
+        /* Source line with line number.  127.267: written by length, a raw
+         * control byte (tab aside) shown as '?' -- one column per byte, so
+         * the caret below still lines up, and a NUL no longer ends it. */
+        fprintf(stderr, "%d | ", line);
+        for (size_t i = 0; i < sl_len; i++) {
+            unsigned char c = (unsigned char)sl_buf[i];
+            fputc((c < 0x20 && c != '\t') || c == 0x7f ? '?' : (int)c, stderr);
+        }
+        fputc('\n', stderr);
 
         /* Caret line: gutter + " | " + spaces up to col, then caret(s) */
         fprintf(stderr, "%*s | ", gutter, "");
@@ -444,7 +483,7 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
         /* 123.12b: underline the rest of the token span with '~', clamped to
          * the visible source line so a bad/multi-line span can't run away. */
         if (span_len > 1) {
-            int avail = (int)strlen(sl_buf) - (col - 1) - 1; /* chars after the caret */
+            int avail = (int)sl_len - (col - 1) - 1; /* chars after the caret */
             int under = span_len - 1;
             if (under > avail) under = avail;
             for (int i = 0; i < under; i++) fputc('~', stderr);

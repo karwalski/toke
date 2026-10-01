@@ -34,6 +34,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C276_STDLIB:-${REPO_ROOT}/src/stdlib}"
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" llmtool)" \
+    || { echo "  FAIL: stdlib link set: see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c276_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 PASS=0; FAIL=0
@@ -85,7 +91,6 @@ cat > "${WORK}/d.c" <<'C'
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-_Thread_local int64_t tk_current_error;
 extern long cnt_live;
 int64_t tk_llmtool_parsetoolcalls_w(int64_t raw);
 /* print the args of a $toolcall block, one "key=value" per line */
@@ -121,7 +126,7 @@ SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -c -o "${WORK}/cnt.o" "${WORK}/cnt.c" >"${WORK}/cc.log" 2>&1 \
    || ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -include "${WORK}/cnt.h" -o "${WORK}/d" "${WORK}/d.c" \
-        "${S}/llm_tool_glue.c" "${S}/llm_tool.c" "${S}/llm.c" "${S}/capabilities.c" "${WORK}/cnt.o" >>"${WORK}/cc.log" 2>&1; then
+        "${LINK[@]}" "${WORK}/cnt.o" >>"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: the driver does not build"; sed 's/^/      /' "${WORK}/cc.log" | head -6
     echo "Results: 0 passed, 1 failed"; exit 1
 fi

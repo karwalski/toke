@@ -24,6 +24,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C542_STDLIB:-${REPO_ROOT}/src/stdlib}"
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" db)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 PASS=0; FAIL=0
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c542_XXXXXX")"; trap 'rm -rf "${WORK}"' EXIT; cd "${WORK}"
 echo "C542: db error text survives later db calls and db.close (121.51)"
@@ -42,7 +48,6 @@ int64_t tk_db_close_w(void);
 int64_t tk_db_exec_w(int64_t, int64_t);
 int64_t tk_db_one_w(int64_t, int64_t);
 int64_t tk_db_many_w(int64_t, int64_t);
-int64_t tk_time_nowms_w(void) { return 0; }
 static int fails = 0;
 #define CHECK(c, m) do { if (c) printf("  PASS: %s\n", m); \
                          else { printf("  FAIL: %s\n", m); fails++; } } while (0)
@@ -77,8 +82,7 @@ int main(void) {
 C
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 # shellcheck disable=SC2086
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c "${S}/db.c" "${S}/db_glue.c" \
-        "${S}/capabilities.c" "${S}/tk_runtime.c" "${S}/args.c" -lsqlite3 > cc.log 2>&1; then
+if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c "${LINK[@]}" -lsqlite3 > cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; FAIL=$((FAIL + 1))
 else
     ASAN_OPTIONS="detect_leaks=0:abort_on_error=0" ./t > t.out 2>&1

@@ -43,6 +43,13 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 echo "C463: router CORS never pairs * with credentials; query drops %00"
 echo "------------------------------------------------------------------"
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" router)" \
+    || { fail "stdlib link set: see stderr above"; echo "C463: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 cat > "${WORK}/h.c" <<'EOF'
 #include "router.h"
 #include <stdio.h>
@@ -100,7 +107,7 @@ EOF
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/h" "${WORK}/h.c" \
-        "${S}/router.c" "${S}/str.c" "${S}/ws.c" "${S}/capabilities.c" -lz >"${WORK}/cc" 2>&1; then
+        "${LINK[@]}" -lz >"${WORK}/cc" 2>&1; then
     fail "build: $(grep -a -m2 error "${WORK}/cc" | head -c 300)"
 else
     ASAN_OPTIONS=detect_leaks=0 "${WORK}/h" >"${WORK}/out" 2>&1

@@ -38,6 +38,16 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C592_STDLIB:-${REPO_ROOT}/src/stdlib}"
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  t_process.c #includes process.c itself
+# (to wrap fcntl), so it is left out of the process set.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except process.c process)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_PROCESS=(); while IFS= read -r l; do LINK_PROCESS+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" file)" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_FILE=(); while IFS= read -r l; do LINK_FILE+=("$l"); done <<< "${LINKSET}"
 ARENA_C="${C592_ARENA:-${REPO_ROOT}/src/arena.c}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c592_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -174,7 +184,7 @@ int main(void) {
 }
 C
 } > "${WORK}/t_process.c"
-case_run process "${WORK}/t_process.c" "${S}/tk_runtime.c" "${S}/capabilities.c" "${S}/args.c"
+case_run process "${WORK}/t_process.c" "${LINK_PROCESS[@]}"
 
 # ── exec: through tkc ──────────────────────────────────────────────────────
 if [ -x "${TKC}" ]; then
@@ -249,7 +259,7 @@ int main(void) {
 }
 C
 } > "${WORK}/t_listall.c"
-case_run listall "${WORK}/t_listall.c" "${S}/file.c" -lpthread
+case_run listall "${WORK}/t_listall.c" "${LINK_FILE[@]}" -lpthread
 
 # ── arena ──────────────────────────────────────────────────────────────────
 cat > "${WORK}/t_arena.c" <<C

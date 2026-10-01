@@ -174,11 +174,16 @@ with open(f"{out}/port", "w") as f: f.write(str(s.server_address[1]))
 s.serve_forever()
 PY
 
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" dashboard chart template llmtool)" \
+    || { echo "  FAIL: stdlib link set: see stderr above"; echo "C207: FAIL (build)"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/t" "${WORK}/t.c" \
-        "${S}/dashboard.c" "${S}/chart.c" "${S}/html.c" "${S}/router.c" "${S}/ws.c" \
-        "${S}/capabilities.c" \
-        "${S}/template.c" "${S}/llm_tool.c" "${S}/llm.c" -lz -lm >"${WORK}/cc.log" 2>&1; then
+        "${LINK[@]}" -lz -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     echo "C207: FAIL (build)"
     exit 1
