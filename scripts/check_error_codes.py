@@ -199,6 +199,11 @@ def check_spec(live, defined, emitted, write=False):
             print(f"rewrote the generated table in {os.path.relpath(SPEC_MD, ROOT)}")
         else:
             have = {c: r[2] for c, r in existing.items()}
+            # 127.267: the stage is per (number, severity) -- W1001 is
+            # type_check, E1001 lex.  render_spec_table() passes the severity;
+            # this listing used to drop it and so reported W1001 as drift
+            # ("the compiler emits 'lex'") whenever any other drift was present.
+            stage_of = emitted_stage_fn()
             for c in sorted(set(have) | live, key=_code_key):
                 if c not in live:
                     errs.append(f"{c}: in the spec table but not live")
@@ -208,10 +213,10 @@ def check_spec(live, defined, emitted, write=False):
                     errs.append(f"{c}: spec says {have[c]!r}, "
                                 "docs/reference/errors.md says "
                                 f"{facts.get(c, ('',))[0]!r}")
-                elif existing[c][1] != emitted_stage_fn()(int(c[1:])):
+                elif existing[c][1] != stage_of(int(c[1:]), c[0]):
                     errs.append(f"{c}: spec Stage {existing[c][1]!r}, the "
                                 "compiler emits "
-                                f"{emitted_stage_fn()(int(c[1:]))!r}")
+                                f"{stage_of(int(c[1:]), c[0])!r}")
             if not errs:
                 errs.append("generated table is out of date (legend or "
                             "reserved list)")
