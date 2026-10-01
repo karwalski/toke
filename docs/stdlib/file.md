@@ -31,10 +31,10 @@ variant carries a message naming the call and the path.
 |---------|------------|---------|
 | $notfound | $str | The file or directory does not exist, or a component of the path is not a directory |
 | $permission | $str | The process lacks permission to perform the operation |
-| $io | $str | A general I/O error occurred (disk full, interrupted, a short read, etc.) |
+| $io | $str | A general I/O error occurred (disk full, interrupted, a short read, a symlink loop in a parent directory of the path, etc.) |
 | $invalid | $str | The operation does not apply to what is there (for example `file.mkdir` over an existing file) |
 | $isdir | $str | The path is a directory |
-| $notregular | $str | A fifo, socket or device — its size is not its content |
+| $notregular | $str | A fifo, socket or device — its size is not its content; or a fifo written to with no process reading it |
 | $symlink | $str | The final component is a symlink, which `std.file` does not follow (AMB-07) |
 | $toolarge | $str | Over the 64 MiB limit of `file.readbytes` |
 | $nomem | $str | It fits the limit, but the allocation failed |
@@ -72,6 +72,8 @@ f=readfile():$str{
 
 Writes `content` to the file at `path`, creating the file if it does not exist and truncating it if it does. Returns `true` on success.
 
+If `path` is a fifo that no process has open for reading, the call fails at once with `$fileerr.$notregular` rather than waiting for a reader (121.77). With a reader there, every byte is written.
+
 ```toke
 m=example;
 i=file:std.file;
@@ -87,6 +89,8 @@ f=writefile():i64{
 ### file.append(path: $str; content: $str): bool!$fileerr
 
 Appends `content` to the end of the file at `path`, creating the file if it does not exist. Returns `true` on success; does not truncate existing content.
+
+A fifo with no reader is `$fileerr.$notregular` at once, as for `file.write`.
 
 ```toke
 m=example;
@@ -195,6 +199,8 @@ f=makedir():i64{
 ### file.copy(src: $str; dst: $str): bool!$fileerr
 
 Copies the file at `src` to `dst`, creating `dst` if it does not exist and overwriting it if it does. Returns `$fileerr.$notfound` if `src` does not exist.
+
+A `dst` that is a fifo with no reader is `$fileerr.$notregular` at once; a `src` that is a fifo with no writer copies as empty (121.77).
 
 ```toke
 m=example;
