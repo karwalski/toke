@@ -66,15 +66,35 @@ EnvGetResult env_get(const char *key)
         return r;
     }
 
-    r.ok = val;
+    /* 121.78: a copy the caller owns, not getenv()'s pointer into the
+     * process environment -- a later env.set of the same name (or another
+     * thread's setenv/unsetenv) may overwrite or free that storage, and on
+     * Darwin a value read before a second env.set then read the new value.
+     * Same defect and fix as os.getenv (121.75). */
+    char *copy = strdup(val);
+    if (!copy) {
+        r.is_err  = 1;
+        r.err_kind = ENV_ERR_NOT_FOUND;
+        r.err_msg  = "allocation failed copying the environment value";
+        return r;
+    }
+    r.ok = copy;
     return r;
 }
 
+/* 121.78: always a fresh heap copy -- of the value, or of default_val when
+ * the key is absent or invalid -- so the result has one ownership
+ * ("ownership": "caller" in env.tki) whichever way it was produced and never
+ * aliases the environment.  Allocation failure falls back to the default
+ * itself (or ""), the only answer left that needs no allocation. */
 const char *env_get_or(const char *key, const char *default_val)
 {
-    if (!key_is_valid(key)) return default_val;
-    const char *val = getenv(key);
-    return val ? val : default_val;
+    const char *val = key_is_valid(key) ? getenv(key) : NULL;
+    const char *src = val ? val : default_val;
+    if (!src) src = "";
+    char *copy = strdup(src);
+    if (copy) return copy;
+    return default_val ? default_val : "";
 }
 
 int64_t env_getint(const char *key, int64_t default_val)
