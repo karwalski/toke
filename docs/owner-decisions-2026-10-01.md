@@ -85,6 +85,7 @@ language rows.
 | 5.3 | 135.14 | Permission for a bulk `git rm` of dead stdlib `.tk`/`.md` files (quarantine list) | **Grant** — archive per the hygiene rubric. |
 | 5.4 | 136.67 | Sign off deleting duplicate C implementations | **Grant.** |
 | 5.5 | 136.71 | Dead glue symbols: wire up or delete | **Delete the shadowed/unreachable ones; wire only those with a `.tki` quarantine entry.** |
+| 5.7 | 128.27 (1) | toke-eval's GitHub workflow sits at `benchmark/.github/workflows/ci.yml`, so GitHub never runs it. Moving it to a root `.github/` creates a new top-level directory (AGENTS §4.6 needs a story + sign-off). | **Approve the move** — a CI file GitHub cannot see protects nothing; `make ci` is the local stand-in meanwhile. |
 | 5.6 | 130.15 | Rewrite published git history | **Close as accepted debt** — the blobs are already public and cloned; `git gc` already shrank the repo; binaries are no longer tracked. |
 
 ## 6. Infrastructure and cost
