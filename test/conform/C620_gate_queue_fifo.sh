@@ -32,7 +32,7 @@
 # live pid kept the slot); cases 2, 4 and 5 green (dead-pid reclaim already
 # existed; the old script records no chain and has no queue to block).
 #
-# Story: 127.247
+# Story: 127.247; case 5 de-flaked in 132.114
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -172,19 +172,43 @@ if TKC_GATE_DETACHED=1 orphan "${L4}" D; then
 else bad "case 4: could not set up the detached run"; fi
 
 # ── 5. a waiter killed while queued ───────────────────────────────────────
+# 132.114: every step waits on the event it needs, with bounds far above any
+# load seen, and the waiter's own budget is shorter than none of them:
+#   - Wk is killed only once its ticket is STAMPED (pid and chain written).
+#     Counting ticket directories, as this case did, can see Wk's ticket
+#     between its mkdir and its pid write -- an unstamped ticket is judged
+#     live for two minutes (conform_isolated.sh `alive`), so killing Wk there
+#     blocks W5 far past any bound;
+#   - the case used to fail outright when Wk or W5 had not queued within 5 s
+#     (`|| true` then went on with the wrong queue); now it waits up to 60 s;
+#   - W5 had TKC_GATE_WAIT_SECS=20 and the test waited 20 s for it: under
+#     load ~40, W5's start, its ticket, the kill and the hand-off (each poll
+#     runs `ps -A` and awk per ticket) took longer, and W5 gave up -- "the
+#     second waiter did not get the slot".  W5 now waits up to 150 s and the
+#     test up to 180 s, so W5's own verdict is what the test sees.
+stamped_is() {   # stamped_is LOCKDIR N: N tickets, each with pid and chain
+    local n=0 t
+    for t in "$1"/queue.slot/*; do
+        case "${t##*/}" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;; *) continue ;; esac
+        [ -s "${t}/pid" ] && [ -s "${t}/chain" ] && n=$((n + 1))
+    done
+    [ "${n}" -eq "$2" ]
+}
 L5="${WORK}/locks5"
 hold "${L5}" Q
-if until_true 10 slot_taken "${L5}"; then
-    TKC_GATE_LOCKDIR="${L5}" TKC_GATE_WAIT_SECS=60 bash "${GATE}" exec -- true > "${WORK}/Wk.out" 2>&1 &
+if until_true 60 slot_taken "${L5}"; then
+    TKC_GATE_LOCKDIR="${L5}" TKC_GATE_WAIT_SECS=150 bash "${GATE}" exec -- true > "${WORK}/Wk.out" 2>&1 &
     wk=$!; PIDS+=("${wk}")
-    until_true 5 ntickets_is "${L5}" 1 || true
-    TKC_GATE_LOCKDIR="${L5}" TKC_GATE_WAIT_SECS=20 bash "${GATE}" exec -- true > "${WORK}/W5.out" 2>&1 &
-    w5=$!; PIDS+=("${w5}")
-    until_true 5 ntickets_is "${L5}" 2 || true
-    kill -9 "${wk}" 2>/dev/null; wait "${wk}" 2>/dev/null
-    touch "${WORK}/release.Q"
-    if until_true 20 sh -c "! kill -0 ${w5} 2>/dev/null" && wait "${w5}"; then ok "case 5: a dead waiter's ticket did not block the queue"
-    else bad "case 5: the second waiter did not get the slot"; sed 's/^/    /' "${WORK}/W5.out"; ls -R "${L5}" | sed 's/^/    /'; fi
+    if until_true 60 stamped_is "${L5}" 1; then
+        TKC_GATE_LOCKDIR="${L5}" TKC_GATE_WAIT_SECS=150 bash "${GATE}" exec -- true > "${WORK}/W5.out" 2>&1 &
+        w5=$!; PIDS+=("${w5}")
+        if until_true 60 stamped_is "${L5}" 2; then
+            kill -9 "${wk}" 2>/dev/null; wait "${wk}" 2>/dev/null
+            touch "${WORK}/release.Q"
+            if until_true 180 sh -c "! kill -0 ${w5} 2>/dev/null" && wait "${w5}"; then ok "case 5: a dead waiter's ticket did not block the queue"
+            else bad "case 5: the second waiter did not get the slot"; sed 's/^/    /' "${WORK}/W5.out"; ls -R "${L5}" | sed 's/^/    /'; fi
+        else bad "case 5: the second waiter never queued (60 s)"; sed 's/^/    /' "${WORK}/W5.out"; fi
+    else bad "case 5: the first waiter never queued (60 s)"; sed 's/^/    /' "${WORK}/Wk.out"; fi
 else bad "case 5: the holder never took the slot"; fi
 
 echo "Results: ${PASS} passed, ${FAIL} failed"
