@@ -120,8 +120,12 @@ int64_t tk_file_copy_w(int64_t src, int64_t dst) {
     TK_REQUIRE(TK_CAP_FS_READ);   /* reads src */
     TK_REQUIRE(TK_CAP_FS_WRITE);  /* writes dst */
     if (!src || !dst) return file_badarg("file.copy: null path");
-    BoolFileResult r = file_copy((const char *)(intptr_t)src, (const char *)(intptr_t)dst);
-    if (r.is_err) return file_raise_op("file.copy", r.err, src);
+    /* 121.84: name the path that failed -- dst for an open/write/close of
+     * the destination, src otherwise (it used to be src for every error). */
+    int dst_failed = 0;
+    BoolFileResult r = file_copy_at((const char *)(intptr_t)src,
+                                    (const char *)(intptr_t)dst, &dst_failed);
+    if (r.is_err) return file_raise_op("file.copy", r.err, dst_failed ? dst : src);
     return file_ok((int64_t)r.ok);
 }
 

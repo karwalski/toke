@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>   /* 121.1b: waitpid/WEXITSTATUS for --emit-asm argv-exec */
+#include <time.h>       /* 121.85: clock_gettime bounds the FIFO writer wait */
 
 /*
  * 121.1b: run `clang -S -x ir` (--emit-asm) via argv-exec (fork + execvp) — no
@@ -105,6 +106,100 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
  * `(git unknown)` outside a checkout -- one line, so a caller that keeps the
  * first line keeps all of it.  --json: one object; git_sha and git_dirty are
  * null when the build did not know the commit. */
+/*
+ * 121.85: read a source file whole without ever blocking in open(2).
+ *
+ * The driver used fopen(src) and then tk_read_stream.  fopen of a FIFO that
+ * no process has open for writing blocks in open(2) until a writer arrives
+ * -- forever, if none does -- before tk_read_stream's bounded non-blocking
+ * loop (127.254) ever runs.  Now the open is O_NONBLOCK (it returns at once
+ * for a FIFO) and, for a FIFO, the driver waits for a writer for at most
+ * TK_FIFO_WRITER_WAIT_MS, deciding with a one-byte non-blocking read(2):
+ *   EAGAIN  a writer has it open, no data yet: read on;
+ *   1 byte  data is there: keep the byte, read on;
+ *   0       no writer has it open (yet): wait 50 ms and ask again.
+ * A writer already blocked in its own open(2) counts as having it open, so
+ * `cat x.tk > f & tkc f` reads x.tk at once; the wait only covers a writer
+ * that has not reached open(2) yet (a background writer still starting).
+ * Past the bound the source is refused with a message naming the FIFO --
+ * rather than read as empty, which would be a confusing parse error.
+ * O_NONBLOCK is cleared before tk_read_stream, so a regular file reads
+ * exactly as before.  On a platform without TK_READALL_POSIX: plain fopen.
+ *
+ * Returns the bytes (caller frees) and their count, or NULL with *why set.
+ */
+#define TK_FIFO_WRITER_WAIT_MS 10000
+enum { TK_SRC_OK, TK_SRC_OPEN, TK_SRC_READ, TK_SRC_BIG, TK_SRC_NOWRITER };
+
+static char *tk_read_source(const char *path, size_t *out_len, int *why)
+{
+    *out_len = 0; *why = TK_SRC_OK;
+    char pre = 0; int have_pre = 0;
+#ifdef TK_READALL_POSIX
+    int fd = open(path, O_RDONLY | O_NONBLOCK);
+    if (fd < 0) { *why = TK_SRC_OPEN; return NULL; }
+    struct stat st;
+    if (fstat(fd, &st) == 0 && S_ISFIFO(st.st_mode)) {
+        struct timespec t0, now;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            ssize_t n = read(fd, &pre, 1);
+            if (n == 1) { have_pre = 1; break; }
+            if (n < 0 && errno == EINTR) continue;
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+            if (n < 0) { close(fd); *why = TK_SRC_READ; return NULL; }
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            long ms = (long)(now.tv_sec - t0.tv_sec) * 1000L
+                    + (now.tv_nsec - t0.tv_nsec) / 1000000L;
+            if (ms >= TK_FIFO_WRITER_WAIT_MS) { close(fd); *why = TK_SRC_NOWRITER; return NULL; }
+            struct timeval tv;
+            tv.tv_sec = 0; tv.tv_usec = 50000;
+            (void)select(0, NULL, NULL, NULL, &tv);
+        }
+    }
+    int fl = fcntl(fd, F_GETFL);
+    if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) {
+        close(fd); *why = TK_SRC_OPEN; return NULL;
+    }
+    FILE *f = fdopen(fd, "rb");
+    if (!f) { close(fd); *why = TK_SRC_OPEN; return NULL; }
+#else
+    FILE *f = fopen(path, "rb");
+    if (!f) { *why = TK_SRC_OPEN; return NULL; }
+#endif
+    size_t len = 0; int big = 0;   /* 135.3j: never ftell -- FIFOs */
+    char *buf = tk_read_stream(f, TK_SOURCE_MAX - (size_t)have_pre, &len, &big);
+    fclose(f);
+    if (!buf) { *why = big ? TK_SRC_BIG : TK_SRC_READ; return NULL; }
+    if (have_pre) {
+        char *nb = (char *)malloc(len + 2);
+        if (!nb) { free(buf); *why = TK_SRC_READ; return NULL; }
+        nb[0] = pre;
+        memcpy(nb + 1, buf, len + 1);   /* with the NUL */
+        free(buf);
+        buf = nb; len++;
+    }
+    *out_len = len;
+    return buf;
+}
+
+/* The driver's message and exit code for a tk_read_source failure. */
+static int tk_source_fail(const char *src, int why)
+{
+    switch (why) {
+    case TK_SRC_OPEN:
+        fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE;
+    case TK_SRC_BIG:
+        fprintf(stderr, "tkc: '%s' is larger than the 64 MiB source limit\n", src); return EUSAGE;
+    case TK_SRC_NOWRITER:
+        fprintf(stderr, "tkc: '%s' is a FIFO that no process opened for writing within %d s\n",
+                src, TK_FIFO_WRITER_WAIT_MS / 1000);
+        return EUSAGE;
+    default:
+        fprintf(stderr, "tkc: failed to read '%s'\n", src); return EINTERNAL;
+    }
+}
+
 static int has_version_flag(int argc, char **argv)
 {
     for (int k = 1; k < argc; k++) if (!strcmp(argv[k], "--version")) return 1;
@@ -705,15 +800,9 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
     for (int fi = 0; fi < nfiles; fi++) {
         const char *src = files[fi];
         diag_reset(); diag_set_source_file(src);
-        FILE *f = fopen(src, "rb");
-        if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); rc = EUSAGE; goto cleanup; }
-        size_t slen_z = 0; int big = 0;   /* 135.3j: never ftell — FIFOs */
-        char *sbuf = tk_read_stream(f, TK_SOURCE_MAX, &slen_z, &big);
-        fclose(f);
-        if (!sbuf) {
-            fprintf(stderr, big ? "tkc: '%s' is larger than the 64 MiB source limit\n"
-                                : "tkc: failed to read '%s'\n", src);
-            rc = big ? EUSAGE : EINTERNAL; goto cleanup; }
+        size_t slen_z = 0; int why = 0;   /* 121.85: never blocks in open(2) */
+        char *sbuf = tk_read_source(src, &slen_z, &why);
+        if (!sbuf) { rc = tk_source_fail(src, why); goto cleanup; }
         long slen = (long)slen_z; diag_set_source(sbuf, slen_z);
         Arena *arena = arena_init();
         Token *toks = arena_alloc(arena, (size_t)(slen + 16) * sizeof(Token));
@@ -1005,18 +1094,12 @@ static int process_file(const char *src, const RunOpts *o)
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
-    FILE *f = fopen(src, "rb");
-    if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE; }
     /* 135.3j: read the stream, never size it with ftell — on a FIFO or pipe
-     * ftell is -1, and malloc(0) + fread(SIZE_MAX) overflowed the heap. */
-    size_t slen_z = 0; int big = 0;
-    char *sbuf = tk_read_stream(f, TK_SOURCE_MAX, &slen_z, &big);
-    fclose(f);
-    if (!sbuf) {
-        fprintf(stderr, big ? "tkc: '%s' is larger than the 64 MiB source limit\n"
-                            : "tkc: failed to read '%s'\n", src);
-        return big ? EUSAGE : EINTERNAL;
-    }
+     * ftell is -1, and malloc(0) + fread(SIZE_MAX) overflowed the heap.
+     * 121.85: and never block in open(2) on a FIFO with no writer. */
+    size_t slen_z = 0; int why = 0;
+    char *sbuf = tk_read_source(src, &slen_z, &why);
+    if (!sbuf) return tk_source_fail(src, why);
     long slen = (long)slen_z;
     diag_set_source(sbuf, slen_z);
 

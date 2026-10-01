@@ -23,6 +23,8 @@
 #include <fcntl.h>   /* AMB-07: O_NOFOLLOW */
 #include <sys/select.h>  /* 121.73: FIFO reads wait in select(2) */
 #include <sys/time.h>
+#include <signal.h>      /* 121.84: SIGPIPE held off around stream writes */
+#include <pthread.h>     /* 121.84: pthread_sigmask (per-thread mask) */
 
 /* Map errno to a FileErrKind after a failed POSIX call.
  *
@@ -267,32 +269,115 @@ StrFileResult file_read(const char *path)
     return r;
 }
 
-BoolFileResult file_write(const char *path, const char *content)
+/*
+ * 121.84: a write that reaches a pipe or the disk can fail at three places,
+ * and until this story file.write / file.append looked at only the first.
+ * stdio BUFFERS what fputs is given, so for anything under the buffer size
+ * fputs succeeds without a write(2) at all; the bytes reach the file in
+ * fflush / fclose -- and their return values were ignored.  A full disk
+ * (ENOSPC, EDQUOT) or a FIFO whose reader closed early (EPIPE) was reported
+ * as $ok with the data lost.
+ *
+ * write_err names those errnos in the message (variant $io, as for every
+ * other write failure); everything else goes through make_err.
+ */
+static FileErr write_err(int err_no, const char *fallback)
+{
+    FileErr e;
+    if (err_no == EPIPE) {
+        e.kind = FILE_ERR_IO;
+        e.msg  = "the reader closed the pipe before all the data was written (EPIPE)";
+        return e;
+    }
+    if (err_no == ENOSPC) {
+        e.kind = FILE_ERR_IO;
+        e.msg  = "no space left on device (ENOSPC); the file is incomplete";
+        return e;
+    }
+#ifdef EDQUOT
+    if (err_no == EDQUOT) {
+        e.kind = FILE_ERR_IO;
+        e.msg  = "disk quota exceeded (EDQUOT); the file is incomplete";
+        return e;
+    }
+#endif
+    return make_err(err_no, fallback);
+}
+
+/*
+ * 121.84: SIGPIPE is held off for the duration of one write, then put back.
+ *
+ * write(2) to a FIFO with no reader left fails with EPIPE AND raises SIGPIPE,
+ * whose default action ends the process (exit 141) -- so a program could not
+ * even see the $err.  The process-wide disposition is NOT changed (a program
+ * that relies on SIGPIPE, or installs its own handler, keeps it): SIGPIPE is
+ * BLOCKED in this thread's mask only, the write runs, and if the write raised
+ * a SIGPIPE that was not already pending it is taken off the pending set with
+ * sigwait(2) -- it is thread-directed (POSIX: the signal for a failed write
+ * goes to the writing thread), so the one consumed is the one this write
+ * caused.  A SIGPIPE already pending before the guard is left alone.  Then
+ * the thread's original mask is restored.  sigtimedwait would be the usual
+ * tool but Darwin lacks it; sigwait returns at once because the signal is
+ * known to be pending.
+ */
+typedef struct { sigset_t old; int active; int was_pending; } SigpipeGuard;
+
+static void sigpipe_hold(SigpipeGuard *g)
+{
+    sigset_t one, pend;
+    sigemptyset(&one); sigaddset(&one, SIGPIPE);
+    sigemptyset(&pend);
+    g->was_pending = (sigpending(&pend) == 0 && sigismember(&pend, SIGPIPE) == 1);
+    g->active = (pthread_sigmask(SIG_BLOCK, &one, &g->old) == 0);
+}
+
+static void sigpipe_release(SigpipeGuard *g)
+{
+    if (!g->active) return;
+    int e = errno;   /* callers read errno after this */
+    if (!g->was_pending) {
+        sigset_t one, pend;
+        sigemptyset(&one); sigaddset(&one, SIGPIPE);
+        sigemptyset(&pend);
+        if (sigpending(&pend) == 0 && sigismember(&pend, SIGPIPE) == 1) {
+            int sig;
+            (void)sigwait(&one, &sig);
+        }
+    }
+    (void)pthread_sigmask(SIG_SETMASK, &g->old, NULL);
+    errno = e;
+}
+
+/* file_write / file_append: open, write, flush, close -- every step checked.
+ * fclose is checked even after a successful fflush: it can still report a
+ * deferred error (NFS and some FUSE filesystems report write-back failures at
+ * close). */
+static BoolFileResult file_put(const char *path, const char *content,
+                               const char *mode, const char *fallback)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
-    FILE *f = fopen_nofollow(path, "w");
+    FILE *f = fopen_nofollow(path, mode);
     if (!f) { r.is_err = 1; r.err = make_open_err(path, errno, NULL); return r; }
-    if (fputs(content, f) == EOF) {
-        int saved = errno; fclose(f);
-        r.is_err = 1; r.err = make_err(saved, "write failed"); return r;
-    }
-    fclose(f);
+    SigpipeGuard g;
+    sigpipe_hold(&g);
+    int saved = 0;
+    if (fputs(content, f) == EOF) saved = errno ? errno : EIO;
+    if (!saved && fflush(f) != 0) saved = errno ? errno : EIO;
+    if (fclose(f) != 0 && !saved) saved = errno ? errno : EIO;
+    sigpipe_release(&g);
+    if (saved) { r.is_err = 1; r.err = write_err(saved, fallback); return r; }
     r.ok = 1;
     return r;
 }
 
+BoolFileResult file_write(const char *path, const char *content)
+{
+    return file_put(path, content, "w", "write failed");
+}
+
 BoolFileResult file_append(const char *path, const char *content)
 {
-    BoolFileResult r = {0, 0, {0, NULL}};
-    FILE *f = fopen_nofollow(path, "a");
-    if (!f) { r.is_err = 1; r.err = make_open_err(path, errno, NULL); return r; }
-    if (fputs(content, f) == EOF) {
-        int saved = errno; fclose(f);
-        r.is_err = 1; r.err = make_err(saved, "append failed"); return r;
-    }
-    fclose(f);
-    r.ok = 1;
-    return r;
+    return file_put(path, content, "a", "append failed");
 }
 
 int file_exists(const char *path)
@@ -472,10 +557,20 @@ BoolFileResult file_rmdir_r(const char *path)
 /*
  * file_copy — copy src to dst in 8 KB chunks.
  * dst is truncated/created.  Cross-device safe (no rename dependency).
+ *
+ * 121.84: file_copy_at also says WHICH path failed -- *dst_failed is set to 1
+ * when the failure is on the destination (opening, writing or closing it) and
+ * 0 when it is on the source -- so tk_file_copy_w names that path; it used to
+ * name src in every error, including "no space left" on dst.  The writes run
+ * under the SIGPIPE guard (a FIFO destination whose reader closes early is
+ * an $err, not a killed process).
  */
-BoolFileResult file_copy(const char *src, const char *dst)
+BoolFileResult file_copy_at(const char *src, const char *dst, int *dst_failed)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
+    int side_dummy;
+    if (!dst_failed) dst_failed = &side_dummy;
+    *dst_failed = 0;
     FILE *in = fopen_nofollow(src, "rb");
     if (!in) {
         r.is_err = 1; r.err = make_open_err(src, errno, "open source failed"); return r;
@@ -483,36 +578,48 @@ BoolFileResult file_copy(const char *src, const char *dst)
     FILE *out = fopen_nofollow(dst, "wb");
     if (!out) {
         int saved_errno = errno; fclose(in);
+        *dst_failed = 1;
         r.is_err = 1; r.err = make_open_err(dst, saved_errno, "open dest failed");
-        if (saved_errno == ENXIO)   /* the glue names src; say which end */
-            r.err.msg = "destination is a FIFO with no reader: no process has it open for reading";
         return r;
     }
 
     char buf[8192];
     size_t nread;
+    int saved_errno = 0;
+    SigpipeGuard g;
+    sigpipe_hold(&g);
     /* 135.3c: stop at the first short read instead of calling fread() again
      * on a stream already at EOF or in error (clang unix.Stream), and check
      * fclose(out): buffered data is written THERE, so a full disk used to be
      * reported as a successful copy. */
     for (;;) {
         nread = fread(buf, 1, sizeof(buf), in);
+        if (nread < sizeof(buf) && ferror(in)) {   /* errno is fread's here */
+            saved_errno = errno ? errno : EIO; break;
+        }
         if (nread > 0 && fwrite(buf, 1, nread, out) != nread) {
-            int saved_errno = errno; fclose(in); fclose(out);
-            r.is_err = 1; r.err = make_err(saved_errno, "write failed"); return r;
+            saved_errno = errno ? errno : EIO; *dst_failed = 1; break;
         }
         if (nread < sizeof(buf)) break;
     }
-    if (ferror(in)) {
-        int saved_errno = errno; fclose(in); fclose(out);
-        r.is_err = 1; r.err = make_err(saved_errno, "read failed"); return r;
-    }
     fclose(in);
-    if (fclose(out) != 0) {
-        r.is_err = 1; r.err = make_err(errno, "write failed"); return r;
+    if (fclose(out) != 0 && !saved_errno) {
+        saved_errno = errno ? errno : EIO; *dst_failed = 1;
+    }
+    sigpipe_release(&g);
+    if (saved_errno) {
+        r.is_err = 1;
+        r.err = *dst_failed ? write_err(saved_errno, "write failed")
+                            : make_err(saved_errno, "read failed");
+        return r;
     }
     r.ok = 1;
     return r;
+}
+
+BoolFileResult file_copy(const char *src, const char *dst)
+{
+    return file_copy_at(src, dst, NULL);
 }
 
 /*

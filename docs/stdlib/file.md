@@ -74,6 +74,8 @@ Writes `content` to the file at `path`, creating the file if it does not exist a
 
 If `path` is a fifo that no process has open for reading, the call fails at once with `$fileerr.$notregular` rather than waiting for a reader (121.77). With a reader there, every byte is written.
 
+A write that fails after the call has started -- a full disk (ENOSPC), or a fifo whose reader closes before all the data is through (EPIPE) -- is `$fileerr.$io`, with the cause in the message; it is never reported as success, including when the failure only shows when the data is flushed and the file closed (121.84). The fifo case does not kill the program with SIGPIPE: the call holds SIGPIPE off in the calling thread for the duration of the write and restores that thread's signal mask afterwards; the program's SIGPIPE disposition is not changed.
+
 ```toke
 m=example;
 i=file:std.file;
@@ -90,7 +92,7 @@ f=writefile():i64{
 
 Appends `content` to the end of the file at `path`, creating the file if it does not exist. Returns `true` on success; does not truncate existing content.
 
-A fifo with no reader is `$fileerr.$notregular` at once, as for `file.write`.
+A fifo with no reader is `$fileerr.$notregular` at once, and a full disk or a reader that closes early is `$fileerr.$io`, as for `file.write`.
 
 ```toke
 m=example;
@@ -200,7 +202,7 @@ f=makedir():i64{
 
 Copies the file at `src` to `dst`, creating `dst` if it does not exist and overwriting it if it does. Returns `$fileerr.$notfound` if `src` does not exist.
 
-A `dst` that is a fifo with no reader is `$fileerr.$notregular` at once; a `src` that is a fifo with no writer copies as empty (121.77).
+A `dst` that is a fifo with no reader is `$fileerr.$notregular` at once; a `src` that is a fifo with no writer copies as empty (121.77). A full disk or a `dst` fifo whose reader closes early is `$fileerr.$io`, as for `file.write`. The error message names the path that failed: `dst` when opening, writing or closing the destination failed, `src` otherwise (121.84).
 
 ```toke
 m=example;
