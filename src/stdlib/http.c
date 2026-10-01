@@ -1964,6 +1964,85 @@ static int bind_listen(const char *host, uint64_t port)
     return srv;
 }
 
+/* ── Worker respawn backoff (121.29 REL-07) ─────────────────────────────
+ *
+ * Both pre-fork supervisors respawned a worker the moment it died abnormally.
+ * A worker that crashes on start, or on every request, therefore became a
+ * fork loop: one fork per crash with no delay, pinning a core and flooding
+ * the logs for as long as the cause lasted.  Now each slot keeps a crash
+ * streak.  The first abnormal death respawns at once (an occasional crash
+ * costs nothing, as before); each further death within
+ * HTTP_RESPAWN_STABLE_MS of the worker's start doubles the wait, from
+ * HTTP_RESPAWN_BASE_MS up to HTTP_RESPAWN_CAP_MS.  A worker that stayed up
+ * HTTP_RESPAWN_STABLE_MS resets its slot's streak.  A failed fork is retried
+ * on the same schedule instead of leaving the slot empty for good.  Each
+ * delayed respawn writes one "DIAGNOSTIC: kind=worker_respawn_backoff" line
+ * to stderr. */
+#ifndef HTTP_RESPAWN_BASE_MS
+#define HTTP_RESPAWN_BASE_MS   100L
+#endif
+#ifndef HTTP_RESPAWN_CAP_MS
+#define HTTP_RESPAWN_CAP_MS    10000L
+#endif
+#ifndef HTTP_RESPAWN_STABLE_MS
+#define HTTP_RESPAWN_STABLE_MS 30000L
+#endif
+
+typedef struct {
+    long     started_ms;    /* when the slot's current worker was forked    */
+    long     respawn_at_ms; /* 0, or when a pending respawn is due          */
+    unsigned streak;        /* abnormal deaths in a row without stable uptime */
+} RespawnSlot;
+
+static void respawn_started(RespawnSlot *rs, long now)
+{
+    rs->started_ms = now;
+    rs->respawn_at_ms = 0;
+}
+
+/* respawn_delay -- the slot's worker died abnormally (or a fork for it
+ * failed) at `now`: how long to wait before the next fork, in ms. */
+static long respawn_delay(RespawnSlot *rs, long now)
+{
+    if (now - rs->started_ms >= HTTP_RESPAWN_STABLE_MS) rs->streak = 0;
+    long d = 0;
+    if (rs->streak > 0) {
+        d = HTTP_RESPAWN_BASE_MS;
+        for (unsigned i = 1; i < rs->streak && d < HTTP_RESPAWN_CAP_MS; i++)
+            d *= 2;
+        if (d > HTTP_RESPAWN_CAP_MS) d = HTTP_RESPAWN_CAP_MS;
+    }
+    if (rs->streak < 64) rs->streak++;
+    return d;
+}
+
+static void respawn_schedule(RespawnSlot *rs, uint64_t slot, long now, long d)
+{
+    rs->respawn_at_ms = now + (d > 0 ? d : 1);
+    if (d > 0) {
+        fprintf(stderr, "DIAGNOSTIC: kind=worker_respawn_backoff slot=%llu"
+                " streak=%u delay_ms=%ld\n",
+                (unsigned long long)slot, rs->streak, d);
+        fflush(stderr);
+    }
+}
+
+/* respawn_pending -- is any slot waiting to be respawned? */
+static int respawn_pending(const RespawnSlot *rs, uint64_t n)
+{
+    for (uint64_t i = 0; i < n; i++) if (rs[i].respawn_at_ms) return 1;
+    return 0;
+}
+
+/* respawn_fork_failed -- fork() for the slot failed at `now`: retry on the
+ * same schedule.  The clock restarts so a long run of failures cannot look
+ * like stable uptime and reset the streak. */
+static void respawn_fork_failed(RespawnSlot *rs, uint64_t slot, long now)
+{
+    rs->started_ms = now;
+    respawn_schedule(rs, slot, now, respawn_delay(rs, now));
+}
+
 /* worker_loop — accept and handle connections; exits when shutdown is set. */
 static void worker_loop(int srv_fd, TkHttpRouter *r)
 {
@@ -2029,6 +2108,8 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
     install_shutdown_handler(SIGINT,  workers_parent_sighandler);  /* 127.69 */
     install_shutdown_handler(SIGHUP,  workers_parent_sighandler);  /* 127.69 */
 
+    RespawnSlot rs[TK_MAX_WORKERS];                     /* 121.29 REL-07 */
+    memset(rs, 0, sizeof rs);
     for (uint64_t i = 0; i < nworkers; i++) {
         pid_t pid = fork();
         if (pid < 0) {
@@ -2042,6 +2123,7 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             _exit(0);
         }
         g_worker_pids[i] = pid;
+        respawn_started(&rs[i], http_now_ms());
     }
 
     /* Parent keeps srv open so respawned workers can inherit it. */
@@ -2054,6 +2136,8 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
         if (died < 0) {
             if (errno == EINTR) {
                 /* Check shutdown flag set by signal handler */
+            } else if (errno == ECHILD && respawn_pending(rs, nworkers)) {
+                died = 0;   /* 121.29: every slot is waiting out its backoff */
             } else {
                 break;
             }
@@ -2098,10 +2182,18 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             /* 121.53 (1): reopen the logs here, so the new workers inherit
              * the files now at the logs' paths (logrotate + SIGHUP). */
             tk_log_reopen_files();
-            /* Fork new workers */
+            /* Fork new workers.  A reload starts every slot afresh; a fork
+             * that fails is retried on the backoff schedule (121.29). */
             for (uint64_t i = 0; i < nworkers; i++) {
+                long now = http_now_ms();
+                rs[i].streak = 0;
+                respawn_started(&rs[i], now);
                 pid_t pid = fork();
-                if (pid < 0) { g_worker_pids[i] = -1; continue; }
+                if (pid < 0) {
+                    g_worker_pids[i] = -1;
+                    respawn_fork_failed(&rs[i], i, now);
+                    continue;
+                }
                 if (pid == 0) { worker_loop(srv, r); _exit(0); }
                 g_worker_pids[i] = pid;
             }
@@ -2151,6 +2243,23 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             break; /* exit supervision loop */
         }
 
+        /* 121.29 REL-07: fork the respawns whose backoff has run out. */
+        {
+            long now = http_now_ms();
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (!rs[i].respawn_at_ms || g_worker_pids[i] > 0 ||
+                    now < rs[i].respawn_at_ms) continue;
+                pid_t pid = fork();
+                if (pid < 0) {
+                    respawn_fork_failed(&rs[i], i, now);
+                    continue;
+                }
+                if (pid == 0) { worker_loop(srv, r); _exit(0); }
+                g_worker_pids[i] = pid;
+                respawn_started(&rs[i], now);
+            }
+        }
+
         if (died <= 0) {
             /* WNOHANG: no child exited yet; yield and retry */
             struct timespec ts;
@@ -2169,10 +2278,15 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
 
         if (WIFSIGNALED(wstatus) ||
             (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
-            /* Respawn worker using the shared listen socket */
+            /* Respawn worker using the shared listen socket -- at once the
+             * first time, then with backoff (121.29 REL-07). */
+            long now = http_now_ms();
+            long d = respawn_delay(&rs[slot], now);
+            g_worker_pids[slot] = -1;
+            if (d > 0) { respawn_schedule(&rs[slot], slot, now, d); continue; }
             pid_t pid = fork();
             if (pid < 0) {
-                g_worker_pids[slot] = -1;
+                respawn_fork_failed(&rs[slot], slot, now);
                 continue;
             }
             if (pid == 0) {
@@ -2180,6 +2294,7 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                 _exit(0);
             }
             g_worker_pids[slot] = pid;
+            respawn_started(&rs[slot], now);
         } else {
             g_worker_pids[slot] = -1;
         }
@@ -4553,6 +4668,13 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
         h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_PROTOCOL);
         return 0;
     }
+    /* 121.29 REL-08: a cookie that could not be rejoined whole fails the
+     * stream rather than reaching the handler with crumbs missing. */
+    if (oom) {
+        free(cookie);
+        h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_INTERNAL);
+        return 0;
+    }
 
     Req req;
     memset(&req, 0, sizeof(req));
@@ -4607,13 +4729,6 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
         req.params.data = NULL; req.params.len = 0;
         if (matched && !called && res.status == 404)
             res = make_res(405, "Method Not Allowed");
-    }
-    /* 121.29 REL-08: a cookie that could not be rejoined whole fails the
-     * stream rather than reaching the handler with crumbs missing. */
-    if (oom) {
-        free(cookie);
-        h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_INTERNAL);
-        return 0;
     }
 
     int rc = h2_send_response(conn, fd, ssl, st, res, is_head);
@@ -5576,6 +5691,8 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
     install_shutdown_handler(SIGHUP,  workers_parent_sighandler);
 
     pid_t tls_pids[TK_MAX_WORKERS];
+    RespawnSlot rs[TK_MAX_WORKERS];                     /* 121.29 REL-07 */
+    memset(rs, 0, sizeof rs);
     for (uint64_t i = 0; i < nworkers; i++) {
         pid_t pid = fork();
         if (pid < 0) {
@@ -5588,6 +5705,7 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
             _exit(0);
         }
         tls_pids[i] = pid;
+        respawn_started(&rs[i], http_now_ms());
     }
 
     /* Parent keeps srv open so respawned workers can inherit it. */
@@ -5600,6 +5718,8 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
         if (died < 0) {
             if (errno == EINTR) {
                 /* Check shutdown flag below */
+            } else if (errno == ECHILD && respawn_pending(rs, nworkers)) {
+                died = 0;   /* 121.29: every slot is waiting out its backoff */
             } else {
                 break;
             }
@@ -5646,6 +5766,23 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
             break;
         }
 
+        /* 121.29 REL-07: fork the respawns whose backoff has run out. */
+        {
+            long now = http_now_ms();
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (!rs[i].respawn_at_ms || tls_pids[i] > 0 ||
+                    now < rs[i].respawn_at_ms) continue;
+                pid_t pid = fork();
+                if (pid < 0) {
+                    respawn_fork_failed(&rs[i], i, now);
+                    continue;
+                }
+                if (pid == 0) { tls_worker_loop(srv, r, tls->ssl_ctx); _exit(0); }
+                tls_pids[i] = pid;
+                respawn_started(&rs[i], now);
+            }
+        }
+
         if (died <= 0) {
             struct timespec ts;
             ts.tv_sec  = 0;
@@ -5663,10 +5800,14 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 
         if (WIFSIGNALED(wstatus) ||
             (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
-            /* Respawn worker using the shared listen socket */
+            /* Respawn -- at once the first time, then with backoff (121.29). */
+            long now = http_now_ms();
+            long d = respawn_delay(&rs[slot], now);
+            tls_pids[slot] = -1;
+            if (d > 0) { respawn_schedule(&rs[slot], slot, now, d); continue; }
             pid_t pid = fork();
             if (pid < 0) {
-                tls_pids[slot] = -1;
+                respawn_fork_failed(&rs[slot], slot, now);
                 continue;
             }
             if (pid == 0) {
@@ -5674,6 +5815,7 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
                 _exit(0);
             }
             tls_pids[slot] = pid;
+            respawn_started(&rs[slot], now);
         } else {
             tls_pids[slot] = -1;
         }
