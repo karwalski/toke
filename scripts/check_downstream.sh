@@ -14,6 +14,11 @@
 #   ooke     `make check-toke-candidate TOKE_CANDIDATE=<toke-dir>` (ooke 121.76:
 #            builds the binary, links + runs the unit tests, `ooke compile`s an app)
 #   website  `make website` + `make check-routes` with TKC/TOKE_REPO = <toke-dir>
+#            and OOKE = the ooke binary the ooke stage built against <toke-dir>
+#            (132.113: the website's own OOKE default is whatever pre-built
+#            ~/tk/toke-ooke/ooke-toke happens to exist, so /docs was rendered
+#            by an ooke that had never seen the candidate).  The ooke worktree
+#            lives until the trap at exit, after the website stage.
 #
 # Each runs in a temporary detached worktree of that repo's `main` (override:
 # OOKE_REF=, WEBSITE_REF=), so the sibling checkouts -- whatever branch they are
@@ -34,7 +39,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-fails=""; skips=""; oks=""
+fails=""; skips=""; oks=""; ooke_bin=""
 # worktree <repo> <ref> <name> -> prints the worktree path, or returns 1.
 # It runs in a $(...) subshell, so the caller records it in $wts for cleanup.
 worktree() {
@@ -57,7 +62,17 @@ elif wts="$wts $ooke|$wt"; ! grep -q '^check-toke-candidate:' "$wt/Makefile"; th
 else
   echo "--- ooke $(git -C "$wt" rev-parse --short HEAD) ($ref): make check-toke-candidate"
   if make -C "$wt" --no-print-directory check-toke-candidate TOKE_CANDIDATE="$toke"; then
-    oks="$oks ooke"; else fails="$fails ooke"; fi
+    # check-toke-candidate builds in a worktree of its own and removes it, so
+    # build the binary again here, in this worktree, for the website stage.
+    echo "--- ooke: building $wt/ooke-toke against $toke for the website stage"
+    if make -s -C "$wt" --no-print-directory TOKE_ROOT="$toke" ooke-toke >"$tmp/ooke-build.log" 2>&1 &&
+       [ -x "$wt/ooke-toke" ]; then
+      ooke_bin=$wt/ooke-toke; oks="$oks ooke"
+    else
+      tail -20 "$tmp/ooke-build.log" >&2
+      echo "--- ooke: FAIL (ooke-toke did not build in $wt)" >&2; fails="$fails ooke"
+    fi
+  else fails="$fails ooke"; fi
 fi
 
 # ── toke-website ────────────────────────────────────────────────────────────
@@ -69,8 +84,15 @@ elif ! wt=$(worktree "$site" "$ref" website); then
 else
   wts="$wts $site|$wt"
   echo "--- website $(git -C "$wt" rev-parse --short HEAD) ($ref): make website check-routes"
-  if make -C "$wt" --no-print-directory website TKC="$toke/toke" TOKE_REPO="$toke" &&
-     make -C "$wt" --no-print-directory check-routes TKC="$toke/toke" TOKE_REPO="$toke"; then
+  if [ -n "$ooke_bin" ]; then
+    echo "    ooke: $ooke_bin (built against $toke)"
+    set -- OOKE="$ooke_bin"
+  else
+    echo "    ooke: the website's default OOKE -- NOT built against $toke (ooke stage did not pass)"
+    set --
+  fi
+  if make -C "$wt" --no-print-directory website TKC="$toke/toke" TOKE_REPO="$toke" "$@" &&
+     make -C "$wt" --no-print-directory check-routes TKC="$toke/toke" TOKE_REPO="$toke" "$@"; then
     oks="$oks website"; else fails="$fails website"; fi
 fi
 
