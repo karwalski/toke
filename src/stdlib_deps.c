@@ -153,7 +153,9 @@ static const StdlibModule stdlib_table[] = {
      * no dependency on image either -- ocr.runsraw takes the raw pixel buffer
      * std.image already produces, which is composition without coupling. */
     { "ocr",           "ocr.c ocr_glue.c",                      "",                                                                 TK_OCR_FLAGS },
-    { "db",            "db.c db_glue.c",                      "",                                                                 "-lsqlite3" },
+    /* 127.269: db_glue.c calls tk_time_nowms_w (time_glue.c).  It linked
+     * only because time is reached from the core modules; say so here. */
+    { "db",            "db.c db_glue.c",                      "time",                                                             "-lsqlite3" },
     { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
     { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
     { "soap",          "soap.c soap_glue.c",                     "",                                                                 "" },  /* 131.46 */
