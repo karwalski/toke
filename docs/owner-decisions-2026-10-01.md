@@ -57,6 +57,7 @@ language rows.
 | 3.1 | 121.64 | TLS client with no pin authenticates nothing | (a) verified mode opt-in; (b) verify by default, pinning/insecure explicit | **(b)** — llm.c already verifies by default (121.23). Breaks unpinned callers: changelog entry required. |
 | 3.2 | 121.41 (3) | Text-format access-log field spoofing | (a) logfmt quoting of the message; (b) escape spaces and `=` only; (c) document | **(a)** — the only option that fully prevents field spoofing. |
 | 3.3 | 127.246 (3) | ocr/pdf/xlsx `lasterr` accessors duplicate the error payload | retire / keep | **Retire**, matching the 127.102 ruling for csv/file/zip. |
+| 3.5 | 121.80 | Idle HTTP/2 connections now close after 2 s (the HTTP/1.1 keep-alive idle) instead of 30 s, because an idle h2 connection held a pre-fork worker and stalled the next client ~30 s. Build-time overridable (`H2_IDLE_TIMEOUT_S`). | keep 2 s / restore 30 s / make it a runtime setting | **Keep 2 s, and make it a runtime setting later** if a deployment needs long-lived h2 — a worker held hostage by an idle connection is the worse failure. |
 | 3.4 | 127.199 | `stdlib/toon.tk` (std.toon is implemented in C; this file is unused) | port / withdraw | **Withdraw (archive)** together with 135.14. |
 
 ## 4. Corpus, training and tokenizer
