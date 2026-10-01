@@ -1691,7 +1691,11 @@ static void handle_connection(int fd)
         for (int i = 0; i < route_count; i++) {
             if (http_match_pattern(route_table[i].pattern,
                                    rpath_h1, params, &pc)) {
-                path_matched = 1;
+                /* 121.87: a "*" route is a fallback, not a route for the path: it
+                 * must not turn a method it lacks into 405.  An http.servedir
+                 * mount sits on GET "*", so with one registered every
+                 * non-GET to an unrouted path answered 405, not 404. */
+                if (strcmp(route_table[i].pattern, "*") != 0) path_matched = 1;
                 const char *check_method = is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
@@ -4559,8 +4563,12 @@ static int h2_flush_pending(H2Conn *conn, int fd, void *ssl)
     return 0;
 }
 
+/* h2_send_response -- send `res` on stream `st`.  `gz`/`gz_len`, when gz is
+ * not NULL, is the gzip encoding of res.body (maybe_gzip_body): it is sent
+ * in place of the body, with content-encoding and vary (121.87). */
 static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
-                            Res res, int is_head)
+                            Res res, int is_head,
+                            const char *gz, size_t gz_len)
 {
     uint32_t sid = st->id;
     static const char *const sec[][2] = {
@@ -4570,7 +4578,8 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
         { "strict-transport-security",
           "max-age=63072000; includeSubDomains; preload" },
     };
-    size_t body_len = http_body_len(res.body);
+    const char *body = gz ? gz : res.body;
+    size_t body_len = gz ? gz_len : http_body_len(res.body);
     int no_body = res.status < 200 || res.status == 204 || res.status == 304;
     if (no_body) body_len = 0;
     size_t cap = (size_t)res.headers.len + 16;
@@ -4587,6 +4596,10 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
     size_t k = 0;
     nm[k] = ":status"; vl[k++] = stat;
     if (!no_body) { nm[k] = "content-length"; vl[k++] = cl; }
+    if (gz && !no_body) {
+        nm[k] = "content-encoding"; vl[k++] = "gzip";
+        nm[k] = "vary";             vl[k++] = "Accept-Encoding";
+    }
     for (uint64_t i = 0; i < res.headers.len; i++) {
         const char *hk = res.headers.data[i].key;
         const char *hv = res.headers.data[i].val;
@@ -4638,7 +4651,7 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
          * streams meanwhile. */
         free(st->out);
         if (!(st->out = malloc(body_len))) { rc = -1; goto out; }
-        memcpy(st->out, res.body, body_len);
+        memcpy(st->out, body, body_len);
         st->out_len = body_len;
         st->out_off = 0;
         st->deadline_ms = 0;
@@ -4752,7 +4765,8 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
         for (int r = 0; r < route_count; r++) {
             if (http_match_pattern(route_table[r].pattern, rpath_h2,
                                    h2_params, &h2_pc)) {
-                matched = 1;
+                /* 121.87: "*" is a fallback (see the cleartext loop). */
+                if (strcmp(route_table[r].pattern, "*") != 0) matched = 1;
                 const char *cm = is_head ? "GET" : method;
                 if (strcmp(route_table[r].method, cm) == 0) {
                     if (strcmp(route_table[r].pattern, "*") != 0) {
@@ -4778,8 +4792,19 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             res = make_res(405, "Method Not Allowed");
     }
 
-    int rc = h2_send_response(conn, fd, ssl, st, res, is_head);
-    log_request(client_ip, &req, res.status, http_body_len(res.body));
+    /* 121.87: gzip per stream, by the rules the HTTP/1.1 loops use
+     * (maybe_gzip_body: a 2xx body of at least GZIP_MIN_SIZE bytes, the
+     * request's accept-encoding naming gzip, no content-encoding set).  The
+     * HTTP/2 path never compressed, so the same server sent a CSS file
+     * gzipped over HTTP/1.1 on TLS and whole over HTTP/2.  HEAD keeps the
+     * unencoded length, as on HTTP/1.1. */
+    char  *gz = NULL;
+    size_t gz_len = 0;
+    if (!is_head && !maybe_gzip_body(req, &res, &gz, &gz_len)) gz = NULL;
+    int rc = h2_send_response(conn, fd, ssl, st, res, is_head, gz, gz_len);
+    log_request(client_ip, &req, res.status,
+                gz ? gz_len : http_body_len(res.body));
+    free(gz);
     free(cookie);
     /* 127.72: response written and logged -- the route bindings it may
      * alias can go now. */
@@ -4793,7 +4818,8 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
 static int h2_refuse_body(H2Conn *conn, int fd, void *ssl, H2Stream *st)
 {
     int rc = h2_send_response(conn, fd, ssl, st,
-                              make_res(413, "Payload Too Large"), 0);
+                              make_res(413, "Payload Too Large"), 0,
+                              NULL, 0);
     h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_NONE);
     h2_stream_release(st);
     return rc;
@@ -5517,7 +5543,8 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         for (int i = 0; i < route_count; i++) {
             if (http_match_pattern(route_table[i].pattern,
                                    rpath_tls, params, &pc)) {
-                tls_path_matched = 1;
+                /* 121.87: "*" is a fallback (see the cleartext loop). */
+                if (strcmp(route_table[i].pattern, "*") != 0) tls_path_matched = 1;
                 const char *check_method = tls_is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
