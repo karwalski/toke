@@ -46,6 +46,11 @@ typedef struct {
 int emit_llvm_ir(const Node *ast, const char *src,
                  const CodegenEnv *env, const char *out_ll);
 
+/* llvm_caps_fit (127.264): 1 when every cap-sized codegen registry fits one
+ * arena allocation; otherwise emits the E9010 the build would and returns 0.
+ * Called after import resolution so --check and the build agree. */
+int llvm_caps_fit(const TkcLimits *lim);
+
 /* compile_binary: invoke clang to compile out_ll to a native binary at out_bin.
  * target: LLVM triple string (NULL = native target).
  * opt_level: optimization level 0-3 (passed as -O0..-O3 to clang).

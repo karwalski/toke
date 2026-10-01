@@ -32,8 +32,6 @@ regexes = [
   '''eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0\.''',
   # A sha256 digest recorded under a *_sha256 key.
   '''"[a-z0-9_]*sha256"\s*:\s*"[0-9a-f]{64}"''',
-  # Doc placeholders written with a trailing ellipsis (stdlib/auth.md).
-  '''(pk_live|sk_test)\.[A-Za-z0-9]+\.\.\.''',
   # test/http/test_auth_patterns.sh: base64("user:pass") and made-up keys.
   '''Basic dXNlcjpwYXNz''',
   '''(tok_live_abc123|sk_test_12345)''',

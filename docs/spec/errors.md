@@ -59,6 +59,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | W1010 | warning | lex | String interpolation `\(…)` not supported in the legacy profile | D005, D009 |
 | W1011 | warning | lex | Identifier starts with a keyword prefix | n/s |
 | W1020 | warning | lex | Foreign keyword detected | C328 |
+| W1021 | warning | lex | Raw control byte in string literal | C682 |
 | E2001 | error | parse | Declaration ordering violation | G024, D112 |
 | E2002 | error | parse | Unexpected token | C326, C327, C335, D107, D108 |
 | E2003 | error | parse | Missing semicolon | D111, D113 |

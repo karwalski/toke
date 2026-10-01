@@ -206,6 +206,29 @@ statement and declaration keywords (`def`, `return`, `class`, `var`, `else`,
 `f(def)`). Value-like words (`None`, `null`, `nil`, `undefined`, `True`,
 `False`) and `print` / `printf` / `console` still warn in value position.
 
+### W1021
+
+**Raw control byte in string literal**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | lex |
+
+A string literal's text holds a raw control byte: 0x00-0x08, 0x0B, 0x0C,
+0x0E-0x1A or 0x1C-0x1F. Tab, line feed, carriage return and ESC (0x1B) are
+not reported. The byte compiles to the same string as its escape, but it is
+invisible in an editor and a raw NUL cuts `source_line` short; the corpus
+control-byte guard rejects a program that holds one (story 131.32).
+
+**Fix:** replace the byte with its `\xHH` escape. The `fix` field names it
+(`replace the raw byte with \x00`); the escape and the byte are the same
+string, so the fix is exact. One warning per byte. A control byte inside a
+`\(...)` interpolation is outside the literal's text and is E1003.
+
+It is a warning, not an error, because the spec permits any UTF-8 in string
+literal content (`toke-spec-v0.4.md` §G).
+
 ## Parser Errors (E2xxx)
 
 ### E2001
@@ -1259,6 +1282,11 @@ the built-in `timeparts` and `none` types. The message lists what was counted.
 `tkc.toml`). The `fix` field names the exact value (story 138.15). The
 defaults are 32 imports, 1024 function signatures and 1024 struct types
 (`tkc --show-limits`); the last two were 128 and 64 until story 127.250.
+
+A cap is a count: `0` allows none. Caps so large (or negative) that a
+registry sized from them cannot be one compiler allocation are refused at
+`--check` too, with the same E9010 as the build, naming the caps; lower them
+(story 127.264).
 
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
 by pointer locals, local types and shadowing aliases) is reported once per

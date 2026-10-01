@@ -631,53 +631,31 @@ static int rule_empty_fn_body(const Node *node, const char *src,
 /* ── Qualified-type references to an import alias (127.81) ───────────── */
 
 /*
- * AST GAP. `parse_type_expr` lowers a qualified type `alias.$name` to a
- * single NODE_TYPE_IDENT whose token is *name*, marked `op == TK_DOT`
- * (src/parser.c:413).  The three tokens it consumed for `alias`, `.` and
- * `$` are dropped on the floor, so the alias has no node anywhere in the
- * tree and `ident_used_in` — which compares node tokens — can never see it.
- *
- * That gap made `unused-import` advise deleting an import that the program
- * genuinely depends on, and the import list is not merely a name-resolution
- * scope: it is the compiler's module manifest.  Three codegen consumers key
- * off it directly —
+ * A qualified type `alias.$name` is one NODE_TYPE_IDENT whose token is
+ * *name*, marked `op == TK_DOT`.  Its alias has no node of its own, so
+ * `ident_used_in` -- which compares node tokens -- never sees it.  That gap
+ * made `unused-import` advise deleting an import the program depends on, and
+ * the import list is not merely a name-resolution scope: it is the
+ * compiler's module manifest.  Three codegen consumers key off it directly --
  *   - resolve_stdlib_deps_imports_only (src/stdlib_deps.c) picks the C
  *     runtime files to compile in, so a dropped import silently drops the
  *     module's implementation out of the link set;
  *   - register_tki_struct_types (src/llvm.c) loads stdlib/<mod>.tki to get
  *     record field -> GEP indices, so a dropped import makes field access
- *     fall back to index 0 — a silently wrong field, not a diagnostic;
+ *     fall back to index 0 -- a silently wrong field, not a diagnostic;
  *   - prepass_load_tki / resolve_stdlib_call map the alias to a C symbol.
  * Deleting an import is therefore a semantic change to the emitted binary.
  *
- * Until the parser preserves the alias (filed separately), recover it from
- * the source text that precedes the type token: `alias . $ name`.
+ * The parser keeps the alias on the node (qual_start/qual_len, 131.81); this
+ * compares it.  It used to be recovered by re-reading the source text before
+ * the type token.
  */
 static int qual_type_alias_is(const Node *n, const char *name, int name_len,
                               const char *src)
 {
-    int p;
-    int end, s;
-
     if (!n || n->kind != NODE_TYPE_IDENT || n->op != TK_DOT) return 0;
-
-    /* Step back over the '$' that precedes the type name. */
-    p = n->tok_start - 1;
-    while (p >= 0 && (src[p] == ' ' || src[p] == '\t')) p--;
-    if (p < 0 || src[p] != '$') return 0;
-    p--;
-    while (p >= 0 && (src[p] == ' ' || src[p] == '\t')) p--;
-    if (p < 0 || src[p] != '.') return 0;
-    p--;
-    while (p >= 0 && (src[p] == ' ' || src[p] == '\t')) p--;
-
-    /* Scan back over the alias identifier. */
-    end = p + 1;
-    s = end;
-    while (s > 0 && (isalnum((unsigned char)src[s - 1]) || src[s - 1] == '_'))
-        s--;
-    if (end - s != name_len) return 0;
-    return memcmp(src + s, name, (size_t)name_len) == 0;
+    if (n->qual_len != name_len) return 0;
+    return memcmp(src + n->qual_start, name, (size_t)name_len) == 0;
 }
 
 /* Does (name, name_len) appear as the qualifier of any qualified type? */

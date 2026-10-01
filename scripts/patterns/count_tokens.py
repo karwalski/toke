@@ -21,11 +21,11 @@ REGION — how the measured function is isolated (and why in this order):
      so it cannot be minified on its own);
   2. `tkc --dump-ast` on the min text: spans are BYTE offsets into exactly
      the text we count, so no second minification and no drift;
-  3. the FUNC_DECL whose IDENT child is `--function` gives the START byte
-     (`f`).  In tkc 2.8.0 a FUNC_DECL span covers only that keyword token
-     and no node carries the closing brace, so the END is found by
-     string-aware brace matching from the head: extent = `f=...{...}`,
-     EXCLUDING the `;` declaration separator that follows;
+  3. the FUNC_DECL whose IDENT child is `--function` gives the extent
+     `f=...{...}`, EXCLUDING the `;` declaration separator that follows.
+     Since 131.31 a FUNC_DECL span is that full extent and is used as is.
+     An older tkc (2.8.0 .. 3.1.0) spans only the `f` keyword token; then
+     the END is found by string-aware brace matching from the head;
   4. that slice is string-masked (mask_strings.py) and counted.
   `--whole` counts the entire program instead (no function isolation).
 
@@ -105,13 +105,14 @@ def _dump_ast_text(text: str) -> dict:
         os.unlink(p)
 
 
-def _func_decls(ast: dict) -> list[tuple[str, int]]:
-    out: list[tuple[str, int]] = []
+def _func_decls(ast: dict) -> list[tuple[str, int, int]]:
+    """(name, span start, span end) BYTE offsets of every FUNC_DECL."""
+    out: list[tuple[str, int, int]] = []
 
     def walk(n: dict) -> None:
         if n.get("kind") == "FUNC_DECL":
             name = next((c.get("name") for c in n.get("children") or [] if c.get("kind") == "IDENT"), None)
-            out.append((name, n["span"]["start"]))
+            out.append((name, n["span"]["start"], n["span"]["end"]))
         for c in n.get("children") or []:
             walk(c)
     walk(ast)
@@ -142,13 +143,18 @@ def function_extent(mtext: str, name: str) -> tuple[int, int]:
     """(start, end) CHARACTER offsets of `f=<name>(...){...}` in the min text."""
     ast = _dump_ast_text(mtext)
     decls = _func_decls(ast)
-    hits = [s for n, s in decls if n == name]
+    hits = [(s, e) for n, s, e in decls if n == name]
     if not hits:
-        raise RuntimeError(f"function {name!r} not found; have {[n for n, _ in decls]}")
+        raise RuntimeError(f"function {name!r} not found; have {[n for n, _, _ in decls]}")
     if len(hits) > 1:
         raise RuntimeError(f"function {name!r} declared {len(hits)} times")
     b = mtext.encode("utf-8")
-    start = len(b[:hits[0]].decode("utf-8"))  # byte offset -> char offset
+    bstart, bend = hits[0]
+    start = len(b[:bstart].decode("utf-8"))  # byte offset -> char offset
+    if bend > bstart + 1:
+        # 131.31: the span is the full declaration (it ends at the `}`)
+        return start, len(b[:bend].decode("utf-8"))
+    # older tkc: the span is the `f` token alone -- brace-match the end
     end = _match_brace(mtext, start)
     return start, end
 

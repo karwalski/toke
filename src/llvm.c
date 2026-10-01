@@ -12163,6 +12163,42 @@ static void emit_lifted_closures(Ctx *c) {
     c->in_lifted = 0;
 }
 
+/* 127.258: the one wording for caps whose registries cannot be allocated. */
+static void caps_alloc_refuse(const TkcLimits *lim) {
+    char msg[512];
+    snprintf(msg, sizeof msg,
+             "compiler limit exceeded: the configured caps (max_funcs=%d, "
+             "max_locals=%d, max_structs=%d, max_imports=%d) need more "
+             "memory than one compiler allocation can hold; lower them "
+             "(--max-funcs=N etc. or tkc.toml)",
+             lim->max_funcs, lim->max_locals, lim->max_struct_types,
+             lim->max_imports);
+    diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, (void *)0);
+}
+
+/* 127.264 (1): would one of codegen's seven cap-sized registries be larger
+ * than one arena allocation can be?  If so the build is certain to refuse
+ * these caps (arena_alloc returns NULL for such a size whatever memory is
+ * free), so --check refuses them too, with the same E9010.  A negative cap
+ * converts to a huge size and is refused the same way.  An allocation that
+ * fits this bound but finds no memory is still met only by the build. */
+static int cap_fits(int cap, size_t elem) {
+    return cap >= 0 && (size_t)cap <= arena_max_alloc() / elem;
+}
+
+int llvm_caps_fit(const TkcLimits *lim) {
+    if (cap_fits(lim->max_funcs, sizeof(FnSig)) &&
+        cap_fits(lim->max_struct_types, sizeof(StructInfo)) &&
+        cap_fits(lim->max_imports, sizeof(ImportAlias)) &&
+        cap_fits(lim->max_locals, sizeof(PtrLocal)) &&
+        cap_fits(lim->max_locals, sizeof(LocalType)) &&
+        cap_fits(lim->max_locals, sizeof(GlobalVar)) &&
+        cap_fits(lim->max_locals, sizeof(NameAlias)))
+        return 1;
+    caps_alloc_refuse(lim);
+    return 0;
+}
+
 int emit_llvm_ir(const Node *ast, const char *src,
                  const CodegenEnv *env, const char *out_ll)
 {
@@ -12237,15 +12273,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
      * the caps. */
     if (!ctx.fns || !ctx.ptrs || !ctx.structs || !ctx.imports ||
         !ctx.locals || !ctx.globals || !ctx.aliases) {
-        char msg[512];
-        snprintf(msg, sizeof msg,
-                 "compiler limit exceeded: the configured caps (max_funcs=%d, "
-                 "max_locals=%d, max_structs=%d, max_imports=%d) need more "
-                 "memory than one compiler allocation can hold; lower them "
-                 "(--max-funcs=N etc. or tkc.toml)",
-                 lim.max_funcs, lim.max_locals, lim.max_struct_types,
-                 lim.max_imports);
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, (void *)0);
+        caps_alloc_refuse(&lim);
         if (!ar) {
             free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports);
             free(ctx.locals); free(ctx.globals); free(ctx.aliases);

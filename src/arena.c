@@ -67,6 +67,16 @@ arena_init(void)
 }
 
 /*
+ * arena_max_alloc — the largest request arena_alloc() accepts: INT_MAX less
+ * the alignment slack, so the rounded-up size still fits an int (127.264).
+ */
+size_t
+arena_max_alloc(void)
+{
+    return (size_t)INT_MAX - (TKC_ARENA_ALIGN - 1);
+}
+
+/*
  * arena_alloc — Bump-allocate size bytes from the arena.
  *
  * Rounds size up to TKC_ARENA_ALIGN boundary.  If the current head
@@ -89,7 +99,7 @@ arena_alloc(Arena *arena, size_t size)
      * int converted to size_t -- is refused with NULL, the same answer as an
      * allocation failure, which callers handle. */
     if (size == 0) size = 1;
-    if (size > (size_t)INT_MAX - (TKC_ARENA_ALIGN - 1)) return NULL;
+    if (size > arena_max_alloc()) return NULL;
     /* round up to alignment boundary */
     int aligned = ((int)size + TKC_ARENA_ALIGN - 1) & ~(TKC_ARENA_ALIGN - 1);
 
