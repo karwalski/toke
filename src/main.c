@@ -1677,18 +1677,18 @@ int main(int argc, char **argv)
         return EUSAGE;
     }
     if (do_compress || do_decompress || do_compress_stream) {
-        /* Read all of stdin into a malloc'd buffer */
-        char *ibuf = NULL;
-        size_t ilen = 0, icap = 0;
-        int ch;
-        while ((ch = fgetc(stdin)) != EOF) {
-            if (ilen >= icap) {
-                size_t newcap = icap == 0 ? 4096 : icap * 2;
-                char *tmp = realloc(ibuf, newcap);
-                if (!tmp) { free(ibuf); fputs("tkc: out of memory\n", stderr); return EINTERNAL; }
-                ibuf = tmp; icap = newcap;
-            }
-            ibuf[ilen++] = (char)ch;
+        /* Read all of stdin into a malloc'd buffer.  127.263: through
+         * tk_read_stream, not an fgetc(stdin) loop -- stdin is usually a pipe
+         * or FIFO here, and on Darwin under load a blocking read of one can
+         * miss the writer's close and sleep for good (127.254).  The bound
+         * keeps ilen * 4 (the batch output size below) from overflowing. */
+        size_t ilen = 0;
+        int ibig = 0;
+        char *ibuf = tk_read_stream(stdin, SIZE_MAX / 8, &ilen, &ibig);
+        if (!ibuf) {
+            fputs(ibig ? "tkc: standard input is too large\n"
+                       : "tkc: could not read standard input\n", stderr);
+            return EINTERNAL;
         }
 
         if (do_compress_stream) {

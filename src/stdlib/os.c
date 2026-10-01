@@ -172,9 +172,18 @@ int64_t tk_os_exit(int64_t status) {
 
 /* ── Environment ─────────────────────────────────────────────────── */
 
+/* 121.75: each call returns its own heap copy ("ownership": "caller").  It
+ * returned getenv()'s pointer into the process environment, which a later
+ * os.setenv of the same name (or another thread's setenv/unsetenv) may free
+ * or overwrite: the program's string then read the new value, or freed
+ * memory.  An unset name returns an owned "" too, as os.read's failures do
+ * (135.23) -- a caller that frees its result cannot free a literal. */
 int64_t tk_os_getenv(int64_t name) {
-    const char *val = getenv((const char *)(intptr_t)name);
-    return (int64_t)(intptr_t)(val ? val : "");
+    const char *key = (const char *)(intptr_t)name;
+    const char *val = key ? getenv(key) : NULL;
+    if (!val) return os_empty_owned();
+    char *out = strdup(val);
+    return out ? (int64_t)(intptr_t)out : os_empty_owned();
 }
 
 int64_t tk_os_setenv(int64_t name, int64_t value) {

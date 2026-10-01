@@ -8,6 +8,7 @@
  */
 
 #include "toml.h"
+#include "file.h"   /* 121.74: file_read -- AMB-07, $isdir, FIFO-safe */
 #include "../../stdlib/vendor/tomlc99/toml.h"
 #include <stdlib.h>
 #include <string.h>
@@ -51,27 +52,22 @@ TomlResult toml_load(const char *src)
 
 /*
  * toml_load_file — read a TOML file and parse it.
+ *
+ * 121.74: read through std.file's file_read(), not a plain fopen().  fopen
+ * followed a symlinked final path component -- the AMB-07 rule every
+ * std.file read enforces with O_NOFOLLOW -- and on Darwin it opened a
+ * directory, whose fseek/ftell/fread do not fail, so a directory parsed as
+ * an empty TOML document.  file_read refuses both ("final path component is
+ * a symlink ..." and "is a directory"), and does not hang on a FIFO with no
+ * writer (121.73).
  */
 TomlResult toml_load_file(const char *path)
 {
     if (!path) return toml_err("null path");
-    FILE *f = fopen(path, "rb");
-    if (!f) return toml_err("file not found");
-
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    if (sz < 0) { fclose(f); return toml_err("ftell failed"); }
-    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
-    if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); return toml_err("seek failed"); }
-
-    char *src = malloc((size_t)sz + 1);
-    if (!src) { fclose(f); return toml_err("allocation failed"); }
-    size_t nread = fread(src, 1, (size_t)sz, f);
-    fclose(f);
-    src[nread] = '\0';
-
-    TomlResult r = toml_load(src);
-    free(src);
+    StrFileResult fr = file_read(path);
+    if (fr.is_err) return toml_err(fr.err.msg ? fr.err.msg : "file read failed");
+    TomlResult r = toml_load(fr.ok);
+    free((void *)fr.ok);
     return r;
 }
 

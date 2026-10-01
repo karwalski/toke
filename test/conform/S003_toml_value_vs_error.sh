@@ -51,6 +51,7 @@ if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
         -o "${WORK}/test_toml_glue" \
         "${REPO_ROOT}/test/stdlib/test_toml_glue.c" \
         "${REPO_ROOT}/src/stdlib/toml.c" \
+        "${REPO_ROOT}/src/stdlib/file.c" \
         "${REPO_ROOT}/src/stdlib/toml_glue.c" \
         "${REPO_ROOT}/src/stdlib/capabilities.c" \
         "${REPO_ROOT}/stdlib/vendor/tomlc99/toml.c" \

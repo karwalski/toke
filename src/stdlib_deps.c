@@ -119,7 +119,7 @@ static const StdlibModule stdlib_table[] = {
     { "dashboard",     "dashboard.c dashboard_glue.c",          "chart html router",                                                "-lz" },
     { "http",          "http.c http2.c acme.c proxy.c cache.c content.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",
                                                                 "encoding log str crypto ws router net yaml toon i18n html svg canvas chart dashboard dataframe template toml file auth encrypt llm ml task", "-lssl -lcrypto -lz -lm -lpthread" },
-    { "toml",          "toml.c toml_glue.c",                    "",                                                                 "" },  /* vendor sources appended separately */
+    { "toml",          "toml.c toml_glue.c",                    "file",                                                             "" },  /* 121.74: toml_load_file reads via file_read */  /* vendor sources appended separately */
     { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */
     /* 135.1: zip.c #includes the vendored miniz.c into its own translation
      * unit (see the header comment there), so miniz is NOT listed as a

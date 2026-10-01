@@ -600,7 +600,10 @@ stress: $(BIN)
 check-tki-layout:
 	python3 scripts/check_tki_layout.py --list
 
-check-tki: check-tki-layout
+# 127.266: check-tki-names rides here too.  It was only in `make ci` and the
+# CI workflow, which batches do not run locally, so a stale rule in it failed
+# on stdlib/csv.tki for two days with nobody seeing it.
+check-tki: check-tki-layout check-tki-names
 	python3 scripts/check_tki_coverage.py
 	python3 scripts/check_tki_coverage.py --quarantine-md-check
 	python3 scripts/check_tki_coverage.py --internal-md-check
@@ -2028,14 +2031,14 @@ test-stdlib-md:
 
 test-stdlib-toml:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml \
-	    test/stdlib/test_toml.c src/stdlib/toml.c $(TOML_SRCS)
+	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_toml
 
 # Story 127.67: the std.toml wrappers must distinguish a value of false/0
 # from an error, and a missing section must not resolve to its parent.
 test-stdlib-toml-glue:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
-	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/toml_glue.c \
+	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/toml_glue.c \
 	    src/stdlib/capabilities.c $(TOML_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
@@ -2260,7 +2263,7 @@ fuzz-json:
 fuzz-yaml:
 	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
 fuzz-toml:
-	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c $(TOML_SRCS),$(TOML_FLAGS))
+	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS))
 fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:

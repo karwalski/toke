@@ -136,7 +136,8 @@ exits `1` instead. Does not return.
 ### os.getenv(name: $str): $str
 
 The value of environment variable `name`, or `""` if it is unset. The string
-is borrowed from the environment: do not keep it across an `os.setenv`.
+is a copy the program owns: a later `os.setenv` of the same name does not
+change or invalidate it.
 
 ### os.setenv(name: $str; value: $str): i64
 

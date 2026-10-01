@@ -391,8 +391,9 @@ f=main():i64{
 #    the old compiler resolved the name against it — so `r.score` loaded the
 #    payload POINTER and printed it as a double.  Both are numbers; nothing
 #    looked wrong.
-# 136.15 x 121.22: vs.close writes the dirty store, so it takes fs.write.
-RUN_GRANT=--allow-write \
+# 136.15 x 121.22: vs.close writes the dirty store, so it takes fs.write;
+# 121.42: vs.collection loads the collection file, so it takes fs.read.
+RUN_GRANT="--allow-write --allow-read" \
 run_case "a stdlib struct-array element resolves against its own record" \
     "$(printf 'id=a\nscore=1')" '
 m=t;

@@ -137,7 +137,7 @@ mkdir -p A B
 export VFA="${WORK}/A" VFB="${WORK}/B" VFMARK="${WORK}/ready"
 
 # 1. write, flush, write more, then die by SIGKILL -- close never runs.
-VFPHASE=write ./vf --allow-write > write.out 2>&1 &
+VFPHASE=write ./vf --allow-write --allow-read > write.out 2>&1 &
 PID=$!
 for _ in $(seq 1 200); do [ -f "${VFMARK}" ] && break; sleep 0.05; done
 if [ -f "${VFMARK}" ] && kill -0 "$PID" 2>/dev/null; then
@@ -149,7 +149,7 @@ else
 fi
 
 # 2. a fresh process sees exactly the flushed state.
-out="$(VFPHASE=read ./vf 2>&1)"; rc=$?
+out="$(VFPHASE=read ./vf --allow-read 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "after SIGKILL: flushed a1 survives; unflushed a2 and store B (never flushed) do not ($(echo "$out" | head -1))"
 else bad "read-back after SIGKILL (exit $rc): $out"; fi
 
@@ -160,22 +160,23 @@ else ok "no .vecs.tmp left behind"; fi
 # 4. a failed write is reported, and the previous complete file survives it.
 before="$(cksum < A/docs.vecs)"
 mkdir A/docs.vecs.tmp
-out="$(VFPHASE=fail ./vf --allow-write 2>&1)"; rc=$?
+out="$(VFPHASE=fail ./vf --allow-write --allow-read 2>&1)"; rc=$?
 after="$(cksum < A/docs.vecs)"
 if [ "$rc" -eq 0 ] && [ "$before" = "$after" ]; then ok "flush returns false when it cannot write; the previous file is untouched"
 else bad "flush over an unwritable temp path (exit $rc, file changed: $([ "$before" = "$after" ] && echo no || echo yes)): $out"; fi
 rmdir A/docs.vecs.tmp
 
 # 5. flush with nothing dirty is a successful no-op.
-out="$(VFPHASE=clean ./vf --allow-write 2>&1)"; rc=$?
+out="$(VFPHASE=clean ./vf --allow-write --allow-read 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "flush with nothing dirty returns true ($(echo "$out" | head -1))"
 else bad "flush with nothing dirty (exit $rc): $out"; fi
 
 # 6. flush takes fs.write authority (121.22): without the grant it is CAP001,
+#    (granted fs.read, which vecstore.collection takes since 121.42),
 #    and nothing reaches disk.
 before="$(cksum < A/docs.vecs)"
-out="$(VFPHASE=fail ./vf 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | /usr/bin/grep -a -q "CAP001" && [ "$before" = "$(cksum < A/docs.vecs)" ]; then
+out="$(VFPHASE=fail ./vf --allow-read 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | /usr/bin/grep -a -q "CAP001: capability 'fs.write'" && [ "$before" = "$(cksum < A/docs.vecs)" ]; then
     ok "flush without --allow-write is CAP001 and writes nothing"
 else bad "flush without the fs.write grant (exit $rc): $out"; fi
 
