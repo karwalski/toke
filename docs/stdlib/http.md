@@ -325,7 +325,9 @@ trickles bytes to hold a worker open is answered `408` when its deadline
 passes; the timeout used to restart with every byte received.
 
 **HTTP/2 has the same clock** (story 121.44). HTTP/2 is offered on the TLS
-servers, through ALPN. The connection preface and the client's first
+servers, through ALPN (`h2` first, then `http/1.1`), so a client that offers
+both gets HTTP/2. Between 2026-05-16 and story 121.80 the servers offered only
+`http/1.1`, and no client could reach HTTP/2 at all. The connection preface and the client's first
 `SETTINGS` frame must arrive within the server timeout of the connection
 starting; every frame must be whole within the timeout of its first byte; and
 a request's header block (`HEADERS` up to `END_HEADERS`) must be complete
@@ -334,10 +336,14 @@ above. A connection that misses one of these is closed. A header block larger
 than the 64 KiB header-list size the server advertises ends the connection
 with `GOAWAY` (`ENHANCE_YOUR_CALM`). Waiting between requests is not a
 request, but it is not free either: a connection with no request in progress
-for 30 seconds is closed with `GOAWAY` (`NO_ERROR`), and `PING` frames do not
-count as activity (story 121.46 — the server used to ping an idle connection
-and take the answer as activity, so any client that answered held a worker
-for as long as it stayed connected).
+for 2 seconds — the same as an idle HTTP/1.1 keep-alive connection — is
+closed with `GOAWAY` (`NO_ERROR`), and `PING` frames do not count as activity
+(story 121.46 — the server used to ping an idle connection and take the
+answer as activity, so any client that answered held a worker for as long as
+it stayed connected). A worker serves one connection at a time, so an idle
+connection costs a worker whichever protocol it speaks; until story 121.80
+the HTTP/2 limit was 30 seconds, long enough for one browser's idle
+connection to keep a worker from every other client.
 
 **An HTTP/2 request is the same request** (story 121.46). A header block that
 continues into `CONTINUATION` frames is dispatched when it ends; the request

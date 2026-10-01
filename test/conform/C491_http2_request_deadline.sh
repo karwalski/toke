@@ -25,6 +25,9 @@
 # header block larger than the SETTINGS_MAX_HEADER_LIST_SIZE we advertised is
 # a GOAWAY (ENHANCE_YOUR_CALM).  Waiting BETWEEN requests is not a request:
 # the idle control below sleeps past timeout_secs and is still served.
+# (Built with H2_IDLE_TIMEOUT_S=30: the control is about the request
+# deadline, and since 121.80 the default idle close is the HTTP/1.1
+# keep-alive clock -- 2 s -- which a 3 s pause would cross.)
 #
 # WHAT THIS DRIVES.  A C harness that #includes src/stdlib/http.c, run under
 # ASan+UBSan.  Each case is a script of byte segments written over a real
@@ -362,7 +365,7 @@ EOF
 if ! openssl req -x509 -newkey rsa:2048 -keyout "${WORK}/key.pem" \
         -out "${WORK}/cert.pem" -days 2 -nodes -subj "/CN=localhost" >/dev/null 2>&1; then
     fail "could not generate a self-signed certificate"
-elif ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DTK_HAVE_OPENSSL \
+elif ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DTK_HAVE_OPENSSL -DH2_IDLE_TIMEOUT_S=30 \
         -Wno-deprecated-declarations -I"${OSSL_INC}" -iquote "${S}" -I"${S}" \
         -o "${WORK}/h" "${WORK}/h.c" "${S}/http2.c" "${S}/encoding.c" "${S}/str.c" \
         "${S}/log.c" "${S}/capabilities.c" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread \
