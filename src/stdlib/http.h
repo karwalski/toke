@@ -343,6 +343,14 @@ void http_shutdown(void);
  * Pass NULL to disable CORS headers.  The string is copied internally. */
 void http_set_cors(const char *origins);
 
+/* http_set_notfound — the body (served as text/html, status 404) for any
+ * request whose path matches no route, in every serving mode.  The string is
+ * copied.  NULL restores the plain-text "Not Found".  Returns 0, or -1 when
+ * the copy cannot be allocated (the previous body is kept).  121.62. */
+int http_set_notfound(const char *body);
+/* http_notfound_body — the body set by http_set_notfound, or NULL. */
+const char *http_notfound_body(void);
+
 #define HTTP_DRAIN_TIMEOUT_SECS 10
 
 /* ── ETag generation and conditional requests (Story 27.1.13) ────────── */

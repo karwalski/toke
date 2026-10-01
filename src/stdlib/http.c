@@ -209,6 +209,43 @@ Res http_Res_json(uint16_t s, const char *b){ return make_res(s,   b); }
 Res http_Res_bad (const char *m)            { return make_res(400, m ? m : "Bad Request"); }
 Res http_Res_err (const char *m)            { return make_res(500, m ? m : "Internal Server Error"); }
 
+/* ── Custom 404 body (121.62) ───────────────────────────────────────────
+ *
+ * http.setnotfound's body.  It used to live only in tk_web_glue.c, read by
+ * tk_static_dispatch -- which runs only for a path that matched a registered
+ * getstatic route -- so every genuinely unrouted path got the plain
+ * "Not Found" below and the set body was never served.  It now lives here and
+ * is what all three dispatchers (HTTP/1.1, TLS, HTTP/2) answer an unrouted
+ * path with.  The string is copied: the caller's may be freed.  NULL (the
+ * default) keeps the plain-text "Not Found". */
+static char *g_notfound_body = NULL;
+static StrPair g_notfound_ct = { "Content-Type", "text/html; charset=utf-8" };
+
+int http_set_notfound(const char *body)
+{
+    char *copy = NULL;
+    if (body) {
+        copy = strdup(body);
+        if (!copy) return -1;        /* keep the previous body */
+    }
+    free(g_notfound_body);
+    g_notfound_body = copy;
+    return 0;
+}
+
+const char *http_notfound_body(void) { return g_notfound_body; }
+
+static Res notfound_res(void)
+{
+    Res r = make_res(404, "Not Found");
+    if (g_notfound_body) {
+        r.body = g_notfound_body;
+        r.headers.data = &g_notfound_ct;
+        r.headers.len  = 1;
+    }
+    return r;
+}
+
 /* ── Accessors ──────────────────────────────────────────────────────── */
 
 HttpResult http_param(Req req, const char *name) {
@@ -1517,7 +1554,7 @@ static void handle_connection(int fd)
                         route_table[_d].method ? route_table[_d].method : "?",
                         route_table[_d].pattern ? route_table[_d].pattern : "?");
         }
-        Res res = make_res(404, "Not Found");
+        Res res = notfound_res();   /* 121.62 */
         StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
         /* 127.100: route on the path component; the query string is not
          * part of the path and must not take part in matching. */
@@ -4447,7 +4484,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
                 break;
             }
 
-    Res res = make_res(404, "Not Found");
+    Res res = notfound_res();   /* 121.62 */
     int is_head = (strcmp(method, "HEAD") == 0);
     if (strcmp(method, "OPTIONS") == 0 && g_cors_matched) {
         res = make_res(204, NULL);                 /* CORS preflight (7.7.4) */
@@ -5211,7 +5248,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                         route_table[_d].method ? route_table[_d].method : "?",
                         route_table[_d].pattern ? route_table[_d].pattern : "?");
         }
-        Res res = make_res(404, "Not Found");
+        Res res = notfound_res();   /* 121.62 */
         StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
         /* 127.100: route on the path component; the query string is not
          * part of the path and must not take part in matching. */

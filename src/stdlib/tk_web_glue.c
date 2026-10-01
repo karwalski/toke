@@ -286,8 +286,9 @@ static Res call_toke_handler(TkGetHandlerFn fn, const Req *req) {
     return r;
 }
 
-/* Custom 404 body set via http.setnotfound (Story 49.4.5) */
-static const char *g_notfound_body = NULL;
+/* Custom 404 body set via http.setnotfound (Story 49.4.5): since 121.62 it
+ * is held (copied) by http.c -- http_set_notfound / http_notfound_body -- so
+ * the router serves it for unrouted paths too. */
 
 static const char *g_default_404 =
     "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
@@ -328,7 +329,7 @@ static Res tk_static_dispatch(Req req) {
     }
     Res r;
     r.status       = 404;
-    r.body         = g_notfound_body ? g_notfound_body : g_default_404;
+    r.body         = http_notfound_body() ? http_notfound_body() : g_default_404;
     r.headers.data = &g_html_ct_hdr;
     r.headers.len  = 1;
     return r;
@@ -361,8 +362,8 @@ int64_t tk_http_get_static_mime(int64_t path_ptr, int64_t body_ptr, int64_t mime
 }
 
 int64_t tk_http_set_notfound(int64_t body_ptr) {
-    g_notfound_body = (const char *)(intptr_t)body_ptr;
-    return 0;
+    /* 121.62: copied -- the caller's string may be freed after this call. */
+    return http_set_notfound((const char *)(intptr_t)body_ptr);
 }
 
 int64_t tk_http_set_cors(int64_t origins_ptr) {
