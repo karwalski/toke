@@ -49,7 +49,9 @@ if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except server_ops.c net router http)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c11 -D_GNU_SOURCE -D_DARWIN_C_SOURCE -g -O1 -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except server_ops.c --cc "${CC}" --objects net router http -- "${CF[@]}")" \
     || { echo "FAIL: stdlib link set: see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c392_XXXXXX")"
@@ -212,7 +214,7 @@ int main(void) {
     return fails ? 1 : 0;
 }
 C
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -D_DARWIN_C_SOURCE -g -O1 -iquote "${S}" -o t t.c \
+if ! "${CC}" "${CF[@]}" -o t t.c \
         "${LINK[@]}" -lz -lm -lpthread > cc.log 2>&1; then
     echo "  FAIL: driver build: $(head -c 800 cc.log)"; FAIL=$((FAIL + 1))
 else

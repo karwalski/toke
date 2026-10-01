@@ -76,10 +76,12 @@ C
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" os)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects os -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c "${LINK[@]}" -lm -lpthread > cc.log 2>&1; then
+if ! "${CC}" "${CF[@]}" -o t t.c "${LINK[@]}" -lm -lpthread > cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; echo "C256: 0 passed, 1 failed"; exit 1
 fi
 ASAN_OPTIONS="detect_leaks=0:abort_on_error=0" ./t > t.out 2>&1

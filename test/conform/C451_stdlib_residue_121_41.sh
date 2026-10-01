@@ -61,10 +61,15 @@ echo "---------------------------------------------------------------------"
 # dependency change silently breaks.  yaml.c itself is compiled separately
 # with the fault-injecting allocator, so the yaml set leaves it out; the md
 # set carries the vendored cmark sources.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except yaml.c yaml)" \
+# 127.270: as cached objects built with each driver's flags (CFY, CFM).
+CFY=(${CF} -iquote "${S}" -I"${S}")
+CFM=(${CF} -Wno-pedantic -I"${CMARK_DIR}" -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except yaml.c --cc "${CC}" \
+        --objects yaml -- "${CFY[@]}")" \
     || { echo "  FAIL: stdlib link set (yaml): see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK_YAML=(); while IFS= read -r l; do LINK_YAML+=("$l"); done <<< "${LINKSET}"
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" md)" \
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --objects md -- "${CFM[@]}")" \
     || { echo "  FAIL: stdlib link set (md): see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK_MD=(); while IFS= read -r l; do LINK_MD+=("$l"); done <<< "${LINKSET}"
 
@@ -120,7 +125,7 @@ int main(void) {
 }
 C
 if "${CC}" ${CF} -iquote "${S}" -I"${S}" -include "${WORK}/fault.h" -c -o "${WORK}/yaml.o" "${S}/yaml.c" >"${WORK}/yb.cc" 2>&1 \
-   && "${CC}" ${CF} -iquote "${S}" -I"${S}" -o "${WORK}/t_yaml" "${WORK}/t_yaml.c" "${WORK}/yaml.o" \
+   && "${CC}" "${CFY[@]}" -o "${WORK}/t_yaml" "${WORK}/t_yaml.c" "${WORK}/yaml.o" \
         "${LINK_YAML[@]}" >>"${WORK}/yb.cc" 2>&1; then
     run "${WORK}/t_yaml" yaml
 else
@@ -194,7 +199,7 @@ int main(void) {
     return 0;
 }
 C
-if "${CC}" ${CF} -Wno-pedantic -I"${CMARK_DIR}" -iquote "${S}" -I"${S}" -o "${WORK}/t_md" "${WORK}/t_md.c" \
+if "${CC}" "${CFM[@]}" -o "${WORK}/t_md" "${WORK}/t_md.c" \
         "${LINK_MD[@]}" >"${WORK}/md.cc" 2>&1; then
     run "${WORK}/t_md" md
 else

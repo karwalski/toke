@@ -32,13 +32,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C602_STDLIB:-${REPO_ROOT}/src/stdlib}"
-# 127.268: the stdlib link set comes from tkc's own dependency table
-# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
-# dependency change silently breaks.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c602_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -64,6 +57,15 @@ if [ -n "${OSSL_INC}" ] && command -v openssl >/dev/null 2>&1; then
 else
     echo "  SKIP: the TLS half -- no OpenSSL headers or openssl CLI on this host"
 fi
+
+# 127.268: the stdlib link set comes from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
+# dependency change silently breaks.
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} ${TLSFLAGS} -Wno-deprecated-declarations -Wno-macro-redefined -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c --cc "${CC}" --objects http -- "${CF[@]}")" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 
 cat > "${WORK}/h.c" <<'EOF'
 #include "http.c"
@@ -225,9 +227,7 @@ EOF
 if [ -n "${TLSFLAGS}" ] && ! openssl req -x509 -newkey rsa:2048 -keyout "${WORK}/key.pem" \
         -out "${WORK}/cert.pem" -days 2 -nodes -subj "/CN=localhost" >/dev/null 2>&1; then
     fail "could not generate a self-signed certificate"
-elif ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} ${TLSFLAGS} \
-        -Wno-deprecated-declarations -Wno-macro-redefined -iquote "${S}" -I"${S}" \
-        -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" ${TLSLIBS} -lz -lpthread \
+elif ! "${CC}" "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" ${TLSLIBS} -lz -lpthread \
         >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
 else

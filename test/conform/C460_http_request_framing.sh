@@ -302,14 +302,19 @@ EOF
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.  h.c #includes http.c itself.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http)" \
-    || { fail "stdlib link set: see stderr above"; echo "C460: ${PASS} passed, ${FAIL} failed"; exit 1; }
-LIBS=(); while IFS= read -r l; do LIBS+=("$l"); done <<< "${LINKSET}"
+# 127.270: as objects, compiled once per flag set and cached -- the closure
+# is built with the case's own flags (-DTK_HAVE_OPENSSL reaches it too).
 
 # build_run NAME MODE EXTRA-CFLAGS -- EXTRA-LINK...  (reports every case line)
 build_run() {
     local name="$1" mode="$2" cflags="$3"; shift 3
-    if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} ${cflags} -iquote "${S}" -I"${S}" \
+    local CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} ${cflags} -iquote "${S}" -I"${S}")
+    local LINKSET LIBS=()
+    LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c \
+            --cc "${CC}" --objects http -- "${CF[@]}")" \
+        || { fail "${name}: stdlib link set: see stderr above"; return; }
+    while IFS= read -r l; do LIBS+=("$l"); done <<< "${LINKSET}"
+    if ! "${CC}" "${CF[@]}" \
             -o "${WORK}/${name}" "${WORK}/h.c" "${LIBS[@]}" "$@" -lz -lpthread \
             >"${WORK}/${name}.cc" 2>&1; then
         fail "${name}: build: $(grep -a -m3 -E 'error' "${WORK}/${name}.cc" | head -c 400)"

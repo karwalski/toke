@@ -30,7 +30,7 @@
 # tree.  A copy of src/stdlib/ with main's encrypt.c fails the modinv
 # vectors (inv(3 mod 7) = 6) and the keygen bound.
 #
-# Story: 121.48
+# Story: 121.48, 127.270 (cached objects)
 
 set -uo pipefail
 
@@ -188,20 +188,25 @@ EOF
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.  d.c
 # #includes encrypt.c itself, so it is left out of the set.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c encrypt)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+# 127.270: as cached objects, one set per build shape (ASan, -O2).
+# objs NAME CF... -- fill LINK with the set compiled with those flags.
+objs() {
+    local LINKSET l; LINK=()
+    LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c \
+            --cc "${CC}" --objects encrypt -- "$@")" || return 1
+    while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+}
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 
-# shellcheck disable=SC2086
-if ! ${CC} -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/d_san" \
+CF_SAN=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}")
+CF_O2=(-std=c99 -D_GNU_SOURCE -O2 -iquote "${S}")
+if ! objs "${CF_SAN[@]}" || ! ${CC} "${CF_SAN[@]}" -o "${WORK}/d_san" \
         "${WORK}/d.c" "${LINK[@]}" > "${WORK}/cc1.log" 2>&1; then
     fail "driver (ASan+UBSan) does not compile"; sed 's/^/    /' "${WORK}/cc1.log" | head -20
     echo ""; echo "C520: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
-# shellcheck disable=SC2086
-if ! ${CC} -std=c99 -D_GNU_SOURCE -O2 -iquote "${S}" -o "${WORK}/d_o2" \
+if ! objs "${CF_O2[@]}" || ! ${CC} "${CF_O2[@]}" -o "${WORK}/d_o2" \
         "${WORK}/d.c" "${LINK[@]}" > "${WORK}/cc2.log" 2>&1; then
     fail "driver (-O2) does not compile"; sed 's/^/    /' "${WORK}/cc2.log" | head -20
     echo ""; echo "C520: ${PASS} passed, ${FAIL} failed"; exit 1

@@ -200,12 +200,14 @@ C
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.  auth.c is
 # compiled separately with the fault hook, so it is left out of the set.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except auth.c auth yaml)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c11 -D_GNU_SOURCE ${SAN} -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except auth.c --cc "${CC}" --objects auth yaml -- "${CF[@]}")" \
     || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 if "${CC}" -std=c11 -D_GNU_SOURCE ${SAN} -I"${S}" -c -o "${WORK}/auth.o" \
         -include "${WORK}/hook.h" "${S}/auth.c" >"${WORK}/b1.cc" 2>&1 \
-   && "${CC}" -std=c11 -D_GNU_SOURCE ${SAN} -I"${S}" -o "${WORK}/t" "${WORK}/t.c" "${WORK}/auth.o" \
+   && "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${WORK}/auth.o" \
         "${LINK[@]}" >"${WORK}/b2.cc" 2>&1; then
     "${WORK}/t" >"${WORK}/t.out" 2>&1
     /usr/bin/grep -a -E '^  (PASS|FAIL):' "${WORK}/t.out"
