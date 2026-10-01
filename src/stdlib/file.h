@@ -142,6 +142,9 @@ int              file_is_file(const char *path);
 
 /* 28.2.2 — copy, move, and metadata */
 BoolFileResult   file_copy(const char *src, const char *dst);
+/* 121.84: file_copy, plus *dst_failed = 1 when the failure was on dst and 0
+ * when on src (dst_failed may be NULL), so the caller names the right path. */
+BoolFileResult   file_copy_at(const char *src, const char *dst, int *dst_failed);
 BoolFileResult   file_move(const char *src, const char *dst);
 /* file_size is declared once, with the byte calls above: 135.12 replaced its
  * 28.2-era stat(2) body in place, and a second declaration here is how a
