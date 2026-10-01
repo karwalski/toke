@@ -85,6 +85,7 @@ if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
         "${REPO_ROOT}/src/stdlib/task.c" \
         "${REPO_ROOT}/src/stdlib/template.c" \
         "${REPO_ROOT}/src/stdlib/toml.c" \
+        "${REPO_ROOT}/src/stdlib/file.c" \
         "${REPO_ROOT}/src/stdlib/chart.c" \
         "${REPO_ROOT}/src/stdlib/html.c" \
         "${REPO_ROOT}/src/stdlib/ws.c" \
