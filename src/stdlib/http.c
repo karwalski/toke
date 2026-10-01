@@ -209,6 +209,43 @@ Res http_Res_json(uint16_t s, const char *b){ return make_res(s,   b); }
 Res http_Res_bad (const char *m)            { return make_res(400, m ? m : "Bad Request"); }
 Res http_Res_err (const char *m)            { return make_res(500, m ? m : "Internal Server Error"); }
 
+/* ── Custom 404 body (121.62) ───────────────────────────────────────────
+ *
+ * http.setnotfound's body.  It used to live only in tk_web_glue.c, read by
+ * tk_static_dispatch -- which runs only for a path that matched a registered
+ * getstatic route -- so every genuinely unrouted path got the plain
+ * "Not Found" below and the set body was never served.  It now lives here and
+ * is what all three dispatchers (HTTP/1.1, TLS, HTTP/2) answer an unrouted
+ * path with.  The string is copied: the caller's may be freed.  NULL (the
+ * default) keeps the plain-text "Not Found". */
+static char *g_notfound_body = NULL;
+static StrPair g_notfound_ct = { "Content-Type", "text/html; charset=utf-8" };
+
+int http_set_notfound(const char *body)
+{
+    char *copy = NULL;
+    if (body) {
+        copy = strdup(body);
+        if (!copy) return -1;        /* keep the previous body */
+    }
+    free(g_notfound_body);
+    g_notfound_body = copy;
+    return 0;
+}
+
+const char *http_notfound_body(void) { return g_notfound_body; }
+
+static Res notfound_res(void)
+{
+    Res r = make_res(404, "Not Found");
+    if (g_notfound_body) {
+        r.body = g_notfound_body;
+        r.headers.data = &g_notfound_ct;
+        r.headers.len  = 1;
+    }
+    return r;
+}
+
 /* ── Accessors ──────────────────────────────────────────────────────── */
 
 HttpResult http_param(Req req, const char *name) {
@@ -442,19 +479,35 @@ static int count_req_headers(const char *raw)
     return n;
 }
 
-static Req parse_request(const char *raw) {
+static void free_req(Req *req);
+
+/*
+ * parse_request — split a framed request into a Req whose strings the caller
+ * owns (release with free_req).  Returns 0, or -1 when an allocation failed
+ * (121.29 REL-08): every strdup used to go unchecked, so under memory
+ * pressure a request reached the router with a NULL method, path, header key
+ * or value -- partial state the dispatchers and handlers do not expect.  On
+ * -1 everything already allocated is released and *out is zeroed; the caller
+ * answers 500 and closes.  A request line with no CRLF or no space is not an
+ * allocation failure: it returns 0 with method and path NULL, as before.
+ */
+static int parse_request(const char *raw, Req *out) {
     Req req; memset(&req, 0, sizeof(req));
-    char *buf = malloc(strlen(raw) + 1); if (!buf) return req;
+    memset(out, 0, sizeof(*out));
+    char *buf = malloc(strlen(raw) + 1); if (!buf) return -1;
     strcpy(buf, raw);
-    char *nl = strstr(buf, "\r\n"); if (!nl) { free(buf); return req; }
+    char *nl = strstr(buf, "\r\n"); if (!nl) { free(buf); return 0; }
     *nl = '\0';
-    char *sp1 = strchr(buf, ' '); if (!sp1) { free(buf); return req; }
+    char *sp1 = strchr(buf, ' '); if (!sp1) { free(buf); return 0; }
     *sp1 = '\0'; req.method = strdup(buf);
     char *sp2 = strchr(sp1+1, ' '); if (sp2) *sp2 = '\0';
     req.path = strdup(sp1+1);
+    if (!req.method || !req.path) goto oom;
     /* 127.65: size the header block to the headers that actually arrived. */
     int hmax = count_req_headers(raw);
     StrPair *hdrs = hmax > 0 ? malloc((size_t)hmax * sizeof(StrPair)) : NULL;
+    if (hmax > 0 && !hdrs) goto oom;
+    req.headers.data = hdrs; req.headers.len = 0;
     int hc = 0;
     char *p = nl + 2;
     while (hdrs) {
@@ -463,16 +516,25 @@ static Req parse_request(const char *raw) {
         char *col = strchr(p, ':');
         if (col && hc < hmax) {
             *col = '\0';
-            hdrs[hc].key = strdup(p);
-            hdrs[hc].val = strdup(col+1 + (*(col+1)==' ' ? 1 : 0));
+            char *k = strdup(p);
+            char *v = strdup(col+1 + (*(col+1)==' ' ? 1 : 0));
+            if (!k || !v) { free(k); free(v); goto oom; }
+            hdrs[hc].key = k; hdrs[hc].val = v;
             hc++;
+            req.headers.len = (uint64_t)hc;   /* free_req sees only whole pairs */
         }
         p = e + 2;
     }
-    req.headers.data = hdrs; req.headers.len = (uint64_t)hc;
     const char *bs = strstr(raw, "\r\n\r\n");
     req.body = bs ? strdup(bs+4) : strdup("");
-    free(buf); return req;
+    if (!req.body) goto oom;
+    free(buf);
+    *out = req;
+    return 0;
+oom:
+    free(buf);
+    free_req(&req);
+    return -1;
 }
 
 /*
@@ -949,11 +1011,20 @@ static void send_error(int fd, uint16_t status, const char *client_ip)
 /* http_read_request result: close the connection without answering. */
 #define HTTP_RR_CLOSE (-1)
 
+/* 121.29 REL-02: the per-connection buffer starts at this size and grows
+ * on demand (doubling) up to http_frame_cap().  It used to be allocated at
+ * the full max_header + max_body + slack -- about 1 MB with the defaults --
+ * for every connection, so N idle keep-alive connections held N MB whether
+ * or not any of them ever sent a body.  After a request that grew it, the
+ * next request on the connection shrinks it back when what is buffered fits. */
+#define HTTP_IN_INIT_CAP    16384u
+
 typedef struct {
     int    fd;
     void  *ssl;         /* SSL* on the TLS loop, NULL on the plain one      */
-    char  *raw;         /* max_header + max_body + HTTP_FRAME_SLACK bytes   */
+    char  *raw;         /* cap bytes; grows up to maxcap (121.29 REL-02)    */
     size_t cap;
+    size_t maxcap;      /* max_header + max_body + HTTP_FRAME_SLACK         */
     size_t used;        /* bytes held in raw                                */
     size_t next_off;    /* where the next request's bytes start in raw      */
     char   next_first;  /* raw[next_off] before the NUL terminator hid it   */
@@ -964,6 +1035,35 @@ static size_t http_frame_cap(void)
 {
     return (size_t)srv_limits.max_header + (size_t)srv_limits.max_body
          + HTTP_FRAME_SLACK;
+}
+
+/* httpin_open -- allocate the reader's first buffer: HTTP_IN_INIT_CAP bytes,
+ * or the whole frame cap if the limits make that smaller.  Returns 0, or -1
+ * when it cannot be allocated. */
+static int httpin_open(HttpIn *in, int fd, void *ssl)
+{
+    memset(in, 0, sizeof *in);
+    in->fd = fd; in->ssl = ssl;
+    in->maxcap = http_frame_cap();
+    in->cap = in->maxcap < HTTP_IN_INIT_CAP ? in->maxcap : HTTP_IN_INIT_CAP;
+    in->raw = malloc(in->cap);
+    return in->raw ? 0 : -1;
+}
+
+/* httpin_grow -- make room for at least `want` bytes plus the terminator,
+ * doubling, never past maxcap.  Returns 0, or -1 when the buffer is already
+ * at maxcap or realloc fails (the old buffer is kept either way). */
+static int httpin_grow(HttpIn *in, size_t want)
+{
+    if (want + 1 <= in->cap) return 0;
+    if (in->cap >= in->maxcap) return -1;
+    size_t nc = in->cap;
+    while (nc < want + 1 && nc < in->maxcap)
+        nc = nc > in->maxcap / 2 ? in->maxcap : nc * 2;
+    char *nr = realloc(in->raw, nc);
+    if (!nr) return -1;
+    in->raw = nr; in->cap = nc;
+    return 0;
 }
 
 static long http_now_ms(void)
@@ -1069,11 +1169,20 @@ static ssize_t httpin_read(HttpIn *in, char *buf, size_t n)
     }
 }
 
-/* httpin_fill — append more bytes to raw.  Returns httpin_read's result. */
+/* httpin_fill — append more bytes to raw, up to `limit` bytes held in all.
+ * The buffer grows toward limit as it fills (121.29 REL-02); a limit past
+ * maxcap - 1 means maxcap - 1.  Returns httpin_read's result, or -1 when the
+ * limit is reached or the buffer cannot grow. */
 static ssize_t httpin_fill(HttpIn *in, size_t limit)
 {
-    if (limit > in->cap - 1) limit = in->cap - 1;
+    if (limit > in->maxcap - 1) limit = in->maxcap - 1;
     if (in->used >= limit) return -1;
+    if (in->used >= in->cap - 1) {
+        size_t want = in->used + (in->used < 4096 ? 4096 : in->used);
+        if (want > limit) want = limit;
+        if (httpin_grow(in, want) != 0) return -1;
+    }
+    if (limit > in->cap - 1) limit = in->cap - 1;
     ssize_t r = httpin_read(in, in->raw + in->used, limit - in->used);
     if (r > 0) { in->used += (size_t)r; in->raw[in->used] = '\0'; }
     return r;
@@ -1252,13 +1361,14 @@ static int http_read_chunked(HttpIn *in, size_t hlen, size_t *out, size_t *next)
             }
         }
         if (!need_more) continue;
-        /* Out of room: slide the unread input down onto the decoded body. */
-        if (in->used >= in->cap - 1 && pos > hlen + o) {
+        /* Out of room: slide the unread input down onto the decoded body
+         * (only once the buffer is at its largest; before that it grows). */
+        if (in->used >= in->maxcap - 1 && pos > hlen + o) {
             memmove(in->raw + hlen + o, in->raw + pos, in->used - pos);
             in->used -= pos - (hlen + o);
             pos = hlen + o;
         }
-        ssize_t r = httpin_fill(in, in->cap - 1);
+        ssize_t r = httpin_fill(in, in->maxcap - 1);
         if (r == -2) return 408;
         if (r <= 0) return HTTP_RR_CLOSE;
     }
@@ -1283,6 +1393,14 @@ static int http_read_request_(HttpIn *in, int requests)
         in->used = 0;
     }
     in->next_off = 0;
+    /* 121.29 REL-02: a buffer grown by an earlier request goes back to its
+     * initial size when what is carried over fits (a failed shrink keeps
+     * the larger buffer). */
+    if (in->cap > HTTP_IN_INIT_CAP && in->used < HTTP_IN_INIT_CAP &&
+        HTTP_IN_INIT_CAP <= in->maxcap) {
+        char *nr = realloc(in->raw, HTTP_IN_INIT_CAP);
+        if (nr) { in->raw = nr; in->cap = HTTP_IN_INIT_CAP; }
+    }
     in->raw[in->used] = '\0';
 
     size_t mh = (size_t)srv_limits.max_header;
@@ -1326,7 +1444,7 @@ static int http_read_request_(HttpIn *in, int requests)
     } else {
         body_end = hlen + (cl > 0 ? (size_t)cl : 0);
         while (in->used < body_end) {
-            ssize_t r = httpin_fill(in, in->cap - 1);
+            ssize_t r = httpin_fill(in, in->maxcap - 1);
             if (r == -2) return 408;
             if (r <= 0) return HTTP_RR_CLOSE;
         }
@@ -1423,13 +1541,11 @@ static void handle_connection(int fd)
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     /* The per-connection buffer holds one whole request (headers + body),
-     * plus room for chunk-size lines and the next pipelined request. */
-    size_t buf_cap = http_frame_cap();
-    char *raw = malloc(buf_cap);
-    if (!raw) { close(fd); return; }
+     * plus room for chunk-size lines and the next pipelined request.  It
+     * starts small and grows to that bound on demand (121.29 REL-02); since
+     * it may move, it is always in.raw, never a copy of the pointer. */
     HttpIn in;
-    memset(&in, 0, sizeof in);
-    in.fd = fd; in.raw = raw; in.cap = buf_cap;
+    if (httpin_open(&in, fd, NULL) != 0) { close(fd); return; }
 
     int requests = 0;
     int linger = 0;   /* 121.52: closing on the peer's error -- see http_linger_close */
@@ -1445,11 +1561,16 @@ static void handle_connection(int fd)
 
         requests++;
 
-        int client_wants_close = req_wants_close(raw);
+        int client_wants_close = req_wants_close(in.raw);
         int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
         int keep_alive         = (!client_wants_close && !max_reached);
 
-        Req req = parse_request(raw);
+        Req req;
+        if (parse_request(in.raw, &req) != 0) {
+            /* 121.29 REL-08: out of memory -- answer, close, no partial Req. */
+            send_error(fd, 500, client_ip);
+            break;
+        }
 
         /* 121.44: no h2c upgrade.  An "Upgrade: h2c" request used to get a
          * 101 and then handle_h2_connection(fd, NULL, ...), which read the
@@ -1517,7 +1638,7 @@ static void handle_connection(int fd)
                         route_table[_d].method ? route_table[_d].method : "?",
                         route_table[_d].pattern ? route_table[_d].pattern : "?");
         }
-        Res res = make_res(404, "Not Found");
+        Res res = notfound_res();   /* 121.62 */
         StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
         /* 127.100: route on the path component; the query string is not
          * part of the path and must not take part in matching. */
@@ -1630,7 +1751,7 @@ static void handle_connection(int fd)
         if (!keep_alive) break;
     }
 
-    free(raw);
+    free(in.raw);
     if (linger) http_linger_close(fd);
     else        close(fd);
 }
@@ -1843,6 +1964,85 @@ static int bind_listen(const char *host, uint64_t port)
     return srv;
 }
 
+/* ── Worker respawn backoff (121.29 REL-07) ─────────────────────────────
+ *
+ * Both pre-fork supervisors respawned a worker the moment it died abnormally.
+ * A worker that crashes on start, or on every request, therefore became a
+ * fork loop: one fork per crash with no delay, pinning a core and flooding
+ * the logs for as long as the cause lasted.  Now each slot keeps a crash
+ * streak.  The first abnormal death respawns at once (an occasional crash
+ * costs nothing, as before); each further death within
+ * HTTP_RESPAWN_STABLE_MS of the worker's start doubles the wait, from
+ * HTTP_RESPAWN_BASE_MS up to HTTP_RESPAWN_CAP_MS.  A worker that stayed up
+ * HTTP_RESPAWN_STABLE_MS resets its slot's streak.  A failed fork is retried
+ * on the same schedule instead of leaving the slot empty for good.  Each
+ * delayed respawn writes one "DIAGNOSTIC: kind=worker_respawn_backoff" line
+ * to stderr. */
+#ifndef HTTP_RESPAWN_BASE_MS
+#define HTTP_RESPAWN_BASE_MS   100L
+#endif
+#ifndef HTTP_RESPAWN_CAP_MS
+#define HTTP_RESPAWN_CAP_MS    10000L
+#endif
+#ifndef HTTP_RESPAWN_STABLE_MS
+#define HTTP_RESPAWN_STABLE_MS 30000L
+#endif
+
+typedef struct {
+    long     started_ms;    /* when the slot's current worker was forked    */
+    long     respawn_at_ms; /* 0, or when a pending respawn is due          */
+    unsigned streak;        /* abnormal deaths in a row without stable uptime */
+} RespawnSlot;
+
+static void respawn_started(RespawnSlot *rs, long now)
+{
+    rs->started_ms = now;
+    rs->respawn_at_ms = 0;
+}
+
+/* respawn_delay -- the slot's worker died abnormally (or a fork for it
+ * failed) at `now`: how long to wait before the next fork, in ms. */
+static long respawn_delay(RespawnSlot *rs, long now)
+{
+    if (now - rs->started_ms >= HTTP_RESPAWN_STABLE_MS) rs->streak = 0;
+    long d = 0;
+    if (rs->streak > 0) {
+        d = HTTP_RESPAWN_BASE_MS;
+        for (unsigned i = 1; i < rs->streak && d < HTTP_RESPAWN_CAP_MS; i++)
+            d *= 2;
+        if (d > HTTP_RESPAWN_CAP_MS) d = HTTP_RESPAWN_CAP_MS;
+    }
+    if (rs->streak < 64) rs->streak++;
+    return d;
+}
+
+static void respawn_schedule(RespawnSlot *rs, uint64_t slot, long now, long d)
+{
+    rs->respawn_at_ms = now + (d > 0 ? d : 1);
+    if (d > 0) {
+        fprintf(stderr, "DIAGNOSTIC: kind=worker_respawn_backoff slot=%llu"
+                " streak=%u delay_ms=%ld\n",
+                (unsigned long long)slot, rs->streak, d);
+        fflush(stderr);
+    }
+}
+
+/* respawn_pending -- is any slot waiting to be respawned? */
+static int respawn_pending(const RespawnSlot *rs, uint64_t n)
+{
+    for (uint64_t i = 0; i < n; i++) if (rs[i].respawn_at_ms) return 1;
+    return 0;
+}
+
+/* respawn_fork_failed -- fork() for the slot failed at `now`: retry on the
+ * same schedule.  The clock restarts so a long run of failures cannot look
+ * like stable uptime and reset the streak. */
+static void respawn_fork_failed(RespawnSlot *rs, uint64_t slot, long now)
+{
+    rs->started_ms = now;
+    respawn_schedule(rs, slot, now, respawn_delay(rs, now));
+}
+
 /* worker_loop — accept and handle connections; exits when shutdown is set. */
 static void worker_loop(int srv_fd, TkHttpRouter *r)
 {
@@ -1908,6 +2108,8 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
     install_shutdown_handler(SIGINT,  workers_parent_sighandler);  /* 127.69 */
     install_shutdown_handler(SIGHUP,  workers_parent_sighandler);  /* 127.69 */
 
+    RespawnSlot rs[TK_MAX_WORKERS];                     /* 121.29 REL-07 */
+    memset(rs, 0, sizeof rs);
     for (uint64_t i = 0; i < nworkers; i++) {
         pid_t pid = fork();
         if (pid < 0) {
@@ -1921,6 +2123,7 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             _exit(0);
         }
         g_worker_pids[i] = pid;
+        respawn_started(&rs[i], http_now_ms());
     }
 
     /* Parent keeps srv open so respawned workers can inherit it. */
@@ -1933,6 +2136,8 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
         if (died < 0) {
             if (errno == EINTR) {
                 /* Check shutdown flag set by signal handler */
+            } else if (errno == ECHILD && respawn_pending(rs, nworkers)) {
+                died = 0;   /* 121.29: every slot is waiting out its backoff */
             } else {
                 break;
             }
@@ -1977,10 +2182,18 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             /* 121.53 (1): reopen the logs here, so the new workers inherit
              * the files now at the logs' paths (logrotate + SIGHUP). */
             tk_log_reopen_files();
-            /* Fork new workers */
+            /* Fork new workers.  A reload starts every slot afresh; a fork
+             * that fails is retried on the backoff schedule (121.29). */
             for (uint64_t i = 0; i < nworkers; i++) {
+                long now = http_now_ms();
+                rs[i].streak = 0;
+                respawn_started(&rs[i], now);
                 pid_t pid = fork();
-                if (pid < 0) { g_worker_pids[i] = -1; continue; }
+                if (pid < 0) {
+                    g_worker_pids[i] = -1;
+                    respawn_fork_failed(&rs[i], i, now);
+                    continue;
+                }
                 if (pid == 0) { worker_loop(srv, r); _exit(0); }
                 g_worker_pids[i] = pid;
             }
@@ -2030,6 +2243,23 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             break; /* exit supervision loop */
         }
 
+        /* 121.29 REL-07: fork the respawns whose backoff has run out. */
+        {
+            long now = http_now_ms();
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (!rs[i].respawn_at_ms || g_worker_pids[i] > 0 ||
+                    now < rs[i].respawn_at_ms) continue;
+                pid_t pid = fork();
+                if (pid < 0) {
+                    respawn_fork_failed(&rs[i], i, now);
+                    continue;
+                }
+                if (pid == 0) { worker_loop(srv, r); _exit(0); }
+                g_worker_pids[i] = pid;
+                respawn_started(&rs[i], now);
+            }
+        }
+
         if (died <= 0) {
             /* WNOHANG: no child exited yet; yield and retry */
             struct timespec ts;
@@ -2048,10 +2278,15 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
 
         if (WIFSIGNALED(wstatus) ||
             (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
-            /* Respawn worker using the shared listen socket */
+            /* Respawn worker using the shared listen socket -- at once the
+             * first time, then with backoff (121.29 REL-07). */
+            long now = http_now_ms();
+            long d = respawn_delay(&rs[slot], now);
+            g_worker_pids[slot] = -1;
+            if (d > 0) { respawn_schedule(&rs[slot], slot, now, d); continue; }
             pid_t pid = fork();
             if (pid < 0) {
-                g_worker_pids[slot] = -1;
+                respawn_fork_failed(&rs[slot], slot, now);
                 continue;
             }
             if (pid == 0) {
@@ -2059,6 +2294,7 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                 _exit(0);
             }
             g_worker_pids[slot] = pid;
+            respawn_started(&rs[slot], now);
         } else {
             g_worker_pids[slot] = -1;
         }
@@ -4388,6 +4624,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
     StrPair req_headers[64];
     int req_hcount = 0, have_host = 0;
     char *cookie = NULL;   /* RFC 9113 8.2.3: crumbs rejoined with "; " */
+    int oom = 0;           /* 121.29 REL-08: a crumb could not be kept */
 
     for (int i = 0; i < st->hcount; i++) {
         const char *n = st->hnames[i], *v = st->hvalues[i];
@@ -4398,10 +4635,11 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
             continue;
         }
         if (strcmp(n, "cookie") == 0) {
-            if (!cookie) { cookie = strdup(v); continue; }
+            if (oom) continue;
+            if (!cookie) { cookie = strdup(v); if (!cookie) oom = 1; continue; }
             size_t a = strlen(cookie), b = strlen(v);
             char *j = realloc(cookie, a + b + 3);
-            if (!j) continue;
+            if (!j) { oom = 1; continue; }   /* was: dropped the crumb */
             memcpy(j + a, "; ", 2); memcpy(j + a + 2, v, b + 1);
             cookie = j;
             continue;
@@ -4430,6 +4668,13 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
         h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_PROTOCOL);
         return 0;
     }
+    /* 121.29 REL-08: a cookie that could not be rejoined whole fails the
+     * stream rather than reaching the handler with crumbs missing. */
+    if (oom) {
+        free(cookie);
+        h2_send_rst_stream(conn, fd, ssl, st->id, H2_ERR_INTERNAL);
+        return 0;
+    }
 
     Req req;
     memset(&req, 0, sizeof(req));
@@ -4447,7 +4692,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
                 break;
             }
 
-    Res res = make_res(404, "Not Found");
+    Res res = notfound_res();   /* 121.62 */
     int is_head = (strcmp(method, "HEAD") == 0);
     if (strcmp(method, "OPTIONS") == 0 && g_cors_matched) {
         res = make_res(204, NULL);                 /* CORS preflight (7.7.4) */
@@ -5115,12 +5360,8 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-    size_t buf_cap = http_frame_cap();
-    char *raw = malloc(buf_cap);
-    if (!raw) { SSL_free(ssl); close(fd); return; }
-    HttpIn in;
-    memset(&in, 0, sizeof in);
-    in.fd = fd; in.ssl = ssl; in.raw = raw; in.cap = buf_cap;
+    HttpIn in;   /* grows on demand; always in.raw (121.29 REL-02) */
+    if (httpin_open(&in, fd, ssl) != 0) { SSL_free(ssl); close(fd); return; }
 
     int requests = 0;
     int linger = 0;   /* 121.52: see http_linger_close */
@@ -5135,11 +5376,15 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         if (rr > 0) { tls_send_error(ssl, (uint16_t)rr); linger = rr != 408; break; }
 
         requests++;
-        int client_wants_close = req_wants_close(raw);
+        int client_wants_close = req_wants_close(in.raw);
         int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
         int keep_alive         = (!client_wants_close && !max_reached);
 
-        Req req = parse_request(raw);
+        Req req;
+        if (parse_request(in.raw, &req) != 0) {
+            tls_send_error(ssl, 500);          /* 121.29 REL-08 */
+            break;
+        }
 
         /* ── CORS: match request Origin against allowed list (TLS path) ── */
         g_cors_matched = NULL;
@@ -5211,7 +5456,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                         route_table[_d].method ? route_table[_d].method : "?",
                         route_table[_d].pattern ? route_table[_d].pattern : "?");
         }
-        Res res = make_res(404, "Not Found");
+        Res res = notfound_res();   /* 121.62 */
         StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
         /* 127.100: route on the path component; the query string is not
          * part of the path and must not take part in matching. */
@@ -5344,7 +5589,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         if (!keep_alive) break;
     }
 
-    free(raw);
+    free(in.raw);
     ssl_shutdown_quick(ssl, fd);
     if (linger) http_linger_close(fd);
     else        close(fd);
@@ -5446,6 +5691,8 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
     install_shutdown_handler(SIGHUP,  workers_parent_sighandler);
 
     pid_t tls_pids[TK_MAX_WORKERS];
+    RespawnSlot rs[TK_MAX_WORKERS];                     /* 121.29 REL-07 */
+    memset(rs, 0, sizeof rs);
     for (uint64_t i = 0; i < nworkers; i++) {
         pid_t pid = fork();
         if (pid < 0) {
@@ -5458,6 +5705,7 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
             _exit(0);
         }
         tls_pids[i] = pid;
+        respawn_started(&rs[i], http_now_ms());
     }
 
     /* Parent keeps srv open so respawned workers can inherit it. */
@@ -5470,6 +5718,8 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
         if (died < 0) {
             if (errno == EINTR) {
                 /* Check shutdown flag below */
+            } else if (errno == ECHILD && respawn_pending(rs, nworkers)) {
+                died = 0;   /* 121.29: every slot is waiting out its backoff */
             } else {
                 break;
             }
@@ -5516,6 +5766,23 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
             break;
         }
 
+        /* 121.29 REL-07: fork the respawns whose backoff has run out. */
+        {
+            long now = http_now_ms();
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (!rs[i].respawn_at_ms || tls_pids[i] > 0 ||
+                    now < rs[i].respawn_at_ms) continue;
+                pid_t pid = fork();
+                if (pid < 0) {
+                    respawn_fork_failed(&rs[i], i, now);
+                    continue;
+                }
+                if (pid == 0) { tls_worker_loop(srv, r, tls->ssl_ctx); _exit(0); }
+                tls_pids[i] = pid;
+                respawn_started(&rs[i], now);
+            }
+        }
+
         if (died <= 0) {
             struct timespec ts;
             ts.tv_sec  = 0;
@@ -5533,10 +5800,14 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 
         if (WIFSIGNALED(wstatus) ||
             (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
-            /* Respawn worker using the shared listen socket */
+            /* Respawn -- at once the first time, then with backoff (121.29). */
+            long now = http_now_ms();
+            long d = respawn_delay(&rs[slot], now);
+            tls_pids[slot] = -1;
+            if (d > 0) { respawn_schedule(&rs[slot], slot, now, d); continue; }
             pid_t pid = fork();
             if (pid < 0) {
-                tls_pids[slot] = -1;
+                respawn_fork_failed(&rs[slot], slot, now);
                 continue;
             }
             if (pid == 0) {
@@ -5544,6 +5815,7 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
                 _exit(0);
             }
             tls_pids[slot] = pid;
+            respawn_started(&rs[slot], now);
         } else {
             tls_pids[slot] = -1;
         }

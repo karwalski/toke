@@ -257,8 +257,10 @@ void tk_error_log_write(TkAccessLog *log,
 void tk_error_log_close(TkAccessLog *log);
 
 /*
- * tk_log_reopen_files — reopen the global access and error logs at their
- * paths (121.53 (1): what a server does on SIGHUP, after logrotate).  A log
+ * tk_log_reopen_files — reopen the global access and error logs, the
+ * tk_log_set_output file and the tk_log_security_set_output file at their
+ * paths (121.53 (1), 121.72: what a server does on SIGHUP, after logrotate).
+ * A log
  * that rotates by its own lock follows a rename on its next write anyway; this
  * matters for one opened without the lock (no sidecar could be made beside
  * it), which otherwise keeps writing the renamed file.  A log on a tty, FIFO

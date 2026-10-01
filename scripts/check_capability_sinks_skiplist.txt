@@ -58,6 +58,12 @@ exempt | log.c:compress_to_gz | fopen | 2026-09-29 | 121.22 | rotation of a log 
 exempt | log.c:compress_to_gz | unlink | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
 exempt | log.c:path_exists | stat | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
 exempt | log.c:rotate_access_log_locked | rename | 2026-09-29 | 121.22 | rotation of a log opened under fs.write
+# 121.72: SIGHUP's tk_log_reopen_files also reopens the tk_log_set_output and
+# tk_log_security_set_output sinks at the path they were opened at.  Those two
+# are C interface only (not on std.log's .tki), so the open was the embedding
+# C code's, and the reopen acquires nothing new.
+exempt | log.c:sink_reopen | fopen | 2026-10-01 | 121.72 | reopen of a log sink at the path it was already opened at
+exempt | log.c:sink_reopen | stat | 2026-10-01 | 121.72 | regular-file check before reopening a log sink at its own path
 exempt | log.c:tk_access_log_open | stat | 2026-09-29 | 121.22 | is-it-a-regular-file check on the path being opened under fs.write (or on /dev/stderr, which needs no grant)
 
 # TZ.  time.parse / time.withtz / time.utcoffset used to set TZ, call

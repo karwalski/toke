@@ -49,9 +49,11 @@ static ProcHook g_shutdown_hook = NULL;
  * called any of the four: no stdlib module, no glue, no header, no .tki
  * entry, nothing in toke-ooke.  So SIGHUP never reached this file and the
  * "graceful reload" / "log rotation on SIGHUP" it promised did not exist.
- * The serving loop's signal handling is http.c's (workers mode: SIGHUP
- * respawns the workers; an access log is not reopened -- see the 121.51
- * report).  Removed rather than wired: git history holds the code. */
+ * The serving loop's signal handling is http.c's: in every serving mode
+ * SIGHUP reopens log.c's files at their paths (tk_log_reopen_files -- the
+ * access and error logs since 121.53, the tk_log_set_output and security
+ * files since 121.72), and in workers mode also respawns the workers.
+ * Removed rather than wired: git history holds the code. */
 
 /* ── Configuration API ──────────────────────────────────────────────── */
 
@@ -165,7 +167,8 @@ int proc_config_test(const ProcConfig *cfg)
  * metrics_reopen_logs(), which has been empty since 121.41 deleted metrics.c's
  * log files.  Nothing called proc_reopen_logs -- no stdlib module, no glue,
  * no header, no .tki entry -- so it was removed with the call.  Reopening
- * log.c's own files on SIGHUP is not implemented anywhere. */
+ * log.c's own files on SIGHUP is log.c's tk_log_reopen_files, called from
+ * http.c's serving loops (121.53, 121.72). */
 
 /* ── Health probe endpoints (67.2.1) ────────────────────────────────── */
 

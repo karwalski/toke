@@ -50,6 +50,9 @@ static int g_format = TK_LOG_FMT_JSON; /* default: JSON */
  * ---------------------------------------------------------------------- */
 
 static FILE *g_outfile = NULL; /* NULL → use stderr */
+/* 121.72: the path g_outfile was opened at, so tk_log_reopen_files can
+ * reopen it after logrotate renames it (NULL when g_outfile is NULL). */
+static char *g_outpath = NULL;
 
 /* Helper: return the active output stream. */
 static FILE *output_stream(void)
@@ -393,13 +396,25 @@ static void enc_clf(TkStrBuf *b, const char *s, int quoted)
 
 /* The security stream's own sink (NULL → the main log output). */
 static FILE *g_secfile = NULL;
+static char *g_secpath = NULL;   /* 121.72: g_secfile's path, for reopen */
+
+/* 121.72: open `path` for append into *fp, remembering the path in *pathp;
+ * NULL closes the sink.  Shared by tk_log_set_output and
+ * tk_log_security_set_output. */
+static int sink_open(FILE **fp, char **pathp, const char *path)
+{
+    if (*fp) { fclose(*fp); *fp = NULL; }
+    free(*pathp); *pathp = NULL;
+    if (!path) return 1;
+    *fp = fopen(path, "a");
+    if (!*fp) return 0;
+    *pathp = strdup(path);   /* NULL on OOM: the sink works, is not reopened */
+    return 1;
+}
 
 int tk_log_security_set_output(const char *path)
 {
-    if (g_secfile) { fclose(g_secfile); g_secfile = NULL; }
-    if (!path) return 1;
-    g_secfile = fopen(path, "a");
-    return g_secfile ? 1 : 0;
+    return sink_open(&g_secfile, &g_secpath, path);
 }
 
 /* write one finished line with a single fwrite, so concurrent writers to the
@@ -570,17 +585,8 @@ void tk_log_set_format(const char *fmt)
 
 int tk_log_set_output(const char *path)
 {
-    /* Close any previously opened output file. */
-    if (g_outfile != NULL) {
-        fclose(g_outfile);
-        g_outfile = NULL;
-    }
-    if (path == NULL) {
-        /* Caller is resetting back to stderr. */
-        return 1;
-    }
-    g_outfile = fopen(path, "a");
-    return (g_outfile != NULL) ? 1 : 0;
+    /* Closes any previous file; NULL resets output back to stderr. */
+    return sink_open(&g_outfile, &g_outpath, path);
 }
 
 /*
@@ -1128,10 +1134,31 @@ static void alog_reopen_path(TkAccessLog *log)
     alog_reopen(log);
 }
 
+/* 121.72: reopen a plain log sink (tk_log_set_output's or the security
+ * stream's) at its path.  Same exclusions as alog_reopen_path: a /dev/ path
+ * and anything at the path that is not a regular file (tty, FIFO) are left
+ * alone.  The new file is opened before the old one is closed, and if it
+ * cannot be opened the sink keeps writing where it was rather than losing
+ * lines. */
+static void sink_reopen(FILE **fp, const char *path)
+{
+    struct stat st;
+    FILE *nf;
+    if (!*fp || !path) return;
+    if (strncmp(path, "/dev/", 5) == 0) return;
+    if (stat(path, &st) == 0 && !S_ISREG(st.st_mode)) return;
+    nf = fopen(path, "a");
+    if (!nf) return;
+    fclose(*fp);
+    *fp = nf;
+}
+
 void tk_log_reopen_files(void)
 {
     alog_reopen_path(g_access_log);
     alog_reopen_path(g_error_log);
+    sink_reopen(&g_outfile, g_outpath);
+    sink_reopen(&g_secfile, g_secpath);
 }
 
 /* ── Access log format selection (Story 47.1.3) ───────────────────────── */
