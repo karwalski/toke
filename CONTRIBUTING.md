@@ -17,6 +17,16 @@
   (anything in `src/`) without raising an issue and getting explicit approval
 - Every change to a compiler stage requires conformance tests
 - `make conform` must pass at 100% before any PR is merged
+- A change to `src/stdlib/*.c`, `src/stdlib_deps.c` or `stdlib/*.tki` must
+  pass `make check-downstream` before it is merged (story 121.82). ooke and
+  toke-website link toke's stdlib C files from `tkc --emit-deps`, so adding,
+  moving or splitting a stdlib file, or editing the manifest or an interface,
+  can break their build while every gate in this repo stays green. The target
+  builds, links and tests ooke (`make check-toke-candidate`) and builds the
+  website and checks its routes (`make website check-routes`) against this
+  tree, each in a temporary worktree of that repo's `main`; siblings are found
+  under `TOKE_WORKSPACE` and one that is not checked out is skipped, which is
+  not a pass -- say so in the PR
 
 ## Developer Certificate of Origin (DCO)
 
@@ -81,6 +91,8 @@ To run clang-tidy locally:
 ## Pull request checklist
 
 - [ ] `make conform` passes 100%
+- [ ] `make check-downstream` passes, if `src/stdlib/*.c`, `src/stdlib_deps.c` or
+      `stdlib/*.tki` changed
 - [ ] `make lint` produces zero warnings
 - [ ] `make build-all` succeeds on x86-64 and ARM64
 - [ ] `cppcheck --enable=all src/` produces zero errors
