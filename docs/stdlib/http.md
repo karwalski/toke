@@ -455,6 +455,15 @@ The request path is appended to `dir` **whole, including the prefix** — so
 `./public/static/style.css`, not from `./public/style.css`. Lay the directory
 out to match.
 
+**Files are served as bytes.** A file holding `0x00` bytes — an image, a
+font, a `.wasm` module — is served whole, with a `Content-Length` (or chunk
+sizes) counting every byte, over HTTP/1.1, TLS and HTTP/2, and gzip-encoded
+whole when the client accepts it (story 121.86). Until then every response
+writer sized the body as a C string, so a binary file was cut at its first
+`0x00`: a PNG arrived as its 8-byte signature and nothing else. A handler's
+body is a `str`, which cannot hold a `0x00`, so this only ever affected
+`http.servedir`.
+
 **Capabilities.** The mount gives the server the authority to read any file
 under `dir` on every request, so `http.servedir` — and `http.servepages`,
 which reads its pages and templates on every request — takes `fs.read` when it

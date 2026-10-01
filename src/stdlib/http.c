@@ -373,10 +373,44 @@ void http_defer_free(void *p)
     g_deferred[g_deferred_n++] = p;
 }
 
+/* 121.86: bodies whose length is recorded (http.h).  A response has one
+ * body; the slack covers a handler that replaced its first choice.  Should
+ * the table ever be full the oldest record is overwritten, never a write
+ * past it -- the cost is that body falling back to strlen. */
+#define HTTP_MAX_BODYLEN 8
+static struct { const char *p; size_t n; } g_bodylen[HTTP_MAX_BODYLEN];
+static int g_bodylen_n;
+
+void http_body_setlen(const char *body, size_t len)
+{
+    if (!body) return;
+    for (int i = 0; i < g_bodylen_n; i++)
+        if (g_bodylen[i].p == body) { g_bodylen[i].n = len; return; }
+    if (g_bodylen_n < HTTP_MAX_BODYLEN) {
+        g_bodylen[g_bodylen_n].p = body;
+        g_bodylen[g_bodylen_n].n = len;
+        g_bodylen_n++;
+        return;
+    }
+    memmove(&g_bodylen[0], &g_bodylen[1],
+            (HTTP_MAX_BODYLEN - 1) * sizeof g_bodylen[0]);
+    g_bodylen[HTTP_MAX_BODYLEN - 1].p = body;
+    g_bodylen[HTTP_MAX_BODYLEN - 1].n = len;
+}
+
+size_t http_body_len(const char *body)
+{
+    if (!body) return 0;
+    for (int i = 0; i < g_bodylen_n; i++)
+        if (g_bodylen[i].p == body) return g_bodylen[i].n;
+    return strlen(body);
+}
+
 void http_run_deferred_frees(void)
 {
     for (int i = 0; i < g_deferred_n; i++) free(g_deferred[i]);
     g_deferred_n = 0;
+    g_bodylen_n  = 0;   /* 121.86: the recorded bodies go with them */
 }
 
 /*
@@ -623,7 +657,7 @@ static int maybe_gzip_body(Req req, Res *res,
     *compressed_buf = NULL;
     *compressed_len = 0;
     if (!res->body) return 0;
-    size_t bodylen = strlen(res->body);
+    size_t bodylen = http_body_len(res->body);   /* 121.86 */
     if (bodylen < GZIP_MIN_SIZE) return 0;
     if (res->status < 200 || res->status >= 300) return 0;
     if (!req_accepts_gzip(req)) return 0;
@@ -841,10 +875,10 @@ static void send_response(int fd, Res res, int keep_alive) {
         write_cors_headers(fd);
         http_write_all(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
-        http_chunked_write(fd, res.body, strlen(res.body), 4096);
+        http_chunked_write(fd, res.body, http_body_len(res.body), 4096);
     } else {
         /* Fixed Content-Length path (body may be NULL for empty responses) */
-        size_t bl = res.body ? strlen(res.body) : 0;
+        size_t bl = http_body_len(res.body);
         char hdr[256];
         int hl = snprintf(hdr, sizeof(hdr),
             "HTTP/1.1 %u %s\r\n"
@@ -1693,7 +1727,7 @@ static void handle_connection(int fd)
         /* HEAD: send headers with correct Content-Length, but no body
          * (RFC 9110 §9.3.2) */
         if (is_head) {
-            size_t head_body_len = res.body ? strlen(res.body) : 0;
+            size_t head_body_len = http_body_len(res.body);
             const char *conn_hdr = keep_alive ? "keep-alive" : "close";
             char hdr[256];
             int hl = snprintf(hdr, sizeof(hdr),
@@ -1736,7 +1770,7 @@ static void handle_connection(int fd)
         } else {
             send_response(fd, res, keep_alive);
             log_request(client_ip, &req,
-                        res.status, res.body ? strlen(res.body) : 0);
+                        res.status, http_body_len(res.body));
         }
         }
 
@@ -4536,7 +4570,7 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
         { "strict-transport-security",
           "max-age=63072000; includeSubDomains; preload" },
     };
-    size_t body_len = res.body ? strlen(res.body) : 0;
+    size_t body_len = http_body_len(res.body);
     int no_body = res.status < 200 || res.status == 204 || res.status == 304;
     if (no_body) body_len = 0;
     size_t cap = (size_t)res.headers.len + 16;
@@ -4745,7 +4779,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
     }
 
     int rc = h2_send_response(conn, fd, ssl, st, res, is_head);
-    log_request(client_ip, &req, res.status, res.body ? strlen(res.body) : 0);
+    log_request(client_ip, &req, res.status, http_body_len(res.body));
     free(cookie);
     /* 127.72: response written and logged -- the route bindings it may
      * alias can go now. */
@@ -5442,7 +5476,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             /* inline TLS send for 405 */
             {
                 const char *ch = keep_alive ? "keep-alive" : "close";
-                size_t bl = bad.body ? strlen(bad.body) : 0;
+                size_t bl = http_body_len(bad.body);
                 char hb[256];
                 int hl2 = snprintf(hb, sizeof(hb),
                     "HTTP/1.1 405 Method Not Allowed\r\n"
@@ -5512,7 +5546,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         /* HEAD: send headers with correct Content-Length, but no body
          * (RFC 9110 §9.3.2) */
         if (tls_is_head) {
-            size_t head_body_len = res.body ? strlen(res.body) : 0;
+            size_t head_body_len = http_body_len(res.body);
             const char *conn_hdr = keep_alive ? "keep-alive" : "close";
             char hdr_buf[256];
             int hl = snprintf(hdr_buf, sizeof(hdr_buf),
@@ -5569,7 +5603,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         } else {
             /* Serialise response to a buffer and write via SSL_write */
             const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-            size_t body_len = res.body ? strlen(res.body) : 0;
+            size_t body_len = http_body_len(res.body);
             char hdr_buf[256];
             int hl = snprintf(hdr_buf, sizeof(hdr_buf),
                 "HTTP/1.1 %u %s\r\n"
