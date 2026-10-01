@@ -1360,6 +1360,14 @@ check-claims-all:
 	python3 scripts/check_metrics_claims.py $$repos --self --list && \
 	python3 scripts/check_canonical.py $$repos --list
 
+# 121.82 — downstream gate: build ooke (check-toke-candidate) and toke-website
+# (website + check-routes) against THIS tree, each in a temp worktree of its
+# main. Required before merging a change to src/stdlib/*.c, src/stdlib_deps.c
+# or stdlib/*.tki (CONTRIBUTING.md). An absent sibling is skipped, not failed.
+.PHONY: check-downstream
+check-downstream: $(BIN)
+	scripts/check_downstream.sh "$(CURDIR)" "$(TOKE_WORKSPACE)"
+
 # 132.14 — project-facts gate. Every countable project-scale number (character
 # set, keywords, EBNF productions, stdlib modules, conformance cases, diagnostic
 # codes, corpus records, epics, stories) is derived from the tree by
