@@ -9,6 +9,8 @@ recommendation. Produced by the 2026-10-01 backlog review, which also marked sta
 superseded (each with its evidence in the row). Rows referenced here carry
 `Blocked: owner — see docs/owner-decisions-2026-10-01.md §n` in the tracker.
 
+**Decided 2026-10-01:** the owner accepted every recommendation in §2, §3, §4, §5 and §7. Items there whose recommendation is an owner action stay open: 4.8 (GPU spend), 4.9 (grading against hidden tests), 7.5 (article draft). §1 actions done the same day: 1.4 (homebrew tap pushed), 1.7 (toke-ocr begun, Epic 139), 132.5's deploy (Search Console/analytics access still open); 1.6 under review.
+
 **How to use this:** answer an item with its number and a letter (e.g. "2.3 a"); the main thread
 records the decision in the row, lifts the block, and schedules the work.
 
