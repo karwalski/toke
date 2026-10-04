@@ -630,7 +630,9 @@ static void rotate_access_log(TkAccessLog *log)
              "%s/%s.%s%s", log->dir, log->stem, ts, log->ext);
 
     if (rename(log->path, rotated) == 0) {
-        char gzpath[1024];
+        /* sizeof rotated + ".gz": a rotated path that fits can never be
+         * truncated here (GCC -Wformat-truncation proves the bound). */
+        char gzpath[sizeof rotated + 3];
         snprintf(gzpath, sizeof gzpath, "%s.gz", rotated);
         compress_to_gz(rotated, gzpath);
         apply_retention(log);
