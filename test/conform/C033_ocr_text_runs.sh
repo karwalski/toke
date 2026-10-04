@@ -170,7 +170,10 @@ if [ "$(uname -s)" != "Darwin" ]; then
     echo "SKIP: std.ocr has no engine on $(uname -s); macOS Vision only."
     echo "      Case 8 (the no-engine path) would still be meaningful here and"
     echo "      is the part to run first if this suite is ever ported."
-    exit 1
+    # 77: a platform skip, not a failure. No dependency can be installed to
+    # make this run on Linux, so exit 1 left `make conform` red on every
+    # Linux host and CI run. conform-sh reports 77 as SKIP, by name.
+    exit 77
 fi
 
 # ════════════════════════════════════════════════════════════════════════

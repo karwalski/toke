@@ -17,6 +17,17 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang
 
+      # C031 (std.xlsx) and C032 (std.pdf) build their fixtures with these
+      # independent producers and FAIL, by design, when they are missing.
+      # Without this step both failed on every run.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install conformance fixture producers
+        run: python3 -m pip install openpyxl reportlab pikepdf pillow
+
       - name: Build tkc
         run: make
 
