@@ -10261,7 +10261,15 @@ int compile_binary_n(const char *const *lls, int nll, const char *out_bin,
         if (glue_path[0]) remove(glue_path);
         if (rc != 0) {
             char msg[256];
-            snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
+            /* 127 is the child's _exit after execvp failed: clang is not
+             * installed or not on PATH. Say so; "exit code 127" alone does
+             * not name the cause. */
+            if (rc == 127)
+                snprintf(msg, sizeof msg, "clang not found on PATH; tkc runs "
+                         "clang to compile and link every program (install "
+                         "clang, e.g. 'apt-get install clang')");
+            else
+                snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
             diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
             return -1;
         }
