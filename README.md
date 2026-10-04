@@ -142,11 +142,20 @@ EOF
 ./hello
 ```
 
-Or use the `toke` wrapper to compile and run in one step:
+Or use the `toke-run` wrapper to compile and run in one step (`./toke hello.tk`
+on its own only compiles, writing `./hello`):
 
 ```bash
-./toke hello.tk
+./toke-run hello.tk
 ```
+
+`make` builds the compiler as `./toke`, with `./tkc` as a symlink to it; the two
+names are the same program. Compiling a program needs `clang` on `PATH`, because
+the compiler hands its LLVM IR to clang to produce and link the binary.
+
+Programs get no file or network access unless granted at run time. A program
+that reads a file stops with `CAP001` and names the flag to add, for example
+`./tkgrep --allow-read pattern file.txt`.
 
 ## Install & use
 
@@ -156,7 +165,7 @@ Or use the `toke` wrapper to compile and run in one step:
 git clone https://github.com/karwalski/toke.git
 cd toke
 make
-./build/tkc --version
+./tkc --version
 ```
 
 **Homebrew** — *not published yet.* The tap `github.com/karwalski/homebrew-toke`
@@ -241,23 +250,27 @@ Every row above except the two struck ones was re-checked on 2026-09-20 and reso
 ## Building
 
 **Prerequisites:**
-- C99 compiler (GCC or Clang)
-- LLVM (for the code generation backend)
+- C99 compiler (GCC or Clang) to build the compiler
+- `clang` on `PATH`: required at run time too, because every program the
+  compiler builds is compiled and linked by clang
 - Make
-- zlib (`-lz`)
+- zlib development headers (`-lz`)
+
+On Debian or Ubuntu: `sudo apt-get install clang zlib1g-dev make`.
+On macOS: the Xcode command line tools provide clang and make.
 
 **Build commands:**
 
 ```bash
 make            # Build the toke compiler
 make clean      # Remove build artifacts
-make lint       # Run static analysis (cppcheck + clang-tidy)
+make lint       # clang static analyzer (uses clang, set LINT_CC to override)
 ```
 
 ## Testing
 
 ```bash
-make conform         # Run the full conformance suite (must pass at 100%)
+make conform         # Full conformance suite (must pass at 100%; ~17 min on 4 cores)
 make test-e2e        # Run end-to-end integration tests
 make test-stdlib     # Run standard library unit tests
 make fuzz            # Run the fuzzer
@@ -267,6 +280,22 @@ make check-metrics   # Fail if a number is published without its tokenizer and i
 make check-facts     # Fail if a countable project number disagrees with the tree
 make check-claims-all # The two guards above, across every sibling repository
 ```
+
+`make conform` runs two parts. For a fast loop while working, run them
+separately:
+
+```bash
+bash test/run_conform.sh                     # the core YAML cases, about a minute
+bash test/conform/C035_multi_module_link.sh  # any single shell-script case
+make conform-sh                              # all shell-script cases, ~16 min
+```
+
+A few shell-script cases build their fixtures with independent Python
+producers and fail, naming the install command, when those are missing:
+`python3 -m pip install openpyxl reportlab pikepdf pillow` (a virtualenv is
+fine; point `TKC_PY` at its interpreter). A case that cannot run on the
+current OS at all, such as the macOS-only OCR suite on Linux, exits 77 and is
+reported as `SKIP` by name rather than as a failure.
 
 Those four are the claim guards. All four run in `make ci` and, since story 132.41,
 in the GitHub workflow. Any new number published in this repository must appear in
