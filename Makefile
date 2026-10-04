@@ -383,10 +383,13 @@ check-canonical:
 # karwalski/tkc (an early copy of the compiler tree, public with no description).
 # A repo that is absent is reported by name as a skip, not silently passed over;
 # cloning them into the workspace is story 132.46.
+# ../tkc is not swept: docs/about/repos.md places karwalski/tkc, a stale early
+# copy of the compiler, outside the published surface, and it is being
+# archived (137.18). Its 22 stale claims were the bulk of every sweep.
 SIBLING_REPOS := ../toke-spec ../toke-corpus ../toke-model ../toke-eval ../toke-mcp \
                  ../toke-console ../toke-cloud ../toke-ooke ../toke-test-programs \
                  ../toke-tokenizer ../toke-website ../homebrew-toke \
-                 ../loke ../tkc
+                 ../loke
 check-claims-all:
 	@repos=""; for r in $(SIBLING_REPOS); do \
 	  if [ -d "$$r" ]; then repos="$$repos $$r"; else echo "skip (not checked out): $$r"; fi; \

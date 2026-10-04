@@ -78,7 +78,7 @@ jobs:
                       toke-models:toke-model toke-tokenizer:toke-tokenizer \
                       toke-eval:toke-eval toke-test-programs:toke-test-programs \
                       toke-mcp:toke-mcp ooke:toke-ooke loke:loke \
-                      toke-web:toke-website homebrew-toke:homebrew-toke tkc:tkc; do
+                      toke-web:toke-website homebrew-toke:homebrew-toke; do
             repo="${pair%%:*}"; dir="${pair##*:}"
             git clone --quiet --depth 1 "https://github.com/karwalski/${repo}.git" "${dir}"
             echo "${dir} <- karwalski/${repo} @ $(git -C "${dir}" rev-parse --short HEAD)"
