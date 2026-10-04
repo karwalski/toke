@@ -582,7 +582,9 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             merged.count++;
         }
         ll_list[fi] = ll_paths[fi];
-        symtab_free(&st); free(sbuf); arena_free(arena);
+        /* The link-stage E9003 is emitted after this loop; it must not
+         * read source_line from a freed buffer. */
+        symtab_free(&st); free(sbuf); diag_set_source(NULL, 0); arena_free(arena);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
     if (compile_binary_n(ll_list, nfiles, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
