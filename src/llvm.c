@@ -10075,6 +10075,21 @@ static const char *find_stdlib_vendor_includes(void) {
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
 {
+    const char *one[1];
+    one[0] = out_ll;
+    return compile_binary_n(one, 1, out_bin, target, opt_level, st, debug);
+}
+
+/*
+ * compile_binary_n — compile_binary over several .ll files linked into one
+ * binary (the multi-module path, 114.40). Each path is its own argv element:
+ * since the argv-exec change (121.1b) nothing splits a joined string, so a
+ * space-separated list reached clang as one nonexistent filename (E9003).
+ */
+int compile_binary_n(const char *const *lls, int nll, const char *out_bin,
+                     const char *target, int opt_level, const SymbolTable *st,
+                     int debug)
+{
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *dbg_flag = debug ? " -g" : "";
 
@@ -10226,7 +10241,8 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         if (target && target[0]) { argv[argc++] = "-target"; argv[argc++] = (char *)target; }
         argv[argc++] = "-o";
         argv[argc++] = (char *)out_bin;
-        argv[argc++] = (char *)out_ll;
+        for (int li = 0; li < nll && argc < AMAX - 1; li++)
+            argv[argc++] = (char *)lls[li];
         push_ws_tokens(argv, &argc, AMAX, sources);   /* leading space is skipped */
         push_ws_tokens(argv, &argc, AMAX, all_libs);
         argv[argc] = NULL;
