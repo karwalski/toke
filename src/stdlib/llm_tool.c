@@ -755,6 +755,7 @@ ToolCallResultArray llm_parallel_tool_calls(TkLlmClient *client,
     /* Parse tool_calls from the response */
     ToolCallResult tc = llm_parse_tool_calls(raw ? raw : resp.content);
     free(raw);
+    free((char *)resp.content); /* tc holds its own copies of every field */
     if (tc.is_err || tc.ncalls == 0) {
         /* No tool calls — return empty array */
         if (tc.calls) free(tc.calls);
@@ -905,7 +906,7 @@ const char *llm_agentic_loop(TkLlmClient *client,
 
         if (tc.ncalls == 0 || tc.is_err) {
             /* No tool calls — this is the final answer */
-            final_answer = strdup(resp.content);
+            final_answer = resp.content; /* ownership moves to the caller */
             if (tc.calls) free(tc.calls);
             break;
         }
@@ -921,11 +922,13 @@ const char *llm_agentic_loop(TkLlmClient *client,
                 free(conv);
                 free(tools_json_extra);
                 if (tc.calls) free(tc.calls);
+                free((char *)resp.content);
                 return strdup("[error: out of memory]");
             }
             conv = nb;
         }
-        char *asst_content = strdup(resp.content);
+        /* resp.content is already a heap copy; heap_contents takes ownership. */
+        char *asst_content = (char *)resp.content;
         if (asst_content) heap_contents[heap_count++] = asst_content;
         conv[conv_len].role    = "assistant";
         conv[conv_len].content = asst_content ? asst_content : "";
