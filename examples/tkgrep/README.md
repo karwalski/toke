@@ -12,15 +12,19 @@ tkc --out tkgrep main.tk
 ## Usage
 
 ```
-$ ./tkgrep [-icnv] <pattern> <file>
+$ ./tkgrep --allow-read [-icnv] <pattern> <file>
 ```
+
+toke programs run with no file access by default; `--allow-read` lets
+tkgrep read the file. Without it the program stops with a `CAP001` message
+naming the missing flag.
 
 Example:
 
 ```
-$ ./tkgrep main src/app.tk
+$ ./tkgrep --allow-read main src/app.tk
 12:f=main():$i64{
-$ ./tkgrep -ci error log.txt
+$ ./tkgrep --allow-read -ci error log.txt
 4
 ```
 
