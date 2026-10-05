@@ -1047,7 +1047,7 @@ static int process_file(const char *src, const RunOpts *o)
             diag_emit(DIAG_ERROR, 9020, 0, 1, 1,
                       "no main function defined — every executable toke program needs an entry point",
                       "fix", "add `f=main():$i64{<0}` (or a body that calls your helper functions)",
-                      NULL);
+                      (const char *)NULL);
             symtab_free(&st);
             rc = ECOMPILE;
             goto done;

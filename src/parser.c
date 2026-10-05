@@ -183,7 +183,7 @@ static void eerr(Parser *p, int code, Token *t, const char *msg) {
     else if (code == E2001) fix = "reorder declarations: m= first, then i=, t=, f=";
     p->errs++;
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, msg,
-                   "fix", fix, NULL);
+                   "fix", fix, (const char *)NULL);
 }
 
 /*
@@ -213,7 +213,7 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
     p->errs++;
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, buf,
                    "fix", fix,
-                   "got", tok_text, NULL);
+                   "got", tok_text, (const char *)NULL);
 }
 
 /*
@@ -223,7 +223,7 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
  */
 static void ewarn(Parser *p, int code, Token *t, const char *msg, const char *fix) {
     (void)p;
-    diag_emit(DIAG_WARNING, code, t->start, t->line, t->col, msg, "fix", fix, NULL);
+    diag_emit(DIAG_WARNING, code, t->start, t->line, t->col, msg, "fix", fix, (const char *)NULL);
 }
 
 /*
@@ -277,7 +277,7 @@ static void opt_semi(Parser *p) {
     diag_emit_span(DIAG_ERROR, E2003, t->start, t->line, t->col, t->len, "missing semicolon",
                    "fix", "insert ';' after expression",
                    "got", tok_text,
-                   "expected", ";", NULL);
+                   "expected", ";", (const char *)NULL);
 }
 
 /*
@@ -305,7 +305,7 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         diag_emit(DIAG_ERROR, E2004, t->start, t->line, t->col, full_msg,
                   "fix", "add the missing closing delimiter",
                   "got", "end of file",
-                  "expected", w, NULL);
+                  "expected", w, (const char *)NULL);
     } else {
         char full_msg[256];
         if (tok_text[0])
@@ -316,7 +316,7 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         diag_emit(DIAG_ERROR, E2002, t->start, t->line, t->col, full_msg,
                   "fix", "check syntax; see toke spec for valid constructs",
                   "got", tok_text,
-                  "expected", w, NULL);
+                  "expected", w, (const char *)NULL);
     }
     return NULL;
 }
@@ -955,7 +955,7 @@ static Node *parse_unary(Parser *p) {
             diag_emit(DIAG_ERROR, E2002, t->start, t->line, t->col,
                       "leading '!' on a struct value does not raise an error (it is discarded as logical-NOT)",
                       "fix", "to return an error use `<$err(payload)`; `!` negates a bool, it does not raise",
-                      NULL);
+                      (const char *)NULL);
         }
         return n;
     }
@@ -1911,7 +1911,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
             else { ch(&p,n,parse_module_path(&p)); opt_semi(&p); ch(&p,root,n); }
         }
     }
-    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix","add 'm=modulename;' as the first declaration",NULL); p.errs++; }
+    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix","add 'm=modulename;' as the first declaration",(const char *)NULL); p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=global 5=func */
     while(peek(&p)!=TK_EOF){
         if(p.errs>=MAX_PARSE_ERRORS) break;
@@ -1923,7 +1923,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
         else if(peek(&p)==TK_KW_LET)        cp=4; /* 114.44: module-level mutable global */
         else if(peek(&p)==TK_KW_F||(di==4)) cp=5;
         else{eerr(&p,E2002,t,"unexpected token");sync(&p);if(p.errs>=MAX_PARSE_ERRORS)break;continue;}
-        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix","reorder declarations: m= first, then i=, t=, f=",NULL);p.errs++;}
+        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix","reorder declarations: m= first, then i=, t=, f=",(const char *)NULL);p.errs++;}
         else if(cp>phase) phase=cp;
         Node *d;
         if(cp==1){

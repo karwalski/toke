@@ -741,7 +741,7 @@ int emit_tkir(const Node *ast, const char *src,
     e.func_code_offsets = calloc((size_t)e.func_count + 1, sizeof(uint32_t));
     if (!e.func_code_offsets && e.func_count > 0) {
         diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
-                  "failed to allocate code offset table", "fix", NULL);
+                  "failed to allocate code offset table", "fix", (const char *)NULL);
         tkir_buf_free(&e.code);
         return -1;
     }
@@ -762,7 +762,7 @@ int emit_tkir(const Node *ast, const char *src,
     FILE *f = fopen(out_path, "wb");
     if (!f) {
         diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
-                  "failed to open output file for .tkir", "fix", NULL);
+                  "failed to open output file for .tkir", "fix", (const char *)NULL);
         tkir_buf_free(&out);
         tkir_buf_free(&e.code);
         free(e.func_code_offsets);
