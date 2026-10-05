@@ -146,8 +146,12 @@ jobs:
 
       - name: clang-tidy
         run: |
+          # Same defines as the Makefile's CFLAGS: without -D_GNU_SOURCE every
+          # POSIX call (strdup, strtok_r, clock_gettime) is undeclared, and
+          # without TKC_STDLIB_DIR main.c and llvm.c do not compile (65 errors).
           clang-tidy src/*.c -- \
-            -std=c99 -Wall -Wextra -Wpedantic -Werror -g
+            -std=c99 -D_GNU_SOURCE -DTKC_STDLIB_DIR='"src/stdlib"' \
+            -Wall -Wextra -Wpedantic -Werror -g
 
       - name: Set up Python
         uses: actions/setup-python@v5
