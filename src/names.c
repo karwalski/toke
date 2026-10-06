@@ -1141,8 +1141,9 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                         if (!tki_str_value(pp, pe, pt, (int)sizeof pt)) break;
                         pbuf[pcount++] = arena_intern(arena, pt,
                                                       (int)strlen(pt));
-                        pp = tki_scan_value(pp, pe);
-                        if (!pp) break;
+                        const char *next = tki_scan_value(pp, pe);
+                        if (!next) break;
+                        pp = next;
                     }
                     int slots = pcount > 0 ? pcount : 1;
                     const char **pa_arr = (const char **)arena_alloc(

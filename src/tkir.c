@@ -1324,7 +1324,7 @@ int tkir_decode(const uint8_t *buf, size_t len, TkirModule *out,
     if (vmaj != TKIR_VERSION_MAJOR) {
         char msg[128];
         snprintf(msg, sizeof(msg), "unsupported TKIR version %u.%u (expected %u.x)",
-                 vmaj, vmin, TKIR_VERSION_MAJOR);
+                 (unsigned)vmaj, (unsigned)vmin, (unsigned)TKIR_VERSION_MAJOR);
         set_err(errbuf, errbuf_len, msg);
         return -1;
     }
