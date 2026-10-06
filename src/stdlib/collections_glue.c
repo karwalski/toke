@@ -477,17 +477,6 @@ int64_t tk_map_contains_w(int64_t map, int64_t key) {
     tk_map_check_key(m, key);
     return tk_map_find(m, key, tk_map_hash(m, key)) >= 0;
 }
-int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {
-    if (map) tk_map_put((void *)(intptr_t)map, key, val);
-    return 0;
-}
-int64_t tk_map_getint_w(int64_t map, int64_t key) {
-    if (!map) return 0;
-    return tk_map_get((void *)(intptr_t)map, key);
-}
-int64_t tk_map_setint_w(int64_t map, int64_t key, int64_t val) {
-    return tk_map_put_w(map, key, val);
-}
 
 /* array extras — allocate empty toke-format arrays */
 int64_t tk_array_newarray_w(void) {
@@ -610,10 +599,6 @@ int64_t tk_array_pop_w(int64_t arr) {
 
 /* array.len — alias for array.length */
 int64_t tk_array_len_w(int64_t arr) { return tk_array_length_w(arr); }
-
-/* sort stubs */
-int64_t tk_sort_ints_w(int64_t arr) { (void)arr; return arr; }
-int64_t tk_sort_strs_w(int64_t arr) { (void)arr; return arr; }
 
 /* ── collections wrappers (toke array layout: block[-1]=count, return block+1) */
 

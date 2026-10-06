@@ -181,19 +181,3 @@ int64_t tk_template_load_w(int64_t path) {
     free(buf);
     return (int64_t)(intptr_t)t;
 }
-
-/* tpl_ aliases (i64 ABI, not in template.tki): source text and a bare map,
- * as they always took them. */
-static const char tk_tpl_render_fail[] =
-    "tpl.render: the template is missing or could not be compiled";
-int64_t tk_tpl_render_w(int64_t tpl, int64_t data) {
-    uint64_t nvar = 0;
-    TkTmplVar *vars = unpack_map(data, &nvar);
-    const char *r = template_render_src((const char *)(intptr_t)tpl, vars, nvar);
-    free(vars);
-    return tpl_slot((int64_t)(intptr_t)r, tk_tpl_render_fail);
-}
-
-int64_t tk_tpl_load_w(int64_t path) {
-    return tk_template_load_w(path);
-}

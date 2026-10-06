@@ -1601,10 +1601,6 @@ int64_t tk_http_posturl_w(int64_t url, int64_t body) {
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
-/* tk_http_postjson_w alias for outbound POST */
-int64_t tk_http_postjson_w(int64_t url, int64_t body) {
-    return tk_http_posturl_w(url, body);
-}
 
 /* tk_http_post_w — POST request via client handle; body is a string. */
 int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
@@ -2038,129 +2034,12 @@ extern int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_);
  * they compiled with regcomp and read an invalid pattern as "no match".
  * toke's regex surface is str.* over tk_regex.h (str_glue.c). */
 
-/* ── validation wrappers (basic regex-free checks) ────────────────── */
-int64_t tk_validate_email_w(int64_t s) {
-    if (!s) return 0;
-    const char *e = (const char *)(intptr_t)s;
-    /* Basic check: non-empty local part, exactly one @, non-empty domain with dot */
-    const char *at = strchr(e, '@');
-    if (!at || at == e) return 0;            /* no @ or empty local */
-    if (strchr(at + 1, '@')) return 0;       /* multiple @ */
-    if (at[1] == '\0') return 0;             /* empty domain */
-    const char *dot = strchr(at + 1, '.');
-    if (!dot || dot == at + 1) return 0;     /* no dot or dot at start of domain */
-    if (dot[1] == '\0') return 0;            /* dot at end */
-    return 1;
-}
-
-int64_t tk_validate_url_w(int64_t s) {
-    if (!s) return 0;
-    const char *u = (const char *)(intptr_t)s;
-    /* Must start with http:// or https:// and have at least 1 char after :// */
-    if (strncmp(u, "http://", 7) == 0 && u[7] != '\0') return 1;
-    if (strncmp(u, "https://", 8) == 0 && u[8] != '\0') return 1;
-    return 0;
-}
-
-int64_t tk_validate_range_w(int64_t val, int64_t lo, int64_t hi) {
-    return (val >= lo && val <= hi) ? 1 : 0;
-}
-
 /* ── ws wrappers (ws.h) ───────────────────────────────────────────── */
 
 
 
 
 /* 136.33: the auth.hash/jwt/verify/verifyjwt wrappers moved to auth_glue.c. */
-
-/* ── rate limit — token bucket with per-key partitioning ───────────── */
-
-#include <time.h>
-
-#define TK_RL_MAP_SIZE 256 /* fixed-size hash table, power of 2 */
-
-typedef struct {
-    char    *key;        /* heap-allocated key string, NULL = empty slot */
-    int64_t  tokens;
-    time_t   last_refill;
-} TkRlEntry;
-
-typedef struct {
-    int64_t    max_tokens;
-    int64_t    window_sec;
-    TkRlEntry  map[TK_RL_MAP_SIZE];
-} TkRateLimiter;
-
-static uint32_t tk_rl_hash(const char *s) {
-    uint32_t h = 5381;
-    while (*s) { h = ((h << 5) + h) ^ (uint32_t)(unsigned char)*s++; }
-    return h;
-}
-
-int64_t tk_ratelimit_new_w(int64_t max, int64_t window) {
-    TkRateLimiter *rl = (TkRateLimiter *)calloc(1, sizeof(TkRateLimiter));
-    if (!rl) return 0;
-    rl->max_tokens = max > 0 ? max : 10;
-    rl->window_sec = window > 0 ? window : 60;
-    return (int64_t)(intptr_t)rl;
-}
-
-int64_t tk_ratelimit_check_w(int64_t limiter, int64_t key) {
-    if (!limiter) return 0;
-    TkRateLimiter *rl = (TkRateLimiter *)(intptr_t)limiter;
-    const char *key_str = key ? (const char *)(intptr_t)key : "__global__";
-    uint32_t idx = tk_rl_hash(key_str) & (TK_RL_MAP_SIZE - 1);
-
-    /* Linear probe to find existing entry or empty slot */
-    TkRlEntry *slot = NULL;
-    for (uint32_t i = 0; i < TK_RL_MAP_SIZE; i++) {
-        uint32_t probe = (idx + i) & (TK_RL_MAP_SIZE - 1);
-        TkRlEntry *e = &rl->map[probe];
-        if (!e->key) {
-            /* Empty slot — claim it for this key */
-            e->key = strdup(key_str);
-            if (!e->key) return 0;
-            e->tokens = rl->max_tokens;
-            e->last_refill = time(NULL);
-            slot = e;
-            break;
-        }
-        if (strcmp(e->key, key_str) == 0) {
-            slot = e;
-            break;
-        }
-    }
-    if (!slot) return 0; /* table full */
-
-    time_t now = time(NULL);
-    int64_t elapsed = (int64_t)(now - slot->last_refill);
-    if (elapsed >= rl->window_sec) {
-        slot->tokens = rl->max_tokens;
-        slot->last_refill = now;
-    }
-    if (slot->tokens > 0) {
-        slot->tokens--;
-        return 1; /* allowed */
-    }
-    return 0; /* rate limited */
-}
-
-/* ── uuid v4 (RFC 4122) via crypto_randombytes ────────────────────── */
-int64_t tk_uuid_v4_w(void) {
-    ByteArray rnd = crypto_randombytes(16);
-    if (!rnd.data || rnd.len < 16) return 0;
-    uint8_t *b = (uint8_t *)rnd.data; /* safe: we own this buffer */
-    b[6] = (uint8_t)((b[6] & 0x0F) | 0x40); /* version 4 */
-    b[8] = (uint8_t)((b[8] & 0x3F) | 0x80); /* variant 1 */
-    char *uuid = (char *)malloc(37);
-    if (!uuid) { free((void *)rnd.data); return 0; }
-    snprintf(uuid, 37,
-        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-        b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7],
-        b[8],b[9], b[10],b[11],b[12],b[13],b[14],b[15]);
-    free((void *)rnd.data);
-    return (int64_t)(intptr_t)uuid;
-}
 
 /* yaml wrappers moved to src/stdlib/yaml_glue.c in 136.32 so
  * `i=yaml:std.yaml` links on its own, and so the nine documented
@@ -2188,38 +2067,6 @@ int64_t tk_uuid_v4_w(void) {
 
 
 /* ── llm / tool wrappers (llm.h, llm_tool.h) ──────────────────────── */
-
-/* Tool registry for tk_tool_register_w / tk_tool_call_w */
-#define TK_MAX_TOOLS 64
-
-typedef struct {
-    const char *name;
-    int64_t     fn_ptr;  /* toke function pointer (i64 -> i64) */
-} TkRegisteredTool;
-
-static TkRegisteredTool g_tools[TK_MAX_TOOLS];
-static int              g_tool_count = 0;
-
-int64_t tk_tool_register_w(int64_t name, int64_t fn) {
-    if (!name || g_tool_count >= TK_MAX_TOOLS) return -1;
-    g_tools[g_tool_count].name   = (const char *)(intptr_t)name;
-    g_tools[g_tool_count].fn_ptr = fn;
-    g_tool_count++;
-    return 0;
-}
-
-int64_t tk_tool_call_w(int64_t name, int64_t args) {
-    if (!name) return 0;
-    const char *n = (const char *)(intptr_t)name;
-    for (int i = 0; i < g_tool_count; i++) {
-        if (g_tools[i].name && strcmp(g_tools[i].name, n) == 0) {
-            typedef int64_t (*ToolFn)(int64_t);
-            ToolFn f = (ToolFn)(intptr_t)g_tools[i].fn_ptr;
-            return f(args);
-        }
-    }
-    return 0; /* tool not found */
-}
 
 /* 136.33: fmt.print moved to fmt_glue.c. */
 
@@ -2359,8 +2206,6 @@ int64_t tk_http_queryparam_w(int64_t req, int64_t name) {
 
 /* Response constructors */
 int64_t tk_http_res_w(int64_t status, int64_t body) { return tk_http_res_new(status, body); }
-int64_t tk_http_resnew_w(int64_t status, int64_t body) { return tk_http_res_new(status, body); }
-int64_t tk_http_resjson_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_resjsonnew_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_jsonresp_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_resp_w(int64_t status, int64_t body, int64_t ct) {
@@ -2383,24 +2228,9 @@ int64_t tk_http_resp_w(int64_t status, int64_t body, int64_t ct) {
     }
     return toke_res(status, hdrs, (const char *)(intptr_t)body);
 }
-int64_t tk_http_resok_w(int64_t body) { return tk_http_res_ok(body); }
-int64_t tk_http_resbad_w(int64_t msg) { return tk_http_res_bad(msg); }
-int64_t tk_http_reserr_w(int64_t msg) { return tk_http_res_err(msg); }
 
-/* Request accessors */
-int64_t tk_http_reqpath_w(int64_t req) { return tk_http_req_path(req); }
-int64_t tk_http_reqmethod_w(int64_t req) { return tk_http_req_method(req); }
-int64_t tk_http_reqbody_w(int64_t req) { return tk_http_req_body(req); }
 int64_t tk_http_body_w(int64_t req) { return tk_http_req_body(req); }
-int64_t tk_http_reqparam_w(int64_t req, int64_t name) { return tk_http_req_param(req, name); }
 
-int64_t tk_http_reqheader_w(int64_t req, int64_t name) { return tk_http_req_header(req, name); }
-
-/* Route registration (static) */
-int64_t tk_http_getstatic_w(int64_t path, int64_t body) { return tk_http_get_static(path, body); }
-int64_t tk_http_getstaticmime_w(int64_t path, int64_t body, int64_t mime) { return tk_http_get_static_mime(path, body, mime); }
-int64_t tk_http_poststatic_w(int64_t path, int64_t body) { return tk_http_post_static(path, body); }
-int64_t tk_http_postecho_w(int64_t path) { return tk_http_post_echo(path); }
 /* tk_http_postjson route registration — use server-side post_json */
 int64_t tk_http_postroutejson_w(int64_t path, int64_t body) { return tk_http_post_json(path, body); }
 
@@ -2411,12 +2241,4 @@ int64_t tk_http_puthandler_w(int64_t path, int64_t handler) { return tk_http_put
 int64_t tk_http_deletehandler_w(int64_t path, int64_t handler) { return tk_http_delete_handler(path, handler); }
 int64_t tk_http_patchhandler_w(int64_t path, int64_t handler) { return tk_http_patch_handler(path, handler); }
 
-/* Server lifecycle */
-int64_t tk_http_serve_w(int64_t port) { return tk_http_serve(port); }
-int64_t tk_http_servetls_w(int64_t port, int64_t cert, int64_t key) { return tk_http_servetls(port, cert, key); }
-int64_t tk_http_servedir_w(int64_t prefix, int64_t root) { return tk_http_serve_staticdir_w(prefix, root); }
 /* tk_http_servepages_w defined above (Story 95.2) */
-
-/* Server config */
-int64_t tk_http_setnotfound_w(int64_t body) { return tk_http_set_notfound(body); }
-int64_t tk_http_setcors_w(int64_t origins) { return tk_http_set_cors(origins); }

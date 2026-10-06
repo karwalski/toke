@@ -132,7 +132,6 @@ int64_t tk_encoding_b64urldecode_w(int64_t data) {
 
 /* base64 (alias spelling) */
 int64_t tk_base64_encode_w(int64_t data) { return tk_encoding_b64encode_w(data); }
-int64_t tk_base64_decode_w(int64_t data) { return tk_encoding_b64decode_w(data); }
 
 /* ── Linker-gap additions ───────────────────────────────────────────────── */
 

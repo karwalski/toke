@@ -24,10 +24,6 @@ static int64_t f64_to_i64(double d) {
 }
 
 int64_t tk_math_abs_w(int64_t x) { return f64_to_i64(math_abs(i64_to_f64(x))); }
-int64_t tk_math_pow_w(int64_t base, int64_t exp) {
-    return f64_to_i64(math_pow(i64_to_f64(base), i64_to_f64(exp)));
-}
-int64_t tk_math_floor_w(int64_t x) { return f64_to_i64(math_floor(i64_to_f64(x))); }
 /*
  * Toke array layout for F64Array:
  *   ptr[-1] = element count (i64)
@@ -113,7 +109,6 @@ int64_t tk_math_linreg_w(int64_t xs, int64_t ys) {
     result[2] = lr.r_squared;
     return (int64_t)(intptr_t)result;
 }
-int64_t tk_math_sqrt_w(int64_t x) { return f64_to_i64(math_sqrt(i64_to_f64(x))); }
 int64_t tk_math_sum_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
     double r = math_sum(fa);
@@ -127,8 +122,6 @@ int64_t tk_math_stddev_w(int64_t arr) {
     free((void *)fa.data);
     return f64_to_i64(r);
 }
-int64_t tk_math_ceil_w(int64_t v) { return f64_to_i64(math_ceil(i64_to_f64(v))); }
-int64_t tk_math_round_w(int64_t v) { return f64_to_i64(math_round(i64_to_f64(v), 0)); }
 
 int64_t tk_math_variance_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
@@ -140,14 +133,6 @@ int64_t tk_math_variance_w(int64_t arr) {
 /* math.ln(x) — natural logarithm */
 int64_t tk_math_ln_w(int64_t x) { return f64_to_i64(math_log(i64_to_f64(x))); }
 
-/* math.exp(x) — e^x */
-int64_t tk_math_exp_w(int64_t x) { return f64_to_i64(math_exp(i64_to_f64(x))); }
-
-/* math.log(x) — alias for ln (natural log) */
-int64_t tk_math_log_w(int64_t x) { return f64_to_i64(math_log(i64_to_f64(x))); }
-
-/* math.log10(x) — base-10 logarithm */
-int64_t tk_math_log10_w(int64_t x) { return f64_to_i64(math_log10(i64_to_f64(x))); }
 int64_t tk_math_log2_w(int64_t x)  { return f64_to_i64(math_log2(i64_to_f64(x))); }   /* 114.5 */
 int64_t tk_math_erf_w(int64_t x)   { return f64_to_i64(math_erf(i64_to_f64(x))); }     /* 114.5 */
 

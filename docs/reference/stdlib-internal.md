@@ -85,10 +85,10 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 71 |
-| `c-internal` | called only from other C in `src/stdlib/` | 153 |
+| `c-internal` | called only from other C in `src/stdlib/` | 151 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 85 |
-| | **total** | **318** |
+| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 34 |
+| | **total** | **265** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -168,7 +168,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (153)
+### `c-internal` (151)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -219,7 +219,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_map_key_fill` | `collections_glue.c` | collections_glue.c |
 | `tk_map_key_init` | `collections_glue.c` | collections_glue.c |
 | `tk_map_new_kind` | `collections_glue.c` | collections_glue.c |
-| `tk_map_put_w` | `collections_glue.c` | collections_glue.c |
 | `tk_map_rehash` | `collections_glue.c` | collections_glue.c |
 | `tk_map_siphash` | `collections_glue.c` | collections_glue.c |
 | `tk_map_slot_insert` | `collections_glue.c` | collections_glue.c |
@@ -238,7 +237,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_queue_pop` | `collections.c` | collections_glue.c |
 | `tk_queue_push` | `collections.c` | collections_glue.c |
 | `tk_rec2` | `encrypt_glue.c` | encrypt_glue.c |
-| `tk_rl_hash` | `tk_web_glue.c` | tk_web_glue.c |
 | `tk_securemem_alloc` | `securemem.c` | securemem.c, securemem_glue.c |
 | `tk_securemem_isavailable` | `securemem.c` | securemem_glue.c |
 | `tk_securemem_read` | `securemem.c` | securemem.c, securemem_glue.c |
@@ -340,43 +338,15 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `dead` (85)
+### `dead` (34)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
 | `tk_array_retain` | `collections_glue.c` | - |
-| `tk_base64_decode_w` | `encoding_glue.c` | - |
 | `tk_cap_check` | `capabilities.c` | - |
 | `tk_cap_deny` | `capabilities.c` | - |
 | `tk_cap_grants` | `capabilities.c` | - |
-| `tk_df_columnstr_w` | `dataframe_glue.c` | - |
-| `tk_df_filter_w` | `dataframe_glue.c` | - |
-| `tk_df_fromcsv_w` | `dataframe_glue.c` | - |
-| `tk_df_fromrows_w` | `dataframe_glue.c` | - |
-| `tk_df_groupby_w` | `dataframe_glue.c` | - |
-| `tk_df_shape_w` | `dataframe_glue.c` | - |
 | `tk_error_log_close` | `log.c` | - |
-| `tk_float_parse_w` | `str_glue.c` | - |
-| `tk_http_getstatic_w` | `tk_web_glue.c` | - |
-| `tk_http_getstaticmime_w` | `tk_web_glue.c` | - |
-| `tk_http_postecho_w` | `tk_web_glue.c` | - |
-| `tk_http_postjson_w` | `tk_web_glue.c` | - |
-| `tk_http_poststatic_w` | `tk_web_glue.c` | - |
-| `tk_http_reqbody_w` | `tk_web_glue.c` | - |
-| `tk_http_reqheader_w` | `tk_web_glue.c` | - |
-| `tk_http_reqmethod_w` | `tk_web_glue.c` | - |
-| `tk_http_reqparam_w` | `tk_web_glue.c` | - |
-| `tk_http_reqpath_w` | `tk_web_glue.c` | - |
-| `tk_http_resbad_w` | `tk_web_glue.c` | - |
-| `tk_http_reserr_w` | `tk_web_glue.c` | - |
-| `tk_http_resjson_w` | `tk_web_glue.c` | - |
-| `tk_http_resnew_w` | `tk_web_glue.c` | - |
-| `tk_http_resok_w` | `tk_web_glue.c` | - |
-| `tk_http_serve_w` | `tk_web_glue.c` | - |
-| `tk_http_servedir_w` | `tk_web_glue.c` | - |
-| `tk_http_servetls_w` | `tk_web_glue.c` | - |
-| `tk_http_setcors_w` | `tk_web_glue.c` | - |
-| `tk_http_setnotfound_w` | `tk_web_glue.c` | - |
 | `tk_infer_is_loaded` | `infer.c` | - |
 | `tk_infer_stream_cleanup` | `infer_stream.c` | - |
 | `tk_infer_unload` | `infer.c` | - |
@@ -386,22 +356,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_log_security_set_output` | `log.c` | - |
 | `tk_log_set_output` | `log.c` | - |
 | `tk_log_with_context` | `log.c` | - |
-| `tk_map_getint_w` | `collections_glue.c` | - |
-| `tk_map_setint_w` | `collections_glue.c` | - |
-| `tk_math_ceil_w` | `math_glue.c` | - |
-| `tk_math_exp_w` | `math_glue.c` | - |
-| `tk_math_floor_w` | `math_glue.c` | - |
-| `tk_math_log10_w` | `math_glue.c` | - |
-| `tk_math_log_w` | `math_glue.c` | - |
-| `tk_math_pow_w` | `math_glue.c` | - |
-| `tk_math_round_w` | `math_glue.c` | - |
-| `tk_math_sqrt_w` | `math_glue.c` | - |
 | `tk_os_o_nofollow` | `os.c` | - |
-| `tk_ratelimit_check_w` | `tk_web_glue.c` | - |
-| `tk_ratelimit_new_w` | `tk_web_glue.c` | - |
-| `tk_soap12_envelope_w` | `soap_glue.c` | - |
-| `tk_sort_ints_w` | `collections_glue.c` | - |
-| `tk_sort_strs_w` | `collections_glue.c` | - |
 | `tk_test_assert_contains` | `tk_test.c` | - |
 | `tk_test_assert_false` | `tk_test.c` | - |
 | `tk_test_assert_gt` | `tk_test.c` | - |
@@ -413,14 +368,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_test_assert_not_nil` | `tk_test.c` | - |
 | `tk_test_setup` | `tk_test.c` | - |
 | `tk_test_teardown` | `tk_test.c` | - |
-| `tk_tool_call_w` | `tk_web_glue.c` | - |
-| `tk_tool_register_w` | `tk_web_glue.c` | - |
-| `tk_tpl_load_w` | `template_glue.c` | - |
-| `tk_tpl_render_w` | `template_glue.c` | - |
-| `tk_uuid_v4_w` | `tk_web_glue.c` | - |
-| `tk_validate_email_w` | `tk_web_glue.c` | - |
-| `tk_validate_range_w` | `tk_web_glue.c` | - |
-| `tk_validate_url_w` | `tk_web_glue.c` | - |
 | `tk_webview_allow_origin` | `webview.c` | - |
 | `tk_webview_close` | `webview.c` | - |
 | `tk_webview_eval_js` | `webview.c` | - |
