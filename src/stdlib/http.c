@@ -13,6 +13,7 @@
 #include "encoding.h"
 #include "capabilities.h"   /* 124.4c2: net capability gate (server + client) */
 #include "tk_bind.h"       /* 135.32/135.33: tk_bind_exclusive() */
+#include "tk_gzip_type.h"  /* 121.89: tk_gzip_skip_type() */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -663,10 +664,17 @@ static int maybe_gzip_body(Req req, Res *res,
     if (res->status < 200 || res->status >= 300) return 0;
     if (!req_accepts_gzip(req)) return 0;
 
-    /* Skip if Content-Encoding already set */
+    /* Skip if Content-Encoding already set; 121.89: and an already-
+     * compressed Content-Type (tk_gzip_type.h).  Since 121.86 a PNG, a font
+     * or a wasm module reaches here whole, and was gzipped -- CPU spent for
+     * a body as large or larger.  One check for HTTP/1.1, TLS and h2, which
+     * all come through here. */
     for (uint64_t i = 0; i < res->headers.len; i++) {
-        if (res->headers.data[i].key &&
-            strcasecmp(res->headers.data[i].key, "Content-Encoding") == 0)
+        const char *k = res->headers.data[i].key;
+        if (!k) continue;
+        if (strcasecmp(k, "Content-Encoding") == 0) return 0;
+        if (strcasecmp(k, "Content-Type") == 0 &&
+            tk_gzip_skip_type(res->headers.data[i].val))
             return 0;
     }
 
