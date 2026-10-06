@@ -38,8 +38,9 @@ The `toke` repository is Apache-2.0 (`LICENSE`) with one boundary, recorded in
 language specification (`spec/`) and the standard library (`stdlib/` and its C
 implementation in `src/stdlib/`) are MIT, so that anyone can implement the language
 or ship programs that statically link the standard library on the simplest terms.
-`spec/LICENSE` carries the MIT text for the specification; the MIT text for the
-standard library is still to be added to the tree.
+`spec/LICENSE` carries the MIT text for the specification and `stdlib/LICENSE`
+for the standard library; every `src/stdlib/` source file carries an
+`SPDX-License-Identifier: MIT` line (story 135.15a).
 
 A repository marked "No licence file" has no `LICENSE` in it, so no licence has been
 granted for it yet.
