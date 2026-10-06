@@ -209,9 +209,14 @@ site once — in this line — and nowhere else in new content.*
 ## 10. Source and author
 
 **Source.** github.com/karwalski/toke — compiler, specification and standard library,
-Apache-2.0. The project is eleven public repositories under github.com/karwalski, plus
-two private ones (`docs/about/repos.md`); the site is tokelang.dev, built with ooke
-and served by a toke binary on std.http.
+Apache-2.0, except spec/, stdlib/ and src/stdlib/, which are MIT. The project is twelve
+public repositories under github.com/karwalski, plus two private ones; the site is
+tokelang.dev, built with ooke and served by a toke binary on std.http.
+
+*Source: `docs/about/repos.md` (repository map and licence boundary); `LICENSING.md`
+(story 135.15a); the public count is `repos_public` from
+`scripts/verify_project_facts.py`, derived from the verified inventory in
+`scripts/about/github_repo_descriptions.py` (story 132.121).*
 
 **Author.** Matthew Watt (github.com/karwalski), sole maintainer.
 
