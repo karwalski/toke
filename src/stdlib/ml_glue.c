@@ -17,9 +17,20 @@ int64_t tk_ml_linregfit_w(int64_t data, int64_t targets) {
     /* Decode toke F64Array layout: ptr[-1] = count, ptr[0..] = doubles */
     int64_t *dptr = (int64_t *)(intptr_t)data;
     int64_t *tptr = (int64_t *)(intptr_t)targets;
-    F64Array xs = { (const double *)dptr, (uint64_t)dptr[-1] };
-    F64Array ys = { (const double *)tptr, (uint64_t)tptr[-1] };
+    /* The slots hold bitcast doubles: copy them out with memcpy rather than
+     * read through a double * (a strict-aliasing violation). */
+    uint64_t nx = dptr[-1] > 0 ? (uint64_t)dptr[-1] : 0;
+    uint64_t ny = tptr[-1] > 0 ? (uint64_t)tptr[-1] : 0;
+    double *xv = (double *)malloc((nx ? nx : 1) * sizeof(double));
+    double *yv = (double *)malloc((ny ? ny : 1) * sizeof(double));
+    if (!xv || !yv) { free(xv); free(yv); return 0; }
+    memcpy(xv, dptr, nx * sizeof(double));
+    memcpy(yv, tptr, ny * sizeof(double));
+    F64Array xs = { xv, nx };
+    F64Array ys = { yv, ny };
     LinearModel m = ml_linregfit(xs, ys);
+    free(xv);
+    free(yv);
     /* Pack slope + intercept into heap block */
     double *block = (double *)malloc(2 * sizeof(double));
     if (!block) return 0;
