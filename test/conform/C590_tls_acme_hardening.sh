@@ -146,7 +146,9 @@ static int free_port(void) {
 }
 
 static TlsConn connect_one(void) {
-    TlsConfig cc = {NULL, NULL, NULL, 0};
+    /* 121.64: an unpinned client now verifies the server; pin the test
+     * server's self-signed certificate (portable to a pre-121.64 tls.c). */
+    TlsConfig cc = {NULL, NULL, g_srv.cert_pem, 0};
     for (int i = 0; i < 100; i++) {
         TlsConnResult r = tls_connect("127.0.0.1", g_port, cc);
         if (!r.is_none) return r.conn;
