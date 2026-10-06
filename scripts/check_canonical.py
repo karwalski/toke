@@ -434,14 +434,32 @@ def check_awaiting():
     return out
 
 
+# Private by policy (docs/about/repos.md, "Private repositories"): CI and any
+# outside checkout can never fetch these, so a surface in one of them is
+# skipped BY NAME when the whole repository is absent. A missing file in a
+# repository that IS checked out still fails, and so does --strict.
+PRIVATE_REPOS = ("toke-console", "toke-cloud")
+
+
+def private_repo_absent(rel):
+    """True when rel lives in a private repo that is not checked out at all."""
+    if not rel.startswith("../"):
+        return False
+    repo = rel[3:].split("/", 1)[0]
+    return repo in PRIVATE_REPOS and not os.path.isdir(resolve("../" + repo))
+
+
 def check_surfaces(canon):
     """Rule 1 — every declared surface reproduces its blocks verbatim."""
-    failures, warnings = [], []
+    failures, warnings, skipped = [], [], []
     for surface in SURFACES:
         rel = surface["path"]
         full = resolve(rel)
         owner = surface.get("story")
         sink = warnings if owner else failures
+        if private_repo_absent(rel):
+            skipped.append(rel)
+            continue
         if not os.path.exists(full):
             sink.append((rel, 0, "surface not present; the block has nowhere to live",
                          "", owner))
@@ -462,7 +480,7 @@ def check_surfaces(canon):
                              % (key, ratio * 100), first_difference(got, want), owner))
             else:
                 sink.append((rel, 0, "the %r block is MISSING" % key, "", owner))
-    return failures, warnings
+    return failures, warnings, skipped
 
 
 def owner_of(rel):
@@ -730,7 +748,7 @@ def main():
     targets = argv or DEFAULT_TARGETS
 
     canon = load_canonical()
-    failures, warnings = check_surfaces(canon)
+    failures, warnings, skipped = check_surfaces(canon)
     warnings += check_awaiting()
 
     scanned = 0
@@ -742,8 +760,13 @@ def main():
         for item in check_stale(path, rel):
             (warnings if item[4] else failures).append(item)
 
+    for rel in skipped:
+        print("SKIP  %s: private repository, not checked out (docs/about/repos.md)" % rel)
+
     if strict:
         failures += warnings
+        failures += [(rel, 0, "private repository not checked out; --strict needs it",
+                      "", None) for rel in skipped]
         warnings = []
 
     if "--list" in sys.argv:

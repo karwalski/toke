@@ -166,8 +166,13 @@ src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 src/stdlib/encrypt.o: src/stdlib/encrypt.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
+# --analyze is the clang static analyzer; GCC has no such flag, so lint must
+# not inherit CC (cc is GCC on Linux, and `make lint` failed there, CI too).
+LINT_CC ?= clang
 lint:
-	$(CC) $(CFLAGS) --analyze $(SRCS)
+	@command -v $(LINT_CC) >/dev/null 2>&1 || { \
+	  echo "lint: '$(LINT_CC)' not found; make lint needs the clang static analyzer (install clang, or set LINT_CC)"; exit 1; }
+	$(LINT_CC) $(CFLAGS) --analyze $(SRCS)
 
 conform:
 	@bash test/run_conform.sh
@@ -179,18 +184,25 @@ conform:
 # invocation, so two concurrent runs of this target overwrote each other's
 # output and each reported the other's failures. mktemp per run, removed on
 # the way out.
+# Exit 77 is a PLATFORM skip: the case cannot run on this OS at all (e.g.
+# std.ocr is macOS-only). It is reported as SKIP, by name, with its reason,
+# and does not fail the run. A missing installable dependency is still a
+# FAIL (the script exits 1 and names the install command).
 conform-sh:
-	@pass=0; fail=0; \
+	@pass=0; fail=0; skip=0; \
 	log="$$(mktemp "$${TMPDIR:-/tmp}/tkc_conform_sh.XXXXXX")" || exit 1; \
 	trap 'rm -f "$$log"' EXIT INT TERM; \
 	for s in test/conform/*.sh; do \
-	  if bash "$$s" > "$$log" 2>&1; then \
+	  bash "$$s" > "$$log" 2>&1; rc=$$?; \
+	  if [ $$rc -eq 0 ]; then \
 	    pass=$$((pass+1)); echo "PASS $$s: $$(grep -E '^Results:' "$$log" | tail -1)"; \
+	  elif [ $$rc -eq 77 ]; then \
+	    skip=$$((skip+1)); echo "SKIP $$s: $$(grep -E '^SKIP:' "$$log" | head -1 | sed 's/^SKIP: //')"; \
 	  else \
 	    fail=$$((fail+1)); echo "FAIL $$s"; tail -25 "$$log" | sed 's/^/    /'; \
 	  fi; \
 	done; \
-	echo "conform-sh: $$pass scripts passed, $$fail failed"; \
+	echo "conform-sh: $$pass scripts passed, $$fail failed, $$skip skipped (platform)"; \
 	[ $$fail -eq 0 ]
 
 conform-check:
@@ -371,10 +383,13 @@ check-canonical:
 # karwalski/tkc (an early copy of the compiler tree, public with no description).
 # A repo that is absent is reported by name as a skip, not silently passed over;
 # cloning them into the workspace is story 132.46.
+# ../tkc is not swept: docs/about/repos.md places karwalski/tkc, a stale early
+# copy of the compiler, outside the published surface, and it is being
+# archived (137.18). Its 22 stale claims were the bulk of every sweep.
 SIBLING_REPOS := ../toke-spec ../toke-corpus ../toke-model ../toke-eval ../toke-mcp \
                  ../toke-console ../toke-cloud ../toke-ooke ../toke-test-programs \
                  ../toke-tokenizer ../toke-website ../homebrew-toke \
-                 ../loke ../tkc
+                 ../loke
 check-claims-all:
 	@repos=""; for r in $(SIBLING_REPOS); do \
 	  if [ -d "$$r" ]; then repos="$$repos $$r"; else echo "skip (not checked out): $$r"; fi; \

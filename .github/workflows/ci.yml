@@ -17,6 +17,17 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang
 
+      # C031 (std.xlsx) and C032 (std.pdf) build their fixtures with these
+      # independent producers and FAIL, by design, when they are missing.
+      # Without this step both failed on every run.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install conformance fixture producers
+        run: python3 -m pip install openpyxl reportlab pikepdf pillow
+
       - name: Build tkc
         run: make
 
@@ -54,6 +65,25 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Story 137.18: the claim gates read sibling repositories at ../<dir>.
+      # All public ones are cloned under the local directory names that
+      # docs/about/repos.md maps them to. toke-console and toke-cloud are
+      # private by policy and can never be fetched here; check-canonical
+      # skips their surfaces by name, and only when the whole repo is absent.
+      - name: Check out sibling repositories
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE/.."
+          for pair in toke-spec:toke-spec toke-corpus:toke-corpus \
+                      toke-models:toke-model toke-tokenizer:toke-tokenizer \
+                      toke-eval:toke-eval toke-test-programs:toke-test-programs \
+                      toke-mcp:toke-mcp ooke:toke-ooke loke:loke \
+                      toke-web:toke-website homebrew-toke:homebrew-toke; do
+            repo="${pair%%:*}"; dir="${pair##*:}"
+            git clone --quiet --depth 1 "https://github.com/karwalski/${repo}.git" "${dir}"
+            echo "${dir} <- karwalski/${repo} @ $(git -C "${dir}" rev-parse --short HEAD)"
+          done
+
       - name: Build tkc
         run: make
 
@@ -88,9 +118,8 @@ jobs:
         run: make check-canonical
 
       # The same two guards across every sibling repo checked out beside this
-      # one. On a GitHub runner none are, so this proves the runner works and
-      # reports each skip by name; it is the local `make ci` that sweeps them
-      # for real. Wiring the sibling checkouts in is story 132.46.
+      # one: since 137.18, every public sibling (the step above). Only the two
+      # private repositories are reported as skips, by name.
       - name: Claim guards across sibling repos
         run: make check-claims-all
 
@@ -107,18 +136,29 @@ jobs:
       - name: make lint (compiler --analyze)
         run: make lint
 
+      # Errors (always on), warnings, performance and portability fail the
+      # build. --enable=all also failed it on style opinions ("can be const")
+      # and on missingIncludeSystem, which fires on every system header, so no
+      # tree could pass; it never ran until make lint stopped failing first.
+      # Vendored code (miniz, pulled in by zip.c) is not ours to change.
       - name: cppcheck
         run: |
-          cppcheck --enable=all \
+          cppcheck --enable=warning,performance,portability \
                    --error-exitcode=1 \
                    --inline-suppr \
+                   --suppress='*:*stdlib/vendor/*' \
+                   -j "$(nproc)" \
                    --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
                    src/
 
       - name: clang-tidy
         run: |
+          # Same defines as the Makefile's CFLAGS: without -D_GNU_SOURCE every
+          # POSIX call (strdup, strtok_r, clock_gettime) is undeclared, and
+          # without TKC_STDLIB_DIR main.c and llvm.c do not compile (65 errors).
           clang-tidy src/*.c -- \
-            -std=c99 -Wall -Wextra -Wpedantic -Werror -g
+            -std=c99 -D_GNU_SOURCE -DTKC_STDLIB_DIR='"src/stdlib"' \
+            -Wall -Wextra -Wpedantic -Werror -g
 
       - name: Set up Python
         uses: actions/setup-python@v5

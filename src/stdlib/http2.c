@@ -846,10 +846,16 @@ int hpack_decode(HpackTable *t, const uint8_t *buf, size_t len,
         }
 
         if ((size_t)count >= cap) {
+            /* Grow through temporaries: assigning realloc's NULL straight
+             * back lost the old block, and err: then indexed names[i]
+             * through a NULL pointer. */
+            char **gn = realloc(names, cap * 2 * sizeof(char *));
+            if (!gn) { free(name); free(value); goto err; }
+            names = gn;
+            char **gv = realloc(values, cap * 2 * sizeof(char *));
+            if (!gv) { free(name); free(value); goto err; }
+            values = gv;
             cap *= 2;
-            names  = realloc(names,  cap * sizeof(char *));
-            values = realloc(values, cap * sizeof(char *));
-            if (!names || !values) goto err;
         }
         names[count]  = name;
         values[count] = value;

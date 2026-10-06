@@ -293,7 +293,7 @@ static void extract_module_prefix(Ctx *c, const Node *ast) {
  */
 static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
     if (c->ptr_count >= c->ptr_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many pointer locals", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many pointer locals", "fix", (const char *)NULL);
         return;
     }
     int len = (int)strlen(name);
@@ -419,7 +419,7 @@ static void record_elem_spelling(const char *src, const Node *ty, char *out) {
 
 static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
     if (c->struct_count >= c->struct_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", (const char *)NULL);
         return;
     }
     StructInfo *si = &c->structs[c->struct_count];
@@ -697,7 +697,7 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
  */
 static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     if (c->fn_count >= c->fn_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many functions", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many functions", "fix", (const char *)NULL);
         return NULL;
     }
     FnSig *s = &c->fns[c->fn_count];
@@ -956,7 +956,7 @@ static void prepass_imports(Ctx *c, const Node *n) {
     }
     if (n->kind != NODE_IMPORT) return;
     if (c->import_count >= c->import_cap) {
-        diag_emit(DIAG_ERROR, E9010, n->start, n->line, n->col, "compiler limit exceeded: too many imports", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, n->start, n->line, n->col, "compiler limit exceeded: too many imports", "fix", (const char *)NULL);
         return;
     }
     /* NODE_IMPORT children: [0]=alias (IDENT), [1..]=module path segments (IDENT) */
@@ -3023,7 +3023,7 @@ static int emit_expr(Ctx *c, const Node *n)
                             diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
                                       "cannot interpolate a composite value (array/struct/map) into a string",
                                       "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
-                                      NULL);
+                                      (const char *)NULL);
                             /* Emit an empty-string placeholder so the IR stays
                              * well-formed (compilation has already failed). */
                             int alenc = 1;
@@ -3077,7 +3077,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                       "cannot interpolate a value whose type the compiler cannot determine",
                                       "this stdlib call declares no return type in its .tki interface; "
                                       "bind it to a typed local first, or add the `return` entry to the interface file",
-                                      NULL);
+                                      (const char *)NULL);
                             int alenu = 1;
                             int siu = emit_str_global(c, "\"\"", 2, &alenu);
                             seg_val = next_tmp(c);
@@ -3418,7 +3418,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 if ((!strcmp(lty, "i8*") && r_lit) || (!strcmp(rty, "i8*") && l_lit)) {
                     diag_emit(DIAG_ERROR, E4031, n->start, n->line, n->col,
                               "cannot add a number to an array or string with `+`",
-                              "to append to an array wrap the element as `@(x)`; to build a string convert it with `s.fromint(x)`/`s.fromfloat(x)` or interpolate `\\(x)`", NULL);
+                              "to append to an array wrap the element as `@(x)`; to build a string convert it with `s.fromint(x)`/`s.fromfloat(x)` or interpolate `\\(x)`", (const char *)NULL);
                     t = next_tmp(c);
                     fprintf(c->out, "  %%t%d = add i64 0, 0 ; 114.19c error stub\n", t);
                     return t;
@@ -4207,7 +4207,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                     alias, alias);
                                 diag_emit(DIAG_ERROR, E9004,
                                           n->tok_start, n->line, n->col,
-                                          dmsg, "fix", dfix, NULL);
+                                          dmsg, "fix", dfix, (const char *)NULL);
                                 break;
                             }
                         }
@@ -6154,7 +6154,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 "function that takes it as a typed parameter; a match of 3 or "
                 "more arms needs the type to dispatch on");
             diag_emit(DIAG_ERROR, E9005,
-                      n->tok_start, n->line, n->col, mmsg, "fix", mfix, NULL);
+                      n->tok_start, n->line, n->col, mmsg, "fix", mfix, (const char *)NULL);
             /* Emit nothing further for this match: the result slot is already
              * allocated, so load it and let the (failed) build stop here. */
             t = next_tmp(c);
@@ -7062,7 +7062,7 @@ static const char *make_unique_name(Ctx *c, const char *toke_name) {
 
     /* Generate a unique name */
     if (c->alias_count >= c->alias_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many name aliases", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many name aliases", "fix", (const char *)NULL);
         return toke_name;
     }
     NameAlias *a = &c->aliases[c->alias_count++];
@@ -7084,7 +7084,7 @@ static void set_local_type(Ctx *c, const char *name, const char *ty) {
         if (!strcmp(c->locals[i].name, name)) { c->locals[i].ty = ty; return; }
     }
     if (c->local_count >= c->local_cap) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many local variables", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many local variables", "fix", (const char *)NULL);
         return;
     }
     LocalType *lt = &c->locals[c->local_count++];
@@ -8801,7 +8801,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
                          "extern function declaration '%s' "
                          "\xe2\x80\x94 FFI calls are inherently unsafe", tb);
                 diag_emit(DIAG_WARNING, W8001,
-                          n->tok_start, n->line, n->col, wmsg, NULL);
+                          n->tok_start, n->line, n->col, wmsg, (const char *)NULL);
             }
             break;
         }
@@ -10075,6 +10075,21 @@ static const char *find_stdlib_vendor_includes(void) {
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
 {
+    const char *one[1];
+    one[0] = out_ll;
+    return compile_binary_n(one, 1, out_bin, target, opt_level, st, debug);
+}
+
+/*
+ * compile_binary_n — compile_binary over several .ll files linked into one
+ * binary (the multi-module path, 114.40). Each path is its own argv element:
+ * since the argv-exec change (121.1b) nothing splits a joined string, so a
+ * space-separated list reached clang as one nonexistent filename (E9003).
+ */
+int compile_binary_n(const char *const *lls, int nll, const char *out_bin,
+                     const char *target, int opt_level, const SymbolTable *st,
+                     int debug)
+{
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *dbg_flag = debug ? " -g" : "";
 
@@ -10226,7 +10241,8 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         if (target && target[0]) { argv[argc++] = "-target"; argv[argc++] = (char *)target; }
         argv[argc++] = "-o";
         argv[argc++] = (char *)out_bin;
-        argv[argc++] = (char *)out_ll;
+        for (int li = 0; li < nll && argc < AMAX - 1; li++)
+            argv[argc++] = (char *)lls[li];
         push_ws_tokens(argv, &argc, AMAX, sources);   /* leading space is skipped */
         push_ws_tokens(argv, &argc, AMAX, all_libs);
         argv[argc] = NULL;
@@ -10245,7 +10261,15 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         if (glue_path[0]) remove(glue_path);
         if (rc != 0) {
             char msg[256];
-            snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
+            /* 127 is the child's _exit after execvp failed: clang is not
+             * installed or not on PATH. Say so; "exit code 127" alone does
+             * not name the cause. */
+            if (rc == 127)
+                snprintf(msg, sizeof msg, "clang not found on PATH; tkc runs "
+                         "clang to compile and link every program (install "
+                         "clang, e.g. 'apt-get install clang')");
+            else
+                snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
             diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
             return -1;
         }

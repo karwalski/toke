@@ -1497,7 +1497,8 @@ int64_t tk_regex_replace_w(int64_t pattern, int64_t s, int64_t repl) {
         regfree(&re);
         /* no match — return copy of original */
         char *copy = strdup(str);
-        return (int64_t)(intptr_t)(copy ? copy : str);
+        if (!copy) return s;
+        return (int64_t)(intptr_t)copy;
     }
     /* build: prefix + replacement + suffix */
     size_t prefix_len = (size_t)m.rm_so;

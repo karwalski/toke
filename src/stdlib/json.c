@@ -175,7 +175,7 @@ const char *json_enc(const char *v) {
 
 /* json_dec — validate and store raw JSON string */
 JsonResult json_dec(const char *s) {
-    JsonResult r;
+    JsonResult r = {0};
     const char *p = skip_ws(s);
     if (*p != '{' && *p != '[') {
         r.is_err = 1;
@@ -195,7 +195,7 @@ JsonResult json_dec(const char *s) {
 
 /* json_str — extract a string value for key */
 StrJsonResult json_str(Json j, const char *key) {
-    StrJsonResult r;
+    StrJsonResult r = {0};
     const char *vs, *ve;
     if (!find_json_key(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
@@ -219,7 +219,7 @@ StrJsonResult json_str(Json j, const char *key) {
 
 /* json_u64 */
 U64JsonResult json_u64(Json j, const char *key) {
-    U64JsonResult r;
+    U64JsonResult r = {0};
     const char *vs, *ve;
     if (!find_json_key(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
@@ -234,7 +234,7 @@ U64JsonResult json_u64(Json j, const char *key) {
 
 /* json_i64 */
 I64JsonResult json_i64(Json j, const char *key) {
-    I64JsonResult r;
+    I64JsonResult r = {0};
     const char *vs, *ve;
     if (!find_json_key(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
@@ -249,7 +249,7 @@ I64JsonResult json_i64(Json j, const char *key) {
 
 /* json_f64 */
 F64JsonResult json_f64(Json j, const char *key) {
-    F64JsonResult r;
+    F64JsonResult r = {0};
     const char *vs, *ve;
     if (!find_json_key(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
@@ -264,7 +264,7 @@ F64JsonResult json_f64(Json j, const char *key) {
 
 /* json_bool */
 BoolJsonResult json_bool(Json j, const char *key) {
-    BoolJsonResult r;
+    BoolJsonResult r = {0};
     const char *vs, *ve;
     if (!find_json_key(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
@@ -277,7 +277,7 @@ BoolJsonResult json_bool(Json j, const char *key) {
 /* collect_array — single-pass walk of the JSON array text starting at `vs`
  * ('[' expected), producing a JsonArray of owned raw-text elements. */
 static JsonArrayResult collect_array(const char *vs) {
-    JsonArrayResult r;
+    JsonArrayResult r = {0};
     if (*vs != '[') {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an array"); return r;
     }
@@ -320,7 +320,7 @@ static JsonArrayResult collect_array(const char *vs) {
 
 /* json_arr — extract the JSON array under `key` as JsonArray of Json elements */
 JsonArrayResult json_arr(Json j, const char *key) {
-    JsonArrayResult r;
+    JsonArrayResult r = {0};
     const char *vs, *ve;
     if (!find_json_key(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
@@ -330,7 +330,7 @@ JsonArrayResult json_arr(Json j, const char *key) {
 
 /* json_arr_top — 127.29: the document itself is the JSON array */
 JsonArrayResult json_arr_top(Json j) {
-    JsonArrayResult r;
+    JsonArrayResult r = {0};
     if (!j.raw) {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an array"); return r;
     }
@@ -346,7 +346,7 @@ JsonArrayResult json_arr_top(Json j) {
  * Iterates the object once to count, then again to fill.
  */
 StrArrayJsonResult json_keys(Json j) {
-    StrArrayJsonResult r;
+    StrArrayJsonResult r = {0};
     const char *p = skip_ws(j.raw);
     if (!p || *p != '{') {
         r.is_err = 1;
@@ -435,7 +435,7 @@ int json_has(Json j, const char *key) {
  * json_len — count elements in array or keys in object.
  */
 U64JsonResult json_len(Json j) {
-    U64JsonResult r;
+    U64JsonResult r = {0};
     const char *p = skip_ws(j.raw);
     if (!p) { r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "null json"); return r; }
 
@@ -490,7 +490,7 @@ U64JsonResult json_len(Json j) {
  * json_type — return a string literal identifying j's type.
  */
 StrJsonResult json_type(Json j) {
-    StrJsonResult r;
+    StrJsonResult r = {0};
     const char *p = skip_ws(j.raw);
     if (!p || *p == '\0') {
         r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "empty json"); return r;
@@ -510,7 +510,7 @@ StrJsonResult json_type(Json j) {
  * Handles nested objects and arrays; copies strings verbatim.
  */
 StrJsonResult json_pretty(Json j) {
-    StrJsonResult r;
+    StrJsonResult r = {0};
     if (!j.raw) {
         r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "null json"); return r;
     }
@@ -644,7 +644,7 @@ int json_is_null(Json j, const char *key) {
  * object, or parses the segment as a decimal index into an array.
  */
 JsonResult json_at(Json j, const char *path) {
-    JsonResult r;
+    JsonResult r = {0};
     /* work on a mutable copy of path */
     size_t plen = strlen(path);
     char *buf = malloc(plen + 1);
@@ -667,7 +667,9 @@ JsonResult json_at(Json j, const char *path) {
         const char *p = skip_ws(cur.raw);
         if (!p) {
             free(buf);
-            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, seg); return r;
+            /* seg points into buf, freed above: a static message, like every
+             * other error path here (GCC -Wuse-after-free). */
+            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "no value at path segment"); return r;
         }
 
         if (*p == '{') {
@@ -748,7 +750,7 @@ JsonResult json_at(Json j, const char *path) {
  * json_index — return the i-th element of a JSON array.
  */
 JsonResult json_index(Json j, uint64_t i) {
-    JsonResult r;
+    JsonResult r = {0};
     const char *p = skip_ws(j.raw);
     if (!p || *p != '[') {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an array"); return r;
@@ -790,7 +792,7 @@ JsonResult json_index(Json j, uint64_t i) {
  * Returns a new heap-allocated JSON object string.
  */
 JsonResult json_merge(Json j1, Json j2) {
-    JsonResult r;
+    JsonResult r = {0};
     const char *p1 = skip_ws(j1.raw);
     const char *p2 = skip_ws(j2.raw);
     if (!p1 || *p1 != '{') {
@@ -973,14 +975,14 @@ static JsonStreamErr stream_err(JsonStreamErrKind kind, const char *msg) {
 }
 
 static JsonTokenResult tok_ok(JsonToken t) {
-    JsonTokenResult r;
+    JsonTokenResult r = {0};
     r.is_err = 0;
     r.ok = t;
     return r;
 }
 
 static JsonTokenResult tok_err(JsonStreamErrKind kind, const char *msg) {
-    JsonTokenResult r;
+    JsonTokenResult r = {0};
     r.is_err = 1;
     r.err = stream_err(kind, msg);
     return r;

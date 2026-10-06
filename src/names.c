@@ -129,7 +129,7 @@ static char *build_avail_list(const char *sp, int max_avail) {
             }
             closedir(d);
             if (n >= max_avail)
-                diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many modules in directory", "fix", NULL);
+                diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many modules in directory", "fix", (const char *)NULL);
         }
     }
     if (n == 0) { free(av); char *e = (char *)malloc(1); if (e) e[0] = '\0'; return e; }
@@ -211,7 +211,7 @@ static int  ifl_has (const InFlight *f, const char *p) {
  */
 static void ifl_push(InFlight *f, const char *p) {
     if (f->count >= f->capacity) {
-        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many imports in flight", "fix", NULL);
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many imports in flight", "fix", (const char *)NULL);
         return;
     }
     f->paths[f->count++] = p;
@@ -520,7 +520,7 @@ int resolve_imports(const Node *ast, const char *src,
                 diag_emit(DIAG_WARNING, W2038, d->start, d->line, d->col,
                           msg, "fix",
                           "use all-lowercase module names in import paths",
-                          NULL);
+                          (const char *)NULL);
             }
         }
 
@@ -539,7 +539,7 @@ int resolve_imports(const Node *ast, const char *src,
                     snprintf(msg, sizeof(msg),
                              "malformed version string \"%s\" in import", ver);
                     diag_emit(DIAG_ERROR, E2035, vn->start, vn->line, vn->col,
-                              msg, "fix", NULL);
+                              msg, "fix", (const char *)NULL);
                     err = 1;
                     free(ver); ver = NULL;
                 }
@@ -560,7 +560,7 @@ int resolve_imports(const Node *ast, const char *src,
                                  "\"%s\" vs \"%s\"",
                                  mpath, out->entries[j].version, ver);
                         diag_emit(DIAG_ERROR, E2037, d->start, d->line, d->col,
-                                  msg, "fix", NULL);
+                                  msg, "fix", (const char *)NULL);
                         err = 1;
                     }
                 }
@@ -585,10 +585,10 @@ int resolve_imports(const Node *ast, const char *src,
                 char fix[256];
                 snprintf(fix, sizeof(fix), "did you mean 'std.%s'?", suggestion);
                 diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col,
-                          msg, "fix", fix, NULL);
+                          msg, "fix", fix, (const char *)NULL);
             } else {
                 diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col,
-                          msg, "fix", NULL);
+                          msg, "fix", (const char *)NULL);
             }
             err = 1;
             st_push(out, alias, mpath, ver, 0);
@@ -600,7 +600,7 @@ int resolve_imports(const Node *ast, const char *src,
             char msg[TKC_MAX_PATH + 80];
             snprintf(msg, sizeof(msg),
                      "circular import detected: '%s' is already being resolved", mpath);
-            diag_emit(DIAG_ERROR, E2031, d->start, d->line, d->col, msg, "fix", NULL);
+            diag_emit(DIAG_ERROR, E2031, d->start, d->line, d->col, msg, "fix", (const char *)NULL);
             err = 1; st_push(out, alias, mpath, ver, 0); continue;
         }
 
@@ -637,9 +637,9 @@ int resolve_imports(const Node *ast, const char *src,
             if (suggestion) {
                 char fix[256];
                 snprintf(fix, sizeof(fix), "did you mean 'std.%s'?", suggestion);
-                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", fix, NULL);
+                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", fix, (const char *)NULL);
             } else {
-                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", NULL);
+                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", (const char *)NULL);
             }
             err = 1; st_push(out, alias, mpath, ver, 0);
         }
@@ -869,7 +869,7 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
             snprintf(msg, sizeof(msg),
                      "identifier '%s' is already declared in this scope", nbuf);
             diag_emit(DIAG_ERROR, E3012, tok_start, node_line, node_col, msg,
-                      "fix", NULL);
+                      "fix", (const char *)NULL);
         }
         return -1;
     }
@@ -1141,8 +1141,9 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                         if (!tki_str_value(pp, pe, pt, (int)sizeof pt)) break;
                         pbuf[pcount++] = arena_intern(arena, pt,
                                                       (int)strlen(pt));
-                        pp = tki_scan_value(pp, pe);
-                        if (!pp) break;
+                        const char *next = tki_scan_value(pp, pe);
+                        if (!next) break;
+                        pp = next;
                     }
                     int slots = pcount > 0 ? pcount : 1;
                     const char **pa_arr = (const char **)arena_alloc(
@@ -1434,7 +1435,7 @@ static void resolve_ident(const Node *node, const char *src,
             }
             snprintf(msg, sizeof(msg), "identifier '%s' is not declared", nbuf);
             diag_emit(DIAG_ERROR, E3011, node->start, node->line, node->col,
-                      msg, "fix", fix, NULL);
+                      msg, "fix", fix, (const char *)NULL);
         }
 
         /* Mark the identifier as "error" in the current scope so that

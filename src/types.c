@@ -580,7 +580,7 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                               "cannot interpolate a composite value (array/struct/map) into a string",
                               "fix",
                               "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
-                              NULL);
+                              (const char *)NULL);
                     cx->had_error = 1;
                 }
             }

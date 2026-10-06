@@ -68,7 +68,7 @@ static Row collect_row(sqlite3_stmt *stmt)
 
 RowResult db_one(const char *sql, StrArray params)
 {
-    RowResult res; res.is_err = 0;
+    RowResult res = {0}; res.is_err = 0;
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
@@ -86,9 +86,25 @@ RowResult db_one(const char *sql, StrArray params)
     return res;
 }
 
+/* free_rows — release count collected rows and their array, on an error
+ * path where none of them reaches the caller. */
+static void free_rows(Row *rows, uint64_t count)
+{
+    for (uint64_t i = 0; i < count; i++) {
+        for (uint64_t c = 0; c < rows[i].col_count; c++) {
+            free((char *)rows[i].col_names[c]);
+            free((char *)rows[i].col_values[c]);
+        }
+        free((void *)rows[i].col_names);
+        free((void *)rows[i].col_values);
+        free(rows[i].col_nulls);
+    }
+    free(rows);
+}
+
 RowArrayResult db_many(const char *sql, StrArray params)
 {
-    RowArrayResult res; res.is_err = 0;
+    RowArrayResult res = {0}; res.is_err = 0;
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
@@ -96,16 +112,32 @@ RowArrayResult db_many(const char *sql, StrArray params)
     }
     uint64_t cap = 8, count = 0;
     Row *rows = malloc(cap * sizeof(Row));
+    if (!rows) {
+        sqlite3_finalize(stmt);
+        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, "out of memory");
+        return res;
+    }
     for (uint64_t i = 0; i < params.len; i++)
         sqlite3_bind_text(stmt, (int)(i + 1), params.data[i], -1, SQLITE_STATIC);
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        if (count == cap) { cap *= 2; rows = realloc(rows, cap * sizeof(Row)); }
+        if (count == cap) {
+            /* Keep the old block until realloc succeeds, or it leaks. */
+            Row *grown = realloc(rows, cap * 2 * sizeof(Row));
+            if (!grown) {
+                sqlite3_finalize(stmt);
+                free_rows(rows, count);
+                res.is_err = 1; res.err = make_err(DB_ERR_QUERY, "out of memory");
+                return res;
+            }
+            rows = grown; cap *= 2;
+        }
         rows[count++] = collect_row(stmt);
     }
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) {
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+        free_rows(rows, count);
         return res;
     }
     res.ok.data = rows; res.ok.len = count;
@@ -134,7 +166,7 @@ U64Result db_exec(const char *sql, StrArray params)
 
 U64Result db_last_insert_id(int conn_id)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     sqlite3 *db = conn_db(conn_id);
     if (!db) {
         res.is_err = 1;
@@ -147,7 +179,7 @@ U64Result db_last_insert_id(int conn_id)
 
 U64Result db_affected_rows(int conn_id)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     sqlite3 *db = conn_db(conn_id);
     if (!db) {
         res.is_err = 1;
@@ -248,7 +280,7 @@ BoolResult db_bind(TkStmt *stmt, StrArray params)
 
 RowResult db_step(TkStmt *stmt)
 {
-    RowResult res; res.is_err = 0;
+    RowResult res = {0}; res.is_err = 0;
     if (!stmt) {
         res.is_err = 1;
         res.err = make_err(DB_ERR_QUERY, "null statement");
@@ -312,7 +344,7 @@ static int find_col(Row r, const char *col)
 
 StrResult row_str(Row r, const char *col)
 {
-    StrResult res; res.is_err = 0;
+    StrResult res = {0}; res.is_err = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = r.col_values[idx]; return res;
@@ -320,7 +352,7 @@ StrResult row_str(Row r, const char *col)
 
 U64Result row_u64(Row r, const char *col)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = (uint64_t)strtoull(r.col_values[idx], NULL, 10); return res;
@@ -328,7 +360,7 @@ U64Result row_u64(Row r, const char *col)
 
 I64Result row_i64(Row r, const char *col)
 {
-    I64Result res; res.is_err = 0; res.ok = 0;
+    I64Result res = {0}; res.is_err = 0; res.ok = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = (int64_t)strtoll(r.col_values[idx], NULL, 10); return res;
@@ -336,7 +368,7 @@ I64Result row_i64(Row r, const char *col)
 
 F64Result row_f64(Row r, const char *col)
 {
-    F64Result res; res.is_err = 0; res.ok = 0.0;
+    F64Result res = {0}; res.is_err = 0; res.ok = 0.0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = strtod(r.col_values[idx], NULL); return res;
@@ -344,7 +376,7 @@ F64Result row_f64(Row r, const char *col)
 
 BoolResult row_bool(Row r, const char *col)
 {
-    BoolResult res; res.is_err = 0; res.ok = 0;
+    BoolResult res = {0}; res.is_err = 0; res.ok = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     const char *v = r.col_values[idx];

@@ -520,6 +520,17 @@ const char *csv_writer_flush(TkCsvWriter *w)
  * csv_parse: convenience — all rows at once
  * ----------------------------------------------------------------------- */
 
+/* free_rows — release n parsed rows and the array holding them; used on the
+ * out-of-memory path, where nothing has been handed to the caller yet. */
+static void free_rows(StrArray *rows, uint64_t n)
+{
+    for (uint64_t i = 0; i < n; i++) {
+        for (uint64_t j = 0; j < rows[i].len; j++) free((char *)rows[i].data[j]);
+        free((void *)rows[i].data);
+    }
+    free(rows);
+}
+
 StrArray *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out)
 {
     *nrows_out = 0;
@@ -530,13 +541,21 @@ StrArray *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out)
     uint64_t  rows_len  = 0;
     StrArray *rows      = (StrArray *)malloc(rows_cap * sizeof(StrArray));
     uint64_t  pos       = 0;
+    if (!rows) return NULL;
 
     while (pos < len) {
         RowBuf row;
         if (!parse_row(data, len, &pos, &row, ',', '"', 0)) break;
         if (rows_len == rows_cap) {
+            /* Keep the old block until realloc succeeds, or it leaks. */
+            StrArray *grown = (StrArray *)realloc(rows, rows_cap * 2 * sizeof(StrArray));
+            if (!grown) {
+                rowbuf_free_fields(&row);
+                free_rows(rows, rows_len);
+                return NULL;
+            }
+            rows = grown;
             rows_cap *= 2;
-            rows = (StrArray *)realloc(rows, rows_cap * sizeof(StrArray));
         }
         rows[rows_len++] = rowbuf_to_strarray(&row);
     }
@@ -1183,7 +1202,8 @@ static StrArray csv_reader_next_strict(TkCsvReader *r)
     }
 
     RowBuf   row;
-    uint64_t start = r->phys_line, errline = r->phys_line;
+    uint64_t start = r->phys_line;
+    uint64_t errline = start;   /* both start at the current line */
     RowParse rc = parse_row_ex(r->data, r->len, &r->pos, &row,
                                r->sep, r->quote_char, 0, 1,
                                &r->phys_line, &start, &errline);

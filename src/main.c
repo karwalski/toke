@@ -519,7 +519,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
     sp[spc++] = tdir;
 
     char ll_paths[256][PATH_BUF];
-    char ll_joined[8192]; ll_joined[0] = '\0';
+    const char *ll_list[256];
     SymbolTable merged; merged.entries = (ImportEntry *)malloc(sizeof(ImportEntry) * 256);
     merged.count = 0; merged.search_path = tdir;
     int has_main = 0, rc = 0;
@@ -581,12 +581,13 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             merged.entries[merged.count].resolved = st.entries[e].resolved;
             merged.count++;
         }
-        if (ll_joined[0]) strncat(ll_joined, " ", sizeof ll_joined - strlen(ll_joined) - 1);
-        strncat(ll_joined, ll_paths[fi], sizeof ll_joined - strlen(ll_joined) - 1);
-        symtab_free(&st); free(sbuf); arena_free(arena);
+        ll_list[fi] = ll_paths[fi];
+        /* The link-stage E9003 is emitted after this loop; it must not
+         * read source_line from a freed buffer. */
+        symtab_free(&st); free(sbuf); diag_set_source(NULL, 0); arena_free(arena);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
-    if (compile_binary(ll_joined, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
+    if (compile_binary_n(ll_list, nfiles, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
 
 cleanup:
     for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
@@ -1046,7 +1047,7 @@ static int process_file(const char *src, const RunOpts *o)
             diag_emit(DIAG_ERROR, 9020, 0, 1, 1,
                       "no main function defined — every executable toke program needs an entry point",
                       "fix", "add `f=main():$i64{<0}` (or a body that calls your helper functions)",
-                      NULL);
+                      (const char *)NULL);
             symtab_free(&st);
             rc = ECOMPILE;
             goto done;

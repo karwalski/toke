@@ -1369,7 +1369,12 @@ static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *
                 int e = k, depth = 0;
                 while (e < c->src_len) {
                     char ch = c->src[e];
-                    if (ch == '"') { e++; while (e < c->src_len && c->src[e] != '"') { if (c->src[e] == '\\') e++; e++; } e++; continue; }
+                    if (ch == '"') {
+                        int q = e + 1;   /* first byte inside the string */
+                        while (q < c->src_len && c->src[q] != '"') { if (c->src[q] == '\\') q++; q++; }
+                        e = q + 1;
+                        continue;
+                    }
                     if (ch == '(' || ch == '{') depth++;
                     else if (ch == ')' || ch == '}') { if (depth == 0) break; depth--; }
                     else if (ch == ';' && depth == 0) break;

@@ -268,6 +268,8 @@ static char *acme_get_nonce(AcmeClient *ac)
 
 /* ── ACME client lifecycle ───────────────────────────────────────────── */
 
+void acme_client_free(AcmeClient *ac);   /* defined below; used on error paths */
+
 AcmeClient *acme_client_new(const char *directory_url)
 {
     if (!directory_url) return NULL;
@@ -332,7 +334,9 @@ AcmeClient *acme_client_new(const char *directory_url)
 
     if (!ac->new_nonce_url || !ac->new_account_url || !ac->new_order_url) {
         fprintf(stderr, "acme: incomplete directory response\n");
-        acme_client_new(NULL); /* will return NULL, just cleanup */
+        /* acme_client_new(NULL) was called here as "cleanup"; it returns
+         * NULL at once and freed nothing, leaking ac and its URLs. */
+        acme_client_free(ac);
         return NULL;
     }
 

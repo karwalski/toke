@@ -93,10 +93,14 @@ f=search(opts:$opts):u64!$greperr{
     $err:e <$greperr{$fileerr:str.concat("cannot read file: ";opts.path)}
   };
   let lines=str.split(content;"\n");
+  (* A file ending in a newline splits into one extra, empty element, which
+     is not a line: -v printed it as a phantom last line and -v -c counted it. *)
+  let nlines=mut.(lines.len as i64);
+  if(nlines>0&&str.endswith(content;"\n")){nlines=nlines-1};
   let count=mut.0;
   let shownum=opts.nolinenum==false;
 
-  lp(let i=0;i<(lines.len as i64);i=i+1){
+  lp(let i=0;i<nlines;i=i+1){
     let line=lines.get(i);
     let hit=matches(line;opts.pattern;opts.ignorecase);
     let show=mut.hit;

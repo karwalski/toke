@@ -11,6 +11,62 @@ This file is the authoritative operating specification for any AI coding agent w
 
 ---
 
+## 0. This Repository As It Is (read first)
+
+Sections 1 and 8 describe the original multi-component plan. This repository
+is the compiler and standard library only; where the plan and the tree
+disagree, the tree is right. Verified 2026-10-04:
+
+| The plan says | The tree has |
+|---|---|
+| `tkc/src/`, `tkc/Makefile` | `src/`, and the `Makefile` at the repository root |
+| `stdlib/*.toke` | `stdlib/*.tki` interfaces, `.tk` sources; C backing in `src/stdlib/` |
+| `.toke` source files | `.tk` |
+| `tkc/test/<series>/` | `test/<series>/*.yaml` (run by `test/run_conform.sh`) and `test/conform/*.sh` |
+| `corpus/`, `tokenizer/`, `models/` | sibling repositories, not checked out here |
+| `make test` | no such target; see below |
+
+**Build and smoke-test (about a minute):**
+
+```bash
+make -j"$(nproc)"                 # builds ./toke; ./tkc is a symlink to it
+./tkc --version
+./toke-run hello.tk               # compile and run; ./tkc hello.tk only compiles
+```
+
+`clang` must be on `PATH`: tkc runs it to compile and link every program. If
+it is missing, E9003 says so. `make lint` uses clang's static analyzer
+(`LINT_CC`, default `clang`), whatever `CC` is.
+
+**Test loop.** `make conform` takes about 17 minutes on 4 cores, so do not
+run it first in a session just to check the baseline: CI on `main` records
+that. While working:
+
+```bash
+bash test/run_conform.sh                    # core YAML cases, about a minute
+SERIES=L bash test/run_conform.sh           # one series (the variable, not a make argument)
+bash test/conform/C0NN_name.sh              # one shell-script case
+```
+
+Run the full `make conform` before pushing a compiler change. A shell-script
+case exits 0 (pass), 77 (cannot run on this OS: reported as SKIP by name) or
+anything else (fail). C031 and C032 need `python3 -m pip install openpyxl
+reportlab pikepdf pillow`, and fail by design without them.
+
+**Adding a test script changes a registered count.** After adding or removing
+a `test/conform/*.sh`, run `python3 scripts/verify_project_facts.py --sync`,
+or `make check-facts` fails in CI.
+
+**Programs are sandboxed.** A compiled program has no file or network access
+unless granted at run time (`--allow-read`, `--allow-write`, `--allow-all`);
+without it the program stops with `CAP001` naming the flag.
+
+**Gates that cannot pass in a single checkout.** `make check-canonical` and
+`make check-claims-all` read sibling repositories (`../toke-model`, …) and
+fail when those are absent, locally and in CI. That is not a regression.
+
+---
+
 ## 1. What This Project Is
 
 toke is a compiled, statically typed programming language designed for LLM code generation. The repository contains:
@@ -678,6 +734,12 @@ undid an entire fix, 226 deletions, and nobody noticed for hours.
 git commit -m "…" -- src/foo.c test/conform/C0NN_thing.sh
 git show --stat          # ALWAYS: confirm only your paths landed
 ```
+
+**A new file must be known to git first.** `git commit -- <path>` refuses an
+untracked path (`pathspec … did not match any file(s) known to git`), and if
+it is one of several pathspec commits run in sequence, the next commit can
+silently sweep up changes meant for the first. Run `git add -N <new-file>`
+(intent-to-add) before the pathspec commit, then check `git show --stat`.
 
 A pathspec commit takes the **working-tree** content of the named paths and
 ignores the index, which is what makes it safe when someone else has staged
