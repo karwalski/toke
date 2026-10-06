@@ -86,6 +86,22 @@ RowResult db_one(const char *sql, StrArray params)
     return res;
 }
 
+/* free_rows — release count collected rows and their array, on an error
+ * path where none of them reaches the caller. */
+static void free_rows(Row *rows, uint64_t count)
+{
+    for (uint64_t i = 0; i < count; i++) {
+        for (uint64_t c = 0; c < rows[i].col_count; c++) {
+            free((char *)rows[i].col_names[c]);
+            free((char *)rows[i].col_values[c]);
+        }
+        free((void *)rows[i].col_names);
+        free((void *)rows[i].col_values);
+        free(rows[i].col_nulls);
+    }
+    free(rows);
+}
+
 RowArrayResult db_many(const char *sql, StrArray params)
 {
     RowArrayResult res = {0}; res.is_err = 0;
@@ -96,16 +112,32 @@ RowArrayResult db_many(const char *sql, StrArray params)
     }
     uint64_t cap = 8, count = 0;
     Row *rows = malloc(cap * sizeof(Row));
+    if (!rows) {
+        sqlite3_finalize(stmt);
+        res.is_err = 1; res.err = make_err(DB_ERR_QUERY, "out of memory");
+        return res;
+    }
     for (uint64_t i = 0; i < params.len; i++)
         sqlite3_bind_text(stmt, (int)(i + 1), params.data[i], -1, SQLITE_STATIC);
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        if (count == cap) { cap *= 2; rows = realloc(rows, cap * sizeof(Row)); }
+        if (count == cap) {
+            /* Keep the old block until realloc succeeds, or it leaks. */
+            Row *grown = realloc(rows, cap * 2 * sizeof(Row));
+            if (!grown) {
+                sqlite3_finalize(stmt);
+                free_rows(rows, count);
+                res.is_err = 1; res.err = make_err(DB_ERR_QUERY, "out of memory");
+                return res;
+            }
+            rows = grown; cap *= 2;
+        }
         rows[count++] = collect_row(stmt);
     }
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) {
         res.is_err = 1; res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(g_db));
+        free_rows(rows, count);
         return res;
     }
     res.ok.data = rows; res.ok.len = count;
