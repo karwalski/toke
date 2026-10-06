@@ -176,9 +176,22 @@ MatchArm     = TypeExpr ':' IDENT Expr ;
 StructLit    = '$' IDENT '{' FieldInit { ';' FieldInit } '}' ;
 FieldInit    = IDENT ':' Expr ;
 
-ArrayLit     = '@' '(' [ Expr { ';' Expr } ] ')' ;
+ArrayLit     = '@' '(' [ Expr { ';' Expr } ] ')'
+             | '@' '(' '$' IDENT ')' ;                  (* typed-empty array *)
 
-MapLit       = '@' '(' Expr ':' Expr { ';' Expr ':' Expr } ')' ;
+MapLit       = '@' '(' Expr ':' Expr { ';' Expr ':' Expr } ')'
+             | '@' '(' '$' IDENT ':' ( '$' IDENT | ArrayLit | MapLit ) ')' ;
+                                                        (* typed-empty map  *)
+
+(* Typed-empty literals (semantics.md §2.1, story 127.227): `@($t)` is an  *)
+(* empty array of $t and `@($k:$v)` an empty map from $k to $v. The value  *)
+(* of a typed-empty map may itself be a typed-empty literal: `@($k:@($v))` *)
+(* is an empty map whose values are @$v arrays. The type is written with   *)
+(* its sigil (`$str`, `$i64`, `$point`); an unsigilled `@(i64)` names no   *)
+(* value and is E4033. In the ArrayLit/MapLit nested on the right of a     *)
+(* typed-empty map, only the typed-empty alternatives type-check. No new   *)
+(* lookahead: the parser reads `'$' IDENT` not followed by '{' as a type   *)
+(* reference, and the type checker accepts one only in these positions.    *)
 
 
 (* ================================================================== *)
