@@ -24,6 +24,8 @@
 #   3. --diag-text renders the same record for a human (code and message).
 #   4. Not every exit is 4: legacy source with nothing in the way migrates,
 #      exit 0, and emits no E9026.
+#   5. A decline does not stop a multi-file run: the next file still
+#      migrates, and the batch exits 4 (1 only if some file failed).
 #
 # Negative control: run with TKC=<a compiler built before 127.197>; cases
 # 1, 2 and 3 go red (exit 1, plain-text stderr, no record).
@@ -137,6 +139,15 @@ expect "4a-exit-0" "$?" 0
 expect "4b-no-E9026" "$(grep -c 'E9026' "${WORK}/p.err")" 0
 "${TKC}" --check "${WORK}/p.out" >/dev/null 2>&1
 expect "4c-output-compiles" "$?" 0
+
+# ── 5. a decline does not stop a multi-file batch ───────────────────────
+# clean.tk declines, plain.tk migrates: both are written, in order, and the
+# batch exits 4 (no file failed, one declined).
+"${TKC}" --migrate "${WORK}/clean.tk" "${WORK}/plain.tk" > "${WORK}/b.out" 2> "${WORK}/b.err"
+expect "5a-batch-exit-4" "$?" 4
+expect "5b-first-file-echoed" "$(grep -c '^m=clean;' "${WORK}/b.out")" 1
+expect "5c-second-file-migrated" "$(grep -c '^m=legp;' "${WORK}/b.out")" 1
+expect "5d-one-record" "$(grep -c '"error_code":"E9026"' "${WORK}/b.err")" 1
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

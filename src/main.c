@@ -1898,7 +1898,10 @@ int main(int argc, char **argv)
     /* 131.37: single per-file dispatch — every positional file, in order,
      * through the same pipeline in the same mode. A file that fails with
      * diagnostics (ECOMPILE) does not stop the batch (like `--check a b`);
-     * usage/internal failures do. */
+     * usage/internal failures do.  127.197: nor does a declined --migrate
+     * (EDECLINED) -- the file was echoed and the next one still migrates.
+     * The batch exits ECOMPILE if any file failed, else EDECLINED if any
+     * declined, so a failure is never reported as a mere decline. */
     RunOpts o = {
         emit_iface, check_only, djson, dtext, dsarif,
         emit_ll, emit_asm, opt_level, fmt_only, debug_info,
@@ -1915,8 +1918,8 @@ int main(int argc, char **argv)
         if (si > 0) diag_reset();
         int r = process_file(source_files[si], &o);
         if (r == 0) continue;
-        if (r != ECOMPILE) return r;
-        if (!rc) rc = r;
+        if (r != ECOMPILE && r != EDECLINED) return r;
+        if (rc != ECOMPILE) rc = r;
     }
     return rc;
 }
