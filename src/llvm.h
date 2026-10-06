@@ -22,6 +22,7 @@
 #define E9004 9004  /* unresolved stdlib call — missing import (84.1.5)   */
 #define E9005 9005  /* match on a value whose sum type is not established     */
 #define E9024 9024  /* stdlib/runtime directory path contains whitespace (121.28) */
+#define E9027 9027  /* TKC_CC or the build-time clang path is not an executable file (121.28) */
 #define W8001 8001  /* extern function declaration — FFI unsafe (76.1.2d) */
 
 /* ── CodegenEnv ──────────────────────────────────────────────────────── */
@@ -50,6 +51,11 @@ int emit_llvm_ir(const Node *ast, const char *src,
  * arena allocation; otherwise emits the E9010 the build would and returns 0.
  * Called after import resolution so --check and the build agree. */
 int llvm_caps_fit(const TkcLimits *lim);
+
+/* llvm_set_cc (121.28, COM-04): the clang compile_binary runs, as a path
+ * (main.c resolves it: TKC_CC, else the clang found at build time).  NULL or
+ * "" restores the default, `clang` looked up on $PATH. */
+void llvm_set_cc(const char *path);
 
 /* compile_binary: invoke clang to compile out_ll to a native binary at out_bin.
  * target: LLVM triple string (NULL = native target).

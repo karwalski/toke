@@ -33,12 +33,12 @@
  * shell, so paths with metacharacters are inert. Returns clang's exit code
  * (0 = success), or -1 if the process could not be run.
  */
-static int run_clang_emit_asm(int opt_level, const char *ir_path,
+static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path,
                               const char *asm_path, const char *tgt) {
     char obuf[16], tbuf[256];
     snprintf(obuf, sizeof obuf, "-O%d", opt_level);
     char *argv[16]; int argc = 0;
-    argv[argc++] = "clang";
+    argv[argc++] = (char *)cc;   /* 121.28: an absolute path (resolve_cc) */
     argv[argc++] = obuf;
     argv[argc++] = "-Wno-override-module";
     argv[argc++] = "-S";
@@ -48,7 +48,7 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
     if (tgt && tgt[0]) { snprintf(tbuf, sizeof tbuf, "--target=%s", tgt); argv[argc++] = tbuf; }
     argv[argc] = NULL;
     pid_t pid = fork();
-    if (pid == 0) { execvp("clang", argv); _exit(127); }
+    if (pid == 0) { execvp(cc, argv); _exit(127); }
     if (pid > 0) {
         int status;
         if (waitpid(pid, &status, 0) == pid && WIFEXITED(status)) return WEXITSTATUS(status);
@@ -101,6 +101,69 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
 #define EDECLINED TKC_EXIT_DECLINED   /* 127.197: --migrate declined */
+
+/* 127.264 (2), owner decision §2.14: every limit E9010 is a user error and
+ * exits 1, whether it is found before codegen, during codegen or the link
+ * step, or as caps too large to allocate.  Only a failure WITHOUT one (a true
+ * internal error) exits 2.  This keep-predicate keeps every diagnostic and
+ * notes whether an E9010 error was emitted; a failed codegen/link step asks
+ * limit_or_internal() for its exit status.  It is installed for the whole run
+ * (main) and restored after the recovery type check swaps in its own. */
+static int g_limit_seen = 0;
+static int limit_tap(DiagSeverity sev, int code, int byte_offset, void *ctx) {
+    (void)byte_offset; (void)ctx;
+    if (sev == DIAG_ERROR && code == E9010) g_limit_seen = 1;
+    return 1;
+}
+static int limit_or_internal(void) { return g_limit_seen ? ECOMPILE : EINTERNAL; }
+
+/* 121.28 (audit-120 compiler-toolchain COM-04), owner decision §2.10: tkc ran
+ * `clang` looked up on $PATH, so any directory early on a user's $PATH could
+ * substitute the compiler.  The clang that `make` found is now baked in as an
+ * absolute path (TKC_CLANG_PATH, build_info.h), and the TKC_CC environment
+ * variable overrides it.  Either must name an executable regular file, or the
+ * build stops with E9027 before clang would run -- never a fall-through to
+ * $PATH.  A relative TKC_CC is taken from the current directory.  Only a tkc
+ * built where no clang was found falls back to $PATH (TKC_CLANG_PATH "").
+ * Resolved once, lazily, by the steps that run clang; returns the path, or
+ * NULL after E9027. */
+static const char *resolve_cc(void)
+{
+    static char cc[4096];
+    static int done = 0;
+    if (done) return cc[0] ? cc : NULL;
+    done = 1;
+    const char *env = getenv("TKC_CC");
+    const char *want = (env && env[0]) ? env : TKC_CLANG_PATH;
+    if (!want[0]) { snprintf(cc, sizeof cc, "clang"); llvm_set_cc(cc); return cc; }
+    int n;
+    if (want[0] == '/') n = snprintf(cc, sizeof cc, "%s", want);
+    else {
+        char cwd[2048];
+        n = getcwd(cwd, sizeof cwd) ? snprintf(cc, sizeof cc, "%s/%s", cwd, want) : -1;
+    }
+    struct stat sb;
+    if (n < 0 || (size_t)n >= sizeof cc || stat(cc, &sb) != 0 ||
+        !S_ISREG(sb.st_mode) || access(cc, X_OK) != 0) {
+        char msg[1024];
+        if (env && env[0])
+            snprintf(msg, sizeof msg,
+                     "TKC_CC='%.600s' is not an executable file; set TKC_CC to the "
+                     "path of a clang executable, or unset it to use the clang "
+                     "tkc was built with (%.200s)", env,
+                     TKC_CLANG_PATH[0] ? TKC_CLANG_PATH : "clang on $PATH");
+        else
+            snprintf(msg, sizeof msg,
+                     "the clang tkc was built with (%.600s) is not an executable "
+                     "file any more; set TKC_CC to the path of a clang executable, "
+                     "or rebuild tkc", TKC_CLANG_PATH);
+        diag_emit(DIAG_ERROR, E9027, 0, 0, 0, msg, (void *)0);
+        cc[0] = '\0';
+        return NULL;
+    }
+    llvm_set_cc(cc);
+    return cc;
+}
 
 /* 131.33: the version with the commit the binary was built from.  Plain:
  * `toke <version> (git 1a2b3c4d5e6f)`, `(git 1a2b3c4d5e6f, dirty)` or
@@ -290,6 +353,7 @@ static const char HELP[] =
     "\n"
     "Environment:\n"
     "  TKC_INTERFACE_PATH  Colon-separated list of .tki search directories\n"
+    "  TKC_CC              Path of clang to build with\n"
     "\n"
     "  --version           Print version and build commit and exit\n"
     "                      (--version --json: one JSON object)\n"
@@ -815,8 +879,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         SymbolTable st;
         if (resolve_imports(ast, sbuf, sp, spc, &limits, &st) < 0 || diag_error_count() > 0) {
             rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
-        if (!llvm_caps_fit(&limits)) {     /* 127.264 (1); rc as above */
-            symtab_free(&st); rc = EINTERNAL; free(sbuf); arena_free(arena); goto cleanup; }
+        if (!llvm_caps_fit(&limits)) {     /* 127.264: a limit E9010, rc 1 */
+            symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         NameEnv ne;
         if (resolve_names(ast, sbuf, &st, arena, &ne, sp, spc) < 0 || diag_error_count() > 0) {
             /* 123.13: the same recovery as process_file (123.12c) */
@@ -851,7 +915,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         snprintf(ll_paths[fi], PATH_BUF, "%s/m%d.ll", tdir, fi);
         CodegenEnv cg = { &te, &ne, arena, target, limits, debug_info, NULL, NULL, sp, spc };
         if (emit_llvm_ir(ast, sbuf, &cg, ll_paths[fi]) < 0) {
-            symtab_free(&st); rc = EINTERNAL; free(sbuf); arena_free(arena); goto cleanup; }
+            symtab_free(&st); rc = limit_or_internal(); free(sbuf); arena_free(arena); goto cleanup; }
         for (int e = 0; e < st.count && merged.count < 256; e++) {
             merged.entries[merged.count].module_path = strdup(st.entries[e].module_path ? st.entries[e].module_path : "");
             merged.entries[merged.count].version = NULL;
@@ -865,7 +929,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         diag_set_source(NULL, 0);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
-    if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
+    if (!resolve_cc()) { rc = EUSAGE; goto cleanup; }   /* 121.28: E9027 */
+    if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = limit_or_internal();
 
 cleanup:
     for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
@@ -1073,7 +1138,7 @@ static int typecheck_after_name_errors(Node *ast, const char *sbuf, int slen,
     TypeEnv te;
     diag_set_keep(recover_keep, &ctx);
     (void)type_check(ast, sbuf, ne, arena, &te);
-    diag_set_keep(NULL, NULL);
+    diag_set_keep(limit_tap, NULL);   /* 127.264 (2): back to the run's tap */
     free(taint);
     return 1;
 }
@@ -1271,11 +1336,10 @@ static int process_file(const char *src, const RunOpts *o)
     SymbolTable st;
     if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
     /* 127.264 (1): caps whose codegen registries cannot be allocated are
-     * refused here, so --check refuses what the build would.  EINTERNAL is
-     * the exit status the build gave this E9010 (127.258, C641); whether a
-     * limit error should exit 1 instead is an open owner question
-     * (127.264 (2)), so both keep the build's status for now. */
-    if (!llvm_caps_fit(&limits)) { symtab_free(&st); rc = EINTERNAL; goto done; }
+     * refused here, so --check refuses what the build would.  127.264 (2),
+     * owner decision §2.14: a limit E9010 is a user error, rc 1, here and in
+     * the build alike. */
+    if (!llvm_caps_fit(&limits)) { symtab_free(&st); rc = ECOMPILE; goto done; }
 
     /* Resolve names */
     NameEnv ne;
@@ -1476,7 +1540,7 @@ static int process_file(const char *src, const RunOpts *o)
         char tkir_path[PATH_BUF];
         if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
         else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
-        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         symtab_free(&st);
         goto done;
@@ -1492,7 +1556,7 @@ static int process_file(const char *src, const RunOpts *o)
             snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
         }
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         symtab_free(&st);
         goto done;
@@ -1505,7 +1569,7 @@ static int process_file(const char *src, const RunOpts *o)
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         char asm_path[PATH_BUF];
         if (out && !out_is_dir) {
@@ -1513,7 +1577,9 @@ static int process_file(const char *src, const RunOpts *o)
         } else {
             snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
         }
-        int r = run_clang_emit_asm(opt_level, tmp, asm_path, tgt);
+        const char *cc = resolve_cc();   /* 121.28: E9027 when unusable */
+        if (!cc) { unlink(tmp); symtab_free(&st); rc = EUSAGE; goto done; }
+        int r = run_clang_emit_asm(cc, opt_level, tmp, asm_path, tgt);
         unlink(tmp);
         symtab_free(&st);
         if (r != 0) { rc = EINTERNAL; goto done; }
@@ -1574,9 +1640,10 @@ static int process_file(const char *src, const RunOpts *o)
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
-        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (!resolve_cc()) { unlink(tmp); symtab_free(&st); rc = EUSAGE; goto done; }   /* 121.28: E9027 */
+        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(100);
         unlink(tmp);
         symtab_free(&st);
@@ -1616,6 +1683,7 @@ int main(int argc, char **argv)
     Profile profile = PROFILE_DEFAULT;
     TkcLimits limits;
     tkc_limits_defaults(&limits);
+    diag_set_keep(limit_tap, NULL);   /* 127.264 (2): a limit E9010 exits 1 */
 
     /* .tki search path: CWD + -I dirs + TKC_INTERFACE_PATH dirs */
     #define MAX_SEARCH_PATHS 64

@@ -14,6 +14,7 @@
 # the build.  A cap of 0 is now counted like any other.
 #
 # Every case runs --check and the build and requires the same outcome.
+# Since 127.264 (2) every limit E9010 exits 1 (was 2 for cases 1-4).
 #
 # Negative control: TKC=<437dc471's toke> -- cases 1-6 fail (check rc=0
 # while the build refuses).
@@ -44,13 +45,13 @@ both() {
 }
 
 expect "1 --max-funcs=1000000 (2.6 GB of FnSig): --check refuses as the build does" \
-    "$(both --max-funcs=1000000)" "check=2 E9010 | build=2 E9010 "
+    "$(both --max-funcs=1000000)" "check=1 E9010 | build=1 E9010 "
 expect "2 --max-structs=100000000: --check refuses as the build does" \
-    "$(both --max-structs=100000000)" "check=2 E9010 | build=2 E9010 "
+    "$(both --max-structs=100000000)" "check=1 E9010 | build=1 E9010 "
 expect "3 --max-locals=100000000: --check refuses as the build does" \
-    "$(both --max-locals=100000000)" "check=2 E9010 | build=2 E9010 "
+    "$(both --max-locals=100000000)" "check=1 E9010 | build=1 E9010 "
 expect "4 a negative cap: --check refuses as the build does" \
-    "$(both --max-funcs=-1)" "check=2 E9010 | build=2 E9010 "
+    "$(both --max-funcs=-1)" "check=1 E9010 | build=1 E9010 "
 expect "5 --max-funcs=0 is a cap of 0 at --check too" \
     "$(both --max-funcs=0)" "check=1 E9010 | build=1 E9010 "
 # the unallocatable-caps message names the caps, once

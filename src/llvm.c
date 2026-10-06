@@ -12832,6 +12832,10 @@ static const char *find_stdlib_vendor_includes(void) {
  *
  * Returns 0 on success, -1 if clang fails (with E9003 diagnostic).
  */
+/* 121.28 (COM-04): the clang to run; main.c sets an absolute path. */
+static const char *g_cc_path = "clang";
+void llvm_set_cc(const char *path) { g_cc_path = (path && path[0]) ? path : "clang"; }
+
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
 {
@@ -13156,7 +13160,7 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         int argc = 0;
         char obuf[16];
         snprintf(obuf, sizeof obuf, "-O%d", ol);
-        argv[argc++] = "clang";
+        argv[argc++] = (char *)g_cc_path;   /* 121.28: an absolute path */
         argv[argc++] = obuf;
         if (dbg_flag[0]) argv[argc++] = "-g";      /* dbg_flag is " -g" or "" */
         argv[argc++] = "-Wno-override-module";
@@ -13189,7 +13193,7 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         pid_t pid = fork();
         if (pid == 0) {
             if (errfd >= 0) dup2(errfd, 2);
-            execvp("clang", argv);
+            execvp(g_cc_path, argv);   /* a path with '/' is not looked up */
             _exit(127);                                /* exec failed */
         } else if (pid > 0) {
             int status;
@@ -13239,11 +13243,20 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
              * failed -- clang is not installed or not on PATH -- and then
              * clang wrote nothing.  "exit code 127" alone names neither the
              * tool nor the remedy.  Code and schema are unchanged. */
+            /* 121.28: clang is normally an absolute path (the build-time
+             * clang or TKC_CC, validated by main.c), so "not on PATH" is said
+             * only for a tkc built where no clang was found. */
             int n;
-            if (rc == 127 && (!cerr || !cerr[0]))
+            if (rc == 127 && (!cerr || !cerr[0]) && !strchr(g_cc_path, '/'))
                 n = snprintf(msg, sizeof msg, "clang not found on PATH; tkc runs "
                              "clang to compile and link every program (install "
-                             "clang, e.g. 'apt-get install clang')");
+                             "clang, e.g. 'apt-get install clang', or set TKC_CC "
+                             "to its path)");
+            else if (rc == 127 && (!cerr || !cerr[0]))
+                n = snprintf(msg, sizeof msg, "clang could not be started: '%.600s' "
+                             "(TKC_CC, or the clang tkc was built with); tkc runs "
+                             "clang to compile and link every program (set TKC_CC "
+                             "to a working clang)", g_cc_path);
             else
                 n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
             if (why[0] && n > 0 && (size_t)n < sizeof msg)

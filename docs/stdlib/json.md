@@ -85,6 +85,18 @@ f=example():void{
 };
 ```
 
+### json.parse(s: $str): T
+
+Parses JSON text holding a string, a number, a bool or an array and returns that value, typed by the binding it initialises (`let t:$str=json.parse(..)`, `let n:i64=..`, `let a:@($str)=..`). String escapes are decoded. It never returns a `$json` document: to read fields of an object, decode the text with `json.dec` or `json.decode`. Passing a `json.parse` result -- the call itself, or a name an un-annotated `let` bound to one -- as the document argument of `json.str`, `json.getstr`, `json.keys`, `json.has` and the other document readers is a compile error, E4031 (story 138.9).
+
+```toke
+i=json:std.json;
+f=example():void{
+  let name:$str=json.parse("\"alice\"");
+  let n:i64=json.parse("42");
+};
+```
+
 ### json.str(j: $json; key: $str): $str!$jsonerr
 
 Extracts a string value from the JSON object by key, returning `$jsonerr.$missing` if the key does not exist or `$jsonerr.$type` if the value at that key is not a string.

@@ -610,6 +610,8 @@ A field access expression (`expr.field`) references a field name that does not e
 
 The workhorse type error. Emitted for mismatched operands in binary expressions, mismatched function arguments, mismatched binding annotations, mismatched assignment sides, and mismatched return values.
 
+A `json.parse` result -- the call, or a name an un-annotated `let` bound to one -- passed as the document argument of a `std.json` member that reads a `$json` (`json.str`, `json.getstr`, `json.keys`, `json.has`, ...) is E4031 with no `fix`: `json.parse` returns a str, number, bool or array, never a document; decode object text with `json.decode` or `json.dec` (story 138.9, loke T-17).
+
 The diagnostic may include a fix suggestion such as `"cast RHS to i64 using 'as'"`.
 
 **Composite types print structurally** (127.54). `expected` and `got` render an
@@ -1242,9 +1244,12 @@ where it was declared). The message also carries clang's first error text or
 the undefined symbol's name. A failure with no such trace — an unwritable
 output path, a missing C library — stays at line 0 (137.13).
 
-When clang itself could not be started (not installed, or not on `PATH`),
-the message says `clang not found on PATH` and names the remedy instead of
-reporting exit code 127: tkc runs clang to compile and link every program.
+When clang itself could not be started, the message says so and names the
+remedy instead of reporting exit code 127: tkc runs clang to compile and link
+every program. tkc runs the clang found when it was built, by absolute path,
+or `TKC_CC` (see E9027), so the message reads `clang could not be started:
+'<path>'`; only a tkc built where no clang was found looks clang up on `PATH`,
+and then it reads `clang not found on PATH` (121.28).
 
 ### E9004
 
@@ -1287,6 +1292,11 @@ basic block!" — a backend crash rather than a diagnostic.
 | Stage    | codegen |
 
 A fixed compiler capacity was exceeded (e.g. too many locals, functions, or imports).
+
+E9010 is a user error: `tkc` exits 1 whether the limit is met at `--check`,
+before code generation, during code generation or linking, or as caps too
+large to allocate. Exit status 2 is kept for internal compiler errors -- a
+failure with no E9010 (story 127.264).
 
 The import, function-signature and struct-type caps are met at `--check`, at
 the import or declaration that crosses them, with `expected` = the limit and
@@ -1431,6 +1441,26 @@ failed run (story 127.197; both declines used to print plain stderr and exit
 
 `TKC_MIGRATE_FORCE=1` migrates anyway, dropping every comment. No `fix`:
 whether to do that is the user's choice.
+
+### E9027
+
+**The C compiler tkc would run is not an executable file**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+`tkc` assembles and links a program with the clang that `make` found when
+`tkc` was built, baked in as an absolute path -- never a `clang` looked up on
+`$PATH` at run time. The `TKC_CC` environment variable overrides it (a path;
+a relative one is taken from the current directory). When a build to an
+executable or `--emit-asm` is requested and `TKC_CC` (or, with it unset, the
+baked path) does not name an executable regular file, `tkc` stops with this
+error before clang would run, naming the value, and exits 3 (`TKC_EXIT_USAGE`). `--check` runs no
+clang and is unaffected. Set `TKC_CC` to a clang executable, unset it, or
+rebuild `tkc`. No `fix`: the right path is not knowable from the diagnostic
+(121.28, audit-120 compiler-toolchain COM-04).
 
 ## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
 

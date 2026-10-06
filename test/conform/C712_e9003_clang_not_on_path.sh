@@ -15,8 +15,8 @@
 # (install clang, ...)".  Same code, same schema.
 #
 # CASES.
-#   1. PATH holds no clang: exactly one E9003, the not-found message, and no
-#      "exit code 127".
+#   1. The clang to run (TKC_CC here) cannot be started: exactly one E9003,
+#      the could-not-be-started message, and no "exit code 127" (121.28).
 #   2. Control, PATH normal, clang fails for its own reason (-o into a
 #      directory that does not exist): the message is still "clang invocation
 #      failed with exit code N" -- the special case is narrow.
@@ -91,9 +91,17 @@ verdict() {
     fi
 }
 
-rc=0; env PATH="${WORK}/emptybin" "${TKC}" ok.tk -o okbin > c1.log 2>&1 || rc=$?
-verdict "no clang on PATH: E9003 says so" "${rc}" c1.log \
-        "clang not found on PATH" "exit code 127"
+# 121.28 (owner decision §2.10): tkc runs the clang found at BUILD time by
+# its absolute path, or TKC_CC -- an empty PATH no longer stops a build (C706
+# case 6).  The exec failure this test guards is now a clang that passes
+# main.c's check (an executable file) but cannot be started: a script whose
+# interpreter does not exist.  "not found on PATH" is kept for a tkc built
+# where no clang was found, which this tree cannot construct.
+printf '#!%s/no/such/interpreter\n' "${WORK}" > "${WORK}/emptybin/clang"
+chmod +x "${WORK}/emptybin/clang"
+rc=0; env TKC_CC="${WORK}/emptybin/clang" "${TKC}" ok.tk -o okbin > c1.log 2>&1 || rc=$?
+verdict "clang cannot be started: E9003 says so" "${rc}" c1.log \
+        "clang could not be started" "exit code 127"
 
 rc=0; "${TKC}" ok.tk -o nodir/okbin > c2.log 2>&1 || rc=$?
 verdict "clang fails on its own: exit code still reported" "${rc}" c2.log \

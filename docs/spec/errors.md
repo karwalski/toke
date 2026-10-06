@@ -124,6 +124,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9024 | error | codegen | Stdlib or runtime directory path contains whitespace | n/s |
 | E9025 | error | codegen | No version of a dependency satisfies every constraint | n/s |
 | E9026 | error | codegen | `--migrate` declined; source echoed unchanged | C711 |
+| E9027 | error | codegen | The C compiler tkc would run is not an executable file | n/s |
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 

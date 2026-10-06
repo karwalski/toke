@@ -75,6 +75,22 @@ echo 'm=test; f=main():i64{<42;};' > test.tk
 
 If everything is working, you will see `42` printed as the exit code.
 
+## Which clang `toke` runs
+
+`toke` builds a program by running clang. It runs the clang that `make` found
+on your `PATH` when `toke` was built, by its absolute path, so a later change
+to `PATH` cannot swap in a different compiler. To pick a clang at build time,
+pass its absolute path: `make TKC_CLANG_PATH=/opt/homebrew/opt/llvm/bin/clang`.
+
+To use another clang without rebuilding, set `TKC_CC` to its path:
+
+```bash
+TKC_CC=/opt/homebrew/opt/llvm/bin/clang ./toke test.tk -o test
+```
+
+If `TKC_CC` (or the clang `toke` was built with) is not an executable file,
+the build stops with error E9027 and exits 3. `toke --check` runs no clang.
+
 ## Troubleshooting
 
 ### `clang: command not found`
