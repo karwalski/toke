@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdftext.c — the content-stream interpreter: text runs with positions.
  *

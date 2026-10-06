@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * zip.c — Implementation of the std.zip standard library module (story 135.1).
  *

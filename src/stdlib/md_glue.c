@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * md_glue.c — i64-ABI wrappers for std.md module.
  *

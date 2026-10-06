@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * mem.c — Implementation of the std.mem standard library module.
  *

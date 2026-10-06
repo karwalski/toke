@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_secure.h — the stdlib crypto core's random source and secret wiping
  * (story 121.20, audit 120.9 findings CRY-01 and HYG-01).

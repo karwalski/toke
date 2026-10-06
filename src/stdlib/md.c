@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * md.c — Implementation of the std.md standard library module.
  *

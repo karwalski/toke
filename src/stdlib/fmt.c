@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * fmt.c — Implementation of the std.fmt standard library module.
  *

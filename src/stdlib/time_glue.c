@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * time_glue.c — i64-ABI wrappers for std.time module.
  *

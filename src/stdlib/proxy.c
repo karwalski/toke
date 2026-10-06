@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * proxy.c — HTTP reverse proxy and load balancing for std.http.
  *

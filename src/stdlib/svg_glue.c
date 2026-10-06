@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * svg_glue.c — i64-ABI wrappers for std.svg.
  *

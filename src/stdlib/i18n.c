@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * i18n.c — Implementation of std.i18n for the toke compiler runtime.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdf_glue.c — i64-ABI wrappers for the std.pdf module (story 135.3).
  *

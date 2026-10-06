@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * collections.c -- std.stack, std.queue, std.set standard library modules.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * soap.c — SOAP 1.1/1.2 envelope builder, fault generator, extractor,
  *           and WS-Security header stubs for the std.soap module.

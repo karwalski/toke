@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * analytics_glue.c — i64-ABI wrappers for std.analytics (Story 136.32).
  *

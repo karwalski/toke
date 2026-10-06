@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * llm_tool_glue.c — i64-ABI wrappers for std.llmtool (story 136.17).
  *

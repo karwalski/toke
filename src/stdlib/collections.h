@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * collections.h -- C interface for std.stack, std.queue, std.set modules.
  *

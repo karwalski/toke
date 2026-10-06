@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * os.c — std.os standard library module.
  *

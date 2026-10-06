@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * xlsx_glue.c — i64-ABI wrappers for the std.xlsx module (story 135.4).
  *

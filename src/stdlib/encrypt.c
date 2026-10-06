@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * encrypt.c — Implementation of the std.encrypt standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * collections_glue.c — i64-ABI wrappers for std.stack, std.queue, std.set,
  *                      and array/map/sort runtime functions.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * chart.c — Implementation of the std.chart standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * sse.c — Implementation of the std.sse standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * keychain.c — Implementation of the std.keychain standard library module.
  *

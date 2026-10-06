@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * vecstore_glue.c — i64-ABI wrappers for std.vecstore module.
  *

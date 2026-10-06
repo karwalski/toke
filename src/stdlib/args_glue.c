@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * args_glue.c — i64-ABI wrappers for std.args module.
  *

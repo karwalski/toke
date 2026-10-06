@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * router.c — Implementation of the std.router standard library module.
  *

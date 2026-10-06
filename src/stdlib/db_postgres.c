@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* db_postgres.c — PostgreSQL backend for std.db (Story 57.10.2)
  * Compile with: -DTK_HAVE_LIBPQ $(pkg-config --cflags --libs libpq) */
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * image_glue.c — i64-ABI wrappers for std.image (Story 136.32).
  *

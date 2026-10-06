@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * file.c — Implementation of the std.file standard library module.
  *

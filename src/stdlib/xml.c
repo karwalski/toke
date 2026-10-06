@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * xml.c — std.xml standard library implementation.
  *

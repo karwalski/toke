@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdfobj.h — the PDF object model, shared between pdf.c and pdftext.c.
  *

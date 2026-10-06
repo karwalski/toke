@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * env.c — Implementation of the std.env standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * fmt_glue.c — i64-ABI wrappers for the std.fmt module (story 131.30).
  *

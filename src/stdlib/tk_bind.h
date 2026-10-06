@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_bind.h — bind a TCP address without shadowing a live listener
  * (stories 135.32, 135.33).

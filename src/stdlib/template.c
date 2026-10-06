@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * template.c — Implementation of the std.template standard library module.
  *

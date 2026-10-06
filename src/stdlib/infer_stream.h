@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * infer_stream.h — disk-streaming extension for the std.infer module.
  *

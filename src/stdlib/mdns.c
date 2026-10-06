@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * mdns.c — Implementation of the std.mdns standard library module.
  *
