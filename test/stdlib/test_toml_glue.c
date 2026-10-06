@@ -55,6 +55,17 @@ __thread int64_t tk_current_error = 0;
  * (tk_runtime.c) — stood in for here like the slot itself. */
 static int64_t g_errbox[8];
 void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
+
+/* 127.272: toml_raise copies its message through tk_err_msg (the runtime's
+ * message ring) — a one-slot stand-in is enough for these single-raise checks. */
+#include <stdarg.h>
+static char g_errmsg[1024];
+const char *tk_err_msg(const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    vsnprintf(g_errmsg, sizeof g_errmsg, fmt, ap);
+    va_end(ap);
+    return g_errmsg;
+}
 #endif
 
 #define POISON_VALUE 0x5eed

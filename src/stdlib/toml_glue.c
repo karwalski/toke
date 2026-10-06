@@ -40,9 +40,20 @@
  * reads it.  Until 127.182 every failure stored the payload-less flag 1, and
  * `e.msg` was E4034 at compile time (the type was not registered) or RT005
  * at run time (the payload was nil).  An ok return stores 0 (127.123). */
+/*
+ * 127.272: the message is copied through tk_err_msg() (tk_runtime.c), as
+ * csv_glue.c and file_glue.c do.  toml_load's parse message lives in toml.c's
+ * per-thread buffer, which the next toml.load rewrites, and toml.loadfile's
+ * read failure in file.c's static buffer; a `let`-kept error keeps a copy of
+ * its BOX, not of the string (127.103), so without this copy a later call
+ * would rewrite a message the program still holds.  The ring keeps a message
+ * exact across the next TK_ERR_MSG_RING - 1 raises on the thread, with no
+ * allocation per error (127.109) -- before this, toml_load malloc'd the
+ * message and nothing freed it. */
 static int64_t toml_raise(const char *msg) {
+    const char *m = tk_err_msg("%s", msg && msg[0] ? msg : "toml error");
     int64_t *box = (int64_t *)tk_err_box((int64_t)sizeof(int64_t));
-    box[0] = (int64_t)(intptr_t)(msg && msg[0] ? msg : "toml error");
+    box[0] = (int64_t)(intptr_t)m;
     tk_current_error = (int64_t)(intptr_t)box;
     return 0;
 }
