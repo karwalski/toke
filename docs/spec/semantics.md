@@ -425,6 +425,16 @@ error union type. Its semantics are:
    enclosing function immediately (early return).
 4. If the value is the success variant, the `!` operator unwraps it and
    produces a value of type `T`.
+5. The error must be one the enclosing function can return unchanged
+   (127.225, owner decision 2026-10-01 §2.3). When the operand is a call to
+   a user function declaring `T!$a`, and the enclosing function declares
+   `U!$b`, then `$a` and `$b` must be the same type, or two records whose
+   fields have the same types in the same order. Any other pair of named sum
+   or record types is a check-time error `[errors.md E4076]`. A re-raise
+   the checker cannot judge, between two types whose layouts differ, traps
+   `RT010` when the error occurs (memory-model §6.6). An error from a
+   `std.*` call is re-raised without its payload when its type is not the
+   enclosing function's.
 
 ### 5.3 Match on Error Types
 

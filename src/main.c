@@ -287,7 +287,11 @@ static void print_version(int json)
     }
 }
 
-static const char HELP[] =
+/* 127.275: --help is a table of sections, printed in sequence, so no one
+ * literal nears C99's 4,095-byte minimum (-Woverlength-strings).  Keep each
+ * entry under 2,048 bytes: C718 measures them and compares the output with
+ * test/conform/fixtures/help/tkc_help.txt. */
+static const char *const HELP_SECTIONS[] = {
     "Usage: toke [flags] <source-file> [source-file ...]\n"
     "\n"
     "Flags:\n"
@@ -306,7 +310,7 @@ static const char HELP[] =
     "  --expand            Expand abbreviated identifiers as inline comments\n"
     "  --sourcemap         Emit .map source map alongside --fmt/--pretty output\n"
     "  --dump-ast          Dump parsed AST as JSON to stdout and exit\n"
-    "  --check             Type check only; no code generation\n"
+    "  --check             Type check only; no code generation\n",
     "  --companion         Generate .tkc.md companion file skeleton to stdout\n"
     "  --companion-out <p> Write companion file to <p> instead of stdout\n"
     "  --verify-companion <f> Verify companion file hash against source\n"
@@ -328,7 +332,7 @@ static const char HELP[] =
     "  --diag-text         Emit diagnostics as human-readable text with the\n"
     "                      source line and a caret under the span\n"
     "  --diag-sarif        Emit diagnostics as SARIF v2.1.0 JSON to stdout\n"
-    "\n"
+    "\n",
     "Limit overrides (per-session):\n"
     "  --max-funcs=N       Max function signatures (default: 1024)\n"
     "  --max-locals=N      Max locals per function (default: 128)\n"
@@ -340,7 +344,7 @@ static const char HELP[] =
     "  --arena-block=N     Arena block size in bytes (default: 65536)\n"
     "  --max-iters=N       Max loop iterations at runtime (default: 0 = unlimited)\n"
     "  --show-limits       Print effective limits and exit\n"
-    "\n"
+    "\n",
     "Capabilities (ADR-0010, deny-by-default; grants also declarable in\n"
     "tkc.toml [capabilities] and passable at run time on the compiled binary):\n"
     "  --allow-read[=PATH] --allow-write[=PATH]  Grant fs read / write\n"
@@ -357,7 +361,15 @@ static const char HELP[] =
     "\n"
     "  --version           Print version and build commit and exit\n"
     "                      (--version --json: one JSON object)\n"
-    "  --help              Print this help and exit";
+    "  --help              Print this help and exit"
+};
+
+static void print_help(void)
+{
+    for (size_t i = 0; i < sizeof HELP_SECTIONS / sizeof HELP_SECTIONS[0]; i++)
+        fputs(HELP_SECTIONS[i], stdout);
+    putchar('\n');
+}
 
 /* ── Utility ───────────────────────────────────────────────────────── */
 
@@ -1718,7 +1730,7 @@ int main(int argc, char **argv)
             int json = 0;
             for (int k = 1; k < argc; k++) if (!strcmp(argv[k], "--json")) json = 1;
             print_version(json); return 0; }
-        else if (!strcmp(argv[i], "--help"))       { puts(HELP);   return 0; }
+        else if (!strcmp(argv[i], "--help"))       { print_help(); return 0; }
         else if (!strcmp(argv[i], "--emit-interface")) emit_iface = 1;
         else if (!strcmp(argv[i], "--emit-llvm"))      emit_ll = 1;
         else if (!strcmp(argv[i], "--emit-asm"))       emit_asm = 1;
@@ -1915,7 +1927,7 @@ int main(int argc, char **argv)
 
     /* --verify-companion: standalone mode, no source file needed */
     if (verify_companion_path) return verify_companion(verify_companion_path);
-    if (source_file_count == 0) { puts(HELP); return EUSAGE; }
+    if (source_file_count == 0) { print_help(); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
 
     /* 127.179: find the stdlib before anything consults it.  The purely

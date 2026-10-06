@@ -102,6 +102,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4073 | error | type_check | Nested interpolation the interpolation lowering cannot delimit | n/s |
 | E4074 | error | type_check | A comparison stands as a statement: its result is discarded | n/s |
 | E4075 | error | type_check | Regex pattern literal is not in the supported regex language | n/s |
+| E4076 | error | type_check | `!` re-raises a user error into a different error type | n/s |
 | E5001 | error | arena_check | Value escapes arena scope | -- |
 | W5001 | warning | arena_check | Value may escape arena scope | n/s |
 | E5002 | error | arena_check | Unreachable code after return | -- |

@@ -65,6 +65,7 @@ typedef enum {
 #define E4072 4072  /* ambiguous variant constructor: several sum types declare it */
 #define E4073 4073  /* nested interpolation the interpolation lowering cannot delimit */
 #define E4074 4074  /* a comparison stands as a statement: its result is discarded */
+#define E4076 4076  /* `!` re-raises a user error into a different error type */
 
 typedef struct Type {
     TypeKind      kind;

@@ -4823,6 +4823,122 @@ int map_lit_typed_empty(const Node *n) {
     return map_type_node(e->children[1]) || map_lit_typed_empty(e->children[1]);
 }
 
+/*
+ * ── 127.225: `!` may not re-raise a user error into a different error type ──
+ *
+ * `let v=inner()!$eb` inside `f=outer():i64!$eb`, with `inner` declaring
+ * `i64!$ea`, cannot carry inner's error across: a `$ea` box read as a `$eb`
+ * reads the wrong variant at the wrong width.  127.210 made codegen re-raise
+ * it payload-less instead (tag -1, which a nested `mt e{..}` sends to its
+ * LAST arm with payload 0 -- a made-up variant).  Owner decision 2026-10-01
+ * §2.3: a check-time error, with a runtime trap (RT010, llvm.c) as the
+ * backstop for what the checker cannot see.
+ *
+ * The rule is codegen's own pass-through rule (llvm.c
+ * stdlib_err_passes_through): the error passes into the same type, or into a
+ * record whose fields have the same types in the same order; anything else is
+ * E4076.  Judged only where both types are named sums or records the checker
+ * can lay out and the callee is a user function -- a local one (or a function
+ * value) whose type infer() knows, or `alias.fn` from a user module's
+ * interface.  A std.* callee keeps 127.182's payload-less re-raise: that is
+ * the sentinel ABI, not this decision.  `!$none`, `!str` and a type the
+ * checker cannot resolve are not judged.
+ *
+ * No `fix`: the repair is a choice -- declare the function with the callee's
+ * error type, or match the error and return a value of this function's type.
+ */
+/* 2 = a sum, 1 = a record, 0 = not judged.  `nm` has no leading '$'. */
+static int reraise_err_shape(Ctx *cx, const char *nm) {
+    if (!nm || !*nm || !cx->env->names) return 0;
+    if (!strcmp(nm, "none") || !strcmp(nm, "str")) return 0;
+    Decl *d = tc_lookup(cx->env->names->module_scope, nm, (int)strlen(nm));
+    if (d && d->def_node && d->def_node->kind == NODE_TYPE_DECL) {
+        const Node *td = d->def_node;
+        int any = 0;
+        for (int i = 1; i < td->child_count; i++) {
+            const Node *ch = td->children[i];
+            if (!ch) continue;
+            int nf = ch->kind == NODE_FIELD ? 1
+                   : ch->kind == NODE_STMT_LIST ? ch->child_count : 0;
+            for (int j = 0; j < nf; j++) {
+                const Node *f = ch->kind == NODE_FIELD ? ch : ch->children[j];
+                if (!f || f->kind != NODE_FIELD) continue;
+                any = 1;
+                if (f->op == TK_DOLLAR) return 2;
+            }
+        }
+        return any ? 1 : 0;
+    }
+    const ImportedType *it = imported_type_lookup(cx->env->names, nm);
+    if (!it) return 0;
+    return it->is_sum ? 2 : 1;
+}
+
+/* 1 when two record layouts agree field by field, 0 when they differ,
+ * -1 when a field type is unknown (not judged). */
+static int reraise_records_agree(const Type *a, const Type *b) {
+    if (!a || !b) return -1;
+    if (a->field_count != b->field_count) return 0;
+    if (a->field_count > 0 && (!a->field_types || !b->field_types)) return -1;
+    for (int i = 0; i < a->field_count; i++) {
+        const Type *x = a->field_types[i], *y = b->field_types[i];
+        if (!x || !y || x->kind == TY_UNKNOWN || y->kind == TY_UNKNOWN) return -1;
+        if (!types_equal(x, y)) return 0;
+    }
+    return 1;
+}
+
+static void check_reraise_type(Ctx *cx, const Node *node, const Type *inner) {
+    if (!cx->fn_ret || cx->fn_ret->kind != TY_ERROR_TYPE || !cx->fn_ret->name) return;
+    if (node->child_count < 1 || !node->children[0]) return;
+    const Node *call = node->children[0];
+    if (call->kind != NODE_CALL_EXPR || call->child_count < 1 || !call->children[0]) return;
+    const Node *callee = call->children[0];
+    char from[128] = {0};
+    const Type *from_rec = NULL;
+    if (callee->kind == NODE_IDENT) {
+        if (!inner || inner->kind != TY_ERROR_TYPE || !inner->name) return;
+        snprintf(from, sizeof from, "%s", inner->name);
+        from_rec = inner;
+    } else if (callee->kind == NODE_FIELD_EXPR && callee->child_count >= 2
+               && callee->children[0] && callee->children[0]->kind == NODE_IDENT
+               && callee->children[1]) {
+        if (alias_shadowed(cx, callee->children[0])) return;
+        char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+        char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+        char pb[256];
+        const char *mp = import_module_path(cx, ab, pb, sizeof pb);
+        if (!mp || !strncmp(mp, "std.", 4) || !strcmp(mp, "std")) return;
+        const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+        if (!f || !f->errty) return;
+        snprintf(from, sizeof from, "%s", f->errty);
+    } else {
+        return;
+    }
+    const char *fn = from[0] == '$' ? from + 1 : from;
+    const char *to = cx->fn_ret->name[0] == '$' ? cx->fn_ret->name + 1 : cx->fn_ret->name;
+    if (!*fn || !strcmp(fn, to)) return;
+    int fs = reraise_err_shape(cx, fn), ts = reraise_err_shape(cx, to);
+    if (!fs || !ts) return;
+    if (fs == 1 && ts == 1) {
+        if (!from_rec) from_rec = imported_struct_type(cx, fn, 0);
+        if (reraise_records_agree(from_rec, cx->fn_ret) != 0) return;
+    }
+    if (!tc_first_report(cx, node) || !tc_can_emit(cx)) return;
+    char msg[512], exp[160], got[160];
+    snprintf(msg, sizeof msg,
+             "'!' re-raises an error of type '$%s' into this function's error "
+             "type '$%s'; a %s cannot be carried across into a different %s. "
+             "Declare the function '!$%s', or match the error and return a "
+             "'$%s' value", fn, to, fs == 2 ? "sum" : "record",
+             (fs == 1 && ts == 1) ? "record layout" : "error type", fn, to);
+    snprintf(exp, sizeof exp, "$%s", to);
+    snprintf(got, sizeof got, "$%s", fn);
+    diag_emit(DIAG_ERROR, E4076, node->start, node->line, node->col, msg,
+              "expected", exp, "got", got, (const char *)NULL);
+}
+
+
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
     if (node) ((Node *)node)->rtype = t;
@@ -5889,6 +6005,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
             return mk_type(A,TY_UNKNOWN);
         }
+        check_reraise_type(cx,node,inner);                  /* 127.225 */
         return (inner->kind==TY_ERROR_TYPE&&inner->elem)?inner->elem:mk_type(A,TY_UNKNOWN);
     }
 

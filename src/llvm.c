@@ -1529,6 +1529,29 @@ static int user_err_reraise(Ctx *c, const FnSig *ucs) {
     return !stdlib_err_passes_through(c, from, c->cur_fn_err);
 }
 
+/* 127.225 (owner decision 2026-10-01 §2.3): re-raising a user error into a
+ * different error type is a check-time error (E4076, types.c
+ * check_reraise_type).  This is the runtime backstop for a re-raise the
+ * checker could not judge (a record field type it could not resolve, a callee
+ * it could not type): when both error types are named sums or records this
+ * module knows the layout of, the prop_err path traps RT010 naming them,
+ * instead of 127.210's payload-less re-raise (tag -1), which a nested `mt`
+ * read as its last variant with payload 0.  `!str`, `!$none` and a type with
+ * no layout here keep the payload-less re-raise.  Copies the two names
+ * (without '$') into from/to; 1 when the re-raise must trap. */
+static int user_err_reraise_traps(Ctx *c, const FnSig *ucs,
+                                  char *from, char *to, size_t sz) {
+    if (!user_err_reraise(c, ucs)) return 0;
+    const char *f = ucs->err_type_name[0] == '$' ? ucs->err_type_name + 1
+                                                 : ucs->err_type_name;
+    const char *t = c->cur_fn_err[0] == '$' ? c->cur_fn_err + 1 : c->cur_fn_err;
+    if (!strcmp(f, "none") || !strcmp(t, "none")) return 0;
+    if (!lookup_struct(c, f) || !lookup_struct(c, t)) return 0;
+    snprintf(from, sz, "%s", f);
+    snprintf(to, sz, "%s", t);
+    return 1;
+}
+
 /*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
@@ -6931,6 +6954,10 @@ static int emit_expr(Ctx *c, const Node *n)
         /* 127.182: a stdlib payload re-raised payload-less unless its layout
          * is the one the enclosing function's error type declares. */
         int prop_reraise = 0;
+        /* 127.225: a user error re-raised into a different user error type
+         * the checker could not see -- trap RT010 (user_err_reraise_traps). */
+        int prop_trap = 0;
+        char trap_from[NAME_BUF] = {0}, trap_to[NAME_BUF] = {0};
         /* 127.249 (3): `args.get(n)!$e` is the qualified call `args.get`
          * written in its index spelling. */
         char iqal[128], iqme[128];
@@ -6977,6 +7004,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (ucs && ucs->err_type_name[0]) {
                         prop_cur_err = 1;
                         prop_reraise = user_err_reraise(c, ucs);   /* 127.210 */
+                        prop_trap = user_err_reraise_traps(c, ucs, trap_from, trap_to,
+                                                           sizeof trap_from);
                     }
                 }
             } else if (sc->kind == NODE_IDENT) {
@@ -6987,6 +7016,8 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (ucs && ucs->err_type_name[0]) {
                         prop_cur_err = 1;
                         prop_reraise = user_err_reraise(c, ucs);   /* 127.210 */
+                        prop_trap = user_err_reraise_traps(c, ucs, trap_from, trap_to,
+                                                           sizeof trap_from);
                     }
                 }
             }
@@ -7012,6 +7043,24 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  br i1 %%t%d, label %%prop_ok%d, label %%prop_err%d\n",
                 prop_cond, prop_lbl, prop_lbl);
         fprintf(c->out, "prop_err%d:\n", prop_lbl);
+        if (prop_trap) {
+            /* 127.225: RT010 -- see user_err_reraise_traps. */
+            char lit[NAME_BUF + 4];
+            int fa = 1, ta = 1;
+            snprintf(lit, sizeof lit, "\"%s\"", trap_from);
+            int fs = emit_str_global(c, lit, (int)strlen(lit), &fa);
+            snprintf(lit, sizeof lit, "\"%s\"", trap_to);
+            int ts = emit_str_global(c, lit, (int)strlen(lit), &ta);
+            int fp = next_tmp(c), tp = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                    fp, fa, fa, c->module_prefix, fs);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                    tp, ta, ta, c->module_prefix, ts);
+            fprintf(c->out, "  call void @tk_reraise_trap(i8* %%t%d, i8* %%t%d) ; 127.225 RT010\n", fp, tp);
+            fprintf(c->out, "  unreachable\n");
+            fprintf(c->out, "prop_ok%d:\n", prop_lbl);
+            return sv;
+        }
         /* 127.56: the enclosing `T!$err` function signals failure to ITS caller
          * through @tk_current_error (114.55) — every other error exit sets it.
          * When the propagated-from callee used the 0/null sentinel ABI instead

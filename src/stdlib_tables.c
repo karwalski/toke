@@ -750,6 +750,7 @@ const StdlibDecl g_stdlib_decls[] = {
     {"tk_div_trap", "declare void @tk_div_trap(i32)", 0},  /* 124.2b: RT004 divide-by-zero */
     {"tk_bounds_trap", "declare void @tk_bounds_trap(i64, i64)", 0},  /* 124.2a: RT003 OOB */
     {"tk_nil_trap", "declare void @tk_nil_trap(i32)", 0},  /* 124.2d: RT005 nil-deref */
+    {"tk_reraise_trap", "declare void @tk_reraise_trap(i8*, i8*)", 0},  /* 127.225: RT010 re-raise into another error type */
     {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
     {"llvm.uadd.with.overflow.i64", "declare {i64, i1} @llvm.uadd.with.overflow.i64(i64, i64)", 0}, /* 127.217: u64 */
     {"llvm.usub.with.overflow.i64", "declare {i64, i1} @llvm.usub.with.overflow.i64(i64, i64)", 0},
