@@ -136,11 +136,18 @@ jobs:
       - name: make lint (compiler --analyze)
         run: make lint
 
+      # Errors (always on), warnings, performance and portability fail the
+      # build. --enable=all also failed it on style opinions ("can be const")
+      # and on missingIncludeSystem, which fires on every system header, so no
+      # tree could pass; it never ran until make lint stopped failing first.
+      # Vendored code (miniz, pulled in by zip.c) is not ours to change.
       - name: cppcheck
         run: |
-          cppcheck --enable=all \
+          cppcheck --enable=warning,performance,portability \
                    --error-exitcode=1 \
                    --inline-suppr \
+                   --suppress='*:*stdlib/vendor/*' \
+                   -j "$(nproc)" \
                    --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
                    src/
 
