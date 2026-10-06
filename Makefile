@@ -1478,9 +1478,12 @@ test-stdlib-db:
 	    test/stdlib/test_db.c src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3
 	$(RUN_TEST) ./test/stdlib/test_db
 
+# 127.271: every link line below that compiles src/stdlib/file.c names
+# -lpthread: file.c calls pthread_sigmask (121.84 SIGPIPE guard), which lives in
+# libpthread on glibc < 2.34 (harmless on Darwin and newer glibc).
 test-stdlib-file:
 	$(CC) $(CFLAGS) -o test/stdlib/test_file \
-	    test/stdlib/test_file.c src/stdlib/file.c
+	    test/stdlib/test_file.c src/stdlib/file.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_file
 
 test-stdlib-runtime:
@@ -1612,7 +1615,7 @@ test-stdlib-process:
 test-stdlib-ambient:
 	$(CC) $(CFLAGS) -o test/stdlib/test_ambient \
 	    test/stdlib/test_ambient.c src/stdlib/path.c src/stdlib/file.c \
-	    src/stdlib/env.c src/stdlib/os.c src/stdlib/capabilities.c
+	    src/stdlib/env.c src/stdlib/os.c src/stdlib/capabilities.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_ambient
 
 test-stdlib-env:
@@ -1955,7 +1958,7 @@ test-stdlib-coverage:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_stdlib_coverage \
 	    test/stdlib/test_stdlib_coverage.c \
 	    src/stdlib/json.c src/stdlib/file.c src/stdlib/str.c \
-	    src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3
+	    src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3 -lpthread
 	$(RUN_TEST) ./test/stdlib/test_stdlib_coverage
 
 bench:
@@ -1964,7 +1967,7 @@ bench:
 	    src/stdlib/str.c src/stdlib/json.c src/stdlib/file.c \
 	    src/stdlib/crypto.c src/stdlib/tk_time.c src/stdlib/process.c \
 	    src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
-	    src/stdlib/db.c src/stdlib/http.c -lsqlite3
+	    src/stdlib/db.c src/stdlib/http.c -lsqlite3 -lpthread
 	./test/stdlib/bench_stdlib
 
 # ── 123.11: performance-regression gate ────────────────────────────────────
@@ -2052,7 +2055,7 @@ test-stdlib-md:
 
 test-stdlib-toml:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml \
-	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS)
+	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml
 
 # Story 127.67: the std.toml wrappers must distinguish a value of false/0
@@ -2060,7 +2063,7 @@ test-stdlib-toml:
 test-stdlib-toml-glue:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
 	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/toml_glue.c \
-	    src/stdlib/capabilities.c $(TOML_SRCS)
+	    src/stdlib/capabilities.c $(TOML_SRCS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────
@@ -2284,7 +2287,7 @@ fuzz-json:
 fuzz-yaml:
 	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
 fuzz-toml:
-	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS))
+	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS) -lpthread)
 fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:

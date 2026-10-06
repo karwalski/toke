@@ -479,10 +479,10 @@ def repo_facts():
     import github_repo_descriptions as grd
     private = {"toke-cloud", "toke-console"}
     archived = {"toke-benchmark", "toke-stdlib"}
-    # Prepared but not yet created on GitHub (story 132.18): the Homebrew tap
-    # exists only as a local working copy, so `brew tap karwalski/toke` fails.
-    # It belongs in the map — as unpublished — until the owner creates it.
-    unpublished = {"homebrew-toke"}
+    # Repositories prepared but not yet created on GitHub. Empty since the
+    # Homebrew tap was pushed on 2026-10-01 (story 132.120); it is now a public
+    # repository in the inventory like any other.
+    unpublished = set()
     names = [r[0] for r in grd.REPOS]
     public = [n for n in names if n not in private and n not in archived]
     return {

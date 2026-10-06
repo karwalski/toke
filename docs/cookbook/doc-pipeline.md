@@ -110,18 +110,27 @@ f=main():i64!$err{
 
 ```shell
 tkc docpipeline.tk
-./docpipeline
+./docpipeline --allow-read
 ```
 
-Sample output:
+The program reads files, so it needs the `fs.read` capability: without
+`--allow-read` (or a `[capabilities]` entry in `tkc.toml`) it stops after the first
+log line with `CAP001: capability 'fs.read' required but not granted`.
+
+Sample output, from a `docs/` directory holding `readme.txt`, `changelog.txt` and a
+subdirectory `notes/` (a directory cannot be read as a file, so it is skipped):
 
 ```
-[INFO] scanning: docs
-[INFO] readme.txt lines=42 words=310
-[INFO] changelog.txt lines=18 words=95
-[WARN] skipped: .DS_Store
-[INFO] processed 2
+{"level":"info","msg":"scanning: docs","ts":"2026-10-06T18:48:44.592Z"}
+{"level":"warn","msg":"skipped: notes","ts":"2026-10-06T18:48:44.595Z"}
+{"level":"info","msg":"changelog.txt lines=3 words=6","ts":"2026-10-06T18:48:44.596Z"}
+{"level":"info","msg":"readme.txt lines=4 words=13","ts":"2026-10-06T18:48:44.596Z"}
+{"level":"info","msg":"processed 2","ts":"2026-10-06T18:48:44.596Z"}
 ```
+
+`std.log` writes JSON lines by default; the program never switches it to text
+format. The entry order is whatever `file.list` returns. `countlines` counts the
+empty string after a trailing newline, so a two-line file reports `lines=3`.
 
 ## Key syntax reminders
 
