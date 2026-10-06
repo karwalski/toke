@@ -101,6 +101,21 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
 
+/* 127.264 (2), owner decision §2.14: every limit E9010 is a user error and
+ * exits 1, whether it is found before codegen, during codegen or the link
+ * step, or as caps too large to allocate.  Only a failure WITHOUT one (a true
+ * internal error) exits 2.  This keep-predicate keeps every diagnostic and
+ * notes whether an E9010 error was emitted; a failed codegen/link step asks
+ * limit_or_internal() for its exit status.  It is installed for the whole run
+ * (main) and restored after the recovery type check swaps in its own. */
+static int g_limit_seen = 0;
+static int limit_tap(DiagSeverity sev, int code, int byte_offset, void *ctx) {
+    (void)byte_offset; (void)ctx;
+    if (sev == DIAG_ERROR && code == E9010) g_limit_seen = 1;
+    return 1;
+}
+static int limit_or_internal(void) { return g_limit_seen ? ECOMPILE : EINTERNAL; }
+
 /* 131.33: the version with the commit the binary was built from.  Plain:
  * `toke <version> (git 1a2b3c4d5e6f)`, `(git 1a2b3c4d5e6f, dirty)` or
  * `(git unknown)` outside a checkout -- one line, so a caller that keeps the
@@ -813,8 +828,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         SymbolTable st;
         if (resolve_imports(ast, sbuf, sp, spc, &limits, &st) < 0 || diag_error_count() > 0) {
             rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
-        if (!llvm_caps_fit(&limits)) {     /* 127.264 (1); rc as above */
-            symtab_free(&st); rc = EINTERNAL; free(sbuf); arena_free(arena); goto cleanup; }
+        if (!llvm_caps_fit(&limits)) {     /* 127.264: a limit E9010, rc 1 */
+            symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
         NameEnv ne;
         if (resolve_names(ast, sbuf, &st, arena, &ne, sp, spc) < 0 || diag_error_count() > 0) {
             /* 123.13: the same recovery as process_file (123.12c) */
@@ -849,7 +864,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         snprintf(ll_paths[fi], PATH_BUF, "%s/m%d.ll", tdir, fi);
         CodegenEnv cg = { &te, &ne, arena, target, limits, debug_info, NULL, NULL, sp, spc };
         if (emit_llvm_ir(ast, sbuf, &cg, ll_paths[fi]) < 0) {
-            symtab_free(&st); rc = EINTERNAL; free(sbuf); arena_free(arena); goto cleanup; }
+            symtab_free(&st); rc = limit_or_internal(); free(sbuf); arena_free(arena); goto cleanup; }
         for (int e = 0; e < st.count && merged.count < 256; e++) {
             merged.entries[merged.count].module_path = strdup(st.entries[e].module_path ? st.entries[e].module_path : "");
             merged.entries[merged.count].version = NULL;
@@ -863,7 +878,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         diag_set_source(NULL, 0);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
-    if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
+    if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = limit_or_internal();
 
 cleanup:
     for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
@@ -1049,7 +1064,7 @@ static int typecheck_after_name_errors(Node *ast, const char *sbuf, int slen,
     TypeEnv te;
     diag_set_keep(recover_keep, &ctx);
     (void)type_check(ast, sbuf, ne, arena, &te);
-    diag_set_keep(NULL, NULL);
+    diag_set_keep(limit_tap, NULL);   /* 127.264 (2): back to the run's tap */
     free(taint);
     return 1;
 }
@@ -1247,11 +1262,10 @@ static int process_file(const char *src, const RunOpts *o)
     SymbolTable st;
     if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
     /* 127.264 (1): caps whose codegen registries cannot be allocated are
-     * refused here, so --check refuses what the build would.  EINTERNAL is
-     * the exit status the build gave this E9010 (127.258, C641); whether a
-     * limit error should exit 1 instead is an open owner question
-     * (127.264 (2)), so both keep the build's status for now. */
-    if (!llvm_caps_fit(&limits)) { symtab_free(&st); rc = EINTERNAL; goto done; }
+     * refused here, so --check refuses what the build would.  127.264 (2),
+     * owner decision §2.14: a limit E9010 is a user error, rc 1, here and in
+     * the build alike. */
+    if (!llvm_caps_fit(&limits)) { symtab_free(&st); rc = ECOMPILE; goto done; }
 
     /* Resolve names */
     NameEnv ne;
@@ -1452,7 +1466,7 @@ static int process_file(const char *src, const RunOpts *o)
         char tkir_path[PATH_BUF];
         if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
         else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
-        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         symtab_free(&st);
         goto done;
@@ -1468,7 +1482,7 @@ static int process_file(const char *src, const RunOpts *o)
             snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
         }
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         symtab_free(&st);
         goto done;
@@ -1481,7 +1495,7 @@ static int process_file(const char *src, const RunOpts *o)
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         char asm_path[PATH_BUF];
         if (out && !out_is_dir) {
@@ -1550,9 +1564,9 @@ static int process_file(const char *src, const RunOpts *o)
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
-        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(100);
         unlink(tmp);
         symtab_free(&st);
@@ -1592,6 +1606,7 @@ int main(int argc, char **argv)
     Profile profile = PROFILE_DEFAULT;
     TkcLimits limits;
     tkc_limits_defaults(&limits);
+    diag_set_keep(limit_tap, NULL);   /* 127.264 (2): a limit E9010 exits 1 */
 
     /* .tki search path: CWD + -I dirs + TKC_INTERFACE_PATH dirs */
     #define MAX_SEARCH_PATHS 64

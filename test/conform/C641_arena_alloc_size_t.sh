@@ -14,7 +14,8 @@
 # to a ~0.9 GB block indexed as if it held two million entries.
 #
 # arena_alloc now takes size_t and refuses what a block cannot hold; callers
-# multiply in size_t; codegen refuses unallocatable caps with E9010.
+# multiply in size_t; codegen refuses unallocatable caps with E9010 -- a
+# limit error, rc 1 since 127.264 (2) (it was rc 2).
 #
 # Negative control: TKC=<2aa48c88's toke> -- cases 1 and 3 fail (rc=139),
 # case 2 fails (rc=0, no diagnostic).  Case 5 fails on 2aa48c88's
@@ -46,11 +47,11 @@ run() {
 }
 
 expect "1 --max-funcs=1000000 (2.6 GB of FnSig) is E9010, not SIGSEGV" \
-    "$(run --max-funcs=1000000 max_funcs=1000000)" "rc=2 E9010 named=1"
+    "$(run --max-funcs=1000000 max_funcs=1000000)" "rc=1 E9010 named=1"
 expect "2 --max-funcs=2000000 (wrapped to a positive int on main) is E9010" \
-    "$(run --max-funcs=2000000 max_funcs=2000000)" "rc=2 E9010 named=1"
+    "$(run --max-funcs=2000000 max_funcs=2000000)" "rc=1 E9010 named=1"
 expect "3 --max-structs=100000000 is E9010, not SIGSEGV" \
-    "$(run --max-structs=100000000 max_structs=100000000)" "rc=2 E9010 named=1"
+    "$(run --max-structs=100000000 max_structs=100000000)" "rc=1 E9010 named=1"
 expect "4 a large cap that fits still builds" \
     "$(run --max-funcs=4096 max_funcs)" "rc=0 named=0"
 

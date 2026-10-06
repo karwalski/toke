@@ -296,7 +296,7 @@
 
 /* ── Exit Codes ───────────────────────────────────────────────────────── */
 
-#define TKC_EXIT_COMPILE  1   /* compilation error (lex/parse/type/codegen) */
+#define TKC_EXIT_COMPILE  1   /* compilation error (lex/parse/type/codegen), every limit E9010 (127.264) */
 #define TKC_EXIT_INTERNAL 2   /* internal compiler error                   */
 #define TKC_EXIT_USAGE    3   /* CLI usage error                           */
 

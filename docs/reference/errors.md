@@ -1280,6 +1280,11 @@ basic block!" — a backend crash rather than a diagnostic.
 
 A fixed compiler capacity was exceeded (e.g. too many locals, functions, or imports).
 
+E9010 is a user error: `tkc` exits 1 whether the limit is met at `--check`,
+before code generation, during code generation or linking, or as caps too
+large to allocate. Exit status 2 is kept for internal compiler errors -- a
+failure with no E9010 (story 127.264).
+
 The import, function-signature and struct-type caps are met at `--check`, at
 the import or declaration that crosses them, with `expected` = the limit and
 `got` = the count. Imported signatures and types count: every function of an
