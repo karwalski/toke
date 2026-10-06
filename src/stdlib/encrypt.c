@@ -632,7 +632,10 @@ static void fe_to_bytes(uint8_t b[32], fe25519 h)
         int64_t t3 = (int64_t)h.v[3] - (int64_t)MASK51 + (t2 >> 51);
         int64_t t4 = (int64_t)h.v[4] - (int64_t)MASK51 + (t3 >> 51);
         /* t4 >= 0 means h >= p (no final borrow); mask = all-ones to select t */
-        uint64_t mask = ~(uint64_t)(t4 >> 63); /* all-ones if h >= p, 0 if h < p */
+        /* all-ones if h >= p, 0 if h < p. The sign bit is read with an
+         * unsigned shift: t4 >> 63 on a negative int64 is
+         * implementation-defined. */
+        uint64_t mask = ((uint64_t)t4 >> 63) - 1;
         h.v[0] = (h.v[0] & ~mask) | ((uint64_t)t0 & MASK51 & mask);
         h.v[1] = (h.v[1] & ~mask) | ((uint64_t)t1 & MASK51 & mask);
         h.v[2] = (h.v[2] & ~mask) | ((uint64_t)t2 & MASK51 & mask);
@@ -829,7 +832,7 @@ static const uint8_t X25519_BASEPOINT[32] = {9};
 
 X25519Keypair encrypt_x25519_keypair(void)
 {
-    X25519Keypair kp;
+    X25519Keypair kp = {0};
     random_bytes(kp.privkey, 32);
     x25519_clamp(kp.privkey);
     x25519_scalarmult(kp.pubkey, kp.privkey, X25519_BASEPOINT);

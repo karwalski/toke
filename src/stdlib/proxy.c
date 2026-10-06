@@ -288,6 +288,7 @@ static ProxyBackend *lb_select(ProxyUpstream *up, const char *client_ip)
         int total_weight = 0;
         for (int i = 0; i < nhealthy; i++)
             total_weight += healthy[i]->weight > 0 ? healthy[i]->weight : 1;
+        if (total_weight <= 0) return healthy[0];   /* overflowed sum */
         int r = up->rr_index % total_weight;
         up->rr_index++;
         int cum = 0;

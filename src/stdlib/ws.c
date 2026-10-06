@@ -1232,10 +1232,11 @@ const char *ws_build_upgrade_response(const char *accept_key,
 
 int ws_validate_utf8(const uint8_t *payload, size_t len)
 {
+    /* Check before forming end: NULL + len is undefined even when unused. */
+    if (!payload) return (len == 0) ? 1 : 0;
+
     const uint8_t *p   = payload;
     const uint8_t *end = p + len;
-
-    if (!payload) return (len == 0) ? 1 : 0;
 
     while (p < end) {
         uint8_t  b = *p++;

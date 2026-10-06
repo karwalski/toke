@@ -84,8 +84,9 @@ static int parse_url(const char *base_url, const char *path_suffix,
                      char *path_out, size_t path_cap,
                      int  *is_https_out)
 {
-    const char *p = base_url;
     *is_https_out = 0;
+    if (!base_url) return -1;   /* callers report "failed to parse base_url" */
+    const char *p = base_url;
 
     if (strncmp(p, "https://", 8) == 0) {
         *is_https_out = 1;
