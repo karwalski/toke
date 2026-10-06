@@ -192,7 +192,7 @@ static TkStmt *my_run_prepared(const char *sql, StrArray params, DbErr *err)
 
 static RowResult my_one(const char *sql, StrArray params)
 {
-    RowResult r; r.is_err = 0;
+    RowResult r = {0}; r.is_err = 0;
     if (!g_mysql) { r.is_err = 1; r.err = my_err(DB_ERR_CONNECTION, "no connection"); return r; }
 
     if (params.len > 0) {
@@ -233,7 +233,7 @@ static RowResult my_one(const char *sql, StrArray params)
 
 static RowArrayResult my_many(const char *sql, StrArray params)
 {
-    RowArrayResult r; r.is_err = 0;
+    RowArrayResult r = {0}; r.is_err = 0;
     if (!g_mysql) { r.is_err = 1; r.err = my_err(DB_ERR_CONNECTION, "no connection"); return r; }
 
     if (params.len > 0) {
@@ -299,7 +299,7 @@ static RowArrayResult my_many(const char *sql, StrArray params)
 
 static U64Result my_exec(const char *sql, StrArray params)
 {
-    U64Result r; r.is_err = 0; r.ok = 0;
+    U64Result r = {0}; r.is_err = 0; r.ok = 0;
     if (!g_mysql) { r.is_err = 1; r.err = my_err(DB_ERR_CONNECTION, "no connection"); return r; }
 
     if (params.len > 0) {
@@ -322,7 +322,7 @@ static U64Result my_exec(const char *sql, StrArray params)
 static BoolResult my_begin(int conn_id)
 {
     (void)conn_id;
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     if (mysql_query(g_mysql, "START TRANSACTION") != 0) {
         r.is_err = 1; r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
     }
@@ -332,7 +332,7 @@ static BoolResult my_begin(int conn_id)
 static BoolResult my_commit(int conn_id)
 {
     (void)conn_id;
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     if (mysql_commit(g_mysql) != 0) {
         r.is_err = 1; r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
     }
@@ -342,7 +342,7 @@ static BoolResult my_commit(int conn_id)
 static BoolResult my_rollback(int conn_id)
 {
     (void)conn_id;
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     if (mysql_rollback(g_mysql) != 0) {
         r.is_err = 1; r.err = my_err_copy(DB_ERR_QUERY, mysql_error(g_mysql));
     }
@@ -352,7 +352,7 @@ static BoolResult my_rollback(int conn_id)
 static U64Result my_last_insert_id(int conn_id)
 {
     (void)conn_id;
-    U64Result r; r.is_err = 0;
+    U64Result r = {0}; r.is_err = 0;
     r.ok = (uint64_t)mysql_insert_id(g_mysql);
     return r;
 }
@@ -360,7 +360,7 @@ static U64Result my_last_insert_id(int conn_id)
 static U64Result my_affected_rows(int conn_id)
 {
     (void)conn_id;
-    U64Result r; r.is_err = 0;
+    U64Result r = {0}; r.is_err = 0;
     r.ok = (uint64_t)mysql_affected_rows(g_mysql);
     return r;
 }
@@ -384,7 +384,7 @@ static int my_table_exists(int conn_id, const char *name)
 static StmtResult my_prepare(int conn_id, const char *sql)
 {
     (void)conn_id;
-    StmtResult r; r.is_err = 0; r.ok = NULL;
+    StmtResult r = {0}; r.is_err = 0; r.ok = NULL;
 
     if (!g_mysql) {
         r.is_err = 1;
@@ -449,7 +449,7 @@ static StmtResult my_prepare(int conn_id, const char *sql)
  * prepared statement without `?`s never ran. */
 static BoolResult my_bind(TkStmt *stmt, StrArray params)
 {
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     if (!stmt) {
         r.is_err = 1;
         r.err = my_err(DB_ERR_QUERY, "null statement");
@@ -501,7 +501,7 @@ static BoolResult my_bind(TkStmt *stmt, StrArray params)
 
 static RowResult my_step(TkStmt *stmt)
 {
-    RowResult r; r.is_err = 0;
+    RowResult r = {0}; r.is_err = 0;
     if (!stmt) {
         r.is_err = 1;
         r.err = my_err(DB_ERR_QUERY, "null statement");

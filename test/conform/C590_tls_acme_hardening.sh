@@ -38,16 +38,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C590_STDLIB:-${REPO_ROOT}/src/stdlib}"
-# 127.268: the stdlib link sets come from tkc's own dependency table
-# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
-# dependency change silently breaks.  t_acme.c #includes acme.c itself, so
-# it is left out of the acme set.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" tls)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK_TLS=(); while IFS= read -r l; do LINK_TLS+=("$l"); done <<< "${LINKSET}"
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except acme.c http)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK_ACME=(); while IFS= read -r l; do LINK_ACME+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c590_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 PASS=0; FAIL=0
@@ -75,13 +65,27 @@ if [ -z "${OSSL_LIBS}" ]; then
     exit 0
 fi
 
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  t_acme.c #includes acme.c itself, so
+# it is left out of the acme set.
+# 127.270: the link sets are cached objects built with case_run's flags.
+# shellcheck disable=SC2206
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DTK_HAVE_OPENSSL ${OSSL_CFLAGS}
+    -Wno-deprecated-declarations -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects tls -- "${CF[@]}")" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_TLS=(); while IFS= read -r l; do LINK_TLS+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except acme.c --cc "${CC}" \
+        --objects http -- "${CF[@]}")" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_ACME=(); while IFS= read -r l; do LINK_ACME+=("$l"); done <<< "${LINKSET}"
+
 # case NAME SOURCE-FILE LINK-ARGS... -- build + run; the program prints
 # "OK <what>" / "BAD <what>" lines.
 case_run() {
     local name="$1" src="$2"; shift 2
-    # shellcheck disable=SC2086
-    if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DTK_HAVE_OPENSSL ${OSSL_CFLAGS} \
-            -Wno-deprecated-declarations -iquote "${S}" -I"${S}" \
+    if ! "${CC}" "${CF[@]}" \
             -o "${WORK}/${name}" "${src}" "$@" >"${WORK}/${name}.cc" 2>&1; then
         fail "${name}: build: $(grep -a -m3 -E 'error' "${WORK}/${name}.cc" | head -c 400)"
         return

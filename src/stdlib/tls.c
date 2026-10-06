@@ -1017,7 +1017,8 @@ char *tls_group(TlsConn conn)
     char *out = strdup(g ? g : "");
     pthread_mutex_unlock(&e->io);
     registry_release(e);
-    return out ? out : strdup("");
+    if (!out) out = strdup("");
+    return out;
 }
 
 char *tls_protocol(TlsConn conn)
@@ -1032,5 +1033,6 @@ char *tls_protocol(TlsConn conn)
     char *out = strdup(v ? v : "");
     pthread_mutex_unlock(&e->io);
     registry_release(e);
-    return out ? out : strdup("");
+    if (!out) out = strdup("");
+    return out;
 }

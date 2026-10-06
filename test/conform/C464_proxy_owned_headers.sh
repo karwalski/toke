@@ -40,7 +40,10 @@ echo "------------------------------------------------------"
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.  h.c #includes proxy.c itself.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except proxy.c http)" \
+SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-unused-function -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except proxy.c --cc "${CC}" --objects http -- "${CF[@]}")" \
     || { fail "stdlib link set: see stderr above"; echo "C464: ${PASS} passed, ${FAIL} failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 
@@ -86,9 +89,7 @@ int main(void) {
 }
 EOF
 
-SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-unused-function -iquote "${S}" -I"${S}" \
-        -o "${WORK}/h" "${WORK}/h.c" \
+if ! "${CC}" "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" \
         "${LINK[@]}" -lz -lpthread -lm >"${WORK}/cc" 2>&1; then
     fail "build: $(grep -a -m2 error "${WORK}/cc" | head -c 300)"
 else

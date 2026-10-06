@@ -169,11 +169,12 @@ C
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" tls)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c11 -D_GNU_SOURCE -DTK_HAVE_OPENSSL -g -O1 ${SAN} -Wno-deprecated-declarations -iquote "${S}" ${OSSL_CFLAGS})
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects tls -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -DTK_HAVE_OPENSSL -g -O1 ${SAN} -Wno-deprecated-declarations \
-        -iquote "${S}" ${OSSL_CFLAGS} -o "${WORK}/t" "${WORK}/t.c" "${LINK[@]}" \
+if ! "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${LINK[@]}" \
         ${OSSL_LIBS} -lpthread >"${WORK}/cc.log" 2>&1; then
     fail "driver does not build against ${S}: $(grep -a -m1 -E 'error' "${WORK}/cc.log")"
     echo ""; echo "C206: ${PASS} passed, ${FAIL} failed"; exit 1

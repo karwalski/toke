@@ -20,8 +20,14 @@
 #
 # Then the same driver, built -O2 without sanitizers (the build shape the
 # stdlib ships in), generates one RSA-2048 key through the public
-# encrypt_rsa_generate_keypair and must finish within C520_KEYGEN_SECS
-# (default 240 s wall; ~20 s is typical on an M4 Max).  The key is checked in
+# encrypt_rsa_generate_keypair and must finish within C520_KEYGEN_SECS of CPU
+# time (default 240 s; ~20 s is typical on an M4 Max), with a wall-clock
+# backstop of C520_KEYGEN_WALL_SECS (default 1800 s) for a keygen that
+# blocks instead of spinning.  132.115: the bound was 240 s of WALL time, and
+# with three full conforms sharing the machine a correct keygen ran out of it
+# (it passed 7/7 alone).  CPU time is what a non-terminating keygen burns
+# and what load does not steal, so the bound still catches the 121.48 loop
+# (a planted infinite loop fails it) but no longer flakes under load.  The key is checked in
 # Python (n = p*q, n is 2048 bits, e*d == 1 mod (p-1)(q-1), p and q pass
 # Miller-Rabin), and the driver round-trips OAEP encrypt/decrypt and PSS
 # sign/verify with it and rejects a tampered signature.
@@ -30,7 +36,7 @@
 # tree.  A copy of src/stdlib/ with main's encrypt.c fails the modinv
 # vectors (inv(3 mod 7) = 6) and the keygen bound.
 #
-# Story: 121.48
+# Story: 121.48, 132.115 (CPU-time bound), 127.270 (cached objects)
 
 set -uo pipefail
 
@@ -39,6 +45,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 S="${C520_STDLIB:-${REPO_ROOT}/src/stdlib}"
 KEYGEN_SECS="${C520_KEYGEN_SECS:-240}"
+KEYGEN_WALL_SECS="${C520_KEYGEN_WALL_SECS:-1800}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c520_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -63,6 +70,8 @@ cat > "${WORK}/d.c" <<'EOF'
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 static int hexval(int c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -104,23 +113,42 @@ static void print_field(const char *name, const uint8_t *d, uint32_t len) {
     printf("\n");
 }
 
-static void on_alarm(int sig) {
-    (void)sig;
-    static const char m[] = "TIMEOUT keygen did not finish within the bound\n";
-    ssize_t w = write(1, m, sizeof m - 1); (void)w;
+/* 132.115: the bound is CPU time (ITIMER_PROF counts user + system time of
+ * this process, so it advances only while keygen actually runs); SIGALRM is
+ * a generous wall-clock backstop for a keygen that blocks. */
+static void on_timeout(int sig) {
+    static const char cpu[] = "TIMEOUT keygen used more than its CPU-time bound\n";
+    static const char wall[] = "TIMEOUT keygen did not finish within the wall-clock backstop\n";
+    ssize_t w = sig == SIGPROF ? write(1, cpu, sizeof cpu - 1) : write(1, wall, sizeof wall - 1);
+    (void)w;
     _exit(3);
 }
 
-static int keygen(unsigned secs) {
-    signal(SIGALRM, on_alarm);
-    alarm(secs);
+static double cpu_secs(void) {
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    return (double)(ru.ru_utime.tv_sec + ru.ru_stime.tv_sec)
+         + (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1e6;
+}
+
+static int keygen(unsigned cpu_bound, unsigned wall_bound) {
+    signal(SIGPROF, on_timeout);
+    signal(SIGALRM, on_timeout);
+    struct itimerval it = { { 0, 0 }, { (time_t)cpu_bound, 0 } };
+    setitimer(ITIMER_PROF, &it, NULL);
+    alarm(wall_bound);
     struct timespec t0, t1;
+    double c0 = cpu_secs();
     clock_gettime(CLOCK_MONOTONIC, &t0);
     RsaKeyPairResult r = encrypt_rsa_generate_keypair(2048);
     clock_gettime(CLOCK_MONOTONIC, &t1);
+    double c1 = cpu_secs();
+    struct itimerval off = { { 0, 0 }, { 0, 0 } };
+    setitimer(ITIMER_PROF, &off, NULL);
     alarm(0);
     if (r.is_err) { printf("KEYERR %s\n", r.err_msg ? r.err_msg : "?"); return 1; }
     printf("SECS %.1f\n", (double)(t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9);
+    printf("CPUSECS %.1f\n", c1 - c0);
     const uint8_t *p = r.ok.priv_data; uint64_t rem = r.ok.priv_len; uint32_t fl;
     const char *names[5] = { "n", "e", "d", "p", "q" };
     int i;
@@ -155,8 +183,8 @@ static int keygen(unsigned secs) {
 }
 
 int main(int argc, char **argv) {
-    if (argc == 3 && strcmp(argv[1], "keygen") == 0)
-        return keygen((unsigned)atoi(argv[2]));
+    if (argc == 4 && strcmp(argv[1], "keygen") == 0)
+        return keygen((unsigned)atoi(argv[2]), (unsigned)atoi(argv[3]));
     char line[4096], op[16], x[1100], y[1100], z[1100];
     while (fgets(line, sizeof line, stdin)) {
         int k = sscanf(line, "%15s %1099s %1099s %1099s", op, x, y, z);
@@ -188,20 +216,25 @@ EOF
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.  d.c
 # #includes encrypt.c itself, so it is left out of the set.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c encrypt)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+# 127.270: as cached objects, one set per build shape (ASan, -O2).
+# objs NAME CF... -- fill LINK with the set compiled with those flags.
+objs() {
+    local LINKSET l; LINK=()
+    LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c \
+            --cc "${CC}" --objects encrypt -- "$@")" || return 1
+    while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+}
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 
-# shellcheck disable=SC2086
-if ! ${CC} -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/d_san" \
+CF_SAN=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}")
+CF_O2=(-std=c99 -D_GNU_SOURCE -O2 -iquote "${S}")
+if ! objs "${CF_SAN[@]}" || ! ${CC} "${CF_SAN[@]}" -o "${WORK}/d_san" \
         "${WORK}/d.c" "${LINK[@]}" > "${WORK}/cc1.log" 2>&1; then
     fail "driver (ASan+UBSan) does not compile"; sed 's/^/    /' "${WORK}/cc1.log" | head -20
     echo ""; echo "C520: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
-# shellcheck disable=SC2086
-if ! ${CC} -std=c99 -D_GNU_SOURCE -O2 -iquote "${S}" -o "${WORK}/d_o2" \
+if ! objs "${CF_O2[@]}" || ! ${CC} "${CF_O2[@]}" -o "${WORK}/d_o2" \
         "${WORK}/d.c" "${LINK[@]}" > "${WORK}/cc2.log" 2>&1; then
     fail "driver (-O2) does not compile"; sed 's/^/    /' "${WORK}/cc2.log" | head -20
     echo ""; echo "C520: ${PASS} passed, ${FAIL} failed"; exit 1
@@ -301,13 +334,14 @@ else
 fi
 
 # ── 2. RSA-2048 keygen terminates, and the key works ────────────────────────
-"${WORK}/d_o2" keygen "${KEYGEN_SECS}" > "${WORK}/key.log" 2>&1
+"${WORK}/d_o2" keygen "${KEYGEN_SECS}" "${KEYGEN_WALL_SECS}" > "${WORK}/key.log" 2>&1
 krc=$?
 if [ "${krc}" -ne 0 ] || ! /usr/bin/grep -aq '^SECS ' "${WORK}/key.log"; then
-    fail "RSA-2048 keygen within ${KEYGEN_SECS}s: $(head -1 "${WORK}/key.log") (exit ${krc})"
+    fail "RSA-2048 keygen within ${KEYGEN_SECS}s CPU (${KEYGEN_WALL_SECS}s wall backstop): $(head -1 "${WORK}/key.log") (exit ${krc})"
 else
     secs="$(awk '/^SECS/{print $2}' "${WORK}/key.log")"
-    pass "RSA-2048 keygen finished in ${secs}s (bound ${KEYGEN_SECS}s)"
+    csecs="$(awk '/^CPUSECS/{print $2}' "${WORK}/key.log")"
+    pass "RSA-2048 keygen finished: ${csecs}s CPU, ${secs}s wall (bound ${KEYGEN_SECS}s CPU)"
     cat > "${WORK}/key.py" <<'EOF'
 import random, sys
 f = {}

@@ -136,11 +136,12 @@ C
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.
 LINK=()
-if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" svg canvas chart 2>"${WORK}/cc.log")"; then
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects svg canvas chart -- "${CF[@]}" 2>"${WORK}/cc.log")"; then
     while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 fi
-if [ "${#LINK[@]}" -eq 0 ] || ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
-        -o "${WORK}/drv" "${WORK}/drv.c" "${LINK[@]}" \
+if [ "${#LINK[@]}" -eq 0 ] || ! "${CC}" "${CF[@]}" -o "${WORK}/drv" "${WORK}/drv.c" "${LINK[@]}" \
         -lz -lm -lpthread >>"${WORK}/cc.log" 2>&1; then
     fail "driver does not build against ${S}"
     sed 's/^/      /' "${WORK}/cc.log" | head -20

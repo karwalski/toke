@@ -212,12 +212,12 @@ EOF
 
 # 127.268: the rest of std.http's link set (h.c #includes http.c itself)
 # comes from tkc's dependency table, not a hand list.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http 2> "${WORK}/cc.log")" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -I"${REPO_ROOT}/stdlib/vendor/tomlc99" -Wno-unused-function)
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c --cc "${CC}" --objects http -- "${CF[@]}" 2> "${WORK}/cc.log")" \
     || { fail "harness link set: $(head -c 400 "${WORK}/cc.log")"; echo "Results: ${PASS} passed, ${FAIL} failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! ${CC} -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
-        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" -Wno-unused-function \
-        -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" \
+if ! ${CC} "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" \
         -lz -lpthread -lm > "${WORK}/cc.log" 2>&1; then
     fail "harness build: $(grep -a -m3 -E 'error' "${WORK}/cc.log" | head -c 400)"
     echo "Results: ${PASS} passed, ${FAIL} failed"; exit 1

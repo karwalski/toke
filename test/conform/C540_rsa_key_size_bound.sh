@@ -164,13 +164,15 @@ EOF
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.  d.c
 # #includes encrypt.c itself, so it is left out of the set.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c encrypt)" \
+SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except encrypt.c --cc "${CC}" --objects encrypt -- "${CF[@]}")" \
     || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 # shellcheck disable=SC2086
-if ! ${CC} -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/d" \
+if ! ${CC} "${CF[@]}" -o "${WORK}/d" \
         "${WORK}/d.c" "${LINK[@]}" > "${WORK}/cc.log" 2>&1; then
     fail "driver (ASan+UBSan) does not compile"; sed 's/^/    /' "${WORK}/cc.log" | head -20
     echo ""; echo "C540: ${PASS} passed, ${FAIL} failed"; exit 1

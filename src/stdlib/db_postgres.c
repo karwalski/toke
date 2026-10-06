@@ -222,7 +222,7 @@ static int pg_collect_row(PGresult *res, int row_idx, Row *out)
 
 static RowResult pg_one(const char *sql, StrArray params)
 {
-    RowResult r; r.is_err = 0;
+    RowResult r = {0}; r.is_err = 0;
     char *rewritten = rewrite_placeholders(sql);
     if (!rewritten) {   /* 121.51 (8): a NULL went on to libpq as the query */
         r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
@@ -251,7 +251,7 @@ static RowResult pg_one(const char *sql, StrArray params)
 
 static RowArrayResult pg_many(const char *sql, StrArray params)
 {
-    RowArrayResult r; r.is_err = 0;
+    RowArrayResult r = {0}; r.is_err = 0;
     char *rewritten = rewrite_placeholders(sql);
     if (!rewritten) {
         r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
@@ -287,7 +287,7 @@ static RowArrayResult pg_many(const char *sql, StrArray params)
 
 static U64Result pg_exec(const char *sql, StrArray params)
 {
-    U64Result r; r.is_err = 0; r.ok = 0;
+    U64Result r = {0}; r.is_err = 0; r.ok = 0;
     char *rewritten = rewrite_placeholders(sql);
     if (!rewritten) {
         r.is_err = 1; r.err = pg_err(DB_ERR_QUERY, "out of memory"); return r;
@@ -312,7 +312,7 @@ static U64Result pg_exec(const char *sql, StrArray params)
 static BoolResult pg_begin(int conn_id)
 {
     (void)conn_id;
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     PGresult *res = PQexec(g_pg, "BEGIN");
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         r.is_err = 1; r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
@@ -324,7 +324,7 @@ static BoolResult pg_begin(int conn_id)
 static BoolResult pg_commit(int conn_id)
 {
     (void)conn_id;
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     PGresult *res = PQexec(g_pg, "COMMIT");
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         r.is_err = 1; r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
@@ -336,7 +336,7 @@ static BoolResult pg_commit(int conn_id)
 static BoolResult pg_rollback(int conn_id)
 {
     (void)conn_id;
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     PGresult *res = PQexec(g_pg, "ROLLBACK");
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         r.is_err = 1; r.err = pg_err_copy(DB_ERR_QUERY, PQerrorMessage(g_pg));
@@ -350,7 +350,7 @@ static U64Result pg_last_insert_id(int conn_id)
     (void)conn_id;
     /* PostgreSQL uses RETURNING clause instead of last_insert_id.
      * This queries the last value from any serial/identity column. */
-    U64Result r; r.is_err = 0; r.ok = 0;
+    U64Result r = {0}; r.is_err = 0; r.ok = 0;
     PGresult *res = PQexec(g_pg, "SELECT lastval()");
     if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
         r.ok = (uint64_t)strtoull(PQgetvalue(res, 0, 0), NULL, 10);
@@ -366,7 +366,7 @@ static U64Result pg_affected_rows(int conn_id)
 {
     (void)conn_id;
     /* Caller should use return value from db_exec instead */
-    U64Result r; r.is_err = 1; r.ok = 0;
+    U64Result r = {0}; r.is_err = 1; r.ok = 0;
     r.err = pg_err(DB_ERR_QUERY, "use db_exec return value");
     return r;
 }
@@ -399,7 +399,7 @@ typedef struct {
 static StmtResult pg_prepare(int conn_id, const char *sql)
 {
     (void)conn_id;
-    StmtResult r; r.is_err = 0; r.ok = NULL;
+    StmtResult r = {0}; r.is_err = 0; r.ok = NULL;
 
     if (!g_pg) {
         r.is_err = 1;
@@ -433,7 +433,7 @@ static StmtResult pg_prepare(int conn_id, const char *sql)
 
 static BoolResult pg_bind(TkStmt *stmt, StrArray params)
 {
-    BoolResult r; r.is_err = 0; r.ok = 1;
+    BoolResult r = {0}; r.is_err = 0; r.ok = 1;
     if (!stmt) {
         r.is_err = 1;
         r.err = pg_err(DB_ERR_QUERY, "null statement");
@@ -466,7 +466,7 @@ static BoolResult pg_bind(TkStmt *stmt, StrArray params)
 
 static RowResult pg_step(TkStmt *stmt)
 {
-    RowResult r; r.is_err = 0;
+    RowResult r = {0}; r.is_err = 0;
     if (!stmt) {
         r.is_err = 1;
         r.err = pg_err(DB_ERR_QUERY, "null statement");

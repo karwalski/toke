@@ -212,11 +212,14 @@ int main(void) {
 }
 C
 # http2.c is #included into c.c above, so it is left out of the set.
+# 127.270: as cached objects built with the driver's flags.
+CF_C=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -Wno-unused-function)
 LINK_C=()
-if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http2.c http 2>"${WORK}/c.cc")"; then
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http2.c --cc "${CC}" \
+        --objects http -- "${CF_C[@]}" 2>"${WORK}/c.cc")"; then
     while IFS= read -r l; do LINK_C+=("$l"); done <<< "${LINKSET}"
 fi
-if [ "${#LINK_C[@]}" -gt 0 ] && "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -Wno-unused-function -o "${WORK}/c" "${WORK}/c.c" \
+if [ "${#LINK_C[@]}" -gt 0 ] && "${CC}" "${CF_C[@]}" -o "${WORK}/c" "${WORK}/c.c" \
         "${LINK_C[@]}" -lm -lz -lpthread >>"${WORK}/c.cc" 2>&1; then
     run hpack "${WORK}/c"
 else

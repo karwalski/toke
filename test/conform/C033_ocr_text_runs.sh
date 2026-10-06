@@ -168,13 +168,17 @@ echo "--------------------------------------"
 # `CONFORM-SKIP:` line, which the runner counts and names as a SKIP (and
 # TKC_CONFORM_NO_SKIP=1 turns back into a failure).  It used to exit 1,
 # which the runner reported as a FAIL under a line that said SKIP.
+# PR #1 (f21f7432): but CI sets TKC_CONFORM_NO_SKIP=1, and no package makes
+# Vision exist on Linux, so that turned this skip into a red CI run.  It now
+# exits 77, the runner's PLATFORM skip: reported as SKIP by name, never
+# promoted to a failure.
 # ════════════════════════════════════════════════════════════════════════
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "SKIP: std.ocr has no engine on $(uname -s); macOS Vision only."
     echo "      Case 8 (the no-engine path) would still be meaningful here and"
     echo "      is the part to run first if this suite is ever ported."
     echo "CONFORM-SKIP: std.ocr has no engine on $(uname -s) (macOS Vision only)"
-    exit 0
+    exit 77
 fi
 
 # ════════════════════════════════════════════════════════════════════════

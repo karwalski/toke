@@ -179,6 +179,30 @@ void http_defer_params(StrPair *out, int *cnt);
 void http_defer_free(void *p);
 void http_run_deferred_frees(void);
 
+/*
+ * ── A body that is bytes, not a string (story 121.86) ──────────────────
+ *
+ * Res.body is a `const char *` and every writer used to size it with
+ * strlen(), so a body holding a 0x00 byte -- any binary file http.servedir
+ * reads -- went out cut at its first NUL, with a Content-Length to match.
+ * A handler cannot produce such a body (a toke `str` is NUL-terminated with
+ * no stored length), so the length travels beside the pointer rather than in
+ * Res, whose field-by-field construction all over the tree would leave a new
+ * field uninitialised.
+ *
+ * http_body_setlen(body, len) records that `body` is `len` bytes long, for
+ * the request in flight.  The record is dropped by http_run_deferred_frees()
+ * -- the same point a deferred body is freed, so the pointer cannot be
+ * reused while it is recorded.  Register a body you also hand to
+ * http_defer_free (or one with request lifetime).
+ *
+ * http_body_len(body) is that length when one is recorded, else strlen(body)
+ * (0 for NULL).  Every response writer -- HTTP/1.1, TLS, HTTP/2, HEAD, gzip,
+ * the access log -- sizes the body with it.
+ */
+void   http_body_setlen(const char *body, size_t len);
+size_t http_body_len(const char *body);
+
 /* Route registration */
 void http_GET   (const char *pattern, RouteHandler h);
 void http_POST  (const char *pattern, RouteHandler h);

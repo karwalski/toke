@@ -57,18 +57,26 @@ int64_t tk_ml_linregfit_w(int64_t rows, int64_t targets) {
     if (!cols) return ml_slot(0, tk_ml_linregfit_fail);
     int64_t *tptr = (int64_t *)(intptr_t)targets;
     if (tptr[-1] < (int64_t)nrows) { ml_cols_free(cols, ncols); return ml_slot(0, tk_ml_linregfit_fail); }
+    /* PR #1 (9374e703): the slots hold bitcast doubles; copy them out with
+     * memcpy rather than read through a double * (strict aliasing,
+     * cppcheck invalidPointerCast). */
+    double *yv = (double *)malloc((nrows ? nrows : 1) * sizeof(double));
+    if (!yv) { ml_cols_free(cols, ncols); return ml_slot(0, tk_ml_linregfit_fail); }
+    memcpy(yv, tptr, nrows * sizeof(double));
     int64_t coef = tk_arr_alloc((int64_t)ncols, (int64_t)ncols);
     TkLinearModelRec *m = (TkLinearModelRec *)malloc(sizeof *m);
     double intercept = 0.0;
     if (!coef || !m ||
-        ml_linregfit_multi(cols, ncols, (const double *)tptr, nrows,
+        ml_linregfit_multi(cols, ncols, yv, nrows,
                            (double *)(intptr_t)coef, &intercept) != 0) {
         ml_cols_free(cols, ncols);
+        free(yv);
         free(m);
         if (coef) free((int64_t *)(intptr_t)coef - TK_ARR_HDR);
         return ml_slot(0, tk_ml_linregfit_fail);
     }
     ml_cols_free(cols, ncols);
+    free(yv);
     m->coef      = coef;
     m->intercept = intercept;
     return ml_slot((int64_t)(intptr_t)m, tk_ml_linregfit_fail);
@@ -80,9 +88,12 @@ int64_t tk_ml_linregpredict_w(int64_t model, int64_t input) {
     int64_t *xs = (int64_t *)(intptr_t)input;
     int64_t nc = tk_arr_len(m->coef), nx = xs ? xs[-1] : 0;
     const double *c = (const double *)(intptr_t)m->coef;
-    const double *x = (const double *)xs;
     double result = m->intercept;
-    for (int64_t j = 0; j < nc && j < nx; j++) result += c[j] * x[j];
+    for (int64_t j = 0; j < nc && j < nx; j++) {
+        double xj;   /* bitcast slot: memcpy, not a double * read (9374e703) */
+        memcpy(&xj, &xs[j], sizeof xj);
+        result += c[j] * xj;
+    }
     int64_t r;
     memcpy(&r, &result, sizeof(r));
     return r;

@@ -266,7 +266,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
                           "invalid numeric literal: 0x requires hex digits",
                           /* 127.221: no fix — the intended digits are unknown */
                           "got", "0x with no hex digits",
-                          "expected", "hexadecimal digit (0-9, a-f)", NULL);
+                          "expected", "hexadecimal digit (0-9, a-f)", (const char *)NULL);
                 return -1;
             }
             while (l->pos < l->len && is_hex(l->src[l->pos])) advance(l);
@@ -276,7 +276,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
                           "identifier must not start with a digit",
                           /* 127.223 item 3: no fix — guidance, not a repair;
                            * errors.md specifies none */
-                          "expected", "letter (a-z, A-Z) to start an identifier", NULL);
+                          "expected", "letter (a-z, A-Z) to start an identifier", (const char *)NULL);
                 return -1;
             }
             return emit(l, TK_INT_LIT, start, l->pos - start, line, col);
@@ -288,7 +288,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
                           "invalid numeric literal: 0b requires binary digits",
                           /* 127.221: no fix — the intended digits are unknown */
                           "got", "0b with no binary digits",
-                          "expected", "binary digit (0 or 1)", NULL);
+                          "expected", "binary digit (0 or 1)", (const char *)NULL);
                 return -1;
             }
             while (l->pos < l->len &&
@@ -299,7 +299,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
                           "identifier must not start with a digit",
                           /* 127.223 item 3: no fix — guidance, not a repair;
                            * errors.md specifies none */
-                          "expected", "letter (a-z, A-Z) to start an identifier", NULL);
+                          "expected", "letter (a-z, A-Z) to start an identifier", (const char *)NULL);
                 return -1;
             }
             return emit(l, TK_INT_LIT, start, l->pos - start, line, col);
@@ -316,7 +316,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
     if (l->pos < l->len && is_letter(l->src[l->pos])) {
         while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
         diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
-                  "identifier must not start with a digit", NULL);
+                  "identifier must not start with a digit", (const char *)NULL);
         return -1;
     }
     return emit(l, is_float ? TK_FLOAT_LIT : TK_INT_LIT,
@@ -356,7 +356,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
                               "invalid escape sequence: \\x requires two hex digits",
                               /* 127.221: no fix — the intended byte is unknown */
                               "got", "\\x without two hex digits",
-                              "expected", "\\xHH (two hex digits 0-9, a-f)", NULL);
+                              "expected", "\\xHH (two hex digits 0-9, a-f)", (const char *)NULL);
                     had_error = 1;
                     if (record_error(l)) return -1;
                 }
@@ -390,7 +390,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 diag_emit(DIAG_ERROR, LEX_E1001, l->pos - 1, l->line, l->col - 1,
                           esc_msg,
                           "got", esc_got,
-                          "expected", "one of: \\n \\t \\r \\\\ \\\" \\0 \\xHH", NULL);
+                          "expected", "one of: \\n \\t \\r \\\\ \\\" \\0 \\xHH", (const char *)NULL);
                 had_error = 1;
                 if (record_error(l)) return -1;
                 /* Skip the bad escape character and continue scanning */
@@ -411,7 +411,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 snprintf(got, sizeof got, "raw byte 0x%02X", u);
                 diag_emit_span(DIAG_WARNING, LEX_W1021, l->pos, l->line, l->col, 1, msg,
                           "got", got, "expected", "an escape sequence (\\xHH)",
-                          "fix", fix, NULL);
+                          "fix", fix, (const char *)NULL);
             }
             advance(l);
         }
@@ -421,7 +421,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
     diag_emit(DIAG_ERROR, LEX_E1002, start, line, col,
               "unterminated string literal at end of file",
               "got", "end of file",
-              "expected", "closing '\"'", NULL);
+              "expected", "closing '\"'", (const char *)NULL);
     record_error(l);
     return -1;
 }
@@ -514,20 +514,20 @@ static int check_foreign_keyword(const char *buf, int start, int line, int col)
         if (strcmp(buf, PYTHON_KEYWORDS[i].python_kw) == 0) {
             diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
                       PYTHON_KEYWORDS[i].message,
-                      "fix", PYTHON_KEYWORDS[i].fix, NULL);
+                      "fix", PYTHON_KEYWORDS[i].fix, (const char *)NULL);
             return 1;
         }
     }
     if (strcmp(buf, "True") == 0) {
         diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
                   "Python boolean 'True' detected; toke uses 'true'",
-                  "fix", "replace 'True' with 'true'", NULL);
+                  "fix", "replace 'True' with 'true'", (const char *)NULL);
         return 1;
     }
     if (strcmp(buf, "False") == 0) {
         diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
                   "Python boolean 'False' detected; toke uses 'false'",
-                  "fix", "replace 'False' with 'false'", NULL);
+                  "fix", "replace 'False' with 'false'", (const char *)NULL);
         return 1;
     }
     return 0;
@@ -591,7 +591,7 @@ static int lex_ident(Lexer *l, int start, int line, int col)
                   /* 127.221: no fix — joining the words can collide with
                    * another name (`to_int` beside `toint`); --migrate owns it */
                   "got", id_buf,
-                  "expected", "identifier without underscores (a-z, A-Z, 0-9)", NULL);
+                  "expected", "identifier without underscores (a-z, A-Z, 0-9)", (const char *)NULL);
         return -1;
     }
 
@@ -617,7 +617,7 @@ static int lex_ident(Lexer *l, int start, int line, int col)
                     diag_emit(DIAG_ERROR, LEX_E1006, start, line, col,
                               msg, "fix", fix_kw,
                               "got", got_kw,
-                              "expected", UPPER_KW_MAP[i].lower, NULL);
+                              "expected", UPPER_KW_MAP[i].lower, (const char *)NULL);
                     }
                     return -1;
                 }
@@ -706,7 +706,7 @@ static int lex_comment(Lexer *l, int start, int line, int col)
                  nest_line, nest_col);
     diag_emit(DIAG_ERROR, LEX_E1007, start, line, col, msg,
               "got", "end of file",
-              "expected", "'*)' closing every open '(*' (comments nest)", NULL);
+              "expected", "'*)' closing every open '(*' (comments nest)", (const char *)NULL);
     record_error(l);
     return -1;
 }
@@ -755,7 +755,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                        * collide with another name (`_x` beside `x`), and
                        * docs/spec/errors.md specifies none; --migrate owns it */
                       "got", ubuf,
-                      "expected", "identifier starting with a letter (a-z, A-Z)", NULL);
+                      "expected", "identifier starting with a letter (a-z, A-Z)", (const char *)NULL);
             if (record_error(&l)) break;
             continue;
         }
@@ -786,7 +786,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         if (c == '#') {
             diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
                       "Python comment '#' detected; toke uses (* comment *) block comments",
-                      "fix", "replace '# comment' with '(* comment *)'", NULL);
+                      "fix", "replace '# comment' with '(* comment *)'", (const char *)NULL);
             while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
             continue;
         }
@@ -831,14 +831,14 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                               "use @() for arrays/maps",
                               "fix", "replace '[' with '@(' for array/map literals",
                               "got", "[",
-                              "expected", "@( for arrays/maps", NULL);
+                              "expected", "@( for arrays/maps", (const char *)NULL);
                 else
                     diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                               "square brackets are not allowed in default mode; "
                               "index with .get(i) (read), not [i]",
                               "got", "[",
                               "expected", "a method call such as .get(i) for element access",
-                              NULL);
+                              (const char *)NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;
                 advance(&l);
@@ -861,12 +861,12 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                               "use @() for arrays/maps",
                               "fix", "replace ']' with ')' to close @() array/map literal",
                               "got", "]",
-                              "expected", ") to close @() array/map", NULL);
+                              "expected", ") to close @() array/map", (const char *)NULL);
                 else
                     diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                               "square brackets are not allowed in default mode",
                               "got", "]",
-                              "expected", "no ']' in default mode", NULL);
+                              "expected", "no ']' in default mode", (const char *)NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;
                 advance(&l);
@@ -892,7 +892,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                           "C-style comment '//' detected; toke has no comment "
                           "syntax — documentation belongs in companion .tkc files",
                           "fix", "remove '// comment' and place documentation "
-                          "in a companion .tkc file", NULL);
+                          "in a companion .tkc file", (const char *)NULL);
                 while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
                 continue;
             }
@@ -956,7 +956,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "character outside Profile 1 character set",
                           "fix", "remove '$'; type references use uppercase names in legacy mode",
-                          "got", "$", NULL);
+                          "got", "$", (const char *)NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;
                 advance(&l);
@@ -968,7 +968,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "character outside Profile 1 character set",
                           /* 127.221: no fix — two different remedies */
-                          "got", "@", NULL);
+                          "got", "@", (const char *)NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;
                 advance(&l);
@@ -986,7 +986,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                       "character outside allowed character set",
                       "got", got_ch,
-                      "expected", "ASCII letter, digit, or toke operator", NULL);
+                      "expected", "ASCII letter, digit, or toke operator", (const char *)NULL);
             sym_error = 1;
             if (record_error(&l)) break;
             advance(&l);

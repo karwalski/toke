@@ -136,11 +136,12 @@ C
 
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except log.c log)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all ${C137_EXTRA_CFLAGS:-} -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except log.c --cc "${CC}" --objects log -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all \
-        ${C137_EXTRA_CFLAGS:-} -iquote "${S}" -o "${WORK}/drv" "${WORK}/drv.c" "${LOG_C}" "${LINK[@]}" -lz -lm -lpthread \
+if ! "${CC}" "${CF[@]}" -o "${WORK}/drv" "${WORK}/drv.c" "${LOG_C}" "${LINK[@]}" -lz -lm -lpthread \
         >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 -E 'error|Undefined|undefined' "${WORK}/cc.log" | head -c 500)"
     echo ""; echo "Results: ${PASS} passed, ${FAIL} failed"; exit 1
