@@ -142,11 +142,19 @@ EOF
 ./hello
 ```
 
-Or use the `toke` wrapper to compile and run in one step:
+Or use the `toke-run` wrapper to compile and run in one step (`./toke hello.tk`
+on its own only compiles, writing `./hello`):
 
 ```bash
-./toke hello.tk
+./toke-run hello.tk
 ```
+
+Compiling a program needs `clang` on `PATH`, because the compiler hands its
+LLVM IR to clang to produce and link the binary; without it, E9003 says so.
+
+Programs get no file or network access unless granted at run time. A program
+that reads a file stops with `CAP001` and names the flag to add, for example
+`./tkgrep --allow-read pattern file.txt`.
 
 ## Install & use
 
@@ -245,17 +253,21 @@ Every row above except the two struck ones was re-checked on 2026-09-20 and reso
 ## Building
 
 **Prerequisites:**
-- C99 compiler (GCC or Clang)
-- LLVM (for the code generation backend)
+- C99 compiler (GCC or Clang) to build the compiler
+- `clang` on `PATH`: required at run time too, because every program the
+  compiler builds is compiled and linked by clang
 - Make
-- zlib (`-lz`)
+- zlib development headers (`-lz`)
+
+On Debian or Ubuntu: `sudo apt-get install clang zlib1g-dev make`.
+On macOS: the Xcode command line tools provide clang and make.
 
 **Build commands:**
 
 ```bash
 make            # Build the toke compiler
 make clean      # Remove build artifacts
-make lint       # Run static analysis (cppcheck + clang-tidy)
+make lint       # -Werror compile + clang static analyzer over every C source (LINT_CC, default clang)
 ```
 
 ## Testing
@@ -275,6 +287,24 @@ make check-claims-all # The two guards above, across every sibling repository
 Those four are the claim guards. All four run in `make ci` and, since story 132.41,
 in the GitHub workflow. Any new number published in this repository must appear in
 `docs/metrics-baseline.md` first.
+
+`make conform` runs two parts. For a fast loop while working, run them
+separately:
+
+```bash
+bash test/run_conform.sh                     # the core YAML cases
+SERIES=L bash test/run_conform.sh            # one series (an environment variable)
+bash test/conform/C077_multi_module_link.sh  # any single shell-script case
+make conform-sh                              # all shell-script cases
+```
+
+A few shell-script cases build their fixtures with independent Python
+producers: `python3 -m pip install openpyxl reportlab pikepdf pillow` (a
+virtualenv is fine; point `TKC_PY` at its interpreter). Without them those
+cases are reported as `SKIP` by name, and `TKC_CONFORM_NO_SKIP=1` (set in CI)
+turns every such skip into a failure. A case that cannot run on the current OS
+at all, such as the macOS-only OCR suite on Linux, exits 77: a platform skip,
+reported as `SKIP` by name and never turned into a failure.
 
 `check-claims-all` is the one that reaches outside this repository: it runs the same
 two rule sets over every sibling repo checked out beside this one — the website, the
