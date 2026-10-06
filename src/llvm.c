@@ -13235,7 +13235,17 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
                 free(cerr);
                 return -1;
             }
-            int n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
+            /* PR #1 (a46aebf5): 127 is the child's _exit after execvp
+             * failed -- clang is not installed or not on PATH -- and then
+             * clang wrote nothing.  "exit code 127" alone names neither the
+             * tool nor the remedy.  Code and schema are unchanged. */
+            int n;
+            if (rc == 127 && (!cerr || !cerr[0]))
+                n = snprintf(msg, sizeof msg, "clang not found on PATH; tkc runs "
+                             "clang to compile and link every program (install "
+                             "clang, e.g. 'apt-get install clang')");
+            else
+                n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
             if (why[0] && n > 0 && (size_t)n < sizeof msg)
                 n += snprintf(msg + n, sizeof msg - (size_t)n, ": %s", why);
             if (undef && undef->is_fn && n > 0 && (size_t)n < sizeof msg)
