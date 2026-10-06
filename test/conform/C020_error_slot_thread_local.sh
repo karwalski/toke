@@ -124,8 +124,11 @@ GEOF
 # 127.268: the runtime's link set is the base set every program links, from
 # tkc's own dependency table (src/stdlib_deps.c via --emit-deps), not a hand
 # list that a runtime dependency change silently breaks.
+# 127.270: as cached objects, built with gate_real's flags.
+CF=(-std=c99 -D_GNU_SOURCE -I"${STDLIB_DIR}")
 RT_SRCS=()
-if RT_SET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${STDLIB_DIR}" --tkc "${TKC}")"; then
+if RT_SET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${STDLIB_DIR}" --tkc "${TKC}" \
+        --cc cc --objects -- "${CF[@]}")"; then
     while IFS= read -r l; do RT_SRCS+=("$l"); done <<< "${RT_SET}"
 else
     echo "  FAIL: stdlib link set: see stderr above"
@@ -151,8 +154,8 @@ else
 fi
 
 # Now the real slot, linked against the shipped runtime.
-if cc -std=c99 -D_GNU_SOURCE -o gate_real gate.c ${RT_SRCS[@]+"${RT_SRCS[@]}"} \
-        -I"${STDLIB_DIR}" -lm -lz -lpthread >/dev/null 2>&1; then
+if cc "${CF[@]}" -o gate_real gate.c ${RT_SRCS[@]+"${RT_SRCS[@]}"} \
+        -lm -lz -lpthread >/dev/null 2>&1; then
     got="$(./gate_real 2>/dev/null)"; rc=$?
     if [ "${got}" = "1111" ]; then
         echo "  PASS: each thread reads back its OWN error (read 1111, not 2222)"

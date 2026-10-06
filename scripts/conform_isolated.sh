@@ -341,7 +341,8 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
                 # 127.131: awk, not grep -- a log carrying one control byte is
                 # "binary" to grep, which then prints "Binary file matches" (BSD)
                 # or nothing at all (ugrep -I) instead of the line.
-                pass=$((pass+1)); echo "PASS ${s}: $(awk '/^Results:/{l=$0} END{print l}' "${log}")"
+                # 127.269: "Results: N passed" or "Cnnn: N passed" -- see the awk.
+                pass=$((pass+1)); echo "PASS ${s}: $(awk -f "${REPO_ROOT}/scripts/conform_summary.awk" "${log}")"
             fi
         else
             fail=$((fail+1)); echo "FAIL ${s}"

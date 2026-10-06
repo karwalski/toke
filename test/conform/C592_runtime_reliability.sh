@@ -38,16 +38,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C592_STDLIB:-${REPO_ROOT}/src/stdlib}"
-# 127.268: the stdlib link sets come from tkc's own dependency table
-# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
-# dependency change silently breaks.  t_process.c #includes process.c itself
-# (to wrap fcntl), so it is left out of the process set.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except process.c process)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK_PROCESS=(); while IFS= read -r l; do LINK_PROCESS+=("$l"); done <<< "${LINKSET}"
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" file)" \
-    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
-LINK_FILE=(); while IFS= read -r l; do LINK_FILE+=("$l"); done <<< "${LINKSET}"
 ARENA_C="${C592_ARENA:-${REPO_ROOT}/src/arena.c}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c592_XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -56,14 +46,27 @@ pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
+# 127.268: the stdlib link sets come from tkc's own dependency table
+# (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
+# dependency change silently breaks.  t_process.c #includes process.c itself
+# (to wrap fcntl), so it is left out of the process set.
+# 127.270: as cached objects built with case_run's flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -I"${REPO_ROOT}/src")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except process.c \
+        --cc "${CC}" --objects process -- "${CF[@]}")" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_PROCESS=(); while IFS= read -r l; do LINK_PROCESS+=("$l"); done <<< "${LINKSET}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" \
+        --cc "${CC}" --objects file -- "${CF[@]}")" \
+    || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
+LINK_FILE=(); while IFS= read -r l; do LINK_FILE+=("$l"); done <<< "${LINKSET}"
 
 echo "C592: runtime reliability -- process pipes, listall, arena (121.29)"
 echo "------------------------------------------------------------------------"
 
 case_run() {
     local name="$1" src="$2"; shift 2
-    # shellcheck disable=SC2086
-    if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -I"${REPO_ROOT}/src" \
+    if ! "${CC}" "${CF[@]}" \
             -o "${WORK}/${name}" "${src}" "$@" >"${WORK}/${name}.cc" 2>&1; then
         fail "${name}: build: $(grep -a -m3 -E 'error' "${WORK}/${name}.cc" | head -c 400)"
         return

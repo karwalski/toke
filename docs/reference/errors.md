@@ -28,6 +28,11 @@ Each section's **Stage** row gives that value first; when another pass
 actually emits the code, the row says so in parentheses (for example E2030 is
 `parse`, emitted by name resolution). `make check-error-codes` gates both rows.
 
+The `source_line` field holds the text of the diagnostic's line. A line longer
+than 1023 bytes is cut on a UTF-8 character boundary, never inside a
+multi-byte character, and the record then also carries
+`"source_line_truncated": true`. The field is absent when the line is whole.
+
 ---
 
 ## Lexer Errors (E1xxx)

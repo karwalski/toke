@@ -70,11 +70,12 @@ int main(int argc, char **argv)
 C
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" log)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -g -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects log -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! ${CC} -std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -g -iquote "${S}" \
-        -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" -lz -lm -lpthread > "${WORK}/cc.log" 2>&1; then
+if ! ${CC} "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" -lz -lm -lpthread > "${WORK}/cc.log" 2>&1; then
     echo "  FAIL: harness does not build"; sed 's/^/      /' "${WORK}/cc.log" | head -8
     echo "Results: 0 passed, 1 failed"; exit 1
 fi

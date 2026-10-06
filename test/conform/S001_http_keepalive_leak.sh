@@ -37,13 +37,12 @@ echo "--------------------------------------"
 # --emit-deps), not a hand list a stdlib dependency change silently breaks.
 # tk_web_glue.c carries helpers unused outside the full glue surface, hence
 # -Wno-unused-function.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${REPO_ROOT}/src/stdlib" http)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -Wno-unused-function -g -I"${REPO_ROOT}/stdlib/vendor/tomlc99")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${REPO_ROOT}/src/stdlib" --cc "${CC}" --objects http -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
-        -Wno-misleading-indentation -Wno-unused-function -g \
-        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" \
-        -o "${WORK}/test_http_keepalive_leak" \
+if ! "${CC}" "${CF[@]}" -o "${WORK}/test_http_keepalive_leak" \
         "${REPO_ROOT}/test/stdlib/test_http_keepalive_leak.c" \
         "${LINK[@]}" \
         -lz -lpthread -lm >"${WORK}/build.log" 2>&1; then
