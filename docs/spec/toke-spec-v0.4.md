@@ -212,6 +212,11 @@ Companion files (`.tkc`, v0.3 §24.11) remain the home for documentation that
 tools consume: API docs, parameter descriptions, line-targeted annotations.
 A `(* *)` comment is for the reader of the source.
 
+`tkc --migrate` keeps the comments of the code it rewrites: each goes back on
+its line, `//` and `#` become `(* *)`, and a comment with code on both sides
+of it moves to the end of its line with a note. When it cannot place one
+safely it declines (E9026, exit 4) instead (story 127.161).
+
 Resolved by story **127.198** (owner decision 2026-10-01 §2.7).
 
 ---

@@ -254,9 +254,10 @@ static const char HELP[] =
     "  --lint              Run lint rules and report diagnostics\n"
     "  --fix               With --lint, auto-fix mechanical violations in-place\n"
     "  --dry-run           With --lint --fix, print the diff instead of writing\n"
-    "  --migrate           Migrate legacy .tk file to default syntax (stdout).\n"
-    "                      Declines (echoes input, E9026, exit 4) on source\n"
-    "                      that already compiles; TKC_MIGRATE_FORCE=1 overrides\n"
+    "  --migrate           Migrate legacy .tk file to default syntax (stdout),\n"
+    "                      keeping comments. Declines (echoes input, E9026,\n"
+    "                      exit 4) on source that already compiles or whose\n"
+    "                      comments it cannot place; TKC_MIGRATE_FORCE=1 overrides\n"
     "  --legacy            Legacy mode (86-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
     "  --profile2          Deprecated alias for default mode\n"
@@ -1148,37 +1149,37 @@ static int process_file(const char *src, const RunOpts *o)
             rc = migrate_decline(sbuf, slen, 0, msg);
             goto done;
         }
-        /* 127.160 / 127.161: the migrator strips every comment before it
-         * lexes and cannot put them back (architectural; design in
-         * docs/architecture/migrate-comment-preservation.md). The decline
-         * above only covers source that compiles STANDALONE, so a valid file
-         * of a multi-file module (an import --check cannot resolve alone) and
-         * genuinely legacy source both still reached it and lost every
-         * comment with exit 0. Refuse instead, naming the file, and echo it
-         * verbatim for the redirect. TKC_MIGRATE_FORCE=1 is the consent to
-         * lose them (and the old behaviour C041's negative control needs). */
-        {
-            const char *force = getenv("TKC_MIGRATE_FORCE");
-            int forced = force && force[0] && strcmp(force, "0") != 0;
-            int first_line = 0;
-            int ncom = tkc_migrate_count_comments(sbuf, (int)slen, &first_line);
-            if (!forced && ncom > 0) {
-                char msg[512];
-                snprintf(msg, sizeof msg,
-                         "--migrate declined: '%s' has %d comment(s) (first at line %d) "
-                         "that migration would delete — source echoed unchanged; "
-                         "set TKC_MIGRATE_FORCE=1 to migrate and lose them",
-                         src, ncom, first_line);
-                rc = migrate_decline(sbuf, slen, first_line, msg);
-                goto done;
-            }
-        }
-        /* --migrate does its own prepass + re-lex internally.
-         * Pass raw source directly — no external lex needed. */
+        /* 127.161: comments are kept (design:
+         * docs/architecture/migrate-comment-preservation.md; owner decision
+         * 2026-10-01 §2.8).  tkc_migrate_keep_comments() puts each one back
+         * on its line, moves a comment with code on both sides to the end of
+         * its line with a note, and declines -- E9026, exit 4, source echoed
+         * -- when a comment cannot be placed safely.  TKC_MIGRATE_FORCE=1 is
+         * the consent to lose them: it runs the old stripping migrator (the
+         * behaviour C041's negative control needs). */
         diag_reset();
         diag_set_source(sbuf, (size_t)slen);
-        if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
-            rc = EINTERNAL;
+        {
+            const char *force = getenv("TKC_MIGRATE_FORCE");
+            if (force && force[0] && strcmp(force, "0") != 0) {
+                if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) rc = EINTERNAL;
+                goto done;
+            }
+            char *mres = NULL; int mlen = 0;
+            TkcMigrateDecline why;
+            int mr = tkc_migrate_keep_comments(sbuf, (int)slen, src, &mres, &mlen, &why);
+            if (mr < 0) { rc = EINTERNAL; goto done; }
+            if (mr > 0) {
+                char msg[512];
+                snprintf(msg, sizeof msg,
+                         "--migrate declined: '%s': %s — source echoed unchanged; "
+                         "set TKC_MIGRATE_FORCE=1 to migrate and lose the comments",
+                         src, why.reason);
+                rc = migrate_decline(sbuf, slen, why.line, msg);
+                goto done;
+            }
+            fwrite(mres, 1, (size_t)mlen, stdout);
+            free(mres);
         }
         goto done;
     }

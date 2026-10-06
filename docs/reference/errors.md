@@ -1421,11 +1421,16 @@ failed run (story 127.197; both declines used to print plain stderr and exit
 
 - the source **already compiles** under the current profile, so there is
   nothing to migrate (127.57); the record has no line;
-- it has **comments the migration would delete** (127.160/127.161): the
-  record's line is the first one, and the message gives the count.
+- its **comments cannot be kept** (127.161). `--migrate` normally keeps every
+  comment (spec v0.4 §H); it declines when it cannot place one safely, and
+  the message says why: a `(*` that is never closed, a `//` or `#` comment
+  whose text holds `(*` or `*)` (it cannot become a `(* *)` comment with the
+  same extent), a rewrite that moved code across lines, or a source that
+  needed the migrator's second pass. The record's line is the comment
+  concerned, or 0 when the cause is the whole file.
 
-`TKC_MIGRATE_FORCE=1` migrates anyway. No `fix`: whether to do that is the
-user's choice.
+`TKC_MIGRATE_FORCE=1` migrates anyway, dropping every comment. No `fix`:
+whether to do that is the user's choice.
 
 ## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
 
