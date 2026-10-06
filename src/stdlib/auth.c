@@ -569,12 +569,6 @@ const char *auth_apikeygenerate(void)
     return key;   /* heap-allocated, caller frees */
 }
 
-/* Legacy alias. */
-const char *auth_apikeygen(void)
-{
-    return auth_apikeygenerate();
-}
-
 /* -----------------------------------------------------------------------
  * API key validation (constant-time)
  * ----------------------------------------------------------------------- */

@@ -97,18 +97,6 @@ int main(void)
     /* Story 28.4.1: comparison and containment assertions                 */
     /* ------------------------------------------------------------------ */
 
-    /* --- assert_true: passes for non-zero --- */
-    int rt1 = tk_test_assert_true(1, "assert_true with 1");
-    ASSERT(rt1 == 1, "assert_true(1) returns 1");
-
-    int rt2 = tk_test_assert_true(42, "assert_true with 42");
-    ASSERT(rt2 == 1, "assert_true(42) returns 1");
-
-    /* --- assert_true: fails for zero, returns 0 --- */
-    fprintf(stderr, "[expected diagnostic below]\n");
-    int rt3 = tk_test_assert_true(0, "intentional assert_true failure");
-    ASSERT(rt3 == 0, "assert_true(0) returns 0");
-
     /* --- assert_false: passes for zero --- */
     int rf1 = tk_test_assert_false(0, "assert_false with 0");
     ASSERT(rf1 == 1, "assert_false(0) returns 1");

@@ -71,8 +71,6 @@ int             auth_jwtexpired(const char *token);
  * must free().  Canonical name per std.auth contract. */
 const char     *auth_apikeygenerate(void);
 
-/* auth_apikeygen — alias for auth_apikeygenerate (legacy name). */
-const char     *auth_apikeygen(void);
 
 /* auth_apikeyvalidate — constant-time comparison of two null-terminated
  * strings.  Returns 1 if equal, 0 if not.  Both pointers must be non-NULL. */

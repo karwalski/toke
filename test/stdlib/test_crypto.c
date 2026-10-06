@@ -215,48 +215,6 @@ int main(void)
     ASSERT(strlen(hex512_abc) == 128, "to_hex(sha512) length == 128");
 
     /* =================================================================
-     * crypto_from_hex tests (Story 29.6.1)
-     * ================================================================= */
-
-    /* Valid hex: "48656c6c6f" -> "Hello" (5 bytes) */
-    ByteArray fh_out;
-    const char *fh_err = crypto_from_hex("48656c6c6f", &fh_out);
-    ASSERT(fh_err == NULL, "from_hex valid: returns NULL error");
-    ASSERT(fh_out.len == 5, "from_hex valid: len==5");
-    ASSERT(fh_out.data && fh_out.data[0] == 'H', "from_hex valid: data[0]=='H'");
-    ASSERT(fh_out.data && fh_out.data[4] == 'o', "from_hex valid: data[4]=='o'");
-
-    /* Invalid chars: "xyz" */
-    ByteArray fh_bad1;
-    const char *fh_err1 = crypto_from_hex("xyz", &fh_bad1);
-    ASSERT(fh_err1 != NULL, "from_hex invalid chars: returns error");
-    ASSERT(fh_bad1.data == NULL, "from_hex invalid chars: out.data==NULL");
-
-    /* Odd length: "abc" */
-    ByteArray fh_bad2;
-    const char *fh_err2 = crypto_from_hex("abc", &fh_bad2);
-    ASSERT(fh_err2 != NULL, "from_hex odd length: returns error");
-    ASSERT(fh_bad2.data == NULL, "from_hex odd length: out.data==NULL");
-
-    /* Empty hex string -> empty ByteArray, no error */
-    ByteArray fh_empty;
-    const char *fh_err3 = crypto_from_hex("", &fh_empty);
-    ASSERT(fh_err3 == NULL, "from_hex empty string: returns NULL error");
-    ASSERT(fh_empty.len == 0, "from_hex empty string: len==0");
-
-    /* Round-trip: to_hex then from_hex */
-    ByteArray fh_rt_src;
-    fh_rt_src.data = h_abc.data;
-    fh_rt_src.len  = 32;
-    const char *hex_rt = crypto_to_hex(fh_rt_src);
-    ByteArray fh_rt_out;
-    const char *fh_rt_err = crypto_from_hex(hex_rt, &fh_rt_out);
-    ASSERT(fh_rt_err == NULL, "from_hex round-trip: no error");
-    ASSERT(fh_rt_out.len == 32, "from_hex round-trip: len==32");
-    ASSERT(fh_rt_out.data && memcmp(fh_rt_out.data, h_abc.data, 32) == 0,
-           "from_hex round-trip: data matches original");
-
-    /* =================================================================
      * bcrypt tests (Story 29.6.1)
      * ================================================================= */
 

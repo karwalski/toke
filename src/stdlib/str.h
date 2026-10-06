@@ -54,7 +54,6 @@ const char     *str_format(const char *fmt, int64_t arg);
 
 /* Story 28.1.1 — search and transform */
 int64_t         str_index(const char *s, const char *sub);
-int64_t         str_rindex(const char *s, const char *sub);
 const char     *str_replace(const char *s, const char *old, const char *new_val);
 const char     *str_replace_first(const char *s, const char *old, const char *new_val);
 const char     *str_join(const char *sep, StrArray parts);
@@ -74,14 +73,6 @@ int             str_is_alpha(const char *s);
 int             str_is_digit(const char *s);
 int             str_is_alnum(const char *s);
 int             str_is_space(const char *s);
-
-/* Story 55.4.6 — string builder */
-typedef struct { char *data; uint64_t len; uint64_t cap; } StrBuf;
-
-StrBuf      str_buf_new(void);
-void        str_buf_add(StrBuf *b, const char *s);
-void        str_buf_addbyte(StrBuf *b, unsigned char c);
-const char *str_buf_done(StrBuf *b);   /* returns heap string, resets b */
 
 /* Story 56.8.5 — trimprefix, trimsuffix, lastindex, matchbracket */
 typedef struct { const char *ok; int is_err; const char *err_msg; } StrBracketResult;

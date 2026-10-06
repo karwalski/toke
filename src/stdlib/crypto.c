@@ -639,55 +639,6 @@ const char *crypto_to_hex(ByteArray data)
  * crypto_from_hex — Story 29.6.1
  * ----------------------------------------------------------------------- */
 
-const char *crypto_from_hex(const char *hex, ByteArray *out)
-{
-    size_t hex_len;
-    size_t byte_len;
-    uint8_t *buf;
-    size_t i;
-
-    out->data = NULL;
-    out->len  = 0;
-
-    if (!hex) return "crypto_from_hex: NULL input";
-
-    hex_len = strlen(hex);
-    if (hex_len % 2 != 0)
-        return "crypto_from_hex: odd-length hex string";
-
-    byte_len = hex_len / 2;
-    if (byte_len == 0) {
-        /* empty hex string -> empty ByteArray (data=NULL, len=0 is fine) */
-        return NULL;
-    }
-
-    buf = (uint8_t *)malloc(byte_len);
-    if (!buf) return "crypto_from_hex: out of memory";
-
-    for (i = 0; i < byte_len; i++) {
-        unsigned int hi, lo;
-        char ch;
-
-        ch = hex[i * 2];
-        if      (ch >= '0' && ch <= '9') hi = (unsigned int)(ch - '0');
-        else if (ch >= 'a' && ch <= 'f') hi = (unsigned int)(ch - 'a' + 10);
-        else if (ch >= 'A' && ch <= 'F') hi = (unsigned int)(ch - 'A' + 10);
-        else { free(buf); return "crypto_from_hex: invalid hex character"; }
-
-        ch = hex[i * 2 + 1];
-        if      (ch >= '0' && ch <= '9') lo = (unsigned int)(ch - '0');
-        else if (ch >= 'a' && ch <= 'f') lo = (unsigned int)(ch - 'a' + 10);
-        else if (ch >= 'A' && ch <= 'F') lo = (unsigned int)(ch - 'A' + 10);
-        else { free(buf); return "crypto_from_hex: invalid hex character"; }
-
-        buf[i] = (uint8_t)((hi << 4) | lo);
-    }
-
-    out->data = buf;
-    out->len  = (uint64_t)byte_len;
-    return NULL;
-}
-
 /* -----------------------------------------------------------------------
  * Blowfish — used by bcrypt (Story 29.6.1)
  *

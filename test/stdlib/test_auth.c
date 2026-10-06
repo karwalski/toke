@@ -15,8 +15,8 @@
  *   - wrong secret → is_err=1
  *   - auth_jwtexpired on token with exp in past → returns 1
  *   - auth_jwtexpired on token with no exp → returns 0
- *   - auth_apikeygen returns non-NULL string of length > 0
- *   - two calls to auth_apikeygen return different strings
+ *   - auth_apikeygenerate returns non-NULL string of length > 0
+ *   - two calls to auth_apikeygenerate return different strings
  *   - auth_apikeyvalidate("abc","abc") = 1
  *   - auth_apikeyvalidate("abc","abd") = 0
  *   - auth_apikeyvalidate("","") = 1
@@ -176,14 +176,14 @@ int main(void)
     ASSERT(not_expired == 0, "jwtexpired on no-exp token returns 0");
 
     /* ------------------------------------------------------------------ */
-    /* auth_apikeygen                                                      */
+    /* auth_apikeygenerate                                                      */
     /* ------------------------------------------------------------------ */
 
-    const char *key1 = auth_apikeygen();
+    const char *key1 = auth_apikeygenerate();
     ASSERT(key1 != NULL,       "apikeygen returns non-NULL");
     ASSERT(key1 && strlen(key1) > 0, "apikeygen returns non-empty string");
 
-    const char *key2 = auth_apikeygen();
+    const char *key2 = auth_apikeygenerate();
     ASSERT(key2 != NULL,       "apikeygen second call returns non-NULL");
 
     /* Two random keys should not be equal (probability 2^-256 they collide). */

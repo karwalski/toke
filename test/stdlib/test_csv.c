@@ -59,19 +59,19 @@ static void test_simple_2col_2row(void)
     const char *csv = "a,b\nc,d";
     TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
 
-    ASSERT(csv_reader_has_next(r), "simple: has_next before first row");
+    ASSERT(!csv_reader_at_end(r), "simple: has_next before first row");
     StrArray row0 = csv_reader_next(r);
     ASSERT_INTEQ((int)row0.len, 2, "simple: row0 has 2 fields");
     ASSERT_STREQ(row0.data[0], "a", "simple: row0[0]=='a'");
     ASSERT_STREQ(row0.data[1], "b", "simple: row0[1]=='b'");
 
-    ASSERT(csv_reader_has_next(r), "simple: has_next before second row");
+    ASSERT(!csv_reader_at_end(r), "simple: has_next before second row");
     StrArray row1 = csv_reader_next(r);
     ASSERT_INTEQ((int)row1.len, 2, "simple: row1 has 2 fields");
     ASSERT_STREQ(row1.data[0], "c", "simple: row1[0]=='c'");
     ASSERT_STREQ(row1.data[1], "d", "simple: row1[1]=='d'");
 
-    ASSERT(!csv_reader_has_next(r), "simple: has_next false at EOF");
+    ASSERT(csv_reader_at_end(r), "simple: has_next false at EOF");
 
     free_row(row0);
     free_row(row1);
@@ -177,7 +177,7 @@ static void test_crlf(void)
     ASSERT_STREQ(row0.data[0], "a", "crlf: row0[0]=='a'");
     ASSERT_INTEQ((int)row1.len, 1, "crlf: row1 has 1 field");
     ASSERT_STREQ(row1.data[0], "b", "crlf: row1[0]=='b'");
-    ASSERT(!csv_reader_has_next(r),  "crlf: EOF after two rows");
+    ASSERT(csv_reader_at_end(r),  "crlf: EOF after two rows");
 
     free_row(row0);
     free_row(row1);
@@ -245,7 +245,7 @@ static void test_header(void)
     ASSERT_STREQ(data1.data[1], "Bob", "header: data row 1 field 1");
     free_row(data1);
 
-    ASSERT(!csv_reader_has_next(r), "header: EOF after data rows");
+    ASSERT(csv_reader_at_end(r), "header: EOF after data rows");
 
     /* hdr / hdr2 are owned by the reader, freed in csv_reader_free. */
     csv_reader_free(r);
@@ -257,7 +257,7 @@ static void test_header(void)
 static void test_has_next_empty(void)
 {
     TkCsvReader *r = csv_reader_new("", 0);
-    ASSERT(!csv_reader_has_next(r), "has_next_empty: false on empty input");
+    ASSERT(csv_reader_at_end(r), "has_next_empty: false on empty input");
     csv_reader_free(r);
 }
 
@@ -387,7 +387,7 @@ static void test_large_streaming(void)
 
     TkCsvReader *r = csv_reader_new(buf, buflen);
     uint64_t count = 0;
-    while (csv_reader_has_next(r)) {
+    while (!csv_reader_at_end(r)) {
         StrArray row = csv_reader_next(r);
         ASSERT_INTEQ((int)row.len, 3, "large_stream: each row has 3 fields");
         free_row(row);
@@ -431,7 +431,7 @@ static void test_trailing_crlf_variations(void)
         StrArray row = csv_reader_next(r);
         ASSERT_INTEQ((int)row.len, 1,   "trailing_cr: 1 field");
         ASSERT_STREQ(row.data[0], "a",  "trailing_cr: field == 'a'");
-        ASSERT(!csv_reader_has_next(r),  "trailing_cr: EOF");
+        ASSERT(csv_reader_at_end(r),  "trailing_cr: EOF");
         free_row(row);
         csv_reader_free(r);
     }
@@ -442,7 +442,7 @@ static void test_trailing_crlf_variations(void)
         StrArray row = csv_reader_next(r);
         ASSERT_INTEQ((int)row.len, 1,   "trailing_lf: 1 field");
         ASSERT_STREQ(row.data[0], "a",  "trailing_lf: field == 'a'");
-        ASSERT(!csv_reader_has_next(r),  "trailing_lf: EOF");
+        ASSERT(csv_reader_at_end(r),  "trailing_lf: EOF");
         free_row(row);
         csv_reader_free(r);
     }
@@ -453,7 +453,7 @@ static void test_trailing_crlf_variations(void)
         StrArray row = csv_reader_next(r);
         ASSERT_INTEQ((int)row.len, 1,     "trailing_crlf: 1 field");
         ASSERT_STREQ(row.data[0], "a",    "trailing_crlf: field == 'a'");
-        ASSERT(!csv_reader_has_next(r),    "trailing_crlf: EOF");
+        ASSERT(csv_reader_at_end(r),    "trailing_crlf: EOF");
         free_row(row);
         csv_reader_free(r);
     }
@@ -464,7 +464,7 @@ static void test_trailing_crlf_variations(void)
         StrArray row = csv_reader_next(r);
         ASSERT_INTEQ((int)row.len, 1,     "trailing_none: 1 field");
         ASSERT_STREQ(row.data[0], "a",    "trailing_none: field == 'a'");
-        ASSERT(!csv_reader_has_next(r),    "trailing_none: EOF");
+        ASSERT(csv_reader_at_end(r),    "trailing_none: EOF");
         free_row(row);
         csv_reader_free(r);
     }

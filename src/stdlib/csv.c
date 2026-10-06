@@ -370,11 +370,6 @@ void csv_reader_free(TkCsvReader *r)
     free(r);
 }
 
-int csv_reader_has_next(TkCsvReader *r)
-{
-    return r->pos < r->len;
-}
-
 static StrArray csv_reader_next_strict(TkCsvReader *r);
 
 StrArray csv_reader_next(TkCsvReader *r)

@@ -84,10 +84,6 @@ int main(void)
     ASSERT(str_index("foobar", "xyz") == -1, "index(xyz)==-1");
     ASSERT(str_index("foobar", "")    == 0,  "index(empty)==0");
 
-    /* str_rindex */
-    ASSERT(str_rindex("abcabc", "bc") == 4,  "rindex(bc)==4");
-    ASSERT(str_rindex("abcabc", "ab") == 3,  "rindex(ab)==3");
-    ASSERT(str_rindex("foobar", "xyz") == -1, "rindex(xyz)==-1");
 
     /* str_replace */
     ASSERT_STREQ(str_replace("aabbaa", "aa", "X"),  "XbbX",    "replace(aa->X)");
