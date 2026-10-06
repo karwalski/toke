@@ -72,6 +72,12 @@ signature, a gzip stream could not be read past its third byte, and two
 binary files that agreed before their first 0x00 shared an ETag. A C caller
 building a `TkRouteResp` by hand must zero-initialise it.
 
+The gzip middleware leaves already-compressed content types alone: `image/*`
+except `image/svg+xml`, `video/*`, `audio/*`, `font/*`,
+`application/octet-stream`, `application/wasm`, `application/zip` and
+`application/gzip` -- the list `std.http`'s server uses (story 121.89). Before
+it, fonts, wasm and archives were recompressed and SVG was not compressed.
+
 ## Usage
 
 ```toke

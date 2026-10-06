@@ -33,6 +33,7 @@
 #include <limits.h>
 #include <zlib.h>
 #include "tk_bind.h"   /* 135.33 */
+#include "tk_gzip_type.h"   /* 121.89 */
 #include "capabilities.h"   /* 121.42: router.serve takes the net grant */
 
 /* ----------------------------------------------------------------------- */
@@ -1740,19 +1741,14 @@ void router_use_etag(TkRouter *r)
  * Stored in a static slot so the middleware function can read it. */
 static size_t gzip_min_size = 1024;
 
-/*
- * gzip_skip_type — return 1 if the Content-Type is already compressed
- * (image, video, audio, and application/octet-stream subtypes).
- * These types gain nothing from gzip and may grow slightly.
- */
+/* gzip_skip_type -- an already-compressed Content-Type gzip leaves alone.
+ * 121.89: the list is tk_gzip_type.h's, shared with http.c; it was image/,
+ * video/, audio/ and an exact application/octet-stream here, so fonts,
+ * wasm and archives were recompressed and a parameter or capital letter
+ * defeated the octet-stream match. */
 static int gzip_skip_type(const char *ct)
 {
-    if (!ct) return 0;
-    if (strncmp(ct, "image/",  6) == 0) return 1;
-    if (strncmp(ct, "video/",  6) == 0) return 1;
-    if (strncmp(ct, "audio/",  6) == 0) return 1;
-    if (strcmp(ct,  "application/octet-stream") == 0) return 1;
-    return 0;
+    return tk_gzip_skip_type(ct);
 }
 
 /*

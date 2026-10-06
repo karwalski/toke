@@ -377,6 +377,15 @@ its own — per stream, by the rule the HTTP/1.1 servers use. A `HEAD` carries
 the unencoded length. Until then HTTP/2 never compressed, so a server sent the
 same stylesheet gzipped over HTTP/1.1 and whole over HTTP/2.
 
+**Already-compressed types are sent as they are** (story 121.89). On all
+three transports gzip skips a body whose `Content-Type` is `image/*` (except
+`image/svg+xml`, which is text), `video/*`, `audio/*`, `font/*`,
+`application/octet-stream`, `application/wasm`, `application/zip` or
+`application/gzip`, ignoring case and parameters; HTML, CSS, JavaScript,
+JSON and SVG still compress. Until then a PNG, a font or a wasm module served
+to a gzip-accepting client was gzipped for no gain. std.router's gzip
+middleware uses the same list.
+
 **The handler's security headers win** (story 121.50). Every response
 carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
 `Referrer-Policy: strict-origin-when-cross-origin`, and over TLS

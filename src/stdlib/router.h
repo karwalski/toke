@@ -179,8 +179,9 @@ void router_ws(TkRouter *r, const char *pattern,
 
 /* router_use_gzip — add gzip compression middleware.
  * Compresses responses >= min_size bytes when client sends
- * Accept-Encoding: gzip.  Skips already-compressed MIME types
- * (image, video, audio, application/octet-stream subtypes).
+ * Accept-Encoding: gzip.  Skips already-compressed MIME types: the
+ * tk_gzip_type.h list http.c also uses (121.89) -- image/ but not
+ * image/svg+xml, video/, audio/, font/, octet-stream, wasm, zip, gzip.
  * Sets Content-Encoding: gzip and Vary: Accept-Encoding on
  * compressed responses, whose body is the gzip stream with its length in
  * body_len (121.88). */
