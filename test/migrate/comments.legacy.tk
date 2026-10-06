@@ -1,0 +1,11 @@
+M=legcomments;
+// line comment
+F=main():i64{
+  # hash comment
+  let x=1; (* trailing block *)
+  (* leading *) let y=2;
+  let z=(* interior *)3; // trailing line
+  (* multi
+     line *)
+  <x+y+z
+};

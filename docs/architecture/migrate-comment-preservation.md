@@ -2,8 +2,10 @@
 
 **Stories:** 127.161 (comments are stripped before lexing; architectural),
 127.160 (the per-file decline cannot classify a multi-file module).
-**Status:** designed, not implemented. The interim guard is implemented.
-**Date:** 2026-09-25.
+**Status:** implemented (story 127.161, 2026-10-07) after the owner decisions
+of 2026-10-01 §2.6–§2.8; §5 records how each was decided. §2 describes the
+interim guard it replaced.
+**Date:** 2026-09-25 (design), 2026-10-07 (implementation).
 
 ## 1. The problem
 
@@ -161,3 +163,31 @@ without the override.
 4. Both declines (127.57's and this one) print plain text to stderr, not a
    structured diagnostic record. AGENTS.md §3.1 asks for a JSON record on
    every error path, and a decline needs a code to have one.
+
+## 6. As implemented (127.161, 127.197, 127.198)
+
+- **§5.1 → move.** An `INTERIOR` comment goes to the end of its line, after
+  the code and before any trailing comment, with a note on stderr:
+  `tkc: --migrate: <file>:<line>: note: comment moved to the end of its line`.
+- **§5.2/§5.4 → E9026, exit 4.** Every decline echoes the source, emits one
+  E9026 record (`docs/reference/errors.md`) and exits `TKC_EXIT_DECLINED`.
+- **§5.3 → official.** `(* *)` is toke's comment form (spec v0.4 §H), so
+  comments are re-inserted into the source, not moved to a companion file.
+- **Placement is per line, from the source line.** Rather than a `col_kind`
+  per comment, each source line is split into code and comment bytes: the
+  source text before the first code (indentation and leading comments)
+  replaces the output line's indentation, the source text after the last
+  code replaces its trailing space, and lines holding only comments are
+  written back verbatim (their output line must be blank). A multi-line
+  comment is therefore the trailing part of its first line, the leading part
+  of its last, and own-line in between, so it always returns exactly.
+- **Guards** (each declines naming the cause): unclosed `(*`; a `//`/`#`
+  text holding `(*` or `*)`; the retry path (§3.3, "decline" option); a line
+  count that changed; code on a comment-only line; and the §3.2 verify step —
+  same tokens with and without the comments, and the same comment count.
+- **`TKC_MIGRATE_FORCE=1`** still runs the stripping migrator, so C041's
+  negative control keeps its witness.
+- `prepass()` also stopped gluing tokens: a one-line block comment between
+  two word characters becomes a space (`a(*x*)b` used to become `ab`).
+- Tests: C058 (every comment form and position, an interior comment in each
+  rewrite of §1, both guards, the tree-wide sweep), C711 (the record).

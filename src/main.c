@@ -100,6 +100,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
+#define EDECLINED TKC_EXIT_DECLINED   /* 127.197: --migrate declined */
 
 /* 131.33: the version with the commit the binary was built from.  Plain:
  * `toke <version> (git 1a2b3c4d5e6f)`, `(git 1a2b3c4d5e6f, dirty)` or
@@ -253,9 +254,10 @@ static const char HELP[] =
     "  --lint              Run lint rules and report diagnostics\n"
     "  --fix               With --lint, auto-fix mechanical violations in-place\n"
     "  --dry-run           With --lint --fix, print the diff instead of writing\n"
-    "  --migrate           Migrate legacy .tk file to default syntax (stdout).\n"
-    "                      Declines (echoes input, exits non-zero) on source\n"
-    "                      that already compiles; TKC_MIGRATE_FORCE=1 overrides\n"
+    "  --migrate           Migrate legacy .tk file to default syntax (stdout),\n"
+    "                      keeping comments. Declines (echoes input, E9026,\n"
+    "                      exit 4) on source that already compiles or whose\n"
+    "                      comments it cannot place; TKC_MIGRATE_FORCE=1 overrides\n"
     "  --legacy            Legacy mode (86-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
     "  --profile2          Deprecated alias for default mode\n"
@@ -954,6 +956,28 @@ static int source_needs_migration(const char *sbuf, long slen, const RunOpts *o)
     return needs;
 }
 
+/*
+ * migrate_decline — 127.197.  A `--migrate` run that will not rewrite its
+ * input echoes the source to stdout byte for byte (the redirect it is used
+ * through keeps the original), emits one E9026 record naming the reason, and
+ * returns TKC_EXIT_DECLINED.  Both declines used to print plain stderr and
+ * exit ECOMPILE, so a driver could not tell "nothing to do" from "failed"
+ * and the error path carried no structured record (AGENTS §6).  `line` is
+ * the 1-based line the reason points at, or 0 for the whole file.  No `fix`:
+ * whether to migrate anyway (TKC_MIGRATE_FORCE=1) is the user's choice.
+ */
+static int migrate_decline(const char *sbuf, long slen, int line, const char *msg)
+{
+    fwrite(sbuf, 1, (size_t)slen, stdout);
+    fflush(stdout);
+    int off = 0;
+    for (int ln = 1; ln < line && off < slen; off++)
+        if (sbuf[off] == '\n') ln++;
+    diag_set_source(sbuf, (size_t)slen);
+    diag_emit(DIAG_ERROR, E9026, off, line, line > 0 ? 1 : 0, msg, (void *)0);
+    return EDECLINED;
+}
+
 /* ── 123.12c: type-check after name-resolution errors ─────────────────
  *
  * Before 123.12c a file with any name-resolution error stopped there, so a
@@ -1118,44 +1142,44 @@ static int process_file(const char *src, const RunOpts *o)
          * source_needs_migration above. Echo the input verbatim so the
          * redirect this mode is designed for keeps the original bytes. */
         if (!source_needs_migration(sbuf, slen, o)) {
-            fwrite(sbuf, 1, (size_t)slen, stdout);
-            fprintf(stderr,
-                    "tkc: --migrate: '%s' already compiles under the current "
-                    "profile — nothing to migrate, source echoed unchanged\n", src);
-            rc = ECOMPILE;
+            char msg[512];
+            snprintf(msg, sizeof msg,
+                     "--migrate declined: '%s' already compiles under the current "
+                     "profile — nothing to migrate, source echoed unchanged", src);
+            rc = migrate_decline(sbuf, slen, 0, msg);
             goto done;
         }
-        /* 127.160 / 127.161: the migrator strips every comment before it
-         * lexes and cannot put them back (architectural; design in
-         * docs/architecture/migrate-comment-preservation.md). The decline
-         * above only covers source that compiles STANDALONE, so a valid file
-         * of a multi-file module (an import --check cannot resolve alone) and
-         * genuinely legacy source both still reached it and lost every
-         * comment with exit 0. Refuse instead, naming the file, and echo it
-         * verbatim for the redirect. TKC_MIGRATE_FORCE=1 is the consent to
-         * lose them (and the old behaviour C041's negative control needs). */
-        {
-            const char *force = getenv("TKC_MIGRATE_FORCE");
-            int forced = force && force[0] && strcmp(force, "0") != 0;
-            int first_line = 0;
-            int ncom = tkc_migrate_count_comments(sbuf, (int)slen, &first_line);
-            if (!forced && ncom > 0) {
-                fwrite(sbuf, 1, (size_t)slen, stdout);
-                fprintf(stderr,
-                        "tkc: --migrate: '%s' has %d comment(s) (first at line %d) "
-                        "that migration would delete — declined, source echoed "
-                        "unchanged; set TKC_MIGRATE_FORCE=1 to migrate and lose them\n",
-                        src, ncom, first_line);
-                rc = ECOMPILE;
-                goto done;
-            }
-        }
-        /* --migrate does its own prepass + re-lex internally.
-         * Pass raw source directly — no external lex needed. */
+        /* 127.161: comments are kept (design:
+         * docs/architecture/migrate-comment-preservation.md; owner decision
+         * 2026-10-01 §2.8).  tkc_migrate_keep_comments() puts each one back
+         * on its line, moves a comment with code on both sides to the end of
+         * its line with a note, and declines -- E9026, exit 4, source echoed
+         * -- when a comment cannot be placed safely.  TKC_MIGRATE_FORCE=1 is
+         * the consent to lose them: it runs the old stripping migrator (the
+         * behaviour C041's negative control needs). */
         diag_reset();
         diag_set_source(sbuf, (size_t)slen);
-        if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
-            rc = EINTERNAL;
+        {
+            const char *force = getenv("TKC_MIGRATE_FORCE");
+            if (force && force[0] && strcmp(force, "0") != 0) {
+                if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) rc = EINTERNAL;
+                goto done;
+            }
+            char *mres = NULL; int mlen = 0;
+            TkcMigrateDecline why;
+            int mr = tkc_migrate_keep_comments(sbuf, (int)slen, src, &mres, &mlen, &why);
+            if (mr < 0) { rc = EINTERNAL; goto done; }
+            if (mr > 0) {
+                char msg[512];
+                snprintf(msg, sizeof msg,
+                         "--migrate declined: '%s': %s — source echoed unchanged; "
+                         "set TKC_MIGRATE_FORCE=1 to migrate and lose the comments",
+                         src, why.reason);
+                rc = migrate_decline(sbuf, slen, why.line, msg);
+                goto done;
+            }
+            fwrite(mres, 1, (size_t)mlen, stdout);
+            free(mres);
         }
         goto done;
     }
@@ -1875,7 +1899,10 @@ int main(int argc, char **argv)
     /* 131.37: single per-file dispatch — every positional file, in order,
      * through the same pipeline in the same mode. A file that fails with
      * diagnostics (ECOMPILE) does not stop the batch (like `--check a b`);
-     * usage/internal failures do. */
+     * usage/internal failures do.  127.197: nor does a declined --migrate
+     * (EDECLINED) -- the file was echoed and the next one still migrates.
+     * The batch exits ECOMPILE if any file failed, else EDECLINED if any
+     * declined, so a failure is never reported as a mere decline. */
     RunOpts o = {
         emit_iface, check_only, djson, dtext, dsarif,
         emit_ll, emit_asm, opt_level, fmt_only, debug_info,
@@ -1892,8 +1919,8 @@ int main(int argc, char **argv)
         if (si > 0) diag_reset();
         int r = process_file(source_files[si], &o);
         if (r == 0) continue;
-        if (r != ECOMPILE) return r;
-        if (!rc) rc = r;
+        if (r != ECOMPILE && r != EDECLINED) return r;
+        if (rc != ECOMPILE) rc = r;
     }
     return rc;
 }

@@ -64,7 +64,8 @@ printf 'm=beta;\nf=main():i64{\n  <2\n};\n' > b.tk
 # the migrator has nothing to do to either and declines — echoing each file
 # verbatim, which is what keeps the per-file ordering assertions below
 # meaningful, and reporting the refusal in the exit code instead of running a
-# rewrite that could only lose. Every other mode still expects 0.
+# rewrite that could only lose. Every other mode still expects 0. 127.197:
+# the decline exits 4 (TKC_EXIT_DECLINED, with an E9026 record), not 1.
 mode_check() {
     local name="$1" ma="$2" mb="$3"; shift 3
     local want_rc="${MODE_RC:-0}"
@@ -87,7 +88,7 @@ mode_check "--fmt"      'm=alpha;' 'm=beta;'  --fmt
 mode_check "--pretty"   'm=alpha;' 'm=beta;'  --pretty
 mode_check "--expand"   'm=alpha;' 'm=beta;'  --expand
 mode_check "--dump-ast" '"alpha"'  '"beta"'   --dump-ast
-MODE_RC=1 mode_check "--migrate"  'm=alpha;' 'm=beta;'  --migrate
+MODE_RC=4 mode_check "--migrate"  'm=alpha;' 'm=beta;'  --migrate
 mode_check "--min"      'm=alpha;' 'm=beta;'  --min
 
 # --lint: diagnostics go to stdout as JSON when not a tty; a.tk has one hint,

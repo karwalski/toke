@@ -58,7 +58,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E1007 | error | lex | Unterminated comment | D101, C325 |
 | W1010 | warning | lex | String interpolation `\(…)` not supported in the legacy profile | D005, D009 |
 | W1011 | warning | lex | Identifier starts with a keyword prefix | n/s |
-| W1020 | warning | lex | Foreign keyword detected | C328 |
+| W1020 | warning | lex | Foreign keyword detected | C328, D201, D202 |
 | W1021 | warning | lex | Raw control byte in string literal | C682 |
 | E2001 | error | parse | Declaration ordering violation | G024, D112 |
 | E2002 | error | parse | Unexpected token | C326, C327, C335, D107, D108 |
@@ -123,6 +123,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9023 | error | codegen | No main function defined | n/s |
 | E9024 | error | codegen | Stdlib or runtime directory path contains whitespace | n/s |
 | E9025 | error | codegen | No version of a dependency satisfies every constraint | n/s |
+| E9026 | error | codegen | `--migrate` declined; source echoed unchanged | C711 |
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 

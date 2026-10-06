@@ -61,7 +61,7 @@ The `.tkc` content becomes part of the training record:
 }
 ```
 
-The `(* ... *)` comment syntax is tolerated by the lexer (silently discarded) specifically for this purpose — the model can emit reasoning in `(* *)` blocks during generation, and the compiler ignores them. The reasoning is captured by the training pipeline.
+The `(* ... *)` comment form (spec v0.4 §H) is discarded by the lexer, which suits this purpose — the model can emit reasoning in `(* *)` blocks during generation, and the compiler ignores them. The reasoning is captured by the training pipeline.
 
 ## Interaction with Token Efficiency
 

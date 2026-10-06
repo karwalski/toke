@@ -189,7 +189,7 @@ Every `.tk` file follows this order with no exceptions:
 
 ### Comments in toke source
 
-toke has no comment syntax. Use a companion `.tkc.md` file in the same directory for documentation (see [Companion File Format Specification](/docs/compiler/companion-file-spec/)):
+toke has one comment form, `(* ... *)` (spec v0.4 §H); `//` and `#` are not comments. For documentation, use a companion `.tkc.md` file in the same directory for documentation (see [Companion File Format Specification](/docs/compiler/companion-file-spec/)):
 
 ```
 stdlib/

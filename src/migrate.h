@@ -38,16 +38,26 @@ int tkc_migrate(const char *src, int slen, const Token *toks, int tc,
                 FILE *out);
 
 /*
- * tkc_migrate_count_comments — number of comments tkc_migrate() would strip.
+ * tkc_migrate_keep_comments — migrate `src`, keeping every comment (127.161).
  *
- * 127.160 / 127.161: tkc_migrate()'s prepass deletes every `(* *)`, `//` and
- * `#` comment before lexing, and nothing downstream can put them back (see
- * docs/architecture/migrate-comment-preservation.md). This scanner recognises
- * comments with exactly the prepass's rules (same string tracking, same
- * nesting) so a caller can refuse to run the migrator on source it would
- * damage. Returns the count; *first_line (may be NULL) receives the 1-based
- * line of the first one, or 0 when there are none.
+ * Runs the same pipeline as tkc_migrate() and puts each comment back on the
+ * line it came from: own-line, leading and trailing comments where they
+ * were, `//` and `#` rewritten as `(* *)`, and a comment with code on both
+ * sides of it on one line moved to the end of that line with a note on
+ * stderr naming `path` and the line.  Design and placement rules:
+ * docs/architecture/migrate-comment-preservation.md.
+ *
+ * Returns 0 with the result in *outp (heap, NUL-terminated; the caller frees
+ * it) and its length in *outlen; 1 when it declines because a comment could
+ * not be placed safely, with the reason and line (0 = the whole file) in
+ * *why and nothing allocated; -1 on an internal failure.
  */
-int tkc_migrate_count_comments(const char *src, int slen, int *first_line);
+typedef struct {
+    int  line;
+    char reason[256];
+} TkcMigrateDecline;
+
+int tkc_migrate_keep_comments(const char *src, int slen, const char *path,
+                              char **outp, int *outlen, TkcMigrateDecline *why);
 
 #endif /* TKC_MIGRATE_H */

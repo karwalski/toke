@@ -185,6 +185,42 @@ documentation was never measured.
 
 ---
 
+## H. Comments are `(* ... *)` (supersedes v0.3 §8.10 and the §7.2 "not a language feature" bullet)
+
+`(* ... *)` is toke's comment form. It is part of the language, not a
+tolerance mechanism:
+
+- A comment opens with `(*` and closes with the matching `*)`. Comments
+  **nest**: `(* outer (* inner *) *)` is one comment, so every `(*` inside a
+  comment needs its own `*)`. A comment still open at end of file is
+  **E1007**.
+- A comment produces no token. It separates tokens the way whitespace does,
+  may appear wherever whitespace may, and may span lines. Inside a string
+  literal, `(*` and `*)` are ordinary text.
+- `(`, `*` and `)` are already members of the alphabet (§G), so the comment
+  form adds no character.
+- The grammar's productions are over tokens and never mention comments; see
+  the token-class note in `grammar.ebnf`.
+
+`//` and `#` are **not** comment syntax. The lexer skips each to end of line
+only as error recovery and warns **W1020** ("toke comments are written
+(* comment *)"). The warning's `fix` is the rewrite to `(* comment *)`, offered
+only when the comment's text holds no `(*` or `*)`, since either would change
+where the rewritten comment ends (AGENTS §6).
+
+Companion files (`.tkc`, v0.3 §24.11) remain the home for documentation that
+tools consume: API docs, parameter descriptions, line-targeted annotations.
+A `(* *)` comment is for the reader of the source.
+
+`tkc --migrate` keeps the comments of the code it rewrites: each goes back on
+its line, `//` and `#` become `(* *)`, and a comment with code on both sides
+of it moves to the end of its line with a note. When it cannot place one
+safely it declines (E9026, exit 4) instead (story 127.161).
+
+Resolved by story **127.198** (owner decision 2026-10-01 §2.7).
+
+---
+
 ## Conformance & migration
 
 - `make conform` remains the gate (228 cases: 222 YAML + 6 shell, 0 failed as of
@@ -207,3 +243,6 @@ documentation was never measured.
   `src/lexer.c`; `^ ~ % &` are live operators, none is reserved.
 - **2026-09-24 (story 127.91):** §F.1 added — `str.indexfrom(s; sub; start)`,
   a start-offset form of `str.indexof`. Additive; no existing call changes.
+- **2026-10-06 (story 127.198):** §H added — `(* ... *)` is the official
+  comment form (supersedes v0.3 §8.10's "tolerance only"). W1020's text for
+  `//` no longer says toke "has no comment syntax".

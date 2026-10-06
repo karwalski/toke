@@ -1,0 +1,14 @@
+id: L037
+series: L
+description: "127.198: `(* *)` is the official comment form (spec v0.4 §H) -- own-line, trailing, interior, multi-line and nested comments draw no diagnostic at all"
+input: |
+  m=test;
+  (* own line *)
+  f=main():i64{
+    let x=(* interior *)1; (* trailing *)
+    (* multi
+       line (* nested *) comment *)
+    <x-1
+  };
+expected_exit_code: 0
+expected_error_codes: []
