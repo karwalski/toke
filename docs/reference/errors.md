@@ -1236,9 +1236,12 @@ where it was declared). The message also carries clang's first error text or
 the undefined symbol's name. A failure with no such trace — an unwritable
 output path, a missing C library — stays at line 0 (137.13).
 
-When clang itself could not be started (not installed, or not on `PATH`),
-the message says `clang not found on PATH` and names the remedy instead of
-reporting exit code 127: tkc runs clang to compile and link every program.
+When clang itself could not be started, the message says so and names the
+remedy instead of reporting exit code 127: tkc runs clang to compile and link
+every program. tkc runs the clang found when it was built, by absolute path,
+or `TKC_CC` (see E9026), so the message reads `clang could not be started:
+'<path>'`; only a tkc built where no clang was found looks clang up on `PATH`,
+and then it reads `clang not found on PATH` (121.28).
 
 ### E9004
 
