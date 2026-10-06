@@ -26,7 +26,8 @@
  *   other six.)  A-Z are tolerated by the lexer but rejected by the parser
  *   (E2002), so uppercase is not in the alphabet; '#' is accepted only to
  *   emit W1020 and skip the line, which is error recovery and not language
- *   surface, so it is not a member either.
+ *   surface, so it is not a member either.  The comment form is `(* ... *)`
+ *   (nesting; spec v0.4 §H, story 127.198): `//` and `#` are not comments.
  *   Keywords are lowercase (m=, f=, t=, i=); uppercase produces E1006.
  *   $ prefixes type references; @ is a valid token.
  *   Uppercase-initial identifiers are plain TK_IDENT (not TK_TYPE_IDENT).
@@ -711,6 +712,22 @@ static int lex_comment(Lexer *l, int start, int line, int col)
     return -1;
 }
 
+/*
+ * line_comment_rewrite_safe — 1 when the `#` / `//` comment text running from
+ * `from` to the end of the line holds neither `(*` nor `*)`, so rewriting it
+ * as `(* text *)` yields one comment with the same extent (127.198).  W1020
+ * offers that rewrite as its `fix` only then (AGENTS §6: a `fix` must be
+ * correct in every case it is emitted).
+ */
+static int line_comment_rewrite_safe(const Lexer *l, int from)
+{
+    for (int p = from; p + 1 < l->len && l->src[p] != '\n'; p++) {
+        if (l->src[p] == '(' && l->src[p + 1] == '*') return 0;
+        if (l->src[p] == '*' && l->src[p + 1] == ')') return 0;
+    }
+    return 1;
+}
+
 /* -------------------------------------------------------------------------
  * lex — public entry point (multi-error recovery)
  * ----------------------------------------------------------------------- */
@@ -784,9 +801,17 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
 
         /* 4b. Python-style '#' line comments */
         if (c == '#') {
-            diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
-                      "Python comment '#' detected; toke uses (* comment *) block comments",
-                      "fix", "replace '# comment' with '(* comment *)'", NULL);
+            /* 127.198: `(* *)` is toke's comment form (spec v0.4 §H).  The
+             * `fix` is offered only when it is correct: a `(*` or `*)` in the
+             * text would nest or close the rewritten comment early. */
+            if (line_comment_rewrite_safe(&l, l.pos + 1))
+                diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                          "Python comment '#' detected; toke comments are written (* comment *)",
+                          "fix", "replace '# comment' with '(* comment *)'", NULL);
+            else
+                diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                          "Python comment '#' detected; toke comments are written (* comment *)",
+                          NULL);
             while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
             continue;
         }
@@ -888,11 +913,19 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         case '*':  sym = TK_STAR;     break;
         case '/':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '/') {
-                diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
-                          "C-style comment '//' detected; toke has no comment "
-                          "syntax — documentation belongs in companion .tkc files",
-                          "fix", "remove '// comment' and place documentation "
-                          "in a companion .tkc file", NULL);
+                /* 127.198: toke's comment form is `(* *)` (spec v0.4 §H);
+                 * the old text said toke "has no comment syntax", which the
+                 * lexer contradicted by accepting `(* *)`.  `fix` only when
+                 * the text holds no `(*` / `*)` that would break the rewrite. */
+                if (line_comment_rewrite_safe(&l, l.pos + 2))
+                    diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                              "C-style comment '//' detected; toke comments are "
+                              "written (* comment *)",
+                              "fix", "replace '// comment' with '(* comment *)'", NULL);
+                else
+                    diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                              "C-style comment '//' detected; toke comments are "
+                              "written (* comment *)", NULL);
                 while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
                 continue;
             }

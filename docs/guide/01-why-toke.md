@@ -42,7 +42,7 @@ The real difference emerges in two scenarios:
 
 **1. Complete programs.** Add `print(fib(10))` to Python (41 tokens total) vs toke's `f=main():i64{io.println(fib(10));<0};` (59 tokens total for the readable version). toke needs a module declaration and explicit main, but C (59 tokens) and Java (62 tokens) need similar boilerplate.
 
-**2. Documentation.** Add a one-line docstring to every Python function and the count doubles. toke source is comment-free by design -- there is no comment syntax in the language. Documentation for human readers lives in companion files (`.tkc`), completely separate from source. The purpose-built model trains on clean code only, so toke's token cost is fixed. This is where toke's structural advantage compounds.
+**2. Documentation.** Add a one-line docstring to every Python function and the count doubles. toke source is comment-free by convention -- the language has one comment form, `(* ... *)`, but documentation for human readers lives in companion files (`.tkc`), completely separate from source. The purpose-built model trains on clean code only, so toke's token cost is fixed. This is where toke's structural advantage compounds.
 
 The syntactic differences are:
 
@@ -163,7 +163,7 @@ toke achieves token efficiency through deliberate constraints:
 - **One way to do everything** -- no synonym constructs, no optional syntax
 - **Backtrack-free grammar** -- deterministic parsing, no rescanning; bounded ≤3-token lookahead (not strict one-token LL(1) — see `grammar.ebnf` Appendix A)
 - **Semicolons terminate everything** -- no whitespace-as-syntax
-- **No comment syntax** -- source is comment-free by design; human documentation lives in companion files (`.tkc`)
+- **Comment-free by convention** -- the one comment form is `(* ... *)`, but human documentation lives in companion files (`.tkc`)
 - **Explicit types everywhere** -- no type inference in v0.1
 
 These constraints make toke predictable, parseable, and compact.
@@ -190,7 +190,7 @@ Do not worry about getting the syntax perfectly right yet -- the next lesson cov
 ## Key takeaways
 
 - LLMs pay per token. Verbose languages waste tokens on syntax, not logic.
-- toke source is comment-free by design. There are no comments in `.tk` files -- documentation for human readers lives in companion files (`.tkc`). Other languages double in token cost when documentation is added; toke's cost is fixed.
+- toke source is comment-free by convention: the language has one comment form, `(* ... *)`, but documentation for human readers lives in companion files (`.tkc`). Other languages double in token cost when documentation is added; toke's cost is fixed.
 - On cl100k_base, toke matches C and beats Java for complete programs. Python is cheaper on cl100k because the tokenizer was trained on Python.
 - A purpose-built BPE tokenizer merges toke-specific patterns into single tokens. Measured: the v0.3 Toke-16K encoded toke source in 52% fewer tokens than cl100k_base encoded the *same toke source* (N = 42 benchmark programs) -- a tokenizer-vs-tokenizer figure, not a comparison with Python, and superseded, because on canonical v0.4 text the shipped 8K tokenizer needs 15.4% more tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - Gate 1 benchmark: token reduction 12.5% (8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs -- superseded, see `docs/metrics-baseline.md`) and 58.8% Pass@1 across 1,000 held-out tasks (588/1,000; published as 63.7% until 2026-09-19, when the denominator was corrected from the 923 that compiled to the 1,000 generated -- story 128.19, and below the gate's own >= 60% threshold, so on 2026-09-22 the owner decided Gate 1 NOT PASSED).

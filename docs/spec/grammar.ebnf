@@ -237,6 +237,12 @@ LiteralExpr  = INT_LIT | FLOAT_LIT | STR_LIT | BOOL_LIT ;
 (* STR_LIT     — double-quoted string literal   '"' ... '"'           *)
 (* BOOL_LIT    — boolean literal                'true' | 'false'      *)
 (* EOF         — end of input                                         *)
+(*                                                                    *)
+(* Comments (toke-spec-v0.4.md §H, story 127.198) are not tokens: a   *)
+(* comment opens with '(' '*' and closes with the matching '*' ')',   *)
+(* nests, may span lines, and separates tokens as whitespace does.    *)
+(* No production above mentions one. '//' and '#' are not comments:   *)
+(* the lexer skips them to end of line as recovery and warns W1020.   *)
 
 
 (* ================================================================== *)

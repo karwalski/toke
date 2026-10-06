@@ -183,7 +183,7 @@ Every `.toke` file follows this order with no exceptions:
 
 ### Comments in toke source
 
-toke has no comment syntax. Use a companion `.md` file in the same directory for documentation:
+toke has one comment form, `(* ... *)` (spec v0.4 §H); `//` and `#` are not comments. For documentation, use a companion `.md` file in the same directory for documentation:
 
 ```
 stdlib/

@@ -199,6 +199,14 @@ Hint that an identifier begins with a reserved keyword prefix.
 
 Cross-language hint: a keyword from another language was detected.
 
+The same code covers foreign comment markers. toke's comment form is
+`(* ... *)` (spec v0.4 §H, story 127.198); `//` and `#` are not comment syntax,
+so the lexer skips each to end of line as recovery and warns "toke comments are
+written (* comment *)". **Fix:** `replace '// comment' with '(* comment *)'`
+(or `'# comment'`), offered only when the comment's text holds no `(*` or `*)`
+-- either one would change where the rewritten comment ends. Pinned by D201
+and D202.
+
 Not emitted where toke has a name spelled like the keyword (story 138.10):
 after `let`, before `=` or a `:` that does not end the line, and -- for the
 statement and declaration keywords (`def`, `return`, `class`, `var`, `else`,

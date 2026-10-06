@@ -20,8 +20,9 @@ Reserved keywords: if el lp br let mut as rt mt sc
 
 ## no comments
 
-toke source is comment-free by design. There is no comment syntax.
-Documentation for human readers lives in companion files (`.tkc`), separate from source.
+toke's only comment form is `(* ... *)` (nests; `//` and `#` are not comments
+and draw W1020). Generated source is comment-free by policy: documentation for
+human readers lives in companion files (`.tkc`), separate from source.
 Never generate comments in toke output.
 
 ## declarations (file order: m, i, t, f)
@@ -35,7 +36,7 @@ f=add(a:i64;b:i64):i64{<a+b};         # function
 f=load(p:$str):$str!$fileerr{...};    # fallible function
 ```
 
-Note: `#` annotations above are spec explanations only. toke has no comment syntax.
+Note: `#` annotations above are spec explanations only. `#` is not toke comment syntax.
 
 ## types
 
