@@ -667,7 +667,9 @@ JsonResult json_at(Json j, const char *path) {
         const char *p = skip_ws(cur.raw);
         if (!p) {
             free(buf);
-            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, seg); return r;
+            /* seg points into buf, freed above: a static message, like every
+             * other error path here (GCC -Wuse-after-free). */
+            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "no value at path segment"); return r;
         }
 
         if (*p == '{') {
