@@ -153,7 +153,6 @@ router_static gap        # no wrapper, no .tki entry
 router_use_cors gap        # no wrapper, no .tki entry
 router_use_etag gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 router_use_gzip gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-router_use_log gap        # no wrapper, no .tki entry
 router_ws gap        # no wrapper, no .tki entry
 sse_is_closed gap        # no wrapper, no .tki entry
 str_buf_add dup        # second implementation of str.add (see str_buf_new)
