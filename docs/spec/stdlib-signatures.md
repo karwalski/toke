@@ -473,6 +473,45 @@ f=sse.close(ctx:$ssectx):void
 f=sse.keepalive(ctx:$ssectx;interval:u64):void
 ```
 
+### std.tls
+
+Amended 2026-10-06, story 121.64 (owner decision 2026-10-01 §3.1): the
+`insecure` field and `tls.insecureconfig`, and client verification by default.
+
+```text
+t=$tlsconfig{certpem:$str;keypem:$str;peercertpem:$str;requiremutual:bool;insecure:bool}
+t=$tlsconn{id:$str}
+t=$tlskeypair{certpem:$str;keypem:$str}
+f=tls.genselfsigned(commonname:$str;validdays:i32):$tlskeypair!$str
+f=tls.genselfsignedalg(commonname:$str;validdays:i32;keyalg:$str):$tlskeypair!$str
+f=tls.certof(kp:$tlskeypair):$str
+f=tls.keyof(kp:$tlskeypair):$str
+f=tls.freekeypair(kp:$tlskeypair):bool
+f=tls.tlsconfig(certpem:$str;keypem:$str):$tlsconfig
+f=tls.pinconfig(certpem:$str;keypem:$str;peercertpem:$str):$tlsconfig
+f=tls.mutualconfig(certpem:$str;keypem:$str;peercertpem:$str):$tlsconfig
+f=tls.insecureconfig(certpem:$str;keypem:$str):$tlsconfig
+f=tls.freeconfig(cfg:$tlsconfig):bool
+f=tls.listen(port:i32;cfg:$tlsconfig;cb:fn):bool
+f=tls.connect(host:$str;port:i32;cfg:$tlsconfig):?($tlsconn)
+f=tls.read(conn:$tlsconn):?($str)
+f=tls.write(conn:$tlsconn;data:$str):bool
+f=tls.close(conn:$tlsconn):bool
+f=tls.protocol(conn:$tlsconn):$str
+f=tls.group(conn:$tlsconn):$str
+f=tls.peercert(conn:$tlsconn):?($str)
+f=tls.fingerprint(pem:$str):$str
+f=tls.pairingcode(conn:$tlsconn):$str
+```
+
+TLS 1.3 only. A client authenticates the server by exactly one rule, chosen
+by the configuration: a non-empty `peercertpem` accepts only that certificate
+(pinning; no chain or host-name check); `insecure` checks nothing; otherwise
+the chain must verify against the default trust store (`SSL_CERT_FILE` /
+`SSL_CERT_DIR` override it) and the certificate must name `host`. A literal
+that omits `insecure` gets `false`. On a server, `insecure` has no effect. See
+[std.tls](/docs/stdlib/tls).
+
 ### std.zip
 
 ```text
