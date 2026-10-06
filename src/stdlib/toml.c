@@ -9,6 +9,7 @@
  */
 
 #include "toml.h"
+#include "tk_runtime.h" /* 127.272: TK_TLS for g_toml_err */
 #include "file.h"   /* 121.74: file_read -- AMB-07, $isdir, FIFO-safe */
 #include "../../stdlib/vendor/tomlc99/toml.h"
 #include <stdlib.h>
@@ -31,20 +32,28 @@ static TomlResult toml_err(const char *msg)
  * Returns a TomlResult wrapping a heap-allocated toml_table_t *.
  * On success, caller owns the table and must call toml_free() via toml_free_table().
  * On error, err_msg describes the parse failure.
+ *
+ * 127.272: err_msg points into this thread's g_toml_err and is valid until
+ * the next toml_load on the same thread -- the contract csv.c (g_csv_err)
+ * and file.c (g_file_err_msg) already keep.  It used to be a malloc'd copy
+ * of the parser's stack buffer that nothing ever freed: the glue stored the
+ * pointer in the error box, which the runtime reuses and never frees
+ * (127.109), so every failed toml.load leaked 256 bytes.  A message that must
+ * outlive the next call is the CALLER's copy to make: toml_glue.c's
+ * toml_raise copies it through tk_err_msg(), the stdlib's message ring.
  */
+static TK_TLS char g_toml_err[256];
+
 TomlResult toml_load(const char *src)
 {
     TomlResult r = {NULL, 0, NULL};
     if (!src) return toml_err("null input");
 
-    char errbuf[256] = {0};
-    toml_table_t *tab = toml_parse((char *)src, errbuf, sizeof(errbuf));
+    g_toml_err[0] = '\0';
+    toml_table_t *tab = toml_parse((char *)src, g_toml_err, sizeof(g_toml_err));
     if (!tab) {
-        /* Copy errbuf into heap so caller doesn't need to worry about lifetime. */
-        char *msg = malloc(sizeof(errbuf));
-        if (msg) memcpy(msg, errbuf, sizeof(errbuf));
         r.is_err = 1;
-        r.err_msg = msg ? msg : "parse error";
+        r.err_msg = g_toml_err[0] ? g_toml_err : "parse error";
         return r;
     }
     r.ok = tab;
