@@ -190,6 +190,9 @@ typedef struct {
     int          internal;      /* 127.220 item 7: the record says
                                  * `"internal": true` — a glue helper, not
                                  * part of the module's public surface     */
+    const char  *errty;         /* 127.225: the `E` of a `T!E` export (the
+                                 * record's "error" key), or NULL; read by
+                                 * the re-raise check (E4076)              */
 } ImportedFunc;
 
 typedef struct {

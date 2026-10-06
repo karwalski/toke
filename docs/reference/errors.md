@@ -1165,6 +1165,45 @@ f=main():i64{ <str.countre("<a><b>";"<.*?>") };
 Rewrite the construct, e.g. `<[^>]*>` for `<.*?>`. There is no `fix` field:
 the intended pattern is not knowable from the rejected one.
 
+### E4076
+
+**`!` re-raises a user error into a different error type**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+`f()!` inside a function declaring `T!$b`, where `f` is a user function
+(local, a function value, or `alias.f` from a user module's interface)
+declaring a different error type `$a`. The error cannot be carried across:
+a `$a` value read as a `$b` gives the wrong variant at the wrong width.
+Until 127.225 the compiler re-raised it with no payload, and a nested
+`mt e{..}` took its *last* arm with payload 0, a variant nobody raised.
+Owner decision 2026-10-01 §2.3 made it a check-time error.
+
+The error passes through `!` into the same type, or into a record whose
+fields have the same types in the same order. Any other pair of named sum
+or record types is E4076. A `std.*` callee is not judged here (its failure
+is re-raised without a payload, as before), and neither are `!str`,
+`!$none`, or a type the checker cannot resolve. There is no `fix`, because
+the repair is a choice: declare the function with the callee's error type,
+or match the error and return a value of this function's own type:
+`mt inner(n){$ok:v v;$err:e <$eb{$q:1}}`.
+
+If the checker cannot judge a re-raise (for example, a record field whose
+type it cannot resolve) and the two error types still differ in layout,
+the program traps `RT010` at the re-raise instead.
+
+<!-- skip-check -->
+```text
+m=test;
+t=$ea{$x:i64;$y:str};
+t=$eb{$p:str;$q:i64};
+f=inner(n:i64):i64!$ea{if(n>0){<$ea{$y:"boom"}};<n};
+f=outer(n:i64):i64!$eb{let v=inner(n)!$eb;<v+1};
+```
+
 ## Arena Errors (E5xxx)
 
 ### E5001

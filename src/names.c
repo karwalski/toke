@@ -1046,6 +1046,7 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
     env->ifuncs[env->ifunc_count].param_count = ptypes ? pcount : 0;
     env->ifuncs[env->ifunc_count].abi_ret = 0;
     env->ifuncs[env->ifunc_count].internal = 0;
+    env->ifuncs[env->ifunc_count].errty = NULL;
     env->ifunc_count++;
 }
 
@@ -1160,6 +1161,14 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                                      gen, (int)sizeof gen)
                     && strcmp(gen, "abi") == 0)
                     env->ifuncs[env->ifunc_count - 1].abi_ret = 1;
+            }
+            {   /* 127.225: the error type of a `T!E` export */
+                char ety[128] = {0};
+                if (env->ifunc_count > before
+                    && tki_str_value(tki_obj_key(rec, end, "error"), end,
+                                     ety, (int)sizeof ety) && ety[0])
+                    env->ifuncs[env->ifunc_count - 1].errty =
+                        arena_intern(arena, ety, (int)strlen(ety));
             }
             {   /* 127.220 item 7: `"internal": true` (a bare JSON literal) */
                 const char *iv = tki_obj_key(rec, end, "internal");

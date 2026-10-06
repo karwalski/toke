@@ -566,6 +566,17 @@ void tk_nil_trap(int32_t code) {
     exit(1);
 }
 
+/* 127.225: RT010 -- `!` re-raised an error of one user error type into a
+ * function declaring another, on a path the checker (E4076) could not judge.
+ * The error cannot be carried across, and inventing a variant of the other
+ * type would hand the caller a wrong answer; toke stops instead. */
+void tk_reraise_trap(const char *from, const char *to) {
+    fprintf(stderr, "RT010: error of type $%s re-raised with '!' into a "
+            "function whose error type is $%s\n",
+            from ? from : "?", to ? to : "?");
+    exit(1);
+}
+
 /* ── 124.0c item 3: closure environments are reference counted ──────────────
  * memory-model §2.5: a closure's environment is malloc'd so it can outlive
  * the scope that made it, and "is freed when the last reference to the

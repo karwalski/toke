@@ -18,6 +18,12 @@
 # error flag alone for a record, so reading a field traps RT005 instead of
 # returning garbage).
 #
+# 127.225 (owner decision 2026-10-01 §2.3): cases 1 and 4 -- a re-raise into
+# a different sum, or into a record of another layout -- are now the
+# check-time error E4076 (C719 covers the rule), so they assert that code
+# instead of the payload-less run-time behaviour.  Case 5's ok-path guard
+# uses a same-type re-raise, which still compiles.
+#
 # Negative control: TKC built from main at 8f4a843 — case 1 prints
 # "q <pointer>", case 4 prints "rc <pointer>" and does not trap: 3 of 6 red.
 #
@@ -34,7 +40,7 @@ expect() {
 }
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 runs() { "${TKC}" "$1" -o "${WORK}/b" >/dev/null 2>&1 && "${WORK}/b" 2>/dev/null | tr '\n' ' '; }
-errs_rt() { "${TKC}" "$1" -o "${WORK}/b" >/dev/null 2>&1 && "${WORK}/b" 2>&1 >/dev/null | awk '{print $1}' | tr '\n' ' '; }
+codes() { "${TKC}" --check "$1" 2>&1 | grep -o '"error_code":"[A-Z0-9]*"' | sed 's/.*:"//;s/"//' | tr '\n' ' '; }
 
 # 1. sum -> a different sum: re-raised, not read as the other sum's variant
 cat > "${WORK}/p1.tk" <<'EOF'
@@ -48,7 +54,7 @@ f=main():i64{
   <0
 };
 EOF
-expect "1-sum-to-other-sum-reraised" "$(runs "${WORK}/p1.tk")" "r 0 "
+expect "1-sum-to-other-sum-is-E4076" "$(codes "${WORK}/p1.tk")" "E4076 "
 
 # 2. sum -> the same sum: the payload passes through
 cat > "${WORK}/p2.tk" <<'EOF'
@@ -84,16 +90,14 @@ f=ri(n:i64):i64!$ra{if(n>0){<$ra{msg:"rm";code:7}};<n};
 f=rdiff(n:i64):i64!$rc{let v=ri(n)!$rc;<v+1};
 f=main():i64{mt rdiff(5){$ok:v io.println("ok \(v)");$err:e io.println("rc \(e.n)")};<0};
 EOF
-expect "4-other-layout-no-foreign-read" "$(runs "${WORK}/p4.tk")" ""
-expect "4-other-layout-record-traps"    "$(errs_rt "${WORK}/p4.tk")" "RT005: "
+expect "4-other-layout-record-is-E4076" "$(codes "${WORK}/p4.tk")" "E4076 "
 
 # 5. positive guard: the ok path is untouched
 cat > "${WORK}/p5.tk" <<'EOF'
 m=t;i=io:std.io;
 t=$ea{$x:i64;$y:str};
-t=$eb{$p:str;$q:i64};
 f=inner(n:i64):i64!$ea{if(n>0){<$ea{$y:"boom"}};<n};
-f=outer(n:i64):i64!$eb{let v=inner(n)!$eb;<v+1};
+f=outer(n:i64):i64!$ea{let v=inner(n)!$ea;<v+1};
 f=main():i64{mt outer(0){$ok:v io.println("ok \(v)");$err:e io.println("err")};<0};
 EOF
 expect "5-ok-path-unchanged" "$(runs "${WORK}/p5.tk")" "ok 1 "
