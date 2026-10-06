@@ -131,8 +131,9 @@ static void current_iso8601(char *buf, size_t buf_size)
  *   enc_text      text-format fields, logfmt-style: a value that is empty or
  *                 holds a space, '=', '"', '\' or a control byte is written
  *                 in double quotes with \" \\ \n \r \t \xHH escapes; anything
- *                 else is written bare.  The message itself is written bare
- *                 with the same control/backslash escapes (no quoting).
+ *                 else is written bare.  The message is the field msg=, by
+ *                 the same rule (121.41 (3); before, it was written bare, so
+ *                 " user=admin" inside a message spoofed a field).
  *   enc_clf       Combined Log Format, as Apache's ap_escape_logitem: " and \
  *                 backslash-escaped, control bytes as \n \r \t or \xHH; in
  *                 the unquoted positions (ip, method) a space is \x20 too.
@@ -482,8 +483,13 @@ static int emit_text_to(FILE *out, const char *level_str, const char *event,
     }
     strbuf_append(&b, "] ");
 
+    /* 121.41 (3): the message is a logfmt field, msg=..., quoted by the same
+     * rule as every value.  It used to be written bare, so a message holding
+     * " user=admin" read as a user field it was not (owner decision
+     * 2026-10-01 §3.2). */
     char *m = redact_value(msg ? msg : "", 0);
-    enc_ctl(&b, m ? m : "", 0, 0);
+    strbuf_append(&b, "msg=");
+    enc_text(&b, m ? m : "");
     free(m);
     if (event) {
         strbuf_append(&b, " event=");
@@ -1175,9 +1181,14 @@ int tk_access_log_set_format(const char *fmt)
     }
     /* 127.191: an unknown format used to be ignored silently, so a typo
      * ("jsno") left the log in combined format with nothing to say why. */
-    fprintf(stderr, "log.accessformat: unknown format \"%s\" "
-                    "(expected \"combined\" or \"json\"); format unchanged\n",
-            fmt ? fmt : "(null)");
+    /* 121.41 (3): the name is config-sourced; escape it like a log field so
+     * it cannot write a forged line to stderr. */
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "log.accessformat: unknown format ");
+    if (fmt) { strbuf_putc(&b, '"'); enc_ctl(&b, fmt, 1, 0); strbuf_putc(&b, '"'); }
+    else     strbuf_append(&b, "(null)");
+    strbuf_append(&b, " (expected \"combined\" or \"json\"); format unchanged\n");
+    write_line(stderr, &b);
     return -1;
 }
 

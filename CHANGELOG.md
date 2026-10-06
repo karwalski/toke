@@ -12,6 +12,17 @@ may no longer compile.
 
 ---
 
+## Unreleased
+
+### Breaking changes (with migration)
+
+| # | Change | Story | Migration |
+|---|---|---|---|
+| 1 | **`std.tls` clients verify the server by default.** `tls.connect` with `tls.tlsconfig`, a `$tlsconfig{...}` literal without a pin, or no configuration now checks the server's chain against the system trust store (`SSL_CERT_FILE`/`SSL_CERT_DIR` override it) and checks the host name (DNS name, or IP address for an address literal). A self-signed, expired, wrongly named or untrusted certificate now makes `tls.connect` return `0`; before, any certificate was accepted (audit-120 TLS-02). Pinned configurations (`tls.pinconfig`, `tls.mutualconfig`) are unchanged. `tlsconfig` gains a fifth field, `insecure`, which a literal may omit (it is `false`). An IP-address `host` is no longer sent as SNI. | 121.64 (owner decision 2026-10-01 §3.1) | Install the CA or point `SSL_CERT_FILE` at it; to trust one self-signed peer, pin it with `tls.pinconfig("";"";peercert)`; to keep the old unverified connection, say so: `tls.insecureconfig(cert;key)` (new). No caller in toke, toke-ooke or toke-website relied on the old behaviour. |
+| 2 | **Text-format log lines are logfmt.** The message is now the field `msg=`, quoted by the same rule as every value (quoted when empty or holding a space, `=`, `"`, `\` or a control byte, with `\"` `\\` `\n` `\r` `\t` `\xHH` escapes): `[INFO] msg="request received" request_id=abc123`. Before, the message was written bare, so a message holding ` user=admin` read as a `user` field. JSON-format logs and the access logs are unchanged. An unknown `log.accessformat` name is now echoed escaped. | 121.41 (3) (owner decision 2026-10-01 §3.2) | A reader of text logs that took everything after `[LEVEL] ` up to the first `key=` as the message should parse the `msg` field instead. |
+
+---
+
 ## 3.1.0 — loke's handoff, the typed standard library, and security fixes
 
 **Status: prepared on branch `release/3.1.0` (story 138.17). Not tagged, not

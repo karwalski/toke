@@ -8,6 +8,8 @@
  *   - TLS 1.3 only (SSL_CTX_set_min_proto_version TLS1_3_VERSION)
  *   - Mutual TLS (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
  *   - Certificate pinning (peer_cert_pem match on connect/accept)
+ *   - Client verification by default (121.64): chain against the default
+ *     trust store + host name, unless pinned or explicitly insecure
  *   - Per-connection thread dispatch in tls_listen
  *   - SHA-256 certificate fingerprinting (DER encoding)
  *   - 6-digit pairing codes (XOR-derived from local + peer fingerprints)
@@ -332,9 +334,21 @@ static SSL_CTX *build_ssl_ctx(int is_server, TlsConfig cfg)
         int verify_mode = SSL_VERIFY_PEER;
         if (cfg.require_mutual) verify_mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
         SSL_CTX_set_verify(ctx, verify_mode, NULL);
+    } else if (!is_server && !cfg.insecure) {
+        /* 121.64 (TLS-02): a client with no pin verifies the server by
+         * default -- chain against the default trust store (SSL_CERT_FILE /
+         * SSL_CERT_DIR override it, as in llm.c since 121.23), and the host
+         * name, which tls_connect sets on the SSL once it knows it.  This
+         * branch used to be SSL_VERIFY_NONE for every unpinned client, so
+         * tls.connect authenticated nothing unless the caller pinned. */
+        if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
+            SSL_CTX_free(ctx);
+            return NULL;
+        }
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
     } else if (!cfg.require_mutual) {
-        /* No pinning, no mutual TLS: skip server cert verification on client.
-         * This allows self-signed certs without a CA chain. */
+        /* A server that neither pins nor demands a client certificate, or a
+         * client that opted out with tls.insecureconfig: verify nothing. */
         SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
     }
 
@@ -720,9 +734,31 @@ TlsConnResult tls_connect(const char *host, int32_t port, TlsConfig cfg)
     if (!ssl) { close(fd); SSL_CTX_free(ctx); return result; }
 
     SSL_set_fd(ssl, fd);
-    SSL_set_tlsext_host_name(ssl, host); /* SNI */
 
-    if (SSL_connect(ssl) != 1) {
+    /* 121.64: the name the default (verifying) mode checks the certificate
+     * against.  A literal address is matched as an IP SAN and sent no SNI
+     * (RFC 6066 forbids an address there); a name is both. */
+    unsigned char ipbuf[16];
+    int is_ip = inet_pton(AF_INET, host, ipbuf) == 1 ||
+                inet_pton(AF_INET6, host, ipbuf) == 1;
+    int verifying = !(cfg.peer_cert_pem && *cfg.peer_cert_pem) && !cfg.insecure;
+    int named = 1;
+    if (!is_ip)
+        named = SSL_set_tlsext_host_name(ssl, host) == 1; /* SNI */
+    if (named && verifying)
+        named = is_ip
+            ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host) == 1
+            : SSL_set1_host(ssl, host) == 1;
+    if (!named) {
+        SSL_free(ssl);
+        close(fd);
+        SSL_CTX_free(ctx);
+        return result;
+    }
+
+    if (SSL_connect(ssl) != 1 ||
+        (verifying && SSL_get_verify_result(ssl) != X509_V_OK)) {
+        ERR_clear_error();
         SSL_free(ssl);
         close(fd);
         SSL_CTX_free(ctx);

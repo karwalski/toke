@@ -41,6 +41,9 @@ typedef struct {
     const char *key_pem;        /* local private key PEM  (may be NULL/empty) */
     const char *peer_cert_pem;  /* pin remote cert PEM    (NULL/empty = no pin) */
     int         require_mutual; /* 1 = demand client cert on server side */
+    int         insecure;       /* 1 = client skips chain + host-name checks
+                                 *     (121.64: explicit opt-out; ignored when a
+                                 *     peer is pinned, and on the server side) */
 } TlsConfig;
 
 /* -------------------------------------------------------------------------
@@ -75,6 +78,7 @@ typedef struct {
     const char *keypem;
     const char *peercertpem;
     int64_t     requiremutual;  /* bool */
+    int64_t     insecure;       /* bool; 121.64 */
 } TkTlsCfgRec;
 
 /* tki-record: tls.tlskeypair */
@@ -150,6 +154,13 @@ int tls_listen(int32_t port, TlsConfig cfg, TlsConnCallback cb);
  * tls.connect(host, port, cfg) -> ?(TlsConn)
  *
  * Opens a TCP connection to host:port and performs a TLS 1.3 handshake.
+ * Server authentication (121.64), in order:
+ *   - cfg.peer_cert_pem set: the server must present exactly that
+ *     certificate (pinning); no CA chain or host-name check.
+ *   - cfg.insecure set: nothing is checked (explicit opt-out).
+ *   - otherwise (the default): the chain must verify against the default
+ *     trust store (SSL_CERT_FILE / SSL_CERT_DIR override it) and the
+ *     certificate must name `host` (DNS name, or IP address for a literal).
  * Returns result.is_none == 0 and a valid conn on success.
  * Returns result.is_none == 1 on any failure.
  */
