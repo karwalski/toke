@@ -40,8 +40,13 @@ static F64Array decode_f64_array(int64_t arr) {
     int64_t *ptr = (int64_t *)(intptr_t)arr;
     int64_t count = ptr[-1];
     if (count <= 0) return fa;
-    /* The i64 values are bitcast f64s stored contiguously */
-    fa.data = (const double *)ptr;
+    /* The i64 slots hold bitcast f64s. Reading them through a double * is a
+     * strict-aliasing violation (cppcheck invalidPointerCast); memcpy is the
+     * defined way to reinterpret the bytes. The caller frees fa.data. */
+    double *copy = (double *)malloc((size_t)count * sizeof(double));
+    if (!copy) return fa;
+    memcpy(copy, ptr, (size_t)count * sizeof(double));
+    fa.data = copy;
     fa.len  = (uint64_t)count;
     return fa;
 }
@@ -60,33 +65,45 @@ static F64Array decode_f64_array(int64_t arr) {
  */
 int64_t tk_math_min_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_min(fa));
+    double r = math_min(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 int64_t tk_math_max_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_max(fa));
+    double r = math_max(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 int64_t tk_math_mean_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_mean(fa));
+    double r = math_mean(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 int64_t tk_math_median_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_median(fa));
+    double r = math_median(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 int64_t tk_math_percentile_w(int64_t arr, int64_t p) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_percentile(fa, i64_to_f64(p)));
+    double r = math_percentile(fa, i64_to_f64(p));
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 int64_t tk_math_linreg_w(int64_t xs, int64_t ys) {
     F64Array fxs = decode_f64_array(xs);
     F64Array fys = decode_f64_array(ys);
     LinRegResult lr = math_linreg(fxs, fys);
+    free((void *)fxs.data);
+    free((void *)fys.data);
     /* Pack slope, intercept, r_squared into a heap block of 3 doubles */
     double *result = (double *)malloc(3 * sizeof(double));
     if (!result) return 0;
@@ -98,19 +115,25 @@ int64_t tk_math_linreg_w(int64_t xs, int64_t ys) {
 int64_t tk_math_sqrt_w(int64_t x) { return f64_to_i64(math_sqrt(i64_to_f64(x))); }
 int64_t tk_math_sum_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_sum(fa));
+    double r = math_sum(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 int64_t tk_math_stddev_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_stddev(fa));
+    double r = math_stddev(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 int64_t tk_math_ceil_w(int64_t v) { return f64_to_i64(math_ceil(i64_to_f64(v))); }
 int64_t tk_math_round_w(int64_t v) { return f64_to_i64(math_round(i64_to_f64(v), 0)); }
 
 int64_t tk_math_variance_w(int64_t arr) {
     F64Array fa = decode_f64_array(arr);
-    return f64_to_i64(math_variance(fa));
+    double r = math_variance(fa);
+    free((void *)fa.data);
+    return f64_to_i64(r);
 }
 
 /* math.ln(x) — natural logarithm */

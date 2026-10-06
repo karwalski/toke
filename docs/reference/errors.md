@@ -28,6 +28,11 @@ Each section's **Stage** row gives that value first; when another pass
 actually emits the code, the row says so in parentheses (for example E2030 is
 `parse`, emitted by name resolution). `make check-error-codes` gates both rows.
 
+The `source_line` field holds the text of the diagnostic's line. A line longer
+than 1023 bytes is cut on a UTF-8 character boundary, never inside a
+multi-byte character, and the record then also carries
+`"source_line_truncated": true`. The field is absent when the line is whole.
+
 ---
 
 ## Lexer Errors (E1xxx)
@@ -1228,6 +1233,10 @@ references it; if the symbol is itself a toke extern, the message also says
 where it was declared). The message also carries clang's first error text or
 the undefined symbol's name. A failure with no such trace — an unwritable
 output path, a missing C library — stays at line 0 (137.13).
+
+When clang itself could not be started (not installed, or not on `PATH`),
+the message says `clang not found on PATH` and names the remedy instead of
+reporting exit code 127: tkc runs clang to compile and link every program.
 
 ### E9004
 

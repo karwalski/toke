@@ -52,10 +52,12 @@ echo "------------------------------------------------------------------"
 # (src/stdlib_deps.c via --emit-deps), not hand lists that a stdlib
 # dependency change silently breaks.  The OOM build compiles http2.c itself
 # (strdup renamed), so its set leaves http2.c out.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" http)" \
+# 127.270: linked as cached objects, built with the flags the harness uses.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects http -- "${CF[@]}")" \
     || { fail "stdlib link set: see stderr above"; echo "C461: ${PASS} passed, ${FAIL} failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http2.c http)" \
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http2.c --cc "${CC}" --objects http -- "${CF[@]}")" \
     || { fail "stdlib link set: see stderr above"; echo "C461: ${PASS} passed, ${FAIL} failed"; exit 1; }
 LINK_OOM=(); while IFS= read -r l; do LINK_OOM+=("$l"); done <<< "${LINKSET}"
 
@@ -144,7 +146,7 @@ int main(void) {
 }
 EOF
 
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
+if ! "${CC}" "${CF[@]}" \
         -o "${WORK}/h" "${WORK}/h.c" \
         "${LINK[@]}" -lz -lpthread -lm >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
@@ -196,7 +198,7 @@ int main(void) {
 EOF
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -Dstrdup=h3_strdup \
         -c -o "${WORK}/http2_oom.o" "${S}/http2.c" >"${WORK}/oom.cc" 2>&1 \
-   || ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
+   || ! "${CC}" "${CF[@]}" \
         -o "${WORK}/oom" "${WORK}/oom.c" "${WORK}/http2_oom.o" \
         "${LINK_OOM[@]}" -lz -lpthread -lm >>"${WORK}/oom.cc" 2>&1; then
     fail "oom build: $(grep -a -m3 error "${WORK}/oom.cc" | head -c 400)"

@@ -17,6 +17,11 @@
 # arm of a suite that goes on to run the rest) followed within six lines by
 # `exit` with a non-zero status.
 #
+# EXCEPT exit 77, the runner's PLATFORM skip (PR #1, f21f7432): a suite that
+# cannot run on this OS at all (C033 off macOS) prints SKIP and exits 77, and
+# scripts/conform_isolated.sh reports it as SKIP by name -- never as a
+# failure, even under TKC_CONFORM_NO_SKIP=1.  77 is the protocol, not a FAIL.
+#
 # Negative control: C212_DIR=<main's test/conform> -- 97 offenders.
 #
 # Story: 127.219 (item 3)
@@ -30,8 +35,9 @@ n=0
 for f in "${DIR}"/*.sh; do
     hits="$(awk '
         /echo "SKIP/ && !/CONFORM-SKIP/ && !/echo "  +SKIP/ {
-            if ($0 ~ /echo "SKIP.*(^|[;{ ])exit [1-9]/) { printf "%d: %s\n", NR, $0; s = 0; next }
+            if ($0 ~ /echo "SKIP.*(^|[;{ ])exit [1-9]/ && $0 !~ /exit 77([^0-9]|$)/) { printf "%d: %s\n", NR, $0; s = 0; next }
             s = NR; l = $0; next }
+        s && NR <= s + 6 && /(^|[;{ ])exit 77([^0-9]|$)/ { s = 0 }
         s && NR <= s + 6 && /(^|[;{ ])exit [1-9]/ { printf "%d: %s\n", s, l; s = 0 }
         s && NR > s + 6 { s = 0 }' "${f}")"
     if [ -n "${hits}" ]; then

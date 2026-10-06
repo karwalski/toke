@@ -183,12 +183,17 @@ void diag_set_source(const char *src, size_t len) { s_source_buf = src; s_source
  * so every consumer must write the line by length.  Before this the JSON
  * source_line stopped at the NUL — the line of the very byte W1021 reports
  * was cut short just before it.
+ *
+ * 127.269: a line longer than the buffer is cut on a UTF-8 character
+ * boundary and *truncated is set.  A cut at a fixed byte count could split a
+ * multi-byte sequence, and the JSON record then carried invalid UTF-8.
  */
 static int
 extract_source_line(int byte_offset, int line, char *buf, size_t buf_size,
-                    size_t *out_len)
+                    size_t *out_len, int *truncated)
 {
     *out_len = 0;
+    *truncated = 0;
     if (!s_source_buf || s_source_len == 0 || byte_offset < 0 || buf_size == 0) {
         if (buf_size > 0) buf[0] = '\0';
         return -1;
@@ -213,7 +218,17 @@ extract_source_line(int byte_offset, int line, char *buf, size_t buf_size,
     while (le < s_source_len && s_source_buf[le] != '\n' && s_source_buf[le] != '\r') ++le;
 
     size_t line_len = le - ls;
-    if (line_len >= buf_size) line_len = buf_size - 1;
+    if (line_len >= buf_size) {
+        line_len = buf_size - 1;
+        /* The first byte left out must not be a continuation byte
+         * (10xxxxxx): if it is, the cut is inside a sequence, so the
+         * sequence's lead and earlier continuation bytes go too.  At most
+         * three steps -- a UTF-8 sequence is at most four bytes. */
+        for (int k = 0; k < 3 && line_len > 0 &&
+                        ((unsigned char)s_source_buf[ls + line_len] & 0xC0) == 0x80; k++)
+            line_len--;
+        *truncated = 1;
+    }
     memcpy(buf, s_source_buf + ls, line_len);
     buf[line_len] = '\0';
     *out_len = line_len;
@@ -422,10 +437,13 @@ emit_json(DiagSeverity sev, int code,
     {
         char sl_buf[1024];
         size_t sl_len;
-        if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf), &sl_len) == 0) {
+        int sl_cut;
+        if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf), &sl_len, &sl_cut) == 0) {
             fputs(",\"source_line\":\"", stderr);
             json_escape_n(stderr, sl_buf, sl_len);
             fputc('"', stderr);
+            /* 127.269: present only when the line was cut, like "fix". */
+            if (sl_cut) fputs(",\"source_line_truncated\":true", stderr);
         } else {
             fputs(",\"source_line\":\"\"", stderr);
         }
@@ -457,7 +475,8 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
 
     char sl_buf[1024];
     size_t sl_len;
-    if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf), &sl_len) == 0) {
+    int sl_cut;
+    if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf), &sl_len, &sl_cut) == 0) {
         /* Compute gutter width for the line number */
         char line_str[16];
         snprintf(line_str, sizeof(line_str), "%d", line);
@@ -474,6 +493,7 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
             unsigned char c = (unsigned char)sl_buf[i];
             fputc((c < 0x20 && c != '\t') || c == 0x7f ? '?' : (int)c, stderr);
         }
+        if (sl_cut) fputs(" ...", stderr);   /* 127.269: the line goes on */
         fputc('\n', stderr);
 
         /* Caret line: gutter + " | " + spaces up to col, then caret(s) */

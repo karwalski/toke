@@ -277,7 +277,12 @@ int main(void) {
 C
 # 127.268: the stdlib link sets come from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not hand lists.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" llm)" \
+# 127.270: the llm set is cached objects built with case_run's flags for
+# that case.  The mlx set stays sources: its build bakes in a per-run port.
+# shellcheck disable=SC2206
+CF_LLM=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -DTK_HAVE_OPENSSL ${OSSL_CFLAGS} -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --objects llm -- "${CF_LLM[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK_LLM=(); while IFS= read -r l; do LINK_LLM+=("$l"); done <<< "${LINKSET}"
 LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" mlx)" \

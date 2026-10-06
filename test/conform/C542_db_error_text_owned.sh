@@ -27,7 +27,10 @@ S="${C542_STDLIB:-${REPO_ROOT}/src/stdlib}"
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" db)" \
+SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects db -- "${CF[@]}")" \
     || { echo "FAIL: stdlib link set: see stderr above"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 PASS=0; FAIL=0
@@ -80,9 +83,8 @@ int main(void) {
     return fails ? 1 : 0;
 }
 C
-SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 # shellcheck disable=SC2086
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c "${LINK[@]}" -lsqlite3 > cc.log 2>&1; then
+if ! "${CC}" "${CF[@]}" -o t t.c "${LINK[@]}" -lsqlite3 > cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; FAIL=$((FAIL + 1))
 else
     ASAN_OPTIONS="detect_leaks=0:abort_on_error=0" ./t > t.out 2>&1

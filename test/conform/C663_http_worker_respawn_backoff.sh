@@ -147,13 +147,22 @@ scenario() {
 }
 
 # 127.268: the rest of std.http's link set (h.c #includes http.c itself)
-# comes from tkc's dependency table, not a hand list.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c http 2> "${WORK}/linkset.err")" \
-    || { fail "harness link set: $(head -c 400 "${WORK}/linkset.err")"; echo "Results: ${PASS} passed, ${FAIL} failed"; exit 1; }
-LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+# comes from tkc's dependency table, not a hand list.  127.270: as cached
+# objects, built with each harness build's own flags.
+# objs CF... -- fill LINK with the set compiled with those flags.
+objs() {
+    local LINKSET l
+    LINK=()
+    LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except http.c \
+            --cc "${CC}" --objects http -- "$@" 2> "${WORK}/linkset.err")" || return 1
+    while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+}
+VENDOR_TOML="${REPO_ROOT}/stdlib/vendor/tomlc99"
 
-if ${CC} -std=c99 -D_GNU_SOURCE -g -O1 -iquote "${S}" -I"${S}" -o "${WORK}/plain" \
-        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" "${WORK}/h.c" "${LINK[@]}" \
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 -iquote "${S}" -I"${S}" -I"${VENDOR_TOML}")
+if ! objs "${CF[@]}"; then
+    fail "plain: harness link set: $(head -c 400 "${WORK}/linkset.err")"
+elif ${CC} "${CF[@]}" -o "${WORK}/plain" "${WORK}/h.c" "${LINK[@]}" \
         -lz -lpthread -lm > "${WORK}/plain.cc" 2>&1; then
     scenario plain http "${WORK}/plain" plain
 else
@@ -164,14 +173,16 @@ OSSL_INC=""
 for d in /opt/homebrew/include /usr/local/include /usr/include; do
     [ -f "${d}/openssl/ssl.h" ] && { OSSL_INC="${d}"; break; }
 done
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 -DTK_HAVE_OPENSSL -Wno-deprecated-declarations
+    -I"${OSSL_INC}" -iquote "${S}" -I"${S}" -I"${VENDOR_TOML}")
 if [ -z "${OSSL_INC}" ] || ! command -v openssl >/dev/null 2>&1; then
     echo "  SKIP: TLS supervisor -- no OpenSSL headers or openssl CLI on this host"
 elif ! openssl req -x509 -newkey rsa:2048 -keyout "${WORK}/key.pem" -out "${WORK}/cert.pem" \
         -days 2 -nodes -subj "/CN=localhost" > /dev/null 2>&1; then
     fail "tls: could not generate a self-signed certificate"
-elif ${CC} -std=c99 -D_GNU_SOURCE -g -O1 -DTK_HAVE_OPENSSL -Wno-deprecated-declarations \
-        -I"${OSSL_INC}" -iquote "${S}" -I"${S}" -o "${WORK}/tls" "${WORK}/h.c" \
-        -I"${REPO_ROOT}/stdlib/vendor/tomlc99" "${LINK[@]}" \
+elif ! objs "${CF[@]}"; then
+    fail "tls: harness link set: $(head -c 400 "${WORK}/linkset.err")"
+elif ${CC} "${CF[@]}" -o "${WORK}/tls" "${WORK}/h.c" "${LINK[@]}" \
         -L"$(dirname "${OSSL_INC}")/lib" -lssl -lcrypto -lz -lpthread -lm > "${WORK}/tls.cc" 2>&1; then
     scenario tls https "${WORK}/tls" tls "${WORK}/cert.pem" "${WORK}/key.pem"
 else
