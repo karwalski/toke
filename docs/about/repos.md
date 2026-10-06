@@ -5,8 +5,8 @@ section: about
 order: 9
 ---
 
-The toke project is sixteen repositories under the
-[karwalski](https://github.com/karwalski) GitHub account: eleven public and active,
+The toke project is seventeen repositories under the
+[karwalski](https://github.com/karwalski) GitHub account: twelve public and active,
 one public but undescribed pending an owner decision, two private, and two archived.
 
 Several repositories are checked out locally under a different name from their
@@ -18,17 +18,31 @@ be told apart.
 
 | Repository | Role | Licence | Local directory |
 |---|---|---|---|
-| [toke](https://github.com/karwalski/toke) | Reference compiler (`tkc`), standard library, documentation, and the cross-repo story tracker. Root of trust. | Apache-2.0 | `toke` |
-| [toke-spec](https://github.com/karwalski/toke-spec) | The language specification: the normative v0.4 text, the EBNF and GBNF grammars, the tree-sitter grammar, and the RFC draft. | Apache-2.0 | `toke-spec` |
+| [toke](https://github.com/karwalski/toke) | Reference compiler (`tkc`), standard library, documentation, and the cross-repo story tracker. Root of trust. | Apache-2.0, except `spec/`, `stdlib/` and `src/stdlib/`, which are MIT (see below) | `toke` |
+| [toke-spec](https://github.com/karwalski/toke-spec) | The language specification: the normative v0.4 text, the EBNF and GBNF grammars, the tree-sitter grammar, and the RFC draft. | MIT | `toke-spec` |
 | [toke-corpus](https://github.com/karwalski/toke-corpus) | Training corpus: generation, audit and execution-verification pipeline, regen harness and ledgers. | Apache-2.0 | `toke-corpus` |
 | [toke-models](https://github.com/karwalski/toke-models) | Fine-tuning, evaluation and packaging for toke code-generation models (QLoRA, MLX). | Apache-2.0 | `toke-model` (singular) |
 | [toke-tokenizer](https://github.com/karwalski/toke-tokenizer) | BPE tokenizer training and evaluation, and the token-efficiency baselines. | Apache-2.0 | `toke-tokenizer` |
 | [toke-eval](https://github.com/karwalski/toke-eval) | Held-out benchmark and evaluation harness. Owns `benchmark/hidden_tests/`. | Apache-2.0 | `toke-eval` |
-| [toke-test-programs](https://github.com/karwalski/toke-test-programs) | Executable toke programs used as regression and conformance material for the compiler. | Apache-2.0 | `toke-test-programs` |
+| [toke-test-programs](https://github.com/karwalski/toke-test-programs) | Executable toke programs used as regression and conformance material for the compiler. | No licence file (owner to choose one) | `toke-test-programs` |
 | [toke-mcp](https://github.com/karwalski/toke-mcp) | MCP server, language server and VS Code extension. | MIT | `toke-mcp` |
 | [ooke](https://github.com/karwalski/ooke) | ooke, toke's web framework and static site generator, written in toke; it builds tokelang.dev; a toke binary on std.http serves it. | MIT | `toke-ooke` |
 | [loke](https://github.com/karwalski/loke) | loke, toke's local intelligence layer, written in toke. | MIT | `loke` |
 | [toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev, built with ooke and served by a toke binary on std.http. | MIT | `toke-website` |
+| [homebrew-toke](https://github.com/karwalski/homebrew-toke) | Homebrew tap for toke: the `tkc` and `ooke` formulae. Not installable yet: the formulae carry placeholder checksums until the release artefacts they download are published. | No licence file | `homebrew-toke` |
+
+### Licence boundary inside toke
+
+The `toke` repository is Apache-2.0 (`LICENSE`) with one boundary, recorded in
+[`LICENSING.md`](https://github.com/karwalski/toke/blob/main/LICENSING.md): the
+language specification (`spec/`) and the standard library (`stdlib/` and its C
+implementation in `src/stdlib/`) are MIT, so that anyone can implement the language
+or ship programs that statically link the standard library on the simplest terms.
+`spec/LICENSE` carries the MIT text for the specification; the MIT text for the
+standard library is still to be added to the tree.
+
+A repository marked "No licence file" has no `LICENSE` in it, so no licence has been
+granted for it yet.
 
 ooke and loke are toke sub-projects, not separate products — see
 [`docs/about/ecosystem.md`](/docs/about/ecosystem/).
@@ -56,13 +70,6 @@ Kept public for provenance; no longer developed.
 | Repository | State |
 |---|---|
 | [tkc](https://github.com/karwalski/tkc) | Public, with no description, no homepage, and no role in the map above. It holds an early copy of the compiler tree. It must be given a description or archived; until then it is not part of the project's published surface. |
-
-## Not published
-
-`homebrew-toke`, the Homebrew tap that would serve `brew tap karwalski/toke`,
-exists only as a local working copy. There is no `karwalski/homebrew-toke`
-repository on GitHub, so the tap cannot be tapped and the install instructions
-that name it do not yet work.
 
 ---
 

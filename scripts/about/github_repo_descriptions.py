@@ -37,7 +37,8 @@ BACK = "github.com/karwalski/toke"
 # appended to every repo but the main one, whose own URL that is.
 REPOS = [
     ("toke",
-     "Reference compiler (tkc), language specification and standard library. Apache-2.0.",
+     "Reference compiler (tkc), language specification and standard library. "
+     "Apache-2.0; spec/ and the standard library are MIT.",
      ["programming-language", "llm", "code-generation", "token-efficiency", "compiler"],
      False),
     ("toke-spec",
@@ -75,6 +76,9 @@ REPOS = [
     ("toke-web",
      "Source for tokelang.dev, built and served by ooke.",
      ["toke", "website"], True),
+    ("homebrew-toke",
+     "Homebrew tap for toke: the tkc and ooke formulae.",
+     ["toke", "homebrew"], True),
     ("toke-benchmark",
      "Archived (superseded by karwalski/toke-eval). Early benchmark material for toke, "
      "kept for provenance.",
