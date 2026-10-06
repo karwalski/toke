@@ -149,11 +149,19 @@ jobs:
         env:
           TK_LINT_REQUIRE_OPENSSL: 1
 
+      # PR #1 (30da90be): errors (always on), warnings, performance and
+      # portability fail the build. --enable=all also failed it on style
+      # opinions ("can be const") and on missingIncludeSystem, which fires on
+      # every system header, so no tree could pass; it never ran because
+      # make lint failed first. Vendored code (miniz, cmark, tomlc99) is not
+      # ours to change.
       - name: cppcheck
         run: |
-          cppcheck --enable=all \
+          cppcheck --enable=warning,performance,portability \
                    --error-exitcode=1 \
                    --inline-suppr \
+                   --suppress='*:*stdlib/vendor/*' \
+                   -j "$(nproc)" \
                    --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
                    src/
 
