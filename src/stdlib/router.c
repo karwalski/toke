@@ -707,6 +707,12 @@ const char *router_query_get(const char *query, const char *key)
 /* Convenience response constructors                                         */
 /* ----------------------------------------------------------------------- */
 
+size_t router_resp_body_len(TkRouteResp resp)
+{
+    if (!resp.body) return 0;
+    return resp.body_len ? resp.body_len : strlen(resp.body);
+}
+
 TkRouteResp router_resp_ok(const char *body, const char *ct)
 {
     TkRouteResp resp;
@@ -1021,7 +1027,9 @@ static void router_send_response(int fd, TkRouteResp resp)
     char header[512];
     const char *ct = resp.content_type ? resp.content_type : "text/plain";
     const char *bd = resp.body ? resp.body : "";
-    size_t bl = strlen(bd);
+    /* 121.88: a served file or a gzip stream holds 0x00 -- strlen() sent a
+     * binary file cut at its first NUL, with a Content-Length to match. */
+    size_t bl = router_resp_body_len(resp);
     int n = snprintf(header, sizeof(header),
                      "HTTP/1.1 %d OK\r\n"
                      "Content-Type: %s\r\n"
@@ -1252,6 +1260,7 @@ static int has_traversal(const char *path)
  * status, body (heap), and content_type must all be set.
  * nheaders/header_names/header_values cover additional headers. */
 static TkRouteResp static_resp_with_body(int status, char *body,
+                                          size_t body_len,
                                           const char *ct,
                                           const char **hnames,
                                           const char **hvals,
@@ -1261,6 +1270,7 @@ static TkRouteResp static_resp_with_body(int status, char *body,
     memset(&resp, 0, sizeof(resp));
     resp.status       = status;
     resp.body         = body;
+    resp.body_len     = body_len;   /* 121.88: the bytes read, NULs included */
     resp.content_type = ct;
     resp.header_names  = hnames;
     resp.header_values = hvals;
@@ -1460,7 +1470,7 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
             hnames[3] = "Content-Range";  hvals[3] = strdup(cr_val);
             hnames[4] = "Accept-Ranges";  hvals[4] = strdup("bytes");
 
-            return static_resp_with_body(206, part, mime, hnames, hvals, 5);
+            return static_resp_with_body(206, part, part_len, mime, hnames, hvals, 5);
         }
     }
 
@@ -1486,7 +1496,7 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
         return router_resp_status(500, "Internal Error");
     }
 
-    return static_resp_with_body(200, buf, mime, hnames, hvals, 4);
+    return static_resp_with_body(200, buf, total, mime, hnames, hvals, 4);
 }
 
 /* Per-prefix handler: the StaticCtx is embedded in a heap allocation
@@ -1582,17 +1592,20 @@ void router_static(TkRouter *r, const char *url_prefix, const char *dir_path)
 /* ----------------------------------------------------------------------- */
 
 /*
- * etag_fnv_local — FNV-1a 64-bit hash of a NUL-terminated string body,
- * formatted as W/"<16 hex digits>".
+ * etag_fnv_local — FNV-1a 64-bit hash of the len bytes of body, formatted
+ * as W/"<16 hex digits>".  121.88: every byte -- it hashed up to the first
+ * NUL, so two binary files agreeing before their first 0x00 shared an ETag
+ * and If-None-Match answered 304 for the wrong one.
  * Returns a heap-allocated string the caller must free, or NULL on OOM.
  */
-static char *etag_fnv_local(const char *body)
+static char *etag_fnv_local(const char *body, size_t len)
 {
     uint64_t hash = 14695981039346656037ULL;
     const uint64_t prime = 1099511628211ULL;
     const unsigned char *p = (const unsigned char *)(body ? body : "");
-    while (*p) {
-        hash ^= (uint64_t)*p++;
+    if (!body) len = 0;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint64_t)p[i];
         hash *= prime;
     }
     char *out = malloc(24);
@@ -1689,8 +1702,7 @@ static TkRouteResp mw_etag(TkRouteCtx ctx, TkRouteHandler next)
 
     if (resp.status < 200 || resp.status >= 300) return resp;
 
-    const char *body = resp.body ? resp.body : "";
-    char *etag = etag_fnv_local(body);
+    char *etag = etag_fnv_local(resp.body, router_resp_body_len(resp));
     if (!etag) return resp; /* OOM: skip ETag rather than crash */
 
     const char *inm = ctx_req_header(ctx, "If-None-Match");
@@ -1803,7 +1815,7 @@ static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
 
     /* Only compress 2xx responses with a non-empty body. */
     if (resp.status < 200 || resp.status >= 300) return resp;
-    if (!resp.body || resp.body[0] == '\0')       return resp;
+    if (router_resp_body_len(resp) == 0)          return resp;
 
     /* Check Accept-Encoding header for "gzip". */
     const char *ae = ctx_req_header(ctx, "Accept-Encoding");
@@ -1813,7 +1825,7 @@ static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
     if (gzip_skip_type(resp.content_type)) return resp;
 
     /* Skip bodies below the configured minimum size. */
-    size_t bodylen = strlen(resp.body);
+    size_t bodylen = router_resp_body_len(resp);   /* 121.88 */
     if (bodylen < gzip_min_size) return resp;
 
     /* Compress. */
@@ -1846,6 +1858,9 @@ static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
     new_vals[nh + 1]  = "Accept-Encoding";
 
     resp.body          = compressed;
+    /* 121.88: a gzip stream always holds 0x00 (its FLG byte, at offset 3):
+     * without its length a caller could recover 3 bytes of it. */
+    resp.body_len      = compressed_len;
     resp.header_names  = new_names;
     resp.header_values = new_vals;
     resp.nheaders      = nh + 2;

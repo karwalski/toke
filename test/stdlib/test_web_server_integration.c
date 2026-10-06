@@ -116,6 +116,7 @@ static TkRouteResp handler_cookie_echo(TkRouteCtx ctx)
     hvals_buf[0]  = g_set_cookie_hdr;
 
     TkRouteResp resp;
+    memset(&resp, 0, sizeof resp);   /* 121.88: body_len 0 = strlen(body) */
     resp.status       = 200;
     resp.body         = "ok";
     resp.content_type = "text/plain";

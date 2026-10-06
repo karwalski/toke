@@ -40,7 +40,22 @@ typedef struct {
     const char **header_names;
     const char **header_values;
     uint64_t     nheaders;
+    /* 121.88: the number of bytes in body, which may hold 0x00 (a served
+     * binary file, a gzip stream).  0 means strlen(body), so a response
+     * built from a string needs nothing here -- but a TkRouteResp must be
+     * zero-initialised (memset, `= {0}`, or a router_resp_* constructor),
+     * as every one built in the stdlib is.  Read it with
+     * router_resp_body_len(). */
+    size_t       body_len;
 } TkRouteResp;
+
+/* Defined while TkRouteResp carries body_len (121.88). */
+#define TK_ROUTER_RESP_BODY_LEN 1
+
+/* router_resp_body_len — the bytes in resp.body: body_len when set, else
+ * strlen(body), 0 for no body.  Everything that writes, compresses or hashes
+ * a response body sizes it with this, never strlen. */
+size_t router_resp_body_len(TkRouteResp resp);
 
 /* Handler function pointer */
 typedef TkRouteResp (*TkRouteHandler)(TkRouteCtx ctx);
@@ -128,7 +143,8 @@ void router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
  * dir_path.  rel_path is the URL path component after stripping the prefix
  * (e.g. "style.css").  if_none_match and range_header may be NULL.
  * Returns a TkRouteResp with status 200/206/304/403/404/416.
- * When status==200/206, resp.body is a heap-allocated buffer the caller must free.
+ * When status==200/206, resp.body is a heap-allocated buffer the caller must free,
+ * resp.body_len its length in bytes (the file may hold 0x00: 121.88), and
  * resp.header_values[0] (the ETag string) is also heap-allocated. */
 TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
                                  const char *if_none_match,
@@ -166,7 +182,8 @@ void router_ws(TkRouter *r, const char *pattern,
  * Accept-Encoding: gzip.  Skips already-compressed MIME types
  * (image, video, audio, application/octet-stream subtypes).
  * Sets Content-Encoding: gzip and Vary: Accept-Encoding on
- * compressed responses. */
+ * compressed responses, whose body is the gzip stream with its length in
+ * body_len (121.88). */
 void router_use_gzip(TkRouter *r, size_t min_size);
 
 /* ── Access logging middleware (Story 27.1.11): removed 2026-09-30 (121.41

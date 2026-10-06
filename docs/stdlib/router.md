@@ -59,6 +59,19 @@ starts, and that address's traffic keeps going to the first server while
 every other address's goes to the new one. On Linux the bind fails either
 way.
 
+### Response bodies are bytes
+
+A response body leaves the router whole, 0x00 bytes included: a binary file
+served by the C API's static serving (`router_static`, `router_static_serve`),
+a byte range of one, and a body the gzip middleware (`router_use_gzip`) has
+compressed. Their length travels in `TkRouteResp.body_len` (0 means the body
+is a string, sized by its terminator), and the writer, the gzip middleware
+and the ETag middleware size the body with `router_resp_body_len()`. Until
+story 121.88 all of them used `strlen`, so a PNG went out as its 8-byte
+signature, a gzip stream could not be read past its third byte, and two
+binary files that agreed before their first 0x00 shared an ETag. A C caller
+building a `TkRouteResp` by hand must zero-initialise it.
+
 ## Usage
 
 ```toke
