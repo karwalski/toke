@@ -1129,8 +1129,6 @@ t=$r{a:i64};
 f=main(): i64 { let x=mut.$r{a:1}; x.a==9; <x.a };
 ```
 
-## Arena Errors (E5xxx)
-
 ### E4075
 
 **Regex pattern literal is not in the supported regex language**
