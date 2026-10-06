@@ -62,11 +62,12 @@ int main(int argc, char **argv) {
     return 0;
 }
 C
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except log.c log)" \
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except log.c --cc "${CC}" --objects log -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set"; echo "C709: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all \
-        -iquote "${S}" -o "${WORK}/drv" "${WORK}/drv.c" "${LOG_C}" "${LINK[@]}" -lz -lm -lpthread \
+if ! "${CC}" "${CF[@]}" -o "${WORK}/drv" "${WORK}/drv.c" "${LOG_C}" "${LINK[@]}" -lz -lm -lpthread \
         >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: build: $(grep -a -m3 -E 'error|Undefined|undefined' "${WORK}/cc.log" | head -c 500)"
     echo "C709: 0 passed, 1 failed"; exit 1
