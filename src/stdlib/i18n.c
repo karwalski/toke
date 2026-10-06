@@ -235,6 +235,21 @@ const char *i18n_get(I18nBundle bundle, const char *key) {
     return copy;
 }
 
+/* grow_to — make *buf hold at least need bytes, doubling *cap until it does.
+ * One doubling was not enough: a substituted value longer than the buffer
+ * overflowed it. On failure the buffer is freed and 0 returned, so the
+ * caller can fall back exactly as it does when the first malloc fails. */
+static int grow_to(char **buf, size_t *cap, size_t need)
+{
+    if (need <= *cap) return 1;
+    size_t ncap = *cap;
+    while (ncap < need) ncap *= 2;
+    char *nb = (char *)realloc(*buf, ncap);
+    if (!nb) { free(*buf); *buf = NULL; return 0; }
+    *buf = nb; *cap = ncap;
+    return 1;
+}
+
 const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
     const char *tmpl = find_string(bundle.data, key);
     if (!tmpl) {
@@ -288,10 +303,8 @@ const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
                 for (int i = 0; i < nargs; i++) {
                     if (arg_list[i].nlen == plen &&
                         strncmp(arg_list[i].name, ps, plen) == 0) {
-                        if (pos + arg_list[i].vlen >= cap) {
-                            cap *= 2;
-                            out = (char *)realloc(out, cap);
-                        }
+                        if (!grow_to(&out, &cap, pos + arg_list[i].vlen + 1))
+                            return tmpl;
                         memcpy(out + pos, arg_list[i].val, arg_list[i].vlen);
                         pos += arg_list[i].vlen;
                         found = 1;
@@ -301,7 +314,7 @@ const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
                 if (!found) {
                     /* Keep placeholder as-is */
                     size_t chunk = plen + 2;
-                    if (pos + chunk >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
+                    if (!grow_to(&out, &cap, pos + chunk + 1)) return tmpl;
                     memcpy(out + pos, tp, chunk);
                     pos += chunk;
                 }
@@ -309,7 +322,7 @@ const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
                 continue;
             }
         }
-        if (pos + 1 >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
+        if (!grow_to(&out, &cap, pos + 2)) return tmpl;
         out[pos++] = *tp++;
     }
     out[pos] = '\0';
