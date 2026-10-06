@@ -143,6 +143,7 @@ ml_random_forest_fit gap        # no wrapper, no .tki entry (found 135.19: hidde
 ml_random_forest_predict gap        # no wrapper, no .tki entry
 ml_standardize gap        # no wrapper, no .tki entry
 ml_train_test_split gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
+ocr_lasterr_kind internal   # C-API kind token; the toke surface is the $ocrerr variant since ocr.lasterrkind was retired (127.246); C033's C harness reads it
 process_stdin_write gap        # no wrapper, no .tki entry
 process_timeout gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 router_dispatch_ex internal   # server-loop plumbing: extended dispatch used by the serve loop (found 135.19: hidden by the comment-blind regex)
