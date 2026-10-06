@@ -1202,7 +1202,8 @@ static StrArray csv_reader_next_strict(TkCsvReader *r)
     }
 
     RowBuf   row;
-    uint64_t start = r->phys_line, errline = r->phys_line;
+    uint64_t start = r->phys_line;
+    uint64_t errline = start;   /* both start at the current line */
     RowParse rc = parse_row_ex(r->data, r->len, &r->pos, &row,
                                r->sep, r->quote_char, 0, 1,
                                &r->phys_line, &start, &errline);
