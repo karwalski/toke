@@ -92,12 +92,6 @@
     },
     {
       "kind": "func",
-      "name": "xlsx.lasterr",
-      "params": [],
-      "return": "str"
-    },
-    {
-      "kind": "func",
       "name": "xlsx.open",
       "params": [
         "@(byte)"

@@ -96,7 +96,7 @@ An opaque handle. Release it with `pdf.close`; everything derived from it is dan
 
 The error side of every fallible call: `$baddoc`, `$encrypted`, `$nopage`, `$toolarge`, `$unsupported`, `$io`.
 
-The `$err` arm binds the `$pdferr`, so match on the variant to tell which one it was -- `mt e {$encrypted:m …}` is how a password-protected statement is told apart from one with nothing in it. Every variant carries the reader's message, which is prose for a human and is not stable. Until 127.241 the arm bound nothing and **`pdf.lasterrkind`** was the only way to ask; it still answers, with the same closed set of tokens.
+The `$err` arm binds the `$pdferr`, so match on the variant to tell which one it was -- `mt e {$encrypted:m …}` is how a password-protected statement is told apart from one with nothing in it. Every variant carries the reader's message, which is prose for a human and is not stable. Until 127.241 the arm bound nothing and `pdf.lasterr`/`pdf.lasterrkind` were the only way to ask; those accessors duplicated the payload and were retired by 127.246.
 
 ## Functions
 
@@ -141,14 +141,9 @@ This is what routes a document to OCR or away from it.
 
 Releases the document and every object in it.
 
-### pdf.lasterr(): $str
-### pdf.lasterrkind(): $str
-
-Why the most recent `pdf.*` call failed. `lasterrkind` returns one of `none`, `baddoc`, `encrypted`, `nopage`, `toolarge`, `unsupported`, `io` -- switch on that. `lasterr` is the human-readable sentence.
-
 ## Encrypted documents
 
-An encrypted document is **refused**, with kind `encrypted`. It is not decrypted, even when the user password is empty and a viewer would open it without asking: "this file is protected" is the fact the caller needs, and silently opening a protected document is not a decision this module should make on anyone's behalf.
+An encrypted document is **refused**, with `$encrypted`. It is not decrypted, even when the user password is empty and a viewer would open it without asking: "this file is protected" is the fact the caller needs, and silently opening a protected document is not a decision this module should make on anyone's behalf.
 
 ## How objects are found
 
@@ -197,11 +192,16 @@ f=eachrun(runs:@($textrun)):i64{
   <0
 };
 
+(* Every $pdferr variant carries the reader's message. *)
+f=why(e:$pdferr):$str{
+  <mt e {$baddoc:m m;$encrypted:m m;$nopage:m m;$toolarge:m m;$unsupported:m m;$io:m m}
+};
+
 f=page(doc:$pdfdoc;n:i64):i64{
   let r=p.runs(doc;n);
   mt r {
     $ok:runs eachrun(runs);
-    $err:e io.println(s.concat("page failed: ";p.lasterr()))
+    $err:e io.println(s.concat("page failed: ";why(e)))
   };
   <0
 };
@@ -223,18 +223,20 @@ f=main():i64{
   let d=p.openfile("statement.pdf");
   mt d {
     $ok:doc dump(doc);
-    $err:e report()
+    $err:e report(e)
   };
   <0
 };
 
-(* The kind is what to switch on; the message is for a human. *)
-f=report():i64{
-  let k=p.lasterrkind();
-  if(s.eq(k;"encrypted")){
-    io.println("this statement is password protected")
-  }el{
-    io.println(s.concat(s.concat("rejected (";k);s.concat("): ";p.lasterr())))
+(* The variant is what to switch on; the message is for a human. *)
+f=report(e:$pdferr):i64{
+  mt e {
+    $encrypted:m io.println("this statement is password protected");
+    $baddoc:m io.println(s.concat("rejected: ";m));
+    $nopage:m io.println(s.concat("rejected: ";m));
+    $toolarge:m io.println(s.concat("rejected: ";m));
+    $unsupported:m io.println(s.concat("rejected: ";m));
+    $io:m io.println(s.concat("rejected: ";m))
   };
   <0
 };

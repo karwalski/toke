@@ -437,6 +437,12 @@ f=fix(name:str):str{
    .ref, .row and .col are here for trap 3 as well: a parser that counted
    cells left to right would report the right VALUE at the wrong REFERENCE,
    and this line shows both. *)
+(* The reason a call failed: every $xlsxerr variant carries the message
+   (xlsx.lasterr() was retired by 127.246). *)
+f=xwhy(e:$xlsxerr):str{
+  <mt e {$badworkbook:m m;$badpart:m m;$nosheet:m m;$toolarge:m m;$io:m m}
+};
+
 f=cellline(c:$xlsxcell):str{
   <s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(
     c.ref;"|");s.fromint(c.row));"|");s.fromint(c.col));"|");c.celltype);"|");c.raw);"|");c.value)
@@ -460,7 +466,7 @@ f=dumpsheet(prefix:str;file:str;sheet:str):i64{
   let w=x.openfile(fix(file));
   mt w {
     $ok:b dumpbook(prefix;b;sheet);
-    $err:e io.println(s.concat(s.concat(prefix;"-open=ERR|");x.lasterr()))
+    $err:e io.println(s.concat(s.concat(prefix;"-open=ERR|");xwhy(e)))
   };
   <0
 };
@@ -477,7 +483,7 @@ f=dumpbook(prefix:str;b:$xlsxbook;sheet:str):i64{
   let r=x.rows(b;sheet);
   mt r {
     $ok:rows dumprows(prefix;rows);
-    $err:e io.println(s.concat(s.concat(prefix;"-rows=ERR|");x.lasterr()))
+    $err:e io.println(s.concat(s.concat(prefix;"-rows=ERR|");xwhy(e)))
   };
   x.close(b);
   <0
@@ -503,7 +509,7 @@ f=mustreject(label:str;file:str):i64{
   let w=x.openfile(fix(file));
   mt w {
     $ok:b io.println(s.concat(s.concat("reject-";label);"=ACCEPTED"));
-    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");x.lasterr()))
+    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");xwhy(e)))
   };
   <0
 };
@@ -521,7 +527,7 @@ f=badsheetbody(b:$xlsxbook):i64{
   let r=x.rows(b;"NoSuchSheet");
   mt r {
     $ok:rows io.println(s.concat("badsheet=ACCEPTED|";s.fromint(rows.len)));
-    $err:e io.println(s.concat("badsheet=";x.lasterr()))
+    $err:e io.println(s.concat("badsheet=";xwhy(e)))
   };
   x.close(b);
   <0

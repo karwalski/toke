@@ -42,8 +42,6 @@
     {"kind": "func", "name": "pdf.runs",        "params": ["pdfdoc", "i64"], "return": "@(textrun)!pdferr"},
     {"kind": "func", "name": "pdf.pagetext",    "params": ["pdfdoc", "i64"], "return": "str!pdferr"},
     {"kind": "func", "name": "pdf.hastext",     "params": ["pdfdoc", "i64"], "return": "bool"},
-    {"kind": "func", "name": "pdf.close",       "params": ["pdfdoc"],        "return": "void"},
-    {"kind": "func", "name": "pdf.lasterr",     "params": [],                "return": "str"},
-    {"kind": "func", "name": "pdf.lasterrkind", "params": [],                "return": "str"}
+    {"kind": "func", "name": "pdf.close",       "params": ["pdfdoc"],        "return": "void"}
   ]
 }

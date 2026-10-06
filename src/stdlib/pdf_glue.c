@@ -63,8 +63,9 @@
  * (`mt e {$encrypted:m …}`) without matching prose.  The tag is the index of
  * pdf_lasterr_kind()'s token in the .tki's variant order; the message is
  * pdf.c's, copied out of its static buffer by tk_err_msg so a let-kept
- * error keeps it.  Until 127.241 these returned a bare 0 and bound nil;
- * pdf.lasterr()/lasterrkind() still exist and still agree. */
+ * error keeps it.  Until 127.241 these returned a bare 0 and bound nil.
+ * The pdf.lasterr()/lasterrkind() accessors that duplicated this payload
+ * were retired by 127.246 (owner decision 2026-10-01 §3.3). */
 static const char *const k_pdf_variants[] = {
     TK_PDF_E_BADDOC, TK_PDF_E_ENCRYPTED, TK_PDF_E_NOPAGE,
     TK_PDF_E_TOOLARGE, TK_PDF_E_UNSUPPORTED, TK_PDF_E_IO
@@ -115,9 +116,9 @@ static int64_t f64_to_i64(double d)
 /* pdf.open(data:@(byte)) -> $pdfdoc!$pdferr
  *
  * 0 on any rejection, which is what the compiled error-union ABI lowers the
- * `$err` arm to.  pdf.lasterrkind() carries WHICH rejection — in particular
- * "encrypted", which story 135.3 requires be distinguishable from "no
- * text". */
+ * `$err` arm to.  The arm's $pdferr variant carries WHICH rejection — in
+ * particular $encrypted, which story 135.3 requires be distinguishable from
+ * "no text". */
 int64_t tk_pdf_open_w(int64_t data)
 {
     uint8_t *buf = NULL;
@@ -254,26 +255,4 @@ int64_t tk_pdf_close_w(int64_t handle)
 {
     pdf_close((TkPdfDoc *)(intptr_t)handle);
     return 0;
-}
-
-/* pdf.lasterr() -> str — prose, for a human. */
-int64_t tk_pdf_lasterr_w(void)
-{
-    const char *m = pdf_lasterr();
-    return (int64_t)(intptr_t)(m ? m : "");
-}
-
-/* pdf.lasterrkind() -> str — one of "none", "baddoc", "encrypted",
- * "nopage", "toolarge", "unsupported", "io".
- *
- * Separate from the message on purpose.  The error-union ABI binds nothing
- * in the `$err` arm, and story 135.3 requires an encrypted document to be
- * DISTINGUISHABLE rather than merely reported: a caller that has to
- * substring-match a prose sentence to decide whether to prompt for a
- * password is one rewording away from silently treating a protected
- * statement as an empty one. */
-int64_t tk_pdf_lasterrkind_w(void)
-{
-    const char *k = pdf_lasterr_kind();
-    return (int64_t)(intptr_t)(k ? k : "none");
 }

@@ -64,7 +64,8 @@ static int64_t dup_str(const char *s)
  * layout — the tag is xlsx_lasterr_kind() (xlsx.h), the msg xlsx_lasterr(),
  * which is always a string literal (zip's, passed through, included) — and a
  * success stores 0, so the $err arm binds the variant.  Until 127.241 these
- * returned a bare 0 and bound nil; xlsx.lasterr() still exists and agrees. */
+ * returned a bare 0 and bound nil.  xlsx.lasterr(), which duplicated this
+ * payload, was retired by 127.246 (owner decision 2026-10-01 §3.3). */
 static int64_t xlsx_raise(TkXlsxErrKind kind, const char *msg)
 {
     int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
@@ -241,11 +242,4 @@ int64_t tk_xlsx_close_w(int64_t handle)
 {
     xlsx_close((TkXlsxBook *)(intptr_t)handle);
     return 0;
-}
-
-/* xlsx.lasterr() -> str — why the last xlsx call failed; "" if none has. */
-int64_t tk_xlsx_lasterr_w(void)
-{
-    const char *m = xlsx_lasterr();
-    return (int64_t)(intptr_t)(m ? m : "");
 }

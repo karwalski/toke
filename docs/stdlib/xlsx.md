@@ -99,6 +99,8 @@ It is spelled `celltype` and not `kind` for a reason worth knowing: a `.tki` typ
 
 The error side of every fallible call: `$badworkbook`, `$badpart`, `$nosheet`, `$toolarge`, `$io`. The `$err` arm binds it (127.241): the variant is the class of failure -- a cap is `$toolarge` whether the workbook's own or the archive's fired, and a part that is missing or malformed is `$badpart` -- and every variant carries the reason as a `$str`.
 
+A rejection that came from the archive rather than the workbook is passed through **verbatim from std.zip**, so the rule that fired is still the one reported. `xlsx.lasterr()`, which duplicated that message from before 127.241 gave the arm a payload, was retired by 127.246, as `zip.lasterr` was by 127.102c.
+
 ## Functions
 
 ### xlsx.open(data: @(byte)): $xlsxbook!$xlsxerr
@@ -139,12 +141,6 @@ Exposed because the leap-year rule is the part of this module most likely to be 
 
 Releases the workbook and its archive.
 
-### xlsx.lasterr(): $str
-
-Why the most recent `xlsx.*` call failed, or `""` if none has.
-
-The same message the `$err` arm's `$xlsxerr` carries. It was the only way to read the reason until 127.241, when the arm began binding a payload; it still agrees with it. A rejection that came from the archive rather than the workbook is passed through **verbatim from std.zip**, so the rule that fired is still the one reported. (`zip.lasterr` itself was retired by 127.102c.)
-
 ## Usage Example
 
 ```toke
@@ -164,13 +160,18 @@ f=showrow(row:@($xlsxcell)):i64{
   <0
 };
 
+(* Every $xlsxerr variant carries the message. *)
+f=why(e:$xlsxerr):$str{
+  <mt e {$badworkbook:m m;$badpart:m m;$nosheet:m m;$toolarge:m m;$io:m m}
+};
+
 f=dump(b:$xlsxbook):i64{
   let names=x.sheets(b);
   io.println(s.concat("date system: ";x.datesystem(b)));
   let r=x.rows(b;names.get(0));
   mt r {
     $ok:rows eachrow(rows);
-    $err:e io.println(s.concat("sheet failed: ";x.lasterr()))
+    $err:e io.println(s.concat("sheet failed: ";why(e)))
   };
   x.close(b);
   <0
@@ -187,7 +188,7 @@ f=main():i64{
   let w=x.openfile("statement.xlsx");
   mt w {
     $ok:b dump(b);
-    $err:e io.println(s.concat("rejected: ";x.lasterr()))
+    $err:e io.println(s.concat("rejected: ";why(e)))
   };
   <0
 };
