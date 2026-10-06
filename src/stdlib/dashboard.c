@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * dashboard.c — Implementation of the std.dashboard standard library module.
  *

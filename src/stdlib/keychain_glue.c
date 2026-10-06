@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * keychain_glue.c — i64-ABI wrappers for std.keychain module.
  *

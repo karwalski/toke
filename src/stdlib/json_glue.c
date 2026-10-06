@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * json_glue.c — i64-ABI wrappers for std.json module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * cache.c — HTTP response cache for std.http.
  *

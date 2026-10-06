@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * infer_glue.c — i64-ABI wrappers for std.infer module.
  *

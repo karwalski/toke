@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * infer.c — Implementation of the std.infer standard library module.
  *

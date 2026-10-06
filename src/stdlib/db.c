@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* db.c — std.db implementation (SQLite3 backend). Link: -lsqlite3
  * Story: 1.3.3  Branch: feature/stdlib-db */
 

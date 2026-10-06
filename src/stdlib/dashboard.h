@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef TK_STDLIB_DASHBOARD_H
 #define TK_STDLIB_DASHBOARD_H
 

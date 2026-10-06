@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * sys.c — std.sys standard library module.
  *

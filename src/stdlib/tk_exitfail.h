@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_exitfail.h — "this process has failed": a non-zero exit status that a
  * stdlib call can record for later (stories 127.231 item 2, 135.22).

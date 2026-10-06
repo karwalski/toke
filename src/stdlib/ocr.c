@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * ocr.c — Implementation of the std.ocr standard library module (story 135.6).
  *

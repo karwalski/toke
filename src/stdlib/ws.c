@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * ws.c — Implementation of the std.ws standard library module.
  *

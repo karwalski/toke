@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * router_glue.c — toke `_w` ABI wrappers for std.router.
  *

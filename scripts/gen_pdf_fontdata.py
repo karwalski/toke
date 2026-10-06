@@ -120,6 +120,7 @@ def main() -> int:
     rows = sorted(names)
 
     out = sys.stdout.write
+    out('/* SPDX-License-Identifier: MIT */\n')
     out('/*\n')
     out(' * pdffont.c — GENERATED.  Do not edit by hand.\n')
     out(' *\n')

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * analytics.c — Implementation of the std.analytics standard library module.
  *

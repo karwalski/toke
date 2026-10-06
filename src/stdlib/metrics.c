@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * metrics.c — in-process request counters and their Prometheus rendering.
  *

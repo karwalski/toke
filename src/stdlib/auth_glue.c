@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * auth_glue.c — i64-ABI wrappers for std.auth module.
  *

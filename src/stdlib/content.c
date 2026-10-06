@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * content.c — Content transformation, negotiation, and serving for std.http.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_array.h — toke array backing-block layout + helpers (ADR-0006 / story 114.18).
  *

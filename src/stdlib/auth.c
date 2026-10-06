@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * auth.c — Implementation of the std.auth standard library module.
  *

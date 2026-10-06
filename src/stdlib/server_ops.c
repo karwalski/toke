@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * server_ops.c — Process architecture and operations for std.http.
  *

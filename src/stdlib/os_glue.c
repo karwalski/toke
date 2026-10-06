@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * os_glue.c — the std.os wrappers that report failure through the error slot.
  *

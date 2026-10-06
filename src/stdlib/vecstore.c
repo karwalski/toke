@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * vecstore.c — Implementation of the std.vecstore standard library module.
  *

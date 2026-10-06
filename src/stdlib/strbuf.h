@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * strbuf.h — the one growable string buffer (story 122.2).
  *

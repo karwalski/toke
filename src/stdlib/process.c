@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * process.c — Implementation of the std.process standard library module.
  *

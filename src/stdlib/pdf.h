@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdf.h — C interface for the std.pdf standard library module.
  *

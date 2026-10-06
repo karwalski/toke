@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * image.c — Implementation of the std.image standard library module.
  *

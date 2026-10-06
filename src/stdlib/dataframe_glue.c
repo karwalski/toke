@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * dataframe_glue.c — i64-ABI wrapper for df.fromrows (Story 136.32).
  *

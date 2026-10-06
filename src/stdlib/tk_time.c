@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_time.c — Implementation of the std.time standard library module.
  *

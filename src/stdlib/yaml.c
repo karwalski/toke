@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * yaml.c — Implementation of std.yaml for the toke compiler runtime.
  *

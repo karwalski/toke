@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * dashboard_glue.c — i64-ABI wrappers for std.dashboard (Story 136.40).
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * net.c — Implementation of the std.net standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * http.c — Implementation of the std.http standard library module.
  *

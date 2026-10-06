@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdf.c — object model, file index, filters and page tree for std.pdf.
  *

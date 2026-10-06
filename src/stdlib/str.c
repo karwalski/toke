@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * str.c — Implementation of the std.str standard library module.
  *

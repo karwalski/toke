@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * xlsx.h — C interface for the std.xlsx standard library module.
  *

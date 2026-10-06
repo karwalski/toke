@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef TK_STDLIB_MD_H
 #define TK_STDLIB_MD_H
 

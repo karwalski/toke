@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * args.c — Implementation of the std.args standard library module.
  *

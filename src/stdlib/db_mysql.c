@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* db_mysql.c — MySQL/MariaDB backend for std.db (Story 57.10.3)
  * Compile with: -DTK_HAVE_MYSQL $(mysql_config --cflags --libs) */
 

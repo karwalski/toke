@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * io_glue.c — i64-ABI wrappers for std.io module.
  *

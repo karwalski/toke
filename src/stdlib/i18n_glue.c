@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * i18n_glue.c — i64-ABI wrappers for std.i18n (Story 114.35).
  * Extracted from tk_web_glue.c so a standalone `i=i18n:std.i18n` import links

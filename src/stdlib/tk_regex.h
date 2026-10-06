@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_regex.h — toke's regular-expression engine (stories 137.9, 121.35).
  *

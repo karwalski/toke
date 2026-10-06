@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdffont.c — GENERATED.  Do not edit by hand.
  *
