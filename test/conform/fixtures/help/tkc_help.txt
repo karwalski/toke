@@ -63,6 +63,7 @@ Configuration:
 
 Environment:
   TKC_INTERFACE_PATH  Colon-separated list of .tki search directories
+  TKC_CC              Path of clang to build with
 
   --version           Print version and build commit and exit
                       (--version --json: one JSON object)
