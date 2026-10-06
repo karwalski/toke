@@ -602,6 +602,8 @@ A field access expression (`expr.field`) references a field name that does not e
 
 The workhorse type error. Emitted for mismatched operands in binary expressions, mismatched function arguments, mismatched binding annotations, mismatched assignment sides, and mismatched return values.
 
+A `json.parse` result -- the call, or a name an un-annotated `let` bound to one -- passed as the document argument of a `std.json` member that reads a `$json` (`json.str`, `json.getstr`, `json.keys`, `json.has`, ...) is E4031 with no `fix`: `json.parse` returns a str, number, bool or array, never a document; decode object text with `json.decode` or `json.dec` (story 138.9, loke T-17).
+
 The diagnostic may include a fix suggestion such as `"cast RHS to i64 using 'as'"`.
 
 **Composite types print structurally** (127.54). `expected` and `got` render an

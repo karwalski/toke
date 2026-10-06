@@ -3640,6 +3640,86 @@ static int tki_arg_class(const Type *t) {
     }
 }
 
+/* ── 138.9 (loke T-17): a json.parse result is never a JSON document ─────
+ *
+ * json.parse (tk_json_parse) reads a str, an integer, a bool or an array and
+ * returns that value -- never a document.  The std.json members below read
+ * their first argument as a decoded document (`Json *`, what json.dec and
+ * json.decode return), so `let d=json.parse(src); json.getstr(d;"a")` read a
+ * string pointer or an integer as a document: loke's repro printed
+ * `parse a=[]` beside `decode a=[xyz]` and exited 0.  Owner decision
+ * docs/owner-decisions-2026-10-01.md §2.9 (b): refuse it at compile time,
+ * keeping json.parse's own API (C255).  A `"gen":"abi"` record's i64 says
+ * nothing (check_tki_arg_types), so the value is traced instead: the
+ * argument is a json.parse call, or a name an un-annotated `let` bound to
+ * one (an annotated `let`, a `mut` or anything computed is not judged).
+ * The list is the json_glue.c wrappers that cast their first parameter to
+ * `Json *` (directly or through another wrapper); C707 recomputes it from
+ * the glue so the two cannot drift.  E4031, no `fix`. */
+static const char *const JSON_DOC_READERS[] = {
+    "arr", "at", "bool", "entries", "f64", "get", "getarr", "getarray",
+    "getbool", "getf32", "getfloat", "geti32", "geti64", "getint", "getobj",
+    "getopt", "getregulations", "getstr", "getstring", "getval", "has",
+    "haskey", "i64", "isnullkey", "keys", "len", "serialize", "set",
+    "setint", "str", "tryarr", "trybool", "tryboolkey", "tryfloat",
+    "tryfloatkey", "tryint", "tryintkey", "trystr", "trystrkey", "u64",
+    "values", NULL
+};
+
+/* 1 when `n` is a call `<alias>.parse(..)` with <alias> importing std.json. */
+static int is_json_parse_call(Ctx *cx, const Node *n) {
+    if (!n || n->kind != NODE_CALL_EXPR || n->child_count < 1) return 0;
+    const Node *callee = n->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return 0;
+    if (alias_shadowed(cx, callee->children[0])) return 0;
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    if (strcmp(member, "parse") != 0) return 0;
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    return mpath && strcmp(mpath, "std.json") == 0;
+}
+
+/* The json.parse call `an` stands for: itself, or the initialiser of the
+ * un-annotated immutable `let` an identifier names; NULL otherwise. */
+static const Node *json_parse_origin(Ctx *cx, const Node *an) {
+    if (!an) return NULL;
+    if (is_json_parse_call(cx, an)) return an;
+    if (an->kind != NODE_IDENT) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, an);
+    int nlen = (int)strlen(nb);
+    const Node *bn = local_in_force(cx, nb, nlen, an);
+    if (!bn && cx->env && cx->env->names) {
+        Decl *d = tc_lookup(cx->env->names->module_scope, nb, nlen);
+        if (d && d->def_node) bn = d->def_node;
+    }
+    if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return NULL;
+    return is_json_parse_call(cx, bn->children[1]) ? bn->children[1] : NULL;
+}
+
+static void check_json_parse_as_doc(Ctx *cx, const Node *call, const char *alias,
+                                    const char *member) {
+    int reads = 0;
+    for (int i = 0; JSON_DOC_READERS[i]; i++)
+        if (strcmp(member, JSON_DOC_READERS[i]) == 0) { reads = 1; break; }
+    if (!reads || call->child_count < 2) return;
+    const Node *an = call->children[1];
+    if (!json_parse_origin(cx, an)) return;
+    if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+    char msg[640];
+    snprintf(msg, sizeof msg,
+             "type mismatch: argument 1 of '%s.%s' is a JSON document (what "
+             "json.dec or json.decode returns), but this value comes from "
+             "json.parse, which returns a str, number, bool or array and "
+             "never a document; decode the text with json.decode (or "
+             "json.dec) to read fields from it", alias, member);
+    diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col, msg,
+              "expected", "a JSON document (json.decode)",
+              "got", "a json.parse result", (const char *)NULL);
+}
+
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3688,6 +3768,8 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         }
         return;
     }
+
+    if (strcmp(mpath, "std.json") == 0) check_json_parse_as_doc(cx, call, alias, member);   /* 138.9 */
 
     const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
     if (!f || f->abi_ret || !f->param_types || f->param_count != actual) return;
