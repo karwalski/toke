@@ -317,7 +317,8 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
     # 127.166: a suite that cannot run because an optional external tool is
     # missing exits 0 and prints a line starting `CONFORM-SKIP: <reason>`.
     # It is counted and printed as SKIP -- neither a pass nor a failure --
-    # unless TKC_CONFORM_NO_SKIP=1 (CI), where every skip is a failure.
+    # unless TKC_CONFORM_NO_SKIP=1 (CI), where every skip is a failure --
+    # except a PLATFORM skip (exit 77, below), which no runner can cure.
     pass=0; fail=0; skip=0
     log="${PRIV}/suite.log"
     for s in test/conform/*.sh; do
@@ -327,7 +328,19 @@ if [ "${MODE}" = all ] || [ "${MODE}" = sh ]; then
         if [ "${serial}" -eq 1 ]; then
             wait_lock "the serial lock for ${name}" serial "${LOCKROOT}/serial" || { fail=$((fail+1)); echo "FAIL ${s}: serial lock not acquired"; continue; }
         fi
-        if bash "${s}" > "${log}" 2>&1 && [ "$(nul_bytes "${log}")" -eq 0 ]; then
+        bash "${s}" > "${log}" 2>&1; src=$?
+        if [ "${src}" -eq 77 ] && [ "$(nul_bytes "${log}")" -eq 0 ]; then
+            # PR #1 (f21f7432): exit 77 is a PLATFORM skip -- the case cannot
+            # run on this OS at all (std.ocr is macOS Vision only), and no
+            # dependency can be installed to change that.  Unlike a
+            # CONFORM-SKIP for a missing tool, TKC_CONFORM_NO_SKIP=1 does NOT
+            # turn it into a failure: it left the Linux CI run red on C033
+            # for a reason no runner could fix.  Still printed by name.
+            why="$(sed -n 's/^CONFORM-SKIP: *//p' "${log}" | head -1)"
+            [ -n "${why}" ] || why="$(sed -n 's/^SKIP: *//p' "${log}" | head -1)"
+            [ -n "${why}" ] || why="(no reason given)"
+            skip=$((skip+1)); echo "SKIP ${s}: platform: ${why}"
+        elif [ "${src}" -eq 0 ] && [ "$(nul_bytes "${log}")" -eq 0 ]; then
             why=""
             if [ -n "$(sed -n '/^CONFORM-SKIP:/=' "${log}")" ]; then
                 why="$(sed -n 's/^CONFORM-SKIP: *//p' "${log}" | head -1)"

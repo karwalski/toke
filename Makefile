@@ -420,8 +420,18 @@ src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
 # scripts/check_stdlib_analysis.py now runs three passes over $(ANALYZE_SRCS)
 # and FAILS on anything not accounted for on a checked-in, self-failing
 # skiplist.  See its header for what a pass does and does not prove.
+#
+# PR #1 (f21f7432): --analyze is the clang static analyzer and GCC has no such
+# flag, but the script compiles with $CC, which is `cc` -- GCC on Linux -- so
+# `make lint` failed on every Linux host and CI run before analysing a line.
+# The --analyze targets run with LINT_CC (default clang), and say so by name
+# when it is missing.  lint-nonhost has no --analyze pass and keeps CC.
+LINT_CC ?= clang
+LINT_CC_CHECK = @command -v $(LINT_CC) >/dev/null 2>&1 || { \
+	  echo "lint: '$(LINT_CC)' not found; the --analyze pass needs the clang static analyzer (install clang, or set LINT_CC)" >&2; exit 1; }
 lint:
-	@python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
@@ -433,13 +443,15 @@ lint-nonhost:
 #   make lint-file F=src/stdlib/http.c
 lint-file:
 	@if [ -z "$(F)" ]; then echo "usage: make lint-file F=<source.c> [F=\"a.c b.c\"]" >&2; exit 2; fi
-	@python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)
 	@python3 scripts/check_stdlib_analysis.py --only --nonhost $(F)
 
 # Drafting aid: print proposed skiplist lines for everything now failing.
 # Writes nothing — paste the lines in and put a real reason and story on each.
 lint-report:
-	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
 	    --report $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 127.156 / 136.65: every conformance entry point goes through
