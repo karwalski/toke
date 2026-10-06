@@ -147,7 +147,7 @@ static Row collect_row(sqlite3_stmt *stmt)
 
 RowResult db_one_on(int64_t conn_id, const char *sql, StrArray params)
 {
-    RowResult res; res.is_err = 0;
+    RowResult res = {0}; res.is_err = 0;
     sqlite3 *g_db = conn_db(conn_id);
     if (!g_db) {
         res.is_err = 1;
@@ -174,7 +174,7 @@ RowResult db_one_on(int64_t conn_id, const char *sql, StrArray params)
 
 RowArrayResult db_many_on(int64_t conn_id, const char *sql, StrArray params)
 {
-    RowArrayResult res; res.is_err = 0;
+    RowArrayResult res = {0}; res.is_err = 0;
     sqlite3 *g_db = conn_db(conn_id);
     if (!g_db) {
         res.is_err = 1;
@@ -274,7 +274,7 @@ static const char *skip_sql_blank(const char *p)
  * deleted (sqlite3_total_changes before and after). */
 U64Result db_exec_on(int64_t conn_id, const char *sql, StrArray params)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     sqlite3 *g_db = conn_db(conn_id);
     if (!g_db) {
         res.is_err = 1;
@@ -332,7 +332,7 @@ U64Result      db_exec(const char *sql, StrArray params) { return db_exec_on(0, 
 
 U64Result db_last_insert_id(int conn_id)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     sqlite3 *db = conn_db(conn_id);
     if (!db) {
         res.is_err = 1;
@@ -345,7 +345,7 @@ U64Result db_last_insert_id(int conn_id)
 
 U64Result db_affected_rows(int conn_id)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     sqlite3 *db = conn_db(conn_id);
     if (!db) {
         res.is_err = 1;
@@ -406,7 +406,7 @@ static sqlite3 *conn_db(int64_t conn_id)
 
 StmtResult db_prepare(int conn_id, const char *sql)
 {
-    StmtResult res; res.is_err = 0; res.ok = NULL;
+    StmtResult res = {0}; res.is_err = 0; res.ok = NULL;
     sqlite3 *db = conn_db(conn_id);
     if (!db) {
         res.is_err = 1;
@@ -434,7 +434,7 @@ StmtResult db_prepare(int conn_id, const char *sql)
 
 BoolResult db_bind(TkStmt *stmt, StrArray params)
 {
-    BoolResult res; res.is_err = 0; res.ok = 1;
+    BoolResult res = {0}; res.is_err = 0; res.ok = 1;
     if (!stmt) {
         res.is_err = 1;
         res.err = make_err(DB_ERR_QUERY, "null statement");
@@ -456,7 +456,7 @@ BoolResult db_bind(TkStmt *stmt, StrArray params)
 
 RowResult db_step(TkStmt *stmt)
 {
-    RowResult res; res.is_err = 0;
+    RowResult res = {0}; res.is_err = 0;
     if (!stmt) {
         res.is_err = 1;
         res.err = make_err(DB_ERR_QUERY, "null statement");
@@ -486,7 +486,7 @@ void db_finalize(TkStmt *stmt)
 
 static BoolResult exec_simple(int conn_id, const char *sql)
 {
-    BoolResult res; res.is_err = 0; res.ok = 1;
+    BoolResult res = {0}; res.is_err = 0; res.ok = 1;
     sqlite3 *db = conn_db(conn_id);
     if (!db) {
         res.is_err = 1;
@@ -522,7 +522,7 @@ static int find_col(Row r, const char *col)
 
 StrResult row_str(Row r, const char *col)
 {
-    StrResult res; res.is_err = 0;
+    StrResult res = {0}; res.is_err = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = r.col_values[idx]; return res;
@@ -530,7 +530,7 @@ StrResult row_str(Row r, const char *col)
 
 U64Result row_u64(Row r, const char *col)
 {
-    U64Result res; res.is_err = 0; res.ok = 0;
+    U64Result res = {0}; res.is_err = 0; res.ok = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = (uint64_t)strtoull(r.col_values[idx], NULL, 10); return res;
@@ -538,7 +538,7 @@ U64Result row_u64(Row r, const char *col)
 
 I64Result row_i64(Row r, const char *col)
 {
-    I64Result res; res.is_err = 0; res.ok = 0;
+    I64Result res = {0}; res.is_err = 0; res.ok = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = (int64_t)strtoll(r.col_values[idx], NULL, 10); return res;
@@ -546,7 +546,7 @@ I64Result row_i64(Row r, const char *col)
 
 F64Result row_f64(Row r, const char *col)
 {
-    F64Result res; res.is_err = 0; res.ok = 0.0;
+    F64Result res = {0}; res.is_err = 0; res.ok = 0.0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     res.ok = strtod(r.col_values[idx], NULL); return res;
@@ -554,7 +554,7 @@ F64Result row_f64(Row r, const char *col)
 
 BoolResult row_bool(Row r, const char *col)
 {
-    BoolResult res; res.is_err = 0; res.ok = 0;
+    BoolResult res = {0}; res.is_err = 0; res.ok = 0;
     int idx = find_col(r, col);
     if (idx < 0) { res.is_err = 1; res.err = make_err(DB_ERR_NOT_FOUND, col); return res; }
     const char *v = r.col_values[idx];
