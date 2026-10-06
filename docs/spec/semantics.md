@@ -131,8 +131,29 @@ This section defines how the type of each expression form is determined.
 | Boolean literal           | `bool`        | `true` or `false`              |
 | Array literal `@(e1;e2;..)`| `@$t`        | T = type of first element      |
 | Empty array literal `@()` | `@unknown`    | Constrained by annotation      |
+| Typed-empty array `@($t)` | `@$t`         | Empty; element type `$t` (see below) |
 | Map literal `@(k1:v1;..)` | `@($k:$v)`   | K,V from first entry           |
+| Typed-empty map `@($k:$v)`| `@($k:$v)`   | Empty; key `$k`, value `$v`    |
+| Typed-empty map `@($k:L)` | `@($k:T)`    | Empty; `L` a typed-empty literal of type `T` |
 | Struct literal `$name{..}`| `$name`       | Resolved via type declaration  |
+
+**Typed-empty literals** (story 127.227, owner decision 2026-10-01 §2.4). An
+array literal whose only element is a type, or a map literal whose only entry
+has a type as its key, is an *empty* collection of that type — the literal
+names the type that `@()` would otherwise leave `unknown`:
+
+- `@($t)` is an empty `@$t`, e.g. `let names=mut.@($str);`.
+- `@($k:$v)` is an empty `@($k:$v)`, e.g. `let counts=mut.@($str:$i64);`.
+- `@($k:L)`, where `L` is itself a typed-empty literal of type `T`, is an
+  empty `@($k:T)`, e.g. `@($str:@($str))` is an empty map from `$str` to
+  `@$str`.
+
+Each type is written with its sigil, primitives included (`@($i64)`). The
+literal has length 0; nothing is stored for the type itself. An unsigilled
+name such as `@(i64)` is not a type here, and a type in any other position of
+a map literal entry (`@($str:1)`) is not a value: both are
+`[errors.md E4033]`. Grammar: the typed-empty
+alternatives of `ArrayLit` and `MapLit` in `grammar.ebnf`.
 
 ### 2.2 Identifier Expressions
 

@@ -206,13 +206,25 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             continue;
         }
 
-        /* Strip (* ... *) block comments */
+        /* Strip (* ... *) block comments.  127.161: one '\n' is kept for
+         * every newline the comment held, so line N of the output is line N
+         * of the input and the comment can be put back on it.  A comment on
+         * one line between two word characters becomes a space: the lexer
+         * reads it as a separator, and `a(*x*)b` must not become `ab`. */
         if (src[i] == '(' && i+1 < slen && src[i+1] == '*') {
-            int d = 1; i += 2;
+            int d = 1, nl = 0; i += 2;
             while (i < slen && d > 0) {
                 if (i+1 < slen && src[i]=='(' && src[i+1]=='*') { d++; i+=2; continue; }
                 if (i+1 < slen && src[i]=='*' && src[i+1]==')') { d--; i+=2; continue; }
+                if (src[i] == '\n') {
+                    OENSURE(1);
+                    o[w++] = '\n'; nl++;
+                }
                 i++;
+            }
+            if (!nl && w > 0 && is_idchar(o[w-1]) && i < slen && is_idchar(src[i])) {
+                OENSURE(1);
+                o[w++] = ' ';
             }
             i--; continue;
         }
@@ -2010,16 +2022,26 @@ static void postpass_str_concat(char **bufp, int *blen_p)
     }
 }
 
-/* 127.160 / 127.161: count what prepass() would strip. The recognition rules
- * are prepass()'s, deliberately duplicated rather than approximated: string
- * state toggles on a `"` not preceded by `\`, `//` and `#` run to end of line,
- * `(* *)` nests. prepass() also has bracket rewrites that bulk-copy text; if
- * one of those ever swallowed a comment prefix, this count would be HIGHER
- * than what prepass strips, which errs toward declining -- the safe side. */
-int tkc_migrate_count_comments(const char *src, int slen, int *first_line)
+/* 127.161: one comment as prepass() recognises it.  [start, end) covers the
+ * whole comment: `(*` through the matching `*)` (or end of file when it is
+ * never closed), or `//` / `#` up to but not including the newline.  The
+ * recognition rules are prepass()'s, duplicated deliberately: string state
+ * toggles on a `"` not preceded by `\`, `//` and `#` run to end of line,
+ * `(* *)` nests.  If a prepass bracket rewrite ever bulk-copied a comment
+ * instead of stripping it, the final comment count would exceed this table
+ * and the verify step in tkc_migrate_keep_comments() declines. */
+typedef struct {
+    int start, end;
+    int line;        /* 1-based line of `start` */
+    int is_line;     /* `//` or `#` */
+    int unclosed;    /* a `(*` with no matching `*)` */
+} MigCmt;
+
+/* Scan `src` for comments with prepass()'s rules.  Fills up to `cap` entries
+ * of `tab` (which may be NULL) and returns the total count. */
+static int mig_scan_comments(const char *src, int slen, MigCmt *tab, int cap)
 {
     int n = 0, line = 1, in_str = 0;
-    if (first_line) *first_line = 0;
     for (int i = 0; i < slen; i++) {
         if (src[i] == '\n') { line++; continue; }
         if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) { in_str = !in_str; continue; }
@@ -2027,9 +2049,10 @@ int tkc_migrate_count_comments(const char *src, int slen, int *first_line)
         int is_line = (src[i] == '#') || (src[i] == '/' && i+1 < slen && src[i+1] == '/');
         int is_block = (src[i] == '(' && i+1 < slen && src[i+1] == '*');
         if (!is_line && !is_block) continue;
-        if (n++ == 0 && first_line) *first_line = line;
+        MigCmt m = { i, i, line, is_line, 0 };
         if (is_line) {
             while (i+1 < slen && src[i+1] != '\n') i++;
+            m.end = i + 1;
         } else {
             int d = 1; i += 2;
             while (i < slen && d > 0) {
@@ -2038,22 +2061,41 @@ int tkc_migrate_count_comments(const char *src, int slen, int *first_line)
                 if (i+1 < slen && src[i]=='*' && src[i+1]==')') { d--; i+=2; continue; }
                 i++;
             }
+            m.end = i < slen ? i : slen;
+            m.unclosed = d > 0;
             i--;
         }
+        if (tab && n < cap) tab[n] = m;
+        n++;
     }
     return n;
 }
 
-static int s_migrate_depth = 0;  /* recursion guard */
+static int s_migrate_depth = 0;    /* recursion guard */
+static int s_migrate_retried = 0;  /* 127.161: the retry path ran */
 
-int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unused,
-                FILE *out)
+/* 127.161: a heap copy of `src[0..n)`, NUL-terminated, into *outp. */
+static int mig_dup_out(const char *src, int n, char **outp, int *outlen)
 {
-    (void)toks_unused; (void)tc_unused;
+    char *r = malloc((size_t)n + 1);
+    if (!r) return -1;
+    memcpy(r, src, (size_t)n);
+    r[n] = '\0';
+    *outp = r; *outlen = n;
+    return 0;
+}
+
+/*
+ * migrate_core — the migration pipeline (prepass → lex → token transforms →
+ * text transforms → postpasses).  127.161: it returns its result in a heap
+ * buffer instead of writing to a stream, so the comment-preservation layer
+ * can check the result and decline before anything is written.
+ */
+static int migrate_core(const char *src, int slen, char **outp, int *outlen)
+{
     if (s_migrate_depth > 2) {
         /* Max 3 passes — if still failing, output what we have */
-        fwrite(src, 1, (size_t)slen, out);
-        return 0;
+        return mig_dup_out(src, slen, outp, outlen);
     }
     s_migrate_depth++;
 
@@ -2061,12 +2103,12 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     int clen = 0;
     int inserted_module = 0;
     char *c = prepass(src, slen, &clen, &inserted_module);
-    if (!c) return -1;
+    if (!c) { s_migrate_depth--; return -1; }
 
     /* Step 2: Lex cleaned text */
     int ncap = clen * 2 + 256;
     Token *nt = malloc((size_t)ncap * sizeof(Token));
-    if (!nt) { free(c); return -1; }
+    if (!nt) { free(c); s_migrate_depth--; return -1; }
 
     diag_suppress(1);
     int ntc = lex(c, clen, nt, ncap, PROFILE_DEFAULT);
@@ -2099,14 +2141,16 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
         /* Recursive call with the prepass output as new source.
          * The second prepass will re-insert m= if needed, and the text
          * may now lex because the first pass stripped the offending chars. */
-        int rc = tkc_migrate(p2src, p2len, NULL, 0, out);
+        s_migrate_retried = 1;
+        int rc = migrate_core(p2src, p2len, outp, outlen);
         free(c); free(nt);
+        s_migrate_depth--;
         return rc;
     }
 
     /* Step 3: Token-level transforms */
     char *buf = malloc((size_t)(clen * 3 + 2048));
-    if (!buf) { free(c); free(nt); return -1; }
+    if (!buf) { free(c); free(nt); s_migrate_depth--; return -1; }
     int blen = 0, prev = 0;
     /* 127.57: brace nesting depth at the *start* of the current token.  A type
      * declaration (`t=$name{...}`) is a top-level form, so the "after t=" type
@@ -2234,7 +2278,7 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
 
     /* Step 4: Text-level |{ → mt expr { */
     char *buf2 = malloc((size_t)(blen * 2 + 512));
-    if (!buf2) { free(buf); free(c); free(nt); return -1; }
+    if (!buf2) { free(buf); free(c); free(nt); s_migrate_depth--; return -1; }
     int b2 = 0;
 
     for (int p = 0; p < blen; p++) {
@@ -2318,17 +2362,285 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     postpass_mut_bindings(&buf2, &b2);
 
     /* Output — strip inserted module if needed */
+    int rc = 0;
     if (inserted_module) {
         const char *skip = "m=migrated;\n";
         int skiplen = (int)strlen(skip);
         if (b2 >= skiplen && !strncmp(buf2, skip, (size_t)skiplen))
-            fwrite(buf2 + skiplen, 1, (size_t)(b2 - skiplen), out);
+            rc = mig_dup_out(buf2 + skiplen, b2 - skiplen, outp, outlen);
         else
-            fwrite(buf2, 1, (size_t)b2, out);
+            rc = mig_dup_out(buf2, b2, outp, outlen);
     } else {
-        fwrite(buf2, 1, (size_t)b2, out);
+        rc = mig_dup_out(buf2, b2, outp, outlen);
     }
     free(buf2); free(buf); free(c); free(nt);
     s_migrate_depth--;
+    return rc;
+}
+
+int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unused,
+                FILE *out)
+{
+    (void)toks_unused; (void)tc_unused;
+    char *r = NULL; int rlen = 0;
+    s_migrate_retried = 0;
+    if (migrate_core(src, slen, &r, &rlen) < 0) return -1;
+    fwrite(r, 1, (size_t)rlen, out);
+    free(r);
+    return 0;
+}
+
+/* ── 127.161: keep comments through migration ──────────────────────────
+ *
+ * Design: docs/architecture/migrate-comment-preservation.md §3; placement
+ * policy: owner decision 2026-10-01 §2.8.  migrate_core() still strips
+ * every comment before it lexes, but prepass() keeps one newline for every
+ * newline a block comment held, so line N of its output is line N of the
+ * input.  The comments are then put back by LINE, never by offset:
+ *
+ *   own line   — a source line holding only comments and whitespace is
+ *                written back verbatim (its output line must be blank);
+ *   leading    — comments before the first code on a line: the source text
+ *                up to that code replaces the output line's indentation;
+ *   trailing   — comments after the last code: the source text from that
+ *                code to end of line replaces the output's trailing space;
+ *   interior   — a comment with code on both sides of it on one line.  The
+ *                rewrites may move code within the line, so where it sat is
+ *                not known afterwards: it goes to the end of the line, and a
+ *                note on stderr says so.  It is moved, never dropped.
+ *
+ * A multi-line comment is the trailing comment of its first line, the
+ * leading comment of its last, and own-line in between, so it always goes
+ * back exactly where it was.  `//` and `#` comments are rewritten as
+ * `(* text *)` (spec v0.4 §H) so the result lexes without W1020.
+ *
+ * Every step that could put a comment in the wrong place declines instead,
+ * naming the line (E9026 in the driver): a `//` / `#` text holding `(*` or
+ * `*)`, a `(*` that never closes, a run that needed migrate_core()'s retry,
+ * an output whose line count differs from the input's, code on a line that
+ * held only comments, and a final check that re-lexes the result.  That
+ * check requires the same tokens with and without the comments, and the
+ * same number of comments as the source had.
+ */
+
+typedef struct { char *p; int n, cap; } MigBuf;
+
+static int mb_put(MigBuf *b, const char *s, int n)
+{
+    if (n <= 0) return 0;
+    if (b->n + n + 1 > b->cap) {
+        int nc = (b->cap ? b->cap * 2 : 256) + n;
+        char *np = realloc(b->p, (size_t)nc);
+        if (!np) return -1;
+        b->p = np; b->cap = nc;
+    }
+    memcpy(b->p + b->n, s, (size_t)n);
+    b->n += n;
+    b->p[b->n] = '\0';
+    return 0;
+}
+
+static int mig_is_ws(char ch) { return ch == ' ' || ch == '\t' || ch == '\r'; }
+
+/* Copy src[from, to) into `b`, writing each `//` / `#` comment that starts
+ * in the range as `(* text *)`.  Block comments are copied as they are. */
+static int mig_put_normalised(MigBuf *b, const char *src, int from, int to,
+                              const MigCmt *tab, int ncom)
+{
+    int p = from;
+    for (int k = 0; k < ncom && p < to; k++) {
+        const MigCmt *c = &tab[k];
+        if (!c->is_line || c->start < from || c->start >= to) continue;
+        if (mb_put(b, src + p, c->start - p) < 0) return -1;
+        int t = c->start + (src[c->start] == '#' ? 1 : 2), e = c->end;
+        while (t < e && mig_is_ws(src[t])) t++;
+        while (e > t && mig_is_ws(src[e - 1])) e--;
+        if (mb_put(b, "(* ", 3) < 0 || mb_put(b, src + t, e - t) < 0 ||
+            mb_put(b, e > t ? " *)" : "*)", e > t ? 3 : 2) < 0) return -1;
+        /* keep a '\r' that ended the comment's line (CRLF source) */
+        p = c->end;
+        if (src[p - 1] == '\r' && mb_put(b, "\r", 1) < 0) return -1;
+    }
+    return mb_put(b, src + p, to - p);
+}
+
+/* Token streams of `a` and `b` are the same (kind and text). -1 if either
+ * cannot be lexed at all. */
+static int mig_same_tokens(const char *a, int alen, const char *b, int blen)
+{
+    int ca = alen + 16, cb = blen + 16;
+    Token *ta = malloc((size_t)ca * sizeof(Token));
+    Token *tb = malloc((size_t)cb * sizeof(Token));
+    int same = -1;
+    if (ta && tb) {
+        diag_suppress(1);
+        int na = lex(a, alen, ta, ca, PROFILE_DEFAULT);
+        int nb = lex(b, blen, tb, cb, PROFILE_DEFAULT);
+        diag_reset_counts();
+        diag_suppress(0);
+        if (na >= 0 && nb >= 0) {
+            same = (na == nb);
+            for (int i = 0; same && i < na; i++)
+                same = ta[i].kind == tb[i].kind && ta[i].len == tb[i].len &&
+                       (ta[i].kind == TK_EOF ||
+                        memcmp(a + ta[i].start, b + tb[i].start, (size_t)ta[i].len) == 0);
+        }
+    }
+    free(ta); free(tb);
+    return same;
+}
+
+static int mig_decline(TkcMigrateDecline *why, int line, const char *msg)
+{
+    why->line = line;
+    snprintf(why->reason, sizeof why->reason, "%s", msg);
+    return 1;
+}
+
+int tkc_migrate_keep_comments(const char *src, int slen, const char *path,
+                              char **outp, int *outlen, TkcMigrateDecline *why)
+{
+    *outp = NULL; *outlen = 0;
+    why->line = 0; why->reason[0] = '\0';
+
+    int ncom = mig_scan_comments(src, slen, NULL, 0);
+    MigCmt *tab = ncom ? malloc((size_t)ncom * sizeof *tab) : NULL;
+    if (ncom && !tab) return -1;
+    mig_scan_comments(src, slen, tab, ncom);
+
+    /* Comments that no placement can keep: decline before migrating. */
+    for (int k = 0; k < ncom; k++) {
+        const MigCmt *c = &tab[k];
+        int cl = c->line;
+        if (c->unclosed) {
+            free(tab);
+            return mig_decline(why, cl,
+                "its '(*' comment is never closed, so where it ends is not known");
+        }
+        if (c->is_line) {
+            for (int p = c->start + 1; p + 1 < c->end; p++)
+                if ((src[p] == '(' && src[p+1] == '*') || (src[p] == '*' && src[p+1] == ')')) {
+                    free(tab);
+                    return mig_decline(why, cl,
+                        "its line comment holds '(*' or '*)', so it cannot be "
+                        "rewritten as a (* *) comment with the same extent");
+                }
+        }
+    }
+
+    char *mig = NULL; int mlen = 0;
+    s_migrate_retried = 0;
+    if (migrate_core(src, slen, &mig, &mlen) < 0) { free(tab); return -1; }
+    if (ncom == 0) { free(tab); *outp = mig; *outlen = mlen; return 0; }
+    if (s_migrate_retried) {
+        free(tab); free(mig);
+        return mig_decline(why, 0,
+            "the source needed a second migration pass, which does not keep "
+            "the line map that comments are put back by");
+    }
+
+    /* Line map: the output must have exactly the input's lines. */
+    int src_nl = 0, mig_nl = 0;
+    for (int i = 0; i < slen; i++) src_nl += src[i] == '\n';
+    for (int i = 0; i < mlen; i++) mig_nl += mig[i] == '\n';
+    if (src_nl != mig_nl) {
+        char msg[256];
+        snprintf(msg, sizeof msg,
+                 "a rewrite moved code across lines (%d lines in, %d out), so "
+                 "comments cannot be put back by line", src_nl + 1, mig_nl + 1);
+        free(tab); free(mig);
+        return mig_decline(why, 0, msg);
+    }
+
+    /* Byte classes of the source: 0 whitespace, 1 code, 2 comment. */
+    unsigned char *cls = malloc((size_t)slen + 1);
+    if (!cls) { free(tab); free(mig); return -1; }
+    for (int i = 0; i < slen; i++)
+        cls[i] = (mig_is_ws(src[i]) || src[i] == '\n') ? 0 : 1;
+    for (int k = 0; k < ncom; k++)
+        for (int i = tab[k].start; i < tab[k].end; i++)
+            if (src[i] != '\n') cls[i] = 2;
+
+    MigBuf ob = { NULL, 0, 0 };
+    int rc = 0, ls = 0, ms = 0, line = 1;
+    while (rc == 0 && ls <= slen) {
+        int le = ls; while (le < slen && src[le] != '\n') le++;
+        int me = ms; while (me < mlen && mig[me] != '\n') me++;
+        int first_code = -1, last_code = -1, has_cmt = 0;
+        for (int i = ls; i < le; i++) {
+            if (cls[i] == 1) { if (first_code < 0) first_code = i; last_code = i; }
+            else if (cls[i] == 2) has_cmt = 1;
+        }
+        if (!has_cmt) {
+            if (mb_put(&ob, mig + ms, me - ms) < 0) rc = -1;
+        } else if (first_code < 0) {
+            /* own-line: the output line must be blank */
+            for (int i = ms; i < me; i++)
+                if (!mig_is_ws(mig[i])) {
+                    char msg[160];
+                    snprintf(msg, sizeof msg,
+                             "a rewrite put code on line %d, which held only a "
+                             "comment", line);
+                    rc = mig_decline(why, line, msg);
+                    break;
+                }
+            if (rc == 0 && mig_put_normalised(&ob, src, ls, le, tab, ncom) < 0) rc = -1;
+        } else {
+            int lead = 0, trail = 0;
+            for (int i = ls; i < first_code; i++) lead |= cls[i] == 2;
+            for (int i = last_code + 1; i < le; i++) trail |= cls[i] == 2;
+            int bs = ms, be = me;
+            if (lead) {
+                while (bs < be && mig_is_ws(mig[bs])) bs++;
+                if (mig_put_normalised(&ob, src, ls, first_code, tab, ncom) < 0) rc = -1;
+            }
+            int interior = 0;
+            for (int k = 0; k < ncom; k++)
+                interior |= tab[k].start > first_code && tab[k].start < last_code;
+            if (trail || interior)
+                while (be > bs && mig_is_ws(mig[be - 1])) be--;
+            if (rc == 0 && mb_put(&ob, mig + bs, be - bs) < 0) rc = -1;
+            for (int k = 0; rc == 0 && k < ncom; k++) {
+                if (!(tab[k].start > first_code && tab[k].start < last_code)) continue;
+                if (mb_put(&ob, " ", 1) < 0 ||
+                    mig_put_normalised(&ob, src, tab[k].start, tab[k].end, tab, ncom) < 0)
+                    rc = -1;
+                fprintf(stderr, "tkc: --migrate: %s:%d: note: comment moved to the "
+                        "end of its line (code on both sides of it is rewritten)\n",
+                        path ? path : "<input>", line);
+            }
+            /* the source's trailing comments, with the gap before them; with
+             * only interior comments, keep a CRLF line's '\r' */
+            if (rc == 0 && trail) {
+                if (mig_put_normalised(&ob, src, last_code + 1, le, tab, ncom) < 0) rc = -1;
+            } else if (rc == 0 && interior && src[le - 1] == '\r') {
+                if (mb_put(&ob, "\r", 1) < 0) rc = -1;
+            }
+        }
+        if (rc != 0) break;
+        if (le >= slen) break;
+        if (mb_put(&ob, "\n", 1) < 0) { rc = -1; break; }
+        ls = le + 1; ms = me + 1; line++;
+    }
+    free(cls);
+
+    /* Verify: the same tokens with and without the comments, and every
+     * comment present. */
+    if (rc == 0) {
+        int nout = mig_scan_comments(ob.p ? ob.p : "", ob.n, NULL, 0);
+        int same = mig_same_tokens(ob.p ? ob.p : "", ob.n, mig, mlen);
+        if (nout != ncom || same != 1) {
+            char msg[200];
+            snprintf(msg, sizeof msg,
+                     "putting the comments back changed the program "
+                     "(%d of %d comments found, tokens %s), so it was not done",
+                     nout, ncom, same == 1 ? "unchanged" : same == 0 ? "changed" : "unreadable");
+            rc = mig_decline(why, 0, msg);
+        }
+    }
+    free(tab); free(mig);
+    if (rc != 0) { free(ob.p); return rc; }
+    if (!ob.p && !(ob.p = calloc(1, 1))) return -1;
+    *outp = ob.p; *outlen = ob.n;
     return 0;
 }

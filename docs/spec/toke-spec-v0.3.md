@@ -308,7 +308,7 @@ The following character classes are explicitly excluded from structural toke sou
 - Uppercase letters (A-Z) — not used in structural positions; type references use the `$` sigil instead
 - Square brackets `[` `]` — not used; array literals use `@(...)`, array types use `@$type`
 - Whitespace (space U+0020, tab U+0009, carriage return U+000D, line feed U+000A) — structurally meaningless; permitted only within string literals
-- Comment sequences `(* ... *)` — tolerated and discarded by the lexer (Section 8.10); not a language feature
+- Comment sequences `(* ... *)` — tolerated and discarded by the lexer (Section 8.10); not a language feature. **(Superseded by [toke-spec-v0.4 §H](/docs/spec/toke-spec-v0.4/): `(* ... *)` is the official comment form.)**
 - `_` (underscore) — was excluded at M0, reinstated in error, now re-excluded
 - `^`, `~` — bitwise operators deferred to v0.5+
 - `#`, `` ` ``, `\`, `'`, `,`, `?` — not assigned
@@ -534,6 +534,10 @@ A token that begins with a keyword string but continues with additional identifi
 The rule is mechanical and context-free: the lexer does not consult surrounding syntax or parser state when deciding token boundaries. Longest-match is applied unconditionally.
 
 ### 8.10 Comment Tolerance [N]
+
+> **Superseded by [toke-spec-v0.4 §H](/docs/spec/toke-spec-v0.4/) (story 127.198):**
+> `(* ... *)` is toke's official comment form, not a tolerance mechanism. The
+> lexing rule below (silently discarded, nests) is unchanged.
 
 The lexer recognises `(* ... *)` sequences and silently discards them. No tokens are produced. Nesting is permitted: `(* outer (* inner *) *)` is a single discarded sequence.
 
@@ -2234,6 +2238,7 @@ Output binary byte-identity is not required (link addresses may vary); semantic 
 | 1 | Compilation failed; diagnostics emitted to stderr |
 | 2 | Internal compiler error; bug report should be filed |
 | 3 | Usage error (invalid flags, missing input files) |
+| 4 | `--migrate` declined (E9026): the source was echoed unchanged, nothing was migrated. Added by story 127.197. |
 
 ### 17.5 Performance Requirements [I]
 

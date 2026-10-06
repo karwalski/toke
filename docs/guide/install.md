@@ -89,7 +89,7 @@ TKC_CC=/opt/homebrew/opt/llvm/bin/clang ./toke test.tk -o test
 ```
 
 If `TKC_CC` (or the clang `toke` was built with) is not an executable file,
-the build stops with error E9026 and exits 3. `toke --check` runs no clang.
+the build stops with error E9027 and exits 3. `toke --check` runs no clang.
 
 ## Troubleshooting
 

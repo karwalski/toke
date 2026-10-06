@@ -19,7 +19,7 @@ Before 136.44 none of this was reachable. `src/stdlib/tls.c` was ~910 lines of w
 
 That history explains two things about the interface below that otherwise look redundant.
 
-**Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig` and `tls.mutualconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `tlsconfig` and `tlskeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$tlsconfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
+**Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig`, `tls.mutualconfig` and `tls.insecureconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `tlsconfig` and `tlskeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$tlsconfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
 
 **The handles are opaque i64.** A `tlsconn` or `tlskeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
 
@@ -27,7 +27,7 @@ That history explains two things about the interface below that otherwise look r
 
 ### tlsconfig
 
-Configuration for either end of a connection. Treat it as opaque: build it with `tls.tlsconfig`, `tls.pinconfig` or `tls.mutualconfig`, and release it with `tls.freeconfig`.
+Configuration for either end of a connection. Treat it as opaque: build it with `tls.tlsconfig`, `tls.pinconfig`, `tls.mutualconfig` or `tls.insecureconfig`, and release it with `tls.freeconfig`.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -35,8 +35,9 @@ Configuration for either end of a connection. Treat it as opaque: build it with 
 | `keypem` | `str` | the matching private key |
 | `peercertpem` | `str` | certificate to pin the peer against (empty = no pinning) |
 | `requiremutual` | `bool` | demand a certificate from the peer |
+| `insecure` | `bool` | client only: do not authenticate the server (set by `tls.insecureconfig`; story 121.64) |
 
-These four were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` until story 136.46; no toke program could name them, so there are no callers to migrate.
+A `$tlsconfig{...}` literal that leaves out `insecure` gets `false`, so it verifies the server like `tls.tlsconfig`. The first four fields were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` until story 136.46; no toke program could name them, so there are no callers to migrate.
 
 The fields read what the table says (135.30), and the connection calls read a configuration through them, so a `$tlsconfig{...}` literal works with `tls.connect` and `tls.listen`. `tls.freeconfig` frees only a configuration one of the constructors made; on a literal it returns `false` and frees nothing.
 
@@ -127,9 +128,11 @@ f=main():i64{
 
 ### tls.tlsconfig(certpem: str; keypem: str): tlsconfig
 
-A plain endpoint configuration: present this certificate and key, pin nothing, require nothing of the peer.
+A plain endpoint configuration: present this certificate and key (pass `""` for both on an anonymous client), pin nothing, require nothing of the peer.
 
-**On a client this authenticates nothing.** `tls.connect` with a `tlsconfig` accepts whatever certificate the server presents: there is no CA-chain check and no hostname check, and `std.tls` has no route to either -- it never loads a system trust store. The connection is encrypted but not authenticated, so an on-path attacker can present any certificate and be accepted. Pin the server with `tls.pinconfig`, or verify out of band with `tls.pairingcode`, before trusting who is on the other end. (Story 121.19, finding TLS-02; a CA-verified client configuration needs a spec amendment and is not implemented.)
+**On a client it verifies the server** (story 121.64). `tls.connect` checks the server's certificate chain against the system trust store and checks that the certificate names the host you connected to -- a DNS name, or an IP address when `host` is an address literal. A self-signed, expired or wrongly named certificate, or one from a CA the trust store does not hold, fails the handshake and `tls.connect` returns `0`. The trust store is OpenSSL's default; the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables replace it, as for `std.llm` (121.23). Before 121.64 this configuration authenticated nothing on a client (finding TLS-02).
+
+On a server it requires nothing of the client: the server presents its certificate and accepts any client.
 
 ### tls.pinconfig(certpem: str; keypem: str; peercertpem: str): tlsconfig
 
@@ -138,6 +141,10 @@ As above, plus: accept the peer **only** if it presents exactly `peercertpem`. A
 ### tls.mutualconfig(certpem: str; keypem: str; peercertpem: str): tlsconfig
 
 As `pinconfig`, and additionally demands a certificate from the peer. A peer that presents none never reaches your handler -- the handshake fails first. That is the fail-closed behaviour `C022` witnesses with an independent TLS implementation.
+
+### tls.insecureconfig(certpem: str; keypem: str): tlsconfig
+
+As `tls.tlsconfig`, but a client **does not authenticate the server**: no chain check, no host-name check, no pin. The connection is encrypted, but an on-path attacker can present any certificate and be accepted. It exists so that the old unverified behaviour is a named, searchable choice rather than a default -- use it only for a test server or a peer you then verify out of band with `tls.pairingcode`. To trust one particular self-signed peer, use `tls.pinconfig` instead. On a server it is the same as `tls.tlsconfig`. (Story 121.64.)
 
 ### tls.freeconfig(cfg: tlsconfig): bool
 
@@ -153,7 +160,7 @@ Returns `false` at once if the socket cannot be bound or the TLS context cannot 
 
 ### tls.connect(host: str; port: i32; cfg: tlsconfig): ?(tlsconn)
 
-Connects to `host:port` and performs a TLS 1.3 handshake. Returns the connection handle, or `0` if the connection, the handshake or the pin check fails.
+Connects to `host:port` and performs a TLS 1.3 handshake. The server is authenticated according to `cfg`: a pinned configuration (`tls.pinconfig`, `tls.mutualconfig` with a peer certificate) accepts exactly the pinned certificate and checks neither chain nor host name; `tls.insecureconfig` checks nothing; anything else -- `tls.tlsconfig`, a literal without a pin -- verifies the chain against the system trust store and the host name. Returns the connection handle, or `0` if the connection, the handshake, the verification or the pin check fails. `host` is sent as SNI unless it is an IP address literal.
 
 ### tls.read(conn: tlsconn): ?(str)
 
@@ -277,7 +284,7 @@ f=main():i64{
 ## Security notes
 
 - **TLS 1.3 only**, enforced as a version floor and ceiling. No downgrade is reachable.
-- **A client with no pin does not authenticate the server.** `tls.tlsconfig` on the connecting side accepts any certificate (see `tls.tlsconfig` above). Use `tls.pinconfig` or `tls.mutualconfig` whenever the peer's identity matters.
+- **A client verifies the server by default** (121.64): system trust store plus host name, unless the configuration pins a certificate or is `tls.insecureconfig`. Turning verification off is always an explicit `tls.insecureconfig`; search for it in review.
 - **Pinning** (`tls.pinconfig`) gives an identity guarantee stronger than a CA chain, and is the right choice for device-to-device or service-to-service links where you control both ends.
 - **Mutual TLS** (`tls.mutualconfig`) authenticates both ends. Combined with pinning it is the strongest configuration here, and it fails closed: an unauthenticated peer never reaches your handler.
 - **Pairing codes** are six digits. They are a human-verification convenience, not a substitute for comparing full fingerprints where the stakes justify it.

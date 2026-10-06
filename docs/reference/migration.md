@@ -24,7 +24,18 @@ The `--legacy` flag tells the compiler to accept the old syntax throughout that 
 
 ## Automated migration
 
-> `tkc --migrate` (story 11.3.5) will automate this conversion. It is not yet implemented. Until then, use this guide to migrate by hand.
+`tkc --migrate file.tk > new.tk` (story 11.3.5) rewrites legacy source into the
+default syntax on stdout. Check the result with `tkc --check`; this guide covers
+what it changes, and anything it leaves for you.
+
+- **Comments are kept** (story 127.161). Each comment goes back on the line it
+  came from; `//` and `#` comments become `(* *)`, toke's comment form. A
+  comment with code on both sides of it moves to the end of its line, and a
+  note on stderr names the line.
+- **It declines rather than guess** (story 127.197). Source that already
+  compiles, or whose comments it cannot place safely, is echoed unchanged with
+  an E9026 diagnostic and exit code 4, so the redirect keeps your original.
+  `TKC_MIGRATE_FORCE=1` migrates anyway and drops every comment.
 
 ---
 

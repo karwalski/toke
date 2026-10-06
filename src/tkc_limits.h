@@ -299,6 +299,10 @@
 #define TKC_EXIT_COMPILE  1   /* compilation error (lex/parse/type/codegen), every limit E9010 (127.264) */
 #define TKC_EXIT_INTERNAL 2   /* internal compiler error                   */
 #define TKC_EXIT_USAGE    3   /* CLI usage error                           */
+/* 127.197: `--migrate` declined (E9026). The source was echoed to stdout
+ * unchanged, so nothing failed and nothing was migrated; a migration driver
+ * tells this apart from a failed run (1) by the code alone. */
+#define TKC_EXIT_DECLINED 4   /* --migrate declined, source echoed unchanged */
 
 /* ── Diagnostic Error Codes ───────────────────────────────────────────── */
 
@@ -308,6 +312,14 @@
  * The diagnostic message includes the limit name and current value.
  */
 #define E9010 9010
+
+/*
+ * E9026 — `--migrate` declined (127.197).  The driver echoes the source to
+ * stdout byte for byte, emits this record and exits TKC_EXIT_DECLINED (4).
+ * The message names the reason: the source already compiles (127.57), or its
+ * comments cannot be kept (127.161).
+ */
+#define E9026 9026  /* --migrate declined; source echoed unchanged */
 
 /* ── Runtime Limits Struct ─────────────────────────────────────────── */
 

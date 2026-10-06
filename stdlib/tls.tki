@@ -9,7 +9,8 @@
         {"name": "certpem",       "type": "str"},
         {"name": "keypem",        "type": "str"},
         {"name": "peercertpem",  "type": "str"},
-        {"name": "requiremutual", "type": "bool"}
+        {"name": "requiremutual", "type": "bool"},
+        {"name": "insecure",      "type": "bool"}
       ]
     },
     {
@@ -34,6 +35,7 @@
     {"kind": "func", "name": "tls.freekeypair",      "params": ["tlskeypair"],               "return": "bool"},
     {"kind": "func", "name": "tls.tlsconfig",        "params": ["str", "str"],               "return": "tlsconfig"},
     {"kind": "func", "name": "tls.pinconfig",        "params": ["str", "str", "str"],        "return": "tlsconfig"},
+    {"kind": "func", "name": "tls.insecureconfig",   "params": ["str", "str"],               "return": "tlsconfig"},
     {"kind": "func", "name": "tls.mutualconfig",     "params": ["str", "str", "str"],        "return": "tlsconfig"},
     {"kind": "func", "name": "tls.freeconfig",       "params": ["tlsconfig"],                "return": "bool"},
     {"kind": "func", "name": "tls.protocol",         "params": ["tlsconn"],                  "return": "str"},

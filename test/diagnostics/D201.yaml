@@ -1,0 +1,10 @@
+id: D201
+series: D
+description: "127.198: `(* *)` is toke's comment form, so W1020 on a `//` comment offers the rewrite to `(* comment *)` as its fix. It used to say toke \"has no comment syntax\" and offered moving the text to a companion file, which the lexer contradicted by accepting `(* *)`"
+input: |
+  m=test;
+  // the entry point
+  f=main():i64{<0};
+expected_exit_code: 0
+expected_error_codes: ["W1020"]
+expected_fix: "replace '// comment' with '(* comment *)'"

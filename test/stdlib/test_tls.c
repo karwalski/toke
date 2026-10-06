@@ -232,7 +232,7 @@ static void test_conn_free_id(void)
 
 static void test_connect_refused(void)
 {
-    TlsConfig cfg = {NULL, NULL, NULL, 0};
+    TlsConfig cfg = {NULL, NULL, NULL, 0, 0};
     /* Port 1 is almost certainly refused on any dev machine */
     TlsConnResult r = tls_connect("127.0.0.1", 1, cfg);
     ASSERT(r.is_none == 1, "tls_connect: is_none==1 for refused connection");
@@ -241,7 +241,7 @@ static void test_connect_refused(void)
 
 static void test_connect_bad_host(void)
 {
-    TlsConfig cfg = {NULL, NULL, NULL, 0};
+    TlsConfig cfg = {NULL, NULL, NULL, 0, 0};
     TlsConnResult r = tls_connect("this.host.does.not.exist.invalid", 8443, cfg);
     ASSERT(r.is_none == 1, "tls_connect: is_none==1 for unresolvable host");
     free(r.conn.id);

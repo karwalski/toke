@@ -20,7 +20,7 @@ A **companion file** is a plain-language explanation of a toke source file. It i
 2. **LLMs** — an LLM reading the companion should regenerate functionally equivalent toke code without seeing the original source.
 3. **Tooling** — the `source_hash` field enables staleness detection, diff-based review workflows, and CI checks.
 
-toke has no comment syntax. Companion files are the canonical mechanism for documenting toke programs.
+toke has one comment form, `(* ... *)` (spec v0.4 §H), for notes to the reader of the source. Companion files are the canonical mechanism for documenting toke programs.
 
 ## File Naming
 

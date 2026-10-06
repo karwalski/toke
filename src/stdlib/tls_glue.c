@@ -115,9 +115,11 @@ static const char *nonempty(const char *s)
 }
 
 /* An absent config handle is a valid, empty configuration: no local
- * certificate, no pin, no mutual auth.  That is what tls.connect against a
- * public server wants.  135.30: read from the $TlsConfig record, whether
- * a constructor below or a literal built it; "" means absent. */
+ * certificate, no pin, no mutual auth -- so a client verifies the server
+ * against the default trust store and the host name (121.64).  That is what
+ * tls.connect against a public server wants.  135.30: read from the
+ * $TlsConfig record, whether a constructor below or a literal built it; ""
+ * means absent, and a literal that omits `insecure` leaves it false. */
 static TlsConfig cfg_of(int64_t h)
 {
     TlsConfig c;
@@ -126,10 +128,12 @@ static TlsConfig cfg_of(int64_t h)
     c.key_pem        = r ? nonempty(r->keypem) : NULL;
     c.peer_cert_pem  = r ? nonempty(r->peercertpem) : NULL;
     c.require_mutual = (r && r->requiremutual) ? 1 : 0;
+    c.insecure       = (r && r->insecure) ? 1 : 0;
     return c;
 }
 
-static int64_t make_cfg(int64_t cert, int64_t key, int64_t peer, int mutual)
+static int64_t make_cfg(int64_t cert, int64_t key, int64_t peer, int mutual,
+                        int insecure)
 {
     TkTlsCfgRec *c = calloc(1, sizeof *c);
     char *ce = dup_arg(cert), *ke = dup_arg(key), *pe = dup_arg(peer);
@@ -141,6 +145,7 @@ static int64_t make_cfg(int64_t cert, int64_t key, int64_t peer, int mutual)
     c->keypem        = ke;
     c->peercertpem   = pe;
     c->requiremutual = mutual ? 1 : 0;
+    c->insecure      = insecure ? 1 : 0;
     return (int64_t)(intptr_t)c;
 }
 
@@ -153,7 +158,7 @@ static int64_t make_cfg(int64_t cert, int64_t key, int64_t peer, int mutual)
  * the body discarded them, so nothing depended on the other reading. */
 int64_t tk_tls_tlsconfig_w(int64_t cert_pem, int64_t key_pem)
 {
-    return make_cfg(cert_pem, key_pem, 0, 0);
+    return make_cfg(cert_pem, key_pem, 0, 0, 0);
 }
 
 /* tls.mutualconfig(certpem; keypem; peercertpem) — mutual TLS.
@@ -165,7 +170,7 @@ int64_t tk_tls_tlsconfig_w(int64_t cert_pem, int64_t key_pem)
 int64_t tk_tls_mutualconfig_w(int64_t cert_pem, int64_t key_pem,
                               int64_t peer_cert_pem)
 {
-    return make_cfg(cert_pem, key_pem, peer_cert_pem, 1);
+    return make_cfg(cert_pem, key_pem, peer_cert_pem, 1, 0);
 }
 
 /* tls.pinconfig(certpem; keypem; peercertpem) — pin the peer certificate
@@ -173,7 +178,16 @@ int64_t tk_tls_mutualconfig_w(int64_t cert_pem, int64_t key_pem,
 int64_t tk_tls_pinconfig_w(int64_t cert_pem, int64_t key_pem,
                            int64_t peer_cert_pem)
 {
-    return make_cfg(cert_pem, key_pem, peer_cert_pem, 0);
+    return make_cfg(cert_pem, key_pem, peer_cert_pem, 0, 0);
+}
+
+/* tls.insecureconfig(certpem; keypem) — 121.64: a client that does NOT
+ * authenticate the server (no chain, no host name, no pin).  Until 121.64
+ * this was what tls.tlsconfig silently did on a client; it is now a named,
+ * greppable opt-out.  On a server it is the same as tls.tlsconfig. */
+int64_t tk_tls_insecureconfig_w(int64_t cert_pem, int64_t key_pem)
+{
+    return make_cfg(cert_pem, key_pem, 0, 0, 1);
 }
 
 /* tls.freeconfig(cfg) — release a configuration handle. */

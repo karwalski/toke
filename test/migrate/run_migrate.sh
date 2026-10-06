@@ -13,7 +13,7 @@
 # code. The expected exit code is therefore derived from the fixture rather
 # than assumed to be 0 — `--check` decides, the same way the compiler does.
 #
-# Story: 11.3.5, 127.57
+# Story: 11.3.5, 127.57, 127.197
 set -uo pipefail
 PASS=0 FAIL=0
 TKC="$(cd "$(dirname "$0")/../.." && pwd)/tkc"
@@ -30,7 +30,8 @@ for legacy in "${DIR}"/*.legacy.tk; do
 
     # 127.57: a fixture that already compiles is a no-op case; --migrate must
     # decline it (non-zero) rather than rewrite source that needs no rewriting.
-    if "$TKC" --check "$legacy" >/dev/null 2>&1; then want_rc=1; else want_rc=0; fi
+    # 127.197: a decline exits 4 (TKC_EXIT_DECLINED, E9026), not 1.
+    if "$TKC" --check "$legacy" >/dev/null 2>&1; then want_rc=4; else want_rc=0; fi
 
     # Run migration
     actual=$("$TKC" --migrate "$legacy" 2>/tmp/tkc_migrate_err)

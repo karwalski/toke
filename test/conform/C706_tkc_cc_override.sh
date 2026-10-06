@@ -8,7 +8,7 @@
 # early on $PATH could substitute the compiler, and with $PATH empty no
 # program could be built (E9003 "exit code 127").  Now `make` bakes the clang
 # it finds (TKC_CLANG_PATH in build_info.h) and TKC_CC overrides it; an
-# override that is not an executable file is refused with E9026 (rc 3)
+# override that is not an executable file is refused with E9027 (rc 3)
 # before clang would run.
 #
 # Negative control: TKC=<c7f376a7's toke> -- cases 2-6 fail
@@ -62,14 +62,14 @@ r="$(cd "${WORK}" && build TKC_CC=cc/myclang)"
 expect "4 TKC_CC is honoured (relative to the current directory)" "${r} $(ran override.ran)" "rc=0 exit=7 yes"
 
 r="$(build TKC_CC="${WORK}/no/such/clang")"
-expect "5 a missing TKC_CC is E9026, rc 3, nothing built" "${r}" "rc=3 E9026 exit=none"
+expect "5 a missing TKC_CC is E9027, rc 3, nothing built" "${r}" "rc=3 E9027 exit=none"
 expect "5b ... naming the variable" "$(grep -c "TKC_CC='${WORK}/no/such/clang'" "${WORK}/o")" "1"
 r="$(build TKC_CC="${WORK}/p.tk")"
-expect "5c a TKC_CC that is not executable is E9026" "${r}" "rc=3 E9026 exit=none"
+expect "5c a TKC_CC that is not executable is E9027" "${r}" "rc=3 E9027 exit=none"
 r="$(build TKC_CC="${WORK}/cc")"
-expect "5d a TKC_CC that is a directory is E9026" "${r}" "rc=3 E9026 exit=none"
+expect "5d a TKC_CC that is a directory is E9027" "${r}" "rc=3 E9027 exit=none"
 env TKC_CC="${WORK}/no/such/clang" "${TKC}" --emit-asm "${WORK}/p.tk" -o "${WORK}/p.s" > "${WORK}/o" 2>&1
-expect "5e --emit-asm refuses it the same way" "rc=$? $(codes "${WORK}/o")" "rc=3 E9026 "
+expect "5e --emit-asm refuses it the same way" "rc=$? $(codes "${WORK}/o")" "rc=3 E9027 "
 
 r="$(build PATH=)"
 expect "6 the default works with PATH emptied" "${r}" "rc=0 exit=7"

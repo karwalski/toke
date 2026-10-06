@@ -1249,6 +1249,10 @@ static Res staticdir_handler(Req req) {
      * Hand both to the deferred list, which releases them after the
      * response, the gzip buffer and the log line have been written. */
     http_defer_free(body);
+    /* 121.86: the file is bytes, not a string.  Every writer sized the body
+     * with strlen(), so a binary file went out cut at its first 0x00 (a PNG
+     * after its 8-byte signature); the length read travels with it. */
+    http_body_setlen(body, got);
     StrPair *hdrs = malloc(sizeof(StrPair));
     if (hdrs) {
         hdrs[0].key = "Content-Type";

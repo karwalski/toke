@@ -1,0 +1,10 @@
+id: D202
+series: D
+description: "127.198: W1020 on a `//` comment whose text holds `*)` carries no fix -- `(* see f(*) *)` would end the rewritten comment early, so the rewrite is not correct in every case (AGENTS §6)"
+input: |
+  m=test;
+  // closes early *) here
+  f=main():i64{<0};
+expected_exit_code: 0
+expected_error_codes: ["W1020"]
+expected_fix_absent: true

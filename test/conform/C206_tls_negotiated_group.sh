@@ -124,6 +124,7 @@ int main(int argc, char **argv) {
 
     /* 1. std.tls client */
     TlsConfig ccfg; memset(&ccfg, 0, sizeof ccfg);
+    ccfg.peer_cert_pem = kp.cert_pem;  /* 121.64: unpinned clients verify; pin */
     TlsConnResult r = { {0}, 1 };
     for (int k = 0; k < 100 && r.is_none; k++) { r = tls_connect("127.0.0.1", port, ccfg); if (r.is_none) usleep(20000); }
     if (r.is_none) { printf("  FAIL: tls_connect never succeeded\n"); return 1; }

@@ -38,11 +38,20 @@ not a number of milliseconds.
 ### Text
 
 When the format is set to `text`, output is human-readable, and carries no
-timestamp:
+timestamp. After the level tag the line is logfmt:
+the message is the field `msg`, followed by your fields in order:
 
 ```
-[INFO] request received request_id=abc123
+[INFO] msg="request received" request_id=abc123
 ```
+
+Every value -- the message included -- is written bare when it is a single
+token, and in double quotes when it is empty or contains a space, `=`, `"`,
+`\` or a control byte, with `\"`, `\\`, `\n`, `\r`, `\t` and `\xHH` escapes
+inside the quotes. So no message or value can spoof another field: a message
+`login ok user=admin` is written `msg="login ok user=admin"`, one field.
+Before story 121.41 the message was written bare after the tag, where
+` user=admin` read as a field of its own.
 
 The output format is set with `log.setformat` (`"json"` or `"text"`). There is
 no environment variable for it: `TK_LOG_FORMAT` is not read (122.13 — earlier
@@ -55,7 +64,7 @@ No string you pass — and no request path, referer or user-agent the access log
 | Sink | What is escaped |
 |---|---|
 | JSON lines, NDJSON access log | `"`, `\` and every byte below 0x20 (`\n`, `\r`, `\t`, otherwise `\u00XX`), and 0x7F |
-| Text lines | the message: `\` and control bytes (`\n`, `\r`, `\t`, `\xHH`). A field value that is empty or contains a space, `=`, `"`, `\` or a control byte is written in double quotes, `key="a b"`; other values are written bare |
+| Text lines | logfmt: the message (field `msg`) and every field value that is empty or contains a space, `=`, `"`, `\` or a control byte is written in double quotes with `"`, `\` and control bytes (`\n`, `\r`, `\t`, `\xHH`) escaped, `key="a b"`; other values are written bare (121.41) |
 | Combined access log | as Apache's `ap_escape_logitem`: `"` and `\` backslash-escaped, control bytes as `\n` `\r` `\t` or `\xHH`; in the unquoted method and IP positions a space is `\x20` |
 
 Before 122.8 the text format and the combined access log wrote these strings raw, and the NDJSON access log escaped only `"` and `\`. Text-format output changes only for values that need quoting.

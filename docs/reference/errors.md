@@ -204,6 +204,14 @@ Hint that an identifier begins with a reserved keyword prefix.
 
 Cross-language hint: a keyword from another language was detected.
 
+The same code covers foreign comment markers. toke's comment form is
+`(* ... *)` (spec v0.4 §H, story 127.198); `//` and `#` are not comment syntax,
+so the lexer skips each to end of line as recovery and warns "toke comments are
+written (* comment *)". **Fix:** `replace '// comment' with '(* comment *)'`
+(or `'# comment'`), offered only when the comment's text holds no `(*` or `*)`
+-- either one would change where the rewritten comment ends. Pinned by D201
+and D202.
+
 Not emitted where toke has a name spelled like the keyword (story 138.10):
 after `let`, before `=` or a `:` that does not end the line, and -- for the
 statement and declaration keywords (`def`, `return`, `class`, `var`, `else`,
@@ -1239,7 +1247,7 @@ output path, a missing C library — stays at line 0 (137.13).
 When clang itself could not be started, the message says so and names the
 remedy instead of reporting exit code 127: tkc runs clang to compile and link
 every program. tkc runs the clang found when it was built, by absolute path,
-or `TKC_CC` (see E9026), so the message reads `clang could not be started:
+or `TKC_CC` (see E9027), so the message reads `clang could not be started:
 '<path>'`; only a tkc built where no clang was found looks clang up on `PATH`,
 and then it reads `clang not found on PATH` (121.28).
 
@@ -1407,6 +1415,35 @@ knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
 
 ### E9026
 
+**`--migrate` declined; source echoed unchanged**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+`tkc --migrate` did not rewrite its input. The source is written to stdout
+byte for byte, so the redirect `--migrate` is used through keeps the
+original, and the compiler exits **4** (`TKC_EXIT_DECLINED`) rather than 1, so a
+migration driver can tell "declined, nothing written but the input" from a
+failed run (story 127.197; both declines used to print plain stderr and exit
+1). The message names the reason:
+
+- the source **already compiles** under the current profile, so there is
+  nothing to migrate (127.57); the record has no line;
+- its **comments cannot be kept** (127.161). `--migrate` normally keeps every
+  comment (spec v0.4 §H); it declines when it cannot place one safely, and
+  the message says why: a `(*` that is never closed, a `//` or `#` comment
+  whose text holds `(*` or `*)` (it cannot become a `(* *)` comment with the
+  same extent), a rewrite that moved code across lines, or a source that
+  needed the migrator's second pass. The record's line is the comment
+  concerned, or 0 when the cause is the whole file.
+
+`TKC_MIGRATE_FORCE=1` migrates anyway, dropping every comment. No `fix`:
+whether to do that is the user's choice.
+
+### E9027
+
 **The C compiler tkc would run is not an executable file**
 
 | Field    | Value |
@@ -1420,7 +1457,7 @@ knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
 a relative one is taken from the current directory). When a build to an
 executable or `--emit-asm` is requested and `TKC_CC` (or, with it unset, the
 baked path) does not name an executable regular file, `tkc` stops with this
-error before clang would run, naming the value, and exits 3. `--check` runs no
+error before clang would run, naming the value, and exits 3 (`TKC_EXIT_USAGE`). `--check` runs no
 clang and is unaffected. Set `TKC_CC` to a clang executable, unset it, or
 rebuild `tkc`. No `fix`: the right path is not knowable from the diagnostic
 (121.28, audit-120 compiler-toolchain COM-04).

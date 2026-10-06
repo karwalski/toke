@@ -66,7 +66,8 @@ int tk_log_debug(const char *msg, const char **fields, int field_count);
  * fmt == "json"  (default): newline-delimited JSON objects.
  *   {"level":"info","msg":"...","key":"val",...,"ts":"..."}
  * fmt == "text": human-readable text lines.
- *   [INFO] msg key=val key2=val2
+ *   [INFO] msg="..." key=val key2="v a l"   (logfmt: a value is quoted
+ *   when it is empty or holds a space, =, ", \ or a control byte; 121.41)
  *
  * Unknown fmt strings are silently ignored.
  *
