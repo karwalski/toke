@@ -69,6 +69,23 @@ int main(void) {
     CHECK(formatted && strcmp(formatted, "Hi Alice, you have 5 items") == 0,
           "i18n_fmt TOON placeholder substitution");
 
+    /* --- A substituted value longer than the output buffer ---
+     * The buffer starts at 2*len(template)+256 bytes and used to be doubled
+     * only once before a value was copied in, so a value longer than twice
+     * that overflowed the heap. */
+    {
+        static char longargs[5200];
+        size_t vlen = 5000;
+        memcpy(longargs, "user=", 5);
+        memset(longargs + 5, 'a', vlen);
+        strcpy(longargs + 5 + vlen, "|count=5");
+        const char *lf = i18n_fmt(tr.ok, "msg", longargs);
+        size_t want = strlen("Hi , you have 5 items") + vlen;
+        CHECK(lf && strlen(lf) == want && strncmp(lf, "Hi aaaa", 7) == 0
+              && strcmp(lf + 3 + vlen, ", you have 5 items") == 0,
+              "i18n_fmt substitutes a value longer than its buffer");
+    }
+
     /* --- Load YAML bundle (remove TOON to test fallback) --- */
     remove("/tmp/test_strings.en.toon");
     I18nBundleResult yr = i18n_load("/tmp/test_strings", "en");

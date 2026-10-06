@@ -344,6 +344,21 @@ ToonArrayResult toon_arr(Toon t, const char *key) {
  * Input:  [{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]
  * Output: data[2]{id,name}:\n1|Alice\n2|Bob\n
  */
+/* toon_grow — make *buf hold at least need bytes, doubling *cap until it does.
+ * A single doubling was not enough for a long value, and snprintf then
+ * advanced pos past cap, so cap - pos wrapped and the next write was
+ * unbounded. On failure the buffer is freed and 0 returned. */
+static int toon_grow(char **buf, size_t *cap, size_t need)
+{
+    if (need <= *cap) return 1;
+    size_t ncap = *cap;
+    while (ncap < need) ncap *= 2;
+    char *nb = (char *)realloc(*buf, ncap);
+    if (!nb) { free(*buf); *buf = NULL; return 0; }
+    *buf = nb; *cap = ncap;
+    return 1;
+}
+
 const char *toon_from_json(const char *json) {
     if (!json) return "";
     const char *p = json;
@@ -506,9 +521,9 @@ const char *toon_from_json(const char *json) {
                         first = 0;
                         /* Grow buffer if needed */
                         size_t need = (size_t)(search - vs) + 16;
-                        if ((size_t)pos + need >= cap) {
-                            cap *= 2;
-                            out = (char *)realloc(out, cap);
+                        if (!toon_grow(&out, &cap, (size_t)pos + need + 1)) {
+                            for (int i = 0; i < nkeys; i++) free(keys[i]);
+                            return "";
                         }
                         pos += snprintf(out + pos, cap - (size_t)pos, "%.*s",
                                         (int)(search - vs), vs);
@@ -523,9 +538,9 @@ const char *toon_from_json(const char *json) {
                         const char *ve = search;
                         while (ve > vs && (*(ve - 1) == ' ' || *(ve - 1) == '\t')) ve--;
                         size_t need = (size_t)(ve - vs) + 16;
-                        if ((size_t)pos + need >= cap) {
-                            cap *= 2;
-                            out = (char *)realloc(out, cap);
+                        if (!toon_grow(&out, &cap, (size_t)pos + need + 1)) {
+                            for (int i = 0; i < nkeys; i++) free(keys[i]);
+                            return "";
                         }
                         pos += snprintf(out + pos, cap - (size_t)pos, "%.*s",
                                         (int)(ve - vs), vs);
@@ -595,9 +610,10 @@ const char *toon_to_json(const char *toon_str) {
 
             /* Grow buffer if needed */
             size_t need = (size_t)(ve - vs) + strlen(fields[fi]) + 16;
-            if ((size_t)pos + need >= cap) {
-                cap *= 2;
-                out = (char *)realloc(out, cap);
+            if (!toon_grow(&out, &cap, (size_t)pos + need + 1)) {
+                for (int i = 0; i < nfields; i++) free(fields[i]);
+                free(fields);
+                return "[]";
             }
 
             /* Detect if value is numeric or boolean */

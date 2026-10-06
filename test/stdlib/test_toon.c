@@ -73,6 +73,30 @@ int main(void) {
     CHECK(json_output && strstr(json_output, "Alice") && strstr(json_output, "Bob"),
           "toon_to_json has values");
 
+    /* --- Values longer than the output buffer ---
+     * Both converters doubled their buffer once before writing a value, and
+     * snprintf then advanced pos past cap; a 20000-byte value overflowed. */
+    {
+        enum { N = 20000 };
+        static char big[N + 64];
+        memcpy(big, "data[1]{name}:\n", 15);
+        memset(big + 15, 'a', N);
+        strcpy(big + 15 + N, "\n");
+        const char *lj = toon_to_json(big);
+        CHECK(lj && strlen(lj) == (size_t)N + 13 && strncmp(lj, "[{\"name\":\"", 10) == 0
+              && strspn(lj + 10, "a") == (size_t)N && strcmp(lj + 10 + N, "\"}]") == 0,
+              "toon_to_json writes a value longer than its buffer");
+
+        static char bigjson[N + 64];
+        memcpy(bigjson, "[{\"name\":\"", 10);
+        memset(bigjson + 10, 'b', N);
+        strcpy(bigjson + 10 + N, "\"}]");
+        const char *lt = toon_from_json(bigjson);
+        const char *run = lt ? strchr(lt, 'b') : NULL;
+        CHECK(run && strspn(run, "b") == (size_t)N,
+              "toon_from_json writes a value longer than its buffer");
+    }
+
     /* --- toon_f64 --- */
     ToonResult fd = toon_dec("{x,y}:\n3.14|2.71\n");
     CHECK(!fd.is_err, "toon_dec float data");
