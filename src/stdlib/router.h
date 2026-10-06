@@ -34,6 +34,28 @@ typedef struct {
     const char  *ip;           /* client IP string, or NULL if unavailable */
 } TkRouteCtx;
 
+/* TkRouteResp memory ownership (story 121.91).
+ *
+ *  - What a HANDLER puts in a response (body, content_type, header arrays
+ *    and strings) stays the handler's: the router never frees it, and it
+ *    must stay valid until the response is written (router_handle_fd,
+ *    router_serve) or the dispatch caller is done with it.
+ *  - What the ROUTER's own code allocates for a response it returns from
+ *    router_dispatch / router_dispatch_ex -- the header arrays and ETag
+ *    string router_use_etag adds, the header arrays and compressed body
+ *    router_use_gzip adds, the body, header arrays and header values of a
+ *    router_static route -- is the router's.  It is valid until the next
+ *    dispatch on ANY router (router_dispatch, router_dispatch_ex, a request
+ *    served by router_handle_fd or router_serve) or router_free, which free
+ *    it; the caller frees none of it.  CORS header arrays are static, with
+ *    the same window.  A middleware or caller that replaces a header array
+ *    or body never frees the one it replaces: it is not its to free.
+ *  - router_static_serve called DIRECTLY is not a dispatch: its caller frees
+ *    what it allocated (see that function).
+ *  - router_handle_fd and router_serve release the router's share as soon
+ *    as the response is written.
+ * Dispatch is single-threaded and not re-entrant: a handler must not
+ * dispatch. */
 typedef struct {
     int          status;        /* HTTP status code */
     const char  *body;
@@ -105,7 +127,9 @@ typedef struct {
  * for the lifetime of the router. */
 void router_use_cors(TkRouter *r, TkCorsOpts opts);
 
-/* Match a request — returns handler result or 404 response */
+/* Match a request — returns handler result or 404 response.  The response's
+ * router-built memory is valid until the next dispatch (TkRouteResp
+ * ownership, 121.91). */
 TkRouteResp router_dispatch(TkRouter *r, const char *method, const char *path,
                              const char *query, const char *body);
 
@@ -128,7 +152,19 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port);
 
 /* router_handle_fd — process one HTTP or WebSocket request/response cycle
  * on an already-connected socket fd.  The socket is closed before returning.
- * Intended for use in tests via socketpair(2). */
+ * Intended for use in tests via socketpair(2).
+ *
+ * router_handle_fd and router_serve (121.90): the request's header fields
+ * (up to 64) reach middleware and handlers, as router_dispatch_ex's are.
+ * The response is written with its status's reason phrase ("304 Not
+ * Modified"; an unregistered code gets an empty one; a status outside
+ * 100..599 is sent as 500) and with header_names/header_values.  The writer
+ * owns framing: a Content-Length, Transfer-Encoding or Connection entry is
+ * not sent, and Content-Type is content_type (a Content-Type entry is used
+ * only when content_type is NULL).  An entry whose name is not an RFC 9110
+ * token, or whose value holds CR, LF or another control byte other than
+ * HTAB, is dropped (no response splitting); such a content_type becomes
+ * application/octet-stream.  1xx, 204 and 304 carry no body. */
 void router_handle_fd(TkRouter *r, int fd);
 
 /* Query string helpers */
@@ -145,8 +181,11 @@ void router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
  * (e.g. "style.css").  if_none_match and range_header may be NULL.
  * Returns a TkRouteResp with status 200/206/304/403/404/416.
  * When status==200/206, resp.body is a heap-allocated buffer the caller must free,
- * resp.body_len its length in bytes (the file may hold 0x00: 121.88), and
- * resp.header_values[0] (the ETag string) is also heap-allocated. */
+ * resp.body_len its length in bytes (the file may hold 0x00: 121.88).
+ * Whenever resp.nheaders > 0 (200, 206, 416) both header arrays and every
+ * header value are heap-allocated and the caller frees them; the header
+ * names are literals.  (Through a router_static route the router owns all
+ * of it instead: see TkRouteResp ownership, 121.91.) */
 TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
                                  const char *if_none_match,
                                  const char *range_header);

@@ -168,14 +168,7 @@ static void test_static_file_mime(void)
     ASSERT(strstr(resp.body, "body") != NULL,
            "T1: body contains CSS content");
 
-    if (resp.status == 200) {
-        free((char *)resp.body);
-        if (resp.nheaders > 0) {
-            free((char *)resp.header_values[0]);
-            free(resp.header_names);
-            free(resp.header_values);
-        }
-    }
+    /* 121.91: a dispatched static response is router-owned */
 
     router_free(r);
     remove(filepath);
@@ -462,8 +455,7 @@ static void test_gzip_compression(void)
                "T7: gzip body starts with magic bytes 1f 8b");
     }
 
-    if (resp.body)     free((char *)resp.body);
-    if (resp.nheaders) { free(resp.header_names); free(resp.header_values); }
+    /* 121.91: compressed body and header arrays are router-owned */
 
     router_free(r);
 }
@@ -498,11 +490,7 @@ static void test_etag_conditional(void)
            "T8: ETag is a weak ETag (W/ prefix)");
 
     /* Free first response headers */
-    if (r1.nheaders > 0) {
-        free((char *)r1.header_values[r1.nheaders - 1]);
-        free(r1.header_names);
-        free(r1.header_values);
-    }
+    /* 121.91: router-owned; released by the next dispatch */
 
     /* Second request — matching If-None-Match → expect 304 */
     const char *hnames[] = { "If-None-Match" };
