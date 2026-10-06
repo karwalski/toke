@@ -1316,8 +1316,8 @@ check-canonical:
 # docs/about/repos.md still cannot be swept because they are not checked out in
 # this workspace — karwalski/loke (the local intelligence layer) and
 # karwalski/tkc (an early copy of the compiler tree, public with no description).
-# A repo that is absent is reported by name as a skip, not silently passed over;
-# cloning them into the workspace is story 132.46.
+# A repo that is absent is reported by name as a skip, not silently passed over.
+# (132.46 is a different story; CI clones every public sibling since PR #1.)
 #
 # 132.68 / 136.41 — siblings are resolved from the WORKSPACE, not from `..`.
 # `../toke-*` is relative to the current directory, so from a worktree
@@ -1331,10 +1331,11 @@ check-canonical:
 # whose declared `../toke-*` surfaces resolve through it, and to
 # verify_project_facts.py, which reads ../toke-corpus.
 #
-# And a sweep that resolves NO sibling now FAILS instead of passing.  The one
-# place that is expected -- a GitHub runner, where no sibling is checked out
-# (story 132.46) -- says so explicitly with CLAIMS_ALLOW_NO_SIBLINGS=1, and the
-# run still prints that it checked zero repositories.
+# And a sweep that resolves NO sibling now FAILS instead of passing.  A runner
+# where no sibling can be checked out says so explicitly with
+# CLAIMS_ALLOW_NO_SIBLINGS=1, and the run still prints that it checked zero
+# repositories.  The GitHub workflow no longer needs it: since PR #1 it clones
+# every public sibling beside the checkout first.
 ifndef TOKE_WORKSPACE
 TOKE_WORKSPACE := $(shell d=$$(git rev-parse --git-common-dir 2>/dev/null) && \
                     cd "$$d/../.." 2>/dev/null && pwd)
