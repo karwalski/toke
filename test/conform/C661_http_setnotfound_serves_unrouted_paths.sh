@@ -178,10 +178,13 @@ C
 # with, read from tkc's dependency table (scripts/stdlib_link_set.sh) -- the
 # hand-written list that stood here broke at merge on 121.74's toml.c ->
 # file.c dependency.
-if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" http 2>copy.log)" \
+# 127.270: as cached objects built with the harness's flags.
+CF=(-std=c99 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-function -g
+    -iquote "${S}" -I"${REPO_ROOT}/stdlib/vendor/tomlc99")
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --cc "${CC}" \
+        --objects http -- "${CF[@]}" 2>copy.log)" \
    && LINK=() && while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}" \
-   && ${CC} -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-function -g \
-        -iquote "${S}" -I"${REPO_ROOT}/stdlib/vendor/tomlc99" -o copy copy.c \
+   && ${CC} "${CF[@]}" -o copy copy.c \
         "${LINK[@]}" -lz -lpthread -lm >> copy.log 2>&1; then
     if out="$(./copy 2>&1)"; then pass "setnotfound copies the body: it survives the caller's free"
     else fail "setnotfound copy: exit $? ${out}"; fi

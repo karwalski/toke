@@ -53,7 +53,10 @@ echo "--------------------------------------------------------------"
 # 127.268: the stdlib link set comes from tkc's own dependency table
 # (src/stdlib_deps.c via --emit-deps), not a hand list that a stdlib
 # dependency change silently breaks.
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" router)" \
+SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+# 127.270: the stdlib set is linked as cached objects built with these flags.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --cc "${CC}" --objects router -- "${CF[@]}")" \
     || { fail "stdlib link set: see stderr above"; echo "C462: ${PASS} passed, ${FAIL} failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 
@@ -149,9 +152,7 @@ int main(int argc, char **argv) {
     return bad ? 1 : 0;
 }
 EOF
-SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! ASAN_OPTIONS=detect_leaks=0 "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" \
-        -o "${WORK}/r" "${WORK}/r.c" "${LINK[@]}" -lz >"${WORK}/r.cc" 2>&1; then
+if ! ASAN_OPTIONS=detect_leaks=0 "${CC}" "${CF[@]}" -o "${WORK}/r" "${WORK}/r.c" "${LINK[@]}" -lz >"${WORK}/r.cc" 2>&1; then
     fail "router harness build: $(grep -a -m2 error "${WORK}/r.cc" | head -c 300)"
 else
     ASAN_OPTIONS=detect_leaks=0 "${WORK}/r" "${WORK}/root/s" >"${WORK}/r.out" 2>&1

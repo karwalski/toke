@@ -227,7 +227,7 @@ static void check_call(const Node *call, const Node *fdecl, const char *src, int
             diag_emit(DIAG_ERROR, E4075, off, line, col, msg,
                       "got", got,
                       "expected", "a pattern in toke's regex language (docs/stdlib/str.md, Regular expressions)",
-                      NULL);
+                      (const char *)NULL);
             (*count)++;
             if (via_let && g_nseen < (int)(sizeof g_seen / sizeof g_seen[0]))
                 g_seen[g_nseen++] = lit->tok_start;

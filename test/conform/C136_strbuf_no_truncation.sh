@@ -57,10 +57,14 @@ echo "----------------------------------------------------------------------"
 # stdlib link set for those modules.  127.268: the set comes from tkc's own
 # dependency table (src/stdlib_deps.c via --emit-deps), not a hand list that
 # a stdlib dependency change silently breaks.  A case whose set cannot be
-# resolved fails visibly and is not run.
+# resolved fails visibly and is not run.  127.270: the set is cached objects
+# built with case_run's flags plus ${LSET_CFLAGS} -- the extra compile flags
+# the case passes case_run, which reach the stdlib sources too.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
 lset() {
     local n="$1" out l; shift
-    if ! out="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" "$@")"; then
+    if ! out="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+            --objects "$@" -- "${CF[@]}" ${LSET_CFLAGS:-})"; then
         fail "${n}: stdlib link set: see stderr above"; return 1
     fi
     eval "LS_${n}=()"
@@ -71,7 +75,7 @@ lset() {
 # "OK <what>" lines for passes and "BAD <what>" for failures.
 case_run() {
     local name="$1" src="$2"; shift 2
-    if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
+    if ! "${CC}" "${CF[@]}" \
             -o "${WORK}/${name}" "${src}" "$@" >"${WORK}/${name}.cc" 2>&1; then
         fail "${name}: build: $(grep -a -m3 -E 'error' "${WORK}/${name}.cc" | head -c 400)"
         return
@@ -288,7 +292,7 @@ int main(void) {
 C
     # shellcheck disable=SC2086
     # acme.c is #included above, so it is left out of the set.
-    lset acme --except acme.c http \
+    LSET_CFLAGS="-DTK_HAVE_OPENSSL ${OSSL_CFLAGS}" lset acme --except acme.c http \
         && case_run acme "${WORK}/t_acme.c" -DTK_HAVE_OPENSSL ${OSSL_CFLAGS} "${LS_acme[@]}" \
             ${OSSL_LIBS} -lz -lm -lpthread
 fi
