@@ -942,5 +942,6 @@ char *tls_protocol(TlsConn conn)
     const char *v = SSL_get_version(e->ssl);
     char *out = strdup(v ? v : "");
     registry_unlock();
-    return out ? out : strdup("");
+    if (!out) out = strdup("");
+    return out;
 }

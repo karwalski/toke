@@ -62,7 +62,7 @@ int64_t tk_chart_bar_w(int64_t labels_i64, int64_t data_i64, int64_t title_i64) 
         }
     }
     TkDataset *ds = (TkDataset *)calloc(1, sizeof(TkDataset));
-    if (!ds) { free((void *)labels.data); return 0; }
+    if (!ds) { free(labels.data); return 0; }
     ds->label = "data";
     ds->color = NULL;
     if (data_i64) {
@@ -78,6 +78,8 @@ int64_t tk_chart_bar_w(int64_t labels_i64, int64_t data_i64, int64_t title_i64) 
             }
         }
     }
+    /* cppcheck-suppress memleak ; chart_bar stores labels.data in the
+     * returned spec (make_spec in chart.c), which owns it from here. */
     return (int64_t)(intptr_t)chart_bar(labels, ds, 1,
                title_i64 ? (const char *)(intptr_t)title_i64 : NULL);
 }

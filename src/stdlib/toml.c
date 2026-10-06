@@ -23,26 +23,34 @@ static TomlResult toml_err(const char *msg)
     return r;
 }
 
+/* The parse error text. It was copied to the heap, but err_msg is also set
+ * to string literals elsewhere, so no caller can free it and none does
+ * (tk_toml_load_w discards it): every parse error leaked. A thread-local
+ * buffer is valid until the next toml_load on the same thread. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+static _Thread_local char g_toml_errbuf[256];
+#else
+static __thread char g_toml_errbuf[256];
+#endif
+
 /*
  * toml_load — parse a TOML string.
  *
  * Returns a TomlResult wrapping a heap-allocated toml_table_t *.
  * On success, caller owns the table and must call toml_free() via toml_free_table().
- * On error, err_msg describes the parse failure.
+ * On error, err_msg describes the parse failure; it is valid until the next
+ * toml_load call on the same thread.
  */
 TomlResult toml_load(const char *src)
 {
     TomlResult r = {NULL, 0, NULL};
     if (!src) return toml_err("null input");
 
-    char errbuf[256] = {0};
-    toml_table_t *tab = toml_parse((char *)src, errbuf, sizeof(errbuf));
+    g_toml_errbuf[0] = '\0';
+    toml_table_t *tab = toml_parse((char *)src, g_toml_errbuf, sizeof(g_toml_errbuf));
     if (!tab) {
-        /* Copy errbuf into heap so caller doesn't need to worry about lifetime. */
-        char *msg = malloc(sizeof(errbuf));
-        if (msg) memcpy(msg, errbuf, sizeof(errbuf));
         r.is_err = 1;
-        r.err_msg = msg ? msg : "parse error";
+        r.err_msg = g_toml_errbuf[0] ? g_toml_errbuf : "parse error";
         return r;
     }
     r.ok = tab;
