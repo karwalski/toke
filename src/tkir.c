@@ -1015,7 +1015,7 @@ int emit_tkir(const Node *ast, const char *src,
     FILE *f = fopen(out_path, "wb");
     if (!f) {
         diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
-                  "failed to open output file for .tkir", "fix", NULL);
+                  "failed to open output file for .tkir", "fix", (const char *)NULL);
         tkir_buf_free(&out);
         tkir_buf_free(&e.code);
         return -1;
