@@ -33,12 +33,12 @@
  * shell, so paths with metacharacters are inert. Returns clang's exit code
  * (0 = success), or -1 if the process could not be run.
  */
-static int run_clang_emit_asm(int opt_level, const char *ir_path,
+static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path,
                               const char *asm_path, const char *tgt) {
     char obuf[16], tbuf[256];
     snprintf(obuf, sizeof obuf, "-O%d", opt_level);
     char *argv[16]; int argc = 0;
-    argv[argc++] = "clang";
+    argv[argc++] = (char *)cc;   /* 121.28: an absolute path (resolve_cc) */
     argv[argc++] = obuf;
     argv[argc++] = "-Wno-override-module";
     argv[argc++] = "-S";
@@ -48,7 +48,7 @@ static int run_clang_emit_asm(int opt_level, const char *ir_path,
     if (tgt && tgt[0]) { snprintf(tbuf, sizeof tbuf, "--target=%s", tgt); argv[argc++] = tbuf; }
     argv[argc] = NULL;
     pid_t pid = fork();
-    if (pid == 0) { execvp("clang", argv); _exit(127); }
+    if (pid == 0) { execvp(cc, argv); _exit(127); }
     if (pid > 0) {
         int status;
         if (waitpid(pid, &status, 0) == pid && WIFEXITED(status)) return WEXITSTATUS(status);
@@ -115,6 +115,54 @@ static int limit_tap(DiagSeverity sev, int code, int byte_offset, void *ctx) {
     return 1;
 }
 static int limit_or_internal(void) { return g_limit_seen ? ECOMPILE : EINTERNAL; }
+
+/* 121.28 (audit-120 compiler-toolchain COM-04), owner decision §2.10: tkc ran
+ * `clang` looked up on $PATH, so any directory early on a user's $PATH could
+ * substitute the compiler.  The clang that `make` found is now baked in as an
+ * absolute path (TKC_CLANG_PATH, build_info.h), and the TKC_CC environment
+ * variable overrides it.  Either must name an executable regular file, or the
+ * build stops with E9026 before clang would run -- never a fall-through to
+ * $PATH.  A relative TKC_CC is taken from the current directory.  Only a tkc
+ * built where no clang was found falls back to $PATH (TKC_CLANG_PATH "").
+ * Resolved once, lazily, by the steps that run clang; returns the path, or
+ * NULL after E9026. */
+static const char *resolve_cc(void)
+{
+    static char cc[4096];
+    static int done = 0;
+    if (done) return cc[0] ? cc : NULL;
+    done = 1;
+    const char *env = getenv("TKC_CC");
+    const char *want = (env && env[0]) ? env : TKC_CLANG_PATH;
+    if (!want[0]) { snprintf(cc, sizeof cc, "clang"); llvm_set_cc(cc); return cc; }
+    int n;
+    if (want[0] == '/') n = snprintf(cc, sizeof cc, "%s", want);
+    else {
+        char cwd[2048];
+        n = getcwd(cwd, sizeof cwd) ? snprintf(cc, sizeof cc, "%s/%s", cwd, want) : -1;
+    }
+    struct stat sb;
+    if (n < 0 || (size_t)n >= sizeof cc || stat(cc, &sb) != 0 ||
+        !S_ISREG(sb.st_mode) || access(cc, X_OK) != 0) {
+        char msg[1024];
+        if (env && env[0])
+            snprintf(msg, sizeof msg,
+                     "TKC_CC='%.600s' is not an executable file; set TKC_CC to the "
+                     "path of a clang executable, or unset it to use the clang "
+                     "tkc was built with (%.200s)", env,
+                     TKC_CLANG_PATH[0] ? TKC_CLANG_PATH : "clang on $PATH");
+        else
+            snprintf(msg, sizeof msg,
+                     "the clang tkc was built with (%.600s) is not an executable "
+                     "file any more; set TKC_CC to the path of a clang executable, "
+                     "or rebuild tkc", TKC_CLANG_PATH);
+        diag_emit(DIAG_ERROR, E9026, 0, 0, 0, msg, (void *)0);
+        cc[0] = '\0';
+        return NULL;
+    }
+    llvm_set_cc(cc);
+    return cc;
+}
 
 /* 131.33: the version with the commit the binary was built from.  Plain:
  * `toke <version> (git 1a2b3c4d5e6f)`, `(git 1a2b3c4d5e6f, dirty)` or
@@ -303,6 +351,7 @@ static const char HELP[] =
     "\n"
     "Environment:\n"
     "  TKC_INTERFACE_PATH  Colon-separated list of .tki search directories\n"
+    "  TKC_CC              Path of the clang to build with (default: build-time clang)\n"
     "\n"
     "  --version           Print version and build commit and exit\n"
     "                      (--version --json: one JSON object)\n"
@@ -878,6 +927,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         diag_set_source(NULL, 0);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
+    if (!resolve_cc()) { rc = EUSAGE; goto cleanup; }   /* 121.28: E9026 */
     if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = limit_or_internal();
 
 cleanup:
@@ -1503,7 +1553,9 @@ static int process_file(const char *src, const RunOpts *o)
         } else {
             snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
         }
-        int r = run_clang_emit_asm(opt_level, tmp, asm_path, tgt);
+        const char *cc = resolve_cc();   /* 121.28: E9026 when unusable */
+        if (!cc) { unlink(tmp); symtab_free(&st); rc = EUSAGE; goto done; }
+        int r = run_clang_emit_asm(cc, opt_level, tmp, asm_path, tgt);
         unlink(tmp);
         symtab_free(&st);
         if (r != 0) { rc = EINTERNAL; goto done; }
@@ -1566,6 +1618,7 @@ static int process_file(const char *src, const RunOpts *o)
         CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
+        if (!resolve_cc()) { unlink(tmp); symtab_free(&st); rc = EUSAGE; goto done; }   /* 121.28: E9026 */
         if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(100);
         unlink(tmp);

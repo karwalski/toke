@@ -1400,6 +1400,26 @@ directory whose path has no whitespace (a symlink to it works: the compiler
 resolves `TKC_STDLIB_DIR` to its real path). No `fix`: the right path is not
 knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
 
+### E9026
+
+**The C compiler tkc would run is not an executable file**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+`tkc` assembles and links a program with the clang that `make` found when
+`tkc` was built, baked in as an absolute path -- never a `clang` looked up on
+`$PATH` at run time. The `TKC_CC` environment variable overrides it (a path;
+a relative one is taken from the current directory). When a build to an
+executable or `--emit-asm` is requested and `TKC_CC` (or, with it unset, the
+baked path) does not name an executable regular file, `tkc` stops with this
+error before clang would run, naming the value, and exits 3. `--check` runs no
+clang and is unaffected. Set `TKC_CC` to a clang executable, unset it, or
+rebuild `tkc`. No `fix`: the right path is not knowable from the diagnostic
+(121.28, audit-120 compiler-toolchain COM-04).
+
 ## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
 
 The codes `docs/reference/package-manifest.md` gives for package resolution.
