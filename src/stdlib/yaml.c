@@ -180,7 +180,7 @@ const char *yaml_enc(const char *v) {
 
 /* yaml_dec — validate and store raw YAML string */
 YamlResult yaml_dec(const char *s) {
-    YamlResult r;
+    YamlResult r = {0};
     if (!s || !*s) {
         r.is_err = 1;
         r.err = make_err(YAML_ERR_PARSE, "empty input");
@@ -193,7 +193,7 @@ YamlResult yaml_dec(const char *s) {
 
 /* yaml_str — extract a string value for key */
 StrYamlResult yaml_str(Yaml y, const char *key) {
-    StrYamlResult r;
+    StrYamlResult r = {0};
     const char *vs, *ve;
     if (!find_yaml_key(y.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;
@@ -208,7 +208,7 @@ StrYamlResult yaml_str(Yaml y, const char *key) {
 
 /* yaml_i64 — extract an integer value for key */
 I64YamlResult yaml_i64(Yaml y, const char *key) {
-    I64YamlResult r;
+    I64YamlResult r = {0};
     const char *vs, *ve;
     if (!find_yaml_key(y.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;
@@ -223,7 +223,7 @@ I64YamlResult yaml_i64(Yaml y, const char *key) {
 
 /* yaml_f64 — extract a float value for key */
 F64YamlResult yaml_f64(Yaml y, const char *key) {
-    F64YamlResult r;
+    F64YamlResult r = {0};
     const char *vs, *ve;
     if (!find_yaml_key(y.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;
@@ -238,7 +238,7 @@ F64YamlResult yaml_f64(Yaml y, const char *key) {
 
 /* yaml_bool — extract a boolean value for key */
 BoolYamlResult yaml_bool(Yaml y, const char *key) {
-    BoolYamlResult r;
+    BoolYamlResult r = {0};
     const char *vs, *ve;
     if (!find_yaml_key(y.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;
@@ -262,7 +262,7 @@ BoolYamlResult yaml_bool(Yaml y, const char *key) {
 
 /* yaml_arr — extract a YAML sequence as YamlArray */
 YamlArrayResult yaml_arr(Yaml y, const char *key) {
-    YamlArrayResult r;
+    YamlArrayResult r = {0};
     const char *vs, *ve;
     if (!find_yaml_key(y.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;

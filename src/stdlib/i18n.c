@@ -204,7 +204,7 @@ try_yaml:
 /* ------------------------------------------------------------------ */
 
 I18nBundleResult i18n_load(const char *base_path, const char *locale) {
-    I18nBundleResult r;
+    I18nBundleResult r = {0};
     char *data;
 
     /* Try TOON first (default format), then YAML, then JSON */

@@ -167,7 +167,7 @@ const char *toon_enc(const char *v) {
 
 /* toon_dec — validate and store raw TOON string */
 ToonResult toon_dec(const char *s) {
-    ToonResult r;
+    ToonResult r = {0};
     if (!s || !*s) {
         r.is_err = 1;
         r.err = make_err(TOON_ERR_PARSE, "empty input");
@@ -196,7 +196,7 @@ ToonResult toon_dec(const char *s) {
 
 /* toon_str — extract a string value for key */
 StrToonResult toon_str(Toon t, const char *key) {
-    StrToonResult r;
+    StrToonResult r = {0};
     const char *vs, *ve;
     if (!find_toon_field(t.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(TOON_ERR_MISSING, key); return r;
@@ -211,7 +211,7 @@ StrToonResult toon_str(Toon t, const char *key) {
 
 /* toon_i64 — extract an integer value for key */
 I64ToonResult toon_i64(Toon t, const char *key) {
-    I64ToonResult r;
+    I64ToonResult r = {0};
     const char *vs, *ve;
     if (!find_toon_field(t.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(TOON_ERR_MISSING, key); return r;
@@ -226,7 +226,7 @@ I64ToonResult toon_i64(Toon t, const char *key) {
 
 /* toon_f64 — extract a float value for key */
 F64ToonResult toon_f64(Toon t, const char *key) {
-    F64ToonResult r;
+    F64ToonResult r = {0};
     const char *vs, *ve;
     if (!find_toon_field(t.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(TOON_ERR_MISSING, key); return r;
@@ -241,7 +241,7 @@ F64ToonResult toon_f64(Toon t, const char *key) {
 
 /* toon_bool — extract a boolean value for key */
 BoolToonResult toon_bool(Toon t, const char *key) {
-    BoolToonResult r;
+    BoolToonResult r = {0};
     const char *vs, *ve;
     if (!find_toon_field(t.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(TOON_ERR_MISSING, key); return r;
@@ -258,7 +258,7 @@ BoolToonResult toon_bool(Toon t, const char *key) {
 
 /* toon_arr — extract array rows as ToonArray */
 ToonArrayResult toon_arr(Toon t, const char *key) {
-    ToonArrayResult r;
+    ToonArrayResult r = {0};
     const char *p = t.raw;
     char **fields = NULL;
     int nfields = 0, rowcount = 0;
