@@ -420,8 +420,18 @@ src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
 # scripts/check_stdlib_analysis.py now runs three passes over $(ANALYZE_SRCS)
 # and FAILS on anything not accounted for on a checked-in, self-failing
 # skiplist.  See its header for what a pass does and does not prove.
+#
+# PR #1 (f21f7432): --analyze is the clang static analyzer and GCC has no such
+# flag, but the script compiles with $CC, which is `cc` -- GCC on Linux -- so
+# `make lint` failed on every Linux host and CI run before analysing a line.
+# The --analyze targets run with LINT_CC (default clang), and say so by name
+# when it is missing.  lint-nonhost has no --analyze pass and keeps CC.
+LINT_CC ?= clang
+LINT_CC_CHECK = @command -v $(LINT_CC) >/dev/null 2>&1 || { \
+	  echo "lint: '$(LINT_CC)' not found; the --analyze pass needs the clang static analyzer (install clang, or set LINT_CC)" >&2; exit 1; }
 lint:
-	@python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
@@ -433,13 +443,15 @@ lint-nonhost:
 #   make lint-file F=src/stdlib/http.c
 lint-file:
 	@if [ -z "$(F)" ]; then echo "usage: make lint-file F=<source.c> [F=\"a.c b.c\"]" >&2; exit 2; fi
-	@python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)
 	@python3 scripts/check_stdlib_analysis.py --only --nonhost $(F)
 
 # Drafting aid: print proposed skiplist lines for everything now failing.
 # Writes nothing — paste the lines in and put a real reason and story on each.
 lint-report:
-	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
 	    --report $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 127.156 / 136.65: every conformance entry point goes through
@@ -1304,8 +1316,8 @@ check-canonical:
 # docs/about/repos.md still cannot be swept because they are not checked out in
 # this workspace — karwalski/loke (the local intelligence layer) and
 # karwalski/tkc (an early copy of the compiler tree, public with no description).
-# A repo that is absent is reported by name as a skip, not silently passed over;
-# cloning them into the workspace is story 132.46.
+# A repo that is absent is reported by name as a skip, not silently passed over.
+# (132.46 is a different story; CI clones every public sibling since PR #1.)
 #
 # 132.68 / 136.41 — siblings are resolved from the WORKSPACE, not from `..`.
 # `../toke-*` is relative to the current directory, so from a worktree
@@ -1319,10 +1331,11 @@ check-canonical:
 # whose declared `../toke-*` surfaces resolve through it, and to
 # verify_project_facts.py, which reads ../toke-corpus.
 #
-# And a sweep that resolves NO sibling now FAILS instead of passing.  The one
-# place that is expected -- a GitHub runner, where no sibling is checked out
-# (story 132.46) -- says so explicitly with CLAIMS_ALLOW_NO_SIBLINGS=1, and the
-# run still prints that it checked zero repositories.
+# And a sweep that resolves NO sibling now FAILS instead of passing.  A runner
+# where no sibling can be checked out says so explicitly with
+# CLAIMS_ALLOW_NO_SIBLINGS=1, and the run still prints that it checked zero
+# repositories.  The GitHub workflow no longer needs it: since PR #1 it clones
+# every public sibling beside the checkout first.
 ifndef TOKE_WORKSPACE
 TOKE_WORKSPACE := $(shell d=$$(git rev-parse --git-common-dir 2>/dev/null) && \
                     cd "$$d/../.." 2>/dev/null && pwd)

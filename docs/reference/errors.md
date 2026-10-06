@@ -1234,6 +1234,10 @@ where it was declared). The message also carries clang's first error text or
 the undefined symbol's name. A failure with no such trace — an unwritable
 output path, a missing C library — stays at line 0 (137.13).
 
+When clang itself could not be started (not installed, or not on `PATH`),
+the message says `clang not found on PATH` and names the remedy instead of
+reporting exit code 127: tkc runs clang to compile and link every program.
+
 ### E9004
 
 **Unresolved stdlib call — missing import**

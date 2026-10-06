@@ -192,7 +192,7 @@ static void eerr(Parser *p, int code, Token *t, const char *msg) {
      * and the declaration-order check in parse()). */
     p->errs++;
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, msg,
-                   "fix", fix, NULL);
+                   "fix", fix, (const char *)NULL);
 }
 
 /*
@@ -227,7 +227,7 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
      * NULL fix listed first would drop "got" too (127.233; C335). */
     diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, buf,
                    "got", tok_text,
-                   "fix", fix, NULL);
+                   "fix", fix, (const char *)NULL);
 }
 
 /*
@@ -237,7 +237,7 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
  */
 static void ewarn(Parser *p, int code, Token *t, const char *msg, const char *fix) {
     (void)p;
-    diag_emit(DIAG_WARNING, code, t->start, t->line, t->col, msg, "fix", fix, NULL);
+    diag_emit(DIAG_WARNING, code, t->start, t->line, t->col, msg, "fix", fix, (const char *)NULL);
 }
 
 /*
@@ -295,7 +295,7 @@ static void opt_semi(Parser *p) {
      * `got` and `expected` stay: they are facts.  D111. */
     diag_emit_span(DIAG_ERROR, E2003, t->start, t->line, t->col, t->len, "missing semicolon",
                    "got", tok_text,
-                   "expected", ";", NULL);
+                   "expected", ";", (const char *)NULL);
 }
 
 /*
@@ -323,7 +323,7 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         /* 127.235: no "fix" -- see eerr.  D109. */
         diag_emit(DIAG_ERROR, E2004, t->start, t->line, t->col, full_msg,
                   "got", "end of file",
-                  "expected", w, NULL);
+                  "expected", w, (const char *)NULL);
     } else {
         char full_msg[256];
         if (tok_text[0])
@@ -336,7 +336,7 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
         /* 127.233: no "fix" -- see eerr_got.  D107. */
         diag_emit_span(DIAG_ERROR, E2002, t->start, t->line, t->col, t->len, full_msg,
                        "got", tok_text,
-                       "expected", w, NULL);
+                       "expected", w, (const char *)NULL);
     }
     return NULL;
 }
@@ -366,7 +366,7 @@ static Token *xp_alias(Parser *p) {
     p->errs++;
     diag_emit_span(DIAG_ERROR, E2002, t->start, t->line, t->col, t->len, msg,
                    "got", word,
-                   "expected", "an import alias that is not a keyword", NULL);
+                   "expected", "an import alias that is not a keyword", (const char *)NULL);
     if (is_kw) p->kw_alias |= 1u << (unsigned)(k - TK_KW_F);
     return adv(p);
 }
@@ -1017,7 +1017,7 @@ static Node *parse_unary(Parser *p) {
             diag_emit(DIAG_ERROR, E2002, t->start, t->line, t->col,
                       "leading '!' on a struct value does not raise an error (it is discarded as logical-NOT)",
                       "fix", "to return an error use `<$err(payload)`; `!` negates a bool, it does not raise",
-                      NULL);
+                      (const char *)NULL);
         }
         return n;
     }
@@ -1124,7 +1124,7 @@ static Node *parse_compare(Parser *p) {
                 "(only a plain name can be assigned, `name=expr;`). Bind a new "
                 "value with every field instead, e.g. `x=$type{a:9;b:x.b};` on a "
                 "`mut.` binding",
-                "got","=","expected","no '=' after a field access",NULL);
+                "got","=","expected","no '=' after a field access",(const char *)NULL);
         } else
             eerr(p,E2002,cur(p),"`=` is assignment; use `==` for equality");
         Token *t=adv(p); /* consume '=' and the RHS to recover */
@@ -2107,7 +2107,7 @@ static Node *parse_source(Parser *pp)
         }
         if(root&&root->child_count>0) set_decl_end(&p,root->children[root->child_count-1],m0);
     }
-    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first",NULL); /* 127.221: no fix — the declaration may exist later (move, not add), and the name is the author's */ p.errs++; }
+    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first",(const char *)NULL); /* 127.221: no fix — the declaration may exist later (move, not add), and the name is the author's */ p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=global 5=func */
     while(peek(&p)!=TK_EOF){
         if(p.errs>=MAX_PARSE_ERRORS) break;
@@ -2128,7 +2128,7 @@ static Node *parse_source(Parser *pp)
         /* 127.240: no fix.  "reorder declarations: m= first, then i=, t=, f="
          * names neither the declaration to move nor where to, and leaves out
          * constants and `let` globals, which the order also covers.  D112. */
-        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation",NULL);p.errs++;}
+        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation",(const char *)NULL);p.errs++;}
         else if(cp>phase) phase=cp;
         Node *d;
         if(cp==1){

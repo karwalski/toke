@@ -1015,7 +1015,7 @@ int emit_tkir(const Node *ast, const char *src,
     FILE *f = fopen(out_path, "wb");
     if (!f) {
         diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
-                  "failed to open output file for .tkir", "fix", NULL);
+                  "failed to open output file for .tkir", "fix", (const char *)NULL);
         tkir_buf_free(&out);
         tkir_buf_free(&e.code);
         return -1;
@@ -1597,7 +1597,7 @@ int tkir_decode(const uint8_t *buf, size_t len, TkirModule *out,
     if (vmaj != TKIR_VERSION_MAJOR) {
         char msg[128];
         snprintf(msg, sizeof(msg), "unsupported TKIR version %u.%u (expected %u.x)",
-                 vmaj, vmin, TKIR_VERSION_MAJOR);
+                 (unsigned)vmaj, (unsigned)vmin, (unsigned)TKIR_VERSION_MAJOR);
         set_err(errbuf, errbuf_len, msg);
         return -1;
     }
