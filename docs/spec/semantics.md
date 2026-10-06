@@ -435,6 +435,15 @@ error union type. Its semantics are:
    `RT010` when the error occurs (memory-model §6.6). An error from a
    `std.*` call is re-raised without its payload when its type is not the
    enclosing function's.
+6. A call through a function value (a `let` bound to a function, a copy of
+   `&f`, a closure, an array element, an immediately applied closure) is a
+   call of that value's signature, and the error type is part of the
+   signature: `!` and `mt` decide on the callee's error exactly as for a
+   call by name, and rule 5 applies to it (127.276). A function type written
+   `(T1;..):R` is infallible, so a function declaring `R!$e` cannot be
+   passed to a parameter, stored in a field, or bound to an annotated `let`
+   of that type: `[errors.md E4031]`, whose message names the error type
+   (`(i64):i64!$e`).
 
 ### 5.3 Match on Error Types
 

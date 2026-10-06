@@ -1522,11 +1522,13 @@ static int stdlib_err_passes_through(Ctx *c, const char *from, const char *to)
  * `$a` payload was read as a `$b` variant (a str pointer printed as `$b`'s
  * i64 variant).  127.182's rule, for user errors: pass through only into the
  * same layout, else re-raise payload-less (tag -1). */
-static int user_err_reraise(Ctx *c, const FnSig *ucs) {
-    if (!c->cur_fn_err[0] || !ucs || !ucs->err_type_name[0]) return 0;
-    const char *from = ucs->err_type_name[0] == '$' ? ucs->err_type_name + 1
-                                                    : ucs->err_type_name;
+static int user_err_reraise_named(Ctx *c, const char *ety) {
+    if (!c->cur_fn_err[0] || !ety || !ety[0]) return 0;
+    const char *from = ety[0] == '$' ? ety + 1 : ety;
     return !stdlib_err_passes_through(c, from, c->cur_fn_err);
+}
+static int user_err_reraise(Ctx *c, const FnSig *ucs) {
+    return ucs ? user_err_reraise_named(c, ucs->err_type_name) : 0;
 }
 
 /* 127.225 (owner decision 2026-10-01 §2.3): re-raising a user error into a
@@ -1539,16 +1541,42 @@ static int user_err_reraise(Ctx *c, const FnSig *ucs) {
  * read as its last variant with payload 0.  `!str`, `!$none` and a type with
  * no layout here keep the payload-less re-raise.  Copies the two names
  * (without '$') into from/to; 1 when the re-raise must trap. */
-static int user_err_reraise_traps(Ctx *c, const FnSig *ucs,
-                                  char *from, char *to, size_t sz) {
-    if (!user_err_reraise(c, ucs)) return 0;
-    const char *f = ucs->err_type_name[0] == '$' ? ucs->err_type_name + 1
-                                                 : ucs->err_type_name;
+static int user_err_reraise_traps_named(Ctx *c, const char *ety,
+                                        char *from, char *to, size_t sz) {
+    if (!user_err_reraise_named(c, ety)) return 0;
+    const char *f = ety[0] == '$' ? ety + 1 : ety;
     const char *t = c->cur_fn_err[0] == '$' ? c->cur_fn_err + 1 : c->cur_fn_err;
     if (!strcmp(f, "none") || !strcmp(t, "none")) return 0;
     if (!lookup_struct(c, f) || !lookup_struct(c, t)) return 0;
     snprintf(from, sz, "%s", f);
     snprintf(to, sz, "%s", t);
+    return 1;
+}
+static int user_err_reraise_traps(Ctx *c, const FnSig *ucs,
+                                  char *from, char *to, size_t sz) {
+    return ucs ? user_err_reraise_traps_named(c, ucs->err_type_name, from, to, sz) : 0;
+}
+
+/* 127.276: a call through a function VALUE -- a fn-typed `let`, a
+ * parameter, a closure, a struct field or array element copied into a local,
+ * an immediately-applied closure -- whose signature declares `T!$E`.  The
+ * error channel was tracked only for NAMED callees (lookup_fn), so `g(n)!$e`
+ * and `mt g(n){..}` decided on the value sentinel: a failure took the $ok
+ * path with the error box's address (or 0) as its value.  Every fallible
+ * function keeps @tk_current_error truthful on every exit (127.185), lifted
+ * closures included, so the channel is as good through a pointer as through
+ * a name; the checker records the callee's signature on its rtype (124.0c
+ * item 2), and the error type is part of that signature.  Returns 1 when the
+ * call is such a call, copying the declared error type's name (no '$'; ""
+ * when the checker has no name for it, e.g. `!str`) into ety. */
+static int fnval_call_err(const Node *call, char *ety, size_t sz) {
+    if (sz) ety[0] = '\0';
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return 0;
+    const Node *callee = call->children[0];
+    if (!callee || !tk_type_is_fnval(callee->rtype)) return 0;
+    const Type *r = callee->rtype->elem;
+    if (!r || r->kind != TY_ERROR_TYPE) return 0;
+    if (r->name) snprintf(ety, sz, "%s", r->name[0] == '$' ? r->name + 1 : r->name);
     return 1;
 }
 
@@ -3536,6 +3564,22 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         for (int ii = 0; ii < c->import_count; ii++)
             if (!strcmp(c->imports[ii].alias, qal)) { qstd = c->imports[ii].is_std; break; }
     const Node *sc = call->kind == NODE_CALL_EXPR ? call->children[0] : NULL;
+
+    /* 127.276: a call through a fallible function value decides on the
+     * error channel, and its $err arm binds the signature's error type. */
+    {
+        char fv_ety[NAME_BUF];
+        if (!qual && fnval_call_err(call, fv_ety, sizeof fv_ety)) {
+            *out_uce = 1;
+            if (fv_ety[0]) {
+                const StructInfo *fsi = lookup_struct(c, fv_ety);
+                if (fsi) *out_err_type = fsi->name;
+                else if (!strcmp(fv_ety, "str")) *out_err_type = "str";
+                else if (scalar_err_type(fv_ety)) *out_err_type = scalar_err_type(fv_ety);
+            }
+            return;
+        }
+    }
 
     /* (a) which discriminant.  Verbatim the gate that has always run for a
      *     direct-call scrutinee; kept in one place so the two spellings
@@ -6963,7 +7007,15 @@ static int emit_expr(Ctx *c, const Node *n)
         char iqal[128], iqme[128];
         int iqual = index_as_qualified_get(c, n->children[0], iqal, sizeof iqal,
                                            iqme, sizeof iqme);
-        if (iqual || (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1)) {
+        char fv_ety[NAME_BUF];
+        if (fnval_call_err(n->children[0], fv_ety, sizeof fv_ety)) {   /* 127.276 */
+            prop_cur_err = 1;
+            /* no name for the callee's error type: re-raise payload-less */
+            prop_reraise = fv_ety[0] ? user_err_reraise_named(c, fv_ety)
+                                     : c->cur_fn_err[0] != '\0';
+            prop_trap = user_err_reraise_traps_named(c, fv_ety, trap_from, trap_to,
+                                                     sizeof trap_from);
+        } else if (iqual || (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1)) {
             const Node *sc = iqual ? n->children[0] : n->children[0]->children[0];
             if (iqual || (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2)) {
                 char pal[128], pme[128];
@@ -12134,7 +12186,16 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     const char *ret; char fpty[256];
     closure_sig(c, clos, fpty, sizeof fpty, &ret); (void)fpty;
     c->cur_fn_ret = ret; c->cur_fn_err[0] = '\0';
+    /* 127.276: a `T!$E` closure is a fallible function like any `f=`: its
+     * error returns set @tk_current_error and its ok returns clear it, so a
+     * call through the closure value can decide on the channel.  Without
+     * this the error box's ADDRESS came back as the ok value. */
+    for (int i = 0; i < clos->child_count; i++)
+        if (clos->children[i]->kind == NODE_RETURN_SPEC &&
+            clos->children[i]->child_count > 1 && clos->children[i]->children[1])
+            tok_cp(c->src, clos->children[i]->children[1], c->cur_fn_err, NAME_BUF);
     strncpy(c->cur_fn_name, "closure", NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
+    long fn_ir_off = ftell(c->out);   /* 127.276: re-read for the 127.185 check */
     fprintf(c->out, "\ndefine internal fastcc %s @__tk_closure_%d(i8* %%__env", ret, cid);
     { char cs[NAME_BUF]; snprintf(cs, sizeof cs, "__tk_closure_%d", cid);
       ir_decl_record(cs, "closure", clos, 0); }       /* 137.13 */
@@ -12149,6 +12210,7 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         fprintf(c->out, ", %s %%%s.arg", pty, pn);
     }
     fputs(") nounwind #0 {\nbb.entry:\n", c->out);
+    if (c->cur_fn_err[0]) fprintf(c->out, "  ; tk.fallible !$%s\n", c->cur_fn_err);
     int envb = next_tmp(c);
     fprintf(c->out, "  %%t%d = bitcast i8* %%__env to i64*\n", envb);
     const char **caps = NULL; int ncap = 0;
@@ -12194,6 +12256,8 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->linear_arr_count = 0;
     if (body) emit_stmt(c, body);
     if (!c->term) {
+        if (c->cur_fn_err[0])   /* 127.276: as 127.112 for an f= */
+            fprintf(c->out, "  store i64 0, i64* @tk_current_error ; 127.112 implicit ok return clears the slot\n");
         if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
         else fprintf(c->out, "  ret %s 0 ; implicit\n", ret);
     }
@@ -12201,7 +12265,29 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->crel_count = 0;
     { char w[64]; snprintf(w, sizeof w, "a closure (lifted as __tk_closure_%d)", cid);
       locals_cap_flush(c, clos, w); }   /* 127.252 (1) */
-    c->cur_fn_ret = NULL; c->cur_fn_name[0] = '\0';
+    /* 127.276: the 127.185 error-exit rule, as for an f= (NODE_FUNC_DECL). */
+    if (c->cur_fn_err[0] && fn_ir_off >= 0) {
+        long fn_end = ftell(c->out);
+        if (fn_end > fn_ir_off && fflush(c->out) == 0 &&
+            fseek(c->out, fn_ir_off, SEEK_SET) == 0) {
+            size_t blen = (size_t)(fn_end - fn_ir_off);
+            char *fbody = (char *)malloc(blen + 1);
+            size_t got = fbody ? fread(fbody, 1, blen, c->out) : 0;
+            char blk[128] = "";
+            if (fbody && got == blen && !fallible_exits_ok(fbody, blen, blk, sizeof blk)) {
+                char msg[512];
+                snprintf(msg, sizeof msg,
+                         "internal compiler error: an exit of a fallible closure "
+                         "(lifted as __tk_closure_%d) returns without setting "
+                         "@tk_current_error (block '%s'), so its caller would read "
+                         "a stale error flag (127.185)", cid, blk);
+                diag_emit(DIAG_ERROR, E9002, clos->start, clos->line, clos->col, msg, (void *)0);
+            }
+            free(fbody);
+        }
+        fseek(c->out, 0, SEEK_END);
+    }
+    c->cur_fn_ret = NULL; c->cur_fn_name[0] = '\0'; c->cur_fn_err[0] = '\0';
 }
 
 /* Drain the pending-closure list; nested closures append during emission. */
