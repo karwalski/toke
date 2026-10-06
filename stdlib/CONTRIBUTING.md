@@ -3,20 +3,24 @@
 ## Rules
 
 - Every stdlib function signature is normative. Do not change a signature
-  without first raising a spec amendment issue (see spec/).
-- All .tk source files must compile cleanly with `tkc --check` before commit.
-- Each module file has a companion .md documentation file. Keep them in sync.
-- Stdlib implementations may use C FFI internally. FFI calls must be
-  commented with the C signature and a rationale.
+  without first raising a spec amendment (see `docs/spec/stdlib-signatures.md`).
+- A module is exactly three gated surfaces: its interface `stdlib/<m>.tki`
+  (`make check-tki`, `make check-tki-names`), its implementation in
+  `src/stdlib/` (C, built by `make`), and its documentation
+  `docs/stdlib/<m>.md` (`make check-docs`). Nothing else describes a module:
+  `make check-parallel-stdlib` rejects a `stdlib/<m>.tk` or a `stdlib/<m>.md`
+  beside them (135.11, 135.14).
+- C glue calls must be commented with the toke signature they implement.
 
-## Adding a new module
+## Adding a new module or function
 
-1. Raise a spec amendment issue defining the module's
-   normative interface (see spec/)
-2. Wait for the spec amendment to be accepted
-3. Implement the module in `std/<name>.tk`
-4. Write the documentation in `std/<name>.md`
-5. Add a CI test that compiles the module with `tkc --check`
+1. Amend `docs/spec/stdlib-signatures.md` with the normative interface, and
+   wait for the amendment to be accepted.
+2. Declare it in `stdlib/<m>.tki` and implement the glue in `src/stdlib/`.
+3. Document it in `docs/stdlib/<m>.md`.
+4. Regenerate the derived files: `python3 scripts/gen_stdlib_decls.py` and
+   `make render-stdlib-internal`.
+5. Add a conformance test under `test/conform/`.
 
 ## Licence note
 

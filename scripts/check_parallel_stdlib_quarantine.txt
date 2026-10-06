@@ -32,62 +32,17 @@
 #                   wrong place and must be MIGRATED, not deleted (see the
 #                   note at the end of this file).
 
-# --- parallel .tk implementations (20) ---
-stdlib/args.tk
-stdlib/auth.tk
-stdlib/crypto.tk
-stdlib/db.tk
-stdlib/encoding.tk
-stdlib/env.tk
-stdlib/http.tk
-stdlib/json.tk
-stdlib/log.tk
-stdlib/md.tk
-stdlib/net.tk
-stdlib/path.tk
-stdlib/process.tk
-stdlib/sha256.tk
-stdlib/str.tk
-stdlib/strpure.tk
-stdlib/test.tk
-stdlib/time.tk
-stdlib/toml.tk
-stdlib/toon.tk
-
-# --- duplicate module docs superseded by docs/stdlib/ (33) ---
-stdlib/args.md
-stdlib/canvas.md
-stdlib/chart.md
-stdlib/crypto.md
-stdlib/crypto_ext.md
-stdlib/dashboard.md
-stdlib/db.md
-stdlib/encoding.md
-stdlib/encrypt.md
-stdlib/env.md
-stdlib/html.md
-stdlib/http.md
-stdlib/i18n.md
-stdlib/image.md
-stdlib/json.md
-stdlib/json_stream.md
-stdlib/llm.md
-stdlib/log.md
-stdlib/md.md
-stdlib/net.md
-stdlib/path.md
-stdlib/process.md
-stdlib/router.md
-stdlib/sse.md
-stdlib/str.md
-stdlib/svg.md
-stdlib/template.md
-stdlib/test.md
-stdlib/time.md
-stdlib/toml.md
-stdlib/toon.md
-stdlib/ws.md
-stdlib/yaml.md
+# --- EMPTY since story 135.14 / 127.199 (Batch Z53, 2026-10-07) ---
+# The 20 parallel .tk implementations and 33 duplicate module docs that were
+# listed here are gone (owner decision 2026-10-01 §3.4 and §5.3). The 18 that
+# were byte-identical to a copy already in ~/tk/archive/toke-stdlib-20260819/
+# were deleted outright; the rest, with the three orphaned .tkc companions
+# (encoding, sha256, strpure), were moved to
+# ~/tk/archive/toke-stdlib-parallel-20261007/ (MANIFEST.md there).
+# stdlib/encoding.tk and stdlib/sha256.tk were moved, byte for byte, to
+# test/conform/fixtures/migrate/, because C041 uses them as its --migrate
+# control corpus. Nothing is quarantined; the gate now rejects any
+# stdlib/*.tk and any stdlib/*.md that duplicates docs/stdlib/.
 
 # --- NOT quarantined: live docs in the wrong place (11) ---
 # These stdlib/*.md had NO docs/stdlib counterpart, so they were the only copy

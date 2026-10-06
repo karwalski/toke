@@ -1,3 +1,0 @@
-module: sha256
-description: toke standard library (pure toke implementation)
-version: 0.3.0
