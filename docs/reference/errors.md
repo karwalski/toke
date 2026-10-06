@@ -1394,6 +1394,30 @@ directory whose path has no whitespace (a symlink to it works: the compiler
 resolves `TKC_STDLIB_DIR` to its real path). No `fix`: the right path is not
 knowable from the diagnostic (121.28, audit-120 compiler-toolchain COM-02).
 
+### E9026
+
+**`--migrate` declined; source echoed unchanged**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+`tkc --migrate` did not rewrite its input. The source is written to stdout
+byte for byte, so the redirect `--migrate` is used through keeps the
+original, and the compiler exits **4** (`TKC_EXIT_DECLINED`) rather than 1, so a
+migration driver can tell "declined, nothing written but the input" from a
+failed run (story 127.197; both declines used to print plain stderr and exit
+1). The message names the reason:
+
+- the source **already compiles** under the current profile, so there is
+  nothing to migrate (127.57); the record has no line;
+- it has **comments the migration would delete** (127.160/127.161): the
+  record's line is the first one, and the message gives the count.
+
+`TKC_MIGRATE_FORCE=1` migrates anyway. No `fix`: whether to do that is the
+user's choice.
+
 ## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
 
 The codes `docs/reference/package-manifest.md` gives for package resolution.

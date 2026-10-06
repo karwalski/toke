@@ -2238,6 +2238,7 @@ Output binary byte-identity is not required (link addresses may vary); semantic 
 | 1 | Compilation failed; diagnostics emitted to stderr |
 | 2 | Internal compiler error; bug report should be filed |
 | 3 | Usage error (invalid flags, missing input files) |
+| 4 | `--migrate` declined (E9026): the source was echoed unchanged, nothing was migrated. Added by story 127.197. |
 
 ### 17.5 Performance Requirements [I]
 
