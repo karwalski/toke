@@ -932,51 +932,6 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
 }
 
 /*
- * find_binding_kind — search the AST tree rooted at `root` for a binding
- * (NODE_BIND_STMT or NODE_MUT_BIND_STMT) whose name matches (name, nlen).
- * Also searches NODE_LOOP_INIT nodes.
- *
- * Returns:
- *   NODE_BIND_STMT      — immutable let binding found
- *   NODE_MUT_BIND_STMT  — mutable let binding found
- *   NODE_LOOP_INIT      — loop init variable (implicitly mutable)
- *   -1                  — not found
- */
-/* 114.7: when a name has multiple bindings (shadowing), prefer a *mutable* one
- * (NODE_MUT_BIND_STMT / NODE_LOOP_INIT) over an immutable NODE_BIND_STMT, so
- * `let x=5; let x=mut.10; x=x+1` doesn't spuriously report E4070 by finding the
- * earlier immutable `let x` first. (A purely position/scope-accurate resolver
- * would be ideal, but preferring mutable avoids false positives — the worst
- * case is failing to flag an assignment to a shadowed immutable when a mutable
- * of the same name also exists, which is rare and harmless.) */
-static int find_binding_kind(const Node *root, const char *src,
-                             const char *name, int nlen) {
-    if (!root) return -1;
-    int best=-1;
-    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT)
-        &&root->child_count>0&&root->children[0]) {
-        int tl=root->children[0]->tok_len;
-        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
-            best=(int)root->kind;
-    }
-    if (best!=(int)NODE_MUT_BIND_STMT && root->kind==NODE_LOOP_INIT
-        &&root->child_count>0&&root->children[0]) {
-        int tl=root->children[0]->tok_len;
-        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
-            best=(int)NODE_LOOP_INIT;
-    }
-    for (int i=0;i<root->child_count;i++) {
-        int r=find_binding_kind(root->children[i],src,name,nlen);
-        if (r<0) continue;
-        if (best<0) best=r;
-        /* a mutable/loop binding wins over an immutable one */
-        else if (best==(int)NODE_BIND_STMT &&
-                 (r==(int)NODE_MUT_BIND_STMT||r==(int)NODE_LOOP_INIT)) best=r;
-    }
-    return best;
-}
-
-/*
  * find_binding_node — search the AST tree for a binding whose name matches.
  * Returns the binding node (NODE_BIND_STMT/NODE_MUT_BIND_STMT/NODE_LOOP_INIT),
  * or NULL if not found.  Used by NODE_IDENT to resolve local variable types.
@@ -1047,7 +1002,11 @@ static void find_binding_before_rec(const Node *root, const char *src,
          * the outer binding on block exit (`let s="abc"; if(..){let
          * s=@(1;2)}; "\(s)"` prints abc).  Only when no binding at all is
          * in force does the first-found fallback below still answer. */
-        if (ch && ch->kind==NODE_STMT_LIST && !node_contains(ch,use)) continue;
+        /* 127.196: so has an `lp` that does not contain the use, and its
+         * `let` loop variable with it (the variable is scoped to the
+         * loop, not to the block around it). */
+        if (ch && (ch->kind==NODE_STMT_LIST||ch->kind==NODE_LOOP_STMT)
+            && !node_contains(ch,use)) continue;
         find_binding_before_rec(ch,src,name,nlen,use,best);
     }
 }
@@ -1077,45 +1036,78 @@ static const Node *find_binding_before(const Node *root, const char *src,
     return best ? best : find_binding_node(root, src, name, nlen);
 }
 
-/*
- * local_in_force (127.169) — the local binding of `name` that codegen will
- * resolve `use` to, or NULL when codegen resolves it to a module declaration.
- *
- * The emitter keeps one flat table of locals per function, filled in source
- * order as each `let`/`mut`/loop variable is emitted, and a name in that
- * table shadows a module function or global (name_is_local, llvm.c).
- * Measured at d25ba32 with a module `f=sum(..)` and `let sum=fn..`:
- *
- *   use before the `let`                     -> the module function
- *   use after it, same block                 -> the local
- *   use after an `if` whose block holds it   -> the local (the table is flat)
- *   `let` inside a closure body, use outside -> the module function (a
- *                                               closure is emitted apart)
- *
- * So: the latest binding that starts before `use` and does not contain it,
- * searching the whole function body except closures that do not contain
- * `use`.  Unlike find_binding_before there is no "first found anywhere"
- * fallback — a binding after the use is not in force, and the module
- * declaration answers.
- */
-static void local_in_force_rec(const Node *root, const char *src,
-                               const char *name, int nlen,
-                               const Node *use, const Node **best) {
-    if (!root) return;
-    if (root->kind == NODE_CLOSURE && !node_contains(root, use)) return;
-    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
-        &&root->child_count>0&&root->children[0]) {
-        int tl=root->children[0]->tok_len;
-        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
-            && root->start < use->start
-            && (!*best || root->start > (*best)->start)
-            && !node_contains(root, use))
-            *best = root;
-    }
-    for (int i=0;i<root->child_count;i++)
-        local_in_force_rec(root->children[i],src,name,nlen,use,best);
+static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
+    return x && x->tok_len == nl && nl > 0
+        && memcmp(src + x->tok_start, nm, (size_t)nl) == 0;
 }
+/* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
+ * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
+ * innermost scope first and, within one statement list, the NEAREST earlier
+ * `let` (a same-scope rebinding replaces the earlier one).  NULL when no
+ * enclosing scope inside `a` binds it.  `*found` reports whether `use` is
+ * inside `a` at all. */
+static const Node *lex_binder_rec(const Node *a, const char *src, const Node *use,
+                                  const char *nm, int nl, int *found) {
+    if (!a) return NULL;
+    if (a == use) { *found = 1; return NULL; }
+    for (int i = 0; i < a->child_count; i++) {
+        int f = 0;
+        const Node *b = lex_binder_rec(a->children[i], src, use, nm, nl, &f);
+        if (!f) continue;
+        *found = 1;
+        if (b) return b;
+        /* children[i] holds `use`: is the name bound at this level? */
+        for (int j = i - 1; j >= 0; j--) {
+            const Node *st = a->children[j];
+            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+                && st->child_count > 0 && ident_same(st->children[0], src, nm, nl))
+                return st;
+        }
+        if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1
+            && ident_same(a->children[1], src, nm, nl)) return a;
+        if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
+            && a->children[0]->kind == NODE_LOOP_INIT
+            && a->children[0]->child_count > 0
+            && ident_same(a->children[0]->children[0], src, nm, nl))
+            return a->children[0];
+        if (a->kind == NODE_FUNC_DECL || a->kind == NODE_CLOSURE)
+            for (int j = 0; j < a->child_count; j++) {
+                const Node *pc = a->children[j];
+                if (pc && pc->kind == NODE_PARAM && pc->child_count > 0
+                    && ident_same(pc->children[0], src, nm, nl)) return pc;
+            }
+        return NULL;
+    }
+    return NULL;
+}
+static const Node *tk_binder_at(const Node *root, const char *src, const Node *use,
+                                const char *name, int nlen, const Node *anchor) {
+    int found = 0;
+    if (!root || !src || !use || !name || nlen <= 0) return NULL;
+    const Node *b = lex_binder_rec(root, src, use, name, nlen, &found);
+    if (found || !anchor) return b;
+    /* `use` is not in the tree: an interpolation's sub-parse.  Ask at the
+     * string literal that holds it. */
+    return lex_binder_rec(root, src, anchor, name, nlen, &found);
+}
+/*
+ * local_in_force (127.169, 127.196) — the local `let`/`mut`/loop binding of
+ * `name` in force at `use`, or NULL when the name there means a module
+ * declaration (or a parameter / `mt` arm binding, which callers ask about
+ * separately).
+ *
+ * Lexical, like name resolution (docs/spec/semantics.md §4.1, §4.5): the
+ * innermost enclosing scope that binds the name answers, and within one
+ * statement list the nearest earlier `let`.  A `let` in a block that has
+ * closed is out of scope, so after
+ *
+ *     f=sum(..)..;  if(c){let sum=fn..;};  sum(a)
+ *
+ * `sum` is the module function again.  Until 127.196 this followed the
+ * emitter's one flat locals table per function, where the closed block's
+ * `let` stayed in force; the emitter now ends a block's bindings with the
+ * block (llvm.c NODE_STMT_LIST), so both stages scope the same way.
+ */
 /* closure_between — 1 when a NODE_CLOSURE inside `root` contains `n`. */
 static int closure_between(const Node *root, const Node *n) {
     if (!root || root == n) return 0;
@@ -1149,11 +1141,12 @@ static const Node *in_tree_use(const Ctx *cx, const Node *use) {
 
 static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
                                   const Node *use) {
-    const Node *best = NULL;
     if (!cx->fn_node || !use) return NULL;
     use = in_tree_use(cx, use);
-    local_in_force_rec(cx->fn_node, cx->src, name, nlen, use, &best);
-    return best;
+    const Node *b = tk_binder_at(cx->fn_node, cx->src, use, name, nlen, NULL);
+    if (b && (b->kind == NODE_BIND_STMT || b->kind == NODE_MUT_BIND_STMT
+              || b->kind == NODE_LOOP_INIT)) return b;
+    return NULL;
 }
 
 /*
@@ -1655,46 +1648,10 @@ static Type *func_ref_sig(Ctx *cx, const Node *n) {
  * `let`/`mut` before `use` in an enclosing block.  *kind_out says which
  * (NODE_PARAM / NODE_BIND_STMT / NODE_MUT_BIND_STMT); a loop variable or an
  * `mt` arm binding answers the node with *kind_out = 0 (not a function
- * value).  Mirrors ident_bound_rec (127.214), returning the node. */
+ * value).  The walk is lex_binder_rec. */
 static const Node *fnval_bind_rec(const Node *a, const char *src, const Node *use,
                                   const char *nm, int nl, int *found) {
-    if (!a) return NULL;
-    if (a == use) { *found = 1; return NULL; }
-    for (int i = 0; i < a->child_count; i++) {
-        int f = 0;
-        const Node *b = fnval_bind_rec(a->children[i], src, use, nm, nl, &f);
-        if (!f) continue;
-        *found = 1;
-        if (b) return b;
-        if (a->kind == NODE_FUNC_DECL || a->kind == NODE_CLOSURE)
-            for (int j = 0; j < a->child_count; j++) {
-                const Node *pc = a->children[j];
-                if (pc && pc->kind == NODE_PARAM && pc->child_count > 0
-                    && pc->children[0] && pc->children[0]->tok_len == nl
-                    && memcmp(src + pc->children[0]->tok_start, nm, (size_t)nl) == 0)
-                    return pc;
-            }
-        if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
-            && a->children[0]->kind == NODE_LOOP_INIT
-            && a->children[0]->child_count > 0 && a->children[0]->children[0]
-            && a->children[0]->children[0]->tok_len == nl
-            && memcmp(src + a->children[0]->children[0]->tok_start, nm, (size_t)nl) == 0)
-            return a->children[0];
-        if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1 && a->children[1]
-            && a->children[1]->tok_len == nl
-            && memcmp(src + a->children[1]->tok_start, nm, (size_t)nl) == 0)
-            return a;
-        for (int j = i - 1; j >= 0; j--) {
-            const Node *st = a->children[j];
-            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
-                && st->child_count > 0 && st->children[0]
-                && st->children[0]->tok_len == nl
-                && memcmp(src + st->children[0]->tok_start, nm, (size_t)nl) == 0)
-                return st;
-        }
-        return NULL;
-    }
-    return NULL;
+    return lex_binder_rec(a, src, use, nm, nl, found);
 }
 static const Node *in_tree_use(const Ctx *cx, const Node *use);
 static const Node *fnval_binding(Ctx *cx, const Node *ident) {
@@ -2420,58 +2377,13 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
  * different buffer; `anchor` (the string literal) stands in for a `use` that
  * is not in the tree.
  *
- * Deliberately lexical, not local_in_force's flat per-function table
- * (127.169): that table is the emitter's model for FUNCTIONS, and its leak
- * past a closed block is 127.196.  Applied to import aliases it would turn
- * `if(c){let io=..}; io.println(..)` — a program that works — into a module
- * call on a stale local.  Exported so llvm.c answers with this same walk.
+ * The walk is tk_binder_at's (lex_binder_rec), which local_in_force uses
+ * too since 127.196 made `let` block-scoped.  Exported so llvm.c answers
+ * with this same walk.
  */
-static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
-    return x && x->tok_len == nl && nl > 0
-        && memcmp(src + x->tok_start, nm, (size_t)nl) == 0;
-}
-static int ident_bound_rec(const Node *a, const char *src, const Node *use,
-                           const char *nm, int nl, int *found) {
-    if (!a) return 0;
-    if (a == use) { *found = 1; return 0; }
-    for (int i = 0; i < a->child_count; i++) {
-        int f = 0;
-        int b = ident_bound_rec(a->children[i], src, use, nm, nl, &f);
-        if (!f) continue;
-        *found = 1;
-        if (b) return 1;
-        /* children[i] holds `use`: is the name bound at this level? */
-        if (a->kind == NODE_FUNC_DECL || a->kind == NODE_CLOSURE)
-            for (int j = 0; j < a->child_count; j++) {
-                const Node *pc = a->children[j];
-                if (pc && pc->kind == NODE_PARAM && pc->child_count > 0
-                    && ident_same(pc->children[0], src, nm, nl)) return 1;
-            }
-        if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
-            && a->children[0]->kind == NODE_LOOP_INIT
-            && a->children[0]->child_count > 0
-            && ident_same(a->children[0]->children[0], src, nm, nl)) return 1;
-        if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1
-            && ident_same(a->children[1], src, nm, nl)) return 1;
-        for (int j = 0; j < i; j++) {
-            const Node *st = a->children[j];
-            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
-                && st->child_count > 0 && ident_same(st->children[0], src, nm, nl))
-                return 1;
-        }
-        return 0;
-    }
-    return 0;
-}
 int tk_name_bound_at(const Node *root, const char *src, const Node *use,
                      const char *name, int nlen, const Node *anchor) {
-    int found = 0;
-    if (!root || !src || !use || !name || nlen <= 0) return 0;
-    int b = ident_bound_rec(root, src, use, name, nlen, &found);
-    if (found || !anchor) return b;
-    /* `use` is not in the tree: an interpolation's sub-parse.  Ask at the
-     * string literal that holds it. */
-    return ident_bound_rec(root, src, anchor, name, nlen, &found);
+    return tk_binder_at(root, src, use, name, nlen, anchor) != NULL;
 }
 
 /*
@@ -5317,7 +5229,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * declaration of the same name, exactly as codegen resolves it
          * (local_in_force).  `f=c(p:$str):$str{let base="x";<base}` beside a
          * module `f=base(..)` typed `base` as the function: a false E4031
-         * "expected str, got func" on stdlib/path.tk. */
+         * "expected str, got func" on stdlib/path.tk (a file removed later,
+         * 135.14). */
         const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
         /* If not found at module scope, check current function's local binds. */
         if (((!d||!d->def_node)||shadow)&&cx->fn_node) {
@@ -6429,19 +6342,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
             int immutable=0;
-            /* Check function parameters (immutable by default). */
-            for (int pi=0;pi<cx->fn_node->child_count;pi++) {
-                const Node *pc=cx->fn_node->children[pi];
-                if (pc&&pc->kind==NODE_PARAM&&pc->child_count>0) {
-                    char pn[128]; TOKSTR(pn,cx->src,pc->children[0]);
-                    if (strcmp(pn,nb)==0) { immutable=1; break; }
-                }
-            }
-            /* Check local bindings by searching the function AST. */
-            if (!immutable) {
-                int bk=find_binding_kind(cx->fn_node,cx->src,nb,nlen);
-                if (bk==(int)NODE_BIND_STMT) immutable=1;
-                /* NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable — no error. */
+            /* 127.196: the binding assigned is the one in force LEXICALLY
+             * at the assignment — not any same-named binding anywhere in
+             * the function.  The flat search let `let x=1;if(c){let
+             * x=mut.0;};x=2` through (a `mut` in a closed block made the
+             * outer immutable `x` assignable, and the store went to it),
+             * and rejected an assignment to a module-level `mut` global
+             * after a block that held an immutable `let` of that name.
+             * The function's own parameters are immutable; a closure
+             * parameter or an `mt` arm binding is not checked here (as
+             * before); no local binder means a module-level name. */
+            const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
+            if (lb&&lb->kind==NODE_BIND_STMT) immutable=1;
+            else if (lb&&lb->kind==NODE_PARAM) {
+                for (int pi=0;pi<cx->fn_node->child_count;pi++)
+                    if (cx->fn_node->children[pi]==lb) { immutable=1; break; }
             }
             if (immutable) {
                 if (tc_can_emit(cx)) {

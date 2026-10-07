@@ -221,6 +221,52 @@ Resolved by story **127.198** (owner decision 2026-10-01 §2.7).
 
 ---
 
+## I. `let` is block-scoped (clarifies v0.3 §11.8 and §11.8.1)
+
+A binding made by `let x = e` or `let x = mut.e` is in scope from the end of
+its statement to the end of the innermost enclosing block: a function or
+closure body, an `if`/`el` branch, an `lp` body, or an `mt` arm body. A loop
+variable `lp(let v = e; ...; ...)` is in scope in the condition, the step and
+the body, and not after the loop. An `mt` arm binding is in scope in its arm
+only.
+
+When the block ends, its bindings end with it, and the name means again what
+it meant before the block: an enclosing binding, a module-level declaration
+(a function, a module `let` global, a constant, an import alias), or nothing,
+in which case a use is **E3011**.
+
+```
+f=sum(a:i64):i64{ <a+100 };
+f=main():i64{
+  let c = 1;
+  if(c == 1){ let sum = fn(a:i64):i64{ <a }; sum(1) };  (* the closure: 1 *)
+  <sum(1)                                              (* the module function: 101 *)
+};
+```
+
+Shadowing is as v0.3 §11.8.1 states: a `let` may shadow a binding of the
+same name in the same scope or in an enclosing one, and the newer binding is
+the one in force until its own block ends. Shadowing an enclosing binding draws
+the warning **W3013**, since an assignment to a `mut` is the more common
+intent.
+
+An assignment `x = e` assigns the binding of `x` in force at the assignment.
+If that binding is an immutable `let`, the assignment is **E4070**, whatever
+other block holds a `mut` of the same name.
+
+Before story 127.196 the compiler kept one table of locals per function. A
+binding first made inside a block therefore stayed in force after the block
+wherever its name also meant something outside it (a module function or
+global), and an `lp` variable that shadowed an outer binding leaked its last
+value. No corpus record, and no program in the compiler tree, ooke or the
+website, relied on that. `--migrate` has no rewrite for it: hoisting a `let`
+out of its block changes when its initialiser runs, so no rewrite is correct
+in every case.
+
+Resolved by story **127.196** (owner decision 2026-10-01 §2.2).
+
+---
+
 ## Conformance & migration
 
 - `make conform` remains the gate (228 cases: 222 YAML + 6 shell, 0 failed as of
@@ -246,3 +292,6 @@ Resolved by story **127.198** (owner decision 2026-10-01 §2.7).
 - **2026-10-06 (story 127.198):** §H added — `(* ... *)` is the official
   comment form (supersedes v0.3 §8.10's "tolerance only"). W1020's text for
   `//` no longer says toke "has no comment syntax".
+- **2026-10-07 (story 127.196):** §I added — `let` is block-scoped in both the
+  checker and the emitter; a binding ends with its block, and an assignment is
+  checked against the binding in force where it stands.

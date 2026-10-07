@@ -17,7 +17,9 @@
 # the checker now follows (local_in_force, types.c):
 #   1. a use after the `let`                  -> the local
 #   2. a use BEFORE the `let`                 -> the module function
-#   3. after an `if` whose block holds the let -> the local (flat table)
+#   3. after an `if` whose block holds the let -> the module function
+#      (127.196: block scoping -- the block's `let` ended with the block;
+#      before it this asserted the flat-table leak, "out 3")
 #   4. a let inside a closure, use outside     -> the module function
 # Each program must --check clean AND run to the output that proves which
 # binding codegen used; 5 is a closure call whose argument only the
@@ -26,7 +28,7 @@
 # Negative control: TKC built from d25ba32 — cases 1, 2 and 5 are E4031, so
 # they neither check nor build (6 of 11 red).
 #
-# Story: 127.169
+# Story: 127.169 (case 3 revised by 127.196)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,8 +72,8 @@ EOF
 expect "2-before-and-after-checks" "$(errs "${WORK}/p2.tk")" ""
 expect "2-before-and-after-runs"   "$(runs "${WORK}/p2.tk")" "FN LOCAL "
 
-# 3. a let inside an if block is still the local after the block (codegen's
-#    locals table is flat per function)
+# 3. a let inside an if block is out of scope after the block: the call there
+#    is the module function again (127.196, block scoping)
 cat > "${WORK}/p3.tk" <<'EOF'
 m=t;
 i=io:std.io;
@@ -87,7 +89,7 @@ f=main():i64{
 };
 EOF
 expect "3-block-let-checks" "$(errs "${WORK}/p3.tk")" ""
-expect "3-block-let-runs"   "$(runs "${WORK}/p3.tk")" "in 3 out 3 "
+expect "3-block-let-runs"   "$(runs "${WORK}/p3.tk")" "in 3 out 99 "
 
 # 4. a let inside a closure body does not reach the enclosing function
 cat > "${WORK}/p4.tk" <<'EOF'

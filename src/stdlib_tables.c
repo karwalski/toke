@@ -716,8 +716,8 @@ int recv_method_arity(const char *m) {
  * Nothing resolved the three-segment spelling.  `alias.seg.member(...)` parses
  * as receiver dispatch on `alias.seg`, and the receiver path emitted a bare
  * `_ok` — which is why 127.96 was filed as a missing symbol when the symbol
- * it names has been declared all along.  (The row cites tk_http_resok_w; the
- * spelling the emitter picks is tk_http_res_ok.  Both are in the table.)
+ * it names has been declared all along.  (The row cites tk_http_resok_w, a
+ * wrapper since deleted; the spelling the emitter picks is tk_http_res_ok.)
  *
  * Grounded on the glue table: the concatenated spelling is accepted only when
  * g_stdlib_decls actually declares the symbol it names, so this cannot invent
@@ -1104,8 +1104,8 @@ int is_err_slot_bare_glue(const char *name) {
 
 /* 127.238: the .tki entry a resolved glue symbol implements, or NULL.  The
  * cache names an export `tk_<prefix>_<method>_w` after its own prefix
- * (`df.columnstr` -> tk_df_columnstr_w), but a call through the module's
- * import resolves to `tk_<file>_<method>_w` (std.dataframe ->
+ * (`df.columnstr` -> tk_df_columnstr_w, a spelling since deleted), but a
+ * call through the module's import resolves to `tk_<file>_<method>_w` (std.dataframe ->
  * tk_dataframe_columnstr_w) whenever the interface file publishes a
  * sub-namespace; both spellings are the same export. */
 const TkiCacheEntry *tki_entry_for_symbol(const char *sym) {
