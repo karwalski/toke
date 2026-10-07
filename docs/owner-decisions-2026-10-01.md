@@ -51,6 +51,7 @@ language rows.
 | 2.15 | 131.32 | Raw control bytes inside string literals now get **W1021** (warning, exact `\xHH` fix) because the spec permits any UTF-8 there. | (a) keep a warning; (b) make it an error by amending the spec ("Arbitrary UTF-8 is permitted inside string literal content") | **(a)** — the fix is mechanical and the repair loop applies it; an error would reject existing valid programs for no safety gain. |
 | 2.12 | 124.6c | `@nobounds` annotation | new annotation grammar / CLI flag or pragma / withdraw | **Withdraw** until a perf trace shows real residual bounds cost; -O2 already removes provably safe checks. |
 | 2.13 | 124.6e | Post-hoc measurement of the ADR-0012 flips | define a rebuild-and-compare / retire | **Retire into 128.15** — the flips showed no codegen change and the row is behind the compute hold. |
+| 2.16 | 127.279 | Function types `(T):R` cannot be declared fallible, so a parameter or struct field holding a function rejects a fallible one (E4031; semantics §5.2 rule 6). Found by Batch Z54 after 127.276 fixed `!`/`mt` through function values. | (a) grammar `')' ':' TypeExpr ['!' TypeExpr]`, with `!` in return-spec position still meaning the enclosing function's error; (b) keep function types infallible, callers adapt with a closure | **(b) for now** — no grammar change for model-written code, and the compile error already blocks the unsafe case; revisit if corpus programs need fallible callbacks. |
 
 ## 3. Security and runtime decisions
 
