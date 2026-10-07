@@ -8,6 +8,7 @@
  */
 
 #include "http.h"
+#include "tk_gzip_type.h"   /* 121.96: tk_coding_accepted */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -246,50 +247,36 @@ uint8_t *content_decompress_gzip(const uint8_t *input, size_t input_len,
 /* ── Pre-compressed file serving (64.1.4) ────────────────────────────── */
 
 /* Check for pre-compressed variant of a file path.
- * Returns heap-allocated path to compressed file, or NULL. */
+ * Returns heap-allocated path to compressed file, or NULL.
+ *
+ * 121.96: a variant is offered only when Accept-Encoding admits its coding
+ * under RFC 9110 sec. 12.5.3 -- q-values and "*" included, the same rule
+ * as the gzip writers (tk_coding_accepted, tk_gzip_type.h).  It asked
+ * strstr(ae, "gzip") (and "br", "zstd"), so "gzip;q=0" -- the client's
+ * explicit refusal -- got the .gz file, and any coding whose name merely
+ * contained "br" counted as br.  When several are acceptable and present,
+ * the server's order decides: .br, then .gz, then .zst. */
 char *content_find_precompressed(const char *path,
                                   const char *accept_encoding)
 {
     if (!path || !accept_encoding) return NULL;
 
+    static const char *const variants[][2] = {
+        { "br",   ".br"  },
+        { "gzip", ".gz"  },
+        { "zstd", ".zst" },
+    };
     struct stat st;
-
-    /* Try .br first */
-    if (strstr(accept_encoding, "br")) {
-        size_t len = strlen(path) + 4;
-        char *br_path = malloc(len);
-        if (br_path) {
-            snprintf(br_path, len, "%s.br", path);
-            if (stat(br_path, &st) == 0 && S_ISREG(st.st_mode))
-                return br_path;
-            free(br_path);
-        }
+    for (size_t i = 0; i < sizeof variants / sizeof variants[0]; i++) {
+        if (!tk_coding_accepted(accept_encoding, variants[i][0])) continue;
+        size_t len = strlen(path) + strlen(variants[i][1]) + 1;
+        char *vpath = malloc(len);
+        if (!vpath) continue;
+        snprintf(vpath, len, "%s%s", path, variants[i][1]);
+        if (stat(vpath, &st) == 0 && S_ISREG(st.st_mode))
+            return vpath;
+        free(vpath);
     }
-
-    /* Try .gz */
-    if (strstr(accept_encoding, "gzip")) {
-        size_t len = strlen(path) + 4;
-        char *gz_path = malloc(len);
-        if (gz_path) {
-            snprintf(gz_path, len, "%s.gz", path);
-            if (stat(gz_path, &st) == 0 && S_ISREG(st.st_mode))
-                return gz_path;
-            free(gz_path);
-        }
-    }
-
-    /* Try .zst */
-    if (strstr(accept_encoding, "zstd")) {
-        size_t len = strlen(path) + 5;
-        char *zst_path = malloc(len);
-        if (zst_path) {
-            snprintf(zst_path, len, "%s.zst", path);
-            if (stat(zst_path, &st) == 0 && S_ISREG(st.st_mode))
-                return zst_path;
-            free(zst_path);
-        }
-    }
-
     return NULL;
 }
 
