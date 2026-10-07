@@ -6360,15 +6360,29 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
             if (immutable) {
                 if (tc_can_emit(cx)) {
+                    /* The `fix` rewrites a `let`; a parameter has no `let`
+                     * to rewrite and no `mut` form at all (AGENTS §6: a fix
+                     * only where it is correct in every case), so only an
+                     * immutable `let` carries one. */
+                    int is_let=lb->kind==NODE_BIND_STMT;
                     char msg[256];
-                    snprintf(msg,sizeof(msg),
-                        "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                    if (is_let)
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                    else
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a parameter cannot be assigned, copy it into a 'let %s=mut.' first",nb,nb);
                     char fix[256];
                     snprintf(fix,sizeof(fix),
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                    diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
-                        "expected","mutable binding","got","immutable binding",
-                        "fix",fix,(const char*)NULL);
+                    if (is_let)
+                        diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                            "expected","mutable binding","got","immutable binding",
+                            "fix",fix,(const char*)NULL);
+                    else
+                        diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                            "expected","mutable binding","got","immutable binding",
+                            (const char*)NULL);
                 }
                 return mk_type(A,TY_VOID);
             }

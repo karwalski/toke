@@ -1,0 +1,12 @@
+id: D203
+series: D
+description: "E4070 on a parameter carries no fix: there is no `let` to rewrite and a parameter has no `mut` form (story 127.281)"
+input: |
+  m=test;
+  f=bad(x:i64):i64{
+    x=2;
+    <x
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix_absent: true
