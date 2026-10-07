@@ -15,6 +15,7 @@
 #      leaves no `Vec`, and the result passes --check;
 #  1b. 4000 x `Vec;` (2.75x, the densest Vec text) migrates byte for byte;
 #   2. 4000 unmatched `[` migrate to 4000 `.get(` without a heap overrun.
+#   3. 4000 `|{` migrate to `mt  {` byte for byte (step 4's buffer, 2 → 5).
 #
 # Negative control (recorded in 127.286): the compiler at main 8f2dcce3 under
 # libgmalloc exits 139 on case 2; under ASan it reports heap-buffer-overflow
@@ -117,6 +118,26 @@ if [ "$rc" -eq 0 ]; then
     fi
 else
     fail "2-bracket-run: --migrate exited ${rc}" "$(grep -m2 -E 'ERROR|SUMMARY' "${WORK}/err")"
+fi
+
+# ── 3. run of `|{`: step 4 rewrites each to `mt  {`, 2 bytes → 5 ────────
+# Its buffer was a fixed blen*2+512; main exits 139 here under libgmalloc.
+{
+    printf 'm=t;\nf=g():i64{let x=1;<x};\n'
+    for k in $(seq 1 4000); do printf '|{'; done
+    printf '\n'
+} > "${WORK}/pipe.tk"
+{
+    printf 'm=t;\nf=g():i64{let x=1;<x};\n'
+    for k in $(seq 1 4000); do printf 'mt  {'; done
+    printf '\n'
+} > "${WORK}/pipe.want"
+migrate "${WORK}/pipe.tk" > "${WORK}/pipe.out"
+rc=$?
+if [ "$rc" -eq 0 ] && cmp -s "${WORK}/pipe.want" "${WORK}/pipe.out"; then
+    pass "3-pipe-brace-run: 4000 |{ -> 'mt  {', byte for byte"
+else
+    fail "3-pipe-brace-run: --migrate exited ${rc}" "$(grep -m2 -E 'ERROR|SUMMARY' "${WORK}/err")"
 fi
 
 echo "C738: ${PASS} passed, ${FAIL} failed"

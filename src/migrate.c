@@ -1112,8 +1112,12 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
 /* ��─ Post-pass: text-level transforms after token migration ──────── */
 
 /* Add missing }; terminators — in toke, } at end of function/type must be }; */
-static void postpass_semicolons(char *buf, int *blen_p)
+/* 127.286: each input byte emits at most two ('}' + ';'), so blen*2+1 is an
+ * exact bound for `out`.  The result replaces *bufp: it used to be copied back
+ * into the caller's buffer, which had no room for the growth. */
+static void postpass_semicolons(char **bufp, int *blen_p)
 {
+    const char *buf = *bufp;
     int blen = *blen_p;
     char *out = malloc((size_t)(blen * 2 + 256));
     if (!out) return;
@@ -1143,9 +1147,10 @@ static void postpass_semicolons(char *buf, int *blen_p)
             }
         }
     }
-    memcpy(buf, out, (size_t)w);
+    out[w] = '\0';
+    free(*bufp);
+    *bufp = out;
     *blen_p = w;
-    free(out);
 }
 
 /* ── Public API ────────────────────────────────────��──────────────── */
@@ -2377,9 +2382,19 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
     #undef BENSURE_TOK
 
     /* Step 4: Text-level |{ → mt expr { */
-    char *buf2 = malloc((size_t)(blen * 2 + 512));
+    /* 127.286: `|{` → `mt  {` is 2 → 5 bytes, so a fixed blen*2+512 overran
+     * on a run of them.  B2ENSURE grows buf2 before each write. */
+    long b2cap = (long)blen * 2 + 512;
+    char *buf2 = malloc((size_t)b2cap);
     if (!buf2) { free(buf); free(c); free(nt); s_migrate_depth--; return -1; }
     int b2 = 0;
+    #define B2ENSURE(need) do { \
+        if ((long)b2 + (long)(need) + 1 > b2cap) { \
+            long nc = b2cap * 2 + (long)(need) + 16; \
+            char *nb = realloc(buf2, (size_t)nc); \
+            if (!nb) { free(buf2); free(buf); free(c); free(nt); s_migrate_depth--; return -1; } \
+            buf2 = nb; b2cap = nc; \
+        } } while (0)
 
     for (int p = 0; p < blen; p++) {
         if (buf[p]=='|' && p+1<blen && buf[p+1]=='{' && !is_in_string(buf,p)) {
@@ -2400,15 +2415,18 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
             }
             while (es<p && (buf[es]==' '||buf[es]=='\t')) es++;
             b2 -= (p - es);
+            B2ENSURE((p - es) + 5);
             memcpy(buf2+b2, "mt ", 3); b2 += 3;
             memcpy(buf2+b2, buf+es, (size_t)(p-es)); b2 += (p-es);
             buf2[b2++] = ' '; buf2[b2++] = '{';
             p++;
         } else {
+            B2ENSURE(1);
             buf2[b2++] = buf[p];
         }
     }
     buf2[b2] = '\0';
+    #undef B2ENSURE
 
     /* Step 5: Wrap if/lp conditions in parens if missing: if cond { → if(cond){ */
     {
@@ -2437,15 +2455,17 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
                 }
                 buf3[b3++] = buf2[p];
             }
-            memcpy(buf2, buf3, (size_t)b3);
+            /* 127.286: buf3 replaces buf2 -- `if c{` → `if(c){` grows the
+             * text, and buf2 has no room guaranteed for that growth. */
+            buf3[b3] = '\0';
+            free(buf2);
+            buf2 = buf3;
             b2 = b3;
-            buf2[b2] = '\0';
-            free(buf3);
         }
     }
 
     /* Step 6: Add missing }; terminators */
-    postpass_semicolons(buf2, &b2);
+    postpass_semicolons(&buf2, &b2);
 
     /* Step 7 (127.18): legacy `=` equality → `==` in every boolean-context
      * position, driven by the parser's own E2002 recovery. */
