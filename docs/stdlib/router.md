@@ -84,6 +84,15 @@ unlisted, `*` with one -- and only a response with no `Content-Encoding` of
 its own (story 121.94). Before it, `gzip;q=0` was taken as a yes, and a
 handler's `Content-Encoding: br` body was gzipped again under two codings.
 
+The ETag middleware's `304 Not Modified` carries the `ETag`, and the
+`Cache-Control`, `Expires`, `Content-Location`, `Date` and `Vary` fields the
+`200` it stands for carried, as RFC 9110 §15.4.5 requires -- no other
+header, and no body (story 121.95; it used to carry no header at all, so a
+cache revalidating its copy learned neither the validator nor a new
+lifetime). A middleware registered before `router_use_etag` runs outside it
+and does not see the `200`: register the ETag middleware first when the
+`304` should carry the gzip middleware's `Vary: Accept-Encoding`.
+
 ## Usage
 
 ```toke

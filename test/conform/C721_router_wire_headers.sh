@@ -45,7 +45,12 @@
 #   (121.94) Accept-Encoding with weights: gzip;q=0, gzip; q=0.000,
 #   deflate, *;q=0, gzip;q=0, *, identity and a malformed weight get the
 #   plain body; *, GZIP;Q=0.5, x-gzip and br;q=1, gzip;q=0.1 get gzip; a
-#   handler's Content-Encoding: br body is not encoded again.
+#   handler's Content-Encoding: br body is not encoded again;
+#   (121.95) the ETag middleware's 304 carries the ETag; with the ETag
+#   middleware outside gzip, the 304 carries the ETag, Cache-Control,
+#   Expires, Content-Location and both Vary fields the 200 carried (the
+#   handler's Origin and gzip's Accept-Encoding), and no X-Other,
+#   Content-Type, Content-Encoding or body.
 #
 # Negative control: C721_STDLIB=<dir> builds the harness against another
 # stdlib tree.  Against main's src/stdlib (e9ec45b5) it is 9 passed,
@@ -56,9 +61,11 @@
 # and framing cases.  The 121.94 cases against main (7ca0e318): 39 passed,
 # 7 failed -- gzip;q=0, gzip; q=0.000, gzip;q=0, *, gzip;q=x got gzip;
 # *, GZIP;Q=0.5 did not (no lower-case "gzip" in them); the br body
-# went out under two Content-Encodings.
+# went out under two Content-Encodings.  With the 121.95 cases: 42 passed,
+# 13 failed -- the 6 more are the 304's ETag (twice), Cache-Control,
+# Expires, Content-Location and Vary: main's 304 carried no header at all.
 #
-# Story: 121.90, 121.94
+# Story: 121.90, 121.94, 121.95
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -196,7 +203,16 @@ static TkRouteResp h_br(TkRouteCtx c)
     r.header_names = br_n; r.header_values = br_v; r.nheaders = 1;
     return r;
 }
-
+/* 121.95: the representation metadata a 304 must repeat, and one it must not */
+static const char *cc_n[] = { "Cache-Control", "Expires", "Content-Location", "Vary", "X-Other" };
+static const char *cc_v[] = { "max-age=60", "Thu, 01 Jan 2099 00:00:00 GMT", "/cc", "Origin", "1" };
+static TkRouteResp h_cc(TkRouteCtx c)
+{
+    (void)c;
+    TkRouteResp r = router_resp_ok(big, "text/plain");
+    r.header_names = cc_n; r.header_values = cc_v; r.nheaders = 5;
+    return r;
+}
 static TkRouteResp h_201(TkRouteCtx c) { (void)c; return router_resp_status(201, "made"); }
 static TkRouteResp h_299(TkRouteCtx c) { (void)c; return router_resp_status(299, "odd"); }
 static TkRouteResp h_0(TkRouteCtx c)   { (void)c; return router_resp_status(0, "zero"); }
@@ -343,6 +359,47 @@ int main(int argc, char **argv)
         report(status_is("HTTP/1.1 304 Not Modified"), "etag mw: If-None-Match -> [%s] (want 304 Not Modified)", status_line());
         report(ex.blen == 0 && hdr_count("Content-Length") == 0,
                "etag mw: 304 has no body (%zu) and no Content-Length (%d)", ex.blen, hdr_count("Content-Length"));
+        report(etag[0] && HAS("ETag", etag), "etag mw: the 304 carries the ETag (%s, want %s) -- 121.95", SHOW("ETag"), etag);
+    }
+
+    /* ── 121.95: a 304 repeats what the 200 would have sent ── */
+    TkRouter *e2 = router_new();
+    router_get(e2, "/cc", h_cc);
+    router_use_etag(e2);          /* first registered = outermost */
+    router_use_gzip(e2, 256);
+    rt(e2, "GET /cc HTTP/1.1\r\nHost: t\r\nAccept-Encoding: gzip\r\n\r\n");
+    char etag2[256] = "";
+    if (hdr("ETag")) snprintf(etag2, sizeof etag2, "%s", hdr("ETag"));
+    report(status_is("HTTP/1.1 200 OK") && etag2[0] && HAS("Content-Encoding", "gzip"),
+           "etag+gzip: 200, gzip, ETag %s", etag2[0] ? etag2 : "(none)");
+    {
+        char req[512];
+        snprintf(req, sizeof req, "GET /cc HTTP/1.1\r\nHost: t\r\nAccept-Encoding: gzip\r\nIf-None-Match: %s\r\n\r\n",
+                 etag2[0] ? etag2 : "W/\"x\"");
+        rt(e2, req);
+        report(status_is("HTTP/1.1 304 Not Modified"), "etag+gzip: If-None-Match -> [%s] (want 304)", status_line());
+        report(etag2[0] && HAS("ETag", etag2), "304: ETag %s (want %s)", SHOW("ETag"), etag2);
+        report(HAS("Cache-Control", "max-age=60"), "304: Cache-Control %s (want max-age=60)", SHOW("Cache-Control"));
+        report(HAS("Expires", "Thu, 01 Jan 2099 00:00:00 GMT"), "304: Expires %s", SHOW("Expires"));
+        report(HAS("Content-Location", "/cc"), "304: Content-Location %s", SHOW("Content-Location"));
+        {
+            /* both Vary fields the 200 carried: the handler's and gzip's */
+            int origin = 0, ae = 0;
+            for (const char *p = strstr(ex.head, "\r\n"); p; p = strstr(p, "\r\n")) {
+                p += 2;
+                if (strncasecmp(p, "Vary:", 5) != 0) continue;
+                const char *e = strstr(p, "\r\n");
+                size_t l = e ? (size_t)(e - p) : strlen(p);
+                char line[256]; if (l >= sizeof line) l = sizeof line - 1;
+                memcpy(line, p, l); line[l] = '\0';
+                if (strcasestr(line, "Origin")) origin = 1;
+                if (strcasestr(line, "Accept-Encoding")) ae = 1;
+            }
+            report(origin && ae, "304: Vary carries Origin (%d) and Accept-Encoding (%d), as the 200 did", origin, ae);
+        }
+        report(!hdr("X-Other") && !hdr("Content-Type") && !hdr("Content-Encoding") && ex.blen == 0,
+               "304: no other representation metadata (X-Other %s, Content-Type %s, Content-Encoding %s), no body",
+               SHOW("X-Other"), SHOW("Content-Type"), SHOW("Content-Encoding"));
     }
 
     /* ── router_static ── */

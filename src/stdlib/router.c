@@ -1967,13 +1967,65 @@ static TkRouteResp resp_with_etag(TkRouteResp base, char *etag)
     return base;
 }
 
+/* The fields a 304 repeats from the 200 it stands for (RFC 9110 sec.
+ * 15.4.5): Content-Location, Date, Vary, Cache-Control, Expires -- and the
+ * ETag, added by not_modified.  Nothing else: a 304 SHOULD NOT carry other
+ * representation metadata (Content-Type, Content-Encoding, ...). */
+static const char *const not_mod_keep[] = {
+    "Cache-Control", "Content-Location", "Date", "Expires", "Vary",
+};
+
+/*
+ * not_modified — the 304 for base, a 2xx whose ETag (etag, heap) matched
+ * If-None-Match.  121.95: it carries the ETag and the fields of
+ * not_mod_keep that base carries, every copy of each (two Vary fields stay
+ * two); it used to carry no header at all, so a cache revalidating its copy
+ * learned neither the validator nor a new freshness lifetime.  The arrays
+ * and etag are router-owned (resp_pool, 121.91).  On OOM: a bare 304.
+ */
+static TkRouteResp not_modified(TkRouteResp base, char *etag)
+{
+    TkRouteResp nm;
+    memset(&nm, 0, sizeof nm);
+    nm.status = 304;
+    uint64_t nh = base.nheaders;
+    const char **names = malloc((nh + 1) * sizeof(char *));
+    const char **vals  = malloc((nh + 1) * sizeof(char *));
+    if (!names || !vals) {
+        free(names);
+        free(vals);
+        free(etag);
+        return nm;
+    }
+    uint64_t k = 0;
+    names[k] = "ETag"; vals[k++] = etag;
+    for (uint64_t i = 0; i < nh; i++) {
+        const char *n = base.header_names  ? base.header_names[i]  : NULL;
+        const char *v = base.header_values ? base.header_values[i] : NULL;
+        if (!n || !v) continue;
+        for (size_t j = 0; j < sizeof not_mod_keep / sizeof not_mod_keep[0]; j++)
+            if (strcasecmp(n, not_mod_keep[j]) == 0) {
+                names[k] = n; vals[k++] = v;
+                break;
+            }
+    }
+    resp_pool_add(names);
+    resp_pool_add(vals);
+    resp_pool_add(etag);
+    nm.header_names  = names;
+    nm.header_values = vals;
+    nm.nheaders      = k;
+    return nm;
+}
+
 /*
  * mw_etag — middleware function installed by router_use_etag.
  *
  * After the downstream handler produces a response:
  *   - Non-2xx responses pass through unchanged.
  *   - Computes FNV-1a ETag of the response body.
- *   - If the request If-None-Match header matches, returns 304.
+ *   - If the request If-None-Match header matches, returns 304 with the
+ *     ETag and the cache fields the 200 carried (not_modified, 121.95).
  *   - Otherwise appends ETag header and returns the original response.
  */
 static TkRouteResp mw_etag(TkRouteCtx ctx, TkRouteHandler next)
@@ -1986,13 +2038,8 @@ static TkRouteResp mw_etag(TkRouteCtx ctx, TkRouteHandler next)
     if (!etag) return resp; /* OOM: skip ETag rather than crash */
 
     const char *inm = ctx_req_header(ctx, "If-None-Match");
-    if (inm && etag_matches_local(etag, inm)) {
-        free(etag);
-        TkRouteResp not_mod;
-        memset(&not_mod, 0, sizeof(not_mod));
-        not_mod.status = 304;
-        return not_mod;
-    }
+    if (inm && etag_matches_local(etag, inm))
+        return not_modified(resp, etag);
 
     return resp_with_etag(resp, etag);
 }

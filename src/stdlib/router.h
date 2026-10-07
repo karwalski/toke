@@ -194,7 +194,12 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
 
 /* router_use_etag — middleware that auto-generates ETags for all responses.
  * Computes FNV-1a of response body, sets ETag header.
- * If request has If-None-Match matching the ETag, returns 304. */
+ * If request has If-None-Match matching the ETag, returns 304 carrying
+ * the ETag and the Cache-Control, Expires, Content-Location, Date and Vary
+ * fields of the 2xx it replaces (RFC 9110 sec. 15.4.5, 121.95) -- and only
+ * those.  Middleware registered BEFORE it runs outside it (index 0 is the
+ * outermost), so register router_use_etag first for the 304 to repeat the
+ * gzip middleware's Vary: Accept-Encoding. */
 void router_use_etag(TkRouter *r);
 
 /* Convenience response constructors */
