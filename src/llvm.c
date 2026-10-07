@@ -1978,8 +1978,9 @@ static void prepass_load_tki(Ctx *c, const Node *ast) {
  * bare-name fallback, emitting `_ok`.  That is the whole of 127.96, which was
  * filed as a missing symbol when the implementation was never missing: the
  * `resok` mapping in stdlib_symbol_for answers tk_http_res_ok (declared at
- * g_stdlib_decls), and tk_http_resok_w is declared too.  Two spellings, both
- * present, and the compiler reached neither.
+ * g_stdlib_decls; a tk_http_resok_w wrapper was declared too at the time
+ * (since deleted).  The implementation was present, and the compiler reached
+ * none of it.
  *
  * The interface names the two spellings of one function (`http.res.ok` and
  * `http.resok`), so the sub-path resolves by concatenation — and only when

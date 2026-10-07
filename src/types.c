@@ -5267,7 +5267,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * declaration of the same name, exactly as codegen resolves it
          * (local_in_force).  `f=c(p:$str):$str{let base="x";<base}` beside a
          * module `f=base(..)` typed `base` as the function: a false E4031
-         * "expected str, got func" on stdlib/path.tk. */
+         * "expected str, got func" on stdlib/path.tk (a file removed later,
+         * 135.14). */
         const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
         /* If not found at module scope, check current function's local binds. */
         if (((!d||!d->def_node)||shadow)&&cx->fn_node) {

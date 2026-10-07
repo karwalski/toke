@@ -975,7 +975,7 @@ typedef struct {
  * needs rewriting, so it ran its whole transform chain over source that was
  * already valid v0.4 and damaged it: measured over this tree, 36 of 497 files
  * that `--check` clean no longer compiled afterwards (stdlib/encoding.tk and
- * stdlib/sha256.tk among them), and 124 of 124 files containing block comments
+ * stdlib/sha256.tk among them; both files were removed later, 135.14), and 124 of 124 files containing block comments
  * lost 100% of them — 216 comment blocks, including the round-trip fixture
  * named for the thing being destroyed.  Every one of those runs exited 0.
  *
