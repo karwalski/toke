@@ -141,38 +141,34 @@ StrArray str_split(const char *s, const char *sep)
 const char *str_trim(const char *s)
 {
     if (!s) return NULL;
-    while (*s && isspace((unsigned char)*s)) s++;
-    size_t len = strlen(s);
+    size_t len = tk_strlen(s);
+    while (len > 0 && isspace((unsigned char)*s)) { s++; len--; }
     while (len > 0 && isspace((unsigned char)s[len - 1])) len--;
-    char *out = malloc(len + 1);
-    if (!out) return NULL;
-    memcpy(out, s, len);
-    out[len] = '\0';
-    return out;
+    return tks_dup(s, len);                   /* 127.170: sealed */
 }
 
 const char *str_upper(const char *s)
 {
     if (!s) return NULL;
-    size_t len = strlen(s);
-    char *out = malloc(len + 1);
+    size_t len = tk_strlen(s);
+    char *out = tks_alloc(len);               /* 127.170: sealed below */
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++)
         out[i] = (char)toupper((unsigned char)s[i]);
     out[len] = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 const char *str_lower(const char *s)
 {
     if (!s) return NULL;
-    size_t len = strlen(s);
-    char *out = malloc(len + 1);
+    size_t len = tk_strlen(s);
+    char *out = tks_alloc(len);               /* 127.170: sealed below */
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++)
         out[i] = (char)tolower((unsigned char)s[i]);
     out[len] = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 ByteArray str_bytes(const char *s)
@@ -439,20 +435,15 @@ const char *str_join(const char *sep, StrArray parts)
 const char *str_repeat(const char *s, uint64_t n)
 {
     if (!s) return NULL;
-    if (n == 0) {
-        char *empty = malloc(1);
-        if (!empty) return NULL;
-        empty[0] = '\0';
-        return empty;
-    }
-    size_t slen  = strlen(s);
+    if (n == 0) return tks_dup("", 0);        /* 127.170: sealed */
+    size_t slen  = tk_strlen(s);
     size_t total = slen * (size_t)n;
-    char *out = malloc(total + 1);
+    char *out = tks_alloc(total);
     if (!out) return NULL;
     for (uint64_t i = 0; i < n; i++)
         memcpy(out + i * slen, s, slen);
     out[total] = '\0';
-    return out;
+    return tks_seal(out, total);
 }
 
 /* --- Story 28.1.2: prefix/suffix and line operations --------------------- */
@@ -539,51 +530,41 @@ uint64_t str_count(const char *s, const char *sub)
 const char *str_pad_left(const char *s, uint64_t width, char ch)
 {
     if (!s) return NULL;
-    size_t slen = strlen(s);
-    if ((uint64_t)slen >= width) {
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
+    size_t slen = tk_strlen(s);
+    if ((uint64_t)slen >= width) return tks_dup(s, slen);   /* 127.170: sealed */
     size_t pad = (size_t)(width - (uint64_t)slen);
-    char *out = malloc(width + 1);
+    char *out = tks_alloc((size_t)width);
     if (!out) return NULL;
     memset(out, ch, pad);
     memcpy(out + pad, s, slen);
     out[width] = '\0';
-    return out;
+    return tks_seal(out, ch ? (size_t)width : 0);   /* a 0 pad ends the C string */
 }
 
 const char *str_pad_right(const char *s, uint64_t width, char ch)
 {
     if (!s) return NULL;
-    size_t slen = strlen(s);
-    if ((uint64_t)slen >= width) {
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
+    size_t slen = tk_strlen(s);
+    if ((uint64_t)slen >= width) return tks_dup(s, slen);   /* 127.170: sealed */
     size_t pad = (size_t)(width - (uint64_t)slen);
-    char *out = malloc(width + 1);
+    char *out = tks_alloc((size_t)width);
     if (!out) return NULL;
     memcpy(out, s, slen);
     memset(out + slen, ch, pad);
     out[width] = '\0';
-    return out;
+    return tks_seal(out, ch ? (size_t)width : slen);   /* a 0 pad ends the C string */
 }
 
 const char *str_reverse(const char *s)
 {
     if (!s) return NULL;
-    size_t len = strlen(s);
-    char *out = malloc(len + 1);
+    size_t len = tk_strlen(s);
+    char *out = tks_alloc(len);               /* 127.170: sealed below */
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++)
         out[i] = s[len - 1 - i];
     out[len] = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 int str_is_alpha(const char *s)
@@ -630,28 +611,24 @@ int str_is_space(const char *s)
 
 const char *str_trimprefix(const char *s, const char *prefix)
 {
-    if (!s) return strdup("");
-    if (!prefix || prefix[0] == '\0') return strdup(s);
-    size_t plen = strlen(prefix);
-    if (strncmp(s, prefix, plen) == 0)
-        return strdup(s + plen);
-    return strdup(s);
+    if (!s) return tks_dup("", 0);            /* 127.170: sealed */
+    size_t slen = tk_strlen(s);
+    if (!prefix || prefix[0] == '\0') return tks_dup(s, slen);
+    size_t plen = tk_strlen(prefix);
+    if (plen <= slen && memcmp(s, prefix, plen) == 0)
+        return tks_dup(s + plen, slen - plen);
+    return tks_dup(s, slen);
 }
 
 const char *str_trimsuffix(const char *s, const char *suffix)
 {
-    if (!s) return strdup("");
-    if (!suffix || suffix[0] == '\0') return strdup(s);
+    if (!s) return tks_dup("", 0);            /* 127.170: sealed */
     size_t slen   = tk_strlen(s);
+    if (!suffix || suffix[0] == '\0') return tks_dup(s, slen);
     size_t suflen = tk_strlen(suffix);
-    if (slen >= suflen && memcmp(s + slen - suflen, suffix, suflen) == 0) {
-        char *r = malloc(slen - suflen + 1);
-        if (!r) return strdup(s);
-        memcpy(r, s, slen - suflen);
-        r[slen - suflen] = '\0';
-        return r;
-    }
-    return strdup(s);
+    if (slen >= suflen && memcmp(s + slen - suflen, suffix, suflen) == 0)
+        return tks_dup(s, slen - suflen);
+    return tks_dup(s, slen);
 }
 
 int64_t str_lastindex(const char *s, const char *sub)

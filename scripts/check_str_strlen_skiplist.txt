@@ -68,7 +68,7 @@ src/stdlib/server_ops.c 2
 src/stdlib/soap.c 9
 src/stdlib/sse.c 7
 src/stdlib/sse_glue.c 1
-src/stdlib/str.c 17
+src/stdlib/str.c 9
 src/stdlib/str_glue.c 12
 src/stdlib/strbuf.h 1
 src/stdlib/svg.c 4
