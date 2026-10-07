@@ -85,12 +85,13 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 72 |
-| `c-internal` | called only from other C in `src/stdlib/` | 151 |
+| `c-internal` | called only from other C in `src/stdlib/` | 153 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 34 |
+| `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 29 |
+| `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 3 |
 | | **total** | **266** |
 
-A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
+A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the conformance harness -- and is listed with the file that documents it. A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
 ### `emitted` (72)
 
@@ -169,7 +170,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (151)
+### `c-internal` (153)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -180,7 +181,9 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_access_log_set_global` | `log.c` | log_glue.c |
 | `tk_access_log_write` | `log.c` | http.c, log.c |
 | `tk_arr_sort_qsort_cmp` | `collections_glue.c` | collections_glue.c |
+| `tk_cap_check` | `capabilities.c` | via `TK_REQUIRE` in 28 files |
 | `tk_cap_class_name` | `capabilities.c` | capabilities.c |
+| `tk_cap_deny` | `capabilities.c` | via `TK_REQUIRE` in 28 files |
 | `tk_cap_init` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_is_grant_flag` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_mode` | `capabilities.c` | capabilities.c |
@@ -339,41 +342,44 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `dead` (34)
+### `c-api` (29)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
-| `tk_array_retain` | `collections_glue.c` | - |
-| `tk_cap_check` | `capabilities.c` | - |
-| `tk_cap_deny` | `capabilities.c` | - |
-| `tk_cap_grants` | `capabilities.c` | - |
-| `tk_error_log_close` | `log.c` | - |
-| `tk_infer_is_loaded` | `infer.c` | - |
-| `tk_infer_stream_cleanup` | `infer_stream.c` | - |
-| `tk_infer_unload` | `infer.c` | - |
-| `tk_json_print_arr_bool` | `tk_runtime.c` | - |
-| `tk_json_print_arr_str` | `tk_runtime.c` | - |
-| `tk_log_security` | `log.c` | - |
-| `tk_log_security_set_output` | `log.c` | - |
-| `tk_log_set_output` | `log.c` | - |
-| `tk_log_with_context` | `log.c` | - |
-| `tk_os_o_nofollow` | `os.c` | - |
-| `tk_test_assert_contains` | `tk_test.c` | - |
-| `tk_test_assert_false` | `tk_test.c` | - |
-| `tk_test_assert_gt` | `tk_test.c` | - |
-| `tk_test_assert_gte` | `tk_test.c` | - |
-| `tk_test_assert_lt` | `tk_test.c` | - |
-| `tk_test_assert_lte` | `tk_test.c` | - |
-| `tk_test_assert_nil` | `tk_test.c` | - |
-| `tk_test_assert_not_contains` | `tk_test.c` | - |
-| `tk_test_assert_not_nil` | `tk_test.c` | - |
-| `tk_test_setup` | `tk_test.c` | - |
-| `tk_test_teardown` | `tk_test.c` | - |
-| `tk_webview_allow_origin` | `webview.c` | - |
-| `tk_webview_close` | `webview.c` | - |
-| `tk_webview_eval_js` | `webview.c` | - |
-| `tk_webview_is_available` | `webview.c` | - |
-| `tk_webview_on_close` | `webview.c` | - |
-| `tk_webview_register_handler` | `webview.c` | - |
-| `tk_webview_run_event_loop` | `webview.c` | - |
-| `tk_webview_set_title` | `webview.c` | - |
+| `tk_cap_grants` | `capabilities.c` | "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c |
+| `tk_error_log_close` | `log.c` | documented in log.h's error-log block as the pair of tk_error_log_open (which log_glue.c calls) |
+| `tk_infer_is_loaded` | `infer.c` | handle query of the finished C core; tested from C |
+| `tk_infer_unload` | `infer.c` | infer.md: "`tk_infer_unload` exists; the wrapper returns 0" |
+| `tk_json_print_arr_bool` | `tk_runtime.c` | listed in the runtime ABI table; the compiler does not currently emit it |
+| `tk_json_print_arr_str` | `tk_runtime.c` | listed in the runtime ABI table; the compiler does not currently emit it |
+| `tk_log_security` | `log.c` | the C runtime's security-event stream; log.md: "not yet part of the std.log interface" |
+| `tk_log_security_set_output` | `log.c` | routes that stream to its own file; same log.md paragraph |
+| `tk_log_set_output` | `log.c` | C-side log destination; the conform harnesses drive the logger through it |
+| `tk_log_with_context` | `log.c` | structured-context log call, tested from C |
+| `tk_test_assert_contains` | `tk_test.c` | "C interface for the std.test standard library module" (tk_test.h) |
+| `tk_test_assert_false` | `tk_test.c` | as above |
+| `tk_test_assert_gt` | `tk_test.c` | as above |
+| `tk_test_assert_gte` | `tk_test.c` | as above |
+| `tk_test_assert_lt` | `tk_test.c` | as above |
+| `tk_test_assert_lte` | `tk_test.c` | as above |
+| `tk_test_assert_nil` | `tk_test.c` | as above |
+| `tk_test_assert_not_contains` | `tk_test.c` | as above |
+| `tk_test_assert_not_nil` | `tk_test.c` | as above |
+| `tk_test_setup` | `tk_test.c` | as above |
+| `tk_test_teardown` | `tk_test.c` | as above |
+| `tk_webview_allow_origin` | `webview.c` | bridge origin policy; C139 drives it from C |
+| `tk_webview_close` | `webview.c` | documented and tested from C |
+| `tk_webview_eval_js` | `webview.c` | documented and tested from C |
+| `tk_webview_is_available` | `webview.c` | platform probe; tested from C |
+| `tk_webview_on_close` | `webview.c` | close callback; tested from C |
+| `tk_webview_register_handler` | `webview.c` | JS->C bridge handler; tested from C |
+| `tk_webview_run_event_loop` | `webview.c` | webview.h documents it as the main-thread platform run loop an embedder calls; a blocking GUI loop, so no headless test calls it |
+| `tk_webview_set_title` | `webview.c` | tested from C |
+
+### `dead` (3)
+
+| Symbol | Defined in | Detail |
+|---|---|---|
+| `tk_array_retain` | `collections_glue.c` | ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c still says codegen emits it (stale) |
+| `tk_infer_stream_cleanup` | `infer_stream.c` | infer_stream.h/.c say it is "called from tk_infer_unload"; tk_infer_unload does not call it and no test does -- a missing caller (defect reported by Batch Z59), not an API |
+| `tk_os_o_nofollow` | `os.c` | no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story) |

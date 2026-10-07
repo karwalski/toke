@@ -504,6 +504,10 @@ def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
 # public is a deliberate one-word edit, reviewed in the diff.
 INTERNAL_MD = REPO_ROOT / "docs" / "reference" / "stdlib-internal.md"
 
+# 136.73: the reasoned list behind the `c-api` class, and the acknowledged
+# `dead` symbols.  `--c-api-list PATH` reads another copy (negative controls).
+C_API_LIST = REPO_ROOT / "scripts" / "stdlib_c_api.txt"
+
 
 def glue_home(symbol: str, defs: dict[str, str]) -> str:
     """The module stem of the file defining `symbol` ('' if not a tk_ def)."""
@@ -524,7 +528,7 @@ _C_TYPES = r"(?:int64_t|int32_t|uint64_t|uint32_t|void|double|float|int|char|lon
 
 
 def classify_unpublished(defs: dict[str, str], resolved: set[str],
-                         explicit, patterns) -> list[tuple[str, str, str, str]]:
+                         explicit, patterns, c_api=None) -> list[tuple[str, str, str, str]]:
     """Every defined tk_* symbol no `.tki` export resolves to, classified.
 
     136.34: "456 runtime glue symbols have no interface entry at all".  The
@@ -535,10 +539,14 @@ def classify_unpublished(defs: dict[str, str], resolved: set[str],
                   g_stdlib_decls rows): a lowering target, internal by
                   construction
       c-internal  other C in src/stdlib calls it (a helper, or the body behind
-                  a published spelling)
+                  a published spelling) -- directly, or through a macro in
+                  src/stdlib/*.h that a .c expands (136.73)
       alias       toke source can reach it, but only under a spelling that
                   generation will not publish (`time.add_days`, `str.charAt`,
                   `task.spawn_w`): a legacy alias of a published name
+      c-api       none of the above, but scripts/stdlib_c_api.txt lists it as
+                  a documented C entry point, citing the header, doc or test
+                  that makes it one (136.73)
       dead        nothing in src/ calls it and no toke spelling reaches it
                   (a unit test under test/ may)
 
@@ -561,6 +569,9 @@ def classify_unpublished(defs: dict[str, str], resolved: set[str],
     glue = {p.name: _C_COMMENT.sub("", p.read_text(errors="replace"))
             for p in sorted(C_DIR.glob("*.c"))}
 
+    macros = header_macros()
+    c_api = c_api or {}
+
     out = []
     for sym in sorted(defs):
         if sym in resolved:
@@ -575,12 +586,111 @@ def classify_unpublished(defs: dict[str, str], resolved: set[str],
             uses = len(word.findall(text)) - len(proto.findall(text))
             if uses > 0:
                 callers.append(name)
+        # 136.73: a call written inside a header macro is a call from every
+        # file that expands the macro.  `TK_REQUIRE(cap)` (capabilities.h)
+        # calls tk_cap_check and tk_cap_deny in every fs/net/env/process
+        # sink, and the page classed both `dead` because no .c spells them.
+        if not callers:
+            for mname, body in macros.items():
+                if not word.search(body):
+                    continue
+                mword = re.compile(r"\b" + re.escape(mname) + r"\b")
+                users = [n for n, t in glue.items() if mword.search(t)]
+                if users:
+                    callers.append(f"via `{mname}` in {len(users)} file"
+                                   + ("s" if len(users) != 1 else ""))
         if callers:
             out.append((sym, defs[sym], "c-internal", ", ".join(callers)))
         elif reach.get(sym):
             out.append((sym, defs[sym], "alias", ", ".join(sorted(reach[sym]))))
+        elif c_api.get(sym, ("",))[0] == "c-api":
+            out.append((sym, defs[sym], "c-api", c_api[sym][2]))
         else:
-            out.append((sym, defs[sym], "dead", ""))
+            out.append((sym, defs[sym], "dead",
+                        c_api[sym][2] if sym in c_api else ""))
+    return out
+
+
+_MACRO_DEF = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)((?:[^\n]*\\\n)*[^\n]*)", re.M)
+
+
+def header_macros() -> dict[str, str]:
+    """name -> body of every #define in src/stdlib/*.h (continuations joined)."""
+    out: dict[str, str] = {}
+    for h in sorted(C_DIR.glob("*.h")):
+        text = _C_COMMENT.sub("", h.read_text(errors="replace"))
+        for m in _MACRO_DEF.finditer(text):
+            out[m.group(1)] = out.get(m.group(1), "") + m.group(2)
+    return out
+
+
+def load_c_api_list(path: Path) -> tuple[dict[str, tuple[str, list[str], str]], list[str]]:
+    """scripts/stdlib_c_api.txt -> ({symbol: (class, cites, reason)}, problems).
+
+    One line per symbol:   <tk_symbol> <c-api|dead> [<cite>[,<cite>...]]  # reason
+    A `c-api` line must cite at least one repo file (a header, a doc page, a
+    test) that exists and names the symbol: the citation IS the reason it is
+    an API and not dead code.  A `dead` line acknowledges a symbol that
+    nothing reaches; its reason names the story or defect that decides it.
+    """
+    entries: dict[str, tuple[str, list[str], str]] = {}
+    problems: list[str] = []
+    if not path.exists():
+        return entries, [f"BADLINE    {path.name} is missing"]
+    for n, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        body, _, reason = raw.partition("#")
+        body, reason = body.strip(), reason.strip()
+        if not body:
+            continue
+        parts = body.split()
+        where = f"{path.name}:{n}"
+        if len(parts) not in (2, 3) or parts[1] not in ("c-api", "dead") \
+                or not parts[0].startswith("tk_"):
+            problems.append(f"BADLINE    {where}: want `<tk_symbol> <c-api|dead> "
+                            f"[cites]  # reason`, got: {raw.strip()}")
+            continue
+        sym, cls = parts[0], parts[1]
+        cites = parts[2].split(",") if len(parts) == 3 else []
+        if not reason:
+            problems.append(f"BADLINE    {where}: {sym} has no `# reason`")
+        if sym in entries:
+            problems.append(f"BADLINE    {where}: {sym} listed twice")
+        if cls == "c-api" and not cites:
+            problems.append(f"BADCITE    {where}: c-api {sym} cites no file")
+        word = re.compile(r"\b" + re.escape(sym) + r"\b")
+        for c in cites:
+            f = REPO_ROOT / c
+            if not f.is_file():
+                problems.append(f"BADCITE    {where}: {sym} cites {c}, which does not exist")
+            elif not word.search(f.read_text(errors="replace")):
+                problems.append(f"BADCITE    {where}: {sym} cites {c}, which does not name it")
+        entries[sym] = (cls, cites, reason)
+    return entries, problems
+
+
+def c_api_findings(defs: dict[str, str], unpublished, entries) -> list[str]:
+    """The 136.73 gate, shaped like check-core-reach's (136.50a).
+
+    UNTRIAGED  a `dead` symbol with no line in the list: decide it -- cite the
+               doc or test that makes it a C API, or acknowledge it as dead
+               with the story that will wire or retire it.
+    STALE      a line for a symbol that is no longer defined, or that something
+               now reaches (exported, emitted, called from C, an alias): delete it.
+    """
+    out = []
+    cls_of = {s: c for s, _, c, _ in unpublished}
+    for s, _, c, _ in unpublished:
+        if c == "dead" and s not in entries:
+            out.append(f"UNTRIAGED  {s} ({defs[s]}) is dead and not in "
+                       f"scripts/stdlib_c_api.txt")
+    for s, (c, _, _) in sorted(entries.items()):
+        if s not in defs:
+            out.append(f"STALE      {s} is listed `{c}` but no longer defined "
+                       f"in src/stdlib/*.c -- delete its line")
+        elif cls_of.get(s) not in ("c-api", "dead"):
+            now = cls_of.get(s, "exported by a .tki")
+            out.append(f"STALE      {s} is listed `{c}` but is now {now} "
+                       f"-- delete its line")
     return out
 
 
@@ -589,8 +699,13 @@ UNPUBLISHED_CLASSES = [
     ("c-internal", "called only from other C in `src/stdlib/`"),
     ("alias", "reachable from toke only under a spelling generation will not "
               "publish -- a legacy alias of a published name"),
-    ("dead", "nothing in `src/` calls it and no toke spelling reaches it "
-             "(a unit test under `test/` may)"),
+    ("c-api", "a documented C entry point: no toke spelling and no caller "
+              "in `src/`, but a header, doc page or test names it as API "
+              "(`scripts/stdlib_c_api.txt` cites which)"),
+    ("dead", "nothing in `src/` calls it, no toke spelling reaches it and it "
+             "is not a documented C API (a unit test under `test/` may call "
+             "it); each is acknowledged in `scripts/stdlib_c_api.txt` with "
+             "the reason"),
 ]
 
 
@@ -642,7 +757,10 @@ def render_internal_md(internal_exports, unpublished) -> str:
         out.append(f"| `{c}` | {meaning} | {counts[c]} |")
     out.append(f"| | **total** | **{len(unpublished)}** |")
     out.append("")
-    out += ["A `dead` symbol is finished or half-finished code with no way in: "
+    out += ["A `c-api` symbol is kept for C callers -- an embedder, a C unit "
+            "test, the conformance harness -- and is listed with the file that "
+            "documents it. "
+            "A `dead` symbol is finished or half-finished code with no way in: "
             "wiring it up is an interface decision, and deleting it is a glue "
             "decision. Neither is made by this page.", ""]
     for c, _ in UNPUBLISHED_CLASSES:
@@ -880,18 +998,40 @@ def main() -> int:
             print(f"  {k}")
         print()
     if "--internal-md" in sys.argv or "--internal-md-check" in sys.argv:
-        md = render_internal_md(internal_exports, classify_unpublished(
-            defs, resolved_symbols, explicit, patterns))
+        c_api_path = C_API_LIST
+        if "--c-api-list" in sys.argv:
+            c_api_path = Path(sys.argv[sys.argv.index("--c-api-list") + 1]).resolve()
+        c_api, c_api_problems = load_c_api_list(c_api_path)
+        unpublished = classify_unpublished(defs, resolved_symbols, explicit,
+                                           patterns, c_api)
+        md = render_internal_md(internal_exports, unpublished)
         rel = INTERNAL_MD.relative_to(REPO_ROOT)
         if "--internal-md" in sys.argv:
             INTERNAL_MD.write_text(md, encoding="utf-8")
             print(f"wrote {rel}")
             return 0
+        # 136.73: every dead symbol is decided, and no decision is stale.
+        findings = c_api_problems + c_api_findings(defs, unpublished, c_api)
+        n = {c: sum(1 for _, _, cc, _ in unpublished if cc == c)
+             for c in ("c-api", "dead")}
+        print(f"c-api list: {n['c-api']} c-api, {n['dead']} dead "
+              f"({sum(1 for v in c_api.values() if v[0] == 'dead')} acknowledged "
+              f"in {c_api_path.name})")
+        for line in findings:
+            print(line)
         live = INTERNAL_MD.read_text(encoding="utf-8") if INTERNAL_MD.exists() else ""
+        rc = 0
+        if findings:
+            print(f"FAIL: {len(findings)} c-api list finding(s). A dead symbol "
+                  f"needs a line in scripts/stdlib_c_api.txt; a stale line is "
+                  f"deleted.")
+            rc = 1
         if live != md:
             print(f"FAIL drift: {rel} does not match stdlib/*.tki and "
                   f"src/stdlib/*.c. Run `make render-stdlib-internal`.")
             return 1
+        if rc:
+            return rc
         print(f"internal report OK: {rel} matches the interfaces and the glue "
               f"({len(internal_exports)} internal exports).")
         return 0
