@@ -250,7 +250,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
 	test-stdlib-http-leak test-stdlib-toml-glue \
 	test-stdlib-http-form test-stdlib-http-tls test-stdlib-tls \
-	test-stdlib-file test-stdlib-runtime \
+	test-stdlib-file test-stdlib-runtime test-stdlib-strhdr \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-keychain \
 	test-stdlib-securemem test-stdlib-glue-contract test-stdlib-zip \
@@ -449,6 +449,14 @@ LINT_CC_CHECK = @command -v $(LINT_CC) >/dev/null 2>&1 || { \
 lint:
 	$(LINT_CC_CHECK)
 	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
+	@python3 scripts/check_str_strlen.py
+
+# 127.170 gate 3: the reader ratchet for length-carrying strings -- every bare
+# strlen( in src/stdlib is on a skiplist that only shrinks, and the core string
+# readers may not call it.  `--census` prints what is left.
+.PHONY: check-str-strlen
+check-str-strlen:
+	@python3 scripts/check_str_strlen.py
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
@@ -836,7 +844,7 @@ test-asan-compiler: asan-selftest
 # counting allocator), and test-stdlib-json never reached them: built under
 # this configuration it runs clean at dbb254a, where the comment was written
 # (102/102), at 5350fdc~1 (110/110) and now (111/111), 0 sanitizer reports.
-ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
+ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-strhdr test-stdlib-json test-stdlib-encoding \
                       test-stdlib-math test-stdlib-template \
                       test-stdlib-encrypt test-stdlib-toon \
                       test-stdlib-yaml test-stdlib-regex \
@@ -1058,7 +1066,7 @@ TEST_CI_GREEN = \
 	test-stdlib-image test-stdlib-json test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-map test-stdlib-math test-stdlib-md test-stdlib-ml \
 	test-stdlib-network-integration test-stdlib-path test-stdlib-process \
-	test-stdlib-regex test-stdlib-runtime test-stdlib-securemem \
+	test-stdlib-regex test-stdlib-runtime test-stdlib-securemem test-stdlib-strhdr \
 	test-stdlib-security-integration test-stdlib-sse test-stdlib-svg \
 	test-stdlib-template test-stdlib-test test-stdlib-time \
 	test-stdlib-toml test-stdlib-toml-glue test-stdlib-toon \
@@ -1483,6 +1491,18 @@ test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \
 	    test/stdlib/test_str.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_str
+
+# 127.170: the sealed string heap (src/stdlib/tk_strhdr.h) -- trust and
+# exclusion, commit chunks, the verify switch, the never-freed rule, and eight
+# threads racing the reservation.  Built twice: the second with
+# -DTK_STR_NO_HEAP, the malloc fallback a target without mmap gets.
+test-stdlib-strhdr:
+	$(CC) $(CFLAGS) -o test/stdlib/test_strhdr \
+	    test/stdlib/test_strhdr.c src/stdlib/str.c -lpthread
+	$(RUN_TEST) ./test/stdlib/test_strhdr
+	$(CC) $(CFLAGS) -DTK_STR_NO_HEAP -o test/stdlib/test_strhdr_noheap \
+	    test/stdlib/test_strhdr.c src/stdlib/str.c -lpthread
+	$(RUN_TEST) ./test/stdlib/test_strhdr_noheap
 
 # 137.9 / 121.35: the regex engine (src/stdlib/tk_regex.h) -- supported
 # language, rejected syntax with offsets, and the step budget.

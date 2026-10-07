@@ -1,0 +1,16 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"tok\(i),")};
+  let t=s.build(b);
+  let cnt=mut.0;
+  lp(let k=0;k<t.len;k=k+1){
+    cnt=cnt+1
+  };
+  io.println("n=\(cnt)");
+  <0
+};

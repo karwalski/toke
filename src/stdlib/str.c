@@ -9,6 +9,7 @@
  */
 
 #include "str.h"
+#include "tk_strhdr.h"   /* 127.170: the sealed string heap (state at the end of this file) */
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -713,3 +714,166 @@ StrBracketResult str_matchbracket(const char *s)
 }
 
 /* --- Story 55.4.6: string builder ---*/
+
+/* --- Story 127.170: the sealed string heap (tk_strhdr.h) -----------------
+ *
+ * The state behind tk_strhdr.h, in the one translation unit every compiled
+ * toke program and the compiler link.  See the header for the layout and the
+ * rule; docs/runtime-abi.md §3.1 for the design and the gates.
+ */
+char    *tks_lo;          /* region base; NULL until reserved */
+uint8_t *tks_bits;        /* TKS_RESERVE/128 bytes, one bit per granule */
+int      tks_verify;      /* set once, before tks_lo is published */
+
+void tks_verify_fail(const char *p, int64_t hdr)
+{
+    fprintf(stderr, "TK_STR_VERIFY: header %lld != strlen %zu at %p "
+            "(a sealed string was written after tks_seal)\n",
+            (long long)hdr, strlen(p), (const void *)p);
+    fflush(stderr);
+    abort();
+}
+
+#if TKS_HEAP
+#include <sys/mman.h>
+#include <sched.h>
+
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define TKS_ASAN 1
+#endif
+#endif
+#if !defined(TKS_ASAN) && defined(__SANITIZE_ADDRESS__)
+#define TKS_ASAN 1
+#endif
+#ifdef TKS_ASAN
+#include <sanitizer/asan_interface.h>
+#define TKS_REDZONE 16    /* poisoned granule after every string under ASan */
+#else
+#define TKS_REDZONE 0
+#endif
+
+#ifndef MAP_NORESERVE
+#define MAP_NORESERVE 0
+#endif
+#ifndef MAP_ANON
+#define MAP_ANON MAP_ANONYMOUS
+#endif
+
+static size_t tks_top;        /* bytes handed out (may run past the end) */
+static size_t tks_committed;  /* region bytes mprotect'd read/write */
+static int    tks_state;      /* 0 unreserved, 2 ready, 3 failed */
+static int    tks_lock_word;
+
+static void tks_lock(void)
+{
+    while (__atomic_exchange_n(&tks_lock_word, 1, __ATOMIC_ACQUIRE))
+        sched_yield();
+}
+static void tks_unlock(void) { __atomic_store_n(&tks_lock_word, 0, __ATOMIC_RELEASE); }
+
+/* Reserve the region and the bitmap, once.  Returns 1 when the heap is
+ * usable.  Nothing is committed here: both mappings are PROT_NONE. */
+static int tks_reserve(void)
+{
+    int st = __atomic_load_n(&tks_state, __ATOMIC_ACQUIRE);
+    if (st) return st == 2;
+    tks_lock();
+    st = __atomic_load_n(&tks_state, __ATOMIC_RELAXED);
+    if (!st) {
+        const char *e = getenv("TK_STR_VERIFY");
+        tks_verify = (TK_STR_VERIFY || (e && e[0] == '1')) ? 1 : 0;
+        void *r = mmap(NULL, (size_t)TKS_RESERVE, PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+        void *b = mmap(NULL, (size_t)(TKS_RESERVE / 128), PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+        if (r == MAP_FAILED || b == MAP_FAILED) {
+            if (r != MAP_FAILED) munmap(r, (size_t)TKS_RESERVE);
+            if (b != MAP_FAILED) munmap(b, (size_t)(TKS_RESERVE / 128));
+            st = 3;
+        } else {
+            tks_bits = (uint8_t *)b;
+            __atomic_store_n(&tks_lo, (char *)r, __ATOMIC_RELEASE);
+            st = 2;
+        }
+        __atomic_store_n(&tks_state, st, __ATOMIC_RELEASE);
+    }
+    tks_unlock();
+    return st == 2;
+}
+
+/* Make region bytes [0, end) and their bitmap read/write.  Returns 0 when
+ * the OS refuses (strict overcommit, RLIMIT_AS): the caller falls back. */
+static int tks_commit(size_t end)
+{
+    int ok = 1;
+    tks_lock();
+    size_t have = __atomic_load_n(&tks_committed, __ATOMIC_RELAXED);
+    while (have < end) {
+        if (mprotect(tks_lo + have, TKS_CHUNK, PROT_READ | PROT_WRITE) != 0 ||
+            mprotect(tks_bits + have / 128, TKS_CHUNK / 128,
+                     PROT_READ | PROT_WRITE) != 0) { ok = 0; break; }
+#ifdef TKS_ASAN
+        /* Fresh pages are unpoisoned; each allocation poisons its own tail. */
+#endif
+        have += TKS_CHUNK;
+        __atomic_store_n(&tks_committed, have, __ATOMIC_RELEASE);
+    }
+    tks_unlock();
+    return ok;
+}
+
+char *tks_alloc(size_t n)
+{
+    if (n < (size_t)TKS_RESERVE && tks_reserve()) {
+        size_t need = (8 + n + 1 + TKS_REDZONE + 15) & ~(size_t)15;
+        size_t off = __atomic_fetch_add(&tks_top, need, __ATOMIC_RELAXED);
+        if (off + need <= (size_t)TKS_RESERVE &&
+            (off + need <= __atomic_load_n(&tks_committed, __ATOMIC_ACQUIRE) ||
+             tks_commit(off + need))) {
+            char *p = tks_lo + off + 8;
+#ifdef TKS_ASAN
+            /* Everything past the NUL to the end of the block is off limits,
+             * so an over-read of a sealed string is reported as it would be
+             * for a malloc'd one. */
+            ASAN_POISON_MEMORY_REGION(p + n + 1, (size_t)(tks_lo + off + need - (p + n + 1)));
+#endif
+            return p;
+        }
+    }
+    return (char *)malloc(n + 1);
+}
+
+char *tks_seal(char *p, size_t n)
+{
+    char *lo = __atomic_load_n(&tks_lo, __ATOMIC_ACQUIRE);
+    uint64_t o = (uint64_t)((uintptr_t)p - (uintptr_t)lo);
+    if (p && lo && o < TKS_RESERVE && (o & 15) == 8) {
+        int64_t len = (int64_t)n;
+        memcpy(p - 8, &len, sizeof len);
+        uint64_t g = o >> 4;
+        __atomic_fetch_or(&tks_bits[g >> 3], (uint8_t)(1u << (g & 7)), __ATOMIC_RELEASE);
+    }
+    return p;
+}
+
+#else /* !TKS_HEAP: every string is a malloc'd, unsealed C string */
+
+char *tks_alloc(size_t n) { return (char *)malloc(n + 1); }
+char *tks_seal(char *p, size_t n) { (void)n; return p; }
+
+#endif /* TKS_HEAP */
+
+char *tks_dup(const char *s, size_t n)
+{
+    char *p = tks_alloc(n);
+    if (!p) return NULL;
+    memcpy(p, s, n);
+    p[n] = '\0';
+    return tks_seal(p, n);
+}
+
+char *tks_strdup(const char *s)
+{
+    return tks_dup(s, tk_strlen(s));
+}
