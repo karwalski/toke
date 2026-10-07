@@ -2211,10 +2211,26 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
         return rc;
     }
 
-    /* Step 3: Token-level transforms */
-    char *buf = malloc((size_t)(clen * 3 + 2048));
+    /* Step 3: Token-level transforms.
+     * 127.286: the buffer grows.  It was a fixed clen*3+2048, but one token
+     * can expand past 3x: `Vec` → `$vechandle` is 3 → 10 bytes, and an
+     * unmatched legacy `[` the prepass leaves alone becomes `.get(`, 1 → 5,
+     * so 4000 of them overflowed the heap.  BENSURE runs before every token,
+     * sized for the gap before it plus the most that token can emit: its own
+     * length (underscores only shrink a name), a '$' sigil, and the longest
+     * MIG_RENAMED_TYPES spelling (14) — BENSURE_TOK bytes beyond the token. */
+    long bcap = (long)clen * 2 + 256;
+    char *buf = malloc((size_t)bcap);
     if (!buf) { free(c); free(nt); s_migrate_depth--; return -1; }
     int blen = 0, prev = 0;
+    #define BENSURE_TOK 32   /* '$' + longest renamed type (14), rounded up */
+    #define BENSURE(need) do { \
+        if ((long)blen + (long)(need) + 1 > bcap) { \
+            long nc = bcap * 2 + (long)(need) + 16; \
+            char *nb = realloc(buf, (size_t)nc); \
+            if (!nb) { free(buf); free(c); free(nt); s_migrate_depth--; return -1; } \
+            buf = nb; bcap = nc; \
+        } } while (0)
     /* 127.57: brace nesting depth at the *start* of the current token.  A type
      * declaration (`t=$name{...}`) is a top-level form, so the "after t=" type
      * position heuristic below is only valid at depth 0.  Without this, the
@@ -2227,6 +2243,7 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
         const Token *t = &nt[i];
         if (t->kind == TK_EOF) break;
 
+        BENSURE((long)(t->start - prev) + t->len + BENSURE_TOK);
         /* Gap: copy from cleaned text */
         for (int g = prev; g < t->start; g++) buf[blen++] = c[g];
 
@@ -2353,8 +2370,11 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
         else if (t->kind == TK_RBRACE && brace_depth > 0) brace_depth--;
         prev = t->start + t->len;
     }
+    BENSURE((long)(clen - prev));
     for (int g = prev; g < clen; g++) buf[blen++] = c[g];
     buf[blen] = '\0';
+    #undef BENSURE
+    #undef BENSURE_TOK
 
     /* Step 4: Text-level |{ → mt expr { */
     char *buf2 = malloc((size_t)(blen * 2 + 512));
