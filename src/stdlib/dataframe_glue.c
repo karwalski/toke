@@ -79,13 +79,6 @@ int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
     return (int64_t)(intptr_t)(out ? out : df_new());
 }
 
-/* `df.` and `dataframe.` are both live aliases for this module (see the
- * paired tk_df_ and tk_dataframe_ wrappers in tk_web_glue.c), so both
- * spellings resolve. */
-int64_t tk_df_fromrows_w(int64_t headers, int64_t rows) {
-    return tk_dataframe_fromrows_w(headers, rows);
-}
-
 /* ─────────────────────────────────────────────────────────────────────
  * 136.40 — moved verbatim from tk_web_glue.c.
  *
@@ -158,19 +151,6 @@ static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {
     return (int64_t)(intptr_t)strs;
 }
 
-static const char tk_df_fromcsv_fail[] =
-    "df.fromcsv: the CSV could not be read as a dataframe";
-int64_t tk_df_fromcsv_w(int64_t csv) { return df_slot(df_fromcsv_impl(csv), tk_df_fromcsv_fail); }
-int64_t tk_df_shape_w(int64_t df) { return df_shape_impl(df); }
-static const char tk_df_filter_fail[] =
-    "df.filter: the filter could not be applied (unknown column or operator)";
-int64_t tk_df_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_slot(df_filter_impl(df, col, op, val), tk_df_filter_fail); }
-static const char tk_df_groupby_fail[] =
-    "df.groupby: the column could not be grouped";
-int64_t tk_df_groupby_w(int64_t df, int64_t col) { return df_slot(df_groupby_impl(df, col), tk_df_groupby_fail); }
-static const char tk_df_columnstr_fail[] =
-    "df.columnstr: no such string column";
-int64_t tk_df_columnstr_w(int64_t df, int64_t col) { return df_slot(df_columnstr_impl(df, col), tk_df_columnstr_fail); }
 static const char tk_dataframe_fromcsv_fail[] =
     "df.fromcsv: the CSV could not be read as a dataframe";
 int64_t tk_dataframe_fromcsv_w(int64_t csv) { return df_slot(df_fromcsv_impl(csv), tk_dataframe_fromcsv_fail); }

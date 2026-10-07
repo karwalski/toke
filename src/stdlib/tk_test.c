@@ -123,17 +123,6 @@ int tk_test_assert_ne(const char *a, const char *b, const char *msg)
     return 0;
 }
 
-int tk_test_assert_true(int cond, const char *msg)
-{
-    if (cond) return 1;
-    if (!msg) msg = "(no message)";
-    fprintf(stderr,
-            "DIAGNOSTIC: kind=assertion_failed msg=\"%s\" detail=\"assert_true: condition is false\"\n",
-            msg);
-    mark_current_test_failed();
-    return 0;
-}
-
 int tk_test_assert_false(int cond, const char *msg)
 {
     if (!cond) return 1;

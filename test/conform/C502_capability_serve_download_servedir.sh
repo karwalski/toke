@@ -24,7 +24,9 @@
 #   2-4. NEGATIVE CONTROLS, in a copy of the tree: delete the new TK_REQUIRE
 #      in router_serve / http_downloadfile / tk_http_serve_staticdir_w -> the
 #      gate FAILS naming tk_router_serve_w / tk_http_downloadfile_w /
-#      tk_http_servedir_w.  Each injection is asserted to have landed.
+#      tk_http_serve_staticdir_w (the dead tk_http_servedir_w alias that
+#      used to be named first was deleted by 136.71).  Each injection is
+#      asserted to have landed.
 #   5. runtime, no grant: router.serve exits 1 with CAP001 'net' and no
 #      listener appears; with --allow-net it listens
 #   6. runtime, no grant: dashboard.serve exits 1 with CAP001 'net'
@@ -94,7 +96,7 @@ control() {  # $1 label  $2 file  $3 function  $4 expected entry
 }
 control 2 router.c router_serve tk_router_serve_w
 control 3 http.c http_downloadfile tk_http_downloadfile_w
-control 4 tk_web_glue.c tk_http_serve_staticdir_w tk_http_servedir_w
+control 4 tk_web_glue.c tk_http_serve_staticdir_w tk_http_serve_staticdir_w
 
 # ── 5-9: the runtime ──────────────────────────────────────────────────────
 cd "${WORK}"

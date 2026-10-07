@@ -15,7 +15,6 @@
 
 analytics_trend gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 analytics_ttest gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-auth_apikeygen dup        # legacy alias of auth_apikeygenerate, surfaced as auth.apikeygenerate (found 135.19: hidden by the comment-blind regex)
 auth_jwtdecode_claims gap        # no wrapper, no .tki entry
 auth_oauth2_authorize_url gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 auth_oauth2_token_exchange gap        # no wrapper, no .tki entry
@@ -42,8 +41,6 @@ chart_set_legend gap        # no wrapper, no .tki entry
 chart_set_theme gap        # no wrapper, no .tki entry
 chart_set_tooltip gap        # no wrapper, no .tki entry
 chart_stacked_bar gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-crypto_from_hex dup        # hex decode; surfaced as encoding.hexdecode (found 135.19: hidden by the comment-blind regex)
-csv_reader_has_next dup        # inverse of csv.atend, which is surfaced
 csv_reader_lazyquotes gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 csv_reader_line_number gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 csv_reader_set_quote gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
@@ -81,13 +78,8 @@ env_delete gap        # no wrapper, no .tki entry (found 135.19: hidden by the c
 env_file_load gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 env_list gap        # no wrapper, no .tki entry
 file_absolute gap        # no wrapper, no .tki entry
-file_basename dup        # duplicates path.base
-file_dirname dup        # duplicates path.dir
-file_ext dup        # duplicates path.ext
 file_is_file gap        # no wrapper, no .tki entry
-file_join dup        # duplicates path.join
 file_mtime gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-file_rmdir dup        # duplicates os.rmdir
 html_a gap        # no wrapper, no .tki entry
 html_attr gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 html_br gap        # no wrapper, no .tki entry
@@ -143,6 +135,7 @@ ml_random_forest_fit gap        # no wrapper, no .tki entry (found 135.19: hidde
 ml_random_forest_predict gap        # no wrapper, no .tki entry
 ml_standardize gap        # no wrapper, no .tki entry
 ml_train_test_split gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
+ocr_lasterr_kind internal   # C-API kind token; the toke surface is the $ocrerr variant since ocr.lasterrkind was retired (127.246); C033's C harness reads it
 process_stdin_write gap        # no wrapper, no .tki entry
 process_timeout gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 router_dispatch_ex internal   # server-loop plumbing: extended dispatch used by the serve loop (found 135.19: hidden by the comment-blind regex)
@@ -153,19 +146,13 @@ router_static gap        # no wrapper, no .tki entry
 router_use_cors gap        # no wrapper, no .tki entry
 router_use_etag gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 router_use_gzip gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-router_use_log gap        # no wrapper, no .tki entry
 router_ws gap        # no wrapper, no .tki entry
 sse_is_closed gap        # no wrapper, no .tki entry
-str_buf_add dup        # second implementation of str.add (see str_buf_new)
-str_buf_addbyte dup        # second implementation of str.addbyte (see str_buf_new)
-str_buf_done dup        # second implementation of str.done (see str_buf_new)
-str_buf_new dup        # str.buf is surfaced by a SEPARATE implementation in str_glue.c; this is a second copy
 str_count gap        # no wrapper, no .tki entry
 str_is_alnum gap        # no wrapper, no .tki entry
 str_is_alpha gap        # no wrapper, no .tki entry
 str_is_space gap        # no wrapper, no .tki entry
 str_replace_first gap        # no wrapper, no .tki entry
-str_rindex dup        # duplicates str.lastindex, whose glue does not call it
 str_split_lines gap        # no wrapper, no .tki entry
 svg_animate gap        # no wrapper, no .tki entry
 svg_defs gap        # no wrapper, no .tki entry
@@ -183,7 +170,6 @@ tk_test_assert_lte gap        # no wrapper, no .tki entry
 tk_test_assert_nil gap        # no wrapper, no .tki entry
 tk_test_assert_not_contains gap        # no wrapper, no .tki entry
 tk_test_assert_not_nil gap        # no wrapper, no .tki entry
-tk_test_assert_true dup        # body identical in shape to tk_test_assert, surfaced as test.assert
 tk_test_setup gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 tk_test_summary gap        # no wrapper, no .tki entry
 tk_test_teardown gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)

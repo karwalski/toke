@@ -33,17 +33,13 @@ void         csv_reader_free(TkCsvReader *r);
  * no way to do this and leaked its copy of the input on every csv.close. */
 void         csv_reader_adopt(TkCsvReader *r, char *buf);
 
-/* csv_reader_has_next: returns 1 if there is at least one more row to read,
- * 0 at EOF. */
-int          csv_reader_has_next(TkCsvReader *r);
-
 /* csv_reader_next: reads and returns the next row as a StrArray.
  * Each field is a heap-allocated, NUL-terminated string; caller owns them.
  * Returns an empty StrArray (len==0, data==NULL) at EOF. */
 StrArray     csv_reader_next(TkCsvReader *r);
 
 /* csv_reader_header: returns the first row.
- * If has_next has been called zero times this reads the first row and caches
+ * If no row has been read yet this reads the first row and caches
  * it so that subsequent next() calls begin from the second row.
  * If the reader has already advanced past row 0, returns the cached copy. */
 StrArray     csv_reader_header(TkCsvReader *r);

@@ -48,19 +48,16 @@ rm -f "$T/stdlib/llm_tool.md"
 out="$(python3 "$T/scripts/check_parallel_stdlib.py" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && ok "clean tree passes" || bad "clean tree failed (rc=$rc): $out"
 
-# 3. A verbatim underscore twin still matches verbatim (quarantine unchanged).
-if /usr/bin/grep -qx 'stdlib/json_stream.md' "$T/scripts/check_parallel_stdlib_quarantine.txt" \
-   && [ -f "$T/docs/stdlib/json_stream.md" ]; then
-  sed -i.bak '/^stdlib\/json_stream.md$/d' "$T/scripts/check_parallel_stdlib_quarantine.txt"
-  out="$(python3 "$T/scripts/check_parallel_stdlib.py" 2>&1)"; rc=$?
-  if [ $rc -eq 1 ] && printf '%s' "$out" | /usr/bin/grep -q 'duplicates docs/stdlib/json_stream.md'; then
-    ok "unquarantined json_stream.md still matched verbatim"
-  else
-    bad "verbatim twin lost (rc=$rc): $out"
-  fi
+# 3. A verbatim underscore twin still matches verbatim.  135.14 emptied the
+#    quarantine and deleted stdlib/json_stream.md, so inject it, unlisted.
+echo "# stale" > "$T/stdlib/json_stream.md"
+out="$(python3 "$T/scripts/check_parallel_stdlib.py" 2>&1)"; rc=$?
+if [ $rc -eq 1 ] && printf '%s' "$out" | /usr/bin/grep -q 'duplicates docs/stdlib/json_stream.md'; then
+  ok "injected json_stream.md matched verbatim"
 else
-  ok "verbatim twin case skipped: json_stream.md no longer present"
+  bad "verbatim twin lost (rc=$rc): $out"
 fi
+rm -f "$T/stdlib/json_stream.md"
 
 echo "C150: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

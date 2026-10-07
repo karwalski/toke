@@ -564,6 +564,15 @@ f=each(tag:str;runs:@($textrun)):i64{
   <0
 };
 
+(* The kind and the message of a $pdferr (pdf.lasterrkind()/lasterr()
+   were retired by 127.246; the $err arm's payload carries both). *)
+f=pkind(e:$pdferr):str{
+  <mt e {$baddoc:m "baddoc";$encrypted:m "encrypted";$nopage:m "nopage";$toolarge:m "toolarge";$unsupported:m "unsupported";$io:m "io"}
+};
+f=pwhy(e:$pdferr):str{
+  <mt e {$baddoc:m m;$encrypted:m m;$nopage:m m;$toolarge:m m;$unsupported:m m;$io:m m}
+};
+
 f=body(tag:str;doc:$pdfdoc;page:i64):i64{
   io.println(s.concat(s.concat(tag;"-pages=");s.fromint(p.pagecount(doc))));
   io.println(s.concat(s.concat(s.concat(s.concat(tag;"-size=");f.f64(p.pagewidth(doc;page);2));"x");f.f64(p.pageheight(doc;page);2)));
@@ -572,12 +581,12 @@ f=body(tag:str;doc:$pdfdoc;page:i64):i64{
   let rr=p.runs(doc;page);
   mt rr {
     $ok:runs each(tag;runs);
-    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");p.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");pkind(e)))
   };
   let t=p.pagetext(doc;page);
   mt t {
     $ok:txt io.println(s.concat(s.concat(tag;"-text=");s.replace(txt;"\n";"/")));
-    $err:e io.println(s.concat(s.concat(tag;"-text=ERR|");p.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-text=ERR|");pkind(e)))
   };
   p.close(doc);
   <0
@@ -587,7 +596,7 @@ f=dump(tag:str;file:str;page:i64):i64{
   let d=p.openfile(fix(file));
   mt d {
     $ok:doc body(tag;doc;page);
-    $err:e io.println(s.concat(s.concat(s.concat(s.concat(tag;"-open=ERR|");p.lasterrkind());"|");p.lasterr()))
+    $err:e io.println(s.concat(s.concat(s.concat(s.concat(tag;"-open=ERR|");pkind(e));"|");pwhy(e)))
   };
   <0
 };
@@ -607,7 +616,7 @@ f=memopen(tag:str;bytes:@(byte);page:i64):i64{
   let d=p.open(bytes);
   mt d {
     $ok:doc body(tag;doc;page);
-    $err:e io.println(s.concat(s.concat(tag;"-open=ERR|");p.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-open=ERR|");pkind(e)))
   };
   <0
 };
@@ -618,7 +627,7 @@ f=mustreject(label:str;file:str):i64{
   let d=p.openfile(fix(file));
   mt d {
     $ok:doc rejectfail(label;doc);
-    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");p.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");pkind(e)))
   };
   <0
 };
@@ -642,7 +651,7 @@ f=badpagebody(doc:$pdfdoc):i64{
   let r=p.runs(doc;99);
   mt r {
     $ok:runs io.println(s.concat("badpage=ACCEPTED|";s.fromint(runs.len)));
-    $err:e io.println(s.concat("badpage=";p.lasterrkind()))
+    $err:e io.println(s.concat("badpage=";pkind(e)))
   };
   p.close(doc);
   <0

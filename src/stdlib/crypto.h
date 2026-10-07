@@ -58,7 +58,6 @@ const char *crypto_to_hex(ByteArray data);
  * On error (odd length, invalid chars), returns a static error message string
  * and sets out->data = NULL, out->len = 0.
  * Story: 29.6.1 */
-const char *crypto_from_hex(const char *hex, ByteArray *out);
 
 /* Result type for bcrypt (mirrors StrSliceResult pattern).
  * Story: 29.6.1 */

@@ -95,9 +95,9 @@ The error side of every fallible call:
 | `$failed` | The engine itself returned an error |
 | `$io` | The file could not be read |
 
-The `$err` arm binds the `$ocrerr`, so match on the variant to tell which one it was (`mt e {$noengine:m …; $badimage:m …}`); every variant carries the engine's message, which is prose for a human and is not stable. Until 127.241 the arm bound nothing and **`ocr.lasterrkind`** was the only way to ask; it still answers, with the same closed set of tokens.
+The `$err` arm binds the `$ocrerr`, so match on the variant to tell which one it was (`mt e {$noengine:m …; $badimage:m …}`); every variant carries the engine's message, which is prose for a human and is not stable. Until 127.241 the arm bound nothing and `ocr.lasterr`/`ocr.lasterrkind` were the only way to ask; those accessors duplicated the payload and were retired by 127.246.
 
-**A blank page is not an error.** It succeeds with zero runs and `ocr.lasterrkind` of `"none"`. Blank, unavailable and failed are three different answers.
+**A blank page is not an error.** It succeeds with zero runs, taking the `$ok` arm. Blank, unavailable and failed are three different answers.
 
 ## Functions
 
@@ -117,7 +117,7 @@ Comma-separated BCP-47 tags the engine supports, **queried live**. `""` when the
 
 Set the recognition languages, comma-separated, most-preferred first. `""` restores the default.
 
-Returns `false` with kind `nolanguage` if **any** tag is one the engine does not have, and changes nothing. That check is not paranoia: Vision silently ignores a tag it does not know and recognises in its default language instead, which produces confident output in the wrong language. Note that a prefix is not a tag -- `"en"` is refused even though `"en-US"` is supported.
+Returns `false` if **any** tag is one the engine does not have, and changes nothing. That check is not paranoia: Vision silently ignores a tag it does not know and recognises in its default language instead, which produces confident output in the wrong language. Note that a prefix is not a tag -- `"en"` is refused even though `"en-US"` is supported. It also returns `false` when there is no engine at all; `ocr.isavailable()` tells the two apart.
 
 ### ocr.setfast(fast: bool): void
 
@@ -146,11 +146,6 @@ Every run joined with `\n`, **in the engine's order**.
 
 Unlike `pdf.pagetext`, this does **not** sort. A PDF's emission order is arbitrary while its positions are exact, so sorting recovers real information; here the positions are themselves estimates and the engine already returns a sensible order for single-column text. A multi-column sort invented in this module would be a heuristic wearing the costume of a fact. Use `ocr.runs` and sort on the positions if you need that, with your own tolerance.
 
-### ocr.lasterr(): $str
-### ocr.lasterrkind(): $str
-
-Prose for a human, and the stable kind to switch on. `lasterrkind` is one of `none`, `noengine`, `badimage`, `toosmall`, `nolanguage`, `failed`, `io`.
-
 ## The routing this exists for
 
 Extraction is exact; recognition is probabilistic. Running OCR over a page that already has a text layer pays an error rate it never needed, so ask first.
@@ -162,12 +157,20 @@ i=s:std.str;
 i=p:std.pdf;
 i=o:std.ocr;
 
+(* The stable kind of each error, to switch on; the payload is prose. *)
+f=pdfkind(e:$pdferr):$str{
+  <mt e {$baddoc:m "baddoc";$encrypted:m "encrypted";$nopage:m "nopage";$toolarge:m "toolarge";$unsupported:m "unsupported";$io:m "io"}
+};
+f=ocrkind(e:$ocrerr):$str{
+  <mt e {$noengine:m "noengine";$badimage:m "badimage";$toosmall:m "toosmall";$nolanguage:m "nolanguage";$failed:m "failed";$io:m "io"}
+};
+
 (* A page WITH a text layer: exact, no error rate, no engine needed. *)
 f=viapdf(doc:$pdfdoc;pageno:i64):i64{
   let t=p.pagetext(doc;pageno);
   mt t {
     $ok:txt io.println(s.concat("exact: ";txt));
-    $err:e io.println(s.concat("pdf rejected: ";p.lasterrkind()))
+    $err:e io.println(s.concat("pdf rejected: ";pdfkind(e)))
   };
   <0
 };
@@ -177,7 +180,7 @@ f=viaocr(path:str):i64{
   let t=o.textfile(path);
   mt t {
     $ok:txt io.println(s.concat("recognised: ";txt));
-    $err:e io.println(s.concat("ocr rejected: ";o.lasterrkind()))
+    $err:e io.println(s.concat("ocr rejected: ";ocrkind(e)))
   };
   <0
 };
@@ -202,7 +205,7 @@ f=main():i64{
   let d=p.openfile("statement.pdf");
   mt d {
     $ok:doc routepage(doc;1;"page1.png");
-    $err:e io.println(s.concat("cannot open: ";p.lasterrkind()))
+    $err:e io.println(s.concat("cannot open: ";pdfkind(e)))
   };
   <0
 };

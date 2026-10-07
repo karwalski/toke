@@ -1,1 +1,0 @@
-(* std.log — stub, C backend via tk_log_info / tk_log_warn / tk_log_error *)

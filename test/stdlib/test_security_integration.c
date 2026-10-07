@@ -53,7 +53,7 @@ static void test_apikey_jwt_pipeline(void)
 {
     printf("\n--- Test 1: API key -> JWT -> verify pipeline ---\n");
 
-    const char *apikey = auth_apikeygen();
+    const char *apikey = auth_apikeygenerate();
     ASSERT(apikey != NULL, "apikeygen returns non-NULL");
     ASSERT(strlen(apikey) > 0, "apikeygen returns non-empty string");
 
@@ -340,8 +340,8 @@ static void test_constant_time_key_comparison(void)
 {
     printf("\n--- Test 8: Constant-time key comparison ---\n");
 
-    const char *key_a = auth_apikeygen();
-    const char *key_b = auth_apikeygen();
+    const char *key_a = auth_apikeygenerate();
+    const char *key_b = auth_apikeygenerate();
     ASSERT(key_a != NULL, "apikeygen returns key_a");
     ASSERT(key_b != NULL, "apikeygen returns key_b");
 
@@ -426,7 +426,7 @@ static void test_full_auth_flow(void)
     printf("\n--- Test 10: Full auth flow ---\n");
 
     /* Generate API key */
-    const char *apikey = auth_apikeygen();
+    const char *apikey = auth_apikeygenerate();
     ASSERT(apikey != NULL, "apikeygen returns key");
 
     /* Build JWT with sub and iss */
@@ -458,7 +458,7 @@ static void test_full_auth_flow(void)
            "Full auth flow: apikey validates against itself");
 
     /* Validate against a different key → 0 */
-    const char *other_key = auth_apikeygen();
+    const char *other_key = auth_apikeygenerate();
     ASSERT(other_key != NULL, "Full auth flow: second apikeygen succeeds");
     ASSERT(auth_apikeyvalidate(apikey, other_key) == 0,
            "Full auth flow: apikey does not validate against different key");

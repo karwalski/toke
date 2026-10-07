@@ -40,8 +40,6 @@
     {"kind": "func", "name": "ocr.runsfile",      "params": ["str"],                            "return": "@(ocrrun)!ocrerr"},
     {"kind": "func", "name": "ocr.runsraw",       "params": ["@(byte)", "i64", "i64", "i64"],   "return": "@(ocrrun)!ocrerr"},
     {"kind": "func", "name": "ocr.text",          "params": ["@(byte)"],                        "return": "str!ocrerr"},
-    {"kind": "func", "name": "ocr.textfile",      "params": ["str"],                            "return": "str!ocrerr"},
-    {"kind": "func", "name": "ocr.lasterr",       "params": [],                                 "return": "str"},
-    {"kind": "func", "name": "ocr.lasterrkind",   "params": [],                                 "return": "str"}
+    {"kind": "func", "name": "ocr.textfile",      "params": ["str"],                            "return": "str!ocrerr"}
   ]
 }

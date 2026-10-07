@@ -458,6 +458,12 @@ f=runline(r:$ocrrun):str{
   <v
 };
 
+(* The kind of an $ocrerr, from the $err arm's payload (ocr.lasterrkind()
+   was retired by 127.246). *)
+f=okind(e:$ocrerr):str{
+  <mt e {$noengine:m "noengine";$badimage:m "badimage";$toosmall:m "toosmall";$nolanguage:m "nolanguage";$failed:m "failed";$io:m "io"}
+};
+
 f=each(tag:str;runs:@($ocrrun)):i64{
   io.println(s.concat(s.concat(tag;"-nruns=");s.fromint(runs.len)));
   lp(let i=0;i<runs.len;i=i+1){
@@ -470,12 +476,12 @@ f=dump(tag:str;name:str):i64{
   let rr=o.runsfile(fix(name));
   mt rr {
     $ok:runs each(tag;runs);
-    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");o.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");okind(e)))
   };
   let t=o.textfile(fix(name));
   mt t {
     $ok:txt io.println(s.concat(s.concat(tag;"-text=");s.replace(txt;"\n";"/")));
-    $err:e io.println(s.concat(s.concat(tag;"-text=ERR|");o.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-text=ERR|");okind(e)))
   };
   <0
 };
@@ -495,7 +501,7 @@ f=memruns(tag:str;bytes:@(byte)):i64{
   let rr=o.runs(bytes);
   mt rr {
     $ok:runs each(tag;runs);
-    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");o.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");okind(e)))
   };
   <0
 };
@@ -514,7 +520,7 @@ f=rawruns(tag:str;bytes:@(byte);w:i64;h:i64;ch:i64):i64{
   let rr=o.runsraw(bytes;w;h;ch);
   mt rr {
     $ok:runs each(tag;runs);
-    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");o.lasterrkind()))
+    $err:e io.println(s.concat(s.concat(tag;"-nruns=ERR|");okind(e)))
   };
   <0
 };
@@ -544,11 +550,11 @@ f=main():i64{
   io.println(s.concat("haslangs=";if(s.contains(o.languages();"en-US")){"yes"}el{"no"}));
   io.println(s.concat("langcount=";s.fromint((s.split(o.languages();",")).len)));
   io.println(s.concat("setlang-known=";if(o.setlanguages("en-US")){"yes"}el{"no"}));
-  io.println(s.concat("setlang-unknown=";if(o.setlanguages("xx-YY")){"yes"}el{s.concat("no|";o.lasterrkind())}));
+  io.println(s.concat("setlang-unknown=";if(o.setlanguages("xx-YY")){"yes"}el{"no"}));
   (* A BCP-47 prefix of a supported tag is NOT a supported tag: "en" must be
      refused even though "en-US" is present, or a substring match is hiding
      in the implementation. *)
-  io.println(s.concat("setlang-prefix=";if(o.setlanguages("en")){"yes"}el{s.concat("no|";o.lasterrkind())}));
+  io.println(s.concat("setlang-prefix=";if(o.setlanguages("en")){"yes"}el{"no"}));
   o.setlanguages("");
 
   dump("stmt";"statement.png");
@@ -564,7 +570,7 @@ f=main():i64{
   let miss=o.runsfile(fix("nosuchfile.png"));
   mt miss {
     $ok:runs io.println(s.concat("miss-nruns=";s.fromint(runs.len)));
-    $err:e io.println(s.concat("miss-nruns=ERR|";o.lasterrkind()))
+    $err:e io.println(s.concat("miss-nruns=ERR|";okind(e)))
   };
 
   (* A buffer too small for the stated geometry must be refused, not read
@@ -616,8 +622,8 @@ expect "avail-yes"            "$(line "${OUT}" avail)"           "yes"
 expect "engine-is-named"      "$(line "${OUT}" engine)"          "vision"
 expect "languages-live"       "$(line "${OUT}" haslangs)"        "yes"
 expect "setlang-known-ok"     "$(line "${OUT}" setlang-known)"   "yes"
-expect "setlang-unknown-kind" "$(line "${OUT}" setlang-unknown)" "no|nolanguage"
-expect "setlang-prefix-kind"  "$(line "${OUT}" setlang-prefix)"  "no|nolanguage"
+expect "setlang-unknown-refused" "$(line "${OUT}" setlang-unknown)" "no"
+expect "setlang-prefix-refused" "$(line "${OUT}" setlang-prefix)"  "no"
 LANGCOUNT="$(line "${OUT}" langcount)"
 if [ "${LANGCOUNT:-0}" -gt 5 ]; then
     echo "PASS languages-plural (${LANGCOUNT} tags, read live)"

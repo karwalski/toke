@@ -43,10 +43,6 @@ void tk_test_mark_failed(void);
  * Passes if strcmp(a, b) != 0; emits diagnostic and returns 0 otherwise. */
 int tk_test_assert_ne(const char *a, const char *b, const char *msg);
 
-/* test.assert_true(cond:bool;msg:Str):bool
- * Passes if cond is non-zero; emits diagnostic and returns 0 otherwise. */
-int tk_test_assert_true(int cond, const char *msg);
-
 /* test.assert_false(cond:bool;msg:Str):bool
  * Passes if cond is zero; emits diagnostic and returns 0 otherwise. */
 int tk_test_assert_false(int cond, const char *msg);

@@ -25,9 +25,9 @@ TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}"
 
 # file : story -- reason.  Remove the line in the commit that fixes the file.
-KNOWN_RED=(
-  "stdlib/toon.tk:127.126 -- E1003 from line 209: the v0.3 migration (a6fe9cd) un-escaped its string escapes, leaving raw newlines, tabs and CRs inside literals and bare backslashes before quotes; it also still uses = for equality. Unused draft (std.toon is toon.c); fix or withdraw."
-)
+# Empty since 127.199/135.14 (2026-10-07): stdlib/toon.tk, its one entry, was
+# withdrawn with the other dead parallel stdlib .tk files and archived.
+KNOWN_RED=()
 
 [ -x "${TKC}" ] || { echo "check-stdlib-tk: no compiler at ${TKC} (run 'make')" >&2; exit 1; }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_stdlib_tk.XXXXXX")" || exit 1
@@ -35,7 +35,7 @@ trap 'rm -rf "${WORK}"' EXIT
 
 known_story() {
   local f="$1" e
-  for e in "${KNOWN_RED[@]}"; do
+  for e in ${KNOWN_RED[@]+"${KNOWN_RED[@]}"}; do
     [ "${e%%:*}" = "${f}" ] && { echo "${e#*:}"; return 0; }
   done
   return 1
@@ -66,7 +66,7 @@ for f in stdlib/*.tk test/stdlib/*.tk; do
     fi
   fi
 done
-for e in "${KNOWN_RED[@]}"; do
+for e in ${KNOWN_RED[@]+"${KNOWN_RED[@]}"}; do
   f="${e%%:*}"
   case " ${seen} " in *" ${f} "*) ;; *)
     echo "FAIL ${f}: listed in KNOWN_RED but not a checked stdlib source -- delete its entry"

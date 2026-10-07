@@ -45,7 +45,8 @@
  * An empty result is NOT 0: tk_arr_alloc(0, 0) returns a real handle, so a
  * page with no text at all comes back as a SUCCESS with zero runs and a
  * caller can tell it from "this platform has no recogniser", which is the
- * whole of requirement 5 on this story.  ocr.lasterrkind() carries which.
+ * whole of requirement 5 on this story.  The $err arm's $ocrerr variant
+ * carries which ($noengine).
  */
 
 #include "ocr.h"
@@ -72,8 +73,9 @@
  * $nolanguage $failed $io in exactly the enum's order after OCR_ERR_NONE
  * (ocr.h).  The message is ocr.c's, copied out of its static buffer by
  * tk_err_msg so a let-kept error keeps it.  Until 127.241 these returned a
- * bare 0 and bound nil; ocr.lasterr()/lasterrkind() still exist and still
- * agree (retiring them was not authorised with 127.102's three). */
+ * bare 0 and bound nil.  The ocr.lasterr()/lasterrkind() accessors that
+ * duplicated this payload were retired by 127.246 (owner decision
+ * 2026-10-01 §3.3, matching 127.102's ruling for csv/file/zip). */
 static int64_t ocr_raise(TkOcrErr code, const char *msg)
 {
     int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
@@ -193,8 +195,8 @@ int64_t tk_ocr_languages_w(void)
 
 /* ocr.setlanguages(langs:str) -> bool
  *
- * false, with lasterrkind "nolanguage", if any tag is one the engine does
- * not have.  Vision silently ignores an unknown tag and recognises in its
+ * false if any tag is one the engine does not have, or if there is no
+ * engine at all (ocr.isavailable() tells those two apart).  Vision silently ignores an unknown tag and recognises in its
  * default language, so accepting one would produce confident output in a
  * language the caller never asked for. */
 int64_t tk_ocr_setlanguages_w(int64_t langs)
@@ -327,25 +329,4 @@ int64_t tk_ocr_textfile_w(int64_t path)
         if (!out) return ocr_raise(OCR_ERR_FAILED, "ocr.textfile: out of memory");
         return ocr_ok(out);
     }
-}
-
-/* ocr.lasterr() -> str — prose, for a human. */
-int64_t tk_ocr_lasterr_w(void)
-{
-    const char *m = ocr_lasterr();
-    return (int64_t)(intptr_t)(m ? m : "");
-}
-
-/* ocr.lasterrkind() -> str — one of "none", "noengine", "badimage",
- * "toosmall", "nolanguage", "failed", "io".
- *
- * Separate from the message for the reason std.pdf keeps them separate: a
- * caller that has to substring-match a prose sentence to tell "no engine on
- * this platform" from "that file is not an image" is one rewording away
- * from treating a scanned statement as an empty one.  "noengine" is the
- * distinct kind requirement 5 of this story asks for. */
-int64_t tk_ocr_lasterrkind_w(void)
-{
-    const char *k = ocr_lasterr_kind();
-    return (int64_t)(intptr_t)(k ? k : "none");
 }

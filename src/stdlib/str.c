@@ -356,23 +356,6 @@ int64_t str_index(const char *s, const char *sub)
     return (int64_t)(p - s);
 }
 
-int64_t str_rindex(const char *s, const char *sub)
-{
-    if (!s || !sub) return -1;
-    size_t slen   = strlen(s);
-    size_t sublen = strlen(sub);
-    if (sublen == 0) return (int64_t)slen; /* convention: empty sub at end */
-    if (sublen > slen) return -1;
-    /* scan from right */
-    const char *last = NULL;
-    const char *p    = s;
-    while ((p = strstr(p, sub)) != NULL) {
-        last = p;
-        p++;
-    }
-    return last ? (int64_t)(last - s) : -1;
-}
-
 const char *str_replace(const char *s, const char *old, const char *new_val)
 {
     if (!s || !old || !new_val) return NULL;
@@ -730,55 +713,3 @@ StrBracketResult str_matchbracket(const char *s)
 }
 
 /* --- Story 55.4.6: string builder ---*/
-
-StrBuf str_buf_new(void)
-{
-    StrBuf b = {NULL, 0, 0};
-    b.cap  = 256;
-    b.data = malloc(b.cap);
-    if (b.data) b.data[0] = '\0';
-    return b;
-}
-
-void str_buf_add(StrBuf *b, const char *s)
-{
-    if (!b || !s || !b->data) return;
-    size_t slen = strlen(s);
-    if (b->len + slen + 1 > b->cap) {
-        uint64_t newcap = b->cap;
-        while (newcap < b->len + slen + 1) newcap *= 2;
-        char *tmp = realloc(b->data, newcap);
-        if (!tmp) return;
-        b->data = tmp;
-        b->cap  = newcap;
-    }
-    memcpy(b->data + b->len, s, slen);
-    b->len += slen;
-    b->data[b->len] = '\0';
-}
-
-void str_buf_addbyte(StrBuf *b, unsigned char c)
-{
-    if (!b || !b->data) return;
-    if (b->len + 2 > b->cap) {
-        uint64_t newcap = b->cap * 2;
-        char *tmp = realloc(b->data, newcap);
-        if (!tmp) return;
-        b->data = tmp;
-        b->cap  = newcap;
-    }
-    b->data[b->len++] = (char)c;
-    b->data[b->len]   = '\0';
-}
-
-const char *str_buf_done(StrBuf *b)
-{
-    if (!b || !b->data) return NULL;
-    /* Shrink to fit (optional but polite). */
-    char *result = realloc(b->data, b->len + 1);
-    if (!result) result = b->data;
-    b->data = NULL;
-    b->len  = 0;
-    b->cap  = 0;
-    return result;
-}

@@ -97,10 +97,10 @@ int main(void)
     ASSERT(!mdp.is_err && mdp.ok, "file_mkdir_p creates nested dirs");
     ASSERT(file_is_dir(nested), "nested dir exists after file_mkdir_p");
 
-    /* file_rmdir — remove empty dir */
-    BoolFileResult rmd = file_rmdir(nested);
-    ASSERT(!rmd.is_err && rmd.ok, "file_rmdir removes empty nested dir");
-    ASSERT(!file_is_dir(nested), "nested dir gone after file_rmdir");
+    /* remove the empty leaf (file_rmdir, a duplicate of os.rmdir, was
+     * deleted by 136.67) */
+    ASSERT(rmdir(nested) == 0, "rmdir removes empty nested dir");
+    ASSERT(!file_is_dir(nested), "nested dir gone after rmdir");
 
     /* file_rmdir_r — remove non-empty tree */
     /* Populate subdir with a file so it is non-empty */
@@ -160,102 +160,6 @@ int main(void)
     ASSERT(!cleanup.is_err && cleanup.ok, "cleaned up sandbox with file_rmdir_r");
 
     /* ── 28.2.3: path utilities ─────────────────────────────────────────── */
-
-    /* file_join */
-    {
-        const char *j1 = file_join("a", "b");
-        ASSERT_STREQ(j1, "a/b", "file_join: 'a'+'b' == 'a/b'");
-        free((void *)j1);
-
-        const char *j2 = file_join("a/", "b");
-        ASSERT_STREQ(j2, "a/b", "file_join: 'a/'+'b' == 'a/b'");
-        free((void *)j2);
-
-        const char *j3 = file_join("a", "/b");
-        ASSERT_STREQ(j3, "a/b", "file_join: 'a'+'/b' == 'a/b'");
-        free((void *)j3);
-
-        const char *j4 = file_join("a/", "/b");
-        ASSERT_STREQ(j4, "a/b", "file_join: 'a/'+'/b' == 'a/b'");
-        free((void *)j4);
-
-        const char *j5 = file_join("/usr/local", "bin");
-        ASSERT_STREQ(j5, "/usr/local/bin", "file_join: absolute prefix");
-        free((void *)j5);
-    }
-
-    /* file_basename */
-    {
-        const char *b1 = file_basename("/usr/local/bin");
-        ASSERT_STREQ(b1, "bin", "file_basename: '/usr/local/bin' == 'bin'");
-        free((void *)b1);
-
-        const char *b2 = file_basename("foo.txt");
-        ASSERT_STREQ(b2, "foo.txt", "file_basename: 'foo.txt' == 'foo.txt'");
-        free((void *)b2);
-
-        const char *b3 = file_basename("/");
-        ASSERT_STREQ(b3, "/", "file_basename: '/' == '/'");
-        free((void *)b3);
-
-        const char *b4 = file_basename("");
-        ASSERT_STREQ(b4, "", "file_basename: '' == ''");
-        free((void *)b4);
-
-        const char *b5 = file_basename("/foo/bar/");
-        ASSERT_STREQ(b5, "bar", "file_basename: trailing slash stripped");
-        free((void *)b5);
-    }
-
-    /* file_dirname */
-    {
-        const char *d1 = file_dirname("/usr/local/bin");
-        ASSERT_STREQ(d1, "/usr/local", "file_dirname: '/usr/local/bin' == '/usr/local'");
-        free((void *)d1);
-
-        const char *d2 = file_dirname("foo");
-        ASSERT_STREQ(d2, ".", "file_dirname: 'foo' == '.'");
-        free((void *)d2);
-
-        const char *d3 = file_dirname("/");
-        ASSERT_STREQ(d3, "/", "file_dirname: '/' == '/'");
-        free((void *)d3);
-
-        const char *d4 = file_dirname("/foo");
-        ASSERT_STREQ(d4, "/", "file_dirname: '/foo' == '/'");
-        free((void *)d4);
-
-        const char *d5 = file_dirname("a/b");
-        ASSERT_STREQ(d5, "a", "file_dirname: 'a/b' == 'a'");
-        free((void *)d5);
-    }
-
-    /* file_ext */
-    {
-        const char *e1 = file_ext("foo.txt");
-        ASSERT_STREQ(e1, ".txt", "file_ext: 'foo.txt' == '.txt'");
-        free((void *)e1);
-
-        const char *e2 = file_ext("foo.tar.gz");
-        ASSERT_STREQ(e2, ".gz", "file_ext: 'foo.tar.gz' == '.gz'");
-        free((void *)e2);
-
-        const char *e3 = file_ext("foo");
-        ASSERT_STREQ(e3, "", "file_ext: 'foo' == ''");
-        free((void *)e3);
-
-        const char *e4 = file_ext(".hidden");
-        ASSERT_STREQ(e4, ".hidden", "file_ext: '.hidden' == '.hidden'");
-        free((void *)e4);
-
-        const char *e5 = file_ext("/path/to/file.c");
-        ASSERT_STREQ(e5, ".c", "file_ext: path with dirs");
-        free((void *)e5);
-
-        const char *e6 = file_ext("archive.");
-        ASSERT_STREQ(e6, ".", "file_ext: trailing dot");
-        free((void *)e6);
-    }
 
     /* file_absolute */
     {

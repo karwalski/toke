@@ -1008,11 +1008,6 @@ int64_t tk_str_length_w(int64_t s) {
 
 /* ── std.float glue (no separate file; linked via str_glue) ─────────────── */
 
-/* float.parse(s) — parse string to f64 */
-int64_t tk_float_parse_w(int64_t s) {
-    return tk_str_tofloat_w(s);
-}
-
 /* ── std.fmt glue (no separate file; linked via str_glue) ───────────────── */
 
 /* fmt.f64(value, decimals) — format f64 with N decimal places, returns string */

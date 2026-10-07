@@ -10,8 +10,8 @@
 # it shipped (135.5a, C156).
 #
 # Asserted: (1) docs/stdlib/image.md names every function image.tki exports;
-# (2) stdlib/image.md either names them all too or opens with the dated
-# `**Archived YYYY-MM-DD` banner the claim guards treat as a record;
+# (2) stdlib/image.md is gone (135.14), or names them all too, or opens with
+# the dated `**Archived YYYY-MM-DD` banner the claim guards treat as a record;
 # (3) the loke reply's "CCITT ... missing" sentence carries a dated update.
 #
 # Negative control: the tree at main 7c16729 — (2) lists the 18 exports the
@@ -36,7 +36,10 @@ print(" ".join(n for n in names if not re.search(r"\bimage\." + n + r"\b", page)
 PY
 }
 expect "1-docs-page-names-every-export" "$(missing "$ROOT/docs/stdlib/image.md")" "none"
-if head -40 "$ROOT/stdlib/image.md" | grep -q '\*\*Archived 20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'; then
+if [ ! -e "$ROOT/stdlib/image.md" ]; then
+    # 135.14 (2026-10-07) removed the old page outright (archived outside the repo).
+    expect "2-old-page-archived-or-complete" "removed" "removed"
+elif head -40 "$ROOT/stdlib/image.md" | grep -q '\*\*Archived 20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'; then
     expect "2-old-page-archived-or-complete" "archived" "archived"
 else
     expect "2-old-page-archived-or-complete" "$(missing "$ROOT/stdlib/image.md")" "none"

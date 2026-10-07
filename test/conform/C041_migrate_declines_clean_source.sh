@@ -236,9 +236,14 @@ echo "      (swept ${T_CLEAN} files that --check clean)"
 # that stopped compiling, and the round-trip fixture named for comments, which
 # lost all of its. Re-sweeping 497 files to learn the same thing would double
 # this suite's runtime for no extra information.
+#
+# The two stdlib sources were moved here from stdlib/ by 135.14 (Batch Z53,
+# 2026-10-07), byte for byte, when the dead parallel stdlib .tk files were
+# removed: they are kept only as this control's corpus.
 
 : > "${WORK}/control.txt"
-for rel in stdlib/encoding.tk stdlib/sha256.tk \
+for rel in test/conform/fixtures/migrate/encoding.tk \
+           test/conform/fixtures/migrate/sha256.tk \
            test/conform/fixtures/roundtrip/comments.tk; do
     [ -f "${REPO_ROOT}/${rel}" ] && echo "${REPO_ROOT}/${rel}" >> "${WORK}/control.txt"
 done

@@ -23,14 +23,6 @@ int64_t tk_soap_envelope_w(int64_t body, int64_t header) {
     return (int64_t)(intptr_t)result;
 }
 
-/* soap.envelope12(body, header) → str */
-int64_t tk_soap12_envelope_w(int64_t body, int64_t header) {
-    const char *b = body   ? (const char *)(intptr_t)body   : "";
-    const char *h = header ? (const char *)(intptr_t)header : "";
-    const char *result = soap12_envelope(b, h);
-    return (int64_t)(intptr_t)result;
-}
-
 /* soap.fault(code, string, detail) → str */
 int64_t tk_soap_fault_w(int64_t code, int64_t string, int64_t detail) {
     const char *c = code   ? (const char *)(intptr_t)code   : "";
