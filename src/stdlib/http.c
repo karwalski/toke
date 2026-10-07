@@ -822,9 +822,9 @@ static size_t res_head_fmt(char *buf, size_t cap, unsigned status,
         n = 0;
     if (n < 0 || (size_t)n >= cap - o) return 0;
     o += (size_t)n;
-    if (gz) {
-        n = snprintf(buf + o, cap - o,
-                     "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n");
+    if (gz) {   /* 121.99: gz 2 -- the handler already varies on it */
+        n = snprintf(buf + o, cap - o, gz == 2 ? "Content-Encoding: gzip\r\n"
+                     : "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n");
         if (n < 0 || (size_t)n >= cap - o) return 0;
         o += (size_t)n;
     }
@@ -832,6 +832,32 @@ static size_t res_head_fmt(char *buf, size_t cap, unsigned status,
                  keep_alive ? "keep-alive" : "close");
     if (n < 0 || (size_t)n >= cap - o) return 0;
     return o + (size_t)n;
+}
+
+/* res_varies_on_ae — 1 when the handler's response already carries a Vary
+ * field listing Accept-Encoding (or "*").  121.99: http.servedir says
+ * "Vary: Accept-Encoding" on a file it has precompressed variants of; when
+ * the writer then gzips the file itself it does not send a second one. */
+static int res_varies_on_ae(const Res *res)
+{
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        const char *v = res->headers.data[i].val;
+        if (!k || !v || strcasecmp(k, "Vary") != 0) continue;
+        if (!tk_http_field_name_ok(k) || !tk_http_field_value_ok(v))
+            continue;   /* the writer drops it (121.92): it does not count */
+        while (*v) {
+            while (*v == ' ' || *v == '\t' || *v == ',') v++;
+            const char *t = v;
+            while (*v && *v != ',') v++;
+            const char *e = v;
+            while (e > t && (e[-1] == ' ' || e[-1] == '\t')) e--;
+            if ((e - t == 15 && strncasecmp(t, "Accept-Encoding", 15) == 0) ||
+                (e - t == 1 && *t == '*'))
+                return 1;
+        }
+    }
+    return 0;
 }
 
 /* res_headers_emit — hand each of a handler's header fields to sink as one
@@ -1003,7 +1029,8 @@ static void res_write_fd(int fd, Res res, const ResFrame *rf, int keep_alive,
 {
     char hdr[256];
     size_t hl = res_head_fmt(hdr, sizeof hdr, res.status, rf->frame, rf->len,
-                             rf->gz != NULL, keep_alive);
+                             rf->gz ? (res_varies_on_ae(&res) ? 2 : 1) : 0,
+                             keep_alive);
     http_write_all(fd, hdr, hl);
     write_res_headers(fd, res);
     write_security_headers(fd, &res);
@@ -4564,7 +4591,8 @@ static void res_write_ssl(SSL *ssl, Res res, const ResFrame *rf, int keep_alive,
 {
     char hdr[256];
     size_t hl = res_head_fmt(hdr, sizeof hdr, res.status, rf->frame, rf->len,
-                             rf->gz != NULL, keep_alive);
+                             rf->gz ? (res_varies_on_ae(&res) ? 2 : 1) : 0,
+                             keep_alive);
     if (hl > 0) SSL_write(ssl, hdr, (int)hl);
     write_res_headers_ssl(ssl, &res);   /* 121.92 */
     write_security_headers_ssl(ssl, &res);
@@ -4773,7 +4801,9 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
     if (!no_body) { nm[k] = "content-length"; vl[k++] = cl; }
     if (gz && !no_body) {
         nm[k] = "content-encoding"; vl[k++] = "gzip";
-        nm[k] = "vary";             vl[k++] = "Accept-Encoding";
+        if (!res_varies_on_ae(&res)) {   /* 121.99 */
+            nm[k] = "vary";         vl[k++] = "Accept-Encoding";
+        }
     }
     for (uint64_t i = 0; i < res.headers.len; i++) {
         const char *hk = res.headers.data[i].key;

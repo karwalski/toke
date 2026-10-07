@@ -502,6 +502,20 @@ writer sized the body as a C string, so a binary file was cut at its first
 body is a `str`, which cannot hold a `0x00`, so this only ever affected
 `http.servedir`.
 
+**Precompressed files are served when the client accepts them** (story
+121.99). When `style.css.br`, `style.css.gz` or `style.css.zst` sits beside
+`style.css` and the request's `Accept-Encoding` admits that coding (RFC 9110
+§12.5.3: weights and `*` count, `gzip;q=0` refuses), the variant is sent in
+place of the file — `br` before `gzip` before `zstd` — with the file's
+`Content-Type`, `Content-Encoding` naming the coding, and `Vary:
+Accept-Encoding`; it is not compressed again. A directory's `index.html` is
+served the same way. A file that has any variant says `Vary: Accept-Encoding`
+even when it is sent as it is, so a cache keeps the encodings apart. The
+variant is resolved and checked like the file itself: one that is a symlink
+out of `dir` is not followed, and the file is sent instead. `http.servedir`
+sends no `ETag`. Until then the variants were never served: the file was read
+and gzipped per request, and a client that accepts only `br` got it whole.
+
 **Capabilities.** The mount gives the server the authority to read any file
 under `dir` on every request, so `http.servedir` — and `http.servepages`,
 which reads its pages and templates on every request — takes `fs.read` when it

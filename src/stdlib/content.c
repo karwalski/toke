@@ -30,103 +30,16 @@
 /* Already have zlib for gzip */
 #include <zlib.h>
 
-/* ── Accept-Encoding parsing (64.2.1) ────────────────────────────────── */
-
-typedef struct {
-    const char *encoding;
-    float       quality;
-} EncodingPref;
-
-/* Parse Accept-Encoding header into preference list, sorted by quality.
- * Returns count of encodings parsed. */
-static int parse_accept_encoding(const char *header, EncodingPref *out,
-                                  int max_out)
-{
-    if (!header || !out) return 0;
-    int count = 0;
-    const char *p = header;
-
-    while (*p && count < max_out) {
-        /* Skip whitespace and commas */
-        while (*p == ' ' || *p == ',' || *p == '\t') p++;
-        if (*p == '\0') break;
-
-        /* Read encoding name */
-        const char *name_start = p;
-        while (*p && *p != ',' && *p != ';' && *p != ' ') p++;
-        size_t name_len = (size_t)(p - name_start);
-
-        float q = 1.0f;
-        /* Check for quality value */
-        while (*p == ' ') p++;
-        if (*p == ';') {
-            p++;
-            while (*p == ' ') p++;
-            if (*p == 'q' || *p == 'Q') {
-                p++;
-                if (*p == '=') {
-                    p++;
-                    q = (float)atof(p);
-                    while (*p && *p != ',') p++;
-                }
-            }
-        }
-
-        if (name_len > 0 && name_len < 32) {
-            char name[32];
-            memcpy(name, name_start, name_len);
-            name[name_len] = '\0';
-            out[count].encoding = strdup(name);
-            out[count].quality = q;
-            count++;
-        }
-    }
-
-    /* Sort by quality (descending) */
-    for (int i = 0; i < count - 1; i++) {
-        for (int j = i + 1; j < count; j++) {
-            if (out[j].quality > out[i].quality) {
-                EncodingPref tmp = out[i];
-                out[i] = out[j];
-                out[j] = tmp;
-            }
-        }
-    }
-
-    return count;
-}
-
-/* Select best encoding from client preferences.
- * Priority: br > zstd > gzip > identity.
- * Returns encoding name or "identity". */
-const char *content_select_encoding(const char *accept_encoding)
-{
-    EncodingPref prefs[16];
-    int n = parse_accept_encoding(accept_encoding, prefs, 16);
-
-    for (int i = 0; i < n; i++) {
-        if (prefs[i].quality <= 0) continue;
-#ifdef TK_HAVE_BROTLI
-        if (strcasecmp(prefs[i].encoding, "br") == 0) {
-            for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-            return "br";
-        }
-#endif
-#ifdef TK_HAVE_ZSTD
-        if (strcasecmp(prefs[i].encoding, "zstd") == 0) {
-            for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-            return "zstd";
-        }
-#endif
-        if (strcasecmp(prefs[i].encoding, "gzip") == 0) {
-            for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-            return "gzip";
-        }
-    }
-
-    for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-    return "identity";
-}
+/* ── Accept-Encoding / Accept-Language negotiation: retired (121.99) ────
+ *
+ * content_select_encoding (64.2.1), content_negotiate_language (64.2.2) and
+ * their shared parser parse_accept_encoding had no caller anywhere -- not in
+ * src/, the .tki surface, toke-ooke or the website -- and the parser read
+ * q-values with atof() and ignored "*", a second and wrong reading of RFC
+ * 9110 sec. 12.5.3 beside tk_coding_accepted (tk_gzip_type.h).  They were
+ * removed; the code is in ~/tk/archive/toke-stdlib-content-negotiation-
+ * 20261008/.  The precompressed-variant lookup below is kept and wired into
+ * http.servedir. */
 
 /* ── Brotli compression (64.1.1) ─────────────────────────────────────── */
 
@@ -278,42 +191,6 @@ char *content_find_precompressed(const char *path,
         free(vpath);
     }
     return NULL;
-}
-
-/* ── Accept-Language negotiation (64.2.2) ─────────────────────────────── */
-
-/* Parse Accept-Language and find best match from available languages.
- * Returns matched language tag or NULL. */
-const char *content_negotiate_language(const char *accept_lang,
-                                        const char **available,
-                                        int navailable)
-{
-    if (!accept_lang || !available || navailable <= 0) return NULL;
-
-    /* Parse Accept-Language with quality values */
-    EncodingPref prefs[16];
-    /* Reuse the Accept-Encoding parser — format is identical */
-    int n = parse_accept_encoding(accept_lang, prefs, 16);
-
-    const char *best = NULL;
-    for (int i = 0; i < n && !best; i++) {
-        if (prefs[i].quality <= 0) continue;
-        for (int j = 0; j < navailable; j++) {
-            /* Exact match or prefix match (e.g. "en" matches "en-US") */
-            if (strcasecmp(prefs[i].encoding, available[j]) == 0 ||
-                (strlen(prefs[i].encoding) <= strlen(available[j]) &&
-                 strncasecmp(prefs[i].encoding, available[j],
-                             strlen(prefs[i].encoding)) == 0 &&
-                 (available[j][strlen(prefs[i].encoding)] == '-' ||
-                  available[j][strlen(prefs[i].encoding)] == '\0'))) {
-                best = available[j];
-                break;
-            }
-        }
-    }
-
-    for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-    return best;
 }
 
 /* ── Range request support (64.2.3) ──────────────────────────────────── */

@@ -1184,6 +1184,9 @@ static int staticdir_decode(const char *in, char *out, size_t cap)
     return 0;
 }
 
+static Res staticdir_serve(const char *filepath, const char *mime,
+                           const char *coding, int vary);
+
 static Res staticdir_handler(Req req) {
     if (!req.path) return mk404();
     /* 127.100: a versioned asset URL — /static/css/style.css?v=<hash> — is
@@ -1218,6 +1221,52 @@ static Res staticdir_handler(Req req) {
         rc = staticdir_resolve(mnt->root, joined, filepath, sizeof filepath);
         if (rc) return rc == 403 ? mk403() : mk404();
     }
+    /* 121.99: a precompressed variant -- filepath.br, .gz or .zst -- is
+     * served in place of the file when the request's Accept-Encoding
+     * admits its coding (content_find_precompressed: RFC 9110 sec. 12.5.3,
+     * br before gzip before zstd).  The variant is resolved and checked
+     * under the mount root like the file itself (staticdir_resolve), so a
+     * variant symlinked out of the tree is not followed: the file is served
+     * as it is.  The response says Content-Encoding and Vary, keeps the
+     * file's own Content-Type, and is not gzipped again (a Content-Encoding
+     * is set).  When any variant exists the response varies on
+     * Accept-Encoding even when the file is served as it is, and says so. */
+    const char *coding = NULL;
+    int varies = 0;
+    {
+        const char *ae = NULL;
+        for (uint64_t i = 0; i < req.headers.len; i++)
+            if (req.headers.data[i].key &&
+                strcasecmp(req.headers.data[i].key, "Accept-Encoding") == 0) {
+                ae = req.headers.data[i].val;
+                break;
+            }
+        char *any = content_find_precompressed(filepath, "*");
+        varies = any != NULL;
+        free(any);
+        char *var = varies && ae ? content_find_precompressed(filepath, ae) : NULL;
+        char vreal[PATH_MAX];
+        if (var && staticdir_resolve(mnt->root, var, vreal, sizeof vreal) == 0) {
+            size_t fl = strlen(filepath);
+            const char *sfx = var + fl;   /* the variant is filepath + suffix */
+            coding = !strcmp(sfx, ".br") ? "br" : !strcmp(sfx, ".gz") ? "gzip"
+                   : !strcmp(sfx, ".zst") ? "zstd" : NULL;
+            if (coding) {
+                free(var);
+                return staticdir_serve(vreal, mime_for_ext(filepath), coding, 1);
+            }
+        }
+        free(var);
+    }
+    return staticdir_serve(filepath, mime_for_ext(filepath), NULL, varies);
+}
+
+/* staticdir_serve -- read `filepath` whole and answer 200 with it: the
+ * Content-Type `mime`, and Content-Encoding `coding` (NULL: none) and
+ * "Vary: Accept-Encoding" when `vary` (121.99). */
+static Res staticdir_serve(const char *filepath, const char *mime,
+                           const char *coding, int vary)
+{
     FILE *f = fopen(filepath, "rb");
     if (!f) return mk404();
     /* 135.3c: checked seeks, not rewind() -- rewind cannot report failure,
@@ -1241,7 +1290,6 @@ static Res staticdir_handler(Req req) {
     size_t got = fread(body, 1, (size_t)sz, f);
     body[got] = '\0';
     fclose(f);
-    const char *mime = mime_for_ext(filepath);
     Res res;
     res.status = 200;
     res.body   = body;
@@ -1254,12 +1302,21 @@ static Res staticdir_handler(Req req) {
      * with strlen(), so a binary file went out cut at its first 0x00 (a PNG
      * after its 8-byte signature); the length read travels with it. */
     http_body_setlen(body, got);
-    StrPair *hdrs = malloc(sizeof(StrPair));
+    StrPair *hdrs = malloc(3 * sizeof(StrPair));
     if (hdrs) {
-        hdrs[0].key = "Content-Type";
-        hdrs[0].val = mime;   /* static storage from mime_for_ext */
+        size_t nh = 0;
+        hdrs[nh].key = "Content-Type";
+        hdrs[nh++].val = mime;   /* static storage from mime_for_ext */
+        if (coding) {            /* 121.99: static strings */
+            hdrs[nh].key = "Content-Encoding";
+            hdrs[nh++].val = coding;
+        }
+        if (vary) {
+            hdrs[nh].key = "Vary";
+            hdrs[nh++].val = "Accept-Encoding";
+        }
         res.headers.data = hdrs;
-        res.headers.len  = 1;
+        res.headers.len  = nh;
         http_defer_free(hdrs);
     } else {
         res.headers.data = NULL;
