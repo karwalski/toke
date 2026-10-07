@@ -45,7 +45,7 @@ WORK="$(mktemp -d /tmp/tkc_c100_XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 cd "${WORK}"
 
-echo "C100: stdlib sum-typed error payloads (FileErr, JsonErr) match by variant"
+echo "C100: stdlib sum-typed error payloads (fileerr, jsonerr) match by variant"
 echo "--------------------------------------"
 
 printf 'twelve bytes' > present.txt

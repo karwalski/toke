@@ -49,8 +49,8 @@ expect "2 in place, not only through a binding" \
     "$(diags "${H}"'f=main():i64{<s.nowunix()/86400};')" "E4031|str|ABSENT"
 expect "3 str.charat's i64 into str.isdigit (loke T-28)" \
     "$(diags "${H}"'f=main():i64{let c=s.charat("a5b";1);if(s.isdigit(c)){<1};<0};')" "E4031|i64|ABSENT"
-expect "4 json.getval's str into json.i64's Json (loke T-32)" \
-    "$(diags 'm=q;i=json:std.json;f=main():i64{let o=mt json.dec("{}") {$ok:v v;$jsonerr:e $json{raw:""}};let g=json.getval(o;"u");let c=mt json.i64(g;"k") {$ok:n n;$jsonerr:e 0};<c};')" "E4031|str|ABSENT"
+expect "4 json.getval's str into json.i64's jsonval (loke T-32)" \
+    "$(diags 'm=q;i=json:std.json;f=main():i64{let o=mt json.dec("{}") {$ok:v v;$jsonerr:e $jsonval{raw:""}};let g=json.getval(o;"u");let c=mt json.i64(g;"k") {$ok:n n;$jsonerr:e 0};<c};')" "E4031|str|ABSENT"
 expect "5 a u64 return is not adopted: no W1001 on s.len(x) as i64" \
     "$(diags "${H}"'f=main():i64{let n=s.len("abc");<n as i64};')" "rc=0"
 expect "6 a declared bool used as a bool stays clean" \

@@ -7,7 +7,7 @@ order: 11
 
 **Status: Implemented** -- C runtime backing.
 
-The `std.db` module provides functions for querying a SQL database. Query results are returned as `$row` values, with typed accessor functions to extract column values by column name.
+The `std.db` module provides functions for querying a SQL database. Query results are returned as `$dbrow` values, with typed accessor functions to extract column values by column name.
 
 The current implementation uses SQLite as the backend. A connection is opened with `db.open`, which returns a handle.
 
@@ -15,13 +15,13 @@ The current implementation uses SQLite as the backend. A connection is opened wi
 
 ## Types
 
-### $row
+### $dbrow
 
 Represents a single row returned from a query. Column values are accessed by name using the `row.*` accessor functions.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| cols | @(@($str)) | One `@(name; value)` pair per column, in the query's column order; SQL NULL reads as `""`. The `row.*` accessors read this field, so a `$row{cols:@(...)}` literal works with them too |
+| cols | @(@($str)) | One `@(name; value)` pair per column, in the query's column order; SQL NULL reads as `""`. The `row.*` accessors read this field, so a `$dbrow{cols:@(...)}` literal works with them too |
 
 ### $dberr
 
@@ -85,7 +85,7 @@ f=setup():i64{
 
 `db.exec` on the connection `h`. Returns `$dberr.$connection` if `h` is not an open handle.
 
-### db.one(sql: $str; params: @($str)): $row!$dberr
+### db.one(sql: $str; params: @($str)): $dbrow!$dberr
 
 Executes a query and returns the first matching row. Returns `$dberr.$notfound` if no rows match, or `$dberr.$query` if the SQL is invalid.
 
@@ -99,11 +99,11 @@ f=finduser(id:$str):i64{
 };
 ```
 
-### db.oneon(h: u64; sql: $str; params: @($str)): $row!$dberr
+### db.oneon(h: u64; sql: $str; params: @($str)): $dbrow!$dberr
 
 `db.one` on the connection `h`.
 
-### db.many(sql: $str; params: @($str)): @($row)!$dberr
+### db.many(sql: $str; params: @($str)): @($dbrow)!$dberr
 
 Executes a query and returns all matching rows as a slice. Returns `$dberr.$query` if the SQL is invalid.
 
@@ -117,11 +117,11 @@ f=allrows():i64{
 };
 ```
 
-### db.manyon(h: u64; sql: $str; params: @($str)): @($row)!$dberr
+### db.manyon(h: u64; sql: $str; params: @($str)): @($dbrow)!$dberr
 
 `db.many` on the connection `h`.
 
-### row.str(r: $row; col: $str): $str!$dberr
+### row.str(r: $dbrow; col: $str): $str!$dberr
 
 Extracts the value of column `col` from `r` as a string. Returns `$dberr.$notfound` if the column does not exist in the row.
 
@@ -131,13 +131,13 @@ i=db:std.db;
 
 f=getname():$str{
   let r=db.one("SELECT name FROM t WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let name=mt row.str(row;"name") {$ok:s s;$err:e "unknown"};
   < name
 };
 ```
 
-### row.u64(r: $row; col: $str): u64!$dberr
+### row.u64(r: $dbrow; col: $str): u64!$dberr
 
 Extracts the value of column `col` from `r` as an unsigned 64-bit integer. Returns `$dberr.$notfound` if the column does not exist.
 
@@ -147,13 +147,13 @@ i=db:std.db;
 
 f=getid():u64{
   let r=db.one("SELECT id FROM t WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let id=mt row.u64(row;"id") {$ok:n n;$err:e 0};
   < id
 };
 ```
 
-### row.i64(r: $row; col: $str): i64!$dberr
+### row.i64(r: $dbrow; col: $str): i64!$dberr
 
 Extracts the value of column `col` from `r` as a signed 64-bit integer. Returns `$dberr.$notfound` if the column does not exist.
 
@@ -163,13 +163,13 @@ i=db:std.db;
 
 f=getbal():i64{
   let r=db.one("SELECT balance FROM t WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let val=mt row.i64(row;"balance") {$ok:n n;$err:e 0};
   < val
 };
 ```
 
-### row.f64(r: $row; col: $str): f64!$dberr
+### row.f64(r: $dbrow; col: $str): f64!$dberr
 
 Extracts the value of column `col` from `r` as a 64-bit float. Returns `$dberr.$notfound` if the column does not exist.
 
@@ -179,13 +179,13 @@ i=db:std.db;
 
 f=getprice():f64{
   let r=db.one("SELECT price FROM t WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let price=mt row.f64(row;"price") {$ok:f f;$err:e 0.0};
   < price
 };
 ```
 
-### row.bool(r: $row; col: $str): bool!$dberr
+### row.bool(r: $dbrow; col: $str): bool!$dberr
 
 Extracts the value of column `col` from `r` as a boolean. Returns `$dberr.$notfound` if the column does not exist.
 
@@ -195,7 +195,7 @@ i=db:std.db;
 
 f=isactive():bool{
   let r=db.one("SELECT active FROM t WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let active=mt row.bool(row;"active") {$ok:b b;$err:e false};
   < active
 };
@@ -218,7 +218,7 @@ f=main():i64{
     $err:e log.warn("insert failed";@())
   };
   let r=db.one("SELECT * FROM users WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let name=mt row.str(row;"name") {$ok:s s;$err:e "unknown"};
   let active=mt row.bool(row;"active") {$ok:b b;$err:e false};
   log.info("found user";@());

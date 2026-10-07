@@ -18,7 +18,7 @@ Where `mlock()` is unavailable or fails -- no `CAP_IPC_LOCK`, no `RLIMIT_MEMLOCK
 
 ## Types
 
-### SecureBuf
+### $securebuf
 
 An **opaque handle**. Pass it whole to `write`, `read` and `wipe`; it has no readable fields.
 
@@ -28,7 +28,7 @@ The handle is a lightweight descriptor; the locked memory is managed internally 
 
 ## Functions
 
-### securemem.alloc(sizebytes: i32; ttlseconds: i32): SecureBuf
+### securemem.alloc(sizebytes: i32; ttlseconds: i32): $securebuf
 
 Allocates a locked region of `sizebytes` bytes with a TTL of `ttlseconds` seconds from the moment of allocation.
 
@@ -36,17 +36,17 @@ Allocates a locked region of `sizebytes` bytes with a TTL of `ttlseconds` second
 - The memory is zeroed immediately after allocation.
 - The page is locked with `mlock()` where available; a failure to lock logs a warning and allocation continues.
 
-### securemem.write(buf: SecureBuf; data: str): bool
+### securemem.write(buf: $securebuf; data: str): bool
 
 Copies `data` into the buffer. Returns `true` on success; `false` if the buffer has expired, has been wiped, or `data` is longer than the buffer. The write is bounds-checked and truncated to `sizebytes - 1` so a NUL terminator fits.
 
-### securemem.read(buf: SecureBuf): ?(str)
+### securemem.read(buf: $securebuf): ?(str)
 
 Returns the buffer contents. The interface declares this as `?(str)`; it yields the none sentinel when the buffer has expired, been wiped, or never existed. Reading does not reset the expiry clock.
 
 > **Do not test the result with `==`.** Comparing the `?(str)` none sentinel with `==` segfaults the caller (story 127.83). `str.len()` is null-safe and is the probe to use until that is fixed. Returning `""` instead would be the wrong fix: it would make a wiped secret indistinguishable from an empty one.
 
-### securemem.wipe(buf: SecureBuf): bool
+### securemem.wipe(buf: $securebuf): bool
 
 Zeros the contents and releases the region immediately. Returns `true` if the buffer was found and wiped, `false` if it was already wiped or never existed. After a successful wipe, `read` returns none.
 
@@ -111,5 +111,5 @@ f=main():i64{
 
 ## See Also
 
-- `std.keychain` -- persisting a secret in the OS credential store, which is where it should come from before it reaches a `SecureBuf`.
+- `std.keychain` -- persisting a secret in the OS credential store, which is where it should come from before it reaches a `$securebuf`.
 - `std.crypto` -- the primitives you are most likely holding key material for.

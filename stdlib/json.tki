@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "Json",
+      "name": "jsonval",
       "fields": [
         {
           "name": "raw",
@@ -14,7 +14,7 @@
     },
     {
       "kind": "type",
-      "name": "JsonErr",
+      "name": "jsonerr",
       "is_sum": true,
       "fields": [
         {
@@ -45,74 +45,74 @@
       "params": [
         "str"
       ],
-      "return": "Json!JsonErr"
+      "return": "jsonval!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.str",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "str!JsonErr"
+      "return": "str!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.u64",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "u64!JsonErr"
+      "return": "u64!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.i64",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "i64!JsonErr"
+      "return": "i64!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.f64",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "f64!JsonErr"
+      "return": "f64!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.bool",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "bool!JsonErr"
+      "return": "bool!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.arr",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "[Json]!JsonErr"
+      "return": "[jsonval]!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.at",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
-      "return": "Json!JsonErr"
+      "return": "jsonval!jsonerr"
     },
     {
       "kind": "type",
-      "name": "JsonWriter",
+      "name": "jsonwriter",
       "fields": [
         {
           "name": "buf",
@@ -126,7 +126,7 @@
     },
     {
       "kind": "type",
-      "name": "JsonStream",
+      "name": "jsonstream",
       "opaque": true,
       "fields": [
         {
@@ -149,7 +149,7 @@
     },
     {
       "kind": "type",
-      "name": "JsonToken",
+      "name": "jsontoken",
       "is_sum": true,
       "fields": [
         {
@@ -204,7 +204,7 @@
     },
     {
       "kind": "type",
-      "name": "JsonStreamErr",
+      "name": "jsonstreamerr",
       "is_sum": true,
       "fields": [
         {
@@ -227,24 +227,24 @@
       "params": [
         "[byte]"
       ],
-      "return": "JsonStream"
+      "return": "jsonstream"
     },
     {
       "kind": "func",
       "name": "json.streamnext",
       "params": [
-        "JsonStream"
+        "jsonstream"
       ],
-      "return": "JsonToken!JsonStreamErr"
+      "return": "jsontoken!jsonstreamerr"
     },
     {
       "kind": "func",
       "name": "json.streamemit",
       "params": [
-        "JsonWriter",
-        "Json"
+        "jsonwriter",
+        "jsonval"
       ],
-      "return": "void!JsonStreamErr"
+      "return": "void!jsonstreamerr"
     },
     {
       "kind": "func",
@@ -252,13 +252,13 @@
       "params": [
         "u64"
       ],
-      "return": "JsonWriter"
+      "return": "jsonwriter"
     },
     {
       "kind": "func",
       "name": "json.writerbytes",
       "params": [
-        "JsonWriter"
+        "jsonwriter"
       ],
       "return": "[byte]"
     },
@@ -401,7 +401,7 @@
         "i64",
         "i64"
       ],
-      "return": "bool!JsonErr"
+      "return": "bool!jsonerr"
     },
     {
       "kind": "func",
@@ -410,7 +410,7 @@
         "i64",
         "i64"
       ],
-      "return": "f64!JsonErr"
+      "return": "f64!jsonerr"
     },
     {
       "kind": "func",
@@ -419,7 +419,7 @@
         "i64",
         "i64"
       ],
-      "return": "f64!JsonErr"
+      "return": "f64!jsonerr"
     },
     {
       "kind": "func",
@@ -428,7 +428,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64!JsonErr"
+      "return": "i64!jsonerr"
     },
     {
       "kind": "func",
@@ -437,7 +437,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64!JsonErr"
+      "return": "i64!jsonerr"
     },
     {
       "kind": "func",
@@ -446,7 +446,7 @@
         "i64",
         "i64"
       ],
-      "return": "i64!JsonErr"
+      "return": "i64!jsonerr"
     },
     {
       "kind": "func",
@@ -501,7 +501,7 @@
       "kind": "func",
       "name": "json.getval",
       "params": [
-        "Json",
+        "jsonval",
         "str"
       ],
       "return": "str"

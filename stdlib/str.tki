@@ -27,7 +27,7 @@
         "u64",
         "u64"
       ],
-      "return": "str!SliceErr"
+      "return": "str!sliceerr"
     },
     {
       "kind": "func",
@@ -51,7 +51,7 @@
       "params": [
         "str"
       ],
-      "return": "i64!ParseErr"
+      "return": "i64!parseerr"
     },
     {
       "kind": "func",
@@ -59,7 +59,7 @@
       "params": [
         "str"
       ],
-      "return": "f64!ParseErr",
+      "return": "f64!parseerr",
       "note": "parse a decimal string to f64 (Story 114.39)"
     },
     {
@@ -191,11 +191,11 @@
       "params": [
         "[byte]"
       ],
-      "return": "str!EncodingErr"
+      "return": "str!encodingerr"
     },
     {
       "kind": "type",
-      "name": "SliceErr",
+      "name": "sliceerr",
       "fields": [
         {
           "name": "msg",
@@ -205,7 +205,7 @@
     },
     {
       "kind": "type",
-      "name": "ParseErr",
+      "name": "parseerr",
       "fields": [
         {
           "name": "msg",
@@ -215,7 +215,7 @@
     },
     {
       "kind": "type",
-      "name": "EncodingErr",
+      "name": "encodingerr",
       "fields": [
         {
           "name": "msg",
@@ -290,20 +290,20 @@
     },
     {
       "kind": "type",
-      "name": "StrBuf",
+      "name": "strbuf",
       "fields": []
     },
     {
       "kind": "func",
       "name": "str.buf",
       "params": [],
-      "return": "StrBuf"
+      "return": "strbuf"
     },
     {
       "kind": "func",
       "name": "str.add",
       "params": [
-        "StrBuf",
+        "strbuf",
         "str"
       ],
       "return": "void"
@@ -312,7 +312,7 @@
       "kind": "func",
       "name": "str.addbyte",
       "params": [
-        "StrBuf",
+        "strbuf",
         "byte"
       ],
       "return": "void"
@@ -321,7 +321,7 @@
       "kind": "func",
       "name": "str.done",
       "params": [
-        "StrBuf"
+        "strbuf"
       ],
       "return": "str"
     },
@@ -329,13 +329,13 @@
       "kind": "func",
       "name": "str.builder",
       "params": [],
-      "return": "StrBuf"
+      "return": "strbuf"
     },
     {
       "kind": "func",
       "name": "str.build",
       "params": [
-        "StrBuf"
+        "strbuf"
       ],
       "return": "str"
     },
@@ -380,11 +380,11 @@
       "params": [
         "str"
       ],
-      "return": "str!BracketErr"
+      "return": "str!bracketerr"
     },
     {
       "kind": "type",
-      "name": "BracketErr",
+      "name": "bracketerr",
       "fields": [
         {
           "name": "msg",
@@ -394,7 +394,7 @@
     },
     {
       "kind": "type",
-      "name": "RegexErr",
+      "name": "regexerr",
       "fields": [
         {
           "name": "msg",
@@ -550,8 +550,8 @@
       "params": [
         "str"
       ],
-      "return": "str!RegexErr",
-      "note": "the pattern unchanged if it is in the pattern language (docs/stdlib/str.md 'Regular expressions'), else RegexErr{msg;pos}: the reason and the byte offset into the pattern (-1 when not at a byte); never RT008, never E4075 -- the error-as-value check for an untrusted pattern, 121.45"
+      "return": "str!regexerr",
+      "note": "the pattern unchanged if it is in the pattern language (docs/stdlib/str.md 'Regular expressions'), else regexerr{msg;pos}: the reason and the byte offset into the pattern (-1 when not at a byte); never RT008, never E4075 -- the error-as-value check for an untrusted pattern, 121.45"
     },
     {
       "kind": "func",
@@ -806,7 +806,7 @@
       "params": [
         "str"
       ],
-      "return": "f64!ParseErr",
+      "return": "f64!parseerr",
       "note": "alias of str.tofloat -- 138.11"
     },
     {
@@ -968,7 +968,7 @@
       "params": [
         "str"
       ],
-      "return": "f64!ParseErr",
+      "return": "f64!parseerr",
       "note": "alias of str.tofloat -- 138.11"
     },
     {
@@ -977,7 +977,7 @@
       "params": [
         "str"
       ],
-      "return": "f64!ParseErr",
+      "return": "f64!parseerr",
       "note": "alias of str.tofloat -- 138.11"
     },
     {

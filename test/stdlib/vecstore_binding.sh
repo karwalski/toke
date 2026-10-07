@@ -78,7 +78,7 @@ check "empty collection returns @() not null"  empty
 # Known gap, deliberately not asserted here: comparing an optional's null
 # sentinel with `==` segfaults (127.83). std.vecstore returns no ?(T) today, so
 # this harness does not trip it, but vecstore.collection is declared
-# VecCollection!VecErr and a future error-path test must use a null-safe probe
+# veccollection!vecerr and a future error-path test must use a null-safe probe
 # rather than `== none`.
 echo "  NOTE ?(T) none-sentinel comparison segfaults — see 127.83"
 

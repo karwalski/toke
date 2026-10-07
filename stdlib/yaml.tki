@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "Yaml",
+      "name": "yamlval",
       "fields": [
         {
           "name": "raw",
@@ -14,7 +14,7 @@
     },
     {
       "kind": "type",
-      "name": "YamlErr",
+      "name": "yamlerr",
       "is_sum": true,
       "fields": [
         {
@@ -35,7 +35,7 @@
       "kind": "func",
       "name": "yaml.empty",
       "params": [],
-      "return": "Yaml"
+      "return": "yamlval"
     },
     {
       "kind": "func",
@@ -51,52 +51,52 @@
       "params": [
         "str"
       ],
-      "return": "Yaml!YamlErr"
+      "return": "yamlval!yamlerr"
     },
     {
       "kind": "func",
       "name": "yaml.str",
       "params": [
-        "Yaml",
+        "yamlval",
         "str"
       ],
-      "return": "str!YamlErr"
+      "return": "str!yamlerr"
     },
     {
       "kind": "func",
       "name": "yaml.i64",
       "params": [
-        "Yaml",
+        "yamlval",
         "str"
       ],
-      "return": "i64!YamlErr"
+      "return": "i64!yamlerr"
     },
     {
       "kind": "func",
       "name": "yaml.f64",
       "params": [
-        "Yaml",
+        "yamlval",
         "str"
       ],
-      "return": "f64!YamlErr"
+      "return": "f64!yamlerr"
     },
     {
       "kind": "func",
       "name": "yaml.bool",
       "params": [
-        "Yaml",
+        "yamlval",
         "str"
       ],
-      "return": "bool!YamlErr"
+      "return": "bool!yamlerr"
     },
     {
       "kind": "func",
       "name": "yaml.arr",
       "params": [
-        "Yaml",
+        "yamlval",
         "str"
       ],
-      "return": "[Yaml]!YamlErr"
+      "return": "[yamlval]!yamlerr"
     },
     {
       "kind": "func",

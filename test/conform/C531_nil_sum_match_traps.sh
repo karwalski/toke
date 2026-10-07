@@ -6,7 +6,7 @@
 # scrutinee's box without a null test.  A sum value can be nil: a map miss
 # (`m.get("zz")` on an @(str:$shape) map) handed to a `$shape` parameter, or
 # an `$err:e` payload the callee never boxed (db.open's glue stores no box)
-# handed to a `DbErr` parameter.  At -O0 that is SIGSEGV; at -O2 the
+# handed to a `$dberr` parameter.  At -O0 that is SIGSEGV; at -O2 the
 # optimiser treats the undefined load as unreachable, and the db program
 # printed "ok" for a failed open -- a silent wrong answer (R2, 121.51).
 #
@@ -58,7 +58,7 @@ cat > d.tk <<'EOF2'
 m=d;
 i=io:std.io;
 i=db:std.db;
-f=why(e:DbErr):str{ <mt e {$connection:m "conn"; $query:m "q"; $notfound:m "nf"; $constraint:m "c"} };
+f=why(e:$dberr):str{ <mt e {$connection:m "conn"; $query:m "q"; $notfound:m "nf"; $constraint:m "c"} };
 f=main():i64{
   let r=mt db.open("/nonexistent-c531/dir/x.db") { $ok:h "ok"; $err:e why(e) };
   io.println(r);
@@ -72,7 +72,7 @@ for o in -O0 -O2; do
     case "${out}" in
         "RT005: nil dereference rc=1"|"conn| rc=0") out="trap-or-variant" ;;
     esac
-    expect "2 an unboxed \$err payload matched as DbErr ${o}" "${out}" "trap-or-variant"
+    expect "2 an unboxed \$err payload matched as \$dberr ${o}" "${out}" "trap-or-variant"
 done
 
 cat > c.tk <<'EOF2'

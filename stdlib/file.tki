@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "FileErr",
+      "name": "fileerr",
       "is_sum": true,
       "fields": [
         {
@@ -55,7 +55,7 @@
       "params": [
         "str"
       ],
-      "return": "str!FileErr"
+      "return": "str!fileerr"
     },
     {
       "kind": "func",
@@ -64,7 +64,7 @@
         "str",
         "str"
       ],
-      "return": "bool!FileErr"
+      "return": "bool!fileerr"
     },
     {
       "kind": "func",
@@ -73,7 +73,7 @@
         "str",
         "str"
       ],
-      "return": "bool!FileErr"
+      "return": "bool!fileerr"
     },
     {
       "kind": "func",
@@ -89,7 +89,7 @@
       "params": [
         "str"
       ],
-      "return": "bool!FileErr"
+      "return": "bool!fileerr"
     },
     {
       "kind": "func",
@@ -97,7 +97,7 @@
       "params": [
         "str"
       ],
-      "return": "[str]!FileErr"
+      "return": "[str]!fileerr"
     },
     {
       "kind": "func",
@@ -113,7 +113,7 @@
       "params": [
         "str"
       ],
-      "return": "bool!FileErr"
+      "return": "bool!fileerr"
     },
     {
       "kind": "func",
@@ -122,7 +122,7 @@
         "str",
         "str"
       ],
-      "return": "bool!FileErr"
+      "return": "bool!fileerr"
     },
     {
       "kind": "func",
@@ -130,7 +130,7 @@
       "params": [
         "str"
       ],
-      "return": "[str]!FileErr"
+      "return": "[str]!fileerr"
     },
     {
       "kind": "func",
@@ -138,7 +138,7 @@
       "params": [
         "str"
       ],
-      "return": "@(byte)!FileErr"
+      "return": "@(byte)!fileerr"
     },
     {
       "kind": "func",
@@ -147,7 +147,7 @@
         "str",
         "@(byte)"
       ],
-      "return": "bool!FileErr"
+      "return": "bool!fileerr"
     },
     {
       "kind": "func",
@@ -157,7 +157,7 @@
         "i64",
         "i64"
       ],
-      "return": "@(byte)!FileErr"
+      "return": "@(byte)!fileerr"
     },
     {
       "kind": "func",
@@ -165,7 +165,7 @@
       "params": [
         "str"
       ],
-      "return": "i64!FileErr"
+      "return": "i64!fileerr"
     },
     {
       "kind": "func",
@@ -173,7 +173,7 @@
       "params": [
         "str"
       ],
-      "return": "str!FileErr"
+      "return": "str!fileerr"
     },
     {
       "kind": "func",

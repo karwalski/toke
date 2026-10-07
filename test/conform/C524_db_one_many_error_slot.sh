@@ -136,7 +136,7 @@ fi
 mkdir e2e && cd e2e
 cat > slot.tk <<'TOKE'
 m=main;i=io:std.io;i=db:std.db;
-f=why(e:DbErr):str{ <mt e {$connection:m "connection: \(m)"; $query:m "query"; $notfound:m "notfound: \(m)"; $constraint:m "constraint"} };
+f=why(e:$dberr):str{ <mt e {$connection:m "connection: \(m)"; $query:m "query"; $notfound:m "notfound: \(m)"; $constraint:m "constraint"} };
 f=main():i64{
   let o=mt db.open(":memory:") { $ok:h h; $err:e 0 };
   let x=mt db.exec("CREATE TABLE t (v INTEGER); INSERT INTO t VALUES (1)";@()) { $ok:n 0; $err:e 1 };

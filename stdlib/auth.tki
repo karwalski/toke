@@ -8,7 +8,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "JwtClaims",
+      "name": "jwtclaims",
       "fields": [
         {
           "name": "sub",
@@ -34,7 +34,7 @@
     },
     {
       "kind": "type",
-      "name": "AuthErr",
+      "name": "autherr",
       "fields": [
         {
           "name": "msg",
@@ -50,10 +50,10 @@
       "kind": "func",
       "name": "auth.jwtsign",
       "params": [
-        "JwtClaims",
+        "jwtclaims",
         "[byte]"
       ],
-      "return": "str!AuthErr"
+      "return": "str!autherr"
     },
     {
       "kind": "func",
@@ -62,7 +62,7 @@
         "str",
         "[byte]"
       ],
-      "return": "JwtClaims!AuthErr"
+      "return": "jwtclaims!autherr"
     },
     {
       "kind": "func",
@@ -93,7 +93,7 @@
       "params": [
         "str"
       ],
-      "return": "str!AuthErr"
+      "return": "str!autherr"
     },
     {
       "kind": "func",
@@ -101,7 +101,7 @@
       "params": [
         "str"
       ],
-      "return": "str!AuthErr"
+      "return": "str!autherr"
     },
     {
       "kind": "func",

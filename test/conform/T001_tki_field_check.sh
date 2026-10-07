@@ -172,7 +172,7 @@ f=main():i64{
 check_case "bogus field on a std record type" 1 '"error_code":"E4025"' '
 m=t;
 i=tm:std.time;
-f=bad(p:TimeParts):i64{
+f=bad(p:$timeparts):i64{
   <p.yearr
 };
 f=main():i64{
@@ -181,7 +181,7 @@ f=main():i64{
 check_case "declared field on a std record type" 0 "" '
 m=t;
 i=tm:std.time;
-f=good(p:TimeParts):i64{
+f=good(p:$timeparts):i64{
   <p.year
 };
 f=main():i64{

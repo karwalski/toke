@@ -186,7 +186,7 @@ m=app;
 i=db:std.db;
 f=getprice():f64{
   let r=db.one("SELECT price FROM t WHERE id=?";@("1"));
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let price=mt row.f64(row;"price") {$ok:f f;$err:e 0.0};
   < price
 };
@@ -275,7 +275,7 @@ m=app;
 i=db:std.db;
 f=getid():i64{
   let r=db.one("SELECT id FROM t";@());
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let id=mt row.i64(row;"id") {$ok:n n;$err:e 0-1};
   < id
 };
@@ -287,7 +287,7 @@ i=db:std.db;
 i=io:std.io;
 f=getname():i64{
   let r=db.one("SELECT name FROM t";@());
-  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let row=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let nm=mt row.str(row;"name") {$ok:v v;$err:e "?"};
   io.println(nm);
   < 0

@@ -4,13 +4,13 @@
   "exports": [
     {
       "kind": "type",
-      "name": "ArgsErr",
+      "name": "argserr",
       "fields": [
         {"name": "msg", "type": "str"}
       ]
     },
     {"kind": "func", "name": "args.all",   "params": [],      "return": "[str]"},
-    {"kind": "func", "name": "args.get",   "params": ["u64"], "return": "str!ArgsErr"},
+    {"kind": "func", "name": "args.get",   "params": ["u64"], "return": "str!argserr"},
     {"kind": "func", "name": "args.count", "params": [],      "return": "u64"}
   ]
 }

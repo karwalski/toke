@@ -7,11 +7,11 @@ order: 20
 
 **Status: Implemented** -- C runtime backing.
 
-The `std.json` module provides functions for parsing JSON strings into an opaque `$json` value and extracting typed fields by key. It also provides object inspection, path traversal, shallow merging, and a SAX-style streaming API for large payloads.
+The `std.json` module provides functions for parsing JSON strings into an opaque `$jsonval` value and extracting typed fields by key. It also provides object inspection, path traversal, shallow merging, and a SAX-style streaming API for large payloads.
 
 ## Types
 
-### $json
+### $jsonval
 
 An opaque wrapper around a raw JSON string. Obtained by calling `json.dec` on a valid JSON input. Field access is performed via the typed accessor functions (`json.str`, `json.u64`, etc.).
 
@@ -72,9 +72,9 @@ f=example():void{
 };
 ```
 
-### json.dec(s: $str): $json!$jsonerr
+### json.dec(s: $str): $jsonval!$jsonerr
 
-Parses a JSON string into a `$json` value, returning `$jsonerr.$parse` if the input is not valid JSON. Any valid JSON value (object, array, string, number, bool, or null) is accepted.
+Parses a JSON string into a `$jsonval` value, returning `$jsonerr.$parse` if the input is not valid JSON. Any valid JSON value (object, array, string, number, bool, or null) is accepted.
 
 ```toke
 i=json:std.json;
@@ -87,7 +87,7 @@ f=example():void{
 
 ### json.parse(s: $str): T
 
-Parses JSON text holding a string, a number, a bool or an array and returns that value, typed by the binding it initialises (`let t:$str=json.parse(..)`, `let n:i64=..`, `let a:@($str)=..`). String escapes are decoded. It never returns a `$json` document: to read fields of an object, decode the text with `json.dec` or `json.decode`. Passing a `json.parse` result -- the call itself, or a name an un-annotated `let` bound to one -- as the document argument of `json.str`, `json.getstr`, `json.keys`, `json.has` and the other document readers is a compile error, E4031 (story 138.9).
+Parses JSON text holding a string, a number, a bool or an array and returns that value, typed by the binding it initialises (`let t:$str=json.parse(..)`, `let n:i64=..`, `let a:@($str)=..`). String escapes are decoded. It never returns a `$jsonval` document: to read fields of an object, decode the text with `json.dec` or `json.decode`. Passing a `json.parse` result -- the call itself, or a name an un-annotated `let` bound to one -- as the document argument of `json.str`, `json.getstr`, `json.keys`, `json.has` and the other document readers is a compile error, E4031 (story 138.9).
 
 ```toke
 i=json:std.json;
@@ -97,7 +97,7 @@ f=example():void{
 };
 ```
 
-### json.str(j: $json; key: $str): $str!$jsonerr
+### json.str(j: $jsonval; key: $str): $str!$jsonerr
 
 Extracts a string value from the JSON object by key, returning `$jsonerr.$missing` if the key does not exist or `$jsonerr.$type` if the value at that key is not a string.
 
@@ -114,7 +114,7 @@ f=example():void{
 };
 ```
 
-### json.u64(j: $json; key: $str): u64!$jsonerr
+### json.u64(j: $jsonval; key: $str): u64!$jsonerr
 
 Extracts an unsigned 64-bit integer from the JSON object by key. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not a non-negative integer.
 
@@ -128,7 +128,7 @@ f=example():void{
 };
 ```
 
-### json.i64(j: $json; key: $str): i64!$jsonerr
+### json.i64(j: $jsonval; key: $str): i64!$jsonerr
 
 Extracts a signed 64-bit integer from the JSON object by key, accepting negative values that `json.u64` would reject. Returns `$jsonerr.$missing` or `$jsonerr.$type` on failure.
 
@@ -142,7 +142,7 @@ f=example():void{
 };
 ```
 
-### json.f64(j: $json; key: $str): f64!$jsonerr
+### json.f64(j: $jsonval; key: $str): f64!$jsonerr
 
 Extracts a 64-bit floating-point number from the JSON object by key. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not a number.
 
@@ -156,7 +156,7 @@ f=example():void{
 };
 ```
 
-### json.bool(j: $json; key: $str): bool!$jsonerr
+### json.bool(j: $jsonval; key: $str): bool!$jsonerr
 
 Extracts a boolean value from the JSON object by key. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not `true` or `false`.
 
@@ -170,9 +170,9 @@ f=example():void{
 };
 ```
 
-### json.arr(j: $json; key: $str): @($json)!$jsonerr
+### json.arr(j: $jsonval; key: $str): @($jsonval)!$jsonerr
 
-Extracts a JSON array from the object by key, returning each element as a `$json` value that can be further accessed with the typed accessors. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not an array.
+Extracts a JSON array from the object by key, returning each element as a `$jsonval` value that can be further accessed with the typed accessors. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not an array.
 
 ```toke
 i=json:std.json;
@@ -183,7 +183,7 @@ f=example():void{
 };
 ```
 
-### json.keys(j: $json): @($str)!$jsonerr
+### json.keys(j: $jsonval): @($str)!$jsonerr
 
 Returns the top-level key names of a JSON object as an array of strings. Returns `$jsonerr.$type` if `j` is not an object; an empty object returns an empty array.
 
@@ -196,7 +196,7 @@ f=example():void{
 };
 ```
 
-### json.has(j: $json; key: $str): bool
+### json.has(j: $jsonval; key: $str): bool
 
 Returns `true` if the top-level JSON object contains the given key, `false` otherwise. This function is infallible and does not distinguish between a missing key and a null-valued key.
 
@@ -210,7 +210,7 @@ f=example():void{
 };
 ```
 
-### json.len(j: $json): u64!$jsonerr
+### json.len(j: $jsonval): u64!$jsonerr
 
 Returns the number of elements in a JSON array, or the number of keys in a JSON object. Returns `$jsonerr.$type` for any other JSON type.
 
@@ -225,7 +225,7 @@ f=example():void{
 };
 ```
 
-### json.type(j: $json): $str!$jsonerr
+### json.type(j: $jsonval): $str!$jsonerr
 
 > **Not exported.** `std.json`'s interface declares no `json.type`, so `tkc --check` rejects a call to it (E4027). The C core has `json_type` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
 
@@ -244,7 +244,7 @@ f=example():void{
 };
 ```
 
-### json.pretty(j: $json): $str!$jsonerr
+### json.pretty(j: $jsonval): $str!$jsonerr
 
 > **Not exported.** `std.json`'s interface declares no `json.pretty`, so `tkc --check` rejects a call to it (E4027). The C core has `json_pretty` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
 
@@ -259,7 +259,7 @@ f=example():void{
 };
 ```
 
-### json.isnullkey(j: $json; key: $str): i64
+### json.isnullkey(j: $jsonval; key: $str): i64
 
 Returns `1` if the value at `key` is JSON `null`, or if the key does not exist at all; `0` if the key exists with any non-null value. This function is infallible. Its interface types are ABI placeholders (`"gen":"abi"`), so the result is typed `i64`, not `bool`.
 
@@ -273,11 +273,11 @@ f=example():void{
 };
 ```
 
-### json.at(j: $json; path: $str): $json!$jsonerr
+### json.at(j: $jsonval; path: $str): $jsonval!$jsonerr
 
-Traverses a dotted path through nested objects and arrays, where each segment is either an object key or a numeric array index, and returns the value there as a `$json` that the typed accessors (`json.str`, `json.i64`, ...) read. Returns `$jsonerr.$missing` if any segment along the path does not exist. A key that itself contains `.` cannot be named. **Exported since 138.12** -- this is the typed nested read; before it, the only path was the untyped `json.getobj`/`json.getval`.
+Traverses a dotted path through nested objects and arrays, where each segment is either an object key or a numeric array index, and returns the value there as a `$jsonval` that the typed accessors (`json.str`, `json.i64`, ...) read. Returns `$jsonerr.$missing` if any segment along the path does not exist. A key that itself contains `.` cannot be named. **Exported since 138.12** -- this is the typed nested read; before it, the only path was the untyped `json.getobj`/`json.getval`.
 
-`json.getval(j; path)` is the same walk returning the value's raw JSON **text** as a `$str` (`""` when there is none) -- text, not a `$json`: use `json.at` to read further.
+`json.getval(j; path)` is the same walk returning the value's raw JSON **text** as a `$str` (`""` when there is none) -- text, not a `$jsonval`: use `json.at` to read further.
 
 ```toke
 i=json:std.json;
@@ -290,7 +290,7 @@ f=example():void{
 };
 ```
 
-### json.index(j: $json; i: u64): $json!$jsonerr
+### json.index(j: $jsonval; i: u64): $jsonval!$jsonerr
 
 > **Not exported.** `std.json`'s interface declares no `json.index`, so `tkc --check` rejects a call to it (E4027). The C core has `json_index` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
 
@@ -306,7 +306,7 @@ f=example():void{
 };
 ```
 
-### json.merge(j1: $json; j2: $json): $json!$jsonerr
+### json.merge(j1: $jsonval; j2: $jsonval): $jsonval!$jsonerr
 
 > **Not exported.** `std.json`'s interface declares no `json.merge`, so `tkc --check` rejects a call to it (E4027). The C core has `json_merge` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
 
@@ -322,7 +322,7 @@ f=example():void{
 };
 ```
 
-### json.frompairs(keys: @($str); values: @($str)): $json
+### json.frompairs(keys: @($str); values: @($str)): $jsonval
 
 > **Not exported.** `std.json`'s interface declares no `json.frompairs`, so `tkc --check` rejects a call to it (E4027). The C core has `json_from_pairs` (`src/stdlib/json.c`), but no toke glue or interface entry reaches it; this section records the intended design.
 
@@ -383,7 +383,7 @@ f=example():void{
 };
 ```
 
-### json.streamemit(w: $jsonwriter; j: $json): void!$jsonstreamerr
+### json.streamemit(w: $jsonwriter; j: $jsonval): void!$jsonstreamerr
 
 > [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 

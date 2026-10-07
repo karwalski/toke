@@ -32,7 +32,7 @@
         "str",
         "str"
       ],
-      "return": "u64!TimeErr"
+      "return": "u64!timeerr"
     },
     {
       "kind": "func",
@@ -54,7 +54,7 @@
     },
     {
       "kind": "type",
-      "name": "TimeParts",
+      "name": "timeparts",
       "fields": [
         {
           "name": "year",
@@ -88,13 +88,13 @@
       "params": [
         "u64"
       ],
-      "return": "TimeParts"
+      "return": "timeparts"
     },
     {
       "kind": "func",
       "name": "time.fromparts",
       "params": [
-        "TimeParts"
+        "timeparts"
       ],
       "return": "u64"
     },
@@ -203,7 +203,7 @@
     },
     {
       "kind": "type",
-      "name": "Duration",
+      "name": "timeduration",
       "fields": [
         {
           "name": "years",
@@ -237,13 +237,13 @@
       "params": [
         "str"
       ],
-      "return": "Duration!TimeErr"
+      "return": "timeduration!timeerr"
     },
     {
       "kind": "func",
       "name": "time.formatduration",
       "params": [
-        "Duration"
+        "timeduration"
       ],
       "return": "str"
     },
@@ -254,7 +254,7 @@
         "u64",
         "u64"
       ],
-      "return": "Duration"
+      "return": "timeduration"
     },
     {
       "kind": "func",
@@ -293,7 +293,7 @@
     },
     {
       "kind": "type",
-      "name": "TimeErr",
+      "name": "timeerr",
       "is_sum": true,
       "fields": [
         {

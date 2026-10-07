@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "SecureBuf",
+      "name": "securebuf",
       "fields": []
     },
     {
@@ -14,13 +14,13 @@
         "i32",
         "i32"
       ],
-      "return": "SecureBuf"
+      "return": "securebuf"
     },
     {
       "kind": "func",
       "name": "securemem.write",
       "params": [
-        "SecureBuf",
+        "securebuf",
         "str"
       ],
       "return": "bool"
@@ -29,7 +29,7 @@
       "kind": "func",
       "name": "securemem.read",
       "params": [
-        "SecureBuf"
+        "securebuf"
       ],
       "return": "?(str)"
     },
@@ -37,7 +37,7 @@
       "kind": "func",
       "name": "securemem.wipe",
       "params": [
-        "SecureBuf"
+        "securebuf"
       ],
       "return": "bool"
     },

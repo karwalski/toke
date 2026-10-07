@@ -41,9 +41,9 @@ variant carries a message naming the call and the path.
 | $badarg | $str | A null path, content or byte array reached the call |
 
 **Branch on the variant, not on the message**: the variants are the interface
-and the wording is not. The interface file spells this type `FileErr`, which
-toke source cannot name in a parameter, so match it where the `$err` arm binds
-it rather than passing it on. Until 127.102b the type carried only the first
+and the wording is not. The type is `$fileerr` (the interface spelled it `FileErr`
+until 127.251, which toke source could not name in a parameter); it can be
+passed on as `e:$fileerr` or matched where the `$err` arm binds it. Until 127.102b the type carried only the first
 three variants and the rest were readable only through `file.lasterrkind()`,
 which is retired along with `file.lasterr()`.
 

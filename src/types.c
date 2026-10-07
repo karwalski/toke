@@ -271,7 +271,7 @@ static const char *type_name(const Type *t) {
 /*
  * opaque_handle_type (136.36) — a `.tki` record declared with NO fields.
  *
- * `std.vec`'s Vec and `std.securemem`'s SecureBuf are C handles: the
+ * `std.vec`'s vechandle and `std.securemem`'s securebuf are C handles: the
  * interface states `"fields": []` because their real C layout is not toke's
  * i64-slot layout and nothing in them is readable from toke.  At the ABI such
  * a value simply IS the i64 handle, and idiomatic code passes it where `i64`

@@ -17,7 +17,7 @@ Legend: ✓ = covered  — = not applicable (infallible function)
 
 ## std.str
 
-| Function | Happy path | SliceErr | ParseErr | EncodingErr |
+| Function | Happy path | $sliceerr | $parseerr | $encodingerr |
 |----------|-----------|---------|---------|------------|
 | str.len | ✓ | — | — | — |
 | str.concat | ✓ | — | — | — |
@@ -40,7 +40,7 @@ Legend: ✓ = covered  — = not applicable (infallible function)
 
 ## std.json
 
-| Function | Happy path | JsonErr.Parse | JsonErr.Type | JsonErr.Missing |
+| Function | Happy path | $jsonerr.$parse | $jsonerr.$type | $jsonerr.$missing |
 |----------|-----------|-------------|-------------|----------------|
 | json.enc | ✓ | — | — | — |
 | json.dec | ✓ | ✓ (invalid JSON) | — | — |
@@ -57,7 +57,7 @@ Legend: ✓ = covered  — = not applicable (infallible function)
 
 ## std.file
 
-| Function | Happy path | FileErr.NotFound | FileErr.Permission | FileErr.IO |
+| Function | Happy path | $fileerr.$notfound | $fileerr.$permission | $fileerr.$io |
 |----------|-----------|-----------------|-------------------|-----------|
 | file.read | ✓ | ✓ (missing file) | — | — |
 | file.write | ✓ | — | — | — |
@@ -74,7 +74,7 @@ Permission and IO variants require root or broken device — not tested in CI.
 
 ## std.process
 
-| Function | Happy path | ProcessErr.NotFound | ProcessErr.Permission | ProcessErr.IO |
+| Function | Happy path | $processerr.$notfound | $processerr.$permission | $processerr.$io |
 |----------|-----------|--------------------|-----------------------|--------------|
 | process.spawn | ✓ (true, echo, sleep) | ✓ (missing binary) | — | — |
 | process.wait | ✓ (exit 0, exit 42, exit 1) | — | — | — |
@@ -87,7 +87,7 @@ Permission and IO variants require root or broken device — not tested in CI.
 
 ## std.env
 
-| Function | Happy path | EnvErr.NotFound | EnvErr.Invalid |
+| Function | Happy path | $enverr.$notfound | $enverr.$invalid |
 |----------|-----------|----------------|---------------|
 | env.get | ✓ (PATH) | ✓ (unset var) | ✓ (bad=key), ✓ (empty key) |
 | env.get_or | ✓ (present), ✓ (absent) | — | ✓ (bad=key returns default) |

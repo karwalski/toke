@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "EncodingErr",
+      "name": "encodingerr",
       "fields": [
         {
           "name": "msg",
@@ -34,7 +34,7 @@
       "params": [
         "str"
       ],
-      "return": "[byte]!EncodingErr"
+      "return": "[byte]!encodingerr"
     },
     {
       "kind": "func",
@@ -42,7 +42,7 @@
       "params": [
         "str"
       ],
-      "return": "[byte]!EncodingErr"
+      "return": "[byte]!encodingerr"
     },
     {
       "kind": "func",
@@ -58,7 +58,7 @@
       "params": [
         "str"
       ],
-      "return": "[byte]!EncodingErr"
+      "return": "[byte]!encodingerr"
     },
     {
       "kind": "func",
@@ -74,7 +74,7 @@
       "params": [
         "str"
       ],
-      "return": "str!EncodingErr"
+      "return": "str!encodingerr"
     },
     {
       "kind": "func",

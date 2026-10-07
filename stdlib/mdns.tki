@@ -48,7 +48,7 @@
     },
     {
       "kind": "type",
-      "name": "MdnsErr",
+      "name": "mdnserr",
       "is_sum": true,
       "fields": [
         {

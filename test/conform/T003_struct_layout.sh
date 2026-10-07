@@ -151,7 +151,7 @@ ir_case() {
 #    it opaque.  `b.size` therefore has no slot at all, and used to read the
 #    id string's first eight bytes: 128 bytes of buffer reported as 49. ──
 check_case "opaque C record: an undeclared field is E4025, not the id bytes" 1 \
-    "struct 'SecureBuf' has no field 'size'" '
+    "struct 'securebuf' has no field 'size'" '
 m=t;
 i=io:std.io;
 i=s:std.str;
@@ -444,7 +444,7 @@ f=main():i64{
 #    "tm.toparts(0)".  imported_func_ret() matched the export spelling, so
 #    every such record return was untyped and E4025 never ran on it. ──
 check_case "a std record return is typed, so a bogus field on it is E4025" 1 \
-    "struct 'TimeParts' has no field 'yearr'" '
+    "struct 'timeparts' has no field 'yearr'" '
 m=t;
 i=tm:std.time;
 f=main():i64{
