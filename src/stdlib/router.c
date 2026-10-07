@@ -38,6 +38,7 @@
 #include <zlib.h>
 #include "tk_bind.h"   /* 135.33 */
 #include "tk_gzip_type.h"   /* 121.89 */
+#include "tk_http_field.h"  /* 121.92 */
 #include "capabilities.h"   /* 121.42: router.serve takes the net grant */
 
 /* ----------------------------------------------------------------------- */
@@ -1116,29 +1117,11 @@ static const char *router_reason(int s)
     }
 }
 
-/* hdr_name_ok -- name is a non-empty RFC 9110 token (sec. 5.1): no CR, LF,
- * colon, space or other separator can end the field early. */
-static int hdr_name_ok(const char *n)
-{
-    if (!n || !*n) return 0;
-    for (const unsigned char *p = (const unsigned char *)n; *p; p++) {
-        unsigned char c = *p;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9')) continue;
-        if (!strchr("!#$%&'*+-.^_`|~", c)) return 0;
-    }
-    return 1;
-}
-
-/* hdr_value_ok -- value holds no control byte but HTAB (RFC 9110 sec. 5.5):
- * no CR or LF to start a forged header line or end the header block. */
-static int hdr_value_ok(const char *v)
-{
-    if (!v) return 0;
-    for (const unsigned char *p = (const unsigned char *)v; *p; p++)
-        if ((*p < 0x20 && *p != '\t') || *p == 0x7f) return 0;
-    return 1;
-}
+/* hdr_name_ok / hdr_value_ok -- tk_http_field.h's rule (121.90), shared
+ * with http.c's writers since 121.92: a name that is not an RFC 9110 token,
+ * or a value holding CR, LF or another control byte but HTAB, is dropped. */
+#define hdr_name_ok  tk_http_field_name_ok
+#define hdr_value_ok tk_http_field_value_ok
 
 /* write_all -- write n bytes, retrying short writes and EINTR. */
 static void write_all(int fd, const char *b, size_t n)
