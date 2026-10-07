@@ -95,7 +95,7 @@ Loads a GGUF file into memory. `tk_infer_load` in the core does this and takes t
 
 #### infer.unload(h: modelhandle): bool
 
-Frees the model. `tk_infer_unload` exists; the wrapper returns 0.
+Frees the model. `tk_infer_unload` exists; the wrapper returns 0. For a handle from the streaming loader, the C core's unload also stops and joins the prefetch thread and frees its shard buffers before freeing the handle (136.75).
 
 #### infer.generate(h: modelhandle; prompt: str; maxtokens: i32): str!infererr
 
