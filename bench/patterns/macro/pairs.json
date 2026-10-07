@@ -152,7 +152,7 @@
    "category": "ai-agents",
    "title": "Agent state synchronisation",
    "source": "~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk",
-   "source_sha256": "6ec7c5c2ce50c0f505aa11f2fd3af9019ce3f7fe4500d1f04e6dd17b6e656d0d",
+   "source_sha256": "a9b844193e5a53a6e8ac631f6dbe11b922d1489eb4cc512eac3472fa52096253",
    "orig": "programs/AIA-100.orig.tk",
    "manifest": "~/tk/toke-test-programs/results/library/ai-agents.json",
    "canon": "programs/AIA-100.canon.tk",
