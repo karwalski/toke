@@ -4,21 +4,21 @@
   "exports": [
     {
       "kind": "type",
-      "name": "VecStore",
+      "name": "vecstorehandle",
       "fields": [
         {"name": "path", "type": "str"}
       ]
     },
     {
       "kind": "type",
-      "name": "VecCollection",
+      "name": "veccollection",
       "fields": [
         {"name": "name", "type": "str"}
       ]
     },
     {
       "kind": "type",
-      "name": "VecEntry",
+      "name": "vecentry",
       "fields": [
         {"name": "id",         "type": "str"},
         {"name": "embedding",  "type": "@(f64)"},
@@ -28,7 +28,7 @@
     },
     {
       "kind": "type",
-      "name": "SearchResult",
+      "name": "searchresult",
       "fields": [
         {"name": "id",      "type": "str"},
         {"name": "score",   "type": "f64"},
@@ -37,7 +37,7 @@
     },
     {
       "kind": "type",
-      "name": "VecErr",
+      "name": "vecerr",
       "is_sum": true,
       "fields": [
         {"name": "$ioerr",       "type": "str"},
@@ -45,14 +45,14 @@
         {"name": "$notfound",    "type": "str"}
       ]
     },
-    {"kind": "func", "name": "vecstore.open",         "params": ["str"],                                     "return": "VecStore!VecErr"},
-    {"kind": "func", "name": "vecstore.close",        "params": ["VecStore"],                                "return": "void"},
-    {"kind": "func", "name": "vecstore.flush",        "params": ["VecStore"],                                "return": "bool"},
-    {"kind": "func", "name": "vecstore.collection",   "params": ["VecStore", "str"],                         "return": "VecCollection!VecErr"},
-    {"kind": "func", "name": "vecstore.upsert",       "params": ["VecCollection", "str", "@(f64)", "str"],   "return": "bool"},
-    {"kind": "func", "name": "vecstore.search",       "params": ["VecCollection", "@(f64)", "i32", "f64"],   "return": "@(SearchResult)"},
-    {"kind": "func", "name": "vecstore.delete",       "params": ["VecCollection", "str"],                    "return": "bool"},
-    {"kind": "func", "name": "vecstore.deletebefore", "params": ["VecCollection", "i64"],                    "return": "i32"},
-    {"kind": "func", "name": "vecstore.count",        "params": ["VecCollection"],                           "return": "i32"}
+    {"kind": "func", "name": "vecstore.open",         "params": ["str"],                                     "return": "vecstorehandle!vecerr"},
+    {"kind": "func", "name": "vecstore.close",        "params": ["vecstorehandle"],                                "return": "void"},
+    {"kind": "func", "name": "vecstore.flush",        "params": ["vecstorehandle"],                                "return": "bool"},
+    {"kind": "func", "name": "vecstore.collection",   "params": ["vecstorehandle", "str"],                         "return": "veccollection!vecerr"},
+    {"kind": "func", "name": "vecstore.upsert",       "params": ["veccollection", "str", "@(f64)", "str"],   "return": "bool"},
+    {"kind": "func", "name": "vecstore.search",       "params": ["veccollection", "@(f64)", "i32", "f64"],   "return": "@(searchresult)"},
+    {"kind": "func", "name": "vecstore.delete",       "params": ["veccollection", "str"],                    "return": "bool"},
+    {"kind": "func", "name": "vecstore.deletebefore", "params": ["veccollection", "i64"],                    "return": "i32"},
+    {"kind": "func", "name": "vecstore.count",        "params": ["veccollection"],                           "return": "i32"}
   ]
 }

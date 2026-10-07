@@ -107,7 +107,7 @@ m=ae;
 i=io:std.io;
 i=env:std.env;
 i=args:std.args;
-f=g():str!EnvErr{ let v=env.get("C534_UNSET_VAR")!EnvErr; <v };
+f=g():str!$enverr{ let v=env.get("C534_UNSET_VAR")!$enverr; <v };
 f=main():i64{
   let a=mt env.get("C534_UNSET_VAR") { $ok:v "ok:\(v)"; $err:e mt e { $notfound:m "nf:\(m)"; $invalid:m "inv:\(m)" } };
   let b=mt env.get("HOME") { $ok:v "ok"; $err:e "err" };

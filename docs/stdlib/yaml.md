@@ -13,7 +13,7 @@ YAML is a **secondary format** in toke's serialization hierarchy: TOON (default)
 
 ## Types
 
-### $yaml
+### $yamlval
 
 An opaque wrapper around a raw YAML string. Obtained by calling `yaml.dec` on valid YAML input.
 
@@ -47,10 +47,10 @@ f=demo():i64{
 };
 ```
 
-### yaml.empty(): $yaml
+### yaml.empty(): $yamlval
 
 Returns the empty YAML document. Use it as the `$err` arm of a `mt` over
-`yaml.dec`, where the match has to produce a `$yaml` and the only other
+`yaml.dec`, where the match has to produce a `$yamlval` and the only other
 constructor is the call that has just failed.
 
 ```toke
@@ -62,9 +62,9 @@ f=demo():i64{
 };
 ```
 
-### yaml.dec(s: $str): $yaml!$yamlerr
+### yaml.dec(s: $str): $yamlval!$yamlerr
 
-Parses a YAML string into a `Yaml` value. Returns `$yamlerr.$parse` if the input is empty or invalid.
+Parses a YAML string into a `$yamlval` value. Returns `$yamlerr.$parse` if the input is empty or invalid.
 
 ```toke
 m=app;
@@ -75,66 +75,66 @@ f=demo():i64{
 };
 ```
 
-### yaml.str(y: $yaml; key: $str): $str!$yamlerr
+### yaml.str(y: $yamlval; key: $str): $str!$yamlerr
 
 Extracts a string value by key. Automatically strips surrounding quotes.
 
 ```toke
 m=app;
 i=yaml:std.yaml;
-f=demo(y:$yaml):i64{
+f=demo(y:$yamlval):i64{
   let name=mt yaml.str(y;"name") {$ok:s s;$err:e "unknown"};
   < 0
 };
 ```
 
-### yaml.i64(y: $yaml; key: $str): i64!$yamlerr
+### yaml.i64(y: $yamlval; key: $str): i64!$yamlerr
 
 Extracts a signed 64-bit integer by key.
 
 ```toke
 m=app;
 i=yaml:std.yaml;
-f=demo(y:$yaml):i64{
+f=demo(y:$yamlval):i64{
   let age=mt yaml.i64(y;"age") {$ok:n n;$err:e 0};
   < age
 };
 ```
 
-### yaml.f64(y: $yaml; key: $str): f64!$yamlerr
+### yaml.f64(y: $yamlval; key: $str): f64!$yamlerr
 
 Extracts a 64-bit float by key.
 
 ```toke
 m=app;
 i=yaml:std.yaml;
-f=demo(y:$yaml):f64{
+f=demo(y:$yamlval):f64{
   let pi=mt yaml.f64(y;"pi") {$ok:f f;$err:e 0.0};
   < pi
 };
 ```
 
-### yaml.bool(y: $yaml; key: $str): bool!$yamlerr
+### yaml.bool(y: $yamlval; key: $str): bool!$yamlerr
 
 Extracts a boolean by key. Accepts `true`/`false` and YAML-style `yes`/`no`.
 
 ```toke
 m=app;
 i=yaml:std.yaml;
-f=demo(y:$yaml):bool{
+f=demo(y:$yamlval):bool{
   let active=mt yaml.bool(y;"active") {$ok:b b;$err:e false};
   < active
 };
 ```
 
-### yaml.arr(y: $yaml; key: $str): @($yaml)!$yamlerr
+### yaml.arr(y: $yamlval; key: $str): @($yamlval)!$yamlerr
 
-Extracts a YAML sequence as an array of `Yaml` values.
+Extracts a YAML sequence as an array of `$yamlval` values.
 
 ```toke
 m=app;
 i=yaml:std.yaml;
-f=demo(y:$yaml):i64{
+f=demo(y:$yamlval):i64{
   let items=mt yaml.arr(y;"items") {$ok:a a;$err:e @()};
   < 0
 };

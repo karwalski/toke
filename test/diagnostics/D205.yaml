@@ -1,0 +1,11 @@
+id: D205
+series: D
+description: "127.251: `$json` with std.json imported names only the module alias -- an alias is not a type, so it is E3011 (it used to resolve and type nothing, so the parameter accepted a str); std.json's document type is `$jsonval` (owner decision 2026-10-01 §2.5), the fix, without a second sigil"
+input: |
+  m=t;
+  i=json:std.json;
+  f=g(b:$json):i64{<1};
+  f=main():i64{<g("x")};
+expected_exit_code: 1
+expected_error_codes: ["E3011"]
+expected_fix: "did you mean 'jsonval'?"

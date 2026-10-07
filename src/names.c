@@ -1429,6 +1429,74 @@ static int name_spellable(const char *nm, int want_type) {
     return 1;
 }
 
+/*
+ * 127.251 — the stdlib .tki type names that were renamed.  Forty upper-case
+ * names were lower-cased (FileErr -> fileerr); seven whose lower-case
+ * spelling is a module or a sub-namespace (or, for Duration, a time.*
+ * function) took the `<module><noun>` form instead (owner decision
+ * 2026-10-01 §2.5): Json -> jsonval, Row -> dbrow, Toon -> toonval,
+ * Yaml -> yamlval, Vec -> vechandle, VecStore -> vecstorehandle,
+ * Duration -> timeduration.  The lower-case rows are the `$json`/`$row`
+ * spellings the module pages documented, which resolved to the module alias
+ * (see resolve_ident) rather than to the type.
+ *
+ * An old spelling in a type position names exactly one type when its module
+ * is imported: the renamed one.  So the fix is offered only when the new
+ * name is in scope as a type -- when it is not, the module is not imported
+ * and a rename alone would not compile.  The lower-case `$row` has no row
+ * here: std.ml declares its own `row`, so `$row` beside std.db may mean
+ * either, and a fix must be right in every case (AGENTS §6).
+ */
+static const struct { const char *old; const char *now; } k_renamed_types[] = {
+    {"ArgsErr","argserr"}, {"AuthErr","autherr"}, {"BracketErr","bracketerr"},
+    {"DbErr","dberr"}, {"DecryptResult","decryptresult"},
+    {"Duration","timeduration"}, {"EncodingErr","encodingerr"},
+    {"EnvErr","enverr"}, {"FileErr","fileerr"}, {"Handle","handle"},
+    {"I18nErr","i18nerr"}, {"Json","jsonval"}, {"JsonErr","jsonerr"},
+    {"JsonStream","jsonstream"}, {"JsonStreamErr","jsonstreamerr"},
+    {"JsonToken","jsontoken"}, {"JsonWriter","jsonwriter"},
+    {"JwtClaims","jwtclaims"}, {"Keypair","keypair"}, {"MdErr","mderr"},
+    {"MdnsErr","mdnserr"}, {"ParseErr","parseerr"},
+    {"ProcessErr","processerr"}, {"RegexErr","regexerr"}, {"Row","dbrow"},
+    {"SearchResult","searchresult"}, {"SecureBuf","securebuf"},
+    {"SliceErr","sliceerr"}, {"StrBuf","strbuf"}, {"TimeErr","timeerr"},
+    {"TimeParts","timeparts"}, {"Toon","toonval"}, {"ToonErr","toonerr"},
+    {"Vec","vechandle"}, {"VecCollection","veccollection"},
+    {"VecEntry","vecentry"}, {"VecErr","vecerr"},
+    {"VecStore","vecstorehandle"}, {"Yaml","yamlval"}, {"YamlErr","yamlerr"},
+    {"duration","timeduration"}, {"json","jsonval"},
+    {"toon","toonval"}, {"vec","vechandle"}, {"vecstore","vecstorehandle"},
+    {"yaml","yamlval"},
+};
+
+/* "did you mean '$dberr'?" for an old spelling, or NULL.  `sigilled`: the
+ * source already wrote the `$` (`$json`), so the fix names the bare type;
+ * a bare upper-case `DbErr` needs the sigil (a bare lower-case name is not a
+ * type reference). */
+static const char *renamed_type_fix(const Scope *scope, const char *nm,
+                                    int sigilled, char *buf, size_t cap) {
+    for (size_t i = 0; i < sizeof k_renamed_types / sizeof k_renamed_types[0]; i++) {
+        if (strcmp(nm, k_renamed_types[i].old) != 0) continue;
+        const char *now = k_renamed_types[i].now;
+        const Decl *d = scope_lookup(scope, now, (int)strlen(now));
+        if (!d || (d->kind != DECL_TYPE && d->kind != DECL_PREDEFINED)) return NULL;
+        snprintf(buf, cap, "did you mean '%s%s'?", sigilled ? "" : "$", now);
+        return buf;
+    }
+    return NULL;
+}
+
+/* 1 when some declaration named `name` in the scope chain is not a module
+ * alias -- a type, a declared variant, a value.  A `$name` resolves to it. */
+static int name_has_non_alias_decl(const Scope *scope, const char *name, int len) {
+    for (const Scope *sc = scope; sc; sc = sc->parent)
+        for (const Decl *d = sc->head; d; d = d->next)
+            if (d->name && d->name_len == len && memcmp(d->name, name, (size_t)len) == 0
+                && d->kind != DECL_IMPORT_ALIAS)
+                return 1;
+    return 0;
+}
+
 /* 127.98 (i): set while the base identifier of a member access is resolved */
 static int s_resolving_member_base = 0;
 
@@ -1504,6 +1572,34 @@ static void resolve_ident(const Node *node, const char *src,
         *had_error = 1;
         return;
     }
+    /*
+     * 127.251 — a `$name` whose only declaration is a module alias or a
+     * sub-namespace (`$json` with std.json imported, `$row` with std.db).
+     * It resolved here and nothing else checked it: the type checker took
+     * `b:$json` for an opaque record and accepted a str where a document
+     * belongs.  The module pages documented `$json`, `$row`, `$toon` and
+     * `$yaml` for the types now spelled jsonval, dbrow, toonval and yamlval,
+     * so those programs compiled against no type at all.  An alias is not a
+     * type: E3011, as for any other name no type declares.
+     */
+    if (found && found->kind == DECL_IMPORT_ALIAS &&
+        (node->kind == NODE_TYPE_IDENT || node->kind == NODE_STRUCT_LIT) &&
+        !name_has_non_alias_decl(scope, name, len)) {
+        s_name_error_count++;
+        if (s_name_error_count <= MAX_NAME_ERRORS) {
+            char nbuf[201], msg[512], fbuf[128];
+            int mlen = len < 200 ? len : 200;
+            memcpy(nbuf, name, (size_t)mlen); nbuf[mlen] = '\0';
+            snprintf(msg, sizeof msg,
+                     "no type '%s' is declared: '%s' is a module alias, not a type", nbuf, nbuf);
+            int sig = node->tok_start > 0 && src[node->tok_start - 1] == '$';
+            const char *fix = renamed_type_fix(scope, nbuf, sig, fbuf, sizeof fbuf);
+            diag_emit(DIAG_ERROR, E3011, node->start, node->line, node->col,
+                      msg, "fix", fix, (const char *)NULL);
+        }
+        *had_error = 1;
+        return;
+    }
     if (!found) {
         /* Only emit a diagnostic if we have not yet reached the error limit.
          * The diagnostic is emitted BEFORE inserting the error-marker decl so
@@ -1517,6 +1613,12 @@ static void resolve_ident(const Node *node, const char *src,
             memcpy(nbuf, name, (size_t)mlen);
             nbuf[mlen] = '\0';
             const char *fix = foreign_keyword_fix(nbuf);
+            /* 127.251: an old stdlib type spelling has one right answer. */
+            char ren_fix[128];
+            if (!fix && (node->kind == NODE_TYPE_IDENT || node->kind == NODE_STRUCT_LIT))
+                fix = renamed_type_fix(scope, nbuf,
+                                       node->tok_start > 0 && src[node->tok_start - 1] == '$',
+                                       ren_fix, sizeof ren_fix);
             /* If no foreign-keyword fix, try Levenshtein suggestion from scope */
             char lev_fix[256];
             if (!fix) {
@@ -2286,10 +2388,10 @@ int resolve_names(const Node *ast, const char *src,
         /* 127.66: std.* .tki files are found only by this loop (the loop above
          * probes module-path / -I dirs, not TKC_STDLIB_DIR), so record their
          * export surface here — an unchecked field on `http.res` or
-         * `time.TimeParts` is the same type-safety hole. */
+         * `time.timeparts` is the same type-safety hole. */
         tki_record_exports(out, arena, ie->alias_name, tki_buf);
 
-        /* Story 114.18: register "kind":"type" names (e.g. Vec, JwtClaims) as
+        /* Story 114.18: register "kind":"type" names (e.g. vechandle, jwtclaims) as
          * predefined identifiers so they're usable in `:Type` annotations on
          * params/returns. The first .tki loop above does this but can't locate
          * std.* files (it probes module-path/-I dirs, not TKC_STDLIB_DIR); this

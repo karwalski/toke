@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "Toon",
+      "name": "toonval",
       "fields": [
         {
           "name": "raw",
@@ -14,7 +14,7 @@
     },
     {
       "kind": "type",
-      "name": "ToonErr",
+      "name": "toonerr",
       "is_sum": true,
       "fields": [
         {
@@ -35,7 +35,7 @@
       "kind": "func",
       "name": "toon.empty",
       "params": [],
-      "return": "Toon"
+      "return": "toonval"
     },
     {
       "kind": "func",
@@ -51,52 +51,52 @@
       "params": [
         "str"
       ],
-      "return": "Toon!ToonErr"
+      "return": "toonval!toonerr"
     },
     {
       "kind": "func",
       "name": "toon.str",
       "params": [
-        "Toon",
+        "toonval",
         "str"
       ],
-      "return": "str!ToonErr"
+      "return": "str!toonerr"
     },
     {
       "kind": "func",
       "name": "toon.i64",
       "params": [
-        "Toon",
+        "toonval",
         "str"
       ],
-      "return": "i64!ToonErr"
+      "return": "i64!toonerr"
     },
     {
       "kind": "func",
       "name": "toon.f64",
       "params": [
-        "Toon",
+        "toonval",
         "str"
       ],
-      "return": "f64!ToonErr"
+      "return": "f64!toonerr"
     },
     {
       "kind": "func",
       "name": "toon.bool",
       "params": [
-        "Toon",
+        "toonval",
         "str"
       ],
-      "return": "bool!ToonErr"
+      "return": "bool!toonerr"
     },
     {
       "kind": "func",
       "name": "toon.arr",
       "params": [
-        "Toon",
+        "toonval",
         "str"
       ],
-      "return": "[Toon]!ToonErr"
+      "return": "[toonval]!toonerr"
     },
     {
       "kind": "func",

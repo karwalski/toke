@@ -8,13 +8,13 @@
       "params": [
         "[str]"
       ],
-      "return": "Handle!ProcessErr"
+      "return": "handle!processerr"
     },
     {
       "kind": "func",
       "name": "process.wait",
       "params": [
-        "Handle"
+        "handle"
       ],
       "return": "i32"
     },
@@ -22,34 +22,34 @@
       "kind": "func",
       "name": "process.stdout",
       "params": [
-        "Handle"
+        "handle"
       ],
-      "return": "str!ProcessErr"
+      "return": "str!processerr"
     },
     {
       "kind": "func",
       "name": "process.stderr",
       "params": [
-        "Handle"
+        "handle"
       ],
-      "return": "str!ProcessErr"
+      "return": "str!processerr"
     },
     {
       "kind": "func",
       "name": "process.kill",
       "params": [
-        "Handle"
+        "handle"
       ],
       "return": "bool"
     },
     {
       "kind": "type",
-      "name": "Handle",
+      "name": "handle",
       "fields": []
     },
     {
       "kind": "type",
-      "name": "ProcessErr",
+      "name": "processerr",
       "is_sum": true,
       "fields": [
         {

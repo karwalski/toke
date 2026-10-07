@@ -26,11 +26,11 @@ i=enc:std.encoding;
 | Function | Signature | Purpose |
 |----------|-----------|---------|
 | `encoding.b64encode` | `(data:[byte]):$str` | Base64-encode bytes |
-| `encoding.b64decode` | `(s:$str):[byte]!EncodingErr` | Base64-decode to bytes |
+| `encoding.b64decode` | `(s:$str):[byte]!$encodingerr` | Base64-decode to bytes |
 | `encoding.hexencode` | `(data:[byte]):$str` | Hex-encode bytes |
-| `encoding.hexdecode` | `(s:$str):[byte]!EncodingErr` | Hex-decode to bytes |
+| `encoding.hexdecode` | `(s:$str):[byte]!$encodingerr` | Hex-decode to bytes |
 | `encoding.urlencode` | `(s:$str):$str` | URL-encode string |
-| `encoding.urldecode` | `(s:$str):$str!EncodingErr` | URL-decode string |
+| `encoding.urldecode` | `(s:$str):$str!$encodingerr` | URL-decode string |
 
 Encode/decode operate on real `[byte]` (see the bytes model in the crypto section);
 use `str.bytes` / `str.frombytes` to convert to and from text.
@@ -257,20 +257,20 @@ i=db:std.db;
 
 SQL is always **parameterized**: values travel in a separate `@$str` array and bind
 to `?` placeholders, so a string value can never break out of the query (ADR-0011 —
-parameterized-queries-only). Results are `Row` values read with typed accessors.
+parameterized-queries-only). Results are `$dbrow` values read with typed accessors.
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `db.open` | `(dsn:$str):u64!DbErr` | Open the connection to a SQLite DSN/path |
+| `db.open` | `(dsn:$str):u64!$dberr` | Open the connection to a SQLite DSN/path |
 | `db.close` | `():i64` | Close the connection |
-| `db.exec` | `(sql:$str;params:@$str):u64!DbErr` | Run a statement; returns affected-row count |
-| `db.one` | `(sql:$str;params:@$str):Row!DbErr` | Query a single row |
-| `db.many` | `(sql:$str;params:@$str):@Row!DbErr` | Query multiple rows |
-| `row.str` | `(r:Row;col:$str):$str!DbErr` | Read a text column |
-| `row.i64` | `(r:Row;col:$str):i64!DbErr` | Read an integer column |
-| `row.u64` | `(r:Row;col:$str):u64!DbErr` | Read an unsigned column |
-| `row.f64` | `(r:Row;col:$str):f64!DbErr` | Read a float column |
-| `row.bool` | `(r:Row;col:$str):bool!DbErr` | Read a boolean column |
+| `db.exec` | `(sql:$str;params:@$str):u64!$dberr` | Run a statement; returns affected-row count |
+| `db.one` | `(sql:$str;params:@$str):$dbrow!$dberr` | Query a single row |
+| `db.many` | `(sql:$str;params:@$str):@$dbrow!$dberr` | Query multiple rows |
+| `row.str` | `(r:$dbrow;col:$str):$str!$dberr` | Read a text column |
+| `row.i64` | `(r:$dbrow;col:$str):i64!$dberr` | Read an integer column |
+| `row.u64` | `(r:$dbrow;col:$str):u64!$dberr` | Read an unsigned column |
+| `row.f64` | `(r:$dbrow;col:$str):f64!$dberr` | Read a float column |
+| `row.bool` | `(r:$dbrow;col:$str):bool!$dberr` | Read a boolean column |
 
 > **Connection:** `db.open` opens a single process-global SQLite handle; the query
 > functions then operate on it. Opening a database needs the `fs_read`/`fs_write`
@@ -285,33 +285,33 @@ i=db:std.db;
 
 t=$todo{id:i64;title:$str;done:bool};
 
-f=init():u64!DbErr{
+f=init():u64!$dberr{
   <db.exec("CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)";@())
 };
 
-f=add(title:$str):u64!DbErr{
+f=add(title:$str):u64!$dberr{
   <db.exec("INSERT INTO todos (title,done) VALUES (?,0)";@(title))
 };
 
-f=list():@$todo!DbErr{
-  let rows=db.many("SELECT id,title,done FROM todos";@())!DbErr;
+f=list():@$todo!$dberr{
+  let rows=db.many("SELECT id,title,done FROM todos";@())!$dberr;
   let result=mut.@();
   lp(let i=0;i<rows.len;i=i+1){
     let r=rows.get(i);
     result=result.push($todo{
-      id:row.i64(r;"id")!DbErr;
-      title:row.str(r;"title")!DbErr;
-      done:row.i64(r;"done")!DbErr==1
+      id:row.i64(r;"id")!$dberr;
+      title:row.str(r;"title")!$dberr;
+      done:row.i64(r;"done")!$dberr==1
     });
   };
   <result
 };
 
 f=main():i64{
-  db.open("todos.db")!DbErr;   // needs --allow-read/--allow-write (or tkc.toml)
-  init()!DbErr;
-  add("write docs")!DbErr;
-  <(list()!DbErr).len
+  db.open("todos.db")!$dberr;   // needs --allow-read/--allow-write (or tkc.toml)
+  init()!$dberr;
+  add("write docs")!$dberr;
+  <(list()!$dberr).len
 };
 ```
 

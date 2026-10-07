@@ -68,14 +68,14 @@ FIELD = re.compile(r"^(.*?)([A-Za-z_][A-Za-z0-9_]*)\s*;$")
 
 
 # Returned records not marked yet, each owned outside story 135.30's
-# territory (src/stdlib for llm, canvas, chart, dashboard, db Row, html,
+# territory (src/stdlib for llm, canvas, chart, dashboard, db dbrow, html,
 # i18n, ml, svg, template, tls, ws).  "mod.type": "owner / why".  Delete an
 # entry when its struct is marked; a stale entry fails the check.
 PENDING = {
     "analytics.groupstat":    "135.30 residue: analytics glue",
     "analytics.statsrow":     "135.30 residue: analytics glue",
     "analytics.tspoint":      "135.30 residue: analytics glue",
-    "auth.JwtClaims":         "135.30 residue: auth glue",
+    "auth.jwtclaims":         "135.30 residue: auth glue",
     "csv.csvdialect":         "135.30 residue: csv glue",
     "csv.csvopts":            "135.30 residue: csv glue",
     "csv.csvreader":          "135.30 residue: csv glue",
@@ -84,24 +84,24 @@ PENDING = {
     "dataframe.dataframe":    "135.30 residue: dataframe glue",
     "dataframe.dfshape":      "135.30 residue: dataframe glue",
     "dataframe.series":       "135.30 residue: dataframe glue",
-    "encrypt.DecryptResult":  "135.30 residue: encrypt glue",
-    "encrypt.Keypair":        "135.30 residue: encrypt glue",
+    "encrypt.decryptresult":  "135.30 residue: encrypt glue",
+    "encrypt.keypair":        "135.30 residue: encrypt glue",
     "image.imgbuf":           "135.30 residue: image glue",
     "infer.modelhandle":      "135.30 residue: infer glue",
-    "json.Json":              "135.30 residue: json glue (LS / HX)",
-    "json.JsonStream":        "135.30 residue: json stream glue (HX)",
-    "json.JsonWriter":        "135.30 residue: json glue (LS)",
+    "json.jsonval":           "135.30 residue: json glue (LS / HX)",
+    "json.jsonstream":        "135.30 residue: json stream glue (HX)",
+    "json.jsonwriter":        "135.30 residue: json glue (LS)",
     "llmtool.toolcall":       "135.30 residue: llm_tool_glue.c (GH / LH)",
     "math.linregresult":      "135.30 residue: math glue",
     "mdns.discovered":        "135.30 residue: mdns glue",
     "mlx.mlxmodel":           "135.30 residue: mlx glue",
     "router.router":          "135.30 residue: router_glue.c (LH)",
-    "time.Duration":          "135.30 residue: time glue",
-    "time.TimeParts":         "135.30 residue: time glue",
-    "toon.Toon":              "135.30 residue: toon glue",
-    "vecstore.VecCollection": "135.30 residue: vecstore glue",
-    "vecstore.VecStore":      "135.30 residue: vecstore glue",
-    "yaml.Yaml":              "135.30 residue: yaml glue",
+    "time.timeduration":      "135.30 residue: time glue",
+    "time.timeparts":         "135.30 residue: time glue",
+    "toon.toonval":           "135.30 residue: toon glue",
+    "vecstore.veccollection": "135.30 residue: vecstore glue",
+    "vecstore.vecstorehandle": "135.30 residue: vecstore glue",
+    "yaml.yamlval":           "135.30 residue: yaml glue",
 }
 
 

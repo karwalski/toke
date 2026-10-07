@@ -480,6 +480,19 @@ f=bad(): i64 { < x };
 
 Triggers E3011.
 
+A `$name` in a type position whose only declaration is a module alias or a
+sub-namespace is E3011 too (`$json` with `std.json` imported): an alias is
+not a type (127.251). Before 127.251 it resolved and nothing checked it, so a
+`b:$json` parameter accepted any value.
+
+The stdlib type names are lower-case since 127.251. An old spelling --
+the bare upper-case `DbErr`, or one of the seven renamed `<module><noun>`
+(`Json`/`$json` → `$jsonval`, `Row`/`$row` → `$dbrow`, `Toon` → `$toonval`,
+`Yaml` → `$yamlval`, `Vec` → `$vechandle`, `VecStore` → `$vecstorehandle`,
+`Duration` → `$timeduration`) -- carries `fix` "did you mean '$dberr'?"
+when the renamed type is in scope (not for `$row`, which may mean `std.ml`'s
+own `row`); `tkc --migrate` rewrites them.
+
 **Fix:** Declare the identifier before using it, or check for typos.
 
 ---
@@ -610,7 +623,7 @@ A field access expression (`expr.field`) references a field name that does not e
 
 The workhorse type error. Emitted for mismatched operands in binary expressions, mismatched function arguments, mismatched binding annotations, mismatched assignment sides, and mismatched return values.
 
-A `json.parse` result -- the call, or a name an un-annotated `let` bound to one -- passed as the document argument of a `std.json` member that reads a `$json` (`json.str`, `json.getstr`, `json.keys`, `json.has`, ...) is E4031 with no `fix`: `json.parse` returns a str, number, bool or array, never a document; decode object text with `json.decode` or `json.dec` (story 138.9, loke T-17).
+A `json.parse` result -- the call, or a name an un-annotated `let` bound to one -- passed as the document argument of a `std.json` member that reads a `$jsonval` (`json.str`, `json.getstr`, `json.keys`, `json.has`, ...) is E4031 with no `fix`: `json.parse` returns a str, number, bool or array, never a document; decode object text with `json.decode` or `json.dec` (story 138.9, loke T-17).
 
 The diagnostic may include a fix suggestion such as `"cast RHS to i64 using 'as'"`.
 

@@ -97,7 +97,7 @@ let tok=json.streamnext(parser)?;
 });
 ```
 
-### json.streamemit(writer: $jsonwriter; val: $json): void!$jsonstreamerr
+### json.streamemit(writer: $jsonwriter; val: $jsonval): void!$jsonstreamerr
 
 > [quarantined](/docs/reference/tki-quarantine/): declared in the interface, but no C symbol implements it, so `tkc --check` rejects a call to it.
 

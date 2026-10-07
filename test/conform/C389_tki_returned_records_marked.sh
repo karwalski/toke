@@ -10,7 +10,7 @@
 # glue went on handing toke raw C structs of other shapes.  llm.client
 # returned TkLlmClient {base_url; api_key; model; ...} as the $llmclient
 # {provider; model}: `c.model` printed the API key.  canvas, chart,
-# dashboard, db's Row, html, i18n, ml, svg, template, tls and ws had the
+# dashboard, db's dbrow, html, i18n, ml, svg, template, tls and ws had the
 # same fault (C380-C387).
 #
 # THE GATE NOW.  A record with fields that a .tki function returns --
@@ -75,7 +75,7 @@ fresh
 expect "1  the tree: OK" "$(gate)" "0 OK"
 n=0
 for r in llm.llmclient llm.llmresp canvas.canvas canvas.canvasop chart.chartspec \
-         dashboard.dashwidget dashboard.dashboard db.Row html.htmlnode html.htmldoc \
+         dashboard.dashwidget dashboard.dashboard db.dbrow html.htmlnode html.htmldoc \
          i18n.i18nbundle ml.linearmodel svg.svgdoc svg.svgstyle template.tmpl \
          template.tmplvars tls.tlsconn tls.tlsconfig tls.tlskeypair ws.wsconn ws.wsmsg; do
     grep -q "= ${r} (" "${WORK}/last.out" && n=$((n + 1))
@@ -112,9 +112,9 @@ expect "7  a new function returning an unmarked record: FAIL" "$(gate)" "1 FAIL"
 expect "7b ... naming it" "$(seen 'canvas.canvasinfo is returned by canvas.info but no struct')" "1"
 
 fresh
-edit "${S}/canvas.h" 's.replace("/* tki-record: canvas.canvasop */", "/* tki-record: yaml.Yaml */\ntypedef struct {\n    int64_t     h;\n} TkYamlFake;\n\n/* tki-record: canvas.canvasop */", 1)'
+edit "${S}/canvas.h" 's.replace("/* tki-record: canvas.canvasop */", "/* tki-record: yaml.yamlval */\ntypedef struct {\n    int64_t     h;\n} TkYamlFake;\n\n/* tki-record: canvas.canvasop */", 1)'
 expect "8  a PENDING record now marked: FAIL" "$(gate)" "1 FAIL"
-expect "8b ... the entry is called stale" "$(seen 'PENDING lists yaml.Yaml, but it is marked now')" "1"
+expect "8b ... the entry is called stale" "$(seen 'PENDING lists yaml.yamlval, but it is marked now')" "1"
 
 fresh
 gate > /dev/null

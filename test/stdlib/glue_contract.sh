@@ -75,7 +75,7 @@ if build math_minmax test/stdlib/math_minmax.tk; then
 fi
 
 echo
-echo "=== 136.16 -- std.toon typed accessors take (Toon; key) ==="
+echo "=== 136.16 -- std.toon typed accessors take ($toonval; key) ==="
 if build toon_accessors test/stdlib/toon_accessors.tk; then
     out="$("$TMP/toon_accessors")"
     expect "toon.str(t; \"name\") == Alice"  "$(line "$out" str.name)"       "Alice"

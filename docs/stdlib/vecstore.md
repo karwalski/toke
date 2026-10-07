@@ -33,19 +33,19 @@ Key properties:
 
 ## Types
 
-### VecStore
+### $vecstorehandle
 
 An opaque handle representing an open vector store rooted at a directory on
 disk.  Returned by `vecstore.open`.  A single process may hold multiple
-`VecStore` handles pointing at different directories.
+`$vecstorehandle` handles pointing at different directories.
 
-### VecCollection
+### $veccollection
 
-An opaque handle representing a named collection within a `VecStore`.
+An opaque handle representing a named collection within a `$vecstorehandle`.
 Collections are independent: each has its own entries, dimension, and backing
 file.  Returned by `vecstore.collection`.
 
-### VecEntry
+### $vecentry
 
 Represents a single stored embedding.
 
@@ -56,7 +56,7 @@ Represents a single stored embedding.
 | `payload`    | `str`    | Arbitrary string payload (JSON, text, etc.) |
 | `createdat`  | `i64`    | Unix timestamp (seconds) set on upsert      |
 
-### SearchResult
+### $searchresult
 
 Represents one result from a similarity search.
 
@@ -66,7 +66,7 @@ Represents one result from a similarity search.
 | `score`   | `f64` | Cosine similarity score in the range [−1, 1]   |
 | `payload` | `str` | The payload string stored with the entry       |
 
-### VecErr
+### $vecerr
 
 A sum type for errors returned by `vecstore.open` and `vecstore.collection`.
 
@@ -80,24 +80,24 @@ A sum type for errors returned by `vecstore.open` and `vecstore.collection`.
 
 ## Store Lifecycle
 
-### vecstore.open(data_dir: str): VecStore!VecErr
+### vecstore.open(data_dir: str): $vecstorehandle!$vecerr
 
 Opens (or creates) a vector store rooted at `data_dir`.  The directory must
 already exist and be writable.  Collections are loaded lazily — their backing
 files are read from disk when `vecstore.collection` is first called.
 
-Returns `VecErr.IoErr` if `data_dir` does not exist or cannot be accessed.
+Returns `$vecerr.$ioerr` if `data_dir` does not exist or cannot be accessed.
 
 **Example:**
 ```toke
 let vs=vecstore.open("/var/data/embeddings");
 ```
 
-### vecstore.close(vs: VecStore): void
+### vecstore.close(vs: $vecstorehandle): void
 
 Flushes all dirty collections to disk and releases all resources associated
 with the store.  Each collection is written to `{data_dir}/{name}.vecs` in
-binary format.  Using the `VecStore` or any of its `VecCollection` handles
+binary format.  Using the `$vecstorehandle` or any of its `$veccollection` handles
 after `vecstore.close` is undefined behaviour.
 
 **Example:**
@@ -105,7 +105,7 @@ after `vecstore.close` is undefined behaviour.
 vecstore.close(vs);
 ```
 
-### vecstore.flush(vs: VecStore): bool
+### vecstore.flush(vs: $vecstorehandle): bool
 
 Writes every collection with unsaved changes to disk **now**, and keeps the
 store and its collections open.  Each file is written to
@@ -145,7 +145,7 @@ are not.
 
 ## Collection Operations
 
-### vecstore.collection(vs: VecStore; name: str): VecCollection!VecErr
+### vecstore.collection(vs: $vecstorehandle; name: str): $veccollection!$vecerr
 
 Returns a handle for the named collection within `vs`.  If a backing file
 `{data_dir}/{name}.vecs` exists it is loaded into memory.  If the file does
@@ -154,7 +154,7 @@ the next `vecstore.flush` or `vecstore.close` after a change).  Needs the
 `fs.read` capability (`--allow-read`) on every call, whether or not the file
 exists yet.
 
-Returns `VecErr.IoErr` if the backing file exists but cannot be parsed.
+Returns `$vecerr.$ioerr` if the backing file exists but cannot be parsed.
 
 Collection names must be non-empty and must not contain path separators.
 
@@ -163,7 +163,7 @@ Collection names must be non-empty and must not contain path separators.
 let col=vecstore.collection(vs;"documents");
 ```
 
-### vecstore.upsert(col: VecCollection; id: str; embedding: @(f64); payload: str): bool
+### vecstore.upsert(col: $veccollection; id: str; embedding: @(f64); payload: str): bool
 
 Inserts a new entry or replaces an existing entry with the given `id`.
 `embedding` is an `f64` array; toke arrays carry their own length, so the
@@ -192,13 +192,13 @@ let emb=@(0.1;0.9;0.4);
 let ok=vecstore.upsert(col;"doc-1";emb;"{\"title\":\"hello\"}");
 ```
 
-### vecstore.search(col: VecCollection; query: @(f64); topk: i32; minscore: f64): @(SearchResult)
+### vecstore.search(col: $veccollection; query: @(f64); topk: i32; minscore: f64): @($searchresult)
 
 Performs a brute-force cosine similarity search over all entries in `col`.
 `query` is an `f64` array whose length must match the collection's dimension;
 it is normalised before comparison.
 
-Returns up to `topk` `SearchResult` values with score >= `minscore`, sorted by
+Returns up to `topk` `$searchresult` values with score >= `minscore`, sorted by
 descending score.  Returns a zero-length array — never a null — if the
 dimension mismatches, the collection is empty, or no entry clears `minscore`.
 
@@ -211,7 +211,7 @@ lp(let i=0;i<results.len();i=i+1){
 };
 ```
 
-### vecstore.delete(col: VecCollection; id: str): bool
+### vecstore.delete(col: $veccollection; id: str): bool
 
 Removes the entry with the given `id` from the collection.  Returns `true` if
 the entry existed and was removed, `false` if no entry with that `id` was
@@ -222,7 +222,7 @@ found.
 let removed=vecstore.delete(col;"doc-1");
 ```
 
-### vecstore.deletebefore(col: VecCollection; beforets: i64): i32
+### vecstore.deletebefore(col: $veccollection; beforets: i64): i32
 
 Removes all entries whose creation timestamp (Unix seconds) is strictly less
 than `beforets`.  Returns the number of entries removed.
@@ -238,7 +238,7 @@ let removed=vecstore.deletebefore(col;cutoff);
 io.println(str.concat("expired ";str.concat(str.fromint(removed);" entries")));
 ```
 
-### vecstore.count(col: VecCollection): i32
+### vecstore.count(col: $veccollection): i32
 
 Returns the number of entries currently in the collection.
 

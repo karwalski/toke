@@ -462,7 +462,7 @@ fixable: no
 
 **Description:** A function call whose return type includes an error variant (`T!E`) is used in a context where the error case is never inspected or propagated.
 
-**Rationale:** toke stdlib functions signal failure via `!`-error result types (e.g. `str.slice` returns `str!SliceErr`). If the caller ignores the error case — for example, by binding the result directly to a `let` without any error handling — a runtime error will propagate silently or produce a panic. Explicit error handling is the convention; ignoring errors is almost always a bug.
+**Rationale:** toke stdlib functions signal failure via `!`-error result types (e.g. `str.slice` returns `str!sliceerr`). If the caller ignores the error case — for example, by binding the result directly to a `let` without any error handling — a runtime error will propagate silently or produce a panic. Explicit error handling is the convention; ignoring errors is almost always a bug.
 
 **Example violation:**
 
@@ -475,7 +475,7 @@ f=main():i64{
 };
 ```
 
-`str.slice` returns `str!SliceErr` but the result is bound as if it were a plain `str`, with no handling of `SliceErr`.
+`str.slice` returns `str!sliceerr` but the result is bound as if it were a plain `str`, with no handling of `sliceerr`.
 
 **Example fix:**
 

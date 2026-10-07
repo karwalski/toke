@@ -121,7 +121,7 @@ run_tk() {   # name expected-output
 cat > t44.tk <<'TOKE'
 m=t44;i=io:std.io;i=str:std.str;i=json:std.json;
 f=main():i64{
-  let o=mt json.dec("{\"content\":\"summarisation\\n\"}") { $ok:v v; $jsonerr:e $json{raw:""} };
+  let o=mt json.dec("{\"content\":\"summarisation\\n\"}") { $ok:v v; $jsonerr:e $jsonval{raw:""} };
   let s=mt json.str(o;"content") { $ok:x x; $jsonerr:e "ERR" };
   let n=str.len(s);
   io.println("len=\(n) lastbyte=\(str.charat(s;n-1))");
@@ -132,7 +132,7 @@ run_tk t44 "len=14 lastbyte=10"
 cat > t47.tk <<'TOKE'
 m=t47a;i=io:std.io;i=str:std.str;i=json:std.json;
 f=main():i64{
-  let o=mt json.dec("{\"c\":\"a\\nb\\tc\\rd\\\"e\\\\f\\u0041\"}") { $ok:v v; $jsonerr:e $json{raw:""} };
+  let o=mt json.dec("{\"c\":\"a\\nb\\tc\\rd\\\"e\\\\f\\u0041\"}") { $ok:v v; $jsonerr:e $jsonval{raw:""} };
   let s=mt json.str(o;"c") { $ok:x x; $jsonerr:e "ERR" };
   let n=str.len(s);
   let out=mut."";
@@ -147,7 +147,7 @@ run_tk t47 "bytes=97 10 98 9 99 13 100 34 101 92 102 65 "
 cat > t32.tk <<'TOKE'
 m=t32;i=io:std.io;i=json:std.json;
 f=main():i64{
-  let o=mt json.dec("{\"model\":\"abc\",\"usage\":{\"input_tokens\":150}}") { $ok:v v; $jsonerr:e $json{raw:""} };
+  let o=mt json.dec("{\"model\":\"abc\",\"usage\":{\"input_tokens\":150}}") { $ok:v v; $jsonerr:e $jsonval{raw:""} };
   let u=mt json.at(o;"usage") { $ok:j j; $jsonerr:e o };
   let tokens=mt json.i64(u;"input_tokens") { $ok:v v; $jsonerr:e 0-1 };
   let miss:str=mt json.at(o;"usage.nope") { $ok:j "ok"; $jsonerr:e "err" };
