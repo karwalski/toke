@@ -109,7 +109,8 @@ StrArray str_split(const char *s, const char *sep)
     StrArray result = {NULL, 0};
     if (!s || !sep || *sep == '\0') return result;
 
-    size_t seplen = strlen(sep);
+    size_t seplen = tk_strlen(sep);
+    size_t slen = tk_strlen(s);
     /* count occurrences to pre-size the array */
     size_t count = 1;
     const char *p = s;
@@ -124,17 +125,15 @@ StrArray str_split(const char *s, const char *sep)
     const char *next;
     while ((next = strstr(p, sep)) != NULL && i < count - 1) {
         n = (size_t)(next - p);
-        char *piece = malloc(n + 1);
+        char *piece = tks_dup(p, n);          /* 127.170: sealed */
         if (!piece) break;
-        memcpy(piece, p, n);
-        piece[n] = '\0';
         result.data[i++] = piece;
         p = next + seplen;
     }
     /* last segment */
-    n = strlen(p);
-    char *tail = malloc(n + 1);
-    if (tail) { memcpy(tail, p, n); tail[n] = '\0'; result.data[i++] = tail; }
+    n = slen - (size_t)(p - s);
+    char *tail = tks_dup(p, n);
+    if (tail) result.data[i++] = tail;
     result.len = i;
     return result;
 }
@@ -358,24 +357,19 @@ int64_t str_index(const char *s, const char *sub)
 const char *str_replace(const char *s, const char *old, const char *new_val)
 {
     if (!s || !old || !new_val) return NULL;
-    size_t oldlen = strlen(old);
-    size_t newlen = strlen(new_val);
+    size_t oldlen = tk_strlen(old);
+    size_t newlen = tk_strlen(new_val);
+    size_t slen = tk_strlen(s);
     if (oldlen == 0) {
         /* nothing to replace — return copy */
-        size_t slen = strlen(s);
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
+        return tks_dup(s, slen);              /* 127.170: sealed */
     }
     /* count occurrences */
     size_t count = 0;
     const char *p = s;
     while ((p = strstr(p, old)) != NULL) { count++; p += oldlen; }
-    size_t slen = strlen(s);
-    size_t outsz = slen + count * (newlen - oldlen) + 1; /* may be smaller */
-    /* newlen >= oldlen path: outsz is fine; newlen < oldlen: shrinks, still fine */
-    char *out = malloc(outsz);
+    size_t outlen = slen - count * oldlen + count * newlen;
+    char *out = tks_alloc(outlen);            /* 127.170: sealed below */
     if (!out) return NULL;
     char *w = out;
     p = s;
@@ -388,64 +382,48 @@ const char *str_replace(const char *s, const char *old, const char *new_val)
         w += newlen;
         p = found + oldlen;
     }
-    size_t tail = strlen(p);
+    size_t tail = slen - (size_t)(p - s);
     memcpy(w, p, tail + 1); /* include NUL */
-    return out;
+    return tks_seal(out, outlen);
 }
 
 const char *str_replace_first(const char *s, const char *old, const char *new_val)
 {
     if (!s || !old || !new_val) return NULL;
-    size_t oldlen = strlen(old);
-    if (oldlen == 0) {
-        size_t slen = strlen(s);
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
+    size_t oldlen = tk_strlen(old);
+    size_t slen = tk_strlen(s);
+    if (oldlen == 0) return tks_dup(s, slen);            /* 127.170: sealed */
     const char *found = strstr(s, old);
-    if (!found) {
-        size_t slen = strlen(s);
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
-    size_t newlen  = strlen(new_val);
+    if (!found) return tks_dup(s, slen);
+    size_t newlen  = tk_strlen(new_val);
     size_t before  = (size_t)(found - s);
-    size_t after   = strlen(found + oldlen);
-    size_t outsz   = before + newlen + after + 1;
-    char *out = malloc(outsz);
+    size_t after   = slen - before - oldlen;
+    size_t outlen  = before + newlen + after;
+    char *out = tks_alloc(outlen);
     if (!out) return NULL;
     memcpy(out, s, before);
     memcpy(out + before, new_val, newlen);
     memcpy(out + before + newlen, found + oldlen, after + 1);
-    return out;
+    return tks_seal(out, outlen);
 }
 
 const char *str_join(const char *sep, StrArray parts)
 {
     if (!sep) sep = "";
-    if (parts.len == 0 || !parts.data) {
-        char *empty = malloc(1);
-        if (!empty) return NULL;
-        empty[0] = '\0';
-        return empty;
-    }
-    size_t seplen = strlen(sep);
+    if (parts.len == 0 || !parts.data) return tks_dup("", 0);   /* 127.170 */
+    size_t seplen = tk_strlen(sep);
     size_t total  = 0;
     uint64_t i;
     for (i = 0; i < parts.len; i++) {
-        if (parts.data[i]) total += strlen(parts.data[i]);
+        if (parts.data[i]) total += tk_strlen(parts.data[i]);
         if (i + 1 < parts.len) total += seplen;
     }
-    char *out = malloc(total + 1);
+    char *out = tks_alloc(total);             /* 127.170: sealed below */
     if (!out) return NULL;
     char *w = out;
     for (i = 0; i < parts.len; i++) {
         if (parts.data[i]) {
-            size_t plen = strlen(parts.data[i]);
+            size_t plen = tk_strlen(parts.data[i]);
             memcpy(w, parts.data[i], plen);
             w += plen;
         }
@@ -455,7 +433,7 @@ const char *str_join(const char *sep, StrArray parts)
         }
     }
     *w = '\0';
-    return out;
+    return tks_seal(out, total);
 }
 
 const char *str_repeat(const char *s, uint64_t n)
