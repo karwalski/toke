@@ -2075,7 +2075,8 @@ static int gzip_compress(const char *src, size_t srclen,
 
 /*
  * gzip_middleware — compress the response body when:
- *   - The client sends Accept-Encoding: gzip
+ *   - The client's Accept-Encoding admits gzip (q-values honoured, 121.94)
+ *   - The response carries no Content-Encoding already (121.94)
  *   - The response body is at least gzip_min_size bytes
  *   - The Content-Type is not an already-compressed type
  *
@@ -2092,9 +2093,20 @@ static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
     if (resp.status < 200 || resp.status >= 300) return resp;
     if (router_resp_body_len(resp) == 0)          return resp;
 
-    /* Check Accept-Encoding header for "gzip". */
+    /* 121.94: the client must admit gzip under RFC 9110 sec. 12.5.3 --
+     * q-values and "*" (tk_gzip_accepted).  strstr(ae, "gzip") took
+     * "gzip;q=0", the client's explicit refusal, as a yes. */
     const char *ae = ctx_req_header(ctx, "Accept-Encoding");
-    if (!ae || strstr(ae, "gzip") == NULL) return resp;
+    if (!tk_gzip_accepted(ae)) return resp;
+
+    /* 121.94: a body that already has a content coding (a handler's
+     * pre-compressed asset, Content-Encoding: br) is left alone: gzipping it
+     * again sent "Content-Encoding: br" AND "gzip" over a body the client
+     * could decode neither way. */
+    for (uint64_t i = 0; i < resp.nheaders; i++) {
+        const char *k = resp.header_names ? resp.header_names[i] : NULL;
+        if (k && strcasecmp(k, "Content-Encoding") == 0) return resp;
+    }
 
     /* Skip already-compressed MIME types. */
     if (gzip_skip_type(resp.content_type)) return resp;

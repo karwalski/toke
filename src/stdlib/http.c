@@ -636,15 +636,16 @@ static int http_gzip_compress(const char *src, size_t srclen,
     return 0;
 }
 
-/* req_accepts_gzip — return 1 if the parsed request has Accept-Encoding: gzip */
+/* req_accepts_gzip — 1 if the request's Accept-Encoding admits gzip.
+ * 121.94: under RFC 9110 sec. 12.5.3, q-values and "*" included
+ * (tk_gzip_accepted, shared with router.c); strstr(val, "gzip") took
+ * "gzip;q=0" -- the client refusing gzip -- as a yes. */
 static int req_accepts_gzip(Req req)
 {
     for (uint64_t i = 0; i < req.headers.len; i++) {
         if (req.headers.data[i].key &&
-            strcasecmp(req.headers.data[i].key, "Accept-Encoding") == 0) {
-            return req.headers.data[i].val &&
-                   strstr(req.headers.data[i].val, "gzip") != NULL;
-        }
+            strcasecmp(req.headers.data[i].key, "Accept-Encoding") == 0)
+            return tk_gzip_accepted(req.headers.data[i].val);
     }
     return 0;
 }

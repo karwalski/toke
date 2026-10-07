@@ -41,7 +41,11 @@
 #   the bytes; an unsatisfiable Range -> 416 with Content-Range: bytes */N;
 #   injection: CR/LF in a header value, a header name or content_type sends
 #   no forged line; a handler's Content-Length/Connection/Transfer-Encoding
-#   are not sent; the well-formed header next to them is.
+#   are not sent; the well-formed header next to them is;
+#   (121.94) Accept-Encoding with weights: gzip;q=0, gzip; q=0.000,
+#   deflate, *;q=0, gzip;q=0, *, identity and a malformed weight get the
+#   plain body; *, GZIP;Q=0.5, x-gzip and br;q=1, gzip;q=0.1 get gzip; a
+#   handler's Content-Encoding: br body is not encoded again.
 #
 # Negative control: C721_STDLIB=<dir> builds the harness against another
 # stdlib tree.  Against main's src/stdlib (e9ec45b5) it is 9 passed,
@@ -49,9 +53,12 @@
 # headers at all: the 200 status line, a plain body with no Accept-Encoding,
 # Content-Length equal to the (uncompressed) body, no CORS header for a
 # foreign Origin, one Content-Type, and the absence checks of the injection
-# and framing cases.
+# and framing cases.  The 121.94 cases against main (7ca0e318): 39 passed,
+# 7 failed -- gzip;q=0, gzip; q=0.000, gzip;q=0, *, gzip;q=x got gzip;
+# *, GZIP;Q=0.5 did not (no lower-case "gzip" in them); the br body
+# went out under two Content-Encodings.
 #
-# Story: 121.90
+# Story: 121.90, 121.94
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -181,6 +188,15 @@ static int hdr_count(const char *name)
 static char big[4097];
 static TkRouteResp h_big(TkRouteCtx c) { (void)c; return router_resp_ok(big, "text/plain; charset=utf-8"); }
 static TkRouteResp h_hi(TkRouteCtx c)  { (void)c; return router_resp_ok("hi", "text/plain"); }
+static const char *br_n[] = { "Content-Encoding" }, *br_v[] = { "br" };
+static TkRouteResp h_br(TkRouteCtx c)
+{
+    (void)c;
+    TkRouteResp r = router_resp_ok(big, "text/plain");
+    r.header_names = br_n; r.header_values = br_v; r.nheaders = 1;
+    return r;
+}
+
 static TkRouteResp h_201(TkRouteCtx c) { (void)c; return router_resp_status(201, "made"); }
 static TkRouteResp h_299(TkRouteCtx c) { (void)c; return router_resp_status(299, "odd"); }
 static TkRouteResp h_0(TkRouteCtx c)   { (void)c; return router_resp_status(0, "zero"); }
@@ -261,6 +277,34 @@ int main(int argc, char **argv)
     rt(g, "GET /t HTTP/1.1\r\nHost: t\r\n\r\n");
     report(!hdr("Content-Encoding") && ex.blen == 4096 && memcmp(ex.body, big, 4096) == 0,
            "gzip: no Accept-Encoding -> plain body (%zu bytes, Content-Encoding %s)", ex.blen, SHOW("Content-Encoding"));
+
+    /* ── 121.94: Accept-Encoding weights, and a body already encoded ── */
+    {
+        static const struct { const char *ae; int gz; } aes[] = {
+            { "gzip;q=0", 0 },             { "gzip; q=0.000", 0 },
+            { "deflate, *;q=0", 0 },       { "gzip;q=0, *", 0 },
+            { "identity", 0 },             { "gzip;q=x", 0 },
+            { "*", 1 },                    { "GZIP;Q=0.5", 1 },
+            { "x-gzip", 1 },               { "br;q=1, gzip;q=0.1", 1 },
+        };
+        for (size_t i = 0; i < sizeof aes / sizeof aes[0]; i++) {
+            char req[256];
+            snprintf(req, sizeof req, "GET /t HTTP/1.1\r\nHost: t\r\nAccept-Encoding: %s\r\n\r\n", aes[i].ae);
+            rt(g, req);
+            int gz = HAS("Content-Encoding", "gzip");
+            int plain = !hdr("Content-Encoding") && ex.blen == 4096 && memcmp(ex.body, big, 4096) == 0;
+            report(aes[i].gz ? gz : plain, "gzip: Accept-Encoding [%s] -> %s (want %s)", aes[i].ae,
+                   gz ? "gzip" : plain ? "plain" : "neither", aes[i].gz ? "gzip" : "plain");
+        }
+    }
+    TkRouter *gb = router_new();
+    router_get(gb, "/br", h_br);
+    router_use_gzip(gb, 256);
+    rt(gb, "GET /br HTTP/1.1\r\nHost: t\r\nAccept-Encoding: gzip, br\r\n\r\n");
+    report(hdr_count("Content-Encoding") == 1 && HAS("Content-Encoding", "br") &&
+           ex.blen == 4096 && memcmp(ex.body, big, 4096) == 0,
+           "gzip: a response with Content-Encoding: br is not encoded again (%d Content-Encoding, %s; %zu bytes)",
+           hdr_count("Content-Encoding"), SHOW("Content-Encoding"), ex.blen);
 
     /* ── CORS ── */
     static const char *origins[] = { "https://a.example", NULL };

@@ -388,6 +388,15 @@ JSON and SVG still compress. Until then a PNG, a font or a wasm module served
 to a gzip-accepting client was gzipped for no gain. std.router's gzip
 middleware uses the same list.
 
+**`Accept-Encoding` is read with its weights** (story 121.94). On all three
+transports a client is sent gzip only when its `Accept-Encoding` admits it
+under RFC 9110 §12.5.3: `gzip` (or `x-gzip`) listed with a weight above zero,
+or, when gzip is not listed, `*` with a weight above zero. So `gzip;q=0`,
+`*;q=0` and `gzip;q=0, *` get the body as it is, and a weight that is not a
+valid qvalue counts as zero. Until then the server looked for the letters
+`gzip` anywhere in the header, so a client that refused gzip with `gzip;q=0`
+was sent it. std.router's gzip middleware reads the header the same way.
+
 **The handler's security headers win** (story 121.50). Every response
 carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
 `Referrer-Policy: strict-origin-when-cross-origin`, and over TLS

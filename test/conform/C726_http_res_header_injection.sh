@@ -41,6 +41,8 @@
 #   4. HEAD /lit: the same (the HEAD writer);
 #   5. GET /big with Accept-Encoding: gzip: the gzip writer drops the
 #      CR LF header too, and the body inflates;
+#   6. (story 121.94) gzip;q=0, *;q=0 and gzip;q=0,* get the plain body;
+#      * and GZIP;Q=0.5 get gzip (the server read strstr(ae, "gzip"));
 #   all of it again over TLS (http.servetlson), whose writer had three copies
 #   of the old loop of its own.
 #
@@ -215,6 +217,15 @@ except Exception:
     ok = False
 report(ok, "gzip: the body inflates to what the handler sent")
 report(b"Set-Cookie" not in h and b"x-crlf" not in f and f.get(b"x-good") == [b"1"], "gzip: the CR LF header is dropped, the good one sent")
+# 6. (121.94) Accept-Encoding is read with its weights
+for ae, want in ((b"gzip;q=0", False), (b"deflate, *;q=0", False), (b"gzip;q=0, *", False),
+                 (b"*", True), (b"GZIP;Q=0.5", True)):
+    h, b = rt(b"GET /big HTTP/1.1\r\nHost: t\r\nConnection: close\r\nAccept-Encoding: " + ae + b"\r\n\r\n")
+    f = fields(h)
+    gz = f.get(b"content-encoding") == [b"gzip"]
+    plain = b"content-encoding" not in f and b == b"hello world " * 200
+    report(gz if want else plain, "gzip: Accept-Encoding [%s] -> %s (want %s) -- 121.94" %
+           (ae.decode(), "gzip" if gz else "plain" if plain else "neither", "gzip" if want else "plain"))
 PY
 if ! build srv 'http.serveon("127.0.0.1"; 0)'; then
     fail "the server does not build: $(grep -m1 '^error' srv.log)"

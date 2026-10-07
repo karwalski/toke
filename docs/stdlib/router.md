@@ -78,6 +78,12 @@ except `image/svg+xml`, `video/*`, `audio/*`, `font/*`,
 `application/gzip` -- the list `std.http`'s server uses (story 121.89). Before
 it, fonts, wasm and archives were recompressed and SVG was not compressed.
 
+It compresses only for a client whose `Accept-Encoding` admits gzip under
+RFC 9110 §12.5.3 -- `gzip` or `x-gzip` with a weight above zero, or, gzip
+unlisted, `*` with one -- and only a response with no `Content-Encoding` of
+its own (story 121.94). Before it, `gzip;q=0` was taken as a yes, and a
+handler's `Content-Encoding: br` body was gzipped again under two codings.
+
 ## Usage
 
 ```toke
