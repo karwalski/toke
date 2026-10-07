@@ -6349,19 +6349,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * outer immutable `x` assignable, and the store went to it),
              * and rejected an assignment to a module-level `mut` global
              * after a block that held an immutable `let` of that name.
-             * The function's own parameters are immutable; a closure
-             * parameter or an `mt` arm binding is not checked here (as
-             * before); no local binder means a module-level name. */
+             * No local binder means a module-level name.
+             *
+             * 127.281: a parameter is immutable whether it belongs to the
+             * function or to a closure inside it, and so is an `mt` arm
+             * binding -- semantics.md §2.9: an assignment's binding "must
+             * have been declared with `let x=mut.`"; §4.2: a parameter is
+             * not mutable.  Until 127.281 only the function's own
+             * parameters were checked, so `fn(a:i64):i64{a=a+1;<a}` and
+             * `mt r{$ok:v if(c){v=v+1;v}el{v};..}` compiled. */
             const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
-            if (lb&&lb->kind==NODE_BIND_STMT) immutable=1;
-            else if (lb&&lb->kind==NODE_PARAM) {
-                for (int pi=0;pi<cx->fn_node->child_count;pi++)
-                    if (cx->fn_node->children[pi]==lb) { immutable=1; break; }
-            }
+            if (lb&&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_PARAM
+                     ||lb->kind==NODE_MATCH_ARM)) immutable=1;
             if (immutable) {
                 if (tc_can_emit(cx)) {
-                    /* The `fix` rewrites a `let`; a parameter has no `let`
-                     * to rewrite and no `mut` form at all (AGENTS §6: a fix
+                    /* The `fix` rewrites a `let`; a parameter or an `mt`
+                     * arm binding has no `let` to rewrite and no `mut` form (AGENTS §6: a fix
                      * only where it is correct in every case), so only an
                      * immutable `let` carries one. */
                     int is_let=lb->kind==NODE_BIND_STMT;
@@ -6371,7 +6374,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                             "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
                     else
                         snprintf(msg,sizeof(msg),
-                            "cannot assign to immutable binding '%s'; a parameter cannot be assigned, copy it into a 'let %s=mut.' first",nb,nb);
+                            "cannot assign to immutable binding '%s'; a %s cannot be assigned, copy it into a 'let %s=mut.' first",
+                            nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
                     char fix[256];
                     snprintf(fix,sizeof(fix),
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
