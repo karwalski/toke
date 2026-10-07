@@ -44,7 +44,14 @@
 # tree.  A copy of src/stdlib/ with main's http.c/http2.c/http2.h fails every
 # case except control-get.
 #
-# Story: 121.46
+# 121.98 adds one case, response-header-control-bytes-dropped: a handler's
+# header whose value holds a control byte other than HTAB (0x01, 0x7f) is
+# dropped whole over HTTP/2, as HTTP/1.1 has done since 121.92
+# (tk_http_field_value_ok); h2_field_value_ok refused only CR and LF.  With
+# C500_STDLIB at a copy of main (837e5f81) that case alone fails (x-ctl and
+# x-del sent); every other case passes as before.
+#
+# Story: 121.46, 121.98
 
 set -uo pipefail
 
@@ -107,6 +114,19 @@ static Res custom(Req r) {
     g_hdrs[1].key = "Content-Type"; g_hdrs[1].val = "application/json";
     g_hdrs[2].key = "Connection";   g_hdrs[2].val = "close";
     res.headers.data = g_hdrs; res.headers.len = 3;
+    return res;
+}
+/* 121.98: control bytes other than HTAB in a value -- dropped whole, as on
+ * HTTP/1.1 (tk_http_field_value_ok); HTAB kept */
+static StrPair g_ctl[4];
+static Res ctl(Req r) {
+    (void)r;
+    Res res = make_res(200, "ctl-ok");
+    g_ctl[0].key = "X-Ctl"; g_ctl[0].val = "a\x01b";
+    g_ctl[1].key = "X-Del"; g_ctl[1].val = "a\x7f" "b";
+    g_ctl[2].key = "X-Tab"; g_ctl[2].val = "a\tb";
+    g_ctl[3].key = "X-Ok";  g_ctl[3].val = "fine";
+    res.headers.data = g_ctl; res.headers.len = 4;
     return res;
 }
 static char g_ck[512];
@@ -178,6 +198,7 @@ static const unsigned char POSTECHO[] = { 0x83, 0x87, 0x44, 5, '/','e','c','h','
 static const unsigned char POSTECHO_CL10[] = { 0x83, 0x87, 0x44, 5, '/','e','c','h','o', 0x41, 1, 't',
                                                0x5c, 2, '1', '0' };
 static const unsigned char GETCUSTOM[] = { 0x82, 0x87, 0x44, 7, '/','c','u','s','t','o','m', 0x41, 1, 't' };
+static const unsigned char GETCTL[] = { 0x82, 0x87, 0x44, 4, '/','c','t','l', 0x41, 1, 't' };
 static const unsigned char GETBIG[] = { 0x82, 0x87, 0x44, 4, '/','b','i','g', 0x41, 1, 't' };
 /* GET /ck with :authority t and two cookie fields (static name index 32) */
 static const unsigned char GETCK[] = { 0x82, 0x87, 0x44, 3, '/','c','k', 0x41, 1, 't',
@@ -319,6 +340,7 @@ int main(int argc, char **argv) {
     http_GET("/custom", custom);
     http_GET("/big", bighdr);
     http_GET("/ck", cookies);
+    http_GET("/ctl", ctl);
     g_lfd = socket(AF_INET, SOCK_STREAM, 0);
     int one = 1; setsockopt(g_lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     struct sockaddr_in a; memset(&a, 0, sizeof a);
@@ -417,6 +439,15 @@ int main(int argc, char **argv) {
     C[k].wantnot[0] = "X-Custom"; C[k].wantnot[1] = "connection";
     C[k].wantnot[2] = "text/html";
     n = hello(b); n += frame(b + n, 1, 0x5, 1, GETCUSTOM, sizeof GETCUSTOM); add(&C[k], b, n); k++;
+
+    /* 121.98: a value with a control byte but HTAB is dropped whole, as
+     *     over HTTP/1.1; HTAB is kept.  (It asked only for CR and LF.) */
+    C[k].name = "response-header-control-bytes-dropped"; C[k].max_ms = 3000;
+    C[k].want[0] = "ctl-ok"; C[k].want[1] = "x-tab"; C[k].want[2] = "a\tb";
+    C[k].want[3] = "x-ok"; C[k].want[4] = "fine";
+    C[k].wantnot[0] = "x-ctl"; C[k].wantnot[1] = "x-del";
+    C[k].wantnot[2] = "a\x01"; C[k].wantnot[3] = "a\x7f";
+    n = hello(b); n += frame(b + n, 1, 0x5, 1, GETCTL, sizeof GETCTL); add(&C[k], b, n); k++;
 
     /* (3) the other two security headers */
     C[k].name = "response-security-headers"; C[k].max_ms = 3000;
