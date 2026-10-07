@@ -1,0 +1,71 @@
+# 136.73 -- the tk_* symbols that no .tki export reaches, nothing in src/
+# calls and no toke spelling names, each decided.  Read by
+# scripts/check_tki_coverage.py (`make render-stdlib-internal`,
+# `make check-tki`), which classes them on docs/reference/stdlib-internal.md.
+#
+#   <tk_symbol> c-api <cite>[,<cite>...]   # reason
+#   <tk_symbol> dead  [<cite>...]          # reason
+#
+#   c-api  a documented C entry point, kept for C callers (an embedder, a C
+#          unit test under test/stdlib/, a conformance harness).  At least one
+#          cite is required; every cite is a repo file that names the symbol
+#          -- the header that declares and documents it, a doc page, a test.
+#   dead   nothing reaches it and nothing documents it as API.  The reason
+#          names what decides it (a story, a defect); deleting it is a glue
+#          decision this file does not make.
+#
+# `make check-tki` FAILS on: a `dead` symbol with no line here (UNTRIAGED);
+# a line whose symbol is gone or is now reached some other way (STALE --
+# delete the line); a cite that does not exist or does not name the symbol
+# (BADCITE).  Same shape as scripts/core_reach_triage.txt (136.50a).
+#
+# Not here: tk_cap_check and tk_cap_deny.  The TK_REQUIRE macro in
+# capabilities.h calls both in every fs/net/env/process sink; 136.73 taught
+# the classifier to follow a header macro into the .c files that expand it,
+# so they are `c-internal`, not `dead`.
+
+# ── std capabilities broker (ADR-0010) ──────────────────────────────────────
+tk_cap_grants c-api src/stdlib/capabilities.h,test/stdlib/test_capabilities.c   # "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c
+
+# ── std.log C runtime ───────────────────────────────────────────────────────
+tk_error_log_close c-api src/stdlib/log.h   # documented in log.h's error-log block as the pair of tk_error_log_open (which log_glue.c calls)
+tk_log_security c-api src/stdlib/log.h,docs/stdlib/log.md,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh   # the C runtime's security-event stream; log.md: "not yet part of the std.log interface"
+tk_log_security_set_output c-api src/stdlib/log.h,docs/stdlib/log.md,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh   # routes that stream to its own file; same log.md paragraph
+tk_log_set_output c-api src/stdlib/log.h,test/stdlib/test_log.c,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh,test/conform/C709_log_text_logfmt_quoting.sh   # C-side log destination; the conform harnesses drive the logger through it
+tk_log_with_context c-api src/stdlib/log.h,test/stdlib/test_log.c,test/conform/C137_log_injection_redaction.sh   # structured-context log call, tested from C
+
+# ── std.infer C core (docs/stdlib/infer.md: the toke surface is a facade) ────
+tk_infer_is_loaded c-api src/stdlib/infer.h,test/stdlib/test_infer.c   # handle query of the finished C core; tested from C
+tk_infer_unload c-api src/stdlib/infer.h,docs/stdlib/infer.md,test/stdlib/test_infer.c,test/stdlib/test_infer_stream.c   # infer.md: "`tk_infer_unload` exists; the wrapper returns 0"
+tk_infer_stream_cleanup dead src/stdlib/infer_stream.h   # infer_stream.h/.c say it is "called from tk_infer_unload"; tk_infer_unload does not call it and no test does -- a missing caller (defect reported by Batch Z59), not an API
+
+# ── runtime ABI JSON printers (docs/runtime-abi.md) ─────────────────────────
+tk_json_print_arr_bool c-api src/stdlib/tk_runtime.h,docs/runtime-abi.md,docs/compiler/runtime-abi.md,test/stdlib/test_tk_runtime.c   # listed in the runtime ABI table; the compiler does not currently emit it
+tk_json_print_arr_str c-api src/stdlib/tk_runtime.h,docs/runtime-abi.md,docs/compiler/runtime-abi.md   # listed in the runtime ABI table; the compiler does not currently emit it
+
+# ── std.test C runtime (core_reach_triage.txt holds the toke side as `gap`) ──
+tk_test_assert_contains c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # "C interface for the std.test standard library module" (tk_test.h)
+tk_test_assert_false c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_gt c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_gte c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_lt c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_lte c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_nil c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_not_contains c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_assert_not_nil c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_setup c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+tk_test_teardown c-api src/stdlib/tk_test.h,test/stdlib/test_tktest.c   # as above
+
+# ── std.webview C API ───────────────────────────────────────────────────────
+tk_webview_allow_origin c-api src/stdlib/webview.h,docs/stdlib/webview.md,test/conform/C139_webview_bridge_policy.sh   # bridge origin policy; C139 drives it from C
+tk_webview_close c-api src/stdlib/webview.h,docs/stdlib/webview.md,test/stdlib/test_webview.c   # documented and tested from C
+tk_webview_eval_js c-api src/stdlib/webview.h,docs/stdlib/webview.md,test/conform/C139_webview_bridge_policy.sh,test/stdlib/test_webview.c   # documented and tested from C
+tk_webview_is_available c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # platform probe; tested from C
+tk_webview_on_close c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # close callback; tested from C
+tk_webview_register_handler c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # JS->C bridge handler; tested from C
+tk_webview_run_event_loop c-api src/stdlib/webview.h   # webview.h documents it as the main-thread platform run loop an embedder calls; a blocking GUI loop, so no headless test calls it
+tk_webview_set_title c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # tested from C
+
+# ── genuinely dead ──────────────────────────────────────────────────────────
+tk_array_retain dead docs/decisions/ADR-0006.md   # ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c still says codegen emits it (stale)
+tk_os_o_nofollow dead   # no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story)
