@@ -194,7 +194,12 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
 
 /* router_use_etag — middleware that auto-generates ETags for all responses.
  * Computes FNV-1a of response body, sets ETag header.
- * If request has If-None-Match matching the ETag, returns 304. */
+ * If request has If-None-Match matching the ETag, returns 304 carrying
+ * the ETag and the Cache-Control, Expires, Content-Location, Date and Vary
+ * fields of the 2xx it replaces (RFC 9110 sec. 15.4.5, 121.95) -- and only
+ * those.  Middleware registered BEFORE it runs outside it (index 0 is the
+ * outermost), so register router_use_etag first for the 304 to repeat the
+ * gzip middleware's Vary: Accept-Encoding. */
 void router_use_etag(TkRouter *r);
 
 /* Convenience response constructors */
@@ -218,8 +223,10 @@ void router_ws(TkRouter *r, const char *pattern,
 /* ── Gzip response compression middleware (Story 27.1.6) ───────────── */
 
 /* router_use_gzip — add gzip compression middleware.
- * Compresses responses >= min_size bytes when client sends
- * Accept-Encoding: gzip.  Skips already-compressed MIME types: the
+ * Compresses responses >= min_size bytes when the client's
+ * Accept-Encoding admits gzip (RFC 9110 sec. 12.5.3: q-values, "*",
+ * x-gzip; gzip;q=0 refuses it -- 121.94) and the response has no
+ * Content-Encoding of its own.  Skips already-compressed MIME types: the
  * tk_gzip_type.h list http.c also uses (121.89) -- image/ but not
  * image/svg+xml, video/, audio/, font/, octet-stream, wasm, zip, gzip.
  * Sets Content-Encoding: gzip and Vary: Accept-Encoding on

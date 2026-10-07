@@ -14,6 +14,7 @@
 #include "capabilities.h"   /* 124.4c2: net capability gate (server + client) */
 #include "tk_bind.h"       /* 135.32/135.33: tk_bind_exclusive() */
 #include "tk_gzip_type.h"  /* 121.89: tk_gzip_skip_type() */
+#include "tk_http_field.h" /* 121.92: tk_http_field_name_ok/_value_ok */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -635,15 +636,16 @@ static int http_gzip_compress(const char *src, size_t srclen,
     return 0;
 }
 
-/* req_accepts_gzip — return 1 if the parsed request has Accept-Encoding: gzip */
+/* req_accepts_gzip — 1 if the request's Accept-Encoding admits gzip.
+ * 121.94: under RFC 9110 sec. 12.5.3, q-values and "*" included
+ * (tk_gzip_accepted, shared with router.c); strstr(val, "gzip") took
+ * "gzip;q=0" -- the client refusing gzip -- as a yes. */
 static int req_accepts_gzip(Req req)
 {
     for (uint64_t i = 0; i < req.headers.len; i++) {
         if (req.headers.data[i].key &&
-            strcasecmp(req.headers.data[i].key, "Accept-Encoding") == 0) {
-            return req.headers.data[i].val &&
-                   strstr(req.headers.data[i].val, "gzip") != NULL;
-        }
+            strcasecmp(req.headers.data[i].key, "Accept-Encoding") == 0)
+            return tk_gzip_accepted(req.headers.data[i].val);
     }
     return 0;
 }
@@ -778,17 +780,49 @@ static int res_has_content_length(Res res)
  * If Res.headers already carries Content-Length (set by the handler), the
  * body is sent with that fixed length instead.
  */
-/* write_res_headers — emit all custom headers from res.headers to fd. */
+/* res_headers_emit — hand each of a handler's header fields to sink as one
+ * "name: value\r\n" line.  121.92: tk_http_field.h's rule, router.c's since
+ * 121.90 -- a field whose name is not an RFC 9110 token or whose value holds
+ * CR, LF or another control byte but HTAB is DROPPED whole (it used to be
+ * written as given, so a handler that put request data in a header -- a
+ * redirect's Location -- let the client forge header lines).  Every line is
+ * written at its own length: it was formatted into a 512-byte buffer and a
+ * longer one was cut, CR LF and all, gluing the next header onto it.  The
+ * plain (write_res_headers) and TLS (write_res_headers_ssl) writers share
+ * this; HTTP/2 applies the same drop in h2_send_response. */
+typedef void (*ResHdrSink)(void *ctx, const char *s, size_t n);
+static void res_headers_emit(const Res *res, ResHdrSink sink, void *ctx)
+{
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        const char *v = res->headers.data[i].val;
+        if (!tk_http_field_name_ok(k) || !tk_http_field_value_ok(v)) continue;
+        size_t kl = strlen(k), vl = strlen(v), n = kl + vl + 4;
+        char sbuf[512];
+        char *line = n <= sizeof sbuf ? sbuf : malloc(n);
+        if (!line) {   /* OOM: the same bytes, in pieces */
+            sink(ctx, k, kl); sink(ctx, ": ", 2);
+            sink(ctx, v, vl); sink(ctx, "\r\n", 2);
+            continue;
+        }
+        memcpy(line, k, kl);
+        memcpy(line + kl, ": ", 2);
+        memcpy(line + kl + 2, v, vl);
+        memcpy(line + kl + 2 + vl, "\r\n", 2);
+        sink(ctx, line, n);
+        if (line != sbuf) free(line);
+    }
+}
+
+static void res_hdr_fd_sink(void *ctx, const char *s, size_t n)
+{
+    http_write_all(*(const int *)ctx, s, n);
+}
+
+/* write_res_headers — emit a handler's header fields to fd (121.92). */
 static void write_res_headers(int fd, Res res)
 {
-    for (uint64_t i = 0; i < res.headers.len; i++) {
-        const char *k = res.headers.data[i].key;
-        const char *v = res.headers.data[i].val;
-        if (!k || !v) continue;
-        char line[512];
-        int ln = snprintf(line, sizeof(line), "%s: %s\r\n", k, v);
-        if (ln > 0) http_write_all(fd, line, (size_t)ln);
-    }
+    res_headers_emit(&res, res_hdr_fd_sink, &fd);
 }
 
 /* The hardened headers every response carries, as "Name: value\r\n" lines;
@@ -809,7 +843,11 @@ static int res_sets_header(const Res *res, const char *line)
     size_t n = (size_t)(strchr(line, ':') - line);
     for (uint64_t i = 0; i < res->headers.len; i++) {
         const char *k = res->headers.data[i].key;
-        if (k && strlen(k) == n && strncasecmp(k, line, n) == 0) return 1;
+        /* 121.92: a field the writer drops does not displace the default */
+        if (k && strlen(k) == n && strncasecmp(k, line, n) == 0 &&
+            tk_http_field_name_ok(k) &&
+            tk_http_field_value_ok(res->headers.data[i].val))
+            return 1;
     }
     return 0;
 }
@@ -4400,6 +4438,18 @@ static void write_security_headers_ssl(SSL *ssl, const Res *res)
             SSL_write(ssl, sec_hdr_lines[i], (int)strlen(sec_hdr_lines[i]));
 }
 
+static void res_hdr_ssl_sink(void *ctx, const char *s, size_t n)
+{
+    SSL_write((SSL *)ctx, s, (int)n);
+}
+
+/* write_res_headers_ssl — a handler's header fields over TLS, under the
+ * plain writer's rule (res_headers_emit, 121.92). */
+static void write_res_headers_ssl(SSL *ssl, const Res *res)
+{
+    res_headers_emit(res, res_hdr_ssl_sink, ssl);
+}
+
 /* write_cors_headers_ssl — emit CORS headers over TLS when configured (Story 7.7.4).
  * Uses g_cors_matched (the single matching origin), not the full allowed list. */
 static void write_cors_headers_ssl(SSL *ssl)
@@ -5591,14 +5641,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 "Connection: %s\r\n",
                 res.status, reason(res.status), head_body_len, conn_hdr);
             if (hl > 0) SSL_write(ssl, hdr_buf, hl);
-            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
-                const char *hk = res.headers.data[hi].key;
-                const char *hv = res.headers.data[hi].val;
-                if (!hk || !hv) continue;
-                char hline[512];
-                int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
-                if (ln > 0) SSL_write(ssl, hline, ln);
-            }
+            write_res_headers_ssl(ssl, &res);   /* 121.92 */
             write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
@@ -5622,14 +5665,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 "Connection: %s\r\n",
                 res.status, reason(res.status), tls_gz_len, conn_hdr);
             if (hl > 0) SSL_write(ssl, hdr_buf, hl);
-            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
-                const char *hk = res.headers.data[hi].key;
-                const char *hv = res.headers.data[hi].val;
-                if (!hk || !hv) continue;
-                char hline[512];
-                int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
-                if (ln > 0) SSL_write(ssl, hline, ln);
-            }
+            write_res_headers_ssl(ssl, &res);   /* 121.92 */
             write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
@@ -5647,14 +5683,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 "Connection: %s\r\n",
                 res.status, reason(res.status), body_len, conn_hdr);
             if (hl > 0) SSL_write(ssl, hdr_buf, hl);
-            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
-                const char *hk = res.headers.data[hi].key;
-                const char *hv = res.headers.data[hi].val;
-                if (!hk || !hv) continue;
-                char hline[512];
-                int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
-                if (ln > 0) SSL_write(ssl, hline, ln);
-            }
+            write_res_headers_ssl(ssl, &res);   /* 121.92 */
             write_security_headers_ssl(ssl, &res);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);

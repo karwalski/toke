@@ -39,6 +39,8 @@ Represents an outgoing HTTP response returned by a server route handler.
 
 A handler may build its response as a literal, `$res{status:201;headers:@(@("Location";"/items/7"));body:""}`, and the server sends exactly that status, those headers and that body. The fields of a `$res` from a constructor (`http.res.ok`, `http.resnew`, ...) read back what was passed, `r.status` and `r.body`, with the constructor's `Content-Type` in `r.headers` (story 138.18).
 
+**A header that could split the response is not sent** (story 121.92). A header whose name is not an HTTP token (letters, digits and ``!#$%&'*+-.^_`|~``; no space, colon, carriage return or line feed) or whose value holds a carriage return, a line feed or another control character other than tab is dropped whole over HTTP/1.1 and TLS (HTTP/2 drops a name that is not a token and a value holding a carriage return or line feed), and the rest of the response is sent; the server does not repair it, since stripping bytes would still send a value nobody wrote. A handler that copies request data into a header, such as `@("Location"; req.body)`, therefore cannot be made to write a header line of the client's choosing. A dropped `X-Frame-Options`, `X-Content-Type-Options` or `Referrer-Policy` does not displace the server's default for it. A header is sent at its full length; until 121.92 a header line longer than 511 bytes was cut, and the header after it was joined onto it.
+
 ### $httpclient
 
 An opaque client handle created by `http.client`. Holds connection pool state and applies a shared timeout to all requests issued through it.
@@ -385,6 +387,15 @@ three transports gzip skips a body whose `Content-Type` is `image/*` (except
 JSON and SVG still compress. Until then a PNG, a font or a wasm module served
 to a gzip-accepting client was gzipped for no gain. std.router's gzip
 middleware uses the same list.
+
+**`Accept-Encoding` is read with its weights** (story 121.94). On all three
+transports a client is sent gzip only when its `Accept-Encoding` admits it
+under RFC 9110 §12.5.3: `gzip` (or `x-gzip`) listed with a weight above zero,
+or, when gzip is not listed, `*` with a weight above zero. So `gzip;q=0`,
+`*;q=0` and `gzip;q=0, *` get the body as it is, and a weight that is not a
+valid qvalue counts as zero. Until then the server looked for the letters
+`gzip` anywhere in the header, so a client that refused gzip with `gzip;q=0`
+was sent it. std.router's gzip middleware reads the header the same way.
 
 **The handler's security headers win** (story 121.50). Every response
 carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and

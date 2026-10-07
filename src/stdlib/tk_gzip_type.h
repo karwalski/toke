@@ -67,4 +67,85 @@ static TK_GZIP_TYPE_UNUSED int tk_gzip_skip_type(const char *ct)
     return 0;
 }
 
+/* ── Accept-Encoding (story 121.94) ─────────────────────────────────── */
+
+/* 1 when the n bytes at v are an RFC 9110 qvalue (sec. 12.4.2) above zero:
+ * "0" [ "." 0*3DIGIT ] / "1" [ "." 0*3("0") ].  A malformed weight is
+ * treated as zero -- not acceptable -- so a header the server cannot read
+ * never gets a coding the client may not handle. */
+static TK_GZIP_TYPE_UNUSED int tk_gzip_qvalue_positive(const char *v, size_t n)
+{
+    if (n == 0 || (v[0] != '0' && v[0] != '1')) return 0;
+    int pos = v[0] == '1';
+    if (n == 1) return pos;
+    if (v[1] != '.' || n > 5) return 0;
+    for (size_t i = 2; i < n; i++) {
+        if (v[i] < '0' || v[i] > '9') return 0;
+        if (v[i] != '0') { if (v[0] == '1') return 0; pos = 1; }
+    }
+    return pos;
+}
+
+static TK_GZIP_TYPE_UNUSED int tk_gzip_ows(char c) { return c == ' ' || c == '\t'; }
+
+/* 1 when an Accept-Encoding field value admits a gzip response (RFC 9110
+ * sec. 12.5.3).  Each element is a coding with an optional ";q=" weight,
+ * names compared without case; "x-gzip" is gzip (sec. 8.4.1.3).  gzip is
+ * acceptable when it is listed with a weight above zero; when it is not
+ * listed, when "*" is, with a weight above zero; otherwise not.  So
+ * "gzip;q=0" and "*;q=0" refuse it, and "gzip;q=0, *" too -- the coding
+ * named outright wins over the wildcard.  A coding listed twice counts
+ * once, at its first weight.  No header (ae NULL) or an empty one admits
+ * nothing: the server sends identity, as before 121.94.  (Until then both
+ * gzip writers asked strstr(ae, "gzip"), so "gzip;q=0" -- the client's
+ * explicit refusal -- got gzip.) */
+static TK_GZIP_TYPE_UNUSED int tk_gzip_accepted(const char *ae)
+{
+    if (!ae) return 0;
+    int gz = -1, star = -1;   /* -1 unlisted, else 1 / 0 */
+    const char *p = ae;
+    while (*p) {
+        while (*p == ',' || tk_gzip_ows(*p)) p++;
+        if (!*p) break;
+        const char *name = p;
+        while (*p && *p != ',' && *p != ';' && !tk_gzip_ows(*p)) p++;
+        size_t nl = (size_t)(p - name);
+        int ok = 1;            /* no weight: q=1 */
+        while (*p && *p != ',') {
+            while (tk_gzip_ows(*p)) p++;
+            if (!*p || *p == ',') break;
+            if (*p != ';') {   /* junk after the coding: the element is unreadable */
+                ok = 0;
+                while (*p && *p != ',') p++;
+                break;
+            }
+            p++;
+            while (tk_gzip_ows(*p)) p++;
+            const char *pn = p;
+            while (*p && *p != '=' && *p != ',' && *p != ';' && !tk_gzip_ows(*p)) p++;
+            size_t pnl = (size_t)(p - pn);
+            while (tk_gzip_ows(*p)) p++;
+            const char *pv = p;
+            size_t pvl = 0;
+            if (*p == '=') {
+                p++;
+                while (tk_gzip_ows(*p)) p++;
+                pv = p;
+                while (*p && *p != ',' && *p != ';' && !tk_gzip_ows(*p)) p++;
+                pvl = (size_t)(p - pv);
+            }
+            if (pnl == 1 && (pn[0] == 'q' || pn[0] == 'Q'))
+                ok = tk_gzip_qvalue_positive(pv, pvl);
+        }
+        if ((nl == 4 && strncasecmp(name, "gzip", 4) == 0) ||
+            (nl == 6 && strncasecmp(name, "x-gzip", 6) == 0)) {
+            if (gz < 0) gz = ok;
+        } else if (nl == 1 && name[0] == '*') {
+            if (star < 0) star = ok;
+        }
+    }
+    if (gz >= 0) return gz;
+    return star > 0;
+}
+
 #endif /* TK_GZIP_TYPE_H */
