@@ -1526,7 +1526,7 @@ test-stdlib-file:
 test-stdlib-runtime:
 	$(CC) $(CFLAGS) -o test/stdlib/test_tk_runtime \
 	    test/stdlib/test_tk_runtime.c src/stdlib/tk_runtime.c \
-	    src/stdlib/capabilities.c src/stdlib/args.c
+	    src/stdlib/capabilities.c src/stdlib/args.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_tk_runtime
 
 # ── 123.8: these four could not LINK at all ─────────────────────────────────
@@ -1645,7 +1645,7 @@ test-stdlib-tls:
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \
 	    test/stdlib/test_process.c src/stdlib/process.c \
-	    src/stdlib/tk_runtime.c src/stdlib/capabilities.c src/stdlib/args.c
+	    src/stdlib/tk_runtime.c src/stdlib/capabilities.c src/stdlib/args.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_process
 
 # 124.4h — ambient defect hardening (AMB-04/05/06/07/08 at the C level).

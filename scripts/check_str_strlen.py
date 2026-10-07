@@ -54,15 +54,7 @@ CORE = {
 }
 # Core readers not yet converted.  Landing step 2 empties this; an entry that
 # no longer calls strlen is STALE.
-PENDING_CORE: set[tuple[str, str]] = {
-    ('src/stdlib/str.c', 'str_len'), ('src/stdlib/str.c', 'str_concat'),
-    ('src/stdlib/str.c', 'str_slice'), ('src/stdlib/str.c', 'str_ends_with'),
-    ('src/stdlib/str.c', 'str_trimsuffix'),
-    ('src/stdlib/str_glue.c', 'tk_str_charat_w'), ('src/stdlib/str_glue.c', 'tk_str_indexfrom_w'),
-    ('src/stdlib/str_glue.c', 'tk_str_setat_w'), ('src/stdlib/str_glue.c', 'tk_str_add_w'),
-    ('src/stdlib/tk_runtime.c', 'tk_str_concat'), ('src/stdlib/tk_runtime.c', 'tk_str_join_n'),
-    ('src/stdlib/tk_runtime.c', 'tk_str_len'), ('src/stdlib/tk_runtime.c', 'tk_str_char_at'),
-}
+PENDING_CORE: set[tuple[str, str]] = set()
 
 MUST_CALL = {('src/stdlib/str_glue.c', 'tk_str_indexfrom_w'): 'tks_hdrlen('}
 

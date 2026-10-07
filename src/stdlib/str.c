@@ -20,14 +20,14 @@
 uint64_t str_len(const char *s)
 {
     if (!s) return 0;
-    return (uint64_t)strlen(s);
+    return (uint64_t)tk_strlen(s);
 }
 
 const char *str_concat(const char *a, const char *b)
 {
     if (!a) a = "";
     if (!b) b = "";
-    size_t la = strlen(a), lb = strlen(b);
+    size_t la = tk_strlen(a), lb = tk_strlen(b);
     char *out = malloc(la + lb + 1);
     if (!out) return NULL;
     memcpy(out, a, la);
@@ -40,7 +40,7 @@ StrSliceResult str_slice(const char *s, uint64_t start, uint64_t end)
 {
     StrSliceResult r = {NULL, 0, NULL};
     if (!s) { r.is_err = 1; r.err_msg = "null string"; return r; }
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
     if (start > slen || end > slen || start > end) {
         r.is_err = 1;
         r.err_msg = "slice index out of range";
@@ -491,8 +491,8 @@ int str_starts_with(const char *s, const char *prefix)
 int str_ends_with(const char *s, const char *suffix)
 {
     if (!s || !suffix) return 0;
-    size_t slen    = strlen(s);
-    size_t suflen  = strlen(suffix);
+    size_t slen    = tk_strlen(s);
+    size_t suflen  = tk_strlen(suffix);
     if (suflen > slen) return 0;
     return strcmp(s + slen - suflen, suffix) == 0 ? 1 : 0;
 }
@@ -666,8 +666,8 @@ const char *str_trimsuffix(const char *s, const char *suffix)
 {
     if (!s) return strdup("");
     if (!suffix || suffix[0] == '\0') return strdup(s);
-    size_t slen   = strlen(s);
-    size_t suflen = strlen(suffix);
+    size_t slen   = tk_strlen(s);
+    size_t suflen = tk_strlen(suffix);
     if (slen >= suflen && memcmp(s + slen - suflen, suffix, suflen) == 0) {
         char *r = malloc(slen - suflen + 1);
         if (!r) return strdup(s);

@@ -9,6 +9,7 @@
 #include "str.h"
 #include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "tk_strhdr.h"  /* 127.170: length-carrying strings (tk_strlen) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,16 +163,20 @@ int64_t tk_str_indexof_w(int64_t s, int64_t sub) {
  * Without it a scanner must re-slice the tail before every search, which
  * allocates and copies O(remaining) bytes per token and never frees them.
  *
- * The bounds check is O(start): a toke string is a bare NUL-terminated
- * buffer with no length header, so the only way to know `start` lies inside
- * `s` is to confirm no NUL precedes it.  memchr does that at memory
- * bandwidth and allocates nothing; C11 7.24.5.1 requires it to stop at the
- * first match, so it never reads past the terminator. */
+ * The bounds check: a sealed string (127.170, tk_strhdr.h) carries its
+ * length, so `start` is checked in O(1).  Any other string is a bare
+ * NUL-terminated buffer, and the only way to know `start` lies inside it is
+ * to confirm no NUL precedes it: memchr does that at memory bandwidth and
+ * allocates nothing; C11 7.24.5.1 requires it to stop at the first match, so
+ * it never reads past the terminator. */
 int64_t tk_str_indexfrom_w(int64_t s, int64_t sub, int64_t start) {
     if (!s || !sub) return -1;
     const char *cs = (const char *)(intptr_t)s;
     if (start < 0) start = 0;
-    if (start > 0 && memchr(cs, '\0', (size_t)start)) return -1;
+    if (start > 0) {
+        int64_t hl = tks_hdrlen(cs);
+        if (hl >= 0 ? start > hl : memchr(cs, '\0', (size_t)start) != NULL) return -1;
+    }
     const char *p = strstr(cs + start, (const char *)(intptr_t)sub);
     return p ? (int64_t)(p - cs) : -1;
 }
@@ -234,7 +239,7 @@ int64_t tk_str_contains_w(int64_t s, int64_t sub) {
 
 int64_t tk_str_charat_w(int64_t s, int64_t i) {
     const char *p = s ? (const char *)(intptr_t)s : "";
-    int64_t len = (int64_t)strlen(p);
+    int64_t len = (int64_t)tk_strlen(p);
     if (i < 0 || i >= len) return 0;
     return (int64_t)(unsigned char)p[i];
 }
@@ -496,7 +501,7 @@ int64_t tk_str_emptyof_w(int64_t type) {
 int64_t tk_str_setat_w(int64_t s, int64_t idx, int64_t ch) {
     const char *p = (const char *)(intptr_t)s;
     if (!p) return s;
-    size_t len = strlen(p);
+    size_t len = tk_strlen(p);
     if (idx < 0 || (size_t)idx >= len) return s;
     char *out = malloc(len + 1);
     if (!out) return s;
@@ -913,7 +918,7 @@ int64_t tk_str_add_w(int64_t b, int64_t s) {
     TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
     if (!buf) return 0;
     const char *str = s ? (const char *)(intptr_t)s : "";
-    size_t slen = strlen(str);
+    size_t slen = tk_strlen(str);
     if (buf->len + slen + 1 > buf->cap) {
         size_t newcap = (buf->len + slen + 1) * 2;
         char *tmp = (char *)realloc(buf->data, newcap);

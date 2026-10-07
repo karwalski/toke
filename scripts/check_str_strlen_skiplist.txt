@@ -68,14 +68,13 @@ src/stdlib/server_ops.c 2
 src/stdlib/soap.c 9
 src/stdlib/sse.c 7
 src/stdlib/sse_glue.c 1
-src/stdlib/str.c 39
-src/stdlib/str_glue.c 15
+src/stdlib/str.c 32
+src/stdlib/str_glue.c 12
 src/stdlib/strbuf.h 1
 src/stdlib/svg.c 4
 src/stdlib/sys.c 1
 src/stdlib/template.c 11
 src/stdlib/tk_regex.h 1
-src/stdlib/tk_runtime.c 5
 src/stdlib/tk_time.c 1
 src/stdlib/tk_web_glue.c 11
 src/stdlib/tls.c 1

@@ -10,6 +10,7 @@
 
 #include "tk_runtime.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "tk_strhdr.h"  /* 127.170: length-carrying strings (tk_strlen) */
 #include "args.h"
 #include "capabilities.h"  /* 124.4a: capability broker init */
 #include "strbuf.h"        /* 127.229: JSON string escape/unescape */
@@ -416,7 +417,7 @@ int64_t *tk_array_concat(int64_t *a, int64_t *b) {
 char *tk_str_concat(const char *a, const char *b) {
     if (!a) a = "";
     if (!b) b = "";
-    size_t la = strlen(a), lb = strlen(b);
+    size_t la = tk_strlen(a), lb = tk_strlen(b);
     char *r = (char *)malloc(la + lb + 1);
     memcpy(r, a, la);
     memcpy(r + la, b, lb);
@@ -432,9 +433,15 @@ char *tk_str_concat(const char *a, const char *b) {
 char *tk_str_join_n(int64_t n, ...) {
     enum { STACK_PARTS = 32 };
     const char *stack_parts[STACK_PARTS];
+    size_t stack_lens[STACK_PARTS];
     const char **parts = stack_parts;
+    size_t *lens = stack_lens;
     if (n < 0) n = 0;
-    if (n > STACK_PARTS) parts = (const char **)malloc((size_t)n * sizeof *parts);
+    if (n > STACK_PARTS) {
+        parts = (const char **)malloc((size_t)n * sizeof *parts);
+        lens = (size_t *)malloc((size_t)n * sizeof *lens);
+        if (!parts || !lens) abort();
+    }
     size_t total = 0;
     va_list ap;
     va_start(ap, n);
@@ -442,24 +449,24 @@ char *tk_str_join_n(int64_t n, ...) {
         const char *p = va_arg(ap, const char *);
         if (!p) p = "";
         parts[i] = p;
-        total += strlen(p);
+        lens[i] = tk_strlen(p);      /* 127.170: O(1) for a sealed part */
+        total += lens[i];
     }
     va_end(ap);
     char *r = (char *)malloc(total + 1);
     size_t off = 0;
     for (int64_t i = 0; i < n; i++) {
-        size_t l = strlen(parts[i]);
-        memcpy(r + off, parts[i], l);
-        off += l;
+        memcpy(r + off, parts[i], lens[i]);
+        off += lens[i];
     }
     r[off] = '\0';
-    if (parts != stack_parts) free(parts);
+    if (parts != stack_parts) { free(parts); free(lens); }
     return r;
 }
 
 /* String length for C strings. */
 int64_t tk_str_len(const char *s) {
-    return s ? (int64_t)strlen(s) : 0;
+    return s ? (int64_t)tk_strlen(s) : 0;
 }
 
 /*
@@ -476,7 +483,7 @@ int64_t tk_str_cmp(const char *a, const char *b) {
 
 /* Character at index for C strings (returns the char code as i64). */
 int64_t tk_str_char_at(const char *s, int64_t idx) {
-    if (!s || idx < 0 || idx >= (int64_t)strlen(s)) return 0;
+    if (!s || idx < 0 || idx >= (int64_t)tk_strlen(s)) return 0;
     return (int64_t)(unsigned char)s[idx];
 }
 
