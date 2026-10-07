@@ -494,8 +494,10 @@ The request path is appended to `dir` **whole, including the prefix** — so
 out to match.
 
 **Files are served as bytes.** A file holding `0x00` bytes — an image, a
-font, a `.wasm` module — is served whole, with a `Content-Length` (or chunk
-sizes) counting every byte, over HTTP/1.1, TLS and HTTP/2, and gzip-encoded
+font, a `.wasm` module — is served whole, with a `Content-Length` counting
+every byte, over HTTP/1.1, TLS and HTTP/2 (since story 121.100 cleartext
+HTTP/1.1 too, where it was sent in chunks, so a `HEAD` gives the file's
+size), and gzip-encoded
 whole when the client accepts it (story 121.86). Until then every response
 writer sized the body as a C string, so a binary file was cut at its first
 `0x00`: a PNG arrived as its 8-byte signature and nothing else. A handler's

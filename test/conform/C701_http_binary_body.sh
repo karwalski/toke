@@ -25,8 +25,8 @@
 # WHAT IS ASSERTED, against a real tkc-built server with one worker, for each
 # of HTTP/1.1, HTTP/1.1 over TLS and HTTP/2 over TLS:
 #   - /s/bytes.bin (0x00..0xFF x 64, 16384 B) -> 200, size_download 16384,
-#     byte-identical, Content-Length 16384 (cleartext HTTP/1.1 is chunked,
-#     so there the length is checked by HEAD only);
+#     byte-identical, Content-Length 16384 (since 121.100 cleartext
+#     HTTP/1.1 too: http.servedir sends a fixed length, where it was chunked);
 #   - /s/img.png (a generated 4x4 PNG) -> byte-identical, image/png;
 #   - HEAD /s/bytes.bin -> Content-Length 16384;
 #   - with --compressed (Accept-Encoding: gzip) /s/bytes.bin decodes to the
@@ -138,7 +138,7 @@ cases() {
     r="$("${cu}" -sk "$@" --max-time 10 -o got.bin -D got.hdr -w '%{http_version} %{http_code} %{size_download}' "${u}/s/bytes.bin")"
     cl="$(hdr got.hdr content-length)"
     if [ "${r}" = "${wantv} 200 16384" ] && cmp -s got.bin pub/s/bytes.bin \
-        && { [ -z "${cl}" ] && [ "${label}" = "HTTP/1.1" ] || [ "${cl}" = 16384 ]; }; then
+        && [ "${cl}" = 16384 ]; then
         pass "${label}: bytes.bin (0x00..0xFF x 64) whole${cl:+, content-length ${cl}}"
     else fail "${label}: bytes.bin: '${r}' content-length '${cl}'$(cmp -s got.bin pub/s/bytes.bin || echo ', bytes differ') (want '${wantv} 200 16384')"; fi
     if [ "${HAVE_PNG}" = 1 ]; then

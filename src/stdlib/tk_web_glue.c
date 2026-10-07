@@ -1302,11 +1302,25 @@ static Res staticdir_serve(const char *filepath, const char *mime,
      * with strlen(), so a binary file went out cut at its first 0x00 (a PNG
      * after its 8-byte signature); the length read travels with it. */
     http_body_setlen(body, got);
-    StrPair *hdrs = malloc(3 * sizeof(StrPair));
+    /* 121.100: a Content-Length, so the file goes out with a fixed length,
+     * not chunked -- the writer sends the body's own length, not this
+     * value, but a handler's Content-Length chooses fixed-length framing.
+     * A HEAD now carries the GET's framing, so without it a HEAD for a file
+     * said "Transfer-Encoding: chunked" and gave no size at all. */
+    char *clen = malloc(24);
+    if (clen) {
+        snprintf(clen, 24, "%zu", got);
+        http_defer_free(clen);
+    }
+    StrPair *hdrs = malloc(4 * sizeof(StrPair));
     if (hdrs) {
         size_t nh = 0;
         hdrs[nh].key = "Content-Type";
         hdrs[nh++].val = mime;   /* static storage from mime_for_ext */
+        if (clen) {
+            hdrs[nh].key = "Content-Length";
+            hdrs[nh++].val = clen;
+        }
         if (coding) {            /* 121.99: static strings */
             hdrs[nh].key = "Content-Encoding";
             hdrs[nh++].val = coding;
