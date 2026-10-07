@@ -403,6 +403,104 @@ static void ptr_arm_release(Ctx *c, int pc0, int lc0, const char *bname)
     }
 }
 
+/* 127.196: block scoping for `let` in the emitter.
+ *
+ * A `let` (or `lp` variable) bound inside a block is out of scope once the
+ * block ends (docs/spec/semantics.md §4.1).  137.6 already dropped the name
+ * ALIASES a block mints, which fixed a shadowing `let` of an outer local.  A
+ * FIRST binding of a name was still left in the flat per-function tables,
+ * so after the block that name kept meaning the dead local wherever the
+ * emitter asks "is this a local?" (name_is_local): `if(c){let g=5};g` read
+ * the block's slot instead of the module global `g`, a closure-bound
+ * `let sum=fn..` was still what `sum(1)` called after the block, and a
+ * loop variable that shadowed an outer `let` leaked its last value.
+ *
+ * scope_mark records the table sizes on entry; scope_end retires what the
+ * block bound:
+ *   - aliases are truncated (137.6);
+ *   - a local-type entry first made in the block for one of its names is
+ *     renamed `name.~`, so name lookups miss it but make_unique_name (which
+ *     matches `name` or `name.<suffix>`) still sees the slot as taken and a
+ *     later binding of the name gets its own alloca;
+ *   - pointer-local entries made in the block for those names are blanked
+ *     (ptr_shadow_restore's convention);
+ *   - function-reference locals are per function and never read by a lifted
+ *     closure body, so the block's entries are truncated;
+ *   - closure-bound locals are ALSO read module-wide by lifted closure bodies
+ *     (clos_local_lookup), so they are not removed: each name the block
+ *     bound gets a restore entry re-asserting what was in force before the
+ *     block (or nothing).  A restore entry carries a negative serial, which
+ *     only the emitting function itself matches. */
+/* 127.224 item 8: grow the closure-bound-locals table when it is full
+ * (arena; the Ctx lives for one module). */
+static void clos_grow(Ctx *c) {
+    if (c->clos_lcount < c->clos_lcap) return;
+    int ncap = c->clos_lcap ? c->clos_lcap * 2 : 64;
+    char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(
+        c->arena, (size_t)ncap * sizeof(*nn));
+    const Node **nd = (const Node **)arena_alloc(
+        c->arena, (size_t)ncap * sizeof(*nd));
+    int *ns = (int *)arena_alloc(c->arena, (size_t)ncap * sizeof(*ns));
+    if (nn && nd && ns) {
+        if (c->clos_lcount) {
+            memcpy(nn, c->clos_lname, (size_t)c->clos_lcount * sizeof(*nn));
+            memcpy(nd, c->clos_lnode, (size_t)c->clos_lcount * sizeof(*nd));
+            memcpy(ns, c->clos_lser, (size_t)c->clos_lcount * sizeof(*ns));
+        }
+        c->clos_lname = nn; c->clos_lnode = nd; c->clos_lser = ns;
+        c->clos_lcap = ncap;
+    }
+}
+typedef struct { int al, lc, pc, cc, fc; } ScopeMark;
+static void scope_mark(const Ctx *c, ScopeMark *m) {
+    m->al = c->alias_count; m->lc = c->local_count; m->pc = c->ptr_count;
+    m->cc = c->clos_lcount; m->fc = c->fref_lcount;
+}
+static void scope_retire_name(Ctx *c, const ScopeMark *m, const Node *id) {
+    char nm[NAME_BUF];
+    if (!id) return;
+    tok_cp(c->src, id, nm, sizeof nm);
+    if (!nm[0]) return;
+    for (int i = m->lc; i < c->local_count; i++)
+        if (!strcmp(c->locals[i].name, nm))
+            snprintf(c->locals[i].name, sizeof c->locals[i].name, "%.120s.~", nm);
+    for (int i = m->pc; i < c->ptr_count; i++)
+        if (!strcmp(c->ptrs[i].name, nm)) c->ptrs[i].name[0] = '\0';
+}
+/* `list` is the block (its direct `let`/`mut` children are its bindings);
+ * `init` an `lp` loop's NODE_LOOP_INIT. */
+static void scope_end(Ctx *c, const ScopeMark *m, const Node *list, const Node *init) {
+    c->alias_count = m->al;
+    for (int i = 0; list && i < list->child_count; i++) {
+        const Node *st = list->children[i];
+        if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+            && st->child_count > 0)
+            scope_retire_name(c, m, st->children[0]);
+    }
+    if (init && init->kind == NODE_LOOP_INIT && init->child_count > 0)
+        scope_retire_name(c, m, init->children[0]);
+    if (m->fc >= 0 && m->fc <= c->fref_lcount) c->fref_lcount = m->fc;
+    int end = c->clos_lcount;
+    for (int i = m->cc; i < end; i++) {
+        if (c->clos_lser[i] < 0) continue;            /* a nested block's restore */
+        const char *nm = c->clos_lname[i];
+        int dup = 0;
+        for (int j = m->cc; j < i && !dup; j++)
+            if (c->clos_lser[j] >= 0 && !strcmp(c->clos_lname[j], nm)) dup = 1;
+        if (dup) continue;
+        clos_grow(c);
+        if (c->clos_lcount >= c->clos_lcap) continue;   /* allocation failed */
+        const Node *prev = NULL;
+        for (int j = m->cc - 1; j >= 0; j--)
+            if ((c->clos_lser[j] == c->fn_serial || c->clos_lser[j] == -1 - c->fn_serial)
+                && !strcmp(c->clos_lname[j], nm)) { prev = c->clos_lnode[j]; break; }
+        snprintf(c->clos_lname[c->clos_lcount], NAME_BUF, "%s", nm);
+        c->clos_lnode[c->clos_lcount] = prev;
+        c->clos_lser[c->clos_lcount] = -1 - c->fn_serial;
+        c->clos_lcount++;
+    }
+}
+
 /*
  * is_ptr_local — Return 1 if `name` was previously registered via
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
@@ -2487,9 +2585,14 @@ static const char *canon_llvm_ty(const char *t) {
  * function's bindings match, latest first; a lifted closure body (emitted at
  * module tail) keeps the module-wide lookup its captures rely on. */
 static const Node *clos_local_lookup(Ctx *c, const char *nm) {
-    for (int i = c->clos_lcount - 1; i >= 0; i--)
-        if ((c->in_lifted || c->clos_lser[i] == c->fn_serial) &&
-            !strcmp(c->clos_lname[i], nm)) return c->clos_lnode[i];
+    for (int i = c->clos_lcount - 1; i >= 0; i--) {
+        int ser = c->clos_lser[i];
+        /* 127.196: a negative serial is a block-end restore entry
+         * (scope_end), visible only to the function that emitted it. */
+        int vis = ser < 0 ? (!c->in_lifted && ser == -1 - c->fn_serial)
+                          : (c->in_lifted || ser == c->fn_serial);
+        if (vis && !strcmp(c->clos_lname[i], nm)) return c->clos_lnode[i];
+    }
     return NULL;
 }
 static int name_is_local(Ctx *c, const char *name);
@@ -10438,25 +10541,7 @@ static void emit_stmt(Ctx *c, const Node *n)
         if (init_node) {
             /* 124.0a: remember closure-bound locals so a later `f(args)` lowers
              * as an indirect call. Record the toke name before make_unique_name. */
-            if (init_node->kind == NODE_CLOSURE &&
-                c->clos_lcount == c->clos_lcap) {
-                /* 127.224 item 8: grow (arena; the Ctx lives for one module) */
-                int ncap = c->clos_lcap ? c->clos_lcap * 2 : 64;
-                char (*nn)[NAME_BUF] = (char (*)[NAME_BUF])arena_alloc(
-                    c->arena, (size_t)ncap * sizeof(*nn));
-                const Node **nd = (const Node **)arena_alloc(
-                    c->arena, (size_t)ncap * sizeof(*nd));
-                int *ns = (int *)arena_alloc(c->arena, (size_t)ncap * sizeof(*ns));
-                if (nn && nd && ns) {
-                    if (c->clos_lcount) {
-                        memcpy(nn, c->clos_lname, (size_t)c->clos_lcount * sizeof(*nn));
-                        memcpy(nd, c->clos_lnode, (size_t)c->clos_lcount * sizeof(*nd));
-                        memcpy(ns, c->clos_lser, (size_t)c->clos_lcount * sizeof(*ns));
-                    }
-                    c->clos_lname = nn; c->clos_lnode = nd; c->clos_lser = ns;
-                    c->clos_lcap = ncap;
-                }
-            }
+            if (init_node->kind == NODE_CLOSURE) clos_grow(c);
             if (init_node->kind == NODE_CLOSURE && c->clos_lcount < c->clos_lcap) {
                 strncpy(c->clos_lname[c->clos_lcount], tb, NAME_BUF - 1);
                 c->clos_lname[c->clos_lcount][NAME_BUF - 1] = '\0';
@@ -11203,6 +11288,8 @@ static void emit_stmt(Ctx *c, const Node *n)
     }
     case NODE_LOOP_STMT: {
         int L = next_lbl(c);
+        /* 127.196: the `lp(let v=..)` variable is scoped to the loop. */
+        ScopeMark lp_sm; scope_mark(c, &lp_sm);
         /* optional init */
         if (n->child_count > 0 && n->children[0] && n->children[0]->kind == NODE_LOOP_INIT)
             emit_stmt(c, n->children[0]);
@@ -11290,6 +11377,8 @@ static void emit_stmt(Ctx *c, const Node *n)
         if (!c->term) fprintf(c->out, "  br label %%loop_hdr%d\n", L);
         fprintf(c->out, "loop_exit%d:\n", L);
         c->term = 0;
+        scope_end(c, &lp_sm, NULL,
+                  n->child_count > 0 ? n->children[0] : NULL);   /* 127.196 */
         break;
     }
     case NODE_ARENA_STMT:
@@ -11350,9 +11439,10 @@ static void emit_stmt(Ctx *c, const Node *n)
          * make_unique_name consults to decide a name is already taken, and
          * a re-entered block must still mint a distinct slot rather than
          * redefine %x.1. */
-        int saved_aliases = c->alias_count;
+        ScopeMark sm; scope_mark(c, &sm);
         for (int i = 0; i < n->child_count; i++) emit_stmt(c, n->children[i]);
-        c->alias_count = saved_aliases;
+        /* 127.196: and so do the block's own bindings (scope_end). */
+        scope_end(c, &sm, n, NULL);
         break;
     }
     case NODE_EXPR_STMT:
