@@ -54,6 +54,69 @@ static int is_idchar(char c) {
     return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_';
 }
 
+/* 127.251: the std types whose lower-cased spelling is a module or a
+ * sub-namespace were renamed `<module><noun>` (owner decision 2026-10-01
+ * §2.5), so lower-casing `Json` -- or keeping the `$json` the module pages
+ * documented -- names the module alias, not the type.  The other 33 renamed
+ * std types are their old spelling lower-cased, which the TK_TYPE_IDENT case
+ * below already produces.  A rename applies only when the program imports
+ * the module (`:std.json`), does not import `clash` (std.ml declares its own
+ * `row`), and declares no type of that name itself. */
+static const struct { const char *lo; const char *mod; const char *clash; const char *now; }
+MIG_RENAMED_TYPES[] = {
+    {"json", "std.json", NULL, "jsonval"},   {"row", "std.db", "std.ml", "dbrow"},
+    {"toon", "std.toon", NULL, "toonval"},   {"yaml", "std.yaml", NULL, "yamlval"},
+    {"vec", "std.vec", NULL, "vechandle"},   {"vecstore", "std.vecstore", NULL, "vecstorehandle"},
+    {"duration", "std.time", NULL, "timeduration"},
+    {NULL, NULL, NULL, NULL}
+};
+
+/* 1 when `:<mod>` (an import's module path) occurs in src, whole-word */
+static int mig_imports(const char *src, int slen, const char *mod)
+{
+    int ml = (int)strlen(mod);
+    for (int k = 1; k + ml <= slen; k++)
+        if (src[k-1] == ':' && !strncmp(src + k, mod, (size_t)ml) &&
+            (k + ml == slen || !is_idchar(src[k + ml]) ))
+            return 1;
+    return 0;
+}
+
+/* 1 when src declares a type spelled `lo` in any case: `t=name{` / `t=$name{` */
+static int mig_declares_type(const char *src, int slen, const char *lo)
+{
+    int nl = (int)strlen(lo);
+    for (int k = 0; k + 2 < slen; k++) {
+        if ((src[k] != 't' && src[k] != 'T') || src[k+1] != '=') continue;
+        if (k > 0 && is_idchar(src[k-1])) continue;
+        int p = k + 2;
+        if (p < slen && src[p] == '$') p++;
+        if (p + nl > slen) continue;
+        int same = 1;
+        for (int j = 0; j < nl && same; j++) {
+            char ch = src[p+j];
+            if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
+            same = ch == lo[j];
+        }
+        if (same && (p + nl == slen || !is_idchar(src[p + nl]))) return 1;
+    }
+    return 0;
+}
+
+/* the 127.251 spelling for a lower-cased std type name, or NULL */
+static const char *mig_renamed_type(const char *lo, const char *src, int slen)
+{
+    for (int k = 0; MIG_RENAMED_TYPES[k].lo; k++) {
+        if (strcmp(lo, MIG_RENAMED_TYPES[k].lo) != 0) continue;
+        if (!mig_imports(src, slen, MIG_RENAMED_TYPES[k].mod)) return NULL;
+        if (MIG_RENAMED_TYPES[k].clash &&
+            mig_imports(src, slen, MIG_RENAMED_TYPES[k].clash)) return NULL;
+        if (mig_declares_type(src, slen, MIG_RENAMED_TYPES[k].lo)) return NULL;
+        return MIG_RENAMED_TYPES[k].now;
+    }
+    return NULL;
+}
+
 /* 127.19: copy src[from..to) into out, rewriting every bracket type inside
  * it in one go — `[T]` → `@T`, `[K:V]` → `@(K:V)`, nested `[[T]]` → `@@T`.
  * Returns bytes written; `cap` is the remaining room. */
@@ -2190,6 +2253,13 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
              * unparseable `@($$e)`.  Primitive names never take a sigil at all. */
             int already_sigilled = (i >= 1 && nt[i-1].kind == TK_DOLLAR);
             if (!is_primitive(clean_name) && !already_sigilled) buf[blen++] = '$';
+            /* 127.251: `Json` is `$jsonval`, not the module alias `$json` */
+            const char *renamed = mig_renamed_type(clean_name, c, clen);
+            if (renamed) {
+                cn = (int)strlen(renamed);
+                memcpy(buf+blen, renamed, (size_t)cn); blen += cn;
+                break;
+            }
             memcpy(buf+blen, clean_name, (size_t)cn); blen += cn;
             break;
         }
@@ -2249,6 +2319,16 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
                              !strcmp(tmp,"as")||!strcmp(tmp,"rt")||!strcmp(tmp,"mt")||
                              !strcmp(tmp,"sc")||!strcmp(tmp,"true")||!strcmp(tmp,"false"));
                 if (!is_kw) buf[blen++] = '$';
+            }
+            /* 127.251: a `$json` / `$row` / `$toon` / ... written after the
+             * sigil names the std type that is now jsonval / dbrow / ... */
+            if (i >= 1 && nt[i-1].kind == TK_DOLLAR && nt[i-1].start + 1 == t->start) {
+                const char *renamed = mig_renamed_type(tmp, c, clen);
+                if (renamed) {
+                    int rl = (int)strlen(renamed);
+                    memcpy(buf+blen, renamed, (size_t)rl); blen += rl;
+                    break;
+                }
             }
             memcpy(buf+blen, tmp, (size_t)cl); blen += cl;
             break;

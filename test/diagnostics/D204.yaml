@@ -1,0 +1,11 @@
+id: D204
+series: D
+description: "127.251: the stdlib .tki type names are lower-case, so a bare upper-case old spelling (`e:DbErr`) is E3011 whose fix names the renamed type with its sigil -- offered only because std.db is imported, so `$dberr` is in scope"
+input: |
+  m=t;
+  i=db:std.db;
+  f=why(e:DbErr):i64{<1};
+  f=main():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E3011"]
+expected_fix: "did you mean '$dberr'?"
