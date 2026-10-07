@@ -1,17 +1,17 @@
-(* source: ~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk sha256 6ec7c5c2ce50c0f505aa11f2fd3af9019ce3f7fe4500d1f04e6dd17b6e656d0d manifest ~/tk/toke-test-programs/results/library/ai-agents.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk sha256 a9b844193e5a53a6e8ac631f6dbe11b922d1489eb4cc512eac3472fa52096253 manifest ~/tk/toke-test-programs/results/library/ai-agents.json *)
 m=mergestate;i=io:std.io;i=s:std.str;i=json:std.json;
-f=pdoc(x:$str):Json{<mt json.dec(x){$ok:d d;$err:e pdoc("{}")}};
+f=pdoc(x:$str):$jsonval{<mt json.dec(x){$ok:d d;$err:e pdoc("{}")}};
 f=first(x:$str):$str{ if(s.len(x)==0){<""}; <s.slice(x;0;1) };
 f=innerarr(raw:$str):$str{ let n=s.len(raw); if(n<=2){<""}; <s.slice(raw;1;n-1) };
-f=setstr(a:@($str);idx:$i64;v:$str):@($str){
+f=setstr(a:@$str;idx:$i64;v:$str):@$str{
 let r=mut.@(); let n=a.len(); let i=mut.0;
 lp(i<n){ if(i==idx){r=r+@(v)}el{r=r+@(a.get(i))}; i=i+1; };
 <r};
-f=setint(a:@($i64);idx:$i64;v:$i64):@($i64){
+f=setint(a:@$i64;idx:$i64;v:$i64):@$i64{
 let r=mut.@(); let n=a.len(); let i=mut.0;
 lp(i<n){ if(i==idx){r=r+@(v)}el{r=r+@(a.get(i))}; i=i+1; };
 <r};
-f=indexof(a:@($str);v:$str):$i64{
+f=indexof(a:@$str;v:$str):$i64{
 let n=a.len(); let i=mut.0; let r=mut.0-1;
 lp(i<n){ if(a.get(i)==v){if(r<0){r=i}}; i=i+1; };
 <r};
