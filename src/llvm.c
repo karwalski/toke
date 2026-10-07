@@ -2634,6 +2634,14 @@ static const Node *clos_callee_lookup(Ctx *c, const Node *callee) {
     const Node *cl = clos_local_lookup(c, nm);
     if (cl && c->in_lifted && tk_type_is_fnval(callee->rtype) && name_is_local(c, nm))
         return NULL;
+    /* 127.282: a closure-bound local of a lifted body is one of ITS locals
+     * (a capture, a parameter or its own `let`).  The module-wide table
+     * cannot see block ends (the 127.196 restore entries are per f=), so a
+     * name the body does not bind -- a module function `h` called after
+     * an enclosing block's `let h=fn..` ended -- matched that dead closure
+     * and the module function's address was called as an env box. */
+    if (cl && c->in_lifted && !name_is_local(c, nm))
+        return NULL;
     return cl;
 }
 /* 124.0c: the function reference a local of this name is bound to, latest
