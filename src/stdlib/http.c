@@ -4523,10 +4523,17 @@ static int h2_field_name(const char *k, char *out, size_t cap)
     return 1;
 }
 
-/* h2_field_value_ok — a field value may not carry CR or LF (RFC 9113 8.2.1). */
+/* h2_field_value_ok — 121.98: the HTTP/1.1 writers' rule
+ * (tk_http_field_value_ok): a value holding any control byte but HTAB, or
+ * DEL, is not sent -- the field is dropped whole, as on HTTP/1.1.  RFC 9113
+ * sec. 8.2.1 forbids only NUL, CR and LF in an h2 value (and a NUL cannot
+ * reach here, the value being a C string), so this asked only for CR and
+ * LF, and a handler's header with 0x01 or 0x7f went out over h2 while the
+ * same response over HTTP/1.1 dropped it.  One rule now, whatever the
+ * protocol; HPACK carries any octet, so nothing it expects changes. */
 static int h2_field_value_ok(const char *v)
 {
-    return strpbrk(v, "\r\n") == NULL;
+    return tk_http_field_value_ok(v);
 }
 
 static int h2_has_field(const char **names, size_t n, const char *name)
