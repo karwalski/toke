@@ -334,6 +334,11 @@ to innermost, is:
 Lookup proceeds from the innermost scope outward. The first matching declaration
 is returned.
 
+A `let` binding is in scope from the end of its statement to the end of its
+block; when the block ends, the name means again what it meant before the
+block (an enclosing binding, a module-level declaration, or nothing). Uses and
+assignments both resolve this way [toke-spec-v0.4 §I, story 127.196].
+
 ### 4.2 Declaration Kinds
 
 | Kind              | Introduced by           | Mutable | Notes                        |
@@ -374,11 +379,13 @@ pass before any references are resolved. This means:
 
 ### 4.5 Shadowing Rules
 
-- **Same-scope duplicate:** Declaring a name that already exists in the
-  *same* scope is a compile error `[errors.md E3012]`.
+- **Same-scope duplicate:** Declaring a function, type, constant, parameter or
+  import alias whose name already exists in the *same* scope is a compile
+  error `[errors.md E3012]`. A `let` may re-bind a name in the same scope; the
+  newer binding is in force from its statement on (v0.3 §11.8.1).
 - **Cross-scope shadowing:** Declaring a name in an inner scope that shadows
-  an outer-scope name is permitted. The inner declaration takes precedence
-  within its scope.
+  an outer-scope name is permitted (a `let` that does so draws W3013). The
+  inner declaration takes precedence within its scope, and only there.
 
 ### 4.6 Reference Resolution
 
@@ -396,7 +403,8 @@ field list.
 
 A `lp(init; cond; step) { body }` loop creates a single scope that encloses
 the init variable, condition, step, and body. The init variable (if declared
-with `let` or `let x=mut.`) is visible in all three subsequent positions.
+with `let` or `let x=mut.`) is visible in all three subsequent positions, and
+not after the loop.
 
 ### 4.8 Match Arm Scoping
 

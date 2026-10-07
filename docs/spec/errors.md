@@ -687,13 +687,16 @@ f=bad():i64{<x};
 | **Fix field** | absent |
 | **Conformance test** | -- |
 
-**Notes:** A second declaration of the same name in the same scope. Shadowing
-across scope boundaries is allowed; duplicate declaration within one scope is not.
+**Notes:** A second function, type, constant, parameter or import alias of
+the same name in the same scope. A `let` may re-bind a name, in the same scope
+or an enclosing one (v0.3 §11.8.1; toke-spec-v0.4 §I), so `let x=1;let x=2;`
+is not E3012.
 
 **Example trigger:**
 ```text
 m=test;
-f=bad():i64{let x=1;let x=2;<x};
+f=bad():i64{<1};
+f=bad():i64{<2};
 ```
 
 ---
