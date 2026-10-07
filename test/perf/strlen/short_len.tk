@@ -1,0 +1,11 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t="hello \(n)!!";
+  let tot=mut.0;
+  lp(let k=0;k<n;k=k+1){tot=tot+t.len};
+  io.println("t=\(tot)");
+  <0
+};

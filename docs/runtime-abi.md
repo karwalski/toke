@@ -53,20 +53,26 @@ Strings are **C strings**: null-terminated `ptr` (pointer to `i8`).
 
 - String literals are emitted as LLVM global constants
   (`@.str.N = private constant [K x i8] c"...\\00"`).
-- Runtime-created strings (e.g. from `tk_str_concat`) are allocated
-  via `malloc`. **Caller owns returned strings** -- the runtime does
-  not track or free them.
+- Runtime-created strings are never freed: the runtime does not track
+  them, and nothing may `free()` one that reached toke code.  Most are
+  `malloc`'d; since 127.170 the core producers return **sealed strings**
+  from the string heap instead, which carry their length (§3.1).  A sealed
+  string is still a NUL-terminated C string, so nothing that reads one with
+  `strlen` changes.
 
 **IR access pattern** for string literals:
 ```llvm
 %t0 = getelementptr inbounds [K x i8], ptr @.str.0, i32 0, i32 0
 ```
 
-### 3.1 Strings carry no length (story 127.170) — plan, not landed
+### 3.1 Strings carry no length (story 127.170) — S1 landed
 
-**Status: plan plus a measured prototype on branch `proto/fe-strlen`. Not
-merged, and not for merge.** Nothing in this section describes the tree as it
-is except the premise check; the layout above is still the only one.
+**Status: option S1 (sealed string heap + side bitmap) is implemented,
+following the owner decision of 2026-10-01 (§2.1).** Landing steps 1–4 are
+in, and step 5 has begun (see "As landed" at the end of this section).  The
+subsections from "What the premise check found" to "The prototype" are the
+design record as written before the decision; "As landed" says where the
+implementation differs from it.
 
 #### What the premise check found
 
@@ -349,6 +355,170 @@ What it proves and what it does not:
   space with no configuration and carries a weak-symbol trick so that the
   compiler binary, which links `str.o` without `tk_runtime.o`, still links;
   landing step 1 should put the globals in one translation unit instead.
+
+#### As landed (branch `feature/z63-s1-strings`, 2026-10-08)
+
+**The API** is `src/stdlib/tk_strhdr.h`; its state and out-of-line half are
+at the end of `src/stdlib/str.c`, the one translation unit every compiled
+program and `tkc` itself link (no weak symbols).  Producers: `tks_alloc(n)`,
+`tks_seal(p, n)`, `tks_dup(s, n)`, `tks_strdup(s)`.  Readers: `tk_strlen(p)`,
+`tks_hdrlen(p)`.  Layout, trust rule and the one new rule (a sealed string
+is never written, freed or reallocated) are as designed above.
+
+**Where it differs from the prototype:**
+
+- *Commit as touched, for real.* The 16 GiB region and the 128 MiB bitmap
+  are mapped `PROT_NONE` (plus `MAP_NORESERVE`) at the first `tks_alloc`, and
+  made read/write by `mprotect` in 64 MiB steps (512 KiB of bitmap per step)
+  as the bump pointer reaches them.  The prototype mapped both read/write up
+  front, which Linux's default heuristic overcommit refuses outright on a
+  host with less than ~16 GiB of RAM + swap; a refused mapping silently
+  meant the malloc fallback everywhere.
+- *Initialisation under a lock.* The prototype stored the bitmap pointer
+  before its compare-and-swap of the base, so a thread that lost the race
+  could leave `tks_bits` pointing at the bitmap it then unmapped.  The
+  reservation and each chunk commit now run under one spin lock; the bump
+  itself stays a lock-free `fetch_add`.  The lock is held across `fork()`
+  (`pthread_atfork`) because the HTTP server forks workers: a fork during a
+  commit would otherwise leave the child's copy locked.
+- *Verify switch read once, before publication.* `TK_STR_VERIFY` is read from
+  the environment when the region is reserved, before the base pointer is
+  published, so a reader that sees a sealed string sees the switch too.
+- *ASan.* Under AddressSanitizer every block's bytes past the NUL plus a
+  16-byte redzone are poisoned, so an over-read of a sealed string is
+  reported as it would be for a malloc'd one ("use-after-poison").
+- *Fallback.* No `mmap` (wasm), a 32-bit `size_t`, `-DTK_STR_NO_HEAP`, an
+  `RLIMIT_AS` too small for the reservation, or an `mprotect` the OS refuses:
+  `tks_alloc` returns malloc'd memory and `tks_seal` does nothing — every
+  string unsealed, behaviour as before.
+
+**Converted.** Readers (all 20 named in the consumer inventory, checked by
+`scripts/check_str_strlen.py`): `.len` (`str_len`, `tk_str_len`), `charat`
+(`tk_str_charat_w`, `tk_str_char_at`), `slice`/`substr`, `setat`, `endswith`,
+`trimsuffix`, concat, interpolation parts (now measured once, not twice),
+builder `add`, and the `indexfrom` bound (header when present, else the
+`memchr` of the prefix).  Producers: interpolation (`tk_str_join_n`),
+`tk_str_concat`/`str_concat`, `slice`, the builder's `build` (one copy out
+of the builder; sealed with the C-string length because `addbyte(b;0)` can
+store a 0), `replace`, `join`, every `split` element, `file.read` (new
+`file_read_into(path, alloc, seal)`: a regular file is read straight into
+the heap; `file_read` keeps its malloc contract because `toml_load_file`
+frees it), `io.readln`, `net.read`; and, as step 5's first tranche, `trim`,
+`upper`, `lower`, `repeat`, `padleft`, `padright`, `reverse`, `trimprefix`,
+`trimsuffix`.  Producers whose bytes can hold a 0 (file, line, packet, a 0
+pad) seal with the C-string length.  Not converted: `str.frombytes` (its
+wrapper frees the `str_from_bytes` result), `json` strings, every other
+module — census below.
+
+**Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
+`tk_str_charat_w` are declared `nounwind willreturn readonly` in
+`src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
+only the former, LLVM ≥ 16 upgrades it).  Only declaration text changes;
+`make diff-codegen` shows no behaviour change.  The inline `.len` fast path
+was **not** landed: an inline header read needs acquire loads, which LICM
+does not hoist, so it would trade away S0's hoisting where that applies, to
+save about 5 instructions per call where it does not.  Constant `.len` of a
+literal was not landed either; a hoisted `.len` of a literal already costs
+nothing per iteration.
+
+**The gates, red and green.**
+
+1. *`TK_STR_VERIFY` (safety)* — conform case C736: `.len` of a slice,
+   concat, interpolation and build results, a build holding a 0 byte,
+   charat/indexfrom/endswith/trimsuffix, eight `spawn`ed tasks producing
+   strings concurrently, all under `TK_STR_VERIFY=1`; then the switch in C
+   against the shipped `str.c`.  Red: `str_slice` with a planted
+   `out[n/2] = 0` after sealing aborts with `TK_STR_VERIFY: header 4 !=
+   strlen 2`; main fails the switch case (no header).  The full conformance
+   suite and the stdlib CI tests were run with `TK_STR_VERIFY=1` at landing
+   step 3 (results in the story row).  Blast radius: 840 corpus programs
+   with a `main` (60 from each of the 14 categories of
+   `toke-corpus/corpus/regen_v04`), built with main's compiler and run
+   plainly, and with the branch's compiler and run under `TK_STR_VERIFY=1`:
+   exit status and stdout identical for all 840 (828 ran, 12 fail to compile
+   on both), no verify abort, no `free()` abort.  ASan/UBSan: the C736
+   programs, the scaling programs and the producer probes built with an
+   instrumented stdlib run clean, as do the stdlib unit tests
+   (`make test-asan-stdlib`, plus file, runtime, process and toml).
+2. *Scaling (performance)* — conform case C735 runs
+   `test/perf/strlen/scaling.sh` (N = 4,000 vs 16,000, fail above 6×).
+   Main: 9.72 / 17.02 / 17.75, FAIL.  Branch: 1.81 / 1.88 / 2.01, PASS.  An
+   in-script control runs the `.len` loop over a string from an unconverted
+   producer (`str.frombytes`) and must still FAIL (16.89 here), so the gate
+   is seen to fire on the host that runs it.
+3. *Reader ratchet* — `make check-str-strlen` (also in `make lint`):
+   per-file counts of bare `strlen(` lines in `scripts/check_str_strlen_skiplist.txt`
+   may only fall, and the core readers may not call `strlen` at all.  Shown
+   red on a planted `strlen` in `tk_str_charat_w` (CORE + NEW) and on a
+   removed one (STALE).  Census at landing: 420 bare `strlen(` lines in 79
+   files (458 before), 40 sealed-producer lines in 5 files, 228
+   `strdup`/`strndup` lines in 36 files still unconverted.
+
+**Measured** on this host (macOS 26.6.2 arm64, Apple clang 21.0.0), main
+`fb0592a1` against the branch head; instructions retired, median of five
+runs (`[min..max]`), `-O2`; RSS is the median maximum resident set size.
+Programs in `test/perf/strlen/`: the three scaling programs, the
+prototype's three cost probes, and two more whose loop writes memory, so
+`.len` cannot be hoisted.
+
+| Program | N | main instructions | branch instructions | main RSS | branch RSS |
+|---|---:|---:|---:|---:|---:|
+| `scan_from` (127.91 scanner) | 4,000 | 48,446,655 [48.00M..49.60M] | 21,860,998 [21.64M..23.43M] | 1.80 MB | 1.89 MB |
+| | 16,000 | 492,067,144 [491.8M..493.4M] | 41,542,178 [40.56M..42.07M] | 2.47 MB | 2.83 MB |
+| | 64,000 | 7,909,248,772 [7.905G..7.915G] | 113,758,916 [113.4M..114.5M] | 5.06 MB | 6.61 MB |
+| `len_only` (`.len` loop) | 4,000 | 261,087,221 [260.7M..261.7M] | 21,221,498 [20.94M..22.50M] | 1.81 MB | 1.88 MB |
+| | 16,000 | 4,471,371,162 [4.465G..4.474G] | 39,440,508 [38.35M..39.84M] | 2.48 MB | 2.83 MB |
+| | 64,000 | 80,075,912,776 [80.07G..80.11G] | 103,489,463 [102.7M..104.6M] | 5.08 MB | 6.61 MB |
+| `len_loop` (`.len` + `charat`) | 4,000 | 501,867,922 [501.4M..503.6M] | 22,834,316 [22.58M..25.01M] | 1.80 MB | 1.86 MB |
+| | 16,000 | 8,894,363,766 [8.892G..8.903G] | 44,675,494 [44.28M..45.49M] | 2.47 MB | 2.83 MB |
+| | 64,000 | 160,056,233,395 [160.01G..160.16G] | 131,460,316 [130.5M..131.7M] | 5.08 MB | 6.62 MB |
+| `small_strs` (10⁶ interpolated strings kept, `.len` each) | 1,000,000 | 1,464,136,049 | 1,354,707,484 | 63.36 MB | 77.23 MB |
+| `lit_len` (`.len` of a literal, hoistable) | 1,000,000 | 51,058,870 | 18,067,834 | 1.44 MB | 1.48 MB |
+| `short_len` (`.len` of a 12-byte sealed string, hoistable) | 1,000,000 | 46,760,917 | 18,521,841 | 1.44 MB | 1.47 MB |
+| `lit_len_nh` (literal, loop writes memory) | 1,000,000 | 70,966,532 | 79,520,122 | 1.44 MB | 1.50 MB |
+| `short_len_nh` (sealed, loop writes memory) | 1,000,000 | 66,007,558 | 72,360,333 | 1.44 MB | 1.48 MB |
+
+At 64,000 tokens the scanner retires 69× fewer instructions, the `.len`
+loop 774× and the `.len` + `charat` loop 1,218× fewer, with byte-identical
+output; 16,000 → 64,000 multiplies them by 2.74, 2.62 and 2.94 (main: 16.1,
+17.9, 18.0).  The costs: a `.len` that cannot be hoisted pays about 6
+instructions more per call on a short sealed string and about 9 more on a
+literal (the range test fails, then `strlen`), against about 28 and 33 fewer
+where S0 lets it hoist; and small strings take more memory — 10⁶ strings of
+3–9 bytes cost 77.2 MB against 63.4 MB, because a block is the 8-byte header
+plus the bytes plus the NUL rounded up to 16, so a string of 8–23 bytes takes
+32 bytes where macOS malloc's 16-byte quantum gives 16 or 32.  The prototype
+measured RSS level at this size with different string lengths; this is the
+cost the owner decision accepted with the 16-byte granule.
+
+**Memory, measured on macOS** (an in-process probe reading
+`TASK_VM_INFO`): the first sealed string adds 16.13 GiB of virtual size
+(the region plus the bitmap; region base `0x300000000` in the probe,
+`0x7000000000` in a compiled toke program) and 0.05 MiB resident; 100 MiB of
+sealed strings then add 101.8 MiB resident, and 10⁶ five-byte strings
+15.4 MiB (16 bytes each).  macOS does not enforce `RLIMIT_AS`, so
+`ulimit -v` cannot make the reservation fail there.
+
+**Memory on Linux, from the code** (not run: this host has no Linux
+toolchain, and `make build-all` needs a sysroot it lacks).  A `PROT_NONE`
+private mapping is not charged against the commit limit, so the 16 GiB
+reservation succeeds under `vm.overcommit_memory` 0, 1 and 2; each 64 MiB
+`mprotect` to read/write is charged, and under mode 2 a refused one sends
+that allocation and every later one past the committed end to malloc.  An
+`RLIMIT_AS` below about 16.2 GiB (`ulimit -v`) makes the reservation fail
+and every string unsealed.  The read/write prefix and the `PROT_NONE` rest
+stay two mappings each, so `vm.max_map_count` is not a concern.
+
+**Threads.** `test-stdlib-strhdr`: eight threads race the one-time
+reservation, then allocate, seal and cross-read 160,000 strings; forty
+`fork()`s while a second thread commits chunks.  Clean under ASan/UBSan;
+TSan reports no data race.  C736 does the same at toke level with `sc` /
+`spawn` (std.task's worker pool).
+
+**Not landed / next (step 5, by profile, under the ratchet):** the other 420
+`strlen` readers and 228 `strdup`/`strndup` producer lines across the
+stdlib; `str.frombytes` (needs its wrapper's `free` reworked first); the
+inline `.len` (above).
 
 ---
 
@@ -838,8 +1008,8 @@ All functions are declared in `tk_runtime.h` and linked from
 | `tk_json_print_f64` | `void (double)` | Print f64 as decimal number | None |
 | `tk_json_print_arr_str` | `void (ptr, i64)` | Print string array as JSON (takes data ptr + len) | None |
 | `tk_array_concat` | `ptr (ptr, ptr)` | Concatenate two length-prefixed i64 arrays | malloc -- caller owns result |
-| `tk_str_concat` | `ptr (ptr, ptr)` | Concatenate two C strings | malloc -- caller owns result |
-| `tk_str_len` | `i64 (ptr)` | Return byte length of a C string (`0` for NULL) | None |
+| `tk_str_concat` | `ptr (ptr, ptr)` | Concatenate two C strings | sealed string heap (§3.1) -- never freed, never written |
+| `tk_str_len` | `i64 (ptr)` | Return byte length of a C string (`0` for NULL); O(1) for a sealed string (§3.1) | None |
 | `tk_str_cmp` | `i64 (ptr, ptr)` | NULL-safe three-way string compare; backs `==` `!=` `<` `>` `<=` `>=` on `$str`. NULL is the `?(T)` miss sentinel, is **not** equal to `""`, and orders before every string | None |
 | `tk_str_char_at` | `i64 (ptr, i64)` | Return char code at index (unsigned byte) | None |
 | `tk_overflow_trap` | `void (i32)` | Print RT002 diagnostic and exit(1) | None (terminates) |
