@@ -381,5 +381,5 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 
 | Symbol | Defined in | Detail |
 |---|---|---|
-| `tk_array_retain` | `collections_glue.c` | ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c still says codegen emits it (stale) |
+| `tk_array_retain` | `collections_glue.c` | ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c says so (136.76) |
 | `tk_os_o_nofollow` | `os.c` | no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story) |

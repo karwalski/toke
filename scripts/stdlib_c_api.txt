@@ -66,5 +66,5 @@ tk_webview_run_event_loop c-api src/stdlib/webview.h   # webview.h documents it 
 tk_webview_set_title c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # tested from C
 
 # ── genuinely dead ──────────────────────────────────────────────────────────
-tk_array_retain dead docs/decisions/ADR-0006.md   # ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c still says codegen emits it (stale)
+tk_array_retain dead docs/decisions/ADR-0006.md   # ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c says so (136.76)
 tk_os_o_nofollow dead   # no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story)
