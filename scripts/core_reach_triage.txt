@@ -138,7 +138,7 @@ ml_train_test_split gap        # no wrapper, no .tki entry (found 135.19: hidden
 ocr_lasterr_kind internal   # C-API kind token; the toke surface is the $ocrerr variant since ocr.lasterrkind was retired (127.246); C033's C harness reads it
 process_stdin_write gap        # no wrapper, no .tki entry
 process_timeout gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
-router_dispatch_ex internal   # server-loop plumbing: extended dispatch used by the serve loop (found 135.19: hidden by the comment-blind regex)
+router_dispatch internal   # C API: header-less dispatch kept for C callers and test_router; the serve loop now calls router_dispatch_ex (121.90)
 router_handle_fd internal   # server-loop plumbing: dispatch one accepted connection (found 135.19: hidden by the comment-blind regex)
 router_query_get gap        # no wrapper, no .tki entry
 router_resp_json gap        # no wrapper, no .tki entry
