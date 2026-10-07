@@ -14,15 +14,17 @@
 # Counter: macOS `/usr/bin/time -l` ("instructions retired"); Linux
 # `perf stat -e instructions:u`.  With neither, it says SKIP and exits 77.
 # TOKE=<compiler> measures another compiler (default: this tree's ./toke);
-# PROGS="..." runs a subset.
+# PROGS="..." runs a subset.  TK_STR_VERIFY is unset for the measured runs:
+# the verify switch adds a strlen to every trusted read by design, which is
+# quadratic here.
 set -u
 DIR=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$DIR/../../.." && pwd)
 TK=${TOKE:-$ROOT/toke}; N=${N:-4000}; LIMIT=${LIMIT:-6}
 
 if [ "$(uname -s)" = Darwin ] && [ -x /usr/bin/time ]; then
-  insns() { PAT_N=$2 /usr/bin/time -l "$1" 2>&1 >/dev/null | awk '/instructions retired/{print $1}'; }
+  insns() { env -u TK_STR_VERIFY PAT_N=$2 /usr/bin/time -l "$1" 2>&1 >/dev/null | awk '/instructions retired/{print $1}'; }
 elif command -v perf >/dev/null 2>&1 && perf stat -x, -e instructions:u true >/dev/null 2>&1; then
-  insns() { PAT_N=$2 perf stat -x, -e instructions:u "$1" 2>&1 >/dev/null | awk -F, '/instructions/{print $1}'; }
+  insns() { env -u TK_STR_VERIFY PAT_N=$2 perf stat -x, -e instructions:u "$1" 2>&1 >/dev/null | awk -F, '/instructions/{print $1}'; }
 else
   echo "SKIP: no instruction counter (/usr/bin/time -l on macOS, perf on Linux)"; exit 77
 fi

@@ -430,8 +430,12 @@ nothing per iteration.
    against the shipped `str.c`.  Red: `str_slice` with a planted
    `out[n/2] = 0` after sealing aborts with `TK_STR_VERIFY: header 4 !=
    strlen 2`; main fails the switch case (no header).  The full conformance
-   suite and the stdlib CI tests were run with `TK_STR_VERIFY=1` at landing
-   step 3 (results in the story row).  Blast radius: 840 corpus programs
+   suite was run with `TK_STR_VERIFY=1` at landing step 3 (`85b2b1ea`):
+   every YAML case and every script passed except C735, whose instruction
+   counts the switch's per-read `strlen` makes quadratic (the case now
+   unsets it); no verify abort anywhere.  The stdlib CI-green tests under
+   the switch: all pass but `test-stdlib-auth-flow-integration`, which fails
+   identically on main.  Blast radius: 840 corpus programs
    with a `main` (60 from each of the 14 categories of
    `toke-corpus/corpus/regen_v04`), built with main's compiler and run
    plainly, and with the branch's compiler and run under `TK_STR_VERIFY=1`:
@@ -442,10 +446,13 @@ nothing per iteration.
    (`make test-asan-stdlib`, plus file, runtime, process and toml).
 2. *Scaling (performance)* — conform case C735 runs
    `test/perf/strlen/scaling.sh` (N = 4,000 vs 16,000, fail above 6×).
-   Main: 9.72 / 17.02 / 17.75, FAIL.  Branch: 1.81 / 1.88 / 2.01, PASS.  An
-   in-script control runs the `.len` loop over a string from an unconverted
-   producer (`str.frombytes`) and must still FAIL (16.89 here), so the gate
-   is seen to fire on the host that runs it.
+   Main: 9.72 / 17.02 / 17.75, FAIL.  Branch: 1.78 / 1.77 / 1.92, PASS.  An
+   in-script control runs the `.len` + charat loop over a string from an
+   unconverted producer (`str.frombytes`) and must still FAIL (16.99 here),
+   so the gate is seen to fire on the host that runs it.  (Not the `.len`
+   loop alone: since step 4 a loop-invariant `.len` is hoisted, and is
+   linear even on an unsealed string.)  The measured runs unset
+   `TK_STR_VERIFY`, which by design adds a `strlen` to every trusted read.
 3. *Reader ratchet* — `make check-str-strlen` (also in `make lint`):
    per-file counts of bare `strlen(` lines in `scripts/check_str_strlen_skiplist.txt`
    may only fall, and the core readers may not call `strlen` at all.  Shown

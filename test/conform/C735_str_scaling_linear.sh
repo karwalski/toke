@@ -16,9 +16,11 @@
 # Asserted: test/perf/strlen/scaling.sh — the 127.91 scanner, the `.len`
 # loop and the `.len` + charat loop at N and 4N; each must grow by at most 6x
 # in INSTRUCTIONS RETIRED (linear ~4, quadratic ~16; load cannot move a
-# count).  Control, in this script: the same `.len` loop over a string from a
-# producer that is NOT converted (str.frombytes, whose result is malloc'd by
-# the [byte] unpack) must still be quadratic — so the gate is seen to fail on
+# count).  Control, in this script: the same `.len` + charat loop over a
+# string from a producer that is NOT converted (str.frombytes, whose result is
+# malloc'd by the [byte] unpack) must still be quadratic -- charat, not `.len`
+# alone, because since step 4 (C737) a loop-invariant `.len` is hoisted and is
+# linear even on an unsealed string — so the gate is seen to fail on
 # this host, with this counter.  If str.frombytes is ever sealed, pick another
 # unconverted producer (scripts/check_str_strlen.py --census lists them).
 #
@@ -53,7 +55,7 @@ done <<< "${out}"
 # Control: an unconverted producer keeps the old, quadratic behaviour.
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c735_XXXXXX")"; trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}/perf/strlen"
-cat > "${WORK}/perf/strlen/len_only.tk" <<'EOF'
+cat > "${WORK}/perf/strlen/len_loop.tk" <<'EOF'
 m=main;
 i=io:std.io;
 i=s:std.str;
@@ -65,16 +67,16 @@ f=main():i64{
   let t=s.frombytes(s.bytes(s.build(b)));
   let cnt=mut.0;
   lp(let k=0;k<t.len;k=k+1){
-    cnt=cnt+1
+    if(t.charat(k)==44){cnt=cnt+1}
   };
   io.println("n=\(cnt)");
   <0
 };
 EOF
 cp "${REPO_ROOT}/test/perf/strlen/scaling.sh" "${WORK}/perf/strlen/"
-ctl="$(PROGS=len_only TOKE="${TKC}" sh "${WORK}/perf/strlen/scaling.sh" 2>&1)"
-if echo "${ctl}" | grep -q '^FAIL len_only: .*(quadratic)'; then
-    echo "  PASS: control: .len over an unconverted producer is still quadratic — $(echo "${ctl}" | sed -n 's/^FAIL len_only: //p')"
+ctl="$(PROGS=len_loop TOKE="${TKC}" sh "${WORK}/perf/strlen/scaling.sh" 2>&1)"
+if echo "${ctl}" | grep -q '^FAIL len_loop: .*(quadratic)'; then
+    echo "  PASS: control: the charat loop over an unconverted producer is still quadratic — $(echo "${ctl}" | sed -n 's/^FAIL len_loop: //p')"
     PASS=$((PASS + 1))
 else
     echo "  FAIL: control did not fail the gate:"; echo "${ctl}" | sed 's/^/      /'
