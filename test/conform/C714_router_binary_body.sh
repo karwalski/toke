@@ -232,9 +232,14 @@ int main(int argc, char **argv)
     TkRouter *e = router_new();
     router_static(e, "/s", dir);
     router_use_etag(e);
+    /* 121.91: a dispatched response's router-built memory (here the ETag
+     * string) is valid until the next dispatch, so each ETag is copied
+     * before the next request. */
     TkRouteResp ra = router_dispatch_ex(e, "GET", "/s/a.bin", NULL, NULL, NULL, NULL, 0);
+    const char *ea0 = hdr(ra, "ETag", 1);
+    char *ea = ea0 ? strdup(ea0) : NULL;
     TkRouteResp rb = router_dispatch_ex(e, "GET", "/s/b.bin", NULL, NULL, NULL, NULL, 0);
-    const char *ea = hdr(ra, "ETag", 1), *eb = hdr(rb, "ETag", 1);
+    const char *eb = hdr(rb, "ETag", 1);
     report(ea && eb && ea[0] == 'W' && strcmp(ea, eb) != 0,
            "etag: a.bin %s, b.bin %s (want two different weak ETags)", ea ? ea : "(none)", eb ? eb : "(none)");
     if (ea) {
@@ -242,6 +247,7 @@ int main(int argc, char **argv)
         TkRouteResp c = router_dispatch_ex(e, "GET", "/s/b.bin", NULL, NULL, in, iv, 1);
         report(c.status == 200, "etag: b.bin with a.bin's ETag in If-None-Match -> %d (want 200)", c.status);
     }
+    free(ea);
     return bad ? 1 : 0;
 }
 EOF

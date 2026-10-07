@@ -590,14 +590,7 @@ int main(void)
             ASSERT_INTEQ(resp.status, 200, "T32: router_static dispatch status=200");
             ASSERT_STREQ(resp.content_type, "text/html; charset=utf-8",
                          "T32: router_static dispatch content_type='text/html; charset=utf-8'");
-            if (resp.status == 200) {
-                free((char *)resp.body);
-                if (resp.nheaders > 0) {
-                    free((char *)resp.header_values[0]);
-                    free(resp.header_names);
-                    free(resp.header_values);
-                }
-            }
+            /* 121.91: a dispatched static response is router-owned */
             router_free(r);
         }
 
@@ -867,10 +860,7 @@ int main(void)
         }
         ASSERT(etag_found, "T42: etag mw — ETag header present and weak");
 
-        /* Clean up heap-allocated header arrays from middleware */
-        free(resp.header_names);
-        free((char *)resp.header_values[resp.nheaders - 1]); /* etag string */
-        free(resp.header_values);
+        /* 121.91: router-owned; released by the next dispatch / router_free */
 
         router_free(r);
     }
@@ -900,12 +890,7 @@ int main(void)
         }
         ASSERT(etag_buf[0] != '\0', "T43: etag mw — ETag extracted from first response");
 
-        /* Clean up first response headers */
-        if (r1.nheaders > 0) {
-            free((char *)r1.header_values[r1.nheaders - 1]);
-            free(r1.header_names);
-            free(r1.header_values);
-        }
+        /* 121.91: router-owned; released by the next dispatch / router_free */
 
         /* Second request with matching If-None-Match → expect 304 */
         const char *hnames[] = { "If-None-Match" };
@@ -933,12 +918,7 @@ int main(void)
                                               hnames, hvals, 1);
         ASSERT_INTEQ(resp.status, 200, "T44: etag mw — non-matching INM → 200");
 
-        /* Clean up */
-        if (resp.nheaders > 0) {
-            free((char *)resp.header_values[resp.nheaders - 1]);
-            free(resp.header_names);
-            free(resp.header_values);
-        }
+        /* 121.91: router-owned; released by the next dispatch / router_free */
 
         router_free(r);
     }
@@ -1021,9 +1001,7 @@ int main(void)
         ASSERT(found_vary, "T47: gzip mw — Vary: Accept-Encoding present");
         ASSERT(resp.body != NULL, "T47: gzip mw — body is non-NULL");
 
-        /* Free compressed body and header arrays */
-        if (resp.body)     free((char *)resp.body);
-        if (resp.nheaders) { free(resp.header_names); free(resp.header_values); }
+        /* 121.91: router-owned; released by the next dispatch / router_free */
 
         router_free(r);
     }

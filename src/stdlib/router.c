@@ -13,7 +13,9 @@
  * No external dependencies beyond libc.
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
- * compiler code. Callers own the returned pointers.
+ * compiler code.  Who frees a response's memory is router.h's "TkRouteResp
+ * memory ownership" (121.91): a handler's stays the handler's, and what the
+ * router allocates for a dispatched response is released by the router.
  *
  * Story: 15.1.3
  */
@@ -22,6 +24,7 @@
 #include "ws.h"
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>   /* strcasecmp */
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
@@ -49,6 +52,48 @@
 /* Client IP populated by router_serve for each accepted connection.
  * Empty string when no connection context (e.g. direct router_dispatch call). */
 static char serve_client_ip[48]; /* enough for IPv4 and IPv6 */
+
+/* ----------------------------------------------------------------------- */
+/* Response memory the router owns (story 121.91)                            */
+/* ----------------------------------------------------------------------- */
+
+/* Every allocation the router's OWN code makes for a response it hands back
+ * from dispatch -- the header arrays and ETag string of router_use_etag, the
+ * header arrays and compressed body of router_use_gzip, the body, header
+ * arrays and header values of a router_static route -- is recorded here and
+ * freed at the start of the next dispatch (router_dispatch,
+ * router_dispatch_ex, or a request served by router_handle_fd/router_serve,
+ * which also release it once the response is written) and by router_free.
+ * So a dispatched response is valid until the next dispatch on any router,
+ * the window the CORS middleware's static header arrays already had; the
+ * caller frees none of it.  Before 121.91 the middleware malloc'd fresh
+ * arrays per request and nothing freed them -- neither the caller (whose
+ * free() would have hit CORS's static arrays had CORS run after) nor the
+ * wire path.  Single-threaded, like the rest of the router's statics. */
+static void  **resp_pool;
+static size_t  resp_pool_n, resp_pool_cap;
+
+/* resp_pool_add -- the router owns p until the next release.  NULL is
+ * ignored.  If the list cannot grow p leaks rather than being freed while a
+ * response still points at it. */
+static void resp_pool_add(const void *p)
+{
+    if (!p) return;
+    if (resp_pool_n == resp_pool_cap) {
+        size_t nc = resp_pool_cap ? resp_pool_cap * 2 : 16;
+        void **np = realloc(resp_pool, nc * sizeof *np);
+        if (!np) return;
+        resp_pool = np;
+        resp_pool_cap = nc;
+    }
+    resp_pool[resp_pool_n++] = (void *)(uintptr_t)p;
+}
+
+static void resp_pool_release(void)
+{
+    for (size_t i = 0; i < resp_pool_n; i++) free(resp_pool[i]);
+    resp_pool_n = 0;
+}
 
 typedef struct TkRoute {
     char           *method;
@@ -221,6 +266,9 @@ void router_free(TkRouter *r)
         cur = next;
     }
     free(r);
+    /* 121.91: the last response's router-owned memory goes with it.  The
+     * pool's own array is kept for the next router; release leaves it empty. */
+    resp_pool_release();
 }
 
 /* ----------------------------------------------------------------------- */
@@ -533,6 +581,10 @@ static TkRouteResp dispatch_internal(TkRouter *r,
                                       const char **hnames, const char **hvals,
                                       uint64_t nhdrs)
 {
+    /* 121.91: the previous response's router-owned memory is released now;
+     * a dispatched response is valid until the next dispatch. */
+    resp_pool_release();
+
     /* We scan all registered routes and keep the best-priority match,
      * with first-registered winning ties (stable). */
     TkRoute    *best_route  = NULL;
@@ -1024,26 +1076,227 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
 /* router_serve — HTTP server using this router for dispatch                 */
 /* ----------------------------------------------------------------------- */
 
+/* router_reason -- the reason phrase for a status code (RFC 9110 sec. 15).
+ * 121.90: every response used to say "OK" -- "HTTP/1.1 404 OK".  A code
+ * with no registered phrase gets an empty one, which RFC 9112 sec. 4
+ * allows ("HTTP/1.1 299 "). */
+static const char *router_reason(int s)
+{
+    switch (s) {
+    case 100: return "Continue";            case 101: return "Switching Protocols";
+    case 200: return "OK";                  case 201: return "Created";
+    case 202: return "Accepted";            case 203: return "Non-Authoritative Information";
+    case 204: return "No Content";          case 205: return "Reset Content";
+    case 206: return "Partial Content";
+    case 300: return "Multiple Choices";    case 301: return "Moved Permanently";
+    case 302: return "Found";               case 303: return "See Other";
+    case 304: return "Not Modified";        case 307: return "Temporary Redirect";
+    case 308: return "Permanent Redirect";
+    case 400: return "Bad Request";         case 401: return "Unauthorized";
+    case 402: return "Payment Required";    case 403: return "Forbidden";
+    case 404: return "Not Found";           case 405: return "Method Not Allowed";
+    case 406: return "Not Acceptable";      case 408: return "Request Timeout";
+    case 409: return "Conflict";            case 410: return "Gone";
+    case 411: return "Length Required";     case 412: return "Precondition Failed";
+    case 413: return "Content Too Large";   case 414: return "URI Too Long";
+    case 415: return "Unsupported Media Type";
+    case 416: return "Range Not Satisfiable";
+    case 417: return "Expectation Failed";  case 418: return "I'm a teapot";
+    case 421: return "Misdirected Request"; case 422: return "Unprocessable Content";
+    case 425: return "Too Early";           case 426: return "Upgrade Required";
+    case 428: return "Precondition Required";
+    case 429: return "Too Many Requests";
+    case 431: return "Request Header Fields Too Large";
+    case 451: return "Unavailable For Legal Reasons";
+    case 500: return "Internal Server Error";
+    case 501: return "Not Implemented";     case 502: return "Bad Gateway";
+    case 503: return "Service Unavailable"; case 504: return "Gateway Timeout";
+    case 505: return "HTTP Version Not Supported";
+    default:  return "";
+    }
+}
+
+/* hdr_name_ok -- name is a non-empty RFC 9110 token (sec. 5.1): no CR, LF,
+ * colon, space or other separator can end the field early. */
+static int hdr_name_ok(const char *n)
+{
+    if (!n || !*n) return 0;
+    for (const unsigned char *p = (const unsigned char *)n; *p; p++) {
+        unsigned char c = *p;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9')) continue;
+        if (!strchr("!#$%&'*+-.^_`|~", c)) return 0;
+    }
+    return 1;
+}
+
+/* hdr_value_ok -- value holds no control byte but HTAB (RFC 9110 sec. 5.5):
+ * no CR or LF to start a forged header line or end the header block. */
+static int hdr_value_ok(const char *v)
+{
+    if (!v) return 0;
+    for (const unsigned char *p = (const unsigned char *)v; *p; p++)
+        if ((*p < 0x20 && *p != '\t') || *p == 0x7f) return 0;
+    return 1;
+}
+
+/* write_all -- write n bytes, retrying short writes and EINTR. */
+static void write_all(int fd, const char *b, size_t n)
+{
+    while (n > 0) {
+        ssize_t w = write(fd, b, n);
+        if (w < 0 && errno == EINTR) continue;
+        if (w <= 0) return;
+        b += (size_t)w;
+        n -= (size_t)w;
+    }
+}
+
+/* Growable header block for router_send_response. */
+typedef struct { char *b; size_t n, cap; int oom; } HdrBuf;
+
+static void hb_put(HdrBuf *h, const char *s, size_t n)
+{
+    if (h->oom) return;
+    if (h->n + n + 1 > h->cap) {
+        size_t nc = h->cap ? h->cap : 512;
+        while (h->n + n + 1 > nc) nc *= 2;
+        char *nb = realloc(h->b, nc);
+        if (!nb) { h->oom = 1; return; }
+        h->b = nb; h->cap = nc;
+    }
+    memcpy(h->b + h->n, s, n);
+    h->n += n;
+    h->b[h->n] = '\0';
+}
+static void hb_str(HdrBuf *h, const char *s) { if (s) hb_put(h, s, strlen(s)); }
+
+/* router_send_response -- write resp as an HTTP/1.1 response.
+ *
+ * 121.90: the status line carries the code's reason phrase (it said "OK"
+ * for every status), and resp.header_names/header_values are written (they
+ * were dropped, so Content-Encoding, ETag, Cache-Control, Content-Range and
+ * every CORS header never reached a client).
+ *
+ * The writer owns framing: Content-Length and Connection are its own, and a
+ * Content-Length, Transfer-Encoding or Connection header in the list is not
+ * sent.  Content-Type comes from resp.content_type; a Content-Type in the
+ * list is sent only when content_type is NULL (router_static_serve sets
+ * both, to the same value).  A header whose name is not a token or whose
+ * value holds CR, LF or another control byte is DROPPED, never repaired --
+ * that is a response-splitting attempt or a bug, and stripping the bytes
+ * would still send a value nobody wrote.  A content_type that fails the
+ * same check is replaced by application/octet-stream.  A status outside
+ * 100..599 is sent as 500.  1xx, 204 and 304 carry no body and no
+ * Content-Length (RFC 9110 sec. 6.4.1, 8.6). */
 static void router_send_response(int fd, TkRouteResp resp)
 {
-    char header[512];
-    const char *ct = resp.content_type ? resp.content_type : "text/plain";
+    int status = (resp.status >= 100 && resp.status <= 599) ? resp.status : 500;
+    int no_body = status < 200 || status == 204 || status == 304;
+
+    const char *ct = resp.content_type;
+    for (uint64_t i = 0; !ct && i < resp.nheaders; i++) {
+        const char *k = resp.header_names  ? resp.header_names[i]  : NULL;
+        const char *v = resp.header_values ? resp.header_values[i] : NULL;
+        if (k && strcasecmp(k, "Content-Type") == 0 && hdr_value_ok(v)) ct = v;
+    }
+    if (!ct) ct = "text/plain";
+    if (!hdr_value_ok(ct)) ct = "application/octet-stream";
+
     const char *bd = resp.body ? resp.body : "";
     /* 121.88: a served file or a gzip stream holds 0x00 -- strlen() sent a
      * binary file cut at its first NUL, with a Content-Length to match. */
-    size_t bl = router_resp_body_len(resp);
-    int n = snprintf(header, sizeof(header),
-                     "HTTP/1.1 %d OK\r\n"
-                     "Content-Type: %s\r\n"
-                     "Content-Length: %zu\r\n"
-                     "Connection: close\r\n\r\n",
-                     resp.status, ct, bl);
-    if (n > 0) {
-        (void)write(fd, header, (size_t)n);
+    size_t bl = no_body ? 0 : router_resp_body_len(resp);
+
+    HdrBuf h = { NULL, 0, 0, 0 };
+    char line[96];
+    snprintf(line, sizeof line, "HTTP/1.1 %d %s\r\n", status, router_reason(status));
+    hb_str(&h, line);
+    if (status != 204 && status != 304 && status >= 200) {
+        hb_str(&h, "Content-Type: "); hb_str(&h, ct); hb_str(&h, "\r\n");
+        snprintf(line, sizeof line, "Content-Length: %zu\r\n", bl);
+        hb_str(&h, line);
     }
-    if (bl) {
-        (void)write(fd, bd, bl);
+    for (uint64_t i = 0; i < resp.nheaders; i++) {
+        const char *k = resp.header_names  ? resp.header_names[i]  : NULL;
+        const char *v = resp.header_values ? resp.header_values[i] : NULL;
+        if (!k || !v || !hdr_name_ok(k) || !hdr_value_ok(v)) continue;
+        if (strcasecmp(k, "Content-Length") == 0 ||
+            strcasecmp(k, "Transfer-Encoding") == 0 ||
+            strcasecmp(k, "Connection") == 0 ||
+            strcasecmp(k, "Content-Type") == 0) continue;
+        hb_str(&h, k); hb_str(&h, ": "); hb_str(&h, v); hb_str(&h, "\r\n");
     }
+    hb_str(&h, "Connection: close\r\n\r\n");
+
+    if (h.oom) {
+        static const char r500[] =
+            "HTTP/1.1 500 Internal Server Error\r\n"
+            "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        write_all(fd, r500, sizeof r500 - 1);
+        free(h.b);
+        return;
+    }
+    write_all(fd, h.b, h.n);
+    free(h.b);
+    if (bl) write_all(fd, bd, bl);
+}
+
+/* MAX_REQ_HEADERS -- request header fields router_handle_fd/router_serve
+ * hand to dispatch; any beyond are not seen by middleware or handlers. */
+#define MAX_REQ_HEADERS 64
+
+/* router_parse_headers -- split the header block of raw (the bytes after
+ * the request line, up to the empty line) into names[]/vals[], copying it
+ * into buf[cap] first so raw is left whole (the WebSocket upgrade scans it).
+ * Values lose their leading and trailing blanks.  A line with no colon, an
+ * empty name, a name with a blank before its colon, or a continuation line
+ * (obs-fold) is skipped.  Lines end at CRLF or a bare LF.  Returns the
+ * number of fields.
+ *
+ * 121.90: router_handle_fd and router_serve dispatched with NO request
+ * headers, so over the wire the gzip middleware never saw Accept-Encoding,
+ * the ETag middleware never saw If-None-Match and CORS never saw Origin. */
+static uint64_t router_parse_headers(const char *raw, char *buf, size_t cap,
+                                     const char **names, const char **vals,
+                                     uint64_t max)
+{
+    const char *p = raw;
+    while (*p && *p != '\n') p++;          /* skip the request line */
+    if (*p == '\n') p++;
+    const char *end = strstr(p, "\r\n\r\n");
+    const char *end2 = strstr(p, "\n\n");
+    if (!end || (end2 && end2 < end)) end = end2;
+    size_t len = end ? (size_t)(end - p) : strlen(p);
+    if (len >= cap) len = cap - 1;
+    memcpy(buf, p, len);
+    buf[len] = '\0';
+
+    uint64_t n = 0;
+    char *line = buf;
+    while (line && *line && n < max) {
+        char *nl = strchr(line, '\n');
+        if (nl) {
+            *nl = '\0';
+            if (nl > line && nl[-1] == '\r') nl[-1] = '\0';
+        }
+        char *next = nl ? nl + 1 : NULL;
+        if (*line != ' ' && *line != '\t') {
+            char *colon = strchr(line, ':');
+            if (colon && colon > line && colon[-1] != ' ' && colon[-1] != '\t') {
+                *colon = '\0';
+                char *v = colon + 1;
+                while (*v == ' ' || *v == '\t') v++;
+                char *ve = v + strlen(v);
+                while (ve > v && (ve[-1] == ' ' || ve[-1] == '\t')) *--ve = '\0';
+                names[n] = line;
+                vals[n]  = v;
+                n++;
+            }
+        }
+        line = next;
+    }
+    return n;
 }
 
 TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
@@ -1148,12 +1401,17 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
             continue;
         }
 
-        TkRouteResp resp = router_dispatch(r,
+        char        hbuf[8192];
+        const char *hn[MAX_REQ_HEADERS], *hv[MAX_REQ_HEADERS];
+        uint64_t    nh = router_parse_headers(raw, hbuf, sizeof hbuf,
+                                              hn, hv, MAX_REQ_HEADERS);
+        TkRouteResp resp = router_dispatch_ex(r,
             method ? method : "GET",
             path   ? path   : "/",
-            query, body);
+            query, body, hn, hv, nh);
 
         router_send_response(fd, resp);
+        resp_pool_release();        /* 121.91: written; release it now */
         serve_client_ip[0] = '\0'; /* clear after dispatch */
         close(fd);
     }
@@ -1184,11 +1442,16 @@ void router_handle_fd(TkRouter *r, int fd)
         return;
     }
 
-    TkRouteResp resp = router_dispatch(r,
+    char        hbuf[8192];
+    const char *hn[MAX_REQ_HEADERS], *hv[MAX_REQ_HEADERS];
+    uint64_t    nh = router_parse_headers(raw, hbuf, sizeof hbuf,
+                                          hn, hv, MAX_REQ_HEADERS);
+    TkRouteResp resp = router_dispatch_ex(r,
         method ? method : "GET",
         path   ? path   : "/",
-        query, body);
+        query, body, hn, hv, nh);
     router_send_response(fd, resp);
+    resp_pool_release();            /* 121.91: written; release it now */
     close(fd);
 }
 
@@ -1518,19 +1781,27 @@ static StaticEntry static_entries[MAX_STATIC_ROUTES];
 /* One trampoline per slot — we declare them as forward references and
  * define them with a macro below. */
 
-/* Macro to define a trampoline for slot N.
- * Strips the registered prefix from ctx.path to get the relative sub-path,
- * then delegates to router_static_serve.
- * If-None-Match is not available through TkRouteCtx (no header map); the
- * full server loop (router_serve) handles conditional GET at a higher level. */
+/* static_route_serve -- what every trampoline runs: strip the registered
+ * prefix from ctx.path and serve the rest with router_static_serve.
+ *
+ * 121.90: the request's If-None-Match and Range headers are passed through.
+ * The trampolines used to pass NULL for both ("not available through
+ * TkRouteCtx", which was untrue -- ctx carries the request headers), so a
+ * router_static route never answered 304 or 206 over the wire.
+ *
+ * 121.91: what router_static_serve allocated -- for 200/206 the body; for
+ * any response with headers both header arrays and every header value --
+ * is handed to the router's response pool, so a dispatched static response
+ * is released at the next dispatch like every other router-built one.
+ * router_static_serve called directly keeps its caller-frees contract. */
+static const char *ctx_req_header(TkRouteCtx ctx, const char *name);
+static TkRouteResp static_route_serve(const StaticEntry *se, TkRouteCtx ctx);
+
+/* Macro to define a trampoline for slot N. */
 #define DEFINE_STATIC_TRAMPOLINE(N)                                         \
 static TkRouteResp static_handler_##N(TkRouteCtx ctx)                      \
 {                                                                           \
-    StaticEntry *se = &static_entries[N];                                   \
-    const char *rel = ctx.path;                                             \
-    size_t plen = strlen(se->url_prefix);                                   \
-    if (strncmp(rel, se->url_prefix, plen) == 0) rel += plen;              \
-    return router_static_serve(se->dir_path, rel, NULL, NULL);              \
+    return static_route_serve(&static_entries[N], ctx);                     \
 }
 
 DEFINE_STATIC_TRAMPOLINE(0)
@@ -1556,6 +1827,25 @@ static TkRouteHandler static_trampolines[MAX_STATIC_ROUTES] = {
     static_handler_8,  static_handler_9,  static_handler_10, static_handler_11,
     static_handler_12, static_handler_13, static_handler_14, static_handler_15,
 };
+
+static TkRouteResp static_route_serve(const StaticEntry *se, TkRouteCtx ctx)
+{
+    const char *rel = ctx.path;
+    size_t plen = strlen(se->url_prefix);
+    if (strncmp(rel, se->url_prefix, plen) == 0) rel += plen;
+    TkRouteResp resp = router_static_serve(se->dir_path, rel,
+                                           ctx_req_header(ctx, "If-None-Match"),
+                                           ctx_req_header(ctx, "Range"));
+    if (resp.status == 200 || resp.status == 206)
+        resp_pool_add(resp.body);
+    if (resp.nheaders > 0) {
+        for (uint64_t i = 0; i < resp.nheaders; i++)
+            resp_pool_add(resp.header_values[i]);
+        resp_pool_add(resp.header_names);
+        resp_pool_add(resp.header_values);
+    }
+    return resp;
+}
 
 void router_static(TkRouter *r, const char *url_prefix, const char *dir_path)
 {
@@ -1663,8 +1953,10 @@ static const char *ctx_req_header(TkRouteCtx ctx, const char *name)
 
 /*
  * resp_with_etag — return a copy of base with an ETag header appended.
- * New header_names/header_values arrays and the etag string are
- * heap-allocated and owned by the returned response.
+ * The new header_names/header_values arrays and the etag string are owned
+ * by the router (resp_pool, 121.91): released at the next dispatch.  The
+ * arrays they replace are not freed here -- they belong to whoever built
+ * them (a handler, another middleware, the pool already).
  */
 static TkRouteResp resp_with_etag(TkRouteResp base, char *etag)
 {
@@ -1683,6 +1975,9 @@ static TkRouteResp resp_with_etag(TkRouteResp base, char *etag)
     }
     names[nh] = "ETag";
     vals[nh]  = etag;
+    resp_pool_add(names);   /* 121.91: router-owned until the next dispatch */
+    resp_pool_add(vals);
+    resp_pool_add(etag);
     base.header_names  = names;
     base.header_values = vals;
     base.nheaders      = nh + 1;
@@ -1803,8 +2098,8 @@ static int gzip_compress(const char *src, size_t srclen,
  *
  * On compression: body is replaced with the gzip bytes; the old body
  * is NOT freed (it is owned by the route handler, not the middleware).
- * The new compressed body IS heap-allocated and owned by the caller of
- * router_dispatch.
+ * The compressed body and the new header arrays are owned by the router
+ * (121.91): valid until the next dispatch; the caller frees none of them.
  */
 static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
 {
@@ -1853,6 +2148,15 @@ static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
     new_vals[nh]      = "gzip";
     new_names[nh + 1] = "Vary";
     new_vals[nh + 1]  = "Accept-Encoding";
+
+    /* 121.91: the new arrays and the compressed body are router-owned
+     * (resp_pool), released at the next dispatch.  They were malloc'd here
+     * and freed by nobody: every compressed response leaked them.  The
+     * arrays and body they replace are not freed -- each belongs to whoever
+     * built it (a handler's literal, a CORS static array, the pool). */
+    resp_pool_add(new_names);
+    resp_pool_add(new_vals);
+    resp_pool_add(compressed);
 
     resp.body          = compressed;
     /* 121.88: a gzip stream always holds 0x00 (its FLG byte, at offset 3):
