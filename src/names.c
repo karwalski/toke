@@ -1497,6 +1497,77 @@ static int name_has_non_alias_decl(const Scope *scope, const char *name, int len
     return 0;
 }
 
+/*
+ * 127.292 — does a match-arm label name anything?
+ *
+ * The label (`$str:v`, `$fileerr:e`, `$notfound:m`, `$ok:v`) is not resolved
+ * as a reference (see NODE_MATCH_ARM), and nothing else checked it, so a
+ * label that named no type and no variant passed --check.  The old
+ * upper-case spellings of the 127.251 types (`ProcessErr:e`, `Handle:h`,
+ * `ParseErr:e`) are such labels now: beside `$i64:v` the match lowered
+ * positionally and the label was never read; with no recognisable label at
+ * all (`{Handle:h ..; ProcessErr:e ..}`) codegen died with E9005 on a
+ * program --check had passed, and --migrate (127.197) took the program for
+ * clean and declined to rewrite it.
+ *
+ * A label names something when it is: a result or option label (ok, err,
+ * some, none, and the legacy Ok/Err codegen also reads); a primitive type;
+ * a type or a variant in scope (local `t=` declarations, imported .tki
+ * types and their `$` variants, both seeded into the module scope); a field
+ * or variant of a type declared here (a variant spelled without its `$`);
+ * or a field or variant of an imported .tki type (std sums such as
+ * fileerr's notfound are not seeded as names).  Values -- functions, lets,
+ * parameters, module aliases -- are not.  Deliberately wide: this rejects a
+ * label that names NOTHING, not one that names the wrong thing.
+ */
+static int arm_label_names_something(const Scope *scope, const char *src,
+                                     const char *name, int len) {
+    static const char *const k_labels[] = {
+        "ok", "err", "Ok", "Err", "some", "none",
+        "str", "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8",
+        "f64", "f32", "bool", "byte", "void", NULL
+    };
+    for (int i = 0; k_labels[i]; i++)
+        if ((int)strlen(k_labels[i]) == len && memcmp(k_labels[i], name, (size_t)len) == 0)
+            return 1;
+    for (const Scope *sc = scope; sc; sc = sc->parent)
+        for (const Decl *d = sc->head; d; d = d->next) {
+            if (!d->name || d->name_len != len || memcmp(d->name, name, (size_t)len) != 0)
+                continue;
+            if (d->kind == DECL_TYPE || d->kind == DECL_PREDEFINED) return 1;
+        }
+    /* fields / variants of a type declared in this program */
+    const Scope *ms = scope;
+    while (ms && ms->parent) ms = ms->parent;
+    for (const Decl *d = ms ? ms->head : NULL; d; d = d->next) {
+        if (d->kind != DECL_TYPE || !d->def_node) continue;
+        const Node *td = d->def_node;
+        for (int j = 1; j < td->child_count; j++) {
+            const Node *ch = td->children[j];
+            if (!ch) continue;
+            int n = ch->kind == NODE_STMT_LIST ? ch->child_count : 1;
+            for (int k = 0; k < n; k++) {
+                const Node *f = ch->kind == NODE_STMT_LIST ? ch->children[k] : ch;
+                if (f && f->kind == NODE_FIELD && f->tok_len == len &&
+                    memcmp(src + f->tok_start, name, (size_t)len) == 0)
+                    return 1;
+            }
+        }
+    }
+    /* fields / variants of an imported .tki type */
+    if (s_name_env)
+        for (int i = 0; i < s_name_env->itype_count; i++) {
+            const ImportedType *it = &s_name_env->itypes[i];
+            for (int k = 0; k < it->field_count; k++) {
+                const char *fn = it->field_names ? it->field_names[k] : NULL;
+                if (!fn) continue;
+                if (fn[0] == '$') fn++;
+                if ((int)strlen(fn) == len && memcmp(fn, name, (size_t)len) == 0) return 1;
+            }
+        }
+    return 0;
+}
+
 /* 127.98 (i): set while the base identifier of a member access is resolved */
 static int s_resolving_member_base = 0;
 
@@ -1965,8 +2036,8 @@ static int resolve_func(const Node *node, const char *src,
  *   NODE_MATCH_ARM:
  *     Opens an arm scope, inserts the binding name (child[1]) into it,
  *     and resolves the arm body (child[2]) within that scope.  The
- *     variant label (child[0]) is intentionally not resolved — it is
- *     validated by the type checker.
+ *     variant label (child[0]) is not resolved as a reference; it must
+ *     name a type or a variant (arm_label_names_something, 127.292).
  *
  *   NODE_LOOP_STMT (lp):
  *     Opens a loop scope for the init variable, then resolves the
@@ -2075,9 +2146,31 @@ static int resolve_node(const Node *node, const char *src,
          * children[0]: NODE_TYPE_IDENT (variant label — not a standalone ref)
          * children[1]: NODE_IDENT (binding name — insert into arm scope)
          * children[2]: body expr (resolve in arm scope) */
+        /* 127.292: the label is not a reference, but it must name a type or
+         * a variant (arm_label_names_something).  E3011 when it names
+         * nothing; the fix only for an old spelling of a 127.251 type whose
+         * module is imported (renamed_type_fix), as in a type position. */
+        const Node *lab = node->child_count > 0 ? node->children[0] : NULL;
+        if (lab && lab->kind == NODE_TYPE_IDENT && lab->tok_len > 0 &&
+            !arm_label_names_something(scope, src, src + lab->tok_start, lab->tok_len)) {
+            s_name_error_count++;
+            if (s_name_error_count <= MAX_NAME_ERRORS) {
+                char nbuf[201], msg[512], fbuf[128];
+                int mlen = lab->tok_len < 200 ? lab->tok_len : 200;
+                memcpy(nbuf, src + lab->tok_start, (size_t)mlen); nbuf[mlen] = '\0';
+                int sig = lab->tok_start > 0 && src[lab->tok_start - 1] == '$';
+                snprintf(msg, sizeof msg,
+                         "match arm label '%s%s' names no type or variant in scope",
+                         sig ? "$" : "", nbuf);
+                const char *fix = renamed_type_fix(scope, nbuf, sig, fbuf, sizeof fbuf);
+                diag_emit(DIAG_ERROR, E3011, lab->start, lab->line, lab->col,
+                          msg, "fix", fix, (const char *)NULL);
+            }
+            *had_error = 1;
+        }
         Scope *arm_scope = push_scope(arena, scope);
         if (!arm_scope) { *had_error = 1; return -1; }
-        /* children[0] (variant label) intentionally skipped */
+        /* children[0] (variant label) is checked above, not resolved */
         const Node *bname = node->child_count > 1 ? node->children[1] : NULL;
         if (bname && bname->kind == NODE_IDENT) {
             DeclKind dk = DECL_LET;

@@ -1,0 +1,12 @@
+id: D206
+series: D
+description: "127.292: a match-arm label must name a type or a variant -- the old upper-case spelling of a 127.251 type (`ProcessErr:e`) named nothing, passed --check, and lowered positionally or died with E9005 at codegen; it is E3011 whose fix names the renamed type with its sigil, offered only because std.process is imported, so `$processerr` is in scope"
+input: |
+  m=t;
+  i=process:std.process;
+  f=main():i64{
+    <mt process.spawn(@("/bin/true")){$handle:h 0;ProcessErr:e 1}
+  };
+expected_exit_code: 1
+expected_error_codes: ["E3011"]
+expected_fix: "did you mean '$processerr'?"
