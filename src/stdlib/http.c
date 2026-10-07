@@ -1097,28 +1097,61 @@ static void log_request(const char *client_ip, const Req *req,
 
 /* ── Connection handler (single accepted socket) ────────────────────── */
 
+/* conn_list_has_close — 1 when a Connection field value (n bytes at v)
+ * lists the "close" option, compared without regard to case.  121.101:
+ * Connection is a comma-separated list (RFC 9110 sec. 7.6.1), so "close"
+ * may follow other options ("upgrade, close", "keep-alive, close"). */
+static int conn_list_has_close(const char *v, size_t n)
+{
+    size_t i = 0;
+    while (i < n) {
+        while (i < n && (v[i] == ' ' || v[i] == '\t' || v[i] == ',')) i++;
+        size_t s = i;
+        while (i < n && v[i] != ',') i++;
+        size_t e = i;
+        while (e > s && (v[e - 1] == ' ' || v[e - 1] == '\t')) e--;
+        if (e - s == 5 && strncasecmp(v + s, "close", 5) == 0) return 1;
+    }
+    return 0;
+}
+
 /*
  * req_wants_close — return 1 if the request signals Connection: close,
- * 0 if it signals keep-alive (or is silent, defaulting to keep-alive
- * for HTTP/1.1).
+ * 0 otherwise (HTTP/1.1 defaults to keep-alive).  121.101: every
+ * Connection field, read as a list; only the first token of the first
+ * field was read, so "Connection: upgrade, close" kept the connection.
  */
 static int req_wants_close(const char *raw)
 {
-    /* Walk header lines looking for Connection: */
     const char *p = strstr(raw, "\r\n");
     while (p) {
         p += 2; /* skip \r\n */
         const char *eol = strstr(p, "\r\n");
         if (!eol || eol == p) break; /* blank line = end of headers */
-        if (strncasecmp(p, "Connection:", 11) == 0) {
-            const char *v = p + 11;
-            while (*v == ' ') v++;
-            if (strncasecmp(v, "close", 5) == 0) return 1;
-            return 0; /* "keep-alive" or anything else */
-        }
+        if (strncasecmp(p, "Connection:", 11) == 0 &&
+            conn_list_has_close(p + 11, (size_t)(eol - (p + 11))))
+            return 1;
         p = eol;
     }
     return 0; /* HTTP/1.1 default: keep-alive */
+}
+
+/* res_wants_close — 1 when the handler's response asks for the connection
+ * to end: a Connection field whose list holds "close".  121.101: since
+ * 121.97 the writer owns Connection and never sends the handler's, so this
+ * is how a handler's close reaches it -- the writer sends its own
+ * "Connection: close" and the loop ends after the response.  A handler's
+ * "keep-alive" changes nothing: the writer still decides that. */
+static int res_wants_close(const Res *res)
+{
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        const char *v = res->headers.data[i].val;
+        if (k && v && strcasecmp(k, "Connection") == 0 &&
+            conn_list_has_close(v, strlen(v)))
+            return 1;
+    }
+    return 0;
 }
 
 /*
@@ -1868,6 +1901,12 @@ static void handle_connection(int fd)
         if (path_matched && !handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
         }
+
+        /* 121.101: a handler's Connection: close ends the connection after
+         * this response.  The close lingers (http_linger_close): bytes the
+         * client already pipelined behind this request would otherwise make
+         * close() send a reset, which can discard the response. */
+        if (keep_alive && res_wants_close(&res)) { keep_alive = 0; linger = 1; }
 
         /* 121.100: one framing decision for GET and HEAD (res_frame_plan);
          * a HEAD writes the GET's head and no body (RFC 9110 sec. 9.3.2). */
@@ -5703,6 +5742,9 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         if (tls_path_matched && !tls_handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
         }
+
+        /* 121.101: a handler's Connection: close, as on the plain loop. */
+        if (keep_alive && res_wants_close(&res)) { keep_alive = 0; linger = 1; }
 
         /* 121.100: one framing decision for GET and HEAD, as on the plain
          * loop; the TLS writer always sends a length (may_chunk 0). */
