@@ -20,6 +20,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "tk_bind.h"   /* 135.33 */
+#include "tk_strhdr.h" /* 127.170: net.read returns a sealed string */
 
 int64_t tk_net_portavailable_w(int64_t port) {
     TK_REQUIRE(TK_CAP_NET);
@@ -84,11 +85,12 @@ int64_t tk_net_accept_w(int64_t listener) {
 }
 
 int64_t tk_net_read_w(int64_t conn) {
-    char *buf = malloc(4096);
-    if (!buf) return 0;
-    ssize_t n = read((int)conn, buf, 4095);
-    if (n <= 0) { free(buf); return 0; }
-    buf[n] = '\0';
+    char tmp[4096];
+    ssize_t n = read((int)conn, tmp, sizeof tmp - 1);
+    if (n <= 0) return 0;
+    /* 127.170: sealed with the C-string length (the bytes may hold a 0) */
+    const char *nul = memchr(tmp, '\0', (size_t)n);
+    char *buf = tks_dup(tmp, nul ? (size_t)(nul - tmp) : (size_t)n);
     return (int64_t)(intptr_t)buf;
 }
 

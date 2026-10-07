@@ -15,6 +15,7 @@
  */
 
 #include <stdint.h>
+#include <stddef.h>   /* size_t (127.170: file_read_into) */
 
 typedef enum {
     FILE_ERR_NOT_FOUND,
@@ -127,6 +128,16 @@ const char      *file_lasterrkind(void);
 void             file_setlasterr(FileErrKind kind, const char *msg);
 
 StrFileResult    file_read(const char *path);
+
+/* 127.170: file_read with the result's storage chosen by the caller.
+ * alloc(n) returns room for n bytes plus the NUL (NULL on failure); seal(p, k)
+ * is called once the bytes are final, with k the C-string length of p (a file
+ * holding a 0 byte reads as the text before it).  file_read is
+ * file_read_into(path, NULL, NULL): malloc, caller frees.  tk_file_read_w
+ * passes tks_alloc / tks_seal (tk_strhdr.h) so file.read returns a sealed
+ * string; file.c itself never references them, so it links without str.c. */
+StrFileResult    file_read_into(const char *path, char *(*alloc)(size_t n),
+                                char *(*seal)(char *p, size_t n));
 BoolFileResult   file_write(const char *path, const char *content);
 BoolFileResult   file_append(const char *path, const char *content);
 int              file_exists(const char *path);
