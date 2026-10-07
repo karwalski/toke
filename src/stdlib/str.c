@@ -713,6 +713,7 @@ void tks_verify_fail(const char *p, int64_t hdr)
 #if TKS_HEAP
 #include <sys/mman.h>
 #include <sched.h>
+#include <pthread.h>
 
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
@@ -771,6 +772,10 @@ static int tks_reserve(void)
             tks_bits = (uint8_t *)b;
             __atomic_store_n(&tks_lo, (char *)r, __ATOMIC_RELEASE);
             st = 2;
+            /* The http server forks workers.  A fork while another thread
+             * holds the lock (mid-commit) would leave the child spinning
+             * forever; hold it across fork so the child's copy is free. */
+            (void)pthread_atfork(tks_lock, tks_unlock, tks_unlock);
         }
         __atomic_store_n(&tks_state, st, __ATOMIC_RELEASE);
     }

@@ -17,7 +17,9 @@
  *   5. the verify switch (child processes, so an abort is observable):
  *      a planted write into a sealed string gives the silent wrong answer
  *      with TK_STR_VERIFY unset, and aborts with TK_STR_VERIFY=1;
- *   6. free() of a sealed string does not return normally.
+ *   6. free() of a sealed string does not return normally;
+ *   7. fork() while another thread is committing chunks: every child can
+ *      still allocate (the commit lock is held across fork, pthread_atfork).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,6 +159,40 @@ static void test_chunks(void)
     free(buf);
 }
 
+/* ── 7. fork while another thread commits ──────────────────────────────── */
+static int g_stop;
+static void *committer(void *arg)
+{
+    (void)arg;
+    /* 1 MiB blocks never written: each 64th crosses a commit chunk, and no
+     * page is touched, so this costs address space, not memory.  Bounded to
+     * 4 GiB so the region is never exhausted. */
+    for (int i = 0; i < 4096 && !__atomic_load_n(&g_stop, __ATOMIC_ACQUIRE); i++)
+        (void)tks_alloc((size_t)1 << 20);
+    return NULL;
+}
+
+static void test_fork(void)
+{
+    pthread_t t;
+    pthread_create(&t, NULL, committer, NULL);
+    int ok = 0, n = 40;
+    for (int i = 0; i < n; i++) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            alarm(10);                            /* a deadlock dies, not hangs */
+            char *p = tks_dup("child", 5);
+            _exit(p && tk_strlen(p) == 5 && strcmp(p, "child") == 0 ? 0 : 1);
+        }
+        int st = 0;
+        waitpid(pid, &st, 0);
+        if (WIFEXITED(st) && WEXITSTATUS(st) == 0) ok++;
+    }
+    __atomic_store_n(&g_stop, 1, __ATOMIC_RELEASE);
+    pthread_join(t, NULL);
+    ASSERT(ok == n, "fork x40 while another thread commits chunks: every child allocates");
+}
+
 /* ── 5-6. the verify switch and the never-freed rule ────────────────────── */
 static int run_child(const char *self, const char *mode, const char *verify, char *out, size_t outsz)
 {
@@ -224,6 +260,7 @@ int main(int argc, char **argv)
     test_threads();           /* first: races the one-time reservation */
     test_trust();
     test_chunks();
+    test_fork();
     test_verify(argv[0]);
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
