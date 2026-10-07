@@ -37,7 +37,6 @@ tk_log_with_context c-api src/stdlib/log.h,test/stdlib/test_log.c,test/conform/C
 # ── std.infer C core (docs/stdlib/infer.md: the toke surface is a facade) ────
 tk_infer_is_loaded c-api src/stdlib/infer.h,test/stdlib/test_infer.c   # handle query of the finished C core; tested from C
 tk_infer_unload c-api src/stdlib/infer.h,docs/stdlib/infer.md,test/stdlib/test_infer.c,test/stdlib/test_infer_stream.c   # infer.md: "`tk_infer_unload` exists; the wrapper returns 0"
-tk_infer_stream_cleanup dead src/stdlib/infer_stream.h   # infer_stream.h/.c say it is "called from tk_infer_unload"; tk_infer_unload does not call it and no test does -- a missing caller (defect reported by Batch Z59), not an API
 
 # ── runtime ABI JSON printers (docs/runtime-abi.md) ─────────────────────────
 tk_json_print_arr_bool c-api src/stdlib/tk_runtime.h,docs/runtime-abi.md,docs/compiler/runtime-abi.md,test/stdlib/test_tk_runtime.c   # listed in the runtime ABI table; the compiler does not currently emit it
@@ -67,5 +66,5 @@ tk_webview_run_event_loop c-api src/stdlib/webview.h   # webview.h documents it 
 tk_webview_set_title c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # tested from C
 
 # ── genuinely dead ──────────────────────────────────────────────────────────
-tk_array_retain dead docs/decisions/ADR-0006.md   # ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c still says codegen emits it (stale)
+tk_array_retain dead docs/decisions/ADR-0006.md   # ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c says so (136.76)
 tk_os_o_nofollow dead   # no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story)

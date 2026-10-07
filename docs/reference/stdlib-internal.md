@@ -85,10 +85,10 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 72 |
-| `c-internal` | called only from other C in `src/stdlib/` | 153 |
+| `c-internal` | called only from other C in `src/stdlib/` | 154 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 29 |
-| `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 3 |
+| `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 2 |
 | | **total** | **266** |
 
 A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the conformance harness -- and is listed with the file that documents it. A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
@@ -170,7 +170,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (153)
+### `c-internal` (154)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -203,6 +203,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_infer_generate` | `infer.c` | infer.c |
 | `tk_infer_load` | `infer.c` | infer.c |
 | `tk_infer_load_streaming` | `infer_stream.c` | infer_stream.c |
+| `tk_infer_stream_cleanup` | `infer_stream.c` | infer.c |
 | `tk_infer_stream_throughput` | `infer_stream.c` | infer_stream.c |
 | `tk_inject_bootstrap` | `webview.c` | webview.c |
 | `tk_log_debug` | `log.c` | log_glue.c |
@@ -376,10 +377,9 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_webview_run_event_loop` | `webview.c` | webview.h documents it as the main-thread platform run loop an embedder calls; a blocking GUI loop, so no headless test calls it |
 | `tk_webview_set_title` | `webview.c` | tested from C |
 
-### `dead` (3)
+### `dead` (2)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
-| `tk_array_retain` | `collections_glue.c` | ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c still says codegen emits it (stale) |
-| `tk_infer_stream_cleanup` | `infer_stream.c` | infer_stream.h/.c say it is "called from tk_infer_unload"; tk_infer_unload does not call it and no test does -- a missing caller (defect reported by Batch Z59), not an API |
+| `tk_array_retain` | `collections_glue.c` | ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c says so (136.76) |
 | `tk_os_o_nofollow` | `os.c` | no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story) |

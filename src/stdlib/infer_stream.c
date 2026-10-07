@@ -21,6 +21,7 @@
  */
 
 #include "infer_stream.h"
+#include "infer_handle.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -594,20 +595,11 @@ static void *prefetch_thread_fn(void *arg)
 }
 
 /* =========================================================================
- * Minimal opaque handle definition
- *
- * The real struct lives in infer.c but we need a local definition to allocate
- * one from this translation unit.  This definition MUST match the one in
- * infer.c exactly.
+ * The handle layout comes from infer_handle.h, the same definition infer.c
+ * uses.  This file used to carry its own copy, commented "MUST match the one
+ * in infer.c exactly"; it did not, and tk_infer_unload read a streaming
+ * handle through the wrong layout (136.75).
  * ========================================================================= */
-
-struct TkModelHandle {
-    char            id[64];
-    pthread_mutex_t mu;
-    int             loaded;
-    void           *llama_ctx;   /* TODO: struct llama_context * */
-    void           *llama_model; /* TODO: struct llama_model   * */
-};
 
 /* =========================================================================
  * tk_infer_load_streaming (72.7.3)
@@ -690,8 +682,8 @@ TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
     }
 
     snprintf(h->id, sizeof(h->id), "stream:%s", model_dir);
-    pthread_mutex_init(&h->mu, NULL);
-    h->loaded = 1;
+    pthread_mutex_init(&h->lock, NULL);
+    /* h->model / h->ctx stay NULL until the layer loop below exists. */
 
     s->owner = h;
     registry_insert(s);
@@ -706,7 +698,7 @@ TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
         pthread_cond_destroy(&s->cond_slot_ready);
         free(s->slots);
         free(s);
-        pthread_mutex_destroy(&h->mu);
+        pthread_mutex_destroy(&h->lock);
         free(h);
         result.is_err   = 1;
         result.err.msg  = "failed to start prefetch thread";
@@ -759,7 +751,8 @@ TkStreamThroughput tk_infer_stream_throughput(const TkModelHandle *h)
 }
 
 /* =========================================================================
- * tk_infer_stream_cleanup — called from tk_infer_unload (72.7.3)
+ * tk_infer_stream_cleanup — called from tk_infer_unload (72.7.3; the call
+ * itself landed in 136.75)
  * ========================================================================= */
 
 /*

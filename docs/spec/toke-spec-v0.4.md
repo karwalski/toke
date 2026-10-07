@@ -252,7 +252,10 @@ intent.
 
 An assignment `x = e` assigns the binding of `x` in force at the assignment.
 If that binding is an immutable `let`, the assignment is **E4070**, whatever
-other block holds a `mut` of the same name.
+other block holds a `mut` of the same name. A loop variable
+`lp(let v = e; ...)` is not an immutable `let`: it is mutable without `mut.`
+(which the loop init does not accept), so the step `v = v + 1` and an
+assignment to `v` in the body are legal (127.283; semantics §2.9, §4.7).
 
 Before story 127.196 the compiler kept one table of locals per function. A
 binding first made inside a block therefore stayed in force after the block
