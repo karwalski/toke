@@ -52,6 +52,7 @@ language rows.
 | 2.12 | 124.6c | `@nobounds` annotation | new annotation grammar / CLI flag or pragma / withdraw | **Withdraw** until a perf trace shows real residual bounds cost; -O2 already removes provably safe checks. |
 | 2.13 | 124.6e | Post-hoc measurement of the ADR-0012 flips | define a rebuild-and-compare / retire | **Retire into 128.15** — the flips showed no codegen change and the row is behind the compute hold. |
 | 2.16 | 127.279 | Function types `(T):R` cannot be declared fallible, so a parameter or struct field holding a function rejects a fallible one (E4031; semantics §5.2 rule 6). Found by Batch Z54 after 127.276 fixed `!`/`mt` through function values. | (a) grammar `')' ':' TypeExpr ['!' TypeExpr]`, with `!` in return-spec position still meaning the enclosing function's error; (b) keep function types infallible, callers adapt with a closure | **(b) for now** — no grammar change for model-written code, and the compile error already blocks the unsafe case; revisit if corpus programs need fallible callbacks. |
+| 2.17 | 127.288 | Spelling for the old `VecStore` type. §2.5 listed six `<module><noun>` names but not this one; Batch Z60 (127.251) shipped `vecstorehandle` by analogy with `vechandle`. | keep `vecstorehandle` / another spelling (one-line .tki change plus the E3011 and --migrate tables) | **Keep `vecstorehandle`** — follows the §2.5 rule and the `vechandle` precedent. |
 
 ## 3. Security and runtime decisions
 
