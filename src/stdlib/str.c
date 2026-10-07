@@ -28,12 +28,12 @@ const char *str_concat(const char *a, const char *b)
     if (!a) a = "";
     if (!b) b = "";
     size_t la = tk_strlen(a), lb = tk_strlen(b);
-    char *out = malloc(la + lb + 1);
+    char *out = tks_alloc(la + lb);       /* 127.170: sealed below */
     if (!out) return NULL;
     memcpy(out, a, la);
     memcpy(out + la, b, lb);
     out[la + lb] = '\0';
-    return out;
+    return tks_seal(out, la + lb);
 }
 
 StrSliceResult str_slice(const char *s, uint64_t start, uint64_t end)
@@ -47,10 +47,8 @@ StrSliceResult str_slice(const char *s, uint64_t start, uint64_t end)
         return r;
     }
     uint64_t n = end - start;
-    char *out = malloc(n + 1);
+    char *out = tks_dup(s + start, (size_t)n);   /* 127.170: sealed */
     if (!out) { r.is_err = 1; r.err_msg = "allocation failed"; return r; }
-    memcpy(out, s + start, n);
-    out[n] = '\0';
     r.ok = out;
     return r;
 }

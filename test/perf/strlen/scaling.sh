@@ -13,7 +13,8 @@
 #
 # Counter: macOS `/usr/bin/time -l` ("instructions retired"); Linux
 # `perf stat -e instructions:u`.  With neither, it says SKIP and exits 77.
-# TOKE=<compiler> measures another compiler (default: this tree's ./toke).
+# TOKE=<compiler> measures another compiler (default: this tree's ./toke);
+# PROGS="..." runs a subset.
 set -u
 DIR=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$DIR/../../.." && pwd)
 TK=${TOKE:-$ROOT/toke}; N=${N:-4000}; LIMIT=${LIMIT:-6}
@@ -28,7 +29,7 @@ fi
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/tk_strscale.XXXXXX"); trap 'rm -rf "$W"' EXIT
 fail=0
-for p in scan_from len_only len_loop; do
+for p in ${PROGS:-scan_from len_only len_loop}; do
   "$TK" -O2 --allow-all "$DIR/$p.tk" --out "$W/$p" >/dev/null 2>&1 || { echo "FAIL $p: compile"; fail=1; continue; }
   a=$(insns "$W/$p" "$N"); b=$(insns "$W/$p" $((N*4)))
   case "$a$b" in *[!0-9]*|'') echo "FAIL $p: no instruction count (got '$a' / '$b')"; fail=1; continue;; esac

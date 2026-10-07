@@ -413,16 +413,18 @@ int64_t *tk_array_concat(int64_t *a, int64_t *b) {
     return data;
 }
 
-/* Concatenate two C strings. Returns new malloc'd string. */
+/* Concatenate two C strings.  Returns a new sealed string (127.170,
+ * tk_strhdr.h): never freed, never written. */
 char *tk_str_concat(const char *a, const char *b) {
     if (!a) a = "";
     if (!b) b = "";
     size_t la = tk_strlen(a), lb = tk_strlen(b);
-    char *r = (char *)malloc(la + lb + 1);
+    char *r = tks_alloc(la + lb);         /* 127.170: sealed below */
+    if (!r) abort();
     memcpy(r, a, la);
     memcpy(r + la, b, lb);
     r[la + lb] = '\0';
-    return r;
+    return tks_seal(r, la + lb);
 }
 
 /* 127.26: one-allocation string interpolation. `n` NUL-terminated i8* parts
@@ -453,7 +455,8 @@ char *tk_str_join_n(int64_t n, ...) {
         total += lens[i];
     }
     va_end(ap);
-    char *r = (char *)malloc(total + 1);
+    char *r = tks_alloc(total);           /* 127.170: sealed below */
+    if (!r) abort();
     size_t off = 0;
     for (int64_t i = 0; i < n; i++) {
         memcpy(r + off, parts[i], lens[i]);
@@ -461,7 +464,7 @@ char *tk_str_join_n(int64_t n, ...) {
     }
     r[off] = '\0';
     if (parts != stack_parts) { free(parts); free(lens); }
-    return r;
+    return tks_seal(r, off);
 }
 
 /* String length for C strings. */

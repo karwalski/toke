@@ -952,7 +952,14 @@ int64_t tk_str_addbyte_w(int64_t b, int64_t ch) {
 int64_t tk_str_done_w(int64_t b) {
     TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
     if (!buf) return (int64_t)(intptr_t)"";
-    char *result = buf->data;
+    /* 127.170: one copy into a sealed string, so .len / charat / indexfrom on
+     * the result are O(1).  The header is the C-string length, not buf->len:
+     * str.addbyte(b; 0) can store a 0 byte, and the header must equal
+     * strlen. */
+    const char *nul = (const char *)memchr(buf->data, '\0', buf->len);
+    size_t n = nul ? (size_t)(nul - buf->data) : buf->len;
+    char *result = tks_dup(buf->data, n);
+    if (result) free(buf->data); else result = buf->data;
     free(buf);
     return (int64_t)(intptr_t)result;
 }
