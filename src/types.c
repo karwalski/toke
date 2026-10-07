@@ -199,7 +199,16 @@ static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
                 char r[TN_LEN];
                 if (t->elem) type_name_into(t->elem, r, sizeof r, depth + 1);
                 else snprintf(r, sizeof r, "?");
-                snprintf(buf + w, n - (size_t)w, "):%s", r);
+                /* 127.276: the error type is part of the signature -- a
+                 * fallible and an infallible signature printed alike
+                 * ("expected '(i64):i64', got '(i64):i64'"). */
+                const Type *et = t->elem;
+                if (et && et->kind == TY_ERROR_TYPE)
+                    snprintf(buf + w, n - (size_t)w, "):%s!%s%s", r,
+                             et->name && et->name[0] != '$' ? "$" : "",
+                             et->name ? et->name : "?");
+                else
+                    snprintf(buf + w, n - (size_t)w, "):%s", r);
             }
             return;
         }
@@ -1560,6 +1569,13 @@ static Type *resolve_return_spec(Ctx *cx, const Node *rspec) {
     et->elem = success;
     Type *err = resolve_type(cx, rspec->children[1]);
     et->name = err ? err->name : NULL;
+    /* 127.276: a scalar error type (`T!str`, `T!i64`) keeps its name too:
+     * it is part of a function value's signature, and codegen keys the
+     * payload a call through the value carries on it. */
+    if (err && !err->name && err->kind != TY_UNKNOWN && err->kind != TY_VOID
+        && err->kind != TY_ARRAY && err->kind != TY_MAP && err->kind != TY_FUNC
+        && err->kind != TY_PTR && err->kind != TY_ERROR_TYPE)
+        et->name = type_name(err);
     et->field_count = err ? err->field_count : 0;
     et->field_names = err ? err->field_names : NULL;
     et->field_types = err ? err->field_types : NULL;
@@ -1710,9 +1726,38 @@ static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
         int found = 0;
         char nb[128]; TOKSTR(nb, cx->src, init);
         const Node *ib = fnval_bind_rec(cx->fn_node, cx->src, init, nb, (int)strlen(nb), &found);
+        /* 127.276: `let g=inner` -- the bare name of a module function, as
+         * `&inner` is.  Its signature (error type included) is what a call
+         * `g(..)` is judged against and what codegen keys the error channel
+         * on; without it `g(n)!$e` read the value sentinel. */
+        if (!ib) return func_ref_sig(cx, init);
         return fnval_bind_sig(cx, ib, depth + 1);
     }
     return func_has_sig(init->rtype) ? init->rtype : NULL;
+}
+
+static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
+                    const Type *got, const char *fix);
+/* 127.276: a fallible function stored where an infallible function type is
+ * declared.  A struct literal's field values are not judged against the
+ * field types, so `t=$h{f:(i64):i64}` accepted `$h{f:inner}` with `inner`
+ * declaring `i64!$e`, and a call through the field read the error-exit
+ * filler as an ok value (a silent wrong result).  Parameters, annotated
+ * lets, assignments and returns already reject this (types_equal compares
+ * the signatures); this judges only the error channel, so nothing else a
+ * struct literal accepted changes.  E4031, no `fix`. */
+static void check_fnval_err_slot(Ctx *cx, const Node *v, Type *vt, const Type *slot) {
+    if (!v || !func_has_sig(slot)) return;
+    if (slot->elem && slot->elem->kind == TY_ERROR_TYPE) return;
+    Type *sig = func_has_sig(vt) ? vt : NULL;
+    if (!sig && v->kind == NODE_FUNC_REF) sig = func_ref_sig(cx, v);
+    if (!sig && v->kind == NODE_IDENT) {
+        const Node *b = fnval_binding(cx, v);
+        sig = b ? fnval_bind_sig(cx, b, 0) : func_ref_sig(cx, v);
+    }
+    if (!sig || !sig->elem || sig->elem->kind != TY_ERROR_TYPE) return;
+    if (!tc_first_report(cx, v)) return;
+    emit_mm(cx, v, slot, sig, NULL);
 }
 
 /*
@@ -5022,14 +5067,19 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 138.13 (GB): `$w{l:$internal}` -- a type standing as a field
              * VALUE.  Codegen rejects it with E4033 at build; say so at
              * --check, as bind/assign/argument already do (127.227). */
+            Type *fvt = NULL;
             if (fi->child_count > 0 && !type_as_value(cx, fi->children[0]))
-                infer(cx, fi->children[0]);
+                fvt = infer(cx, fi->children[0]);
             if (is_sum_lit || !st || st->kind != TY_STRUCT || fi->tok_len <= 0) continue;
             char fnb[128]; TOKSTR(fnb,cx->src,fi);
             if (!fnb[0]) continue;
             int found = 0;
             for (int f=0; f<st->field_count && !found; f++)
-                if (st->field_names[f] && strcmp(st->field_names[f],fnb)==0) found = 1;
+                if (st->field_names[f] && strcmp(st->field_names[f],fnb)==0) {
+                    found = 1;
+                    if (fi->child_count > 0 && st->field_types)
+                        check_fnval_err_slot(cx, fi->children[0], fvt, st->field_types[f]);
+                }
             if (found) continue;
             /* A struct declared with no fields at all is a shape this checker
              * cannot speak for (a forward/opaque declaration); only complain
