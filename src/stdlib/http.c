@@ -1003,7 +1003,7 @@ typedef struct {
 
 /* res_frame_plan — decide rf for res.  req is the request (NULL: no gzip,
  * for the server's own error answers); may_chunk is 0 on the TLS writer,
- * which always sends a length.  A 1xx, 204 or 304 has no body and neither
+ * which always sends a length, and for an HTTP/1.0 request (121.103).  A 1xx, 204 or 304 has no body and neither
  * field (res_no_body); a gzip-eligible body (maybe_gzip_body) goes with
  * its gzip length; a body the handler gave no Content-Length goes chunked
  * when the writer may chunk (Story 27.1.4); any other with its length. */
@@ -1055,10 +1055,13 @@ static void res_write_fd(int fd, Res res, const ResFrame *rf, int keep_alive,
  * writer's, computed from the body -- the handler's field only chooses
  * fixed-length framing, and is not itself written (res_framing_field).  A
  * 1xx, 204 or 304 goes out with no body and neither field (res_no_body).
+ * 121.103: may_chunk is 0 for an HTTP/1.0 request (RFC 9112 sec. 6.1: no
+ * Transfer-Encoding to a 1.0 client) and for send_error; the body is
+ * already complete, so it goes with its length.
  */
-static void send_response(int fd, Res res, int keep_alive) {
+static void send_response(int fd, Res res, int keep_alive, int may_chunk) {
     ResFrame rf;
-    res_frame_plan(NULL, &res, 1, &rf);
+    res_frame_plan(NULL, &res, may_chunk, &rf);
     res_write_fd(fd, res, &rf, keep_alive, 0);
 }
 
@@ -1214,7 +1217,9 @@ static int res_wants_close(const Res *res)
 static void send_error(int fd, uint16_t status, const char *client_ip)
 {
     Res r = make_res(status, reason(status));
-    send_response(fd, r, 0 /* Connection: close */);
+    /* 121.103: always a length -- the request's version may not be known
+     * (its framing failed), and a length is valid on every version. */
+    send_response(fd, r, 0 /* Connection: close */, 0);
 
     /* Write to error log if configured */
     TkAccessLog *el = tk_error_log_get_global();
@@ -1824,6 +1829,9 @@ static void handle_connection(int fd)
         int client_wants_close = req_wants_close(in.raw);
         int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
         int keep_alive         = (!client_wants_close && !max_reached);
+        /* 121.103: never Transfer-Encoding: chunked to an HTTP/1.0 request
+         * (RFC 9112 sec. 6.1) -- its responses go with their length. */
+        int may_chunk          = !req_is_http10(in.raw);
 
         Req req;
         if (parse_request(in.raw, &req) != 0) {
@@ -1863,7 +1871,7 @@ static void handle_connection(int fd)
             res.body         = NULL;
             res.headers.data = NULL;
             res.headers.len  = 0;
-            send_response(fd, res, keep_alive);
+            send_response(fd, res, keep_alive, may_chunk);
             log_request(client_ip, &req, res.status, 0);
             free_req(&req);                     /* 127.65 */
             if (!keep_alive) break;
@@ -1881,7 +1889,7 @@ static void handle_connection(int fd)
             strcmp(req.method, "OPTIONS") != 0 &&
             !is_head) {
             Res res = make_res(405, "Method Not Allowed");
-            send_response(fd, res, keep_alive);
+            send_response(fd, res, keep_alive, may_chunk);
             log_request(client_ip, &req, res.status, 0);
             free_req(&req);                     /* 127.65 */
             if (!keep_alive) break;
@@ -1964,7 +1972,7 @@ static void handle_connection(int fd)
          * a HEAD writes the GET's head and no body (RFC 9110 sec. 9.3.2). */
         {
             ResFrame rf;
-            res_frame_plan(&req, &res, 1, &rf);
+            res_frame_plan(&req, &res, may_chunk, &rf);
             res_write_fd(fd, res, &rf, keep_alive, is_head);
             log_request(client_ip, &req, res.status, rf.len);
             free(rf.gz);
