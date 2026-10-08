@@ -18,7 +18,10 @@
 #     uninitialised value for "x" -- a silent wrong value.  So did a
 #     misspelled std variant (`$exists` is no fileerr variant).
 #
-# NOW: names.c checks the label (arm_label_names_something).  A label names
+# NOW: names.c checks the label (arm_label_names_something) in every match
+# that is not a string-tag match (80.2.7: over a str the labels are strings)
+# -- one with a result/type label, a fallible scrutinee, or a sum-typed
+# parameter as scrutinee (mt_not_string_match, mirroring codegen).  A label names
 # something when it is ok/err/Ok/Err/some/none, a primitive type, a type or
 # variant in scope, or a field/variant of a type declared here or imported
 # from a .tki.  Otherwise E3011.  The fix is the 127.251 one -- "did you mean
@@ -34,9 +37,9 @@
 #   5. the silent wrong-value order is rejected
 #   6. --migrate rewrites the labels; the result checks, builds and runs
 #
-# Negative control: TKC=<main b442a5d7's toke> -- 14 of 24 fail: all of
+# Negative control: TKC=<main b442a5d7's toke> -- 14 of 26 fail: all of
 # parts 1, 2, 4 and 5, and three of part 6 (main declines the migration, so
-# the echoed source "checks clean"); part 3's nine controls pass on both.
+# the echoed source "checks clean"); part 3's eleven controls pass on both.
 #
 # Story: 127.292
 set -uo pipefail
@@ -126,6 +129,11 @@ expect "3 a user record type label" \
     "$(diags 'm=t;t=$point{x:i64};t=$myerr{$bad:str};f=g():$point!$myerr{<$point{x:1}};f=main():i64{<mt g(){$point:p p.x;$myerr:e 0}};')" "rc=0"
 expect "3 str / i32 / u8 / f64 / bool type labels" \
     "$(diags 'm=t;f=g():i64!$str{<1};f=main():i64{let a=mt g(){$str:s 1;$i64:v v};let b=mt g(){$ok:v v;$i32:x 0};let c=mt g(){$ok:v v;$u8:x 0};let d=mt g(){$ok:v v;$f64:x 0};let e=mt g(){$ok:v v;$bool:x 0};<a+b+c+d+e};')" "rc=0"
+
+expect "3 string-tag match over a str: labels are strings (80.2.7)" \
+    "$(diags 'm=t;f=main():i64{let k="bb";<mt k {$aa:w 1;$bb:w 2;$cc:w 3}};')" "rc=0"
+expect "3 string-tag match over a str-returning std call" \
+    "$(diags 'm=t;i=s:std.str;f=main():i64{<mt s.lower("BB") {$aa:w 1;$bb:w 2;$cc:w 3}};')" "rc=0"
 
 # ── 4: the build stops at name resolution, not codegen ──
 printf '%s\n' "${PROC}" > b.tk

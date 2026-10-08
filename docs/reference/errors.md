@@ -497,7 +497,8 @@ A match-arm label that names no type and no variant is E3011 too (127.292):
 `mt s.toint(t) {$i64:v v;StrErr:e 0}`. A label names something when it is
 `$ok`/`$err` (or the legacy `Ok`/`Err`), `$some`/`$none`, a primitive type,
 a type in scope, or a variant of a sum declared in the program or in an
-imported interface. Before 127.292 nothing checked the label: beside a
+imported interface. A string-tag match (`mt s {$aa:w ..;$bb:w ..}` over a
+`str`) is exempt: its labels are strings. Before 127.292 nothing checked the label: beside a
 recognised one it lowered by position (and in the other order gave a wrong
 value), and with none recognised (`{Handle:h ..;ProcessErr:e ..}`) the build
 died with E9005 after `--check` had passed. An old spelling of a renamed
