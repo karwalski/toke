@@ -1124,12 +1124,13 @@ static void log_request(const char *client_ip, const Req *req,
 
 /* ── Connection handler (single accepted socket) ────────────────────── */
 
-/* conn_list_has_close — 1 when a Connection field value (n bytes at v)
- * lists the "close" option, compared without regard to case.  121.101:
+/* conn_list_has — 1 when a Connection field value (n bytes at v) lists
+ * the option opt ("close", "keep-alive"), compared without regard to case.  121.101:
  * Connection is a comma-separated list (RFC 9110 sec. 7.6.1), so "close"
  * may follow other options ("upgrade, close", "keep-alive, close"). */
-static int conn_list_has_close(const char *v, size_t n)
+static int conn_list_has(const char *v, size_t n, const char *opt)
 {
+    size_t ol = strlen(opt);
     size_t i = 0;
     while (i < n) {
         while (i < n && (v[i] == ' ' || v[i] == '\t' || v[i] == ',')) i++;
@@ -1137,29 +1138,53 @@ static int conn_list_has_close(const char *v, size_t n)
         while (i < n && v[i] != ',') i++;
         size_t e = i;
         while (e > s && (v[e - 1] == ' ' || v[e - 1] == '\t')) e--;
-        if (e - s == 5 && strncasecmp(v + s, "close", 5) == 0) return 1;
+        if (e - s == ol && strncasecmp(v + s, opt, ol) == 0) return 1;
     }
     return 0;
 }
 
+static int conn_list_has_close(const char *v, size_t n)
+{
+    return conn_list_has(v, n, "close");
+}
+
+/* req_is_http10 — 1 when the request line (raw up to its CRLF) ends in
+ * the protocol version "HTTP/1.0".  The version is case-sensitive (RFC
+ * 9112 sec. 2.3); the reader has already framed the line. */
+static int req_is_http10(const char *raw)
+{
+    const char *eol = strstr(raw, "\r\n");
+    if (!eol || eol - raw < 9) return 0;
+    return eol[-9] == ' ' && memcmp(eol - 8, "HTTP/1.0", 8) == 0;
+}
+
 /*
- * req_wants_close — return 1 if the request signals Connection: close,
- * 0 otherwise (HTTP/1.1 defaults to keep-alive).  121.101: every
- * Connection field, read as a list; only the first token of the first
- * field was read, so "Connection: upgrade, close" kept the connection.
+ * req_wants_close — return 1 if the connection is to close after this
+ * request's response, 0 to keep it.  121.101: every Connection field,
+ * read as a list; only the first token of the first field was read, so
+ * "Connection: upgrade, close" kept the connection.  121.102: "close"
+ * closes on any version; HTTP/1.1 otherwise keeps the connection, and
+ * HTTP/1.0 keeps it only when a Connection field lists "keep-alive" (RFC
+ * 9112 sec. 9.3).  A 1.0 request without it was kept open, so a 1.0
+ * client reading to EOF waited for the idle timeout.  When a 1.0
+ * connection is kept, the writer's "Connection: keep-alive" says so.
  */
 static int req_wants_close(const char *raw)
 {
+    int keep = 0;
     const char *p = strstr(raw, "\r\n");
     while (p) {
         p += 2; /* skip \r\n */
         const char *eol = strstr(p, "\r\n");
         if (!eol || eol == p) break; /* blank line = end of headers */
-        if (strncasecmp(p, "Connection:", 11) == 0 &&
-            conn_list_has_close(p + 11, (size_t)(eol - (p + 11))))
-            return 1;
+        if (strncasecmp(p, "Connection:", 11) == 0) {
+            size_t n = (size_t)(eol - (p + 11));
+            if (conn_list_has_close(p + 11, n)) return 1;
+            if (conn_list_has(p + 11, n, "keep-alive")) keep = 1;
+        }
         p = eol;
     }
+    if (req_is_http10(raw)) return !keep; /* HTTP/1.0 default: close */
     return 0; /* HTTP/1.1 default: keep-alive */
 }
 
