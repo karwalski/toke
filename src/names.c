@@ -893,6 +893,51 @@ static void warn_enclosing_shadow(const Scope *scope, const char *src,
  *
  * Returns 0 on success, -1 on duplicate or allocation failure.
  */
+/*
+ * 127.285 — the import table of the module being resolved, so E3012 can say
+ * WHICH import a clashing declaration collides with.  Set by resolve_names.
+ */
+static const SymbolTable *s_symtab = NULL;
+
+/*
+ * 127.285 — E3012 text for a function, type or constant whose name is an
+ * import alias (`i=json:std.json;` then `t=$json{..}`) or a sub-namespace an
+ * imported module registers (`row` with std.db).  The bare "already declared
+ * in this scope" named no earlier declaration the reader could find: the
+ * alias is not a `t=`/`f=` line.  This states the rule as implemented today
+ * (import aliases, sub-namespaces, types, functions and constants share the
+ * module scope); it changes no program's verdict.  No `fix`: renaming the
+ * declaration and renaming the alias are both right, depending on intent.
+ */
+static void import_alias_clash_msg(char *msg, size_t cap, const char *name,
+                                   DeclKind kind) {
+    const char *what = kind == DECL_TYPE  ? "type"
+                     : kind == DECL_FUNC  ? "function"
+                     : kind == DECL_CONST ? "constant"
+                     :                      "declaration";
+    const char *mod = NULL;
+    if (s_symtab)
+        for (int i = 0; i < s_symtab->count; i++) {
+            const ImportEntry *ie = &s_symtab->entries[i];
+            if (ie->resolved && ie->alias_name && strcmp(ie->alias_name, name) == 0) {
+                mod = ie->module_path;
+                break;
+            }
+        }
+    if (mod)
+        snprintf(msg, cap,
+                 "%s '%s' clashes with the import alias '%s' (i=%s:%s): import "
+                 "aliases share the module scope with types, functions and "
+                 "constants; rename the %s or the alias",
+                 what, name, name, name, mod, what);
+    else
+        snprintf(msg, cap,
+                 "%s '%s' clashes with '%s', a sub-namespace of an imported "
+                 "module: sub-namespaces share the module scope with types, "
+                 "functions and constants; rename the %s",
+                 what, name, name, what);
+}
+
 static int scope_insert(Scope *s, Arena *arena, const char *src,
                         int tok_start, int tok_len __attribute__((unused)), int name_start, int name_len,
                         DeclKind kind, const Node *def_node,
@@ -925,8 +970,11 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
             char nbuf[201];
             memcpy(nbuf, src + name_start, (size_t)mlen);
             nbuf[mlen] = '\0';
-            snprintf(msg, sizeof(msg),
-                     "identifier '%s' is already declared in this scope", nbuf);
+            if (existing->kind == DECL_IMPORT_ALIAS)
+                import_alias_clash_msg(msg, sizeof msg, nbuf, kind);
+            else
+                snprintf(msg, sizeof(msg),
+                         "identifier '%s' is already declared in this scope", nbuf);
             diag_emit(DIAG_ERROR, E3012, tok_start, node_line, node_col, msg,
                       "fix", (const char *)NULL);
         }
@@ -2155,6 +2203,17 @@ static int resolve_node(const Node *node, const char *src,
             resolve_node(node->children[i], src, scope, arena, had_error);
         break;
 
+    case NODE_TYPE_DECL:
+        /* child[0] is the declared name, registered in the first pass.
+         * Resolving it again found nothing new when that insert succeeded
+         * and, when it failed (E3012), found the clashing declaration and
+         * cascaded: against an import alias it raised E3011 "'json' is a
+         * module alias, not a type" with a fix renaming the user's own type
+         * to the stdlib's (127.285).  Resolve the fields only. */
+        for (int i = 1; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        break;
+
     default:
         /* Generic: walk all children */
         for (int i = 0; i < node->child_count; i++)
@@ -2222,6 +2281,7 @@ int resolve_names(const Node *ast, const char *src,
 
     /* Make NameEnv available to resolve_closure via file-static pointer */
     s_name_env = out;
+    s_symtab = symtab;   /* 127.285 */
 
     /* Reset the multi-error counter (story 84.1.8) */
     s_name_error_count = 0;
