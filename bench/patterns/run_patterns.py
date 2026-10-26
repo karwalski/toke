@@ -497,8 +497,11 @@ def load_stamp(samples, max_load):
 
 def collect_meta(args):
     therm = sh(["pmset", "-g", "therm"])
-    git_sha = sh(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
-    dirty = bool(sh(["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"]))
+    # 131.90: the commit and dirty flag the binary reports for itself
+    # (`tkc --version --json`, 131.33), not this checkout's HEAD, which may
+    # have moved since the build. toke_head is kept beside it for reference.
+    git_sha, dirty = (PIN.tkc_git_sha, PIN.tkc_git_dirty) if PIN else tkc_pin.build_info(TKC)
+    toke_head = sh(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
     return {
         "date": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "hw_model": sh(["sysctl", "-n", "hw.model"]),
@@ -511,6 +514,7 @@ def collect_meta(args):
         "tkc_version": sh([str(TKC), "--version"]),
         "tkc_git_sha": git_sha,
         "tkc_git_dirty": dirty,
+        "toke_head": toke_head,
         "tkc_binary_sha256": sha256_file(TKC) if TKC.exists() else None,
         "tkc_bin_sha": PIN.sha256 if PIN else None,          # 131.39: the pinned copy every form was compiled with
         "tkc_pinned_copy": PIN.path if PIN else None,
@@ -600,7 +604,7 @@ def main():
         die("no patterns found" + (f" matching {args.pattern}" if args.pattern else ""))
 
     results = {"meta": collect_meta(args), "patterns": {}}
-    log(f"run_patterns: {results['meta']['tkc_version']} @ {results['meta']['tkc_git_sha'][:12]}"
+    log(f"run_patterns: {results['meta']['tkc_version']} @ {(results['meta']['tkc_git_sha'] or 'unknown')[:12]}"
         f"{' (dirty)' if results['meta']['tkc_git_dirty'] else ''}  {results['meta']['hw_model']}"
         f"  load {load:.2f}  runs {args.runs}")
     mid_after = (len(pats) - 1) // 2          # 131.65: sample again halfway through the patterns
