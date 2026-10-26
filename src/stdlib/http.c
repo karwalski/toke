@@ -36,6 +36,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
+#include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
 #endif
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
@@ -3327,7 +3328,7 @@ static HttpClientResp client_do_request(HttpClient *c,
                      || inet_pton(AF_INET6, host, ipbuf) == 1;
             int named = is_ip
                 ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host)
-                : SSL_set1_host(ssl, host);
+                : tk_ssl_set1_dnsname(ssl, host);
             if (!is_ip) SSL_set_tlsext_host_name(ssl, host);   /* SNI: names only */
             if (named != 1) {
                 SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
