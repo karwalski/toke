@@ -5,7 +5,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "DecryptResult",
+      "name": "decryptresult",
       "fields": [
         {"name": "ok",  "type": "[byte]"},
         {"name": "err", "type": "str"}
@@ -13,19 +13,19 @@
     },
     {
       "kind": "type",
-      "name": "Keypair",
+      "name": "keypair",
       "fields": [
         {"name": "pubkey",  "type": "[byte]"},
         {"name": "privkey", "type": "[byte]"}
       ]
     },
     {"kind": "func", "name": "encrypt.aes256gcmencrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.aes256gcmdecrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "DecryptResult"},
+    {"kind": "func", "name": "encrypt.aes256gcmdecrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "decryptresult"},
     {"kind": "func", "name": "encrypt.aes256gcmkeygen",     "params": [],                                       "return": "[byte]"},
     {"kind": "func", "name": "encrypt.aes256gcmnoncegen",   "params": [],                                       "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.x25519keypair",       "params": [],                                       "return": "Keypair"},
+    {"kind": "func", "name": "encrypt.x25519keypair",       "params": [],                                       "return": "keypair"},
     {"kind": "func", "name": "encrypt.x25519dh",            "params": ["[byte]", "[byte]"],                     "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.ed25519keypair",      "params": [],                                       "return": "Keypair"},
+    {"kind": "func", "name": "encrypt.ed25519keypair",      "params": [],                                       "return": "keypair"},
     {"kind": "func", "name": "encrypt.ed25519sign",         "params": ["[byte]", "[byte]"],                     "return": "[byte]"},
     {"kind": "func", "name": "encrypt.ed25519verify",       "params": ["[byte]", "[byte]", "[byte]"],           "return": "bool"},
     {"kind": "func", "name": "encrypt.hkdfsha256",          "params": ["[byte]", "[byte]", "[byte]", "u64"],   "return": "[byte]"},

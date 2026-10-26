@@ -266,8 +266,12 @@ For `x = expr`:
 
 - The left-hand side type and right-hand side type must be equal.
   Violation: `[errors.md E4031]`.
-- The binding must have been declared with `let x=mut.` (mutable binding).
-  STUB: mutability checking is not yet formalized in the type checker.
+- The binding must be mutable: declared with `let x=mut.`, or the loop
+  variable introduced by an `lp` init (§4.7), which is mutable without
+  `mut.`. Assigning to any other binding -- an immutable `let`, a
+  parameter, an `mt` arm binding -- is `[errors.md E4070]`. So
+  `lp(let i=0; i<n; i=i+1){...}` is legal, and so is an assignment to `i`
+  in the loop body (127.283).
 
 ### 2.10 Return Statements
 
@@ -402,9 +406,14 @@ field list.
 ### 4.7 Loop Scoping
 
 A `lp(init; cond; step) { body }` loop creates a single scope that encloses
-the init variable, condition, step, and body. The init variable (if declared
-with `let` or `let x=mut.`) is visible in all three subsequent positions, and
+the init variable, condition, step, and body. The init variable
+(`lp(let i = e; ...)`) is visible in all three subsequent positions, and
 not after the loop.
+
+The init variable is **mutable**, though it is written without `mut.`: the
+step (`i = i + 1`) and any assignment to it in the body are legal (§2.9).
+The init takes no `mut.` qualifier -- `lp(let i = mut.e; ...)` does not
+parse (`[errors.md E2002]`) (127.283).
 
 ### 4.8 Match Arm Scoping
 

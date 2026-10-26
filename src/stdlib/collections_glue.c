@@ -29,9 +29,13 @@
 
 /*
  * tk_array_retain — bump the refcount on an array-typed handle (ADR-0006 D2).
- * Codegen emits a call to this at every array-typed handle duplication so that
- * a later in-place mutation can tell whether the array is uniquely referenced.
- * Monotonic (never decremented) and NULL-safe.
+ * NOTHING CALLS THIS.  ADR-0006 D2 planned for codegen to emit it at every
+ * array-typed handle duplication; its 2026-06-30 implementation note replaced
+ * that with a static, per-function linear-array analysis (the in-place fast
+ * path fires only where the array is proven unaliased), so no call is
+ * emitted.  Kept for the ADR's D1 (release/free) follow-up, and
+ * acknowledged `dead` in scripts/stdlib_c_api.txt (136.76).  Monotonic and
+ * NULL-safe.
  */
 void tk_array_retain(int64_t h) {
     if (h) ((int64_t *)(intptr_t)h)[-3] += 1;

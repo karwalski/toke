@@ -36,6 +36,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
+#include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
 #endif
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
@@ -664,6 +665,7 @@ static int maybe_gzip_body(Req req, Res *res,
     size_t bodylen = http_body_len(res->body);   /* 121.86 */
     if (bodylen < GZIP_MIN_SIZE) return 0;
     if (res->status < 200 || res->status >= 300) return 0;
+    if (res->status == 204) return 0;   /* 121.97: no body (res_no_body) */
     if (!req_accepts_gzip(req)) return 0;
 
     /* Skip if Content-Encoding already set; 121.89: and an already-
@@ -772,14 +774,93 @@ static int res_has_content_length(Res res)
     return 0;
 }
 
-/*
- * send_response — serialise and send a Res to fd.
- *
- * If Res.body is non-NULL and Res.headers contains no Content-Length entry,
- * the body is sent with Transfer-Encoding: chunked (Story 27.1.4).
- * If Res.headers already carries Content-Length (set by the handler), the
- * body is sent with that fixed length instead.
- */
+/* res_framing_field — 1 when k names a field that frames the message:
+ * Content-Length, Transfer-Encoding or Connection.  121.97: these are the
+ * writer's own, as router.c's since 121.90 -- it computes them from the
+ * body it actually sends and the connection it actually keeps.  A
+ * handler's copy is never written: it used to go out after the writer's,
+ * so a handler's Content-Length that differed from the body sent two
+ * conflicting lengths (RFC 9112 sec. 6.3: a recipient may frame by either
+ * -- the request-smuggling class), and one beside a chunked body sent
+ * Content-Length with Transfer-Encoding. */
+static int res_framing_field(const char *k)
+{
+    return strcasecmp(k, "Content-Length") == 0 ||
+           strcasecmp(k, "Transfer-Encoding") == 0 ||
+           strcasecmp(k, "Connection") == 0;
+}
+
+/* res_no_body — 1 for a status whose response has no body: 1xx, 204 and
+ * 304 (RFC 9110 sec. 6.4.1).  121.97: those are sent with no body, no
+ * Content-Length and no Transfer-Encoding (sec. 8.6, RFC 9112 sec. 6.1).
+ * A 204 used to carry "Content-Length: 0" (forbidden), and a handler's
+ * 204 or 304 with a body sent the body -- bytes a client reads as the
+ * start of the next response on the connection. */
+static int res_no_body(unsigned status)
+{
+    return status < 200 || status == 204 || status == 304;
+}
+
+/* How the writer frames a response's body (121.97). */
+enum { RES_FRAME_LEN, RES_FRAME_CHUNKED, RES_FRAME_NONE };
+
+/* res_head_fmt — the status line and the writer's own framing fields into
+ * buf: Content-Length (RES_FRAME_LEN, `len`), Transfer-Encoding: chunked
+ * (RES_FRAME_CHUNKED) or neither (RES_FRAME_NONE); Content-Encoding and
+ * Vary when the body is the gzip encoding; and Connection.  Every
+ * HTTP/1.1 writer, plain and TLS, starts here.  Returns the length. */
+static size_t res_head_fmt(char *buf, size_t cap, unsigned status,
+                           int frame, size_t len, int gz, int keep_alive)
+{
+    int n = snprintf(buf, cap, "HTTP/1.1 %u %s\r\n", status, reason((uint16_t)status));
+    if (n < 0 || (size_t)n >= cap) return 0;
+    size_t o = (size_t)n;
+    if (frame == RES_FRAME_LEN)
+        n = snprintf(buf + o, cap - o, "Content-Length: %zu\r\n", len);
+    else if (frame == RES_FRAME_CHUNKED)
+        n = snprintf(buf + o, cap - o, "Transfer-Encoding: chunked\r\n");
+    else
+        n = 0;
+    if (n < 0 || (size_t)n >= cap - o) return 0;
+    o += (size_t)n;
+    if (gz) {   /* 121.99: gz 2 -- the handler already varies on it */
+        n = snprintf(buf + o, cap - o, gz == 2 ? "Content-Encoding: gzip\r\n"
+                     : "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n");
+        if (n < 0 || (size_t)n >= cap - o) return 0;
+        o += (size_t)n;
+    }
+    n = snprintf(buf + o, cap - o, "Connection: %s\r\n",
+                 keep_alive ? "keep-alive" : "close");
+    if (n < 0 || (size_t)n >= cap - o) return 0;
+    return o + (size_t)n;
+}
+
+/* res_varies_on_ae — 1 when the handler's response already carries a Vary
+ * field listing Accept-Encoding (or "*").  121.99: http.servedir says
+ * "Vary: Accept-Encoding" on a file it has precompressed variants of; when
+ * the writer then gzips the file itself it does not send a second one. */
+static int res_varies_on_ae(const Res *res)
+{
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        const char *v = res->headers.data[i].val;
+        if (!k || !v || strcasecmp(k, "Vary") != 0) continue;
+        if (!tk_http_field_name_ok(k) || !tk_http_field_value_ok(v))
+            continue;   /* the writer drops it (121.92): it does not count */
+        while (*v) {
+            while (*v == ' ' || *v == '\t' || *v == ',') v++;
+            const char *t = v;
+            while (*v && *v != ',') v++;
+            const char *e = v;
+            while (e > t && (e[-1] == ' ' || e[-1] == '\t')) e--;
+            if ((e - t == 15 && strncasecmp(t, "Accept-Encoding", 15) == 0) ||
+                (e - t == 1 && *t == '*'))
+                return 1;
+        }
+    }
+    return 0;
+}
+
 /* res_headers_emit — hand each of a handler's header fields to sink as one
  * "name: value\r\n" line.  121.92: tk_http_field.h's rule, router.c's since
  * 121.90 -- a field whose name is not an RFC 9110 token or whose value holds
@@ -789,7 +870,9 @@ static int res_has_content_length(Res res)
  * written at its own length: it was formatted into a 512-byte buffer and a
  * longer one was cut, CR LF and all, gluing the next header onto it.  The
  * plain (write_res_headers) and TLS (write_res_headers_ssl) writers share
- * this; HTTP/2 applies the same drop in h2_send_response. */
+ * this; HTTP/2 applies the same drop in h2_send_response.  121.97: the
+ * framing fields (res_framing_field) are skipped too -- the writer has
+ * already sent its own. */
 typedef void (*ResHdrSink)(void *ctx, const char *s, size_t n);
 static void res_headers_emit(const Res *res, ResHdrSink sink, void *ctx)
 {
@@ -797,6 +880,7 @@ static void res_headers_emit(const Res *res, ResHdrSink sink, void *ctx)
         const char *k = res->headers.data[i].key;
         const char *v = res->headers.data[i].val;
         if (!tk_http_field_name_ok(k) || !tk_http_field_value_ok(v)) continue;
+        if (res_framing_field(k)) continue;   /* 121.97: the writer's own */
         size_t kl = strlen(k), vl = strlen(v), n = kl + vl + 4;
         char sbuf[512];
         char *line = n <= sizeof sbuf ? sbuf : malloc(n);
@@ -905,40 +989,78 @@ static void write_cors_headers_for(int fd, const char *matched_origin)
 }
 static void write_cors_headers(int fd) { write_cors_headers_for(fd, g_cors_matched); }
 
-static void send_response(int fd, Res res, int keep_alive) {
-    const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+/* ResFrame — how one response's body goes out: the writer's framing
+ * decision, made once by res_frame_plan.  121.100: GET and HEAD share it,
+ * so a HEAD carries the head the GET would (RFC 9110 sec. 9.3.2) -- the
+ * same Content-Length (the gzip length when the GET is gzipped), the same
+ * Transfer-Encoding: chunked, the same Content-Encoding and Vary.  HEAD
+ * used to make its own decision: the uncompressed length with no coding,
+ * and a fixed length where the GET was chunked. */
+typedef struct {
+    int    frame;   /* RES_FRAME_*                                       */
+    size_t len;     /* bytes of body sent (gz's when gz is not NULL)     */
+    char  *gz;      /* the gzip encoding of the body, or NULL; caller frees */
+} ResFrame;
 
-    if (res.body != NULL && !res_has_content_length(res)) {
-        /* Chunked path */
-        char hdr[256];
-        int hl = snprintf(hdr, sizeof(hdr),
-            "HTTP/1.1 %u %s\r\n"
-            "Transfer-Encoding: chunked\r\n"
-            "Connection: %s\r\n",
-            res.status, reason(res.status), conn_hdr);
-        http_write_all(fd, hdr, (size_t)hl);
-        write_res_headers(fd, res);
-        write_security_headers(fd, &res);
-        write_cors_headers(fd);
-        http_write_all(fd, "\r\n", 2);
-        /* Default chunk size: 4096 bytes */
-        http_chunked_write(fd, res.body, http_body_len(res.body), 4096);
-    } else {
-        /* Fixed Content-Length path (body may be NULL for empty responses) */
-        size_t bl = http_body_len(res.body);
-        char hdr[256];
-        int hl = snprintf(hdr, sizeof(hdr),
-            "HTTP/1.1 %u %s\r\n"
-            "Content-Length: %zu\r\n"
-            "Connection: %s\r\n",
-            res.status, reason(res.status), bl, conn_hdr);
-        http_write_all(fd, hdr, (size_t)hl);
-        write_res_headers(fd, res);
-        write_security_headers(fd, &res);
-        write_cors_headers(fd);
-        http_write_all(fd, "\r\n", 2);
-        if (bl) http_write_all(fd, res.body, bl);
+/* res_frame_plan — decide rf for res.  req is the request (NULL: no gzip,
+ * for the server's own error answers); may_chunk is 0 on the TLS writer,
+ * which always sends a length.  A 1xx, 204 or 304 has no body and neither
+ * field (res_no_body); a gzip-eligible body (maybe_gzip_body) goes with
+ * its gzip length; a body the handler gave no Content-Length goes chunked
+ * when the writer may chunk (Story 27.1.4); any other with its length. */
+static void res_frame_plan(const Req *req, Res *res, int may_chunk, ResFrame *rf)
+{
+    rf->gz = NULL;
+    rf->len = 0;
+    if (res_no_body(res->status)) { rf->frame = RES_FRAME_NONE; return; }
+    if (req && maybe_gzip_body(*req, res, &rf->gz, &rf->len)) {
+        rf->frame = RES_FRAME_LEN;
+        return;
     }
+    rf->gz = NULL;
+    rf->len = http_body_len(res->body);
+    rf->frame = (may_chunk && res->body != NULL && !res_has_content_length(*res))
+              ? RES_FRAME_CHUNKED : RES_FRAME_LEN;
+}
+
+/* res_write_fd — write res to fd as rf frames it: the head, then (unless
+ * head_only, a HEAD) the body.  Frees nothing. */
+static void res_write_fd(int fd, Res res, const ResFrame *rf, int keep_alive,
+                         int head_only)
+{
+    char hdr[256];
+    size_t hl = res_head_fmt(hdr, sizeof hdr, res.status, rf->frame, rf->len,
+                             rf->gz ? (res_varies_on_ae(&res) ? 2 : 1) : 0,
+                             keep_alive);
+    http_write_all(fd, hdr, hl);
+    write_res_headers(fd, res);
+    write_security_headers(fd, &res);
+    write_cors_headers(fd);
+    http_write_all(fd, "\r\n", 2);
+    if (head_only) return;
+    const char *b = rf->gz ? rf->gz : res.body;
+    if (rf->frame == RES_FRAME_CHUNKED)
+        /* Default chunk size: 4096 bytes */
+        http_chunked_write(fd, b, rf->len, 4096);
+    else if (rf->frame == RES_FRAME_LEN && rf->len)
+        http_write_all(fd, b, rf->len);
+}
+
+/*
+ * send_response — serialise and send a Res to fd, uncompressed (the
+ * server's own answers: errors, 405, the CORS preflight).
+ *
+ * A body the handler did not give a Content-Length field is sent with
+ * Transfer-Encoding: chunked (Story 27.1.4); one it did is sent with a
+ * fixed length.  121.97: either way the length or the chunking is the
+ * writer's, computed from the body -- the handler's field only chooses
+ * fixed-length framing, and is not itself written (res_framing_field).  A
+ * 1xx, 204 or 304 goes out with no body and neither field (res_no_body).
+ */
+static void send_response(int fd, Res res, int keep_alive) {
+    ResFrame rf;
+    res_frame_plan(NULL, &res, 1, &rf);
+    res_write_fd(fd, res, &rf, keep_alive, 0);
 }
 
 /* ── Keep-alive connection constants ────────────────────────────────── */
@@ -1003,28 +1125,86 @@ static void log_request(const char *client_ip, const Req *req,
 
 /* ── Connection handler (single accepted socket) ────────────────────── */
 
+/* conn_list_has — 1 when a Connection field value (n bytes at v) lists
+ * the option opt ("close", "keep-alive"), compared without regard to case.  121.101:
+ * Connection is a comma-separated list (RFC 9110 sec. 7.6.1), so "close"
+ * may follow other options ("upgrade, close", "keep-alive, close"). */
+static int conn_list_has(const char *v, size_t n, const char *opt)
+{
+    size_t ol = strlen(opt);
+    size_t i = 0;
+    while (i < n) {
+        while (i < n && (v[i] == ' ' || v[i] == '\t' || v[i] == ',')) i++;
+        size_t s = i;
+        while (i < n && v[i] != ',') i++;
+        size_t e = i;
+        while (e > s && (v[e - 1] == ' ' || v[e - 1] == '\t')) e--;
+        if (e - s == ol && strncasecmp(v + s, opt, ol) == 0) return 1;
+    }
+    return 0;
+}
+
+static int conn_list_has_close(const char *v, size_t n)
+{
+    return conn_list_has(v, n, "close");
+}
+
+/* req_is_http10 — 1 when the request line (raw up to its CRLF) ends in
+ * the protocol version "HTTP/1.0".  The version is case-sensitive (RFC
+ * 9112 sec. 2.3); the reader has already framed the line. */
+static int req_is_http10(const char *raw)
+{
+    const char *eol = strstr(raw, "\r\n");
+    if (!eol || eol - raw < 9) return 0;
+    return eol[-9] == ' ' && memcmp(eol - 8, "HTTP/1.0", 8) == 0;
+}
+
 /*
- * req_wants_close — return 1 if the request signals Connection: close,
- * 0 if it signals keep-alive (or is silent, defaulting to keep-alive
- * for HTTP/1.1).
+ * req_wants_close — return 1 if the connection is to close after this
+ * request's response, 0 to keep it.  121.101: every Connection field,
+ * read as a list; only the first token of the first field was read, so
+ * "Connection: upgrade, close" kept the connection.  121.102: "close"
+ * closes on any version; HTTP/1.1 otherwise keeps the connection, and
+ * HTTP/1.0 keeps it only when a Connection field lists "keep-alive" (RFC
+ * 9112 sec. 9.3).  A 1.0 request without it was kept open, so a 1.0
+ * client reading to EOF waited for the idle timeout.  When a 1.0
+ * connection is kept, the writer's "Connection: keep-alive" says so.
  */
 static int req_wants_close(const char *raw)
 {
-    /* Walk header lines looking for Connection: */
+    int keep = 0;
     const char *p = strstr(raw, "\r\n");
     while (p) {
         p += 2; /* skip \r\n */
         const char *eol = strstr(p, "\r\n");
         if (!eol || eol == p) break; /* blank line = end of headers */
         if (strncasecmp(p, "Connection:", 11) == 0) {
-            const char *v = p + 11;
-            while (*v == ' ') v++;
-            if (strncasecmp(v, "close", 5) == 0) return 1;
-            return 0; /* "keep-alive" or anything else */
+            size_t n = (size_t)(eol - (p + 11));
+            if (conn_list_has_close(p + 11, n)) return 1;
+            if (conn_list_has(p + 11, n, "keep-alive")) keep = 1;
         }
         p = eol;
     }
+    if (req_is_http10(raw)) return !keep; /* HTTP/1.0 default: close */
     return 0; /* HTTP/1.1 default: keep-alive */
+}
+
+/* res_wants_close — 1 when the handler's response asks for the connection
+ * to end: a Connection field whose list holds "close".  121.101: since
+ * 121.97 the writer owns Connection and never sends the handler's, so this
+ * is how a handler's close reaches it -- the writer sends its own
+ * "Connection: close" and the loop ends after the response.  A handler's
+ * "keep-alive" changes nothing: the writer still decides that. */
+static int res_wants_close(const Res *res)
+{
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        const char *k = res->headers.data[i].key;
+        const char *v = res->headers.data[i].val;
+        if (k && v && strcasecmp(k, "Connection") == 0 &&
+            conn_list_has_close(v, strlen(v)))
+            return 1;
+    }
+    return 0;
 }
 
 /*
@@ -1775,54 +1955,20 @@ static void handle_connection(int fd)
             res = make_res(405, "Method Not Allowed");
         }
 
-        /* HEAD: send headers with correct Content-Length, but no body
-         * (RFC 9110 §9.3.2) */
-        if (is_head) {
-            size_t head_body_len = http_body_len(res.body);
-            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-            char hdr[256];
-            int hl = snprintf(hdr, sizeof(hdr),
-                "HTTP/1.1 %u %s\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: %s\r\n",
-                res.status, reason(res.status), head_body_len, conn_hdr);
-            http_write_all(fd, hdr, (size_t)hl);
-            write_res_headers(fd, res);
-            write_security_headers(fd, &res);
-            write_cors_headers(fd);
-            http_write_all(fd, "\r\n", 2);
-            /* No body for HEAD */
-            log_request(client_ip, &req, res.status, head_body_len);
-        }
+        /* 121.101: a handler's Connection: close ends the connection after
+         * this response.  The close lingers (http_linger_close): bytes the
+         * client already pipelined behind this request would otherwise make
+         * close() send a reset, which can discard the response. */
+        if (keep_alive && res_wants_close(&res)) { keep_alive = 0; linger = 1; }
 
-        /* Gzip compress if eligible — write directly (binary-safe) */
-        else {
-        char  *gz_buf = NULL;
-        size_t gz_len = 0;
-        int    did_gz = maybe_gzip_body(req, &res, &gz_buf, &gz_len);
-        if (did_gz) {
-            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-            char hdr[256];
-            int hl = snprintf(hdr, sizeof(hdr),
-                "HTTP/1.1 %u %s\r\n"
-                "Content-Length: %zu\r\n"
-                "Content-Encoding: gzip\r\n"
-                "Vary: Accept-Encoding\r\n"
-                "Connection: %s\r\n",
-                res.status, reason(res.status), gz_len, conn_hdr);
-            http_write_all(fd, hdr, (size_t)hl);
-            write_res_headers(fd, res);
-            write_security_headers(fd, &res);
-            write_cors_headers(fd);
-            http_write_all(fd, "\r\n", 2);
-            http_write_all(fd, gz_buf, gz_len);
-            log_request(client_ip, &req, res.status, gz_len);
-            free(gz_buf);
-        } else {
-            send_response(fd, res, keep_alive);
-            log_request(client_ip, &req,
-                        res.status, http_body_len(res.body));
-        }
+        /* 121.100: one framing decision for GET and HEAD (res_frame_plan);
+         * a HEAD writes the GET's head and no body (RFC 9110 sec. 9.3.2). */
+        {
+            ResFrame rf;
+            res_frame_plan(&req, &res, 1, &rf);
+            res_write_fd(fd, res, &rf, keep_alive, is_head);
+            log_request(client_ip, &req, res.status, rf.len);
+            free(rf.gz);
         }
 
         /* 127.65: release the parsed request before the next keep-alive
@@ -3174,7 +3320,7 @@ static HttpClientResp client_do_request(HttpClient *c,
                      || inet_pton(AF_INET6, host, ipbuf) == 1;
             int named = is_ip
                 ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host)
-                : SSL_set1_host(ssl, host);
+                : tk_ssl_set1_dnsname(ssl, host);
             if (!is_ip) SSL_set_tlsext_host_name(ssl, host);   /* SNI: names only */
             if (named != 1) {
                 SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
@@ -4465,6 +4611,23 @@ static void write_cors_headers_ssl(SSL *ssl)
     if (n > 0) SSL_write(ssl, buf, n);
 }
 
+/* res_write_ssl — res_write_fd over TLS (121.100). */
+static void res_write_ssl(SSL *ssl, Res res, const ResFrame *rf, int keep_alive,
+                          int head_only)
+{
+    char hdr[256];
+    size_t hl = res_head_fmt(hdr, sizeof hdr, res.status, rf->frame, rf->len,
+                             rf->gz ? (res_varies_on_ae(&res) ? 2 : 1) : 0,
+                             keep_alive);
+    if (hl > 0) SSL_write(ssl, hdr, (int)hl);
+    write_res_headers_ssl(ssl, &res);   /* 121.92 */
+    write_security_headers_ssl(ssl, &res);
+    write_cors_headers_ssl(ssl);
+    SSL_write(ssl, "\r\n", 2);
+    if (head_only || rf->frame != RES_FRAME_LEN || !rf->len) return;
+    SSL_write(ssl, rf->gz ? rf->gz : res.body, (int)rf->len);
+}
+
 /*
  * handle_tls_connection — accept a TLS handshake on fd, then process
  * HTTP keep-alive requests over the TLS session.  Mirrors handle_connection
@@ -4523,10 +4686,17 @@ static int h2_field_name(const char *k, char *out, size_t cap)
     return 1;
 }
 
-/* h2_field_value_ok — a field value may not carry CR or LF (RFC 9113 8.2.1). */
+/* h2_field_value_ok — 121.98: the HTTP/1.1 writers' rule
+ * (tk_http_field_value_ok): a value holding any control byte but HTAB, or
+ * DEL, is not sent -- the field is dropped whole, as on HTTP/1.1.  RFC 9113
+ * sec. 8.2.1 forbids only NUL, CR and LF in an h2 value (and a NUL cannot
+ * reach here, the value being a C string), so this asked only for CR and
+ * LF, and a handler's header with 0x01 or 0x7f went out over h2 while the
+ * same response over HTTP/1.1 dropped it.  One rule now, whatever the
+ * protocol; HPACK carries any octet, so nothing it expects changes. */
 static int h2_field_value_ok(const char *v)
 {
-    return strpbrk(v, "\r\n") == NULL;
+    return tk_http_field_value_ok(v);
 }
 
 static int h2_has_field(const char **names, size_t n, const char *name)
@@ -4657,7 +4827,9 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
     if (!no_body) { nm[k] = "content-length"; vl[k++] = cl; }
     if (gz && !no_body) {
         nm[k] = "content-encoding"; vl[k++] = "gzip";
-        nm[k] = "vary";             vl[k++] = "Accept-Encoding";
+        if (!res_varies_on_ae(&res)) {   /* 121.99 */
+            nm[k] = "vary";         vl[k++] = "Accept-Encoding";
+        }
     }
     for (uint64_t i = 0; i < res.headers.len; i++) {
         const char *hk = res.headers.data[i].key;
@@ -4855,11 +5027,12 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
      * (maybe_gzip_body: a 2xx body of at least GZIP_MIN_SIZE bytes, the
      * request's accept-encoding naming gzip, no content-encoding set).  The
      * HTTP/2 path never compressed, so the same server sent a CSS file
-     * gzipped over HTTP/1.1 on TLS and whole over HTTP/2.  HEAD keeps the
-     * unencoded length, as on HTTP/1.1. */
+     * gzipped over HTTP/1.1 on TLS and whole over HTTP/2.  121.100: a HEAD
+     * is encoded too, so its content-length and content-encoding are the
+     * GET's (RFC 9110 sec. 9.3.2); it used to carry the unencoded length. */
     char  *gz = NULL;
     size_t gz_len = 0;
-    if (!is_head && !maybe_gzip_body(req, &res, &gz, &gz_len)) gz = NULL;
+    if (!maybe_gzip_body(req, &res, &gz, &gz_len)) gz = NULL;
     int rc = h2_send_response(conn, fd, ssl, st, res, is_head, gz, gz_len);
     log_request(client_ip, &req, res.status,
                 gz ? gz_len : http_body_len(res.body));
@@ -5532,12 +5705,11 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 
         /* ── CORS preflight: OPTIONS → 204 with CORS headers (Story 7.7.4) ── */
         if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_matched) {
-            const char *ch = keep_alive ? "keep-alive" : "close";
+            /* 121.97: a 204 has no Content-Length (RFC 9110 8.6) */
             char hb[256];
-            int hl2 = snprintf(hb, sizeof(hb),
-                "HTTP/1.1 204 No Content\r\n"
-                "Content-Length: 0\r\nConnection: %s\r\n", ch);
-            if (hl2 > 0) SSL_write(ssl, hb, hl2);
+            size_t hl2 = res_head_fmt(hb, sizeof hb, 204, RES_FRAME_NONE,
+                                      0, 0, keep_alive);
+            if (hl2 > 0) SSL_write(ssl, hb, (int)hl2);
             write_security_headers_ssl(ssl, NULL);
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
@@ -5560,13 +5732,11 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             Res bad = make_res(405, "Method Not Allowed");
             /* inline TLS send for 405 */
             {
-                const char *ch = keep_alive ? "keep-alive" : "close";
                 size_t bl = http_body_len(bad.body);
                 char hb[256];
-                int hl2 = snprintf(hb, sizeof(hb),
-                    "HTTP/1.1 405 Method Not Allowed\r\n"
-                    "Content-Length: %zu\r\nConnection: %s\r\n", bl, ch);
-                if (hl2 > 0) SSL_write(ssl, hb, hl2);
+                size_t hl2 = res_head_fmt(hb, sizeof hb, 405, RES_FRAME_LEN,
+                                          bl, 0, keep_alive);
+                if (hl2 > 0) SSL_write(ssl, hb, (int)hl2);
                 write_security_headers_ssl(ssl, &bad);
                 write_cors_headers_ssl(ssl);
                 SSL_write(ssl, "\r\n", 2);
@@ -5629,67 +5799,17 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             res = make_res(405, "Method Not Allowed");
         }
 
-        /* HEAD: send headers with correct Content-Length, but no body
-         * (RFC 9110 §9.3.2) */
-        if (tls_is_head) {
-            size_t head_body_len = http_body_len(res.body);
-            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-            char hdr_buf[256];
-            int hl = snprintf(hdr_buf, sizeof(hdr_buf),
-                "HTTP/1.1 %u %s\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: %s\r\n",
-                res.status, reason(res.status), head_body_len, conn_hdr);
-            if (hl > 0) SSL_write(ssl, hdr_buf, hl);
-            write_res_headers_ssl(ssl, &res);   /* 121.92 */
-            write_security_headers_ssl(ssl, &res);
-            write_cors_headers_ssl(ssl);
-            SSL_write(ssl, "\r\n", 2);
-            /* No body for HEAD */
-            log_request(client_ip, &req, res.status, head_body_len);
-        }
+        /* 121.101: a handler's Connection: close, as on the plain loop. */
+        if (keep_alive && res_wants_close(&res)) { keep_alive = 0; linger = 1; }
 
-        /* Gzip compress if eligible — write directly (binary-safe) */
-        else {
-        char  *tls_gz_buf = NULL;
-        size_t tls_gz_len = 0;
-        int    tls_did_gz = maybe_gzip_body(req, &res, &tls_gz_buf, &tls_gz_len);
-        if (tls_did_gz) {
-            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-            char hdr_buf[256];
-            int hl = snprintf(hdr_buf, sizeof(hdr_buf),
-                "HTTP/1.1 %u %s\r\n"
-                "Content-Length: %zu\r\n"
-                "Content-Encoding: gzip\r\n"
-                "Vary: Accept-Encoding\r\n"
-                "Connection: %s\r\n",
-                res.status, reason(res.status), tls_gz_len, conn_hdr);
-            if (hl > 0) SSL_write(ssl, hdr_buf, hl);
-            write_res_headers_ssl(ssl, &res);   /* 121.92 */
-            write_security_headers_ssl(ssl, &res);
-            write_cors_headers_ssl(ssl);
-            SSL_write(ssl, "\r\n", 2);
-            SSL_write(ssl, tls_gz_buf, (int)tls_gz_len);
-            log_request(client_ip, &req, res.status, tls_gz_len);
-            free(tls_gz_buf);
-        } else {
-            /* Serialise response to a buffer and write via SSL_write */
-            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-            size_t body_len = http_body_len(res.body);
-            char hdr_buf[256];
-            int hl = snprintf(hdr_buf, sizeof(hdr_buf),
-                "HTTP/1.1 %u %s\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: %s\r\n",
-                res.status, reason(res.status), body_len, conn_hdr);
-            if (hl > 0) SSL_write(ssl, hdr_buf, hl);
-            write_res_headers_ssl(ssl, &res);   /* 121.92 */
-            write_security_headers_ssl(ssl, &res);
-            write_cors_headers_ssl(ssl);
-            SSL_write(ssl, "\r\n", 2);
-            if (body_len) SSL_write(ssl, res.body, (int)body_len);
-            log_request(client_ip, &req, res.status, body_len);
-        }
+        /* 121.100: one framing decision for GET and HEAD, as on the plain
+         * loop; the TLS writer always sends a length (may_chunk 0). */
+        {
+            ResFrame rf;
+            res_frame_plan(&req, &res, 0, &rf);
+            res_write_ssl(ssl, res, &rf, keep_alive, tls_is_head);
+            log_request(client_ip, &req, res.status, rf.len);
+            free(rf.gz);
         }
 
         /* 127.65: release the parsed request before the next keep-alive

@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "Row",
+      "name": "dbrow",
       "fields": [
         {
           "name": "cols",
@@ -14,7 +14,7 @@
     },
     {
       "kind": "type",
-      "name": "DbErr",
+      "name": "dberr",
       "is_sum": true,
       "fields": [
         {
@@ -41,7 +41,7 @@
       "params": [
         "str"
       ],
-      "return": "u64!DbErr"
+      "return": "u64!dberr"
     },
     {
       "kind": "func",
@@ -56,7 +56,7 @@
         "str",
         "[str]"
       ],
-      "return": "Row!DbErr"
+      "return": "dbrow!dberr"
     },
     {
       "kind": "func",
@@ -65,7 +65,7 @@
         "str",
         "[str]"
       ],
-      "return": "[Row]!DbErr"
+      "return": "[dbrow]!dberr"
     },
     {
       "kind": "func",
@@ -74,7 +74,7 @@
         "str",
         "[str]"
       ],
-      "return": "u64!DbErr"
+      "return": "u64!dberr"
     },
     {
       "kind": "func",
@@ -84,7 +84,7 @@
         "str",
         "[str]"
       ],
-      "return": "u64!DbErr"
+      "return": "u64!dberr"
     },
     {
       "kind": "func",
@@ -94,7 +94,7 @@
         "str",
         "[str]"
       ],
-      "return": "Row!DbErr"
+      "return": "dbrow!dberr"
     },
     {
       "kind": "func",
@@ -104,7 +104,7 @@
         "str",
         "[str]"
       ],
-      "return": "[Row]!DbErr"
+      "return": "[dbrow]!dberr"
     },
     {
       "kind": "func",
@@ -118,46 +118,46 @@
       "kind": "func",
       "name": "row.str",
       "params": [
-        "Row",
+        "dbrow",
         "str"
       ],
-      "return": "str!DbErr"
+      "return": "str!dberr"
     },
     {
       "kind": "func",
       "name": "row.u64",
       "params": [
-        "Row",
+        "dbrow",
         "str"
       ],
-      "return": "u64!DbErr"
+      "return": "u64!dberr"
     },
     {
       "kind": "func",
       "name": "row.i64",
       "params": [
-        "Row",
+        "dbrow",
         "str"
       ],
-      "return": "i64!DbErr"
+      "return": "i64!dberr"
     },
     {
       "kind": "func",
       "name": "row.f64",
       "params": [
-        "Row",
+        "dbrow",
         "str"
       ],
-      "return": "f64!DbErr"
+      "return": "f64!dberr"
     },
     {
       "kind": "func",
       "name": "row.bool",
       "params": [
-        "Row",
+        "dbrow",
         "str"
       ],
-      "return": "bool!DbErr"
+      "return": "bool!dberr"
     },
     {
       "kind": "func",

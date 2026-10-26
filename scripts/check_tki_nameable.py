@@ -37,7 +37,7 @@ import sys
 # field on 2026-09-29 (127.102a), correctly, and this check failed on it.
 # The rule is removed; C129 is the regression test for the scanners.
 
-# Structural punctuation in a .tki type expression: `$Rec`, `str!FileErr`,
+# Structural punctuation in a .tki type expression: `$rec`, `str!fileerr`,
 # `@(byte)`, `map[str]i64`, `fn`, `void`.  Split on all of it and check the
 # identifier tokens that remain.
 WORD = re.compile(r"[A-Za-z0-9_]+")
@@ -52,8 +52,15 @@ def offenders(text):
 # caller as `.name` / `$name`, so `{"name": "Parse"}` in toon.tki, yaml.tki
 # and i18n.tki could not be matched from toke: `mt e{$parse:...}` failed at
 # codegen with E9005 ("sum type ... not established"), `$Parse` is E1003.
-# TYPE names are not checked for case here: stdlib types are spelled
-# `JsonErr` throughout and reach toke through names.c's own mapping.
+# 127.251: TYPE names are checked for case too.  They used to be exempt
+# ("stdlib types are spelled `JsonErr` throughout"), but a `$` type name is
+# lower-case -- `$FileErr` is E2002 -- so an upper-case .tki type could only be
+# written bare (`e:DbErr`), a spelling the default profile is meant to retire.
+# The 40 that remained were lower-cased (FileErr -> fileerr) or, where the
+# lower-case spelling is a module or a sub-namespace, renamed `<module><noun>`
+# (Json -> jsonval, Row -> dbrow, Vec -> vechandle; owner decision
+# 2026-10-01 §2.5), as i18nbundle/tlsconfig were.  Checked: the name of every
+# exported type and every identifier in a param, return or field type.
 def upper_offenders(text):
     return [w for w in WORD.findall(str(text)) if re.search(r"[A-Z]", w)]
 
@@ -75,6 +82,10 @@ def check_file(path, out):
 
     for exp in doc.get("exports", []) or []:
         name = exp.get("name", "")
+        if exp.get("kind") == "type":                           # 127.251
+            for w in upper_offenders(name):
+                out.append(("NAME", path, "type %s" % name, w))
+                bad += 1
         # An export name is `module.call`; the module half is checked above.
         for w in offenders(name.split(".")[-1]):
             out.append(("NAME", path, "%s %s" % (exp.get("kind", "?"), name), w))
@@ -87,14 +98,15 @@ def check_file(path, out):
                 out.append(("NAME", path, "%s %s.%s" % (
                     "variant" if exp.get("is_sum") else "field", name, fld.get("name")), w))
                 bad += 1
-            for w in offenders(fld.get("type", "")):
+            for w in offenders(fld.get("type", "")) + upper_offenders(fld.get("type", "")):
                 out.append(("NAME", path, "field type %s.%s" % (name, fld.get("name")), w))
                 bad += 1
         for p in exp.get("params", []) or []:
-            for w in offenders(p if isinstance(p, str) else p.get("type", "")):
+            pt = p if isinstance(p, str) else p.get("type", "")
+            for w in offenders(pt) + upper_offenders(pt):
                 out.append(("NAME", path, "param of %s" % name, w))
                 bad += 1
-        for w in offenders(exp.get("return", "")):
+        for w in offenders(exp.get("return", "")) + upper_offenders(exp.get("return", "")):
             out.append(("NAME", path, "return of %s" % name, w))
             bad += 1
     return bad

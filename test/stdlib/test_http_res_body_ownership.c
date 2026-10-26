@@ -131,18 +131,38 @@ static void *client_thread(void *arg)
             if (w <= 0) { close(s); return (void *)(intptr_t)-1; }
             off += (size_t)w;
         }
-        /* Drain one whole response.  The static handler sets no
-         * Content-Length, so the server sends it chunked; read until the
-         * terminating zero-length chunk. */
+        /* Drain one whole response.  121.100: the static handler sends a
+         * fixed Content-Length (it used to send chunks); read the head, then
+         * exactly that many body bytes -- or, should it be chunked, up to
+         * the terminating zero-length chunk. */
         char   buf[16384];
-        size_t have = 0;
-        int    done = 0;
+        char   head[4096];
+        size_t have = 0, hl = 0, want = 0;
+        int    done = 0, framed = 0, chunked = 0;
         while (!done) {
             ssize_t r = read(s, buf, sizeof(buf));
             if (r <= 0) { close(s); return (void *)(intptr_t)-1; }
             have += (size_t)r;
-            if ((size_t)r >= 5 && memcmp(buf + r - 5, "0\r\n\r\n", 5) == 0)
+            if (!framed) {
+                size_t take = (size_t)r < sizeof head - 1 - hl
+                            ? (size_t)r : sizeof head - 1 - hl;
+                memcpy(head + hl, buf, take);
+                hl += take;
+                head[hl] = '\0';
+                char *eoh = strstr(head, "\r\n\r\n");
+                if (!eoh) continue;
+                framed = 1;
+                size_t hlen = (size_t)(eoh - head) + 4;
+                const char *cl = strstr(head, "Content-Length: ");
+                if (cl && cl < eoh) want = hlen + strtoul(cl + 16, NULL, 10);
+                else chunked = 1;
+            }
+            if (chunked) {
+                if ((size_t)r >= 5 && memcmp(buf + r - 5, "0\r\n\r\n", 5) == 0)
+                    done = 1;
+            } else if (have >= want) {
                 done = 1;
+            }
         }
         if (have < ASSET_BYTES) { close(s); return (void *)(intptr_t)-1; }
     }

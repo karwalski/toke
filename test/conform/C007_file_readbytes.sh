@@ -225,12 +225,13 @@ f=digest(b:@(byte)):str{
 (* Every outcome prints exactly one line, and an error prints its KIND — never
    an empty value, which is the defect this story exists to remove. Since
    127.102b the kind and the message are the $err arm's own payload: the
-   FileErr variant (ten of them, one per kind) and its string. A success
+   $fileerr variant (ten of them, one per kind) and its string. A success
    prints the literal "ok" where it used to print file.lasterrkind(), which
    was retired; that the slot is clear after a success is what the $ok arm
-   being taken at all now proves. The FileErr type cannot be named in a
-   parameter (127.102b report: an upper-case .tki type), so each call site
-   matches the variants inline. *)
+   being taken at all now proves. The type was the upper-case FileErr when
+   this was written and could not be named in a parameter (127.102b report;
+   it is $fileerr since 127.251), so each call site matches the variants
+   inline. *)
 f=rd(label:str;path:str):i64{
   let r=file.readbytes(path);
   mt r {

@@ -96,7 +96,7 @@ f=getuser(id:u64):$user!$apierr{
 
 Here is what `!$apierr` does:
 
-1. Call `db.one(...)` which returns a `$row!$dberr` union
+1. Call `db.one(...)` which returns a `$dbrow!$dberr` union
 2. If the result is `$ok(row)`: unwrap and continue, `row` gets the value
 3. If the result is `$err(e)`: return the error from `getuser`
 

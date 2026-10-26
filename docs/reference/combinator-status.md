@@ -173,7 +173,7 @@ build clean, binary dies; **WRONG** = runs, wrong output.
 | contains | `s.contains(x;"b")` | ok | ok | ok | yes | bool renders `1` |
 | indexof | `s.indexof(x;"c")` | ok | ok | ok | yes | |
 | find | `s.find(x;"c")` | ok | ok | ok | yes | not in `str.tki`; resolves via generic fallback |
-| slice | `s.slice(x;1;3)` | ok | ok | ok | yes | `str.tki` says `str!SliceErr`, but the plain value prints fine |
+| slice | `s.slice(x;1;3)` | ok | ok | ok | yes | `str.tki` says `str!sliceerr`, but the plain value prints fine |
 | fromint | `s.fromint(i)` | ok | ok | ok | yes | interpolates correctly |
 
 ## Strings — method / UFCS style (`x.op(...)`)

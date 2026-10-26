@@ -54,6 +54,69 @@ static int is_idchar(char c) {
     return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_';
 }
 
+/* 127.251: the std types whose lower-cased spelling is a module or a
+ * sub-namespace were renamed `<module><noun>` (owner decision 2026-10-01
+ * §2.5), so lower-casing `Json` -- or keeping the `$json` the module pages
+ * documented -- names the module alias, not the type.  The other 33 renamed
+ * std types are their old spelling lower-cased, which the TK_TYPE_IDENT case
+ * below already produces.  A rename applies only when the program imports
+ * the module (`:std.json`), does not import `clash` (std.ml declares its own
+ * `row`), and declares no type of that name itself. */
+static const struct { const char *lo; const char *mod; const char *clash; const char *now; }
+MIG_RENAMED_TYPES[] = {
+    {"json", "std.json", NULL, "jsonval"},   {"row", "std.db", "std.ml", "dbrow"},
+    {"toon", "std.toon", NULL, "toonval"},   {"yaml", "std.yaml", NULL, "yamlval"},
+    {"vec", "std.vec", NULL, "vechandle"},   {"vecstore", "std.vecstore", NULL, "vecstorehandle"},
+    {"duration", "std.time", NULL, "timeduration"},
+    {NULL, NULL, NULL, NULL}
+};
+
+/* 1 when `:<mod>` (an import's module path) occurs in src, whole-word */
+static int mig_imports(const char *src, int slen, const char *mod)
+{
+    int ml = (int)strlen(mod);
+    for (int k = 1; k + ml <= slen; k++)
+        if (src[k-1] == ':' && !strncmp(src + k, mod, (size_t)ml) &&
+            (k + ml == slen || !is_idchar(src[k + ml]) ))
+            return 1;
+    return 0;
+}
+
+/* 1 when src declares a type spelled `lo` in any case: `t=name{` / `t=$name{` */
+static int mig_declares_type(const char *src, int slen, const char *lo)
+{
+    int nl = (int)strlen(lo);
+    for (int k = 0; k + 2 < slen; k++) {
+        if ((src[k] != 't' && src[k] != 'T') || src[k+1] != '=') continue;
+        if (k > 0 && is_idchar(src[k-1])) continue;
+        int p = k + 2;
+        if (p < slen && src[p] == '$') p++;
+        if (p + nl > slen) continue;
+        int same = 1;
+        for (int j = 0; j < nl && same; j++) {
+            char ch = src[p+j];
+            if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
+            same = ch == lo[j];
+        }
+        if (same && (p + nl == slen || !is_idchar(src[p + nl]))) return 1;
+    }
+    return 0;
+}
+
+/* the 127.251 spelling for a lower-cased std type name, or NULL */
+static const char *mig_renamed_type(const char *lo, const char *src, int slen)
+{
+    for (int k = 0; MIG_RENAMED_TYPES[k].lo; k++) {
+        if (strcmp(lo, MIG_RENAMED_TYPES[k].lo) != 0) continue;
+        if (!mig_imports(src, slen, MIG_RENAMED_TYPES[k].mod)) return NULL;
+        if (MIG_RENAMED_TYPES[k].clash &&
+            mig_imports(src, slen, MIG_RENAMED_TYPES[k].clash)) return NULL;
+        if (mig_declares_type(src, slen, MIG_RENAMED_TYPES[k].lo)) return NULL;
+        return MIG_RENAMED_TYPES[k].now;
+    }
+    return NULL;
+}
+
 /* 127.19: copy src[from..to) into out, rewriting every bracket type inside
  * it in one go — `[T]` → `@T`, `[K:V]` → `@(K:V)`, nested `[[T]]` → `@@T`.
  * Returns bytes written; `cap` is the remaining room. */
@@ -1049,8 +1112,12 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
 /* ��─ Post-pass: text-level transforms after token migration ──────── */
 
 /* Add missing }; terminators — in toke, } at end of function/type must be }; */
-static void postpass_semicolons(char *buf, int *blen_p)
+/* 127.286: each input byte emits at most two ('}' + ';'), so blen*2+1 is an
+ * exact bound for `out`.  The result replaces *bufp: it used to be copied back
+ * into the caller's buffer, which had no room for the growth. */
+static void postpass_semicolons(char **bufp, int *blen_p)
 {
+    const char *buf = *bufp;
     int blen = *blen_p;
     char *out = malloc((size_t)(blen * 2 + 256));
     if (!out) return;
@@ -1080,9 +1147,10 @@ static void postpass_semicolons(char *buf, int *blen_p)
             }
         }
     }
-    memcpy(buf, out, (size_t)w);
+    out[w] = '\0';
+    free(*bufp);
+    *bufp = out;
     *blen_p = w;
-    free(out);
 }
 
 /* ── Public API ────────────────────────────────────��──────────────── */
@@ -2148,10 +2216,26 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
         return rc;
     }
 
-    /* Step 3: Token-level transforms */
-    char *buf = malloc((size_t)(clen * 3 + 2048));
+    /* Step 3: Token-level transforms.
+     * 127.286: the buffer grows.  It was a fixed clen*3+2048, but one token
+     * can expand past 3x: `Vec` → `$vechandle` is 3 → 10 bytes, and an
+     * unmatched legacy `[` the prepass leaves alone becomes `.get(`, 1 → 5,
+     * so 4000 of them overflowed the heap.  BENSURE runs before every token,
+     * sized for the gap before it plus the most that token can emit: its own
+     * length (underscores only shrink a name), a '$' sigil, and the longest
+     * MIG_RENAMED_TYPES spelling (14) — BENSURE_TOK bytes beyond the token. */
+    long bcap = (long)clen * 2 + 256;
+    char *buf = malloc((size_t)bcap);
     if (!buf) { free(c); free(nt); s_migrate_depth--; return -1; }
     int blen = 0, prev = 0;
+    #define BENSURE_TOK 32   /* '$' + longest renamed type (14), rounded up */
+    #define BENSURE(need) do { \
+        if ((long)blen + (long)(need) + 1 > bcap) { \
+            long nc = bcap * 2 + (long)(need) + 16; \
+            char *nb = realloc(buf, (size_t)nc); \
+            if (!nb) { free(buf); free(c); free(nt); s_migrate_depth--; return -1; } \
+            buf = nb; bcap = nc; \
+        } } while (0)
     /* 127.57: brace nesting depth at the *start* of the current token.  A type
      * declaration (`t=$name{...}`) is a top-level form, so the "after t=" type
      * position heuristic below is only valid at depth 0.  Without this, the
@@ -2164,6 +2248,7 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
         const Token *t = &nt[i];
         if (t->kind == TK_EOF) break;
 
+        BENSURE((long)(t->start - prev) + t->len + BENSURE_TOK);
         /* Gap: copy from cleaned text */
         for (int g = prev; g < t->start; g++) buf[blen++] = c[g];
 
@@ -2190,6 +2275,13 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
              * unparseable `@($$e)`.  Primitive names never take a sigil at all. */
             int already_sigilled = (i >= 1 && nt[i-1].kind == TK_DOLLAR);
             if (!is_primitive(clean_name) && !already_sigilled) buf[blen++] = '$';
+            /* 127.251: `Json` is `$jsonval`, not the module alias `$json` */
+            const char *renamed = mig_renamed_type(clean_name, c, clen);
+            if (renamed) {
+                cn = (int)strlen(renamed);
+                memcpy(buf+blen, renamed, (size_t)cn); blen += cn;
+                break;
+            }
             memcpy(buf+blen, clean_name, (size_t)cn); blen += cn;
             break;
         }
@@ -2250,6 +2342,16 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
                              !strcmp(tmp,"sc")||!strcmp(tmp,"true")||!strcmp(tmp,"false"));
                 if (!is_kw) buf[blen++] = '$';
             }
+            /* 127.251: a `$json` / `$row` / `$toon` / ... written after the
+             * sigil names the std type that is now jsonval / dbrow / ... */
+            if (i >= 1 && nt[i-1].kind == TK_DOLLAR && nt[i-1].start + 1 == t->start) {
+                const char *renamed = mig_renamed_type(tmp, c, clen);
+                if (renamed) {
+                    int rl = (int)strlen(renamed);
+                    memcpy(buf+blen, renamed, (size_t)rl); blen += rl;
+                    break;
+                }
+            }
             memcpy(buf+blen, tmp, (size_t)cl); blen += cl;
             break;
         }
@@ -2273,13 +2375,26 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
         else if (t->kind == TK_RBRACE && brace_depth > 0) brace_depth--;
         prev = t->start + t->len;
     }
+    BENSURE((long)(clen - prev));
     for (int g = prev; g < clen; g++) buf[blen++] = c[g];
     buf[blen] = '\0';
+    #undef BENSURE
+    #undef BENSURE_TOK
 
     /* Step 4: Text-level |{ → mt expr { */
-    char *buf2 = malloc((size_t)(blen * 2 + 512));
+    /* 127.286: `|{` → `mt  {` is 2 → 5 bytes, so a fixed blen*2+512 overran
+     * on a run of them.  B2ENSURE grows buf2 before each write. */
+    long b2cap = (long)blen * 2 + 512;
+    char *buf2 = malloc((size_t)b2cap);
     if (!buf2) { free(buf); free(c); free(nt); s_migrate_depth--; return -1; }
     int b2 = 0;
+    #define B2ENSURE(need) do { \
+        if ((long)b2 + (long)(need) + 1 > b2cap) { \
+            long nc = b2cap * 2 + (long)(need) + 16; \
+            char *nb = realloc(buf2, (size_t)nc); \
+            if (!nb) { free(buf2); free(buf); free(c); free(nt); s_migrate_depth--; return -1; } \
+            buf2 = nb; b2cap = nc; \
+        } } while (0)
 
     for (int p = 0; p < blen; p++) {
         if (buf[p]=='|' && p+1<blen && buf[p+1]=='{' && !is_in_string(buf,p)) {
@@ -2300,15 +2415,18 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
             }
             while (es<p && (buf[es]==' '||buf[es]=='\t')) es++;
             b2 -= (p - es);
+            B2ENSURE((p - es) + 5);
             memcpy(buf2+b2, "mt ", 3); b2 += 3;
             memcpy(buf2+b2, buf+es, (size_t)(p-es)); b2 += (p-es);
             buf2[b2++] = ' '; buf2[b2++] = '{';
             p++;
         } else {
+            B2ENSURE(1);
             buf2[b2++] = buf[p];
         }
     }
     buf2[b2] = '\0';
+    #undef B2ENSURE
 
     /* Step 5: Wrap if/lp conditions in parens if missing: if cond { → if(cond){ */
     {
@@ -2337,15 +2455,17 @@ static int migrate_core(const char *src, int slen, char **outp, int *outlen)
                 }
                 buf3[b3++] = buf2[p];
             }
-            memcpy(buf2, buf3, (size_t)b3);
+            /* 127.286: buf3 replaces buf2 -- `if c{` → `if(c){` grows the
+             * text, and buf2 has no room guaranteed for that growth. */
+            buf3[b3] = '\0';
+            free(buf2);
+            buf2 = buf3;
             b2 = b3;
-            buf2[b2] = '\0';
-            free(buf3);
         }
     }
 
     /* Step 6: Add missing }; terminators */
-    postpass_semicolons(buf2, &b2);
+    postpass_semicolons(&buf2, &b2);
 
     /* Step 7 (127.18): legacy `=` equality → `==` in every boolean-context
      * position, driven by the parser's own E2002 recovery. */

@@ -1,6 +1,6 @@
 (* toon_accessors.tk -- story 136.16.
 
-   The five typed accessors are declared (Toon; key) by stdlib/toon.tki, by
+   The five typed accessors are declared ($toonval; key) by stdlib/toon.tki, by
    docs/stdlib/toon.md and by toon.h, and toon.c implements all five that way.
    The _w glue took the handle alone and never called them: str handed back
    t->raw entire, i64 ran strtoll over the whole document, f64 strtod, bool

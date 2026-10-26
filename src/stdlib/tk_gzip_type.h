@@ -23,6 +23,7 @@
 #define TK_GZIP_TYPE_H
 
 #include <stddef.h>
+#include <string.h>
 #include <strings.h>
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -67,7 +68,7 @@ static TK_GZIP_TYPE_UNUSED int tk_gzip_skip_type(const char *ct)
     return 0;
 }
 
-/* ── Accept-Encoding (story 121.94) ─────────────────────────────────── */
+/* ── Accept-Encoding (stories 121.94, 121.96) ───────────────────────── */
 
 /* 1 when the n bytes at v are an RFC 9110 qvalue (sec. 12.4.2) above zero:
  * "0" [ "." 0*3DIGIT ] / "1" [ "." 0*3("0") ].  A malformed weight is
@@ -88,21 +89,35 @@ static TK_GZIP_TYPE_UNUSED int tk_gzip_qvalue_positive(const char *v, size_t n)
 
 static TK_GZIP_TYPE_UNUSED int tk_gzip_ows(char c) { return c == ' ' || c == '\t'; }
 
-/* 1 when an Accept-Encoding field value admits a gzip response (RFC 9110
- * sec. 12.5.3).  Each element is a coding with an optional ";q=" weight,
- * names compared without case; "x-gzip" is gzip (sec. 8.4.1.3).  gzip is
- * acceptable when it is listed with a weight above zero; when it is not
- * listed, when "*" is, with a weight above zero; otherwise not.  So
- * "gzip;q=0" and "*;q=0" refuse it, and "gzip;q=0, *" too -- the coding
- * named outright wins over the wildcard.  A coding listed twice counts
- * once, at its first weight.  No header (ae NULL) or an empty one admits
- * nothing: the server sends identity, as before 121.94.  (Until then both
- * gzip writers asked strstr(ae, "gzip"), so "gzip;q=0" -- the client's
- * explicit refusal -- got gzip.) */
-static TK_GZIP_TYPE_UNUSED int tk_gzip_accepted(const char *ae)
+/* 1 when the n bytes at name are the content coding `coding`, ignoring
+ * case; "x-gzip" is gzip (RFC 9110 sec. 8.4.1.3). */
+static TK_GZIP_TYPE_UNUSED int tk_coding_is(const char *name, size_t n,
+                                            const char *coding)
 {
-    if (!ae) return 0;
-    int gz = -1, star = -1;   /* -1 unlisted, else 1 / 0 */
+    size_t cl = strlen(coding);
+    if (n == cl && strncasecmp(name, coding, n) == 0) return 1;
+    return strcasecmp(coding, "gzip") == 0 &&
+           n == 6 && strncasecmp(name, "x-gzip", 6) == 0;
+}
+
+/* 1 when an Accept-Encoding field value admits a response in the content
+ * coding `coding` -- "gzip", "br", "zstd", ... (RFC 9110 sec. 12.5.3).
+ * Each element is a coding with an optional ";q=" weight, names compared
+ * without case.  The coding is acceptable when it is listed with a weight
+ * above zero; when it is not listed, when "*" is, with a weight above
+ * zero; otherwise not.  So "gzip;q=0" and "*;q=0" refuse gzip, and
+ * "gzip;q=0, *" too -- the coding named outright wins over the wildcard.
+ * A coding listed twice counts once, at its first weight.  No header (ae
+ * NULL) or an empty one admits nothing: the server sends identity.
+ * (121.94 wrote this for gzip, whose two writers asked strstr(ae, "gzip"),
+ * so "gzip;q=0" -- the client's explicit refusal -- got gzip; 121.96
+ * opened it to any coding for content.c's precompressed .br/.gz/.zst
+ * lookup, which made the same strstr mistake for all three.) */
+static TK_GZIP_TYPE_UNUSED int tk_coding_accepted(const char *ae,
+                                                  const char *coding)
+{
+    if (!ae || !coding) return 0;
+    int named = -1, star = -1;   /* -1 unlisted, else 1 / 0 */
     const char *p = ae;
     while (*p) {
         while (*p == ',' || tk_gzip_ows(*p)) p++;
@@ -137,15 +152,21 @@ static TK_GZIP_TYPE_UNUSED int tk_gzip_accepted(const char *ae)
             if (pnl == 1 && (pn[0] == 'q' || pn[0] == 'Q'))
                 ok = tk_gzip_qvalue_positive(pv, pvl);
         }
-        if ((nl == 4 && strncasecmp(name, "gzip", 4) == 0) ||
-            (nl == 6 && strncasecmp(name, "x-gzip", 6) == 0)) {
-            if (gz < 0) gz = ok;
+        if (tk_coding_is(name, nl, coding)) {
+            if (named < 0) named = ok;
         } else if (nl == 1 && name[0] == '*') {
             if (star < 0) star = ok;
         }
     }
-    if (gz >= 0) return gz;
+    if (named >= 0) return named;
     return star > 0;
+}
+
+/* 1 when an Accept-Encoding field value admits a gzip response
+ * (tk_coding_accepted for "gzip"; http.c's and router.c's gzip writers). */
+static TK_GZIP_TYPE_UNUSED int tk_gzip_accepted(const char *ae)
+{
+    return tk_coding_accepted(ae, "gzip");
 }
 
 #endif /* TK_GZIP_TYPE_H */

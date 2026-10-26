@@ -8,6 +8,7 @@
  */
 
 #include "http.h"
+#include "tk_gzip_type.h"   /* 121.96: tk_coding_accepted */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,103 +30,16 @@
 /* Already have zlib for gzip */
 #include <zlib.h>
 
-/* ── Accept-Encoding parsing (64.2.1) ────────────────────────────────── */
-
-typedef struct {
-    const char *encoding;
-    float       quality;
-} EncodingPref;
-
-/* Parse Accept-Encoding header into preference list, sorted by quality.
- * Returns count of encodings parsed. */
-static int parse_accept_encoding(const char *header, EncodingPref *out,
-                                  int max_out)
-{
-    if (!header || !out) return 0;
-    int count = 0;
-    const char *p = header;
-
-    while (*p && count < max_out) {
-        /* Skip whitespace and commas */
-        while (*p == ' ' || *p == ',' || *p == '\t') p++;
-        if (*p == '\0') break;
-
-        /* Read encoding name */
-        const char *name_start = p;
-        while (*p && *p != ',' && *p != ';' && *p != ' ') p++;
-        size_t name_len = (size_t)(p - name_start);
-
-        float q = 1.0f;
-        /* Check for quality value */
-        while (*p == ' ') p++;
-        if (*p == ';') {
-            p++;
-            while (*p == ' ') p++;
-            if (*p == 'q' || *p == 'Q') {
-                p++;
-                if (*p == '=') {
-                    p++;
-                    q = (float)atof(p);
-                    while (*p && *p != ',') p++;
-                }
-            }
-        }
-
-        if (name_len > 0 && name_len < 32) {
-            char name[32];
-            memcpy(name, name_start, name_len);
-            name[name_len] = '\0';
-            out[count].encoding = strdup(name);
-            out[count].quality = q;
-            count++;
-        }
-    }
-
-    /* Sort by quality (descending) */
-    for (int i = 0; i < count - 1; i++) {
-        for (int j = i + 1; j < count; j++) {
-            if (out[j].quality > out[i].quality) {
-                EncodingPref tmp = out[i];
-                out[i] = out[j];
-                out[j] = tmp;
-            }
-        }
-    }
-
-    return count;
-}
-
-/* Select best encoding from client preferences.
- * Priority: br > zstd > gzip > identity.
- * Returns encoding name or "identity". */
-const char *content_select_encoding(const char *accept_encoding)
-{
-    EncodingPref prefs[16];
-    int n = parse_accept_encoding(accept_encoding, prefs, 16);
-
-    for (int i = 0; i < n; i++) {
-        if (prefs[i].quality <= 0) continue;
-#ifdef TK_HAVE_BROTLI
-        if (strcasecmp(prefs[i].encoding, "br") == 0) {
-            for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-            return "br";
-        }
-#endif
-#ifdef TK_HAVE_ZSTD
-        if (strcasecmp(prefs[i].encoding, "zstd") == 0) {
-            for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-            return "zstd";
-        }
-#endif
-        if (strcasecmp(prefs[i].encoding, "gzip") == 0) {
-            for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-            return "gzip";
-        }
-    }
-
-    for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-    return "identity";
-}
+/* ── Accept-Encoding / Accept-Language negotiation: retired (121.99) ────
+ *
+ * content_select_encoding (64.2.1), content_negotiate_language (64.2.2) and
+ * their shared parser parse_accept_encoding had no caller anywhere -- not in
+ * src/, the .tki surface, toke-ooke or the website -- and the parser read
+ * q-values with atof() and ignored "*", a second and wrong reading of RFC
+ * 9110 sec. 12.5.3 beside tk_coding_accepted (tk_gzip_type.h).  They were
+ * removed; the code is in ~/tk/archive/toke-stdlib-content-negotiation-
+ * 20261008/.  The precompressed-variant lookup below is kept and wired into
+ * http.servedir. */
 
 /* ── Brotli compression (64.1.1) ─────────────────────────────────────── */
 
@@ -246,87 +160,37 @@ uint8_t *content_decompress_gzip(const uint8_t *input, size_t input_len,
 /* ── Pre-compressed file serving (64.1.4) ────────────────────────────── */
 
 /* Check for pre-compressed variant of a file path.
- * Returns heap-allocated path to compressed file, or NULL. */
+ * Returns heap-allocated path to compressed file, or NULL.
+ *
+ * 121.96: a variant is offered only when Accept-Encoding admits its coding
+ * under RFC 9110 sec. 12.5.3 -- q-values and "*" included, the same rule
+ * as the gzip writers (tk_coding_accepted, tk_gzip_type.h).  It asked
+ * strstr(ae, "gzip") (and "br", "zstd"), so "gzip;q=0" -- the client's
+ * explicit refusal -- got the .gz file, and any coding whose name merely
+ * contained "br" counted as br.  When several are acceptable and present,
+ * the server's order decides: .br, then .gz, then .zst. */
 char *content_find_precompressed(const char *path,
                                   const char *accept_encoding)
 {
     if (!path || !accept_encoding) return NULL;
 
+    static const char *const variants[][2] = {
+        { "br",   ".br"  },
+        { "gzip", ".gz"  },
+        { "zstd", ".zst" },
+    };
     struct stat st;
-
-    /* Try .br first */
-    if (strstr(accept_encoding, "br")) {
-        size_t len = strlen(path) + 4;
-        char *br_path = malloc(len);
-        if (br_path) {
-            snprintf(br_path, len, "%s.br", path);
-            if (stat(br_path, &st) == 0 && S_ISREG(st.st_mode))
-                return br_path;
-            free(br_path);
-        }
+    for (size_t i = 0; i < sizeof variants / sizeof variants[0]; i++) {
+        if (!tk_coding_accepted(accept_encoding, variants[i][0])) continue;
+        size_t len = strlen(path) + strlen(variants[i][1]) + 1;
+        char *vpath = malloc(len);
+        if (!vpath) continue;
+        snprintf(vpath, len, "%s%s", path, variants[i][1]);
+        if (stat(vpath, &st) == 0 && S_ISREG(st.st_mode))
+            return vpath;
+        free(vpath);
     }
-
-    /* Try .gz */
-    if (strstr(accept_encoding, "gzip")) {
-        size_t len = strlen(path) + 4;
-        char *gz_path = malloc(len);
-        if (gz_path) {
-            snprintf(gz_path, len, "%s.gz", path);
-            if (stat(gz_path, &st) == 0 && S_ISREG(st.st_mode))
-                return gz_path;
-            free(gz_path);
-        }
-    }
-
-    /* Try .zst */
-    if (strstr(accept_encoding, "zstd")) {
-        size_t len = strlen(path) + 5;
-        char *zst_path = malloc(len);
-        if (zst_path) {
-            snprintf(zst_path, len, "%s.zst", path);
-            if (stat(zst_path, &st) == 0 && S_ISREG(st.st_mode))
-                return zst_path;
-            free(zst_path);
-        }
-    }
-
     return NULL;
-}
-
-/* ── Accept-Language negotiation (64.2.2) ─────────────────────────────── */
-
-/* Parse Accept-Language and find best match from available languages.
- * Returns matched language tag or NULL. */
-const char *content_negotiate_language(const char *accept_lang,
-                                        const char **available,
-                                        int navailable)
-{
-    if (!accept_lang || !available || navailable <= 0) return NULL;
-
-    /* Parse Accept-Language with quality values */
-    EncodingPref prefs[16];
-    /* Reuse the Accept-Encoding parser — format is identical */
-    int n = parse_accept_encoding(accept_lang, prefs, 16);
-
-    const char *best = NULL;
-    for (int i = 0; i < n && !best; i++) {
-        if (prefs[i].quality <= 0) continue;
-        for (int j = 0; j < navailable; j++) {
-            /* Exact match or prefix match (e.g. "en" matches "en-US") */
-            if (strcasecmp(prefs[i].encoding, available[j]) == 0 ||
-                (strlen(prefs[i].encoding) <= strlen(available[j]) &&
-                 strncasecmp(prefs[i].encoding, available[j],
-                             strlen(prefs[i].encoding)) == 0 &&
-                 (available[j][strlen(prefs[i].encoding)] == '-' ||
-                  available[j][strlen(prefs[i].encoding)] == '\0'))) {
-                best = available[j];
-                break;
-            }
-        }
-    }
-
-    for (int j = 0; j < n; j++) free((void *)prefs[j].encoding);
-    return best;
 }
 
 /* ── Range request support (64.2.3) ──────────────────────────────────── */

@@ -901,7 +901,7 @@ the payload type is read from the `.tki` declaration and:
 |---|---|---|
 | `T!str` (std.image) | the message pointer itself — never `0` or `1` | `e` as the `str` |
 | a record, e.g. `tomlval!tomlerr` with `tomlerr{msg:str}` | a `tk_err_box` of the record's layout | `e` as that record (`e.msg`) |
-| a sum not registered from a `.tki` (`JsonErr`, `FileErr`) | a `{tag, msg}` box | nil, as before |
+| a sum not registered from a `.tki` (`jsonerr`, `fileerr`) | a `{tag, msg}` box | nil, as before |
 
 Until 135.5b every stdlib `T!str` failure stored the payload-less flag `1`,
 and the payload lookup consulted only user functions' signatures — so the
@@ -914,7 +914,7 @@ layout — the same type, or a record whose fields have the same types in the
 same order. Anything else is re-raised payload-less exactly as a
 sentinel-ABI callee is (127.56): a tag `-1` box into a sum, `1` otherwise.
 Passing it through blind would let a `{msg}` box be read as a sum's
-`{tag, payload}`, or a `JsonErr {Missing, msg}` box select a user sum's third
+`{tag, payload}`, or a `jsonerr {Missing, msg}` box select a user sum's third
 variant.
 
 ### 7.4 Consuming an error union
@@ -962,8 +962,8 @@ These are limitations of the current lowering, not of the design:
    `std.task` tasks raising errors really did overwrite each other's.
 3. **Nothing enforces that every error exit sets the slot** (127.59).
 4. **The declared error type is not checked against what is
-   observable.** `MdnsErr` declares five variants and no function returns
-   it. (`FileErr` declared three while `file.lasterrkind()` distinguished
+   observable.** `mdnserr` declares five variants and no function returns
+   it. (`fileerr` declared three while `file.lasterrkind()` distinguished
    ten; 127.102b widened it to the ten and retired the accessor.)
 
 ### 7.6 Why this representation
@@ -1036,7 +1036,7 @@ can prove the fault is impossible.
 | RT003 | array/collection index out of bounds | `tk_bounds_trap` | `RT003: index N out of bounds for length M` |
 | RT004 | divide-by-zero / `INT64_MIN / -1` | `tk_div_trap` | `RT004: <division|remainder> by zero` |
 | RT005 | nil struct-field dereference | `tk_nil_trap` | `RT005: nil dereference` |
-| RT008 | invalid regex pattern reached `str.containsre`/`countre`/`findall`/`matches`/`replacere` at run time (a literal one is E4075 at compile time; 137.9 — `str.checkre` returns the same error as a `RegexErr` value instead, 121.45) | `regex_trap_invalid` (static, `str_glue.c`) | `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` |
+| RT008 | invalid regex pattern reached `str.containsre`/`countre`/`findall`/`matches`/`replacere` at run time (a literal one is E4075 at compile time; 137.9 — `str.checkre` returns the same error as a `regexerr` value instead, 121.45) | `regex_trap_invalid` (static, `str_glue.c`) | `RT008: invalid regex pattern in str.<fn>: <reason> (at byte N of "<pattern>")` |
 | RT009 | a regex call spent its step budget (121.35; see [str.md](stdlib/str.md#regular-expressions)) | `regex_trap_budget` (static, `str_glue.c`) | `RT009: regex step budget exceeded in str.<fn> (pattern "<pattern>", subject N bytes)` |
 
 (See [memory-model.md §6.6](spec/memory-model.md) for the normative spatial/

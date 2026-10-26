@@ -14,7 +14,7 @@
     },
     {
       "kind": "type",
-      "name": "I18nErr",
+      "name": "i18nerr",
       "is_sum": true,
       "fields": [
         {
@@ -34,7 +34,7 @@
         "str",
         "str"
       ],
-      "return": "i18nbundle!I18nErr"
+      "return": "i18nbundle!i18nerr"
     },
     {
       "kind": "func",

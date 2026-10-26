@@ -57,7 +57,7 @@ f=main():i64{
   <0
 };
 EOF
-expect "1 args.get with an extern get!\$myerr: e.msg is ArgsErr's" "$(run a.tk)" \
+expect "1 args.get with an extern get!\$myerr: e.msg is argserr's" "$(run a.tk)" \
     "err:args.get: index out of bounds
 rc=0"
 
@@ -73,7 +73,7 @@ f=main():i64{
   <0
 };
 EOF
-expect "2 env.get with an extern get!\$myerr: e is EnvErr" "$(unset C562_UNSET_VAR; run e.tk)" \
+expect "2 env.get with an extern get!\$myerr: e is enverr" "$(unset C562_UNSET_VAR; run e.tk)" \
     "nf:env.get: environment variable not set
 rc=0"
 
@@ -89,7 +89,7 @@ f=main():i64{
   <0
 };
 EOF
-expect "3 file.read (call spelling) with an extern read!\$myerr: e is FileErr" "$(run r.tk --allow-read)" \
+expect "3 file.read (call spelling) with an extern read!\$myerr: e is fileerr" "$(run r.tk --allow-read)" \
     "nf
 rc=0"
 

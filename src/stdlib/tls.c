@@ -27,6 +27,7 @@
 #include "tls.h"
 #include "capabilities.h"   /* 124.4c2: net capability gate */
 #include "tk_bind.h"       /* 135.34 (3): bind without shadowing a live listener */
+#include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -477,10 +478,21 @@ TlsKeypairResult tls_gen_self_signed_alg(const char *common_name,
     X509_gmtime_adj(X509_get_notAfter(cert), (long)valid_days * 86400L);
 
     /* Subject / issuer */
-    X509_NAME *name = X509_get_subject_name(cert);
+    /* Built separately: OpenSSL 4 returns the certificate's own name const
+     * (121.104).  X509_set_*_name copy it. */
+    X509_NAME *name = X509_NAME_new();
+    if (!name) {
+        X509_free(cert);
+        EVP_PKEY_free(pkey);
+        result.is_err  = 1;
+        result.err_msg = "X509_NAME_new failed";
+        return result;
+    }
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
                                 (const unsigned char *)common_name, -1, -1, 0);
+    X509_set_subject_name(cert, name);
     X509_set_issuer_name(cert, name); /* self-signed */
+    X509_NAME_free(name);
 
     /* Public key */
     X509_set_pubkey(cert, pkey);
@@ -749,7 +761,7 @@ TlsConnResult tls_connect(const char *host, int32_t port, TlsConfig cfg)
     if (named && verifying)
         named = is_ip
             ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host) == 1
-            : SSL_set1_host(ssl, host) == 1;
+            : tk_ssl_set1_dnsname(ssl, host) == 1;
     if (!named) {
         SSL_free(ssl);
         close(fd);

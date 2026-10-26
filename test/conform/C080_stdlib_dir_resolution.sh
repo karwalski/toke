@@ -56,7 +56,7 @@ i=db:std.db;
 i=io:std.io;
 f=getname():str{
   let r=db.one("SELECT name FROM t";@());
-  let rw=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let rw=mt r {$ok:v v;$err:e $dbrow{cols:@()}};
   let nm=mt row.str(rw;"name") {$ok:v v;$err:e "?"};
   < nm
 };

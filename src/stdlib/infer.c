@@ -22,6 +22,8 @@
  */
 
 #include "infer.h"
+#include "infer_handle.h"
+#include "infer_stream.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,19 +36,9 @@
 #endif
 
 /* -------------------------------------------------------------------------
- * Internal handle definition (only meaningful with llama.cpp)
+ * Internal handle definition: src/stdlib/infer_handle.h, shared with
+ * infer_stream.c so both TUs read one layout (136.75).
  * ------------------------------------------------------------------------- */
-
-struct TkModelHandle {
-    char id[128]; /* short human-readable label */
-#ifdef TK_HAVE_LLAMACPP
-    struct llama_model   *model;
-    struct llama_context *ctx;
-    pthread_mutex_t       lock;
-#else
-    int _placeholder; /* keep struct non-empty in stub builds */
-#endif
-};
 
 /* -------------------------------------------------------------------------
  * Static error helpers
@@ -156,6 +148,14 @@ TkModelHandleResult tk_infer_load(const char *model_path, TkInferOpts opts)
 int tk_infer_unload(TkModelHandle *h)
 {
     if (!h) return 0;
+
+    /* 136.75: a handle from tk_infer_load_streaming owns a prefetch thread,
+     * a slot ring and shard buffers, held in infer_stream.c's registry under
+     * this handle's address.  Stop and join the thread and free them BEFORE
+     * the handle goes: once it is freed, its address can be handed to the
+     * next handle, which would inherit the stale registry entry.  Returns 0
+     * (nothing to do) for a non-streaming handle and in stub builds. */
+    (void)tk_infer_stream_cleanup(h);
 
 #ifdef TK_HAVE_LLAMACPP
     pthread_mutex_lock(&h->lock);

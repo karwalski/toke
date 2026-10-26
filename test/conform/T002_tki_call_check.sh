@@ -212,9 +212,9 @@ f=main():i64{
 check_case "sub-namespace call left alone" 0 "" '
 m=t;
 i=db:std.db;
-f=run():i64!DbErr{
-  let r=db.one("SELECT 1 AS x";@())!DbErr;
-  <row.i64(r;"x")!DbErr
+f=run():i64!$dberr{
+  let r=db.one("SELECT 1 AS x";@())!$dberr;
+  <row.i64(r;"x")!$dberr
 };
 f=main():i64{ <mt run() {$ok:v v;$err:e 1} };'
 

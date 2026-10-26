@@ -167,7 +167,9 @@ static const StdlibModule stdlib_table[] = {
     { "securemem",     "securemem.c securemem_glue.c",           "",                                                                 "" },
     { "tls",           "tls.c tls_glue.c",                       "",                                                                 "-lssl -lcrypto" },
     { "keychain",      "keychain.c keychain_glue.c",             "",                                                                 TK_KEYCHAIN_FLAGS },
-    { "infer",         "infer.c infer_glue.c",                   "",                                                                 "" },
+    /* 136.75: tk_infer_unload calls tk_infer_stream_cleanup, so infer.c
+     * no longer links without infer_stream.c (prefetch thread: -lpthread). */
+    { "infer",         "infer.c infer_stream.c infer_glue.c",    "",                                                                 "-lpthread" },
     /* 137.12/136.47: the "infer_stream" row is withdrawn. It was dead in
      * exactly the way 136.5's "secure_mem" row was dead: the lexer rejects an
      * underscore in an identifier, so `i=x:std.infer_stream;` cannot be

@@ -35,7 +35,7 @@ it produces.
 
 ## Types
 
-### $toon
+### $toonval
 
 An opaque wrapper around a raw TOON string. Obtained by calling `toon.dec` on valid TOON input. Field access is performed via typed accessor functions (`toon.str`, `toon.i64`, etc.).
 
@@ -69,10 +69,10 @@ f=main():i64{
 }
 ```
 
-### toon.empty(): $toon
+### toon.empty(): $toonval
 
 Returns the empty TOON document. Use it as the `$err` arm of a `mt` over
-`toon.dec`, where the match has to produce a `$toon` and the only other
+`toon.dec`, where the match has to produce a `$toonval` and the only other
 constructor is the call that has just failed.
 
 ```toke
@@ -84,9 +84,9 @@ f=demo():i64{
 };
 ```
 
-### toon.dec(s: $str): $toon!$toonerr
+### toon.dec(s: $str): $toonval!$toonerr
 
-Parses a TOON string into a `Toon` value. Returns `$toonerr.$parse` if the input is not valid TOON.
+Parses a TOON string into a `$toonval` value. Returns `$toonerr.$parse` if the input is not valid TOON.
 
 ```toke
 m=app;
@@ -97,66 +97,66 @@ f=demo():i64{
 };
 ```
 
-### toon.str(t: $toon; key: $str): $str!$toonerr
+### toon.str(t: $toonval; key: $str): $str!$toonerr
 
 Extracts a string value from the first TOON row by field name. Returns `$toonerr.$missing` if the field does not exist.
 
 ```toke
 m=app;
 i=toon:std.toon;
-f=demo(t:$toon):i64{
+f=demo(t:$toonval):i64{
   let name=mt toon.str(t;"name") {$ok:s s;$err:e "unknown"};
   < 0
 };
 ```
 
-### toon.i64(t: $toon; key: $str): i64!$toonerr
+### toon.i64(t: $toonval; key: $str): i64!$toonerr
 
 Extracts a signed 64-bit integer by field name. Returns `$toonerr.$type` if the value is not a number.
 
 ```toke
 m=app;
 i=toon:std.toon;
-f=demo(t:$toon):i64{
+f=demo(t:$toonval):i64{
   let id=mt toon.i64(t;"id") {$ok:n n;$err:e 0};
   < id
 };
 ```
 
-### toon.f64(t: $toon; key: $str): f64!$toonerr
+### toon.f64(t: $toonval; key: $str): f64!$toonerr
 
 Extracts a 64-bit float by field name.
 
 ```toke
 m=app;
 i=toon:std.toon;
-f=demo(t:$toon):f64{
+f=demo(t:$toonval):f64{
   let x=mt toon.f64(t;"x") {$ok:f f;$err:e 0.0};
   < x
 };
 ```
 
-### toon.bool(t: $toon; key: $str): bool!$toonerr
+### toon.bool(t: $toonval; key: $str): bool!$toonerr
 
 Extracts a boolean by field name.
 
 ```toke
 m=app;
 i=toon:std.toon;
-f=demo(t:$toon):bool{
+f=demo(t:$toonval):bool{
   let active=mt toon.bool(t;"active") {$ok:b b;$err:e false};
   < active
 };
 ```
 
-### toon.arr(t: $toon; key: $str): @($toon)!$toonerr
+### toon.arr(t: $toonval; key: $str): @($toonval)!$toonerr
 
-Extracts all rows for a given field as a `Toon` array.
+Extracts all rows for a given field as a `$toonval` array.
 
 ```toke
 m=app;
 i=toon:std.toon;
-f=demo(t:$toon):i64{
+f=demo(t:$toonval):i64{
   let names=mt toon.arr(t;"name") {$ok:a a;$err:e @()};
   < 0
 };

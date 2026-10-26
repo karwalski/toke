@@ -23,7 +23,7 @@
  *                            expression-position if/el or mt arm — that
  *                            call IS the branch value, see pattern_walk)
  *                            (127.37: NOT a std.vec handle receiver —
- *                            `let x=v.new()` / `x:Vec` — by-reference,
+ *                            `let x=v.new()` / `x:$vechandle` — by-reference,
  *                            the bare call mutates in place)
  *   loop-rebuilds-array    — lp whose body is only `acc=acc.append(f(i))`
  *
@@ -1542,7 +1542,7 @@ static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *
  *   (a) `let x=<alias>.new(...)` for an import alias — every stdlib `.new`
  *       returns a handle; value-semantic arrays/maps come from `@(...)` /
  *       `@{...}` literals or `.append/.push/.set` results, never `.new`; or
- *   (b) declared `:Vec` (let annotation or param) while `std.vec` is imported.
+ *   (b) declared `:$vechandle` (let annotation or param) while `std.vec` is imported.
  * Anything else (literal init, unannotated param, mt/lp binding) keeps firing. */
 static int module_path_is(const Node *mp, const char *path, const char *src)
 {
@@ -1577,11 +1577,13 @@ static int is_handle_ctor(PatCtx *c, const Node *init)
     return m && method_is(m, "new", c->src) && is_alias(&c->aliases, base, c->src);
 }
 
-/* bare `Vec` type reference (not `mod.$Vec`) with std.vec imported */
+/* `$vechandle` type reference (not `mod.$vechandle`) with std.vec imported.
+ * 127.251: std.vec's handle type was `Vec`; the .tki now spells it
+ * `vechandle` (a lower-cased `vec` would collide with the module). */
 static int is_handle_type(PatCtx *c, const Node *ty)
 {
-    return ty && ty->kind == NODE_TYPE_IDENT && ty->op != TK_DOT && ty->tok_len == 3 &&
-           memcmp(c->src + ty->tok_start, "Vec", 3) == 0 &&
+    return ty && ty->kind == NODE_TYPE_IDENT && ty->op != TK_DOT && ty->tok_len == 9 &&
+           memcmp(c->src + ty->tok_start, "vechandle", 9) == 0 &&
            program_imports(c->root, "std.vec", c->src);
 }
 

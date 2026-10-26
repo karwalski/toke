@@ -3,7 +3,7 @@
   "module": "std.md",
   "exports": [
     {"kind": "func", "name": "md.render",     "params": ["str"],  "return": "str"},
-    {"kind": "func", "name": "md.renderfile", "params": ["str"],  "return": "str!MdErr"},
-    {"kind": "type",   "name": "MdErr",       "fields": [{"name": "msg", "type": "str"}]}
+    {"kind": "func", "name": "md.renderfile", "params": ["str"],  "return": "str!mderr"},
+    {"kind": "type",   "name": "mderr",       "fields": [{"name": "msg", "type": "str"}]}
   ]
 }

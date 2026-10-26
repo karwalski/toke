@@ -1243,7 +1243,7 @@ static void prepass_imports(Ctx *c, const Node *n) {
 /*
  * register_tki_struct_types — Register record ("kind":"type") layouts declared
  * in the .tki files of imported std modules, so field access on stdlib record
- * returns (e.g. encrypt.x25519keypair():Keypair, auth.jwtverify():JwtClaims)
+ * returns (e.g. encrypt.x25519keypair():keypair, auth.jwtverify():jwtclaims)
  * resolves the correct GEP index instead of defaulting to 0 (Story 114.17).
  *
  * Field names/order are taken verbatim from the .tki, matching the i64-slot
@@ -3557,7 +3557,7 @@ static int index_is_map_get(Ctx *c, const Node *n)
     if (base->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, base, nb, sizeof nb);
         const char *vst = ptr_local_struct_type(c, get_llvm_name(c, nb));
-        if (vst && !strcmp(vst, "Vec")) return 0;
+        if (vst && !strcmp(vst, "vechandle")) return 0;
         for (int ii = 0; ii < c->import_count; ii++)
             if (!strcmp(c->imports[ii].alias, nb) && !alias_is_value(c, base))
                 return 0;
@@ -5295,11 +5295,11 @@ static int emit_expr(Ctx *c, const Node *n)
             /* Story 114.18 first-class Vec: if the receiver is a Vec-typed local/
              * param, instance methods dispatch to the tk_vec_* wrappers instead of
              * the array path (a Vec handle is a DynArr*, not a [count|data] block).
-             * Strict gate on the "Vec" struct marker leaves arrays/maps/strs alone. */
+             * Strict gate on the "vechandle" struct marker (127.251: was "Vec") leaves arrays/maps/strs alone. */
             int base_is_vec = 0;
             if (!is_mod_im && n->children[0]->children[0]->kind == NODE_IDENT) {
                 const char *_vst = ptr_local_struct_type(c, get_llvm_name(c, alias_im));
-                if (_vst && !strcmp(_vst, "Vec")) base_is_vec = 1;
+                if (_vst && !strcmp(_vst, "vechandle")) base_is_vec = 1;
             }
             if (base_is_vec) {
                 const char *vfn = NULL;
@@ -6503,7 +6503,7 @@ static int emit_expr(Ctx *c, const Node *n)
         if (n->children[0]->kind == NODE_IDENT && n->child_count >= 2) {
             char _vb[128]; tok_cp(c->src, n->children[0], _vb, sizeof _vb);
             const char *_vst = ptr_local_struct_type(c, get_llvm_name(c, _vb));
-            if (_vst && !strcmp(_vst, "Vec")) {
+            if (_vst && !strcmp(_vst, "vechandle")) {
                 int vb = emit_expr(c, n->children[0]);
                 const char *vbty = expr_llvm_type(c, n->children[0]);
                 if (!strcmp(vbty, "i8*")) { int z = next_tmp(c);
@@ -8825,8 +8825,8 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                     if (!strcmp(resolved, str_wrappers[i])) return "$str";
                 /* Story 114.18: generic stdlib struct/record return — consult the
                  * .tki return-type cache so any call whose .tki return is a
-                 * registered type (vec.new()->Vec, encrypt.x25519keypair()->
-                 * Keypair) tags the bound local with that struct name. */
+                 * registered type (vec.new()->vechandle, encrypt.x25519keypair()->
+                 * keypair) tags the bound local with that struct name. */
                 /*
                  * 127.80: the interface file IS the declared return type — ask
                  * it about strings too, not only about structs.

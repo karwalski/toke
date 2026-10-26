@@ -44,16 +44,16 @@ PY
 
 expect "1 v.len on a std.vec handle names vec.len(v)" \
     "$(diags 'm=q;i=vec:std.vec;f=main():i64{let v=vec.new();let w=vec.push(v;3);<w.len as i64};')" \
-    "E4025|struct 'Vec' has no field 'len': 'len' is a function of the module, not a field -- call vec.len(w)|ABSENT"
+    "E4025|struct 'vechandle' has no field 'len': 'len' is a function of the module, not a field -- call vec.len(w)|ABSENT"
 expect "2 the alias the program chose is the one named" \
     "$(diags 'm=q;i=vv:std.vec;f=main():i64{let v=vv.new();<v.len as i64};')" \
-    "E4025|struct 'Vec' has no field 'len': 'len' is a function of the module, not a field -- call vv.len(v)|ABSENT"
+    "E4025|struct 'vechandle' has no field 'len': 'len' is a function of the module, not a field -- call vv.len(v)|ABSENT"
 expect "3 another one-argument member (pop) is named the same way" \
     "$(diags 'm=q;i=vec:std.vec;f=main():i64{let v=vec.new();<v.pop};')" \
-    "E4025|struct 'Vec' has no field 'pop': 'pop' is a function of the module, not a field -- call vec.pop(v)|ABSENT"
+    "E4025|struct 'vechandle' has no field 'pop': 'pop' is a function of the module, not a field -- call vec.pop(v)|ABSENT"
 expect "4 a name the module does not export stays the plain E4025" \
     "$(diags 'm=q;i=vec:std.vec;f=main():i64{let v=vec.new();<v.size as i64};')" \
-    "E4025|struct 'Vec' has no field 'size'|ABSENT"
+    "E4025|struct 'vechandle' has no field 'size'|ABSENT"
 expect "5 vec.len(v) itself is clean" \
     "$(diags 'm=q;i=vec:std.vec;f=main():i64{let v=vec.new();<vec.len(v)};')" "rc=0"
 expect "6 .len on an array is unchanged" \

@@ -292,7 +292,7 @@ f=bytesline(b:@(byte)):str{
 
 (* Every outcome prints exactly one line, and a failure prints its KIND —
    never an empty value, which is the defect this family exists to remove.
-   Since 127.102b the kind is the FileErr variant the $err arm binds, not
+   Since 127.102b the kind is the $fileerr variant the $err arm binds, not
    the retired file.lasterrkind(). *)
 f=rd(label:str;path:str;off:i64;n:i64):i64{
   let r=file.readrange(path;off;n);

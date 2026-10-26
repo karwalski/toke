@@ -76,18 +76,18 @@ of them is E4075 at compile time.
 Mirrors `stdlib/json.tki` (135.27; conform C353 holds the two together).
 
 ```text
-t=$json{raw:$str}
+t=$jsonval{raw:$str}
 t=$jsonerr{$parse:$str;$type:$str;$missing:$str}
 f=enc(s:$str):$str
-f=dec(s:$str):$json!$jsonerr
-f=str(j:$json;key:$str):$str!$jsonerr
-f=u64(j:$json;key:$str):u64!$jsonerr
-f=i64(j:$json;key:$str):i64!$jsonerr
-f=f64(j:$json;key:$str):f64!$jsonerr
-f=bool(j:$json;key:$str):bool!$jsonerr
-f=arr(j:$json;key:$str):@$json!$jsonerr
-f=at(j:$json;path:$str):$json!$jsonerr   (* 138.12: dotted path, e.g. "usage.input_tokens", "r.0" *)
-f=getval(j:$json;path:$str):$str        (* 138.12: the raw JSON text at path, "" if none *)
+f=dec(s:$str):$jsonval!$jsonerr
+f=str(j:$jsonval;key:$str):$str!$jsonerr
+f=u64(j:$jsonval;key:$str):u64!$jsonerr
+f=i64(j:$jsonval;key:$str):i64!$jsonerr
+f=f64(j:$jsonval;key:$str):f64!$jsonerr
+f=bool(j:$jsonval;key:$str):bool!$jsonerr
+f=arr(j:$jsonval;key:$str):@$jsonval!$jsonerr
+f=at(j:$jsonval;path:$str):$jsonval!$jsonerr   (* 138.12: dotted path, e.g. "usage.input_tokens", "r.0" *)
+f=getval(j:$jsonval;path:$str):$str        (* 138.12: the raw JSON text at path, "" if none *)
 
 (* 127.241: the typed get* spellings -- aliases of i64 / bool / f64 above.
    Their parameters are still the ABI's i64 (a json handle, a str key); the
@@ -108,7 +108,7 @@ t=$jsonstreamerr{$truncated:$str;$invalid:$str;$overflow:$str}
 t=$jsonwriter{buf:@$byte;pos:u64}
 f=json.streamparser(input:@$byte):$jsonstream
 f=json.streamnext(parser:$jsonstream):$jsontoken!$jsonstreamerr
-f=json.streamemit(writer:$jsonwriter;val:$json):void!$jsonstreamerr
+f=json.streamemit(writer:$jsonwriter;val:$jsonval):void!$jsonstreamerr
 f=json.newwriter(capacity:u64):$jsonwriter
 f=json.writerbytes(writer:$jsonwriter):@$byte
 ```
@@ -220,11 +220,11 @@ f=http.streamnext(s:$httpstream):@$byte!$httperr
 f=open(path:$str):u64!$dberr
 f=close():i64
 f=exec(sql:$str;params:@($str)):u64!$dberr
-f=one(sql:$str;params:@($str)):$row!$dberr
-f=many(sql:$str;params:@($str)):@($row)!$dberr
+f=one(sql:$str;params:@($str)):$dbrow!$dberr
+f=many(sql:$str;params:@($str)):@($dbrow)!$dberr
 f=execon(h:u64;sql:$str;params:@($str)):u64!$dberr
-f=oneon(h:u64;sql:$str;params:@($str)):$row!$dberr
-f=manyon(h:u64;sql:$str;params:@($str)):@($row)!$dberr
+f=oneon(h:u64;sql:$str;params:@($str)):$dbrow!$dberr
+f=manyon(h:u64;sql:$str;params:@($str)):@($dbrow)!$dberr
 f=closeon(h:u64):bool
 ```
 
@@ -232,7 +232,7 @@ Every `open` returns a new handle; the `*on` forms name one, and the
 handle-less forms use the default connection -- the lowest-numbered one still
 open (138.6). `exec` runs every `;`-separated statement of its string or
 fails naming the one that failed; bind parameters with more than one
-statement are refused. Row values are read with `row.str/u64/i64/f64/bool`.
+statement are refused. `$dbrow` values are read with `row.str/u64/i64/f64/bool`.
 
 ### std.keychain
 

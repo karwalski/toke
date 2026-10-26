@@ -121,31 +121,31 @@ run_case "json.getfloat of a string binds Type" "type" \
 run_case "json.getint of 0 after a failure is ok" "ok 0" \
 '  mt json.getint(o;"n"){$ok:v io.println(str.concat("ok ";str.fromint(v)));$err:e io.println("err")};'
 
-run_case "str.slice out of range binds SliceErr.msg" "slice index out of range" \
+run_case "str.slice out of range binds sliceerr.msg" "slice index out of range" \
 '  io.println(mt str.slice("abc";5;9){$ok:v v;$err:e e.msg});'
 
 run_case "str.slice empty result is ok" "ok []" \
 '  io.println(str.concat(str.concat("ok [";mt str.slice("abc";3;3){$ok:v v;$err:e "ERR"});"]"));'
 
-run_case "str.matchbracket binds BracketErr.msg" "not a bracket segment" \
+run_case "str.matchbracket binds bracketerr.msg" "not a bracket segment" \
 '  io.println(mt str.matchbracket("(ab"){$ok:v v;$err:e e.msg});'
 
 run_case "str.matchbracket ok" "ab" \
 '  io.println(mt str.matchbracket("[ab]"){$ok:v v;$err:e e.msg});'
 
-run_case "str.frombytes invalid UTF-8 binds EncodingErr.msg" "invalid UTF-8 encoding" \
+run_case "str.frombytes invalid UTF-8 binds encodingerr.msg" "invalid UTF-8 encoding" \
 '  io.println(mt str.frombytes(@(104;255;105)){$ok:v v;$err:e e.msg});'
 
 run_case "str.frombytes empty is ok" "ok []" \
 '  io.println(str.concat(str.concat("ok [";mt str.frombytes(@()){$ok:v v;$err:e "ERR"});"]"));'
 
-run_case "str.toint failure binds ParseErr.msg" "invalid integer" \
+run_case "str.toint failure binds parseerr.msg" "invalid integer" \
 '  io.println(mt str.toint("x"){$ok:v "ok";$err:e e.msg});'
 
 run_case "str.toint 0 after a failure is ok" "ok 0" \
 '  io.println(mt str.toint("0"){$ok:v str.concat("ok ";str.fromint(v));$err:e e.msg});'
 
-run_case "str.tofloat failure binds ParseErr.msg" "invalid float" \
+run_case "str.tofloat failure binds parseerr.msg" "invalid float" \
 '  io.println(mt str.tofloat("x"){$ok:v "ok";$err:e e.msg});'
 
 echo "--------------------------------------"
