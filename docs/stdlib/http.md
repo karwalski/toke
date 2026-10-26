@@ -41,7 +41,11 @@ A handler may build its response as a literal, `$res{status:201;headers:@(@("Loc
 
 **A header that could split the response is not sent** (story 121.92). A header whose name is not an HTTP token (letters, digits and ``!#$%&'*+-.^_`|~``; no space, colon, carriage return or line feed) or whose value holds a carriage return, a line feed or another control character other than tab is dropped whole, over HTTP/1.1, TLS and HTTP/2 alike, and the rest of the response is sent; the server does not repair it, since stripping bytes would still send a value nobody wrote. A handler that copies request data into a header, such as `@("Location"; req.body)`, therefore cannot be made to write a header line of the client's choosing. A dropped `X-Frame-Options`, `X-Content-Type-Options` or `Referrer-Policy` does not displace the server's default for it. A header is sent at its full length; until 121.92 a header line longer than 511 bytes was cut, and the header after it was joined onto it. Until story 121.98 HTTP/2 dropped only a value holding a carriage return or line feed, so a value with another control character was sent over HTTP/2 and dropped over HTTP/1.1.
 
-**The server frames the response** (story 121.97). `Content-Length`, `Transfer-Encoding` and `Connection` are the server's own: it computes them from the body it sends and the connection it keeps, and a handler's copy of any of them is not sent. A handler's `Content-Length` still chooses how an HTTP/1.1 body is framed — with it the body is sent with a fixed length, without it in chunks — but the length sent is always the body's. A `1xx`, `204` or `304` response is sent with no body and neither field, whatever body the handler gave it, over HTTP/1.1, TLS and HTTP/2, and in answer to `HEAD`. Until then a handler's `Content-Length` was sent after the server's, so one that differed from the body gave the response two lengths, and a client or proxy could frame it by either (the request-smuggling class, RFC 9112 §6.3); a `204` carried `Content-Length: 0`, and a `204` or `304` with a body sent the body, which a client reads as the start of the next response.
+**The server frames the response** (story 121.97). `Content-Length`, `Transfer-Encoding` and `Connection` are the server's own: it computes them from the body it sends and the connection it keeps, and a handler's copy of any of them is not sent. A handler's `Content-Length` still chooses how an HTTP/1.1 body is framed — with it the body is sent with a fixed length, without it in chunks — but the length sent is always the body's. A `1xx`, `204` or `304` response is sent with no body and neither field, whatever body the handler gave it, over HTTP/1.1, TLS and HTTP/2, and in answer to `HEAD`. Until then a handler's `Content-Length` was sent after the server's, so one that differed from the body gave the response two lengths, and a client or proxy could frame it by either (the request-smuggling class, RFC 9112 §6.3); a `204` carried `Content-Length: 0`, and a `204` or `304` with a body sent the body, which a client reads as the start of the next response. A `HEAD` response carries the head the `GET` for the same resource would (story 121.100, RFC 9110 §9.3.2): the same `Content-Length` — the gzip length when the `GET` is sent gzip-encoded — or the same `Transfer-Encoding: chunked`, and the same `Content-Encoding` and `Vary`, over HTTP/1.1, TLS and HTTP/2; the server encodes the body to learn the length, then sends no body. Until then a `HEAD` gave the uncompressed length and no coding where the `GET` was gzipped, and a fixed length where the `GET` was chunked.
+
+**A handler can close the connection** (story 121.101). The server's `Connection` is its own, but a handler's `Connection` field that lists `close` (`close`, `Keep-Alive, close`, any case) is honoured: the response goes out with `Connection: close`, nothing further is read or served on that connection — a request the client pipelined behind it is not answered — and the server half-closes the socket and drains what the client is still sending before it closes, so the response is not lost to a TCP reset. A handler's `keep-alive` changes nothing; the server still decides when to close (when the client asks, or at its per-connection request limit). A client's `Connection` fields are read as lists too, so `Connection: upgrade, close` closes like `Connection: close` (RFC 9110 §7.6.1). This holds on HTTP/1.1 and TLS; HTTP/2 has no `Connection` field (RFC 9113 §8.2.2) and drops a handler's. Until then a handler's `close` was not sent and the connection stayed open, and a client's `close` was seen only as the first option of the first `Connection` field.
+
+**An HTTP/1.0 request closes the connection unless it asks for keep-alive** (story 121.102, RFC 9112 §9.3). HTTP/1.1 keeps a connection open by default; HTTP/1.0 does not, so after the response to a 1.0 request the server sends `Connection: close` and closes — unless the request's `Connection` fields list `keep-alive` (any case, `x-foo, Keep-Alive` too), in which case the response says `Connection: keep-alive` and the next request is read. `close` in the list still wins. The version is read from the request line, plain and TLS. Until then a 1.0 request was kept like a 1.1 one: the response said `keep-alive`, a request pipelined behind it was served, and a 1.0 client reading the response to the end of the connection waited for the 2-second idle timeout.
 
 ### $httpclient
 
@@ -378,7 +382,7 @@ overran a client on the default window, and the table size changed silently.
 `content-encoding: gzip` and `vary: Accept-Encoding`, when the request's
 `accept-encoding` names `gzip` and the handler set no `Content-Encoding` of
 its own — per stream, by the rule the HTTP/1.1 servers use. A `HEAD` carries
-the unencoded length. Until then HTTP/2 never compressed, so a server sent the
+the GET's `content-length` and `content-encoding` (story 121.100). Until then HTTP/2 never compressed, so a server sent the
 same stylesheet gzipped over HTTP/1.1 and whole over HTTP/2.
 
 **Already-compressed types are sent as they are** (story 121.89). On all
@@ -492,13 +496,29 @@ The request path is appended to `dir` **whole, including the prefix** — so
 out to match.
 
 **Files are served as bytes.** A file holding `0x00` bytes — an image, a
-font, a `.wasm` module — is served whole, with a `Content-Length` (or chunk
-sizes) counting every byte, over HTTP/1.1, TLS and HTTP/2, and gzip-encoded
+font, a `.wasm` module — is served whole, with a `Content-Length` counting
+every byte, over HTTP/1.1, TLS and HTTP/2 (since story 121.100 cleartext
+HTTP/1.1 too, where it was sent in chunks, so a `HEAD` gives the file's
+size), and gzip-encoded
 whole when the client accepts it (story 121.86). Until then every response
 writer sized the body as a C string, so a binary file was cut at its first
 `0x00`: a PNG arrived as its 8-byte signature and nothing else. A handler's
 body is a `str`, which cannot hold a `0x00`, so this only ever affected
 `http.servedir`.
+
+**Precompressed files are served when the client accepts them** (story
+121.99). When `style.css.br`, `style.css.gz` or `style.css.zst` sits beside
+`style.css` and the request's `Accept-Encoding` admits that coding (RFC 9110
+§12.5.3: weights and `*` count, `gzip;q=0` refuses), the variant is sent in
+place of the file — `br` before `gzip` before `zstd` — with the file's
+`Content-Type`, `Content-Encoding` naming the coding, and `Vary:
+Accept-Encoding`; it is not compressed again. A directory's `index.html` is
+served the same way. A file that has any variant says `Vary: Accept-Encoding`
+even when it is sent as it is, so a cache keeps the encodings apart. The
+variant is resolved and checked like the file itself: one that is a symlink
+out of `dir` is not followed, and the file is sent instead. `http.servedir`
+sends no `ETag`. Until then the variants were never served: the file was read
+and gzipped per request, and a client that accepts only `br` got it whole.
 
 **Capabilities.** The mount gives the server the authority to read any file
 under `dir` on every request, so `http.servedir` — and `http.servepages`,

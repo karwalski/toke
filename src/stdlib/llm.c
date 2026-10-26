@@ -46,6 +46,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+#include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
 #define LLM_HTTPS_UNSUPPORTED(url) 0
 #else
 #define LLM_HTTPS_UNSUPPORTED(url) ((url) && strncmp((url), "https://", 8) == 0)
@@ -404,7 +405,7 @@ static char *http_exchange(const char *host, const char *port, const char *path,
         int ok = is_ip
             ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(c.ssl), host) == 1
             : (SSL_set_tlsext_host_name(c.ssl, host) == 1 &&
-               SSL_set1_host(c.ssl, host) == 1);
+               tk_ssl_set1_dnsname(c.ssl, host) == 1);
         if (!ok) {
             conn_close(&c);
             NETFAIL("TLS: could not set the name to verify", 1);

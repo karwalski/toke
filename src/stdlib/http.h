@@ -203,6 +203,15 @@ void http_run_deferred_frees(void);
 void   http_body_setlen(const char *body, size_t len);
 size_t http_body_len(const char *body);
 
+/*
+ * content_find_precompressed (content.c) -- the path of a precompressed
+ * variant of `path` (path.br, path.gz, path.zst, in that order) that exists
+ * as a regular file and whose coding `accept_encoding` admits under RFC 9110
+ * sec. 12.5.3 (tk_coding_accepted); heap-allocated, or NULL.  http.servedir
+ * serves it in place of the file (story 121.99).
+ */
+char *content_find_precompressed(const char *path, const char *accept_encoding);
+
 /* Route registration */
 void http_GET   (const char *pattern, RouteHandler h);
 void http_POST  (const char *pattern, RouteHandler h);
