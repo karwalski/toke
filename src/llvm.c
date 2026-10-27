@@ -12148,6 +12148,28 @@ static int body_references_symbol(const char *body, long body_len, const char *n
 }
 
 /*
+ * body_declares_symbol (127.305) — does a `declare` line of the IR body
+ * declare exactly @name?  The symbol must appear as "@name(" on a line that
+ * starts with "declare ".  The test this replaced accepted ANY occurrence of
+ * the bare name on a declare line, so an imported user function whose
+ * mangled name merely contained a libm name (`declare i1 @util_isink(double)`
+ * holds "sin") made the emitter skip `declare double @sin(double)`, and clang
+ * rejected the module: use of undefined value '@sin' (E9003).
+ */
+static int body_declares_symbol(const char *body, const char *name)
+{
+    char pat[256];
+    int plen = snprintf(pat, sizeof pat, "@%s(", name);
+    if (plen <= 0 || plen >= (int)sizeof pat) return 0;
+    for (const char *p = strstr(body, pat); p; p = strstr(p + 1, pat)) {
+        const char *ls = p;
+        while (ls > body && ls[-1] != '\n') ls--;
+        if (!strncmp(ls, "declare ", 8)) return 1;
+    }
+    return 0;
+}
+
+/*
  * own_c_decl (127.219) — the compiler's own declaration of a plain C symbol
  * it calls itself, or NULL.
  */
@@ -12783,26 +12805,7 @@ timeparts_done:
         if (g_stdlib_decls[di].always ||
             body_references_symbol(body_buf, body_len, g_stdlib_decls[di].name)) {
             /* Skip if already forward-declared in body (avoid "invalid redefinition") */
-            char needle[256];
-            snprintf(needle, sizeof needle, "declare %%*[^ ] @%s(", g_stdlib_decls[di].name);
-            /* Simple check: look for "declare" + "@name(" in body */
-            char simple_needle[256];
-            snprintf(simple_needle, sizeof simple_needle, "@%s(", g_stdlib_decls[di].name);
-            if (strstr(body_buf, simple_needle) &&
-                strstr(body_buf, "declare") &&
-                strstr(body_buf, g_stdlib_decls[di].name)) {
-                /* Check more precisely: is there a declare line with this name? */
-                char *pos = body_buf;
-                int already = 0;
-                while ((pos = strstr(pos, g_stdlib_decls[di].name)) != NULL) {
-                    /* Walk back to check if this line starts with "declare" */
-                    char *line_start = pos;
-                    while (line_start > body_buf && *(line_start-1) != '\n') line_start--;
-                    if (!strncmp(line_start, "declare ", 8)) { already = 1; break; }
-                    pos++;
-                }
-                if (already) continue;
-            }
+            if (body_declares_symbol(body_buf, g_stdlib_decls[di].name)) continue;
             fprintf(f, "%s\n", g_stdlib_decls[di].decl);
         }
     }
