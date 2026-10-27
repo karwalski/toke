@@ -38,7 +38,7 @@ if grep -q '^| `tk_cap_check` | `capabilities.c` | via `TK_REQUIRE`' "${REPO_ROO
 else bad "1-macro-callee-c-internal" "tk_cap_check not classed c-internal via TK_REQUIRE"; fi
 
 L="${WORK}/list.txt"
-sed -e '/^tk_os_o_nofollow /d' \
+sed -e '/^tk_array_retain /d' \
     -e 's#^tk_webview_set_title c-api src/stdlib/webview.h,#tk_webview_set_title c-api docs/stdlib/infer.md,#' \
     "${REPO_ROOT}/scripts/stdlib_c_api.txt" > "${L}"
 printf '%s\n' 'tk_no_such_symbol dead   # gone' \
@@ -47,7 +47,7 @@ printf '%s\n' 'tk_no_such_symbol dead   # gone' \
 OUT="$(gate --c-api-list "${L}")"; RC=$?
 [ $RC -ne 0 ] && ok "2-mutated-list-fails" || bad "2-mutated-list-fails" "rc=0"
 want() { if echo "${OUT}" | grep -q "$2"; then ok "$1"; else bad "$1" "no line matching: $2"; fi; }
-want "3-untriaged-dead"        '^UNTRIAGED  tk_os_o_nofollow '
+want "3-untriaged-dead"        '^UNTRIAGED  tk_array_retain '
 want "4-stale-gone"            '^STALE      tk_no_such_symbol .*no longer defined'
 want "4-stale-now-reached"     '^STALE      tk_cap_check .*now c-internal'
 want "5-badcite-wrong-file"    '^BADCITE    .*tk_webview_set_title cites docs/stdlib/infer.md, which does not name it'

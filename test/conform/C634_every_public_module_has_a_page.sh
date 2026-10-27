@@ -43,7 +43,7 @@ variant() {  # $1 label  $2 command run inside the docs copy  $3 expected line
     elif grep -qF "$3" "${WORK}/g"; then pass "$1"
     else fail "$1 (failed, but not naming it)"; head -6 "${WORK}/g"; fi
 }
-variant "2-no-os-page"      "rm os.md"             "stdlib/os.tki  27 public exports, no docs/stdlib/os.md"
+variant "2-no-os-page"      "rm os.md"             "stdlib/os.tki  28 public exports, no docs/stdlib/os.md"
 variant "4-no-io-page"      "rm io.md"             "no docs/stdlib/io.md"
 
 python3 - "${GATE}" > "${WORK}/g3" 2>&1 <<'PYEOF'
