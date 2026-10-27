@@ -59,6 +59,7 @@ Exit codes: `--lint` exits `0` whether or not findings exist (findings are data 
 | `single-use-let` | hint | A `let` bound once, used exactly once, in the very next statement — inline it (pattern rule) |
 | `discarded-value-result` | error | Bare `x.set/push/append(…)` statement: the new collection is discarded (pattern rule; absorbs 127.3) |
 | `loop-rebuilds-array` | hint | A `lp` whose only statement is `acc=acc.append(f(i))` — a combinator may express it (pattern rule) |
+| `nested-if-ladder` | hint | An `el` block whose only statement is another `if` — write `el if` (pattern rule, 131.64; fixable) |
 
 ---
 
@@ -583,7 +584,7 @@ Inline the expressions to avoid the shadowing locals.
 
 ## Pattern rules (Epic 131)
 
-Story 131.9. These rules encode `docs/spec/idiom-v0.4.md` rules 1, 2, 5, 6/8, 7 and the value-semantics gotcha from the syntax card as AST-decidable, low-false-positive checks. They run in the same pass as the base rules, need no type information, and are the rule ids the idiom judge (131.10) and the corpus sweep (131.13) consume. Two of them carry a deterministic `fix`; the rest are report-only.
+Story 131.9. These rules encode `docs/spec/idiom-v0.4.md` rules 1, 2, 5, 6/8, 7 and the value-semantics gotcha from the syntax card as AST-decidable, low-false-positive checks. They run in the same pass as the base rules, need no type information, and are the rule ids the idiom judge (131.10) and the corpus sweep (131.13) consume. Three of them carry a deterministic `fix` (`single-use-let`, `string-concat-chain` when armed, `nested-if-ladder`); the rest are report-only.
 
 Implementation notes shared by every pattern rule:
 
@@ -858,6 +859,50 @@ f=main():i64{
 
 ---
 
+### `nested-if-ladder`
+
+```yaml
+id: nested-if-ladder
+category: hint
+fixable: yes
+```
+
+**Description:** An `if` (statement or expression form) whose `el` branch is a block holding exactly one statement, and that statement is another `if`: `if(a){x}el{if(b){y}el{z}}`. Story 131.64.
+
+**Rationale:** Idiom rule 1 and the `cond-elif-chain` catalogue entry (canonical form `a`, the `el if` chain; form `b` is this ladder). `regen/quality_rubric.md` counts an el-if chain as **one** nesting level (`> 3` flags, `> 4` fails a record), so every `el{if}` rung costs one level of depth that the chain does not. The threshold is therefore one rung: every ladder is reported. It is reported **once**, at its top rung, and the message names the ladder's rung count (`el if` links inside the ladder are free and not counted).
+
+**Example violation:**
+
+```toke
+m=demo;
+f=tier(x:i64):i64{
+  <if(x>90){3}el{if(x>80){2}el{1}}
+};
+```
+
+**Example fix:**
+
+```toke
+m=demo;
+f=tier(x:i64):i64{
+  <if(x>90){3}el if(x>80){2}el{1}
+};
+```
+
+**Auto-fix (`tkc --lint --fix`):** Yes. The fix replaces the top rung's `el{ … }` with `el ` followed by the inner `if` exactly as written; the fixpoint loop re-lints and takes the next rung, so a ladder of any length becomes one chain in one invocation. The AST after the rewrite differs only in that the else child is the `IF_STMT` itself rather than a `STMT_LIST` holding only it; the block declares no binding, so `let` scoping (spec v0.4 §I) is unchanged. The fix is **absent** (the hint still fires) when:
+
+- anything but whitespace separates `el`, `{` and the inner `if`, or anything but whitespace and at most one `;` follows the inner `if` before `}`;
+- `(*`, `//` or `#` appears in the block outside a string literal — a comment would be dropped or moved;
+- the outer `if` is in value position and the inner `if` has no `el` — an expression-`if` requires one, so `el if(b){y}` would not parse there.
+
+**Edge cases:**
+
+- An `el` block with a second statement (`el{let b=a+1;if(b>0){…}}`) is not a ladder — not flagged.
+- An `if` nested in the **then** branch (`if(a){if(b){…}}`) is not this rule: merging it into `&&` changes behaviour when the outer `if` has an `el`.
+- `el if` chains are already canonical — not flagged.
+
+---
+
 ## `--fix` rewrite mode
 
 `tkc --lint --fix file.tk` rewrites the file in place; `tkc --lint --fix --dry-run file.tk` prints a line diff on stdout and leaves the file alone. Every fixable diagnostic carries `fix: {span: {start, end}, replacement}`; the base rules' deletions are replacements with an empty string (`mutable-never-mutated` now replaces just the `mut.` token rather than the statement).
@@ -871,4 +916,4 @@ Application rules:
 
 Diagnostics are printed for the first round only; fixes discovered in later rounds are consequences of the first round's rewrites.
 
-Conformance tests for this mode live in `test/diagnostics/D055`–`D079` and use three runner keys added for 131.9: `expected_absent_codes` (rule ids that must not appear), `expected_fix_absent_for` (rule ids whose diagnostics must carry no `fix`), and `expected_fixed_output` (the file after `--lint --fix`, plus the idempotency check); `env:` sets environment variables such as `TKC_LINT_CONCAT_FIX=1`.
+Conformance tests for this mode live in `test/diagnostics/D055`–`D079` (and `D230`–`D232`, `test/conform/C795` for `nested-if-ladder`) and use three runner keys added for 131.9: `expected_absent_codes` (rule ids that must not appear), `expected_fix_absent_for` (rule ids whose diagnostics must carry no `fix`), and `expected_fixed_output` (the file after `--lint --fix`, plus the idempotency check); `env:` sets environment variables such as `TKC_LINT_CONCAT_FIX=1`.

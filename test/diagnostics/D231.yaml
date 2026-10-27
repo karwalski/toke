@@ -1,0 +1,24 @@
+id: D231
+series: D
+description: "lint nested-if-ladder (131.64): statement-form ladder — `el {` with a space, a multi-line block and a `;` after the inner if — splices to `el if`; a string holding braces and an interpolated literal is copied byte for byte"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let x=1;
+    if(x>1){io.println("a{")}el {
+      if(x>0){io.println("\(x)}\("q")")}el{io.println("c")};
+    };
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["nested-if-ladder"]
+expected_fixed_output: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let x=1;
+    if(x>1){io.println("a{")}el if(x>0){io.println("\(x)}\("q")")}el{io.println("c")};
+    <0
+  };
