@@ -259,6 +259,16 @@ f=main():i64{
 TOKE
 run_tk builderr 'set-on-array=type bad-val=parse nan=type inf=type good={"k":[1]} o={}'
 
+# json.kv (still an ABI helper) encodes its key too -- it pasted it in.
+cat > kv.tk <<'TOKE'
+m=kv;i=io:std.io;i=json:std.json;
+f=main():i64{
+  io.println(json.serialize(json.kv("a\"b";"v")));
+  <0
+};
+TOKE
+run_tk kv '{"a\"b":"v"}'
+
 # The declarations: an argument of the wrong type is refused at --check.
 printf '%s\n' 'm=r1;i=json:std.json;f=main():i64{let k=json.keys("{}");<0};' > r1.tk
 check_rejects r1 E4031 "json.keys of a str is refused (it declares \$jsonval)"

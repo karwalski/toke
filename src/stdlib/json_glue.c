@@ -578,22 +578,21 @@ int64_t tk_json_entries_w(int64_t obj) {
     return h;
 }
 
-/* json.kv(key, value) — build {"key":"value"} JSON object */
+/* json.kv(key, value) — build {"key":"value"} JSON object.
+ * 127.301: the key is JSON-encoded (json_setmember), not pasted into
+ * the text by snprintf, so a key holding a quote or a control byte still
+ * yields a well-formed object. */
 int64_t tk_json_kv_w(int64_t key, int64_t value) {
     if (!key) return 0;
-    const char *k = (const char *)(intptr_t)key;
-    const char *v = value ? (const char *)(intptr_t)value : "";
-    const char *enc_v = json_enc(v);
+    const char *enc_v = json_enc(value ? (const char *)(intptr_t)value : "");
     if (!enc_v) return 0;
-    size_t klen = strlen(k), vlen = strlen(enc_v);
-    size_t blen = 2 + klen + 2 + vlen + 2;
-    char *buf = (char *)malloc(blen);
-    if (!buf) { free((void *)enc_v); return 0; }
-    snprintf(buf, blen, "{\"%s\":%s}", k, enc_v);
+    Json empty = { "{}" };
+    JsonResult r = json_setmember(empty, (const char *)(intptr_t)key, enc_v);
     free((void *)enc_v);
+    if (r.is_err) return 0;
     Json *jp = (Json *)malloc(sizeof(Json));
-    if (!jp) { free(buf); return 0; }
-    jp->raw = buf;
+    if (!jp) { free((void *)r.ok.raw); return 0; }
+    *jp = r.ok;
     return (int64_t)(intptr_t)jp;
 }
 
