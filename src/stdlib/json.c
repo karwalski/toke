@@ -116,6 +116,28 @@ static const char *skip_object(const char *p) { return skip_object_d(p, 0); }
 static const char *skip_array(const char *p)  { return skip_array_d(p, 0); }
 
 /*
+ * json_key_eq — 127.300: does the member name whose raw (still escaped) text
+ * is ks[0..kraw) name `key`?  The raw text was compared byte for byte, so a
+ * key written with an escape ("a\"b", "\u0041") could be listed by
+ * json_keys, which decodes it (138.12), and then never found again by any
+ * reader -- and a key json.set had escaped could not be read back.  A name
+ * without a backslash is compared directly (the common case, no allocation);
+ * one with a backslash is decoded through strbuf_append_json_unescape, the
+ * one copy of the rule (127.229), and the decoded text is compared.
+ */
+static int json_key_eq(const char *ks, size_t kraw, const char *key, size_t klen) {
+    if (!memchr(ks, '\\', kraw))
+        return kraw == klen && strncmp(ks, key, klen) == 0;
+    TkStrBuf b = TK_STRBUF_INIT;
+    const char *src = ks;
+    (void)strbuf_append_json_unescape(&b, &src);
+    char *dec = strbuf_take(&b);              /* NULL only on OOM */
+    int eq = dec && strlen(dec) == klen && memcmp(dec, key, klen) == 0;
+    free(dec);
+    return eq;
+}
+
+/*
  * find_json_key — linear scan of a flat JSON object for "key":value.
  * Sets *val_start to the first character of the value, *val_end past it.
  * Returns 1 on success, 0 if not found.
@@ -140,7 +162,7 @@ static int find_json_key(const char *raw, const char *key,
         const char *vs = p;
         const char *ve = skip_value(p);
         if (!ve) return 0;
-        if (kfound == klen && strncmp(ks, key, klen) == 0) {
+        if (json_key_eq(ks, kfound, key, klen)) {
             *val_start = vs;
             *val_end   = ve;
             return 1;
