@@ -874,6 +874,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
     SymbolTable merged; merged.entries = (ImportEntry *)malloc(sizeof(ImportEntry) * 256);
     merged.count = 0; merged.search_path = tdir;
     int has_main = 0, rc = 0;
+    llvm_xmod_begin();   /* 127.306: same-build cross-module non-retention */
 
     for (int fi = 0; fi < nfiles; fi++) {
         const char *src = files[fi];
@@ -945,6 +946,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
     if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = limit_or_internal();
 
 cleanup:
+    llvm_xmod_end();
     for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
     free(merged.entries);
     for (int fi = 0; fi < nfiles && fi < 256; fi++) if (ll_paths[fi][0]) unlink(ll_paths[fi]);

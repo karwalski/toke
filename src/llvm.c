@@ -9944,6 +9944,21 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
             char meth[NAME_BUF]; tok_cp(c->src, callee->children[1], meth, sizeof meth);
             return !strcmp(meth, "print");
         }
+        /* 127.306: the std.image entry points that take an array argument
+         * only read it during the call: decode, fromraw, tiffpages and
+         * tiffdecode copy their [byte] out through tk_bytes_unpack (a fresh
+         * malloc, freed before return), and convolve reads its [f64] kernel
+         * in place and returns a buffer image.c allocated (image_glue.c).
+         * None stores the handle, so `<image.fromraw(o;w;h;c)` after a
+         * pixel-building loop no longer demotes every `o=o.append(v)` to
+         * the copying path.  Method by method: the others take an $imgbuf,
+         * never a bare array, and are not vouched for. */
+        if (!strcmp(m, "image")) {
+            char meth[NAME_BUF]; tok_cp(c->src, callee->children[1], meth, sizeof meth);
+            return !strcmp(meth, "decode") || !strcmp(meth, "fromraw") ||
+                   !strcmp(meth, "tiffpages") || !strcmp(meth, "tiffdecode") ||
+                   !strcmp(meth, "convolve");
+        }
         return !strcmp(m, "str") || !strcmp(m, "io") || !strcmp(m, "fmt");
     }
     return 0;
@@ -10078,6 +10093,97 @@ static int la_param_nonretaining(Ctx *c, const Node *fn, int idx, int depth) {
     return !bad;
 }
 
+/* 127.306: non-retaining parameters of USER functions in OTHER modules of the
+ * same multi-module build.  la_param_nonretaining reads the callee's body,
+ * and an imported module's body is not in this compilation unit — so a
+ * linear accumulator passed to `lib.n(o)` used to demote every append in the
+ * caller to the copying path (O(N^2)).
+ *
+ * link_multi_module (main.c) compiles the files of ONE `tkc -o` build in
+ * dependency order and links exactly those .ll files.  While it runs
+ * (llvm_xmod_begin/end), each module's emit_llvm_ir records here every
+ * (mangled symbol, parameter index) whose parameter passes
+ * la_param_nonretaining in that module's own analysis; a later module's call
+ * of that symbol consults the record.  The record is keyed by the mangled
+ * symbol the call is lowered to, and the body it describes is the body that
+ * defines that symbol in the linked binary, so the answer is as sound as the
+ * same-module one.  Outside a multi-module build nothing is recorded or
+ * consulted: a module compiled on its own is reached through a .tki whose
+ * matching object is not known to this compiler run. */
+typedef struct { char sym[256]; int idx; } XmodNoRetain;
+static XmodNoRetain *g_xmod_nr;
+static int g_xmod_nr_n, g_xmod_nr_cap, g_xmod_on;
+
+void llvm_xmod_begin(void) { g_xmod_on = 1; g_xmod_nr_n = 0; }
+void llvm_xmod_end(void) {
+    g_xmod_on = 0; free(g_xmod_nr); g_xmod_nr = NULL; g_xmod_nr_n = g_xmod_nr_cap = 0;
+}
+
+static void xmod_nr_add(const char *sym, int idx) {
+    if (g_xmod_nr_n == g_xmod_nr_cap) {
+        int nc = g_xmod_nr_cap ? g_xmod_nr_cap * 2 : 64;
+        XmodNoRetain *g = (XmodNoRetain *)realloc(g_xmod_nr, (size_t)nc * sizeof *g);
+        if (!g) return;   /* not recorded = "retains", the conservative answer */
+        g_xmod_nr = g; g_xmod_nr_cap = nc;
+    }
+    snprintf(g_xmod_nr[g_xmod_nr_n].sym, sizeof g_xmod_nr[0].sym, "%s", sym);
+    g_xmod_nr[g_xmod_nr_n].idx = idx;
+    g_xmod_nr_n++;
+}
+
+/* Record this module's non-retaining parameters (called once per module,
+ * after its prepasses, only during a multi-module build). */
+static void xmod_record_module(Ctx *c) {
+    const Node *root = c->la_prog;
+    if (!g_xmod_on || !root || !c->module_prefix[0]) return;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *ch = root->children[i];
+        if (!ch) continue;
+        int lo = 0, hi = (ch->kind == NODE_MODULE) ? ch->child_count : 1;
+        for (int j = lo; j < hi; j++) {
+            const Node *fn = (ch->kind == NODE_MODULE) ? ch->children[j] : ch;
+            if (!fn || fn->kind != NODE_FUNC_DECL || fn->child_count < 1) continue;
+            int has_body = 0, np = 0;
+            for (int k = 0; k < fn->child_count; k++) {
+                if (!fn->children[k]) continue;
+                if (fn->children[k]->kind == NODE_STMT_LIST) has_body = 1;
+                else if (fn->children[k]->kind == NODE_PARAM) np++;
+            }
+            if (!has_body || !np) continue;
+            char fname[NAME_BUF]; tok_cp(c->src, fn->children[0], fname, sizeof fname);
+            char sym[256]; snprintf(sym, sizeof sym, "%s%s", c->module_prefix, fname);
+            for (int p = 0; p < np; p++)
+                if (la_param_nonretaining(c, fn, p, 0)) xmod_nr_add(sym, p);
+        }
+    }
+    c->la_fn = NULL;
+}
+
+/* `call` is `alias.method(a0;a1;…)` with alias a USER-module import; is its
+ * argument at call child `child_i` a parameter recorded as non-retaining? */
+static int la_xmod_arg_nonretaining(Ctx *c, const Node *call, int child_i) {
+    if (!g_xmod_on || !g_xmod_nr_n) return 0;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return 0;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return 0;
+    char al[NAME_BUF]; tok_cp(c->src, callee->children[0], al, sizeof al);
+    if (c->la_fn && la_binds_name(c, c->la_fn, al)) return 0;   /* a local, not the module */
+    for (int i = 0; i < c->import_count; i++) {
+        if (strcmp(c->imports[i].alias, al)) continue;
+        if (c->imports[i].is_std) return 0;
+        char sym[256]; int ml = 0;
+        for (const char *mp = c->imports[i].module; *mp && ml < 200; mp++)
+            sym[ml++] = (*mp == '.') ? '_' : *mp;
+        sym[ml] = '\0';
+        char meth[NAME_BUF]; tok_cp(c->src, callee->children[1], meth, sizeof meth);
+        snprintf(sym + ml, sizeof sym - (size_t)ml, "_%s", meth);
+        for (int k = 0; k < g_xmod_nr_n; k++)
+            if (g_xmod_nr[k].idx == child_i - 1 && !strcmp(g_xmod_nr[k].sym, sym)) return 1;
+        return 0;
+    }
+    return 0;
+}
+
 /* 127.108: `call` is `f(a0;a1;…)` with f a top-level user function of this
  * module; is its argument i (call child i+1) a non-retaining parameter? */
 static int la_user_arg_nonretaining(Ctx *c, const Node *call, int child_i, int depth) {
@@ -10107,7 +10213,7 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
     if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
         la_ident_is(c, n->children[0], x) && la_self_concat(c, n->children[1], x))
         return la_bad_use(c, n->children[1]->children[1], x, strict, depth);
-    int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0;
+    int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0, xmod_call = 0;
     int borrowed_init = 0;   /* 127.237 (2): child index of a copied init */
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
@@ -10118,6 +10224,9 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
             skip_bare_args = 1;                               /* 127.25 */
         else if (n->child_count > 0 && n->children[0] && n->children[0]->kind == NODE_IDENT)
             user_call = 1;                                    /* 127.108 */
+        else if (n->child_count > 0 && n->children[0] &&
+                 n->children[0]->kind == NODE_FIELD_EXPR)
+            xmod_call = 1;                                    /* 127.306 */
         break;
     case NODE_FIELD_EXPR:
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* receiver */
@@ -10156,6 +10265,8 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         if (i >= 1 && skip_bare_args && la_ident_is(c, n->children[i], x)) continue;
         if (i >= 1 && user_call && la_ident_is(c, n->children[i], x) &&
             la_user_arg_nonretaining(c, n, i, depth)) continue;
+        if (i >= 1 && xmod_call && la_ident_is(c, n->children[i], x) &&
+            la_xmod_arg_nonretaining(c, n, i)) continue;     /* 127.306 */
         if (la_bad_use(c, n->children[i], x, strict, depth)) return 1;
     }
     return 0;
@@ -12616,6 +12727,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     prepass_imports(&ctx, ast);
     prepass_load_tki(&ctx, ast);
     prepass_globals(&ctx, ast); /* 114.44: after structs+tki so init types resolve */
+    xmod_record_module(&ctx);   /* 127.306: multi-module builds only */
 
     /* Register well-known stdlib struct types for field-index resolution */
     if (ctx.struct_count < ctx.struct_cap && !lookup_struct(&ctx, "timeparts")) {

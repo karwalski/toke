@@ -52,6 +52,14 @@ int emit_llvm_ir(const Node *ast, const char *src,
  * Called after import resolution so --check and the build agree. */
 int llvm_caps_fit(const TkcLimits *lim);
 
+/* llvm_xmod_begin / llvm_xmod_end (127.306): bracket ONE multi-module build
+ * (main.c link_multi_module).  In between, each emit_llvm_ir records which
+ * parameters of its module's functions are non-retaining, and later modules'
+ * linear-array analysis trusts those records for calls into it.  Outside the
+ * bracket nothing is recorded or consulted. */
+void llvm_xmod_begin(void);
+void llvm_xmod_end(void);
+
 /* llvm_set_cc (121.28, COM-04): the clang compile_binary runs, as a path
  * (main.c resolves it: TKC_CC, else the clang found at build time).  NULL or
  * "" restores the default, `clang` looked up on $PATH. */
