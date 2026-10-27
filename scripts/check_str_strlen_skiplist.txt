@@ -12,6 +12,13 @@
 # file with more fails as NEW (use tk_strlen; if the string can never have
 # reached toke, raise the entry in the same commit and say why there).
 # The core readers in the script's CORE table may not call strlen at all.
+#
+# Re-baselined 2026-10-27 when 127.170 (Z63) merged with main: lines that
+# landed on main after the ratchet was recorded (121.89-121.102 http/gzip/
+# web glue, all HTTP header and path C strings that never came from toke),
+# plus json.c/toml_glue.c key lengths from 113.B.4/113.B.5/127.300.  The
+# json/toml ones stay bare because test-stdlib-json/-toml link those units
+# without the runtime heap tk_strhdr.h needs; convert them with that tranche.
 src/stdlib/acme.c 17
 src/stdlib/analytics.c 2
 src/stdlib/auth.c 23
@@ -20,7 +27,7 @@ src/stdlib/cache.c 6
 src/stdlib/chart.c 3
 src/stdlib/chart_glue.c 1
 src/stdlib/collections_glue.c 1
-src/stdlib/content.c 9
+src/stdlib/content.c 3
 src/stdlib/crypto.c 3
 src/stdlib/csv.c 2
 src/stdlib/csv_glue.c 2
@@ -39,12 +46,12 @@ src/stdlib/file.c 5
 src/stdlib/file_glue.c 3
 src/stdlib/fmt.c 6
 src/stdlib/html.c 9
-src/stdlib/http.c 26
+src/stdlib/http.c 28
 src/stdlib/http2.c 4
 src/stdlib/i18n.c 5
 src/stdlib/infer.c 4
-src/stdlib/json.c 8
-src/stdlib/json_glue.c 12
+src/stdlib/json.c 10
+src/stdlib/json_glue.c 7
 src/stdlib/keychain.c 5
 src/stdlib/llm.c 29
 src/stdlib/llm_tool.c 8
@@ -76,7 +83,7 @@ src/stdlib/sys.c 1
 src/stdlib/template.c 11
 src/stdlib/tk_regex.h 1
 src/stdlib/tk_time.c 1
-src/stdlib/tk_web_glue.c 11
+src/stdlib/tk_web_glue.c 12
 src/stdlib/tls.c 1
 src/stdlib/tls_glue.c 1
 src/stdlib/toon.c 2
@@ -91,3 +98,5 @@ src/stdlib/xml.c 8
 src/stdlib/yaml.c 4
 src/stdlib/zip.c 1
 src/stdlib/zip_glue.c 1
+src/stdlib/tk_gzip_type.h 1
+src/stdlib/toml_glue.c 1
