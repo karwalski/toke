@@ -4,19 +4,23 @@ i=io:std.io;
 i=str:std.str;
 i=fs:std.file;
 
+(* 131.45: rewritten for the handle API of 138.6 (open returns u64!$dberr;
+ * the handle-taking forms are execon/manyon/closeon).  The point of the test
+ * is unchanged: a db file opened, written, read and closed under the run
+ * grants, then removed through std.file (tk_fs_remove_w must link). *)
+
 f=main():i64{
   let dbpath="/tmp/toke_test_db_sandbox.db";
-  let conn=db.open(dbpath);
-  db.exec(conn; "CREATE TABLE IF NOT EXISTS test(id INTEGER PRIMARY KEY,name TEXT)"; @());
-  db.exec(conn; "INSERT INTO test(name) VALUES('hello')"; @());
-  let rows=db.many(conn; "SELECT name FROM test"; @());
-  let count=rows.len;
-  db.close(conn);
   fs.remove(dbpath);
-  if(count>0){
-    io.println("PASS db sandbox");
-    <0
-  };
-  io.println("FAIL db sandbox: no rows returned");
-  <1
+  let conn=mt db.open(dbpath) {$ok:h h; $err:e 0};
+  if(conn==0){io.println("FAIL db sandbox: open failed"); <1};
+  let a=mt db.execon(conn; "CREATE TABLE IF NOT EXISTS test(id INTEGER PRIMARY KEY,name TEXT)"; @()) {$ok:n 0; $err:e 1};
+  let b=mt db.execon(conn; "INSERT INTO test(name) VALUES('hello')"; @()) {$ok:n 0; $err:e 1};
+  let count=mt db.manyon(conn; "SELECT name FROM test"; @()) {$ok:rows rows.len; $err:e 0};
+  db.closeon(conn);
+  fs.remove(dbpath);
+  if(a+b==0){io.println("PASS db sandbox: create and insert")}el{io.println("FAIL db sandbox: exec failed")};
+  if(count==1){io.println("PASS db sandbox: one row read back")}el{io.println("FAIL db sandbox: wrong row count")};
+  if(fs.exists(dbpath)){io.println("FAIL db sandbox: file not removed")}el{io.println("PASS db sandbox: file removed")};
+  <0
 };
