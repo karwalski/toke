@@ -181,7 +181,9 @@ written and waiting on a publish step (story 132.18); build from source until th
 ollama run karwalski/toke
 ```
 
-Verified 2026-09-20: the manifest resolves and the model layer is 4.7 GB. The
+Verified 2026-09-20 and again 2026-10-27 (story 132.37a): the manifest resolves,
+the model layer is 4.7 GB (Q4\_K\_M GGUF, qwen2 7.6B), and the page is
+`ollama.com/karwalski/toke`; it has no readme yet. The
 published model is the Gate 2 v0.3-syntax model described above; it does not write
 v0.4.
 

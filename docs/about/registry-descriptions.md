@@ -42,7 +42,9 @@ The one-liner, for reference (127 characters, fits every field below):
 **Live text was read on 2026-09-19** from the PyPI JSON API, the npm registry API, the
 GitHub REST API, `huggingface.co/<repo>/raw/main/README.md`, the VS Code marketplace
 `extensionquery` API and `ollama.com/library/karwalski/toke`. Read-only; nothing was
-written.
+written. **The Ollama probe used the wrong URL** -- `library/` is the official-library
+path and 404s for every user-namespace model -- so its "not published" was a false
+negative; Ollama was re-read on 2026-10-27 (story 132.37a, §9).
 
 ---
 
@@ -58,7 +60,7 @@ written.
 | 6 | VS Code `tokelang.toke-language` | 0.2.2, "Toke" capitalised | **yes** — `vscode-toke/package.json` + `README.md` | release |
 | 7 | Hugging Face `karwalski/toke` | card carries the withdrawn 52%, the retired 13-keyword count, 55 chars, bare 100% | **yes** — `toke-model/huggingface/README.md` | **owner** (Hub push) |
 | 8 | Hugging Face `karwalski/toke-tokenizer` | card carries 52% and a per-example 19-vs-49 | **yes** — `toke-tokenizer/docs/hf-model-card.md` | **owner** (Hub push) |
-| 9 | Ollama `karwalski/toke` | **not published** (404) | **yes** — `toke-model/ollama/README.md` | **owner** (first push) |
+| 9 | Ollama `karwalski/toke` | **published** — `toke:latest`, Q4\_K\_M, 4.7 GB, **no readme** (re-read 2026-10-27) | **yes** — `toke-model/ollama/README.md` | **owner** (paste the description) |
 
 ---
 
@@ -447,16 +449,31 @@ huggingface-cli upload karwalski/toke-tokenizer \
 
 ## 9. Ollama — `karwalski/toke`
 
-### Current (2026-09-19)
+### Current (re-read 2026-10-27, story 132.37a)
 
-`https://ollama.com/library/karwalski/toke` returns **404**. The model has never been
-pushed; `toke-model/ollama/` holds the `Modelfile` and the conversion script that would
-push it.
+**Published.** The 2026-09-19 reading here said 404 and "never pushed"; it had probed
+`https://ollama.com/library/karwalski/toke`, the *official-library* path, which 404s for
+any user-namespace model. The model's page is `https://ollama.com/karwalski/toke`, and on
+2026-10-27, read-only:
+
+- `ollama.com/karwalski/toke` -> 200: one tag, `toke:latest`, 4.7 GB, 32K context,
+  "Updated 5 months ago", **"No readme"**;
+- `ollama.com/library/karwalski/toke` -> 404 (the wrong path, still);
+- `registry.ollama.ai/v2/karwalski/toke/manifests/latest` -> 200: config
+  `model_family` qwen2, `model_type` 7.6B, `file_type` Q4\_K\_M, GGUF; model layer
+  4,683,073,472 bytes (4.7 GB decimal, 4.4 GiB -- the two sizes the in-tree records
+  quoted are this one number in two units); params `temperature` 0.2, `top_p` 0.9.
+
+"5 months ago" agrees with story 99.7 (published 2026-05-24).
 
 ### What is wrong
 
-Nothing is live. The risk is the opposite one: the publishing runbook has no description
-text, so a first push would take whatever was typed in the moment.
+The page has **no description at all**, so nothing on it says the model writes **v0.3**
+syntax or qualifies its compile figure -- the two things this artefact cannot be
+published without. And the owner decision in story 132.24 ("Do not publish to Ollama. It
+is 404 today") rests on the false negative: the model has been public since May. Whether
+to keep it (and paste the description) or take it down is an owner decision, not made
+here.
 
 ### Proposed
 
@@ -528,8 +545,8 @@ Nothing below has been done. Each line is one outward-facing action.
 - [ ] **Hugging Face** — upload the two cards (write token required); check the
       `console.tokelang.dev` / `api.tokelang.dev` links still resolve before publishing
       the model card.
-- [ ] **Ollama** — nothing is live; if the model is ever pushed, use the description in
-      `toke-model/ollama/README.md`.
+- [ ] **Ollama** — the model IS live with no readme (132.37a). Owner: keep it and paste
+      the description in `toke-model/ollama/README.md`, or remove it (132.24 revisited).
 - [ ] **After each publish** — delete that surface's `AWAITING_PUBLISH` entry in
       `scripts/check_canonical.py` so the warning disappears, and record the date in
       story 132.5's baseline.
@@ -559,7 +576,7 @@ happen by themselves.
 | GitHub, 14 other repos | description, homepage, topics | `gh` auth |
 | Hugging Face `karwalski/toke` | upload `README.md` as the card | HF write token |
 | Hugging Face `karwalski/toke-tokenizer` | upload the card | HF write token |
-| Ollama `karwalski/toke` | not published; description text only if pushed | Ollama account |
+| Ollama `karwalski/toke` | published, no readme: paste the description (or remove the model) | Ollama account |
 
 **Baseline consequences for 132.5.** Package-download counts can be taken now (PyPI
 `toke-tokenizer` 0.1.0, npm `@tokelang/mcp-server` 0.1.0, VS Code 166 downloads / 7
