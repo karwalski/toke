@@ -12,8 +12,10 @@
 # Cases:
 #   1 the gate is OK on this tree
 #   2 docs/stdlib without os.md (a copy)  -> FAIL naming stdlib/os.tki
-#   3 docs/stdlib plus an xml.md (a copy) -> FAIL: MISSING_PAGES['xml'] is
-#     stale (the list only shrinks)
+#   3 the gate with MISSING_PAGES['xml'] injected (xml.md exists) -> FAIL:
+#     the entry is stale (the list only shrinks).  127.265 emptied the list,
+#     so the case loads the gate as a module and injects the entry rather
+#     than relying on one the tree carries.
 #   4 docs/stdlib without io.md (a copy)  -> FAIL naming stdlib/io.tki
 #
 # Negative control: main's gate (git show 2aa48c88:scripts/
@@ -42,7 +44,19 @@ variant() {  # $1 label  $2 command run inside the docs copy  $3 expected line
     else fail "$1 (failed, but not naming it)"; head -6 "${WORK}/g"; fi
 }
 variant "2-no-os-page"      "rm os.md"             "stdlib/os.tki  27 public exports, no docs/stdlib/os.md"
-variant "3-stale-entry"     "printf '# x\n' > xml.md" "MISSING_PAGES['xml']: docs/stdlib/xml.md exists now"
 variant "4-no-io-page"      "rm io.md"             "no docs/stdlib/io.md"
+
+python3 - "${GATE}" > "${WORK}/g3" 2>&1 <<'PYEOF'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("gate", sys.argv[1])
+g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)
+g.MISSING_PAGES["xml"] = "injected by C634 case 3"
+sys.argv = ["gate"]
+sys.exit(g.main())
+PYEOF
+rc=$?
+if [ "${rc}" -eq 1 ] && grep -qF "MISSING_PAGES['xml']: docs/stdlib/xml.md exists now" "${WORK}/g3"; then
+    pass "3-stale-entry"
+else fail "3-stale-entry (rc=${rc})"; head -6 "${WORK}/g3"; fi
 echo "C634: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

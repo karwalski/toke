@@ -179,10 +179,12 @@ AWAITING_PUBLISH = [
      "apply": "huggingface-cli upload karwalski/toke-tokenizer "
               "~/tk/toke-tokenizer/docs/hf-model-card.md README.md"},
     {"surface": "Ollama karwalski/toke",
-     "live": "not published (404, 2026-09-19)",
+     "live": "published with no readme (toke:latest, Q4_K_M, 4.7 GB; re-read "
+             "2026-10-27 at ollama.com/karwalski/toke -- the 2026-09-19 404 "
+             "probed the library/ path, 132.37a)",
      "source": "../toke-model/ollama/README.md § Registry description",
-     "apply": "ollama push karwalski/toke, then paste the description from the "
-              "source file"},
+     "apply": "paste the description from the source file into the model's "
+              "readme on ollama.com (owner: or remove the model, 132.24)"},
 ]
 
 NEAR_MISS = 0.55        # similarity above which an absent block is "drifted"

@@ -64,6 +64,14 @@ imported, not copied): a table row whose first cell is `mod.name`, or a `##`-
      shrinks: an entry whose page now exists, or whose .tki is gone, or that
      has no public export, fails as stale.
 
+  5. INDEX (132.52).  Every docs/stdlib/<stem>.md except index.md must be
+     linked from docs/stdlib/index.md (`/docs/stdlib/<stem>/`), and every
+     such link must name a page that exists.  The index was maintained by
+     hand and nothing asked whether a reader could find a page: four of 54
+     (std.pdf, std.xlsx, std.ocr, std.fmt) were reachable from no entry
+     until Wave 3 fixed them by hand on 2026-09-23.  An archived page is
+     held to this too -- the index lists withdrawn modules on purpose.
+
 A page that opens with the workspace archive banner (`**Archived
 YYYY-MM-DD ...**` in its first 40 lines -- check_canonical.ARCHIVE_BANNER, the
 same test every claims guard uses) is a dated record, not a reference, and is
@@ -100,24 +108,12 @@ QUALIFIER = re.compile(r"\b[a-z][a-z0-9]*\.(?=[a-z])")
 
 
 # 121.70 (2): modules whose interface has public func exports and no
-# docs/stdlib page, as of 2026-10-01, each with why.  Shrink-only (rule 4):
-# write the page, then delete the entry -- a stale entry fails.  Never add
-# one for a new module; a new module ships with its page.
-MISSING_PAGES = {
-    "array": "std.array: the array builtins' glue (127.42); the language guide covers arrays -- page pending",
-    "clipboard": "std.clipboard: two calls, no page written -- pending",
-    "collections": "std.collections: container helpers, no page written -- pending",
-    "mem": "std.mem: raw memory primitives (tk_mem_*), no page written -- pending",
-    "queue": "std.queue: FIFO container (76.1.7b), no page written -- pending",
-    "set": "std.set: unique-element container (76.1.7b), no page written -- pending",
-    "soap": "std.soap (131.46): no page written -- pending",
-    "stack": "std.stack: LIFO container (76.1.7b), no page written -- pending",
-    "std": "std.homedir (138.11): the one-function root module, no page -- pending",
-    "sys": "std.sys: no page written -- pending",
-    "task": "std.task: structured concurrency (76.1.1a), no page written -- pending",
-    "vec": "std.vec: growable vector (114.18), no page written -- pending",
-    "xml": "std.xml (131.46): no page written -- pending",
-}
+# docs/stdlib page, each with why.  Shrink-only (rule 4): write the page,
+# then delete the entry -- a stale entry fails.  Never add one for a new
+# module; a new module ships with its page.  Empty since 127.265
+# (2026-10-27) wrote the last thirteen pages; it stays so the rule can
+# still name a stale entry (C634 case 3 injects one).
+MISSING_PAGES = {}
 
 
 def public_modules(tki_dir):
@@ -152,6 +148,25 @@ def page_problems(tki_dir, docs_dir):
             stale.append("  MISSING_PAGES[%r]: no public export -- delete the "
                          "entry" % m)
     return missing, stale
+
+
+INDEX_LINK = re.compile(r"/docs/stdlib/([A-Za-z0-9_]+)/")
+
+
+def index_problems(docs_dir):
+    """Rule 5: lines naming every page the index does not link, and every
+    index link to a page that does not exist.  None if there is no index."""
+    d = pathlib.Path(docs_dir)
+    idx = d / "index.md"
+    if not idx.is_file():
+        return None
+    linked = set(INDEX_LINK.findall(idx.read_text()))
+    have = {p.stem for p in d.glob("*.md")} - {"index"}
+    out = ["  docs/stdlib/%s.md is linked from no entry in docs/stdlib/index.md"
+           % m for m in sorted(have - linked)]
+    out += ["  docs/stdlib/index.md links /docs/stdlib/%s/, which has no page"
+            % m for m in sorted(linked - have - {"index"})]
+    return out
 
 
 def load_exports(tki_dir):
@@ -441,6 +456,18 @@ def main():
         print("\n".join(missing + stale))
         print("  (write the page; MISSING_PAGES in this script only shrinks)")
         return 1
+    iprob = index_problems(a.docs)
+    if iprob is None:
+        print("check-stdlib-doc-exports: no %s/index.md -- refusing to report "
+              "a pass (rule 5 reads it)" % a.docs)
+        return 2
+    if iprob:
+        print("check-stdlib-doc-exports: FAIL -- rule 5 (every page is in the "
+              "index):")
+        print("\n".join(iprob))
+        print("  (add a `- [std.<m>](/docs/stdlib/<m>/) -- ...` entry under the "
+              "right section of docs/stdlib/index.md)")
+        return 1
     if bad:
         print("check-stdlib-doc-exports: FAIL -- %d documented entr%s disagree%s "
               "with stdlib/*.tki:" % (len(bad), "y" if len(bad) == 1 else "ies",
@@ -455,11 +482,11 @@ def main():
           "%d documented type(s) declared by their module's .tki; "
           "%d return type(s) exempt as \"gen\":\"abi\"; "
           "%d archived page(s) skipped%s; every public module has a page "
-          "but the %d in MISSING_PAGES"
+          "but the %d in MISSING_PAGES; all %d page(s) linked from index.md"
           % (len(pages) - len(archived), entries, "y" if entries == 1 else "ies",
              NOT_EXPORTED, plists, tchecked, abi, len(archived),
              (" (" + ", ".join(archived) + ")") if archived else "",
-             len(MISSING_PAGES)))
+             len(MISSING_PAGES), len(pages) - 1))
     return 0
 
 

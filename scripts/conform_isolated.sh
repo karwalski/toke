@@ -124,8 +124,13 @@ alive() {
     local d="$1" pid
     pid="$(cat "${d}/pid" 2>/dev/null || true)"
     if [ -z "${pid}" ]; then
-        # Created but not yet stamped.  Two minutes on, its owner died
-        # between mkdir and the pid write.
+        # 132.116: a ticket is a symlink to a directory stamped BEFORE the
+        # link was made (take_ticket), so one with no readable pid has lost
+        # its directory -- its owner is gone, now, not in two minutes.
+        [ -L "${d}" ] && return 1
+        # A lock or mutex (mkdir, then stamp), or a ticket from an older copy
+        # of this script: created but not yet stamped.  Two minutes on, its
+        # owner died between mkdir and the pid write.
         [ -z "$(find "${d}" -maxdepth 0 -mmin +2 2>/dev/null)" ]
         return
     fi
@@ -145,9 +150,15 @@ alive() {
 # sees the whole directory or none of it -- never one half-deleted (127.247:
 # a waiter read a releasing lock whose chain was already unlinked as
 # abandoned).
+# A ticket (a symlink, see take_ticket) takes its stamped directory with it;
+# only the dropper whose rename won removes it.
 drop() {
-    local g="${1}.gone.$$.${RANDOM}"
-    mv "$1" "${g}" 2>/dev/null && rm -rf "${g}"
+    local g="${1}.gone.$$.${RANDOM}" tgt=""
+    [ -L "$1" ] && tgt="$(readlink "$1" 2>/dev/null)"
+    mv "$1" "${g}" 2>/dev/null || return 0
+    rm -rf "${g}"
+    case "${tgt}" in .s.*) rm -rf "${1%/*}/${tgt}" ;; esac
+    return 0
 }
 
 # The mutex serialises reclaim-and-take, so two waiters cannot both judge a
@@ -194,17 +205,38 @@ release_all() {
 }
 
 # take_ticket QDIR: the next number in QDIR -- one above the highest ticket
-# present, so it is above every live waiter's; mkdir settles a tie.
+# present, so it is above every live waiter's.
+#
+# 132.116 -- a ticket is never visible unstamped.  It used to be a directory
+# made by mkdir and stamped after, so a waiter killed between the two left a
+# ticket with no pid, which `alive` had to judge live for two minutes: the
+# real gate queue stood still that long behind a dead waiter.  Now the pid and
+# chain are written into a hidden staging directory (.s.<pid>.<n>, which no
+# reader lists) and the numbered ticket is a symlink to it, made by `ln -s` --
+# atomic, and failing if the name exists, so it settles a tie as mkdir did.
+# A waiter killed before the link leaves only a staging directory, which the
+# next taker sweeps once its pid is dead; one killed after leaves a stamped
+# ticket, judged by its chain like any other.  Older copies of this script
+# read a ticket's pid through the link and still take numbered mkdir tickets
+# beside these; both kinds count.
 take_ticket() {
-    local q="$1" n t
+    local q="$1" n t s f
     mkdir -p "${q}" || return 1
+    for f in "${q}"/.s.*; do
+        [ -d "${f}" ] || continue
+        n="${f##*/.s.}"; n="${n%%.*}"
+        case "${n}" in ''|*[!0-9]*) continue ;; esac
+        kill -0 "${n}" 2>/dev/null || rm -rf "${f}"
+    done
+    s="${q}/.s.$$.${RANDOM}"
+    mkdir "${s}" || return 1
+    stamp "${s}"
     while :; do
         n="$(ls "${q}" 2>/dev/null | grep -E '^[0-9]{10}$' | tail -1)"
         n=$(( 10#${n:-0} + 1 ))
         t="${q}/$(printf '%010d' "${n}")"
-        if mkdir "${t}" 2>/dev/null; then
+        if ln -s "${s##*/}" "${t}" 2>/dev/null; then
             TICKET="${t}"
-            stamp "${t}"
             return 0
         fi
     done

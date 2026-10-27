@@ -1256,7 +1256,7 @@ ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check
 # the main checkout has), so check-docs works in a fresh worktree. TKC still wins.
 check-docs check-doc-patterns: export TKC ?= $(abspath $(BIN))
 check-docs: $(BIN)
-	TOKE_WORKSPACE="$(TOKE_WORKSPACE)" python3 scripts/check_doc_site_links.py --self-test  # 132.111
+	python3 scripts/check_doc_site_links.py --self-test  # 132.111; TOKE_WORKSPACE exported globally (132.112)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
 
@@ -1387,7 +1387,13 @@ SIBLING_NAMES := toke-spec toke-corpus toke-model toke-eval toke-mcp \
                  toke-tokenizer toke-website homebrew-toke \
                  loke tkc
 SIBLING_REPOS := $(addprefix $(TOKE_WORKSPACE)/,$(SIBLING_NAMES))
-check-canonical check-claims-all check-facts: export TOKE_WORKSPACE := $(TOKE_WORKSPACE)
+# 132.112 -- exported to EVERY recipe, not to three targets.  It used to be a
+# target-specific export on check-canonical/check-claims-all/check-facts only,
+# so any other target (check-docs, conform, ci's sub-makes) ran its scripts
+# without it, and a script that computes its own default from its own path
+# (check_doc_site_links.py: REPO.parent) looked for siblings in tmpwork/ when
+# run from a worktree.  One global export; recipes need not pass it.
+export TOKE_WORKSPACE
 check-claims-all:
 	@echo "workspace: $(TOKE_WORKSPACE)"; \
 	repos=""; n=0; for r in $(SIBLING_REPOS); do \

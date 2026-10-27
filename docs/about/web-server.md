@@ -7,255 +7,148 @@ order: 6
 
 ## toke Web Server
 
-A production-grade HTTP server built into the toke standard library. Single static binary, zero runtime dependencies. Import `std.http` and you have a full-featured web server -- no framework, no package manager, no container.
+An HTTP/1.1 and HTTP/2 server built into the toke standard library. Import `std.http`, register handlers, call `http.serve` -- no framework, no package manager, no container. Every name below is a call `std.http`'s interface (`stdlib/http.tki`) exports, so it is what a toke program can actually write; behaviour the runtime has but does not expose to toke is listed separately, and says so. The full reference is [std.http](/docs/stdlib/http/).
 
-### Features
+### What a toke program can call
 
-**Route registration** -- pattern-matched handlers for all standard HTTP methods:
+**Route registration** -- bind a pattern to a handler `f=name(req:$req):$res{...}`, passed by reference:
 
-- `http.get(pattern, handler)` -- `http_GET`
-- `http.post(pattern, handler)` -- `http_POST`
-- `http.put(pattern, handler)` -- `http_PUT`
-- `http.delete(pattern, handler)` -- `http_DELETE`
-- `http.patch(pattern, handler)` -- `http_PATCH`
+- `http.get(pattern;&handler)`, `http.post`, `http.put`, `http.delete`, `http.patch`. These names **register routes** and send nothing; the HTTP client calls are `http.clientget`/`clientpost`/`clientput`/`clientdelete` (story 138.3).
+- Patterns may carry named segments (`"/users/:id"`), read with `http.param`.
+- `http.getstatic(path;body)`, `http.servedir(prefix;dir)` and `http.setnotfound(body)` serve fixed content without a handler.
 
-**Response constructors:**
+**Response constructors** -- `http.res.ok(body)` (200, `text/html`), `http.res.json(status;body)` (`application/json`), `http.res.bad(msg)` (400), `http.res.err(msg)` (500). For any other status or content type, build the `$res` record yourself.
 
-- `http.ok(body)` -- 200 text response (`http_Res_ok`)
-- `http.json(status, body)` -- JSON response with status code (`http_Res_json`)
-- `http.bad(msg)` -- 400 Bad Request (`http_Res_bad`)
-- `http.err(msg)` -- 500 Internal Server Error (`http_Res_err`)
+**Request accessors** -- `http.param(req;name)` and `http.header(req;name)` return `$str!$httprouteerr` (`$err` when absent; a header lookup is case-insensitive). `req.body`, `req.method` and `req.path` are fields of the request record.
 
-**Request accessors:**
+**Starting the server** -- `http.serve(port)`; `http.serveworkers(port;n)` for a pre-fork pool of `n` worker processes; `http.servetls(port;cert;key)` and `http.servetlsworkers(port;cert;key;n)` terminate TLS from PEM files; the `...on` forms (`http.serveon(host;port)` and so on) bind one address. Each blocks until the server stops.
 
-- `http.param(req, name)` -- extract a route parameter (`http_param`)
-- `http.header(req, name)` -- extract a request header (`http_header`)
+**Testing a handler without a socket** -- `http.mockreq(...)` builds a `$req`, and `http.resstatus`/`resbody`/`resheader` read a `$res` (see [Testing a Handler](/docs/stdlib/http/)).
 
-**TLS termination** -- native HTTPS with PEM cert/key loading (`http_serve_tls`, `http_serve_tls_workers`). No reverse proxy required for TLS.
+### What the runtime does for every server
 
-**Pre-fork worker pool** -- multi-process serving via `http_serve_workers`. Specify worker count; `nworkers=1` falls back to single-process mode.
+These need no call -- they are how the server behaves:
 
-**Keep-alive** -- persistent connections: an HTTP/1.1 connection idle for 2 s between requests is closed, and one connection serves at most 1000 requests. An HTTP/2 connection (offered over TLS through ALPN) is closed after 30 s with no request in progress.
+- **Keep-alive.** An HTTP/1.1 connection idle for 2 s between requests is closed, and one connection serves at most 1000 requests. An HTTP/2 connection (offered over TLS through ALPN) is closed after 30 s with no request in progress.
+- **Gzip.** A response is gzip-compressed when the request's `Accept-Encoding` admits it and the content type is worth compressing.
+- **Request framing and limits.** Chunked request bodies are decoded by the server. Headers are capped at 8 KiB, bodies at 1 MiB, and each socket read times out after 10 s (see "How a request is framed" in [std.http](/docs/stdlib/http/)).
+- **Workers.** In a pre-fork pool the supervisor binds the port once and every worker accepts on the inherited socket; it never sets `SO_REUSEPORT`, so a second server cannot bind a busy port and silently split its traffic (story 127.203). A worker that dies is respawned.
+- **Security headers.** Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`.
+- **No rate limiting.** The per-IP limiter was removed (story 127.60): it counted connections rather than requests, kept a separate table in each worker process, and HTTP/2 clients never reached it. Put rate limiting at an external reverse proxy or WAF.
 
-**Gzip compression** -- automatic response compression.
+### In the C runtime, not callable from toke
 
-**ETag generation and 304 support** -- `http_etag_fnv` generates weak ETags via FNV-1a hash. `http_etag_matches` checks `If-None-Match` headers for conditional responses.
-
-**No rate limiting.** The per-IP limiter was removed (story 127.60): it counted connections rather than requests, kept a separate table in each worker process, and HTTP/2 clients never reached it. Put rate limiting at an external reverse proxy or WAF.
-
-**Cookie support** -- `http_cookie` reads cookies from headers; `http_set_cookie_header` builds `Set-Cookie` values with path, domain, max-age, Secure, HttpOnly, and SameSite options.
-
-**Multipart form parsing** -- `http_multipart_parse` handles `multipart/form-data` with file uploads, field names, content types, and binary data.
-
-**URL-encoded form parsing** -- `http_form_parse` handles `application/x-www-form-urlencoded` bodies with `http_form_get` for field lookup.
-
-**Chunked transfer encoding** -- `http_chunked_write` writes a body in chunked encoding; the server decodes chunked request bodies itself (see "How a request is framed" in `docs/stdlib/http.md`).
-
-**Request size limits** -- configurable via `http_set_limits`: max header size (default 8 KiB), max body size (default 1 MiB), and per-socket timeout (default 10s).
-
-**Graceful shutdown** -- `http_shutdown` stops accepting new connections while in-flight requests complete (drain timeout 10s).
-
-**HTTP client** -- `http_client` creates a connection pool with configurable timeout. Methods: `http_get`, `http_post`, `http_put`, `http_delete`.
-
-**Streaming responses** -- `http_stream` opens a streaming connection; `http_streamnext` reads chunks incrementally.
+`src/stdlib/http.c` also implements weak ETags (`http_etag_fnv`, `http_etag_matches`), cookie reading and `Set-Cookie` building (`http_cookie`, `http_set_cookie_header`), `multipart/form-data` and URL-encoded form parsing (`http_multipart_parse`, `http_form_parse`, `http_form_get`), configurable limits (`http_set_limits`) and a graceful drain (`http_shutdown`). **None of them is in `std.http`'s interface**, so a toke program cannot call them today, and the server does not apply ETags or conditional `304` responses on its own. They are listed here so nobody reads an earlier version of this page and goes looking for them.
 
 ### Hello World
-
-A complete toke web server in 10 lines:
 
 ```toke
 m=hello;
 i=http:std.http;
 
-f=home(req:http.$req):http.$res{
-  < http.ok("Hello from toke!")
+f=home(req:$req):$res{
+  <http.res.ok("Hello from toke!")
 };
 
 f=main():i64{
-  http.get("/";home);
-  < http.serve(8080 as u16)
+  http.get("/";&home);
+  <http.serve(8080)
 };
 ```
 
-Build and run:
+Build and run it. A toke program is denied the network until it is granted it (capabilities, ADR-0010), so pass `--allow-net` when you start it:
 
 ```bash
-tkc hello.tk -o hello
-./hello
+tkc hello.tk --out hello
+./hello --allow-net
 # In another terminal:
 curl http://localhost:8080/
 # Hello from toke!
 ```
 
-### REST API Example
+Without `--allow-net` the binary exits 1 at once with `CAP001: capability 'net' required but not granted`.
 
-A four-route CRUD API for a to-do list:
+### A small JSON API
+
+Three routes: a named path segment, a JSON echo that checks the request's content type, and a fixed status. Each handler returns a `$res`; `mt` takes the `$ok` and `$err` arms of an accessor apart.
 
 ```toke
-m=todos;
+m=api;
 i=http:std.http;
+i=str:std.str;
 
-let store=mut.@($str);
-
-f=list(req:http.$req):http.$res{
-  < http.json(200 as u16;store.to_json())
+f=greet(req:$req):$res{
+  <mt http.param(req;"name") {
+    $ok:name  http.res.json(200;str.concat("{\"hello\":\"";str.concat(name;"\"}")));
+    $err:e    http.res.bad("missing name")
+  }
 };
 
-f=create(req:http.$req):http.$res{
-  let item=$str=req.body;
-  store.push(item);
-  < http.json(201 as u16;item)
+f=echo(req:$req):$res{
+  <mt http.header(req;"content-type") {
+    $ok:ct  (if(ct=="application/json"){http.res.json(200;req.body)}el{http.res.bad("send JSON")});
+    $err:e  http.res.bad("no content-type")
+  }
 };
 
-f=show(req:http.$req):http.$res{
-  let id=$str!=http.param(req;"id");
-  if(id.is_err){< http.bad("missing id")};
-  < http.json(200 as u16;store.get(id.ok))
-};
-
-f=remove(req:http.$req):http.$res{
-  let id=$str!=http.param(req;"id");
-  if(id.is_err){< http.bad("missing id")};
-  store.remove(id.ok);
-  < http.ok("deleted")
+f=gone(req:$req):$res{
+  <http.res.json(410;"{\"error\":\"gone\"}")
 };
 
 f=main():i64{
-  http.get("/todos";list);
-  http.post("/todos";create);
-  http.get("/todos/:id";show);
-  http.delete("/todos/:id";remove);
-  < http.serve(8080 as u16)
+  http.get("/hello/:name";&greet);
+  http.post("/echo";&echo);
+  http.delete("/items/:id";&gone);
+  <http.serve(8080)
 };
 ```
 
 ```bash
-tkc todos.tk -o todos && ./todos
+tkc api.tk --out api && ./api --allow-net &
+
+curl http://localhost:8080/hello/ada
+# {"hello":"ada"}
+curl -X POST -H 'Content-Type: application/json' -d '{"a":1}' http://localhost:8080/echo
+# {"a":1}
+curl -X POST -H 'Content-Type: text/plain' -d 'x' http://localhost:8080/echo
+# send JSON          (status 400)
+curl -X DELETE http://localhost:8080/items/3
+# {"error":"gone"}   (status 410)
+curl http://localhost:8080/nope
+# Not Found          (status 404: no route matched)
 ```
 
-### Bookmarks REST API
-
-A more complete CRUD example with JSON request parsing, error handling, and all four HTTP methods:
-
-```toke
-m=bookmarks;
-i=http:std.http;
-i=json:std.json;
-
-t=$bm{url:$str;title:$str;tags:@($str)};
-let db=mut.@($str;$bm);
-let next_id=mut.1;
-
-f=list_all(req:http.$req):http.$res{
-  < http.json(200 as u16;json.encode(db.values()))
-};
-
-f=create(req:http.$req):http.$res{
-  let parsed=$bm!=json.decode(req.body;$bm);
-  if(parsed.is_err){< http.bad("invalid JSON: expected {url,title,tags}")};
-  let bm=$bm=parsed.ok;
-  if(bm.url.len()==0){< http.bad("url is required")};
-  let id=$str=next_id.to_str();
-  next_id=next_id+1;
-  db.set(id;bm);
-  < http.json(201 as u16;json.encode(@("id"=>id;"url"=>bm.url;"title"=>bm.title)))
-};
-
-f=update(req:http.$req):http.$res{
-  let id=$str!=http.param(req;"id");
-  if(id.is_err){< http.bad("missing id")};
-  if(db.has(id.ok)==false){< http.json(404 as u16;json.encode(@("error"=>"not found")))};
-  let parsed=$bm!=json.decode(req.body;$bm);
-  if(parsed.is_err){< http.bad("invalid JSON")};
-  db.set(id.ok;parsed.ok);
-  < http.json(200 as u16;json.encode(parsed.ok))
-};
-
-f=delete(req:http.$req):http.$res{
-  let id=$str!=http.param(req;"id");
-  if(id.is_err){< http.bad("missing id")};
-  if(db.has(id.ok)==false){< http.json(404 as u16;json.encode(@("error"=>"not found")))};
-  db.remove(id.ok);
-  < http.json(200 as u16;json.encode(@("deleted"=>id.ok)))
-};
-
-f=main():i64{
-  http.get("/api/bookmarks";list_all);
-  http.post("/api/bookmarks";create);
-  http.put("/api/bookmarks/:id";update);
-  http.delete("/api/bookmarks/:id";delete);
-  < http.serve(8080 as u16)
-};
-```
-
-Test it:
-
-```bash
-tkc bookmarks.tk -o bookmarks && ./bookmarks &
-
-# Create
-curl -X POST http://localhost:8080/api/bookmarks \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://toke.dev","title":"toke","tags":["lang","compiler"]}'
-
-# List all
-curl http://localhost:8080/api/bookmarks
-
-# Update
-curl -X PUT http://localhost:8080/api/bookmarks/1 \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://toke.dev","title":"toke language","tags":["lang"]}'
-
-# Delete
-curl -X DELETE http://localhost:8080/api/bookmarks/1
-
-# Error handling
-curl -X POST http://localhost:8080/api/bookmarks \
-  -d 'not json'
-# {"error":"invalid JSON: expected {url,title,tags}"}
-```
+`str.concat` builds the JSON by hand here and does not escape `name`; for real output build the body with [std.json](/docs/stdlib/json/). `/hello/` with an empty name matches no route (404), so `greet`'s `$err` arm is the defensive case.
 
 ### Production Setup: TLS + Workers
 
-A production-ready server with TLS termination and pre-fork workers (rate limiting and cache policy belong at a reverse proxy in front of it -- see the comment):
+TLS termination and a pre-fork pool of eight workers. Rate limiting and cache policy belong at a reverse proxy in front of it; toke's own controls are deny-by-default capabilities (ADR-0010), auto-escaping and parameterised queries (ADR-0011), and the spatial-safety traps (ADR-0012).
 
 ```toke
 m=prod;
 i=http:std.http;
 
-f=index(req:http.$req):http.$res{
-  < http.ok("running")
+f=index(req:$req):$res{
+  <http.res.ok("running")
 };
 
 f=main():i64{
-  // Rate-limiting / gzip / cache-control are not in-runtime toke APIs — the
-  // in-runtime WAF was removed (Story 121.13). Put those at an external reverse
-  // proxy (nginx, Caddy, a cloud WAF). toke's controls are deny-by-default
-  // capabilities (ADR-0010), auto-escaping/parameterized queries (ADR-0011), and
-  // the spatial-safety traps (ADR-0012).
-  http.get("/";index);
-
-  < http.serve_tls_workers(
-    443 as u16;
-    "/etc/toke/cert.pem";
-    "/etc/toke/key.pem";
-    8 as u32
-  )
+  http.get("/";&index);
+  <http.servetlsworkers(443;"/etc/toke/cert.pem";"/etc/toke/key.pem";8)
 };
 ```
 
 Deploy:
 
 ```bash
-# Build a static binary
-tkc prod.tk -o prod --release
+tkc prod.tk --out prod
 
 # Copy to server
 scp prod user@server:/opt/toke/prod
 
 # Run with systemd (create /etc/systemd/system/toke-prod.service)
 # [Service]
-# ExecStart=/opt/toke/prod
+# ExecStart=/opt/toke/prod --allow-net
 # Restart=always
 # LimitNOFILE=65536
 
@@ -263,7 +156,7 @@ sudo systemctl enable toke-prod
 sudo systemctl start toke-prod
 ```
 
-The binary is ~2 MB. No runtime, no container image, no reverse proxy needed for TLS. Eight pre-fork workers share the listening socket via `SO_REUSEPORT`.
+Binding port 443 needs the privilege your platform requires for a port below 1024. The binary is not fully static: it links the C library, zlib and OpenSSL as shared libraries (`otool -L prod` on macOS, `ldd prod` on Linux), so the server needs those installed. No reverse proxy is needed for TLS.
 
 ### Performance
 
@@ -295,9 +188,12 @@ against `caddy file-server`, recorded in `docs/metrics-baseline.md`
 `toke-ooke/bench/serving/`. It does not compare toke to Go, Node, Rust or
 nginx, and no such comparison should be published until one is measured.
 
-What can be stated without a benchmark: the binary is ~2 MB, it has no
-runtime dependencies, it terminates TLS itself, and it pre-forks workers that
-share the listening socket via `SO_REUSEPORT`.
+What can be stated without a benchmark: it terminates TLS itself, and it
+pre-forks workers that accept on one listening socket the supervisor bound
+(never `SO_REUSEPORT`, story 127.203). The "~2 MB, no runtime dependencies"
+that stood here is withdrawn (119.8): a server binary links OpenSSL, zlib and
+the C library as shared libraries, and its size is not a measured figure in
+`docs/metrics-baseline.md`.
 
 ### How it compares
 
@@ -308,7 +204,7 @@ unstated sources.
 
 | | toke | Go net/http | Node Express | Rust actix-web |
 |---|---|---|---|---|
-| Runtime deps | 0 | 0 | 30+ (npm) | 0 |
+| Runtime deps | OpenSSL, zlib (shared libraries) | 0 | 30+ (npm) | 0 |
 | TLS built-in | Yes | Yes | No (needs proxy) | Yes |
 | Worker pool built-in | Yes | Yes (goroutines) | No (needs cluster) | Yes |
 | Package manager required | No | No | Yes (npm) | Yes (cargo) |

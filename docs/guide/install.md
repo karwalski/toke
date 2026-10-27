@@ -91,6 +91,24 @@ TKC_CC=/opt/homebrew/opt/llvm/bin/clang ./toke test.tk -o test
 If `TKC_CC` (or the clang `toke` was built with) is not an executable file,
 the build stops with error E9027 and exits 3. `toke --check` runs no clang.
 
+### Packaged installs: release tarballs and Homebrew
+
+A `toke` you did not build yourself -- a release tarball, or the Homebrew
+formula, which installs that tarball -- runs the clang path baked in **on the
+machine that built it**: whatever `command -v clang` returned on the release
+build runner. It does not look clang up on your `PATH`. If your clang lives
+somewhere else, every build stops with E9027 (exit 3), and the message names
+the path it tried.
+
+Set `TKC_CC` to your clang once, in your shell profile:
+
+```bash
+export TKC_CC="$(command -v clang)"
+```
+
+`toke --check` needs no clang, so it works either way. Building `toke` from
+source (above) bakes your own machine's clang and needs no `TKC_CC`.
+
 ## Troubleshooting
 
 ### `clang: command not found`
