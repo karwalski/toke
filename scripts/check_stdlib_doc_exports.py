@@ -108,24 +108,12 @@ QUALIFIER = re.compile(r"\b[a-z][a-z0-9]*\.(?=[a-z])")
 
 
 # 121.70 (2): modules whose interface has public func exports and no
-# docs/stdlib page, as of 2026-10-01, each with why.  Shrink-only (rule 4):
-# write the page, then delete the entry -- a stale entry fails.  Never add
-# one for a new module; a new module ships with its page.
-MISSING_PAGES = {
-    "array": "std.array: the array builtins' glue (127.42); the language guide covers arrays -- page pending",
-    "clipboard": "std.clipboard: two calls, no page written -- pending",
-    "collections": "std.collections: container helpers, no page written -- pending",
-    "mem": "std.mem: raw memory primitives (tk_mem_*), no page written -- pending",
-    "queue": "std.queue: FIFO container (76.1.7b), no page written -- pending",
-    "set": "std.set: unique-element container (76.1.7b), no page written -- pending",
-    "soap": "std.soap (131.46): no page written -- pending",
-    "stack": "std.stack: LIFO container (76.1.7b), no page written -- pending",
-    "std": "std.homedir (138.11): the one-function root module, no page -- pending",
-    "sys": "std.sys: no page written -- pending",
-    "task": "std.task: structured concurrency (76.1.1a), no page written -- pending",
-    "vec": "std.vec: growable vector (114.18), no page written -- pending",
-    "xml": "std.xml (131.46): no page written -- pending",
-}
+# docs/stdlib page, each with why.  Shrink-only (rule 4): write the page,
+# then delete the entry -- a stale entry fails.  Never add one for a new
+# module; a new module ships with its page.  Empty since 127.265
+# (2026-10-27) wrote the last thirteen pages; it stays so the rule can
+# still name a stale entry (C634 case 3 injects one).
+MISSING_PAGES = {}
 
 
 def public_modules(tki_dir):

@@ -22,6 +22,19 @@ API reference for every module in the toke standard library. Each page documents
 - [std.args](/docs/stdlib/args/) -- command-line argument parsing
 - [std.log](/docs/stdlib/log/) -- structured logging
 - [std.test](/docs/stdlib/test/) -- test framework
+- [std](/docs/stdlib/std/) -- the root module: `std.homedir`
+- [std.sys](/docs/stdlib/sys/) -- platform, CPU, RAM, disk, config/data directories
+- [std.task](/docs/stdlib/task/) -- run functions on a thread pool, grouped in scopes
+- [std.mem](/docs/stdlib/mem/) -- raw, unchecked memory: alloc, copy, byte load/store
+
+## Collections
+
+- [std.array](/docs/stdlib/array/) -- module-call spelling of the array built-ins
+- [std.vec](/docs/stdlib/vec/) -- mutable growable vector, in-place set
+- [std.stack](/docs/stdlib/stack/) -- LIFO container of `i64`
+- [std.queue](/docs/stdlib/queue/) -- FIFO container of `i64`
+- [std.set](/docs/stdlib/set/) -- unique `i64` values
+- [std.collections](/docs/stdlib/collections/) -- three array helpers (duplicates of the array built-ins)
 
 ## Data Formats
 
@@ -36,6 +49,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.zip](/docs/stdlib/zip/) -- read-only zip archive access
 - [std.xlsx](/docs/stdlib/xlsx/) -- read cell values out of an XLSX workbook
 - [std.pdf](/docs/stdlib/pdf/) -- extract text runs with positions from a PDF
+- [std.xml](/docs/stdlib/xml/) -- build XML strings; read a value by dotted path
 
 ## Networking
 
@@ -44,6 +58,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.ws](/docs/stdlib/ws/) -- WebSocket support
 - [std.sse](/docs/stdlib/sse/) -- Server-Sent Events
 - [std.router](/docs/stdlib/router/) -- HTTP routing
+- [std.soap](/docs/stdlib/soap/) -- SOAP 1.1 envelopes, faults, WS-Security headers
 
 ## Security
 
@@ -88,3 +103,7 @@ These modules are published but are not reachable from a toke program. Each page
 - [std.mlx](/docs/stdlib/mlx/) -- Apple Silicon MLX bridge. Façade: two functions have no wrapper and fail at link.
 - [std.mdns](/docs/stdlib/mdns/) -- Bonjour/DNS-SD discovery. Façade: two functions have no wrapper; `browse` has lost its callback parameter.
 - [std.webview](/docs/stdlib/webview/) -- native browser window. Withdrawn (136.2); cannot be imported at all.
+
+One more module links and runs but does nothing:
+
+- [std.clipboard](/docs/stdlib/clipboard/) -- stub. `read` always returns `""`; `write` discards its text.
