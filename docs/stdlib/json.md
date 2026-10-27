@@ -339,10 +339,10 @@ The siblings differ only in the value they write:
 
 | Function | Writes |
 |----------|--------|
-| `json.setint(j; key; v: i64)` | `v` as a JSON number |
-| `json.setf64(j; key; v: f64)` | `v` as a JSON number, in the shortest form that reads back exactly; NaN and the infinities have no JSON spelling and are `$jsonerr.$type` |
-| `json.setbool(j; key; v: bool)` | `true` or `false` |
-| `json.setval(j; key; v: $jsonval)` | `v`'s JSON text, so an object or array (from `json.newobj`, `json.dec`, `json.get`, `json.at`) nests; `$jsonerr.$parse` if `v` does not hold exactly one JSON value |
+| `json.setint(j: $jsonval; key: $str; v: i64)` | `v` as a JSON number |
+| `json.setf64(j: $jsonval; key: $str; v: f64)` | `v` as a JSON number, in the shortest form that reads back exactly; NaN and the infinities have no JSON spelling and are `$jsonerr.$type` |
+| `json.setbool(j: $jsonval; key: $str; v: bool)` | `true` or `false` |
+| `json.setval(j: $jsonval; key: $str; v: $jsonval)` | `v`'s JSON text, so an object or array (from `json.newobj`, `json.dec`, `json.get`, `json.at`) nests; `$jsonerr.$parse` if `v` does not hold exactly one JSON value |
 
 All five return `$jsonval!$jsonerr`.
 
