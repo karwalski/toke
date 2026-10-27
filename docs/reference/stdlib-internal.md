@@ -190,7 +190,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_clos_base` | `tk_runtime.c` | tk_runtime.c |
 | `tk_delegate_class` | `webview.c` | webview.c |
 | `tk_delete_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_err_msg` | `tk_runtime.c` | csv_glue.c, file_glue.c, ocr_glue.c, os_glue.c, pdf_glue.c, str_glue.c, toml_glue.c, toon_glue.c |
+| `tk_err_msg` | `tk_runtime.c` | csv_glue.c, file_glue.c, md_glue.c, ocr_glue.c, os_glue.c, pdf_glue.c, str_glue.c, toml_glue.c, toon_glue.c |
 | `tk_err_release` | `tk_runtime.c` | tk_runtime.c |
 | `tk_error_log_get_global` | `log.c` | http.c, log.c |
 | `tk_error_log_open` | `log.c` | log.c, log_glue.c |

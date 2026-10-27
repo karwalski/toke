@@ -65,4 +65,4 @@ Returned by `md.renderfile` when the file cannot be read.
 |-------|------|---------|
 | msg | $str | Human-readable description of the file error |
 
-Possible `msg` values: `"file not found"`, `"seek failed"`, `"ftell failed"`, `"allocation failed"`, `"null path"`.
+Possible `msg` values: `"file not found"`, `"seek failed"`, `"ftell failed"`, `"allocation failed"`, `"md.renderfile: null path"`. `e.msg` is readable in the `$err` arm (113.B.7; until then reading it stopped the program with `RT005`).
