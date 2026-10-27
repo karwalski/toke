@@ -7,4 +7,9 @@ m=sh;i=io:std.io;i=s:std.str;f=conv(t:$str):i64{
   if(c>=0.0){r=1}el{r=0};
   <r
 };
-f=main():i64{ <conv("100.0") }
+(* 131.45: 100.0 F is 37.8 C, so conv answers 1.  main used to return that
+ * 1 as its exit status, which run_all.sh never read; it now reports. *)
+f=main():i64{
+  if(conv("100.0")==1&&conv("F")==1&&conv("0.0")==0){io.println("PASS shadowed let retypes str -> f64")}el{io.println("FAIL conv")};
+  <0
+}
