@@ -129,6 +129,17 @@ static FILE *fopen_nofollow(const char *path, const char *mode)
     else return fopen(path, mode);   /* unknown mode: fall back */
     int fd = open(path, flags | O_NOFOLLOW | O_NONBLOCK, 0644);
     if (fd < 0) return NULL;          /* errno set (ELOOP on symlink, ENXIO on a readerless FIFO) */
+#ifdef F_SETNOSIGPIPE
+    /* 127.273: on Darwin the SIGPIPE a failed write(2) raises is sent to the
+     * PROCESS, not the writing thread, so the per-thread block in
+     * sigpipe_hold does not stop it: any other thread that has SIGPIPE
+     * unblocked takes it and the default action ends the program (exit 141;
+     * C699 case 6, intermittent while its reader thread was still alive).
+     * F_SETNOSIGPIPE turns the signal off for this descriptor only; the
+     * write still fails with EPIPE.  Linux has no such flag and directs the
+     * signal at the writing thread, where sigpipe_hold handles it. */
+    if (mode[0] != 'r') (void)fcntl(fd, F_SETNOSIGPIPE, 1);
+#endif
     int fl = fcntl(fd, F_GETFL);
     if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) {
         int e = errno; close(fd); errno = e; return NULL;
@@ -338,7 +349,9 @@ static FileErr write_err(int err_no, const char *fallback)
  * a SIGPIPE that was not already pending it is taken off the pending set with
  * sigwait(2) -- it is thread-directed (POSIX: the signal for a failed write
  * goes to the writing thread), so the one consumed is the one this write
- * caused.  A SIGPIPE already pending before the guard is left alone.  Then
+ * caused (on Linux; Darwin directs it at the process, so fopen_nofollow sets
+ * F_SETNOSIGPIPE there instead, 127.273).  A SIGPIPE already pending before
+ * the guard is left alone.  Then
  * the thread's original mask is restored.  sigtimedwait would be the usual
  * tool but Darwin lacks it; sigwait returns at once because the signal is
  * known to be pending.

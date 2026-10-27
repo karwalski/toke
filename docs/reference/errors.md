@@ -523,6 +523,14 @@ A second declaration of the same name in the same scope, for a kind that may
 not be redeclared: `f=` functions, `t=` types, `i=` imports, consts and
 parameters.
 
+Import aliases (`i=json:std.json;`) and the sub-namespaces an imported module
+registers (`row` with `std.db`) live in the same module scope as types,
+functions and constants, so `t=$json{..}` beside `i=json:std.json;` is E3012.
+The message then names the alias and its module ("type 'json' clashes with
+the import alias 'json' (i=json:std.json)") or says the name is a
+sub-namespace; there is no `fix`, because renaming either side can be the
+intended repair (127.285).
+
 `let` and `let mut` are **excluded**: story 75.1.7 chose "allow same-scope
 and cross-scope shadowing", and §11.8.1 of the spec publishes
 `let x = 1; let x = x + 1;` as a valid program that yields 2. A re-binding

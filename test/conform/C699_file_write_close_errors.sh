@@ -29,7 +29,11 @@
 #   6.   C probe (threads): after an EPIPE write, SIGPIPE's disposition is
 #        still SIG_DFL, the thread's mask does not hold SIGPIPE, and no
 #        SIGPIPE is left pending; a SIGPIPE pending BEFORE the write is
-#        still pending after it (not swallowed).
+#        still pending after it (not swallowed).  The reader thread, which
+#        has SIGPIPE unblocked, stays alive until the write returns
+#        (127.273): Darwin sends the SIGPIPE to the process, so that thread
+#        used to take it -- rc 141 or a pass depending on whether it had
+#        already exited.  Now deterministic; fixed by F_SETNOSIGPIPE.
 #   7.   Linux only: write / append / copy to /dev/full -> $io "ENOSPC".
 #        Skipped on other systems (no portable full device; a RAM disk needs
 #        privileges and is not portable).
@@ -39,8 +43,10 @@
 # tree at ../../stdlib> builds the probes against it.  With main's tree
 # (2026-10-01) cases 1-3 and 6 die of SIGPIPE (rc -13 from python, 141 from
 # the shell) and case 5 names src; 4 and 8 pass.
+# With main's file.c of 2026-10-27 (8bb9f63e, before F_SETNOSIGPIPE) case 6
+# fails every run on Darwin (rc 141); the rest pass (127.273).
 #
-# Story: 121.84
+# Stories: 121.84, 127.273
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -164,6 +170,7 @@ cat > probe.c <<'EOF'
 #include <sys/stat.h>
 #include <unistd.h>
 static int rfd;
+static int done[2];              /* main -> reader: "file_write has returned" */
 static void *reader(void *a) {   /* wait for one byte, take it, close */
     (void)a; char c;
     for (int i = 0; i < 200; i++) {
@@ -171,7 +178,13 @@ static void *reader(void *a) {   /* wait for one byte, take it, close */
         struct timeval tv = {0, 100000};
         if (select(rfd + 1, &s, NULL, NULL, &tv) > 0 && read(rfd, &c, 1) == 1) break;
     }
-    close(rfd); return NULL;
+    close(rfd);
+    /* 127.273: stay alive until the write has returned.  On Darwin the
+     * SIGPIPE is process-directed, and this thread (SIGPIPE unblocked in
+     * the first run) is where it lands -- the case used to pass or die
+     * depending on whether this thread had already exited. */
+    while (read(done[0], &c, 1) < 0 && errno == EINTR) {}
+    return NULL;
 }
 static int pipe_pending(void) {
     sigset_t p; sigemptyset(&p); sigpending(&p); return sigismember(&p, SIGPIPE) == 1;
@@ -182,9 +195,12 @@ static int pipe_masked(void) {
 static int run(const char *fifo, char *big, int pre_pending) {
     rfd = open(fifo, O_RDONLY | O_NONBLOCK);
     if (rfd < 0) { perror("open reader"); return 2; }
+    if (pipe(done) != 0) { perror("pipe"); return 2; }
     pthread_t t; pthread_create(&t, NULL, reader, NULL);
     BoolFileResult r = file_write(fifo, big);
+    (void)write(done[1], "x", 1);
     pthread_join(t, NULL);
+    close(done[0]); close(done[1]);
     struct sigaction sa; sigaction(SIGPIPE, NULL, &sa);
     int bad = 0;
     if (!r.is_err || !r.err.msg || !strstr(r.err.msg, "EPIPE")) { printf("not-epipe:%s ", r.is_err ? r.err.msg : "ok"); bad = 1; }
