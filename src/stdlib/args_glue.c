@@ -21,7 +21,10 @@ int64_t tk_args_get_w(int64_t n) {
     StrArgsResult r = args_get((uint64_t)n);
     if (r.is_err) {
         int64_t *box = (int64_t *)tk_err_box((int64_t)sizeof(int64_t));
-        box[0] = (int64_t)(intptr_t)"args.get: index out of bounds";
+        /* 113.B.8: the core's own reason, not a constant standing in for it,
+         * so a new failure args_get reports reaches `e.msg` as it says it. */
+        box[0] = (int64_t)(intptr_t)tk_err_msg("args.get: %s",
+                                               r.err_msg ? r.err_msg : "failed");
         tk_current_error = (int64_t)(intptr_t)box;
         return 0;
     }
