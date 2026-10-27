@@ -89,6 +89,28 @@ f=arr(j:$jsonval;key:$str):@$jsonval!$jsonerr
 f=at(j:$jsonval;path:$str):$jsonval!$jsonerr   (* 138.12: dotted path, e.g. "usage.input_tokens", "r.0" *)
 f=getval(j:$jsonval;path:$str):$str        (* 138.12: the raw JSON text at path, "" if none *)
 
+(* 113.B.5: the object surface.  get names one member exactly (no path
+   split: a key may hold '.'), at walks a dotted path; both return the value,
+   of any JSON type, as a $jsonval.  The scalar readers above take the key ""
+   on a non-object $jsonval to mean the value itself (as arr does for a
+   top-level array), so a value from get/at/arr reads as str/i64/... too. *)
+f=get(j:$jsonval;key:$str):$jsonval!$jsonerr
+f=keys(j:$jsonval):@$str!$jsonerr          (* names in document order; {} -> @() *)
+f=entries(j:$jsonval):@$str!$jsonerr       (* "key=<value as JSON text>" per member *)
+f=has(j:$jsonval;key:$str):bool
+f=haskey(j:$jsonval;key:$str):bool         (* alias of has *)
+
+(* 113.B.5: building output.  $jsonval is immutable: every set* returns a NEW
+   object with the member set (replaced in place, or appended), and $type if
+   j is not an object.  The key is always JSON-encoded. *)
+f=newobj():$jsonval                        (* {} *)
+f=set(j:$jsonval;key:$str;v:$str):$jsonval!$jsonerr      (* v as a JSON string *)
+f=setint(j:$jsonval;key:$str;v:i64):$jsonval!$jsonerr
+f=setf64(j:$jsonval;key:$str;v:f64):$jsonval!$jsonerr    (* NaN/inf: $type *)
+f=setbool(j:$jsonval;key:$str;v:bool):$jsonval!$jsonerr
+f=setval(j:$jsonval;key:$str;v:$jsonval):$jsonval!$jsonerr (* nests v; $parse if v is not one JSON value *)
+f=serialize(j:$jsonval):$str               (* the JSON text, for output *)
+
 (* 127.241: the typed get* spellings -- aliases of i64 / bool / f64 above.
    Their parameters are still the ABI's i64 (a json handle, a str key); the
    result is the declared union, so a match decides on the error slot. *)
@@ -116,7 +138,7 @@ f=json.writerbytes(writer:$jsonwriter):@$byte
 ABI helpers. `json.tki` exports these with `"gen":"abi"`: their parameter and
 return types are `i64` placeholders, so only the name and arity are
 established, and they are listed that way (`name/arity`):
-`arrget/2`, `arrlen/1`, `decode/1`, `encarr/3`, `encbool/1`, `encf64/1`, `encnum/1`, `encode/1`, `encstr/1`, `entries/1`, `err/1`, `get/2`, `getarr/2`, `getarray/2`, `getobj/2`, `getopt/2`, `getregulations/1`, `getstr/2`, `getstring/2`, `has/2`, `haskey/2`, `isnullkey/2`, `keys/1`, `kv/2`, `len/1`, `obj/1`, `ok/1`, `parse/1`, `parsearray/1`, `parseobj/1`, `print/1`, `printarr/3`, `quote/1`, `serialize/1`, `set/3`, `setint/3`, `strarr/1`, `strarray/1`, `stringify/1`, `tryarr/2`, `trybool/2`, `tryboolkey/2`, `tryfloat/2`, `tryfloatkey/2`, `tryint/2`, `tryintkey/2`, `trystr/2`, `trystrkey/2`, `values/1`.
+`arrget/2`, `arrlen/1`, `decode/1`, `encarr/3`, `encbool/1`, `encf64/1`, `encnum/1`, `encode/1`, `encstr/1`, `err/1`, `getarr/2`, `getarray/2`, `getobj/2`, `getopt/2`, `getregulations/1`, `getstr/2`, `getstring/2`, `isnullkey/2`, `kv/2`, `len/1`, `obj/1`, `ok/1`, `parse/1`, `parsearray/1`, `parseobj/1`, `print/1`, `printarr/3`, `quote/1`, `strarr/1`, `strarray/1`, `stringify/1`, `tryarr/2`, `trybool/2`, `tryboolkey/2`, `tryfloat/2`, `tryfloatkey/2`, `tryint/2`, `tryintkey/2`, `trystr/2`, `trystrkey/2`, `values/1`.
 
 ### std.toon
 

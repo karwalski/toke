@@ -3618,7 +3618,7 @@ static const char *const JSON_DOC_READERS[] = {
     "getbool", "getf32", "getfloat", "geti32", "geti64", "getint", "getobj",
     "getopt", "getregulations", "getstr", "getstring", "getval", "has",
     "haskey", "i64", "isnullkey", "keys", "len", "serialize", "set",
-    "setint", "str", "tryarr", "trybool", "tryboolkey", "tryfloat",
+    "setbool", "setf64", "setint", "setval", "str", "tryarr", "trybool", "tryboolkey", "tryfloat",
     "tryfloatkey", "tryint", "tryintkey", "trystr", "trystrkey", "u64",
     "values", NULL
 };

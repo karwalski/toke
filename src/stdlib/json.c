@@ -174,6 +174,29 @@ static int find_json_key(const char *raw, const char *key,
     }
 }
 
+/*
+ * json_locate — 113.B.5: where the scalar readers (json_str/u64/i64/f64/bool)
+ * find their value.  In an object, the member named `key` (find_json_key; an
+ * object's "" member is still the member named "").  In anything else --
+ * a scalar or an array, which is what json_at, json.get and a json.arr
+ * element hand back -- the key "" names the value itself, the convention
+ * json.arr(doc;"") already uses for a top-level array (127.29).  Without it a
+ * $jsonval holding `150` or `"alice"` had no typed read at all: every reader
+ * asked it for a key and reported $missing.
+ */
+static int json_locate(const char *raw, const char *key,
+                       const char **val_start, const char **val_end) {
+    if (!raw) return 0;
+    const char *p = skip_ws(raw);
+    if (*p == '{') return find_json_key(raw, key, val_start, val_end);
+    if (key[0] != '\0') return 0;
+    const char *e = skip_value(p);
+    if (!e || *skip_ws(e) != '\0') return 0;
+    *val_start = p;
+    *val_end   = e;
+    return 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* Public API                                                           */
 /* ------------------------------------------------------------------ */
@@ -221,7 +244,7 @@ JsonResult json_dec(const char *s) {
 StrJsonResult json_str(Json j, const char *key) {
     StrJsonResult r = {0};
     const char *vs, *ve;
-    if (!find_json_key(j.raw, key, &vs, &ve)) {
+    if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
     if (*vs != '"') {
@@ -243,7 +266,7 @@ StrJsonResult json_str(Json j, const char *key) {
 U64JsonResult json_u64(Json j, const char *key) {
     U64JsonResult r = {0};
     const char *vs, *ve;
-    if (!find_json_key(j.raw, key, &vs, &ve)) {
+    if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
     char *end; errno = 0;
@@ -258,7 +281,7 @@ U64JsonResult json_u64(Json j, const char *key) {
 I64JsonResult json_i64(Json j, const char *key) {
     I64JsonResult r = {0};
     const char *vs, *ve;
-    if (!find_json_key(j.raw, key, &vs, &ve)) {
+    if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
     char *end; errno = 0;
@@ -273,7 +296,7 @@ I64JsonResult json_i64(Json j, const char *key) {
 F64JsonResult json_f64(Json j, const char *key) {
     F64JsonResult r = {0};
     const char *vs, *ve;
-    if (!find_json_key(j.raw, key, &vs, &ve)) {
+    if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
     char *end; errno = 0;
@@ -288,7 +311,7 @@ F64JsonResult json_f64(Json j, const char *key) {
 BoolJsonResult json_bool(Json j, const char *key) {
     BoolJsonResult r = {0};
     const char *vs, *ve;
-    if (!find_json_key(j.raw, key, &vs, &ve)) {
+    if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
     if (strncmp(vs, "true",  4) == 0) { r.is_err = 0; r.ok = 1; return r; }
@@ -773,6 +796,116 @@ JsonResult json_at(Json j, const char *path) {
     free(buf);
     r.is_err = 0;
     r.ok = cur;
+    return r;
+}
+
+/*
+ * json_member — 113.B.5: the value of the member named exactly `key` (no
+ * path splitting: a key holding '.' or digits is just a key), as a new Json
+ * owning a copy of its text.  $type if j is not an object, $missing if it has
+ * no such member.  json.get's core; json_at is the dotted-path walk.
+ */
+JsonResult json_member(Json j, const char *key) {
+    JsonResult r = {0};
+    const char *p = j.raw ? skip_ws(j.raw) : NULL;
+    if (!p || *p != '{') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an object"); return r;
+    }
+    const char *vs, *ve;
+    if (!find_json_key(j.raw, key, &vs, &ve)) {
+        r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
+    }
+    size_t n = (size_t)(ve - vs);
+    char *buf = malloc(n + 1);
+    if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+    memcpy(buf, vs, n);
+    buf[n] = '\0';
+    r.ok.raw = buf;
+    return r;
+}
+
+/*
+ * json_is_value — 113.B.5: 1 when `text` is exactly one JSON value
+ * (surrounding whitespace allowed), 0 otherwise.
+ */
+int json_is_value(const char *text) {
+    if (!text) return 0;
+    const char *e = skip_value(skip_ws(text));
+    return e && *skip_ws(e) == '\0';
+}
+
+/*
+ * json_setmember — 113.B.5: a new object that is j with member `key` set to
+ * the JSON value `valtext` (already-encoded JSON text: "\"x\"", "42",
+ * "{...}").  An existing member keeps its position and only its value
+ * changes; a new member is appended, so building an object member by member
+ * emits the members in the order they were set.  The key is JSON-encoded
+ * (json_enc), never pasted into the text.  Every other member is copied
+ * verbatim.  If `key` occurs more than once, the first occurrence -- the one
+ * every reader finds -- is the one replaced.
+ *
+ * $type if j is not an object; $parse if `valtext` is not exactly one JSON
+ * value or j is malformed, so the result is always one well-formed object.
+ * j itself is never modified.
+ */
+JsonResult json_setmember(Json j, const char *key, const char *valtext) {
+    JsonResult r = {0};
+    const char *p = j.raw ? skip_ws(j.raw) : NULL;
+    if (!p || *p != '{') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an object"); return r;
+    }
+    if (!key) key = "";
+    if (!json_is_value(valtext)) {
+        r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "not a JSON value"); return r;
+    }
+    const char *vtext = skip_ws(valtext);
+    size_t vlen = (size_t)(skip_value(vtext) - vtext);
+    size_t klen = strlen(key);
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_putc(&b, '{');
+    int first = 1, replaced = 0;
+    const char *q = skip_ws(p + 1);
+    if (*q != '}') {
+        for (;;) {
+            q = skip_ws(q);
+            const char *ks = q;
+            const char *ke = skip_string(q);
+            const char *colon = ke ? skip_ws(ke) : NULL;
+            const char *vs = (colon && *colon == ':') ? skip_ws(colon + 1) : NULL;
+            const char *ve = vs ? skip_value(vs) : NULL;
+            if (!ve) {
+                strbuf_free(&b);
+                r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "malformed object"); return r;
+            }
+            if (!first) strbuf_putc(&b, ',');
+            first = 0;
+            if (!replaced && json_key_eq(ks + 1, (size_t)((ke - 1) - (ks + 1)), key, klen)) {
+                strbuf_appendn(&b, ks, (size_t)(ke - ks));
+                strbuf_putc(&b, ':');
+                strbuf_appendn(&b, vtext, vlen);
+                replaced = 1;
+            } else {
+                strbuf_appendn(&b, ks, (size_t)(ve - ks));
+            }
+            q = skip_ws(ve);
+            if (*q == '}') break;
+            if (*q == ',') { q++; continue; }
+            strbuf_free(&b);
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "malformed object"); return r;
+        }
+    }
+    if (!replaced) {
+        if (!first) strbuf_putc(&b, ',');
+        strbuf_putc(&b, '"');
+        strbuf_append_json(&b, key);
+        strbuf_putc(&b, '"');
+        strbuf_putc(&b, ':');
+        strbuf_appendn(&b, vtext, vlen);
+    }
+    strbuf_putc(&b, '}');
+    char *out = strbuf_take(&b);
+    if (!out) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+    r.ok.raw = out;
     return r;
 }
 

@@ -96,6 +96,18 @@ int json_is_null(Json j, const char *key);
  * Returns JSON_ERR_MISSING if any segment fails. */
 JsonResult json_at(Json j, const char *path);
 
+/* json_member — 113.B.5: the member named exactly `key` (no path split).
+ * $type if j is not an object, $missing if there is no such member. */
+JsonResult json_member(Json j, const char *key);
+
+/* json_is_value — 113.B.5: 1 when text is exactly one JSON value. */
+int json_is_value(const char *text);
+
+/* json_setmember — 113.B.5: a new object, j with member key set to the JSON
+ * value text valtext (replaced in place, or appended).  $type if j is not an
+ * object, $parse if valtext is not one JSON value.  j is not modified. */
+JsonResult json_setmember(Json j, const char *key, const char *valtext);
+
 /* json_index — return the i-th element of a JSON array.
  * Returns JSON_ERR_TYPE if j is not an array, JSON_ERR_MISSING if out of bounds. */
 JsonResult json_index(Json j, uint64_t i);
