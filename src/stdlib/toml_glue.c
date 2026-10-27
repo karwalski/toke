@@ -153,3 +153,68 @@ int64_t tk_toml_f64_w(int64_t tab, int64_t key) {
 int64_t tk_toml_has_w(int64_t tab, int64_t key) {
     return (int64_t)toml_has((void *)(intptr_t)tab, (const char *)(intptr_t)key);
 }
+
+/*
+ * Story 113.B.4 — arrays, keys, len, free.
+ *
+ * toml.strarr / i64arr / boolarr / sectionarr (v; key) : @T!$tomlerr
+ *   read the array at `key` into a real toke array (tk_array.h layout: one
+ *   i64 slot per element -- a string pointer, the integer, 0/1, or a section
+ *   view).  There is no toml.f64arr yet: the checker leaves the $ok binding
+ *   of a stdlib `@f64!E` call untyped, so `.get(i)` on it reads the double's
+ *   bit pattern as an integer -- a wrong value, silently (story 127.297).
+ *   Same error protocol as the scalar accessors: the slot is the
+ *   discriminant, never the returned handle.
+ * toml.keys(v) : @$str   the table's own keys (copies: they outlive v).
+ * toml.len(v)  : u64     how many keys the table has.
+ * toml.free(v) : bool    release a document; true if v was a live document,
+ *   false (and nothing happens) for a section view, a document already
+ *   freed, or any other value -- see toml_free_root (toml.c).
+ */
+#include "tk_array.h"
+#include <stdlib.h>
+
+static int64_t toml_arr_w(int64_t tab, int64_t key, char kind) {
+    if (!tab || !key) { return toml_raise("toml: null argument"); }
+    TomlArrResult r = toml_get_arr((void *)(intptr_t)tab, (const char *)(intptr_t)key, kind);
+    if (r.is_err) return toml_raise(r.err_msg);
+    int64_t h = tk_arr_alloc(r.len, r.len);
+    if (!h) {
+        if (kind == 's') for (int64_t i = 0; i < r.len; i++) free((void *)(intptr_t)r.data[i]);
+        free(r.data);
+        return toml_raise("toml: out of memory");
+    }
+    int64_t *slots = (int64_t *)(intptr_t)h;
+    for (int64_t i = 0; i < r.len; i++) slots[i] = r.data[i];
+    free(r.data);
+    tk_current_error = 0;
+    return h;
+}
+
+int64_t tk_toml_strarr_w(int64_t tab, int64_t key)     { return toml_arr_w(tab, key, 's'); }
+int64_t tk_toml_i64arr_w(int64_t tab, int64_t key)     { return toml_arr_w(tab, key, 'i'); }
+int64_t tk_toml_boolarr_w(int64_t tab, int64_t key)    { return toml_arr_w(tab, key, 'b'); }
+int64_t tk_toml_sectionarr_w(int64_t tab, int64_t key) { return toml_arr_w(tab, key, 't'); }
+
+int64_t tk_toml_keys_w(int64_t tab) {
+    int64_t n = toml_count((void *)(intptr_t)tab);
+    int64_t h = tk_arr_alloc(n, n);
+    if (!h) return tk_arr_alloc(0, 0);
+    int64_t *slots = (int64_t *)(intptr_t)h;
+    for (int64_t i = 0; i < n; i++) {
+        const char *k = toml_key_at((void *)(intptr_t)tab, i);
+        size_t kl = k ? strlen(k) : 0;
+        char *c = k ? (char *)malloc(kl + 1) : NULL;
+        if (c) memcpy(c, k, kl + 1);
+        slots[i] = (int64_t)(intptr_t)(c ? c : "");
+    }
+    return h;
+}
+
+int64_t tk_toml_len_w(int64_t tab) {
+    return toml_count((void *)(intptr_t)tab);
+}
+
+int64_t tk_toml_free_w(int64_t tab) {
+    return (int64_t)toml_free_root((void *)(intptr_t)tab);
+}
