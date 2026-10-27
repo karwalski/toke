@@ -1,0 +1,24 @@
+id: D232
+series: D
+description: "lint nested-if-ladder (131.64): no fix when the rewrite is not correct in every case — a comment in the el block would be dropped by the splice, so that rung keeps its hint and carries no fix; the comment-free rung in the same file is still fixed"
+input: |
+  m=t;
+  f=main():i64{
+    let a=1;
+    let r=mut.0;
+    if(a>1){r=1}el{ (* why *) if(a>0){r=2}};
+    let v=if(a>1){1}el{if(a>0){2}el{3}};
+    <r+v
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["nested-if-ladder"]
+expected_fixed_output: |
+  m=t;
+  f=main():i64{
+    let a=1;
+    let r=mut.0;
+    if(a>1){r=1}el{ (* why *) if(a>0){r=2}};
+    let v=if(a>1){1}el if(a>0){2}el{3};
+    <r+v
+  };

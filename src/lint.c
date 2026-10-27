@@ -26,6 +26,9 @@
  *                            `let x=v.new()` / `x:$vechandle` — by-reference,
  *                            the bare call mutates in place)
  *   loop-rebuilds-array    — lp whose body is only `acc=acc.append(f(i))`
+ *   nested-if-ladder       — (131.64) `el{if(...){...}...}`: an else block
+ *                            whose only statement is another if — write
+ *                            `el if(...)`; fix splices the inner if up
  *
  * Fix model: every fixable diagnostic carries [span_start, span_end) and a
  * replacement string ("" = delete). main.c applies fixes right-to-left.
@@ -1071,6 +1074,9 @@ typedef struct {
     const LintOptions *opts;
     LintResult   *out;
     Aliases       aliases;
+    /* 131.64: inner ifs of an already-reported nested-if ladder */
+    const Node   *ladder_seen[64];
+    int           ladder_seen_n;
 } PatCtx;
 
 /* single_assign — STMT_LIST containing exactly one `name = rhs` whose rhs
@@ -1729,6 +1735,172 @@ static int check_loop_rebuilds_array(PatCtx *c, const Node *lp)
                      LINT_HINT, 0, lp->start, span_end_of_stmt(lp, c->src, c->src_len), NULL);
 }
 
+/* ── Rule 7: nested-if-ladder (131.64) ───────────────────────────────── */
+
+/*
+ * The ladder `if(a){x}el{if(b){y}el{z}}` is the chain `if(a){x}el if(b){y}el{z}`
+ * written with one extra block per rung.  regen/quality_rubric.md counts an
+ * el-if chain as ONE nesting level (> 3 flags, > 4 fails), so every `el{if}`
+ * rung costs one level of depth that the chain does not: the threshold is
+ * therefore one rung, and every ladder is reported (once, at its top rung).
+ *
+ * The fix rewrites the top rung only — `el{ if(b)… ;}` becomes `el if(b)…` —
+ * and the --fix fixpoint loop re-lints and takes the next rung, so a ladder of
+ * any length converges in one invocation.  The rewrite is the identity on the
+ * AST shape the emitter consumes (else = IF_STMT instead of a STMT_LIST
+ * holding only that IF_STMT; the block holds no binding, so §I scoping is
+ * unchanged).  It is offered only when the source is exactly that shape:
+ *   - `el`, optional whitespace, `{`, optional whitespace, the inner `if`;
+ *   - after the inner if, only whitespace and at most one `;` before `}`;
+ *   - no `(*`, `//` or `#` anywhere in the block outside string literals
+ *     (a comment would be dropped or moved);
+ *   - when the outer if is in value position the inner if must have its own
+ *     `el` (an expression-`if` requires one; the rewrite would not parse).
+ * Otherwise the hint carries no fix.
+ */
+
+/* skip_str_lit — s[i] == '"'; offset just past the closing quote, following
+ * `\(…)` interpolations (which may hold string literals of their own), or -1. */
+static int skip_interp(const char *s, int len, int i);
+static int skip_str_lit(const char *s, int len, int i)
+{
+    i++;
+    while (i < len) {
+        char ch = s[i];
+        if (ch == '"') return i + 1;
+        if (ch == '\\') {
+            if (i + 1 < len && s[i + 1] == '(') {
+                i = skip_interp(s, len, i + 1);
+                if (i < 0) return -1;
+                continue;
+            }
+            i += 2;
+            continue;
+        }
+        i++;
+    }
+    return -1;
+}
+
+/* skip_interp — s[i] == '(' opening an interpolation; offset past its ')'. */
+static int skip_interp(const char *s, int len, int i)
+{
+    int depth = 0;
+    while (i < len) {
+        char ch = s[i];
+        if (ch == '"') { i = skip_str_lit(s, len, i); if (i < 0) return -1; continue; }
+        if (ch == '(') depth++;
+        else if (ch == ')') { if (--depth == 0) return i + 1; }
+        i++;
+    }
+    return -1;
+}
+
+/* match_block_close — s[ob] == '{'; offset of the matching '}', -1 when
+ * unbalanced, -2 when a comment opener (`(*`, `//`, `#`) appears outside a
+ * string literal before it. */
+static int match_block_close(const char *s, int len, int ob)
+{
+    int depth = 0, i = ob;
+    while (i < len) {
+        char ch = s[i];
+        if (ch == '"') { i = skip_str_lit(s, len, i); if (i < 0) return -1; continue; }
+        if (ch == '#') return -2;
+        if (i + 1 < len && ((ch == '(' && s[i + 1] == '*') || (ch == '/' && s[i + 1] == '/')))
+            return -2;
+        if (ch == '{') depth++;
+        else if (ch == '}') { if (--depth == 0) return i; }
+        i++;
+    }
+    return -1;
+}
+
+static int is_ident_char(char ch)
+{
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+           (ch >= '0' && ch <= '9') || ch == '_';
+}
+
+/* sole_inner_if — the IF_STMT that is the only statement of ifn's else block. */
+static const Node *sole_inner_if(const Node *ifn)
+{
+    if (!ifn || ifn->kind != NODE_IF_STMT || ifn->child_count < 3) return NULL;
+    const Node *els = ifn->children[2];
+    if (!els || els->kind != NODE_STMT_LIST || els->child_count != 1) return NULL;
+    const Node *in = els->children[0];
+    return (in && in->kind == NODE_IF_STMT) ? in : NULL;
+}
+
+static int ladder_seen(const PatCtx *c, const Node *n)
+{
+    for (int i = 0; i < c->ladder_seen_n; i++) if (c->ladder_seen[i] == n) return 1;
+    return 0;
+}
+
+static int check_nested_if_ladder(PatCtx *c, const Node *ifn, int value_pos)
+{
+    const Node *inner = sole_inner_if(ifn);
+    if (!inner || ladder_seen(c, ifn)) return 0;
+
+    /* Rungs of the whole ladder: follow `el if` links for free and count each
+     * `el{if}`; remember every if on the way so the walk reports it once. */
+    int rungs = 0;
+    for (const Node *t = ifn; t && t->kind == NODE_IF_STMT && t->child_count >= 3; ) {
+        const Node *nx = sole_inner_if(t);
+        if (nx) rungs++;
+        else if (t->children[2] && t->children[2]->kind == NODE_IF_STMT) nx = t->children[2];
+        if (!nx) break;
+        if (c->ladder_seen_n < 64) c->ladder_seen[c->ladder_seen_n++] = nx;
+        t = nx;
+    }
+    if (!rule_enabled("nested-if-ladder", c->opts)) return 0;
+
+    const char *s = c->src;
+    int len = c->src_len;
+    int fixable = 0;
+    int span_s = ifn->start, span_e = span_end_of_stmt(ifn, c->src, c->src_len);
+    char *rep = NULL;
+    do {
+        int k = inner->start;
+        if (k <= 0 || k >= len) break;
+        while (k > 0 && src_is_space(s[k - 1])) k--;
+        if (k <= 0 || s[k - 1] != '{') break;
+        int ob = k - 1;
+        k = ob;
+        while (k > 0 && src_is_space(s[k - 1])) k--;
+        if (k < 2 || s[k - 1] != 'l' || s[k - 2] != 'e') break;
+        int el = k - 2;
+        if (el > 0 && is_ident_char(s[el - 1])) break;
+        int cb = match_block_close(s, len, ob);
+        if (cb < 0) break;
+        int te = cb;
+        while (te > inner->start && src_is_space(s[te - 1])) te--;
+        if (te > inner->start && s[te - 1] == ';') te--;
+        while (te > inner->start && src_is_space(s[te - 1])) te--;
+        if (te <= inner->start || s[te - 1] != '}') break;
+        if (!balanced(s, inner->start, te)) break;
+        if (value_pos && inner->child_count < 3) break;
+        int ilen = te - inner->start;
+        rep = malloc((size_t)ilen + 4);
+        if (!rep) return -1;
+        memcpy(rep, "el ", 3);
+        memcpy(rep + 3, s + inner->start, (size_t)ilen);
+        rep[ilen + 3] = '\0';
+        span_s = el; span_e = cb + 1; fixable = 1;
+    } while (0);
+
+    char msg[320];
+    snprintf(msg, sizeof msg,
+        "else block holds only another if (%d nested rung%s) — write `el if(...)`: an "
+        "el-if chain is one nesting level, each `el{if}` rung adds one "
+        "(quality_rubric: depth > 3 flags, > 4 fails)",
+        rungs, rungs == 1 ? "" : "s");
+    int rc = lint_push(c->out, "nested-if-ladder", msg, inner->start, inner->line, inner->col,
+                       LINT_HINT, fixable, span_s, span_e, rep);
+    free(rep);
+    return rc;
+}
+
 /* ── Pattern walker ───────────────────────────────────────────────────── */
 
 /* 127.33 — value position.  The parser yields the same NODE_IF_STMT for the
@@ -1751,6 +1923,8 @@ static int pattern_walk(PatCtx *c, const Node *n, const Node *fn, int unsafe, in
     if (n->kind == NODE_FUNC_DECL) { fn = n; unsafe = 0; }
     if (n->kind == NODE_CLOSURE || n->kind == NODE_SCOPE_STMT || n->kind == NODE_SPAWN_EXPR)
         unsafe = 1;
+    if (n->kind == NODE_IF_STMT && fn && check_nested_if_ladder(c, n, value_pos) < 0)
+        return -1;
 
     if (n->kind == NODE_STMT_LIST && fn) {
         const Node *body = func_body(fn);

@@ -1,0 +1,22 @@
+id: D230
+series: D
+description: "lint nested-if-ladder (131.64): an expression-if whose el block holds only another if is a hint with a fix; --fix converges the whole ladder to one el-if chain in one invocation and is idempotent"
+input: |
+  m=t;
+  f=grade(x:i64):i64{
+    <if(x>90){4}el{if(x>80){3}el{if(x>70){2}el{1}}}
+  };
+  f=main():i64{
+    <grade(85)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["nested-if-ladder"]
+expected_fixed_output: |
+  m=t;
+  f=grade(x:i64):i64{
+    <if(x>90){4}el if(x>80){3}el if(x>70){2}el{1}
+  };
+  f=main():i64{
+    <grade(85)
+  };
