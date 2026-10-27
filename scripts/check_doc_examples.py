@@ -75,11 +75,9 @@ SKIP = ("reference/errors.md", "spec/errors.md", "known-limitations.md",
         "reference/migration.md",
         # lint-rules pages demonstrate violations on purpose (unreachable code,
         # undeclared identifiers, underscore idents) — they MUST NOT compile.
-        "compiler/lint-rules-v1.md",
-        # about/web-server.md is an illustrative marketing example using an
-        # aspirational API surface (store.to_json/push/get, http.rate_limit that
-        # 120.13 found is dead); needs a real-API rewrite — tracked in 119.8.
-        "about/web-server.md")
+        "compiler/lint-rules-v1.md")
+# 119.8: about/web-server.md left this list -- it was rewritten against the
+# real std.http surface and every example on it now builds and links.
 
 
 HAS_MAIN = re.compile(r"(^|\n)[ \t]*f=main[ \t]*\(")
