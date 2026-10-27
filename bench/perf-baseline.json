@@ -6,6 +6,8 @@
   "os": "Darwin"
  },
  "partial_records": {
+  "chained_calls": "toke 3.1.0 (git 4bb13f984e69)",
+  "large_expr": "toke 3.1.0 (git 4bb13f984e69)",
   "struct_ops": "toke 3.0.0"
  },
  "programs": {
@@ -17,11 +19,11 @@
    "run_insns": 114957109
   },
   "chained_calls": {
-   "compile_allocs": 417,
-   "compile_insns": 131673678,
-   "exit_status": 1,
+   "compile_allocs": 426,
+   "compile_insns": 118247540,
+   "exit_status": 232,
    "run_allocs": 196,
-   "run_insns": 27857930
+   "run_insns": 138357508
   },
   "collatz": {
    "compile_allocs": 417,
@@ -59,11 +61,11 @@
    "run_insns": 5038541478
   },
   "large_expr": {
-   "compile_allocs": 417,
-   "compile_insns": 132416298,
-   "exit_status": 1,
+   "compile_allocs": 426,
+   "compile_insns": 122463336,
+   "exit_status": 96,
    "run_allocs": 196,
-   "run_insns": 22928293
+   "run_insns": 442640572
   },
   "nested_loops": {
    "compile_allocs": 278,

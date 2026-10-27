@@ -7,10 +7,12 @@ f=add7(x:i64):i64{<x+7};
 f=chain(x:i64):i64{
   <add7(sub3(sqr(dbl(inc(x)))))
 };
+(* 123.13: i%4093 keeps sqr() and the sum inside i64 -- unbounded, the sum
+   overflowed and the run died RT002 part-way, measuring the trap. *)
 f=main():i64{
   let s=mut.0;
   lp(let i=0;i<10000000;i=i+1){
-    s=s+chain(i)
+    s=s+chain(i%4093)
   };
   <s
 };
