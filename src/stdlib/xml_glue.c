@@ -30,22 +30,28 @@ int64_t tk_xml_parse_w(int64_t xml) {
     return (int64_t)(intptr_t)arr;
 }
 
-/* xml.get(xml, tag) — extract text content by tag path */
-int64_t tk_xml_get_w(int64_t xml, int64_t tag) {
-    if (!xml || !tag) return 0;
-    const char *s = (const char *)(intptr_t)xml;
-    const char *t = (const char *)(intptr_t)tag;
-    const char *result = xml_get(s, t);
-    return result ? (int64_t)(intptr_t)result : 0;
+/* 131.48: xml.get / xml.attr are declared `:str` (stdlib/xml.tki).  The C
+ * core answers NULL for "no such path / attribute"; a toke str is never
+ * NULL, and handing one back made the next `==` or interpolation read
+ * address 0.  A miss is the empty string, as json.getval's is. */
+static int64_t xml_str_or_empty(const char *r) {
+    return (int64_t)(intptr_t)(r ? r : "");
 }
 
-/* xml.attr(element, attrname) — extract attribute value */
+/* xml.get(xml, path) — text content at a dotted tag path, "" if none */
+int64_t tk_xml_get_w(int64_t xml, int64_t tag) {
+    if (!xml || !tag) return xml_str_or_empty(NULL);
+    const char *s = (const char *)(intptr_t)xml;
+    const char *t = (const char *)(intptr_t)tag;
+    return xml_str_or_empty(xml_get(s, t));
+}
+
+/* xml.attr(element, attrname) — attribute value, "" if absent */
 int64_t tk_xml_attr_w(int64_t element, int64_t attrname) {
-    if (!element || !attrname) return 0;
+    if (!element || !attrname) return xml_str_or_empty(NULL);
     const char *e = (const char *)(intptr_t)element;
     const char *a = (const char *)(intptr_t)attrname;
-    const char *result = xml_attr(e, a);
-    return result ? (int64_t)(intptr_t)result : 0;
+    return xml_str_or_empty(xml_attr(e, a));
 }
 
 /* xml.escape(s) */
@@ -56,8 +62,8 @@ int64_t tk_xml_escape_w(int64_t s) {
 
 /* xml.cdata(s) */
 int64_t tk_xml_cdata_w(int64_t s) {
-    if (!s) return 0;
-    return (int64_t)(intptr_t)xml_cdata((const char *)(intptr_t)s);
+    if (!s) return xml_str_or_empty(NULL);
+    return xml_str_or_empty(xml_cdata((const char *)(intptr_t)s));
 }
 
 /* xml.declaration(version, encoding) */
@@ -69,8 +75,8 @@ int64_t tk_xml_declaration_w(int64_t version, int64_t encoding) {
 
 /* xml.comment(text) */
 int64_t tk_xml_comment_w(int64_t text) {
-    if (!text) return 0;
-    return (int64_t)(intptr_t)xml_comment((const char *)(intptr_t)text);
+    if (!text) return xml_str_or_empty(NULL);
+    return xml_str_or_empty(xml_comment((const char *)(intptr_t)text));
 }
 
 /* xml.elementns(ns, tag, content, attrs) */

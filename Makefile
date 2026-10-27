@@ -1113,7 +1113,13 @@ TEST_CI_MACOS_ONLY = test-stdlib-tls test-stdlib-keychain \
 #                          permission prompt, so 136.56 did not run it here.
 #                          On Linux mdns.c is a stub and the test checks the
 #                          stub's safe return values.
-TEST_CI_UNMEASURED = test-stdlib-mdns
+#   test-standalone        test/standalone/run_all.sh. Was here in
+#                          TEST_CI_KNOWN_RED at 558/571; 131.45 made it
+#                          600 passed / 0 failed on macOS/arm64 (2026-10-27)
+#                          and `make ci` now runs it, so it cannot rot
+#                          unseen again. Never run on Linux: the CI step is
+#                          its first measurement there.
+TEST_CI_UNMEASURED = test-stdlib-mdns test-standalone
 
 # Red at HEAD on 2026-09-24, measured, with the reason.  CI runs these in a
 # job that is ALLOWED TO FAIL and says so on its face -- see
@@ -1126,7 +1132,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   test-compress-schema       22/23; CSV compression ratio over threshold
 #   test-e2e / test-e2e-check  11 of 48 fixtures still use `=` for equality
 #                              and are rejected with E2002. Stale fixtures.
-#   test-standalone            558/571
 #   test-stdlib-auth           FLAKY, ~19% of runs, and the flake is the
 #                              test being wrong rather than auth.c being
 #                              broken. test_auth.c:124 "tampers" with a JWT
@@ -1176,8 +1181,7 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
 TEST_CI_KNOWN_RED = test-stdlib-auth \
 	test-stdlib-viz-integration test-stdlib-crypto \
-	test-compress-schema test-e2e test-e2e-check \
-	test-standalone
+	test-compress-schema test-e2e test-e2e-check
 
 # Run a list of targets, one log each, never stopping at the first failure --
 # "3 of 61 failed, here they are" is actionable; "make: *** Error 1" after the
@@ -1235,7 +1239,8 @@ test-ci: test-ci-green
 # went red with 127.251 (an unescaped `$toonval` under `set -u`); both sat red
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+# 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -2202,6 +2207,9 @@ test-tkir-reader: $(BIN)
 	    test/tkir/test_tkir_reader.c src/tkir.c src/diag.c
 	$(RUN_TEST) ./test/tkir/test_tkir_reader ./$(BIN)
 
+# 131.45: a prerequisite of `ci`.  run_all.sh tests the checkout it lives in
+# (not the main checkout), works in a private temp dir, feeds each test its
+# <name>.stdin or /dev/null, and counts a crash or a non-zero exit as a FAIL.
 test-standalone: $(BIN)
 	@test/standalone/run_all.sh
 

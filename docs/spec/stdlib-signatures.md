@@ -571,3 +571,53 @@ f=zip.close(a:$ziparchive):void
 ```
 
 Read-only; Store and Deflate only. `$ziparchive` is an opaque handle with no readable fields. Opening validates the whole central directory first, so a single bad entry rejects the archive: absolute or `..`-bearing or backslash-bearing names, a cumulative uncompressed size over 64 MiB, a ratio over 200:1, more than 65536 entries, an archive over 128 MiB, an encrypted entry, or any other compression method. `zip.openfile` is an addition to the requested interface, because toke has no binary file read (`file.read` truncates at the first NUL). Every failure raises a `$ziperr` whose variant names the class of rule that rejected the input and whose payload is the reason (`$err:e mt e {$toolarge:m …}`); `zip.lasterr` was retired by 127.102c. See [std.zip](/docs/stdlib/zip).
+
+### std.xml
+
+Mirrors `stdlib/xml.tki` (131.48).
+
+```text
+f=element(tag:$str;content:$str;attrs:$str):$str
+f=elementns(ns:$str;tag:$str;content:$str;attrs:$str):$str
+f=escape(s:$str):$str
+f=cdata(s:$str):$str
+f=comment(text:$str):$str
+f=declaration(version:$str;encoding:$str):$str
+f=get(xml:$str;path:$str):$str
+f=attr(attrs:$str;name:$str):$str
+```
+
+Builders take `attrs` as raw attribute text (`href="/" id='7'`), inserted
+verbatim after the tag name; `content` is inserted verbatim too, so text
+that may hold markup goes through `escape` (or `cdata`) first. `get` parses
+`xml` and returns the text content of the first element at the dotted tag
+path (`"root.name"`, `"a.c"`) whose text is non-empty;
+`attr` reads one attribute from a raw attribute string. Both return `""`
+when nothing matches -- as `json.getval` does -- so a present-but-empty
+element and a missing one read the same. `elementns` with an empty `ns`
+emits an unprefixed tag.
+
+ABI helper. `xml.tki` exports `parse/1` with `"gen":"abi"`: it returns an
+opaque node-array handle, and no export reads or frees one, so it has no
+use from toke yet.
+
+### std.soap
+
+Mirrors `stdlib/soap.tki` (131.48).
+
+```text
+f=envelope(body:$str;header:$str):$str
+f=fault(code:$str;string:$str;detail:$str):$str
+f=extractbody(envelope:$str):$str
+f=extractfault(envelope:$str):$str
+f=wsseusernametoken(user:$str;pass:$str):$str
+f=wssetimestamp(created:$str;expires:$str):$str
+```
+
+`envelope` wraps `body` (and a non-empty `header`) in a SOAP 1.1
+`soap:Envelope`. `extractbody` returns the inner XML of the first `soap:Body`,
+`SOAP-ENV:Body` or unprefixed `Body`, and `extractfault` the whole first
+`Fault` element in the same prefix order; each returns `""` when there is
+none. `fault` XML-escapes its three fields, and the `wsse*` calls build
+WS-Security header fragments from their escaped arguments (a PasswordText
+`UsernameToken`, a `Timestamp`); they do no hashing or clock reads.

@@ -7,10 +7,11 @@ long chain(long x) {
     return add7(sub3(sqr(dbl(inc(x)))));
 }
 
+/* 123.13: bounded like chained_calls.tk; the checksum is 232. */
 int main(void) {
     long s = 0;
     for (long i = 0; i < 10000000; i++) {
-        s += chain(i);
+        s += chain(i % 4093);
     }
     return (int)(s & 0xFF);
 }

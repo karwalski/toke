@@ -34,5 +34,11 @@ f=main():i64{
   fails=fails+cks("get-sibling";xml.get("<a><b>1</b><c>2</c></a>";"a.c");"2");
   fails=fails+cks("attr";xml.attr("href=\"/x\" id='7'";"id");"7");
   fails=fails+cks("attr-first";xml.attr("href=\"/x\" id='7'";"href");"/x");
+  (* 131.48: a miss is "", not NULL; results are str, so they interpolate *)
+  fails=fails+cks("get-missing";xml.get(doc;"root.nope");"");
+  fails=fails+cks("get-missing-root";xml.get(doc;"other.name");"");
+  fails=fails+cks("attr-missing";xml.attr("href=\"/x\"";"id");"");
+  let nm=xml.get(doc;"root.name");
+  fails=fails+cks("get-interp";"name=\(nm)";"name=John");
   <fails
 };

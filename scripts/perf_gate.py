@@ -110,10 +110,10 @@ ALLOC_LIB = ALLOC_DIR / "liballoccount.dylib"
 # included.  The two below trap the same way on main and are carried as known
 # until they are rewritten (their baseline entries must be re-recorded then);
 # an entry here that stops trapping also fails, so the list only shrinks.
-KNOWN_TRAPS = {
-    "chained_calls": "123.13 (3) residue: RT002 integer overflow in addition",
-    "large_expr": "123.13 (3) residue: RT002 integer overflow in addition",
-}
+# 123.13 (2): chained_calls and large_expr were the last two; their inputs
+# are now bounded (chain(i%4093), compute(i%1024), C twins alike) and both run
+# to completion with the C twin's checksum, so the list is empty.
+KNOWN_TRAPS = {}
 TRAP_RE = re.compile(r"^(RT\d{3}:.*)$", re.M)
 
 THRESHOLDS = {

@@ -7,81 +7,73 @@
       "kind": "func",
       "name": "xml.attr",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.cdata",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.comment",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.declaration",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.element",
       "params": [
-        "i64",
-        "i64",
-        "i64"
+        "str",
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.elementns",
       "params": [
-        "i64",
-        "i64",
-        "i64",
-        "i64"
+        "str",
+        "str",
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.escape",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "xml.get",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",

@@ -49,7 +49,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.zip](/docs/stdlib/zip/) -- read-only zip archive access
 - [std.xlsx](/docs/stdlib/xlsx/) -- read cell values out of an XLSX workbook
 - [std.pdf](/docs/stdlib/pdf/) -- extract text runs with positions from a PDF
-- [std.xml](/docs/stdlib/xml/) -- build XML strings; read a value by dotted path
+- [std.xml](/docs/stdlib/xml/) -- build XML text and read values by tag path
 
 ## Networking
 

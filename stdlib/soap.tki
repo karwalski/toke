@@ -7,60 +7,54 @@
       "kind": "func",
       "name": "soap.envelope",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "soap.extractbody",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "soap.extractfault",
       "params": [
-        "i64"
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "soap.fault",
       "params": [
-        "i64",
-        "i64",
-        "i64"
+        "str",
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "soap.wssetimestamp",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "soap.wsseusernametoken",
       "params": [
-        "i64",
-        "i64"
+        "str",
+        "str"
       ],
-      "return": "str",
-      "gen": "abi"
+      "return": "str"
     }
   ]
 }

@@ -40,12 +40,14 @@ int64_t tk_soap_extractbody_w(int64_t envelope) {
     return (int64_t)(intptr_t)result;
 }
 
-/* soap.extractfault(envelope) → str (0 if no fault) */
+/* soap.extractfault(envelope) → str ("" if no fault).  131.48: declared
+ * `:str` in stdlib/soap.tki; a toke str is never NULL, so the C core's
+ * "no fault" NULL is the empty string here. */
 int64_t tk_soap_extractfault_w(int64_t envelope) {
-    if (!envelope) return 0;
+    if (!envelope) return (int64_t)(intptr_t)"";
     const char *e = (const char *)(intptr_t)envelope;
     const char *result = soap_extract_fault(e);
-    return (int64_t)(intptr_t)result;
+    return (int64_t)(intptr_t)(result ? result : "");
 }
 
 /* ── WS-Security Glue (88.6.5) ────────────────────────────────────────── */
