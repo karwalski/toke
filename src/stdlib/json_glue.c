@@ -550,9 +550,10 @@ int64_t tk_json_entries_w(int64_t obj) {
     StrArrayJsonResult kr = json_keys(*jp);
     if (kr.is_err) return json_raise(kr.err.kind, kr.err.msg);
     uint64_t count = kr.ok.len;
-    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    int oom = !h;
-    int64_t *block = h ? (int64_t *)(intptr_t)h : NULL;
+    /* Build every entry first, so an OOM part-way frees what it made and
+     * no toke array is ever handed out half filled. */
+    char **ents = count ? (char **)calloc(count, sizeof(char *)) : NULL;
+    int oom = count && !ents;
     for (uint64_t i = 0; i < count; i++) {
         const char *k = kr.ok.data[i];
         if (!oom) {
@@ -564,7 +565,7 @@ int64_t tk_json_entries_w(int64_t obj) {
                 memcpy(entry, k, klen);
                 entry[klen] = '=';
                 memcpy(entry + klen + 1, v, vlen + 1);
-                block[i] = (int64_t)(intptr_t)entry;
+                ents[i] = entry;
             } else {
                 oom = 1;
             }
@@ -573,7 +574,15 @@ int64_t tk_json_entries_w(int64_t obj) {
         free((void *)k);
     }
     free(kr.ok.data);
-    if (oom) return json_raise(JSON_ERR_PARSE, "json.entries: out of memory");
+    int64_t h = oom ? 0 : tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) {
+        for (uint64_t i = 0; ents && i < count; i++) free(ents[i]);
+        free(ents);
+        return json_raise(JSON_ERR_PARSE, "json.entries: out of memory");
+    }
+    int64_t *block = (int64_t *)(intptr_t)h;
+    for (uint64_t i = 0; i < count; i++) block[i] = (int64_t)(intptr_t)ents[i];
+    free(ents);
     tk_current_error = 0;
     return h;
 }
