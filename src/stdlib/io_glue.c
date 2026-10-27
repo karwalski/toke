@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_strhdr.h"   /* 127.170: readln returns a sealed string */
 
 int64_t tk_io_print_w(int64_t s) {
     if (s) printf("%s", (const char *)(intptr_t)s);
@@ -57,9 +58,8 @@ int64_t tk_io_readln_w(void) {
         size_t len = 0;
         while (tmp[len] && tmp[len] != '\n') len++;
         tmp[len] = '\0';
-        char *out = (char *)malloc(len + 1);
+        char *out = tks_dup(tmp, len);   /* len stops at a 0 byte: the C length */
         if (!out) return (int64_t)(intptr_t)"";
-        memcpy(out, tmp, len + 1);
         return (int64_t)(intptr_t)out;
     }
     tk_io_eof_flag = 1;

@@ -1,0 +1,12 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let a=mut.@($str);
+  lp(let i=0;i<n;i=i+1){a=a.push("s\(i)x")};
+  let tot=mut.0;
+  lp(let k=0;k<a.len;k=k+1){let e=a.get(k);tot=tot+e.len};
+  io.println("t=\(tot)");
+  <0
+};

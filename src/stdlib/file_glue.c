@@ -11,6 +11,7 @@
 #include "capabilities.h"   /* 124.4c: fs.read / fs.write capability gates */
 #include "bytes_rt.h"       /* 135.10: @(byte) <-> contiguous uint8_t buffer */
 #include "tk_runtime.h"     /* 135.12: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"      /* 127.170: file.read returns a sealed string */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,7 +90,7 @@ static int64_t file_strarray(const char *op, StrArray arr, int free_data) {
 int64_t tk_file_read_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return file_badarg("file.read: null path");
-    StrFileResult r = file_read((const char *)(intptr_t)path);
+    StrFileResult r = file_read_into((const char *)(intptr_t)path, tks_alloc, tks_seal);
     if (r.is_err) return file_raise_op("file.read", r.err, path);
     return file_ok((int64_t)(intptr_t)r.ok);
 }

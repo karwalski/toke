@@ -9,6 +9,7 @@
  */
 
 #include "str.h"
+#include "tk_strhdr.h"   /* 127.170: the sealed string heap (state at the end of this file) */
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -19,37 +20,35 @@
 uint64_t str_len(const char *s)
 {
     if (!s) return 0;
-    return (uint64_t)strlen(s);
+    return (uint64_t)tk_strlen(s);
 }
 
 const char *str_concat(const char *a, const char *b)
 {
     if (!a) a = "";
     if (!b) b = "";
-    size_t la = strlen(a), lb = strlen(b);
-    char *out = malloc(la + lb + 1);
+    size_t la = tk_strlen(a), lb = tk_strlen(b);
+    char *out = tks_alloc(la + lb);       /* 127.170: sealed below */
     if (!out) return NULL;
     memcpy(out, a, la);
     memcpy(out + la, b, lb);
     out[la + lb] = '\0';
-    return out;
+    return tks_seal(out, la + lb);
 }
 
 StrSliceResult str_slice(const char *s, uint64_t start, uint64_t end)
 {
     StrSliceResult r = {NULL, 0, NULL};
     if (!s) { r.is_err = 1; r.err_msg = "null string"; return r; }
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
     if (start > slen || end > slen || start > end) {
         r.is_err = 1;
         r.err_msg = "slice index out of range";
         return r;
     }
     uint64_t n = end - start;
-    char *out = malloc(n + 1);
+    char *out = tks_dup(s + start, (size_t)n);   /* 127.170: sealed */
     if (!out) { r.is_err = 1; r.err_msg = "allocation failed"; return r; }
-    memcpy(out, s + start, n);
-    out[n] = '\0';
     r.ok = out;
     return r;
 }
@@ -110,7 +109,8 @@ StrArray str_split(const char *s, const char *sep)
     StrArray result = {NULL, 0};
     if (!s || !sep || *sep == '\0') return result;
 
-    size_t seplen = strlen(sep);
+    size_t seplen = tk_strlen(sep);
+    size_t slen = tk_strlen(s);
     /* count occurrences to pre-size the array */
     size_t count = 1;
     const char *p = s;
@@ -125,17 +125,15 @@ StrArray str_split(const char *s, const char *sep)
     const char *next;
     while ((next = strstr(p, sep)) != NULL && i < count - 1) {
         n = (size_t)(next - p);
-        char *piece = malloc(n + 1);
+        char *piece = tks_dup(p, n);          /* 127.170: sealed */
         if (!piece) break;
-        memcpy(piece, p, n);
-        piece[n] = '\0';
         result.data[i++] = piece;
         p = next + seplen;
     }
     /* last segment */
-    n = strlen(p);
-    char *tail = malloc(n + 1);
-    if (tail) { memcpy(tail, p, n); tail[n] = '\0'; result.data[i++] = tail; }
+    n = slen - (size_t)(p - s);
+    char *tail = tks_dup(p, n);
+    if (tail) result.data[i++] = tail;
     result.len = i;
     return result;
 }
@@ -143,38 +141,34 @@ StrArray str_split(const char *s, const char *sep)
 const char *str_trim(const char *s)
 {
     if (!s) return NULL;
-    while (*s && isspace((unsigned char)*s)) s++;
-    size_t len = strlen(s);
+    size_t len = tk_strlen(s);
+    while (len > 0 && isspace((unsigned char)*s)) { s++; len--; }
     while (len > 0 && isspace((unsigned char)s[len - 1])) len--;
-    char *out = malloc(len + 1);
-    if (!out) return NULL;
-    memcpy(out, s, len);
-    out[len] = '\0';
-    return out;
+    return tks_dup(s, len);                   /* 127.170: sealed */
 }
 
 const char *str_upper(const char *s)
 {
     if (!s) return NULL;
-    size_t len = strlen(s);
-    char *out = malloc(len + 1);
+    size_t len = tk_strlen(s);
+    char *out = tks_alloc(len);               /* 127.170: sealed below */
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++)
         out[i] = (char)toupper((unsigned char)s[i]);
     out[len] = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 const char *str_lower(const char *s)
 {
     if (!s) return NULL;
-    size_t len = strlen(s);
-    char *out = malloc(len + 1);
+    size_t len = tk_strlen(s);
+    char *out = tks_alloc(len);               /* 127.170: sealed below */
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++)
         out[i] = (char)tolower((unsigned char)s[i]);
     out[len] = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 ByteArray str_bytes(const char *s)
@@ -359,24 +353,19 @@ int64_t str_index(const char *s, const char *sub)
 const char *str_replace(const char *s, const char *old, const char *new_val)
 {
     if (!s || !old || !new_val) return NULL;
-    size_t oldlen = strlen(old);
-    size_t newlen = strlen(new_val);
+    size_t oldlen = tk_strlen(old);
+    size_t newlen = tk_strlen(new_val);
+    size_t slen = tk_strlen(s);
     if (oldlen == 0) {
         /* nothing to replace — return copy */
-        size_t slen = strlen(s);
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
+        return tks_dup(s, slen);              /* 127.170: sealed */
     }
     /* count occurrences */
     size_t count = 0;
     const char *p = s;
     while ((p = strstr(p, old)) != NULL) { count++; p += oldlen; }
-    size_t slen = strlen(s);
-    size_t outsz = slen + count * (newlen - oldlen) + 1; /* may be smaller */
-    /* newlen >= oldlen path: outsz is fine; newlen < oldlen: shrinks, still fine */
-    char *out = malloc(outsz);
+    size_t outlen = slen - count * oldlen + count * newlen;
+    char *out = tks_alloc(outlen);            /* 127.170: sealed below */
     if (!out) return NULL;
     char *w = out;
     p = s;
@@ -389,64 +378,48 @@ const char *str_replace(const char *s, const char *old, const char *new_val)
         w += newlen;
         p = found + oldlen;
     }
-    size_t tail = strlen(p);
+    size_t tail = slen - (size_t)(p - s);
     memcpy(w, p, tail + 1); /* include NUL */
-    return out;
+    return tks_seal(out, outlen);
 }
 
 const char *str_replace_first(const char *s, const char *old, const char *new_val)
 {
     if (!s || !old || !new_val) return NULL;
-    size_t oldlen = strlen(old);
-    if (oldlen == 0) {
-        size_t slen = strlen(s);
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
+    size_t oldlen = tk_strlen(old);
+    size_t slen = tk_strlen(s);
+    if (oldlen == 0) return tks_dup(s, slen);            /* 127.170: sealed */
     const char *found = strstr(s, old);
-    if (!found) {
-        size_t slen = strlen(s);
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
-    size_t newlen  = strlen(new_val);
+    if (!found) return tks_dup(s, slen);
+    size_t newlen  = tk_strlen(new_val);
     size_t before  = (size_t)(found - s);
-    size_t after   = strlen(found + oldlen);
-    size_t outsz   = before + newlen + after + 1;
-    char *out = malloc(outsz);
+    size_t after   = slen - before - oldlen;
+    size_t outlen  = before + newlen + after;
+    char *out = tks_alloc(outlen);
     if (!out) return NULL;
     memcpy(out, s, before);
     memcpy(out + before, new_val, newlen);
     memcpy(out + before + newlen, found + oldlen, after + 1);
-    return out;
+    return tks_seal(out, outlen);
 }
 
 const char *str_join(const char *sep, StrArray parts)
 {
     if (!sep) sep = "";
-    if (parts.len == 0 || !parts.data) {
-        char *empty = malloc(1);
-        if (!empty) return NULL;
-        empty[0] = '\0';
-        return empty;
-    }
-    size_t seplen = strlen(sep);
+    if (parts.len == 0 || !parts.data) return tks_dup("", 0);   /* 127.170 */
+    size_t seplen = tk_strlen(sep);
     size_t total  = 0;
     uint64_t i;
     for (i = 0; i < parts.len; i++) {
-        if (parts.data[i]) total += strlen(parts.data[i]);
+        if (parts.data[i]) total += tk_strlen(parts.data[i]);
         if (i + 1 < parts.len) total += seplen;
     }
-    char *out = malloc(total + 1);
+    char *out = tks_alloc(total);             /* 127.170: sealed below */
     if (!out) return NULL;
     char *w = out;
     for (i = 0; i < parts.len; i++) {
         if (parts.data[i]) {
-            size_t plen = strlen(parts.data[i]);
+            size_t plen = tk_strlen(parts.data[i]);
             memcpy(w, parts.data[i], plen);
             w += plen;
         }
@@ -456,26 +429,21 @@ const char *str_join(const char *sep, StrArray parts)
         }
     }
     *w = '\0';
-    return out;
+    return tks_seal(out, total);
 }
 
 const char *str_repeat(const char *s, uint64_t n)
 {
     if (!s) return NULL;
-    if (n == 0) {
-        char *empty = malloc(1);
-        if (!empty) return NULL;
-        empty[0] = '\0';
-        return empty;
-    }
-    size_t slen  = strlen(s);
+    if (n == 0) return tks_dup("", 0);        /* 127.170: sealed */
+    size_t slen  = tk_strlen(s);
     size_t total = slen * (size_t)n;
-    char *out = malloc(total + 1);
+    char *out = tks_alloc(total);
     if (!out) return NULL;
     for (uint64_t i = 0; i < n; i++)
         memcpy(out + i * slen, s, slen);
     out[total] = '\0';
-    return out;
+    return tks_seal(out, total);
 }
 
 /* --- Story 28.1.2: prefix/suffix and line operations --------------------- */
@@ -490,8 +458,8 @@ int str_starts_with(const char *s, const char *prefix)
 int str_ends_with(const char *s, const char *suffix)
 {
     if (!s || !suffix) return 0;
-    size_t slen    = strlen(s);
-    size_t suflen  = strlen(suffix);
+    size_t slen    = tk_strlen(s);
+    size_t suflen  = tk_strlen(suffix);
     if (suflen > slen) return 0;
     return strcmp(s + slen - suflen, suffix) == 0 ? 1 : 0;
 }
@@ -562,51 +530,41 @@ uint64_t str_count(const char *s, const char *sub)
 const char *str_pad_left(const char *s, uint64_t width, char ch)
 {
     if (!s) return NULL;
-    size_t slen = strlen(s);
-    if ((uint64_t)slen >= width) {
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
+    size_t slen = tk_strlen(s);
+    if ((uint64_t)slen >= width) return tks_dup(s, slen);   /* 127.170: sealed */
     size_t pad = (size_t)(width - (uint64_t)slen);
-    char *out = malloc(width + 1);
+    char *out = tks_alloc((size_t)width);
     if (!out) return NULL;
     memset(out, ch, pad);
     memcpy(out + pad, s, slen);
     out[width] = '\0';
-    return out;
+    return tks_seal(out, ch ? (size_t)width : 0);   /* a 0 pad ends the C string */
 }
 
 const char *str_pad_right(const char *s, uint64_t width, char ch)
 {
     if (!s) return NULL;
-    size_t slen = strlen(s);
-    if ((uint64_t)slen >= width) {
-        char *copy = malloc(slen + 1);
-        if (!copy) return NULL;
-        memcpy(copy, s, slen + 1);
-        return copy;
-    }
+    size_t slen = tk_strlen(s);
+    if ((uint64_t)slen >= width) return tks_dup(s, slen);   /* 127.170: sealed */
     size_t pad = (size_t)(width - (uint64_t)slen);
-    char *out = malloc(width + 1);
+    char *out = tks_alloc((size_t)width);
     if (!out) return NULL;
     memcpy(out, s, slen);
     memset(out + slen, ch, pad);
     out[width] = '\0';
-    return out;
+    return tks_seal(out, ch ? (size_t)width : slen);   /* a 0 pad ends the C string */
 }
 
 const char *str_reverse(const char *s)
 {
     if (!s) return NULL;
-    size_t len = strlen(s);
-    char *out = malloc(len + 1);
+    size_t len = tk_strlen(s);
+    char *out = tks_alloc(len);               /* 127.170: sealed below */
     if (!out) return NULL;
     for (size_t i = 0; i < len; i++)
         out[i] = s[len - 1 - i];
     out[len] = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 int str_is_alpha(const char *s)
@@ -653,28 +611,24 @@ int str_is_space(const char *s)
 
 const char *str_trimprefix(const char *s, const char *prefix)
 {
-    if (!s) return strdup("");
-    if (!prefix || prefix[0] == '\0') return strdup(s);
-    size_t plen = strlen(prefix);
-    if (strncmp(s, prefix, plen) == 0)
-        return strdup(s + plen);
-    return strdup(s);
+    if (!s) return tks_dup("", 0);            /* 127.170: sealed */
+    size_t slen = tk_strlen(s);
+    if (!prefix || prefix[0] == '\0') return tks_dup(s, slen);
+    size_t plen = tk_strlen(prefix);
+    if (plen <= slen && memcmp(s, prefix, plen) == 0)
+        return tks_dup(s + plen, slen - plen);
+    return tks_dup(s, slen);
 }
 
 const char *str_trimsuffix(const char *s, const char *suffix)
 {
-    if (!s) return strdup("");
-    if (!suffix || suffix[0] == '\0') return strdup(s);
-    size_t slen   = strlen(s);
-    size_t suflen = strlen(suffix);
-    if (slen >= suflen && memcmp(s + slen - suflen, suffix, suflen) == 0) {
-        char *r = malloc(slen - suflen + 1);
-        if (!r) return strdup(s);
-        memcpy(r, s, slen - suflen);
-        r[slen - suflen] = '\0';
-        return r;
-    }
-    return strdup(s);
+    if (!s) return tks_dup("", 0);            /* 127.170: sealed */
+    size_t slen   = tk_strlen(s);
+    if (!suffix || suffix[0] == '\0') return tks_dup(s, slen);
+    size_t suflen = tk_strlen(suffix);
+    if (slen >= suflen && memcmp(s + slen - suflen, suffix, suflen) == 0)
+        return tks_dup(s, slen - suflen);
+    return tks_dup(s, slen);
 }
 
 int64_t str_lastindex(const char *s, const char *sub)
@@ -713,3 +667,171 @@ StrBracketResult str_matchbracket(const char *s)
 }
 
 /* --- Story 55.4.6: string builder ---*/
+
+/* --- Story 127.170: the sealed string heap (tk_strhdr.h) -----------------
+ *
+ * The state behind tk_strhdr.h, in the one translation unit every compiled
+ * toke program and the compiler link.  See the header for the layout and the
+ * rule; docs/runtime-abi.md §3.1 for the design and the gates.
+ */
+char    *tks_lo;          /* region base; NULL until reserved */
+uint8_t *tks_bits;        /* TKS_RESERVE/128 bytes, one bit per granule */
+int      tks_verify;      /* set once, before tks_lo is published */
+
+void tks_verify_fail(const char *p, int64_t hdr)
+{
+    fprintf(stderr, "TK_STR_VERIFY: header %lld != strlen %zu at %p "
+            "(a sealed string was written after tks_seal)\n",
+            (long long)hdr, strlen(p), (const void *)p);
+    fflush(stderr);
+    abort();
+}
+
+#if TKS_HEAP
+#include <sys/mman.h>
+#include <sched.h>
+#include <pthread.h>
+
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define TKS_ASAN 1
+#endif
+#endif
+#if !defined(TKS_ASAN) && defined(__SANITIZE_ADDRESS__)
+#define TKS_ASAN 1
+#endif
+#ifdef TKS_ASAN
+#include <sanitizer/asan_interface.h>
+#define TKS_REDZONE 16    /* poisoned granule after every string under ASan */
+#else
+#define TKS_REDZONE 0
+#endif
+
+#ifndef MAP_NORESERVE
+#define MAP_NORESERVE 0
+#endif
+#ifndef MAP_ANON
+#define MAP_ANON MAP_ANONYMOUS
+#endif
+
+static size_t tks_top;        /* bytes handed out (may run past the end) */
+static size_t tks_committed;  /* region bytes mprotect'd read/write */
+static int    tks_state;      /* 0 unreserved, 2 ready, 3 failed */
+static int    tks_lock_word;
+
+static void tks_lock(void)
+{
+    while (__atomic_exchange_n(&tks_lock_word, 1, __ATOMIC_ACQUIRE))
+        sched_yield();
+}
+static void tks_unlock(void) { __atomic_store_n(&tks_lock_word, 0, __ATOMIC_RELEASE); }
+
+/* Reserve the region and the bitmap, once.  Returns 1 when the heap is
+ * usable.  Nothing is committed here: both mappings are PROT_NONE. */
+static int tks_reserve(void)
+{
+    int st = __atomic_load_n(&tks_state, __ATOMIC_ACQUIRE);
+    if (st) return st == 2;
+    tks_lock();
+    st = __atomic_load_n(&tks_state, __ATOMIC_RELAXED);
+    if (!st) {
+        const char *e = getenv("TK_STR_VERIFY");
+        tks_verify = (TK_STR_VERIFY || (e && e[0] == '1')) ? 1 : 0;
+        void *r = mmap(NULL, (size_t)TKS_RESERVE, PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+        void *b = mmap(NULL, (size_t)(TKS_RESERVE / 128), PROT_NONE,
+                       MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+        if (r == MAP_FAILED || b == MAP_FAILED) {
+            if (r != MAP_FAILED) munmap(r, (size_t)TKS_RESERVE);
+            if (b != MAP_FAILED) munmap(b, (size_t)(TKS_RESERVE / 128));
+            st = 3;
+        } else {
+            tks_bits = (uint8_t *)b;
+            __atomic_store_n(&tks_lo, (char *)r, __ATOMIC_RELEASE);
+            st = 2;
+            /* The http server forks workers.  A fork while another thread
+             * holds the lock (mid-commit) would leave the child spinning
+             * forever; hold it across fork so the child's copy is free. */
+            (void)pthread_atfork(tks_lock, tks_unlock, tks_unlock);
+        }
+        __atomic_store_n(&tks_state, st, __ATOMIC_RELEASE);
+    }
+    tks_unlock();
+    return st == 2;
+}
+
+/* Make region bytes [0, end) and their bitmap read/write.  Returns 0 when
+ * the OS refuses (strict overcommit, RLIMIT_AS): the caller falls back. */
+static int tks_commit(size_t end)
+{
+    int ok = 1;
+    tks_lock();
+    size_t have = __atomic_load_n(&tks_committed, __ATOMIC_RELAXED);
+    while (have < end) {
+        if (mprotect(tks_lo + have, TKS_CHUNK, PROT_READ | PROT_WRITE) != 0 ||
+            mprotect(tks_bits + have / 128, TKS_CHUNK / 128,
+                     PROT_READ | PROT_WRITE) != 0) { ok = 0; break; }
+#ifdef TKS_ASAN
+        /* Fresh pages are unpoisoned; each allocation poisons its own tail. */
+#endif
+        have += TKS_CHUNK;
+        __atomic_store_n(&tks_committed, have, __ATOMIC_RELEASE);
+    }
+    tks_unlock();
+    return ok;
+}
+
+char *tks_alloc(size_t n)
+{
+    if (n < (size_t)TKS_RESERVE && tks_reserve()) {
+        size_t need = (8 + n + 1 + TKS_REDZONE + 15) & ~(size_t)15;
+        size_t off = __atomic_fetch_add(&tks_top, need, __ATOMIC_RELAXED);
+        if (off + need <= (size_t)TKS_RESERVE &&
+            (off + need <= __atomic_load_n(&tks_committed, __ATOMIC_ACQUIRE) ||
+             tks_commit(off + need))) {
+            char *p = tks_lo + off + 8;
+#ifdef TKS_ASAN
+            /* Everything past the NUL to the end of the block is off limits,
+             * so an over-read of a sealed string is reported as it would be
+             * for a malloc'd one. */
+            ASAN_POISON_MEMORY_REGION(p + n + 1, (size_t)(tks_lo + off + need - (p + n + 1)));
+#endif
+            return p;
+        }
+    }
+    return (char *)malloc(n + 1);
+}
+
+char *tks_seal(char *p, size_t n)
+{
+    char *lo = __atomic_load_n(&tks_lo, __ATOMIC_ACQUIRE);
+    uint64_t o = (uint64_t)((uintptr_t)p - (uintptr_t)lo);
+    if (p && lo && o < TKS_RESERVE && (o & 15) == 8) {
+        int64_t len = (int64_t)n;
+        memcpy(p - 8, &len, sizeof len);
+        uint64_t g = o >> 4;
+        __atomic_fetch_or(&tks_bits[g >> 3], (uint8_t)(1u << (g & 7)), __ATOMIC_RELEASE);
+    }
+    return p;
+}
+
+#else /* !TKS_HEAP: every string is a malloc'd, unsealed C string */
+
+char *tks_alloc(size_t n) { return (char *)malloc(n + 1); }
+char *tks_seal(char *p, size_t n) { (void)n; return p; }
+
+#endif /* TKS_HEAP */
+
+char *tks_dup(const char *s, size_t n)
+{
+    char *p = tks_alloc(n);
+    if (!p) return NULL;
+    memcpy(p, s, n);
+    p[n] = '\0';
+    return tks_seal(p, n);
+}
+
+char *tks_strdup(const char *s)
+{
+    return tks_dup(s, tk_strlen(s));
+}

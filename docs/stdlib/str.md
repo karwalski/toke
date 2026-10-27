@@ -131,7 +131,7 @@ f=example():void{
 
 `str.indexof` with a start offset: returns the byte offset (counted from the start of `s`, not from `start`) of the first occurrence of `sub` at or after byte `start`, or `-1`. A negative `start` searches from 0; a `start` past the end of `s` returns `-1`. Use it to walk a string without slicing off the tail before each search.
 
-The bounds check reads the `start` bytes before the search point (toke strings store no length), so each call costs O(`start`) reads — but no allocation and no copy, where slicing the tail allocated and copied the rest of the string on every call.
+The bounds check is O(1) when `s` carries its length — a string from interpolation, `s.concat`, `slice`, the builder's `build`, `split`, `join`, `replace`, `file.read` or `io.readln` does (runtime-abi §3.1). For any other string it reads the `start` bytes before the search point, so the call costs O(`start`) reads. Either way there is no allocation and no copy, where slicing the tail allocated and copied the rest of the string on every call.
 
 ```toke
 m=test;

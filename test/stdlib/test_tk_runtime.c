@@ -274,17 +274,16 @@ static void test_print_arr_bool(void)
 /* 13. str_concat */
 static void test_str_concat(void)
 {
+    /* 127.170: a toke string is never freed (runtime-abi §3), and a sealed
+     * one (tk_strhdr.h) did not come from malloc, so free() would abort. */
     char *s = tk_str_concat("foo", "bar");
     ASSERT_STREQ(s, "foobar", "str_concat: 'foo'+'bar' == 'foobar'");
-    free(s);
 
     char *e = tk_str_concat("", "x");
     ASSERT_STREQ(e, "x", "str_concat: ''+'x' == 'x'");
-    free(e);
 
     char *n = tk_str_concat(NULL, "hi");
     ASSERT_STREQ(n, "hi", "str_concat: NULL+'hi' == 'hi'");
-    free(n);
 }
 
 /* 14. str_len */

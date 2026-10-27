@@ -151,7 +151,7 @@ static FILE *fopen_nofollow(const char *path, const char *mode)
  * fd must already be O_NONBLOCK.  Returns the NUL-terminated buffer, or NULL
  * with *err filled.
  */
-static char *file_read_fifo(int fd, FileErr *err)
+static char *file_read_fifo(int fd, FileErr *err, size_t *outlen)
 {
     size_t cap = 65536, len = 0;
     char *buf = malloc(cap + 1);
@@ -193,10 +193,17 @@ static char *file_read_fifo(int fd, FileErr *err)
         return NULL;
     }
     buf[len] = '\0';
+    *outlen = len;
     return buf;
 }
 
 StrFileResult file_read(const char *path)
+{
+    return file_read_into(path, NULL, NULL);
+}
+
+StrFileResult file_read_into(const char *path, char *(*alloc)(size_t n),
+                             char *(*seal)(char *p, size_t n))
 {
     StrFileResult r = {NULL, 0, {0, NULL}};
     /* 121.73: opened as the byte calls' file_open_for_read opens -- with
@@ -226,9 +233,20 @@ StrFileResult file_read(const char *path)
      * "seek failed" when a writer was there, and hang in open when none was);
      * read it to end-of-file instead. */
     if (S_ISFIFO(st.st_mode)) {
-        char *fb = file_read_fifo(fd, &r.err);
+        size_t flen = 0;
+        char *fb = file_read_fifo(fd, &r.err, &flen);
         close(fd);
         if (!fb) { r.is_err = 1; return r; }
+        if (alloc) {                       /* 127.170: one copy into the caller's storage */
+            const char *nul = memchr(fb, '\0', flen);
+            size_t clen = nul ? (size_t)(nul - fb) : flen;
+            char *p = alloc(clen);
+            if (!p) { free(fb); r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r; }
+            memcpy(p, fb, clen + 1);
+            free(fb);
+            r.ok = seal ? seal(p, clen) : p;
+            return r;
+        }
         r.ok = fb;
         return r;
     }
@@ -258,7 +276,7 @@ StrFileResult file_read(const char *path)
         r.is_err = 1; r.err = make_err(e, "seek failed"); return r;
     }
 
-    char *buf = malloc((size_t)sz + 1);
+    char *buf = alloc ? alloc((size_t)sz) : malloc((size_t)sz + 1);
     if (!buf) {
         fclose(f);
         r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r;
@@ -266,6 +284,10 @@ StrFileResult file_read(const char *path)
     size_t nread = fread(buf, 1, (size_t)sz, f);
     fclose(f);
     buf[nread] = '\0';
+    if (seal) {                            /* 127.170: the C-string length */
+        const char *nul = memchr(buf, '\0', nread);
+        buf = seal(buf, nul ? (size_t)(nul - buf) : nread);
+    }
     r.ok = buf;
     return r;
 }

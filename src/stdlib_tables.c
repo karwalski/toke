@@ -776,15 +776,22 @@ const StdlibDecl g_stdlib_decls[] = {
     {"tk_array_concat", "declare i8* @tk_array_concat(i8*, i8*)", 0},
     {"tk_str_concat", "declare i8* @tk_str_concat(i8*, i8*)", 0},
     {"tk_str_join_n", "declare i8* @tk_str_join_n(i64, ...)", 0},  /* 127.26: interpolation */
-    {"tk_str_len", "declare i64 @tk_str_len(i8*)", 0},
+    {"tk_str_len", "declare i64 @tk_str_len(i8*) nounwind willreturn readonly", 0},
     {"tk_str_cmp", "declare i64 @tk_str_cmp(i8*, i8*)", 0},  /* 127.83: NULL-safe ==/!=/ordering */
-    {"tk_str_char_at", "declare i64 @tk_str_char_at(i8*, i64)", 0},
+    {"tk_str_char_at", "declare i64 @tk_str_char_at(i8*, i64) nounwind willreturn readonly", 0},
     {"tk_json_print_bool", "declare void @tk_json_print_bool(i64)", 0},
     {"tk_json_print_arr", "declare void @tk_json_print_arr(i8*)", 0},
     {"tk_json_print_str", "declare void @tk_json_print_str(i8*)", 0},
-    /* std.str wrappers */
+    /* std.str wrappers.
+     * 127.170 (runtime-abi §3.1 option S0): the pure length readers --
+     * tk_str_len(_w), tk_str_char_at / tk_str_charat_w -- are declared
+     * `nounwind willreturn readonly`: they write no memory the program can
+     * see and always return (TK_STR_VERIFY's abort is a diagnostic stop, not
+     * a result), so LLVM may hoist `.len` out of a loop condition whose body
+     * writes no memory and CSE repeated reads.  `readonly` rather than
+     * `memory(read)`: LLVM >= 16 upgrades it, and older LLVM only parses it. */
     {"tk_str_concat_w", "declare i64 @tk_str_concat_w(i64, i64)", 0},
-    {"tk_str_len_w", "declare i64 @tk_str_len_w(i64)", 0},
+    {"tk_str_len_w", "declare i64 @tk_str_len_w(i64) nounwind willreturn readonly", 0},
     {"tk_map_len_w", "declare i64 @tk_map_len_w(i64)", 0},  /* 127.8: map.len */
     {"tk_map_contains_w", "declare i64 @tk_map_contains_w(i64, i64)", 0},  /* 127.41: m.contains(k) */
     {"tk_map_getor_w", "declare i64 @tk_map_getor_w(i64, i64, i64)", 0},   /* 127.41: m.getor(k;d) */
@@ -795,7 +802,7 @@ const StdlibDecl g_stdlib_decls[] = {
     {"tk_str_fromi64_w", "declare i64 @tk_str_fromi64_w(i64)", 0},
     {"tk_str_to_int", "declare i64 @tk_str_to_int(i64)", 0},
     /* Instance method string functions (101.R3a) */
-    {"tk_str_charat_w", "declare i64 @tk_str_charat_w(i64, i64)", 0},
+    {"tk_str_charat_w", "declare i64 @tk_str_charat_w(i64, i64) nounwind willreturn readonly", 0},
     {"tk_str_find_w", "declare i64 @tk_str_find_w(i64, i64)", 0},
     {"tk_str_starts_w", "declare i64 @tk_str_starts_w(i64, i64)", 0},
     {"tk_str_substr_w", "declare i64 @tk_str_substr_w(i64, i64, i64)", 0},
