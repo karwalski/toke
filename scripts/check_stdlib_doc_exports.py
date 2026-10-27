@@ -110,13 +110,11 @@ MISSING_PAGES = {
     "mem": "std.mem: raw memory primitives (tk_mem_*), no page written -- pending",
     "queue": "std.queue: FIFO container (76.1.7b), no page written -- pending",
     "set": "std.set: unique-element container (76.1.7b), no page written -- pending",
-    "soap": "std.soap (131.46): no page written -- pending",
     "stack": "std.stack: LIFO container (76.1.7b), no page written -- pending",
     "std": "std.homedir (138.11): the one-function root module, no page -- pending",
     "sys": "std.sys: no page written -- pending",
     "task": "std.task: structured concurrency (76.1.1a), no page written -- pending",
     "vec": "std.vec: growable vector (114.18), no page written -- pending",
-    "xml": "std.xml (131.46): no page written -- pending",
 }
 
 

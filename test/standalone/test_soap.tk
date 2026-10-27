@@ -1,14 +1,29 @@
+(* test_soap.tk -- std.soap builds and extracts envelopes.  131.45: it printed
+ * no PASS/FAIL lines, so run_all.sh counted it as 0 passed / 0 failed
+ * whatever happened; each check now reports.  131.48: extractfault on a
+ * fault-free envelope is "". *)
 m=test;
+i=io:std.io;
 i=soap:std.soap;
 i=str:std.str;
+
+f=ck(name:str;ok:bool):i64{
+  if(ok){ io.println("PASS \(name)"); <0 };
+  io.println("FAIL \(name)");
+  <1
+};
+
 f=main():i64{
   let fails=mut.0;
   let env=soap.envelope("<GetPrice><Item>Widget</Item></GetPrice>";"");
-  if(!str.contains(env;"soap:Envelope")){ fails=fails+1 };
-  if(!str.contains(env;"GetPrice")){ fails=fails+1 };
+  fails=fails+ck("envelope-tag";str.contains(env;"soap:Envelope"));
+  fails=fails+ck("envelope-body";str.contains(env;"GetPrice"));
   let fault=soap.fault("Server";"Internal Error";"details");
-  if(!str.contains(fault;"faultcode")){ fails=fails+1 };
+  fails=fails+ck("fault-code";str.contains(fault;"<faultcode>Server</faultcode>"));
   let body=soap.extractbody(env);
-  if(!str.contains(body;"GetPrice")){ fails=fails+1 };
+  fails=fails+ck("extractbody";body=="<GetPrice><Item>Widget</Item></GetPrice>");
+  fails=fails+ck("extractfault-none";soap.extractfault(env)=="");
+  let fenv=soap.envelope(fault;"");
+  fails=fails+ck("extractfault";str.contains(soap.extractfault(fenv);"Internal Error"));
   <fails
 };
