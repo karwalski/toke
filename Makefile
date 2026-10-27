@@ -1218,7 +1218,16 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+#
+# 136.79 — `test-ci-green` likewise ran only in the GitHub workflow
+# (stdlib-tests), never in `make ci` or the conform gate, so the batches that
+# gate locally never saw it. test-stdlib-auth-flow-integration went red on
+# 2026-09-29 (121.20 made jwtverify reject expired tokens, as specified, and
+# the test still asserted the old acceptance) and test-stdlib-glue-contract
+# went red with 127.251 (an unescaped `$toonval` under `set -u`); both sat red
+# on main while the workflow was already red for other reasons. It is a
+# prerequisite of `ci` as of this line. 81 targets.
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).

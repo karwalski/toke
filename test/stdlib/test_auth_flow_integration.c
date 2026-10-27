@@ -14,7 +14,7 @@
  * Scenarios:
  *   1. Generate API key, sign JWT, build Bearer header, build JSON payload,
  *      encrypt with AES-256-GCM, decrypt, verify JWT, check payload match.
- *   2. Expired JWT should fail expiry check.
+ *   2. Expired JWT fails jwtverify ("token expired") and jwtexpired.
  *   3. Wrong key should fail decrypt.
  */
 
@@ -172,7 +172,7 @@ static void test_auth_protected_api_flow(void)
  * ----------------------------------------------------------------------- */
 static void test_expired_jwt_fails_verify(void)
 {
-    printf("\n--- Test 2: Expired JWT fails expiry check ---\n");
+    printf("\n--- Test 2: Expired JWT fails verify and expiry check ---\n");
 
     ByteArray secret = ba_from_str("expired-jwt-test-secret-key-256!");
 
@@ -189,10 +189,16 @@ static void test_expired_jwt_fails_verify(void)
     ASSERT(jwt_res.is_err == 0, "jwtsign for expired token succeeds (signing is allowed)");
     ASSERT(jwt_res.ok != NULL, "jwtsign returns expired token");
 
-    /* Signature verification still passes (jwtverify does not check expiry) */
+    /* jwtverify checks the validity window as well as the signature
+     * (121.20 AUTH-01, docs/stdlib/auth.md): a token at or after its exp
+     * fails with "token expired" -- not with a signature error, so the
+     * signature itself was good.  136.79: this used to assert the
+     * pre-121.20 behaviour, that an expired token verified. */
     JwtVerifyResult verify = auth_jwtverify(jwt_res.ok, secret);
-    ASSERT(verify.is_err == 0,
-           "jwtverify signature check passes for expired token");
+    ASSERT(verify.is_err == 1,
+           "jwtverify rejects an expired token");
+    ASSERT(verify.err_msg != NULL && strcmp(verify.err_msg, "token expired") == 0,
+           "jwtverify's error for an expired token is \"token expired\"");
 
     /* But the expiry check should detect it */
     int expired = auth_jwtexpired(jwt_res.ok);
