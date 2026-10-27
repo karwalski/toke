@@ -42,6 +42,12 @@
     },
     {
       "kind": "func",
+      "name": "log.closeerror",
+      "params": [],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
       "name": "log.accessformat",
       "params": [
         "str"

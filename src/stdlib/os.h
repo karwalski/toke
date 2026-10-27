@@ -54,6 +54,8 @@ int64_t tk_os_o_rdwr(void);
 int64_t tk_os_o_creat(void);
 int64_t tk_os_o_trunc(void);
 int64_t tk_os_o_append(void);
+int64_t tk_os_o_nofollow(void);   /* 136.77 */
+int64_t tk_os_onofollow_w(void);  /* 136.77: os.onofollow() */
 int64_t tk_os_stdin_fd(void);
 int64_t tk_os_stdout_fd(void);
 int64_t tk_os_stderr_fd(void);

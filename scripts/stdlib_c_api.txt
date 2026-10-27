@@ -28,7 +28,6 @@
 tk_cap_grants c-api src/stdlib/capabilities.h,test/stdlib/test_capabilities.c   # "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c
 
 # ── std.log C runtime ───────────────────────────────────────────────────────
-tk_error_log_close c-api src/stdlib/log.h   # documented in log.h's error-log block as the pair of tk_error_log_open (which log_glue.c calls)
 tk_log_security c-api src/stdlib/log.h,docs/stdlib/log.md,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh   # the C runtime's security-event stream; log.md: "not yet part of the std.log interface"
 tk_log_security_set_output c-api src/stdlib/log.h,docs/stdlib/log.md,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh   # routes that stream to its own file; same log.md paragraph
 tk_log_set_output c-api src/stdlib/log.h,test/stdlib/test_log.c,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh,test/conform/C709_log_text_logfmt_quoting.sh   # C-side log destination; the conform harnesses drive the logger through it
@@ -67,4 +66,3 @@ tk_webview_set_title c-api src/stdlib/webview.h,test/stdlib/test_webview.c   # t
 
 # ── genuinely dead ──────────────────────────────────────────────────────────
 tk_array_retain dead docs/decisions/ADR-0006.md   # ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c says so (136.76)
-tk_os_o_nofollow dead   # no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story)

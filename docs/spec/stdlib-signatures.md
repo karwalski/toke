@@ -345,6 +345,7 @@ f=ordwr():i64
 f=ocreat():i64
 f=otrunc():i64
 f=oappend():i64
+f=onofollow():i64
 f=stdinfd():i64
 f=stdoutfd():i64
 f=stderrfd():i64
@@ -454,7 +455,11 @@ f=info(msg:$str):void
 f=warn(msg:$str):void
 f=error(msg:$str):void
 f=debug(msg:$str):void
+f=closeerror():bool
 ```
+
+`closeerror` (136.77) flushes, closes and unregisters the error log
+`log.openerror` opened; `true` if one was open. See [std.log](/docs/stdlib/log).
 
 ### std.test
 
