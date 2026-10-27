@@ -58,10 +58,12 @@ f=main():i64{<pick(0)};')" "1 0 match has 3 arms, but the sum type of the matche
 #    of its variants (a std call's `$str` result, first arm `$ok`, so the
 #    string chain declines — see C370).  127.242 (3): a str is not a sum
 #    type, and the message no longer calls it one ("... is not a variant of
-#    sum type '$str'" until then).
+#    sum type '$str'" until then).  127.292: arm labels must name a type or
+#    variant in scope (E3011 at name resolution), so the later arms are real
+#    names ($err, $str) that still name no variant of a str.
 expect "2-not-a-variant" "$(e9005 'm=main;i=str:std.str;
 f=pick(s:$str):i64{
-  <mt str.lower(s) {$ok:w 1;$x:w 2;$y:w 3}
+  <mt str.lower(s) {$ok:w 1;$err:w 2;$str:w 3}
 };
 f=main():i64{<pick("x")};')" "1 0 match has 3 arms, but the matched value is a 'str', not a sum type, so '\$ok' names no variant of it"
 
