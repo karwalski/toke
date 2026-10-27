@@ -75,7 +75,7 @@ SKIP = ("reference/errors.md", "spec/errors.md", "known-limitations.md",
         "reference/migration.md",
         # lint-rules pages demonstrate violations on purpose (unreachable code,
         # undeclared identifiers, underscore idents) — they MUST NOT compile.
-        "lint-rules-v1.md", "compiler/lint-rules-v1.md",
+        "compiler/lint-rules-v1.md",
         # about/web-server.md is an illustrative marketing example using an
         # aspirational API surface (store.to_json/push/get, http.rate_limit that
         # 120.13 found is dead); needs a real-API rewrite — tracked in 119.8.
@@ -252,7 +252,8 @@ CANARY_LINK_ONLY = [
 # not recompute the judge's numeric score -- its weights live in toke-corpus,
 # and this script reads nothing outside this repository.
 #
-# The rule set is read from docs/lint-rules-v1.md ("## Pattern rules"), the
+# The rule set is read from docs/compiler/lint-rules-v1.md ("## Pattern
+# rules"; the one copy since 119.8 deleted the stray docs/lint-rules-v1.md), the
 # normative list, so a new pattern rule is picked up without editing this.
 #
 # 132.99: a page that shows a deliberate "Not this" counter-example (guide/11's
@@ -262,7 +263,7 @@ CANARY_LINK_ONLY = [
 # as a would-fail. A marker on a block with no gated hit is listed as STALE.
 # `make check-doc-patterns` runs this report.
 LINT_RULES_MD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             "docs", "lint-rules-v1.md")
+                             "docs", "compiler", "lint-rules-v1.md")
 JUDGE_GATE = ("error", "warning")     # idiom_judge.GATE_SEVERITIES
 ALLOW_MARK = "<!-- pattern-report: counter-example -->"
 ALLOW_LOOKBACK = 3                    # lines above the opening fence
@@ -278,7 +279,7 @@ f=main():i64{
 
 
 def pattern_rules():
-    """Rule ids under '## Pattern rules' in docs/lint-rules-v1.md."""
+    """Rule ids under '## Pattern rules' in docs/compiler/lint-rules-v1.md."""
     text = open(LINT_RULES_MD, encoding="utf-8").read()
     m = re.search(r"^## Pattern rules.*?$(.*?)(?=^## )", text, re.M | re.S)
     return set(re.findall(r"^### `([a-z0-9-]+)`", m.group(1), re.M)) if m else set()

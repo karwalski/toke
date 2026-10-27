@@ -13,7 +13,7 @@
  *   unused-let            — `let x = expr;` where x is never referenced
  *   mutable-never-mutated — `let x=mut.v` where x is never reassigned
  *
- * Pattern rules (131.9, docs/lint-rules-v1.md "Pattern rules"):
+ * Pattern rules (131.9, docs/compiler/lint-rules-v1.md "Pattern rules"):
  *   mut-flag-if            — `let x=mut.<lit>;` written only by the next if/el
  *   flag-soup              — ≥2 consecutive ifs each assigning x a literal
  *   string-concat-chain    — concat nested ≥ 2 deep
