@@ -112,6 +112,7 @@ http_set_cookie_header gap        # no wrapper, no .tki entry (found 135.19: hid
 http_set_limits gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)
 http_shutdown gap        # no wrapper, no .tki entry
 json_from_pairs gap        # no wrapper, no .tki entry
+json_merge gap        # no wrapper, no .tki entry (113.B.5: json.set no longer reaches it -- json_setmember keeps member order)
 json_pretty gap        # no wrapper, no .tki entry
 json_type gap        # no wrapper, no .tki entry
 llm_embedding gap        # no wrapper, no .tki entry (found 135.19: hidden by the comment-blind regex)

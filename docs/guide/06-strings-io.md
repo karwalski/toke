@@ -211,13 +211,14 @@ f=jsontouser(s:$str):$user!$jsonerr{
 
 ### Working with dynamic JSON
 
-For JSON whose structure you do not know at compile time, use `json.get` to extract fields:
+For JSON whose structure you do not know at compile time, list its members with `json.keys`, take any member's value with `json.get` (or a nested one with `json.at`), and read it with a typed reader -- the key `""` reads a value that is not an object:
 
 ```text
 f=getname(raw:$str):$str!$jsonerr{
   let obj=json.dec(raw)!$jsonerr;
-  let name=json.get(obj;"name")!$jsonerr;
-  <name as $str;
+  let v=json.get(obj;"name")!$jsonerr;
+  let name=json.str(v;"")!$jsonerr;
+  <name;
 };
 ```
 

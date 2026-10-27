@@ -101,6 +101,8 @@ f=example():void{
 
 Extracts a string value from the JSON object by key, returning `$jsonerr.$missing` if the key does not exist or `$jsonerr.$type` if the value at that key is not a string.
 
+**The key `""` on a value that is not an object** names the value itself (113.B.5), the convention `json.arr(j;"")` already uses for a top-level array. It applies to all five scalar readers (`json.str`, `json.u64`, `json.i64`, `json.f64`, `json.bool`), so a `$jsonval` that holds a scalar -- from `json.get`, `json.at` or an element of `json.arr` -- has a typed read: `json.i64(n;"")` where `n` holds `150`. On an object, `""` still names the member called `""`. Member names are matched with their JSON escapes decoded, so `"q\"k"` in the text is found by the key `q"k`.
+
 The JSON escapes are decoded (138.12): `\n` `\t` `\r` `\b` `\f` are their control characters, `\"` `\\` `\/` their byte, and `\uXXXX` (a surrogate pair included) the code point as UTF-8; `\u0000` becomes U+FFFD, because a `$str` cannot hold a NUL. Before 138.12 the byte after each backslash was copied, so `"a\nb"` read back as `anb`. `json.keys` decodes keys the same way.
 
 ```toke
@@ -183,9 +185,24 @@ f=example():void{
 };
 ```
 
+### json.get(j: $jsonval; key: $str): $jsonval!$jsonerr
+
+Returns the value of the member named exactly `key`, whatever its JSON type, as a `$jsonval`: read it further with the typed readers (an object by key, a scalar with the key `""`), or nest it into output with `json.setval`. Returns `$jsonerr.$type` if `j` is not an object and `$jsonerr.$missing` if it has no such member. Unlike `json.at`, the key is not split on `.`, so every name `json.keys` lists can be read back (113.B.5; before it, `json.get` was an untyped alias of `json.str`).
+
+```toke
+i=json:std.json;
+i=io:std.io;
+f=example():void{
+  let j=mt json.dec("{\"a.b\":{\"port\":8080}}") {$ok:v v;$err:e io.exit(1)};
+  let ab=mt json.get(j;"a.b") {$ok:v v;$err:e j};
+  let p=mt json.get(ab;"port") {$ok:v v;$err:e j};
+  let port=json.i64(p;"");
+};
+```
+
 ### json.keys(j: $jsonval): @($str)!$jsonerr
 
-Returns the top-level key names of a JSON object as an array of strings. Returns `$jsonerr.$type` if `j` is not an object; an empty object returns an empty array.
+Returns the top-level key names of a JSON object as an array of strings, in document order, with their JSON escapes decoded. Returns `$jsonerr.$type` if `j` is not an object; an empty object returns an empty array. (Before 113.B.5 both cases returned a bare null handle and the export was untyped.)
 
 ```toke
 i=json:std.json;
@@ -196,9 +213,22 @@ f=example():void{
 };
 ```
 
+### json.entries(j: $jsonval): @($str)!$jsonerr
+
+Returns one `"key=value"` string per member, in document order: the key with its escapes decoded, `=`, then the member's value as **JSON text** -- a string keeps its quotes (`name="alice"`), a number, bool, null, object or array is its literal text (`age=30`, `tags=["a","b"]`). Split an entry at its first `=`; a key that itself holds `=` cannot be told apart that way, so read such a member with `json.keys` and `json.get`. Returns `$jsonerr.$type` if `j` is not an object; an empty object returns an empty array. (113.B.5: a non-string value used to read as an empty string.)
+
+```toke
+i=json:std.json;
+i=io:std.io;
+f=example():void{
+  let j=mt json.dec("{\"age\":30}") {$ok:v v;$err:e io.exit(1)};
+  let es=json.entries(j);
+};
+```
+
 ### json.has(j: $jsonval; key: $str): bool
 
-Returns `true` if the top-level JSON object contains the given key, `false` otherwise. This function is infallible and does not distinguish between a missing key and a null-valued key.
+Returns `true` if the top-level JSON object contains the given key, `false` otherwise (and `false` when `j` is not an object). This function is infallible and does not distinguish between a missing key and a null-valued key. `json.haskey(j; key)` is the same function under another name.
 
 ```toke
 i=json:std.json;
@@ -287,6 +317,76 @@ f=example():void{
   let addr=mt json.at(j;"user.address") {$ok:a a;$err:e j};
   let city=json.str(addr;"city");
   let item=json.at(j;"results.0");
+};
+```
+
+### json.newobj(): $jsonval
+
+Returns a new empty object, `{}` -- the start of a document built for output with the `json.set*` functions below.
+
+```toke
+i=json:std.json;
+f=example():void{
+  let o=json.newobj();
+};
+```
+
+### json.set(j: $jsonval; key: $str; v: $str): $jsonval!$jsonerr
+
+Returns a **new** object: `j` with the member `key` set to the string `v` (JSON-encoded, so quotes and control bytes are escaped). A `$jsonval` is immutable, so `j` itself is unchanged; bind the result. If `j` already has the member, its value is replaced where it stands; otherwise the member is appended, so members appear in the order they were first set. The key is always JSON-encoded, never pasted into the text. Returns `$jsonerr.$type` if `j` is not an object.
+
+The siblings differ only in the value they write:
+
+| Function | Writes |
+|----------|--------|
+| `json.setint(j: $jsonval; key: $str; v: i64)` | `v` as a JSON number |
+| `json.setf64(j: $jsonval; key: $str; v: f64)` | `v` as a JSON number, in the shortest form that reads back exactly; NaN and the infinities have no JSON spelling and are `$jsonerr.$type` |
+| `json.setbool(j: $jsonval; key: $str; v: bool)` | `true` or `false` |
+| `json.setval(j: $jsonval; key: $str; v: $jsonval)` | `v`'s JSON text, so an object or array (from `json.newobj`, `json.dec`, `json.get`, `json.at`) nests; `$jsonerr.$parse` if `v` does not hold exactly one JSON value |
+
+All five return `$jsonval!$jsonerr`.
+
+```toke
+i=json:std.json;
+i=io:std.io;
+f=example():void{
+  let o=json.newobj();
+  let o1=mt json.set(o;"name";"alice") {$ok:v v;$err:e o};
+  let o2=mt json.setint(o1;"age";30) {$ok:v v;$err:e o1};
+  let o3=mt json.setbool(o2;"admin";false) {$ok:v v;$err:e o2};
+  let tags=mt json.dec("[\"a\"]") {$ok:v v;$err:e o};
+  let o4=mt json.setval(o3;"tags";tags) {$ok:v v;$err:e o3};
+  io.println(json.serialize(o4));
+};
+```
+
+### json.setint(j: $jsonval; key: $str; v: i64): $jsonval!$jsonerr
+
+`json.set` for an integer value; see `json.set`.
+
+### json.setf64(j: $jsonval; key: $str; v: f64): $jsonval!$jsonerr
+
+`json.set` for a floating-point value; NaN and the infinities are `$jsonerr.$type`. See `json.set`.
+
+### json.setbool(j: $jsonval; key: $str; v: bool): $jsonval!$jsonerr
+
+`json.set` for a boolean value; see `json.set`.
+
+### json.setval(j: $jsonval; key: $str; v: $jsonval): $jsonval!$jsonerr
+
+`json.set` for any JSON value, including a nested object or array; `$jsonerr.$parse` if `v` does not hold exactly one JSON value. See `json.set`.
+
+### json.serialize(j: $jsonval): $str
+
+Returns the document's JSON text -- what a document built with `json.newobj` and `json.set*` hands to `io.println`, `file.write` or an HTTP response. Infallible.
+
+```toke
+i=json:std.json;
+i=io:std.io;
+f=example():void{
+  let o=json.newobj();
+  let o1=mt json.set(o;"status";"ok") {$ok:v v;$err:e o};
+  io.println(json.serialize(o1));
 };
 ```
 
@@ -440,7 +540,28 @@ f=main():i64{
 };
 ```
 
-> **Note:** Higher-level accessor functions (`json.str`, `json.u64`, `json.arr`, `json.at`, `json.from_pairs`, streaming parser, etc.) are documented above and are planned for a future release. Only `json.enc` and `json.dec` are implemented in the current compiler.
+### Reading nested values and building a reply
+
+`json.at` walks a dotted path to a value; the key `""` reads a scalar `$jsonval` (113.B.5). The reply is built member by member and serialised once.
+
+```toke
+m=example;
+i=json:std.json;
+i=io:std.io;
+
+f=main():i64{
+  let req=mt json.dec("{\"user\":{\"name\":\"alice\"}}") {$ok:v v;$err:e json.newobj()};
+  let n=mt json.at(req;"user.name") {$ok:v v;$err:e req};
+  let name=mt json.str(n;"") {$ok:v v;$err:e "?"};
+  let out=json.newobj();
+  let o1=mt json.set(out;"greeting";"hello \(name)") {$ok:v v;$err:e out};
+  let o2=mt json.setint(o1;"code";200) {$ok:v v;$err:e o1};
+  io.println(json.serialize(o2));
+  <0;
+};
+```
+
+The functions marked **Not exported** or quarantined above are not reachable from toke; everything else on this page is.
 
 ## Error Types
 

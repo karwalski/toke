@@ -149,50 +149,129 @@ int64_t tk_json_at_w(int64_t obj, int64_t path) {
 
 int64_t tk_json_parseobj_w(int64_t s) { return tk_json_dec_w(s); }
 int64_t tk_json_stringify_w(int64_t val) { return tk_json_enc_w(val); }
-int64_t tk_json_get_w(int64_t obj, int64_t key) { return tk_json_str_w(obj, key); }
-int64_t tk_json_set_w(int64_t obj, int64_t key, int64_t val) {
-    if (!obj || !key) return obj;
-    /* Build a new JSON object by merging a single key:value pair.
-     * Construct {"key":"val"} and merge with obj. */
-    Json *jp = (Json *)(intptr_t)obj;
-    const char *kstr = (const char *)(intptr_t)key;
-    const char *vstr = val ? (const char *)(intptr_t)val : "";
-    const char *enc_val = json_enc(vstr);
-    if (!enc_val) return obj;
-    /* Build {"key":enc_val} */
-    size_t klen = strlen(kstr);
-    size_t vlen = strlen(enc_val);
-    size_t blen = 1 + klen + 2 + 1 + vlen + 1 + 1;
-    char *patch = (char *)malloc(blen);
-    if (!patch) { free((void *)enc_val); return obj; }
-    snprintf(patch, blen, "{\"%s\":%s}", kstr, enc_val);
-    free((void *)enc_val);
-    Json j2 = { patch };
-    JsonResult merged = json_merge(*jp, j2);
-    free(patch);
-    if (merged.is_err) return obj;
-    Json *result = (Json *)malloc(sizeof(Json));
-    if (!result) return obj;
-    *result = merged.ok;
-    return (int64_t)(intptr_t)result;
+/* ── 113.B.5: the typed object surface ──────────────────────────────────
+ *
+ * json.get / keys / entries / has / haskey were reachable but undeclared
+ * ("gen":"abi", i64 in and out), and set / setint built their patch with
+ * snprintf("{\"%s\":...}") -- the key pasted in unescaped, so a key holding
+ * a quote produced text that is not JSON -- then went through json_merge,
+ * which moves a replaced member to the end, and on any failure handed back
+ * the input object as if the write had happened.  Each wrapper below is
+ * declared `T!jsonerr` in json.tki (so is_stdlib_slot_wrapper() makes the
+ * slot authoritative) and keeps the slot truthful on every path: a JsonErr
+ * box on failure, 0 on success.
+ */
+
+/* json_handle — a heap Json owning `r.ok`, or a raised JsonErr. */
+static int64_t json_handle(JsonResult r, const char *who) {
+    if (r.is_err) return json_raise(r.err.kind, r.err.msg);
+    Json *heap = (Json *)malloc(sizeof(Json));
+    if (!heap) { free((void *)r.ok.raw); return json_raise(JSON_ERR_PARSE, who); }
+    *heap = r.ok;
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)heap;
 }
+
+/* json.get(doc, key) -> jsonval!jsonerr: the member named exactly `key`, of
+ * any JSON type.  json.at is the dotted-path walk; this names any key,
+ * including one holding '.', so json.keys + json.get visits every member. */
+int64_t tk_json_get_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return json_raise(JSON_ERR_MISSING, "json.get: null object or key");
+    Json *jp = (Json *)(intptr_t)obj;
+    return json_handle(json_member(*jp, (const char *)(intptr_t)key),
+                       "json.get: out of memory");
+}
+
+/* json_setraw — the shared body of json.set*: member `key` of `obj` set to
+ * the JSON text `vtext` (owned by the caller). */
+static int64_t json_setraw(const Json *jp, int64_t key, const char *vtext, const char *who) {
+    if (!jp) return json_raise(JSON_ERR_TYPE, who);
+    if (!key) return json_raise(JSON_ERR_MISSING, who);
+    if (!vtext) return json_raise(JSON_ERR_PARSE, who);
+    return json_handle(json_setmember(*jp, (const char *)(intptr_t)key, vtext), who);
+}
+
+/* json.set(doc, key, v:str) -> jsonval!jsonerr: v as a JSON string. */
+int64_t tk_json_set_w(int64_t obj, int64_t key, int64_t val) {
+    Json *jp = (Json *)(intptr_t)obj;
+    const char *enc = json_enc(val ? (const char *)(intptr_t)val : "");
+    int64_t h = json_setraw(jp, key, enc, "json.set: out of memory");
+    free((void *)enc);
+    return h;
+}
+
+/* json.setint(doc, key, v:i64) -> jsonval!jsonerr: v as a JSON number. */
+int64_t tk_json_setint_w(int64_t obj, int64_t key, int64_t val) {
+    char vbuf[24];
+    snprintf(vbuf, sizeof vbuf, "%lld", (long long)val);
+    return json_setraw((Json *)(intptr_t)obj, key, vbuf, "json.setint: out of memory");
+}
+
+/* json.setf64(doc, key, v:f64) -> jsonval!jsonerr: v (its i64 bit pattern,
+ * this glue's float ABI) as a JSON number, shortest round-tripping form.
+ * NaN and the infinities have no JSON spelling: $type, nothing written. */
+static void j_fmt_f64(char *buf, size_t n, double v);
+int64_t tk_json_setf64_w(int64_t obj, int64_t key, int64_t bits) {
+    double v = i64_to_f64(bits);
+    if (v != v || v - v != 0.0)
+        return json_raise(JSON_ERR_TYPE, "json.setf64: not a finite number");
+    char vbuf[40];
+    j_fmt_f64(vbuf, sizeof vbuf, v);
+    return json_setraw((Json *)(intptr_t)obj, key, vbuf, "json.setf64: out of memory");
+}
+
+/* json.setbool(doc, key, v:bool) -> jsonval!jsonerr: true / false. */
+int64_t tk_json_setbool_w(int64_t obj, int64_t key, int64_t b) {
+    return json_setraw((Json *)(intptr_t)obj, key, b ? "true" : "false", "json.setbool: out of memory");
+}
+
+/* json.setval(doc, key, v:jsonval) -> jsonval!jsonerr: v's JSON text, so an
+ * object or array (json.newobj, json.dec, json.at, json.get) nests.  A
+ * $jsonval whose text is not one JSON value is $parse, never pasted in. */
+int64_t tk_json_setval_w(int64_t obj, int64_t key, int64_t val) {
+    if (!val) return json_raise(JSON_ERR_PARSE, "json.setval: null value");
+    const Json *vp = (const Json *)(intptr_t)val;
+    if (!vp->raw) return json_raise(JSON_ERR_PARSE, "json.setval: null value");
+    return json_setraw((Json *)(intptr_t)obj, key, vp->raw, "json.setval: out of memory");
+}
+
+/* json.newobj() -> jsonval: a new empty object, {}. */
+int64_t tk_json_newobj_w(void) {
+    Json *jp = (Json *)malloc(sizeof(Json));
+    char *raw = (char *)malloc(3);
+    if (!jp || !raw) { free(jp); free(raw); return 0; }
+    memcpy(raw, "{}", 3);
+    jp->raw = raw;
+    return (int64_t)(intptr_t)jp;
+}
+
+/* json.has(doc, key) -> bool: 1 when the object has a member named `key`
+ * (escapes decoded, 113.B.5); 0 for a missing key and for a non-object. */
 int64_t tk_json_has_w(int64_t obj, int64_t key) {
     if (!obj || !key) return 0;
     Json *jp = (Json *)(intptr_t)obj;
     return (int64_t)json_has(*jp, (const char *)(intptr_t)key);
 }
+
+/* json.keys(doc) -> [str]!jsonerr: the member names in document order,
+ * escapes decoded.  {} is an empty array (a real handle of length 0); a
+ * non-object is $type.  Both used to return a bare 0. */
 int64_t tk_json_keys_w(int64_t obj) {
-    if (!obj) return 0;
+    if (!obj) return json_raise(JSON_ERR_TYPE, "json.keys: null object");
     Json *jp = (Json *)(intptr_t)obj;
     StrArrayJsonResult r = json_keys(*jp);
-    if (r.is_err || r.ok.len == 0) return 0;
-    /* Return as toke array: [len, elem0, elem1, ...] */
+    if (r.is_err) return json_raise(r.err.kind, r.err.msg);
     int64_t h = tk_arr_alloc((int64_t)r.ok.len, (int64_t)r.ok.len);
-    if (!h) return 0;
+    if (!h) {
+        for (uint64_t i = 0; i < r.ok.len; i++) free((void *)r.ok.data[i]);
+        free(r.ok.data);
+        return json_raise(JSON_ERR_PARSE, "json.keys: out of memory");
+    }
     int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < r.ok.len; i++)
         block[i] = (int64_t)(intptr_t)r.ok.data[i];
-    free(r.ok.data); /* free the pointer array, strings are now owned by the toke array */
+    free(r.ok.data); /* the strings are owned by the toke array now */
+    tk_current_error = 0;
     return h;
 }
 int64_t tk_json_values_w(int64_t obj) {
@@ -252,32 +331,13 @@ int64_t tk_json_ok_w(int64_t val) {
     jp->raw = buf;
     return (int64_t)(intptr_t)jp;
 }
+/* json.serialize(doc) -> str: the document's JSON text -- what a builder
+ * (json.newobj + json.set*) hands to http/file/io for output.  113.B.5: ""
+ * rather than a null for a null document. */
 int64_t tk_json_serialize_w(int64_t obj) {
-    if (!obj) return 0;
+    if (!obj) return (int64_t)(intptr_t)"";
     Json *jp = (Json *)(intptr_t)obj;
-    /* Return the raw JSON string */
-    return jp->raw ? (int64_t)(intptr_t)jp->raw : 0;
-}
-int64_t tk_json_setint_w(int64_t obj, int64_t key, int64_t val) {
-    if (!obj || !key) return obj;
-    Json *jp = (Json *)(intptr_t)obj;
-    const char *kstr = (const char *)(intptr_t)key;
-    /* Build {"key":val} with integer value */
-    char vbuf[32];
-    snprintf(vbuf, sizeof(vbuf), "%lld", (long long)val);
-    size_t klen = strlen(kstr);
-    size_t blen = 1 + klen + 2 + 1 + strlen(vbuf) + 1 + 1;
-    char *patch = (char *)malloc(blen);
-    if (!patch) return obj;
-    snprintf(patch, blen, "{\"%s\":%s}", kstr, vbuf);
-    Json j2 = { patch };
-    JsonResult merged = json_merge(*jp, j2);
-    free(patch);
-    if (merged.is_err) return obj;
-    Json *result = (Json *)malloc(sizeof(Json));
-    if (!result) return obj;
-    *result = merged.ok;
-    return (int64_t)(intptr_t)result;
+    return (int64_t)(intptr_t)(jp->raw ? jp->raw : "");
 }
 int64_t tk_json_haskey_w(int64_t obj, int64_t key) {
     return tk_json_has_w(obj, key);
@@ -476,51 +536,72 @@ int64_t tk_json_arrlen_w(int64_t arr) {
     return ptr[-1];
 }
 
-/* json.entries(obj) — return array of "key=value" strings */
+/* json.entries(doc) -> [str]!jsonerr — 113.B.5: one "key=value" string per
+ * member, in document order: the key with its escapes decoded, then '=',
+ * then the member's value as JSON TEXT (a string keeps its quotes and
+ * escapes), so no value is lost or confused with another -- before, every
+ * non-string value read as "" and the string "1" and the number 1 looked the
+ * same.  Split at the FIRST '=' (a key holding '=' cannot be told apart: use
+ * json.keys + json.get to read such a member).  {} is an empty array, a
+ * non-object $type; both were a bare 0. */
 int64_t tk_json_entries_w(int64_t obj) {
-    if (!obj) return 0;
+    if (!obj) return json_raise(JSON_ERR_TYPE, "json.entries: null object");
     Json *jp = (Json *)(intptr_t)obj;
     StrArrayJsonResult kr = json_keys(*jp);
-    if (kr.is_err || kr.ok.len == 0) return 0;
+    if (kr.is_err) return json_raise(kr.err.kind, kr.err.msg);
     uint64_t count = kr.ok.len;
-    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!h) return 0;
-    int64_t *block = (int64_t *)(intptr_t)h;
+    /* Build every entry first, so an OOM part-way frees what it made and
+     * no toke array is ever handed out half filled. */
+    char **ents = count ? (char **)calloc(count, sizeof(char *)) : NULL;
+    int oom = count && !ents;
     for (uint64_t i = 0; i < count; i++) {
         const char *k = kr.ok.data[i];
-        StrJsonResult vr = json_str(*jp, k);
-        const char *v = vr.is_err ? "" : vr.ok;
-        size_t klen = strlen(k), vlen = strlen(v);
-        char *entry = (char *)malloc(klen + 1 + vlen + 1);
-        if (entry) {
-            memcpy(entry, k, klen);
-            entry[klen] = '=';
-            memcpy(entry + klen + 1, v, vlen);
-            entry[klen + 1 + vlen] = '\0';
+        if (!oom) {
+            JsonResult vr = json_member(*jp, k);
+            const char *v = vr.is_err ? "null" : vr.ok.raw;
+            size_t klen = strlen(k), vlen = strlen(v);
+            char *entry = (char *)malloc(klen + 1 + vlen + 1);
+            if (entry) {
+                memcpy(entry, k, klen);
+                entry[klen] = '=';
+                memcpy(entry + klen + 1, v, vlen + 1);
+                ents[i] = entry;
+            } else {
+                oom = 1;
+            }
+            if (!vr.is_err) free((void *)vr.ok.raw);
         }
-        block[i] = (int64_t)(intptr_t)entry;
         free((void *)k);
     }
     free(kr.ok.data);
+    int64_t h = oom ? 0 : tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) {
+        for (uint64_t i = 0; ents && i < count; i++) free(ents[i]);
+        free(ents);
+        return json_raise(JSON_ERR_PARSE, "json.entries: out of memory");
+    }
+    int64_t *block = (int64_t *)(intptr_t)h;
+    for (uint64_t i = 0; i < count; i++) block[i] = (int64_t)(intptr_t)ents[i];
+    free(ents);
+    tk_current_error = 0;
     return h;
 }
 
-/* json.kv(key, value) — build {"key":"value"} JSON object */
+/* json.kv(key, value) — build {"key":"value"} JSON object.
+ * 127.301: the key is JSON-encoded (json_setmember), not pasted into
+ * the text by snprintf, so a key holding a quote or a control byte still
+ * yields a well-formed object. */
 int64_t tk_json_kv_w(int64_t key, int64_t value) {
     if (!key) return 0;
-    const char *k = (const char *)(intptr_t)key;
-    const char *v = value ? (const char *)(intptr_t)value : "";
-    const char *enc_v = json_enc(v);
+    const char *enc_v = json_enc(value ? (const char *)(intptr_t)value : "");
     if (!enc_v) return 0;
-    size_t klen = strlen(k), vlen = strlen(enc_v);
-    size_t blen = 2 + klen + 2 + vlen + 2;
-    char *buf = (char *)malloc(blen);
-    if (!buf) { free((void *)enc_v); return 0; }
-    snprintf(buf, blen, "{\"%s\":%s}", k, enc_v);
+    Json empty = { "{}" };
+    JsonResult r = json_setmember(empty, (const char *)(intptr_t)key, enc_v);
     free((void *)enc_v);
+    if (r.is_err) return 0;
     Json *jp = (Json *)malloc(sizeof(Json));
-    if (!jp) { free(buf); return 0; }
-    jp->raw = buf;
+    if (!jp) { free((void *)r.ok.raw); return 0; }
+    *jp = r.ok;
     return (int64_t)(intptr_t)jp;
 }
 

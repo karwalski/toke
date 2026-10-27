@@ -111,6 +111,42 @@
       "return": "jsonval!jsonerr"
     },
     {
+      "kind": "func",
+      "name": "json.newobj",
+      "params": [],
+      "return": "jsonval"
+    },
+    {
+      "kind": "func",
+      "name": "json.setf64",
+      "params": [
+        "jsonval",
+        "str",
+        "f64"
+      ],
+      "return": "jsonval!jsonerr"
+    },
+    {
+      "kind": "func",
+      "name": "json.setbool",
+      "params": [
+        "jsonval",
+        "str",
+        "bool"
+      ],
+      "return": "jsonval!jsonerr"
+    },
+    {
+      "kind": "func",
+      "name": "json.setval",
+      "params": [
+        "jsonval",
+        "str",
+        "jsonval"
+      ],
+      "return": "jsonval!jsonerr"
+    },
+    {
       "kind": "type",
       "name": "jsonwriter",
       "fields": [
@@ -350,10 +386,9 @@
       "kind": "func",
       "name": "json.entries",
       "params": [
-        "i64"
+        "jsonval"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "[str]!jsonerr"
     },
     {
       "kind": "func",
@@ -368,11 +403,10 @@
       "kind": "func",
       "name": "json.get",
       "params": [
-        "i64",
-        "i64"
+        "jsonval",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "jsonval!jsonerr"
     },
     {
       "kind": "func",
@@ -510,21 +544,19 @@
       "kind": "func",
       "name": "json.has",
       "params": [
-        "i64",
-        "i64"
+        "jsonval",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "bool"
     },
     {
       "kind": "func",
       "name": "json.haskey",
       "params": [
-        "i64",
-        "i64"
+        "jsonval",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "bool"
     },
     {
       "kind": "func",
@@ -540,10 +572,9 @@
       "kind": "func",
       "name": "json.keys",
       "params": [
-        "i64"
+        "jsonval"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "[str]!jsonerr"
     },
     {
       "kind": "func",
@@ -644,32 +675,29 @@
       "kind": "func",
       "name": "json.serialize",
       "params": [
-        "i64"
+        "jsonval"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "json.set",
       "params": [
-        "i64",
-        "i64",
-        "i64"
+        "jsonval",
+        "str",
+        "str"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "jsonval!jsonerr"
     },
     {
       "kind": "func",
       "name": "json.setint",
       "params": [
-        "i64",
-        "i64",
+        "jsonval",
+        "str",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "jsonval!jsonerr"
     },
     {
       "kind": "func",
