@@ -62,7 +62,7 @@ The toke project has a published governance document (see [governance.md](https:
 
 The consortium owns and maintains the toke language specification. Responsibilities include:
 
-- **Versioning.** Semantic versioning (MAJOR.MINOR.PATCH). The specification is currently at v0.2 (draft). Version 1.0 requires: conformance suite passing for two independent implementations, ecosystem proof complete, all deferred sections resolved.
+- **Versioning.** Semantic versioning (MAJOR.MINOR.PATCH). The specification is currently at v0.4 (`docs/spec/toke-spec-v0.4.md`, a normative amendment to v0.3). Version 1.0 requires: conformance suite passing for two independent implementations, ecosystem proof complete, all deferred sections resolved.
 - **Compatibility guarantees.** After 1.0: source syntax stable across minor versions. Error codes never reused. Deprecation cycles of at least two minor releases or six months. Migration guides for major-version breaking changes.
 - **Change process.** Specification changes require an ADR, review by the TSC, and voting by contributing members.
 
@@ -297,7 +297,7 @@ The toke Language Consortium is seeking founding members from the following cate
 ### How to Express Interest
 
 1. Review the project: [github.com/karwalski/toke](https://github.com/karwalski/toke)
-2. Read the specification: [toke-spec-v02.md](https://github.com/karwalski/toke-spec/blob/main/spec/toke-spec-v02.md)
+2. Read the specification: [toke-spec-v0.4](/docs/spec/toke-spec-v0.4/) (normative; it amends [v0.3](/docs/spec/toke-spec-v0.3/))
 3. Run the conformance suite: `make conform`
 4. Contact: matt@tokelang.dev
 
@@ -310,7 +310,7 @@ We are looking for organisations willing to invest in the formation phase -- not
 | Document | Description |
 |----------|-------------|
 | [governance.md](https://github.com/karwalski/toke/blob/main/docs/governance.md) | Project governance model, decision-making, versioning policy |
-| [toke-spec-v02.md](https://github.com/karwalski/toke-spec/blob/main/spec/toke-spec-v02.md) | Language specification (v0.2, draft) |
+| [toke-spec-v0.4](/docs/spec/toke-spec-v0.4/) | Language specification (v0.4, normative amendment to v0.3) |
 | [enterprise.md](/docs/about/enterprise/) | Enterprise value proposition and integration guide |
 | [why.md](/docs/about/why/) | Project thesis and design rationale |
 | [competitive-matrix.md](/docs/about/competitive-matrix/) | Competitive positioning analysis |
