@@ -194,6 +194,24 @@ f=openlogfile():i64{
 };
 ```
 
+### log.closeerror(): bool
+
+Flushes, closes and unregisters the error log opened by `log.openerror` (136.77). Returns `true` if an error log was open, `false` if none was (a second call, or no `log.openerror`). After it, 4xx/5xx responses are no longer written to an error log until `log.openerror` is called again. Needs no capability: it closes a file this process already holds.
+
+The global logs are not synchronised with a write in progress on another thread, so close the error log when no request is being served -- before `http.serve` starts, or after it returns.
+
+```toke
+m=example;
+i=log:std.log;
+
+f=main():i64{
+  log.openerror("/dev/stderr"; 0; 0; 0);
+  let closed = log.closeerror();
+  if(closed){<0};
+  < 1
+};
+```
+
 ### log.accessformat(fmt: $str): i64
 
 Selects the line format of the access and error logs: `"combined"` (Combined Log Format, the default) or `"json"` (one JSON object per line). Returns `0` if the format was recognised. Any other value is rejected: a message naming the accepted formats is written to stderr, the format is left unchanged, and `-1` is returned.

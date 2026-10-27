@@ -85,6 +85,14 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
     return 0;
 }
 
+/* 136.77: log.closeerror() : bool -- the toke surface of tk_error_log_close.
+ * Closing a file this process opened needs no grant (log.openerror took
+ * fs.write when it opened it). */
+int64_t tk_log_closeerror_w(void)
+{
+    return (int64_t)tk_error_log_close_global();
+}
+
 int64_t tk_log_accessformat_w(int64_t fmt_ptr)
 {
     const char *fmt = (const char *)(intptr_t)fmt_ptr;

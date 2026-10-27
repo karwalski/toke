@@ -155,7 +155,6 @@ PAYLOADLESS = [  # 2026-09-30, 127.246 (2): measured on main at cde89021
     'tk_llmtool_chatwithtools_w',
     'tk_llmtool_parsetoolcalls_w',
     'tk_llmtool_submitresult_w',
-    'tk_md_renderfile_w',
     'tk_yaml_arr_w',
     'tk_yaml_bool_w',
     'tk_yaml_dec_w',

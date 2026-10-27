@@ -258,6 +258,9 @@ void tk_error_log_write(TkAccessLog *log,
                          const char *ua);
 void tk_error_log_close(TkAccessLog *log);
 
+/* 136.77: close and unregister the global error log; 1 if one was open. */
+int  tk_error_log_close_global(void);
+
 /*
  * tk_log_reopen_files — reopen the global access and error logs, the
  * tk_log_set_output file and the tk_log_security_set_output file at their

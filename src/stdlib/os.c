@@ -246,6 +246,13 @@ int64_t tk_os_ordwr_w(void)    { return tk_os_o_rdwr(); }
 int64_t tk_os_ocreat_w(void)   { return tk_os_o_creat(); }
 int64_t tk_os_otrunc_w(void)   { return tk_os_o_trunc(); }
 int64_t tk_os_oappend_w(void)  { return tk_os_o_append(); }
+/* 136.77: O_NOFOLLOW had a C constant (tk_os_o_nofollow, above) and no toke
+ * surface -- no .tki export, no header, no doc -- unlike its siblings
+ * ocreat/otrunc/oappend.  os.open already ORs O_NOFOLLOW into every open
+ * (AMB-07, above), so passing it changes no behaviour; it is exported so a
+ * flag set can be spelled and compared in full.  A flag value touches
+ * nothing: the fs grant is taken by os.open itself. */
+int64_t tk_os_onofollow_w(void) { return tk_os_o_nofollow(); }
 int64_t tk_os_stdinfd_w(void)  { return tk_os_stdin_fd(); }
 int64_t tk_os_stdoutfd_w(void) { return tk_os_stdout_fd(); }
 int64_t tk_os_stderrfd_w(void) { return tk_os_stderr_fd(); }

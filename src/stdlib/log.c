@@ -1317,3 +1317,23 @@ void tk_error_log_close(TkAccessLog *log)
 {
     tk_access_log_close(log);
 }
+
+/*
+ * 136.77 — tk_error_log_close_global: flush, close and free the process's
+ * error log (the one log.openerror registered), and unregister it so http.c
+ * stops writing to it.  Returns 1 if a log was open, 0 if none was.
+ *
+ * The pointer is detached before the close, so a later 4xx/5xx sees no error
+ * log rather than a freed one.  Like the rest of the global log state
+ * (tk_error_log_set_global, tk_log_reopen_files) it is not synchronised with
+ * a write in progress on another thread: close it when no request is being
+ * served -- before http.serve starts, or after it returns.
+ */
+int tk_error_log_close_global(void)
+{
+    TkAccessLog *el = g_error_log;
+    if (!el) return 0;
+    g_error_log = NULL;
+    tk_error_log_close(el);
+    return 1;
+}

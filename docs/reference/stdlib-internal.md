@@ -85,11 +85,11 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 72 |
-| `c-internal` | called only from other C in `src/stdlib/` | 154 |
+| `c-internal` | called only from other C in `src/stdlib/` | 157 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 29 |
-| `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 2 |
-| | **total** | **266** |
+| `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 28 |
+| `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 1 |
+| | **total** | **267** |
 
 A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the conformance harness -- and is listed with the file that documents it. A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -170,7 +170,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (154)
+### `c-internal` (157)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -190,8 +190,10 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_clos_base` | `tk_runtime.c` | tk_runtime.c |
 | `tk_delegate_class` | `webview.c` | webview.c |
 | `tk_delete_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_err_msg` | `tk_runtime.c` | csv_glue.c, file_glue.c, ocr_glue.c, os_glue.c, pdf_glue.c, str_glue.c, toml_glue.c, toon_glue.c |
+| `tk_err_msg` | `tk_runtime.c` | args_glue.c, csv_glue.c, file_glue.c, md_glue.c, ocr_glue.c, os_glue.c, pdf_glue.c, str_glue.c, toml_glue.c, toon_glue.c |
 | `tk_err_release` | `tk_runtime.c` | tk_runtime.c |
+| `tk_error_log_close` | `log.c` | log.c |
+| `tk_error_log_close_global` | `log.c` | log_glue.c |
 | `tk_error_log_get_global` | `log.c` | http.c, log.c |
 | `tk_error_log_open` | `log.c` | log.c, log_glue.c |
 | `tk_error_log_set_global` | `log.c` | log_glue.c |
@@ -229,6 +231,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_map_slot_insert` | `collections_glue.c` | collections_glue.c |
 | `tk_message_trusted` | `webview.c` | webview.c |
 | `tk_nsurl_trusted` | `webview.c` | webview.c |
+| `tk_os_o_nofollow` | `os.c` | os.c |
 | `tk_page_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
 | `tk_page_trusted` | `webview.c` | webview.c |
 | `tk_patch_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
@@ -343,12 +346,11 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `c-api` (29)
+### `c-api` (28)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
 | `tk_cap_grants` | `capabilities.c` | "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c |
-| `tk_error_log_close` | `log.c` | documented in log.h's error-log block as the pair of tk_error_log_open (which log_glue.c calls) |
 | `tk_infer_is_loaded` | `infer.c` | handle query of the finished C core; tested from C |
 | `tk_infer_unload` | `infer.c` | infer.md: "`tk_infer_unload` exists; the wrapper returns 0" |
 | `tk_json_print_arr_bool` | `tk_runtime.c` | listed in the runtime ABI table; the compiler does not currently emit it |
@@ -377,9 +379,8 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_webview_run_event_loop` | `webview.c` | webview.h documents it as the main-thread platform run loop an embedder calls; a blocking GUI loop, so no headless test calls it |
 | `tk_webview_set_title` | `webview.c` | tested from C |
 
-### `dead` (2)
+### `dead` (1)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
 | `tk_array_retain` | `collections_glue.c` | ADR-0006 D2 planned a codegen retain at every array copy; its 2026-06-30 implementation note replaced that with static uniqueness, so nothing emits it.  Kept for the D1 (release/free) follow-up; its comment in collections_glue.c says so (136.76) |
-| `tk_os_o_nofollow` | `os.c` | no header, doc, test, resolver row or .tki export, unlike its siblings os.ocreat/otrunc/oappend; exporting it is a stdlib surface decision (needs a story) |

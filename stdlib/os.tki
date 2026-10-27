@@ -27,6 +27,7 @@
     {"kind": "func", "name": "os.ocreat",    "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.otrunc",    "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.oappend",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.onofollow", "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.stdinfd",   "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.stdoutfd",  "params": [],                   "return": "i64"},
     {"kind": "func", "name": "os.stderrfd",  "params": [],                   "return": "i64"}

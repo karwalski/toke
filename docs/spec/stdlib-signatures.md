@@ -345,6 +345,7 @@ f=ordwr():i64
 f=ocreat():i64
 f=otrunc():i64
 f=oappend():i64
+f=onofollow():i64
 f=stdinfd():i64
 f=stdoutfd():i64
 f=stderrfd():i64
@@ -372,6 +373,13 @@ f=f64(v:$tomlval;key:$str):f64!$tomlerr
 f=bool(v:$tomlval;key:$str):bool!$tomlerr
 f=has(v:$tomlval;key:$str):bool
 f=section(v:$tomlval;key:$str):$tomlval!$tomlerr
+f=strarr(v:$tomlval;key:$str):@$str!$tomlerr
+f=i64arr(v:$tomlval;key:$str):@i64!$tomlerr
+f=boolarr(v:$tomlval;key:$str):@bool!$tomlerr
+f=sectionarr(v:$tomlval;key:$str):@$tomlval!$tomlerr
+f=keys(v:$tomlval):@$str
+f=len(v:$tomlval):u64
+f=free(v:$tomlval):bool
 ```
 
 `$tomlval` is an opaque table handle. Each accessor reads one key of the
@@ -379,7 +387,18 @@ table it is given (not a dotted path); `section` descends. `f64` and `has`
 (121.68): `f64` reads a float, or a decimal integer as the nearest `f64`, and
 its `$err` says `key not found` or `key is not a float`; `has` is `true` for a
 key present with any value, arrays and tables included. `loadfile` needs the
-`fs.read` grant. See [std.toml](/docs/stdlib/toml).
+`fs.read` grant.
+
+113.B.4: every accessor's `$err` says `key not found` for an absent key and
+`key is not a <type>` (`string`, `integer`, `boolean`, `table`) for a key of
+another type.  `strarr`/`i64arr`/`boolarr`/`sectionarr` read the array at
+`key` whole, each element as its scalar accessor would (`sectionarr`: the
+`[[x]]` form, as views); an empty array is `$ok` with length 0, a mixed one
+`array element N is not a <type>`.  `keys` lists the table's own keys
+(values, then arrays, then sub-tables, document order within each; copies),
+`len` counts them.  `free` releases a document from `load`/`loadfile` and is
+`true`; on a view, or a document already freed, it does nothing and is
+`false`.  No `f64arr` yet (127.297). See [std.toml](/docs/stdlib/toml).
 
 ### std.env
 
@@ -436,7 +455,11 @@ f=info(msg:$str):void
 f=warn(msg:$str):void
 f=error(msg:$str):void
 f=debug(msg:$str):void
+f=closeerror():bool
 ```
+
+`closeerror` (136.77) flushes, closes and unregisters the error log
+`log.openerror` opened; `true` if one was open. See [std.log](/docs/stdlib/log).
 
 ### std.test
 

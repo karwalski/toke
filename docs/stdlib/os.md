@@ -180,6 +180,7 @@ Zero-argument functions, so the values are the host's own.
 | `os.ocreat(): i64` | `O_CREAT` |
 | `os.otrunc(): i64` | `O_TRUNC` |
 | `os.oappend(): i64` | `O_APPEND` |
+| `os.onofollow(): i64` | `O_NOFOLLOW` (136.77). `os.open` already adds it to every open (AMB-07): a symlinked final path component fails with errno `ELOOP` whatever the flags, so passing it changes nothing there; it is exported so a flag set can be spelled and compared in full |
 | `os.stdinfd(): i64` | `0` |
 | `os.stdoutfd(): i64` | `1` |
 | `os.stderrfd(): i64` | `2` |
