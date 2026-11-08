@@ -713,9 +713,23 @@ f=label(a:str;b:str):str{
 };
 ```
 
-**Auto-fix:** Deterministic **only** when every leaf of the chain is a plain identifier or a string literal (identifiers become `\(name)`, literal contents are spliced verbatim). The rewrite is implemented but **dormant**: Epic 127.7 / 127.10 (interpolation memory bugs) are open, so a mechanically correct rewrite can still produce a program that misbehaves at runtime. The `fix` field is emitted only when `TKC_LINT_CONCAT_FIX` is armed — the environment variable set to a non-empty value other than `0`, or the compiler built with `-DTKC_LINT_CONCAT_FIX=1`. When 127.7 and 127.10 close, flip the default in `src/lint.c` and drop the env gate; the D-series tests (D062, D063) already exercise both states.
+**Auto-fix:** Implemented but **dormant**: the `fix` field is emitted only when `TKC_LINT_CONCAT_FIX` is armed — the environment variable set to a non-empty value other than `0`, or the compiler built with `-DTKC_LINT_CONCAT_FIX=1`. Armed, the fix is offered only when all of these hold (131.110, the 131.59 / 131.104 discipline; AGENTS.md §6 — absent if uncertain):
 
-**Audit before arming (131.104, 131.110):** the rewrite is AST-only and is **not** sound as it stands. `concat_call` matches any `.concat` method and any import alias's `concat`, and `concat_leaves` accepts any identifier, so an array chain `a.concat(b).concat(d)` is rewritten to `"\(a)\(b)\(d)"`, which is E4032 (measured with `TKC_LINT_CONCAT_FIX=1`). Arming it needs the 131.59 / 131.104 discipline first: `LintOptions.typed`, every identifier leaf and method receiver typed exactly `str` by the checker, a module alias that resolves to `std.str` (or a `LintOptions.recheck` of the rewritten program). Story 131.110.
+- the program type-checked cleanly immediately before linting (`LintOptions.typed`), so the checker's node types can be trusted;
+- every `concat` in the chain is **module style** through an import alias that resolves to `std.str` (and is that alias, not a local of the same name), and the checker typed the call `str`;
+- every leaf is a string literal (spliced verbatim, escapes included) or an identifier the checker typed exactly `str` (`\(name)`); a missing or unknown type never qualifies;
+- the rewritten program lexes, parses and type-checks cleanly (`LintOptions.recheck`).
+
+Those conditions make the rewrite value-preserving: `"\(x)"` of a `str` is `x`, so interpolating str operands concatenates exactly what `str.concat` concatenates. A chain that fails any of them keeps its warning without a fix. Before 131.110 the rewrite was AST-only and turned an array chain `a.concat(b).concat(d)` into `"\(a)\(b)\(d)"` (E4032); D295 and C921 hold that closed.
+
+**Method-style chains are never fixed.** The checker types neither the receiver nor the result of a method-style `concat` (`a.concat(b)` is untyped / `TY_UNKNOWN` for a `str` and an array alike), so nothing distinguishes a str chain from an array chain (D296). Making them fixable needs the checker to type method-style `concat` first.
+
+**What remains before arming (owner / product decision — not taken here):**
+
+1. Epic 127.7 / 127.10 (interpolation memory bugs) must be closed or shown not to affect the rewrite; that was the original reason for the gate.
+2. Decide whether a module-style-only fix is enough to arm, or whether the checker should first type method-style `concat` (receiver and result) so the common `a.concat(b).concat(c)` spelling is fixable too.
+3. 127.318: a method-style **array** `concat` chain passes the checker and is mis-lowered (wrong length and elements). Not this rule's defect, but it is the shape the rule flags, and its warning text recommends interpolation, which does not apply to arrays; the message may want to name the str case only.
+4. Then flip the default in `src/lint.c`, drop the env gate, and update D061 (fix absent while dormant) and D062/D063/D295–D299, which exercise the armed state.
 
 **Edge cases:**
 

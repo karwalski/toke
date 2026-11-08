@@ -20,6 +20,10 @@
  *   mut-flag-if            — `let x=mut.<lit>;` written only by the next if/el
  *   flag-soup              — ≥2 consecutive ifs each assigning x a literal
  *   string-concat-chain    — concat nested ≥ 2 deep
+ *                            (fix dormant, TKC_LINT_CONCAT_FIX; 131.110:
+ *                            only an all-str std.str chain the checker
+ *                            typed -- see concat_chain_str_typed; needs
+ *                            opts->typed and opts->recheck)
  *   single-use-let         — let used exactly once, in the next statement
  *                            (131.59: fix only when the checker typed the
  *                            use and the initialiser identically — see
@@ -1392,6 +1396,81 @@ static int concat_leaves(PatCtx *c, const Node *n, const Node **leaves, int *cou
     return 1;
 }
 
+static int module_path_is(const Node *mp, const char *path, const char *src);
+
+/* 131.110: the import alias `base` names std.str, and `base` is that alias,
+ * not a local of the same name (an alias reference carries no rtype). */
+static int alias_is_std_str(PatCtx *c, const Node *base)
+{
+    if (!is_ident(base) || base->rtype) return 0;
+    const Node *root = c->root;
+    if (!root || root->kind != NODE_PROGRAM) return 0;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *imp = root->children[i];
+        if (imp && imp->kind == NODE_IMPORT && imp->child_count >= 2 &&
+            ident_eq(imp->children[0], base, c->src))
+            return module_path_is(imp->children[1], "std.str", c->src);
+    }
+    return 0;
+}
+
+static int typed_str(const Node *n)
+{
+    return n && n->rtype && n->rtype->kind == TY_STR;
+}
+
+/* 131.110: is every part of the chain a str, by the checker's own types?
+ * The interpolation rewrite equals the concat only when every operand is a
+ * str (`"\(x)"` of an i64 renders it; of an array it is E4032) and every
+ * call is std.str's concat.  So, with the program type-checked cleanly
+ * (opts->typed):
+ *   - every call in the chain is module style through an alias that resolves
+ *     to std.str, and the checker typed it str.  Method style
+ *     (`a.concat(b)`) never qualifies: the checker types neither its receiver
+ *     nor its result (both untyped / TY_UNKNOWN, for a str and an array
+ *     alike), so nothing distinguishes the two;
+ *   - every identifier leaf is typed exactly str (absent or unknown never
+ *     qualifies); a string literal leaf is a str by construction. */
+static int concat_chain_str_typed(PatCtx *c, const Node *n)
+{
+    int module = 0;
+    const Node *base = NULL;
+    if (concat_call(c, n, &module)) {
+        if (!module || !method_call(n, &base) || !alias_is_std_str(c, base) ||
+            !typed_str(n))
+            return 0;
+        const Node *ops[32];
+        int k = concat_operands(c, n, ops, 32);
+        for (int i = 0; i < k; i++)
+            if (!concat_chain_str_typed(c, ops[i])) return 0;
+        return k > 0;
+    }
+    if (n->kind == NODE_STR_LIT) return 1;
+    return is_ident(n) && typed_str(n);
+}
+
+/* 131.110: the rewritten program still lexes, parses and type-checks
+ * cleanly (LintOptions.recheck, as 131.104).  The types above already make
+ * the rewrite equal in value; this confirms it compiles. */
+static int concat_fix_rechecks(PatCtx *c, int fs, int fe, const Str *rep)
+{
+    const LintOptions *o = c->opts;
+    size_t rl = rep->buf ? (size_t)rep->len : 0;
+    size_t n = (size_t)fs + rl + (size_t)(c->src_len - fe);
+    char *probe = malloc(n + 1);
+    if (!probe) return 0;
+    memcpy(probe, c->src, (size_t)fs);
+    if (rl) memcpy(probe + fs, rep->buf, rl);
+    memcpy(probe + fs + rl, c->src + fe, (size_t)(c->src_len - fe));
+    probe[n] = '\0';
+    void *h = NULL;
+    const Node *nr = o->recheck(o->recheck_ctx, probe, (int)n, &h);
+    int ok = nr != NULL;
+    if (o->recheck_free) o->recheck_free(o->recheck_ctx, h);
+    free(probe);
+    return ok;
+}
+
 int lint_concat_fix_enabled(void)
 {
     if (TKC_LINT_CONCAT_FIX) return 1;
@@ -1409,7 +1488,10 @@ static int rule_concat_chain(PatCtx *c, const Node *n)
             if (!rule_enabled("string-concat-chain", c->opts)) return 0;
             int fixable = 0, fs = 0, fe = 0;
             Str rep = {0};
-            if (lint_concat_fix_enabled()) {
+            /* 131.110: only a chain the checker proves all-str, with a
+             * re-check to hand (AGENTS.md section 6: absent if uncertain) */
+            if (lint_concat_fix_enabled() && c->opts && c->opts->typed &&
+                c->opts->recheck && concat_chain_str_typed(c, n)) {
                 const Node *leaves[64]; int lc = 0;
                 if (concat_leaves(c, n, leaves, &lc, 64) && lc > 0) {
                     fs = subtree_min_start(n);
@@ -1428,6 +1510,7 @@ static int rule_concat_chain(PatCtx *c, const Node *n)
                             }
                         }
                         str_puts(&rep, "\"");
+                        if (!concat_fix_rechecks(c, fs, fe, &rep)) fixable = 0;
                     }
                 }
             }
