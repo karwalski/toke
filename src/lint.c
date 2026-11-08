@@ -1542,11 +1542,22 @@ static int inline_keeps_type(const PatCtx *c, const Node *decl, const Node *init
 {
     if (!c->opts || !c->opts->typed) return 0;
     if (decl->child_count != 2) return 0;                 /* annotated */
-    if (!tk_type_identical(use->rtype, init->rtype)) return 0;
+    /* The checker does not infer every position: a method-call receiver
+     * (`w.contains(c)`) carries no rtype.  A string literal without
+     * interpolation (is_pure_expr) and a bool literal are typed by their
+     * token alone -- bind_init_type gives the immutable binding exactly str
+     * / bool, and no slot re-types them -- so for those the binding's type
+     * is the initialiser's even where the use was not inferred. */
+    const Type *ut = use->rtype;
+    if (!ut && init->rtype &&
+        ((init->kind == NODE_STR_LIT && init->rtype->kind == TY_STR) ||
+         (init->kind == NODE_BOOL_LIT && init->rtype->kind == TY_BOOL)))
+        ut = init->rtype;
+    if (!tk_type_identical(ut, init->rtype)) return 0;
     int lk = numeric_literal_kind(init);
     if (lk) {
         TypeKind want = lk == 1 ? TY_I64 : TY_F64;
-        if (use->rtype->kind != want) return 0;
+        if (ut->kind != want) return 0;
         const Node *p = lint_parent_of(next, use);
         if (!p) return 0;
         /* `<k` from a function declared exactly i64 (f64): the literal is

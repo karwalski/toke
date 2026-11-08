@@ -18,7 +18,9 @@
 # NOW: --lint type-checks the file silently first (src/main.c lint_typecheck)
 # and the fix is offered only when the checker typed the USE and the
 # INITIALISER identically (tk_type_identical, TY_UNKNOWN never identical),
-# the let is unannotated, and a numeric literal lands only beside an
+# the let is unannotated (a str/bool literal, typed by its token, also where
+# the checker infers no use type, e.g. a method receiver), and a numeric
+# literal lands only beside an
 # i64 (f64) operand or as `<` of a function declared exactly i64 (f64).  A
 # file that does not type-check gets the hint without a fix.
 #
@@ -151,18 +153,26 @@ f=two():i64{
   let r=2;
   <r
 };
+f=has(c:str):bool{
+  let pool="abc";
+  <pool.contains(c)
+};
 f=main():i64{
   let a=@(1;2;3);
   let x=10;
   let j=3;
   let y=x+j;
   io.println("\(y)");
+  let hit=has("b");
+  io.println("\(hit)");
   <last(a)+two()
 };
 EOF
 expect "7  u64 binding of a u64 expression keeps its fix" "$(fix_for "${WORK}/ok.tk" w)" "  <a.get(a.len-1"
 expect "8  literal beside an i64 keeps its fix"           "$(fix_for "${WORK}/ok.tk" j)" "  let y=x+3"
 expect "9  literal as <of an i64 function keeps its fix"  "$(fix_for "${WORK}/ok.tk" r)" "  <2"
+# (fix_for's extraction stops at the first escaped quote of the JSON string)
+expect "9b str literal as a method receiver keeps its fix" "$(fix_for "${WORK}/ok.tk" pool)" '  <\'
 
 # ── 10. every fix this file applies preserves behaviour ────────────────────
 for p in web ok; do
