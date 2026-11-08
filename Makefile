@@ -2351,7 +2351,7 @@ fuzz-toml:
 fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:
-	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c,)
+	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
 fuzz-template:
 	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c,)
 # http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls

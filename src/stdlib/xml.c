@@ -3,7 +3,12 @@
  * xml.c — std.xml standard library implementation.
  *
  * Pure libc XML builder and parser. No external dependencies.
- * All returned strings are heap-allocated.
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every string the public API
+ * returns (builder results, xml_get, xml_attr) is a sealed string from the
+ * string heap (tk_strhdr.h) -- never freed, written or reallocated -- and
+ * inputs are measured with tk_strlen.  The parser's XmlNodeArray strings
+ * stay malloc'd: xml_free owns them.
  *
  * Story: 88.6.1 (builder) / 88.6.2 (parser)
  */
@@ -13,6 +18,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include "tk_strhdr.h"
 
 /* ------------------------------------------------------------------ */
 /* Internal helpers                                                     */
@@ -33,6 +39,22 @@ static char *xprintf(const char *fmt, ...) {
     return buf;
 }
 
+/* xprintf into a sealed string (127.295).  The formatted text holds no 0
+ * byte: every argument is a C string. */
+static char *xprintf_sealed(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+    if (n < 0) return NULL;
+    char *buf = tks_alloc((size_t)n);
+    if (!buf) return NULL;
+    va_start(ap, fmt);
+    vsnprintf(buf, (size_t)n + 1, fmt, ap);
+    va_end(ap);
+    return tks_seal(buf, (size_t)n);
+}
+
 /* ------------------------------------------------------------------ */
 /* Builder API                                                         */
 /* ------------------------------------------------------------------ */
@@ -41,39 +63,39 @@ const char *xml_element(const char *tag, const char *content, const char *attrs)
     if (!tag) tag = "";
     if (!content) content = "";
     if (!attrs) attrs = "";
-    size_t tlen = strlen(tag);
-    size_t clen = strlen(content);
-    size_t alen = strlen(attrs);
+    size_t tlen = tk_strlen(tag);
+    size_t clen = tk_strlen(content);
+    size_t alen = tk_strlen(attrs);
     /* <tag attrs>content</tag> — with space before attrs if non-empty */
     size_t need = 1 + tlen + (alen ? 1 + alen : 0) + 1 + clen + 2 + tlen + 1 + 1;
-    char *buf = (char *)malloc(need);
+    char *buf = tks_alloc(need - 1);
     if (!buf) return NULL;
     if (alen) {
         snprintf(buf, need, "<%s %s>%s</%s>", tag, attrs, content, tag);
     } else {
         snprintf(buf, need, "<%s>%s</%s>", tag, content, tag);
     }
-    return buf;
+    return tks_seal(buf, need - 1);
 }
 
 const char *xml_element_self_closing(const char *tag, const char *attrs) {
     if (!tag) tag = "";
     if (!attrs) attrs = "";
-    size_t tlen = strlen(tag);
-    size_t alen = strlen(attrs);
+    size_t tlen = tk_strlen(tag);
+    size_t alen = tk_strlen(attrs);
     size_t need = 1 + tlen + (alen ? 1 + alen : 0) + 3 + 1;
-    char *buf = (char *)malloc(need);
+    char *buf = tks_alloc(need - 1);
     if (!buf) return NULL;
     if (alen) {
         snprintf(buf, need, "<%s %s />", tag, attrs);
     } else {
         snprintf(buf, need, "<%s />", tag);
     }
-    return buf;
+    return tks_seal(buf, need - 1);
 }
 
 const char *xml_escape(const char *s) {
-    if (!s) return strdup("");
+    if (!s) return tks_dup("", 0);
     /* Count how much space we need */
     size_t need = 0;
     for (const char *p = s; *p; p++) {
@@ -86,7 +108,7 @@ const char *xml_escape(const char *s) {
             default:   need += 1; break;
         }
     }
-    char *buf = (char *)malloc(need + 1);
+    char *buf = tks_alloc(need);
     if (!buf) return NULL;
     char *d = buf;
     for (const char *p = s; *p; p++) {
@@ -100,25 +122,25 @@ const char *xml_escape(const char *s) {
         }
     }
     *d = '\0';
-    return buf;
+    return tks_seal(buf, need);
 }
 
 const char *xml_cdata(const char *s) {
     if (!s) s = "";
-    return xprintf("<![CDATA[%s]]>", s);
+    return xprintf_sealed("<![CDATA[%s]]>", s);
 }
 
 const char *xml_declaration(const char *version, const char *encoding) {
     if (!version) version = "1.0";
     if (encoding && *encoding) {
-        return xprintf("<?xml version=\"%s\" encoding=\"%s\"?>", version, encoding);
+        return xprintf_sealed("<?xml version=\"%s\" encoding=\"%s\"?>", version, encoding);
     }
-    return xprintf("<?xml version=\"%s\"?>", version);
+    return xprintf_sealed("<?xml version=\"%s\"?>", version);
 }
 
 const char *xml_comment(const char *text) {
     if (!text) text = "";
-    return xprintf("<!-- %s -->", text);
+    return xprintf_sealed("<!-- %s -->", text);
 }
 
 const char *xml_element_ns(const char *ns, const char *tag, const char *content, const char *attrs) {
@@ -203,31 +225,47 @@ static char *cb_detach(CharBuf *b) {
 
 /* cb_free unused but retained for API completeness */
 
-/* Unescape XML entities in-place style (returns new heap string) */
-static char *xml_unescape(const char *s, size_t n) {
-    CharBuf out;
-    cb_init(&out);
+/* Unescape XML entities of s[0..n) onto out. */
+static void xml_unescape_into(CharBuf *outp, const char *s, size_t n) {
     size_t i = 0;
     while (i < n) {
         if (s[i] == '&') {
             if (i + 3 < n && s[i+1] == 'l' && s[i+2] == 't' && s[i+3] == ';') {
-                cb_appendc(&out, '<'); i += 4;
+                cb_appendc(outp, '<'); i += 4;
             } else if (i + 3 < n && s[i+1] == 'g' && s[i+2] == 't' && s[i+3] == ';') {
-                cb_appendc(&out, '>'); i += 4;
+                cb_appendc(outp, '>'); i += 4;
             } else if (i + 4 < n && s[i+1] == 'a' && s[i+2] == 'm' && s[i+3] == 'p' && s[i+4] == ';') {
-                cb_appendc(&out, '&'); i += 5;
+                cb_appendc(outp, '&'); i += 5;
             } else if (i + 5 < n && s[i+1] == 'q' && s[i+2] == 'u' && s[i+3] == 'o' && s[i+4] == 't' && s[i+5] == ';') {
-                cb_appendc(&out, '"'); i += 6;
+                cb_appendc(outp, '"'); i += 6;
             } else if (i + 5 < n && s[i+1] == 'a' && s[i+2] == 'p' && s[i+3] == 'o' && s[i+4] == 's' && s[i+5] == ';') {
-                cb_appendc(&out, '\''); i += 6;
+                cb_appendc(outp, '\''); i += 6;
             } else {
-                cb_appendc(&out, s[i]); i++;
+                cb_appendc(outp, s[i]); i++;
             }
         } else {
-            cb_appendc(&out, s[i]); i++;
+            cb_appendc(outp, s[i]); i++;
         }
     }
+}
+
+/* Unescape XML entities (returns new malloc'd string; the parser's). */
+static char *xml_unescape(const char *s, size_t n) {
+    CharBuf out;
+    cb_init(&out);
+    xml_unescape_into(&out, s, n);
     return cb_detach(&out);
+}
+
+/* Unescape XML entities into a sealed string (xml_attr's result, 127.295).
+ * The input holds no 0 byte and no entity decodes to one. */
+static char *xml_unescape_sealed(const char *s, size_t n) {
+    CharBuf out;
+    cb_init(&out);
+    xml_unescape_into(&out, s, n);
+    char *r = tks_dup(out.data ? out.data : "", out.len);
+    free(out.data);
+    return r;
 }
 
 /* Skip whitespace */
@@ -267,7 +305,7 @@ static char *ts_path(TagStack *ts) {
     cb_init(&b);
     for (int i = 0; i < ts->depth; i++) {
         if (i > 0) cb_appendc(&b, '.');
-        if (ts->tags[i]) cb_append(&b, ts->tags[i], strlen(ts->tags[i]));
+        if (ts->tags[i]) cb_append(&b, ts->tags[i], tk_strlen(ts->tags[i]));
     }
     return cb_detach(&b);
 }
@@ -293,7 +331,7 @@ XmlNodeArray xml_parse(const char *xml) {
     TagStack stack;
     ts_init(&stack);
 
-    size_t len = strlen(xml);
+    size_t len = tk_strlen(xml);
     size_t pos = 0;
 
     while (pos < len) {
@@ -465,7 +503,7 @@ const char *xml_get(const char *xml, const char *tag) {
     for (int i = 0; i < arr.count; i++) {
         if (arr.nodes[i].tag && strcmp(arr.nodes[i].tag, tag) == 0) {
             if (arr.nodes[i].content && *arr.nodes[i].content) {
-                result = strdup(arr.nodes[i].content);
+                result = tks_strdup(arr.nodes[i].content);
                 break;
             }
         }
@@ -476,7 +514,7 @@ const char *xml_get(const char *xml, const char *tag) {
 
 const char *xml_attr(const char *element, const char *attr_name) {
     if (!element || !attr_name) return NULL;
-    size_t nlen = strlen(attr_name);
+    size_t nlen = tk_strlen(attr_name);
     const char *p = element;
 
     while (*p) {
@@ -515,7 +553,7 @@ const char *xml_attr(const char *element, const char *attr_name) {
 
         /* Check if this is the attribute we want */
         if (name_len == nlen && memcmp(name_start, attr_name, nlen) == 0) {
-            return xml_unescape(val_start, val_len);
+            return xml_unescape_sealed(val_start, val_len);
         }
     }
     return NULL;

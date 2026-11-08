@@ -93,7 +93,6 @@ src/stdlib/ws.c 19
 src/stdlib/ws_server.c 4
 src/stdlib/xlsx.c 6
 src/stdlib/xlsx_glue.c 1
-src/stdlib/xml.c 8
 src/stdlib/yaml.c 4
 src/stdlib/zip.c 1
 src/stdlib/zip_glue.c 1
