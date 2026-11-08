@@ -2256,11 +2256,16 @@ static Type *infer(Ctx *cx, const Node *node);
  * nothing the i64 default does not render and stay unknown -- adopting
  * `i64` drew new W1001s on `$ok:v (v as u64)` over str.toint -- as do
  * struct-element arrays and maps (their own rules: 136.28, 127.224 item 7)
- * and `f32` (the emitter's subscript reads only an f64 or str rtype).
+ * and a scalar `f32`.  An array of `f32` IS adopted (127.313): its
+ * elements are stored as double bits and the subscript reads them so.
  */
 static int repr_elem(const Type *e) {
     for (int d = 0; e && d < 6; d++, e = e->elem) {
         if (e->kind == TY_STR || e->kind == TY_BOOL || e->kind == TY_F64) return 1;
+        /* 127.313: an f32 ELEMENT is stored as double bits (fpext+bitcast)
+         * and the subscript now reads it as a double, so it is adopted too.
+         * A scalar f32 return is not (repr_payload_type below). */
+        if (e->kind == TY_F32) return 1;
         if (e->kind != TY_ARRAY) return 0;
     }
     return 0;

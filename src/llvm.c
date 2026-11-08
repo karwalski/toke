@@ -6826,7 +6826,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * @f64/@str local markers cannot see — closing the 114.1 deferred
          * fn-return case and 114.16. (Elements are stored i64-strided, so only
          * f64/str need a non-i64 result.) */
-        if (n->rtype && n->rtype->kind == TY_F64) {
+        if (n->rtype && (n->rtype->kind == TY_F64
+                         || n->rtype->kind == TY_F32)) {   /* 127.313 */
             int bc = next_tmp(c);
             fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript (rtype)\n", bc, t);
             t = bc;
@@ -9656,7 +9657,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
              * reaches rtype: that build emits no str conversion for the
              * nested subscript, and test/standalone/test_nested_arr_compare.tk
              * still compares numerically. */
-            if (n->rtype->kind == TY_F64) return "double";
+            /* 127.313: an f32 element is stored as double bits (fpext +
+             * bitcast), so it reads as a double -- as the @f64 local marker
+             * already reads a same-module @f32 array. */
+            if (n->rtype->kind == TY_F64 || n->rtype->kind == TY_F32) return "double";
             if (n->rtype->kind == TY_STR) return "i8*";
         }
         /* Bug 102.29b: subscript on @f64 arrays returns double (legacy marker
