@@ -53,8 +53,8 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **67** | `ls stdlib/*.tki \| wc -l` |
 | `conformance_cases_yaml` | **306** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 132, lexical 37) |
-| `conformance_cases_shell` | **452** | `ls test/conform/*.sh \| wc -l` |
-| `conformance_cases_total` | **758** | the two rows above; `make conform` runs both |
+| `conformance_cases_shell` | **453** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **759** | the two rows above; `make conform` runs both |
 | `diagnostic_codes_documented` | **78** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
 | `diagnostic_codes_in_src` | **78** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |

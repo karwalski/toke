@@ -2123,6 +2123,7 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
 static const char *import_module_path(Ctx *cx, const char *alias,
                                       char *buf, size_t bufsz);
 static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
+static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -2175,6 +2176,14 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
                     && ret[0] == '[' && ret[rl - 1] == ']') {
                     Type *mt = tki_compound_type(cx, ret, rl, 0);
                     if (mt && mt->kind == TY_MAP) return mt;
+                    /* 127.308: an array of str/bool/f64 from another user
+                     * module (`f=mk():@$str` spelled `[str]`).  Left
+                     * unknown, `let a=sl.mk(); \(a.get(0))` printed the
+                     * string's address; a same-module call was typed. */
+                    if (mt && mt->kind == TY_ARRAY) {
+                        Type *at = repr_payload_type(cx, ret);
+                        if (at) return at;
+                    }
                 }
             }
             return NULL;
@@ -2235,6 +2244,36 @@ static Type *infer(Ctx *cx, const Node *node);
  * "error" key (imported struct records only, the 127.66 rule) — or a local
  * `let` bound to such a call.
  */
+/*
+ * repr_payload_type -- 127.297 / 127.302 / 127.308.  The type an interface
+ * spelling states when it says something about the value's
+ * REPRESENTATION: a `str`, `bool` or `f64` scalar, or an array (to any
+ * nesting) of `str`, `bool` or `f64` elements.  The emitter lowers each of those differently from the i64 it
+ * assumes for an untyped value (an i8* element, an i1 rendered true/false,
+ * a double read by bitcast), so leaving them unknown printed pointers, 1/0
+ * and raw f64 bit patterns at exit 0.  Integers (`i64`, `u64`, `[i64]`) add
+ * nothing the i64 default does not render and stay unknown -- adopting
+ * `i64` drew new W1001s on `$ok:v (v as u64)` over str.toint -- as do
+ * struct-element arrays and maps (their own rules: 136.28, 127.224 item 7)
+ * and `f32` (the emitter's subscript reads only an f64 or str rtype).
+ */
+static int repr_elem(const Type *e) {
+    for (int d = 0; e && d < 6; d++, e = e->elem) {
+        if (e->kind == TY_STR || e->kind == TY_BOOL || e->kind == TY_F64) return 1;
+        if (e->kind != TY_ARRAY) return 0;
+    }
+    return 0;
+}
+static Type *repr_payload_type(Ctx *cx, const char *sp) {
+    if (!sp || !*sp) return NULL;
+    size_t sl = strlen(sp);
+    Type *t = tki_compound_type(cx, sp, sl, 0);
+    if (!t) return NULL;
+    if (t->kind == TY_ARRAY) return repr_elem(t->elem) ? t : NULL;
+    if (t->kind == TY_STR || t->kind == TY_BOOL || t->kind == TY_F64) return t;
+    return NULL;
+}
+
 static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
     if (!scr || depth > 2) return NULL;
     if (scr->kind == NODE_IDENT) {
@@ -2259,8 +2298,28 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
         char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
         if (alias_shadowed(cx, callee->children[0])) return NULL;   /* 127.214 */
         const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
-        if (!f || !f->okret) return NULL;
-        return imported_struct_type(cx, f->okret, 0);
+        if (!f) return NULL;
+        if (!f->okret) {
+            /* 127.297 / 127.302: a hand-written std record spells the union
+             * inline (`"return": "bool!jsonerr"`) rather than with an
+             * "error" key, so its `T` is the spelling before the '!'.  Only
+             * a representation-bearing T is adopted (no struct: the 127.66
+             * rule stays as it was for the inline form). */
+            const char *bang = (f->ret && !f->abi_ret) ? strchr(f->ret, '!') : NULL;
+            if (!bang || bang == f->ret || (size_t)(bang - f->ret) >= 128) return NULL;
+            char okb[128];
+            memcpy(okb, f->ret, (size_t)(bang - f->ret));
+            okb[bang - f->ret] = '\0';
+            return repr_payload_type(cx, okb);
+        }
+        Type *st = imported_struct_type(cx, f->okret, 0);
+        if (st) return st;
+        /* 127.297 / 127.302: a representation-bearing ok payload -- the
+         * interface's `[f64]`, `[str]`, `[bool]` or `bool`, `str`, `f64`.
+         * Left unknown, `let r=mt toml.f64arr(..){$ok:v v;..}` bound an
+         * untyped array, so `r.get(0)` read the double's bits as an integer
+         * (sitofp), and `let c=mt json.bool(..){..}` interpolated as 1. */
+        return repr_payload_type(cx, f->okret);
     }
     if (callee->kind != NODE_IDENT) return NULL;
     Type *rt = call_decl_ret_type(cx, scr);
