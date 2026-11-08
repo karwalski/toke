@@ -52,9 +52,9 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `keywords` | **14** | `sed -n '/KEYWORDS_DEFAULT/,/};/p' src/lexer.c` — 10 reserved words (`if el lp br let mut as rt sc mt`) plus the 4 declaration heads `m= i= t= f=` |
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **67** | `ls stdlib/*.tki \| wc -l` |
-| `conformance_cases_yaml` | **324** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 150, lexical 37) |
-| `conformance_cases_shell` | **468** | `ls test/conform/*.sh \| wc -l` |
-| `conformance_cases_total` | **792** | the two rows above; `make conform` runs both |
+| `conformance_cases_yaml` | **325** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 151, lexical 37) |
+| `conformance_cases_shell` | **474** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **799** | the two rows above; `make conform` runs both |
 | `diagnostic_codes_documented` | **78** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
 | `diagnostic_codes_in_src` | **78** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |
