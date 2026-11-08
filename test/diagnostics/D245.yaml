@@ -1,0 +1,12 @@
+id: D245
+series: D
+description: "127.309: an unresolved USER module (`i=lib:lib`, no lib.tki on the path) is E2030 with no `fix` — an edit-distance stdlib guess ('std.log') is not deterministically correct for a user module"
+input: |
+  m=t;
+  i=lib:lib;
+  f=main():i64{
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E2030"]
+expected_fix_absent_for: ["E2030"]

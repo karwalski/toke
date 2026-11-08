@@ -1,0 +1,12 @@
+id: D247
+series: D
+description: "127.309 positive guard: a `std.*` typo (`std.lgo`) still carries the exact deterministic `did you mean 'std.log'?` fix on its E2030"
+input: |
+  m=t;
+  i=l:std.lgo;
+  f=main():i64{
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E2030"]
+expected_fix: "did you mean 'std.log'?"

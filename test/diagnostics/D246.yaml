@@ -1,0 +1,12 @@
+id: D246
+series: D
+description: "127.309: a dotted user-module path whose last segment is near a stdlib name (`app.jsn`) is E2030 with no `fix` — the suggestion is offered only for `std.*` imports"
+input: |
+  m=t;
+  i=a:app.jsn;
+  f=main():i64{
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E2030"]
+expected_fix_absent_for: ["E2030"]
