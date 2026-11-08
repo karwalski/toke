@@ -71,8 +71,8 @@ If you are using an LLM to help write toke code, here are prompts tuned for each
 
 > Write a toke page handler in module mortgage.web.calculate that handles a POST of URL-encoded form data. It should:
 > 1. Parse the request body into key=value pairs.
-> 2. Extract principal (f64), rate (f64), term (u64), and extra (f64, defaulting to 0).
-> 3. Validate rate is between 0 and 1, term is at least 1.
+> 2. Extract principal (f64), rate (f64), term (whole years, parsed as i64), and extra (f64, defaulting to 0).
+> 3. Validate rate is between 0 and 1, and term is at least 1 while it is still i64; only then convert term to u64.
 > 4. Compute monthly payment using M = P * [r(1+r)^n] / [(1+r)^n - 1].
 > 5. Build an HTML amortisation table (one row per month).
 > 6. Build an SVG stacked bar chart comparing principal vs interest per year.
@@ -479,8 +479,10 @@ f=handler(req:i64):i64{
     $ok:v v;
     $err:e <router.bad("invalid rate")
   };
-  let term=mt str.toint(terms) {
-    $ok:v (v as u64);
+  (* keep the parsed term signed until it is validated: cast first and
+     "-5" wraps to a huge u64 that passes term<1 (127.328) *)
+  let termyears=mt str.toint(terms) {
+    $ok:v v;
     $err:e <router.bad("invalid term")
   };
   let extra=mt str.tofloat(extras) {
@@ -491,9 +493,10 @@ f=handler(req:i64):i64{
   if(annualrate<0.0||annualrate>1.0){
     <router.bad("rate must be between 0 and 1 (e.g. 0.065 for 6.5%)")
   };
-  if(term<1){
+  if(termyears<1){
     <router.bad("term must be at least 1 year")
   };
+  let term=(termyears as u64);
 
   let pmt=monthlypayment(principal;annualrate;term*12);
   let totals=calctotals(principal;annualrate;term;extra;pmt);
@@ -509,7 +512,7 @@ f=handler(req:i64):i64{
     "total_cost":str.concat("$";formatmoney(totalcost));
     "principal":formatmoney(principal);
     "rate":rates;
-    "term":str.fromint(term as i64);
+    "term":str.fromint(termyears);
     "extra":formatmoney(extra);
     "schedule_rows":schedulehtml;
     "chart_svg":chartsvg
@@ -531,6 +534,8 @@ f=handler(req:i64):i64{
 The flow: parse the form body, validate inputs, run all computations, build the template variable map, render the results template, slot it into the layout, and return the complete page.
 
 Note how `extra` defaults to `0.0` on parse failure rather than returning an error — this makes the extra payment field truly optional.
+
+Note also the order of the term check. `str.toint` returns an `i64`, and the handler keeps it as `termyears` until `termyears<1` has rejected zero and negative input; only then does it cast to `u64` for the month arithmetic. Casting first would be a bug: `"-5" as u64` wraps to 18446744073709551611, which passes a `term<1` check, and `term*12` then overflows (RT002) and stops the server. The template shows `termyears` directly, so no cast back to `i64` is needed.
 
 ### 4.6 The results template
 
@@ -712,6 +717,15 @@ curl -s -X POST http://localhost:8080/calculate \
 ```
 
 Expected response: `rate must be between 0 and 1 (e.g. 0.065 for 6.5%)`.
+
+Negative term (should return 400, and the server keeps running):
+
+```bash
+curl -s -X POST http://localhost:8080/calculate \
+  -d "principal=500000&rate=0.065&term=-5&extra=0"
+```
+
+Expected response: `term must be at least 1 year`.
 
 ---
 
