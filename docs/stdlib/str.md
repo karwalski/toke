@@ -231,7 +231,7 @@ Byte-wise ordering, as `strcmp`: negative if `a` sorts before `b`, `0` if they a
 
 ### str.padleft(s: $str; width: i64; pad: i64): $str
 
-Pads `s` on the left to `width` bytes with the byte whose code is `pad` (`0` means a space): `str.padleft("7";3;48)` is `"007"`. A string passed as `pad` -- which the checker does not yet reject -- pads with its first byte since 138.11; it used to pad with the low byte of its address. `str.padright` is the same on the right.
+Pads `s` on the left to `width` bytes with the byte whose code is `pad` (`0` means a space): `str.padleft("7";3;48)` is `"007"`. A string passed as `pad` pads with its first byte (138.11; it used to pad with the low byte of its address), and the checker accepts it there (127.304); a string for `width` is E4031. `str.padright` is the same on the right.
 
 ### str.padright(s: $str; width: i64; pad: i64): $str
 
