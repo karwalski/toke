@@ -1,0 +1,16 @@
+id: D287
+series: D
+description: "lint mutable-never-mutated (131.104): a std call's adopted return types an IMMUTABLE let only (127.176 / 138.3; C055 case 3), so `let u=mut.s.trim(..)` is untyped where `let u=s.trim(..)` is str -- both check clean, but the checker types the references differently, so the fix is absent"
+input: |
+  m=t;
+  i=io:std.io;
+  i=s:std.str;
+  f=main():i64{
+    let u=mut.s.trim(" a ");
+    io.println(u);
+    <s.len(u) as i64
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mutable-never-mutated"]
+expected_fix_absent_for: ["mutable-never-mutated"]

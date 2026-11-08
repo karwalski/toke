@@ -56,6 +56,17 @@ typedef struct {
      * node->rtype the checker memoised is trustworthy.  Fixes whose
      * correctness depends on types (single-use-let) are offered only then. */
     int          typed;
+    /* 131.104: re-check a candidate source.  Lex, parse and type-check
+     * `src` (silently, as lint_typecheck does) and return its AST when every
+     * stage succeeded with no error, else NULL; *handle receives what
+     * recheck_free must release (the AST's arena).  The mutable-never-mutated
+     * fix is offered only when the caller provides this and the checker
+     * types the `mut`-less program node for node as it typed the original
+     * (a `let` is typed differently by mutability: bind_init_type).  NULL =
+     * withhold that fix. */
+    const Node *(*recheck)(void *ctx, const char *src, int src_len, void **handle);
+    void        (*recheck_free)(void *ctx, void *handle);
+    void        *recheck_ctx;
 } LintOptions;
 
 /* ── Public API ───────────────────────────────────────────────────────── */

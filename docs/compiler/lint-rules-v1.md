@@ -474,7 +474,8 @@ f=main():i64{
 };
 ```
 
-**Auto-fix (`toke lint --fix`):** Yes. The `mut.` prefix is stripped from the initial value expression. Safe because no reassignment exists to break.
+**Auto-fix (`toke lint --fix`):** Yes. The `mut.` prefix is stripped from the initial value expression. 
+**Fix condition (131.104):** deleting `mut.` is not type-transparent. The checker types a binding by its mutability: an int / float / bool literal, a negated literal and a std call's adopted return type an *immutable* `let` only, so `let x=mut.5; g(x)` into a `u64` parameter checks clean while `let x=5; g(x)` is E4031. The `fix` is therefore offered only when `--lint` re-checks the program with the `mut.` deleted (together with every `mut.` deletion already accepted in the same pass) and that program type-checks cleanly with every node typed exactly as before (`tk_type_identical`, or unknown on both sides); the name is bound once in the function; and at least one AST reference shows the binding's type (a use only inside `"\(...)"` interpolation does not). Otherwise the warning stands without a `fix`. In the example above `x` is untyped with `mut.` and `i64` without it, so that warning carries no fix; `let s=mut."hi"` used as `io.println(s)` does. Tests: C900, D076, D285–D289.
 
 **Edge cases:**
 
@@ -713,6 +714,8 @@ f=label(a:str;b:str):str{
 ```
 
 **Auto-fix:** Deterministic **only** when every leaf of the chain is a plain identifier or a string literal (identifiers become `\(name)`, literal contents are spliced verbatim). The rewrite is implemented but **dormant**: Epic 127.7 / 127.10 (interpolation memory bugs) are open, so a mechanically correct rewrite can still produce a program that misbehaves at runtime. The `fix` field is emitted only when `TKC_LINT_CONCAT_FIX` is armed — the environment variable set to a non-empty value other than `0`, or the compiler built with `-DTKC_LINT_CONCAT_FIX=1`. When 127.7 and 127.10 close, flip the default in `src/lint.c` and drop the env gate; the D-series tests (D062, D063) already exercise both states.
+
+**Audit before arming (131.104, 131.110):** the rewrite is AST-only and is **not** sound as it stands. `concat_call` matches any `.concat` method and any import alias's `concat`, and `concat_leaves` accepts any identifier, so an array chain `a.concat(b).concat(d)` is rewritten to `"\(a)\(b)\(d)"`, which is E4032 (measured with `TKC_LINT_CONCAT_FIX=1`). Arming it needs the 131.59 / 131.104 discipline first: `LintOptions.typed`, every identifier leaf and method receiver typed exactly `str` by the checker, a module alias that resolves to `std.str` (or a `LintOptions.recheck` of the rewritten program). Story 131.110.
 
 **Edge cases:**
 

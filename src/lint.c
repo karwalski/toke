@@ -12,6 +12,9 @@
  *   redundant-bind        — `let x = x;` where both sides are the same ident
  *   unused-let            — `let x = expr;` where x is never referenced
  *   mutable-never-mutated — `let x=mut.v` where x is never reassigned
+ *                            (131.104: fix only when the checker types the
+ *                            `mut`-less program identically -- see
+ *                            mut_drop_keeps_types; needs opts->recheck)
  *
  * Pattern rules (131.9, docs/compiler/lint-rules-v1.md "Pattern rules"):
  *   mut-flag-if            — `let x=mut.<lit>;` written only by the next if/el
@@ -1011,60 +1014,188 @@ static int rule_unused_let(const Node *node, const char *src,
  * A NODE_MUT_BIND_STMT declares a mutable binding.  If no NODE_ASSIGN_STMT
  * in the enclosing function body targets the same identifier, the binding
  * could be immutable.  Fix: delete the `mut.` prefix (span replacement).
+ *
+ * 131.104: deleting `mut.` is NOT type-transparent.  The checker types a
+ * binding by its mutability (types.c bind_init_type): an int / float / bool
+ * literal, a negated literal and a std call's scalar return type an
+ * IMMUTABLE `let` only (127.229, 127.230, 127.248, 138.3), and a `mut` empty
+ * `@()` takes its element type from its first append.  So
+ * `let x=mut.5; g(x)` into a u64 parameter checks clean and prints 5, while
+ * the fixed `let x=5; g(x)` is E4031 -- a compiling program turned into a
+ * non-compiling one -- and on arithmetic beside a u64 the two can be
+ * different operations.  Rather than restate the checker's rules here (they
+ * move: 127.315 widens one of them), the fix asks the checker itself
+ * (LintOptions.recheck) and is offered only when every one of these holds
+ * (AGENTS.md section 6 -- absent if uncertain):
+ *   - the original program type-checked cleanly (opts->typed) and a re-check
+ *     callback is available;
+ *   - the name is bound exactly once in the function (no shadowing, so every
+ *     reference below is this binding);
+ *   - the program with this `mut.` deleted -- together with every deletion
+ *     already accepted in this pass, so combined fixes are judged together
+ *     -- lexes, parses and type-checks cleanly;
+ *   - the two ASTs are the same shape (only MUT_BIND -> BIND differs) and the
+ *     checker gave every node the same type: tk_type_identical, or both
+ *     absent, or both TY_UNKNOWN;
+ *   - the binding's type is OBSERVED: at least one AST reference carries a
+ *     type in both programs.  A reference only inside "\(...)"
+ *     interpolation is not in the AST, so a binding used only there (or
+ *     only as an untyped method receiver) keeps the hint without a fix.
  */
-static int rule_mutable_never_mutated(const Node *node, const char *src,
-                                       int src_len,
-                                       const LintOptions *opts, LintResult *out)
+static int count_bind_sites(const Node *n, const Node *parent, int idx,
+                            const char *name, int len, const char *src,
+                            const Node **mut_decl);
+
+typedef struct {
+    const Node        *root;
+    const char        *src;
+    int                src_len;
+    const LintOptions *opts;
+    LintResult        *out;
+    int                acc[64];   /* starts of accepted `mut.` deletions */
+    int                acc_n;
+} MutCtx;
+
+/* Same checker type: both absent, both TY_UNKNOWN, or tk_type_identical. */
+static int mut_same_type(const Type *a, const Type *b)
+{
+    if (!a || !b) return !a && !b;
+    if (a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN)
+        return a->kind == TY_UNKNOWN && b->kind == TY_UNKNOWN;
+    return tk_type_identical(a, b);
+}
+
+/* Is `n` (child idx of `p`) a value reference to (name,len)?  count_refs'
+ * classification: not a field name, binder or assignment target. */
+static int mut_is_ref(const Node *n, const Node *p, int idx,
+                      const char *name, int len, const char *src)
+{
+    if (!name_is(n, name, len, src) || !p) return 0;
+    if (p->kind == NODE_FIELD_EXPR && idx == 1) return 0;
+    if ((p->kind == NODE_BIND_STMT || p->kind == NODE_MUT_BIND_STMT ||
+         p->kind == NODE_LOOP_INIT || p->kind == NODE_PARAM) && idx == 0) return 0;
+    if (p->kind == NODE_MATCH_ARM && idx == 1) return 0;
+    if (p->kind == NODE_ASSIGN_STMT && idx == 0) return 0;
+    return 1;
+}
+
+/* Walk the original tree `a` and the re-checked tree `b` in step.  Returns 1
+ * when they are the same shape and every node has the same type; sets
+ * *observed when a reference to (name,len) inside `fn` is typed in both. */
+static int mut_tree_same(const MutCtx *m, const Node *a, const Node *b,
+                         const Node *pa, int idx, const Node *fn, int in_fn,
+                         const char *name, int len, int *observed)
+{
+    if (!a || !b) return !a && !b;
+    if (a->kind != b->kind &&
+        !(a->kind == NODE_MUT_BIND_STMT && b->kind == NODE_BIND_STMT)) return 0;
+    if (a->child_count != b->child_count) return 0;
+    if (!mut_same_type(a->rtype, b->rtype)) return 0;
+    if (a == fn) in_fn = 1;
+    if (in_fn && a->kind == NODE_IDENT && a->rtype && b->rtype &&
+        mut_is_ref(a, pa, idx, name, len, m->src))
+        *observed = 1;
+    for (int i = 0; i < a->child_count; i++)
+        if (!mut_tree_same(m, a->children[i], b->children[i], a, i, fn, in_fn,
+                           name, len, observed))
+            return 0;
+    return 1;
+}
+
+/* The source with every accepted `mut.` and the one at `fs` deleted. */
+static char *mut_probe_src(const MutCtx *m, int fs, int *plen)
+{
+    char *p = malloc((size_t)m->src_len + 1);
+    if (!p) return NULL;
+    int n = 0;
+    for (int k = 0; k < m->src_len; k++) {
+        int del = (k == fs);
+        for (int j = 0; j < m->acc_n && !del; j++) del = (k == m->acc[j]);
+        if (del) { k += 3; continue; }
+        p[n++] = m->src[k];
+    }
+    p[n] = '\0';
+    *plen = n;
+    return p;
+}
+
+static int mut_drop_keeps_types(MutCtx *m, const Node *fn, const Node *ident, int fs)
+{
+    const LintOptions *o = m->opts;
+    if (!o || !o->typed || !o->recheck || m->acc_n >= 64) return 0;
+    const char *name = m->src + ident->tok_start;
+    int len = ident->tok_len;
+    const Node *md = NULL;
+    if (count_bind_sites(fn, NULL, 0, name, len, m->src, &md) != 1) return 0;
+    int plen = 0;
+    char *probe = mut_probe_src(m, fs, &plen);
+    if (!probe) return 0;
+    void *h = NULL;
+    const Node *nr = o->recheck(o->recheck_ctx, probe, plen, &h);
+    int observed = 0;
+    int ok = nr && mut_tree_same(m, m->root, nr, NULL, 0, fn, 0, name, len, &observed)
+             && observed;
+    if (o->recheck_free) o->recheck_free(o->recheck_ctx, h);
+    free(probe);
+    if (ok) m->acc[m->acc_n++] = fs;
+    return ok;
+}
+
+/* Byte span of the `mut.` (or `MUT.`) after `name=` in a binding, or 0. */
+static int mut_prefix_span(const Node *ident, const char *src, int src_len, int *fs)
+{
+    int k = ident->tok_start + ident->tok_len;
+    while (k < src_len && src[k] == ' ') k++;
+    if (k >= src_len || src[k] != '=') return 0;
+    k++;
+    while (k < src_len && src[k] == ' ') k++;
+    if (k + 4 <= src_len &&
+        (memcmp(src + k, "mut.", 4) == 0 || memcmp(src + k, "MUT.", 4) == 0)) {
+        *fs = k;
+        return 1;
+    }
+    return 0;
+}
+
+static int mutable_never_mutated_walk(MutCtx *m, const Node *node)
 {
     if (!node) return 0;
 
-    if (node->kind == NODE_FUNC_DECL && node->child_count > 0) {
-        const Node *body = func_body(node);
-        if (body) {
-            for (int i = 0; i < body->child_count; i++) {
-                const Node *stmt = body->children[i];
-                if (!stmt || stmt->kind != NODE_MUT_BIND_STMT) continue;
-                if (stmt->child_count == 0) continue;
-
-                const Node *ident = stmt->children[0];
-                if (!is_ident(ident)) continue;
-
-                const char *name = src + ident->tok_start;
-                int name_len = ident->tok_len;
-
-                if (!has_assign_to(body, name, name_len, src) &&
-                    rule_enabled("mutable-never-mutated", opts)) {
-                    char msg[256];
-                    snprintf(msg, sizeof msg,
-                        "mutable binding '%.*s' is never reassigned; "
-                        "consider removing 'mut'", name_len, name);
-                    /* Locate the `mut.` token after the '=' that follows the name */
-                    int fixable = 0, fs = 0, fe = 0;
-                    int k = ident->tok_start + ident->tok_len;
-                    while (k < src_len && src[k] == ' ') k++;
-                    if (k < src_len && src[k] == '=') {
-                        k++;
-                        while (k < src_len && src[k] == ' ') k++;
-                        if (k + 4 <= src_len && memcmp(src + k, "mut.", 4) == 0) {
-                            fixable = 1; fs = k; fe = k + 4;
-                        } else if (k + 4 <= src_len && memcmp(src + k, "MUT.", 4) == 0) {
-                            fixable = 1; fs = k; fe = k + 4;
-                        }
-                    }
-                    if (lint_push(out, "mutable-never-mutated", msg,
-                                  stmt->start, stmt->line, stmt->col, LINT_WARNING,
-                                  fixable, fs, fe, "") < 0)
-                        return -1;
-                }
-            }
-        }
-    }
-
-    for (int i = 0; i < node->child_count; i++) {
-        if (rule_mutable_never_mutated(node->children[i], src, src_len, opts, out) < 0)
+    const Node *body = (node->kind == NODE_FUNC_DECL) ? func_body(node) : NULL;
+    for (int i = 0; body && i < body->child_count; i++) {
+        const Node *stmt = body->children[i];
+        if (!stmt || stmt->kind != NODE_MUT_BIND_STMT || stmt->child_count == 0) continue;
+        const Node *ident = stmt->children[0];
+        if (!is_ident(ident)) continue;
+        const char *name = m->src + ident->tok_start;
+        int name_len = ident->tok_len;
+        if (has_assign_to(body, name, name_len, m->src) ||
+            !rule_enabled("mutable-never-mutated", m->opts)) continue;
+        char msg[256];
+        snprintf(msg, sizeof msg,
+            "mutable binding '%.*s' is never reassigned; "
+            "consider removing 'mut'", name_len, name);
+        int fs = 0;
+        int fixable = mut_prefix_span(ident, m->src, m->src_len, &fs) &&
+                      mut_drop_keeps_types(m, node, ident, fs);   /* 131.104 */
+        if (lint_push(m->out, "mutable-never-mutated", msg,
+                      stmt->start, stmt->line, stmt->col, LINT_WARNING,
+                      fixable, fixable ? fs : 0, fixable ? fs + 4 : 0, "") < 0)
             return -1;
     }
+
+    for (int i = 0; i < node->child_count; i++)
+        if (mutable_never_mutated_walk(m, node->children[i]) < 0) return -1;
     return 0;
+}
+
+static int rule_mutable_never_mutated(const Node *ast, const char *src, int src_len,
+                                      const LintOptions *opts, LintResult *out)
+{
+    MutCtx m;
+    memset(&m, 0, sizeof m);
+    m.root = ast; m.src = src; m.src_len = src_len; m.opts = opts; m.out = out;
+    return mutable_never_mutated_walk(&m, ast);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

@@ -3769,6 +3769,7 @@ static void check_json_parse_as_doc(Ctx *cx, const Node *call, const char *alias
               "got", "a json.parse result", (const char *)NULL);
 }
 
+static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3841,6 +3842,13 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * printed the string's address.  The records that spelled a str
          * parameter `i64` were retyped with this check. */
         const Type *at = an->rtype;
+        /* 127.314: a `[T]` an interface declares, reaching a `str`
+         * parameter untyped -- `let a=s.split(t;"\n"); s.len(a)` passed
+         * --check and returned 1, while `s.len(@("x";"y"))` was E4031.
+         * The 127.230 item 5 rule for user calls: judged here, never
+         * stored, so the emitter sees the rtypes it saw before. */
+        if ((!at || at->kind == TY_UNKNOWN) && strcmp(ps, "str") == 0)
+            at = std_array_ret(cx, an, 0);
         if (!at || at->kind == TY_UNKNOWN) continue;
         if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
@@ -4673,7 +4681,8 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
  * std_array_ret (127.230 item 5) — the ARRAY type a std/user interface
  * declares for `alias.member(..)` (a `[T]` return, e.g. `str.bytes` ->
  * `[byte]`), reached directly or through the immutable, un-annotated `let`
- * in force for identifier `n`; NULL otherwise.
+ * in force for identifier `n` (or a `mut` one, under std_array_mut_ret's
+ * conditions, 127.315); NULL otherwise.
  *
  * stdlib returns are deliberately not typed by call_decl_ret_type (127.66),
  * so `let b=s.bytes("x"); g(b)` -- and `g(s.bytes("x"))` itself -- passed a
@@ -4682,6 +4691,46 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
  * this is read by one check only and never stored on a node, so the emitter
  * sees exactly the rtypes it saw before.
  */
+/*
+ * std_array_mut_ret (127.315) -- std_array_ret through a `mut` binding.
+ * `let a=mut.s.split(..); s.len(a)` passed --check and printed 1: the
+ * immutable-only rule left a `mut` binding unjudged.  A `mut` binding can be
+ * re-assigned, and the checker leaves it untyped, so an assignment of
+ * another type is accepted (`a="x"`) and judging by the initialiser alone
+ * would be a false E4031.  So a `mut` binding is judged only when
+ *   - the binding is the one LEXICALLY in force at the use (tk_binder_at);
+ *   - its initialiser is a std [T] (std_array_ret), and
+ *   - every assignment to that same binding anywhere in the function is a
+ *     std [T] identical to it (tk_type_identical) -- `a=a.append(..)`,
+ *     `a=other` or a closure's store all leave it unjudged.
+ * Judged, never stored, exactly as for the immutable case.
+ */
+static Type *std_array_ret(Ctx *cx, const Node *n, int depth);
+static int mut_assigns_all_array(Ctx *cx, const Node *node, const Node *bn,
+                                 const char *nb, int nlen, const Type *t, int depth) {
+    if (!node) return 1;
+    if (node->kind == NODE_ASSIGN_STMT && node->child_count == 2 && node->children[0]
+        && node->children[0]->kind == NODE_IDENT
+        && node->children[0]->tok_len == nlen
+        && memcmp(cx->src + node->children[0]->tok_start, nb, (size_t)nlen) == 0
+        && tk_binder_at(cx->fn_node, cx->src, node->children[0], nb, nlen, NULL) == bn) {
+        Type *at = std_array_ret(cx, node->children[1], depth + 1);
+        if (!at || !tk_type_identical(at, t)) return 0;
+    }
+    for (int i = 0; i < node->child_count; i++)
+        if (!mut_assigns_all_array(cx, node->children[i], bn, nb, nlen, t, depth)) return 0;
+    return 1;
+}
+static Type *std_array_mut_ret(Ctx *cx, const Node *bn, const Node *use,
+                               const char *nb, int nlen, int depth) {
+    if (tk_binder_at(cx->fn_node, cx->src, use, nb, nlen, NULL) != bn) return NULL;
+    Type *t = std_array_ret(cx, bn->children[1], depth + 1);
+    /* tk_type_identical(t,t) is 0 when t holds TY_UNKNOWN anywhere: an
+     * element type the interface does not state cannot anchor the check. */
+    if (!t || !tk_type_identical(t, t)) return NULL;
+    return mut_assigns_all_array(cx, cx->fn_node, bn, nb, nlen, t, depth) ? t : NULL;
+}
+
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
     if (!n || depth > 2 || !cx->env || !cx->env->names) return NULL;
     if (n->kind == NODE_IDENT) {
@@ -4691,7 +4740,9 @@ static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
         if (!nlen || is_param(cx, nb, nlen)) return NULL;
         if (arm_bind_lookup(cx, nb, nlen, n)) return NULL;
         const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, n);
-        if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return NULL;
+        if (!bn || bn->child_count != 2) return NULL;
+        if (bn->kind == NODE_MUT_BIND_STMT) return std_array_mut_ret(cx, bn, n, nb, nlen, depth);
+        if (bn->kind != NODE_BIND_STMT) return NULL;
         return std_array_ret(cx, bn->children[1], depth + 1);
     }
     if (n->kind != NODE_CALL_EXPR || n->child_count < 1) return NULL;

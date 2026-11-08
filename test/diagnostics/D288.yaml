@@ -1,0 +1,22 @@
+id: D288
+series: D
+description: "lint mutable-never-mutated (131.104): a binding whose type does not depend on mutability (a user function's declared return, an array literal) keeps the fix -- --fix deletes both `mut.` prefixes and the program is typed identically"
+input: |
+  m=t;
+  f=sq(n:i64):i64{<n*n};
+  f=main():i64{
+    let a=mut.sq(3);
+    let b=mut.@(1;2;3);
+    <a+b.get(0)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mutable-never-mutated"]
+expected_fixed_output: |
+  m=t;
+  f=sq(n:i64):i64{<n*n};
+  f=main():i64{
+    let a=sq(3);
+    let b=@(1;2;3);
+    <a+b.get(0)
+  };

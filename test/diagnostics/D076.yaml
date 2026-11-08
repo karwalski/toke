@@ -1,12 +1,13 @@
 id: D076
 series: D
-description: "lint mutable-never-mutated --fix removes only the `mut.` prefix (span replacement), not the whole binding"
+description: "lint mutable-never-mutated --fix removes only the `mut.` prefix (span replacement), not the whole binding. 131.104: the fix is offered only when the checker types the `mut`-less program identically, so the binding here is a str literal (str either way) with AST references (two, so single-use-let does not inline it); the earlier `let x=mut.5` used only inside interpolation is D285 (no fix: the binding's type is not observable)"
 input: |
   m=t;
   i=io:std.io;
   f=main():i64{
-    let x=mut.5;
-    io.println("\(x)");
+    let x=mut."hi";
+    io.println(x);
+    io.println(x);
     <0
   };
 flags: --lint
@@ -16,7 +17,8 @@ expected_fixed_output: |
   m=t;
   i=io:std.io;
   f=main():i64{
-    let x=5;
-    io.println("\(x)");
+    let x="hi";
+    io.println(x);
+    io.println(x);
     <0
   };
