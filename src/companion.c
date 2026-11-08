@@ -413,8 +413,10 @@ static void emit_constants_section(FILE *out, const Node *ast, const char *src)
 
         const char *ctype = "unknown";
         char ctype_buf[NAME_BUF];
-        if (top->child_count >= 2 && top->children[1]) {
-            get_type_text(top->children[1], src, ctype_buf, (int)sizeof(ctype_buf));
+        /* 127.311: [0]=name, [1]=literal, [2]=type (parse_const_decl);
+         * reading [1] printed the literal in the Type column. */
+        if (top->child_count >= 3 && top->children[2]) {
+            get_type_text(top->children[2], src, ctype_buf, (int)sizeof(ctype_buf));
             ctype = ctype_buf;
         }
 
