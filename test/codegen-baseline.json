@@ -525,9 +525,9 @@
   "94ca8bd0ab1a625c"
  ],
  "test/standalone/test_db_sandbox.tk": [
-  false,
-  null,
-  null
+  true,
+  0,
+  "2bc5508038955d8e"
  ],
  "test/standalone/test_elif_stmt.tk": [
   true,
@@ -651,13 +651,13 @@
  ],
  "test/standalone/test_shadow_retype.tk": [
   true,
-  1,
-  "e3b0c44298fc1c14"
+  0,
+  "e4756ea931abc43c"
  ],
  "test/standalone/test_soap.tk": [
   true,
   0,
-  "e3b0c44298fc1c14"
+  "a5b34b9ad36080ed"
  ],
  "test/standalone/test_split_append.tk": [
   true,
@@ -707,7 +707,7 @@
  "test/standalone/test_xml.tk": [
   true,
   0,
-  "d64fff2041fe5f10"
+  "c58695fcba64e474"
  ],
  "test/standalone/test_xml_stress.tk": [
   true,
