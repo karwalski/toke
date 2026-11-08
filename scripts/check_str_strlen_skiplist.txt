@@ -19,10 +19,7 @@
 # plus json.c/toml_glue.c key lengths from 113.B.4/113.B.5/127.300.  The
 # json/toml ones stay bare because test-stdlib-json/-toml link those units
 # without the runtime heap tk_strhdr.h needs; convert them with that tranche.
-src/stdlib/acme.c 17
 src/stdlib/analytics.c 2
-src/stdlib/auth.c 23
-src/stdlib/auth_glue.c 3
 src/stdlib/cache.c 6
 src/stdlib/chart.c 3
 src/stdlib/chart_glue.c 1

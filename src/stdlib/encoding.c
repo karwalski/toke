@@ -6,11 +6,13 @@
  * All implementations are self-contained; no external dependencies beyond libc.
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
- * compiler code. Callers own the returned pointers.
+ * compiler code.  Callers own the returned decoded byte buffers.
  *
  * 127.295 (S1 step 5, runtime-abi §3.1): string inputs are measured with
- * tk_strlen (O(1) for a sealed string).  The encoders' results stay
- * malloc'd: auth.c, acme.c and http.c free them.
+ * tk_strlen (O(1) for a sealed string), and every string result (base32,
+ * base64, base64url, hex, urlencode, urldecode) is a sealed string from the
+ * string heap.  A string result is never freed, written or reallocated --
+ * C callers included (auth.c, acme.c, http.c's form parser).
  *
  * Story: 14.1.1
  */
@@ -103,13 +105,13 @@ const char *encoding_base32_encode(ByteArray data)
 {
     /* Output length: ceil(len/5)*8 chars + NUL */
     uint64_t in_len  = data.len;
-    uint64_t out_len = ((in_len + 4) / 5) * 8 + 1;
-    char *out = (char *)malloc(out_len);
+    uint64_t out_len = ((in_len + 4) / 5) * 8;
+    char *out = tks_alloc((size_t)out_len);
     if (!out) return NULL;
 
     if (in_len == 0) {
         out[0] = '\0';
-        return out;
+        return tks_seal(out, 0);
     }
 
     const uint8_t *in = data.data;
@@ -156,7 +158,7 @@ const char *encoding_base32_encode(ByteArray data)
     }
 
     out[j] = '\0';
-    return out;
+    return tks_seal(out, (size_t)j);
 }
 
 /* Map a single base32 character (upper or lower) to its 5-bit value, or -1. */
@@ -240,8 +242,8 @@ static const char *b64_encode_impl(ByteArray data, const char *alpha, int pad)
 {
     uint64_t in_len  = data.len;
     /* Output length: 4 chars per 3 input bytes, rounded up, plus NUL. */
-    uint64_t out_len = ((in_len + 2) / 3) * 4 + 1;
-    char *out = (char *)malloc(out_len);
+    uint64_t out_len = ((in_len + 2) / 3) * 4;
+    char *out = tks_alloc((size_t)out_len);
     if (!out) return NULL;
 
     const uint8_t *in = data.data;
@@ -268,7 +270,7 @@ static const char *b64_encode_impl(ByteArray data, const char *alpha, int pad)
     }
 
     out[j] = '\0';
-    return out;
+    return tks_seal(out, (size_t)j);
 }
 
 /* Internal: build a 256-entry decode table for a given alphabet.
@@ -337,11 +339,7 @@ static ByteArray b64_decode_impl(const char *s, const char *alpha)
 
 const char *encoding_b64encode(ByteArray data)
 {
-    if (data.len == 0) {
-        char *out = (char *)malloc(1);
-        if (out) out[0] = '\0';
-        return out;
-    }
+    if (data.len == 0) return tks_dup("", 0);
     return b64_encode_impl(data, B64_STD, 1);
 }
 
@@ -352,11 +350,7 @@ ByteArray encoding_b64decode(const char *s)
 
 const char *encoding_b64urlencode(ByteArray data)
 {
-    if (data.len == 0) {
-        char *out = (char *)malloc(1);
-        if (out) out[0] = '\0';
-        return out;
-    }
+    if (data.len == 0) return tks_dup("", 0);
     return b64_encode_impl(data, B64_URL, 0);
 }
 
@@ -373,8 +367,8 @@ static const char HEX_DIGITS[] = "0123456789abcdef";
 
 const char *encoding_hexencode(ByteArray data)
 {
-    uint64_t out_len = data.len * 2 + 1;
-    char *out = (char *)malloc(out_len);
+    uint64_t out_len = data.len * 2;
+    char *out = tks_alloc((size_t)out_len);
     if (!out) return NULL;
 
     uint64_t i;
@@ -382,8 +376,8 @@ const char *encoding_hexencode(ByteArray data)
         out[i * 2]     = HEX_DIGITS[(data.data[i] >> 4) & 0x0f];
         out[i * 2 + 1] = HEX_DIGITS[ data.data[i]       & 0x0f];
     }
-    out[data.len * 2] = '\0';
-    return out;
+    out[out_len] = '\0';
+    return tks_seal(out, (size_t)out_len);
 }
 
 static int hex_val(char c)
@@ -442,7 +436,7 @@ const char *encoding_urlencode(const char *s)
 
     uint64_t slen = (uint64_t)tk_strlen(s);
     /* Worst case: every byte becomes %XX (3 chars). */
-    char *out = (char *)malloc(slen * 3 + 1);
+    char *out = tks_alloc((size_t)(slen * 3));
     if (!out) return NULL;
 
     uint64_t i, j = 0;
@@ -457,7 +451,7 @@ const char *encoding_urlencode(const char *s)
         }
     }
     out[j] = '\0';
-    return out;
+    return tks_seal(out, (size_t)j);
 }
 
 const char *encoding_urldecode(const char *s)
@@ -465,8 +459,9 @@ const char *encoding_urldecode(const char *s)
     if (!s) return NULL;
 
     uint64_t slen = (uint64_t)tk_strlen(s);
-    /* Output is never longer than input. */
-    char *out = (char *)malloc(slen + 1);
+    /* Output is never longer than input.  It never holds a 0 byte (%00 is
+     * dropped below), so j is the C-string length the seal needs. */
+    char *out = tks_alloc((size_t)slen);
     if (!out) return NULL;
 
     uint64_t i = 0, j = 0;
@@ -490,5 +485,5 @@ const char *encoding_urldecode(const char *s)
         out[j++] = s[i++];
     }
     out[j] = '\0';
-    return out;
+    return tks_seal(out, (size_t)j);
 }

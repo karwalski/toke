@@ -77,8 +77,6 @@ static void test_apikey_jwt_pipeline(void)
     ASSERT(strcmp(verified.ok.subject, "alice")        == 0, "subject matches");
     ASSERT(strcmp(verified.ok.issuer,  "test-service") == 0, "issuer matches");
 
-    free((void *)apikey);
-    free((void *)signed_jwt.ok);
 }
 
 /* -----------------------------------------------------------------------
@@ -120,9 +118,7 @@ static void test_encoding_roundtrips(void)
     ASSERT(memcmp(decoded_hex.data, raw, 32) == 0,
            "hex round-trip bytes match original");
 
-    free((void *)b64url);
     free((void *)decoded_b64.data);
-    free((void *)hexstr);
     free((void *)decoded_hex.data);
 }
 
@@ -251,7 +247,6 @@ static void test_ed25519_hex_encode(void)
            "Ed25519 verify with hex-round-tripped signature succeeds");
 
     free((void *)sig.data);
-    free((void *)sig_hex);
     free((void *)sig_decoded.data);
 }
 
@@ -300,8 +295,6 @@ static void test_jwt_expiry(void)
     int not_expired = auth_jwtexpired(future_tok.ok);
     ASSERT(not_expired == 0, "auth_jwtexpired returns 0 for future exp");
 
-    free((void *)expired_tok.ok);
-    free((void *)future_tok.ok);
 }
 
 /* -----------------------------------------------------------------------
@@ -329,7 +322,6 @@ static void test_hmac_b64url_workflow(void)
            "HMAC -> b64url -> decode round-trip matches");
 
     free((void *)hmac.data);
-    free((void *)encoded);
     free((void *)decoded.data);
 }
 
@@ -375,8 +367,6 @@ static void test_constant_time_key_comparison(void)
     ASSERT(auth_apikeyvalidate("short", key_a) == 0,
            "apikeyvalidate: different lengths returns 0");
 
-    free((void *)key_a);
-    free((void *)key_b);
     free(key_a_mut);
 }
 
@@ -463,9 +453,6 @@ static void test_full_auth_flow(void)
     ASSERT(auth_apikeyvalidate(apikey, other_key) == 0,
            "Full auth flow: apikey does not validate against different key");
 
-    free((void *)apikey);
-    free((void *)jwt_result.ok);
-    free((void *)other_key);
 }
 
 /* -----------------------------------------------------------------------

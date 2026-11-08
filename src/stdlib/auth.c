@@ -9,7 +9,17 @@
  * No external dependencies beyond libc.
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
- * compiler code. Callers own the returned pointers.
+ * compiler code.
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length is read with
+ * tk_strlen, and every string result -- the signed token, verified and
+ * decoded claim strings, API keys, bearer tokens, the OAuth2 authorize URL,
+ * the TOTP URI and secret -- is a sealed string from the string heap that is
+ * never freed, written or reallocated, C callers included.  Two exceptions,
+ * both malloc'd and freed by the caller: JwtDecodedClaims.raw_payload (the
+ * decoded payload bytes, which may hold a 0) and auth_password_hash's result
+ * (std.crypto's bcrypt producer).  The std.encoding strings used inside are
+ * sealed too, so none of them is freed here.
  *
  * Story: 14.1.3
  */
@@ -19,6 +29,7 @@
 #include "crypto.h"
 #include "strbuf.h"
 #include "tk_secure.h"
+#include "tk_strhdr.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,8 +45,8 @@
 /* Concatenate two strings with a separator character.  Caller frees result. */
 static char *concat3(const char *a, char sep, const char *b)
 {
-    size_t la = strlen(a);
-    size_t lb = strlen(b);
+    size_t la = tk_strlen(a);
+    size_t lb = tk_strlen(b);
     char  *out = (char *)malloc(la + 1 + lb + 1);
     if (!out) return NULL;
     memcpy(out, a, la);
@@ -50,7 +61,7 @@ static ByteArray ba_of_str(const char *s)
 {
     ByteArray b;
     b.data = (const uint8_t *)s;
-    b.len  = (uint64_t)strlen(s);
+    b.len  = (uint64_t)tk_strlen(s);
     return b;
 }
 
@@ -132,7 +143,6 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
     strbuf_putc(&pb, '}');
     char *payload_json = strbuf_take(&pb);
     if (!payload_json) {
-        free((void *)header_b64);
         result.err_msg = "out of memory";
         return result;
     }
@@ -142,7 +152,6 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
     free(payload_json);
 
     if (!payload_b64) {
-        free((void *)header_b64);
         result.err_msg = "failed to encode payload";
         return result;
     }
@@ -150,8 +159,6 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
     /* ---- Signing input: header_b64 + "." + payload_b64 ---- */
     char *signing_input = concat3(header_b64, '.', payload_b64);
     if (!signing_input) {
-        free((void *)header_b64);
-        free((void *)payload_b64);
         result.err_msg = "out of memory";
         return result;
     }
@@ -160,8 +167,6 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
     ByteArray   mac    = crypto_hmac_sha256(secret, si_ba);
     if (!mac.data) {
         free(signing_input);
-        free((void *)header_b64);
-        free((void *)payload_b64);
         result.err_msg = "HMAC computation failed";
         return result;
     }
@@ -171,31 +176,27 @@ JwtResult auth_jwtsign(JwtClaims claims, ByteArray secret)
 
     if (!sig_b64) {
         free(signing_input);
-        free((void *)header_b64);
-        free((void *)payload_b64);
         result.err_msg = "failed to encode signature";
         return result;
     }
 
-    /* ---- Assemble token: header.payload.signature ---- */
-    size_t token_len = strlen(header_b64) + 1 + strlen(payload_b64) + 1 + strlen(sig_b64) + 1;
-    char  *token = (char *)malloc(token_len);
+    /* ---- Assemble token: header.payload.signature (a sealed string) ---- */
+    size_t si_len    = tk_strlen(signing_input);
+    size_t sg_len    = tk_strlen(sig_b64);
+    size_t token_len = si_len + 1 + sg_len;
+    char  *token = tks_alloc(token_len);
     if (!token) {
         free(signing_input);
-        free((void *)header_b64);
-        free((void *)payload_b64);
-        free((void *)sig_b64);
         result.err_msg = "out of memory";
         return result;
     }
-    snprintf(token, token_len, "%s.%s.%s", header_b64, payload_b64, sig_b64);
-
+    memcpy(token, signing_input, si_len);
+    token[si_len] = '.';
+    memcpy(token + si_len + 1, sig_b64, sg_len);
+    token[token_len] = '\0';
     free(signing_input);
-    free((void *)header_b64);
-    free((void *)payload_b64);
-    free((void *)sig_b64);
 
-    result.ok     = token;
+    result.ok     = tks_seal(token, token_len);
     result.is_err = 0;
     result.err_msg = NULL;
     return result;
@@ -223,7 +224,7 @@ static int jwt_split(const char *token, char **part)
 
     size_t l0 = (size_t)(dot1 - p);
     size_t l1 = (size_t)(dot2 - dot1 - 1);
-    size_t l2 = strlen(dot2 + 1);
+    size_t l2 = tk_strlen(dot2 + 1);
 
     part[0] = (char *)malloc(l0 + 1);
     part[1] = (char *)malloc(l1 + 1);
@@ -269,7 +270,7 @@ static int json_get_str(const char *json, const char *key,
     const char *p = strstr(json, pattern);
     if (!p) return 0;
 
-    p += strlen(pattern);  /* now points at first char of value */
+    p += tk_strlen(pattern);  /* now points at first char of value */
 
     /* 135.3j: the value ends at the first UNESCAPED quote, and escapes are
      * decoded, so a value auth_jwtsign escaped reads back as it was given.
@@ -327,7 +328,7 @@ static int json_get_int64(const char *json, const char *key, int64_t *out)
     const char *p = strstr(json, pattern);
     if (!p) return 0;
 
-    p += strlen(pattern);
+    p += tk_strlen(pattern);
     /* skip optional whitespace */
     while (*p == ' ' || *p == '\t') p++;
 
@@ -418,11 +419,10 @@ JwtVerifyResult auth_jwtverify(const char *token, ByteArray secret)
     const char *expected_b64 = encoding_b64urlencode(expected);
     int sig_ok = 0;
     if (expected_b64) {
-        size_t el = strlen(expected_b64);
-        if (strlen(part[2]) == el)
+        size_t el = tk_strlen(expected_b64);
+        if (tk_strlen(part[2]) == el)
             sig_ok = ct_memeq((const uint8_t *)part[2],
                               (const uint8_t *)expected_b64, el);
-        free((void *)expected_b64);
     }
 
     free((void *)expected.data);
@@ -493,8 +493,8 @@ JwtVerifyResult auth_jwtverify(const char *token, ByteArray secret)
 
     JwtClaims claims;
     memset(&claims, 0, sizeof(claims));
-    claims.subject    = has_sub ? strdup(sub_buf) : NULL;
-    claims.issuer     = has_iss ? strdup(iss_buf) : NULL;
+    claims.subject    = has_sub ? tks_strdup(sub_buf) : NULL;
+    claims.issuer     = has_iss ? tks_strdup(iss_buf) : NULL;
     claims.issued_at  = iat_val;
     claims.expires_at = has_exp ? exp_val : 0;
     claims.audience   = NULL;
@@ -566,7 +566,7 @@ const char *auth_apikeygenerate(void)
 
     ByteArray   ba  = ba_of_bytes(raw, sizeof(raw));
     const char *key = encoding_b64urlencode(ba);
-    return key;   /* heap-allocated, caller frees */
+    return key;   /* a sealed string: never freed */
 }
 
 /* -----------------------------------------------------------------------
@@ -577,8 +577,8 @@ int auth_apikeyvalidate(const char *provided, const char *stored)
 {
     if (!provided || !stored) return 0;
 
-    size_t lp = strlen(provided);
-    size_t ls = strlen(stored);
+    size_t lp = tk_strlen(provided);
+    size_t ls = tk_strlen(stored);
 
     /* We must compare all bytes of the longer string to avoid length leaks.
      * Accumulate any differences and also flag length mismatch. */
@@ -654,12 +654,12 @@ JwtDecodeResult auth_jwtdecode_claims(const char *token)
 
     JwtDecodedClaims claims;
     memset(&claims, 0, sizeof(claims));
-    claims.sub         = has_sub ? strdup(sub_buf) : NULL;
-    claims.iss         = has_iss ? strdup(iss_buf) : NULL;
-    claims.aud         = has_aud ? strdup(aud_buf) : NULL;
+    claims.sub         = has_sub ? tks_strdup(sub_buf) : NULL;
+    claims.iss         = has_iss ? tks_strdup(iss_buf) : NULL;
+    claims.aud         = has_aud ? tks_strdup(aud_buf) : NULL;
     claims.exp         = has_exp ? exp_val : 0;
     claims.iat         = has_iat ? iat_val : 0;
-    claims.raw_payload = payload_json; /* caller owns this */
+    claims.raw_payload = payload_json; /* malloc'd: the caller frees it */
 
     result.ok      = claims;
     result.is_err  = 0;
@@ -701,34 +701,23 @@ const char *auth_oauth2_authorize_url(const char *provider,
 
     /* Encode scopes: spaces become %20 via urlencode. */
     const char *enc_scopes = encoding_urlencode(scopes);
-    if (!enc_scopes) {
-        free((void *)enc_redirect);
-        return NULL;
-    }
+    if (!enc_scopes) return NULL;
 
-    /* Build: {base_url}?client_id={id}&redirect_uri={uri}&scope={scopes}&response_type=code */
-    size_t url_len = strlen(base_url)
-                   + strlen("?client_id=") + strlen(client_id)
-                   + strlen("&redirect_uri=") + strlen(enc_redirect)
-                   + strlen("&scope=") + strlen(enc_scopes)
-                   + strlen("&response_type=code")
-                   + 1; /* NUL */
+    /* Build: {base_url}?client_id={id}&redirect_uri={uri}&scope={scopes}&response_type=code
+     * as a sealed string (runtime-abi §3.1). */
+    size_t url_len = tk_strlen(base_url)
+                   + sizeof("?client_id=") - 1 + tk_strlen(client_id)
+                   + sizeof("&redirect_uri=") - 1 + tk_strlen(enc_redirect)
+                   + sizeof("&scope=") - 1 + tk_strlen(enc_scopes)
+                   + sizeof("&response_type=code") - 1;
 
-    char *url = (char *)malloc(url_len);
-    if (!url) {
-        free((void *)enc_redirect);
-        free((void *)enc_scopes);
-        return NULL;
-    }
+    char *url = tks_alloc(url_len);
+    if (!url) return NULL;
 
-    snprintf(url, url_len,
+    int n = snprintf(url, url_len + 1,
              "%s?client_id=%s&redirect_uri=%s&scope=%s&response_type=code",
              base_url, client_id, enc_redirect, enc_scopes);
-
-    free((void *)enc_redirect);
-    free((void *)enc_scopes);
-
-    return url;
+    return tks_seal(url, n > 0 ? (size_t)n : 0);
 }
 
 OAuth2TokenResult auth_oauth2_token_exchange(const char *code,
@@ -782,7 +771,7 @@ BearerResult auth_bearerextract(const char *header_value)
         return result;
     }
 
-    char *token = strdup(token_start);
+    const char *token = tks_strdup(token_start);
     if (!token) {
         result.err_msg = "out of memory";
         return result;
@@ -985,40 +974,31 @@ TotpSetupResult auth_totp_generate(const char *issuer, const char *account)
     const char *enc_issuer  = encoding_urlencode(issuer);
     const char *enc_account = encoding_urlencode(account);
     if (!enc_issuer || !enc_account) {
-        free((void *)secret_b32);
-        free((void *)enc_issuer);
-        free((void *)enc_account);
         result.err_msg = "out of memory";
         return result;
     }
 
-    /* Build otpauth URI:
+    /* Build otpauth URI (a sealed string, runtime-abi §3.1):
      * otpauth://totp/{issuer}:{account}?secret={b32}&issuer={issuer}&algorithm=SHA1&digits=6&period=30 */
-    size_t uri_len = strlen("otpauth://totp/")
-                   + strlen(enc_issuer) + 1 /* ':' */
-                   + strlen(enc_account)
-                   + strlen("?secret=") + strlen(secret_b32)
-                   + strlen("&issuer=") + strlen(enc_issuer)
-                   + strlen("&algorithm=SHA1&digits=6&period=30")
-                   + 1; /* NUL */
+    size_t ei_len  = tk_strlen(enc_issuer);
+    size_t uri_len = sizeof("otpauth://totp/") - 1
+                   + ei_len + 1 /* ':' */
+                   + tk_strlen(enc_account)
+                   + sizeof("?secret=") - 1 + tk_strlen(secret_b32)
+                   + sizeof("&issuer=") - 1 + ei_len
+                   + sizeof("&algorithm=SHA1&digits=6&period=30") - 1;
 
-    char *uri = (char *)malloc(uri_len);
+    char *uri = tks_alloc(uri_len);
     if (!uri) {
-        free((void *)secret_b32);
-        free((void *)enc_issuer);
-        free((void *)enc_account);
         result.err_msg = "out of memory";
         return result;
     }
 
-    snprintf(uri, uri_len,
+    int n = snprintf(uri, uri_len + 1,
              "otpauth://totp/%s:%s?secret=%s&issuer=%s&algorithm=SHA1&digits=6&period=30",
              enc_issuer, enc_account, secret_b32, enc_issuer);
 
-    free((void *)enc_issuer);
-    free((void *)enc_account);
-
-    result.ok.uri        = uri;
+    result.ok.uri        = tks_seal(uri, n > 0 ? (size_t)n : 0);
     result.ok.secret_b32 = secret_b32;
     result.is_err        = 0;
     result.err_msg       = NULL;
@@ -1045,7 +1025,7 @@ int auth_totp_verify(const char *secret_b32, const char *token, int window)
      * This was strcmp() inside a loop that stopped at the first match --
      * the one credential comparison in the module that was not
      * constant-time.  Only the token's length (public: six) can end early. */
-    size_t tlen = strlen(token);
+    size_t tlen = tk_strlen(token);
     if (tlen != 6) { tk_secure_zero((void *)dec.ok.data, (size_t)dec.ok.len); free((void *)dec.ok.data); return 0; }
 
     int matched = 0;
