@@ -22,7 +22,8 @@
 # The checker now enforces the .tki (138.3 (c), Batch GA): `str.tof32(12345)`
 # and `str.isdigit(<i64>)` are E4031 at --check (case t28 below) --
 # `str.nowunix()/86400` (T-47b) is pinned by C296.  A str pad is not: the pad
-# is declared `i64`, the placeholder spelling, which is never judged.
+# is declared `i64`, and 127.304, which judges a str for an `i64` parameter,
+# exempts this one because the glue reads a str pad's first byte (C841 p8).
 #
 # Negative control: C313_STDLIB=<dir>/src/stdlib builds against another tree
 # (the compiler reads that tree's <dir>/stdlib/*.tki too).  Measured

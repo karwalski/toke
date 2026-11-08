@@ -3752,6 +3752,24 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         const Type *at = an->rtype;
         if (!at || at->kind == TY_UNKNOWN) continue;
         if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
+        /* 127.304: two `i64` parameters take a str by contract.
+         *   test.eq -- codegen lowers a str pair to tk_test_eqstr_w (127.68,
+         *     llvm.c test_eq_args_are_str: a str argument and no provable
+         *     number/bool), so a str is judged only beside a number or bool,
+         *     where the integer compare would read the string's address.
+         *   str.padleft / padright's pad -- the glue reads a str pad's first
+         *     byte (138.11, str_glue.c pad_byte; C313 pins "0" and "*"). */
+        if (strcmp(ps, "i64") == 0 && sym && strcmp(sym, "tk_test_eq_w") == 0
+            && actual == 2) {
+            const Node *on = call->children[i == 0 ? 2 : 1];
+            const Type *ot = on ? on->rtype : NULL;
+            int other_num = ot && ot->kind != TY_UNKNOWN && ot->kind != TY_STR
+                            && tki_arg_class(ot) >= 2 && tki_arg_class(ot) <= 3;
+            if (!other_num) continue;
+        }
+        if (strcmp(ps, "i64") == 0 && i == 2 && sym
+            && (strcmp(sym, "tk_str_padleft_w") == 0
+                || strcmp(sym, "tk_str_padright_w") == 0)) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID) continue;
         /* Judged by REPRESENTATION class, not width: a hand-written record

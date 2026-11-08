@@ -31,7 +31,7 @@
 #
 # Negative control: C841_TKC=<other tkc> runs the cases against another
 # compiler (this tree's .tki).  Measured 2026-11-09 with main 7758dcf3's
-# compiler: 7 passed, 6 failed -- exactly the six compiler-side rejections
+# compiler: 9 passed, 8 failed -- exactly the eight compiler-side rejections
 # (p5 is carried by the retyped .tki alone).
 #
 # Story: 127.304
@@ -83,6 +83,15 @@ clean   p4 'the retyped str parameters: json.getint key, http.resjson body' \
   "m=p4;${H}i=http:std.http;f=main():i64{${D}let n=mt json.getint(o;\"a\") { \$ok:v v; \$jsonerr:e 0 };let r=http.resjson(200;\"{}\");<0};"
 rejects p5 'an i64 key for json.getint (now declared str)' \
   "m=p5;${H}f=main():i64{${D}let n=mt json.getint(o;7) { \$ok:v v; \$jsonerr:e 0 };<0};"
+
+clean   p6 'test.eq on a str pair (lowered to the str compare, 127.68)' \
+  "m=p6;${H}i=test:std.test;f=main():i64{let a=test.eq(str.upper(\"hi\");\"HI\");let b=test.eq(2;2);<0};"
+rejects p7 'test.eq of a str beside a number (the integer compare reads an address)' \
+  "m=p7;${H}i=test:std.test;f=main():i64{let a=test.eq(\"5\";5);<0};"
+clean   p8 'str.padleft / padright with a str pad (glue reads its first byte, 138.11)' \
+  "m=p8;${H}f=main():i64{let a:str=str.padleft(\"7\";3;\"0\");let b:str=str.padright(\"a\";3;42);<0};"
+rejects p9 'str.padleft with a str width' \
+  "m=p9;${H}f=main():i64{let a:str=str.padleft(\"7\";\"3\";48);<0};"
 
 # ── direction 2: a record / T!E std result into a scalar-annotated let ───
 rejects r1 'let s:str=json.at(..) -- declares jsonval!jsonerr' \
