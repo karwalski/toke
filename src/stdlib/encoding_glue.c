@@ -9,6 +9,7 @@
 #include "encoding.h"
 #include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
 #include "tk_runtime.h" /* 127.241: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,7 +58,7 @@ static int64_t enc_bytes(ByteArray d, const char *why) {
  * returns [byte]. All binary-safe (0x00 preserved). */
 int64_t tk_encoding_tobytes_w(int64_t s) {
     const char *str = s ? (const char *)(intptr_t)s : "";
-    return tk_bytes_pack((const uint8_t *)str, (uint64_t)strlen(str));
+    return tk_bytes_pack((const uint8_t *)str, (uint64_t)tk_strlen(str));
 }
 int64_t tk_encoding_bytes_w(int64_t s) { return tk_encoding_tobytes_w(s); }
 int64_t tk_encoding_frombytes_w(int64_t b) {
@@ -150,7 +151,7 @@ int64_t tk_encoding_jsonfield_w(int64_t json_str, int64_t key) {
     if (!json_str || !key) return 0;
     const char *j = (const char *)(intptr_t)json_str;
     const char *k = (const char *)(intptr_t)key;
-    size_t klen = strlen(k);
+    size_t klen = tk_strlen(k);
     /* Search for "key":" pattern */
     const char *p = j;
     while ((p = strstr(p, k)) != NULL) {
@@ -186,7 +187,7 @@ int64_t tk_encoding_jsonfieldint_w(int64_t json_str, int64_t key) {
     if (!json_str || !key) return 0;
     const char *j = (const char *)(intptr_t)json_str;
     const char *k = (const char *)(intptr_t)key;
-    size_t klen = strlen(k);
+    size_t klen = tk_strlen(k);
     const char *p = j;
     while ((p = strstr(p, k)) != NULL) {
         if (p > j && *(p - 1) == '"') {

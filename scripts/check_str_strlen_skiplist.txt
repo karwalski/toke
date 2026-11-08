@@ -37,8 +37,6 @@ src/stdlib/dataframe_glue.c 1
 src/stdlib/db.c 2
 src/stdlib/db_mysql.c 2
 src/stdlib/db_postgres.c 2
-src/stdlib/encoding.c 5
-src/stdlib/encoding_glue.c 3
 src/stdlib/encrypt.c 2
 src/stdlib/encrypt_glue.c 1
 src/stdlib/env.c 8

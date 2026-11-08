@@ -1744,7 +1744,7 @@ test-stdlib-analytics:
 
 test-stdlib-encoding:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_encoding \
-	    test/stdlib/test_encoding.c src/stdlib/encoding.c
+	    test/stdlib/test_encoding.c src/stdlib/encoding.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_encoding
 
 test-stdlib-encrypt:
@@ -1891,7 +1891,7 @@ test-stdlib-capabilities:
 test-stdlib-auth-flow-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_auth_flow_integration \
 	    test/stdlib/test_auth_flow_integration.c \
-	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/encoding.c \
+	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/encoding.c src/stdlib/str.c \
 	    src/stdlib/crypto.c src/stdlib/json.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_auth_flow_integration
 
@@ -1914,7 +1914,7 @@ test-stdlib-http-json-integration:
 test-stdlib-http2:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_http2 \
 	    test/stdlib/test_http2.c src/stdlib/http2.c src/stdlib/http.c \
-	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
 	    $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_http2
 
@@ -1968,7 +1968,7 @@ test-stdlib-web-server-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_web_server_integration \
 	    test/stdlib/test_web_server_integration.c \
 	    src/stdlib/http.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c \
-	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
 	    $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_web_server_integration
 
