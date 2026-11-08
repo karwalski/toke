@@ -32,7 +32,11 @@
 # green on main by design — they pin that the
 # fix keeps the i64-strided cases unchanged.
 #
-# Story: 127.274
+# 127.244: a map lookup is `V!$err`, so the arithmetic in item 5 unwraps
+# the inner lookup with `mt` (`m.get(k)+1` is E4031, C881); the chain
+# itself is unchanged.
+#
+# Story: 127.274, 127.244
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -120,9 +124,9 @@ f=main():i64{
   let m=@("o":@("i":"w"));
   io.println(m.get("o").get("i"));
   let n=@("o":@("i":2.5));
-  io.println("\(n.get("o").get("i")+1.0)");
+  io.println("\(mt n.get("o").get("i"){$ok:y y+1.0;$err:e 0.0})");
   let p=@("o":@("i":4));
-  io.println("\(p.get("o").get("i")+1)");
+  io.println("\(mt p.get("o").get("i"){$ok:z z+1;$err:e 0})");
   <0
 };
 EOF2

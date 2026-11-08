@@ -21,7 +21,8 @@
 # so every "missing" line must still take $err.  The stale-slot case binds a
 # hit, then a miss, then matches the hit: the binding must keep its own copy
 # of the slot (135.16), not read the miss.  The value channel is unchanged:
-# an unconsumed `m.get(k)` is still the value, or the 0 filler on a miss.
+# the value, or the 0 filler on a miss -- read since 127.244 through
+# `m.getor(k;0)`, because an unconsumed `m.get(k)+1` is now E4031 (C881).
 # Everything is asserted at -O0 and -O2.
 #
 # Story: 127.30
@@ -88,8 +89,8 @@ f=main():i64{
   let d1=mt m.get("q"){$ok:v v;$err:e 7};
   io.println("default stored \(d0)");
   io.println("default missing \(d1)");
-  io.println("value hit \(m.get("b")+1)");
-  io.println("value filler \(m.get("q")+1)");
+  io.println("value hit \(m.getor("b";0)+1)");
+  io.println("value filler \(m.getor("q";0)+1)");
   <0
 };
 EOF

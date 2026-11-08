@@ -1,11 +1,12 @@
 id: T003
 series: T
 description: "valid: nested structs, array and map fields check clean"
+# 127.244: `o.tags.get("k")` is `i64!$err`; the sum reads it through getor.
 input: |
   m=t;
   t=$in{v:i64};
   t=$out{inner:$in;xs:@i64;tags:@(str:i64);name:str};
-  f=get(o:$out):i64{<o.inner.v+o.xs.get(0)+o.tags.get("k")};
+  f=get(o:$out):i64{<o.inner.v+o.xs.get(0)+o.tags.getor("k";0)};
   f=mk():$out{<$out{inner:$in{v:1};xs:@(2;3);tags:@("k":4);name:"n"}};
 expected_exit_code: 0
 expected_error_codes: []

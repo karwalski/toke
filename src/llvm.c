@@ -6826,7 +6826,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * @f64/@str local markers cannot see — closing the 114.1 deferred
          * fn-return case and 114.16. (Elements are stored i64-strided, so only
          * f64/str need a non-i64 result.) */
-        if (n->rtype && n->rtype->kind == TY_F64) {
+        if (n->rtype && (n->rtype->kind == TY_F64
+                         || n->rtype->kind == TY_F32)) {   /* 127.313 */
             int bc = next_tmp(c);
             fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript (rtype)\n", bc, t);
             t = bc;
@@ -7171,7 +7172,16 @@ static int emit_expr(Ctx *c, const Node *n)
         int iqual = index_as_qualified_get(c, n->children[0], iqal, sizeof iqal,
                                            iqme, sizeof iqme);
         char fv_ety[NAME_BUF];
-        if (fnval_call_err(n->children[0], fv_ety, sizeof fv_ety)) {   /* 127.276 */
+        if (index_is_map_get(c, n->children[0])) {
+            /* 127.244: `m.get(k)!$e` -- the checker accepts `!` on a map
+             * lookup now (it was E3020).  tk_map_get reports a miss on the
+             * error channel (127.30); a stored 0/false/"" is a hit, so the
+             * value sentinel would re-raise it.  A miss has no payload: it
+             * is re-raised payload-less, as a fallible function value with
+             * no error name is. */
+            prop_cur_err = 1;
+            prop_reraise = c->cur_fn_err[0] != '\0';
+        } else if (fnval_call_err(n->children[0], fv_ety, sizeof fv_ety)) {   /* 127.276 */
             prop_cur_err = 1;
             /* no name for the callee's error type: re-raise payload-less */
             prop_reraise = fv_ety[0] ? user_err_reraise_named(c, fv_ety)
@@ -9656,7 +9666,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
              * reaches rtype: that build emits no str conversion for the
              * nested subscript, and test/standalone/test_nested_arr_compare.tk
              * still compares numerically. */
-            if (n->rtype->kind == TY_F64) return "double";
+            /* 127.313: an f32 element is stored as double bits (fpext +
+             * bitcast), so it reads as a double -- as the @f64 local marker
+             * already reads a same-module @f32 array. */
+            if (n->rtype->kind == TY_F64 || n->rtype->kind == TY_F32) return "double";
             if (n->rtype->kind == TY_STR) return "i8*";
         }
         /* Bug 102.29b: subscript on @f64 arrays returns double (legacy marker

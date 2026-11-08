@@ -17,7 +17,7 @@ f=mkmap():@(str:str){
 };
 
 f=viaparam(m:@(str:str);k:str):str{
-  <m.get(k)
+  <m.getor(k;"")
 };
 
 f=main():$i64{

@@ -17,6 +17,10 @@
 # levels; case 2 exits 139 at -O0 and prints "ok" rc=0 at -O2.  Case 3 (a
 # non-nil sum) is green on both.
 #
+# 127.244: a lookup is `V!$err` to the checker, so case 1's map miss no
+# longer reaches the match: `nm(m.get("zz"))` is E4031 at --check (C881),
+# which case 1 now asserts.  The runtime guard is still asserted by case 2.
+#
 # Story: 121.51
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,9 +54,8 @@ f=main():i64{
   <0
 };
 EOF2
-for o in -O0 -O2; do
-    expect "1 a map miss matched as a sum ${o}" "$(run m.tk "${o}")" "b|RT005: nil dereference rc=1"
-done
+expect "1 a map miss handed to a \$shape parameter is E4031 (127.244)" \
+    "$("${TKC}" --check m.tk 2>&1 | grep -o "\"error_code\":\"E4031\"" | sort -u)" '"error_code":"E4031"'
 
 cat > d.tk <<'EOF2'
 m=d;
