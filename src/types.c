@@ -3769,6 +3769,7 @@ static void check_json_parse_as_doc(Ctx *cx, const Node *call, const char *alias
               "got", "a json.parse result", (const char *)NULL);
 }
 
+static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3841,6 +3842,13 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * printed the string's address.  The records that spelled a str
          * parameter `i64` were retyped with this check. */
         const Type *at = an->rtype;
+        /* 127.314: a `[T]` an interface declares, reaching a `str`
+         * parameter untyped -- `let a=s.split(t;"\n"); s.len(a)` passed
+         * --check and returned 1, while `s.len(@("x";"y"))` was E4031.
+         * The 127.230 item 5 rule for user calls: judged here, never
+         * stored, so the emitter sees the rtypes it saw before. */
+        if ((!at || at->kind == TY_UNKNOWN) && strcmp(ps, "str") == 0)
+            at = std_array_ret(cx, an, 0);
         if (!at || at->kind == TY_UNKNOWN) continue;
         if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
