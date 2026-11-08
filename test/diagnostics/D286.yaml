@@ -1,0 +1,17 @@
+id: D286
+series: D
+description: "lint mutable-never-mutated (131.104 repro): `let x=mut.5` is untyped while `let x=5` is i64, so `g(x)` into a u64 parameter checks clean before the fix and is E4031 after it -- the hint stays, the fix is absent"
+input: |
+  m=t;
+  i=io:std.io;
+  f=g(n:u64):u64{<n};
+  f=main():i64{
+    let x=mut.5;
+    let r=g(x);
+    io.println("\(r)");
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mutable-never-mutated"]
+expected_fix_absent_for: ["mutable-never-mutated"]

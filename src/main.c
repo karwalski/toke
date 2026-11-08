@@ -636,6 +636,55 @@ static int lint_typecheck(const Node *ast, const char *buf, long blen, Arena *ar
     return ok;
 }
 
+/*
+ * lint_recheck (131.104) — LintOptions.recheck: lex, parse and type-check a
+ * candidate source silently in its own arena, so the mutable-never-mutated
+ * fix can compare the checker's types with and without `mut.`.  Returns the
+ * AST only when every stage succeeded with no error.  Afterwards the
+ * diagnostic source is pointed back at the buffer being linted.
+ */
+typedef struct {
+    Profile          profile;
+    const char     **sp;
+    int              spc;
+    const TkcLimits *limits;
+    const char      *restore;      /* the buffer tkc_lint is linting */
+    long             restore_len;
+} LintRecheckCtx;
+
+static const Node *lint_recheck(void *vctx, const char *src, int src_len, void **handle)
+{
+    LintRecheckCtx *c = vctx;
+    *handle = NULL;
+    Arena *ar = arena_init();
+    if (!ar) return NULL;
+    *handle = ar;
+    const Node *out = NULL;
+    int tcap = src_len + 16;
+    Token *toks = arena_alloc(ar, (size_t)tcap * sizeof(Token));
+    if (toks) {
+        diag_suppress(1);
+        diag_reset();
+        diag_set_source(src, (size_t)src_len);
+        int tc = lex(src, src_len, toks, tcap, c->profile);
+        Node *ast = (tc < 0 || diag_error_count() > 0) ? NULL
+                    : parse(toks, tc, src, ar, c->profile);
+        int parsed = ast && diag_error_count() == 0;
+        diag_reset();
+        diag_suppress(0);
+        if (parsed && lint_typecheck(ast, src, src_len, ar, c->sp, c->spc, c->limits))
+            out = ast;
+    }
+    diag_set_source(c->restore, (size_t)c->restore_len);
+    return out;
+}
+
+static void lint_recheck_free(void *vctx, void *handle)
+{
+    (void)vctx;
+    if (handle) arena_free((Arena *)handle);
+}
+
 static int run_lint_mode(const char *path, const char *sbuf, long slen,
                          const Node *ast, Arena *arena, Profile profile,
                          const char **sp, int spc, const TkcLimits *limits,
@@ -645,6 +694,10 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
     LintOptions lopt;
     memset(&lopt, 0, sizeof lopt);
     lopt.typed = lint_typecheck(ast, sbuf, slen, arena, sp, spc, limits);   /* 131.59 */
+    LintRecheckCtx rck = { profile, sp, spc, limits, sbuf, slen };      /* 131.104 */
+    lopt.recheck = lint_recheck;
+    lopt.recheck_free = lint_recheck_free;
+    lopt.recheck_ctx = &rck;
     if (tkc_lint(ast, sbuf, (int)slen, &lopt, &lr) < 0) return EINTERNAL;
 
     int rc = 0, total_applied = 0, total_skipped = 0;
@@ -723,6 +776,10 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
         LintOptions lopt2;
         memset(&lopt2, 0, sizeof lopt2);
         lopt2.typed = lint_typecheck(ast2, buf, blen, ar, sp, spc, limits);   /* 131.59 */
+        rck.restore = buf; rck.restore_len = blen;                          /* 131.104 */
+        lopt2.recheck = lint_recheck;
+        lopt2.recheck_free = lint_recheck_free;
+        lopt2.recheck_ctx = &rck;
         if (tkc_lint(ast2, buf, (int)blen, &lopt2, &lr2) < 0) { arena_free(ar); ok = 0; rc = EINTERNAL; break; }
         /* 127.137: this round's lint IS the state of the buffer as it now
          * stands, so it supersedes the previous round's error tally. */
