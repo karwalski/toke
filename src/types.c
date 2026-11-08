@@ -123,6 +123,7 @@ static Type *mk_type(Arena *arena, TypeKind k) {
     if (!t) return NULL;
     t->kind = k; t->name = NULL; t->elem = NULL;
     t->field_count = 0; t->field_names = NULL; t->field_types = NULL;
+    t->slot_lower = NULL;
     return t;
 }
 
@@ -131,8 +132,8 @@ static Type *mk_type(Arena *arena, TypeKind k) {
  *
  * Used exclusively in diagnostic messages.  For primitives the name is a
  * fixed string ("i64", "str", ...).  For TY_STRUCT, returns the user-defined
- * struct name if available.  For TY_ERROR_TYPE, recurses into the wrapped
- * success type.
+ * struct name if available.  TY_ERROR_TYPE renders both sides, `T!$E`
+ * (127.244 -- it printed only T).
  *
  * 127.54 — composites are rendered STRUCTURALLY (`@(i64)`, `@(str:i64)`)
  * rather than as the bare kind ("array", "map", "func").  The bare spelling
@@ -197,7 +198,11 @@ static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
             }
             if (w < (int)n) {
                 char r[TN_LEN];
-                if (t->elem) type_name_into(t->elem, r, sizeof r, depth + 1);
+                /* 127.244: a union renders its own `!$E` now; this keeps the
+                 * signature's established spelling, so take its T. */
+                const Type *rt = (t->elem && t->elem->kind == TY_ERROR_TYPE)
+                                 ? t->elem->elem : t->elem;
+                if (rt) type_name_into(rt, r, sizeof r, depth + 1);
                 else snprintf(r, sizeof r, "?");
                 /* 127.276: the error type is part of the signature -- a
                  * fallible and an infallible signature printed alike
@@ -222,6 +227,24 @@ static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
         } else snprintf(buf, n, "func");
         return;
     }
+    case TY_ERROR_TYPE: {
+        /* 127.244: both sides of the union.  Rendering only the success
+         * type printed a mismatch between `i64!$e` and `i64` as
+         * "expected 'i64', got 'i64'".  The error type is spelled as a
+         * program writes it: `$name`, bare for a number or bool. */
+        char r[TN_LEN];
+        if (t->elem && t->elem->kind != TY_UNKNOWN)
+            type_name_into(t->elem, r, sizeof r, depth + 1);
+        else snprintf(r, sizeof r, "?");
+        const char *en = t->name ? t->name : "?";
+        static const char *const bare[] = { "i8","i16","i32","i64","u8","u16",
+            "u32","u64","f32","f64","bool","byte","?" };
+        int dollar = en[0] != '$';
+        for (size_t i = 0; dollar && i < sizeof bare / sizeof bare[0]; i++)
+            if (!strcmp(en, bare[i])) dollar = 0;
+        snprintf(buf, n, "%s!%s%s", r, dollar ? "$" : "", en);
+        return;
+    }
     default:
         snprintf(buf, n, "%s", type_name(t));
         return;
@@ -237,9 +260,8 @@ static const char *type_name(const Type *t) {
     case TY_U8: return "u8";     case TY_U16: return "u16";   case TY_U32: return "u32";
     case TY_F32: return "f32";
     case TY_STRUCT: return t->name?t->name:"struct";
-    case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
     case TY_PTR: return "ptr";
-    case TY_ARRAY: case TY_MAP: case TY_FUNC: {
+    case TY_ARRAY: case TY_MAP: case TY_FUNC: case TY_ERROR_TYPE: {   /* 127.244 */
         static char pool[TN_SLOTS][TN_LEN];
         static int  slot;
         char *buf = pool[slot];
@@ -4763,6 +4785,35 @@ static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_
     return buf;
 }
 
+/*
+ * slot_union_base (127.244) -- a slot error union used as the BASE of a
+ * field read or a subscript (`m.get("k").len`, `mm.get("k").get(0)`) is
+ * read as the type it had before (slot_lower), so the access is typed --
+ * and lowered -- exactly as it was.  Not judged yet: the repairs are not
+ * sound for a compound value (`getor` on a map of arrays/maps reads the
+ * element untyped, and an `mt` arm binding of a lookup is untyped -- both
+ * print pointers / bit patterns), so the chained form is the only working
+ * spelling until those land.  Any other base is returned unchanged.
+ */
+static Type *slot_union_base(Type *t) {
+    return (t && t->slot_lower) ? t->slot_lower : t;
+}
+
+/*
+ * map_get_union (127.244) -- `m.get(k)` on a map `@(K:V)` is fallible
+ * (semantics.md 10.1): `V!$err`, judged like a user `T!E`; its slot_lower
+ * is V, the type the lookup had before.
+ */
+static Type *map_get_union(Ctx *cx, Type *v) {
+    Arena *A = cx->env->arena;
+    Type *u = mk_type(A, TY_ERROR_TYPE);
+    if (!u) return v;
+    u->elem = v;
+    u->name = "err";
+    u->slot_lower = v;
+    return u;
+}
+
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
     /* 127.168: an array or map LITERAL is as proven a receiver as a string
@@ -5005,7 +5056,8 @@ static void check_reraise_type(Ctx *cx, const Node *node, const Type *inner) {
 
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
-    if (node) ((Node *)node)->rtype = t;
+    /* 127.244: a slot error union is judged as `T!E` but lowered as before. */
+    if (node) ((Node *)node)->rtype = (t && t->slot_lower) ? t->slot_lower : t;
     return t;
 }
 /* 127.223 item 2 — the declared return type of a call whose callee is a
@@ -6079,6 +6131,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_UNKNOWN);
         }
         check_reraise_type(cx,node,inner);                  /* 127.225 */
+        /* 127.244: a slot union yields the type its node had before. */
+        if (inner->slot_lower) return inner->slot_lower;
         return (inner->kind==TY_ERROR_TYPE&&inner->elem)?inner->elem:mk_type(A,TY_UNKNOWN);
     }
 
@@ -6126,6 +6180,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
         }
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
+        base=slot_union_base(base);   /* 127.244 */
         Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         /* 113.B.12: indexing a map (incl. a map stored in a struct field) by
          * key — `m.get(k)` desugars to NODE_INDEX_EXPR. The index is the KEY
@@ -6145,7 +6200,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 }
                 return mk_type(A,TY_UNKNOWN);
             }
-            return (base->field_count>0&&base->field_types&&base->field_types[0])?base->field_types[0]:mk_type(A,TY_UNKNOWN);
+            /* 127.244: the lookup is fallible -- `V!$err` (map_get_union). */
+            return map_get_union(cx,(base->field_count>0&&base->field_types&&base->field_types[0])?base->field_types[0]:mk_type(A,TY_UNKNOWN));
         }
         /*
          * 136.36 narrowing: `v.get(i)` on a value whose type came from a .tki
@@ -6211,6 +6267,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_FIELD_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
+        base=slot_union_base(base);   /* 127.244 */
         if (node->child_count<2||!node->children[1]) return mk_type(A,TY_UNKNOWN);
         char fname[128]; TOKSTR(fname,cx->src,node->children[1]);
         /*
