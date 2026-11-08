@@ -1671,7 +1671,7 @@ test-stdlib-process:
 # 124.4h — ambient defect hardening (AMB-04/05/06/07/08 at the C level).
 test-stdlib-ambient:
 	$(CC) $(CFLAGS) -o test/stdlib/test_ambient \
-	    test/stdlib/test_ambient.c src/stdlib/path.c src/stdlib/file.c \
+	    test/stdlib/test_ambient.c src/stdlib/path.c src/stdlib/str.c src/stdlib/file.c \
 	    src/stdlib/env.c src/stdlib/os.c src/stdlib/capabilities.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_ambient
 
@@ -2092,7 +2092,7 @@ repro-check:
 
 test-stdlib-path:
 	$(CC) $(CFLAGS) -o test/stdlib/test_path \
-	    test/stdlib/test_path.c src/stdlib/path.c
+	    test/stdlib/test_path.c src/stdlib/path.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_path
 
 test-stdlib-args:

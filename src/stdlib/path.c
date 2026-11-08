@@ -3,7 +3,12 @@
  * path.c — Implementation of the std.path standard library module.
  *
  * Pure path string operations. No filesystem calls — all logic is
- * string manipulation only.  Callers own returned pointers.
+ * string manipulation only.
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every result is a sealed string
+ * from the string heap (tk_strhdr.h) and inputs are measured with
+ * tk_strlen.  A result is never freed, written or reallocated -- C callers
+ * included.
  *
  * Story: 55.1  Branch: feature/stdlib-55.1-path
  */
@@ -11,18 +16,19 @@
 #include "path.h"
 #include <string.h>
 #include <stdlib.h>
+#include "tk_strhdr.h"
 
 /*
  * path_join — concatenate two path segments with exactly one '/' between them.
  * "a" + "b"  → "a/b"
  * "a/" + "b" → "a/b"
  * "a" + "/b" → "a/b"
- * Returns a heap-allocated string; caller owns it.
+ * Returns a sealed string.
  */
 const char *path_join(const char *a, const char *b)
 {
-    size_t alen = strlen(a);
-    size_t blen = strlen(b);
+    size_t alen = tk_strlen(a);
+    size_t blen = tk_strlen(b);
 
     /* Strip trailing slash from a. */
     while (alen > 0 && a[alen - 1] == '/') alen--;
@@ -33,13 +39,13 @@ const char *path_join(const char *a, const char *b)
 
     /* Result: a[0..alen-1] + '/' + b[boff..blen-1] + '\0' */
     size_t rlen = alen + 1 + (blen - boff);
-    char *out = malloc(rlen + 1);
+    char *out = tks_alloc(rlen);
     if (!out) return NULL;
     memcpy(out, a, alen);
     out[alen] = '/';
     memcpy(out + alen + 1, b + boff, blen - boff);
     out[rlen] = '\0';
-    return out;
+    return tks_seal(out, rlen);
 }
 
 /*
@@ -49,12 +55,12 @@ const char *path_join(const char *a, const char *b)
  * normalized relative path stays within its starting point — making it safe as a
  * containment primitive when combined with a prefix check. An absolute path keeps
  * its leading '/'. An empty relative result normalizes to ".".
- * Returns a heap-allocated string; caller owns it.
+ * Returns a sealed string.
  */
 const char *path_normalize(const char *p)
 {
     if (!p) return NULL;
-    size_t len = strlen(p);
+    size_t len = tk_strlen(p);
     int absolute = (len > 0 && p[0] == '/');
 
     char *buf = malloc(len + 1);
@@ -75,13 +81,13 @@ const char *path_normalize(const char *p)
         stack[sp++] = tok;
     }
 
-    char *out = malloc(len + 2);   /* <= input + optional leading '/' + NUL */
+    char *out = tks_alloc(len + 1);   /* <= input + optional leading '/' (+ NUL) */
     if (!out) { free(stack); free(buf); return NULL; }
     size_t o = 0;
     if (absolute) out[o++] = '/';
     for (size_t i = 0; i < sp; i++) {
         if (i > 0) out[o++] = '/';
-        size_t sl = strlen(stack[i]);
+        size_t sl = tk_strlen(stack[i]);   /* a private token: strlen fallback */
         memcpy(out + o, stack[i], sl);
         o += sl;
     }
@@ -89,7 +95,7 @@ const char *path_normalize(const char *p)
     out[o] = '\0';
     free(stack);
     free(buf);
-    return out;
+    return tks_seal(out, o);
 }
 
 /*
@@ -102,7 +108,7 @@ const char *path_normalize(const char *p)
  *   ".hidden"    → ".hidden"  (pure dotfile: entire basename is the extension)
  *   "foo."       → "."
  *
- * Returns a heap-allocated string; caller owns it.
+ * Returns a sealed string.
  */
 const char *path_ext(const char *p)
 {
@@ -111,7 +117,7 @@ const char *path_ext(const char *p)
     base = (base != NULL) ? base + 1 : p;
 
     /* Empty basename → no extension. */
-    if (*base == '\0') return strdup("");
+    if (*base == '\0') return tks_dup("", 0);
 
     /* Pure dotfile (starts with '.' and has no further dot): entire name is
      * the extension. */
@@ -119,16 +125,16 @@ const char *path_ext(const char *p)
         const char *dot2 = strchr(base + 1, '.');
         if (dot2 == NULL) {
             /* e.g. ".hidden" → ".hidden" */
-            return strdup(base);
+            return tks_strdup(base);
         }
         /* e.g. ".foo.bar" — fall through and find the last dot. */
     }
 
     const char *dot = strrchr(base, '.');
     if (dot == NULL || dot == base) {
-        return strdup("");
+        return tks_dup("", 0);
     }
-    return strdup(dot);
+    return tks_strdup(dot);
 }
 
 /*
@@ -140,7 +146,7 @@ const char *path_ext(const char *p)
  *   ".hidden"      → ""   (stem of a pure dotfile is empty)
  *   "foo"          → "foo"
  *
- * Returns a heap-allocated string; caller owns it.
+ * Returns a sealed string.
  */
 const char *path_stem(const char *p)
 {
@@ -148,40 +154,32 @@ const char *path_stem(const char *p)
     const char *base = strrchr(p, '/');
     base = (base != NULL) ? base + 1 : p;
 
-    size_t blen = strlen(base);
+    size_t blen = tk_strlen(base);
 
     /* Empty basename. */
-    if (blen == 0) return strdup("");
+    if (blen == 0) return tks_dup("", 0);
 
     /* Pure dotfile: starts with '.' and has no further dot.  Stem is "". */
     if (base[0] == '.') {
         const char *dot2 = strchr(base + 1, '.');
         if (dot2 == NULL) {
-            return strdup("");
+            return tks_dup("", 0);
         }
         /* e.g. ".foo.bar" — stem is everything up to the last dot. */
         const char *dot = strrchr(base, '.');
         size_t stem_len = (size_t)(dot - base);
-        char *out = malloc(stem_len + 1);
-        if (!out) return NULL;
-        memcpy(out, base, stem_len);
-        out[stem_len] = '\0';
-        return out;
+        return tks_dup(base, stem_len);
     }
 
     /* General case: find the last dot. */
     const char *dot = strrchr(base, '.');
     if (dot == NULL) {
         /* No extension — stem is the whole basename. */
-        return strdup(base);
+        return tks_strdup(base);
     }
 
     size_t stem_len = (size_t)(dot - base);
-    char *out = malloc(stem_len + 1);
-    if (!out) return NULL;
-    memcpy(out, base, stem_len);
-    out[stem_len] = '\0';
-    return out;
+    return tks_dup(base, stem_len);
 }
 
 /*
@@ -192,12 +190,12 @@ const char *path_stem(const char *p)
  *   "/"      → "/"
  *   "/foo"   → "/"
  *
- * Returns a heap-allocated string; caller owns it.
+ * Returns a sealed string.
  */
 const char *path_dir(const char *p)
 {
-    size_t len = strlen(p);
-    if (len == 0) return strdup(".");
+    size_t len = tk_strlen(p);
+    if (len == 0) return tks_dup(".", 1);
 
     /* Strip trailing slashes. */
     size_t end = len;
@@ -209,20 +207,16 @@ const char *path_dir(const char *p)
 
     if (last_slash == 0) {
         /* No '/' found — directory is current directory. */
-        return strdup(".");
+        return tks_dup(".", 1);
     }
 
     /* Trim trailing slashes from the directory portion, but keep "/" as-is. */
     size_t dir_end = last_slash;
     while (dir_end > 1 && p[dir_end - 1] == '/') dir_end--;
 
-    if (dir_end == 0) return strdup("/");
+    if (dir_end == 0) return tks_dup("/", 1);
 
-    char *out = malloc(dir_end + 1);
-    if (!out) return NULL;
-    memcpy(out, p, dir_end);
-    out[dir_end] = '\0';
-    return out;
+    return tks_dup(p, dir_end);
 }
 
 /*
@@ -232,13 +226,13 @@ const char *path_dir(const char *p)
  *   "/"  → "/"
  *   ""   → ""
  *
- * Returns a heap-allocated string; caller owns it.
+ * Returns a sealed string.
  */
 const char *path_base(const char *p)
 {
-    size_t len = strlen(p);
-    if (len == 0) return strdup("");
-    if (len == 1 && p[0] == '/') return strdup("/");
+    size_t len = tk_strlen(p);
+    if (len == 0) return tks_dup("", 0);
+    if (len == 1 && p[0] == '/') return tks_dup("/", 1);
 
     /* Strip trailing slashes (but keep at least one character). */
     size_t end = len;
@@ -249,11 +243,7 @@ const char *path_base(const char *p)
     while (start > 0 && p[start - 1] != '/') start--;
 
     size_t seg = end - start;
-    char *out = malloc(seg + 1);
-    if (!out) return NULL;
-    memcpy(out, p + start, seg);
-    out[seg] = '\0';
-    return out;
+    return tks_dup(p + start, seg);
 }
 
 /*
