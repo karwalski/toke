@@ -285,6 +285,8 @@ f=main():i64{
 # how test_127_27 asserts it (`ck("bool-lit-true";m.get("a");1)`).  Same slot
 # argument as u64: 127.27 coerces a bool map value to the i64 slot at the
 # literal (i1 zext), so reading it back at i64 moves no bits.
+# 127.244: read through `m.getor(k;false)` -- `m.get(k)` is `bool!$err`
+# and E4031 at an i64 site now (C881); the slot read is the same.
 
 echo "-- bool -> i64 (a bool in an i64 slot, read back) --"
 
@@ -294,7 +296,7 @@ i=io:std.io;
 f=id(n:i64):i64{<n};
 f=main():i64{
   let m=@("a":true;"b":false);
-  io.println("\(id(m.get("a"))) \(id(m.get("b")))");
+  io.println("\(id(m.getor("a";false))) \(id(m.getor("b";false)))");
   <0
 };'
 
@@ -303,7 +305,7 @@ accept "bool map value into an i64 annotation" "1" \
 i=io:std.io;
 f=main():i64{
   let m=@("a":true);
-  let n:i64=m.get("a");
+  let n:i64=m.getor("a";false);
   io.println("\(n)");
   <0
 };'
@@ -314,7 +316,7 @@ i=io:std.io;
 f=id(n:i64):i64{<n};
 f=main():i64{
   let m=@("x":1<2;"y":3>4);
-  io.println("\(id(m.get("x"))) \(id(m.get("y")))");
+  io.println("\(id(m.getor("x";false))) \(id(m.getor("y";false)))");
   <0
 };'
 

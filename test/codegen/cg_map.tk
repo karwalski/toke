@@ -18,22 +18,22 @@ f=cs(n:str;got:str;want:str):i64{
 f=total(m:@(str:i64)):i64{
   let ks=m.keys();
   let t=mut.0;
-  lp(let i=0;i<ks.len as i64;i=i+1){ t=t+m.get(ks.get(i)); };
+  lp(let i=0;i<ks.len as i64;i=i+1){ t=t+m.getor(ks.get(i);0); };
   <t
 };
-f=addone(m:@(str:i64);k:str):@(str:i64){ <m.set(k;m.get(k)+1) };
+f=addone(m:@(str:i64);k:str):@(str:i64){ <m.set(k;m.getor(k;0)+1) };
 f=main():i64{
   let m=mut.@("a":1;"b":2);
   ck("len";m.len as i64;2);
-  ck("get";m.get("a")+m.get("b");3);
-  ck("get miss is 0";m.get("q");0);
+  ck("get";m.getor("a";0)+m.getor("b";0);3);
+  ck("get miss is 0";m.getor("q";0);0);
   let ha:bool=m.contains("a");
   let hq:bool=m.contains("q");
   cs("contains";"\(ha) \(hq)";"true false");
   m=m.set("c";3);
   m=m.set("a";10);
   ck("set new and overwrite len";m.len as i64;3);
-  ck("overwritten value";m.get("a");10);
+  ck("overwritten value";m.getor("a";0);10);
   cs("keys keep insertion order";s.join(",";m.keys());"a,b,c");
   let snap=m;
   m=m.set("d";4);
@@ -46,11 +46,11 @@ f=main():i64{
   im=im.set(3;"three");
   cs("i64 keys";"\(im.get(1)) \(im.get(3)) \(im.len)";"one three 3");
   let acc=mut.@("x":0);
-  lp(let i=0;i<100;i=i+1){ acc=acc.set("x";acc.get("x")+i); acc=addone(acc;"n"); };
+  lp(let i=0;i<100;i=i+1){ acc=acc.set("x";acc.getor("x";0)+i); acc=addone(acc;"n"); };
   cs("accumulator through a user fn";"\(acc.get("x")) \(acc.get("n")) \(acc.len)";"4950 100 2");
   let big=mut.@("k0":0);
   lp(let i=1;i<300;i=i+1){ big=big.set("k\(i)";i); };
   ck("growth keeps every key";big.len as i64;300);
-  ck("growth keeps values";big.get("k299")+big.get("k150");449);
+  ck("growth keeps values";big.getor("k299";0)+big.getor("k150";0);449);
   <0
 };

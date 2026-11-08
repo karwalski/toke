@@ -10,6 +10,9 @@
 #
 # Negative control: TKC=<main's toke> -- case 1 fails (rc=0).
 #
+# 127.244: case 3 consumes the lookup with `mt` -- `<m.get("a")` from an
+# i64 function is E4031 now (C881); the point (no E4026) is unchanged.
+#
 # Story: 138.3, 138.13
 
 set -uo pipefail
@@ -51,7 +54,7 @@ esac
 expect "2 an array's .get(i) stays clean" \
     "$(diags 'm=q;i=http:std.http;f=main():i64{let a=@(1;2);<a.get(0)};')" "rc=0"
 expect "3 a map's .get(k) stays clean" \
-    "$(diags 'm=q;f=main():i64{let m=@("a":1);<m.get("a")};')" "rc=0"
+    "$(diags 'm=q;f=main():i64{let m=@("a":1);<mt m.get("a"){$ok:v v;$err:e 0}};')" "rc=0"
 
 echo "C299: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

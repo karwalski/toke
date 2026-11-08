@@ -127,12 +127,14 @@ done
 # integer" / "map key must be 'i64'"), so the i1 arm and a narrow key are
 # unreachable at these sites from source.  The i1 arm is preserved inside
 # coerce_value regardless; it is simply not assertable from a .tk program.
+# 127.244: the lookup is consumed with `mt` (`<mm.get(k)` from an i64
+# function is E4031 now, C881); the key widening is unchanged.
 run_case "str-keyed map .get still widens its key" "77" \
 'm=main;
 i=io:std.io;
 i=s:std.str;
 f=look(mm:@(str:i64);k:str):i64{
-  <mm.get(k)
+  <mt mm.get(k){$ok:v v;$err:e 0}
 };
 f=main():i64{
   let mm=@("a":77;"b":88);

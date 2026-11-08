@@ -606,9 +606,9 @@ f=pat(keys:@str;n:i64):i64{
   let m=mut.@("a":0;"b":0;"c":0;"d":0);
   lp(let i=0;i<n;i=i+1){
     let k=keys.get(i%4);
-    m=m.set(k;m.get(k)+i)
+    m=m.set(k;m.getor(k;0)+i)
   };
-  <m.get("a")+2*m.get("b")+3*m.get("c")+4*m.get("d")
+  <m.getor("a";0)+2*m.getor("b";0)+3*m.getor("c";0)+4*m.getor("d";0)
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -702,7 +702,7 @@ f=pat(xs:@i64):@i64{
   lp(let i=0;i<xs.len;i=i+1){
     let v=xs.get(i);
     let k="\(v)";
-    if(seen.get(k)==0){seen=seen.set(k;1);out=out.append(v)}
+    if(seen.getor(k;0)==0){seen=seen.set(k;1);out=out.append(v)}
   };
   <out
 };
@@ -2125,7 +2125,7 @@ i=env:std.env;
 f=pat(m:@(str:i64);ks:@str):i64{
   let t=mut.0;
   lp(let i=0;i<ks.len;i=i+1){
-    let v=m.get(ks.get(i));
+    let v=m.getor(ks.get(i);0);
     let d=if(v==0){7}el{v};
     t=t+d
   };
