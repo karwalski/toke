@@ -2446,6 +2446,64 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
     return rt->elem;
 }
 
+/*
+ * 127.327 — the value type of a branch tail or `mt` arm body, shared by
+ * if_expr_bind_type (127.326) and mt_bind_type: a nested expression-`if` or
+ * `mt` is answered by its own rule under the bind_infer_depth guard; any
+ * other expression by the rtype memo infer() stored when the binding
+ * statement was walked (never by re-walking it, which would repeat its
+ * diagnostics).  NULL when unknown.
+ */
+static Type *if_expr_bind_type(Ctx *cx, const Node *ifn);
+static Type *mt_bind_type(Ctx *cx, const Node *m);
+static Type *tail_value_type(Ctx *cx, const Node *te) {
+    if (!te) return NULL;
+    if (te->kind != NODE_IF_STMT && te->kind != NODE_MATCH_STMT) return te->rtype;
+    if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+    cx->bind_infer_depth++;
+    Type *t = te->kind == NODE_IF_STMT ? if_expr_bind_type(cx, te)
+                                       : mt_bind_type(cx, te);
+    cx->bind_infer_depth--;
+    return t;
+}
+
+/* 127.326 / 127.327: t is a value type the checker knows completely --
+ * not void, and no TY_UNKNOWN anywhere in it (tk_type_identical is strict:
+ * a type holding an unknown is not identical even to itself). */
+static int known_value_type(Type *t) {
+    return t && t->kind != TY_VOID && tk_type_identical(t, t);
+}
+
+/*
+ * 127.327 — the agreed type of an `mt`'s value-yielding arms, or NULL.
+ *
+ * semantics.md §8.1: "All arm body types must be equal ... The result type
+ * of the match expression is the common arm type."  So when the checker
+ * knows every non-diverging arm body's type and they are all
+ * tk_type_identical, that is the match's type.  An arm that is a `<` return
+ * leaves the function (114.47) and yields nothing, as codegen skips it.  An
+ * unknown arm, or arms that differ -- including E4011's tolerated shapes
+ * (the `0`/`false` null filler beside a pointer arm, an `$err` arm that is a
+ * call, u64 beside i64) -- answer NULL.  No join rule.  Codegen types the
+ * match by its ok-or-first value arm (llvm.c mt_arm_order); with every arm
+ * identical, that arm has the agreed type too.
+ */
+static Type *mt_arms_agreed_type(Ctx *cx, const Node *m) {
+    Type *agreed = NULL;
+    for (int i = 1; i < m->child_count; i++) {
+        const Node *arm = m->children[i];
+        if (!arm || arm->kind != NODE_MATCH_ARM) continue;
+        if (arm->child_count < 3 || !arm->children[2]) return NULL;
+        const Node *body = arm->children[2];
+        if (body->kind == NODE_RETURN_STMT) continue;
+        Type *bt = tail_value_type(cx, body);
+        if (!known_value_type(bt)) return NULL;
+        if (!agreed) agreed = bt;
+        else if (!tk_type_identical(agreed, bt)) return NULL;
+    }
+    return agreed;
+}
+
 static Type *mt_bind_type(Ctx *cx, const Node *m) {
     if (!m || m->kind != NODE_MATCH_STMT || m->child_count < 2) return NULL;
     /* 138.2: codegen types the match from its `$ok` arm first, wherever it
@@ -2466,14 +2524,17 @@ static Type *mt_bind_type(Ctx *cx, const Node *m) {
             continue;
         const Node *body = arm->children[2];
         if (body->kind == NODE_RETURN_STMT) continue;   /* 114.47, as codegen */
-        /* This is codegen's arm.  Only a bare `$ok:v v` is answered. */
+        /* This is codegen's arm.  A bare `$ok:v v` is answered with the
+         * scrutinee's ok payload type; any other shape by the arms'
+         * agreed type (127.327). */
         if (body->kind != NODE_IDENT || !arm->children[0] || !arm->children[1])
-            return NULL;
+            return mt_arms_agreed_type(cx, m);
         char tag[16]; TOKSTR(tag, cx->src, arm->children[0]);
-        if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0) return NULL;
+        if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0)
+            return mt_arms_agreed_type(cx, m);
         char bb[128], vb[128];
         TOKSTR(bb, cx->src, body); TOKSTR(vb, cx->src, arm->children[1]);
-        if (strcmp(bb, vb) != 0) return NULL;
+        if (strcmp(bb, vb) != 0) return mt_arms_agreed_type(cx, m);
         return mt_ok_payload_type(cx, m->children[0], 0);
     }
     return NULL;
@@ -2808,7 +2869,8 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
  * binding statement itself was walked, never by re-walking the branches:
  * infer() on an IF_STMT pushes a scope and would repeat every diagnostic in
  * them once per reference to the binding.  A tail not yet walked has no
- * rtype and answers NULL.  An `el if` chain recurses (depth-guarded).
+ * rtype and answers NULL.  An `el if` chain recurses (depth-guarded), and
+ * since 127.327 so does a tail that is itself an `mt` (tail_value_type).
  */
 static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
     if (!ifn || ifn->kind != NODE_IF_STMT || ifn->child_count < 3) return NULL;
@@ -2819,24 +2881,15 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
         Type *bt = NULL;
         if (!br) return NULL;
         if (br->kind == NODE_IF_STMT) {
-            cx->bind_infer_depth++;
-            bt = if_expr_bind_type(cx, br);
-            cx->bind_infer_depth--;
+            bt = tail_value_type(cx, br);
         } else if (br->kind == NODE_STMT_LIST && br->child_count > 0) {
             const Node *tail = br->children[br->child_count - 1];
             if (!tail || tail->kind != NODE_EXPR_STMT || tail->child_count < 1
                 || !tail->children[0])
                 return NULL;
-            const Node *te = tail->children[0];
-            if (te->kind == NODE_IF_STMT) {
-                cx->bind_infer_depth++;
-                bt = if_expr_bind_type(cx, te);
-                cx->bind_infer_depth--;
-            } else {
-                bt = te->rtype;
-            }
+            bt = tail_value_type(cx, tail->children[0]);   /* 127.327 */
         }
-        if (!bt || bt->kind == TY_VOID || !tk_type_identical(bt, bt)) return NULL;
+        if (!known_value_type(bt)) return NULL;
         if (!agreed) agreed = bt;
         else if (!tk_type_identical(agreed, bt)) return NULL;
     }
@@ -3039,7 +3092,8 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         return params_sig(cx, initN, 1);
     case NODE_FUNC_REF:
         return func_ref_sig(cx, initN);
-    /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
+    /* 127.180: `let x = mt scr {$ok:v v; ...}`, and since 127.327 any
+     * `mt` whose value arms agree — see mt_bind_type. */
     case NODE_MATCH_STMT:
         return mt_bind_type(cx, initN);
     /* 127.326: `let d=if(c){m}el{m2}` — see if_expr_bind_type. */
