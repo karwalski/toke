@@ -269,9 +269,14 @@ U64JsonResult json_u64(Json j, const char *key) {
     if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
+    /* 127.303: the value must be a JSON integer -- digits only, the whole
+     * value.  strtoull accepted a leading '-' and wrapped (-1 read as
+     * 2^64-1), and stopped at the '.' of 1.5, reading it as 1. */
     char *end; errno = 0;
-    uint64_t v = (uint64_t)strtoull(vs, &end, 10);
-    if (end == vs || errno) {
+    uint64_t v = 0;
+    if (*vs >= '0' && *vs <= '9') v = (uint64_t)strtoull(vs, &end, 10);
+    else end = (char *)vs;
+    if (end == vs || end != ve || errno) {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not a u64"); return r;
     }
     r.is_err = 0; r.ok = v; return r;
@@ -284,9 +289,15 @@ I64JsonResult json_i64(Json j, const char *key) {
     if (!json_locate(j.raw, key, &vs, &ve)) {
         r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
     }
+    /* 127.303: the value must be a JSON integer -- an optional '-' then
+     * digits, the whole value.  strtoll stopped at the '.' of 1.5 and read
+     * it as 1, and at the 'e' of 1e3 and read it as 1. */
     char *end; errno = 0;
-    int64_t v = (int64_t)strtoll(vs, &end, 10);
-    if (end == vs || errno) {
+    int64_t v = 0;
+    if (*vs == '-' || (*vs >= '0' && *vs <= '9'))
+        v = (int64_t)strtoll(vs, &end, 10);
+    else end = (char *)vs;
+    if (end == vs || end != ve || errno) {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an i64"); return r;
     }
     r.is_err = 0; r.ok = v; return r;
