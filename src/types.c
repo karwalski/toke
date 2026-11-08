@@ -2178,6 +2178,7 @@ static const char *import_module_path(Ctx *cx, const char *alias,
                                       char *buf, size_t bufsz);
 static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
 static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
+static Type *slot_union_base(Type *t);                     /* 127.320 */
 static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz);   /* 127.304 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
@@ -2332,6 +2333,55 @@ static Type *repr_payload_type(Ctx *cx, const char *sp) {
     if (t->kind == TY_ARRAY) return repr_elem(t->elem) ? t : NULL;
     if (t->kind == TY_STR || t->kind == TY_BOOL || t->kind == TY_F64) return t;
     return NULL;
+}
+
+/*
+ * repr_value_type -- 127.320 / 127.322.  A map's value type V, adopted for a
+ * value read OUT of the map (`m.getor(k;d)`, the `$ok` binding of an `mt`
+ * over `m.get(k)`) when V says something about the representation: a `str`,
+ * `bool` or `f64` scalar, a map, or an array whose innermost element is one
+ * of those (or `f32`, stored as double bits, 127.313).  Left unknown, the
+ * emitter read the value as the i64 it assumes: `getor` on a map of arrays
+ * printed the element string's address, an f64 its raw bits, a bool 1/0,
+ * and a map-valued result lost its value type for the next lookup.
+ * Integers, `f32` scalars and struct values stay unknown, as in
+ * repr_payload_type (the i64 default renders an integer; structs and f32
+ * scalars have their own rules).
+ */
+static Type *repr_value_type(Type *v) {
+    if (!v) return NULL;
+    if (v->kind == TY_STR || v->kind == TY_BOOL || v->kind == TY_F64
+        || v->kind == TY_MAP) return v;
+    if (v->kind != TY_ARRAY) return NULL;
+    const Type *e = v->elem;
+    for (int d = 0; e && d < 6 && e->kind == TY_ARRAY; d++) e = e->elem;
+    if (e && (repr_elem(e) || e->kind == TY_MAP)) return v;
+    return NULL;
+}
+
+/* map_getor_type (127.320) -- `m.getor(k;d)` on a map value (not a module
+ * alias such as `env.getor`): the map's value type, when repr_value_type
+ * adopts it.  The receiver is inferred so a chained receiver
+ * (`mm.getor(a;d).getor(b;0.0)`, `n.get("o").getor("i";0.0)`) carries its
+ * own type too. */
+static Type *map_getor_type(Ctx *cx, const Node *call) {
+    const Node *cal = call->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2
+        || !cal->children[0] || !cal->children[1]) return NULL;
+    char mb[16]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "getor") != 0 || call->child_count != 3) return NULL;
+    const Node *rv = cal->children[0];
+    if (rv->kind == NODE_TYPE_IDENT) return NULL;
+    if (rv->kind == NODE_IDENT) {
+        char ab[128]; TOKSTR(ab, cx->src, rv);
+        char pb[256];
+        if (!alias_shadowed(cx, rv) && import_module_path(cx, ab, pb, sizeof pb))
+            return NULL;
+    }
+    Type *rt = slot_union_base(infer(cx, rv));
+    if (!rt || rt->kind != TY_MAP || rt->field_count < 1 || !rt->field_types)
+        return NULL;
+    return repr_value_type(rt->field_types[0]);
 }
 
 static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
@@ -6092,6 +6142,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * (`str.nowunix()/86400`). */
                 Type *srt=std_scalar_ret(cx,node);
                 if (srt) return srt;
+                /* 127.320: `m.getor(k;d)` yields the map's value V. */
+                Type *grt=map_getor_type(cx,node);
+                if (grt) return grt;
             }
             return mk_type(A,TY_UNKNOWN);
         }
