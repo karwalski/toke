@@ -102,8 +102,11 @@ int main(void)
     return 0;
 }
 C
+# The link set comes from scripts/stdlib_link_set.sh, never a hand list (C696).
+LS=(); while IFS= read -r l; do LS+=("$l"); done < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" path xml fmt)
+LF=(); while IFS= read -r l; do [ -n "$l" ] && LF+=("$l"); done < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags path xml fmt)
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -iquote "${S}" -o seal seal.c \
-        "${S}/path.c" "${S}/xml.c" "${S}/fmt.c" "${S}/str.c" -lpthread > seal.cc 2>&1; then
+        "${LS[@]}" ${LF[@]+"${LF[@]}"} -lpthread > seal.cc 2>&1; then
     fail "C harness did not build"; sed 's/^/        /' seal.cc | head -6
 else
     TK_STR_VERIFY=1 ./seal > seal.out 2>&1; rc=$?

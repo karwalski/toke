@@ -52,9 +52,7 @@ cat > t.c <<'C'
 #include <stdlib.h>
 #include <string.h>
 #include "tk_strhdr.h"
-/* encoding_glue.c's error-slot references; jsonfield touches neither. */
-_Thread_local int64_t tk_current_error;
-void *tk_err_box(int64_t n) { return calloc(1, (size_t)n); }
+/* The error slot (tk_current_error, tk_err_box) comes from tk_runtime.c in the link set. */
 int64_t tk_encoding_jsonfield_w(int64_t, int64_t);
 static int fails = 0;
 #define CHECK(c, m) do { if (c) printf("  PASS: %s\n", m); \
@@ -87,8 +85,11 @@ int main(void) {
     return fails ? 1 : 0;
 }
 C
+# The link set comes from scripts/stdlib_link_set.sh, never a hand list (C696).
+LS=(); while IFS= read -r l; do LS+=("$l"); done < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" encoding)
+LF=(); while IFS= read -r l; do [ -n "$l" ] && LF+=("$l"); done < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags encoding)
 if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SANF} -iquote "${S}" -o t t.c \
-        "${S}/encoding_glue.c" "${S}/encoding.c" "${S}/str.c" -lpthread > cc.log 2>&1; then
+        "${LS[@]}" ${LF[@]+"${LF[@]}"} -lpthread > cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; FAIL=$((FAIL + 1))
 else
     ./t > t.out 2>&1
