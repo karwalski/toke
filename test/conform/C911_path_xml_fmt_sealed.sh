@@ -22,7 +22,7 @@
 # header" (none of these producers sealed); the toke case still passes there,
 # since an unsealed string is read with strlen -- correctness never depended
 # on the header, which is the point of S1.
-# Measured: this branch 46 passed (32 C + 14 toke); main 14 passed, 32
+# Measured: this branch 47 passed (32 C + 15 toke); main 15 passed, 32
 # failed (every C case "no header").
 #
 # Story: 127.295
@@ -151,6 +151,8 @@ f=main():i64{
   io.println("strs=[\(fs)] \(fs.len)");
   let fp=fmt.pad("ab";5;true);
   io.println("pad=[\(fp)] \(fp.len)");
+  let ff=fmt.f64(3.14159;2);
+  io.println("f64=[\(ff)] \(ff.len)");
   <0
 };
 TOKE
@@ -172,7 +174,8 @@ else
                 "attr=[a&b] 3" \
                 "arr=[1,-2,3] 6" \
                 "strs=[x+yy] 4" \
-                "pad=[   ab] 5"; do
+                "pad=[   ab] 5" \
+                "f64=[3.14] 4"; do
         if grep -a -q -x -F -- "${want}" p.out; then
             pass "toke: ${want}"
         else

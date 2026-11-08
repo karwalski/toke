@@ -306,7 +306,7 @@ int64_t tk_str_toint_w(int64_t s) {
 int64_t tk_str_bytes_w(int64_t s) {
     if (!s) return tk_bytes_pack((const uint8_t *)"", 0);
     const char *str = (const char *)(intptr_t)s;
-    return tk_bytes_pack((const uint8_t *)str, (uint64_t)strlen(str));
+    return tk_bytes_pack((const uint8_t *)str, (uint64_t)tk_strlen(str));
 }
 int64_t tk_str_tobytes_w(int64_t s) { return tk_str_bytes_w(s); }
 /* 127.241: str!EncodingErr, as declared and as str.md documents -- bytes that
@@ -584,13 +584,13 @@ int64_t tk_str_arraylen_w(int64_t arr) {
  * (docs/runtime-abi.md section 9). */
 static void regex_trap_invalid(const char *fn, const char *pat, const TkReErr *e) {
     fprintf(stderr, "RT008: invalid regex pattern in str.%s: %s (at byte %d of \"%.80s%s\")\n",
-            fn, e->msg, e->pos, pat, strlen(pat) > 80 ? "..." : "");
+            fn, e->msg, e->pos, pat, tk_strlen(pat) > 80 ? "..." : "");
     exit(1);
 }
 
 static void regex_trap_budget(const char *fn, const char *pat, size_t len) {
     fprintf(stderr, "RT009: regex step budget exceeded in str.%s (pattern \"%.80s%s\", subject %zu bytes)\n",
-            fn, pat, strlen(pat) > 80 ? "..." : "", len);
+            fn, pat, tk_strlen(pat) > 80 ? "..." : "", len);
     exit(1);
 }
 
@@ -603,7 +603,7 @@ static int64_t regex_find1(const char *fn, const char *str, const char *pat, int
     if (!str || !pat) return 0;
     TkRe re;
     regex_compile_or_trap(fn, pat, &re);
-    size_t len = strlen(str), ms, me;
+    size_t len = tk_strlen(str), ms, me;
     uint64_t budget = tkre_budget(&re, len);
     int rc = tkre_search(&re, str, len, 0, full, &budget, &ms, &me);
     tkre_free(&re);
@@ -623,7 +623,7 @@ typedef struct {
 
 static void regex_iter_init(RegexIter *it, const TkRe *re, const char *s) {
     memset(it, 0, sizeof *it);
-    it->re = re; it->s = s; it->len = strlen(s);
+    it->re = re; it->s = s; it->len = tk_strlen(s);
     it->budget = tkre_budget(re, it->len);
 }
 
@@ -770,8 +770,8 @@ int64_t tk_str_containsignorecase_w(int64_t s, int64_t sub) {
     const char *str = (const char *)(intptr_t)s;
     const char *needle = (const char *)(intptr_t)sub;
     if (!str || !needle) return 0;
-    size_t slen = strlen(str);
-    size_t nlen = strlen(needle);
+    size_t slen = tk_strlen(str);
+    size_t nlen = tk_strlen(needle);
     if (nlen > slen) return 0;
     if (nlen == 0) return 1;
     for (size_t i = 0; i <= slen - nlen; i++) {
@@ -854,7 +854,7 @@ int64_t tk_str_replacere_w(int64_t s, int64_t pattern, int64_t replacement) {
     if (!rep) rep = "";
     TkRe re;
     regex_compile_or_trap("replacere", pat, &re);
-    size_t rlen = strlen(rep), slen = strlen(str), opos = 0, done = 0;
+    size_t rlen = tk_strlen(rep), slen = tk_strlen(str), opos = 0, done = 0;
     size_t cap = slen + 64;
     char *out = (char *)malloc(cap);
     if (!out) { tkre_free(&re); return s; }
@@ -885,12 +885,10 @@ int64_t tk_str_sha256prefix_w(int64_t s, int64_t n) {
     int64_t hash = tk_crypto_sha256_w(s);
     if (!hash || n <= 0) return hash;
     const char *hex = (const char *)(intptr_t)hash;
-    size_t hlen = strlen(hex);
+    size_t hlen = tk_strlen(hex);
     size_t take = (size_t)n < hlen ? (size_t)n : hlen;
-    char *prefix = (char *)malloc(take + 1);
+    char *prefix = tks_dup(hex, take);        /* 127.295: sealed */
     if (!prefix) return hash;
-    memcpy(prefix, hex, take);
-    prefix[take] = '\0';
     return (int64_t)(intptr_t)prefix;
 }
 
@@ -1030,9 +1028,8 @@ int64_t tk_fmt_f64_w(int64_t val_bits, int64_t decimals) {
     if (dec > 20) dec = 20;
     char buf[64];
     snprintf(buf, sizeof(buf), "%.*f", dec, d);
-    char *out = (char *)malloc(strlen(buf) + 1);
+    char *out = tks_strdup(buf);              /* 127.295: sealed */
     if (!out) return (int64_t)(intptr_t)"0";
-    strcpy(out, buf);
     return (int64_t)(intptr_t)out;
 }
 
@@ -1045,7 +1042,7 @@ int64_t tk_str_find_w(int64_t s, int64_t sub) {
 int64_t tk_str_chars_w(int64_t s) {
     if (!s) return 0;
     const char *str = (const char *)(intptr_t)s;
-    size_t len = strlen(str);
+    size_t len = tk_strlen(str);
     /* Allocate array: header + one i64 per character */
     int64_t h = tk_arr_alloc((int64_t)len, (int64_t)len);
     if (!h) return 0;
@@ -1070,9 +1067,8 @@ int64_t tk_fmt_sprintf_w(int64_t fmt, int64_t val) {
     if (!fmt) return (int64_t)(intptr_t)"";
     char buf[1024];
     snprintf(buf, sizeof(buf), (const char *)(intptr_t)fmt, (const char *)(intptr_t)val);
-    char *out = (char *)malloc(strlen(buf) + 1);
+    char *out = tks_strdup(buf);              /* 127.295: sealed */
     if (!out) return (int64_t)(intptr_t)"";
-    strcpy(out, buf);
     return (int64_t)(intptr_t)out;
 }
 
