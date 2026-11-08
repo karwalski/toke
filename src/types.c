@@ -2792,6 +2792,57 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
     return t;
 }
 
+/*
+ * 127.326 — the value type of an expression-`if` used as an initialiser,
+ * `let d=if(c){m}el{m2}`, or NULL to leave the binding unknown.
+ *
+ * Spec v0.4 §C: "Both arms are blocks whose value is the block's tail
+ * expression; the two tails must have the same type."  So the binding takes
+ * that type when the checker knows it for both tails and they are identical
+ * (tk_type_identical: strict, TY_UNKNOWN anywhere is never identical).  Any
+ * other shape — a branch whose last statement is not an expression (a `<`
+ * return, a `br`, a binding), an unknown tail, or tails of different types —
+ * answers NULL, the behaviour before this story.  No join rule is invented.
+ *
+ * The tails' types are read from the rtype memo infer() stored when the
+ * binding statement itself was walked, never by re-walking the branches:
+ * infer() on an IF_STMT pushes a scope and would repeat every diagnostic in
+ * them once per reference to the binding.  A tail not yet walked has no
+ * rtype and answers NULL.  An `el if` chain recurses (depth-guarded).
+ */
+static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
+    if (!ifn || ifn->kind != NODE_IF_STMT || ifn->child_count < 3) return NULL;
+    if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+    Type *agreed = NULL;
+    for (int i = 1; i < 3; i++) {
+        const Node *br = ifn->children[i];
+        Type *bt = NULL;
+        if (!br) return NULL;
+        if (br->kind == NODE_IF_STMT) {
+            cx->bind_infer_depth++;
+            bt = if_expr_bind_type(cx, br);
+            cx->bind_infer_depth--;
+        } else if (br->kind == NODE_STMT_LIST && br->child_count > 0) {
+            const Node *tail = br->children[br->child_count - 1];
+            if (!tail || tail->kind != NODE_EXPR_STMT || tail->child_count < 1
+                || !tail->children[0])
+                return NULL;
+            const Node *te = tail->children[0];
+            if (te->kind == NODE_IF_STMT) {
+                cx->bind_infer_depth++;
+                bt = if_expr_bind_type(cx, te);
+                cx->bind_infer_depth--;
+            } else {
+                bt = te->rtype;
+            }
+        }
+        if (!bt || bt->kind == TY_VOID || !tk_type_identical(bt, bt)) return NULL;
+        if (!agreed) agreed = bt;
+        else if (!tk_type_identical(agreed, bt)) return NULL;
+    }
+    return agreed;
+}
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -2991,6 +3042,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
     /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
     case NODE_MATCH_STMT:
         return mt_bind_type(cx, initN);
+    /* 127.326: `let d=if(c){m}el{m2}` — see if_expr_bind_type. */
+    case NODE_IF_STMT:
+        return if_expr_bind_type(cx, initN);
     /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
@@ -3012,7 +3066,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * (same AST scan as above): INT_LIT 239 sites, BINARY_EXPR 111,
      * MATCH_STMT 110, STR_LIT 93, FLOAT_LIT 29, BOOL_LIT 18, IF_STMT 10,
      * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  STR_LIT has since landed
-     * (127.157, above).  The rest are a larger blast radius than the
+     * (127.157, above), and IF_STMT too (127.326, if_expr_bind_type;
+     * the IR of 3852 tree sources was unchanged).  The rest are a larger
+     * blast radius than the
      * container cases and are held out deliberately, not overlooked.
      */
     default:
