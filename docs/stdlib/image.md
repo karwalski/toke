@@ -204,7 +204,7 @@ i=image:std.image;
 i=file:std.file;
 
 f=main():i64{
-  let raw = mt file.read("photo.jpg") {$ok:d d;$err:e ""};
+  let raw = mt file.readbytes("photo.jpg") {$ok:d d;$err:e @()};
   let img = mt image.decode(raw) {$ok:i i;$err:e $imgbuf{width:0;height:0;channels:0;data:@()}};
   let thumb = image.resize(img; 128; 128);
   let out = mt image.encode(thumb; $imgfmt{$png:true}; 90) {$ok:b b;$err:e @()};
