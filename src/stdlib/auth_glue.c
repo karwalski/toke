@@ -14,11 +14,15 @@
  * the standard sub/iss/iat/exp/aud claim set (matching the C JwtClaims struct
  * order), and (str,str)->bool apikey validation. Wrapper names use the
  * no-underscore (Profile-1) method spelling the compiler emits.
+ *
+ * 127.295 (runtime-abi §3.1): auth.c's string results are sealed strings,
+ * returned to toke as they are; lengths are read with tk_strlen.
  */
 
 #include "auth.h"
 #include "bytes_rt.h"   /* tk_bytes_unpack */
 #include "tk_runtime.h" /* 127.238: tk_current_error + tk_err_box */
+#include "tk_strhdr.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,13 +44,11 @@ static int64_t auth_ok(int64_t v) {
     return v;
 }
 
-static int64_t dup_str_i64(const char *s) {
-    if (!s) s = "";
-    size_t n = strlen(s);
-    char *out = (char *)malloc(n + 1);
-    if (!out) return 0;
-    memcpy(out, s, n + 1);
-    return (int64_t)(intptr_t)out;
+/* A claim string for a JwtClaims record slot: auth_jwtverify's claim strings
+ * are sealed (127.295), so they go to toke as they are (this used to copy
+ * them into malloc'd strings and leak the originals); an absent claim is "". */
+static int64_t claim_str_i64(const char *s) {
+    return (int64_t)(intptr_t)(s ? s : "");
 }
 
 /* auth.jwtsign(JwtClaims, [byte] secret) -> str!AuthErr (HS256).
@@ -77,11 +79,11 @@ int64_t tk_auth_jwtverify_w(int64_t token_i64, int64_t secret_i64) {
     if (r.is_err) return auth_raise(r.err_msg);
     int64_t *rec = (int64_t *)malloc(5 * sizeof(int64_t));
     if (!rec) return auth_raise("auth.jwtverify: out of memory");
-    rec[0] = dup_str_i64(r.ok.subject);
-    rec[1] = dup_str_i64(r.ok.issuer);
+    rec[0] = claim_str_i64(r.ok.subject);
+    rec[1] = claim_str_i64(r.ok.issuer);
     rec[2] = (int64_t)r.ok.issued_at;
     rec[3] = (int64_t)r.ok.expires_at;
-    rec[4] = dup_str_i64(r.ok.audience);
+    rec[4] = claim_str_i64(r.ok.audience);
     return auth_ok((int64_t)(intptr_t)rec);
 }
 
@@ -152,7 +154,7 @@ int64_t tk_auth_jwt_w(int64_t claims, int64_t secret) {
     memset(&c, 0, sizeof(c));
     c.subject = (const char *)(intptr_t)claims;
     const char *sec = (const char *)(intptr_t)secret;
-    ByteArray sec_ba = { (uint8_t *)sec, strlen(sec) };
+    ByteArray sec_ba = { (uint8_t *)sec, tk_strlen(sec) };
     JwtResult r = auth_jwtsign(c, sec_ba);
     if (r.is_err || !r.ok) return 0;
     return (int64_t)(intptr_t)r.ok;
@@ -161,7 +163,7 @@ int64_t tk_auth_jwt_w(int64_t claims, int64_t secret) {
 int64_t tk_auth_verifyjwt_w(int64_t token, int64_t secret) {
     if (!token || !secret) return 0;
     const char *sec = (const char *)(intptr_t)secret;
-    ByteArray sec_ba = { (uint8_t *)sec, strlen(sec) };
+    ByteArray sec_ba = { (uint8_t *)sec, tk_strlen(sec) };
     JwtVerifyResult r = auth_jwtverify((const char *)(intptr_t)token, sec_ba);
     return r.is_err ? 0 : 1;
 }

@@ -4,6 +4,9 @@
  * Build and run: make test-stdlib-encoding
  * Stories: 14.1.1, 20.1.1
  *
+ * 127.295: every string result is a sealed string (runtime-abi §3.1) and is
+ * never freed here; decoded byte buffers (.data) still are.
+ *
  * Known-vector sources (verified with Python3):
  *   base64.b64encode(b"")    = b""
  *   base64.b64encode(b"Man") = b"TWFu"
@@ -18,6 +21,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "../../src/stdlib/encoding.h"
+#include "../../src/stdlib/tk_strhdr.h"
 
 static int failures = 0;
 
@@ -121,7 +125,6 @@ int main(void)
         ASSERT(dec_nulls.len == 5 &&
                memcmp(dec_nulls.data, with_nulls, 5) == 0,
                "b64 round-trip with embedded null bytes");
-        free((void *)enc_nulls);
         free((void *)dec_nulls.data);
     }
 
@@ -183,7 +186,6 @@ int main(void)
         const char *url_enc_empty = encoding_b64urlencode(url_empty);
         ASSERT(url_enc_empty && strlen(url_enc_empty) == 0,
                "b64urlencode(empty) == \"\"");
-        free((void *)url_enc_empty);
 
         ByteArray url_dec_empty = encoding_b64urldecode("");
         ASSERT(url_dec_empty.len == 0, "b64urldecode(\"\") len==0");
@@ -225,7 +227,6 @@ int main(void)
         const char *hex_enc_empty = encoding_hexencode(hex_empty_ba);
         ASSERT(hex_enc_empty && strlen(hex_enc_empty) == 0,
                "hexencode(empty) == \"\"");
-        free((void *)hex_enc_empty);
 
         ByteArray hex_dec_empty = encoding_hexdecode("");
         ASSERT(hex_dec_empty.len == 0, "hexdecode(\"\") len==0");
@@ -272,7 +273,6 @@ int main(void)
         const char *enc_empty_url = encoding_urlencode("");
         ASSERT(enc_empty_url && strlen(enc_empty_url) == 0,
                "urlencode(\"\") == \"\"");
-        free((void *)enc_empty_url);
     }
 
     /* 32 — All RFC 3986 reserved characters are percent-encoded */
@@ -297,7 +297,6 @@ int main(void)
         }
         ASSERT(!found_literal,
                "urlencode percent-encodes all RFC 3986 reserved chars");
-        free((void *)enc_reserved);
     }
 
     /* 33 — Invalid UTF-8 bytes in urlencode (should percent-encode, not crash) */
@@ -307,7 +306,6 @@ int main(void)
         const char *enc_inv = encoding_urlencode(invalid_utf8);
         ASSERT_STREQ(enc_inv, "%fe%ff",
                      "urlencode of invalid UTF-8 bytes 0xfe/0xff");
-        free((void *)enc_inv);
     }
 
     /* 34 — Multi-byte UTF-8 (e.g. U+00E9 = C3 A9) percent-encoded */
@@ -316,7 +314,6 @@ int main(void)
         const char *enc_utf8 = encoding_urlencode(utf8_e_acute);
         ASSERT_STREQ(enc_utf8, "%c3%a9",
                      "urlencode of U+00E9 (e-acute) == \"%c3%a9\"");
-        free((void *)enc_utf8);
     }
 
     /* 35 — urlencode(NULL) returns NULL */
@@ -348,7 +345,6 @@ int main(void)
         const char *dec_empty_url = encoding_urldecode("");
         ASSERT(dec_empty_url && strlen(dec_empty_url) == 0,
                "urldecode(\"\") == \"\"");
-        free((void *)dec_empty_url);
     }
 
     /* 40 — urldecode(NULL) returns NULL */
@@ -363,7 +359,6 @@ int main(void)
         /* '%' at position with only 1 hex digit remaining: literal passthrough */
         ASSERT(dec_trunc1 && strcmp(dec_trunc1, "abc%2") == 0,
                "urldecode truncated %2 at end is literal");
-        free((void *)dec_trunc1);
     }
 
     /* 42 — Bare percent sign */
@@ -372,7 +367,6 @@ int main(void)
         /* '%do' — 'd' is hex but 'o' is not, so literal passthrough */
         ASSERT(dec_bare && strcmp(dec_bare, "100%done") == 0,
                "urldecode bare % with invalid hex is literal");
-        free((void *)dec_bare);
     }
 
     /* ================================================================== */
@@ -398,7 +392,6 @@ int main(void)
                        memcmp(big_dec.data, big_data, big_len) == 0,
                        "b64 round-trip 1MB+ data matches");
                 free((void *)big_dec.data);
-                free((void *)big_enc);
             }
             free(big_data);
         }
@@ -425,7 +418,6 @@ int main(void)
                        memcmp(big_dec.data, big_data, big_len) == 0,
                        "hex round-trip 1MB data matches");
                 free((void *)big_dec.data);
-                free((void *)big_hex);
             }
             free(big_data);
         }
@@ -445,7 +437,6 @@ int main(void)
         ByteArray dec256 = encoding_b64decode(enc256);
         ASSERT(dec256.len == 256 && memcmp(dec256.data, all256, 256) == 0,
                "b64 round-trip all 256 byte values");
-        free((void *)enc256);
         free((void *)dec256.data);
     }
 
@@ -459,7 +450,6 @@ int main(void)
         ByteArray dec256 = encoding_hexdecode(hex256);
         ASSERT(dec256.len == 256 && memcmp(dec256.data, all256, 256) == 0,
                "hex round-trip all 256 byte values");
-        free((void *)hex256);
         free((void *)dec256.data);
     }
 
@@ -473,8 +463,6 @@ int main(void)
         const char *dec_print = encoding_urldecode(enc_print);
         ASSERT_STREQ(dec_print, printable,
                      "url round-trip all printable ASCII");
-        free((void *)enc_print);
-        free((void *)dec_print);
     }
 
     /* ================================================================== */
@@ -490,7 +478,6 @@ int main(void)
         ByteArray dec_zero = encoding_b64decode("AA==");
         ASSERT(dec_zero.len == 1 && dec_zero.data[0] == 0x00,
                "b64decode(\"AA==\") == 0x00");
-        free((void *)enc_zero);
         free((void *)dec_zero.data);
     }
 
@@ -500,7 +487,6 @@ int main(void)
         ByteArray ba_zero = ba_from_bytes(&zero, 1);
         const char *hex_zero = encoding_hexencode(ba_zero);
         ASSERT_STREQ(hex_zero, "00", "hexencode(0x00) == \"00\"");
-        free((void *)hex_zero);
     }
 
     /* 50 — Single 0xff byte in hex */
@@ -509,7 +495,6 @@ int main(void)
         ByteArray ba_ff = ba_from_bytes(&ff, 1);
         const char *hex_ff = encoding_hexencode(ba_ff);
         ASSERT_STREQ(hex_ff, "ff", "hexencode(0xff) == \"ff\"");
-        free((void *)hex_ff);
     }
 
     /* ================================================================== */
@@ -598,7 +583,6 @@ int main(void)
         const char *b32_empty = encoding_base32_encode(empty_ba);
         ASSERT(b32_empty && strlen(b32_empty) == 0,
                "base32_encode(\"\") == \"\"");
-        free((void *)b32_empty);
     }
 
     /* 62 — "f" → "MY======" */
@@ -607,7 +591,6 @@ int main(void)
         const char *b32_f = encoding_base32_encode(f_ba);
         ASSERT_STREQ(b32_f, "MY======",
                      "base32_encode(\"f\") == \"MY======\"");
-        free((void *)b32_f);
     }
 
     /* 63 — "fo" → "MZXQ====" */
@@ -616,7 +599,6 @@ int main(void)
         const char *b32_fo = encoding_base32_encode(fo_ba);
         ASSERT_STREQ(b32_fo, "MZXQ====",
                      "base32_encode(\"fo\") == \"MZXQ====\"");
-        free((void *)b32_fo);
     }
 
     /* 64 — "foo" → "MZXW6===" */
@@ -625,7 +607,6 @@ int main(void)
         const char *b32_foo = encoding_base32_encode(foo_ba);
         ASSERT_STREQ(b32_foo, "MZXW6===",
                      "base32_encode(\"foo\") == \"MZXW6===\"");
-        free((void *)b32_foo);
     }
 
     /* 65 — "foob" → "MZXW6YQ=" */
@@ -634,7 +615,6 @@ int main(void)
         const char *b32_foob = encoding_base32_encode(foob_ba);
         ASSERT_STREQ(b32_foob, "MZXW6YQ=",
                      "base32_encode(\"foob\") == \"MZXW6YQ=\"");
-        free((void *)b32_foob);
     }
 
     /* 66 — "fooba" → "MZXW6YTB" */
@@ -643,7 +623,6 @@ int main(void)
         const char *b32_fooba = encoding_base32_encode(fooba_ba);
         ASSERT_STREQ(b32_fooba, "MZXW6YTB",
                      "base32_encode(\"fooba\") == \"MZXW6YTB\"");
-        free((void *)b32_fooba);
     }
 
     /* 67 — "foobar" → "MZXW6YTBOI======" */
@@ -652,7 +631,6 @@ int main(void)
         const char *b32_foobar = encoding_base32_encode(foobar_ba);
         ASSERT_STREQ(b32_foobar, "MZXW6YTBOI======",
                      "base32_encode(\"foobar\") == \"MZXW6YTBOI======\"");
-        free((void *)b32_foobar);
     }
 
     /* ================================================================== */
@@ -717,9 +695,38 @@ int main(void)
                    memcmp(dec.ok.data, orig.data, orig.len) == 0,
                    "base32 round-trip \"Hello, World!\"");
             free((void *)dec.ok.data);
-            free((void *)enc);
         }
     }
+
+    /* ================================================================== */
+    /* 127.295: string results are sealed (header == strlen)              */
+    /* ================================================================== */
+#if TKS_HEAP
+    {
+        const uint8_t raw[] = { 'f', 'o', 'o', 0xfb, 0xff, 0x00, 0x7e };
+        ByteArray ba = ba_from_bytes(raw, sizeof raw);
+        ByteArray none = ba_from_bytes(raw, 0);
+        struct { const char *name; const char *s; } r[] = {
+            { "base32_encode",   encoding_base32_encode(ba) },
+            { "base32_encode()", encoding_base32_encode(none) },
+            { "b64encode",       encoding_b64encode(ba) },
+            { "b64encode()",     encoding_b64encode(none) },
+            { "b64urlencode",    encoding_b64urlencode(ba) },
+            { "b64urlencode()",  encoding_b64urlencode(none) },
+            { "hexencode",       encoding_hexencode(ba) },
+            { "hexencode()",     encoding_hexencode(none) },
+            { "urlencode",       encoding_urlencode("a b/c?d=\xc3\xa9") },
+            { "urldecode",       encoding_urldecode("a+b%2Fc%00d%zz%4") },
+        };
+        for (size_t i = 0; i < sizeof r / sizeof r[0]; i++) {
+            char msg[96];
+            snprintf(msg, sizeof msg, "127.295: %s result is sealed, header == strlen",
+                     r[i].name);
+            ASSERT(r[i].s && tks_hdrlen(r[i].s) == (int64_t)strlen(r[i].s), msg);
+        }
+        ASSERT_STREQ(r[9].s, "a b/cd%zz%4", "127.295: urldecode drops %00 (sealed length)");
+    }
+#endif
 
     /* ================================================================== */
     /* Summary                                                              */

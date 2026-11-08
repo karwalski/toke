@@ -14,6 +14,10 @@
  *
  * Implementation is self-contained (no external dependencies beyond libc).
  *
+ * String results (127.295, runtime-abi §3.1) are sealed strings from the
+ * string heap (tk_strhdr.h): never free, write or realloc them.  Decoded
+ * byte buffers (.data) are malloc'd and the caller frees them.
+ *
  * Story: 14.1.1
  */
 
@@ -46,7 +50,7 @@ typedef struct {
 
 /* encoding.base32encode(data:[Byte]):Str
  * Encodes data using RFC 4648 base32 (uppercase A-Z, 2-7, '=' padding).
- * Returns a heap-allocated string; caller owns it. Returns NULL on alloc fail. */
+ * Returns a sealed string (never freed). Returns NULL on alloc fail. */
 const char *encoding_base32_encode(ByteArray data);
 
 /* encoding.base32decode(s:Str):[Byte]
@@ -55,8 +59,7 @@ const char *encoding_base32_encode(ByteArray data);
 EncBytesResult encoding_base32_decode(const char *s);
 
 /* encoding.b64encode(data:[Byte]):Str
- * Returns a heap-allocated standard base64 string (RFC 4648, with padding).
- * Caller owns the returned pointer. */
+ * Returns a standard base64 string (RFC 4648, with padding), sealed. */
 const char *encoding_b64encode(ByteArray data);
 
 /* encoding.b64decode(s:Str):[Byte]
@@ -65,9 +68,8 @@ const char *encoding_b64encode(ByteArray data);
 ByteArray encoding_b64decode(const char *s);
 
 /* encoding.b64urlencode(data:[Byte]):Str
- * Returns a heap-allocated URL-safe base64 string (RFC 4648 §5, no padding).
- * Uses '-' and '_' instead of '+' and '/'.
- * Caller owns the returned pointer. */
+ * Returns a URL-safe base64 string (RFC 4648 §5, no padding), sealed.
+ * Uses '-' and '_' instead of '+' and '/'. */
 const char *encoding_b64urlencode(ByteArray data);
 
 /* encoding.b64urldecode(s:Str):[Byte]
@@ -77,8 +79,7 @@ const char *encoding_b64urlencode(ByteArray data);
 ByteArray encoding_b64urldecode(const char *s);
 
 /* encoding.hexencode(data:[Byte]):Str
- * Returns a heap-allocated lowercase hex string (2 chars per byte + NUL).
- * Caller owns the returned pointer. */
+ * Returns a lowercase hex string (2 chars per byte), sealed. */
 const char *encoding_hexencode(ByteArray data);
 
 /* encoding.hexdecode(s:Str):[Byte]
@@ -89,12 +90,12 @@ ByteArray encoding_hexdecode(const char *s);
 
 /* encoding.urlencode(s:Str):Str
  * Percent-encodes all characters except unreserved (ALPHA / DIGIT / - . _ ~).
- * Caller owns the returned pointer. */
+ * Returns a sealed string. */
 const char *encoding_urlencode(const char *s);
 
 /* encoding.urldecode(s:Str):Str
- * Decodes percent-encoded sequences; '+' is decoded as space.
- * Caller owns the returned pointer. */
+ * Decodes percent-encoded sequences; '+' is decoded as space; %00 is
+ * dropped.  Returns a sealed string. */
 const char *encoding_urldecode(const char *s);
 
 #endif /* TK_STDLIB_ENCODING_H */

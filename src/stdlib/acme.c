@@ -7,11 +7,19 @@
  *
  * Uses std.http client for ACME server communication, std.encoding for
  * base64url, and OpenSSL for JWS/ES256 signing and key generation.
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length is read with
+ * tk_strlen, and the base64url strings b64url() returns are sealed strings
+ * from std.encoding that are never freed.  The client's own strings
+ * (directory URLs, nonces, account URL, challenge table) are malloc'd
+ * internal storage, freed by acme_client_free / acme_challenges_clear;
+ * none of them reaches toke.
  */
 
 #include "http.h"
 #include "encoding.h"
 #include "strbuf.h"
+#include "tk_strhdr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -118,11 +126,11 @@ static int acme_write_key(const char *path, EVP_PKEY *key);
 
 /* ── JWS / ES256 helpers ─────────────────────────────────────────────── */
 
-/* Base64url-encode raw bytes */
-static char *b64url(const uint8_t *data, size_t len)
+/* Base64url-encode raw bytes.  The result is a sealed string (never freed). */
+static const char *b64url(const uint8_t *data, size_t len)
 {
     ByteArray ba = { .data = (uint8_t *)data, .len = (uint64_t)len };
-    return (char *)encoding_b64urlencode(ba);
+    return encoding_b64urlencode(ba);
 }
 
 /* Generate an ES256 (P-256) key pair */
@@ -141,8 +149,9 @@ static EVP_PKEY *acme_gen_key(void)
     return pkey;
 }
 
-/* Get the JWK thumbprint of an ES256 key (SHA-256 of canonical JWK) */
-static char *acme_jwk_thumbprint(EVP_PKEY *key)
+/* Get the JWK thumbprint of an ES256 key (SHA-256 of canonical JWK); a
+ * sealed string */
+static const char *acme_jwk_thumbprint(EVP_PKEY *key)
 {
     /* Extract x, y coordinates */
     BIGNUM *x_bn = NULL, *y_bn = NULL;
@@ -158,19 +167,17 @@ static char *acme_jwk_thumbprint(EVP_PKEY *key)
     BN_free(x_bn);
     BN_free(y_bn);
 
-    char *x_b64 = b64url(x, 32);
-    char *y_b64 = b64url(y, 32);
+    const char *x_b64 = b64url(x, 32);
+    const char *y_b64 = b64url(y, 32);
 
     /* Canonical JWK for thumbprint (RFC 7638) — lexicographic key order */
     char jwk[512];
     snprintf(jwk, sizeof(jwk),
              "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"%s\",\"y\":\"%s\"}",
              x_b64, y_b64);
-    free(x_b64);
-    free(y_b64);
 
     uint8_t digest[32];
-    SHA256((uint8_t *)jwk, strlen(jwk), digest);
+    SHA256((uint8_t *)jwk, tk_strlen(jwk), digest);
     return b64url(digest, 32);
 }
 
@@ -190,16 +197,14 @@ static char *acme_jwk_json(EVP_PKEY *key)
     BN_free(x_bn);
     BN_free(y_bn);
 
-    char *x_b64 = b64url(x, 32);
-    char *y_b64 = b64url(y, 32);
+    const char *x_b64 = b64url(x, 32);
+    const char *y_b64 = b64url(y, 32);
 
     char *jwk = malloc(512);
-    if (!jwk) { free(x_b64); free(y_b64); return NULL; }
+    if (!jwk) return NULL;
     snprintf(jwk, 512,
              "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"%s\",\"y\":\"%s\"}",
              x_b64, y_b64);
-    free(x_b64);
-    free(y_b64);
     return jwk;
 }
 
@@ -271,36 +276,32 @@ static char *acme_jws(AcmeClient *ac, const char *url,
     char *header = strbuf_take(&hb);
     if (!header) return NULL;
 
-    char *hdr_b64 = b64url((uint8_t *)header, strlen(header));
+    const char *hdr_b64 = b64url((uint8_t *)header, tk_strlen(header));
     free(header);
-    char *pay_b64 = b64url((uint8_t *)payload, strlen(payload));
+    const char *pay_b64 = b64url((uint8_t *)payload, tk_strlen(payload));
 
     /* Signing input: header.payload */
-    size_t input_len = strlen(hdr_b64) + 1 + strlen(pay_b64);
+    size_t input_len = tk_strlen(hdr_b64) + 1 + tk_strlen(pay_b64);
     char *input = malloc(input_len + 1);
-    if (!input) { free(hdr_b64); free(pay_b64); return NULL; }
+    if (!input) return NULL;
     snprintf(input, input_len + 1, "%s.%s", hdr_b64, pay_b64);
 
     size_t sig_len = 0;
     uint8_t *sig = acme_es256_sign(ac->account_key,
                                     (uint8_t *)input, input_len, &sig_len);
     free(input);
-    if (!sig) { free(hdr_b64); free(pay_b64); return NULL; }
+    if (!sig) return NULL;
 
-    char *sig_b64 = b64url(sig, sig_len);
+    const char *sig_b64 = b64url(sig, sig_len);
     free(sig);
 
     /* Flattened JWS JSON */
-    size_t jws_len = strlen(hdr_b64) + strlen(pay_b64) + strlen(sig_b64) + 128;
+    size_t jws_len = tk_strlen(hdr_b64) + tk_strlen(pay_b64) + tk_strlen(sig_b64) + 128;
     char *jws = malloc(jws_len);
-    if (!jws) { free(hdr_b64); free(pay_b64); free(sig_b64); return NULL; }
+    if (!jws) return NULL;
     snprintf(jws, jws_len,
              "{\"protected\":\"%s\",\"payload\":\"%s\",\"signature\":\"%s\"}",
              hdr_b64, pay_b64, sig_b64);
-
-    free(hdr_b64);
-    free(pay_b64);
-    free(sig_b64);
     return jws;
 }
 
@@ -495,7 +496,7 @@ int acme_register_account(AcmeClient *ac, const char *email)
     if (!jws) return -1;
 
     HttpClientResp resp = http_post(ac->client, ac->new_account_url,
-                                     (uint8_t *)jws, (uint64_t)strlen(jws),
+                                     (uint8_t *)jws, (uint64_t)tk_strlen(jws),
                                      "application/jose+json");
     free(jws);
 
@@ -581,7 +582,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
     if (!jws) return -1;
 
     HttpClientResp resp = http_post(ac->client, ac->new_order_url,
-                                     (uint8_t *)jws, (uint64_t)strlen(jws),
+                                     (uint8_t *)jws, (uint64_t)tk_strlen(jws),
                                      "application/jose+json");
     free(jws);
 
@@ -653,7 +654,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
         if (!jws) { free(auth_urls[i]); continue; }
 
         resp = http_post(ac->client, auth_urls[i],
-                          (uint8_t *)jws, (uint64_t)strlen(jws),
+                          (uint8_t *)jws, (uint64_t)tk_strlen(jws),
                           "application/jose+json");
         free(jws);
         free(auth_urls[i]);
@@ -700,9 +701,9 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
         challenge_url = last_url;
 
         /* Build key authorization: token.thumbprint */
-        char *thumbprint = acme_jwk_thumbprint(ac->account_key);
+        const char *thumbprint = acme_jwk_thumbprint(ac->account_key);
         if (thumbprint && token) {
-            size_t ka_len = strlen(token) + 1 + strlen(thumbprint) + 1;
+            size_t ka_len = tk_strlen(token) + 1 + tk_strlen(thumbprint) + 1;
             char *key_auth = malloc(ka_len);
             if (key_auth) {
                 snprintf(key_auth, ka_len, "%s.%s", token, thumbprint);
@@ -719,7 +720,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
                         if (jws) {
                             HttpClientResp cr = http_post(
                                 ac->client, challenge_url,
-                                (uint8_t *)jws, (uint64_t)strlen(jws),
+                                (uint8_t *)jws, (uint64_t)tk_strlen(jws),
                                 "application/jose+json");
                             free(jws);
                             free(cr.body);
@@ -730,7 +731,6 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
                 free(key_auth);
             }
         }
-        free(thumbprint);
         free(token);
         free(challenge_url);
         free(resp.body);
@@ -753,7 +753,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
         if (!jws) continue;
 
         resp = http_post(ac->client, order_url,
-                          (uint8_t *)jws, (uint64_t)strlen(jws),
+                          (uint8_t *)jws, (uint64_t)tk_strlen(jws),
                           "application/jose+json");
         free(jws);
 
@@ -828,7 +828,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
     X509_REQ_free(csr);
     sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
 
-    char *csr_b64 = b64url(csr_der, (size_t)csr_der_len);
+    const char *csr_b64 = b64url(csr_der, (size_t)csr_der_len);
     free(csr_der);
 
     /* Finalize the order */
@@ -847,7 +847,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
             fin_payload = NULL;
             if (jws) {
                 resp = http_post(ac->client, finalize_url,
-                                  (uint8_t *)jws, (uint64_t)strlen(jws),
+                                  (uint8_t *)jws, (uint64_t)tk_strlen(jws),
                                   "application/jose+json");
                 free(jws);
 
@@ -877,7 +877,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
                             if (jws) {
                                 resp = http_post(ac->client, cert_url,
                                                   (uint8_t *)jws,
-                                                  (uint64_t)strlen(jws),
+                                                  (uint64_t)tk_strlen(jws),
                                                   "application/jose+json");
                                 free(jws);
 
@@ -902,7 +902,6 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
         free(fin_payload);
     }
 
-    free(csr_b64);
     free(finalize_url);
 
     /* Save private key (61.1.5) */
@@ -989,13 +988,13 @@ Res acme_challenge_handler(Req req)
 
     /* Strip prefix */
     const char *prefix = "/.well-known/acme-challenge/";
-    if (!path || strncmp(path, prefix, strlen(prefix)) != 0) {
+    if (!path || strncmp(path, prefix, tk_strlen(prefix)) != 0) {
         res.status = 404;
         res.body = "Not Found";
         return res;
     }
 
-    const char *token = path + strlen(prefix);
+    const char *token = path + tk_strlen(prefix);
 
     /* 121.19 (ACME-02): look up and copy under the lock.  Res.body is not
      * freed by the server, so the copy lives in a per-thread buffer that
@@ -1010,7 +1009,7 @@ Res acme_challenge_handler(Req req)
     pthread_mutex_lock(&g_challenge_mu);
     for (int i = 0; i < g_challenge_count; i++) {
         if (strcmp(g_challenges[i].token, token) == 0) {
-            size_t n = strlen(g_challenges[i].key_auth);
+            size_t n = tk_strlen(g_challenges[i].key_auth);
             if (n < sizeof served) {
                 memcpy(served, g_challenges[i].key_auth, n + 1);
                 found = 1;
@@ -1117,12 +1116,13 @@ void acme_set_dns01_hook(AcmeDns01Hook hook)
     g_dns01_hook = hook;
 }
 
-/* Compute the DNS-01 challenge value for a given key authorization */
-char *acme_dns01_value(const char *key_auth)
+/* Compute the DNS-01 challenge value for a given key authorization: a
+ * sealed string (127.295), never freed */
+const char *acme_dns01_value(const char *key_auth)
 {
     if (!key_auth) return NULL;
     uint8_t digest[32];
-    SHA256((uint8_t *)key_auth, strlen(key_auth), digest);
+    SHA256((uint8_t *)key_auth, tk_strlen(key_auth), digest);
     return b64url(digest, 32);
 }
 

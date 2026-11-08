@@ -155,16 +155,11 @@ static void test_auth_protected_api_flow(void)
            "API key validates against itself");
 
     /* Cleanup */
-    free((void *)api_key);
-    free((void *)jwt_res.ok);
     free(auth_header);
-    free((void *)bearer.ok);
     free((void *)aes_key.data);
     free((void *)nonce.data);
     free(enc.ok);
     free(dec.ok);
-    free((void *)verify.ok.subject);
-    free((void *)verify.ok.issuer);
 }
 
 /* -----------------------------------------------------------------------
@@ -220,11 +215,7 @@ static void test_expired_jwt_fails_verify(void)
            "extracted expired token still fails expiry check");
 
     /* Cleanup */
-    free((void *)jwt_res.ok);
     free(auth_header);
-    free((void *)bearer.ok);
-    free((void *)verify.ok.subject);
-    free((void *)verify.ok.issuer);
 }
 
 /* -----------------------------------------------------------------------
@@ -317,9 +308,6 @@ static void test_wrong_jwt_secret_fails_verify(void)
            "jwtverify with wrong secret returns is_err=1");
 
     /* Cleanup */
-    free((void *)jwt_res.ok);
-    free((void *)verify_ok.ok.subject);
-    free((void *)verify_ok.ok.issuer);
 }
 
 /* -----------------------------------------------------------------------

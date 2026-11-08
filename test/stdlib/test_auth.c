@@ -39,6 +39,9 @@
  *   - bearerextract: empty string, "Bearer" without space, double-space,
  *     token with spaces, all-uppercase BEARER
  *   - JWT sign/verify with minimal claims (no subject/issuer)
+ *   - 127.295: every string result is a sealed string (header == strlen)
+ *     and is never freed; jwtdecode's raw_payload and password_hash's
+ *     result are malloc'd and are freed
  */
 
 #include <stdio.h>
@@ -47,6 +50,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "../../src/stdlib/auth.h"
+#include "../../src/stdlib/tk_strhdr.h"
 
 static int failures = 0;
 
@@ -169,7 +173,6 @@ int main(void)
 
     int expired = auth_jwtexpired(past_sign.ok);
     ASSERT(expired == 1, "jwtexpired on past-exp token returns 1");
-    free((void *)past_sign.ok);
 
     /* Token with no exp. */
     int not_expired = auth_jwtexpired(token);
@@ -190,8 +193,6 @@ int main(void)
     ASSERT(key1 && key2 && strcmp(key1, key2) != 0,
            "two apikeygen calls return different strings");
 
-    free((void *)key1);
-    free((void *)key2);
 
     /* ------------------------------------------------------------------ */
     /* auth_apikeyvalidate                                                 */
@@ -216,7 +217,6 @@ int main(void)
     const char *key3 = auth_apikeygenerate();
     ASSERT(key3 != NULL,       "apikeygenerate returns non-NULL");
     ASSERT(key3 && strlen(key3) > 0, "apikeygenerate returns non-empty string");
-    free((void *)key3);
 
     /* ------------------------------------------------------------------ */
     /* auth_bearerextract                                                  */
@@ -227,7 +227,6 @@ int main(void)
     ASSERT(br1.is_err == 0, "bearerextract valid header is_err==0");
     ASSERT_STREQ(br1.ok, "eyJhbGciOiJIUzI1NiJ9",
                  "bearerextract extracts token");
-    free((void *)br1.ok);
 
     /* Not a Bearer token (Basic auth). */
     BearerResult br2 = auth_bearerextract("Basic dXNlcjpwYXNz");
@@ -333,7 +332,6 @@ int main(void)
             ASSERT(vr.is_err == 1,
                    "jwtverify rejects non-base64 signature chars");
             free(mangled);
-            free((void *)nr.ok);
         }
     }
 
@@ -356,14 +354,11 @@ int main(void)
             JwtVerifyResult evr = auth_jwtverify(er.ok, empty_secret);
             ASSERT(evr.is_err == 0,
                    "jwtverify with matching empty secret succeeds");
-            free((void *)evr.ok.subject);
-            free((void *)evr.ok.issuer);
 
             /* Verify same token with non-empty secret should fail */
             JwtVerifyResult evr2 = auth_jwtverify(er.ok, secret);
             ASSERT(evr2.is_err == 1,
                    "jwtverify empty-secret token fails with real secret");
-            free((void *)er.ok);
         }
     }
 
@@ -383,7 +378,6 @@ int main(void)
             int exp_check = auth_jwtexpired(br.ok);
             ASSERT(exp_check == 1,
                    "jwtexpired returns 1 for token expired by 1 second");
-            free((void *)br.ok);
         }
     }
 
@@ -403,7 +397,6 @@ int main(void)
             int exp_check = auth_jwtexpired(fr.ok);
             ASSERT(exp_check == 0,
                    "jwtexpired returns 0 for token with future exp");
-            free((void *)fr.ok);
         }
     }
 
@@ -433,7 +426,6 @@ int main(void)
             /* 32 bytes in URL-safe base64 without padding = 43 chars */
             ASSERT(strlen(k) == 43,
                    "api key is 43 chars (32 bytes in base64url)");
-            free((void *)k);
         }
     }
 
@@ -469,7 +461,6 @@ int main(void)
         if (br_extra.ok) {
             ASSERT_STREQ(br_extra.ok, " token123",
                          "bearerextract double-space includes leading space in token");
-            free((void *)br_extra.ok);
         }
     }
 
@@ -481,7 +472,6 @@ int main(void)
         if (br_sp.ok) {
             ASSERT_STREQ(br_sp.ok, "abc def ghi",
                          "bearerextract preserves remainder after 'Bearer '");
-            free((void *)br_sp.ok);
         }
     }
 
@@ -509,7 +499,6 @@ int main(void)
                    "jwtverify minimal claims subject is NULL");
             ASSERT(mvr.ok.issuer == NULL,
                    "jwtverify minimal claims issuer is NULL");
-            free((void *)mr.ok);
         }
     }
 
@@ -549,9 +538,6 @@ int main(void)
             ASSERT(dr.ok.raw_payload != NULL,
                    "jwtdecode_claims raw_payload is non-NULL");
             /* Free heap fields */
-            free((void *)dr.ok.sub);
-            free((void *)dr.ok.iss);
-            free((void *)dr.ok.aud);
             free((void *)dr.ok.raw_payload);
         }
     }
@@ -586,7 +572,6 @@ int main(void)
                    "oauth2_authorize_url google contains accounts.google.com");
             ASSERT(strstr(url, "client_id=my_client") != NULL,
                    "oauth2_authorize_url google contains client_id=my_client");
-            free((void *)url);
         }
     }
 
@@ -601,7 +586,6 @@ int main(void)
         if (url) {
             ASSERT(strstr(url, "github.com/login/oauth/authorize") != NULL,
                    "oauth2_authorize_url github contains correct endpoint");
-            free((void *)url);
         }
     }
 
@@ -617,7 +601,6 @@ int main(void)
         if (url) {
             ASSERT(strstr(url, "auth.example.com") != NULL,
                    "oauth2_authorize_url custom URL contains host");
-            free((void *)url);
         }
     }
 
@@ -688,8 +671,6 @@ int main(void)
                  * on a valid secret — we test correctness via round-trip below. */
             }
 
-            free((void *)tsr.ok.uri);
-            free((void *)tsr.ok.secret_b32);
         }
     }
 
@@ -741,11 +722,46 @@ int main(void)
     /* Cleanup and summary                                                 */
     /* ------------------------------------------------------------------ */
 
-    free((void *)token);
-    /* Note: verify_result.ok.subject and .issuer are owned by the verify
-     * result; in a production wrapper they would be freed here. */
-    free((void *)verify_result.ok.subject);
-    free((void *)verify_result.ok.issuer);
+    /* 127.295 (runtime-abi §3.1): string results are sealed strings. */
+#if TKS_HEAP
+    {
+        static const uint8_t K[] = "0123456789abcdef0123456789abcdef";
+        ByteArray sk = { K, 32 };
+        JwtClaims c; memset(&c, 0, sizeof c);
+        c.subject = "s\"ub"; c.issuer = "iss"; c.audience = "aud";
+        c.expires_at = (int64_t)time(NULL) + 3600;
+        JwtResult sr = auth_jwtsign(c, sk);
+        JwtVerifyResult vr = auth_jwtverify(sr.ok, sk);
+        JwtDecodeResult dr = auth_jwtdecode_claims(sr.ok);
+        BearerResult brr = auth_bearerextract("Bearer abc.def");
+        TotpSetupResult ts = auth_totp_generate("My App", "a@b.c");
+        struct { const char *name; const char *s; } r[] = {
+            { "jwtsign",            sr.ok },
+            { "jwtverify subject",  vr.ok.subject },
+            { "jwtverify issuer",   vr.ok.issuer },
+            { "jwtdecode sub",      dr.ok.sub },
+            { "jwtdecode iss",      dr.ok.iss },
+            { "jwtdecode aud",      dr.ok.aud },
+            { "apikeygenerate",     auth_apikeygenerate() },
+            { "bearerextract",      brr.ok },
+            { "oauth2_authorize_url", auth_oauth2_authorize_url("github", "id",
+                                        "https://x/cb?a=1", "read write") },
+            { "totp uri",           ts.ok.uri },
+            { "totp secret_b32",    ts.ok.secret_b32 },
+        };
+        for (size_t i = 0; i < sizeof r / sizeof r[0]; i++) {
+            char msg[96];
+            snprintf(msg, sizeof msg, "127.295: %s result is sealed, header == strlen",
+                     r[i].name);
+            ASSERT(r[i].s && tks_hdrlen(r[i].s) == (int64_t)strlen(r[i].s), msg);
+        }
+        ASSERT(vr.ok.subject && strcmp(vr.ok.subject, "s\"ub") == 0,
+               "127.295: sealed jwtsign token verifies and round-trips the subject");
+        ASSERT(dr.ok.raw_payload && tks_hdrlen(dr.ok.raw_payload) < 0,
+               "127.295: jwtdecode raw_payload stays malloc'd (caller frees)");
+        free((void *)dr.ok.raw_payload);
+    }
+#endif
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

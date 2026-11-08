@@ -2705,15 +2705,14 @@ TkFormResult http_form_parse(const char *body)
         memcpy(val_raw, val_start, val_raw_len);
         val_raw[val_raw_len] = '\0';
 
-        /* URL-decode both key and value */
+        /* URL-decode both key and value.  127.295: the decoded strings are
+         * sealed (runtime-abi §3.1) and never freed. */
         const char *key_dec = encoding_urldecode(key_raw);
         const char *val_dec = encoding_urldecode(val_raw);
         free(key_raw);
         free(val_raw);
 
         if (!key_dec || !val_dec) {
-            free((void *)(uintptr_t)key_dec);
-            free((void *)(uintptr_t)val_dec);
             /* skip malformed pair */
             p = (*amp != '\0') ? amp + 1 : amp;
             continue;
@@ -2723,11 +2722,7 @@ TkFormResult http_form_parse(const char *body)
         if (result.nfields >= cap) {
             size_t new_cap = cap * 2;
             TkFormField *tmp = realloc(fields, new_cap * sizeof(TkFormField));
-            if (!tmp) {
-                free((void *)(uintptr_t)key_dec);
-                free((void *)(uintptr_t)val_dec);
-                break;
-            }
+            if (!tmp) break;
             fields = tmp;
             cap = new_cap;
         }
@@ -2756,12 +2751,10 @@ const char *http_form_get(TkFormResult form, const char *key)
     return NULL;
 }
 
+/* 127.295: the keys and values are sealed strings from encoding_urldecode
+ * (runtime-abi §3.1) and are never freed; only the field array is. */
 void http_form_free(TkFormResult form)
 {
-    for (size_t i = 0; i < form.nfields; i++) {
-        free((void *)(uintptr_t)form.fields[i].key);
-        free((void *)(uintptr_t)form.fields[i].value);
-    }
     free(form.fields);
 }
 

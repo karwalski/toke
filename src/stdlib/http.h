@@ -278,7 +278,8 @@ TkFormResult http_form_parse(const char *body);
 /* http_form_get — look up a field by key. Returns value or NULL. */
 const char  *http_form_get(TkFormResult form, const char *key);
 
-/* http_form_free — release all resources. */
+/* http_form_free — release the field array.  Keys and values are sealed
+ * strings (127.295) and stay valid after it. */
 void         http_form_free(TkFormResult form);
 
 /* ── Multipart/form-data parsing (Story 27.1.8) ─────────────────────── */
