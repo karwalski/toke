@@ -14,12 +14,19 @@
  * content strings passed to node constructors are NOT auto-escaped; callers
  * must use html_escape() when they want safe output.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): string inputs are measured with
+ * tk_strlen (O(1) for a sealed string).  The results of this file stay
+ * malloc'd: the node tree and the document own theirs (html_node_free,
+ * html_free), and the string-builder helpers are a C API whose callers
+ * free.  What reaches toke is sealed in html_glue.c.
+ *
  * Story: 18.1.2
  */
 
 #include "html.h"
 #include "strbuf.h"
 #include "tk_array.h"
+#include "tk_strhdr.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -284,7 +291,7 @@ void html_title(TkHtmlDoc *doc, const char *title)
 static void doc_add_block(char **slot, const char *text)
 {
     if (!*slot) { *slot = strdup(text); return; }
-    size_t a = strlen(*slot), b = strlen(text);
+    size_t a = tk_strlen(*slot), b = tk_strlen(text);
     char *j = realloc(*slot, a + b + 2);
     if (!j) return;                      /* OOM: keep what was there */
     j[a] = '\n';
@@ -524,7 +531,7 @@ const char *html_escape(const char *s)
         }
     }
 
-    size_t srclen = strlen(s);
+    size_t srclen = tk_strlen(s);
     char  *out    = (char *)malloc(srclen + extra + 1);
     if (!out) return NULL;
 
@@ -758,9 +765,9 @@ static const char *insert_attr_before_gt(const char *node,
 
     /* Build:  prefix + " name=\"value\"" + suffix */
     size_t prefix_len = (size_t)(gt - node);
-    size_t name_len   = strlen(name);
-    size_t value_len  = strlen(value);
-    size_t suffix_len = strlen(gt);   /* includes '>' */
+    size_t name_len   = tk_strlen(name);
+    size_t value_len  = tk_strlen(value);
+    size_t suffix_len = tk_strlen(node) - prefix_len;   /* includes '>' */
 
     /* " name=\"value\"" = 1 + name_len + 2 + value_len + 1 */
     size_t insert_len = 1 + name_len + 2 + value_len + 1;
@@ -793,14 +800,14 @@ const char *html_class_add(const char *node, const char *cls)
 
     /* Look for class="..." in the string (within the opening tag only). */
     const char *gt  = strchr(node, '>');
-    size_t tag_len  = gt ? (size_t)(gt - node) : strlen(node);
+    size_t tag_len  = gt ? (size_t)(gt - node) : tk_strlen(node);
 
     /* Search for ' class="' within the tag portion. */
     const char *found = NULL;
     {
         /* Manual scan limited to tag_len characters. */
-        const char *needle = "class=\"";
-        size_t nlen = strlen(needle);
+        static const char needle[] = "class=\"";
+        size_t nlen = sizeof needle - 1;
         for (size_t i = 0; i + nlen <= tag_len; i++) {
             if (memcmp(node + i, needle, nlen) == 0) {
                 found = node + i;
@@ -824,8 +831,8 @@ const char *html_class_add(const char *node, const char *cls)
 
         /* Build new string with " cls" inserted before closing_quote. */
         size_t before_len  = (size_t)(closing_quote - node);
-        size_t cls_len     = strlen(cls);
-        size_t after_len   = strlen(closing_quote); /* includes '"' */
+        size_t cls_len     = tk_strlen(cls);
+        size_t after_len   = tk_strlen(node) - before_len; /* includes '"' */
         size_t total       = before_len + 1 + cls_len + after_len + 1;
 
         char *out = (char *)malloc(total);

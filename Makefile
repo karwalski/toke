@@ -1802,17 +1802,17 @@ test-stdlib-chart:
 
 test-stdlib-html:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_html \
-	    test/stdlib/test_html.c src/stdlib/html.c
+	    test/stdlib/test_html.c src/stdlib/html.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_html
 
 test-stdlib-dashboard:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
-	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
+	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/str.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
 	$(RUN_TEST) ./test/stdlib/test_dashboard
 
 test-stdlib-svg:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg \
-	    test/stdlib/test_svg.c src/stdlib/svg.c -lm
+	    test/stdlib/test_svg.c src/stdlib/svg.c src/stdlib/str.c -lm
 	$(RUN_TEST) ./test/stdlib/test_svg
 
 test-stdlib-canvas:
@@ -1899,7 +1899,7 @@ test-stdlib-dashboard-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard_integration \
 	    test/stdlib/test_dashboard_integration.c \
 	    src/stdlib/csv.c src/stdlib/dataframe.c src/stdlib/analytics.c \
-	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/dashboard.c \
+	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/str.c src/stdlib/dashboard.c \
 	    src/stdlib/math.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_dashboard_integration
 
@@ -1955,7 +1955,7 @@ test-stdlib-mlx:
 test-stdlib-svg-diagram-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg_diagram_integration \
 	    test/stdlib/test_svg_diagram_integration.c \
-	    src/stdlib/svg.c src/stdlib/csv.c $(ORPHAN_LIBS)
+	    src/stdlib/svg.c src/stdlib/str.c src/stdlib/csv.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_svg_diagram_integration
 
 test-stdlib-template-email-integration:
