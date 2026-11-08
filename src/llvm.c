@@ -400,6 +400,18 @@ static void ptr_arm_release(Ctx *c, int pc0, int lc0, const char *bname)
             w++;
         }
         c->local_count = w;
+    } else if (bname && bname[0] && lc0 >= 0 && lc0 <= c->local_count) {
+        /* 127.321: a FIRST-use binding (unsuffixed) is retired the way
+         * scope_retire_name retires a block's `let` (127.196): renamed
+         * `name.~`, so a later lookup of the name misses it while
+         * make_unique_name still sees the slot as taken.  Kept under its raw
+         * name, the arm's slot outlived the arm: the next match's result
+         * type, predicted before ITS binding of the same name exists, read
+         * this one's -- `{$ok:y y+1.0;..}` then `{$ok:y y+1;..}` stored the
+         * i64 into a double slot and printed 5 as 2.47033e-323. */
+        for (int i = lc0; i < c->local_count; i++)
+            if (!strcmp(c->locals[i].name, bname))
+                snprintf(c->locals[i].name, sizeof c->locals[i].name, "%.120s.~", bname);
     }
 }
 
@@ -5599,6 +5611,23 @@ static int emit_expr(Ctx *c, const Node *n)
                  * Arrays store doubles as bitcast i64 values; when reading back
                  * via .get(), the i64 must be reinterpreted as double so that
                  * downstream float arithmetic uses the correct bit pattern. */
+                /* 127.320: `m.getor(k;d)` on an f64-valued map carries the
+                 * double's bits in the i64 ABI; the checker types the call
+                 * (map_getor_type), so read it back as the double it is.
+                 * expr_llvm_type answers "double" on the same rtype. */
+                if (!strcmp(fn_im, "tk_map_getor_w") && n->rtype
+                    && n->rtype->kind == TY_F64) {
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 map getor (rtype)\n", bc, t);
+                    t = bc;
+                } else if (!strcmp(fn_im, "tk_map_getor_w") && n->rtype
+                           && n->rtype->kind == TY_BOOL) {
+                    /* and a bool-valued one is the i1 it is, so a let-bound
+                     * `bm.getor(k;false)` interpolates true/false, not 1/0 */
+                    int bz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; bool map getor (rtype)\n", bz, t);
+                    t = bz;
+                }
                 if (!strcmp(fn_im, "tk_str_arrayget_w")) {
                     const char *base_stype = NULL;
                     if (n->children[0]->children[0]->kind == NODE_IDENT) {
@@ -9466,6 +9495,16 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             char _ga[128], _gm[128];
             tok_cp(c->src, n->children[0]->children[0], _ga, sizeof _ga);
             tok_cp(c->src, n->children[0]->children[1], _gm, sizeof _gm);
+            /* 127.320: an f64 / bool `m.getor(k;d)` -- emit_expr converts it
+             * on the same rtype (the receiver dispatch's tk_map_getor_w). */
+            if (!strcmp(_gm, "getor") && n->rtype
+                && (n->rtype->kind == TY_F64 || n->rtype->kind == TY_BOOL)) {
+                int _gmod = 0;
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, _ga)) { _gmod = 1; break; }
+                if (alias_is_value(c, n->children[0]->children[0])) _gmod = 0;
+                if (!_gmod) return n->rtype->kind == TY_F64 ? "double" : "i1";
+            }
             if (!strcmp(_gm, "get")) {
                 int _is_mod = 0;
                 for (int ii = 0; ii < c->import_count; ii++)
