@@ -44,7 +44,6 @@ src/stdlib/encrypt_glue.c 1
 src/stdlib/env.c 8
 src/stdlib/file.c 5
 src/stdlib/file_glue.c 3
-src/stdlib/fmt.c 6
 src/stdlib/html.c 9
 src/stdlib/http.c 28
 src/stdlib/http2.c 4
