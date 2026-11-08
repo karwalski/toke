@@ -2803,7 +2803,18 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (bn->kind != NODE_BIND_STMT && std_scalar_ret(cx, initN)) return NULL;
         Type *rt = call_decl_ret_type(cx, initN);
         if (rt && rt->kind != TY_UNKNOWN && rt->kind != TY_VOID) return rt;
-        return NULL;
+        /* 127.325: `let d=mm.getor(k;D)` binds the map's value V, the type
+         * the same call has in place (infer, 127.320).  Left unknown, `d`
+         * on a map of maps lost its value type, so `d.getor("k";0.5)` read
+         * an inner f64 as its raw bits and a bool as 1/0.  A `mut` binding
+         * is typed too: unlike a std scalar (138.3), V is the map's own
+         * stated type, not an interface spelling.  The receiver may name
+         * another binding, so this takes the depth guard. */
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *gt = map_getor_type(cx, initN);
+        cx->bind_infer_depth--;
+        return gt;
     }
     case NODE_IDENT: {
         if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
