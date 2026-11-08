@@ -2124,6 +2124,7 @@ static const char *import_module_path(Ctx *cx, const char *alias,
                                       char *buf, size_t bufsz);
 static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
 static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
+static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz);   /* 127.304 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -3801,10 +3802,15 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         /* `i64` is also the ABI-placeholder spelling, and hand-written
          * records use it for handles and strings too (`http.resjson` spells
          * its str body `i64`; examples/apihandler passes a str there and
-         * works) -- so an `i64` parameter says nothing and is not judged. */
-        if (strcmp(ps, "i64") == 0) continue;
+         * works) -- so an `i64` parameter says nothing about a handle and
+         * is not judged for one.
+         * 127.304: a `str` argument IS judged.  A str is never a handle, and
+         * the glue behind a typed `i64` parameter reads an integer: str.fromint("x")
+         * printed the string's address.  The records that spelled a str
+         * parameter `i64` were retyped with this check. */
         const Type *at = an->rtype;
         if (!at || at->kind == TY_UNKNOWN) continue;
+        if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID) continue;
         /* Judged by REPRESENTATION class, not width: a hand-written record
@@ -4713,6 +4719,43 @@ static Type *std_scalar_ret_impl(Ctx *cx, const Node *call, int any_width) {
     if (!any_width && t->kind != TY_STR && t->kind != TY_BOOL && t->kind != TY_F64
         && t->kind != TY_F32 && t->kind != TY_I64) return NULL;
     return t;
+}
+
+/* 127.304: an annotated scalar `let` (str, bool, a number) bound straight
+ * from a std call whose typed (not `"gen":"abi"`) record declares a RECORD
+ * or a `T!E` union.  stdlib results are not adopted as binding types
+ * (127.66), so `let s:str=json.at(o;"a")` (`jsonval!jsonerr`) and
+ * `let s:str=json.newobj()` (`jsonval`) were clean and printed a pointer.
+ * A user `T!E` call into a `T` let is already E4031; this is that rule for
+ * the declared std return.  Returns the spelling to report, or NULL. */
+static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1
+        || !cx->env || !cx->env->names) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return NULL;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    char pbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return NULL;
+    const char *mpath = import_module_path(cx, ab, pbuf, sizeof pbuf);
+    if (!mpath || strncmp(mpath, "std.", 4) != 0) return NULL;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+    if (!f || f->abi_ret || f->internal) return NULL;
+    if (f->okret && f->okret[0]) {
+        snprintf(buf, bsz, "%s!%s", f->okret, f->errty ? f->errty : "?");
+        return buf;
+    }
+    if (!f->ret || !f->ret[0]) return NULL;
+    /* a std record spells its union inline: "return":"jsonval!jsonerr" */
+    if (strchr(f->ret, '!')) { snprintf(buf, bsz, "%s", f->ret); return buf; }
+    Type *t = tki_compound_type(cx, f->ret, strlen(f->ret), 0);
+    if (!t || t->kind != TY_STRUCT || tki_arg_class(t) != 6) return NULL;
+    snprintf(buf, bsz, "%s", f->ret);
+    return buf;
 }
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
@@ -6382,6 +6425,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (dt&&!types_compat(dt,ann)) {
                 char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
                 emit_mm(cx,node,ann,dt,cast_fix_certain(dt,ann)?fix:NULL);
+            }
+        }
+        /* 127.304: the declared std return is a record or a `T!E` union and
+         * the annotation a scalar -- no fix (an `mt`, a `!`, a field read or
+         * a different callee are all possible repairs). */
+        if (ann&&init&&init->kind==TY_UNKNOWN&&initN&&initN->kind==NODE_CALL_EXPR
+            &&(ann->kind==TY_STR||ann->kind==TY_BOOL||kind_is_scalar(ann->kind))) {
+            char rb[160];
+            const char *rs=std_nonscalar_ret(cx,initN,rb,sizeof rb);
+            if (rs&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[384], en[96];
+                snprintf(en,sizeof en,"%s",type_name(ann));
+                snprintf(msg,sizeof msg,
+                         "type mismatch: expected '%s', got '%s' (the declared "
+                         "return of this std call)",en,rs);
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected",en,"got",rs,(const char*)NULL);
             }
         }
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)

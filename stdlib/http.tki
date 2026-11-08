@@ -298,7 +298,7 @@
       "kind": "func",
       "name": "http.resok",
       "params": [
-        "i64"
+        "str"
       ],
       "return": "i64",
       "note": "create 200 OK res from body pointer for handler dispatch"
@@ -308,7 +308,7 @@
       "name": "http.resjson",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "i64",
       "note": "create JSON res from status and body pointer for handler dispatch"
@@ -317,7 +317,7 @@
       "kind": "func",
       "name": "http.resbad",
       "params": [
-        "i64"
+        "str"
       ],
       "return": "i64",
       "note": "create 400 bad request res from message pointer"
@@ -326,7 +326,7 @@
       "kind": "func",
       "name": "http.reserr",
       "params": [
-        "i64"
+        "str"
       ],
       "return": "i64",
       "note": "create 500 internal server error res from message pointer"
