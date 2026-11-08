@@ -400,6 +400,18 @@ static void ptr_arm_release(Ctx *c, int pc0, int lc0, const char *bname)
             w++;
         }
         c->local_count = w;
+    } else if (bname && bname[0] && lc0 >= 0 && lc0 <= c->local_count) {
+        /* 127.321: a FIRST-use binding (unsuffixed) is retired the way
+         * scope_retire_name retires a block's `let` (127.196): renamed
+         * `name.~`, so a later lookup of the name misses it while
+         * make_unique_name still sees the slot as taken.  Kept under its raw
+         * name, the arm's slot outlived the arm: the next match's result
+         * type, predicted before ITS binding of the same name exists, read
+         * this one's -- `{$ok:y y+1.0;..}` then `{$ok:y y+1;..}` stored the
+         * i64 into a double slot and printed 5 as 2.47033e-323. */
+        for (int i = lc0; i < c->local_count; i++)
+            if (!strcmp(c->locals[i].name, bname))
+                snprintf(c->locals[i].name, sizeof c->locals[i].name, "%.120s.~", bname);
     }
 }
 
