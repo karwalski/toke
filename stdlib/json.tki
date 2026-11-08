@@ -433,7 +433,7 @@
       "name": "json.getbool",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "bool!jsonerr"
     },
@@ -442,7 +442,7 @@
       "name": "json.getf32",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "f64!jsonerr"
     },
@@ -451,7 +451,7 @@
       "name": "json.getfloat",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "f64!jsonerr"
     },
@@ -460,7 +460,7 @@
       "name": "json.geti32",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "i64!jsonerr"
     },
@@ -469,7 +469,7 @@
       "name": "json.geti64",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "i64!jsonerr"
     },
@@ -478,7 +478,7 @@
       "name": "json.getint",
       "params": [
         "i64",
-        "i64"
+        "str"
       ],
       "return": "i64!jsonerr"
     },
