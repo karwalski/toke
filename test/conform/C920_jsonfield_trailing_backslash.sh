@@ -85,11 +85,13 @@ int main(void) {
     return fails ? 1 : 0;
 }
 C
-# The link set comes from scripts/stdlib_link_set.sh, never a hand list (C696).
-LS=(); while IFS= read -r l; do LS+=("$l"); done < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" encoding)
-LF=(); while IFS= read -r l; do [ -n "$l" ] && LF+=("$l"); done < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags encoding)
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SANF} -iquote "${S}" -o t t.c \
-        "${LS[@]}" ${LF[@]+"${LF[@]}"} -lpthread > cc.log 2>&1; then
+# The link set comes from scripts/stdlib_link_set.sh as cached objects built
+# with these flags, never a hand list (C696, C703 case 12).
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SANF} -iquote "${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" --objects encoding -- "${CF[@]}")" \
+    || { echo "  FAIL: stdlib link set: see stderr above"; exit 1; }
+LS=(); while IFS= read -r l; do LS+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o t t.c "${LS[@]}" -lpthread > cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; FAIL=$((FAIL + 1))
 else
     ./t > t.out 2>&1
