@@ -1009,6 +1009,8 @@ and the call disagrees with its arity.
 
 Emitted when code assigns to a `let` binding that was not declared mutable.
 
+Also emitted, with no `fix`, for an assignment to a module constant (`lim=5:i64;` then `lim=6` in a body; story 127.310): a constant is not mutable (semantics §4.2) and has no `mut` spelling to rewrite it to.
+
 ### E4071
 
 **Function body ends in a value expression with no `<`**

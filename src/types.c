@@ -5286,6 +5286,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         if (def->kind==NODE_PARAM&&def->child_count>1&&def->children[1])
             return resolve_type(cx,def->children[1]);
+        /* 127.310: a module constant is of its declared type. */
+        if (def->kind==NODE_CONST_DECL&&def->child_count>2&&def->children[2])
+            return resolve_type(cx,def->children[2]);
         /* 124.0c item 2: a function named bare is a value of its signature
          * (`ap(inc;5)` against a `(i64):i64` parameter). */
         if (def->kind==NODE_FUNC_DECL) return params_sig(cx,def,0);
@@ -6275,6 +6278,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *
      * Returns TY_VOID (bindings are statements, not expressions).
      * ──────────────────────────────────────────────────────────────────── */
+    /* 127.310: a module constant `name=literal:Type;` -- its literal must be
+     * of its declared type, by the rule an annotated `let` applies (an
+     * integer literal narrows to a smaller integer type when it fits).  No
+     * `fix`: the grammar admits only a literal there, so the `as` cast the
+     * `let` mismatch offers would not parse. */
+    case NODE_CONST_DECL: {
+        if (node->child_count < 3 || !node->children[1] || !node->children[2])
+            return mk_type(A,TY_VOID);
+        Type *ann = resolve_type(cx, node->children[2]);
+        Type *lit = infer(cx, node->children[1]);
+        if (ann&&lit&&ann->kind!=TY_UNKNOWN&&lit->kind!=TY_UNKNOWN
+            &&!types_compat(lit,ann)&&!lit_narrows(cx->src,node->children[1],ann))
+            emit_mm(cx,node->children[1],ann,lit,NULL);
+        return mk_type(A,TY_VOID);
+    }
     case NODE_BIND_STMT: case NODE_MUT_BIND_STMT: {
         /* Stage 2 (type-flow): correctly distinguish annotated (3 children:
          * ident, type, init) from un-annotated (2 children: ident, init). The
@@ -6361,6 +6379,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
             if (lb&&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_PARAM
                      ||lb->kind==NODE_MATCH_ARM)) immutable=1;
+            /* 127.310: no local binder, and the module-level name is a
+             * constant (semantics.md §4.2: DECL_CONST is not mutable).  No
+             * `fix`: a constant has no `mut` spelling to rewrite it to. */
+            if (!lb) {
+                Decl *md=tc_lookup(cx->env->names->module_scope,nb,nlen);
+                if (md&&md->kind==DECL_CONST) {
+                    if (tc_can_emit(cx)) {
+                        char msg[256];
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to module constant '%s'; a constant cannot be assigned",nb);
+                        diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                            "expected","mutable binding","got","constant",
+                            (const char*)NULL);
+                    }
+                    return mk_type(A,TY_VOID);
+                }
+            }
             if (immutable) {
                 if (tc_can_emit(cx)) {
                     /* The `fix` rewrites a `let`; a parameter or an `mt`
