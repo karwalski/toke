@@ -95,6 +95,10 @@ int map_lit_typed_empty(const Node *n);
  * parameter types in field_types[0..field_count), return type in elem.
  * The emitter keys indirect calls and closure reference counting on it. */
 int tk_type_is_fnval(const Type *t);
+/* 131.59: strict structural identity -- TY_UNKNOWN at any depth is never
+ * identical to anything (unlike the checker's lenient types_equal).  The
+ * linter's single-use-let fix inlines only when this holds. */
+int tk_type_identical(const Type *a, const Type *b);
 int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out);
 

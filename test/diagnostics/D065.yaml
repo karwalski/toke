@@ -1,6 +1,6 @@
 id: D065
 series: D
-description: "lint single-use-let: a pure initialiser used once in the next statement is a hint with an inline fix; --fix inlines (parenthesised where needed) and deletes the let"
+description: "lint single-use-let: a pure initialiser used once in the next statement is a hint with an inline fix; --fix inlines (parenthesised where needed) and deletes the let. 131.59: `let q=arr.len` is NOT inlined -- the binding is an untyped (i64) local while `arr.len` is u64, so `q-1` and `arr.len-1` are different operations (signed vs unsigned-with-overflow); the literal `3` is inlined because its sibling `1` is i64"
 input: |
   m=t;
   f=dbl(x:i64):i64{<x*2};
@@ -22,5 +22,6 @@ expected_fixed_output: |
   f=main():i64{
     let r=dbl(3+1);
     let arr=@(1;2;3);
-    <r+arr.get(arr.len-1)
+    let q=arr.len;
+    <r+arr.get(q-1)
   };

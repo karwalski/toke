@@ -1592,6 +1592,38 @@ static int func_has_sig(const Type *t) {
     return t && t->kind == TY_FUNC && t->name == TY_FUNC_SIG;
 }
 int tk_type_is_fnval(const Type *t) { return func_has_sig(t); }
+
+/*
+ * tk_type_identical (131.59) -- STRICT structural identity of two checker
+ * types, for `tkc --lint --fix`'s single-use-let inliner.  Unlike
+ * types_equal() it never treats TY_UNKNOWN (at any depth) as a wildcard and
+ * never equates an opaque handle with an integer: the question is not "may
+ * one stand where the other is expected" but "is the inlined expression the
+ * same typed value the binding was", and only an answer the checker actually
+ * knows may say yes (AGENTS.md section 6).
+ */
+int tk_type_identical(const Type *a, const Type *b) {
+    if (!a || !b) return 0;
+    if (a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN) return 0;
+    if (a == b) return 1;
+    if (a->kind != b->kind) return 0;
+    if ((a->name == NULL) != (b->name == NULL)) return 0;
+    if (a->name && a->name != b->name && strcmp(a->name, b->name) != 0) return 0;
+    if ((a->elem == NULL) != (b->elem == NULL)) return 0;
+    if (a->elem && !tk_type_identical(a->elem, b->elem)) return 0;
+    if (a->field_count != b->field_count) return 0;
+    for (int i = 0; i < a->field_count; i++) {
+        const Type *x = a->field_types ? a->field_types[i] : NULL;
+        const Type *y = b->field_types ? b->field_types[i] : NULL;
+        if ((x == NULL) != (y == NULL)) return 0;
+        if (x && !tk_type_identical(x, y)) return 0;
+        const char *xn = a->field_names ? a->field_names[i] : NULL;
+        const char *yn = b->field_names ? b->field_names[i] : NULL;
+        if ((xn == NULL) != (yn == NULL)) return 0;
+        if (xn && xn != yn && strcmp(xn, yn) != 0) return 0;
+    }
+    return 1;
+}
 static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
     Type *t = mk_type(cx->env->arena, TY_FUNC);
     if (!t) return NULL;

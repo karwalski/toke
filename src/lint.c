@@ -18,6 +18,9 @@
  *   flag-soup              — ≥2 consecutive ifs each assigning x a literal
  *   string-concat-chain    — concat nested ≥ 2 deep
  *   single-use-let         — let used exactly once, in the next statement
+ *                            (131.59: fix only when the checker typed the
+ *                            use and the initialiser identically — see
+ *                            inline_keeps_type; needs opts->typed)
  *   discarded-value-result — bare `x.set/push/append(...)` statement
  *                            (127.33: NOT the tail expression of an
  *                            expression-position if/el or mt arm — that
@@ -44,6 +47,7 @@
  */
 
 #include "lint.h"
+#include "types.h"   /* 131.59: tk_type_identical, node->rtype */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1458,6 +1462,115 @@ static int init_is_fn_value(const PatCtx *c, const Node *init, const Node *fn)
     return 0;
 }
 
+/* ── 131.59: the inline must be the same typed value ─────────────────── */
+
+/* The parent of `n` inside `r` (NULL when `n` is not below `r`). */
+static const Node *lint_parent_of(const Node *r, const Node *n)
+{
+    if (!r) return NULL;
+    for (int i = 0; i < r->child_count; i++) {
+        if (r->children[i] == n) return r;
+        const Node *p = lint_parent_of(r->children[i], n);
+        if (p) return p;
+    }
+    return NULL;
+}
+
+/* A numeric literal, or a unary minus over one (the grammar has no negative
+ * literal).  1 = integer, 2 = float, 0 = neither. */
+static int numeric_literal_kind(const Node *n)
+{
+    if (!n) return 0;
+    if (n->kind == NODE_UNARY_EXPR && n->child_count == 1) n = n->children[0];
+    if (!n) return 0;
+    if (n->kind == NODE_INT_LIT) return 1;
+    if (n->kind == NODE_FLOAT_LIT) return 2;
+    return 0;
+}
+
+/*
+ * inline_keeps_type (131.59) — may `use` (the binding's one reference, inside
+ * `next`) be replaced by the initialiser text without changing what the
+ * program means?  A `let` is not type-transparent in toke, so the AST alone
+ * cannot answer this; the checker's types can.  D-WEB-0006v87:
+ * `let count=segs.len` binds an UNTYPED local (bind_init_type adopts no
+ * scalar field type), so `right>=count` compared i64 with i64, while the
+ * inlined `right>=segs.len` compares i64 with the u64 `.len` — E4031 before
+ * 127.53's widening, and on arithmetic a different program still:
+ * `let n=a.len; n-4` is -1 where `a.len-4` is RT002 (u64 overflow).
+ *
+ * Offered only when every one of these holds (AGENTS.md §6 — absent if
+ * uncertain):
+ *   - the caller type-checked the AST cleanly (opts->typed), so rtype is the
+ *     checker's own answer and not a stale or partial one;
+ *   - the `let` has no annotation: `let c:i64=a.len` states a type the
+ *     expression does not have, and inlining deletes the statement of it;
+ *   - the type the checker gave the USE (the binding's type) is identical to
+ *     the type it gave the INITIALISER, strictly: TY_UNKNOWN at any depth is
+ *     never identical (tk_type_identical).  Expression types are computed
+ *     bottom-up, so an identical non-literal expression stays identical in
+ *     the new slot;
+ *   - except a numeric LITERAL, whose type is decided by its slot, not by
+ *     itself: beside a u64 the checker narrows it (lit_narrows) and the
+ *     emitter lowers the operation unsigned (binop_is_unsigned), while the
+ *     i64 binding it replaces widened the other side instead —
+ *     `let k=5; a.len-k` is -2, `a.len-5` is RT002.  A literal is inlined
+ *     only as an operand of a binary operator whose other operand the
+ *     checker typed i64 (f64 for a float literal), the one slot where the
+ *     literal and the binding are provably the same value, or as the whole
+ *     value of `<` from a function whose return type is spelled exactly
+ *     `i64` (`f64`); every other slot (array/map literal element, argument,
+ *     if/mt arm, unary, any other return type) keeps the binding.
+ */
+/* Is `fn`'s declared return type spelled exactly `want` (a plain scalar)? */
+static int fn_returns_plain(const PatCtx *c, const Node *fn, const char *want)
+{
+    for (int i = 0; fn && i < fn->child_count; i++) {
+        const Node *rs = fn->children[i];
+        if (!rs || rs->kind != NODE_RETURN_SPEC) continue;
+        if (rs->child_count != 1 || !rs->children[0]) return 0;
+        const Node *t = rs->children[0];
+        if (t->kind != NODE_TYPE_EXPR || t->child_count != 0) return 0;
+        int wl = (int)strlen(want);
+        return t->tok_len == wl && memcmp(c->src + t->tok_start, want, (size_t)wl) == 0;
+    }
+    return 0;
+}
+
+static int inline_keeps_type(const PatCtx *c, const Node *decl, const Node *init,
+                             const Node *next, const Node *use, const Node *fn)
+{
+    if (!c->opts || !c->opts->typed) return 0;
+    if (decl->child_count != 2) return 0;                 /* annotated */
+    /* The checker does not infer every position: a method-call receiver
+     * (`w.contains(c)`) carries no rtype.  A string literal without
+     * interpolation (is_pure_expr) and a bool literal are typed by their
+     * token alone -- bind_init_type gives the immutable binding exactly str
+     * / bool, and no slot re-types them -- so for those the binding's type
+     * is the initialiser's even where the use was not inferred. */
+    const Type *ut = use->rtype;
+    if (!ut && init->rtype &&
+        ((init->kind == NODE_STR_LIT && init->rtype->kind == TY_STR) ||
+         (init->kind == NODE_BOOL_LIT && init->rtype->kind == TY_BOOL)))
+        ut = init->rtype;
+    if (!ut || !tk_type_identical(ut, init->rtype)) return 0;
+    int lk = numeric_literal_kind(init);
+    if (lk) {
+        TypeKind want = lk == 1 ? TY_I64 : TY_F64;
+        if (ut->kind != want) return 0;
+        const Node *p = lint_parent_of(next, use);
+        if (!p) return 0;
+        /* `<k` from a function declared exactly i64 (f64): the literal is
+         * judged against that same type the binding was. */
+        if (p->kind == NODE_RETURN_STMT && p->child_count == 1)
+            return fn_returns_plain(c, fn, lk == 1 ? "i64" : "f64");
+        if (p->kind != NODE_BINARY_EXPR || p->child_count != 2) return 0;
+        const Node *sib = p->children[0] == use ? p->children[1] : p->children[0];
+        if (!sib || !sib->rtype || sib->rtype->kind != want) return 0;
+    }
+    return 1;
+}
+
 static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *fn)
 {
     const Node *decl = list->children[i];
@@ -1491,7 +1604,7 @@ static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *
         !init_is_fn_value(c, init, fn)) {
         int unsafe = 0;
         const Node *use = find_ref_ctx(next, list, i + 1, name, len, c->src, 0, &unsafe);
-        if (use && !unsafe) {
+        if (use && !unsafe && inline_keeps_type(c, decl, init, next, use, fn)) {   /* 131.59 */
             /* initialiser text: after '=' up to the statement terminator */
             int k = id->tok_start + id->tok_len;
             while (k < c->src_len && src_is_space(c->src[k])) k++;
