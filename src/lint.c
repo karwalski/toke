@@ -1553,7 +1553,7 @@ static int inline_keeps_type(const PatCtx *c, const Node *decl, const Node *init
         ((init->kind == NODE_STR_LIT && init->rtype->kind == TY_STR) ||
          (init->kind == NODE_BOOL_LIT && init->rtype->kind == TY_BOOL)))
         ut = init->rtype;
-    if (!tk_type_identical(ut, init->rtype)) return 0;
+    if (!ut || !tk_type_identical(ut, init->rtype)) return 0;
     int lk = numeric_literal_kind(init);
     if (lk) {
         TypeKind want = lk == 1 ? TY_I64 : TY_F64;
