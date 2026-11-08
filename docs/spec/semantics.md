@@ -667,6 +667,13 @@ carry the value type `$v` when it is a `str`, `bool`, `f64`, a map, or an
 array of those: `m.getor(k;d)` (story 127.320) and the `$ok` binding of
 `mt m.get(k){…}` (story 127.322), so `mm.getor(k;d).get(i)` and
 `mt mm.get(k){$ok:x x.get(i);…}` read the element as its own type.
+The default `d` of `m.getor(k;d)` is what a miss yields, so it is a `$v`
+(story 127.324): an integer default widens to an `i64` value type and an
+integer literal narrows as everywhere else, but there is no int-to-float
+promotion (`mf.getor(k;1)` on an `f64` map) and an empty `@()` is an empty
+array, never a map (the empty map is `@($k:$v)`). Any other default type is
+`[errors.md E4031]`, no `fix`. Module calls spelled `getor` (`env.getor`)
+are judged by their own interface.
 
 The stdlib calls whose records declare `T!Err` (`str.toint`, `json.i64`, …)
 report failure on the same channel but are still given the value's type (or

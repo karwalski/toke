@@ -5054,6 +5054,60 @@ static void check_array_store_elem(Ctx *cx, const Node *call) {
               "expected", en, "got", vn_, (const char *)NULL);
 }
 
+/*
+ * check_map_getor_default (127.324) -- `m.getor(k;d)` on a map whose value
+ * type V is known must be given a default `d` of type V.  The default is
+ * what the call yields on a miss, through the same i64 slot as a stored
+ * value, and nothing judged it: `@("a":1.5).getor("zz";1)` read the int's
+ * bits as a double (4.94e-324), `@("a":"x").getor("zz";5)` handed 5 to the
+ * str reader and exited 139, and an int default on a map of arrays or maps
+ * crashed at the first `.len`/lookup.  Flow direction is the store's
+ * (check_array_store_elem): types_compat(d, V), an integer literal narrows,
+ * and an empty `@()` stands for an empty array (types_equal) but not for a
+ * map -- the empty map is `@($k:$v)`, as for `let m:@($k:$v)=@()`
+ * (semantics.md 2.1).  No int -> float promotion (ADR-0004):
+ * `mf.getor(k;1)` is E4031.  Module calls (`env.getor`) are judged by their
+ * interface, not here.  Silent when V or the default's type is unknown.
+ * No `fix`: whether to change the default, the map's value type or the
+ * data structure is the program's choice, not the checker's.
+ */
+static void check_map_getor_default(Ctx *cx, const Node *call) {
+    if (!call || call->child_count != 3) return;
+    const Node *cal = call->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2
+        || !cal->children[0] || !cal->children[1]) return;
+    char mb[16]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "getor") != 0) return;
+    const Node *rv = cal->children[0];
+    if (rv->kind == NODE_TYPE_IDENT) return;
+    if (rv->kind == NODE_IDENT) {
+        char ab[128]; TOKSTR(ab, cx->src, rv);
+        char pb[256];
+        if (!alias_shadowed(cx, rv) && import_module_path(cx, ab, pb, sizeof pb))
+            return;
+    }
+    Type *rt = slot_union_base(infer(cx, rv));
+    if (!rt || rt->kind != TY_MAP || rt->field_count < 1 || !rt->field_types)
+        return;
+    const Type *v = rt->field_types[0];
+    if (!v || v->kind == TY_UNKNOWN || v->kind == TY_VOID) return;
+    const Node *dn = call->children[2];
+    if (!dn) return;
+    const Type *dt = dn->rtype ? dn->rtype : infer(cx, dn);
+    if (!dt || dt->kind == TY_UNKNOWN) return;
+    if (types_compat(dt, v)) return;
+    if (lit_narrows(cx->src, dn, v)) return;
+    if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+    char vn[64], dn_[64], msg[256];
+    snprintf(vn, sizeof vn, "%s", type_name(v));
+    snprintf(dn_, sizeof dn_, "%s", type_name(dt));
+    snprintf(msg, sizeof msg,
+             "type mismatch: the default of '.getor' is a '%s', but the map's "
+             "values are '%s'", dn_, vn);
+    diag_emit(DIAG_ERROR, E4031, dn->start, dn->line, dn->col, msg,
+              "expected", vn, "got", dn_, (const char *)NULL);
+}
+
 /* 127.226: a type node standing where a literal element would be. */
 static int map_type_node(const Node *n) {
     return n && (n->kind == NODE_TYPE_IDENT || n->kind == NODE_TYPE_EXPR ||
@@ -6139,6 +6193,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             check_recv_method_call(cx,node);
             /* and an array store must match the element type. */
             check_array_store_elem(cx,node);
+            /* 127.324: and a map's getor default must be a V. */
+            check_map_getor_default(cx,node);
             /* 127.224 item 7: a map from another user module, used in place
              * (`lib.mk().get("a")`) — the same answer the `let` binding gets
              * from bind_init_type.  Maps only: see call_decl_ret_type. */
