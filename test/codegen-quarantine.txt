@@ -45,11 +45,10 @@ test/e2e/e2e_struct_field_disambiguation.tk # 2026-09-23 E2002 `=` used for equa
 test/e2e/e2e_tail_recursion.tk            # 2026-09-23 E2002 `=` used for equality at lines 3, 9, 15 127.139-followup
 #
 # ── E4026: interface/implementation arity disagreement ─────────────────────
-# db.exec and db.many are called with 3 arguments; the implementation takes 2.
-# The call sites pass a trailing `@()` bind-parameter array the implementation
-# does not accept. Either the .tki or the test is wrong — that is a decision
-# for whoever owns std.db, not for this gate.
-test/standalone/test_db_sandbox.tk        # 2026-09-23 E4026 db.exec/db.many called with 3 args, implementation takes 2 127.139-followup
+# (none — test/standalone/test_db_sandbox.tk called db.exec/db.many/db.close
+# with a connection, the pre-138.6 shape. 131.45 (c5ee628e) moved it to the
+# handle API, execon/manyon/closeon, and it now prints 3 PASS. Entry removed
+# 2026-11-08 by story 127.312.)
 #
 # ── Crashes ────────────────────────────────────────────────────────────────
 # (none — test/standalone/test_str.tk was the only one and was fixed under
