@@ -662,8 +662,11 @@ error channel, so a stored `0`/`false` is a hit; a `$ok`/`$err` match on a
 bool-valued map is exhaustive. Not judged yet: interpolating a lookup
 (`"\(m.get(k))"`), passing it to a stdlib call and assigning it to an
 existing `mut` binding (the same as for a user `T!Err`), and a lookup used as
-the base of a field read or a subscript (`mm.get(k).get(i)`), whose repairs
-do not yet type a compound value.
+the base of a field read or a subscript (`mm.get(k).get(i)`). Its repairs
+carry the value type `$v` when it is a `str`, `bool`, `f64`, a map, or an
+array of those: `m.getor(k;d)` (story 127.320) and the `$ok` binding of
+`mt m.get(k){…}` (story 127.322), so `mm.getor(k;d).get(i)` and
+`mt mm.get(k){$ok:x x.get(i);…}` read the element as its own type.
 
 The stdlib calls whose records declare `T!Err` (`str.toint`, `json.i64`, …)
 report failure on the same channel but are still given the value's type (or

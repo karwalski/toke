@@ -2397,6 +2397,14 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
             return NULL;
         return mt_ok_payload_type(cx, bn->children[1], depth + 1);
     }
+    /* 127.322: a map lookup `m.get(k)` is the union `V!$err` (127.244); its
+     * ok payload is V.  Left unknown, `mt n.get("o"){$ok:x x.get("i")..}`
+     * read the inner f64 through an untyped map and printed its bits. */
+    if (scr->kind == NODE_INDEX_EXPR) {
+        Type *ut = infer(cx, scr);
+        return (ut && ut->kind == TY_ERROR_TYPE && ut->slot_lower)
+               ? repr_value_type(ut->slot_lower) : NULL;
+    }
     if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1 || !scr->children[0])
         return NULL;
     const Node *callee = scr->children[0];
@@ -4940,11 +4948,10 @@ static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_
  * slot_union_base (127.244) -- a slot error union used as the BASE of a
  * field read or a subscript (`m.get("k").len`, `mm.get("k").get(0)`) is
  * read as the type it had before (slot_lower), so the access is typed --
- * and lowered -- exactly as it was.  Not judged yet: the repairs are not
- * sound for a compound value (`getor` on a map of arrays/maps reads the
- * element untyped, and an `mt` arm binding of a lookup is untyped -- both
- * print pointers / bit patterns), so the chained form is the only working
- * spelling until those land.  Any other base is returned unchanged.
+ * and lowered -- exactly as it was.  Not judged yet.  Its repairs type a
+ * compound value since 127.320 (`getor`, map_getor_type) and 127.322 (the
+ * `$ok` binding, mt_ok_payload_type), which judging this form needed first.
+ * Any other base is returned unchanged.
  */
 static Type *slot_union_base(Type *t) {
     return (t && t->slot_lower) ? t->slot_lower : t;
