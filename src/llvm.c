@@ -10196,6 +10196,80 @@ static int la_user_arg_nonretaining(Ctx *c, const Node *call, int child_i, int d
     return la_param_nonretaining(c, fn, child_i - 1, depth);
 }
 
+/* 127.307: a struct literal that takes x as a bare field value MOVES x's
+ * block into the struct; it is an alias only if x is used again afterwards.
+ * Is there a disqualifying use of x in `lit`, treating each bare-x field
+ * value (also inside a nested struct literal field) as that move?  Every
+ * other field value is checked normally.  Callers accept the move only where
+ * x is provably dead after the literal is built (see la_bad_use). */
+static int la_struct_move_bad(Ctx *c, const Node *lit, const char *x, int strict, int depth) {
+    for (int i = 0; i < lit->child_count; i++) {
+        const Node *fi = lit->children[i];
+        if (!fi || fi->kind != NODE_FIELD_INIT || fi->child_count < 1) {
+            if (la_bad_use(c, fi, x, strict, depth)) return 1;
+            continue;
+        }
+        const Node *v = fi->children[0];
+        if (la_ident_is(c, v, x)) continue;                       /* the move */
+        if (v && v->kind == NODE_STRUCT_LIT) {
+            if (la_struct_move_bad(c, v, x, strict, depth)) return 1;
+            continue;
+        }
+        if (la_bad_use(c, v, x, strict, depth)) return 1;
+        for (int k = 1; k < fi->child_count; k++)
+            if (la_bad_use(c, fi->children[k], x, strict, depth)) return 1;
+    }
+    return 0;
+}
+
+/* 127.307: is statement `s` `let r=$T{..x..}` / `mut r=..` / `r=$T{..}`
+ * (r a plain name other than x) whose struct literal moves x?  Returns the
+ * literal's child index in `s`, or 0. */
+static int la_struct_store_init(Ctx *c, const Node *s, const char *x) {
+    if (!s || s->child_count < 2 || !s->children[0] ||
+        s->children[0]->kind != NODE_IDENT || la_ident_is(c, s->children[0], x)) return 0;
+    int ii;
+    if (s->kind == NODE_BIND_STMT || s->kind == NODE_MUT_BIND_STMT)
+        ii = (s->child_count >= 3 && s->children[2]) ? 2 : 1;
+    else if (s->kind == NODE_ASSIGN_STMT) ii = 1;
+    else return 0;
+    const Node *init = s->children[ii];
+    return (init && init->kind == NODE_STRUCT_LIT) ? ii : 0;
+}
+
+/* 127.307: the function body under analysis (c->la_fn's statement list). */
+static const Node *la_fn_body(Ctx *c) {
+    if (!c->la_fn) return NULL;
+    for (int i = 0; i < c->la_fn->child_count; i++)
+        if (c->la_fn->children[i] && c->la_fn->children[i]->kind == NODE_STMT_LIST)
+            return c->la_fn->children[i];
+    return NULL;
+}
+
+/* 127.307: la_bad_use for the function body's own statement list.  A
+ * top-level statement that stores x into a struct literal bound to another
+ * name is a move when no LATER top-level statement mentions x: a top-level
+ * statement runs once per call, after every loop that precedes it, so no
+ * self-update of x (in place or not) can run once the struct holds the block,
+ * and no alias of it is observable through x. */
+static int la_body_bad(Ctx *c, const Node *body, const char *x, int depth) {
+    for (int i = 0; i < body->child_count; i++) {
+        const Node *s = body->children[i];
+        int ii = la_struct_store_init(c, s, x);
+        int later = 0;
+        for (int j = i + 1; ii && j < body->child_count && !later; j++)
+            later = la_mentions(c, body->children[j], x);
+        if (ii && !later) {
+            for (int k = 0; k < s->child_count; k++)
+                if (k != ii && la_bad_use(c, s->children[k], x, 0, depth)) return 1;
+            if (la_struct_move_bad(c, s->children[ii], x, 0, depth)) return 1;
+            continue;
+        }
+        if (la_bad_use(c, s, x, 0, depth)) return 1;
+    }
+    return 0;
+}
+
 /* Recursively detect a disqualifying (alias-creating) use of x. Allowed roles:
  * assign-LHS, method/field receiver, index base, bind name-slot, terminal
  * return operand (not in STRICT mode — see la_param_nonretaining), bare
@@ -10208,6 +10282,16 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
     if (n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR)
         return la_mentions(c, n, x);    /* any capture of x is unsafe */
+    /* 127.307: `<$T{d:x;..}` is a terminal return like `<x`: the function
+     * ends, so x is never updated again and the struct holds the only live
+     * reference.  Not in STRICT mode, where returning p is a retention. */
+    if (!strict && n->kind == NODE_RETURN_STMT && n->child_count == 1 &&
+        n->children[0] && n->children[0]->kind == NODE_STRUCT_LIT)
+        return la_struct_move_bad(c, n->children[0], x, 0, depth);
+    /* 127.307: a struct literal stored at the top level of the body after
+     * which x is dead (la_body_bad). */
+    if (!strict && n->kind == NODE_STMT_LIST && n == la_fn_body(c))
+        return la_body_bad(c, n, x, depth);
     /* 127.229 (2): `x = x + @(…)` — the left operand is the receiver of the
      * append, as in `x = x.append(…)`; only the literal's elements are uses. */
     if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
