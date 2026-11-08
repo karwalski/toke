@@ -684,16 +684,12 @@ int resolve_imports(const Node *ast, const char *src,
             snprintf(msg, sizeof(msg),
                      "module '%s' not found; available: %s", mpath, avail ? avail : "");
             free(avail);
-            const char *last_seg = strrchr(mpath, '.');
-            last_seg = last_seg ? last_seg + 1 : mpath;
-            const char *suggestion = find_closest_module(last_seg);
-            if (suggestion) {
-                char fix[256];
-                snprintf(fix, sizeof(fix), "did you mean 'std.%s'?", suggestion);
-                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", fix, (const char *)NULL);
-            } else {
-                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", (const char *)NULL);
-            }
+            /* 127.309: no `fix` for a user-module path.  Replacing a missing
+             * user module with an edit-distance stdlib guess (`i=lib:lib` ->
+             * 'std.log') is not deterministically correct (AGENTS §6); the
+             * did-you-mean suggestion is offered only for `std.*` imports,
+             * in the branch above. */
+            diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", (const char *)NULL);
             err = 1; (void)st_push(out, alias, mpath, ver, 0);
         }
 

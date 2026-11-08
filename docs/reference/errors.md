@@ -391,7 +391,7 @@ The module path in an `i=` declaration does not resolve to any `.tki` interface 
 
 A `std.*` path is checked the same way (story 127.42): a standard-library module is real only when it is registered in the compiler's native-glue registry or ships a `.tki` interface. Before that check, any `std.<anything>` was accepted and the generic `tk_<mod>_<m>_w` call rule fabricated symbols for it, so a typo surfaced only as a link failure — or, under `--check`, not at all.
 
-**Fix:** Check the module path spelling and ensure the dependency is available. When the name is within edit distance 2 of exactly one known module the diagnostic carries a `did you mean 'std.<module>'?` fix; otherwise no fix is offered, because the intended module is not determined.
+**Fix:** Check the module path spelling and ensure the dependency is available. For a `std.*` import whose module name is within edit distance 2 of exactly one known module, the diagnostic carries a `did you mean 'std.<module>'?` fix; otherwise no fix is offered, because the intended module is not determined. A user-module path (one not under `std.`) never carries the fix (story 127.309): a missing user module is not a misspelt stdlib module, so `i=lib:lib` is not rewritten to `std.log`.
 
 ---
 
