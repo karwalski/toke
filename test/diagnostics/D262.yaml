@@ -1,0 +1,14 @@
+id: D262
+series: D
+description: "lint single-use-let (131.59): an annotated `let c:i64=a.len` states a type the expression does not have; inlining would delete that statement of it, so the fix is absent (for every annotated let)"
+input: |
+  m=t;
+  f=main():i64{
+    let a=@(1;2;3);
+    let c:i64=a.len;
+    <c-4
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fix_absent: true

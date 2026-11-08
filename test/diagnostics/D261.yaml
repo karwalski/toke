@@ -1,0 +1,28 @@
+id: D261
+series: D
+description: "lint single-use-let (131.59): a numeric literal is typed by its slot -- beside a u64 it narrows and the operation lowers unsigned (`let k=5; a.len-k` is -2, `a.len-5` is RT002), so that binding keeps no fix; beside an i64 operand the literal is the same value and is inlined, and the fixpoint finishes the chain"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let a=@(1;2;3);
+    let k=5;
+    io.println("\(a.len-k)");
+    let x=10;
+    let j=3;
+    let y=x+j;
+    let h=2;
+    <y-h
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fixed_output: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let a=@(1;2;3);
+    let k=5;
+    io.println("\(a.len-k)");
+    <(10+3)-2
+  };

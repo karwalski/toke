@@ -51,6 +51,11 @@ typedef struct {
     int          only_count;
     const char **ignore_rules;  /* NULL = ignore none     */
     int          ignore_count;
+    /* 131.59: 1 when the caller type-checked this AST cleanly (imports,
+     * names and types, no errors) immediately before tkc_lint, so every
+     * node->rtype the checker memoised is trustworthy.  Fixes whose
+     * correctness depends on types (single-use-let) are offered only then. */
+    int          typed;
 } LintOptions;
 
 /* ── Public API ───────────────────────────────────────────────────────── */
