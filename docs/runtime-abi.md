@@ -423,7 +423,11 @@ buffer toke held).  The rest of `str.c`/`str_glue.c`: every reader but the
 verify switch's own `strlen` (`tks_verify_fail`), and `fmt.f64`,
 `fmt.sprintf`, `str.sha256prefix` seal.  Gate: C911 (each converted
 producer's header equals `strlen`, and a program reads them under
-`TK_STR_VERIFY=1`).
+`TK_STR_VERIFY=1`).  `encoding.jsonfield` followed once its over-read was
+fixed (127.317, Batch Z97: a value ending in a backslash at the end of the
+input stepped over the NUL); its result is sealed (`tks_dup` of the scanned
+value, which can no longer hold a 0 byte).  Gate: C920 (ASan C driver and
+an ASan-built toke program under `TK_STR_VERIFY=1`).
 
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in

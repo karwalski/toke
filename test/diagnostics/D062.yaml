@@ -1,6 +1,6 @@
 id: D062
 series: D
-description: "lint string-concat-chain: with TKC_LINT_CONCAT_FIX=1 and plain ident/literal leaves, --fix rewrites the chain to one interpolated literal (module and method style)"
+description: "lint string-concat-chain: with TKC_LINT_CONCAT_FIX=1 and plain ident/literal leaves the checker types str, --fix rewrites a module-style std.str chain to one interpolated literal; a method-style chain keeps its warning without a fix (131.110: the checker types neither its receiver nor its result)"
 input: |
   m=t;
   i=s:std.str;
@@ -22,6 +22,6 @@ expected_fixed_output: |
     let a="a";
     let b="b";
     let c="x=\(a), y=\(b)";
-    let d="\(a)\(b)z";
+    let d=a.concat(b).concat("z");
     <s.len(c)+s.len(d)
   };

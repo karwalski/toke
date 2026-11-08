@@ -1,0 +1,18 @@
+id: D296
+series: D
+description: "lint string-concat-chain (131.110): with TKC_LINT_CONCAT_FIX=1 a method-style str chain is flagged but carries no fix: the checker types neither the receiver nor the call, so it cannot be told from an array chain"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let a="a";
+    let b="b";
+    let d=a.concat(b).concat("z");
+    io.println(d);
+    <0
+  };
+flags: --lint
+env: TKC_LINT_CONCAT_FIX=1
+expected_exit_code: 0
+expected_error_codes: ["string-concat-chain"]
+expected_fix_absent_for: ["string-concat-chain"]

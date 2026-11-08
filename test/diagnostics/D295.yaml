@@ -1,0 +1,19 @@
+id: D295
+series: D
+description: "lint string-concat-chain (131.110): with TKC_LINT_CONCAT_FIX=1 an ARRAY concat chain is flagged but carries no fix (the interpolation rewrite would be E4032)"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let a=@(1;2);
+    let b=@(3);
+    let d=@(4);
+    let c=a.concat(b).concat(d);
+    io.println("\(c.len)");
+    <0
+  };
+flags: --lint
+env: TKC_LINT_CONCAT_FIX=1
+expected_exit_code: 0
+expected_error_codes: ["string-concat-chain"]
+expected_fix_absent_for: ["string-concat-chain"]
