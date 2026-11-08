@@ -118,7 +118,7 @@ f=example():void{
 
 ### json.u64(j: $jsonval; key: $str): u64!$jsonerr
 
-Extracts an unsigned 64-bit integer from the JSON object by key. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not a non-negative integer.
+Extracts an unsigned 64-bit integer from the JSON object by key. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not a non-negative integer: a negative number, and a number written with a fraction or an exponent (`1.5`, `1e3`), are `$type` (127.303).
 
 ```toke
 i=json:std.json;
@@ -132,7 +132,7 @@ f=example():void{
 
 ### json.i64(j: $jsonval; key: $str): i64!$jsonerr
 
-Extracts a signed 64-bit integer from the JSON object by key, accepting negative values that `json.u64` would reject. Returns `$jsonerr.$missing` or `$jsonerr.$type` on failure.
+Extracts a signed 64-bit integer from the JSON object by key, accepting negative values that `json.u64` would reject. Returns `$jsonerr.$missing` if the key does not exist, or `$jsonerr.$type` if the value is not an integer: a number written with a fraction or an exponent (`1.5`, `1e3`) is `$type`, not its integer prefix (127.303).
 
 ```toke
 i=json:std.json;

@@ -1,0 +1,25 @@
+id: D298
+series: D
+description: "lint string-concat-chain (131.110): the fix splices literal leaves verbatim, escapes included, around a str-typed identifier"
+input: |
+  m=t;
+  i=s:std.str;
+  f=q(x:str):str{
+    <s.concat("a\"";s.concat(x;"\n"))
+  };
+  f=main():i64{
+    <s.len(q("v"))
+  };
+flags: --lint
+env: TKC_LINT_CONCAT_FIX=1
+expected_exit_code: 0
+expected_error_codes: ["string-concat-chain"]
+expected_fixed_output: |
+  m=t;
+  i=s:std.str;
+  f=q(x:str):str{
+    <"a\"\(x)\n"
+  };
+  f=main():i64{
+    <s.len(q("v"))
+  };

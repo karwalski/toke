@@ -1,0 +1,18 @@
+id: D299
+series: D
+description: "lint string-concat-chain (131.110): with TKC_LINT_CONCAT_FIX=1 a str chain in a program that does not type-check cleanly is flagged but carries no fix (no trustworthy types)"
+input: |
+  m=t;
+  i=s:std.str;
+  f=main():i64{
+    let a="a";
+    let b="b";
+    let c=s.concat(s.concat(a;b);"c");
+    let z:i64="q";
+    <s.len(c)+z
+  };
+flags: --lint
+env: TKC_LINT_CONCAT_FIX=1
+expected_exit_code: 0
+expected_error_codes: ["string-concat-chain"]
+expected_fix_absent_for: ["string-concat-chain"]

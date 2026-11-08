@@ -112,14 +112,16 @@ f=setval(j:$jsonval;key:$str;v:$jsonval):$jsonval!$jsonerr (* nests v; $parse if
 f=serialize(j:$jsonval):$str               (* the JSON text, for output *)
 
 (* 127.241: the typed get* spellings -- aliases of i64 / bool / f64 above.
-   Their parameters are still the ABI's i64 (a json handle, a str key); the
-   result is the declared union, so a match decides on the error slot. *)
-f=getint(j:i64;key:i64):i64!$jsonerr
-f=geti64(j:i64;key:i64):i64!$jsonerr
-f=geti32(j:i64;key:i64):i64!$jsonerr
-f=getbool(j:i64;key:i64):bool!$jsonerr
-f=getf32(j:i64;key:i64):f64!$jsonerr
-f=getfloat(j:i64;key:i64):f64!$jsonerr
+   Their document parameter is still the ABI's i64 (a json handle); the key
+   is a str (127.304: it was spelled i64, so a str key went unjudged and an
+   i64 key was accepted).  The result is the declared union, so a match
+   decides on the error slot. *)
+f=getint(j:i64;key:$str):i64!$jsonerr
+f=geti64(j:i64;key:$str):i64!$jsonerr
+f=geti32(j:i64;key:$str):i64!$jsonerr
+f=getbool(j:i64;key:$str):bool!$jsonerr
+f=getf32(j:i64;key:$str):f64!$jsonerr
+f=getfloat(j:i64;key:$str):f64!$jsonerr
 
 (* Streaming API — 12.1.1.  Declared in json.tki but quarantined: no glue
    reaches the C core yet, so a call is refused at check with E4027

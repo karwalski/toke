@@ -9,6 +9,7 @@
 #include "encoding.h"
 #include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
 #include "tk_runtime.h" /* 127.241: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,7 +58,7 @@ static int64_t enc_bytes(ByteArray d, const char *why) {
  * returns [byte]. All binary-safe (0x00 preserved). */
 int64_t tk_encoding_tobytes_w(int64_t s) {
     const char *str = s ? (const char *)(intptr_t)s : "";
-    return tk_bytes_pack((const uint8_t *)str, (uint64_t)strlen(str));
+    return tk_bytes_pack((const uint8_t *)str, (uint64_t)tk_strlen(str));
 }
 int64_t tk_encoding_bytes_w(int64_t s) { return tk_encoding_tobytes_w(s); }
 int64_t tk_encoding_frombytes_w(int64_t b) {
@@ -145,12 +146,16 @@ int64_t tk_encoding_base64urlencodenopad_w(int64_t data) {
 }
 
 /* encoding.jsonfield(obj, key) — extract a JSON string field value.
- * Simple implementation: find "key":"value" and return value. */
+ * Simple implementation: find "key":"value" and return value (escapes kept
+ * as written).  An unterminated value runs to the end of obj; a backslash
+ * that is obj's last byte ends the value there (127.317: the scan used to
+ * step over the NUL and read past the string).  The result is a sealed
+ * string (runtime-abi §3.1): the scanned range never holds a 0 byte. */
 int64_t tk_encoding_jsonfield_w(int64_t json_str, int64_t key) {
     if (!json_str || !key) return 0;
     const char *j = (const char *)(intptr_t)json_str;
     const char *k = (const char *)(intptr_t)key;
-    size_t klen = strlen(k);
+    size_t klen = tk_strlen(k);
     /* Search for "key":" pattern */
     const char *p = j;
     while ((p = strstr(p, k)) != NULL) {
@@ -164,15 +169,11 @@ int64_t tk_encoding_jsonfield_w(int64_t json_str, int64_t key) {
                     vstart++;
                     const char *vend = vstart;
                     while (*vend && *vend != '"') {
-                        if (*vend == '\\') vend++; /* skip escaped char */
+                        if (*vend == '\\' && vend[1]) vend++; /* skip escaped char */
                         vend++;
                     }
-                    size_t vlen = (size_t)(vend - vstart);
-                    char *result = (char *)malloc(vlen + 1);
-                    if (!result) return 0;
-                    memcpy(result, vstart, vlen);
-                    result[vlen] = '\0';
-                    return (int64_t)(intptr_t)result;
+                    char *result = tks_dup(vstart, (size_t)(vend - vstart));
+                    return result ? (int64_t)(intptr_t)result : 0;
                 }
             }
         }
@@ -186,7 +187,7 @@ int64_t tk_encoding_jsonfieldint_w(int64_t json_str, int64_t key) {
     if (!json_str || !key) return 0;
     const char *j = (const char *)(intptr_t)json_str;
     const char *k = (const char *)(intptr_t)key;
-    size_t klen = strlen(k);
+    size_t klen = tk_strlen(k);
     const char *p = j;
     while ((p = strstr(p, k)) != NULL) {
         if (p > j && *(p - 1) == '"') {

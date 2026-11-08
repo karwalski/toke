@@ -1671,7 +1671,7 @@ test-stdlib-process:
 # 124.4h — ambient defect hardening (AMB-04/05/06/07/08 at the C level).
 test-stdlib-ambient:
 	$(CC) $(CFLAGS) -o test/stdlib/test_ambient \
-	    test/stdlib/test_ambient.c src/stdlib/path.c src/stdlib/file.c \
+	    test/stdlib/test_ambient.c src/stdlib/path.c src/stdlib/str.c src/stdlib/file.c \
 	    src/stdlib/env.c src/stdlib/os.c src/stdlib/capabilities.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_ambient
 
@@ -1744,7 +1744,7 @@ test-stdlib-analytics:
 
 test-stdlib-encoding:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_encoding \
-	    test/stdlib/test_encoding.c src/stdlib/encoding.c
+	    test/stdlib/test_encoding.c src/stdlib/encoding.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_encoding
 
 test-stdlib-encrypt:
@@ -1802,17 +1802,17 @@ test-stdlib-chart:
 
 test-stdlib-html:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_html \
-	    test/stdlib/test_html.c src/stdlib/html.c
+	    test/stdlib/test_html.c src/stdlib/html.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_html
 
 test-stdlib-dashboard:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
-	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
+	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/str.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
 	$(RUN_TEST) ./test/stdlib/test_dashboard
 
 test-stdlib-svg:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg \
-	    test/stdlib/test_svg.c src/stdlib/svg.c -lm
+	    test/stdlib/test_svg.c src/stdlib/svg.c src/stdlib/str.c -lm
 	$(RUN_TEST) ./test/stdlib/test_svg
 
 test-stdlib-canvas:
@@ -1891,7 +1891,7 @@ test-stdlib-capabilities:
 test-stdlib-auth-flow-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_auth_flow_integration \
 	    test/stdlib/test_auth_flow_integration.c \
-	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/encoding.c \
+	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/encoding.c src/stdlib/str.c \
 	    src/stdlib/crypto.c src/stdlib/json.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_auth_flow_integration
 
@@ -1899,7 +1899,7 @@ test-stdlib-dashboard-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard_integration \
 	    test/stdlib/test_dashboard_integration.c \
 	    src/stdlib/csv.c src/stdlib/dataframe.c src/stdlib/analytics.c \
-	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/dashboard.c \
+	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/str.c src/stdlib/dashboard.c \
 	    src/stdlib/math.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_dashboard_integration
 
@@ -1914,7 +1914,7 @@ test-stdlib-http-json-integration:
 test-stdlib-http2:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_http2 \
 	    test/stdlib/test_http2.c src/stdlib/http2.c src/stdlib/http.c \
-	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
 	    $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_http2
 
@@ -1955,7 +1955,7 @@ test-stdlib-mlx:
 test-stdlib-svg-diagram-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg_diagram_integration \
 	    test/stdlib/test_svg_diagram_integration.c \
-	    src/stdlib/svg.c src/stdlib/csv.c $(ORPHAN_LIBS)
+	    src/stdlib/svg.c src/stdlib/str.c src/stdlib/csv.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_svg_diagram_integration
 
 test-stdlib-template-email-integration:
@@ -1968,7 +1968,7 @@ test-stdlib-web-server-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_web_server_integration \
 	    test/stdlib/test_web_server_integration.c \
 	    src/stdlib/http.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c \
-	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
 	    $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_web_server_integration
 
@@ -2092,7 +2092,7 @@ repro-check:
 
 test-stdlib-path:
 	$(CC) $(CFLAGS) -o test/stdlib/test_path \
-	    test/stdlib/test_path.c src/stdlib/path.c
+	    test/stdlib/test_path.c src/stdlib/path.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_path
 
 test-stdlib-args:
@@ -2351,7 +2351,7 @@ fuzz-toml:
 fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:
-	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c,)
+	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
 fuzz-template:
 	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c,)
 # http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls

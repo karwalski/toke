@@ -37,15 +37,11 @@ src/stdlib/dataframe_glue.c 1
 src/stdlib/db.c 2
 src/stdlib/db_mysql.c 2
 src/stdlib/db_postgres.c 2
-src/stdlib/encoding.c 5
-src/stdlib/encoding_glue.c 3
 src/stdlib/encrypt.c 2
 src/stdlib/encrypt_glue.c 1
 src/stdlib/env.c 8
 src/stdlib/file.c 5
 src/stdlib/file_glue.c 3
-src/stdlib/fmt.c 6
-src/stdlib/html.c 9
 src/stdlib/http.c 28
 src/stdlib/http2.c 4
 src/stdlib/i18n.c 5
@@ -63,7 +59,6 @@ src/stdlib/net_glue.c 1
 src/stdlib/ocr.c 7
 src/stdlib/ocr_glue.c 1
 src/stdlib/os_glue.c 1
-src/stdlib/path.c 7
 src/stdlib/pdf.c 4
 src/stdlib/pdf_glue.c 1
 src/stdlib/pdftext.c 1
@@ -75,10 +70,8 @@ src/stdlib/server_ops.c 2
 src/stdlib/soap.c 9
 src/stdlib/sse.c 7
 src/stdlib/sse_glue.c 1
-src/stdlib/str.c 9
-src/stdlib/str_glue.c 12
+src/stdlib/str.c 1   # tks_verify_fail: the verify switch's own strlen (127.295)
 src/stdlib/strbuf.h 1
-src/stdlib/svg.c 4
 src/stdlib/sys.c 1
 src/stdlib/template.c 11
 src/stdlib/tk_regex.h 1
@@ -94,7 +87,6 @@ src/stdlib/ws.c 19
 src/stdlib/ws_server.c 4
 src/stdlib/xlsx.c 6
 src/stdlib/xlsx_glue.c 1
-src/stdlib/xml.c 8
 src/stdlib/yaml.c 4
 src/stdlib/zip.c 1
 src/stdlib/zip_glue.c 1

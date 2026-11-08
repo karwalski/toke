@@ -1,0 +1,25 @@
+id: D297
+series: D
+description: "lint string-concat-chain (131.110): with TKC_LINT_CONCAT_FIX=1 a module-style std.str chain over str parameters and literals is rewritten to one interpolated literal (exact fix value)"
+input: |
+  m=t;
+  i=s:std.str;
+  f=label(a:str;b:str):str{
+    <s.concat("x=";s.concat(a;s.concat(", y=";b)))
+  };
+  f=main():i64{
+    <s.len(label("1";"2"))
+  };
+flags: --lint
+env: TKC_LINT_CONCAT_FIX=1
+expected_exit_code: 0
+expected_error_codes: ["string-concat-chain"]
+expected_fixed_output: |
+  m=t;
+  i=s:std.str;
+  f=label(a:str;b:str):str{
+    <"x=\(a), y=\(b)"
+  };
+  f=main():i64{
+    <s.len(label("1";"2"))
+  };

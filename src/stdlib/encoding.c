@@ -8,6 +8,10 @@
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code. Callers own the returned pointers.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): string inputs are measured with
+ * tk_strlen (O(1) for a sealed string).  The encoders' results stay
+ * malloc'd: auth.c, acme.c and http.c free them.
+ *
  * Story: 14.1.1
  */
 
@@ -16,6 +20,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include "tk_strhdr.h"
 
 /* -----------------------------------------------------------------------
  * UTF-8 validation and rune counting
@@ -180,7 +185,7 @@ EncBytesResult encoding_base32_decode(const char *s)
     if (!s) return err;
     if (*s == '\0') return ok_empty;
 
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
 
     /* Count non-padding characters and validate */
     uint64_t data_chars = 0;
@@ -285,7 +290,7 @@ static ByteArray b64_decode_impl(const char *s, const char *alpha)
     ByteArray bad = {NULL, 0};
     if (!s) return bad;
 
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
 
     int *table = b64_make_table(alpha);
     if (!table) return bad;
@@ -394,7 +399,7 @@ ByteArray encoding_hexdecode(const char *s)
     ByteArray bad = {NULL, 0};
     if (!s) return bad;
 
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
     if (slen % 2 != 0) return bad;  /* odd length is invalid */
 
     uint64_t out_len = slen / 2;
@@ -435,7 +440,7 @@ const char *encoding_urlencode(const char *s)
 {
     if (!s) return NULL;
 
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
     /* Worst case: every byte becomes %XX (3 chars). */
     char *out = (char *)malloc(slen * 3 + 1);
     if (!out) return NULL;
@@ -459,7 +464,7 @@ const char *encoding_urldecode(const char *s)
 {
     if (!s) return NULL;
 
-    uint64_t slen = (uint64_t)strlen(s);
+    uint64_t slen = (uint64_t)tk_strlen(s);
     /* Output is never longer than input. */
     char *out = (char *)malloc(slen + 1);
     if (!out) return NULL;

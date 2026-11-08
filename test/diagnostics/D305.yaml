@@ -1,0 +1,14 @@
+id: D305
+series: D
+description: "m.getor(k;d) default of the wrong type (127.324): an int default on an f64-valued map is E4031 with no fix -- the right default is the program's (1.0? 0.0?), and int -> float is never implicit (ADR-0004)"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let d=@("a":1.5);
+    io.println("\(d.getor("zz";1))");
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true

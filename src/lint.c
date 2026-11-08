@@ -12,12 +12,22 @@
  *   redundant-bind        — `let x = x;` where both sides are the same ident
  *   unused-let            — `let x = expr;` where x is never referenced
  *   mutable-never-mutated — `let x=mut.v` where x is never reassigned
+ *                            (131.104: fix only when the checker types the
+ *                            `mut`-less program identically -- see
+ *                            mut_drop_keeps_types; needs opts->recheck)
  *
  * Pattern rules (131.9, docs/compiler/lint-rules-v1.md "Pattern rules"):
  *   mut-flag-if            — `let x=mut.<lit>;` written only by the next if/el
  *   flag-soup              — ≥2 consecutive ifs each assigning x a literal
  *   string-concat-chain    — concat nested ≥ 2 deep
+ *                            (fix dormant, TKC_LINT_CONCAT_FIX; 131.110:
+ *                            only an all-str std.str chain the checker
+ *                            typed -- see concat_chain_str_typed; needs
+ *                            opts->typed and opts->recheck)
  *   single-use-let         — let used exactly once, in the next statement
+ *                            (131.59: fix only when the checker typed the
+ *                            use and the initialiser identically — see
+ *                            inline_keeps_type; needs opts->typed)
  *   discarded-value-result — bare `x.set/push/append(...)` statement
  *                            (127.33: NOT the tail expression of an
  *                            expression-position if/el or mt arm — that
@@ -44,6 +54,7 @@
  */
 
 #include "lint.h"
+#include "types.h"   /* 131.59: tk_type_identical, node->rtype */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1007,60 +1018,188 @@ static int rule_unused_let(const Node *node, const char *src,
  * A NODE_MUT_BIND_STMT declares a mutable binding.  If no NODE_ASSIGN_STMT
  * in the enclosing function body targets the same identifier, the binding
  * could be immutable.  Fix: delete the `mut.` prefix (span replacement).
+ *
+ * 131.104: deleting `mut.` is NOT type-transparent.  The checker types a
+ * binding by its mutability (types.c bind_init_type): an int / float / bool
+ * literal, a negated literal and a std call's scalar return type an
+ * IMMUTABLE `let` only (127.229, 127.230, 127.248, 138.3), and a `mut` empty
+ * `@()` takes its element type from its first append.  So
+ * `let x=mut.5; g(x)` into a u64 parameter checks clean and prints 5, while
+ * the fixed `let x=5; g(x)` is E4031 -- a compiling program turned into a
+ * non-compiling one -- and on arithmetic beside a u64 the two can be
+ * different operations.  Rather than restate the checker's rules here (they
+ * move: 127.315 widens one of them), the fix asks the checker itself
+ * (LintOptions.recheck) and is offered only when every one of these holds
+ * (AGENTS.md section 6 -- absent if uncertain):
+ *   - the original program type-checked cleanly (opts->typed) and a re-check
+ *     callback is available;
+ *   - the name is bound exactly once in the function (no shadowing, so every
+ *     reference below is this binding);
+ *   - the program with this `mut.` deleted -- together with every deletion
+ *     already accepted in this pass, so combined fixes are judged together
+ *     -- lexes, parses and type-checks cleanly;
+ *   - the two ASTs are the same shape (only MUT_BIND -> BIND differs) and the
+ *     checker gave every node the same type: tk_type_identical, or both
+ *     absent, or both TY_UNKNOWN;
+ *   - the binding's type is OBSERVED: at least one AST reference carries a
+ *     type in both programs.  A reference only inside "\(...)"
+ *     interpolation is not in the AST, so a binding used only there (or
+ *     only as an untyped method receiver) keeps the hint without a fix.
  */
-static int rule_mutable_never_mutated(const Node *node, const char *src,
-                                       int src_len,
-                                       const LintOptions *opts, LintResult *out)
+static int count_bind_sites(const Node *n, const Node *parent, int idx,
+                            const char *name, int len, const char *src,
+                            const Node **mut_decl);
+
+typedef struct {
+    const Node        *root;
+    const char        *src;
+    int                src_len;
+    const LintOptions *opts;
+    LintResult        *out;
+    int                acc[64];   /* starts of accepted `mut.` deletions */
+    int                acc_n;
+} MutCtx;
+
+/* Same checker type: both absent, both TY_UNKNOWN, or tk_type_identical. */
+static int mut_same_type(const Type *a, const Type *b)
+{
+    if (!a || !b) return !a && !b;
+    if (a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN)
+        return a->kind == TY_UNKNOWN && b->kind == TY_UNKNOWN;
+    return tk_type_identical(a, b);
+}
+
+/* Is `n` (child idx of `p`) a value reference to (name,len)?  count_refs'
+ * classification: not a field name, binder or assignment target. */
+static int mut_is_ref(const Node *n, const Node *p, int idx,
+                      const char *name, int len, const char *src)
+{
+    if (!name_is(n, name, len, src) || !p) return 0;
+    if (p->kind == NODE_FIELD_EXPR && idx == 1) return 0;
+    if ((p->kind == NODE_BIND_STMT || p->kind == NODE_MUT_BIND_STMT ||
+         p->kind == NODE_LOOP_INIT || p->kind == NODE_PARAM) && idx == 0) return 0;
+    if (p->kind == NODE_MATCH_ARM && idx == 1) return 0;
+    if (p->kind == NODE_ASSIGN_STMT && idx == 0) return 0;
+    return 1;
+}
+
+/* Walk the original tree `a` and the re-checked tree `b` in step.  Returns 1
+ * when they are the same shape and every node has the same type; sets
+ * *observed when a reference to (name,len) inside `fn` is typed in both. */
+static int mut_tree_same(const MutCtx *m, const Node *a, const Node *b,
+                         const Node *pa, int idx, const Node *fn, int in_fn,
+                         const char *name, int len, int *observed)
+{
+    if (!a || !b) return !a && !b;
+    if (a->kind != b->kind &&
+        !(a->kind == NODE_MUT_BIND_STMT && b->kind == NODE_BIND_STMT)) return 0;
+    if (a->child_count != b->child_count) return 0;
+    if (!mut_same_type(a->rtype, b->rtype)) return 0;
+    if (a == fn) in_fn = 1;
+    if (in_fn && a->kind == NODE_IDENT && a->rtype && b->rtype &&
+        mut_is_ref(a, pa, idx, name, len, m->src))
+        *observed = 1;
+    for (int i = 0; i < a->child_count; i++)
+        if (!mut_tree_same(m, a->children[i], b->children[i], a, i, fn, in_fn,
+                           name, len, observed))
+            return 0;
+    return 1;
+}
+
+/* The source with every accepted `mut.` and the one at `fs` deleted. */
+static char *mut_probe_src(const MutCtx *m, int fs, int *plen)
+{
+    char *p = malloc((size_t)m->src_len + 1);
+    if (!p) return NULL;
+    int n = 0;
+    for (int k = 0; k < m->src_len; k++) {
+        int del = (k == fs);
+        for (int j = 0; j < m->acc_n && !del; j++) del = (k == m->acc[j]);
+        if (del) { k += 3; continue; }
+        p[n++] = m->src[k];
+    }
+    p[n] = '\0';
+    *plen = n;
+    return p;
+}
+
+static int mut_drop_keeps_types(MutCtx *m, const Node *fn, const Node *ident, int fs)
+{
+    const LintOptions *o = m->opts;
+    if (!o || !o->typed || !o->recheck || m->acc_n >= 64) return 0;
+    const char *name = m->src + ident->tok_start;
+    int len = ident->tok_len;
+    const Node *md = NULL;
+    if (count_bind_sites(fn, NULL, 0, name, len, m->src, &md) != 1) return 0;
+    int plen = 0;
+    char *probe = mut_probe_src(m, fs, &plen);
+    if (!probe) return 0;
+    void *h = NULL;
+    const Node *nr = o->recheck(o->recheck_ctx, probe, plen, &h);
+    int observed = 0;
+    int ok = nr && mut_tree_same(m, m->root, nr, NULL, 0, fn, 0, name, len, &observed)
+             && observed;
+    if (o->recheck_free) o->recheck_free(o->recheck_ctx, h);
+    free(probe);
+    if (ok) m->acc[m->acc_n++] = fs;
+    return ok;
+}
+
+/* Byte span of the `mut.` (or `MUT.`) after `name=` in a binding, or 0. */
+static int mut_prefix_span(const Node *ident, const char *src, int src_len, int *fs)
+{
+    int k = ident->tok_start + ident->tok_len;
+    while (k < src_len && src[k] == ' ') k++;
+    if (k >= src_len || src[k] != '=') return 0;
+    k++;
+    while (k < src_len && src[k] == ' ') k++;
+    if (k + 4 <= src_len &&
+        (memcmp(src + k, "mut.", 4) == 0 || memcmp(src + k, "MUT.", 4) == 0)) {
+        *fs = k;
+        return 1;
+    }
+    return 0;
+}
+
+static int mutable_never_mutated_walk(MutCtx *m, const Node *node)
 {
     if (!node) return 0;
 
-    if (node->kind == NODE_FUNC_DECL && node->child_count > 0) {
-        const Node *body = func_body(node);
-        if (body) {
-            for (int i = 0; i < body->child_count; i++) {
-                const Node *stmt = body->children[i];
-                if (!stmt || stmt->kind != NODE_MUT_BIND_STMT) continue;
-                if (stmt->child_count == 0) continue;
-
-                const Node *ident = stmt->children[0];
-                if (!is_ident(ident)) continue;
-
-                const char *name = src + ident->tok_start;
-                int name_len = ident->tok_len;
-
-                if (!has_assign_to(body, name, name_len, src) &&
-                    rule_enabled("mutable-never-mutated", opts)) {
-                    char msg[256];
-                    snprintf(msg, sizeof msg,
-                        "mutable binding '%.*s' is never reassigned; "
-                        "consider removing 'mut'", name_len, name);
-                    /* Locate the `mut.` token after the '=' that follows the name */
-                    int fixable = 0, fs = 0, fe = 0;
-                    int k = ident->tok_start + ident->tok_len;
-                    while (k < src_len && src[k] == ' ') k++;
-                    if (k < src_len && src[k] == '=') {
-                        k++;
-                        while (k < src_len && src[k] == ' ') k++;
-                        if (k + 4 <= src_len && memcmp(src + k, "mut.", 4) == 0) {
-                            fixable = 1; fs = k; fe = k + 4;
-                        } else if (k + 4 <= src_len && memcmp(src + k, "MUT.", 4) == 0) {
-                            fixable = 1; fs = k; fe = k + 4;
-                        }
-                    }
-                    if (lint_push(out, "mutable-never-mutated", msg,
-                                  stmt->start, stmt->line, stmt->col, LINT_WARNING,
-                                  fixable, fs, fe, "") < 0)
-                        return -1;
-                }
-            }
-        }
-    }
-
-    for (int i = 0; i < node->child_count; i++) {
-        if (rule_mutable_never_mutated(node->children[i], src, src_len, opts, out) < 0)
+    const Node *body = (node->kind == NODE_FUNC_DECL) ? func_body(node) : NULL;
+    for (int i = 0; body && i < body->child_count; i++) {
+        const Node *stmt = body->children[i];
+        if (!stmt || stmt->kind != NODE_MUT_BIND_STMT || stmt->child_count == 0) continue;
+        const Node *ident = stmt->children[0];
+        if (!is_ident(ident)) continue;
+        const char *name = m->src + ident->tok_start;
+        int name_len = ident->tok_len;
+        if (has_assign_to(body, name, name_len, m->src) ||
+            !rule_enabled("mutable-never-mutated", m->opts)) continue;
+        char msg[256];
+        snprintf(msg, sizeof msg,
+            "mutable binding '%.*s' is never reassigned; "
+            "consider removing 'mut'", name_len, name);
+        int fs = 0;
+        int fixable = mut_prefix_span(ident, m->src, m->src_len, &fs) &&
+                      mut_drop_keeps_types(m, node, ident, fs);   /* 131.104 */
+        if (lint_push(m->out, "mutable-never-mutated", msg,
+                      stmt->start, stmt->line, stmt->col, LINT_WARNING,
+                      fixable, fixable ? fs : 0, fixable ? fs + 4 : 0, "") < 0)
             return -1;
     }
+
+    for (int i = 0; i < node->child_count; i++)
+        if (mutable_never_mutated_walk(m, node->children[i]) < 0) return -1;
     return 0;
+}
+
+static int rule_mutable_never_mutated(const Node *ast, const char *src, int src_len,
+                                      const LintOptions *opts, LintResult *out)
+{
+    MutCtx m;
+    memset(&m, 0, sizeof m);
+    m.root = ast; m.src = src; m.src_len = src_len; m.opts = opts; m.out = out;
+    return mutable_never_mutated_walk(&m, ast);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1257,6 +1396,81 @@ static int concat_leaves(PatCtx *c, const Node *n, const Node **leaves, int *cou
     return 1;
 }
 
+static int module_path_is(const Node *mp, const char *path, const char *src);
+
+/* 131.110: the import alias `base` names std.str, and `base` is that alias,
+ * not a local of the same name (an alias reference carries no rtype). */
+static int alias_is_std_str(PatCtx *c, const Node *base)
+{
+    if (!is_ident(base) || base->rtype) return 0;
+    const Node *root = c->root;
+    if (!root || root->kind != NODE_PROGRAM) return 0;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *imp = root->children[i];
+        if (imp && imp->kind == NODE_IMPORT && imp->child_count >= 2 &&
+            ident_eq(imp->children[0], base, c->src))
+            return module_path_is(imp->children[1], "std.str", c->src);
+    }
+    return 0;
+}
+
+static int typed_str(const Node *n)
+{
+    return n && n->rtype && n->rtype->kind == TY_STR;
+}
+
+/* 131.110: is every part of the chain a str, by the checker's own types?
+ * The interpolation rewrite equals the concat only when every operand is a
+ * str (`"\(x)"` of an i64 renders it; of an array it is E4032) and every
+ * call is std.str's concat.  So, with the program type-checked cleanly
+ * (opts->typed):
+ *   - every call in the chain is module style through an alias that resolves
+ *     to std.str, and the checker typed it str.  Method style
+ *     (`a.concat(b)`) never qualifies: the checker types neither its receiver
+ *     nor its result (both untyped / TY_UNKNOWN, for a str and an array
+ *     alike), so nothing distinguishes the two;
+ *   - every identifier leaf is typed exactly str (absent or unknown never
+ *     qualifies); a string literal leaf is a str by construction. */
+static int concat_chain_str_typed(PatCtx *c, const Node *n)
+{
+    int module = 0;
+    const Node *base = NULL;
+    if (concat_call(c, n, &module)) {
+        if (!module || !method_call(n, &base) || !alias_is_std_str(c, base) ||
+            !typed_str(n))
+            return 0;
+        const Node *ops[32];
+        int k = concat_operands(c, n, ops, 32);
+        for (int i = 0; i < k; i++)
+            if (!concat_chain_str_typed(c, ops[i])) return 0;
+        return k > 0;
+    }
+    if (n->kind == NODE_STR_LIT) return 1;
+    return is_ident(n) && typed_str(n);
+}
+
+/* 131.110: the rewritten program still lexes, parses and type-checks
+ * cleanly (LintOptions.recheck, as 131.104).  The types above already make
+ * the rewrite equal in value; this confirms it compiles. */
+static int concat_fix_rechecks(PatCtx *c, int fs, int fe, const Str *rep)
+{
+    const LintOptions *o = c->opts;
+    size_t rl = rep->buf ? (size_t)rep->len : 0;
+    size_t n = (size_t)fs + rl + (size_t)(c->src_len - fe);
+    char *probe = malloc(n + 1);
+    if (!probe) return 0;
+    memcpy(probe, c->src, (size_t)fs);
+    if (rl) memcpy(probe + fs, rep->buf, rl);
+    memcpy(probe + fs + rl, c->src + fe, (size_t)(c->src_len - fe));
+    probe[n] = '\0';
+    void *h = NULL;
+    const Node *nr = o->recheck(o->recheck_ctx, probe, (int)n, &h);
+    int ok = nr != NULL;
+    if (o->recheck_free) o->recheck_free(o->recheck_ctx, h);
+    free(probe);
+    return ok;
+}
+
 int lint_concat_fix_enabled(void)
 {
     if (TKC_LINT_CONCAT_FIX) return 1;
@@ -1274,7 +1488,10 @@ static int rule_concat_chain(PatCtx *c, const Node *n)
             if (!rule_enabled("string-concat-chain", c->opts)) return 0;
             int fixable = 0, fs = 0, fe = 0;
             Str rep = {0};
-            if (lint_concat_fix_enabled()) {
+            /* 131.110: only a chain the checker proves all-str, with a
+             * re-check to hand (AGENTS.md section 6: absent if uncertain) */
+            if (lint_concat_fix_enabled() && c->opts && c->opts->typed &&
+                c->opts->recheck && concat_chain_str_typed(c, n)) {
                 const Node *leaves[64]; int lc = 0;
                 if (concat_leaves(c, n, leaves, &lc, 64) && lc > 0) {
                     fs = subtree_min_start(n);
@@ -1293,6 +1510,7 @@ static int rule_concat_chain(PatCtx *c, const Node *n)
                             }
                         }
                         str_puts(&rep, "\"");
+                        if (!concat_fix_rechecks(c, fs, fe, &rep)) fixable = 0;
                     }
                 }
             }
@@ -1458,6 +1676,115 @@ static int init_is_fn_value(const PatCtx *c, const Node *init, const Node *fn)
     return 0;
 }
 
+/* ── 131.59: the inline must be the same typed value ─────────────────── */
+
+/* The parent of `n` inside `r` (NULL when `n` is not below `r`). */
+static const Node *lint_parent_of(const Node *r, const Node *n)
+{
+    if (!r) return NULL;
+    for (int i = 0; i < r->child_count; i++) {
+        if (r->children[i] == n) return r;
+        const Node *p = lint_parent_of(r->children[i], n);
+        if (p) return p;
+    }
+    return NULL;
+}
+
+/* A numeric literal, or a unary minus over one (the grammar has no negative
+ * literal).  1 = integer, 2 = float, 0 = neither. */
+static int numeric_literal_kind(const Node *n)
+{
+    if (!n) return 0;
+    if (n->kind == NODE_UNARY_EXPR && n->child_count == 1) n = n->children[0];
+    if (!n) return 0;
+    if (n->kind == NODE_INT_LIT) return 1;
+    if (n->kind == NODE_FLOAT_LIT) return 2;
+    return 0;
+}
+
+/*
+ * inline_keeps_type (131.59) — may `use` (the binding's one reference, inside
+ * `next`) be replaced by the initialiser text without changing what the
+ * program means?  A `let` is not type-transparent in toke, so the AST alone
+ * cannot answer this; the checker's types can.  D-WEB-0006v87:
+ * `let count=segs.len` binds an UNTYPED local (bind_init_type adopts no
+ * scalar field type), so `right>=count` compared i64 with i64, while the
+ * inlined `right>=segs.len` compares i64 with the u64 `.len` — E4031 before
+ * 127.53's widening, and on arithmetic a different program still:
+ * `let n=a.len; n-4` is -1 where `a.len-4` is RT002 (u64 overflow).
+ *
+ * Offered only when every one of these holds (AGENTS.md §6 — absent if
+ * uncertain):
+ *   - the caller type-checked the AST cleanly (opts->typed), so rtype is the
+ *     checker's own answer and not a stale or partial one;
+ *   - the `let` has no annotation: `let c:i64=a.len` states a type the
+ *     expression does not have, and inlining deletes the statement of it;
+ *   - the type the checker gave the USE (the binding's type) is identical to
+ *     the type it gave the INITIALISER, strictly: TY_UNKNOWN at any depth is
+ *     never identical (tk_type_identical).  Expression types are computed
+ *     bottom-up, so an identical non-literal expression stays identical in
+ *     the new slot;
+ *   - except a numeric LITERAL, whose type is decided by its slot, not by
+ *     itself: beside a u64 the checker narrows it (lit_narrows) and the
+ *     emitter lowers the operation unsigned (binop_is_unsigned), while the
+ *     i64 binding it replaces widened the other side instead —
+ *     `let k=5; a.len-k` is -2, `a.len-5` is RT002.  A literal is inlined
+ *     only as an operand of a binary operator whose other operand the
+ *     checker typed i64 (f64 for a float literal), the one slot where the
+ *     literal and the binding are provably the same value, or as the whole
+ *     value of `<` from a function whose return type is spelled exactly
+ *     `i64` (`f64`); every other slot (array/map literal element, argument,
+ *     if/mt arm, unary, any other return type) keeps the binding.
+ */
+/* Is `fn`'s declared return type spelled exactly `want` (a plain scalar)? */
+static int fn_returns_plain(const PatCtx *c, const Node *fn, const char *want)
+{
+    for (int i = 0; fn && i < fn->child_count; i++) {
+        const Node *rs = fn->children[i];
+        if (!rs || rs->kind != NODE_RETURN_SPEC) continue;
+        if (rs->child_count != 1 || !rs->children[0]) return 0;
+        const Node *t = rs->children[0];
+        if (t->kind != NODE_TYPE_EXPR || t->child_count != 0) return 0;
+        int wl = (int)strlen(want);
+        return t->tok_len == wl && memcmp(c->src + t->tok_start, want, (size_t)wl) == 0;
+    }
+    return 0;
+}
+
+static int inline_keeps_type(const PatCtx *c, const Node *decl, const Node *init,
+                             const Node *next, const Node *use, const Node *fn)
+{
+    if (!c->opts || !c->opts->typed) return 0;
+    if (decl->child_count != 2) return 0;                 /* annotated */
+    /* The checker does not infer every position: a method-call receiver
+     * (`w.contains(c)`) carries no rtype.  A string literal without
+     * interpolation (is_pure_expr) and a bool literal are typed by their
+     * token alone -- bind_init_type gives the immutable binding exactly str
+     * / bool, and no slot re-types them -- so for those the binding's type
+     * is the initialiser's even where the use was not inferred. */
+    const Type *ut = use->rtype;
+    if (!ut && init->rtype &&
+        ((init->kind == NODE_STR_LIT && init->rtype->kind == TY_STR) ||
+         (init->kind == NODE_BOOL_LIT && init->rtype->kind == TY_BOOL)))
+        ut = init->rtype;
+    if (!ut || !tk_type_identical(ut, init->rtype)) return 0;
+    int lk = numeric_literal_kind(init);
+    if (lk) {
+        TypeKind want = lk == 1 ? TY_I64 : TY_F64;
+        if (ut->kind != want) return 0;
+        const Node *p = lint_parent_of(next, use);
+        if (!p) return 0;
+        /* `<k` from a function declared exactly i64 (f64): the literal is
+         * judged against that same type the binding was. */
+        if (p->kind == NODE_RETURN_STMT && p->child_count == 1)
+            return fn_returns_plain(c, fn, lk == 1 ? "i64" : "f64");
+        if (p->kind != NODE_BINARY_EXPR || p->child_count != 2) return 0;
+        const Node *sib = p->children[0] == use ? p->children[1] : p->children[0];
+        if (!sib || !sib->rtype || sib->rtype->kind != want) return 0;
+    }
+    return 1;
+}
+
 static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *fn)
 {
     const Node *decl = list->children[i];
@@ -1491,7 +1818,7 @@ static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *
         !init_is_fn_value(c, init, fn)) {
         int unsafe = 0;
         const Node *use = find_ref_ctx(next, list, i + 1, name, len, c->src, 0, &unsafe);
-        if (use && !unsafe) {
+        if (use && !unsafe && inline_keeps_type(c, decl, init, next, use, fn)) {   /* 131.59 */
             /* initialiser text: after '=' up to the statement terminator */
             int k = id->tok_start + id->tok_len;
             while (k < c->src_len && src_is_space(c->src[k])) k++;

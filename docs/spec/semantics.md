@@ -652,11 +652,32 @@ value, and so does the let-bound spelling `let r=m.get(k); mt r{…}`. The
 non-matching spellings are `m.getor(k;d)` (the stored value, else `d`) and
 `m.contains(k)` (membership).
 
-As implemented, the checker gives `m.get(k)` the value type `$v`, as it does
-for every stdlib `T!Err` call: a use that does not consume the error channel
-(`m.get(k)+1`) type-checks and evaluates to the zero filler on a miss, and
-`!` on `m.get(k)` is `[errors.md E3020]`. Both are restrictions of the
-current checker, not of the lookup.
+The checker types `m.get(k)` as the error union `$v!$err` (story 127.244),
+judged as a user `T!Err` is: a use that does not consume the error channel —
+`m.get(k)+1`, a lookup passed to a `$v` parameter or returned as a `$v`,
+and the same through a `let v=m.get(k)` or `let v=mut.m.get(k)` binding — is
+`[errors.md E4031]` (no `fix`: `mt`, `!` and `getor` are all repairs).
+`m.get(k)!$e` inside a function returning `T!$e` propagates a miss on the
+error channel, so a stored `0`/`false` is a hit; a `$ok`/`$err` match on a
+bool-valued map is exhaustive. Not judged yet: interpolating a lookup
+(`"\(m.get(k))"`), passing it to a stdlib call and assigning it to an
+existing `mut` binding (the same as for a user `T!Err`), and a lookup used as
+the base of a field read or a subscript (`mm.get(k).get(i)`). Its repairs
+carry the value type `$v` when it is a `str`, `bool`, `f64`, a map, or an
+array of those: `m.getor(k;d)` (story 127.320) and the `$ok` binding of
+`mt m.get(k){…}` (story 127.322), so `mm.getor(k;d).get(i)` and
+`mt mm.get(k){$ok:x x.get(i);…}` read the element as its own type.
+The default `d` of `m.getor(k;d)` is what a miss yields, so it is a `$v`
+(story 127.324): an integer default widens to an `i64` value type and an
+integer literal narrows as everywhere else, but there is no int-to-float
+promotion (`mf.getor(k;1)` on an `f64` map) and an empty `@()` is an empty
+array, never a map (the empty map is `@($k:$v)`). Any other default type is
+`[errors.md E4031]`, no `fix`. Module calls spelled `getor` (`env.getor`)
+are judged by their own interface.
+
+The stdlib calls whose records declare `T!Err` (`str.toint`, `json.i64`, …)
+report failure on the same channel but are still given the value's type (or
+none) by the checker; enforcing them is the remainder of 127.244.
 
 ### 10.2 Map iteration order
 

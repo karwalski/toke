@@ -74,6 +74,14 @@ typedef struct Type {
     int           field_count;
     const char  **field_names;
     struct Type **field_types;
+    /* 127.244: set only on the error union `V!$err` the checker gives a map
+     * `.get(k)`.  The lookup reports a miss on the runtime's error slot
+     * (127.30) and is judged as a `T!E` like a user one; slot_lower is the
+     * value type V the node had before, which infer() stores as the node's
+     * rtype, so the emitter lowers every accepted program as it did.  (A
+     * std `T!E` call -- str.toint, json.* -- is meant to take the same
+     * shape; 127.244 measured that as too breaking to land unmigrated.) */
+    struct Type  *slot_lower;
 } Type;
 
 typedef struct TypeEnv {
@@ -95,6 +103,10 @@ int map_lit_typed_empty(const Node *n);
  * parameter types in field_types[0..field_count), return type in elem.
  * The emitter keys indirect calls and closure reference counting on it. */
 int tk_type_is_fnval(const Type *t);
+/* 131.59: strict structural identity -- TY_UNKNOWN at any depth is never
+ * identical to anything (unlike the checker's lenient types_equal).  The
+ * linter's single-use-let fix inlines only when this holds. */
+int tk_type_identical(const Type *a, const Type *b);
 int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out);
 

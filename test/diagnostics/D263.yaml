@@ -1,0 +1,30 @@
+id: D263
+series: D
+description: "lint single-use-let (131.59) control: when the checker types the use and the initialiser identically the fix stays -- `let w=a.len-1` binds a u64 (bind_init_type adopts a binary expression's type) and a str literal binds a str; both are inlined"
+input: |
+  m=t;
+  i=io:std.io;
+  f=last(a:@i64):i64{
+    let w=a.len-1;
+    <a.get(w)
+  };
+  f=main():i64{
+    let a=@(1;2;3);
+    let t="n=";
+    io.println(t);
+    <last(a)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fixed_output: |
+  m=t;
+  i=io:std.io;
+  f=last(a:@i64):i64{
+    <a.get(a.len-1)
+  };
+  f=main():i64{
+    let a=@(1;2;3);
+    io.println("n=");
+    <last(a)
+  };

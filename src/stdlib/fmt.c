@@ -5,6 +5,11 @@
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code. All returned strings are caller-owned (runtime-abi §3).
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every string returned is a sealed
+ * string from the string heap (tk_strhdr.h) -- never freed, written or
+ * reallocated -- and inputs are measured with tk_strlen.  fmt_bool's two
+ * literals are excluded by construction (no heap bit).
+ *
  * Story: 131.30  value formatting for print (bool / arrays / pad).
  */
 
@@ -12,14 +17,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_strhdr.h"
 
 static char *dup_cstr(const char *s)
 {
-    size_t n = strlen(s);
-    char *out = (char *)malloc(n + 1);
-    if (!out) return NULL;
-    memcpy(out, s, n + 1);
-    return out;
+    return tks_strdup(s);
 }
 
 /* 127.48 — `fmt.bool` returns one of two fixed, immutable strings, so the
@@ -43,10 +45,10 @@ char *fmt_join_i64(const int64_t *xs, int64_t n, const char *sep)
 {
     if (!sep) sep = "";
     if (n <= 0 || !xs) return dup_cstr("");
-    size_t seplen = strlen(sep);
+    size_t seplen = tk_strlen(sep);
     /* worst case per element: "-9223372036854775808" = 20 chars */
     size_t cap = (size_t)n * (20 + seplen) + 1;
-    char *out = (char *)malloc(cap);
+    char *out = tks_alloc(cap - 1);
     if (!out) return NULL;
     size_t pos = 0;
     for (int64_t i = 0; i < n; i++) {
@@ -54,25 +56,25 @@ char *fmt_join_i64(const int64_t *xs, int64_t n, const char *sep)
         pos += (size_t)snprintf(out + pos, cap - pos, "%lld", (long long)xs[i]);
     }
     out[pos] = '\0';
-    return out;
+    return tks_seal(out, pos);
 }
 
 char *fmt_join_str(const char *const *xs, int64_t n, const char *sep)
 {
     if (!sep) sep = "";
     if (n <= 0 || !xs) return dup_cstr("");
-    size_t seplen = strlen(sep);
+    size_t seplen = tk_strlen(sep);
     size_t total = 1 + seplen * (size_t)(n - 1);
-    for (int64_t i = 0; i < n; i++) total += xs[i] ? strlen(xs[i]) : 0;
-    char *out = (char *)malloc(total);
+    for (int64_t i = 0; i < n; i++) total += xs[i] ? tk_strlen(xs[i]) : 0;
+    char *out = tks_alloc(total - 1);
     if (!out) return NULL;
     size_t pos = 0;
     for (int64_t i = 0; i < n; i++) {
         if (i) { memcpy(out + pos, sep, seplen); pos += seplen; }
-        if (xs[i]) { size_t l = strlen(xs[i]); memcpy(out + pos, xs[i], l); pos += l; }
+        if (xs[i]) { size_t l = tk_strlen(xs[i]); memcpy(out + pos, xs[i], l); pos += l; }
     }
     out[pos] = '\0';
-    return out;
+    return tks_seal(out, pos);
 }
 
 /* Count UTF-8 code points: every byte that is not a continuation byte. */
@@ -87,11 +89,11 @@ static int64_t utf8_width(const char *s)
 char *fmt_pad(const char *s, int64_t width, int left)
 {
     if (!s) s = "";
-    size_t slen = strlen(s);
+    size_t slen = tk_strlen(s);
     int64_t have = utf8_width(s);
-    if (width <= have) return dup_cstr(s);
+    if (width <= have) return tks_dup(s, slen);
     size_t padn = (size_t)(width - have);
-    char *out = (char *)malloc(slen + padn + 1);
+    char *out = tks_alloc(slen + padn);
     if (!out) return NULL;
     if (left) {
         memset(out, ' ', padn);
@@ -101,5 +103,5 @@ char *fmt_pad(const char *s, int64_t width, int left)
         memset(out + slen, ' ', padn);
     }
     out[slen + padn] = '\0';
-    return out;
+    return tks_seal(out, slen + padn);
 }

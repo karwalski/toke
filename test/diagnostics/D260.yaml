@@ -1,0 +1,17 @@
+id: D260
+series: D
+description: "lint single-use-let (131.59): `let count=segs.len` binds an untyped (i64) local while `segs.len` is u64, so inlining it is not the same program (corpus D-WEB-0006v87: E4031 before 127.53) -- the hint stays, the fix is absent"
+input: |
+  m=t;
+  f=at(segs:@str;right:i64):str{
+    let count=segs.len;
+    <if(right<0||right>=count){""}el{segs.get(right)}
+  };
+  f=main():i64{
+    let x=at(@("a";"b");1);
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fix_absent: true

@@ -184,7 +184,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
 #define TKC_LOV_NAMES 64   /* 127.252 (1): overflowing local names deduped per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; /* 127.252 (1): demand past the max_locals caps (pointer locals, local types, name aliases) in the current function, reported ONCE at its end by locals_cap_flush -- previously one unlocated E9010 per overflowing local. lov_name dedupes overflowing local-type names so a re-set name is not counted twice; past TKC_LOV_NAMES distinct names the count stops growing, so the reported need stays a lower bound. */ int ptr_over, local_over, alias_over; char lov_name[TKC_LOV_NAMES][NAME_BUF]; int lov_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; /* 127.252 (1): demand past the max_locals caps (pointer locals, local types, name aliases) in the current function, reported ONCE at its end by locals_cap_flush -- previously one unlocated E9010 per overflowing local. lov_name dedupes overflowing local-type names so a re-set name is not counted twice; past TKC_LOV_NAMES distinct names the count stops growing, so the reported need stays a lower bound. */ int ptr_over, local_over, alias_over; char lov_name[TKC_LOV_NAMES][NAME_BUF]; int lov_count; /* 127.310: the module's own source, which a constant's literal lives in (c->src is swapped while a string interpolation is lowered) */ const char *mod_src; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -400,6 +400,18 @@ static void ptr_arm_release(Ctx *c, int pc0, int lc0, const char *bname)
             w++;
         }
         c->local_count = w;
+    } else if (bname && bname[0] && lc0 >= 0 && lc0 <= c->local_count) {
+        /* 127.321: a FIRST-use binding (unsuffixed) is retired the way
+         * scope_retire_name retires a block's `let` (127.196): renamed
+         * `name.~`, so a later lookup of the name misses it while
+         * make_unique_name still sees the slot as taken.  Kept under its raw
+         * name, the arm's slot outlived the arm: the next match's result
+         * type, predicted before ITS binding of the same name exists, read
+         * this one's -- `{$ok:y y+1.0;..}` then `{$ok:y y+1;..}` stored the
+         * i64 into a double slot and printed 5 as 2.47033e-323. */
+        for (int i = lc0; i < c->local_count; i++)
+            if (!strcmp(c->locals[i].name, bname))
+                snprintf(c->locals[i].name, sizeof c->locals[i].name, "%.120s.~", bname);
     }
 }
 
@@ -573,6 +585,43 @@ static int alias_is_value(Ctx *c, const Node *id) {
                             id, nb, (int)strlen(nb), g_interp_host);
 }
 static const char *map_tag(int int_keys, int str_vals);     /* 127.39/127.41 */
+/* 127.310: a module constant `name=literal:Type;` (grammar.ebnf ConstDecl).
+ * It is folded at each use: the use lowers as its literal, converted to the
+ * declared type exactly as an annotated `let` initialiser is, so no global is
+ * emitted and two modules declaring the same constant name cannot collide at
+ * link.  const_decl_for answers the declaration a bare identifier names, or
+ * NULL -- when there is none, or when a parameter or a local in force shadows
+ * it (the checker's lexical answer, as for alias_is_value). */
+static const Node *const_decl_for(Ctx *c, const Node *id) {
+    if (!id || id->kind != NODE_IDENT || !c->la_prog) return NULL;
+    const char *usrc = c->src;
+    const Node *root = c->la_prog;
+    const Node *found = NULL;
+    for (int i = 0; i < root->child_count && !found; i++) {
+        const Node *d = root->children[i];
+        if (!d) continue;
+        const Node *list = (d->kind == NODE_MODULE) ? d : NULL;
+        int n = list ? list->child_count : 1;
+        for (int j = 0; j < n && !found; j++) {
+            const Node *k = list ? list->children[j] : d;
+            if (!k || k->kind != NODE_CONST_DECL || k->child_count < 3
+                || !k->children[0]) continue;
+            const Node *nm = k->children[0];
+            if (nm->tok_len == id->tok_len
+                && !memcmp(c->mod_src + nm->tok_start, usrc + id->tok_start,
+                           (size_t)id->tok_len))
+                found = k;
+        }
+    }
+    if (!found) return NULL;
+    char nb[NAME_BUF];
+    tok_cp(usrc, id, nb, sizeof nb);
+    if (name_is_local(c, nb)
+        && tk_name_bound_at(c->la_prog, g_interp_host ? g_interp_src : c->src,
+                            id, nb, (int)strlen(nb), g_interp_host))
+        return NULL;
+    return found;
+}
 
 /* ── Struct type registry ──────────────────────────────────────────── */
 
@@ -4311,6 +4360,20 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = add i64 0, 0 ; void expression\n", t);
             return t;
         }
+        /* 127.310: a module constant lowers as its literal, in its type. */
+        {
+            const Node *cd = const_decl_for(c, n);
+            if (cd) {
+                const Node *lit = cd->children[1];
+                const char *saved = c->src;
+                c->src = c->mod_src;
+                const char *lt = expr_llvm_type(c, lit);
+                const char *dt = resolve_llvm_type(c, cd->children[2]);
+                int v = emit_expr(c, lit);
+                c->src = saved;
+                return coerce_value(c, v, lt, dt);
+            }
+        }
         /* 114.44: read a module-level mutable global (unless a local shadows it) */
         {
             GlobalVar *g = lookup_global(c, tb);
@@ -5548,6 +5611,23 @@ static int emit_expr(Ctx *c, const Node *n)
                  * Arrays store doubles as bitcast i64 values; when reading back
                  * via .get(), the i64 must be reinterpreted as double so that
                  * downstream float arithmetic uses the correct bit pattern. */
+                /* 127.320: `m.getor(k;d)` on an f64-valued map carries the
+                 * double's bits in the i64 ABI; the checker types the call
+                 * (map_getor_type), so read it back as the double it is.
+                 * expr_llvm_type answers "double" on the same rtype. */
+                if (!strcmp(fn_im, "tk_map_getor_w") && n->rtype
+                    && n->rtype->kind == TY_F64) {
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 map getor (rtype)\n", bc, t);
+                    t = bc;
+                } else if (!strcmp(fn_im, "tk_map_getor_w") && n->rtype
+                           && n->rtype->kind == TY_BOOL) {
+                    /* and a bool-valued one is the i1 it is, so a let-bound
+                     * `bm.getor(k;false)` interpolates true/false, not 1/0 */
+                    int bz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; bool map getor (rtype)\n", bz, t);
+                    t = bz;
+                }
                 if (!strcmp(fn_im, "tk_str_arrayget_w")) {
                     const char *base_stype = NULL;
                     if (n->children[0]->children[0]->kind == NODE_IDENT) {
@@ -6775,7 +6855,8 @@ static int emit_expr(Ctx *c, const Node *n)
          * @f64/@str local markers cannot see — closing the 114.1 deferred
          * fn-return case and 114.16. (Elements are stored i64-strided, so only
          * f64/str need a non-i64 result.) */
-        if (n->rtype && n->rtype->kind == TY_F64) {
+        if (n->rtype && (n->rtype->kind == TY_F64
+                         || n->rtype->kind == TY_F32)) {   /* 127.313 */
             int bc = next_tmp(c);
             fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript (rtype)\n", bc, t);
             t = bc;
@@ -7120,7 +7201,16 @@ static int emit_expr(Ctx *c, const Node *n)
         int iqual = index_as_qualified_get(c, n->children[0], iqal, sizeof iqal,
                                            iqme, sizeof iqme);
         char fv_ety[NAME_BUF];
-        if (fnval_call_err(n->children[0], fv_ety, sizeof fv_ety)) {   /* 127.276 */
+        if (index_is_map_get(c, n->children[0])) {
+            /* 127.244: `m.get(k)!$e` -- the checker accepts `!` on a map
+             * lookup now (it was E3020).  tk_map_get reports a miss on the
+             * error channel (127.30); a stored 0/false/"" is a hit, so the
+             * value sentinel would re-raise it.  A miss has no payload: it
+             * is re-raised payload-less, as a fallible function value with
+             * no error name is. */
+            prop_cur_err = 1;
+            prop_reraise = c->cur_fn_err[0] != '\0';
+        } else if (fnval_call_err(n->children[0], fv_ety, sizeof fv_ety)) {   /* 127.276 */
             prop_cur_err = 1;
             /* no name for the callee's error type: re-raise payload-less */
             prop_reraise = fv_ety[0] ? user_err_reraise_named(c, fv_ety)
@@ -9313,6 +9403,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
     case NODE_IDENT: {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
         if (!strcmp(nb, "true") || !strcmp(nb, "false")) return "i1";
+        { const Node *cd = const_decl_for(c, n);              /* 127.310 */
+          if (cd) return resolve_llvm_type(c, cd->children[2]); }
         const char *ln = get_llvm_name(c, nb);
         return get_local_type(c, ln);
     }
@@ -9403,6 +9495,16 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             char _ga[128], _gm[128];
             tok_cp(c->src, n->children[0]->children[0], _ga, sizeof _ga);
             tok_cp(c->src, n->children[0]->children[1], _gm, sizeof _gm);
+            /* 127.320: an f64 / bool `m.getor(k;d)` -- emit_expr converts it
+             * on the same rtype (the receiver dispatch's tk_map_getor_w). */
+            if (!strcmp(_gm, "getor") && n->rtype
+                && (n->rtype->kind == TY_F64 || n->rtype->kind == TY_BOOL)) {
+                int _gmod = 0;
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, _ga)) { _gmod = 1; break; }
+                if (alias_is_value(c, n->children[0]->children[0])) _gmod = 0;
+                if (!_gmod) return n->rtype->kind == TY_F64 ? "double" : "i1";
+            }
             if (!strcmp(_gm, "get")) {
                 int _is_mod = 0;
                 for (int ii = 0; ii < c->import_count; ii++)
@@ -9603,7 +9705,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
              * reaches rtype: that build emits no str conversion for the
              * nested subscript, and test/standalone/test_nested_arr_compare.tk
              * still compares numerically. */
-            if (n->rtype->kind == TY_F64) return "double";
+            /* 127.313: an f32 element is stored as double bits (fpext +
+             * bitcast), so it reads as a double -- as the @f64 local marker
+             * already reads a same-module @f32 array. */
+            if (n->rtype->kind == TY_F64 || n->rtype->kind == TY_F32) return "double";
             if (n->rtype->kind == TY_STR) return "i8*";
         }
         /* Bug 102.29b: subscript on @f64 arrays returns double (legacy marker
@@ -10196,6 +10301,80 @@ static int la_user_arg_nonretaining(Ctx *c, const Node *call, int child_i, int d
     return la_param_nonretaining(c, fn, child_i - 1, depth);
 }
 
+/* 127.307: a struct literal that takes x as a bare field value MOVES x's
+ * block into the struct; it is an alias only if x is used again afterwards.
+ * Is there a disqualifying use of x in `lit`, treating each bare-x field
+ * value (also inside a nested struct literal field) as that move?  Every
+ * other field value is checked normally.  Callers accept the move only where
+ * x is provably dead after the literal is built (see la_bad_use). */
+static int la_struct_move_bad(Ctx *c, const Node *lit, const char *x, int strict, int depth) {
+    for (int i = 0; i < lit->child_count; i++) {
+        const Node *fi = lit->children[i];
+        if (!fi || fi->kind != NODE_FIELD_INIT || fi->child_count < 1) {
+            if (la_bad_use(c, fi, x, strict, depth)) return 1;
+            continue;
+        }
+        const Node *v = fi->children[0];
+        if (la_ident_is(c, v, x)) continue;                       /* the move */
+        if (v && v->kind == NODE_STRUCT_LIT) {
+            if (la_struct_move_bad(c, v, x, strict, depth)) return 1;
+            continue;
+        }
+        if (la_bad_use(c, v, x, strict, depth)) return 1;
+        for (int k = 1; k < fi->child_count; k++)
+            if (la_bad_use(c, fi->children[k], x, strict, depth)) return 1;
+    }
+    return 0;
+}
+
+/* 127.307: is statement `s` `let r=$T{..x..}` / `mut r=..` / `r=$T{..}`
+ * (r a plain name other than x) whose struct literal moves x?  Returns the
+ * literal's child index in `s`, or 0. */
+static int la_struct_store_init(Ctx *c, const Node *s, const char *x) {
+    if (!s || s->child_count < 2 || !s->children[0] ||
+        s->children[0]->kind != NODE_IDENT || la_ident_is(c, s->children[0], x)) return 0;
+    int ii;
+    if (s->kind == NODE_BIND_STMT || s->kind == NODE_MUT_BIND_STMT)
+        ii = (s->child_count >= 3 && s->children[2]) ? 2 : 1;
+    else if (s->kind == NODE_ASSIGN_STMT) ii = 1;
+    else return 0;
+    const Node *init = s->children[ii];
+    return (init && init->kind == NODE_STRUCT_LIT) ? ii : 0;
+}
+
+/* 127.307: the function body under analysis (c->la_fn's statement list). */
+static const Node *la_fn_body(Ctx *c) {
+    if (!c->la_fn) return NULL;
+    for (int i = 0; i < c->la_fn->child_count; i++)
+        if (c->la_fn->children[i] && c->la_fn->children[i]->kind == NODE_STMT_LIST)
+            return c->la_fn->children[i];
+    return NULL;
+}
+
+/* 127.307: la_bad_use for the function body's own statement list.  A
+ * top-level statement that stores x into a struct literal bound to another
+ * name is a move when no LATER top-level statement mentions x: a top-level
+ * statement runs once per call, after every loop that precedes it, so no
+ * self-update of x (in place or not) can run once the struct holds the block,
+ * and no alias of it is observable through x. */
+static int la_body_bad(Ctx *c, const Node *body, const char *x, int depth) {
+    for (int i = 0; i < body->child_count; i++) {
+        const Node *s = body->children[i];
+        int ii = la_struct_store_init(c, s, x);
+        int later = 0;
+        for (int j = i + 1; ii && j < body->child_count && !later; j++)
+            later = la_mentions(c, body->children[j], x);
+        if (ii && !later) {
+            for (int k = 0; k < s->child_count; k++)
+                if (k != ii && la_bad_use(c, s->children[k], x, 0, depth)) return 1;
+            if (la_struct_move_bad(c, s->children[ii], x, 0, depth)) return 1;
+            continue;
+        }
+        if (la_bad_use(c, s, x, 0, depth)) return 1;
+    }
+    return 0;
+}
+
 /* Recursively detect a disqualifying (alias-creating) use of x. Allowed roles:
  * assign-LHS, method/field receiver, index base, bind name-slot, terminal
  * return operand (not in STRICT mode — see la_param_nonretaining), bare
@@ -10208,6 +10387,16 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int dept
         return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
     if (n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR)
         return la_mentions(c, n, x);    /* any capture of x is unsafe */
+    /* 127.307: `<$T{d:x;..}` is a terminal return like `<x`: the function
+     * ends, so x is never updated again and the struct holds the only live
+     * reference.  Not in STRICT mode, where returning p is a retention. */
+    if (!strict && n->kind == NODE_RETURN_STMT && n->child_count == 1 &&
+        n->children[0] && n->children[0]->kind == NODE_STRUCT_LIT)
+        return la_struct_move_bad(c, n->children[0], x, 0, depth);
+    /* 127.307: a struct literal stored at the top level of the body after
+     * which x is dead (la_body_bad). */
+    if (!strict && n->kind == NODE_STMT_LIST && n == la_fn_body(c))
+        return la_body_bad(c, n, x, depth);
     /* 127.229 (2): `x = x + @(…)` — the left operand is the receiver of the
      * append, as in `x = x.append(…)`; only the literal's elements are uses. */
     if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
@@ -11637,10 +11826,8 @@ static void emit_stmt(Ctx *c, const Node *n)
  *     with one i64 slot per field.  Empty structs get a single i8 placeholder.
  *
  *   NODE_CONST_DECL:
- *     Emits a module-level constant.  Integer constants become
- *     `@name = constant i64 <value>`.  String constants are emitted via
- *     emit_str_global and stored as a constant pointer to the string data.
- *     Other types get a stub `constant i64 0`.
+ *     Emits nothing: a module constant is folded at each use (127.310,
+ *     const_decl_for).
  *
  *   NODE_FUNC_DECL:
  *     If the function has no body (body_i < 0), emits `declare <ret> @name(...)`.
@@ -11901,35 +12088,9 @@ static void emit_toplevel(Ctx *c, const Node *n)
         fputs(" }\n", c->out);
         break;
     case NODE_CONST_DECL:
-        tok_cp(c->src, n->children[0], tb, sizeof tb);
-        if (n->child_count >= 3 && n->children[2]->kind == NODE_INT_LIT) {
-            char vb[64]; tok_cp(c->src, n->children[2], vb, sizeof vb);
-            fprintf(c->out, "@%s = constant i64 %s\n", tb, vb);
-        } else if (n->child_count >= 3 && n->children[2]->kind == NODE_STR_LIT) {
-            const Node *sl = n->children[2];
-            int ilen = 1;
-            int si = emit_str_global(c, c->src + sl->tok_start, sl->tok_len, &ilen);
-            fprintf(c->out, "@%s = constant i8* getelementptr ([%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0)\n",
-                    tb, ilen, ilen, c->module_prefix, si);
-        } else if (n->child_count >= 3 && n->children[2]->kind == NODE_FLOAT_LIT) {
-            char vb[64]; tok_cp(c->src, n->children[2], vb, sizeof vb);
-            fprintf(c->out, "@%s = constant double %s\n", tb, vb);
-        } else if (n->child_count >= 3 && n->children[2]->kind == NODE_BOOL_LIT) {
-            char vb[64]; tok_cp(c->src, n->children[2], vb, sizeof vb);
-            fprintf(c->out, "@%s = constant i1 %d\n", tb, vb[0] == 't' ? 1 : 0);
-        } else if (n->child_count >= 2) {
-            /* Unknown initializer — try to resolve the declared type */
-            const char *cty = (n->child_count >= 2 && n->children[1])
-                              ? resolve_llvm_type(c, n->children[1]) : "i64";
-            if (cty[0] == '%')
-                fprintf(c->out, "@%s = constant %s zeroinitializer\n", tb, cty);
-            else if (!strcmp(cty, "double") || !strcmp(cty, "float"))
-                fprintf(c->out, "@%s = constant %s 0.0\n", tb, cty);
-            else
-                fprintf(c->out, "@%s = constant %s 0\n", tb, cty);
-        } else {
-            fprintf(c->out, "@%s = constant i64 0 ; const fallback\n", tb);
-        }
+        /* 127.310: folded at every use (const_decl_for); no global.  The
+         * global this emitted read the literal from children[2] -- the type
+         * -- so every constant was 0, and no use ever loaded it. */
         break;
     case NODE_FUNC_DECL: {
         tok_cp(c->src, n->children[0], tb, sizeof tb);
@@ -12588,6 +12749,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     snprintf(g_ir_cur_ll, sizeof g_ir_cur_ll, "%s", out_ll);   /* 137.13 */
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
     ctx.la_prog = ast;   /* 127.108 */
+    ctx.mod_src = src;   /* 127.310 */
     /* Story 76.1.2d: store source file for FFI extern diagnostic */
     ctx.source_file = (env && env->source_file) ? env->source_file : "";
     /* 124.0a: thread the name-resolver's NameEnv (closure capture side-table)

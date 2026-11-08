@@ -23,6 +23,11 @@
 #    line but was never marked: inside test.run the test was PASS and
 #    test.report exited 0.  The family of 127.68 / 134.17.
 #
+# The bool reads "false", not "0": since 127.302 an unannotated `mt` binding
+# over a std `bool!E` call keeps its bool type and interpolates true/false
+# (owner decision 127.15).  The $err arm still yields `true`, so "false" is
+# the $ok value exactly as "0" was -- the zero-takes-$ok check is unchanged.
+#
 # Negative controls: remove the six tk_toon_* / tk_yaml_* names from
 # is_num_parse_wrapper (section 1 goes red); restore the old body of
 # tk_test_assert_w (section 3 goes red).
@@ -94,9 +99,9 @@ f=main():i64{
 };'; then
     out="$("${WORK}/zero.bin" 2>/dev/null)"
     expect "toon.i64/bool/f64 of 0/false/0.0 take \$ok; a missing key takes \$err" \
-        "$(echo "${out}" | sed -n 1p)" "0 0 0 7"
+        "$(echo "${out}" | sed -n 1p)" "0 false 0 7"
     expect "yaml.i64/bool/f64 of 0/false/0.0 take \$ok; a missing key takes \$err" \
-        "$(echo "${out}" | sed -n 2p)" "0 0 0 7"
+        "$(echo "${out}" | sed -n 2p)" "0 false 0 7"
 fi
 
 echo ""

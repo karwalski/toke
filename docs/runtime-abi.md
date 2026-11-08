@@ -410,6 +410,25 @@ pad) seal with the C-string length.  Not converted: `str.frombytes` (its
 wrapper frees the `str_from_bytes` result), `json` strings, every other
 module — census below.
 
+**Step 5, second tranche (story 127.295, Batch Z96).**  Converted whole, by
+module: `std.path` (every result sealed; `test_path.c` no longer frees),
+`std.xml` (builder results, `get`, `attr`; the parser's `XmlNodeArray`
+strings stay malloc'd, `xml_free` owns them) and `std.fmt` (`arr`, `strs`,
+`pad`).  Readers only, because C callers free the results: `std.encoding`
+(`auth.c`, `acme.c`, `http.c` free the encoders' strings), `std.html` and
+`std.svg` (the node trees and documents own theirs).  `html.render`,
+`html.docr` and `svg.render` now return a sealed copy from the glue, which
+also fixes a dangling result (127.316: the next render freed the cached
+buffer toke held).  The rest of `str.c`/`str_glue.c`: every reader but the
+verify switch's own `strlen` (`tks_verify_fail`), and `fmt.f64`,
+`fmt.sprintf`, `str.sha256prefix` seal.  Gate: C911 (each converted
+producer's header equals `strlen`, and a program reads them under
+`TK_STR_VERIFY=1`).  `encoding.jsonfield` followed once its over-read was
+fixed (127.317, Batch Z97: a value ending in a backslash at the end of the
+input stepped over the NUL); its result is sealed (`tks_dup` of the scanned
+value, which can no longer hold a 0 byte).  Gate: C920 (ASan C driver and
+an ASan-built toke program under `TK_STR_VERIFY=1`).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

@@ -343,10 +343,13 @@ int emit_interface(const Node *ast, const char *src,
             fputs("\n    {\"kind\": \"const\", \"name\": \"", fp);
             json_str(fp, nbuf, (int)strlen(nbuf));
             fputs("\", \"type\": \"", fp);
+            /* 127.311: children are [0]=name, [1]=literal, [2]=type
+             * (parse_const_decl).  This read [1], the literal, and required
+             * it to be a NODE_TYPE_EXPR, so every const was "unknown". */
             const char *ty = "unknown";
-            if (top->child_count >= 2 && top->children[1] &&
-                    top->children[1]->kind == NODE_TYPE_EXPR) {
-                tok_copy(top->children[1], src, tbuf, sizeof(tbuf)); ty = tbuf;
+            if (top->child_count >= 3 && top->children[2]) {
+                render_type_node(top->children[2], src, tbuf, sizeof(tbuf));
+                if (tbuf[0]) ty = tbuf;
             }
             json_str(fp, ty, (int)strlen(ty));
             fputs("\"}", fp);

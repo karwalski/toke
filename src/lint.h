@@ -51,6 +51,22 @@ typedef struct {
     int          only_count;
     const char **ignore_rules;  /* NULL = ignore none     */
     int          ignore_count;
+    /* 131.59: 1 when the caller type-checked this AST cleanly (imports,
+     * names and types, no errors) immediately before tkc_lint, so every
+     * node->rtype the checker memoised is trustworthy.  Fixes whose
+     * correctness depends on types (single-use-let) are offered only then. */
+    int          typed;
+    /* 131.104: re-check a candidate source.  Lex, parse and type-check
+     * `src` (silently, as lint_typecheck does) and return its AST when every
+     * stage succeeded with no error, else NULL; *handle receives what
+     * recheck_free must release (the AST's arena).  The mutable-never-mutated
+     * fix is offered only when the caller provides this and the checker
+     * types the `mut`-less program node for node as it typed the original
+     * (a `let` is typed differently by mutability: bind_init_type).  NULL =
+     * withhold that fix. */
+    const Node *(*recheck)(void *ctx, const char *src, int src_len, void **handle);
+    void        (*recheck_free)(void *ctx, void *handle);
+    void        *recheck_ctx;
 } LintOptions;
 
 /* ── Public API ───────────────────────────────────────────────────────── */

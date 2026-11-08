@@ -1,0 +1,15 @@
+id: D285
+series: D
+description: "lint mutable-never-mutated (131.104): a binding referenced only inside \"\\(...)\" interpolation has no AST reference, so the checker's type for it cannot be compared with and without `mut` -- the hint stays, the fix is absent (this was D076's input before 131.104)"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let x=mut.5;
+    io.println("\(x)");
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mutable-never-mutated"]
+expected_fix_absent: true

@@ -17,7 +17,7 @@ f=pass(n:str;ok:bool):i64{
 f=main():i64{
   let b=$bag{nums:@(4;5;6);words:@("p";"q");idx:@("k":9)};
   pass("@i64 field get";b.nums.get(2)==6);
-  pass("map field get";b.idx.get("k")==9);
+  pass("map field get";b.idx.getor("k";0)==9);
   let g=b.words.get(1);
   pass("@str field get bound first";g=="q");
   pass("@str field get interpolated";"\(b.words.get(1))"=="q");

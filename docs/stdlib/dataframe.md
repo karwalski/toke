@@ -184,7 +184,7 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let raw = mt file.read("sales.csv") {$ok:d d;$err:e @()};
+  let raw = mt file.read("sales.csv") {$ok:d d;$err:e ""};
 
   let data = mt df.fromcsv(raw) {$ok:d d;$err:e $dataframe{}};
 

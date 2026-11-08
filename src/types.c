@@ -123,6 +123,7 @@ static Type *mk_type(Arena *arena, TypeKind k) {
     if (!t) return NULL;
     t->kind = k; t->name = NULL; t->elem = NULL;
     t->field_count = 0; t->field_names = NULL; t->field_types = NULL;
+    t->slot_lower = NULL;
     return t;
 }
 
@@ -131,8 +132,8 @@ static Type *mk_type(Arena *arena, TypeKind k) {
  *
  * Used exclusively in diagnostic messages.  For primitives the name is a
  * fixed string ("i64", "str", ...).  For TY_STRUCT, returns the user-defined
- * struct name if available.  For TY_ERROR_TYPE, recurses into the wrapped
- * success type.
+ * struct name if available.  TY_ERROR_TYPE renders both sides, `T!$E`
+ * (127.244 -- it printed only T).
  *
  * 127.54 — composites are rendered STRUCTURALLY (`@(i64)`, `@(str:i64)`)
  * rather than as the bare kind ("array", "map", "func").  The bare spelling
@@ -197,7 +198,11 @@ static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
             }
             if (w < (int)n) {
                 char r[TN_LEN];
-                if (t->elem) type_name_into(t->elem, r, sizeof r, depth + 1);
+                /* 127.244: a union renders its own `!$E` now; this keeps the
+                 * signature's established spelling, so take its T. */
+                const Type *rt = (t->elem && t->elem->kind == TY_ERROR_TYPE)
+                                 ? t->elem->elem : t->elem;
+                if (rt) type_name_into(rt, r, sizeof r, depth + 1);
                 else snprintf(r, sizeof r, "?");
                 /* 127.276: the error type is part of the signature -- a
                  * fallible and an infallible signature printed alike
@@ -222,6 +227,24 @@ static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
         } else snprintf(buf, n, "func");
         return;
     }
+    case TY_ERROR_TYPE: {
+        /* 127.244: both sides of the union.  Rendering only the success
+         * type printed a mismatch between `i64!$e` and `i64` as
+         * "expected 'i64', got 'i64'".  The error type is spelled as a
+         * program writes it: `$name`, bare for a number or bool. */
+        char r[TN_LEN];
+        if (t->elem && t->elem->kind != TY_UNKNOWN)
+            type_name_into(t->elem, r, sizeof r, depth + 1);
+        else snprintf(r, sizeof r, "?");
+        const char *en = t->name ? t->name : "?";
+        static const char *const bare[] = { "i8","i16","i32","i64","u8","u16",
+            "u32","u64","f32","f64","bool","byte","?" };
+        int dollar = en[0] != '$';
+        for (size_t i = 0; dollar && i < sizeof bare / sizeof bare[0]; i++)
+            if (!strcmp(en, bare[i])) dollar = 0;
+        snprintf(buf, n, "%s!%s%s", r, dollar ? "$" : "", en);
+        return;
+    }
     default:
         snprintf(buf, n, "%s", type_name(t));
         return;
@@ -237,9 +260,8 @@ static const char *type_name(const Type *t) {
     case TY_U8: return "u8";     case TY_U16: return "u16";   case TY_U32: return "u32";
     case TY_F32: return "f32";
     case TY_STRUCT: return t->name?t->name:"struct";
-    case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
     case TY_PTR: return "ptr";
-    case TY_ARRAY: case TY_MAP: case TY_FUNC: {
+    case TY_ARRAY: case TY_MAP: case TY_FUNC: case TY_ERROR_TYPE: {   /* 127.244 */
         static char pool[TN_SLOTS][TN_LEN];
         static int  slot;
         char *buf = pool[slot];
@@ -1592,6 +1614,38 @@ static int func_has_sig(const Type *t) {
     return t && t->kind == TY_FUNC && t->name == TY_FUNC_SIG;
 }
 int tk_type_is_fnval(const Type *t) { return func_has_sig(t); }
+
+/*
+ * tk_type_identical (131.59) -- STRICT structural identity of two checker
+ * types, for `tkc --lint --fix`'s single-use-let inliner.  Unlike
+ * types_equal() it never treats TY_UNKNOWN (at any depth) as a wildcard and
+ * never equates an opaque handle with an integer: the question is not "may
+ * one stand where the other is expected" but "is the inlined expression the
+ * same typed value the binding was", and only an answer the checker actually
+ * knows may say yes (AGENTS.md section 6).
+ */
+int tk_type_identical(const Type *a, const Type *b) {
+    if (!a || !b) return 0;
+    if (a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN) return 0;
+    if (a == b) return 1;
+    if (a->kind != b->kind) return 0;
+    if ((a->name == NULL) != (b->name == NULL)) return 0;
+    if (a->name && a->name != b->name && strcmp(a->name, b->name) != 0) return 0;
+    if ((a->elem == NULL) != (b->elem == NULL)) return 0;
+    if (a->elem && !tk_type_identical(a->elem, b->elem)) return 0;
+    if (a->field_count != b->field_count) return 0;
+    for (int i = 0; i < a->field_count; i++) {
+        const Type *x = a->field_types ? a->field_types[i] : NULL;
+        const Type *y = b->field_types ? b->field_types[i] : NULL;
+        if ((x == NULL) != (y == NULL)) return 0;
+        if (x && !tk_type_identical(x, y)) return 0;
+        const char *xn = a->field_names ? a->field_names[i] : NULL;
+        const char *yn = b->field_names ? b->field_names[i] : NULL;
+        if ((xn == NULL) != (yn == NULL)) return 0;
+        if (xn && xn != yn && strcmp(xn, yn) != 0) return 0;
+    }
+    return 1;
+}
 static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
     Type *t = mk_type(cx->env->arena, TY_FUNC);
     if (!t) return NULL;
@@ -2123,6 +2177,9 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
 static const char *import_module_path(Ctx *cx, const char *alias,
                                       char *buf, size_t bufsz);
 static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
+static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
+static Type *slot_union_base(Type *t);                     /* 127.320 */
+static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz);   /* 127.304 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -2175,6 +2232,14 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
                     && ret[0] == '[' && ret[rl - 1] == ']') {
                     Type *mt = tki_compound_type(cx, ret, rl, 0);
                     if (mt && mt->kind == TY_MAP) return mt;
+                    /* 127.308: an array of str/bool/f64 from another user
+                     * module (`f=mk():@$str` spelled `[str]`).  Left
+                     * unknown, `let a=sl.mk(); \(a.get(0))` printed the
+                     * string's address; a same-module call was typed. */
+                    if (mt && mt->kind == TY_ARRAY) {
+                        Type *at = repr_payload_type(cx, ret);
+                        if (at) return at;
+                    }
                 }
             }
             return NULL;
@@ -2235,6 +2300,90 @@ static Type *infer(Ctx *cx, const Node *node);
  * "error" key (imported struct records only, the 127.66 rule) — or a local
  * `let` bound to such a call.
  */
+/*
+ * repr_payload_type -- 127.297 / 127.302 / 127.308.  The type an interface
+ * spelling states when it says something about the value's
+ * REPRESENTATION: a `str`, `bool` or `f64` scalar, or an array (to any
+ * nesting) of `str`, `bool` or `f64` elements.  The emitter lowers each of those differently from the i64 it
+ * assumes for an untyped value (an i8* element, an i1 rendered true/false,
+ * a double read by bitcast), so leaving them unknown printed pointers, 1/0
+ * and raw f64 bit patterns at exit 0.  Integers (`i64`, `u64`, `[i64]`) add
+ * nothing the i64 default does not render and stay unknown -- adopting
+ * `i64` drew new W1001s on `$ok:v (v as u64)` over str.toint -- as do
+ * struct-element arrays and maps (their own rules: 136.28, 127.224 item 7)
+ * and a scalar `f32`.  An array of `f32` IS adopted (127.313): its
+ * elements are stored as double bits and the subscript reads them so.
+ */
+static int repr_elem(const Type *e) {
+    for (int d = 0; e && d < 6; d++, e = e->elem) {
+        if (e->kind == TY_STR || e->kind == TY_BOOL || e->kind == TY_F64) return 1;
+        /* 127.313: an f32 ELEMENT is stored as double bits (fpext+bitcast)
+         * and the subscript now reads it as a double, so it is adopted too.
+         * A scalar f32 return is not (repr_payload_type below). */
+        if (e->kind == TY_F32) return 1;
+        if (e->kind != TY_ARRAY) return 0;
+    }
+    return 0;
+}
+static Type *repr_payload_type(Ctx *cx, const char *sp) {
+    if (!sp || !*sp) return NULL;
+    size_t sl = strlen(sp);
+    Type *t = tki_compound_type(cx, sp, sl, 0);
+    if (!t) return NULL;
+    if (t->kind == TY_ARRAY) return repr_elem(t->elem) ? t : NULL;
+    if (t->kind == TY_STR || t->kind == TY_BOOL || t->kind == TY_F64) return t;
+    return NULL;
+}
+
+/*
+ * repr_value_type -- 127.320 / 127.322.  A map's value type V, adopted for a
+ * value read OUT of the map (`m.getor(k;d)`, the `$ok` binding of an `mt`
+ * over `m.get(k)`) when V says something about the representation: a `str`,
+ * `bool` or `f64` scalar, a map, or an array whose innermost element is one
+ * of those (or `f32`, stored as double bits, 127.313).  Left unknown, the
+ * emitter read the value as the i64 it assumes: `getor` on a map of arrays
+ * printed the element string's address, an f64 its raw bits, a bool 1/0,
+ * and a map-valued result lost its value type for the next lookup.
+ * Integers, `f32` scalars and struct values stay unknown, as in
+ * repr_payload_type (the i64 default renders an integer; structs and f32
+ * scalars have their own rules).
+ */
+static Type *repr_value_type(Type *v) {
+    if (!v) return NULL;
+    if (v->kind == TY_STR || v->kind == TY_BOOL || v->kind == TY_F64
+        || v->kind == TY_MAP) return v;
+    if (v->kind != TY_ARRAY) return NULL;
+    const Type *e = v->elem;
+    for (int d = 0; e && d < 6 && e->kind == TY_ARRAY; d++) e = e->elem;
+    if (e && (repr_elem(e) || e->kind == TY_MAP)) return v;
+    return NULL;
+}
+
+/* map_getor_type (127.320) -- `m.getor(k;d)` on a map value (not a module
+ * alias such as `env.getor`): the map's value type, when repr_value_type
+ * adopts it.  The receiver is inferred so a chained receiver
+ * (`mm.getor(a;d).getor(b;0.0)`, `n.get("o").getor("i";0.0)`) carries its
+ * own type too. */
+static Type *map_getor_type(Ctx *cx, const Node *call) {
+    const Node *cal = call->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2
+        || !cal->children[0] || !cal->children[1]) return NULL;
+    char mb[16]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "getor") != 0 || call->child_count != 3) return NULL;
+    const Node *rv = cal->children[0];
+    if (rv->kind == NODE_TYPE_IDENT) return NULL;
+    if (rv->kind == NODE_IDENT) {
+        char ab[128]; TOKSTR(ab, cx->src, rv);
+        char pb[256];
+        if (!alias_shadowed(cx, rv) && import_module_path(cx, ab, pb, sizeof pb))
+            return NULL;
+    }
+    Type *rt = slot_union_base(infer(cx, rv));
+    if (!rt || rt->kind != TY_MAP || rt->field_count < 1 || !rt->field_types)
+        return NULL;
+    return repr_value_type(rt->field_types[0]);
+}
+
 static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
     if (!scr || depth > 2) return NULL;
     if (scr->kind == NODE_IDENT) {
@@ -2248,6 +2397,14 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
             return NULL;
         return mt_ok_payload_type(cx, bn->children[1], depth + 1);
     }
+    /* 127.322: a map lookup `m.get(k)` is the union `V!$err` (127.244); its
+     * ok payload is V.  Left unknown, `mt n.get("o"){$ok:x x.get("i")..}`
+     * read the inner f64 through an untyped map and printed its bits. */
+    if (scr->kind == NODE_INDEX_EXPR) {
+        Type *ut = infer(cx, scr);
+        return (ut && ut->kind == TY_ERROR_TYPE && ut->slot_lower)
+               ? repr_value_type(ut->slot_lower) : NULL;
+    }
     if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1 || !scr->children[0])
         return NULL;
     const Node *callee = scr->children[0];
@@ -2259,8 +2416,28 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
         char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
         if (alias_shadowed(cx, callee->children[0])) return NULL;   /* 127.214 */
         const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
-        if (!f || !f->okret) return NULL;
-        return imported_struct_type(cx, f->okret, 0);
+        if (!f) return NULL;
+        if (!f->okret) {
+            /* 127.297 / 127.302: a hand-written std record spells the union
+             * inline (`"return": "bool!jsonerr"`) rather than with an
+             * "error" key, so its `T` is the spelling before the '!'.  Only
+             * a representation-bearing T is adopted (no struct: the 127.66
+             * rule stays as it was for the inline form). */
+            const char *bang = (f->ret && !f->abi_ret) ? strchr(f->ret, '!') : NULL;
+            if (!bang || bang == f->ret || (size_t)(bang - f->ret) >= 128) return NULL;
+            char okb[128];
+            memcpy(okb, f->ret, (size_t)(bang - f->ret));
+            okb[bang - f->ret] = '\0';
+            return repr_payload_type(cx, okb);
+        }
+        Type *st = imported_struct_type(cx, f->okret, 0);
+        if (st) return st;
+        /* 127.297 / 127.302: a representation-bearing ok payload -- the
+         * interface's `[f64]`, `[str]`, `[bool]` or `bool`, `str`, `f64`.
+         * Left unknown, `let r=mt toml.f64arr(..){$ok:v v;..}` bound an
+         * untyped array, so `r.get(0)` read the double's bits as an integer
+         * (sitofp), and `let c=mt json.bool(..){..}` interpolated as 1. */
+        return repr_payload_type(cx, f->okret);
     }
     if (callee->kind != NODE_IDENT) return NULL;
     Type *rt = call_decl_ret_type(cx, scr);
@@ -2615,6 +2792,57 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
     return t;
 }
 
+/*
+ * 127.326 — the value type of an expression-`if` used as an initialiser,
+ * `let d=if(c){m}el{m2}`, or NULL to leave the binding unknown.
+ *
+ * Spec v0.4 §C: "Both arms are blocks whose value is the block's tail
+ * expression; the two tails must have the same type."  So the binding takes
+ * that type when the checker knows it for both tails and they are identical
+ * (tk_type_identical: strict, TY_UNKNOWN anywhere is never identical).  Any
+ * other shape — a branch whose last statement is not an expression (a `<`
+ * return, a `br`, a binding), an unknown tail, or tails of different types —
+ * answers NULL, the behaviour before this story.  No join rule is invented.
+ *
+ * The tails' types are read from the rtype memo infer() stored when the
+ * binding statement itself was walked, never by re-walking the branches:
+ * infer() on an IF_STMT pushes a scope and would repeat every diagnostic in
+ * them once per reference to the binding.  A tail not yet walked has no
+ * rtype and answers NULL.  An `el if` chain recurses (depth-guarded).
+ */
+static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
+    if (!ifn || ifn->kind != NODE_IF_STMT || ifn->child_count < 3) return NULL;
+    if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+    Type *agreed = NULL;
+    for (int i = 1; i < 3; i++) {
+        const Node *br = ifn->children[i];
+        Type *bt = NULL;
+        if (!br) return NULL;
+        if (br->kind == NODE_IF_STMT) {
+            cx->bind_infer_depth++;
+            bt = if_expr_bind_type(cx, br);
+            cx->bind_infer_depth--;
+        } else if (br->kind == NODE_STMT_LIST && br->child_count > 0) {
+            const Node *tail = br->children[br->child_count - 1];
+            if (!tail || tail->kind != NODE_EXPR_STMT || tail->child_count < 1
+                || !tail->children[0])
+                return NULL;
+            const Node *te = tail->children[0];
+            if (te->kind == NODE_IF_STMT) {
+                cx->bind_infer_depth++;
+                bt = if_expr_bind_type(cx, te);
+                cx->bind_infer_depth--;
+            } else {
+                bt = te->rtype;
+            }
+        }
+        if (!bt || bt->kind == TY_VOID || !tk_type_identical(bt, bt)) return NULL;
+        if (!agreed) agreed = bt;
+        else if (!tk_type_identical(agreed, bt)) return NULL;
+    }
+    return agreed;
+}
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -2626,7 +2854,18 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (bn->kind != NODE_BIND_STMT && std_scalar_ret(cx, initN)) return NULL;
         Type *rt = call_decl_ret_type(cx, initN);
         if (rt && rt->kind != TY_UNKNOWN && rt->kind != TY_VOID) return rt;
-        return NULL;
+        /* 127.325: `let d=mm.getor(k;D)` binds the map's value V, the type
+         * the same call has in place (infer, 127.320).  Left unknown, `d`
+         * on a map of maps lost its value type, so `d.getor("k";0.5)` read
+         * an inner f64 as its raw bits and a bool as 1/0.  A `mut` binding
+         * is typed too: unlike a std scalar (138.3), V is the map's own
+         * stated type, not an interface spelling.  The receiver may name
+         * another binding, so this takes the depth guard. */
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *gt = map_getor_type(cx, initN);
+        cx->bind_infer_depth--;
+        return gt;
     }
     case NODE_IDENT: {
         if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
@@ -2803,6 +3042,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
     /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
     case NODE_MATCH_STMT:
         return mt_bind_type(cx, initN);
+    /* 127.326: `let d=if(c){m}el{m2}` — see if_expr_bind_type. */
+    case NODE_IF_STMT:
+        return if_expr_bind_type(cx, initN);
     /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
@@ -2824,7 +3066,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * (same AST scan as above): INT_LIT 239 sites, BINARY_EXPR 111,
      * MATCH_STMT 110, STR_LIT 93, FLOAT_LIT 29, BOOL_LIT 18, IF_STMT 10,
      * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  STR_LIT has since landed
-     * (127.157, above).  The rest are a larger blast radius than the
+     * (127.157, above), and IF_STMT too (127.326, if_expr_bind_type;
+     * the IR of 3852 tree sources was unchanged).  The rest are a larger
+     * blast radius than the
      * container cases and are held out deliberately, not overlooked.
      */
     default:
@@ -3677,6 +3921,7 @@ static void check_json_parse_as_doc(Ctx *cx, const Node *call, const char *alias
               "got", "a json.parse result", (const char *)NULL);
 }
 
+static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -3742,10 +3987,40 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         /* `i64` is also the ABI-placeholder spelling, and hand-written
          * records use it for handles and strings too (`http.resjson` spells
          * its str body `i64`; examples/apihandler passes a str there and
-         * works) -- so an `i64` parameter says nothing and is not judged. */
-        if (strcmp(ps, "i64") == 0) continue;
+         * works) -- so an `i64` parameter says nothing about a handle and
+         * is not judged for one.
+         * 127.304: a `str` argument IS judged.  A str is never a handle, and
+         * the glue behind a typed `i64` parameter reads an integer: str.fromint("x")
+         * printed the string's address.  The records that spelled a str
+         * parameter `i64` were retyped with this check. */
         const Type *at = an->rtype;
+        /* 127.314: a `[T]` an interface declares, reaching a `str`
+         * parameter untyped -- `let a=s.split(t;"\n"); s.len(a)` passed
+         * --check and returned 1, while `s.len(@("x";"y"))` was E4031.
+         * The 127.230 item 5 rule for user calls: judged here, never
+         * stored, so the emitter sees the rtypes it saw before. */
+        if ((!at || at->kind == TY_UNKNOWN) && strcmp(ps, "str") == 0)
+            at = std_array_ret(cx, an, 0);
         if (!at || at->kind == TY_UNKNOWN) continue;
+        if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
+        /* 127.304: two `i64` parameters take a str by contract.
+         *   test.eq -- codegen lowers a str pair to tk_test_eqstr_w (127.68,
+         *     llvm.c test_eq_args_are_str: a str argument and no provable
+         *     number/bool), so a str is judged only beside a number or bool,
+         *     where the integer compare would read the string's address.
+         *   str.padleft / padright's pad -- the glue reads a str pad's first
+         *     byte (138.11, str_glue.c pad_byte; C313 pins "0" and "*"). */
+        if (strcmp(ps, "i64") == 0 && sym && strcmp(sym, "tk_test_eq_w") == 0
+            && actual == 2) {
+            const Node *on = call->children[i == 0 ? 2 : 1];
+            const Type *ot = on ? on->rtype : NULL;
+            int other_num = ot && ot->kind != TY_UNKNOWN && ot->kind != TY_STR
+                            && tki_arg_class(ot) >= 2 && tki_arg_class(ot) <= 3;
+            if (!other_num) continue;
+        }
+        if (strcmp(ps, "i64") == 0 && i == 2 && sym
+            && (strcmp(sym, "tk_str_padleft_w") == 0
+                || strcmp(sym, "tk_str_padright_w") == 0)) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID) continue;
         /* Judged by REPRESENTATION class, not width: a hand-written record
@@ -4576,7 +4851,8 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
  * std_array_ret (127.230 item 5) — the ARRAY type a std/user interface
  * declares for `alias.member(..)` (a `[T]` return, e.g. `str.bytes` ->
  * `[byte]`), reached directly or through the immutable, un-annotated `let`
- * in force for identifier `n`; NULL otherwise.
+ * in force for identifier `n` (or a `mut` one, under std_array_mut_ret's
+ * conditions, 127.315); NULL otherwise.
  *
  * stdlib returns are deliberately not typed by call_decl_ret_type (127.66),
  * so `let b=s.bytes("x"); g(b)` -- and `g(s.bytes("x"))` itself -- passed a
@@ -4585,6 +4861,46 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
  * this is read by one check only and never stored on a node, so the emitter
  * sees exactly the rtypes it saw before.
  */
+/*
+ * std_array_mut_ret (127.315) -- std_array_ret through a `mut` binding.
+ * `let a=mut.s.split(..); s.len(a)` passed --check and printed 1: the
+ * immutable-only rule left a `mut` binding unjudged.  A `mut` binding can be
+ * re-assigned, and the checker leaves it untyped, so an assignment of
+ * another type is accepted (`a="x"`) and judging by the initialiser alone
+ * would be a false E4031.  So a `mut` binding is judged only when
+ *   - the binding is the one LEXICALLY in force at the use (tk_binder_at);
+ *   - its initialiser is a std [T] (std_array_ret), and
+ *   - every assignment to that same binding anywhere in the function is a
+ *     std [T] identical to it (tk_type_identical) -- `a=a.append(..)`,
+ *     `a=other` or a closure's store all leave it unjudged.
+ * Judged, never stored, exactly as for the immutable case.
+ */
+static Type *std_array_ret(Ctx *cx, const Node *n, int depth);
+static int mut_assigns_all_array(Ctx *cx, const Node *node, const Node *bn,
+                                 const char *nb, int nlen, const Type *t, int depth) {
+    if (!node) return 1;
+    if (node->kind == NODE_ASSIGN_STMT && node->child_count == 2 && node->children[0]
+        && node->children[0]->kind == NODE_IDENT
+        && node->children[0]->tok_len == nlen
+        && memcmp(cx->src + node->children[0]->tok_start, nb, (size_t)nlen) == 0
+        && tk_binder_at(cx->fn_node, cx->src, node->children[0], nb, nlen, NULL) == bn) {
+        Type *at = std_array_ret(cx, node->children[1], depth + 1);
+        if (!at || !tk_type_identical(at, t)) return 0;
+    }
+    for (int i = 0; i < node->child_count; i++)
+        if (!mut_assigns_all_array(cx, node->children[i], bn, nb, nlen, t, depth)) return 0;
+    return 1;
+}
+static Type *std_array_mut_ret(Ctx *cx, const Node *bn, const Node *use,
+                               const char *nb, int nlen, int depth) {
+    if (tk_binder_at(cx->fn_node, cx->src, use, nb, nlen, NULL) != bn) return NULL;
+    Type *t = std_array_ret(cx, bn->children[1], depth + 1);
+    /* tk_type_identical(t,t) is 0 when t holds TY_UNKNOWN anywhere: an
+     * element type the interface does not state cannot anchor the check. */
+    if (!t || !tk_type_identical(t, t)) return NULL;
+    return mut_assigns_all_array(cx, cx->fn_node, bn, nb, nlen, t, depth) ? t : NULL;
+}
+
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
     if (!n || depth > 2 || !cx->env || !cx->env->names) return NULL;
     if (n->kind == NODE_IDENT) {
@@ -4594,7 +4910,9 @@ static Type *std_array_ret(Ctx *cx, const Node *n, int depth) {
         if (!nlen || is_param(cx, nb, nlen)) return NULL;
         if (arm_bind_lookup(cx, nb, nlen, n)) return NULL;
         const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, n);
-        if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return NULL;
+        if (!bn || bn->child_count != 2) return NULL;
+        if (bn->kind == NODE_MUT_BIND_STMT) return std_array_mut_ret(cx, bn, n, nb, nlen, depth);
+        if (bn->kind != NODE_BIND_STMT) return NULL;
         return std_array_ret(cx, bn->children[1], depth + 1);
     }
     if (n->kind != NODE_CALL_EXPR || n->child_count < 1) return NULL;
@@ -4654,6 +4972,71 @@ static Type *std_scalar_ret_impl(Ctx *cx, const Node *call, int any_width) {
     if (!any_width && t->kind != TY_STR && t->kind != TY_BOOL && t->kind != TY_F64
         && t->kind != TY_F32 && t->kind != TY_I64) return NULL;
     return t;
+}
+
+/* 127.304: an annotated scalar `let` (str, bool, a number) bound straight
+ * from a std call whose typed (not `"gen":"abi"`) record declares a RECORD
+ * or a `T!E` union.  stdlib results are not adopted as binding types
+ * (127.66), so `let s:str=json.at(o;"a")` (`jsonval!jsonerr`) and
+ * `let s:str=json.newobj()` (`jsonval`) were clean and printed a pointer.
+ * A user `T!E` call into a `T` let is already E4031; this is that rule for
+ * the declared std return.  Returns the spelling to report, or NULL. */
+static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1
+        || !cx->env || !cx->env->names) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return NULL;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    char pbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return NULL;
+    const char *mpath = import_module_path(cx, ab, pbuf, sizeof pbuf);
+    if (!mpath || strncmp(mpath, "std.", 4) != 0) return NULL;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+    if (!f || f->abi_ret || f->internal) return NULL;
+    if (f->okret && f->okret[0]) {
+        snprintf(buf, bsz, "%s!%s", f->okret, f->errty ? f->errty : "?");
+        return buf;
+    }
+    if (!f->ret || !f->ret[0]) return NULL;
+    /* a std record spells its union inline: "return":"jsonval!jsonerr" */
+    if (strchr(f->ret, '!')) { snprintf(buf, bsz, "%s", f->ret); return buf; }
+    Type *t = tki_compound_type(cx, f->ret, strlen(f->ret), 0);
+    if (!t || t->kind != TY_STRUCT || tki_arg_class(t) != 6) return NULL;
+    snprintf(buf, bsz, "%s", f->ret);
+    return buf;
+}
+
+/*
+ * slot_union_base (127.244) -- a slot error union used as the BASE of a
+ * field read or a subscript (`m.get("k").len`, `mm.get("k").get(0)`) is
+ * read as the type it had before (slot_lower), so the access is typed --
+ * and lowered -- exactly as it was.  Not judged yet.  Its repairs type a
+ * compound value since 127.320 (`getor`, map_getor_type) and 127.322 (the
+ * `$ok` binding, mt_ok_payload_type), which judging this form needed first.
+ * Any other base is returned unchanged.
+ */
+static Type *slot_union_base(Type *t) {
+    return (t && t->slot_lower) ? t->slot_lower : t;
+}
+
+/*
+ * map_get_union (127.244) -- `m.get(k)` on a map `@(K:V)` is fallible
+ * (semantics.md 10.1): `V!$err`, judged like a user `T!E`; its slot_lower
+ * is V, the type the lookup had before.
+ */
+static Type *map_get_union(Ctx *cx, Type *v) {
+    Arena *A = cx->env->arena;
+    Type *u = mk_type(A, TY_ERROR_TYPE);
+    if (!u) return v;
+    u->elem = v;
+    u->name = "err";
+    u->slot_lower = v;
+    return u;
 }
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
@@ -4736,6 +5119,60 @@ static void check_array_store_elem(Ctx *cx, const Node *call) {
              "are '%s'", member, vn_, en);
     diag_emit(DIAG_ERROR, E4031, vn->start, vn->line, vn->col, msg,
               "expected", en, "got", vn_, (const char *)NULL);
+}
+
+/*
+ * check_map_getor_default (127.324) -- `m.getor(k;d)` on a map whose value
+ * type V is known must be given a default `d` of type V.  The default is
+ * what the call yields on a miss, through the same i64 slot as a stored
+ * value, and nothing judged it: `@("a":1.5).getor("zz";1)` read the int's
+ * bits as a double (4.94e-324), `@("a":"x").getor("zz";5)` handed 5 to the
+ * str reader and exited 139, and an int default on a map of arrays or maps
+ * crashed at the first `.len`/lookup.  Flow direction is the store's
+ * (check_array_store_elem): types_compat(d, V), an integer literal narrows,
+ * and an empty `@()` stands for an empty array (types_equal) but not for a
+ * map -- the empty map is `@($k:$v)`, as for `let m:@($k:$v)=@()`
+ * (semantics.md 2.1).  No int -> float promotion (ADR-0004):
+ * `mf.getor(k;1)` is E4031.  Module calls (`env.getor`) are judged by their
+ * interface, not here.  Silent when V or the default's type is unknown.
+ * No `fix`: whether to change the default, the map's value type or the
+ * data structure is the program's choice, not the checker's.
+ */
+static void check_map_getor_default(Ctx *cx, const Node *call) {
+    if (!call || call->child_count != 3) return;
+    const Node *cal = call->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2
+        || !cal->children[0] || !cal->children[1]) return;
+    char mb[16]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "getor") != 0) return;
+    const Node *rv = cal->children[0];
+    if (rv->kind == NODE_TYPE_IDENT) return;
+    if (rv->kind == NODE_IDENT) {
+        char ab[128]; TOKSTR(ab, cx->src, rv);
+        char pb[256];
+        if (!alias_shadowed(cx, rv) && import_module_path(cx, ab, pb, sizeof pb))
+            return;
+    }
+    Type *rt = slot_union_base(infer(cx, rv));
+    if (!rt || rt->kind != TY_MAP || rt->field_count < 1 || !rt->field_types)
+        return;
+    const Type *v = rt->field_types[0];
+    if (!v || v->kind == TY_UNKNOWN || v->kind == TY_VOID) return;
+    const Node *dn = call->children[2];
+    if (!dn) return;
+    const Type *dt = dn->rtype ? dn->rtype : infer(cx, dn);
+    if (!dt || dt->kind == TY_UNKNOWN) return;
+    if (types_compat(dt, v)) return;
+    if (lit_narrows(cx->src, dn, v)) return;
+    if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+    char vn[64], dn_[64], msg[256];
+    snprintf(vn, sizeof vn, "%s", type_name(v));
+    snprintf(dn_, sizeof dn_, "%s", type_name(dt));
+    snprintf(msg, sizeof msg,
+             "type mismatch: the default of '.getor' is a '%s', but the map's "
+             "values are '%s'", dn_, vn);
+    diag_emit(DIAG_ERROR, E4031, dn->start, dn->line, dn->col, msg,
+              "expected", vn, "got", dn_, (const char *)NULL);
 }
 
 /* 127.226: a type node standing where a literal element would be. */
@@ -4898,7 +5335,8 @@ static void check_reraise_type(Ctx *cx, const Node *node, const Type *inner) {
 
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
-    if (node) ((Node *)node)->rtype = t;
+    /* 127.244: a slot error union is judged as `T!E` but lowered as before. */
+    if (node) ((Node *)node)->rtype = (t && t->slot_lower) ? t->slot_lower : t;
     return t;
 }
 /* 127.223 item 2 — the declared return type of a call whose callee is a
@@ -5286,6 +5724,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         if (def->kind==NODE_PARAM&&def->child_count>1&&def->children[1])
             return resolve_type(cx,def->children[1]);
+        /* 127.310: a module constant is of its declared type. */
+        if (def->kind==NODE_CONST_DECL&&def->child_count>2&&def->children[2])
+            return resolve_type(cx,def->children[2]);
         /* 124.0c item 2: a function named bare is a value of its signature
          * (`ap(inc;5)` against a `(i64):i64` parameter). */
         if (def->kind==NODE_FUNC_DECL) return params_sig(cx,def,0);
@@ -5819,6 +6260,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             check_recv_method_call(cx,node);
             /* and an array store must match the element type. */
             check_array_store_elem(cx,node);
+            /* 127.324: and a map's getor default must be a V. */
+            check_map_getor_default(cx,node);
             /* 127.224 item 7: a map from another user module, used in place
              * (`lib.mk().get("a")`) — the same answer the `let` binding gets
              * from bind_init_type.  Maps only: see call_decl_ret_type. */
@@ -5829,6 +6272,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * (`str.nowunix()/86400`). */
                 Type *srt=std_scalar_ret(cx,node);
                 if (srt) return srt;
+                /* 127.320: `m.getor(k;d)` yields the map's value V. */
+                Type *grt=map_getor_type(cx,node);
+                if (grt) return grt;
             }
             return mk_type(A,TY_UNKNOWN);
         }
@@ -5969,6 +6415,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_UNKNOWN);
         }
         check_reraise_type(cx,node,inner);                  /* 127.225 */
+        /* 127.244: a slot union yields the type its node had before. */
+        if (inner->slot_lower) return inner->slot_lower;
         return (inner->kind==TY_ERROR_TYPE&&inner->elem)?inner->elem:mk_type(A,TY_UNKNOWN);
     }
 
@@ -6016,6 +6464,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
         }
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
+        base=slot_union_base(base);   /* 127.244 */
         Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         /* 113.B.12: indexing a map (incl. a map stored in a struct field) by
          * key — `m.get(k)` desugars to NODE_INDEX_EXPR. The index is the KEY
@@ -6035,7 +6484,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 }
                 return mk_type(A,TY_UNKNOWN);
             }
-            return (base->field_count>0&&base->field_types&&base->field_types[0])?base->field_types[0]:mk_type(A,TY_UNKNOWN);
+            /* 127.244: the lookup is fallible -- `V!$err` (map_get_union). */
+            return map_get_union(cx,(base->field_count>0&&base->field_types&&base->field_types[0])?base->field_types[0]:mk_type(A,TY_UNKNOWN));
         }
         /*
          * 136.36 narrowing: `v.get(i)` on a value whose type came from a .tki
@@ -6101,6 +6551,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_FIELD_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
+        base=slot_union_base(base);   /* 127.244 */
         if (node->child_count<2||!node->children[1]) return mk_type(A,TY_UNKNOWN);
         char fname[128]; TOKSTR(fname,cx->src,node->children[1]);
         /*
@@ -6275,6 +6726,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *
      * Returns TY_VOID (bindings are statements, not expressions).
      * ──────────────────────────────────────────────────────────────────── */
+    /* 127.310: a module constant `name=literal:Type;` -- its literal must be
+     * of its declared type, by the rule an annotated `let` applies (an
+     * integer literal narrows to a smaller integer type when it fits).  No
+     * `fix`: the grammar admits only a literal there, so the `as` cast the
+     * `let` mismatch offers would not parse. */
+    case NODE_CONST_DECL: {
+        if (node->child_count < 3 || !node->children[1] || !node->children[2])
+            return mk_type(A,TY_VOID);
+        Type *ann = resolve_type(cx, node->children[2]);
+        Type *lit = infer(cx, node->children[1]);
+        if (ann&&lit&&ann->kind!=TY_UNKNOWN&&lit->kind!=TY_UNKNOWN
+            &&!types_compat(lit,ann)&&!lit_narrows(cx->src,node->children[1],ann))
+            emit_mm(cx,node->children[1],ann,lit,NULL);
+        return mk_type(A,TY_VOID);
+    }
     case NODE_BIND_STMT: case NODE_MUT_BIND_STMT: {
         /* Stage 2 (type-flow): correctly distinguish annotated (3 children:
          * ident, type, init) from un-annotated (2 children: ident, init). The
@@ -6305,6 +6771,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (dt&&!types_compat(dt,ann)) {
                 char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
                 emit_mm(cx,node,ann,dt,cast_fix_certain(dt,ann)?fix:NULL);
+            }
+        }
+        /* 127.304: the declared std return is a record or a `T!E` union and
+         * the annotation a scalar -- no fix (an `mt`, a `!`, a field read or
+         * a different callee are all possible repairs). */
+        if (ann&&init&&init->kind==TY_UNKNOWN&&initN&&initN->kind==NODE_CALL_EXPR
+            &&(ann->kind==TY_STR||ann->kind==TY_BOOL||kind_is_scalar(ann->kind))) {
+            char rb[160];
+            const char *rs=std_nonscalar_ret(cx,initN,rb,sizeof rb);
+            if (rs&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[384], en[96];
+                snprintf(en,sizeof en,"%s",type_name(ann));
+                snprintf(msg,sizeof msg,
+                         "type mismatch: expected '%s', got '%s' (the declared "
+                         "return of this std call)",en,rs);
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected",en,"got",rs,(const char*)NULL);
             }
         }
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)
@@ -6361,6 +6844,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
             if (lb&&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_PARAM
                      ||lb->kind==NODE_MATCH_ARM)) immutable=1;
+            /* 127.310: no local binder, and the module-level name is a
+             * constant (semantics.md §4.2: DECL_CONST is not mutable).  No
+             * `fix`: a constant has no `mut` spelling to rewrite it to. */
+            if (!lb) {
+                Decl *md=tc_lookup(cx->env->names->module_scope,nb,nlen);
+                if (md&&md->kind==DECL_CONST) {
+                    if (tc_can_emit(cx)) {
+                        char msg[256];
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to module constant '%s'; a constant cannot be assigned",nb);
+                        diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                            "expected","mutable binding","got","constant",
+                            (const char*)NULL);
+                    }
+                    return mk_type(A,TY_VOID);
+                }
+            }
             if (immutable) {
                 if (tc_can_emit(cx)) {
                     /* The `fix` rewrites a `let`; a parameter or an `mt`

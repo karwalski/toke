@@ -305,11 +305,13 @@ Result: `20` (zero-based index)
 
 Map values are accessed by key. The key expression must have the map's key type; an index of a different type is rejected with `E4031`. Use structs for named-field access.
 
+A lookup can miss, so `m.get(k)` on a map `@($k:$v)` is the error union `$v!$err`: it is unwrapped with `mt` (`$ok`/`$err`), propagated with `!`, or replaced by `m.getor(k;default)`. Using it directly as a `$v` — `scores.get("alice")+1`, returning it as an `i64` — is `E4031`.
+
 ```toke
 m=exprs;
 f=demo():i64{
   let scores=@("alice":30;"bob":25);
-  < scores.get("alice")
+  < mt scores.get("alice") {$ok:v v;$err:e 0}
 };
 ```
 

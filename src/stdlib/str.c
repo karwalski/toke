@@ -176,7 +176,7 @@ ByteArray str_bytes(const char *s)
     ByteArray r = {NULL, 0};
     if (!s) return r;
     r.data = (const uint8_t *)s;
-    r.len  = (uint64_t)strlen(s);
+    r.len  = (uint64_t)tk_strlen(s);
     return r;
 }
 
@@ -258,7 +258,7 @@ const char *str_format(const char *fmt, int64_t arg)
 
     if (!spec_start || !spec_end || !conversion) {
         /* No format specifier found, return fmt as-is (with %% -> %) */
-        size_t len = strlen(fmt);
+        size_t len = tk_strlen(fmt);
         char *out = malloc(len + 1);
         if (!out) return NULL;
         char *w = out;
@@ -316,7 +316,7 @@ const char *str_format(const char *fmt, int64_t arg)
 
     /* Build the output: prefix + formatted arg + suffix */
     size_t prefix_len = (size_t)(spec_start - fmt);
-    size_t suffix_len = strlen(spec_end);
+    size_t suffix_len = tk_strlen(fmt) - (size_t)(spec_end - fmt);
     /* Handle %% in prefix and suffix */
     size_t out_len = prefix_len + (size_t)tmp_len + suffix_len + 1;
     char *out = malloc(out_len);
@@ -451,7 +451,7 @@ const char *str_repeat(const char *s, uint64_t n)
 int str_starts_with(const char *s, const char *prefix)
 {
     if (!s || !prefix) return 0;
-    size_t plen = strlen(prefix);
+    size_t plen = tk_strlen(prefix);
     return strncmp(s, prefix, plen) == 0 ? 1 : 0;
 }
 
@@ -516,7 +516,7 @@ uint64_t str_count(const char *s, const char *sub)
 {
     if (!s || !sub || *sub == '\0') return 0;
     uint64_t count  = 0;
-    size_t   sublen = strlen(sub);
+    size_t   sublen = tk_strlen(sub);
     const char *p   = s;
     while ((p = strstr(p, sub)) != NULL) {
         count++;
@@ -634,8 +634,8 @@ const char *str_trimsuffix(const char *s, const char *suffix)
 int64_t str_lastindex(const char *s, const char *sub)
 {
     if (!s || !sub) return -1;
-    size_t slen   = strlen(s);
-    size_t sublen = strlen(sub);
+    size_t slen   = tk_strlen(s);
+    size_t sublen = tk_strlen(sub);
     if (sublen == 0) return (int64_t)slen;
     if (sublen > slen) return -1;
     for (size_t i = slen - sublen + 1; i-- > 0; ) {
@@ -651,7 +651,7 @@ StrBracketResult str_matchbracket(const char *s)
     if (!s || s[0] != '[') {
         r.is_err = 1; r.err_msg = "not a bracket segment"; return r;
     }
-    size_t slen = strlen(s);
+    size_t slen = tk_strlen(s);
     if (slen < 3 || s[slen - 1] != ']') {
         /* need at least '[', one char of name, ']' */
         r.is_err = 1; r.err_msg = "not a bracket segment"; return r;
