@@ -584,7 +584,7 @@ Inline the expressions to avoid the shadowing locals.
 
 ## Pattern rules (Epic 131)
 
-Story 131.9. These rules encode `docs/spec/idiom-v0.4.md` rules 1, 2, 5, 6/8, 7 and the value-semantics gotcha from the syntax card as AST-decidable, low-false-positive checks. They run in the same pass as the base rules, need no type information, and are the rule ids the idiom judge (131.10) and the corpus sweep (131.13) consume. Three of them carry a deterministic `fix` (`single-use-let`, `string-concat-chain` when armed, `nested-if-ladder`); the rest are report-only.
+Story 131.9. These rules encode `docs/spec/idiom-v0.4.md` rules 1, 2, 5, 6/8, 7 and the value-semantics gotcha from the syntax card as AST-decidable, low-false-positive checks. They run in the same pass as the base rules, need no type information to *report* (the `single-use-let` *fix* consults the type checker, 131.59), and are the rule ids the idiom judge (131.10) and the corpus sweep (131.13) consume. Three of them carry a deterministic `fix` (`single-use-let`, `string-concat-chain` when armed, `nested-if-ladder`); the rest are report-only.
 
 Implementation notes shared by every pattern rule:
 
@@ -757,7 +757,8 @@ f=setbit(x:i64;y:i64):i64{
 
 - the initialiser is on the side-effect-free allowlist — literal (a string literal without interpolation), identifier, `x.field`/`x.len` on an identifier chain, `x.get(i)` on an identifier with an allowlisted index, and arithmetic / comparison / logic / unary / `as` over allowlisted operands; **any call** is off the list;
 - the single use is AST-visible (not inside `"\(…)"`), not under a `lp`, closure, `mt`, `sc` or `spawn` inside the next statement (re-evaluation or capture would change meaning), and not the initialiser of a `let y=mut.v` (`mut.<compound>` is a parse hazard);
-- the next statement does not assign or rebind any identifier the initialiser mentions.
+- the next statement does not assign or rebind any identifier the initialiser mentions;
+- **the inlined expression is the same typed value the binding was (131.59).** A `let` is not type-transparent in toke: `let count=segs.len` binds an untyped (i64) local while `segs.len` is u64, so `right>=count` and `right>=segs.len` are different comparisons, and `let n=a.len; n-4` is `-1` where `a.len-4` is RT002. `--lint` therefore type-checks the file silently first (imports, names, types — no diagnostics from those stages are reported) and offers the fix only when the file checks with no error, the `let` has **no type annotation**, and the checker gave the use and the initialiser **identical** types (an unknown type is never identical to anything). A **numeric literal** is typed by its slot, not by itself (beside a u64 it narrows and the operation lowers unsigned: `let k=5; a.len-k` is `-2`, `a.len-5` is RT002), so a literal is inlined only as an operand of a binary operator whose other operand is i64 (f64 for a float literal), or as the whole value of `<` in a function declared exactly `i64` (`f64`). A file that does not type-check — including one whose imports need `-I` paths that were not given — keeps the hint without a fix.
 
 The initialiser text is spliced at the use, parenthesised unless it is atomic, already parenthesised, or fills a whole expression slot (`f(v)`, `x=v`, `{v}`), and the `let` line is deleted. One fix covers the contiguous span from the `let` to the use, which is what makes chains of inlines compose under the overlap rule (see `--fix` rewrite mode). Otherwise the hint is reported without a `fix`.
 
