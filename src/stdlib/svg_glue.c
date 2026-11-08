@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_strhdr.h"
 
 static double i64_to_f64(int64_t i){ double d; memcpy(&d, &i, sizeof d); return d; }
 
@@ -147,7 +148,13 @@ int64_t tk_svg_append_w(int64_t doc, int64_t elem) {
     return doc;
 }
 
+/* 127.316: svg_render() returns the document's cached buffer, which the
+ * NEXT render of the same document frees -- so a toke string from an earlier
+ * svg.render(d) dangled once d was rendered again.  toke strings are never
+ * freed (runtime-abi §3), so the wrapper hands back its own copy: a sealed
+ * string (127.295, §3.1), whose length is then O(1). */
 int64_t tk_svg_render_w(int64_t doc) {
     if (!doc) return 0;
-    return (int64_t)(intptr_t)svg_render((TkSvgDoc *)(intptr_t)doc);
+    const char *s = svg_render((TkSvgDoc *)(intptr_t)doc);
+    return s ? (int64_t)(intptr_t)tks_strdup(s) : 0;
 }

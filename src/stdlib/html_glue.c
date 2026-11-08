@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_strhdr.h"
 
 /*
  * html.doc() takes no arguments -- stdlib/html.tki says so, docs/stdlib/html.md
@@ -85,10 +86,18 @@ int64_t tk_html_table_w(int64_t headers_i64, int64_t rows_i64) {
     return (int64_t)(intptr_t)node;
 }
 
+/* 127.316: html_render() returns the document's cached buffer, which the
+ * NEXT render of the same document frees -- so a toke string from an earlier
+ * html.render(d) dangled once d was rendered again.  toke strings are never
+ * freed (runtime-abi §3), so the wrapper hands back its own copy: a sealed
+ * string (127.295, §3.1), whose length is then O(1). */
+static int64_t html_str_copy(const char *s) {
+    return s ? (int64_t)(intptr_t)tks_strdup(s) : 0;
+}
+
 int64_t tk_html_render_w(int64_t doc) {
     if (!doc) return 0;
-    const char *s = html_render((TkHtmlDoc *)(intptr_t)doc);
-    return (int64_t)(intptr_t)s;
+    return html_str_copy(html_render((TkHtmlDoc *)(intptr_t)doc));
 }
 
 int64_t tk_html_style_w(int64_t doc, int64_t css) {
@@ -117,6 +126,5 @@ int64_t tk_html_docr_w(int64_t body) {
         TkHtmlNode *p = html_p((const char *)(intptr_t)body);
         if (p) html_append(doc, p);
     }
-    const char *s = html_render(doc);
-    return (int64_t)(intptr_t)s;
+    return html_str_copy(html_render(doc));
 }

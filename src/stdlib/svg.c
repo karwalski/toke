@@ -8,12 +8,18 @@
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code. Callers own the returned pointers.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): string inputs are measured with
+ * tk_strlen, and the animation splice uses its builders' lengths.  The
+ * element and document strings stay malloc'd (svg_free owns them); what
+ * reaches toke is sealed in svg_glue.c.
+ *
  * Story: 18.1.4
  */
 
 #include "svg.h"
 #include "strbuf.h"
 #include "tk_array.h"
+#include "tk_strhdr.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -605,7 +611,7 @@ static char *inject_animates(const char *src,
         const char *hit = strstr(data, needle);
         if (hit) {
             /* Find end of the opening element after the id attribute */
-            const char *end_tag = hit + strlen(needle);
+            const char *end_tag = hit + nd.len;
             while (*end_tag && !(*end_tag == '/' && *(end_tag+1) == '>')
                    && *end_tag != '>') {
                 end_tag++;
@@ -627,7 +633,7 @@ static char *inject_animates(const char *src,
             const char *close = strstr(data, "</svg>");
             insert_pos = close ? (size_t)(close - data) : out.len;
         }
-        strbuf_insertn(&out, insert_pos, atag, strlen(atag));
+        strbuf_insertn(&out, insert_pos, atag, at.len);
         strbuf_free(&at);
         strbuf_free(&nd);
     }
@@ -754,8 +760,8 @@ static void defs_append(TkSvgDoc *doc, const char *markup)
     if (!doc->defs_buf) {
         doc->defs_buf = strdup(markup);
     } else {
-        size_t old_len = strlen(doc->defs_buf);
-        size_t add_len = strlen(markup);
+        size_t old_len = tk_strlen(doc->defs_buf);
+        size_t add_len = tk_strlen(markup);
         doc->defs_buf  = (char *)realloc(doc->defs_buf,
                                          old_len + add_len + 1);
         memcpy(doc->defs_buf + old_len, markup, add_len + 1);

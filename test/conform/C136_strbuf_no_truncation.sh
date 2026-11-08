@@ -320,7 +320,7 @@ int main(void) {
     return 0;
 }
 C
-case_run svg "${WORK}/t_svg.c" "${S}/svg.c" -lm
+case_run svg "${WORK}/t_svg.c" "${S}/svg.c" "${S}/str.c" -lm   # 127.295: svg.c reads with tk_strlen
 
 # ── canvas ─────────────────────────────────────────────────────────────────
 cat > "${WORK}/t_canvas.c" <<'C'
