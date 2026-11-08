@@ -219,8 +219,10 @@ f=handler(req:i64):i64{
     $ok:v v;
     $err:e <router.bad("invalid rate")
   };
-  let term=mt str.toint(terms) {
-    $ok:v (v as u64);
+  (* keep the parsed term signed until it is validated: cast first and
+     "-5" wraps to a huge u64 that passes term<1 (127.328) *)
+  let termyears=mt str.toint(terms) {
+    $ok:v v;
     $err:e <router.bad("invalid term")
   };
   let extra=mt str.tofloat(extras) {
@@ -231,9 +233,10 @@ f=handler(req:i64):i64{
   if(annualrate<0.0||annualrate>1.0){
     <router.bad("rate must be between 0 and 1 (e.g. 0.065 for 6.5%)")
   };
-  if(term<1){
+  if(termyears<1){
     <router.bad("term must be at least 1 year")
   };
+  let term=(termyears as u64);
 
   let pmt=monthlypayment(principal;annualrate;term*12);
   let totals=calctotals(principal;annualrate;term;extra;pmt);
@@ -249,7 +252,7 @@ f=handler(req:i64):i64{
     "total_cost":str.concat("$";formatmoney(totalcost));
     "principal":formatmoney(principal);
     "rate":rates;
-    "term":str.fromint(term as i64);
+    "term":str.fromint(termyears);
     "extra":formatmoney(extra);
     "schedule_rows":schedulehtml;
     "chart_svg":chartsvg
