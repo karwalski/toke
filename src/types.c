@@ -4067,6 +4067,17 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * stored, so the emitter sees the rtypes it saw before. */
         if ((!at || at->kind == TY_UNKNOWN) && strcmp(ps, "str") == 0)
             at = std_array_ret(cx, an, 0);
+        /* 138.26: a std call whose interface returns a RECORD, written in
+         * place -- `http.geturl(http.client(u))` passed --check while the
+         * same client bound by `let` first was E4031: infer() adopts an
+         * in-place record return only for a map (the emitter keys on the
+         * rtype), so the argument reached here untyped.  The declared
+         * record (call_decl_ret_type, the 127.66 rule) is judged here and
+         * never stored, as 127.314 does for an array. */
+        if ((!at || at->kind == TY_UNKNOWN) && an->kind == NODE_CALL_EXPR) {
+            Type *rt = call_decl_ret_type(cx, an);
+            if (rt && rt->kind == TY_STRUCT) at = rt;
+        }
         if (!at || at->kind == TY_UNKNOWN) continue;
         if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
         /* 127.304: two `i64` parameters take a str by contract.
