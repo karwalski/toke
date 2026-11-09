@@ -1440,6 +1440,11 @@ validation. The message names the problem. There is no `fix` field: the
 repair is to re-emit the file from its source. See
 `docs/architecture/binary-ir-design.md` §3.8.
 
+`tkc --read-tkir` (story 127.345) emits E9021 for a file it cannot read or
+decode (missing, truncated, bad magic or version, malformed section, invalid
+opcode or register); it does not require the AST section, which it reports as
+absent. See §3.10 of the same document.
+
 ### E9022
 
 **Stdlib directory not found**

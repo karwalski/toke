@@ -304,6 +304,7 @@ static const char *const HELP_SECTIONS[] = {
     "  --emit-deps         Print stdlib C sources and linker flags needed, then exit\n"
     "  --emit-tkir         Write the type-checked program as binary IR (.tkir)\n"
     "  --from-tkir         Inputs are .tkir files: compile them as their source\n"
+    "  --read-tkir         Print a summary of each .tkir input and exit\n"
     "  -I <dir>            Add .tki interface search directory (repeatable)\n"
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O2)\n"
@@ -1833,6 +1834,7 @@ int main(int argc, char **argv)
     int do_lint = 0, do_fix = 0, lint_dry_run = 0;
     int emit_tkir_flag = 0;
     int from_tkir = 0;   /* 76.1.6c */
+    int read_tkir = 0;   /* 127.345 */
     int emit_deps = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
@@ -1895,6 +1897,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--dry-run"))          lint_dry_run = 1;
         else if (!strcmp(argv[i], "--emit-tkir"))       emit_tkir_flag = 1;
         else if (!strcmp(argv[i], "--from-tkir"))       from_tkir = 1;
+        else if (!strcmp(argv[i], "--read-tkir"))       read_tkir = 1;
         else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
         else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
         else if (!strcmp(argv[i], "--decompress"))      do_decompress = 1;
@@ -2087,6 +2090,23 @@ int main(int argc, char **argv)
               "--fmt, --pretty, --expand, --sourcemap, --min, --migrate, --lint, --fix "
               "or the --companion modes, which work on source text\n", stderr);
         return EUSAGE;
+    }
+
+    /* 127.345: --read-tkir prints each .tkir input (tkir_dump plus the
+     * format-1.2 TEXT/AST section sizes) and exits; it compiles nothing, so
+     * it needs no stdlib.  A file that does not decode gets E9021. */
+    if (read_tkir) {
+        diag_set_format(dsarif ? DIAG_FMT_SARIF :
+                        djson  ? DIAG_FMT_JSON  :
+                        dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
+        int bad = 0;
+        for (int fi = 0; fi < source_file_count; fi++) {
+            if (source_file_count > 1) printf("== %s ==\n", source_files[fi]);
+            if (tkir_print_file(source_files[fi], stdout) < 0) bad = 1;
+        }
+        fflush(stdout);
+        diag_flush_sarif();
+        return bad ? ECOMPILE : 0;
     }
 
     /* 127.179: find the stdlib before anything consults it.  The purely

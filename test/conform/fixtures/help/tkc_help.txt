@@ -9,6 +9,7 @@ Flags:
   --emit-deps         Print stdlib C sources and linker flags needed, then exit
   --emit-tkir         Write the type-checked program as binary IR (.tkir)
   --from-tkir         Inputs are .tkir files: compile them as their source
+  --read-tkir         Print a summary of each .tkir input and exit
   -I <dir>            Add .tki interface search directory (repeatable)
   -g / --debug        Emit DWARF debug metadata for lldb/gdb
   -O0/-O1/-O2/-O3    Optimization level (default: -O2)
