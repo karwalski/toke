@@ -124,7 +124,7 @@ def test_temspec_report_passes_the_claims_gate(superword, patcher, tmp_path):
         r["form"] = p.stem
         rows.append(r)
     rep = ct.temspec_report(str(d), "pat", rows, c, "0" * 64)
-    lines = [ln for ln in rep.splitlines() if ln.startswith("- ") and "not measured" not in ln]
+    lines = [ln for ln in rep.splitlines() if ln.startswith("- ") and not ln.startswith("- note:") and "not measured" not in ln]
     assert len(lines) >= len(ct.COLUMNS) + 2
     for ln in lines:                                       # every comparison carries all four fields
         assert "metric: " in ln and "tokenizer: " in ln and "baseline: " in ln and "N = " in ln
