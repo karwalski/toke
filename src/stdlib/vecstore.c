@@ -15,6 +15,7 @@
  * Story: 72.5.3
  */
 
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include "vecstore.h"
 
 #include <stdlib.h>
@@ -127,8 +128,8 @@ static int normalise(float *dst, const float *src, int32_t dim)
 /* Build the file path for a collection: {data_dir}/{name}.vecs */
 static char *make_file_path(const char *data_dir, const char *name)
 {
-    size_t dlen = strlen(data_dir);
-    size_t nlen = strlen(name);
+    size_t dlen = tk_strlen(data_dir);
+    size_t nlen = tk_strlen(name);
     /* data_dir + "/" + name + ".vecs" + NUL */
     size_t total = dlen + 1 + nlen + 5 + 1;
     char *path = (char *)malloc(total);
@@ -206,7 +207,7 @@ static int save_fail(FILE *fp, const char *tmp)
 static int collection_save(TkVecCollection *col)
 {
     if (!col || !col->file_path) return 0;
-    size_t plen = strlen(col->file_path);
+    size_t plen = tk_strlen(col->file_path);
     char *tmp = (char *)malloc(plen + 5);
     if (!tmp) return 0;
     memcpy(tmp, col->file_path, plen);
@@ -236,8 +237,8 @@ static int collection_write(TkVecCollection *col, const char *tmp)
 
     for (int32_t i = 0; i < col->count; i++) {
         VecEntry *e = &col->entries[i];
-        uint32_t id_len  = (uint32_t)strlen(e->id);
-        uint32_t pay_len = (uint32_t)strlen(e->payload);
+        uint32_t id_len  = (uint32_t)tk_strlen(e->id);
+        uint32_t pay_len = (uint32_t)tk_strlen(e->payload);
 
         if (fwrite(&id_len,     sizeof id_len,  1,        fp) != 1)         return save_fail(fp, tmp);
         if (fwrite(e->id,       1,              id_len,   fp) != id_len)    return save_fail(fp, tmp);
@@ -367,7 +368,7 @@ TkVecStore *vecstore_open(const char *data_dir)
     TkVecStore *vs = (TkVecStore *)calloc(1, sizeof(TkVecStore));
     if (!vs) return NULL;
 
-    vs->data_dir = (char *)malloc(strlen(data_dir) + 1);
+    vs->data_dir = (char *)malloc(tk_strlen(data_dir) + 1);
     if (!vs->data_dir) { free(vs); return NULL; }
     strcpy(vs->data_dir, data_dir);
 
@@ -474,7 +475,7 @@ TkVecCollection *vecstore_collection(TkVecStore *vs, const char *name)
     TkVecCollection *col = (TkVecCollection *)calloc(1, sizeof(TkVecCollection));
     if (!col) { pthread_mutex_unlock(&vs->mutex); return NULL; }
 
-    col->name = (char *)malloc(strlen(name) + 1);
+    col->name = (char *)malloc(tk_strlen(name) + 1);
     if (!col->name) { free(col); pthread_mutex_unlock(&vs->mutex); return NULL; }
     strcpy(col->name, name);
 
@@ -570,7 +571,7 @@ int vecstore_upsert(TkVecCollection *col,
              * left with a NULL embedding AND payload (normed leaked), and
              * the next save did strlen(NULL).  Allocate first; on failure
              * the entry is untouched. */
-            char *np = (char *)malloc(strlen(payload) + 1);
+            char *np = (char *)malloc(tk_strlen(payload) + 1);
             if (!np) { free(normed); return 0; }
             strcpy(np, payload);
             free(col->entries[i].embedding);
@@ -596,8 +597,8 @@ int vecstore_upsert(TkVecCollection *col,
 
     /* Insert */
     VecEntry *e   = &col->entries[col->count];
-    e->id         = (char *)malloc(strlen(id) + 1);
-    e->payload    = (char *)malloc(strlen(payload) + 1);
+    e->id         = (char *)malloc(tk_strlen(id) + 1);
+    e->payload    = (char *)malloc(tk_strlen(payload) + 1);
     if (!e->id || !e->payload) {
         free(e->id);
         free(e->payload);
@@ -623,8 +624,8 @@ static void insert_sorted(TkSearchResult *arr, int32_t *n, int32_t cap,
         /* Append and bubble up */
         int32_t pos = *n;
         arr[pos].score   = score;
-        arr[pos].id      = (char *)malloc(strlen(id) + 1);
-        arr[pos].payload = (char *)malloc(strlen(payload) + 1);
+        arr[pos].id      = (char *)malloc(tk_strlen(id) + 1);
+        arr[pos].payload = (char *)malloc(tk_strlen(payload) + 1);
         if (!arr[pos].id || !arr[pos].payload) {
             free(arr[pos].id);
             free(arr[pos].payload);
@@ -645,8 +646,8 @@ static void insert_sorted(TkSearchResult *arr, int32_t *n, int32_t cap,
         free(arr[*n - 1].id);
         free(arr[*n - 1].payload);
         arr[*n - 1].score   = score;
-        arr[*n - 1].id      = (char *)malloc(strlen(id) + 1);
-        arr[*n - 1].payload = (char *)malloc(strlen(payload) + 1);
+        arr[*n - 1].id      = (char *)malloc(tk_strlen(id) + 1);
+        arr[*n - 1].payload = (char *)malloc(tk_strlen(payload) + 1);
         if (!arr[*n - 1].id || !arr[*n - 1].payload) {
             free(arr[*n - 1].id);
             free(arr[*n - 1].payload);

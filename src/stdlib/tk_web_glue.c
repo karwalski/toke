@@ -17,6 +17,7 @@
  * Story: 56.8.7 (ooke toke-only build)
  */
 
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include "http.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "bytes_rt.h"   /* 135.19: tk_bytes_pack */
@@ -1054,7 +1055,7 @@ static const TkStaticMount *staticdir_find(const char *rpath)
     const TkStaticMount *best = NULL;
     size_t bestlen = 0;
     for (int i = 0; i < g_staticdir_count; i++) {
-        size_t n = strlen(g_staticdirs[i].prefix);
+        size_t n = tk_strlen(g_staticdirs[i].prefix);
         if (strncmp(rpath, g_staticdirs[i].prefix, n) != 0) continue;
         if (best && n <= bestlen) continue;
         best = &g_staticdirs[i];
@@ -1135,7 +1136,7 @@ static int staticdir_resolve(const char *root, const char *path,
     if (!realpath(root, rroot)) return 404;
     if (!realpath(path, rfull))
         return (errno == ENOENT || errno == ENOTDIR) ? 404 : 403;
-    size_t rl = strlen(rroot);
+    size_t rl = tk_strlen(rroot);
     if (strncmp(rfull, rroot, rl) != 0 ||
         (rfull[rl] != '\0' && rfull[rl] != '/' && !(rl == 1 && rroot[0] == '/')))
         return 403;
@@ -1214,7 +1215,7 @@ static Res staticdir_handler(Req req) {
     if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
         /* The directory's index.html is resolved and checked again: it may
          * itself be a symlink out of the tree. */
-        size_t fplen = strlen(filepath);
+        size_t fplen = tk_strlen(filepath);
         jn = snprintf(joined, sizeof joined, "%s%sindex.html", filepath,
                       (fplen > 0 && filepath[fplen-1] == '/') ? "" : "/");
         if (jn < 0 || (size_t)jn >= sizeof joined) return mk404();
@@ -1247,7 +1248,7 @@ static Res staticdir_handler(Req req) {
         char *var = varies && ae ? content_find_precompressed(filepath, ae) : NULL;
         char vreal[PATH_MAX];
         if (var && staticdir_resolve(mnt->root, var, vreal, sizeof vreal) == 0) {
-            size_t fl = strlen(filepath);
+            size_t fl = tk_strlen(filepath);
             const char *sfx = var + fl;   /* the variant is filepath + suffix */
             coding = !strcmp(sfx, ".br") ? "br" : !strcmp(sfx, ".gz") ? "gzip"
                    : !strcmp(sfx, ".zst") ? "zstd" : NULL;
@@ -1483,7 +1484,7 @@ static void scan_pages_recursive(const char *dir_path, const char *prefix,
         }
 
         /* Check for .tkt extension */
-        size_t nlen = strlen(ent->d_name);
+        size_t nlen = tk_strlen(ent->d_name);
         if (nlen < 5 || strcmp(ent->d_name + nlen - 4, ".tkt") != 0) continue;
 
         /* Only register pages (files containing {! layout() !}), not layouts.
@@ -1661,7 +1662,7 @@ int64_t tk_http_posturl_w(int64_t url, int64_t body) {
     free(base_url);
     if (!c) return 0;
     HttpClientResp resp = http_post(c, path_str,
-                                     (const uint8_t *)b, strlen(b),
+                                     (const uint8_t *)b, tk_strlen(b),
                                      "application/json");
     http_client_free(c);
     if (resp.is_err || !resp.body) return 0;
@@ -1679,7 +1680,7 @@ int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
     HttpClient *c = (HttpClient *)(intptr_t)client;
     const char *b = body ? (const char *)(intptr_t)body : "";
     HttpClientResp resp = http_post(c, (const char *)(intptr_t)path,
-                                     (const uint8_t *)b, strlen(b),
+                                     (const uint8_t *)b, tk_strlen(b),
                                      "application/json");
     if (resp.is_err || !resp.body) return 0;
     char *s = (char *)malloc(resp.body_len + 1);
@@ -1769,7 +1770,7 @@ int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) {
     HttpClient *c = (HttpClient *)(intptr_t)client;
     const char *b = body ? (const char *)(intptr_t)body : "";
     HttpClientResp resp = http_put(c, (const char *)(intptr_t)path,
-                                    (const uint8_t *)b, strlen(b),
+                                    (const uint8_t *)b, tk_strlen(b),
                                     "application/json");
     if (resp.is_err || !resp.body) return 0;
     char *s = (char *)malloc(resp.body_len + 1);
@@ -1929,7 +1930,7 @@ int64_t tk_http_geturl_w(int64_t url) {
     else if (strncmp(p, "https://", 8) == 0) p += 8;
     else return http_raise("http.geturl: the url must start with http:// or https://", 0);
     const char *slash = strchr(p, '/');
-    size_t base_len = slash ? (size_t)(slash - u) : strlen(u);
+    size_t base_len = slash ? (size_t)(slash - u) : tk_strlen(u);
     char *base = (char *)malloc(base_len + 1);
     if (!base) return http_raise("out of memory", 0);
     memcpy(base, u, base_len); base[base_len] = '\0';
@@ -1999,7 +2000,7 @@ int64_t tk_http_listen_w(int64_t addr, int64_t handler) {
         } else if (a[0] >= '0' && a[0] <= '9' && !strchr(a, '.')) {
             ps = a;
         } else {
-            size_t hl = strlen(a);
+            size_t hl = tk_strlen(a);
             if (hl >= sizeof hostbuf)
                 return plain_start_failed("http.listen", -1, "host");
             memcpy(hostbuf, a, hl + 1);
@@ -2249,7 +2250,7 @@ int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers
     }
 
     const char *slash = strchr(p, '/');
-    size_t base_len = slash ? (size_t)(slash - u) : strlen(u);
+    size_t base_len = slash ? (size_t)(slash - u) : tk_strlen(u);
     char *base = (char *)malloc(base_len + 1);
     if (!base) return http_raise("out of memory", 0);
     memcpy(base, u, base_len); base[base_len] = '\0';
@@ -2257,7 +2258,7 @@ int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers
     free(base);
     if (!c) return http_raise("out of memory", 0);
     HttpClientResp r = http_request_headers(c, "POST", slash ? slash : "/",
-                                            (const uint8_t *)body, strlen(body),
+                                            (const uint8_t *)body, tk_strlen(body),
                                             "application/json", hv, (uint64_t)nh);
     http_client_free(c);
     return client_result(r);

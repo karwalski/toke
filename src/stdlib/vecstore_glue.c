@@ -6,6 +6,7 @@
  * cosine similarity.
  */
 
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include "vecstore.h"
 #include "capabilities.h"   /* 136.15 x 121.22: flush/close take fs.write */
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
@@ -147,11 +148,12 @@ int64_t tk_vecstore_search_w(int64_t coll, int64_t query_vec, int64_t k, int64_t
         /* Copy the strings out: vecstore_free_results owns the originals. */
         const char *src_id  = results.items[i].id      ? results.items[i].id      : "";
         const char *src_pay = results.items[i].payload  ? results.items[i].payload : "";
-        char *id  = (char *)malloc(strlen(src_id) + 1);
-        char *pay = (char *)malloc(strlen(src_pay) + 1);
-        if (!id || !pay) { free(id); free(pay); free(sr); break; }
-        strcpy(id, src_id);
-        strcpy(pay, src_pay);
+        /* 127.295: sealed (runtime-abi §3.1) -- toke owns them and reads
+         * .len in O(1); a sealed string is never freed, so a failed second
+         * copy leaves the first one to the heap like any toke string. */
+        char *id  = tks_strdup(src_id);
+        char *pay = tks_strdup(src_pay);
+        if (!id || !pay) { free(sr); break; }
         int64_t score_bits;
         memcpy(&score_bits, &results.items[i].score, sizeof score_bits);
         sr[0] = (int64_t)(intptr_t)id;   /* .id      */
