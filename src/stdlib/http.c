@@ -3215,6 +3215,136 @@ static const char *proxy_connect_tunnel(int fd, const char *host, const char *po
 
 /* ── Raw HTTP request helper ───────────────────────────────────────── */
 
+/* 138.31: why a client read returned no data.  A body with neither
+ * Content-Length nor chunked encoding ends at connection close (RFC 9112
+ * 6.3), so its read loop must tell a close (the end of the body) from a
+ * timeout or reset (the body was cut).  Both used to look like n <= 0. */
+enum {
+    CLIENT_RECV_EOF = 0,        /* orderly close: recv()==0, TLS close_notify */
+    CLIENT_RECV_EOF_NOTIFY,     /* TLS: TCP close without close_notify */
+    CLIENT_RECV_TIMEOUT,        /* SO_RCVTIMEO expired (EAGAIN / WANT_READ) */
+    CLIENT_RECV_RESET,          /* ECONNRESET */
+    CLIENT_RECV_FAILED,         /* any other socket error (errno kept) */
+    CLIENT_RECV_TLS             /* a TLS protocol error */
+};
+
+/* Is this end of a read a close, so a close-delimited body is complete?
+ *
+ * TLS without close_notify (CLIENT_RECV_EOF_NOTIFY) counts as a close.
+ * RFC 9112 9.8 says a close-delimited response over TLS is complete only
+ * after a valid closure alert, but many servers close the TCP connection
+ * without one; treating that as an error would fail ordinary https bodies
+ * that worked before.  This is the same choice as Python's ssl module
+ * (suppress_ragged_eofs=True, its default).  A body with a Content-Length
+ * or chunked framing is checked against its framing either way, so the
+ * truncation this permits is limited to close-delimited bodies.  The one
+ * place the choice is made: docs/stdlib/http.md says so. */
+#define CLIENT_RECV_IS_CLOSE(h_) \
+    ((h_) == CLIENT_RECV_EOF || (h_) == CLIENT_RECV_EOF_NOTIFY)
+
+static int client_recv_errno_kind(int e)
+{
+    if (e == EAGAIN || e == EWOULDBLOCK || e == ETIMEDOUT) return CLIENT_RECV_TIMEOUT;
+    if (e == ECONNRESET || e == EPIPE) return CLIENT_RECV_RESET;
+    return CLIENT_RECV_FAILED;
+}
+
+/* One read for client_do_request.  Returns the byte count (> 0), or 0 with
+ * *how saying why nothing was read.  *err_out gets errno for
+ * CLIENT_RECV_FAILED (else 0); *tls_reason gets the OpenSSL reason string
+ * for CLIENT_RECV_TLS. */
+static int client_recv(int fd, void *sslp, char *buf, size_t len,
+                       int *how, int *err_out, char *tls_reason, size_t trcap)
+{
+    if (len > 0x7fffffff) len = 0x7fffffff;
+    *err_out = 0;
+    if (tls_reason && trcap) tls_reason[0] = '\0';
+#ifdef TK_HAVE_OPENSSL
+    if (sslp) {
+        SSL *ssl = (SSL *)sslp;
+        /* SSL_get_error needs an empty error queue before the call
+         * (SSL_get_error(3)). */
+        ERR_clear_error();
+        errno = 0;
+        int r = SSL_read(ssl, buf, (int)len);
+        if (r > 0) return r;
+        int saved = errno;
+        int e = SSL_get_error(ssl, r);
+        switch (e) {
+        case SSL_ERROR_ZERO_RETURN:          /* close_notify */
+            *how = CLIENT_RECV_EOF; break;
+        case SSL_ERROR_WANT_READ:            /* blocking socket: SO_RCVTIMEO */
+        case SSL_ERROR_WANT_WRITE:
+            *how = CLIENT_RECV_TIMEOUT; break;
+        case SSL_ERROR_SYSCALL:
+            /* Before OpenSSL 3.0 an EOF without close_notify was reported
+             * here with errno 0 and nothing on the error stack. */
+            if (saved == 0 && ERR_peek_error() == 0) *how = CLIENT_RECV_EOF_NOTIFY;
+            else {
+                *how = client_recv_errno_kind(saved);
+                if (*how == CLIENT_RECV_FAILED) *err_out = saved;
+            }
+            break;
+        case SSL_ERROR_SSL: {
+            /* OpenSSL 3.0 and later (4.0.x included) report an EOF without
+             * close_notify as SSL_ERROR_SSL with reason
+             * SSL_R_UNEXPECTED_EOF_WHILE_READING (SSL_get_error(3) NOTES);
+             * we do not set SSL_OP_IGNORE_UNEXPECTED_EOF, which would hide
+             * the difference from every read. */
+            unsigned long ec = ERR_peek_error();
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+            if (ERR_GET_LIB(ec) == ERR_LIB_SSL
+                && ERR_GET_REASON(ec) == SSL_R_UNEXPECTED_EOF_WHILE_READING) {
+                *how = CLIENT_RECV_EOF_NOTIFY; break;
+            }
+#endif
+            *how = CLIENT_RECV_TLS;
+            if (tls_reason && trcap) {
+                const char *rs = ec ? ERR_reason_error_string(ec) : NULL;
+                snprintf(tls_reason, trcap, "%s", rs ? rs : "unknown");
+            }
+            break;
+        }
+        default:
+            *how = CLIENT_RECV_TLS;
+            if (tls_reason && trcap) snprintf(tls_reason, trcap, "SSL_get_error %d", e);
+            break;
+        }
+        ERR_clear_error();
+        return 0;
+    }
+#else
+    (void)sslp; (void)trcap;
+#endif
+    for (;;) {
+        ssize_t n = recv(fd, buf, len, 0);
+        if (n > 0) return (int)n;
+        if (n == 0) { *how = CLIENT_RECV_EOF; return 0; }
+        if (errno == EINTR) continue;
+        *how = client_recv_errno_kind(errno);
+        if (*how == CLIENT_RECV_FAILED) *err_out = errno;
+        return 0;
+    }
+}
+
+/* What ended a read, for an $httperr msg. */
+static const char *client_recv_how(int how, int err, const char *tls_reason,
+                                   char *buf, size_t cap)
+{
+    switch (how) {
+    case CLIENT_RECV_EOF:        return "connection closed";
+    case CLIENT_RECV_EOF_NOTIFY: return "connection closed (TLS, without close_notify)";
+    case CLIENT_RECV_TIMEOUT:    return "receive timed out";
+    case CLIENT_RECV_RESET:      return "connection reset by peer";
+    case CLIENT_RECV_TLS:
+        snprintf(buf, cap, "TLS error (%s)", tls_reason && tls_reason[0] ? tls_reason : "unknown");
+        return buf;
+    default:
+        snprintf(buf, cap, "receive failed (%s)", strerror(err));
+        return buf;
+    }
+}
+
 /*
  * client_do_request — send method+path request via POSIX sockets.
  * For non-streaming requests, reads entire response and returns it.
@@ -3356,11 +3486,13 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
     }
 #define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, 0))
-#define CLIENT_RECV(buf, len) (is_https ? SSL_read(ssl, buf, (int)(len)) : (int)recv(fd, buf, len, 0))
+#define CLIENT_RECV(buf, len) client_recv(fd, is_https ? (void *)ssl : NULL, buf, len, \
+                                          &rd_how, &rd_err, rd_tls, sizeof rd_tls)
 #define CLIENT_CLOSE() do { if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); } if (ssl_ctx) SSL_CTX_free(ssl_ctx); close(fd); } while(0)
 #else
 #define CLIENT_SEND(buf, len) send(fd, buf, len, 0)
-#define CLIENT_RECV(buf, len) (int)recv(fd, buf, len, 0)
+#define CLIENT_RECV(buf, len) client_recv(fd, NULL, buf, len, \
+                                          &rd_how, &rd_err, rd_tls, sizeof rd_tls)
 #define CLIENT_CLOSE() close(fd)
 #endif
 
@@ -3436,8 +3568,9 @@ static HttpClientResp client_do_request(HttpClient *c,
      * the 8 bytes a Content-Length promised (loke MK19.11).  The three
      * places: a header block that never reaches its blank line, a
      * Content-Length body that is short, and a chunked body that ends before
-     * its last (zero-size) chunk.  A body with neither header still ends at
-     * connection close (RFC 9112 6.3), unchanged.
+     * its last (zero-size) chunk.  A body with neither header ends at
+     * connection close (RFC 9112 6.3) -- and, since 138.31, only at a close:
+     * a timeout or reset before it is $err too (client_recv).
      *
      * The chunked body is now walked chunk by chunk as it arrives.  It used
      * to be "complete" as soon as the five bytes 0\r\n\r\n appeared anywhere
@@ -3454,7 +3587,7 @@ static HttpClientResp client_do_request(HttpClient *c,
     size_t content_length = 0;
     uint64_t status = 0;
     const char *read_err = NULL;
-    char read_err_buf[200];
+    char read_err_buf[320];
     uint8_t *dec = NULL;      /* chunked: the decoded body */
     size_t dec_len = 0, dec_cap = 0;
 
@@ -3465,7 +3598,11 @@ static HttpClientResp client_do_request(HttpClient *c,
             if (!tmp_) { read_err = "out of memory"; goto read_done; }  \
             resp = tmp_; cap *= 2;                                      \
         } } while (0)
-#define CLIENT_HOW(n_) ((n_) == 0 ? "connection closed" : "receive timed out or failed")
+    /* 138.31: why the last read returned nothing (client_recv) */
+    int rd_how = CLIENT_RECV_EOF, rd_err = 0;
+    char rd_tls[120] = "", rd_how_buf[160];
+#define CLIENT_HOW(n_) ((void)(n_), client_recv_how(rd_how, rd_err, rd_tls, \
+                                                     rd_how_buf, sizeof rd_how_buf))
 
     /* Phase 1: read until we have full headers (\r\n\r\n) */
     while (!hdr_end_ptr) {
@@ -3617,11 +3754,22 @@ static HttpClientResp client_do_request(HttpClient *c,
             resp[used] = '\0';
         }
     } else if (body_mode == 3) {
-        /* read until connection close / timeout (original behavior) */
+        /* Read until the connection closes (RFC 9112 6.3).  138.31: only a
+         * close ends the body; a timeout, a reset or a TLS error before it
+         * means the body was cut, and used to be answered $ok with what had
+         * arrived.  CLIENT_RECV_IS_CLOSE says which ends count as a close
+         * (TLS without close_notify does -- see client_recv). */
         for (;;) {
             CLIENT_GROW();
             n = CLIENT_RECV(resp + used, cap - used - 1);
-            if (n <= 0) break;
+            if (n <= 0) {
+                if (CLIENT_RECV_IS_CLOSE(rd_how)) break;
+                snprintf(read_err_buf, sizeof read_err_buf,
+                         "incomplete response: %s after %zu body bytes of a body with no Content-Length (it ends only at connection close)",
+                         CLIENT_HOW(n), used - hdr_end_off);
+                read_err = read_err_buf;
+                goto read_done;
+            }
             used += (size_t)n;
         }
     }
