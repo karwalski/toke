@@ -3160,6 +3160,11 @@ static int client_tcp_connect(const char *host, const char *port,
     for (rp = res; rp != NULL; rp = rp->ai_next) {
         fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd < 0) continue;
+        /* 127.341: a server that closes before the request is fully sent must
+         * not kill the client with SIGPIPE.  SO_NOSIGPIPE here (Darwin/BSD)
+         * and HTTP_SEND_FLAGS on every client send() (MSG_NOSIGNAL, Linux)
+         * turn that into EPIPE, which each send site already reports. */
+        http_sock_nosigpipe(fd);
         if (timeout_ms > 0) {
             struct timeval tv;
             tv.tv_sec  = (long)(timeout_ms / 1000);
@@ -3486,12 +3491,12 @@ static HttpClientResp client_do_request(HttpClient *c,
             return err_resp_client(m, 0);
         }
     }
-#define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, 0))
+#define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, HTTP_SEND_FLAGS))
 #define CLIENT_RECV(buf, len) client_recv(fd, is_https ? (void *)ssl : NULL, buf, len, \
                                           &rd_how, &rd_err, rd_tls, sizeof rd_tls)
 #define CLIENT_CLOSE() do { if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); } if (ssl_ctx) SSL_CTX_free(ssl_ctx); close(fd); } while(0)
 #else
-#define CLIENT_SEND(buf, len) send(fd, buf, len, 0)
+#define CLIENT_SEND(buf, len) send(fd, buf, len, HTTP_SEND_FLAGS)
 #define CLIENT_RECV(buf, len) client_recv(fd, NULL, buf, len, \
                                           &rd_how, &rd_err, rd_tls, sizeof rd_tls)
 #define CLIENT_CLOSE() close(fd)
@@ -4002,7 +4007,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n",
             host, port, host, port);
         if (clen < 0 || (size_t)clen >= sizeof(connect_buf) ||
-            send(fd, connect_buf, (size_t)clen, 0) < 0) {
+            send(fd, connect_buf, (size_t)clen, HTTP_SEND_FLAGS) < 0) {
             close(fd);
             result.is_err  = 1;
             result.err_msg = hstrdup("proxy CONNECT send failed");
@@ -4066,14 +4071,14 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
         return result;
     }
 
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0) {
+    if (send(fd, req_buf, (size_t)req_len, HTTP_SEND_FLAGS) < 0) {
         close(fd);
         result.is_err  = 1;
         result.err_msg = hstrdup("send failed");
         return result;
     }
     if (req.body && req.body_len > 0) {
-        if (send(fd, req.body, (size_t)req.body_len, 0) < 0) {
+        if (send(fd, req.body, (size_t)req.body_len, HTTP_SEND_FLAGS) < 0) {
             close(fd);
             result.is_err  = 1;
             result.err_msg = hstrdup("send body failed");
@@ -4352,7 +4357,7 @@ int http_downloadfile(HttpClient *c, const char *url,
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
         close(fd); return -1;
     }
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0) {
+    if (send(fd, req_buf, (size_t)req_len, HTTP_SEND_FLAGS) < 0) {
         close(fd); return -1;
     }
 
