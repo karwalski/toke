@@ -429,6 +429,22 @@ input stepped over the NUL); its result is sealed (`tks_dup` of the scanned
 value, which can no longer hold a 0 byte).  Gate: C920 (ASan C driver and
 an ASan-built toke program under `TK_STR_VERIFY=1`).
 
+**Step 5, third tranche (story 127.295, Batch Z105).**  The C callers that
+held `std.encoding` back were changed with it: every encoding string result
+(`base32`, `b64encode`, `b64urlencode`, `hexencode`, `urlencode`,
+`urldecode` — which drops `%00`, so its count is the C-string length) is
+sealed, and `auth.c`, `acme.c` and `http.c`'s form parser no longer free
+them (`http_form_free` frees only the field array).  `std.auth` converted
+whole: every reader uses `tk_strlen`, and the token, `jwtverify`/
+`jwtdecode` claim strings, API key, bearer token, OAuth2 authorize URL and
+TOTP URI/secret are sealed (the glue now hands `jwtverify`'s claims to toke
+as they are instead of copying them); `JwtDecodedClaims.raw_payload` (bytes
+that may hold a 0) and `auth_password_hash` (std.crypto's bcrypt producer)
+stay malloc'd.  `acme.c`: every reader uses `tk_strlen`; its client strings
+are internal storage that never reaches toke.  Gate: C990 (ASan C drivers
+over encoding, auth, the form parser and `acme_jws`, plus a toke program
+under `TK_STR_VERIFY=1`).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

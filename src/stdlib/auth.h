@@ -14,7 +14,12 @@
  * Implementation is self-contained (no external dependencies beyond libc).
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
- * compiler code. Callers own the returned pointers.
+ * compiler code.
+ *
+ * Ownership (127.295, runtime-abi §3.1): every string result is a SEALED
+ * string from the string heap (tk_strhdr.h) -- never free, write or realloc
+ * it -- except JwtDecodedClaims.raw_payload and auth_password_hash's .ok,
+ * which are malloc'd and freed by the caller.
  *
  * Story: 14.1.3
  */
@@ -32,7 +37,7 @@ typedef struct {
 
 /* Result of auth_jwtsign. */
 typedef struct {
-    const char *ok;     /* heap-allocated JWT string; NULL on error */
+    const char *ok;     /* sealed JWT string; NULL on error */
     int         is_err;
     const char *err_msg;
 } JwtResult;
@@ -49,8 +54,8 @@ typedef struct {
  * ----------------------------------------------------------------------- */
 
 /* auth.jwtsign — build a signed HS256 JWT from claims and secret.
- * Returns JwtResult; on success .ok is a heap-allocated string the caller
- * must free(), .is_err == 0.  On error .is_err == 1, .ok == NULL. */
+ * Returns JwtResult; on success .ok is a sealed string (never freed),
+ * .is_err == 0.  On error .is_err == 1, .ok == NULL. */
 JwtResult       auth_jwtsign(JwtClaims claims, ByteArray secret);
 
 /* auth.jwtverify — verify token signature and parse claims.
@@ -67,8 +72,8 @@ int             auth_jwtexpired(const char *token);
  * ----------------------------------------------------------------------- */
 
 /* auth_apikeygenerate — generate a fresh API key: 32 random bytes encoded
- * as URL-safe base64 (no padding).  Returns a heap-allocated string; caller
- * must free().  Canonical name per std.auth contract. */
+ * as URL-safe base64 (no padding).  Returns a sealed string (never freed).
+ * Canonical name per std.auth contract. */
 const char     *auth_apikeygenerate(void);
 
 
@@ -82,15 +87,15 @@ int             auth_apikeyvalidate(const char *provided, const char *stored);
 
 /* Result of auth_bearerextract. */
 typedef struct {
-    const char *ok;      /* heap-allocated token string; NULL on error */
+    const char *ok;      /* sealed token string; NULL on error */
     int         is_err;
     const char *err_msg;
 } BearerResult;
 
 /* auth_bearerextract — extract the Bearer token from an Authorization
  * header value (e.g. "Bearer eyJhbG..." → "eyJhbG...").
- * Returns BearerResult; on success .ok is heap-allocated, caller must
- * free().  On error .is_err == 1 and .ok == NULL. */
+ * Returns BearerResult; on success .ok is a sealed string (never freed).
+ * On error .is_err == 1 and .ok == NULL. */
 BearerResult    auth_bearerextract(const char *header_value);
 
 /* -----------------------------------------------------------------------
@@ -98,8 +103,8 @@ BearerResult    auth_bearerextract(const char *header_value);
  * ----------------------------------------------------------------------- */
 
 /* JWT inspection — decode without signature verification, for reading claims.
- * All string fields are heap-allocated; caller must free each non-NULL field
- * and the raw_payload field when done. */
+ * sub/iss/aud are sealed strings (never freed); raw_payload is malloc'd
+ * and the caller frees it. */
 typedef struct {
     const char *sub;         /* subject claim; NULL if absent */
     const char *iss;         /* issuer claim; NULL if absent */
@@ -120,7 +125,7 @@ typedef struct {
  * signature.  Use only for inspection; never for access control.
  * On success .is_err == 0 and .ok fields are populated.
  * On error .is_err == 1 and .err_msg is a static string.
- * Caller must free all non-NULL string fields in .ok when done. */
+ * The caller frees .ok.raw_payload; the other strings are sealed. */
 JwtDecodeResult auth_jwtdecode_claims(const char *token);
 
 /* -----------------------------------------------------------------------
@@ -134,7 +139,7 @@ JwtDecodeResult auth_jwtdecode_claims(const char *token);
  * redirect_uri : callback URL; will be percent-encoded.
  * scopes    : space-separated scope list; spaces encoded as %20.
  *
- * Returns a heap-allocated URL string; caller must free().
+ * Returns a sealed URL string (never freed).
  * Returns NULL on allocation failure or NULL inputs. */
 const char *auth_oauth2_authorize_url(const char *provider,
                                       const char *client_id,
@@ -167,8 +172,8 @@ OAuth2TokenResult auth_oauth2_token_exchange(const char *code,
  * ----------------------------------------------------------------------- */
 
 typedef struct {
-    const char *uri;        /* otpauth://totp/... URI (heap-allocated) */
-    const char *secret_b32; /* base32-encoded secret (heap-allocated) */
+    const char *uri;        /* otpauth://totp/... URI (sealed) */
+    const char *secret_b32; /* base32-encoded secret (sealed) */
 } TotpSetup;
 
 typedef struct {
@@ -180,7 +185,7 @@ typedef struct {
 /* auth_totp_generate — generate a new TOTP secret and otpauth URI.
  * issuer and account are URL-encoded in the URI.
  * On success .is_err == 0 and both .ok.uri and .ok.secret_b32 are
- * heap-allocated strings; caller must free() both.
+ * sealed strings (never freed).
  * On error .is_err == 1 and .err_msg is a static string. */
 TotpSetupResult auth_totp_generate(const char *issuer, const char *account);
 
