@@ -1,7 +1,7 @@
 # Canonical Binary IR Design
 
-**Date:** 2026-05-01
-**Status:** draft
+**Date:** 2026-05-01 (format 1.2 and `--from-tkir`: 2026-11-10, story 76.1.6c)
+**Status:** draft; format 1.2 implemented (`--emit-tkir`, `--from-tkir`)
 **Author:** Matthew Watt
 **Story:** 76.1.6
 **Spec reference:** S24.6
@@ -38,6 +38,14 @@ A toke-owned binary IR solves all four problems: it is compact, version-stable, 
 The binary IR file uses the extension `.tkir` (toke IR). The file is a sequence of length-prefixed sections in a fixed order.
 
 ### 3.1 Header
+
+> **As implemented (format 1.x).** The encoder writes a 9-byte header: the
+> four bytes `TKIR`, `version_major` (u8, 1), `version_minor` (u8, 2 since
+> 76.1.6c), `flags` (u8), and a u16 section count, followed by that many
+> sections, each `tag u8, length u32, body`. The target triple and module
+> name below are not written. A reader rejects a different major version and
+> skips section tags it does not know, so a minor bump is additive.
+> The table below is the original proposal.
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
@@ -177,6 +185,87 @@ mappings:
 
 This section provides enough information for debuggers to map binary IR instructions back to source locations. When lowered to LLVM, these mappings are converted to `!dbg` metadata (compatible with the existing `-g` flag from story 76.1.5).
 
+### 3.8 Program sections: TEXT (0x08) and AST (0x09) — format 1.2
+
+Story 76.1.6c. The code section (§3.4) as implemented is not a faithful
+encoding of the program: a `load` names no variable, an assignment stores to
+register 0, a float literal is truncated to an integer, and `mt`, arrays,
+maps, closures and string interpolation are not encoded at all. No lowering
+from it could behave like the source. Rather than complete a second
+instruction set and write a second LLVM backend for it, format 1.2 carries
+the parsed program, and `--from-tkir` hands the rebuilt AST to the same name
+resolver, type checker and LLVM backend (`src/llvm.c`) a source compile
+uses. There is one code generator. The code section is still written, for
+readers of 1.1.
+
+```
+TEXT  section_id u8 = 0x08, section_len u32
+  src_len    u32                  length of the original source in bytes
+  path       u16 len + utf8       source path as given to tkc (reference only)
+  run_count  u32
+  runs       (offset u32, len u32, bytes)*
+```
+
+The runs are the bytes of every token, every AST node span and every newline,
+at their original offsets. A reader rebuilds a buffer of `src_len` bytes,
+spaces everywhere else, so every node offset, line and column is unchanged.
+Comments and inter-token whitespace are not carried.
+
+```
+AST   section_id u8 = 0x09, section_len u32
+  profile     u8                  0 = default, 1 = legacy syntax
+  node_count  u32                 distinct nodes in the tree
+  root        entry               a NODE_PROGRAM
+
+entry = tag u8, then
+  0x01 NODE  kind u8 (NodeKind), op u16 (TokenKind),
+             start, line, col, tok_start, tok_len, end, qual_start, qual_len
+               (i32 each, the fields of `Node` in src/parser.h),
+             child_count u32, child entries
+  0x02 REF   index u32            an earlier node, by pre-order index
+```
+
+The tree is written in pre-order as `parse()` returned it, before name
+resolution or type checking annotate it (`--from-tkir` runs both again). A
+REF covers a node the parser hangs in two places; it must name a node that is
+already closed, so the loader never builds a cycle.
+
+**Validation.** The loader (`src/tkir_ast.c`) treats the file as untrusted:
+the base sections must decode (§3.1–3.6 rules); `src_len` is capped at the
+compiler's source limit; every run, node span and offset must lie inside
+`src_len`; node kinds and operators must be known values; each child count is
+bounded by the bytes left; nesting is capped at 4096; the node count must
+match the tree exactly and the root must be a program. Every failure is an
+E9021 diagnostic that names the problem, and a file without the AST section
+(format 1.0/1.1) is refused with a message to re-emit it. Nothing is guessed.
+
+### 3.9 Using it: `--emit-tkir` and `--from-tkir`
+
+```
+tkc prog.tk --emit-tkir --out prog.tkir     # parse, check, write format 1.2
+tkc --from-tkir prog.tkir --out prog        # build the binary
+tkc --from-tkir prog.tkir --emit-llvm --out prog.ll
+```
+
+`--from-tkir` accepts the build modes (`--out`, `--emit-llvm`, `--emit-asm`,
+`--check`, `--emit-interface`, `--emit-deps`, `--emit-tkir`, `--dump-ast`,
+`-g`, `-O`, the capability flags and limits). With `-g` the debug info names
+the recorded source file, whose lines the AST carries. The modes that read or
+rewrite source text (`--fmt`, `--pretty`, `--expand`, `--sourcemap`, `--min`,
+`--migrate`, `--lint`, `--fix`, the companion modes) are a usage error (exit
+3), as is linking several `.tkir` files into one binary. Imports resolve as
+they do for source: the standard library from the compiler's own interfaces,
+user modules through the `-I` / `TKC_INTERFACE_PATH` search path, which is
+why a `.tkir` that imports a sibling module must be built with that module
+reachable, exactly as its source would.
+
+**Parity.** `make diff-tkir` (`scripts/diff_tkir.py`) runs over the
+`diff-codegen` program set and requires that, for every program that compiles
+from source, the LLVM IR from source and from source → `.tkir` are identical
+bytes; `make diff-tkir-run` also builds and runs both binaries and compares
+exit status and stdout. Conformance cases C1240 (parity, re-emission fixed
+point, `-g`) and C1241 (refusals) pin both.
+
 ---
 
 ## 4. Instruction Set Sketch
@@ -275,6 +364,10 @@ The compiler gains a `--emit-tkir` flag. Both outputs are produced from the same
 ```
 
 A new tool (`tkir-to-llvm` or a mode within `tkc`) reads `.tkir` and emits LLVM IR. The text IR emitter is retired. The package registry distributes `.tkir` files.
+
+*Status (76.1.6c):* the lowering exists as `tkc --from-tkir` (§3.9), reading
+the format-1.2 program sections. The `.ll` text emitter is not retired; the
+package registry does not yet distribute `.tkir`.
 
 ### Phase 4 (optional: LLVM-free targets)
 
