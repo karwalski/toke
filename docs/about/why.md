@@ -25,7 +25,7 @@ The central claim behind toke:
 
 > A sufficiently constrained, unambiguous, token-efficient language will reduce end-to-end LLM code generation cost -- measured as (tokens x iterations x error rate) -- by a material margin sufficient to justify building and training a purpose-native model.
 
-This is treated as an empirical hypothesis, not an article of faith. The project has explicit go/no-go gates. Gate 1 required greater than 10% token reduction and a Pass@1 rate of at least 60%. Both criteria were met — the project proceeds to Phase 2.
+This is treated as an empirical hypothesis, not an article of faith. The project has explicit go/no-go gates. Gate 1 required greater than 10% token reduction and a Pass@1 rate of at least 60%. It was recorded as a pass on 2026-04-03 at 63.7% Pass@1, but that figure was corrected on 2026-09-19 to **58.8%** (588 passed of 1,000 generated; the 63.7% had dropped the 77 non-compiling solutions from the denominator). The token-reduction criterion stands as met; the Pass@1 criterion does not, and on 2026-09-22 the owner decided **Gate 1 NOT PASSED** (story 128.19; see `docs/decisions/gate1-decision.md` and `docs/metrics-baseline.md`).
 
 ## How It Works
 
