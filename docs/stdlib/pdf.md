@@ -19,7 +19,7 @@ Conflating the two means paying OCR's error rate on documents that never require
 
 ## Why an extractor was written rather than a library vendored
 
-[ADR-0015](/docs/decisions/ADR-0015/) leaves the toolchain C99 only, which disqualifies pdfium, podofo and poppler. The only mostly-C engine, MuPDF, is **AGPL-3.0-or-later** against this repository's Apache-2.0 -- and because the stdlib is statically linked into *your* program, vendoring it would attach a network-copyleft obligation to every binary anyone compiles with `tkc`. There is no permissively-licensed C99 PDF text extractor to find.
+[ADR-0015](/docs/decisions/ADR-0015/) leaves the toolchain C99 only, which disqualifies pdfium, podofo and poppler. The only mostly-C engine, MuPDF, is **AGPL-3.0-or-later** against the standard library's MIT licence -- and because the stdlib is statically linked into *your* program, vendoring it would attach a network-copyleft obligation to every binary anyone compiles with `tkc`. There is no permissively-licensed C99 PDF text extractor to find.
 
 The full costing is in [the route note](/docs/decisions/135.3-pdf-extraction-route/). The subset actually needed -- parse the objects, inflate the Flate streams, walk the content stream for the text-showing operators, apply the font's encoding map -- is two orders of magnitude smaller than an engine that is almost all rasteriser.
 

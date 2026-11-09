@@ -8,7 +8,7 @@ order: 1
 # toke Language Specification — v0.4 (Normative Amendment)
 
 **Status:** normative. **Date:** 2026-07-02. **Supersedes:** the listed sections of
-[toke-spec-v0.3](/docs/spec/toke-spec-v0.3/). **Deciders:** Matt Watt.
+[toke-spec-v0.3](/docs/spec/toke-spec-v0.3/). **Deciders:** Matthew Watt.
 
 This document is a *delta amendment*. Everything in `toke-spec-v0.3.md` remains
 normative **except** the sections superseded below. v0.4 is a **breaking** release

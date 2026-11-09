@@ -80,7 +80,7 @@ The toke compiler is built with security as a baseline requirement:
 
 ## Licensing
 
-toke is released under the **Apache 2.0 licence**. You can use, modify, and distribute the compiler and standard library in commercial products. You can embed the compiler in proprietary products, ship generated binaries to customers, and modify the source for internal use -- with the standard Apache 2.0 obligations (preserving the copyright notice and licence, stating changes).
+The toke compiler (`tkc`) is released under the **Apache 2.0 licence**; the language specification and the standard library -- the runtime code linked into the programs you compile -- are released under the **MIT licence** (see [LICENSING.md](https://github.com/karwalski/toke/blob/main/LICENSING.md)). You can use, modify, and distribute both in commercial products. You can embed the compiler in proprietary products, ship generated binaries to customers, and modify the source for internal use -- with the standard obligations of each licence (preserving the copyright notice and licence text, and for Apache 2.0, stating changes).
 
 ## Support
 

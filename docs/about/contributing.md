@@ -7,7 +7,7 @@ order: 3
 
 ## Welcome
 
-toke is open source under the MIT licence. Contributions are welcome at all skill levels -- from fixing a typo in the docs to adding a new compiler pass. Every contribution matters.
+toke is open source: the compiler is Apache 2.0, and the specification and standard library are MIT (see [LICENSING.md](https://github.com/karwalski/toke/blob/main/LICENSING.md)). Contributions are welcome at all skill levels -- from fixing a typo in the docs to adding a new compiler pass. Every contribution matters.
 
 ## Ways to Contribute
 

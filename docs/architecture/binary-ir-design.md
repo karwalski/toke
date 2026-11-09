@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-01
 **Status:** draft
-**Author:** Matt Watt
+**Author:** Matthew Watt
 **Story:** 76.1.6
 **Spec reference:** S24.6
 

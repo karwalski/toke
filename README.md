@@ -411,7 +411,16 @@ The Homebrew tap (`brew tap karwalski/toke`) is not published yet; see
 
 ## Licence
 
-Apache 2.0. See [LICENSE](LICENSE) for the full text and [LICENSING.md](LICENSING.md) for the project's licensing rationale.
+This repository is mixed-licence:
+
+- The compiler (`tkc`), documentation, tooling and `tree-sitter-toke/` are licensed under
+  the [Apache License 2.0](LICENSE); attribution is in [NOTICE](NOTICE).
+- The language specification (`spec/`) and the standard library (`stdlib/`, `src/stdlib/`)
+  are licensed under the MIT License ([spec/LICENSE](spec/LICENSE),
+  [stdlib/LICENSE](stdlib/LICENSE)), so programs compiled with `tkc` carry no licence
+  obligation from the runtime they link.
+
+See [LICENSING.md](LICENSING.md) for the full split and the reasoning behind it.
 
 ## Contributing
 

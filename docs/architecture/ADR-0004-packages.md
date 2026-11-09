@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-01
 **Status:** accepted
-**Deciders:** Matt Watt
+**Deciders:** Matthew Watt
 
 ## Context
 
