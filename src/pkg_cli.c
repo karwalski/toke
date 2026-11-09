@@ -1,5 +1,6 @@
 /*
- * pkg_cli.c — `tkc pkg` (story 76.1.3b), built on the 76.1.3a resolver and lock (pkg.c) and the
+ * pkg_cli.c — `tkc pkg` (story 76.1.3b) and the build's pkg.* import path
+ * (story 76.1.3c), built on the 76.1.3a resolver and lock (pkg.c) and the
  * git fetch (pkg_git.c, 76.1.3d).  Design: ADR-0004.
  *
  *   tkc pkg init [<name>]                      write pkg.toml
@@ -21,6 +22,7 @@
  */
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -1263,4 +1265,294 @@ pkg_cli_main(int argc, char **argv)
     if (!strcmp(cmd, "resolve")) return cmd_resolve_fetch(&a, 0);
     if (!strcmp(cmd, "fetch"))   return cmd_resolve_fetch(&a, 1);
     return cmd_list(&a);
+}
+
+/* ── Build integration (76.1.3c) ─────────────────────────────────────────── */
+
+static int      s_bp_code = 0;           /* 0 = ready */
+static char     s_bp_msg[PKG_MSG * 2];
+static int      s_bp_prepared = 0;
+static PkgLock  s_bp_lock;
+static char     s_bp_tki[PKG_PATH];
+static char   **s_bp_srcs = NULL;
+static int      s_bp_nsrc = 0;
+
+static int
+bp_fail(int code, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(s_bp_msg, sizeof s_bp_msg, fmt, ap);
+    va_end(ap);
+    s_bp_code = code;
+    return -1;
+}
+
+static void
+bp_cleanup(void)
+{
+    if (s_bp_tki[0]) pkg_rmtree(s_bp_tki);
+    for (int i = 0; i < s_bp_nsrc; i++) free(s_bp_srcs[i]);
+    free(s_bp_srcs);
+    s_bp_srcs = NULL; s_bp_nsrc = 0;
+}
+
+static int
+cmp_str(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+/* Root-level *.tk files of a package directory, sorted. */
+static int
+list_modules(const char *dir, char ***out, int *n)
+{
+    *out = NULL; *n = 0;
+    DIR *d = opendir(dir);
+    if (!d) return -1;
+    struct dirent *de;
+    int cap = 0;
+    while ((de = readdir(d)) != NULL) {
+        size_t l = strlen(de->d_name);
+        if (l < 4 || strcmp(de->d_name + l - 3, ".tk") || de->d_name[0] == '.') continue;
+        char p[PKG_PATH];
+        snprintf(p, sizeof p, "%s/%s", dir, de->d_name);
+        struct stat st;
+        if (lstat(p, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+        if (*n == cap) {
+            cap = cap ? cap * 2 : 8;
+            char **nv = realloc(*out, (size_t)cap * sizeof **out);
+            if (!nv) { closedir(d); return -1; }
+            *out = nv;
+        }
+        (*out)[(*n)++] = strdup(de->d_name);
+    }
+    closedir(d);
+    if (*n > 1) qsort(*out, (size_t)*n, sizeof **out, cmp_str);
+    return 0;
+}
+
+/* Does the lock still satisfy every direct requirement of the manifest? */
+static const char *
+lock_stale(const PkgManifest *m, const PkgLock *lock)
+{
+    for (int k = 0; k < m->dep_count; k++) {
+        const PkgDep *d = &m->deps[k];
+        const PkgResolved *e = NULL;
+        for (int i = 0; i < lock->count; i++)
+            if (!strcmp(lock->entries[i].name, d->name)) e = &lock->entries[i];
+        if (!e || !dep_admits(d, e->version) || (d->git[0] && strcmp(d->git, e->source)))
+            return d->name;
+    }
+    return NULL;
+}
+
+int
+pkg_build_prepare(PkgEmitIfaceFn emit, void *ud)
+{
+    if (s_bp_prepared) return s_bp_code ? -1 : 0;
+    s_bp_prepared = 1;
+    atexit(bp_cleanup);
+
+    char cwd[PKG_PATH], err[PKG_MSG];
+    if (!getcwd(cwd, sizeof cwd)) snprintf(cwd, sizeof cwd, ".");
+    if (!file_exists(PKG_MANIFEST))
+        return bp_fail(E9011, "pkg.* import, but there is no pkg.toml in %s "
+                       "(the project root; create one with `tkc pkg init`)", cwd);
+    PkgManifest *m = calloc(1, sizeof *m);
+    if (!m) return bp_fail(E9032, "out of memory");
+    if (pkg_manifest_parse(PKG_MANIFEST, m, err, (int)sizeof err) != 0) {
+        free(m);
+        return bp_fail(E9012, "malformed pkg.toml: %s", err);
+    }
+    if (!file_exists(PKG_LOCKFILE)) {
+        free(m);
+        return bp_fail(E9028, "pkg.* import, but there is no pkg.lock; run `tkc pkg fetch`");
+    }
+    if (pkg_lock_read(PKG_LOCKFILE, &s_bp_lock) != 0) {
+        free(m);
+        return bp_fail(E9028, "pkg.lock is malformed%s", pkg_allow_file_sources() ? "" :
+                       " (a file:// source needs --allow-file-source)");
+    }
+    const char *stale = lock_stale(m, &s_bp_lock);
+    free(m);
+    if (stale)
+        pdiag(DIAG_WARNING, W9010, PKG_LOCKFILE, 0,
+              "pkg.lock is out of date relative to pkg.toml ('%s'); run `tkc pkg fetch`", stale);
+    if (pkg_lock_check_pinned(&s_bp_lock, err, (int)sizeof err) != 0)
+        return bp_fail(E9029, "%s; run `tkc pkg fetch`", err);
+
+    char cache[PKG_PATH];
+    const char *home = getenv("HOME");
+    if (!home || home[0] != '/' ||
+        (size_t)snprintf(cache, sizeof cache, "%s/.toke/pkg", home) >= sizeof cache)
+        return bp_fail(E9032, "the package cache is $HOME/.toke/pkg, and HOME is not an absolute path");
+
+    /* The cache is not trusted: every package is re-hashed on every build. */
+    for (int i = 0; i < s_bp_lock.count; i++) {
+        const PkgResolved *e = &s_bp_lock.entries[i];
+        char dir[PKG_PATH], v[PKG_MAX_VERSION], got[PKG_MAX_COMMIT];
+        cache_dir(cache, e->name, e->version, dir, sizeof dir);
+        vfmt(e->version, v);
+        if (!dir_exists(dir) || read_sidecar(dir, got) != 0)
+            return bp_fail(E9029, "package '%s' %s is not in the package cache; run `tkc pkg fetch`",
+                           e->name, v);
+        if (pkg_verify_fetched(e, got, dir, err, (int)sizeof err) != 0)
+            return bp_fail(E9030, "cached package '%s' %s does not match pkg.lock: %s",
+                           e->name, v, err);
+    }
+
+    /* Interfaces are regenerated from source, never taken from the fetched
+     * tree (ADR-0004 section 4), into a private directory. */
+    const char *tmpd = getenv("TMPDIR");
+    snprintf(s_bp_tki, sizeof s_bp_tki, "%s/tkc_pkg_XXXXXX",
+             tmpd && tmpd[0] ? tmpd : "/tmp");
+    if (!mkdtemp(s_bp_tki)) {
+        s_bp_tki[0] = '\0';
+        return bp_fail(E9032, "cannot create a temporary directory for package interfaces");
+    }
+
+    /* Pending modules: source path, output dir, expected .tki. */
+    typedef struct {
+        char src[PKG_PATH], outdir[PKG_PATH], tki[PKG_PATH], mod[PKG_PATH];
+        int  done;
+    } Mod;
+    Mod *mods = NULL;
+    int nmod = 0, cap = 0, rc = -1;
+    for (int i = 0; i < s_bp_lock.count; i++) {
+        const PkgResolved *e = &s_bp_lock.entries[i];
+        char dir[PKG_PATH], v[PKG_MAX_VERSION];
+        cache_dir(cache, e->name, e->version, dir, sizeof dir);
+        vfmt(e->version, v);
+        char **files; int nf;
+        if (list_modules(dir, &files, &nf) != 0) {
+            bp_fail(E9032, "cannot read package directory %s", dir);
+            goto done;
+        }
+        char entry[PKG_MAX_NAME + 4];
+        snprintf(entry, sizeof entry, "%s.tk", e->name);
+        int has_entry = 0;
+        for (int k = 0; k < nf; k++) if (!strcmp(files[k], entry)) has_entry = 1;
+        for (int k = 0; k < nf; k++) {
+            if (nmod == cap) {
+                cap = cap ? cap * 2 : 16;
+                Mod *nm = realloc(mods, (size_t)cap * sizeof *mods);
+                if (!nm) { bp_fail(E9032, "out of memory"); goto files_done; }
+                mods = nm;
+            }
+            Mod *md = &mods[nmod++];
+            char stem[PKG_PATH];
+            snprintf(stem, sizeof stem, "%.*s", (int)(strlen(files[k]) - 3), files[k]);
+            /* A package module declares its import path, as every toke
+             * module does: m=pkg.<name>; for the entry module <name>.tk,
+             * m=pkg.<name>.<file>; for the others.  Its interface is then
+             * <that path>.tki, found by the importer's dotted-name lookup,
+             * and its symbols are mangled under pkg_<name>_ -- so two
+             * packages cannot collide. */
+            snprintf(md->src, sizeof md->src, "%s/%s", dir, files[k]);
+            snprintf(md->outdir, sizeof md->outdir, "%s", s_bp_tki);
+            if (!strcmp(files[k], entry))
+                snprintf(md->mod, sizeof md->mod, "pkg.%s", e->name);
+            else
+                snprintf(md->mod, sizeof md->mod, "pkg.%s.%s", e->name, stem);
+            snprintf(md->tki, sizeof md->tki, "%s/%s.tki", md->outdir, md->mod);
+            md->done = 0;
+        }
+        for (int k = 0; k < nf; k++) free(files[k]);
+        free(files);
+        if (!has_entry) {
+            bp_fail(E9035, "package '%s' %s has no entry module %s", e->name, v, entry);
+            goto done;
+        }
+        continue;
+files_done:
+        for (int k = 0; k < nf; k++) free(files[k]);
+        free(files);
+        goto done;
+    }
+
+    /* A module importing another package module needs that module's
+     * interface first: emit in rounds until none is left or a round makes
+     * no progress, then show the first failure's own diagnostics. */
+    for (int left = nmod; left > 0; ) {
+        int progress = 0;
+        for (int k = 0; k < nmod; k++) {
+            if (mods[k].done) continue;
+            if (emit(mods[k].src, mods[k].outdir, s_bp_tki, 1, ud) != 0) continue;
+            if (!file_exists(mods[k].tki)) {
+                bp_fail(E9035, "package module %s must declare its import path: m=%s;",
+                        mods[k].src, mods[k].mod);
+                goto done;
+            }
+            mods[k].done = 1; progress = 1; left--;
+        }
+        if (!progress) {
+            for (int k = 0; k < nmod; k++)
+                if (!mods[k].done) {
+                    (void)emit(mods[k].src, mods[k].outdir, s_bp_tki, 0, ud);
+                    bp_fail(E9035, "package module %s does not compile", mods[k].src);
+                    goto done;
+                }
+        }
+    }
+
+    s_bp_srcs = calloc((size_t)(nmod ? nmod : 1), sizeof *s_bp_srcs);
+    if (!s_bp_srcs) { bp_fail(E9032, "out of memory"); goto done; }
+    for (int k = 0; k < nmod; k++) {
+        s_bp_srcs[k] = strdup(mods[k].src);
+        if (!s_bp_srcs[k]) { bp_fail(E9032, "out of memory"); goto done; }
+        s_bp_nsrc = k + 1;
+    }
+    rc = 0;
+done:
+    free(mods);
+    if (rc != 0 && !s_bp_code) bp_fail(E9032, "package preparation failed");
+    return rc;
+}
+
+const char *
+pkg_build_tki_dir(void)
+{
+    return (s_bp_prepared && !s_bp_code && s_bp_tki[0]) ? s_bp_tki : NULL;
+}
+
+const char *const *
+pkg_build_sources(int *n)
+{
+    *n = (s_bp_prepared && !s_bp_code) ? s_bp_nsrc : 0;
+    return (const char *const *)s_bp_srcs;
+}
+
+int
+pkg_build_import_check(const char *name, char *msg, int msgsz)
+{
+    if (!s_bp_prepared) return 0;
+    if (s_bp_code) {
+        snprintf(msg, (size_t)msgsz, "%s", s_bp_msg);
+        return s_bp_code;
+    }
+    if (!name || !name[0]) {
+        snprintf(msg, (size_t)msgsz, "import path 'pkg' names no package: write pkg.<name>");
+        return E9011;
+    }
+    for (int i = 0; i < s_bp_lock.count; i++)
+        if (!strcmp(s_bp_lock.entries[i].name, name)) return 0;
+    snprintf(msg, (size_t)msgsz,
+             "package '%s' is not a dependency: it is not in pkg.lock "
+             "(add it with `tkc pkg add %s <constraint> --git <url>`, then `tkc pkg fetch`)",
+             name, name);
+    return E9011;
+}
+
+int
+pkg_build_sources_mention_pkg(const char *const *files, int n)
+{
+    for (int i = 0; i < n; i++) {
+        char *t = read_text(files[i], (size_t)64 << 20);
+        if (!t) continue;
+        int hit = strstr(t, "pkg.") != NULL;
+        free(t);
+        if (hit) return 1;
+    }
+    return 0;
 }
