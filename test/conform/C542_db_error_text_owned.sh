@@ -9,11 +9,10 @@
 #   sqlite's.  Through the glue: e.msg from db.one/db.exec/db.many named the
 #   LATER error's column (3 wrong), and e.msg read after db.close was an ASan
 #   heap-use-after-free.  db_postgres.c (PQerrorMessage) and db_mysql.c
-#   (mysql_error / mysql_stmt_error) did the same; they get the same copy but
-#   are not driven here (no server).
+#   (mysql_error / mysql_stmt_error) did the same and got the same copy;
+#   both were archived by 121.71 (never dispatched by any build).
 #
-# NOW: every non-literal message is copied (err_copy / pg_err_copy /
-# my_err_copy).  This drives the glue under ASan+UBSan.
+# NOW: every non-literal message is copied (err_copy).  This drives the glue under ASan+UBSan.
 #
 # Negative control: C542_STDLIB=<dir> builds against another src/stdlib tree;
 # the pre-fix tree fails three checks and then aborts in ASan on the fourth.

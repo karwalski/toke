@@ -14,10 +14,14 @@
 #   121.49 (1) removed, and C451 asserted it still linked.
 #
 # NOW: all of it is removed (git history holds it); the live SIGHUP path is
-# http.c's worker respawn.  This compiles server_ops.c and metrics.c the way
-# the stdlib does (-Werror) and reads their symbol tables.  Controls:
-# server_ops.o still defines proc_healthz and metrics.o
-# metrics_record_request, so an empty or wrong symbol table cannot pass.
+# http.c's worker respawn.  This compiles metrics.c (and server_ops.c, when
+# the tree under test still has it) the way the stdlib does (-Werror) and
+# reads their symbol tables.  Controls: metrics.o defines
+# metrics_record_request (and server_ops.o proc_healthz), so an empty or
+# wrong symbol table cannot pass.  121.71 archived the rest of server_ops.c
+# (nothing called any of it); in a tree without the file its symbol checks
+# are one PASS for its absence, and the source scan below still covers
+# every stdlib file.
 #
 # Negative control: C541_STDLIB=<dir> checks another src/stdlib tree; the
 # pre-fix tree fails every removal check.
@@ -43,7 +47,9 @@ echo "C541: no unreachable SIGHUP reload machinery, no empty reopen hook"
 echo "------------------------------------------------------------------"
 
 CF="-std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror"
-for f in server_ops metrics; do
+HAVE_SO=0; [ -f "${S}/server_ops.c" ] && HAVE_SO=1
+objs="metrics"; [ "${HAVE_SO}" -eq 1 ] && objs="server_ops metrics"
+for f in ${objs}; do
     # shellcheck disable=SC2086
     if ! "${CC}" ${CF} -iquote "${S}" -c "${S}/${f}.c" -o "${WORK}/${f}.o" > "${WORK}/${f}.cc" 2>&1; then
         fail "${f}.c does not compile: $(head -c 600 "${WORK}/${f}.cc")"
@@ -55,11 +61,14 @@ done
 defines() { awk -v s="$2" '$2 ~ /^[TtDd]$/ && ($3 == s || $3 == "_" s) {f=1} END {exit !f}' "${WORK}/$1.nm"; }
 refs()    { awk -v s="$2" '$1 == "U" && ($2 == s || $2 == "_" s) {f=1} END {exit !f}' "${WORK}/$1.nm"; }
 
+if [ "${HAVE_SO}" -eq 1 ]; then
 defines server_ops proc_healthz && pass "control: server_ops.o defines proc_healthz" \
     || fail "control: proc_healthz not in server_ops.o's symbol table"
+fi
 defines metrics metrics_record_request && pass "control: metrics.o defines metrics_record_request" \
     || fail "control: metrics_record_request not in metrics.o's symbol table"
 
+if [ "${HAVE_SO}" -eq 1 ]; then
 for s in proc_install_signals proc_check_reload proc_check_shutdown proc_check_scale proc_signal_handler; do
     if defines server_ops "${s}"; then fail "server_ops.o still defines ${s}, which nothing calls"
     else pass "server_ops.o does not define ${s}"; fi
@@ -68,6 +77,9 @@ for s in sigaction signal; do
     if refs server_ops "${s}"; then fail "server_ops.o still installs signal handlers (${s})"
     else pass "server_ops.o does not reference ${s}"; fi
 done
+else
+    pass "server_ops.c is archived (121.71): it defines and installs nothing"
+fi
 if defines metrics metrics_reopen_logs; then
     fail "metrics.o still defines the empty metrics_reopen_logs"
 else

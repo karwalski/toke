@@ -152,23 +152,25 @@ f=main():i64{
 
 ### toml.strarr(v: $tomlval; key: $str): @$str!$tomlerr
 ### toml.i64arr(v: $tomlval; key: $str): @i64!$tomlerr
+### toml.f64arr(v: $tomlval; key: $str): @f64!$tomlerr
 ### toml.boolarr(v: $tomlval; key: $str): @bool!$tomlerr
 
-Reads the array at `key` in the TOML table `v` as a toke array whose every element has the named type (113.B.4). An element is accepted exactly when the same value under a key would be by `toml.str`, `toml.i64` or `toml.bool`. An empty array (`x = []`) is a success with length `0`. Returns `$tomlerr` with `msg` `key not found` if the key is absent, `key is not an array` if its value is not an array, or `array element N is not a string` (`an integer`, `a boolean`; `N` counts from `0`) for the first element of another type -- TOML 1.0 allows mixed arrays, and those are refused rather than read in part.
-
-There is no `toml.f64arr` yet (story 127.297).
+Reads the array at `key` in the TOML table `v` as a toke array whose every element has the named type (113.B.4). An element is accepted exactly when the same value under a key would be by `toml.str`, `toml.i64`, `toml.f64` or `toml.bool` (so `toml.f64arr` reads a decimal integer element as the nearest `f64`). An empty array (`x = []`) is a success with length `0`. Returns `$tomlerr` with `msg` `key not found` if the key is absent, `key is not an array` if its value is not an array, or `array element N is not a string` (`an integer`, `a float`, `a boolean`; `N` counts from `0`) for the first element of another type -- TOML 1.0 allows mixed arrays, and those are refused rather than read in part.
 
 **Example:**
 ```toke
 m=example;
 i=toml:std.toml;
 i=io:std.io;
+i=s:std.str;
 
 f=main():i64{
-  let cfg = mt toml.load("plugins = [\"sitemap\", \"feed\"]\nports = [80, 443]\n") {$ok:v v;$err:e < 1};
+  let cfg = mt toml.load("plugins = [\"sitemap\", \"feed\"]\nports = [80, 443]\nratios = [0.5, 2]\n") {$ok:v v;$err:e < 1};
   let plugins = mt toml.strarr(cfg; "plugins") {$ok:v v;$err:e < 1};
   io.println(plugins.get(0));
   let ports = mt toml.i64arr(cfg; "ports") {$ok:v v;$err:e < 1};
+  let ratios = mt toml.f64arr(cfg; "ratios") {$ok:v v;$err:e < 1};
+  io.println(s.fromfloat(ratios.get(0) * 2.0));
   < ports.len as i64
 };
 ```

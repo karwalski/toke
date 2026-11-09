@@ -1829,10 +1829,8 @@ static int64_t http_raise(const char *msg, uint64_t code)
 
 static void client_resp_free(HttpClientResp *r)
 {
-    for (uint64_t i = 0; i < r->headers.len; i++) {
-        free((char *)r->headers.data[i].key);
-        free((char *)r->headers.data[i].val);
-    }
+    /* 127.295: the header keys and values are sealed strings (http.c
+     * client_do_request, runtime-abi §3.1) -- never freed, only the array. */
     free(r->headers.data);
     free(r->body);
     free(r->err_msg);

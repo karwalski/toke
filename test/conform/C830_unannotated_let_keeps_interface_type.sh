@@ -24,7 +24,7 @@
 # cases 5 and 12 (controls) green on both.
 #
 # 127.297's only reachable export (df.column) is quarantined and
-# toml.f64arr does not exist yet (113.B.4), so case 10 adds the record to a
+# toml.f64arr did not exist yet (113.B.4 has since shipped it), so case 10 adds the record to a
 # COPY of the interfaces and checks the IR: it cannot link without glue.
 #
 # Story: 127.297, 127.302, 127.308
@@ -121,9 +121,10 @@ cp "${REPO_ROOT}"/stdlib/*.tki "${FS}/stdlib/"
 python3 - "${FS}/stdlib/toml.tki" <<'EOF'
 import sys
 p = sys.argv[1]; s = open(p).read()
-a = '    {"kind": "func",   "name": "toml.boolarr",'
-assert a in s
-s = s.replace(a, '    {"kind": "func",   "name": "toml.f64arr",    "params": ["tomlval", "str"],   "return": "[f64]!tomlerr"},\n' + a, 1)
+if '"toml.f64arr"' not in s:  # shipped by 113.B.4; inject only on an older tree
+    a = '    {"kind": "func",   "name": "toml.boolarr",'
+    assert a in s
+    s = s.replace(a, '    {"kind": "func",   "name": "toml.f64arr",    "params": ["tomlval", "str"],   "return": "[f64]!tomlerr"},\n' + a, 1)
 open(p, 'w').write(s)
 EOF
 cat > "${WORK}/f.tk" <<'EOF'

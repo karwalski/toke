@@ -85,7 +85,7 @@ run_postgres_tests() {
     fi
 
     echo "  PostgreSQL DSN: ${PGDSN%%@*}@***"
-    skip "PostgreSQL integration tests (requires compiled binary with -DTK_HAVE_LIBPQ)"
+    skip "PostgreSQL backend archived (story 121.71: never dispatched by std.db)"
 }
 
 # ── MySQL tests ──────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ run_mysql_tests() {
     fi
 
     echo "  MySQL DSN: ${MYDSN%%@*}@***"
-    skip "MySQL integration tests (requires compiled binary with -DTK_HAVE_MYSQL)"
+    skip "MySQL backend archived (story 121.71: never dispatched by std.db)"
 }
 
 # ── Run selected backends ────────────────────────────────────────────

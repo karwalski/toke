@@ -15,8 +15,8 @@
 #   toml.keys(v):@$str   toml.len(v):u64   toml.free(v):bool
 # toml.free frees a DOCUMENT once; on a section view, an array-of-tables
 # element or a document already freed it does nothing and is false.
-# (toml.f64arr is withheld until story 127.297: an untyped binding reads the
-# double's bits as an integer.)
+# (toml.f64arr was withheld until story 127.297 -- an untyped binding read the
+# double's bits as an integer; it shipped later and is tested by C1080.)
 #
 # Document: name="x" n=0 ports=[80,0,443] tags=["a","b"] flags=[true,false]
 #   empty=[] mixed=[1,"two"]  [server] host="h"  [[plugin]] name=p1 / p2

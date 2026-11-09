@@ -476,6 +476,23 @@ copies (the core's own entries, names and result arrays stay malloc'd:
 same files free them.  Gate: C1061 (an ASan C driver under
 `TK_STR_VERIFY=1` over sealed inputs, plus a toke program).
 
+**Step 5, sixth tranche (story 127.295, Batch Z120).**  `http.c` converted
+whole: every reader uses `tk_strlen`, and the one producer whose strings the
+program keeps is sealed -- the client response's header keys and values
+(`client_do_request`), which `client_resp_block` in `tk_web_glue.c` hands to
+toke as the `$httpresp` headers.  `client_resp_free` now frees only the
+header array, never the strings (`HttpClientResp` in `http.h` says so).
+Every other `http.c` string is C-owned and stays malloc'd: request fields
+(`http_req_free` frees them after the handler returns -- a handler borrows
+them), the client's `base_url` / `proxy_url` (`http_client_free`), the CORS
+origin list, the 404 body, SNI host names, and `err_msg` (copied by
+`http_raise`).  The C-only helpers `http_cookie`, `http_set_cookie_header`
+and the multipart parser return malloc'd results their C callers free (the
+form parser's fields are sealed `urldecode` results since the third
+tranche).
+Gate: C1070 (an ASan C driver against a loopback server under
+`TK_STR_VERIFY=1`, plus a toke program).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
