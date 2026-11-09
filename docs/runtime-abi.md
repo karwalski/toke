@@ -476,6 +476,20 @@ copies (the core's own entries, names and result arrays stay malloc'd:
 same files free them.  Gate: C1061 (an ASan C driver under
 `TK_STR_VERIFY=1` over sealed inputs, plus a toke program).
 
+**Step 5, seventh tranche (story 127.295, Batch Z129).**  `std.llmtool`
+converted whole: every reader in `llm_tool.c` uses `tk_strlen` or the
+`sizeof` of the literal it skips, and every string `llm_tool_glue.c` builds for
+toke is sealed — a `$toolcall`'s `.name` and `.id`, every key and value of
+its `.args`, and each `$llmmsg` `.role` / `.content` from
+`llmtool.resultmsgs`.  `llm_tool.c`'s own results (`llm_parse_tool_calls`,
+`llm_tool_result_msgs`, `llm_parallel_tool_calls`, `llm_agentic_loop`,
+`err_msg` strings) stay malloc'd, because its C callers free them; the glue
+makes the sealed copy at the boundary and frees the original, so nothing is
+left behind.  A `\u0000` escape decodes to U+FFFD, so no sealed value holds
+a 0 byte.  Gate: C1111 (an ASan C driver under `TK_STR_VERIFY=1`, plus a
+toke program); C208 and C276 now count only the malloc'd part a
+`$toolcall` block owns.
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
