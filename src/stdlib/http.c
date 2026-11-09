@@ -2061,7 +2061,7 @@ static void reopen_logs_if_requested(void)
 
 /* 135.32 -- bind a listening address without shadowing a live listener:
  * tk_bind_exclusive() in tk_bind.h (moved there by 135.33 so router.c,
- * net.c, net_glue.c and server_ops.c share it). */
+ * net.c and net_glue.c share it; server_ops.c was archived by 121.71). */
 
 int http_serve(uint16_t port) {
     TK_REQUIRE(TK_CAP_NET);
