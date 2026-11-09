@@ -2365,8 +2365,12 @@ fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:
 	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
+# 127.295: tmpl_render/tmpl_renderhtml return sealed strings, which are never
+# freed; a fuzzer rendering up to 64 KiB per input would grow the sealed heap
+# past libFuzzer's RSS limit.  -DTK_STR_NO_HEAP builds the malloc fallback
+# (the one a target without mmap gets), so the harness frees each result.
 fuzz-template:
-	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c src/stdlib/str.c,)
+	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c src/stdlib/str.c,-DTK_STR_NO_HEAP)
 # http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls
 # the capability checks, hence capabilities.c (not in 120.22's link line).
 fuzz-multipart:
