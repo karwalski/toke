@@ -738,6 +738,8 @@ Returns a copy of `client` that sends its requests through the HTTP proxy at `pr
 
 A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse, HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
 
+A response that ends before it is complete is also a transport failure (`code` 0): the connection closes, or a read times out, before the blank line that ends the headers, before all the bytes its `Content-Length` promises, or before the last (zero-size) chunk of a `Transfer-Encoding: chunked` body. `msg` says which, e.g. `incomplete response: connection closed after 3 of 8 body bytes (Content-Length)`. Until story 138.23 each of these answered `$ok` with whatever had arrived. A body with neither header ends when the server closes the connection; a `204`, a `304` and a `1xx` response have no body.
+
 ### http.clientget(client: $httpclient; path: $str): $httpresp!$httperr
 
 Sends `GET path` relative to the client's base URL.
