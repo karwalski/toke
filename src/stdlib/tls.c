@@ -260,11 +260,14 @@ static SSL_CTX *build_ssl_ctx(int is_server, TlsConfig cfg)
      * fallback for interop with peers that don't offer the hybrid group.
      * If the linked OpenSSL is too old to know the hybrid group
      * (< 3.5), degrade gracefully to classical groups rather than
-     * failing the context. */
-    if (SSL_CTX_set1_groups_list(ctx,
-            "X25519MLKEM768:X25519:secp256r1:x448:secp384r1") != 1) {
-        if (SSL_CTX_set1_groups_list(ctx,
-                "X25519:secp256r1:x448:secp384r1") != 1) {
+     * failing the context.  OpenSSL rejects the whole list when one
+     * name in it is unknown (verified on 4.0.3), which is what makes
+     * the second call the fallback; tls.group(conn) reports the group
+     * a connection actually settled on (122.13).  The two lists are
+     * macros (tls.h) so C1180 can build this file with a hybrid name
+     * the library does not know and drive the fallback path (122.5). */
+    if (SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_HYBRID) != 1) {
+        if (SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_CLASSICAL) != 1) {
             SSL_CTX_free(ctx);
             return NULL;
         }
