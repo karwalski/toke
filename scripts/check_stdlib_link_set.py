@@ -27,6 +27,8 @@ faithful derivation of the manifest, so the guess can no longer be wrong:
 OPT_IN_BACKENDS are the sole exception: their entire contents sit inside an
 #ifdef that no default build defines, so they compile to an empty object and
 contribute no symbol to a glob link.  Adding to this list requires the same.
+It is empty since story 121.71 archived the only two (db_postgres.c and
+db_mysql.c, never dispatched by any build).
 
 Exit 0 when both hold, 1 otherwise.
 """
@@ -38,7 +40,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 STDLIB = ROOT / "src" / "stdlib"
 
 # Wholly #ifdef-guarded opt-in backends: no symbols unless the flag is given.
-OPT_IN_BACKENDS = {"db_postgres.c", "db_mysql.c"}
+OPT_IN_BACKENDS: set = set()
 
 MANIFEST_FILES = [
     (ROOT / "src" / "stdlib_deps.c", r"([A-Za-z0-9_]+\.c)"),

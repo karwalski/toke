@@ -4,7 +4,8 @@
 #
 # THE DEFECT.  router.serve (router.c), net.listen (net_glue.c),
 # net.portavailable (net.c) and proc_config_test (server_ops.c) set
-# SO_REUSEADDR before every bind.  On Darwin that lets 127.0.0.1:P bind
+# SO_REUSEADDR before every bind.  (server_ops.c, which nothing called, was
+# archived by 121.71; its checks 1d/2c/3e went with it.)  On Darwin that lets 127.0.0.1:P bind
 # beside a live *:P listener (and *:P beside a live 127.0.0.1:P); the more
 # specific socket then takes that address's traffic.  So router.serve and
 # net.listen started on a busy port and took loopback traffic, and the two
@@ -15,17 +16,16 @@
 # WHAT IS ASSERTED (a C driver linked against the stdlib sources; the live
 # listener A is a plain socket in the driver, with SO_REUSEADDR set):
 #   1. A on *:P.  net.listen("127.0.0.1:P") is 0; after it, a connection to
-#      127.0.0.1:P reaches A; net.portavailable(P) is 0; proc_config_test
-#      on 127.0.0.1:P fails; router.serve(r;"127.0.0.1";P) returns $err
+#      127.0.0.1:P reaches A; net.portavailable(P) is 0;
+#      router.serve(r;"127.0.0.1";P) returns $err
 #      (a child process -- if the bind succeeded it would serve forever,
 #      and is reported as "started")
 #   2. A on 127.0.0.1:P.  The wildcard forms: net.listen("0.0.0.0:P") is 0
-#      and A keeps loopback; proc_config_test with no host fails;
-#      router.serve(r;"";P) returns $err
+#      and A keeps loopback; router.serve(r;"";P) returns $err
 #   3. P in TIME_WAIT on the server side (asserted: a plain bind without
 #      SO_REUSEADDR is EADDRINUSE and nothing listens, so the case cannot
 #      pass vacuously).  net.listen binds, net.portavailable is 1,
-#      proc_config_test passes, router.serve starts
+#      router.serve starts
 #   4. a toke program: router.serve(r;"127.0.0.1";P) beside a live *:P
 #      takes the $err arm (exit 7) instead of serving
 #
@@ -51,14 +51,14 @@ if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make
 # dependency change silently breaks.
 # 127.270: the stdlib set is linked as cached objects built with these flags.
 CF=(-std=c11 -D_GNU_SOURCE -D_DARWIN_C_SOURCE -g -O1 -iquote "${S}")
-LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --except server_ops.c --cc "${CC}" --objects net router http -- "${CF[@]}")" \
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --cc "${CC}" --objects net router http -- "${CF[@]}")" \
     || { echo "FAIL: stdlib link set: see stderr above"; echo "Results: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c392_XXXXXX")"
 cleanup() { [ -n "${SRV}" ] && kill -9 "${SRV}" 2>/dev/null; rm -rf "${WORK}"; }
 trap cleanup EXIT
 cd "${WORK}"
-echo "C392: router/net/server_ops binds cannot shadow a live listener (135.33)"
+echo "C392: router/net binds cannot shadow a live listener (135.33)"
 echo "------------------------------------------------------------------------"
 
 cat > t.c <<'C'
@@ -77,7 +77,6 @@ cat > t.c <<'C'
 #include "capabilities.h"
 #include "net.h"
 #include "router.h"
-#include "server_ops.c"      /* proc_config_test and ProcConfig are file-local */
 
 int64_t tk_net_listen_w(int64_t addr);
 static int fails = 0;
@@ -135,12 +134,6 @@ static const char *router_try(const char *host, int port) {
     return "started";
 }
 
-static int cfg_test(const char *host, int port) {
-    ProcConfig c; memset(&c, 0, sizeof c);
-    c.host = host; c.port = (uint64_t)port; c.workers = 1;
-    return proc_config_test(&c);
-}
-
 int main(void) {
     char *av[] = {"t", "--allow-all", NULL}; tk_cap_init(2, av);
     char addr[64];
@@ -154,7 +147,6 @@ int main(void) {
     CHECK(reaches(A, P), "1b ... and 127.0.0.1:P still reaches A");
     if (fd > 0) close((int)fd);
     CHECK(net_portavailable((uint64_t)P) == 0, "1c net.portavailable(P) is false while *:P listens");
-    CHECK(cfg_test("127.0.0.1", P) == -1, "1d proc_config_test(127.0.0.1:P) fails while *:P listens");
     const char *rr = router_try("127.0.0.1", P);
     printf("      router.serve -> %s\n", rr);
     CHECK(!strcmp(rr, "err"), "1e router.serve(r;\"127.0.0.1\";P) beside a live *:P is $err");
@@ -168,7 +160,6 @@ int main(void) {
     CHECK(fd == 0, "2a net.listen(\"0.0.0.0:P\") beside a live 127.0.0.1:P is 0");
     CHECK(reaches(A, P), "2b ... and 127.0.0.1:P still reaches A");
     if (fd > 0) close((int)fd);
-    CHECK(cfg_test(NULL, P) == -1, "2c proc_config_test(*:P) fails while 127.0.0.1:P listens");
     rr = router_try("", P);
     printf("      router.serve -> %s\n", rr);
     CHECK(!strcmp(rr, "err"), "2d router.serve(r;\"\";P) beside a live 127.0.0.1:P is $err");
@@ -205,7 +196,6 @@ int main(void) {
     CHECK(fd > 0, "3c net.listen(\"127.0.0.1:P\") over TIME_WAIT binds");
     if (fd > 0) close((int)fd);
     CHECK(net_portavailable((uint64_t)P) == 1, "3d net.portavailable(P) over TIME_WAIT is true");
-    CHECK(cfg_test("127.0.0.1", P) == 0, "3e proc_config_test(127.0.0.1:P) over TIME_WAIT passes");
     rr = router_try("127.0.0.1", P);
     printf("      router.serve -> %s\n", rr);
     CHECK(!strcmp(rr, "started"), "3f router.serve(r;\"127.0.0.1\";P) over TIME_WAIT starts");

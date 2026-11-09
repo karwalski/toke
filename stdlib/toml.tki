@@ -14,6 +14,7 @@
     {"kind": "func",   "name": "toml.section",   "params": ["tomlval", "str"],   "return": "tomlval!tomlerr"},
     {"kind": "func",   "name": "toml.strarr",    "params": ["tomlval", "str"],   "return": "[str]!tomlerr"},
     {"kind": "func",   "name": "toml.i64arr",    "params": ["tomlval", "str"],   "return": "[i64]!tomlerr"},
+    {"kind": "func",   "name": "toml.f64arr",    "params": ["tomlval", "str"],   "return": "[f64]!tomlerr"},
     {"kind": "func",   "name": "toml.boolarr",   "params": ["tomlval", "str"],   "return": "[bool]!tomlerr"},
     {"kind": "func",   "name": "toml.sectionarr", "params": ["tomlval", "str"],  "return": "[tomlval]!tomlerr"},
     {"kind": "func",   "name": "toml.keys",      "params": ["tomlval"],          "return": "[str]"},

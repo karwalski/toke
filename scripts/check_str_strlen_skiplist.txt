@@ -32,8 +32,6 @@ src/stdlib/dashboard_glue.c 1
 src/stdlib/dataframe.c 1
 src/stdlib/dataframe_glue.c 1
 src/stdlib/db.c 2
-src/stdlib/db_mysql.c 2
-src/stdlib/db_postgres.c 2
 src/stdlib/encrypt.c 2
 src/stdlib/encrypt_glue.c 1
 src/stdlib/env.c 8
@@ -60,7 +58,6 @@ src/stdlib/pdftext.c 1
 src/stdlib/process_glue.c 1
 src/stdlib/proxy.c 3
 src/stdlib/securemem.c 1
-src/stdlib/server_ops.c 2
 src/stdlib/soap.c 9
 src/stdlib/sse.c 7
 src/stdlib/sse_glue.c 1

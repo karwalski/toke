@@ -157,12 +157,13 @@ int64_t tk_toml_has_w(int64_t tab, int64_t key) {
 /*
  * Story 113.B.4 — arrays, keys, len, free.
  *
- * toml.strarr / i64arr / boolarr / sectionarr (v; key) : @T!$tomlerr
+ * toml.strarr / i64arr / f64arr / boolarr / sectionarr (v; key) : @T!$tomlerr
  *   read the array at `key` into a real toke array (tk_array.h layout: one
- *   i64 slot per element -- a string pointer, the integer, 0/1, or a section
- *   view).  There is no toml.f64arr yet: the checker leaves the $ok binding
- *   of a stdlib `@f64!E` call untyped, so `.get(i)` on it reads the double's
- *   bit pattern as an integer -- a wrong value, silently (story 127.297).
+ *   i64 slot per element -- a string pointer, the integer, the double's bit
+ *   pattern (as @f64 is laid out), 0/1, or a section view).  f64arr waited
+ *   on 127.297 (the checker now types a std `@f64!E` $ok binding as @f64, so
+ *   `.get(i)` bitcasts the slot back to a double); it reads a decimal
+ *   integer element as the nearest double, as toml.f64 does.
  *   Same error protocol as the scalar accessors: the slot is the
  *   discriminant, never the returned handle.
  * toml.keys(v) : @$str   the table's own keys (copies: they outlive v).
@@ -193,6 +194,7 @@ static int64_t toml_arr_w(int64_t tab, int64_t key, char kind) {
 
 int64_t tk_toml_strarr_w(int64_t tab, int64_t key)     { return toml_arr_w(tab, key, 's'); }
 int64_t tk_toml_i64arr_w(int64_t tab, int64_t key)     { return toml_arr_w(tab, key, 'i'); }
+int64_t tk_toml_f64arr_w(int64_t tab, int64_t key)     { return toml_arr_w(tab, key, 'd'); }
 int64_t tk_toml_boolarr_w(int64_t tab, int64_t key)    { return toml_arr_w(tab, key, 'b'); }
 int64_t tk_toml_sectionarr_w(int64_t tab, int64_t key) { return toml_arr_w(tab, key, 't'); }
 

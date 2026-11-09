@@ -1,5 +1,13 @@
 # std.db Multi-Backend Architecture
 
+> **Archived 2026-11-10 (story 121.71).** A design record, not the current
+> state. The PostgreSQL and MySQL backends below (`db_postgres.c`,
+> `db_mysql.c`) and the `DbBackend` vtable were never dispatched -- `db.c`
+> talks to SQLite directly and no build selected a backend -- and were
+> archived out of the repo by 121.71. Superseded facts: DSN-prefix backend
+> routing, the `DbBackend` vtable, the `TK_HAVE_LIBPQ` / `TK_HAVE_MYSQL`
+> build flags. std.db is SQLite only; see [std.db](/docs/stdlib/db).
+
 ## Current State (SQLite only)
 
 The current `db.c` implementation uses a single global `sqlite3 *g_db` handle. Functions operate on this global. The `.tki` interface exposes 8 functions (db.one, db.many, db.exec, row.str, row.u64, row.i64, row.f64, row.bool).
