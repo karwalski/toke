@@ -2554,6 +2554,61 @@ static int null_filler(Ctx *cx, const Node *b) {
 }
 
 /*
+ * 138.22 — the two tails of an expression-`if` must have the same type
+ * (spec v0.4 §C: "the two tails must have the same type").  Until this,
+ * NODE_IF_STMT returned the then-tail's type and never looked at the other,
+ * so `let v=if(c){n}el{"s"}` checked clean and `v` held the string's address
+ * as an i64 -- while the same disagreement between `mt` arms is E4011.  The
+ * check uses E4011's rule, scoped as narrowly:
+ *
+ *   - only an `if` whose value is used (not if_discard: a statement `if`'s
+ *     branches are free to end in anything);
+ *   - only a branch whose value is an expression: a STMT_LIST whose last
+ *     statement is an expression statement, or an `el if` (answered by its
+ *     own check, its type being its then-tail's).  A tail that is a `<`
+ *     return, `br`, a binding, or no statement yields nothing to compare;
+ *   - only when both types are known values (TY_UNKNOWN or void tolerated,
+ *     as mt tolerates an unresolved arm -- never a refusal on a guess);
+ *   - types_equal, plus mt's two widenings: u64 beside i64, and the
+ *     literal rule of 127.230 (lit_narrows): an integer literal tail that
+ *     fits the other tail's integer type (`if(c){b}el{0}` with b:u8).
+ *
+ * mt's null filler (`0`/`false` beside a pointer arm) is NOT carried over:
+ * it exists for `$ok:v v;$err:e 0` result matches whose failure side is
+ * guarded elsewhere, and an `if` has no such side.  No `fix`: which branch
+ * is wrong is not decidable (errors.md E4011).
+ */
+static const Node *if_branch_tail_expr(const Node *br) {
+    if (!br || br->kind != NODE_STMT_LIST) return NULL;
+    const Node *tail = NULL;
+    for (int i = 0; i < br->child_count; i++) if (br->children[i]) tail = br->children[i];
+    if (!tail || tail->kind != NODE_EXPR_STMT || tail->child_count < 1) return NULL;
+    return tail->children[0];
+}
+static void if_tails_agree(Ctx *cx, const Node *ifn, Type *a, Type *b) {
+    const Node *ba = ifn->children[1], *bb = ifn->children[2];
+    if (!ba || !bb) return;
+    const Node *ea = if_branch_tail_expr(ba), *eb = if_branch_tail_expr(bb);
+    if (!ea && ba->kind != NODE_IF_STMT) return;
+    if (!eb && bb->kind != NODE_IF_STMT) return;
+    if (!a || !b || a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN
+        || a->kind == TY_VOID || b->kind == TY_VOID) return;
+    if (types_equal(a, b)) return;
+    if ((a->kind == TY_U64 && b->kind == TY_I64) || (a->kind == TY_I64 && b->kind == TY_U64))
+        return;
+    if (ea && lit_narrows(cx->src, ea, b)) return;
+    if (eb && lit_narrows(cx->src, eb, a)) return;
+    const Node *at = eb ? eb : bb;
+    if (!tc_first_report(cx, ifn) || !tc_can_emit(cx)) return;
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "if branches have inconsistent types: '%s' vs '%s'",
+             type_name(a), type_name(b));
+    diag_emit(DIAG_ERROR, E4011, at->start, at->line, at->col, msg,
+              "expected", type_name(a), "got", type_name(b), (const char *)NULL);
+}
+
+/*
  * 127.195 — the type of an `mt` arm's binding while its body is inferred.
  *
  * Only the `$ok:v` arm of a `T!E` scrutinee is answered, with the ok payload
@@ -7494,16 +7549,20 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * statement-ness of the if it continues. */
         int if_discarded=(cx->if_discard==node);
         if (if_discarded) cx->if_discard=NULL;
+        Type *br_ty[3]={NULL,NULL,NULL};
         for (int i=1;i<node->child_count;i++) {
             const Node *br=node->children[i];
             if (br&&br->kind==NODE_STMT_LIST&&!if_discarded) cx->valued_block=br;
             if (br&&br->kind==NODE_IF_STMT&&if_discarded) cx->if_discard=br;
             Type *bt=infer(cx,node->children[i]);
             cx->valued_block=NULL;
+            if (i<3) br_ty[i]=bt;
             if (i==1) then_ty=bt;   /* A1: expression-if yields the then-branch tail type */
         }
         cx->scope_depth--;
         cx->bind_count=saved_bc;
+        if (!if_discarded&&node->child_count>=3)
+            if_tails_agree(cx,node,br_ty[1],br_ty[2]);
         /* As an expression, the if yields its then-branch tail value's type.
          * Statement-position `if` callers discard the returned type. */
         return then_ty;

@@ -612,9 +612,12 @@ is E4010. An `if` standing as a statement discards its branches' values.
 | Severity | error      |
 | Stage    | type_check |
 
-All arms of a `match` expression must evaluate to the same type.
+All arms of a `match` expression must evaluate to the same type. The same
+holds for the two branches of an expression-`if` whose value is used
+(`let v=if(c){ n }el{ "s" }`): the message then reads
+`if branches have inconsistent types: '<T1>' vs '<T2>'`.
 
-**Fix:** Ensure all arms return the same type, using explicit casts if needed.
+**Fix:** Ensure all arms (or both `if` branches) yield the same type, using explicit casts if needed.
 
 ---
 
