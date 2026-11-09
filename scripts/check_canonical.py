@@ -78,15 +78,17 @@ SURFACES = [
     # the source of truth itself — the .md must agree with the .json
     {"path": CANON_MD,
      "blocks": ["one_liner", "paragraph", "token_efficiency_short_form",
-                "disambiguation", "subprojects"],
+                "disambiguation", "disambiguation_structured_data", "subprojects"],
      "facts": ["purpose_one_sentence"]},
 
     {"path": "README.md", "blocks": ["paragraph"]},
 
-    {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"],
-     "story": "132.2 — site home page + disambiguation + llms.txt"},
-    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"],
-     "story": "132.2 — site home page + disambiguation + llms.txt"},
+    # Story 132.126: 132.2 is done, so the home page and llms.txt are enforced.
+    # The owner moved the home page's disambiguation into schema.org JSON-LD
+    # (toke-website 077064e); a structured-data form (STRUCTURED_FORMS) in the
+    # page or the layout it renders through satisfies the block.
+    {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"]},
+    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"]},
 
     # repo READMEs, rewritten from the canonical block by story 132.10. These are
     # repository front pages, not registry descriptions: 132.4 owns the PyPI, npm,
@@ -188,6 +190,68 @@ AWAITING_PUBLISH = [
 ]
 
 NEAR_MISS = 0.55        # similarity above which an absent block is "drifted"
+
+# ------------------------------------------------------ structured data ----
+# Story 132.126. A block may be carried as schema.org JSON-LD instead of visible
+# text, but only where canonical.json declares that form: a block whose
+# "form_of" names the visible block, with the JSON-LD "field" that carries it
+# and the "same_as" URLs that must accompany it. The home page does this for the
+# disambiguation (toke-website 077064e, owner). The structured form is checked
+# word for word like the visible one; a page with neither still fails.
+LAYOUT_CALL = re.compile(r"""\{!\s*layout\(\s*["']([^"']+)["']\s*\)\s*!\}""")
+JSONLD_SCRIPT = re.compile(
+    r"""<script[^>]*type\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>""",
+    re.S | re.I)
+
+
+def structured_forms(canon):
+    """{visible block key: structured block key} from canonical.json."""
+    return {v["form_of"]: k for k, v in canon.get("blocks", {}).items()
+            if isinstance(v, dict) and v.get("form_of")}
+
+
+def jsonld_objects(full):
+    """Every JSON-LD object in `full` and in the layout chain it renders through."""
+    out, seen = [], set()
+    while full and full not in seen and os.path.exists(full):
+        seen.add(full)
+        text = open(full, encoding="utf-8", errors="replace").read()
+        for raw in JSONLD_SCRIPT.findall(text):
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            stack = [data]
+            while stack:
+                obj = stack.pop()
+                if isinstance(obj, list):
+                    stack.extend(obj)
+                elif isinstance(obj, dict):
+                    out.append((full, obj))
+                    stack.extend(obj.get("@graph", []) if isinstance(obj.get("@graph"), list) else [])
+        m = LAYOUT_CALL.search(text)
+        full = os.path.join(os.path.dirname(full), m.group(1) + ".tkt") if m else None
+    return out
+
+
+def check_structured(canon, full, key):
+    """None when `full` carries block `key` as structured data, else (why, detail)."""
+    spec = canon["blocks"][key]
+    field, want = spec["field"], normalise(spec["value"])
+    found = [(src, obj) for src, obj in jsonld_objects(full) if field in obj]
+    if not found:
+        return ("MISSING", "")
+    for src, obj in found:
+        got = normalise(str(obj[field]))
+        if got != want:
+            return ("DRIFTED", "%s %s: %s" % (os.path.basename(src), field,
+                                             first_difference(got, want)))
+        same = obj.get("sameAs", [])
+        same = [same] if isinstance(same, str) else same
+        lost = [u for u in spec.get("same_as", []) if u not in same]
+        if lost:
+            return ("DRIFTED", "%s sameAs lacks %s" % (os.path.basename(src), ", ".join(lost)))
+    return None
 
 # ---------------------------------------------------------------- Rule 2 ----
 DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md", "AGENTS.md"]
@@ -506,16 +570,27 @@ def check_surfaces(canon):
         except OSError as exc:
             sink.append((rel, 0, "unreadable: %s" % exc, "", owner))
             continue
+        forms = structured_forms(canon)
         for key in surface.get("blocks", []) + surface.get("facts", []):
             want = normalise(block_text(canon, key))
             if want in hay:
                 continue
+            if markup and key in forms:                       # 132.126
+                res = check_structured(canon, full, forms[key])
+                if res is None:
+                    continue
+                if res[0] == "DRIFTED":
+                    sink.append((rel, 0, "the %r block is absent and its structured-data "
+                                 "form %r has DRIFTED" % (key, forms[key]), res[1], owner))
+                    continue
             got, ratio = best_window(hay, want)
             if ratio >= NEAR_MISS:
                 sink.append((rel, 0, "the %r block has DRIFTED (%.0f%% match)"
                              % (key, ratio * 100), first_difference(got, want), owner))
             else:
-                sink.append((rel, 0, "the %r block is MISSING" % key, "", owner))
+                sink.append((rel, 0, "the %r block is MISSING%s"
+                             % (key, " (and so is its structured-data form %r)" % forms[key]
+                                if markup and key in forms else ""), "", owner))
     return failures, warnings
 
 
@@ -770,6 +845,65 @@ def selftest_rule1():
     return bad
 
 
+def selftest_structured():
+    """132.126 — a block's structured-data form satisfies it; neither form fails.
+
+    Fixture: a template page that renders through `{! layout("base") !}`, as the
+    website's index.tkt does, with the JSON-LD (if any) in the layout. The
+    negative controls are the point: a page with neither the visible block nor
+    the JSON-LD form, a re-worded JSON-LD description, and a JSON-LD object that
+    drops a canonical sameAs URL must all still fail."""
+    import tempfile
+    global SURFACES
+    canon = load_canonical()
+    spec = canon["blocks"]["disambiguation_structured_data"]
+    visible = canon["blocks"]["disambiguation"]["value"]
+
+    def jsonld(desc, same):
+        return ('<script type="application/ld+json">\n%s\n</script>'
+                % json.dumps({"@context": "https://schema.org",
+                              "@type": "SoftwareApplication", "name": "toke",
+                              spec["field"]: desc, "sameAs": same}, indent=2))
+
+    page = '{! layout("base") !}\n{! block("content") !}\n<p>%s</p>\n{! end !}\n'
+    reworded = spec["value"].replace("unrelated to the slang term", "not the slang term")
+    cases = [
+        # (passes?, name, index.tkt body, base.tkt head)
+        (True, "visible block, no JSON-LD", page % visible, "<head></head>"),
+        (True, "JSON-LD form in the layout (toke-website 077064e)", page % "Hero.",
+         "<head>%s</head>" % jsonld(spec["value"], spec["same_as"])),
+        (True, "JSON-LD form in the page itself", page % jsonld(spec["value"], spec["same_as"]),
+         "<head></head>"),
+        (False, "neither the visible block nor the JSON-LD form", page % "Hero.",
+         "<head></head>"),
+        (False, "JSON-LD present but carries a different field only", page % "Hero.",
+         '<script type="application/ld+json">{"description": "%s"}</script>' % spec["value"]),
+        (False, "re-worded JSON-LD description", page % "Hero.",
+         "<head>%s</head>" % jsonld(reworded, spec["same_as"])),
+        (False, "JSON-LD sameAs drops the GitHub URL", page % "Hero.",
+         "<head>%s</head>" % jsonld(spec["value"], ["https://tokelang.dev"])),
+    ]
+    bad, saved = 0, SURFACES
+    try:
+        for passes, name, index_body, base_body in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                for fname, body in (("index.tkt", index_body), ("base.tkt", base_body)):
+                    with open(os.path.join(tmp, fname), "w", encoding="utf-8") as fh:
+                        fh.write(body)
+                SURFACES = [{"path": os.path.join(tmp, "index.tkt"),
+                             "blocks": ["disambiguation"]}]
+                failures, warnings = check_surfaces(canon)
+            ok = (not failures and not warnings) if passes else bool(failures)
+            if not ok:
+                bad += 1
+                print("SELFTEST FAIL [rule 1 structured %s] %s: %s"
+                      % ("accept" if passes else "reject", name,
+                         failures[0][2] if failures else "not flagged"))
+    finally:
+        SURFACES = saved
+    return bad, len(cases)
+
+
 def selftest_workspace():
     """132.95: a worktree resolves its siblings beside the MAIN checkout.
 
@@ -811,7 +945,8 @@ def selftest_workspace():
 
 def selftest():
     import tempfile
-    bad = selftest_rule1() + selftest_workspace()
+    sbad, nstructured = selftest_structured()
+    bad = selftest_rule1() + selftest_workspace() + sbad
     for accept, name, text in SELFTEST:
         with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
                                          delete=False) as fh:
@@ -827,19 +962,20 @@ def selftest():
             print("SELFTEST FAIL [%s] %s: %s"
                   % ("accept" if accept else "reject", name,
                      "flagged: %s" % found[0][2] if found else "not flagged"))
-    total = len(SELFTEST) + len(SELFTEST_RULE1) + 1
+    total = len(SELFTEST) + len(SELFTEST_RULE1) + 1 + nstructured
     if bad:
         print("\nselftest: %d of %d cases wrong — the canonical-facts gate is not "
               "behaving as documented." % (bad, total))
         return 1
     print("selftest: %d cases OK — %d Rule 2 (%d corrections accepted, %d stale "
           "claims still rejected) and %d Rule 1 (%d faithful copies matched, "
-          "%d re-wordings still caught), plus worktree workspace resolution (132.95)."
+          "%d re-wordings still caught), %d Rule 1 structured-data form (132.126), "
+          "plus worktree workspace resolution (132.95)."
           % (total, len(SELFTEST),
              sum(1 for c in SELFTEST if c[0]), sum(1 for c in SELFTEST if not c[0]),
              len(SELFTEST_RULE1),
              sum(1 for c in SELFTEST_RULE1 if c[0]),
-             sum(1 for c in SELFTEST_RULE1 if not c[0])))
+             sum(1 for c in SELFTEST_RULE1 if not c[0]), nstructured))
     return 0
 
 

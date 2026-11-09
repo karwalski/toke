@@ -117,6 +117,14 @@
       "verbatim": true,
       "source": "docs/progress.md Epic 132, acceptance criterion 5"
     },
+    "disambiguation_structured_data": {
+      "value": "toke is a compiled programming language. It is unrelated to the slang term for smoking, to cannabis brands using the name, to the TOKE cryptocurrency tokens, to Tokelau or its .tk country-code domain, and to tokelang.com, which is an unrelated third-party project.",
+      "verbatim": true,
+      "field": "disambiguatingDescription",
+      "same_as": ["https://github.com/karwalski/toke", "https://tokelang.dev"],
+      "form_of": "disambiguation",
+      "source": "toke-website 077064e (owner, 2026-09-22): the home page carries the disambiguation as schema.org JSON-LD (disambiguatingDescription + sameAs in templates/base.tkt) instead of a visible block; story 132.126"
+    },
     "subprojects": {
       "value": "ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web framework and static site generator, and it builds tokelang.dev (a toke binary on std.http serves it); loke is toke's local intelligence layer; moke is loke's data-analysis demo. All three are written in toke.",
       "verbatim": true,
