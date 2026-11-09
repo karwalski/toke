@@ -288,10 +288,18 @@ mkdir -p "${WORK}/tl"
 printf '<p>{! yield("a") !}</p>' > "${WORK}/tl/base.tkt"
 printf '{! layout("base") !}{! block("a") !}xx{! end !}{! block("bad' > "${WORK}/tl/page.tkt"
 trc=1
-if "${CC}" -std=c11 -D_GNU_SOURCE -g ${SAN} -iquote "${S}" -c -include "${WORK}/cnt.h" \
+# The rest of std.template's link set (str.c since 127.295's tk_strlen, and
+# whatever it needs next) comes from stdlib_link_set.sh, with template.c
+# itself left out: it is the counting-allocator build above.
+TL_LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --except template.c --objects template -- "${CF[@]}")" \
+    || { echo "  FAIL: template leak driver link set: see stderr above"; TL_LINKSET=""; }
+TL_LINK=(); while IFS= read -r l; do [ -n "$l" ] && TL_LINK+=("$l"); done <<< "${TL_LINKSET}"
+if [ -n "${TL_LINKSET}" ] &&
+   "${CC}" -std=c11 -D_GNU_SOURCE -g ${SAN} -iquote "${S}" -c -include "${WORK}/cnt.h" \
         -o "${WORK}/tmpl_cnt.o" "${S}/template.c" >"${WORK}/tcc.log" 2>&1 &&
    "${CC}" -std=c11 -D_GNU_SOURCE -g ${SAN} -iquote "${S}" -o "${WORK}/tl_t" \
-        "${WORK}/cnt.c" "${WORK}/tmpl_cnt.o" >>"${WORK}/tcc.log" 2>&1; then
+        "${WORK}/cnt.c" "${WORK}/tmpl_cnt.o" "${TL_LINK[@]}" -lz -lm -lpthread >>"${WORK}/tcc.log" 2>&1; then
     ASAN_OPTIONS="detect_leaks=0" "${WORK}/tl_t" "${WORK}/tl/page.tkt" "${WORK}/tl"
     trc=$?
 else
