@@ -40,6 +40,7 @@
 #include "tk_bind.h"   /* 135.33 */
 #include "tk_gzip_type.h"   /* 121.89 */
 #include "tk_http_field.h"  /* 121.92 */
+#include "tk_nosigpipe.h"   /* 127.347 */
 #include "capabilities.h"   /* 121.42: router.serve takes the net grant */
 
 /* ----------------------------------------------------------------------- */
@@ -944,6 +945,14 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
     if (strcmp(upgrade_val, "websocket") != 0)
         return 0;
 
+    /* 127.347: from here on every write on fd is a WebSocket server write.
+     * They used plain write(2), so a client that closed first (a browser tab
+     * shut mid-handshake, a peer that sends CLOSE and leaves before our CLOSE
+     * reply) raised SIGPIPE and killed the server.  SO_NOSIGPIPE on the socket
+     * where it exists (it also covers writes the on_open / on_message
+     * callbacks make on fd) and tk_send_all (MSG_NOSIGNAL) on every write. */
+    tk_sock_nosigpipe(fd);
+
     /* Find a matching WS route */
     TkWsRoute *matched = NULL;
     for (i = 0; i < r->nws; i++) {
@@ -967,7 +976,7 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
             "HTTP/1.1 404 Not Found\r\n"
             "Content-Length: 0\r\n"
             "Connection: close\r\n\r\n";
-        (void)write(fd, resp404, sizeof(resp404) - 1);
+        (void)tk_send_all(fd, resp404, sizeof(resp404) - 1);
         return 1;
     }
 
@@ -976,7 +985,7 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
             "HTTP/1.1 400 Bad Request\r\n"
             "Content-Length: 0\r\n"
             "Connection: close\r\n\r\n";
-        (void)write(fd, resp400, sizeof(resp400) - 1);
+        (void)tk_send_all(fd, resp400, sizeof(resp400) - 1);
         return 1;
     }
 
@@ -988,7 +997,7 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
                 "HTTP/1.1 500 Internal Server Error\r\n"
                 "Content-Length: 0\r\n"
                 "Connection: close\r\n\r\n";
-            (void)write(fd, resp500, sizeof(resp500) - 1);
+            (void)tk_send_all(fd, resp500, sizeof(resp500) - 1);
             return 1;
         }
         {
@@ -1000,7 +1009,7 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
                              "Sec-WebSocket-Accept: %s\r\n\r\n",
                              accept);
             free((char *)accept);
-            if (n > 0) (void)write(fd, resp101, (size_t)n);
+            if (n > 0) (void)tk_send_all(fd, resp101, (size_t)n);
         }
     }
 
@@ -1032,7 +1041,7 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
                                         frame->payload,
                                         frame->payload_len, 0);
                     if (!pong.is_err && pong.data)
-                        (void)write(fd, pong.data, (size_t)pong.len);
+                        (void)tk_send_all(fd, pong.data, (size_t)pong.len);
                     ws_encode_result_free(&pong);
                     break;
                 }
@@ -1040,7 +1049,7 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
                     WsEncodeResult cfr =
                         ws_encode_frame(WS_CLOSE, NULL, 0, 0);
                     if (!cfr.is_err && cfr.data)
-                        (void)write(fd, cfr.data, (size_t)cfr.len);
+                        (void)tk_send_all(fd, cfr.data, (size_t)cfr.len);
                     ws_encode_result_free(&cfr);
                     if (matched->on_close)
                         matched->on_close(fd);

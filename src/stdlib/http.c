@@ -39,6 +39,7 @@
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
 #endif
+#include "tk_nosigpipe.h"      /* 127.347: TK_SEND_FLAGS, tk_sock_nosigpipe */
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
 
@@ -87,20 +88,13 @@
  * docs/stdlib/http.md under "What servetls does to SIGPIPE on Linux".
  */
 
-#ifdef MSG_NOSIGNAL
-#define HTTP_SEND_FLAGS MSG_NOSIGNAL
-#else
-#define HTTP_SEND_FLAGS 0
-#endif
+/* The mechanisms live in tk_nosigpipe.h so ws.c applies the same guard
+ * without linking this file (127.347). */
+#define HTTP_SEND_FLAGS TK_SEND_FLAGS
 
 void http_sock_nosigpipe(int fd)
 {
-#ifdef SO_NOSIGPIPE
-    int on = 1;
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
-#else
-    (void)fd;
-#endif
+    tk_sock_nosigpipe(fd);
 }
 
 /*
