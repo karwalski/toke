@@ -186,6 +186,11 @@ here are **remote-unauth**.
 
 **Added:** 2026-09-26 (story 122.6; decision record ADR-0013 (f), roadmap 122.5)
 
+The call-site triage of key-establishment exposure is
+[`pqc-hndl-triage.md`](pqc-hndl-triage.md); the signature migration plan, and
+the proposed post-quantum stdlib API awaiting an owner decision, are in
+[`pqc-signatures-roadmap.md`](pqc-signatures-roadmap.md) (122.5).
+
 A cryptographically relevant quantum computer (CRQC) breaks the classical
 **asymmetric** primitives (RSA, finite-field and elliptic-curve Diffie-Hellman,
 ECDSA, Ed25519) outright. It weakens symmetric ciphers and hashes far less:
