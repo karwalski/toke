@@ -16,6 +16,10 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <time.h>
 #include "../../src/stdlib/http.h"
 #include "../../src/stdlib/capabilities.h"
 
@@ -599,6 +603,69 @@ int main(void)
         const char *etag = "W/\"v4\"";
         ASSERT(http_etag_matches(etag, "W/\"v1\", W/\"v2\", W/\"v3\"") == 0,
                "http_etag_matches no match in list returns 0");
+    }
+
+    /* 138.31: a body with neither Content-Length nor chunked encoding ends
+     * at connection close; a read TIMEOUT before the close means it was cut
+     * and is an error, not success with what arrived.  toke has no setter for
+     * the 30 s client timeout, so this case lives here, where timeout_ms is a
+     * field (C1030 covers close and reset, plain and TLS).  A forked loopback
+     * server sends the headers and 3 body bytes, then holds the connection
+     * open (10 s, killed when the client returns); the client's 300 ms per-read timeout must fire first.  The
+     * control: the same server closing at once is answered with the body. */
+    for (int stall = 1; stall >= 0; stall--) {
+        int ls = socket(AF_INET, SOCK_STREAM, 0);
+        struct sockaddr_in sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sin_family = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t sl = sizeof sa;
+        int okl = ls >= 0 && bind(ls, (struct sockaddr *)&sa, sizeof sa) == 0
+               && listen(ls, 1) == 0
+               && getsockname(ls, (struct sockaddr *)&sa, &sl) == 0;
+        ASSERT(okl, "138.31: loopback listener");
+        if (!okl) { if (ls >= 0) close(ls); break; }
+        pid_t pid = fork();
+        if (pid == 0) {
+            int c = accept(ls, NULL, NULL);
+            char rb[4096]; size_t got = 0;
+            while (c >= 0 && got < sizeof rb - 1) {      /* read the request */
+                ssize_t k = recv(c, rb + got, sizeof rb - 1 - got, 0);
+                if (k <= 0) break;
+                got += (size_t)k; rb[got] = '\0';
+                if (strstr(rb, "\r\n\r\n")) break;
+            }
+            const char *resp = "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nabc";
+            if (c >= 0) (void)!send(c, resp, strlen(resp), 0);
+            if (stall) sleep(10);   /* killed once the client returns */
+            if (c >= 0) close(c);
+            _exit(0);
+        }
+        close(ls);
+        char url[64];
+        snprintf(url, sizeof url, "http://127.0.0.1:%u", (unsigned)ntohs(sa.sin_port));
+        HttpClient *tc = http_client(url);
+        tc->timeout_ms = 300;
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        HttpClientResp tr = http_get(tc, "/");
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        long ms = (long)(t1.tv_sec - t0.tv_sec) * 1000
+                + (long)(t1.tv_nsec - t0.tv_nsec) / 1000000;
+        if (stall) {
+            ASSERT(tr.is_err == 1 && tr.err_code == 0,
+                   "138.31: close-delimited body cut by a read timeout is an error (code 0)");
+            ASSERT(tr.err_msg && strstr(tr.err_msg, "receive timed out")
+                   && strstr(tr.err_msg, "after 3 body bytes"),
+                   "138.31: the timeout error names the cause and the bytes read");
+            ASSERT(ms < 5000, "138.31: the error comes at the read timeout, not the close");
+        } else {
+            ASSERT(tr.is_err == 0 && tr.body_len == 3 && tr.body
+                   && memcmp(tr.body, "abc", 3) == 0,
+                   "138.31: control: the same body ended by a close is success");
+        }
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
     }
 
     if (failures == 0) { printf("All tests passed.\n"); return 0; }

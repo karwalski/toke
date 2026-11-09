@@ -2297,7 +2297,8 @@ static Type *infer(Ctx *cx, const Node *node);
  *
  * mt_ok_payload_type is the `T` of a scrutinee that is a `T!E` call — a user
  * function's return spec, or an imported export's "return" beside its
- * "error" key (imported struct records only, the 127.66 rule) — or a local
+ * "error" key or inline `T!E` spelling (imported struct records, the 127.66
+ * rule; the inline form since 138.21/138.33) — or a local
  * `let` bound to such a call.
  */
 /*
@@ -2421,13 +2422,30 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
             /* 127.297 / 127.302: a hand-written std record spells the union
              * inline (`"return": "bool!jsonerr"`) rather than with an
              * "error" key, so its `T` is the spelling before the '!'.  Only
-             * a representation-bearing T is adopted (no struct: the 127.66
-             * rule stays as it was for the inline form). */
+             * a representation-bearing T or an imported std record (138.21
+             * opaque, 138.33 fielded, below) is adopted. */
             const char *bang = (f->ret && !f->abi_ret) ? strchr(f->ret, '!') : NULL;
             if (!bang || bang == f->ret || (size_t)(bang - f->ret) >= 128) return NULL;
             char okb[128];
             memcpy(okb, f->ret, (size_t)(bang - f->ret));
             okb[bang - f->ret] = '\0';
+            /* 138.21: an OPAQUE std record (`"fields": []` -- process's
+             * `handle`, vechandle, strbuf, ...) is adopted.  It carries no
+             * field layout for codegen to read, and at the ABI it is the
+             * i64 handle (opaque_handle_type: integer-compatible), so the
+             * only thing typing it adds is the judgment: `$ok:h h; $err:e
+             * "oops"` was clean and `process.wait(h)` read the string's
+             * bytes as a ProcessHandle.
+             * 138.33: a std record WITH fields (`httpresp!httperr`) is
+             * adopted too.  Left unknown, `$ok:x x; $err:e "oops"` was clean
+             * and `r.nosuch` on the bound value passed --check.  Codegen
+             * already lowers the payload by the record's .tki layout, so
+             * typing it adds the E4011 arm judgment and E4025 field checks;
+             * `$err:e 0` stays clean (E4011's null filler). */
+            {
+                Type *ost = imported_struct_type(cx, okb, 0);
+                if (ost) return ost;
+            }
             return repr_payload_type(cx, okb);
         }
         Type *st = imported_struct_type(cx, f->okret, 0);
@@ -2551,6 +2569,61 @@ static int null_filler(Ctx *cx, const Node *b) {
     if (b->kind == NODE_INT_LIT) return strcmp(tb, "0") == 0;
     if (b->kind == NODE_BOOL_LIT) return strcmp(tb, "false") == 0;
     return 0;
+}
+
+/*
+ * 138.22 — the two tails of an expression-`if` must have the same type
+ * (spec v0.4 §C: "the two tails must have the same type").  Until this,
+ * NODE_IF_STMT returned the then-tail's type and never looked at the other,
+ * so `let v=if(c){n}el{"s"}` checked clean and `v` held the string's address
+ * as an i64 -- while the same disagreement between `mt` arms is E4011.  The
+ * check uses E4011's rule, scoped as narrowly:
+ *
+ *   - only an `if` whose value is used (not if_discard: a statement `if`'s
+ *     branches are free to end in anything);
+ *   - only a branch whose value is an expression: a STMT_LIST whose last
+ *     statement is an expression statement, or an `el if` (answered by its
+ *     own check, its type being its then-tail's).  A tail that is a `<`
+ *     return, `br`, a binding, or no statement yields nothing to compare;
+ *   - only when both types are known values (TY_UNKNOWN or void tolerated,
+ *     as mt tolerates an unresolved arm -- never a refusal on a guess);
+ *   - types_equal, plus mt's two widenings: u64 beside i64, and the
+ *     literal rule of 127.230 (lit_narrows): an integer literal tail that
+ *     fits the other tail's integer type (`if(c){b}el{0}` with b:u8).
+ *
+ * mt's null filler (`0`/`false` beside a pointer arm) is NOT carried over:
+ * it exists for `$ok:v v;$err:e 0` result matches whose failure side is
+ * guarded elsewhere, and an `if` has no such side.  No `fix`: which branch
+ * is wrong is not decidable (errors.md E4011).
+ */
+static const Node *if_branch_tail_expr(const Node *br) {
+    if (!br || br->kind != NODE_STMT_LIST) return NULL;
+    const Node *tail = NULL;
+    for (int i = 0; i < br->child_count; i++) if (br->children[i]) tail = br->children[i];
+    if (!tail || tail->kind != NODE_EXPR_STMT || tail->child_count < 1) return NULL;
+    return tail->children[0];
+}
+static void if_tails_agree(Ctx *cx, const Node *ifn, Type *a, Type *b) {
+    const Node *ba = ifn->children[1], *bb = ifn->children[2];
+    if (!ba || !bb) return;
+    const Node *ea = if_branch_tail_expr(ba), *eb = if_branch_tail_expr(bb);
+    if (!ea && ba->kind != NODE_IF_STMT) return;
+    if (!eb && bb->kind != NODE_IF_STMT) return;
+    if (!a || !b || a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN
+        || a->kind == TY_VOID || b->kind == TY_VOID) return;
+    if (types_equal(a, b)) return;
+    if ((a->kind == TY_U64 && b->kind == TY_I64) || (a->kind == TY_I64 && b->kind == TY_U64))
+        return;
+    if (ea && lit_narrows(cx->src, ea, b)) return;
+    if (eb && lit_narrows(cx->src, eb, a)) return;
+    const Node *at = eb ? eb : bb;
+    if (!tc_first_report(cx, ifn) || !tc_can_emit(cx)) return;
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "if branches have inconsistent types: '%s' vs '%s'",
+             type_name(a), type_name(b));
+    diag_emit(DIAG_ERROR, E4011, at->start, at->line, at->col, msg,
+              "expected", type_name(a), "got", type_name(b), (const char *)NULL);
 }
 
 /*
@@ -4055,6 +4128,17 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
          * stored, so the emitter sees the rtypes it saw before. */
         if ((!at || at->kind == TY_UNKNOWN) && strcmp(ps, "str") == 0)
             at = std_array_ret(cx, an, 0);
+        /* 138.26: a std call whose interface returns a RECORD, written in
+         * place -- `http.geturl(http.client(u))` passed --check while the
+         * same client bound by `let` first was E4031: infer() adopts an
+         * in-place record return only for a map (the emitter keys on the
+         * rtype), so the argument reached here untyped.  The declared
+         * record (call_decl_ret_type, the 127.66 rule) is judged here and
+         * never stored, as 127.314 does for an array. */
+        if ((!at || at->kind == TY_UNKNOWN) && an->kind == NODE_CALL_EXPR) {
+            Type *rt = call_decl_ret_type(cx, an);
+            if (rt && rt->kind == TY_STRUCT) at = rt;
+        }
         if (!at || at->kind == TY_UNKNOWN) continue;
         if (strcmp(ps, "i64") == 0 && at->kind != TY_STR) continue;
         /* 127.304: two `i64` parameters take a str by contract.
@@ -4077,23 +4161,44 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
                 || strcmp(sym, "tk_str_padright_w") == 0)) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID) continue;
-        /* Judged by REPRESENTATION class, not width: a hand-written record
-         * spells `u64`/`u8` where the glue takes an i64 slot and programs
-         * pass an i64 (str.slice, mem.store8, s.addbyte -- 150+ call sites in
-         * the tree sweep), and an array's element width is not the glue's
-         * business either.  What is certain is a value of another KIND --
-         * a number where a str is read, a str or a record where a number
-         * is, an array where a scalar is. */
-        int ac = tki_arg_class(at), pc = tki_arg_class(pt);
-        if (!ac || !pc || ac == pc) continue;
-        /* An integer where a RECORD is declared is a handle: std callbacks
-         * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
-         * then `tls.read(conn)` -- conform C022), and every record crosses
-         * the ABI as an i64 slot.  The reverse (a record where a number is
-         * read) stays judged. */
-        if (pc == 6 && ac == 2) continue;
-        if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
-            && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
+        /* 138.21: an OPAQUE std record (`"fields": []`: process's `handle`,
+         * vechandle, strbuf, ...) is the C handle itself.  tki_arg_class
+         * leaves it unjudged (class 0) because an integer is a legitimate
+         * handle there (136.36: the ABI value IS the i64), and that let
+         * `process.wait("abc")` through: the glue read the string's bytes
+         * as a ProcessHandle.  What is certain is a value of another KIND:
+         * a str, float, array or map where an opaque handle is declared,
+         * or an opaque handle where one of those is; an integer either way,
+         * or the same record, is not judged.  A record of another name is
+         * judged as for any record. */
+        if (opaque_handle_type(pt) || opaque_handle_type(at)) {
+            const Type *h = opaque_handle_type(pt) ? pt : at;
+            const Type *o = h == pt ? at : pt;
+            int oc = tki_arg_class(o);
+            if (scalar_int_type(o)) continue;
+            if (o->kind == TY_STRUCT && o->name && h->name
+                && strcmp(o->name, h->name) == 0) continue;
+            if (o->kind != TY_STRUCT && oc != 1 && oc != 3 && oc != 4 && oc != 5)
+                continue;
+        } else {
+            /* Judged by REPRESENTATION class, not width: a hand-written record
+             * spells `u64`/`u8` where the glue takes an i64 slot and programs
+             * pass an i64 (str.slice, mem.store8, s.addbyte -- 150+ call sites in
+             * the tree sweep), and an array's element width is not the glue's
+             * business either.  What is certain is a value of another KIND --
+             * a number where a str is read, a str or a record where a number
+             * is, an array where a scalar is. */
+            int ac = tki_arg_class(at), pc = tki_arg_class(pt);
+            if (!ac || !pc || ac == pc) continue;
+            /* An integer where a RECORD is declared is a handle: std callbacks
+             * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
+             * then `tls.read(conn)` -- conform C022), and every record crosses
+             * the ABI as an i64 slot.  The reverse (a record where a number is
+             * read) stays judged. */
+            if (pc == 6 && ac == 2) continue;
+            if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
+                && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
+        }
         if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
         char msg[512], en[96], gn[96];
         snprintf(en, sizeof en, "%s", type_name(pt));
@@ -7494,16 +7599,20 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * statement-ness of the if it continues. */
         int if_discarded=(cx->if_discard==node);
         if (if_discarded) cx->if_discard=NULL;
+        Type *br_ty[3]={NULL,NULL,NULL};
         for (int i=1;i<node->child_count;i++) {
             const Node *br=node->children[i];
             if (br&&br->kind==NODE_STMT_LIST&&!if_discarded) cx->valued_block=br;
             if (br&&br->kind==NODE_IF_STMT&&if_discarded) cx->if_discard=br;
             Type *bt=infer(cx,node->children[i]);
             cx->valued_block=NULL;
+            if (i<3) br_ty[i]=bt;
             if (i==1) then_ty=bt;   /* A1: expression-if yields the then-branch tail type */
         }
         cx->scope_depth--;
         cx->bind_count=saved_bc;
+        if (!if_discarded&&node->child_count>=3)
+            if_tails_agree(cx,node,br_ty[1],br_ty[2]);
         /* As an expression, the if yields its then-branch tail value's type.
          * Statement-position `if` callers discard the returned type. */
         return then_ty;

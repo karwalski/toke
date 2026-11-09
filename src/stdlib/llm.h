@@ -32,6 +32,8 @@
  * base_url and api_key came first and `c.model` printed the API key.
  * `make check-tki-layout` keeps the prefix in step with the .tki.
  */
+/* The four strings are sealed (127.295, runtime-abi §3.1): never freed;
+ * llm_client_free frees only the struct. */
 /* tki-record-prefix: llm.llmclient */
 typedef struct {
     const char *provider;    /* slot 0: "openai", "anthropic", "ollama" or the URL's host */
@@ -59,7 +61,7 @@ typedef struct {
 
 /* TkLlmResp — result of a non-streaming chat completion. */
 typedef struct {
-    const char *content;      /* full response text; heap-allocated */
+    const char *content;      /* full response text; a sealed string, never freed (127.295) */
     uint64_t    input_tokens;
     uint64_t    output_tokens;
     int         is_err;
@@ -68,7 +70,7 @@ typedef struct {
 
 /* TkLlmStream — collected delta chunks from a streaming completion. */
 typedef struct {
-    const char **chunks;   /* NULL-terminated array of delta strings; heap-allocated */
+    const char **chunks;   /* NULL-terminated, heap-allocated array of sealed delta strings (127.295) */
     uint64_t     nchunks;
     int          is_err;
     const char  *err_msg;  /* heap-allocated on error, NULL otherwise */
@@ -96,7 +98,7 @@ typedef struct {
 /* llm_client — allocate a new TkLlmClient.  Caller must call llm_client_free. */
 TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *model);
 
-/* llm_client_free — release all resources owned by c. */
+/* llm_client_free — release c (its sealed strings are never freed). */
 void         llm_client_free(TkLlmClient *c);
 
 /* llm_chat — send msgs to the model and return a single completion.
@@ -142,7 +144,7 @@ const char  *llm_build_request(TkLlmMsg *msgs, uint64_t nmsgs, const char *model
 
 /* llm_parse_sse_chunk — extract choices[0].delta.content from a raw SSE data JSON string.
  * Pass the raw JSON after "data: ".
- * Returns a heap-allocated string (possibly empty "") for a normal delta.
+ * Returns a sealed string (possibly empty "", never freed; 127.295) for a normal delta.
  * Returns NULL for "[DONE]" or on parse error. */
 const char  *llm_parse_sse_chunk(const char *sse_data);
 
