@@ -340,7 +340,36 @@ STALE = [
      "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
      "(docs/decisions/gate1-decision.md)",
      "verdict"),
+    # Story 132.127 — the same retired verdict, PARAPHRASED: "Gate 1 required
+    # >10% token reduction and Pass@1 >= 60%. Both criteria were met" (toke
+    # docs/about/why.md:28 until Z122) passed every rule above. A sentence that
+    # says both / all of the criteria (thresholds, conditions, requirements)
+    # were met, exceeded, passed or satisfied is the PASS verdict in other
+    # words. It is only a Gate 1 claim when "Gate 1" is in the same window
+    # (GATE1_CONTEXT), so "both criteria were met" about anything else is left
+    # alone; one criterion stated as met ("the token-reduction criterion stands
+    # as met") never matches. Excused, like the verdict above, only by the
+    # decision itself (VERDICT_DECIDED).
+    (re.compile(
+        r"(?i:\b(?:both|all)\s+(?:(?:two|three|of\s+(?:the|its))\s+)?"
+        r"(?:gate[\s-]*1\s+|gate\s+|go/no-go\s+)?"
+        r"(?:criteria|criterion|thresholds?|conditions|requirements|targets)\s+"
+        r"(?:(?:were|was|are|is|have\s+been|had\s+been|got)\s+)?(?:both\s+)?"
+        r"(?:met|exceeded|passed|satisfied|cleared|achieved)\b)"
+        r"|(?i:\b(?:criteria|thresholds|conditions|requirements|targets)\s+"
+        r"(?:were|are|have\s+been|had\s+been)\s+(?:both|all)\s+"
+        r"(?:met|exceeded|passed|satisfied|cleared|achieved)\b)"
+        r"|(?i:\b(?:met|exceeded|passed|satisfied|cleared)\s+(?:both|all)\s+"
+        r"(?:(?:of\s+)?(?:the|its)\s+)?(?:two\s+|three\s+)?(?:gate[\s-]*1\s+)?"
+        r"(?:criteria|thresholds|conditions|requirements|targets)\b)"),
+     "Gate 1 PASS, paraphrased (both criteria met)",
+     "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
+     "(docs/decisions/gate1-decision.md)",
+     "verdict-gate1"),
 ]
+
+# Story 132.127 — a paraphrased verdict is a Gate 1 claim only beside "Gate 1".
+GATE1_CONTEXT = re.compile(r"\bgate[\s-]*(?:1|one)\b", re.I)
 
 # Story 132.69 — the only thing that excuses the retired verdict is the decision
 # that retired it, stated within the same paragraph window.
@@ -639,7 +668,10 @@ def check_stale(path, rel):
         for pat, label, fix, *kind in STALE:
             if not pat.search(claim):
                 continue
-            if kind == ["verdict"]:
+            if kind == ["verdict-gate1"]:                     # 132.127
+                if not GATE1_CONTEXT.search(near) or VERDICT_DECIDED.search(near):
+                    continue
+            elif kind == ["verdict"]:
                 if VERDICT_DECIDED.search(near):
                     continue
             elif CORRECTION.search(near) or negation_of(pat).search(near):
@@ -745,6 +777,31 @@ SELFTEST = [
     (True, "open verdict followed by its decision on the next line",
      "The verdict is re-opened by the correction above;\n"
      "it was decided NOT PASSED on 2026-09-22."),
+    # Story 132.127 — the verdict paraphrased.
+    (False, "both criteria met (docs/about/why.md:28 before Z122)",
+     "The project has explicit go/no-go gates. Gate 1 required greater than 10% token "
+     "reduction and a Pass@1 rate of at least 60%. Both criteria were met -- the project "
+     "proceeds to Phase 2."),
+    (False, "both criteria met, wrapped onto the next line",
+     "Gate 1 required greater than 10% token reduction and Pass@1 >= 60%.\n"
+     "Both criteria were met."),
+    (False, "met both thresholds", "toke met both Gate 1 thresholds on 2026-04-03."),
+    (False, "all criteria exceeded", "Gate 1: all criteria exceeded."),
+    (False, "criteria were both met", "The Gate 1 criteria were both met."),
+    (False, "both Gate 1 criteria satisfied, emphasised",
+     "**Both Gate 1 criteria were satisfied** (token reduction and Pass@1)."),
+    (True, "one criterion met is not the verdict (docs/about/why.md:28 after Z122)",
+     "Gate 1 required greater than 10% token reduction and a Pass@1 rate of at least "
+     "60%. The token-reduction criterion stands as met; the Pass@1 criterion does not."),
+    (True, "both criteria met, decided in the same sentence",
+     "Gate 1 was recorded as passed because both criteria were met, but on 2026-09-22 "
+     "the owner decided Gate 1 NOT PASSED."),
+    (True, "both criteria met about something other than Gate 1",
+     "The tokenizer acceptance review had two criteria. Both criteria were met."),
+    (True, "both criteria NOT met",
+     "Gate 1 required two criteria; both criteria were not met at the corrected 58.8%."),
+    (True, "a requirement, not a result",
+     "Gate 1 requires both criteria to be met before Phase 2 opens."),
     (False, "one-token lookahead", "The parser needs exactly one token of lookahead."),
     (False, "negation of something else in the previous sentence",
      "The parser does not backtrack. The grammar is LL(1)."),
