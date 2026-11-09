@@ -518,7 +518,8 @@ typedef struct {
 
 typedef struct {
     uint64_t     status;
-    StrPairArray headers;
+    StrPairArray headers;   /* 127.295: keys/vals sealed (tk_strhdr.h) --
+                             * free the array only, never the strings */
     uint8_t     *body;
     uint64_t     body_len;
     int          is_err;

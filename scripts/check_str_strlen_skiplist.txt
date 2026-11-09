@@ -39,7 +39,6 @@ src/stdlib/encrypt_glue.c 1
 src/stdlib/env.c 8
 src/stdlib/file.c 5
 src/stdlib/file_glue.c 3
-src/stdlib/http.c 28
 src/stdlib/http2.c 4
 src/stdlib/i18n.c 5
 src/stdlib/infer.c 4

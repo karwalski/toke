@@ -15,6 +15,7 @@
 #include "tk_bind.h"       /* 135.32/135.33: tk_bind_exclusive() */
 #include "tk_gzip_type.h"  /* 121.89: tk_gzip_skip_type() */
 #include "tk_http_field.h" /* 121.92: tk_http_field_name_ok/_value_ok */
+#include "tk_strhdr.h"     /* 127.295: tk_strlen, tks_dup (runtime-abi §3.1) */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -407,7 +408,7 @@ size_t http_body_len(const char *body)
     if (!body) return 0;
     for (int i = 0; i < g_bodylen_n; i++)
         if (g_bodylen[i].p == body) return g_bodylen[i].n;
-    return strlen(body);
+    return tk_strlen(body);
 }
 
 void http_run_deferred_frees(void)
@@ -532,7 +533,7 @@ static void free_req(Req *req);
 static int parse_request(const char *raw, Req *out) {
     Req req; memset(&req, 0, sizeof(req));
     memset(out, 0, sizeof(*out));
-    char *buf = malloc(strlen(raw) + 1); if (!buf) return -1;
+    char *buf = malloc(tk_strlen(raw) + 1); if (!buf) return -1;
     strcpy(buf, raw);
     char *nl = strstr(buf, "\r\n"); if (!nl) { free(buf); return 0; }
     *nl = '\0';
@@ -881,7 +882,7 @@ static void res_headers_emit(const Res *res, ResHdrSink sink, void *ctx)
         const char *v = res->headers.data[i].val;
         if (!tk_http_field_name_ok(k) || !tk_http_field_value_ok(v)) continue;
         if (res_framing_field(k)) continue;   /* 121.97: the writer's own */
-        size_t kl = strlen(k), vl = strlen(v), n = kl + vl + 4;
+        size_t kl = tk_strlen(k), vl = tk_strlen(v), n = kl + vl + 4;
         char sbuf[512];
         char *line = n <= sizeof sbuf ? sbuf : malloc(n);
         if (!line) {   /* OOM: the same bytes, in pieces */
@@ -928,7 +929,7 @@ static int res_sets_header(const Res *res, const char *line)
     for (uint64_t i = 0; i < res->headers.len; i++) {
         const char *k = res->headers.data[i].key;
         /* 121.92: a field the writer drops does not displace the default */
-        if (k && strlen(k) == n && strncasecmp(k, line, n) == 0 &&
+        if (k && tk_strlen(k) == n && strncasecmp(k, line, n) == 0 &&
             tk_http_field_name_ok(k) &&
             tk_http_field_value_ok(res->headers.data[i].val))
             return 1;
@@ -945,7 +946,7 @@ static void write_security_headers(int fd, const Res *res)
 {
     for (size_t i = 0; i < 3; i++)
         if (!res_sets_header(res, sec_hdr_lines[i]))
-            http_write_all(fd, sec_hdr_lines[i], strlen(sec_hdr_lines[i]));
+            http_write_all(fd, sec_hdr_lines[i], tk_strlen(sec_hdr_lines[i]));
 }
 
 /*
@@ -958,7 +959,7 @@ static const char *cors_match_origin(const char *request_origin)
 {
     if (!g_cors_origins || !request_origin) return NULL;
     if (strcmp(g_cors_origins, "*") == 0) return "*";
-    size_t orig_len = strlen(request_origin);
+    size_t orig_len = tk_strlen(request_origin);
     const char *p = g_cors_origins;
     while (*p) {
         while (*p == ' ' || *p == ',') p++;
@@ -1134,7 +1135,7 @@ static void log_request(const char *client_ip, const Req *req,
  * may follow other options ("upgrade, close", "keep-alive, close"). */
 static int conn_list_has(const char *v, size_t n, const char *opt)
 {
-    size_t ol = strlen(opt);
+    size_t ol = tk_strlen(opt);
     size_t i = 0;
     while (i < n) {
         while (i < n && (v[i] == ' ' || v[i] == '\t' || v[i] == ',')) i++;
@@ -1204,7 +1205,7 @@ static int res_wants_close(const Res *res)
         const char *k = res->headers.data[i].key;
         const char *v = res->headers.data[i].val;
         if (k && v && strcasecmp(k, "Connection") == 0 &&
-            conn_list_has_close(v, strlen(v)))
+            conn_list_has_close(v, tk_strlen(v)))
             return 1;
     }
     return 0;
@@ -2583,7 +2584,7 @@ static char *url_decode(const char *s, size_t len)
 const char *http_cookie(const char *cookie_header, const char *name)
 {
     if (!cookie_header || !name) return NULL;
-    size_t namelen = strlen(name);
+    size_t namelen = tk_strlen(name);
     const char *p = cookie_header;
 
     while (*p) {
@@ -2607,7 +2608,7 @@ const char *http_cookie(const char *cookie_header, const char *name)
 
         /* value ends at ';' or end of string */
         const char *semi = strchr(val_start, ';');
-        size_t vlen = semi ? (size_t)(semi - val_start) : strlen(val_start);
+        size_t vlen = semi ? (size_t)(semi - val_start) : tk_strlen(val_start);
 
         /* trim trailing whitespace from value */
         while (vlen > 0 && (val_start[vlen - 1] == ' ' ||
@@ -2630,10 +2631,10 @@ const char *http_set_cookie_header(const char *name, const char *value,
     if (!name || !value) return NULL;
 
     /* estimate buffer: name=value + all optional attributes */
-    size_t cap = strlen(name) + strlen(value) + 256;
-    if (opts.path)      cap += strlen(opts.path)      + 8;
-    if (opts.domain)    cap += strlen(opts.domain)    + 10;
-    if (opts.same_site) cap += strlen(opts.same_site) + 12;
+    size_t cap = tk_strlen(name) + tk_strlen(value) + 256;
+    if (opts.path)      cap += tk_strlen(opts.path)      + 8;
+    if (opts.domain)    cap += tk_strlen(opts.domain)    + 10;
+    if (opts.same_site) cap += tk_strlen(opts.same_site) + 12;
 
     char *buf = malloc(cap);
     if (!buf) return NULL;
@@ -2795,7 +2796,7 @@ static const char *mp_skip_ws(const char *p)
 /* mp_parse_cd_param — extract param="value" from Content-Disposition line. */
 static char *mp_parse_cd_param(const char *hdr, const char *param)
 {
-    size_t plen = strlen(param);
+    size_t plen = tk_strlen(param);
     const char *p = hdr;
     while (*p) {
         p = strchr(p, ';');
@@ -2807,7 +2808,7 @@ static char *mp_parse_cd_param(const char *hdr, const char *param)
             if (*p == '"') {
                 p++;
                 const char *end = strchr(p, '"');
-                if (!end) return mp_strdup_n(p, strlen(p));
+                if (!end) return mp_strdup_n(p, tk_strlen(p));
                 return mp_strdup_n(p, (size_t)(end - p));
             }
             const char *end = p;
@@ -2874,7 +2875,7 @@ const char *http_multipart_boundary(const char *content_type)
             if (*p == '"') {
                 p++;
                 const char *end = strchr(p, '"');
-                if (!end) return mp_strdup_n(p, strlen(p));
+                if (!end) return mp_strdup_n(p, tk_strlen(p));
                 return mp_strdup_n(p, (size_t)(end - p));
             }
             const char *end = p;
@@ -2897,7 +2898,7 @@ TkMultipartResult http_multipart_parse(const char *boundary,
     if (!boundary || !body || body_len == 0 || body_len > MP_MAX_BODY_BYTES)
         return result;
 
-    size_t blen = strlen(boundary);
+    size_t blen = tk_strlen(boundary);
     if (blen == 0) return result;
 
     /* Build delimiter: "--" + boundary */
@@ -3056,7 +3057,7 @@ void http_multipart_free(TkMultipartResult r)
 static char *hstrdup(const char *s)
 {
     if (!s) return NULL;
-    size_t n = strlen(s) + 1;
+    size_t n = tk_strlen(s) + 1;
     char *p = malloc(n);
     if (p) memcpy(p, s, n);
     return p;
@@ -3094,7 +3095,7 @@ static int client_parse_url(const char *base_url, const char *path_suffix,
     }
 
     const char *slash = strchr(p, '/');
-    const char *hostend = slash ? slash : (p + strlen(p));
+    const char *hostend = slash ? slash : (p + tk_strlen(p));
 
     const char *colon = NULL;
     for (const char *q = p; q < hostend; q++) {
@@ -3377,7 +3378,7 @@ static HttpClientResp client_do_request(HttpClient *c,
         if (!strcasecmp(k, "content-length") || !strcasecmp(k, "host"))
             return err_resp_client("Content-Length and Host are set by the client, not the caller", 0);
         if (!strcasecmp(k, "content-type")) caller_ct = 1;
-        xh_len += strlen(k) + strlen(v) + 4;
+        xh_len += tk_strlen(k) + tk_strlen(v) + 4;
     }
     char ct_line[512] = "";
     if (body && body_len > 0 && !caller_ct)
@@ -3804,20 +3805,23 @@ read_done:
                     if (!eol || eol > hdr_end) break;
                     const char *col = memchr(hp, ':', (size_t)(eol - hp));
                     if (col) {
+                        /* 127.295: the key and value are handed to the
+                         * program as they are (client_resp_block, the
+                         * $httpresp headers), so they are sealed and never
+                         * freed (runtime-abi §3.1).  The header block lies
+                         * before the first "\r\n\r\n" strstr found, so it
+                         * holds no 0 byte and klen/vlen are the C-string
+                         * lengths. */
                         size_t klen = (size_t)(col - hp);
-                        char *k = malloc(klen + 1);
-                        if (k) { memcpy(k, hp, klen); k[klen] = '\0'; }
+                        char *k = tks_dup(hp, klen);
                         const char *vs = col + 1;
                         while (vs < eol && *vs == ' ') vs++;
                         size_t vlen = (size_t)(eol - vs);
-                        char *v = malloc(vlen + 1);
-                        if (v) { memcpy(v, vs, vlen); v[vlen] = '\0'; }
+                        char *v = k ? tks_dup(vs, vlen) : NULL;
                         if (k && v) {
                             rhdrs[rhdr_count].key = k;
                             rhdrs[rhdr_count].val = v;
                             rhdr_count++;
-                        } else {
-                            free(k); free(v);
                         }
                     }
                     hp = eol + 2;
@@ -4392,7 +4396,7 @@ int http_downloadfile(HttpClient *c, const char *url,
     int chunked = is_chunked_encoding(hdr_buf, headers_len);
 
     /* open tmp file */
-    size_t tmp_path_len = strlen(dest_path) + 5;
+    size_t tmp_path_len = tk_strlen(dest_path) + 5;
     char *tmp_path = malloc(tmp_path_len);
     if (!tmp_path) { free(hdr_buf); close(fd); return -1; }
     snprintf(tmp_path, tmp_path_len, "%s.tmp", dest_path);
@@ -4793,7 +4797,7 @@ static void write_security_headers_ssl(SSL *ssl, const Res *res)
     /* 121.50 (3): the handler's own value wins, as over plain HTTP. */
     for (size_t i = 0; i < 4; i++)
         if (!res_sets_header(res, sec_hdr_lines[i]))
-            SSL_write(ssl, sec_hdr_lines[i], (int)strlen(sec_hdr_lines[i]));
+            SSL_write(ssl, sec_hdr_lines[i], (int)tk_strlen(sec_hdr_lines[i]));
 }
 
 static void res_hdr_ssl_sink(void *ctx, const char *s, size_t n)
@@ -4884,7 +4888,7 @@ static int h2_field_name(const char *k, char *out, size_t cap)
         "connection", "keep-alive", "proxy-connection", "transfer-encoding",
         "upgrade", "te", "content-length", NULL
     };
-    size_t n = strlen(k);
+    size_t n = tk_strlen(k);
     if (n == 0 || n >= cap) return 0;
     for (size_t i = 0; i < n; i++) {
         unsigned char c = (unsigned char)k[i];
@@ -5073,7 +5077,7 @@ static int h2_send_response(H2Conn *conn, int fd, void *ssl, H2Stream *st,
      * at most 5 bytes each (RFC 7541 5.1).  An encode that ran out of room
      * would already have changed the encoder's dynamic table. */
     size_t need = 16;
-    for (size_t i = 0; i < k; i++) need += strlen(nm[i]) + strlen(vl[i]) + 12;
+    for (size_t i = 0; i < k; i++) need += tk_strlen(nm[i]) + tk_strlen(vl[i]) + 12;
     if (!(blk = malloc(need))) goto out;
     int hlen = hpack_encode(&conn->hpack_encode, nm, vl, k, blk, need);
     if (hlen < 0) goto out;
@@ -5140,7 +5144,7 @@ static int h2_dispatch(H2Conn *conn, int fd, void *ssl, const char *client_ip,
         if (strcmp(n, "cookie") == 0) {
             if (oom) continue;
             if (!cookie) { cookie = strdup(v); if (!cookie) oom = 1; continue; }
-            size_t a = strlen(cookie), b = strlen(v);
+            size_t a = tk_strlen(cookie), b = tk_strlen(v);
             char *j = realloc(cookie, a + b + 3);
             if (!j) { oom = 1; continue; }   /* was: dropped the crumb */
             memcpy(j + a, "; ", 2); memcpy(j + a + 2, v, b + 1);
@@ -5815,7 +5819,7 @@ static void tls_send_error(SSL *ssl, uint16_t status)
     int n = snprintf(hb, sizeof hb,
         "HTTP/1.1 %u %s\r\nContent-Type: text/plain\r\n"
         "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
-        status, why, strlen(why), why);
+        status, why, tk_strlen(why), why);
     if (n > 0 && (size_t)n < sizeof hb) SSL_write(ssl, hb, n);
 }
 
@@ -6401,7 +6405,7 @@ int http_etag_matches(const char *etag, const char *if_none_match)
             tok_end--;
 
         size_t tok_len = (size_t)(tok_end - tok_start);
-        if (tok_len == strlen(etag) &&
+        if (tok_len == tk_strlen(etag) &&
             memcmp(tok_start, etag, tok_len) == 0)
             return 1;
     }
