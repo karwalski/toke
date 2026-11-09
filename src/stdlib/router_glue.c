@@ -17,8 +17,9 @@
  *
  * Handler model: a toke router handler is a closure `(body:str) -> json:str`
  * passed as `&handler`. Each registered route stores {method, pattern, handler}
- * in a process-global table; one shared dispatch trampoline
- * (router_closure_dispatch) is registered with the C router for every route and
+ * in a process-global table that grows with the routes (127.348); one shared
+ * dispatch trampoline (router_closure_dispatch) is registered with the C
+ * router for every route and
  * finds the toke handler of the route the C router's matcher chose
  * (router_dispatch_route: router, method and pattern -- 127.343; it used to
  * compare the literal pattern with the request path, so a `:param` or `*`
@@ -187,8 +188,14 @@ static void resp_handles_release(void)
 
 /* ── closure route registry ──────────────────────────────────────────── */
 
-#define TK_MAX_CLOSURE_ROUTES 128
-
+/* 127.348: the table grows with the routes registered.  It was a fixed
+ * array of 128: the 129th route was skipped here but still registered with
+ * the C router and reported success, so it matched, found no handler and
+ * answered 404 -- silently.  Now registration grows the table (doubling);
+ * if that allocation fails the route is NOT registered with the C router
+ * and registration reports failure (DIAGNOSTIC: kind=router_register_failed
+ * on stderr, -1 from the wrapper), so no route is ever accepted without a
+ * handler.  router.c's own route table is a linked list with no cap. */
 typedef struct {
     const TkRouter *router; /* the router it was registered on */
     const char *method;   /* "GET", "POST", … (a literal) */
@@ -196,8 +203,8 @@ typedef struct {
     int64_t     handler;  /* toke handler fn pointer */
 } TkClosureRoute;
 
-static TkClosureRoute g_closure_routes[TK_MAX_CLOSURE_ROUTES];
-static int            g_closure_route_count = 0;
+static TkClosureRoute *g_closure_routes;
+static size_t          g_closure_route_count, g_closure_route_cap;
 
 static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
     /* 127.343: the route the router matched -- by its own matcher, which
@@ -207,7 +214,7 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
     const char *mm = NULL, *mp = NULL;
     if (!router_dispatch_route(&mr, &mm, &mp) || !mm || !mp)
         return router_resp_404();
-    for (int i = 0; i < g_closure_route_count; i++) {
+    for (size_t i = 0; i < g_closure_route_count; i++) {
         if (g_closure_routes[i].router == mr &&
             g_closure_routes[i].path &&
             strcmp(g_closure_routes[i].path, mp) == 0 &&
@@ -259,13 +266,26 @@ static int64_t register_route(const char *method, int64_t router_i64,
                               int64_t path, int64_t handler,
                               void (*reg)(TkRouter *, const char *, TkRouteHandler)) {
     if (!router_i64 || !path) return -1;
-    if (g_closure_route_count < TK_MAX_CLOSURE_ROUTES) {
-        g_closure_routes[g_closure_route_count].router  = (const TkRouter *)(intptr_t)router_i64;
-        g_closure_routes[g_closure_route_count].method  = method;
-        g_closure_routes[g_closure_route_count].path    = (const char *)(intptr_t)path;
-        g_closure_routes[g_closure_route_count].handler = handler;
-        g_closure_route_count++;
+    if (g_closure_route_count == g_closure_route_cap) {
+        size_t nc = g_closure_route_cap ? g_closure_route_cap * 2 : 64;
+        TkClosureRoute *nt = NULL;
+        if (nc <= SIZE_MAX / sizeof *nt)
+            nt = (TkClosureRoute *)realloc(g_closure_routes, nc * sizeof *nt);
+        if (!nt) {
+            /* 127.348: never accept a route that has no handler entry */
+            fprintf(stderr, "DIAGNOSTIC: kind=router_register_failed "
+                    "method=%s reason=\"out of memory growing the route table "
+                    "(%zu routes registered)\"\n", method, g_closure_route_count);
+            return -1;
+        }
+        g_closure_routes = nt;
+        g_closure_route_cap = nc;
     }
+    g_closure_routes[g_closure_route_count].router  = (const TkRouter *)(intptr_t)router_i64;
+    g_closure_routes[g_closure_route_count].method  = method;
+    g_closure_routes[g_closure_route_count].path    = (const char *)(intptr_t)path;
+    g_closure_routes[g_closure_route_count].handler = handler;
+    g_closure_route_count++;
     reg((TkRouter *)(intptr_t)router_i64, (const char *)(intptr_t)path,
         router_closure_dispatch);
     return 0;
