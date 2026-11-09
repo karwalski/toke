@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * csv.c — Implementation of the std.csv standard library module.
  *

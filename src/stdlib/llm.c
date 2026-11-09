@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * llm.c — Implementation of the std.llm standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * ws_server.c — WebSocket & streaming integration for std.http.
  *

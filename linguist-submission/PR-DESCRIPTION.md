@@ -25,7 +25,7 @@ toke is a statically typed, compiled programming language designed for token-eff
 A tree-sitter grammar exists at:
 https://github.com/karwalski/toke/tree/main/tree-sitter-toke
 
-The grammar defines `source.toke` as the TextMate scope and `.tk` as the file type. It is licensed under ISC.
+The grammar defines `source.toke` as the TextMate scope and `.tk` as the file type. It is licensed under Apache-2.0.
 
 ## Repositories using toke
 
@@ -58,7 +58,7 @@ All sample code is from the toke project documentation, which is MIT-licensed. C
 ## Checklist
 
 - [x] Added entry to `languages.yml`
-- [x] Provided tree-sitter grammar (ISC license)
+- [x] Provided tree-sitter grammar (Apache-2.0 license)
 - [x] Included 5 representative sample files
 - [x] Extension `.tk` has no conflicts
 - [x] Linked to language spec and repositories

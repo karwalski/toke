@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * encoding.c — Implementation of the std.encoding standard library module.
  *

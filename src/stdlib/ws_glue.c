@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * ws_glue.c — i64-ABI wrappers for std.ws (Story 114.35).
  * Extracted from tk_web_glue.c so a standalone `i=ws:std.ws` import links

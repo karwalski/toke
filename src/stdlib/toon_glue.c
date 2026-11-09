@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * toon_glue.c — i64-ABI wrappers for std.toon (Story 114.35).
  * Extracted from tk_web_glue.c so a standalone `i=toon:std.toon` import links

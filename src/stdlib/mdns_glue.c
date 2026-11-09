@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * mdns_glue.c — i64-ABI wrappers for std.mdns module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * capabilities.h — deny-by-default capability broker (ADR-0010, Epic 124.4).
  *

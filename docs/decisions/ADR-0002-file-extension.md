@@ -7,7 +7,7 @@ order: 2
 
 **Date:** 2026-04-01
 **Status:** accepted
-**Deciders:** Matt Watt
+**Deciders:** Matthew Watt
 
 ## Context
 

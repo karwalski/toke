@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdf.h — C interface for the std.pdf standard library module.
  *
@@ -8,8 +9,8 @@
  * ROUTE.  A purpose-built C99 extractor, not a vendored engine.  The full
  * costing is docs/decisions/135.3-pdf-extraction-route.md; the short form is
  * that ADR-0015 disqualifies every C++ candidate (pdfium, podofo, poppler),
- * the only mostly-C engine (MuPDF) is AGPL against this repository's
- * Apache-2.0 and would relicense every binary a user compiles, and there is
+ * the only mostly-C engine (MuPDF) is AGPL against the standard library's
+ * MIT licence and would relicense every binary a user compiles, and there is
  * no permissively-licensed C99 extractor to find.  The subset actually
  * needed — parse the objects, inflate the Flate streams, walk the content
  * stream for the text-showing operators, apply the font's encoding map — is

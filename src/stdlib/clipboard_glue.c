@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * clipboard_glue.c — stubs for std.clipboard module.
  * Clipboard access requires platform-specific code (macOS pbcopy/pbpaste,

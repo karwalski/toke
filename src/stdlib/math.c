@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * math.c — Implementation of the std.math standard library module.
  *

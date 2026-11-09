@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * ocr_glue.c — i64-ABI wrappers for the std.ocr module (story 135.6).
  *

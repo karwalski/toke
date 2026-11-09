@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * acme.c — ACME v2 client (RFC 8555) for automatic certificate provisioning.
  *

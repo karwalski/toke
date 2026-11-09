@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * test_glue.c — i64-ABI wrappers for std.test module.
  *

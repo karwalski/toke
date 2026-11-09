@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * webview.c — Implementation of the std.webview standard library module.
  *

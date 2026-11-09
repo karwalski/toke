@@ -37,7 +37,8 @@ BACK = "github.com/karwalski/toke"
 # appended to every repo but the main one, whose own URL that is.
 REPOS = [
     ("toke",
-     "Reference compiler (tkc), language specification and standard library. Apache-2.0.",
+     "Reference compiler (tkc), language specification and standard library. Compiler "
+     "Apache-2.0; specification and standard library MIT.",
      ["programming-language", "llm", "code-generation", "token-efficiency", "compiler"],
      False),
     ("toke-spec",

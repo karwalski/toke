@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * yaml_glue.c — i64-ABI wrappers for std.yaml (Story 136.32).
  *

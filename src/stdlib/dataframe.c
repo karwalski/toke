@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * dataframe.c — Implementation of the std.dataframe standard library module.
  *

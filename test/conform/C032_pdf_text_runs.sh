@@ -3,7 +3,7 @@
 #
 # std.pdf is a purpose-built C99 extractor, not a vendored engine: ADR-0015
 # disqualifies every C++ candidate, the only mostly-C engine is AGPL against
-# this repository's Apache-2.0, and there is no permissively-licensed C99
+# the standard library's MIT licence, and there is no permissively-licensed C99
 # extractor to find.  The costing is docs/decisions/135.3-pdf-extraction-route.md.
 #
 # "EXTRACTED SOMETHING" IS TREATED AS FAILURE THROUGHOUT.  Not one assertion

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_test.c — Implementation of the std.test standard library module.
  *

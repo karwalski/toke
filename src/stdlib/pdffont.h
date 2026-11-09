@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * pdffont.h — the generated standard-14 metric and encoding tables.
  *

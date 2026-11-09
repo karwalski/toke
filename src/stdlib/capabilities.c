@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * capabilities.c — deny-by-default capability broker (ADR-0010, Epic 124.4a).
  * See capabilities.h for the model. This is the runtime half: broker state,

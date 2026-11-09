@@ -7,7 +7,7 @@ order: 4
 
 **Date:** 2026-04-03
 **Status:** recorded PASS 2026-04-03 — **verdict RE-OPENED 2026-09-19** (story 128.19)
-**Deciders:** Matt Watt
+**Deciders:** Matthew Watt
 **Story:** 1.6.4
 
 ---

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * str_glue.c — i64-ABI wrappers for std.str module.
  *

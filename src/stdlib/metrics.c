@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * metrics.c — Observability, metrics, and distributed tracing for std.http.
  *

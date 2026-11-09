@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * securemem_glue.c — i64-ABI wrappers for std.securemem module.
  *

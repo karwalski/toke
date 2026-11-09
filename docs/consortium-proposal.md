@@ -2,7 +2,7 @@
 
 **Version:** 0.1 (Draft)
 **Date:** Post Gate 1
-**Author:** Matt Watt ([@karwalski](https://github.com/karwalski))
+**Author:** Matthew Watt ([@karwalski](https://github.com/karwalski))
 **Status:** Story 4.5.2 — Draft for review
 
 ---
@@ -132,7 +132,7 @@ Support delivery may be provided by the consortium directly, by founding members
 ### 4.4 Individual Contributors
 
 - Open participation in specification discussions and code contributions.
-- No membership fee. Subject to the existing contribution process (Apache 2.0 licence, DCO sign-off, CONTRIBUTING.md rules).
+- No membership fee. Subject to the existing contribution process (Apache 2.0 or MIT licence per LICENSING.md, DCO sign-off, CONTRIBUTING.md rules).
 - Individual contributors do not hold consortium voting rights but may be nominated to working groups.
 
 ---
@@ -223,7 +223,7 @@ Revenue from premium support tiers, training workshops, and consulting engagemen
 
 ### 7.4 No Licence Fees
 
-toke is and will remain open source under Apache 2.0. There are no licence fees, royalties, or per-seat charges for using the language, compiler, or standard library. This is a foundational principle, not a business decision subject to change.
+toke is and will remain open source under Apache 2.0 (compiler) and MIT (specification, standard library). There are no licence fees, royalties, or per-seat charges for using the language, compiler, or standard library. This is a foundational principle, not a business decision subject to change.
 
 ---
 

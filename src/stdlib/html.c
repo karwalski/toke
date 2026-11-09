@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * html.c — Implementation of the std.html standard library module.
  *

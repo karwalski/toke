@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * canvas.c — Implementation of the std.canvas standard library module.
  *

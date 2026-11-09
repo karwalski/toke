@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * toml_glue.c — i64-ABI wrappers for std.toml module.
  *

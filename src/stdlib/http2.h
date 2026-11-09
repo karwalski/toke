@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * http2.h — HTTP/2 binary framing layer (RFC 7540 / RFC 9113).
  *

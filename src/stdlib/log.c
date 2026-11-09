@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * log.c — Implementation of the std.log standard library module.
  *

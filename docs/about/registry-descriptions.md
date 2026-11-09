@@ -81,11 +81,12 @@ written.
 
 ### Proposed
 
-Description (210 characters, limit 350):
+Description (259 characters, limit 350):
 
 > toke: a compiled language designed for LLM code generation, with a small grammar, one
 > canonical form and compiler verification. Reference compiler (tkc), language
-> specification and standard library. Apache-2.0.
+> specification and standard library. Compiler Apache-2.0; specification and standard
+> library MIT.
 
 Homepage: `https://tokelang.dev`
 
@@ -95,7 +96,7 @@ Topics: `programming-language`, `llm`, `code-generation`, `token-efficiency`, `c
 
 ```sh
 gh repo edit karwalski/toke \
-  --description "toke: a compiled language designed for LLM code generation, with a small grammar, one canonical form and compiler verification. Reference compiler (tkc), language specification and standard library. Apache-2.0." \
+  --description "toke: a compiled language designed for LLM code generation, with a small grammar, one canonical form and compiler verification. Reference compiler (tkc), language specification and standard library. Compiler Apache-2.0; specification and standard library MIT." \
   --homepage "https://tokelang.dev" \
   --add-topic programming-language --add-topic llm --add-topic code-generation \
   --add-topic token-efficiency --add-topic compiler

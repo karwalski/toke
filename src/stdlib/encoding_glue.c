@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * encoding_glue.c — i64-ABI wrappers for std.encoding module.
  *

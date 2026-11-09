@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * mlx_glue.c — i64-ABI wrappers for std.mlx module.
  *

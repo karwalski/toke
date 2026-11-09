@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * toml.c — Implementation of the std.toml standard library module.
  *

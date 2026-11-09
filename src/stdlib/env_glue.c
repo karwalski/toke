@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * env_glue.c — i64-ABI wrappers for std.env module.
  *

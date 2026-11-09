@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * securemem.c — Implementation of the std.securemem standard library module.
  *

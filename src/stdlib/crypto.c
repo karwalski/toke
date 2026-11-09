@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * crypto.c — Implementation of the std.crypto standard library module.
  *

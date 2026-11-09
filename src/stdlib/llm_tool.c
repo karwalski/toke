@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * llm_tool.c — Implementation of the std.llm.tool standard library module.
  *

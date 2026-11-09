@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * db_glue.c — i64-ABI wrappers for std.db module.
  *

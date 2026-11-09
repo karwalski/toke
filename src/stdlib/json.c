@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * json.c — Implementation of std.json for the toke compiler runtime.
  *

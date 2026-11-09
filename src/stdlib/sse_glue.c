@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * sse_glue.c — i64-ABI wrappers for std.sse (Story 136.32).
  *

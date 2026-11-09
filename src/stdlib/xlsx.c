@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * xlsx.c — std.xlsx, cell values out of an XLSX workbook (story 135.4).
  *

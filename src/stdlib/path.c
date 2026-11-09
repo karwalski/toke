@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * path.c — Implementation of the std.path standard library module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * template_glue.c — i64-ABI wrappers for std.template module.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * net_glue.c — i64-ABI wrappers for std.net module.
  *

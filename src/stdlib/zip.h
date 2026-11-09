@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * zip.h — C interface for the std.zip standard library module.
  *

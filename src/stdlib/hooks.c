@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * hooks.c — Scripting and extensibility for std.http.
  *

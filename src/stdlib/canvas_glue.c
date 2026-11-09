@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * canvas_glue.c — i64-ABI wrappers for std.canvas (Story 114.35).
  * Extracted from tk_web_glue.c so a standalone `i=canvas:std.canvas` import links

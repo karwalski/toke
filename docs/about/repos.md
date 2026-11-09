@@ -18,8 +18,8 @@ be told apart.
 
 | Repository | Role | Licence | Local directory |
 |---|---|---|---|
-| [toke](https://github.com/karwalski/toke) | Reference compiler (`tkc`), standard library, documentation, and the cross-repo story tracker. Root of trust. | Apache-2.0 | `toke` |
-| [toke-spec](https://github.com/karwalski/toke-spec) | The language specification: the normative v0.4 text, the EBNF and GBNF grammars, the tree-sitter grammar, and the RFC draft. | Apache-2.0 | `toke-spec` |
+| [toke](https://github.com/karwalski/toke) | Reference compiler (`tkc`), standard library, documentation, and the cross-repo story tracker. Root of trust. | Apache-2.0 (compiler); MIT (spec, standard library) | `toke` |
+| [toke-spec](https://github.com/karwalski/toke-spec) | The language specification: the normative v0.4 text, the EBNF and GBNF grammars, the tree-sitter grammar, and the RFC draft. | MIT | `toke-spec` |
 | [toke-corpus](https://github.com/karwalski/toke-corpus) | Training corpus: generation, audit and execution-verification pipeline, regen harness and ledgers. | Apache-2.0 | `toke-corpus` |
 | [toke-models](https://github.com/karwalski/toke-models) | Fine-tuning, evaluation and packaging for toke code-generation models (QLoRA, MLX). | Apache-2.0 | `toke-model` (singular) |
 | [toke-tokenizer](https://github.com/karwalski/toke-tokenizer) | BPE tokenizer training and evaluation, and the token-efficiency baselines. | Apache-2.0 | `toke-tokenizer` |

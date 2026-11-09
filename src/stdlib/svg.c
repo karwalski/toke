@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * svg.c — Implementation of the std.svg standard library module.
  *

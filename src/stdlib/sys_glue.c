@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * sys_glue.c — i64-ABI wrappers for std.sys module.
  *

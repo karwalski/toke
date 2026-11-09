@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * crypto_glue.c — i64-ABI wrappers for std.crypto module.
  *

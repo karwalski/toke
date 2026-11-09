@@ -2,7 +2,7 @@
 
 **Version:** 0.1 (Draft)
 **Effective date:** TBD
-**Authored by:** Matt Watt ([@karwalski](https://github.com/karwalski))
+**Authored by:** Matthew Watt ([@karwalski](https://github.com/karwalski))
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### 1.1 Current Phase: Benevolent Dictator for Life (BDFL)
 
-The toke project is currently governed under a BDFL model. Matt Watt holds final decision-making authority over the language specification, compiler implementation, standard library, tooling protocols, and all related repositories under the [karwalski](https://github.com/karwalski) GitHub account.
+The toke project is currently governed under a BDFL model. Matthew Watt holds final decision-making authority over the language specification, compiler implementation, standard library, tooling protocols, and all related repositories under the [karwalski](https://github.com/karwalski) GitHub account.
 
 ### 1.2 Transition Path: Technical Steering Committee
 
@@ -90,7 +90,7 @@ No fixed cadence during 0.x. Post-1.0: patches as needed, minor quarterly, major
 
 ## 6. Contribution Process
 
-All contributions subject to Apache 2.0 licence and DCO. Rules from CONTRIBUTING.md apply. Non-negotiable: never change error code meanings, never populate `fix` with an incorrect fix, conformance suite must pass at 100%.
+All contributions subject to the licence of the part they touch (Apache 2.0 or MIT, per LICENSING.md) and DCO. Rules from CONTRIBUTING.md apply. Non-negotiable: never change error code meanings, never populate `fix` with an incorrect fix, conformance suite must pass at 100%.
 
 ---
 

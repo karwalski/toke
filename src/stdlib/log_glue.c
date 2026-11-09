@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * log_glue.c — i64-ABI wrappers for std.log module.
  *

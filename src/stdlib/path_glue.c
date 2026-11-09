@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * path_glue.c — i64-ABI wrappers for std.path module.
  *

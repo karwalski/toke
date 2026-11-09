@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * mlx.c — Implementation of the std.mlx standard library module.
  *

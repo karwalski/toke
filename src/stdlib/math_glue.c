@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * math_glue.c — i64-ABI wrappers for std.math module.
  *

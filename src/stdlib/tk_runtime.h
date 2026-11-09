@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * tk_runtime.h — Lightweight runtime for toke benchmark programs.
  *

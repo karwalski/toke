@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * zip_glue.c — i64-ABI wrappers for the std.zip module (story 135.1).
  *

@@ -8,10 +8,18 @@ users and contributors.
 
 | Repository | Licence | Purpose |
 |---|---|---|
-| `toke` | MIT (spec, stdlib) / Apache 2.0 (compiler) | Compiler, specification, standard library |
-| `toke-model` | Apache 2.0 | Corpus generation, BPE tokenizer, fine-tuning |
+| `toke` | MIT (`spec/`, `stdlib/`, `src/stdlib/`) / Apache 2.0 (compiler, docs, tooling, `tree-sitter-toke/`) | Compiler, specification, standard library |
+| `toke-spec` | MIT | Specification archive, tree-sitter grammar |
+| `toke-corpus` | Apache 2.0 | Corpus generation pipeline |
+| `toke-models` | Apache 2.0 | Fine-tuning pipeline, model tokenizer |
+| `toke-tokenizer` | Apache 2.0 (including the `python/` package) | BPE tokenizer |
 | `toke-eval` | Apache 2.0 | Benchmark tasks and harness |
+| `toke-test-programs` | Apache 2.0 | Test program corpus |
+| `toke-mcp` | MIT | MCP server, language server, VS Code extension |
+| `ooke` | MIT | Web framework and static site generator |
+| `toke-ocr` | MIT | Optical character recognition written in toke |
 | `toke-web` | MIT | Website |
+| `homebrew-toke` | MIT | Homebrew tap |
 
 ## Why dual licensing
 
@@ -52,12 +60,20 @@ repository's licence.
 Apache 2.0 header comment:
 
 ```
-// Copyright 2026 Matt Watt
+// Copyright 2026 Matthew Watt
 // SPDX-License-Identifier: Apache-2.0
 ```
 
 **MIT repos** -- No per-file header is required. The repository-level
 `LICENSE` file applies.
+
+**MIT parts of the `toke` repo** -- Because the `toke` root `LICENSE` is
+Apache 2.0, C sources in `src/stdlib/` carry an MIT SPDX line instead
+(`stdlib/LICENSE` names the copyright holder):
+
+```
+/* SPDX-License-Identifier: MIT */
+```
 
 ### Which licence applies to your contribution
 
