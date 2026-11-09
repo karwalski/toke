@@ -148,10 +148,14 @@ check "OpenAI string-form arguments" "${WORK}/got_string.txt"
 check "object-form arguments" "${WORK}/got_object.txt"
 
 got="$(awk '/^owned /{print $2, $3}' "${WORK}/run.out")"
-if [ "${got}" = "25 25" ]; then
-    echo "  PASS: a 7-key parse leaves exactly what the block owns (25), both forms"; PASS=$((PASS + 1))
+# 127.295 (tranche 7): the block's name, id and every key and value are
+# sealed strings from the reserved range, not malloc, so the malloc'd part
+# the block owns is the block, the args array and the 7 pair arrays = 9 (it
+# was 25 while the 16 strings were malloc'd; 10 = the dropped empty array).
+if [ "${got}" = "9 9" ]; then
+    echo "  PASS: a 7-key parse leaves exactly what the block owns (9 malloc'd), both forms"; PASS=$((PASS + 1))
 else
-    echo "  FAIL: a 7-key parse leaves [${got}] allocations; the block owns 25 (26 = the dropped empty array)"
+    echo "  FAIL: a 7-key parse leaves [${got}] allocations; the block owns 9 (10 = the dropped empty array)"
     FAIL=$((FAIL + 1))
 fi
 

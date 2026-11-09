@@ -46,7 +46,6 @@ src/stdlib/infer.c 4
 src/stdlib/json.c 10
 src/stdlib/json_glue.c 7
 src/stdlib/keychain.c 5
-src/stdlib/llm_tool.c 8
 src/stdlib/log.c 7
 src/stdlib/md.c 6
 src/stdlib/mdns.c 2
