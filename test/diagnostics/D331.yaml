@@ -1,0 +1,12 @@
+id: D331
+series: D
+description: "E1003 for a leading underscore expects an identifier starting with a lowercase letter (a-z) -- not A-Z (v0.4 section G) -- and carries no fix (127.338)"
+input: |
+  m=test;
+  f=main():i64{let _x=3;<_x};
+expected_exit_code: 1
+expected_error_codes: ["E1003"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "identifier starting with a lowercase letter (a-z)"

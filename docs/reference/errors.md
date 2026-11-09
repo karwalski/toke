@@ -101,6 +101,17 @@ The above is valid; E1003 triggers when non-ASCII characters like `£` appear in
 
 **Fix:** Remove or replace the non-ASCII character with valid ASCII.
 
+**Underscore in an identifier.** `_` is not in the default alphabet
+(`toke-spec-v0.4.md` §G: identifiers are lowercase `a-z` and digits `0-9`;
+uppercase is E2002). `let max_val=3;` draws E1003 with the message
+`identifier 'max_val' contains underscore; toke identifiers are lowercase
+letters and digits only (a-z, 0-9; spec v0.4 section G); `toke --migrate`
+removes underscores` and `expected` `identifier of lowercase letters and
+digits only (a-z, 0-9)`. A leading underscore (`_x`) says `starts with
+underscore` and expects `identifier starting with a lowercase letter (a-z)`.
+No `fix` field: joining the words can collide with another name (`to_int`
+beside `toint`), so `toke --migrate` owns the rewrite.
+
 ---
 
 ### E1004

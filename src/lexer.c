@@ -584,15 +584,18 @@ static int lex_ident(Lexer *l, int start, int line, int col)
         int cplen = full_len < (int)sizeof(id_buf) - 1 ? full_len : (int)sizeof(id_buf) - 1;
         for (int j = 0; j < cplen; j++) id_buf[j] = l->src[start + j];
         id_buf[cplen] = '\0';
-        char msg[256];
+        char msg[384];
         snprintf(msg, sizeof msg,
-                 "identifier '%s' contains underscore (v0.2 syntax); "
-                 "run `toke --migrate` to convert to v0.3", id_buf);
+                 "identifier '%s' contains underscore; toke identifiers are "
+                 "lowercase letters and digits only (a-z, 0-9; spec v0.4 section G); "
+                 "`toke --migrate` removes underscores", id_buf);
         diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, msg,
                   /* 127.221: no fix — joining the words can collide with
                    * another name (`to_int` beside `toint`); --migrate owns it */
                   "got", id_buf,
-                  "expected", "identifier without underscores (a-z, A-Z, 0-9)", (const char *)NULL);
+                  /* 127.338: v0.4 §G -- uppercase is not in the
+                   * default alphabet (E2002), so A-Z is not offered */
+                  "expected", "identifier of lowercase letters and digits only (a-z, 0-9)", (const char *)NULL);
         return -1;
     }
 
@@ -763,16 +766,17 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             int ulen = l.pos - start;
             char ubuf[128]; int cp = ulen < (int)sizeof(ubuf)-1 ? ulen : (int)sizeof(ubuf)-1;
             for (int j = 0; j < cp; j++) ubuf[j] = l.src[start+j]; ubuf[cp] = '\0';
-            char umsg[256];
+            char umsg[384];
             snprintf(umsg, sizeof umsg,
-                     "identifier '%s' starts with underscore (v0.2 syntax); "
-                     "run `toke --migrate` to convert to v0.3", ubuf);
+                     "identifier '%s' starts with underscore; toke identifiers "
+                     "start with a lowercase letter (a-z; spec v0.4 section G); "
+                     "`toke --migrate` removes underscores", ubuf);
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, umsg,
                       /* 127.223 item 3: no fix — dropping the underscore can
                        * collide with another name (`_x` beside `x`), and
                        * docs/spec/errors.md specifies none; --migrate owns it */
                       "got", ubuf,
-                      "expected", "identifier starting with a letter (a-z, A-Z)", (const char *)NULL);
+                      "expected", "identifier starting with a lowercase letter (a-z)", (const char *)NULL);
             if (record_error(&l)) break;
             continue;
         }
