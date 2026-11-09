@@ -140,7 +140,7 @@ VENDOR_SENTINELS = stdlib/vendor/tomlc99/toml.c \
 
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
-          src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
+          src/sourcemap.c src/ast_json.c src/pyview.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
           src/stdlib_deps.c src/stdlib_tables.c src/glue_gen.c src/lint.c src/tkir.c \
           src/regex_check.c src/main.c src/stdlib/str.c
 

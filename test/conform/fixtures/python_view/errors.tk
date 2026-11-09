@@ -1,0 +1,14 @@
+m=demo;
+i=io:std.io;
+t=$pt{x:i64;y:i64};
+t=$err{$bad:i64;$worse:$str};
+lim=5:i64;
+f=h(a:i64):i64!$err{<a};
+f=g(a:i64):i64!$err{
+  if(a<0){<$err{$bad:a}};
+  let s="v=\(a) {x}";
+  let r=mt h(a) {$ok:v v+1; $err:e <e};
+  let k=if(a>1){a}el{0};
+  let p=$pt{x:1;y:2};
+  <r+k+p.x
+};

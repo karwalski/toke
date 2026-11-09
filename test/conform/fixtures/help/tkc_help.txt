@@ -16,6 +16,7 @@ Flags:
   --expand            Expand abbreviated identifiers as inline comments
   --sourcemap         Emit .map source map alongside --fmt/--pretty output
   --dump-ast          Dump parsed AST as JSON to stdout and exit
+  --python-view       Print a read-only Python-like view of the source (display only)
   --check             Type check only; no code generation
   --companion         Generate .tkc.md companion file skeleton to stdout
   --companion-out <p> Write companion file to <p> instead of stdout
