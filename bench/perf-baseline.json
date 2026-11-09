@@ -5,95 +5,90 @@
   "cpu": "Apple M2 Pro",
   "os": "Darwin"
  },
- "partial_records": {
-  "chained_calls": "toke 3.1.0 (git 4bb13f984e69)",
-  "large_expr": "toke 3.1.0 (git 4bb13f984e69)",
-  "struct_ops": "toke 3.0.0"
- },
  "programs": {
   "binary_search": {
-   "compile_allocs": 417,
-   "compile_insns": 136871322,
+   "compile_allocs": 426,
+   "compile_insns": 105808465,
    "exit_status": 128,
    "run_allocs": 197,
-   "run_insns": 114957109
+   "run_insns": 114152741
   },
   "chained_calls": {
    "compile_allocs": 426,
-   "compile_insns": 118247540,
+   "compile_insns": 102442367,
    "exit_status": 232,
    "run_allocs": 196,
-   "run_insns": 138357508
+   "run_insns": 136094899
   },
   "collatz": {
-   "compile_allocs": 417,
-   "compile_insns": 138961048,
+   "compile_allocs": 426,
+   "compile_insns": 101610094,
    "exit_status": 116,
    "run_allocs": 196,
-   "run_insns": 580436982
+   "run_insns": 580474459
   },
   "deep_recursion": {
-   "compile_allocs": 417,
-   "compile_insns": 128513106,
+   "compile_allocs": 426,
+   "compile_insns": 99283658,
    "exit_status": 253,
    "run_allocs": 196,
-   "run_insns": 443844039
+   "run_insns": 441645216
   },
   "fib_iterative": {
-   "compile_allocs": 417,
-   "compile_insns": 129158161,
+   "compile_allocs": 426,
+   "compile_insns": 99362059,
    "exit_status": 64,
    "run_allocs": 196,
-   "run_insns": 324396056
+   "run_insns": 324230973
   },
   "fib_recursive": {
-   "compile_allocs": 417,
-   "compile_insns": 130224160,
+   "compile_allocs": 426,
+   "compile_insns": 98458912,
    "exit_status": 201,
    "run_allocs": 196,
-   "run_insns": 345575330
+   "run_insns": 344834205
   },
   "gcd_euler": {
-   "compile_allocs": 417,
-   "compile_insns": 131403520,
+   "compile_allocs": 426,
+   "compile_insns": 102063681,
    "exit_status": 141,
    "run_allocs": 196,
-   "run_insns": 5038541478
+   "run_insns": 5014441512
   },
   "large_expr": {
    "compile_allocs": 426,
-   "compile_insns": 122463336,
+   "compile_insns": 108444032,
    "exit_status": 96,
    "run_allocs": 196,
-   "run_insns": 442640572
+   "run_insns": 441268398
   },
   "nested_loops": {
-   "compile_allocs": 278,
-   "compile_insns": 46318060,
+   "compile_allocs": 289,
+   "compile_insns": 49259363,
    "exit_status": 144,
    "run_allocs": 196,
-   "run_insns": 21238936
+   "run_insns": 21152579
   },
   "prime_sieve": {
-   "compile_allocs": 417,
-   "compile_insns": 125141151,
+   "compile_allocs": 426,
+   "compile_insns": 101736321,
    "exit_status": 13,
    "run_allocs": 196,
-   "run_insns": 36304587
+   "run_insns": 36010370
   },
   "struct_ops": {
-   "compile_allocs": 420,
-   "compile_insns": 117738037,
+   "compile_allocs": 428,
+   "compile_insns": 114190253,
    "exit_status": 165,
    "run_allocs": 3000197,
-   "run_insns": 583289428
+   "run_insns": 582036014
   },
   "sum_array": {
-   "compile_allocs": 417,
-   "compile_insns": 133002718,
+   "compile_allocs": 426,
+   "compile_insns": 104387467,
    "exit_status": 224,
    "run_allocs": 197,
-   "run_insns": 42335427
+   "run_insns": 42257619
   }
  },
  "runs": 5,
@@ -116,5 +111,5 @@
    "pct": 0.08
   }
  },
- "tkc_version": "toke 3.0.0"
+ "tkc_version": "toke 3.1.0 (git c54b87d31812)"
 }
