@@ -78,8 +78,8 @@ Table of Contents
    4.9.  Arena Memory Discipline ...................................  7
    5.  Character Set Specification .................................  7
    5.1.  The 59-Character Alphabet .................................  8
-   5.2.  Development Profile (80 Characters) — Historical ..........  9
-   5.3.  Token Count Estimates ..................................... 10
+   5.2.  Legacy Profile (80 Characters) — Historical ...............  9
+   5.3.  Token Count ............................................... 10
    6.  Symbol Assignment ........................................... 10
    6.1.  Operator and Delimiter Table .............................. 11
    6.2.  Keywords .................................................. 11
@@ -104,7 +104,7 @@ Table of Contents
    10. Compilation Pipeline ........................................ 21
    11. Hardware Strategy ........................................... 22
    11.1. Capital Investment Case ................................... 22
-   11.2. Local Pre/Post Processing ................................. 23
+   11.2. Local Pre/Post Processing with Qwen ....................... 23
    11.3. Post-Generation Quality Processing ........................ 24
    12. Parallel Differential Testing ............................... 24
    12.1. Validation Properties ..................................... 25
@@ -121,10 +121,10 @@ Table of Contents
    15.4. Purpose-Built Tokenizer ................................... 31
    16. Validation Workstreams ...................................... 32
    17. Project Stages .............................................. 34
-   17.1. Stage 1 — Falsification ................................... 34
-   17.2. Stage 2 — Language Viability .............................. 35
-   17.3. Stage 3 — Ecosystem Proof ................................. 35
-   17.4. Stage 4 — Standard Pathway ................................ 36
+   17.1. Stage 1 — Falsification (Months 1-8) ...................... 34
+   17.2. Stage 2 — Language Viability (Months 8-14) ................ 35
+   17.3. Stage 3 — Ecosystem Proof (Months 14-26) .................. 35
+   17.4. Stage 4 — Standard Pathway (Months 26-32) ................. 36
    18. Cost Model .................................................. 36
    19. Self-Improvement Loop ....................................... 39
    20. Benchmark Targets ........................................... 40
