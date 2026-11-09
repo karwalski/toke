@@ -329,9 +329,17 @@ int tkir_decode(const uint8_t *buf, size_t len, TkirModule *out,
 /*
  * tkir_dump — print a human-readable summary of a TkirModule to f.
  *
- * Used by the --read-tkir CLI flag.
+ * Used by `tkc --read-tkir` (via tkir_print_file).
  */
 void tkir_dump(const TkirModule *mod, FILE *f);
+
+/*
+ * tkir_print_file -- 127.345: `tkc --read-tkir <path>`.  Reads and validates
+ * the file as tkir_read does, prints tkir_dump to f followed by the sizes of
+ * the format-1.2 TEXT/AST sections.  Returns 0, or -1 after emitting E9021
+ * when the file cannot be read or decoded.
+ */
+int tkir_print_file(const char *path, FILE *f);
 
 /*
  * tkir_module_free — release all heap memory owned by a TkirModule.

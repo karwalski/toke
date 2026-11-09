@@ -1402,6 +1402,11 @@ registry sized from them cannot be one compiler allocation are refused at
 `--check` too, with the same E9010 as the build, naming the caps; lower them
 (story 127.264).
 
+`--emit-tkir` refuses a module with more than 65535 type entries or 65535
+data entries (distinct literals) with E9010 and writes no file: the format
+stores those counts and type references as u16, so this limit is fixed and
+has no flag (story 127.344; `docs/architecture/binary-ir-design.md` §3.11).
+
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
 by pointer locals, local types and shadowing aliases) is reported once per
 function, closure or globals initialiser that crosses it, at that function,
@@ -1450,6 +1455,11 @@ written before format 1.2 (it has no AST section; re-emit it with
 validation. The message names the problem. There is no `fix` field: the
 repair is to re-emit the file from its source. See
 `docs/architecture/binary-ir-design.md` §3.8.
+
+`tkc --read-tkir` (story 127.345) emits E9021 for a file it cannot read or
+decode (missing, truncated, bad magic or version, malformed section, invalid
+opcode or register); it does not require the AST section, which it reports as
+absent. See §3.10 of the same document.
 
 ### E9022
 

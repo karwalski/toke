@@ -1,7 +1,7 @@
 # Canonical Binary IR Design
 
 **Date:** 2026-05-01 (format 1.2 and `--from-tkir`: 2026-11-10, story 76.1.6c)
-**Status:** draft; format 1.2 implemented (`--emit-tkir`, `--from-tkir`)
+**Status:** draft; format 1.2 implemented (`--emit-tkir`, `--from-tkir`, `--read-tkir`)
 **Author:** Matthew Watt
 **Story:** 76.1.6
 **Spec reference:** S24.6
@@ -265,6 +265,32 @@ from source, the LLVM IR from source and from source → `.tkir` are identical
 bytes; `make diff-tkir-run` also builds and runs both binaries and compares
 exit status and stdout. Conformance cases C1240 (parity, re-emission fixed
 point, `-g`) and C1241 (refusals) pin both.
+
+### 3.10 Inspecting a file: `--read-tkir`
+
+```
+tkc --read-tkir prog.tkir                   # print a summary, compile nothing
+```
+
+`--read-tkir` decodes each `.tkir` input with the reader's full validation
+(magic, version, section structure, opcodes, register references) and prints
+the type, function (with an opcode histogram per function), data, import and
+export tables, then the sizes of the format-1.2 TEXT and AST sections, or
+`absent` for a 1.0/1.1 file, which `--from-tkir` will refuse. It needs no
+standard library and writes nothing. A file that cannot be read or decoded is
+an E9021 diagnostic and exit 1. With several inputs each summary is headed
+`== <path> ==`. Conformance case C1281 pins it (story 127.345).
+
+### 3.11 Encoder limits
+
+As written, the type, data, function, import and export sections store their
+entry counts as u16, and type references are u16, so a module may hold at
+most 65535 type entries and 65535 data entries (distinct literals). The
+encoder grows its tables up to that limit; a module past it is refused with
+E9010 ("compiler limit exceeded") and exit 1, and no `.tkir` is written.
+Before story 127.344 the tables were fixed at 256 types and 1024 data
+entries, and every entry past them was written as index 0 with exit 0.
+Conformance case C1280 pins the boundary.
 
 ---
 

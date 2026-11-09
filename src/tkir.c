@@ -150,8 +150,13 @@ typedef struct {
     uint32_t type_idx;
 } EncImportEntry;
 
-#define ENC_MAX_TYPES  256
-#define ENC_MAX_DATA  1024
+/* 127.344: the type and data sections store their counts (and every type
+ * reference) as a u16, so 65535 entries is a format limit.  The tables grow
+ * on demand up to it; past it the encoder emits E9010 and fails instead of
+ * writing index 0 for the overflow (they were fixed arrays of 256 and 1024
+ * that silently did that). */
+#define ENC_MAX_TYPES 65535
+#define ENC_MAX_DATA  65535
 /* The type section stores a struct's field count as a u16. */
 #define ENC_MAX_FIELDS 65535
 /* Pending `br` exits across all loops open at once; a body needing more is
@@ -164,14 +169,14 @@ typedef struct {
     const NameEnv *names;
     const char    *target;
 
-    EncTypeEntry   type_entries[ENC_MAX_TYPES];
-    int            type_count;
+    EncTypeEntry  *type_entries;  /* 127.344: grown on demand */
+    int            type_count, type_cap;
 
     EncFunc        funcs[TKC_MAX_FUNCS];
     int            func_count;
 
-    EncDataEntry   data_entries[ENC_MAX_DATA];
-    int            data_count;
+    EncDataEntry  *data_entries;  /* 127.344: grown on demand */
+    int            data_count, data_cap;
 
     /* 127.235: sized from the module's own import count, not the default
      * cap: a fixed [TKC_MAX_IMPORTS] array dropped every import past 32
@@ -198,14 +203,75 @@ static void enc_tok_text(const char *src, const Node *n, char *buf, int sz)
     buf[len] = '\0';
 }
 
+/* 127.344: claim the next type / data slot, growing the table.  On the
+ * u16 format limit or out of memory, emit E9010 once, mark the encode
+ * failed and return NULL; callers then return index 0, which is never
+ * written because emit_tkir checks `failed` before writing anything. */
+static void enc_limit(Enc *e, const char *msg)
+{
+    if (!e->failed)
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, msg, (void *)0);
+    e->failed = 1;
+}
+
+static EncTypeEntry *enc_new_type(Enc *e)
+{
+    if (e->type_count >= ENC_MAX_TYPES) {
+        char msg[96];
+        snprintf(msg, sizeof msg,
+                 "compiler limit exceeded: more than %d type entries for .tkir", ENC_MAX_TYPES);
+        enc_limit(e, msg);
+        return NULL;
+    }
+    if (e->type_count == e->type_cap) {
+        int ncap = e->type_cap ? e->type_cap * 2 : 64;
+        if (ncap > ENC_MAX_TYPES) ncap = ENC_MAX_TYPES;
+        EncTypeEntry *p = realloc(e->type_entries, (size_t)ncap * sizeof(*p));
+        if (!p) {
+            enc_limit(e, "compiler limit exceeded: out of memory for .tkir type entries");
+            return NULL;
+        }
+        e->type_entries = p;
+        e->type_cap = ncap;
+    }
+    EncTypeEntry *te = &e->type_entries[e->type_count];
+    memset(te, 0, sizeof(*te));
+    return te;
+}
+
+static EncDataEntry *enc_new_data(Enc *e)
+{
+    if (e->data_count >= ENC_MAX_DATA) {
+        char msg[96];
+        snprintf(msg, sizeof msg,
+                 "compiler limit exceeded: more than %d data entries for .tkir", ENC_MAX_DATA);
+        enc_limit(e, msg);
+        return NULL;
+    }
+    if (e->data_count == e->data_cap) {
+        int ncap = e->data_cap ? e->data_cap * 2 : 256;
+        if (ncap > ENC_MAX_DATA) ncap = ENC_MAX_DATA;
+        EncDataEntry *p = realloc(e->data_entries, (size_t)ncap * sizeof(*p));
+        if (!p) {
+            enc_limit(e, "compiler limit exceeded: out of memory for .tkir data entries");
+            return NULL;
+        }
+        e->data_entries = p;
+        e->data_cap = ncap;
+    }
+    EncDataEntry *de = &e->data_entries[e->data_count];
+    memset(de, 0, sizeof(*de));
+    return de;
+}
+
 static uint32_t enc_ensure_scalar(Enc *e, uint8_t kind)
 {
     for (int i = 0; i < e->type_count; i++) {
         if (e->type_entries[i].kind == kind && e->type_entries[i].name[0] == '\0')
             return (uint32_t)i;
     }
-    if (e->type_count >= ENC_MAX_TYPES) return 0;
-    EncTypeEntry *te = &e->type_entries[e->type_count];
+    EncTypeEntry *te = enc_new_type(e);
+    if (!te) return 0;
     te->kind = kind;
     te->name[0] = '\0';
     te->field_count = 0;
@@ -246,8 +312,8 @@ static uint32_t enc_type_idx_from_name(Enc *e, const char *name)
             !strcmp(e->type_entries[i].name, name))
             return (uint32_t)i;
     }
-    if (e->type_count >= ENC_MAX_TYPES) return 0;
-    EncTypeEntry *te = &e->type_entries[e->type_count];
+    EncTypeEntry *te = enc_new_type(e);
+    if (!te) return 0;
     te->kind = TKIR_TY_STRUCT;
     strncpy(te->name, name, NAME_BUF - 1);
     te->name[NAME_BUF - 1] = '\0';
@@ -262,8 +328,8 @@ static uint32_t enc_compound(Enc *e, uint8_t kind, uint32_t elem)
             e->type_entries[i].elem_type_idx == elem)
             return (uint32_t)i;
     }
-    if (e->type_count >= ENC_MAX_TYPES) return 0;
-    EncTypeEntry *te = &e->type_entries[e->type_count];
+    EncTypeEntry *te = enc_new_type(e);
+    if (!te) return 0;
     te->kind = kind;
     te->name[0] = '\0';
     te->field_count = 0;
@@ -279,8 +345,8 @@ static uint32_t enc_map(Enc *e, uint32_t key, uint32_t val)
         if (t->kind == TKIR_TY_MAP && t->key_type_idx == key && t->elem_type_idx == val)
             return (uint32_t)i;
     }
-    if (e->type_count >= ENC_MAX_TYPES) return 0;
-    EncTypeEntry *te = &e->type_entries[e->type_count];
+    EncTypeEntry *te = enc_new_type(e);
+    if (!te) return 0;
     te->kind = TKIR_TY_MAP;
     te->name[0] = '\0';
     te->field_count = 0;
@@ -324,8 +390,8 @@ static uint32_t enc_add_str(Enc *e, const char *str, size_t len)
             !memcmp(e->data_entries[i].u.str.ptr, str, len))
             return (uint32_t)i;
     }
-    if (e->data_count >= ENC_MAX_DATA) return 0;
-    EncDataEntry *de = &e->data_entries[e->data_count];
+    EncDataEntry *de = enc_new_data(e);
+    if (!de) return 0;
     de->kind = TKIR_DATA_STR;
     de->u.str.ptr = str;
     de->u.str.len = len;
@@ -339,8 +405,8 @@ static uint32_t enc_add_i64(Enc *e, int64_t val)
             e->data_entries[i].u.i64_val == val)
             return (uint32_t)i;
     }
-    if (e->data_count >= ENC_MAX_DATA) return 0;
-    EncDataEntry *de = &e->data_entries[e->data_count];
+    EncDataEntry *de = enc_new_data(e);
+    if (!de) return 0;
     de->kind = TKIR_DATA_I64;
     de->u.i64_val = val;
     return (uint32_t)e->data_count++;
@@ -467,6 +533,10 @@ static void enc_free_types(Enc *e)
         free(e->type_entries[i].field_type_idxs);
         e->type_entries[i].field_type_idxs = NULL;
     }
+    free(e->type_entries);              /* 127.344: heap-sized now */
+    e->type_entries = NULL;
+    free(e->data_entries);
+    e->data_entries = NULL;
     free(e->enc_imports);               /* 127.235: heap-sized now */
     e->enc_imports = NULL;
 }
@@ -489,10 +559,14 @@ static int enc_prepass_types(Enc *e, const Node *ast)
             if (e->type_entries[j].kind == TKIR_TY_STRUCT &&
                 !strcmp(e->type_entries[j].name, name)) { found = 1; break; }
         }
-        if (found || e->type_count >= ENC_MAX_TYPES) continue;
+        if (found) continue;
         /* Claim the slot before walking the fields: resolving a field's type
-         * may append a type entry, which must not land in this one. */
-        EncTypeEntry *te = &e->type_entries[e->type_count++];
+         * may append a type entry, which must not land in this one.  127.344:
+         * that append may also move the table, so the entry is re-fetched by
+         * index after each field type is resolved. */
+        EncTypeEntry *te = enc_new_type(e);
+        if (!te) return -1;
+        int slot = e->type_count++;
         te->kind = TKIR_TY_STRUCT;
         strncpy(te->name, name, NAME_BUF - 1);
         te->name[NAME_BUF - 1] = '\0';
@@ -509,7 +583,8 @@ static int enc_prepass_types(Enc *e, const Node *ast)
                  * as i64. */
                 uint32_t ti = (fld->child_count > 0) ? enc_type_idx_from_node(e, fld->children[0])
                                                      : enc_ensure_scalar(e, TKIR_TY_I64);
-                if (enc_add_field(te, ti) < 0) return -1;
+                if (e->failed) return -1;
+                if (enc_add_field(&e->type_entries[slot], ti) < 0) return -1;
             }
         }
     }
@@ -1309,7 +1384,9 @@ static int parse_code_section(Cursor *c, size_t sec_end, TkirModule *mod,
             return -1;
         }
 
-        if (func_idx >= (uint16_t)mod->func_count) {
+        /* !funcs: a code section before any function section (127.345:
+         * the analyzer follows this path from tkir_print_file). */
+        if (!mod->funcs || func_idx >= (uint16_t)mod->func_count) {
             char msg[128];
             snprintf(msg, sizeof(msg), "code section: func_idx %u >= func_count %d",
                      func_idx, mod->func_count);
@@ -1715,17 +1792,17 @@ int tkir_find_section(const uint8_t *buf, size_t len, uint8_t tag,
     return -1;
 }
 
-int tkir_read(const char *path, TkirModule *out,
-              char *errbuf, int errbuf_len)
+/* Read a whole .tkir file into a heap buffer (127.345: shared by tkir_read
+ * and tkir_print_file).  Returns NULL with errbuf set on failure. */
+static uint8_t *tkir_slurp(const char *path, size_t *len_out,
+                           char *errbuf, int errbuf_len)
 {
-    memset(out, 0, sizeof(*out));
-
     FILE *f = fopen(path, "rb");
     if (!f) {
         char msg[320];
         snprintf(msg, sizeof(msg), "cannot open '%s'", path);
         set_err(errbuf, errbuf_len, msg);
-        return -1;
+        return NULL;
     }
 
     /* 135.3j: read the stream — ftell/rewind are unchecked and fail on a
@@ -1735,17 +1812,63 @@ int tkir_read(const char *path, TkirModule *out,
     fclose(f);
     if (!buf) {
         set_err(errbuf, errbuf_len, big ? "file too large" : "failed to read file");
-        return -1;
+        return NULL;
     }
     if (flen == 0) {
         free(buf);
         set_err(errbuf, errbuf_len, "empty or unreadable file");
-        return -1;
+        return NULL;
     }
+    *len_out = flen;
+    return buf;
+}
 
+int tkir_read(const char *path, TkirModule *out,
+              char *errbuf, int errbuf_len)
+{
+    memset(out, 0, sizeof(*out));
+    size_t flen = 0;
+    uint8_t *buf = tkir_slurp(path, &flen, errbuf, errbuf_len);
+    if (!buf) return -1;
     int rc = tkir_decode(buf, flen, out, errbuf, errbuf_len);
     free(buf);
     return rc;
+}
+
+/* 127.345: `tkc --read-tkir <f.tkir>`.  Decodes the file with the same
+ * validation as tkir_read, prints tkir_dump, then the sizes of the format-1.2
+ * TEXT and AST sections (the ones --from-tkir compiles from), which
+ * tkir_decode does not load.  A file that does not decode gets E9021. */
+int tkir_print_file(const char *path, FILE *out)
+{
+    char err[256] = {0};
+    size_t flen = 0;
+    TkirModule mod;
+    memset(&mod, 0, sizeof mod);
+    uint8_t *buf = tkir_slurp(path, &flen, err, (int)sizeof err);
+    if (!buf || tkir_decode(buf, flen, &mod, err, (int)sizeof err) != 0) {
+        char msg[640];
+        snprintf(msg, sizeof msg, "failed to read .tkir file '%s': %s",
+                 path, err[0] ? err : "malformed file");
+        diag_emit(DIAG_ERROR, E9021, 0, 0, 0, msg, (void *)0);
+        free(buf);
+        return -1;
+    }
+    tkir_dump(&mod, out);
+    size_t off, tlen = 0, alen = 0;
+    int has_text = tkir_find_section(buf, flen, TKIR_SEC_TEXT, &off, &tlen) == 0;
+    int has_ast  = tkir_find_section(buf, flen, TKIR_SEC_AST,  &off, &alen) == 0;
+    fprintf(out, "\nProgram sections:");
+    if (has_text) fprintf(out, " TEXT=%zu bytes", tlen);
+    else          fprintf(out, " TEXT=absent");
+    if (has_ast)  fprintf(out, " AST=%zu bytes", alen);
+    else          fprintf(out, " AST=absent");
+    if (!has_text || !has_ast)
+        fprintf(out, "  (--from-tkir needs both: format 1.2 or later)");
+    fprintf(out, "\n");
+    tkir_module_free(&mod);
+    free(buf);
+    return 0;
 }
 
 /* ── Module free ─────────────────────────────────────────────────────── */
