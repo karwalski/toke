@@ -113,6 +113,23 @@ nothing freed, so a server leaked one per request and one more for each
 response a handler built and did not return; a cached handle "worked" only
 because it was never freed, and a stray integer crashed the server.)
 
+### Route patterns and request strings
+
+A pattern segment `:name` matches any one path segment and binds it, read in
+the handler with `router.param(req;"name")`; a trailing `*` matches the rest
+of the path. When several routes match, an exact segment beats a `:param`,
+which beats `*`; on a tie the first registered wins. Until story 127.343 a
+route registered from toke reached its handler only when the request path
+equalled the pattern text, so a `:param` or `*` route always answered 404 and
+`router.param` never returned a value.
+
+`router.param`, `router.reqpath`, `router.reqquery`, `router.reqbody` and
+`router.reqmethod` return strings that last for the whole program, like any
+other toke string: a handler may keep one in a mutable global and read it on
+a later request. Each is copied out of the request once per request, on its
+first read (127.343: they used to point into the request's own memory, which
+the next request overwrote or which was freed when the handler returned).
+
 ## Usage
 
 ```toke
