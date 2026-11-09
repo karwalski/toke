@@ -78,15 +78,17 @@ SURFACES = [
     # the source of truth itself — the .md must agree with the .json
     {"path": CANON_MD,
      "blocks": ["one_liner", "paragraph", "token_efficiency_short_form",
-                "disambiguation", "subprojects"],
+                "disambiguation", "disambiguation_structured_data", "subprojects"],
      "facts": ["purpose_one_sentence"]},
 
     {"path": "README.md", "blocks": ["paragraph"]},
 
-    {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"],
-     "story": "132.2 — site home page + disambiguation + llms.txt"},
-    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"],
-     "story": "132.2 — site home page + disambiguation + llms.txt"},
+    # Story 132.126: 132.2 is done, so the home page and llms.txt are enforced.
+    # The owner moved the home page's disambiguation into schema.org JSON-LD
+    # (toke-website 077064e); a structured-data form (STRUCTURED_FORMS) in the
+    # page or the layout it renders through satisfies the block.
+    {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"]},
+    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"]},
 
     # repo READMEs, rewritten from the canonical block by story 132.10. These are
     # repository front pages, not registry descriptions: 132.4 owns the PyPI, npm,
@@ -189,6 +191,68 @@ AWAITING_PUBLISH = [
 
 NEAR_MISS = 0.55        # similarity above which an absent block is "drifted"
 
+# ------------------------------------------------------ structured data ----
+# Story 132.126. A block may be carried as schema.org JSON-LD instead of visible
+# text, but only where canonical.json declares that form: a block whose
+# "form_of" names the visible block, with the JSON-LD "field" that carries it
+# and the "same_as" URLs that must accompany it. The home page does this for the
+# disambiguation (toke-website 077064e, owner). The structured form is checked
+# word for word like the visible one; a page with neither still fails.
+LAYOUT_CALL = re.compile(r"""\{!\s*layout\(\s*["']([^"']+)["']\s*\)\s*!\}""")
+JSONLD_SCRIPT = re.compile(
+    r"""<script[^>]*type\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>""",
+    re.S | re.I)
+
+
+def structured_forms(canon):
+    """{visible block key: structured block key} from canonical.json."""
+    return {v["form_of"]: k for k, v in canon.get("blocks", {}).items()
+            if isinstance(v, dict) and v.get("form_of")}
+
+
+def jsonld_objects(full):
+    """Every JSON-LD object in `full` and in the layout chain it renders through."""
+    out, seen = [], set()
+    while full and full not in seen and os.path.exists(full):
+        seen.add(full)
+        text = open(full, encoding="utf-8", errors="replace").read()
+        for raw in JSONLD_SCRIPT.findall(text):
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            stack = [data]
+            while stack:
+                obj = stack.pop()
+                if isinstance(obj, list):
+                    stack.extend(obj)
+                elif isinstance(obj, dict):
+                    out.append((full, obj))
+                    stack.extend(obj.get("@graph", []) if isinstance(obj.get("@graph"), list) else [])
+        m = LAYOUT_CALL.search(text)
+        full = os.path.join(os.path.dirname(full), m.group(1) + ".tkt") if m else None
+    return out
+
+
+def check_structured(canon, full, key):
+    """None when `full` carries block `key` as structured data, else (why, detail)."""
+    spec = canon["blocks"][key]
+    field, want = spec["field"], normalise(spec["value"])
+    found = [(src, obj) for src, obj in jsonld_objects(full) if field in obj]
+    if not found:
+        return ("MISSING", "")
+    for src, obj in found:
+        got = normalise(str(obj[field]))
+        if got != want:
+            return ("DRIFTED", "%s %s: %s" % (os.path.basename(src), field,
+                                             first_difference(got, want)))
+        same = obj.get("sameAs", [])
+        same = [same] if isinstance(same, str) else same
+        lost = [u for u in spec.get("same_as", []) if u not in same]
+        if lost:
+            return ("DRIFTED", "%s sameAs lacks %s" % (os.path.basename(src), ", ".join(lost)))
+    return None
+
 # ---------------------------------------------------------------- Rule 2 ----
 DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md", "AGENTS.md"]
 SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".ebnf", ".gbnf",
@@ -211,13 +275,14 @@ EXCLUDE_DIRS = {
 
 # Files owned by another story: warn, never fail, until that story lands and the
 # entry is deleted. Keep this list SHORT and always keyed to a story number.
+#
+# Story 132.128 deleted the five 132.8 entries (the toke whitepaper and RFC,
+# docs/whitepaper/, spec/rfc/ and toke-spec/rfc/): 132.8 landed 2026-09-19, and
+# the entries kept downgrading a "55-character set" and an open Gate 1 verdict
+# to warnings for seven weeks after it.
 PENDING = {
-    "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
-    "spec/rfc/draft-karwalski-toke-lang-00.md": "132.8 — whitepaper v2 + RFC alignment",
 }
 PENDING_PREFIXES = (
-    ("docs/whitepaper/", "132.8 — whitepaper v2 + RFC alignment"),
-    ("spec/rfc/", "132.8 — whitepaper v2 + RFC alignment"),
     # Story 132.42 removed ("../toke-website/", "132.9 / 132.2 — website roadmap
     # + home page"): a single prefix that took the whole public website out of
     # rule one. See the matching note in check_metrics_claims.py. Name
@@ -226,7 +291,6 @@ PENDING_PREFIXES = (
     # archive banners and the live ones were corrected, so only the RFC is still pending.
     # 132.61: keyed by repository identity (check_metrics_claims.repo_key),
     # not by a path relative to this checkout.
-    ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
     # 132.86 deleted the three toke-model entries keyed to 132.69: README.md,
     # huggingface/UPLOAD.md and the unpublished model card now state the
     # 2026-09-22 NOT PASSED decision, so Rule 2 fails them if it comes back.
@@ -276,7 +340,36 @@ STALE = [
      "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
      "(docs/decisions/gate1-decision.md)",
      "verdict"),
+    # Story 132.127 — the same retired verdict, PARAPHRASED: "Gate 1 required
+    # >10% token reduction and Pass@1 >= 60%. Both criteria were met" (toke
+    # docs/about/why.md:28 until Z122) passed every rule above. A sentence that
+    # says both / all of the criteria (thresholds, conditions, requirements)
+    # were met, exceeded, passed or satisfied is the PASS verdict in other
+    # words. It is only a Gate 1 claim when "Gate 1" is in the same window
+    # (GATE1_CONTEXT), so "both criteria were met" about anything else is left
+    # alone; one criterion stated as met ("the token-reduction criterion stands
+    # as met") never matches. Excused, like the verdict above, only by the
+    # decision itself (VERDICT_DECIDED).
+    (re.compile(
+        r"(?i:\b(?:both|all)\s+(?:(?:two|three|of\s+(?:the|its))\s+)?"
+        r"(?:gate[\s-]*1\s+|gate\s+|go/no-go\s+)?"
+        r"(?:criteria|criterion|thresholds?|conditions|requirements|targets)\s+"
+        r"(?:(?:were|was|are|is|have\s+been|had\s+been|got)\s+)?(?:both\s+)?"
+        r"(?:met|exceeded|passed|satisfied|cleared|achieved)\b)"
+        r"|(?i:\b(?:criteria|thresholds|conditions|requirements|targets)\s+"
+        r"(?:were|are|have\s+been|had\s+been)\s+(?:both|all)\s+"
+        r"(?:met|exceeded|passed|satisfied|cleared|achieved)\b)"
+        r"|(?i:\b(?:met|exceeded|passed|satisfied|cleared)\s+(?:both|all)\s+"
+        r"(?:(?:of\s+)?(?:the|its)\s+)?(?:two\s+|three\s+)?(?:gate[\s-]*1\s+)?"
+        r"(?:criteria|thresholds|conditions|requirements|targets)\b)"),
+     "Gate 1 PASS, paraphrased (both criteria met)",
+     "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
+     "(docs/decisions/gate1-decision.md)",
+     "verdict-gate1"),
 ]
+
+# Story 132.127 — a paraphrased verdict is a Gate 1 claim only beside "Gate 1".
+GATE1_CONTEXT = re.compile(r"\bgate[\s-]*(?:1|one)\b", re.I)
 
 # Story 132.69 — the only thing that excuses the retired verdict is the decision
 # that retired it, stated within the same paragraph window.
@@ -506,16 +599,27 @@ def check_surfaces(canon):
         except OSError as exc:
             sink.append((rel, 0, "unreadable: %s" % exc, "", owner))
             continue
+        forms = structured_forms(canon)
         for key in surface.get("blocks", []) + surface.get("facts", []):
             want = normalise(block_text(canon, key))
             if want in hay:
                 continue
+            if markup and key in forms:                       # 132.126
+                res = check_structured(canon, full, forms[key])
+                if res is None:
+                    continue
+                if res[0] == "DRIFTED":
+                    sink.append((rel, 0, "the %r block is absent and its structured-data "
+                                 "form %r has DRIFTED" % (key, forms[key]), res[1], owner))
+                    continue
             got, ratio = best_window(hay, want)
             if ratio >= NEAR_MISS:
                 sink.append((rel, 0, "the %r block has DRIFTED (%.0f%% match)"
                              % (key, ratio * 100), first_difference(got, want), owner))
             else:
-                sink.append((rel, 0, "the %r block is MISSING" % key, "", owner))
+                sink.append((rel, 0, "the %r block is MISSING%s"
+                             % (key, " (and so is its structured-data form %r)" % forms[key]
+                                if markup and key in forms else ""), "", owner))
     return failures, warnings
 
 
@@ -564,7 +668,10 @@ def check_stale(path, rel):
         for pat, label, fix, *kind in STALE:
             if not pat.search(claim):
                 continue
-            if kind == ["verdict"]:
+            if kind == ["verdict-gate1"]:                     # 132.127
+                if not GATE1_CONTEXT.search(near) or VERDICT_DECIDED.search(near):
+                    continue
+            elif kind == ["verdict"]:
                 if VERDICT_DECIDED.search(near):
                     continue
             elif CORRECTION.search(near) or negation_of(pat).search(near):
@@ -592,7 +699,8 @@ def check_stale(path, rel):
 # writes it), shared with check_metrics_claims -- never by the checkout's name.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_metrics_claims import (deployed_source, is_deployed_tree,  # noqa: E402
-                                  is_generated_mirror, repo_key,
+                                  is_generated_mirror, never_read, repo_key,
+                                  walk_readable,
                                   scan_deployed_tree, report_stale_trees, STALE_TREES)
 
 
@@ -604,10 +712,12 @@ def scan_files(targets):
         # in check_metrics_claims.py: `README.md` typed in toke-model scanned
         # toke's README and passed toke-model's own over.
         p = os.path.abspath(t)
+        if never_read(p):              # 132.129: hidden_tests/ is never read
+            continue
         if os.path.isfile(p):
             out.append(p)
         elif os.path.isdir(p):
-            for dirpath, dirs, files in os.walk(p):
+            for dirpath, dirs, files in walk_readable(p):
                 # 132.46: the website's deployed build/ is scanned; see
                 # check_metrics_claims.is_deployed_tree for why.
                 dirs[:] = [d for d in dirs
@@ -667,6 +777,31 @@ SELFTEST = [
     (True, "open verdict followed by its decision on the next line",
      "The verdict is re-opened by the correction above;\n"
      "it was decided NOT PASSED on 2026-09-22."),
+    # Story 132.127 — the verdict paraphrased.
+    (False, "both criteria met (docs/about/why.md:28 before Z122)",
+     "The project has explicit go/no-go gates. Gate 1 required greater than 10% token "
+     "reduction and a Pass@1 rate of at least 60%. Both criteria were met -- the project "
+     "proceeds to Phase 2."),
+    (False, "both criteria met, wrapped onto the next line",
+     "Gate 1 required greater than 10% token reduction and Pass@1 >= 60%.\n"
+     "Both criteria were met."),
+    (False, "met both thresholds", "toke met both Gate 1 thresholds on 2026-04-03."),
+    (False, "all criteria exceeded", "Gate 1: all criteria exceeded."),
+    (False, "criteria were both met", "The Gate 1 criteria were both met."),
+    (False, "both Gate 1 criteria satisfied, emphasised",
+     "**Both Gate 1 criteria were satisfied** (token reduction and Pass@1)."),
+    (True, "one criterion met is not the verdict (docs/about/why.md:28 after Z122)",
+     "Gate 1 required greater than 10% token reduction and a Pass@1 rate of at least "
+     "60%. The token-reduction criterion stands as met; the Pass@1 criterion does not."),
+    (True, "both criteria met, decided in the same sentence",
+     "Gate 1 was recorded as passed because both criteria were met, but on 2026-09-22 "
+     "the owner decided Gate 1 NOT PASSED."),
+    (True, "both criteria met about something other than Gate 1",
+     "The tokenizer acceptance review had two criteria. Both criteria were met."),
+    (True, "both criteria NOT met",
+     "Gate 1 required two criteria; both criteria were not met at the corrected 58.8%."),
+    (True, "a requirement, not a result",
+     "Gate 1 requires both criteria to be met before Phase 2 opens."),
     (False, "one-token lookahead", "The parser needs exactly one token of lookahead."),
     (False, "negation of something else in the previous sentence",
      "The parser does not backtrack. The grammar is LL(1)."),
@@ -767,6 +902,65 @@ def selftest_rule1():
     return bad
 
 
+def selftest_structured():
+    """132.126 — a block's structured-data form satisfies it; neither form fails.
+
+    Fixture: a template page that renders through `{! layout("base") !}`, as the
+    website's index.tkt does, with the JSON-LD (if any) in the layout. The
+    negative controls are the point: a page with neither the visible block nor
+    the JSON-LD form, a re-worded JSON-LD description, and a JSON-LD object that
+    drops a canonical sameAs URL must all still fail."""
+    import tempfile
+    global SURFACES
+    canon = load_canonical()
+    spec = canon["blocks"]["disambiguation_structured_data"]
+    visible = canon["blocks"]["disambiguation"]["value"]
+
+    def jsonld(desc, same):
+        return ('<script type="application/ld+json">\n%s\n</script>'
+                % json.dumps({"@context": "https://schema.org",
+                              "@type": "SoftwareApplication", "name": "toke",
+                              spec["field"]: desc, "sameAs": same}, indent=2))
+
+    page = '{! layout("base") !}\n{! block("content") !}\n<p>%s</p>\n{! end !}\n'
+    reworded = spec["value"].replace("unrelated to the slang term", "not the slang term")
+    cases = [
+        # (passes?, name, index.tkt body, base.tkt head)
+        (True, "visible block, no JSON-LD", page % visible, "<head></head>"),
+        (True, "JSON-LD form in the layout (toke-website 077064e)", page % "Hero.",
+         "<head>%s</head>" % jsonld(spec["value"], spec["same_as"])),
+        (True, "JSON-LD form in the page itself", page % jsonld(spec["value"], spec["same_as"]),
+         "<head></head>"),
+        (False, "neither the visible block nor the JSON-LD form", page % "Hero.",
+         "<head></head>"),
+        (False, "JSON-LD present but carries a different field only", page % "Hero.",
+         '<script type="application/ld+json">{"description": "%s"}</script>' % spec["value"]),
+        (False, "re-worded JSON-LD description", page % "Hero.",
+         "<head>%s</head>" % jsonld(reworded, spec["same_as"])),
+        (False, "JSON-LD sameAs drops the GitHub URL", page % "Hero.",
+         "<head>%s</head>" % jsonld(spec["value"], ["https://tokelang.dev"])),
+    ]
+    bad, saved = 0, SURFACES
+    try:
+        for passes, name, index_body, base_body in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                for fname, body in (("index.tkt", index_body), ("base.tkt", base_body)):
+                    with open(os.path.join(tmp, fname), "w", encoding="utf-8") as fh:
+                        fh.write(body)
+                SURFACES = [{"path": os.path.join(tmp, "index.tkt"),
+                             "blocks": ["disambiguation"]}]
+                failures, warnings = check_surfaces(canon)
+            ok = (not failures and not warnings) if passes else bool(failures)
+            if not ok:
+                bad += 1
+                print("SELFTEST FAIL [rule 1 structured %s] %s: %s"
+                      % ("accept" if passes else "reject", name,
+                         failures[0][2] if failures else "not flagged"))
+    finally:
+        SURFACES = saved
+    return bad, len(cases)
+
+
 def selftest_workspace():
     """132.95: a worktree resolves its siblings beside the MAIN checkout.
 
@@ -808,7 +1002,8 @@ def selftest_workspace():
 
 def selftest():
     import tempfile
-    bad = selftest_rule1() + selftest_workspace()
+    sbad, nstructured = selftest_structured()
+    bad = selftest_rule1() + selftest_workspace() + sbad
     for accept, name, text in SELFTEST:
         with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
                                          delete=False) as fh:
@@ -824,19 +1019,20 @@ def selftest():
             print("SELFTEST FAIL [%s] %s: %s"
                   % ("accept" if accept else "reject", name,
                      "flagged: %s" % found[0][2] if found else "not flagged"))
-    total = len(SELFTEST) + len(SELFTEST_RULE1) + 1
+    total = len(SELFTEST) + len(SELFTEST_RULE1) + 1 + nstructured
     if bad:
         print("\nselftest: %d of %d cases wrong — the canonical-facts gate is not "
               "behaving as documented." % (bad, total))
         return 1
     print("selftest: %d cases OK — %d Rule 2 (%d corrections accepted, %d stale "
           "claims still rejected) and %d Rule 1 (%d faithful copies matched, "
-          "%d re-wordings still caught), plus worktree workspace resolution (132.95)."
+          "%d re-wordings still caught), %d Rule 1 structured-data form (132.126), "
+          "plus worktree workspace resolution (132.95)."
           % (total, len(SELFTEST),
              sum(1 for c in SELFTEST if c[0]), sum(1 for c in SELFTEST if not c[0]),
              len(SELFTEST_RULE1),
              sum(1 for c in SELFTEST_RULE1 if c[0]),
-             sum(1 for c in SELFTEST_RULE1 if not c[0])))
+             sum(1 for c in SELFTEST_RULE1 if not c[0]), nstructured))
     return 0
 
 

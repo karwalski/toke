@@ -197,6 +197,19 @@ same section.*
 *Source: `docs/progress.md`, Epic 132 acceptance criterion 5. "tokelang" appears on the
 site once — in this line — and nowhere else in new content.*
 
+### Disambiguation (structured data)
+
+> toke is a compiled programming language. It is unrelated to the slang term for smoking,
+> to cannabis brands using the name, to the TOKE cryptocurrency tokens, to Tokelau or its
+> .tk country-code domain, and to tokelang.com, which is an unrelated third-party project.
+
+*Source: toke-website commit 077064e (owner, 2026-09-22). The home page does not show the
+one-line disambiguation; it carries it as schema.org JSON-LD in the page head, as the
+`disambiguatingDescription` of a `SoftwareApplication` whose `sameAs` lists
+https://github.com/karwalski/toke and https://tokelang.dev (the two locations the visible
+line names). This is the only form a surface may use in place of the visible line, and
+`make check-canonical` checks it word for word like any other block (story 132.126).*
+
 ### Sub-projects (one line)
 
 > ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web
