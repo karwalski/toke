@@ -578,6 +578,22 @@ static TkRouteResp cors_preflight_noop(TkRouteCtx ctx)
 /* Dispatch (internal — shared by router_dispatch and router_dispatch_ex)    */
 /* ----------------------------------------------------------------------- */
 
+/* The route the dispatch in progress matched (127.343).  Set around the
+ * middleware chain and handler call, restored after; read by the toke glue's
+ * shared trampoline (router_glue.c) through router_dispatch_route. */
+static const TkRouter *cur_router;
+static const TkRoute  *cur_route;
+
+int router_dispatch_route(const TkRouter **router, const char **method,
+                          const char **pattern)
+{
+    if (!cur_route) return 0;
+    if (router)  *router  = cur_router;
+    if (method)  *method  = cur_route->method;
+    if (pattern) *pattern = cur_route->pattern;
+    return 1;
+}
+
 static TkRouteResp dispatch_internal(TkRouter *r,
                                       const char *method, const char *path,
                                       const char *query,  const char *body,
@@ -652,6 +668,10 @@ static TkRouteResp dispatch_internal(TkRouter *r,
     }
 
     TkRouteResp resp;
+    const TkRouter *prev_router = cur_router;
+    const TkRoute  *prev_route  = cur_route;
+    cur_router = r;
+    cur_route  = best_route;          /* NULL for the OPTIONS+CORS no-op */
     if (r->nmw > 0) {
         mw_chain_ctx.router   = r;
         mw_chain_ctx.mw_index = 0;
@@ -660,6 +680,8 @@ static TkRouteResp dispatch_internal(TkRouter *r,
     } else {
         resp = final_handler(ctx);
     }
+    cur_router = prev_router;
+    cur_route  = prev_route;
 
     /* free param strings */
     if (best_route) {

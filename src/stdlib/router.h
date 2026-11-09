@@ -142,6 +142,17 @@ TkRouteResp router_dispatch_ex(TkRouter *r,
                                 const char **hnames, const char **hvals,
                                 uint64_t nhdrs);
 
+/* router_dispatch_route — inside a handler (or middleware) called by a
+ * dispatch: the router that dispatched and the method and pattern of the
+ * route it matched, as registered (":id" segments, a trailing "*"), and 1.
+ * Outside a dispatch, or when no route matched (a CORS preflight), 0 and the
+ * outputs are untouched.  Any output may be NULL.  The strings are the
+ * router's and live until router_free.  The toke glue's shared trampoline
+ * uses it to find the toke handler of the route the router's own matcher
+ * chose (127.343). */
+int router_dispatch_route(const TkRouter **router, const char **method,
+                          const char **pattern);
+
 /* Start an HTTP server using this router for dispatch.
  * Binds to the given host:port and blocks, serving requests.
  * host is an IPv4 literal or "localhost" (127.0.0.1); NULL, "", "*" or
