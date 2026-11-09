@@ -802,14 +802,14 @@ static void enc_emit_func_body(Enc *e, int func_idx)
 
 /* ── Encoder: section writers ────────────────────────────────────────── */
 
-static void enc_write_header(TkirBuf *out, const char *target)
+static void enc_write_header(TkirBuf *out, const char *target, uint16_t sec_count)
 {
     /* Write magic as raw bytes so file starts with "TKIR" in ASCII */
     tkir_buf_bytes(out, "TKIR", 4);
     tkir_buf_u8(out, TKIR_VERSION_MAJOR);
     tkir_buf_u8(out, TKIR_VERSION_MINOR);
     tkir_buf_u8(out, TKIR_FLAG_EXPORTS);
-    tkir_buf_u16(out, 6);
+    tkir_buf_u16(out, sec_count);
     (void)target;
 }
 
@@ -969,7 +969,8 @@ static void enc_write_export_section(TkirBuf *out, Enc *e)
 
 int emit_tkir(const Node *ast, const char *src,
               const TypeEnv *types, const NameEnv *names,
-              const char *target, const char *out_path)
+              const char *target, const char *out_path,
+              const TkirBuf *text_sec, const TkirBuf *ast_sec)
 {
     Enc e;
     memset(&e, 0, sizeof(e));
@@ -998,7 +999,8 @@ int emit_tkir(const Node *ast, const char *src,
 
     TkirBuf out;
     tkir_buf_init(&out);
-    enc_write_header(&out, target);
+    enc_write_header(&out, target,
+                     (uint16_t)(6 + (text_sec != NULL) + (ast_sec != NULL)));
     enc_write_type_section(&out, &e);
     enc_write_func_section(&out, &e);
     if (enc_write_code_section(&out, &e) < 0) {
@@ -1010,6 +1012,17 @@ int emit_tkir(const Node *ast, const char *src,
     enc_write_data_section(&out, &e);
     enc_write_import_section(&out, &e);
     enc_write_export_section(&out, &e);
+    /* 76.1.6c: the program itself, for --from-tkir. */
+    if (text_sec) {
+        tkir_buf_u8(&out, TKIR_SEC_TEXT);
+        tkir_buf_u32(&out, (uint32_t)text_sec->len);
+        if (text_sec->len) tkir_buf_bytes(&out, text_sec->data, text_sec->len);
+    }
+    if (ast_sec) {
+        tkir_buf_u8(&out, TKIR_SEC_AST);
+        tkir_buf_u32(&out, (uint32_t)ast_sec->len);
+        if (ast_sec->len) tkir_buf_bytes(&out, ast_sec->data, ast_sec->len);
+    }
     enc_free_types(&e);
 
     FILE *f = fopen(out_path, "wb");
@@ -1681,6 +1694,25 @@ int tkir_decode(const uint8_t *buf, size_t len, TkirModule *out,
     }
 
     return 0;
+}
+
+int tkir_find_section(const uint8_t *buf, size_t len, uint8_t tag,
+                      size_t *off, size_t *sec_len)
+{
+    Cursor c = { buf, len, 0 };
+    uint32_t magic; uint8_t vmaj, vmin, flags; uint16_t n;
+    if (cur_read_u32(&c, &magic) < 0 || magic != TKIR_MAGIC ||
+        cur_read_u8(&c, &vmaj) < 0 || cur_read_u8(&c, &vmin) < 0 ||
+        cur_read_u8(&c, &flags) < 0 || cur_read_u16(&c, &n) < 0)
+        return -1;
+    for (int i = 0; i < n; i++) {
+        uint8_t t; uint32_t l;
+        if (cur_read_u8(&c, &t) < 0 || cur_read_u32(&c, &l) < 0) return -1;
+        if (l > len - c.pos) return -1;
+        if (t == tag) { *off = c.pos; *sec_len = l; return 0; }
+        c.pos += l;
+    }
+    return -1;
 }
 
 int tkir_read(const char *path, TkirModule *out,

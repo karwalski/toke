@@ -7,6 +7,8 @@ Flags:
   --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary
   --emit-asm          Emit assembly (.s) instead of compiling to binary
   --emit-deps         Print stdlib C sources and linker flags needed, then exit
+  --emit-tkir         Write the type-checked program as binary IR (.tkir)
+  --from-tkir         Inputs are .tkir files: compile them as their source
   -I <dir>            Add .tki interface search directory (repeatable)
   -g / --debug        Emit DWARF debug metadata for lldb/gdb
   -O0/-O1/-O2/-O3    Optimization level (default: -O2)
