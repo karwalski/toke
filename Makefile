@@ -239,7 +239,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -1240,7 +1240,7 @@ test-ci: test-ci-green
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
 # 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen test-standalone
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1301,6 +1301,17 @@ check-patterns: $(BIN)
 	python3 scripts/patterns/render_catalogue.py check
 render-patterns:
 	python3 scripts/patterns/render_catalogue.py all
+
+# 131.52 — grammar drift gate. docs/spec/toke.gbnf (shipped for grammar-constrained
+# decoding) must accept exactly what the parser parses: scripts/gbnf_gate.py runs a
+# dependency-free Earley recogniser over test/gbnf/fragments.json and compares each
+# verdict with `tkc --dump-ast`. Regenerate the fragment set with
+# `python3 scripts/gbnf_gate.py --write-fragments` after adding test inputs.
+# bench-gbnf prints the mask-cost micro-benchmark (operation counts, not a gate).
+check-gbnf: $(BIN)
+	TKC=$(abspath $(BIN)) python3 scripts/gbnf_gate.py
+bench-gbnf: $(BIN)
+	TKC=$(abspath $(BIN)) python3 scripts/gbnf_bench.py
 
 # 132.6 — token-efficiency claim gate. Every published percentage about tokens must
 # carry its TEMSpec §6.3 fields (metric type, tokenizer, baseline, N), no withdrawn

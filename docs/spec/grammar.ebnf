@@ -307,4 +307,6 @@ LiteralExpr  = INT_LIT | FLOAT_LIT | STR_LIT | BOOL_LIT ;
 (* separator and a matching ')'/'}'/']' as the terminator, and the         *)
 (* trailing ';' before a closing '}'/EOF is elidable (see §Semicolon       *)
 (* elision). A conformance harness (scripts/grammar_check.py) confirms the  *)
-(* reference corpus (conform + standalone + examples) is accepted.         *)
+(* reference corpus (conform + standalone + examples) is accepted, and the  *)
+(* character-level docs/spec/toke.gbnf is held to the parser in both       *)
+(* directions by `make check-gbnf` (scripts/gbnf_gate.py, story 131.52).   *)
