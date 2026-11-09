@@ -73,7 +73,9 @@ CONTEXT_LINES = 30
 # 127.261: plus the Makefile -- its comments and help text are read by every
 # contributor, and it stated "56-character"/"12 keywords" with no gate seeing it
 # (it has no extension, so neither this default nor a directory walk reached it).
-DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md", "Makefile"]
+# 132.130: plus spec/ -- the published RFC (spec/rfc/draft-karwalski-toke-lang-00.md)
+# sat outside every default, so check-claims-all never read it.
+DEFAULT_TARGETS = ["docs", "spec", "README.md", "PROJECT_STATUS.md", "Makefile"]
 
 # Story 132.15: the guard is run across the sibling repos too, by passing their
 # paths (absolute, or relative to the current directory -- `make check-claims-all`
@@ -241,6 +243,8 @@ MEASURED = re.compile(
 TOKENIZERS = re.compile(
     r"\b(cl100k(_base)?|o200k(_base)?|tiktoken|sentencepiece|sp8k|sp32k|"
     r"toke-?16k|toke-?bpe|tokenizer_v03|proxy8k|qwen[\s.]?2\.5[- ]?coder|"
+    # 131.50: the superword and byte lanes of scripts/patterns/count_tokens.py
+    r"superword8k|bytepatch|byte-patch|byte256|"
     r"byte-level BPE|8K? ?(vocab|BPE|SentencePiece)|16K? ?(vocab|BPE))\b", re.I)
 
 # Sample size: an explicit N, or a count followed by a unit noun.
@@ -251,7 +255,8 @@ N_FIELD = re.compile(
 
 # Rule 2: tokenizers trained on toke text — valid on the toke side only.
 TOKE_TRAINED = re.compile(
-    r"\b(toke-?16k|toke-?bpe|tokenizer_v03|proxy8k|toke's own (BPE|tokenizer)|"
+    # 131.50: superword8k and bytepatch are trained on the same toke corpus as proxy8k
+    r"\b(toke-?16k|toke-?bpe|tokenizer_v03|proxy8k|superword8k|bytepatch|toke's own (BPE|tokenizer)|"
     r"toke BPE|purpose-built (16K |8K )?(BPE|SentencePiece|tokenizer)|toke tokenizer|"
     # 132.15: TEMSpec v1.0 §6.2 wrote it as "the toke-specific BPE tokenizer"
     r"toke-specific (BPE )?tokenizer|custom SentencePiece)\b", re.I)
@@ -1307,6 +1312,15 @@ SELFTEST = [
     # -- Rule 2: a toke-trained tokenizer against a non-toke baseline ----------
     (False, "rule 2: lane crossing",
      "toke-16K on toke source uses 48.2% fewer tokens than cl100k on Go."),
+
+    # -- 131.50: the superword and byte-patch lanes are tokenizers too ---------
+    (True, "131.50: superword lane, fully qualified",
+     "Under superword8k, toke form b uses 12.0% fewer tokens than toke form a "
+     "(same-tokenizer reduction, N = 40 functions)."),
+    (False, "131.50: byte-patch lane with no N",
+     "Under bytepatch the toke rewrite uses 9.5% fewer tokens."),
+    (False, "131.50: superword8k is toke-trained -- never against Python",
+     "superword8k on toke vs Python: 21.0% more tokens, N = 60 programs."),
 
     # -- Rule 3: a withdrawn headline restated with no supersession note -------
     (False, "rule 3: the withdrawn 52% headline, restated bare",

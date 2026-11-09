@@ -41,6 +41,9 @@ below with the story that owns them; they are reported, not failed, and an
 entry whose record has since been marked, or that no longer names a
 returned record, fails (the list only shrinks).
 
+Every record field's type must be in interface notation (127.336): a field
+spelled `@(T)` in source syntax is one tkc never reads, so it was untyped.
+
 Exit 0 when every marked struct agrees with its record and every returned
 record is marked or pending; exit 1 otherwise, naming the struct, the
 record and the difference; exit 1 also when no marker is found at all (a
@@ -103,6 +106,32 @@ PENDING = {
     "vecstore.vecstorehandle": "135.30 residue: vecstore glue",
     "yaml.yamlval":           "135.30 residue: yaml glue",
 }
+
+
+def source_spelled_fields():
+    """127.336: a record field spelled in SOURCE syntax (`@(f64)`, `@(str)`,
+    `@($str:$str)`).  tkc reads a .tki field type in interface notation only
+    -- `[T]` for an array, `[K:V]` for a map, as ir.c's render_type_node
+    writes it -- so a source spelling left the field untyped and
+    `e.embedding.get(1)` printed an f64's bits.  One error line per field."""
+    errs = []
+    for path in sorted(glob.glob(os.path.join(STDLIB_TKI, "*.tki"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            continue            # an unreadable .tki is other checks' business
+        for e in d.get("exports", []):
+            if e.get("kind") != "type":
+                continue
+            for fl in e.get("fields", []) or []:
+                t = str(fl.get("type", ""))
+                if t.startswith("@"):
+                    errs.append("%s: %s.%s is spelled %r, source syntax; a .tki "
+                                "field type is written in interface notation "
+                                "(`[T]`, `[K:V]`), which is all tkc reads"
+                                % (rel(path), e.get("name"), fl.get("name"), t))
+    return errs
 
 
 def returned_records():
@@ -300,6 +329,7 @@ def main(argv):
         for e in compare_fields(name, mod, rec, cfields, tfields, prefix):
             errors.append("%s:%d: %s" % (rel(path), at, e))
     errors += compile_layout(structs)
+    errors += source_spelled_fields()
     marked = {(mod, rec) for _, _, mod, rec, *_ in structs}
     returned = returned_records()
     pending = []

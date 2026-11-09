@@ -20,7 +20,7 @@
         },
         {
           "name": "txt",
-          "type": "@(str)"
+          "type": "[str]"
         }
       ]
     },
@@ -42,7 +42,7 @@
         },
         {
           "name": "txt",
-          "type": "@(str)"
+          "type": "[str]"
         }
       ]
     },

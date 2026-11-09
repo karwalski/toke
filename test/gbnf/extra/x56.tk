@@ -1,0 +1,1 @@
+m=a;i=io:std.io "1.0";i=s:Std.str;t=$p{x:i64;$y:@$q};t=Q{a:@(str:i64)};n=5:i64;s="x":str;let z=mut.1;f=e(x:i64):i64;f=g(a:i64;b:(i64;str):bool):i64!$err{<a};

@@ -26,7 +26,7 @@ Abstract
    design rationale, not a measured result; Section 5.3 states what
    has been measured.
 
-   The language was developed iteratively: an initial 80-character
+   The language was developed iteratively: an initial 86-character
    legacy profile (using uppercase keywords and bracket arrays)
    was used to bootstrap the compiler, generate the training corpus,
    and validate the core thesis.  The default syntax
@@ -78,7 +78,7 @@ Table of Contents
    4.9.  Arena Memory Discipline ...................................  7
    5.  Character Set Specification .................................  7
    5.1.  The 59-Character Alphabet .................................  8
-   5.2.  Development Profile (80 Characters) — Historical ..........  9
+   5.2.  Development Profile (86 Characters) — Historical ..........  9
    5.3.  Token Count Estimates ..................................... 10
    6.  Symbol Assignment ........................................... 10
    6.1.  Operator and Delimiter Table .............................. 11
@@ -328,7 +328,7 @@ Table of Contents
       The reference compiler binary for toke.
 
    Legacy profile:
-      The 80-character bootstrapping variant of the toke source
+      The 86-character bootstrapping variant of the toke source
       language, used during early compiler development and corpus
       generation to maintain compatibility with existing LLM
       tokenizers.  Uses uppercase keywords (F=, T=, I=, M=) and
@@ -570,9 +570,9 @@ Table of Contents
       merged tokens: $user, $str, @( each become one vocabulary entry
       after sufficient corpus exposure.
 
-### 5.2.  Legacy Profile (80 Characters) — Historical
+### 5.2.  Legacy Profile (86 Characters) — Historical
 
-   During early development, toke used an 80-character legacy
+   During early development, toke used an 86-character legacy
    profile to maintain compatibility with existing LLM tokenizers
    (cl100k_base).  This profile used uppercase keywords (F=, T=, I=,
    M=), uppercase-initial type names (User, Str), and bracket array
@@ -723,7 +723,7 @@ Table of Contents
    are single characters.  Boolean literals true and false are
    predefined identifiers, not keywords, and MUST NOT be redefined.
 
-   NOTE: In the legacy profile (80-character), the declaration
+   NOTE: In the legacy profile (86-character), the declaration
    keywords are uppercase (F, T, I, M).  The production language uses
    lowercase throughout.
 
@@ -1626,7 +1626,7 @@ Table of Contents
 
 ### 15.3.  Training Data Format
 
-   Initial model training uses the legacy profile (80-character)
+   Initial model training uses the legacy profile (86-character)
    corpus, since this is the corpus that was generated and validated
    during the bootstrapping phase.  The training data format uses
    ChatML with a system prompt establishing toke expertise.
@@ -1838,11 +1838,12 @@ Table of Contents
 
    Status (as of April 2026):
 
-   o  Compiler: 3,700 lines of C, 90/90 conformance tests, 9/9 e2e
-      tests.  LLVM IR backend producing native binaries for x86-64
-      and ARM64.  [April 2026 snapshot.  As of 2026-09-19 the
-      conformance suite is 222 YAML cases plus 6 shell scripts and
-      `src/` is about 29,700 lines of C — see
+   o  Compiler (April 2026 snapshot): 3,700 lines of C, 90/90
+      conformance tests, 9/9 e2e tests.  LLVM IR backend producing
+      native binaries for x86-64 and ARM64.  [As of 2026-11-10 the
+      conformance suite is 812 cases (325 YAML cases plus 487 shell
+      scripts); current counts are derived by
+      `scripts/verify_project_facts.py` — see
       `docs/metrics-baseline.md` § Project facts.]
    o  Corpus: ~47,000 programs generated (27K Phase A, 10K Phase B,
       5K Phase C, 5K Phase D).

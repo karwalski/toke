@@ -23,7 +23,7 @@
       "fields": [
         {
           "name": "entries",
-          "type": "@($str:$str)"
+          "type": "[str:str]"
         }
       ],
       "note": "Variable bindings map: string key to string value."

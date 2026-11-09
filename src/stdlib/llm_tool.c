@@ -17,6 +17,7 @@
 #include "llm_tool.h"
 #include "llm.h"
 #include "strbuf.h"
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -127,7 +128,7 @@ const char *llm_tool_build_tools_json(TkToolDecl *tools, uint64_t ntools)
  * Updates *pos to point past the key. */
 static const char __attribute__((unused)) *find_key(const char *json, const char *key, size_t *pos)
 {
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
     const char *p = json + *pos;
     while (*p) {
         /* look for "key" */
@@ -228,7 +229,7 @@ ToolCallResult llm_parse_tool_calls(const char *response_json)
     if (!tc_key) return res; /* no tool calls — not an error */
 
     /* advance to the '[' */
-    const char *arr_start = tc_key + strlen("\"tool_calls\"");
+    const char *arr_start = tc_key + (sizeof("\"tool_calls\"") - 1);
     while (*arr_start && *arr_start != '[' && *arr_start != '\0') arr_start++;
     if (*arr_start != '[') return res;
     arr_start++; /* past '[' */
@@ -272,7 +273,7 @@ ToolCallResult llm_parse_tool_calls(const char *response_json)
         /* "function": {"name":"...", "arguments":"..."} */
         const char *fn_ptr = strstr(obj, "\"function\"");
         if (fn_ptr) {
-            fn_ptr += strlen("\"function\"");
+            fn_ptr += sizeof("\"function\"") - 1;
             while (*fn_ptr && *fn_ptr != '{') fn_ptr++;
             if (*fn_ptr == '{') {
                 /* find "name" within function object */
@@ -285,7 +286,7 @@ ToolCallResult llm_parse_tool_calls(const char *response_json)
                 /* find "arguments" — may be a string (OpenAI) or object (some providers) */
                 const char *args_ptr = strstr(fn_ptr, "\"arguments\"");
                 if (args_ptr) {
-                    args_ptr += strlen("\"arguments\"");
+                    args_ptr += sizeof("\"arguments\"") - 1;
                     while (*args_ptr && (*args_ptr == ':' || *args_ptr == ' ' || *args_ptr == '\t')) args_ptr++;
                     if (*args_ptr == '"') {
                         args_json = extract_string(&args_ptr);
@@ -367,7 +368,7 @@ static char *tools_extra(TkToolDecl *tools, uint64_t ntools)
     if (!tools || ntools == 0) return NULL;
     const char *tools_json = llm_tool_build_tools_json(tools, ntools);
     if (!tools_json) return NULL;
-    size_t n = strlen(tools_json) + sizeof("\"tools\":");
+    size_t n = tk_strlen(tools_json) + sizeof("\"tools\":");
     char  *out = malloc(n);
     if (!out) { free((char *)tools_json); return NULL; }
     snprintf(out, n, "\"tools\":%s", tools_json);
@@ -542,7 +543,7 @@ static int json_has(const char *json_obj, const char *key)
 {
     if (!json_obj || !key) return 0;
     /* Build search token: "key" */
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
     /* We walk char by char to avoid matching keys inside string values. */
     const char *p = json_obj;
     int depth = 0;
@@ -615,7 +616,7 @@ ToolValidResult llm_tool_validate_args(TkTool *tool, const char *args_json)
     }
 
     /* Advance to the '[' */
-    req += strlen("\"required\"");
+    req += sizeof("\"required\"") - 1;
     while (*req && *req != '[') req++;
     if (*req != '[') {
         res.ok = 1;
@@ -828,7 +829,7 @@ const char *llm_agentic_loop(TkLlmClient *client,
             free(tools_json_extra);
             /* Error from LLM — return error string */
             const char *msg = resp.err_msg ? resp.err_msg : "llm_chat failed";
-            size_t mlen = strlen(msg) + 32;
+            size_t mlen = tk_strlen(msg) + 32;
             char  *err  = malloc(mlen);
             if (err) snprintf(err, mlen, "[error: %s]", msg);
             /* cleanup */
