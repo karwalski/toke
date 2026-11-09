@@ -460,7 +460,15 @@ int main(void) {
     return 0;
 }
 C
-CASE_CFLAGS="" case_run vec "${WORK}/t_vec.c" -lpthread
+# t_vec.c #includes vecstore.c (fault-injecting malloc); the rest of the
+# std.vecstore set (str.c since 127.295's tk_strlen) comes from the table.
+# shellcheck disable=SC2206
+CF_VEC=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --except vecstore.c --objects vecstore -- "${CF_VEC[@]}")" \
+    || { echo "  FAIL: stdlib link set (see above)"; echo "Results: 0 passed, 1 failed"; exit 1; }
+LINK_VEC=(); while IFS= read -r l; do [ -n "$l" ] && LINK_VEC+=("$l"); done <<< "${LINKSET}"
+CASE_CFLAGS="" case_run vec "${WORK}/t_vec.c" "${LINK_VEC[@]}" -lz -lpthread -lm
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
