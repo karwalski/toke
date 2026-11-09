@@ -21,7 +21,7 @@
       "name": "vecentry",
       "fields": [
         {"name": "id",         "type": "str"},
-        {"name": "embedding",  "type": "@(f64)"},
+        {"name": "embedding",  "type": "[f64]"},
         {"name": "payload",    "type": "str"},
         {"name": "createdat",  "type": "i64"}
       ]

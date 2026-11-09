@@ -1336,8 +1336,8 @@ static Type *tki_scalar_type(Arena *A, const char *s) {
  * module's qualified type keeps TY_UNKNOWN — the field *name* is what E4025
  * needs, and leaving those types unknown keeps the change to the hole.
  * Exceptions: a generated user interface's `[T]` / `[K:V]` (127.226), a
- * std array of str/bool/f64 to any depth (127.333, repr_payload_type) and a
- * std array of std records (127.335).
+ * std array of str/bool/f64 to any depth (127.333, repr_payload_type), a std
+ * array of std records (127.335) and a std map of scalars (127.336).
  * `depth` caps the recursion for a type whose field names its own type.
  */
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth);
@@ -1420,6 +1420,21 @@ static int struct_array_spelling(const char *sp, char *out, size_t osz) {
     return (int)n;
 }
 
+/* 127.336: `sp` is `[K:V]` with K and V scalar spellings (`tmplvars.entries`
+ * "[str:str]") -- a std map field tki_compound_type can type without naming
+ * a record. */
+static int scalar_map_spelling(Arena *A, const char *sp) {
+    size_t len = sp ? strlen(sp) : 0;
+    char b[64];
+    if (len < 5 || len >= sizeof b || sp[0] != '[' || sp[len - 1] != ']')
+        return 0;
+    memcpy(b, sp + 1, len - 2); b[len - 2] = '\0';
+    char *colon = strchr(b, ':');
+    if (!colon || strchr(colon + 1, ':') || strpbrk(b, "[]")) return 0;
+    *colon = '\0';
+    return tki_scalar_type(A, b) && tki_scalar_type(A, colon + 1);
+}
+
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     Arena *A = cx->env->arena;
     if (!tname || !*tname || !cx->env->names) return NULL;
@@ -1454,8 +1469,8 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                  * `row.vals` "[f64]") takes the repr_payload_type rule the
                  * other interface edges use (127.297 / 127.308).  Left
                  * unknown, `let a=r.headers.get(1); \(a.get(0))` printed
-                 * the string's address.  [byte] and maps stay unknown,
-                 * as for 127.226. */
+                 * the string's address.  [byte] and maps of non-scalars
+                 * stay unknown, as for 127.226. */
                 if (!ft && sp && sp[0] == '[' && it->is_std &&
                     repr_array_spelling(sp))
                     ft = repr_payload_type(cx, sp);
@@ -1481,6 +1496,11 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                     }
                     ft = el;
                 }
+                /* 127.336: a std map of scalars (`tmplvars.entries`
+                 * "[str:str]", a toke map handle in TkTmplVarsRec). */
+                if (!ft && sp && sp[0] == '[' && it->is_std &&
+                    scalar_map_spelling(A, sp))
+                    ft = tki_compound_type(cx, sp, strlen(sp), depth + 1);
                 if (!ft && sp && *sp && depth < 4 && sp[0] != '[' &&
                     sp[0] != '@' && !strchr(sp, '!') && !strchr(sp, '.'))
                     ft = imported_struct_type(cx, sp, depth + 1);
