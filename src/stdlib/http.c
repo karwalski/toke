@@ -3134,6 +3134,21 @@ static int client_parse_url(const char *base_url, const char *path_suffix,
     return 0;
 }
 
+/* client_host_value — the Host header value: the host, plus ":port" when
+ * the port is not the scheme's default (RFC 9110 7.2).  138.28: it used to
+ * be the bare host on every port, so a server on 127.0.0.1:47974 was sent
+ * "Host: 127.0.0.1", and a virtual-hosted server on a non-default port
+ * could route the request to the wrong site. */
+static void client_host_value(char *out, size_t cap, const char *host,
+                              const char *port, int is_https)
+{
+    const char *dflt = is_https ? "443" : "80";
+    if (!port[0] || strcmp(port, dflt) == 0)
+        snprintf(out, cap, "%s", host);
+    else
+        snprintf(out, cap, "%s:%s", host, port);
+}
+
 /* ── TCP connect ───────────────────────────────────────────────────── */
 
 static int client_tcp_connect(const char *host, const char *port,
@@ -3379,6 +3394,8 @@ static HttpClientResp client_do_request(HttpClient *c,
                                   xh[i].key, xh[i].val ? xh[i].val : "");
         xh_buf[o] = '\0';
     }
+    char host_val[sizeof host + sizeof port + 1];
+    client_host_value(host_val, sizeof host_val, host, port, is_https);
     if (body && body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
@@ -3388,7 +3405,7 @@ static HttpClientResp client_do_request(HttpClient *c,
             "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host, ct_line,
+            method, request_uri, host_val, ct_line,
             (unsigned long long)body_len, xh_buf);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
@@ -3397,7 +3414,7 @@ static HttpClientResp client_do_request(HttpClient *c,
             "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host, xh_buf);
+            method, request_uri, host_val, xh_buf);
     }
     free(xh_buf);
 
@@ -3877,6 +3894,8 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
         snprintf(request_uri, sizeof(request_uri), "%s", full_path);
     }
 
+    char host_val[sizeof host + sizeof port + 1];
+    client_host_value(host_val, sizeof host_val, host, port, is_https);
     if (req.body && req.body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
@@ -3884,7 +3903,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "Content-Length: %llu\r\n"
             "Connection: keep-alive\r\n"
             "\r\n",
-            method, request_uri, host,
+            method, request_uri, host_val,
             (unsigned long long)req.body_len);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
@@ -3892,7 +3911,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "Host: %s\r\n"
             "Connection: keep-alive\r\n"
             "\r\n",
-            method, request_uri, host);
+            method, request_uri, host_val);
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
@@ -4175,13 +4194,15 @@ int http_downloadfile(HttpClient *c, const char *url,
     if (fd < 0) return -1;
 
     /* send GET request */
+    char host_val[sizeof host + sizeof port + 1];
+    client_host_value(host_val, sizeof host_val, host, port, is_https);
     char req_buf[4096];
     int req_len = snprintf(req_buf, sizeof(req_buf),
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n"
         "Connection: close\r\n"
         "\r\n",
-        full_path, host);
+        full_path, host_val);
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
         close(fd); return -1;
