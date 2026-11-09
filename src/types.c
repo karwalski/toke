@@ -1335,8 +1335,9 @@ static Type *tki_scalar_type(Arena *A, const char *s) {
  * A field whose .tki spelling is a collection (`[T]`, `@(...)`) or another
  * module's qualified type keeps TY_UNKNOWN — the field *name* is what E4025
  * needs, and leaving those types unknown keeps the change to the hole.
- * Exceptions: a generated user interface's `[T]` / `[K:V]` (127.226), and a
- * std array of str/bool/f64 to any depth (127.333, repr_payload_type).
+ * Exceptions: a generated user interface's `[T]` / `[K:V]` (127.226), a
+ * std array of str/bool/f64 to any depth (127.333, repr_payload_type) and a
+ * std array of std records (127.335).
  * `depth` caps the recursion for a type whose field names its own type.
  */
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth);
@@ -1399,6 +1400,26 @@ static int repr_array_spelling(const char *sp) {
            (il == 4 && !strncmp(in, "bool", 4));
 }
 
+/* 127.335: `sp` is `[`^n NAME `]`^n (1 <= n <= 6) with NAME a bare
+ * identifier -- the spelling of a std array field whose elements are records
+ * (`kmeansmodel.centroids` "[centroid]").  NAME is copied to `out`; returns n,
+ * or 0 for any other spelling. */
+static int struct_array_spelling(const char *sp, char *out, size_t osz) {
+    size_t n = 0, len = sp ? strlen(sp) : 0;
+    while (n < len && sp[n] == '[') n++;
+    if (n == 0 || n > 6 || len <= 2 * n) return 0;
+    for (size_t i = len - n; i < len; i++) if (sp[i] != ']') return 0;
+    size_t il = len - 2 * n;
+    if (il >= osz) return 0;
+    for (size_t i = 0; i < il; i++) {
+        char ch = sp[n + i];
+        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+              (ch >= '0' && ch <= '9') || ch == '_')) return 0;
+    }
+    memcpy(out, sp + n, il); out[il] = '\0';
+    return (int)n;
+}
+
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     Arena *A = cx->env->arena;
     if (!tname || !*tname || !cx->env->names) return NULL;
@@ -1433,11 +1454,33 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                  * `row.vals` "[f64]") takes the repr_payload_type rule the
                  * other interface edges use (127.297 / 127.308).  Left
                  * unknown, `let a=r.headers.get(1); \(a.get(0))` printed
-                 * the string's address.  Other std collections (struct
-                 * elements, [byte], maps) stay unknown, as for 127.226. */
+                 * the string's address.  [byte] and maps stay unknown,
+                 * as for 127.226. */
                 if (!ft && sp && sp[0] == '[' && it->is_std &&
                     repr_array_spelling(sp))
                     ft = repr_payload_type(cx, sp);
+                /* 127.335: a std array of std records (`[centroid]`,
+                 * `[dataset]`, `[toolparam]`, `[svgelem]`, `[canvasop]`):
+                 * each glue hands toke an array of record pointers laid out
+                 * as the element's .tki.  Left unknown, a nested read
+                 * `km.centroids.get(0).center.get(1)` printed the f64's
+                 * bits.  The element must itself be a std record, and
+                 * `depth` bounds a record whose field names its own type. */
+                char en[64];
+                int an = (!ft && sp && sp[0] == '[' && it->is_std && depth < 4)
+                       ? struct_array_spelling(sp, en, sizeof en) : 0;
+                if (an) {
+                    const ImportedType *et =
+                        imported_type_lookup(cx->env->names, en);
+                    Type *el = (et && et->is_std && !et->is_sum)
+                             ? imported_struct_type(cx, en, depth + 1) : NULL;
+                    for (; el && an > 0; an--) {
+                        Type *at = mk_type(A, TY_ARRAY);
+                        if (at) at->elem = el;
+                        el = at;
+                    }
+                    ft = el;
+                }
                 if (!ft && sp && *sp && depth < 4 && sp[0] != '[' &&
                     sp[0] != '@' && !strchr(sp, '!') && !strchr(sp, '.'))
                     ft = imported_struct_type(cx, sp, depth + 1);
