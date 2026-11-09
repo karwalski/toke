@@ -47,9 +47,11 @@
 /* ----------------------------------------------------------------------- */
 
 #define MAX_PARAMS        32
-#define MAX_MIDDLEWARE    64
 #define MAX_CORS_HEADERS  16  /* max CORS response headers we build */
-#define MAX_WS_ROUTES     16  /* max WebSocket upgrade handlers      */
+/* 127.349: the middleware chain, the WebSocket routes and the router_static
+ * prefixes have no fixed cap any more (they were 64, 16 and 16, and the
+ * one past each was dropped without a word).  The tables grow; a
+ * registration that cannot allocate returns -1 and says so on stderr. */
 
 /* Client IP populated by router_serve for each accepted connection.
  * Empty string when no connection context (e.g. direct router_dispatch call). */
@@ -101,28 +103,55 @@ typedef struct TkRoute {
     char           *method;
     char           *pattern;
     TkRouteHandler  handler;
+    void           *udata;    /* 127.349: the route's own data (a router_static
+                                * route's StaticEntry), freed with the route */
     struct TkRoute *next;
 } TkRoute;
 
 /* WebSocket endpoint registration */
 typedef struct {
-    char           pattern[512];
+    char          *pattern;   /* 127.349: owned copy (was char[512], truncating) */
     TkWsOnOpen     on_open;
     TkWsOnMessage  on_message;
     TkWsOnClose    on_close;
-    int            in_use;
 } TkWsRoute;
 
 struct TkRouter {
     TkRoute      *head;
     TkRoute      *tail;
-    TkMiddleware  middleware[MAX_MIDDLEWARE];
-    int           nmw;
+    TkMiddleware *middleware;   /* 127.349: grows; was [64] */
+    int           nmw, mw_cap;
     int           cors_enabled;
     TkCorsOpts    cors_opts;
-    TkWsRoute     ws_routes[MAX_WS_ROUTES];
-    int           nws;
+    TkWsRoute    *ws_routes;    /* 127.349: grows; was [16] */
+    int           nws, ws_cap;
 };
+
+/* reg_fail -- every registration that cannot be kept says so (127.349):
+ * the function returns -1 and stderr carries one DIAGNOSTIC line, so a
+ * caller that ignores the result still does not lose a route silently. */
+static int reg_fail(const char *what, const char *pattern, const char *reason)
+{
+    fprintf(stderr, "DIAGNOSTIC: kind=router_register_failed what=%s "
+            "pattern=\"%s\" reason=\"%s\"\n", what,
+            pattern ? pattern : "", reason);
+    return -1;
+}
+
+/* table_grow -- make room for one more element in *arr (n used, *cap
+ * allocated, elt bytes each): 0, or -1 with *arr untouched. */
+static int table_grow(void **arr, int n, int *cap, size_t elt)
+{
+    if (n < *cap) return 0;
+    if (*cap > INT_MAX / 2) return -1;
+    int nc = *cap ? *cap * 2 : 16;
+    if ((size_t)nc > SIZE_MAX / elt) return -1;
+    void *na = realloc(*arr, (size_t)nc * elt);
+    if (!na) return -1;
+    *arr = na;
+    *cap = nc;
+    return 0;
+}
 
 /* ----------------------------------------------------------------------- */
 /* Path splitting helpers                                                    */
@@ -246,13 +275,7 @@ TkRouter *router_new(void)
 {
     TkRouter *r = malloc(sizeof(TkRouter));
     if (!r) return NULL;
-    r->head         = NULL;
-    r->tail         = NULL;
-    r->nmw          = 0;
-    r->cors_enabled = 0;
-    r->nws          = 0;
-    memset(&r->cors_opts, 0, sizeof(r->cors_opts));
-    memset(r->ws_routes, 0, sizeof(r->ws_routes));
+    memset(r, 0, sizeof(*r));   /* empty lists, empty tables, no CORS */
     return r;
 }
 
@@ -264,9 +287,13 @@ void router_free(TkRouter *r)
         TkRoute *next = cur->next;
         free(cur->method);
         free(cur->pattern);
+        free(cur->udata);
         free(cur);
         cur = next;
     }
+    for (int i = 0; i < r->nws; i++) free(r->ws_routes[i].pattern);
+    free(r->ws_routes);
+    free(r->middleware);
     free(r);
     /* 121.91: the last response's router-owned memory goes with it.  The
      * pool's own array is kept for the next router; release leaves it empty. */
@@ -277,45 +304,73 @@ void router_free(TkRouter *r)
 /* Route registration                                                        */
 /* ----------------------------------------------------------------------- */
 
-static void add_route(TkRouter *r, const char *method, const char *pattern,
-                      TkRouteHandler h)
+/* add_route -- link a route in: 0, or -1 (and a DIAGNOSTIC) with nothing
+ * linked.  127.349: a failed malloc used to return silently, and a failed
+ * strdup linked a node whose method or pattern was NULL, which the matcher
+ * then dereferenced.  udata (may be NULL) is the route's from here on, also
+ * on failure. */
+static int add_route(TkRouter *r, const char *method, const char *pattern,
+                     TkRouteHandler h, void *udata)
 {
+    if (!r || !pattern || !h) {
+        free(udata);
+        return reg_fail(method, pattern, !r ? "no router" :
+                        !pattern ? "no pattern" : "no handler");
+    }
     TkRoute *route = malloc(sizeof(TkRoute));
-    if (!route) return;
-    route->method  = strdup(method);
-    route->pattern = strdup(pattern);
+    char *m = strdup(method);
+    char *p = strdup(pattern);
+    if (!route || !m || !p) {
+        free(route); free(m); free(p); free(udata);
+        return reg_fail(method, pattern, "out of memory");
+    }
+    route->method  = m;
+    route->pattern = p;
     route->handler = h;
+    route->udata   = udata;
     route->next    = NULL;
     if (!r->head) { r->head = route; r->tail = route; }
     else          { r->tail->next = route; r->tail = route; }
+    return 0;
 }
 
-void router_get   (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "GET",    p, h); }
-void router_post  (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "POST",   p, h); }
-void router_put   (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "PUT",    p, h); }
-void router_delete(TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "DELETE", p, h); }
+int router_get   (TkRouter *r, const char *p, TkRouteHandler h) { return add_route(r, "GET",    p, h, NULL); }
+int router_post  (TkRouter *r, const char *p, TkRouteHandler h) { return add_route(r, "POST",   p, h, NULL); }
+int router_put   (TkRouter *r, const char *p, TkRouteHandler h) { return add_route(r, "PUT",    p, h, NULL); }
+int router_delete(TkRouter *r, const char *p, TkRouteHandler h) { return add_route(r, "DELETE", p, h, NULL); }
 
-void router_ws(TkRouter *r, const char *pattern,
-               TkWsOnOpen on_open, TkWsOnMessage on_message, TkWsOnClose on_close)
+int router_ws(TkRouter *r, const char *pattern,
+              TkWsOnOpen on_open, TkWsOnMessage on_message, TkWsOnClose on_close)
 {
-    if (!r || !pattern || r->nws >= MAX_WS_ROUTES) return;
+    if (!r || !pattern)
+        return reg_fail("ws", pattern, !r ? "no router" : "no pattern");
+    char *p = strdup(pattern);
+    if (!p || table_grow((void **)&r->ws_routes, r->nws, &r->ws_cap,
+                         sizeof *r->ws_routes) != 0) {
+        free(p);
+        return reg_fail("ws", pattern, "out of memory");
+    }
     TkWsRoute *ws = &r->ws_routes[r->nws++];
-    strncpy(ws->pattern, pattern, sizeof(ws->pattern) - 1);
-    ws->pattern[sizeof(ws->pattern) - 1] = '\0';
+    ws->pattern    = p;
     ws->on_open    = on_open;
     ws->on_message = on_message;
     ws->on_close   = on_close;
-    ws->in_use     = 1;
+    return 0;
 }
 
 /* ----------------------------------------------------------------------- */
 /* Middleware                                                                 */
 /* ----------------------------------------------------------------------- */
 
-void router_use(TkRouter *r, TkMiddleware mw)
+int router_use(TkRouter *r, TkMiddleware mw)
 {
-    if (!r || !mw || r->nmw >= MAX_MIDDLEWARE) return;
+    if (!r || !mw)
+        return reg_fail("middleware", NULL, !r ? "no router" : "no middleware");
+    if (table_grow((void **)&r->middleware, r->nmw, &r->mw_cap,
+                   sizeof *r->middleware) != 0)
+        return reg_fail("middleware", NULL, "out of memory");
     r->middleware[r->nmw++] = mw;
+    return 0;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -525,14 +580,16 @@ static TkRouteResp cors_middleware(TkRouteCtx ctx, TkRouteHandler next)
     return resp;
 }
 
-void router_use_cors(TkRouter *r, TkCorsOpts opts)
+int router_use_cors(TkRouter *r, TkCorsOpts opts)
 {
-    if (!r) return;
+    if (!r) return reg_fail("middleware", NULL, "no router");
+    /* Copy opts into the static slot and register the middleware.  127.349:
+     * CORS is switched on only once the middleware is in the chain. */
+    cors_mw_opts = opts;
+    if (router_use(r, cors_middleware) != 0) return -1;
     r->cors_enabled = 1;
     r->cors_opts    = opts;
-    /* Copy opts into the static slot and register the middleware. */
-    cors_mw_opts = opts;
-    router_use(r, cors_middleware);
+    return 0;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -969,7 +1026,6 @@ static int router_ws_try_upgrade(TkRouter *r, int fd,
     /* Find a matching WS route */
     TkWsRoute *matched = NULL;
     for (i = 0; i < r->nws; i++) {
-        if (!r->ws_routes[i].in_use) continue;
         MatchResult mr = match_route(r->ws_routes[i].pattern, path);
         {
             int k;
@@ -1770,25 +1826,22 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
     return static_resp_with_body(200, buf, total, mime, hnames, hvals, 4);
 }
 
-/* Per-prefix handler: the StaticCtx is embedded in a heap allocation
- * referenced by the per-route context.  Because TkRouteHandler has no
- * closure argument we use a small trampoline array. */
-
-#define MAX_STATIC_ROUTES 16
+/* Per-prefix handler (127.349).  A router_static route's StaticEntry hangs
+ * off the route itself (TkRoute.udata) and the one handler every such route
+ * shares finds it through the route the dispatch in progress matched
+ * (cur_route, as the toke glue's trampoline does since 127.343).  This
+ * replaces a process-wide StaticEntry[16] with one macro trampoline per
+ * slot: the 17th router_static ever made -- on any router, as slots were
+ * never released -- was dropped silently and its prefix answered 404, and a
+ * prefix past 511 bytes or a directory past 1023 was truncated. */
 
 typedef struct {
-    char url_prefix[512];
-    char dir_path[1024];
-    int  in_use;
+    char *url_prefix;   /* both point into the same allocation as the entry */
+    char *dir_path;
 } StaticEntry;
 
-static StaticEntry static_entries[MAX_STATIC_ROUTES];
-
-/* One trampoline per slot — we declare them as forward references and
- * define them with a macro below. */
-
-/* static_route_serve -- what every trampoline runs: strip the registered
- * prefix from ctx.path and serve the rest with router_static_serve.
+/* static_route_serve -- what a router_static route runs: strip the
+ * registered prefix from ctx.path and serve the rest with router_static_serve.
  *
  * 121.90: the request's If-None-Match and Range headers are passed through.
  * The trampolines used to pass NULL for both ("not available through
@@ -1803,36 +1856,12 @@ static StaticEntry static_entries[MAX_STATIC_ROUTES];
 static const char *ctx_req_header(TkRouteCtx ctx, const char *name);
 static TkRouteResp static_route_serve(const StaticEntry *se, TkRouteCtx ctx);
 
-/* Macro to define a trampoline for slot N. */
-#define DEFINE_STATIC_TRAMPOLINE(N)                                         \
-static TkRouteResp static_handler_##N(TkRouteCtx ctx)                      \
-{                                                                           \
-    return static_route_serve(&static_entries[N], ctx);                     \
+static TkRouteResp static_route_handler(TkRouteCtx ctx)
+{
+    const StaticEntry *se = cur_route ? (const StaticEntry *)cur_route->udata : NULL;
+    if (!se) return router_resp_404();
+    return static_route_serve(se, ctx);
 }
-
-DEFINE_STATIC_TRAMPOLINE(0)
-DEFINE_STATIC_TRAMPOLINE(1)
-DEFINE_STATIC_TRAMPOLINE(2)
-DEFINE_STATIC_TRAMPOLINE(3)
-DEFINE_STATIC_TRAMPOLINE(4)
-DEFINE_STATIC_TRAMPOLINE(5)
-DEFINE_STATIC_TRAMPOLINE(6)
-DEFINE_STATIC_TRAMPOLINE(7)
-DEFINE_STATIC_TRAMPOLINE(8)
-DEFINE_STATIC_TRAMPOLINE(9)
-DEFINE_STATIC_TRAMPOLINE(10)
-DEFINE_STATIC_TRAMPOLINE(11)
-DEFINE_STATIC_TRAMPOLINE(12)
-DEFINE_STATIC_TRAMPOLINE(13)
-DEFINE_STATIC_TRAMPOLINE(14)
-DEFINE_STATIC_TRAMPOLINE(15)
-
-static TkRouteHandler static_trampolines[MAX_STATIC_ROUTES] = {
-    static_handler_0,  static_handler_1,  static_handler_2,  static_handler_3,
-    static_handler_4,  static_handler_5,  static_handler_6,  static_handler_7,
-    static_handler_8,  static_handler_9,  static_handler_10, static_handler_11,
-    static_handler_12, static_handler_13, static_handler_14, static_handler_15,
-};
 
 static TkRouteResp static_route_serve(const StaticEntry *se, TkRouteCtx ctx)
 {
@@ -1853,36 +1882,37 @@ static TkRouteResp static_route_serve(const StaticEntry *se, TkRouteCtx ctx)
     return resp;
 }
 
-void router_static(TkRouter *r, const char *url_prefix, const char *dir_path)
+int router_static(TkRouter *r, const char *url_prefix, const char *dir_path)
 {
-    if (!r || !url_prefix || !dir_path) return;
+    if (!r || !url_prefix || !dir_path)
+        return reg_fail("static", url_prefix, !r ? "no router" :
+                        !url_prefix ? "no url prefix" : "no directory");
 
-    /* Find a free slot */
-    int slot = -1;
-    for (int i = 0; i < MAX_STATIC_ROUTES; i++) {
-        if (!static_entries[i].in_use) { slot = i; break; }
-    }
-    if (slot < 0) return; /* no slots available */
-
-    StaticEntry *se = &static_entries[slot];
-    strncpy(se->url_prefix, url_prefix, sizeof(se->url_prefix) - 1);
-    se->url_prefix[sizeof(se->url_prefix) - 1] = '\0';
-    strncpy(se->dir_path, dir_path, sizeof(se->dir_path) - 1);
-    se->dir_path[sizeof(se->dir_path) - 1] = '\0';
-    se->in_use = 1;
-
-    /* Register a wildcard GET route for the prefix */
-    char pattern[544];
-    /* Normalise: strip trailing slash from prefix for pattern construction */
     size_t plen = tk_strlen(url_prefix);
-    char prefix_norm[512];
-    strncpy(prefix_norm, url_prefix, sizeof(prefix_norm) - 1);
-    prefix_norm[sizeof(prefix_norm) - 1] = '\0';
-    if (plen > 1 && prefix_norm[plen - 1] == '/')
-        prefix_norm[plen - 1] = '\0';
+    size_t dlen = tk_strlen(dir_path);
+    if (plen > SIZE_MAX / 2 - sizeof(StaticEntry) - dlen - 8)
+        return reg_fail("static", url_prefix, "out of memory");
+    StaticEntry *se = malloc(sizeof *se + plen + 1 + dlen + 1);
+    /* the route pattern: the prefix without a trailing slash, then a slash-star */
+    char *pattern = malloc(plen + 3);
+    if (!se || !pattern) {
+        free(se); free(pattern);
+        return reg_fail("static", url_prefix, "out of memory");
+    }
+    se->url_prefix = (char *)(se + 1);
+    memcpy(se->url_prefix, url_prefix, plen + 1);
+    se->dir_path = se->url_prefix + plen + 1;
+    memcpy(se->dir_path, dir_path, dlen + 1);
 
-    snprintf(pattern, sizeof(pattern), "%s/*", prefix_norm);
-    add_route(r, "GET", pattern, static_trampolines[slot]);
+    size_t n = plen;
+    if (n > 1 && url_prefix[n - 1] == '/') n--;
+    memcpy(pattern, url_prefix, n);
+    memcpy(pattern + n, "/*", 3);
+
+    /* Register a wildcard GET route for the prefix; it owns se from here. */
+    int rc = add_route(r, "GET", pattern, static_route_handler, se);
+    free(pattern);
+    return rc;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -2067,9 +2097,9 @@ static TkRouteResp mw_etag(TkRouteCtx ctx, TkRouteHandler next)
     return resp_with_etag(resp, etag);
 }
 
-void router_use_etag(TkRouter *r)
+int router_use_etag(TkRouter *r)
 {
-    router_use(r, mw_etag);
+    return router_use(r, mw_etag);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -2233,9 +2263,9 @@ static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
     return resp;
 }
 
-void router_use_gzip(TkRouter *r, size_t min_size)
+int router_use_gzip(TkRouter *r, size_t min_size)
 {
-    if (!r) return;
+    if (!r) return reg_fail("middleware", NULL, "no router");
     gzip_min_size = min_size;
-    router_use(r, gzip_middleware);
+    return router_use(r, gzip_middleware);
 }

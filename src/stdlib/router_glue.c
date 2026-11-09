@@ -264,7 +264,7 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
  * into the C router for the given method. */
 static int64_t register_route(const char *method, int64_t router_i64,
                               int64_t path, int64_t handler,
-                              void (*reg)(TkRouter *, const char *, TkRouteHandler)) {
+                              int (*reg)(TkRouter *, const char *, TkRouteHandler)) {
     if (!router_i64 || !path) return -1;
     if (g_closure_route_count == g_closure_route_cap) {
         size_t nc = g_closure_route_cap ? g_closure_route_cap * 2 : 64;
@@ -286,8 +286,14 @@ static int64_t register_route(const char *method, int64_t router_i64,
     g_closure_routes[g_closure_route_count].path    = (const char *)(intptr_t)path;
     g_closure_routes[g_closure_route_count].handler = handler;
     g_closure_route_count++;
-    reg((TkRouter *)(intptr_t)router_i64, (const char *)(intptr_t)path,
-        router_closure_dispatch);
+    /* 127.349: router.c now reports a route it could not keep (out of
+     * memory; it has written the DIAGNOSTIC).  Take the handler entry back
+     * so the table holds no route the C router does not. */
+    if (reg((TkRouter *)(intptr_t)router_i64, (const char *)(intptr_t)path,
+            router_closure_dispatch) != 0) {
+        g_closure_route_count--;
+        return -1;
+    }
     return 0;
 }
 
