@@ -1335,6 +1335,8 @@ static Type *tki_scalar_type(Arena *A, const char *s) {
  * A field whose .tki spelling is a collection (`[T]`, `@(...)`) or another
  * module's qualified type keeps TY_UNKNOWN — the field *name* is what E4025
  * needs, and leaving those types unknown keeps the change to the hole.
+ * Exceptions: a generated user interface's `[T]` / `[K:V]` (127.226), and a
+ * std array of str/bool/f64 to any depth (127.333, repr_payload_type).
  * `depth` caps the recursion for a type whose field names its own type.
  */
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth);
@@ -1382,6 +1384,21 @@ static Type *tki_compound_type(Ctx *cx, const char *s, size_t len, int depth) {
     return mt;
 }
 
+static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
+/* 127.333: `sp` is `[`^n T `]`^n (n >= 1) with T one of str, bool, f64 --
+ * an array spelling repr_payload_type adopts that names no struct, so the
+ * check below cannot recurse through a std record's own type. */
+static int repr_array_spelling(const char *sp) {
+    size_t n = 0, len = sp ? strlen(sp) : 0;
+    while (n < len && sp[n] == '[') n++;
+    if (n == 0 || n > 6 || len < 2 * n) return 0;
+    for (size_t i = len - n; i < len; i++) if (sp[i] != ']') return 0;
+    size_t il = len - 2 * n;
+    const char *in = sp + n;
+    return (il == 3 && (!strncmp(in, "str", 3) || !strncmp(in, "f64", 3))) ||
+           (il == 4 && !strncmp(in, "bool", 4));
+}
+
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     Arena *A = cx->env->arena;
     if (!tname || !*tname || !cx->env->names) return NULL;
@@ -1411,6 +1428,16 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                  * `.set` / `.len` / `.contains` as the array glue. */
                 if (!ft && sp && sp[0] == '[' && !it->is_std)
                     ft = tki_compound_type(cx, sp, strlen(sp), depth + 1);
+                /* 127.333: a std record's array field whose innermost
+                 * element is str/bool/f64 (`httpresp.headers` "[[str]]",
+                 * `row.vals` "[f64]") takes the repr_payload_type rule the
+                 * other interface edges use (127.297 / 127.308).  Left
+                 * unknown, `let a=r.headers.get(1); \(a.get(0))` printed
+                 * the string's address.  Other std collections (struct
+                 * elements, [byte], maps) stay unknown, as for 127.226. */
+                if (!ft && sp && sp[0] == '[' && it->is_std &&
+                    repr_array_spelling(sp))
+                    ft = repr_payload_type(cx, sp);
                 if (!ft && sp && *sp && depth < 4 && sp[0] != '[' &&
                     sp[0] != '@' && !strchr(sp, '!') && !strchr(sp, '.'))
                     ft = imported_struct_type(cx, sp, depth + 1);
