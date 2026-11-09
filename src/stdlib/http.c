@@ -3575,8 +3575,9 @@ static HttpClientResp client_do_request(HttpClient *c,
      * the 8 bytes a Content-Length promised (loke MK19.11).  The three
      * places: a header block that never reaches its blank line, a
      * Content-Length body that is short, and a chunked body that ends before
-     * its last (zero-size) chunk.  A body with neither header still ends at
-     * connection close (RFC 9112 6.3), unchanged.
+     * its last (zero-size) chunk.  A body with neither header ends at
+     * connection close (RFC 9112 6.3) -- and, since 138.31, only at a close:
+     * a timeout or reset before it is $err too (client_recv).
      *
      * The chunked body is now walked chunk by chunk as it arrives.  It used
      * to be "complete" as soon as the five bytes 0\r\n\r\n appeared anywhere
