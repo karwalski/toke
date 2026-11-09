@@ -81,10 +81,7 @@ f=handlecreate(req:i64):i64{
   let body=http.reqbody(req);
   let doc=mt json.dec(body) {
     $ok:d d;
-    $err:e (0-1)
-  };
-  if(doc<0){
-    <http.resjson(400; "{\"error\":\"invalid json\"}")
+    $err:e <http.resjson(400; "{\"error\":\"invalid json\"}")
   };
   let url=mt json.str(doc;"url") {
     $ok:v v;
