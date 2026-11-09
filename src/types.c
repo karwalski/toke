@@ -2297,7 +2297,8 @@ static Type *infer(Ctx *cx, const Node *node);
  *
  * mt_ok_payload_type is the `T` of a scrutinee that is a `T!E` call — a user
  * function's return spec, or an imported export's "return" beside its
- * "error" key (imported struct records only, the 127.66 rule) — or a local
+ * "error" key or inline `T!E` spelling (imported struct records, the 127.66
+ * rule; the inline form since 138.21/138.33) — or a local
  * `let` bound to such a call.
  */
 /*
@@ -2421,8 +2422,8 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
             /* 127.297 / 127.302: a hand-written std record spells the union
              * inline (`"return": "bool!jsonerr"`) rather than with an
              * "error" key, so its `T` is the spelling before the '!'.  Only
-             * a representation-bearing T is adopted (no struct: the 127.66
-             * rule stays as it was for the inline form). */
+             * a representation-bearing T or an imported std record (138.21
+             * opaque, 138.33 fielded, below) is adopted. */
             const char *bang = (f->ret && !f->abi_ret) ? strchr(f->ret, '!') : NULL;
             if (!bang || bang == f->ret || (size_t)(bang - f->ret) >= 128) return NULL;
             char okb[128];
@@ -2434,11 +2435,16 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
              * i64 handle (opaque_handle_type: integer-compatible), so the
              * only thing typing it adds is the judgment: `$ok:h h; $err:e
              * "oops"` was clean and `process.wait(h)` read the string's
-             * bytes as a ProcessHandle.  A record WITH fields keeps the
-             * 127.66 rule. */
+             * bytes as a ProcessHandle.
+             * 138.33: a std record WITH fields (`httpresp!httperr`) is
+             * adopted too.  Left unknown, `$ok:x x; $err:e "oops"` was clean
+             * and `r.nosuch` on the bound value passed --check.  Codegen
+             * already lowers the payload by the record's .tki layout, so
+             * typing it adds the E4011 arm judgment and E4025 field checks;
+             * `$err:e 0` stays clean (E4011's null filler). */
             {
                 Type *ost = imported_struct_type(cx, okb, 0);
-                if (ost && opaque_handle_type(ost)) return ost;
+                if (ost) return ost;
             }
             return repr_payload_type(cx, okb);
         }
