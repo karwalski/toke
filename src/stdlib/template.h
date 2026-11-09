@@ -40,7 +40,7 @@ typedef struct {
 
 /* tki-record: template.tmplvars */
 typedef struct {
-    int64_t     entries;    /* @($str:$str): a toke map handle */
+    int64_t     entries;    /* [str:str]: a toke map handle */
 } TkTmplVarsRec;
 
 /* A single key/value variable binding. */
