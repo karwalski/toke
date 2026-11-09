@@ -20,6 +20,7 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <time.h>
+#include <errno.h>
 #include "../../src/stdlib/http.h"
 #include "../../src/stdlib/capabilities.h"
 
@@ -33,6 +34,18 @@ static int failures = 0;
 
 static Res dummy_handler(Req req) { (void)req; return http_Res_ok("ok"); }
 
+/* 127.341: the parent's writes into a forked http_handle_fd() child go
+ * through the module's own SIGPIPE-proof path.  The child may close first --
+ * it holds a 1 s read timeout and a loaded host can starve the parent that
+ * long -- and a plain write() then killed the whole binary with SIGPIPE
+ * (exit 141, block-buffered output lost).  An EPIPE here is just a failed
+ * send; the assertions on the reply decide the case. */
+static void send_req(int fd, const char *buf, size_t len)
+{
+    http_sock_nosigpipe(fd);
+    (void)http_write_all(fd, buf, len);
+}
+
 int main(void)
 {
     alarm(120); /* safety net: HTTP client has 30s connect timeout per call */
@@ -45,6 +58,12 @@ int main(void)
      * fails loudly. */
     char *cap_argv[] = {"test_http", "--allow-net", NULL};
     tk_cap_init(2, cap_argv);
+
+    /* 127.341: unbuffered, so a run that dies shows the last case it reached
+     * (a SIGPIPE death used to lose every buffered "pass:" line); SIGPIPE at
+     * its default, so no case passes only because the caller ignored it. */
+    setvbuf(stdout, NULL, _IONBF, 0);
+    signal(SIGPIPE, SIG_DFL);
 
     /* ── Response constructors ─────────────────────────────────────── */
 
@@ -306,7 +325,7 @@ int main(void)
                 big_req[off++] = '\r'; big_req[off++] = '\n';
                 big_req[off++] = '\r'; big_req[off++] = '\n';
             }
-            write(sv[0], big_req, (size_t)off);
+            send_req(sv[0], big_req, (size_t)off);
         }
 
         /* Read response */
@@ -358,7 +377,7 @@ int main(void)
             "Content-Length: 2000000\r\n"
             "Connection: close\r\n"
             "\r\n";
-        write(sv[0], big_cl_req, strlen(big_cl_req));
+        send_req(sv[0], big_cl_req, strlen(big_cl_req));
 
         char resp[256];
         memset(resp, 0, sizeof(resp));
@@ -427,19 +446,34 @@ int main(void)
             _exit(0);
         }
 
-        /* Parent: close server side, send a request, expect EOF */
+        /* Parent: close server side, send a request, expect EOF.
+         *
+         * 127.341: this was the SIGPIPE flake.  The child closes its end at
+         * once, so the parent's plain write() raced it: written first, the
+         * bytes sat unread; written second, the write raised SIGPIPE and
+         * killed the test binary (exit 141).  Now the order is fixed -- the
+         * child is reaped before the write, so its end is always closed --
+         * and the write is the module's own http_write_all() on a socket
+         * marked by http_sock_nosigpipe(), the path every server and client
+         * socket takes: the peer having gone must be EPIPE, not a signal. */
         close(sv[1]);
+        int wstatus = 0;
+        waitpid(pid, &wstatus, 0);
+
         const char *req_str =
             "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
-        write(sv[0], req_str, strlen(req_str));
+        http_sock_nosigpipe(sv[0]);
+        errno = 0;
+        ssize_t wn = http_write_all(sv[0], req_str, strlen(req_str));
+        int werr = errno;
+        ASSERT(wn == -1 && werr == EPIPE,
+               "127.341: write to a peer that already closed is EPIPE, not SIGPIPE");
 
         char resp[64];
         memset(resp, 0, sizeof(resp));
         ssize_t rn = read(sv[0], resp, sizeof(resp) - 1);
 
         close(sv[0]);
-        int wstatus = 0;
-        waitpid(pid, &wstatus, 0);
 
         /* Child exited cleanly (shutdown path) */
         ASSERT(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0,
