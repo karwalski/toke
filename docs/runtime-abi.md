@@ -445,6 +445,25 @@ are internal storage that never reaches toke.  Gate: C990 (ASan C drivers
 over encoding, auth, the form parser and `acme_jws`, plus a toke program
 under `TK_STR_VERIFY=1`).
 
+**Step 5, fourth tranche (story 127.295, Batch Z115).**  `std.llm` converted
+whole: every reader in `llm.c` uses `tk_strlen` or the length a buffer or
+`json_escape` already holds, and every string that reaches toke is sealed —
+a response's content (`llm_chat`, `llm_chat_extra`, `llm_complete`,
+`llm_json_mode`, `llm_vision`), every `llm_parse_sse_chunk` result and so
+every stream chunk, and the client's `provider`/`base_url`/`api_key`/`model`
+(`llm_client_free` frees only the struct; `llmtool.withtools` copies the
+struct and shares the fields).  `err_msg` strings, request bodies, raw
+response bodies and embedding arrays stay malloc'd: they never reach toke.
+`llm_tool.c`'s callers stop freeing the content; `llm_agentic_loop` hands
+its C caller a malloc'd copy of the final reply (its own strings are the
+next tranche).  The JSON string decoder no longer steps over the NUL after a
+trailing backslash (story 127.331), so its result cannot hold a 0 byte.
+`std.ws` (`ws.c`, `ws_server.c`) reads every length with `tk_strlen` or from
+the literal or buffer that holds it; it hands no string to toke (`ws.recv`
+returns a `[byte]`), so nothing there is sealed.  Gate: C1050 (an ASan C
+driver against a local mock endpoint, plus a toke program under
+`TK_STR_VERIFY=1`).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
