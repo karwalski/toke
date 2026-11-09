@@ -3127,6 +3127,21 @@ static int client_parse_url(const char *base_url, const char *path_suffix,
     return 0;
 }
 
+/* client_host_value — the Host header value: the host, plus ":port" when
+ * the port is not the scheme's default (RFC 9110 7.2).  138.28: it used to
+ * be the bare host on every port, so a server on 127.0.0.1:47974 was sent
+ * "Host: 127.0.0.1", and a virtual-hosted server on a non-default port
+ * could route the request to the wrong site. */
+static void client_host_value(char *out, size_t cap, const char *host,
+                              const char *port, int is_https)
+{
+    const char *dflt = is_https ? "443" : "80";
+    if (!port[0] || strcmp(port, dflt) == 0)
+        snprintf(out, cap, "%s", host);
+    else
+        snprintf(out, cap, "%s:%s", host, port);
+}
+
 /* ── TCP connect ───────────────────────────────────────────────────── */
 
 static int client_tcp_connect(const char *host, const char *port,
@@ -3372,6 +3387,8 @@ static HttpClientResp client_do_request(HttpClient *c,
                                   xh[i].key, xh[i].val ? xh[i].val : "");
         xh_buf[o] = '\0';
     }
+    char host_val[sizeof host + sizeof port + 1];
+    client_host_value(host_val, sizeof host_val, host, port, is_https);
     if (body && body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
@@ -3381,7 +3398,7 @@ static HttpClientResp client_do_request(HttpClient *c,
             "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host, ct_line,
+            method, request_uri, host_val, ct_line,
             (unsigned long long)body_len, xh_buf);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
@@ -3390,7 +3407,7 @@ static HttpClientResp client_do_request(HttpClient *c,
             "%s"
             "Connection: close\r\n"
             "\r\n",
-            method, request_uri, host, xh_buf);
+            method, request_uri, host_val, xh_buf);
     }
     free(xh_buf);
 
@@ -3410,37 +3427,76 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
     }
 
-    /* read full response (headers + body) with proper framing */
+    /* read full response (headers + body) with proper framing.
+     *
+     * 138.23: a timeout or close before the framing says the response is
+     * complete is a transport failure -- $err (an $httperr, code 0).  Every
+     * read loop here used to `break` on recv <= 0 and fall through to
+     * success with whatever had arrived: http.geturl answered $ok with 3 of
+     * the 8 bytes a Content-Length promised (loke MK19.11).  The three
+     * places: a header block that never reaches its blank line, a
+     * Content-Length body that is short, and a chunked body that ends before
+     * its last (zero-size) chunk.  A body with neither header still ends at
+     * connection close (RFC 9112 6.3), unchanged.
+     *
+     * The chunked body is now walked chunk by chunk as it arrives.  It used
+     * to be "complete" as soon as the five bytes 0\r\n\r\n appeared anywhere
+     * in the raw body -- which chunk DATA can contain, so a body carrying
+     * those bytes was cut there and answered as success. */
     size_t cap = 65536, used = 0;
     char *resp = malloc(cap);
     if (!resp) { CLIENT_CLOSE(); return err_resp_client("out of memory", 0); }
 
-    ssize_t n;
+    ssize_t n = 0;
     char *hdr_end_ptr = NULL;
     size_t hdr_end_off = 0;   /* offset of first byte after \r\n\r\n */
-    int body_mode = 0;        /* 0=unknown, 1=content-length, 2=chunked, 3=close */
+    int body_mode = 0;        /* 1=content-length, 2=chunked, 3=close, 4=none */
     size_t content_length = 0;
+    uint64_t status = 0;
+    const char *read_err = NULL;
+    char read_err_buf[200];
+    uint8_t *dec = NULL;      /* chunked: the decoded body */
+    size_t dec_len = 0, dec_cap = 0;
+
+    /* make room for at least one more byte plus the NUL */
+#define CLIENT_GROW() do {                                              \
+        if (used + 1 >= cap) {                                          \
+            char *tmp_ = realloc(resp, cap * 2);                        \
+            if (!tmp_) { read_err = "out of memory"; goto read_done; }  \
+            resp = tmp_; cap *= 2;                                      \
+        } } while (0)
+#define CLIENT_HOW(n_) ((n_) == 0 ? "connection closed" : "receive timed out or failed")
 
     /* Phase 1: read until we have full headers (\r\n\r\n) */
     while (!hdr_end_ptr) {
+        CLIENT_GROW();
         n = CLIENT_RECV(resp + used, cap - used - 1);
-        if (n <= 0) break; /* timeout or close */
+        if (n <= 0) {
+            snprintf(read_err_buf, sizeof read_err_buf,
+                     "incomplete response: %s before the header block ended (%zu bytes)",
+                     CLIENT_HOW(n), used);
+            read_err = read_err_buf;
+            goto read_done;
+        }
         used += (size_t)n;
         resp[used] = '\0';
-        if (used + 1 >= cap) {
-            cap *= 2;
-            char *tmp = realloc(resp, cap);
-            if (!tmp) { free(resp); CLIENT_CLOSE();
-                        return err_resp_client("out of memory", 0); }
-            resp = tmp;
-        }
         hdr_end_ptr = strstr(resp, "\r\n\r\n");
     }
+    hdr_end_off = (size_t)(hdr_end_ptr - resp) + 4;
 
-    if (hdr_end_ptr) {
-        hdr_end_off = (size_t)(hdr_end_ptr - resp) + 4;
+    /* status line: "HTTP/1.x NNN ..." */
+    {
+        const char *sp = strchr(resp, ' ');
+        if (sp && sp < hdr_end_ptr) status = (uint64_t)atoi(sp + 1);
+    }
 
-        /* Determine body framing from headers */
+    /* Determine body framing from headers.  A response to HEAD, and a
+     * 1xx, 204 or 304, has no body whatever its headers say (RFC 9112 6.3),
+     * so a Content-Length there is not owed. */
+    if (strcasecmp(method, "HEAD") == 0 || status == 204 || status == 304
+        || (status >= 100 && status < 200)) {
+        body_mode = 4;
+    } else {
         /* Check Transfer-Encoding: chunked (case-insensitive scan) */
         const char *te = resp;
         while ((te = strstr(te, "\r\n")) != NULL && te < hdr_end_ptr) {
@@ -3472,85 +3528,117 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
         /* If neither, fall back to read-until-close */
         if (body_mode == 0) body_mode = 3;
-    } else {
-        /* Never found headers — treat what we have as the full response */
-        body_mode = 3;
     }
 
     /* Phase 2: read body according to framing mode */
     if (body_mode == 1) {
         /* Content-Length: read exactly content_length bytes of body */
-        size_t body_have = used - hdr_end_off;
-        while (body_have < content_length) {
-            if (used + 1 >= cap) {
-                cap *= 2;
-                char *tmp = realloc(resp, cap);
-                if (!tmp) { free(resp); CLIENT_CLOSE();
-                            return err_resp_client("out of memory", 0); }
-                resp = tmp;
-            }
+        while (used - hdr_end_off < content_length) {
+            CLIENT_GROW();
             n = CLIENT_RECV(resp + used, cap - used - 1);
-            if (n <= 0) break;
+            if (n <= 0) {
+                snprintf(read_err_buf, sizeof read_err_buf,
+                         "incomplete response: %s after %zu of %zu body bytes (Content-Length)",
+                         CLIENT_HOW(n), used - hdr_end_off, content_length);
+                read_err = read_err_buf;
+                goto read_done;
+            }
             used += (size_t)n;
-            body_have += (size_t)n;
         }
     } else if (body_mode == 2) {
-        /* Chunked: read until final chunk marker "0\r\n\r\n" appears in body */
-        for (;;) {
-            resp[used] = '\0';
-            /* Look for terminal chunk in body portion */
-            const char *body_start = resp + hdr_end_off;
-            size_t body_len_so_far = used - hdr_end_off;
-            /* Terminal chunk: "0\r\n\r\n" (could also be "0\r\n" + trailers + "\r\n") */
-            if (body_len_so_far >= 5) {
-                const char *p = body_start;
-                const char *end = resp + used - 4;
-                while (p <= end) {
-                    if (p[0] == '0' && p[1] == '\r' && p[2] == '\n' &&
-                        p[3] == '\r' && p[4] == '\n') {
-                        goto chunked_done;
-                    }
-                    p++;
+        /* Chunked (RFC 9112 7.1): chunk-size [; ext] CRLF data CRLF ...,
+         * then 0 CRLF, trailer lines, CRLF.  A bare LF is accepted as a
+         * line end (RFC 9112 2.2).  pos is the next unparsed byte. */
+        size_t pos = hdr_end_off;
+        int last = 0;             /* the zero-size chunk has been read */
+        int done = 0;             /* ... and the blank line after its trailers */
+        while (!done) {
+            /* consume every complete element already buffered */
+            for (;;) {
+                size_t ls = pos, lf = pos;
+                while (lf < used && resp[lf] != '\n') lf++;
+                if (lf >= used) break;                     /* need more */
+                size_t le = (lf > ls && resp[lf - 1] == '\r') ? lf - 1 : lf;
+                if (last) {
+                    /* trailer section: lines until an empty one */
+                    pos = lf + 1;
+                    if (le == ls) { done = 1; break; }
+                    continue;
                 }
+                size_t sz = 0, k = ls;
+                while (k < le && isxdigit((unsigned char)resp[k])) {
+                    if (sz > ((size_t)-1 >> 5)) { k = ls; break; }  /* overflow */
+                    int c0 = (unsigned char)resp[k];
+                    sz = sz * 16 + (size_t)(isdigit(c0) ? c0 - '0'
+                                                        : tolower(c0) - 'a' + 10);
+                    k++;
+                }
+                while (k > ls && k < le && (resp[k] == ' ' || resp[k] == '\t')) k++;
+                if (k == ls || (k < le && resp[k] != ';')) {
+                    read_err = "malformed chunked response body: bad chunk size line";
+                    goto read_done;
+                }
+                if (sz == 0) { last = 1; pos = lf + 1; continue; }
+                size_t d = lf + 1;                         /* first data byte */
+                if (used - d < sz + 1) break;              /* need more */
+                size_t after;
+                if (resp[d + sz] == '\n') {
+                    after = d + sz + 1;
+                } else if (resp[d + sz] == '\r' && used - d < sz + 2) {
+                    break;                                 /* need more */
+                } else if (resp[d + sz] == '\r' && resp[d + sz + 1] == '\n') {
+                    after = d + sz + 2;
+                } else {
+                    read_err = "malformed chunked response body: chunk data not followed by CRLF";
+                    goto read_done;
+                }
+                if (dec_len + sz > dec_cap) {
+                    size_t nc = dec_cap ? dec_cap : 4096;
+                    while (nc < dec_len + sz) nc *= 2;
+                    uint8_t *t = realloc(dec, nc);
+                    if (!t) { read_err = "out of memory"; goto read_done; }
+                    dec = t; dec_cap = nc;
+                }
+                memcpy(dec + dec_len, resp + d, sz);
+                dec_len += sz;
+                pos = after;
             }
-            if (used + 1 >= cap) {
-                cap *= 2;
-                char *tmp = realloc(resp, cap);
-                if (!tmp) { free(resp); CLIENT_CLOSE();
-                            return err_resp_client("out of memory", 0); }
-                resp = tmp;
+            if (done) break;
+            CLIENT_GROW();
+            n = CLIENT_RECV(resp + used, cap - used - 1);
+            if (n <= 0) {
+                snprintf(read_err_buf, sizeof read_err_buf,
+                         "incomplete response: %s before the last chunk of a chunked body (%zu body bytes decoded)",
+                         CLIENT_HOW(n), dec_len);
+                read_err = read_err_buf;
+                goto read_done;
             }
+            used += (size_t)n;
+            resp[used] = '\0';
+        }
+    } else if (body_mode == 3) {
+        /* read until connection close / timeout (original behavior) */
+        for (;;) {
+            CLIENT_GROW();
             n = CLIENT_RECV(resp + used, cap - used - 1);
             if (n <= 0) break;
             used += (size_t)n;
-        }
-        chunked_done: ;
-    } else {
-        /* mode 3: read until connection close / timeout (original behavior) */
-        while ((n = CLIENT_RECV(resp + used, cap - used - 1)) > 0) {
-            used += (size_t)n;
-            if (used + 1 >= cap) {
-                cap *= 2;
-                char *tmp = realloc(resp, cap);
-                if (!tmp) { free(resp); CLIENT_CLOSE();
-                            return err_resp_client("out of memory", 0); }
-                resp = tmp;
-            }
         }
     }
 
-    resp[used] = '\0';
+read_done:
+#undef CLIENT_GROW
+#undef CLIENT_HOW
     CLIENT_CLOSE();
 #undef CLIENT_SEND
 #undef CLIENT_RECV
 #undef CLIENT_CLOSE
-
-    /* parse status line: "HTTP/1.x NNN ..." */
-    uint64_t status = 0;
-    {
-        const char *sp = strchr(resp, ' ');
-        if (sp) status = (uint64_t)atoi(sp + 1);
+    if (read_err) {
+        free(resp);
+        free(dec);
+        return err_resp_client(read_err, 0);
     }
+    resp[used] = '\0';
 
     /* parse response headers */
     StrPair *rhdrs = NULL;
@@ -3591,52 +3679,23 @@ static HttpClientResp client_do_request(HttpClient *c,
     }
 
     /* extract body */
-    const char *sep = strstr(resp, "\r\n\r\n");
     uint8_t *resp_body = NULL;
     uint64_t resp_body_len = 0;
-    if (sep) {
-        sep += 4;
-        size_t raw_body_len = used - (size_t)(sep - resp);
-        if (raw_body_len > 0 && body_mode == 2) {
-            /* Decode chunked transfer encoding:
-             * Format: <hex-size>\r\n<data>\r\n ... 0\r\n\r\n */
-            uint8_t *decoded = malloc(raw_body_len); /* upper bound */
-            if (decoded) {
-                size_t dpos = 0;
-                const char *cp = sep;
-                const char *raw_end = sep + raw_body_len;
-                while (cp < raw_end) {
-                    /* Parse chunk size (hex) */
-                    char *nl = NULL;
-                    unsigned long chunk_sz = strtoul(cp, &nl, 16);
-                    if (!nl || nl == cp) break; /* malformed */
-                    /* Skip to data (past \r\n after size) */
-                    if (nl + 2 <= raw_end && nl[0] == '\r' && nl[1] == '\n')
-                        cp = nl + 2;
-                    else if (nl + 1 <= raw_end && nl[0] == '\n')
-                        cp = nl + 1;
-                    else
-                        break;
-                    if (chunk_sz == 0) break; /* final chunk */
-                    /* Copy chunk data */
-                    size_t avail = (size_t)(raw_end - cp);
-                    size_t to_copy = chunk_sz < avail ? (size_t)chunk_sz : avail;
-                    memcpy(decoded + dpos, cp, to_copy);
-                    dpos += to_copy;
-                    cp += to_copy;
-                    /* Skip trailing \r\n after chunk data */
-                    if (cp + 2 <= raw_end && cp[0] == '\r' && cp[1] == '\n')
-                        cp += 2;
-                    else if (cp + 1 <= raw_end && cp[0] == '\n')
-                        cp += 1;
-                }
-                resp_body = decoded;
-                resp_body_len = (uint64_t)dpos;
+    if (body_mode == 2) {
+        resp_body = dec;                 /* decoded while reading */
+        resp_body_len = (uint64_t)dec_len;
+        dec = NULL;
+    } else if (body_mode == 1 || body_mode == 3) {
+        size_t raw_body_len = used - hdr_end_off;
+        /* bytes past the Content-Length are not this response's body */
+        if (body_mode == 1 && raw_body_len > content_length)
+            raw_body_len = content_length;
+        if (raw_body_len > 0) {
+            resp_body = malloc(raw_body_len);
+            if (resp_body) {
+                memcpy(resp_body, resp + hdr_end_off, raw_body_len);
+                resp_body_len = (uint64_t)raw_body_len;
             }
-        } else if (raw_body_len > 0) {
-            resp_body_len = (uint64_t)raw_body_len;
-            resp_body = malloc((size_t)resp_body_len);
-            if (resp_body) memcpy(resp_body, sep, (size_t)resp_body_len);
         }
     }
 
@@ -3828,6 +3887,8 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
         snprintf(request_uri, sizeof(request_uri), "%s", full_path);
     }
 
+    char host_val[sizeof host + sizeof port + 1];
+    client_host_value(host_val, sizeof host_val, host, port, is_https);
     if (req.body && req.body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
@@ -3835,7 +3896,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "Content-Length: %llu\r\n"
             "Connection: keep-alive\r\n"
             "\r\n",
-            method, request_uri, host,
+            method, request_uri, host_val,
             (unsigned long long)req.body_len);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
@@ -3843,7 +3904,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "Host: %s\r\n"
             "Connection: keep-alive\r\n"
             "\r\n",
-            method, request_uri, host);
+            method, request_uri, host_val);
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
@@ -4126,13 +4187,15 @@ int http_downloadfile(HttpClient *c, const char *url,
     if (fd < 0) return -1;
 
     /* send GET request */
+    char host_val[sizeof host + sizeof port + 1];
+    client_host_value(host_val, sizeof host_val, host, port, is_https);
     char req_buf[4096];
     int req_len = snprintf(req_buf, sizeof(req_buf),
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n"
         "Connection: close\r\n"
         "\r\n",
-        full_path, host);
+        full_path, host_val);
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
         close(fd); return -1;
