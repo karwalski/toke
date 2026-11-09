@@ -28,6 +28,7 @@
 #include "capabilities.h"   /* 124.4c2: net capability gate */
 #include "tk_bind.h"       /* 135.34 (3): bind without shadowing a live listener */
 #include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
+#include "tk_tls_groups.h" /* 122.15: tk_tls_set_groups() */
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -265,12 +266,12 @@ static SSL_CTX *build_ssl_ctx(int is_server, TlsConfig cfg)
      * the second call the fallback; tls.group(conn) reports the group
      * a connection actually settled on (122.13).  The two lists are
      * macros (tls.h) so C1180 can build this file with a hybrid name
-     * the library does not know and drive the fallback path (122.5). */
-    if (SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_HYBRID) != 1) {
-        if (SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_CLASSICAL) != 1) {
-            SSL_CTX_free(ctx);
-            return NULL;
-        }
+     * the library does not know and drive the fallback path (122.5).
+     * The two calls live in tk_tls_groups.h since 122.15, shared with the
+     * std.http and std.llm contexts. */
+    if (tk_tls_set_groups(ctx) == TK_TLS_GROUPS_NONE) {
+        SSL_CTX_free(ctx);
+        return NULL;
     }
 
     /* Load local certificate + key (if provided) */
