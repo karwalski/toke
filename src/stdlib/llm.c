@@ -20,13 +20,26 @@
  * either (a CR/LF header injection) is refused (INF-06).
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
- * compiler code.  Callers own all returned heap pointers.
+ * compiler code.  Callers own all returned heap pointers, except the sealed
+ * strings below.
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length is read with tk_strlen
+ * (O(1) on a sealed toke string) or taken from the buffer that holds it.  The
+ * strings that reach toke are sealed and never freed: a response's content
+ * (llm_chat / llm_chat_extra / llm_complete / llm_json_mode / llm_vision),
+ * every llm_parse_sse_chunk result and so every stream chunk, and the
+ * client's provider / base_url / api_key / model (llm_client_free frees only
+ * the struct; llmtool.withtools copies the struct and shares them).
+ * err_msg strings, request bodies, raw response bodies (raw_out) and the
+ * embedding arrays stay malloc'd: they never reach toke and their C callers
+ * free them.
  *
  * Story: 17.1.1
  */
 
 #include "llm.h"
 #include "capabilities.h"   /* 121.42 (2): tcp_connect is a net sink */
+#include "tk_strhdr.h"      /* 127.295: tk_strlen, sealed strings */
 
 #include <stdlib.h>
 #include <string.h>
@@ -76,10 +89,17 @@ static const char *neterr_or(const char *fallback)
 static char *strdup_safe(const char *s)
 {
     if (!s) return NULL;
-    size_t n = strlen(s) + 1;
+    size_t n = tk_strlen(s) + 1;
     char *p = malloc(n);
     if (p) memcpy(p, s, n);
     return p;
+}
+
+/* seal_dup — a sealed copy of s (NULL for NULL): a string that reaches toke.
+ * Never freed (runtime-abi §3.1). */
+static char *seal_dup(const char *s)
+{
+    return s ? tks_strdup(s) : NULL;
 }
 
 /* err_resp — build a TkLlmResp that signals an error. */
@@ -140,7 +160,7 @@ static int parse_url(const char *base_url, const char *path_suffix,
 
     /* find end of host[:port] */
     const char *slash = strchr(p, '/');
-    const char *hostend = slash ? slash : (p + strlen(p));
+    const char *hostend = slash ? slash : (base_url + tk_strlen(base_url));
 
     /* check for explicit port */
     const char *colon = NULL;
@@ -424,7 +444,7 @@ static char *http_exchange(const char *host, const char *port, const char *path,
     }
 #endif
 
-    size_t body_len = body ? strlen(body) : 0;
+    size_t body_len = body ? tk_strlen(body) : 0;
 
     /* build request */
     char req_buf[8192];
@@ -541,11 +561,11 @@ const char *llm_build_request(TkLlmMsg *msgs, uint64_t nmsgs, const char *model,
                                double temperature, int stream)
 {
     /* Estimate buffer size: generous upper bound */
-    size_t cap = 256 + (model ? strlen(model) : 0);
+    size_t cap = 256 + (model ? tk_strlen(model) : 0);
     for (uint64_t i = 0; i < nmsgs; i++) {
         cap += 32;
-        if (msgs[i].role)    cap += strlen(msgs[i].role)    * 2 + 4;
-        if (msgs[i].content) cap += strlen(msgs[i].content) * 6 + 4; /* worst case escaping */
+        if (msgs[i].role)    cap += tk_strlen(msgs[i].role)    * 2 + 4;
+        if (msgs[i].content) cap += tk_strlen(msgs[i].content) * 6 + 4; /* worst case escaping */
     }
 
     char *buf = malloc(cap);
@@ -575,13 +595,14 @@ const char *llm_build_request(TkLlmMsg *msgs, uint64_t nmsgs, const char *model,
 
         if (msgs[i].content) {
             /* content may be large — escape into a separate heap buffer */
-            size_t clen = strlen(msgs[i].content);
+            size_t clen = tk_strlen(msgs[i].content);
             size_t esc_cap = clen * 6 + 4;
             char *esc = malloc(esc_cap);
             if (!esc) { free(buf); return NULL; }
-            if (json_escape(msgs[i].content, esc, esc_cap) < 0) { free(esc); free(buf); return NULL; }
+            int esc_n = json_escape(msgs[i].content, esc, esc_cap);
+            if (esc_n < 0) { free(esc); free(buf); return NULL; }
             /* make sure esc fits in remaining buf */
-            size_t esc_len = strlen(esc);
+            size_t esc_len = (size_t)esc_n;
             if ((size_t)pos + esc_len + 64 >= cap) {
                 cap = (size_t)pos + esc_len + 256;
                 char *tmp = realloc(buf, cap);
@@ -619,10 +640,11 @@ static char *find_json_string(const char *json_text, const char *key)
 {
     /* build search pattern  "key":" */
     char pat[256];
-    snprintf(pat, sizeof(pat), "\"%s\":", key);
+    int patlen = snprintf(pat, sizeof(pat), "\"%s\":", key);
+    if (patlen < 0 || (size_t)patlen >= sizeof(pat)) return NULL;
     const char *p = strstr(json_text, pat);
     if (!p) return NULL;
-    p += strlen(pat);
+    p += patlen;
     /* skip whitespace */
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
     if (*p != '"') return NULL;
@@ -640,6 +662,15 @@ static char *find_json_string(const char *json_text, const char *key)
             char *tmp = realloc(out, cap);
             if (!tmp) { free(out); return NULL; }
             out = tmp;
+        }
+        if (*p == '\\' && p[1] == '\0') {
+            /* 127.331: a value ending in a lone backslash at the end of the
+             * input stepped over the NUL (p++ then p++ below), copying the 0
+             * into the value and reading past the string.  Keep the
+             * backslash and stop at the NUL. */
+            out[outpos++] = '\\';
+            p++;
+            break;
         }
         if (*p == '\\') {
             p++;
@@ -660,7 +691,12 @@ static char *find_json_string(const char *json_text, const char *key)
         p++;
     }
     out[outpos] = '\0';
-    return out;
+    /* 127.295: the value reaches toke (content, stream chunks), so it is
+     * returned sealed.  No escape decodes to a 0 byte (\u is copied as
+     * text), and a raw 0 ends the scan, so outpos is the C-string length. */
+    char *sealed = tks_dup(out, outpos);
+    free(out);
+    return sealed;
 }
 
 /*
@@ -670,10 +706,11 @@ static char *find_json_string(const char *json_text, const char *key)
 static uint64_t find_json_uint64(const char *json_text, const char *key)
 {
     char pat[256];
-    snprintf(pat, sizeof(pat), "\"%s\":", key);
+    int patlen = snprintf(pat, sizeof(pat), "\"%s\":", key);
+    if (patlen < 0 || (size_t)patlen >= sizeof(pat)) return 0;
     const char *p = strstr(json_text, pat);
     if (!p) return 0;
-    p += strlen(pat);
+    p += patlen;
     while (*p == ' ' || *p == '\t') p++;
     if (*p < '0' || *p > '9') return 0;
     return (uint64_t)strtoull(p, NULL, 10);
@@ -702,22 +739,22 @@ const char *llm_parse_sse_chunk(const char *sse_data)
     const char *delta_start = strstr(sse_data, "\"delta\":");
     if (!delta_start) {
         /* no delta key — return empty string */
-        return strdup_safe("");
+        return seal_dup("");
     }
     /* move past "delta": */
-    delta_start += strlen("\"delta\":");
+    delta_start += sizeof("\"delta\":") - 1;
     while (*delta_start == ' ' || *delta_start == '\t') delta_start++;
-    if (*delta_start != '{') return strdup_safe("");
+    if (*delta_start != '{') return seal_dup("");
 
     /* find closing brace of delta object (naive: first '}') */
     const char *delta_end = strchr(delta_start, '}');
-    if (!delta_end) return strdup_safe("");
+    if (!delta_end) return seal_dup("");
 
     /* search for "content": within [delta_start, delta_end] */
     const char *content_key = strstr(delta_start, "\"content\":");
     if (!content_key || content_key > delta_end) {
         /* delta exists but has no content field (e.g. role-only chunk) */
-        return strdup_safe("");
+        return seal_dup("");
     }
 
     return find_json_string(delta_start, "content");
@@ -735,19 +772,15 @@ const char *llm_parse_sse_chunk(const char *sse_data)
  */
 static char *provider_name(const char *base_url)
 {
-    if (!base_url) return strdup_safe("");
+    if (!base_url) return seal_dup("");
     if (strstr(base_url, "11434") || strstr(base_url, "ollama"))
-        return strdup_safe("ollama");
-    if (strstr(base_url, "api.openai.com"))    return strdup_safe("openai");
-    if (strstr(base_url, "api.anthropic.com")) return strdup_safe("anthropic");
+        return seal_dup("ollama");
+    if (strstr(base_url, "api.openai.com"))    return seal_dup("openai");
+    if (strstr(base_url, "api.anthropic.com")) return seal_dup("anthropic");
     const char *h = strstr(base_url, "://");
     h = h ? h + 3 : base_url;
     size_t n = strcspn(h, ":/?#");
-    char *out = malloc(n + 1);
-    if (!out) return NULL;
-    memcpy(out, h, n);
-    out[n] = '\0';
-    return out;
+    return tks_dup(h, n);
 }
 
 TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *model)
@@ -755,9 +788,9 @@ TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *m
     TkLlmClient *c = malloc(sizeof(TkLlmClient));
     if (!c) return NULL;
     c->provider               = provider_name(base_url);
-    c->base_url               = strdup_safe(base_url);
-    c->api_key                = strdup_safe(api_key);
-    c->model                  = strdup_safe(model);
+    c->base_url               = seal_dup(base_url);
+    c->api_key                = seal_dup(api_key);
+    c->model                  = seal_dup(model);
     c->timeout_ms             = 0;
     c->max_retries            = 0;
     c->retry_base_delay_ms    = 0;
@@ -770,10 +803,8 @@ TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *m
 void llm_client_free(TkLlmClient *c)
 {
     if (!c) return;
-    free((void *)c->provider);
-    free((void *)c->base_url);
-    free((void *)c->api_key);
-    free((void *)c->model);
+    /* 127.295: provider/base_url/api_key/model are sealed strings that toke
+     * may still hold (c.provider, a $llmresp's model) -- never freed. */
     free(c);
 }
 
@@ -872,7 +903,7 @@ TkLlmResp llm_chat_extra(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
 
     TkLlmResp r;
     memset(&r, 0, sizeof(r));
-    r.content       = content ? content : strdup_safe("");
+    r.content       = content ? content : seal_dup("");
     r.input_tokens  = prompt_tokens;
     r.output_tokens = completion_tokens;
     r.is_err        = 0;
@@ -906,6 +937,8 @@ TkLlmStream llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, doubl
     free((void *)body);
     if (!resp) return err_stream(neterr_or("request failed"));
 
+    const char *resp_end = resp + tk_strlen(resp);
+
     /* skip HTTP headers */
     const char *sep = strstr(resp, "\r\n\r\n");
     const char *sse_body = sep ? sep + 4 : resp;
@@ -920,7 +953,7 @@ TkLlmStream llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, doubl
     while (line && *line) {
         /* find end of line */
         const char *eol = strchr(line, '\n');
-        size_t line_len = eol ? (size_t)(eol - line) : strlen(line);
+        size_t line_len = eol ? (size_t)(eol - line) : (size_t)(resp_end - line);
 
         /* strip trailing \r */
         const char *line_end = line + line_len;
@@ -951,13 +984,11 @@ TkLlmStream llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, doubl
                     if (nchunks + 2 >= chunks_cap) {
                         chunks_cap *= 2;
                         const char **tmp = realloc(chunks, chunks_cap * sizeof(const char *));
-                        if (!tmp) { free((void *)chunk); break; }
+                        if (!tmp) break;   /* chunk is sealed: never freed */
                         chunks = tmp;
                     }
                     chunks[nchunks++] = chunk;
-                } else {
-                    free((void *)chunk);
-                }
+                }   /* an empty chunk is sealed: dropped, never freed */
             }
         }
 
@@ -1000,7 +1031,7 @@ uint64_t llm_countokens(TkLlmClient *c, const char *text)
 {
     (void)c; /* client unused; approximation is model-independent */
     if (!text) return 0;
-    return (uint64_t)(strlen(text) / 4);
+    return (uint64_t)(tk_strlen(text) / 4);
 }
 
 /* -----------------------------------------------------------------------
@@ -1105,8 +1136,8 @@ static F64ArraysLlmResult err_f64s(const char *msg)
 static char *build_embedding_request(const char *model, const char *input_json)
 {
     /* {"model":"...","input":...} */
-    size_t model_len = model ? strlen(model) : 0;
-    size_t input_len = input_json ? strlen(input_json) : 2; /* "null" fallback */
+    size_t model_len = model ? tk_strlen(model) : 0;
+    size_t input_len = input_json ? tk_strlen(input_json) : 2; /* "null" fallback */
     size_t cap = model_len * 2 + input_len + 64;
     char *buf = malloc(cap);
     if (!buf) return NULL;
@@ -1188,7 +1219,7 @@ static int find_nth_embedding(const char *json, uint64_t n,
             /* found our object — search for "embedding": within it */
             const char *emb_key = strstr(p, "\"embedding\":");
             if (!emb_key) return -1;
-            emb_key += strlen("\"embedding\":");
+            emb_key += sizeof("\"embedding\":") - 1;
             while (*emb_key == ' ' || *emb_key == '\t') emb_key++;
             return parse_embedding_array(emb_key, out_data, out_len);
         }
@@ -1221,17 +1252,18 @@ F64ArrayLlmResult llm_embedding(TkLlmClient *client, const char *text)
         return err_f64("failed to parse base_url");
 
     /* build JSON input: a quoted escaped string */
-    size_t text_len = strlen(text);
+    size_t text_len = tk_strlen(text);
     size_t esc_cap  = text_len * 6 + 4;
     char *esc_text  = malloc(esc_cap);
     if (!esc_text) return err_f64("out of memory");
-    if (json_escape(text, esc_text, esc_cap) < 0) {
+    int esc_n = json_escape(text, esc_text, esc_cap);
+    if (esc_n < 0) {
         free(esc_text);
         return err_f64("json_escape failed");
     }
 
     /* wrap in quotes: "\"<escaped>\"" */
-    size_t quoted_cap = strlen(esc_text) + 4;
+    size_t quoted_cap = (size_t)esc_n + 4;
     char *quoted = malloc(quoted_cap);
     if (!quoted) { free(esc_text); return err_f64("out of memory"); }
     snprintf(quoted, quoted_cap, "\"%s\"", esc_text);
@@ -1291,7 +1323,7 @@ F64ArraysLlmResult llm_embeddings_batch(TkLlmClient *client,
     /* estimate size: sum of (len*6+4) per text + brackets + commas */
     size_t arr_cap = 4;
     for (uint64_t i = 0; i < n; i++) {
-        arr_cap += texts[i] ? (strlen(texts[i]) * 6 + 4) : 6;
+        arr_cap += texts[i] ? (tk_strlen(texts[i]) * 6 + 4) : 6;
     }
     char *arr_json = malloc(arr_cap);
     if (!arr_json) return err_f64s("out of memory");
@@ -1304,7 +1336,7 @@ F64ArraysLlmResult llm_embeddings_batch(TkLlmClient *client,
         arr_json[pos++] = '"';
 
         const char *src = texts[i] ? texts[i] : "";
-        size_t src_len  = strlen(src);
+        size_t src_len  = tk_strlen(src);
         size_t esc_cap2 = src_len * 6 + 4;
         char *esc = malloc(esc_cap2);
         if (!esc) { free(arr_json); return err_f64s("out of memory"); }
@@ -1399,8 +1431,8 @@ static const char *build_request_extra(TkLlmMsg *msgs, uint64_t nmsgs,
     if (!extra_json || extra_json[0] == '\0') return base;
 
     /* base ends with '}'; we want to insert ,extra_json before it */
-    size_t base_len  = strlen(base);
-    size_t extra_len = strlen(extra_json);
+    size_t base_len  = tk_strlen(base);
+    size_t extra_len = tk_strlen(extra_json);
     size_t new_cap   = base_len + extra_len + 4;
     char *buf = malloc(new_cap);
     if (!buf) { free((void *)base); return NULL; }
@@ -1473,7 +1505,7 @@ TkLlmResp llm_json_mode(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
 
     TkLlmResp r;
     memset(&r, 0, sizeof(r));
-    r.content       = content ? content : strdup_safe("");
+    r.content       = content ? content : seal_dup("");
     r.input_tokens  = prompt_tokens;
     r.output_tokens = completion_tokens;
     r.is_err        = 0;
@@ -1497,11 +1529,11 @@ static const char *build_vision_request(TkLlmMsg *msgs, uint64_t nmsgs,
                                           const char *model)
 {
     /* estimate generous upper bound */
-    size_t cap = 256 + (model ? strlen(model) : 0);
+    size_t cap = 256 + (model ? tk_strlen(model) : 0);
     for (uint64_t i = 0; i < nmsgs; i++) {
         cap += 64;
-        if (msgs[i].role)    cap += strlen(msgs[i].role)    * 2 + 4;
-        if (msgs[i].content) cap += strlen(msgs[i].content) * 6 + 128;
+        if (msgs[i].role)    cap += tk_strlen(msgs[i].role)    * 2 + 4;
+        if (msgs[i].content) cap += tk_strlen(msgs[i].content) * 6 + 128;
     }
 
     char *buf = malloc(cap);
@@ -1529,14 +1561,15 @@ static const char *build_vision_request(TkLlmMsg *msgs, uint64_t nmsgs,
 
         if (is_image) {
             /* vision array format */
-            size_t clen     = strlen(content);
+            size_t clen     = tk_strlen(content);
             size_t esc_cap2 = clen * 6 + 4;
             char *esc = malloc(esc_cap2);
             if (!esc) { free(buf); return NULL; }
-            if (json_escape(content, esc, esc_cap2) < 0) { free(esc); free(buf); return NULL; }
+            int esc_n = json_escape(content, esc, esc_cap2);
+            if (esc_n < 0) { free(esc); free(buf); return NULL; }
 
             /* ensure buf has room */
-            size_t needed = strlen(esc) + 128;
+            size_t needed = (size_t)esc_n + 128;
             if ((size_t)pos + needed >= cap) {
                 cap = (size_t)pos + needed + 256;
                 char *tmp = realloc(buf, cap);
@@ -1551,13 +1584,14 @@ static const char *build_vision_request(TkLlmMsg *msgs, uint64_t nmsgs,
             pos += n2;
         } else {
             /* standard string content */
-            size_t clen     = strlen(content);
+            size_t clen     = tk_strlen(content);
             size_t esc_cap2 = clen * 6 + 4;
             char *esc = malloc(esc_cap2);
             if (!esc) { free(buf); return NULL; }
-            if (json_escape(content, esc, esc_cap2) < 0) { free(esc); free(buf); return NULL; }
+            int esc_n = json_escape(content, esc, esc_cap2);
+            if (esc_n < 0) { free(esc); free(buf); return NULL; }
 
-            size_t esc_len = strlen(esc);
+            size_t esc_len = (size_t)esc_n;
             if ((size_t)pos + esc_len + 4 >= cap) {
                 cap = (size_t)pos + esc_len + 64;
                 char *tmp = realloc(buf, cap);
@@ -1626,7 +1660,7 @@ TkLlmResp llm_vision(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
 
     TkLlmResp r;
     memset(&r, 0, sizeof(r));
-    r.content       = content ? content : strdup_safe("");
+    r.content       = content ? content : seal_dup("");
     r.input_tokens  = prompt_tokens;
     r.output_tokens = completion_tokens;
     r.is_err        = 0;

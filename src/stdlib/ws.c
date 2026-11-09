@@ -11,11 +11,19 @@
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code. Callers own returned pointers.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length is read with tk_strlen
+ * (O(1) on a sealed toke string, strlen otherwise) or taken from the literal
+ * or buffer that holds it.  std.ws hands no string to toke (ws.recv returns a
+ * [byte] payload), so nothing here is sealed: ws_accept_key,
+ * ws_build_upgrade_response and the URL parser's host/path are malloc'd for
+ * their C callers, which free them.
+ *
  * Story: 15.1.1
  */
 
 #include "ws.h"
 #include "strbuf.h"
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -443,8 +451,8 @@ const char *ws_accept_key(const char *client_key)
 
     if (!client_key) return NULL;
 
-    key_len    = (uint64_t)strlen(client_key);
-    guid_len   = (uint64_t)strlen(WS_GUID);
+    key_len    = (uint64_t)tk_strlen(client_key);
+    guid_len   = (uint64_t)(sizeof(WS_GUID) - 1);
     concat_len = key_len + guid_len;
 
     concat = (uint8_t *)malloc(concat_len);
@@ -605,8 +613,9 @@ static int ws_parse_url(const char *url, char **host_out,
      * "ws://h/x HTTP/1.1\r\nX-Injected: 1\r\n..." sent headers (or a
      * whole second request) of the caller's choosing.  A URL is printable
      * ASCII without spaces (RFC 3986); anything else is refused. */
-    for (const char *q = p; *q; q++) {
-        unsigned char c = (unsigned char)*q;
+    const char *url_end = p;
+    for (; *url_end; url_end++) {
+        unsigned char c = (unsigned char)*url_end;
         if (c <= 0x20 || c >= 0x7f) return -1;
     }
 
@@ -652,7 +661,7 @@ static int ws_parse_url(const char *url, char **host_out,
     /* Path (default to "/") */
     if (*p == '/') {
         path_start = p;
-        path_len = strlen(path_start);
+        path_len = (size_t)(url_end - path_start);   /* the scan above found the end */
     } else {
         path_start = "/";
         path_len = 1;
@@ -721,6 +730,7 @@ WsConnResult ws_connect(const char *url)
     char *ws_key = NULL;
     const char *expected_accept = NULL;
     char *request = NULL;
+    size_t request_len = 0;
     char response[4096];
     int resp_len = 0;
     ssize_t n;
@@ -821,6 +831,7 @@ WsConnResult ws_connect(const char *url)
             "Sec-WebSocket-Version: 13\r\n"
             "\r\n",
             path, host, (int)port, ws_key);
+        request_len = rb.len;
         request = strbuf_take(&rb);
     }
     if (!request) {
@@ -830,7 +841,7 @@ WsConnResult ws_connect(const char *url)
         goto cleanup;
     }
 
-    if (ws_send_all(fd, (const uint8_t *)request, (uint64_t)strlen(request)) != 0) {
+    if (ws_send_all(fd, (const uint8_t *)request, (uint64_t)request_len) != 0) {
         res.is_err  = 1;
         res.err_msg = "ws_connect: failed to send upgrade request";
         close(fd);
@@ -882,7 +893,7 @@ WsConnResult ws_connect(const char *url)
         accept_hdr = strstr(response, "sec-websocket-accept: ");
     }
     if (!accept_hdr || strncmp(accept_hdr + 22, expected_accept,
-                                strlen(expected_accept)) != 0) {
+                                tk_strlen(expected_accept)) != 0) {
         res.is_err  = 1;
         res.err_msg = "ws_connect: accept key mismatch";
         close(fd);
@@ -940,7 +951,7 @@ WsSendResult ws_send(WsConn *conn, const char *text)
         return res;
     }
 
-    text_len = (uint64_t)strlen(text);
+    text_len = (uint64_t)tk_strlen(text);
     enc = ws_encode_frame(WS_TEXT, (const uint8_t *)text, text_len, conn->mask);
     if (enc.is_err) {
         res.is_err  = 1;
@@ -1193,7 +1204,7 @@ WsCloseFrame ws_handle_close_frame(ByteArray payload)
 ByteArray ws_build_close_frame(uint16_t code, const char *reason)
 {
     ByteArray ba;
-    size_t reason_len = (reason != NULL) ? strlen(reason) : 0;
+    size_t reason_len = (reason != NULL) ? tk_strlen(reason) : 0;
     size_t total      = 2 + reason_len;
     uint8_t *buf;
     uint16_t code_be;
@@ -1232,7 +1243,7 @@ WsUpgradeHeaders ws_parse_upgrade_headers(const char *const *hnames,
 
     for (i = 0; i < nhdrs; i++) {
         if (!hnames[i]) continue;
-        nlen = strlen(hnames[i]);
+        nlen = tk_strlen(hnames[i]);
         if (nlen >= sizeof(lower)) continue;
 
         for (j = 0; j < nlen; j++)
@@ -1271,17 +1282,17 @@ const char *ws_build_upgrade_response(const char *accept_key,
     static const char crlf[]     = "\r\n";
     static const char proto_hdr[] = "Sec-WebSocket-Protocol: ";
 
-    size_t key_len   = accept_key  ? strlen(accept_key)  : 0;
-    size_t proto_len = protocols   ? strlen(protocols)   : 0;
+    size_t key_len   = accept_key  ? tk_strlen(accept_key)  : 0;
+    size_t proto_len = protocols   ? tk_strlen(protocols)   : 0;
     size_t total;
     char  *buf;
     char  *p;
 
-    total = strlen(preamble)
+    total = (sizeof(preamble) - 1)
           + key_len
-          + strlen(crlf)          /* after accept key */
-          + (protocols ? strlen(proto_hdr) + proto_len + strlen(crlf) : 0)
-          + strlen(crlf)          /* blank line */
+          + (sizeof(crlf) - 1)          /* after accept key */
+          + (protocols ? (sizeof(proto_hdr) - 1) + proto_len + (sizeof(crlf) - 1) : 0)
+          + (sizeof(crlf) - 1)          /* blank line */
           + 1;                    /* NUL */
 
     buf = (char *)malloc(total);
@@ -1289,17 +1300,17 @@ const char *ws_build_upgrade_response(const char *accept_key,
 
     p = buf;
 
-    memcpy(p, preamble, strlen(preamble)); p += strlen(preamble);
+    memcpy(p, preamble, (sizeof(preamble) - 1)); p += (sizeof(preamble) - 1);
     if (key_len > 0) { memcpy(p, accept_key, key_len); p += key_len; }
-    memcpy(p, crlf, strlen(crlf)); p += strlen(crlf);
+    memcpy(p, crlf, (sizeof(crlf) - 1)); p += (sizeof(crlf) - 1);
 
     if (protocols) {
-        memcpy(p, proto_hdr, strlen(proto_hdr)); p += strlen(proto_hdr);
+        memcpy(p, proto_hdr, (sizeof(proto_hdr) - 1)); p += (sizeof(proto_hdr) - 1);
         memcpy(p, protocols, proto_len);         p += proto_len;
-        memcpy(p, crlf, strlen(crlf));           p += strlen(crlf);
+        memcpy(p, crlf, (sizeof(crlf) - 1));           p += (sizeof(crlf) - 1);
     }
 
-    memcpy(p, crlf, strlen(crlf)); p += strlen(crlf);
+    memcpy(p, crlf, (sizeof(crlf) - 1)); p += (sizeof(crlf) - 1);
     *p = '\0';
 
     return buf;

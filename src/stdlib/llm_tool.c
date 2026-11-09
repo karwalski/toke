@@ -692,7 +692,8 @@ ToolCallResultArray llm_parallel_tool_calls(TkLlmClient *client,
     /* Parse tool_calls from the response */
     ToolCallResult tc = llm_parse_tool_calls(raw ? raw : resp.content);
     free(raw);
-    free((char *)resp.content); /* tc holds its own copies of every field */
+    /* resp.content is a sealed string (127.295): never freed.  tc holds
+     * its own copies of every field. */
     if (tc.is_err || tc.ncalls == 0) {
         /* No tool calls — return empty array */
         if (tc.calls) free(tc.calls);
@@ -844,7 +845,9 @@ const char *llm_agentic_loop(TkLlmClient *client,
 
         if (tc.ncalls == 0 || tc.is_err) {
             /* No tool calls — this is the final answer */
-            final_answer = resp.content; /* ownership moves to the caller */
+            /* resp.content is sealed (127.295); the caller frees what this
+             * returns, so it gets a malloc'd copy below. */
+            final_answer = resp.content;
             if (tc.calls) free(tc.calls);
             /* 135.3c: err_msg is heap-owned (llm_parse_tool_calls strdup()s
              * it) and was dropped here (clang unix.Malloc llm_tool.c:1012). */
@@ -863,16 +866,14 @@ const char *llm_agentic_loop(TkLlmClient *client,
                 free(conv);
                 free(tools_json_extra);
                 if (tc.calls) free(tc.calls);
-                free((char *)resp.content);
                 return strdup("[error: out of memory]");
             }
             conv = nb;
         }
-        /* resp.content is already a heap copy; heap_contents takes ownership. */
-        char *asst_content = (char *)resp.content;
-        if (asst_content) heap_contents[heap_count++] = asst_content;
+        /* resp.content is a sealed string (127.295): the conversation holds
+         * it as it is, and it is never freed. */
         conv[conv_len].role    = "assistant";
-        conv[conv_len].content = asst_content ? asst_content : "";
+        conv[conv_len].content = resp.content ? resp.content : "";
         conv_len++;
 
         /* Execute each tool call and append tool result messages */
@@ -944,6 +945,6 @@ const char *llm_agentic_loop(TkLlmClient *client,
     free(conv);
     free(tools_json_extra);
 
-    if (final_answer) return final_answer;
+    if (final_answer) return strdup(final_answer);
     return strdup("[max iterations reached]");
 }

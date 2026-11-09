@@ -248,7 +248,7 @@ int main(void) {
     return 0;
 }
 C
-case_run ws "${WORK}/t_ws.c" "${S}/ws.c"
+case_run ws "${WORK}/t_ws.c" "${S}/ws.c" "${S}/str.c"   # 127.295: ws.c reads with tk_strlen
 
 # ── acme (needs OpenSSL) ───────────────────────────────────────────────────
 OSSL_CFLAGS=""; OSSL_LIBS=""

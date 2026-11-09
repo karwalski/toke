@@ -1754,7 +1754,7 @@ test-stdlib-encrypt:
 
 test-stdlib-ws:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ws \
-	    test/stdlib/test_ws.c src/stdlib/ws.c
+	    test/stdlib/test_ws.c src/stdlib/ws.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_ws
 
 test-stdlib-sse:
@@ -1764,7 +1764,7 @@ test-stdlib-sse:
 
 test-stdlib-router:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_router \
-	    test/stdlib/test_router.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/capabilities.c -lz
+	    test/stdlib/test_router.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/str.c src/stdlib/capabilities.c -lz
 	$(RUN_TEST) ./test/stdlib/test_router
 
 test-stdlib-template:
@@ -1786,13 +1786,13 @@ test-stdlib-math:
 # rule linked capabilities.c -- both failed at link on main (f605aec9).
 test-stdlib-llm:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm \
-	    test/stdlib/test_llm.c src/stdlib/llm.c src/stdlib/capabilities.c
+	    test/stdlib/test_llm.c src/stdlib/llm.c src/stdlib/capabilities.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_llm
 
 test-stdlib-llm-tool:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_tool \
 	    test/stdlib/test_llm_tool.c src/stdlib/llm_tool.c src/stdlib/llm.c \
-	    src/stdlib/capabilities.c
+	    src/stdlib/capabilities.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_llm_tool
 
 test-stdlib-chart:
@@ -1851,7 +1851,8 @@ test-stdlib-security-integration:
 test-stdlib-network-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_network_integration \
 	    test/stdlib/test_network_integration.c \
-	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c src/stdlib/capabilities.c -lz
+	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c src/stdlib/capabilities.c \
+	    src/stdlib/str.c -lz
 	$(RUN_TEST) ./test/stdlib/test_network_integration
 
 # 123.8: could not LINK -- the live-dashboard path reaches ws.c
@@ -1974,7 +1975,7 @@ test-stdlib-web-server-integration:
 
 test-stdlib-ws-handshake-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ws_handshake_integration \
-	    test/stdlib/test_ws_handshake_integration.c src/stdlib/ws.c $(ORPHAN_LIBS)
+	    test/stdlib/test_ws_handshake_integration.c src/stdlib/ws.c src/stdlib/str.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_ws_handshake_integration
 
 # src/pkg.c is the package registry, a compiler-side unit, so its test binary
@@ -2005,7 +2006,7 @@ test-stdlib-keychain-core:
 test-stdlib-llm-live:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_live \
 	    test/stdlib/test_llm_live.c \
-	    src/stdlib/llm.c src/stdlib/llm_tool.c src/stdlib/json.c
+	    src/stdlib/llm.c src/stdlib/llm_tool.c src/stdlib/json.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_llm_live
 
 # 123.8: could not LINK -- db.c puts every connection behind TK_REQUIRE(TK_CAP_DB)
@@ -2359,7 +2360,7 @@ fuzz-template:
 fuzz-multipart:
 	$(call fuzz_build_rule,multipart,test/fuzz/fuzz_multipart.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz)
 fuzz-ws-frame:
-	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
+	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c src/stdlib/str.c,)
 fuzz-image:
 	$(call fuzz_build_rule,image,test/fuzz/fuzz_image.c src/stdlib/image.c,-lm)
 # 121.30: the compiler front end, compiled from source like the rest.
