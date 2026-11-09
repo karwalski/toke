@@ -39,7 +39,9 @@
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
 #include "tk_tls_groups.h"    /* 122.15: tk_tls_set_groups() */
+#include "tk_ssl_nosigpipe.h"  /* 127.346: TLS writes via send(MSG_NOSIGNAL) */
 #endif
+#include "tk_nosigpipe.h"      /* 127.347: TK_SEND_FLAGS, tk_sock_nosigpipe */
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
 
@@ -88,20 +90,13 @@
  * docs/stdlib/http.md under "What servetls does to SIGPIPE on Linux".
  */
 
-#ifdef MSG_NOSIGNAL
-#define HTTP_SEND_FLAGS MSG_NOSIGNAL
-#else
-#define HTTP_SEND_FLAGS 0
-#endif
+/* The mechanisms live in tk_nosigpipe.h so ws.c applies the same guard
+ * without linking this file (127.347). */
+#define HTTP_SEND_FLAGS TK_SEND_FLAGS
 
 void http_sock_nosigpipe(int fd)
 {
-#ifdef SO_NOSIGPIPE
-    int on = 1;
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
-#else
-    (void)fd;
-#endif
+    tk_sock_nosigpipe(fd);
 }
 
 /*
@@ -3471,7 +3466,14 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
         ssl = SSL_new(ssl_ctx);
         if (!ssl) { SSL_CTX_free(ssl_ctx); close(fd); return err_resp_client("SSL_new failed", 0); }
-        SSL_set_fd(ssl, fd);
+        /* 127.346: not SSL_set_fd.  OpenSSL's socket BIO writes with
+         * write(2), which on Linux (no SO_NOSIGPIPE) raised SIGPIPE when the
+         * server had closed -- the TLS twin of 127.341.  Records now leave
+         * through send(MSG_NOSIGNAL); see tk_ssl_nosigpipe.h. */
+        if (tk_ssl_set_fd_nosigpipe(ssl, fd) != 1) {
+            SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: cannot attach the socket", 0);
+        }
         {
             unsigned char ipbuf[16];
             int is_ip = inet_pton(AF_INET, host, ipbuf) == 1

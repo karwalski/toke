@@ -24,6 +24,7 @@
 #include "ws.h"
 #include "strbuf.h"
 #include "tk_strhdr.h"   /* 127.295: tk_strlen */
+#include "tk_nosigpipe.h" /* 127.347: no SIGPIPE on a closed peer */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -678,16 +679,20 @@ static int ws_parse_url(const char *url, char **host_out,
     return 0;
 }
 
-/* Send all bytes over a socket. Returns 0 on success, -1 on error. */
+/*
+ * Send all bytes over a socket. Returns 0 on success, -1 on error.
+ *
+ * 127.347: this used plain write(2) on a socket with no SO_NOSIGPIPE, so a
+ * ws.send / ws.sendbytes / ws.close to a peer that had already closed raised
+ * SIGPIPE and the toke program died with status 141 instead of taking $err.
+ * Every frame now goes through tk_send_all (send() with MSG_NOSIGNAL where it
+ * exists), and ws_connect sets SO_NOSIGPIPE on the socket where that exists:
+ * the same two guards the http client and server use (127.144, 127.341).
+ * EINTR is retried rather than reported as a failed send.
+ */
 static int ws_send_all(int fd, const uint8_t *buf, uint64_t len)
 {
-    uint64_t sent = 0;
-    while (sent < len) {
-        ssize_t n = write(fd, buf + sent, (size_t)(len - sent));
-        if (n <= 0) return -1;
-        sent += (uint64_t)n;
-    }
-    return 0;
+    return tk_send_all(fd, buf, (size_t)len);
 }
 
 /* Read exactly `len` bytes from socket. Returns 0 on success, -1 on error. */
@@ -767,6 +772,7 @@ WsConnResult ws_connect(const char *url)
     for (rp = ai; rp; rp = rp->ai_next) {
         fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd < 0) continue;
+        tk_sock_nosigpipe(fd);   /* 127.347: see ws_send_all */
         /* Set non-blocking for connect with timeout */
         {
             int flags = fcntl(fd, F_GETFL, 0);
