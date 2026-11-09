@@ -15,7 +15,8 @@
 # The content hash is checked against an independent computation from the
 # ADR's definition (sorted regular files, "path NUL size NUL bytes").
 #
-# Negative control: TKC=<main's tkc> -- every case fails (no `pkg` command).
+# Negative control: TKC=<tkc built from main without 76.1.3b-d> -- 47 of 54 fail
+# (no `pkg` command); the 7 that pass check that nothing was fetched or run.
 #
 # Story: 76.1.3d
 

@@ -12,7 +12,8 @@
 # No network: no command here fetches (resolve does not), and no source is
 # contacted.
 #
-# Negative control: TKC=<main's tkc> -- every case fails (no `pkg` command).
+# Negative control: TKC=<tkc built from main without 76.1.3b-d> -- 42 of 63 fail
+# (no `pkg` command); the 21 that pass check that nothing was written.
 #
 # Story: 76.1.3b
 
