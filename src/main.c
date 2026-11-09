@@ -2205,7 +2205,8 @@ int main(int argc, char **argv)
         RunOpts po = {
             0, 1, djson, dtext, 0, 0, 0, opt_level, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, NULL, NULL, tgt, NULL, 0,
-            search_paths, search_path_count, limits, profile
+            search_paths, search_path_count, limits, profile,
+            0, 0   /* python_view (96.7), from_tkir (76.1.6c): off for the pkg pass */
         };
         if (pkg_build_prepare(pkg_emit_iface, &po) == 0) {
             if (search_path_count < MAX_SEARCH_PATHS)
