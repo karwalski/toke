@@ -641,6 +641,15 @@ static char *find_json_string(const char *json_text, const char *key)
             if (!tmp) { free(out); return NULL; }
             out = tmp;
         }
+        if (*p == '\\' && p[1] == '\0') {
+            /* 127.331: a value ending in a lone backslash at the end of the
+             * input stepped over the NUL (p++ then p++ below), copying the 0
+             * into the value and reading past the string.  Keep the
+             * backslash and stop at the NUL. */
+            out[outpos++] = '\\';
+            p++;
+            break;
+        }
         if (*p == '\\') {
             p++;
             switch (*p) {
