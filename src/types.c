@@ -2636,12 +2636,66 @@ static void if_tails_agree(Ctx *cx, const Node *ifn, Type *a, Type *b) {
  * TY_UNKNOWN, which checks nothing about it but still shadows whatever else
  * carries the name.
  */
+/*
+ * 127.337 -- the `$ok` payload of a std call whose interface declares an
+ * `i64!E` return (`str.toint` is `"return": "i64!parseerr"`), or NULL.
+ * mt_ok_payload_type leaves i64 unadopted (it is not representation-bearing:
+ * an unknown already lowers as i64), so the `$ok` arm binding of
+ * `let v=mt s.toint(x) {$ok:n n;$err:e "bad"}` was unknown, that arm was
+ * skipped as unresolved, and E4011 never compared it with the str arm --
+ * the binary stored the string's pointer in an i64 slot and crashed.  Used
+ * ONLY for the arm binding while the match's arms are judged (arm_bind_type),
+ * not for the bound `let`'s type.  Only `i64` exactly, from a typed record
+ * (never `"gen":"abi"`, whose i64 is a placeholder); narrow and unsigned
+ * widths stay unknown, as in std_scalar_ret (138.3).  An identifier
+ * scrutinee is followed to its `let` initialiser, as in mt_ok_payload_type.
+ */
+static Type *std_i64_ok_payload(Ctx *cx, const Node *scr, int depth) {
+    if (!scr || depth > 2 || !cx->env || !cx->env->names) return NULL;
+    /* `let r=s.toint(x); mt r {..}`: the let's initialiser, as
+     * mt_ok_payload_type resolves an identifier scrutinee. */
+    if (scr->kind == NODE_IDENT) {
+        if (!cx->fn_node) return NULL;
+        char nb[128]; TOKSTR(nb, cx->src, scr);
+        if (arm_bind_lookup(cx, nb, (int)strlen(nb), scr)) return NULL;
+        const Node *bn = find_binding_before(cx->fn_node, cx->src, nb,
+                                             (int)strlen(nb), scr);
+        if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT)
+            || bn->child_count != 2 || !bn->children[1])
+            return NULL;
+        return std_i64_ok_payload(cx, bn->children[1], depth + 1);
+    }
+    if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1) return NULL;
+    const Node *callee = scr->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return NULL;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    char pbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return NULL;
+    if (!import_module_path(cx, ab, pbuf, sizeof pbuf)) return NULL;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+    if (!f || f->abi_ret) return NULL;
+    const char *ok = NULL; size_t okl = 0;
+    if (f->okret && f->okret[0]) { ok = f->okret; okl = strlen(ok); }
+    else if (f->ret) {
+        const char *bang = strchr(f->ret, '!');
+        if (bang && bang != f->ret) { ok = f->ret; okl = (size_t)(bang - f->ret); }
+    }
+    if (!ok || okl != 3 || memcmp(ok, "i64", 3) != 0) return NULL;
+    return mk_type(cx->env->arena, TY_I64);
+}
+
 static Type *arm_bind_type(Ctx *cx, const Node *m, const Node *arm) {
     Type *u = mk_type(cx->env->arena, TY_UNKNOWN);
     if (!arm->children[0] || m->child_count < 1) return u;
     char tag[16]; TOKSTR(tag, cx->src, arm->children[0]);
     if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0) return u;
     Type *t = mt_ok_payload_type(cx, m->children[0], 0);
+    if (!t) t = std_i64_ok_payload(cx, m->children[0], 0);   /* 127.337 */
     return t ? t : u;
 }
 
