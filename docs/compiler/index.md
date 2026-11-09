@@ -14,4 +14,5 @@ Technical documentation for the toke compiler implementation, runtime ABI, and t
 - [Companion File Format Specification](/docs/compiler/companion-file-spec/) -- `.tkc.md` companion file format
 - [Coding Conventions](/docs/compiler/conventions/) -- style and conventions across the codebase
 - [Lint Rules v1](/docs/compiler/lint-rules-v1/) -- compiler-enforced lint checks
+- [Python View](/docs/compiler/python-view/) -- `tkc --python-view`, a read-only Python rendering for reviewers
 - [Runtime ABI v0](/docs/compiler/runtime-abi/) -- calling conventions and memory layout

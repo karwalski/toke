@@ -68,6 +68,7 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 #include "ast_json.h" /* ast_dump_json() */
 #include "sourcemap.h" /* SourceMap, sourcemap_*() */
 #include "companion.h" /* emit_companion() */
+#include "pyview.h"    /* 96.7: tkc_python_view() */
 #include "compress.h"  /* compress_text(), decompress_text(), compress_stream_*() */
 #include "tkc_limits.h"
 #include "config.h"
@@ -312,6 +313,7 @@ static const char *const HELP_SECTIONS[] = {
     "  --expand            Expand abbreviated identifiers as inline comments\n"
     "  --sourcemap         Emit .map source map alongside --fmt/--pretty output\n"
     "  --dump-ast          Dump parsed AST as JSON to stdout and exit\n"
+    "  --python-view       Print a read-only Python-like view of the source (display only)\n"
     "  --check             Type check only; no code generation\n",
     "  --companion         Generate .tkc.md companion file skeleton to stdout\n"
     "  --companion-out <p> Write companion file to <p> instead of stdout\n"
@@ -1069,6 +1071,7 @@ typedef struct {
     const char **search_paths; int search_path_count;
     TkcLimits limits;
     Profile profile;
+    int python_view;   /* 96.7 */
 } RunOpts;
 
 /*
@@ -1279,6 +1282,7 @@ static int process_file(const char *src, const RunOpts *o)
     const int fmt_only = o->fmt_only, debug_info = o->debug_info;
     const int pretty = o->pretty, expand = o->expand, sourcemap = o->sourcemap;
     const int dump_ast = o->dump_ast, migrate = o->migrate, min_only = o->min_only;
+    const int python_view = o->python_view;
     const int do_lint = o->do_lint, do_fix = o->do_fix, lint_dry_run = o->lint_dry_run;
     const int emit_tkir_flag = o->emit_tkir_flag, emit_deps = o->emit_deps, companion = o->companion;
     const char *companion_out = o->companion_out, *companion_diff_comp = o->companion_diff_comp;
@@ -1295,7 +1299,7 @@ static int process_file(const char *src, const RunOpts *o)
     diag_set_source_file(src);
 
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_lint || emit_deps;
+    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || python_view || migrate || companion || companion_diff_comp || do_lint || emit_deps;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
@@ -1392,6 +1396,17 @@ static int process_file(const char *src, const RunOpts *o)
     /* --dump-ast: serialise AST as JSON to stdout, then exit */
     if (dump_ast) {
         ast_dump_json(ast, sbuf, stdout);
+        goto done;
+    }
+
+    /* --python-view (96.7): read-only Python-like rendering, then exit.
+     * Display only -- docs/decisions/96.7-python-view.md. */
+    if (python_view) {
+        const char *base = strrchr(src, '/');
+        char *view = tkc_python_view(ast, sbuf, base ? base + 1 : src);
+        if (!view) { rc = EINTERNAL; goto done; }
+        fputs(view, stdout);
+        free(view);
         goto done;
     }
 
@@ -1822,6 +1837,7 @@ int main(int argc, char **argv)
     int emit_ll = 0, emit_asm = 0, opt_level = 2, fmt_only = 0, debug_info = 0;  /* 124.6b: default -O2 */
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
+    int python_view = 0;   /* 96.7 */
     int migrate = 0;
     int min_only = 0;
     int do_lint = 0, do_fix = 0, lint_dry_run = 0;
@@ -1883,6 +1899,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--sourcemap"))      sourcemap = 1;
         else if (!strcmp(argv[i], "--check"))          check_only = 1;
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
+        else if (!strcmp(argv[i], "--python-view"))    python_view = 1;
         else if (!strcmp(argv[i], "--lint"))             do_lint = 1;
         else if (!strcmp(argv[i], "--fix"))              do_fix = 1;
         else if (!strcmp(argv[i], "--dry-run"))          lint_dry_run = 1;
@@ -2074,7 +2091,7 @@ int main(int argc, char **argv)
 
     /* 127.179: find the stdlib before anything consults it.  The purely
      * syntactic modes never do, so a missing stdlib does not stop them. */
-    if (!(fmt_only || pretty || expand || min_only || dump_ast)) {
+    if (!(fmt_only || pretty || expand || min_only || dump_ast || python_view)) {
         diag_set_format(dsarif ? DIAG_FMT_SARIF :
                         djson  ? DIAG_FMT_JSON  :
                         dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
@@ -2145,7 +2162,7 @@ int main(int argc, char **argv)
      * compile-to-binary mode (skipped for check, emit, fmt, lint, ... modes). */
     if (source_file_count > 1 && out && !out_is_dir &&
         !check_only && !emit_iface && !emit_ll && !emit_asm && !emit_deps &&
-        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast && !min_only) {
+        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast && !python_view && !min_only) {
         return link_multi_module(source_files, source_file_count, out,
                                  tgt, opt_level, debug_info,
                                  search_paths, search_path_count, limits, profile);
@@ -2178,7 +2195,8 @@ int main(int argc, char **argv)
         out_is_dir,
         search_paths, search_path_count,
         limits,
-        profile
+        profile,
+        python_view
     };
     int rc = 0;
     for (int si = 0; si < source_file_count; si++) {

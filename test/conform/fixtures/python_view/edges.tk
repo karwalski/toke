@@ -1,0 +1,36 @@
+m=edge;
+i=io:std.io;
+i=s:std.str;
+t=$box{in:i64;class:$str};
+t=$e{$bad:i64};
+f=twice(x:i64):i64{<x*2};
+f=risky(x:i64):i64!$e{
+  if(x<0){<$e{$bad:x}};
+  <x
+};
+f=use2(x:i64):i64!$e{
+  let v=risky(x)!$e;
+  <v+1
+};
+f=run(lambda:i64;pass:i64):i64{
+  let fs=@(1;2;3).map(&twice);
+  let total=mut.0;
+  lp(let i=0;i<fs.len;i=i+1){total=total+fs.get(i)};
+  let w=(total as f64)/2.0;
+  let b=$box{in:lambda;class:"x"};
+  let doc="line one
+line two";
+  io.println(s.concat(doc;if(pass>0){let q=pass; "pos"}el{"neg"}));
+  {arena
+    let tmp=twice(3)
+  }
+  let r=-(lambda+pass)*~pass;
+  let z=(1<2)==(3<4);
+  let m=(6&3)==2;
+  let none=@();
+  sc{
+    spawn twice(1)
+  };
+  <total+b.in+r+(w as i64)
+};
+f=main():i64{rt run(1;2)};

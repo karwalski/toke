@@ -1,0 +1,23 @@
+m=feat;
+i=io:std.io;
+t=$shape{$circle:f64;$square:f64};
+f=area(s:$shape):f64{
+  <mt s {$circle:r 3.14*r*r; $square:w w*w}
+};
+f=pick(a:i64;b:i64):i64{
+  let x=if(a>b){let d=a-b; d*2}el if(a==b){0}el{b-a};
+  let y=mut.0;
+  y=if(a>0){1}el{2};
+  let add=fn(p:i64;q:i64):i64{<p+q};
+  let big=fn(p:i64):i64{let t=p*2; <t+1};
+  let m=@(1:2; 3:4);
+  let xs=@(add(1;2); big(3));
+  lp(y<10){y=y+1; if(y==5){br}};
+  <add(x;mt $shape{$circle:1.0} {$circle:r 1; $square:w 0})
+};
+f=main():i64{
+  let n=pick(1;2);
+  let s=!(n>1) && n!=3;
+  io.println("n=\(n) ok");
+  <0
+};
