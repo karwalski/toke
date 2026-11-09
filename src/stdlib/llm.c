@@ -60,6 +60,7 @@
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
 #include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
+#include "tk_tls_groups.h" /* 122.15: tk_tls_set_groups() */
 #define LLM_HTTPS_UNSUPPORTED(url) 0
 #else
 #define LLM_HTTPS_UNSUPPORTED(url) ((url) && strncmp((url), "https://", 8) == 0)
@@ -410,6 +411,12 @@ static char *http_exchange(const char *host, const char *port, const char *path,
             SSL_CTX_set_default_verify_paths(c.ctx) != 1) {
             conn_close(&c);
             NETFAIL("TLS: could not create a context with the default trust store", 1);
+            return NULL;
+        }
+        /* 122.15: the explicit hybrid-first group list, as std.tls. */
+        if (!tk_tls_set_groups(c.ctx)) {
+            conn_close(&c);
+            NETFAIL("TLS: no usable key-exchange group", 1);
             return NULL;
         }
         SSL_CTX_set_verify(c.ctx, SSL_VERIFY_PEER, NULL);

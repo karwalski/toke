@@ -37,6 +37,7 @@
 #include <openssl/err.h>
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
+#include "tk_tls_groups.h"    /* 122.15: tk_tls_set_groups() */
 #endif
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
@@ -3443,6 +3444,11 @@ static HttpClientResp client_do_request(HttpClient *c,
     if (is_https) {
         ssl_ctx = SSL_CTX_new(TLS_client_method());
         if (!ssl_ctx) { close(fd); return err_resp_client("SSL_CTX_new failed", 0); }
+        /* 122.15: the explicit hybrid-first group list, as std.tls. */
+        if (!tk_tls_set_groups(ssl_ctx)) {
+            SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: no usable key-exchange group", 0);
+        }
         /* 138.8: VERIFY THE SERVER.  This context used to be created and
          * used with OpenSSL's default of SSL_VERIFY_NONE: any certificate
          * was accepted for any host, so every https:// request -- API keys
@@ -4556,6 +4562,13 @@ TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
     /* Minimum TLS 1.2 — disable SSLv3, TLS 1.0, TLS 1.1 */
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
 
+    /* 122.15: the explicit hybrid-first group list, as std.tls. */
+    if (!tk_tls_set_groups(ctx)) {
+        fprintf(stderr, "http_tls_ctx_new: no usable key-exchange group\n");
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
     /* Strong cipher suites: ECDHE + AEAD only, no CBC, no RC4 */
     SSL_CTX_set_cipher_list(ctx,
         "ECDHE-ECDSA-AES256-GCM-SHA384:"
@@ -4664,6 +4677,7 @@ int http_tls_add_sni(TkTlsCtx *ctx, const char *hostname,
 
     SSL_CTX *sctx = SSL_CTX_new(TLS_server_method());
     if (!sctx) return -1;
+    if (!tk_tls_set_groups(sctx)) { SSL_CTX_free(sctx); return -1; }  /* 122.15 */
 
     if (SSL_CTX_use_certificate_file(sctx, cert_path, SSL_FILETYPE_PEM) != 1 ||
         SSL_CTX_use_PrivateKey_file(sctx, key_path, SSL_FILETYPE_PEM) != 1 ||
@@ -4717,6 +4731,10 @@ TkTlsCtx *http_tls_ctx_new_config(const TkTlsConfig *config)
         /* TLS 1.3 ciphersuites */
         SSL_CTX_set_ciphersuites(ctx, config->ciphers);
     }
+
+    /* 122.15: the explicit hybrid-first group list, as std.tls.  Set
+     * before the caller's curves so an explicit tls.curves still wins. */
+    if (!tk_tls_set_groups(ctx)) { SSL_CTX_free(ctx); return NULL; }
 
     /* Elliptic curves (61.2.3) */
     if (config->curves) {
