@@ -90,6 +90,29 @@ EXCLUDE_DIRS = {
     "checkpoints", "training-data",
 }
 
+# Story 132.129 / AGENTS.md §5: a `hidden_tests/` directory is write-only for
+# agents -- move/preserve only, NEVER read. `make check-claims-all` passes
+# ../toke-eval, whose benchmark/hidden_tests/ the walk used to open file by
+# file. This is not a pruning preference like EXCLUDE_DIRS: no override (the
+# deployed-tree exception included) may reach it, and a path argument inside
+# one is refused rather than scanned.
+NEVER_READ_DIRS = frozenset({"hidden_tests"})
+
+
+def never_read(path):
+    """True when `path` is, or lies under, a directory nobody may read."""
+    parts = os.path.normpath(os.path.abspath(path)).split(os.sep)
+    return any(part in NEVER_READ_DIRS for part in parts)
+
+
+def walk_readable(top):
+    """os.walk that never descends into, or lists, a NEVER_READ_DIRS directory."""
+    if never_read(top):
+        return
+    for dirpath, dirs, files in os.walk(top):
+        dirs[:] = [d for d in dirs if d not in NEVER_READ_DIRS]
+        yield dirpath, dirs, files
+
 # Prose and metadata surfaces. `.json` catches package metadata and tool
 # descriptions (`toke-mcp/package.json`, plugin manifests); the code extensions catch
 # the places 132.15 actually found withdrawn claims still shipping — MCP tool
@@ -1085,10 +1108,12 @@ def md_files(targets):
         # resolved against the cwd, never against ROOT: resolving `test` against
         # this repo scanned toke's test/ when the caller stood in toke-mcp.
         p = os.path.abspath(t)
+        if never_read(p):                                    # 132.129
+            continue
         if os.path.isfile(p):
             out.append(p)
         else:
-            for dirpath, dirs, files in os.walk(p):
+            for dirpath, dirs, files in walk_readable(p):
                 dirs[:] = [d for d in dirs
                            if (d not in EXCLUDE_DIRS
                                or (is_deployed_tree(os.path.join(dirpath, d))
@@ -1519,9 +1544,33 @@ def selftest_structure():
     return bad
 
 
+def selftest_never_read():
+    """132.129 -- a hidden_tests/ tree is never listed, walked into or opened."""
+    import tempfile
+    bad = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        sealed = os.path.join(tmp, "repo", "benchmark", "hidden_tests")
+        os.makedirs(sealed)
+        for f in (os.path.join(sealed, "task.md"),
+                  os.path.join(tmp, "repo", "README.md")):
+            with open(f, "w", encoding="utf-8") as fh:
+                fh.write("toke uses 52% fewer tokens.\n")
+        listed = md_files([os.path.join(tmp, "repo")]) + md_files([sealed]) + \
+            md_files([os.path.join(sealed, "task.md")])
+        if any(never_read(p) for p in listed):
+            bad += 1
+            print("SELFTEST FAIL [hidden_tests] the walk listed a file under "
+                  "hidden_tests/ (AGENTS.md section 5)")
+        if os.path.join(tmp, "repo", "README.md") not in listed:
+            bad += 1
+            print("SELFTEST FAIL [hidden_tests] the exclusion also hid the "
+                  "repository's own README")
+    return bad
+
+
 def selftest():
     import tempfile
-    bad = selftest_structure()
+    bad = selftest_structure() + selftest_never_read()
     for case in SELFTEST:
         accept, name, text = case[:3]
         suffix = case[3] if len(case) > 3 else ".md"

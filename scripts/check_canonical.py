@@ -592,7 +592,8 @@ def check_stale(path, rel):
 # writes it), shared with check_metrics_claims -- never by the checkout's name.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_metrics_claims import (deployed_source, is_deployed_tree,  # noqa: E402
-                                  is_generated_mirror, repo_key,
+                                  is_generated_mirror, never_read, repo_key,
+                                  walk_readable,
                                   scan_deployed_tree, report_stale_trees, STALE_TREES)
 
 
@@ -604,10 +605,12 @@ def scan_files(targets):
         # in check_metrics_claims.py: `README.md` typed in toke-model scanned
         # toke's README and passed toke-model's own over.
         p = os.path.abspath(t)
+        if never_read(p):              # 132.129: hidden_tests/ is never read
+            continue
         if os.path.isfile(p):
             out.append(p)
         elif os.path.isdir(p):
-            for dirpath, dirs, files in os.walk(p):
+            for dirpath, dirs, files in walk_readable(p):
                 # 132.46: the website's deployed build/ is scanned; see
                 # check_metrics_claims.is_deployed_tree for why.
                 dirs[:] = [d for d in dirs
