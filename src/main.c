@@ -58,6 +58,8 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 
 #include "parser.h"  /* Token, Node, parse(); Arena/diag_emit forwards */
 #include "names.h"   /* resolve_imports(), resolve_names(), SymbolTable, NameEnv */
+#include "pkg.h"     /* pkg_set_allow_file_sources() (76.1.3d) */
+#include "pkg_cli.h" /* tkc pkg (76.1.3b) */
 #include "types.h"   /* type_check(), TypeEnv */
 #include "regex_check.h" /* 137.9: E4075, literal regex patterns */
 #include "ir.h"      /* emit_interface() */
@@ -351,6 +353,10 @@ static const char *const HELP_SECTIONS[] = {
     "  --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn\n"
     "  --allow-all         Grant every capability\n"
     "  --cap-enforce       Bake deny-by-default enforcement into the binary\n"
+    "\n"
+    "Packages (ADR-0004, docs/reference/package-manifest.md):\n"
+    "  toke pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
+    "  --allow-file-source Accept file:/// package sources (local override)\n"
     "\n"
     "Configuration:\n"
     "  --config=PATH       Load config from PATH (default: ./tkc.toml)\n"
@@ -1771,6 +1777,9 @@ done:
 
 int main(int argc, char **argv)
 {
+    /* 76.1.3b: `tkc pkg <command>` -- the package manager. */
+    if (argc >= 2 && !strcmp(argv[1], "pkg")) return pkg_cli_main(argc - 2, argv + 2);
+
     const char *tgt = NULL, *out = NULL;
     #define MAX_SOURCE_FILES 256
     const char *source_files[MAX_SOURCE_FILES];
@@ -1879,6 +1888,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--diag-text"))  dtext = 1;
         else if (!strcmp(argv[i], "--diag-sarif")) dsarif = 1;
         else if (!strcmp(argv[i], "--show-limits")) show_limits = 1;
+        else if (!strcmp(argv[i], "--allow-file-source")) pkg_set_allow_file_sources(true);  /* 76.1.3d */
         else if (!strncmp(argv[i], "--max-funcs=", 12))   limits.max_funcs = atoi(argv[i] + 12);
         else if (!strncmp(argv[i], "--max-locals=", 13))  limits.max_locals = atoi(argv[i] + 13);
         else if (!strncmp(argv[i], "--max-params=", 13))  limits.max_params = atoi(argv[i] + 13);

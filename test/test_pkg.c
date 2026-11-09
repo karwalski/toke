@@ -604,6 +604,27 @@ test_sha256_known_answers(void)
     ASSERT(pkg_hash_valid(pin), "a content hash formed from tk_sha256 is a valid pin");
 }
 
+/* 76.1.3d: file:// only under the explicit override, and only absolute. */
+static void
+test_file_source_override(void)
+{
+    ASSERT(!pkg_allow_file_sources(), "override is off by default");
+    ASSERT(!pkg_source_valid("file:///srv/repo.git"), "file:// refused by default");
+    pkg_set_allow_file_sources(true);
+    ASSERT(pkg_source_valid("file:///srv/repo.git"), "file:/// accepted under the override");
+    ASSERT(!pkg_source_valid("file://host/repo.git"), "file://host refused (not absolute)");
+    ASSERT(!pkg_source_valid("file:///srv/../etc"), "a .. segment refused");
+    ASSERT(!pkg_source_valid("file:///srv/.."), "a trailing .. refused");
+    ASSERT(!pkg_source_valid("file:///-x"), "a path beginning with '-' refused");
+    ASSERT(!pkg_source_valid("file:///"), "an empty path refused");
+    ASSERT(!pkg_source_valid("file:///a b"), "whitespace still refused");
+    ASSERT(!pkg_source_valid("ext::sh -c x"), "ext:: still refused");
+    ASSERT(!pkg_source_valid("http://example.com/x.git"), "http still refused");
+    ASSERT(!pkg_source_valid("/srv/repo.git"), "a bare local path still refused");
+    pkg_set_allow_file_sources(false);
+    ASSERT(!pkg_source_valid("file:///srv/repo.git"), "refused again when the override is off");
+}
+
 int
 main(void)
 {
@@ -639,6 +660,7 @@ main(void)
     test_commit_hash_grammar();
     test_lock_pins();
     test_lock_read_rejects();
+    test_file_source_override();
 
     /* Shared SHA-256 (122.13 item 9) */
     test_sha256_known_answers();

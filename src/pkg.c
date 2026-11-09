@@ -642,6 +642,23 @@ path_ok(const char *s)
     return s[0] != '\0' && s[0] != '-' && strstr(s, "::") == NULL;
 }
 
+/* 76.1.3d: the explicit local-path override of ADR-0004 section 2.  Off by
+ * default; `tkc pkg ... --allow-file-source` (and the same flag on a build)
+ * turns it on for that one process. */
+static bool s_allow_file_sources = false;
+
+void
+pkg_set_allow_file_sources(bool on)
+{
+    s_allow_file_sources = on;
+}
+
+bool
+pkg_allow_file_sources(void)
+{
+    return s_allow_file_sources;
+}
+
 bool
 pkg_source_valid(const char *url)
 {
@@ -684,6 +701,16 @@ pkg_source_valid(const char *url)
         if (colon && !port_ok(colon + 1, alen - hlen - 1)) return false;
         return path_ok(slash + 1);
     }
+    /* 76.1.3d: file:///absolute/path, only under the explicit override.  The
+     * character rules above still apply; the path must be absolute and may
+     * not contain a ".." segment or begin with '-'. */
+    if (s_allow_file_sources && strncmp(url, "file:///", 8) == 0) {
+        const char *p = url + 7;                         /* the leading '/' */
+        if (p[1] == '\0' || p[1] == '-' || strstr(p, "/../") ||
+            (strlen(p) >= 3 && strcmp(p + strlen(p) - 3, "/..") == 0))
+            return false;
+        return true;
+    }
     /* Any other scheme (http, git, file, git+ssh, ...) is refused. */
     if (strstr(url, "://")) return false;
 
@@ -719,7 +746,8 @@ pkg_lock_check_pinned(const PkgLock *lock, char *errbuf, int errbufsz)
         const PkgResolved *e = &lock->entries[i];
         if (!pkg_source_valid(e->source)) {
             errf(errbuf, errbufsz,
-                 "pkg.lock: '%s' has no https or ssh source", e->name);
+                 "pkg.lock: '%s' has no %s source", e->name,
+                 s_allow_file_sources ? "https, ssh or file" : "https or ssh");
             return -1;
         }
         if (!pkg_commit_valid(e->commit)) {
