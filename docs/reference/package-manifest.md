@@ -51,7 +51,7 @@ version = ">=0.3.0"
 git = "https://github.com/example/toke-webframework.git"
 ```
 
-The `git` field is optional. When omitted, the compiler resolves the package name via the central index (when available) or emits E9011. When present it must be an authenticated transport: `https://host/path`, `ssh://[user@]host/path` or `[user@]host:path`. `http://`, `git://`, `file://`, local paths, git's `ext::`-style helpers, anything beginning with `-`, and a user or password inside an https URL are refused (ADR-0004, "Supply-chain security").
+The `git` field is optional. When omitted, the compiler resolves the package name via the central index (when available) or emits E9011. When present it must be an authenticated transport: `https://host/path`, `ssh://[user@]host/path` or `[user@]host:path`. `http://`, `git://`, `file://`, local paths, git's `ext::`-style helpers, anything beginning with `-`, and a user or password inside an https URL are refused (ADR-0004, "Supply-chain security"). The one exception is ADR-0004's explicit local-path override: with `--allow-file-source` on the command line (of `tkc pkg` and of a build alike), a `file:///<absolute path>` source with no `..` segment is accepted for that run -- for local repositories and tests; nothing else is relaxed.
 
 **No other tables or keys.** The schema is closed: a table other than `[package]`, `[dependencies]` and `[dependencies.<name>]`, a key other than the ones listed above, or a line that is not `key = "value"` is an error. In particular a package cannot declare build scripts or install hooks — there is nowhere to put one (story 121.39).
 
@@ -127,7 +127,28 @@ jsonparser = "sha256:<64 lower-case hex digits>"
 
 `pkg.lock` SHOULD be committed to version control. It is what makes a build reproducible and what stops a moved tag or a tampered download from being built.
 
-> **Status.** The lock format, its validation, the source policy, the content-hash computation and the pin/verify checks are implemented in `src/pkg.c` and tested (`test/conform/C140_pkg_lock_pins.sh`, `test/conform/C492_pkg_integrity_by_construction.sh`). `tkc pkg fetch` itself does not exist yet: `src/pkg.c` is network-free and not linked into `tkc`. An earlier revision of this page showed a `[package.<name>]` table layout that no code ever read or wrote.
+> **Status.** The lock format, its validation, the source policy, the content-hash computation and the pin/verify checks are implemented in `src/pkg.c` (`test/conform/C140_pkg_lock_pins.sh`, `test/conform/C492_pkg_integrity_by_construction.sh`). Since stories 76.1.3b-d, `tkc pkg` writes and reads the lock and `tkc pkg fetch` fills in the pins on first fetch and verifies them on every later one (see "Commands" below). An earlier revision of this page showed a `[package.<name>]` table layout that no code ever read or wrote.
+
+---
+
+## Commands (`tkc pkg`)
+
+Run from the project root (the directory holding `pkg.toml`). Every command also takes `--allow-file-source` and `--diag-text`; every error is one structured diagnostic (see Diagnostics) and leaves `pkg.toml` and `pkg.lock` unchanged.
+
+| Command | Does |
+|---|---|
+| `tkc pkg init [<name>]` | Writes `pkg.toml` (`[package]` with the name -- default: the directory's -- and `0.1.0`, and an empty `[dependencies]`). An existing `pkg.toml` is left alone (W9011). |
+| `tkc pkg add <name> <constraint> [--git <url>]` | Adds the dependency, or updates its constraint in place; with `--git`, in the extended `[dependencies.<name>]` form. Other lines and comments are kept. Then resolves and writes `pkg.lock`; nothing is written if resolution fails. |
+| `tkc pkg remove <name>` | Removes the dependency (either form) and re-resolves; packages no longer required leave the lock. |
+| `tkc pkg resolve` | Minimal version selection over `pkg.toml` and the manifests of packages already in the cache; writes `pkg.lock`. Fetches nothing, so a lock it writes for a new package has a version (and the manifest's source) but no commit or hash. |
+| `tkc pkg fetch` | Resolves, fetching each selected package so that its own requirements join the graph, until nothing new is required; then writes a fully pinned `pkg.lock`. |
+| `tkc pkg list` | Prints the locked packages, direct and transitive (`(via <package>)` when its cached manifest says). |
+
+**Fetch.** A package is fetched by running git -- as a process, from an argument vector, never through a shell, with the repository-locating `GIT_*` variables removed and only https and ssh (plus file under the override) allowed at git's own layer -- at the tag `v<version>`; only the working tree is kept, at `$HOME/.toke/pkg/<name>/<version>/`, with the commit beside it in `<version>.commit`. The first fetch of a package records its source, commit and content hash in the lock (trust on first use, ADR-0004). Every later fetch -- and every build -- re-hashes the tree, and a different commit (a moved tag) or hash is an error (E9030); the lock is never updated to match. A package's own `pkg.toml` must declare the name and version it was fetched as. A version or source change in `pkg.toml` drops that package's pins, and the next fetch pins it afresh. There is no `tkc pkg update` yet.
+
+**Imports.** `i=x:pkg.<name>;` imports a package's entry module `<name>.tk`, and `i=x:pkg.<name>.<module>;` its module `<module>.tk` (root-level `.tk` files of the package). A package module declares its import path like any toke module: `m=pkg.<name>;` and `m=pkg.<name>.<module>;` -- so its symbols cannot collide with another package's. When a source file has a `pkg.*` import, the build reads `pkg.toml` and `pkg.lock` in the current directory, refuses a lock that is not fully pinned, re-verifies every locked package in the cache, regenerates each package's interfaces from its source (a `.tki` in the fetched tree is never used), and links the package modules into the program. Any failure is reported at the `pkg.*` import. A transitive package may also be imported directly.
+
+**Not decided, not implemented** (product decisions, ADR-0004): the central package index and its URL, authentication, publishing, signature verification, `tkc pkg update`, and the sandboxed install-time compile.
 
 ---
 
@@ -147,17 +168,25 @@ jsonparser = "sha256:<64 lower-case hex digits>"
 
 | Code  | Condition |
 |-------|-----------|
-| E9025 | No version of a dependency satisfies all constraints in the transitive graph. |
-| E9011 | Package name not found in the central index and no `git` URL specified. |
-| E9012 | Malformed `pkg.toml`: missing required field, invalid TOML, or unsupported constraint syntax. |
+| E9011 | A dependency has no `git` source and there is no index; a `pkg.*` import names a package that is not in `pkg.lock`, or the project has no `pkg.toml`. |
+| E9012 | Malformed `pkg.toml`: missing required field, invalid TOML, unsupported constraint syntax, refused source. |
 | E9013 | Git clone/fetch failed for a dependency repository. |
 | E9014 | No git tag matches the resolved version for a dependency. |
-| W9010 | `pkg.lock` is out of date relative to `pkg.toml`. |
+| E9025 | No version of a dependency satisfies all constraints in the transitive graph. |
+| E9028 | `pkg.lock` is missing (where needed), unreadable or malformed. |
+| E9029 | A locked package is not pinned (source, commit, hash) or not in the package cache. |
+| E9030 | A fetched or cached package does not match its lock entry, cannot be hashed, or declares another name or version. |
+| E9031 | `tkc pkg`: invalid command, argument or flag. |
+| E9032 | A package file could not be read or written (`pkg.toml` absent, cache not writable, `HOME` unset). |
+| E9033 | Circular package dependency. |
+| E9034 | Two manifests give one package different sources. |
+| E9035 | A package's modules could not be built (no entry module, wrong module declaration, compile errors). |
+| W9010 | `pkg.lock` is out of date relative to `pkg.toml` (a build continues against the lock). |
+| W9011 | `tkc pkg init`: `pkg.toml` already exists and was left unchanged. |
 
-These codes are reserved in the compiler's code registry (`src/pkg.h`,
-`docs/reference/errors.md`) but not yet emitted: the resolver is not wired
-into a `tkc` command. Until story 121.50 the unsatisfiable-constraints
-condition was documented here as E9010, a code the compiler already uses for
-"compiler limit exceeded"; codes are stable, so it moved to E9025, the next
-free code at the end of the E9xxx series (story 121.50; E9024 is the
-compiler's, 121.28).
+Full entries: `docs/reference/errors.md`. Until story 121.50 the
+unsatisfiable-constraints condition was documented here as E9010, a code the
+compiler already uses for "compiler limit exceeded"; codes are stable, so it
+moved to E9025, the next free code at the end of the E9xxx series at the time
+(story 121.50; E9024 is the compiler's, 121.28). E9028--E9035 and W9011 were
+added by stories 76.1.3b-d.

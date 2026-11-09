@@ -175,9 +175,10 @@ transitive:
 
 ## Supply-chain security (story 122.10, 2026-09-26)
 
-**Status of this section:** design accepted before any network code exists.
-`src/pkg.c` is network-free today and is not linked into `tkc` (see
-`src/pkg.h`). The lock-file and hash-verification parts that need no network
+**Status of this section:** design accepted before any network code existed
+(`src/pkg.c` stays network-free; since 76.1.3b-d it is linked into `tkc`, and
+git, run by `src/pkg_git.c`, does every transfer -- see "Implementation
+(76.1.3b-d)" below). The lock-file and hash-verification parts that need no network
 are implemented (below); everything that fetches is specified here so the fetch
 story is built against it, not retrofitted.
 
@@ -336,6 +337,48 @@ install sandbox. The fetch story is to call `pkg_lock_check_pinned` before it
 touches the network, take URLs only from the lock's `[source]`, and hand every
 checked-out tree to `pkg_verify_fetched` -- on download and on every later use
 of the cache.
+
+### Implementation (76.1.3b-d, 2026-11-10)
+
+| Piece | Where | Tested by |
+|---|---|---|
+| `tkc pkg init/add/remove/resolve/fetch/list`; every error a structured diagnostic (E9011-E9014, E9025, E9028-E9035, W9010, W9011), none with a `fix` | `src/pkg_cli.c` | `test/conform/C1160_pkg_cli_manifest_commands.sh` |
+| git fetch at tag `v<version>`: argv-only child process, `GIT_*` repository variables removed, transport restricted at git's layer (`protocol.allow=never` + https/ssh), no templates or hooks, working tree only | `src/pkg_git.c` | `test/conform/C1161_pkg_git_fetch_local.sh` (local `file://` bare repositories only) |
+| trust on first use, then every fetch and every build re-verifies commit and tree hash with `pkg_verify_fetched`; a moved tag, a modified cache, a package declaring another name/version, a symlink -- refused; the lock is never rewritten on mismatch | `pkg_cli.c` `obtain`, `pkg_build_prepare` | C1161, C1162 |
+| `pkg.*` imports resolved through the lock: interfaces regenerated from source into a private directory, package modules linked in, failures reported at the import | `pkg_build_*` + `names_set_pkg_hook` (`src/names.c`), `src/main.c` | `test/conform/C1162_pkg_imports_through_lock.sh` |
+
+Decisions taken here, within this ADR, where it was silent or could not be
+followed literally:
+
+- **Local-path override** (section 2): the flag `--allow-file-source`, on
+  `tkc pkg` and on a build, accepts `file:///<absolute path>` (no `..`) for
+  that run. It is what the tests use; nothing else is relaxed.
+- **Cycle code.** "emits E9010" above is the compiler's "compiler limit
+  exceeded"; the cycle takes E9033.
+- **Build outputs are not written into the cache.** `build/` inside
+  `~/.toke/pkg/<name>/<version>/` would change the tree the hash covers, so
+  interfaces are regenerated per build into a temporary directory and the
+  package modules are compiled with the program.
+- **Module names.** A package module declares its import path
+  (`m=pkg.<name>;`, `m=pkg.<name>.<file>;`), as every toke module's declared
+  name is its import path; that also keeps two packages' symbols apart. The
+  entry module is `<name>.tk` (`.tk`, the extension in use), modules are the
+  package's root-level `.tk` files.
+- **Resolution graph.** Requirements accumulate from the manifest of every
+  package version selected along the way (fetching it), until a pass adds
+  none -- MVS over the versions reached. `tkc pkg resolve` (no fetch) uses
+  only manifests already in the cache and says so.
+- **Pins carry over** while a package's version and source are unchanged; a
+  change in `pkg.toml` re-pins on the next fetch (trust on first use again).
+  A lock entry pinned only in part is refused (E9029), never re-pinned.
+- The commit a cached tree came from is recorded beside it
+  (`<version>.commit`) and handed to `pkg_verify_fetched` with the tree.
+
+Still open, and product decisions rather than engineering ones: the central
+index (its URL, its format, typosquatting rules), authentication beyond what
+git and ssh already do, publishing, signature verification, `tkc pkg update`,
+and the install sandbox (no package code runs at fetch; package modules are
+compiled by `tkc` as ordinary source).
 
 ## Consequences
 
