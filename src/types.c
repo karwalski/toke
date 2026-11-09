@@ -2428,6 +2428,18 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
             char okb[128];
             memcpy(okb, f->ret, (size_t)(bang - f->ret));
             okb[bang - f->ret] = '\0';
+            /* 138.21: an OPAQUE std record (`"fields": []` -- process's
+             * `handle`, vechandle, strbuf, ...) is adopted.  It carries no
+             * field layout for codegen to read, and at the ABI it is the
+             * i64 handle (opaque_handle_type: integer-compatible), so the
+             * only thing typing it adds is the judgment: `$ok:h h; $err:e
+             * "oops"` was clean and `process.wait(h)` read the string's
+             * bytes as a ProcessHandle.  A record WITH fields keeps the
+             * 127.66 rule. */
+            {
+                Type *ost = imported_struct_type(cx, okb, 0);
+                if (ost && opaque_handle_type(ost)) return ost;
+            }
             return repr_payload_type(cx, okb);
         }
         Type *st = imported_struct_type(cx, f->okret, 0);
@@ -4077,23 +4089,44 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
                 || strcmp(sym, "tk_str_padright_w") == 0)) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID) continue;
-        /* Judged by REPRESENTATION class, not width: a hand-written record
-         * spells `u64`/`u8` where the glue takes an i64 slot and programs
-         * pass an i64 (str.slice, mem.store8, s.addbyte -- 150+ call sites in
-         * the tree sweep), and an array's element width is not the glue's
-         * business either.  What is certain is a value of another KIND --
-         * a number where a str is read, a str or a record where a number
-         * is, an array where a scalar is. */
-        int ac = tki_arg_class(at), pc = tki_arg_class(pt);
-        if (!ac || !pc || ac == pc) continue;
-        /* An integer where a RECORD is declared is a handle: std callbacks
-         * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
-         * then `tls.read(conn)` -- conform C022), and every record crosses
-         * the ABI as an i64 slot.  The reverse (a record where a number is
-         * read) stays judged. */
-        if (pc == 6 && ac == 2) continue;
-        if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
-            && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
+        /* 138.21: an OPAQUE std record (`"fields": []`: process's `handle`,
+         * vechandle, strbuf, ...) is the C handle itself.  tki_arg_class
+         * leaves it unjudged (class 0) because an integer is a legitimate
+         * handle there (136.36: the ABI value IS the i64), and that let
+         * `process.wait("abc")` through: the glue read the string's bytes
+         * as a ProcessHandle.  What is certain is a value of another KIND:
+         * a str, float, array or map where an opaque handle is declared,
+         * or an opaque handle where one of those is; an integer either way,
+         * or the same record, is not judged.  A record of another name is
+         * judged as for any record. */
+        if (opaque_handle_type(pt) || opaque_handle_type(at)) {
+            const Type *h = opaque_handle_type(pt) ? pt : at;
+            const Type *o = h == pt ? at : pt;
+            int oc = tki_arg_class(o);
+            if (scalar_int_type(o)) continue;
+            if (o->kind == TY_STRUCT && o->name && h->name
+                && strcmp(o->name, h->name) == 0) continue;
+            if (o->kind != TY_STRUCT && oc != 1 && oc != 3 && oc != 4 && oc != 5)
+                continue;
+        } else {
+            /* Judged by REPRESENTATION class, not width: a hand-written record
+             * spells `u64`/`u8` where the glue takes an i64 slot and programs
+             * pass an i64 (str.slice, mem.store8, s.addbyte -- 150+ call sites in
+             * the tree sweep), and an array's element width is not the glue's
+             * business either.  What is certain is a value of another KIND --
+             * a number where a str is read, a str or a record where a number
+             * is, an array where a scalar is. */
+            int ac = tki_arg_class(at), pc = tki_arg_class(pt);
+            if (!ac || !pc || ac == pc) continue;
+            /* An integer where a RECORD is declared is a handle: std callbacks
+             * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
+             * then `tls.read(conn)` -- conform C022), and every record crosses
+             * the ABI as an i64 slot.  The reverse (a record where a number is
+             * read) stays judged. */
+            if (pc == 6 && ac == 2) continue;
+            if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
+                && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
+        }
         if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
         char msg[512], en[96], gn[96];
         snprintf(en, sizeof en, "%s", type_name(pt));
