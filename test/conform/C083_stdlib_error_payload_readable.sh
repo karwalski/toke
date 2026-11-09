@@ -59,7 +59,7 @@ i=str:std.str;
 t=$cerr{msg:$str};
 t=$serr{$bad:$str;$worse:i64};
 t=$s4{$a:i64;$b:i64;$c:$str;$d:i64};
-f=jsum(o:i64):bool!$s4{
+f=jsum(o:$jsonval):bool!$s4{
   let v=json.bool(o;"nope")!$s4;
   <v
 };
