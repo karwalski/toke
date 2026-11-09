@@ -395,7 +395,7 @@ This is the weak half of the project and always has been.
 |---|---|---|---|
 | Gate 1 (2026-04-03) | 92.3% (923/1,000) | **58.8%** (588/1,000) | fine-tuned 7B baseline; ~2.5% illegal-char |
 | Gate 2 (2026-05-22) | **100%** | **55.6%** (272/489) | curated 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA, **v0.3 syntax** |
-| Full-local re-audit (honest floor) | **37.5%** (655/1,748) | **~2.2%** (38 PASS) | all 1,748 programs, v0.3.9 |
+| Full-local re-audit (honest floor) | **37.5%** (655/1,748) | **~2.2%** (38 PASS) | all 1,748 programs in [toke-test-programs](https://github.com/karwalski/toke-test-programs), v0.3.9 |
 | `toke_generate` sample (71.5.4) | 84% (21/25) | 78% (18/23) | 25-prompt benchmark |
 | Corpus after v0.4 mechanical migration | 84.3% (1,781/2,112) | n/a | `=`→`==` only, not yet idiomatic |
 
@@ -600,6 +600,9 @@ find an error in it.
   from pinned commits and wheel SHAs with bootstrap CIs.
 - **The tokenizer baseline:** sample ids and SHAs in
   `toke-tokenizer/data/baseline_sample_ids_v04.txt`.
+- **The real-world programs:** [`github.com/karwalski/toke-test-programs`](https://github.com/karwalski/toke-test-programs)
+  — application requirements by category with their generated toke solutions; the
+  full-local re-audit in §5 (1,748 programs, v0.3.9) is `infra/local-audit.py` there.
 - **The compiler and grammar:** `github.com/karwalski/toke`; `docs/spec/grammar.ebnf` and
   `docs/spec/toke.gbnf` are the artefacts to wire a constrained decoder to.
 
