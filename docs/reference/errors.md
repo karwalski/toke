@@ -1443,6 +1443,14 @@ The compiler could not write the `.tkir` artifact.
 
 The compiler could not read a `.tkir` artifact.
 
+Emitted by `tkc --from-tkir` (story 76.1.6c) for every `.tkir` it cannot
+build: a missing or unreadable file, a malformed header or section, a file
+written before format 1.2 (it has no AST section; re-emit it with
+`--emit-tkir`), and any node, span, reference or count that fails
+validation. The message names the problem. There is no `fix` field: the
+repair is to re-emit the file from its source. See
+`docs/architecture/binary-ir-design.md` §3.8.
+
 ### E9022
 
 **Stdlib directory not found**

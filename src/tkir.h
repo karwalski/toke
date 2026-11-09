@@ -26,7 +26,11 @@
  * big-endian -- so every file the encoder wrote failed "invalid magic". */
 #define TKIR_MAGIC          0x52494B54u  /* "TKIR" read as a little-endian u32 */
 #define TKIR_VERSION_MAJOR  1
-#define TKIR_VERSION_MINOR  1   /* 127.219: kinds 0x0A-0x12, resolved labels */
+/* 1.1 (127.219): kinds 0x0A-0x12, resolved labels.
+ * 1.2 (76.1.6c): the TEXT (0x08) and AST (0x09) sections -- the parsed
+ * program, which is what --from-tkir lowers.  Additive: a 1.1 reader skips
+ * them as unknown sections. */
+#define TKIR_VERSION_MINOR  2
 
 /* ── Section type IDs (matching binary-ir-design.md) ─────────────────── */
 
@@ -36,6 +40,12 @@
 #define TKIR_SEC_DATA       0x04
 #define TKIR_SEC_IMPORT     0x05
 #define TKIR_SEC_EXPORT     0x06
+/* 0x07 is reserved for the debug section (binary-ir-design.md §3.7). */
+/* 76.1.6c (format 1.2).  TEXT: the token text the AST's spans point into,
+ * at its original byte offsets (comments and inter-token blanks dropped).
+ * AST: the parsed program, pre-order.  Layouts: binary-ir-design.md §3.8. */
+#define TKIR_SEC_TEXT       0x08
+#define TKIR_SEC_AST        0x09
 
 /* ── Type entry kinds ────────────────────────────────────────────────── */
 
@@ -161,7 +171,25 @@ void tkir_buf_str(TkirBuf *b, const char *s, size_t len);
  */
 int emit_tkir(const Node *ast, const char *src,
               const TypeEnv *types, const NameEnv *names,
-              const char *target, const char *out_path);
+              const char *target, const char *out_path,
+              const TkirBuf *text_sec, const TkirBuf *ast_sec);
+
+/*
+ * emit_tkir's last two arguments (76.1.6c): the bodies of the TEXT and AST
+ * sections (src/tkir_ast.c builds them), written after the six base
+ * sections.  NULL omits a section.  They are passed in, rather than built
+ * here, so that tkir.c keeps no dependency on the arena or the parser and
+ * the reader stays linkable on its own (test/tkir/test_tkir_reader.c).
+ */
+
+/*
+ * tkir_find_section -- locate a section in an encoded .tkir buffer.
+ * Walks the header and the length-prefixed section list; on success sets
+ * *off to the section body's offset and *len to its length and returns 0.
+ * Returns -1 when the buffer is malformed or the section is absent.
+ */
+int tkir_find_section(const uint8_t *buf, size_t len, uint8_t tag,
+                      size_t *off, size_t *sec_len);
 
 /* ── Reader: in-memory structures ────────────────────────────────────── */
 

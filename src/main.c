@@ -77,6 +77,7 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 #include "migrate.h"
 #include "lint.h"
 #include "tkir.h"
+#include "tkir_ast.h"
 #include "stdlib_deps.h"
 #include "diag.h"    /* 123.12c: diag_set_keep, diag_error_offsets */
 #include "version.h" /* 135.3j: TKC_VERSION, the one statement of it */
@@ -304,6 +305,8 @@ static const char *const HELP_SECTIONS[] = {
     "  --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary\n"
     "  --emit-asm          Emit assembly (.s) instead of compiling to binary\n"
     "  --emit-deps         Print stdlib C sources and linker flags needed, then exit\n"
+    "  --emit-tkir         Write the type-checked program as binary IR (.tkir)\n"
+    "  --from-tkir         Inputs are .tkir files: compile them as their source\n"
     "  -I <dir>            Add .tki interface search directory (repeatable)\n"
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O2)\n"
@@ -1072,6 +1075,7 @@ typedef struct {
     TkcLimits limits;
     Profile profile;
     int python_view;   /* 96.7 */
+    int from_tkir;   /* 76.1.6c: positional files are .tkir, not source */
 } RunOpts;
 
 /*
@@ -1291,7 +1295,8 @@ static int process_file(const char *src, const RunOpts *o)
     const char **search_paths = o->search_paths;
     const int search_path_count = o->search_path_count;
     TkcLimits limits = o->limits;
-    const Profile profile = o->profile;
+    Profile profile = o->profile;   /* 76.1.6c: a .tkir records its own */
+    const int from_tkir = o->from_tkir;
 
     diag_set_format(dsarif ? DIAG_FMT_SARIF :
                     djson  ? DIAG_FMT_JSON  :
@@ -1307,13 +1312,35 @@ static int process_file(const char *src, const RunOpts *o)
      * ftell is -1, and malloc(0) + fread(SIZE_MAX) overflowed the heap.
      * 121.85: and never block in open(2) on a FIFO with no writer. */
     size_t slen_z = 0; int why = 0;
-    char *sbuf = tk_read_source(src, &slen_z, &why);
-    if (!sbuf) return tk_source_fail(src, why);
+    char *sbuf = NULL;
+    Node *ast = NULL;
+    /* 76.1.6c: --from-tkir rebuilds the parsed program from a .tkir file
+     * (src/tkir_ast.c) instead of lexing and parsing source, then joins the
+     * pipeline at name resolution: one type checker, one LLVM backend. */
+    char tkir_orig[PATH_BUF];
+    tkir_orig[0] = '\0';
+    Arena *arena = arena_init();
+    if (!arena) { fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
+    if (from_tkir) {
+        if (tkir_load_program(src, arena, &sbuf, &slen_z, &ast, &profile,
+                              tkir_orig, sizeof tkir_orig) < 0) {
+            progress_done();
+            diag_flush_sarif();
+            arena_free(arena);
+            return ECOMPILE;
+        }
+    } else {
+        sbuf = tk_read_source(src, &slen_z, &why);
+        if (!sbuf) { arena_free(arena); return tk_source_fail(src, why); }
+    }
     long slen = (long)slen_z;
     diag_set_source(sbuf, slen_z);
 
-    Arena *arena = arena_init();
-    if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
+    /* 76.1.6c: the TEXT/AST sections --emit-tkir writes, built from the
+     * tree as parse() returned it -- before resolution annotates it. */
+    TkirBuf tkir_text, tkir_ast;
+    tkir_buf_init(&tkir_text);
+    tkir_buf_init(&tkir_ast);
 
     int rc = 0;
 
@@ -1321,7 +1348,16 @@ static int process_file(const char *src, const RunOpts *o)
     int tcap = (int)(slen + 16);
     Token *toks = arena_alloc(arena, (size_t)tcap * sizeof(Token));
     if (!toks) { rc = EINTERNAL; goto done; }
-    int tc;
+    int tc = 0;
+    if (from_tkir) {
+        /* Re-emitting (--from-tkir --emit-tkir) keeps the token text: lex
+         * the rebuilt buffer for its spans.  Nothing else needs tokens. */
+        if (emit_tkir_flag) {
+            tc = lex(sbuf, (int)slen, toks, tcap, profile);
+            if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+        }
+        goto have_ast;
+    }
     if (migrate) {
         /* 127.57: decline on source that already compiles — see
          * source_needs_migration above. Echo the input verbatim so the
@@ -1383,9 +1419,17 @@ static int process_file(const char *src, const RunOpts *o)
     progress_update(10);
 
     /* Parse */
-    Node *ast = parse(toks, tc, sbuf, arena, profile);
+    ast = parse(toks, tc, sbuf, arena, profile);
     if (!ast || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+have_ast:
     progress_update(30);
+
+    if (emit_tkir_flag &&
+        tkir_ast_encode(ast, sbuf, slen_z, toks, tc, profile,
+                        from_tkir && tkir_orig[0] ? tkir_orig : src,
+                        &tkir_text, &tkir_ast) < 0) {
+        rc = limit_or_internal(); goto done;
+    }
 
     /* --companion-diff: compare source AST against existing companion */
     if (companion_diff_comp) {
@@ -1631,15 +1675,17 @@ static int process_file(const char *src, const RunOpts *o)
     }
 
     /* Story 76.1.5: derive source filename and directory for debug metadata */
-    const char *dbg_file = src;
+    /* 76.1.6c: from a .tkir, the lines are the recorded source's. */
+    const char *dbg_src = (from_tkir && tkir_orig[0]) ? tkir_orig : src;
+    const char *dbg_file = dbg_src;
     char dbg_dir[PATH_BUF];
     dbg_dir[0] = '\0';
     if (debug_info) {
-        const char *slash = strrchr(src, '/');
+        const char *slash = strrchr(dbg_src, '/');
         if (slash) {
-            int dlen = (int)(slash - src);
+            int dlen = (int)(slash - dbg_src);
             if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
-            memcpy(dbg_dir, src, (size_t)dlen);
+            memcpy(dbg_dir, dbg_src, (size_t)dlen);
             dbg_dir[dlen] = '\0';
             dbg_file = slash + 1;
         } else {
@@ -1672,7 +1718,7 @@ static int process_file(const char *src, const RunOpts *o)
         char tkir_path[PATH_BUF];
         if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
         else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
-        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
+        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path, &tkir_text, &tkir_ast) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         symtab_free(&st);
         goto done;
@@ -1784,6 +1830,8 @@ static int process_file(const char *src, const RunOpts *o)
 done:
     progress_done();
     diag_flush_sarif();
+    tkir_buf_free(&tkir_text);
+    tkir_buf_free(&tkir_ast);
     arena_free(arena);
     free(sbuf);
     return rc;
@@ -1842,6 +1890,7 @@ int main(int argc, char **argv)
     int min_only = 0;
     int do_lint = 0, do_fix = 0, lint_dry_run = 0;
     int emit_tkir_flag = 0;
+    int from_tkir = 0;   /* 76.1.6c */
     int emit_deps = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
@@ -1904,6 +1953,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--fix"))              do_fix = 1;
         else if (!strcmp(argv[i], "--dry-run"))          lint_dry_run = 1;
         else if (!strcmp(argv[i], "--emit-tkir"))       emit_tkir_flag = 1;
+        else if (!strcmp(argv[i], "--from-tkir"))       from_tkir = 1;
         else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
         else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
         else if (!strcmp(argv[i], "--decompress"))      do_decompress = 1;
@@ -2088,6 +2138,16 @@ int main(int argc, char **argv)
     if (verify_companion_path) return verify_companion(verify_companion_path);
     if (source_file_count == 0) { print_help(); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
+    /* 76.1.6c: a .tkir is a compiled program, not source text.  The modes
+     * that read or rewrite the source file itself (and --lint --fix would
+     * rewrite the .tkir in place) do not apply to it. */
+    if (from_tkir && (fmt_only || pretty || expand || sourcemap || min_only || migrate ||
+                      do_lint || do_fix || companion || companion_diff_comp)) {
+        fputs("tkc: --from-tkir compiles a .tkir file; it cannot be combined with "
+              "--fmt, --pretty, --expand, --sourcemap, --min, --migrate, --lint, --fix "
+              "or the --companion modes, which work on source text\n", stderr);
+        return EUSAGE;
+    }
 
     /* 127.179: find the stdlib before anything consults it.  The purely
      * syntactic modes never do, so a missing stdlib does not stop them. */
@@ -2156,6 +2216,11 @@ int main(int argc, char **argv)
         return link_multi_module(all, na, obin, tgt, opt_level, debug_info,
                                  search_paths, search_path_count, limits, profile);
     }
+    if (from_tkir && source_file_count > 1 && out && !out_is_dir) {
+        fputs("tkc: --from-tkir builds one .tkir per binary; linking several files "
+              "into one binary is source-only\n", stderr);
+        return EUSAGE;
+    }
 
     /* 114.40: multiple files + a non-directory out path link into ONE binary
      * (instead of the old per-file error). Only in the default
@@ -2196,7 +2261,8 @@ int main(int argc, char **argv)
         search_paths, search_path_count,
         limits,
         profile,
-        python_view
+        python_view,
+        from_tkir
     };
     int rc = 0;
     for (int si = 0; si < source_file_count; si++) {
