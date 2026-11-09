@@ -7310,6 +7310,17 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 char etag[8]; TOKSTR(etag,cx->src,arm->children[0]);
                 if (!strcmp(etag,"err")||!strcmp(etag,"Err")) continue;
             }
+            /* 127.340: a match RETURNED from a `T!E` function may yield the
+             * function's error value from an arm -- `<mt s.toint(x) {$ok:v
+             * v+100;$err:e $e{$bad:1}}` returns that path as an error
+             * (127.245, C401).  Such an arm leaves as the error side, as a
+             * `<` arm does, so it is not compared with the ok value. */
+            if (at->kind==TY_STRUCT&&at->name&&!discarded&&cx->fn_ret
+                &&cx->fn_ret->kind==TY_ERROR_TYPE&&cx->fn_ret->name
+                &&strcmp(cx->fn_ret->name,at->name)==0&&cx->fn_node) {
+                const Node *par=parent_of(cx->fn_node,node);
+                if (par&&par->kind==NODE_RETURN_STMT) continue;
+            }
             if (!arm_type) { arm_type=at; arm_body=body; continue; }
             /* The null filler: a literal `0` or `false` arm beside an arm of
              * a pointer type (str, array, map, struct) is the idiom
