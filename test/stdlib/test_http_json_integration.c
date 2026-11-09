@@ -500,7 +500,7 @@ static void test_sse_chunk_parsing(void)
     const char *content = llm_parse_sse_chunk(chunk_json);
     CHECK(content != NULL && strcmp(content, "Hello world") == 0,
           "sse chunk extracts delta content");
-    free((void *)content);
+    /* 127.295: a sealed string, never freed */
 
     /* [DONE] sentinel. */
     const char *done = llm_parse_sse_chunk("[DONE]");
@@ -512,7 +512,7 @@ static void test_sse_chunk_parsing(void)
     const char *empty_content = llm_parse_sse_chunk(empty_chunk);
     CHECK(empty_content != NULL && strcmp(empty_content, "") == 0,
           "sse empty delta returns empty string");
-    free((void *)empty_content);
+    /* 127.295: a sealed string, never freed */
 }
 
 /* ================================================================ */

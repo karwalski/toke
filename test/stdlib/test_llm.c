@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "../../src/stdlib/llm.h"
+#include "../../src/stdlib/tk_strhdr.h"   /* 127.295: sealed results */
 
 static int failures = 0;
 
@@ -90,7 +91,7 @@ int main(void)
         const char *got = llm_parse_sse_chunk(sse);
         ASSERT_NOTNULL(got, "parse_sse_chunk: non-null for normal delta");
         ASSERT_STREQ(got, "hello", "parse_sse_chunk: extracts content 'hello'");
-        free((void *)got);
+        ASSERT(tks_hdrlen(got) == (int64_t)strlen(got), "parse_sse_chunk: result is sealed, header == strlen");
     }
 
     /* Test 9: delta with no content key (e.g. role-only chunk) */
@@ -99,7 +100,7 @@ int main(void)
         const char *got = llm_parse_sse_chunk(sse);
         ASSERT_NOTNULL(got, "parse_sse_chunk: non-null for empty delta");
         ASSERT(strlen(got) == 0, "parse_sse_chunk: empty string for delta without content");
-        free((void *)got);
+        ASSERT(tks_hdrlen(got) == 0, "parse_sse_chunk: empty result is sealed");
     }
 
     /* Test 10: [DONE] sentinel returns NULL */
@@ -206,7 +207,7 @@ int main(void)
         const char *got = llm_parse_sse_chunk(sse);
         ASSERT_NOTNULL(got, "parse_sse_chunk escaped: non-null");
         ASSERT(contains(got, "line1"), "parse_sse_chunk escaped: contains line1");
-        free((void *)got);
+        ASSERT(tks_hdrlen(got) == (int64_t)strlen(got), "parse_sse_chunk escaped: sealed, header == strlen");
     }
 
     /* ------------------------------------------------------------------ */
@@ -300,7 +301,6 @@ int main(void)
         TkLlmResp r = llm_json_mode(c, &msg, 1);
         ASSERT(r.is_err == 1, "llm_json_mode offline: is_err == 1 for invalid URL");
         if (r.err_msg)  free((void *)r.err_msg);
-        if (r.content)  free((void *)r.content);
         llm_client_free(c);
     }
 
@@ -312,7 +312,6 @@ int main(void)
         TkLlmResp r = llm_json_mode(NULL, &msg, 1);
         ASSERT(r.is_err == 1, "llm_json_mode: NULL client -> is_err == 1");
         if (r.err_msg) free((void *)r.err_msg);
-        if (r.content) free((void *)r.content);
     }
 
     /* ------------------------------------------------------------------ */
@@ -329,7 +328,6 @@ int main(void)
         TkLlmResp r = llm_vision(c, &msg, 1);
         ASSERT(r.is_err == 1, "llm_vision offline: is_err == 1 for invalid URL");
         if (r.err_msg)  free((void *)r.err_msg);
-        if (r.content)  free((void *)r.content);
         llm_client_free(c);
     }
 
@@ -341,7 +339,6 @@ int main(void)
         TkLlmResp r = llm_vision(NULL, &msg, 1);
         ASSERT(r.is_err == 1, "llm_vision: NULL client -> is_err == 1");
         if (r.err_msg) free((void *)r.err_msg);
-        if (r.content) free((void *)r.content);
     }
 
     /* ------------------------------------------------------------------ */

@@ -7,6 +7,7 @@
  * SSE keep-alive, HTTP/2 streamed responses.
  */
 
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,8 +178,8 @@ char *ws_server_accept_key(const char *client_key)
 {
     if (!client_key) return NULL;
 
-    size_t klen = strlen(client_key);
-    size_t glen = strlen(WS_GUID);
+    size_t klen = tk_strlen(client_key);
+    size_t glen = sizeof(WS_GUID) - 1;
     char *concat = malloc(klen + glen + 1);
     if (!concat) return NULL;
     memcpy(concat, client_key, klen);
@@ -460,14 +461,14 @@ typedef struct {
  */
 SseResponse *sse_response_begin(int fd)
 {
-    const char *headers =
+    static const char headers[] =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/event-stream\r\n"
         "Cache-Control: no-cache\r\n"
         "Connection: keep-alive\r\n"
         "X-Accel-Buffering: no\r\n\r\n";
 
-    size_t hlen = strlen(headers);
+    size_t hlen = sizeof(headers) - 1;
     if (http_write_all(fd, headers, hlen) != (ssize_t)hlen) return NULL;
 
     SseResponse *sse = calloc(1, sizeof(SseResponse));
@@ -521,8 +522,8 @@ int sse_response_keepalive(SseResponse *sse)
     if ((uint64_t)(now - sse->last_send) < g_sse_keepalive_interval)
         return 0; /* not yet */
 
-    const char *keepalive = ": keepalive\n\n";
-    size_t len = strlen(keepalive);
+    static const char keepalive[] = ": keepalive\n\n";
+    size_t len = sizeof(keepalive) - 1;
     sse->last_send = now;
     ssize_t w = http_write_all(sse->fd, keepalive, len);
     return (w == (ssize_t)len) ? 0 : -1;
