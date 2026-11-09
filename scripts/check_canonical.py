@@ -275,13 +275,14 @@ EXCLUDE_DIRS = {
 
 # Files owned by another story: warn, never fail, until that story lands and the
 # entry is deleted. Keep this list SHORT and always keyed to a story number.
+#
+# Story 132.128 deleted the five 132.8 entries (the toke whitepaper and RFC,
+# docs/whitepaper/, spec/rfc/ and toke-spec/rfc/): 132.8 landed 2026-09-19, and
+# the entries kept downgrading a "55-character set" and an open Gate 1 verdict
+# to warnings for seven weeks after it.
 PENDING = {
-    "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
-    "spec/rfc/draft-karwalski-toke-lang-00.md": "132.8 — whitepaper v2 + RFC alignment",
 }
 PENDING_PREFIXES = (
-    ("docs/whitepaper/", "132.8 — whitepaper v2 + RFC alignment"),
-    ("spec/rfc/", "132.8 — whitepaper v2 + RFC alignment"),
     # Story 132.42 removed ("../toke-website/", "132.9 / 132.2 — website roadmap
     # + home page"): a single prefix that took the whole public website out of
     # rule one. See the matching note in check_metrics_claims.py. Name
@@ -290,7 +291,6 @@ PENDING_PREFIXES = (
     # archive banners and the live ones were corrected, so only the RFC is still pending.
     # 132.61: keyed by repository identity (check_metrics_claims.repo_key),
     # not by a path relative to this checkout.
-    ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
     # 132.86 deleted the three toke-model entries keyed to 132.69: README.md,
     # huggingface/UPLOAD.md and the unpublished model card now state the
     # 2026-09-22 NOT PASSED decision, so Rule 2 fails them if it comes back.

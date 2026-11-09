@@ -11,7 +11,7 @@ Whitepaper v2 — spec v0.4, compiler `tkc` toke 2.8.0
 ## Abstract
 
 > toke is a compiled programming language designed for LLM code generation. It has 14
-> keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one
+> keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
 > canonical form per construct, chosen by measurement in a 46-pattern catalogue and
 > reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
 > cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one
@@ -99,11 +99,11 @@ Each property below is a fact about the language paired with the mechanism it bu
 The mechanisms survive a change of generation unit; the numbers attached to any one
 tokenizer do not.
 
-### 2.1 Small: 14 keywords, a 55-character set
+### 2.1 Small: 14 keywords, a 59-character set
 
 `docs/spec/toke-spec-v0.4.md` §A fixes the keyword set at **14** — `m i t f let if el lp br
 rt as mt sc mut` — verified against the lexer keyword table. The default syntax uses a
-**55-character** alphabet: 26 lowercase letters, 10 digits and 19 symbols. No uppercase, no
+**59-character** alphabet: 26 lowercase letters, 10 digits and 23 symbols. No uppercase, no
 underscores, no comment syntax (documentation lives in companion `.tkc` files), and
 whitespace is not syntax.
 
@@ -538,7 +538,7 @@ here, in full, because they propagated: an independent September 2026 review des
 as "LL(1), 13 keywords" with "about 8% functional correctness" precisely because that is what
 we published.
 
-| Published claim | Status | Correct statement |
+| Withdrawn published claim (2026-05-24 revision) | Status | Correct statement |
 |---|---|---|
 | "a formal EBNF grammar, LL(1) verified" | **Wrong** | `toke-spec-v0.4.md` §E (2026-07-02) states the strict-LL(1) claim "was **not accurate** for the real grammar". The grammar is backtrack-free with an enumerated set of productions needing bounded lookahead of up to 3 tokens |
 | "13 keywords" | **Wrong** | 14: `m i t f let if el lp br rt as mt sc mut` (spec §A, verified against the lexer keyword table). `mut` and `sc` are keywords |

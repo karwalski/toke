@@ -126,7 +126,6 @@ SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".py", ".js", ".php",
 # until that story lands and the entry is deleted. Keep this list SHORT and
 # always keyed to a story number.
 PENDING = {
-    "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
     "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
 
@@ -150,8 +149,9 @@ PENDING = {
 # relative to this checkout. `../toke-spec/rfc/` only ever matched when this
 # repo and toke-spec were both checked out side by side under their own names;
 # from a worktree of either, the entry silently stopped applying.
+# Story 132.128 deleted the 132.8 entries (the whitepaper above and
+# toke-spec/rfc/ here): 132.8 landed 2026-09-19.
 PENDING_PREFIXES = (
-    ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec draft is v0.3-era)"),
 )
 
 
@@ -485,7 +485,9 @@ FACTS_SKIP = SKIP_PREFIXES + (
     "docs/security/audit-120/",
     "docs/spec/toke-spec-v0.3.md",
     "docs/about/changelog.md",
-    "docs/whitepaper/",
+    # 132.128 removed "docs/whitepaper/": 132.8 rewrote the whitepaper as a live
+    # document, and the skip hid its "55-character set" (canonical 59) from
+    # rule 4 for seven weeks. Its corrections table dates its own counts.
 )
 
 
@@ -1492,6 +1494,19 @@ def selftest_structure():
     """132.61: exclusions and pending entries follow what a tree IS, not what
     its checkout is called. Builds throwaway trees under neutral names."""
     import tempfile
+    global PENDING_PREFIXES
+    bad = 0
+    # 132.128: the live toke-spec/rfc/ entry is gone (132.8 landed), so the
+    # mechanism is exercised with a fixture entry of the same shape.
+    saved_prefixes = PENDING_PREFIXES
+    PENDING_PREFIXES = (("toke-spec/rfc/", "selftest fixture"),)
+    try:
+        return bad + _selftest_structure_trees(tempfile)
+    finally:
+        PENDING_PREFIXES = saved_prefixes
+
+
+def _selftest_structure_trees(tempfile):
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:
         # a worktree of toke-spec, checked out as "wt_x": its .git is a file
