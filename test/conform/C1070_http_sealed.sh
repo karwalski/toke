@@ -51,7 +51,7 @@ PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
-command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not found (loopback server)"; exit 0; }
+command -v python3 >/dev/null 2>&1 || { echo "CONFORM-SKIP: python3 not found (loopback server)"; exit 0; }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c1070_XXXXXX")"; SRV=""
 cleanup() { [ -n "${SRV}" ] && { kill -9 "${SRV}" 2>/dev/null; wait "${SRV}" 2>/dev/null; }; rm -rf "${WORK}"; }
 trap cleanup EXIT
