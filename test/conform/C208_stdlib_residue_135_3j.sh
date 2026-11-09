@@ -23,8 +23,11 @@
 #       expects http_request_duration_seconds_sum 1.750500 (ASan+UBSan).
 #   (B) llm_tool_glue.c/llm_tool.c/llm.c built with a counting allocator
 #       (-include): the live allocations a parse leaves behind must be exactly
-#       what the returned block owns (block, name, id, args array = 4), for a
-#       one-call and a three-call response alike.
+#       what the returned block owns, for a one-call and a three-call response
+#       alike.  127.295 (tranche 7): the block's name and id are sealed strings
+#       from the reserved range, not malloc, so the malloc'd part it owns is
+#       the block and the args array = 2 (it was 4 while name and id were
+#       malloc'd); the name and id must be sealed (header == strlen).
 #   (C) http2.c #included with strdup failing on demand: hpack_insert must
 #       return -1 and leave the table unchanged; hpack_encode must report the
 #       failure (ASan+UBSan).
@@ -124,6 +127,7 @@ cat > "${WORK}/b.c" <<'C'
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include "tk_strhdr.h"
 /* tk_current_error comes from the real tk_runtime.c in the link set (127.268). */
 extern long cnt_live;
 int64_t tk_llmtool_parsetoolcalls_w(int64_t raw);
@@ -149,10 +153,15 @@ int main(void) {
            && strcmp((const char *)(intptr_t)((int64_t *)(intptr_t)h1)[2], "call_1") == 0)
         printf("  PASS: the block carries calls[0]'s name and id\n");
     else printf("  FAIL: the block does not carry calls[0]'s name and id\n");
-    if (d1 == 4) printf("  PASS: a one-call parse leaves exactly what the block owns (4)\n");
-    else printf("  FAIL: a one-call parse leaves %ld allocations, the block owns 4\n", d1);
-    if (d3 == 4 && h3) printf("  PASS: a three-call parse leaves exactly what the block owns (4)\n");
-    else printf("  FAIL: a three-call parse leaves %ld allocations, the block owns 4\n", d3);
+    const char *nm = h1 ? (const char *)(intptr_t)((int64_t *)(intptr_t)h1)[0] : NULL;
+    const char *id = h1 ? (const char *)(intptr_t)((int64_t *)(intptr_t)h1)[2] : NULL;
+    if (nm && id && tks_hdrlen(nm) == (int64_t)strlen(nm) && tks_hdrlen(id) == (int64_t)strlen(id))
+        printf("  PASS: the block's name and id are sealed (127.295)\n");
+    else printf("  FAIL: the block's name and id are not sealed (127.295)\n");
+    if (d1 == 2) printf("  PASS: a one-call parse leaves exactly what the block owns (2 malloc'd)\n");
+    else printf("  FAIL: a one-call parse leaves %ld allocations, the block owns 2\n", d1);
+    if (d3 == 2 && h3) printf("  PASS: a three-call parse leaves exactly what the block owns (2 malloc'd)\n");
+    else printf("  FAIL: a three-call parse leaves %ld allocations, the block owns 2\n", d3);
     printf("RESULT OK\n");
     return 0;
 }

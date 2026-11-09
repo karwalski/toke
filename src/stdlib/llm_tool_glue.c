@@ -28,6 +28,7 @@
 #include "llm_tool.h"
 #include "tk_array.h"
 #include "strbuf.h"   /* 135.24: strbuf_append_json_unescape */
+#include "tk_strhdr.h" /* 127.295: tks_strdup */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,28 @@ static const char *slot_str(int64_t block, int idx) {
 static int64_t slot_i64(int64_t block, int idx) {
     if (!block) return 0;
     return ((int64_t *)(intptr_t)block)[idx];
+}
+
+/*
+ * 127.295 (S1 step 5, tranche 7): every string this module hands toke is
+ * sealed -- it carries its length in the header tk_strlen reads in O(1).
+ *
+ * llm_tool.c's results stay malloc'd: its C callers (llm_submitresult,
+ * llm_parallel_tool_calls, llm_agentic_loop, the C API's users) free them,
+ * and a free() of a sealed string aborts.  So the seal happens HERE, at the
+ * boundary: seal_take() makes the sealed copy toke keeps and frees the
+ * malloc'd original, so nothing is left behind.  The copy is measured with
+ * tk_strlen (strlen for the malloc'd original), so a decoded \u0000 ends
+ * the string exactly where every C reader already saw it end.  If the
+ * sealed copy cannot be made, the original is handed over instead -- an
+ * unsealed string is read correctly, only with strlen.
+ */
+static char *seal_take(char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free(s);
+    return t;
 }
 
 /*
@@ -236,6 +259,8 @@ static int64_t args_pairs(const char *json) {
                 char *v = pair ? strbuf_take(&vb) : NULL;
                 strbuf_free(&kb); strbuf_free(&vb);
                 if (!pair || !k || !v) { free(k); free(v); break; }
+                k = seal_take(k);                         /* 127.295 */
+                v = seal_take(v);
                 ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)k;
                 ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)v;
                 ((int64_t *)(intptr_t)h)[idx++] = pair;
@@ -259,8 +284,16 @@ static int64_t toolcall_block(const TkToolCall *tc);
  * block keeps calls[0]'s name and id (the toke program owns them now);
  * the rest is freed here. */
 static int64_t toolcall_block_take(ToolCallResult *r) {
-    int64_t h = toolcall_block(&r->calls[0]);
-    if (!h) {                                   /* nothing handed out: free all */
+    /* 127.295: the block holds sealed copies of calls[0]'s name and id
+     * (seal_take frees the malloc'd originals); when there is no block the
+     * originals are freed here. */
+    TkToolCall c0 = r->calls[0];
+    int64_t h = toolcall_block(&c0);
+    if (h) {
+        int64_t *b = (int64_t *)(intptr_t)h;
+        if (c0.tool_name) b[0] = (int64_t)(intptr_t)seal_take((char *)c0.tool_name);
+        if (c0.call_id)   b[2] = (int64_t)(intptr_t)seal_take((char *)c0.call_id);
+    } else {                                    /* nothing handed out: free all */
         free((char *)r->calls[0].tool_name);
         free((char *)r->calls[0].call_id);
     }
@@ -396,9 +429,18 @@ int64_t tk_llmtool_resultmsgs_w(int64_t results_arr) {
     for (uint64_t i = 0; i < nout; i++) {
         int64_t *m = (int64_t *)malloc(2 * sizeof(int64_t));
         if (!m) { tk_arr_setlen(h, (int64_t)i); break; }
-        m[0] = (int64_t)(intptr_t)(msgs[i].role    ? msgs[i].role    : "tool");
-        m[1] = (int64_t)(intptr_t)(msgs[i].content ? msgs[i].content : "");
+        /* 127.295: sealed copies; seal_take frees llm_tool_result_msgs'
+         * malloc'd role and content (they used to be handed over and kept
+         * forever as malloc'd strings). */
+        m[0] = (int64_t)(intptr_t)(msgs[i].role    ? seal_take((char *)msgs[i].role)    : "tool");
+        m[1] = (int64_t)(intptr_t)(msgs[i].content ? seal_take((char *)msgs[i].content) : "");
+        msgs[i].role = msgs[i].content = NULL;
         slots[i] = (int64_t)(intptr_t)m;
+    }
+    /* a malloc failure above stops the copy: free what was not handed out */
+    for (uint64_t i = 0; i < nout; i++) {
+        free((char *)msgs[i].role);
+        free((char *)msgs[i].content);
     }
     free(msgs);
     return h;

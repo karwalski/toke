@@ -73,7 +73,9 @@ CONTEXT_LINES = 30
 # 127.261: plus the Makefile -- its comments and help text are read by every
 # contributor, and it stated "56-character"/"12 keywords" with no gate seeing it
 # (it has no extension, so neither this default nor a directory walk reached it).
-DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md", "Makefile"]
+# 132.130: plus spec/ -- the published RFC (spec/rfc/draft-karwalski-toke-lang-00.md)
+# sat outside every default, so check-claims-all never read it.
+DEFAULT_TARGETS = ["docs", "spec", "README.md", "PROJECT_STATUS.md", "Makefile"]
 
 # Story 132.15: the guard is run across the sibling repos too, by passing their
 # paths (absolute, or relative to the current directory -- `make check-claims-all`

@@ -254,7 +254,8 @@ def check_structured(canon, full, key):
     return None
 
 # ---------------------------------------------------------------- Rule 2 ----
-DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md", "AGENTS.md"]
+# 132.130: spec/ is a default target -- the published RFC lives there.
+DEFAULT_TARGETS = ["docs", "spec", "README.md", "PROJECT_STATUS.md", "AGENTS.md"]
 SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".ebnf", ".gbnf",
             # story 132.15: the sibling repos publish facts from code too — MCP tool
             # descriptions (`toke-mcp/tools/*.js`), generator system prompts
