@@ -38,6 +38,7 @@
 #include <openssl/err.h>
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
+#include "tk_ssl_nosigpipe.h"  /* 127.346: TLS writes via send(MSG_NOSIGNAL) */
 #endif
 #include "tk_nosigpipe.h"      /* 127.347: TK_SEND_FLAGS, tk_sock_nosigpipe */
 
@@ -3459,7 +3460,14 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
         ssl = SSL_new(ssl_ctx);
         if (!ssl) { SSL_CTX_free(ssl_ctx); close(fd); return err_resp_client("SSL_new failed", 0); }
-        SSL_set_fd(ssl, fd);
+        /* 127.346: not SSL_set_fd.  OpenSSL's socket BIO writes with
+         * write(2), which on Linux (no SO_NOSIGPIPE) raised SIGPIPE when the
+         * server had closed -- the TLS twin of 127.341.  Records now leave
+         * through send(MSG_NOSIGNAL); see tk_ssl_nosigpipe.h. */
+        if (tk_ssl_set_fd_nosigpipe(ssl, fd) != 1) {
+            SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: cannot attach the socket", 0);
+        }
         {
             unsigned char ipbuf[16];
             int is_ip = inet_pton(AF_INET, host, ipbuf) == 1

@@ -250,6 +250,18 @@ signal per socket (`SO_NOSIGPIPE`, on macOS and the BSDs) and per send
 error instead. `test/conform/S007_http_abandoned_request.sh` drives all three
 serve paths, because all three used to fail differently.
 
+### The client side
+
+The same holds for `std.http`'s client: a server that closes while a request
+is still being sent gives the caller `$err`, not a dead process. Plain-HTTP
+requests use the per-socket and per-send pair above (127.341). An `https://`
+request is written by OpenSSL, whose own socket BIO writes with `write(2)`;
+the client therefore attaches its socket to OpenSSL with a write BIO of its
+own that sends each record with `MSG_NOSIGNAL` (127.346), so the guard holds on
+Linux as well as on macOS, again without touching the program's `SIGPIPE`
+disposition. `test/conform/C1260_http_client_peer_close_no_sigpipe.sh` and
+`C1301_https_client_peer_close_no_sigpipe.sh` cover the two.
+
 ### What servetls does to SIGPIPE on Linux
 
 One gap is not closable per socket or per send: OpenSSL writes the TLS record
