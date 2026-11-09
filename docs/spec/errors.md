@@ -781,6 +781,15 @@ f=bad():i64{match true{true=>{<1}}};
 **Notes:** All arms of a `match` expression must evaluate to the same type. If
 one arm returns `i64` and another returns `$str`, this error fires.
 
+The same rule covers the two tails of an expression-`if` (spec v0.4 §C: "the
+two tails must have the same type"; story 138.22). There the message reads
+`if branches have inconsistent types: '<T1>' vs '<T2>'`, at the second
+tail. It applies only when the `if`'s value is used (a statement `if` is
+free), only when both tails' types are known, and it tolerates what the
+match rule tolerates for values: `u64` beside `i64`, and an integer literal
+tail that fits the other tail's integer type (`if(c){ b }el{ 0 }` with
+`b:u8`). An `el if` chain is checked link by link. Conformance: C1010.
+
 ---
 
 ### E4020 -- Function call argument type mismatch (never emitted)
