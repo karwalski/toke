@@ -7,8 +7,10 @@
  * Implements story 76.1.3a: Minimum Version Selection for toke's package
  * system as defined in ADR-0004-packages.md.
  *
- * This module is standalone — it does not depend on the rest of the compiler
- * and is not linked into tkc yet.
+ * This module is standalone and network-free -- it does not depend on the
+ * rest of the compiler.  76.1.3b-d link it into tkc: `tkc pkg` (src/pkg_cli.c)
+ * drives it, src/pkg_git.c is the only code that runs git, and the build's
+ * pkg.* import path (pkg_cli.c, pkg_build_*) reads the lock through it.
  */
 
 #include <stdbool.h>
@@ -16,21 +18,33 @@
 /* ── Diagnostic codes (reserved) ───────────────────────────────────────────── */
 
 /* 121.50 (4): the codes docs/reference/package-manifest.md publishes for
- * package resolution.  Nothing emits them yet -- this module is not wired into
- * any tkc command -- but they are defined here so the code registry
- * (scripts/check_error_codes.py) lists them as reserved and no compiler
- * diagnostic takes one.  The manifest used to give "no version satisfies the
+ * package resolution.  Defined here so the code registry
+ * (scripts/check_error_codes.py) lists them and no compiler diagnostic takes
+ * one; 76.1.3b-d emit them (src/pkg_cli.c).  The manifest used to give "no version satisfies the
  * constraints" as E9010, which the compiler already uses for "compiler limit
  * exceeded"; codes are stable, so that condition gets a new code at the end of
  * the E9xxx series -- E9025, since E9024 went to the compiler first (121.28)
  * -- and E9010 keeps its meaning.  E9011-E9014 and W9010
  * collided with nothing and keep their numbers. */
-#define E9011 9011 /* Package not found in the index and no git URL */
+#define E9011 9011 /* Package not found: no git source and no index, or not a dependency */
 #define E9012 9012 /* Malformed pkg.toml */
 #define E9013 9013 /* Git clone or fetch of a dependency failed */
 #define E9014 9014 /* No git tag matches the resolved version */
 #define E9025 9025 /* No version of a dependency satisfies every constraint */
 #define W9010 9010 /* pkg.lock is out of date relative to pkg.toml */
+
+/* 76.1.3b-d: the package commands and the build's pkg.* import path emit the
+ * codes above and these, added at the end of the E9xxx series (E9027 was the
+ * last; W9010 the last W90xx). */
+#define E9028 9028 /* pkg.lock is missing, unreadable or malformed */
+#define E9029 9029 /* A locked package is not pinned or not in the package cache */
+#define E9030 9030 /* A fetched or cached package does not match its lock entry */
+#define E9031 9031 /* tkc pkg: invalid command, argument or flag */
+#define E9032 9032 /* A package file could not be read or written */
+#define E9033 9033 /* Circular package dependency */
+#define E9034 9034 /* Two manifests give one package different sources */
+#define E9035 9035 /* A package's modules could not be built */
+#define W9011 9011 /* tkc pkg init: pkg.toml already exists, left unchanged */
 
 /* ── Limits ────────────────────────────────────────────────────────────────── */
 
@@ -184,6 +198,15 @@ bool pkg_hash_valid(const char *hash);
  * quotes and backslashes.
  */
 bool pkg_source_valid(const char *url);
+
+/*
+ * 76.1.3d: the explicit local-path override ADR-0004 section 2 allows.  When
+ * on, pkg_source_valid also accepts file:///<absolute path> (no ".."
+ * segment), in manifests and locks alike.  Process-global, off by default;
+ * set only from an explicit command-line flag (--allow-file-source).
+ */
+void pkg_set_allow_file_sources(bool on);
+bool pkg_allow_file_sources(void);
 
 /*
  * Refuse a lock that fetch/build cannot trust: every entry must carry a

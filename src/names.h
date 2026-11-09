@@ -60,6 +60,17 @@ typedef struct {
 /* ── Public API ───────────────────────────────────────────────────────── */
 
 /*
+ * 76.1.3c: the pkg.* import hook.  When set (by the tkc driver, after it has
+ * prepared the package import path), resolve_imports asks it about every
+ * import whose path is pkg.<name>[.<module>]: 0 lets the import resolve
+ * through the .tki search path as usual; any other return is the diagnostic
+ * code to emit at the import, with msg as its message.  Unset (NULL), pkg.*
+ * paths are looked up like any other user module, as before.
+ */
+typedef int (*NamesPkgHook)(const char *pkg_name, char *msg, int msgsz);
+void names_set_pkg_hook(NamesPkgHook hook);
+
+/*
  * resolve_imports — main entry point.
  *
  *   ast         : root NODE_PROGRAM node returned by parse()

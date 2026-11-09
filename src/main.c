@@ -58,6 +58,8 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 
 #include "parser.h"  /* Token, Node, parse(); Arena/diag_emit forwards */
 #include "names.h"   /* resolve_imports(), resolve_names(), SymbolTable, NameEnv */
+#include "pkg.h"     /* pkg_set_allow_file_sources() (76.1.3d) */
+#include "pkg_cli.h" /* tkc pkg, the pkg.* import path (76.1.3b/c) */
 #include "types.h"   /* type_check(), TypeEnv */
 #include "regex_check.h" /* 137.9: E4075, literal regex patterns */
 #include "ir.h"      /* emit_interface() */
@@ -351,6 +353,10 @@ static const char *const HELP_SECTIONS[] = {
     "  --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn\n"
     "  --allow-all         Grant every capability\n"
     "  --cap-enforce       Bake deny-by-default enforcement into the binary\n"
+    "\n"
+    "Packages (ADR-0004, docs/reference/package-manifest.md):\n"
+    "  toke pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
+    "  --allow-file-source Accept file:/// package sources (local override)\n"
     "\n"
     "Configuration:\n"
     "  --config=PATH       Load config from PATH (default: ./tkc.toml)\n"
@@ -1769,8 +1775,44 @@ done:
 }
 
 
+/* ── pkg.* imports (76.1.3c) ─────────────────────────────────────── */
+
+static void pkg_quiet_sink(DiagSeverity sev, int code, int off, int line, int col,
+                           const char *msg, const char *fix, void *ctx)
+{
+    (void)sev; (void)code; (void)off; (void)line; (void)col; (void)msg; (void)fix; (void)ctx;
+}
+
+/* PkgEmitIfaceFn: a package module's interface, generated from its source
+ * by the same per-file pipeline as `tkc --emit-interface --check`. */
+static int pkg_emit_iface(const char *src, const char *outdir, const char *extra_sp,
+                          int quiet, void *ud)
+{
+    const RunOpts *b = (const RunOpts *)ud;
+    const char *sp[65]; int spc = 0;
+    for (int i = 0; i < b->search_path_count && spc < 64; i++) sp[spc++] = b->search_paths[i];
+    sp[spc++] = extra_sp;
+    RunOpts o;
+    memset(&o, 0, sizeof o);
+    o.emit_iface = 1; o.check_only = 1;
+    o.djson = b->djson; o.dtext = b->dtext; o.dsarif = 0;
+    o.opt_level = b->opt_level;
+    o.tgt = b->tgt; o.out = outdir; o.out_is_dir = 1;
+    o.search_paths = sp; o.search_path_count = spc;
+    o.limits = b->limits; o.profile = b->profile;
+    diag_reset();
+    if (quiet) diag_set_sink(pkg_quiet_sink, NULL);
+    int r = process_file(src, &o);
+    diag_set_sink(NULL, NULL);
+    diag_reset();
+    return r;
+}
+
 int main(int argc, char **argv)
 {
+    /* 76.1.3b: `tkc pkg <command>` -- the package manager. */
+    if (argc >= 2 && !strcmp(argv[1], "pkg")) return pkg_cli_main(argc - 2, argv + 2);
+
     const char *tgt = NULL, *out = NULL;
     #define MAX_SOURCE_FILES 256
     const char *source_files[MAX_SOURCE_FILES];
@@ -1879,6 +1921,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--diag-text"))  dtext = 1;
         else if (!strcmp(argv[i], "--diag-sarif")) dsarif = 1;
         else if (!strcmp(argv[i], "--show-limits")) show_limits = 1;
+        else if (!strcmp(argv[i], "--allow-file-source")) pkg_set_allow_file_sources(true);  /* 76.1.3d */
         else if (!strncmp(argv[i], "--max-funcs=", 12))   limits.max_funcs = atoi(argv[i] + 12);
         else if (!strncmp(argv[i], "--max-locals=", 13))  limits.max_locals = atoi(argv[i] + 13);
         else if (!strncmp(argv[i], "--max-params=", 13))  limits.max_params = atoi(argv[i] + 13);
@@ -2051,6 +2094,50 @@ int main(int argc, char **argv)
             if (stat(out, &sb) == 0 && S_ISDIR(sb.st_mode))
                 out_is_dir = 1;
         }
+    }
+
+    /* 76.1.3c: pkg.* imports.  When a source mentions "pkg." at all, the
+     * lock is read, every locked package is verified in the cache and its
+     * interfaces are regenerated; a failure is reported at the pkg.* import
+     * (names_set_pkg_hook), so a mere mention costs nothing else.  In the
+     * build-to-binary mode the package modules are linked in. */
+    const char *const *pkg_srcs = NULL; int pkg_nsrc = 0;
+    if (!(fmt_only || pretty || expand || min_only || dump_ast || migrate || do_lint ||
+          emit_deps || companion || companion_diff_comp) &&
+        pkg_build_sources_mention_pkg(source_files, source_file_count)) {
+        RunOpts po = {
+            0, 1, djson, dtext, 0, 0, 0, opt_level, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, NULL, NULL, tgt, NULL, 0,
+            search_paths, search_path_count, limits, profile
+        };
+        if (pkg_build_prepare(pkg_emit_iface, &po) == 0) {
+            if (search_path_count < MAX_SEARCH_PATHS)
+                search_paths[search_path_count++] = pkg_build_tki_dir();
+            pkg_srcs = pkg_build_sources(&pkg_nsrc);
+        }
+        names_set_pkg_hook(pkg_build_import_check);
+    }
+    if (pkg_nsrc > 0 && !check_only && !emit_iface && !emit_ll && !emit_asm &&
+        !emit_tkir_flag && (!out || !out_is_dir || source_file_count == 1)) {
+        static const char *all[MAX_SOURCE_FILES];
+        int na = 0;
+        for (int i = 0; i < pkg_nsrc && na < MAX_SOURCE_FILES; i++) all[na++] = pkg_srcs[i];
+        for (int i = 0; i < source_file_count && na < MAX_SOURCE_FILES; i++)
+            all[na++] = source_files[i];
+        if (na < pkg_nsrc + source_file_count) {
+            fputs("tkc: too many source files\n", stderr); return EUSAGE;
+        }
+        static char obin[PATH_BUF];
+        char ostm[MSG_BUF];
+        stem(source_files[0], ostm, (int)sizeof ostm);
+        if (out && !out_is_dir) snprintf(obin, sizeof obin, "%s", out);
+        else if (out) {
+            size_t ol = strlen(out);
+            while (ol > 1 && out[ol - 1] == '/') ol--;
+            snprintf(obin, sizeof obin, "%.*s/%s", (int)ol, out, ostm);
+        } else snprintf(obin, sizeof obin, "%s", ostm);
+        return link_multi_module(all, na, obin, tgt, opt_level, debug_info,
+                                 search_paths, search_path_count, limits, profile);
     }
 
     /* 114.40: multiple files + a non-directory out path link into ONE binary

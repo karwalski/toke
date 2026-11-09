@@ -488,6 +488,9 @@ static int normalise_module_path(char *mpath) {
  *
  * Returns 0 if all imports resolved, -1 on any failure.
  */
+static NamesPkgHook s_pkg_hook = NULL;   /* 76.1.3c */
+void names_set_pkg_hook(NamesPkgHook hook) { s_pkg_hook = hook; }
+
 int resolve_imports(const Node *ast, const char *src,
                     const char **search_paths, int search_path_count,
                     const TkcLimits *limits,
@@ -646,6 +649,25 @@ int resolve_imports(const Node *ast, const char *src,
             err = 1;
             (void)st_push(out, alias, mpath, ver, 0);   /* err already set */
             continue;
+        }
+
+        /* 76.1.3c: pkg.<name>[.<module>] goes past the package hook first:
+         * the package must be locked, pinned and verified before its
+         * interface is looked up. */
+        if (s_pkg_hook && (strncmp(mpath, "pkg.", 4) == 0 || strcmp(mpath, "pkg") == 0)) {
+            char pname[TKC_MAX_PATH];
+            const char *pn0 = mpath[3] == '.' ? mpath + 4 : "";
+            size_t pl = strcspn(pn0, ".");
+            if (pl >= sizeof pname) pl = sizeof pname - 1;
+            memcpy(pname, pn0, pl); pname[pl] = '\0';
+            char pmsg[TKC_MAX_PATH + 512];
+            pmsg[0] = '\0';
+            int pcode = s_pkg_hook(pname, pmsg, (int)sizeof pmsg);
+            if (pcode != 0) {
+                diag_emit(DIAG_ERROR, pcode, d->start, d->line, d->col, pmsg,
+                          "fix", (const char *)NULL);
+                err = 1; (void)st_push(out, alias, mpath, ver, 0); continue;
+            }
         }
 
         /* Circular import check */
