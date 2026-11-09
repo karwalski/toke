@@ -59,20 +59,24 @@ void        tmpl_free(TkTmpl *t);
 
 /* tmpl_render — render template t substituting {{name}} with the matching
  * value from vars[0..nvar-1].  Missing keys are replaced with "".
- * Returns a heap-allocated string; caller owns it. */
+ * Returns a sealed string (127.295, runtime-abi §3.1): a toke string, which a
+ * C caller reads but must never free, write or realloc (free() aborts). */
 const char *tmpl_render(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar);
 
 /* tmpl_renderhtml — same as tmpl_render but escapes each variable value for
  * the HTML context its slot lands in (text, attribute, URL, JavaScript, CSS,
  * tag/attribute name -- 121.37; see "Contextual auto-escaping" in
  * template.c).  {{key|raw}} values and literal text are NOT escaped.
- * tpl.render, tpl.renderfile and tmpl_renderpage all render through this.
- * Returns a heap-allocated string; caller owns it. */
+ * tpl.render, tpl.renderfile and tmpl_renderpage all render with this
+ * escaping.
+ * Returns a sealed string (127.295, runtime-abi §3.1): a toke string, which a
+ * C caller reads but must never free, write or realloc (free() aborts). */
 const char *tmpl_renderhtml(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar);
 
 /* tmpl_escape — HTML-escape a string:
  *   & -> &amp;   < -> &lt;   > -> &gt;   " -> &quot;   ' -> &#39;
- * Returns a heap-allocated string; caller owns it. */
+ * Returns a sealed string (127.295, runtime-abi §3.1): a toke string, which a
+ * C caller reads but must never free, write or realloc (free() aborts). */
 const char *tmpl_escape(const char *s);
 
 /* tmpl_vars — construct a TkTmplVar array from parallel key/value arrays.
@@ -88,8 +92,9 @@ TkTmplVar  *tmpl_vars(const char *const *keys, const char *const *values,
  * attr_keys/attr_values are parallel arrays of attribute name/value pairs
  * with nattr entries.  children is an array of nchild already-rendered
  * child strings that are concatenated inside the element.
- * Returns a heap-allocated string; caller owns it.  Returns NULL on
- * allocation failure. */
+ * Returns a sealed string (127.295, runtime-abi §3.1): a toke string, which a
+ * C caller reads but must never free, write or realloc (free() aborts).
+ * Returns NULL on allocation failure. */
 const char *tmpl_html(const char *tag,
                       const char *const *attr_keys,
                       const char *const *attr_values,
@@ -99,7 +104,8 @@ const char *tmpl_html(const char *tag,
 
 /* tmpl_renderfile — load a template from the file at path, compile it,
  * render with the given variable bindings, and return the result.
- * Returns a heap-allocated string on success; caller owns it.
+ * Returns a sealed string (127.295, runtime-abi §3.1): a toke string, which a
+ * C caller reads but must never free, write or realloc (free() aborts).
  * Returns NULL if the file cannot be read or compilation/rendering fails. */
 const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
                             uint64_t nvar);
@@ -121,7 +127,8 @@ void tmpl_register_partial(const char *name, const char *source);
  * transformed string.  The returned pointer must remain valid until the
  * render call that produced it completes; returning a heap-allocated string
  * is the safe choice.  Returning the same pointer (no transform) is also
- * valid. */
+ * valid.  A result that differs from value is free()d by the engine, so it
+ * must be malloc'd -- never a sealed string such as tmpl_escape's (127.295). */
 typedef const char *(*TkTmplHelperFn)(const char *value);
 
 /* tmpl_register_helper — register a helper function under name.
@@ -141,8 +148,9 @@ void tmpl_register_helper(const char *name, TkTmplHelperFn fn);
  * loads the layout from templates_dir, substitutes yield placeholders with
  * block content, then performs {{var}} rendering on the result.
  *
- * Returns a heap-allocated string on success; caller owns it.
- * Returns NULL on failure.
+ * Returns a malloc'd string on success; the caller owns it and frees it
+ * (NOT sealed, 127.295: tk_page_dispatch renders one per request and frees
+ * it, and a sealed string is never freed).  Returns NULL on failure.
  * ----------------------------------------------------------------------- */
 const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
                             const TkTmplVar *vars, uint64_t nvar);

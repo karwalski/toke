@@ -14,6 +14,7 @@
  *   - tmpl_escape standalone function
  *   - invalid {{ treated as literal
  *   - empty template
+ *   - 127.295: every result but tmpl_renderpage's is sealed (SEALED)
  */
 
 #include <stdio.h>
@@ -23,6 +24,7 @@
 #include <unistd.h>     /* mkdtemp (PAR-09 layout test) */
 #include <sys/stat.h>   /* mkdir */
 #include "../../src/stdlib/template.h"
+#include "../../src/stdlib/tk_strhdr.h"   /* 127.295: tks_hdrlen */
 
 static int failures = 0;
 
@@ -46,6 +48,15 @@ static const char *helper_shout(const char *value)
 #define ASSERT_STREQ(a, b, msg) \
     ASSERT((a) && (b) && strcmp((a),(b)) == 0, msg)
 
+/* 127.295: tmpl_render/renderhtml/escape/html/renderfile return sealed
+ * strings (runtime-abi §3.1) -- header == strlen, and never freed (free()
+ * of one aborts).  tmpl_renderpage alone stays malloc'd: its C caller frees. */
+#define SEALED(s) \
+    do { const char *s_ = (s); \
+         if (s_ && (tks_hdrlen(s_) < 0 || (size_t)tks_hdrlen(s_) != strlen(s_))) { \
+             fprintf(stderr, "FAIL: line %d: result not sealed\n", __LINE__); \
+             failures++; } } while (0)
+
 /* 121.37: render src with one binding v through the escaping renderer. */
 static void ctx_case(const char *src, const char *key, const char *val,
                      const char *want, const char *msg)
@@ -56,7 +67,7 @@ static void ctx_case(const char *src, const char *key, const char *val,
     if (!got || strcmp(got, want) != 0)
         fprintf(stderr, "  got:  %s\n  want: %s\n", got ? got : "(null)", want);
     ASSERT_STREQ(got, want, msg);
-    free((void *)got);
+    SEALED(got);   /* 127.295: sealed, never freed */
     tmpl_free(t);
 }
 
@@ -67,7 +78,7 @@ int main(void)
         TkTmpl *t = tmpl_compile("hello");
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "hello", "no slots: literal passthrough");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -77,7 +88,7 @@ int main(void)
         TkTmplVar vars[] = {{"name", "Alice"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "Hello, Alice!", "single slot: {{name}} -> Alice");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -87,7 +98,7 @@ int main(void)
         TkTmplVar vars[] = {{"greeting", "Hello"}, {"name", "Bob"}};
         const char *got = tmpl_render(t, vars, 2);
         ASSERT_STREQ(got, "Hello, Bob!", "multiple slots: greeting + name");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -96,7 +107,7 @@ int main(void)
         TkTmpl *t = tmpl_compile("Value: {{missing}}.");
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "Value: .", "missing key: replaced with empty string");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -106,7 +117,7 @@ int main(void)
         TkTmplVar vars[] = {{"x", "y"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "y and y", "repeated slot: {{x}} and {{x}} with x=y");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -117,7 +128,7 @@ int main(void)
         const char *got = tmpl_renderhtml(t, vars, 1);
         ASSERT_STREQ(got, "&lt;b&gt;bold&lt;/b&gt;",
                      "renderhtml: <b>bold</b> -> &lt;b&gt;bold&lt;/b&gt;");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -128,7 +139,7 @@ int main(void)
         const char *got = tmpl_renderhtml(t, vars, 1);
         ASSERT_STREQ(got, "<b>bold</b>",
                      "renderhtml: {{content|raw}} emits trusted HTML unescaped");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -139,7 +150,7 @@ int main(void)
         const char *got = tmpl_renderhtml(t, vars, 1);
         ASSERT_STREQ(got, "<p>Alice</p>",
                      "renderhtml: literal text not escaped, value safe");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -148,7 +159,7 @@ int main(void)
         const char *got = tmpl_escape("<>&\"'");
         ASSERT_STREQ(got, "&lt;&gt;&amp;&quot;&#39;",
                      "tmpl_escape: <>&\"' -> &lt;&gt;&amp;&quot;&#39;");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
     }
 
     /* ---- 9. Invalid {{ treated as literal ---- */
@@ -157,7 +168,7 @@ int main(void)
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "price: {{ not valid }}",
                      "invalid {{ treated as literal");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -166,7 +177,7 @@ int main(void)
         TkTmpl *t = tmpl_compile("");
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "", "empty template renders to empty string");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -177,7 +188,7 @@ int main(void)
         const char *got = tmpl_renderhtml(t, vars, 1);
         ASSERT_STREQ(got, "a&amp;b &quot;c&quot;",
                      "renderhtml: & and \" escaped in value");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -188,7 +199,7 @@ int main(void)
         const char *got = tmpl_render(t, vars, 2);
         ASSERT_STREQ(got, "START middle END",
                      "slots at start and end of template");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -207,7 +218,7 @@ int main(void)
         TkTmpl *t = tmpl_compile("{{greeting}}, {{name}}!");
         const char *got = tmpl_render(t, vars, 2);
         ASSERT_STREQ(got, "Hi, Carol!", "tmpl_vars: render with constructed vars");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
         free(vars);
     }
@@ -226,14 +237,14 @@ int main(void)
         const char *got = tmpl_html("div", ak, av, 2, ch, 1);
         ASSERT_STREQ(got, "<div class=\"main\" id=\"box\">hello</div>",
                      "tmpl_html: div with attrs and child");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
     }
 
     /* ---- 16. tmpl_html: no attributes, no children ---- */
     {
         const char *got = tmpl_html("br", NULL, NULL, 0, NULL, 0);
         ASSERT_STREQ(got, "<br></br>", "tmpl_html: empty element");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
     }
 
     /* ---- 17. tmpl_html: attribute values are HTML-escaped ---- */
@@ -243,7 +254,7 @@ int main(void)
         const char *got = tmpl_html("span", ak, av, 1, NULL, 0);
         ASSERT_STREQ(got, "<span title=\"a&amp;b&lt;c&quot;d\"></span>",
                      "tmpl_html: attribute values escaped");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
     }
 
     /* ---- 18. tmpl_html: multiple children concatenated ---- */
@@ -252,7 +263,7 @@ int main(void)
         const char *got = tmpl_html("p", NULL, NULL, 0, ch, 2);
         ASSERT_STREQ(got, "<p><b>one</b><i>two</i></p>",
                      "tmpl_html: multiple children");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
     }
 
     /* ---- 19. tmpl_renderfile: load, compile, render ---- */
@@ -269,7 +280,7 @@ int main(void)
             const char *got = tmpl_renderfile(tmppath, vars, 1);
             ASSERT_STREQ(got, "Hello, World!",
                          "tmpl_renderfile: renders from file");
-            free((void *)got);
+            SEALED(got);   /* 127.295: sealed, never freed */
             remove(tmppath);
         }
     }
@@ -288,7 +299,7 @@ int main(void)
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "Hello World!",
                      "if: non-empty key renders block with slot");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -298,7 +309,7 @@ int main(void)
         TkTmplVar vars[] = {{"name", ""}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "", "if: empty value suppresses block");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -308,7 +319,7 @@ int main(void)
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "Default",
                      "unless: missing key renders block");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -318,7 +329,7 @@ int main(void)
         TkTmplVar vars[] = {{"name", "Alice"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "", "unless: non-empty value suppresses block");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -328,7 +339,7 @@ int main(void)
         TkTmplVar vars[] = {{"items", "[\"a\",\"b\",\"c\"]"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "a b c ", "each: basic iteration with {{.}}");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -338,7 +349,7 @@ int main(void)
         TkTmplVar vars[] = {{"nums", "[\"x\",\"y\"]"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "0:x 1:y ", "each: {{@index}} gives 0-based index");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -348,7 +359,7 @@ int main(void)
         TkTmplVar vars[] = {{"empty", "[]"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "", "each: empty array renders nothing");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -359,7 +370,7 @@ int main(void)
         const char *got = tmpl_renderhtml(t, vars, 1);
         ASSERT_STREQ(got, "&lt;b&gt;",
                      "each: renderhtml escapes {{.}}");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -373,7 +384,7 @@ int main(void)
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "Hello, World!",
                      "partial: {{>greeting}} with name=World");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -385,7 +396,7 @@ int main(void)
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "<h1>Welcome</h1><p>body</p>",
                      "partial: outer template with header partial");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -396,7 +407,7 @@ int main(void)
         TkTmplVar vars[] = {{"message", "hello"}};
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "HELLO", "helper: {{message|shout}} -> HELLO");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -406,7 +417,7 @@ int main(void)
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "",
                      "partial: unregistered partial renders as empty string");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -417,7 +428,7 @@ int main(void)
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "original",
                      "helper: unregistered helper passes through value");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -430,7 +441,7 @@ int main(void)
         ASSERT(t != NULL, "PAR-09: self-partial template compiles");
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT(got == NULL, "PAR-09: self-including partial fails the render");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
 
         /* 35. a mutual cycle a -> b -> a fails too */
@@ -439,7 +450,7 @@ int main(void)
         t = tmpl_compile("{{>par09a}}");
         got = tmpl_render(t, NULL, 0);
         ASSERT(got == NULL, "PAR-09: partial cycle a->b->a fails the render");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
 
         /* 36. a partial chain inside the cap still renders */
@@ -449,7 +460,7 @@ int main(void)
         t = tmpl_compile("{{>par09c1}}");
         got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, "123", "PAR-09: a 3-deep partial chain renders");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
     {
@@ -479,7 +490,7 @@ int main(void)
         TkTmplVar v[] = {{"a", "1"}};
         const char *got = tmpl_render(t, v, 1);
         ASSERT_STREQ(got, "y", "PAR-09: 64 nested blocks render");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
     {
@@ -511,6 +522,8 @@ int main(void)
                      pages[i][1] ? pages[i][1] : "refused (NULL)");
             if (pages[i][1]) ASSERT_STREQ(got, pages[i][1], msg);
             else ASSERT(got == NULL, msg);
+            /* 127.295: renderpage stays malloc'd -- the caller frees it */
+            if (got) ASSERT(tks_hdrlen(got) < 0, "PAR-09: renderpage result is malloc'd, not sealed");
             free((void *)got);
         }
         snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
@@ -597,7 +610,7 @@ int main(void)
         const char *got = tmpl_render(t, vars, 1);
         ASSERT_STREQ(got, "<a href=\"javascript:x\">",
                      "ctx: tmpl_render (escaping off) is unchanged");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
     {
@@ -610,7 +623,7 @@ int main(void)
             const char *got = tmpl_renderfile(tmppath, vars, 2);
             ASSERT_STREQ(got, "<a href=\"#ZtokeZ\">&lt;b&gt;</a>",
                          "ctx: tmpl_renderfile escapes for context");
-            free((void *)got);
+            SEALED(got);   /* 127.295: sealed, never freed */
             remove(tmppath);
         } else {
             ASSERT(0, "ctx: create renderfile temp file");

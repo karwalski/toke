@@ -30,6 +30,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     TkTmpl *t = tmpl_compile(input);
     if (t) {
+        /* 127.295: the results are sealed strings, never freed -- except in
+         * this build, which the Makefile compiles with -DTK_STR_NO_HEAP (the
+         * malloc fallback) so a long run's memory stays bounded. */
         const char *r1 = tmpl_render(t, NULL, 0);
         if (r1) free((void *)r1);
         const char *r2 = tmpl_renderhtml(t, NULL, 0);

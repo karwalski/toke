@@ -7,6 +7,7 @@
  */
 
 #include "template.h"
+#include "tk_strhdr.h"   /* 127.295: tks_strdup */
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -36,7 +37,7 @@ static int64_t tpl_slot(int64_t v, const char *msg) {
  *
  * data layout (toke ABI):  ptr[-1] = count (i64, must be even)
  *                           ptr[0..count-1] = alternating key/value i64 ptrs
- * Returns a heap-allocated rendered string, or 0 on failure.
+ * Returns a sealed rendered string (127.295), or 0 on failure.
  */
 /* A toke `@($str:$str)` map is a tk_map object, NOT a flat array: it is the
  * TkMapImpl built by tk_map_new/tk_map_put (see collections_glue.c). Mirror its
@@ -136,9 +137,12 @@ int64_t tk_template_compile_w(int64_t src) {
     if (!t) return tpl_slot(0, tk_template_compile_fail);
     tmpl_free(t);
     TkTmplRec *rec = (TkTmplRec *)malloc(sizeof *rec);
-    char *copy = strdup(s);
-    if (!rec || !copy) {
-        free(rec); free(copy);
+    if (!rec) return tpl_slot(0, tk_template_compile_fail);
+    /* 127.295: $tmpl.src is a toke string (a field toke reads); sealed, and
+     * like every toke record never freed. */
+    char *copy = tks_strdup(s);
+    if (!copy) {
+        free(rec);
         return tpl_slot(0, tk_template_compile_fail);
     }
     rec->id  = ++next_id;
@@ -146,7 +150,7 @@ int64_t tk_template_compile_w(int64_t src) {
     return tpl_slot((int64_t)(intptr_t)rec, tk_template_compile_fail);
 }
 
-/* tpl.escape(str) -> str — HTML-escape. */
+/* tpl.escape(str) -> str — HTML-escape (sealed, 127.295; "" for nil). */
 int64_t tk_template_escape_w(int64_t s) {
     if (!s) return (int64_t)(intptr_t)"";
     return (int64_t)(intptr_t)tmpl_escape((const char *)(intptr_t)s);
