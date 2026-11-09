@@ -1769,7 +1769,7 @@ test-stdlib-router:
 
 test-stdlib-template:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_template \
-	    test/stdlib/test_template.c src/stdlib/template.c
+	    test/stdlib/test_template.c src/stdlib/template.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_template
 
 test-stdlib-csv:
@@ -1961,7 +1961,7 @@ test-stdlib-svg-diagram-integration:
 
 test-stdlib-template-email-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_template_email_integration \
-	    test/stdlib/test_template_email_integration.c src/stdlib/template.c \
+	    test/stdlib/test_template_email_integration.c src/stdlib/template.c src/stdlib/str.c \
 	    $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_template_email_integration
 
@@ -2127,7 +2127,7 @@ test-stdlib-toml-glue:
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────
 test-stdlib-vecstore:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_vecstore \
-	    test/stdlib/test_vecstore.c src/stdlib/vecstore.c -lpthread
+	    test/stdlib/test_vecstore.c src/stdlib/vecstore.c src/stdlib/str.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_vecstore
 
 # ── Story 136.4: std.vecstore binding, end to end ────────────────────────────
@@ -2354,7 +2354,7 @@ fuzz-toon:
 fuzz-xml:
 	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
 fuzz-template:
-	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c,)
+	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c src/stdlib/str.c,)
 # http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls
 # the capability checks, hence capabilities.c (not in 120.22's link line).
 fuzz-multipart:
