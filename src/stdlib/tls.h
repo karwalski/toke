@@ -223,6 +223,26 @@ char *tls_fingerprint(const char *pem);
 char *tls_protocol(TlsConn conn);
 
 /*
+ * Key-exchange group preference for every std.tls context (build_ssl_ctx).
+ *
+ * TK_TLS_GROUPS_HYBRID is tried first: the post-quantum hybrid
+ * X25519MLKEM768 (ML-KEM-768 + X25519), then classical groups for peers
+ * that do not offer it.  If the linked OpenSSL rejects that list -- it does
+ * when it does not know X25519MLKEM768, i.e. before 3.5 -- the context is
+ * built with TK_TLS_GROUPS_CLASSICAL instead of failing (ADR-0013 (c)).
+ *
+ * Overridable at compile time only so a test can name a hybrid group the
+ * library does not know and drive the fallback on a library that has the
+ * real one (C1180, story 122.5).  Production builds never define them.
+ */
+#ifndef TK_TLS_GROUPS_HYBRID
+#define TK_TLS_GROUPS_HYBRID    "X25519MLKEM768:X25519:secp256r1:x448:secp384r1"
+#endif
+#ifndef TK_TLS_GROUPS_CLASSICAL
+#define TK_TLS_GROUPS_CLASSICAL "X25519:secp256r1:x448:secp384r1"
+#endif
+
+/*
  * tls.group(conn) -> str
  *
  * The key-exchange group NEGOTIATED on `conn`, as OpenSSL names it:
