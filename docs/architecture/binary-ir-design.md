@@ -281,6 +281,17 @@ standard library and writes nothing. A file that cannot be read or decoded is
 an E9021 diagnostic and exit 1. With several inputs each summary is headed
 `== <path> ==`. Conformance case C1281 pins it (story 127.345).
 
+### 3.11 Encoder limits
+
+As written, the type, data, function, import and export sections store their
+entry counts as u16, and type references are u16, so a module may hold at
+most 65535 type entries and 65535 data entries (distinct literals). The
+encoder grows its tables up to that limit; a module past it is refused with
+E9010 ("compiler limit exceeded") and exit 1, and no `.tkir` is written.
+Before story 127.344 the tables were fixed at 256 types and 1024 data
+entries, and every entry past them was written as index 0 with exit 0.
+Conformance case C1280 pins the boundary.
+
 ---
 
 ## 4. Instruction Set Sketch

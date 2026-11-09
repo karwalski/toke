@@ -1391,6 +1391,11 @@ registry sized from them cannot be one compiler allocation are refused at
 `--check` too, with the same E9010 as the build, naming the caps; lower them
 (story 127.264).
 
+`--emit-tkir` refuses a module with more than 65535 type entries or 65535
+data entries (distinct literals) with E9010 and writes no file: the format
+stores those counts and type references as u16, so this limit is fixed and
+has no flag (story 127.344; `docs/architecture/binary-ir-design.md` §3.11).
+
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
 by pointer locals, local types and shadowing aliases) is reported once per
 function, closure or globals initialiser that crosses it, at that function,
