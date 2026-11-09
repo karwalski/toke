@@ -464,6 +464,18 @@ returns a `[byte]`), so nothing there is sealed.  Gate: C1050 (an ASan C
 driver against a local mock endpoint, plus a toke program under
 `TK_STR_VERIFY=1`).
 
+**Step 5, fifth tranche (story 127.295, Batch Z118).**  `std.vecstore`
+converted whole: every reader in `vecstore.c` / `vecstore_glue.c` uses
+`tk_strlen`, and `vecstore.search` hands toke sealed `.id` / `.payload`
+copies (the core's own entries, names and result arrays stay malloc'd:
+`collection_free` / `vecstore_free_results` own them).  `std.template`
+(`template.c`), `std.router` (`router.c`) and the std.http web glue
+(`tk_web_glue.c`) are converted as readers only: every length is read with
+`tk_strlen`; their producers (rendered templates, route and page tables,
+`strdup`'d header values) are not sealed yet, because C callers in the
+same files free them.  Gate: C1061 (an ASan C driver under
+`TK_STR_VERIFY=1` over sealed inputs, plus a toke program).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

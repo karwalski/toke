@@ -60,7 +60,6 @@ src/stdlib/pdf_glue.c 1
 src/stdlib/pdftext.c 1
 src/stdlib/process_glue.c 1
 src/stdlib/proxy.c 3
-src/stdlib/router.c 14
 src/stdlib/securemem.c 1
 src/stdlib/server_ops.c 2
 src/stdlib/soap.c 9
@@ -69,15 +68,11 @@ src/stdlib/sse_glue.c 1
 src/stdlib/str.c 1   # tks_verify_fail: the verify switch's own strlen (127.295)
 src/stdlib/strbuf.h 1
 src/stdlib/sys.c 1
-src/stdlib/template.c 11
 src/stdlib/tk_regex.h 1
 src/stdlib/tk_time.c 1
-src/stdlib/tk_web_glue.c 12
 src/stdlib/tls.c 1
 src/stdlib/tls_glue.c 1
 src/stdlib/toon.c 2
-src/stdlib/vecstore.c 14
-src/stdlib/vecstore_glue.c 2
 src/stdlib/webview.c 3
 src/stdlib/xlsx.c 6
 src/stdlib/xlsx_glue.c 1

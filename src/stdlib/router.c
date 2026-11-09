@@ -20,6 +20,7 @@
  * Story: 15.1.3
  */
 
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include "router.h"
 #include "ws.h"
 #include <stdlib.h>
@@ -336,7 +337,7 @@ static char *strarray_join(const char **arr, char *buf, size_t buflen)
         if (i > 0) {
             if (pos + 2 < buflen) { buf[pos++] = ','; buf[pos++] = ' '; }
         }
-        size_t slen = strlen(arr[i]);
+        size_t slen = tk_strlen(arr[i]);
         if (pos + slen < buflen) {
             memcpy(buf + pos, arr[i], slen);
             pos += slen;
@@ -734,7 +735,7 @@ static char *url_decode(const char *src, size_t len)
 const char *router_query_get(const char *query, const char *key)
 {
     if (!query || !key) return NULL;
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
     const char *p = query;
 
     while (*p) {
@@ -747,7 +748,7 @@ const char *router_query_get(const char *query, const char *key)
 
         /* find end of value (next '&' or end of string) */
         const char *amp = strchr(val_start, '&');
-        size_t val_len = amp ? (size_t)(amp - val_start) : strlen(val_start);
+        size_t val_len = amp ? (size_t)(amp - val_start) : tk_strlen(val_start);
 
         if (name_len == klen && memcmp(p, key, klen) == 0) {
             return url_decode(val_start, val_len);
@@ -765,7 +766,7 @@ const char *router_query_get(const char *query, const char *key)
 size_t router_resp_body_len(TkRouteResp resp)
 {
     if (!resp.body) return 0;
-    return resp.body_len ? resp.body_len : strlen(resp.body);
+    return resp.body_len ? resp.body_len : tk_strlen(resp.body);
 }
 
 TkRouteResp router_resp_ok(const char *body, const char *ct)
@@ -863,7 +864,7 @@ static const char *ws_extract_header(const char *raw,
                                       const char *name,
                                       char *out_buf, size_t out_len)
 {
-    size_t name_len = strlen(name);
+    size_t name_len = tk_strlen(name);
     const char *p = raw;
 
     /* Skip the request line */
@@ -1152,7 +1153,7 @@ static void hb_put(HdrBuf *h, const char *s, size_t n)
     h->n += n;
     h->b[h->n] = '\0';
 }
-static void hb_str(HdrBuf *h, const char *s) { if (s) hb_put(h, s, strlen(s)); }
+static void hb_str(HdrBuf *h, const char *s) { if (s) hb_put(h, s, tk_strlen(s)); }
 
 /* router_send_response -- write resp as an HTTP/1.1 response.
  *
@@ -1250,7 +1251,7 @@ static uint64_t router_parse_headers(const char *raw, char *buf, size_t cap,
     const char *end = strstr(p, "\r\n\r\n");
     const char *end2 = strstr(p, "\n\n");
     if (!end || (end2 && end2 < end)) end = end2;
-    size_t len = end ? (size_t)(end - p) : strlen(p);
+    size_t len = end ? (size_t)(end - p) : tk_strlen(p);
     if (len >= cap) len = cap - 1;
     memcpy(buf, p, len);
     buf[len] = '\0';
@@ -1270,7 +1271,7 @@ static uint64_t router_parse_headers(const char *raw, char *buf, size_t cap,
                 *colon = '\0';
                 char *v = colon + 1;
                 while (*v == ' ' || *v == '\t') v++;
-                char *ve = v + strlen(v);
+                char *ve = v + tk_strlen(v);
                 while (ve > v && (ve[-1] == ' ' || ve[-1] == '\t')) *--ve = '\0';
                 names[n] = line;
                 vals[n]  = v;
@@ -1536,7 +1537,7 @@ static int static_confine(const char *dir_path, char *full, size_t cap)
     if (!realpath(dir_path, resolved_root)) return 403;
     if (!realpath(full, resolved_full))
         return (errno == ENOENT || errno == ENOTDIR) ? 404 : 403;
-    size_t root_len = strlen(resolved_root);
+    size_t root_len = tk_strlen(resolved_root);
     if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
         (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
         return 403;
@@ -1814,7 +1815,7 @@ static TkRouteHandler static_trampolines[MAX_STATIC_ROUTES] = {
 static TkRouteResp static_route_serve(const StaticEntry *se, TkRouteCtx ctx)
 {
     const char *rel = ctx.path;
-    size_t plen = strlen(se->url_prefix);
+    size_t plen = tk_strlen(se->url_prefix);
     if (strncmp(rel, se->url_prefix, plen) == 0) rel += plen;
     TkRouteResp resp = router_static_serve(se->dir_path, rel,
                                            ctx_req_header(ctx, "If-None-Match"),
@@ -1851,7 +1852,7 @@ void router_static(TkRouter *r, const char *url_prefix, const char *dir_path)
     /* Register a wildcard GET route for the prefix */
     char pattern[544];
     /* Normalise: strip trailing slash from prefix for pattern construction */
-    size_t plen = strlen(url_prefix);
+    size_t plen = tk_strlen(url_prefix);
     char prefix_norm[512];
     strncpy(prefix_norm, url_prefix, sizeof(prefix_norm) - 1);
     prefix_norm[sizeof(prefix_norm) - 1] = '\0';
@@ -1906,7 +1907,7 @@ static int etag_matches_local(const char *etag, const char *if_none_match)
         const char *te = p;
         while (te > ts && (*(te-1) == ' ' || *(te-1) == '\t')) te--;
         size_t tlen = (size_t)(te - ts);
-        if (tlen == strlen(etag) && memcmp(ts, etag, tlen) == 0)
+        if (tlen == tk_strlen(etag) && memcmp(ts, etag, tlen) == 0)
             return 1;
     }
     return 0;
@@ -1915,12 +1916,12 @@ static int etag_matches_local(const char *etag, const char *if_none_match)
 /* Look up a request header value by name (case-insensitive). */
 static const char *ctx_req_header(TkRouteCtx ctx, const char *name)
 {
-    size_t nlen = strlen(name);
+    size_t nlen = tk_strlen(name);
     for (uint64_t i = 0; i < ctx.nreq_headers; i++) {
         const char *k = ctx.req_header_names  ? ctx.req_header_names[i]  : NULL;
         const char *v = ctx.req_header_values ? ctx.req_header_values[i] : NULL;
         if (!k || !v) continue;
-        size_t klen = strlen(k);
+        size_t klen = tk_strlen(k);
         if (klen != nlen) continue;
         size_t j;
         for (j = 0; j < klen; j++) {

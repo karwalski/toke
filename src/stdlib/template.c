@@ -23,6 +23,7 @@
  * Story: 15.1.4, 33.1.1, 33.1.2
  */
 
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include "template.h"
 #include "strbuf.h"
 #include <stdlib.h>
@@ -1020,7 +1021,7 @@ static void hc_byte(HtmlCtx *h, int c) {
              * the element even inside a JS string -- that is how HTML parses
              * it; likewise "</style", "</title", "</textarea". */
             const char *want = h->rname;
-            int wlen = (int)strlen(want);
+            int wlen = (int)tk_strlen(want);
             if (h->endlen == 2 + wlen) {                 /* "</name" read */
                 h->endlen = 0;
                 if (hc_space(c) || c == '/') {
@@ -1058,7 +1059,7 @@ static void esc_attr_unquoted(Buf *b, const char *s, size_t n) {
 /* the attribute layer, applied to text already escaped for its sub-context */
 static void esc_attr(Buf *b, const HtmlCtx *h, const char *s) {
     if (h->quote) strbuf_append_xml(b, s);
-    else esc_attr_unquoted(b, s, strlen(s));   /* unquoted, or starts one */
+    else esc_attr_unquoted(b, s, tk_strlen(s));   /* unquoted, or starts one */
 }
 
 static int js_keep(unsigned char c) {
@@ -1235,7 +1236,7 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
         const Node *nd = &nodes[i];
         switch (nd->kind) {
             case NODE_LITERAL:
-                if (!out_literal(out, nd->text, strlen(nd->text))) return 0;
+                if (!out_literal(out, nd->text, tk_strlen(nd->text))) return 0;
                 break;
 
             case NODE_SLOT: {
@@ -1413,7 +1414,7 @@ const char *tmpl_html(const char *tag,
 {
     if (!tag) return NULL;
 
-    size_t tag_len = strlen(tag);
+    size_t tag_len = tk_strlen(tag);
 
     size_t total = 1 + tag_len;
 
@@ -1421,7 +1422,7 @@ const char *tmpl_html(const char *tag,
         if (!attr_keys || !attr_values) break;
         const char *ak = attr_keys[i]   ? attr_keys[i]   : "";
         const char *av = attr_values[i]  ? attr_values[i] : "";
-        total += 1 + strlen(ak) + 2;
+        total += 1 + tk_strlen(ak) + 2;
         for (const char *p = av; *p; p++) {
             switch (*p) {
                 case '&':  total += 5; break;
@@ -1439,7 +1440,7 @@ const char *tmpl_html(const char *tag,
 
     for (uint64_t i = 0; i < nchild; i++) {
         if (children && children[i])
-            total += strlen(children[i]);
+            total += tk_strlen(children[i]);
     }
 
     total += 2 + tag_len + 1;
@@ -1458,7 +1459,7 @@ const char *tmpl_html(const char *tag,
         const char *ak = attr_keys[i]   ? attr_keys[i]   : "";
         const char *av = attr_values[i]  ? attr_values[i] : "";
         *q++ = ' ';
-        size_t ak_len = strlen(ak);
+        size_t ak_len = tk_strlen(ak);
         memcpy(q, ak, ak_len);
         q += ak_len;
         *q++ = '=';
@@ -1480,7 +1481,7 @@ const char *tmpl_html(const char *tag,
 
     for (uint64_t i = 0; i < nchild; i++) {
         if (children && children[i]) {
-            size_t clen = strlen(children[i]);
+            size_t clen = tk_strlen(children[i]);
             memcpy(q, children[i], clen);
             q += clen;
         }
@@ -1763,7 +1764,7 @@ static char *apply_yields(const char *layout_src, const TmplBlock *blocks,
                         /* Find matching block */
                         const char *replacement = NULL;
                         for (int i = 0; i < nblocks; i++) {
-                            if (strlen(blocks[i].name) == nlen &&
+                            if (tk_strlen(blocks[i].name) == nlen &&
                                 memcmp(blocks[i].name, name_start, nlen) == 0) {
                                 replacement = blocks[i].content;
                                 break;
@@ -1820,8 +1821,8 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
             goto cleanup;
         }
         /* Build layout path: templates_dir/layout_name.tkt */
-        size_t dir_len = strlen(templates_dir);
-        size_t name_len = strlen(layout_name);
+        size_t dir_len = tk_strlen(templates_dir);
+        size_t name_len = tk_strlen(layout_name);
         /* +1 for '/', +4 for ".tkt", +1 for '\0' */
         char *layout_path = (char *)malloc(dir_len + 1 + name_len + 4 + 1);
         if (!layout_path) goto cleanup;

@@ -7,7 +7,6 @@
  * SSE keep-alive, HTTP/2 streamed responses.
  */
 
-#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,139 +83,10 @@ void ws_server_set_max_message_size(uint64_t bytes)
     g_ws_config.max_message_size = bytes;
 }
 
-/* ── SHA-1 for WebSocket handshake ──────────────────────────────────── */
-
-/* Minimal SHA-1 for WebSocket accept key derivation.
- * Only used for the 20-byte hash of the concatenated key+GUID. */
-static void sha1_block(uint32_t *h, const uint8_t *block)
-{
-    uint32_t w[80];
-    for (int i = 0; i < 16; i++)
-        w[i] = ((uint32_t)block[i*4] << 24) | ((uint32_t)block[i*4+1] << 16) |
-               ((uint32_t)block[i*4+2] << 8) | block[i*4+3];
-    for (int i = 16; i < 80; i++) {
-        uint32_t t = w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16];
-        w[i] = (t << 1) | (t >> 31);
-    }
-
-    uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
-    for (int i = 0; i < 80; i++) {
-        uint32_t f, k;
-        if (i < 20)      { f = (b & c) | (~b & d); k = 0x5A827999; }
-        else if (i < 40) { f = b ^ c ^ d;          k = 0x6ED9EBA1; }
-        else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
-        else              { f = b ^ c ^ d;          k = 0xCA62C1D6; }
-        uint32_t tmp = ((a << 5) | (a >> 27)) + f + e + k + w[i];
-        e = d; d = c; c = (b << 30) | (b >> 2); b = a; a = tmp;
-    }
-    h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
-}
-
-static void sha1(const uint8_t *data, size_t len, uint8_t out[20])
-{
-    uint32_t h[5] = { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 };
-    size_t i;
-    for (i = 0; i + 64 <= len; i += 64)
-        sha1_block(h, data + i);
-
-    uint8_t pad[128];
-    memset(pad, 0, sizeof(pad));
-    size_t rem = len - i;
-    memcpy(pad, data + i, rem);
-    pad[rem] = 0x80;
-    size_t padlen = (rem < 56) ? 64 : 128;
-    uint64_t bits = (uint64_t)len * 8;
-    for (int j = 0; j < 8; j++)
-        pad[padlen - 1 - j] = (uint8_t)(bits >> (j * 8));
-    for (size_t j = 0; j < padlen; j += 64)
-        sha1_block(h, pad + j);
-
-    for (int j = 0; j < 5; j++) {
-        out[j*4]   = (uint8_t)(h[j] >> 24);
-        out[j*4+1] = (uint8_t)(h[j] >> 16);
-        out[j*4+2] = (uint8_t)(h[j] >> 8);
-        out[j*4+3] = (uint8_t)(h[j]);
-    }
-}
-
-/* ── Base64 encode ──────────────────────────────────────────────────── */
-
-static const char b64_table[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-static void base64_encode(const uint8_t *in, size_t len, char *out)
-{
-    size_t i, j = 0;
-    for (i = 0; i + 2 < len; i += 3) {
-        uint32_t v = ((uint32_t)in[i] << 16) | ((uint32_t)in[i+1] << 8) | in[i+2];
-        out[j++] = b64_table[(v >> 18) & 0x3F];
-        out[j++] = b64_table[(v >> 12) & 0x3F];
-        out[j++] = b64_table[(v >> 6)  & 0x3F];
-        out[j++] = b64_table[v & 0x3F];
-    }
-    if (i < len) {
-        uint32_t v = (uint32_t)in[i] << 16;
-        if (i + 1 < len) v |= (uint32_t)in[i+1] << 8;
-        out[j++] = b64_table[(v >> 18) & 0x3F];
-        out[j++] = b64_table[(v >> 12) & 0x3F];
-        out[j++] = (i + 1 < len) ? b64_table[(v >> 6) & 0x3F] : '=';
-        out[j++] = '=';
-    }
-    out[j] = '\0';
-}
-
-/* ── WebSocket upgrade in HTTP handler (68.1.1) ─────────────────────── */
-
-#define WS_GUID "258EAFA5-E914-47DA-95CA-5AB5DC11D685"
-
-/*
- * ws_server_accept_key — compute the Sec-WebSocket-Accept value.
- * client_key is the Sec-WebSocket-Key header value.
- * Returns heap-allocated accept key string. Caller owns.
- */
-char *ws_server_accept_key(const char *client_key)
-{
-    if (!client_key) return NULL;
-
-    size_t klen = tk_strlen(client_key);
-    size_t glen = sizeof(WS_GUID) - 1;
-    char *concat = malloc(klen + glen + 1);
-    if (!concat) return NULL;
-    memcpy(concat, client_key, klen);
-    memcpy(concat + klen, WS_GUID, glen + 1);
-
-    uint8_t hash[20];
-    sha1((const uint8_t *)concat, klen + glen, hash);
-    free(concat);
-
-    /* Base64 of 20 bytes = 28 chars + NUL */
-    char *accept = malloc(32);
-    if (!accept) return NULL;
-    base64_encode(hash, 20, accept);
-    return accept;
-}
-
-/*
- * ws_server_handshake — perform WebSocket upgrade handshake on fd.
- * Sends the 101 Switching Protocols response.
- * Returns 0 on success, -1 on error.
- */
-int ws_server_handshake(int fd, const char *client_key)
-{
-    char *accept = ws_server_accept_key(client_key);
-    if (!accept) return -1;
-
-    char resp[512];
-    int n = snprintf(resp, sizeof(resp),
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Accept: %s\r\n\r\n", accept);
-    free(accept);
-
-    ssize_t w = http_write_all(fd, resp, (size_t)n);
-    return (w == n) ? 0 : -1;
-}
+/* The WebSocket upgrade handshake (Sec-WebSocket-Accept, 101 response) is
+ * ws.c's ws_accept_key / ws_build_upgrade_response.  127.332 deleted a dead
+ * duplicate here (ws_server_accept_key / ws_server_handshake: no header, no
+ * caller) that used a wrong RFC 6455 GUID. */
 
 /* ── WebSocket frame I/O (68.1.3, 68.1.4) ──────────────────────────── */
 
