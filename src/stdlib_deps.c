@@ -117,7 +117,7 @@ static const StdlibModule stdlib_table[] = {
     { "analytics",     "analytics.c analytics_glue.c",          "dataframe csv str math",                                           "-lm" },  /* 136.32 */
     { "router",        "router.c router_glue.c",                "ws",                                                               "-lz" },
     { "dashboard",     "dashboard.c dashboard_glue.c",          "chart html router",                                                "-lz" },
-    { "http",          "http.c http2.c acme.c proxy.c cache.c content.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",
+    { "http",          "http.c http2.c acme.c proxy.c cache.c content.c metrics.c ws_server.c hooks.c tk_web_glue.c",
                                                                 "encoding log str crypto ws router net yaml toon i18n html svg canvas chart dashboard dataframe template toml file auth encrypt llm ml task", "-lssl -lcrypto -lz -lm -lpthread" },
     { "toml",          "toml.c toml_glue.c",                    "file",                                                             "" },  /* 121.74: toml_load_file reads via file_read */  /* vendor sources appended separately */
     { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */

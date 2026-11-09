@@ -887,7 +887,8 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-strhdr test-stdlib-json test-stdli
 #       sees it. A sweep on 2026-09-24 found 7 more unbounded sprintf() calls
 #       in SHIPPING code -- src/stdlib/tk_time.c (format_duration, now
 #       snprintf and in the list above, 127.246 (6)) and
-#       src/stdlib/db_postgres.c:37 (no sprintf there at 2026-09-30). Re-add
+#       src/stdlib/db_postgres.c:37 (no sprintf there at 2026-09-30; the
+#       file was archived by 121.71). Re-add
 #       this target when test_csv.c is
 #       dealt with.
 # The negative control, run FIRST and never behind a flag: a planted

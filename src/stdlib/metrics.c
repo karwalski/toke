@@ -24,7 +24,8 @@
  *
  * metrics_reopen_logs, left empty then, is gone too: its one caller,
  * server_ops.c's uncalled proc_reopen_logs, was removed by 121.49 (1), and
- * nothing else named it (121.51 (4)). */
+ * nothing else named it (121.51 (4)).  server_ops.c itself, wholly
+ * uncalled, was archived by 121.71. */
 
 /* ── Request IDs, W3C Trace Context and B3 tracing: removed (121.43) ───
  *

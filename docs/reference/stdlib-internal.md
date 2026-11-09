@@ -181,9 +181,9 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_access_log_set_global` | `log.c` | log_glue.c |
 | `tk_access_log_write` | `log.c` | http.c, log.c |
 | `tk_arr_sort_qsort_cmp` | `collections_glue.c` | collections_glue.c |
-| `tk_cap_check` | `capabilities.c` | via `TK_REQUIRE` in 28 files |
+| `tk_cap_check` | `capabilities.c` | via `TK_REQUIRE` in 26 files |
 | `tk_cap_class_name` | `capabilities.c` | capabilities.c |
-| `tk_cap_deny` | `capabilities.c` | via `TK_REQUIRE` in 28 files |
+| `tk_cap_deny` | `capabilities.c` | via `TK_REQUIRE` in 26 files |
 | `tk_cap_init` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_is_grant_flag` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_mode` | `capabilities.c` | capabilities.c |
