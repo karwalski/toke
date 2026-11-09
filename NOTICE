@@ -1,7 +1,10 @@
-tkc — toke Reference Compiler
-Copyright 2026 Matt Watt
+toke
+Copyright 2026 Matthew Watt
 
-Licensed under the Apache License, Version 2.0.
+The tkc compiler, documentation and tooling in this repository are licensed
+under the Apache License, Version 2.0 (see LICENSE). The language
+specification (spec/) and the standard library (stdlib/, src/stdlib/) are
+licensed under the MIT License; see LICENSING.md.
 
 This product includes software developed by the LLVM Project
 (https://llvm.org), licensed under the Apache License 2.0 with

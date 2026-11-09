@@ -16,14 +16,15 @@ directory differs it is given in brackets. The project's repository map is
 | `toke-spec` | MIT | Language specification archive, tree-sitter grammar |
 | `toke-corpus` | Apache 2.0 | Corpus generation, audit and verification pipeline |
 | `toke-models` (local `toke-model`) | Apache 2.0 | Fine-tuning, evaluation and packaging of models |
-| `toke-tokenizer` | Apache 2.0 | BPE tokenizer training and evaluation |
+| `toke-tokenizer` | Apache 2.0 (including `python/`) | BPE tokenizer training and evaluation |
 | `toke-eval` | Apache 2.0 | Benchmark tasks and evaluation harness |
 | `toke-mcp` | MIT | MCP server, language server, VS Code extension |
 | `ooke` (local `toke-ooke`) | MIT | Web framework and static site generator, written in toke |
 | `loke` | MIT | Local intelligence layer, written in toke |
 | `toke-web` (local `toke-website`) | MIT | Website source |
 | `toke-ocr` | MIT | Optical character recognition, written in toke |
-| `toke-test-programs` | no licence file yet | Test program corpus |
+| `toke-test-programs` | Apache 2.0 | Test program corpus |
+| `homebrew-toke` | MIT | Homebrew tap (`tkc`, `ooke` formulae) |
 | `toke-cloud`, `toke-console` | Proprietary (private) | Hosted services |
 
 ### Where the MIT boundary is inside `toke`
@@ -83,7 +84,7 @@ repository's licence.
 Apache 2.0 header comment:
 
 ```
-// Copyright 2026 Matt Watt
+// Copyright 2026 Matthew Watt
 // SPDX-License-Identifier: Apache-2.0
 ```
 

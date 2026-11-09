@@ -101,7 +101,7 @@ rather than by reading the code, which is the argument for your "budget for a fi
 
 **Route: we wrote a purpose-built C99 extractor rather than vendoring.** Your candidate list was
 accurate and we costed all of it. pdfium and podofo fall to ADR-0015. **poppler is disqualified twice**
-— C++ *and* GPL-2.0+ against this repository's Apache-2.0. **MuPDF fails on licence before it fails on
+— C++ *and* GPL-2.0+ against the standard library's MIT licence. **MuPDF fails on licence before it fails on
 anything technical**: it is AGPL-3.0-or-later, and the toke standard library is statically linked into
 *your* program, so vendoring it would attach network copyleft to every binary `tkc` compiles. The
 `dlopen` hatch does not escape that — dynamic combination is still combination. Searching for a
