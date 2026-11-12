@@ -37,7 +37,7 @@ Configuration for either end of a connection. Treat it as opaque: build it with 
 | `requiremutual` | `bool` | demand a certificate from the peer |
 | `insecure` | `bool` | client only: do not authenticate the server (set by `tls.insecureconfig`; story 121.64) |
 
-A `$tlsconfig{...}` literal that leaves out `insecure` gets `false`, so it verifies the server like `tls.tlsconfig`. The first four fields were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` until story 136.46; no toke program could name them, so there are no callers to migrate.
+A `$tlsconfig{...}` literal gives every field, `insecure` included (E4077 otherwise, story 127.365; before that an omitted `insecure` read an uninitialised slot, which could switch verification off). A literal with `insecure:false` verifies the server like `tls.tlsconfig`. The first four fields were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` until story 136.46; no toke program could name them, so there are no callers to migrate.
 
 The fields read what the table says (135.30), and the connection calls read a configuration through them, so a `$tlsconfig{...}` literal works with `tls.connect` and `tls.listen`. `tls.freeconfig` frees only a configuration one of the constructors made; on a literal it returns `false` and frees nothing.
 

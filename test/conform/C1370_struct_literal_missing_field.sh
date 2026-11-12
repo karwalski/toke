@@ -78,6 +78,11 @@ expect "10 std record omits three fields" \
     "E4077|every declared field|'hour', 'min', 'sec'|39|ABSENT"
 expect "11 std record with every field, out of order, stays clean" \
     "$(diags 'm=a;i=tm:std.time;f=main():i64{let p=$timeparts{sec:0;year:2026;month:1;day:1;hour:0;min:0};<p.month};')" "rc=0"
+# 10b. The std.tls config: an omitted `insecure` read an uninitialised slot, so
+#      a literal could switch server verification off.  It is E4077 now.
+expect "10b \$tlsconfig literal without insecure" \
+    "$(diags 'm=a;i=tls:std.tls;f=main():i64{let c=$tlsconfig{certpem:"";keypem:"";peercertpem:"";requiremutual:false};<0};')" \
+    "E4077|every declared field|'insecure'|39|ABSENT"
 # 12-13. An imported user record (a user module's .tki).
 cat > "${WORK}/amod.tki" <<'EOF'
 {
