@@ -79,7 +79,7 @@ SURFACES = [
     {"path": CANON_MD,
      "blocks": ["one_liner", "paragraph", "token_efficiency_short_form",
                 "disambiguation", "disambiguation_structured_data", "subprojects"],
-     "facts": ["purpose_one_sentence"]},
+     "facts": ["purpose_one_sentence", "compiler"]},
 
     {"path": "README.md", "blocks": ["paragraph"]},
 
@@ -89,6 +89,13 @@ SURFACES = [
     # page or the layout it renders through satisfies the block.
     {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"]},
     {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"]},
+    # Story 132.141: llms.txt also copies the `compiler` fact (canonical.md §5). The
+    # corrected copy is on a toke-website branch that is not merged yet, so this
+    # entry warns until it is -- then delete the "story" key and it is enforced.
+    # Rule 2's "compiler: single-pass / LLVM-only" entry catches the old wording on
+    # every other surface, copied or paraphrased.
+    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "facts": ["compiler"],
+     "story": "132.141"},
 
     # repo READMEs, rewritten from the canonical block by story 132.10. These are
     # repository front pages, not registry descriptions: 132.4 owns the PyPI, npm,
@@ -282,6 +289,11 @@ EXCLUDE_DIRS = {
 # the entries kept downgrading a "55-character set" and an open Gate 1 verdict
 # to warnings for seven weeks after it.
 PENDING = {
+    # Story 132.141: both copies of the retired compiler fact are corrected on
+    # unmerged branches in their own repositories (z150/compiler-fact-1113 in
+    # toke-mcp and toke-website). Delete both entries when those merge.
+    "../toke-mcp/npm-tkc/package.json": "132.141",
+    "../toke-website/sites/tokelang.dev/llms.txt": "132.141",
 }
 PENDING_PREFIXES = (
     # Story 132.42 removed ("../toke-website/", "132.9 / 132.2 — website roadmap
@@ -322,6 +334,14 @@ STALE = [
      "backtrack-free (with bounded lookahead of up to 3 tokens) — toke-spec-v0.4.md §E"),
     (re.compile(r"\b(13|thirteen)[\s-]+keywords?\b", re.I), "13 keywords",
      "14 keywords: m i t f let if el lp br rt as mt sc mut — toke-spec-v0.4.md §A"),
+    # Story 132.141 — the retired COMPILER fact. canonical.md §5 said "single-pass
+    # C99, zero dependencies beyond LLVM": tkc has separate lexer, parser, resolver,
+    # checker and lowering stages, links only libc, libm, zlib and pthreads, and
+    # builds binaries by running clang on the LLVM IR it writes.
+    (re.compile(r"\bsingle[\s-]+pass\s+C99\b|\bdependencies\s+beyond\s+LLVM\b", re.I),
+     "compiler: single-pass / LLVM-only",
+     "the `compiler` fact in canonical.json: C99; links only libc, libm, zlib and "
+     "pthreads; emits LLVM IR and drives clang — canonical.md §5"),
     (re.compile(r"\bexactly one token of lookahead\b", re.I), "one-token lookahead",
      "bounded lookahead of up to 3 tokens on an enumerated set of productions"),
     # Story 132.69 — the retired Gate 1 VERDICT. The verdict was re-opened on
@@ -804,6 +824,18 @@ SELFTEST = [
     (True, "a requirement, not a result",
      "Gate 1 requires both criteria to be met before Phase 2 opens."),
     (False, "one-token lookahead", "The parser needs exactly one token of lookahead."),
+    # Story 132.141 — the retired compiler fact, as it was published.
+    (False, "single-pass C99, LLVM-only (canonical.md §5 before 132.141)",
+     "tkc, the reference compiler: single-pass C99, zero dependencies beyond LLVM, native"),
+    (False, "single-pass C99 in a JSON string (npm-tkc/package.json before 132.141)",
+     '  "description": "tkc, the reference toke compiler and checker: single-pass C99, '
+     'native binaries, structured diagnostics.",'),
+    (False, "LLVM-only vendor claim (soc2-readiness.md:94 before 132.141)",
+     "| CC9.1 Vendor management | No third-party dependencies beyond LLVM and libc | x |"),
+    (True, "the retired compiler fact, named as retired",
+     "It replaced the retired wording \"single-pass C99, zero dependencies beyond LLVM\"."),
+    (True, "single-pass about something else",
+     "The JSON stream parser is single-pass and not thread-safe."),
     (False, "negation of something else in the previous sentence",
      "The parser does not backtrack. The grammar is LL(1)."),
     (False, "negation of something else, wrapped",

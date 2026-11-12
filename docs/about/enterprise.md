@@ -43,7 +43,7 @@ tkc program.tk -o program
 tkc --target aarch64-linux-gnu program.tk -o program
 ```
 
-The compiler is a single self-contained binary with no runtime dependencies. It integrates into any CI/CD pipeline, container image, or build system that can invoke a command-line tool.
+The compiler is a single native binary that links only libc, libm, zlib and pthreads. It emits LLVM IR and runs clang to build native binaries, so clang must be installed wherever tkc builds a program (`tkc --check` does not need it). It integrates into any CI/CD pipeline, container image, or build system that can invoke a command-line tool.
 
 ### Interface Files
 
@@ -75,7 +75,7 @@ The toke compiler is built with security as a baseline requirement:
 - **SAST-scanned.** Every commit is checked with cppcheck and clang-tidy. Zero error-level findings are permitted.
 - **Fuzz-tested.** The compiler frontend is fuzzed to catch crashes, undefined behaviour, and memory safety issues.
 - **SBOM and signed releases.** Release artifacts include a software bill of materials and cryptographic signatures.
-- **No external dependencies.** The compiler frontend has zero external C library dependencies, minimising supply chain risk.
+- **Small dependency surface.** The compiler links only libc, libm, zlib and pthreads, and uses clang as its backend toolchain, minimising supply chain risk.
 - **Responsible disclosure.** Security issues are handled through the process described in [SECURITY.md](https://github.com/karwalski/toke/blob/main/SECURITY.md).
 
 ## Licensing

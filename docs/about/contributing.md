@@ -73,7 +73,7 @@ cd toke
 make
 ```
 
-The `tkc` binary is placed in the repo root. It is a self-contained native binary with no runtime dependencies.
+The `tkc` binary is placed in the repo root. It links only libc, libm, zlib and pthreads, and runs clang to build native binaries, so clang must stay installed (`tkc --check` does not need it; `TKC_CC` names a different clang).
 
 ### Run the conformance suite
 

@@ -103,12 +103,21 @@ is the sentence every downstream surface quotes.*
 
 ## 5. Compiler
 
-**tkc**, the reference compiler: single-pass C99, zero dependencies beyond LLVM, native
-binaries for x86-64 and ARM64, and structured diagnostics with stable error codes,
-machine-parseable spans and a fix field. Current version: **toke 3.1.0** (`tkc --version`).
-Apache-2.0.
+tkc, the reference compiler: C99; links only libc, libm, zlib and pthreads; emits LLVM IR
+and drives clang to build native binaries for x86-64 and ARM64; structured diagnostics with
+stable error codes, machine-parseable spans and a fix field. Current version: **toke 3.1.0**
+(`tkc --version`). Apache-2.0.
 
-*Source: `src/main.c` (`VERSION`); `docs/about/repos.md`.*
+The first sentence is the `compiler` fact in `canonical.json`, and `make check-canonical`
+compares every copy of it word for word. It replaced "single-pass C99, zero dependencies
+beyond LLVM" (story 132.141), which was wrong on both counts: tkc runs separate lexer,
+parser, name-resolution, type-checking and IR-lowering stages, and it does not link LLVM.
+It writes textual LLVM IR and runs clang (the absolute path baked in at build time, or
+`TKC_CC`; E9027 if neither is an executable), so clang is a run-time requirement for
+building a binary, though not for `--check`.
+
+*Source: `src/main.c` (`VERSION`, `resolve_cc`); `Makefile` (`LDLIBS = -lm -lz -lpthread`);
+`otool -L ./tkc` / `ldd ./tkc`; `src/llvm.c` (target triples); `docs/about/repos.md`.*
 
 ## 6. Tokenizer
 
