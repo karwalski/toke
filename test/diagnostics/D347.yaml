@@ -1,0 +1,17 @@
+id: D347
+series: D
+description: "127.358: the 127.318 chain `a.concat(b).concat(d)` on arrays is E4036 at check time (it passed --check and printed `3 262913 0 0`); the inner call is the one reported, with the fix `(a+b)`"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let a=@(1;2);
+    let b=@(3);
+    let d=@(4);
+    let c=a.concat(b).concat(d);
+    io.println("\(c.len)");
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4036"]
+expected_fix: "(a+b)"

@@ -1,0 +1,14 @@
+id: D348
+series: D
+description: "127.358: a user function's array result used as a receiver is judged by its declared type -- `mk().concat(b)` with mk:@(i64) is E4036, with no fix (a call receiver is not rewritten)"
+input: |
+  m=t;
+  f=mk():@(i64){<@(1;2)};
+  f=main():i64{
+    let b=@(3);
+    let c=mk().concat(b);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4036"]
+expected_fix_absent: true

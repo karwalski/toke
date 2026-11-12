@@ -5044,12 +5044,42 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
                      "method of another type, and a '%s' does not answer it%s",
                      member, type_name(rt), member, kn, note);
             snprintf(got, sizeof got, "%s.%s", kn, member);
-            /* No `fix`: whether the receiver or the member is wrong is not
-             * decidable here (AGENTS.md §6). */
-            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
-                      msg,
-                      "expected", "a member the receiver's type answers",
-                      "got", got, (const char *)NULL);
+            /* In general no `fix`: whether the receiver or the member is
+             * wrong is not decidable here (AGENTS.md §6).
+             *
+             * 127.358: one shape is decidable.  `a.concat(b)` where `a` and
+             * `b` are both identifiers of the SAME established array type
+             * `@T`: array `+` is toke's concatenation (patterns-v0.4,
+             * acc-array form b), so `(a+b)` is the one spelling that means
+             * what was written, with the type it was written for.  Any other
+             * argument (a literal, a call, a different or unknown type) or
+             * receiver shape gets no fix: the rewrite would be a guess or
+             * would need source spans the AST does not keep. */
+            char cfix[320];
+            const char *cfixp = NULL;
+            if (rk == RK_A && strcmp(member, "concat") == 0 &&
+                recv->kind == NODE_IDENT && call->child_count == 2 &&
+                call->children[1] && call->children[1]->kind == NODE_IDENT) {
+                const Type *bt = recv_value_type(cx, call->children[1]);
+                if (bt && bt->kind == TY_ARRAY && rt->elem &&
+                    rt->elem->kind != TY_UNKNOWN && types_equal(rt, bt)) {
+                    char an[128], bn[128];
+                    TOKSTR(an, cx->src, recv);
+                    TOKSTR(bn, cx->src, call->children[1]);
+                    snprintf(cfix, sizeof cfix, "(%s+%s)", an, bn);
+                    cfixp = cfix;
+                }
+            }
+            if (cfixp)
+                diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                          msg,
+                          "expected", "a member the receiver's type answers",
+                          "got", got, "fix", cfixp, (const char *)NULL);
+            else
+                diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                          msg,
+                          "expected", "a member the receiver's type answers",
+                          "got", got, (const char *)NULL);
             return;
         }
         /* 127.168: `.join` has str glue only.  Both of its lowerings
@@ -5344,6 +5374,20 @@ static Type *map_get_union(Ctx *cx, Type *v) {
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
+    /* 127.358: a CALL receiver (`mk().concat(b)`, `a.concat(b).concat(d)`)
+     * is judged by the type the call site already inferred for it (infer_impl
+     * infers a call receiver before this runs; nothing is re-inferred here).
+     * Only a proven str, array or map is returned: those are the kinds the
+     * per-kind table judges, and the emitter's kind tests read this same
+     * rtype.  A scalar-typed call result is NOT judged -- a stdlib handle
+     * (a Vec, a json value) is declared i64 and does answer receiver methods
+     * -- and an unknown one stays unjudged, as for every other receiver. */
+    if (recv->kind == NODE_CALL_EXPR) {
+        const Type *ct = recv->rtype;
+        if (ct && (ct->kind == TY_STR || ct->kind == TY_ARRAY ||
+                   ct->kind == TY_MAP)) return ct;
+        return NULL;
+    }
     /* 127.168: an array or map LITERAL is as proven a receiver as a string
      * literal — `@(1;2;3).replace(1;2)` passed --check and exited 139 because
      * only identifiers and string literals were judged.  The emitter's kind
@@ -6557,6 +6601,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     if (!is_mod&&rv->children[0]->kind!=NODE_TYPE_IDENT) infer(cx,rv);
                 }
+                /* 127.358: and a CALL receiver (`a.concat(b).concat(d)`,
+                 * `f(x).trim()`).  Nothing inferred it either, so the inner
+                 * call was never checked at all: not its receiver dispatch
+                 * (E4036), not its arity, not its arguments -- and its
+                 * result reached the outer judgement typeless, so the outer
+                 * call was never judged either.  An array `.concat` chain
+                 * passed --check and printed `3 262913 0 0`.  Inferring it
+                 * runs every check the same call gets anywhere else, and
+                 * gives recv_value_type the result type to judge. */
+                if (rv&&rv->kind==NODE_CALL_EXPR) infer(cx,rv);
             }
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
