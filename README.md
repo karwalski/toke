@@ -192,8 +192,11 @@ on its own only compiles, writing `./hello`):
 ./toke-run hello.tk
 ```
 
-Compiling a program needs `clang` on `PATH`, because the compiler hands its
-LLVM IR to clang to produce and link the binary; without it, E9003 says so.
+Compiling a program needs `clang`, because the compiler hands its LLVM IR to
+clang to produce and link the binary. tkc uses the clang found when it was
+built (an absolute path), or the one named by the `TKC_CC` environment
+variable; it never searches `PATH`. If neither names an executable, E9027
+says so.
 
 Programs get no file or network access unless granted at run time. A program
 that reads a file stops with `CAP001` and names the flag to add, for example
