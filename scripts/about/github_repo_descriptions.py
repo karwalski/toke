@@ -79,6 +79,10 @@ REPOS = [
     ("homebrew-toke",
      "Homebrew tap for toke: the tkc and ooke formulae.",
      ["toke", "homebrew"], True),
+    ("toke-ocr",
+     "toke-ocr: optical character recognition for clean machine-printed documents, "
+     "written in toke.",
+     ["toke", "ocr"], True),
     ("toke-benchmark",
      "Archived (superseded by karwalski/toke-eval). Early benchmark material for toke, "
      "kept for provenance.",
@@ -116,6 +120,7 @@ LICENCES = {
     "loke": "MIT",
     "toke-web": "MIT",
     "homebrew-toke": "MIT",
+    "toke-ocr": "MIT",
     "toke-cloud": "Proprietary",
     "toke-console": "Proprietary",
 }

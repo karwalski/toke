@@ -5,8 +5,8 @@ section: about
 order: 9
 ---
 
-The toke project is seventeen repositories under the
-[karwalski](https://github.com/karwalski) GitHub account: twelve public and active,
+The toke project is eighteen repositories under the
+[karwalski](https://github.com/karwalski) GitHub account: thirteen public and active,
 one public but undescribed pending an owner decision, two private, and two archived.
 
 Several repositories are checked out locally under a different name from their
@@ -30,6 +30,7 @@ be told apart.
 | [loke](https://github.com/karwalski/loke) | loke, toke's local intelligence layer, written in toke. | MIT | Matthew Watt | `loke` |
 | [toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev, built with ooke and served by a toke binary on std.http. | MIT | Matthew Watt | `toke-website` |
 | [homebrew-toke](https://github.com/karwalski/homebrew-toke) | Homebrew tap for toke: the `tkc` and `ooke` formulae. Not installable yet: the formulae carry placeholder checksums until the release artefacts they download are published. | MIT | Matthew Watt | `homebrew-toke` |
+| [toke-ocr](https://github.com/karwalski/toke-ocr) | Optical character recognition for clean machine-printed documents, written in toke (Epic 139). Separate from `std.ocr`, the platform-engine binding in the standard library. | MIT | Matthew Watt | `toke-ocr` |
 
 ### Licence boundary inside toke
 
