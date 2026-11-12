@@ -290,7 +290,7 @@ EXCLUDE_DIRS = {
 # to warnings for seven weeks after it.
 PENDING = {
     # Story 132.141: both copies of the retired compiler fact are corrected on
-    # unmerged branches in their own repositories (z150/compiler-fact-1113 in
+    # unmerged branches in their own repositories (fix/compiler-fact-z150 in
     # toke-mcp and toke-website). Delete both entries when those merge.
     "../toke-mcp/npm-tkc/package.json": "132.141",
     "../toke-website/sites/tokelang.dev/llms.txt": "132.141",
