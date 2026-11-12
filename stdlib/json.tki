@@ -824,6 +824,17 @@
       ],
       "return": "i64",
       "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.printval",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "void",
+      "gen": "abi",
+      "internal": true
     }
   ]
 }

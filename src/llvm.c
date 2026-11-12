@@ -3348,6 +3348,66 @@ static int json_arr_shape(Ctx *c, const Node *n, int *kind_out) {
     }
     return 0;
 }
+/* 127.353: the JSON descriptor of a checker type, for tk_json_printval_w
+ * (grammar in json_glue.c): i u f b s, '[' elem, '{' name ':' desc, ... '}'.
+ * Returns 1 and appends to buf when every part of the type has a JSON shape
+ * the printer knows -- scalars, str, arrays and plain records (one i64 slot
+ * per field, no header: struct_lit).  Returns 0 for anything else (a map, a
+ * sum, an error union, a function, a pointer, an opaque handle with no
+ * declared fields, an unresolved type), and the caller must not guess. */
+static int json_type_desc(Ctx *c, const Type *t, char *buf, size_t cap,
+                          size_t *len, int depth) {
+    if (!t || depth > 16) return 0;
+    const char *lit = NULL;
+    switch (t->kind) {
+    case TY_I64: case TY_I32: case TY_I16: case TY_I8:
+    case TY_U32: case TY_U16: case TY_U8: lit = "i"; break;
+    case TY_U64: lit = "u"; break;
+    case TY_F64: case TY_F32: lit = "f"; break;
+    case TY_BOOL: lit = "b"; break;
+    case TY_STR: lit = "s"; break;
+    case TY_ARRAY:
+        if (*len + 2 > cap) return 0;
+        buf[(*len)++] = '['; buf[*len] = '\0';
+        return json_type_desc(c, t->elem, buf, cap, len, depth + 1);
+    case TY_STRUCT: {
+        /* no declared fields: an opaque std handle ($vechandle), whose
+         * memory is the glue's own -- not a record to walk */
+        if (!t->name || t->field_count <= 0) return 0;
+        const StructInfo *si = lookup_struct(c, t->name);
+        if (si && (si->is_sum || si->field_count != t->field_count)) return 0;
+        if (!t->field_names || !t->field_types) return 0;
+        if (*len + 2 > cap) return 0;
+        buf[(*len)++] = '{';
+        for (int i = 0; i < t->field_count; i++) {
+            const char *fn = t->field_names[i];
+            size_t fl = fn ? strlen(fn) : 0;
+            if (!fl || fn[0] == '$' || strpbrk(fn, "{}[]:,\"\\")) return 0;
+            if (*len + fl + 3 > cap) return 0;
+            if (i) buf[(*len)++] = ',';
+            memcpy(buf + *len, fn, fl); *len += fl;
+            buf[(*len)++] = ':'; buf[*len] = '\0';
+            if (!json_type_desc(c, t->field_types[i], buf, cap, len, depth + 1)) return 0;
+        }
+        if (*len + 2 > cap) return 0;
+        buf[(*len)++] = '}'; buf[*len] = '\0';
+        return 1;
+    }
+    default: return 0;
+    }
+    if (*len + 2 > cap) return 0;
+    buf[(*len)++] = lit[0]; buf[*len] = '\0';
+    return 1;
+}
+/* 127.353: does this type contain a record anywhere (so the shape-only
+ * tk_json_printarr_w, which prints each element word as a scalar, cannot
+ * print it)? */
+static int json_type_has_struct(const Type *t, int depth) {
+    if (!t || depth > 16) return 0;
+    if (t->kind == TY_STRUCT) return 1;
+    if (t->kind == TY_ARRAY) return json_type_has_struct(t->elem, depth + 1);
+    return 0;
+}
 /* 127.11: is this receiver an array (as opposed to a str or a map)? The verbs
  * `contains` / `find` / `indexof` / `slice` exist on both strings and arrays;
  * with no array test they were all routed to the std.str glue, which read the
@@ -6012,6 +6072,48 @@ static int emit_expr(Ctx *c, const Node *n)
              * so hand tk_json_printarr_w the nesting depth and element kind
              * rather than letting the printer guess (it printed `@(122;5)` as
              * the string "z", and an @@i64 as a list of addresses). */
+            /* 127.353: a record (or an array holding records) prints from a
+             * descriptor of its checker type.  It used to reach
+             * tk_json_print_arr, which read the length from rec[-1] -- before
+             * the allocation, since a record has no header -- and printed `[]`
+             * or garbage; an array of records printed its element addresses. */
+            {
+                const Type *jt0 = n->children[1]->rtype;
+                if (jt0 && (jt0->kind == TY_STRUCT || jt0->kind == TY_MAP ||
+                            jt0->kind == TY_FUNC || jt0->kind == TY_PTR ||
+                            (jt0->kind == TY_ARRAY && json_type_has_struct(jt0, 0)))) {
+                    char jd[512]; size_t jl = 0;
+                    jd[0] = '"'; jl = 1;
+                    if (!json_type_desc(c, jt0, jd, sizeof jd - 1, &jl, 0)) {
+                        diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                                  "internal compiler error: json.print has no JSON "
+                                  "printer for this argument's type (a map, a sum, "
+                                  "a function, a pointer or an opaque handle, or a "
+                                  "record holding one); its value is not printed "
+                                  "by guessing",
+                                  (void *)0);
+                    } else {
+                        jd[jl++] = '"'; jd[jl] = '\0';
+                        int dal = 1;
+                        int dsi = emit_str_global(c, jd, (int)jl, &dal);
+                        int dg = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                                dg, dal, dal, c->module_prefix, dsi);
+                        int dp = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", dp, dg);
+                        int hv = args[0];
+                        if (!strcmp(aty0, "i8*")) {
+                            int z = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, hv);
+                            hv = z;
+                        }
+                        fprintf(c->out, "  call void @tk_json_printval_w(i64 %%t%d, i64 %%t%d)\n", hv, dp);
+                    }
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                    return t;
+                }
+            }
             int jk0 = 0, jdepth0 = json_arr_shape(c, n->children[1], &jk0);
             if (jdepth0 > 0) {
                 int hv = args[0];
@@ -6044,8 +6146,18 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *jst = expr_struct_type(c, jn0);
                     j_is_str = jst && (!strcmp(jst, "$str") || !strcmp(jst, "str"));
                 }
-                fprintf(c->out, "  call void @%s(i8* %%t%d)\n",
-                        j_is_str ? "tk_json_print_str" : "tk_json_print_arr", args[0]);
+                /* 127.353: not a str, and (above) not an array, record or
+                 * map either: the type is unknown here, and tk_json_print_arr
+                 * would read a length from v[-1] of a block that may have no
+                 * header.  Fail the build rather than guess. */
+                if (j_is_str)
+                    fprintf(c->out, "  call void @tk_json_print_str(i8* %%t%d)\n", args[0]);
+                else
+                    diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                              "internal compiler error: json.print argument is a "
+                              "pointer of unknown type; its value is not printed "
+                              "by guessing",
+                              (void *)0);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
@@ -6080,6 +6192,30 @@ static int emit_expr(Ctx *c, const Node *n)
                 return t;
             } else if (!strcmp(aty0, "double")) {
                 fprintf(c->out, "  call void @tk_json_print_f64(double %%t%d)\n", args[0]);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                return t;
+            } else if (!strcmp(aty0, "float")) {
+                /* 127.353: an f32 went to tk_json_print as the i64 bit
+                 * pattern of its f64 widening, which that printer took for a
+                 * pointer (any value past 1e9) and dereferenced. */
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", z, args[0]);
+                fprintf(c->out, "  call void @tk_json_print_f64(double %%t%d)\n", z);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                return t;
+            } else if (!strcmp(aty0, "i32") || !strcmp(aty0, "i16") || !strcmp(aty0, "i8")) {
+                /* 127.353: a narrow integer is a number, never a pointer;
+                 * tk_json_print dereferenced one past 1e9.  Widen by the
+                 * checker's signedness. */
+                const Type *nt0 = n->children[1]->rtype;
+                int uns = nt0 && (nt0->kind == TY_U8 || nt0->kind == TY_U16 ||
+                                  nt0->kind == TY_U32);
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = %s %s %%t%d to i64\n", z, uns ? "zext" : "sext",
+                        aty0, args[0]);
+                fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", z);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
@@ -10058,7 +10194,8 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
         const char *m = strrchr(c->imports[i].module, '.');
         m = m ? m + 1 : c->imports[i].module;
         /* 127.229 (2): json.print only walks its argument to write it
-         * (tk_json_printarr_w / tk_json_print_*; json_glue.c keeps nothing),
+         * (tk_json_printarr_w / tk_json_printval_w / tk_json_print_*; json_glue.c
+         * keeps nothing),
          * so `j.print(acc)` after the loop no longer demotes every append.
          * Method by method: other std.json exports are not vouched for. */
         if (!strcmp(m, "json")) {

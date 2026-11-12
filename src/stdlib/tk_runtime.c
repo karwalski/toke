@@ -490,51 +490,19 @@ int64_t tk_str_char_at(const char *s, int64_t idx) {
     return (int64_t)(unsigned char)s[idx];
 }
 
-/* Generic print: detect type heuristically from the i64 value.
- * - Heap pointers (from json_parse returning strings/arrays) are large values
- *   outside the typical integer range on 64-bit systems.
- * - Small values (fitting in 32 bits) are treated as integers.
- * - Pointer-range values are checked: if they look like an int array
- *   (first element is the length, stored by parse_int_array), print as array.
- *   Otherwise try as string. */
+/* Generic print: the i64 value as a JSON number.
+ *
+ * 127.353: this used to guess the value's type -- anything outside +-1e9 was
+ * taken for a pointer, printed as a string if its first byte was printable
+ * ASCII, else as an int array whose length it read from val[-1].  A toke
+ * record has no header (src/llvm.c struct_lit: malloc(nfields * 8)), so that
+ * read was before the allocation; an f32 or a large i32 was dereferenced as
+ * an address.  The compiler now picks a typed printer from the argument's
+ * static type (tk_json_print_i64/_bool/_str/_f64, tk_json_printarr_w,
+ * tk_json_printval_w), and a value it cannot type is a build error, so a call
+ * reaching this is an integer; what is left is the documented runtime-ABI
+ * contract, `void (i64)`: print the i64.  It reads no memory. */
 void tk_json_print(int64_t val) {
-    /* Small integers and booleans: print directly */
-    if (val >= -1000000000LL && val <= 1000000000LL) {
-        printf("%lld\n", (long long)val);
-        return;
-    }
-
-    /* Likely a pointer — determine if it's a string or array.
-     *
-     * Heuristic: strings are char pointers where the first bytes are
-     * printable ASCII. Arrays are int64_t pointers where arr[-1] holds
-     * the length (set by alloc_array).
-     *
-     * Check string first: if the first char is printable ASCII (32-126),
-     * it's almost certainly a string from json_parse. */
-    const char *s = (const char *)(intptr_t)val;
-    unsigned char first = (unsigned char)s[0];
-    if (first >= 32 && first <= 126) {
-        /* Looks like a string */
-        put_json_string(s);
-        putchar('\n');
-        return;
-    }
-
-    /* Otherwise try as array (alloc_array format: length at arr[-1]) */
-    int64_t *arr = (int64_t *)(intptr_t)val;
-    int64_t maybe_len = arr[-1];
-    if (maybe_len >= 0 && maybe_len < 100000) {
-        printf("[");
-        for (int64_t i = 0; i < maybe_len; i++) {
-            if (i > 0) printf(",");
-            printf("%lld", (long long)arr[i]);
-        }
-        printf("]\n");
-        return;
-    }
-
-    /* Fallback */
     printf("%lld\n", (long long)val);
 }
 
