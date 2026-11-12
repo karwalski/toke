@@ -11,11 +11,11 @@ added, renamed or removed without the page following:
     a table of flag and description, in the order the help prints them.  The
     usage line is taken from the help too, so a change of program name in the
     usage text (127.352: "toke" -> "tkc") reaches the page on regeneration.
-  * `tkc pkg <command>` -- tkc pkg has no help of its own (`tkc pkg --help` is
-    an unknown command; 132.142), so each subcommand's usage is read from the
-    E9031 usage diagnostic it prints when given too many arguments.  That is
-    rejected before any file is touched, and it runs in an empty temporary
-    directory regardless.
+  * `tkc pkg <command>` -- each command's usage line and description from
+    `tkc pkg <command> --help`, and the flags tkc pkg accepts from the Flags
+    section of `tkc pkg --help` (132.142; until then pkg had no help, and the
+    usage was scraped from its E9031 diagnostics).  Each probe runs in an empty
+    temporary directory, and writing anything there is an error.
   * Exit codes -- the TKC_EXIT_* defines in src/tkc_limits.h.
 
 Only the region between the BEGIN/END GENERATED markers is rewritten; the prose
@@ -131,27 +131,47 @@ def parse_help(text):
     return usage, out
 
 
-def pkg_usages(tkc):
-    """{command: usage} from each tkc pkg subcommand's E9031 usage diagnostic."""
+def parse_pkg_flags(text):
+    """[(flag, description)] from the Flags: section of `tkc pkg --help`."""
+    out, inside = [], False
+    for line in text.split("\n"):
+        if line.strip() == "Flags:":
+            inside = True
+            continue
+        if inside:
+            if not line.startswith("  "):
+                break
+            out.append(split_entry(line.strip()))
+    return out
+
+
+def parse_pkg_command(text):
+    """(usage, description) from `tkc pkg <command> --help`: the Usage line and
+    the paragraph after it."""
+    paras = [p.strip() for p in text.strip("\n").split("\n\n")]
+    if not paras or not paras[0].startswith("Usage:"):
+        return None, None
+    usage = paras[0][len("Usage:"):].strip()
+    desc = " ".join(paras[1].split()) if len(paras) > 1 and not paras[1].startswith("Flags:") else ""
+    return usage, desc
+
+
+def pkg_help(tkc):
+    """({command: (usage, description)}, [(flag, description)]) from tkc pkg's help."""
     got = {}
     with tempfile.TemporaryDirectory() as tmp:
+        rc, out, err = run([tkc, "pkg", "--help"], cwd=tmp)
+        if rc != 0 or not out.startswith("Usage:"):
+            raise SystemExit("render_cli_reference: `%s pkg --help` failed (rc %d): %s"
+                             % (tkc, rc, (err or out)[:200]))
+        flags = parse_pkg_flags(out)
         for cmd in PKG_COMMANDS:
-            _, out, err = run([tkc, "pkg", cmd, "x", "y", "z"], cwd=tmp)
-            msg = ""
-            for line in (out + err).splitlines():
-                try:
-                    rec = json.loads(line)
-                except ValueError:
-                    continue
-                if rec.get("error_code") == "E9031":
-                    msg = rec.get("message", "")
-                    break
-            m = re.match(r"usage: (.*)$", msg)
-            got[cmd] = m.group(1).strip() if m else None
+            rc, out, err = run([tkc, "pkg", cmd, "--help"], cwd=tmp)
+            got[cmd] = parse_pkg_command(out) if rc == 0 else (None, None)
         if os.listdir(tmp):
-            raise SystemExit("render_cli_reference: a usage probe wrote %s"
+            raise SystemExit("render_cli_reference: a help probe wrote %s"
                              % os.listdir(tmp))
-    return got
+    return got, flags
 
 
 def exit_codes():
@@ -173,16 +193,22 @@ def prose(s):
 
 
 def render(usage, sections, pkg, codes):
+    """pkg is ({command: (usage, description)}, [(flag, description)])."""
+    cmds, pflags = pkg
     out = [BEGIN, "", "## Usage", "", "```text", usage, "```", ""]
     for title, ents in sections:
         out += ["## %s" % title, "", "| Flag | Description |", "|---|---|"]
         out += ["| `%s` | %s |" % (cell(f), prose(d)) for f, d in ents]
         out.append("")
     out += ["## Package commands", "",
-            "Each usage line is the one `tkc pkg` prints for that command.", "",
-            "| Command | Usage |", "|---|---|"]
+            "Each row is what `tkc pkg <command> --help` prints for that command.", "",
+            "| Command | Usage | Description |", "|---|---|---|"]
     for cmd in PKG_COMMANDS:
-        out.append("| `%s` | `%s` |" % (cmd, cell(pkg.get(cmd) or "(no usage printed)")))
+        u, d = cmds.get(cmd) or (None, None)
+        out.append("| `%s` | `%s` | %s |" % (cmd, cell(u or "(no usage printed)"), prose(d or "")))
+    out += ["", "## Package flags", "", "Accepted by every `tkc pkg` command.", "",
+            "| Flag | Description |", "|---|---|"]
+    out += ["| `%s` | %s |" % (cell(f), prose(d)) for f, d in pflags]
     out += ["", "## Exit codes", "", "| Code | Meaning |", "|---|---|"]
     out += ["| %s | %s |" % (c, prose(d)) for c, d in codes]
     out += ["", END]
@@ -195,7 +221,7 @@ def generated(tkc):
         raise SystemExit("render_cli_reference: `%s --help` failed (rc %d): %s"
                          % (tkc, rc, (err or out)[:200]))
     usage, sections = parse_help(out)
-    return render(usage, sections, pkg_usages(tkc), exit_codes())
+    return render(usage, sections, pkg_help(tkc), exit_codes())
 
 
 def region(text):
@@ -242,8 +268,44 @@ Environment:
 """
 
 
+FAKE_PKG_HELP = """Usage: tkc pkg <command> [args] [flags]
+
+Manage pkg.toml and pkg.lock.
+
+Commands:
+  init [<name>]       Write pkg.toml
+  add <name> <constraint> [--git <url>]
+                      Add a dependency
+
+Flags:
+  --allow-file-source Accept file:/// package sources
+  --help              Print this help and exit
+
+Run `tkc pkg <command> --help` for a command's arguments.
+"""
+
+FAKE_PKG_ADD_HELP = """Usage: tkc pkg add <name> <constraint> [--git <url>]
+
+Add a dependency or change its constraint,
+then write pkg.lock.
+
+Flags:
+  --git <url>         The package's git source
+"""
+
+
 def selftest():
     bad = 0
+    pf = parse_pkg_flags(FAKE_PKG_HELP)
+    if pf != [("--allow-file-source", "Accept file:/// package sources"),
+              ("--help", "Print this help and exit")]:
+        bad += 1
+        print("SELFTEST FAIL pkg flags parsed as %r" % pf)
+    pc = parse_pkg_command(FAKE_PKG_ADD_HELP)
+    if pc != ("tkc pkg add <name> <constraint> [--git <url>]",
+              "Add a dependency or change its constraint, then write pkg.lock."):
+        bad += 1
+        print("SELFTEST FAIL pkg command help parsed as %r" % (pc,))
     usage, sections = parse_help(FAKE_HELP)
     want = {
         "Flags": [("--out <path>", "Output binary path"),
@@ -265,7 +327,7 @@ def selftest():
         if got.get(title) != ents:
             bad += 1
             print("SELFTEST FAIL section %r parsed as %r" % (title, got.get(title)))
-    pkg = {c: "tkc pkg %s" % c for c in PKG_COMMANDS}
+    pkg = ({c: ("tkc pkg %s" % c, "Does %s." % c) for c in PKG_COMMANDS}, pf)
     page = render(usage, sections, pkg, [("0", "success")])
     doc = "intro\n\n" + page + "\n\noutro\n"
     # negative half: each kind of drift must be caught
@@ -277,7 +339,13 @@ def selftest():
         (False, "the usage line renamed", doc,
          render(*parse_help(renamed), pkg, [("0", "success")])),
         (False, "a pkg usage changed", doc,
-         render(usage, sections, dict(pkg, add="tkc pkg add <name>"), [("0", "success")])),
+         render(usage, sections, (dict(pkg[0], add=("tkc pkg add <name>", "Does add.")), pf),
+                [("0", "success")])),
+        (False, "a pkg description changed", doc,
+         render(usage, sections, (dict(pkg[0], add=("tkc pkg add", "Adds.")), pf),
+                [("0", "success")])),
+        (False, "a pkg flag added", doc,
+         render(usage, sections, (pkg[0], pf + [("--new", "New")]), [("0", "success")])),
         (False, "a hand edit inside the region",
          doc.replace("Output binary path", "Output path"), page),
         (False, "the markers removed", doc.replace(BEGIN, ""), page),
@@ -288,12 +356,12 @@ def selftest():
             bad += 1
             print("SELFTEST FAIL [%s] %s: %s" % ("accept" if ok else "reject", name,
                                                  why or "not flagged"))
-    n = len(want) + 1 + len(cases)
+    n = len(want) + 3 + len(cases)
     if bad:
         print("render_cli_reference selftest: %d of %d cases wrong" % (bad, n))
         return 1
     print("render_cli_reference selftest: %d cases OK (%d parser, 1 accepted, %d drifts "
-          "caught)" % (n, len(want) + 1, len(cases) - 1))
+          "caught)" % (n, len(want) + 3, len(cases) - 1))
     return 0
 
 

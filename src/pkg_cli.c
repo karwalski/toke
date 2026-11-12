@@ -217,7 +217,86 @@ typedef struct {
     const char *pos[4];
     int         npos;
     const char *git;
+    int         help;     /* --help given (132.142) */
 } PkgArgs;
+
+/* ── Commands and their help (132.142) ──────────────────────────────────── */
+
+/* The one table of commands: `tkc pkg --help`, `tkc pkg <cmd> --help` and the
+ * E9031 usage diagnostic for a wrong argument count all print from it, so the
+ * three cannot disagree.  Each description stays on one line. */
+typedef struct {
+    const char *name;
+    const char *args;     /* after "tkc pkg <name>"; "" when it takes none */
+    const char *desc;
+    int         lo, hi;   /* positional argument count */
+} PkgCmd;
+
+static const PkgCmd PKG_CMDS[] = {
+    { "init",    "[<name>]",
+      "Write pkg.toml for a new package (name: the directory's)", 0, 1 },
+    { "add",     "<name> <constraint> [--git <url>]",
+      "Add a dependency or change its constraint, then write pkg.lock", 2, 2 },
+    { "remove",  "<name>",
+      "Remove a dependency from pkg.toml, then write pkg.lock", 1, 1 },
+    { "resolve", "",
+      "Resolve pkg.toml against the package cache and write pkg.lock", 0, 0 },
+    { "fetch",   "",
+      "Resolve, fetch every package, and write a fully pinned pkg.lock", 0, 0 },
+    { "list",    "",
+      "Print the locked packages, direct then transitive", 0, 0 },
+};
+#define PKG_NCMDS ((int)(sizeof PKG_CMDS / sizeof PKG_CMDS[0]))
+
+static const PkgCmd *
+find_cmd(const char *name)
+{
+    for (int i = 0; i < PKG_NCMDS; i++)
+        if (!strcmp(PKG_CMDS[i].name, name)) return &PKG_CMDS[i];
+    return NULL;
+}
+
+static void
+print_flag(const char *flag, const char *desc)
+{
+    printf("  %-20s%s\n", flag, desc);
+}
+
+static void
+print_common_flags(void)
+{
+    print_flag("--allow-file-source", "Accept file:/// package sources (local override)");
+    print_flag("--diag-text", "Emit diagnostics as human-readable text");
+    print_flag("--diag-json", "Emit diagnostics as JSON (the default)");
+    print_flag("--help", "Print this help and exit");
+}
+
+/* `tkc pkg --help` (cmd NULL) or `tkc pkg <cmd> --help`, on stdout. */
+static void
+print_pkg_help(const PkgCmd *c)
+{
+    if (c) {
+        printf("Usage: tkc pkg %s%s%s\n\n%s.\n\nFlags:\n",
+               c->name, c->args[0] ? " " : "", c->args, c->desc);
+        if (!strcmp(c->name, "add"))
+            print_flag("--git <url>", "The package's git source (https://, ssh:// or user@host:path)");
+        print_common_flags();
+        return;
+    }
+    printf("Usage: tkc pkg <command> [args] [flags]\n\n"
+           "Manage pkg.toml and pkg.lock (ADR-0004, docs/reference/package-manifest.md).\n"
+           "\nCommands:\n");
+    for (int i = 0; i < PKG_NCMDS; i++) {
+        const PkgCmd *c = &PKG_CMDS[i];
+        char spec[96];
+        snprintf(spec, sizeof spec, "%s%s%s", c->name, c->args[0] ? " " : "", c->args);
+        if (strlen(spec) < 20) print_flag(spec, c->desc);
+        else printf("  %s\n  %-20s%s\n", spec, "", c->desc);  /* too wide: own line */
+    }
+    printf("\nFlags:\n");
+    print_common_flags();
+    printf("\nRun `tkc pkg <command> --help` for a command's arguments.\n");
+}
 
 /* Parse the flags every command shares, plus --git for add.  Returns 0,
  * or -1 after emitting E9031. */
@@ -230,6 +309,7 @@ parse_args(int argc, char **argv, int allow_git, PkgArgs *a)
         if (!strcmp(s, "--allow-file-source")) { pkg_set_allow_file_sources(true); continue; }
         if (!strcmp(s, "--diag-text")) { diag_set_format(DIAG_FMT_TEXT); continue; }
         if (!strcmp(s, "--diag-json")) { diag_set_format(DIAG_FMT_JSON); continue; }
+        if (!strcmp(s, "--help")) { a->help = 1; continue; }
         if (allow_git && !strcmp(s, "--git")) {
             if (++i >= argc) {
                 pdiag(DIAG_ERROR, E9031, "", 0, "tkc pkg %s: --git requires a URL", argv[0]);
@@ -252,10 +332,16 @@ parse_args(int argc, char **argv, int allow_git, PkgArgs *a)
 }
 
 static int
-want_args(const char *cmd, const PkgArgs *a, int lo, int hi, const char *usage)
+want_args(const char *cmd, const PkgArgs *a)
 {
-    if (a->npos < lo || a->npos > hi) {
-        pdiag(DIAG_ERROR, E9031, "", 0, "usage: tkc pkg %s %s", cmd, usage);
+    const PkgCmd *c = find_cmd(cmd);
+    if (!c) {   /* every caller names a PKG_CMDS entry; kept for the analyser */
+        pdiag(DIAG_ERROR, E9031, "", 0, "unknown command 'tkc pkg %s'", cmd);
+        return -1;
+    }
+    if (a->npos < c->lo || a->npos > c->hi) {
+        pdiag(DIAG_ERROR, E9031, "", 0, "usage: tkc pkg %s%s%s",
+              cmd, c->args[0] ? " " : "", c->args);
         return -1;
     }
     return 0;
@@ -1041,7 +1127,7 @@ out:
 static int
 cmd_init(const PkgArgs *a)
 {
-    if (want_args("init", a, 0, 1, "[<name>]") != 0) return TKC_EXIT_USAGE;
+    if (want_args("init", a) != 0) return TKC_EXIT_USAGE;
     if (file_exists(PKG_MANIFEST)) {
         pdiag(DIAG_WARNING, W9011, PKG_MANIFEST, 0,
               "pkg.toml already exists; it was left unchanged");
@@ -1090,8 +1176,9 @@ static int
 cmd_add_remove(const PkgArgs *a, int add)
 {
     const char *cmd = add ? "add" : "remove";
-    if (want_args(cmd, a, add ? 2 : 1, add ? 2 : 1,
-                  add ? "<name> <constraint> [--git <url>]" : "<name>") != 0)
+    /* The npos test repeats PKG_CMDS' count for the analyser, which cannot
+     * see through the table that pos[0] (and, for add, pos[1]) is set. */
+    if (want_args(cmd, a) != 0 || a->npos < (add ? 2 : 1))
         return TKC_EXIT_USAGE;
     const char *name = a->pos[0];
     if (!pkg_name_valid(name)) {
@@ -1175,7 +1262,7 @@ out:
 static int
 cmd_resolve_fetch(const PkgArgs *a, int fetch)
 {
-    if (want_args(fetch ? "fetch" : "resolve", a, 0, 0, "") != 0) return TKC_EXIT_USAGE;
+    if (want_args(fetch ? "fetch" : "resolve", a) != 0) return TKC_EXIT_USAGE;
     PkgManifest *m = calloc(1, sizeof *m);
     if (!m) return 1;
     int rc = load_manifest(PKG_MANIFEST, m) == 0 ? resolve_and_write(m, fetch, NULL) : 1;
@@ -1186,7 +1273,7 @@ cmd_resolve_fetch(const PkgArgs *a, int fetch)
 static int
 cmd_list(const PkgArgs *a)
 {
-    if (want_args("list", a, 0, 0, "") != 0) return TKC_EXIT_USAGE;
+    if (want_args("list", a) != 0) return TKC_EXIT_USAGE;
     PkgManifest *m = calloc(1, sizeof *m), *dm = calloc(1, sizeof *dm);
     PkgLock *lock = calloc(1, sizeof *lock);
     int rc = 1;
@@ -1248,11 +1335,25 @@ pkg_cli_main(int argc, char **argv)
         return TKC_EXIT_USAGE;
     }
     const char *cmd = argv[0];
+    /* 132.142: `tkc pkg --help` and `tkc pkg help [<command>]` print usage
+     * on stdout and exit 0, as `tkc --help` does. */
+    if (!strcmp(cmd, "--help") && argc == 1) { print_pkg_help(NULL); return 0; }
+    if (!strcmp(cmd, "help") && argc <= 2) {
+        const PkgCmd *hc = argc == 2 ? find_cmd(argv[1]) : NULL;
+        if (argc == 2 && !hc) {
+            pdiag(DIAG_ERROR, E9031, "", 0,
+                  "tkc pkg help: unknown command '%s'; the commands are init, add, "
+                  "remove, resolve, fetch and list", argv[1]);
+            return TKC_EXIT_USAGE;
+        }
+        print_pkg_help(hc);
+        return 0;
+    }
     PkgArgs a;
     int is_add = !strcmp(cmd, "add");
-    if (!strcmp(cmd, "init") || is_add || !strcmp(cmd, "remove") ||
-        !strcmp(cmd, "resolve") || !strcmp(cmd, "fetch") || !strcmp(cmd, "list")) {
+    if (find_cmd(cmd)) {
         if (parse_args(argc, argv, is_add, &a) != 0) return TKC_EXIT_USAGE;
+        if (a.help) { print_pkg_help(find_cmd(cmd)); return 0; }
     } else {
         pdiag(DIAG_ERROR, E9031, "", 0,
               "unknown command 'tkc pkg %s'; the commands are init, add, remove, "

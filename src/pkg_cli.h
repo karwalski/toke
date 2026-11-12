@@ -13,7 +13,9 @@
 /*
  * `tkc pkg <command> ...` -- argv[0] is the command (init, add, remove,
  * resolve, fetch, list).  Returns the process exit code: 0, 1 for an error
- * diagnostic, 3 (usage) for E9031.
+ * diagnostic, 3 (usage) for E9031.  `tkc pkg --help`, `tkc pkg help
+ * [<command>]` and `tkc pkg <command> --help` print usage on stdout and
+ * return 0 (132.142).
  */
 int pkg_cli_main(int argc, char **argv);
 

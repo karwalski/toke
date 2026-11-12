@@ -1,0 +1,20 @@
+Usage: tkc pkg <command> [args] [flags]
+
+Manage pkg.toml and pkg.lock (ADR-0004, docs/reference/package-manifest.md).
+
+Commands:
+  init [<name>]       Write pkg.toml for a new package (name: the directory's)
+  add <name> <constraint> [--git <url>]
+                      Add a dependency or change its constraint, then write pkg.lock
+  remove <name>       Remove a dependency from pkg.toml, then write pkg.lock
+  resolve             Resolve pkg.toml against the package cache and write pkg.lock
+  fetch               Resolve, fetch every package, and write a fully pinned pkg.lock
+  list                Print the locked packages, direct then transitive
+
+Flags:
+  --allow-file-source Accept file:/// package sources (local override)
+  --diag-text         Emit diagnostics as human-readable text
+  --diag-json         Emit diagnostics as JSON (the default)
+  --help              Print this help and exit
+
+Run `tkc pkg <command> --help` for a command's arguments.

@@ -26,8 +26,9 @@ tkc pkg init myapp            # write pkg.toml
 ```
 
 Everything below this line is generated from the compiler's own help text by
-`scripts/render_cli_reference.py`: `tkc --help` for the flags, each `tkc pkg` command's
-usage diagnostic for the package commands, and `src/tkc_limits.h` for the exit codes.
+`scripts/render_cli_reference.py`: `tkc --help` for the flags, `tkc pkg --help` and
+each `tkc pkg <command> --help` for the package commands, and `src/tkc_limits.h` for
+the exit codes.
 `make check-docs` fails when this page and the built compiler disagree; regenerate with
 `python3 scripts/render_cli_reference.py --write`. Do not edit the tables by hand.
 
@@ -134,16 +135,27 @@ toke [flags] <source-file> [source-file ...]
 
 ## Package commands
 
-Each usage line is the one `tkc pkg` prints for that command.
+Each row is what `tkc pkg <command> --help` prints for that command.
 
-| Command | Usage |
+| Command | Usage | Description |
+|---|---|---|
+| `init` | `tkc pkg init [<name>]` | Write pkg.toml for a new package (name: the directory's). |
+| `add` | `tkc pkg add <name> <constraint> [--git <url>]` | Add a dependency or change its constraint, then write pkg.lock. |
+| `remove` | `tkc pkg remove <name>` | Remove a dependency from pkg.toml, then write pkg.lock. |
+| `resolve` | `tkc pkg resolve` | Resolve pkg.toml against the package cache and write pkg.lock. |
+| `fetch` | `tkc pkg fetch` | Resolve, fetch every package, and write a fully pinned pkg.lock. |
+| `list` | `tkc pkg list` | Print the locked packages, direct then transitive. |
+
+## Package flags
+
+Accepted by every `tkc pkg` command.
+
+| Flag | Description |
 |---|---|
-| `init` | `tkc pkg init [<name>]` |
-| `add` | `tkc pkg add <name> <constraint> [--git <url>]` |
-| `remove` | `tkc pkg remove <name>` |
-| `resolve` | `tkc pkg resolve` |
-| `fetch` | `tkc pkg fetch` |
-| `list` | `tkc pkg list` |
+| `--allow-file-source` | Accept file:/// package sources (local override) |
+| `--diag-text` | Emit diagnostics as human-readable text |
+| `--diag-json` | Emit diagnostics as JSON (the default) |
+| `--help` | Print this help and exit |
 
 ## Exit codes
 
