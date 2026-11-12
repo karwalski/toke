@@ -91,7 +91,7 @@ Privacy is excluded (toke does not process personal data in the compilation pipe
 
 | Control | Gap | Remediation |
 |---------|-----|-------------|
-| CC9.1 Vendor management | No third-party dependencies beyond LLVM and libc | Document vendor risk for cloud providers when hosting |
+| CC9.1 Vendor management | The compiler links only libc, libm, zlib and pthreads, and runs clang (LLVM) to build native binaries, so clang is a toolchain dependency wherever tkc builds | Document vendor risk for cloud providers when hosting |
 
 ---
 

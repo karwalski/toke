@@ -1,5 +1,13 @@
-# 132.58a baseline -- pre-existing structural findings in
-# docs/progress.md, all in historical epics. Anything NOT listed
+# 132.58a baseline -- pre-existing structural and (132.139) status
+# findings in docs/progress.md. Anything NOT listed
 # here fails the gate; an entry here that stops being produced
 # also fails, so this file cannot rot into a blanket amnesty.
 # Regenerate deliberately with --record, never to quiet a gate.
+STATUS	123.10a	already	#1
+STATUS	123.10p	not	#1
+STATUS	124.6	premise	#1
+STATUS	128.17	open	#1
+STATUS	128.1d	open	#1
+STATUS	131.5	harness	#1
+STATUS	132.45	documented	#1
+STATUS	134.6	baseline	#1

@@ -1,7 +1,7 @@
 {
   "schema": "toke-canonical-facts/1",
   "story": "132.1",
-  "updated": "2026-11-12",
+  "updated": "2026-11-13",
   "companion": "docs/about/canonical.md",
   "rules": [
     "Every downstream surface (site, llms.txt, every repo README, registry descriptions, model cards) copies the strings in `blocks` word for word. Do not paraphrase.",
@@ -68,9 +68,10 @@
   "compiler": {
     "name": "tkc",
     "version": "toke 3.1.0",
-    "value": "tkc, the reference compiler: single-pass C99, zero dependencies beyond LLVM, native binaries for x86-64 and ARM64, and structured diagnostics with stable error codes, machine-parseable spans and a fix field.",
+    "value": "tkc, the reference compiler: C99; links only libc, libm, zlib and pthreads; emits LLVM IR and drives clang to build native binaries for x86-64 and ARM64; structured diagnostics with stable error codes, machine-parseable spans and a fix field.",
+    "retired": "single-pass C99, zero dependencies beyond LLVM (story 132.141: tkc has separate lexer/parser/resolver/checker/lowering stages, does not link LLVM, and needs clang at run time to build a binary)",
     "licence": "Apache-2.0",
-    "source": "src/main.c (`VERSION`, printed by `tkc --version`); docs/about/repos.md"
+    "source": "src/main.c (`VERSION`, printed by `tkc --version`; `resolve_cc`); Makefile (LDLIBS = -lm -lz -lpthread); otool -L ./tkc; src/llvm.c (target triples); docs/about/repos.md"
   },
   "tokenizer": {
     "value": "No toke tokenizer currently beats a general-purpose one. The shipped 8K SentencePiece model needs 15.4% more tokens than cl100k_base on canonical v0.4 `tkc --min` text (N = 2,000 stratified corpus records, 2026-09-18); the v0.3 16,384-vocab tokenizer only appears to win (0.545x) because a null `unk_token` silently deletes every backslash. No \"purpose-built tokenizer beats cl100k\" claim is supportable until the v0.4 tokenizer is trained and locked against the Phase-3 anchor of cl100k_base = 242,427 tokens on that exact sample (story 116.9).",

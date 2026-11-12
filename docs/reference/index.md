@@ -7,6 +7,12 @@ order: 7
 
 toke is a statically typed, compiled language with a 59-character set, explicit error handling, and a strict declaration order. This page is a structured overview of the language. Each section links to a dedicated reference page.
 
+## Command Line
+
+`tkc` type-checks, formats, migrates and builds toke source, and manages packages with
+`tkc pkg`. See [Command-Line Reference](/docs/reference/cli/) for every flag, the package
+commands and the exit codes, generated from `tkc --help`.
+
 ## Module System
 
 Every toke source file is a module. A file begins with a mandatory module declaration, followed in strict order by imports, type declarations, constants, and functions. Modules expose a typed interface (`.tki` file) for use by other modules.

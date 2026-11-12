@@ -149,7 +149,7 @@ The toke specification (currently v0.4) is a comprehensive document covering cha
 
 ### 5.2 Reference Compiler (tkc)
 
-A C99 compiler with an LLVM backend producing native binaries for x86-64 and ARM64. Single self-contained binary with no runtime dependencies. Passes the conformance suite at 100%. SAST-scanned and fuzz-tested.
+A C99 compiler with an LLVM backend producing native binaries for x86-64 and ARM64. A single binary that links only libc, libm, zlib and pthreads; it emits LLVM IR and drives clang to build native binaries. Passes the conformance suite at 100%. SAST-scanned and fuzz-tested.
 
 ### 5.3 Conformance Test Suite
 

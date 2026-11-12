@@ -298,9 +298,12 @@ is.
 
 ### Proposed
 
-> tkc, the reference toke compiler and checker: single-pass C99, native binaries,
-> structured diagnostics. toke: a compiled language designed for LLM code generation,
-> with a small grammar, one canonical form and compiler verification.
+> tkc, the reference toke compiler and checker: C99, emits LLVM IR and drives clang to
+> build native binaries, structured diagnostics. toke: a compiled language designed for
+> LLM code generation, with a small grammar, one canonical form and compiler verification.
+
+(132.141 retired "single-pass C99, native binaries": tkc has separate compiler stages
+and builds binaries by running clang; see `canonical.md` §5.)
 
 ### Applied in-repo (commit in `toke-mcp`)
 
