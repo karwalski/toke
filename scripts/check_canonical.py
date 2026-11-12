@@ -89,13 +89,10 @@ SURFACES = [
     # page or the layout it renders through satisfies the block.
     {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"]},
     {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"]},
-    # Story 132.141: llms.txt also copies the `compiler` fact (canonical.md §5). The
-    # corrected copy is on a toke-website branch that is not merged yet, so this
-    # entry warns until it is -- then delete the "story" key and it is enforced.
+    # Story 132.141: llms.txt also copies the `compiler` fact (canonical.md §5).
     # Rule 2's "compiler: single-pass / LLVM-only" entry catches the old wording on
     # every other surface, copied or paraphrased.
-    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "facts": ["compiler"],
-     "story": "132.141"},
+    {"path": "../toke-website/sites/tokelang.dev/llms.txt", "facts": ["compiler"]},
 
     # repo READMEs, rewritten from the canonical block by story 132.10. These are
     # repository front pages, not registry descriptions: 132.4 owns the PyPI, npm,
@@ -295,11 +292,6 @@ EXCLUDE_DIRS = {
 # the entries kept downgrading a "55-character set" and an open Gate 1 verdict
 # to warnings for seven weeks after it.
 PENDING = {
-    # Story 132.141: both copies of the retired compiler fact are corrected on
-    # unmerged branches in their own repositories (fix/compiler-fact-z150 in
-    # toke-mcp and toke-website). Delete both entries when those merge.
-    "../toke-mcp/npm-tkc/package.json": "132.141",
-    "../toke-website/sites/tokelang.dev/llms.txt": "132.141",
 }
 PENDING_PREFIXES = (
     # Story 132.42 removed ("../toke-website/", "132.9 / 132.2 — website roadmap
