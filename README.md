@@ -60,10 +60,12 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 
 ## Key features
 
-- **Compiled to native code** via LLVM — standalone binaries for x86-64 and ARM64,
-  single-pass C99 compiler with no dependencies beyond LLVM
+- **Compiled to native code** via LLVM — standalone binaries for x86-64 and ARM64.
+  The compiler is C99 and links only libc, libm, zlib and pthreads; it writes LLVM IR
+  and hands it to `clang` to build and link the binary
 - **Structured diagnostics** — stable error codes, machine-parseable spans and a fix
-  field, emitted as JSON by default, designed for automated repair loops
+  field, emitted as JSON by default (`--diag-text` for people, `--diag-sarif` for
+  SARIF v2.1.0), designed for automated repair loops
   ([`docs/reference/errors.md`](docs/reference/errors.md))
 - **One canonical form** per construct, reproduced by `tkc --min`, so two implementations
   either produce identical canonical text or they do not
@@ -71,7 +73,42 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - **<!--fact:stdlib_modules-->67<!--/fact--> standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
   JSON, TOON, HTTP server/client, database, crypto, ML, and more
 - **Error handling with result types** — no exceptions; errors are values handled
-  explicitly with `mt` (match)
+  explicitly with `mt` (match); an absent value is `T!$none`
+  ([`docs/stdlib/option.md`](docs/stdlib/option.md))
+- **Deny-by-default capabilities** (ADR-0010) — a program gets no file, network,
+  environment or subprocess access unless it is granted at build or run time
+
+## On `main` since 3.1.0 (unreleased)
+
+These are merged on `main` and listed under *Unreleased* in
+[`CHANGELOG.md`](CHANGELOG.md); no tagged release carries them yet.
+
+- **Packages** — `tkc pkg init|add|remove|resolve|fetch|list` manages `pkg.toml` and
+  `pkg.lock`; a `pkg.*` import resolves through the lock, every cached package is
+  re-hashed against it, and fetch is git-based (stories 76.1.3b–d,
+  [ADR-0004](docs/architecture/ADR-0004-packages.md),
+  [`docs/reference/package-manifest.md`](docs/reference/package-manifest.md)).
+- **Binary IR round trip** — `--emit-tkir` writes `.tkir` 1.2, which now carries the
+  token text and the parse tree; `--from-tkir` compiles a `.tkir` file through the same
+  resolver, checker and backend as source, and `--read-tkir` summarises one (76.1.6c,
+  [`docs/architecture/binary-ir-design.md`](docs/architecture/binary-ir-design.md)).
+- **`--python-view`** — a read-only, Python-like rendering of a toke file, for review
+  only: not executable and not round-trippable (96.7,
+  [`docs/compiler/python-view.md`](docs/compiler/python-view.md)).
+- **Router path parameters** — a `std.router` route with a `:param` or `*` segment now
+  reaches its handler, and `router.param` returns the value (127.343).
+- **Hybrid post-quantum TLS** — every `std.http` and `std.llm` TLS context sets an
+  explicit key-exchange group list that prefers `X25519MLKEM768`, falls back to
+  classical groups, and fails closed when no group is usable; `TK_TLS_TRACE_GROUP=1`
+  prints the negotiated group (122.15). The wider PQC migration (122.5) is still open.
+- **SIGPIPE guards** — the plain-HTTP client (127.341) and the WebSocket client
+  (127.347) return `$err` instead of the process dying when the peer closes first.
+  The HTTPS client fix (127.346) is merged and awaits verification on Linux.
+- **Sealed strings** — more standard-library modules return sealed string copies as the
+  S1 conversion proceeds in tranches (127.295, still open).
+
+Next on the compiler, not yet on `main`: a compact `[byte]` representation in place of
+eight bytes per byte (135.18).
 
 ## Project status
 
@@ -89,7 +126,7 @@ The corpus, tokenizer and model must be refreshed before any of these carry forw
 
 | Evaluation | Date | Result |
 |---|---|---|
-| Gate 1 | 2026-04-03 | **58.8% functional Pass@1** (588 of 1,000 generated), fine-tuned 7B on v0.3 syntax; compile rate 92.3% (923/1,000). Published as "63.7% compile Pass@1" until 2026-09-19 — wrong on both counts: the number was 588/**923**, which drops non-compiling solutions from the denominator, and the label was wrong (the figure is functional, not compile). 58.8% is below Gate 1's declared 60% minimum, so the verdict was re-opened on 2026-09-19 and on 2026-09-22 the owner decided **Gate 1 NOT PASSED** (story 128.19); the token-reduction criterion stands as met. |
+| Gate 1 | 2026-04-03 | **58.8% functional Pass@1** (588 of 1,000 generated), fine-tuned 7B on v0.3 syntax; 923 of the 1,000 compiled. Published as "63.7% compile Pass@1" until 2026-09-19 — wrong on both counts: the number was 588/**923**, which drops non-compiling solutions from the denominator, and the label was wrong (the figure is functional, not compile). 58.8% is below Gate 1's declared 60% minimum, so the verdict was re-opened on 2026-09-19 and on 2026-09-22 the owner decided **Gate 1 NOT PASSED** (story 128.19); the token-reduction criterion stands as met. |
 | Gate 2 (curated set) | 2026-05-22 | **100% compile Pass@1** and **55.6% functional** (272/489) on the curated 500-hidden + 200-eval set; Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax |
 | Full-local re-audit (the honest floor) | 2026-05-28 | **37.5% compile** (655/1,748) and **about 2.2% fully correct** (38 PASS) across all 1,748 v0.3.9 corpus programs |
 | Gate-1 60 re-delivered on v0.4 | 2026-09-19 | 60/60 `tkc --check`, 60/60 hidden tests (120 cases each), lint 0/0 |
@@ -98,6 +135,11 @@ Never quote the 100% without the curated set it was measured on. The 2026-09-19
 re-delivery is **hand-written, not model-generated** — 27 ids are pure `--migrate` output
 and 33 were hand-repaired — so it measures what the *language* can express, not what a
 *model* produces, and it may not be quoted as a model result or as a Pass@1.
+
+**Gate 2 is on hold**, waiting for local compute: no model has been trained or
+evaluated since the 2026-05-22 run above, and the next evaluation follows the
+pre-registered protocol of story 128.1. Gate status is summarised in
+[`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 **What works:** the compiler is stable at 3.1.0, the conformance suite passes, and
 compile-checking removes an entire error class cheaply. **What does not yet:** functional
@@ -109,8 +151,9 @@ listed in the positioning brief.
 ## Sub-projects
 
 ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web
-framework and static site generator, and it serves tokelang.dev; loke is toke's local
-intelligence layer; moke is loke's data-analysis demo. All three are written in toke.
+framework and static site generator, and it builds tokelang.dev (a toke binary on
+std.http serves it); loke is toke's local intelligence layer; moke is loke's
+data-analysis demo. All three are written in toke.
 
 ## Not to be confused with
 
@@ -226,11 +269,11 @@ Every row above except the two struck ones was re-checked on 2026-09-20 and reso
 |-----------|----------|
 | `src/` | Reference compiler (`tkc`) -- lexer, parser, type checker, LLVM backend |
 | `src/stdlib/` | C runtime implementations for standard library modules |
-| `spec/` | Language specification, formal grammar (EBNF), and semantics |
+| `spec/` | The RFC draft (`spec/rfc/`); the normative specification and grammars are in `docs/spec/` |
 | `stdlib/` | Standard library interface files (`.tki`) and documentation |
 | `patterns/` | The pattern catalogue that decides the canonical form of each construct |
 | `test/` | Conformance tests, end-to-end tests, stdlib unit tests, fuzz tests |
-| `docs/` | Architecture docs, project tracking, security policies |
+| `docs/` | Specification (`docs/spec/`), stdlib reference, architecture decisions, project tracking, security policies |
 | `examples/` | Complete example programs (CLI tools, web apps, REST APIs) |
 | `bench/` | Compiler benchmark programs and performance scripts |
 | `tree-sitter-toke/` | Tree-sitter grammar for editor syntax highlighting |
@@ -329,17 +372,30 @@ builds a deliberately broken program and fails unless the gate rejects it.
 ## Usage
 
 ```
-toke [flags] <source-files>
+toke [flags] <source-file> [source-file ...]
+toke pkg init|add|remove|resolve|fetch|list
 
-  --target <arch-os>    cross-compile (x86_64-linux, arm64-macos, etc.)
-  --out <path>          output binary path
-  --emit-interface      emit .tki interface files
-  --check               type-check only, no code generation
-  --min                 emit the canonical minimal form
-  --legacy              legacy syntax: 86-character set
-  --diag-json           structured JSON diagnostics (default)
-  --diag-text           human-readable diagnostics
+  --target <triple>   LLVM target triple (default: native)
+  --out <path>        output binary path (default: source stem)
+  --check             type check only; no code generation
+  --fmt / --min       print the canonical form / the single-line canonical form
+  --emit-interface    also emit the .tki interface file
+  --emit-llvm         emit LLVM IR (.ll) instead of a binary
+  --emit-tkir         write the type-checked program as binary IR (.tkir)
+  --from-tkir         inputs are .tkir files: compile them as their source
+  --read-tkir         print a summary of each .tkir input and exit
+  --python-view       print a read-only Python-like view (display only)
+  --lint [--fix]      run the lint rules; --fix rewrites mechanical violations
+  --migrate           migrate a legacy .tk file to the default syntax
+  --legacy            legacy mode (86-character syntax)
+  --allow-read[=PATH] --allow-write[=PATH] --allow-net[=HOST] --allow-env --allow-run[=PATH]
+                      grant a capability (deny-by-default, ADR-0010)
+  --diag-json         structured JSON diagnostics (the default)
+  --diag-text         human-readable diagnostics with the source line
+  --diag-sarif        SARIF v2.1.0 diagnostics
 ```
+
+`toke --help` prints the full list, including the limit overrides.
 
 ## Standard library
 
@@ -354,7 +410,7 @@ implementations. The most used:
 | `std.yaml` | YAML encoding, decoding, and typed field extraction |
 | `std.toml` | TOML configuration file parsing |
 | `std.csv` | CSV reading, writing, and streaming |
-| `std.http` | HTTP server and client with routing, TLS, cookies, multipart |
+| `std.http` | HTTP server and client with routing, TLS (hybrid post-quantum key exchange), cookies, multipart |
 | `std.router` | URL routing with path parameters and middleware |
 | `std.ws` | WebSocket client and server |
 | `std.sse` | Server-Sent Events |
@@ -403,7 +459,8 @@ and archived repositories, is [docs/about/repos.md](docs/about/repos.md).
 | [toke-mcp](https://github.com/karwalski/toke-mcp) | Model Context Protocol server, language server and VS Code extension |
 | [ooke](https://github.com/karwalski/ooke) | ooke -- web framework and static site generator, written in toke |
 | [loke](https://github.com/karwalski/loke) | loke -- toke's local intelligence layer, written in toke |
-| [toke-web](https://github.com/karwalski/toke-web) | tokelang.dev, built and served by ooke |
+| [toke-web](https://github.com/karwalski/toke-web) | tokelang.dev, built with ooke and served by a toke binary on std.http |
+| [toke-ocr](https://github.com/karwalski/toke-ocr) | Optical character recognition for clean machine-printed documents, written in toke |
 | [toke on HuggingFace](https://huggingface.co/karwalski/toke) | Gate 2 model, tokenizer, and model card |
 
 The Homebrew tap (`brew tap karwalski/toke`) is not published yet; see
@@ -417,10 +474,12 @@ This repository is mixed-licence:
   the [Apache License 2.0](LICENSE); attribution is in [NOTICE](NOTICE).
 - The language specification (`spec/`) and the standard library (`stdlib/`, `src/stdlib/`)
   are licensed under the MIT License ([spec/LICENSE](spec/LICENSE),
-  [stdlib/LICENSE](stdlib/LICENSE)), so programs compiled with `tkc` carry no licence
-  obligation from the runtime they link.
+  [stdlib/LICENSE](stdlib/LICENSE)), so the only obligation a program compiled with
+  `tkc` takes on from the runtime it links is MIT's: keep the notice when you
+  redistribute the binary.
 
-See [LICENSING.md](LICENSING.md) for the full split and the reasoning behind it.
+Copyright Matthew Watt. See [LICENSING.md](LICENSING.md) for the full split, the
+reasoning behind it, and the licence of every other toke repository.
 
 ## Contributing
 
