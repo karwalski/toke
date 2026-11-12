@@ -17,9 +17,13 @@
  *
  * Handler model: a toke router handler is a closure `(body:str) -> json:str`
  * passed as `&handler`. Each registered route stores {method, pattern, handler}
- * in a process-global table; one shared dispatch trampoline
- * (router_closure_dispatch) is registered with the C router for every route and
- * re-identifies the toke closure by matching the request's method+path.
+ * in a process-global table that grows with the routes (127.348); one shared
+ * dispatch trampoline (router_closure_dispatch) is registered with the C
+ * router for every route and
+ * finds the toke handler of the route the C router's matcher chose
+ * (router_dispatch_route: router, method and pattern -- 127.343; it used to
+ * compare the literal pattern with the request path, so a `:param` or `*`
+ * route never reached its handler).
  */
 
 #include <stdint.h>
@@ -28,6 +32,7 @@
 #include <string.h>
 
 #include "router.h"
+#include "tk_strhdr.h"   /* 127.343: tks_strdup -- request strings toke keeps */
 
 /* call_route_handler — invoke a toke router handler with one argument.
  * `&handler` lowers to a raw function pointer (ptrtoint @handler), i.e.
@@ -47,15 +52,31 @@ static int64_t call_route_handler(int64_t fn_val, int64_t arg) {
  * builders. The dispatch trampoline constructs the req, calls the handler, and
  * turns the returned res handle into the C router's TkRouteResp. The req lives
  * only for the synchronous handler call (router dispatch is single-threaded).
+ *
+ * 127.343: the strings the accessors hand toke are sealed copies, never the
+ * router's own.  Those live only for the dispatch -- the :param values are
+ * strdup'd by match_route and freed when the dispatch returns; path, query
+ * and method are static buffers of router_serve/router_handle_fd that the
+ * next request overwrites; body points into the request buffer (on
+ * router_handle_fd's stack) -- while a toke string lives for the program
+ * (runtime-abi §3), so a handler that kept one in a mutable global read
+ * freed or overwritten memory.  Each field is copied at most once per
+ * request, on its first read (the copies are kept in the req), so a server's
+ * string memory grows by what its handlers read, like any string a handler
+ * builds.  reqmethod returns the registered route's method literal.
  */
+#define TK_REQ_MEMO_PARAMS 32   /* router.c's MAX_PARAMS */
 typedef struct {
-    const char  *method;
+    const char  *method;      /* the route's method literal: program lifetime */
     const char  *path;
     const char  *query;
     const char  *body;
     const char **pnames;
     const char **pvals;
     uint64_t     nparam;
+    /* sealed copies, made on first read (NULL until then) */
+    const char  *cpath, *cquery, *cbody;
+    const char  *cvals[TK_REQ_MEMO_PARAMS];
 } TkRouterReq;
 
 typedef struct {
@@ -167,29 +188,47 @@ static void resp_handles_release(void)
 
 /* ── closure route registry ──────────────────────────────────────────── */
 
-#define TK_MAX_CLOSURE_ROUTES 128
-
+/* 127.348: the table grows with the routes registered.  It was a fixed
+ * array of 128: the 129th route was skipped here but still registered with
+ * the C router and reported success, so it matched, found no handler and
+ * answered 404 -- silently.  Now registration grows the table (doubling);
+ * if that allocation fails the route is NOT registered with the C router
+ * and registration reports failure (DIAGNOSTIC: kind=router_register_failed
+ * on stderr, -1 from the wrapper), so no route is ever accepted without a
+ * handler.  router.c's own route table is a linked list with no cap. */
 typedef struct {
-    const char *method;   /* "GET", "POST", … */
+    const TkRouter *router; /* the router it was registered on */
+    const char *method;   /* "GET", "POST", … (a literal) */
     const char *path;     /* route pattern as registered */
     int64_t     handler;  /* toke handler fn pointer */
 } TkClosureRoute;
 
-static TkClosureRoute g_closure_routes[TK_MAX_CLOSURE_ROUTES];
-static int            g_closure_route_count = 0;
+static TkClosureRoute *g_closure_routes;
+static size_t          g_closure_route_count, g_closure_route_cap;
 
 static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
-    const char *m = ctx.method ? ctx.method : "GET";
-    const char *p = ctx.path ? ctx.path : "/";
-    for (int i = 0; i < g_closure_route_count; i++) {
-        if (g_closure_routes[i].path &&
-            strcmp(g_closure_routes[i].path, p) == 0 &&
+    /* 127.343: the route the router matched -- by its own matcher, which
+     * binds :param segments and honours `*` and the priority rules -- not
+     * the request path compared with each pattern. */
+    const TkRouter *mr = NULL;
+    const char *mm = NULL, *mp = NULL;
+    if (!router_dispatch_route(&mr, &mm, &mp) || !mm || !mp)
+        return router_resp_404();
+    for (size_t i = 0; i < g_closure_route_count; i++) {
+        if (g_closure_routes[i].router == mr &&
+            g_closure_routes[i].path &&
+            strcmp(g_closure_routes[i].path, mp) == 0 &&
             g_closure_routes[i].method &&
-            strcmp(g_closure_routes[i].method, m) == 0) {
-            TkRouterReq req = {
-                m, p, ctx.query, ctx.body,
-                ctx.param_names, ctx.param_values, ctx.nparam
-            };
+            strcmp(g_closure_routes[i].method, mm) == 0) {
+            TkRouterReq req;
+            memset(&req, 0, sizeof req);
+            req.method = g_closure_routes[i].method;
+            req.path   = ctx.path;
+            req.query  = ctx.query;
+            req.body   = ctx.body;
+            req.pnames = ctx.param_names;
+            req.pvals  = ctx.param_values;
+            req.nparam = ctx.nparam;
             /* 121.93: handles made by the handler are released once its
              * answer is read (see "response handles" above).  The router
              * does not re-enter dispatch from a handler (router.h). */
@@ -225,16 +264,36 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
  * into the C router for the given method. */
 static int64_t register_route(const char *method, int64_t router_i64,
                               int64_t path, int64_t handler,
-                              void (*reg)(TkRouter *, const char *, TkRouteHandler)) {
+                              int (*reg)(TkRouter *, const char *, TkRouteHandler)) {
     if (!router_i64 || !path) return -1;
-    if (g_closure_route_count < TK_MAX_CLOSURE_ROUTES) {
-        g_closure_routes[g_closure_route_count].method  = method;
-        g_closure_routes[g_closure_route_count].path    = (const char *)(intptr_t)path;
-        g_closure_routes[g_closure_route_count].handler = handler;
-        g_closure_route_count++;
+    if (g_closure_route_count == g_closure_route_cap) {
+        size_t nc = g_closure_route_cap ? g_closure_route_cap * 2 : 64;
+        TkClosureRoute *nt = NULL;
+        if (nc <= SIZE_MAX / sizeof *nt)
+            nt = (TkClosureRoute *)realloc(g_closure_routes, nc * sizeof *nt);
+        if (!nt) {
+            /* 127.348: never accept a route that has no handler entry */
+            fprintf(stderr, "DIAGNOSTIC: kind=router_register_failed "
+                    "method=%s reason=\"out of memory growing the route table "
+                    "(%zu routes registered)\"\n", method, g_closure_route_count);
+            return -1;
+        }
+        g_closure_routes = nt;
+        g_closure_route_cap = nc;
     }
-    reg((TkRouter *)(intptr_t)router_i64, (const char *)(intptr_t)path,
-        router_closure_dispatch);
+    g_closure_routes[g_closure_route_count].router  = (const TkRouter *)(intptr_t)router_i64;
+    g_closure_routes[g_closure_route_count].method  = method;
+    g_closure_routes[g_closure_route_count].path    = (const char *)(intptr_t)path;
+    g_closure_routes[g_closure_route_count].handler = handler;
+    g_closure_route_count++;
+    /* 127.349: router.c now reports a route it could not keep (out of
+     * memory; it has written the DIAGNOSTIC).  Take the handler entry back
+     * so the table holds no route the C router does not. */
+    if (reg((TkRouter *)(intptr_t)router_i64, (const char *)(intptr_t)path,
+            router_closure_dispatch) != 0) {
+        g_closure_route_count--;
+        return -1;
+    }
     return 0;
 }
 
@@ -290,18 +349,29 @@ int64_t tk_router_serve_w(int64_t router_i64, int64_t host, int64_t port) {
 
 /* ── request accessors (114.49) ──────────────────────────────────────────
  * Each takes the req handle and returns a toke string (char* as i64). A
- * missing field yields "" rather than null so str.* ops are always safe. */
+ * missing field yields "" rather than null so str.* ops are always safe.
+ * 127.343: a present field is a sealed copy that lives for the program (see
+ * TkRouterReq above), made once per request and field. */
 static int64_t req_str(const char *s) {
     return (int64_t)(intptr_t)(s ? s : "");
 }
 
+/* the sealed copy of s kept in *memo, made on the first call */
+static int64_t req_copy(const char *s, const char **memo) {
+    if (!s || !*s) return req_str("");
+    if (!*memo) *memo = tks_strdup(s);
+    return req_str(*memo ? *memo : "");
+}
+
 int64_t tk_router_reqbody_w(int64_t req) {
     if (!req) return req_str("");
-    return req_str(((TkRouterReq *)(intptr_t)req)->body);
+    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    return req_copy(r->body, &r->cbody);
 }
 int64_t tk_router_reqpath_w(int64_t req) {
     if (!req) return req_str("");
-    return req_str(((TkRouterReq *)(intptr_t)req)->path);
+    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    return req_copy(r->path, &r->cpath);
 }
 int64_t tk_router_reqmethod_w(int64_t req) {
     if (!req) return req_str("");
@@ -309,7 +379,8 @@ int64_t tk_router_reqmethod_w(int64_t req) {
 }
 int64_t tk_router_reqquery_w(int64_t req) {
     if (!req) return req_str("");
-    return req_str(((TkRouterReq *)(intptr_t)req)->query);
+    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    return req_copy(r->query, &r->cquery);
 }
 /* router.param(req; name) — value of the :name path param, or "". */
 int64_t tk_router_param_w(int64_t req, int64_t name) {
@@ -317,8 +388,11 @@ int64_t tk_router_param_w(int64_t req, int64_t name) {
     TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
     const char *nm = (const char *)(intptr_t)name;
     for (uint64_t i = 0; i < r->nparam; i++)
-        if (r->pnames && r->pnames[i] && strcmp(r->pnames[i], nm) == 0)
-            return req_str(r->pvals ? r->pvals[i] : "");
+        if (r->pnames && r->pnames[i] && strcmp(r->pnames[i], nm) == 0) {
+            const char *v = r->pvals ? r->pvals[i] : NULL;
+            if (i < TK_REQ_MEMO_PARAMS) return req_copy(v, &r->cvals[i]);
+            return req_str(v && *v ? tks_strdup(v) : "");
+        }
     return req_str("");
 }
 

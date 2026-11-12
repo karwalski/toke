@@ -162,6 +162,8 @@ f=main():void{
 };
 ```
 
+**Key exchange (story 122.15).** Every `std.http` TLS context -- the `servetls` family's, each SNI host's, and the client's for `https://` URLs -- sets its own key-exchange group list, the same one `std.tls` uses: the post-quantum hybrid `X25519MLKEM768` first, then `X25519`, `P-256`, `X448`, `P-384`. With an OpenSSL that does not know the hybrid (before 3.5) the context falls back to the classical groups instead of failing. Because the list is set by toke, a system `openssl.cnf` `Groups` line no longer decides it (before 122.15 these contexts set no list and inherited the library default). To see what was negotiated, set `TK_TLS_TRACE_GROUP=1` in the environment: each TLS context then writes `tk-tls-groups: hybrid` (or `classical`) to stderr when it is built, and each completed handshake writes `tk-tls-group: server X25519MLKEM768` (or `client ...`, with the group's name). It is a diagnostic switch, off by default; there is no function that returns the group of an `std.http` connection (`std.tls` has `tls.group`). TLS 1.2 is still accepted, and a TLS 1.2 handshake has no post-quantum key exchange; whether to require TLS 1.3 is an open owner decision.
+
 ### http.servetlsworkers(port: u64; cert_path: $str; key_path: $str; workers: u64): i64
 
 `http.servetls` with the worker count chosen by the caller, as `http.serveworkers` is for plain HTTP. `workers=1` runs in a single process with no fork; values greater than one fork that many workers; `workers=0` auto-detects the CPU count, overridable with `TK_HTTP_WORKERS` — which is what `http.servetls` always does. Returns `-1` if the certificate or key cannot be loaded or the port cannot be bound; otherwise the server blocks until shut down. (Story 127.192: before this, a program had no way to set the TLS worker count.)
@@ -249,6 +251,18 @@ signal per socket (`SO_NOSIGPIPE`, on macOS and the BSDs) and per send
 (`MSG_NOSIGNAL`, on Linux), and reports the broken connection as an ordinary
 error instead. `test/conform/S007_http_abandoned_request.sh` drives all three
 serve paths, because all three used to fail differently.
+
+### The client side
+
+The same holds for `std.http`'s client: a server that closes while a request
+is still being sent gives the caller `$err`, not a dead process. Plain-HTTP
+requests use the per-socket and per-send pair above (127.341). An `https://`
+request is written by OpenSSL, whose own socket BIO writes with `write(2)`;
+the client therefore attaches its socket to OpenSSL with a write BIO of its
+own that sends each record with `MSG_NOSIGNAL` (127.346), so the guard holds on
+Linux as well as on macOS, again without touching the program's `SIGPIPE`
+disposition. `test/conform/C1260_http_client_peer_close_no_sigpipe.sh` and
+`C1301_https_client_peer_close_no_sigpipe.sh` cover the two.
 
 ### What servetls does to SIGPIPE on Linux
 
@@ -802,7 +816,7 @@ f=main():i64{
 
 `POST` `body` to a full `http://` or `https://` URL with the given headers, each an `@(name; value)` pair. The body is sent as `application/json` unless `headers` carries a `Content-Type`, which then replaces it (story 138.8: it used to be sent in addition, so the server saw two). `Content-Length` and `Host` are set by the client and may not be given; a header name or value containing a carriage return or line feed is refused (`$err`) rather than sent, because it would let the caller write a header of its own choosing. As for the other client calls, `$err` is a transport failure and a status such as `401` is a response.
 
-Over `https://` the server's certificate must verify against the trust store (the system default; `SSL_CERT_FILE` or `SSL_CERT_DIR` override it) and name the host or IP address in the URL. Before story 138.8 no certificate was verified by any `std.http` client call.
+Over `https://` the server's certificate must verify against the trust store (the system default; `SSL_CERT_FILE` or `SSL_CERT_DIR` override it) and name the host or IP address in the URL. Before story 138.8 no certificate was verified by any `std.http` client call. The key exchange prefers the post-quantum hybrid `X25519MLKEM768`, and `TK_TLS_TRACE_GROUP=1` traces it, as described under [`http.servetls`](#httpservetlsport-u64-cert_path-str-key_path-str-i64).
 
 ```toke
 i=http:std.http;

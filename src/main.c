@@ -58,6 +58,8 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 
 #include "parser.h"  /* Token, Node, parse(); Arena/diag_emit forwards */
 #include "names.h"   /* resolve_imports(), resolve_names(), SymbolTable, NameEnv */
+#include "pkg.h"     /* pkg_set_allow_file_sources() (76.1.3d) */
+#include "pkg_cli.h" /* tkc pkg, the pkg.* import path (76.1.3b/c) */
 #include "types.h"   /* type_check(), TypeEnv */
 #include "regex_check.h" /* 137.9: E4075, literal regex patterns */
 #include "ir.h"      /* emit_interface() */
@@ -66,6 +68,7 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 #include "ast_json.h" /* ast_dump_json() */
 #include "sourcemap.h" /* SourceMap, sourcemap_*() */
 #include "companion.h" /* emit_companion() */
+#include "pyview.h"    /* 96.7: tkc_python_view() */
 #include "compress.h"  /* compress_text(), decompress_text(), compress_stream_*() */
 #include "tkc_limits.h"
 #include "config.h"
@@ -74,6 +77,7 @@ static int run_clang_emit_asm(const char *cc, int opt_level, const char *ir_path
 #include "migrate.h"
 #include "lint.h"
 #include "tkir.h"
+#include "tkir_ast.h"
 #include "stdlib_deps.h"
 #include "diag.h"    /* 123.12c: diag_set_keep, diag_error_offsets */
 #include "version.h" /* 135.3j: TKC_VERSION, the one statement of it */
@@ -301,6 +305,9 @@ static const char *const HELP_SECTIONS[] = {
     "  --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary\n"
     "  --emit-asm          Emit assembly (.s) instead of compiling to binary\n"
     "  --emit-deps         Print stdlib C sources and linker flags needed, then exit\n"
+    "  --emit-tkir         Write the type-checked program as binary IR (.tkir)\n"
+    "  --from-tkir         Inputs are .tkir files: compile them as their source\n"
+    "  --read-tkir         Print a summary of each .tkir input and exit\n"
     "  -I <dir>            Add .tki interface search directory (repeatable)\n"
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O2)\n"
@@ -310,6 +317,7 @@ static const char *const HELP_SECTIONS[] = {
     "  --expand            Expand abbreviated identifiers as inline comments\n"
     "  --sourcemap         Emit .map source map alongside --fmt/--pretty output\n"
     "  --dump-ast          Dump parsed AST as JSON to stdout and exit\n"
+    "  --python-view       Print a read-only Python-like view of the source (display only)\n"
     "  --check             Type check only; no code generation\n",
     "  --companion         Generate .tkc.md companion file skeleton to stdout\n"
     "  --companion-out <p> Write companion file to <p> instead of stdout\n"
@@ -351,6 +359,10 @@ static const char *const HELP_SECTIONS[] = {
     "  --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn\n"
     "  --allow-all         Grant every capability\n"
     "  --cap-enforce       Bake deny-by-default enforcement into the binary\n"
+    "\n"
+    "Packages (ADR-0004, docs/reference/package-manifest.md):\n"
+    "  toke pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
+    "  --allow-file-source Accept file:/// package sources (local override)\n"
     "\n"
     "Configuration:\n"
     "  --config=PATH       Load config from PATH (default: ./tkc.toml)\n"
@@ -1063,6 +1075,8 @@ typedef struct {
     const char **search_paths; int search_path_count;
     TkcLimits limits;
     Profile profile;
+    int python_view;   /* 96.7 */
+    int from_tkir;   /* 76.1.6c: positional files are .tkir, not source */
 } RunOpts;
 
 /*
@@ -1273,6 +1287,7 @@ static int process_file(const char *src, const RunOpts *o)
     const int fmt_only = o->fmt_only, debug_info = o->debug_info;
     const int pretty = o->pretty, expand = o->expand, sourcemap = o->sourcemap;
     const int dump_ast = o->dump_ast, migrate = o->migrate, min_only = o->min_only;
+    const int python_view = o->python_view;
     const int do_lint = o->do_lint, do_fix = o->do_fix, lint_dry_run = o->lint_dry_run;
     const int emit_tkir_flag = o->emit_tkir_flag, emit_deps = o->emit_deps, companion = o->companion;
     const char *companion_out = o->companion_out, *companion_diff_comp = o->companion_diff_comp;
@@ -1281,7 +1296,8 @@ static int process_file(const char *src, const RunOpts *o)
     const char **search_paths = o->search_paths;
     const int search_path_count = o->search_path_count;
     TkcLimits limits = o->limits;
-    const Profile profile = o->profile;
+    Profile profile = o->profile;   /* 76.1.6c: a .tkir records its own */
+    const int from_tkir = o->from_tkir;
 
     diag_set_format(dsarif ? DIAG_FMT_SARIF :
                     djson  ? DIAG_FMT_JSON  :
@@ -1289,7 +1305,7 @@ static int process_file(const char *src, const RunOpts *o)
     diag_set_source_file(src);
 
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_lint || emit_deps;
+    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || python_view || migrate || companion || companion_diff_comp || do_lint || emit_deps;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
@@ -1297,13 +1313,35 @@ static int process_file(const char *src, const RunOpts *o)
      * ftell is -1, and malloc(0) + fread(SIZE_MAX) overflowed the heap.
      * 121.85: and never block in open(2) on a FIFO with no writer. */
     size_t slen_z = 0; int why = 0;
-    char *sbuf = tk_read_source(src, &slen_z, &why);
-    if (!sbuf) return tk_source_fail(src, why);
+    char *sbuf = NULL;
+    Node *ast = NULL;
+    /* 76.1.6c: --from-tkir rebuilds the parsed program from a .tkir file
+     * (src/tkir_ast.c) instead of lexing and parsing source, then joins the
+     * pipeline at name resolution: one type checker, one LLVM backend. */
+    char tkir_orig[PATH_BUF];
+    tkir_orig[0] = '\0';
+    Arena *arena = arena_init();
+    if (!arena) { fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
+    if (from_tkir) {
+        if (tkir_load_program(src, arena, &sbuf, &slen_z, &ast, &profile,
+                              tkir_orig, sizeof tkir_orig) < 0) {
+            progress_done();
+            diag_flush_sarif();
+            arena_free(arena);
+            return ECOMPILE;
+        }
+    } else {
+        sbuf = tk_read_source(src, &slen_z, &why);
+        if (!sbuf) { arena_free(arena); return tk_source_fail(src, why); }
+    }
     long slen = (long)slen_z;
     diag_set_source(sbuf, slen_z);
 
-    Arena *arena = arena_init();
-    if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
+    /* 76.1.6c: the TEXT/AST sections --emit-tkir writes, built from the
+     * tree as parse() returned it -- before resolution annotates it. */
+    TkirBuf tkir_text, tkir_ast;
+    tkir_buf_init(&tkir_text);
+    tkir_buf_init(&tkir_ast);
 
     int rc = 0;
 
@@ -1311,7 +1349,16 @@ static int process_file(const char *src, const RunOpts *o)
     int tcap = (int)(slen + 16);
     Token *toks = arena_alloc(arena, (size_t)tcap * sizeof(Token));
     if (!toks) { rc = EINTERNAL; goto done; }
-    int tc;
+    int tc = 0;
+    if (from_tkir) {
+        /* Re-emitting (--from-tkir --emit-tkir) keeps the token text: lex
+         * the rebuilt buffer for its spans.  Nothing else needs tokens. */
+        if (emit_tkir_flag) {
+            tc = lex(sbuf, (int)slen, toks, tcap, profile);
+            if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+        }
+        goto have_ast;
+    }
     if (migrate) {
         /* 127.57: decline on source that already compiles — see
          * source_needs_migration above. Echo the input verbatim so the
@@ -1373,9 +1420,17 @@ static int process_file(const char *src, const RunOpts *o)
     progress_update(10);
 
     /* Parse */
-    Node *ast = parse(toks, tc, sbuf, arena, profile);
+    ast = parse(toks, tc, sbuf, arena, profile);
     if (!ast || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+have_ast:
     progress_update(30);
+
+    if (emit_tkir_flag &&
+        tkir_ast_encode(ast, sbuf, slen_z, toks, tc, profile,
+                        from_tkir && tkir_orig[0] ? tkir_orig : src,
+                        &tkir_text, &tkir_ast) < 0) {
+        rc = limit_or_internal(); goto done;
+    }
 
     /* --companion-diff: compare source AST against existing companion */
     if (companion_diff_comp) {
@@ -1386,6 +1441,17 @@ static int process_file(const char *src, const RunOpts *o)
     /* --dump-ast: serialise AST as JSON to stdout, then exit */
     if (dump_ast) {
         ast_dump_json(ast, sbuf, stdout);
+        goto done;
+    }
+
+    /* --python-view (96.7): read-only Python-like rendering, then exit.
+     * Display only -- docs/decisions/96.7-python-view.md. */
+    if (python_view) {
+        const char *base = strrchr(src, '/');
+        char *view = tkc_python_view(ast, sbuf, base ? base + 1 : src);
+        if (!view) { rc = EINTERNAL; goto done; }
+        fputs(view, stdout);
+        free(view);
         goto done;
     }
 
@@ -1610,15 +1676,17 @@ static int process_file(const char *src, const RunOpts *o)
     }
 
     /* Story 76.1.5: derive source filename and directory for debug metadata */
-    const char *dbg_file = src;
+    /* 76.1.6c: from a .tkir, the lines are the recorded source's. */
+    const char *dbg_src = (from_tkir && tkir_orig[0]) ? tkir_orig : src;
+    const char *dbg_file = dbg_src;
     char dbg_dir[PATH_BUF];
     dbg_dir[0] = '\0';
     if (debug_info) {
-        const char *slash = strrchr(src, '/');
+        const char *slash = strrchr(dbg_src, '/');
         if (slash) {
-            int dlen = (int)(slash - src);
+            int dlen = (int)(slash - dbg_src);
             if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
-            memcpy(dbg_dir, src, (size_t)dlen);
+            memcpy(dbg_dir, dbg_src, (size_t)dlen);
             dbg_dir[dlen] = '\0';
             dbg_file = slash + 1;
         } else {
@@ -1651,7 +1719,7 @@ static int process_file(const char *src, const RunOpts *o)
         char tkir_path[PATH_BUF];
         if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
         else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
-        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
+        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path, &tkir_text, &tkir_ast) < 0) { symtab_free(&st); rc = limit_or_internal(); goto done; }
         progress_update(90);
         symtab_free(&st);
         goto done;
@@ -1763,14 +1831,52 @@ static int process_file(const char *src, const RunOpts *o)
 done:
     progress_done();
     diag_flush_sarif();
+    tkir_buf_free(&tkir_text);
+    tkir_buf_free(&tkir_ast);
     arena_free(arena);
     free(sbuf);
     return rc;
 }
 
 
+/* ── pkg.* imports (76.1.3c) ─────────────────────────────────────── */
+
+static void pkg_quiet_sink(DiagSeverity sev, int code, int off, int line, int col,
+                           const char *msg, const char *fix, void *ctx)
+{
+    (void)sev; (void)code; (void)off; (void)line; (void)col; (void)msg; (void)fix; (void)ctx;
+}
+
+/* PkgEmitIfaceFn: a package module's interface, generated from its source
+ * by the same per-file pipeline as `tkc --emit-interface --check`. */
+static int pkg_emit_iface(const char *src, const char *outdir, const char *extra_sp,
+                          int quiet, void *ud)
+{
+    const RunOpts *b = (const RunOpts *)ud;
+    const char *sp[65]; int spc = 0;
+    for (int i = 0; i < b->search_path_count && spc < 64; i++) sp[spc++] = b->search_paths[i];
+    sp[spc++] = extra_sp;
+    RunOpts o;
+    memset(&o, 0, sizeof o);
+    o.emit_iface = 1; o.check_only = 1;
+    o.djson = b->djson; o.dtext = b->dtext; o.dsarif = 0;
+    o.opt_level = b->opt_level;
+    o.tgt = b->tgt; o.out = outdir; o.out_is_dir = 1;
+    o.search_paths = sp; o.search_path_count = spc;
+    o.limits = b->limits; o.profile = b->profile;
+    diag_reset();
+    if (quiet) diag_set_sink(pkg_quiet_sink, NULL);
+    int r = process_file(src, &o);
+    diag_set_sink(NULL, NULL);
+    diag_reset();
+    return r;
+}
+
 int main(int argc, char **argv)
 {
+    /* 76.1.3b: `tkc pkg <command>` -- the package manager. */
+    if (argc >= 2 && !strcmp(argv[1], "pkg")) return pkg_cli_main(argc - 2, argv + 2);
+
     const char *tgt = NULL, *out = NULL;
     #define MAX_SOURCE_FILES 256
     const char *source_files[MAX_SOURCE_FILES];
@@ -1780,10 +1886,13 @@ int main(int argc, char **argv)
     int emit_ll = 0, emit_asm = 0, opt_level = 2, fmt_only = 0, debug_info = 0;  /* 124.6b: default -O2 */
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
+    int python_view = 0;   /* 96.7 */
     int migrate = 0;
     int min_only = 0;
     int do_lint = 0, do_fix = 0, lint_dry_run = 0;
     int emit_tkir_flag = 0;
+    int from_tkir = 0;   /* 76.1.6c */
+    int read_tkir = 0;   /* 127.345 */
     int emit_deps = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
@@ -1841,10 +1950,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--sourcemap"))      sourcemap = 1;
         else if (!strcmp(argv[i], "--check"))          check_only = 1;
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
+        else if (!strcmp(argv[i], "--python-view"))    python_view = 1;
         else if (!strcmp(argv[i], "--lint"))             do_lint = 1;
         else if (!strcmp(argv[i], "--fix"))              do_fix = 1;
         else if (!strcmp(argv[i], "--dry-run"))          lint_dry_run = 1;
         else if (!strcmp(argv[i], "--emit-tkir"))       emit_tkir_flag = 1;
+        else if (!strcmp(argv[i], "--from-tkir"))       from_tkir = 1;
+        else if (!strcmp(argv[i], "--read-tkir"))       read_tkir = 1;
         else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
         else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
         else if (!strcmp(argv[i], "--decompress"))      do_decompress = 1;
@@ -1879,6 +1991,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--diag-text"))  dtext = 1;
         else if (!strcmp(argv[i], "--diag-sarif")) dsarif = 1;
         else if (!strcmp(argv[i], "--show-limits")) show_limits = 1;
+        else if (!strcmp(argv[i], "--allow-file-source")) pkg_set_allow_file_sources(true);  /* 76.1.3d */
         else if (!strncmp(argv[i], "--max-funcs=", 12))   limits.max_funcs = atoi(argv[i] + 12);
         else if (!strncmp(argv[i], "--max-locals=", 13))  limits.max_locals = atoi(argv[i] + 13);
         else if (!strncmp(argv[i], "--max-params=", 13))  limits.max_params = atoi(argv[i] + 13);
@@ -2028,10 +2141,37 @@ int main(int argc, char **argv)
     if (verify_companion_path) return verify_companion(verify_companion_path);
     if (source_file_count == 0) { print_help(); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
+    /* 76.1.6c: a .tkir is a compiled program, not source text.  The modes
+     * that read or rewrite the source file itself (and --lint --fix would
+     * rewrite the .tkir in place) do not apply to it. */
+    if (from_tkir && (fmt_only || pretty || expand || sourcemap || min_only || migrate ||
+                      do_lint || do_fix || companion || companion_diff_comp)) {
+        fputs("tkc: --from-tkir compiles a .tkir file; it cannot be combined with "
+              "--fmt, --pretty, --expand, --sourcemap, --min, --migrate, --lint, --fix "
+              "or the --companion modes, which work on source text\n", stderr);
+        return EUSAGE;
+    }
+
+    /* 127.345: --read-tkir prints each .tkir input (tkir_dump plus the
+     * format-1.2 TEXT/AST section sizes) and exits; it compiles nothing, so
+     * it needs no stdlib.  A file that does not decode gets E9021. */
+    if (read_tkir) {
+        diag_set_format(dsarif ? DIAG_FMT_SARIF :
+                        djson  ? DIAG_FMT_JSON  :
+                        dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
+        int bad = 0;
+        for (int fi = 0; fi < source_file_count; fi++) {
+            if (source_file_count > 1) printf("== %s ==\n", source_files[fi]);
+            if (tkir_print_file(source_files[fi], stdout) < 0) bad = 1;
+        }
+        fflush(stdout);
+        diag_flush_sarif();
+        return bad ? ECOMPILE : 0;
+    }
 
     /* 127.179: find the stdlib before anything consults it.  The purely
      * syntactic modes never do, so a missing stdlib does not stop them. */
-    if (!(fmt_only || pretty || expand || min_only || dump_ast)) {
+    if (!(fmt_only || pretty || expand || min_only || dump_ast || python_view)) {
         diag_set_format(dsarif ? DIAG_FMT_SARIF :
                         djson  ? DIAG_FMT_JSON  :
                         dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
@@ -2053,12 +2193,62 @@ int main(int argc, char **argv)
         }
     }
 
+    /* 76.1.3c: pkg.* imports.  When a source mentions "pkg." at all, the
+     * lock is read, every locked package is verified in the cache and its
+     * interfaces are regenerated; a failure is reported at the pkg.* import
+     * (names_set_pkg_hook), so a mere mention costs nothing else.  In the
+     * build-to-binary mode the package modules are linked in. */
+    const char *const *pkg_srcs = NULL; int pkg_nsrc = 0;
+    if (!(fmt_only || pretty || expand || min_only || dump_ast || migrate || do_lint ||
+          emit_deps || companion || companion_diff_comp) &&
+        pkg_build_sources_mention_pkg(source_files, source_file_count)) {
+        RunOpts po = {
+            0, 1, djson, dtext, 0, 0, 0, opt_level, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, NULL, NULL, tgt, NULL, 0,
+            search_paths, search_path_count, limits, profile,
+            0, 0   /* python_view (96.7), from_tkir (76.1.6c): off for the pkg pass */
+        };
+        if (pkg_build_prepare(pkg_emit_iface, &po) == 0) {
+            if (search_path_count < MAX_SEARCH_PATHS)
+                search_paths[search_path_count++] = pkg_build_tki_dir();
+            pkg_srcs = pkg_build_sources(&pkg_nsrc);
+        }
+        names_set_pkg_hook(pkg_build_import_check);
+    }
+    if (pkg_nsrc > 0 && !check_only && !emit_iface && !emit_ll && !emit_asm &&
+        !emit_tkir_flag && (!out || !out_is_dir || source_file_count == 1)) {
+        static const char *all[MAX_SOURCE_FILES];
+        int na = 0;
+        for (int i = 0; i < pkg_nsrc && na < MAX_SOURCE_FILES; i++) all[na++] = pkg_srcs[i];
+        for (int i = 0; i < source_file_count && na < MAX_SOURCE_FILES; i++)
+            all[na++] = source_files[i];
+        if (na < pkg_nsrc + source_file_count) {
+            fputs("tkc: too many source files\n", stderr); return EUSAGE;
+        }
+        static char obin[PATH_BUF];
+        char ostm[MSG_BUF];
+        stem(source_files[0], ostm, (int)sizeof ostm);
+        if (out && !out_is_dir) snprintf(obin, sizeof obin, "%s", out);
+        else if (out) {
+            size_t ol = strlen(out);
+            while (ol > 1 && out[ol - 1] == '/') ol--;
+            snprintf(obin, sizeof obin, "%.*s/%s", (int)ol, out, ostm);
+        } else snprintf(obin, sizeof obin, "%s", ostm);
+        return link_multi_module(all, na, obin, tgt, opt_level, debug_info,
+                                 search_paths, search_path_count, limits, profile);
+    }
+    if (from_tkir && source_file_count > 1 && out && !out_is_dir) {
+        fputs("tkc: --from-tkir builds one .tkir per binary; linking several files "
+              "into one binary is source-only\n", stderr);
+        return EUSAGE;
+    }
+
     /* 114.40: multiple files + a non-directory out path link into ONE binary
      * (instead of the old per-file error). Only in the default
      * compile-to-binary mode (skipped for check, emit, fmt, lint, ... modes). */
     if (source_file_count > 1 && out && !out_is_dir &&
         !check_only && !emit_iface && !emit_ll && !emit_asm && !emit_deps &&
-        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast && !min_only) {
+        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast && !python_view && !min_only) {
         return link_multi_module(source_files, source_file_count, out,
                                  tgt, opt_level, debug_info,
                                  search_paths, search_path_count, limits, profile);
@@ -2091,7 +2281,9 @@ int main(int argc, char **argv)
         out_is_dir,
         search_paths, search_path_count,
         limits,
-        profile
+        profile,
+        python_view,
+        from_tkir
     };
     int rc = 0;
     for (int si = 0; si < source_file_count; si++) {

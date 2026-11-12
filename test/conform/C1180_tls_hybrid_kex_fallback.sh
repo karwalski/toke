@@ -73,11 +73,14 @@ if [ "${HYB%%:*}" = "X25519MLKEM768" ] && [ "${HYB#*:}" = "${CLA}" ] && [ -n "${
 else
     fail "group lists drifted: hybrid='${HYB}' classical='${CLA}'"
 fi
-if grep -q 'SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_HYBRID)' "${S}/tls.c" \
-   && grep -q 'SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_CLASSICAL)' "${S}/tls.c"; then
-    pass "build_ssl_ctx sets the hybrid list, then the classical list on rejection"
+# 122.15: the two calls moved into tk_tls_set_groups (tk_tls_groups.h), which
+# build_ssl_ctx and the std.http / std.llm contexts share (C1200, C1201).
+if grep -q 'SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_HYBRID)' "${S}/tk_tls_groups.h" \
+   && grep -q 'SSL_CTX_set1_groups_list(ctx, TK_TLS_GROUPS_CLASSICAL)' "${S}/tk_tls_groups.h" \
+   && grep -q 'tk_tls_set_groups(ctx) == TK_TLS_GROUPS_NONE' "${S}/tls.c"; then
+    pass "build_ssl_ctx sets the hybrid list, then the classical list on rejection (tk_tls_set_groups)"
 else
-    fail "build_ssl_ctx no longer sets TK_TLS_GROUPS_HYBRID / TK_TLS_GROUPS_CLASSICAL"
+    fail "build_ssl_ctx no longer sets TK_TLS_GROUPS_HYBRID / TK_TLS_GROUPS_CLASSICAL via tk_tls_set_groups"
 fi
 
 cat > "${WORK}/t.c" <<'C'

@@ -101,6 +101,17 @@ The above is valid; E1003 triggers when non-ASCII characters like `£` appear in
 
 **Fix:** Remove or replace the non-ASCII character with valid ASCII.
 
+**Underscore in an identifier.** `_` is not in the default alphabet
+(`toke-spec-v0.4.md` §G: identifiers are lowercase `a-z` and digits `0-9`;
+uppercase is E2002). `let max_val=3;` draws E1003 with the message
+`identifier 'max_val' contains underscore; toke identifiers are lowercase
+letters and digits only (a-z, 0-9; spec v0.4 section G); `toke --migrate`
+removes underscores` and `expected` `identifier of lowercase letters and
+digits only (a-z, 0-9)`. A leading underscore (`_x`) says `starts with
+underscore` and expects `identifier starting with a lowercase letter (a-z)`.
+No `fix` field: joining the words can collide with another name (`to_int`
+beside `toint`), so `toke --migrate` owns the rewrite.
+
 ---
 
 ### E1004
@@ -1391,6 +1402,11 @@ registry sized from them cannot be one compiler allocation are refused at
 `--check` too, with the same E9010 as the build, naming the caps; lower them
 (story 127.264).
 
+`--emit-tkir` refuses a module with more than 65535 type entries or 65535
+data entries (distinct literals) with E9010 and writes no file: the format
+stores those counts and type references as u16, so this limit is fixed and
+has no flag (story 127.344; `docs/architecture/binary-ir-design.md` §3.11).
+
 The per-function local-variable cap (`--max-locals=N` / `max_locals`, shared
 by pointer locals, local types and shadowing aliases) is reported once per
 function, closure or globals initialiser that crosses it, at that function,
@@ -1431,6 +1447,19 @@ The compiler could not write the `.tkir` artifact.
 | Stage    | codegen |
 
 The compiler could not read a `.tkir` artifact.
+
+Emitted by `tkc --from-tkir` (story 76.1.6c) for every `.tkir` it cannot
+build: a missing or unreadable file, a malformed header or section, a file
+written before format 1.2 (it has no AST section; re-emit it with
+`--emit-tkir`), and any node, span, reference or count that fails
+validation. The message names the problem. There is no `fix` field: the
+repair is to re-emit the file from its source. See
+`docs/architecture/binary-ir-design.md` §3.8.
+
+`tkc --read-tkir` (story 127.345) emits E9021 for a file it cannot read or
+decode (missing, truncated, bad magic or version, malformed section, invalid
+opcode or register); it does not require the AST section, which it reports as
+absent. See §3.10 of the same document.
 
 ### E9022
 
@@ -1538,25 +1567,36 @@ clang and is unaffected. Set `TKC_CC` to a clang executable, unset it, or
 rebuild `tkc`. No `fix`: the right path is not knowable from the diagnostic
 (121.28, audit-120 compiler-toolchain COM-04).
 
-## Package Resolution (E9011--E9014, E9025, W9010 -- reserved)
+## Package Resolution (E9011--E9014, E9025, E9028--E9035, W9010, W9011)
 
-The codes `docs/reference/package-manifest.md` gives for package resolution.
-They are defined in `src/pkg.h` so that no compiler diagnostic takes one, but
-the resolver is not wired into a `tkc` command and nothing emits them yet
-(story 121.50). The unsatisfiable-constraints condition was documented as
-E9010 until then -- the compiler's "compiler limit exceeded" -- and moved to
-E9025 (E9024 went to the compiler in the meantime, 121.28).
+Emitted by `tkc pkg` (story 76.1.3b) and by a build whose source has a
+`pkg.*` import (76.1.3c); the design is ADR-0004 and the manifest and lock
+are described in `docs/reference/package-manifest.md`. A `tkc pkg` diagnostic
+names `pkg.toml`, `pkg.lock` or a cache path as its file (line 0 unless a
+manifest line is known); a build reports a package failure **at the
+`pkg.*` import** that needs the package, so a program with no `pkg.*` import
+is never affected. None of these carries a `fix`: each condition has more
+than one remedy. `tkc pkg` exits 1 on an error and 3 (`TKC_EXIT_USAGE`) on
+E9031. The unsatisfiable-constraints condition was documented as E9010 until
+story 121.50 -- the compiler's "compiler limit exceeded" -- and moved to E9025
+(E9024 went to the compiler in the meantime, 121.28). E9028--E9035 and W9011
+were added at the end of their series by 76.1.3b-d.
 
 ### E9011
 
-**Package not found in the index and no git URL**
+**Package not found: no git source and no index, or not a dependency**
 
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen (reserved for package resolution; not yet emitted) |
+| Stage    | codegen |
 
-A dependency names a package the central index does not have, and gives no `git` source.
+A dependency has no `git` source and there is no package index to look its
+name up in (none exists yet; ADR-0004 makes it optional), so `tkc pkg fetch`
+cannot fetch it -- declare one with `tkc pkg add <name> <constraint> --git <url>`.
+At build time, a `pkg.*` import names a package that is not in `pkg.lock`, or
+the project has no `pkg.toml` at all (ADR-0004: "If absent and a `pkg.*`
+import exists, emit E9011"), or the import path is bare `pkg`.
 
 ### E9012
 
@@ -1565,9 +1605,13 @@ A dependency names a package the central index does not have, and gives no `git`
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen (reserved for package resolution; not yet emitted) |
+| Stage    | codegen |
 
-`pkg.toml` is missing a required field, is not the TOML subset the manifest allows, uses an unsupported constraint, names a dependency twice, or has an unknown table or key.
+`pkg.toml` -- the project's, or the one inside a fetched package -- is missing
+a required field, is not the TOML subset the manifest allows, uses an
+unsupported constraint, names a dependency twice, has an unknown table or key,
+or gives a `git` source the transport rule refuses (a `file://` source needs
+`--allow-file-source`). The record's line is the manifest line when known.
 
 ### E9013
 
@@ -1576,9 +1620,12 @@ A dependency names a package the central index does not have, and gives no `git`
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen (reserved for package resolution; not yet emitted) |
+| Stage    | codegen |
 
-The repository of a dependency could not be cloned or fetched.
+git could not be run (it is looked up on `PATH`), or `git ls-remote` /
+`git fetch` of the dependency's source failed: an unreachable host, a missing
+repository, refused credentials. The message carries git's first line of
+error output. Nothing is installed in the cache.
 
 ### E9014
 
@@ -1587,9 +1634,10 @@ The repository of a dependency could not be cloned or fetched.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen (reserved for package resolution; not yet emitted) |
+| Stage    | codegen |
 
-A dependency's repository has no tag for the version resolution selected.
+The dependency's repository has no tag `v<version>` for the version minimal
+version selection chose.
 
 ### E9025
 
@@ -1598,9 +1646,130 @@ A dependency's repository has no tag for the version resolution selected.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | codegen (reserved for package resolution; not yet emitted) |
+| Stage    | codegen |
 
-Minimal version selection took the highest minimum any constraint names, and some constraint on that package does not admit it (an exact version it does not name, or an upper bound it reaches).
+Minimal version selection took the highest minimum any constraint names, and
+some constraint on that package does not admit it (an exact version it does
+not name, or an upper bound it reaches). The message names the package, the
+version, and the two requirements that disagree. Nothing is written.
+
+### E9028
+
+**pkg.lock is missing, unreadable or malformed**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+`pkg.lock` does not parse (an unknown table or key, a malformed name,
+commit, hash or source, a pin for a package it does not resolve, or a
+`file://` source read without `--allow-file-source`), or a build with a
+`pkg.*` import, or `tkc pkg list`, finds no lock. Run `tkc pkg fetch`
+(build) or `tkc pkg resolve` (list); a malformed lock is deleted by hand.
+
+### E9029
+
+**A locked package is not pinned or not in the package cache**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A build with a `pkg.*` import found a lock entry without a source, a commit
+or a content hash (a lock written by `tkc pkg resolve` has none), or a
+locked package that is not in the cache `$HOME/.toke/pkg`; or `tkc pkg fetch`
+found an entry pinned only in part (a commit without a hash or the reverse),
+which it refuses rather than re-pinning. `tkc pkg fetch` pins and fetches;
+a partly pinned entry is deleted from the lock by hand.
+
+### E9030
+
+**A fetched or cached package does not match its lock entry**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The commit a tag names is not the commit the lock pins (the tag was moved),
+or the canonical tree hash of the fetched or cached tree is not the lock's
+(the content changed, or the cache was modified -- the cache is re-hashed on
+every fetch and every build that uses it), or the tree cannot be hashed (a
+symbolic link or special file), or the package's own `pkg.toml` is absent or
+declares another name or version. The message gives the expected and actual
+values. The lock is never updated on a mismatch.
+
+### E9031
+
+**tkc pkg: invalid command, argument or flag**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+An unknown `tkc pkg` command or flag, a missing or extra argument, an invalid
+package name or version constraint, a `--git` source the transport rule
+refuses, `tkc pkg add` of the package to itself, or `tkc pkg remove` of a
+name that is not a dependency. Nothing is written; exit 3.
+
+### E9032
+
+**A package file could not be read or written**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+`pkg.toml` is absent where a command needs it (create it with
+`tkc pkg init`), or `pkg.toml`, `pkg.lock`, the package cache or the build's
+temporary interface directory could not be written, or `HOME` is unset or
+not absolute (the cache is `$HOME/.toke/pkg`).
+
+### E9033
+
+**Circular package dependency**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The packages require one another in a cycle (the message gives it, e.g.
+`a -> b -> a`), or a package requires the project itself. ADR-0004 prohibits
+cycles. (The ADR's text named E9010 for this; E9010 is the compiler's
+"compiler limit exceeded", so the condition took the next free code.)
+
+### E9034
+
+**Two manifests give one package different sources**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+Two requirements on one package name different `git` sources. Choosing
+either would let one manifest redirect the other's dependency, so resolution
+stops and names both.
+
+### E9035
+
+**A package's modules could not be built**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A build regenerates every locked package's interfaces from its source
+(ADR-0004: a fetched `.tki` is never trusted). A package has no entry module
+`<name>.tk`, or a module does not declare its import path (`m=pkg.<name>;`
+for the entry module, `m=pkg.<name>.<file>;` for the others), or a module
+does not compile -- its own diagnostics are printed before this one.
 
 ### W9010
 
@@ -1609,9 +1778,24 @@ Minimal version selection took the highest minimum any constraint names, and som
 | Field    | Value |
 |----------|-------|
 | Severity | warning |
-| Stage    | codegen (reserved for package resolution; not yet emitted) |
+| Stage    | codegen |
 
-`pkg.toml` changed after `pkg.lock` was written.
+A build with a `pkg.*` import found a direct dependency of `pkg.toml` that
+the lock does not list, at a version its constraint does not admit, or from
+another source. The build continues against the lock; `tkc pkg fetch`
+re-resolves.
+
+### W9011
+
+**pkg.toml already exists**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | codegen |
+
+`tkc pkg init` found a `pkg.toml` and left it unchanged (ADR-0004: init
+never overwrites). Exit 0.
 
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 

@@ -97,13 +97,26 @@ typedef struct {
 
 TkRouter   *router_new(void);
 void        router_free(TkRouter *r);
-void        router_get(TkRouter *r, const char *pattern, TkRouteHandler h);
-void        router_post(TkRouter *r, const char *pattern, TkRouteHandler h);
-void        router_put(TkRouter *r, const char *pattern, TkRouteHandler h);
-void        router_delete(TkRouter *r, const char *pattern, TkRouteHandler h);
+
+/* Registration (127.349).  Every registration function below -- router_get,
+ * router_post, router_put, router_delete, router_use, router_use_cors,
+ * router_use_etag, router_use_gzip, router_static, router_ws -- returns 0
+ * when the route / middleware / prefix / endpoint is in the router, and -1
+ * when it is not: a NULL router, pattern or handler, or out of memory.  A -1
+ * also writes one line to stderr:
+ *   DIAGNOSTIC: kind=router_register_failed what=<GET|...|middleware|static|ws>
+ *               pattern="..." reason="..."
+ * There is no count limit: the route list, the middleware chain, the
+ * router_static prefixes and the WebSocket endpoints all grow.  (They
+ * returned void, and the 17th router_static prefix, the 17th WebSocket
+ * endpoint and the 65th middleware were dropped without a word.) */
+int         router_get(TkRouter *r, const char *pattern, TkRouteHandler h);
+int         router_post(TkRouter *r, const char *pattern, TkRouteHandler h);
+int         router_put(TkRouter *r, const char *pattern, TkRouteHandler h);
+int         router_delete(TkRouter *r, const char *pattern, TkRouteHandler h);
 
 /* Add middleware to the router's chain (called before route handlers) */
-void        router_use(TkRouter *r, TkMiddleware mw);
+int         router_use(TkRouter *r, TkMiddleware mw);
 
 /* CORS configuration (Story 27.1.12).
  * All array fields are NULL-terminated arrays of C strings.
@@ -125,7 +138,7 @@ typedef struct {
 /* Register CORS middleware on the router.
  * opts is copied by value; the caller's string arrays must remain valid
  * for the lifetime of the router. */
-void router_use_cors(TkRouter *r, TkCorsOpts opts);
+int router_use_cors(TkRouter *r, TkCorsOpts opts);
 
 /* Match a request — returns handler result or 404 response.  The response's
  * router-built memory is valid until the next dispatch (TkRouteResp
@@ -141,6 +154,17 @@ TkRouteResp router_dispatch_ex(TkRouter *r,
                                 const char *query,  const char *body,
                                 const char **hnames, const char **hvals,
                                 uint64_t nhdrs);
+
+/* router_dispatch_route — inside a handler (or middleware) called by a
+ * dispatch: the router that dispatched and the method and pattern of the
+ * route it matched, as registered (":id" segments, a trailing "*"), and 1.
+ * Outside a dispatch, or when no route matched (a CORS preflight), 0 and the
+ * outputs are untouched.  Any output may be NULL.  The strings are the
+ * router's and live until router_free.  The toke glue's shared trampoline
+ * uses it to find the toke handler of the route the router's own matcher
+ * chose (127.343). */
+int router_dispatch_route(const TkRouter **router, const char **method,
+                          const char **pattern);
 
 /* Start an HTTP server using this router for dispatch.
  * Binds to the given host:port and blocks, serving requests.
@@ -174,7 +198,7 @@ const char *router_query_get(const char *query, const char *key); /* URL-decode 
  * e.g. router_static(r, "/static/", "/var/www/static")
  * Features: MIME detection, index.html for directories,
  * path traversal protection, ETag (mtime+size), conditional GET (304). */
-void router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
+int router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
 
 /* router_static_serve — directly serve a single request for a file under
  * dir_path.  rel_path is the URL path component after stripping the prefix
@@ -200,7 +224,7 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
  * those.  Middleware registered BEFORE it runs outside it (index 0 is the
  * outermost), so register router_use_etag first for the 304 to repeat the
  * gzip middleware's Vary: Accept-Encoding. */
-void router_use_etag(TkRouter *r);
+int router_use_etag(TkRouter *r);
 
 /* Convenience response constructors */
 TkRouteResp router_resp_ok(const char *body, const char *ct);
@@ -217,8 +241,8 @@ typedef void (*TkWsOnClose)(int fd);
 /* router_ws — register a WebSocket endpoint.
  * When a GET request arrives on pattern with Upgrade: websocket,
  * performs the HTTP→WS handshake and invokes the callbacks. */
-void router_ws(TkRouter *r, const char *pattern,
-               TkWsOnOpen on_open, TkWsOnMessage on_message, TkWsOnClose on_close);
+int router_ws(TkRouter *r, const char *pattern,
+              TkWsOnOpen on_open, TkWsOnMessage on_message, TkWsOnClose on_close);
 
 /* ── Gzip response compression middleware (Story 27.1.6) ───────────── */
 
@@ -232,7 +256,7 @@ void router_ws(TkRouter *r, const char *pattern,
  * Sets Content-Encoding: gzip and Vary: Accept-Encoding on
  * compressed responses, whose body is the gzip stream with its length in
  * body_len (121.88). */
-void router_use_gzip(TkRouter *r, size_t min_size);
+int router_use_gzip(TkRouter *r, size_t min_size);
 
 /* ── Access logging middleware (Story 27.1.11): removed 2026-09-30 (121.41
  * (2)) -- unreachable, and it wrote request fields unescaped.  Use log.c. */

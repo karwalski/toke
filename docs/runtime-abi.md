@@ -507,6 +507,25 @@ a 0 byte.  Gate: C1111 (an ASan C driver under `TK_STR_VERIFY=1`, plus a
 toke program); C208 and C276 now count only the malloc'd part a
 `$toolcall` block owns.
 
+**Step 5, eighth tranche (story 127.295, Batch Z137).**  `std.template`'s
+producer side, with the C callers that freed it: `tmpl_render`,
+`tmpl_renderhtml`, `tmpl_escape`, `tmpl_html` and `tmpl_renderfile` return
+sealed strings (so do `tpl.render`, `tpl.renderfile` and `tpl.escape`), and
+`tpl.compile`'s `$tmpl.src` is a sealed copy.  A render builds in a
+`TkStrBuf` and is copied once into the heap (`tks_dup`); the output holds no
+0 byte (every piece appended is a C string).  `tmpl_renderpage` alone stays
+malloc'd: `tk_page_dispatch` (`http.servepages`) renders one per request and
+frees it, and a sealed string is never freed, so sealing it would grow the
+heap by a page per request.  A registered helper's result is still `free()`d
+by the engine, so it must be malloc'd (`template.h` says so).  The unit tests
+stop freeing and assert header == strlen; `fuzz-template` builds with
+`-DTK_STR_NO_HEAP` so a long run still frees each result.  Not sealed, by
+the same per-request rule: `router.c`'s route-match parameters and response
+header values and `tk_web_glue.c`'s route and page tables -- C-owned storage
+the router and the server free, not toke producers.
+Gate: C1230 (an ASan C driver over the producers and the toke glue under
+`TK_STR_VERIFY=1`, plus a toke program).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

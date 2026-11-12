@@ -114,7 +114,8 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9005 | error | codegen | Match on a value whose sum type is not established | n/s |
 | E9010 | error | codegen | Compiler limit exceeded | n/s |
 | W9010 | warning | codegen | pkg.lock is out of date relative to pkg.toml | n/s |
-| E9011 | error | codegen | Package not found in the index and no git URL | n/s |
+| E9011 | error | codegen | Package not found: no git source and no index, or not a dependency | n/s |
+| W9011 | warning | codegen | pkg.toml already exists | n/s |
 | E9012 | error | codegen | Malformed pkg.toml | n/s |
 | E9013 | error | codegen | Git clone or fetch of a dependency failed | n/s |
 | E9014 | error | codegen | No git tag matches the resolved version | n/s |
@@ -126,10 +127,18 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9025 | error | codegen | No version of a dependency satisfies every constraint | n/s |
 | E9026 | error | codegen | `--migrate` declined; source echoed unchanged | C711 |
 | E9027 | error | codegen | The C compiler tkc would run is not an executable file | n/s |
+| E9028 | error | codegen | pkg.lock is missing, unreadable or malformed | n/s |
+| E9029 | error | codegen | A locked package is not pinned or not in the package cache | n/s |
+| E9030 | error | codegen | A fetched or cached package does not match its lock entry | n/s |
+| E9031 | error | codegen | tkc pkg: invalid command, argument or flag | n/s |
+| E9032 | error | codegen | A package file could not be read or written | n/s |
+| E9033 | error | codegen | Circular package dependency | n/s |
+| E9034 | error | codegen | Two manifests give one package different sources | n/s |
+| E9035 | error | codegen | A package's modules could not be built | n/s |
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 
-Codes **E2036**, **E4040**, **E4041**, **E4042**, **W9010**, **E9011**, **E9012**, **E9013**, **E9014**, **E9021**, **E9025** are defined in headers but not yet emitted by any `diag_emit` call -- they are reserved for planned functionality.
+Codes **E2036**, **E4040**, **E4041**, **E4042** are defined in headers but not yet emitted by any `diag_emit` call -- they are reserved for planned functionality.
 
 <!-- END error-code table -->
 

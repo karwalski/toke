@@ -23,7 +23,7 @@
  * Story: 15.1.4, 33.1.1, 33.1.2
  */
 
-#include "tk_strhdr.h"   /* 127.295: tk_strlen */
+#include "tk_strhdr.h"   /* 127.295: tk_strlen, tks_alloc/tks_seal/tks_dup */
 #include "template.h"
 #include "strbuf.h"
 #include <stdlib.h>
@@ -564,7 +564,9 @@ const char *tmpl_escape(const char *s)
         }
     }
 
-    char *out = (char *)malloc(len + 1);
+    /* 127.295: sealed -- the result is a toke string (tpl.escape); a C
+     * caller must not free it.  It holds no 0 byte (s is a C string). */
+    char *out = tks_alloc(len);
     if (!out) return NULL;
 
     char *q = out;
@@ -579,7 +581,7 @@ const char *tmpl_escape(const char *s)
         }
     }
     *q = '\0';
-    return out;
+    return tks_seal(out, len);
 }
 
 /* -----------------------------------------------------------------------
@@ -1350,8 +1352,15 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
  * render_internal
  * ----------------------------------------------------------------------- */
 
+/* 127.295: seal != 0 returns a sealed copy (a toke string: tmpl_render,
+ * tmpl_renderhtml and so tpl.render / tpl.renderfile); seal == 0 returns the
+ * malloc'd buffer, which tmpl_renderpage hands to a C caller that frees it
+ * per request (tk_page_dispatch) -- a sealed string is never freed, so
+ * sealing that one would grow the heap by one page per request.  The output
+ * holds no 0 byte: every piece appended is a C string. */
 static const char *render_internal(TkTmpl *t, const TkTmplVar *vars,
-                                    uint64_t nvar, int escape_values)
+                                    uint64_t nvar, int escape_values,
+                                    int seal)
 {
     if (!t) return NULL;
 
@@ -1364,7 +1373,12 @@ static const char *render_internal(TkTmpl *t, const TkTmplVar *vars,
         return NULL;
     }
 
-    return strbuf_take(&o.b);   /* NUL-terminated; NULL after any OOM */
+    if (!seal)
+        return strbuf_take(&o.b);   /* NUL-terminated; NULL after any OOM */
+    if (o.b.oom) { strbuf_free(&o.b); return NULL; }
+    char *r = tks_dup(o.b.buf ? o.b.buf : "", o.b.len);
+    strbuf_free(&o.b);
+    return r;
 }
 
 /* -----------------------------------------------------------------------
@@ -1373,12 +1387,12 @@ static const char *render_internal(TkTmpl *t, const TkTmplVar *vars,
 
 const char *tmpl_render(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar)
 {
-    return render_internal(t, vars, nvar, 0);
+    return render_internal(t, vars, nvar, 0, 1);
 }
 
 const char *tmpl_renderhtml(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar)
 {
-    return render_internal(t, vars, nvar, 1);
+    return render_internal(t, vars, nvar, 1, 1);
 }
 
 /* -----------------------------------------------------------------------
@@ -1445,7 +1459,9 @@ const char *tmpl_html(const char *tag,
 
     total += 2 + tag_len + 1;
 
-    char *out = (char *)malloc(total + 1);
+    /* 127.295: sealed (tpl.html); a C caller must not free it.  No 0 byte:
+     * every piece is a C string. */
+    char *out = tks_alloc(total);
     if (!out) return NULL;
 
     char *q = out;
@@ -1494,7 +1510,7 @@ const char *tmpl_html(const char *tag,
     *q++ = '>';
     *q = '\0';
 
-    return out;
+    return tks_seal(out, (size_t)(q - out));
 }
 
 /* -----------------------------------------------------------------------
@@ -1847,7 +1863,8 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     } else {
         /* No layout — just use the page source directly (after stripping
          * any {! !} directives, treat remaining content as the template) */
-        final_src = strdup(page_src);
+        final_src = page_src;      /* 127.295: moved, not copied */
+        page_src = NULL;
     }
 
     if (!final_src) goto cleanup;
@@ -1858,7 +1875,9 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     final_src = NULL;
     if (!t) goto cleanup;
 
-    const char *result = tmpl_renderhtml(t, vars, nvar);   /* 121.37 */
+    /* 121.37: escaped as tmpl_renderhtml; 127.295: NOT sealed (malloc'd,
+     * the C caller frees it -- see render_internal). */
+    const char *result = render_internal(t, vars, nvar, 1, 0);
     tmpl_free(t);
 
     /* Cleanup blocks and page source */

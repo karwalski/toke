@@ -140,9 +140,9 @@ VENDOR_SENTINELS = stdlib/vendor/tomlc99/toml.c \
 
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
-          src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
-          src/stdlib_deps.c src/stdlib_tables.c src/glue_gen.c src/lint.c src/tkir.c \
-          src/regex_check.c src/main.c src/stdlib/str.c
+          src/sourcemap.c src/ast_json.c src/pyview.c src/migrate.c src/companion.c src/sha256.c src/compress.c \
+          src/stdlib_deps.c src/stdlib_tables.c src/glue_gen.c src/lint.c src/tkir.c src/tkir_ast.c \
+          src/regex_check.c src/pkg.c src/pkg_git.c src/pkg_cli.c src/main.c src/stdlib/str.c
 
 # ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────
 #
@@ -239,7 +239,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -1512,6 +1512,16 @@ diff-codegen: $(BIN)
 diff-codegen-record: $(BIN)
 	TOKE=./$(BIN) python3 scripts/diff_codegen.py --record test/codegen-baseline.json $(DIFF_CODEGEN_DIRS)
 
+# 76.1.6c — `tkc --from-tkir` parity over the same program set: for every
+# program that compiles from source, the LLVM IR from source and from
+# source -> .tkir must be identical bytes, and nothing may be refused
+# (--strict).  `diff-tkir-run` also builds and runs both binaries and compares
+# exit status and stdout (two clang links per program: minutes, not seconds).
+diff-tkir: $(BIN)
+	TOKE=./$(BIN) python3 scripts/diff_tkir.py --strict $(DIFF_CODEGEN_DIRS)
+diff-tkir-run: $(BIN)
+	TOKE=./$(BIN) python3 scripts/diff_tkir.py --strict --run $(DIFF_CODEGEN_DIRS)
+
 # 123.6 — the C-series codegen cases in test/codegen/ with their PINNED expected
 # results: exact stdout, exit code, and the trap line on stderr, at -O0 and -O2,
 # plus the multi-module programs diff-codegen cannot build (test/codegen/multimod).
@@ -2365,8 +2375,12 @@ fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:
 	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
+# 127.295: tmpl_render/tmpl_renderhtml return sealed strings, which are never
+# freed; a fuzzer rendering up to 64 KiB per input would grow the sealed heap
+# past libFuzzer's RSS limit.  -DTK_STR_NO_HEAP builds the malloc fallback
+# (the one a target without mmap gets), so the harness frees each result.
 fuzz-template:
-	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c src/stdlib/str.c,)
+	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c src/stdlib/str.c,-DTK_STR_NO_HEAP)
 # http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls
 # the capability checks, hence capabilities.c (not in 120.22's link line).
 fuzz-multipart:

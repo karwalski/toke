@@ -38,7 +38,10 @@
 #include <openssl/err.h>
 #include <openssl/x509v3.h>   /* 138.8: X509_VERIFY_PARAM_set1_ip_asc */
 #include "tk_ssl_host.h"      /* 121.104: OpenSSL 3 and 4 */
+#include "tk_tls_groups.h"    /* 122.15: tk_tls_set_groups() */
+#include "tk_ssl_nosigpipe.h"  /* 127.346: TLS writes via send(MSG_NOSIGNAL) */
 #endif
+#include "tk_nosigpipe.h"      /* 127.347: TK_SEND_FLAGS, tk_sock_nosigpipe */
 
 /* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
 
@@ -87,20 +90,13 @@
  * docs/stdlib/http.md under "What servetls does to SIGPIPE on Linux".
  */
 
-#ifdef MSG_NOSIGNAL
-#define HTTP_SEND_FLAGS MSG_NOSIGNAL
-#else
-#define HTTP_SEND_FLAGS 0
-#endif
+/* The mechanisms live in tk_nosigpipe.h so ws.c applies the same guard
+ * without linking this file (127.347). */
+#define HTTP_SEND_FLAGS TK_SEND_FLAGS
 
 void http_sock_nosigpipe(int fd)
 {
-#ifdef SO_NOSIGPIPE
-    int on = 1;
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
-#else
-    (void)fd;
-#endif
+    tk_sock_nosigpipe(fd);
 }
 
 /*
@@ -3160,6 +3156,11 @@ static int client_tcp_connect(const char *host, const char *port,
     for (rp = res; rp != NULL; rp = rp->ai_next) {
         fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd < 0) continue;
+        /* 127.341: a server that closes before the request is fully sent must
+         * not kill the client with SIGPIPE.  SO_NOSIGPIPE here (Darwin/BSD)
+         * and HTTP_SEND_FLAGS on every client send() (MSG_NOSIGNAL, Linux)
+         * turn that into EPIPE, which each send site already reports. */
+        http_sock_nosigpipe(fd);
         if (timeout_ms > 0) {
             struct timeval tv;
             tv.tv_sec  = (long)(timeout_ms / 1000);
@@ -3444,6 +3445,11 @@ static HttpClientResp client_do_request(HttpClient *c,
     if (is_https) {
         ssl_ctx = SSL_CTX_new(TLS_client_method());
         if (!ssl_ctx) { close(fd); return err_resp_client("SSL_CTX_new failed", 0); }
+        /* 122.15: the explicit hybrid-first group list, as std.tls. */
+        if (!tk_tls_set_groups(ssl_ctx)) {
+            SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: no usable key-exchange group", 0);
+        }
         /* 138.8: VERIFY THE SERVER.  This context used to be created and
          * used with OpenSSL's default of SSL_VERIFY_NONE: any certificate
          * was accepted for any host, so every https:// request -- API keys
@@ -3460,7 +3466,14 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
         ssl = SSL_new(ssl_ctx);
         if (!ssl) { SSL_CTX_free(ssl_ctx); close(fd); return err_resp_client("SSL_new failed", 0); }
-        SSL_set_fd(ssl, fd);
+        /* 127.346: not SSL_set_fd.  OpenSSL's socket BIO writes with
+         * write(2), which on Linux (no SO_NOSIGPIPE) raised SIGPIPE when the
+         * server had closed -- the TLS twin of 127.341.  Records now leave
+         * through send(MSG_NOSIGNAL); see tk_ssl_nosigpipe.h. */
+        if (tk_ssl_set_fd_nosigpipe(ssl, fd) != 1) {
+            SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("TLS: cannot attach the socket", 0);
+        }
         {
             unsigned char ipbuf[16];
             int is_ip = inet_pton(AF_INET, host, ipbuf) == 1
@@ -3486,12 +3499,12 @@ static HttpClientResp client_do_request(HttpClient *c,
             return err_resp_client(m, 0);
         }
     }
-#define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, 0))
+#define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, HTTP_SEND_FLAGS))
 #define CLIENT_RECV(buf, len) client_recv(fd, is_https ? (void *)ssl : NULL, buf, len, \
                                           &rd_how, &rd_err, rd_tls, sizeof rd_tls)
 #define CLIENT_CLOSE() do { if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); } if (ssl_ctx) SSL_CTX_free(ssl_ctx); close(fd); } while(0)
 #else
-#define CLIENT_SEND(buf, len) send(fd, buf, len, 0)
+#define CLIENT_SEND(buf, len) send(fd, buf, len, HTTP_SEND_FLAGS)
 #define CLIENT_RECV(buf, len) client_recv(fd, NULL, buf, len, \
                                           &rd_how, &rd_err, rd_tls, sizeof rd_tls)
 #define CLIENT_CLOSE() close(fd)
@@ -4002,7 +4015,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n",
             host, port, host, port);
         if (clen < 0 || (size_t)clen >= sizeof(connect_buf) ||
-            send(fd, connect_buf, (size_t)clen, 0) < 0) {
+            send(fd, connect_buf, (size_t)clen, HTTP_SEND_FLAGS) < 0) {
             close(fd);
             result.is_err  = 1;
             result.err_msg = hstrdup("proxy CONNECT send failed");
@@ -4066,14 +4079,14 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
         return result;
     }
 
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0) {
+    if (send(fd, req_buf, (size_t)req_len, HTTP_SEND_FLAGS) < 0) {
         close(fd);
         result.is_err  = 1;
         result.err_msg = hstrdup("send failed");
         return result;
     }
     if (req.body && req.body_len > 0) {
-        if (send(fd, req.body, (size_t)req.body_len, 0) < 0) {
+        if (send(fd, req.body, (size_t)req.body_len, HTTP_SEND_FLAGS) < 0) {
             close(fd);
             result.is_err  = 1;
             result.err_msg = hstrdup("send body failed");
@@ -4352,7 +4365,7 @@ int http_downloadfile(HttpClient *c, const char *url,
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
         close(fd); return -1;
     }
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0) {
+    if (send(fd, req_buf, (size_t)req_len, HTTP_SEND_FLAGS) < 0) {
         close(fd); return -1;
     }
 
@@ -4560,6 +4573,13 @@ TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
     /* Minimum TLS 1.2 — disable SSLv3, TLS 1.0, TLS 1.1 */
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
 
+    /* 122.15: the explicit hybrid-first group list, as std.tls. */
+    if (!tk_tls_set_groups(ctx)) {
+        fprintf(stderr, "http_tls_ctx_new: no usable key-exchange group\n");
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
     /* Strong cipher suites: ECDHE + AEAD only, no CBC, no RC4 */
     SSL_CTX_set_cipher_list(ctx,
         "ECDHE-ECDSA-AES256-GCM-SHA384:"
@@ -4668,6 +4688,7 @@ int http_tls_add_sni(TkTlsCtx *ctx, const char *hostname,
 
     SSL_CTX *sctx = SSL_CTX_new(TLS_server_method());
     if (!sctx) return -1;
+    if (!tk_tls_set_groups(sctx)) { SSL_CTX_free(sctx); return -1; }  /* 122.15 */
 
     if (SSL_CTX_use_certificate_file(sctx, cert_path, SSL_FILETYPE_PEM) != 1 ||
         SSL_CTX_use_PrivateKey_file(sctx, key_path, SSL_FILETYPE_PEM) != 1 ||
@@ -4721,6 +4742,10 @@ TkTlsCtx *http_tls_ctx_new_config(const TkTlsConfig *config)
         /* TLS 1.3 ciphersuites */
         SSL_CTX_set_ciphersuites(ctx, config->ciphers);
     }
+
+    /* 122.15: the explicit hybrid-first group list, as std.tls.  Set
+     * before the caller's curves so an explicit tls.curves still wins. */
+    if (!tk_tls_set_groups(ctx)) { SSL_CTX_free(ctx); return NULL; }
 
     /* Elliptic curves (61.2.3) */
     if (config->curves) {

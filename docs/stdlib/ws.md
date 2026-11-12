@@ -75,6 +75,20 @@ not a terminator — `opcode` is 1 for a text frame and 2 for a binary one, and
 | `ws.close` | `conn: $wsconn` | `void` | Close the connection; the handle stays valid and every later call on it is `$err` |
 | `ws.broadcast` | `conns: @($wsconn); msg: $str` | `void` | Send a text message to all connections |
 
+## When the other end has gone
+
+`ws.send`, `ws.sendbytes` and `ws.close` on a connection whose peer has
+already closed return `$err` (or, for `ws.close`, do nothing); they never kill
+the program. Until story 127.347 every frame was written with plain `write(2)`
+on a socket that did not suppress `SIGPIPE`, so a server that closed first
+terminated the toke program with status 141. Each frame now leaves through
+`send` with `MSG_NOSIGNAL` where the platform has it, and the socket carries
+`SO_NOSIGPIPE` where the platform has that, the same guards the http client
+and server use. The program's own `SIGPIPE` disposition is not changed.
+`test/conform/C1300_ws_client_peer_close_no_sigpipe.sh` covers a peer that
+closes before the write and one that closes during it; the router's WebSocket
+server replies are covered by `C1302_router_ws_server_peer_close_no_sigpipe.sh`.
+
 ## Handling a failed connect
 
 `ws.connect` returns `$wsconn!$wserr`, so every caller has to say what happens

@@ -19,9 +19,9 @@ Line numbers are for the files as they stand on this branch.
 | # | Site | Primitive | Protects | Reachable from toke | HNDL exposure | Status |
 |---|---|---|---|---|---|---|
 | H1 | `std.tls` contexts, `build_ssl_ctx` (`src/stdlib/tls.c:269-275`) | TLS 1.3 KEX | all `std.tls` traffic | yes (`tls.connect`, `tls.listen`) | **mitigated** when both ends have OpenSSL 3.5+: X25519MLKEM768 is preferred | shipped (124.1); fallback now tested (C1180) |
-| H2 | `std.http` HTTPS server contexts (`src/stdlib/http.c:4529`, `:4665`, `:4707`) | TLS 1.2/1.3 KEX | `http.servetls` traffic (ooke serves HTTPS through it) | yes | **library default only** — no group list is set, so the KEX is whatever the linked OpenSSL defaults to | new story 122.15 |
-| H3 | `std.http` HTTPS client context (`src/stdlib/http.c:3444`) | TLS 1.2/1.3 KEX | outbound `http.get`/`post` traffic, including API keys in headers | yes | **library default only**, as H2 | new story 122.15 |
-| H4 | `std.llm` HTTPS client context (`src/stdlib/llm.c:407`) | TLS 1.2/1.3 KEX | prompts, completions and provider API keys | yes | **library default only**, as H2 | new story 122.15 |
+| H2 | `std.http` HTTPS server contexts (`src/stdlib/http.c:4529`, `:4665`, `:4707`) | TLS 1.2/1.3 KEX | `http.servetls` traffic (ooke serves HTTPS through it) | yes | **mitigated** as H1 since 122.15: the explicit hybrid-first list (`tk_tls_set_groups`); TLS 1.2 still accepted | done (122.15, C1200) |
+| H3 | `std.http` HTTPS client context (`src/stdlib/http.c:3444`) | TLS 1.2/1.3 KEX | outbound `http.get`/`post` traffic, including API keys in headers | yes | **mitigated**, as H2 | done (122.15, C1200) |
+| H4 | `std.llm` HTTPS client context (`src/stdlib/llm.c:407`) | TLS 1.2/1.3 KEX | prompts, completions and provider API keys | yes | **mitigated**, as H2 | done (122.15, C1200) |
 | H5 | `encrypt.x25519keypair` / `encrypt.x25519dh` (`src/stdlib/encrypt.h:75`, `:80`; `encrypt.c:842`, `:851`; glue `encrypt_glue.c:99`, `:107`; `stdlib/encrypt.tki:26-27`) | X25519 ECDH, hand-rolled libc core | whatever key a program derives from the shared secret | yes | **exposed by design** when a program uses the shared secret to protect long-lived data | needs the std.encrypt ML-KEM / hybrid API (122.5 part 3, blocked: owner) |
 | H6 | `encrypt_rsa_encrypt` / `encrypt_rsa_decrypt` (`src/stdlib/encrypt.h:196`, `:201`; `encrypt.c:2879`, `:2898`) | RSA-2048 OAEP-SHA-256 | anything a C caller wraps with it | **no** — not in `stdlib/encrypt.tki`; no caller anywhere in `src/` outside `encrypt.c` | none today; latent if it is ever exposed | keep C-only; do not expose without an ML-KEM alternative |
 
@@ -92,6 +92,20 @@ Recommended remediation (story **122.15**, filed by this batch): apply the same
 group observable on the server side. Not done here: 122.5 names
 `build_ssl_ctx` only, and `http.c` is shared with in-flight HTTP work.
 
+**Remediated by 122.15.** The two calls now live in one helper,
+`tk_tls_set_groups` (`src/stdlib/tk_tls_groups.h`), which `build_ssl_ctx` and
+all five `std.http` / `std.llm` contexts call; C1201 fails if a function in
+`src/stdlib` creates an `SSL_CTX` without it. `TK_TLS_TRACE_GROUP=1` makes each
+context report the list it received and each completed handshake the group it
+negotiated, on stderr (a diagnostic switch, not a stdlib API). C1200 shows on
+OpenSSL 4.0.x that the server (plain, SNI and configured contexts) and both
+clients negotiate `X25519MLKEM768`, still do so under an `openssl.cnf` that
+forces `x25519` on unlisted contexts, fall back to `x25519` when the library
+lacks the hybrid, and fail closed when neither list is usable. A configured
+`tls.curves` list still overrides the default. **Residual, owner decision:**
+TLS 1.2 is still accepted by all of these contexts, so a peer that only speaks
+1.2 gets a classical exchange.
+
 ## H5 — `encrypt.x25519dh`
 
 A bare X25519 shared secret is recoverable from the two public keys once a CRQC
@@ -121,8 +135,9 @@ post-quantum counterpart beside it.
 
 ## Priority
 
-1. **H2–H4 (122.15).** The only exposure that carries production traffic, and a
-   small change that reuses the H1 code path.
+1. **H2–H4 (122.15) — done.** The only exposure that carried production
+   traffic; it now reuses the H1 code path. Residual: the TLS 1.2 floor
+   (owner decision).
 2. **H5 (122.5 part 3, after the owner decision).** Gives programs a
    post-quantum way to establish long-lived keys, and is the trigger for
    deprecation stage 1 in threat-model Part III.

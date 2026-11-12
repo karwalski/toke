@@ -247,6 +247,10 @@ int ws_proxy_connect(const char *host, uint16_t port, const char *path)
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
+    /* 127.347: the backend socket is written by http_write_all (MSG_NOSIGNAL)
+     * but never had SO_NOSIGPIPE, unlike every other socket the http and ws
+     * code opens or accepts. */
+    http_sock_nosigpipe(fd);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         close(fd);

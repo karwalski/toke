@@ -7,6 +7,9 @@ Flags:
   --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary
   --emit-asm          Emit assembly (.s) instead of compiling to binary
   --emit-deps         Print stdlib C sources and linker flags needed, then exit
+  --emit-tkir         Write the type-checked program as binary IR (.tkir)
+  --from-tkir         Inputs are .tkir files: compile them as their source
+  --read-tkir         Print a summary of each .tkir input and exit
   -I <dir>            Add .tki interface search directory (repeatable)
   -g / --debug        Emit DWARF debug metadata for lldb/gdb
   -O0/-O1/-O2/-O3    Optimization level (default: -O2)
@@ -16,6 +19,7 @@ Flags:
   --expand            Expand abbreviated identifiers as inline comments
   --sourcemap         Emit .map source map alongside --fmt/--pretty output
   --dump-ast          Dump parsed AST as JSON to stdout and exit
+  --python-view       Print a read-only Python-like view of the source (display only)
   --check             Type check only; no code generation
   --companion         Generate .tkc.md companion file skeleton to stdout
   --companion-out <p> Write companion file to <p> instead of stdout
@@ -57,6 +61,10 @@ tkc.toml [capabilities] and passable at run time on the compiled binary):
   --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn
   --allow-all         Grant every capability
   --cap-enforce       Bake deny-by-default enforcement into the binary
+
+Packages (ADR-0004, docs/reference/package-manifest.md):
+  toke pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock
+  --allow-file-source Accept file:/// package sources (local override)
 
 Configuration:
   --config=PATH       Load config from PATH (default: ./tkc.toml)

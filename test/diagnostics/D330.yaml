@@ -1,0 +1,12 @@
+id: D330
+series: D
+description: "E1003 for an underscore inside an identifier expects v0.4's alphabet (a-z, 0-9) -- not A-Z, which is E2002 in the default profile -- and carries no fix (127.338)"
+input: |
+  m=test;
+  f=main():i64{let max_val=3;<max_val};
+expected_exit_code: 1
+expected_error_codes: ["E1003"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "identifier of lowercase letters and digits only (a-z, 0-9)"

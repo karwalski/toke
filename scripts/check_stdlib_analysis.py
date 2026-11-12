@@ -181,7 +181,9 @@ EXTRA_FLAGS = {
 # If none works, every source needing OpenSSL is reported as a NAMED SKIP --
 # on its own line and in the gate's final line -- never a silent pass, and
 # TK_LINT_REQUIRE_OPENSSL=1 (CI sets it) turns that skip into a failure.
-OPENSSL_SRCS = {"src/stdlib/tls.c", "src/stdlib/tk_ssl_host.h"}  # 121.104
+OPENSSL_SRCS = {"src/stdlib/tls.c", "src/stdlib/tk_ssl_host.h",
+                "src/stdlib/tk_tls_groups.h",     # 121.104, 122.15
+                "src/stdlib/tk_ssl_nosigpipe.h"}  # 127.346
 
 # 135.3j (6): sources with an `#ifdef TK_HAVE_OPENSSL` branch, checked a
 # second time with the macro defined (see the header).

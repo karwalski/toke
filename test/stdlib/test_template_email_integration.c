@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "../../src/stdlib/template.h"
+#include "../../src/stdlib/tk_strhdr.h"   /* 127.295: tks_hdrlen */
 
 static int failures = 0;
 
@@ -30,6 +31,14 @@ static int failures = 0;
 
 #define ASSERT_STREQ(a, b, msg) \
     ASSERT((a) && (b) && strcmp((a),(b)) == 0, msg)
+
+/* 127.295: every tmpl_* result here is a sealed string (header == strlen),
+ * never freed (free() of one aborts). */
+#define SEALED(s) \
+    do { const char *s_ = (s); \
+         if (s_ && (tks_hdrlen(s_) < 0 || (size_t)tks_hdrlen(s_) != strlen(s_))) { \
+             fprintf(stderr, "FAIL: line %d: result not sealed\n", __LINE__); \
+             failures++; } } while (0)
 
 #define ASSERT_NULL_SUBSTR(haystack, needle, msg) \
     ASSERT((haystack) && !strstr((haystack), (needle)), msg)
@@ -62,7 +71,7 @@ int main(void)
             "<p>Thanks for signing up!</p>"
             "</body></html>",
             "email: normal values render correctly");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -106,7 +115,7 @@ int main(void)
         ASSERT(strstr(got, "&quot;quotes&quot;") != NULL,
                "email-xss: quotes escaped to &quot;");
 
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -119,7 +128,7 @@ int main(void)
         ASSERT_STREQ(got,
             "<p>A &amp; B &lt; C &gt; D</p>",
             "email-amp: ampersand/angle brackets escaped");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -136,7 +145,7 @@ int main(void)
             "<p></p>"
             "</body></html>",
             "email-missing: missing vars yield empty string");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -158,7 +167,7 @@ int main(void)
             "<p>Hi</p>"
             "</body></html>",
             "email-extra: extra variables are silently ignored");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -178,7 +187,7 @@ int main(void)
             "Dear Dave, welcome Dave. "
             "Your email is dave@example.com, Dave.",
             "email-repeat: repeated placeholder substituted each time");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
         tmpl_free(t);
     }
 
@@ -193,13 +202,13 @@ int main(void)
         const char *got = tmpl_render(t, NULL, 0);
         ASSERT_STREQ(got, static_tmpl,
             "email-static: static template passes through unchanged");
-        free((void *)got);
+        SEALED(got);   /* 127.295: sealed, never freed */
 
         /* Also test renderhtml — literal HTML must NOT be escaped. */
         const char *got2 = tmpl_renderhtml(t, NULL, 0);
         ASSERT_STREQ(got2, static_tmpl,
             "email-static: renderhtml preserves literal HTML");
-        free((void *)got2);
+        SEALED(got2);   /* 127.295: sealed, never freed */
 
         tmpl_free(t);
     }
@@ -210,28 +219,28 @@ int main(void)
         ASSERT_STREQ(e1,
             "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;",
             "escape-xss: script tag fully escaped");
-        free((void *)e1);
+        SEALED(e1);   /* 127.295: sealed, never freed */
 
         const char *e2 = tmpl_escape("<img src=x onerror=\"alert(1)\">");
         ASSERT_STREQ(e2,
             "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;",
             "escape-xss: img onerror payload escaped");
-        free((void *)e2);
+        SEALED(e2);   /* 127.295: sealed, never freed */
 
         const char *e3 = tmpl_escape("&amp;");
         ASSERT_STREQ(e3, "&amp;amp;",
             "escape-xss: already-encoded ampersand double-escaped");
-        free((void *)e3);
+        SEALED(e3);   /* 127.295: sealed, never freed */
 
         const char *e4 = tmpl_escape("normal text");
         ASSERT_STREQ(e4, "normal text",
             "escape-xss: plain text passes through unchanged");
-        free((void *)e4);
+        SEALED(e4);   /* 127.295: sealed, never freed */
 
         const char *e5 = tmpl_escape("");
         ASSERT_STREQ(e5, "",
             "escape-xss: empty string returns empty");
-        free((void *)e5);
+        SEALED(e5);   /* 127.295: sealed, never freed */
     }
 
     /* ---- Summary ---- */
