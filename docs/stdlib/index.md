@@ -22,6 +22,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.args](/docs/stdlib/args/) -- command-line argument parsing
 - [std.log](/docs/stdlib/log/) -- structured logging
 - [std.test](/docs/stdlib/test/) -- test framework
+- [std.option](/docs/stdlib/option/) -- the `T!$none` convention for a value that may be absent
 - [std](/docs/stdlib/std/) -- the root module: `std.homedir`
 - [std.sys](/docs/stdlib/sys/) -- platform, CPU, RAM, disk, config/data directories
 - [std.task](/docs/stdlib/task/) -- run functions on a thread pool, grouped in scopes

@@ -519,9 +519,61 @@ def check_repo_map(facts):
         print("\nFix: update docs/about/repos.md, or the inventory if a repository "
               "was really added or removed. Story 132.25.")
         return 1
+    lic_bad = check_repo_licences(text)
+    if lic_bad:
+        print("ERROR: the Licence/Copyright columns of docs/about/repos.md disagree "
+              "with LICENCES/HOLDER in scripts/about/github_repo_descriptions.py:\n")
+        for line in lic_bad:
+            print("  " + line)
+        print("\nFix: correct docs/about/repos.md, or the inventory if a "
+              "repository's LICENSE really changed (LICENSING.md too). Story 132.132.")
+        return 1
     print("repo map OK: docs/about/repos.md names all %d repositories in the inventory."
           % len(expected))
     return 0
+
+
+def check_repo_licences(text):
+    """Story 132.132: every repository the inventory gives a licence must sit
+    in a repos.md table row whose Licence cell starts with that SPDX id and
+    whose Copyright cell is the holder. The licence column went stale once
+    (two repos still said "No licence file" after their LICENSE landed)
+    because nothing read it back."""
+    sys.path.insert(0, os.path.join(ROOT, "scripts", "about"))
+    import github_repo_descriptions as grd
+    seen, bad, header = {}, [], None
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            header = None
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if header is None:
+            header = [c.lower() for c in cells]
+            continue
+        if set("".join(cells)) <= set("-: "):
+            continue
+        m = re.search(r"karwalski/([A-Za-z0-9][A-Za-z0-9._-]*)", cells[0])
+        if not m or m.group(1) not in grd.LICENCES:
+            continue
+        repo = m.group(1)
+        row = dict(zip(header, cells))
+        lic, holder = row.get("licence"), row.get("copyright")
+        seen[repo] = True
+        if lic is None or holder is None:
+            bad.append("karwalski/%s: its row has no Licence or no Copyright column"
+                       % repo)
+            continue
+        want = grd.LICENCES[repo]
+        if not lic.startswith(want):
+            bad.append("karwalski/%s: Licence says %r; the inventory says %s"
+                       % (repo, lic, want))
+        if holder != grd.HOLDER:
+            bad.append("karwalski/%s: Copyright says %r; the inventory says %s"
+                       % (repo, holder, grd.HOLDER))
+    for repo in sorted(set(grd.LICENCES) - set(seen)):
+        bad.append("karwalski/%s: has a licence in the inventory but no row in a "
+                   "table of docs/about/repos.md" % repo)
+    return bad
 
 
 def tracker_facts():

@@ -1,7 +1,7 @@
 {
   "schema": "toke-canonical-facts/1",
   "story": "132.1",
-  "updated": "2026-10-07",
+  "updated": "2026-11-12",
   "companion": "docs/about/canonical.md",
   "rules": [
     "Every downstream surface (site, llms.txt, every repo README, registry descriptions, model cards) copies the strings in `blocks` word for word. Do not paraphrase.",
@@ -87,8 +87,8 @@
     "source": "docs/metrics-baseline.md § Correctness; § 2026-08 (story 132.0(a))"
   },
   "source_code": {
-    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0, except spec/, stdlib/ and src/stdlib/, which are MIT. The project is twelve public repositories under github.com/karwalski, plus two private ones; the site is tokelang.dev, built with ooke and served by a toke binary on std.http.",
-    "source": "docs/about/repos.md; LICENSING.md (MIT boundary, story 135.15a); scripts/verify_project_facts.py repo_facts() (repos_public, story 132.121)"
+    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0, except spec/, stdlib/ and src/stdlib/, which are MIT. The project is thirteen public repositories under github.com/karwalski, plus two private ones; the site is tokelang.dev, built with ooke and served by a toke binary on std.http.",
+    "source": "docs/about/repos.md; LICENSING.md (MIT boundary, story 135.15a); scripts/verify_project_facts.py repo_facts() (repos_public, story 132.121; toke-ocr added, story 132.134)"
   },
   "author": {
     "value": "Matthew Watt (github.com/karwalski), sole maintainer.",

@@ -22,24 +22,22 @@ The C structs are defined in `src/stdlib/http.h`.
 
 ## 2. Building responses
 
-Two glue-level response constructors exist in `tk_web_glue.c`:
+An `i64` handler returns one of four response constructors declared in
+`stdlib/http.tki` and backed by glue in `tk_web_glue.c`:
 
 | Glue function | tki name | Signature | Effect |
 |---------------|----------|-----------|--------|
-| `tk_http_res_new` | `http.Res.ok` | `(body:str) -> Res` | 200 OK with `text/html` Content-Type |
-| `tk_http_res_json_new` | `http.Res.json` | `(status:u16; body:str) -> Res` | Given status with `application/json` Content-Type |
+| `tk_http_res_ok` | `http.resok` | `(body:str) -> i64` | 200 OK with `text/html` Content-Type |
+| `tk_http_res_json_new` | `http.resjson` | `(status:i64; body:str) -> i64` | Given status with `application/json` Content-Type |
+| `tk_http_res_bad` | `http.resbad` | `(msg:str) -> i64` | 400 Bad Request, `text/plain` |
+| `tk_http_res_err` | `http.reserr` | `(msg:str) -> i64` | 500 Internal Server Error, `text/plain` |
 
-Two additional response constructors are declared in `http.tki` and implemented in `http.c` (C-level, not yet wrapped in glue as i64):
-
-| C function | tki name | Signature | Effect |
-|------------|----------|-----------|--------|
-| `http_Res_bad` | `http.Res.bad` | `(msg:str) -> Res` | 400 Bad Request |
-| `http_Res_err` | `http.Res.err` | `(msg:str) -> Res` | 500 Internal Server Error |
-
-> **Note:** `http.Res.bad` and `http.Res.err` exist in the C library and
-> the tki schema but do not yet have i64-ABI wrappers in `tk_web_glue.c`.
-> Use `http.Res.json(400; msg)` or `http.Res.json(500; msg)` as
-> workarounds until glue wrappers are added.
+The typed `$res` forms, `http.res.ok`, `http.res.json`, `http.res.bad` and
+`http.res.err`, are documented in `docs/stdlib/http.md` § Response
+Constructors. All names are lower case: upper case is outside toke's
+character set, so `http.Res.json` is rejected at parse time. (This section used to name the
+upper-case `http.Res.*` forms and say `bad`/`err` had no `i64` wrappers; both
+were stale -- 132.133.)
 
 ---
 
@@ -75,11 +73,11 @@ Route registration glue functions (one per HTTP method):
 
 | Glue function | tki name | Signature |
 |---------------|----------|-----------|
-| `tk_http_get_handler` | `http.GET` | `(path:str; handler:FuncDecl)` |
-| `tk_http_post_handler` | `http.POST` | `(path:str; handler:FuncDecl)` |
-| `tk_http_put_handler` | `http.PUT` | `(path:str; handler:FuncDecl)` |
-| `tk_http_delete_handler` | `http.DELETE` | `(path:str; handler:FuncDecl)` |
-| `tk_http_patch_handler` | `http.PATCH` | `(path:str; handler:FuncDecl)` |
+| `tk_http_get_handler` | `http.get` | `(path:str; handler:FuncDecl)` |
+| `tk_http_post_handler` | `http.post` | `(path:str; handler:FuncDecl)` |
+| `tk_http_put_handler` | `http.put` | `(path:str; handler:FuncDecl)` |
+| `tk_http_delete_handler` | `http.delete` | `(path:str; handler:FuncDecl)` |
+| `tk_http_patch_handler` | `http.patch` | `(path:str; handler:FuncDecl)` |
 
 Example in toke:
 
@@ -87,12 +85,12 @@ Example in toke:
 i=http:std.http;
 
 f=helloget(req:i64):i64{
-  <http.Res.json(200;"{\"msg\":\"hello\"}")
+  <http.resjson(200;"{\"msg\":\"hello\"}")
 };
 
 f=main():i64{
-  (http.GET("/api/hello";&helloget));
-  (http.serve_workers(8080;1));
+  http.get("/api/hello";&helloget);
+  http.serveworkers(8080;1);
   <0
 };
 ```
