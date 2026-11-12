@@ -296,7 +296,7 @@ static void print_version(int json)
  * entry under 2,048 bytes: C718 measures them and compares the output with
  * test/conform/fixtures/help/tkc_help.txt. */
 static const char *const HELP_SECTIONS[] = {
-    "Usage: toke [flags] <source-file> [source-file ...]\n"
+    "Usage: tkc [flags] <source-file> [source-file ...]\n"
     "\n"
     "Flags:\n"
     "  --target <triple>   LLVM target triple (default: native)\n"
@@ -361,7 +361,7 @@ static const char *const HELP_SECTIONS[] = {
     "  --cap-enforce       Bake deny-by-default enforcement into the binary\n"
     "\n"
     "Packages (ADR-0004, docs/reference/package-manifest.md):\n"
-    "  toke pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
+    "  tkc pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
     "  --allow-file-source Accept file:/// package sources (local override)\n"
     "\n"
     "Configuration:\n"

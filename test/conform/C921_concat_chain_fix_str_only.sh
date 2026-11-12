@@ -19,16 +19,18 @@
 # WHAT IS ASSERTED (each program built and run before and after --fix).
 #   1. str program: the module-style chains are rewritten to interpolation,
 #      the method-style chain is left alone, and the output is unchanged.
-#   2. array program: --fix leaves the source byte-identical, and it still
-#      builds and prints what it printed (before the fix: rewritten, then
-#      E4032).
+#   2. array program: --fix leaves the source byte-identical (before the
+#      fix: rewritten, then E4032).  Since 127.358 the program itself is
+#      E4036 (an array has no '.concat'; the chained form used to escape the
+#      check and print garbage), so it is asserted rejected before and after
+#      --fix rather than built.
 #   3. without TKC_LINT_CONCAT_FIX the rule stays dormant: no chain rewritten.
 #
 # Negative control: integrate/z-wave-1108 f397c9a0's tkc rewrites part 2's
 # chain to "\(a)\(b)\(d)" and the result fails --check with E4032
 # (measured 2026-11-09).
 #
-# Story: 131.110
+# Story: 131.110 (part 2 updated by 127.358)
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -96,20 +98,22 @@ f=main():i64{
   <0
 };
 TOKE
-before="$(build_run a.tk a0)" || fail "array program did not build before --fix"
 cp a.tk a_fix.tk
 TKC_LINT_CONCAT_FIX=1 "${TKC}" --lint --fix a_fix.tk > fix2.log 2>&1
 grep -q '"string-concat-chain"' fix2.log && pass "array chain still flagged" \
     || fail "array chain not flagged: $(head -c 300 fix2.log)"
 cmp -s a.tk a_fix.tk && pass "--fix leaves the array program byte-identical" \
     || { fail "--fix changed the array program:"; diff a.tk a_fix.tk | sed 's/^/        /'; }
-after="$(build_run a_fix.tk a1)" || fail "array program did not build after --fix"
-# Only "unchanged by --fix" is asserted: the chain's own value is wrong today
-# (c.len is 3, not 4 -- story 127.318, a method-style array concat chain
-# passes the checker and is mis-lowered), which is not this rule's concern.
-[ -n "${before}" ] && [ "${before}" = "${after}" ] \
-    && pass "array program builds and prints the same before and after (${after})" \
-    || fail "array output: before '${before}' after '${after}'"
+# 127.358: the array chain is E4036 at --check, before and after --fix (it
+# used to build and print `3 ...`, the wrong length -- 127.318).
+for f in a.tk a_fix.tk; do
+    "${TKC}" --check "$f" > "$f.chk" 2>&1; rc=$?
+    if [ "$rc" -ne 0 ] && grep -q '"error_code":"E4036"' "$f.chk"; then
+        pass "$f: the array .concat chain is rejected E4036"
+    else
+        fail "$f: rc=$rc, no E4036: $(head -c 300 "$f.chk")"
+    fi
+done
 
 # ── 3. dormant by default ────────────────────────────────────────────────
 cp s.tk s_off.tk
