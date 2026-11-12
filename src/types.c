@@ -1872,13 +1872,28 @@ static void check_fnval_err_slot(Ctx *cx, const Node *v, Type *vt, const Type *s
  * A `void` slot is a payload-less sum variant (`$nopattern:void`, the
  * jsontoken `$end:void`).  No value has type void, so the literal's
  * placeholder (`$greperr{$nopattern:0}`) is the only spelling there is and
- * is not judged. */
+ * is not judged.
+ *
+ * A value whose own subtree was already reported is not judged again: the
+ * type it infers to is a consequence of that error (`items:@(st.items;e)`,
+ * an array and an element mixed, is one E4031 at the element, C248), and a
+ * second E4031 for the same root cause would only point the repair loop at
+ * the wrong place. */
+static int subtree_reported(const Ctx *cx, const Node *n) {
+    if (!n) return 0;
+    for (int i = 0; i < cx->reported_count; i++)
+        if (cx->reported[i] == n) return 1;
+    for (int i = 0; i < n->child_count; i++)
+        if (subtree_reported(cx, n->children[i])) return 1;
+    return 0;
+}
 static void check_field_value(Ctx *cx, const Node *v, const Type *vt,
                               const Type *slot) {
     if (!v || !vt || !slot) return;
     if (vt->kind == TY_UNKNOWN || slot->kind == TY_UNKNOWN) return;
     if (slot->kind == TY_VOID) return;
     if (types_compat(vt, slot) || lit_narrows(cx->src, v, slot)) return;
+    if (subtree_reported(cx, v)) return;
     if (!tc_first_report(cx, v)) return;
     emit_mm(cx, v, slot, vt, NULL);
 }
