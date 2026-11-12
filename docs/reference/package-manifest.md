@@ -133,7 +133,7 @@ jsonparser = "sha256:<64 lower-case hex digits>"
 
 ## Commands (`tkc pkg`)
 
-Run from the project root (the directory holding `pkg.toml`). Every command also takes `--allow-file-source` and `--diag-text`; every error is one structured diagnostic (see Diagnostics) and leaves `pkg.toml` and `pkg.lock` unchanged.
+Run from the project root (the directory holding `pkg.toml`). Every command also takes `--allow-file-source` and `--diag-text`, and `--help` (as does `tkc pkg` itself, and `tkc pkg help [<command>]`), which prints its usage and exits 0; every error is one structured diagnostic (see Diagnostics) and leaves `pkg.toml` and `pkg.lock` unchanged.
 
 | Command | Does |
 |---|---|
