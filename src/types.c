@@ -1898,6 +1898,73 @@ static void check_field_value(Ctx *cx, const Node *v, const Type *vt,
     emit_mm(cx, v, slot, vt, NULL);
 }
 
+/* 127.365 / 127.366: every declared field of a record literal is given,
+ * exactly once.  `t=$r{a:i64;b:i64}`: `$r{a:5}` compiled and `r.b` read
+ * whatever the slot held (it printed 1), against the memory model's "no
+ * uninitialised reads" (v0.3 §14.5) -- the spec gives fields no default
+ * value; and `$r{a:1;b:2;a:3}` compiled with the last write winning.
+ *
+ * E4078 at a repeated field init, naming it; E4077 at the literal, naming
+ * every field it leaves out, in declaration order.  Neither has a `fix`:
+ * an omitted field's value is not knowable, and which of two writes to the
+ * same field was meant (or which other field the second was meant for) is
+ * not decidable.  Field ORDER is free.  A literal that already names a
+ * field the record does not have (E4025, usually a misspelling of the
+ * omitted one) is not also judged for omissions: one root cause, one
+ * diagnostic.  Sum-variant literals never reach here. */
+static int reraise_err_shape(Ctx *cx, const char *nm);
+static void check_record_lit_fields(Ctx *cx, const Node *node, const Type *st,
+                                    int had_unknown) {
+    int nf = st->field_count;
+    unsigned char seen_small[64];
+    unsigned char *seen = nf <= 64 ? seen_small
+        : (unsigned char *)arena_alloc(cx->env->arena, (size_t)nf);
+    if (!seen) return;
+    memset(seen, 0, (size_t)nf);
+    for (int i = 0; i < node->child_count; i++) {
+        const Node *fi = node->children[i];
+        if (!fi || fi->kind != NODE_FIELD_INIT || fi->tok_len <= 0) continue;
+        char fnb[128]; TOKSTR(fnb, cx->src, fi);
+        if (!fnb[0]) continue;
+        int f = 0;
+        while (f < nf && !(st->field_names[f] && strcmp(st->field_names[f], fnb) == 0))
+            f++;
+        if (f >= nf) continue;                    /* E4025, reported above */
+        if (!seen[f]) { seen[f] = 1; continue; }
+        if (tc_first_report(cx, fi) && tc_can_emit(cx)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "struct literal '$%s' gives field '%s' more than once",
+                     st->name ? st->name : "?", fnb);
+            diag_emit(DIAG_ERROR, E4078, fi->start, fi->line, fi->col, msg,
+                      "expected", "each field given once", "got", fnb,
+                      (const char *)NULL);          /* no fix: see above */
+        }
+    }
+    if (had_unknown) return;
+    char miss[256]; size_t ml = 0; int nmiss = 0;
+    miss[0] = '\0';
+    for (int f = 0; f < nf; f++) {
+        if (seen[f]) continue;
+        const char *fnm = st->field_names[f] ? st->field_names[f] : "?";
+        nmiss++;
+        if (ml < sizeof(miss) - 1) {
+            int w = snprintf(miss + ml, sizeof(miss) - ml, "%s'%s'",
+                             nmiss > 1 ? ", " : "", fnm);
+            if (w > 0) ml += (size_t)w;
+            if (ml >= sizeof(miss)) ml = sizeof(miss) - 1;
+        }
+    }
+    if (nmiss == 0) return;
+    if (!tc_first_report(cx, node) || !tc_can_emit(cx)) return;
+    char msg[512];
+    snprintf(msg, sizeof(msg), "struct literal '$%s' leaves out field%s %s",
+             st->name ? st->name : "?", nmiss > 1 ? "s" : "", miss);
+    diag_emit(DIAG_ERROR, E4077, node->start, node->line, node->col, msg,
+              "expected", "every declared field", "got", miss,
+              (const char *)NULL);                  /* no fix: see above */
+}
+
 /*
  * emit_mm — emit a type-mismatch diagnostic (E4031).
  *
@@ -5750,6 +5817,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 ? imported_type_lookup(cx->env->names, st->name) : NULL;
             if (it && it->is_sum) is_sum_lit = 1;
         }
+        /* 127.365: a LOCAL sum type also resolves to a TY_STRUCT, whose
+         * "fields" are its variants; a variant literal (`$sh{$sq:2}`,
+         * `$greperr{$nopattern:0}`) names exactly one of them.  Only a
+         * literal of a type known to be a record (reraise_err_shape 1:
+         * local fields with no `$`, or an imported non-sum) is judged for
+         * omitted or repeated fields. */
+        int is_record_lit = !is_sum_lit && st && st->kind == TY_STRUCT
+            && st->name && reraise_err_shape(cx, st->name) == 1;
+        int lit_unknown_field = 0;      /* an E4025 in this literal (127.365) */
         /* Infer types of field init value expressions so they are type-checked. */
         for (int i=0;i<node->child_count;i++) {
             const Node *fi = node->children[i];
@@ -5777,6 +5853,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * cannot speak for (a forward/opaque declaration); only complain
              * when the layout names something. */
             if (st->field_count <= 0) continue;
+            lit_unknown_field = 1;
             if (tc_first_report(cx, fi) && tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
@@ -5786,6 +5863,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           (const char*)NULL);   /* 127.243: no advice fix */
             }
         }
+        if (is_record_lit && st->field_count > 0 && st->field_names)
+            check_record_lit_fields(cx, node, st, lit_unknown_field);
         return st;
     }
 
