@@ -1265,6 +1265,8 @@ check-docs: $(BIN)
 	python3 scripts/check_doc_site_links.py --self-test  # 132.111; TOKE_WORKSPACE exported globally (132.112)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
+	python3 scripts/render_cli_reference.py --selftest  # 132.135: docs/reference/cli.md
+	python3 scripts/render_cli_reference.py --check     # matches `tkc --help` (TKC above)
 
 # 132.99 — the idiom half of the docs gate, REPORT mode (132.43): runs the
 # compiler's pattern rules (the idiom judge's hard gate) over every documented
