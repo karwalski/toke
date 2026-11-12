@@ -1861,6 +1861,28 @@ static void check_fnval_err_slot(Ctx *cx, const Node *v, Type *vt, const Type *s
     emit_mm(cx, v, slot, sig, NULL);
 }
 
+/* 127.356: a struct literal's field value is judged against the declared
+ * field type by the rule an annotated `let x:T=v` uses: types_compat, or an
+ * integer literal that fits (lit_narrows).  `t=$r{a:i64;b:f64}` accepted
+ * `$r{a:"x";b:3}` and printed a pointer and a denormal.  An unknown type on
+ * either side is not judged (poison propagation, as at `let`).  E4031 on the
+ * field value, no `fix`: a cast, a different value or a different field type
+ * are all plausible repairs.
+ *
+ * A `void` slot is a payload-less sum variant (`$nopattern:void`, the
+ * jsontoken `$end:void`).  No value has type void, so the literal's
+ * placeholder (`$greperr{$nopattern:0}`) is the only spelling there is and
+ * is not judged. */
+static void check_field_value(Ctx *cx, const Node *v, const Type *vt,
+                              const Type *slot) {
+    if (!v || !vt || !slot) return;
+    if (vt->kind == TY_UNKNOWN || slot->kind == TY_UNKNOWN) return;
+    if (slot->kind == TY_VOID) return;
+    if (types_compat(vt, slot) || lit_narrows(cx->src, v, slot)) return;
+    if (!tc_first_report(cx, v)) return;
+    emit_mm(cx, v, slot, vt, NULL);
+}
+
 /*
  * emit_mm — emit a type-mismatch diagnostic (E4031).
  *
@@ -5730,8 +5752,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             for (int f=0; f<st->field_count && !found; f++)
                 if (st->field_names[f] && strcmp(st->field_names[f],fnb)==0) {
                     found = 1;
-                    if (fi->child_count > 0 && st->field_types)
+                    if (fi->child_count > 0 && st->field_types) {
                         check_fnval_err_slot(cx, fi->children[0], fvt, st->field_types[f]);
+                        check_field_value(cx, fi->children[0], fvt, st->field_types[f]);
+                    }
                 }
             if (found) continue;
             /* A struct declared with no fields at all is a shape this checker
