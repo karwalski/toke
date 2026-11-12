@@ -94,6 +94,35 @@ REPOS = [
      [], False),
 ]
 
+# repo -> SPDX licence of its LICENSE file on main, for every repository in the
+# map that publishes one (story 132.132). docs/about/repos.md prints this in its
+# Licence column and `make check-facts` holds it there. The split follows
+# LICENSING.md's dual model: MIT for the specification, the standard library
+# and the libraries and sites written in toke; Apache-2.0 for the compiler,
+# corpus, tokenizer, training and benchmark code. `toke` itself is Apache-2.0
+# with an MIT boundary (spec/, stdlib/, src/stdlib/), which repos.md states in
+# full. Archived repositories are not listed: neither is developed, and the map
+# makes no licence claim for them.
+LICENCES = {
+    "toke": "Apache-2.0",
+    "toke-spec": "MIT",
+    "toke-corpus": "Apache-2.0",
+    "toke-eval": "Apache-2.0",
+    "toke-mcp": "MIT",
+    "toke-models": "Apache-2.0",
+    "toke-tokenizer": "Apache-2.0",
+    "toke-test-programs": "Apache-2.0",
+    "ooke": "MIT",
+    "loke": "MIT",
+    "toke-web": "MIT",
+    "homebrew-toke": "MIT",
+    "toke-cloud": "Proprietary",
+    "toke-console": "Proprietary",
+}
+
+# The copyright holder of every repository above (LICENSE or NOTICE on main).
+HOLDER = "Matthew Watt"
+
 # Repos whose purpose the owner has not settled; story 132.4 will not invent one.
 UNDECIDED = {
     "tkc": "public, undescribed and absent from docs/about/repos.md — describe it or "
