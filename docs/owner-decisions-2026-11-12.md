@@ -54,8 +54,130 @@ compute.
    (homebrew checksums) and 132.122 (packaging) wait on the release too.
 5. **1.2 (138.20) array `==`.** It is a silent wrong result, re-measured on main today. It should
    land before the release in 5.2 so that the tag carries it.
-6. **4.7 (128.4) GPU spend, or explicit deferral.** No Epic 128 lane can move without it or local
-   hardware.
+6. **4.7 (128.4) GPU spend: defer explicitly** (re-check, below). Lane A (128.10) needs no GPU;
+   the trained lanes need the 131.29 export and a scored Lane A first.
+
+## Re-check against the specification and intent (2026-11-13)
+
+Every recommendation below was re-checked against toke's stated purpose (canonical.md §3:
+small, strictly structured, canonical; cheap to constrain, cheap to verify, compact) and
+the spec. The tests were: the closed alphabet (59 characters, lowercase, no `_`) and the
+14 keywords; the grammar property of spec v0.4 §E (backtrack-free, never rescans,
+lookahead of at most 3 tokens on an enumerated set of productions; toke is **not** LL(1),
+a claim §E retired); one canonical form reproduced by `tkc --min`; no silent wrong
+results; token, runtime and memory efficiency; and positioning §7, "the language base does
+not move" (conformance fixes are fine; anything else needs a spec amendment).
+
+**No recommendation adds a keyword, a character, a production or any lookahead.** Two
+remove surface: 1.3 removes uppercase from identifiers (and must shrink `toke.gbnf`, which
+admits `[A-Z]` today), and 1.4 (revised) refuses a second spelling.
+
+**Revised recommendations** (the table rows below are unchanged; these supersede them):
+
+- **1.1 — (a), ordered before 131.15.** It is a conformance fix: v0.3 §16 makes stdlib
+  signatures normative and `str.tki` declares `i64!parseerr`; on main `s.toint("x")+1`
+  yields 1. Measure the corpus, then flip before the wave, so one sweep suffices; drop the
+  "after, with a sweep" option. The `$err:e 0` rewrite may be used by the `--fix` migration
+  tool for the tree, ooke and toke-test-programs, never in the E4031 `fix` field (it is not
+  deterministically correct, AGENTS §6) and never for corpus records, which go through the
+  pipeline to get a real error arm.
+- **1.4 — (b), not (a).** grammar.ebnf admits a trailing `;` in no list; the parser
+  tolerates it in some (struct, array, match) and not others (arguments, parameters), and
+  `tkc --min` keeps it, so it is a second spelling. Refuse it in type declarations with a
+  deterministic `fix` (delete the `;`), and settle the existing tolerance as one question
+  (127.360).
+- **1.13 — a normative amendment, not a documentation fix.** memory-model.md is normative
+  and promises per-function arenas; `{arena}` is a no-op today. Amend §1.1, §1.3 and §2.3
+  under an amendment story, saying what `{arena}` and E5001 mean afterwards, and keep the
+  explicit `{arena}` block as the ADR's first target (request-scoped release for servers),
+  designed together with S1's never-freed sealed strings.
+- **1.14 — accept the memory win, but do not merge yet.** 127.342 judges four positions
+  only; struct, array and map literals still let a compact `[byte]` into `@f64`/`@i64`
+  (out-of-bounds reads under 2.11(c)), and struct-literal fields are not type-checked at
+  all (127.356, P0). Land 127.356 and 127.357 first, then re-measure whether `@i64` can
+  skip the width test (which may recover the +35.8% `sum_array` cost), then sign off what
+  remains.
+- **2.1 — opt-in controls, in the existing `with` pattern:** `http.withdeadline(c;ms)` and
+  `http.withmaxbody(c;bytes)`, defaults off; one spec amendment with 2.2 and 2.3, which
+  also corrects `timeoutms` (per read, not per request; 138.34). A default cap would be a
+  loud `$err`, not a silent break; defaults off still matches loke's ask.
+- **2.2 — `http.withaddr(c;ip)`** (an IP literal; SNI and verification stay on the URL host;
+  `$err` with `withproxy`) and `net.resolve(name:$str):@($str)!…` gated by `TK_CAP_NET`,
+  with its error type defined in the amendment (`neterr` does not exist). Signatures use
+  the spec's `@(…)` notation; `[`/`]` are outside the alphabet.
+- **2.3 — flip the shape: `http.withheaders(c;headers)`, not a URL-taking `getheaders`.** A
+  third GET entry point could not carry the 2.1/2.2 controls; a client option gives every
+  client method headers, adds no request function, and still meets loke's T-58.
+- **2.6 — add the install sandbox** (ADR-0004 §4) to the scheduled work, before any
+  third-party package exists.
+- **3.1 — holds, as a spec amendment;** settle whether `std.pqc` reuses `encrypt.keypair`,
+  and consider ML-DSA alone as the first slice (no consumer for ML-KEM yet).
+- **3.2 — split by role.** Servers (`servetls` family): TLS 1.3 minimum, no opt-down, as
+  std.tls already is. Clients (http, llm): an explicit 1.2 floor, set in the http client
+  too (it sets none today). A 1.3 client floor adds no post-quantum protection (RFC 8446
+  §4.1.3 already stops downgrade) and only loses 1.2-only servers. Option (c)'s opt-down is
+  not reachable from toke, so it would be new stdlib surface.
+- **3.6 — holds, with conditions:** every `SSL_set_fd` (http server accept, HTTP/2 over
+  TLS, tls.c, llm.c) moves to the guard first, `SIG_IGN` stays only where neither
+  `SO_NOSIGPIPE` nor `MSG_NOSIGNAL` exists, and it is verified on Linux.
+- **3.8 — also record the request-log review outcome** before deleting the ref.
+- **3.9 — (a), and (b) is barred, not merely owner-gated:** AGENTS §7.5 forbids
+  force-pushing `main`.
+- **4.1 — holds, on the right basis:** patterns-protocol §5.1 (size is comparable only
+  between forms that print the same output), not positioning §8 F2 (a falsification rule
+  for 131.54, which has not run). Waive only on rows routed by a correctness rule, record
+  the size delta in provenance, keep +16 bytes as a warning, and exempt the three 131.105
+  records from the `single-use-let` charge.
+- **4.2 — weight revised:** map and deterministic status hold; give the hint the hint band
+  (0.02–0.05), not 0.15 — the ladder is token- and runtime-tied with form a, and
+  "cond-elif-chain's weight" does not exist in the judge.
+- **4.3 — holds;** the return-position allowlist must be justified by identical stdout
+  (leave out `f32→f64`), and it is decided together with 1.1 for one re-prep.
+- **4.4 — scope revised:** retire the Phase A path in `main.py`, `trial/runner.py` and
+  `scripts/regenerate.py` (and their tests) in the same change, then archive the prompts.
+- **4.6 — holds;** `_rusage_run` must also return `ru_utime+ru_stime` (it returns only wall
+  time and max RSS); keep the RSS gate.
+- **4.7 — defer explicitly now.** Positioning §8 F3 and §7: no lane advances without beating
+  the no-training baseline, and Lane A (128.10) needs no GPU. There is also no v0.4
+  training export yet (131.29). Trigger for spend: the 131.29 export exists, Lane A is
+  scored on 128.15, and a trained lane has a stated case for beating it on cost per solved
+  task. 4.8 defers with it.
+- **5.1–5.3 — order revised.** (1) Secret scan, push `main` (a fast-forward) and the
+  missing `v3.0.0` and `v3.1.0` tags (GitHub stops at v2.8.0; loke's pin 86c432da cannot
+  be fetched from GitHub today). (2) Decide 1.2 and land 138.20 before the cut. (3) Do not
+  let 138.24, 138.25 or 138.27 gate the tag: they are new API needing the 2.1–2.3
+  amendment; loke has a curl workaround, and the reply says they are pending. (4) Leave
+  127.342 out of the release notes unless 1.14 lands first. (5) Bump the version and fix
+  canonical §5 in the same edit (132.141). (6) Gates, tag, push. (7) Re-run loke's
+  reproducers against the tag, then send the reply.
+- **5.4 — revised: absolute paths only.** Option (c)'s "clang on PATH" reverses 121.28 /
+  §2.10. Search `TKC_CC`, the baked path, `xcrun --find clang` on macOS, then a fixed list
+  of absolute paths; E9027 names each path tried.
+- **5.5 — holds,** after fixing the deployed `llms.txt` (compiler line, twelve vs thirteen
+  public repositories; 132.141).
+- **5.7 — steps (1)–(4) hold; the Ollama readme and the HF upload wait for 6.2.** They
+  restate Gate-2 figures that the 2026-10-01 §4.11 decision says may not be restated until
+  that investigation is done, and `eval_results.json`'s `token_reduction` lacks its
+  TEMSpec §6.3 fields.
+
+**Holds as written:** 1.2 (refuse; the fix `x==@()` → `x.len==0` is deterministic), 1.3
+(plus `toke.gbnf`, `m=T;`, E1003 in the lexer, no `fix`), 1.5 (on a stronger basis: v0.3
+§15.2/§15.4/§15.5 already export constants), 1.6 (array `+` is the one spelling; fix the
+whole TY_UNKNOWN chain class, 127.358), 1.7–1.12, 1.15 (expect a small further breakage
+list once literals are judged), 2.4, 2.5, 2.7, 3.3, 3.4 (no new underscored manifest
+keys), 3.5, 3.7, 4.5, 4.8–4.10, 5.6, 5.8–5.11, 6.1–6.7.
+
+**Batch the acceptance changes.** 1.1, 1.2, 1.3, 1.9, 4.3 and 127.356 all change which
+programs are accepted: measure them in one corpus pass and sweep once, before the 131.15
+re-prep.
+
+**Register claims corrected by the re-check:** 1.4 ("every other list"), 1.5 ("no spec
+text"), 1.3 (gbnf and module names not covered), 1.13 ("documentation honesty"),
+1.14/1.15 (the rule's coverage), 2.1 ("silent break"), 2.2/2.3 (bracket notation,
+`neterr`), 3.1 (127.30 citation), 3.2 (line numbers; the client sets no minimum; the
+opt-down is unreachable), 3.9 (§7.5), 4.2, 4.4, 4.6, Decide-first item 6 (Lane A needs no
+GPU), 5.1 (1,740 commits; both tags missing on GitHub), 5.2 (127.342 is not on main), 5.4,
+5.5 (43 commits).
 
 ---
 
