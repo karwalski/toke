@@ -37,7 +37,7 @@ the exit codes.
 ## Usage
 
 ```text
-toke [flags] <source-file> [source-file ...]
+tkc [flags] <source-file> [source-file ...]
 ```
 
 ## Flags
@@ -110,7 +110,7 @@ toke [flags] <source-file> [source-file ...]
 
 | Flag | Description |
 |---|---|
-| `toke pkg init\|add\|remove\|resolve\|fetch\|list` | Manage pkg.toml and pkg.lock |
+| `tkc pkg init\|add\|remove\|resolve\|fetch\|list` | Manage pkg.toml and pkg.lock |
 | `--allow-file-source` | Accept file:/// package sources (local override) |
 
 ## Configuration
