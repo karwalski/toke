@@ -1548,6 +1548,11 @@ int
 pkg_build_sources_mention_pkg(const char *const *files, int n)
 {
     for (int i = 0; i < n; i++) {
+        /* Only regular files are scanned: a FIFO source (121.85, C210/C700)
+         * can be read once, by the driver, and reading it here would drain
+         * it or block on a writerless pipe. */
+        struct stat st;
+        if (stat(files[i], &st) != 0 || !S_ISREG(st.st_mode)) continue;
         char *t = read_text(files[i], (size_t)64 << 20);
         if (!t) continue;
         int hit = strstr(t, "pkg.") != NULL;
