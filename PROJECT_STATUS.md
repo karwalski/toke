@@ -46,8 +46,10 @@ tokenizer needs **15.4% more** tokens than cl100k_base (N = 2,000). See
 ## Open epics
 
 Every epic in `docs/progress.md` with at least one story not `done` and not closed
-(`superseded`, `cancelled`, `withdrawn` and the like), at `main` `f7d59452`. Counts
-were produced by a script over the tracker, not by hand. A story is counted
+(`superseded`, `cancelled`, `withdrawn` and the like). The table is rendered from the
+tracker by `scripts/status/open_epics.py --write`, never by hand, and
+`make check-open-epics` (part of `make ci`) fails when it no longer matches
+`docs/progress.md`: refresh it in the same commit as a tracker edit. A story is counted
 under the epic its ID names (rows for Epic 127 sit under several headings), once per
 unique ID, from story tables only (the rows `scripts/check_progress.py` checks). "Open
 P0/P1" counts only rows whose priority cell states one.
@@ -65,22 +67,22 @@ P0/P1" counts only rows whose priority cell states one.
 | 118 | Library corpus: v0.4 rebuild | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
 | 121 | Security fix backlog (from Epic 120) | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
 | 122 | Extended security hardening, PQC | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
-| 127 | Compiler and diagnostic findings | 24 | 0 | 4 | 6 | 9 | 5 | 0 | 0 | 2 |
+| 127 | Compiler and diagnostic findings | 33 | 0 | 4 | 6 | 9 | 14 | 0 | 1 | 3 |
 | 128 | Training strategy reset | 13 | 0 | 0 | 2 | 9 | 0 | 2 | 7 | 4 |
 | 130 | Workspace audit and cleanup | 3 | 0 | 0 | 2 | 0 | 1 | 0 | 0 | 1 |
 | 131 | Token-efficient-by-default toke, corpus rewrite | 28 | 2 | 2 | 2 | 21 | 1 | 0 | 4 | 18 |
-| 132 | Awareness and discoverability | 13 | 1 | 1 | 7 | 1 | 3 | 0 | 1 | 5 |
+| 132 | Awareness and discoverability | 17 | 1 | 1 | 7 | 1 | 7 | 0 | 1 | 6 |
 | 133 | Competitive review vs KERN / KERN-py | 3 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 |
 | 134 | ooke uplift and website relaunch | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
-| 135 | Document and image libraries | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| 135 | Document and image libraries | 2 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
 | 136 | The bindings surface loke depends on | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
-| 138 | loke's 2026-09-27 handoff | 8 | 0 | 0 | 4 | 2 | 2 | 0 | 2 | 1 |
+| 138 | loke's 2026-09-27 handoff | 9 | 0 | 0 | 4 | 2 | 3 | 0 | 2 | 1 |
 | 139 | toke-ocr | 3 | 0 | 0 | 1 | 2 | 0 | 0 | 0 | 2 |
-| **Total** | | **117** | **3** | **7** | **42** | **47** | **16** | **2** | **15** | **38** |
+| **Total** | | **132** | **3** | **8** | **42** | **46** | **31** | **2** | **16** | **40** |
 
-"Other open" is the status `open`, which the tracker's status list does not define
-(128 has two such rows). The 132 count includes 132.132, 132.133 and 132.134, which
-`docs/r1-readme-status` addresses; it falls when the tracker records them.
+"Other open" is the status `open`, which the tracker's status list does not define;
+`make check-progress` rejects it (132.139), and the two Epic 128 rows that carry it are
+baselined there until the tracker gives them a defined status.
 
 ---
 

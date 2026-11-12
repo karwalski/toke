@@ -1241,7 +1241,7 @@ test-ci: test-ci-green
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
 # 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen test-standalone
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1499,6 +1499,14 @@ endif
 check-progress:
 	python3 scripts/check_progress.py --selftest
 	python3 scripts/check_progress.py
+
+# 132.140 -- PROJECT_STATUS.md's open-epics table is rendered from the tracker
+# by scripts/status/open_epics.py; this fails when the two disagree (it reads
+# one file, so it is cheap enough for ci). Refresh: open_epics.py --write.
+.PHONY: check-open-epics
+check-open-epics:
+	python3 scripts/status/open_epics.py --selftest
+	python3 scripts/status/open_epics.py --check
 
 # 123.12 — drift-gate: every diagnostic code the compiler emits must be
 # documented in docs/reference/errors.md, and errors.md must not list dead codes.
