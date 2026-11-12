@@ -31,7 +31,8 @@ PREFIX="toke-xplat"
 # exist locally.  Create one with:
 #   aws lightsail create-key-pair --key-pair-name toke-xplat --region us-west-2
 KEY_PAIR_NAME="${TOKE_XPLAT_KEY_NAME:-toke-xplat}"
-SSH_KEY_PATH="${TOKE_XPLAT_KEY_PATH:-${HOME}/.ssh/toke-xplat.pem}"
+# No default path is committed (public repo): set TOKE_XPLAT_KEY_PATH.
+SSH_KEY_PATH="${TOKE_XPLAT_KEY_PATH:-}"
 
 # GitHub repo to clone on each instance (HTTPS — no deploy key needed).
 REPO_URL="https://github.com/karwalski/toke.git"
@@ -186,12 +187,17 @@ SCRIPT
 
 # ── create ───────────────────────────────────────────────────────────────────
 
+require_key() {
+    [ -n "${SSH_KEY_PATH}" ] || die "TOKE_XPLAT_KEY_PATH is not set: point it at the SSH private key for the key pair."
+    [ -f "${SSH_KEY_PATH}" ] || die "SSH key not found at ${SSH_KEY_PATH}. Set TOKE_XPLAT_KEY_PATH."
+}
+
 do_create() {
     log "Creating Lightsail instances in ${REGION}..."
 
     # Pre-flight checks.
     command -v aws >/dev/null 2>&1 || die "aws CLI not found. Install and configure it first."
-    [ -f "${SSH_KEY_PATH}" ] || die "SSH key not found at ${SSH_KEY_PATH}. Set TOKE_XPLAT_KEY_PATH."
+    require_key
 
     for entry in "${INSTANCES[@]}"; do
         parse_entry "${entry}"
@@ -240,6 +246,7 @@ do_create() {
 
 do_test() {
     log "Running tests on all instances..."
+    require_key
 
     mkdir -p "${RESULTS_DIR}"
 
@@ -363,7 +370,7 @@ Commands:
 
 Environment variables:
   TOKE_XPLAT_KEY_NAME   Lightsail key pair name  (default: toke-xplat)
-  TOKE_XPLAT_KEY_PATH   Path to SSH private key  (default: ~/.ssh/toke-xplat.pem)
+  TOKE_XPLAT_KEY_PATH   Path to SSH private key  (required, e.g. ~/.ssh/<your-key>)
   TOKE_XPLAT_YES=1      Skip teardown confirmation prompt
 EOF
 }
