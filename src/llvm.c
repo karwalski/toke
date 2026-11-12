@@ -6414,8 +6414,24 @@ static int emit_expr(Ctx *c, const Node *n)
         char fn[128]; tok_cp(c->src, n->children[1], fn, sizeof fn);
         int base = emit_expr(c, n->children[0]);
 
-        /* .len on arrays: length is stored at ptr[-1] */
+        /* .len on arrays: length is stored at ptr[-1].
+         * 127.355: but on a record, `.len` is a FIELD named len.  A record
+         * has no header (struct_lit: malloc(nfields * 8)), so taking this
+         * path read r[-1], before the allocation, and `r.len` printed
+         * garbage instead of the field.  The checker types the base; when it
+         * could not, a struct the backend resolves for the base and that
+         * declares `len` decides it the same way. */
+        int len_is_field = 0;
         if (!strcmp(fn, "len")) {
+            const Type *lbt = n->children[0]->rtype;
+            if (lbt && lbt->kind == TY_STRUCT) len_is_field = 1;
+            else if (!lbt || lbt->kind == TY_UNKNOWN) {
+                const StructInfo *lsi = resolve_base_struct(c, n->children[0]);
+                for (int li = 0; lsi && li < lsi->field_count; li++)
+                    if (!strcmp(lsi->field_names[li], "len")) { len_is_field = 1; break; }
+            }
+        }
+        if (!strcmp(fn, "len") && !len_is_field) {
             const char *bty = expr_llvm_type(c, n->children[0]);
             /* 127.8: `x.len` on a str (bare char*) or a map (TkMapImpl*) must
              * not read the array header word — route to the length glue. */
