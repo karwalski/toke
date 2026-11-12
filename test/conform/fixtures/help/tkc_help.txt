@@ -1,4 +1,4 @@
-Usage: toke [flags] <source-file> [source-file ...]
+Usage: tkc [flags] <source-file> [source-file ...]
 
 Flags:
   --target <triple>   LLVM target triple (default: native)
@@ -63,7 +63,7 @@ tkc.toml [capabilities] and passable at run time on the compiled binary):
   --cap-enforce       Bake deny-by-default enforcement into the binary
 
 Packages (ADR-0004, docs/reference/package-manifest.md):
-  toke pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock
+  tkc pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock
   --allow-file-source Accept file:/// package sources (local override)
 
 Configuration:
