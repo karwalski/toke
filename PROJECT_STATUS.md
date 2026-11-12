@@ -4,35 +4,105 @@
 > **Source of truth:** `docs/progress.md` (detailed per-story tracker). This file is
 > a **regenerated high-level view** — do not hand-edit it independently; update
 > `docs/progress.md` and summarise here. (Governance: one authoritative tracker;
-> dashboards are views, not parallel state.)
+> dashboards are views, not parallel state.) Every metric below is quoted from
+> [`docs/metrics-baseline.md`](docs/metrics-baseline.md), which is the only source for
+> a toke number.
 
-**Last updated:** 2026-09-18
-**Current phase:** v0.4 language foundation + pre-from-scratch-training hardening
-**Current milestone:** M3 — post-Gate-2 functional-correctness sprint; week-12 GO/NO-GO mid-August
-**Language version:** **v0.4** — Epic 116 shipped the breaking `=`/`==` split, expression-`if`/`match`, `&&`/`||`, and a backtrack-free grammar. The earlier "v0.3 LOCKED / no breaking changes" freeze was superseded; v1.0 RFC pending.
+**Last updated:** 2026-11-12, regenerated from `docs/progress.md` at `main` `f7d59452`
+**Compiler:** toke 3.1.0 (`tkc --version`)
+**Language version:** **v0.4** — [`docs/spec/toke-spec-v0.4.md`](docs/spec/toke-spec-v0.4.md)
+is normative. Epic 116 shipped the breaking `=`/`==` split, expression-`if`/`match`,
+`&&`/`||`, and a backtrack-free grammar; v1.0 RFC pending.
+**Current phase (tracker header):** corpus rewrite and compiler hardening (Epics 127 and
+131); the 2026-08-19 training-data freeze is reopened and will be re-declared by 131.27.
+**Active milestone (tracker header):** Epic 127 to zero P0, then the 131 rewrite waves,
+then `AUDIT_131`. Epic 127 has no open P0 row (table below).
+
+**No v0.4-native model exists.** Every model number on this page, and in
+`docs/metrics-baseline.md`, is from a v0.3-syntax model.
 
 ---
 
 ## Gate Status
 
-| Gate | Month | Criterion | Status |
-|------|-------|-----------|--------|
-| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | **NOT PASSED** — owner decision 2026-09-22, story 128.19 (recorded PASS 2026-04-03 on 12.5% reduction + 63.7% Pass@1; the Pass@1 was corrected to **58.8%** on 2026-09-19 — 588 of 1,000 generated, not 588/923, which had dropped non-compiling solutions from the denominator. 58.8% is below the ≥60% criterion; verdict re-opened, then decided NOT PASSED on criterion 2. Criterion 1 stands as met) |
-| Gate 2 | 14 | Extended features retain efficiency AND model beats baseline | **PASS on the *compile* criterion** (2026-05-22): 100% compile-Pass@1 on the curated hidden+eval set, cloud-trained Qwen 2.5 Coder 7B + QLoRA (37h, A10G). **Open weakness: functional correctness 55.6%** (272/489); a full-local re-audit (101.R1, v0.3.9) found 1093/1748 COMPILE_FAIL. The Gate-2 model was **v0.3-trained** — corpus/tokenizer/model need refresh for v0.4. See `docs/metrics-baseline.md`. |
-| Gate 3 | 26 | Two+ model families ≥70% Pass@1 AND self-improvement loop | not reached |
-| Gate 4 | 32 | All benchmarks met, spec complete, consortium proposal | not reached |
+| Gate | Criterion | Status |
+|------|-----------|--------|
+| Gate 1 | >10% token reduction AND Pass@1 ≥ 60% | **NOT PASSED** — re-opened 2026-09-19 and decided NOT PASSED by the owner on 2026-09-22 (story 128.19, [`docs/decisions/gate1-decision.md`](docs/decisions/gate1-decision.md)). The true Pass@1 is **58.8%** (588 of 1,000 generated; 923 compiled), below Gate 1's own 60% minimum. It was published as 63.7%, which was 588/923 and dropped non-compiling solutions from the denominator. The token-reduction criterion stands as met. |
+| Gate 2 | Extended features retain efficiency AND model beats baseline | **ON HOLD — waiting for local compute.** The last model evaluation on record is still Gate 2 of 2026-05-22: **100% compile Pass@1 and 55.6% functional (272/489)** on the curated 500-hidden + 200-eval set, Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax. The full-local re-audit (101.R1, v0.3.9) is the honest floor: **37.5% compile (655/1748), ~2.2% fully correct (38 PASS)**. The tracker records the Gate 2 milestone as superseded by 128.1's pre-registered protocol (BENCH-128), under which no Gate 2 number is a target; the Epic 128 training stories are `planned` and compute-gated, and GPU provisioning (128.4) is blocked on an owner decision ([`docs/owner-decisions-2026-10-01.md`](docs/owner-decisions-2026-10-01.md) §4). |
+| Gate 3 | Two+ model families ≥70% Pass@1 AND self-improvement loop | not reached |
+| Gate 4 | All benchmarks met, spec complete, consortium proposal | not reached |
+
+Never quote the Gate 2 100% without the curated set it was measured on.
+
+**Token efficiency, measured:** under one shared tokenizer (cl100k_base) toke costs
+**1.34× [1.22, 1.48]** the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60,
+2026-09-19) — more, not fewer. Those 60 programs are hand-written (27 pure `--migrate`
+output, 33 hand-repaired), not model output. On canonical v0.4 text the shipped 8K
+tokenizer needs **15.4% more** tokens than cl100k_base (N = 2,000). See
+`docs/metrics-baseline.md`.
+
+---
+
+## Open epics
+
+Every epic in `docs/progress.md` with at least one story not `done` and not closed
+(`superseded`, `cancelled`, `withdrawn` and the like), at `main` `f7d59452`. Counts
+were produced by a script over the tracker, not by hand. A story is counted
+under the epic its ID names (rows for Epic 127 sit under several headings), once per
+unique ID, from story tables only (the rows `scripts/check_progress.py` checks). "Open
+P0/P1" counts only rows whose priority cell states one.
+
+| Epic | Subject | Open | In progress | Review | Blocked | Planned | Backlog | Other open | Open P0 | Open P1 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 71 | MCP service, console and production deployment | 4 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 |
+| 81 | 1B purpose-built model | 4 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
+| 99 | Publishing and distribution | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| 100 | Application requirements catalogue | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| 102 | From-scratch training architecture (v2) | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| 103 | Compiler stubs and incomplete implementations | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| 108 | Worker fleet management | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| 116 | toke-for-LLM foundations | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 1 | 1 |
+| 118 | Library corpus: v0.4 rebuild | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
+| 121 | Security fix backlog (from Epic 120) | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
+| 122 | Extended security hardening, PQC | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
+| 127 | Compiler and diagnostic findings | 24 | 0 | 4 | 6 | 9 | 5 | 0 | 0 | 2 |
+| 128 | Training strategy reset | 13 | 0 | 0 | 2 | 9 | 0 | 2 | 7 | 4 |
+| 130 | Workspace audit and cleanup | 3 | 0 | 0 | 2 | 0 | 1 | 0 | 0 | 1 |
+| 131 | Token-efficient-by-default toke, corpus rewrite | 28 | 2 | 2 | 2 | 21 | 1 | 0 | 4 | 18 |
+| 132 | Awareness and discoverability | 13 | 1 | 1 | 7 | 1 | 3 | 0 | 1 | 5 |
+| 133 | Competitive review vs KERN / KERN-py | 3 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 |
+| 134 | ooke uplift and website relaunch | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
+| 135 | Document and image libraries | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| 136 | The bindings surface loke depends on | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| 138 | loke's 2026-09-27 handoff | 8 | 0 | 0 | 4 | 2 | 2 | 0 | 2 | 1 |
+| 139 | toke-ocr | 3 | 0 | 0 | 1 | 2 | 0 | 0 | 0 | 2 |
+| **Total** | | **117** | **3** | **7** | **42** | **47** | **16** | **2** | **15** | **38** |
+
+"Other open" is the status `open`, which the tracker's status list does not define
+(128 has two such rows). The 132 count includes 132.132, 132.133 and 132.134, which
+`docs/r1-readme-status` addresses; it falls when the tracker records them.
 
 ---
 
 ## Current focus (detail in `docs/progress.md`)
 
-- **Epic 131 (in execution since 2026-09-18; 19/29 stories done + script halves of 4 more, 2026-09-19):** protocol + validator, 46-entry measured pattern catalogue (tokens measured; runtime pass running), 6 lint pattern rules + `--fix` rewrite mode (found the 129 lint gate was vacuous), judge/validate gates, corpus conformance sweep (rewrite backlog: 60 + 64 agent batches, 33 auto, 283 regen — far below the 200–400 estimate), freeze-129 snapshot + reopen, tokenizer Phase 0 baseline (shipped 8k tokenizer is +15.4% vs cl100k), curation script, must-merge list, provenance rule, `std.fmt`, tkc pinning. 20+ compiler bugs fixed under Epic 127 on the way; ~30 new stories filed (127.11–127.38, 131.30–131.44). Next: card v2 → auto wave → LLM waves → re-freeze `AUDIT_131.md`.
-- **Epic 132 (filed 2026-09-18):** awareness & discoverability — canonical facts block as single source of truth, home/console copy fixed to honest numbers (55.6%), `/toke-programming-language` article + schema.org + llms.txt, registry descriptions aligned, Search Console baseline + 30/60/90 reviews. Gated on the August gate write-up, Fibonacci side-by-side and the toke-eval drift decision (132.0).
-- **Epic 133 (filed 2026-09-18):** competitive review + standing benchmark vs KERN / KERN-py (third party publishes toke at 29/60 on "60 JSON-CLI pairs", −52% tokens; its 16K tokenizer trained on 25,953 programs = our v0.3 corpus size — provenance to check). 133.1 review is P0, no compute gate.
-- **Epic 134 (filed 2026-09-19):** ooke uplift — it declares `mintoke 2.0.0` against a 2.8.0 compiler, still has `:void` returns, 19 of 30 files fail a standalone check, and the idiom pass (117.3) never ran. Runs through to fixing the unreproducible website docs build (132.20), relaunching the site on the uplifted ooke, and packaging a release ooke for loke/moke.
-- **Runnable now (laptop):** Epic 123 (foundation, root-of-trust, quality — in progress); Epic 119 (docs compile-health — done, gate green); Epics 120–122 (security audit done; remediation + ADR ratification pending); v0.4 uplift 116.13 / 117 (ooke migrated) / 118 (corpus 84% compile).
-- **Compute-gated (~Oct local hardware):** tokenizer retrain (116.9), from-scratch training (116.12), corpus regeneration (116.8), idiom re-measure (118.3/118.4), website deploy (117.6 — also owner-approval-gated).
-- **Awaiting owner decision:** ADR-0010 (ambient authority), ADR-0011 (injection/auto-escape), ADR-0012 (spatial safety), ADR-0013 (crypto agility); generics investigation (ADR-0014).
+- **Epic 131 — corpus rewrite.** The largest open epic. Its rewrite waves and the
+  `AUDIT_131` re-freeze are the active milestone; most of what remains is `planned`.
+- **Epic 127 — compiler and diagnostic findings.** No open P0. Recently closed on
+  `main`: router `:param`/`*` dispatch (127.343), SIGPIPE guards on the plain-HTTP and
+  WebSocket clients (127.341, 127.347). The Linux HTTPS client guard (127.346) is at
+  `review`, waiting for a Linux CI run. The S1 sealed-strings conversion (127.295) is
+  `planned` and proceeds in tranches.
+- **Recently landed on `main`:** `tkc pkg` package commands, the resolver in the import
+  path and git-based fetch (76.1.3b–d, ADR-0004); `tkc --python-view` (96.7);
+  `--from-tkir` / `--read-tkir` and `.tkir` 1.2 (76.1.6c); an explicit hybrid
+  post-quantum key-exchange group list on every `std.http` and `std.llm` TLS context
+  (122.15). The PQC migration roadmap (122.5) stays blocked.
+- **Next on the compiler:** the compact `[byte]` ABI (135.18), still `planned` on
+  `main`.
+- **Epic 128 — training reset.** Compute-gated; holds the most open P0 rows.
+- **Epic 132 — awareness and discoverability.** Mostly done; what remains is largely
+  blocked on owner actions (registry publishing, the site deploy, the Homebrew tap).
 
 ---
 
