@@ -5032,6 +5032,31 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
                       "got", got, (const char *)NULL);
             return;
         }
+        /* 127.355: nor does a record.  A record is a bare malloc(nfields *
+         * 8) block with no header (llvm.c struct_lit), and the receiver
+         * dispatch lowers every member to str, array or map glue: `r.len()`
+         * read the length from r[-1], before the allocation, and
+         * `r.contains(x)` / `r.slice(a;b)` / `r.indexof(x)` walked the
+         * record's slots as a NUL-terminated string.  All four passed
+         * --check.  Judged only for a record that declares fields, so an
+         * opaque std handle with no declared fields (`$vechandle`, whose
+         * receiver calls lower to Vec glue) is left alone. */
+        if (rt && rt->kind == TY_STRUCT && rt->field_count > 0) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char msg[640], got[160];
+            snprintf(msg, sizeof msg,
+                     "no receiver method '%s' on a '%s': a record answers no "
+                     "receiver method -- read a field with '.name'%s",
+                     member, type_name(rt), note);
+            snprintf(got, sizeof got, "%s.%s", type_name(rt), member);
+            /* No `fix` (AGENTS.md §6): which field, if any, was meant is not
+             * decidable here. */
+            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                      msg,
+                      "expected", "a str, array or map receiver",
+                      "got", got, (const char *)NULL);
+            return;
+        }
         unsigned rk = !rt ? 0u : rt->kind == TY_STR ? RK_S
                     : rt->kind == TY_ARRAY ? RK_A : rt->kind == TY_MAP ? RK_M : 0u;
         char kc = rk == RK_S ? 's' : rk == RK_A ? 'a' : rk == RK_M ? 'm' : 0;

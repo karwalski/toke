@@ -892,3 +892,109 @@ void tk_json_printarr_w(int64_t h, int64_t depth, int64_t kind) {
     printf("%s\n", text ? text : "[]");
     free(text);
 }
+
+/* ── 127.353: JSON printing driven by the compiler's static type ────────
+ *
+ * tk_json_print guessed the shape of whatever it was handed: an "array" was
+ * any pointer whose word at val[-1] looked like a small length.  A toke
+ * record is a bare malloc(nfields * 8) block with no header (src/llvm.c,
+ * struct_lit), so that read is 8 bytes before the allocation, and a record
+ * passed to j.print printed as `[]` or as garbage.  The compiler knows every
+ * argument's type, so it now hands this printer a descriptor of it and no
+ * header word is read from a value the descriptor does not call an array.
+ *
+ * Descriptor grammar (a NUL-terminated string the compiler emits as a
+ * constant; field names are toke identifiers, so they never contain one of
+ * the punctuation characters below):
+ *
+ *   desc   := 'i'            signed integer, the slot holds the value
+ *           | 'u'            u64, printed unsigned
+ *           | 'f'            f64 / f32, the slot holds the f64 bit pattern
+ *           | 'b'            bool (0 / 1)
+ *           | 's'            str (NULL prints null)
+ *           | '[' desc       array of desc (a toke array block, NULL = null)
+ *           | '{' fields '}' record: one i64 slot per field, in order
+ *   fields := ( name ':' desc ( ',' name ':' desc )* )?
+ *
+ * A record prints as a JSON object whose members are its fields in
+ * declaration order; a NULL record handle prints null.
+ */
+
+static const char *jdesc_skip(const char *d) {
+    if (!d || !*d) return d;
+    switch (*d) {
+    case '[': return jdesc_skip(d + 1);
+    case '{': {
+        d++;
+        while (*d && *d != '}') {
+            while (*d && *d != ':') d++;
+            if (*d == ':') d = jdesc_skip(d + 1);
+            if (*d == ',') d++;
+        }
+        return *d == '}' ? d + 1 : d;
+    }
+    default: return d + 1;
+    }
+}
+
+static void jbuf_typed(JBuf *b, int64_t v, const char *d) {
+    char num[40];
+    if (!d || !*d) { jbuf_puts(b, "null"); return; }
+    switch (*d) {
+    case 'i': jbuf_elem(b, v, TK_JKIND_I64); return;
+    case 'u':
+        snprintf(num, sizeof num, "%llu", (unsigned long long)v);
+        jbuf_puts(b, num);
+        return;
+    case 'f': jbuf_elem(b, v, TK_JKIND_F64); return;
+    case 'b': jbuf_elem(b, v, TK_JKIND_BOOL); return;
+    case 's': jbuf_elem(b, v, TK_JKIND_STR); return;
+    case '[': {
+        if (!v) { jbuf_puts(b, "null"); return; }
+        int64_t len = tk_arr_len(v);   /* the descriptor says: an array block */
+        const int64_t *data = (const int64_t *)(intptr_t)v;
+        jbuf_puts(b, "[");
+        for (int64_t i = 0; i < len; i++) {
+            if (i) jbuf_puts(b, ",");
+            jbuf_typed(b, data[i], d + 1);
+        }
+        jbuf_puts(b, "]");
+        return;
+    }
+    case '{': {
+        if (!v) { jbuf_puts(b, "null"); return; }
+        const int64_t *slot = (const int64_t *)(intptr_t)v;   /* no header */
+        const char *p = d + 1;
+        int64_t k = 0;
+        jbuf_puts(b, "{");
+        while (*p && *p != '}') {
+            const char *name = p;
+            while (*p && *p != ':') p++;
+            if (*p != ':') break;
+            if (k) jbuf_puts(b, ",");
+            jbuf_puts(b, "\"");
+            jbuf_put(b, name, (size_t)(p - name));
+            jbuf_puts(b, "\":");
+            p++;
+            jbuf_typed(b, slot[k], p);
+            p = jdesc_skip(p);
+            k++;
+            if (*p == ',') p++;
+        }
+        jbuf_puts(b, "}");
+        return;
+    }
+    default:
+        jbuf_puts(b, "null");
+        return;
+    }
+}
+
+/* json.printval(v, desc) — v printed as JSON by the compiler's descriptor of
+ * its type, then a newline, like the other tk_json_print_* entry points. */
+void tk_json_printval_w(int64_t v, int64_t desc) {
+    JBuf b = { NULL, 0, 0 };
+    jbuf_typed(&b, v, (const char *)(intptr_t)desc);
+    printf("%s\n", b.p ? b.p : "null");
+    free(b.p);
+}
