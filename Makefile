@@ -1494,7 +1494,10 @@ endif
 # are all in historical epics; the gate fails on anything NEW, and also on a
 # baseline entry that stops being produced, so the file cannot become a
 # blanket amnesty. Regenerate the baseline only deliberately: --record.
+# 132.139 -- it also rejects a status that is not one of AGENTS.md §8's
+# (or a closed-out word such as superseded); --selftest is its negative control.
 check-progress:
+	python3 scripts/check_progress.py --selftest
 	python3 scripts/check_progress.py
 
 # 123.12 — drift-gate: every diagnostic code the compiler emits must be

@@ -149,12 +149,18 @@ SURFACES = [
 #
 # The prose, the live text each one replaces and the owner checklist are in
 # docs/about/registry-descriptions.md.
+sys.path.insert(0, os.path.join(ROOT, "scripts", "about"))
+import github_repo_descriptions as _grd  # noqa: E402
+OTHER_REPOS = sum(1 for r in _grd.REPOS if r[0] != "toke")
+
 AWAITING_PUBLISH = [
     {"surface": "GitHub karwalski/toke — description, homepage, 5 topics",
      "live": "description empty, no topics, no homepage (2026-09-19)",
      "source": "docs/about/registry-descriptions.md §1",
      "apply": "gh repo edit karwalski/toke --description ... (see §1)"},
-    {"surface": "GitHub — the other 14 toke repos",
+    # 132.139: the count is derived from the inventory the apply command runs,
+    # never typed -- it said 14 while that inventory held 16 other repositories.
+    {"surface": "GitHub — the other %d toke repos" % OTHER_REPOS,
      "live": "every public repo description empty (2026-09-19)",
      "source": "scripts/about/github_repo_descriptions.py",
      "apply": "python3 scripts/about/github_repo_descriptions.py | sh"},

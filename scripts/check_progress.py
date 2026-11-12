@@ -29,6 +29,16 @@ table header tells the two apart structurally, so no dated exemption list is
 needed and none is offered: a future delivery record is recognised
 automatically, and a future duplicate story ID still fails.
 
+3. **A defined status (132.139).**  AGENTS.md §8 defines the statuses:
+   `backlog | planned | in_progress | blocked | review | done`.  A story row's
+   status cell must begin with one of those, or with one of the closed-out
+   words the tracker has always used for a story that ends without being done
+   (STATUS_CLOSED: superseded, cancelled, withdrawn, ...).  Emphasis and a
+   trailing note are allowed -- `**DONE 2026-09-19** -- premise wrong` is a
+   done row -- but the FIRST word decides.  `open`, which two Epic 128 rows
+   carried, is in neither list: nothing that filters the tracker by status
+   (PROJECT_STATUS's open-epics count, the Gantt reader) knows what it means.
+
 Exit 0 clean, 1 on a finding, 2 if the anchor is missing (no story table
 found, or fewer rows than the floor) -- a check that cannot find its input
 must fail rather than pass vacuously.
@@ -64,6 +74,28 @@ MIN_ROWS = 2500
 # edit is one nobody will keep accurate.
 BASELINE = pathlib.Path(__file__).resolve().parent / "progress-baseline.txt"
 
+# 132.139: AGENTS.md §8 -- the defined status values.
+STATUS_DEFINED = ("backlog", "planned", "in_progress", "blocked", "review", "done")
+# ...and the closed-out words a story table has always used for a story that
+# ends without being done.  Each is terminal and unambiguous to a reader; none
+# is a synonym for an open state.  Add to this list deliberately, never to
+# quiet a row: an open story takes one of STATUS_DEFINED.
+STATUS_CLOSED = ("superseded", "cancelled", "withdrawn", "won't-do", "moved",
+                 "deferred", "bypassed", "closed", "closed-invalid", "fixed",
+                 "moot", "decided", "deployed")
+STATUS_WORD = re.compile(r"[a-z][a-z'_-]*")
+
+
+def status_word(cell):
+    """The status a cell declares: its first word, lower case, emphasis removed."""
+    m = STATUS_WORD.match(re.sub(r"[*`]", "", cell).strip().lower())
+    return m.group(0).rstrip("-") if m else ""
+
+
+def status_defined(cell):
+    """True when the cell's first word is a defined or closed-out status."""
+    return status_word(cell) in STATUS_DEFINED + STATUS_CLOSED
+
 
 def split_cells(line):
     """Split a markdown row on unescaped pipes, as the tracker's own convention."""
@@ -96,6 +128,12 @@ def parse_header(line):
     return is_story, len(raw)
 
 
+def status_column(line):
+    """Index, in split_cells(row), of the header's Status column (or None)."""
+    cells = [c.strip().lower() for c in split_cells(line)]
+    return cells.index("status") if "status" in cells else None
+
+
 def main():
     # 132.59a: `--path FILE` checks another copy of the tracker (a repaired
     # candidate) against the same rules; `--baseline FILE` swaps the ratchet
@@ -123,6 +161,20 @@ def main():
         print(f"check-progress: anchor missing: {path}", file=sys.stderr)
         return 2
 
+    findings, total_rows, story_rows, seen = collect(path.read_text(), path.name)
+
+    if total_rows < MIN_ROWS:
+        print(
+            f"check-progress: only {total_rows} rows found (floor "
+            f"{MIN_ROWS}) -- the parser is not reading the tracker it should be.",
+            file=sys.stderr,
+        )
+        return 2
+    return report(findings, total_rows, story_rows, seen, baseline)
+
+
+def collect(text, name):
+    """Every finding in a tracker's text: (findings, rows, story rows, ids)."""
     findings = []          # (key, message)
     counts = collections.Counter()
 
@@ -137,8 +189,9 @@ def main():
     total_rows = 0
     is_story = False
     width = None  # expected cell count of the table we are inside
+    status_at = None
 
-    for n, raw in enumerate(path.read_text().split("\n"), 1):
+    for n, raw in enumerate(text.split("\n"), 1):
         line = raw.rstrip()
         if not line.startswith("|"):
             is_story, width = False, None
@@ -147,6 +200,7 @@ def main():
             continue
         if not ROW.match(line):
             is_story, width = parse_header(line)
+            status_at = status_column(line)
             continue
 
         total_rows += 1
@@ -156,7 +210,7 @@ def main():
         if width is None:
             add(
                 "ORPHAN", sid, "",
-                f"ORPHAN {path.name}:{n}: row {sid} is not under any table "
+                f"ORPHAN {name}:{n}: row {sid} is not under any table "
                 f"header, so nothing defines its columns."
             )
             continue
@@ -164,7 +218,7 @@ def main():
         if len(cells) != width:
             add(
                 "CELLS", sid, f"{len(cells)}/{width}",
-                f"CELLS {path.name}:{n}: row {sid} splits into {len(cells)} "
+                f"CELLS {name}:{n}: row {sid} splits into {len(cells)} "
                 f"fields; its table header declares {width} -- an unescaped "
                 f"`|` in a note shifts every later column, so this row's "
                 f"status is not what it appears. Write pipes as `\\|`."
@@ -175,29 +229,34 @@ def main():
             continue  # a delivery record: width-checked, not uniqueness-checked
         story_rows += 1
 
+        if status_at is not None and not status_defined(cells[status_at]):
+            st = cells[status_at].strip()
+            add(
+                "STATUS", sid, status_word(st) or st[:20],
+                f"STATUS {name}:{n}: row {sid} has status `{st[:60]}`, which is "
+                f"not a defined status. Use one of "
+                f"{' | '.join(STATUS_DEFINED)} (AGENTS.md §8), or a closed-out "
+                f"word: {', '.join(STATUS_CLOSED)}."
+            )
+
         if sid in seen:
             add(
                 "DUPID", sid, "",
-                f"DUPID {path.name}:{n}: story ID {sid} is already used at "
+                f"DUPID {name}:{n}: story ID {sid} is already used at "
                 f"line {seen[sid]}. Two different stories share one ID: a "
                 f"scripted update matching `| {sid} |` hits both, and a "
                 f"cross-reference to {sid} is ambiguous. Renumber the later one."
             )
         else:
             seen[sid] = n
+    return findings, total_rows, story_rows, seen
 
-    if total_rows < MIN_ROWS:
-        print(
-            f"check-progress: only {total_rows} rows found (floor "
-            f"{MIN_ROWS}) -- the parser is not reading the tracker it should be.",
-            file=sys.stderr,
-        )
-        return 2
 
+def report(findings, total_rows, story_rows, seen, baseline):
     if "--record" in sys.argv:
         BASELINE.write_text(
-            "# 132.58a baseline -- pre-existing structural findings in\n"
-            "# docs/progress.md, all in historical epics. Anything NOT listed\n"
+            "# 132.58a baseline -- pre-existing structural and (132.139) status\n"
+            "# findings in docs/progress.md. Anything NOT listed\n"
             "# here fails the gate; an entry here that stops being produced\n"
             "# also fails, so this file cannot rot into a blanket amnesty.\n"
             "# Regenerate deliberately with --record, never to quiet a gate.\n"
@@ -236,5 +295,51 @@ def main():
     return 1 if (new or stale) else 0
 
 
+# 132.139 -- the negative control.  A gate nobody has watched fail is not a
+# gate: each REJECT row below must be reported, each ACCEPT row must not.
+SELFTEST_ROWS = [
+    # (accepted?, status cell)
+    (True, "done"), (True, "backlog"), (True, "planned"), (True, "in_progress"),
+    (True, "blocked"), (True, "review"), (True, "**DONE 2026-09-19** — premise wrong"),
+    (True, "in_progress — **plumbing DONE 2026-09-18**"), (True, "superseded → 116.9"),
+    (True, "won't-do"), (True, "**CLOSED-INVALID** (this pass)"),
+    (True, "done — closed by 127.41, verified 2026-09-22"),
+    (False, "open"), (False, "**open**"), (False, "todo"), (False, "wip"),
+    (False, "in progress"), (False, ""), (False, "PREMISE WRONG — close with no work"),
+    (False, "**harness DONE 2026-09-18**"),
+]
+
+
+def selftest():
+    head = "| ID | Story | Status | Priority | Notes |\n|---|---|---|---|---|\n"
+    bad = 0
+    for i, (accept, cell) in enumerate(SELFTEST_ROWS):
+        text = head + "| 9.%d | a story | %s | P1 | note |\n" % (i, cell)
+        findings = collect(text, "selftest.md")[0]
+        flagged = any(k.startswith("STATUS\t") for k, _ in findings)
+        if flagged == accept:
+            bad += 1
+            print("SELFTEST FAIL [%s] status %r was %s"
+                  % ("accept" if accept else "reject", cell,
+                     "rejected" if flagged else "accepted"))
+    # a delivery record restates statuses freely and is not status-checked
+    text = ("| ID | New status | Resolution |\n|---|---|---|\n"
+            "| 9.99 | open | x |\n")
+    if collect(text, "selftest.md")[0]:
+        bad += 1
+        print("SELFTEST FAIL [accept] a delivery-record row was status-checked")
+    n = len(SELFTEST_ROWS) + 1
+    if bad:
+        print("check-progress selftest: %d of %d cases wrong" % (bad, n))
+        return 1
+    print("check-progress selftest: %d cases OK (%d statuses accepted, %d rejected, "
+          "1 delivery record left alone)"
+          % (n, sum(1 for a, _ in SELFTEST_ROWS if a),
+             sum(1 for a, _ in SELFTEST_ROWS if not a)))
+    return 0
+
+
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        sys.exit(selftest())
     sys.exit(main())
