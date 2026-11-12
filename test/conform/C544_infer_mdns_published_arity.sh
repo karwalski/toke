@@ -39,7 +39,7 @@ i=io:std.io;
 f=main():i64{
   let o=$inferopts{ngpulayers:0;nthreads:1;seed:1};
   let h=infer.load("/nonexistent";o);
-  let s=$streamopts{ramceilinggb:1.0;prefetchlayers:1;requiresnvme:false};
+  let s=$streamopts{ramceilinggb:1.0 as f32;prefetchlayers:1;requiresnvme:false};
   let h2=infer.loadstreaming("/nonexistent";s);
   let r=$servicerecord{name:"svc";type:"_http._tcp";port:8080;txt:@("a=b")};
   let ok=mdns.advertise(r);
