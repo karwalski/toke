@@ -183,6 +183,27 @@ def load_exports(tki_dir):
     return out
 
 
+def load_routes(tki_dir):
+    """{name: export dict} for every route export (`{"kind":"route"}`).
+
+    Route registration (`http.get(pattern;&handler)`) is a real export of its
+    own kind, so a documented route entry is held to it like a func.  Kept
+    apart from load_exports because a route name can also carry a withdrawn
+    client-call entry marked **Not exported.** (http.md, 137.10): the marker
+    is about the func form, so it is not "an export after all" (132.133).
+    """
+    out = {}
+    for f in sorted(pathlib.Path(tki_dir).glob("*.tki")):
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        for e in data.get("exports") or []:
+            if e.get("kind") == "route" and e.get("name"):
+                out[e["name"]] = e
+    return out
+
+
 def load_types(tki_dir):
     """({module stem: {type name, case folded}}, {func name: {module stem}})."""
     types, fmods = {}, {}
@@ -191,7 +212,9 @@ def load_types(tki_dir):
             data = json.loads(f.read_text())
         except (OSError, json.JSONDecodeError):
             continue
-        types[f.stem] = {e["name"].lower() for e in data.get("exports") or []
+        # A .tki may spell a type with its sigil (option.tki: "$none"); the
+        # page's heading is read without it, so compare without it (132.133).
+        types[f.stem] = {e["name"].lstrip("$").lower() for e in data.get("exports") or []
                          if e.get("kind") == "type" and e.get("name")}
         for e in data.get("exports") or []:
             if e.get("kind") == "func" and e.get("name"):
@@ -331,8 +354,9 @@ def cells(line):
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def scan(lines, exports):
+def scan(lines, exports, routes=None):
     """(problems, entries, abi_exempt, parameter lists checked)."""
+    routes = routes or {}
     problems, entries, abi, params = [], 0, 0, 0
     retcol = parcol = None
     for i, line in enumerate(lines):
@@ -356,6 +380,8 @@ def scan(lines, exports):
                 j += 1
             marked = j < len(lines) and NOT_EXPORTED in lines[j]
         exp = exports.get(name)
+        if exp is None and not marked and name in routes:
+            exp = routes[name]
         if exp is None:
             if not marked:
                 problems.append((i + 1, name, "is not an export of any stdlib/*.tki "
@@ -411,6 +437,7 @@ def main():
     a = ap.parse_args()
 
     exports = load_exports(a.tki_dir)
+    routes = load_routes(a.tki_dir)
     types, fmods = load_types(a.tki_dir)
     pages = sorted(pathlib.Path(a.docs).glob("*.md"))
     if len(exports) < 100 or not pages:
@@ -424,7 +451,7 @@ def main():
         if ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])):
             archived.append(page.name)
             continue
-        problems, n, k, np = scan(lines, exports)
+        problems, n, k, np = scan(lines, exports, routes)
         tprob, nt = scan_types(page.stem, lines, types, fmods)
         problems += tprob
         tchecked += nt

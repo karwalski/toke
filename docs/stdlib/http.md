@@ -80,53 +80,53 @@ An opaque handle representing an open streaming HTTP connection, obtained from `
 
 ## Server Route Registration
 
-Route registration functions bind a URL pattern to a handler function. Handlers are registered before calling `http.serve` or `http.serveworkers`; the server matches incoming requests to registered patterns in registration order.
+Route registration functions bind a URL pattern to a handler function. The names are lower case, as `stdlib/http.tki` declares them: upper case is outside toke's character set, so `http.GET` is rejected at parse time (E2002). The handler, typed `funcdecl` in the interface, is a top-level function passed by reference, `&handler`. These five names are route registration only; the client calls are `http.clientget` and the rest (see [Client calls and route registration are different names](#client-calls-and-route-registration-are-different-names)). Handlers are registered before calling `http.serve` or `http.serveworkers`; the server matches incoming requests to registered patterns in registration order.
 
-### http.GET(pattern: $str; handler: f): void
+### http.get(pattern: $str; handler: funcdecl): void
 
 Registers `handler` to be called for all `GET` requests matching `pattern`. Patterns may contain named segments (e.g., `"/users/:id"`), which are made available via `http.param`.
 
 ```text
-http.GET("/health"; handler);
+http.get("/health"; &handler);
 ```
 
-### http.POST(pattern: $str; handler: f): void
+### http.post(pattern: $str; handler: funcdecl): void
 
 Registers `handler` for all `POST` requests matching `pattern`. The handler reads the request body as the field `req.body` or with `http.reqbody(req)`; both read the same value (story 138.18).
 
 ```text
-http.POST("/items"; handler);
+http.post("/items"; &handler);
 ```
 
-### http.PUT(pattern: $str; handler: f): void
+### http.put(pattern: $str; handler: funcdecl): void
 
 Registers `handler` for all `PUT` requests matching `pattern`. Commonly used for full-resource replacement endpoints.
 
 ```text
-http.PUT("/items/:id"; handler);
+http.put("/items/:id"; &handler);
 ```
 
-### http.DELETE(pattern: $str; handler: f): void
+### http.delete(pattern: $str; handler: funcdecl): void
 
 Registers `handler` for all `DELETE` requests matching `pattern`. The request body is typically empty.
 
 ```text
-http.DELETE("/items/:id"; handler);
+http.delete("/items/:id"; &handler);
 ```
 
-### http.PATCH(pattern: $str; handler: f): void
+### http.patch(pattern: $str; handler: funcdecl): void
 
 Registers `handler` for all `PATCH` requests matching `pattern`. Use for partial-update endpoints.
 
 ```text
-http.PATCH("/items/:id"; handler);
+http.patch("/items/:id"; &handler);
 ```
 
 ## Server Start Functions
 
 ### http.serve(port: u64): i64
 
-Starts an HTTP server on the given port, blocking the current process until the server is shut down. Route handlers registered via `http.GET`, `http.POST`, etc. are dispatched automatically.
+Starts an HTTP server on the given port, blocking the current process until the server is shut down. Route handlers registered via `http.get`, `http.post`, etc. are dispatched automatically.
 
 ```toke
 m=example;
