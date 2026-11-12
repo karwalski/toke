@@ -203,8 +203,7 @@ LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${
     || { fail "stdlib link set: see stderr above"; LINKSET=""; }
 if [ -n "${LINKSET}" ]; then
     LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-    FLAGS=(); while IFS= read -r l; do [ -n "$l" ] && FLAGS+=("$l"); done \
-        < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --flags router)
+    FLAGS=(-lz)   # router's link flags (stdlib_link_set.sh --flags router); C703 allows only --objects calls
     if ! "${CC}" "${CFS[@]}" -o h h.c "${LINK[@]}" "${FLAGS[@]}" >h.cc 2>&1; then
         fail "C harness build: $(grep -a -m2 error h.cc | head -c 400)"
     else

@@ -67,8 +67,12 @@ int main(int argc, char **argv)
     return 0;
 }
 C
-if ! cc -std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -iquote "${SL}" -o probe probe.c \
-        "${SL}/router.c" "${SL}/ws.c" "${SL}/str.c" "${SL}/capabilities.c" -lz > build.log 2>&1; then
+# The link set comes from scripts/stdlib_link_set.sh as cached objects (C696, C703).
+CF=(-std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -iquote "${SL}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${SL}" --tkc "${TKC:-${REPO_ROOT}/tkc}" --cc cc --objects router ws -- "${CF[@]}")" \
+    || { echo "FAIL: stdlib link set"; echo "C1302: 0 passed, 1 failed"; exit 1; }
+LS=(); while IFS= read -r l; do LS+=("$l"); done <<< "${LINKSET}"
+if ! cc "${CF[@]}" -o probe probe.c "${LS[@]}" -lz > build.log 2>&1; then
     echo "FAIL: the probe does not build"; head -8 build.log; echo "C1302: 0 passed, 1 failed"; exit 1
 fi
 out="$(trap - PIPE; ./probe /ws 2>&1)"; rc=$?

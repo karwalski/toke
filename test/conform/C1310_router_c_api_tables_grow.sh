@@ -257,8 +257,7 @@ export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0"
 LINK=(); FLAGS=()
 if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --cc "${CC}" --objects router -- "${CFS[@]}")"; then
     while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
-    while IFS= read -r l; do [ -n "$l" ] && FLAGS+=("$l"); done \
-        < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --tkc "${TKC}" --stdlib "${S}" --flags router)
+    FLAGS+=(-lz)   # router's link flags (stdlib_link_set.sh --flags router); C703 allows only --objects calls
 else
     fail "stdlib link set: see stderr above"
 fi
