@@ -37,7 +37,8 @@ void tk_log_set_level(const char *level);
  *              ["key1","val1","key2","val2", ...].  May be NULL if field_count==0.
  * field_count — total number of elements in fields (must be even).
  *
- * Returns 1 if the line was emitted, 0 if filtered by the current log level.
+ * Returns 1 if the line was written, 0 if filtered by the current log level
+ * or if the write failed (short write or failed flush, 127.406).
  */
 int tk_log_info(const char *msg, const char **fields, int field_count);
 
@@ -97,7 +98,8 @@ int tk_log_set_output(const char *path);
  * Key/value pairs are extracted (string values only) and appended as fields.
  * Malformed JSON is tolerated: any parseable pairs are used, the rest ignored.
  *
- * Returns 1 if the line was emitted, 0 if filtered by the current log level.
+ * Returns 1 if the line was written, 0 if filtered by the current log level
+ * or if the write failed (short write or failed flush, 127.406).
  *
  * Story: 28.5.3
  */

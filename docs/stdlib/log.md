@@ -89,7 +89,7 @@ The C runtime has a separate security-event stream (`tk_log_security`, `tk_log_s
 
 ### log.info(msg: $str; fields: @(@($str))): bool
 
-Emits an `info`-level structured log line to stderr and returns `true` if the line was written, or `false` if it was suppressed by the current level threshold. The `fields` parameter is an array of two-element key-value arrays that provide additional structured context alongside the message. Fields are written in order after `msg`; an element with fewer than two strings is skipped, and strings past the second in an element are ignored.
+Emits an `info`-level structured log line to stderr and returns `true` if the line was written, or `false` if it was suppressed by the current level threshold or could not be written (for example stderr is closed). Before story 127.406 every call returned `false`, written or not. The `fields` parameter is an array of two-element key-value arrays that provide additional structured context alongside the message. Fields are written in order after `msg`; an element with fewer than two strings is skipped, and strings past the second in an element are ignored.
 
 ```toke
 m=example;

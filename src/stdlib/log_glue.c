@@ -111,39 +111,42 @@ int64_t tk_log_accessformat_w(int64_t fmt_ptr)
     return (int64_t)tk_access_log_set_format(fmt);
 }
 
+/* log.info/warn/error/debug return bool (.tki): true exactly when the line
+ * was written -- false when the level filters it or the write fails (story
+ * 127.406; these used to return 0, so every call read as false). */
 int64_t tk_log_info_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_info((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_info((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 
 int64_t tk_log_error_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_error((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_error((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 
 int64_t tk_log_warn_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_warn((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_warn((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 int64_t tk_log_debug_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_debug((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_debug((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 
 int64_t tk_log_setformat_w(int64_t fmt) {

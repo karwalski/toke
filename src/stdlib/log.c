@@ -445,14 +445,17 @@ int tk_log_security_set_output(const char *path)
 }
 
 /* write one finished line with a single fwrite, so concurrent writers to the
- * same file never interleave inside a line */
+ * same file never interleave inside a line.  Returns 1 only when the whole
+ * line was written and flushed; 0 on OOM, a short write or a failed flush
+ * (127.406: log.info & co. return this as their bool). */
 static int write_line(FILE *out, TkStrBuf *b)
 {
     if (b->oom) { strbuf_free(b); return 0; }
-    fwrite(strbuf_cstr(b), 1, b->len, out);
-    fflush(out);
+    size_t n = fwrite(strbuf_cstr(b), 1, b->len, out);
+    int ok = (n == b->len);
+    if (fflush(out) != 0) ok = 0;
     strbuf_free(b);
-    return 1;
+    return ok;
 }
 
 /* -------------------------------------------------------------------------
