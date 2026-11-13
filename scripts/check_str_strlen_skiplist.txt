@@ -36,8 +36,6 @@ src/stdlib/dataframe_glue.c 1
 src/stdlib/db.c 2
 src/stdlib/encrypt.c 2
 src/stdlib/encrypt_glue.c 1
-src/stdlib/file.c 5
-src/stdlib/file_glue.c 3
 src/stdlib/http2.c 4
 src/stdlib/infer.c 4
 src/stdlib/keychain.c 5
