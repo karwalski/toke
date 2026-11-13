@@ -9,7 +9,9 @@
  * such a program as its first case.
  *
  * ABI notes (docs/runtime-abi.md):
- *   §3  a `str` is a plain NUL-terminated char*, cast through i64.
+ *   §3  a `str` is a plain NUL-terminated char*, cast through i64; every one
+ *       this file makes is sealed (tk_strhdr.h, 127.295) and never freed.
+ *       ocr.engine()'s literal is the one str handed over as is.
  *   §4  an array is a length-prefixed i64 block; the handle points at
  *       data[0] and the length sits at handle[-1] (tk_array.h).  A `@(byte)`
  *       stores ONE BYTE PER i64 SLOT (bytes_rt.h) — hence tk_bytes_unpack.
@@ -54,6 +56,7 @@
 #include "bytes_rt.h"
 #include "capabilities.h"
 #include "tk_runtime.h"   /* 127.241: tk_current_error, tk_err_box, tk_err_msg */
+#include "tk_strhdr.h"    /* 127.295: sealed strings */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -101,14 +104,14 @@ static int64_t ocr_ok(int64_t v)
 /* Number of i64 slots in an $ocrrun — keep in sync with stdlib/ocr.tki. */
 #define TK_OCRRUN_SLOTS 7
 
+/* A sealed copy of s (127.295, runtime-abi §3.1): run text, ocr.text's join
+ * and ocr.languages' list all come from here.  The bytes are a C string's, so
+ * the header is the C-string length.  A sealed string is never freed, by
+ * anyone; 0 only when the string heap's allocation itself fails. */
 static int64_t dup_str(const char *s)
 {
-    size_t n = s ? strlen(s) : 0;
-    char *p = (char *)malloc(n + 1);
-    if (!p) return 0;
-    if (n) memcpy(p, s, n);
-    p[n] = '\0';
-    return (int64_t)(intptr_t)p;
+    if (!s) s = "";
+    return (int64_t)(intptr_t)tks_dup(s, tk_strlen(s));
 }
 
 /* An f64 crosses the i64 ABI as its bit pattern, never as a conversion. */
@@ -187,10 +190,16 @@ int64_t tk_ocr_engine_w(void)
     return (int64_t)(intptr_t)ocr_engine();
 }
 
-/* ocr.languages() -> str — comma-separated BCP-47, queried live. */
+/* ocr.languages() -> str — comma-separated BCP-47, queried live.
+ *
+ * A sealed copy (127.295): ocr_languages() returns ocr.c's static buffer,
+ * which it clears and refills on every call (ocr.setlanguages calls it
+ * too), so handing the buffer itself to toke let a later call rewrite a
+ * string the program still held.  "" when the copy cannot be made. */
 int64_t tk_ocr_languages_w(void)
 {
-    return (int64_t)(intptr_t)ocr_languages();
+    int64_t s = dup_str(ocr_languages());
+    return s ? s : (int64_t)(intptr_t)"";
 }
 
 /* ocr.setlanguages(langs:str) -> bool

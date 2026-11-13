@@ -44,8 +44,6 @@ src/stdlib/keychain.c 5
 src/stdlib/mdns.c 2
 src/stdlib/mlx.c 2
 src/stdlib/net_glue.c 1
-src/stdlib/ocr.c 7
-src/stdlib/ocr_glue.c 1
 src/stdlib/os_glue.c 1
 src/stdlib/pdf.c 4
 src/stdlib/pdf_glue.c 1

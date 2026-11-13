@@ -26,10 +26,18 @@
  * no recogniser, which is true, instead of learning the page is blank,
  * which is not.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length this file takes is read
+ * with tk_strlen (tk_strhdr.h).  Nothing here is handed to toke directly:
+ * the glue (ocr_glue.c) copies run text, ocr_page_text()'s join and
+ * ocr_languages()'s list into sealed strings.  The runs' text, the join
+ * (caller frees) and the static error / language buffers are this file's
+ * own storage and stay as they are.
+ *
  * Story: 135.6
  */
 
 #include "ocr.h"
+#include "tk_strhdr.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +76,7 @@ static void set_err(TkOcrErr code, const char *msg)
 {
     g_err_code = code;
     if (msg) {
-        size_t n = strlen(msg);
+        size_t n = tk_strlen(msg);
         if (n >= sizeof g_err_msg) n = sizeof g_err_msg - 1;
         memcpy(g_err_msg, msg, n);
         g_err_msg[n] = '\0';
@@ -118,14 +126,14 @@ char *ocr_page_text(const TkOcrPage *page)
 
     if (!page) return NULL;
     for (i = 0; i < page->count; i++)
-        total += (page->runs[i].text ? strlen(page->runs[i].text) : 0) + 1;
+        total += (page->runs[i].text ? tk_strlen(page->runs[i].text) : 0) + 1;
 
     out = (char *)malloc(total);
     if (!out) return NULL;
 
     for (i = 0; i < page->count; i++) {
         const char *t = page->runs[i].text;
-        size_t n = t ? strlen(t) : 0;
+        size_t n = t ? tk_strlen(t) : 0;
         if (i) out[pos++] = '\n';
         if (n) memcpy(out + pos, t, n);
         pos += n;
@@ -396,7 +404,7 @@ static void ocr_languages_pooled(void)
         const char *tag = msutf8(msidx(langs, "objectAtIndex:", i));
         size_t tl;
         if (!tag) continue;
-        tl = strlen(tag);
+        tl = tk_strlen(tag);
         if (pos + tl + 2 >= sizeof g_lang_list) break;
         if (pos) g_lang_list[pos++] = ',';
         memcpy(g_lang_list + pos, tag, tl);
@@ -449,7 +457,7 @@ int ocr_set_languages(const char *langs)
         return 0;
     }
 
-    if (strlen(langs) >= sizeof buf) {
+    if (tk_strlen(langs) >= sizeof buf) {
         set_err(OCR_ERR_NOLANGUAGE, "language list too long");
         return 0;
     }
@@ -460,7 +468,7 @@ int ocr_set_languages(const char *langs)
     for (tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
         size_t tl;
         while (*tok == ' ') tok++;
-        tl = strlen(tok);
+        tl = tk_strlen(tok);
         while (tl && tok[tl - 1] == ' ') tok[--tl] = '\0';
         if (!tl) continue;
 
@@ -761,7 +769,7 @@ static TkOcrPage *recognize_cgimage_pooled(CGImageRef img)
         bb = ((MsgRect)objc_msgSend)(obs, sel_getUid("boundingBox"));
 
         r = &page->runs[page->count];
-        r->text = (char *)malloc(strlen(utf8) + 1);
+        r->text = (char *)malloc(tk_strlen(utf8) + 1);
         if (!r->text) continue;
         strcpy(r->text, utf8);
 
