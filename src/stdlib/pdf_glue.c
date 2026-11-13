@@ -45,6 +45,7 @@
 #include "bytes_rt.h"
 #include "capabilities.h"
 #include "tk_runtime.h"   /* 127.241: tk_current_error, tk_err_box, tk_err_msg */
+#include "tk_strhdr.h"    /* 127.295: sealed strings, tk_strlen */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -95,13 +96,18 @@ static int64_t pdf_ok(int64_t v)
     return v;
 }
 
+/* 127.295 (S1 step 5, fourteenth tranche): every str this glue hands toke
+ * -- a $textrun's .text and pdf.pagetext's result -- is a sealed copy
+ * (tks_dup), so tk_strlen reads its length in O(1).  It is made here, at the
+ * boundary: pdf.c's run text belongs to the TkPdfPage (pdf_page_free) and
+ * pdf_page_text's buffer is malloc'd and freed below, so the core stays
+ * malloc'd.  A sealed string is never freed, by anyone.  The copy is
+ * measured as a C string, so it ends at the first 0 byte exactly as the
+ * malloc'd copy did, and its header equals strlen. */
 static int64_t dup_str(const char *s)
 {
-    size_t n = s ? strlen(s) : 0;
-    char *p = (char *)malloc(n + 1);
-    if (!p) return 0;
-    if (n) memcpy(p, s, n);
-    p[n] = '\0';
+    size_t n = s ? tk_strlen(s) : 0;
+    char *p = tks_dup(s ? s : "", n);
     return (int64_t)(intptr_t)p;
 }
 

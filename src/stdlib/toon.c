@@ -19,6 +19,7 @@
 
 #include "toon.h"
 #include "strbuf.h"
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -213,14 +214,29 @@ static int find_toon_field(const char *raw, const char *key,
 /* Public API                                                           */
 /* ------------------------------------------------------------------ */
 
+/* 127.295: the strs this file hands out (toon_enc, toon_str, toon_from_json,
+ * toon_to_json) are sealed strings: one copy of the finished buffer, measured
+ * as a C string (so a decoded 0 byte ends it where every C reader already saw
+ * it end), and the buffer freed.  NULL if any append or the copy hit OOM.  A
+ * sealed string is never freed; no C caller frees these (toon_glue.c hands
+ * them to toke, and the "" / "[]" fallbacks were never freeable). */
+static char *toon_seal(TkStrBuf *b) {
+    if (b->oom) { strbuf_free(b); return NULL; }
+    const char *s = strbuf_cstr(b);
+    const char *z = b->len ? (const char *)memchr(s, 0, b->len) : NULL;
+    char *t = tks_dup(s, z ? (size_t)(z - s) : b->len);
+    strbuf_free(b);
+    return t;
+}
+
 /* toon_enc — encode a value to its TOON representation: the value itself,
  * with '\\', '|', newline and CR escaped (121.40) so it stays one value in
  * one row.  A value without those bytes comes back unchanged. */
 const char *toon_enc(const char *v) {
     if (!v) return "";
     TkStrBuf b = TK_STRBUF_INIT;
-    toon_esc(&b, v, strlen(v), 0);
-    char *out = strbuf_take(&b);
+    toon_esc(&b, v, tk_strlen(v), 0);
+    char *out = toon_seal(&b);
     return out ? out : "";
 }
 
@@ -262,7 +278,7 @@ StrToonResult toon_str(Toon t, const char *key) {
     }
     TkStrBuf b = TK_STRBUF_INIT;
     toon_unesc(&b, vs, ve);
-    char *buf = strbuf_take(&b);
+    char *buf = toon_seal(&b);
     if (!buf) { r.is_err = 1; r.err = make_err(TOON_ERR_PARSE, "oom"); return r; }
     r.is_err = 0; r.ok = buf; return r;
 }
@@ -559,7 +575,7 @@ const char *toon_from_json(const char *json) {
     strbuf_putc(&ob, '{');
     for (int i = 0; i < nkeys; i++) {
         if (i > 0) strbuf_putc(&ob, ',');
-        toon_esc(&ob, keys[i].key, strlen(keys[i].key), 1);
+        toon_esc(&ob, keys[i].key, tk_strlen(keys[i].key), 1);
         free(keys[i].key);
     }
     strbuf_appendn(&ob, "}:\n", 3);
@@ -568,7 +584,7 @@ const char *toon_from_json(const char *json) {
     strbuf_free(&rows);
     free(keys);
     free(mem);
-    char *out = strbuf_take(&ob);
+    char *out = toon_seal(&ob);
     return out ? out : "";
 }
 
@@ -669,6 +685,6 @@ const char *toon_to_json(const char *toon_str) {
     strbuf_free(&vb);
 
     free_fields(fields, nfields);
-    char *out = strbuf_take(&ob);
+    char *out = toon_seal(&ob);
     return out ? out : "[]";
 }

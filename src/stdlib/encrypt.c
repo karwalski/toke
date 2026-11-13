@@ -21,6 +21,7 @@
 #include "crypto.h"
 #include "encoding.h"
 #include "tk_secure.h"
+#include "tk_strhdr.h"   /* 127.295: tk_strlen (runtime-abi §3.1) */
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -1786,12 +1787,12 @@ ByteArray encrypt_tls_cert_fingerprint(const char *pem_cert)
     if (!pem_cert) return empty;
 
     /* Find PEM boundaries */
-    const char *begin_marker = "-----BEGIN CERTIFICATE-----";
-    const char *end_marker   = "-----END CERTIFICATE-----";
+    static const char begin_marker[] = "-----BEGIN CERTIFICATE-----";
+    static const char end_marker[]   = "-----END CERTIFICATE-----";
 
     const char *start = strstr(pem_cert, begin_marker);
     if (!start) return empty;
-    start += strlen(begin_marker);
+    start += sizeof begin_marker - 1;
     /* Skip newline(s) */
     while (*start == '\r' || *start == '\n') start++;
 
@@ -2258,7 +2259,7 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
     /* Password as ByteArray key for HMAC */
     ByteArray pw_ba;
     pw_ba.data = (const uint8_t *)password;
-    pw_ba.len  = strlen(password);
+    pw_ba.len  = tk_strlen(password);
 
     /* Build salt || INT(i) buffer once; INT(i) occupies last 4 bytes */
     uint64_t salt_block_len = salt.len + 4;

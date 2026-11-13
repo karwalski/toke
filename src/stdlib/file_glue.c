@@ -164,10 +164,12 @@ int64_t tk_file_listall_w(int64_t dir) {
     StrArrayFileResult r = file_listall((const char *)(intptr_t)dir);
     if (r.is_err) return file_raise_op("file.listall", r.err, dir);
     seal_all(r.ok);
-    /* The strings AND the pointer block are handed over as before: listall's
-     * data block was never freed here, and freeing it now is not this
-     * story's change. */
-    return file_strarray("file.listall", r.ok, 0);
+    /* 127.415: the pointer block is freed, as file.list's is.  It used to be
+     * handed over (free_data=0) and leaked on every call: file_listall's
+     * thread-local accumulator is replaced by the next call, never freed.
+     * Every element is a sealed copy now, so after the copy into the toke
+     * array nothing reads the block. */
+    return file_strarray("file.listall", r.ok, 1);
 }
 
 int64_t tk_file_exists_w(int64_t path) {

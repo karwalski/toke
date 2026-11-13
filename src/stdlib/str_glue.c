@@ -320,7 +320,17 @@ int64_t tk_str_frombytes_w(int64_t b) {
     StrEncResult v = str_from_bytes(ba);
     if (v.is_err) str_raise(v.err_msg);
     else { free((void *)v.ok); tk_current_error = 0; }
-    return (int64_t)(intptr_t)buf;  /* buf is already NUL-terminated by unpack */
+    /* 127.295: toke receives a sealed copy, measured as a C string (an
+     * interior 0x00 ends it where every reader already saw it end); the
+     * unpacked buffer is freed, and handed over unsealed only if the copy
+     * cannot be made.  (str_from_bytes's own malloc'd copy, freed above, is
+     * only the validator's: buf is never NULL here, so it is never the
+     * literal "" str_from_bytes returns for no data.) */
+    const uint8_t *z = n ? (const uint8_t *)memchr(buf, 0, (size_t)n) : NULL;
+    char *s = tks_dup((const char *)buf, z ? (size_t)(z - buf) : (size_t)n);
+    if (!s) return (int64_t)(intptr_t)buf;  /* NUL-terminated by unpack */
+    free(buf);
+    return (int64_t)(intptr_t)s;
 }
 int64_t tk_str_print_w(int64_t s) {
     if (s) printf("%s", (const char *)(intptr_t)s);

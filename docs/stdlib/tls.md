@@ -91,11 +91,11 @@ ML-DSA certificates are opt-in for a reason: they will not verify against a clas
 
 ### tls.certof(kp: tlskeypair): str
 
-The PEM-encoded certificate from a keypair.
+The PEM-encoded certificate from a keypair: a copy, so it stays valid after `tls.freekeypair`.
 
 ### tls.keyof(kp: tlskeypair): str
 
-The PEM-encoded private key from a keypair. This is secret material.
+The PEM-encoded private key from a keypair. This is secret material. It is the keypair's own buffer, not a copy (a copy could not be wiped), so `tls.freekeypair` zeroes and frees it: do not use the string afterwards.
 
 ### tls.freekeypair(kp: tlskeypair): bool
 

@@ -35,6 +35,7 @@
 #include "../../stdlib/vendor/miniz/miniz.c"
 
 #include "zip.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -178,7 +179,7 @@ static int zip_validate(TkZipArchive *a)
             goto fail;
         }
 
-        size_t nlen = strlen(st.m_filename);
+        size_t nlen = tk_strlen(st.m_filename);
         const char *why = zip_name_reject(st.m_filename, nlen);
         if (why) { zip_fail(ZIP_E_BADENTRY, why); goto fail; }
 

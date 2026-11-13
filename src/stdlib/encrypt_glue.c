@@ -21,6 +21,7 @@
 
 #include "encrypt.h"
 #include "bytes_rt.h"   /* tk_bytes_pack / tk_bytes_unpack */
+#include "tk_strhdr.h"  /* 127.295: sealed strings */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,13 +35,13 @@ static int64_t tk_rec2(int64_t f0, int64_t f1) {
     return (int64_t)(intptr_t)r;
 }
 
+/* 127.295 (runtime-abi §3.1, fifteenth tranche): the one str this glue
+ * hands toke, DecryptResult.err, is a sealed copy (tks_strdup) of the core's
+ * static message.  A sealed string is never freed, so the record is made
+ * first and the copy stored into it. */
 static int64_t dup_str_i64(const char *s) {
     if (!s) s = "";
-    size_t n = strlen(s);
-    char *out = (char *)malloc(n + 1);
-    if (!out) return 0;
-    memcpy(out, s, n + 1);
-    return (int64_t)(intptr_t)out;
+    return (int64_t)(intptr_t)tks_strdup(s);
 }
 
 /* encrypt.aes256gcm_encrypt(key,nonce,plaintext,aad):[byte]
@@ -70,12 +71,13 @@ int64_t tk_encrypt_aes256gcmdecrypt_w(int64_t key, int64_t nonce,
     EncryptResult res = encrypt_aes256gcm_decrypt(kba, nba, cba, aba);
     int64_t ok_slot  = res.is_err ? tk_bytes_pack((const uint8_t *)"", 0)
                                   : tk_bytes_pack(res.ok, res.ok_len);
-    int64_t err_slot = dup_str_i64(res.is_err ? (res.err_msg ? res.err_msg : "decrypt failed") : "");
+    const char *msg = res.is_err ? (res.err_msg ? res.err_msg : "decrypt failed") : "";
+    /* 135.3c: the message copy leaked when the record box could not be made;
+     * 127.295: so the box comes first, and the (sealed) copy only into it. */
+    int64_t rec = tk_rec2(ok_slot, 0);
+    if (rec) ((int64_t *)(intptr_t)rec)[1] = dup_str_i64(msg);
     if (res.ok) free(res.ok);
     free(kb); free(nb); free(cb); free(ab);
-    int64_t rec = tk_rec2(ok_slot, err_slot);
-    /* 135.3c: the message copy leaked when the record box could not be made. */
-    if (!rec) free((void *)(intptr_t)err_slot);
     return rec;
 }
 

@@ -235,8 +235,19 @@ reader:
     return 0;
 }
 C
-if "${CC}" ${CF} -iquote "${S}" -I"${S}" -include "${WORK}/fault.h" -c -o "${WORK}/csv.o" "${S}/csv.c" >"${WORK}/cb.cc" 2>&1 \
-   && "${CC}" ${CF} -iquote "${S}" -I"${S}" -o "${WORK}/t_csv" "${WORK}/t_csv.c" "${WORK}/csv.o" "${WORK}/fault.c" >>"${WORK}/cb.cc" 2>&1; then
+# 127.295: csv.c reads lengths with tk_strlen too, so the same holds for
+# std.csv's link set (--except csv.c, compiled with the fault hooks).
+CLINK=()
+if CLS="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except csv.c --cc "${CC}" \
+        --objects csv -- "${JCF[@]}" 2>"${WORK}/cls.log")"; then
+    while IFS= read -r l; do [ -n "$l" ] && CLINK+=("$l"); done <<< "${CLS}"
+else
+    echo "error: stdlib link set: $(head -c 300 "${WORK}/cls.log")" > "${WORK}/cb.cc"
+fi
+if [ "${#CLINK[@]}" -gt 0 ] \
+   && "${CC}" "${JCF[@]}" -include "${WORK}/fault.h" -c -o "${WORK}/csv.o" "${S}/csv.c" >>"${WORK}/cb.cc" 2>&1 \
+   && "${CC}" "${JCF[@]}" -o "${WORK}/t_csv" "${WORK}/t_csv.c" "${WORK}/csv.o" "${WORK}/fault.c" \
+        "${CLINK[@]}" -lm -lpthread >>"${WORK}/cb.cc" 2>&1; then
     run "${WORK}/t_csv" csv_parse parse
     run "${WORK}/t_csv" csv_reader reader
 else

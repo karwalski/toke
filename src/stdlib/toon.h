@@ -17,6 +17,11 @@
  *   ToonErr        = struct { ToonErrKind kind; const char *msg; }
  *   Toon!ToonErr   = ToonResult
  *
+ * Ownership (127.295): the strs toon_enc, toon_str (.ok), toon_from_json and
+ * toon_to_json return are sealed strings (tk_strhdr.h) or the literals ""
+ * and "[]": never free them.  A ToonArray's element raws (toon_arr) and its
+ * data block stay malloc'd and belong to the caller.
+ *
  * Story: 6.3.2
  */
 
