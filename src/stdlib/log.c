@@ -6,16 +6,25 @@
  *   {"level":"info","msg":"...","fields":{"k1":"v1"},"ts":"<ISO8601>"}\n
  *
  * Log level is read once from TK_LOG_LEVEL on first use, then cached.
- * Levels (lowest to highest): DEBUG=0, INFO=1, WARN=2, ERROR=3.
+ * Levels (lowest to highest): DEBUG=0, INFO=1, WARN=2, ERROR=3; names are
+ * matched case-insensitively (127.407).
  * Default when TK_LOG_LEVEL is absent or unrecognised: INFO (1).
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length this file takes is read
+ * with tk_strlen (tk_strhdr.h) -- O(1) for a sealed toke string, strlen for
+ * anything else.  std.log hands toke no strings (every entry point returns
+ * an int or a handle), so there is no producer to seal; the strdup'd sink
+ * paths, split dir/stem/ext and redacted copies are this file's own storage,
+ * freed by it, and stay malloc'd.
+ *
  * Story: 3.8.1  Branch: feature/stdlib-3.8-log
  */
 
 #include "log.h"
+#include "tk_strhdr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,14 +74,34 @@ static FILE *output_stream(void)
  * Level initialisation
  * ---------------------------------------------------------------------- */
 
+/* ASCII case-insensitive equality, independent of the C locale. */
+static int level_name_eq(const char *s, const char *upper)
+{
+    for (; *s && *upper; s++, upper++) {
+        unsigned char c = (unsigned char)*s;
+        if (c >= 'a' && c <= 'z') c = (unsigned char)(c - 'a' + 'A');
+        if (c != (unsigned char)*upper) return 0;
+    }
+    return *s == '\0' && *upper == '\0';
+}
+
+/* 127.407: level names are case-insensitive ("error", "Error", "ERROR"), as
+ * docs/stdlib/log.md promises for log.setlevel and TK_LOG_LEVEL.  Returns the
+ * level, or -1 for NULL or an unrecognised name. */
+static int level_from_name(const char *s)
+{
+    if (!s) return -1;
+    if (level_name_eq(s, "DEBUG")) return TK_LOG_DEBUG;
+    if (level_name_eq(s, "INFO"))  return TK_LOG_INFO;
+    if (level_name_eq(s, "WARN"))  return TK_LOG_WARN;
+    if (level_name_eq(s, "ERROR")) return TK_LOG_ERROR;
+    return -1;
+}
+
 static int parse_level(const char *s)
 {
-    if (!s) return TK_LOG_INFO;
-    if (strcmp(s, "DEBUG") == 0) return TK_LOG_DEBUG;
-    if (strcmp(s, "INFO")  == 0) return TK_LOG_INFO;
-    if (strcmp(s, "WARN")  == 0) return TK_LOG_WARN;
-    if (strcmp(s, "ERROR") == 0) return TK_LOG_ERROR;
-    return TK_LOG_INFO; /* unrecognised → default INFO */
+    int lv = level_from_name(s);
+    return lv < 0 ? TK_LOG_INFO : lv; /* absent/unrecognised -> default INFO */
 }
 
 static void ensure_level(void)
@@ -84,15 +113,13 @@ static void ensure_level(void)
 
 void tk_log_set_level(const char *level)
 {
-    int parsed = parse_level(level);
-    /* parse_level returns INFO for unknown strings; only accept known ones. */
-    if (level &&
-        (strcmp(level, "DEBUG") == 0 || strcmp(level, "INFO")  == 0 ||
-         strcmp(level, "WARN")  == 0 || strcmp(level, "ERROR") == 0)) {
-        g_level = parsed;
-    }
-    /* If level is unrecognised, leave g_level as-is (or initialise). */
-    if (g_level == TK_LOG_UNINIT) g_level = TK_LOG_INFO;
+    int parsed = level_from_name(level);
+    /* Only a recognised name changes the level. */
+    if (parsed >= 0) { g_level = parsed; return; }
+    /* 127.411: an unrecognised name leaves the effective level unchanged.
+     * Before the first log call that level is the one TK_LOG_LEVEL selects,
+     * so initialise from the environment rather than forcing INFO. */
+    ensure_level();
 }
 
 /* -------------------------------------------------------------------------
@@ -212,14 +239,14 @@ int tk_log_redact_keys(const char *csv)
     g_redact_init = 1;
     if (!csv) {
         for (int i = 0; k_redact_default[i]; i++)
-            redact_add(k_redact_default[i], strlen(k_redact_default[i]));
+            redact_add(k_redact_default[i], tk_strlen(k_redact_default[i]));
         return g_redact_count;
     }
     if (strcmp(csv, "off") == 0) return 0;
     const char *p = csv;
     while (*p) {
         const char *e = strchr(p, ',');
-        size_t n = e ? (size_t)(e - p) : strlen(p);
+        size_t n = e ? (size_t)(e - p) : tk_strlen(p);
         while (n && (*p == ' ')) { p++; n--; }
         while (n && p[n - 1] == ' ') n--;
         redact_add(p, n);
@@ -320,7 +347,7 @@ static char *redact_query(const char *target)
     const char *p = q + 1;
     while (*p) {
         const char *amp = strchr(p, '&');
-        const char *end = amp ? amp : p + strlen(p);
+        const char *end = amp ? amp : p + tk_strlen(p);
         const char *eq = memchr(p, '=', (size_t)(end - p));
         if (eq) {
             TkStrBuf k = TK_STRBUF_INIT;
@@ -420,14 +447,17 @@ int tk_log_security_set_output(const char *path)
 }
 
 /* write one finished line with a single fwrite, so concurrent writers to the
- * same file never interleave inside a line */
+ * same file never interleave inside a line.  Returns 1 only when the whole
+ * line was written and flushed; 0 on OOM, a short write or a failed flush
+ * (127.406: log.info & co. return this as their bool). */
 static int write_line(FILE *out, TkStrBuf *b)
 {
     if (b->oom) { strbuf_free(b); return 0; }
-    fwrite(strbuf_cstr(b), 1, b->len, out);
-    fflush(out);
+    size_t n = fwrite(strbuf_cstr(b), 1, b->len, out);
+    int ok = (n == b->len);
+    if (fflush(out) != 0) ok = 0;
     strbuf_free(b);
-    return 1;
+    return ok;
 }
 
 /* -------------------------------------------------------------------------
@@ -871,24 +901,89 @@ static int compress_to_gz(const char *src_path, const char *dst_path)
 
 static int str_ends_with(const char *s, const char *suffix)
 {
-    size_t slen   = strlen(s);
-    size_t sflen  = strlen(suffix);
+    size_t slen   = tk_strlen(s);
+    size_t sflen  = tk_strlen(suffix);
     if (sflen > slen) return 0;
     return strcmp(s + slen - sflen, suffix) == 0;
 }
 
 #define TK_ALOG_MAX_SCAN 4096
 
-typedef struct { char path[1024]; time_t mtime; } AlogEntry;
+/* 127.401: retention used to order by st_mtime alone -- whole seconds -- so
+ * rotations inside one second tied, qsort's order among ties is unspecified,
+ * and the archive deleted could be the NEWEST.  The order is now total and
+ * deterministic, newest first:
+ *   1. mtime, seconds then nanoseconds (sub-second where the platform
+ *      exposes it; 0 elsewhere, so this degrades to step 2);
+ *   2. the rotation stamp in the name, stem.YYYYMMDD-HHMMSS.uuuuuu-PID[-N]
+ *      (rotate_access_log_locked): the fixed-width stamp compares as text,
+ *      then the probe sequence N (absent = 0) numerically -- a later
+ *      rotation in the same microsecond by the same process takes a larger N;
+ *   3. the name itself (any two distinct names differ).
+ * A name without a parseable stamp has an empty one, so it sorts as older
+ * than every stamped archive it ties with. */
+typedef struct {
+    char    path[1024];
+    int64_t mtime_sec;
+    long    mtime_nsec;
+    char    stamp[23];   /* "YYYYMMDD-HHMMSS.uuuuuu" or "" */
+    long    seq;         /* -N probe suffix, 0 when absent */
+    int     name_off;    /* offset of the file name within path */
+} AlogEntry;
+
+#if defined(__APPLE__)
+#define TK_ST_MTIME_NSEC(st) ((long)(st).st_mtimespec.tv_nsec)
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#define TK_ST_MTIME_NSEC(st) ((long)(st).st_mtim.tv_nsec)
+#else
+#define TK_ST_MTIME_NSEC(st) 0L
+#endif
+
+static int alog_isdigits(const char *s, int n)
+{
+    for (int i = 0; i < n; i++)
+        if (s[i] < '0' || s[i] > '9') return 0;
+    return 1;
+}
+
+/* Parse "YYYYMMDD-HHMMSS.uuuuuu-PID[-N]..." at `key` into e->stamp / e->seq. */
+static void alog_parse_stamp(AlogEntry *e, const char *key)
+{
+    e->stamp[0] = '\0';
+    e->seq = 0;
+    if (tk_strlen(key) < 22) return;
+    if (!alog_isdigits(key, 8) || key[8] != '-' || !alog_isdigits(key + 9, 6) ||
+        key[15] != '.' || !alog_isdigits(key + 16, 6))
+        return;
+    memcpy(e->stamp, key, 22);
+    e->stamp[22] = '\0';
+    const char *p = key + 22;
+    if (*p != '-') return;
+    p++;
+    if (*p < '0' || *p > '9') return;
+    while (*p >= '0' && *p <= '9') p++;          /* pid */
+    if (p[0] == '-' && p[1] >= '0' && p[1] <= '9') {
+        long n = 0;
+        for (p++; *p >= '0' && *p <= '9'; p++) {
+            if (n > 100000000L) break;           /* the probe stops at 10001 */
+            n = n * 10 + (*p - '0');
+        }
+        e->seq = n;
+    }
+}
 
 static int alog_mtime_cmp(const void *a, const void *b)
 {
     const AlogEntry *ea = (const AlogEntry *)a;
     const AlogEntry *eb = (const AlogEntry *)b;
     /* descending: newest first */
-    if (eb->mtime > ea->mtime) return  1;
-    if (eb->mtime < ea->mtime) return -1;
-    return 0;
+    if (eb->mtime_sec  != ea->mtime_sec)  return eb->mtime_sec  > ea->mtime_sec  ? 1 : -1;
+    if (eb->mtime_nsec != ea->mtime_nsec) return eb->mtime_nsec > ea->mtime_nsec ? 1 : -1;
+    int c = strcmp(eb->stamp, ea->stamp);
+    if (c != 0) return c > 0 ? 1 : -1;
+    if (eb->seq != ea->seq) return eb->seq > ea->seq ? 1 : -1;
+    c = strcmp(eb->path + eb->name_off, ea->path + ea->name_off);
+    return c > 0 ? 1 : (c < 0 ? -1 : 0);
 }
 
 static void apply_retention(TkAccessLog *log)
@@ -902,18 +997,25 @@ static void apply_retention(TkAccessLog *log)
     if (!files) return;
     int nfiles = 0;
 
+    size_t plen = tk_strlen(prefix);
     DIR *d = opendir(log->dir);
     if (d) {
         struct dirent *ent;
         while ((ent = readdir(d)) != NULL && nfiles < TK_ALOG_MAX_SCAN) {
             const char *name = ent->d_name;
-            if (strncmp(name, prefix, strlen(prefix)) != 0) continue;
+            if (strncmp(name, prefix, plen) != 0) continue;
             if (!str_ends_with(name, suffix))               continue;
             snprintf(files[nfiles].path, sizeof files[nfiles].path,
                      "%s/%s", log->dir, name);
             struct stat st;
             if (stat(files[nfiles].path, &st) != 0) continue;
-            files[nfiles].mtime = st.st_mtime;
+            files[nfiles].mtime_sec  = (int64_t)st.st_mtime;
+            files[nfiles].mtime_nsec = TK_ST_MTIME_NSEC(st);
+            files[nfiles].name_off   =
+                (int)(tk_strlen(files[nfiles].path) - tk_strlen(name));
+            if (files[nfiles].name_off < 0) files[nfiles].name_off = 0;
+            alog_parse_stamp(&files[nfiles], files[nfiles].path +
+                             files[nfiles].name_off + plen);
             nfiles++;
         }
         closedir(d);
@@ -922,7 +1024,7 @@ static void apply_retention(TkAccessLog *log)
     if (log->max_age_days > 0) {
         time_t cutoff = time(NULL) - (time_t)log->max_age_days * 86400;
         for (int i = 0; i < nfiles; i++) {
-            if (files[i].mtime < cutoff) unlink(files[i].path);
+            if (files[i].mtime_sec < (int64_t)cutoff) unlink(files[i].path);
         }
     } else if (log->max_files > 0 && nfiles > log->max_files) {
         qsort(files, (size_t)nfiles, sizeof *files, alog_mtime_cmp);
@@ -1096,7 +1198,7 @@ TkAccessLog *tk_access_log_open(const char *path,
 
     /* dir/.stem.ext.lock — hidden, and not matched by apply_retention (which
      * takes only stem.*ext.gz). */
-    size_t ll = strlen(log->dir) + strlen(log->stem) + strlen(log->ext) + 16;
+    size_t ll = tk_strlen(log->dir) + tk_strlen(log->stem) + tk_strlen(log->ext) + 16;
     log->lock_path = malloc(ll);
     if (!log->path || !log->lock_path) { tk_access_log_close(log); return NULL; }
     snprintf(log->lock_path, ll, "%s/.%s%s.lock", log->dir, log->stem, log->ext);

@@ -16,6 +16,13 @@
  *   tk_sock_nosigpipe SO_NOSIGPIPE where it exists (Darwin, the BSDs): a
  *                     socket property, so it also covers write(2) calls made
  *                     by code we do not own, such as OpenSSL's socket BIO.
+ *                     LIMIT (127.394): Darwin refuses it (EINVAL) on a socket
+ *                     whose peer has already gone -- e.g. one just
+ *                     accept()ed from a TCP client that reset, or an
+ *                     AF_UNIX peer that closed -- and the failure
+ *                     is silent here.  So it never stands alone: plain
+ *                     sends also pass TK_SEND_FLAGS, and OpenSSL is attached
+ *                     with tk_ssl_set_fd_nosigpipe() (tk_ssl_nosigpipe.h).
  *   tk_send_all       the whole buffer through send(fd, ..., TK_SEND_FLAGS),
  *                     retrying EINTR and short writes; 0 on success, -1 on
  *                     error with errno set (EPIPE, ECONNRESET, ...).  As in

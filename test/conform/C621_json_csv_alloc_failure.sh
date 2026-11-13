@@ -125,8 +125,23 @@ writer:
     return 0;
 }
 C
-if "${CC}" ${CF} -iquote "${S}" -I"${S}" -include "${WORK}/fault.h" -c -o "${WORK}/json.o" "${S}/json.c" >"${WORK}/jb.cc" 2>&1 \
-   && "${CC}" ${CF} -iquote "${S}" -I"${S}" -o "${WORK}/t_json" "${WORK}/t_json.c" "${WORK}/json.o" "${WORK}/fault.c" >>"${WORK}/jb.cc" 2>&1; then
+# 127.295: json.c reads lengths with tk_strlen, whose string-heap state lives
+# in str.c, so the rest of std.json's link set comes from stdlib_link_set.sh
+# --objects (--except json.c: it is compiled above with the fault hooks, and
+# only its own allocations are counted), never a hand list.
+# shellcheck disable=SC2206
+JCF=(${CF} -iquote "${S}" -I"${S}")
+JLINK=()
+if JLS="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except json.c --cc "${CC}" \
+        --objects json -- "${JCF[@]}" 2>"${WORK}/jls.log")"; then
+    while IFS= read -r l; do [ -n "$l" ] && JLINK+=("$l"); done <<< "${JLS}"
+else
+    echo "error: stdlib link set: $(head -c 300 "${WORK}/jls.log")" > "${WORK}/jb.cc"
+fi
+if [ "${#JLINK[@]}" -gt 0 ] \
+   && "${CC}" "${JCF[@]}" -include "${WORK}/fault.h" -c -o "${WORK}/json.o" "${S}/json.c" >>"${WORK}/jb.cc" 2>&1 \
+   && "${CC}" "${JCF[@]}" -o "${WORK}/t_json" "${WORK}/t_json.c" "${WORK}/json.o" "${WORK}/fault.c" \
+        "${JLINK[@]}" -lm -lpthread >>"${WORK}/jb.cc" 2>&1; then
     run "${WORK}/t_json" json_arr arr
     run "${WORK}/t_json" json_writer writer
 else

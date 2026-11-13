@@ -631,11 +631,10 @@ int main(void) {
         char *got = (char *)(intptr_t)tk_json_encval_w((int64_t)(intptr_t)r,
                                                        (int64_t)(intptr_t)"{a:i,s:s,p:{x:i}}");
         CHECK(got && strcmp(got, "{\"a\":7,\"s\":\"h\\\"i\",\"p\":{\"x\":-4}}") == 0,
-              "127.361 encval: record -> JSON object, owned, no newline");
-        free(got);
+              "127.361 encval: record -> JSON object, no newline");
+        /* 127.295: the result is a sealed toke str -- never freed. */
         char *gn = (char *)(intptr_t)tk_json_encval_w(0, (int64_t)(intptr_t)"{x:i}");
         CHECK(gn && strcmp(gn, "null") == 0, "127.361 encval: nil record handle is null");
-        free(gn);
         free(r); free(in);
     }
 

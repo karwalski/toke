@@ -1580,9 +1580,11 @@ test-stdlib-db:
 # 127.271: every link line below that compiles src/stdlib/file.c names
 # -lpthread: file.c calls pthread_sigmask (121.84 SIGPIPE guard), which lives in
 # libpthread on glibc < 2.34 (harmless on Darwin and newer glibc).
+# 127.295: file.c reads with tk_strlen, whose sealed-heap state lives in
+# str.c, so every link line that compiles file.c names str.c too.
 test-stdlib-file:
 	$(CC) $(CFLAGS) -o test/stdlib/test_file \
-	    test/stdlib/test_file.c src/stdlib/file.c -lpthread
+	    test/stdlib/test_file.c src/stdlib/file.c src/stdlib/str.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_file
 
 test-stdlib-runtime:
@@ -1746,10 +1748,10 @@ test-stdlib-test:
 # _gzclose) and -lz was never on this line. Passes once linked.
 test-stdlib-log:
 	$(CC) $(CFLAGS) -o test/stdlib/test_log \
-	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c -lz
+	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c src/stdlib/str.c -lz
 	$(RUN_TEST) ./test/stdlib/test_log
 	$(CC) $(CFLAGS) -o test/stdlib/test_log_rotate \
-	    test/stdlib/test_log_rotate.c src/stdlib/log.c src/stdlib/tk_time.c -lz
+	    test/stdlib/test_log_rotate.c src/stdlib/log.c src/stdlib/tk_time.c src/stdlib/str.c -lz
 	$(RUN_TEST) ./test/stdlib/test_log_rotate
 
 test-stdlib-toon:
@@ -1757,9 +1759,11 @@ test-stdlib-toon:
 	    test/stdlib/test_toon.c src/stdlib/toon.c
 	$(RUN_TEST) ./test/stdlib/test_toon
 
+# 127.295: json.c/json_glue.c read lengths with tk_strlen and the glue seals
+# what it hands toke, so the string heap (str.c) is linked.
 test-stdlib-json:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_json \
-	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c
+	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_json
 
 test-stdlib-yaml:
@@ -2155,14 +2159,14 @@ test-stdlib-md:
 
 test-stdlib-toml:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml \
-	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS) -lpthread
+	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c $(TOML_SRCS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml
 
 # Story 127.67: the std.toml wrappers must distinguish a value of false/0
 # from an error, and a missing section must not resolve to its parent.
 test-stdlib-toml-glue:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
-	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/toml_glue.c \
+	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c src/stdlib/toml_glue.c \
 	    src/stdlib/capabilities.c $(TOML_SRCS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
@@ -2386,11 +2390,13 @@ endef
 	fuzz-multipart fuzz-ws-frame fuzz-image fuzz-120-22 fuzz-120-22-run fuzz-smoke
 
 fuzz-json:
-	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,)
+	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,-DTK_STR_NO_HEAP)
 fuzz-yaml:
 	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
+# 127.295: file.c reads with tk_strlen; -DTK_STR_NO_HEAP keeps that inline
+# (strlen) with no sealed-heap state to link, as for fuzz-json.
 fuzz-toml:
-	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS) -lpthread)
+	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS) -DTK_STR_NO_HEAP -lpthread)
 fuzz-toon:
 	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
 fuzz-xml:

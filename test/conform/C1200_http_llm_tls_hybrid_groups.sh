@@ -36,6 +36,32 @@
 # Plus: with TK_TLS_TRACE_GROUP unset nothing is written (production is
 # silent).
 #
+# NO CLOCK IN THE CLIENT CASES (127.395).  The raw OpenSSL server used to
+# write its port to a file that the script polled for 5 s, and the script
+# then polled 5 s for its `srvgroup=` line; worse, the bare client left
+# without reading the response, so the raw server's response write could
+# meet a reset connection and SIGPIPE killed it before it printed the group
+# (measured: 5 of 40 runs, rc 141).  Now the raw server ignores SIGPIPE (it
+# is the test's peer, not code under test), the bare client reads the
+# response to EOF, and the script reads the raw server's stdout through a
+# FIFO: a blocking read of the `port=` line it prints only after listen(),
+# then, after the client has exited and a `Q` connection has queued behind
+# the client's (accept order is connection order), a read to EOF.  Its
+# alarm(120) is a hang guard, not a readiness budget.
+#
+# NO CLOCK IN THE SERVER CASES EITHER (127.398).  serve() used to pick a
+# port with a throwaway python socket (free, then racy), poll 5 s for the
+# driver's `CTX-` line, and leave the raw peer to retry connect() for 5 s;
+# a server slower than that to bind would read as `peer: no connect`.  Now
+# the std.http server is started on port 0 and its stderr comes through a
+# FIFO: a blocking read of the `DIAGNOSTIC: kind=server_listening port=`
+# line http.c prints only after listen() -- which also yields the port, so
+# none is pre-picked -- or EOF, which means it exited first (a refused
+# context: `server not ready`).  The peer then connects once (the port is
+# already listening), and after the server is stopped its stderr is read
+# to EOF, so every trace line it wrote is in srv_<tag>.err.  tcp_to() makes
+# one connect() attempt; the alarm(120) in serve and peer is a hang guard.
+#
 # Negative control: C1200_STDLIB=<src/stdlib of f8ca5638, before 122.15> --
 # see the commit for the measured result.
 #
@@ -112,6 +138,7 @@ CNF
 
 cat > drv.c <<'C'
 /* C1200 driver: one binary, six roles (argv[1]). */
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,22 +167,25 @@ static const char *gname(SSL *s) {
     return g ? g : "(none)";
 }
 
+/* One connect(), no retry: every caller runs only after the script has
+ * read the target's own after-listen() line, so the port is listening. */
 static int tcp_to(int port) {
-    for (int k = 0; k < 200; k++) {
-        int fd = socket(AF_INET, SOCK_STREAM, 0);
-        struct sockaddr_in a; memset(&a, 0, sizeof a);
-        a.sin_family = AF_INET; a.sin_port = htons((uint16_t)port);
-        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        if (connect(fd, (struct sockaddr *)&a, sizeof a) == 0) return fd;
-        close(fd); usleep(25000);
-    }
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a; memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET; a.sin_port = htons((uint16_t)port);
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (fd >= 0 && connect(fd, (struct sockaddr *)&a, sizeof a) == 0) return fd;
+    if (fd >= 0) close(fd);
     return -1;
 }
 
 static Res root(Req q) { (void)q; return http_Res_ok("c1200-ok"); }
 
-/* serve PORT CERT KEY KIND -- a std.http TLS server, one worker */
+/* serve PORT CERT KEY KIND -- a std.http TLS server, one worker.  The
+ * script passes PORT 0 and learns the port from http.c's after-listen()
+ * `DIAGNOSTIC: kind=server_listening port=` stderr line. */
 static int do_serve(int port, const char *cert, const char *key, const char *kind) {
+    alarm(120);                 /* hang guard only: the script never waits on a clock */
     TkTlsCtx *t = NULL;
     if (strcmp(kind, "plain") == 0 || strcmp(kind, "sni") == 0) {
         t = http_tls_ctx_new(cert, key);
@@ -181,6 +211,7 @@ static int do_serve(int port, const char *cert, const char *key, const char *kin
 
 /* peer PORT [SNI] -- a raw OpenSSL client against the std.http server */
 static int do_peer(int port, const char *sni) {
+    alarm(120);                 /* hang guard only */
     int fd = tcp_to(port);
     if (fd < 0) { printf("peer: no connect\n"); return 1; }
     SSL_CTX *x = SSL_CTX_new(TLS_client_method());
@@ -198,8 +229,12 @@ static int do_peer(int port, const char *sni) {
     return 0;
 }
 
-/* rawsrv PORTFILE CERT KEY N -- a raw OpenSSL server for the toke clients */
-static int do_rawsrv(const char *pf, const char *cert, const char *key, int nconn) {
+/* rawsrv CERT KEY -- a raw OpenSSL server for the toke clients.  Prints
+ * "port=P" once it is listening, one srvgroup= line per TLS connection, and
+ * exits at the first connection whose first byte is 'Q' (see `quit`). */
+static int do_rawsrv(const char *cert, const char *key) {
+    signal(SIGPIPE, SIG_IGN);   /* a client that has left is not this peer's failure */
+    alarm(120);                 /* hang guard only: the script never waits on a clock */
     SSL_CTX *x = SSL_CTX_new(TLS_server_method());
     if (SSL_CTX_set1_groups_list(x, PEER_GROUPS) != 1 ||
         SSL_CTX_use_certificate_chain_file(x, cert) != 1 ||
@@ -212,10 +247,12 @@ static int do_rawsrv(const char *pf, const char *cert, const char *key, int ncon
     socklen_t al = sizeof a;
     if (bind(ls, (struct sockaddr *)&a, sizeof a) != 0 || listen(ls, 8) != 0) return 1;
     getsockname(ls, (struct sockaddr *)&a, &al);
-    FILE *f = fopen(pf, "w"); fprintf(f, "%d\n", ntohs(a.sin_port)); fclose(f);
-    for (int i = 0; i < nconn; i++) {
+    printf("port=%d\n", ntohs(a.sin_port)); fflush(stdout);
+    for (;;) {
         int c = accept(ls, NULL, NULL);
         if (c < 0) continue;
+        char q;
+        if (recv(c, &q, 1, MSG_PEEK) == 1 && q == 'Q') { close(c); break; }
         SSL *s = SSL_new(x); SSL_set_fd(s, c);
         if (SSL_accept(s) != 1) {
             printf("srvgroup=(handshake failed)\n"); fflush(stdout);
@@ -256,15 +293,25 @@ int main(int argc, char **argv) {
         return do_serve(atoi(argv[2]), argv[3], argv[4], argv[5]);
     if (strcmp(role, "peer") == 0 && argc >= 3)
         return do_peer(atoi(argv[2]), argc > 3 ? argv[3] : NULL);
-    if (strcmp(role, "rawsrv") == 0 && argc == 6)
-        return do_rawsrv(argv[2], argv[3], argv[4], atoi(argv[5]));
+    if (strcmp(role, "rawsrv") == 0 && argc == 4)
+        return do_rawsrv(argv[2], argv[3]);
+    if (strcmp(role, "quit") == 0 && argc == 3) {
+        /* queued behind any client connection; tells rawsrv to exit */
+        int fd = tcp_to(atoi(argv[2]));
+        if (fd >= 0) { (void)write(fd, "Q", 1); close(fd); }
+        return 0;
+    }
     if (strcmp(role, "bareclient") == 0 && argc == 3) {
         /* no group list of its own: whatever the library default/config says */
         int fd = tcp_to(atoi(argv[2]));
         SSL_CTX *x = SSL_CTX_new(TLS_client_method());
         SSL *s = SSL_new(x); SSL_set_fd(s, fd);
         int ok = fd >= 0 && SSL_connect(s) == 1;
-        if (ok) SSL_write(s, "GET / HTTP/1.1\r\n\r\n", 18);
+        if (ok) {
+            char rb[4096];
+            SSL_write(s, "GET / HTTP/1.1\r\n\r\n", 18);
+            while (SSL_read(s, rb, (int)sizeof rb) > 0) {}   /* to EOF: leave politely */
+        }
         printf("bare: %s %s\n", ok ? "ok" : "fail", ok ? gname(s) : "");
         return 0;
     }
@@ -308,37 +355,72 @@ build() {   # name [extra -D flags...]
         return 1
     fi
 }
-free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 
-# serve BIN KIND TAG [ENV...] -> starts the std.http server; SRV, PORT set
+# serve BIN KIND TAG [ENV...] -> starts the std.http server on port 0; SRV
+# set, PORT set once it is listening, or empty if it exited first.
+# No clock (127.398): its stderr comes through a FIFO on fd 4, read (into
+# srv_<tag>.err) until the after-listen() line or EOF.  serve_end stops it
+# and reads the rest to EOF.
 serve() {
     local bin="$1" kind="$2" tag="$3"; shift 3
-    PORT="$(free_port)"
-    env "$@" "./${bin}" serve "${PORT}" c.pem k.pem "${kind}" > "srv_${tag}.out" 2> "srv_${tag}.err" &
+    local fifo="srv_${tag}.fifo" line
+    PORT=""
+    rm -f "${fifo}"; : > "srv_${tag}.err"; mkfifo "${fifo}"
+    env "$@" "./${bin}" serve 0 c.pem k.pem "${kind}" > "srv_${tag}.out" 2> "${fifo}" &
     SRV=$!
-    for _ in $(seq 1 100); do grep -q 'CTX-' "srv_${tag}.out" 2>/dev/null && break; sleep 0.05; done
+    exec 4< "${fifo}"
+    while IFS= read -r line <&4; do
+        echo "${line}" >> "srv_${tag}.err"
+        case "${line}" in
+            "DIAGNOSTIC: kind=server_listening port="*) PORT="${line##*port=}"; break ;;
+        esac
+    done
+}
+serve_end() {   # TAG
+    local line
+    stop "${SRV}"; SRV=""
+    while IFS= read -r line <&4; do echo "${line}" >> "srv_$1.err"; done
+    exec 4<&-
 }
 # server_case BIN KIND TAG WANT_GROUP [SNI] [ENV...]: server + raw peer
 server_case() {
     local bin="$1" kind="$2" tag="$3" want="$4" sni="$5"; shift 5
     serve "${bin}" "${kind}" "${tag}" "$@"
     local got
-    got="$(env "$@" "./${bin}" peer "${PORT}" ${sni} 2>&1)"
-    stop "${SRV}"; SRV=""
+    if [ -n "${PORT}" ]; then
+        got="$(env "$@" "./${bin}" peer "${PORT}" ${sni} 2>&1)"
+    else
+        got="server not ready: $(cat "srv_${tag}.out" "srv_${tag}.err" | tr '\n' ' ')"
+    fi
+    serve_end "${tag}"
     expect "${tag}: the peer sees ${want} and the response" "${got}" "group=${want} body_ok=1"
 }
 # client_case BIN ROLE TAG [ENV...]: raw server + toke client; prints
 # "<server-observed group>|<client output>"
+# No clock (127.395): the raw server's stdout comes through a FIFO.  The
+# first read blocks until it prints port= (after listen) or exits (EOF: "not
+# ready"); the last reads to EOF, which comes after `quit` because its
+# connection queues behind the client's.
 client_case() {
     local bin="$1" role="$2" tag="$3"; shift 3
-    rm -f "raw_${tag}.port"
-    env "$@" "./${bin}" rawsrv "raw_${tag}.port" c.pem k.pem 1 > "raw_${tag}.out" 2>&1 &
+    local fifo="raw_${tag}.fifo" line port="" out
+    rm -f "${fifo}" "raw_${tag}.out"; mkfifo "${fifo}"
+    env "$@" "./${bin}" rawsrv c.pem k.pem > "${fifo}" 2>&1 &
     SRV=$!
-    for _ in $(seq 1 100); do [ -s "raw_${tag}.port" ] && break; sleep 0.05; done
-    local out
-    out="$(env SSL_CERT_FILE="${WORK}/c.pem" "$@" "./${bin}" "${role}" "$(cat "raw_${tag}.port")" 2> "cli_${tag}.err")"
-    for _ in $(seq 1 100); do grep -q srvgroup "raw_${tag}.out" && break; sleep 0.05; done
-    stop "${SRV}"; SRV=""
+    exec 3< "${fifo}"
+    while IFS= read -r line <&3; do
+        echo "${line}" >> "raw_${tag}.out"
+        case "${line}" in port=*) port="${line#port=}"; break ;; esac
+    done
+    if [ -n "${port}" ]; then
+        out="$(env SSL_CERT_FILE="${WORK}/c.pem" "$@" "./${bin}" "${role}" "${port}" 2> "cli_${tag}.err")"
+        "./${bin}" quit "${port}"
+    else
+        out="raw server not ready: $(tr '\n' ' ' < "raw_${tag}.out")"
+    fi
+    while IFS= read -r line <&3; do echo "${line}" >> "raw_${tag}.out"; done
+    exec 3<&-
+    wait "${SRV}" 2>/dev/null; SRV=""
     echo "$(sed -n 's/^srvgroup=//p' "raw_${tag}.out" | head -1)|${out}"
 }
 has() { grep -c -- "$2" "$1" 2>/dev/null | tr -d ' '; }
@@ -403,7 +485,7 @@ if build C "-DTK_TLS_GROUPS_HYBRID=\"TkC1200NoSuchHybrid:TkC1200NoSuchClassical\
            "-DTK_TLS_GROUPS_CLASSICAL=\"TkC1200NoSuchClassical\""; then
     for k in plain config; do
         serve drv_C "${k}" "C_${k}"
-        stop "${SRV}"; SRV=""
+        serve_end "C_${k}"
         expect "C_${k}: the server context is refused" "$(head -1 "srv_C_${k}.out")" "CTX-NULL"
     done
     expect "C_httpc: the std.http client fails closed" \

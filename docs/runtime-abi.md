@@ -568,6 +568,103 @@ and free nothing they did not allocate.  Gates: C1540 (an ASan C driver over
 allocations failing in turn, under `TK_STR_VERIFY=1`, plus a toke program)
 and C1541 (the same over every `std.soap` producer and its glue).
 
+**Step 5, eleventh tranche (story 127.295, Batch Z180).**  `std.log`,
+`std.xlsx` and `std.ocr`, each converted completely (`log.c`, `xlsx.c`,
+`xlsx_glue.c`, `ocr.c` and `ocr_glue.c` read only with `tk_strlen`; their
+ratchet entries are deleted).  `std.log` hands toke no strings -- every entry
+point returns an int or a handle -- so only its readers change.  Every str
+`std.xlsx` hands toke (sheet names, the four str slots of each `$xlsxcell`,
+`xlsx.datefromserial`'s text) and every str `std.ocr` hands toke (each
+`$ocrrun`'s text, the `ocr.text` / `ocr.textfile` join, `ocr.languages`) is a
+sealed copy (`tks_dup` of the C-string length) made in the glue; a cell
+whose four strings cannot all be made no longer frees the ones that were.
+`ocr.languages` used to hand toke `ocr.c`'s static list buffer itself, which
+every `ocr_languages()` call (`ocr.setlanguages` makes one) clears and
+refills under a string the program still held; it is now a copy.
+`ocr.engine` and `xlsx.datesystem` stay string literals.  Left as they are,
+on purpose: the workbook's names, rels, shared strings and cells (the book's
+and sheet's own malloc'd storage, freed by `xlsx_close` / `xlsx_sheet_free`),
+the runs' text and the `ocr_page_text` join (freed by `ocr_page_free` and the
+glue), `ocr.c`'s static error and language buffers, and `log.c`'s strdup'd
+sink paths, split dir/stem/ext and redacted copies (the log's own storage).
+`test-stdlib-log` links `str.c`; the hand-built harnesses that compiled
+`log.c` or `ocr.c` without it (C205, and C033's `-U__APPLE__` no-engine
+build) take the module's link set from `stdlib_link_set.sh --objects`
+(`--except` the file they compile or `#include` themselves).  Not in this
+tranche: `cache.c` (linked with `std.http`, but nothing in the tree calls
+`http_cache_*` and nothing tests it) and `json.c` / `json_glue.c` (core;
+the next tranche).  Gates: C1560 (an ASan C driver over `std.log`'s readers
+with every input sealed, against the same driver on unsealed copies, plus a
+toke program), C1561 (an ASan C driver over every `std.xlsx` glue producer on
+a zipfile-written workbook, plus a toke program) and C1562 (the same over
+`std.ocr`'s glue, including Vision recognition when the host has it).
+
+**Step 5, twelfth tranche (story 127.295, Batch Z184).**  `std.json`,
+converted completely (`json.c` and `json_glue.c` read only with
+`tk_strlen`; both ratchet entries are deleted).  Every str the glue hands
+toke is sealed: `json.enc` / `encstr` / `quote` / `stringify` / `encode`,
+`json.str` and its aliases (`getstr`, `getstring`, `getopt`, `trystr`,
+`trystrkey`), each element of `json.keys`, `json.values`, `json.entries` and
+`json.parsearray`, `json.getval`, `json.strarr`, the typed encoders
+`json.encnum` / `encbool` / `encf64`, and `j.enc` of an array (`encarr`) or
+of a typed value (`encval`).  `json.c`'s own producers (`json_enc`,
+`json_str`, `json_keys`, `json_at`, `json_index` ...) stay malloc'd, because
+their C callers -- `json.c` itself (`json_from_pairs`), the glue and the C
+tests -- free what they return; so the seal is made at the boundary:
+`seal_take()` copies the result into a sealed string (measured with
+`tk_strlen`, so a decoded `\u0000` ends it where every C reader already saw
+it end) and frees the malloc'd original, handing the original over unsealed
+only if the copy cannot be made.  No C code calls a `tk_json_*_w` str
+producer (the compiler is the only caller), so no C caller had to stop
+freeing; the two C tests that freed `tk_json_encval_w` results
+(`test_json.c`, C1380) no longer do.  Left as they are, on purpose:
+`json.serialize` returns the document's own text (`Json.raw`, shared by
+every handle copied from it) -- sealing it would add a copy to every
+response a web handler serialises, for no reader that needs the header; a
+`$jsonval`'s raw text (`json.dec` keeps its input; `json.obj`, the `set*`
+builders, `json.at`, `json.get` and `json.arr` own a malloc'd copy) is the
+document's storage, not a str toke holds; the `""`/`[]`/`0`/`null`
+fallbacks are literals.  `test-stdlib-json` links `str.c`; `fuzz-json`
+builds with `-DTK_STR_NO_HEAP`; the hand-built harnesses that compiled
+`json.c` alone (C132, C312, C352, C621, C760, C840) take `std.json`'s link
+set from `stdlib_link_set.sh --objects` (`--except json.c` where they
+compile it themselves with fault-injection or counting allocators).  Gate:
+C1600 (an ASan C driver over every glue str producer and over `json.c`'s
+readers with sealed inputs, plus a toke program, under `TK_STR_VERIFY=1`).
+
+**Step 5, thirteenth tranche (story 127.295, Batch Z187).**  `std.file`,
+converted completely (`file.c` and `file_glue.c` read only with
+`tk_strlen`; both ratchet entries are deleted).  Every str the glue hands
+toke is sealed: `file.read` already was (`file_read_into` with
+`tks_alloc`/`tks_seal`, 127.170); `file.realpath`, each element of
+`file.list` / `file.listdir`, `file.listall`, `file.readlines` and
+`file.listglob`, and `file.tempdir` now are.  `file.c`'s producers
+(`file_read`, `file_realpath`, `file_list`, `file_listall`,
+`file_readlines`, `file_glob`) stay malloc'd, because their C callers free
+what they return -- `toml.c` (`file_read`), `test_file.c` (every
+producer), C592 (`file_listall`) and the coverage test (`file_list`'s
+block); so, as for
+`std.json`, the seal is made at the boundary: `seal_take()` copies the
+result into a sealed string and frees the malloc'd original, handing the
+original over unsealed only if the copy cannot be made.  No C code calls a
+`tk_file_*_w` str producer.  `file.tempdir` used to hand toke `getenv()`'s
+own pointer into the process environment, which a later `setenv` of
+`TMPDIR` may overwrite or free under a str the program still holds (the
+defect 121.75 / 121.78 fixed for `os.getenv` / `env.get`; on Darwin the
+old value is freed); it is now a copy, with the environment's pointer
+handed over only if the copy cannot be made.  Left as they are, on
+purpose: `file.err` returns its argument; the `"/tmp"` fallback of
+`file.tempdir` is a literal; `file_absolute` (no glue caller) and
+`file.c`'s own scratch (the `mkdir_p` prefix copy, `rmdir_r`'s child paths,
+`readlines`' file buffer) are freed before they return.
+`test-stdlib-file`, `test-stdlib-toml` and `test-stdlib-toml-glue` link
+`str.c`; `fuzz-toml` builds with `-DTK_STR_NO_HEAP`; C699's signal probe,
+which compiled `file.c` alone, takes `std.file`'s link set from
+`stdlib_link_set.sh --objects`.  Gate: C1630 (an ASan C driver over every
+glue str producer and over the readers with every argument sealed, against
+the same calls on unsealed copies, plus a toke program, under
+`TK_STR_VERIFY=1`).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

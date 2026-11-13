@@ -228,7 +228,16 @@ int main(int argc, char **argv) {
     return bad;
 }
 EOF
-if "${CC}" -std=c99 -D_GNU_SOURCE -I"${S}" -o probe probe.c "${S}/file.c" -lpthread >probe.cl 2>&1; then
+# 127.295: file.c reads with tk_strlen (str.c holds the sealed heap's state),
+# so the probe takes std.file's link set from stdlib_link_set.sh --objects
+# rather than compiling file.c alone.
+PCF=(-std=c99 -D_GNU_SOURCE -I"${S}")
+PLINK="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" \
+        --objects file -- "${PCF[@]}" 2>probe.ls)" || PLINK=""
+PLS=(); while IFS= read -r l; do [ -n "$l" ] && PLS+=("$l"); done <<< "${PLINK}"
+if [ -z "${PLINK}" ]; then
+    fail "6 probe: stdlib link set failed"; sed 's/^/      | /' probe.ls | head -5
+elif "${CC}" "${PCF[@]}" -o probe probe.c "${PLS[@]}" -lz -lpthread -lm >probe.cl 2>&1; then
     rc=0; out="$(./probe ff 2>&1)" || rc=$?
     if [ "${rc}" -eq 0 ] && [ "${out}" = "GOOD" ]; then
         pass "6 signal state after EPIPE: disposition SIG_DFL, mask restored, nothing left pending, prior pending kept"

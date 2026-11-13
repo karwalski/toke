@@ -9,6 +9,7 @@
 #include "json.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "tk_runtime.h" /* 127.193: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -26,9 +27,47 @@ static int64_t f64_to_i64(double d) {
     return i;
 }
 
+/*
+ * 127.295 (runtime-abi §3.1, twelfth tranche) -- every str this glue hands
+ * toke is sealed: json.enc/encstr/quote/stringify/encode, json.str and its
+ * aliases (getstr, getstring, getopt, trystr, trystrkey), the elements of
+ * json.keys / values / entries / parsearray, json.getval, json.strarr,
+ * json.encnum/encbool/encf64, j.enc of an array (encarr) or of a typed value
+ * (encval).  json.c's own producers (json_enc, json_str, json_keys, ...) stay
+ * malloc'd: their C callers -- json.c itself (json_from_pairs), this
+ * file and the C tests -- free what they return.  So the seal happens here,
+ * at the boundary: seal_take() makes the sealed copy toke keeps and frees the
+ * malloc'd original.  The copy is measured with tk_strlen (strlen for the
+ * malloc'd original), so a decoded \u0000 ends the string exactly where every
+ * C reader already saw it end.  If the sealed copy cannot be made, the
+ * original is handed over instead -- an unsealed string is read correctly,
+ * only with strlen.  A sealed string is never freed, by anyone.
+ *
+ * Left alone, on purpose: json.serialize returns the document's own text
+ * (Json.raw, owned by the $jsonval and aliased by every handle copied from
+ * it -- a copy per call would add an allocation to every response a web
+ * handler writes for no reader that needs it); a Json's raw text (json.dec
+ * keeps its input, json.obj / set* / at / arr own a malloc'd copy) is the
+ * document's storage, not a str toke holds; the "\"\"" / "[]" / "0" / "null"
+ * fallbacks are string literals.
+ */
+static char *seal_take(char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free(s);
+    return t;
+}
+
+/* A sealed copy of a C string built in a stack buffer; lit on failure. */
+static int64_t seal_lit(const char *s, const char *lit) {
+    char *t = tks_strdup(s);
+    return (int64_t)(intptr_t)(t ? t : lit);
+}
+
 int64_t tk_json_enc_w(int64_t val) {
     if (!val) return (int64_t)(intptr_t)"\"\"";
-    const char *e = json_enc((const char *)(intptr_t)val);
+    char *e = seal_take((char *)json_enc((const char *)(intptr_t)val));
     return (int64_t)(intptr_t)(e ? e : "\"\"");
 }
 
@@ -85,7 +124,7 @@ int64_t tk_json_str_w(int64_t obj, int64_t key) {
     StrJsonResult res = json_str(*jp, (const char *)(intptr_t)key);
     if (res.is_err) return json_raise(res.err.kind, res.err.msg);
     tk_current_error = 0;
-    return (int64_t)(intptr_t)res.ok;
+    return (int64_t)(intptr_t)seal_take((char *)res.ok);
 }
 
 int64_t tk_json_i64_w(int64_t obj, int64_t key) {
@@ -269,8 +308,8 @@ int64_t tk_json_keys_w(int64_t obj) {
     }
     int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < r.ok.len; i++)
-        block[i] = (int64_t)(intptr_t)r.ok.data[i];
-    free(r.ok.data); /* the strings are owned by the toke array now */
+        block[i] = (int64_t)(intptr_t)seal_take((char *)r.ok.data[i]);
+    free(r.ok.data); /* sealed copies in the toke array; originals freed */
     tk_current_error = 0;
     return h;
 }
@@ -288,7 +327,7 @@ int64_t tk_json_values_w(int64_t obj) {
         if (vr.is_err)
             block[i] = 0;
         else
-            block[i] = (int64_t)(intptr_t)vr.ok;
+            block[i] = (int64_t)(intptr_t)seal_take((char *)vr.ok);
         free((void *)kr.ok.data[i]);
     }
     free(kr.ok.data);
@@ -304,7 +343,7 @@ int64_t tk_json_err_w(int64_t msg) {
     const char *mstr = msg ? (const char *)(intptr_t)msg : "error";
     const char *enc = json_enc(mstr);
     if (!enc) return 0;
-    size_t elen = strlen(enc);
+    size_t elen = tk_strlen(enc);
     size_t blen = 10 + elen + 2;
     char *buf = (char *)malloc(blen);
     if (!buf) { free((void *)enc); return 0; }
@@ -320,7 +359,7 @@ int64_t tk_json_ok_w(int64_t val) {
     const char *vstr = val ? (const char *)(intptr_t)val : "";
     const char *enc = json_enc(vstr);
     if (!enc) return 0;
-    size_t elen = strlen(enc);
+    size_t elen = tk_strlen(enc);
     size_t blen = 7 + elen + 2;
     char *buf = (char *)malloc(blen);
     if (!buf) { free((void *)enc); return 0; }
@@ -425,7 +464,7 @@ int64_t tk_json_getopt_w(int64_t obj, int64_t key) {
     if (json_is_null(*jp, (const char *)(intptr_t)key)) return 0;
     StrJsonResult r = json_str(*jp, (const char *)(intptr_t)key);
     if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    return (int64_t)(intptr_t)seal_take((char *)r.ok);
 }
 
 /* json.getval(obj, key) — get raw JSON value at key as string */
@@ -439,7 +478,7 @@ int64_t tk_json_getval_w(int64_t obj, int64_t key) {
     Json *jp = (Json *)(intptr_t)obj;
     JsonResult r = json_at(*jp, (const char *)(intptr_t)key);
     if (r.is_err || !r.ok.raw) return (int64_t)(intptr_t)"";
-    return (int64_t)(intptr_t)r.ok.raw;
+    return (int64_t)(intptr_t)seal_take((char *)r.ok.raw);
 }
 
 /* json.isnullkey(obj, key) — return 1 if key is null or missing */
@@ -452,7 +491,7 @@ int64_t tk_json_isnullkey_w(int64_t obj, int64_t key) {
 /* json.encstr(s) — JSON-escape a string (with quotes) */
 int64_t tk_json_encstr_w(int64_t s) {
     if (!s) return (int64_t)(intptr_t)"\"\"";
-    const char *e = json_enc((const char *)(intptr_t)s);
+    char *e = seal_take((char *)json_enc((const char *)(intptr_t)s));
     return (int64_t)(intptr_t)(e ? e : "\"\"");
 }
 
@@ -559,7 +598,7 @@ int64_t tk_json_entries_w(int64_t obj) {
         if (!oom) {
             JsonResult vr = json_member(*jp, k);
             const char *v = vr.is_err ? "null" : vr.ok.raw;
-            size_t klen = strlen(k), vlen = strlen(v);
+            size_t klen = tk_strlen(k), vlen = tk_strlen(v);
             char *entry = (char *)malloc(klen + 1 + vlen + 1);
             if (entry) {
                 memcpy(entry, k, klen);
@@ -581,7 +620,8 @@ int64_t tk_json_entries_w(int64_t obj) {
         return json_raise(JSON_ERR_PARSE, "json.entries: out of memory");
     }
     int64_t *block = (int64_t *)(intptr_t)h;
-    for (uint64_t i = 0; i < count; i++) block[i] = (int64_t)(intptr_t)ents[i];
+    for (uint64_t i = 0; i < count; i++)
+        block[i] = (int64_t)(intptr_t)seal_take(ents[i]);   /* 127.295 */
     free(ents);
     tk_current_error = 0;
     return h;
@@ -619,7 +659,7 @@ int64_t tk_json_parsearray_w(int64_t s) {
         JsonResult r = json_index(j, i);
         if (r.is_err) { tk_arr_setlen(h, (int64_t)i); break; }
         /* Return the raw JSON text for each element */
-        block[i] = r.ok.raw ? (int64_t)(intptr_t)r.ok.raw : 0;
+        block[i] = r.ok.raw ? (int64_t)(intptr_t)seal_take((char *)r.ok.raw) : 0;
     }
     return h;
 }
@@ -640,7 +680,7 @@ int64_t tk_json_strarr_w(int64_t arr) {
         const char *s = (const char *)(intptr_t)ptr[i];
         const char *enc = json_enc(s ? s : "");
         if (!enc) { free(buf); return (int64_t)(intptr_t)"[]"; }
-        size_t elen = strlen(enc);
+        size_t elen = tk_strlen(enc);
         size_t needed = pos + elen + 2; /* comma + bracket */
         if (needed > cap) {
             while (needed > cap) cap *= 2;
@@ -660,7 +700,7 @@ int64_t tk_json_strarr_w(int64_t arr) {
     }
     buf[pos++] = ']';
     buf[pos] = '\0';
-    return (int64_t)(intptr_t)buf;
+    return (int64_t)(intptr_t)seal_take(buf);
 }
 
 /* json.strarray — alias for strarr */
@@ -735,19 +775,13 @@ int64_t tk_json_encnum_w(int64_t v) {
     char buf[24];  /* -9223372036854775808 = 20 chars + NUL */
     int n = snprintf(buf, sizeof buf, "%lld", (long long)v);
     if (n < 0) return (int64_t)(intptr_t)"0";
-    char *out = (char *)malloc((size_t)n + 1);
-    if (!out) return (int64_t)(intptr_t)"0";
-    memcpy(out, buf, (size_t)n + 1);
-    return (int64_t)(intptr_t)out;
+    return seal_lit(buf, "0");
 }
 
 /* json.encbool(b) — encode a bool as the JSON literal true/false. */
 int64_t tk_json_encbool_w(int64_t b) {
     const char *s = b ? "true" : "false";
-    char *out = (char *)malloc(strlen(s) + 1);
-    if (!out) return (int64_t)(intptr_t)"false";
-    strcpy(out, s);
-    return (int64_t)(intptr_t)out;
+    return seal_lit(s, s);
 }
 
 /* json.encf64(bits) — encode a double (passed as its i64 bit pattern, the
@@ -763,10 +797,7 @@ static void j_fmt_f64(char *buf, size_t n, double v) {
 int64_t tk_json_encf64_w(int64_t bits) {
     char buf[40];
     j_fmt_f64(buf, sizeof buf, i64_to_f64(bits));
-    char *out = (char *)malloc(strlen(buf) + 1);
-    if (!out) return (int64_t)(intptr_t)"0";
-    strcpy(out, buf);
-    return (int64_t)(intptr_t)out;
+    return seal_lit(buf, "0");
 }
 
 /* ── 127.44 / 127.45: typed JSON array printing and encoding ────────────
@@ -811,7 +842,7 @@ static void jbuf_put(JBuf *b, const char *s, size_t n) {
     b->len += n;
     b->p[b->len] = '\0';
 }
-static void jbuf_puts(JBuf *b, const char *s) { jbuf_put(b, s, strlen(s)); }
+static void jbuf_puts(JBuf *b, const char *s) { jbuf_put(b, s, tk_strlen(s)); }
 
 /* One element at the innermost level, by kind. */
 static void jbuf_elem(JBuf *b, int64_t v, int64_t kind) {
@@ -873,14 +904,9 @@ static char *json_arr_text(int64_t h, int64_t depth, int64_t kind) {
 
 /* json.encarr(h, depth, kind) — JSON text of an array, as an owned string. */
 int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind) {
-    JBuf b = { json_arr_text(h, depth, kind), 0, 0 };
-    if (!b.p) {
-        char *empty = (char *)malloc(3);
-        if (!empty) return (int64_t)(intptr_t)"[]";
-        strcpy(empty, "[]");
-        return (int64_t)(intptr_t)empty;
-    }
-    return (int64_t)(intptr_t)b.p;
+    char *text = json_arr_text(h, depth, kind);
+    if (!text) return seal_lit("[]", "[]");
+    return (int64_t)(intptr_t)seal_take(text);
 }
 
 /* json.printarr(h, depth, kind) — the same text, to stdout, with a newline. */
@@ -1010,9 +1036,6 @@ void tk_json_printval_w(int64_t v, int64_t desc) {
 int64_t tk_json_encval_w(int64_t v, int64_t desc) {
     JBuf b = { NULL, 0, 0 };
     jbuf_typed(&b, v, (const char *)(intptr_t)desc);
-    if (b.p) return (int64_t)(intptr_t)b.p;
-    char *nul = (char *)malloc(5);
-    if (!nul) return (int64_t)(intptr_t)"null";
-    memcpy(nul, "null", 5);
-    return (int64_t)(intptr_t)nul;
+    if (b.p) return (int64_t)(intptr_t)seal_take(b.p);
+    return seal_lit("null", "null");
 }

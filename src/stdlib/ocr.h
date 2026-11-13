@@ -135,7 +135,9 @@ int         ocr_is_available(void);
 const char *ocr_engine(void);
 
 /* Comma-separated BCP-47 tags the engine actually supports, queried live.
- * "" when there is no engine.  Never a compiled-in list. */
+ * "" when there is no engine.  Never a compiled-in list.  The pointer is
+ * ocr.c's static buffer, cleared and refilled by every call; the glue hands
+ * toke a sealed copy (127.295), never the buffer. */
 const char *ocr_languages(void);
 
 /* ── Configuration ──────────────────────────────────────────────────────

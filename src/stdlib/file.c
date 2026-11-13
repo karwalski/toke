@@ -9,6 +9,7 @@
  */
 
 #include "file.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen (O(1) for a sealed str) */
 #include <stdio.h>
 #include <stdarg.h>   /* 135.10: formatted last-error messages */
 #include <stdlib.h>
@@ -498,7 +499,7 @@ BoolFileResult file_mkdir(const char *path)
 BoolFileResult file_mkdir_p(const char *path)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
-    size_t len = strlen(path);
+    size_t len = tk_strlen(path);
     char *tmp = malloc(len + 1);
     if (!tmp) {
         r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r;
@@ -542,8 +543,8 @@ BoolFileResult file_rmdir_r(const char *path)
             continue;
 
         /* Build child path: path + "/" + name */
-        size_t plen = strlen(path);
-        size_t nlen = strlen(ent->d_name);
+        size_t plen = tk_strlen(path);
+        size_t nlen = tk_strlen(ent->d_name);   /* a dirent name: strlen fallback */
         char *child = malloc(plen + 1 + nlen + 1);
         if (!child) {
             closedir(d);
@@ -750,7 +751,7 @@ StrArrayFileResult file_readlines(const char *path)
     }
 
     char *content = (char *)fr.ok; /* heap-allocated by file_read */
-    size_t total  = strlen(content);
+    size_t total  = tk_strlen(content);   /* file_read's malloc: strlen fallback */
 
     /* Count lines (number of '\n' in content, adjusted for trailing newline). */
     size_t cap   = 16;
@@ -884,7 +885,7 @@ StrArrayFileResult file_listall(const char *dir) {
     _listall_acc.cap = 64;
     _listall_acc.len = 0;
     _listall_acc.base_dir = dir;
-    _listall_acc.base_len = strlen(dir);
+    _listall_acc.base_len = tk_strlen(dir);
     _listall_acc.data = malloc(_listall_acc.cap * sizeof(const char *));
     if (!_listall_acc.data) {
         r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r;

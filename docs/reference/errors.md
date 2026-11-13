@@ -660,6 +660,8 @@ The workhorse type error. Emitted for mismatched operands in binary expressions,
 
 A `json.parse` result -- the call, or a name an un-annotated `let` bound to one -- passed as the document argument of a `std.json` member that reads a `$jsonval` (`json.str`, `json.getstr`, `json.keys`, `json.has`, ...) is E4031 with no `fix`: `json.parse` returns a str, number, bool or array, never a document; decode object text with `json.decode` or `json.dec` (story 138.9, loke T-17).
 
+The argument of `json.print` or `json.enc` that is, or holds, an opaque std handle -- a `.tki` record with no fields, such as `strbuf` (`str.buf()`), `vechandle` (`vec.new()`), `svgelem` or `securebuf` -- is E4031 with no `fix` (story 127.402). The handle's memory is the runtime's own C struct, so it has no JSON representation. The handle is found directly, as an array element at any depth, or as a field of a plain record at any depth: `j.print(vec.new())`, `j.enc(@(s.buf()))` and `j.enc($h{v:vec.new();n:1})` are all rejected. `expected` is `a value with a JSON representation`, and `got` is the argument's type. Until 127.402, `--check` accepted these and the build stopped with E9002 (internal compiler error), which stays the codegen backstop. A map is not looked into: whether `json.print` prints or rejects a map is story 127.363. To print a handle's contents, print values read from it (`j.print(vec.len(v))`).
+
 The diagnostic may include a fix suggestion such as `"cast RHS to i64 using 'as'"`.
 
 **Composite types print structurally** (127.54). `expected` and `got` render an

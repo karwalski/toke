@@ -55,7 +55,10 @@
  * module allocate.
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
- * compiler code.  The caller owns every returned handle.
+ * compiler code.  The caller owns every returned handle.  Sheet names and
+ * cell strings belong to the book / sheet and die with xlsx_close /
+ * xlsx_sheet_free; the glue copies each one it hands toke into a sealed
+ * string (127.295), which is never freed.
  *
  * Story: 135.4
  */

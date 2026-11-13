@@ -72,6 +72,33 @@ static int64_t file_ok(int64_t v) {
     return v;
 }
 
+/* ══ 127.295 (S1 step 5, thirteenth tranche) — every str handed to toke is sealed
+ *
+ * file.c's producers (file_realpath, file_list, file_listall, file_readlines,
+ * file_glob) stay malloc'd: their C callers -- toml.c (file_read),
+ * test_file.c, C592 and the coverage test -- free what they return.  So the seal is made here, at
+ * the boundary: seal_take() copies a result into a sealed string and frees
+ * the malloc'd original, handing the original over unsealed only if the copy
+ * cannot be made (an unsealed string is read correctly, only with strlen).
+ * file.read was already sealed at the source (file_read_into with
+ * tks_alloc/tks_seal, 127.170).  A sealed string is never freed, by anyone.
+ *
+ * Left alone, on purpose: file.err returns its argument; the "/tmp" fallback
+ * of file.tempdir is a literal. */
+static const char *seal_take(const char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free((void *)s);
+    return t;
+}
+
+/* Seal every element of a StrArray in place (each original freed). */
+static void seal_all(StrArray arr) {
+    for (uint64_t i = 0; i < arr.len; i++)
+        arr.data[i] = seal_take(arr.data[i]);
+}
+
 /* A [str] from a StrArray, or a nomem raise. */
 static int64_t file_strarray(const char *op, StrArray arr, int free_data) {
     int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
@@ -136,6 +163,7 @@ int64_t tk_file_listall_w(int64_t dir) {
     if (!dir) return file_badarg("file.listall: null path");
     StrArrayFileResult r = file_listall((const char *)(intptr_t)dir);
     if (r.is_err) return file_raise_op("file.listall", r.err, dir);
+    seal_all(r.ok);
     /* The strings AND the pointer block are handed over as before: listall's
      * data block was never freed here, and freeing it now is not this
      * story's change. */
@@ -158,7 +186,7 @@ int64_t tk_file_realpath_w(int64_t path) {
     if (!path) return file_badarg("file.realpath: null path");
     StrFileResult r = file_realpath((const char *)(intptr_t)path);
     if (r.is_err) return file_raise_op("file.realpath", r.err, path);
-    return file_ok((int64_t)(intptr_t)r.ok);
+    return file_ok((int64_t)(intptr_t)seal_take(r.ok));
 }
 
 int64_t tk_file_list_w(int64_t dir) {
@@ -166,6 +194,7 @@ int64_t tk_file_list_w(int64_t dir) {
     if (!dir) return file_badarg("file.list: null path");
     StrArrayFileResult r = file_list((const char *)(intptr_t)dir);
     if (r.is_err) return file_raise_op("file.list", r.err, dir);
+    seal_all(r.ok);
     return file_strarray("file.list", r.ok, 1);
 }
 
@@ -207,6 +236,7 @@ int64_t tk_file_readlines_w(int64_t path) {
     if (!path) return 0;
     StrArrayFileResult r = file_readlines((const char *)(intptr_t)path);
     if (r.is_err) return 0;
+    seal_all(r.ok);
     StrArray arr = r.ok;
     int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
     if (!h) return 0;
@@ -232,7 +262,7 @@ int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
     size_t total = 0;
     for (int64_t i = 0; i < len; i++) {
         const char *line = (const char *)(intptr_t)arr[i];
-        if (line) total += strlen(line);
+        if (line) total += tk_strlen(line);
         total++; /* for '\n' */
     }
     char *buf = (char *)malloc(total + 1);
@@ -241,7 +271,7 @@ int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
     for (int64_t i = 0; i < len; i++) {
         const char *line = (const char *)(intptr_t)arr[i];
         if (line) {
-            size_t slen = strlen(line);
+            size_t slen = tk_strlen(line);
             memcpy(buf + pos, line, slen);
             pos += slen;
         }
@@ -288,7 +318,7 @@ int64_t tk_file_appendline_w(int64_t path, int64_t line) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path || !line) return 0;
     const char *l = (const char *)(intptr_t)line;
-    size_t llen = strlen(l);
+    size_t llen = tk_strlen(l);
     char *with_nl = (char *)malloc(llen + 2);
     if (!with_nl) return 0;
     memcpy(with_nl, l, llen);
@@ -313,6 +343,7 @@ int64_t tk_file_listglob_w(int64_t pattern) {
     if (!pattern) return 0;
     StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
     if (r.is_err) return 0;
+    seal_all(r.ok);
     StrArray arr = r.ok;
     int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
     if (!h) return 0;
@@ -338,11 +369,17 @@ int64_t tk_file_remove_w(int64_t path) {
  * a second name for std.file that one downstream project imported) are
  * withdrawn with the module. */
 
-/* file.tempdir() — return a temporary directory path */
+/* file.tempdir() — return a temporary directory path.
+ * 127.295: a sealed copy, not getenv()'s pointer into the process
+ * environment, which a later setenv/unsetenv of TMPDIR may overwrite or free
+ * under a str the program still holds (the os.getenv / env.get defect of
+ * 121.75 / 121.78).  If the copy cannot be made the environment's own
+ * pointer is handed over, as before; "/tmp" is a literal. */
 int64_t tk_file_tempdir_w(void) {
     const char *tmp = getenv("TMPDIR");
-    if (!tmp) tmp = "/tmp";
-    return (int64_t)(intptr_t)tmp;
+    if (!tmp) return (int64_t)(intptr_t)"/tmp";
+    char *t = tks_strdup(tmp);
+    return (int64_t)(intptr_t)(t ? t : tmp);
 }
 
 

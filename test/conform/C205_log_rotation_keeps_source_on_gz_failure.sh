@@ -87,8 +87,17 @@ int main(int argc, char **argv) {
 C
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -Wno-unused-function \
-        -o "${WORK}/t" "${WORK}/t.c" -lz >"${WORK}/cc.log" 2>&1; then
+# 127.295: log.c reads lengths with tk_strlen, whose string-heap state lives
+# in str.c, so the rest of std.log's link set comes from stdlib_link_set.sh
+# --objects (--except log.c: it is #included above), never a hand list.
+# shellcheck disable=SC2206
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except log.c \
+        --cc "${CC}" --objects log -- "${CF[@]}" 2>"${WORK}/ls.log")" \
+    || { echo "  FAIL: stdlib link set: $(head -c 600 "${WORK}/ls.log")"; exit 1; }
+LINK=(); while IFS= read -r l; do [ -n "$l" ] && LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -Wno-unused-function \
+        -o "${WORK}/t" "${WORK}/t.c" "${LINK[@]}" -lz -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 "${WORK}/cc.log")"
     exit 1
 fi

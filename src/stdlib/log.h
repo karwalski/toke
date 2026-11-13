@@ -15,7 +15,7 @@
  *   bool     = int           (0 = false / filtered, 1 = true / emitted)
  *   [[Str]]  = const char ** (flat array of interleaved key/value pairs)
  *
- * Log levels (TK_LOG_LEVEL env var): DEBUG, INFO, WARN, ERROR
+ * Log levels (TK_LOG_LEVEL env var): DEBUG, INFO, WARN, ERROR (any case)
  * Default level when TK_LOG_LEVEL is unset: INFO
  *
  * Story: 3.8.1  Branch: feature/stdlib-3.8-log
@@ -23,7 +23,8 @@
 
 /*
  * tk_log_set_level — programmatically override the log level.
- * Accepts the same strings as TK_LOG_LEVEL: "DEBUG", "INFO", "WARN", "ERROR".
+ * Accepts the same strings as TK_LOG_LEVEL: "DEBUG", "INFO", "WARN", "ERROR",
+ * matched case-insensitively ("error" == "ERROR", story 127.407).
  * Unknown strings are silently ignored (level remains unchanged).
  */
 void tk_log_set_level(const char *level);
@@ -36,7 +37,8 @@ void tk_log_set_level(const char *level);
  *              ["key1","val1","key2","val2", ...].  May be NULL if field_count==0.
  * field_count — total number of elements in fields (must be even).
  *
- * Returns 1 if the line was emitted, 0 if filtered by the current log level.
+ * Returns 1 if the line was written, 0 if filtered by the current log level
+ * or if the write failed (short write or failed flush, 127.406).
  */
 int tk_log_info(const char *msg, const char **fields, int field_count);
 
@@ -96,7 +98,8 @@ int tk_log_set_output(const char *path);
  * Key/value pairs are extracted (string values only) and appended as fields.
  * Malformed JSON is tolerated: any parseable pairs are used, the rest ignored.
  *
- * Returns 1 if the line was emitted, 0 if filtered by the current log level.
+ * Returns 1 if the line was written, 0 if filtered by the current log level
+ * or if the write failed (short write or failed flush, 127.406).
  *
  * Story: 28.5.3
  */
