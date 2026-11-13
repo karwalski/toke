@@ -526,6 +526,24 @@ the router and the server free, not toke producers.
 Gate: C1230 (an ASan C driver over the producers and the toke glue under
 `TK_STR_VERIFY=1`, plus a toke program).
 
+**Step 5, ninth tranche (story 127.295, Batch Z175).**  `std.i18n`,
+`std.env` and `std.sse`, each converted completely (`i18n.c`, `env.c`,
+`sse.c`, `sse_glue.c` read only with `tk_strlen`; their ratchet entries are
+deleted).  `i18n_get`, `i18n_fmt` and `i18n_locale` return sealed strings,
+and so do the values `find_string` slices out of a bundle and the
+missing-key fallback; `i18n_fmt` builds in a growing buffer and is copied
+once (`tks_dup`).  No slice holds a 0 byte (the scan stops at the NUL).
+`env_expand` (`env.expand`) is sealed the same way.  Left malloc'd, on
+purpose: the bundle text `i18n_load` reads (the bundle's own storage, and a
+file may hold a 0 byte); `env_get` / `env_get_or`, which `env.tki` declares
+`"ownership": "caller"` (121.78) -- a caller that frees an owned result must
+be able to free every one (135.23), so sealing them waits on what "caller"
+means for a sealed string; `env_list`, a C-only API whose caller frees each
+name; and every formatted SSE event, which `sse_glue.c` writes to the stream
+and frees (sealing would grow the heap by an event per emit).  Gate: C1510
+(an ASan C driver over the producers, the glue and SSE with sealed inputs
+under `TK_STR_VERIFY=1`, plus a toke program).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
