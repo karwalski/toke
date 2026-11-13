@@ -7131,10 +7131,18 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * with fields and no error type -- the type 127.66 gives
                  * the `let` binding.  Left unknown in place,
                  * `time.toparts(0).nosuch` and `time.toparts(0)+1` passed
-                 * --check.  Field-less std handles (strbuf, svgelem,
-                 * vechandle, securebuf) stay unknown in place. */
-                if (mrt&&mrt->kind==TY_STRUCT&&(user_module_call(cx,node)
-                        ||mrt->field_count>0))
+                 * --check.
+                 * 127.392: and a FIELD-LESS std handle (`s.buf()`,
+                 * `vec.new()`, `svg.rect(..)`, `securemem.alloc(..)`:
+                 * strbuf, vechandle, svgelem, securebuf), the type
+                 * 127.66 already gives the `let` binding.  Left unknown
+                 * in place, `s.buf()+1`, `qs(s.buf())` and `vec.new()+1`
+                 * passed --check.  It is opaque_handle_type, so every
+                 * position that takes an integer still takes it, and the
+                 * only codegen reader that answers differently is json's
+                 * descriptor path: `j.enc(vec.new())` is E9002 as the
+                 * bound form is, where it printed the handle's address. */
+                if (mrt&&mrt->kind==TY_STRUCT)
                     return mrt;
                 /* 138.3: and a declared scalar return, in place too
                  * (`str.nowunix()/86400`). */
