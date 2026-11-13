@@ -1,5 +1,5 @@
 ---
-title: "Harvest-now-decrypt-later (HNDL) triage"
+title: Harvest-now-decrypt-later (HNDL) triage
 slug: pqc-hndl-triage
 section: security
 order: 2

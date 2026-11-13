@@ -1,5 +1,5 @@
 ---
-title: "Canonical Binary IR Design"
+title: Canonical Binary IR Design
 slug: binary-ir-design
 section: architecture
 order: 1

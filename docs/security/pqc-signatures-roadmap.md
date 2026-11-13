@@ -1,5 +1,5 @@
 ---
-title: "Post-quantum signatures: migration roadmap"
+title: Post-quantum signatures — migration roadmap
 slug: pqc-signatures-roadmap
 section: security
 order: 3
