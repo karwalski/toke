@@ -2766,8 +2766,22 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
      * read the inner f64 through an untyped map and printed its bits. */
     if (scr->kind == NODE_INDEX_EXPR) {
         Type *ut = infer(cx, scr);
-        return (ut && ut->kind == TY_ERROR_TYPE && ut->slot_lower)
-               ? repr_value_type(ut->slot_lower) : NULL;
+        if (ut && ut->kind == TY_ERROR_TYPE && ut->slot_lower)
+            return repr_value_type(ut->slot_lower);
+        /* 127.428: an array lookup `ps.get(i)` -- the checker answers it
+         * with the element type itself (NODE_INDEX_EXPR above), and codegen
+         * lowers the `$ok` payload as that element.  Left unknown,
+         * `mt ps.get(0) {$ok:r r.nosuch;..}` checked clean where
+         * `ps.get(0).nosuch` is E4025, and E4011 skipped a bare `$ok:r r`
+         * arm against a `$err:e "no"` arm.  Adopted only when the receiver
+         * is a typed array and the result is its element type. */
+        if (ut && ut->kind != TY_UNKNOWN && ut->kind != TY_VOID
+            && scr->child_count == 2 && scr->children[0]) {
+            Type *bt = slot_union_base(infer(cx, scr->children[0]));
+            if (bt && bt->kind == TY_ARRAY && bt->elem
+                && types_equal(bt->elem, ut)) return ut;
+        }
+        return NULL;
     }
     if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1 || !scr->children[0])
         return NULL;
