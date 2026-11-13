@@ -24,6 +24,7 @@
  * reader can see them.
  */
 #include "sse.h"
+#include "tk_strhdr.h"   /* 127.295: tk_strlen */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,7 +83,7 @@ static int64_t sse_write(int64_t id, const char *block) {
     if (!block) { tk_current_error = 1; return -1; }
     int fd = (int)id;
     if (fd <= 0) fd = 1;              /* 0 = stdout for standalone programs */
-    size_t len = strlen(block);
+    size_t len = tk_strlen(block);   /* a malloc'd event: strlen fallback */
     ssize_t n = write(fd, block, len);
     free((void *)block);
     int ok = (n == (ssize_t)len);

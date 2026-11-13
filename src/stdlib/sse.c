@@ -11,10 +11,17 @@
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code.  Callers own the returned pointers.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): inputs (event name, id, data) are
+ * measured with tk_strlen.  The formatted events stay malloc'd on purpose:
+ * they never reach toke -- sse_glue.c writes each one to the stream and
+ * frees it -- and a sealed string is never freed, so sealing them would grow
+ * the string heap by one event per emit for the life of the stream.
+ *
  * Story: 15.1.2
  */
 
 #include "sse.h"
+#include "tk_strhdr.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -57,9 +64,10 @@ static size_t data_block_size(const char *data)
     const size_t prefix_len = 6; /* strlen("data: ") */
     size_t total = 0;
     const char *p = data;
+    const char *end = data + tk_strlen(data);   /* the last line ends here */
     while (1) {
-        const char *nl = strchr(p, '\n');
-        size_t line_len = nl ? (size_t)(nl - p) : strlen(p);
+        const char *nl = memchr(p, '\n', (size_t)(end - p));
+        size_t line_len = nl ? (size_t)(nl - p) : (size_t)(end - p);
         total += prefix_len + line_len + 1; /* "data: " + line + "\n" */
         if (!nl) break;
         p = nl + 1;
@@ -74,9 +82,10 @@ static size_t data_block_size(const char *data)
 static void append_data_lines(char *buf, size_t *pos, const char *data)
 {
     const char *p = data;
+    const char *end = data + tk_strlen(data);
     while (1) {
-        const char *nl = strchr(p, '\n');
-        size_t line_len = nl ? (size_t)(nl - p) : strlen(p);
+        const char *nl = memchr(p, '\n', (size_t)(end - p));
+        size_t line_len = nl ? (size_t)(nl - p) : (size_t)(end - p);
         memcpy(buf + *pos, "data: ", 6);
         *pos += 6;
         memcpy(buf + *pos, p, line_len);
@@ -113,7 +122,7 @@ const char *sse_emit(TkSseCtx *ctx, TkSseEvent ev)
 
     /* event: <name>\n */
     if (ev.event) {
-        needed += 7 + strlen(ev.event) + 1; /* "event: " + name + "\n" */
+        needed += 7 + tk_strlen(ev.event) + 1; /* "event: " + name + "\n" */
     }
 
     /* data: <line>\n  (one or more lines) */
@@ -126,7 +135,7 @@ const char *sse_emit(TkSseCtx *ctx, TkSseEvent ev)
 
     /* id: <id>\n */
     if (ev.id) {
-        needed += 4 + strlen(ev.id) + 1; /* "id: " + id + "\n" */
+        needed += 4 + tk_strlen(ev.id) + 1; /* "id: " + id + "\n" */
     }
 
     /* retry: <ms>\n  — at most "retry: 2147483647\n" = 20 chars */
@@ -149,7 +158,7 @@ const char *sse_emit(TkSseCtx *ctx, TkSseEvent ev)
     if (ev.event) {
         memcpy(buf + pos, "event: ", 7);
         pos += 7;
-        size_t n = strlen(ev.event);
+        size_t n = tk_strlen(ev.event);
         memcpy(buf + pos, ev.event, n);
         pos += n;
         buf[pos++] = '\n';
@@ -167,7 +176,7 @@ const char *sse_emit(TkSseCtx *ctx, TkSseEvent ev)
     if (ev.id) {
         memcpy(buf + pos, "id: ", 4);
         pos += 4;
-        size_t n = strlen(ev.id);
+        size_t n = tk_strlen(ev.id);
         memcpy(buf + pos, ev.id, n);
         pos += n;
         buf[pos++] = '\n';
@@ -199,8 +208,8 @@ const char *sse_emitdata(TkSseCtx *ctx, const char *data)
 const char *sse_keepalive(TkSseCtx *ctx)
 {
     if (!ctx || ctx->closed) return NULL;
-    const char *msg = ": keepalive\n\n";
-    size_t len = strlen(msg);
+    static const char msg[] = ": keepalive\n\n";
+    size_t len = sizeof msg - 1;
     char *buf = (char *)malloc(len + 1);
     if (!buf) return NULL;
     memcpy(buf, msg, len + 1);
