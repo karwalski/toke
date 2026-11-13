@@ -1734,9 +1734,11 @@ test-stdlib-auth:
 	    test/stdlib/test_auth.c src/stdlib/auth.c src/stdlib/encoding.c src/stdlib/crypto.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_auth
 
+# 127.295: tk_time.c reads zone names with tk_strlen, so the test links str.c
+# (the sealed string heap tk_strhdr.h reads).
 test-stdlib-time:
 	$(CC) $(CFLAGS) -o test/stdlib/test_time \
-	    test/stdlib/test_time.c src/stdlib/tk_time.c
+	    test/stdlib/test_time.c src/stdlib/tk_time.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_time
 
 test-stdlib-test:
@@ -2204,7 +2206,7 @@ test-stdlib-zip: $(BIN)
 # throughout, under a name no consumer had been given.
 test-stdlib-securemem: $(BIN)
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_securemem \
-	    test/stdlib/test_securemem.c src/stdlib/securemem.c -lpthread
+	    test/stdlib/test_securemem.c src/stdlib/securemem.c src/stdlib/str.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_securemem
 	@TKC_STDLIB_DIR=$(PWD)/src/stdlib ./$(BIN) test/stdlib/securemem_roundtrip.tk -o test/stdlib/securemem_roundtrip.bin
 	$(RUN_TEST) ./test/stdlib/securemem_roundtrip.bin

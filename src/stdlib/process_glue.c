@@ -178,7 +178,7 @@ int64_t tk_process_env_w(int64_t name) {
     if (!name) return 0;
     const char *val = getenv((const char *)(intptr_t)name);
     if (!val) return 0;
-    return (int64_t)(intptr_t)strdup(val);
+    return (int64_t)(intptr_t)tks_strdup(val);  /* 127.295: sealed */
 }
 
 /* process.exec(cmd) — run command and return stdout as string */
@@ -205,7 +205,7 @@ int64_t tk_process_exec_w(int64_t cmd) {
 int64_t tk_process_homedir_w(void) {
     const char *home = getenv("HOME");
     if (!home) home = "/tmp";
-    return (int64_t)(intptr_t)strdup(home);
+    return (int64_t)(intptr_t)tks_strdup(home);  /* 127.295: sealed */
 }
 
 /* process.readlines(cmd) — run command and return stdout as array of lines */
