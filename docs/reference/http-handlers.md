@@ -5,8 +5,6 @@ section: reference
 order: 24
 ---
 
-# HTTP Handler Contract — Story 82.1.2
-
 Reference for writing dynamic HTTP handlers in toke, backed by
 `std.http` (see `stdlib/http.tki` and `src/stdlib/tk_web_glue.c`).
 

@@ -5,8 +5,6 @@ section: reference
 order: 6
 ---
 
-# Capabilities
-
 toke compiles to native binaries that are **deny-by-default** for operating-system
 authority (ADR-0010). A compiled program cannot read or write files, open sockets,
 set environment variables, or spawn processes unless it has been **granted** the

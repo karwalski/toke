@@ -1,11 +1,9 @@
 ---
-title: Token Comparison
+title: "Token Comparison: toke vs Python vs Go"
 slug: token-comparison
 section: reference
 order: 20
 ---
-
-# Token Comparison: toke vs Python vs Go
 
 > **Requalified 2026-09-19 (stories 132.6 / 132.13).** This page is the v0.3-era N = 42
 > dataset that the "52% average token reduction" and "31% fewer tokens than Python"
