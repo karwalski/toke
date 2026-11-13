@@ -12,10 +12,18 @@
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
  * compiler code.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length this file takes is read
+ * with tk_strlen (tk_strhdr.h) -- O(1) for a sealed toke string, strlen for
+ * anything else.  std.log hands toke no strings (every entry point returns
+ * an int or a handle), so there is no producer to seal; the strdup'd sink
+ * paths, split dir/stem/ext and redacted copies are this file's own storage,
+ * freed by it, and stay malloc'd.
+ *
  * Story: 3.8.1  Branch: feature/stdlib-3.8-log
  */
 
 #include "log.h"
+#include "tk_strhdr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -212,14 +220,14 @@ int tk_log_redact_keys(const char *csv)
     g_redact_init = 1;
     if (!csv) {
         for (int i = 0; k_redact_default[i]; i++)
-            redact_add(k_redact_default[i], strlen(k_redact_default[i]));
+            redact_add(k_redact_default[i], tk_strlen(k_redact_default[i]));
         return g_redact_count;
     }
     if (strcmp(csv, "off") == 0) return 0;
     const char *p = csv;
     while (*p) {
         const char *e = strchr(p, ',');
-        size_t n = e ? (size_t)(e - p) : strlen(p);
+        size_t n = e ? (size_t)(e - p) : tk_strlen(p);
         while (n && (*p == ' ')) { p++; n--; }
         while (n && p[n - 1] == ' ') n--;
         redact_add(p, n);
@@ -320,7 +328,7 @@ static char *redact_query(const char *target)
     const char *p = q + 1;
     while (*p) {
         const char *amp = strchr(p, '&');
-        const char *end = amp ? amp : p + strlen(p);
+        const char *end = amp ? amp : p + tk_strlen(p);
         const char *eq = memchr(p, '=', (size_t)(end - p));
         if (eq) {
             TkStrBuf k = TK_STRBUF_INIT;
@@ -871,8 +879,8 @@ static int compress_to_gz(const char *src_path, const char *dst_path)
 
 static int str_ends_with(const char *s, const char *suffix)
 {
-    size_t slen   = strlen(s);
-    size_t sflen  = strlen(suffix);
+    size_t slen   = tk_strlen(s);
+    size_t sflen  = tk_strlen(suffix);
     if (sflen > slen) return 0;
     return strcmp(s + slen - sflen, suffix) == 0;
 }
@@ -902,12 +910,13 @@ static void apply_retention(TkAccessLog *log)
     if (!files) return;
     int nfiles = 0;
 
+    size_t plen = tk_strlen(prefix);
     DIR *d = opendir(log->dir);
     if (d) {
         struct dirent *ent;
         while ((ent = readdir(d)) != NULL && nfiles < TK_ALOG_MAX_SCAN) {
             const char *name = ent->d_name;
-            if (strncmp(name, prefix, strlen(prefix)) != 0) continue;
+            if (strncmp(name, prefix, plen) != 0) continue;
             if (!str_ends_with(name, suffix))               continue;
             snprintf(files[nfiles].path, sizeof files[nfiles].path,
                      "%s/%s", log->dir, name);
@@ -1096,7 +1105,7 @@ TkAccessLog *tk_access_log_open(const char *path,
 
     /* dir/.stem.ext.lock — hidden, and not matched by apply_retention (which
      * takes only stem.*ext.gz). */
-    size_t ll = strlen(log->dir) + strlen(log->stem) + strlen(log->ext) + 16;
+    size_t ll = tk_strlen(log->dir) + tk_strlen(log->stem) + tk_strlen(log->ext) + 16;
     log->lock_path = malloc(ll);
     if (!log->path || !log->lock_path) { tk_access_log_close(log); return NULL; }
     snprintf(log->lock_path, ll, "%s/.%s%s.lock", log->dir, log->stem, log->ext);
