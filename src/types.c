@@ -3150,6 +3150,7 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
     return agreed;
 }
 
+static Type *recv_method_result_type(Ctx *cx, const Node *call);   /* 127.364 */
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -3171,6 +3172,12 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
         cx->bind_infer_depth++;
         Type *gt = map_getor_type(cx, initN);
+        /* 127.364: `let x=a.slice(0;2)` binds what the same call has in
+         * place -- a kind-preserving receiver method's result.  Immutable
+         * `let` only, the 127.176 / 138.3 rule: a `mut` binding's
+         * initialiser does not state what later assignments store. */
+        if (!gt && bn->kind == NODE_BIND_STMT)
+            gt = recv_method_result_type(cx, initN);
         cx->bind_infer_depth--;
         return gt;
     }
@@ -5465,6 +5472,62 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
 }
 
 /*
+ * recv_method_result_type (127.364) — the type of a receiver-method call's
+ * RESULT, for the kind-preserving members only, or NULL.
+ *
+ * infer_impl typed every receiver-method call TY_UNKNOWN, so the next method
+ * in a chain -- or one on a `let` bound to the result -- was never judged:
+ * `let c=a.slice(0;2).concat(b)` on arrays passed --check and printed `2`,
+ * while `a.concat(b)` is E4036.  The result is typed only where the receiver's
+ * type is ESTABLISHED (recv_value_type, the same judgement 127.151 makes),
+ * for members g_recv_methods lowers on that kind (slice: RK_S|RK_A; the rest
+ * RK_S -- check_recv_method_call reports any other kind as E4036), and only
+ * to what the lowering returns:
+ *   - array `.slice(i;j)` -> tk_arr_slice_w, a copy of the elements: the
+ *     receiver's own @T (the emitter tags it from the receiver, llvm.c 127.11);
+ *   - str `.slice` / `.concat` / `.trim` / `.upper` / `.lower` / `.replace` /
+ *     `.substr` -> the tk_str_*_w glue that returns a str (stdlib-signatures
+ *     std.str; the emitter's "$str" tag list).
+ * An import-alias receiver (a module call) is not a value and is left alone,
+ * exactly as check_recv_method_call leaves it.
+ */
+static Type *recv_method_result_type(Ctx *cx, const Node *call) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || !callee->children[1]) return NULL;
+    const Node *recv = callee->children[0];
+    if (!cx->env || !cx->env->names) return NULL;
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    if (!member[0]) return NULL;
+    if (recv->kind == NODE_IDENT) {
+        char alias[128]; TOKSTR(alias, cx->src, recv);
+        char mbuf[256];
+        int shadowed = alias_shadowed(cx, recv);
+        if (!shadowed && import_module_path(cx, alias, mbuf, sizeof mbuf)) return NULL;
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias, (int)strlen(alias));
+        if (!shadowed && d && d->kind == DECL_IMPORT_ALIAS) return NULL;
+        if (tki_subnamespace_member(cx->env->names, alias, member)) return NULL;
+        if (!recv_ident_is_bound(cx, alias)) return NULL;
+    }
+    const Type *rt = recv_value_type(cx, recv);
+    if (!rt) return NULL;
+    if (rt->kind == TY_ARRAY) {
+        if (strcmp(member, "slice") == 0) return (Type *)rt;
+        return NULL;
+    }
+    if (rt->kind == TY_STR) {
+        static const char *const str_same[] = {
+            "slice", "concat", "trim", "upper", "lower", "replace", "substr", NULL
+        };
+        for (int i = 0; str_same[i]; i++)
+            if (strcmp(member, str_same[i]) == 0)
+                return mk_type(cx->env->arena, TY_STR);
+    }
+    return NULL;
+}
+
+/*
  * check_array_store_elem — `a.set(i;v)` / `a.append(v)` / `a.push(v)` on an
  * array whose element type is known must store a value of that type.
  *
@@ -6696,6 +6759,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 /* 127.320: `m.getor(k;d)` yields the map's value V. */
                 Type *grt=map_getor_type(cx,node);
                 if (grt) return grt;
+                /* 127.364: a kind-preserving receiver method yields the
+                 * receiver's kind. */
+                Type *rrt=recv_method_result_type(cx,node);
+                if (rrt) return rrt;
             }
             return mk_type(A,TY_UNKNOWN);
         }
