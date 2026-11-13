@@ -31,8 +31,10 @@
 #include "toml.h"
 #include "tk_runtime.h"   /* 127.182: tk_err_box (127.109) */
 #include "capabilities.h" /* 121.22: toml.loadfile is an fs.read sink */
+#include "tk_strhdr.h"     /* 127.295: sealed strings */
 #include <stdint.h>
 #include <string.h>   /* 121.68: memcpy for the f64 bit pattern */
+#include <stdlib.h>   /* 127.295: free in seal_take */
 
 /* 127.182 — the error carries the parser's message.  stdlib/toml.tki
  * declares `tomlerr` as a record {msg:str}; a failure stores a one-slot box
@@ -80,12 +82,24 @@ int64_t tk_toml_section_w(int64_t tab, int64_t key) {
     return (int64_t)(intptr_t)r.ok;
 }
 
+/* 127.295: toml_get_str's result is tomlc99's malloc'd copy (caller-owned,
+ * toml.h); the str toke receives is a sealed copy made here, measured as a C
+ * string, and the malloc'd original is freed -- handed over unsealed only if
+ * the copy cannot be made. */
+static const char *seal_take(const char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free((void *)s);
+    return t;
+}
+
 int64_t tk_toml_str_w(int64_t tab, int64_t key) {
     if (!tab || !key) { return toml_raise("toml: null argument"); }
     TomlStrResult r = toml_get_str((void *)(intptr_t)tab, (const char *)(intptr_t)key);
     if (r.is_err) return toml_raise(r.err_msg);
     tk_current_error = 0;
-    return (int64_t)(intptr_t)r.ok;
+    return (int64_t)(intptr_t)seal_take(r.ok);
 }
 
 /* 127.67: `retries = 0` is a value, not an error — report it through
@@ -186,7 +200,9 @@ static int64_t toml_arr_w(int64_t tab, int64_t key, char kind) {
         return toml_raise("toml: out of memory");
     }
     int64_t *slots = (int64_t *)(intptr_t)h;
-    for (int64_t i = 0; i < r.len; i++) slots[i] = r.data[i];
+    for (int64_t i = 0; i < r.len; i++)   /* 127.295: each str element sealed */
+        slots[i] = kind == 's' ? (int64_t)(intptr_t)seal_take((const char *)(intptr_t)r.data[i])
+                               : r.data[i];
     free(r.data);
     tk_current_error = 0;
     return h;
@@ -204,10 +220,10 @@ int64_t tk_toml_keys_w(int64_t tab) {
     if (!h) return tk_arr_alloc(0, 0);
     int64_t *slots = (int64_t *)(intptr_t)h;
     for (int64_t i = 0; i < n; i++) {
+        /* 127.295: a sealed copy -- the table owns its keys and may be
+         * freed while the program still holds the array. */
         const char *k = toml_key_at((void *)(intptr_t)tab, i);
-        size_t kl = k ? strlen(k) : 0;
-        char *c = k ? (char *)malloc(kl + 1) : NULL;
-        if (c) memcpy(c, k, kl + 1);
+        char *c = k ? tks_strdup(k) : NULL;
         slots[i] = (int64_t)(intptr_t)(c ? c : "");
     }
     return h;

@@ -97,7 +97,7 @@ int64_t tk_net_read_w(int64_t conn) {
 int64_t tk_net_write_w(int64_t conn, int64_t data) {
     const char *s = (const char *)(intptr_t)data;
     if (!s) return 0;
-    ssize_t n = write((int)conn, s, strlen(s));
+    ssize_t n = write((int)conn, s, tk_strlen(s));
     return (n < 0) ? 0 : (int64_t)n;
 }
 

@@ -1756,7 +1756,7 @@ test-stdlib-log:
 
 test-stdlib-toon:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_toon \
-	    test/stdlib/test_toon.c src/stdlib/toon.c
+	    test/stdlib/test_toon.c src/stdlib/toon.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_toon
 
 # 127.295: json.c/json_glue.c read lengths with tk_strlen and the glue seals
@@ -1821,7 +1821,7 @@ test-stdlib-template:
 
 test-stdlib-csv:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_csv \
-	    test/stdlib/test_csv.c src/stdlib/csv.c
+	    test/stdlib/test_csv.c src/stdlib/csv.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_csv
 
 test-stdlib-math:
@@ -1992,7 +1992,7 @@ test-stdlib-mdns:
 test-stdlib-ml-pipeline-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ml_pipeline_integration \
 	    test/stdlib/test_ml_pipeline_integration.c \
-	    src/stdlib/ml.c src/stdlib/csv.c src/stdlib/dataframe.c $(ORPHAN_LIBS)
+	    src/stdlib/ml.c src/stdlib/csv.c src/stdlib/dataframe.c src/stdlib/str.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_ml_pipeline_integration
 
 test-stdlib-mlx:
@@ -2150,7 +2150,7 @@ test-stdlib-args:
 
 test-stdlib-map:
 	$(CC) $(CFLAGS) -o test/stdlib/test_map \
-	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c
+	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_map
 
 test-stdlib-md:
@@ -2400,8 +2400,10 @@ fuzz-yaml:
 # (strlen) with no sealed-heap state to link, as for fuzz-json.
 fuzz-toml:
 	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS) -DTK_STR_NO_HEAP -lpthread)
+# 127.295: toon.c's producers seal (tks_dup), so str.c links; -DTK_STR_NO_HEAP
+# builds its malloc fallback, as for fuzz-yaml.
 fuzz-toon:
-	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
+	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c src/stdlib/str.c,-DTK_STR_NO_HEAP)
 fuzz-xml:
 	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
 # 127.295: tmpl_render/tmpl_renderhtml return sealed strings, which are never

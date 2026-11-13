@@ -10,6 +10,7 @@
 #include "collections.h"
 #include "tk_array.h"
 #include "tk_runtime.h"   /* 127.30: tk_current_error (runtime-abi.md §7.2) */
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -201,7 +202,7 @@ static uint64_t tk_map_siphash(const unsigned char *in, size_t len) {
 
 static uint64_t tk_map_hash_str(const char *s) {
     if (!s) return tk_map_siphash((const unsigned char *)"", 0);   /* NULL key: one fixed slot, as before */
-    return tk_map_siphash((const unsigned char *)s, strlen(s));
+    return tk_map_siphash((const unsigned char *)s, tk_strlen(s));
 }
 static uint64_t tk_map_hash_int(int64_t k) {
     unsigned char b[8];

@@ -14,6 +14,25 @@
 #include <string.h>
 
 #include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+#include "tk_strhdr.h"    /* 127.295: sealed strings, tk_strlen */
+
+/* 127.295: every str this file hands toke is a sealed copy.  csv.c's fields
+ * stay malloc'd because its C callers (test_csv.c, csv_reader_free for the
+ * cached header) free them; seal_take copies a field the glue owns and frees
+ * the original (handing the original over unsealed only if the copy cannot
+ * be made), seal_copy copies a string something else still owns. */
+static const char *seal_take(const char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free((void *)s);
+    return t;
+}
+static const char *seal_copy(const char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    return t ? t : "";
+}
 
 /* 127.238: the error slot (runtime-abi.md §7.2).  These `T!csverr` wrappers
  * returned a bare 0 on failure, so only the value sentinel saw it and the
@@ -105,7 +124,7 @@ int64_t tk_csv_parse_w(int64_t data) {
         if (!fields_h) { outer[i] = 0; continue; }
         int64_t *fields = (int64_t *)(intptr_t)fields_h;
         for (uint64_t j = 0; j < fl; j++)
-            fields[j] = (int64_t)(intptr_t)rows[i].data[j];
+            fields[j] = (int64_t)(intptr_t)seal_take(rows[i].data[j]);
         int64_t *cr = (int64_t *)malloc(sizeof(int64_t));
         if (!cr) {   /* 135.3c: the fields block leaked here */
             free((int64_t *)(intptr_t)fields_h - TK_ARR_HDR);
@@ -143,13 +162,16 @@ int64_t tk_csv_serialize_w(int64_t data) {
  * The streaming API was declared in csv.tki but had no `_w` wrappers, so any
  * program using it failed to link. csv.c already implements the primitives. */
 
-/* Build a toke [str] (block[-1]=len, block[i]=char*) from a StrArray. */
-static int64_t strarray_to_tokearr(StrArray a) {
+/* Build a toke [str] (block[-1]=len, block[i]=char*) from a StrArray.
+ * 127.295: each element is sealed -- taken (the row's fields belong to the
+ * caller) or copied (the header's fields belong to the reader, which
+ * csv.close frees while the program may still hold the array). */
+static int64_t strarray_to_tokearr(StrArray a, int take) {
     int64_t h = tk_arr_alloc((int64_t)a.len, (int64_t)a.len);
     if (!h) return 0;
     int64_t *blk = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < a.len; i++)
-        blk[i] = (int64_t)(intptr_t)a.data[i];
+        blk[i] = (int64_t)(intptr_t)(take ? seal_take(a.data[i]) : seal_copy(a.data[i]));
     return h;
 }
 
@@ -180,7 +202,7 @@ int64_t tk_csv_next_w(int64_t reader) {
      * same silent 0 to the caller. */
     StrArray row = csv_reader_next(r);
     if (!row.data || row.len == 0) return csv_slot_core(0, tk_csv_next_fail, "eof");
-    int64_t fields = strarray_to_tokearr(row);
+    int64_t fields = strarray_to_tokearr(row, 1);
     int64_t *cr = (int64_t *)malloc(sizeof(int64_t));   /* csvrow = {fields:[str]} */
     if (!cr) return csv_slot(0, "csv.next: out of memory", "nomem");
     cr[0] = fields;
@@ -194,7 +216,7 @@ int64_t tk_csv_header_w(int64_t reader) {
     if (!reader) return csv_slot(0, "csv.header: null reader (an unchecked error value?)", "badarg");
     StrArray h = csv_reader_header((TkCsvReader *)(intptr_t)reader);
     if (!h.data) return csv_slot_core(0, tk_csv_header_fail, "eof");
-    return csv_slot_core(strarray_to_tokearr(h), tk_csv_header_fail, "eof");
+    return csv_slot_core(strarray_to_tokearr(h, 0), tk_csv_header_fail, "eof");
 }
 
 /* csv.writer(u8 sep) -> csvwriter */
@@ -222,7 +244,7 @@ int64_t tk_csv_flush_w(int64_t writer) {
     if (!writer) return tk_bytes_pack((const uint8_t *)"", 0);
     const char *res = csv_writer_flush((TkCsvWriter *)(intptr_t)writer);
     if (!res) return tk_bytes_pack((const uint8_t *)"", 0);
-    return tk_bytes_pack((const uint8_t *)res, strlen(res));
+    return tk_bytes_pack((const uint8_t *)res, tk_strlen(res));
 }
 
 /* ── 135.2: hardened reader wrappers ─────────────────────────────────────
@@ -256,10 +278,8 @@ int64_t tk_csv_flush_w(int64_t writer) {
  * caller can PRINT what was detected.  A u8 would have to be turned back into
  * a character by every caller that wants to show it. */
 static int64_t char_to_str(char c) {
-    char *s = (char *)malloc(2);
-    if (!s) return (int64_t)(intptr_t)"";
-    s[0] = c; s[1] = '\0';
-    return (int64_t)(intptr_t)s;
+    char *s = tks_dup(&c, c ? 1 : 0);   /* 127.295: sealed */
+    return (int64_t)(intptr_t)(s ? s : "");
 }
 
 static int64_t dialect_to_block(const TkCsvDialect *d) {
@@ -355,12 +375,8 @@ int64_t tk_csv_raggedreport_w(int64_t reader) {
     if (!h) return tk_arr_alloc(0, 0);
     int64_t *blk = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < n; i++) {
-        const char *m = csv_reader_ragged_at(r, i);
-        size_t l = strlen(m);
-        char *copy = (char *)malloc(l + 1);
-        if (!copy) { blk[i] = (int64_t)(intptr_t)""; continue; }
-        memcpy(copy, m, l + 1);
-        blk[i] = (int64_t)(intptr_t)copy;
+        /* 127.295: a sealed copy; the reader keeps (and frees) its own. */
+        blk[i] = (int64_t)(intptr_t)seal_copy(csv_reader_ragged_at(r, i));
     }
     return h;
 }
