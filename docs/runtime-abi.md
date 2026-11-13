@@ -665,6 +665,45 @@ glue str producer and over the readers with every argument sealed, against
 the same calls on unsealed copies, plus a toke program, under
 `TK_STR_VERIFY=1`).
 
+**Step 5, fourteenth tranche (story 127.295, Batch Z189).**  `std.yaml`,
+`std.pdf` and `http2.c`, each converted completely (every reader in
+`yaml.c`, `pdf.c`, `pdftext.c`, `pdf_glue.c` and `http2.c` uses
+`tk_strlen`; their five ratchet entries are deleted).  `yaml.c` seals at
+the source: `yaml_enc`, `yaml_str`, `yaml_from_json` and `yaml_to_json`
+return sealed strings (`tks_dup`, or `tks_alloc`/`tks_seal` for a quoted
+value; the converters copy their `TkStrBuf` once, trimming
+`yaml_from_json`'s leading newline in the copy), because no C caller frees
+what they return -- each has literal fallbacks (`"null"`, `"\"\""`, `""`,
+`"{}"`), so a free was never allowed -- and `yaml_glue.c` hands them to toke
+as they are (`yaml.enc` / `stringify`, `yaml.str` / `getstring`,
+`yaml.fromjson`, `yaml.tojson`).  Stays malloc'd: the element raws
+`yaml_arr` builds (internal `Yaml` handle storage, never a str toke reads;
+`yaml_arr` frees them itself on failure).  `std.pdf` seals at the boundary:
+`pdf_glue.c`'s `dup_str` makes every str it hands toke -- a `$textrun`'s
+`.text` and `pdf.pagetext`'s result -- with `tks_dup`, measured as a C
+string; `pdf.c`'s run text belongs to the page (`pdf_page_free`) and
+`pdf_page_text`'s buffer is freed by the glue after the copy, so both stay
+malloc'd.  `http2.c` hands toke no string: its four readers are the HPACK
+encoder's name/value lengths (`hpack_encode`'s literal forms and
+`hpack_insert`'s entry size); its six `strdup` lines are the HPACK dynamic
+table's entries and `hpack_decode`'s results, which `hpack_table_free` and
+the C callers free -- internal ownership, not toke producers.
+`test-stdlib-yaml` links `str.c`; `fuzz-yaml` links it with
+`-DTK_STR_NO_HEAP`.  Every conform harness that compiles one of these files
+already took its link set from `stdlib_link_set.sh --objects` (or
+`#include`s / compiles the file itself with `--except`), so none moved.
+Not in this tranche: `cache.c` (nothing in the tree calls `http_cache_*`
+and nothing tests it: converting it would mean writing the first test of
+dead code); `keychain.c` (three of its five readers are `_WIN32`-only and
+cannot be built here, and the two macOS ones are exercised only through the
+OS credential store); `infer.c` (all four readers are inside
+`TK_HAVE_LLAMACPP`, and llama.cpp is not installed here).  Gates: C1652 (an
+ASan C driver over every `yaml.c` producer and the glue, and over the
+readers with sealed inputs, plus a toke program), C1653 (`hpack_encode` of
+sealed and unsealed headers gives identical blocks), C1654 (an ASan C
+driver over `std.pdf`'s glue on a PDF the test writes byte by byte, plus a
+toke program), all under `TK_STR_VERIFY=1`.
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
