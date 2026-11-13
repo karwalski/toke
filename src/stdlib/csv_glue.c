@@ -104,10 +104,12 @@ int64_t tk_csv_parse_w(int64_t data) {
     /* The argument is a toke [byte] (packed), not a C string — unpack it. */
     uint8_t *bytes = NULL;
     uint64_t len = tk_bytes_unpack(data, &bytes);
-    if (!bytes || len == 0) return csv_slot(0, tk_csv_parse_fail, "empty");
+    /* 127.422: the unpacked copy of the input leaked on every call. */
+    if (!bytes || len == 0) { free(bytes); return csv_slot(0, tk_csv_parse_fail, "empty"); }
     char *s = (char *)malloc(len + 1);
-    if (!s) return csv_slot(0, tk_csv_parse_fail, "empty");
+    if (!s) { free(bytes); return csv_slot(0, tk_csv_parse_fail, "empty"); }
     memcpy(s, bytes, len); s[len] = '\0';
+    free(bytes);
     uint64_t nrows = 0;
     StrArray *rows = csv_parse(s, len, &nrows);
     free(s);
@@ -125,6 +127,7 @@ int64_t tk_csv_parse_w(int64_t data) {
         int64_t *fields = (int64_t *)(intptr_t)fields_h;
         for (uint64_t j = 0; j < fl; j++)
             fields[j] = (int64_t)(intptr_t)seal_take(rows[i].data[j]);
+        free((void *)rows[i].data);   /* 127.422: the row's pointer block leaked */
         int64_t *cr = (int64_t *)malloc(sizeof(int64_t));
         if (!cr) {   /* 135.3c: the fields block leaked here */
             free((int64_t *)(intptr_t)fields_h - TK_ARR_HDR);
@@ -181,9 +184,10 @@ int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
     uint8_t *bytes = NULL;
     uint64_t len = tk_bytes_unpack(data, &bytes);
     char *s = (char *)malloc(len + 1);
-    if (!s) return 0;
+    if (!s) { free(bytes); return 0; }
     if (bytes && len) memcpy(s, bytes, len);
     s[len] = '\0';
+    free(bytes);   /* 127.422: the unpacked copy leaked; the reader adopts s */
     TkCsvReader *r = csv_reader_new(s, len);
     if (!r) { free(s); return 0; }
     csv_reader_adopt(r, s);   /* 135.3c: freed by csv.close, not leaked */
@@ -203,6 +207,7 @@ int64_t tk_csv_next_w(int64_t reader) {
     StrArray row = csv_reader_next(r);
     if (!row.data || row.len == 0) return csv_slot_core(0, tk_csv_next_fail, "eof");
     int64_t fields = strarray_to_tokearr(row, 1);
+    if (fields) free((void *)row.data);   /* 127.422: the row's pointer block leaked */
     int64_t *cr = (int64_t *)malloc(sizeof(int64_t));   /* csvrow = {fields:[str]} */
     if (!cr) return csv_slot(0, "csv.next: out of memory", "nomem");
     cr[0] = fields;
@@ -244,7 +249,9 @@ int64_t tk_csv_flush_w(int64_t writer) {
     if (!writer) return tk_bytes_pack((const uint8_t *)"", 0);
     const char *res = csv_writer_flush((TkCsvWriter *)(intptr_t)writer);
     if (!res) return tk_bytes_pack((const uint8_t *)"", 0);
-    return tk_bytes_pack((const uint8_t *)res, tk_strlen(res));
+    int64_t h = tk_bytes_pack((const uint8_t *)res, tk_strlen(res));
+    free((void *)res);   /* 127.422: csv_writer_flush's copy leaked on every flush */
+    return h;
 }
 
 /* ── 135.2: hardened reader wrappers ─────────────────────────────────────
