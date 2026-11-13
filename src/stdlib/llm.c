@@ -40,6 +40,7 @@
 #include "llm.h"
 #include "capabilities.h"   /* 121.42 (2): tcp_connect is a net sink */
 #include "tk_strhdr.h"      /* 127.295: tk_strlen, sealed strings */
+#include "tk_nosigpipe.h"   /* 127.388: TK_SEND_FLAGS, tk_sock_nosigpipe */
 
 #include <stdlib.h>
 #include <string.h>
@@ -233,6 +234,13 @@ static int tcp_connect(const char *host, const char *port, uint32_t timeout_ms)
             setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
         }
 
+        /* 127.388: a model server that closes first must be an error, not
+         * SIGPIPE.  conn_send passes MSG_NOSIGNAL (TK_SEND_FLAGS), the
+         * guard that holds everywhere; SO_NOSIGPIPE (Darwin/BSD) also covers
+         * any other write on the socket.  It is set before connect because
+         * Darwin refuses it (EINVAL) once the peer has closed. */
+        tk_sock_nosigpipe(fd);
+
         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
         close(fd);
         fd = -1;
@@ -279,7 +287,7 @@ static int conn_send(LlmConn *c, const char *buf, size_t n)
         } else
 #endif
         {
-            w = send(c->fd, buf + off, n - off, 0);
+            w = send(c->fd, buf + off, n - off, TK_SEND_FLAGS); /* 127.388 */
             if (w < 0 && errno == EINTR) continue;
         }
         if (w <= 0) return -1;
