@@ -812,6 +812,79 @@ with sealed inputs, plus a toke program), C1671 (the same over
 `std.toon`'s glue and `toon.c`'s readers) and C1673 (`str.frombytes`:
 plain, empty, holding a 0, invalid UTF-8), all under `TK_STR_VERIFY=1`.
 
+**Step 5, seventeenth tranche (story 127.295, Batch Z192).**  The last
+toke-input readers that can be built and run here: `tk_time.c`'s zone-name
+check (`time.withtz`, `time.utcoffset`, `time.convert`), `sys.c`'s appname
+(`sys.configdir`, `sys.datadir`) and `securemem.c`'s `securemem.write` read
+with `tk_strlen`; their three ratchet entries are deleted.  `test-stdlib-time`
+and `test-stdlib-securemem` link `str.c`; C546, which compiled `tk_time.c`
+alone, takes `std.time`'s link set from `stdlib_link_set.sh --objects` (its
+`-c` compile of `tk_time.c` for the `nm` check is unchanged).  Producers
+sealed: `sys.chipname`, `process.env`, `process.homedir` / `std.homedir`
+(`tks_strdup` in the glue), `sys.configdir` / `sys.datadir` (`seal_take()`
+copies: `sys.h` documents the paths as caller-freed), every `$dbrow` column
+name and value from `db.one` / `db.many` (`row_rec` in `db_glue.c` puts
+sealed copies in the record and frees the originals it copied; on failure the
+C `Row` is left whole for `rows_free_from`), and the response bodies of
+`http.get`, `http.posturl`, `http.post`, `http.put` and `http.delete`
+(`body_seal` in `tk_web_glue.c`, measured as a C string).  `securemem.read`
+stays malloc'd on purpose: a sealed string is never written or freed, so a
+sealed copy of a secret could never be wiped.  Skipped, each with its reason
+on the ratchet: `mlx.c` (its two readers measure literals, bridge replies and
+JSON `mlx.c` built -- never a toke string, and `std.mlx`'s glue is a stub),
+`webview.c` (`std.webview` is withdrawn, 136.2), `infer.c` (llama.cpp is not
+installed here), `keychain.c` (the real OS store; three of its five lines are
+`_WIN32`).  Gates: C1680 (sealed inputs to the time, sys and securemem
+readers give the same answers as malloc'd ones; the sys and process results
+are sealed; the securemem read copy is not), C1681 (`$dbrow` strings) and
+C1682 (client bodies against a loopback server, including one holding a 0),
+all ASan C drivers under `TK_STR_VERIFY=1`.
+
+**End state of step 5 (127.295).**  The reader ratchet
+(`scripts/check_str_strlen_skiplist.txt`) now gives every remaining bare
+`strlen` line a reason: 38 lines in 16 files, each `never-toke` (a literal,
+a C-built or OS-filled buffer, a C-only API, or an interior pointer, which has
+no header to read), `c-owned`, `untestable` here (`infer.c` 4, `keychain.c`
+5), `dead` (`cache.c` 6) or `by-design` (`tks_verify_fail`'s own check;
+`strbuf_append` and the regex compiler, which do O(len) work on the bytes they
+measure).  The census's 186 `strdup` / `strndup` lines (27 files) are, line
+by line:
+
+- *dead* -- 66: no toke binding reaches them (`acme.c` 13, `content.c` 7,
+  `cache.c` 5, `proxy.c` 5, `mdns.c` 4, `llm_tool.c` 15 in
+  `llm_parallel_tool_calls` / `llm_agentic_loop`, `svg.c` 8, `html.c` 5,
+  `http.c` 1 (`http_tls_add_sni`), `dashboard.c` 1, `canvas.c` 1 (the gradient
+  id), `webview.c` 1);
+- *C-owned storage* -- 78: a struct, tree, table or handle the module frees
+  (or keeps for the process), or a temporary freed in the same function
+  (`router.c` 15, `tk_web_glue.c` 10, `llm_tool.c` 9, `xml.c` 9, `log.c` 7,
+  `tls.c` 4, `html.c` 4, `dashboard.c` 4, `svg.c` 3, `http.c` 3,
+  `tls_glue.c` 3, `http2.c` 2 (the HPACK table), and one each in `canvas.c`,
+  `json_glue.c`, `hooks.c`, `process.c`, `tk_runtime.c`);
+- *sealed at the boundary* -- 24: toke receives only the glue's sealed copy
+  (`tls.c` 15, `llm_tool.c` 3, `router.c` 1, `file.c` 3, `db.c` 2);
+- *caller-owned by the `.tki`* -- 4: `os.getenv`, `os.strerror`, `env.get`,
+  `env.getor` declare `"ownership": "caller"`, so a caller may free them;
+- *toke-visible and unsealed, by rule* -- 14: the request fields a handler
+  borrows (`http.c` 6, `http2.c` 4: method, path, header keys and values and
+  body, freed by `free_req` after the handler returns -- sealing them would
+  grow the never-freed heap by every request), an `$htmlnode`'s `tag` and
+  `content` (`html.c` 3: the record *is* the C node, which `html_free`
+  frees), and a `db` error's `e.msg` (`db.c` 1).
+
+So the rule is: a `strdup` line stays malloc'd when its string is freed by C
+code, or never reaches toke; only the last two groups are strings a program
+holds unsealed.  What would have to change for them: for the caller-owned
+four, a decision on what `"ownership": "caller"` means for a sealed string
+(today it means the program may `free()` it, which aborts on a sealed one);
+for the request fields, either per-request sealed copies (heap growth per
+request, the cost the eighth tranche refused) or a request arena the heap
+does not have; for `$htmlnode`, `html_free` no longer freeing the fields;
+for `db`'s `e.msg`, a sealed copy in `db_raise` (harnesses that compile
+`db.c` alone, C512, would link `str.c`).  The same applies outside the
+`strdup` count to `tls.keyof` (the keypair's own PEM, kept malloc'd so
+`tls.freekeypair` can wipe it) and `securemem.read`.
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
