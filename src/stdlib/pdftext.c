@@ -47,6 +47,7 @@
 #include "pdf.h"
 #include "pdfobj.h"
 #include "pdffont.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 
 #include <math.h>
 #include <stdlib.h>
@@ -553,7 +554,7 @@ static size_t code_text(const Font *f, uint32_t code, char *out, size_t room)
     int gi = -1;
 
     if (f && f->ncmap && (u = cmap_lookup(f, code)) != NULL) {
-        size_t n = strlen(u);
+        size_t n = tk_strlen(u);
         if (n >= room) n = room ? room - 1 : 0;
         memcpy(out, u, n);
         return n;

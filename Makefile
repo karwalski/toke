@@ -1766,9 +1766,10 @@ test-stdlib-json:
 	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_json
 
+# 127.295: yaml.c's results are sealed strings (tks_dup), defined in str.c.
 test-stdlib-yaml:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_yaml \
-	    test/stdlib/test_yaml.c src/stdlib/yaml.c
+	    test/stdlib/test_yaml.c src/stdlib/yaml.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_yaml
 
 test-stdlib-i18n:
@@ -2391,8 +2392,10 @@ endef
 
 fuzz-json:
 	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,-DTK_STR_NO_HEAP)
+# 127.295: yaml.c's producers seal (tks_dup), so str.c links; -DTK_STR_NO_HEAP
+# builds its malloc fallback, as for fuzz-template.
 fuzz-yaml:
-	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
+	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c src/stdlib/str.c,-DTK_STR_NO_HEAP)
 # 127.295: file.c reads with tk_strlen; -DTK_STR_NO_HEAP keeps that inline
 # (strlen) with no sealed-heap state to link, as for fuzz-json.
 fuzz-toml:

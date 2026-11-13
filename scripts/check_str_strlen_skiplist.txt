@@ -36,16 +36,12 @@ src/stdlib/dataframe_glue.c 1
 src/stdlib/db.c 2
 src/stdlib/encrypt.c 2
 src/stdlib/encrypt_glue.c 1
-src/stdlib/http2.c 4
 src/stdlib/infer.c 4
 src/stdlib/keychain.c 5
 src/stdlib/mdns.c 2
 src/stdlib/mlx.c 2
 src/stdlib/net_glue.c 1
 src/stdlib/os_glue.c 1
-src/stdlib/pdf.c 4
-src/stdlib/pdf_glue.c 1
-src/stdlib/pdftext.c 1
 src/stdlib/process_glue.c 1
 src/stdlib/proxy.c 3
 src/stdlib/securemem.c 1
@@ -58,7 +54,6 @@ src/stdlib/tls.c 1
 src/stdlib/tls_glue.c 1
 src/stdlib/toon.c 2
 src/stdlib/webview.c 3
-src/stdlib/yaml.c 4
 src/stdlib/zip.c 1
 src/stdlib/zip_glue.c 1
 src/stdlib/tk_gzip_type.h 1

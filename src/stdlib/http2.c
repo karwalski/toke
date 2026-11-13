@@ -15,6 +15,7 @@
 
 #include "http2.h"
 #include "http.h"   /* 127.144: http_write_all */
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -738,7 +739,7 @@ static void hpack_evict(HpackTable *t)
 /* Insert at front (index 0), shifting existing entries */
 static int hpack_insert(HpackTable *t, const char *name, const char *value)
 {
-    size_t entry_size = strlen(name) + strlen(value) + 32;
+    size_t entry_size = tk_strlen(name) + tk_strlen(value) + 32;
 
     /* 135.3j: the copies are made FIRST.  They were strdup'd into
      * entries[0] after the shift, unchecked, so an allocation failure left
@@ -1187,7 +1188,7 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
                                  (uint32_t)found_name, 6, 0x40) < 0)
                 return -1;
             /* Encode value as raw string */
-            size_t vlen = strlen(value);
+            size_t vlen = tk_strlen(value);
             if (hpack_encode_int(out, out_cap, &pos,
                                  (uint32_t)vlen, 7, 0x00) < 0)
                 return -1;
@@ -1200,7 +1201,7 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
             if (pos >= out_cap) return -1;
             out[pos++] = 0x40; /* prefix: 01, index=0 */
             /* Encode name */
-            size_t nlen = strlen(name);
+            size_t nlen = tk_strlen(name);
             if (hpack_encode_int(out, out_cap, &pos,
                                  (uint32_t)nlen, 7, 0x00) < 0)
                 return -1;
@@ -1208,7 +1209,7 @@ int hpack_encode(HpackTable *t, const char **names, const char **values,
             memcpy(out + pos, name, nlen);
             pos += nlen;
             /* Encode value */
-            size_t vlen = strlen(value);
+            size_t vlen = tk_strlen(value);
             if (hpack_encode_int(out, out_cap, &pos,
                                  (uint32_t)vlen, 7, 0x00) < 0)
                 return -1;
