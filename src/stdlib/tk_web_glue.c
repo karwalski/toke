@@ -1595,6 +1595,22 @@ int64_t tk_http_client_w(int64_t url) {
     HttpClient *c = http_client((const char *)(intptr_t)url);
     return (int64_t)(intptr_t)c;
 }
+/* 127.295: a client response body as toke's str (http.get, http.posturl,
+ * http.post, http.put, http.delete) -- a sealed copy of the n bytes,
+ * measured as a C string (a body holding a 0 reads as the bytes before it,
+ * exactly as the malloc'd copy did), or NULL (the 0 these return on error). */
+static char *body_seal(const void *body, size_t n)
+{
+    const char *b = (const char *)body;
+    const char *z = n ? memchr(b, '\0', n) : NULL;
+    size_t len = z ? (size_t)(z - b) : n;
+    char *s = tks_alloc(len);
+    if (!s) return NULL;
+    memcpy(s, b, len);
+    s[len] = '\0';
+    return tks_seal(s, len);
+}
+
 /* tk_http_get_w — simple GET; creates temporary client from the URL.
  * The URL includes the full path (e.g. http://host:port/path).
  * We split it: base = http://host:port, path = /path suffix.
@@ -1627,10 +1643,7 @@ int64_t tk_http_get_w(int64_t url) {
     HttpClientResp resp = http_get(c, path);
     http_client_free(c);
     if (resp.is_err || !resp.body) return 0;
-    char *s = (char *)malloc(resp.body_len + 1);
-    if (!s) return 0;
-    memcpy(s, resp.body, resp.body_len);
-    s[resp.body_len] = '\0';
+    char *s = body_seal(resp.body, resp.body_len);   /* 127.295 */
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
@@ -1666,10 +1679,7 @@ int64_t tk_http_posturl_w(int64_t url, int64_t body) {
                                      "application/json");
     http_client_free(c);
     if (resp.is_err || !resp.body) return 0;
-    char *s = (char *)malloc(resp.body_len + 1);
-    if (!s) return 0;
-    memcpy(s, resp.body, resp.body_len);
-    s[resp.body_len] = '\0';
+    char *s = body_seal(resp.body, resp.body_len);   /* 127.295 */
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
@@ -1683,10 +1693,7 @@ int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
                                      (const uint8_t *)b, tk_strlen(b),
                                      "application/json");
     if (resp.is_err || !resp.body) return 0;
-    char *s = (char *)malloc(resp.body_len + 1);
-    if (!s) return 0;
-    memcpy(s, resp.body, resp.body_len);
-    s[resp.body_len] = '\0';
+    char *s = body_seal(resp.body, resp.body_len);   /* 127.295 */
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
@@ -1696,10 +1703,7 @@ int64_t tk_http_delete_w(int64_t client, int64_t path) {
     HttpClient *c = (HttpClient *)(intptr_t)client;
     HttpClientResp resp = http_delete(c, (const char *)(intptr_t)path);
     if (resp.is_err || !resp.body) return 0;
-    char *s = (char *)malloc(resp.body_len + 1);
-    if (!s) return 0;
-    memcpy(s, resp.body, resp.body_len);
-    s[resp.body_len] = '\0';
+    char *s = body_seal(resp.body, resp.body_len);   /* 127.295 */
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
@@ -1773,10 +1777,7 @@ int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) {
                                     (const uint8_t *)b, tk_strlen(b),
                                     "application/json");
     if (resp.is_err || !resp.body) return 0;
-    char *s = (char *)malloc(resp.body_len + 1);
-    if (!s) return 0;
-    memcpy(s, resp.body, resp.body_len);
-    s[resp.body_len] = '\0';
+    char *s = body_seal(resp.body, resp.body_len);   /* 127.295 */
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }

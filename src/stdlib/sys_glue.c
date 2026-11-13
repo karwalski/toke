@@ -7,6 +7,7 @@
  */
 
 #include "sys.h"
+#include "tk_strhdr.h"  /* 127.295: sealed strings */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,17 @@
 #include <sys/sysinfo.h>
 #include <sys/statvfs.h>
 #endif
+
+/* 127.295: sys_configdir / sys_datadir are a C API whose caller frees the
+ * path (sys.h), so the glue hands toke a sealed copy and frees the original
+ * (or, if the copy cannot be made, hands the original over unsealed). */
+static int64_t seal_take(const char *s) {
+    if (!s) return 0;
+    char *t = tks_strdup(s);
+    if (!t) return (int64_t)(intptr_t)s;
+    free((void *)s);
+    return (int64_t)(intptr_t)t;
+}
 
 /* sys.platform() — return "macos", "linux", or "unknown" */
 int64_t tk_sys_platform_w(void) {
@@ -78,7 +90,7 @@ int64_t tk_sys_chipname_w(void) {
     char buf[256];
     size_t len = sizeof(buf);
     if (sysctlbyname("machdep.cpu.brand_string", buf, &len, NULL, 0) == 0) {
-        return (int64_t)(intptr_t)strdup(buf);
+        return (int64_t)(intptr_t)tks_strdup(buf);  /* 127.295: sealed */
     }
     return (int64_t)(intptr_t)"Apple Silicon";
 #else
@@ -88,12 +100,12 @@ int64_t tk_sys_chipname_w(void) {
 
 /* sys.configdir(appname) — platform config directory */
 int64_t tk_sys_configdir_w(int64_t appname) {
-    return (int64_t)(intptr_t)sys_configdir(
-        appname ? (const char *)(intptr_t)appname : "");
+    return seal_take(sys_configdir(
+        appname ? (const char *)(intptr_t)appname : ""));
 }
 
 /* sys.datadir(appname) — platform data directory */
 int64_t tk_sys_datadir_w(int64_t appname) {
-    return (int64_t)(intptr_t)sys_datadir(
-        appname ? (const char *)(intptr_t)appname : "");
+    return seal_take(sys_datadir(
+        appname ? (const char *)(intptr_t)appname : ""));
 }

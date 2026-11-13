@@ -6,7 +6,7 @@
  *
  * Build and run:
  *   cc -Wall -Wextra -Wpedantic -Isrc -Isrc/stdlib \
- *       src/stdlib/securemem.c test/stdlib/test_securemem.c \
+ *       src/stdlib/securemem.c src/stdlib/str.c test/stdlib/test_securemem.c \
  *       -lpthread -o /tmp/test_securemem && /tmp/test_securemem
  *
  * Story: 72.3.4

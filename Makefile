@@ -1572,9 +1572,11 @@ test-stdlib-regex:
 	$(CC) $(CFLAGS) -o test/stdlib/test_regex test/stdlib/test_regex.c
 	$(RUN_TEST) ./test/stdlib/test_regex
 
+# 127.295: db.c's err_copy seals its copy (tks_strdup), whose sealed-heap
+# state lives in str.c, so the line names str.c too.
 test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
-	    test/stdlib/test_db.c src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3
+	    test/stdlib/test_db.c src/stdlib/db.c src/stdlib/capabilities.c src/stdlib/str.c -lsqlite3
 	$(RUN_TEST) ./test/stdlib/test_db
 
 # 127.271: every link line below that compiles src/stdlib/file.c names
@@ -1734,9 +1736,11 @@ test-stdlib-auth:
 	    test/stdlib/test_auth.c src/stdlib/auth.c src/stdlib/encoding.c src/stdlib/crypto.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_auth
 
+# 127.295: tk_time.c reads zone names with tk_strlen, so the test links str.c
+# (the sealed string heap tk_strhdr.h reads).
 test-stdlib-time:
 	$(CC) $(CFLAGS) -o test/stdlib/test_time \
-	    test/stdlib/test_time.c src/stdlib/tk_time.c
+	    test/stdlib/test_time.c src/stdlib/tk_time.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_time
 
 test-stdlib-test:
@@ -2204,7 +2208,7 @@ test-stdlib-zip: $(BIN)
 # throughout, under a name no consumer had been given.
 test-stdlib-securemem: $(BIN)
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_securemem \
-	    test/stdlib/test_securemem.c src/stdlib/securemem.c -lpthread
+	    test/stdlib/test_securemem.c src/stdlib/securemem.c src/stdlib/str.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_securemem
 	@TKC_STDLIB_DIR=$(PWD)/src/stdlib ./$(BIN) test/stdlib/securemem_roundtrip.tk -o test/stdlib/securemem_roundtrip.bin
 	$(RUN_TEST) ./test/stdlib/securemem_roundtrip.bin

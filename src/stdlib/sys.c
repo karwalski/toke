@@ -8,6 +8,7 @@
  */
 
 #include "sys.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen -- appname is a toke string */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -36,7 +37,7 @@ static const char *get_home(void) {
 static char *build_path(const char *base, const char *appname) {
     if (!base) return NULL;
     int has_app = appname && appname[0];
-    size_t len = strlen(base) + (has_app ? 1 + strlen(appname) : 0) + 1;
+    size_t len = tk_strlen(base) + (has_app ? 1 + tk_strlen(appname) : 0) + 1;
     char *buf = malloc(len);
     if (!buf) return NULL;
     if (has_app)

@@ -29,7 +29,7 @@
 # Negative control: C546_STDLIB=<dir> builds against another src/stdlib;
 # main's fails 1, disagrees in 2, and hangs in 3 (TIMEOUT at 90 s).
 #
-# Story: 121.42
+# Story: 121.42, 127.295
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -42,7 +42,7 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c546_XXXXXX")"; trap 'rm -rf "${WORK}"' E
 echo "C546: time zones without setenv, thread-safe (121.42)"
 echo "------------------------------------------------------"
 if [ ! -d /usr/share/zoneinfo ] && [ -z "${TZDIR:-}" ]; then
-    echo "  SKIP: no zoneinfo database on this host"; echo "C546: 0 passed, 0 failed (skipped)"; exit 0
+    echo "CONFORM-SKIP: no zoneinfo database on this host"; exit 0
 fi
 
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -iquote "${S}" -c "${S}/tk_time.c" -o tk_time.o > cc0.log 2>&1; then
@@ -169,8 +169,15 @@ int main(void) {
     return fails ? 1 : 0;
 }
 C
-# shellcheck disable=SC2086
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 -Wno-deprecated-declarations -iquote "${S}" -o t t.c "${S}/tk_time.c" -lpthread > cc.log 2>&1; then
+# 127.295: tk_time.c reads zone names with tk_strlen (the sealed string heap
+# in str.c), so the driver takes std.time's link set from stdlib_link_set.sh
+# as objects instead of compiling tk_time.c alone.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 -Wno-deprecated-declarations -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --objects time -- "${CF[@]}")" \
+    || { fail "stdlib link set (time): see stderr above"; echo "C546: ${PASS} passed, ${FAIL} failed"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o t t.c "${LINK[@]}" -lm -lpthread > cc.log 2>&1; then
     fail "driver does not compile: $(head -c 400 cc.log)"
 else
     ./t > t.out 2>&1; rc=$?

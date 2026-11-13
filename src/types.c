@@ -1489,6 +1489,27 @@ static int scalar_map_spelling(Arena *A, const char *sp) {
     return tki_scalar_type(A, b) && tki_scalar_type(A, colon + 1);
 }
 
+/* 127.335 / 127.424: `sp` spells a std array of std records (`[centroid]`,
+ * `[dbrow]`, nested to the depth struct_array_spelling allows): each glue
+ * hands toke an array of record pointers laid out as the element's .tki.
+ * The element must itself be a std non-sum record; `depth` bounds a record
+ * whose field names its own type.  NULL for any other spelling. */
+static Type *std_record_array_type(Ctx *cx, const char *sp, int depth) {
+    char en[64];
+    int an = struct_array_spelling(sp, en, sizeof en);
+    if (!an) return NULL;
+    const ImportedType *et = imported_type_lookup(cx->env->names, en);
+    Type *el = (et && et->is_std && !et->is_sum)
+             ? imported_struct_type(cx, en, depth + 1) : NULL;
+    for (; el && an > 0; an--) {
+        Type *at = mk_type(cx->env->arena, TY_ARRAY);
+        if (!at) return NULL;
+        at->elem = el;
+        el = at;
+    }
+    return el;
+}
+
 static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
     Arena *A = cx->env->arena;
     if (!tname || !*tname || !cx->env->names) return NULL;
@@ -1539,21 +1560,8 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                  * `km.centroids.get(0).center.get(1)` printed the f64's
                  * bits.  The element must itself be a std record, and
                  * `depth` bounds a record whose field names its own type. */
-                char en[64];
-                int an = (!ft && sp && sp[0] == '[' && it->is_std && depth < 4)
-                       ? struct_array_spelling(sp, en, sizeof en) : 0;
-                if (an) {
-                    const ImportedType *et =
-                        imported_type_lookup(cx->env->names, en);
-                    Type *el = (et && et->is_std && !et->is_sum)
-                             ? imported_struct_type(cx, en, depth + 1) : NULL;
-                    for (; el && an > 0; an--) {
-                        Type *at = mk_type(A, TY_ARRAY);
-                        if (at) at->elem = el;
-                        el = at;
-                    }
-                    ft = el;
-                }
+                if (!ft && sp && sp[0] == '[' && it->is_std && depth < 4)
+                    ft = std_record_array_type(cx, sp, depth);
                 /* 127.336: a std map of scalars (`tmplvars.entries`
                  * "[str:str]", a toke map handle in TkTmplVarsRec). */
                 if (!ft && sp && sp[0] == '[' && it->is_std &&
@@ -2769,10 +2777,23 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
                 Type *ost = imported_struct_type(cx, okb, 0);
                 if (ost) return ost;
             }
+            /* 127.424: an array of std records (`db.many`'s
+             * `[dbrow]!dberr`) is adopted as the 127.335 field rule types
+             * it.  Left unknown, `$ok:v v` bound an untyped array, so
+             * `rs.get(0).cols.get(0).get(1)` printed the string's address
+             * where the annotated `let rs:@($dbrow)=..` printed the value. */
+            {
+                Type *ast = std_record_array_type(cx, okb, 0);
+                if (ast) return ast;
+            }
             return repr_payload_type(cx, okb);
         }
         Type *st = imported_struct_type(cx, f->okret, 0);
         if (st) return st;
+        {
+            Type *ast = std_record_array_type(cx, f->okret, 0);
+            if (ast) return ast;
+        }
         /* 127.297 / 127.302: a representation-bearing ok payload -- the
          * interface's `[f64]`, `[str]`, `[bool]` or `bool`, `str`, `f64`.
          * Left unknown, `let r=mt toml.f64arr(..){$ok:v v;..}` bound an
@@ -8310,7 +8331,19 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         /* Sum type exhaustiveness check: if scrutinee is a struct (sum type)
          * with variant fields, verify every variant is covered by a match arm. */
-        if (!rec_scr&&scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
+        /* 127.424: an imported record is a product -- imported_struct_type
+         * never hands the checker a sum (those stay unknown) -- so its
+         * fields are not variants.  A result match over one (`mt
+         * rows.get(0) {$ok:r r;$err:e $csvrow{..}}`, once db.many /
+         * csv.parse bind their typed arrays) drew "missing variant(s)
+         * 'fields'".  A local product record in the same match still does
+         * (127.426). */
+        int imported_product=0;
+        if (has_result_arm&&scr->kind==TY_STRUCT&&scr->name&&cx->env->names) {
+            const ImportedType *it=imported_type_lookup(cx->env->names,scr->name);
+            if (it&&!it->is_sum) imported_product=1;
+        }
+        if (!rec_scr&&!imported_product&&scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
             char missing[512]; missing[0]='\0'; int miss_count=0;
             for (int vi=0;vi<scr->field_count;vi++) {
                 const char *vn=scr->field_names[vi];
