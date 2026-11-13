@@ -2188,6 +2188,38 @@ static int sum_decl_has_variant(const char *src, const Node *td, const char *v) 
     }
     return is_sum && has;
 }
+/* 127.426: 1 when `nm` names a local TYPE_DECL that is certainly a product
+ * record: declared in the default syntax (`t=$nm{..}`, the name follows a
+ * `$`), with fields, none of them a `$variant` (TK_DOLLAR, as
+ * sum_decl_has_variant reads it) and none spelt with an uppercase initial
+ * (127.380's legacy-variant marker; the default alphabet has none).  Any
+ * other declaration -- a sum, `T=Nm{..}` / `t=Nm{..}` without the `$`,
+ * where --legacy record and sum share a spelling (G012, G045) -- is 0, and
+ * a match over it keeps the sum exhaustiveness check. */
+static int local_record_decl(Ctx *cx, const char *nm) {
+    if (!nm || !*nm || !cx->env->names || !cx->src) return 0;
+    Decl *d = tc_lookup(cx->env->names->module_scope, nm, (int)strlen(nm));
+    if (!d || !d->def_node || d->def_node->kind != NODE_TYPE_DECL) return 0;
+    const Node *td = d->def_node;
+    const Node *nn = td->child_count > 0 ? td->children[0] : NULL;
+    if (!nn || nn->tok_start <= 0 || cx->src[nn->tok_start - 1] != '$') return 0;
+    int any = 0;
+    for (int i = 1; i < td->child_count; i++) {
+        const Node *ch = td->children[i];
+        if (!ch) continue;
+        int nf = ch->kind == NODE_FIELD ? 1
+               : ch->kind == NODE_STMT_LIST ? ch->child_count : 0;
+        for (int j = 0; j < nf; j++) {
+            const Node *f = ch->kind == NODE_FIELD ? ch : ch->children[j];
+            if (!f || f->kind != NODE_FIELD) continue;
+            if (f->op == TK_DOLLAR) return 0;
+            if (f->tok_len > 0 && cx->src[f->tok_start] >= 'A'
+                && cx->src[f->tok_start] <= 'Z') return 0;
+            any = 1;
+        }
+    }
+    return any;
+}
 static void sum_owners_rec(const char *src, const Node *n, const char *v,
                            char (*names)[128], const char **own, int *nown) {
     if (!n) return;
@@ -7847,12 +7879,19 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * fields are not variants.  A result match over one (`mt
          * rows.get(0) {$ok:r r;$err:e $csvrow{..}}`, once db.many /
          * csv.parse bind their typed arrays) drew "missing variant(s)
-         * 'fields'".  A local product record in the same match still does
-         * (127.426). */
+         * 'fields'". */
         int imported_product=0;
         if (has_result_arm&&scr->kind==TY_STRUCT&&scr->name&&cx->env->names) {
             const ImportedType *it=imported_type_lookup(cx->env->names,scr->name);
             if (it&&!it->is_sum) imported_product=1;
+            /* 127.426: so is a local default-syntax record.  `t=$pt{x:i64}`
+             * with `mt ps.get(0) {$ok:r r;$err:e $pt{x:0}}` drew "missing
+             * variant(s) 'x'".  Only a declaration that settles the question
+             * is judged a product (local_record_decl); a sum, or a --legacy
+             * declaration where record and sum share a spelling (G012, G045,
+             * 127.380), keeps the check. */
+            if (!imported_product&&local_record_decl(cx,scr->name))
+                imported_product=1;
         }
         if (!imported_product&&scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
             char missing[512]; missing[0]='\0'; int miss_count=0;
