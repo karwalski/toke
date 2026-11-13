@@ -6,7 +6,8 @@
  *   {"level":"info","msg":"...","fields":{"k1":"v1"},"ts":"<ISO8601>"}\n
  *
  * Log level is read once from TK_LOG_LEVEL on first use, then cached.
- * Levels (lowest to highest): DEBUG=0, INFO=1, WARN=2, ERROR=3.
+ * Levels (lowest to highest): DEBUG=0, INFO=1, WARN=2, ERROR=3; names are
+ * matched case-insensitively (127.407).
  * Default when TK_LOG_LEVEL is absent or unrecognised: INFO (1).
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
@@ -73,14 +74,34 @@ static FILE *output_stream(void)
  * Level initialisation
  * ---------------------------------------------------------------------- */
 
+/* ASCII case-insensitive equality, independent of the C locale. */
+static int level_name_eq(const char *s, const char *upper)
+{
+    for (; *s && *upper; s++, upper++) {
+        unsigned char c = (unsigned char)*s;
+        if (c >= 'a' && c <= 'z') c = (unsigned char)(c - 'a' + 'A');
+        if (c != (unsigned char)*upper) return 0;
+    }
+    return *s == '\0' && *upper == '\0';
+}
+
+/* 127.407: level names are case-insensitive ("error", "Error", "ERROR"), as
+ * docs/stdlib/log.md promises for log.setlevel and TK_LOG_LEVEL.  Returns the
+ * level, or -1 for NULL or an unrecognised name. */
+static int level_from_name(const char *s)
+{
+    if (!s) return -1;
+    if (level_name_eq(s, "DEBUG")) return TK_LOG_DEBUG;
+    if (level_name_eq(s, "INFO"))  return TK_LOG_INFO;
+    if (level_name_eq(s, "WARN"))  return TK_LOG_WARN;
+    if (level_name_eq(s, "ERROR")) return TK_LOG_ERROR;
+    return -1;
+}
+
 static int parse_level(const char *s)
 {
-    if (!s) return TK_LOG_INFO;
-    if (strcmp(s, "DEBUG") == 0) return TK_LOG_DEBUG;
-    if (strcmp(s, "INFO")  == 0) return TK_LOG_INFO;
-    if (strcmp(s, "WARN")  == 0) return TK_LOG_WARN;
-    if (strcmp(s, "ERROR") == 0) return TK_LOG_ERROR;
-    return TK_LOG_INFO; /* unrecognised → default INFO */
+    int lv = level_from_name(s);
+    return lv < 0 ? TK_LOG_INFO : lv; /* absent/unrecognised -> default INFO */
 }
 
 static void ensure_level(void)
@@ -92,13 +113,9 @@ static void ensure_level(void)
 
 void tk_log_set_level(const char *level)
 {
-    int parsed = parse_level(level);
-    /* parse_level returns INFO for unknown strings; only accept known ones. */
-    if (level &&
-        (strcmp(level, "DEBUG") == 0 || strcmp(level, "INFO")  == 0 ||
-         strcmp(level, "WARN")  == 0 || strcmp(level, "ERROR") == 0)) {
-        g_level = parsed;
-    }
+    int parsed = level_from_name(level);
+    /* Only a recognised name changes the level. */
+    if (parsed >= 0) g_level = parsed;
     /* If level is unrecognised, leave g_level as-is (or initialise). */
     if (g_level == TK_LOG_UNINIT) g_level = TK_LOG_INFO;
 }

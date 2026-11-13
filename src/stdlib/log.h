@@ -15,7 +15,7 @@
  *   bool     = int           (0 = false / filtered, 1 = true / emitted)
  *   [[Str]]  = const char ** (flat array of interleaved key/value pairs)
  *
- * Log levels (TK_LOG_LEVEL env var): DEBUG, INFO, WARN, ERROR
+ * Log levels (TK_LOG_LEVEL env var): DEBUG, INFO, WARN, ERROR (any case)
  * Default level when TK_LOG_LEVEL is unset: INFO
  *
  * Story: 3.8.1  Branch: feature/stdlib-3.8-log
@@ -23,7 +23,8 @@
 
 /*
  * tk_log_set_level — programmatically override the log level.
- * Accepts the same strings as TK_LOG_LEVEL: "DEBUG", "INFO", "WARN", "ERROR".
+ * Accepts the same strings as TK_LOG_LEVEL: "DEBUG", "INFO", "WARN", "ERROR",
+ * matched case-insensitively ("error" == "ERROR", story 127.407).
  * Unknown strings are silently ignored (level remains unchanged).
  */
 void tk_log_set_level(const char *level);
