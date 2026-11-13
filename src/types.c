@@ -1736,6 +1736,21 @@ int tk_type_identical(const Type *a, const Type *b) {
     }
     return 1;
 }
+/*
+ * 127.374: std_array_mut_ret's "no TY_UNKNOWN anywhere" guard (127.315)
+ * asks this, not tk_type_identical(t,t).  Same name and body as Z159's copy
+ * (127.373, dd55c69d, beside std_elem_ret); keep exactly one at merge.
+ */
+/* TY_UNKNOWN anywhere in `t` (tk_type_identical(t,t) cannot say: it
+ * answers 1 for the same pointer before looking inside). */
+static int tk_type_has_unknown(const Type *t) {
+    if (!t || t->kind == TY_UNKNOWN) return 1;
+    if (t->elem && tk_type_has_unknown(t->elem)) return 1;
+    for (int i = 0; i < t->field_count; i++)
+        if (t->field_types && t->field_types[i] && tk_type_has_unknown(t->field_types[i]))
+            return 1;
+    return 0;
+}
 static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
     Type *t = mk_type(cx->env->arena, TY_FUNC);
     if (!t) return NULL;
@@ -2693,11 +2708,23 @@ static Type *tail_value_type(Ctx *cx, const Node *te) {
     return t;
 }
 
-/* 127.326 / 127.327: t is a value type the checker knows completely --
- * not void, and no TY_UNKNOWN anywhere in it (tk_type_identical is strict:
- * a type holding an unknown is not identical even to itself). */
+/* 127.326 / 127.327: t is a value type the checker knows -- not void and
+ * not TY_UNKNOWN itself.
+ *
+ * 127.374: this read "no TY_UNKNOWN anywhere" and asked
+ * tk_type_identical(t,t), which answers 1 for the same pointer before
+ * looking inside, so a type known only in part (`@(?)`, `@(str:?)`) was
+ * always adopted.  That is now the stated rule, not an accident: refusing
+ * it (tk_type_has_unknown) left `let d=mt r {$ok:v @("k":s.bytes(..));
+ * $err:e <1}` untyped, so `d.get("k")` lowered as an ARRAY read and trapped
+ * RT003, and `g(d)` into a str parameter lost its E4031.  A partial type
+ * is what the arm's own expression is typed as, and what a direct
+ * `let d=@("k":s.bytes(..))` binds (bind_init_type's MAP_LIT case).  Arms
+ * must still agree by tk_type_identical, which answers 0 for two distinct
+ * types holding an unknown, so only a single value arm (or one shared
+ * type) is adopted in part. */
 static int known_value_type(Type *t) {
-    return t && t->kind != TY_VOID && tk_type_identical(t, t);
+    return t && t->kind != TY_VOID && t->kind != TY_UNKNOWN;
 }
 
 /*
@@ -3195,8 +3222,7 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
  * Spec v0.4 §C: "Both arms are blocks whose value is the block's tail
  * expression; the two tails must have the same type."  So the binding takes
  * that type when the checker knows it for both tails and they are identical
- * (tk_type_identical: strict, TY_UNKNOWN anywhere is never identical).  Any
- * other shape — a branch whose last statement is not an expression (a `<`
+ * (tk_type_identical; 127.374: known_value_type).  Any other shape — a branch whose last statement is not an expression (a `<`
  * return, a `br`, a binding), an unknown tail, or tails of different types —
  * answers NULL, the behaviour before this story.  No join rule is invented.
  *
@@ -5378,9 +5404,10 @@ static Type *std_array_mut_ret(Ctx *cx, const Node *bn, const Node *use,
                                const char *nb, int nlen, int depth) {
     if (tk_binder_at(cx->fn_node, cx->src, use, nb, nlen, NULL) != bn) return NULL;
     Type *t = std_array_ret(cx, bn->children[1], depth + 1);
-    /* tk_type_identical(t,t) is 0 when t holds TY_UNKNOWN anywhere: an
-     * element type the interface does not state cannot anchor the check. */
-    if (!t || !tk_type_identical(t, t)) return NULL;
+    /* An element type the interface does not state (TY_UNKNOWN anywhere)
+     * cannot anchor the check.  127.374: tk_type_has_unknown, not
+     * tk_type_identical(t,t), which answers 1 for the same pointer. */
+    if (!t || tk_type_has_unknown(t)) return NULL;
     return mut_assigns_all_array(cx, cx->fn_node, bn, nb, nlen, t, depth) ? t : NULL;
 }
 
