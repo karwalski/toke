@@ -36,6 +36,19 @@
 # Plus: with TK_TLS_TRACE_GROUP unset nothing is written (production is
 # silent).
 #
+# NO CLOCK IN THE CLIENT CASES (127.395).  The raw OpenSSL server used to
+# write its port to a file that the script polled for 5 s, and the script
+# then polled 5 s for its `srvgroup=` line; worse, the bare client left
+# without reading the response, so the raw server's response write could
+# meet a reset connection and SIGPIPE killed it before it printed the group
+# (measured: 5 of 40 runs, rc 141).  Now the raw server ignores SIGPIPE (it
+# is the test's peer, not code under test), the bare client reads the
+# response to EOF, and the script reads the raw server's stdout through a
+# FIFO: a blocking read of the `port=` line it prints only after listen(),
+# then, after the client has exited and a `Q` connection has queued behind
+# the client's (accept order is connection order), a read to EOF.  Its
+# alarm(120) is a hang guard, not a readiness budget.
+#
 # Negative control: C1200_STDLIB=<src/stdlib of f8ca5638, before 122.15> --
 # see the commit for the measured result.
 #
@@ -112,6 +125,7 @@ CNF
 
 cat > drv.c <<'C'
 /* C1200 driver: one binary, six roles (argv[1]). */
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -198,8 +212,12 @@ static int do_peer(int port, const char *sni) {
     return 0;
 }
 
-/* rawsrv PORTFILE CERT KEY N -- a raw OpenSSL server for the toke clients */
-static int do_rawsrv(const char *pf, const char *cert, const char *key, int nconn) {
+/* rawsrv CERT KEY -- a raw OpenSSL server for the toke clients.  Prints
+ * "port=P" once it is listening, one srvgroup= line per TLS connection, and
+ * exits at the first connection whose first byte is 'Q' (see `quit`). */
+static int do_rawsrv(const char *cert, const char *key) {
+    signal(SIGPIPE, SIG_IGN);   /* a client that has left is not this peer's failure */
+    alarm(120);                 /* hang guard only: the script never waits on a clock */
     SSL_CTX *x = SSL_CTX_new(TLS_server_method());
     if (SSL_CTX_set1_groups_list(x, PEER_GROUPS) != 1 ||
         SSL_CTX_use_certificate_chain_file(x, cert) != 1 ||
@@ -212,10 +230,12 @@ static int do_rawsrv(const char *pf, const char *cert, const char *key, int ncon
     socklen_t al = sizeof a;
     if (bind(ls, (struct sockaddr *)&a, sizeof a) != 0 || listen(ls, 8) != 0) return 1;
     getsockname(ls, (struct sockaddr *)&a, &al);
-    FILE *f = fopen(pf, "w"); fprintf(f, "%d\n", ntohs(a.sin_port)); fclose(f);
-    for (int i = 0; i < nconn; i++) {
+    printf("port=%d\n", ntohs(a.sin_port)); fflush(stdout);
+    for (;;) {
         int c = accept(ls, NULL, NULL);
         if (c < 0) continue;
+        char q;
+        if (recv(c, &q, 1, MSG_PEEK) == 1 && q == 'Q') { close(c); break; }
         SSL *s = SSL_new(x); SSL_set_fd(s, c);
         if (SSL_accept(s) != 1) {
             printf("srvgroup=(handshake failed)\n"); fflush(stdout);
@@ -256,15 +276,25 @@ int main(int argc, char **argv) {
         return do_serve(atoi(argv[2]), argv[3], argv[4], argv[5]);
     if (strcmp(role, "peer") == 0 && argc >= 3)
         return do_peer(atoi(argv[2]), argc > 3 ? argv[3] : NULL);
-    if (strcmp(role, "rawsrv") == 0 && argc == 6)
-        return do_rawsrv(argv[2], argv[3], argv[4], atoi(argv[5]));
+    if (strcmp(role, "rawsrv") == 0 && argc == 4)
+        return do_rawsrv(argv[2], argv[3]);
+    if (strcmp(role, "quit") == 0 && argc == 3) {
+        /* queued behind any client connection; tells rawsrv to exit */
+        int fd = tcp_to(atoi(argv[2]));
+        if (fd >= 0) { (void)write(fd, "Q", 1); close(fd); }
+        return 0;
+    }
     if (strcmp(role, "bareclient") == 0 && argc == 3) {
         /* no group list of its own: whatever the library default/config says */
         int fd = tcp_to(atoi(argv[2]));
         SSL_CTX *x = SSL_CTX_new(TLS_client_method());
         SSL *s = SSL_new(x); SSL_set_fd(s, fd);
         int ok = fd >= 0 && SSL_connect(s) == 1;
-        if (ok) SSL_write(s, "GET / HTTP/1.1\r\n\r\n", 18);
+        if (ok) {
+            char rb[4096];
+            SSL_write(s, "GET / HTTP/1.1\r\n\r\n", 18);
+            while (SSL_read(s, rb, (int)sizeof rb) > 0) {}   /* to EOF: leave politely */
+        }
         printf("bare: %s %s\n", ok ? "ok" : "fail", ok ? gname(s) : "");
         return 0;
     }
@@ -329,16 +359,30 @@ server_case() {
 }
 # client_case BIN ROLE TAG [ENV...]: raw server + toke client; prints
 # "<server-observed group>|<client output>"
+# No clock (127.395): the raw server's stdout comes through a FIFO.  The
+# first read blocks until it prints port= (after listen) or exits (EOF: "not
+# ready"); the last reads to EOF, which comes after `quit` because its
+# connection queues behind the client's.
 client_case() {
     local bin="$1" role="$2" tag="$3"; shift 3
-    rm -f "raw_${tag}.port"
-    env "$@" "./${bin}" rawsrv "raw_${tag}.port" c.pem k.pem 1 > "raw_${tag}.out" 2>&1 &
+    local fifo="raw_${tag}.fifo" line port="" out
+    rm -f "${fifo}" "raw_${tag}.out"; mkfifo "${fifo}"
+    env "$@" "./${bin}" rawsrv c.pem k.pem > "${fifo}" 2>&1 &
     SRV=$!
-    for _ in $(seq 1 100); do [ -s "raw_${tag}.port" ] && break; sleep 0.05; done
-    local out
-    out="$(env SSL_CERT_FILE="${WORK}/c.pem" "$@" "./${bin}" "${role}" "$(cat "raw_${tag}.port")" 2> "cli_${tag}.err")"
-    for _ in $(seq 1 100); do grep -q srvgroup "raw_${tag}.out" && break; sleep 0.05; done
-    stop "${SRV}"; SRV=""
+    exec 3< "${fifo}"
+    while IFS= read -r line <&3; do
+        echo "${line}" >> "raw_${tag}.out"
+        case "${line}" in port=*) port="${line#port=}"; break ;; esac
+    done
+    if [ -n "${port}" ]; then
+        out="$(env SSL_CERT_FILE="${WORK}/c.pem" "$@" "./${bin}" "${role}" "${port}" 2> "cli_${tag}.err")"
+        "./${bin}" quit "${port}"
+    else
+        out="raw server not ready: $(tr '\n' ' ' < "raw_${tag}.out")"
+    fi
+    while IFS= read -r line <&3; do echo "${line}" >> "raw_${tag}.out"; done
+    exec 3<&-
+    wait "${SRV}" 2>/dev/null; SRV=""
     echo "$(sed -n 's/^srvgroup=//p' "raw_${tag}.out" | head -1)|${out}"
 }
 has() { grep -c -- "$2" "$1" 2>/dev/null | tr -d ' '; }
