@@ -1,4 +1,9 @@
-# Canonical Binary IR Design
+---
+title: Canonical Binary IR Design
+slug: binary-ir-design
+section: architecture
+order: 1
+---
 
 **Date:** 2026-05-01 (format 1.2 and `--from-tkir`: 2026-11-10, story 76.1.6c)
 **Status:** draft; format 1.2 implemented (`--emit-tkir`, `--from-tkir`, `--read-tkir`)

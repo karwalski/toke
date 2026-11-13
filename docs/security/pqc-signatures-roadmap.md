@@ -1,9 +1,14 @@
-# Post-quantum signatures: migration roadmap
+---
+title: Post-quantum signatures — migration roadmap
+slug: pqc-signatures-roadmap
+section: security
+order: 3
+---
 
 **Story:** 122.5 (Epic 122, PQC / crypto-agility track) · **Decision record:** ADR-0013 (d), (e)
 **Checked against the source:** 2026-11-10, toke `main` at `ccc09753` plus the 122.5 branch
-**Companion documents:** [`pqc-hndl-triage.md`](pqc-hndl-triage.md) (key establishment),
-[`threat-model.md` Part III](threat-model.md) (posture, guidance, deprecation track)
+**Companion documents:** [`pqc-hndl-triage.md`](/docs/security/pqc-hndl-triage/) (key establishment),
+[`threat-model.md` Part III](/docs/security/threat-model/) (posture, guidance, deprecation track)
 
 ADR-0013 (d) commits toke to migrating its signature schemes from Ed25519 and
 ECDSA to ML-DSA (FIPS 204) or SLH-DSA (FIPS 205). Signatures are not a

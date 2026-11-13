@@ -1,9 +1,14 @@
-# Harvest-now-decrypt-later (HNDL) triage
+---
+title: Harvest-now-decrypt-later (HNDL) triage
+slug: pqc-hndl-triage
+section: security
+order: 2
+---
 
 **Story:** 122.5 (Epic 122, PQC / crypto-agility track) · **Decision record:** ADR-0013
 **Checked against the source:** 2026-11-10, toke `main` at `ccc09753` plus the 122.5 branch
-**Companion documents:** [`threat-model.md` Part III](threat-model.md) (posture and guidance, 122.6),
-[`pqc-signatures-roadmap.md`](pqc-signatures-roadmap.md) (signatures, 122.5)
+**Companion documents:** [`threat-model.md` Part III](/docs/security/threat-model/) (posture and guidance, 122.6),
+[`pqc-signatures-roadmap.md`](/docs/security/pqc-signatures-roadmap/) (signatures, 122.5)
 
 This document lists every place in the toke tree where a quantum-vulnerable
 **key-establishment** primitive (RSA-OAEP, X25519 Diffie-Hellman, classical
@@ -115,7 +120,7 @@ as the data must stay secret. Threat-model Part III, guidance item 3, already
 tells programs not to use `x25519dh` alone for long-lived secrets. The fix is
 an ML-KEM-768 or hybrid X25519 + ML-KEM-768 key encapsulation in the stdlib;
 its API shape is not settled by ADR-0013 (e) and is proposed for owner decision
-in [`pqc-signatures-roadmap.md`, appendix A](pqc-signatures-roadmap.md#appendix-a--stdencrypt-pqc-api-proposal-owner-decision).
+in [`pqc-signatures-roadmap.md`, appendix A](/docs/security/pqc-signatures-roadmap/#appendix-a--stdencrypt-pqc-api-proposal-owner-decision).
 
 ## H6 — RSA-OAEP
 

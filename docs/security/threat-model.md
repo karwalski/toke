@@ -1,4 +1,9 @@
-# Toke Corpus Pipeline — Threat Model
+---
+title: Toke Corpus Pipeline — Threat Model
+slug: threat-model
+section: security
+order: 1
+---
 
 **Status:** Draft — must be reviewed and signed off before Phase A corpus generation begins
 **Scope:** toke generate-compile-execute pipeline: task generation → LLM inference → tkc compilation → binary execution → result collection
@@ -103,7 +108,7 @@ only. This part extends the threat model to the parts of toke that ship to and r
 end-user and production hosts: the **tkc compiler toolchain**, the **C runtime / stdlib**,
 and the **HTTP server and web glue**. Findings referenced here come from the Epic 120
 security audit; per-area detail lives under
-[`docs/security/audit-120/`](audit-120/) and the roll-up is `audit-120/index.md`.
+[`docs/security/audit-120/`](https://github.com/karwalski/toke/blob/main/docs/security/audit-120/) and the roll-up is `audit-120/index.md`.
 Every confirmed finding is tracked as an Epic 121 remediation story.
 
 ## Trust boundaries at a glance
@@ -187,9 +192,9 @@ here are **remote-unauth**.
 **Added:** 2026-09-26 (story 122.6; decision record ADR-0013 (f), roadmap 122.5)
 
 The call-site triage of key-establishment exposure is
-[`pqc-hndl-triage.md`](pqc-hndl-triage.md); the signature migration plan, and
+[`pqc-hndl-triage.md`](/docs/security/pqc-hndl-triage/); the signature migration plan, and
 the proposed post-quantum stdlib API awaiting an owner decision, are in
-[`pqc-signatures-roadmap.md`](pqc-signatures-roadmap.md) (122.5).
+[`pqc-signatures-roadmap.md`](/docs/security/pqc-signatures-roadmap/) (122.5).
 
 A cryptographically relevant quantum computer (CRQC) breaks the classical
 **asymmetric** primitives (RSA, finite-field and elliptic-curve Diffie-Hellman,
