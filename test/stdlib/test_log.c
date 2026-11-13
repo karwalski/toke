@@ -9,6 +9,9 @@
  *  3. With TK_LOG_LEVEL=ERROR, log.info returns 0 (filtered).
  *  4. With TK_LOG_LEVEL=ERROR, log.error returns 1 (emitted).
  * 13. Level names are case-insensitive: "error", "Debug" (127.407).
+ *  0. An unknown name passed to tk_log_set_level before the first log call
+ *     keeps the TK_LOG_LEVEL level instead of forcing INFO (127.411).  Must
+ *     run first, while the level is still uninitialised.
  */
 
 #include <stdio.h>
@@ -68,6 +71,17 @@ static char *read_file(const char *path)
 int main(void)
 {
     const char *tmp = "/tmp/test_log_output.txt";
+
+    /* ---- Test 0: unknown name before first use keeps TK_LOG_LEVEL ------ */
+    setenv("TK_LOG_LEVEL", "ERROR", 1);
+    tk_log_set_level("verbose");      /* unknown: level stays env's ERROR */
+    redirect_stderr_to(tmp);
+    int r0a = tk_log_info("info-should-be-filtered", NULL, 0);
+    int r0b = tk_log_error("error-kept", NULL, 0);
+    fflush(stderr);
+    restore_stderr();
+    ASSERT(r0a == 0, "set_level(unknown) before first use: TK_LOG_LEVEL=ERROR filters info (127.411)");
+    ASSERT(r0b == 1, "set_level(unknown) before first use: TK_LOG_LEVEL=ERROR keeps error (127.411)");
 
     /* ---- Test 1: log.info with fields ---------------------------------- */
     setenv("TK_LOG_LEVEL", "INFO", 1);

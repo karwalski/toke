@@ -20,7 +20,7 @@ Levels are ordered from least to most severe: `debug < info < warn < error`. Whe
 | `warn` | 2 | Recoverable anomalies: retries, degraded behaviour, deprecations |
 | `error` | 3 (highest) | Failures that need attention: request errors, resource exhaustion |
 
-The default minimum level when `TK_LOG_LEVEL` is unset is `info`. `TK_LOG_LEVEL` and `log.setlevel` accept the names `debug`, `info`, `warn` and `error` in any case (`error`, `Error` and `ERROR` are the same level); an unrecognised `TK_LOG_LEVEL` value means `info`. Before story 127.407 only the upper-case names were recognised, so `log.setlevel("error")` and `TK_LOG_LEVEL=error` were ignored.
+The default minimum level when `TK_LOG_LEVEL` is unset is `info`. `TK_LOG_LEVEL` and `log.setlevel` accept the names `debug`, `info`, `warn` and `error` in any case (`error`, `Error` and `ERROR` are the same level); an unrecognised `TK_LOG_LEVEL` value means `info`. Before story 127.407 only the upper-case names were recognised, so `log.setlevel("error")` and `TK_LOG_LEVEL=error` were ignored. An unrecognised `log.setlevel` name keeps the current level, which before the first log call is the one `TK_LOG_LEVEL` selects; before story 127.411 such a call forced `info` and discarded `TK_LOG_LEVEL`.
 
 ## Output Format
 

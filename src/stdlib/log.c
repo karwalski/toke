@@ -115,9 +115,11 @@ void tk_log_set_level(const char *level)
 {
     int parsed = level_from_name(level);
     /* Only a recognised name changes the level. */
-    if (parsed >= 0) g_level = parsed;
-    /* If level is unrecognised, leave g_level as-is (or initialise). */
-    if (g_level == TK_LOG_UNINIT) g_level = TK_LOG_INFO;
+    if (parsed >= 0) { g_level = parsed; return; }
+    /* 127.411: an unrecognised name leaves the effective level unchanged.
+     * Before the first log call that level is the one TK_LOG_LEVEL selects,
+     * so initialise from the environment rather than forcing INFO. */
+    ensure_level();
 }
 
 /* -------------------------------------------------------------------------
