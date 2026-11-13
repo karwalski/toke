@@ -31,6 +31,7 @@
 #endif
 
 #include "securemem.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen -- securemem.write data is a toke string */
 
 #include <stdlib.h>
 #include <string.h>
@@ -244,7 +245,7 @@ int tk_securemem_write(TkSecureBuf buf, const char *data)
     }
 
     /* Bounds check: data must fit with a NUL terminator. */
-    size_t data_len = strlen(data);
+    size_t data_len = tk_strlen(data);
     if (data_len >= n->capacity) {
         pthread_mutex_unlock(&g_mutex);
         return 0;

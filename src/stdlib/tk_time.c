@@ -23,6 +23,7 @@
 #endif
 
 #include "tk_time.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen -- a zone name is a toke string */
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
@@ -213,7 +214,7 @@ static int64_t tz_be(const unsigned char *p, int n)
 /* A name that may be opened under the zoneinfo directory. */
 static int tz_safe_name(const char *n)
 {
-    size_t len = strlen(n);
+    size_t len = tk_strlen(n);
     if (len == 0 || len > 255 || n[0] == '/' || strstr(n, "..")) return 0;
     for (size_t i = 0; i < len; i++) {
         char c = n[i];

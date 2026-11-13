@@ -43,7 +43,7 @@ pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 if ! command -v python3 >/dev/null 2>&1; then
-    echo "CONFORM-SKIP: python3 not installed"
+    echo "CONFORM-SKIP: python3 not installed (it writes the fixture workbook)"
     exit 0
 fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c1561_XXXXXX")"
