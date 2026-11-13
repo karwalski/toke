@@ -54,7 +54,6 @@ src/stdlib/pdftext.c 1
 src/stdlib/process_glue.c 1
 src/stdlib/proxy.c 3
 src/stdlib/securemem.c 1
-src/stdlib/soap.c 9
 src/stdlib/str.c 1   # tks_verify_fail: the verify switch's own strlen (127.295)
 src/stdlib/strbuf.h 1
 src/stdlib/sys.c 1
