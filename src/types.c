@@ -3116,6 +3116,21 @@ static int alias_shadowed(Ctx *cx, const Node *id) {
                             cx->interp_host);
 }
 
+/* 127.384: `call` is `alias.fn(..)` with `alias` an unshadowed import of a
+ * USER module (not std.*). */
+static const char *import_module_path(Ctx *cx, const char *alias,
+                                      char *buf, size_t bufsz);
+static int user_module_call(Ctx *cx, const Node *call) {
+    const Node *cal = (call && call->child_count > 0) ? call->children[0] : NULL;
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2
+        || !cal->children[0] || cal->children[0]->kind != NODE_IDENT
+        || alias_shadowed(cx, cal->children[0])) return 0;
+    char ab[128]; TOKSTR(ab, cx->src, cal->children[0]);
+    char mb[256];
+    const char *mp = import_module_path(cx, ab, mb, sizeof mb);
+    return mp && strncmp(mp, "std.", 4) != 0;
+}
+
 /*
  * 127.202 — a `$ok`/`$err` match over a value that is not an error union.
  *
@@ -7076,6 +7091,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * of it (fnval_bind_sig reads the initialiser's rtype) is
                  * called through, as a same-module `let g=getf()` is. */
                 if (func_has_sig(mrt)) return mrt;
+                /* 127.384: and a RECORD returned from another USER module
+                 * (`l.mk()`, .tki "return": "rec"), the type the `let`
+                 * binding already adopts.  Left unknown in place,
+                 * `l.pi(l.mk())` passed --check and printed the record's
+                 * address doubled, and `let a:str=l.mk()` was clean, while
+                 * the bound form and a same-module call are E4031.  A std
+                 * module's records are not adopted here (unchanged). */
+                if (mrt&&mrt->kind==TY_STRUCT&&user_module_call(cx,node))
+                    return mrt;
                 /* 138.3: and a declared scalar return, in place too
                  * (`str.nowunix()/86400`). */
                 Type *srt=std_scalar_ret(cx,node);
