@@ -100,6 +100,16 @@ expect "12 imported user record omits a field" \
 expect "13 imported user record with every field stays clean" \
     "$(diags 'm=b;i=a:amod;f=main():i64{let c=$cfgrec{w:3.0;n:2;name:"q"};<c.n};')" "rc=0"
 
+# 15. A record built with `$variant` spellings (two banked corpus records): the
+#     author meant a sum, and the message says so.
+printf '%s\n' 'm=a;t=$e{notfound:$str;empty:bool};f=g(n:i64):i64!$e{if(n<0){<$e{$empty:true}};<n};f=main():i64{<0};' > "${WORK}/v.tk"
+(cd "${WORK}" && "${TKC}" --check v.tk) > "${WORK}/v.out" 2>&1
+if grep -q '"error_code":"E4077".*is a sum variant, but this type is declared as a record' "${WORK}/v.out"; then
+    expect "15 record written with \$variant fields: E4077 says sum" ok ok
+else
+    expect "15 record written with \$variant fields: E4077 says sum" "$(head -c 300 "${WORK}/v.out")" "E4077 with the sum hint"
+fi
+
 # 14. Runtime control: an out-of-order literal reads back the right values.
 cat > "${WORK}/run.tk" <<'EOF'
 m=a;

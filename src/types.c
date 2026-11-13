@@ -1957,9 +1957,23 @@ static void check_record_lit_fields(Ctx *cx, const Node *node, const Type *st,
     }
     if (nmiss == 0) return;
     if (!tc_first_report(cx, node) || !tc_can_emit(cx)) return;
-    char msg[512];
-    snprintf(msg, sizeof(msg), "struct literal '$%s' leaves out field%s %s",
-             st->name ? st->name : "?", nmiss > 1 ? "s" : "", miss);
+    /* A field spelled `$x` names a sum VARIANT: the author meant a sum and
+     * declared a record (`t=$e{notfound:str;empty:bool}` built as
+     * `$e{$empty:true}`, two banked corpus records).  Say so, or the repair
+     * loop is pointed at adding fields. */
+    int dollar = 0;
+    for (int i = 0; i < node->child_count && !dollar; i++) {
+        const Node *fi = node->children[i];
+        if (fi && fi->kind == NODE_FIELD_INIT && fi->start > 0
+            && cx->src[fi->start - 1] == '$')
+            dollar = 1;
+    }
+    char msg[768];
+    snprintf(msg, sizeof(msg), "struct literal '$%s' leaves out field%s %s%s",
+             st->name ? st->name : "?", nmiss > 1 ? "s" : "", miss,
+             dollar ? "; a field written '$name' is a sum variant, but this"
+                      " type is declared as a record (a sum declares its"
+                      " variants with '$')" : "");
     diag_emit(DIAG_ERROR, E4077, node->start, node->line, node->col, msg,
               "expected", "every declared field", "got", miss,
               (const char *)NULL);                  /* no fix: see above */

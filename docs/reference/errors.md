@@ -1274,7 +1274,10 @@ declaration order (`expected` is `every declared field`, `got` lists them).
 The fields may be given in any order. A sum-variant literal (`$sh{$sq:2}`,
 `$greperr{$nopattern:0}`) names one variant, not fields, and is not judged.
 A literal that already names a field the record lacks (E4025, usually a
-misspelling of the omitted field) is not reported again here. There is no
+misspelling of the omitted field) is not reported again here. When the
+literal spells a field `$name` (a sum variant) the message adds that the type
+is declared as a record: `t=$e{notfound:str;empty:bool}` built as
+`$e{$empty:true}` means a sum, `t=$e{$notfound:str;$empty:bool}`. There is no
 `fix`: the omitted value is not knowable.
 
 <!-- skip-check -->
