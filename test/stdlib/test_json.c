@@ -18,6 +18,7 @@ int64_t tk_json_encnum_w(int64_t v);
 int64_t tk_json_encbool_w(int64_t b);
 int64_t tk_json_encf64_w(int64_t bits);
 int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind);
+int64_t tk_json_encval_w(int64_t v, int64_t desc);
 
 /* 127.193: the scalar accessors now keep the error slot truthful and raise
  * through tk_err_box, both of which live in tk_runtime.c.  This test links
@@ -618,6 +619,24 @@ int main(void) {
         const char *gs = (const char *)(intptr_t)tk_json_encarr_w(so, 2, 1);
         CHECK(gs && strcmp(gs, "[[\"x\",\"y\"]]") == 0,
               "127.45 encarr: @@str nests with quoting");
+    }
+
+    /* --- 127.361: a record encodes from the compiler's descriptor ------
+     * (j.enc(r) walked the record's slots as a C string). */
+    {
+        int64_t *in = (int64_t *)malloc(sizeof(int64_t));
+        in[0] = -4;
+        int64_t *r = (int64_t *)malloc(3 * sizeof(int64_t));
+        r[0] = 7; r[1] = (int64_t)(intptr_t)"h\"i"; r[2] = (int64_t)(intptr_t)in;
+        char *got = (char *)(intptr_t)tk_json_encval_w((int64_t)(intptr_t)r,
+                                                       (int64_t)(intptr_t)"{a:i,s:s,p:{x:i}}");
+        CHECK(got && strcmp(got, "{\"a\":7,\"s\":\"h\\\"i\",\"p\":{\"x\":-4}}") == 0,
+              "127.361 encval: record -> JSON object, owned, no newline");
+        free(got);
+        char *gn = (char *)(intptr_t)tk_json_encval_w(0, (int64_t)(intptr_t)"{x:i}");
+        CHECK(gn && strcmp(gn, "null") == 0, "127.361 encval: nil record handle is null");
+        free(gn);
+        free(r); free(in);
     }
 
     /* --- 127.193: a false / 0 / 0.0 value is not an error --------------

@@ -331,7 +331,7 @@ closed:
 
 ```
 f=handledelete(req:$request):$response{
-  let claims=mt requireuser(req.authheader;secret) {$ok:c c;$err:e ($jwtclaims{})};
+  let claims=mt requireuser(req.authheader;secret) {$ok:c c;$err:e <deny(401)};
   if(!isauthenticated(claims)){ <deny(401) }el{};
   if(!csrfok(req)){ <deny(403) }el{};
   if(!maydelete(claims;req.target)){ <deny(403) }el{};   // authorization, not just authn

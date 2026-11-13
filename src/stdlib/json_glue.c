@@ -998,3 +998,21 @@ void tk_json_printval_w(int64_t v, int64_t desc) {
     printf("%s\n", b.p ? b.p : "null");
     free(b.p);
 }
+
+/* 127.361: json.encval(v, desc) -- the same JSON text tk_json_printval_w
+ * prints, as an owned string, with no newline.  `j.enc(r)` of a record (or of
+ * an array holding records) used to reach tk_json_enc_w, which cast the record
+ * to `char *` and json_enc()ed its slots: strlen ran over the record's bytes,
+ * out of bounds when no slot held a zero byte, and `j.enc(R{a:7;b:9})`
+ * returned "\u0007".  The compiler now hands this encoder the descriptor of
+ * the argument's checker type (json_type_desc() in llvm.c), so `j.enc(r)` is
+ * exactly the object `j.print(r)` prints. */
+int64_t tk_json_encval_w(int64_t v, int64_t desc) {
+    JBuf b = { NULL, 0, 0 };
+    jbuf_typed(&b, v, (const char *)(intptr_t)desc);
+    if (b.p) return (int64_t)(intptr_t)b.p;
+    char *nul = (char *)malloc(5);
+    if (!nul) return (int64_t)(intptr_t)"null";
+    memcpy(nul, "null", 5);
+    return (int64_t)(intptr_t)nul;
+}

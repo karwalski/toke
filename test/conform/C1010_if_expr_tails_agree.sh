@@ -132,10 +132,10 @@ f=main():i64{
 EOF
 
 rejects n9 'if as the value of an mt arm' i64 str 5 <<'EOF'
-t=$s{a:i64;b:i64};
+t=$s{$a:i64;$b:i64};
 f=main():i64{
   let c:bool=false;
-  let m=mt $s{a:1} {$a:n if(c){ 1 }el{ "z" };$b:n 0};
+  let m=mt $s{$a:1} {$a:n if(c){ 1 }el{ "z" };$b:n 0};
   <m
 };
 EOF
@@ -174,12 +174,12 @@ f=main():i64{
 EOF
 
 runs c4 'statement ifs (discarded value) may end in anything' 'x ' <<'EOF'
-t=$s{a:i64;b:i64};
+t=$s{$a:i64;$b:i64};
 f=main():i64{
   let c:bool=false;
   if(c){ io.println("a") }el{ 5 };
   lp(let i=0;i<1;i=i+1){ if(c){ 1 }el{ "s" } };
-  mt $s{a:1} {$a:n if(c){ io.println("y") }el{ 9 };$b:n 0};
+  mt $s{$a:1} {$a:n if(c){ io.println("y") }el{ 9 };$b:n 0};
   io.println("x");
   <0
 };

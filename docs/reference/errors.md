@@ -1254,6 +1254,86 @@ f=inner(n:i64):i64!$ea{if(n>0){<$ea{$y:"boom"}};<n};
 f=outer(n:i64):i64!$eb{let v=inner(n)!$eb;<v+1};
 ```
 
+### E4077
+
+**Struct literal leaves out a declared field**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+A record literal `$name{..}` must give every field the record declares.
+toke has no field defaults, and the memory model forbids uninitialised reads
+(v0.3 §14.5), but until 127.365 an omitted field compiled and read back
+whatever its slot held: for `t=$r{a:i64;b:i64}`, `$r{a:5}` passed `--check`
+and `r.b` printed `1`.
+
+The diagnostic is reported at the literal and names every omitted field in
+declaration order (`expected` is `every declared field`, `got` lists them).
+The fields may be given in any order. A sum-variant literal (`$sh{$sq:2}`,
+`$greperr{$nopattern:0}`) names one variant, not fields, and is not judged.
+A literal that already names a field the record lacks (E4025, usually a
+misspelling of the omitted field) is not reported again here. When the
+literal spells a field `$name` (a sum variant) the message adds that the type
+is declared as a record: `t=$e{notfound:str;empty:bool}` built as
+`$e{$empty:true}` means a sum, `t=$e{$notfound:str;$empty:bool}`. There is no
+`fix`: the omitted value is not knowable.
+
+<!-- skip-check -->
+```text
+m=test;
+t=$r{a:i64;b:i64};
+f=main():i64{let r=$r{a:5};<r.a};
+```
+
+### E4078
+
+**Struct literal gives a field more than once**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+A record literal names the same field twice, as in `$r{a:1;b:2;a:3}`. Until
+127.366 this compiled and the last value silently won. It is reported at the
+repeated field init (`got` is the field name). There is no `fix`: which of
+the two values was meant, or which other field the second was meant for, is
+not decidable.
+
+<!-- skip-check -->
+```text
+m=test;
+t=$r{a:i64;b:i64};
+f=main():i64{let r=$r{a:1;b:2;a:3};<r.a};
+```
+
+### E4079
+
+**`as str` cast of a composite (record / array / map)**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+`x as str` where `x` is a record (a declared struct or sum type), an array or
+a map. The cast converts a number to its decimal text and passes a `str`
+through; it does not render a composite. Until 127.362 it reinterpreted the
+composite's handle as a C string: `S{x:3} as str` printed the record's bytes
+up to the first zero byte, and read past the allocation when no slot held one.
+This is the cast form of E4032 (interpolating a composite). There is no `fix`:
+which field, or which rendering, was meant is not decidable. Cast a field
+(`r.x as str`), or encode the value (`j.enc(r)` with `i=j:std.json`).
+
+<!-- skip-check -->
+```text
+m=test;
+t=$s{x:i64};
+f=main():i64{let r=$s{x:3};let t=r as str;<0};
+```
+
 ## Arena Errors (E5xxx)
 
 ### E5001

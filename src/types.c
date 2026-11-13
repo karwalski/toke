@@ -1736,6 +1736,21 @@ int tk_type_identical(const Type *a, const Type *b) {
     }
     return 1;
 }
+/*
+ * 127.374: std_array_mut_ret's "no TY_UNKNOWN anywhere" guard (127.315)
+ * asks this, not tk_type_identical(t,t).  Same name and body as Z159's copy
+ * (127.373, dd55c69d, beside std_elem_ret); keep exactly one at merge.
+ */
+/* TY_UNKNOWN anywhere in `t` (tk_type_identical(t,t) cannot say: it
+ * answers 1 for the same pointer before looking inside). */
+static int tk_type_has_unknown(const Type *t) {
+    if (!t || t->kind == TY_UNKNOWN) return 1;
+    if (t->elem && tk_type_has_unknown(t->elem)) return 1;
+    for (int i = 0; i < t->field_count; i++)
+        if (t->field_types && t->field_types[i] && tk_type_has_unknown(t->field_types[i]))
+            return 1;
+    return 0;
+}
 static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret) {
     Type *t = mk_type(cx->env->arena, TY_FUNC);
     if (!t) return NULL;
@@ -1896,6 +1911,87 @@ static void check_field_value(Ctx *cx, const Node *v, const Type *vt,
     if (subtree_reported(cx, v)) return;
     if (!tc_first_report(cx, v)) return;
     emit_mm(cx, v, slot, vt, NULL);
+}
+
+/* 127.365 / 127.366: every declared field of a record literal is given,
+ * exactly once.  `t=$r{a:i64;b:i64}`: `$r{a:5}` compiled and `r.b` read
+ * whatever the slot held (it printed 1), against the memory model's "no
+ * uninitialised reads" (v0.3 §14.5) -- the spec gives fields no default
+ * value; and `$r{a:1;b:2;a:3}` compiled with the last write winning.
+ *
+ * E4078 at a repeated field init, naming it; E4077 at the literal, naming
+ * every field it leaves out, in declaration order.  Neither has a `fix`:
+ * an omitted field's value is not knowable, and which of two writes to the
+ * same field was meant (or which other field the second was meant for) is
+ * not decidable.  Field ORDER is free.  A literal that already names a
+ * field the record does not have (E4025, usually a misspelling of the
+ * omitted one) is not also judged for omissions: one root cause, one
+ * diagnostic.  Sum-variant literals never reach here. */
+static int reraise_err_shape(Ctx *cx, const char *nm);
+static void check_record_lit_fields(Ctx *cx, const Node *node, const Type *st,
+                                    int had_unknown) {
+    int nf = st->field_count;
+    unsigned char seen_small[64];
+    unsigned char *seen = nf <= 64 ? seen_small
+        : (unsigned char *)arena_alloc(cx->env->arena, (size_t)nf);
+    if (!seen) return;
+    memset(seen, 0, (size_t)nf);
+    for (int i = 0; i < node->child_count; i++) {
+        const Node *fi = node->children[i];
+        if (!fi || fi->kind != NODE_FIELD_INIT || fi->tok_len <= 0) continue;
+        char fnb[128]; TOKSTR(fnb, cx->src, fi);
+        if (!fnb[0]) continue;
+        int f = 0;
+        while (f < nf && !(st->field_names[f] && strcmp(st->field_names[f], fnb) == 0))
+            f++;
+        if (f >= nf) continue;                    /* E4025, reported above */
+        if (!seen[f]) { seen[f] = 1; continue; }
+        if (tc_first_report(cx, fi) && tc_can_emit(cx)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "struct literal '$%s' gives field '%s' more than once",
+                     st->name ? st->name : "?", fnb);
+            diag_emit(DIAG_ERROR, E4078, fi->start, fi->line, fi->col, msg,
+                      "expected", "each field given once", "got", fnb,
+                      (const char *)NULL);          /* no fix: see above */
+        }
+    }
+    if (had_unknown) return;
+    char miss[256]; size_t ml = 0; int nmiss = 0;
+    miss[0] = '\0';
+    for (int f = 0; f < nf; f++) {
+        if (seen[f]) continue;
+        const char *fnm = st->field_names[f] ? st->field_names[f] : "?";
+        nmiss++;
+        if (ml < sizeof(miss) - 1) {
+            int w = snprintf(miss + ml, sizeof(miss) - ml, "%s'%s'",
+                             nmiss > 1 ? ", " : "", fnm);
+            if (w > 0) ml += (size_t)w;
+            if (ml >= sizeof(miss)) ml = sizeof(miss) - 1;
+        }
+    }
+    if (nmiss == 0) return;
+    if (!tc_first_report(cx, node) || !tc_can_emit(cx)) return;
+    /* A field spelled `$x` names a sum VARIANT: the author meant a sum and
+     * declared a record (`t=$e{notfound:str;empty:bool}` built as
+     * `$e{$empty:true}`, two banked corpus records).  Say so, or the repair
+     * loop is pointed at adding fields. */
+    int dollar = 0;
+    for (int i = 0; i < node->child_count && !dollar; i++) {
+        const Node *fi = node->children[i];
+        if (fi && fi->kind == NODE_FIELD_INIT && fi->start > 0
+            && cx->src[fi->start - 1] == '$')
+            dollar = 1;
+    }
+    char msg[768];
+    snprintf(msg, sizeof(msg), "struct literal '$%s' leaves out field%s %s%s",
+             st->name ? st->name : "?", nmiss > 1 ? "s" : "", miss,
+             dollar ? "; a field written '$name' is a sum variant, but this"
+                      " type is declared as a record (a sum declares its"
+                      " variants with '$')" : "");
+    diag_emit(DIAG_ERROR, E4077, node->start, node->line, node->col, msg,
+              "expected", "every declared field", "got", miss,
+              (const char *)NULL);                  /* no fix: see above */
 }
 
 /*
@@ -2612,11 +2708,23 @@ static Type *tail_value_type(Ctx *cx, const Node *te) {
     return t;
 }
 
-/* 127.326 / 127.327: t is a value type the checker knows completely --
- * not void, and no TY_UNKNOWN anywhere in it (tk_type_identical is strict:
- * a type holding an unknown is not identical even to itself). */
+/* 127.326 / 127.327: t is a value type the checker knows -- not void and
+ * not TY_UNKNOWN itself.
+ *
+ * 127.374: this read "no TY_UNKNOWN anywhere" and asked
+ * tk_type_identical(t,t), which answers 1 for the same pointer before
+ * looking inside, so a type known only in part (`@(?)`, `@(str:?)`) was
+ * always adopted.  That is now the stated rule, not an accident: refusing
+ * it (tk_type_has_unknown) left `let d=mt r {$ok:v @("k":s.bytes(..));
+ * $err:e <1}` untyped, so `d.get("k")` lowered as an ARRAY read and trapped
+ * RT003, and `g(d)` into a str parameter lost its E4031.  A partial type
+ * is what the arm's own expression is typed as, and what a direct
+ * `let d=@("k":s.bytes(..))` binds (bind_init_type's MAP_LIT case).  Arms
+ * must still agree by tk_type_identical, which answers 0 for two distinct
+ * types holding an unknown, so only a single value arm (or one shared
+ * type) is adopted in part. */
 static int known_value_type(Type *t) {
-    return t && t->kind != TY_VOID && tk_type_identical(t, t);
+    return t && t->kind != TY_VOID && t->kind != TY_UNKNOWN;
 }
 
 /*
@@ -3114,8 +3222,7 @@ static Type *empty_arr_first_elem(Ctx *cx, const Node *bn) {
  * Spec v0.4 §C: "Both arms are blocks whose value is the block's tail
  * expression; the two tails must have the same type."  So the binding takes
  * that type when the checker knows it for both tails and they are identical
- * (tk_type_identical: strict, TY_UNKNOWN anywhere is never identical).  Any
- * other shape — a branch whose last statement is not an expression (a `<`
+ * (tk_type_identical; 127.374: known_value_type).  Any other shape — a branch whose last statement is not an expression (a `<`
  * return, a `br`, a binding), an unknown tail, or tails of different types —
  * answers NULL, the behaviour before this story.  No join rule is invented.
  *
@@ -3150,6 +3257,7 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
     return agreed;
 }
 
+static Type *recv_method_result_type(Ctx *cx, const Node *call);   /* 127.364 */
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -3171,6 +3279,12 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
         cx->bind_infer_depth++;
         Type *gt = map_getor_type(cx, initN);
+        /* 127.364: `let x=a.slice(0;2)` binds what the same call has in
+         * place -- a kind-preserving receiver method's result.  Immutable
+         * `let` only, the 127.176 / 138.3 rule: a `mut` binding's
+         * initialiser does not state what later assignments store. */
+        if (!gt && bn->kind == NODE_BIND_STMT)
+            gt = recv_method_result_type(cx, initN);
         cx->bind_infer_depth--;
         return gt;
     }
@@ -5290,9 +5404,10 @@ static Type *std_array_mut_ret(Ctx *cx, const Node *bn, const Node *use,
                                const char *nb, int nlen, int depth) {
     if (tk_binder_at(cx->fn_node, cx->src, use, nb, nlen, NULL) != bn) return NULL;
     Type *t = std_array_ret(cx, bn->children[1], depth + 1);
-    /* tk_type_identical(t,t) is 0 when t holds TY_UNKNOWN anywhere: an
-     * element type the interface does not state cannot anchor the check. */
-    if (!t || !tk_type_identical(t, t)) return NULL;
+    /* An element type the interface does not state (TY_UNKNOWN anywhere)
+     * cannot anchor the check.  127.374: tk_type_has_unknown, not
+     * tk_type_identical(t,t), which answers 1 for the same pointer. */
+    if (!t || tk_type_has_unknown(t)) return NULL;
     return mut_assigns_all_array(cx, cx->fn_node, bn, nb, nlen, t, depth) ? t : NULL;
 }
 
@@ -5462,6 +5577,62 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
         return mk_type(cx->env->arena, TY_STR);             /* 127.176 */
     if (!t || t->kind == TY_UNKNOWN) return NULL;
     return t;
+}
+
+/*
+ * recv_method_result_type (127.364) — the type of a receiver-method call's
+ * RESULT, for the kind-preserving members only, or NULL.
+ *
+ * infer_impl typed every receiver-method call TY_UNKNOWN, so the next method
+ * in a chain -- or one on a `let` bound to the result -- was never judged:
+ * `let c=a.slice(0;2).concat(b)` on arrays passed --check and printed `2`,
+ * while `a.concat(b)` is E4036.  The result is typed only where the receiver's
+ * type is ESTABLISHED (recv_value_type, the same judgement 127.151 makes),
+ * for members g_recv_methods lowers on that kind (slice: RK_S|RK_A; the rest
+ * RK_S -- check_recv_method_call reports any other kind as E4036), and only
+ * to what the lowering returns:
+ *   - array `.slice(i;j)` -> tk_arr_slice_w, a copy of the elements: the
+ *     receiver's own @T (the emitter tags it from the receiver, llvm.c 127.11);
+ *   - str `.slice` / `.concat` / `.trim` / `.upper` / `.lower` / `.replace` /
+ *     `.substr` -> the tk_str_*_w glue that returns a str (stdlib-signatures
+ *     std.str; the emitter's "$str" tag list).
+ * An import-alias receiver (a module call) is not a value and is left alone,
+ * exactly as check_recv_method_call leaves it.
+ */
+static Type *recv_method_result_type(Ctx *cx, const Node *call) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || !callee->children[1]) return NULL;
+    const Node *recv = callee->children[0];
+    if (!cx->env || !cx->env->names) return NULL;
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    if (!member[0]) return NULL;
+    if (recv->kind == NODE_IDENT) {
+        char alias[128]; TOKSTR(alias, cx->src, recv);
+        char mbuf[256];
+        int shadowed = alias_shadowed(cx, recv);
+        if (!shadowed && import_module_path(cx, alias, mbuf, sizeof mbuf)) return NULL;
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias, (int)strlen(alias));
+        if (!shadowed && d && d->kind == DECL_IMPORT_ALIAS) return NULL;
+        if (tki_subnamespace_member(cx->env->names, alias, member)) return NULL;
+        if (!recv_ident_is_bound(cx, alias)) return NULL;
+    }
+    const Type *rt = recv_value_type(cx, recv);
+    if (!rt) return NULL;
+    if (rt->kind == TY_ARRAY) {
+        if (strcmp(member, "slice") == 0) return (Type *)rt;
+        return NULL;
+    }
+    if (rt->kind == TY_STR) {
+        static const char *const str_same[] = {
+            "slice", "concat", "trim", "upper", "lower", "replace", "substr", NULL
+        };
+        for (int i = 0; str_same[i]; i++)
+            if (strcmp(member, str_same[i]) == 0)
+                return mk_type(cx->env->arena, TY_STR);
+    }
+    return NULL;
 }
 
 /*
@@ -5819,6 +5990,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 ? imported_type_lookup(cx->env->names, st->name) : NULL;
             if (it && it->is_sum) is_sum_lit = 1;
         }
+        /* 127.365: a LOCAL sum type also resolves to a TY_STRUCT, whose
+         * "fields" are its variants; a variant literal (`$sh{$sq:2}`,
+         * `$greperr{$nopattern:0}`) names exactly one of them.  Only a
+         * literal of a type known to be a record (reraise_err_shape 1:
+         * local fields with no `$`, or an imported non-sum) is judged for
+         * omitted or repeated fields. */
+        int is_record_lit = !is_sum_lit && st && st->kind == TY_STRUCT
+            && st->name && reraise_err_shape(cx, st->name) == 1;
+        int lit_unknown_field = 0;      /* an E4025 in this literal (127.365) */
         /* Infer types of field init value expressions so they are type-checked. */
         for (int i=0;i<node->child_count;i++) {
             const Node *fi = node->children[i];
@@ -5846,6 +6026,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * cannot speak for (a forward/opaque declaration); only complain
              * when the layout names something. */
             if (st->field_count <= 0) continue;
+            lit_unknown_field = 1;
             if (tc_first_report(cx, fi) && tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
@@ -5855,6 +6036,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           (const char*)NULL);   /* 127.243: no advice fix */
             }
         }
+        if (is_record_lit && st->field_count > 0 && st->field_names)
+            check_record_lit_fields(cx, node, st, lit_unknown_field);
         return st;
     }
 
@@ -6696,6 +6879,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 /* 127.320: `m.getor(k;d)` yields the map's value V. */
                 Type *grt=map_getor_type(cx,node);
                 if (grt) return grt;
+                /* 127.364: a kind-preserving receiver method yields the
+                 * receiver's kind. */
+                Type *rrt=recv_method_result_type(cx,node);
+                if (rrt) return rrt;
             }
             return mk_type(A,TY_UNKNOWN);
         }
@@ -6783,6 +6970,27 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count>1) {
             Type *src_t=infer(cx,node->children[0]);
             Type *dst_t=resolve_type(cx,node->children[1]);
+            /* 127.362: `x as str` reinterprets the value's word as a C string.
+             * For a composite (a record, an array, a map) that word is a
+             * pointer to slots or to an array block, never to text: the cast
+             * printed the record's bytes up to the first zero byte, and read
+             * past the allocation when no slot held one.  Refused as
+             * interpolation refuses a composite (E4032), under its own code
+             * because this is a cast, not an interpolation.  No `fix`: which
+             * field or rendering was meant is not decidable. */
+            if (dst_t->kind==TY_STR&&(src_t->kind==TY_STRUCT||src_t->kind==TY_ARRAY
+                                      ||src_t->kind==TY_MAP)) {
+                if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),"cannot cast a composite value ('%s') to str; "
+                             "'as str' does not convert a record, array or map to text",
+                             type_name(src_t));
+                    diag_emit(DIAG_ERROR,E4079,node->start,node->line,node->col,msg,
+                              "expected","a str or a scalar","got",type_name(src_t),
+                              (const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
             /* W1001: warn on potentially lossy casts between numeric types */
             if (src_t->kind!=TY_UNKNOWN&&dst_t->kind!=TY_UNKNOWN) {
                 int lossy=0;

@@ -77,7 +77,7 @@ f=main():i64{
   io.println(str.concat(c.certpem; str.concat(c.keypem; str.concat(c.peercertpem; str.concat(" "; str.fromint(c.requiremutual as i64))))));
   let d=tls.tlsconfig("x";"");
   io.println(str.concat(d.certpem; str.concat("["; str.concat(d.keypem; str.concat("]"; str.fromint(d.requiremutual as i64))))));
-  io.println(str.concat(str.fromint(tls.freeconfig(d) as i64); str.concat(" "; str.fromint(tls.freeconfig($tlsconfig{certpem:"";keypem:"";peercertpem:"";requiremutual:false}) as i64))));
+  io.println(str.concat(str.fromint(tls.freeconfig(d) as i64); str.concat(" "; str.fromint(tls.freeconfig($tlsconfig{certpem:"";keypem:"";peercertpem:"";requiremutual:false;insecure:false}) as i64))));
   <0
 };
 TK
@@ -116,7 +116,7 @@ f=main():i64{
   let pem=mt file.read("srv.crt") {$ok:s s;$err:e ""};
   let port=mt env.get("PORT") {$ok:v v;$err:e "0"};
   let pn=mt str.toint(port) {$ok:n n;$err:e 0};
-  let cfg=$tlsconfig{certpem:"";keypem:"";peercertpem:pem;requiremutual:false};
+  let cfg=$tlsconfig{certpem:"";keypem:"";peercertpem:pem;requiremutual:false;insecure:false};
   let conn=tls.connect("127.0.0.1";pn as i32;cfg);
   if(conn==0){ io.println("connect=fail"); <1 };
   io.println(str.concat(str.fromint(str.len(conn.id) as i64); str.concat(" "; tls.protocol(conn))));

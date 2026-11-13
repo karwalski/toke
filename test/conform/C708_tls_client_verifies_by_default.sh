@@ -21,8 +21,10 @@
 #   5. default, CA-issued for localhost but expired                 -> refused
 #   6. tls.insecureconfig against the self-signed server            -> ok
 #   7. tls.pinconfig pinned to the self-signed certificate          -> ok
-#   8. a $tlsconfig literal with no pin and no `insecure` field     -> refused
-#      (the self-signed server: an omitted field is false, so literals verify)
+#   8. a $tlsconfig literal with no pin and `insecure:false`        -> refused
+#      (the self-signed server: a literal verifies.  127.365: a literal must
+#      give every field -- leaving `insecure` out read an uninitialised slot,
+#      which could switch verification off, and is now E4077)
 #   9. NEGATIVE CONTROL: case 1 with SSL_CERT_FILE pointing at a file that
 #      holds no CA -> refused.  The ok in case 1 comes from the trust store,
 #      not from a check that passes everything.
@@ -117,7 +119,7 @@ i=env:std.env;
 f=pick(mode:str;pin:str):$tlsconfig{
   if(mode=="insecure"){ <tls.insecureconfig("";"") };
   if(mode=="pin"){ <tls.pinconfig("";"";pin) };
-  if(mode=="literal"){ <$tlsconfig{certpem:"";keypem:"";peercertpem:"";requiremutual:false} };
+  if(mode=="literal"){ <$tlsconfig{certpem:"";keypem:"";peercertpem:"";requiremutual:false;insecure:false} };
   <tls.tlsconfig("";"")
 };
 f=main():i64{
@@ -169,7 +171,7 @@ expect "6 tls.insecureconfig: self-signed -> ok" \
     "$(probe ca.crt localhost "${PORT_self}" insecure)" "ok:hello"
 expect "7 tls.pinconfig pinned to the self-signed cert -> ok" \
     "$(probe ca.crt localhost "${PORT_self}" pin)" "ok:hello"
-expect "8 \$tlsconfig literal without insecure: self-signed -> refused" \
+expect "8 \$tlsconfig literal, insecure:false: self-signed -> refused" \
     "$(probe ca.crt localhost "${PORT_self}" literal)" "refused"
 expect "9 NEGATIVE CONTROL: trust store without the CA -> refused" \
     "$(probe empty.pem localhost "${PORT_good}" default)" "refused"

@@ -3408,6 +3408,32 @@ static int json_type_has_struct(const Type *t, int depth) {
     if (t->kind == TY_ARRAY) return json_type_has_struct(t->elem, depth + 1);
     return 0;
 }
+/* 127.353/127.361: does j.print / j.enc of a value of this type go through
+ * the descriptor path (tk_json_printval_w / tk_json_encval_w) -- or, when
+ * json_type_desc() then has no descriptor, an E9002 -- rather than a
+ * shape-only or scalar printer? */
+static int json_wants_desc(const Type *t) {
+    return t && (t->kind == TY_STRUCT || t->kind == TY_MAP ||
+                 t->kind == TY_FUNC || t->kind == TY_PTR ||
+                 (t->kind == TY_ARRAY && json_type_has_struct(t, 0)));
+}
+/* 127.361: emit the descriptor of `t` as a string constant and return the
+ * tmp holding its address as an i64, or -1 when json_type_desc() has none
+ * (the caller reports E9002). */
+static int emit_json_desc(Ctx *c, const Type *t) {
+    char jd[512]; size_t jl = 1;
+    jd[0] = '"'; jd[1] = '\0';
+    if (!json_type_desc(c, t, jd, sizeof jd - 1, &jl, 0)) return -1;
+    jd[jl++] = '"'; jd[jl] = '\0';
+    int dal = 1;
+    int dsi = emit_str_global(c, jd, (int)jl, &dal);
+    int dg = next_tmp(c);
+    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+            dg, dal, dal, c->module_prefix, dsi);
+    int dp = next_tmp(c);
+    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", dp, dg);
+    return dp;
+}
 /* 127.11: is this receiver an array (as opposed to a str or a map)? The verbs
  * `contains` / `find` / `indexof` / `slice` exist on both strings and arrays;
  * with no array test they were all routed to the std.str glue, which read the
@@ -6079,12 +6105,9 @@ static int emit_expr(Ctx *c, const Node *n)
              * or garbage; an array of records printed its element addresses. */
             {
                 const Type *jt0 = n->children[1]->rtype;
-                if (jt0 && (jt0->kind == TY_STRUCT || jt0->kind == TY_MAP ||
-                            jt0->kind == TY_FUNC || jt0->kind == TY_PTR ||
-                            (jt0->kind == TY_ARRAY && json_type_has_struct(jt0, 0)))) {
-                    char jd[512]; size_t jl = 0;
-                    jd[0] = '"'; jl = 1;
-                    if (!json_type_desc(c, jt0, jd, sizeof jd - 1, &jl, 0)) {
+                if (json_wants_desc(jt0)) {
+                    int dp = emit_json_desc(c, jt0);
+                    if (dp < 0) {
                         diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
                                   "internal compiler error: json.print has no JSON "
                                   "printer for this argument's type (a map, a sum, "
@@ -6093,14 +6116,6 @@ static int emit_expr(Ctx *c, const Node *n)
                                   "by guessing",
                                   (void *)0);
                     } else {
-                        jd[jl++] = '"'; jd[jl] = '\0';
-                        int dal = 1;
-                        int dsi = emit_str_global(c, jd, (int)jl, &dal);
-                        int dg = next_tmp(c);
-                        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
-                                dg, dal, dal, c->module_prefix, dsi);
-                        int dp = next_tmp(c);
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", dp, dg);
                         int hv = args[0];
                         if (!strcmp(aty0, "i8*")) {
                             int z = next_tmp(c);
@@ -6230,6 +6245,38 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!strcmp(tb, "tk_json_enc_w") && na >= 1) {
             const char *ety0 = arg_tys[0];
             const Node *en0 = n->children[1];
+            /* 127.361: a record (or an array holding records) encodes from
+             * the descriptor of its checker type, exactly the object j.print
+             * prints.  It used to fall through to tk_json_enc_w, which
+             * json_enc()ed the record's slots as a C string (strlen past the
+             * allocation when no slot held a zero byte).  A map, sum,
+             * function, pointer or opaque handle has no encoder: E9002, as
+             * j.print. */
+            if (json_wants_desc(en0->rtype)) {
+                int dp = emit_json_desc(c, en0->rtype);
+                if (dp < 0) {
+                    diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                              "internal compiler error: json.enc has no JSON "
+                              "encoder for this argument's type (a map, a sum, "
+                              "a function, a pointer or an opaque handle, or a "
+                              "record holding one); its value is not encoded "
+                              "by guessing",
+                              (void *)0);
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; json.enc not emitted\n", t);
+                    return t;
+                }
+                int ev = args[0];
+                if (!strcmp(ety0, "i8*")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, ev);
+                    ev = z;
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @tk_json_encval_w(i64 %%t%d, i64 %%t%d)\n",
+                        t, ev, dp);
+                return t;
+            }
             int ek0 = 0, edepth0 = json_arr_shape(c, en0, &ek0);
             const char *efn = NULL;
             int ev = args[0];

@@ -76,10 +76,11 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `http.resnew` | `tk_http_res_new` | `tk_web_glue.c` |
 | `http.resp` | `tk_http_resp_w` | `tk_web_glue.c` |
 
-### `std.json` (1)
+### `std.json` (2)
 
 | Export | Glue symbol | Defined in |
 |---|---|---|
+| `json.encval` | `tk_json_encval_w` | `json_glue.c` |
 | `json.printval` | `tk_json_printval_w` | `json_glue.c` |
 
 ## Defined, with no interface entry
