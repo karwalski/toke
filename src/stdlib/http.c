@@ -5853,10 +5853,12 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
 
-    /* 127.144: before SSL_accept, so the handshake's own writes are covered
-     * too.  OpenSSL writes through write(2), which MSG_NOSIGNAL cannot
-     * reach — on macOS/BSD this socket option is what protects the TLS
-     * path; see http_serve_tls_workers for what happens where it is absent. */
+    /* 127.144: before SSL_accept.  Not enough on its own for the TLS path
+     * (127.394): Darwin refuses SO_NOSIGPIPE (EINVAL) on a socket whose
+     * peer has already closed, so a client that sent its ClientHello and
+     * left before accept() returned got no protection here.  The records
+     * are written through send(MSG_NOSIGNAL) instead -- see SSL attach
+     * below; on Linux http_serve_tls_workers' SIG_IGN still stands. */
     http_sock_nosigpipe(fd);
 
     /* Set socket timeouts BEFORE SSL_accept to prevent workers from
@@ -5871,7 +5873,15 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     SSL *ssl = SSL_new(ssl_ctx);
     if (!ssl) { close(fd); return; }
 
-    SSL_set_fd(ssl, fd);
+    /* 127.394: not SSL_set_fd.  OpenSSL's socket BIO writes with write(2),
+     * which only SO_NOSIGPIPE (above, when the kernel accepted it) could
+     * cover; tk_ssl_set_fd_nosigpipe writes every record -- the ServerHello
+     * included -- through send(MSG_NOSIGNAL); see tk_ssl_nosigpipe.h. */
+    if (tk_ssl_set_fd_nosigpipe(ssl, fd) != 1) {
+        SSL_free(ssl);
+        close(fd);
+        return;
+    }
 
     if (SSL_accept(ssl) != 1) {
         SSL_free(ssl);
