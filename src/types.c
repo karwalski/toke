@@ -7994,8 +7994,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * not judged here.  No `fix`: whether a sum was meant, or a field
          * read, is not decidable. */
         int rec_scr=0;
+        /* 127.380: legacy (--legacy) sum variants are uppercase field names
+         * with no `$`, indistinguishable from record fields; the default
+         * alphabet has no uppercase, so an uppercase field name marks a legacy
+         * declaration, where record-vs-sum is not decidable: not judged. */
+        int legacy_decl=scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names
+            &&scr->field_names[0]&&scr->field_names[0][0]>='A'
+            &&scr->field_names[0][0]<='Z';
         if (scr->kind==TY_STRUCT&&scr->name&&arm_tag_count>0&&!has_result_arm
-            &&reraise_err_shape(cx,scr->name)==1) {
+            &&!legacy_decl&&reraise_err_shape(cx,scr->name)==1) {
             rec_scr=1;
             const Node *fa=NULL;
             for (int i=1;i<node->child_count&&!fa;i++) {
