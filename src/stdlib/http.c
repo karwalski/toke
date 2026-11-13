@@ -5855,8 +5855,9 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 
     /* 127.144: before SSL_accept.  Not enough on its own for the TLS path
      * (127.394): Darwin refuses SO_NOSIGPIPE (EINVAL) on a socket whose
-     * peer has already closed, so a client that sent its ClientHello and
-     * left before accept() returned got no protection here.  The records
+     * peer has already gone -- a TCP client that sent its ClientHello and
+     * reset before accept() returned (measured; a plain FIN close is still
+     * accepted), an AF_UNIX peer that closed -- so it got no protection.  The records
      * are written through send(MSG_NOSIGNAL) instead -- see SSL attach
      * below; on Linux http_serve_tls_workers' SIG_IGN still stands. */
     http_sock_nosigpipe(fd);

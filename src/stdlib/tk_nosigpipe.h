@@ -17,8 +17,9 @@
  *                     socket property, so it also covers write(2) calls made
  *                     by code we do not own, such as OpenSSL's socket BIO.
  *                     LIMIT (127.394): Darwin refuses it (EINVAL) on a socket
- *                     whose peer has already closed -- e.g. one just
- *                     accept()ed from a client that left -- and the failure
+ *                     whose peer has already gone -- e.g. one just
+ *                     accept()ed from a TCP client that reset, or an
+ *                     AF_UNIX peer that closed -- and the failure
  *                     is silent here.  So it never stands alone: plain
  *                     sends also pass TK_SEND_FLAGS, and OpenSSL is attached
  *                     with tk_ssl_set_fd_nosigpipe() (tk_ssl_nosigpipe.h).

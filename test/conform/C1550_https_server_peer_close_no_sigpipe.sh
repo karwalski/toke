@@ -7,7 +7,9 @@
 # THE DEFECT.  handle_tls_connection set SO_NOSIGPIPE on the accepted socket
 # (127.144) and then attached it with plain SSL_set_fd, whose socket BIO
 # writes with write(2).  On Darwin setsockopt(SO_NOSIGPIPE) fails with EINVAL
-# once the peer has closed, so for a client that is already gone the option
+# once the peer has gone (a TCP client that reset before accept() returned --
+# measured end to end with a tkc-built server, rc 141 -- or an AF_UNIX peer
+# that closed, as here), so for a client that is already gone the option
 # was never set and the ServerHello write killed the server with status 141.
 # (On Linux the process-wide SIG_IGN in http_serve_tls_workers (127.144,
 # owner §3.6) covers the same write; it is left as it is.)  The fix attaches

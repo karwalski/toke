@@ -254,8 +254,8 @@ serve paths, because all three used to fail differently.
 
 The https server's records are written by OpenSSL, through `write(2)`, which
 the funnel cannot reach, and on macOS `SO_NOSIGPIPE` is refused (`EINVAL`) on a
-socket whose client has already closed — a client that sends its ClientHello
-and leaves before `accept()` returns. Since 127.394 the server attaches each
+socket whose client has already gone — a client that sends its ClientHello
+and resets the connection before `accept()` returns. Since 127.394 the server attaches each
 accepted socket to OpenSSL with the same `MSG_NOSIGNAL` write BIO the https
 client uses (below), so that client costs a failed handshake, not the server.
 `test/conform/C1550_https_server_peer_close_no_sigpipe.sh` covers it.
