@@ -5,10 +5,18 @@
  * FFI wrapper around the cmark CommonMark reference implementation.
  * cmark is vendored at stdlib/vendor/cmark/.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): md_render and md_render_file
+ * return sealed strings from the string heap (tk_strhdr.h) -- cmark's
+ * malloc'd output is copied once and freed -- so a result is never freed,
+ * written or reallocated, C callers included.  Inputs are measured with
+ * tk_strlen.  The table side-list, the pre-processed source and the line
+ * copies stay malloc'd: they are md.c's own scratch and never reach toke.
+ *
  * Story: 55.5.2  Branch: feature/stdlib-55.5-md
  */
 
 #include "md.h"
+#include "tk_strhdr.h"
 #include "../../stdlib/vendor/cmark/src/cmark.h"
 #include <stdlib.h>
 #include <string.h>
@@ -51,7 +59,7 @@ static void mdb_cat(MdBuf *b, const char *s, size_t n) {
     b->buf[b->len] = '\0';
 }
 
-static void mdb_cats(MdBuf *b, const char *s) { if (s) mdb_cat(b, s, strlen(s)); }
+static void mdb_cats(MdBuf *b, const char *s) { if (s) mdb_cat(b, s, tk_strlen(s)); }
 
 static void mdb_esc(MdBuf *b, const char *s, size_t n) {
     for (size_t i = 0; i < n; i++) {
@@ -137,7 +145,7 @@ static int md_url_dangerous(const char *u, size_t n) {
     const char *rest = u + i + 1;
     size_t rn = n - i - 1;
     for (size_t t = 0; t < sizeof ok / sizeof ok[0]; t++) {
-        size_t L = strlen(ok[t]);
+        size_t L = tk_strlen(ok[t]);
         if (rn >= L) {
             size_t m = 0;
             while (m < L && (char)((rest[m] >= 'A' && rest[m] <= 'Z') ? rest[m] + 32 : rest[m]) == ok[t][m]) m++;
@@ -369,8 +377,10 @@ static void md_flush_table(MdBuf *out, size_t ts, MdTables *tables, const char *
 /* Replace each "<p><ph><n></p>" in cmark's output with table n.  Returns
  * NULL -- the caller then tries another prefix -- when ph occurs anywhere
  * else, or a table's placeholder is missing or repeated. */
-static char *md_reinject_tables(const char *html, MdTables *tables, const char *ph) {
-    size_t phlen = strlen(ph);
+static char *md_reinject_tables(const char *html, MdTables *tables, const char *ph,
+                                size_t *out_len) {
+    size_t phlen = tk_strlen(ph);
+    *out_len = 0;
     int seen_n = 0;
     for (const char *q = strstr(html, ph); q; q = strstr(q + phlen, ph)) seen_n++;
     if (seen_n != tables->n) return NULL;
@@ -399,10 +409,12 @@ static char *md_reinject_tables(const char *html, MdTables *tables, const char *
     free(seen);
     if (!ok) { free(out.buf); return NULL; }
     if (!out.buf) { char *e = malloc(1); if (e) e[0] = '\0'; return e; }
+    *out_len = out.len;
     return out.buf;
 }
 
-static char *md_preprocess_tables(const char *src, MdTables *tables, const char *ph) {
+static char *md_preprocess_tables(const char *src, MdTables *tables, const char *ph,
+                                  size_t *out_len) {
     /* Quick scan: any pipe tables at all? */
     int has_table = 0;
     const char *scan = src;
@@ -505,24 +517,39 @@ static char *md_preprocess_tables(const char *src, MdTables *tables, const char 
     }
 
     if (!out.buf) return NULL;
+    *out_len = out.len;
     return out.buf;
+}
+
+/* Hand a malloc'd html string of n bytes to toke: one sealed copy, the
+ * original freed.  cmark's output and md_reinject_tables' hold no 0 byte
+ * (cmark replaces a 0 in its input with U+FFFD, and the tables are built
+ * from bytes of a C string).  If the copy cannot be made the malloc'd
+ * string is returned as it is: still a correct C string, never freed. */
+static const char *md_seal(char *html, size_t n)
+{
+    char *s = tks_dup(html, n);
+    if (!s) return html;
+    free(html);
+    return s;
 }
 
 /*
  * md_render — render CommonMark Markdown to HTML.
  *
  * src: null-terminated UTF-8 Markdown string.
- * Returns a heap-allocated null-terminated HTML string.
+ * Returns a sealed null-terminated HTML string (127.295): never freed,
+ * written or reallocated by anyone, C callers included.
  * Never returns NULL — on allocation failure returns a copy of src.
  * Invalid Markdown degrades gracefully (cmark never errors).
  */
 const char *md_render(const char *src)
 {
     if (!src) {
-        char *empty = malloc(1);
-        if (empty) empty[0] = '\0';
-        return empty;
+        char *empty = tks_dup("", 0);
+        return empty ? empty : "";
     }
+    size_t slen = tk_strlen(src);
 
     /* 124.3 (ADR-0011): lift trusted pipe-tables out to a side-list (leaving
      * placeholders), render with SAFE cmark — which neutralizes untrusted raw
@@ -531,6 +558,7 @@ const char *md_render(const char *src)
      * re-inject the trusted tables into the sanitized output. */
     int options = CMARK_OPT_DEFAULT;
     char *html = NULL;
+    size_t hlen = 0;
     char ph[sizeof MD_TABLE_PH + MD_PH_TRIES];
     for (int attempt = 0; attempt < MD_PH_TRIES && !html; attempt++) {
         /* 121.41: a prefix is used only if the placeholders it produces are
@@ -541,33 +569,34 @@ const char *md_render(const char *src)
         if (strstr(src, ph)) continue;
 
         MdTables tables; mdtables_init(&tables);
-        char *preprocessed = md_preprocess_tables(src, &tables, ph);
+        size_t plen = 0;
+        char *preprocessed = md_preprocess_tables(src, &tables, ph, &plen);
         const char *input = preprocessed ? preprocessed : src;
-        char *raw = cmark_markdown_to_html(input, strlen(input), options);
+        char *raw = cmark_markdown_to_html(input, preprocessed ? plen : slen, options);
         free(preprocessed);  /* safe even if NULL */
+        size_t rlen = raw ? tk_strlen(raw) : 0;
         if (raw && tables.n > 0) {
-            char *reinj = md_reinject_tables(raw, &tables, ph);
+            char *reinj = md_reinject_tables(raw, &tables, ph, &rlen);
             free(raw);
             raw = reinj;            /* NULL: prefix rejected, try the next */
         }
         mdtables_free(&tables);
         html = raw;
+        hlen = rlen;
     }
     if (!html) {
         /* Every prefix rejected: render with no tables lifted.  SAFE cmark
          * shows the pipe rows as text. */
-        html = cmark_markdown_to_html(src, strlen(src), options);
+        html = cmark_markdown_to_html(src, slen, options);
+        hlen = html ? tk_strlen(html) : 0;
     }
 
     if (!html) {
         /* Allocation failure — return copy of source as fallback. */
-        size_t slen = strlen(src);
-        char *copy = malloc(slen + 1);
-        if (!copy) return src;  /* last resort: return literal pointer */
-        memcpy(copy, src, slen + 1);
-        return copy;
+        char *copy = tks_dup(src, slen);
+        return copy ? copy : src;  /* last resort: return literal pointer */
     }
-    return html;
+    return md_seal(html, hlen);
 }
 
 /*

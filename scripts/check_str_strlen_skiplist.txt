@@ -34,17 +34,14 @@ src/stdlib/dataframe_glue.c 1
 src/stdlib/db.c 2
 src/stdlib/encrypt.c 2
 src/stdlib/encrypt_glue.c 1
-src/stdlib/env.c 8
 src/stdlib/file.c 5
 src/stdlib/file_glue.c 3
 src/stdlib/http2.c 4
-src/stdlib/i18n.c 5
 src/stdlib/infer.c 4
 src/stdlib/json.c 10
 src/stdlib/json_glue.c 7
 src/stdlib/keychain.c 5
 src/stdlib/log.c 7
-src/stdlib/md.c 6
 src/stdlib/mdns.c 2
 src/stdlib/mlx.c 2
 src/stdlib/net_glue.c 1
@@ -57,9 +54,6 @@ src/stdlib/pdftext.c 1
 src/stdlib/process_glue.c 1
 src/stdlib/proxy.c 3
 src/stdlib/securemem.c 1
-src/stdlib/soap.c 9
-src/stdlib/sse.c 7
-src/stdlib/sse_glue.c 1
 src/stdlib/str.c 1   # tks_verify_fail: the verify switch's own strlen (127.295)
 src/stdlib/strbuf.h 1
 src/stdlib/sys.c 1

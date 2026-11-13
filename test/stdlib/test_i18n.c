@@ -3,10 +3,12 @@
  *
  * Story: 6.3.5
  *
- * Build: cc -I../../src/stdlib test_i18n.c ../../src/stdlib/i18n.c -o test_i18n
+ * Build: cc -I../../src/stdlib test_i18n.c ../../src/stdlib/i18n.c \
+ *            ../../src/stdlib/str.c -o test_i18n
  */
 
 #include "i18n.h"
+#include "tk_strhdr.h"   /* 127.295: tks_hdrlen */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -17,6 +19,12 @@ static int g_fail = 0;
 #define CHECK(cond, label) \
     do { if (cond) { printf("PASS  %s\n", label); g_pass++; } \
          else      { printf("FAIL  %s\n", label); g_fail++; } } while(0)
+
+/* 127.295: i18n_get / i18n_fmt / i18n_locale return sealed strings
+ * (runtime-abi §3.1): the header holds strlen, and none is ever freed. */
+static int sealed(const char *s) {
+    return s && tks_hdrlen(s) >= 0 && (size_t)tks_hdrlen(s) == strlen(s);
+}
 
 /* Write a temporary file */
 static void write_file(const char *path, const char *content) {
@@ -56,6 +64,7 @@ int main(void) {
     /* --- Get string from TOON --- */
     const char *hello = i18n_get(tr.ok, "hello");
     CHECK(hello && strcmp(hello, "Hello World") == 0, "i18n_get TOON hello");
+    CHECK(sealed(hello), "i18n_get TOON value is sealed");
 
     const char *bye = i18n_get(tr.ok, "bye");
     CHECK(bye && strcmp(bye, "See you later") == 0, "i18n_get TOON bye");
@@ -63,11 +72,13 @@ int main(void) {
     /* --- Missing key returns key itself --- */
     const char *missing = i18n_get(tr.ok, "nonexistent");
     CHECK(missing && strcmp(missing, "nonexistent") == 0, "i18n_get missing key returns key");
+    CHECK(sealed(missing), "i18n_get missing-key fallback is sealed");
 
     /* --- Format with placeholders --- */
     const char *formatted = i18n_fmt(tr.ok, "msg", "user=Alice|count=5");
     CHECK(formatted && strcmp(formatted, "Hi Alice, you have 5 items") == 0,
           "i18n_fmt TOON placeholder substitution");
+    CHECK(sealed(formatted), "i18n_fmt result is sealed");
 
     /* --- A substituted value longer than the output buffer ---
      * The buffer starts at 2*len(template)+256 bytes and used to be doubled
@@ -84,6 +95,7 @@ int main(void) {
         CHECK(lf && strlen(lf) == want && strncmp(lf, "Hi aaaa", 7) == 0
               && strcmp(lf + 3 + vlen, ", you have 5 items") == 0,
               "i18n_fmt substitutes a value longer than its buffer");
+        CHECK(sealed(lf), "i18n_fmt long result is sealed");
     }
 
     /* --- Load YAML bundle (remove TOON to test fallback) --- */
@@ -93,6 +105,7 @@ int main(void) {
 
     const char *yg = i18n_get(yr.ok, "greeting");
     CHECK(yg && strcmp(yg, "Hello") == 0, "i18n_get YAML greeting");
+    CHECK(sealed(yg), "i18n_get YAML value is sealed");
 
     /* --- French locale --- */
     I18nBundleResult fr = i18n_load("/tmp/test_strings", "fr");
@@ -112,6 +125,7 @@ int main(void) {
 
     const char *jg = i18n_get(jr.ok, "greeting");
     CHECK(jg && strcmp(jg, "Hello JSON") == 0, "i18n_get JSON greeting");
+    CHECK(sealed(jg), "i18n_get JSON value is sealed");
 
     /* --- File not found --- */
     I18nBundleResult nr = i18n_load("/tmp/nonexistent_bundle", "en");
@@ -120,10 +134,12 @@ int main(void) {
     /* --- i18n_locale returns something --- */
     const char *loc = i18n_locale();
     CHECK(loc && strlen(loc) > 0, "i18n_locale returns non-empty");
+    CHECK(sealed(loc), "i18n_locale result is sealed");
 
     /* --- Format with missing key returns key --- */
     const char *fmissing = i18n_fmt(tr.ok, "no_such_key", "x=1");
     CHECK(fmissing && strcmp(fmissing, "no_such_key") == 0, "i18n_fmt missing key returns key");
+    CHECK(sealed(fmissing), "i18n_fmt missing-key fallback is sealed");
 
     /* Cleanup */
     remove("/tmp/test_strings.fr.yaml");

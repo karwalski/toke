@@ -526,6 +526,48 @@ the router and the server free, not toke producers.
 Gate: C1230 (an ASan C driver over the producers and the toke glue under
 `TK_STR_VERIFY=1`, plus a toke program).
 
+**Step 5, ninth tranche (story 127.295, Batch Z175).**  `std.i18n`,
+`std.env` and `std.sse`, each converted completely (`i18n.c`, `env.c`,
+`sse.c`, `sse_glue.c` read only with `tk_strlen`; their ratchet entries are
+deleted).  `i18n_get`, `i18n_fmt` and `i18n_locale` return sealed strings,
+and so do the values `find_string` slices out of a bundle and the
+missing-key fallback; `i18n_fmt` builds in a growing buffer and is copied
+once (`tks_dup`).  No slice holds a 0 byte (the scan stops at the NUL).
+`env_expand` (`env.expand`) is sealed the same way.  Left malloc'd, on
+purpose: the bundle text `i18n_load` reads (the bundle's own storage, and a
+file may hold a 0 byte); `env_get` / `env_get_or`, which `env.tki` declares
+`"ownership": "caller"` (121.78) -- a caller that frees an owned result must
+be able to free every one (135.23), so sealing them waits on what "caller"
+means for a sealed string; `env_list`, a C-only API whose caller frees each
+name; and every formatted SSE event, which `sse_glue.c` writes to the stream
+and frees (sealing would grow the heap by an event per emit).  Gate: C1510
+(an ASan C driver over the producers, the glue and SSE with sealed inputs
+under `TK_STR_VERIFY=1`, plus a toke program).
+
+**Step 5, tenth tranche (story 127.295, Batch Z178).**  `std.md` and
+`std.soap`, each converted completely (`md.c` and `soap.c` read only with
+`tk_strlen`; their ratchet entries are deleted).  `md_render` and
+`md_render_file` return sealed strings: cmark's malloc'd output, or the
+buffer the trusted tables are re-injected into, is copied once (`tks_dup`)
+and freed; `""` for a NULL source and the copy-of-source fallback are sealed
+too.  cmark replaces a 0 byte in its input with U+FFFD and the tables are
+built from bytes of a C string, so no result holds a 0 byte.  Every
+`std.soap` producer (`soap_envelope`, `soap12_envelope`, `soap_fault`,
+`soap_wsse_username_token`, `soap_wsse_timestamp`) builds in a malloc'd
+buffer and hands over one sealed copy of exactly the length `snprintf`
+reported; `soap_extract_body` / `soap_extract_fault` slice the envelope
+straight into a sealed string; a result that cannot be built is a sealed
+`""`.  Left malloc'd, on purpose: `md.c`'s table side-list, pre-processed
+source and line copies, and `soap.c`'s escaped copies -- each file's own
+scratch, freed before it returns.  The hand-built harnesses that compiled
+`md.c` or `soap.c` without `str.c` and freed results (C441, C522, C442) take
+the module's link set from `stdlib_link_set.sh --objects` (`--except` the
+file under test, which they compile themselves for their negative control)
+and free nothing they did not allocate.  Gates: C1540 (an ASan C driver over
+`md_render`, its glue and `md_render_file`, including each of `md.c`'s own
+allocations failing in turn, under `TK_STR_VERIFY=1`, plus a toke program)
+and C1541 (the same over every `std.soap` producer and its glue).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

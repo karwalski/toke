@@ -6,10 +6,18 @@
  * Pure C implementation. Uses snprintf + malloc for string building.
  * No external dependencies beyond libc.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every string handed out -- the
+ * envelopes, faults, extracted body/fault and WS-Security blocks -- is a
+ * sealed string from the string heap (tk_strhdr.h), and inputs are measured
+ * with tk_strlen.  A result is never freed, written or reallocated, C
+ * callers included.  The escaped copies xml_escape makes are this file's
+ * own scratch and stay malloc'd.
+ *
  * Stories: 88.6.3, 88.6.5
  */
 
 #include "soap.h"
+#include "tk_strhdr.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,17 +35,37 @@ static int is_empty(const char *s) {
     return !s || s[0] == '\0';
 }
 
+/* A sealed "" -- what every producer returns when it cannot build its
+ * result.  The literal is the last resort (a correct, unsealed C string). */
+static const char *sealed_empty(void) {
+    char *e = tks_dup("", 0);
+    return e ? e : "";
+}
+
+/* Hand the n-byte malloc'd string buf to the caller as one sealed copy and
+ * free buf.  buf holds no 0 byte before n: it was built by snprintf from C
+ * strings.  If the copy cannot be made, buf itself is returned (correct,
+ * unsealed, never freed). */
+static const char *seal_take(char *buf, size_t n) {
+    char *s = tks_dup(buf, n);
+    if (!s) return buf;
+    free(buf);
+    return s;
+}
+
 /*
  * xml_escape — escape &, <, >, ", ' for safe XML embedding.
- * Returns a heap-allocated string. Caller owns the result.
+ * Returns a malloc'd string the caller frees (this file's scratch), its
+ * length in *out_len; NULL when it cannot be allocated.
  */
-static char *xml_escape(const char *s) {
-    if (!s) return strdup("");
-    size_t len = strlen(s);
+static char *xml_escape(const char *s, size_t *out_len) {
+    *out_len = 0;
+    if (!s) s = "";
+    size_t len = tk_strlen(s);
     /* Worst case: every char becomes &quot; (6 chars) */
     size_t cap = len * 6 + 1;
     char *out = (char *)malloc(cap);
-    if (!out) return strdup("");
+    if (!out) return NULL;
     size_t pos = 0;
     for (size_t i = 0; i < len; i++) {
         switch (s[i]) {
@@ -50,13 +78,14 @@ static char *xml_escape(const char *s) {
         }
     }
     out[pos] = '\0';
+    *out_len = pos;
     return out;
 }
 
 /*
  * find_tag_content — find content between <prefix...> and </tag>.
  * Searches for the opening tag prefix and closing tag, copies the
- * content between them into a heap-allocated string.
+ * content between them into a sealed string.
  * Returns NULL if not found.
  */
 static char *find_tag_content(const char *xml, const char *open_tag,
@@ -74,12 +103,7 @@ static char *find_tag_content(const char *xml, const char *open_tag,
     const char *end = strstr(content_start, close_tag);
     if (!end) return NULL;
 
-    size_t content_len = (size_t)(end - content_start);
-    char *result = (char *)malloc(content_len + 1);
-    if (!result) return NULL;
-    memcpy(result, content_start, content_len);
-    result[content_len] = '\0';
-    return result;
+    return tks_dup(content_start, (size_t)(end - content_start));
 }
 
 /* ── SOAP 1.1 Namespace ───────────────────────────────────────────────── */
@@ -103,14 +127,14 @@ static const char *build_envelope(const char *body_xml,
      *   <soap:Body>BODY</soap:Body>\n
      * </soap:Envelope>
      */
-    size_t ns_len = strlen(ns);
-    size_t body_len = strlen(body);
-    size_t header_len = has_header ? strlen(header_xml) : 0;
+    size_t ns_len = tk_strlen(ns);
+    size_t body_len = tk_strlen(body);
+    size_t header_len = has_header ? tk_strlen(header_xml) : 0;
 
     /* Calculate buffer size with generous padding */
     size_t buf_size = 256 + ns_len + body_len + header_len;
     char *buf = (char *)malloc(buf_size);
-    if (!buf) return strdup("");
+    if (!buf) return sealed_empty();
 
     size_t pos = 0;
     pos += (size_t)snprintf(buf + pos, buf_size - pos,
@@ -123,12 +147,12 @@ static const char *build_envelope(const char *body_xml,
     }
 
     /* Last write: buf_size was computed from the three lengths above, so
-     * nothing reads the final offset. */
-    (void)snprintf(buf + pos, buf_size - pos,
+     * every write fit and pos is the final length. */
+    pos += (size_t)snprintf(buf + pos, buf_size - pos,
         "  <soap:Body>%s</soap:Body>\n"
         "</soap:Envelope>", body);
 
-    return buf;
+    return seal_take(buf, pos);
 }
 
 const char *soap_envelope(const char *body_xml, const char *header_xml) {
@@ -151,18 +175,19 @@ const char *soap_fault(const char *faultcode, const char *faultstring,
      * went in raw, so a detail carrying request data could close <detail>
      * and inject elements into the fault (ADR-0011: the safe form is the
      * default). */
-    char *esc_fc = xml_escape(fc);
-    char *esc_fs = xml_escape(fs);
-    char *esc_dt = has_detail ? xml_escape(detail) : NULL;
+    size_t n_fc, n_fs, n_dt = 0;
+    char *esc_fc = xml_escape(fc, &n_fc);
+    char *esc_fs = xml_escape(fs, &n_fs);
+    char *esc_dt = has_detail ? xml_escape(detail, &n_dt) : NULL;
 
-    size_t buf_size = 256 + strlen(esc_fc) + strlen(esc_fs)
-                    + (esc_dt ? strlen(esc_dt) : 0);
-    char *buf = (char *)malloc(buf_size);
+    size_t buf_size = 256 + n_fc + n_fs + n_dt;
+    char *buf = (esc_fc && esc_fs && (esc_dt || !has_detail))
+              ? (char *)malloc(buf_size) : NULL;
     if (!buf) {
         free(esc_fc);
         free(esc_fs);
         free(esc_dt);
-        return strdup("");
+        return sealed_empty();
     }
 
     size_t pos = 0;
@@ -176,18 +201,18 @@ const char *soap_fault(const char *faultcode, const char *faultstring,
             "  <detail>%s</detail>\n", esc_dt);
     }
 
-    snprintf(buf + pos, buf_size - pos, "</soap:Fault>");
+    pos += (size_t)snprintf(buf + pos, buf_size - pos, "</soap:Fault>");
 
     free(esc_fc);
     free(esc_fs);
     free(esc_dt);
-    return buf;
+    return seal_take(buf, pos);
 }
 
 /* ── SOAP Extraction ───────────────────────────────────────────────────── */
 
 const char *soap_extract_body(const char *envelope) {
-    if (!envelope) return strdup("");
+    if (!envelope) return sealed_empty();
 
     /* Try soap:Body first (namespace-prefixed) */
     char *result = find_tag_content(envelope, "<soap:Body", "</soap:Body>");
@@ -201,7 +226,7 @@ const char *soap_extract_body(const char *envelope) {
     result = find_tag_content(envelope, "<Body", "</Body>");
     if (result) return result;
 
-    return strdup("");
+    return sealed_empty();
 }
 
 const char *soap_extract_fault(const char *envelope) {
@@ -223,13 +248,8 @@ const char *soap_extract_fault(const char *envelope) {
     const char *end = strstr(start, end_tag);
     if (!end) return NULL;
 
-    end += strlen(end_tag);
-    size_t len = (size_t)(end - start);
-    char *result = (char *)malloc(len + 1);
-    if (!result) return NULL;
-    memcpy(result, start, len);
-    result[len] = '\0';
-    return result;
+    end += tk_strlen(end_tag);
+    return tks_dup(start, (size_t)(end - start));
 }
 
 /* ── WS-Security Stubs (Story 88.6.5) ─────────────────────────────────── */
@@ -243,18 +263,19 @@ const char *soap_wsse_username_token(const char *username,
     const char *u = safe_str(username);
     const char *p = safe_str(password);
 
-    char *esc_u = xml_escape(u);
-    char *esc_p = xml_escape(p);
+    size_t n_u, n_p;
+    char *esc_u = xml_escape(u, &n_u);
+    char *esc_p = xml_escape(p, &n_p);
 
-    size_t buf_size = 512 + strlen(esc_u) + strlen(esc_p);
-    char *buf = (char *)malloc(buf_size);
+    size_t buf_size = 512 + n_u + n_p;
+    char *buf = (esc_u && esc_p) ? (char *)malloc(buf_size) : NULL;
     if (!buf) {
         free(esc_u);
         free(esc_p);
-        return strdup("");
+        return sealed_empty();
     }
 
-    snprintf(buf, buf_size,
+    int len = snprintf(buf, buf_size,
         "<wsse:Security xmlns:wsse=\"" WSSE_NS "\">\n"
         "  <wsse:UsernameToken>\n"
         "    <wsse:Username>%s</wsse:Username>\n"
@@ -265,25 +286,26 @@ const char *soap_wsse_username_token(const char *username,
 
     free(esc_u);
     free(esc_p);
-    return buf;
+    return seal_take(buf, len > 0 ? (size_t)len : 0);
 }
 
 const char *soap_wsse_timestamp(const char *created, const char *expires) {
     const char *c = safe_str(created);
     const char *e = safe_str(expires);
 
-    char *esc_c = xml_escape(c);
-    char *esc_e = xml_escape(e);
+    size_t n_c, n_e;
+    char *esc_c = xml_escape(c, &n_c);
+    char *esc_e = xml_escape(e, &n_e);
 
-    size_t buf_size = 512 + strlen(esc_c) + strlen(esc_e);
-    char *buf = (char *)malloc(buf_size);
+    size_t buf_size = 512 + n_c + n_e;
+    char *buf = (esc_c && esc_e) ? (char *)malloc(buf_size) : NULL;
     if (!buf) {
         free(esc_c);
         free(esc_e);
-        return strdup("");
+        return sealed_empty();
     }
 
-    snprintf(buf, buf_size,
+    int len = snprintf(buf, buf_size,
         "<wsu:Timestamp xmlns:wsu=\"" WSU_NS "\">\n"
         "  <wsu:Created>%s</wsu:Created>\n"
         "  <wsu:Expires>%s</wsu:Expires>\n"
@@ -292,5 +314,5 @@ const char *soap_wsse_timestamp(const char *created, const char *expires) {
 
     free(esc_c);
     free(esc_e);
-    return buf;
+    return seal_take(buf, len > 0 ? (size_t)len : 0);
 }

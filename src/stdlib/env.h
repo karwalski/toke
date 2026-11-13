@@ -77,10 +77,10 @@ int          env_delete(const char *key);
  *   ${VAR}   ends at the closing '}'
  *   $$       expands to a single literal '$'
  *   unknown variable names expand to ""
- * Returns a heap-allocated NUL-terminated string; caller must free.
- * Returns NULL on allocation failure.
+ * Returns a sealed string (127.295, runtime-abi §3.1): never freed, written
+ * or reallocated.  Returns NULL on allocation failure.
  */
-char        *env_expand(const char *tmpl);
+const char  *env_expand(const char *tmpl);
 
 /*
  * env_file_load — parse a KEY=VALUE dotenv file at path.

@@ -49,14 +49,19 @@ cat > "${WORK}/t.c" <<'C'
 
 static int fails = 0, checks = 0;
 
-/* Inner HTML of the first <open>...</close> in html, cut in place. */
-static char *inner(char *html, const char *open, const char *close) {
-    char *p = html ? strstr(html, open) : NULL;
+/* Inner HTML of the first <open>...</close> in html, as a malloc'd copy
+ * (the caller frees it).  127.295: md_render's result is a sealed string,
+ * never written or freed, so this no longer cuts it in place. */
+static char *inner(const char *html, const char *open, const char *close) {
+    const char *p = html ? strstr(html, open) : NULL;
     if (!p) return NULL;
     p += strlen(open);
-    char *e = strstr(p, close);
-    if (e) *e = '\0';
-    return p;
+    const char *e = strstr(p, close);
+    size_t n = e ? (size_t)(e - p) : strlen(p);
+    char *r = malloc(n + 1);
+    if (!r) return NULL;
+    memcpy(r, p, n); r[n] = '\0';
+    return r;
 }
 
 int main(void) {
@@ -77,9 +82,9 @@ int main(void) {
     char src[1024];
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
         snprintf(src, sizeof src, "| h |\n|---|\n| %s |\n", cases[i]);
-        char *t = (char *)md_render(src);
+        const char *t = md_render(src);
         snprintf(src, sizeof src, "%s\n", cases[i]);
-        char *c = (char *)md_render(src);
+        const char *c = md_render(src);
         char *ti = inner(t, "<td>", "</td>");
         char *ci = inner(c, "<p>", "</p>");
         checks++;
@@ -90,7 +95,7 @@ int main(void) {
                    ti ? ti : "<none>", ci ? ci : "<none>");
             fails++;
         }
-        free(t); free(c);
+        free(ti); free(ci);
     }
     printf("\nResults: %d passed, %d failed\n", checks - fails, fails);
     return fails ? 1 : 0;
@@ -98,10 +103,17 @@ int main(void) {
 C
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-# shellcheck disable=SC2046
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-pedantic -I"${CM}" -iquote "${S}" \
-        -o "${WORK}/t" "${WORK}/t.c" "${MD_C}" \
-        $(ls "${CM}"/*.c | grep -v '/main\.c$') >"${WORK}/cc.log" 2>&1; then
+# 127.295: md.c's results are sealed strings (str.c's string heap), so the
+# driver takes std.md's link set -- runtime, str.c, the vendored cmark
+# sources -- from stdlib_link_set.sh as cached objects, and compiles the md.c
+# under test itself (--except md.c) so the negative control still swaps it.
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-pedantic -I"${CM}" -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except md.c --cc "${CC}" \
+        --objects md -- "${CF[@]}")" \
+    || { echo "  FAIL: stdlib link set (md): see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${MD_C}" \
+        "${LINK[@]}" -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     exit 1
 fi

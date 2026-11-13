@@ -1719,7 +1719,7 @@ test-stdlib-ambient:
 
 test-stdlib-env:
 	$(CC) $(CFLAGS) -o test/stdlib/test_env \
-	    test/stdlib/test_env.c src/stdlib/env.c
+	    test/stdlib/test_env.c src/stdlib/env.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_env
 
 test-stdlib-crypto:
@@ -1769,7 +1769,7 @@ test-stdlib-yaml:
 
 test-stdlib-i18n:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_i18n \
-	    test/stdlib/test_i18n.c src/stdlib/i18n.c
+	    test/stdlib/test_i18n.c src/stdlib/i18n.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_i18n
 
 test-stdlib-dataframe:
@@ -1801,7 +1801,7 @@ test-stdlib-ws:
 
 test-stdlib-sse:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_sse \
-	    test/stdlib/test_sse.c src/stdlib/sse.c
+	    test/stdlib/test_sse.c src/stdlib/sse.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_sse
 
 test-stdlib-router:
@@ -2150,7 +2150,7 @@ test-stdlib-map:
 
 test-stdlib-md:
 	$(CC) $(CFLAGS) $(CMARK_FLAGS) -o test/stdlib/test_md \
-	    test/stdlib/test_md.c src/stdlib/md.c $(CMARK_SRCS)
+	    test/stdlib/test_md.c src/stdlib/md.c src/stdlib/str.c $(CMARK_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_md
 
 test-stdlib-toml:

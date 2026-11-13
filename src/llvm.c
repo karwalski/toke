@@ -3163,12 +3163,34 @@ static int fnv_expr(Ctx *c, const Node *n) {
     }
     return 0;
 }
+/* 127.383: `m.getor(k;d)` on a map of function values (the checker types
+ * the call as a function value, 127.379).  The receiver dispatch lowers it
+ * through tk_map_getor_w, which answers either the map's stored value (a
+ * reference the map holds) or `d` itself.  `d` is emitted BORROWED there and
+ * the result is retained before an owned `d` (a closure literal, a call
+ * returning a closure) is released, so the call yields a reference the
+ * consumer owns (+1) on both paths: a hit frees the unused default, a miss
+ * keeps it alive through the retain.  Before, an owned closure default was
+ * never released (one env leaked per call, ~33 MB over 1M iterations) and a
+ * function-valued local passed as the default took a reference nothing
+ * released. */
+static int recv_is_map(Ctx *c, const Node *recv);
+static int map_getor_fnv(Ctx *c, const Node *n) {
+    if (!n || n->kind != NODE_CALL_EXPR || n->child_count != 3
+        || !tk_type_is_fnval(n->rtype)) return 0;
+    const Node *callee = n->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || !callee->children[1]) return 0;
+    char mb[NAME_BUF]; tok_cp(c->src, callee->children[1], mb, sizeof mb);
+    return !strcmp(mb, "getor") && recv_is_map(c, callee->children[0]);
+}
 /* Does `n` yield a function value the consumer owns (+1)? */
 static int fnv_owned(Ctx *c, const Node *n) {
     if (!n) return 0;
     if (n->kind == NODE_CLOSURE) return 1;
     if (n->kind != NODE_CALL_EXPR || !tk_type_is_fnval(n->rtype) || n->child_count < 1)
         return 0;
+    if (map_getor_fnv(c, n)) return 1;                 /* 127.383 */
     const Node *callee = n->children[0];
     /* 127.377: a function of another USER module returning a function
      * value is a toke function like any other: its return hands the caller
@@ -5691,8 +5713,15 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 int na_im = n->child_count - 1;
                 int coa[TKC_MAX_PARAMS + 1]; coa[0] = obj_v;
+                /* 127.383: a getor yielding a function value borrows its
+                 * default (see map_getor_fnv) */
+                int getor_fnv = !strcmp(fn_im, "tk_map_getor_w") && map_getor_fnv(c, n);
+                int getor_drel = 0;
                 for (int i = 0; i < na_im && i + 1 < TKC_MAX_PARAMS; i++) {
-                    int av = emit_expr(c, n->children[i+1]);
+                    int dfn = getor_fnv && i == 1 && fnv_expr(c, n->children[i+1]);
+                    if (dfn) getor_drel = fnv_owned(c, n->children[i+1]);
+                    int av = dfn ? emit_borrowed(c, n->children[i+1])
+                                 : emit_expr(c, n->children[i+1]);
                     const char *aty = expr_llvm_type(c, n->children[i+1]);
                     if (!strcmp(aty, "i8*")) {
                         int z = next_tmp(c);
@@ -5722,6 +5751,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, " i64 %%t%d", coa[i]);
                 }
                 fputs(")\n", c->out);
+                if (getor_fnv) {                       /* 127.383 */
+                    fnv_retain(c, t, "i64");
+                    if (getor_drel && na_im >= 2) fnv_release(c, coa[2], "i64");
+                }
                 /* Bug 102.29b: bitcast i64 → double for .get() on float arrays.
                  * Arrays store doubles as bitcast i64 values; when reading back
                  * via .get(), the i64 must be reinterpreted as double so that

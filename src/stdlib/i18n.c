@@ -6,10 +6,19 @@
  * Loads string bundles from TOON, YAML, or JSON files, resolves keys,
  * and substitutes {placeholder} tokens with provided arguments.
  *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every string handed to toke --
+ * i18n_get, i18n_fmt and i18n_locale results, and the values find_string
+ * slices out of a bundle -- is a sealed string from the string heap
+ * (tk_strhdr.h), and inputs are measured with tk_strlen.  A result is never
+ * freed, written or reallocated, C callers included.  The bundle text that
+ * i18n_load reads stays malloc'd: it is the bundle's own storage, and a file
+ * may hold a 0 byte, which a sealed string's length may not count past.
+ *
  * Story: 6.3.5
  */
 
 #include "i18n.h"
+#include "tk_strhdr.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -65,7 +74,7 @@ static char *try_load(const char *base, const char *locale, const char *ext) {
  */
 static const char *find_string(const char *data, const char *key) {
     if (!data || !key) return NULL;
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
 
     /* Detect JSON */
     const char *p = data;
@@ -87,11 +96,7 @@ static const char *find_string(const char *data, const char *key) {
                 const char *vs = p;
                 while (*p && !(*p == '"' && *(p - 1) != '\\')) p++;
                 if (match) {
-                    size_t vlen = (size_t)(p - vs);
-                    char *val = (char *)malloc(vlen + 1);
-                    memcpy(val, vs, vlen);
-                    val[vlen] = '\0';
-                    return val;
+                    return tks_dup(vs, (size_t)(p - vs));
                 }
                 if (*p == '"') p++;
             } else {
@@ -100,11 +105,7 @@ static const char *find_string(const char *data, const char *key) {
                 while (*p && *p != ',' && *p != '}') p++;
                 if (match) {
                     while (p > vs && (*(p - 1) == ' ' || *(p - 1) == '\t')) p--;
-                    size_t vlen = (size_t)(p - vs);
-                    char *val = (char *)malloc(vlen + 1);
-                    memcpy(val, vs, vlen);
-                    val[vlen] = '\0';
-                    return val;
+                    return tks_dup(vs, (size_t)(p - vs));
                 }
             }
             if (*p == ',') p++;
@@ -155,10 +156,7 @@ static const char *find_string(const char *data, const char *key) {
                 size_t kflen = (size_t)(field_ends[key_idx] - fields[key_idx]);
                 if (kflen == klen && strncmp(fields[key_idx], key, klen) == 0) {
                     size_t vlen = (size_t)(field_ends[val_idx] - fields[val_idx]);
-                    char *val = (char *)malloc(vlen + 1);
-                    memcpy(val, fields[val_idx], vlen);
-                    val[vlen] = '\0';
-                    return val;
+                    return tks_dup(fields[val_idx], vlen);
                 }
             }
             if (*p == '\n') p++;
@@ -189,10 +187,7 @@ try_yaml:
                               (*vs == '\'' && *(ve - 1) == '\''))) {
                 vs++; ve--; vlen -= 2;
             }
-            char *val = (char *)malloc(vlen + 1);
-            memcpy(val, vs, vlen);
-            val[vlen] = '\0';
-            return val;
+            return tks_dup(vs, vlen);
         }
         (void)line;
         if (*p == '\n') p++;
@@ -229,11 +224,7 @@ const char *i18n_get(I18nBundle bundle, const char *key) {
     const char *val = find_string(bundle.data, key);
     if (val) return val;
     /* Safe fallback: return the key itself */
-    size_t klen = strlen(key);
-    char *copy = (char *)malloc(klen + 1);
-    memcpy(copy, key, klen);
-    copy[klen] = '\0';
-    return copy;
+    return tks_strdup(key);
 }
 
 /* grow_to — make *buf hold at least need bytes, doubling *cap until it does.
@@ -255,11 +246,7 @@ const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
     const char *tmpl = find_string(bundle.data, key);
     if (!tmpl) {
         /* Fallback to key */
-        size_t klen = strlen(key);
-        char *copy = (char *)malloc(klen + 1);
-        memcpy(copy, key, klen);
-        copy[klen] = '\0';
-        return copy;
+        return tks_strdup(key);
     }
 
     /* Parse args: "name=value|name2=value2" */
@@ -286,7 +273,7 @@ const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
     }
 
     /* Substitute {placeholder} tokens */
-    size_t tlen = strlen(tmpl);
+    size_t tlen = tk_strlen(tmpl);
     size_t cap = tlen * 2 + 256;
     char *out = (char *)malloc(cap);
     if (!out) return tmpl;
@@ -327,7 +314,10 @@ const char *i18n_fmt(I18nBundle bundle, const char *key, const char *args) {
         out[pos++] = *tp++;
     }
     out[pos] = '\0';
-    return out;
+    /* Built in a growing malloc'd buffer; handed over as one sealed copy. */
+    char *r = tks_dup(out, pos);
+    free(out);
+    return r ? r : tmpl;
 }
 
 const char *i18n_locale(void) {
@@ -335,11 +325,8 @@ const char *i18n_locale(void) {
     if (!loc || !*loc) loc = getenv("LANG");
     if (!loc || !*loc) loc = "en";
     /* Extract language code (strip encoding like .UTF-8) */
-    size_t len = strlen(loc);
+    size_t len = tk_strlen(loc);   /* the environment's: strlen fallback */
     const char *dot = strchr(loc, '.');
     if (dot) len = (size_t)(dot - loc);
-    char *result = (char *)malloc(len + 1);
-    memcpy(result, loc, len);
-    result[len] = '\0';
-    return result;
+    return tks_dup(loc, len);
 }
