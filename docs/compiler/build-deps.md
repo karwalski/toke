@@ -5,8 +5,6 @@ section: compiler
 order: 5
 ---
 
-# Build Dependencies by Platform
-
 This document lists the exact packages needed to build the toke compiler (`tkc`)
 and the ooke static-site generator from source on each supported platform.
 

@@ -5,9 +5,7 @@ section: spec
 order: 11
 ---
 
-# toke Capability Model [N]
-
-**Status:** implemented (Epic 124.4a–d, 2026-07-06); deny-by-default since the
+**Status:** Normative [N]; implemented (Epic 124.4a–d, 2026-07-06); deny-by-default since the
 124.4g flip (§4). ADR: [ADR-0010](/docs/decisions/ADR-0010/).
 
 toke compiles to native code with no language-level sandbox. Without a capability

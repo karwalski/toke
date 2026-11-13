@@ -1,11 +1,9 @@
 ---
-title: oke Namespace Specification
+title: "*oke Namespace Specification"
 slug: oke-namespace
 section: spec
 order: 10
 ---
-
-# *oke namespace specification
 
 **Project:** toke ecosystem — [tokelang.dev](https://tokelang.dev) | [github.com/karwalski/toke](https://github.com/karwalski/toke)
 **Status:** Draft v0.1

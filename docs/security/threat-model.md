@@ -100,7 +100,7 @@ This document must be reviewed and signed off before Phase A corpus generation b
 
 ---
 
-# Part II — Language, Runtime and Web Trust Boundaries
+## Part II — Language, Runtime and Web Trust Boundaries
 
 **Added:** 2026-07-02 (Story 120.21, Epic 120)
 **Scope expansion:** The sections above (T1–T5) model the *LLM corpus-generation pipeline*
@@ -111,7 +111,7 @@ security audit; per-area detail lives under
 [`docs/security/audit-120/`](https://github.com/karwalski/toke/blob/main/docs/security/audit-120/) and the roll-up is `audit-120/index.md`.
 Every confirmed finding is tracked as an Epic 121 remediation story.
 
-## Trust boundaries at a glance
+### Trust boundaries at a glance
 
 | Boundary | Untrusted input crossing it | Primary threat classes | Audit-120 areas |
 |----------|-----------------------------|------------------------|-----------------|
@@ -121,7 +121,7 @@ Every confirmed finding is tracked as an Epic 121 remediation story.
 
 ---
 
-## TB-A: Compiler toolchain (build-time)
+### TB-A: Compiler toolchain (build-time)
 
 `tkc` runs on developer and CI hosts and, per the deploy pipeline (120.16 DEP-05), on the
 production host itself. Its inputs — source paths, output/target flags, and the
@@ -134,7 +134,7 @@ and into fixed-size buffers.
 | Threats | **Command injection** at link time via source filename / `--out` / `--target` interpolated into `system()` (120.2 COM-01) and via `TKC_STDLIB_DIR`/`TKC_RUNTIME_DIR` (120.2 COM-02); **symlink/temp race** in the auto-glue writer's predictable temp name (120.2 COM-03); **un-pinned toolchain** — clang resolved via `$PATH` with no integrity check (120.2 COM-04); **memory safety on hostile source** — heap overflow in the migrate prepass (120.3 COM-01), unbounded parser/AST recursion (120.3 COM-02), int-overflow length arithmetic (120.3 COM-03), and `decompress_text()` / `compress_stream_feed()` overflow and infinite-loop on crafted companion/compressed input (120.4 COM-01/02) |
 | Mitigation direction | quote/validate or use `execve`-style spawning instead of `system()`; allowlist and canonicalise toolchain env vars; `O_EXCL`/`mkstemp` for temp files; pin/verify the toolchain; bound recursion depth and validate all length/size arithmetic against buffer capacity before write |
 
-## TB-B: C runtime / stdlib (in-process)
+### TB-B: C runtime / stdlib (in-process)
 
 Once a toke program runs, the stdlib parses attacker-influenced data and exercises ambient
 OS authority. These surfaces are reachable **remote-unauth** whenever a toke web service
@@ -152,7 +152,7 @@ filesystem layers.
 | Reliability (DoS) | chunked-body limit bypass + overflow (120.19 REL-01), eager `max_header+max_body` allocation amplification (120.19 REL-02), process-capture deadlock (120.19 REL-03), signed-int `arena_alloc` overflow (120.19 REL-06) |
 | Mitigation direction | grow/bound all buffers against actual input length; cap recursion depth; parameterise every SQL path; fail closed on RNG error; enforce token expiry and constant-time comparisons; introduce a capability gate and drop `/bin/sh -c`; canonicalise paths and use `lstat`/`O_NOFOLLOW`; escape and TLS-validate all outbound model/DB traffic |
 
-## TB-C: HTTP server & web (remote)
+### TB-C: HTTP server & web (remote)
 
 The HTTP core, web glue, TLS/ACME layer, WAF, the ooke app framework, the public MCP
 server, and the deploy pipeline together form the internet-facing boundary. Most findings
@@ -172,7 +172,7 @@ here are **remote-unauth**.
 
 ---
 
-## Residual and cross-cutting observations (Part II)
+### Residual and cross-cutting observations (Part II)
 
 1. **Capability model is the root cause of TB-B.** Many stdlib findings (ambient authority,
    `/bin/sh -c`, un-gated OS access) stem from toke granting full ambient OS authority by
@@ -187,7 +187,7 @@ here are **remote-unauth**.
 
 ---
 
-# Part III — Post-quantum posture and crypto agility
+## Part III — Post-quantum posture and crypto agility
 
 **Added:** 2026-09-26 (story 122.6; decision record ADR-0013 (f), roadmap 122.5)
 
@@ -206,7 +206,7 @@ stay confidential for years is already exposed if a classical key exchange
 protected it. Signatures are the opposite case: a forged signature only matters
 once a CRQC exists, so the risk is to signatures that must still verify then.
 
-## What toke ships, by quantum status
+### What toke ships, by quantum status
 
 Checked against the source on 2026-09-26. "Toke-callable" means declared in a
 `stdlib/*.tki` interface; C-only functions are not reachable from a toke program.
@@ -224,7 +224,7 @@ Checked against the source on 2026-09-26. "Toke-callable" means declared in a
 | RSA in `encrypt.c` | RSA-OAEP / signatures | **no** (C-only) | vulnerable | not reachable from toke |
 | Release signing | sigstore cosign keyless | n/a | classical | see `docs/security/release-signing.md` |
 
-## Guidance for toke programs (HNDL)
+### Guidance for toke programs (HNDL)
 
 1. **Transport.** Use `std.tls` with an OpenSSL of 3.5 or later on both ends; the
    hybrid group is then negotiated automatically. `tls.group(conn)` returns the
@@ -246,7 +246,7 @@ Checked against the source on 2026-09-26. "Toke-callable" means declared in a
    long-term value) are not an HNDL concern; classical primitives remain acceptable
    for them.
 
-## Deprecation track: classical-only asymmetric protection of long-lived data
+### Deprecation track: classical-only asymmetric protection of long-lived data
 
 Governed by `docs/governance.md` §4.3 (a deprecation cycle of at least two minor
 releases or six months between notice and removal) and §4.2 (a stdlib signature may
@@ -263,7 +263,7 @@ No stage beyond 0 has a date: a deprecation without a replacement to move to wou
 only strand users. Classical algorithms are not being removed from hybrids; X25519
 remains half of `X25519MLKEM768`.
 
-## Runtime advisory: decided against (122.6)
+### Runtime advisory: decided against (122.6)
 
 ADR-0013 (f) asked whether a build-time or runtime advisory should fire when a
 quantum-vulnerable primitive protects long-lived data. **Not at runtime:** the

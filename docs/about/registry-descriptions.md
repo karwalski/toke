@@ -7,8 +7,6 @@ date: 2026-09-19
 order: 13
 ---
 
-# Registry descriptions: what every package page must say
-
 **What this file is.** The prepared text for every *registry* surface toke appears on —
 GitHub repository descriptions and topics, PyPI, npm, the VS Code marketplace, Hugging
 Face and Ollama — with the live text beside it, what is wrong with the live text, and the

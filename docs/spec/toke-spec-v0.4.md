@@ -5,8 +5,6 @@ section: spec
 order: 1
 ---
 
-# toke Language Specification — v0.4 (Normative Amendment)
-
 **Status:** normative. **Date:** 2026-07-02. **Supersedes:** the listed sections of
 [toke-spec-v0.3](/docs/spec/toke-spec-v0.3/). **Deciders:** Matthew Watt.
 

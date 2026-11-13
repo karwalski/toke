@@ -1,11 +1,9 @@
 ---
-title: Memory Model Specification
+title: toke Memory Model Specification
 slug: memory-model
 section: spec
 order: 6
 ---
-
-# toke Memory Model Specification
 
 **Status:** Normative [N]
 **Extends:** toke Language Specification §14 (v0.3 base as amended by toke-spec-v0.4.md)

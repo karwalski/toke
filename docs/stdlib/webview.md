@@ -1,11 +1,9 @@
 ---
-title: std.webview
+title: std.webview — withdrawn
 slug: webview
 section: reference/stdlib
 order: 52
 ---
-
-# std.webview -- WITHDRAWN (story 136.2)
 
 > **Archived 2026-09-19 (story 136.2).** `std.webview` was withdrawn: it has no
 > interface and no glue, and cannot be imported. The function names and

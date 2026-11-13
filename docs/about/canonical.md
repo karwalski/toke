@@ -7,8 +7,6 @@ date: 2026-09-19
 order: 12
 ---
 
-# Canonical facts: how toke is described
-
 **What this file is.** The single source of truth for every fact and every sentence used
 to describe toke in public. The home page, `/llms.txt`, the README of every toke repo, the
 Hugging Face model card and the PyPI, npm, VS Code and Ollama descriptions copy the blocks
