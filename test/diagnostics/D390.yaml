@@ -1,0 +1,18 @@
+id: D390
+series: D
+description: "127.371: `let x=mut.a.slice(0;2)` with no other store to x binds the receiver's @T, so `x.concat(b)` with b of the same established @T is E4036 with the deterministic fix `(x+b)` -- array `+` is toke's concatenation"
+input: |
+  m=t;
+  f=main():i64{
+    let a=@(1;2;3);
+    let b=@(9);
+    let x=mut.a.slice(0;2);
+    let c=x.concat(b);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4036"]
+expected_fix: "(x+b)"
+expected_diag_field:
+  field: got
+  value: "array.concat"

@@ -3297,6 +3297,7 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
 }
 
 static Type *recv_method_result_type(Ctx *cx, const Node *call);   /* 127.364 */
+static Type *recv_method_mut_result_type(Ctx *cx, const Node *bn); /* 127.371 */
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -3319,11 +3320,15 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         cx->bind_infer_depth++;
         Type *gt = map_getor_type(cx, initN);
         /* 127.364: `let x=a.slice(0;2)` binds what the same call has in
-         * place -- a kind-preserving receiver method's result.  Immutable
-         * `let` only, the 127.176 / 138.3 rule: a `mut` binding's
-         * initialiser does not state what later assignments store. */
+         * place -- a kind-preserving receiver method's result.  A `mut`
+         * binding's initialiser does not state what later assignments store
+         * (the 127.176 / 138.3 rule), so 127.371 types one only when every
+         * assignment to it stores the same type (recv_method_mut_result_type,
+         * the 127.315 model). */
         if (!gt && bn->kind == NODE_BIND_STMT)
             gt = recv_method_result_type(cx, initN);
+        else if (!gt && bn->kind == NODE_MUT_BIND_STMT)
+            gt = recv_method_mut_result_type(cx, bn);
         cx->bind_infer_depth--;
         return gt;
     }
@@ -5619,6 +5624,51 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
 }
 
 /*
+ * recv_result_on (127.364, 127.371) — what receiver method `member` returns
+ * on a receiver of the ESTABLISHED type `rt`, or NULL for a member whose
+ * result is not modelled.  Each answer is the type the lowering returns
+ * (llvm.c's receiver dispatch and its expr_struct_type tags):
+ *   array .slice / .sort / .filter -> the receiver's own @T (tk_arr_slice_w,
+ *         tk_arr_sort, tk_arr_filter copy the elements; the emitter tags the
+ *         result from the receiver, 127.11);
+ *   array .join -> str (tk_arr_join_w; the emitter's "$str" list);
+ *   str .slice / .concat / .trim / .upper / .lower / .replace / .substr /
+ *       .sub / .substring / .join -> str (std.str signatures; tk_str_sub_w is
+ *       replace, substring is tk_str_substr_w; `sep.join(arr)` is
+ *       tk_str_join_w; all in the emitter's "$str" list);
+ *   str .split / .chars / .fields -> @str (std.str `split(..):@$str`;
+ *       tk_str_chars_w / tk_str_fields_w build arrays of strings; the
+ *       emitter's "@str" list).
+ * `.map` is not modelled: its element type is the mapped function's return.
+ */
+static Type *recv_result_on(Ctx *cx, const Type *rt, const char *member) {
+    if (!rt || !member) return NULL;
+    Arena *A = cx->env->arena;
+    if (rt->kind == TY_ARRAY) {
+        if (strcmp(member, "slice") == 0 || strcmp(member, "sort") == 0
+            || strcmp(member, "filter") == 0) return (Type *)rt;
+        if (strcmp(member, "join") == 0) return mk_type(A, TY_STR);
+        return NULL;
+    }
+    if (rt->kind == TY_STR) {
+        static const char *const str_same[] = {
+            "slice", "concat", "trim", "upper", "lower", "replace", "substr",
+            "sub", "substring", "join", NULL
+        };
+        for (int i = 0; str_same[i]; i++)
+            if (strcmp(member, str_same[i]) == 0) return mk_type(A, TY_STR);
+        if (strcmp(member, "split") == 0 || strcmp(member, "chars") == 0
+            || strcmp(member, "fields") == 0) {
+            Type *at = mk_type(A, TY_ARRAY);
+            if (!at) return NULL;
+            at->elem = mk_type(A, TY_STR);
+            return at->elem ? at : NULL;
+        }
+    }
+    return NULL;
+}
+
+/*
  * recv_method_result_type (127.364) — the type of a receiver-method call's
  * RESULT, for the kind-preserving members only, or NULL.
  *
@@ -5627,14 +5677,10 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
  * `let c=a.slice(0;2).concat(b)` on arrays passed --check and printed `2`,
  * while `a.concat(b)` is E4036.  The result is typed only where the receiver's
  * type is ESTABLISHED (recv_value_type, the same judgement 127.151 makes),
- * for members g_recv_methods lowers on that kind (slice: RK_S|RK_A; the rest
- * RK_S -- check_recv_method_call reports any other kind as E4036), and only
- * to what the lowering returns:
- *   - array `.slice(i;j)` -> tk_arr_slice_w, a copy of the elements: the
- *     receiver's own @T (the emitter tags it from the receiver, llvm.c 127.11);
- *   - str `.slice` / `.concat` / `.trim` / `.upper` / `.lower` / `.replace` /
- *     `.substr` -> the tk_str_*_w glue that returns a str (stdlib-signatures
- *     std.str; the emitter's "$str" tag list).
+ * for members g_recv_methods lowers on that kind (check_recv_method_call
+ * reports any other kind as E4036), and only to what the lowering returns --
+ * recv_result_on lists the members and their results (127.364 slice and the
+ * str-to-str set; 127.371 sort/filter/join/sub/substring/split/chars/fields).
  * An import-alias receiver (a module call) is not a value and is left alone,
  * exactly as check_recv_method_call leaves it.
  */
@@ -5659,19 +5705,79 @@ static Type *recv_method_result_type(Ctx *cx, const Node *call) {
     }
     const Type *rt = recv_value_type(cx, recv);
     if (!rt) return NULL;
-    if (rt->kind == TY_ARRAY) {
-        if (strcmp(member, "slice") == 0) return (Type *)rt;
-        return NULL;
+    return recv_result_on(cx, rt, member);
+}
+
+/*
+ * recv_method_mut_result_type (127.371) -- recv_method_result_type through a
+ * `mut` binding: `let x=mut.a.slice(0;2); x.concat(b)` passed --check and
+ * printed 2.
+ *
+ * 127.364 left a `mut` binding untyped under the 127.176 / 138.3 rule: its
+ * initialiser does not state what later assignments store.  138.3's other
+ * reason -- a std scalar's spelling is an interface claim the ABI does not
+ * honour (`u64`) -- does not arise here: these results are the receiver's
+ * own established type or the str / @str the lowering returns, the same
+ * types a `let x=mut.a` or `let s=mut."t"` binding already carries.  So the
+ * binding is typed by its initialiser only when nothing can store anything
+ * else in it, as std_array_mut_ret (127.315) judges a std [T]:
+ *   - the initialiser's result type is fully known (tk_type_has_unknown);
+ *   - every assignment to THIS binding anywhere in the function
+ *     (tk_binder_at on the target) stores a value of the identical type:
+ *     a receiver method on the binding itself whose result on that type is
+ *     that type (`x=x.slice(1;3)`, `s=s.trim()`), another receiver-method
+ *     result of the identical type, or -- for a str -- a string literal.
+ *     Any other store (`x=x.append(4)`, `x=other`, `s=s+"!"`) leaves the
+ *     binding untyped, exactly as before.
+ * Unlike std_array_mut_ret the answer is the binding's type, as for the
+ * immutable form (127.364): judged and stored alike.
+ */
+static int mut_assigns_all_recv(Ctx *cx, const Node *node, const Node *bn,
+                                const char *nb, int nlen, const Type *t) {
+    if (!node) return 1;
+    if (node->kind == NODE_ASSIGN_STMT && node->child_count == 2 && node->children[0]
+        && node->children[0]->kind == NODE_IDENT
+        && node->children[0]->tok_len == nlen
+        && memcmp(cx->src + node->children[0]->tok_start, nb, (size_t)nlen) == 0
+        && tk_binder_at(cx->fn_node, cx->src, node->children[0], nb, nlen, NULL) == bn) {
+        const Node *v = node->children[1];
+        Type *at = NULL;
+        if (!v) return 0;
+        if (v->kind == NODE_STR_LIT) {
+            if (t->kind != TY_STR) return 0;
+            at = (Type *)t;
+        } else if (v->kind == NODE_CALL_EXPR && v->child_count >= 1 && v->children[0]
+                   && v->children[0]->kind == NODE_FIELD_EXPR
+                   && v->children[0]->child_count >= 2
+                   && v->children[0]->children[0]
+                   && v->children[0]->children[0]->kind == NODE_IDENT
+                   && v->children[0]->children[1]
+                   && v->children[0]->children[0]->tok_len == nlen
+                   && memcmp(cx->src + v->children[0]->children[0]->tok_start, nb,
+                             (size_t)nlen) == 0
+                   && tk_binder_at(cx->fn_node, cx->src, v->children[0]->children[0],
+                                   nb, nlen, NULL) == bn) {
+            /* `x=x.m(..)`: the binding's own type, by induction */
+            char mb[128]; TOKSTR(mb, cx->src, v->children[0]->children[1]);
+            at = recv_result_on(cx, t, mb);
+        } else {
+            at = recv_method_result_type(cx, v);
+        }
+        if (!at || !tk_type_identical(at, t)) return 0;
     }
-    if (rt->kind == TY_STR) {
-        static const char *const str_same[] = {
-            "slice", "concat", "trim", "upper", "lower", "replace", "substr", NULL
-        };
-        for (int i = 0; str_same[i]; i++)
-            if (strcmp(member, str_same[i]) == 0)
-                return mk_type(cx->env->arena, TY_STR);
-    }
-    return NULL;
+    for (int i = 0; i < node->child_count; i++)
+        if (!mut_assigns_all_recv(cx, node->children[i], bn, nb, nlen, t)) return 0;
+    return 1;
+}
+static Type *recv_method_mut_result_type(Ctx *cx, const Node *bn) {
+    if (!bn || bn->kind != NODE_MUT_BIND_STMT || bn->child_count != 2
+        || !bn->children[0] || !bn->children[1] || !cx->fn_node) return NULL;
+    Type *t = recv_method_result_type(cx, bn->children[1]);
+    if (!t || tk_type_has_unknown(t)) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, bn->children[0]);
+    int nlen = (int)strlen(nb);
+    if (!nlen) return NULL;
+    return mut_assigns_all_recv(cx, cx->fn_node, bn, nb, nlen, t) ? t : NULL;
 }
 
 /*
