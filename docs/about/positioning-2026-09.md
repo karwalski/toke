@@ -7,8 +7,6 @@ date: 2026-09-19
 status: draft (owner ratification pending)
 ---
 
-# Repositioning brief: the durable claim
-
 **What this file is.** The single source for how toke is described. Stories 132.1 through
 132.4 and 132.8 through 132.11 copy from this file plus the 132.1 canonical facts block,
 word for word. Nothing in this file changes the language.

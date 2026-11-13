@@ -5,8 +5,6 @@ section: tutorials
 order: 7
 ---
 
-# Cross-Platform Build Guide
-
 This tutorial walks through building toke programs on every supported platform,
 handling the differences between Linux, macOS, FreeBSD, and Windows.
 

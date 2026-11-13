@@ -5,8 +5,6 @@ section: tutorials
 order: 6
 ---
 
-# tutorial: data pipeline
-
 build a csv data processing pipeline that reads a csv file, computes
 column statistics (sum, average, min, max), and writes a json report.
 

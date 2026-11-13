@@ -1,11 +1,9 @@
 ---
-title: The Landscape and the Evidence Against Us
+title: The landscape and the evidence against us (September 2026)
 slug: landscape-2026-09
 section: about
 order: 11
 ---
-
-# The landscape and the evidence against us (September 2026)
 
 ## 1. Why this page exists
 
