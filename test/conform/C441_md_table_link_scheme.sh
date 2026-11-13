@@ -82,11 +82,12 @@ static void first_href(const char *html, char *out, size_t cap) {
     out[k] = '\0';
 }
 
-static char *table_with(const char *url) {
+/* 127.295: md_render's result is a sealed string -- never freed. */
+static const char *table_with(const char *url) {
     size_t n = strlen(url) + 64;
     char *src = malloc(n);
     snprintf(src, n, "| h |\n|---|\n| [x](%s) |\n", url);
-    char *html = (char *)md_render(src);
+    const char *html = md_render(src);
     free(src);
     return html;
 }
@@ -103,12 +104,11 @@ int main(void) {
     };
     char href[512], msg[200];
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
-        char *html = table_with(bad[i].url);
+        const char *html = table_with(bad[i].url);
         first_href(html, href, sizeof href);
         snprintf(msg, sizeof msg, "table-cell link with %s has no script href (got \"%s\")",
                  bad[i].label, href);
         CHECK(strncmp(href, bad[i].scheme, strlen(bad[i].scheme)) != 0, msg);
-        free(html);
     }
 
     /* parity with cmark: URLs cmark parses as a link destination */
@@ -117,17 +117,16 @@ int main(void) {
                           "https://example.com/a?b=1&c=2", "/rel/path", "mailto:a@b.c", "#frag" };
     int mism = 0;
     for (size_t i = 0; i < sizeof par / sizeof par[0]; i++) {
-        char *t = table_with(par[i]);
+        const char *t = table_with(par[i]);
         size_t n = strlen(par[i]) + 16;
         char *src = malloc(n); snprintf(src, n, "[x](%s)\n", par[i]);
-        char *c = (char *)md_render(src); free(src);
+        const char *c = md_render(src); free(src);
         char ht[512], hc[512];
         first_href(t, ht, sizeof ht); first_href(c, hc, sizeof hc);
         if ((ht[0] == '\0') != (hc[0] == '\0')) {
             printf("        parity: %-32s table \"%s\"  cmark \"%s\"\n", par[i], ht, hc);
             mism++;
         }
-        free(t); free(c);
     }
     CHECK(mism == 0, "table-cell href is empty exactly when cmark's own is, for 10 URLs");
 
@@ -138,11 +137,10 @@ int main(void) {
         { "data:image/png;base64,AAAA",    "data:image/png;base64,aaaa",    "data:image/png" },
     };
     for (size_t i = 0; i < sizeof good / sizeof good[0]; i++) {
-        char *html = table_with(good[i].url);
+        const char *html = table_with(good[i].url);
         first_href(html, href, sizeof href);
         snprintf(msg, sizeof msg, "control: %s keeps its href", good[i].label);
         CHECK(strcmp(href, good[i].want) == 0, msg);
-        free(html);
     }
 
     /* PAR-08: 400 KB of nested openers in one cell, on a 256 KB stack */
@@ -153,10 +151,10 @@ int main(void) {
     const char pat[] = "**[*";
     while (k < N) { cell[k] = pat[k % 4]; k++; }
     memcpy(cell + k, " |\n", 4);
-    char *html = (char *)md_render(cell);
+    const char *html = md_render(cell);
     CHECK(html && strstr(html, "<table>") != NULL,
           "PAR-08: a 400 KB cell of nested **[* openers renders (constant nesting depth)");
-    free(html); free(cell);
+    free(cell);
 
     printf("\nResults: %d passed, %d failed\n", checks - fails, fails);
     return fails ? 1 : 0;
@@ -164,10 +162,17 @@ int main(void) {
 C
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-# shellcheck disable=SC2046
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-pedantic -I"${CM}" -iquote "${S}" \
-        -o "${WORK}/t" "${WORK}/t.c" "${MD_C}" \
-        $(ls "${CM}"/*.c | grep -v '/main\.c$') >"${WORK}/cc.log" 2>&1; then
+# 127.295: md.c's results are sealed strings (str.c's string heap), so the
+# driver takes std.md's link set -- runtime, str.c, the vendored cmark
+# sources -- from stdlib_link_set.sh as cached objects, and compiles the md.c
+# under test itself (--except md.c) so the negative control still swaps it.
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -Wno-pedantic -I"${CM}" -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except md.c --cc "${CC}" \
+        --objects md -- "${CF[@]}")" \
+    || { echo "  FAIL: stdlib link set (md): see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${MD_C}" \
+        "${LINK[@]}" -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     exit 1
 fi

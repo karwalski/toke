@@ -2150,7 +2150,7 @@ test-stdlib-map:
 
 test-stdlib-md:
 	$(CC) $(CFLAGS) $(CMARK_FLAGS) -o test/stdlib/test_md \
-	    test/stdlib/test_md.c src/stdlib/md.c $(CMARK_SRCS)
+	    test/stdlib/test_md.c src/stdlib/md.c src/stdlib/str.c $(CMARK_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_md
 
 test-stdlib-toml:
