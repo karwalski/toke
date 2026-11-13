@@ -14,7 +14,7 @@
 #
 # NOW: every case is checked twice, imported (`l.f(..)`) and with the same
 # declarations in one module (`f(..)`); both must give the expected codes.
-# A std module's record return is not affected (unchanged).
+# (A fielded std record return is typed in place too since 127.386, C1520.)
 #
 # Negative control: TKC built from fix/z171-sum-args-getor-leak (183fb159)
 # -- cases 1-11 and 13 red (imported rc 0); 12, 14-16 green.

@@ -7125,9 +7125,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * binding already adopts.  Left unknown in place,
                  * `l.pi(l.mk())` passed --check and printed the record's
                  * address doubled, and `let a:str=l.mk()` was clean, while
-                 * the bound form and a same-module call are E4031.  A std
-                 * module's records are not adopted here (unchanged). */
-                if (mrt&&mrt->kind==TY_STRUCT&&user_module_call(cx,node))
+                 * the bound form and a same-module call are E4031.
+                 * 127.386: and a FIELDED std record (`time.toparts(0)`,
+                 * `math.linreg(..)`), whose .tki return names a record
+                 * with fields and no error type -- the type 127.66 gives
+                 * the `let` binding.  Left unknown in place,
+                 * `time.toparts(0).nosuch` and `time.toparts(0)+1` passed
+                 * --check.  Field-less std handles (strbuf, svgelem,
+                 * vechandle, securebuf) stay unknown in place. */
+                if (mrt&&mrt->kind==TY_STRUCT&&(user_module_call(cx,node)
+                        ||mrt->field_count>0))
                     return mrt;
                 /* 138.3: and a declared scalar return, in place too
                  * (`str.nowunix()/86400`). */
