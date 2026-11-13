@@ -70,7 +70,7 @@ P0/P1" counts only rows whose priority cell states one.
 | 127 | Compiler and diagnostic findings | 41 | 0 | 7 | 6 | 9 | 19 | 0 | 0 | 4 |
 | 128 | Training strategy reset | 13 | 0 | 0 | 3 | 10 | 0 | 0 | 7 | 4 |
 | 130 | Workspace audit and cleanup | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 1 |
-| 131 | Token-efficient-by-default toke, corpus rewrite | 29 | 2 | 2 | 2 | 21 | 2 | 0 | 4 | 18 |
+| 131 | Token-efficient-by-default toke, corpus rewrite | 28 | 2 | 2 | 2 | 21 | 1 | 0 | 4 | 18 |
 | 132 | Awareness and discoverability | 12 | 1 | 1 | 7 | 1 | 2 | 0 | 1 | 5 |
 | 133 | Competitive review vs KERN / KERN-py | 3 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 |
 | 134 | ooke uplift and website relaunch | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
@@ -78,7 +78,7 @@ P0/P1" counts only rows whose priority cell states one.
 | 136 | The bindings surface loke depends on | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
 | 138 | loke's 2026-09-27 handoff | 9 | 0 | 0 | 4 | 2 | 3 | 0 | 2 | 1 |
 | 139 | toke-ocr | 3 | 0 | 0 | 1 | 2 | 0 | 0 | 0 | 2 |
-| **Total** | | **135** | **3** | **11** | **43** | **47** | **31** | **0** | **15** | **40** |
+| **Total** | | **134** | **3** | **11** | **43** | **47** | **30** | **0** | **15** | **40** |
 
 "Other open" is the status `open`, which the tracker's status list does not define;
 `make check-progress` rejects it (132.139), and the two Epic 128 rows that carry it are
