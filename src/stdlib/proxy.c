@@ -22,6 +22,13 @@
  * then waited for bytes that never came.  122.2: append to a TkStrBuf.
  */
 #include "strbuf.h"
+/* 127.295 (runtime-abi §3.1, fifteenth tranche): every length is read with
+ * tk_strlen or taken from the TkStrBuf that built the string.  proxy.c hands
+ * toke no string; its five strdup lines are the connection pool's and the
+ * upstream's own storage (the pool's host, the upstream name, backend
+ * hosts, affinity cookie, health path), freed by the pool and by
+ * proxy_upstream_free -- internal ownership, not toke producers. */
+#include "tk_strhdr.h"
 #include <strings.h>
 #include <unistd.h>
 #include <errno.h>
@@ -348,7 +355,7 @@ static char *proxy_build_request(Req *req, const char *host, int port,
     }
 
     /* Body */
-    size_t body_len = req->body ? strlen(req->body) : 0;
+    size_t body_len = req->body ? tk_strlen(req->body) : 0;
     if (body_len > 0)
         strbuf_appendf(&b, "Content-Length: %zu\r\n", body_len);
 
@@ -560,7 +567,7 @@ Res proxy_forward(ProxyUpstream *up, Req req, const char *client_ip)
 
     /* 127.144: a backend that resets mid-write must give us EPIPE. */
     http_sock_nosigpipe(fd);
-    ssize_t sent = http_write_all(fd, req_str, strlen(req_str));
+    ssize_t sent = http_write_all(fd, req_str, tk_strlen(req_str));
     free(req_str);
 
     if (sent <= 0) {
@@ -635,11 +642,12 @@ int proxy_health_probe(ProxyBackend *b, const char *path, int timeout)
                    "GET %s HTTP/1.1\r\nHost: %s:%d\r\n"
                    "Connection: close\r\n\r\n",
                    path, b->host, b->port);
+    size_t req_len = rq.len;
     char *req = strbuf_take(&rq);
     if (!req) { close(fd); return -1; }
 
     http_sock_nosigpipe(fd);            /* 127.144 */
-    http_write_all(fd, req, strlen(req));
+    http_write_all(fd, req, req_len);
     free(req);
 
     struct timeval tv;

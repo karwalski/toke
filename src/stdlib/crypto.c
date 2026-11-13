@@ -26,6 +26,7 @@
  * that stood here ignored fread's result, so a failed read left bcrypt
  * salts and crypto.randombytes output uninitialised. */
 #include "tk_secure.h"
+#include "tk_strhdr.h"   /* 127.295: tk_strlen (runtime-abi §3.1) */
 
 /* -----------------------------------------------------------------------
  * SHA-256 core (FIPS 180-4)
@@ -1183,7 +1184,7 @@ CryptoStrResult crypto_bcrypt_hash(const char *password, int cost)
     salt_b64[22] = '\0';   /* truncate to 22 chars */
 
     /* Password is passed including NUL terminator (max 72 bytes per spec) */
-    pw_len = strlen(password) + 1; /* include NUL */
+    pw_len = tk_strlen(password) + 1; /* include NUL */
     if (pw_len > 72) pw_len = 72;
 
     /* EksBlowfishSetup */
@@ -1262,7 +1263,7 @@ int crypto_bcrypt_verify(const char *password, const char *hash)
     if (hash[0] != '$' || hash[1] != '2' ||
         (hash[2] != 'b' && hash[2] != 'a' && hash[2] != 'y') ||
         hash[3] != '$') return 0;
-    if (strlen(hash) != 60) return 0;
+    if (tk_strlen(hash) != 60) return 0;
 
     /* Parse cost */
     if (hash[4] < '0' || hash[4] > '3') return 0;
@@ -1275,7 +1276,7 @@ int crypto_bcrypt_verify(const char *password, const char *hash)
     if (bf_b64_decode(hash + 7, 22, salt, 16) != 16) return 0;
 
     /* Re-hash */
-    pw_len = strlen(password) + 1;
+    pw_len = tk_strlen(password) + 1;
     if (pw_len > 72) pw_len = 72;
 
     eks_blowfish_setup(&ctx, cost, salt,

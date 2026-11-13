@@ -1703,7 +1703,7 @@ TLS_TEST_LDFLAGS = -L/opt/homebrew/lib -lssl -lcrypto \
 test-stdlib-tls:
 	$(CC) $(CFLAGS) $(TLS_TEST_CFLAGS) -o test/stdlib/test_tls \
 	    test/stdlib/test_tls.c src/stdlib/tls.c src/stdlib/capabilities.c \
-	    $(TLS_TEST_LDFLAGS)
+	    src/stdlib/str.c $(TLS_TEST_LDFLAGS)
 	$(RUN_TEST) ./test/stdlib/test_tls --allow-net
 
 test-stdlib-process:

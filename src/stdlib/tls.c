@@ -29,6 +29,7 @@
 #include "tk_bind.h"       /* 135.34 (3): bind without shadowing a live listener */
 #include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
 #include "tk_tls_groups.h" /* 122.15: tk_tls_set_groups() */
+#include "tk_strhdr.h"     /* 127.295: tk_strlen (runtime-abi §3.1) */
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -849,7 +850,7 @@ int tls_write(TlsConn conn, const char *data)
     ConnEntry *e = registry_acquire(conn.id);
     if (!e) return 0;
 
-    size_t len = strlen(data);
+    size_t len = tk_strlen(data);   /* 127.295: O(1) for a sealed str */
     pthread_mutex_lock(&e->io);
     int n = SSL_write(e->ssl, data, (int)len);
     pthread_mutex_unlock(&e->io);
