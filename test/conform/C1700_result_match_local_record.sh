@@ -27,7 +27,7 @@
 #      exhaustive legacy match stays clean
 #   4. --check: the arms of a local-record result match are still compared
 #      -- an `$ok` arm yielding `$pt` beside an `$err` arm yielding a str is
-#      E4011 (the `$ok` binding itself is untyped here: 127.428)
+#      E4011 (the `$ok` binding is typed `$pt` since 127.428, C1710)
 #
 # Negative control: C1700_TKC=<path> runs another compiler.  Measured: base
 # 6911273a tkc 5 passed, 3 failed (both run cases and the E4011 case also report E4010); this branch 8

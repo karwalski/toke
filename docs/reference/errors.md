@@ -908,13 +908,15 @@ Triggers E4033 on `thing`.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | type_check (emitted by codegen) |
+| Stage    | type_check (emitted by codegen; also by the checker for a str receiver) |
 
 Emitted when a `.field` access reaches lowering and the base's struct type is not established, and the field name does not resolve to one unambiguous layout — either no struct in scope declares it, or several declare it at different offsets.
 
 Codegen used to answer both cases with a guess that looked like data: `struct_field_index()` returns `0` for "not found", and an unresolved base took the first registered struct declaring a field of that name. That is how a 512-byte secure buffer reported its size as `51` (127.86), a nonexistent field returned the first field (127.89), and a documented field read landed in another struct's slot (136.28).
 
 No `fix` is supplied: the obvious instruction — annotate the binding — is not correct for every shape.
+
+A field read on a value the checker knows is a `str` is the same case: a str has no struct layout, and its only property is `.len` (story 127.430). `--check` reports it as E4034 with the message `a str has no field '<name>': its only property is 'len'`, `got` set to the field name, and no `fix` -- whether the receiver or the name is wrong is not decidable. This covers `let s="hey"; s.nosuch`, a str parameter or str struct field, `ss.get(0).nosuch` and the `$ok` binding of a match over a `[str]` lookup, and a method name written without parentheses (`s.upper`). Until 127.430 the checker passed these and the build stopped with E4034, or -- when some struct in scope declared a field of that name -- built a program that read a struct slot out of the string's bytes and crashed. Method calls (`s.split(",")`, `s.len()`) are not field reads and are unaffected.
 
 ### E4035
 

@@ -2766,8 +2766,22 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
      * read the inner f64 through an untyped map and printed its bits. */
     if (scr->kind == NODE_INDEX_EXPR) {
         Type *ut = infer(cx, scr);
-        return (ut && ut->kind == TY_ERROR_TYPE && ut->slot_lower)
-               ? repr_value_type(ut->slot_lower) : NULL;
+        if (ut && ut->kind == TY_ERROR_TYPE && ut->slot_lower)
+            return repr_value_type(ut->slot_lower);
+        /* 127.428: an array lookup `ps.get(i)` -- the checker answers it
+         * with the element type itself (NODE_INDEX_EXPR above), and codegen
+         * lowers the `$ok` payload as that element.  Left unknown,
+         * `mt ps.get(0) {$ok:r r.nosuch;..}` checked clean where
+         * `ps.get(0).nosuch` is E4025, and E4011 skipped a bare `$ok:r r`
+         * arm against a `$err:e "no"` arm.  Adopted only when the receiver
+         * is a typed array and the result is its element type. */
+        if (ut && ut->kind != TY_UNKNOWN && ut->kind != TY_VOID
+            && scr->child_count == 2 && scr->children[0]) {
+            Type *bt = slot_union_base(infer(cx, scr->children[0]));
+            if (bt && bt->kind == TY_ARRAY && bt->elem
+                && types_equal(bt->elem, ut)) return ut;
+        }
+        return NULL;
     }
     if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1 || !scr->children[0])
         return NULL;
@@ -7664,9 +7678,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *   If found, returns the corresponding field type.  If not found,
      *   emits E4025 ("struct 'X' has no field 'Y'").
      *
-     * If the base is not a struct (and .len does not apply), returns
-     * TY_UNKNOWN silently — the name resolver will have caught truly
-     * invalid accesses already.
+     * A map (E4035), a scalar's `.len`/`.keys` (E4036) and any name other
+     * than `.len` on a str (E4034, 127.430) are refused here.  Any other
+     * non-struct base returns TY_UNKNOWN silently.
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_FIELD_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
@@ -7779,6 +7793,38 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 diag_emit(DIAG_ERROR,E4036,node->start,node->line,node->col,msg,
                           "expected","a str, array, map or struct receiver",
                           "got",got,(const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
+        }
+        /* 127.430: a str has one property, `len` (typed above), and no
+         * fields.  Any other name fell through to the TY_STRUCT test below
+         * and returned TY_UNKNOWN in silence, so `let s="hey"; s.nosuch`
+         * passed --check and the build then stopped with codegen's E4034
+         * (no struct declares the field) -- or, when some struct in scope
+         * happens to declare a field of that name, codegen's 136.28
+         * fallback took that struct's slot and the program read a struct
+         * field out of the string's bytes (SIGSEGV at run time).  The same
+         * held for `ss.get(0).nosuch` and the typed `$ok:v v.nosuch` over a
+         * `[str]` lookup (127.428).
+         *
+         * E4034, the code the build reports for this read: a str has no
+         * struct layout, so there is no layout to resolve the field against.
+         * Unlike an integer (the "bare i64 handle" shape the 127.229 note
+         * leaves to codegen), a str is never a struct handle, so the
+         * established TY_STR is enough to judge it.  Method calls are not
+         * field reads -- `s.split(",")`, `s.len()` reach the receiver-call
+         * path, not this case -- and an untyped receiver stays unjudged.
+         * No `fix`: whether the receiver or the name is wrong is not
+         * decidable here. */
+        if (base->kind==TY_STR) {
+            if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),
+                         "a str has no field '%s': its only property is 'len'",
+                         fname);
+                diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                          "expected","a value of an established struct type",
+                          "got",fname,(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
