@@ -7819,9 +7819,39 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     "expected","false arm","got","missing",
                     "fix","add a match arm for 'false'",(const char*)NULL);
         }
+        /* 127.367: a match on a RECORD value whose arms name variants.  A
+         * record has fields, not variants, so `$a:n` cannot select anything;
+         * when the arm names happened to equal the field names the
+         * exhaustiveness check below found them all, --check passed, and the
+         * build failed at each arm (E4031 from codegen).  A result match
+         * (`$ok`/`$err`, whose scrutinee may be typed by its ok record) is
+         * not judged here.  No `fix`: whether a sum was meant, or a field
+         * read, is not decidable. */
+        int rec_scr=0;
+        if (scr->kind==TY_STRUCT&&scr->name&&arm_tag_count>0&&!has_result_arm
+            &&reraise_err_shape(cx,scr->name)==1) {
+            rec_scr=1;
+            const Node *fa=NULL;
+            for (int i=1;i<node->child_count&&!fa;i++) {
+                const Node *arm=node->children[i];
+                if (arm&&arm->kind==NODE_MATCH_ARM&&arm->child_count>0
+                    &&arm->children[0]&&arm->children[0]->kind==NODE_TYPE_IDENT)
+                    fa=arm->children[0];
+            }
+            if (!fa) fa=node;
+            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[384];
+                snprintf(msg,sizeof(msg),
+                    "match on a record: '$%s' is a record, not a sum type, so it has "
+                    "no variants for '$%s' to name -- match a sum value, or read a field",
+                    scr->name,arm_tags[0]);
+                diag_emit(DIAG_ERROR,E4080,fa->start,fa->line,fa->col,msg,
+                    "expected","a sum type","got",type_name(scr),(const char*)NULL);
+            }
+        }
         /* Sum type exhaustiveness check: if scrutinee is a struct (sum type)
          * with variant fields, verify every variant is covered by a match arm. */
-        if (scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
+        if (!rec_scr&&scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
             char missing[512]; missing[0]='\0'; int miss_count=0;
             for (int vi=0;vi<scr->field_count;vi++) {
                 const char *vn=scr->field_names[vi];

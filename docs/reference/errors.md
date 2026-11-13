@@ -1334,6 +1334,30 @@ t=$s{x:i64};
 f=main():i64{let r=$s{x:3};let t=r as str;<0};
 ```
 
+### E4080
+
+**Match on a record value names variants**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+`mt r {$a:n ..;$b:n ..}` where `r` is a record (a declared struct with plain
+fields, not a sum type). Arm patterns `$name:binding` select variants of a sum;
+a record has fields, not variants, so no arm can be selected. Until 127.367
+`--check` accepted this when the arm names matched the record's field names
+(the exhaustiveness check found every name), and the build then failed at
+each arm. A result match (`$ok`/`$err`) is not affected. There is no `fix`:
+whether a sum type was meant, or a field read (`r.a`), is not decidable.
+
+<!-- skip-check -->
+```text
+m=test;
+t=$s{a:i64;b:i64};
+f=main():i64{let m=mt $s{a:1;b:2} {$a:n n+10;$b:n n+20};<m};
+```
+
 ## Arena Errors (E5xxx)
 
 ### E5001
