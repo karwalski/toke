@@ -239,7 +239,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -1299,11 +1299,18 @@ check-stdlib-tk: $(BIN)
 # patterns/card_snippet.md into a temp dir and diffs them against the committed files
 # (drift fails), then compile-gates every full-program fence in the two generated docs.
 # render-patterns regenerates them in place (run it after any catalogue change).
+# 131.119 — then pins the must-merge inputs (catalogue + every canonical/hot-path fixture) by
+# sha256 in patterns/must_merge_inputs.json, so an edit that stales toke-tokenizer's
+# data/must_merge_v04.json fails here, naming the file, instead of later on toke-tokenizer main.
+# pin-mustmerge re-pins — only after re-deriving that list (scripts/patterns/check_mustmerge_pins.py).
 check-patterns: $(BIN)
 	python3 scripts/patterns/validate_catalogue.py
 	python3 scripts/patterns/render_catalogue.py check
+	python3 scripts/patterns/check_mustmerge_pins.py
 render-patterns:
 	python3 scripts/patterns/render_catalogue.py all
+pin-mustmerge:
+	python3 scripts/patterns/check_mustmerge_pins.py --update
 
 # 131.52 — grammar drift gate. docs/spec/toke.gbnf (shipped for grammar-constrained
 # decoding) must accept exactly what the parser parses: scripts/gbnf_gate.py runs a
