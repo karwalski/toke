@@ -13,8 +13,8 @@
 #   that kind, the result is typed by what the lowering returns:
 #     array .slice                                   -> the receiver's @T
 #     str .slice/.concat/.trim/.upper/.lower/.replace/.substr -> str
-#   in place and through an immutable `let` (a `mut` binding is not typed by
-#   its initialiser: 127.176 / 138.3).
+#   in place and through an immutable `let`.  127.371 (C1450) adds more
+#   members and a `mut` binding whose every store agrees.
 #
 # CASES.
 #   1. `a.slice(0;2).concat(b)` on arrays is E4036 (got array.concat), no fix.

@@ -12,9 +12,11 @@
 #     cannot type, was judged anyway (section A, case 1).  It now asks
 #     tk_type_has_unknown and declines, as 127.315 specified; the immutable
 #     binding (no such guard) and a fully typed mut binding are judged as
-#     before (cases 2-3).  The untyped field is `cb:(i64):i64`, which the
-#     generated .tki spells `(` (127.376); when that is fixed, case 1 needs
-#     another field spelling the checker leaves TY_UNKNOWN.
+#     before (cases 2-3).  The untyped field is `k:$u`, a field of a SUM
+#     type: imported_struct_type declines a sum, so the importer leaves it
+#     TY_UNKNOWN.  (Until 127.376 the fixture was `cb:(i64):i64`, which the
+#     generated .tki spelled `(`; it is now spelled `(i64):i64`, and an
+#     importer that learns to read that spelling would type the field.)
 #
 #   known_value_type (127.326 / 127.327): read "no TY_UNKNOWN anywhere" but
 #     always admitted a partial type.  Refusing it (tk_type_has_unknown) was
@@ -23,11 +25,14 @@
 #     rule is now stated as what it did -- top-level known, not void -- and
 #     section B pins the partial-type adoption (cases 4-7) next to the
 #     fully typed and fully unknown controls (cases 8-9).  Two arms of
-#     distinct partial types still disagree (tk_type_identical), case 10:
-#     that leaves the binding untyped, filed as 127.375.
+#     distinct partial types disagreed (tk_type_identical) and left the
+#     binding untyped, filed as 127.375; case 10 now pins that they agree
+#     when their shape and unknown positions match (arm_types_agree, C1432).
 #
-# Negative control: TKC built from integrate/z-wave-1113b (c1f6408b) --
-# case 1 red (E4031: the guard never fired); every other case green on both.
+# Negative control: TKC built from integrate/z-wave-1113b (c1f6408b; case 1
+# re-checked with the `k:$u` fixture against a pre-127.374 build, 2026-11-13) --
+# case 1 red (E4031: the guard never fired); cases 2-9 green on both; case 10
+# (as updated by 127.375) red on any build without arm_types_agree (rc=0).
 #
 # Story: 127.374
 
@@ -53,9 +58,9 @@ codes() {
 mkdir -p "${WORK}/mm"
 cat > "${WORK}/mm/a_lib.tk" <<'EOF'
 m=c1420.lib;
-t=$rec{n:i64;cb:(i64):i64};
-f=inc(x:i64):i64{<x+1};
-f=recs():@$rec{ <@($rec{n:1;cb:inc}) };
+t=$u{$a:i64;$b:i64};
+t=$rec{n:i64;k:$u};
+f=recs():@$rec{ <@($rec{n:1;k:$u{$a:1}}) };
 EOF
 cat > "${WORK}/mm/b_main.tk" <<'EOF'
 m=c1420.main;
@@ -110,8 +115,8 @@ expect "8 control: fully typed arm" \
   "$(chk 'let d=mt r(1) {$ok:v @(1;2); $err:e <1}; let y:i64=d;')" "rc=1 E4031 @(i64) "
 expect "9 control: an unknown arm leaves d untyped" \
   "$(chk 'let d=mt r(1) {$ok:v s.bytes("ab"); $err:e <1}; let y:i64=d;')" "rc=0 none"
-expect "10 residue (127.375): two distinct partial arms disagree" \
-  "$(chk 'let d=if(c){@(s.bytes("ab"))}el{@(s.bytes("cd"))}; let y:i64=d;')" "rc=0 none"
+expect "10 two partial arms of one shape agree (127.375, C1432)" \
+  "$(chk 'let d=if(c){@(s.bytes("ab"))}el{@(s.bytes("cd"))}; let y:i64=d;')" "rc=1 E4031 @(?) "
 
 echo "C1420: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
