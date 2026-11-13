@@ -757,6 +757,54 @@ since the seventh tranche).  Gates: C1660 (an ASan C driver over every
 a sealed request builds, probes and forwards byte for byte as an unsealed
 one), all under `TK_STR_VERIFY=1`.
 
+**Step 5, sixteenth tranche (story 127.295, Batch Z191).**  The glue
+readers and four data modules: `collections_glue.c`, `net_glue.c`,
+`os_glue.c`, `process_glue.c`, `dataframe_glue.c`, `dataframe.c`,
+`toml_glue.c`, `zip_glue.c`, `zip.c`, `csv_glue.c`, `csv.c` and `toon.c`
+read only with `tk_strlen` (or the length `snprintf` reports); their twelve
+ratchet entries are deleted.  The readers that see a toke string on every
+call are a map's string key (`tk_map_hash_str` hashes `tk_strlen` bytes, so
+a sealed key hashes in O(1) length), `os.write`, `net.write`,
+`process.spawn`'s command string, `df.fromcsv`'s text and each field
+`csv.writerow` writes.  `std.toon` seals at the source: `toon_enc`,
+`toon_str`, `toon_from_json` and `toon_to_json` copy their finished
+`TkStrBuf` once into a sealed string (measured as a C string) and free the
+buffer, because no C caller may free them -- their fallbacks were always
+the literals `""` and `"[]"` -- so `toon_glue.c` hands them to toke as they
+are (`toon.enc` / `stringify` / `tostr`, `toon.str` / `getstring`,
+`toon.fromjson`, `toon.tojson`); C440 stopped freeing them.  The other
+modules seal at the boundary, because their cores' strings belong to a C
+caller or to a handle: `csv.parse` and `csv.next` fields are `seal_take()`
+copies (csv.c's fields stay malloc'd -- `test_csv.c` frees them); each
+`csv.header` field is a sealed copy, because the header is the reader's own
+cache, which `csv.close` frees under a `[str]` the program may still hold
+(on the base that read is a heap-use-after-free, C1670); `csv.raggedreport`
+lines and `csv.sniff`'s delimiter and quote are sealed copies; `toml.str`
+and each `toml.strarr` element are `seal_take()` copies of tomlc99's
+caller-owned strings, and each `toml.keys` element a sealed copy of the
+table's own key; each `zip.entries` name is a sealed copy of the archive's;
+`df.tocsv` is a `seal_take()` copy of `df_tocsv`'s text.  Left malloc'd, on
+purpose: csv.c's fields, header cache and ragged messages (the reader's or
+the C caller's), `toon_arr`'s element raws (each `$toonval`'s own storage),
+the dataframe's names and cells (`df_strdup`, the frame's storage), zip
+names and tomlc99's keys (the archive's and the table's).  (Found on the
+way and fixed separately, story 127.422: `csv.parse` and `csv.reader` kept
+the unpacked copy of their input, `csv.parse` and `csv.next` each row's
+pointer block, and `csv.flush` the text it packs into its `[byte]`; C1672.)  `test-stdlib-csv`, `-toon`, `-map` and
+`-ml-pipeline-integration` link `str.c`; `fuzz-toon` links it with
+`-DTK_STR_NO_HEAP`; C440 and C450, which compiled `toon.c` alone, take
+`std.toon`'s link set from `stdlib_link_set.sh --objects` (C440 `--except
+toon.c`, which it `#include`s with failing allocators).  Not in this
+tranche: `chart.c` (its three readers are the C-only `chart_set_theme` /
+`chart_set_legend` / `chart_set_colors`, which no toke function reaches),
+`chart_glue.c` and `dashboard_glue.c` (they measure `chart_tojson`'s own
+malloc'd JSON, never a toke string, and C109 builds `chart_glue.c` with a
+stub harness); `cache.c`, `keychain.c`, `infer.c` as before.  Gates: C1670
+(an ASan C driver over every csv, toml, zip and dataframe glue producer and
+over the glue readers with sealed inputs, plus a toke program) and C1671
+(the same over `std.toon`'s glue and `toon.c`'s readers), both under
+`TK_STR_VERIFY=1`.
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
