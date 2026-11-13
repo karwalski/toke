@@ -2674,6 +2674,12 @@ static Type *map_getor_type(Ctx *cx, const Node *call) {
     Type *rt = slot_union_base(infer(cx, rv));
     if (!rt || rt->kind != TY_MAP || rt->field_count < 1 || !rt->field_types)
         return NULL;
+    /* 127.379: a map of FUNCTION values (`@("i":inc;"d":dbl)`) yields the
+     * signature too, so `let f=t.getor("d";inc); f(4)` is a function-value
+     * call (fnval_bind_sig), as `t.get` through `mt` and a same-module
+     * function value are.  Left unknown, the call lowered as its argument
+     * and printed 4 for 8. */
+    if (func_has_sig(rt->field_types[0])) return rt->field_types[0];
     return repr_value_type(rt->field_types[0]);
 }
 
@@ -4619,14 +4625,21 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
     }
 }
 
-/* 127.377: `alias.fn(..)` into another USER module, at a parameter its
- * interface declares as a function type (`(i64):i64`): the argument is
- * judged by the rule a same-module call applies to that parameter
- * (types_compat, or an integer literal that fits), so `l.ap(1;20)` is E4031
- * as `ap(1;20)` is.  Untyped, it passed --check and the callee called the
- * integer (SIGSEGV).  Only function-typed parameters: the other parameters
- * of a user-module call are not judged (127.378).  No `fix`: which function
- * was meant is not decidable. */
+/* 127.377 / 127.378: `alias.fn(..)` into another USER module: every
+ * argument is judged by the rule a same-module call applies to its parameter
+ * (types_compat, or an integer literal that fits), so `l.ap(1;20)` and
+ * `l.ap(dbl;"x")` are E4031 as `ap(1;20)` and `ap(dbl;"x")` are.  Untyped,
+ * the first passed --check and the callee called the integer (SIGSEGV), the
+ * second printed the str's address doubled.  127.377 judged only the
+ * function-typed parameters; 127.378 judges every parameter whose generated
+ * .tki spelling tki_compound_type types -- a scalar, `[T]`, `[K:V]`, an
+ * imported record, a function type.  A spelling it cannot type (a sum, an
+ * error union, another module's qualified type, the bare "(" of a
+ * pre-127.376 interface) is NULL, and an untyped parameter or argument
+ * (TY_UNKNOWN) is never judged, as in a same-module call.  No `fix`: the
+ * same-module call offers a cast between numeric types, but here the
+ * declared type is read from an interface, and which repair was meant (cast,
+ * other value, other callee) is not certain. */
 static void check_user_fn_args(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 2 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -4647,10 +4660,12 @@ static void check_user_fn_args(Ctx *cx, const Node *call) {
     for (int i = 0; i < actual; i++) {
         const char *ps = f->param_types[i];
         const Node *an = call->children[i + 1];
-        if (!ps || ps[0] != '(' || !an) continue;
+        if (!ps || !*ps || !an) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
         const Type *at = an->rtype;
-        if (!func_has_sig(pt) || !at || at->kind == TY_UNKNOWN) continue;
+        if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID
+            || (pt->kind == TY_FUNC && !func_has_sig(pt))
+            || !at || at->kind == TY_UNKNOWN) continue;
         if (types_compat(at, pt) || lit_narrows(cx->src, an, pt)) continue;
         if (subtree_reported(cx, an) || !tc_first_report(cx, an)) continue;
         emit_mm(cx, an, pt, at, NULL);
