@@ -5,8 +5,6 @@ section: reference
 order: 22
 ---
 
-# Grammar Encoding
-
 This page documents the grammar differences between the default syntax and the [legacy profile](/docs/reference/grammar/). Only changed productions are listed — all other rules are identical.
 
 ## Changed Productions

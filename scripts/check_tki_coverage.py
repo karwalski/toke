@@ -428,8 +428,6 @@ def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
     out.append("<!-- Source of truth: scripts/check_tki_skiplist.txt. "
                "Regenerate with `make render-tki-quarantine`. -->")
     out.append("")
-    out.append("# Quarantined `.tki` exports")
-    out.append("")
     out.append("An entry below is declared as a `func` export in a `stdlib/*.tki` "
                "interface file, but the symbol the compiler emits for it is not "
                "defined in `src/stdlib/*.c`. Calling one does not link.")
@@ -717,7 +715,6 @@ def render_internal_md(internal_exports, unpublished) -> str:
            "Do not edit by hand. -->",
            "<!-- Regenerate with `make render-stdlib-internal`; `make check-tki` "
            "fails on drift. -->", "",
-           "# Stdlib symbols that are not API", "",
            "Two kinds of runtime symbol are **not** part of the standard "
            "library's public interface, and are listed here so that nothing "
            "else has to list them. Do not build on anything on this page: it "

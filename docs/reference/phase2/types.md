@@ -5,8 +5,6 @@ section: reference
 order: 21
 ---
 
-# Type Encoding
-
 This page documents the default syntax type system. The default syntax uses the same semantic rules as the [legacy profile](/docs/reference/types/) but with a different surface syntax: all type names are lowercased and prefixed with `$`.
 
 ## Primitive Types

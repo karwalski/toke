@@ -1,11 +1,9 @@
 ---
-title: Language Reference
+title: toke Language Reference
 slug: grammar
 section: reference
 order: 6
 ---
-
-# toke Language Reference
 
 A complete guide to toke's syntax. Every construct is shown with working code examples you can copy and compile.
 

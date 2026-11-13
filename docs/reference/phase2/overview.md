@@ -5,8 +5,6 @@ section: reference
 order: 20
 ---
 
-# Encoding Design
-
 The default syntax is a reduced-character profile of the toke language designed for use with the purpose-built BPE tokenizer. It expresses the same semantics as the legacy profile but uses only **59 characters**, enabling significantly higher token density during LLM inference.
 
 The default syntax is the production encoding. The legacy profile (86 characters) was used during corpus generation to leverage existing LLM tokenizers, and programs are mechanically transformed to the default syntax for training and inference.
