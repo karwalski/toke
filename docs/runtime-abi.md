@@ -544,6 +544,30 @@ and frees (sealing would grow the heap by an event per emit).  Gate: C1510
 (an ASan C driver over the producers, the glue and SSE with sealed inputs
 under `TK_STR_VERIFY=1`, plus a toke program).
 
+**Step 5, tenth tranche (story 127.295, Batch Z178).**  `std.md` and
+`std.soap`, each converted completely (`md.c` and `soap.c` read only with
+`tk_strlen`; their ratchet entries are deleted).  `md_render` and
+`md_render_file` return sealed strings: cmark's malloc'd output, or the
+buffer the trusted tables are re-injected into, is copied once (`tks_dup`)
+and freed; `""` for a NULL source and the copy-of-source fallback are sealed
+too.  cmark replaces a 0 byte in its input with U+FFFD and the tables are
+built from bytes of a C string, so no result holds a 0 byte.  Every
+`std.soap` producer (`soap_envelope`, `soap12_envelope`, `soap_fault`,
+`soap_wsse_username_token`, `soap_wsse_timestamp`) builds in a malloc'd
+buffer and hands over one sealed copy of exactly the length `snprintf`
+reported; `soap_extract_body` / `soap_extract_fault` slice the envelope
+straight into a sealed string; a result that cannot be built is a sealed
+`""`.  Left malloc'd, on purpose: `md.c`'s table side-list, pre-processed
+source and line copies, and `soap.c`'s escaped copies -- each file's own
+scratch, freed before it returns.  The hand-built harnesses that compiled
+`md.c` or `soap.c` without `str.c` and freed results (C441, C522, C442) take
+the module's link set from `stdlib_link_set.sh --objects` (`--except` the
+file under test, which they compile themselves for their negative control)
+and free nothing they did not allocate.  Gates: C1540 (an ASan C driver over
+`md_render`, its glue and `md_render_file`, including each of `md.c`'s own
+allocations failing in turn, under `TK_STR_VERIFY=1`, plus a toke program)
+and C1541 (the same over every `std.soap` producer and its glue).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
