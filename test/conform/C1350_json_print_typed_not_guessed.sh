@@ -159,7 +159,7 @@ f=main():i64{
   let r=R{a:7;b:9};
   j.print(r);
   j.print(mk());
-  let k=K{n:0-3;u:200 as u8;f:1.5;g:2.5 as f32;e:true;s:"q\"x";xs:@(1;2);p:P{x:4};w:18446744073709551615 as u64};
+  let k=K{n:(0-3) as i32;u:200 as u8;f:1.5;g:2.5 as f32;e:true;s:"q\"x";xs:@(1;2);p:P{x:4};w:18446744073709551615 as u64};
   j.print(k);
   j.print(@(P{x:1};P{x:2}));
   j.print("hi");
