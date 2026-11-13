@@ -15,7 +15,8 @@
 #
 # NOW: every check case is run twice, in place and bound by a `let` first;
 # both must give the expected codes.  Field-less std handles (strbuf,
-# svgelem, vechandle, securebuf) are not adopted in place (unchanged).
+# svgelem, vechandle, securebuf) are adopted in place too since 127.392
+# (C1570); case 14 is red on 6d270505.
 #
 # Negative control: TKC built from fix/z172-imported-record-sum-lit
 # (8f261a6f) -- cases 1-10 and 16 red; 11-15, 17, 18 green.
@@ -82,8 +83,8 @@ expect "11 annotated str let (already judged)"  "$(chk n11 "${TP}" 'let a:str=X;
 expect "12 well-typed in place (control)" \
     "$(chk p12 "${TP}" 'let a=X.year+1; let b=qi(X.month); let c=time.fromparts(X);')" "${OK}"
 expect "13 linreg field read (control)"         "$(chk p13 "${LR}" 'let a=X.slope*2.0;')" "${OK}"
-expect "14 field-less std handle in place unchanged" \
-    "$(chk p14 's.buf()' 'let a=X+1;')" "rc=0 | E4031 rc=1"
+expect "14 field-less std handle in place (127.392: now judged too)" \
+    "$(chk p14 's.buf()' 'let a=X+1;')" "${B31}"
 
 # 15/16: well-typed in-place calls run as the bound form does
 cat > "${WORK}/r15.tk" <<'EOF'

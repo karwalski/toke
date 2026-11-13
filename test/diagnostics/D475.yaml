@@ -1,0 +1,18 @@
+id: D475
+series: D
+description: "127.402: `j.print(v)` of an opaque std handle (v bound to vec.new(), a vechandle) is E4031 at --check, with no fix -- it has no JSON representation; it used to pass --check and stop the build with E9002"
+input: |
+  m=t;
+  i=vec:std.vec;
+  i=j:std.json;
+  f=main():i64{
+    let v=vec.new();
+    j.print(v);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "vechandle"

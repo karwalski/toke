@@ -1,0 +1,19 @@
+id: D476
+series: D
+description: "127.402: `j.enc(r)` of a record holding an opaque std handle (a strbuf field) is E4031 at --check, with no fix -- which value read from the handle was meant is not decidable"
+input: |
+  m=t;
+  i=s:std.str;
+  i=j:std.json;
+  t=$h{b:$strbuf;n:i64};
+  f=main():i64{
+    let r=$h{b:s.buf();n:1};
+    let e=j.enc(r);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "a value with a JSON representation"
