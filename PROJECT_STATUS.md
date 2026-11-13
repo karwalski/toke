@@ -67,7 +67,7 @@ P0/P1" counts only rows whose priority cell states one.
 | 118 | Library corpus: v0.4 rebuild | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
 | 121 | Security fix backlog (from Epic 120) | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
 | 122 | Extended security hardening, PQC | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 |
-| 127 | Compiler and diagnostic findings | 41 | 0 | 7 | 6 | 15 | 13 | 0 | 0 | 4 |
+| 127 | Compiler and diagnostic findings | 40 | 0 | 7 | 6 | 14 | 13 | 0 | 0 | 4 |
 | 128 | Training strategy reset | 13 | 0 | 0 | 3 | 10 | 0 | 0 | 7 | 4 |
 | 130 | Workspace audit and cleanup | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 1 |
 | 131 | Token-efficient-by-default toke, corpus rewrite | 27 | 2 | 2 | 2 | 21 | 0 | 0 | 4 | 18 |
@@ -78,7 +78,7 @@ P0/P1" counts only rows whose priority cell states one.
 | 136 | The bindings surface loke depends on | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
 | 138 | loke's 2026-09-27 handoff | 9 | 0 | 0 | 4 | 2 | 3 | 0 | 2 | 1 |
 | 139 | toke-ocr | 3 | 0 | 0 | 1 | 2 | 0 | 0 | 0 | 2 |
-| **Total** | | **133** | **3** | **11** | **45** | **53** | **21** | **0** | **15** | **40** |
+| **Total** | | **132** | **3** | **11** | **45** | **52** | **21** | **0** | **15** | **40** |
 
 "Other open" is the status `open`, which the tracker's status list does not define;
 `make check-progress` rejects it (132.139), and the two Epic 128 rows that carry it are
