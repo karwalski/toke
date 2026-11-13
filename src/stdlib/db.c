@@ -4,6 +4,7 @@
 
 #include "db.h"
 #include "capabilities.h"   /* 124.4c2: sqlite db file is a read-write fs sink */
+#include "tk_strhdr.h"     /* 127.295: a DbErr's composed text is a sealed copy */
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,7 +98,10 @@ static DbErr make_err(DbErrKind kind, const char *msg)
  * through here: a heap copy, never freed, like every other str toke holds. */
 static DbErr err_copy(DbErrKind kind, const char *msg)
 {
-    char *c = strdup(msg ? msg : "");
+    /* 127.295 (S1 step 5): the copy is sealed (tks_strdup), so the `e.msg`
+     * a program reads from db_raise's box carries its length; it is still
+     * never freed.  A C caller reads it as the C string it always was. */
+    char *c = tks_strdup(msg ? msg : "");
     return make_err(kind, c ? c : "db: out of memory copying the error message");
 }
 

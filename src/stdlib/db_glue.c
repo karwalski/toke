@@ -54,10 +54,20 @@ static StrArray toke_arr_to_strarray(int64_t arr_i64) {
  * is_stdlib_slot_wrapper() decides by the slot, which is what makes a stored
  * 0, 0.0 or false read as a value rather than as $err (loke T-22, N-5).
  */
+/* 127.295 (S1 step 5): the box's msg is the `e.msg` a program reads, so it
+ * is always a sealed string.  db.c's err_copy already seals what it composes
+ * (sqlite's messages, g_errbuf); the rest -- the literals here and in db.c,
+ * and row.*'s column name -- is given a sealed copy, never freed, like every
+ * other str toke holds. */
 static int64_t db_raise(DbErr e) {
+    const char *m = e.msg ? e.msg : "";
+    if (tks_hdrlen(m) < 0) {
+        char *c = tks_strdup(m);
+        if (c) m = c;
+    }
     int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
     box[0] = (int64_t)e.kind;
-    box[1] = (int64_t)(intptr_t)(e.msg ? e.msg : "");
+    box[1] = (int64_t)(intptr_t)m;
     tk_current_error = (int64_t)(intptr_t)box;
     return 0;
 }

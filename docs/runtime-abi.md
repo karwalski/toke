@@ -847,8 +847,9 @@ a C-built or OS-filled buffer, a C-only API, or an interior pointer, which has
 no header to read), `c-owned`, `untestable` here (`infer.c` 4, `keychain.c`
 5), `dead` (`cache.c` 6) or `by-design` (`tks_verify_fail`'s own check;
 `strbuf_append` and the regex compiler, which do O(len) work on the bytes they
-measure).  The census's 186 `strdup` / `strndup` lines (27 files) are, line
-by line:
+measure).  The census's 185 `strdup` / `strndup` lines (27 files) are, line
+by line (186 at the seventeenth tranche; Z193 converted `db.c`'s `err_copy`,
+below):
 
 - *dead* -- 66: no toke binding reaches them (`acme.c` 13, `content.c` 7,
   `cache.c` 5, `proxy.c` 5, `mdns.c` 4, `llm_tool.c` 15 in
@@ -865,12 +866,12 @@ by line:
   (`tls.c` 15, `llm_tool.c` 3, `router.c` 1, `file.c` 3, `db.c` 2);
 - *caller-owned by the `.tki`* -- 4: `os.getenv`, `os.strerror`, `env.get`,
   `env.getor` declare `"ownership": "caller"`, so a caller may free them;
-- *toke-visible and unsealed, by rule* -- 14: the request fields a handler
+- *toke-visible and unsealed, by rule* -- 13: the request fields a handler
   borrows (`http.c` 6, `http2.c` 4: method, path, header keys and values and
   body, freed by `free_req` after the handler returns -- sealing them would
   grow the never-freed heap by every request), an `$htmlnode`'s `tag` and
   `content` (`html.c` 3: the record *is* the C node, which `html_free`
-  frees), and a `db` error's `e.msg` (`db.c` 1).
+  frees).
 
 So the rule is: a `strdup` line stays malloc'd when its string is freed by C
 code, or never reaches toke; only the last two groups are strings a program
@@ -879,11 +880,24 @@ four, a decision on what `"ownership": "caller"` means for a sealed string
 (today it means the program may `free()` it, which aborts on a sealed one);
 for the request fields, either per-request sealed copies (heap growth per
 request, the cost the eighth tranche refused) or a request arena the heap
-does not have; for `$htmlnode`, `html_free` no longer freeing the fields;
-for `db`'s `e.msg`, a sealed copy in `db_raise` (harnesses that compile
-`db.c` alone, C512, would link `str.c`).  The same applies outside the
+does not have; for `$htmlnode`, `html_free` no longer freeing the fields.
+The same applies outside the
 `strdup` count to `tls.keyof` (the keypair's own PEM, kept malloc'd so
 `tls.freekeypair` can wipe it) and `securemem.read`.
+
+**Step 5, `db` error text (story 127.295, Batch Z193).**  A `db` error's
+`e.msg` -- the last toke-visible string of the end state above that needed no
+owner decision -- is sealed.  `db.c`'s `err_copy` (sqlite's message,
+`g_errbuf`) copies with `tks_strdup`, and `db_glue.c`'s `db_raise` gives
+whatever is still unsealed (the literals in `db.c` and the glue, and
+`row.*`'s column name) a sealed copy; both are never freed, as before.
+`db.c` therefore links `str.c`: C512 now takes std.db's link set from
+`stdlib_link_set.sh --objects` (`--except db.c`, which it compiles itself
+with its sqlite hook) and `test-stdlib-db` names `str.c`.  Gate: C1691 (the
+four raise paths and `db.c`'s own `err.msg`, ASan C driver under
+`TK_STR_VERIFY=1`, and a toke program reading `e`'s text and `.len`).
+What remains of 127.295 is owner-gated (127.425) or untestable on this host
+(`infer.c`, `keychain.c`).
 
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in

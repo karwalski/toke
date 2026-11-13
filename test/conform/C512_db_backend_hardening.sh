@@ -46,8 +46,6 @@ static int fails = 0;
 #define CHECK(c, ...) do { if (c) { printf("  PASS: "); printf(__VA_ARGS__); printf("\n"); } \
                            else { printf("  FAIL: "); printf(__VA_ARGS__); printf("\n"); fails++; } } while (0)
 #include <stdint.h>
-int  tk_cap_check(uint32_t cap) { (void)cap; return 1; }
-void tk_cap_deny(uint32_t cap)  { (void)cap; }
 '
 
 echo "C512: std.db SQLite backend -- driver errors are freed and not ignored (121.21)"
@@ -68,6 +66,7 @@ cat > "${WORK}/tsq.c" <<C
 #include <string.h>
 #include <sqlite3.h>
 #include "db.h"
+#include "capabilities.h"
 ${CHECK_H}
 static int g_errmsgs = 0, g_freed = 0;
 static void *g_last[64]; static int g_nlast = 0;
@@ -81,6 +80,7 @@ void c512_free(void *p) {
     sqlite3_free(p);
 }
 int main(void) {
+    char *av[] = {"t", "--allow-all", NULL}; tk_cap_init(2, av);
     if (db_connect(":memory:") <= 0) { printf("  FAIL: open :memory:\n"); return 1; }
     StrArray none = { NULL, 0 };
     (void)db_exec("CREATE TABLE t(a TEXT)", none);
@@ -110,10 +110,24 @@ int main(void) {
     return fails != 0;
 }
 C
-if "${CC}" -std=c11 -D_GNU_SOURCE ${SAN} -I"${S}" -c -o "${WORK}/db.o" -include "${WORK}/sqhook.h" \
+# 127.295 (Z193): db.c's err_copy seals its copy (tks_strdup, str.c), so
+# db.c no longer links alone.  The rest of std.db's link set comes from
+# stdlib_link_set.sh --objects; db.c is left out of it (--except) because it
+# is compiled here with the sqlite3_exec/sqlite3_free hook forced in.  The
+# real capabilities.c is in the set, so the harness grants --allow-all
+# rather than stubbing tk_cap_check.
+# shellcheck disable=SC2206
+CF=(-std=c11 -D_GNU_SOURCE ${SAN} -iquote "${S}" -I"${S}")
+TKC="${TKC:-${REPO_ROOT}/tkc}"
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" \
+        --except db.c --objects db -- "${CF[@]}")" \
+    || { fail "stdlib link set: see stderr above"; LINKSET=""; }
+LS=(); while IFS= read -r l; do [ -n "$l" ] && LS+=("$l"); done <<< "${LINKSET}"
+if [ -n "${LINKSET}" ] \
+   && "${CC}" "${CF[@]}" -c -o "${WORK}/db.o" -include "${WORK}/sqhook.h" \
         "${S}/db.c" >"${WORK}/sq.cc" 2>&1 \
-   && "${CC}" -std=c11 -D_GNU_SOURCE ${SAN} -I"${S}" -o "${WORK}/tsq" "${WORK}/tsq.c" "${WORK}/db.o" -lsqlite3 \
-        >>"${WORK}/sq.cc" 2>&1; then
+   && "${CC}" "${CF[@]}" -o "${WORK}/tsq" "${WORK}/tsq.c" "${WORK}/db.o" "${LS[@]}" \
+        -lsqlite3 -lz -lpthread -lm >>"${WORK}/sq.cc" 2>&1; then
     "${WORK}/tsq" >"${WORK}/tsq.out" 2>&1; collect "${WORK}/tsq.out" sqlite
 else
     fail "sqlite harness did not build"; head -15 "${WORK}/sq.cc" | sed 's/^/      | /'

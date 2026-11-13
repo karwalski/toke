@@ -1572,9 +1572,11 @@ test-stdlib-regex:
 	$(CC) $(CFLAGS) -o test/stdlib/test_regex test/stdlib/test_regex.c
 	$(RUN_TEST) ./test/stdlib/test_regex
 
+# 127.295: db.c's err_copy seals its copy (tks_strdup), whose sealed-heap
+# state lives in str.c, so the line names str.c too.
 test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
-	    test/stdlib/test_db.c src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3
+	    test/stdlib/test_db.c src/stdlib/db.c src/stdlib/capabilities.c src/stdlib/str.c -lsqlite3
 	$(RUN_TEST) ./test/stdlib/test_db
 
 # 127.271: every link line below that compiles src/stdlib/file.c names
