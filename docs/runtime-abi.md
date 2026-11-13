@@ -632,6 +632,39 @@ compile it themselves with fault-injection or counting allocators).  Gate:
 C1600 (an ASan C driver over every glue str producer and over `json.c`'s
 readers with sealed inputs, plus a toke program, under `TK_STR_VERIFY=1`).
 
+**Step 5, thirteenth tranche (story 127.295, Batch Z187).**  `std.file`,
+converted completely (`file.c` and `file_glue.c` read only with
+`tk_strlen`; both ratchet entries are deleted).  Every str the glue hands
+toke is sealed: `file.read` already was (`file_read_into` with
+`tks_alloc`/`tks_seal`, 127.170); `file.realpath`, each element of
+`file.list` / `file.listdir`, `file.listall`, `file.readlines` and
+`file.listglob`, and `file.tempdir` now are.  `file.c`'s producers
+(`file_read`, `file_realpath`, `file_list`, `file_listall`,
+`file_readlines`, `file_glob`) stay malloc'd, because their C callers free
+what they return -- `toml.c` (`file_read`), `test_file.c` (every
+producer), C592 (`file_listall`) and the coverage test (`file_list`'s
+block); so, as for
+`std.json`, the seal is made at the boundary: `seal_take()` copies the
+result into a sealed string and frees the malloc'd original, handing the
+original over unsealed only if the copy cannot be made.  No C code calls a
+`tk_file_*_w` str producer.  `file.tempdir` used to hand toke `getenv()`'s
+own pointer into the process environment, which a later `setenv` of
+`TMPDIR` may overwrite or free under a str the program still holds (the
+defect 121.75 / 121.78 fixed for `os.getenv` / `env.get`; on Darwin the
+old value is freed); it is now a copy, with the environment's pointer
+handed over only if the copy cannot be made.  Left as they are, on
+purpose: `file.err` returns its argument; the `"/tmp"` fallback of
+`file.tempdir` is a literal; `file_absolute` (no glue caller) and
+`file.c`'s own scratch (the `mkdir_p` prefix copy, `rmdir_r`'s child paths,
+`readlines`' file buffer) are freed before they return.
+`test-stdlib-file`, `test-stdlib-toml` and `test-stdlib-toml-glue` link
+`str.c`; `fuzz-toml` builds with `-DTK_STR_NO_HEAP`; C699's signal probe,
+which compiled `file.c` alone, takes `std.file`'s link set from
+`stdlib_link_set.sh --objects`.  Gate: C1630 (an ASan C driver over every
+glue str producer and over the readers with every argument sealed, against
+the same calls on unsealed copies, plus a toke program, under
+`TK_STR_VERIFY=1`).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
