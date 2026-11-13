@@ -2674,6 +2674,12 @@ static Type *map_getor_type(Ctx *cx, const Node *call) {
     Type *rt = slot_union_base(infer(cx, rv));
     if (!rt || rt->kind != TY_MAP || rt->field_count < 1 || !rt->field_types)
         return NULL;
+    /* 127.379: a map of FUNCTION values (`@("i":inc;"d":dbl)`) yields the
+     * signature too, so `let f=t.getor("d";inc); f(4)` is a function-value
+     * call (fnval_bind_sig), as `t.get` through `mt` and a same-module
+     * function value are.  Left unknown, the call lowered as its argument
+     * and printed 4 for 8. */
+    if (func_has_sig(rt->field_types[0])) return rt->field_types[0];
     return repr_value_type(rt->field_types[0]);
 }
 
