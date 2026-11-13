@@ -9,6 +9,7 @@
 #include "db.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "tk_runtime.h" /* 138.6: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"  /* 127.295: $row strings are sealed copies */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -113,7 +114,13 @@ int64_t tk_db_execon_w(int64_t h, int64_t sql, int64_t params) {
 
 /* ── 135.30: $row is a TkRowRec {cols:[[str]]}, not the C Row ─────────── */
 
-/* row_rec — a C Row as the $row record; the strings are shared with it. */
+/* row_rec — a C Row as the $row record.  127.295: each column name and value
+ * toke sees is a sealed copy (tks_strdup); once the record is built the C
+ * Row's malloc'd strings are freed here, so the caller still drops only the
+ * index.  On failure (0) the Row's strings are left as they were, for the
+ * caller's error path to free (rows_free_from); sealed copies already made
+ * are never freed, like every other sealed string.  A copy that cannot be
+ * made falls back to sharing the original, which is then not freed. */
 static int64_t row_rec(const Row *r) {
     TkRowRec *rec = (TkRowRec *)malloc(sizeof *rec);
     int64_t cols = tk_arr_alloc((int64_t)r->col_count, (int64_t)r->col_count);
@@ -125,16 +132,23 @@ static int64_t row_rec(const Row *r) {
     for (uint64_t c = 0; c < r->col_count; c++) {
         int64_t pair = tk_arr_alloc(2, 2);
         if (!pair) { tk_arr_setlen(cols, (int64_t)c); break; }
-        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)(r->col_names[c] ? r->col_names[c] : "");
-        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)(r->col_values[c] ? r->col_values[c] : "");
+        const char *n = r->col_names[c] ? r->col_names[c] : "";
+        const char *v = r->col_values[c] ? r->col_values[c] : "";
+        const char *sn = tks_strdup(n);
+        const char *sv = tks_strdup(v);
+        ((int64_t *)(intptr_t)pair)[0] = (int64_t)(intptr_t)(sn ? sn : n);
+        ((int64_t *)(intptr_t)pair)[1] = (int64_t)(intptr_t)(sv ? sv : v);
         ((int64_t *)(intptr_t)cols)[c] = pair;
+        /* the record holds the copies: release what it no longer shares */
+        if (sn && r->col_names[c])  free((void *)r->col_names[c]);
+        if (sv && r->col_values[c]) free((void *)r->col_values[c]);
     }
     rec->cols = cols;
     return (int64_t)(intptr_t)rec;
 }
 
 /* row_drop_index — free a C Row's arrays once row_rec has taken its
- * strings (the record now owns them). */
+ * strings (it has freed the ones it copied; the record owns the rest). */
 static void row_drop_index(Row *r) {
     free((void *)r->col_names);
     free((void *)r->col_values);
