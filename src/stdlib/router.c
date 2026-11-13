@@ -1211,16 +1211,16 @@ static const char *router_reason(int s)
 #define hdr_name_ok  tk_http_field_name_ok
 #define hdr_value_ok tk_http_field_value_ok
 
-/* write_all -- write n bytes, retrying short writes and EINTR. */
+/* write_all -- write n bytes, retrying short writes and EINTR.
+ *
+ * 127.350: through tk_send_all (send with MSG_NOSIGNAL where it exists), not
+ * plain write(2): a client that closed before the response raised SIGPIPE and
+ * killed the router.serve process (status 141).  A failed write is dropped,
+ * as before -- the connection is closed next either way.  tk_send_all falls
+ * back to write(2) on ENOTSOCK, so router_handle_fd still serves a pipe. */
 static void write_all(int fd, const char *b, size_t n)
 {
-    while (n > 0) {
-        ssize_t w = write(fd, b, n);
-        if (w < 0 && errno == EINTR) continue;
-        if (w <= 0) return;
-        b += (size_t)w;
-        n -= (size_t)w;
-    }
+    (void)tk_send_all(fd, b, n);
 }
 
 /* Growable header block for router_send_response. */
@@ -1446,6 +1446,10 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
         socklen_t peer_len = sizeof(peer);
         int fd = accept(srv, (struct sockaddr *)&peer, &peer_len);
         if (fd < 0) continue;
+        /* 127.350: SO_NOSIGPIPE where it exists, so a write on this
+         * connection -- ours or a handler's -- to a client that has gone
+         * fails with EPIPE instead of killing the server. */
+        tk_sock_nosigpipe(fd);
 
         /* Capture client IP into the static buffer for logging middleware. */
         if (inet_ntop(AF_INET, &peer.sin_addr,

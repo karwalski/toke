@@ -29,6 +29,7 @@
 #include "tk_bind.h"       /* 135.34 (3): bind without shadowing a live listener */
 #include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
 #include "tk_tls_groups.h" /* 122.15: tk_tls_set_groups() */
+#include "tk_ssl_nosigpipe.h" /* 127.351: tk_ssl_set_fd_nosigpipe() */
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -675,7 +676,13 @@ int tls_listen(int32_t port, TlsConfig cfg, TlsConnCallback cb)
 
         SSL *ssl = SSL_new(ctx);
         if (!ssl) { close(connfd); continue; }
-        SSL_set_fd(ssl, connfd);
+        /* 127.351: not SSL_set_fd.  OpenSSL's socket BIO writes with
+         * write(2), so a client that closed first raised SIGPIPE and killed
+         * the server.  Records now leave through send(MSG_NOSIGNAL); see
+         * tk_ssl_nosigpipe.h.  A socket that cannot be attached is dropped. */
+        if (tk_ssl_set_fd_nosigpipe(ssl, connfd) != 1) {
+            SSL_free(ssl); close(connfd); continue;
+        }
 
         AcceptThreadArg *arg = malloc(sizeof(AcceptThreadArg));
         if (!arg) { SSL_free(ssl); close(connfd); continue; }
@@ -750,7 +757,11 @@ TlsConnResult tls_connect(const char *host, int32_t port, TlsConfig cfg)
     SSL *ssl = SSL_new(ctx);
     if (!ssl) { close(fd); SSL_CTX_free(ctx); return result; }
 
-    SSL_set_fd(ssl, fd);
+    /* 127.351: not SSL_set_fd -- writes through send(MSG_NOSIGNAL), so a
+     * server that closed first is an error, not SIGPIPE. */
+    if (tk_ssl_set_fd_nosigpipe(ssl, fd) != 1) {
+        SSL_free(ssl); close(fd); SSL_CTX_free(ctx); return result;
+    }
 
     /* 121.64: the name the default (verifying) mode checks the certificate
      * against.  A literal address is matched as an IP SAN and sent no SNI
