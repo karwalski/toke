@@ -2728,6 +2728,45 @@ static int known_value_type(Type *t) {
 }
 
 /*
+ * 127.375 -- do two arm / branch-tail types AGREE?  tk_type_identical, except
+ * that TY_UNKNOWN below the top level matches TY_UNKNOWN in the same
+ * position.  tk_type_identical answers 0 whenever either side holds an
+ * unknown, so two arms of the same partial type -- `@(str:?)` from
+ * `@("k":s.bytes("ab"))` and `@("k":s.bytes("cd"))` -- disagreed and the
+ * binding was left untyped (`d.get("k")` lowered as an array read and
+ * trapped RT003), while a single such arm is adopted (127.374).
+ *
+ * Both sides must have the same shape (kind, name, element, fields) and be
+ * unknown in exactly the same positions; a position unknown in one and
+ * known in the other disagrees.  So the agreed type is no more than either
+ * arm's own type -- it says nothing about the unknown positions -- and
+ * this is not a join rule: `@(str:?)` beside `@(str:@(i64))` stays
+ * untyped.  The top level is never unknown here (known_value_type).
+ */
+static int arm_types_agree(const Type *a, const Type *b) {
+    if (!a || !b) return 0;
+    if (a->kind == TY_UNKNOWN || b->kind == TY_UNKNOWN) return a->kind == b->kind;
+    if (a == b) return 1;
+    if (a->kind != b->kind) return 0;
+    if ((a->name == NULL) != (b->name == NULL)) return 0;
+    if (a->name && a->name != b->name && strcmp(a->name, b->name) != 0) return 0;
+    if ((a->elem == NULL) != (b->elem == NULL)) return 0;
+    if (a->elem && !arm_types_agree(a->elem, b->elem)) return 0;
+    if (a->field_count != b->field_count) return 0;
+    for (int i = 0; i < a->field_count; i++) {
+        const Type *x = a->field_types ? a->field_types[i] : NULL;
+        const Type *y = b->field_types ? b->field_types[i] : NULL;
+        if ((x == NULL) != (y == NULL)) return 0;
+        if (x && !arm_types_agree(x, y)) return 0;
+        const char *xn = a->field_names ? a->field_names[i] : NULL;
+        const char *yn = b->field_names ? b->field_names[i] : NULL;
+        if ((xn == NULL) != (yn == NULL)) return 0;
+        if (xn && xn != yn && strcmp(xn, yn) != 0) return 0;
+    }
+    return 1;
+}
+
+/*
  * 127.327 — the agreed type of an `mt`'s value-yielding arms, or NULL.
  *
  * semantics.md §8.1: "All arm body types must be equal ... The result type
@@ -2752,7 +2791,7 @@ static Type *mt_arms_agreed_type(Ctx *cx, const Node *m) {
         Type *bt = tail_value_type(cx, body);
         if (!known_value_type(bt)) return NULL;
         if (!agreed) agreed = bt;
-        else if (!tk_type_identical(agreed, bt)) return NULL;
+        else if (!arm_types_agree(agreed, bt)) return NULL;
     }
     return agreed;
 }
@@ -3252,7 +3291,7 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
         }
         if (!known_value_type(bt)) return NULL;
         if (!agreed) agreed = bt;
-        else if (!tk_type_identical(agreed, bt)) return NULL;
+        else if (!arm_types_agree(agreed, bt)) return NULL;
     }
     return agreed;
 }

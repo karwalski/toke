@@ -25,12 +25,14 @@
 #     rule is now stated as what it did -- top-level known, not void -- and
 #     section B pins the partial-type adoption (cases 4-7) next to the
 #     fully typed and fully unknown controls (cases 8-9).  Two arms of
-#     distinct partial types still disagree (tk_type_identical), case 10:
-#     that leaves the binding untyped, filed as 127.375.
+#     distinct partial types disagreed (tk_type_identical) and left the
+#     binding untyped, filed as 127.375; case 10 now pins that they agree
+#     when their shape and unknown positions match (arm_types_agree, C1432).
 #
 # Negative control: TKC built from integrate/z-wave-1113b (c1f6408b; case 1
 # re-checked with the `k:$u` fixture against a pre-127.374 build, 2026-11-13) --
-# case 1 red (E4031: the guard never fired); every other case green on both.
+# case 1 red (E4031: the guard never fired); cases 2-9 green on both; case 10
+# (as updated by 127.375) red on any build without arm_types_agree (rc=0).
 #
 # Story: 127.374
 
@@ -113,8 +115,8 @@ expect "8 control: fully typed arm" \
   "$(chk 'let d=mt r(1) {$ok:v @(1;2); $err:e <1}; let y:i64=d;')" "rc=1 E4031 @(i64) "
 expect "9 control: an unknown arm leaves d untyped" \
   "$(chk 'let d=mt r(1) {$ok:v s.bytes("ab"); $err:e <1}; let y:i64=d;')" "rc=0 none"
-expect "10 residue (127.375): two distinct partial arms disagree" \
-  "$(chk 'let d=if(c){@(s.bytes("ab"))}el{@(s.bytes("cd"))}; let y:i64=d;')" "rc=0 none"
+expect "10 two partial arms of one shape agree (127.375, C1432)" \
+  "$(chk 'let d=if(c){@(s.bytes("ab"))}el{@(s.bytes("cd"))}; let y:i64=d;')" "rc=1 E4031 @(?) "
 
 echo "C1420: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
