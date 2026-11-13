@@ -599,6 +599,39 @@ toke program), C1561 (an ASan C driver over every `std.xlsx` glue producer on
 a zipfile-written workbook, plus a toke program) and C1562 (the same over
 `std.ocr`'s glue, including Vision recognition when the host has it).
 
+**Step 5, twelfth tranche (story 127.295, Batch Z184).**  `std.json`,
+converted completely (`json.c` and `json_glue.c` read only with
+`tk_strlen`; both ratchet entries are deleted).  Every str the glue hands
+toke is sealed: `json.enc` / `encstr` / `quote` / `stringify` / `encode`,
+`json.str` and its aliases (`getstr`, `getstring`, `getopt`, `trystr`,
+`trystrkey`), each element of `json.keys`, `json.values`, `json.entries` and
+`json.parsearray`, `json.getval`, `json.strarr`, the typed encoders
+`json.encnum` / `encbool` / `encf64`, and `j.enc` of an array (`encarr`) or
+of a typed value (`encval`).  `json.c`'s own producers (`json_enc`,
+`json_str`, `json_keys`, `json_at`, `json_index` ...) stay malloc'd, because
+their C callers -- `json.c` itself (`json_from_pairs`), the glue and the C
+tests -- free what they return; so the seal is made at the boundary:
+`seal_take()` copies the result into a sealed string (measured with
+`tk_strlen`, so a decoded `\u0000` ends it where every C reader already saw
+it end) and frees the malloc'd original, handing the original over unsealed
+only if the copy cannot be made.  No C code calls a `tk_json_*_w` str
+producer (the compiler is the only caller), so no C caller had to stop
+freeing; the two C tests that freed `tk_json_encval_w` results
+(`test_json.c`, C1380) no longer do.  Left as they are, on purpose:
+`json.serialize` returns the document's own text (`Json.raw`, shared by
+every handle copied from it) -- sealing it would add a copy to every
+response a web handler serialises, for no reader that needs the header; a
+`$jsonval`'s raw text (`json.dec` keeps its input; `json.obj`, the `set*`
+builders, `json.at`, `json.get` and `json.arr` own a malloc'd copy) is the
+document's storage, not a str toke holds; the `""`/`[]`/`0`/`null`
+fallbacks are literals.  `test-stdlib-json` links `str.c`; `fuzz-json`
+builds with `-DTK_STR_NO_HEAP`; the hand-built harnesses that compiled
+`json.c` alone (C132, C312, C352, C621, C760, C840) take `std.json`'s link
+set from `stdlib_link_set.sh --objects` (`--except json.c` where they
+compile it themselves with fault-injection or counting allocators).  Gate:
+C1600 (an ASan C driver over every glue str producer and over `json.c`'s
+readers with sealed inputs, plus a toke program, under `TK_STR_VERIFY=1`).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
