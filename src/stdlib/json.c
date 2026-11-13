@@ -10,6 +10,7 @@
 
 #include "json.h"
 #include "strbuf.h"   /* 127.229: json_enc escapes via strbuf_append_json */
+#include "tk_strhdr.h" /* 127.295: every length read here is tk_strlen */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -132,7 +133,7 @@ static int json_key_eq(const char *ks, size_t kraw, const char *key, size_t klen
     const char *src = ks;
     (void)strbuf_append_json_unescape(&b, &src);
     char *dec = strbuf_take(&b);              /* NULL only on OOM */
-    int eq = dec && strlen(dec) == klen && memcmp(dec, key, klen) == 0;
+    int eq = dec && tk_strlen(dec) == klen && memcmp(dec, key, klen) == 0;
     free(dec);
     return eq;
 }
@@ -144,7 +145,7 @@ static int json_key_eq(const char *ks, size_t kraw, const char *key, size_t klen
  */
 static int find_json_key(const char *raw, const char *key,
                          const char **val_start, const char **val_end) {
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
     const char *p = skip_ws(raw);
     if (*p != '{') return 0;
     p++;
@@ -572,7 +573,7 @@ StrJsonResult json_pretty(Json j) {
         r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "null json"); return r;
     }
     const char *src = j.raw;
-    size_t slen = strlen(src);
+    size_t slen = tk_strlen(src);
 
     /* worst-case output is substantially larger than input due to indentation;
      * allocate generously: 8 * input length + some headroom */
@@ -703,7 +704,7 @@ int json_is_null(Json j, const char *key) {
 JsonResult json_at(Json j, const char *path) {
     JsonResult r = {0};
     /* work on a mutable copy of path */
-    size_t plen = strlen(path);
+    size_t plen = tk_strlen(path);
     char *buf = malloc(plen + 1);
     if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
     memcpy(buf, path, plen + 1);
@@ -871,7 +872,7 @@ JsonResult json_setmember(Json j, const char *key, const char *valtext) {
     }
     const char *vtext = skip_ws(valtext);
     size_t vlen = (size_t)(skip_value(vtext) - vtext);
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
     TkStrBuf b = TK_STRBUF_INIT;
     strbuf_putc(&b, '{');
     int first = 1, replaced = 0;
@@ -984,7 +985,7 @@ JsonResult json_merge(Json j1, Json j2) {
      *
      * We accumulate into a growable buffer.
      */
-    size_t cap = strlen(j1.raw) + strlen(j2.raw) + 8;
+    size_t cap = tk_strlen(j1.raw) + tk_strlen(j2.raw) + 8;
     char *out = malloc(cap);
     if (!out) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
     size_t pos = 0;
@@ -1089,7 +1090,7 @@ Json json_from_pairs(const char *const *keys, const char *const *values, uint64_
     /* estimate capacity */
     size_t cap = 4;
     for (uint64_t i = 0; i < n; i++) {
-        cap += strlen(keys[i]) * 2 + strlen(values[i]) * 2 + 8;
+        cap += tk_strlen(keys[i]) * 2 + tk_strlen(values[i]) * 2 + 8;
     }
     char *out = malloc(cap);
     if (!out) return result;
@@ -1118,7 +1119,7 @@ Json json_from_pairs(const char *const *keys, const char *const *values, uint64_
         const char *enc_key = json_enc(keys[i]);
         if (!enc_key) { free(out); return result; }
         pending = enc_key;
-        size_t klen = strlen(enc_key);
+        size_t klen = tk_strlen(enc_key);
         PAIRS_APPEND(enc_key, klen);
         /* json_enc returns a malloc'd string — free it */
         free((void *)enc_key);
@@ -1130,7 +1131,7 @@ Json json_from_pairs(const char *const *keys, const char *const *values, uint64_
         const char *enc_val = json_enc(values[i]);
         if (!enc_val) { free(out); return result; }
         pending = enc_val;
-        size_t vlen = strlen(enc_val);
+        size_t vlen = tk_strlen(enc_val);
         PAIRS_APPEND(enc_val, vlen);
         free((void *)enc_val);
         pending = NULL;
@@ -1553,7 +1554,7 @@ JsonStreamVoidResult json_streamemit(JsonWriter *w, Json j) {
         r.err = stream_err(JSON_STREAM_ERR_INVALID, "null json");
         return r;
     }
-    size_t len = strlen(j.raw);
+    size_t len = tk_strlen(j.raw);
     if (!writer_ensure(w, len)) {
         r.is_err = 1;
         r.err = stream_err(JSON_STREAM_ERR_OVERFLOW, "writer oom");

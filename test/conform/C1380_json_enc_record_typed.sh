@@ -20,7 +20,7 @@
 #   1. C (ASan+UBSan), records exactly nfields*8 bytes from malloc:
 #      tk_json_encval_w over a flat record whose slots hold no zero byte, a
 #      nested record, a record holding a [str] and an array of records, a
-#      null handle -- exact text, owned (free()d here), no newline.
+#      null handle -- exact text, no newline (sealed since 127.295: not freed).
 #   2. toke, IR linked against ASan-built stdlib objects: j.enc of a record
 #      literal, a let-bound record, a record returned by a function, a nested
 #      record with every scalar kind, an array of records -- each line equal
@@ -92,7 +92,9 @@ static void enc(int64_t v, const char *d)
 {
     char *s = (char *)(intptr_t)tk_json_encval_w(v, S(d));
     printf("[%s]\n", s);   /* brackets: the text carries no newline */
-    free(s);               /* owned */
+    /* 127.295: a sealed toke str since the twelfth S1 tranche -- never
+     * freed (free() of a sealed string aborts); unfreed under the base's
+     * malloc'd result only leaks, and leaks are off (detect_leaks=0). */
 }
 
 int main(void)
