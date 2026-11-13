@@ -1,4 +1,9 @@
-# From-Scratch Toke Code Generation — Training Architecture v2
+---
+title: From-Scratch Toke Code Generation — Training Architecture v2
+slug: training-architecture-v2
+section: spec
+order: 16
+---
 
 ## Summary
 

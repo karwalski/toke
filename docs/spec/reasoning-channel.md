@@ -1,4 +1,9 @@
-# Out-of-Band Reasoning Channel
+---
+title: Out-of-Band Reasoning Channel
+slug: reasoning-channel
+section: spec
+order: 13
+---
 
 **Status:** Normative design decision (v0.3.2)
 **Date:** 2026-05-23

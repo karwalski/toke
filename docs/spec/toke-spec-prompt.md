@@ -1,4 +1,9 @@
-# toke language spec — condensed reference (v0.3)
+---
+title: toke language spec — condensed reference (v0.3)
+slug: toke-spec-prompt
+section: spec
+order: 15
+---
 
 File ext: .tk | Compiler: tkc | All lowercase, no uppercase anywhere.
 

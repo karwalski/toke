@@ -1,4 +1,9 @@
-# Gate 1 Research Review — Decisions Required
+---
+title: Gate 1 Research Review — Decisions Required
+slug: gate1-research-review-decisions
+section: decisions
+order: 20
+---
 
 **Source:** 8 research teams (T1–T8) + 2 specification reviews, April 2026
 **Status:** All 20 decisions resolved

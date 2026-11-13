@@ -1,4 +1,9 @@
-# Request for Research Feedback
+---
+title: Request for Research Feedback
+slug: research-feedback-request
+section: spec
+order: 14
+---
 
 **Project:** toke — A Programming Language Designed to Reduce Token Cost of AI-Generated Code
 **Date:** 2026-05-23 (updated with research review responses)
