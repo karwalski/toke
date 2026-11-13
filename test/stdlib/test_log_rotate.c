@@ -23,6 +23,12 @@
  *
  *  D. tk_access_log_set_format rejects an unknown format (returns -1 and
  *     leaves the format unchanged) instead of ignoring it silently.
+ *
+ *  F. retention order (127.401).  Archives that tie on their whole-second
+ *     mtime are ordered by the rotation stamp in the name, then the probe
+ *     sequence N numerically -- never left to qsort's unspecified tie order,
+ *     which could delete the newest.  No sleeps: the ties are made with
+ *     utimes(); one real rotation triggers retention.
  */
 
 #include <stdio.h>
@@ -31,6 +37,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 #include <zlib.h>
 #include "../../src/stdlib/log.h"
 
@@ -250,6 +257,47 @@ static void test_unlockable_path(void)
     if (l) tk_access_log_close(l);
 }
 
+/* F: whole-second ties are broken by the name's stamp, then N numerically. */
+static void test_retention_ties(void)
+{
+    char dir[] = "/tmp/tk_logrot_F_XXXXXX";
+    if (!mkdtemp(dir)) { ASSERT(0, "F: mkdtemp"); return; }
+    const char *names[] = {
+        "access.20260101-000000.000001-5.log.gz",
+        "access.20260101-000000.000002-5.log.gz",
+        "access.20260101-000000.000002-5-2.log.gz",
+        "access.20260101-000000.000002-5-10.log.gz",
+    };
+    for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+        char p[1024]; snprintf(p, sizeof p, "%s/%s", dir, names[i]);
+        FILE *f = fopen(p, "w");
+        if (f) { fputs("x\n", f); fclose(f); }
+        struct timeval tv[2] = { { 1000000000, 0 }, { 1000000000, 0 } };
+        ASSERT(f && utimes(p, tv) == 0, "F: tie %s made", names[i]);
+    }
+    char live[512]; snprintf(live, sizeof live, "%s/access.log", dir);
+    TkAccessLog *al = tk_access_log_open(live, 1, 3, 0);
+    write_n(al, 0, 1);              /* one rotation, then retention keeps 3 */
+    tk_access_log_close(al);
+
+    int keep10 = 0, keep2 = 0, gone = 0, total = 0;
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    while (d && (e = readdir(d))) {
+        size_t L = strlen(e->d_name);
+        if (L < 3 || strcmp(e->d_name + L - 3, ".gz")) continue;
+        total++;
+        if (!strcmp(e->d_name, names[3])) keep10 = 1;
+        if (!strcmp(e->d_name, names[2])) keep2 = 1;
+        if (!strcmp(e->d_name, names[0]) || !strcmp(e->d_name, names[1])) gone++;
+    }
+    if (d) closedir(d);
+    ASSERT(total == 3, "F: 3 archives kept, %d are", total);
+    ASSERT(keep10 && keep2, "F: seq 10 and seq 2 kept (N is numeric)");
+    ASSERT(gone == 0, "F: the older stamp and seq 0 deleted");
+    rm_tree(dir);
+}
+
 int main(void)
 {
     test_unlockable_path();
@@ -257,6 +305,7 @@ int main(void)
     test_prefork();
     test_reopen();
     test_set_format();
+    test_retention_ties();
     reset_lines();
     if (failures == 0) { printf("All log rotation tests passed.\n"); return 0; }
     fprintf(stderr, "%d log rotation test(s) failed.\n", failures);
