@@ -22,15 +22,15 @@
 #          prefix / suffix match), five lines: exactly 2 rotated .gz files
 #          remain, one access line each, the sidecar .<stem><ext>.lock
 #          exists, and the live log is empty again.  WHICH two remain is not
-#          asserted: retention orders by whole-second mtime, so rotations in
-#          the same second tie and the newest may be the one deleted (story
-#          127.401).
+#          asserted here: C1591 pins retention's newest-first order (story
+#          127.401, fixed -- retention used to order by whole-second mtime,
+#          so rotations in the same second tied).
 #      The same driver run with unsealed literals (-DUNSEALED) produces the
 #      same files, timestamps aside.
 #   2. toke, under TK_STR_VERIFY=1: log.info with a built (sealed) message
-#      writes one JSON line with those bytes.  No fields: log_glue.c reads
-#      `fields` as a flat string array while std.log's .tki and docs pass
-#      pairs (@(@(k;v))), so every field prints garbage -- story 127.400.
+#      writes one JSON line with those bytes.  No fields here: C1590 covers
+#      fields read as the declared @(@(k;v)) pairs (story 127.400, fixed --
+#      log_glue.c used to read them as a flat string array).
 #
 # Negative control: C1560_STDLIB=<dir> uses another tree's src/stdlib.  The
 # base tree (refactor/z178-str-s1-tranche10, effa0ad8) passes too: an
