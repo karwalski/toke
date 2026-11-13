@@ -1570,6 +1570,7 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
 }
 
 static Type *func_type_sig(Ctx *cx, const Node *n);   /* 124.0c item 2 */
+static Type *imported_sum_param_type(Ctx *cx, const char *ps);   /* 127.382 */
 static Type *resolve_type(Ctx *cx, const Node *n) {
     if (!n) return mk_type(cx->env->arena, TY_UNKNOWN);
     char nb[128]; TOKSTR(nb, cx->src, n);
@@ -1699,6 +1700,19 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     {
         Type *ist = imported_struct_type(cx, nb, 0);
         if (ist) return ist;
+        /* 127.385: the name of a SUM another USER module exports, written
+         * as a type in this module (`s:$sh`, `let x:$sh`, `:$sh` return):
+         * the type its variant literals and its returned values get
+         * (imported_sum_param_type), so a parameter or binding of it is
+         * judged as a same-module `$sh` one is -- E4031 in a str slot,
+         * E4010 for a match missing a variant.  A std sum is left as it
+         * was. */
+        const ImportedType *sit = cx->env->names
+            ? imported_type_lookup(cx->env->names, nb) : NULL;
+        if (sit && sit->is_sum && !sit->is_std) {
+            Type *sst = imported_sum_param_type(cx, nb);
+            if (sst) return sst;
+        }
     }
     return mk_type(cx->env->arena, TY_UNKNOWN);
 }
@@ -2461,6 +2475,7 @@ static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
 static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
 static Type *slot_union_base(Type *t);                     /* 127.320 */
 static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz);   /* 127.304 */
+static int user_module_call(Ctx *cx, const Node *call);          /* 127.384 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
     /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
@@ -2481,6 +2496,16 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
             if (ret && !strchr(ret, '!')) {
                 Type *ist = imported_struct_type(cx, ret, 0);
                 if (ist) return ist;
+                /* 127.385: a SUM returned from another USER module
+                 * (`l.mks()`, "return": "sh") is the type a variant literal
+                 * of it gets (imported_sum_param_type) -- bound or in place.
+                 * Left unknown, `let a:str=l.mks()` and `l.pr(l.mks())`
+                 * passed --check, and `mt l.mks() {$ci:v v}` drew no E4010,
+                 * where one module judges all three. */
+                if (user_module_call(cx, call)) {
+                    Type *sst = imported_sum_param_type(cx, ret);
+                    if (sst) return sst;
+                }
                 /* 138.3 (c) / 138.11: a SCALAR return a hand-written record
                  * declares (never a "gen":"abi" placeholder, never T!E) --
                  * `let a=str.nowunix(); a/86400` (T-47b), `let c=str.charat(
@@ -6185,6 +6210,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_STRUCT_LIT: {
         Type *st = resolve_type(cx, node);
+        /* 127.385: a variant literal of a SUM another user module exports
+         * (`$sh{$ci:1}`) is typed by resolve_type as the sum; it was
+         * unknown, so `let b:str=$sh{$ci:1}` and `l.pr($sh{$ci:1})` passed
+         * --check where one module says E4031.  A std sum stays unknown. */
         /*
          * 136.29: a literal naming a field the struct does not declare was
          * accepted and WROTE somewhere it should not — struct_field_index()
