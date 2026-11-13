@@ -186,12 +186,12 @@ i=str:std.str;
 f=main():i64{
   let raw = mt file.read("sales.csv") {$ok:d d;$err:e ""};
 
-  let data = mt df.fromcsv(raw) {$ok:d d;$err:e $dataframe{}};
+  let data = mt df.fromcsv(raw) {$ok:d d;$err:e <1};
 
   let s = df.shape(data);
   io.println(str.concat("Rows: "; str.fromint(s.rows)));
 
-  let big = mt df.filter(data; "revenue"; ">"; "1000") {$ok:d d;$err:e $dataframe{}};
+  let big = mt df.filter(data; "revenue"; ">"; "1000") {$ok:d d;$err:e <1};
 
   let groups = mt df.groupby(big; "region") {$ok:g g;$err:e @()};
 

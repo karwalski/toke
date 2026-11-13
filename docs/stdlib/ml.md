@@ -133,14 +133,15 @@ Trains a binary CART decision tree classifier on `X` with corresponding string c
 m=example;
 i=ml:std.ml;
 
-f=example():void{
+f=example():i64{
   let ra = $row{vals:@(2.0; 3.0)};
   let rb = $row{vals:@(8.0; 7.0)};
   let rc = $row{vals:@(1.0; 2.0)};
   let rd = $row{vals:@(9.0; 8.0)};
   let feats = @(ra; rb; rc; rd);
   let labels = @("low"; "high"; "low"; "high");
-  let tree = mt ml.dtreefit(feats; labels; 4) {$ok:m m;$err:e $dtreemodel{}};
+  let tree = mt ml.dtreefit(feats; labels; 4) {$ok:m m;$err:e <1};
+  <0
 };
 ```
 

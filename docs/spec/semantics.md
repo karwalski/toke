@@ -99,6 +99,10 @@ signatures. Use of `*T` in a function with a body is a compile error
 Two struct types are equal if and only if they have the same name (nominal
 typing). Field access is via dot notation: `expr.field`. Accessing a
 non-existent field is a compile error `[errors.md E4025]`.
+A struct literal `$name{f1:v1; f2:v2; ...}` gives every declared field exactly
+once, in any order; fields have no default value. Leaving a field out is
+`[errors.md E4077]` and giving one twice is `[errors.md E4078]` (127.365,
+127.366). A sum-type literal names one variant and is not subject to this rule.
 
 **Task.** The type `Task<T>` is the return type of `spawn(f)` where `f`
 returns type `T`. `Task` is not directly writable in source; it is

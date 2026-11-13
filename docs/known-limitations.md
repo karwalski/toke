@@ -431,7 +431,7 @@ these from an earlier version of the docs, here is where it went:
 | `io.write(s)` | `io.print(s)` | `io.print` is the no-newline write; `io.write` was never declared |
 | `io.writeln(s)` | `io.println(s)` | as above |
 | `http.ok(body)` | `http.resok(body)` | `http.resok` is the spelling `stdlib/http.tki` exports |
-| `llm.emptystream()` | `$llmstream{}` | the struct literal the same page already used twice |
+| `llm.emptystream()` | leave from the `$err` arm (`$err:e <1`) | there is no empty stream; an empty `$llmstream{}` literal left its fields uninitialised and is E4077 since 127.365 |
 
 `yaml.empty()` and `toon.empty()` went the other way: the pages had always
 used them for the `$err` arm of a `mt` over `yaml.dec`/`toon.dec`, where the
