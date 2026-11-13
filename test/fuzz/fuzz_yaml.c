@@ -14,6 +14,9 @@
  * ASAN_OPTIONS=detect_leaks=0 so LeakSanitizer does not mask the
  * heap-overflow crashes we are actually hunting. The inconsistent ownership
  * is itself tracked as a robustness issue (see 120.5 PAR-01).
+ * 127.295: the results are sealed strings now (never freed, by anyone);
+ * this target builds with -DTK_STR_NO_HEAP, where a "sealed" string is the
+ * malloc fallback, so the note above still describes what leaks.
  *
  * Build:  make fuzz-yaml   (requires clang with -fsanitize=fuzzer)
  * Story:  120.22

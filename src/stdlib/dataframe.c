@@ -17,6 +17,7 @@
 #include "dataframe.h"
 #include "strbuf.h"
 #include "csv.h"
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 
 #include <stdlib.h>
 #include <string.h>
@@ -31,7 +32,7 @@
 static char *df_strdup(const char *s)
 {
     if (!s) return NULL;
-    size_t n = strlen(s) + 1;
+    size_t n = tk_strlen(s) + 1;
     char *p = malloc(n);
     if (p) memcpy(p, s, n);
     return p;

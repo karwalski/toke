@@ -38,9 +38,42 @@
 
 #include "tls.h"
 #include "capabilities.h"   /* 124.4c: net capability gate */
+#include "tk_strhdr.h"      /* 127.295: sealed strings, tk_strlen */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/*
+ * 127.295 (runtime-abi §3.1, fifteenth tranche) -- every str this glue makes
+ * for toke is sealed: a $TlsConn's .id (tls.connect, and the record each
+ * tls.listen handler receives), tls.read, tls.peercert, tls.fingerprint,
+ * tls.pairingcode, tls.group, tls.protocol, and tls.certof (a copy).  tls.c's
+ * own producers (the registry's ids, tls_read, tls_peer_cert,
+ * tls_fingerprint, tls_pairing_code, tls_group, tls_protocol) stay malloc'd:
+ * their C callers -- test_tls.c, C206, C590, C1180 -- free what they return.
+ * So the seal happens here, at the boundary: seal_take() makes the sealed
+ * copy toke keeps and frees the malloc'd original, handing the original over
+ * unsealed only if the copy cannot be made.  The copy is measured as a C
+ * string, so plaintext tls.read returns ends at its first 0 byte exactly
+ * where every reader already saw it end -- and it no longer keeps the whole
+ * 64 KiB read buffer alive for a short record.  No C code calls a
+ * tk_tls_*_w str producer.
+ *
+ * Left malloc'd, on purpose: a configuration's PEMs (dup_arg; the record's
+ * storage, freed by tls.freeconfig) and a keypair's PEMs (freed by
+ * tls.freekeypair, which first overwrites the private key -- a sealed string
+ * is never written, so it could not be wiped).  tls.keyof therefore still
+ * hands toke the keypair's own buffer: a sealed copy of a private key would
+ * live, unwiped, for the life of the process.
+ */
+static char *seal_take(char *s)
+{
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free(s);
+    return t;
+}
 
 /* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
  * A plain-global declaration here links with no diagnostic and then SIGBUSes
@@ -106,7 +139,7 @@ static int64_t box_conn(char *id)
 {
     TlsConn *b = malloc(sizeof *b);
     if (!b) return 0;
-    b->id = id;
+    b->id = seal_take(id);   /* 127.295: .id is a str toke can read */
     return (int64_t)(intptr_t)b;
 }
 
@@ -303,7 +336,10 @@ int64_t tk_tls_certof_w(int64_t keypair)
 {
     TkTlsKeypairRec *kp = (TkTlsKeypairRec *)(intptr_t)keypair;
     if (!kp || !kp->certpem) return (int64_t)(intptr_t)"";
-    return (int64_t)(intptr_t)kp->certpem;
+    /* 127.295: a sealed copy -- public material, and the str no longer
+     * dangles once tls.freekeypair frees the record's own PEM. */
+    char *c = tks_strdup(kp->certpem);
+    return (int64_t)(intptr_t)(c ? c : kp->certpem);
 }
 
 /* tls.keyof(keypair) — the private key PEM.  Secret: do not log it. */
@@ -323,7 +359,7 @@ int64_t tk_tls_freekeypair_w(int64_t keypair)
     if (kp->keypem) {
         /* Overwrite through a volatile view so the store is not elided. */
         volatile char *w = (volatile char *)kp->keypem;
-        size_t n = strlen(kp->keypem);
+        size_t n = tk_strlen(kp->keypem);
         while (n--) *w++ = 0;
         free(kp->keypem);
     }
@@ -389,7 +425,7 @@ int64_t tk_tls_read_w(int64_t conn)
 {
     TlsStrResult r = tls_read(conn_of(conn));
     if (r.is_none) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    return (int64_t)(intptr_t)seal_take(r.ok);
 }
 
 /* tls.write(conn; data) — write plaintext; 1 on success. */
@@ -414,7 +450,7 @@ int64_t tk_tls_peercert_w(int64_t conn)
 {
     TlsStrResult r = tls_peer_cert(conn_of(conn));
     if (r.is_none) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    return (int64_t)(intptr_t)seal_take(r.ok);
 }
 
 /* tls.fingerprint(pem) — lowercase hex SHA-256 of the certificate's DER.
@@ -423,21 +459,21 @@ int64_t tk_tls_fingerprint_w(int64_t pem)
 {
     const char *p = as_str(pem);
     if (!p) return (int64_t)(intptr_t)"";
-    return (int64_t)(intptr_t)tls_fingerprint(p);
+    return (int64_t)(intptr_t)seal_take(tls_fingerprint(p));
 }
 
 /* tls.pairingcode(conn) — 6-digit code from the two fingerprints.
  * Declared in tls.tki; it never had a wrapper. */
 int64_t tk_tls_pairingcode_w(int64_t conn)
 {
-    return (int64_t)(intptr_t)tls_pairing_code(conn_of(conn));
+    return (int64_t)(intptr_t)seal_take(tls_pairing_code(conn_of(conn)));
 }
 
 /* tls.group(conn) — the key-exchange group actually negotiated, e.g.
  * "X25519MLKEM768", or the classical group a fallback settled on (122.13). */
 int64_t tk_tls_group_w(int64_t conn)
 {
-    return (int64_t)(intptr_t)tls_group(conn_of(conn));
+    return (int64_t)(intptr_t)seal_take(tls_group(conn_of(conn)));
 }
 
 /* tls.protocol(conn) — the protocol actually negotiated, e.g. "TLSv1.3".
@@ -445,5 +481,5 @@ int64_t tk_tls_group_w(int64_t conn)
  * (136.44). */
 int64_t tk_tls_protocol_w(int64_t conn)
 {
-    return (int64_t)(intptr_t)tls_protocol(conn_of(conn));
+    return (int64_t)(intptr_t)seal_take(tls_protocol(conn_of(conn)));
 }

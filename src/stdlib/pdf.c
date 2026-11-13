@@ -48,6 +48,7 @@
 
 #include "pdf.h"
 #include "pdfobj.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -918,8 +919,8 @@ static int scan_objects(TkPdfDoc *doc)
         objnum = atol(tok);
         {   /* expect: <gen> obj */
             char g[64], k[64];
-            if (!pdf_token(&L, g, sizeof g) || g[0] < '0' || g[0] > '9') { L.i = save + strlen(tok); continue; }
-            if (!pdf_token(&L, k, sizeof k) || strcmp(k, "obj") != 0)    { L.i = save + strlen(tok); continue; }
+            if (!pdf_token(&L, g, sizeof g) || g[0] < '0' || g[0] > '9') { L.i = save + tk_strlen(tok); continue; }
+            if (!pdf_token(&L, k, sizeof k) || strcmp(k, "obj") != 0)    { L.i = save + tk_strlen(tok); continue; }
         }
 
         o = pdf_parse(doc, &L, 0);
@@ -1454,14 +1455,14 @@ char *pdf_page_text(TkPdfDoc *doc, uint32_t n)
     for (uint32_t i = 0; i < pg->n; i++) {
         const TkPdfRun *r = &sorted[i];
         const char *sep = "";
-        size_t tl = strlen(r->text), sl;
+        size_t tl = tk_strlen(r->text), sl;
         if (i > 0) {
             const TkPdfRun *p = &sorted[i - 1];
             double tol = line_tol(p) > line_tol(r) ? line_tol(p) : line_tol(r);
             if (p->y - r->y > tol) sep = "\n";
             else if (r->x - (p->x + p->width) > r->fontsize * 0.25) sep = " ";
         }
-        sl = strlen(sep);
+        sl = tk_strlen(sep);
         if (len + tl + sl + 1 > cap) {
             size_t nc = (len + tl + sl + 1) * 2;
             char *nb = (char *)realloc(out, nc);

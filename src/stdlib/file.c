@@ -457,7 +457,17 @@ StrArrayFileResult file_list(const char *dir)
                 r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r; }
             entries = tmp;
         }
-        entries[count++] = strdup(ent->d_name);
+        /* 127.414: a failed strdup used to be stored as a NULL entry and
+         * the call returned success, so toke received a [str] holding a
+         * null str.  Fail the call instead, as file_glob and file_listall
+         * do: free what was made, close the directory. */
+        char *copy = strdup(ent->d_name);
+        if (!copy) {
+            for (size_t j = 0; j < count; j++) free((void *)entries[j]);
+            free(entries); closedir(d);
+            r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r;
+        }
+        entries[count++] = copy;
     }
     closedir(d);
     r.ok.data = entries;

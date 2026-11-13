@@ -82,20 +82,17 @@ static void exercise(void) {
     for (int i = 0; i < 3; i++) {
         ToonResult d = toon_dec(docs[i]);
         if (d.is_err) continue;
-        StrToonResult s = toon_str(d.ok, "id");
-        if (!s.is_err) free((char *)s.ok);
+        StrToonResult s = toon_str(d.ok, "id");   /* sealed: never freed (127.295) */
+        (void)s;
         ToonArrayResult a = toon_arr(d.ok, "id");
         if (!a.is_err) {
             for (uint64_t k = 0; k < a.ok.len; k++) free((char *)a.ok.data[k].raw);
             free(a.ok.data);
         }
-        const char *j = toon_to_json(docs[i]);
-        if (j && strcmp(j, "[]") != 0) free((char *)j);   /* "[]" may be a literal */
+        (void)toon_to_json(docs[i]);   /* sealed or a literal: never freed */
     }
-    const char *t1 = toon_from_json("{\"id\":1,\"name\":\"x\"}");
-    if (t1 && *t1) free((char *)t1);
-    const char *t2 = toon_from_json("[{\"id\":1,\"n\":\"a\"},{\"id\":2,\"n\":\"b\"}]");
-    if (t2 && *t2) free((char *)t2);
+    (void)toon_from_json("{\"id\":1,\"name\":\"x\"}");
+    (void)toon_from_json("[{\"id\":1,\"n\":\"a\"},{\"id\":2,\"n\":\"b\"}]");
 }
 
 int main(void) {
@@ -152,8 +149,15 @@ int main(void) {
 C
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -iquote "${WORK}" \
-        -o "${WORK}/t" "${WORK}/t.c" >"${WORK}/cc.log" 2>&1; then
+# 127.295: toon.c's results are sealed strings (str.c's string heap), so the
+# driver takes std.toon's link set from stdlib_link_set.sh as objects, less
+# the toon.c it #includes with the failing allocators (--except toon.c).
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -iquote "${WORK}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except toon.c --cc "${CC}" \
+        --objects toon -- "${CF[@]}")" \
+    || { echo "  FAIL: stdlib link set (toon): see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${LINK[@]}" -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     exit 1
 fi

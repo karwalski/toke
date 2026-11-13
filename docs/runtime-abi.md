@@ -665,6 +665,153 @@ glue str producer and over the readers with every argument sealed, against
 the same calls on unsealed copies, plus a toke program, under
 `TK_STR_VERIFY=1`).
 
+**Step 5, fourteenth tranche (story 127.295, Batch Z189).**  `std.yaml`,
+`std.pdf` and `http2.c`, each converted completely (every reader in
+`yaml.c`, `pdf.c`, `pdftext.c`, `pdf_glue.c` and `http2.c` uses
+`tk_strlen`; their five ratchet entries are deleted).  `yaml.c` seals at
+the source: `yaml_enc`, `yaml_str`, `yaml_from_json` and `yaml_to_json`
+return sealed strings (`tks_dup`, or `tks_alloc`/`tks_seal` for a quoted
+value; the converters copy their `TkStrBuf` once, trimming
+`yaml_from_json`'s leading newline in the copy), because no C caller frees
+what they return -- each has literal fallbacks (`"null"`, `"\"\""`, `""`,
+`"{}"`), so a free was never allowed -- and `yaml_glue.c` hands them to toke
+as they are (`yaml.enc` / `stringify`, `yaml.str` / `getstring`,
+`yaml.fromjson`, `yaml.tojson`).  Stays malloc'd: the element raws
+`yaml_arr` builds (internal `Yaml` handle storage, never a str toke reads;
+`yaml_arr` frees them itself on failure).  `std.pdf` seals at the boundary:
+`pdf_glue.c`'s `dup_str` makes every str it hands toke -- a `$textrun`'s
+`.text` and `pdf.pagetext`'s result -- with `tks_dup`, measured as a C
+string; `pdf.c`'s run text belongs to the page (`pdf_page_free`) and
+`pdf_page_text`'s buffer is freed by the glue after the copy, so both stay
+malloc'd.  `http2.c` hands toke no string: its four readers are the HPACK
+encoder's name/value lengths (`hpack_encode`'s literal forms and
+`hpack_insert`'s entry size); its six `strdup` lines are the HPACK dynamic
+table's entries and `hpack_decode`'s results, which `hpack_table_free` and
+the C callers free -- internal ownership, not toke producers.
+`test-stdlib-yaml` links `str.c`; `fuzz-yaml` links it with
+`-DTK_STR_NO_HEAP`.  Every conform harness that compiles one of these files
+already took its link set from `stdlib_link_set.sh --objects` (or
+`#include`s / compiles the file itself with `--except`), so none moved.
+Not in this tranche: `cache.c` (nothing in the tree calls `http_cache_*`
+and nothing tests it: converting it would mean writing the first test of
+dead code); `keychain.c` (three of its five readers are `_WIN32`-only and
+cannot be built here, and the two macOS ones are exercised only through the
+OS credential store); `infer.c` (all four readers are inside
+`TK_HAVE_LLAMACPP`, and llama.cpp is not installed here).  Gates: C1652 (an
+ASan C driver over every `yaml.c` producer and the glue, and over the
+readers with sealed inputs, plus a toke program), C1653 (`hpack_encode` of
+sealed and unsealed headers gives identical blocks), C1654 (an ASan C
+driver over `std.pdf`'s glue on a PDF the test writes byte by byte, plus a
+toke program), all under `TK_STR_VERIFY=1`.
+
+**Step 5, fifteenth tranche (story 127.295, Batch Z190).**  `std.tls`,
+`std.crypto`, `std.encrypt` and `proxy.c`, each converted completely
+(every reader in `tls.c`, `tls_glue.c`, `crypto.c`, `encrypt.c`,
+`encrypt_glue.c` and `proxy.c` uses `tk_strlen`, the `sizeof` of the
+literal it skips, or the length the `TkStrBuf` that built the string
+holds; their six ratchet entries are deleted).  `tls_glue.c` seals at the
+boundary: every str it makes for toke -- a `$TlsConn`'s `.id` (from
+`tls.connect`, and in the record each `tls.listen` handler receives),
+`tls.read`, `tls.peercert`, `tls.fingerprint`, `tls.pairingcode`,
+`tls.group`, `tls.protocol` -- is a sealed copy made by `seal_take()`,
+which frees the malloc'd original (handing it over unsealed only if the
+copy cannot be made); `tls.c`'s producers stay malloc'd because their C
+callers (`test_tls.c`, C206, C590, C1180) free what they return.  A
+`tls.read` copy is measured as a C string, so plaintext ends at its first
+0 byte exactly where every reader already saw it end, and the 64 KiB read
+buffer is no longer kept alive for a short record.  `tls.certof` is now a
+sealed copy (public material; it used to hand toke the keypair's own PEM,
+which `tls.freekeypair` frees under a str the program may still hold).
+Left malloc'd, on purpose: a configuration's PEMs (the record's storage,
+freed by `tls.freeconfig`) and a keypair's PEMs, so `tls.keyof` still hands
+toke the keypair's own buffer -- `tls.freekeypair` overwrites the private
+key before freeing it, and a sealed string is never written, so a sealed
+copy of a key would live unwiped for the life of the process.
+`crypto_glue.c` seals the same way: `crypto.sha256file`, `crypto.tohex` /
+`to_hex` and `crypto.randomhex` (so `str.hexid` / `str.randhex`) are
+`seal_take()` copies of `crypto_to_hex` / `crypto_sha256file`, which stay
+malloc'd (`crypto.h` documents both as caller-owned, and
+`crypto_sha256verify` frees `crypto_sha256file`'s result);
+`crypto.randombase64url` builds straight into a `tks_alloc` buffer and
+seals it.  `encrypt_glue.c`'s one str, `DecryptResult.err`, is a sealed
+copy of the core's static message, stored into the record after the record
+is made (so an allocation failure no longer has a sealed string to free).
+`crypto.c` and `encrypt.c` hand toke no str of their own (bcrypt is
+`std.auth`'s producer, already malloc'd by design since the third
+tranche).  `proxy.c` hands toke no string at all: its five `strdup` lines
+are the connection pool's and the upstream's own storage (pool host,
+upstream name, backend hosts, affinity cookie, health path), freed by the
+pool and `proxy_upstream_free`.  `test-stdlib-tls` links `str.c`; every
+conform harness that compiles one of these files already took its link set
+from `stdlib_link_set.sh --objects` (C452, C520, C540, C464 and C136
+`--except` or `#include` the file they drive), so none moved.  Not in this
+tranche, unchanged from the fourteenth: `cache.c`, `keychain.c`, `infer.c`;
+and by the eighth tranche's per-request rule `router.c`'s sixteen `strdup`
+lines (route-match parameters and response header values the router
+frees) and `llm_tool.c`'s twenty-eight (C-owned results the glue copies
+since the seventh tranche).  Gates: C1660 (an ASan C driver over every
+`tls_glue.c` producer on a real TLS 1.3 loopback connection, and over
+`tls.write` with sealed data, plus a toke program), C1661 (the same over
+`crypto_glue.c` and `encrypt_glue.c`, and over bcrypt, pbkdf2 and
+`tls_cert_fingerprint` with sealed inputs) and C1662 (`proxy.c`'s readers:
+a sealed request builds, probes and forwards byte for byte as an unsealed
+one), all under `TK_STR_VERIFY=1`.
+
+**Step 5, sixteenth tranche (story 127.295, Batch Z191).**  The glue
+readers and four data modules: `collections_glue.c`, `net_glue.c`,
+`os_glue.c`, `process_glue.c`, `dataframe_glue.c`, `dataframe.c`,
+`toml_glue.c`, `zip_glue.c`, `zip.c`, `csv_glue.c`, `csv.c` and `toon.c`
+read only with `tk_strlen` (or the length `snprintf` reports); their twelve
+ratchet entries are deleted.  The readers that see a toke string on every
+call are a map's string key (`tk_map_hash_str` hashes `tk_strlen` bytes, so
+a sealed key hashes in O(1) length), `os.write`, `net.write`,
+`process.spawn`'s command string, `df.fromcsv`'s text and each field
+`csv.writerow` writes.  `std.toon` seals at the source: `toon_enc`,
+`toon_str`, `toon_from_json` and `toon_to_json` copy their finished
+`TkStrBuf` once into a sealed string (measured as a C string) and free the
+buffer, because no C caller may free them -- their fallbacks were always
+the literals `""` and `"[]"` -- so `toon_glue.c` hands them to toke as they
+are (`toon.enc` / `stringify` / `tostr`, `toon.str` / `getstring`,
+`toon.fromjson`, `toon.tojson`); C440 stopped freeing them.  The other
+modules seal at the boundary, because their cores' strings belong to a C
+caller or to a handle: `csv.parse` and `csv.next` fields are `seal_take()`
+copies (csv.c's fields stay malloc'd -- `test_csv.c` frees them); each
+`csv.header` field is a sealed copy, because the header is the reader's own
+cache, which `csv.close` frees under a `[str]` the program may still hold
+(on the base that read is a heap-use-after-free, C1670); `csv.raggedreport`
+lines and `csv.sniff`'s delimiter and quote are sealed copies; `toml.str`
+and each `toml.strarr` element are `seal_take()` copies of tomlc99's
+caller-owned strings, and each `toml.keys` element a sealed copy of the
+table's own key; each `zip.entries` name is a sealed copy of the archive's;
+`df.tocsv` is a `seal_take()` copy of `df_tocsv`'s text.  Left malloc'd, on
+purpose: csv.c's fields, header cache and ragged messages (the reader's or
+the C caller's), `toon_arr`'s element raws (each `$toonval`'s own storage),
+the dataframe's names and cells (`df_strdup`, the frame's storage), zip
+names and tomlc99's keys (the archive's and the table's).  (Found on the
+way and fixed separately, story 127.422: `csv.parse` and `csv.reader` kept
+the unpacked copy of their input, `csv.parse` and `csv.next` each row's
+pointer block, and `csv.flush` the text it packs into its `[byte]`; C1672.)  `test-stdlib-csv`, `-toon`, `-map` and
+`-ml-pipeline-integration` link `str.c`; `fuzz-toon` links it with
+`-DTK_STR_NO_HEAP`; C440 and C450, which compiled `toon.c` alone, take
+`std.toon`'s link set from `stdlib_link_set.sh --objects` (C440 `--except
+toon.c`, which it `#include`s with failing allocators).  Not in this
+tranche: `chart.c` (its three readers are the C-only `chart_set_theme` /
+`chart_set_legend` / `chart_set_colors`, which no toke function reaches),
+`chart_glue.c` and `dashboard_glue.c` (they measure `chart_tojson`'s own
+malloc'd JSON, never a toke string, and C109 builds `chart_glue.c` with a
+stub harness); `cache.c`, `keychain.c`, `infer.c` as before.
+`str.frombytes` (and its alias `str.from_bytes`), the producer every
+earlier tranche left out, now hands toke a sealed copy of the unpacked
+buffer, measured as a C string (a `[byte]` holding a 0 gives the bytes
+before it), and frees the buffer; `str_from_bytes`'s own copy is only the
+UTF-8 validator's and is freed as before.  C735's control, which needs an
+unconverted producer, moved from `str.frombytes` to `env.getor` (caller-owned
+by `env.tki`, so it stays malloc'd).  Gates: C1670 (an ASan C driver over
+every csv, toml, zip and dataframe glue producer and over the glue readers
+with sealed inputs, plus a toke program), C1671 (the same over
+`std.toon`'s glue and `toon.c`'s readers) and C1673 (`str.frombytes`:
+plain, empty, holding a 0, invalid UTF-8), all under `TK_STR_VERIFY=1`.
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

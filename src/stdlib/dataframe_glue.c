@@ -23,6 +23,7 @@
 #include "tk_array.h"
 
 #include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 
 /* 127.238: the error slot (runtime-abi.md §7.2).  These `T!dferr` wrappers
  * returned a bare 0 on failure, so only the value sentinel saw it and the
@@ -100,7 +101,7 @@ int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
 static int64_t df_fromcsv_impl(int64_t csv) {
     if (!csv) return 0;
     const char *s = (const char *)(intptr_t)csv;
-    uint64_t len = strlen(s);
+    uint64_t len = tk_strlen(s);
     DfResult r = df_fromcsv(s, len, 1);
     if (r.is_err || !r.ok) return 0;
     return (int64_t)(intptr_t)r.ok;
@@ -164,8 +165,15 @@ int64_t tk_dataframe_groupby_w(int64_t df, int64_t col) { return df_slot(df_grou
 static const char tk_dataframe_columnstr_fail[] =
     "df.columnstr: no such string column";
 int64_t tk_dataframe_columnstr_w(int64_t df, int64_t col) { return df_slot(df_columnstr_impl(df, col), tk_dataframe_columnstr_fail); }
+/* 127.295: df.tocsv hands toke a sealed copy of df_tocsv's malloc'd text
+ * (freed here); the original is handed over unsealed only if the copy
+ * cannot be made.  No C code calls tk_dataframe_tocsv_w. */
 int64_t tk_dataframe_tocsv_w(int64_t df) {
     if (!df) return 0;
     const char *s = df_tocsv((TkDataframe *)(intptr_t)df);
-    return (int64_t)(intptr_t)s;
+    if (!s) return 0;
+    char *t = tks_strdup(s);
+    if (!t) return (int64_t)(intptr_t)s;
+    free((void *)s);
+    return (int64_t)(intptr_t)t;
 }

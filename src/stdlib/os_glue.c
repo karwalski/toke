@@ -13,6 +13,7 @@
 
 #include "os.h"
 #include "tk_runtime.h"   /* tk_current_error, tk_err_box, tk_err_msg */
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
@@ -39,7 +40,7 @@ static int64_t os_raise(int code, int64_t written, size_t len) {
 int64_t tk_os_write_w(int64_t fd, int64_t data) {
     const char *s = (const char *)(intptr_t)data;
     if (!s) return os_raise(EINVAL, 0, 0);
-    size_t len = strlen(s);
+    size_t len = tk_strlen(s);
     OsWriteResult r = os_write_all((int)fd, s, len);
     if (r.err) return os_raise(r.err, r.written, len);
     tk_current_error = 0;

@@ -18,6 +18,7 @@
  */
 
 #include "yaml.h"
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -32,6 +33,37 @@
  * 122.2: both converters now append to a TkStrBuf, which grows instead.
  */
 #include "strbuf.h"
+
+/*
+ * 127.295 (S1 step 5, fourteenth tranche): every string yaml.c returns to a
+ * caller -- yaml_enc, yaml_str, yaml_from_json, yaml_to_json -- is sealed
+ * (tks_alloc/tks_dup + tks_seal), so tk_strlen reads its length in O(1).
+ * No C caller frees one: yaml_glue.c hands them to toke, and the tests and
+ * fuzz-yaml never freed them (each producer has literal fallbacks -- "null",
+ * "\"\"", "", "{}" -- so a free was never allowed).  A sealed string is never
+ * freed, by anyone.  If the sealed copy cannot be made the converters hand
+ * over their malloc'd buffer instead (read correctly, only with strlen).
+ *
+ * Stays malloc'd, on purpose: the element raws yaml_arr builds (internal
+ * Yaml handle storage, never a str toke reads; yaml_arr frees them itself on
+ * failure), and the TkStrBuf the converters build in.
+ */
+
+/* A sealed copy of b's contents past `skip` bytes, b freed; lit when the
+ * buffer hit OOM (a partial string is never handed out). */
+static const char *seal_buf(TkStrBuf *b, size_t skip, const char *lit) {
+    size_t n = b->len;
+    char *out = strbuf_take(b);
+    if (!out) return lit;
+    if (skip > n) skip = n;
+    char *s = tks_dup(out + skip, n - skip);
+    if (!s) {
+        if (skip) memmove(out, out + skip, n - skip + 1);
+        return out;
+    }
+    free(out);
+    return s;
+}
 
 /* Bound converter recursion depth (121.6 companion) — indent grows by 2/level. */
 #define YAML_MAX_INDENT 512
@@ -70,7 +102,7 @@ static const char *skip_newline(const char *p) {
  */
 static int find_yaml_key(const char *raw, const char *key,
                          const char **val_start, const char **val_end) {
-    size_t klen = strlen(key);
+    size_t klen = tk_strlen(key);
     const char *p = raw;
 
     while (*p) {
@@ -149,22 +181,18 @@ const char *yaml_enc(const char *v) {
         }
         p++;
     }
+    size_t n = tk_strlen(v);
     if (needs_quote) {
-        size_t n = strlen(v);
-        char *buf = (char *)malloc(n + 3);
+        char *buf = tks_alloc(n + 2);
         if (!buf) return "\"\"";
         buf[0] = '"';
         memcpy(buf + 1, v, n);
         buf[n + 1] = '"';
         buf[n + 2] = '\0';
-        return buf;
+        return tks_seal(buf, n + 2);
     }
-    size_t n = strlen(v);
-    char *buf = (char *)malloc(n + 1);
-    if (!buf) return "";
-    memcpy(buf, v, n);
-    buf[n] = '\0';
-    return buf;
+    char *buf = tks_dup(v, n);
+    return buf ? buf : "";
 }
 
 /* yaml_dec — validate and store raw YAML string */
@@ -188,10 +216,8 @@ StrYamlResult yaml_str(Yaml y, const char *key) {
         r.is_err = 1; r.err = make_err(YAML_ERR_MISSING, key); return r;
     }
     size_t len = (size_t)(ve - vs);
-    char *buf = (char *)malloc(len + 1);
+    char *buf = tks_dup(vs, len);
     if (!buf) { r.is_err = 1; r.err = make_err(YAML_ERR_PARSE, "oom"); return r; }
-    memcpy(buf, vs, len);
-    buf[len] = '\0';
     r.is_err = 0; r.ok = buf; return r;
 }
 
@@ -483,11 +509,9 @@ const char *yaml_from_json(const char *json) {
     TkStrBuf ob = TK_STRBUF_INIT;
     const char *p = json;
     json_to_yaml_r(&p, &ob, 0);
-    char *out = strbuf_take(&ob);
-    if (!out) return "";
-    /* Trim leading newline */
-    if (out[0] == '\n') memmove(out, out + 1, strlen(out));
-    return out;
+    /* Trim the leading newline a top-level mapping starts with. */
+    size_t skip = (!ob.oom && ob.len && ob.buf[0] == '\n') ? 1 : 0;
+    return seal_buf(&ob, skip, "");
 }
 
 /*
@@ -599,6 +623,5 @@ const char *yaml_to_json(const char *yaml_str) {
         strbuf_appendf(&ob, "}");
     }
 
-    char *out = strbuf_take(&ob);
-    return out ? out : "{}";
+    return seal_buf(&ob, 0, "{}");
 }

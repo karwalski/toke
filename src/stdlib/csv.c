@@ -17,6 +17,7 @@
 
 #include "csv.h"
 #include "strbuf.h"
+#include "tk_strhdr.h"  /* 127.295: tk_strlen */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -489,7 +490,7 @@ void csv_writer_writerow(TkCsvWriter *w, StrArray row)
             }
             strbuf_putc(&w->buf, '"');
         } else {
-            strbuf_appendn(&w->buf, f, (uint64_t)strlen(f));
+            strbuf_appendn(&w->buf, f, (uint64_t)tk_strlen(f));
         }
     }
 }
@@ -1149,10 +1150,10 @@ static void ragged_record(TkCsvReader *r, uint64_t line, uint64_t got,
         r->ragged_cap  = nc;
     }
     char buf[160];
-    snprintf(buf, sizeof buf, "line %llu: %llu fields, expected %llu",
-             (unsigned long long)line, (unsigned long long)got,
-             (unsigned long long)want);
-    size_t n = strlen(buf);
+    int w = snprintf(buf, sizeof buf, "line %llu: %llu fields, expected %llu",
+                     (unsigned long long)line, (unsigned long long)got,
+                     (unsigned long long)want);
+    size_t n = w < 0 ? 0 : (size_t)w < sizeof buf ? (size_t)w : sizeof buf - 1;
     char *copy = (char *)malloc(n + 1);
     if (!copy) return;
     memcpy(copy, buf, n + 1);

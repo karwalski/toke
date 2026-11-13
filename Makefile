@@ -1703,7 +1703,7 @@ TLS_TEST_LDFLAGS = -L/opt/homebrew/lib -lssl -lcrypto \
 test-stdlib-tls:
 	$(CC) $(CFLAGS) $(TLS_TEST_CFLAGS) -o test/stdlib/test_tls \
 	    test/stdlib/test_tls.c src/stdlib/tls.c src/stdlib/capabilities.c \
-	    $(TLS_TEST_LDFLAGS)
+	    src/stdlib/str.c $(TLS_TEST_LDFLAGS)
 	$(RUN_TEST) ./test/stdlib/test_tls --allow-net
 
 test-stdlib-process:
@@ -1756,7 +1756,7 @@ test-stdlib-log:
 
 test-stdlib-toon:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_toon \
-	    test/stdlib/test_toon.c src/stdlib/toon.c
+	    test/stdlib/test_toon.c src/stdlib/toon.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_toon
 
 # 127.295: json.c/json_glue.c read lengths with tk_strlen and the glue seals
@@ -1766,9 +1766,10 @@ test-stdlib-json:
 	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_json
 
+# 127.295: yaml.c's results are sealed strings (tks_dup), defined in str.c.
 test-stdlib-yaml:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_yaml \
-	    test/stdlib/test_yaml.c src/stdlib/yaml.c
+	    test/stdlib/test_yaml.c src/stdlib/yaml.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_yaml
 
 test-stdlib-i18n:
@@ -1820,7 +1821,7 @@ test-stdlib-template:
 
 test-stdlib-csv:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_csv \
-	    test/stdlib/test_csv.c src/stdlib/csv.c
+	    test/stdlib/test_csv.c src/stdlib/csv.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_csv
 
 test-stdlib-math:
@@ -1991,7 +1992,7 @@ test-stdlib-mdns:
 test-stdlib-ml-pipeline-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ml_pipeline_integration \
 	    test/stdlib/test_ml_pipeline_integration.c \
-	    src/stdlib/ml.c src/stdlib/csv.c src/stdlib/dataframe.c $(ORPHAN_LIBS)
+	    src/stdlib/ml.c src/stdlib/csv.c src/stdlib/dataframe.c src/stdlib/str.c $(ORPHAN_LIBS)
 	$(RUN_TEST) ./test/stdlib/test_ml_pipeline_integration
 
 test-stdlib-mlx:
@@ -2149,7 +2150,7 @@ test-stdlib-args:
 
 test-stdlib-map:
 	$(CC) $(CFLAGS) -o test/stdlib/test_map \
-	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c
+	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_map
 
 test-stdlib-md:
@@ -2391,14 +2392,18 @@ endef
 
 fuzz-json:
 	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,-DTK_STR_NO_HEAP)
+# 127.295: yaml.c's producers seal (tks_dup), so str.c links; -DTK_STR_NO_HEAP
+# builds its malloc fallback, as for fuzz-template.
 fuzz-yaml:
-	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
+	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c src/stdlib/str.c,-DTK_STR_NO_HEAP)
 # 127.295: file.c reads with tk_strlen; -DTK_STR_NO_HEAP keeps that inline
 # (strlen) with no sealed-heap state to link, as for fuzz-json.
 fuzz-toml:
 	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c src/stdlib/file.c $(TOML_SRCS),$(TOML_FLAGS) -DTK_STR_NO_HEAP -lpthread)
+# 127.295: toon.c's producers seal (tks_dup), so str.c links; -DTK_STR_NO_HEAP
+# builds its malloc fallback, as for fuzz-yaml.
 fuzz-toon:
-	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
+	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c src/stdlib/str.c,-DTK_STR_NO_HEAP)
 fuzz-xml:
 	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c src/stdlib/str.c,)
 # 127.295: tmpl_render/tmpl_renderhtml return sealed strings, which are never

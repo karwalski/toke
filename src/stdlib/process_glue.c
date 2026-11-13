@@ -9,6 +9,7 @@
 #include "process.h"
 #include "capabilities.h"   /* 124.4c: process.spawn capability gate */
 #include "tk_runtime.h"     /* 127.241: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -25,7 +26,7 @@
  * `sh -c cmdstr` path, which was a shell-injection sink. */
 static int64_t spawn_cmdstr(const char *cmdstr) {
     if (!cmdstr) return 0;
-    size_t len = strlen(cmdstr);
+    size_t len = tk_strlen(cmdstr);
     char *buf = (char *)malloc(len + 1);
     if (!buf) return 0;
     const char **argv = (const char **)malloc((len / 2 + 2) * sizeof(char *));

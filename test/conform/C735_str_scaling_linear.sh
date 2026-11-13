@@ -17,11 +17,13 @@
 # loop and the `.len` + charat loop at N and 4N; each must grow by at most 6x
 # in INSTRUCTIONS RETIRED (linear ~4, quadratic ~16; load cannot move a
 # count).  Control, in this script: the same `.len` + charat loop over a
-# string from a producer that is NOT converted (str.frombytes, whose result is
-# malloc'd by the [byte] unpack) must still be quadratic -- charat, not `.len`
+# string from a producer that is NOT converted (env.getor, whose result
+# env.tki declares caller-owned, so it stays malloc'd -- runtime-abi §3.1,
+# ninth tranche; str.frombytes served here until the sixteenth tranche
+# sealed it) must still be quadratic -- charat, not `.len`
 # alone, because since step 4 (C737) a loop-invariant `.len` is hoisted and is
 # linear even on an unsealed string — so the gate is seen to fail on
-# this host, with this counter.  If str.frombytes is ever sealed, pick another
+# this host, with this counter.  If env.getor is ever sealed, pick another
 # unconverted producer (scripts/check_str_strlen.py --census lists them).
 #
 # Negative control: TOKE=<tkc built from main fb0592a1> — all three FAIL
@@ -64,7 +66,8 @@ f=main():i64{
   let n=env.getint("PAT_N";1000);
   let b=s.builder();
   lp(let i=0;i<n;i=i+1){s.add(b;"tok\(i),")};
-  let t=s.frombytes(s.bytes(s.build(b)));
+  let ok=env.set("C735_T";s.build(b));
+  let t=env.getor("C735_T";"");
   let cnt=mut.0;
   lp(let k=0;k<t.len;k=k+1){
     if(t.charat(k)==44){cnt=cnt+1}

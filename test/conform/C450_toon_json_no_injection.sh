@@ -158,8 +158,14 @@ int main(void) {
 }
 C
 
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" \
-        -o "${WORK}/t" "${WORK}/t.c" "${S}/toon.c" >"${WORK}/t.cc" 2>&1; then
+# 127.295: toon.c's results are sealed strings (str.c's string heap), so the
+# driver takes std.toon's link set from stdlib_link_set.sh as objects.
+CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --objects toon -- "${CF[@]}")" \
+    || { fail "stdlib link set (toon): see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${LINK[@]}" -lm -lpthread >"${WORK}/t.cc" 2>&1; then
     fail "build: $(grep -a -m3 -E 'error' "${WORK}/t.cc" | head -c 400)"
 else
     "${WORK}/t" >"${WORK}/t.out" 2>&1

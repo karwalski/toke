@@ -37,6 +37,7 @@
 #include "bytes_rt.h"
 #include "capabilities.h"
 #include "tk_runtime.h"   /* 127.102c: tk_current_error + tk_err_box (127.109) */
+#include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -128,11 +129,9 @@ int64_t tk_zip_entries_w(int64_t handle)
         int64_t *slot = (int64_t *)malloc(TK_ZIPENTRY_SLOTS * sizeof(int64_t));
         if (!slot) break;
         /* The archive owns its names and is closed independently of this
-         * array, so copy rather than alias. */
-        size_t len = strlen(e->name);
-        char *name = (char *)malloc(len + 1);
+         * array, so copy rather than alias -- a sealed copy (127.295). */
+        char *name = tks_strdup(e->name);
         if (!name) { free(slot); break; }
-        memcpy(name, e->name, len + 1);
 
         slot[0] = (int64_t)(intptr_t)name;   /* .name           */
         slot[1] = (int64_t)e->size;          /* .size           */

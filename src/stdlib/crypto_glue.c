@@ -9,9 +9,30 @@
 #include "crypto.h"
 #include "capabilities.h"   /* 121.42 (5): sha256file/sha256verify read a file */
 #include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
+#include "tk_strhdr.h"  /* 127.295: sealed strings */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/*
+ * 127.295 (runtime-abi §3.1, fifteenth tranche) -- every str this glue hands
+ * toke is sealed: crypto.sha256file, crypto.tohex / to_hex, crypto.randomhex
+ * (and so str.hexid / str.randhex, which call it) and crypto.randombase64url.
+ * crypto.c's crypto_to_hex and crypto_sha256file stay malloc'd: crypto.h
+ * documents both as caller-owned, and crypto_sha256verify frees
+ * crypto_sha256file's result (which is crypto_to_hex's).  So the seal
+ * happens here, at the boundary: seal_take() makes the sealed copy toke
+ * keeps and frees the malloc'd original, handing the original over unsealed
+ * only if the copy cannot be made.  A hex or base64url string holds no 0
+ * byte.  No C code calls these wrappers and frees the result.
+ */
+static const char *seal_take(const char *s) {
+    if (!s) return NULL;
+    char *t = tks_strdup(s);
+    if (!t) return s;
+    free((void *)s);
+    return t;
+}
 
 /* Stage 5 (114.4): crypto hashes now consume real [byte] (binary-safe, holds
  * 0x00) and RETURN raw [byte] digests — not hex strings. Callers render with
@@ -45,7 +66,7 @@ int64_t tk_crypto_hmacsha256_w(int64_t key, int64_t data) {
 int64_t tk_crypto_sha256file_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
-    const char *hex = crypto_sha256file((const char *)(intptr_t)path);
+    const char *hex = seal_take(crypto_sha256file((const char *)(intptr_t)path));
     return hex ? (int64_t)(intptr_t)hex : 0;
 }
 int64_t tk_crypto_sha256verify_w(int64_t path, int64_t expected) {
@@ -67,7 +88,7 @@ int64_t tk_crypto_constanttimeequal_w(int64_t a, int64_t b) {
 int64_t tk_crypto_tohex_w(int64_t data) {
     uint8_t *buf; uint64_t n = tk_bytes_unpack(data, &buf);
     ByteArray ba = { buf, n };
-    const char *hex = crypto_to_hex(ba);
+    const char *hex = seal_take(crypto_to_hex(ba));
     free(buf);
     return hex ? (int64_t)(intptr_t)hex : 0;
 }
@@ -75,7 +96,7 @@ int64_t tk_crypto_tohex_w(int64_t data) {
 /* crypto.randomhex(n) — generate n random bytes, return as hex string */
 int64_t tk_crypto_randomhex_w(int64_t n) {
     ByteArray ba = crypto_randombytes((size_t)n);
-    const char *hex = crypto_to_hex(ba);
+    const char *hex = seal_take(crypto_to_hex(ba));
     free((void*)ba.data);
     return (int64_t)(intptr_t)hex;
 }
@@ -119,8 +140,8 @@ int64_t tk_crypto_randombase64url_w(int64_t n) {
     ByteArray ba = crypto_randombytes((size_t)n);
     /* Simple base64url encode */
     static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    size_t olen = ((ba.len + 2) / 3) * 4 + 1;
-    char *out = (char *)malloc(olen);
+    size_t olen = ((ba.len + 2) / 3) * 4;
+    char *out = tks_alloc(olen);   /* 127.295: sealed below */
     if (!out) { free((void*)ba.data); return 0; }
     size_t j = 0;
     for (size_t i = 0; i < ba.len; i += 3) {
@@ -134,5 +155,5 @@ int64_t tk_crypto_randombase64url_w(int64_t n) {
     }
     out[j] = '\0';
     free((void*)ba.data);
-    return (int64_t)(intptr_t)out;
+    return (int64_t)(intptr_t)tks_seal(out, j);
 }
