@@ -8,9 +8,9 @@
 # now written with the source's spelling: `(P1;P2):R`, each part rendered as
 # any other .tki type (bare scalars, `[T]` arrays, records by name).
 #
-# Importers do not read the spelling yet: an imported function-typed field,
-# parameter or return stays TY_UNKNOWN in the checker exactly as with "("
-# (case 8 pins that the importing module checks and runs as before).
+# Importers read the spelling since 127.377 (C1440): an imported
+# function-typed field, parameter or return is a function value.  Case 8
+# pins that the importing module checks and runs as before.
 #
 # Negative control: TKC built from integrate/z-wave-1113b (c0a8bee7) --
 # cases 1-7 red (each spelled "("); case 8 green on both.

@@ -1345,6 +1345,55 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth);
  * `[T]`, `[K:V]` (nested to any depth the spelling carries, bounded by
  * `depth`), or an imported struct name.  NULL for anything else, so an
  * unrecognised spelling stays TY_UNKNOWN as before. */
+static Type *tki_compound_type(Ctx *cx, const char *s, size_t len, int depth);
+static Type *mk_func_sig(Ctx *cx, int np, Type **pts, Type *ret);   /* 124.0c */
+/* 127.377: a function type as --emit-interface spells it since 127.376,
+ * `(P1;P2):R` (`():R` for none) -- the same TY_FUNC signature func_type_sig
+ * builds for a function type written in this module, so a function-typed
+ * field, parameter or return of another module is checked and called as one
+ * declared here.  Left unknown, `let g=l.getf(); g(4)` lowered the call as
+ * its argument and `l.ap(1;20)` passed an integer where a function is called.
+ * A part this reader cannot type (another module's qualified type, a sum)
+ * is TY_UNKNOWN, matching anything, as in a local signature.  Anything that
+ * is not the whole shape -- the bare "(" a pre-127.376 interface wrote --
+ * is NULL, so it stays untyped as before. */
+static Type *tki_func_type(Ctx *cx, const char *b, size_t len, int depth) {
+    Arena *A = cx->env->arena;
+    size_t close = 0; int pd = 0, bd = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (b[i] == '[') bd++;
+        else if (b[i] == ']') bd--;
+        else if (b[i] == '(') pd++;
+        else if (b[i] == ')' && --pd == 0) { close = i; break; }
+        if (bd < 0 || pd < 0) return NULL;
+    }
+    if (!close || bd != 0 || close + 2 >= len || b[close + 1] != ':') return NULL;
+    int np = 0;
+    if (close > 1) {
+        np = 1; pd = bd = 0;
+        for (size_t i = 1; i < close; i++) {
+            if (b[i] == '[') bd++; else if (b[i] == ']') bd--;
+            else if (b[i] == '(') pd++; else if (b[i] == ')') pd--;
+            else if (b[i] == ';' && !pd && !bd) np++;
+        }
+    }
+    Type **pts = np > 0 ? (Type **)arena_alloc(A, (size_t)np * sizeof(Type *)) : NULL;
+    if (np > 0 && !pts) return NULL;
+    size_t st = 1; int k = 0; pd = bd = 0;
+    for (size_t i = 1; i <= close && np > 0; i++) {
+        if (i < close) {
+            if (b[i] == '[') bd++; else if (b[i] == ']') bd--;
+            else if (b[i] == '(') pd++; else if (b[i] == ')') pd--;
+        }
+        if (i == close || (b[i] == ';' && !pd && !bd)) {
+            Type *pt = i > st ? tki_compound_type(cx, b + st, i - st, depth + 1) : NULL;
+            pts[k++] = pt ? pt : mk_type(A, TY_UNKNOWN);
+            st = i + 1;
+        }
+    }
+    Type *rt = tki_compound_type(cx, b + close + 2, len - close - 2, depth + 1);
+    return mk_func_sig(cx, np, pts, rt ? rt : mk_type(A, TY_UNKNOWN));
+}
 static Type *tki_compound_type(Ctx *cx, const char *s, size_t len, int depth) {
     Arena *A = cx->env->arena;
     char b[128];
@@ -1352,6 +1401,7 @@ static Type *tki_compound_type(Ctx *cx, const char *s, size_t len, int depth) {
     memcpy(b, s, len); b[len] = '\0';
     Type *t = tki_scalar_type(A, b);
     if (t) return t;
+    if (b[0] == '(') return tki_func_type(cx, b, len, depth);   /* 127.377 */
     if (b[0] != '[') {
         if (strchr(b, '!') || strchr(b, '.') || strchr(b, ':') ||
             strchr(b, ']')) return NULL;
@@ -1359,11 +1409,15 @@ static Type *tki_compound_type(Ctx *cx, const char *s, size_t len, int depth) {
     }
     if (len < 3 || b[len - 1] != ']') return NULL;
     /* the ':' of a map is the one at bracket depth 1 */
-    size_t colon = 0; int d = 0;
+    size_t colon = 0; int d = 0, pd = 0;
     for (size_t i = 0; i < len; i++) {
         if (b[i] == '[') d++;
         else if (b[i] == ']') d--;
-        else if (b[i] == ':' && d == 1 && !colon) colon = i;
+        /* 127.377: a function type's own ':' -- inside its parentheses, or
+         * the one after them -- is no map's: `[(i64):i64]` is an array. */
+        else if (b[i] == '(') pd++;
+        else if (b[i] == ')') pd--;
+        else if (b[i] == ':' && d == 1 && !pd && b[i - 1] != ')' && !colon) colon = i;
     }
     if (d != 0) return NULL;
     if (!colon) {
@@ -1463,6 +1517,10 @@ static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
                  * Left TY_UNKNOWN, a map field of an imported struct lowered
                  * `.set` / `.len` / `.contains` as the array glue. */
                 if (!ft && sp && sp[0] == '[' && !it->is_std)
+                    ft = tki_compound_type(cx, sp, strlen(sp), depth + 1);
+                /* 127.377: a function-typed field, `(i64):i64`.  Left
+                 * unknown, `let c=r.cb; c(4)` lowered as its argument. */
+                if (!ft && sp && sp[0] == '(' && !it->is_std)
                     ft = tki_compound_type(cx, sp, strlen(sp), depth + 1);
                 /* 127.333: a std record's array field whose innermost
                  * element is str/bool/f64 (`httpresp.headers` "[[str]]",
@@ -2451,6 +2509,13 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
                 char pb[256];
                 const char *mp = import_module_path(cx, ab, pb, sizeof pb);
                 size_t rl = strlen(ret);
+                /* 127.377: a function returned from another user module,
+                 * `(i64):i64`.  Left unknown, `let g=l.getf(); g(4)` was
+                 * no function value and lowered the call as its argument. */
+                if (mp && strncmp(mp, "std.", 4) != 0 && ret[0] == '(') {
+                    Type *ft = tki_compound_type(cx, ret, rl, 0);
+                    if (func_has_sig(ft)) return ft;
+                }
                 if (mp && strncmp(mp, "std.", 4) != 0 && rl > 4
                     && ret[0] == '[' && ret[rl - 1] == ']') {
                     Type *mt = tki_compound_type(cx, ret, rl, 0);
@@ -2462,6 +2527,10 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
                     if (mt && mt->kind == TY_ARRAY) {
                         Type *at = repr_payload_type(cx, ret);
                         if (at) return at;
+                        /* 127.377: an array of function values
+                         * (`[(i64):i64]`), whose elements are called as a
+                         * same-module `@((i64):i64)`'s are. */
+                        if (func_has_sig(mt->elem)) return mt;
                     }
                 }
             }
@@ -4542,6 +4611,44 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
                  "(%s.tki), got '%s'", i + 1, alias, member, en, mpath + 4, gn);
         diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col, msg,
                   "expected", en, "got", gn, (const char *)NULL);
+    }
+}
+
+/* 127.377: `alias.fn(..)` into another USER module, at a parameter its
+ * interface declares as a function type (`(i64):i64`): the argument is
+ * judged by the rule a same-module call applies to that parameter
+ * (types_compat, or an integer literal that fits), so `l.ap(1;20)` is E4031
+ * as `ap(1;20)` is.  Untyped, it passed --check and the callee called the
+ * integer (SIGSEGV).  Only function-typed parameters: the other parameters
+ * of a user-module call are not judged (127.378).  No `fix`: which function
+ * was meant is not decidable. */
+static void check_user_fn_args(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 2 || !cx->env || !cx->env->names) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return;
+    if (alias_shadowed(cx, callee->children[0])) return;
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath || strncmp(mpath, "std.", 4) == 0) return;
+    Decl *ad = tc_lookup(cx->env->names->module_scope, alias, (int)strlen(alias));
+    if (ad && ad->kind != DECL_IMPORT_ALIAS) return;
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
+    int actual = call->child_count - 1;
+    if (!f || !f->param_types || f->param_count != actual) return;
+    for (int i = 0; i < actual; i++) {
+        const char *ps = f->param_types[i];
+        const Node *an = call->children[i + 1];
+        if (!ps || ps[0] != '(' || !an) continue;
+        Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
+        const Type *at = an->rtype;
+        if (!func_has_sig(pt) || !at || at->kind == TY_UNKNOWN) continue;
+        if (types_compat(at, pt) || lit_narrows(cx->src, an, pt)) continue;
+        if (subtree_reported(cx, an) || !tc_first_report(cx, an)) continue;
+        emit_mm(cx, an, pt, at, NULL);
     }
 }
 
@@ -6857,6 +6964,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * arity and the member's existence, nothing wider. */
             check_tki_call(cx,node);
             check_tki_arg_types(cx,node);   /* 138.3 */
+            check_user_fn_args(cx,node);    /* 127.377 */
             /* 124.2f: and reject a `str` in a parameter the runtime unpacks
              * as a toke [byte] array — the shape that made every string hash
              * to the digest of the empty string, and crashed on the second
@@ -6911,6 +7019,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (node->children[0]->kind==NODE_FIELD_EXPR) {
                 Type *mrt=call_decl_ret_type(cx,node);
                 if (mrt&&mrt->kind==TY_MAP) return mrt;
+                /* 127.377: and a function value (`(i64):i64`), so a binding
+                 * of it (fnval_bind_sig reads the initialiser's rtype) is
+                 * called through, as a same-module `let g=getf()` is. */
+                if (func_has_sig(mrt)) return mrt;
                 /* 138.3: and a declared scalar return, in place too
                  * (`str.nowunix()/86400`). */
                 Type *srt=std_scalar_ret(cx,node);
@@ -7330,6 +7442,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           "got",got,(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
+        }
+        /* 127.377: a function-typed field of a record another user module
+         * returns, read in place (`let c=l.mk().cb`).  infer() adopts an
+         * in-place imported return only for a map, so the base is untyped
+         * here, and `c(4)` was no function value: it lowered as its
+         * argument.  The declared record (call_decl_ret_type, the 127.66
+         * rule) answers the FIELD's type when that is a function signature;
+         * the base stays as it was and every other field stays unknown. */
+        if (base->kind==TY_UNKNOWN&&node->children[0]
+            &&node->children[0]->kind==NODE_CALL_EXPR) {
+            Type *drt=call_decl_ret_type(cx,node->children[0]);
+            for (int i=0;drt&&drt->kind==TY_STRUCT&&i<drt->field_count;i++)
+                if (drt->field_names[i]&&strcmp(drt->field_names[i],fname)==0)
+                    return func_has_sig(drt->field_types[i])
+                           ?drt->field_types[i]:mk_type(A,TY_UNKNOWN);
         }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         for (int i=0;i<base->field_count;i++)
