@@ -62,8 +62,6 @@ src/stdlib/tls.c 1
 src/stdlib/tls_glue.c 1
 src/stdlib/toon.c 2
 src/stdlib/webview.c 3
-src/stdlib/xlsx.c 6
-src/stdlib/xlsx_glue.c 1
 src/stdlib/yaml.c 4
 src/stdlib/zip.c 1
 src/stdlib/zip_glue.c 1
