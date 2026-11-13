@@ -607,6 +607,10 @@ The `mt` keyword introduces a match expression. It is a reserved keyword (Sectio
 2. Each arm body is inferred to some type `Ti`.
 3. All arm body types must be equal. Violation: `[errors.md E4011]`.
 4. The result type of the match expression is the common arm type.
+5. Variant arms (`$variant:binding`) select a variant of a sum type, or the
+   `$ok`/`$err` side of an error union. A scrutinee whose type is a record
+   (plain fields, no variants) cannot be matched by variant arms.
+   Violation: `[errors.md E4080]`.
 
 ### 8.2 Exhaustiveness
 
@@ -725,6 +729,7 @@ The following error codes are referenced by this specification:
 | E4050 | 7.1        | spawn argument not callable                 |
 | E4051 | 7.1        | await argument not a Task                   |
 | E4052 | 7.1        | Spawned function has parameters             |
+| E4080 | 8.1        | Match on a record value names variants      |
 | E5001 | 7.3        | Value escapes arena scope                   |
 
 ---

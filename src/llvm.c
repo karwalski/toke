@@ -1424,6 +1424,11 @@ static const char *tki_type_to_llvm(const char *toke_type) {
     if (!strcmp(toke_type, "u32"))  return "i32";
     if (!strcmp(toke_type, "bool")) return "i1";
     if (!strcmp(toke_type, "void")) return "void";
+    /* 127.377: a function type, `(i64):i64` (127.376's spelling), is a
+     * function value: an i64 (a function address, or a closure's env+1),
+     * which is how the defining module declares the parameter.  The bare
+     * "(" an older interface wrote stays i8*, as before. */
+    if (toke_type[0] == '(' && strstr(toke_type, "):")) return "i64";
     return "i8*"; /* str, arrays, structs — all pointers */
 }
 
@@ -3165,6 +3170,30 @@ static int fnv_owned(Ctx *c, const Node *n) {
     if (n->kind != NODE_CALL_EXPR || !tk_type_is_fnval(n->rtype) || n->child_count < 1)
         return 0;
     const Node *callee = n->children[0];
+    /* 127.377: a function of another USER module returning a function
+     * value is a toke function like any other: its return hands the caller
+     * a reference (the 124.0c item 3 rule), so the result is owned, exactly
+     * as for `getf()` declared here.  Registered from that module's .tki as
+     * <module path, '.'->'_'>_<member>. */
+    if (callee->kind == NODE_FIELD_EXPR && callee->child_count >= 2
+        && callee->children[0] && callee->children[0]->kind == NODE_IDENT
+        && callee->children[1]) {
+        char al[NAME_BUF], mb[NAME_BUF];
+        tok_cp(c->src, callee->children[0], al, sizeof al);
+        tok_cp(c->src, callee->children[1], mb, sizeof mb);
+        if (name_is_local(c, al)) return 0;
+        for (int ii = 0; ii < c->import_count; ii++) {
+            if (c->imports[ii].is_std || strcmp(c->imports[ii].alias, al)) continue;
+            char mg[512]; int ml = 0;
+            for (const char *mp = c->imports[ii].module; *mp && ml < 250; mp++)
+                mg[ml++] = (*mp == '.') ? '_' : *mp;
+            mg[ml] = '\0';
+            snprintf(mg + ml, sizeof mg - (size_t)ml, "_%s", mb);
+            const FnSig *s = lookup_fn(c, mg);
+            return s && s->is_internal;
+        }
+        return 0;
+    }
     if (callee->kind != NODE_IDENT) return 0;          /* a std/module call borrows */
     char nm[NAME_BUF]; tok_cp(c->src, callee, nm, sizeof nm);
     if (name_is_local(c, nm)) return 1;                /* a function-value call */
