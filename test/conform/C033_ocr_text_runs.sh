@@ -783,10 +783,23 @@ int main(void)
     return 0;
 }
 CEOF
-if cc -std=c99 -Wall -Wextra -Wpedantic -Werror -U__APPLE__ \
+# 127.295: ocr.c reads lengths with tk_strlen, whose string-heap state lives
+# in str.c, so the driver links std.ocr's link set from stdlib_link_set.sh
+# --objects (built with the ordinary host flags) --except ocr.c, which is
+# compiled here on its own with -U__APPLE__ and -Werror exactly as before.
+NE_CF=(-std=c99 -D_GNU_SOURCE -g -O1 -iquote "${REPO_ROOT}/src/stdlib" -I"${REPO_ROOT}/src/stdlib")
+NE_LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${REPO_ROOT}/src/stdlib" \
+        --tkc "${TKC}" --except ocr.c --objects ocr -- "${NE_CF[@]}" 2> "${WORK}/noengine.ls")" \
+    || NE_LINKSET=""
+NE_LINK=(); while IFS= read -r l; do [ -n "$l" ] && NE_LINK+=("$l"); done <<< "${NE_LINKSET}"
+if [ -n "${NE_LINKSET}" ] && \
+   cc -std=c99 -Wall -Wextra -Wpedantic -Werror -U__APPLE__ \
+      -iquote "${REPO_ROOT}/src/stdlib" -c -o "${WORK}/ocr_noengine.o" \
+      "${REPO_ROOT}/src/stdlib/ocr.c" > "${WORK}/noengine.log" 2>&1 && \
+   cc -std=c99 -Wall -Wextra -Wpedantic -Werror \
       -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/noengine" \
-      "${WORK}/noengine.c" "${REPO_ROOT}/src/stdlib/ocr.c" \
-      > "${WORK}/noengine.log" 2>&1; then
+      "${WORK}/noengine.c" "${WORK}/ocr_noengine.o" "${NE_LINK[@]}" -lm -lpthread \
+      >> "${WORK}/noengine.log" 2>&1; then
     echo "PASS noengine-branch-compiles"
     PASS=$((PASS + 1))
     NOUT="$("${WORK}/noengine" 2>&1)"
@@ -802,7 +815,7 @@ if cc -std=c99 -Wall -Wextra -Wpedantic -Werror -U__APPLE__ \
 else
     fail_only "noengine-branch-compiles" \
       "src/stdlib/ocr.c does not compile with -U__APPLE__; std.ocr is broken off macOS"
-    sed 's/^/        /' "${WORK}/noengine.log"
+    sed 's/^/        /' "${WORK}/noengine.log" "${WORK}/noengine.ls" 2>/dev/null | head -20
 fi
 
 echo "--------------------------------------"

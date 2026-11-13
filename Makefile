@@ -1746,10 +1746,10 @@ test-stdlib-test:
 # _gzclose) and -lz was never on this line. Passes once linked.
 test-stdlib-log:
 	$(CC) $(CFLAGS) -o test/stdlib/test_log \
-	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c -lz
+	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c src/stdlib/str.c -lz
 	$(RUN_TEST) ./test/stdlib/test_log
 	$(CC) $(CFLAGS) -o test/stdlib/test_log_rotate \
-	    test/stdlib/test_log_rotate.c src/stdlib/log.c src/stdlib/tk_time.c -lz
+	    test/stdlib/test_log_rotate.c src/stdlib/log.c src/stdlib/tk_time.c src/stdlib/str.c -lz
 	$(RUN_TEST) ./test/stdlib/test_log_rotate
 
 test-stdlib-toon:

@@ -8,35 +8,46 @@
 
 #include "log.h"
 #include "capabilities.h"   /* 121.22: log.openaccess/openerror are fs.write sinks */
+#include "tk_array.h"      /* 127.400: fields is [[str]] */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 /*
- * Decode a toke-format array of strings into a flat const char ** array.
- * Toke array layout:  ptr[-1] = element count (i64)
- *                     ptr[0..count-1] = elements as i64 (char * as integer)
+ * Decode a log `fields` argument into a flat key/value const char ** array.
+ *
+ * 127.400: the declared type (stdlib/log.tki, docs/stdlib/log.md) is
+ * [[str]] -- an array of two-element (key; value) string arrays, e.g.
+ * @(@("host"; "0.0.0.0"); @("port"; "8080")).  This used to read the OUTER
+ * array as a flat interleaved key/value list and cast each inner array handle
+ * to a char *, so every field printed the bytes of an array block as text.
+ * Each element is now read as an array through tk_array.h: slot 0 is the key,
+ * slot 1 the value.  An element with fewer than two slots carries no pair and
+ * is skipped; slots past the second are ignored.  The flattened result is
+ * what tk_log_info/warn/error/debug take (fields[2i] = key, [2i+1] = value).
  */
-static void decode_log_fields(int64_t fields_map,
+static void decode_log_fields(int64_t fields_arr,
                                const char ***out_fields, int *out_count)
 {
     *out_fields = NULL;
     *out_count  = 0;
-    if (fields_map == 0) return;
 
-    int64_t *ptr = (int64_t *)(intptr_t)fields_map;
-    int64_t len  = ptr[-1];
-    if (len <= 0) return;
+    int64_t n = tk_arr_len(fields_arr);
+    if (n <= 0 || n > (int64_t)(INT32_MAX / 2)) return;
 
-    int count = (int)(len & ~(int64_t)1);
-    if (count == 0) return;
-
-    const char **arr = (const char **)malloc((size_t)count * sizeof(const char *));
+    const char **arr = (const char **)malloc((size_t)n * 2 * sizeof(const char *));
     if (!arr) return;
 
-    for (int i = 0; i < count; i++) {
-        arr[i] = (const char *)(intptr_t)ptr[i];
+    const int64_t *outer = (const int64_t *)(intptr_t)fields_arr;
+    int count = 0;
+    for (int64_t i = 0; i < n; i++) {
+        int64_t pair = outer[i];
+        if (tk_arr_len(pair) < 2) continue;
+        const int64_t *kv = (const int64_t *)(intptr_t)pair;
+        arr[count++] = (const char *)(intptr_t)kv[0];
+        arr[count++] = (const char *)(intptr_t)kv[1];
     }
+    if (count == 0) { free(arr); return; }
     *out_fields = arr;
     *out_count  = count;
 }
@@ -100,39 +111,42 @@ int64_t tk_log_accessformat_w(int64_t fmt_ptr)
     return (int64_t)tk_access_log_set_format(fmt);
 }
 
+/* log.info/warn/error/debug return bool (.tki): true exactly when the line
+ * was written -- false when the level filters it or the write fails (story
+ * 127.406; these used to return 0, so every call read as false). */
 int64_t tk_log_info_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_info((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_info((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 
 int64_t tk_log_error_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_error((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_error((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 
 int64_t tk_log_warn_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_warn((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_warn((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 int64_t tk_log_debug_w(int64_t msg, int64_t fields_map) {
     const char **fields = NULL;
     int field_count = 0;
     decode_log_fields(fields_map, &fields, &field_count);
-    tk_log_debug((const char *)(intptr_t)msg, fields, field_count);
+    int wrote = tk_log_debug((const char *)(intptr_t)msg, fields, field_count);
     free(fields);
-    return 0;
+    return wrote ? 1 : 0;
 }
 
 int64_t tk_log_setformat_w(int64_t fmt) {

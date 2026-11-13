@@ -8,6 +8,10 @@
  *  2. log.warn — output contains "warn".
  *  3. With TK_LOG_LEVEL=ERROR, log.info returns 0 (filtered).
  *  4. With TK_LOG_LEVEL=ERROR, log.error returns 1 (emitted).
+ * 13. Level names are case-insensitive: "error", "Debug" (127.407).
+ *  0. An unknown name passed to tk_log_set_level before the first log call
+ *     keeps the TK_LOG_LEVEL level instead of forcing INFO (127.411).  Must
+ *     run first, while the level is still uninitialised.
  */
 
 #include <stdio.h>
@@ -67,6 +71,17 @@ static char *read_file(const char *path)
 int main(void)
 {
     const char *tmp = "/tmp/test_log_output.txt";
+
+    /* ---- Test 0: unknown name before first use keeps TK_LOG_LEVEL ------ */
+    setenv("TK_LOG_LEVEL", "ERROR", 1);
+    tk_log_set_level("verbose");      /* unknown: level stays env's ERROR */
+    redirect_stderr_to(tmp);
+    int r0a = tk_log_info("info-should-be-filtered", NULL, 0);
+    int r0b = tk_log_error("error-kept", NULL, 0);
+    fflush(stderr);
+    restore_stderr();
+    ASSERT(r0a == 0, "set_level(unknown) before first use: TK_LOG_LEVEL=ERROR filters info (127.411)");
+    ASSERT(r0b == 1, "set_level(unknown) before first use: TK_LOG_LEVEL=ERROR keeps error (127.411)");
 
     /* ---- Test 1: log.info with fields ---------------------------------- */
     setenv("TK_LOG_LEVEL", "INFO", 1);
@@ -262,6 +277,27 @@ int main(void)
     fflush(stderr);
     restore_stderr();
     ASSERT(r12 == 1, "tk_log_with_context with NULL context doesn't crash");
+
+    /* ---- Test 13: level names are case-insensitive (127.407) ---------- */
+    tk_log_set_format("json");
+    tk_log_set_level("error");
+    redirect_stderr_to(tmp);
+    int r13a = tk_log_info("filtered by lower-case error", NULL, 0);
+    int r13b = tk_log_error("kept at lower-case error", NULL, 0);
+    fflush(stderr);
+    restore_stderr();
+    ASSERT(r13a == 0, "set_level(\"error\"): log.info filtered (127.407)");
+    ASSERT(r13b == 1, "set_level(\"error\"): log.error emitted (127.407)");
+    tk_log_set_level("Debug");
+    redirect_stderr_to(tmp);
+    int r13c = tk_log_debug("kept at mixed-case Debug", NULL, 0);
+    tk_log_set_level("verbose");   /* unknown: level stays debug */
+    int r13d = tk_log_debug("still kept after unknown name", NULL, 0);
+    fflush(stderr);
+    restore_stderr();
+    ASSERT(r13c == 1, "set_level(\"Debug\"): log.debug emitted (127.407)");
+    ASSERT(r13d == 1, "set_level(unknown) keeps the previous level");
+    tk_log_set_level("INFO");
 
     /* ---- Summary ------------------------------------------------------- */
     if (failures == 0) { printf("All log tests passed.\n"); return 0; }

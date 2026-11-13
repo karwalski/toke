@@ -568,6 +568,37 @@ and free nothing they did not allocate.  Gates: C1540 (an ASan C driver over
 allocations failing in turn, under `TK_STR_VERIFY=1`, plus a toke program)
 and C1541 (the same over every `std.soap` producer and its glue).
 
+**Step 5, eleventh tranche (story 127.295, Batch Z180).**  `std.log`,
+`std.xlsx` and `std.ocr`, each converted completely (`log.c`, `xlsx.c`,
+`xlsx_glue.c`, `ocr.c` and `ocr_glue.c` read only with `tk_strlen`; their
+ratchet entries are deleted).  `std.log` hands toke no strings -- every entry
+point returns an int or a handle -- so only its readers change.  Every str
+`std.xlsx` hands toke (sheet names, the four str slots of each `$xlsxcell`,
+`xlsx.datefromserial`'s text) and every str `std.ocr` hands toke (each
+`$ocrrun`'s text, the `ocr.text` / `ocr.textfile` join, `ocr.languages`) is a
+sealed copy (`tks_dup` of the C-string length) made in the glue; a cell
+whose four strings cannot all be made no longer frees the ones that were.
+`ocr.languages` used to hand toke `ocr.c`'s static list buffer itself, which
+every `ocr_languages()` call (`ocr.setlanguages` makes one) clears and
+refills under a string the program still held; it is now a copy.
+`ocr.engine` and `xlsx.datesystem` stay string literals.  Left as they are,
+on purpose: the workbook's names, rels, shared strings and cells (the book's
+and sheet's own malloc'd storage, freed by `xlsx_close` / `xlsx_sheet_free`),
+the runs' text and the `ocr_page_text` join (freed by `ocr_page_free` and the
+glue), `ocr.c`'s static error and language buffers, and `log.c`'s strdup'd
+sink paths, split dir/stem/ext and redacted copies (the log's own storage).
+`test-stdlib-log` links `str.c`; the hand-built harnesses that compiled
+`log.c` or `ocr.c` without it (C205, and C033's `-U__APPLE__` no-engine
+build) take the module's link set from `stdlib_link_set.sh --objects`
+(`--except` the file they compile or `#include` themselves).  Not in this
+tranche: `cache.c` (linked with `std.http`, but nothing in the tree calls
+`http_cache_*` and nothing tests it) and `json.c` / `json_glue.c` (core;
+the next tranche).  Gates: C1560 (an ASan C driver over `std.log`'s readers
+with every input sealed, against the same driver on unsealed copies, plus a
+toke program), C1561 (an ASan C driver over every `std.xlsx` glue producer on
+a zipfile-written workbook, plus a toke program) and C1562 (the same over
+`std.ocr`'s glue, including Vision recognition when the host has it).
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses

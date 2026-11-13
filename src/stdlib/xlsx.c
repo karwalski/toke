@@ -22,10 +22,18 @@
  * and `<cellStyleXfs>` and `<cellXfs>` both contain `<xf>` elements that mean
  * different things.  So this is a 200-line pull scanner over the four parts
  * we read, which is smaller than the adapter the other route would need.
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every length this file takes is read
+ * with tk_strlen (tk_strhdr.h).  Nothing here is handed to toke directly --
+ * the glue (xlsx_glue.c) copies each sheet name and cell string into a sealed
+ * string -- so the workbook's names, rels, shared strings and cells are the
+ * book's and sheet's own malloc'd storage, freed by xlsx_close /
+ * xlsx_sheet_free, and stay malloc'd.
  */
 
 #include "xlsx.h"
 #include "zip.h"
+#include "tk_strhdr.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,7 +113,7 @@ static void buf_free(Buf *b) { free(b->p); b->p = NULL; b->n = 0; b->cap = 0; }
 
 static char *xdup(const char *s)
 {
-    size_t n = strlen(s);
+    size_t n = tk_strlen(s);
     char *r = (char *)malloc(n + 1);
     if (r) memcpy(r, s, n + 1);
     return r;
@@ -254,7 +262,7 @@ static int xml_next(XmlScan *s, XmlTok *t)
 
 static int xml_is(const XmlTok *t, const char *name)
 {
-    size_t n = strlen(name);
+    size_t n = tk_strlen(name);
     return t->nlen == n && !memcmp(t->name, name, n);
 }
 
@@ -269,7 +277,7 @@ static int xml_attr(const XmlTok *t, const char *want, int prefixed,
                     const char **val, size_t *vlen)
 {
     const char *p = t->attrs, *end = t->attrs + t->alen;
-    size_t wn = strlen(want);
+    size_t wn = tk_strlen(want);
 
     while (p < end) {
         while (p < end && xml_isspace(*p)) p++;
@@ -659,12 +667,12 @@ static int has_entry(TkXlsxBook *wb, const char *name)
  * otherwise silently lose every string in the workbook. */
 static const char *find_entry_ending(TkXlsxBook *wb, const char *suffix)
 {
-    size_t sl = strlen(suffix);
+    size_t sl = tk_strlen(suffix);
     uint32_t n = zip_entry_count(wb->z);
     for (uint32_t i = 0; i < n; i++) {
         const TkZipEntry *e = zip_entry_at(wb->z, i);
         if (!e || e->is_dir) continue;
-        size_t nl = strlen(e->name);
+        size_t nl = tk_strlen(e->name);
         if (nl < sl) continue;
         const char *tail = e->name + (nl - sl);
         size_t k = 0;
@@ -1009,7 +1017,7 @@ static int load_workbook(TkXlsxBook *wb)
              * one we read. */
             if (xml_attr(&t, "id", 1, &v, &vl)) {
                 for (uint32_t i = 0; i < nrel; i++)
-                    if (strlen(rels[i].id) == vl && !memcmp(rels[i].id, v, vl)) {
+                    if (tk_strlen(rels[i].id) == vl && !memcmp(rels[i].id, v, vl)) {
                         pt = xdup(rels[i].target);
                         break;
                     }
