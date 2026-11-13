@@ -1,4 +1,9 @@
-# The toke-eval v0.3 → v0.4 syntax-drift decision
+---
+title: The toke-eval v0.3 → v0.4 syntax-drift decision
+slug: toke-eval-drift-decision
+section: about
+order: 15
+---
 
 **Story 132.0(c).** Epic 132's article and site copy need to state the *basis* of any
 benchmark number taken from `toke-eval/benchmark/solutions/`. That set was written in

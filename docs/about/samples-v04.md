@@ -1,4 +1,9 @@
-# v0.4 code samples — toke vs Python, every tokenizer lane
+---
+title: v0.4 code samples — toke vs Python, every tokenizer lane
+slug: samples-v04
+section: about
+order: 14
+---
 
 **Story 132.0(b).** The public site's side-by-side samples (`toke-website/templates/index.tkt`,
 `tokens.tkt`, `tokenizer.tkt`) were cut under **v0.3** syntax and quote a single

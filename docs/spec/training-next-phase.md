@@ -1,4 +1,9 @@
-# Training Next Phase — Specification and Options
+---
+title: Training Next Phase — Specification and Options
+slug: training-next-phase
+section: spec
+order: 17
+---
 
 > **Archived 2026-10-01 (story 128.24).** This is the dated record of the
 > 2026-05-23 post-Gate-2 plan. Epic 128 explicitly reopened every decision it

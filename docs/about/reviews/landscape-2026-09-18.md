@@ -1,4 +1,8 @@
-# Token-Efficiency Approaches for LLM Code Generation: A Landscape Review (September 2025 to September 2026)
+---
+title: "Token-Efficiency Approaches for LLM Code Generation: A Landscape Review (September 2025 to September 2026)"
+slug: landscape-2026-09-18
+section: about/reviews
+---
 
 > **Editor's note, 2026-09-19 (story 132.12).** This review describes toke as "LL(1), 13
 > keywords" (§ "Adjacent and competing projects"). Both are wrong, and both are our fault:

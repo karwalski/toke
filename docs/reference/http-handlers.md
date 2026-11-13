@@ -1,3 +1,10 @@
+---
+title: HTTP Handler Contract
+slug: http-handlers
+section: reference
+order: 24
+---
+
 # HTTP Handler Contract — Story 82.1.2
 
 Reference for writing dynamic HTTP handlers in toke, backed by

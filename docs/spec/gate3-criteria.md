@@ -1,4 +1,9 @@
-# Gate 3 Success Criteria — Pre-Registration
+---
+title: Gate 3 Success Criteria — Pre-Registration
+slug: gate3-criteria
+section: spec
+order: 12
+---
 
 > **Archived 2026-10-01 (story 128.24).** This is the dated record of the
 > 2026-05-24 pre-registration. It is no longer a live gate. Superseded facts:
