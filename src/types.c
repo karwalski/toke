@@ -6876,6 +6876,27 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count>1) {
             Type *src_t=infer(cx,node->children[0]);
             Type *dst_t=resolve_type(cx,node->children[1]);
+            /* 127.362: `x as str` reinterprets the value's word as a C string.
+             * For a composite (a record, an array, a map) that word is a
+             * pointer to slots or to an array block, never to text: the cast
+             * printed the record's bytes up to the first zero byte, and read
+             * past the allocation when no slot held one.  Refused as
+             * interpolation refuses a composite (E4032), under its own code
+             * because this is a cast, not an interpolation.  No `fix`: which
+             * field or rendering was meant is not decidable. */
+            if (dst_t->kind==TY_STR&&(src_t->kind==TY_STRUCT||src_t->kind==TY_ARRAY
+                                      ||src_t->kind==TY_MAP)) {
+                if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),"cannot cast a composite value ('%s') to str; "
+                             "'as str' does not convert a record, array or map to text",
+                             type_name(src_t));
+                    diag_emit(DIAG_ERROR,E4079,node->start,node->line,node->col,msg,
+                              "expected","a str or a scalar","got",type_name(src_t),
+                              (const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
             /* W1001: warn on potentially lossy casts between numeric types */
             if (src_t->kind!=TY_UNKNOWN&&dst_t->kind!=TY_UNKNOWN) {
                 int lossy=0;

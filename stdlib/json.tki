@@ -835,6 +835,17 @@
       "return": "void",
       "gen": "abi",
       "internal": true
+    },
+    {
+      "kind": "func",
+      "name": "json.encval",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi",
+      "internal": true
     }
   ]
 }

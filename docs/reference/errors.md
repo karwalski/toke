@@ -1309,6 +1309,31 @@ t=$r{a:i64;b:i64};
 f=main():i64{let r=$r{a:1;b:2;a:3};<r.a};
 ```
 
+### E4079
+
+**`as str` cast of a composite (record / array / map)**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+`x as str` where `x` is a record (a declared struct or sum type), an array or
+a map. The cast converts a number to its decimal text and passes a `str`
+through; it does not render a composite. Until 127.362 it reinterpreted the
+composite's handle as a C string: `S{x:3} as str` printed the record's bytes
+up to the first zero byte, and read past the allocation when no slot held one.
+This is the cast form of E4032 (interpolating a composite). There is no `fix`:
+which field, or which rendering, was meant is not decidable. Cast a field
+(`r.x as str`), or encode the value (`j.enc(r)` with `i=j:std.json`).
+
+<!-- skip-check -->
+```text
+m=test;
+t=$s{x:i64};
+f=main():i64{let r=$s{x:3};let t=r as str;<0};
+```
+
 ## Arena Errors (E5xxx)
 
 ### E5001

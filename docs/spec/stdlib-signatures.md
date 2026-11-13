@@ -140,7 +140,7 @@ f=json.writerbytes(writer:$jsonwriter):@$byte
 ABI helpers. `json.tki` exports these with `"gen":"abi"`: their parameter and
 return types are `i64` placeholders, so only the name and arity are
 established, and they are listed that way (`name/arity`):
-`arrget/2`, `arrlen/1`, `decode/1`, `encarr/3`, `encbool/1`, `encf64/1`, `encnum/1`, `encode/1`, `encstr/1`, `err/1`, `getarr/2`, `getarray/2`, `getobj/2`, `getopt/2`, `getregulations/1`, `getstr/2`, `getstring/2`, `isnullkey/2`, `kv/2`, `len/1`, `obj/1`, `ok/1`, `parse/1`, `parsearray/1`, `parseobj/1`, `print/1`, `printarr/3`, `printval/2`, `quote/1`, `strarr/1`, `strarray/1`, `stringify/1`, `tryarr/2`, `trybool/2`, `tryboolkey/2`, `tryfloat/2`, `tryfloatkey/2`, `tryint/2`, `tryintkey/2`, `trystr/2`, `trystrkey/2`, `values/1`.
+`arrget/2`, `arrlen/1`, `decode/1`, `encarr/3`, `encbool/1`, `encf64/1`, `encnum/1`, `encode/1`, `encstr/1`, `encval/2`, `err/1`, `getarr/2`, `getarray/2`, `getobj/2`, `getopt/2`, `getregulations/1`, `getstr/2`, `getstring/2`, `isnullkey/2`, `kv/2`, `len/1`, `obj/1`, `ok/1`, `parse/1`, `parsearray/1`, `parseobj/1`, `print/1`, `printarr/3`, `printval/2`, `quote/1`, `strarr/1`, `strarray/1`, `stringify/1`, `tryarr/2`, `trybool/2`, `tryboolkey/2`, `tryfloat/2`, `tryfloatkey/2`, `tryint/2`, `tryintkey/2`, `trystr/2`, `trystrkey/2`, `values/1`.
 
 ### std.toon
 

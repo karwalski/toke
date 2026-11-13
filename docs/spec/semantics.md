@@ -225,7 +225,10 @@ For a binary expression `lhs op rhs`:
 
 A cast expression `expr as T` evaluates `expr` and produces a value of type `T`.
 The source expression type is inferred but not constrained against the target
-type -- all casts are unconditionally allowed in the legacy profile.
+type -- all casts are unconditionally allowed in the legacy profile, with one
+exception: a cast to `str` from a record, an array or a map is refused
+`[errors.md E4079]`, since `as str` converts a number to text and does not
+render a composite (story 127.362).
 
 STUB: A future profile may restrict which type pairs are castable.
 

@@ -68,6 +68,7 @@ typedef enum {
 #define E4076 4076  /* `!` re-raises a user error into a different error type */
 #define E4077 4077  /* struct literal leaves out a declared field */
 #define E4078 4078  /* struct literal gives a field more than once */
+#define E4079 4079  /* `as str` cast of a composite (record / array / map) */
 
 typedef struct Type {
     TypeKind      kind;
