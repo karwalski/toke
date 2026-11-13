@@ -1,5 +1,5 @@
 ---
-title: "Toke Corpus Pipeline — Threat Model"
+title: Toke Corpus Pipeline — Threat Model
 slug: threat-model
 section: security
 order: 1
