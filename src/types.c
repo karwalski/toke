@@ -4497,6 +4497,62 @@ static void check_json_parse_as_doc(Ctx *cx, const Node *call, const char *alias
               "got", "a json.parse result", (const char *)NULL);
 }
 
+/* 127.402: the opaque std handle (a `.tki` record with no fields: strbuf,
+ * vechandle, svgelem, securebuf, ...) that a value of type `t` is or holds --
+ * itself, an array element at any depth, or a field of a plain record at any
+ * depth -- or NULL.  A map and a sum are not looked into: what j.print / j.enc
+ * do with those is 127.363's question, not this one's. */
+static int reraise_err_shape(Ctx *cx, const char *nm);
+static const Type *json_opaque_handle_in(Ctx *cx, const Type *t, int depth) {
+    if (!t || depth > 16) return NULL;
+    if (opaque_handle_type(t)) return t;
+    if (t->kind == TY_ARRAY) return json_opaque_handle_in(cx, t->elem, depth + 1);
+    if (t->kind == TY_STRUCT && t->field_count > 0 && t->field_types && t->name
+        && reraise_err_shape(cx, t->name[0] == '$' ? t->name + 1 : t->name) == 1) {
+        for (int i = 0; i < t->field_count; i++) {
+            const Type *h = json_opaque_handle_in(cx, t->field_types[i], depth + 1);
+            if (h) return h;
+        }
+    }
+    return NULL;
+}
+
+/* 127.402: `j.print(v)` / `j.enc(v)` where v is, or holds, an opaque std
+ * handle.  The handle's memory is the runtime's own (a C struct, not toke's
+ * i64-slot layout), so it has no JSON representation and codegen's
+ * descriptor path (llvm.c json_type_desc) refuses it -- but only at build
+ * time, as an E9002 internal compiler error after --check had passed.  The
+ * argument is reported here as the type mismatch it is: E4031, as for an
+ * opaque handle passed where another kind is declared (138.21) and for
+ * `j.encode(handle)`.  E9002 stays the codegen backstop.  No `fix`: which
+ * value read from the handle was meant to be printed is not decidable. */
+static void check_json_opaque_arg(Ctx *cx, const Node *call, const char *mpath,
+                                  const char *alias, const char *member) {
+    if (call->child_count != 2) return;
+    const char *sym = stdlib_symbol_for(mpath, 1, member);
+    if (!sym) return;
+    int is_print = strcmp(sym, "tk_json_print") == 0;
+    if (!is_print && strcmp(sym, "tk_json_enc_w") != 0) return;
+    const Node *an = call->children[1];
+    if (!an || !an->rtype) return;
+    const Type *h = json_opaque_handle_in(cx, an->rtype, 0);
+    if (!h) return;
+    if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+    char got[96], hn[96], msg[640];
+    snprintf(got, sizeof got, "%s", type_name(an->rtype));
+    snprintf(hn, sizeof hn, "%s", type_name(h));
+    snprintf(msg, sizeof msg,
+             "type mismatch: argument 1 of '%s.%s' %s '%s', an opaque std "
+             "handle: its memory is the runtime's own and it has no JSON "
+             "representation, so it cannot be %s; %s values read from the "
+             "handle instead", alias, member,
+             h == an->rtype ? "is a" : "holds a", hn,
+             is_print ? "printed" : "encoded", is_print ? "print" : "encode");
+    diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col, msg,
+              "expected", "a value with a JSON representation",
+              "got", got, (const char *)NULL);
+}
+
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
@@ -4547,7 +4603,10 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         return;
     }
 
-    if (strcmp(mpath, "std.json") == 0) check_json_parse_as_doc(cx, call, alias, member);   /* 138.9 */
+    if (strcmp(mpath, "std.json") == 0) {
+        check_json_parse_as_doc(cx, call, alias, member);           /* 138.9 */
+        check_json_opaque_arg(cx, call, mpath, alias, member);      /* 127.402 */
+    }
 
     const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
     if (!f || f->abi_ret || !f->param_types || f->param_count != actual) return;

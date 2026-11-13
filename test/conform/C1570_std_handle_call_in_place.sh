@@ -111,8 +111,9 @@ rm -f "${WORK}/r13.bin"
 r13="$([ -x "${WORK}/r13.bin" ] && "${RUN}" 20 "${WORK}/r13.bin" 2>&1 | tr '\n' ' ')"
 expect "13 well-typed in-place handles run" "${r13}" "ab 2 9 1 1 1 6 true true "
 
-# 14: j.enc of an in-place handle is refused as the bound form is (E9002:
-# no encoder for an opaque handle), where it printed the handle's address.
+# 14: j.enc of an in-place handle is refused as the bound form is, where it
+# printed the handle's address.  It was E9002 (codegen: no encoder for an
+# opaque handle); since 127.402 the checker reports it first as E4031.
 jb() {
     printf 'm=c1570j;\ni=vec:std.vec;\ni=io:std.io;\ni=j:std.json;\nf=main():i64{\n%s\n<0};\n' "$2" > "${WORK}/$1.tk"
     local out; out="$(cd "${WORK}" && "${RUN}" 60 "${TKC}" "$1.tk" -o "$1.bin" 2>&1)"
@@ -120,7 +121,7 @@ jb() {
 }
 expect "14 j.enc in place refused as bound" \
     "$(jb j14 'io.println(j.enc(vec.new()));') | $(jb j14b 'let v=vec.new(); io.println(j.enc(v));')" \
-    "E9002  | E9002 "
+    "E4031  | E4031 "
 
 # 15: no fix field on these diagnostics
 f15="$(cd "${WORK}" && "${TKC}" --check n2.tk 2>&1 | grep -c '"fix"')"
