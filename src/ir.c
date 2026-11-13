@@ -192,6 +192,26 @@ static void render_type_node(const Node *n, const char *src, char *buf, int size
             snprintf(buf, size, "*%s", e);
             return;
         }
+        case NODE_FUNC_TYPE: {
+            /* 127.376: a function type, `(i64;str):bool` -- params are
+             * children[0..n-2], the return children[n-1] (parse_func_type).
+             * The default below copied the head token, `(`, so a
+             * function-typed field, parameter or return was exported as
+             * "(".  Rendered with the source's spelling, ';' between
+             * parameters. */
+            int last = n->child_count - 1, o = 0;
+            o += snprintf(buf + o, (size_t)size - (size_t)o, "(");
+            for (int i = 0; i < last && o < size; i++) {
+                char p[128]; render_type_node(n->children[i], src, p, sizeof p);
+                o += snprintf(buf + o, (size_t)size - (size_t)o, "%s%s", i ? ";" : "", p);
+            }
+            if (o < size) {
+                char r[128]; r[0] = '\0';
+                if (last >= 0) render_type_node(n->children[last], src, r, sizeof r);
+                snprintf(buf + o, (size_t)size - (size_t)o, "):%s", r);
+            }
+            return;
+        }
         default: {
             char t[128]; tok_copy(n, src, t, sizeof t);
             /* strip a leading '$' sigil so .tki uses bare scalar names */

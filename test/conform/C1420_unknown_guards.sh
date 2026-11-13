@@ -12,9 +12,11 @@
 #     cannot type, was judged anyway (section A, case 1).  It now asks
 #     tk_type_has_unknown and declines, as 127.315 specified; the immutable
 #     binding (no such guard) and a fully typed mut binding are judged as
-#     before (cases 2-3).  The untyped field is `cb:(i64):i64`, which the
-#     generated .tki spells `(` (127.376); when that is fixed, case 1 needs
-#     another field spelling the checker leaves TY_UNKNOWN.
+#     before (cases 2-3).  The untyped field is `k:$u`, a field of a SUM
+#     type: imported_struct_type declines a sum, so the importer leaves it
+#     TY_UNKNOWN.  (Until 127.376 the fixture was `cb:(i64):i64`, which the
+#     generated .tki spelled `(`; it is now spelled `(i64):i64`, and an
+#     importer that learns to read that spelling would type the field.)
 #
 #   known_value_type (127.326 / 127.327): read "no TY_UNKNOWN anywhere" but
 #     always admitted a partial type.  Refusing it (tk_type_has_unknown) was
@@ -26,7 +28,8 @@
 #     distinct partial types still disagree (tk_type_identical), case 10:
 #     that leaves the binding untyped, filed as 127.375.
 #
-# Negative control: TKC built from integrate/z-wave-1113b (c1f6408b) --
+# Negative control: TKC built from integrate/z-wave-1113b (c1f6408b; case 1
+# re-checked with the `k:$u` fixture against a pre-127.374 build, 2026-11-13) --
 # case 1 red (E4031: the guard never fired); every other case green on both.
 #
 # Story: 127.374
@@ -53,9 +56,9 @@ codes() {
 mkdir -p "${WORK}/mm"
 cat > "${WORK}/mm/a_lib.tk" <<'EOF'
 m=c1420.lib;
-t=$rec{n:i64;cb:(i64):i64};
-f=inc(x:i64):i64{<x+1};
-f=recs():@$rec{ <@($rec{n:1;cb:inc}) };
+t=$u{$a:i64;$b:i64};
+t=$rec{n:i64;k:$u};
+f=recs():@$rec{ <@($rec{n:1;k:$u{$a:1}}) };
 EOF
 cat > "${WORK}/mm/b_main.tk" <<'EOF'
 m=c1420.main;
