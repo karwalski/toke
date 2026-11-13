@@ -61,8 +61,19 @@ int main(void) {
     return 1;
 }
 CEOF
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/st" "${WORK}/st.c" \
-        "${REPO_ROOT}/src/stdlib/json.c" >"${WORK}/cc.log" 2>&1; then
+# 127.295: json.c reads lengths with tk_strlen, whose string-heap state lives
+# in str.c, so std.json's link set comes from stdlib_link_set.sh --objects,
+# never a hand list.
+CF=(-std=c99 -D_GNU_SOURCE -iquote "${REPO_ROOT}/src/stdlib" -I"${REPO_ROOT}/src/stdlib")
+LINK=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${REPO_ROOT}/src/stdlib" \
+        --cc "${CC}" --objects json -- "${CF[@]}" 2>"${WORK}/ls.log")"; then
+    while IFS= read -r l; do [ -n "$l" ] && LINK+=("$l"); done <<< "${LINKSET}"
+else
+    echo "stdlib link set: $(head -c 400 "${WORK}/ls.log")" > "${WORK}/cc.log"
+fi
+if [ "${#LINK[@]}" -eq 0 ] || ! "${CC}" "${CF[@]}" -o "${WORK}/st" "${WORK}/st.c" \
+        "${LINK[@]}" -lm -lpthread >>"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: harness does not build: $(head -c 400 "${WORK}/cc.log")"
     echo ""; echo "C352: 0 passed, 1 failed"; exit 1
 fi

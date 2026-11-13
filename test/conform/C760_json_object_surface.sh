@@ -112,7 +112,19 @@ int main(void) {
 }
 C
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o t t.c "${S}/json.c" > cc.log 2>&1; then
+# 127.295: json.c reads lengths with tk_strlen, whose string-heap state lives
+# in str.c, so std.json's link set comes from stdlib_link_set.sh --objects,
+# never a hand list.
+# shellcheck disable=SC2206
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+LINK=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" \
+        --objects json -- "${CF[@]}" 2>ls.log)"; then
+    while IFS= read -r l; do [ -n "$l" ] && LINK+=("$l"); done <<< "${LINKSET}"
+else
+    echo "stdlib link set: $(head -c 600 ls.log)" > cc.log
+fi
+if [ "${#LINK[@]}" -eq 0 ] || ! "${CC}" "${CF[@]}" -o t t.c "${LINK[@]}" -lm -lpthread >> cc.log 2>&1; then
     echo "  FAIL: ASan build: $(head -c 600 cc.log)"; FAIL=$((FAIL + 1))
 else
     ASAN_OPTIONS="detect_leaks=0:abort_on_error=0" ./t > t.out 2>&1

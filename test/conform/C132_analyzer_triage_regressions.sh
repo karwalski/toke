@@ -162,8 +162,18 @@ if ! "${CC}" -std=c99 -D_GNU_SOURCE -w -I"${REPO_ROOT}/src/stdlib" \
         -c -o "${WORK}/json.o" "${JSON_SRC}" 2> "${WORK}/cc1.err"; then
     echo "FAIL build-json"; sed 's/^/        /' "${WORK}/cc1.err" | head -5; echo "C132: 0 passed, 1 failed"; exit 1
 fi
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -I"${REPO_ROOT}/src/stdlib" \
-        -o "${WORK}/h" "${WORK}/harness.c" "${WORK}/json.o" 2> "${WORK}/cc2.err"; then
+# 127.295: json.c reads lengths with tk_strlen, whose string-heap state lives
+# in str.c, so the rest of std.json's link set comes from stdlib_link_set.sh
+# --objects (--except json.c: JSON_SRC is compiled above with the counting
+# allocator), never a hand list.
+JCF=(-std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" -I"${REPO_ROOT}/src/stdlib")
+LINK_JS=()
+if LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --except json.c --cc "${CC}" \
+        --objects json -- "${JCF[@]}" 2> "${WORK}/cc2.err")"; then
+    while IFS= read -r l; do [ -n "$l" ] && LINK_JS+=("$l"); done <<< "${LINKSET}"
+fi
+if [ "${#LINK_JS[@]}" -eq 0 ] || ! "${CC}" "${JCF[@]}" \
+        -o "${WORK}/h" "${WORK}/harness.c" "${WORK}/json.o" "${LINK_JS[@]}" -lm -lpthread 2>> "${WORK}/cc2.err"; then
     echo "FAIL build-harness"; sed 's/^/        /' "${WORK}/cc2.err" | head -5; echo "C132: 0 passed, 1 failed"; exit 1
 fi
 "${WORK}/h" > "${WORK}/out" 2>&1; rc=$?

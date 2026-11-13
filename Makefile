@@ -1757,9 +1757,11 @@ test-stdlib-toon:
 	    test/stdlib/test_toon.c src/stdlib/toon.c
 	$(RUN_TEST) ./test/stdlib/test_toon
 
+# 127.295: json.c/json_glue.c read lengths with tk_strlen and the glue seals
+# what it hands toke, so the string heap (str.c) is linked.
 test-stdlib-json:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_json \
-	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c
+	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_json
 
 test-stdlib-yaml:
@@ -2386,7 +2388,7 @@ endef
 	fuzz-multipart fuzz-ws-frame fuzz-image fuzz-120-22 fuzz-120-22-run fuzz-smoke
 
 fuzz-json:
-	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,)
+	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,-DTK_STR_NO_HEAP)
 fuzz-yaml:
 	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
 fuzz-toml:
