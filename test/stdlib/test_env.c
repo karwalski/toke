@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "../../src/stdlib/env.h"
+#include "../../src/stdlib/tk_strhdr.h"   /* 127.295: tks_hdrlen */
 
 static int failures = 0;
 
@@ -18,6 +19,13 @@ static int failures = 0;
 
 #define ASSERT_STREQ(a, b, msg) \
     ASSERT((a) && (b) && strcmp((a),(b)) == 0, msg)
+
+/* 127.295: env_expand returns a sealed string (runtime-abi §3.1) -- header
+ * == strlen, and never freed (free() of one aborts).  env_get / env_get_or
+ * stay caller-owned heap copies (121.78) and are still freed below. */
+#define SEALED(s) \
+    ASSERT((s) && tks_hdrlen(s) >= 0 && (size_t)tks_hdrlen(s) == strlen(s), \
+           "env_expand result is sealed")
 
 int main(void)
 {
@@ -151,11 +159,11 @@ int main(void)
     {
         const char *user = getenv("USER");
         if (user && *user) {
-            char *expanded = env_expand("Hello $USER world");
+            const char *expanded = env_expand("Hello $USER world");
             ASSERT(expanded != NULL, "env_expand() returns non-NULL");
             ASSERT(strstr(expanded, user) != NULL,
                    "env_expand($USER) contains actual USER value");
-            free(expanded);
+            SEALED(expanded);
         } else {
             printf("pass: env_expand($USER) skipped (USER not set)\n");
         }
@@ -163,30 +171,30 @@ int main(void)
 
     /* --- Test 15: env_expand with $$ → literal '$' ------------------------ */
     {
-        char *expanded = env_expand("$$PATH");
+        const char *expanded = env_expand("$$PATH");
         ASSERT(expanded != NULL, "env_expand($$PATH) returns non-NULL");
         ASSERT_STREQ(expanded, "$PATH", "env_expand($$PATH) == \"$PATH\"");
-        free(expanded);
+        SEALED(expanded);
     }
 
     /* --- Test 16: env_expand with ${VAR} syntax --------------------------- */
     {
         env_set("TOKE_TEST_EXP", "expanded_val");
-        char *expanded = env_expand("prefix_${TOKE_TEST_EXP}_suffix");
+        const char *expanded = env_expand("prefix_${TOKE_TEST_EXP}_suffix");
         ASSERT(expanded != NULL, "env_expand(${VAR}) returns non-NULL");
         ASSERT_STREQ(expanded, "prefix_expanded_val_suffix",
                      "env_expand(${TOKE_TEST_EXP}) substitutes correctly");
-        free(expanded);
+        SEALED(expanded);
     }
 
     /* --- Test 17: env_expand unknown var → empty string ------------------- */
     {
         unsetenv("TOKE_TEST_UNDEFINED_XYZ");
-        char *expanded = env_expand("before.$TOKE_TEST_UNDEFINED_XYZ.after");
+        const char *expanded = env_expand("before.$TOKE_TEST_UNDEFINED_XYZ.after");
         ASSERT(expanded != NULL, "env_expand(unknown var) returns non-NULL");
         ASSERT_STREQ(expanded, "before..after",
                      "env_expand(unknown var) substitutes empty string");
-        free(expanded);
+        SEALED(expanded);
     }
 
     /* --- Test 18: env_file_load with KEY=VALUE pairs ---------------------- */

@@ -50,6 +50,7 @@ static int count(const char *h, const char *n) {
     return c;
 }
 
+/* 127.295: soap_fault's result is a sealed string -- never freed. */
 int main(int argc, char **argv) {
     const char *f = soap_fault("Client", "Bad <input>", "</detail><injected/><detail>");
     CHECK(count(f, "<detail>") == 1 && count(f, "</detail>") == 1 && !strstr(f, "<injected/>"),
@@ -57,26 +58,21 @@ int main(int argc, char **argv) {
     CHECK(strstr(f, "&lt;/detail&gt;&lt;injected/&gt;&lt;detail&gt;") != NULL,
           "the payload is present, escaped");
     if (argc > 1) { FILE *o = fopen(argv[1], "w"); fputs(f, o); fclose(o); }
-    free((char *)f);
 
     f = soap_fault("c", "s", "a&b<c>d\"e'f");
     CHECK(strstr(f, "<detail>a&amp;b&lt;c&gt;d&quot;e&apos;f</detail>") != NULL,
           "each of & < > \" ' is escaped in detail");
-    free((char *)f);
 
     f = soap_fault("c", "s", "");
     CHECK(strstr(f, "<detail>") == NULL, "an empty detail omits <detail>");
-    free((char *)f);
     f = soap_fault("c", "s", NULL);
     CHECK(strstr(f, "<detail>") == NULL, "a NULL detail omits <detail>");
-    free((char *)f);
 
     f = soap_fault("Se<rver", "Internal & Error", "plain");
     CHECK(strstr(f, "<faultcode>Se&lt;rver</faultcode>") &&
           strstr(f, "<faultstring>Internal &amp; Error</faultstring>") &&
           strstr(f, "<detail>plain</detail>"),
           "control: faultcode/faultstring escaping and a plain detail unchanged");
-    free((char *)f);
 
     printf("\n");
     return fails ? 1 : 0;
@@ -84,8 +80,17 @@ int main(int argc, char **argv) {
 C
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -o "${WORK}/t" \
-        "${WORK}/t.c" "${SOAP_C}" >"${WORK}/cc.log" 2>&1; then
+# 127.295: soap.c's results are sealed strings (str.c's string heap), so the
+# driver takes std.soap's link set from stdlib_link_set.sh as cached objects
+# and compiles the soap.c under test itself (--except soap.c) so the
+# negative control still swaps it.
+CF=(-std=c11 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --except soap.c --cc "${CC}" \
+        --objects soap -- "${CF[@]}")" \
+    || { echo "  FAIL: stdlib link set (soap): see stderr above"; exit 1; }
+LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
+if ! "${CC}" "${CF[@]}" -o "${WORK}/t" "${WORK}/t.c" "${SOAP_C}" \
+        "${LINK[@]}" -lm -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"
     exit 1
 fi

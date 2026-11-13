@@ -9,9 +9,19 @@
  *
  * Story: 2.7.2  Branch: feature/stdlib-2.7-process-env
  * Story: 28.5.1 env_list, env_delete, env_expand, env_file_load
+ *
+ * 127.295 (S1 step 5, runtime-abi §3.1): every reader measures with
+ * tk_strlen, and env_expand returns a sealed string from the string heap
+ * (never freed, C callers included).  Not sealed, on purpose:
+ *   - env_get / env_get_or: env.tki declares both "ownership": "caller"
+ *     (121.78), and a caller that frees an owned result must be able to free
+ *     every one (135.23); a sealed string cannot be freed.  Sealing them waits
+ *     on what "caller" means for a sealed string.
+ *   - env_list: a C-only API (no toke wrapper) whose caller frees each name.
  */
 
 #include "env.h"
+#include "tk_strhdr.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -143,7 +153,7 @@ EnvStrArray env_list(void)
     for (char **e = environ; *e && i < count; e++) {
         const char *entry = *e;
         const char *eq    = strchr(entry, '=');
-        size_t      namelen = eq ? (size_t)(eq - entry) : strlen(entry);
+        size_t      namelen = eq ? (size_t)(eq - entry) : tk_strlen(entry);
         char       *name    = (char *)malloc(namelen + 1);
         if (!name) {
             /* Free already-allocated names and bail */
@@ -175,14 +185,15 @@ int env_delete(const char *key)
 /* -------------------------------------------------------------------------
  * env_expand
  * Substitute $VAR, ${VAR}, and $$ in tmpl.
- * Returns a heap-allocated NUL-terminated string; caller must free.
+ * Returns a sealed string (127.295): never freed.  The result is built in a
+ * growing malloc'd buffer and handed over as one sealed copy.
  * ------------------------------------------------------------------------- */
-char *env_expand(const char *tmpl)
+const char *env_expand(const char *tmpl)
 {
     if (!tmpl) return NULL;
 
     /* Build result in a dynamically-sized buffer */
-    size_t cap = strlen(tmpl) * 2 + 64;
+    size_t cap = tk_strlen(tmpl) * 2 + 64;
     char  *buf = (char *)malloc(cap);
     if (!buf) return NULL;
 
@@ -234,7 +245,7 @@ char *env_expand(const char *tmpl)
             const char *val = getenv(name);
             free(name);
             if (!val) val = "";
-            size_t vlen = strlen(val);
+            size_t vlen = tk_strlen(val);   /* getenv's: strlen fallback */
             ENSURE(vlen);
             memcpy(buf + out, val, vlen);
             out += vlen;
@@ -253,7 +264,7 @@ char *env_expand(const char *tmpl)
             const char *val = getenv(name);
             free(name);
             if (!val) val = "";
-            size_t vlen = strlen(val);
+            size_t vlen = tk_strlen(val);   /* getenv's: strlen fallback */
             ENSURE(vlen);
             memcpy(buf + out, val, vlen);
             out += vlen;
@@ -268,7 +279,9 @@ char *env_expand(const char *tmpl)
 #undef ENSURE
 
     buf[out] = '\0';
-    return buf;
+    char *r = tks_dup(buf, out);
+    free(buf);
+    return r;
 }
 
 /* -------------------------------------------------------------------------
@@ -281,7 +294,7 @@ static char *trim_inplace(char *s)
     /* Leading */
     while (*s && isspace((unsigned char)*s)) s++;
     /* Trailing */
-    char *end = s + strlen(s);
+    char *end = s + tk_strlen(s);   /* a line buffer: strlen fallback */
     while (end > s && isspace((unsigned char)*(end - 1))) end--;
     *end = '\0';
     return s;
@@ -329,7 +342,7 @@ int env_file_load(const char *path)
 
     while (fgets(line, (int)sizeof(line), f)) {
         /* Strip trailing newline */
-        size_t linelen = strlen(line);
+        size_t linelen = tk_strlen(line);
         while (linelen > 0 && (line[linelen - 1] == '\n' ||
                                 line[linelen - 1] == '\r')) {
             line[--linelen] = '\0';
@@ -365,14 +378,14 @@ int env_file_load(const char *path)
             char *closing = strrchr(raw, '\'');
             if (closing) *closing = '\0';
             /* Copy verbatim */
-            size_t vlen = strlen(raw);
+            size_t vlen = tk_strlen(raw);
             if (vlen >= sizeof(processed)) vlen = sizeof(processed) - 1;
             memcpy(processed, raw, vlen);
             processed[vlen] = '\0';
         } else {
             /* Unquoted: trim whitespace */
             char *trimmed = trim_inplace(raw);
-            size_t vlen = strlen(trimmed);
+            size_t vlen = tk_strlen(trimmed);
             if (vlen >= sizeof(processed)) vlen = sizeof(processed) - 1;
             memcpy(processed, trimmed, vlen);
             processed[vlen] = '\0';

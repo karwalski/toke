@@ -9,6 +9,11 @@
  *   Str           = const char *  (null-terminated UTF-8)
  *   Str!MdErr     = MdFileResult
  *
+ * Ownership (127.295, runtime-abi §3.1): md_render's result and
+ * md_render_file's .ok are sealed strings from the string heap
+ * (tk_strhdr.h).  Never free, write or realloc them -- C callers included;
+ * copy one first to modify it.  .err_msg is a string literal.
+ *
  * Story: 55.5.2  Branch: feature/stdlib-55.5-md
  */
 
