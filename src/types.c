@@ -4635,6 +4635,43 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
  * same-module call offers a cast between numeric types, but here the
  * declared type is read from an interface, and which repair was meant (cast,
  * other value, other callee) is not certain. */
+/* 127.382: a parameter whose generated .tki spelling is the bare name of an
+ * imported SUM type (`"params": ["sh"]`, the type export `"is_sum": true`)
+ * is judged as the same-module parameter `s:$sh` is: resolve_type gives a
+ * local sum a TY_STRUCT named for the type whose "fields" are its variants,
+ * so the type built here is that one -- the sum's name and its variant
+ * list.  types_equal compares structs by name, so a variant literal
+ * `$sh{$ci:4}` or a value of the sum passes, and an integer, a str, a record
+ * or a sum of another name is E4031, as in one module.  The variant list
+ * also keeps the type from reading as a zero-field opaque handle, which
+ * types_equal lets an integer stand for.  Built here, for argument judging
+ * only: imported_struct_type still answers NULL for a sum, so the E4010
+ * variant-exhaustiveness path it guards is untouched.  A sum nested in a
+ * spelling (`[sh]`, `[str:sh]`) is not read and stays unjudged. */
+static Type *imported_sum_param_type(Ctx *cx, const char *ps) {
+    Arena *A = cx->env->arena;
+    if (!ps || !*ps || strpbrk(ps, "[]():;!.@$")) return NULL;
+    const ImportedType *it = imported_type_lookup(cx->env->names, ps);
+    if (!it || !it->is_sum || it->field_count <= 0 || !it->field_names)
+        return NULL;
+    Type *st = mk_type(A, TY_STRUCT);
+    const char **fns = (const char **)arena_alloc(
+        A, (size_t)it->field_count * sizeof(char *));
+    Type **fts = (Type **)arena_alloc(A, (size_t)it->field_count * sizeof(Type *));
+    if (!st || !fns || !fts) return NULL;
+    st->name = it->name;
+    st->field_count = it->field_count;
+    st->field_names = fns;
+    st->field_types = fts;
+    for (int i = 0; i < it->field_count; i++) {
+        fns[i] = it->field_names[i] ? it->field_names[i] : "";
+        const char *sp = it->field_types ? it->field_types[i] : NULL;
+        Type *ft = sp ? tki_scalar_type(A, sp) : NULL;
+        fts[i] = ft ? ft : mk_type(A, TY_UNKNOWN);
+    }
+    return st;
+}
+
 static void check_user_fn_args(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 2 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -4657,6 +4694,7 @@ static void check_user_fn_args(Ctx *cx, const Node *call) {
         const Node *an = call->children[i + 1];
         if (!ps || !*ps || !an) continue;
         Type *pt = tki_compound_type(cx, ps, strlen(ps), 0);
+        if (!pt) pt = imported_sum_param_type(cx, ps);    /* 127.382 */
         const Type *at = an->rtype;
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID
             || (pt->kind == TY_FUNC && !func_has_sig(pt))

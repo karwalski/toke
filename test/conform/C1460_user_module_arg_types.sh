@@ -13,14 +13,21 @@
 # scalar, [T], [K:V], an imported record, a function type -- is judged with
 # types_compat / lit_narrows, E4031, no fix.  Every case is checked twice,
 # imported (`l.f(..)`) and with the same functions declared in the module
-# (`f(..)`); both must give the expected codes.  A sum-typed parameter
-# (case 21) and an interface whose parameter is the pre-127.376 "(" (case
-# 22) stay unjudged, as before.
+# (`f(..)`); both must give the expected codes.  An interface whose
+# parameter is the pre-127.376 "(" (case 22) stays unjudged, as before.
+#
+# 127.382: a SUM-typed parameter (`"params": ["sh"]`, the type export
+# `"is_sum": true`) is judged too, as the same-module `s:$sh` is: an integer,
+# a str, a record or another module-local type is E4031 (cases 21, 24-26); a
+# variant literal of the sum and a value of it pass (case 27).  Before it,
+# `l.psum(3)` checked rc 0 where `psum(3)` is E4031.
 #
 # Negative control: TKC built from fix/z166-imported-fn-types (4ef15404) --
-# cases 1-14 red (imported rc 0); 15-23 green on both.
+# cases 1-14 red (imported rc 0); 15-23 green on both.  TKC built from
+# fix/z169-user-args-getor-fn (87153202) -- cases 21, 24-26 red (imported
+# rc 0), the rest green.
 #
-# Story: 127.378
+# Stories: 127.378, 127.382
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +56,8 @@ f=pn(a:@(@(i64))):i64{<a.len()};
 f=pm(m:@(str:i64)):i64{<m.len()};
 f=pr(r:$rec):i64{<r.n};
 f=mk():$rec{<$rec{n:3;s:"x"}};
-f=psum(s:$sh):i64{<1};'
+f=psum(s:$sh):i64{<1};
+f=mks():$sh{<$sh{$sq:"q"}};'
 printf 'm=c1460.lib;\n%s\n%s\n' "${TYPES}" "${FUNCS}" > "${WORK}/a_lib.tk"
 ( cd "${WORK}" && "${TKC}" --emit-interface --check a_lib.tk >/dev/null 2>&1 )
 [ -f "${WORK}/c1460.lib.tki" ] || echo "  FAIL: setup: --emit-interface produced no c1460.lib.tki"
@@ -106,9 +114,8 @@ rm -f "${WORK}/r20.bin"
 r20="$([ -x "${WORK}/r20.bin" ] && "${RUN}" 20 "${WORK}/r20.bin" 2>&1 | tr '\n' ' ')"
 expect "20 well-typed imported calls run" "${r20}" "42 3 3 "
 
-# 21: a sum-typed parameter is not read from the .tki -- unjudged, as before
-expect "21 sum parameter stays unjudged (imported only)" \
-    "$(chk n21 'let a=L.psum(3);' | cut -d'|' -f1)" "rc=0 "
+# 21: a sum-typed parameter is judged by the same-module rule (127.382)
+expect "21 integer for a sum (127.382)"         "$(chk n21 'let a=L.psum(3);')" "${BAD}"
 
 # 22: an interface written before 127.376 spelled a function type "("
 mkdir -p "${WORK}/old"
@@ -122,6 +129,13 @@ expect "22 old '(' spelling: unjudged, i64 argument still fine" \
 # which repair was meant is not certain)
 f23="$(cd "${WORK}" && "${TKC}" --check n6.tk 2>&1 | grep -c '"fix"')"
 expect "23 no fix field on the imported E4031" "${f23}" "0"
+
+# 24-27: more sum-typed parameters (127.382)
+expect "24 str for a sum"                       "$(chk n24 'let a=L.psum("x");')" "${BAD}"
+expect "25 a local record for a sum"            "$(chk n25 'let a=L.psum($loc{n:1});')" "${BAD}"
+expect "26 an imported record for a sum"        "$(chk n26 'let r=L.mk(); let a=L.psum(r);')" "${BAD}"
+expect "27 variant literals and a sum value (control)" \
+    "$(chk p27 'let a=L.psum($sh{$ci:1}); let b=L.psum($sh{$sq:"x"}); let s=L.mks(); let c=L.psum(s); let d=L.psum(L.mks());')" "${OK}"
 
 echo "C1460: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
