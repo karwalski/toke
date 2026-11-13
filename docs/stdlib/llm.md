@@ -108,12 +108,13 @@ m=main;
 i=llm:std.llm;
 i=env:std.env;
 
-f=demo():void{
+f=demo():i64{
   let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Hello"};
   let msgs=@(msgusr;msgusr);
-  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e $llmstream{}};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e <1};
+  <0
 };
 ```
 
@@ -128,17 +129,18 @@ i=env:std.env;
 i=io:std.io;
 i=str:std.str;
 
-f=demo():void{
+f=demo():i64{
   let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Hello"};
   let msgs=@(msgusr;msgusr);
-  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e $llmstream{}};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e <1};
   lp(let n=0;n<4096;n=n+1){
     let chunk=mt llm.streamnext(stream) {$ok:t t;$err:e ""};
     if(str.len(chunk)==0){br;};
     io.print(chunk);
   };
+  <0
 };
 ```
 
@@ -214,7 +216,7 @@ f=main():i64{
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Write a haiku about compilers."};
   let msgs=@(msgusr;msgusr);
-  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e $llmstream{}};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e <1};
   lp(let n=0;n<4096;n=n+1){
     let chunk=mt llm.streamnext(stream) {$ok:t t;$err:e ""};
     if(str.len(chunk)==0){br;};
