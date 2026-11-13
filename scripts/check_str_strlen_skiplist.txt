@@ -21,19 +21,34 @@
 # without the runtime heap tk_strhdr.h needs; convert them with that tranche.
 # (json.c/json_glue.c: converted in the twelfth tranche, 2026-11-13, with
 # every harness that compiles them taking str.c from stdlib_link_set.sh.)
-src/stdlib/analytics.c 2
-src/stdlib/cache.c 6
-src/stdlib/chart.c 3
-src/stdlib/chart_glue.c 1
-src/stdlib/content.c 3
-src/stdlib/dashboard_glue.c 1
-src/stdlib/db.c 2
-src/stdlib/infer.c 4
-src/stdlib/keychain.c 5
-src/stdlib/mdns.c 2
-src/stdlib/mlx.c 2
-src/stdlib/str.c 1   # tks_verify_fail: the verify switch's own strlen (127.295)
-src/stdlib/strbuf.h 1
-src/stdlib/tk_regex.h 1
-src/stdlib/webview.c 3
-src/stdlib/tk_gzip_type.h 1
+#
+# END STATE (story 127.295 closure, 2026-11-14).  Every toke-input reader that
+# can be converted has been; what is left is listed below with its reason, in
+# one of five classes, so the ratchet documents why each line stays bare:
+#   never-toke   the measured string is never a toke string (a literal, a
+#                C-built buffer, an OS-filled buffer, a C-only API's input),
+#                or is an INTERIOR pointer, which carries no header, so
+#                tk_strlen would always fall back to strlen
+#   c-owned      the string is the module's own malloc'd storage
+#   untestable   a toke string does reach it, but the code cannot be built
+#                or exercised on this host; convert with a story that can
+#   dead         nothing in the tree calls it
+#   by-design    must stay strlen, or the strlen is followed by O(len) work
+#                on the same bytes, so a header read saves nothing
+# A new entry still needs the same: a reason, raised in the same commit.
+src/stdlib/analytics.c 2      # c-owned: pivot's row keys (the frame's own malloc'd keys) and a snprintf'd local buffer
+src/stdlib/cache.c 6          # dead: nothing in the tree calls http_cache_* (linked with std.http, never reached)
+src/stdlib/chart.c 3          # never-toke: chart_set_theme / chart_set_legend / chart_set_tooltip are C-only (no glue, no toke binding)
+src/stdlib/chart_glue.c 1     # c-owned: measures chart_tojson's own malloc'd JSON before packing it into [byte]
+src/stdlib/content.c 3        # never-toke: static-file paths tk_web_glue.c builds with snprintf, and literal suffixes / index names
+src/stdlib/dashboard_glue.c 1 # c-owned: measures chart_tojson's own malloc'd JSON (the widget spec)
+src/stdlib/db.c 2             # never-toke: interior pointers into the SQL text (the comment/statement scanner) -- no header to read
+src/stdlib/infer.c 4          # untestable: prompt/text are toke strings, but the code is under TK_HAVE_LLAMACPP and llama.cpp is not installed here
+src/stdlib/keychain.c 5       # untestable: secret/password (2 macOS Security.framework lines) drive the real OS keychain; 3 are _WIN32 Credential Manager, not buildable here
+src/stdlib/mdns.c 2           # never-toke: an interior pointer into a TXT "key=value" entry, and a key the OS wrote into a local buffer
+src/stdlib/mlx.c 2            # never-toke: strdup_mlx copies literals and bridge replies; bridge_post measures JSON mlx.c built (and std.mlx's glue is a stub, 137.11)
+src/stdlib/str.c 1            # by-design: tks_verify_fail's own strlen -- the verify switch must not trust the header it is checking (127.295)
+src/stdlib/strbuf.h 1         # by-design: strbuf_append copies the bytes it measures (O(len) either way); a header-only helper, so tk_strlen here would make every includer link the string heap (test-stdlib-mlx does not)
+src/stdlib/tk_regex.h 1       # by-design: one strlen per pattern compile, which then scans the whole pattern; the header is also compiled into tkc's regex_check.c
+src/stdlib/webview.c 3        # never-toke: std.webview is withdrawn (136.2: no .tki, no glue, unbuilt) -- C-registered handler names, the escaper's own output, and eval_js text from C
+src/stdlib/tk_gzip_type.h 1   # never-toke: content-coding literals ("gzip", "br", ...) from the C callers
