@@ -44,6 +44,15 @@ SITE_SECTIONS = {
     "spec": "spec",
     "stdlib": "stdlib",
     "tutorials": "tutorials",
+    "architecture": "architecture",
+    "security": "security",
+}
+
+# Sections the site publishes only some files of (`section:dir:a.md,b.md` in
+# SECTIONS there, 132.136); every other file in the dir is not on the site.
+SITE_FILES = {
+    "architecture": ("binary-ir-design.md",),
+    "security": ("pqc-hndl-triage.md", "pqc-signatures-roadmap.md", "threat-model.md"),
 }
 
 # Not synced to the site, but read outside the repo tree (132.111).
@@ -113,15 +122,18 @@ def suggest(src: Path, target: str) -> str:
     parts = rel.parts
     if len(parts) >= 3 and parts[0] == "docs":
         for url, d in SITE_SECTIONS.items():
-            if parts[1] == d:
+            if parts[1] == d and (url not in SITE_FILES or resolved.name in SITE_FILES[url]):
                 return f"/docs/{url}/{slug_of(resolved)}/{tail}"
     return f"{GITHUB}{rel.as_posix()}{tail}"
 
 
 def default_paths() -> list[Path]:
     paths: list[Path] = []
-    for d in SITE_SECTIONS.values():
-        paths.extend(sorted((REPO / "docs" / d).rglob("*.md")))
+    for url, d in SITE_SECTIONS.items():
+        if url in SITE_FILES:
+            paths.extend(REPO / "docs" / d / f for f in SITE_FILES[url])
+        else:
+            paths.extend(sorted((REPO / "docs" / d).rglob("*.md")))
     paths.extend(REPO / f for f in EXTRA_FILES)
     return paths
 
@@ -148,9 +160,17 @@ def section_drift() -> list[str]:
     m = re.search(r"^SECTIONS=\((.*?)^\)", sync.read_text(encoding="utf-8"), re.DOTALL | re.MULTILINE)
     if not m:
         return [f"{sync}: could not find its SECTIONS=( ... ) table"]
-    theirs = dict(e.split(":", 1) for e in re.findall(r'"([^"]+)"', m.group(1)))
+    theirs: dict[str, str] = {}
+    their_files: dict[str, tuple[str, ...]] = {}
+    for e in re.findall(r'"([^"]+)"', m.group(1)):
+        url, d, *files = e.split(":")
+        theirs[url] = d
+        if files:
+            their_files[url] = tuple(files[0].split(","))
     if theirs != SITE_SECTIONS:
         return [f"SITE_SECTIONS differs from {sync}: website {theirs} vs here {SITE_SECTIONS} — update this script"]
+    if their_files != SITE_FILES:
+        return [f"SITE_FILES differs from {sync}: website {their_files} vs here {SITE_FILES} — update this script"]
     return []
 
 
