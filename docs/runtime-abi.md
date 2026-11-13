@@ -704,6 +704,59 @@ sealed and unsealed headers gives identical blocks), C1654 (an ASan C
 driver over `std.pdf`'s glue on a PDF the test writes byte by byte, plus a
 toke program), all under `TK_STR_VERIFY=1`.
 
+**Step 5, fifteenth tranche (story 127.295, Batch Z190).**  `std.tls`,
+`std.crypto`, `std.encrypt` and `proxy.c`, each converted completely
+(every reader in `tls.c`, `tls_glue.c`, `crypto.c`, `encrypt.c`,
+`encrypt_glue.c` and `proxy.c` uses `tk_strlen`, the `sizeof` of the
+literal it skips, or the length the `TkStrBuf` that built the string
+holds; their six ratchet entries are deleted).  `tls_glue.c` seals at the
+boundary: every str it makes for toke -- a `$TlsConn`'s `.id` (from
+`tls.connect`, and in the record each `tls.listen` handler receives),
+`tls.read`, `tls.peercert`, `tls.fingerprint`, `tls.pairingcode`,
+`tls.group`, `tls.protocol` -- is a sealed copy made by `seal_take()`,
+which frees the malloc'd original (handing it over unsealed only if the
+copy cannot be made); `tls.c`'s producers stay malloc'd because their C
+callers (`test_tls.c`, C206, C590, C1180) free what they return.  A
+`tls.read` copy is measured as a C string, so plaintext ends at its first
+0 byte exactly where every reader already saw it end, and the 64 KiB read
+buffer is no longer kept alive for a short record.  `tls.certof` is now a
+sealed copy (public material; it used to hand toke the keypair's own PEM,
+which `tls.freekeypair` frees under a str the program may still hold).
+Left malloc'd, on purpose: a configuration's PEMs (the record's storage,
+freed by `tls.freeconfig`) and a keypair's PEMs, so `tls.keyof` still hands
+toke the keypair's own buffer -- `tls.freekeypair` overwrites the private
+key before freeing it, and a sealed string is never written, so a sealed
+copy of a key would live unwiped for the life of the process.
+`crypto_glue.c` seals the same way: `crypto.sha256file`, `crypto.tohex` /
+`to_hex` and `crypto.randomhex` (so `str.hexid` / `str.randhex`) are
+`seal_take()` copies of `crypto_to_hex` / `crypto_sha256file`, which stay
+malloc'd (`crypto.h` documents both as caller-owned, and
+`crypto_sha256verify` frees `crypto_sha256file`'s result);
+`crypto.randombase64url` builds straight into a `tks_alloc` buffer and
+seals it.  `encrypt_glue.c`'s one str, `DecryptResult.err`, is a sealed
+copy of the core's static message, stored into the record after the record
+is made (so an allocation failure no longer has a sealed string to free).
+`crypto.c` and `encrypt.c` hand toke no str of their own (bcrypt is
+`std.auth`'s producer, already malloc'd by design since the third
+tranche).  `proxy.c` hands toke no string at all: its five `strdup` lines
+are the connection pool's and the upstream's own storage (pool host,
+upstream name, backend hosts, affinity cookie, health path), freed by the
+pool and `proxy_upstream_free`.  `test-stdlib-tls` links `str.c`; every
+conform harness that compiles one of these files already took its link set
+from `stdlib_link_set.sh --objects` (C452, C520, C540, C464 and C136
+`--except` or `#include` the file they drive), so none moved.  Not in this
+tranche, unchanged from the fourteenth: `cache.c`, `keychain.c`, `infer.c`;
+and by the eighth tranche's per-request rule `router.c`'s sixteen `strdup`
+lines (route-match parameters and response header values the router
+frees) and `llm_tool.c`'s twenty-eight (C-owned results the glue copies
+since the seventh tranche).  Gates: C1660 (an ASan C driver over every
+`tls_glue.c` producer on a real TLS 1.3 loopback connection, and over
+`tls.write` with sealed data, plus a toke program), C1661 (the same over
+`crypto_glue.c` and `encrypt_glue.c`, and over bcrypt, pbkdf2 and
+`tls_cert_fingerprint` with sealed inputs) and C1662 (`proxy.c`'s readers:
+a sealed request builds, probes and forwards byte for byte as an unsealed
+one), all under `TK_STR_VERIFY=1`.
+
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
 `src/stdlib_tables.c` (`readonly`, not `memory(read)`: older LLVM parses
