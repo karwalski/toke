@@ -1,0 +1,14 @@
+id: D346
+series: D
+description: "127.358: an array `.concat` whose argument is not an identifier of the receiver's own type (here an @(str) beside an @(i64)) is E4036 with no fix -- `(a+x)` would not mean what was written"
+input: |
+  m=t;
+  f=main():i64{
+    let a=@(1;2);
+    let x=@("p");
+    let c=a.concat(x);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4036"]
+expected_fix_absent: true

@@ -1861,6 +1861,43 @@ static void check_fnval_err_slot(Ctx *cx, const Node *v, Type *vt, const Type *s
     emit_mm(cx, v, slot, sig, NULL);
 }
 
+/* 127.356: a struct literal's field value is judged against the declared
+ * field type by the rule an annotated `let x:T=v` uses: types_compat, or an
+ * integer literal that fits (lit_narrows).  `t=$r{a:i64;b:f64}` accepted
+ * `$r{a:"x";b:3}` and printed a pointer and a denormal.  An unknown type on
+ * either side is not judged (poison propagation, as at `let`).  E4031 on the
+ * field value, no `fix`: a cast, a different value or a different field type
+ * are all plausible repairs.
+ *
+ * A `void` slot is a payload-less sum variant (`$nopattern:void`, the
+ * jsontoken `$end:void`).  No value has type void, so the literal's
+ * placeholder (`$greperr{$nopattern:0}`) is the only spelling there is and
+ * is not judged.
+ *
+ * A value whose own subtree was already reported is not judged again: the
+ * type it infers to is a consequence of that error (`items:@(st.items;e)`,
+ * an array and an element mixed, is one E4031 at the element, C248), and a
+ * second E4031 for the same root cause would only point the repair loop at
+ * the wrong place. */
+static int subtree_reported(const Ctx *cx, const Node *n) {
+    if (!n) return 0;
+    for (int i = 0; i < cx->reported_count; i++)
+        if (cx->reported[i] == n) return 1;
+    for (int i = 0; i < n->child_count; i++)
+        if (subtree_reported(cx, n->children[i])) return 1;
+    return 0;
+}
+static void check_field_value(Ctx *cx, const Node *v, const Type *vt,
+                              const Type *slot) {
+    if (!v || !vt || !slot) return;
+    if (vt->kind == TY_UNKNOWN || slot->kind == TY_UNKNOWN) return;
+    if (slot->kind == TY_VOID) return;
+    if (types_compat(vt, slot) || lit_narrows(cx->src, v, slot)) return;
+    if (subtree_reported(cx, v)) return;
+    if (!tc_first_report(cx, v)) return;
+    emit_mm(cx, v, slot, vt, NULL);
+}
+
 /*
  * emit_mm — emit a type-mismatch diagnostic (E4031).
  *
@@ -5032,6 +5069,31 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
                       "got", got, (const char *)NULL);
             return;
         }
+        /* 127.355: nor does a record.  A record is a bare malloc(nfields *
+         * 8) block with no header (llvm.c struct_lit), and the receiver
+         * dispatch lowers every member to str, array or map glue: `r.len()`
+         * read the length from r[-1], before the allocation, and
+         * `r.contains(x)` / `r.slice(a;b)` / `r.indexof(x)` walked the
+         * record's slots as a NUL-terminated string.  All four passed
+         * --check.  Judged only for a record that declares fields, so an
+         * opaque std handle with no declared fields (`$vechandle`, whose
+         * receiver calls lower to Vec glue) is left alone. */
+        if (rt && rt->kind == TY_STRUCT && rt->field_count > 0) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char msg[640], got[160];
+            snprintf(msg, sizeof msg,
+                     "no receiver method '%s' on a '%s': a record answers no "
+                     "receiver method -- read a field with '.name'%s",
+                     member, type_name(rt), note);
+            snprintf(got, sizeof got, "%s.%s", type_name(rt), member);
+            /* No `fix` (AGENTS.md §6): which field, if any, was meant is not
+             * decidable here. */
+            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                      msg,
+                      "expected", "a str, array or map receiver",
+                      "got", got, (const char *)NULL);
+            return;
+        }
         unsigned rk = !rt ? 0u : rt->kind == TY_STR ? RK_S
                     : rt->kind == TY_ARRAY ? RK_A : rt->kind == TY_MAP ? RK_M : 0u;
         char kc = rk == RK_S ? 's' : rk == RK_A ? 'a' : rk == RK_M ? 'm' : 0;
@@ -5044,12 +5106,42 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
                      "method of another type, and a '%s' does not answer it%s",
                      member, type_name(rt), member, kn, note);
             snprintf(got, sizeof got, "%s.%s", kn, member);
-            /* No `fix`: whether the receiver or the member is wrong is not
-             * decidable here (AGENTS.md §6). */
-            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
-                      msg,
-                      "expected", "a member the receiver's type answers",
-                      "got", got, (const char *)NULL);
+            /* In general no `fix`: whether the receiver or the member is
+             * wrong is not decidable here (AGENTS.md §6).
+             *
+             * 127.358: one shape is decidable.  `a.concat(b)` where `a` and
+             * `b` are both identifiers of the SAME established array type
+             * `@T`: array `+` is toke's concatenation (patterns-v0.4,
+             * acc-array form b), so `(a+b)` is the one spelling that means
+             * what was written, with the type it was written for.  Any other
+             * argument (a literal, a call, a different or unknown type) or
+             * receiver shape gets no fix: the rewrite would be a guess or
+             * would need source spans the AST does not keep. */
+            char cfix[320];
+            const char *cfixp = NULL;
+            if (rk == RK_A && strcmp(member, "concat") == 0 &&
+                recv->kind == NODE_IDENT && call->child_count == 2 &&
+                call->children[1] && call->children[1]->kind == NODE_IDENT) {
+                const Type *bt = recv_value_type(cx, call->children[1]);
+                if (bt && bt->kind == TY_ARRAY && rt->elem &&
+                    rt->elem->kind != TY_UNKNOWN && types_equal(rt, bt)) {
+                    char an[128], bn[128];
+                    TOKSTR(an, cx->src, recv);
+                    TOKSTR(bn, cx->src, call->children[1]);
+                    snprintf(cfix, sizeof cfix, "(%s+%s)", an, bn);
+                    cfixp = cfix;
+                }
+            }
+            if (cfixp)
+                diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                          msg,
+                          "expected", "a member the receiver's type answers",
+                          "got", got, "fix", cfixp, (const char *)NULL);
+            else
+                diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                          msg,
+                          "expected", "a member the receiver's type answers",
+                          "got", got, (const char *)NULL);
             return;
         }
         /* 127.168: `.join` has str glue only.  Both of its lowerings
@@ -5344,6 +5436,20 @@ static Type *map_get_union(Ctx *cx, Type *v) {
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
+    /* 127.358: a CALL receiver (`mk().concat(b)`, `a.concat(b).concat(d)`)
+     * is judged by the type the call site already inferred for it (infer_impl
+     * infers a call receiver before this runs; nothing is re-inferred here).
+     * Only a proven str, array or map is returned: those are the kinds the
+     * per-kind table judges, and the emitter's kind tests read this same
+     * rtype.  A scalar-typed call result is NOT judged -- a stdlib handle
+     * (a Vec, a json value) is declared i64 and does answer receiver methods
+     * -- and an unknown one stays unjudged, as for every other receiver. */
+    if (recv->kind == NODE_CALL_EXPR) {
+        const Type *ct = recv->rtype;
+        if (ct && (ct->kind == TY_STR || ct->kind == TY_ARRAY ||
+                   ct->kind == TY_MAP)) return ct;
+        return NULL;
+    }
     /* 127.168: an array or map LITERAL is as proven a receiver as a string
      * literal — `@(1;2;3).replace(1;2)` passed --check and exited 139 because
      * only identifiers and string literals were judged.  The emitter's kind
@@ -5730,8 +5836,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             for (int f=0; f<st->field_count && !found; f++)
                 if (st->field_names[f] && strcmp(st->field_names[f],fnb)==0) {
                     found = 1;
-                    if (fi->child_count > 0 && st->field_types)
+                    if (fi->child_count > 0 && st->field_types) {
                         check_fnval_err_slot(cx, fi->children[0], fvt, st->field_types[f]);
+                        check_field_value(cx, fi->children[0], fvt, st->field_types[f]);
+                    }
                 }
             if (found) continue;
             /* A struct declared with no fields at all is a shape this checker
@@ -6557,6 +6665,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     if (!is_mod&&rv->children[0]->kind!=NODE_TYPE_IDENT) infer(cx,rv);
                 }
+                /* 127.358: and a CALL receiver (`a.concat(b).concat(d)`,
+                 * `f(x).trim()`).  Nothing inferred it either, so the inner
+                 * call was never checked at all: not its receiver dispatch
+                 * (E4036), not its arity, not its arguments -- and its
+                 * result reached the outer judgement typeless, so the outer
+                 * call was never judged either.  An array `.concat` chain
+                 * passed --check and printed `3 262913 0 0`.  Inferring it
+                 * runs every check the same call gets anywhere else, and
+                 * gives recv_value_type the result type to judge. */
+                if (rv&&rv->kind==NODE_CALL_EXPR) infer(cx,rv);
             }
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */

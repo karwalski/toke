@@ -78,6 +78,12 @@ These are declared in a `.tki` with `"internal": true`: toke source can call the
 | `http.resnew` | `tk_http_res_new` | `tk_web_glue.c` |
 | `http.resp` | `tk_http_resp_w` | `tk_web_glue.c` |
 
+### `std.json` (1)
+
+| Export | Glue symbol | Defined in |
+|---|---|---|
+| `json.printval` | `tk_json_printval_w` | `json_glue.c` |
+
 ## Defined, with no interface entry
 
 Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves to (story 136.34). None of them can be named from toke under a publishable spelling -- any that could is exported by `scripts/gen_tki.py` -- so this is the runtime's private half, classified by what reaches it:

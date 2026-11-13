@@ -1,0 +1,9 @@
+Usage: tkc pkg fetch
+
+Resolve, fetch every package, and write a fully pinned pkg.lock.
+
+Flags:
+  --allow-file-source Accept file:/// package sources (local override)
+  --diag-text         Emit diagnostics as human-readable text
+  --diag-json         Emit diagnostics as JSON (the default)
+  --help              Print this help and exit

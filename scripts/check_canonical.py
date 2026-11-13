@@ -336,7 +336,14 @@ STALE = [
     # C99, zero dependencies beyond LLVM": tkc has separate lexer, parser, resolver,
     # checker and lowering stages, links only libc, libm, zlib and pthreads, and
     # builds binaries by running clang on the LLVM IR it writes.
-    (re.compile(r"\bsingle[\s-]+pass\s+C99\b|\bdependencies\s+beyond\s+LLVM\b", re.I),
+    # Story 132.143 — the same fact PARAPHRASED (docs/about/design.md:36 before
+    # 132.143): "The compiler processes source in one forward pass. No multi-pass
+    # resolution".  Only a single-pass claim tied to the compiler (or tkc) or to
+    # compilation is caught; a single-pass parser of something else is not.
+    (re.compile(r"\bsingle[\s-]+pass\s+C99\b|\bdependencies\s+beyond\s+LLVM\b"
+                r"|\b(?:compiler|tkc)\b[^.]{0,60}?\b(?:one|a\s+single|single)[\s-]+(?:forward[\s-]+)?pass\b"
+                r"|\bsingle[\s-]+pass\s+(?:compil(?:er|ation|es)|toke\s+compiler)\b"
+                r"|\bno\s+multi[\s-]*pass\s+resolution\b", re.I),
      "compiler: single-pass / LLVM-only",
      "the `compiler` fact in canonical.json: C99; links only libc, libm, zlib and "
      "pthreads; emits LLVM IR and drives clang — canonical.md §5"),
@@ -834,6 +841,22 @@ SELFTEST = [
      "It replaced the retired wording \"single-pass C99, zero dependencies beyond LLVM\"."),
     (True, "single-pass about something else",
      "The JSON stream parser is single-pass and not thread-safe."),
+    # Story 132.143 — the paraphrase, as docs/about/design.md:36 published it.
+    (False, "one forward pass (design.md:36 before 132.143)",
+     "1. **Single-pass parsing.** The compiler processes source in one forward pass. "
+     "No multi-pass resolution, no deferred disambiguation."),
+    (False, "no multi-pass resolution, on its own",
+     "There is no multi-pass resolution and no deferred disambiguation."),
+    (False, "a single-pass compiler",
+     "toke ships a fast single-pass compiler, tkc."),
+    (False, "tkc compiles in a single pass",
+     "tkc compiles each file in a single pass."),
+    (True, "the parser reads its input once (a true claim, design.md after 132.143)",
+     "1. **Backtrack-free parsing.** The parser reads the token stream once, front to "
+     "back, and never rescans consumed input."),
+    (True, "the compiler's real stages",
+     "The compiler runs separate lexer, parser, name-resolution, type-checking and "
+     "IR-lowering stages."),
     (False, "negation of something else in the previous sentence",
      "The parser does not backtrack. The grammar is LL(1)."),
     (False, "negation of something else, wrapped",

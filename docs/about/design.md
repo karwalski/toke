@@ -33,7 +33,7 @@ The toke grammar is **backtrack-free**: the parser never rescans consumed input,
 
 This matters for two reasons:
 
-1. **Single-pass parsing.** The compiler processes source in one forward pass. No multi-pass resolution, no deferred disambiguation. Compilation is fast and predictable.
+1. **Backtrack-free parsing.** The parser reads the token stream once, front to back: it never rescans consumed input and never defers a disambiguation, so parsing is fast and predictable. (The compiler as a whole runs separate lexer, parser, name-resolution, type-checking and IR-lowering stages; see [canonical facts](/docs/about/canonical/) §5.)
 2. **Reduced generation space.** At every syntactic position, there is exactly one valid interpretation. The set of syntactically invalid programs the model can generate is as small as the grammar allows.
 
 ## 14 Keywords
