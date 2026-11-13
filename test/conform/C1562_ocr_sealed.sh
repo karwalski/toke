@@ -161,7 +161,14 @@ CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
 LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" \
         --except ocr_glue.c --objects ocr -- "${CF[@]}")" \
     || { fail "stdlib link set: see stderr above"; LINKSET=""; }
-LFLAGS="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags ocr)" || LFLAGS=""
+# The module's extra link flags (frameworks, -l...) come from the same
+# dependency table, read straight from `tkc --emit-deps` (the part after
+# the first "---"): stdlib_link_set.sh --flags would be a call outside
+# --objects, which C703 case 12 forbids (127.408).
+printf 'm=lf;\ni=o:std.ocr;\nf=main():i64{<0};\n' > "${WORK}/lflags.tk"
+LFLAGS="$("${TKC}" --emit-deps "${WORK}/lflags.tk" 2>/dev/null \
+        | awk 'seen == 1 && /^---$/ { exit } seen == 1 && NF { print } /^---$/ { seen = 1 }')" \
+    || LFLAGS=""
 LS=(); while IFS= read -r l; do [ -n "$l" ] && LS+=("$l"); done <<< "${LINKSET}"
 # shellcheck disable=SC2206
 LF=(${LFLAGS})

@@ -188,7 +188,14 @@ CF=(-std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}")
 LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" \
         --objects xlsx -- "${CF[@]}")" \
     || { fail "stdlib link set: see stderr above"; LINKSET=""; }
-LFLAGS="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags xlsx)" || LFLAGS=""
+# The module's extra link flags (frameworks, -l...) come from the same
+# dependency table, read straight from `tkc --emit-deps` (the part after
+# the first "---"): stdlib_link_set.sh --flags would be a call outside
+# --objects, which C703 case 12 forbids (127.408).
+printf 'm=lf;\ni=x:std.xlsx;\nf=main():i64{<0};\n' > "${WORK}/lflags.tk"
+LFLAGS="$("${TKC}" --emit-deps "${WORK}/lflags.tk" 2>/dev/null \
+        | awk 'seen == 1 && /^---$/ { exit } seen == 1 && NF { print } /^---$/ { seen = 1 }')" \
+    || LFLAGS=""
 LS=(); while IFS= read -r l; do [ -n "$l" ] && LS+=("$l"); done <<< "${LINKSET}"
 LF=(); while IFS= read -r l; do [ -n "$l" ] && LF+=("$l"); done <<< "${LFLAGS}"
 if [ -z "${LINKSET}" ]; then
