@@ -61,6 +61,7 @@
 #include <openssl/x509v3.h>
 #include "tk_ssl_host.h"   /* 121.104: OpenSSL 3 and 4 */
 #include "tk_tls_groups.h" /* 122.15: tk_tls_set_groups() */
+#include "tk_ssl_nosigpipe.h" /* 127.351: tk_ssl_set_fd_nosigpipe() */
 #define LLM_HTTPS_UNSUPPORTED(url) 0
 #else
 #define LLM_HTTPS_UNSUPPORTED(url) ((url) && strncmp((url), "https://", 8) == 0)
@@ -421,7 +422,10 @@ static char *http_exchange(const char *host, const char *port, const char *path,
         }
         SSL_CTX_set_verify(c.ctx, SSL_VERIFY_PEER, NULL);
         c.ssl = SSL_new(c.ctx);
-        if (!c.ssl || SSL_set_fd(c.ssl, c.fd) != 1) {
+        /* 127.351: not SSL_set_fd -- OpenSSL's socket BIO writes with
+         * write(2), so a server that closed mid-request raised SIGPIPE.
+         * Records now leave through send(MSG_NOSIGNAL). */
+        if (!c.ssl || tk_ssl_set_fd_nosigpipe(c.ssl, c.fd) != 1) {
             conn_close(&c);
             NETFAIL("TLS: could not create a session", 1);
             return NULL;
