@@ -799,11 +799,18 @@ tranche: `chart.c` (its three readers are the C-only `chart_set_theme` /
 `chart_set_legend` / `chart_set_colors`, which no toke function reaches),
 `chart_glue.c` and `dashboard_glue.c` (they measure `chart_tojson`'s own
 malloc'd JSON, never a toke string, and C109 builds `chart_glue.c` with a
-stub harness); `cache.c`, `keychain.c`, `infer.c` as before.  Gates: C1670
-(an ASan C driver over every csv, toml, zip and dataframe glue producer and
-over the glue readers with sealed inputs, plus a toke program) and C1671
-(the same over `std.toon`'s glue and `toon.c`'s readers), both under
-`TK_STR_VERIFY=1`.
+stub harness); `cache.c`, `keychain.c`, `infer.c` as before.
+`str.frombytes` (and its alias `str.from_bytes`), the producer every
+earlier tranche left out, now hands toke a sealed copy of the unpacked
+buffer, measured as a C string (a `[byte]` holding a 0 gives the bytes
+before it), and frees the buffer; `str_from_bytes`'s own copy is only the
+UTF-8 validator's and is freed as before.  C735's control, which needs an
+unconverted producer, moved from `str.frombytes` to `env.getor` (caller-owned
+by `env.tki`, so it stays malloc'd).  Gates: C1670 (an ASan C driver over
+every csv, toml, zip and dataframe glue producer and over the glue readers
+with sealed inputs, plus a toke program), C1671 (the same over
+`std.toon`'s glue and `toon.c`'s readers) and C1673 (`str.frombytes`:
+plain, empty, holding a 0, invalid UTF-8), all under `TK_STR_VERIFY=1`.
 
 **Codegen (step 4, S0).** `tk_str_len`, `tk_str_len_w`, `tk_str_char_at` and
 `tk_str_charat_w` are declared `nounwind willreturn readonly` in
