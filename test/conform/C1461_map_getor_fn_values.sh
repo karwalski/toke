@@ -10,9 +10,9 @@
 #
 # NOW: a function-signature V is adopted too, so the binding is a function
 # value (fnval_bind_sig) and calls through it are indirect calls, checked as
-# a same-module function value is (E4031 / E4026).  The result is borrowed
-# from the map (the binding retains it): case 5 calls closures read out of a
-# map 400000 times.
+# a same-module function value is (E4031 / E4026).  The call yields a
+# reference its consumer owns (the result retained, the default released --
+# 127.383, C1470): case 5 calls closures read out of a map 400000 times.
 #
 # Negative control: TKC built from fix/z166-imported-fn-types (4ef15404) --
 # cases 1-6, 8-10 and 13 red; 7, 11, 12 green on both.
