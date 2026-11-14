@@ -33,7 +33,10 @@ jobs:
             os: macos
             arch: arm64
           - target: macos-x86_64
-            runner: macos-13
+            # macos-13 images were retired by GitHub (December 2025); a job
+            # asking for one never starts, and `release` needs every build.
+            # macos-15-intel is the x86_64 image that replaced it (138.17).
+            runner: macos-15-intel
             os: macos
             arch: x86_64
 
@@ -97,8 +100,11 @@ jobs:
           done
 
           # LICENSE and NOTICE -- the vendored licences require their
-          # attributions to travel with the binaries (132.35).
-          cp LICENSE NOTICE "${STAGING}/"
+          # attributions to travel with the binaries (132.35).  The stdlib
+          # sources shipped above are MIT (135.15a): NOTICE points at
+          # LICENSING.md, and stdlib/LICENSE is the MIT text (138.17).
+          cp LICENSE NOTICE LICENSING.md "${STAGING}/"
+          cp stdlib/LICENSE "${STAGING}/stdlib/LICENSE"
 
           tar czf "${STAGING}.tar.gz" "${STAGING}"
           echo "TARBALL=${STAGING}.tar.gz" >> "$GITHUB_ENV"
@@ -223,7 +229,7 @@ jobs:
             - `src/stdlib/` — C sources needed for linking user programs
             - `stdlib/*.tki` — interface files for standard library modules
             - `stdlib/vendor/` — vendored cmark, tomlc99 and miniz sources
-            - `LICENSE`, `NOTICE`
+            - `LICENSE`, `NOTICE`, `LICENSING.md`, `stdlib/LICENSE` (MIT, the standard library)
 
             ### Verifying the binary
 
