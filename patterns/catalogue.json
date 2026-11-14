@@ -898,7 +898,7 @@
       "id": "acc-array",
       "family": "acc",
       "intent": "Accumulate values into a new @i64 in a loop.",
-      "applicability": "Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); `x=x+@(v)` calls tk_array_concat, which mallocs and copies the whole array every iteration (O(N^2) bytes, never freed). std.vec is a separate handle type needing `vec.toarray` at the end.",
+      "applicability": "Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w), so it is linear too. The form b numbers below are the 2026-09-19 tkc 2.8.0 measurement (a timeout), which predates 127.229. Re-measured on tkc 3b469371 (2026-11-14, loadavg 5-7), a and b have equal RSS and allocation counts, and the faster of the two changed between runs (b +6.5% at N=16,384,000; a +8.6% at N=8,192,000). Ingesting either run would settle the canonical form by noise, so the new numbers are held for an owner decision (127.437). std.vec is a separate handle type needing `vec.toarray` at the end.",
       "card_rule": "x=x.append(v), never x=x+@(v)",
       "candidates": [
         {
@@ -930,7 +930,7 @@
         },
         {
           "form": "b",
-          "label": "`x=x+@(v)` — expected: worse-bigO (concat copies the array each step)",
+          "label": "`x=x+@(v)` — in-place append since 127.229 (its 2026-09-19 numbers predate that)",
           "fixture": "patterns/acc-array/b.tk",
           "min_bytes": 69,
           "tokens": {
@@ -1716,7 +1716,7 @@
       "id": "str-array-render",
       "family": "str",
       "intent": "Collect N labels into a @str, then render each one.",
-      "applicability": "The collect-then-format shape of CLI/report tasks. Form a (interpolating an element of a `.append`-built `mut.@()`) printed an address until 127.10 closed; since 2026-09-19 it runs and matches its siblings, and it ties c on tokens (23) but is 10.2% slower and allocates 33% more (2.05M vs 1.54M calls). Form b uses the only append form that tags the array (`+@()`) but copies the array every iteration and is quadratic (timeout at 4N). Form c keeps `.append` and reads elements directly into the builder.",
+      "applicability": "The collect-then-format shape of CLI/report tasks. Form a (interpolating an element of a `.append`-built `mut.@()`) printed an address until 127.10 closed; since 2026-09-19 it runs and matches its siblings, and it ties c on tokens (23) but is 6.5% slower with 18% more peak RSS (re-measured 2026-11-14). Form b builds with `+@()`; since 127.229 that self-update is lowered to the in-place append, so it is linear (it timed out at 4N before), and it measures 11.4% slower than c with 18% more RSS. Form c keeps `.append` and reads elements directly into the builder.",
       "card_rule": "@str: build .append, render s.add",
       "candidates": [
         {
@@ -1731,24 +1731,24 @@
             "qwen25coder": 74,
             "cl100k": 73
           },
-          "wall_ms_median": 76.214,
+          "wall_ms_median": 78.574,
           "wall_ci95": [
-            74.985,
-            77.25
+            76.815,
+            79.697
           ],
-          "rss_kb_median": 63680,
+          "rss_kb_median": 78592,
           "allocs": {
-            "calls": 2048242,
-            "bytes": 51534582
+            "calls": 512239,
+            "bytes": 38052001
           },
-          "bigO_ratio": 3.757,
+          "bigO_ratio": 3.415,
           "pat_n": 512000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
           "form": "b",
-          "label": "`+@()`-built, interpolated read — expected: worse-bigO (array concat copies per append)",
+          "label": "`+@()`-built, interpolated read (in-place append since 127.229)",
           "fixture": "patterns/str-array-render/b.tk",
           "min_bytes": 176,
           "tokens": {
@@ -1758,16 +1758,19 @@
             "qwen25coder": 75,
             "cl100k": 74
           },
-          "wall_ms_median": 30000,
+          "wall_ms_median": 82.258,
           "wall_ci95": [
-            30000,
-            30000
+            79.293,
+            86.731
           ],
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": 99,
+          "rss_kb_median": 78608,
+          "allocs": {
+            "calls": 512239,
+            "bytes": 38052001
+          },
+          "bigO_ratio": 3.234,
           "pat_n": 512000,
-          "runtime_verdict": "worse-bigO",
+          "runtime_verdict": "slower",
           "token_verdict": "tied"
         },
         {
@@ -1782,17 +1785,17 @@
             "qwen25coder": 82,
             "cl100k": 81
           },
-          "wall_ms_median": 69.138,
+          "wall_ms_median": 73.809,
           "wall_ci95": [
-            67.558,
-            101.541
+            72.495,
+            74.789
           ],
-          "rss_kb_median": 55600,
+          "rss_kb_median": 66576,
           "allocs": {
-            "calls": 1536243,
-            "bytes": 54883516
+            "calls": 512240,
+            "bytes": 46409825
           },
-          "bigO_ratio": 3.767,
+          "bigO_ratio": 3.308,
           "pat_n": 512000,
           "runtime_verdict": "best",
           "token_verdict": "best"
@@ -1818,12 +1821,12 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "3b469371bff9",
+        "tkc_version": "toke 3.1.0 (git 3b469371bff9)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261114-121134.json",
+        "date": "2026-11-14",
         "load_warning": true
       }
     },

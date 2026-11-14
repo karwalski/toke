@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `c42dcc38a16c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `f307ce04ec2e`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -508,7 +508,7 @@ f=main():i64{
 
 Accumulate values into a new @i64 in a loop.
 
-Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); `x=x+@(v)` calls tk_array_concat, which mallocs and copies the whole array every iteration (O(N^2) bytes, never freed). std.vec is a separate handle type needing `vec.toarray` at the end.
+Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w), so it is linear too. The form b numbers below are the 2026-09-19 tkc 2.8.0 measurement (a timeout), which predates 127.229. Re-measured on tkc 3b469371 (2026-11-14, loadavg 5-7), a and b have equal RSS and allocation counts, and the faster of the two changed between runs (b +6.5% at N=16,384,000; a +8.6% at N=8,192,000). Ingesting either run would settle the canonical form by noise, so the new numbers are held for an owner decision (127.437). std.vec is a separate handle type needing `vec.toarray` at the end.
 
 **Write this** — `x=x.append(v)` (`patterns/acc-array/a.tk`):
 
@@ -535,7 +535,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — `x=x+@(v)` (`patterns/acc-array/b.tk`):
+**Not this** — `x=x+@(v)` — in-place append since 127.229 (its 2026-09-19 numbers predate that) (`patterns/acc-array/b.tk`):
 
 ```toke
 m=main;
@@ -994,7 +994,7 @@ f=main():i64{
 
 Collect N labels into a @str, then render each one.
 
-The collect-then-format shape of CLI/report tasks. Form a (interpolating an element of a `.append`-built `mut.@()`) printed an address until 127.10 closed; since 2026-09-19 it runs and matches its siblings, and it ties c on tokens (23) but is 10.2% slower and allocates 33% more (2.05M vs 1.54M calls). Form b uses the only append form that tags the array (`+@()`) but copies the array every iteration and is quadratic (timeout at 4N). Form c keeps `.append` and reads elements directly into the builder.
+The collect-then-format shape of CLI/report tasks. Form a (interpolating an element of a `.append`-built `mut.@()`) printed an address until 127.10 closed; since 2026-09-19 it runs and matches its siblings, and it ties c on tokens (23) but is 6.5% slower with 18% more peak RSS (re-measured 2026-11-14). Form b builds with `+@()`; since 127.229 that self-update is lowered to the in-place append, so it is linear (it timed out at 4N before), and it measures 11.4% slower than c with 18% more RSS. Form c keeps `.append` and reads elements directly into the builder.
 
 **Write this** — `.append`-built, direct `s.add(b;labels.get(i))` reads (`patterns/str-array-render/c.tk`):
 
@@ -1024,7 +1024,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — `+@()`-built, interpolated read (`patterns/str-array-render/b.tk`):
+**Not this** — `+@()`-built, interpolated read (in-place append since 127.229) (`patterns/str-array-render/b.tk`):
 
 ```toke
 m=main;
@@ -1052,9 +1052,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 23 | 181 | 76.21 | 63680 |
-| `b` — avoid | 24 | 176 | 30000.00 | pending |
-| `c` — canonical | 23 | 200 | 69.14 | 55600 |
+| `a` — avoid | 23 | 181 | 78.57 | 78592 |
+| `b` — avoid | 24 | 176 | 82.26 | 78608 |
+| `c` — canonical | 23 | 200 | 73.81 | 66576 |
 
 ## Errors (`err`)
 
