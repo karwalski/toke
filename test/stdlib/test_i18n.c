@@ -11,6 +11,7 @@
 #include "tk_strhdr.h"   /* 127.295: tks_hdrlen */
 #include <stdio.h>
 #include <string.h>
+#include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 
 static int g_pass = 0;

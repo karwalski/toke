@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 /* 127.241: the error slot (runtime-abi.md §7.2).  The `T!EncodingErr`
  * decoders returned an EMPTY ARRAY for input that is not valid base64 or

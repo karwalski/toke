@@ -78,6 +78,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 #include "diag.h"
 #include "lexer.h"
@@ -370,7 +371,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
                                * composition" is advice; the rewrite needs a
                                * std.str import, an alias and a conversion per
                                * non-str piece, none of which the lexer knows. */
-                              NULL);
+                              (const char *)NULL);
                 }
                 advance(l);
                 int depth = 1;
@@ -815,7 +816,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             else
                 diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
                           "Python comment '#' detected; toke comments are written (* comment *)",
-                          NULL);
+                          (const char *)NULL);
             while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
             continue;
         }

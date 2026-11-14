@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 /* Defined in src/stdlib/tk_runtime.c in a real program.  `make
  * test-stdlib-toml-glue` stands them in here so the unit test links without

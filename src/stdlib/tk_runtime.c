@@ -54,7 +54,13 @@ TK_TLS int64_t tk_current_error = 0;
 #define TK_ERR_INLINE 64
 typedef struct { void *buf; int64_t cap; } TkErrBuf;
 static TK_TLS TkErrBuf       err = { NULL, 0 };
-static TK_TLS unsigned char  err_inline[TK_ERR_INLINE];
+/* 127.439: int64_t storage, not unsigned char.  Every box is written as
+ * int64_t slots, and a char array has alignment 1: in glibc's TLS block it
+ * landed 4-byte aligned, so each raise stored to a misaligned address (UBSan
+ * "store to misaligned address ... for type 'int64_t'" in db_glue, ws_glue,
+ * C310/C524/C542/C203/C1691 on Linux).  macOS happened to place it aligned. */
+static TK_TLS int64_t        err_inline_words[TK_ERR_INLINE / sizeof(int64_t)];
+#define err_inline ((unsigned char *)err_inline_words)
 #define err_buf err.buf
 #define err_cap err.cap
 

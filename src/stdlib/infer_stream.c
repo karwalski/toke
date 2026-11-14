@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <errno.h>
 #include <time.h>
 
@@ -43,6 +44,11 @@
 #  include <fcntl.h>
 #  include <sys/wait.h>
 extern char **environ;
+#endif
+#if defined(__linux__)
+/* 127.439: makedev() (detect_linux).  glibc 2.28 stopped declaring it via
+ * <sys/types.h>; <sys/sysmacros.h> is where it lives. */
+#  include <sys/sysmacros.h>
 #endif
 
 /* =========================================================================
@@ -142,13 +148,15 @@ static const char *detect_linux(const char *path)
         FILE *tf = fopen(transport_path, "r");
         if (tf) {
             char transport[64] = {0};
-            if (fgets(transport, sizeof(transport), tf) != NULL) {
-                fclose(tf);
+            int got = fgets(transport, sizeof(transport), tf) != NULL;
+            fclose(tf);
+            /* 127.442: close d only when returning.  It was closed before
+             * the nvme test, so a device with a non-nvme transport (scsi,
+             * virtio) fell through to the rotational check
+             * and closedir'd it a second time -- a double free. */
+            if (got && strstr(transport, "nvme")) {
                 closedir(d);
-                if (strstr(transport, "nvme"))
-                    return "nvme";
-            } else {
-                fclose(tf);
+                return "nvme";
             }
         }
 

@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>   /* 121.1b: waitpid/WEXITSTATUS for --emit-asm argv-exec */
@@ -1564,7 +1565,7 @@ have_ast:
             stem(src, tki_stem, (int)sizeof(tki_stem));
             if (out && !out_is_dir) {
                 snprintf(tki, sizeof(tki), "%s.tki", out);
-            } else if (out_is_dir) {
+            } else if (out_is_dir && out) {   /* out_is_dir implies out; said for the analyzer (127.439) */
                 char out_clean[PATH_BUF];
                 strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
                 int oclen = (int)strlen(out_clean);
@@ -1698,7 +1699,7 @@ have_ast:
     char obin[PATH_BUF], ostm[MSG_BUF];
     if (out && !out_is_dir) {
         strncpy(obin, out, sizeof(obin) - 1); obin[sizeof(obin) - 1] = '\0';
-    } else if (out_is_dir) {
+    } else if (out_is_dir && out) {   /* out_is_dir implies out; said for the analyzer (127.439) */
         /* For directory output, derive basename from source stem */
         stem(src, ostm, (int)sizeof(ostm));
         /* Strip trailing slash from out for clean path */

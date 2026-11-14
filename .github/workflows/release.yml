@@ -4,10 +4,19 @@ on:
   push:
     tags:
       - 'v*'
+  # 127.439: the build matrix (conform + the -Werror release build + packaging
+  # on all four platforms) also runs on a pull request and on demand, so a
+  # release blocker is found before a tag rather than by one.  Nothing is
+  # signed, published or released on these events: the `release` job's
+  # signing and publishing steps, and the tag/VERSION check, run only on a
+  # refs/tags/v* ref (each carries its own `if:` below).
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
+# Least privilege by default; the release job asks for what it needs.
 permissions:
-  contents: write      # needed by softprops/action-gh-release to create releases
-  id-token: write      # needed by cosign keyless signing (OIDC token exchange)
+  contents: read
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
@@ -29,7 +38,10 @@ jobs:
             os: linux
             arch: arm64
           - target: macos-arm64
-            runner: macos-14
+            # 127.439: macos-14 is no longer offered ("The configuration
+            # 'macos-14-arm64-us-default' is not supported"; the job is
+            # cancelled in one second).  macos-15 is the arm64 image.
+            runner: macos-15
             os: macos
             arch: arm64
           - target: macos-x86_64
@@ -43,9 +55,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 127.439: a tag that does not match VERSION would publish a binary
+      # whose `tkc --version` names another release.
+      - name: Tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "${GITHUB_REF_NAME#v}" = "$(cat VERSION)"
+
       - name: Install dependencies (Linux)
         if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      # 127.439: `make conform` runs the compiler it finds and does not build
+      # one ("conform: no compiler at .../tkc (run 'make' first)"), so this
+      # gate failed on every platform before testing anything.
+      - name: Build tkc
+        run: make -k   # -k: report every failing object, not just the first
 
       - name: Conformance gate
         run: make conform
@@ -59,7 +83,11 @@ jobs:
           # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
           # of the tkc executable (the tarball puts src/stdlib beside tkc), not
           # the caller's cwd, so a released tkc works from any directory.
-          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"src/stdlib\"'"
+          # 127.439: the release build is the Makefile's own flag set plus
+          # these, not a replacement CFLAGS.  The old replacement dropped the
+          # 123.9 hardening flags (the shipped binary had none) and the
+          # -Wno-format-truncation policy (gcc 15 then failed the build).
+          make BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
 
       # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
       # compiler under which programs the website publishes no longer
@@ -76,7 +104,13 @@ jobs:
 
       - name: Package release tarball
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          # On a tag the version is the tag; on a pull request or a manual
+          # run (127.439) GITHUB_REF_NAME is e.g. "12/merge", so the
+          # tarball is named for VERSION and the commit instead.
+          case "${GITHUB_REF}" in
+            refs/tags/v*) VERSION="${GITHUB_REF_NAME}" ;;
+            *)            VERSION="v$(cat VERSION)-ci.$(git rev-parse --short HEAD)" ;;
+          esac
           STAGING="tkc-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}"
           mkdir -p "${STAGING}/src/stdlib"
           mkdir -p "${STAGING}/stdlib/vendor"
@@ -124,7 +158,14 @@ jobs:
     name: SBOM, signing, and release
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      contents: write      # needed by softprops/action-gh-release to create releases
+      id-token: write      # needed by cosign keyless signing (OIDC token exchange)
 
+    # 127.439: on a pull request or a manual run this job rebuilds and
+    # generates the SBOM (neither signs nor publishes anything), so the SBOM
+    # tooling is exercised before a tag.  Every signing, tamper-test,
+    # download and release step below is guarded to refs/tags/v* only.
     steps:
       - uses: actions/checkout@v4
 
@@ -138,34 +179,59 @@ jobs:
           # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
           # of the tkc executable (the tarball puts src/stdlib beside tkc), not
           # the caller's cwd, so a released tkc works from any directory.
-          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"src/stdlib\"'"
+          # 127.439: the release build is the Makefile's own flag set plus
+          # these, not a replacement CFLAGS.  The old replacement dropped the
+          # 123.9 hardening flags (the shipped binary had none) and the
+          # -Wno-format-truncation policy (gcc 15 then failed the build).
+          make BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
 
       # ── SBOM ──────────────────────────────────────────────────────────────
+      # 127.439: pinned (installer script and binary from the same tag);
+      # `syft packages` is deprecated in favour of `syft scan`.
       - name: Install syft
         run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin
+          v=v1.57.1
+          curl -sSfL "https://raw.githubusercontent.com/anchore/syft/${v}/install.sh" \
+            | sh -s -- -b /usr/local/bin "${v}"
+          syft version
 
       - name: Generate SPDX SBOM
-        run: syft packages file:./tkc -o spdx-json > tkc-sbom.spdx.json
+        run: syft scan file:./tkc -o spdx-json > tkc-sbom.spdx.json
 
       - name: Compute SBOM checksum
         run: sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
 
       # ── Binary signing (cosign keyless via GitHub Actions OIDC) ───────────
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: sigstore/cosign-installer@v3.10.1
+        with:
+          cosign-release: 'v2.6.1'
 
+      # 127.439: `sign-blob > tkc.sig` wrote a bare base64 signature, which
+      # `verify-blob --bundle tkc.sig` (the tamper test and the published
+      # instructions) cannot read, so the tamper test "passed" on a parse
+      # error and proved nothing.  --bundle writes the bundle (signature,
+      # certificate and Rekor entry) that verify-blob --bundle expects.
       - name: Sign binary (keyless)
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           COSIGN_EXPERIMENTAL: "1"
-        run: cosign sign-blob --yes tkc > tkc.sig
+        run: cosign sign-blob --yes --bundle tkc.sig tkc
 
       # ── Tamper-detection test ─────────────────────────────────────────────
       - name: Tamper test
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
+          # Positive control first (127.439): the untampered binary must
+          # verify, or a rejection of the tampered one proves nothing.
+          cosign verify-blob \
+               --bundle tkc.sig \
+               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
+               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+               tkc
           cp tkc tkc-tampered
           echo "x" >> tkc-tampered
           if cosign verify-blob \
@@ -181,17 +247,20 @@ jobs:
 
       # ── Download all platform tarballs ──────────────────────────────────
       - name: Download all artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts/
           merge-multiple: true
 
       - name: Compute checksums
+        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: release-artifacts
         run: sha256sum tkc-*.tar.gz > checksums.txt
 
       # ── Publish GitHub release ────────────────────────────────────────────
       - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |

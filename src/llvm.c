@@ -42,6 +42,7 @@
 #include "glue_gen.h"
 #include <stdio.h>
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <stdarg.h>
 #include <unistd.h>     /* 121.1b: fork/execvp/_exit for argv-exec */
@@ -255,8 +256,9 @@ static void mangle_fn_name(const Ctx *c, char *buf, int sz) {
     }
     char tmp[256];
     snprintf(tmp, sizeof tmp, "%s%s", c->module_prefix, buf);
-    strncpy(buf, tmp, (size_t)(sz - 1));
-    buf[sz - 1] = '\0';
+    /* 127.439: snprintf, not strncpy + terminator (gcc 15
+     * -Wstringop-truncation); truncation is intended, as before. */
+    snprintf(buf, (size_t)sz, "%s", tmp);
 }
 
 /*
@@ -1274,10 +1276,17 @@ static void prepass_imports(Ctx *c, const Node *n) {
         /* Store the FULL dotted module path (e.g., "mod.a" not just "a")
          * for cross-module symbol mangling (Story 81b.7). */
         ia->module[0] = '\0';
-        for (int s = 0; s < mp->child_count; s++) {
+        /* 127.439: joined with snprintf and an explicit length, not strncat
+         * (gcc 15 -Werror=stringop-truncation).  Same result: segments
+         * joined by '.', truncated at sizeof ia->module - 1. */
+        size_t ml = 0;
+        for (int s = 0; s < mp->child_count && ml < sizeof(ia->module) - 1; s++) {
             char seg[ALIAS_BUF]; tok_cp(c->src, mp->children[s], seg, sizeof seg);
-            if (s > 0) strncat(ia->module, ".", sizeof(ia->module) - strlen(ia->module) - 1);
-            strncat(ia->module, seg, sizeof(ia->module) - strlen(ia->module) - 1);
+            int w = snprintf(ia->module + ml, sizeof(ia->module) - ml, "%s%s",
+                             s > 0 ? "." : "", seg);
+            if (w < 0) break;
+            ml += (size_t)w < sizeof(ia->module) - ml ? (size_t)w
+                                                      : sizeof(ia->module) - 1 - ml;
         }
         /* Check if first path segment is "std" to distinguish stdlib from user modules */
         char seg0[ALIAS_BUF]; tok_cp(c->src, mp->children[0], seg0, sizeof seg0);
@@ -3098,7 +3107,9 @@ static const char *sum_arm_bind_llvm_type(Ctx *c, const Node *m, const Node *arm
     if (!si || !si->is_sum) return NULL;
     char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
     int vidx = struct_field_index(si, tag);
-    if (vidx < 0 || !si->field_types[vidx]) return NULL;
+    /* 127.439: field_types[vidx] is an array, never NULL (gcc -Waddress);
+     * the dead half of this test is gone, behaviour unchanged. */
+    if (vidx < 0) return NULL;
     const char *vty = si->field_types[vidx];
     if (vty[0] == '$') vty++;
     if (!strcmp(vty, "f64") || !strcmp(vty, "f32")) return "double";
@@ -4103,7 +4114,7 @@ static void fallible_local_record(Ctx *c, const char *lname, int uce, int zok,
     if (i < 0) {
         if (c->fall_count >= TKC_MAX_FALLIBLE_LOCALS) return; /* sentinel fallback */
         i = c->fall_count++;
-        strncpy(c->fall_name[i], lname, NAME_BUF - 1); c->fall_name[i][NAME_BUF - 1] = '\0';
+        snprintf(c->fall_name[i], NAME_BUF, "%s", lname);
         c->fall_slot[i][0] = '\0';
         c->fall_pre[i] = 0;
     }
@@ -4198,7 +4209,7 @@ static void fallible_local_premint(Ctx *c, const char *lname)
     if (!lname || fallible_local_index(c, lname) >= 0) return;
     if (c->fall_count >= TKC_MAX_FALLIBLE_LOCALS) return;   /* sentinel fallback */
     int i = c->fall_count++;
-    strncpy(c->fall_name[i], lname, NAME_BUF - 1); c->fall_name[i][NAME_BUF - 1] = '\0';
+    snprintf(c->fall_name[i], NAME_BUF, "%s", lname);
     c->fall_uce[i] = 0; c->fall_zok[i] = 0; c->fall_errty[i][0] = '\0';
     c->fall_pre[i] = 1;
     snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
@@ -9821,8 +9832,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!av && !strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
             if (is_mod) {
-                /* Build mangled name for lookup (Story 81b.7) */
-                char mangled[256];
+                /* Build mangled name for lookup (Story 81b.7).  is_mod means
+                 * the loop below finds the alias; initialised anyway because
+                 * cppcheck cannot see that (127.439, uninitvar). */
+                char mangled[256] = "";
                 for (int ii = 0; ii < c->import_count; ii++) {
                     if (!strcmp(c->imports[ii].alias, alias)) {
                         const char *mp = c->imports[ii].module;
@@ -10811,8 +10824,7 @@ static int la_collect_linear(Ctx *c, const Node *fn, char (*out)[NAME_BUF], int 
                         la_assigns_ok(c, body, x, &binds, &self_updates, &borrowed) &&
                         binds >= 1 && self_updates >= 1 &&
                         (borrowed == 0 || binds == 1)) {
-                        strncpy(out[*count], x, NAME_BUF - 1);
-                        out[*count][NAME_BUF - 1] = '\0';
+                        snprintf(out[*count], NAME_BUF, "%s", x);
                         (*count)++;
                     }
                 }
@@ -11069,8 +11081,7 @@ static void compute_str_arrays(Ctx *c, const Node *fn) {
                                                                            : n->children[1];
                 char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
                 if (!is_str_loc(c, x) && c->str_loc_count < 64 && expr_is_str_value(c, rhs)) {
-                    strncpy(c->str_loc[c->str_loc_count], x, NAME_BUF - 1);
-                    c->str_loc[c->str_loc_count][NAME_BUF - 1] = '\0';
+                    snprintf(c->str_loc[c->str_loc_count], NAME_BUF, "%s", x);
                     c->str_loc_count++; added = 1;
                 }
             }
@@ -11095,8 +11106,7 @@ static void compute_str_arrays(Ctx *c, const Node *fn) {
                     for (int k = 0; k < c->str_arr_count; k++)
                         if (!strcmp(c->str_arr[k], x)) { known = 1; break; }
                     if (!known && c->str_arr_count < 64) {
-                        strncpy(c->str_arr[c->str_arr_count], x, NAME_BUF - 1);
-                        c->str_arr[c->str_arr_count][NAME_BUF - 1] = '\0';
+                        snprintf(c->str_arr[c->str_arr_count], NAME_BUF, "%s", x);
                         c->str_arr_count++; added = 1;
                     }
                 }
@@ -11165,8 +11175,7 @@ static void emit_stmt(Ctx *c, const Node *n)
              * as an indirect call. Record the toke name before make_unique_name. */
             if (init_node->kind == NODE_CLOSURE) clos_grow(c);
             if (init_node->kind == NODE_CLOSURE && c->clos_lcount < c->clos_lcap) {
-                strncpy(c->clos_lname[c->clos_lcount], tb, NAME_BUF - 1);
-                c->clos_lname[c->clos_lcount][NAME_BUF - 1] = '\0';
+                snprintf(c->clos_lname[c->clos_lcount], NAME_BUF, "%s", tb);
                 c->clos_lnode[c->clos_lcount] = init_node;
                 c->clos_lser[c->clos_lcount] = c->fn_serial;
                 c->clos_lcount++;
@@ -11190,8 +11199,7 @@ static void emit_stmt(Ctx *c, const Node *n)
                 }
             }
             if (init_node->kind == NODE_FUNC_REF && c->fref_lcount < c->fref_lcap) {
-                strncpy(c->fref_lname[c->fref_lcount], tb, NAME_BUF - 1);
-                c->fref_lname[c->fref_lcount][NAME_BUF - 1] = '\0';
+                snprintf(c->fref_lname[c->fref_lcount], NAME_BUF, "%s", tb);
                 c->fref_lnode[c->fref_lcount] = init_node;
                 c->fref_lcount++;
             }
@@ -13272,12 +13280,29 @@ timeparts_done:
      * present). Applies to every emitted function via the #0 attribute group. */
     fputs("\nattributes #0 = { sspstrong \"stack-protector-buffer-size\"=\"8\" }\n", body_file);
 
+    /* 127.439: the module states that its code goes into a position-
+     * independent executable, as clang's own modules do.  With no "PIC Level"
+     * LLVM treats an IR file as non-PIC, so the guard global the sspstrong
+     * canary above reads (__stack_chk_guard on aarch64 glibc) was addressed
+     * directly (R_AARCH64_ADR_PREL_PG_HI21), and every program failed to link
+     * as the PIE Ubuntu's clang builds by default: "relocation ... can not be
+     * used when making a shared object".  Driver -fPIE/-fPIC do not change
+     * an IR input's level; the module flag does (GOT relocations).  Not for
+     * wasm, which has no PIE executable.  Same ids space as the debug nodes. */
+    int pic_md = -1, pie_md = -1;
+    int is_wasm = env && env->target && strstr(env->target, "wasm") != NULL;
+    if (!is_wasm) { pic_md = next_dbg(&ctx); pie_md = next_dbg(&ctx); }
+
     /* Story 76.1.5: emit DWARF debug metadata nodes at module tail */
     if (ctx.debug) {
         fputs("\n; Debug metadata (Story 76.1.5)\n", body_file);
         fprintf(body_file, "!llvm.dbg.cu = !{!%d}\n", ctx.dbg_cu);
-        fprintf(body_file, "!llvm.module.flags = !{!%d, !%d}\n",
-                next_dbg(&ctx), next_dbg(&ctx));
+        int dwv = next_dbg(&ctx), div = next_dbg(&ctx);
+        if (pic_md >= 0)
+            fprintf(body_file, "!llvm.module.flags = !{!%d, !%d, !%d, !%d}\n",
+                    dwv, div, pic_md, pie_md);
+        else
+            fprintf(body_file, "!llvm.module.flags = !{!%d, !%d}\n", dwv, div);
         /* DIFile */
         fprintf(body_file, "!%d = !DIFile(filename: \"%s\", directory: \"%s\")\n",
                 ctx.dbg_file, ctx.dbg_source_file, ctx.dbg_source_dir);
@@ -13287,10 +13312,14 @@ timeparts_done:
                 "runtimeVersion: 0, emissionKind: FullDebug)\n",
                 ctx.dbg_cu, ctx.dbg_file);
         /* Module flags for DWARF version and Debug Info Version */
-        fprintf(body_file, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n",
-                ctx.dbg_next - 2);
-        fprintf(body_file, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n",
-                ctx.dbg_next - 1);
+        fprintf(body_file, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n", dwv);
+        fprintf(body_file, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n", div);
+    } else if (pic_md >= 0) {
+        fprintf(body_file, "\n!llvm.module.flags = !{!%d, !%d}\n", pic_md, pie_md);
+    }
+    if (pic_md >= 0) {
+        fprintf(body_file, "!%d = !{i32 8, !\"PIC Level\", i32 2}\n", pic_md);
+        fprintf(body_file, "!%d = !{i32 7, !\"PIE Level\", i32 2}\n", pie_md);
     }
 
     /* ── Pass 2: read body, scan for references, emit only needed decls ── */
@@ -13744,7 +13773,7 @@ static const IrDecl *ir_map_failure(const char *err, const char *const *lls, int
     /* 3. an LLVM backend error naming the function: "in function <sym> " */
     if ((m = strstr(err, "in function ")) != NULL) {
         const char *q = m + 12; size_t k = 0;
-        while (ir_ident_ch((unsigned char)q[k]) && k < sizeof sym - 1) { sym[k] = q[k]; k++; }
+        while (k < sizeof sym - 1 && ir_ident_ch((unsigned char)q[k])) { sym[k] = q[k]; k++; }
         sym[k] = '\0';
         if (k) return ir_decl_by_sym(sym);
     }
@@ -13865,9 +13894,13 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     /* Story 102.19: conditional linker flags based on resolved deps.
      * Only -lm and -lpthread are always included; everything else comes
      * from the per-module extra_flags in stdlib_table. */
-    const char *base_cflags = "-D_GNU_SOURCE";
+    /* 127.439: one definition per platform (the Apple overwrite of a
+     * default was a dead store there, and skiplisting it went stale on
+     * Linux).  Same values as before. */
 #if defined(__APPLE__)
-    base_cflags = "-I/opt/homebrew/include";
+    const char *base_cflags = "-I/opt/homebrew/include";
+#else
+    const char *base_cflags = "-D_GNU_SOURCE";
 #endif
 
     /* Build the library flags: always include -lm -lpthread */
@@ -13990,7 +14023,9 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
             /* 127.218: an undefined symbol that a stdlib CALL lowered to is
              * an export with no implementation: report it at the call. */
             const IrCall *uc = NULL;
-            if (!strncmp(why, "undefined symbol '", 18)) {
+            /* why is filled only from cerr (127.439: gcc 15 folded the
+             * cerr == NULL path to a constant compare, -Wstring-compare) */
+            if (cerr && !strncmp(why, "undefined symbol '", 18)) {
                 const char *us = why + 18, *ue = strchr(us, '\'');
                 if (ue) uc = ir_call_by_sym(us, (size_t)(ue - us));
             }

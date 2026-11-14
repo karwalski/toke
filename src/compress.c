@@ -689,7 +689,9 @@ int compress_json(const char *input, size_t len, char *out_buf)
         /* First object: emit schema header */
         if (!header_emitted) {
             nkeys = cur_n;
-            memcpy(schema_keys, cur_keys, sizeof(cur_keys));
+            /* 127.439: copy the cur_n keys that were read, not all 32 rows
+             * (gcc 15 -Wmaybe-uninitialized: the rest are never written). */
+            memcpy(schema_keys, cur_keys, (size_t)cur_n * sizeof cur_keys[0]);
             out = snprintf(out_buf, JSON_MAGIC_LEN + 8, "%s%d ",
                            JSON_MAGIC, nkeys);
             for (int i = 0; i < nkeys; i++) {

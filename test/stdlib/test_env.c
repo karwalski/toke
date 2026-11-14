@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <unistd.h>
 #include "../../src/stdlib/env.h"
@@ -212,7 +213,7 @@ int main(void)
                 "TOKE_FL_SQ='single quoted'\n"
                 "TOKE_FL_ESC=\"line1\\nline2\"\n"
                 "  TOKE_FL_TRIM  =  trimmed  \n";
-            write(fd, content, strlen(content));
+            if (write(fd, content, strlen(content)) < 0) perror("write");   /* 127.439 */
             close(fd);
 
             int n = env_file_load(tmppath);

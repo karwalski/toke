@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <math.h>
 #include <stdint.h>
 
@@ -34,7 +35,8 @@ static int failures = 0;
          else { printf("pass: %s\n", msg); } } while (0)
 
 #define ASSERT_CONTAINS(str, sub, msg) \
-    ASSERT((str) && (sub) && strstr((str),(sub)) != NULL, msg)
+    do { const char *sh_ = (str), *sn_ = (sub); /* 127.439: no gcc -Waddress on arrays */ \
+         ASSERT(sh_ && sn_ && strstr(sh_, sn_) != NULL, msg); } while (0)
 
 #define ASSERT_NEAR(a, b, eps, msg) \
     ASSERT(fabs((double)(a) - (double)(b)) <= (double)(eps), msg)

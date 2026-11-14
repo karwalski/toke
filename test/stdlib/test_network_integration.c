@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -31,14 +32,16 @@ static int failures = 0;
          else { printf("pass: %s\n", msg); } } while (0)
 
 #define ASSERT_STREQ(a, b, msg) \
-    ASSERT((a) && (b) && strcmp((a),(b)) == 0, msg)
+    do { const char *sa_ = (a), *sb_ = (b); /* 127.439: no gcc -Waddress on arrays */ \
+         ASSERT(sa_ && sb_ && strcmp(sa_, sb_) == 0, msg); } while (0)
 
 #define ASSERT_INTEQ(a, b, msg) \
     ASSERT((a) == (b), msg)
 
 /* Assert that needle appears somewhere inside haystack. */
 #define ASSERT_CONTAINS(haystack, needle, msg) \
-    ASSERT((haystack) && strstr((haystack), (needle)) != NULL, msg)
+    do { const char *sh_ = (haystack), *sn_ = (needle); /* 127.439: no gcc -Waddress on arrays */ \
+         ASSERT(sh_ && sn_ && strstr(sh_, sn_) != NULL, msg); } while (0)
 
 /* ----------------------------------------------------------------------- */
 /* Shared handler state — static globals let handlers report back to tests  */

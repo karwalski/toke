@@ -36,7 +36,7 @@ int main(void){
     FILE *ef=fopen(extfile,"w"); fputs("survive",ef); fclose(ef);
     snprintf(tree,sizeof tree,"%s/tree",root); mkdir(tree,0755);
     snprintf(link,sizeof link,"%s/link",tree);
-    symlink(ext, link);
+    if (symlink(ext, link) != 0) perror("symlink");   /* 127.439: checked */
 
     /* AMB-05: rmdir_r must remove the symlink, not recurse into the external dir. */
     file_rmdir_r(tree);
@@ -47,7 +47,7 @@ int main(void){
     snprintf(real,sizeof real,"%s/real.txt",root);
     FILE *rf=fopen(real,"w"); fputs("data",rf); fclose(rf);
     snprintf(sym,sizeof sym,"%s/sym.txt",root);
-    symlink(real, sym);
+    if (symlink(real, sym) != 0) perror("symlink");   /* 127.439: checked */
     StrFileResult viaSym = file_read(sym);
     CHECK(viaSym.is_err==1, "AMB-07 file_read through a symlink fails (O_NOFOLLOW)");
     StrFileResult viaReal = file_read(real);

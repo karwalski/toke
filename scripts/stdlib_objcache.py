@@ -197,7 +197,17 @@ def main(argv):
         try:
             tobj = os.path.join(tmp, stem)
             dfile = os.path.join(tmp, "deps.d")
-            p = subprocess.run([exe] + flags + ["-c", src, "-o", tobj,
+            # 127.439: vendored C (stdlib/vendor/: cmark, tomlc99, miniz) is
+            # not ours to edit, so it is compiled without -Werror -- as tkc
+            # compiles it for a program, and as the Makefile's test targets
+            # do.  Recent glibc's const-preserving C23 strchr/bsearch macros
+            # make toml.c and cmark warn, and every conformance harness that
+            # links the full stdlib set failed on that.  Our sources keep
+            # every flag the caller gave.
+            cflags = flags
+            if "%sstdlib%svendor%s" % (os.sep, os.sep, os.sep) in src:
+                cflags = [f for f in flags if f != "-Werror"]
+            p = subprocess.run([exe] + cflags + ["-c", src, "-o", tobj,
                                                 "-MD", "-MF", dfile],
                                capture_output=True)
             if p.returncode != 0:
