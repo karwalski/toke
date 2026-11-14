@@ -18,6 +18,8 @@
 #include <string.h>
 #include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "../../src/stdlib/log.h"
 
 static int failures = 0;
@@ -33,17 +35,36 @@ static int failures = 0;
 
 /*
  * redirect_stderr_to / restore_stderr:
- *   redirect_stderr_to(path) — reopen stderr to write into path.
- *   restore_stderr()         — reopen stderr to /dev/stderr.
+ *   redirect_stderr_to(path) — point fd 2 at path (truncated).
+ *   restore_stderr()         — put the original fd 2 back.
+ *
+ * 127.439: these used to freopen(path) and then freopen("/dev/stderr").
+ * After the first freopen fd 2 IS the capture file, so on Linux, where
+ * /dev/stderr reopens /proc/self/fd/2 rather than duplicating it, "restore"
+ * truncated the capture file and left stderr pointing at it.  Every later
+ * FAIL line went into a file that was then deleted.  The original
+ * descriptor is now saved with dup() and put back with dup2().
  */
+static int g_saved_stderr = -1;
+
 static void redirect_stderr_to(const char *path)
 {
-    if (!freopen(path, "w", stderr)) perror("freopen");   /* 127.439 */
+    fflush(stderr);
+    if (g_saved_stderr < 0) g_saved_stderr = dup(STDERR_FILENO);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { perror("open"); return; }
+    dup2(fd, STDERR_FILENO);
+    close(fd);
 }
 
 static void restore_stderr(void)
 {
-    if (!freopen("/dev/stderr", "w", stderr)) perror("freopen");   /* 127.439 */
+    fflush(stderr);
+    if (g_saved_stderr >= 0) {
+        dup2(g_saved_stderr, STDERR_FILENO);
+        close(g_saved_stderr);
+        g_saved_stderr = -1;
+    }
 }
 
 /*
