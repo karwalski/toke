@@ -350,8 +350,8 @@ CLA="$(sed -n 's/^#define TK_TLS_GROUPS_CLASSICAL *"\(.*\)"$/\1/p' "${S}/tls.h")
 build() {   # name [extra -D flags...]
     local name="$1"; shift
     if ! "${CC}" "${CF[@]}" "$@" -o "drv_${name}" drv.c "${S}/http.c" "${S}/llm.c" "${LINK[@]}" \
-            ${OSSL_LIBS} -lz -lpthread > "cc_${name}.log" 2>&1; then
-        fail "variant ${name}: driver does not build: $(grep -a -m1 -E 'error' "cc_${name}.log")"
+            ${OSSL_LIBS} -lz -lpthread -lm > "cc_${name}.log" 2>&1; then
+        fail "variant ${name}: driver does not build: $(grep -a -m2 -E 'undefined reference|error' "cc_${name}.log" | tr '\n' ' ')"
         return 1
     fi
 }

@@ -177,7 +177,7 @@ LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${SL}" --tkc "${T
            --objects http -- "${CF[@]}")" \
     || { echo "FAIL: stdlib link set"; echo "C1550: 0 passed, 1 failed"; exit 1; }
 LS=(); while IFS= read -r l; do LS+=("$l"); done <<< "${LINKSET}"
-if ! "${CC}" "${CF[@]}" -o probe probe.c "${LS[@]}" ${OSSL_LIBS} -lz -lpthread > build.log 2>&1; then
+if ! "${CC}" "${CF[@]}" -o probe probe.c "${LS[@]}" ${OSSL_LIBS} -lz -lpthread -lm > build.log 2>&1; then
     echo "FAIL: the probe does not build"; head -8 build.log; echo "C1550: 0 passed, 1 failed"; exit 1
 fi
 # stdout only: the server's own stderr lines (DIAGNOSTIC: server_listening ...) go to a log.
