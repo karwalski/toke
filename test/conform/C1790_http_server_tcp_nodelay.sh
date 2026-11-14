@@ -130,7 +130,7 @@ int main(void)
 }
 EOF
 
-CF=(-std=c99 -D_GNU_SOURCE -g -O1 -Wall -Wextra -Werror -Wno-unused-function -iquote "${S}" -I"${S}")
+CF=(-std=c99 -D_GNU_SOURCE -g -Wall -Wextra -Werror -Wno-unused-function -iquote "${S}" -I"${S}")
 LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --cc "${CC}" --objects http -- "${CF[@]}")" \
     || { echo "  FAIL: stdlib link set (see above)"; echo "C1790: 0 passed, 1 failed"; exit 1; }
 LINK=(); while IFS= read -r l; do LINK+=("$l"); done <<< "${LINKSET}"
