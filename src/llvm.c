@@ -13909,7 +13909,13 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
      * on an Intel Mac that path does not exist and every link printed
      * "ld: warning: search path '/opt/homebrew/lib' not found". */
 #if defined(__APPLE__) && defined(TKC_HOMEBREW_PREFIX)
-    const char *base_cflags = "-I" TKC_HOMEBREW_PREFIX "/include";
+    /* An object, not a pasted literal: cppcheck guesses a value for a
+     * macro it only sees under defined(), and "-I" 1 "/include" is a
+     * syntax error to it (127.446). */
+    static const char brew_prefix[] = TKC_HOMEBREW_PREFIX;
+    char brew_cflags[512];
+    snprintf(brew_cflags, sizeof brew_cflags, "-I%s/include", brew_prefix);
+    const char *base_cflags = brew_cflags;
 #elif defined(__APPLE__)
     const char *base_cflags = "";
 #else
@@ -13919,7 +13925,7 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     /* Build the library flags: always include -lm -lpthread */
     char all_libs[1024];
 #if defined(__APPLE__) && defined(TKC_HOMEBREW_PREFIX)
-    snprintf(all_libs, sizeof all_libs, "-L" TKC_HOMEBREW_PREFIX "/lib -lm -lpthread");
+    snprintf(all_libs, sizeof all_libs, "-L%s/lib -lm -lpthread", brew_prefix);
 #else
     snprintf(all_libs, sizeof all_libs, "-lm -lpthread");
 #endif
