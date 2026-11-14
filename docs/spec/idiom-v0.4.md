@@ -70,7 +70,8 @@ BAD   s.concat(s.concat(s.concat("x=";a);", y=");b)   (* 18 tok, unreadable *)
 GOOD  s.interpolate(...) / a single s.join(sep;parts) (* fewer tok, flat *)
 ```
 Never nest `str.concat` more than once; build a `[str]` and `str.join`, or
-interpolate. (`+` is numeric-only, ADR-0004 — it is not string concat.)
+interpolate. (`+` is not string concat, ADR-0004: it adds numbers and
+concatenates arrays, semantics §2.4.)
 
 ### 6. Chain postfix calls
 `s.split(line;",").get(0)` — one expression (A4 made chained `.get` clean). Do

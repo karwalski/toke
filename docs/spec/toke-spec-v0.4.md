@@ -266,6 +266,39 @@ in every case.
 
 Resolved by story **127.196** (owner decision 2026-10-01 §2.2).
 
+## J. `+` on two arrays is concatenation (supersedes the v0.3 Operators table row "`+` add (numeric only)"; extends v0.3 §12.2)
+
+`+` adds two numbers of the same type, and it concatenates two arrays: `a + b`
+on `@T` operands yields a new `@T` holding the elements of `a` followed by
+those of `b`, and leaves both operands unchanged. This is the one spelling of
+array concatenation (owner decision 2026-11-12 §1.6). `+` is still not string
+concatenation (ADR-0004), and maps have no concatenation operator.
+
+```toke
+m=demo;i=io:std.io;
+f=main():i64{
+  let a = @(1; 2);
+  let b = a + @(3);
+  let acc = mut.@();
+  lp(let k = 0; k < 3; k = k + 1){ acc = acc + @(k) };
+  io.println("\(a.len) \(b.len) \(b.get(2)) \(acc.len)");  (* 2 3 3 3 *)
+  <0
+};
+```
+
+The element types must be equal; an element type not yet established (the
+empty literal `@()`) matches any, and an array literal of integer literals
+adopts the other operand's integer element type when every value fits
+(`b + @(128)` on a `@byte`). Mismatched element types, an array with a
+non-array operand (`@(1;2) + 3`), and `-`, `*`, `/` on arrays are **E4031**.
+There is no `+=`; `a += @(x)` is the parse error **E2002**. The full typing
+rules are [semantics §2.4](/docs/spec/semantics/); the behaviour is pinned by
+conformance test C1740.
+
+Resolved by story **127.359** (owner decision 2026-11-12 §1.6). The compiler
+already behaved this way (stories 114.10, 114.19c, 127.230); only the text
+changes.
+
 ---
 
 ## Conformance & migration
@@ -296,3 +329,7 @@ Resolved by story **127.196** (owner decision 2026-10-01 §2.2).
 - **2026-10-07 (story 127.196):** §I added — `let` is block-scoped in both the
   checker and the emitter; a binding ends with its block, and an assignment is
   checked against the binding in force where it stands.
+- **2026-11-14 (story 127.359):** §J added — `+` on two arrays is
+  concatenation, the one spelling (owner decision 2026-11-12 §1.6). It
+  supersedes the v0.3 Operators table's "add (numeric only)" for `+`; the
+  compiler's behaviour is unchanged.

@@ -134,6 +134,8 @@ EqExpr       = CompareExpr [ ( '==' | '!=' ) CompareExpr ] ;
 
 CompareExpr  = AddExpr [ ( '<' | '>' | '<=' | '>=' ) AddExpr ] ;
 
+(* '+' adds numbers or concatenates two arrays (@T + @T); '-' is numeric   *)
+(* only. Typing: semantics.md §2.4, toke-spec-v0.4.md §J. There is no '+='. *)
 AddExpr      = MulExpr { ( '+' | '-' ) MulExpr } ;
 
 MulExpr      = UnaryExpr { ( '*' | '/' | '%' ) UnaryExpr } ;
