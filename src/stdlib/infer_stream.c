@@ -148,13 +148,15 @@ static const char *detect_linux(const char *path)
         FILE *tf = fopen(transport_path, "r");
         if (tf) {
             char transport[64] = {0};
-            if (fgets(transport, sizeof(transport), tf) != NULL) {
-                fclose(tf);
+            int got = fgets(transport, sizeof(transport), tf) != NULL;
+            fclose(tf);
+            /* 127.442: close d only when returning.  It was closed before
+             * the nvme test, so a device with a non-nvme transport (scsi,
+             * virtio) fell through to the rotational check
+             * and closedir'd it a second time -- a double free. */
+            if (got && strstr(transport, "nvme")) {
                 closedir(d);
-                if (strstr(transport, "nvme"))
-                    return "nvme";
-            } else {
-                fclose(tf);
+                return "nvme";
             }
         }
 
