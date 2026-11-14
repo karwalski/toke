@@ -52,8 +52,12 @@ printf '#!/usr/bin/env bash\necho "Results: 1 passed, 0 failed"\nexit 0\n' > "${
 printf '#!/usr/bin/env bash\necho "SKIP: no widget library"\necho "CONFORM-SKIP: widget library not installed"\nexit 0\n' > "${WORK}/tree/test/conform/B_skip.sh"
 printf '#!/usr/bin/env bash\necho "  FAIL: stub"\nexit 1\n' > "${WORK}/tree/test/conform/C_fail.sh"
 
+# 127.439: the runner under test must not inherit the caller's
+# TKC_CONFORM_NO_SKIP.  CI sets it for the whole job, and then cases 1-2 (the
+# local, skip-is-counted mode) saw CI mode and their skip stub failed.  Each
+# case states the mode it tests; case 3 sets it explicitly.
 run() {  # run [ENV=VAL...] -> sets OUT, RC
-    OUT="$(cd "${WORK}/tree" && env TKC_GATE_SLOT_HELD=1 TKC_GATE_LOCKDIR="${WORK}/locks" "$@" \
+    OUT="$(cd "${WORK}/tree" && env -u TKC_CONFORM_NO_SKIP TKC_GATE_SLOT_HELD=1 TKC_GATE_LOCKDIR="${WORK}/locks" "$@" \
            TKC="${WORK}/tree/tkc" bash scripts/conform_isolated.sh sh 2>&1)"
     RC=$?
 }
