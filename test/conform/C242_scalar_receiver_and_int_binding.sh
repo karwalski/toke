@@ -50,7 +50,7 @@ expect "2 .slice on an int-literal binding" \
 expect "3 .charat on a negated int-literal binding" \
     "$(diags "${H}"'f=main():i64{let x=-5;j.print(x.charat(0));<0};')" "E4036|i64.charat|ABSENT"
 expect "4 .get(0) on an int-literal binding" \
-    "$(diags "${H}"'f=main():i64{let x=5;j.print(x.get(0));<0};')" "E4031|i64|indexing with [] requires an array type"
+    "$(diags "${H}"'f=main():i64{let x=5;j.print(x.get(0));<0};')" "E4031|i64|ABSENT"
 expect "5 an int-literal binding into a str parameter" \
     "$(diags "${H}"'f=g(v:str):i64{<0};f=main():i64{let b=3;<g(b)};')" "E4031|i64|ABSENT"
 expect "6 a method on an annotated f64" \

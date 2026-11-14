@@ -6820,9 +6820,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (tc_can_emit(cx)) {
                 char msg[128];
                 snprintf(msg,sizeof(msg),"type mismatch: expected 'i64' or 'f64', got '%s'",type_name(op));
+                /* 127.438: no `fix` -- the prose ("unary minus requires a
+                 * signed numeric type") restated the error (AGENTS §6). */
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","i64 or f64","got",type_name(op),
-                          "fix","unary minus requires a signed numeric type",(const char*)NULL);
+                          "expected","i64 or f64","got",type_name(op),(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
@@ -6830,9 +6831,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (tc_can_emit(cx)) {
                 char msg[128];
                 snprintf(msg,sizeof(msg),"type mismatch: bitwise NOT requires integer type, got '%s'",type_name(op));
+                /* 127.438: no `fix` -- the prose restated the error. */
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","integer","got",type_name(op),
-                          "fix","bitwise NOT requires an integer operand",(const char*)NULL);
+                          "expected","integer","got",type_name(op),(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
@@ -6891,8 +6892,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * here (TY_UNKNOWN early-out above). Array concat needs BOTH sides arrays. */
         if (node->op==TK_PLUS &&
             ((l->kind==TY_ARRAY)!=(r->kind==TY_ARRAY))) {
-            emit_mm(cx,node,l,r,"array concatenation requires both operands to be "
-                    "arrays — wrap a scalar element as @(x)");
+            /* 127.436: no `fix`.  It carried prose ("array concatenation
+             * requires both operands to be arrays -- wrap a scalar element
+             * as @(x)"), which is not a repair; wrapping is right only when
+             * the scalar is the intended element (AGENTS §6, errors.md). */
+            emit_mm(cx,node,l,r,NULL);
             return mk_type(A,TY_UNKNOWN);
         }
         int arith=(node->op==TK_PLUS||node->op==TK_MINUS||node->op==TK_STAR||node->op==TK_SLASH);
@@ -6904,11 +6908,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         int modulo=(node->op==TK_PERCENT);
         if (logic) {
             if (l->kind!=TY_BOOL) {
-                emit_mm(cx,node,mk_type(A,TY_BOOL),l,"operand of && / || must be bool");
+                /* 127.436: no `fix` -- the prose restated the error. */
+                emit_mm(cx,node,mk_type(A,TY_BOOL),l,NULL);
                 return mk_type(A,TY_BOOL);
             }
             if (r->kind!=TY_BOOL) {
-                emit_mm(cx,node,mk_type(A,TY_BOOL),r,"operand of && / || must be bool");
+                emit_mm(cx,node,mk_type(A,TY_BOOL),r,NULL);
                 return mk_type(A,TY_BOOL);
             }
             return mk_type(A,TY_BOOL);
@@ -6932,9 +6937,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (int_operand_widens(r,l)) return l;
             }
             if (!is_integer(l)||!is_integer(r)||!types_equal(l,r)) {
-                char fix[64];
-                snprintf(fix,sizeof(fix),"bitwise operators require matching integer types");
-                emit_mm(cx,node,l,r,fix);
+                /* 127.436: no `fix` -- the prose restated the error. */
+                emit_mm(cx,node,l,r,NULL);
                 return mk_type(A,TY_UNKNOWN);
             }
             return l;
@@ -6955,7 +6959,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             } else if (l_flt&&r_flt&&types_equal(l,r)) {
                 return l;
             }
-            emit_mm(cx,node,l,r,"modulo requires matching integer or float types");
+            /* 127.436: no `fix` -- the prose restated the error. */
+            emit_mm(cx,node,l,r,NULL);
             return mk_type(A,TY_UNKNOWN);
         }
         /* 138.9 (T-14): `==` / `!=` on two struct or sum values.  The
@@ -7072,8 +7077,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * literal side narrows to the typed side (lit_narrows). */
                 if (lit_narrows(cx->src,node->children[1],l)) return l;
                 if (lit_narrows(cx->src,node->children[0],r)) return r;
-                emit_mm(cx,node,l,r,
-                        "array concatenation requires matching element types");
+                /* 127.436: no `fix`.  The prose ("array concatenation
+                 * requires matching element types") is not a repair, and
+                 * errors.md gives an array of another element type none. */
+                emit_mm(cx,node,l,r,NULL);
                 return mk_type(A,TY_UNKNOWN);
             }
             /* 127.114/127.53: mixed integer widths widen to i64 rather than
@@ -7611,9 +7618,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                     char msg[256];
                     snprintf(msg,sizeof(msg),"type mismatch: map key must be '%s', got '%s'",type_name(kt),type_name(idx));
+                    /* 127.438: no `fix` -- the prose ("map key must match
+                     * the map's key type") restated the error. */
                     diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                              "expected",type_name(kt),"got",type_name(idx),
-                              "fix","map key must match the map's key type",(const char*)NULL);
+                              "expected",type_name(kt),"got",type_name(idx),(const char*)NULL);
                 }
                 return mk_type(A,TY_UNKNOWN);
             }
@@ -7638,9 +7646,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"type mismatch: cannot index into '%s'; expected array type",type_name(base));
+                /* 127.438: no `fix` -- the prose ("indexing with []
+                 * requires an array type") restated the error. */
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","array","got",type_name(base),
-                          "fix","indexing with [] requires an array type",(const char*)NULL);
+                          "expected","array","got",type_name(base),(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }

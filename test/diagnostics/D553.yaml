@@ -1,0 +1,16 @@
+id: D553
+series: D
+description: "127.438: indexing a non-array (`x.get(0)` on an i64) is E4031 with no fix -- the fix field restated the error, it was not a repair (AGENTS 6, errors.md E4031)"
+input: |
+  m=t;
+  f=main():i64{
+    let x=5;
+    let v=x.get(0);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "array"
