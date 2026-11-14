@@ -1078,6 +1078,9 @@ static void send_response(int fd, Res res, int keep_alive, int may_chunk) {
 static void fd_peer_ip(int fd, char *buf, size_t bufsz)
 {
     struct sockaddr_storage ss;
+    /* 127.439: zeroed, so ss_family is defined even if getpeername filled
+     * less than the family field (clang UndefinedBinaryOperatorResult). */
+    memset(&ss, 0, sizeof ss);
     socklen_t sslen = sizeof ss;
     if (getpeername(fd, (struct sockaddr *)&ss, &sslen) != 0) {
         snprintf(buf, bufsz, "-"); return;

@@ -941,7 +941,10 @@ pkg_tree_hash(const char *dir, char out[PKG_MAX_HASH], char *errbuf, int errbufs
     TreeList t = { NULL, 0, 0, errbuf, errbufsz };
     int rc = tree_walk(&t, dir, "", 0);
     if (rc == 0) {
-        qsort(t.paths, t.n, sizeof(*t.paths), cmp_path);
+        /* 127.439: an empty tree has t.paths == NULL, and qsort's array
+         * argument must not be NULL even for zero elements. */
+        if (t.n > 1)
+            qsort(t.paths, t.n, sizeof(*t.paths), cmp_path);
         TkSha256 c;
         tk_sha256_init(&c);
         for (size_t i = 0; rc == 0 && i < t.n; i++)

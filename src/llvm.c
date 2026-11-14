@@ -13871,9 +13871,13 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     /* Story 102.19: conditional linker flags based on resolved deps.
      * Only -lm and -lpthread are always included; everything else comes
      * from the per-module extra_flags in stdlib_table. */
-    const char *base_cflags = "-D_GNU_SOURCE";
+    /* 127.439: one definition per platform (the Apple overwrite of a
+     * default was a dead store there, and skiplisting it went stale on
+     * Linux).  Same values as before. */
 #if defined(__APPLE__)
-    base_cflags = "-I/opt/homebrew/include";
+    const char *base_cflags = "-I/opt/homebrew/include";
+#else
+    const char *base_cflags = "-D_GNU_SOURCE";
 #endif
 
     /* Build the library flags: always include -lm -lpthread */

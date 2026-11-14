@@ -209,12 +209,14 @@ int64_t tk_os_errno(void) {
  * be the buffer); POSIX/XSI (macOS, musl, BSD) returns 0 or an error. */
 int64_t tk_os_strerror(int64_t errnum) {
     char buf[256];
-    const char *text = buf;
     buf[0] = '\0';
+    /* 127.439: text is set once per branch; initialising it to buf first was
+     * a dead store on glibc (clang deadcode.DeadStores on Linux). */
 #if defined(__GLIBC__) && defined(_GNU_SOURCE)
-    text = strerror_r((int)errnum, buf, sizeof buf);
+    const char *text = strerror_r((int)errnum, buf, sizeof buf);
     if (!text) text = "";
 #else
+    const char *text = buf;
     if (strerror_r((int)errnum, buf, sizeof buf) != 0 && buf[0] == '\0')
         snprintf(buf, sizeof buf, "Unknown error: %lld", (long long)errnum);
 #endif
