@@ -45,6 +45,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CC="${CC:-cc}"
+# 127.439: the project's gcc policy (Makefile GCC_CHECK): snprintf truncation
+# is by design, so -Wformat-truncation is off where the compiler takes the flag.
+NOFT=""; "${CC}" -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null && NOFT="-Wno-format-truncation"
 S="${C492_SRC:-${REPO_ROOT}/src}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c492_XXXXXX")"
@@ -278,7 +281,7 @@ EOF
 
 run_part() {
     local name="$1"; shift
-    if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -g -O1 ${SAN} -iquote "${S}" \
+    if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror ${NOFT} -g -O1 ${SAN} -iquote "${S}" \
             -o "${WORK}/${name}" "${WORK}/${name}.c" "${S}/pkg.c" "${S}/sha256.c" \
             >"${WORK}/${name}.cc" 2>&1; then
         fail "part ${name}: does not build -- $(grep -a -m2 error "${WORK}/${name}.cc" | head -c 300)"

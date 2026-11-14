@@ -111,7 +111,16 @@ int main(int argc, char **argv)
 CEOF
 
 # shellcheck disable=SC2086
-if "${CC}" ${WFLAGS} '-DTKC_STDLIB_DIR="/stdlib"' -Isrc -o "${WORK}/wasm_standin" \
+# 127.439: the stand-in compiler is gcc on Linux, emcc (clang) is not.  The
+# main Makefile turns gcc's -Wformat-truncation off as project policy
+# (snprintf truncation is by design, GCC_CHECK); apply the same rule here,
+# probed the same way (the flag where the compiler takes it), or gcc fails
+# sources emcc accepts.
+SFLAGS=""
+if "${CC}" -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null; then
+    SFLAGS="-Wno-format-truncation"
+fi
+if "${CC}" ${WFLAGS} ${SFLAGS} '-DTKC_STDLIB_DIR="/stdlib"' -Isrc -o "${WORK}/wasm_standin" \
         ${SRCS} "${WORK}/drv.c" -lm -lz -lpthread > "${WORK}/cc.log" 2>&1; then
     pass "Makefile.wasm's ${nsrc} sources compile under its flags and link"
 else
