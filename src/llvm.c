@@ -13897,18 +13897,24 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
     /* 127.439: one definition per platform (the Apple overwrite of a
      * default was a dead store there, and skiplisting it went stale on
      * Linux).  Same values as before. */
-#if defined(__APPLE__)
-    const char *base_cflags = "-I/opt/homebrew/include";
+    /* 127.446: Homebrew's prefix as the build asked brew for it
+     * (TKC_HOMEBREW_PREFIX, Makefile), not a hard-coded /opt/homebrew --
+     * on an Intel Mac that path does not exist and every link printed
+     * "ld: warning: search path '/opt/homebrew/lib' not found". */
+#if defined(__APPLE__) && defined(TKC_HOMEBREW_PREFIX)
+    const char *base_cflags = "-I" TKC_HOMEBREW_PREFIX "/include";
+#elif defined(__APPLE__)
+    const char *base_cflags = "";
 #else
     const char *base_cflags = "-D_GNU_SOURCE";
 #endif
 
     /* Build the library flags: always include -lm -lpthread */
     char all_libs[1024];
+#if defined(__APPLE__) && defined(TKC_HOMEBREW_PREFIX)
+    snprintf(all_libs, sizeof all_libs, "-L" TKC_HOMEBREW_PREFIX "/lib -lm -lpthread");
+#else
     snprintf(all_libs, sizeof all_libs, "-lm -lpthread");
-#if defined(__APPLE__)
-    /* Homebrew library path (no-op if not present) */
-    snprintf(all_libs, sizeof all_libs, "-L/opt/homebrew/lib -lm -lpthread");
 #endif
 
     /* Append per-module flags from selective linking, or all flags if link_all */

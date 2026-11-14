@@ -7,6 +7,17 @@ BAKED_STDLIB_DIR = $(CURDIR)/src/stdlib
 CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
           -DTKC_STDLIB_DIR='"$(BAKED_STDLIB_DIR)"' \
           -MMD -MP   # emit .d header-dependency files so header changes trigger recompiles
+# Homebrew's prefix on a macOS host (/opt/homebrew on Apple silicon,
+# /usr/local on Intel), asked of brew rather than assumed (Z205, 127.446).
+# tkc passes -I<prefix>/include -L<prefix>/lib when it links a program
+# (src/llvm.c); it hard-coded /opt/homebrew, which on an Intel Mac is a
+# path that does not exist, so every program link printed
+# "ld: warning: search path '/opt/homebrew/lib' not found" (C1162 10c on
+# macos-15-intel).  Empty without brew, and on Linux: no flags then.
+HOMEBREW_PREFIX ?= $(shell command -v brew >/dev/null 2>&1 && brew --prefix 2>/dev/null)
+ifneq ($(strip $(HOMEBREW_PREFIX)),)
+CFLAGS += -DTKC_HOMEBREW_PREFIX='"$(HOMEBREW_PREFIX)"'
+endif
 # GCC-specific: suppress format-truncation warnings (snprintf truncation is by design)
 GCC_CHECK := $(shell $(CC) -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null && echo yes)
 ifeq ($(GCC_CHECK),yes)
@@ -1124,7 +1135,7 @@ TEST_CI_GREEN = \
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
 #   test-stdlib-tls        links -framework Security -framework CoreFoundation
-#                          and -L/opt/homebrew/lib (TLS_TEST_LDFLAGS)
+#                          and -L$(HOMEBREW_PREFIX)/lib (TLS_TEST_LDFLAGS)
 #   test-stdlib-keychain   drives the macOS Keychain via a shell script
 #   test-stdlib-webview    Objective-C under __APPLE__, WebKit + Cocoa.
 #                          Green on macOS/arm64 2026-09-24 (136.56).
@@ -1687,13 +1698,13 @@ test-stdlib-http-form:
 # To test with real TLS, rebuild with:
 #   make test-stdlib-http-tls TK_OPENSSL=1
 ifdef TK_OPENSSL
-TLS_CFLAGS  = -I/opt/homebrew/include -DTK_HAVE_OPENSSL \
+TLS_CFLAGS  = -I$(HOMEBREW_PREFIX)/include -DTK_HAVE_OPENSSL \
               -Wno-deprecated-declarations
 # 136.57: was pinned to openssl@3/3.6.1, a Cellar version not installed here
 # (3.6.2 and 3.6.4 are), so this target could not link at all.  Use the same
-# -L/opt/homebrew/lib that src/llvm.c passes when it links a real std.tls
+# -L<Homebrew prefix>/lib that src/llvm.c passes when it links a real std.tls
 # program, so the two link paths agree and neither pins a point release.
-TLS_LDFLAGS = -L/opt/homebrew/lib -lssl -lcrypto
+TLS_LDFLAGS = -L$(HOMEBREW_PREFIX)/lib -lssl -lcrypto
 else
 TLS_CFLAGS  =
 TLS_LDFLAGS =
@@ -1720,15 +1731,15 @@ test-stdlib-http-tls:
 # Unlike test-stdlib-http-tls above there is no stub build: this file includes
 # <openssl/x509.h> directly and tests the real TLS 1.3 core that 136.44 landed,
 # so OpenSSL is unconditional. The paths mirror what src/llvm.c passes when it
-# links a toke program against std.tls (-L/opt/homebrew/lib plus the two macOS
-# frameworks).  TLS_LDFLAGS above now uses the same -L/opt/homebrew/lib;
+# links a toke program against std.tls (-L<Homebrew prefix>/lib plus the two macOS
+# frameworks).  TLS_LDFLAGS above now uses the same -L<Homebrew prefix>/lib;
 # it named openssl@3/3.6.1, an uninstalled version, until 136.57.
 #
 # --allow-net is the grant, not a bypass: tls_connect is behind
 # TK_REQUIRE(TK_CAP_NET) and still denies with CAP001 if the flag is dropped.
 # Without it the suite passed 24 asserts and exited 1 at the gate.
-TLS_TEST_CFLAGS  = -I/opt/homebrew/include -DTK_HAVE_OPENSSL -Wno-deprecated-declarations
-TLS_TEST_LDFLAGS = -L/opt/homebrew/lib -lssl -lcrypto \
+TLS_TEST_CFLAGS  = -I$(HOMEBREW_PREFIX)/include -DTK_HAVE_OPENSSL -Wno-deprecated-declarations
+TLS_TEST_LDFLAGS = -L$(HOMEBREW_PREFIX)/lib -lssl -lcrypto \
                    -framework Security -framework CoreFoundation
 
 test-stdlib-tls:
