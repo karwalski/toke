@@ -80,7 +80,8 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 
 ## New in 3.2.0
 
-3.2.0 is prepared on branch `release/3.2.0` (2026-11-14) and not yet tagged.
+3.2.0 was released on 2026-11-15 (tag `v3.2.0`; signed archives for linux-x86_64,
+linux-arm64, macos-arm64 and macos-x86_64 on the GitHub release page).
 [`CHANGELOG.md`](CHANGELOG.md) § 3.2.0 lists every change, breaking changes first: the
 checker now rejects many programs that 3.1.0 compiled and then ran wrongly.
 

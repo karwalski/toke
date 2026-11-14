@@ -11,11 +11,12 @@ per-change record for each release, with every breaking change and its migration
 repository; this page summarises it. Story numbers refer to the tracker,
 [`docs/progress.md`](https://github.com/karwalski/toke/blob/main/docs/progress.md).
 
-## 3.2.0 — prepared 2026-11-14
+## 3.2.0 — released 2026-11-15
 
 Everything on `main` since the `v3.1.0` tag (2026-09-30), cut from `main` `fffec674` on
-branch `release/3.2.0`. **Not yet tagged:** until `v3.2.0` is published, a downstream
-that needs one of these fixes pins a `main` commit.
+branch `release/3.2.0`, plus the build and platform fixes that let the release workflow
+pass on current GitHub runners (`CHANGELOG.md` § 3.2.0, "Build, platform and release").
+Tagged `v3.2.0`.
 
 **Breaking changes.** `CHANGELOG.md` § 3.2.0 lists each with its commit and migration:
 

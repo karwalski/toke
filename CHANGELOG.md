@@ -18,8 +18,8 @@ may no longer compile.
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
 
-**Status: prepared on branch `release/3.2.0` (story 138.17). Not tagged, not
-published.** Cut from main `fffec674` on 2026-11-14 under owner decision
+**Status: released as `v3.2.0` on 2026-11-15 (story 138.17).** Cut from main
+`fffec674` on 2026-11-14 under owner decision
 2026-11-12 §5.2 (a); 985 commits since `v3.1.0` (`86c432da`, 2026-09-30), 683 of
 them not merges (`git log v3.1.0..fffec674`). Every entry below names the tracker
 story in `docs/progress.md` and a commit, so a consumer can bisect.
@@ -215,11 +215,60 @@ integration branch, not on main; `let y:@f64=s.bytes("ab")` still checks clean i
   SPDX headers; the full Apache-2.0 text is in the tree. 135.15a — `0a5fd452`;
   `ab2d88cf`.
 
+### Build, platform and release
+
+The release workflow could not pass on GitHub's current runners (Ubuntu with gcc
+15 and a C23 glibc; macOS 13 retired). Fixing it found real defects as well as
+environment ones; these are the changes a user can observe. 127.439 is the
+umbrella story.
+
+- **`std.http` servers set `TCP_NODELAY`** on every accepted connection, plain and
+  TLS. A response goes out in several writes, and Nagle held each write after the
+  first until the client's delayed ACK: about 40 ms per keep-alive response on
+  Linux. C1790 checks the option and times 300 keep-alive responses. 127.443 —
+  `7b03be29`.
+- **A restarted server can rebind its port on Linux.** `tk_bind_exclusive` now sets
+  `SO_REUSEADDR` on every Linux attempt (a `TIME_WAIT` socket keeps its
+  listener's flag, and the rebind needs both); binding over a live listener is
+  still refused. macOS keeps its probe-first order. Covers the http, router, net
+  and tls listeners. 127.444 — `b081cd83`.
+- **tkc names its linker on Linux.** `make` records the linker clang names at build
+  time (`clang -print-prog-name=ld`) as `TKC_LD_PATH`, and tkc passes it as
+  `--ld-path` when its baked clang links for the host. Before, clang looked `ld` up
+  on `$PATH`: an empty `PATH` could not link (E9003), and a planted `ld` on `PATH`
+  would have linked every program. Not used when `TKC_CC` is set or with
+  `--target`. 127.447 — `a394a330`, `c6ef75f1`.
+- **tkc takes Homebrew's prefix from `brew --prefix` at build time** instead of a
+  hard-coded `/opt/homebrew`; on an Intel Mac every link printed "search path
+  '/opt/homebrew/lib' not found". With no brew at build time no Homebrew flags are
+  passed. A release tkc carries the prefix of the machine that built it. 127.446 —
+  `4852e582`, `10164977`.
+- **Emitted IR states PIC/PIE level 2**, so programs link as position-independent
+  executables on Linux. 127.439 — `6ccf348b`.
+- **Runtime and stdlib fixes:** the inline error box is `int64_t`-aligned
+  (`5713b92b`); stdlib allocations abort on out-of-memory where nothing checked
+  the result (`db80e19b`); `ml.kmeans` no longer reads past an empty point array
+  (127.441 — `0f9718db`, `4b92f854`); the inference backend's hardware probe no
+  longer closes a directory twice (127.442 — `09d27141`); an empty
+  `sha512_update` is a no-op (`58b10d7f`); the capability provenance label has
+  room for the module name (`21f68dfa`); compress copies only the schema keys it
+  read (`53c71644`).
+- **Builds:** the compiler and stdlib build clean under gcc 15 `-Werror` and with
+  glibc's C23 string macros under `-std=c99` (`6490a01a`, `2e8692c6`); the release
+  binary is built with the Makefile's hardening flags (`ec3f8be7`); macos-x86_64
+  is built on `macos-15-intel` and the release archives ship the stdlib MIT text
+  (`f2a7f347`).
+
+Known on this release: the linux-arm64 runner's OpenSSL 3.0 lacks the
+`X25519MLKEM768` hybrid group, so the hybrid-handshake cases of C1180 and C1200
+report a skip there; the classical fallback is tested in full.
+
 ### Publishing
 
-Nothing here is tagged or published. For the owner: tag `v3.2.0` on this branch's
-tip once it is merged (the release workflow takes the artefact version from the
-tag), then bump ooke's `ooke.toml [requires]` floor to it.
+Tagged `v3.2.0`; the release workflow builds and signs the four platform archives
+(linux-x86_64, linux-arm64, macos-arm64, macos-x86_64) with an SBOM. Next: bump
+ooke's `ooke.toml [requires]` floor to 3.2.0 and the Homebrew formulae to the
+release checksums.
 
 ---
 
