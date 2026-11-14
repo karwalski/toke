@@ -21,7 +21,7 @@
 #      -- and 0 under BUILD_ALL_ALLOW_SKIP=1 with the same SKIPPED line.
 #   3. HEADERS BUT NO LINK = NAMED SKIP.  A sysroot holding only stub headers
 #      passes the compile probe and is skipped at the link probe, by name
-#      (run with clang where CC is gcc).  3b: a CC that rejects --target is
+#      (2 and 3 run with clang where CC is gcc).  3b: a CC that rejects --target is
 #      skipped as unable to cross-compile, not as a sysroot without headers.
 #   4. FORMAT IS VERIFIED.  With a MAKE shim that "builds" a host-native
 #      binary: under the host's own triple it is BUILT; under a triple whose
@@ -90,15 +90,22 @@ run_ba() {  # env... -- triple ; writes ${WORK}/ba.log, echoes exit status
 last() { awk 'NF{l=$0} END{print l}' "${WORK}/ba.log"; }
 has()  { awk -v s="$1" 'index($0,s){f=1} END{exit f?0:1}' "${WORK}/ba.log"; }
 
+# 127.439: cross-building needs a compiler that takes --target.  On Linux
+# `cc` is gcc, which rejects it, so the probes failed for THAT reason and
+# cases 2-3 never reached the sysroot and link checks they are about.  They
+# run with clang there; build_all.sh names the gcc case itself (3b).
+CC3="${CC}"
+if ! "${CC3}" --target=x86_64-linux-gnu -E -x c /dev/null >/dev/null 2>&1; then CC3=clang; fi
+command -v "${CC3}" >/dev/null 2>&1 || fail "cases 2-3: no compiler that accepts --target (CC=${CC}, and no clang on PATH)"
 T=x86_64-linux-gnu
-rc="$(run_ba TK_SYSROOT_x86_64_linux_gnu=/nonexistent/c134)"
+rc="$(CC="${CC3}" run_ba TK_SYSROOT_x86_64_linux_gnu=/nonexistent/c134)"
 if [ "${rc}" = 1 ] && has "build-all: SKIP ${T}: sysroot /nonexistent/c134" \
    && last | awk -v t="${T}" 'index($0,"INCOMPLETE") && index($0,"SKIPPED") && index($0,t){f=1} END{exit f?0:1}'; then
     pass "bad sysroot: exit 1, SKIP line and final line both name ${T}"
 else
     fail "bad sysroot: rc=${rc}, last line: $(last)"
 fi
-rc="$(run_ba TK_SYSROOT_x86_64_linux_gnu=/nonexistent/c134 BUILD_ALL_ALLOW_SKIP=1)"
+rc="$(CC="${CC3}" run_ba TK_SYSROOT_x86_64_linux_gnu=/nonexistent/c134 BUILD_ALL_ALLOW_SKIP=1)"
 if [ "${rc}" = 0 ] && last | awk 'index($0,"SKIPPED") && index($0,"BUILD_ALL_ALLOW_SKIP=1"){f=1} END{exit f?0:1}'; then
     pass "BUILD_ALL_ALLOW_SKIP=1: exit 0, final line still says SKIPPED"
 else
@@ -106,26 +113,16 @@ else
 fi
 
 # ── 3. headers but no libraries: the LINK probe skips it, by name ───────────
-# 127.439: cross-building needs a compiler that takes --target.  On Linux
-# `cc` is gcc, which rejects it, so the compile probe failed for that reason
-# and this case never reached the link probe it is about.  The case runs with
-# clang there; build_all.sh names the gcc case itself (3b).
-CC3="${CC}"
-if ! "${CC3}" --target=x86_64-linux-gnu -E -x c /dev/null >/dev/null 2>&1; then CC3=clang; fi
 SR="${WORK}/stub_sysroot"
 mkdir -p "${SR}/usr/include"
 printf 'int printf(const char *, ...);\n' > "${SR}/usr/include/stdio.h"
 printf 'const char *zlibVersion(void);\n' > "${SR}/usr/include/zlib.h"
 printf 'double sqrt(double);\n'          > "${SR}/usr/include/math.h"
-if ! command -v "${CC3}" >/dev/null 2>&1; then
-    fail "stub sysroot: no compiler that accepts --target (CC=${CC}, and no clang on PATH)"
+rc="$(CC="${CC3}" run_ba TK_SYSROOT_x86_64_linux_gnu="${SR}")"
+if [ "${rc}" = 1 ] && has "build-all: SKIP ${T}: headers found but the link failed"; then
+    pass "stub sysroot: passes the compile probe, SKIPPED at the link probe by name"
 else
-    rc="$(CC="${CC3}" run_ba TK_SYSROOT_x86_64_linux_gnu="${SR}")"
-    if [ "${rc}" = 1 ] && has "build-all: SKIP ${T}: headers found but the link failed"; then
-        pass "stub sysroot: passes the compile probe, SKIPPED at the link probe by name"
-    else
-        fail "stub sysroot: rc=${rc}; log: $(sed -n '1,6p' "${WORK}/ba.log" | tr '\n' '|')"
-    fi
+    fail "stub sysroot: rc=${rc}; log: $(sed -n '1,6p' "${WORK}/ba.log" | tr '\n' '|')"
 fi
 # 3b. a compiler with no --target is named as such, not as a missing sysroot.
 mkdir -p "${WORK}/gccish"
