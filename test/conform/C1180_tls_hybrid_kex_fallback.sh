@@ -125,6 +125,11 @@ int main(int argc, char **argv) {
     const char *expect = getenv("C1180_EXPECT");   /* hybrid | classical | fail */
     if (!expect) expect = "hybrid";
     tk_cap_init(argc, argv);
+    if (strcmp(expect, "libhybrid") == 0) {   /* 127.439 (Z205): ask the library */
+        SSL_CTX *p = SSL_CTX_new(TLS_client_method());
+        printf("%d\n", p && SSL_CTX_set1_groups_list(p, "X25519MLKEM768") == 1);
+        return 0;
+    }
     printf("  info: [%s] TK_TLS_GROUPS_HYBRID=\"%s\" against %s\n",
            expect, TK_TLS_GROUPS_HYBRID, OPENSSL_VERSION_TEXT);
 
@@ -202,6 +207,15 @@ run_variant() {   # name expect [extra -D flags...]
         fail "variant ${name}: driver does not build: $(grep -a -m1 -E 'error' "${WORK}/cc_${name}.log")"
         return
     fi
+    # 127.439 (Z205): on a library without the hybrid (OpenSSL 3.0, the
+    # ubuntu-24.04-arm runner) the shipped build cannot negotiate it.  A is
+    # then held to the fallback it must take there -- the real-library form
+    # of what B simulates -- and the suite reports CONFORM-SKIP for the
+    # hybrid handshake it could not show.
+    if [ "${expect}" = hybrid ] && [ "$(C1180_EXPECT=libhybrid "${WORK}/t_${name}" --allow-net)" != 1 ]; then
+        expect=classical; LIBHYB=0
+        echo "  note: the linked OpenSSL has no X25519MLKEM768; ${name} is checked as the shipped fallback (classical)"
+    fi
     if C1180_EXPECT="${expect}" "${WORK}/t_${name}" --allow-net; then
         pass "variant ${name}: all driver checks passed"
     else
@@ -209,6 +223,7 @@ run_variant() {   # name expect [extra -D flags...]
     fi
 }
 
+LIBHYB=1
 run_variant A_shipped hybrid
 run_variant B_hybrid_absent classical \
     "-DTK_TLS_GROUPS_HYBRID=\"TkC1180NoSuchHybrid:${CLA}\""
@@ -218,4 +233,8 @@ run_variant C_nothing_usable fail \
 
 echo ""
 echo "C1180: ${PASS} passed, ${FAIL} failed"
-[ "${FAIL}" -eq 0 ]
+[ "${FAIL}" -eq 0 ] || exit 1
+if [ "${LIBHYB}" = 0 ]; then
+    echo "CONFORM-SKIP: the linked OpenSSL has no X25519MLKEM768, so the hybrid handshake cannot run; the shipped fallback, B and C passed"
+fi
+exit 0

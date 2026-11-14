@@ -157,6 +157,15 @@ cat > drv.c <<'C'
  * change what the PEER offers -- only what an unlisted toke context does. */
 #define PEER_GROUPS "X25519MLKEM768:X25519"
 
+/* 127.439 (Z205): an OpenSSL without the hybrid (3.0 on the ubuntu-24.04-arm
+ * runner) rejects PEER_GROUPS whole, and the peer used to give up.  It then
+ * offers X25519 alone: against a toke context that fell back (B, or A on such
+ * a library) the result is the same x25519 either way. */
+static int peer_groups(SSL_CTX *x) {
+    return SSL_CTX_set1_groups_list(x, PEER_GROUPS) == 1 ||
+           SSL_CTX_set1_groups_list(x, "X25519") == 1;
+}
+
 static const char *gname(SSL *s) {
 #if OPENSSL_VERSION_NUMBER >= 0x30200000L
     const char *g = SSL_get0_group_name(s);
@@ -215,7 +224,7 @@ static int do_peer(int port, const char *sni) {
     int fd = tcp_to(port);
     if (fd < 0) { printf("peer: no connect\n"); return 1; }
     SSL_CTX *x = SSL_CTX_new(TLS_client_method());
-    if (SSL_CTX_set1_groups_list(x, PEER_GROUPS) != 1) { printf("peer: groups\n"); return 1; }
+    if (!peer_groups(x)) { printf("peer: groups\n"); return 1; }
     SSL *s = SSL_new(x); SSL_set_fd(s, fd);
     if (sni) SSL_set_tlsext_host_name(s, sni);
     if (SSL_connect(s) != 1) { printf("peer: handshake failed\n"); return 1; }
@@ -236,7 +245,7 @@ static int do_rawsrv(const char *cert, const char *key) {
     signal(SIGPIPE, SIG_IGN);   /* a client that has left is not this peer's failure */
     alarm(120);                 /* hang guard only: the script never waits on a clock */
     SSL_CTX *x = SSL_CTX_new(TLS_server_method());
-    if (SSL_CTX_set1_groups_list(x, PEER_GROUPS) != 1 ||
+    if (!peer_groups(x) ||
         SSL_CTX_use_certificate_chain_file(x, cert) != 1 ||
         SSL_CTX_use_PrivateKey_file(x, key, SSL_FILETYPE_PEM) != 1) {
         printf("rawsrv: ctx\n"); return 1;
@@ -289,6 +298,12 @@ int main(int argc, char **argv) {
     tk_cap_init(2, av);
     if (argc < 2) return 2;
     const char *role = argv[1];
+    if (strcmp(role, "libhybrid") == 0) {
+        /* 1 when the linked library accepts the hybrid group itself */
+        SSL_CTX *x = SSL_CTX_new(TLS_client_method());
+        printf("%d\n", x && SSL_CTX_set1_groups_list(x, "X25519MLKEM768") == 1);
+        return 0;
+    }
     if (strcmp(role, "serve") == 0 && argc == 6)
         return do_serve(atoi(argv[2]), argv[3], argv[4], argv[5]);
     if (strcmp(role, "peer") == 0 && argc >= 3)
@@ -426,16 +441,27 @@ client_case() {
 has() { grep -c -- "$2" "$1" 2>/dev/null | tr -d ' '; }
 
 H=X25519MLKEM768
+# 127.439 (Z205): on a library without the hybrid (OpenSSL 3.0, the
+# ubuntu-24.04-arm runner) the shipped build cannot negotiate it: there A is
+# held to what it must do instead -- the classical list, x25519, every
+# request carried -- the real-library form of what B simulates.  The
+# OPENSSL_CONF cases cannot tell an explicit list from the config when both
+# end at x25519, so they do not run, and the suite reports CONFORM-SKIP.
+LIBHYB=1; LT=hybrid
 # ── A: as shipped ─────────────────────────────────────────────────────────
 echo "  -- variant A (as shipped)"
 if build A; then
+    if [ "$(./drv_A libhybrid)" != 1 ]; then
+        LIBHYB=0; LT=classical; H=x25519
+        echo "  note: the linked OpenSSL has no X25519MLKEM768; A is checked as the shipped fallback (${LT}, ${H})"
+    fi
     T=(TK_TLS_TRACE_GROUP=1)
     server_case drv_A plain A_plain "${H}" "" "${T[@]}"
-    expect "A_plain: the trace names the hybrid list and the server's group" \
-        "$(has srv_A_plain.err '^tk-tls-groups: hybrid$')/$(has srv_A_plain.err "^tk-tls-group: server ${H}$")" "1/1"
+    expect "A_plain: the trace names the ${LT} list and the server's group" \
+        "$(has srv_A_plain.err "^tk-tls-groups: ${LT}$")/$(has srv_A_plain.err "^tk-tls-group: server ${H}$")" "1/1"
     server_case drv_A sni A_sni "${H}" sni.c1200.test "${T[@]}"
-    expect "A_sni: the primary and the SNI context both got the hybrid list" \
-        "$(has srv_A_sni.err '^tk-tls-groups: hybrid$')" "2"
+    expect "A_sni: the primary and the SNI context both got the ${LT} list" \
+        "$(has srv_A_sni.err "^tk-tls-groups: ${LT}$")" "2"
     server_case drv_A config A_config "${H}" "" "${T[@]}"
     server_case drv_A config_curves A_curves x25519 "" "${T[@]}"
     expect "A_curves: a config that names its own curves (x25519) still wins over the default list" \
@@ -453,6 +479,7 @@ if build A; then
         "$(cat srv_A_quiet.err cli_A_quiet.err | grep -c 'tk-tls-' | tr -d ' ')" "0"
 
     # ── A under a system config that forces x25519 ──────────────────────
+    if [ "${LIBHYB}" = 1 ]; then
     echo "  -- variant A under OPENSSL_CONF (Groups = x25519)"
     C=(OPENSSL_CONF="${WORK}/x25519.cnf")
     expect "control: that config forces an unlisted OpenSSL client to x25519" \
@@ -462,6 +489,7 @@ if build A; then
         "$(client_case drv_A httpc conf_httpc "${C[@]}")" "${H}|httpc: 200 c1200-get"
     expect "conf_llmc: the std.llm client's own list beats the config" \
         "$(client_case drv_A llmc conf_llmc "${C[@]}")" "${H}|llmc: ok c1200-llm"
+    fi
 fi
 
 # ── B: the library does not know the hybrid ──────────────────────────────
@@ -496,4 +524,8 @@ fi
 
 echo ""
 echo "C1200: ${PASS} passed, ${FAIL} failed"
-[ "${FAIL}" -eq 0 ]
+[ "${FAIL}" -eq 0 ] || exit 1
+if [ "${LIBHYB}" = 0 ]; then
+    echo "CONFORM-SKIP: the linked OpenSSL has no X25519MLKEM768, so the hybrid and OPENSSL_CONF cases cannot run; the shipped fallback, B and C passed"
+fi
+exit 0
