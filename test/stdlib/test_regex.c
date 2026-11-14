@@ -17,6 +17,7 @@
 #include "../../src/stdlib/tk_regex.h"
 #include <stdio.h>
 #include <string.h>
+#include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 static int pass = 0, fail = 0;
 
