@@ -20,7 +20,9 @@
 #      variable to set, its final line says INCOMPLETE/SKIPPED, and it exits 1
 #      -- and 0 under BUILD_ALL_ALLOW_SKIP=1 with the same SKIPPED line.
 #   3. HEADERS BUT NO LINK = NAMED SKIP.  A sysroot holding only stub headers
-#      passes the compile probe and is skipped at the link probe, by name.
+#      passes the compile probe and is skipped at the link probe, by name
+#      (run with clang where CC is gcc).  3b: a CC that rejects --target is
+#      skipped as unable to cross-compile, not as a sysroot without headers.
 #   4. FORMAT IS VERIFIED.  With a MAKE shim that "builds" a host-native
 #      binary: under the host's own triple it is BUILT; under a triple whose
 #      format differs it is a FAIL, not a pass.
@@ -104,16 +106,43 @@ else
 fi
 
 # ── 3. headers but no libraries: the LINK probe skips it, by name ───────────
+# 127.439: cross-building needs a compiler that takes --target.  On Linux
+# `cc` is gcc, which rejects it, so the compile probe failed for that reason
+# and this case never reached the link probe it is about.  The case runs with
+# clang there; build_all.sh names the gcc case itself (3b).
+CC3="${CC}"
+if ! "${CC3}" --target=x86_64-linux-gnu -E -x c /dev/null >/dev/null 2>&1; then CC3=clang; fi
 SR="${WORK}/stub_sysroot"
 mkdir -p "${SR}/usr/include"
 printf 'int printf(const char *, ...);\n' > "${SR}/usr/include/stdio.h"
 printf 'const char *zlibVersion(void);\n' > "${SR}/usr/include/zlib.h"
 printf 'double sqrt(double);\n'          > "${SR}/usr/include/math.h"
-rc="$(run_ba TK_SYSROOT_x86_64_linux_gnu="${SR}")"
-if [ "${rc}" = 1 ] && has "build-all: SKIP ${T}: headers found but the link failed"; then
-    pass "stub sysroot: passes the compile probe, SKIPPED at the link probe by name"
+if ! command -v "${CC3}" >/dev/null 2>&1; then
+    fail "stub sysroot: no compiler that accepts --target (CC=${CC}, and no clang on PATH)"
 else
-    fail "stub sysroot: rc=${rc}; log: $(sed -n '1,6p' "${WORK}/ba.log" | tr '\n' '|')"
+    rc="$(CC="${CC3}" run_ba TK_SYSROOT_x86_64_linux_gnu="${SR}")"
+    if [ "${rc}" = 1 ] && has "build-all: SKIP ${T}: headers found but the link failed"; then
+        pass "stub sysroot: passes the compile probe, SKIPPED at the link probe by name"
+    else
+        fail "stub sysroot: rc=${rc}; log: $(sed -n '1,6p' "${WORK}/ba.log" | tr '\n' '|')"
+    fi
+fi
+# 3b. a compiler with no --target is named as such, not as a missing sysroot.
+mkdir -p "${WORK}/gccish"
+cat > "${WORK}/gccish/cc" <<'SH'
+#!/bin/sh
+# gcc's answer to --target, and nothing else
+for a in "$@"; do case "$a" in
+  --target=*) echo "cc: error: unrecognized command-line option '$a'" >&2; exit 1 ;;
+esac; done
+exit 0
+SH
+chmod +x "${WORK}/gccish/cc"
+rc="$(CC="${WORK}/gccish/cc" run_ba TK_SYSROOT_x86_64_linux_gnu="${SR}")"
+if [ "${rc}" = 1 ] && has "build-all: SKIP ${T}: CC=${WORK}/gccish/cc cannot cross-compile"; then
+    pass "a CC without --target: SKIPPED by name as unable to cross-compile"
+else
+    fail "a CC without --target: rc=${rc}; log: $(sed -n '1,6p' "${WORK}/ba.log" | tr '\n' '|')"
 fi
 
 # ── 4. the binary's format is verified, with a MAKE shim ────────────────────
