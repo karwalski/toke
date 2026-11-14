@@ -122,6 +122,10 @@ printf 'subjectAltName=DNS:localhost\nbasicConstraints=CA:FALSE\n' > ext.cnf
 # appended to LOG, one JSON line per request.
 cat > srv.py <<'PY'
 import sys, json, ssl, http.server, socketserver
+import socketserver as _ss
+def _bind(self):  # 127.439 (Z205): HTTPServer.server_bind does a reverse-DNS getfqdn() that stalls for seconds on the macos-15-intel runner
+    _ss.TCPServer.server_bind(self); self.server_name = "127.0.0.1"; self.server_port = self.server_address[1]
+http.server.HTTPServer.server_bind = _bind
 mode, portfile, log = sys.argv[1], sys.argv[2], sys.argv[3]
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
