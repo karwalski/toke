@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # C980_mortgage_web_rejects_bad_term.sh — examples/mortgage-web validates the
-# loan term before it becomes unsigned (story 127.328).
+# loan term before it becomes unsigned (story 127.328) and bounds it at
+# 100 years (story 127.329).
 #
 # THE DEFECT.  pages/calculate.tk parsed the term as
 #   let term=mt str.toint(terms){$ok:v (v as u64); ...};  if(term<1){<bad}
@@ -11,19 +12,31 @@
 # THE FIX.  The example keeps the parsed term i64, rejects termyears<1, and
 # only then casts to u64 for the schedule helpers.
 #
+# THE BOUND (127.329).  With no upper bound, term=2000000000000000000
+# overflowed term*12 (RT002) and killed the server; a huge term below the
+# overflow ran the schedule loop term*12 times.  The example now rejects
+# termyears>100 with router.bad before the cast.  100 years is the
+# example's own product choice, not a language or stdlib limit.
+#
 # WHAT IS ASSERTED (the real example, built and served on an ephemeral port):
 #   1. term=-5  -> 400 "term must be at least 1 year", and the server lives
 #   2. term=0   -> 400 "term must be at least 1 year"
 #   3. term=abc -> 400 "invalid term"
 #   4. term=30  -> 200, monthly $3160.34 (500000 at 6.5%; the C710 figure)
 #   5. term=1   -> 200, monthly $43148.21
-#   6. the server is still running after all of the above
+#   6. term=100 -> 200, monthly $2712.48 (the boundary is accepted)
+#   7. term=101 -> 400 "term must be at most 100 years"
+#   8. term=2000000000000000000 -> 400 "term must be at most 100 years",
+#      and the server lives (before 127.329: RT002, server exits)
+#   9. the server is still running after all of the above
 #
 # Negative control: C980_EXAMPLE=<dir> serves another copy of the example.
 # The unfixed calculate.tk (dcf648f0) built with the 127.327 compiler fails
-# all six: the server dies on case 1 and answers nothing after it.
+# all six 127.328 cases: the server dies on case 1 and answers nothing
+# after it.  The 127.328 example (3b469371) passes 1-6, accepts 101 and
+# dies on the huge term, failing 7-9.
 #
-# Story: 127.328
+# Stories: 127.328, 127.329
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -38,7 +51,7 @@ fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c980_XXXXXX")"
 cleanup() { [ -n "${SRV}" ] && { kill -9 "${SRV}" 2>/dev/null; wait "${SRV}" 2>/dev/null; }; rm -rf "${WORK}"; }
 trap cleanup EXIT
-echo "C980: mortgage-web rejects a negative or zero term (127.328)"
+echo "C980: mortgage-web rejects a negative, zero or over-100-year term (127.328, 127.329)"
 echo "------------------------------------------------------------"
 
 expect() {
@@ -94,7 +107,10 @@ expect "2  term=0 is rejected"                       "$(post 0)"           "400 
 expect "3  term=abc is rejected"                     "$(post abc)"         "400 invalid term"
 expect "4  term=30 computes the documented payment"  "$(post 30)"          "200 \$3160.34"
 expect "5  term=1 computes"                          "$(post 1)"           "200 \$43148.21"
-expect "6  the server is still running"              "$(alive)"            "alive"
+expect "6  term=100 (the maximum) computes"            "$(post 100)"         "200 \$2712.48"
+expect "7  term=101 is rejected"                     "$(post 101)"         "400 term must be at most 100 years"
+expect "8  term=2e18 is rejected and the server lives" "$(post 2000000000000000000) $(alive)" "400 term must be at most 100 years alive"
+expect "9  the server is still running"              "$(alive)"            "alive"
 
 echo "------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

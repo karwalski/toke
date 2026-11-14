@@ -186,14 +186,48 @@ For a unary expression `op expr`:
 For a binary expression `lhs op rhs`:
 
 **Arithmetic operators** (`+`, `-`, `*`, `/`):
-- Both operands must be numeric.
+- Both operands must be numeric, except that `+` also concatenates two
+  arrays (below).
 - Both operands must have equal types (no implicit widening).
 - The result type is the common operand type.
 - Violation: `[errors.md E4031]` with fix suggestion `"cast RHS to <T> using 'as'"`.
-- **`+` is strictly numeric** — there is no operator overload for string
-  concatenation. See `decisions/ADR-0004.md`. The compiler diagnostic for a
+- **`+` is not string concatenation** — there is no operator overload for
+  `$str`. See `decisions/ADR-0004.md`. The compiler diagnostic for a
   `$str + $str` use site directs the author to one of the three canonical
   string-building patterns (interpolation, `s.join`, `s.builder`).
+
+**Array concatenation** (`+` on `@T`; story 127.359, owner decision
+2026-11-12 §1.6: `a + b` is the one spelling of array concatenation):
+- `lhs + rhs` where both operands are arrays is concatenation. It yields a
+  new array holding the elements of `lhs` followed by the elements of `rhs`;
+  neither operand is modified.
+- The element types must be equal under §3.1 rule 5, so an element type that
+  is not yet established (`unknown`, as in the empty literal `@()`) matches
+  any. Element types are compared whole: `@@i64 + @i64` is a mismatch, and
+  appending one inner array is written `x + @(y)`.
+- One exception, as for scalar operands: when one operand is an array
+  literal whose elements are integer literals that all fit the other
+  operand's integer element type, the literal adopts that type
+  (`b + @(128)` on a `@byte`; story 127.230). There is no integer-to-float
+  adoption: `@(1.5) + @(1)` is a mismatch.
+- The result type is the operand array type; where one side's element type
+  is `unknown`, it is the side whose element type is known.
+- Violations, all `[errors.md E4031]`:
+  - element types that differ, e.g. `@(1;2) + @("x")` (`expected '@(i64)'`,
+    `got '@(str)'`);
+  - exactly one operand an array, e.g. `@(1;2) + 3` or `3 + @(1;2)` (wrap a
+    single element as `@(x)`);
+  - `-`, `*` or `/` on arrays, and `+` on maps (`'+' requires numeric
+    operands`). Maps have no concatenation operator.
+- There is no compound assignment: `a += @(x)` is a parse error
+  (`[errors.md E2002]`). Accumulate with a mutable binding,
+  `let a = mut.@(); ... a = a + @(x)`. A self-update `x = x + @(e1; ...)`
+  whose right operand is an array literal is lowered as an in-place append
+  (ADR-0006 D2, story 127.229); the observable result is the same.
+- Pinned by `test/conform/C1740_array_plus_concat.sh`; also C241 (literal
+  adoption), C222 (an operand whose whole type is `unknown`, which §3.3 lets
+  through: `@(256;0) + s.bytes(..)` checks today; story 127.342) and C267 (in-place
+  self-update).
 
 **Comparison operators** (`<`, `>`, `=`):
 - Both operands must have equal types.
