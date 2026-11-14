@@ -122,7 +122,8 @@ http.post("/users";&createuser);
 Double-quoted. Escapes: \" \\ \n \t \r \0 \xNN.
 Semicolons separate args, never commas: f(a;b;c).
 
-`+` is numeric only. NEVER `+` on strings. Use these canonical patterns:
+`+` adds numbers and concatenates two arrays (`a+@(x)`). NEVER `+` on
+strings. Use these canonical patterns:
 
 1. Interpolation — PRIMARY form for templates with mixed literals and
    expressions:
