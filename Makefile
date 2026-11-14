@@ -123,9 +123,14 @@ CFLAGS += $(EXTRA_CFLAGS)
 # ── Epic 55: vendor library flags ────────────────────────────────────────────
 CMARK_SRCS  = $(filter-out stdlib/vendor/cmark/src/main.c, \
                 $(wildcard stdlib/vendor/cmark/src/*.c))
-CMARK_FLAGS = -Istdlib/vendor/cmark/src -Wno-pedantic
+# 127.439: VENDOR_C99 gives the vendored C (not ours to edit) the C99
+# strchr/memchr signatures it was written against: recent glibc makes them
+# const-preserving C23 macros, and gcc -Werror then fails cmark's utf8.c and
+# tomlc99's toml.c on discarded-qualifiers.  See src/stdlib/tk_c99_string.h.
+VENDOR_C99  = -include src/stdlib/tk_c99_string.h
+CMARK_FLAGS = -Istdlib/vendor/cmark/src -Wno-pedantic $(VENDOR_C99)
 TOML_SRCS   = stdlib/vendor/tomlc99/toml.c
-TOML_FLAGS  = -Istdlib/vendor/tomlc99
+TOML_FLAGS  = -Istdlib/vendor/tomlc99 $(VENDOR_C99)
 
 # ── Story 127.85: vendored-source preflight ──────────────────────────────────
 # stdlib/vendor/{cmark,tomlc99} are tracked in this repository (see
@@ -1885,7 +1890,7 @@ test-stdlib-canvas:
 
 test-stdlib-image:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_image \
-	    test/stdlib/test_image.c src/stdlib/image.c
+	    test/stdlib/test_image.c src/stdlib/image.c -lm   # 127.439: sqrt/sincos (glibc libm)
 	$(RUN_TEST) ./test/stdlib/test_image
 
 test-stdlib-ml:

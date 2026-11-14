@@ -736,7 +736,7 @@ static void test_emit_read_roundtrip(void)
 
     tkir_module_free(&mod);
     snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
-    (void)system(cmd);
+    if (system(cmd) != 0) { /* cleanup only: a failure is harmless (127.439) */ }
 }
 
 /* 127.219: fixed-width scalars and maps have type codes, FIELD_GET carries
@@ -843,7 +843,7 @@ static void test_widths_maps_fields_labels(void)
 
     tkir_module_free(&mod);
     snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
-    (void)system(cmd);
+    if (system(cmd) != 0) { /* cleanup only: a failure is harmless (127.439) */ }
 }
 
 /* ── Main ───────────��────────────────────────────────────────────────── */

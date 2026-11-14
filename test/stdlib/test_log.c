@@ -38,12 +38,12 @@ static int failures = 0;
  */
 static void redirect_stderr_to(const char *path)
 {
-    freopen(path, "w", stderr);
+    if (!freopen(path, "w", stderr)) perror("freopen");   /* 127.439 */
 }
 
 static void restore_stderr(void)
 {
-    freopen("/dev/stderr", "w", stderr);
+    if (!freopen("/dev/stderr", "w", stderr)) perror("freopen");   /* 127.439 */
 }
 
 /*

@@ -25,7 +25,8 @@ static int failures = 0;
     do { if (!(cond)) { fprintf(stderr, "FAIL: %s\n", msg); failures++; } \
          else { printf("pass: %s\n", msg); } } while (0)
 #define ASSERT_STREQ(a, b, msg) \
-    ASSERT((a) && (b) && strcmp((a),(b)) == 0, msg)
+    do { const char *sa_ = (a), *sb_ = (b); /* 127.439: no gcc -Waddress on arrays */ \
+         ASSERT(sa_ && sb_ && strcmp(sa_, sb_) == 0, msg); } while (0)
 
 int main(void)
 {

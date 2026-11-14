@@ -527,7 +527,7 @@ int main(void)
             free((void *)got);
         }
         snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
-        (void)system(cmd);
+        if (system(cmd) != 0) { /* cleanup only: a failure is harmless (127.439) */ }
     }
 
     /* ---- 121.37 (ADR-0011 (b)): the escaper follows the slot's context ---- */
