@@ -50,24 +50,40 @@ else
     fail "1 the std.http program did not build: $(head -c 300 "${WORK}/build.log")"
 fi
 
-# the strings are read once: grep -q closing a pipe early would fail it under pipefail
-STR="$(strings "${TKC}")"
+# Case 2 reads the flags tkc hands to clang, through a TKC_CC wrapper that
+# logs its arguments and then runs the real clang.  (Reading `strings tkc`
+# was fragile: the linker may tail-merge the prefix into another string.)
+REAL_CC="$(command -v clang || true)"
 BP=""
 command -v brew >/dev/null 2>&1 && BP="$(brew --prefix 2>/dev/null)"
-# tkc holds the prefix as its own string and formats -I%s/include and
-# -L%s/lib from it (127.446: a pasted literal tripped cppcheck), so the
-# prefix is looked for as a whole string, and the old literal as a substring.
-if [ -n "${BP}" ]; then
-    if grep -qxF -- "${BP}" <<< "${STR}" && grep -qxF -- "-L%s/lib -lm -lpthread" <<< "${STR}"; then
-        pass "2 tkc carries brew's prefix (${BP})"
+if [ -z "${REAL_CC}" ]; then
+    fail "2 no clang on PATH to wrap"
+else
+    cat > "${WORK}/cc" <<WRAP
+#!/bin/sh
+printf '%s\n' "\$@" >> "${WORK}/cc.args"
+exec "${REAL_CC}" "\$@"
+WRAP
+    chmod +x "${WORK}/cc"
+    rm -f "${WORK}/cc.args" "${WORK}/p"
+    (cd "${WORK}" && TKC_CC="${WORK}/cc" "${TKC}" --allow-all -o p p.tk > build2.log 2>&1)
+    ARGS="$(cat "${WORK}/cc.args" 2>/dev/null)"
+    if [ -z "${ARGS}" ]; then
+        fail "2 tkc did not run TKC_CC: $(head -c 300 "${WORK}/build2.log")"
     else
-        fail "2 tkc does not carry brew's prefix ${BP} (brew --prefix)"
+        if [ -n "${BP}" ]; then
+            if grep -qxF -- "-L${BP}/lib" <<< "${ARGS}" && grep -qxF -- "-I${BP}/include" <<< "${ARGS}"; then
+                pass "2 tkc passes brew's prefix to clang (${BP})"
+            else
+                fail "2 tkc does not pass -I/-L for brew's prefix ${BP}"
+            fi
+        fi
+        if [ "${BP}" != /opt/homebrew ] && grep -qF -- "/opt/homebrew" <<< "${ARGS}"; then
+            fail "2 tkc still passes /opt/homebrew, which is not this host's prefix (${BP:-no brew})"
+        elif [ "${BP}" != /opt/homebrew ]; then
+            pass "2 no /opt/homebrew passed on a host whose prefix is ${BP:-(no brew)}"
+        fi
     fi
-fi
-if [ "${BP}" != /opt/homebrew ] && { grep -qxF -- "/opt/homebrew" <<< "${STR}" || grep -qF -- "-L/opt/homebrew/lib" <<< "${STR}"; }; then
-    fail "2 tkc still carries /opt/homebrew, which is not this host's prefix (${BP:-no brew})"
-elif [ "${BP}" != /opt/homebrew ]; then
-    pass "2 no /opt/homebrew baked in on a host whose prefix is ${BP:-(no brew)}"
 fi
 
 echo "------------------------------------------------------"
