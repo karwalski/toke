@@ -699,7 +699,9 @@ explain_unsat(Graph *g)
 static int
 mvs(Graph *g, PkgLock *sel)
 {
-    PkgDep *deps = malloc((size_t)(g->nreq ? g->nreq : 1) * sizeof *deps);
+    /* 127.439: a non-positive count allocates one slot (gcc 15
+     * -Walloc-size-larger-than saw a negative nreq cast to size_t). */
+    PkgDep *deps = malloc((size_t)(g->nreq > 0 ? g->nreq : 1) * sizeof *deps);
     if (!deps) return -1;
     for (int i = 0; i < g->nreq; i++) deps[i] = g->reqs[i].dep;
     int rc = pkg_resolve(deps, g->nreq, sel);

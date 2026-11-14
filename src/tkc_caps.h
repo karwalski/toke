@@ -287,10 +287,18 @@ static inline void tkc_caps_count(const Node *ast, const char *src,
         char *buf = tkc_caps_user_tki(imps[i], src, sp, spc);
         if (!buf) continue;
         char what[96], mod[80]; mod[0] = '\0';
-        for (int s = 0; s < mp->child_count; s++) {
+        /* 127.439: joined with snprintf and an explicit length, not strncat.
+         * gcc 15 with _FORTIFY_SOURCE rejects strncat(mod, seg, room) under
+         * -Werror=stringop-truncation (a 79-byte segment into the space
+         * left), which broke every Linux gcc build.  Same result: segments
+         * joined by '.', silently truncated at sizeof mod - 1. */
+        size_t ml = 0;
+        for (int s = 0; s < mp->child_count && ml < sizeof mod - 1; s++) {
             char seg[80]; tkc_caps_tok(src, mp->children[s], seg, sizeof seg);
-            if (s > 0) strncat(mod, ".", sizeof mod - strlen(mod) - 1);
-            strncat(mod, seg, sizeof mod - strlen(mod) - 1);
+            int w = snprintf(mod + ml, sizeof mod - ml, "%s%s",
+                             s > 0 ? "." : "", seg);
+            if (w < 0) break;
+            ml += (size_t)w < sizeof mod - ml ? (size_t)w : sizeof mod - 1 - ml;
         }
         snprintf(what, sizeof what, "imported from %s", mod);
         tkc_caps_add(fc, imps[i], what, tkc_caps_tki_funcs(buf));
