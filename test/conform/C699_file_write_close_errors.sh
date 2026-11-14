@@ -215,6 +215,12 @@ static int run(const char *fifo, char *big, int pre_pending) {
 }
 int main(int argc, char **argv) {
     (void)argc;
+    /* 127.439 (Z205): the case asserts file_write leaves SIGPIPE at SIG_DFL,
+     * so it starts from SIG_DFL.  An ignored disposition survives exec, and
+     * a GitHub Actions step starts with SIGPIPE ignored: the probe inherited
+     * the runner's SIG_IGN and reported it as file.c's doing.  (Cases 1-3
+     * run under python's subprocess, which restores SIG_DFL itself.) */
+    signal(SIGPIPE, SIG_DFL);
     size_t n = 1 << 20; char *big = malloc(n + 1);
     memset(big, 'z', n); big[n] = 0;
     int bad = run(argv[1], big, 0);
@@ -238,6 +244,14 @@ PLS=(); while IFS= read -r l; do [ -n "$l" ] && PLS+=("$l"); done <<< "${PLINK}"
 if [ -z "${PLINK}" ]; then
     fail "6 probe: stdlib link set failed"; sed 's/^/      | /' probe.ls | head -5
 elif "${CC}" "${PCF[@]}" -o probe probe.c "${PLS[@]}" -lz -lpthread -lm >probe.cl 2>&1; then
+    # Say so when this shell was started with SIGPIPE ignored (bit 13 of
+    # SigIgn), the inherited state the probe now resets.
+    if [ -r /proc/$$/status ]; then
+        sigign="$(sed -n 's/^SigIgn:[[:space:]]*//p' /proc/$$/status)"
+        if [ -n "${sigign}" ] && [ $(( 0x${sigign} & 0x1000 )) -ne 0 ]; then
+            echo "  note: this shell inherited SIGPIPE ignored (SigIgn ${sigign}); the probe resets it to SIG_DFL"
+        fi
+    fi
     rc=0; out="$(./probe ff 2>&1)" || rc=$?
     if [ "${rc}" -eq 0 ] && [ "${out}" = "GOOD" ]; then
         pass "6 signal state after EPIPE: disposition SIG_DFL, mask restored, nothing left pending, prior pending kept"
