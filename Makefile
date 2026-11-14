@@ -1102,7 +1102,7 @@ TEST_CI_GREEN = \
 	test-stdlib-toml test-stdlib-toml-glue test-stdlib-toon \
 	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-ws \
 	test-stdlib-yaml test-tkir-encoder test-tkir-reader \
-	test-stdlib-http-leak \
+	test-stdlib-http-leak test-stdlib-http-route-param-leak \
 	test-stdlib-http-tls \
 	test-companion test-companion-diff test-migrate \
 	test-compress test-compress-stream \
@@ -1209,23 +1209,9 @@ TEST_CI_UNMEASURED = test-stdlib-mdns test-standalone
 #   never called tk_cap_init), and behind it sat two stale assertions of
 #   behaviour removed on purpose (NULL-router guard, 27096b4; 30 s default
 #   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
-#   test-stdlib-http-route-param-leak (127.439, 2026-11-14): green on
-#                              macOS, killed by the 180 s alarm on the
-#                              ubuntu-latest runner. 7,264 keep-alive
-#                              requests over loopback, each answered by
-#                              res_write_fd in several small writes on a
-#                              socket without TCP_NODELAY. The suspected
-#                              cause is the Nagle / delayed-ACK stall (about
-#                              40 ms per response on Linux, about 290 s in
-#                              all), which a Linux keep-alive client of
-#                              std.http would also pay. Unconfirmed; it needs
-#                              its own story (TCP_NODELAY on accepted
-#                              sockets, or one write per response). Demoted
-#                              here, not deleted.
 TEST_CI_KNOWN_RED = test-stdlib-auth \
 	test-stdlib-viz-integration test-stdlib-crypto \
-	test-compress-schema test-e2e test-e2e-check \
-	test-stdlib-http-route-param-leak
+	test-compress-schema test-e2e test-e2e-check
 
 # Run a list of targets, one log each, never stopping at the first failure --
 # "3 of 61 failed, here they are" is actionable; "make: *** Error 1" after the
