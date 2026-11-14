@@ -978,6 +978,10 @@ static void sha512_process_block(Sha512Ctx *ctx, const uint8_t *block)
 
 static void sha512_update(Sha512Ctx *ctx, const uint8_t *data, uint64_t len)
 {
+    /* 127.439: an empty update (Ed25519 signs an empty message with
+     * data == NULL) changes nothing; memcpy(dst, NULL, 0) is undefined
+     * (UBSan, ci.yml sanitizer job). */
+    if (len == 0) return;
     uint64_t i = 0;
     uint64_t prev = ctx->msglen_lo;
     ctx->msglen_lo += len * 8;
