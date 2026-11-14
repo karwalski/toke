@@ -6820,9 +6820,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (tc_can_emit(cx)) {
                 char msg[128];
                 snprintf(msg,sizeof(msg),"type mismatch: expected 'i64' or 'f64', got '%s'",type_name(op));
+                /* 127.438: no `fix` -- the prose ("unary minus requires a
+                 * signed numeric type") restated the error (AGENTS §6). */
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","i64 or f64","got",type_name(op),
-                          "fix","unary minus requires a signed numeric type",(const char*)NULL);
+                          "expected","i64 or f64","got",type_name(op),(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
@@ -6830,9 +6831,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (tc_can_emit(cx)) {
                 char msg[128];
                 snprintf(msg,sizeof(msg),"type mismatch: bitwise NOT requires integer type, got '%s'",type_name(op));
+                /* 127.438: no `fix` -- the prose restated the error. */
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","integer","got",type_name(op),
-                          "fix","bitwise NOT requires an integer operand",(const char*)NULL);
+                          "expected","integer","got",type_name(op),(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
@@ -7617,9 +7618,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                     char msg[256];
                     snprintf(msg,sizeof(msg),"type mismatch: map key must be '%s', got '%s'",type_name(kt),type_name(idx));
+                    /* 127.438: no `fix` -- the prose ("map key must match
+                     * the map's key type") restated the error. */
                     diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                              "expected",type_name(kt),"got",type_name(idx),
-                              "fix","map key must match the map's key type",(const char*)NULL);
+                              "expected",type_name(kt),"got",type_name(idx),(const char*)NULL);
                 }
                 return mk_type(A,TY_UNKNOWN);
             }
@@ -7644,9 +7646,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"type mismatch: cannot index into '%s'; expected array type",type_name(base));
+                /* 127.438: no `fix` -- the prose ("indexing with []
+                 * requires an array type") restated the error. */
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","array","got",type_name(base),
-                          "fix","indexing with [] requires an array type",(const char*)NULL);
+                          "expected","array","got",type_name(base),(const char*)NULL);
             }
             return mk_type(A,TY_UNKNOWN);
         }
