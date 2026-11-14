@@ -1,0 +1,15 @@
+id: D542
+series: D
+description: "127.436: a non-bool operand of `&&` / `||` is E4031 with no fix -- the fix field carried prose, not a repair (AGENTS 6, errors.md E4031)"
+input: |
+  m=t;
+  f=main():i64{
+    let a=(1==1)&&3;
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64"
