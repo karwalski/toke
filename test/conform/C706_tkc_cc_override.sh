@@ -73,6 +73,19 @@ expect "5e --emit-asm refuses it the same way" "rc=$? $(codes "${WORK}/o")" "rc=
 
 r="$(build PATH=)"
 expect "6 the default works with PATH emptied" "${r}" "rc=0 exit=7"
+# 127.439: on Linux clang runs the linker by name, and with no
+# /usr/<triple>/bin/ld (Ubuntu 26.04) it searched $PATH: case 6 failed there
+# ("posix_spawn failed" for ld) and a planted `ld` would have linked the
+# program.  tkc now passes the linker baked beside the baked clang
+# (TKC_LD_PATH, Linux).  On macOS clang never looked for ld on $PATH.
+mkdir -p "${WORK}/evil_ld"
+REAL_LD="$("${REAL_CLANG}" -print-prog-name=ld 2>/dev/null)"
+case "${REAL_LD}" in /*) ;; *) REAL_LD="$(command -v ld || echo /usr/bin/ld)" ;; esac
+printf '#!/bin/sh\ntouch "%s/planted_ld.ran"\nexec "%s" "$@"\n' "${WORK}" "${REAL_LD}" > "${WORK}/evil_ld/ld"
+chmod +x "${WORK}/evil_ld/ld"
+r="$(build PATH="${WORK}/evil_ld:${PATH}")"
+expect "6b a planted ld first on PATH: the build works ..." "${r}" "rc=0 exit=7"
+expect "6c ... and the planted ld never ran" "$(ran planted_ld.ran)" "no"
 
 env TKC_CC="${WORK}/no/such/clang" "${TKC}" --check "${WORK}/p.tk" > "${WORK}/o" 2>&1
 expect "7 --check runs no clang, so TKC_CC is not consulted" "rc=$?" "rc=0"

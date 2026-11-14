@@ -67,7 +67,12 @@ for t in "$@"; do
     if ! "${CC}" ${cflags} -c -o "${probe_dir}/p.o" "${probe_dir}/p.c" \
             > "${probe_dir}/cc.log" 2>&1; then
         why="$(sed -n '1{s|^.*/p\.c:[0-9]*:[0-9]*: ||;p;}' "${probe_dir}/cc.log")"
-        if [ -n "${sysroot}" ]; then
+        # 127.439: gcc (cc on Linux) has no --target; that is not a missing
+        # sysroot, and saying so sent a reader looking for headers.
+        if grep -q -e "--target" "${probe_dir}/cc.log" \
+           && grep -q -i -e "unrecognized" -e "unknown argument" "${probe_dir}/cc.log"; then
+            skipped+=("${t}: CC=${CC} cannot cross-compile -- it does not accept --target; use CC=clang (${why})")
+        elif [ -n "${sysroot}" ]; then
             skipped+=("${t}: sysroot ${sysroot} has no usable libc/zlib headers (${why})")
         else
             skipped+=("${t}: no sysroot -- set TK_SYSROOT_${var}=<dir> (${why})")

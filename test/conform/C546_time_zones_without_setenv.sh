@@ -89,6 +89,16 @@ static void oracle(const char *z, int64_t t, char *out, size_t cap) {
     (void)z;
 }
 
+static int tz_file_exists(const char *name) {
+    const char *dir = getenv("TZDIR");
+    char p[1024];
+    snprintf(p, sizeof p, "%s/%s", (dir && *dir) ? dir : "/usr/share/zoneinfo", name);
+    FILE *f = fopen(p, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
 static int fails = 0, checks = 0;
 static void *hammer(void *arg) {
     long id = (long)arg;
@@ -124,7 +134,18 @@ int main(void) {
 
     /* 1. against libc (the oracle sets TZ -- single-threaded, before any thread) */
     for (size_t z = 0; z < NZ; z++) {
-        setenv("TZ", zones[z], 1); tzset();
+        /* 127.439: "EST5EDT" names no rule.  POSIX leaves a rule-less TZ
+         * implementation-defined; it is only well defined here while tzdata
+         * ships an EST5EDT FILE (tzdata 2024b made it a link, and Ubuntu
+         * 26.04's tzdata 2026e has none).  Without the file, glibc 2.43 falls
+         * back to posixrules and ends DST at 2024-11-03 05:59:59 UTC or
+         * earlier: an hour before US law (02:00 EDT = 06:00 UTC), and before
+         * its own America/New_York.  tk_time.c applies the US rule
+         * (M3.2.0,M11.1.0), so the oracle states that rule explicitly in
+         * that case rather than asking libc to guess. */
+        const char *oz = zones[z];
+        if (strcmp(oz, "EST5EDT") == 0 && !tz_file_exists(oz)) oz = "EST5EDT,M3.2.0,M11.1.0";
+        setenv("TZ", oz, 1); tzset();
         for (int k = 0; k < NT; k++) oracle(zones[z], ts[k], want[z][k], sizeof want[z][k]);
         time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
         long off_want = tm.tm_gmtoff;
