@@ -1,6 +1,11 @@
 CC      = cc
+# The stdlib directory baked into tkc.  A release passes BAKED_STDLIB_DIR=src/stdlib
+# (relative: resolved against the tkc executable's directory, 127.179) rather
+# than replacing CFLAGS, so a release keeps every flag below -- the
+# -Wno-format-truncation policy and the 123.9 hardening set included (127.439).
+BAKED_STDLIB_DIR = $(CURDIR)/src/stdlib
 CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
-          -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"' \
+          -DTKC_STDLIB_DIR='"$(BAKED_STDLIB_DIR)"' \
           -MMD -MP   # emit .d header-dependency files so header changes trigger recompiles
 # GCC-specific: suppress format-truncation warnings (snprintf truncation is by design)
 GCC_CHECK := $(shell $(CC) -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null && echo yes)
