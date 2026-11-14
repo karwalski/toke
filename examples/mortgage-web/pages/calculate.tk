@@ -236,6 +236,12 @@ f=handler(req:i64):i64{
   if(termyears<1){
     <router.bad("term must be at least 1 year")
   };
+  (* an unbounded term overflows term*12 (RT002 kills the server) and
+     runs the schedule loop term*12 times; 100 years is the example's
+     maximum (127.329) *)
+  if(termyears>100){
+    <router.bad("term must be at most 100 years")
+  };
   let term=(termyears as u64);
 
   let pmt=monthlypayment(principal;annualrate;term*12);
