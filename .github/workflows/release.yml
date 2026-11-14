@@ -60,7 +60,8 @@ jobs:
       - name: Z206 TEMP targeted suites
         run: |
           rc=0
-          for t in C1780_ir_pie_module_flags C134_build_all_per_triple C706_tkc_cc_override C546_time_zones_without_setenv C1611_log_returns_written C114_conform_skip_is_counted; do
+          sudo apt-get install -y valgrind >/dev/null 2>&1
+          for t in C1780_ir_pie_module_flags C134_build_all_per_triple C706_tkc_cc_override C546_time_zones_without_setenv C1611_log_returns_written C114_conform_skip_is_counted C735_str_scaling_linear; do
             echo "=== $t"; TKC_CONFORM_NO_SKIP=1 bash test/conform/$t.sh || rc=1
           done
           exit $rc
