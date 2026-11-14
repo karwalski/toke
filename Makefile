@@ -839,7 +839,9 @@ asan-clean:
 # The compiler itself, instrumented, driven through the conformance suite.
 test-asan-compiler: asan-selftest
 	@echo "=== ASAN/UBSAN: tkc through the conformance suite ==="
-	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN)
+	@# 127.439: tkc too -- conform runs ./tkc, the symlink `all` makes, and
+	@# on a fresh checkout (CI) building $(BIN) alone left none to run.
+	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN) tkc
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" conform
 
 # The stdlib C unit tests, instrumented. A red result here is a true result:
@@ -1002,7 +1004,9 @@ COV_PROFDATA = $(COV_DIR)/tkc.profdata
 
 coverage: coverage-preflight
 	@rm -rf $(COV_DIR) && mkdir -p $(COV_DIR)
-	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(COV_FLAGS)" $(BIN)
+	@# 127.439: tkc too (see test-asan-compiler); without it conform found no
+	@# compiler on CI and the job reported "no .profraw files".
+	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(COV_FLAGS)" $(BIN) tkc
 	@LLVM_PROFILE_FILE="$(COV_DIR)/tkc-%m.profraw" \
 	   $(MAKE) --no-print-directory conform > /dev/null 2>&1 || true
 	@ls $(COV_DIR)/*.profraw >/dev/null 2>&1 || { \
