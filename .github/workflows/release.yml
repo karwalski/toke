@@ -38,7 +38,10 @@ jobs:
             os: linux
             arch: arm64
           - target: macos-arm64
-            runner: macos-14
+            # 127.439: macos-14 is no longer offered ("The configuration
+            # 'macos-14-arm64-us-default' is not supported"; the job is
+            # cancelled in one second).  macos-15 is the arm64 image.
+            runner: macos-15
             os: macos
             arch: arm64
           - target: macos-x86_64
@@ -66,7 +69,7 @@ jobs:
       # one ("conform: no compiler at .../tkc (run 'make' first)"), so this
       # gate failed on every platform before testing anything.
       - name: Build tkc
-        run: make
+        run: make -k   # -k: report every failing object, not just the first
 
       - name: Conformance gate
         run: make conform
