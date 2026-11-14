@@ -26,7 +26,9 @@ jobs:
       - name: Python libraries for C031/C032
         run: |
           python3 -m venv "$RUNNER_TEMP/tkpy"
-          "$RUNNER_TEMP/tkpy/bin/pip" install --quiet openpyxl reportlab pikepdf pillow
+          # 127.439: pytest + tokenizers for C1100 (the 131.50 token lanes),
+          # which reads TKC_PY like C031/C032.
+          "$RUNNER_TEMP/tkpy/bin/pip" install --quiet openpyxl reportlab pikepdf pillow pytest tokenizers
           echo "TKC_PY=$RUNNER_TEMP/tkpy/bin/python" >> "$GITHUB_ENV"
           echo "TKC_CONFORM_NO_SKIP=1" >> "$GITHUB_ENV"
 
@@ -241,7 +243,9 @@ jobs:
       - name: Python libraries for C031/C032
         run: |
           python3 -m venv "$RUNNER_TEMP/tkpy"
-          "$RUNNER_TEMP/tkpy/bin/pip" install --quiet openpyxl reportlab pikepdf pillow
+          # 127.439: pytest + tokenizers for C1100 (the 131.50 token lanes),
+          # which reads TKC_PY like C031/C032.
+          "$RUNNER_TEMP/tkpy/bin/pip" install --quiet openpyxl reportlab pikepdf pillow pytest tokenizers
           echo "TKC_PY=$RUNNER_TEMP/tkpy/bin/python" >> "$GITHUB_ENV"
           echo "TKC_CONFORM_NO_SKIP=1" >> "$GITHUB_ENV"
 
