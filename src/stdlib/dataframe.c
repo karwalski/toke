@@ -20,6 +20,7 @@
 #include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 
 #include <stdlib.h>
+#include "tk_xalloc.h" /* 127.439: OOM stops at the allocation */
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -483,7 +484,7 @@ static void ht_insert(HashTable *ht, const char *key, uint64_t row_idx)
         n = n->next;
     }
     /* new node */
-    n = calloc(1, sizeof(HtNode));
+    n = tk_xcalloc(1, sizeof(HtNode));
     n->key      = df_strdup(key);
     n->cap      = 4;
     n->rows     = malloc(4 * sizeof(uint64_t));

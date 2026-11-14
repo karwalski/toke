@@ -7,6 +7,7 @@
 #include "tk_strhdr.h"     /* 127.295: a DbErr's composed text is a sealed copy */
 #include <sqlite3.h>
 #include <stdlib.h>
+#include "tk_xalloc.h" /* 127.439: OOM stops at the allocation */
 #include <string.h>
 #include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdio.h>
@@ -135,9 +136,9 @@ static void free_row(Row *row)
 static Row collect_row(sqlite3_stmt *stmt)
 {
     int n = sqlite3_column_count(stmt);
-    const char **names  = malloc((size_t)n * sizeof(char *));
-    const char **values = malloc((size_t)n * sizeof(char *));
-    int         *nulls  = malloc((size_t)n * sizeof(int));
+    const char **names  = tk_xmalloc((size_t)n * sizeof(char *));
+    const char **values = tk_xmalloc((size_t)n * sizeof(char *));
+    int         *nulls  = tk_xmalloc((size_t)n * sizeof(int));
     for (int c = 0; c < n; c++) {
         const char *name = sqlite3_column_name(stmt, c);
         names[c] = name ? strdup(name) : strdup("");

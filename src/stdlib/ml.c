@@ -19,6 +19,7 @@
 
 #include "ml.h"
 #include <stdlib.h>
+#include "tk_xalloc.h" /* 127.439: OOM stops at the allocation */
 #include <string.h>
 #include <math.h>
 #include <float.h>
@@ -402,13 +403,13 @@ static int build_node(TreeBuilder *tb,
     double   parent_gini = gini(labels, idx, n);
 
     /* Temp arrays for partitioning. */
-    uint64_t *left_idx  = (uint64_t *)malloc(n * sizeof(uint64_t));
-    uint64_t *right_idx = (uint64_t *)malloc(n * sizeof(uint64_t));
+    uint64_t *left_idx  = (uint64_t *)tk_xmalloc(n * sizeof(uint64_t));
+    uint64_t *right_idx = (uint64_t *)tk_xmalloc(n * sizeof(uint64_t));
 
     for (uint64_t f = 0; f < nfeatures; f++) {
         /* Collect unique thresholds (midpoints between consecutive sorted
          * values).  For small n we sort a copy. */
-        double *vals = (double *)malloc(n * sizeof(double));
+        double *vals = (double *)tk_xmalloc(n * sizeof(double));
         for (uint64_t i = 0; i < n; i++) vals[i] = feature_cols[f].data[idx[i]];
 
         /* Insertion sort (n is small in practice). */
@@ -496,7 +497,7 @@ DTreeModel ml_dtreefit(F64Array *feature_cols, uint64_t nfeatures,
     tb.capacity        = initial_cap;
     tb.nnodes          = 0;
 
-    uint64_t *idx = (uint64_t *)malloc(nrows * sizeof(uint64_t));
+    uint64_t *idx = (uint64_t *)tk_xmalloc(nrows * sizeof(uint64_t));
     for (uint64_t i = 0; i < nrows; i++) idx[i] = i;
 
     build_node(&tb, feature_cols, nfeatures, labels, idx, nrows, 0, max_depth);
@@ -559,8 +560,8 @@ double ml_knnpredict(F64Array *train_cols, uint64_t nfeatures,
     if (ntrain == 0 || k == 0) return 0.0;
     if (k > ntrain) k = ntrain;
 
-    double   *kd  = (double *)malloc(k * sizeof(double));   /* distances */
-    double   *kl  = (double *)malloc(k * sizeof(double));   /* labels    */
+    double   *kd  = (double *)tk_xmalloc(k * sizeof(double));   /* distances */
+    double   *kl  = (double *)tk_xmalloc(k * sizeof(double));   /* labels    */
     uint64_t  filled = 0;
 
     for (uint64_t t = 0; t < ntrain; t++) {
