@@ -62,6 +62,12 @@ jobs:
         if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
 
+      # 127.439: `make conform` runs the compiler it finds and does not build
+      # one ("conform: no compiler at .../tkc (run 'make' first)"), so this
+      # gate failed on every platform before testing anything.
+      - name: Build tkc
+        run: make
+
       - name: Conformance gate
         run: make conform
 
