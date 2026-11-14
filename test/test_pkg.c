@@ -193,6 +193,7 @@ static void
 test_resolve_single(void)
 {
     PkgDep deps[1];
+    memset(deps, 0, sizeof deps);   /* 127.439: git[] and every other field start empty */
     snprintf(deps[0].name, sizeof(deps[0].name), "web");
     deps[0].minimum = (PkgVersion){0, 3, 0};
 
@@ -216,6 +217,7 @@ test_resolve_mvs_max_of_mins(void)
      * MVS should pick 0.5.0 (the max of all minimums).
      */
     PkgDep deps[2];
+    memset(deps, 0, sizeof deps);   /* 127.439: git[] and every other field start empty */
     snprintf(deps[0].name, sizeof(deps[0].name), "web");
     deps[0].minimum = (PkgVersion){0, 3, 0};
     snprintf(deps[1].name, sizeof(deps[1].name), "web");
@@ -233,6 +235,7 @@ static void
 test_resolve_multiple_packages(void)
 {
     PkgDep deps[3];
+    memset(deps, 0, sizeof deps);   /* 127.439: git[] and every other field start empty */
     snprintf(deps[0].name, sizeof(deps[0].name), "web");
     deps[0].minimum = (PkgVersion){0, 3, 0};
     snprintf(deps[1].name, sizeof(deps[1].name), "json");
