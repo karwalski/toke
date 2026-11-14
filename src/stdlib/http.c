@@ -17,6 +17,7 @@
 #include "tk_http_field.h" /* 121.92: tk_http_field_name_ok/_value_ok */
 #include "tk_strhdr.h"     /* 127.295: tk_strlen, tks_dup (runtime-abi §3.1) */
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>

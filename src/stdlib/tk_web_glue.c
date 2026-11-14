@@ -75,6 +75,7 @@ void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
 #include <limits.h>   /* 121.18: PATH_MAX */
 #include <stdio.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <strings.h>
 #include <ctype.h>
 #include <sys/socket.h>

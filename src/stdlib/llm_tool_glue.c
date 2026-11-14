@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 /* 114.53/114.54/127.67: report failure through this flag and still return the
  * real value; defined in tk_runtime.c. */

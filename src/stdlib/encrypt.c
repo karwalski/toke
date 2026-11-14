@@ -24,6 +24,7 @@
 #include "tk_strhdr.h"   /* 127.295: tk_strlen (runtime-abi §3.1) */
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdint.h>
 #include <stdio.h>
 

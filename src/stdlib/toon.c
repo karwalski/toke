@@ -22,6 +22,7 @@
 #include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdio.h>
 #include <errno.h>
 #include <ctype.h>

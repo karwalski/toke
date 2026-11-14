@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include "parser.h"
 #include "diag.h"
 #include "tkc_limits.h"

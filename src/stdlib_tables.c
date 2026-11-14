@@ -7,6 +7,7 @@
 #include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
 #include <stdio.h>
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <dirent.h>       /* 127.80: scan the stdlib dir for .tki interfaces */
 

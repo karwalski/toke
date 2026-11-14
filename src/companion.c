@@ -30,6 +30,7 @@
 #include "readall.h"      /* 135.3j: tk_read_stream() — no ftell on FIFOs */
 #include "stdlib/capabilities.h"   /* 124.4-fu: TK_CAP_* bits for the grant record */
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <time.h>
 
