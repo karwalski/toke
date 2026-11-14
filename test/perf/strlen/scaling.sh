@@ -21,12 +21,19 @@ set -u
 DIR=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$DIR/../../.." && pwd)
 TK=${TOKE:-$ROOT/toke}; N=${N:-4000}; LIMIT=${LIMIT:-6}
 
-if [ "$(uname -s)" = Darwin ] && [ -x /usr/bin/time ]; then
+# 127.439: a macOS VM (GitHub's macos-15 runners) has no performance
+# counters, and /usr/bin/time -l then prints no "instructions retired" line
+# at all.  That is a host without a counter, the SKIP case below, not a
+# failure of the code under test, so the counter is probed before it is used.
+darwin_counter() {
+  /usr/bin/time -l /usr/bin/true 2>&1 >/dev/null | awk '/instructions retired/ && $1 > 0 {f=1} END{exit !f}'
+}
+if [ "$(uname -s)" = Darwin ] && [ -x /usr/bin/time ] && darwin_counter; then
   insns() { env -u TK_STR_VERIFY PAT_N=$2 /usr/bin/time -l "$1" 2>&1 >/dev/null | awk '/instructions retired/{print $1}'; }
 elif command -v perf >/dev/null 2>&1 && perf stat -x, -e instructions:u true >/dev/null 2>&1; then
   insns() { env -u TK_STR_VERIFY PAT_N=$2 perf stat -x, -e instructions:u "$1" 2>&1 >/dev/null | awk -F, '/instructions/{print $1}'; }
 else
-  echo "SKIP: no instruction counter (/usr/bin/time -l on macOS, perf on Linux)"; exit 77
+  echo "SKIP: no instruction counter (/usr/bin/time -l on macOS reports none on this host, perf on Linux)"; exit 77
 fi
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/tk_strscale.XXXXXX"); trap 'rm -rf "$W"' EXIT
