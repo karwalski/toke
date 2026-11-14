@@ -167,6 +167,12 @@ static const char *resolve_cc(void)
         return NULL;
     }
     llvm_set_cc(cc);
+    /* 127.439: the linker baked beside that clang (Linux), used only with the
+     * baked clang -- a TKC_CC clang finds its own -- and only while it is
+     * still an executable file; otherwise clang searches as it always did. */
+    if (!(env && env[0]) && TKC_LD_PATH[0] && TKC_LD_PATH[0] == '/' &&
+        stat(TKC_LD_PATH, &sb) == 0 && S_ISREG(sb.st_mode) && access(TKC_LD_PATH, X_OK) == 0)
+        llvm_set_ld(TKC_LD_PATH);
     return cc;
 }
 

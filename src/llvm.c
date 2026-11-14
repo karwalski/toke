@@ -13637,6 +13637,13 @@ static const char *find_stdlib_vendor_includes(void) {
 /* 121.28 (COM-04): the clang to run; main.c sets an absolute path. */
 static const char *g_cc_path = "clang";
 void llvm_set_cc(const char *path) { g_cc_path = (path && path[0]) ? path : "clang"; }
+static char g_ld_opt[4200];   /* "--ld-path=<abs>", or "" (127.439) */
+void llvm_set_ld(const char *path)
+{
+    g_ld_opt[0] = '\0';
+    if (path && path[0] == '/' && strlen(path) < sizeof g_ld_opt - 16)
+        snprintf(g_ld_opt, sizeof g_ld_opt, "--ld-path=%s", path);
+}
 
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
@@ -13979,6 +13986,9 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         push_ws_tokens(argv, &argc, AMAX, cflags_buf);
         push_ws_tokens(argv, &argc, AMAX, vibuf);
         if (target && target[0]) { argv[argc++] = "-target"; argv[argc++] = (char *)target; }
+        /* 127.439: the baked linker, for a host link only (a --target build
+         * needs that target's linker, which clang chooses). */
+        else if (g_ld_opt[0]) argv[argc++] = g_ld_opt;
         argv[argc++] = "-o";
         argv[argc++] = (char *)out_bin;
         /* 127.76: one argv element per module, never a joined string. */
