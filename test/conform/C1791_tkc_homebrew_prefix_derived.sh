@@ -54,15 +54,18 @@ fi
 STR="$(strings "${TKC}")"
 BP=""
 command -v brew >/dev/null 2>&1 && BP="$(brew --prefix 2>/dev/null)"
+# tkc holds the prefix as its own string and formats -I%s/include and
+# -L%s/lib from it (127.446: a pasted literal tripped cppcheck), so the
+# prefix is looked for as a whole string, and the old literal as a substring.
 if [ -n "${BP}" ]; then
-    if grep -qx -- "-L${BP}/lib -lm -lpthread" <<< "${STR}"; then
+    if grep -qxF -- "${BP}" <<< "${STR}" && grep -qxF -- "-L%s/lib -lm -lpthread" <<< "${STR}"; then
         pass "2 tkc carries brew's prefix (${BP})"
     else
-        fail "2 tkc does not carry -L${BP}/lib (brew --prefix)"
+        fail "2 tkc does not carry brew's prefix ${BP} (brew --prefix)"
     fi
 fi
-if [ "${BP}" != /opt/homebrew ] && grep -q -- "-L/opt/homebrew/lib" <<< "${STR}"; then
-    fail "2 tkc still carries -L/opt/homebrew/lib, which is not this host's prefix (${BP:-no brew})"
+if [ "${BP}" != /opt/homebrew ] && { grep -qxF -- "/opt/homebrew" <<< "${STR}" || grep -qF -- "-L/opt/homebrew/lib" <<< "${STR}"; }; then
+    fail "2 tkc still carries /opt/homebrew, which is not this host's prefix (${BP:-no brew})"
 elif [ "${BP}" != /opt/homebrew ]; then
     pass "2 no /opt/homebrew baked in on a host whose prefix is ${BP:-(no brew)}"
 fi
