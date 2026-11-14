@@ -63,6 +63,10 @@ expect "1-closed-port-err-payload" "$(build_run p1.tk)" "get:0:true post:0:true 
 #      is $err with code 404)
 cat > rec.py <<'PY'
 import http.server, sys
+import socketserver as _ss
+def _bind(self):  # 127.439 (Z205): HTTPServer.server_bind does a reverse-DNS getfqdn() that stalls for seconds on the macos-15-intel runner
+    _ss.TCPServer.server_bind(self); self.server_name = "127.0.0.1"; self.server_port = self.server_address[1]
+http.server.HTTPServer.server_bind = _bind
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):

@@ -64,6 +64,10 @@ openssl req -x509 -newkey rsa:2048 -keyout srv.key -out srv.pem -days 2 -nodes \
 
 cat > rec.py <<'PY'
 import http.server, ssl, sys
+import socketserver as _ss
+def _bind(self):  # 127.439 (Z205): HTTPServer.server_bind does a reverse-DNS getfqdn() that stalls for seconds on the macos-15-intel runner
+    _ss.TCPServer.server_bind(self); self.server_name = "127.0.0.1"; self.server_port = self.server_address[1]
+http.server.HTTPServer.server_bind = _bind
 LOG = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
