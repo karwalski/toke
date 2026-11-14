@@ -18,7 +18,8 @@
 #   3. the -g module still compiles (the ids do not collide)
 #   4. compiled for aarch64-linux, the canary is reached through the GOT
 #      (R_AARCH64_ADR_GOT_PAGE), never R_AARCH64_ADR_PREL_PG_HI21.  This
-#      case needs an objdump that reads ELF; the others always run.
+#      case needs an objdump that names aarch64 relocation types (llvm-objdump
+#      anywhere; GNU objdump only on an aarch64 host); the others always run.
 #
 # Negative control: on the parent commit cases 1, 2 and 4 fail (no flag;
 # the canary relocation is ADR_PREL_PG_HI21).
@@ -68,19 +69,35 @@ else
     bad "3 the -g program does not build"; sed 's/^/      | /' c3.log | head -5
 fi
 
-OD=""
-for c in llvm-objdump objdump; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" --help 2>&1 | grep -q -- '-r'; then OD="$c"; break; fi
+# 127.439: an objdump counts only if it can NAME aarch64 relocations.  GNU
+# objdump on an x86-64 Linux host reads the aarch64 ELF but prints every
+# relocation type as UNKNOWN, so case 4 failed there although the canary
+# relocation was right.  Candidates: llvm-objdump on PATH, the one beside the
+# clang that compiles the probe (Ubuntu keeps it in /usr/lib/llvm-N/bin), then
+# objdump; the first that names a type in the probe's relocations is used.
+OD_CANDIDATES=()
+for c in llvm-objdump "$(clang -print-prog-name=llvm-objdump 2>/dev/null)" objdump; do
+    case "$c" in
+        /*) [ -x "$c" ] && OD_CANDIDATES+=("$c") ;;
+        ?*) command -v "$c" >/dev/null 2>&1 && OD_CANDIDATES+=("$c") ;;
+    esac
 done
-CLANG="${CC:-clang}"; command -v "${CLANG}" >/dev/null 2>&1 || CLANG=clang
 # tkc's own module (its flags, its #0 = sspstrong attribute group) plus one
 # probe function that has a stack buffer, so a canary is certainly emitted.
-if [ -n "${OD}" ] && "${TKC}" p.tk --emit-llvm --target aarch64-unknown-linux-gnu --out pa.ll >c4.log 2>&1 \
+OD=""
+if [ "${#OD_CANDIDATES[@]}" -gt 0 ] \
+   && "${TKC}" p.tk --emit-llvm --target aarch64-unknown-linux-gnu --out pa.ll >c4.log 2>&1 \
    && printf '%s\n' 'declare void @c1780_use(ptr)' \
         'define void @c1780_probe() #0 {' '  %b = alloca [64 x i8]' \
         '  call void @c1780_use(ptr %b)' '  ret void' '}' >> pa.ll \
-   && clang -Wno-override-module -target aarch64-unknown-linux-gnu -O1 -c pa.ll -o pa.o >>c4.log 2>&1 \
-   && "${OD}" -r pa.o >pa.rel 2>>c4.log && grep -q stack_chk_guard pa.rel; then
+   && clang -Wno-override-module -target aarch64-unknown-linux-gnu -O1 -c pa.ll -o pa.o >>c4.log 2>&1; then
+    for c in "${OD_CANDIDATES[@]}"; do
+        if "$c" -r pa.o >pa.rel 2>>c4.log && grep -q stack_chk_guard pa.rel \
+           && grep stack_chk_guard pa.rel | grep -q R_AARCH64_; then OD="$c"; break; fi
+    done
+    [ -n "${OD}" ] || echo "  note: no objdump here names aarch64 relocations (tried: ${OD_CANDIDATES[*]})"
+fi
+if [ -n "${OD}" ]; then
     if grep stack_chk_guard pa.rel | grep -q ADR_PREL_PG_HI21; then
         bad "4 aarch64: the canary is addressed directly (ADR_PREL_PG_HI21)"
     elif grep stack_chk_guard pa.rel | grep -q GOT; then
@@ -89,7 +106,7 @@ if [ -n "${OD}" ] && "${TKC}" p.tk --emit-llvm --target aarch64-unknown-linux-gn
         bad "4 aarch64: unexpected canary relocation"; grep stack_chk_guard pa.rel | head -3 | sed 's/^/      | /'
     fi
 else
-    echo "  note: case 4 not run here (no ELF-capable objdump, or no aarch64 clang target)"
+    echo "  note: case 4 not run here (no objdump that names aarch64 relocations, or no aarch64 clang target)"
 fi
 
 echo "------------------------------------------------------------------------"
