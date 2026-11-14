@@ -148,7 +148,9 @@ KMeansModel ml_kmeanstrain(F64Array *cols, uint64_t ncols, uint64_t nrows,
     model.centroids = (double *)calloc(k * ncols, sizeof(double));
 
     /* Build a temporary row-major point array for convenience. */
-    double *points = (double *)malloc(nrows * ncols * sizeof(double));
+    /* 127.441: calloc, so no element is indeterminate (gcc 15
+     * -Wmaybe-uninitialized on the nrows == 0 path below). */
+    double *points = (double *)calloc(nrows * ncols ? nrows * ncols : 1, sizeof(double));
     if (!points || !model.centroids) {
         free(points);
         return model; /* out of memory; caller checks centroids != NULL */
@@ -165,7 +167,11 @@ KMeansModel ml_kmeanstrain(F64Array *cols, uint64_t ncols, uint64_t nrows,
      * degenerate case where the first k data points all belong to the same true
      * cluster and produce poor initial partitions. */
     uint64_t init_k = k < nrows ? k : nrows;
-    memcpy(&model.centroids[0], &points[0], ncols * sizeof(double));
+    /* 127.441: with no rows or k == 0 there is no first point to copy; the
+     * unguarded memcpy read ncols doubles past a zero-size allocation and
+     * wrote them into a zero-size centroids block.  Centroids stay zero. */
+    if (init_k > 0)
+        memcpy(&model.centroids[0], &points[0], ncols * sizeof(double));
     for (uint64_t ci = 1; ci < init_k; ci++) {
         double best_dist = -1.0;
         uint64_t best_row = 0;
