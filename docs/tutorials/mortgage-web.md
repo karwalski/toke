@@ -496,6 +496,12 @@ f=handler(req:i64):i64{
   if(termyears<1){
     <router.bad("term must be at least 1 year")
   };
+  (* an unbounded term overflows term*12 (RT002 kills the server) and
+     runs the schedule loop term*12 times; 100 years is the example's
+     maximum (127.329) *)
+  if(termyears>100){
+    <router.bad("term must be at most 100 years")
+  };
   let term=(termyears as u64);
 
   let pmt=monthlypayment(principal;annualrate;term*12);
@@ -535,7 +541,7 @@ The flow: parse the form body, validate inputs, run all computations, build the 
 
 Note how `extra` defaults to `0.0` on parse failure rather than returning an error — this makes the extra payment field truly optional.
 
-Note also the order of the term check. `str.toint` returns an `i64`, and the handler keeps it as `termyears` until `termyears<1` has rejected zero and negative input; only then does it cast to `u64` for the month arithmetic. Casting first would be a bug: `"-5" as u64` wraps to 18446744073709551611, which passes a `term<1` check, and `term*12` then overflows (RT002) and stops the server. The template shows `termyears` directly, so no cast back to `i64` is needed.
+Note also the order of the term check. `str.toint` returns an `i64`, and the handler keeps it as `termyears` until `termyears<1` has rejected zero and negative input; only then does it cast to `u64` for the month arithmetic. Casting first would be a bug: `"-5" as u64` wraps to 18446744073709551611, which passes a `term<1` check, and `term*12` then overflows (RT002) and stops the server. The template shows `termyears` directly, so no cast back to `i64` is needed. The same overflow waits at the other end: a term of 2000000000000000000 years is positive, but `term*12` exceeds `u64`, so the handler also rejects `termyears>100`. The 100-year maximum is this example's own choice; any bound well below the overflow keeps the server up and the schedule loop short.
 
 ### 4.6 The results template
 
@@ -726,6 +732,15 @@ curl -s -X POST http://localhost:8080/calculate \
 ```
 
 Expected response: `term must be at least 1 year`.
+
+Term above the 100-year maximum (should return 400, and the server keeps running):
+
+```bash
+curl -s -X POST http://localhost:8080/calculate \
+  -d "principal=500000&rate=0.065&term=2000000000000000000&extra=0"
+```
+
+Expected response: `term must be at most 100 years`.
 
 ---
 
