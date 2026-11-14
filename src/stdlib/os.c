@@ -135,6 +135,9 @@ int64_t tk_os_access(int64_t path, int64_t amode) {
  * failure results included (135.23). */
 static int64_t os_empty_owned(void) {
     char *e = (char *)calloc(1, 1);
+    /* Escapes as an i64 handle the caller frees; cppcheck does not follow
+     * a pointer through an integer cast (127.439: false memleak). */
+    /* cppcheck-suppress memleak */
     return (int64_t)(intptr_t)(e ? e : "");   /* "" only if calloc(1,1) fails */
 }
 
@@ -184,6 +187,8 @@ int64_t tk_os_getenv(int64_t name) {
     const char *val = key ? getenv(key) : NULL;
     if (!val) return os_empty_owned();
     char *out = strdup(val);
+    /* escapes as an i64 handle (127.439), see os_empty_owned */
+    /* cppcheck-suppress memleak */
     return out ? (int64_t)(intptr_t)out : os_empty_owned();
 }
 
@@ -221,6 +226,8 @@ int64_t tk_os_strerror(int64_t errnum) {
         snprintf(buf, sizeof buf, "Unknown error: %lld", (long long)errnum);
 #endif
     char *out = strdup(text);
+    /* escapes as an i64 handle (127.439), see os_empty_owned */
+    /* cppcheck-suppress memleak */
     return out ? (int64_t)(intptr_t)out : os_empty_owned();
 }
 

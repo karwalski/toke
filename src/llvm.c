@@ -9832,8 +9832,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!av && !strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
             if (is_mod) {
-                /* Build mangled name for lookup (Story 81b.7) */
-                char mangled[256];
+                /* Build mangled name for lookup (Story 81b.7).  is_mod means
+                 * the loop below finds the alias; initialised anyway because
+                 * cppcheck cannot see that (127.439, uninitvar). */
+                char mangled[256] = "";
                 for (int ii = 0; ii < c->import_count; ii++) {
                     if (!strcmp(c->imports[ii].alias, alias)) {
                         const char *mp = c->imports[ii].module;
@@ -13750,7 +13752,7 @@ static const IrDecl *ir_map_failure(const char *err, const char *const *lls, int
     /* 3. an LLVM backend error naming the function: "in function <sym> " */
     if ((m = strstr(err, "in function ")) != NULL) {
         const char *q = m + 12; size_t k = 0;
-        while (ir_ident_ch((unsigned char)q[k]) && k < sizeof sym - 1) { sym[k] = q[k]; k++; }
+        while (k < sizeof sym - 1 && ir_ident_ch((unsigned char)q[k])) { sym[k] = q[k]; k++; }
         sym[k] = '\0';
         if (k) return ir_decl_by_sym(sym);
     }
