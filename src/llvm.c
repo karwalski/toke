@@ -13280,12 +13280,29 @@ timeparts_done:
      * present). Applies to every emitted function via the #0 attribute group. */
     fputs("\nattributes #0 = { sspstrong \"stack-protector-buffer-size\"=\"8\" }\n", body_file);
 
+    /* 127.439: the module states that its code goes into a position-
+     * independent executable, as clang's own modules do.  With no "PIC Level"
+     * LLVM treats an IR file as non-PIC, so the guard global the sspstrong
+     * canary above reads (__stack_chk_guard on aarch64 glibc) was addressed
+     * directly (R_AARCH64_ADR_PREL_PG_HI21), and every program failed to link
+     * as the PIE Ubuntu's clang builds by default: "relocation ... can not be
+     * used when making a shared object".  Driver -fPIE/-fPIC do not change
+     * an IR input's level; the module flag does (GOT relocations).  Not for
+     * wasm, which has no PIE executable.  Same ids space as the debug nodes. */
+    int pic_md = -1, pie_md = -1;
+    int is_wasm = env && env->target && strstr(env->target, "wasm") != NULL;
+    if (!is_wasm) { pic_md = next_dbg(&ctx); pie_md = next_dbg(&ctx); }
+
     /* Story 76.1.5: emit DWARF debug metadata nodes at module tail */
     if (ctx.debug) {
         fputs("\n; Debug metadata (Story 76.1.5)\n", body_file);
         fprintf(body_file, "!llvm.dbg.cu = !{!%d}\n", ctx.dbg_cu);
-        fprintf(body_file, "!llvm.module.flags = !{!%d, !%d}\n",
-                next_dbg(&ctx), next_dbg(&ctx));
+        int dwv = next_dbg(&ctx), div = next_dbg(&ctx);
+        if (pic_md >= 0)
+            fprintf(body_file, "!llvm.module.flags = !{!%d, !%d, !%d, !%d}\n",
+                    dwv, div, pic_md, pie_md);
+        else
+            fprintf(body_file, "!llvm.module.flags = !{!%d, !%d}\n", dwv, div);
         /* DIFile */
         fprintf(body_file, "!%d = !DIFile(filename: \"%s\", directory: \"%s\")\n",
                 ctx.dbg_file, ctx.dbg_source_file, ctx.dbg_source_dir);
@@ -13295,10 +13312,14 @@ timeparts_done:
                 "runtimeVersion: 0, emissionKind: FullDebug)\n",
                 ctx.dbg_cu, ctx.dbg_file);
         /* Module flags for DWARF version and Debug Info Version */
-        fprintf(body_file, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n",
-                ctx.dbg_next - 2);
-        fprintf(body_file, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n",
-                ctx.dbg_next - 1);
+        fprintf(body_file, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n", dwv);
+        fprintf(body_file, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n", div);
+    } else if (pic_md >= 0) {
+        fprintf(body_file, "\n!llvm.module.flags = !{!%d, !%d}\n", pic_md, pie_md);
+    }
+    if (pic_md >= 0) {
+        fprintf(body_file, "!%d = !{i32 8, !\"PIC Level\", i32 2}\n", pic_md);
+        fprintf(body_file, "!%d = !{i32 7, !\"PIE Level\", i32 2}\n", pie_md);
     }
 
     /* ── Pass 2: read body, scan for references, emit only needed decls ── */
