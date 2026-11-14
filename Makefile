@@ -123,14 +123,26 @@ CFLAGS += $(EXTRA_CFLAGS)
 # ── Epic 55: vendor library flags ────────────────────────────────────────────
 CMARK_SRCS  = $(filter-out stdlib/vendor/cmark/src/main.c, \
                 $(wildcard stdlib/vendor/cmark/src/*.c))
-# 127.439: VENDOR_C99 gives the vendored C (not ours to edit) the C99
-# strchr/memchr signatures it was written against: recent glibc makes them
-# const-preserving C23 macros, and gcc -Werror then fails cmark's utf8.c and
-# tomlc99's toml.c on discarded-qualifiers.  See src/stdlib/tk_c99_string.h.
-VENDOR_C99  = -include src/stdlib/tk_c99_string.h
-CMARK_FLAGS = -Istdlib/vendor/cmark/src -Wno-pedantic $(VENDOR_C99)
+CMARK_FLAGS = -Istdlib/vendor/cmark/src -Wno-pedantic
 TOML_SRCS   = stdlib/vendor/tomlc99/toml.c
-TOML_FLAGS  = -Istdlib/vendor/tomlc99 $(VENDOR_C99)
+TOML_FLAGS  = -Istdlib/vendor/tomlc99
+
+# 127.439: the C test targets that link vendored C (cmark, tomlc99) compile
+# it to objects of its own WITHOUT -Werror.  The vendored code is not ours
+# to edit (cppcheck excludes it for the same reason), and recent glibc
+# turns bsearch/strchr into const-preserving C23 macros that it trips
+# (discarded-qualifiers), or a forced include would collide with toml.c's
+# own _POSIX_C_SOURCE.  Our sources in the same targets keep -Werror.
+VENDOR_CFLAGS     = $(filter-out -Werror,$(CFLAGS))
+VENDOR_TEST_OBJ   = test/stdlib/vendor-obj
+CMARK_TEST_OBJS   = $(patsubst stdlib/vendor/%.c,$(VENDOR_TEST_OBJ)/%.o,$(CMARK_SRCS))
+TOML_TEST_OBJS    = $(patsubst stdlib/vendor/%.c,$(VENDOR_TEST_OBJ)/%.o,$(TOML_SRCS))
+$(VENDOR_TEST_OBJ)/cmark/%.o: stdlib/vendor/cmark/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(VENDOR_CFLAGS) $(CMARK_FLAGS) -c -o $@ $<
+$(VENDOR_TEST_OBJ)/tomlc99/%.o: stdlib/vendor/tomlc99/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(VENDOR_CFLAGS) $(TOML_FLAGS) -c -o $@ $<
 
 # ── Story 127.85: vendored-source preflight ──────────────────────────────────
 # stdlib/vendor/{cmark,tomlc99} are tracked in this repository (see
@@ -2188,22 +2200,22 @@ test-stdlib-map:
 	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_map
 
-test-stdlib-md:
+test-stdlib-md: $(CMARK_TEST_OBJS)
 	$(CC) $(CFLAGS) $(CMARK_FLAGS) -o test/stdlib/test_md \
-	    test/stdlib/test_md.c src/stdlib/md.c src/stdlib/str.c $(CMARK_SRCS)
+	    test/stdlib/test_md.c src/stdlib/md.c src/stdlib/str.c $(CMARK_TEST_OBJS)
 	$(RUN_TEST) ./test/stdlib/test_md
 
-test-stdlib-toml:
+test-stdlib-toml: $(TOML_TEST_OBJS)
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml \
-	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c $(TOML_SRCS) -lpthread
+	    test/stdlib/test_toml.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c $(TOML_TEST_OBJS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml
 
 # Story 127.67: the std.toml wrappers must distinguish a value of false/0
 # from an error, and a missing section must not resolve to its parent.
-test-stdlib-toml-glue:
+test-stdlib-toml-glue: $(TOML_TEST_OBJS)
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
 	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c src/stdlib/toml_glue.c \
-	    src/stdlib/capabilities.c $(TOML_SRCS) -lpthread
+	    src/stdlib/capabilities.c $(TOML_TEST_OBJS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────
@@ -2302,6 +2314,7 @@ test-standalone: $(BIN)
 # include graph.  `clean` now means clean.
 clean:
 	rm -f $(OBJS:.o=.d) $(BUILD_FLAGS_STAMP) $(BUILD_INFO_H)
+	rm -rf $(VENDOR_TEST_OBJ)
 	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_regex test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
