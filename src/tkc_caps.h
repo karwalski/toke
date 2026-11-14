@@ -331,7 +331,7 @@ static inline void tkc_caps_count(const Node *ast, const char *src,
         snprintf(path, sizeof path, "%s/../../stdlib/%s.tki", base, mod);
         char *buf = tkc_caps_slurp(path);
         if (!buf) continue;
-        char what[96];
+        char what[160];   /* 127.439: room for "imported from std." + a 127-byte mod */
         snprintf(what, sizeof what, "imported from std.%s", mod);
         tkc_caps_add(sc, imps[i], what, tkc_caps_std_types(buf, &names));
         free(buf);
