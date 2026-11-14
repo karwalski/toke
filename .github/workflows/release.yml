@@ -33,6 +33,24 @@ jobs:
             runner: ubuntu-latest
             os: linux
             arch: x86_64
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+          - target: macos-arm64
+            # 127.439: macos-14 is no longer offered ("The configuration
+            # 'macos-14-arm64-us-default' is not supported"; the job is
+            # cancelled in one second).  macos-15 is the arm64 image.
+            runner: macos-15
+            os: macos
+            arch: arm64
+          - target: macos-x86_64
+            # macos-13 images were retired by GitHub (December 2025); a job
+            # asking for one never starts, and `release` needs every build.
+            # macos-15-intel is the x86_64 image that replaced it (138.17).
+            runner: macos-15-intel
+            os: macos
+            arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -53,18 +71,8 @@ jobs:
       - name: Build tkc
         run: make -k   # -k: report every failing object, not just the first
 
-      - name: Z206 TEMP diagnostics
-        continue-on-error: true
-        run: bash scripts/z206_diag_tmp.sh
-
-      - name: Z206 TEMP targeted suites
-        run: |
-          rc=0
-          sudo apt-get install -y valgrind >/dev/null 2>&1
-          for t in C1780_ir_pie_module_flags C134_build_all_per_triple C706_tkc_cc_override C546_time_zones_without_setenv C1611_log_returns_written C114_conform_skip_is_counted C735_str_scaling_linear; do
-            echo "=== $t"; TKC_CONFORM_NO_SKIP=1 bash test/conform/$t.sh || rc=1
-          done
-          exit $rc
+      - name: Conformance gate
+        run: make conform
 
       - name: Build release binary
         env:
