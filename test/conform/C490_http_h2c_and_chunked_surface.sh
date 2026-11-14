@@ -206,7 +206,7 @@ int main(void) {
     return bad ? 1 : 0;
 }
 EOF
-if ! "${CC}" "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread \
+if ! "${CC}" "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread -lm \
         >"${WORK}/cc.log" 2>&1; then
     fail "h2c: build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
 else

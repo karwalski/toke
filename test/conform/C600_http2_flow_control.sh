@@ -361,7 +361,7 @@ EOF
 if ! openssl req -x509 -newkey rsa:2048 -keyout "${WORK}/key.pem" \
         -out "${WORK}/cert.pem" -days 2 -nodes -subj "/CN=localhost" >/dev/null 2>&1; then
     fail "could not generate a self-signed certificate"
-elif ! "${CC}" "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread \
+elif ! "${CC}" "${CF[@]}" -o "${WORK}/h" "${WORK}/h.c" "${LINK[@]}" "-L${OSSL_LIB}" -lssl -lcrypto -lz -lpthread -lm \
         >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
 else

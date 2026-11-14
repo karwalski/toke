@@ -239,7 +239,7 @@ int main(void) {
 }
 C
 # shellcheck disable=SC2086
-case_run tls "${WORK}/t_tls.c" "${LINK_TLS[@]}" ${OSSL_LIBS} -lpthread
+case_run tls "${WORK}/t_tls.c" "${LINK_TLS[@]}" ${OSSL_LIBS} -lpthread -lm
 
 # ── acme ────────────────────────────────────────────────────────────────────
 cat > "${WORK}/t_acme.c" <<C
@@ -370,7 +370,7 @@ int main(void) {
 }
 C
 # shellcheck disable=SC2086
-case_run acme "${WORK}/t_acme.c" "${LINK_ACME[@]}" ${OSSL_LIBS} -lz -lpthread
+case_run acme "${WORK}/t_acme.c" "${LINK_ACME[@]}" ${OSSL_LIBS} -lz -lpthread -lm
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
