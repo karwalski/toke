@@ -451,7 +451,10 @@ src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
 LINT_CC ?= clang
 LINT_CC_CHECK = @command -v $(LINT_CC) >/dev/null 2>&1 || { \
 	  echo "lint: '$(LINT_CC)' not found; the --analyze pass needs the clang static analyzer (install clang, or set LINT_CC)" >&2; exit 1; }
-lint:
+# 127.439: src/main.c includes the generated build_info.h, so every analysis
+# pass needs it first; on a fresh checkout (CI) lint failed main.c with
+# "'build_info.h' file not found" because nothing had built yet.
+lint: $(BUILD_INFO_H)
 	$(LINT_CC_CHECK)
 	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 	@python3 scripts/check_str_strlen.py
@@ -465,13 +468,13 @@ check-str-strlen:
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
-lint-nonhost:
+lint-nonhost: $(BUILD_INFO_H)
 	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 122.13 (10): the same three passes over ONE file (or a few), with the
 # skiplist entries for every other file out of scope rather than stale.
 #   make lint-file F=src/stdlib/http.c
-lint-file:
+lint-file: $(BUILD_INFO_H)
 	@if [ -z "$(F)" ]; then echo "usage: make lint-file F=<source.c> [F=\"a.c b.c\"]" >&2; exit 2; fi
 	$(LINT_CC_CHECK)
 	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --only --compile --analyze $(F)

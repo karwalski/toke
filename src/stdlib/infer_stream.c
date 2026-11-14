@@ -45,6 +45,11 @@
 #  include <sys/wait.h>
 extern char **environ;
 #endif
+#if defined(__linux__)
+/* 127.439: makedev() (detect_linux).  glibc 2.28 stopped declaring it via
+ * <sys/types.h>; <sys/sysmacros.h> is where it lives. */
+#  include <sys/sysmacros.h>
+#endif
 
 /* =========================================================================
  * Internal constants
