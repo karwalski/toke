@@ -25,10 +25,18 @@
  *      TIME_WAIT or a bound non-listening socket -> retry WITH SO_REUSEADDR,
  *      which is exactly what every bind did before.
  *
- * Linux is unchanged by construction: step 1 fails in a superset of the
- * cases the old bind failed in; where the probe answers, a listener
- * overlaps and Linux's SO_REUSEADDR bind would have failed too; everywhere
- * else step 3 is the old bind.
+ * LINUX SETS SO_REUSEADDR ON EVERY PASS (127.444).  Linux refuses a bind
+ * that overlaps a listener whatever the flag, so the flag cannot shadow
+ * anything there -- but it has a second job there that Darwin does not
+ * need.  A Linux TIME_WAIT socket remembers the SO_REUSEADDR of the socket
+ * it came from (an accepted connection inherits it from its listener), and
+ * a later SO_REUSEADDR bind succeeds over it only if BOTH have the flag.
+ * When step 1 bound without the flag, the old server's TIME_WAIT
+ * connections carried none, so the restart's step 3 failed with
+ * EADDRINUSE: C391 cases 3 and 4 on the ubuntu-latest runner.  Setting the
+ * flag up front on Linux marks the listener, and through it every
+ * connection it accepts, so the next server rebinds over their TIME_WAIT.
+ * Darwin keeps the probe-first order, where the flag would shadow.
  *
  * KNOWN GAP.  A wildcard bind probes loopback only, so a listener on one
  * specific non-loopback address (say 192.168.1.5:P) is not detected: the
@@ -93,8 +101,13 @@ static TK_BIND_UNUSED int tk_bind_exclusive(const struct sockaddr_in *addr)
     for (int pass = 0; pass < 2; pass++) {
         int srv = socket(AF_INET, SOCK_STREAM, 0);
         if (srv < 0) return -1;
+#ifdef __linux__
+        /* 127.444: on every pass -- see LINUX SETS SO_REUSEADDR above */
+        setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#else
         if (pass == 1)
             setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
         if (bind(srv, (const struct sockaddr *)addr, sizeof(*addr)) == 0)
             return srv;
         int e = errno;

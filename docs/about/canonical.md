@@ -103,7 +103,7 @@ is the sentence every downstream surface quotes.*
 
 tkc, the reference compiler: C99; links only libc, libm, zlib and pthreads; emits LLVM IR
 and drives clang to build native binaries for x86-64 and ARM64; structured diagnostics with
-stable error codes, machine-parseable spans and a fix field. Current version: **toke 3.1.0**
+stable error codes, machine-parseable spans and a fix field. Current version: **toke 3.2.0**
 (`tkc --version`). Apache-2.0.
 
 The first sentence is the `compiler` fact in `canonical.json`, and `make check-canonical`

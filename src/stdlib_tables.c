@@ -7,6 +7,7 @@
 #include "tki_scan.h"     /* 127.134a: structural .tki record iteration */
 #include <stdio.h>
 #include <string.h>
+#include "stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <dirent.h>       /* 127.80: scan the stdlib dir for .tki interfaces */
 
@@ -118,11 +119,13 @@ static void load_stdlib_tki(const char *module) {
         }
 
         TkiCacheEntry *e = &g_tki_cache[g_tki_cache_count];
-        strncpy(e->module, mod_part, sizeof(e->module) - 1);
-        strncpy(e->method, meth_part, sizeof(e->method) - 1);
-        strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
-        strncpy(e->file_module, module, sizeof(e->file_module) - 1);
-        e->file_module[sizeof(e->file_module) - 1] = '\0';
+        /* 127.439: snprintf terminates every field (strncpy left three of
+         * them relying on the zeroed static table; gcc 15
+         * -Wstringop-truncation). */
+        snprintf(e->module, sizeof e->module, "%s", mod_part);
+        snprintf(e->method, sizeof e->method, "%s", meth_part);
+        snprintf(e->toke_ret, sizeof e->toke_ret, "%s", toke_ret);
+        snprintf(e->file_module, sizeof e->file_module, "%s", module);
         e->c_name[0] = '\0';
         e->ownership[0] = '\0';
 

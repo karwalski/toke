@@ -38,7 +38,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${REPO_ROOT}/src/stdlib"
 export TKC_STDLIB_DIR="${S}"
-CC="${CC:-cc}"
+# 127.439: clang, not cc: this harness links tkc's .ll directly, and on Linux
+# cc is gcc, which reads a .ll as a linker script ("p.ll:1: syntax error").
+CC="${CC:-clang}"
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }

@@ -806,7 +806,10 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
                 idat_buf = newbuf;
                 idat_cap = newcap;
             }
-            memcpy(idat_buf + idat_len, chunk_data, chunk_len);
+            /* 127.439: a zero-length first IDAT leaves idat_buf NULL, and
+             * memcpy(NULL, ..., 0) is undefined (clang NonNullParamChecker). */
+            if (chunk_len > 0)
+                memcpy(idat_buf + idat_len, chunk_data, chunk_len);
             idat_len += chunk_len;
         } else if (memcmp(chunk_type, "IEND", 4) == 0) {
             break;

@@ -24,6 +24,7 @@
 #include "tk_strhdr.h"   /* 127.295: tk_strlen (runtime-abi §3.1) */
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdint.h>
 #include <stdio.h>
 
@@ -977,6 +978,10 @@ static void sha512_process_block(Sha512Ctx *ctx, const uint8_t *block)
 
 static void sha512_update(Sha512Ctx *ctx, const uint8_t *data, uint64_t len)
 {
+    /* 127.439: an empty update (Ed25519 signs an empty message with
+     * data == NULL) changes nothing; memcpy(dst, NULL, 0) is undefined
+     * (UBSan, ci.yml sanitizer job). */
+    if (len == 0) return;
     uint64_t i = 0;
     uint64_t prev = ctx->msglen_lo;
     ctx->msglen_lo += len * 8;
@@ -1290,38 +1295,45 @@ static const uint8_t ED25519_L[32] __attribute__((unused)) = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x10
 };
 
+/* 127.439: one spelling of the 128-bit accumulator.  __extension__ marks
+ * the GNU type as intended under -std=c99 -Wpedantic (gcc rejected every
+ * use in the test builds, which compile this file with the default
+ * CFLAGS rather than the -Wno-pedantic the object rule adds). */
+__extension__ typedef __int128 tk_i128;
+
 /* Reduce a 64-byte scalar mod l (output 32 bytes) using RFC 8032 §5.1.7 approach */
 /* We implement the standard "sc_reduce" for 64-byte inputs */
+
 static void sc_reduce64(uint8_t out[32], const uint8_t s[64])
 {
     /* Decompose s into 21 integers of ~21 bits each.
      * Use __int128 for accumulators to prevent int64_t overflow when the
      * reduction products (e.g. s23 * MU1 ≈ 45e12) are later multiplied
      * by MU0 (≈ 667e3), yielding values up to ~30e18 > INT64_MAX. */
-    __int128 s0  = 2097151 & ( (int64_t)s[ 0]        | ((int64_t)s[ 1] << 8) | ((int64_t)s[ 2] << 16));
-    __int128 s1  = 2097151 & (((int64_t)s[ 2] >> 5)  | ((int64_t)s[ 3] << 3) | ((int64_t)s[ 4] << 11) | ((int64_t)s[ 5] << 19));
-    __int128 s2  = 2097151 & (((int64_t)s[ 5] >> 2)  | ((int64_t)s[ 6] << 6) | ((int64_t)s[ 7] << 14));
-    __int128 s3  = 2097151 & (((int64_t)s[ 7] >> 7)  | ((int64_t)s[ 8] << 1) | ((int64_t)s[ 9] << 9)  | ((int64_t)s[10] << 17));
-    __int128 s4  = 2097151 & (((int64_t)s[10] >> 4)  | ((int64_t)s[11] << 4) | ((int64_t)s[12] << 12) | ((int64_t)s[13] << 20));
-    __int128 s5  = 2097151 & (((int64_t)s[13] >> 1)  | ((int64_t)s[14] << 7) | ((int64_t)s[15] << 15));
-    __int128 s6  = 2097151 & (((int64_t)s[15] >> 6)  | ((int64_t)s[16] << 2) | ((int64_t)s[17] << 10) | ((int64_t)s[18] << 18));
-    __int128 s7  = 2097151 & (((int64_t)s[18] >> 3)  | ((int64_t)s[19] << 5) | ((int64_t)s[20] << 13));
-    __int128 s8  = 2097151 & ( (int64_t)s[21]        | ((int64_t)s[22] << 8) | ((int64_t)s[23] << 16));
-    __int128 s9  = 2097151 & (((int64_t)s[23] >> 5)  | ((int64_t)s[24] << 3) | ((int64_t)s[25] << 11) | ((int64_t)s[26] << 19));
-    __int128 s10 = 2097151 & (((int64_t)s[26] >> 2)  | ((int64_t)s[27] << 6) | ((int64_t)s[28] << 14));
-    __int128 s11 = 2097151 & (((int64_t)s[28] >> 7)  | ((int64_t)s[29] << 1) | ((int64_t)s[30] << 9)  | ((int64_t)s[31] << 17));
-    __int128 s12 = 2097151 & (((int64_t)s[31] >> 4)  | ((int64_t)s[32] << 4) | ((int64_t)s[33] << 12) | ((int64_t)s[34] << 20));
-    __int128 s13 = 2097151 & (((int64_t)s[34] >> 1)  | ((int64_t)s[35] << 7) | ((int64_t)s[36] << 15));
-    __int128 s14 = 2097151 & (((int64_t)s[36] >> 6)  | ((int64_t)s[37] << 2) | ((int64_t)s[38] << 10) | ((int64_t)s[39] << 18));
-    __int128 s15 = 2097151 & (((int64_t)s[39] >> 3)  | ((int64_t)s[40] << 5) | ((int64_t)s[41] << 13));
-    __int128 s16 = 2097151 & ( (int64_t)s[42]        | ((int64_t)s[43] << 8) | ((int64_t)s[44] << 16));
-    __int128 s17 = 2097151 & (((int64_t)s[44] >> 5)  | ((int64_t)s[45] << 3) | ((int64_t)s[46] << 11) | ((int64_t)s[47] << 19));
-    __int128 s18 = 2097151 & (((int64_t)s[47] >> 2)  | ((int64_t)s[48] << 6) | ((int64_t)s[49] << 14));
-    __int128 s19 = 2097151 & (((int64_t)s[49] >> 7)  | ((int64_t)s[50] << 1) | ((int64_t)s[51] << 9)  | ((int64_t)s[52] << 17));
-    __int128 s20 = 2097151 & (((int64_t)s[52] >> 4)  | ((int64_t)s[53] << 4) | ((int64_t)s[54] << 12) | ((int64_t)s[55] << 20));
-    __int128 s21 = 2097151 & (((int64_t)s[55] >> 1)  | ((int64_t)s[56] << 7) | ((int64_t)s[57] << 15));
-    __int128 s22 = 2097151 & (((int64_t)s[57] >> 6)  | ((int64_t)s[58] << 2) | ((int64_t)s[59] << 10) | ((int64_t)s[60] << 18));
-    __int128 s23 =            ((int64_t)s[60] >> 3)   | ((int64_t)s[61] << 5) | ((int64_t)s[62] << 13) | ((int64_t)s[63] << 21);
+    tk_i128 s0  = 2097151 & ( (int64_t)s[ 0]        | ((int64_t)s[ 1] << 8) | ((int64_t)s[ 2] << 16));
+    tk_i128 s1  = 2097151 & (((int64_t)s[ 2] >> 5)  | ((int64_t)s[ 3] << 3) | ((int64_t)s[ 4] << 11) | ((int64_t)s[ 5] << 19));
+    tk_i128 s2  = 2097151 & (((int64_t)s[ 5] >> 2)  | ((int64_t)s[ 6] << 6) | ((int64_t)s[ 7] << 14));
+    tk_i128 s3  = 2097151 & (((int64_t)s[ 7] >> 7)  | ((int64_t)s[ 8] << 1) | ((int64_t)s[ 9] << 9)  | ((int64_t)s[10] << 17));
+    tk_i128 s4  = 2097151 & (((int64_t)s[10] >> 4)  | ((int64_t)s[11] << 4) | ((int64_t)s[12] << 12) | ((int64_t)s[13] << 20));
+    tk_i128 s5  = 2097151 & (((int64_t)s[13] >> 1)  | ((int64_t)s[14] << 7) | ((int64_t)s[15] << 15));
+    tk_i128 s6  = 2097151 & (((int64_t)s[15] >> 6)  | ((int64_t)s[16] << 2) | ((int64_t)s[17] << 10) | ((int64_t)s[18] << 18));
+    tk_i128 s7  = 2097151 & (((int64_t)s[18] >> 3)  | ((int64_t)s[19] << 5) | ((int64_t)s[20] << 13));
+    tk_i128 s8  = 2097151 & ( (int64_t)s[21]        | ((int64_t)s[22] << 8) | ((int64_t)s[23] << 16));
+    tk_i128 s9  = 2097151 & (((int64_t)s[23] >> 5)  | ((int64_t)s[24] << 3) | ((int64_t)s[25] << 11) | ((int64_t)s[26] << 19));
+    tk_i128 s10 = 2097151 & (((int64_t)s[26] >> 2)  | ((int64_t)s[27] << 6) | ((int64_t)s[28] << 14));
+    tk_i128 s11 = 2097151 & (((int64_t)s[28] >> 7)  | ((int64_t)s[29] << 1) | ((int64_t)s[30] << 9)  | ((int64_t)s[31] << 17));
+    tk_i128 s12 = 2097151 & (((int64_t)s[31] >> 4)  | ((int64_t)s[32] << 4) | ((int64_t)s[33] << 12) | ((int64_t)s[34] << 20));
+    tk_i128 s13 = 2097151 & (((int64_t)s[34] >> 1)  | ((int64_t)s[35] << 7) | ((int64_t)s[36] << 15));
+    tk_i128 s14 = 2097151 & (((int64_t)s[36] >> 6)  | ((int64_t)s[37] << 2) | ((int64_t)s[38] << 10) | ((int64_t)s[39] << 18));
+    tk_i128 s15 = 2097151 & (((int64_t)s[39] >> 3)  | ((int64_t)s[40] << 5) | ((int64_t)s[41] << 13));
+    tk_i128 s16 = 2097151 & ( (int64_t)s[42]        | ((int64_t)s[43] << 8) | ((int64_t)s[44] << 16));
+    tk_i128 s17 = 2097151 & (((int64_t)s[44] >> 5)  | ((int64_t)s[45] << 3) | ((int64_t)s[46] << 11) | ((int64_t)s[47] << 19));
+    tk_i128 s18 = 2097151 & (((int64_t)s[47] >> 2)  | ((int64_t)s[48] << 6) | ((int64_t)s[49] << 14));
+    tk_i128 s19 = 2097151 & (((int64_t)s[49] >> 7)  | ((int64_t)s[50] << 1) | ((int64_t)s[51] << 9)  | ((int64_t)s[52] << 17));
+    tk_i128 s20 = 2097151 & (((int64_t)s[52] >> 4)  | ((int64_t)s[53] << 4) | ((int64_t)s[54] << 12) | ((int64_t)s[55] << 20));
+    tk_i128 s21 = 2097151 & (((int64_t)s[55] >> 1)  | ((int64_t)s[56] << 7) | ((int64_t)s[57] << 15));
+    tk_i128 s22 = 2097151 & (((int64_t)s[57] >> 6)  | ((int64_t)s[58] << 2) | ((int64_t)s[59] << 10) | ((int64_t)s[60] << 18));
+    tk_i128 s23 =            ((int64_t)s[60] >> 3)   | ((int64_t)s[61] << 5) | ((int64_t)s[62] << 13) | ((int64_t)s[63] << 21);
     /* Modular reduction using l = 2^252 + c where c is small */
     /* Signed 21-bit limb decomposition of -c where l = 2^252 + c:
      * -c = +mu0 + mu1*2^21 + mu2*2^42 - mu3*2^63 + mu4*2^84 - mu5*2^105
@@ -1357,7 +1369,7 @@ static void sc_reduce64(uint8_t out[32], const uint8_t s[64])
     s0  += s12 * MU0; s1  += s12 * MU1; s2  += s12 * MU2;
     s3  += s12 * MU3; s4  += s12 * MU4; s5  += s12 * MU5; s12 = 0;
     /* Carry propagation */
-#define CARRY(i,j) { __int128 _c = (s##i) >> 21; s##j += _c; s##i -= _c * (1<<21); }
+#define CARRY(i,j) { tk_i128 _c = (s##i) >> 21; s##j += _c; s##i -= _c * (1<<21); }
     CARRY(0,1); CARRY(1,2); CARRY(2,3); CARRY(3,4); CARRY(4,5); CARRY(5,6);
     CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10); CARRY(10,11); CARRY(11,12);
     s0 += s12 * MU0; s1 += s12 * MU1; s2 += s12 * MU2;
@@ -1450,8 +1462,8 @@ static void sc_muladd(uint8_t out[32],
     int64_t c11 =             ((int64_t)c[28] >> 7) | ((int64_t)c[29] << 1) | ((int64_t)c[30] << 9) | ((int64_t)c[31] << 17);
 
     /* s = a*b + c */
-    __int128 s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
-    __int128 s12, s13, s14, s15, s16, s17, s18, s19, s20, s21, s22;
+    tk_i128 s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
+    tk_i128 s12, s13, s14, s15, s16, s17, s18, s19, s20, s21, s22;
 
     s0  = c0  + a0*b0;
     s1  = c1  + a0*b1 + a1*b0;
@@ -1497,10 +1509,10 @@ static void sc_muladd(uint8_t out[32],
     s0  += s12 * MU0; s1  += s12 * MU1; s2  += s12 * MU2; s3  += s12 * MU3; s4  += s12 * MU4; s5  += s12 * MU5; s12 = 0;
     /* s0..s11 now hold the product mod l (each limb may exceed 21 bits) */
 
-#define CARRY(i,j) { __int128 _c = (s##i) >> 21; s##j += _c; s##i -= _c * (1<<21); }
+#define CARRY(i,j) { tk_i128 _c = (s##i) >> 21; s##j += _c; s##i -= _c * (1<<21); }
     CARRY(0,1); CARRY(1,2); CARRY(2,3); CARRY(3,4); CARRY(4,5); CARRY(5,6);
     CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10); CARRY(10,11);
-    { __int128 _c = (s11) >> 21; s12 = _c; s11 -= _c * (1<<21); }
+    { tk_i128 _c = (s11) >> 21; s12 = _c; s11 -= _c * (1<<21); }
     s0  += s12 * MU0; s1  += s12 * MU1; s2  += s12 * MU2;
     s3  += s12 * MU3; s4  += s12 * MU4; s5  += s12 * MU5; s12 = 0;
     CARRY(0,1); CARRY(1,2); CARRY(2,3); CARRY(3,4); CARRY(4,5); CARRY(5,6);

@@ -45,7 +45,10 @@ echo "C140: pkg.lock commit + hash pins"
 echo "---------------------------------"
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -g -O1 ${SAN} \
+# 127.439: the project's gcc policy (Makefile GCC_CHECK): snprintf truncation
+# is by design, so -Wformat-truncation is off where the compiler takes the flag.
+NOFT=""; "${CC}" -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null && NOFT="-Wno-format-truncation"
+if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror ${NOFT} -g -O1 ${SAN} \
         -iquote "${REPO_ROOT}/src" -o "${WORK}/t" \
         "${REPO_ROOT}/test/test_pkg.c" "${REPO_ROOT}/src/pkg.c" "${REPO_ROOT}/src/sha256.c" >"${WORK}/cc.log" 2>&1; then
     echo "  FAIL: ASan build: $(head -c 800 "${WORK}/cc.log")"

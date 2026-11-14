@@ -78,10 +78,12 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - **Deny-by-default capabilities** (ADR-0010) — a program gets no file, network,
   environment or subprocess access unless it is granted at build or run time
 
-## On `main` since 3.1.0 (unreleased)
+## New in 3.2.0
 
-These are merged on `main` and listed under *Unreleased* in
-[`CHANGELOG.md`](CHANGELOG.md); no tagged release carries them yet.
+3.2.0 was released on 2026-11-15 (tag `v3.2.0`; signed archives for linux-x86_64,
+linux-arm64, macos-arm64 and macos-x86_64 on the GitHub release page).
+[`CHANGELOG.md`](CHANGELOG.md) § 3.2.0 lists every change, breaking changes first: the
+checker now rejects many programs that 3.1.0 compiled and then ran wrongly.
 
 - **Packages** — `tkc pkg init|add|remove|resolve|fetch|list` manages `pkg.toml` and
   `pkg.lock`; a `pkg.*` import resolves through the lock, every cached package is
@@ -112,7 +114,7 @@ eight bytes per byte (135.18).
 
 ## Project status
 
-Current compiler: **toke 3.1.0** (`tkc --version`). Spec: **v0.4** —
+Current compiler: **toke 3.2.0** (`tkc --version`). Spec: **v0.4** —
 [`docs/spec/toke-spec-v0.4.md`](docs/spec/toke-spec-v0.4.md) is the authority; v0.3 is
 historical.
 
@@ -141,7 +143,7 @@ evaluated since the 2026-05-22 run above, and the next evaluation follows the
 pre-registered protocol of story 128.1. Gate status is summarised in
 [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
-**What works:** the compiler is stable at 3.1.0, the conformance suite passes, and
+**What works:** the compiler is stable at 3.2.0, the conformance suite passes, and
 compile-checking removes an entire error class cheaply. **What does not yet:** functional
 correctness is the open weakness on every honest number in
 [`docs/metrics-baseline.md`](docs/metrics-baseline.md), and no toke tokenizer currently

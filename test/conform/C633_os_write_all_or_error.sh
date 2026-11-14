@@ -98,7 +98,9 @@ int main(void) {
 }
 EOF
 ABI=""; grep -q 'os_write_all' "${SL}/os.h" || ABI="-DMAIN_ABI"
-if cc -std=c99 ${ABI} -I"${SL}" "${WORK}/drv.c" "${SL}/os.c" "${SL}/capabilities.c" \
+# 127.439: -D_GNU_SOURCE as the Makefile builds os.c (O_NOFOLLOW, which glibc
+# declares only with it; macOS always does).
+if cc -std=c99 -D_GNU_SOURCE ${ABI} -I"${SL}" "${WORK}/drv.c" "${SL}/os.c" "${SL}/capabilities.c" \
       -o "${WORK}/drv" > "${WORK}/drv.log" 2>&1; then
     GOT="$("${WORK}/drv" 2> "${WORK}/drv.err")"
     expect "1-every-byte-under-signals" "${GOT}|$(sed 's/ signals=.*//' "${WORK}/drv.err")" "4194304|wrote=4194304 err=0"

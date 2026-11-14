@@ -11,8 +11,10 @@
 # "caller", as os.getcwd has since 135.23.
 #
 # WHAT IS ASSERTED (a toke program):
-#   1. a = os.strerror(9999), then b = os.strerror(9998): a is still
-#      "Unknown error: 9999" (glibc spells it the same way)
+#   1. a = os.strerror(9999), then b = os.strerror(9998): a is still the
+#      C library's text for 9999.  127.439: that text is read from the
+#      platform below -- macOS says "Unknown error: 9999", glibc says
+#      "Unknown error 9999" (no colon), so a fixed string failed on Linux.
 #   2. os.strerror(2) is the ENOENT text, not empty
 #   3. os.tki declares os.strerror "ownership": "caller"
 #
@@ -32,7 +34,13 @@ cd "${WORK}"
 echo "C471: os.strerror returns its own copy (121.22, AMB-11)"
 echo "------------------------------------------------------------------------"
 
-cat > t.tk <<'EOF'
+# The platform C library's own text for the two unknown codes (Python's
+# os.strerror is strerror(3)).  The assertion stays exact equality.
+E9999="$(python3 -c 'import os; print(os.strerror(9999))')"
+E9998="$(python3 -c 'import os; print(os.strerror(9998))')"
+case "${E9999}${E9998}" in *'"'*|*'\\'*) echo "  FAIL: unexpected strerror text"; exit 1 ;; esac
+
+cat > t.tk <<EOF
 m=t;
 i=os:std.os;
 i=str:std.str;
@@ -44,8 +52,8 @@ f=main():i64{
   (io.println(a));
   (io.println(b));
   (io.println(n));
-  if(!str.eq(a;"Unknown error: 9999")){<5}el{};
-  if(!str.eq(b;"Unknown error: 9998")){<6}el{};
+  if(!str.eq(a;"${E9999}")){<5}el{};
+  if(!str.eq(b;"${E9998}")){<6}el{};
   if(str.len(n)==0){<7}el{};
   <0
 };
@@ -55,7 +63,7 @@ if ! "${TKC}" t.tk --out t >t.cl 2>&1; then
 else
     rc=0; ./t >t.out 2>t.err || rc=$?
     case "${rc}" in
-        0) echo "  PASS: 1 a keeps \"Unknown error: 9999\" after a second call"; PASS=$((PASS + 1))
+        0) echo "  PASS: 1 a keeps \"${E9999}\" after a second call"; PASS=$((PASS + 1))
            echo "  PASS: 2 os.strerror(2) = \"$(sed -n 3p t.out)\""; PASS=$((PASS + 1)) ;;
         5) echo "  FAIL: 1 the second call rewrote the first result: a = \"$(sed -n 1p t.out)\""; FAIL=$((FAIL + 1)) ;;
         *) echo "  FAIL: 1/2 exit ${rc}"; sed 's/^/      | /' t.out t.err | head -5; FAIL=$((FAIL + 1)) ;;

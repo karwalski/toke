@@ -14,15 +14,261 @@ may no longer compile.
 
 ## Unreleased
 
+---
+
+## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
+
+**Status: released as `v3.2.0` on 2026-11-15 (story 138.17).** Cut from main
+`fffec674` on 2026-11-14 under owner decision
+2026-11-12 §5.2 (a); 985 commits since `v3.1.0` (`86c432da`, 2026-09-30), 683 of
+them not merges (`git log v3.1.0..fffec674`). Every entry below names the tracker
+story in `docs/progress.md` and a commit, so a consumer can bisect.
+
+As with 3.1.0 this is a minor version by the letter of semver, and **Breaking
+changes** come first: most of the release is the checker rejecting, at `--check`,
+programs that 3.1.0 compiled and then ran wrongly (printing an address, reading a
+slot nobody wrote, or segfaulting). A program that 3.1.0 compiled *and ran
+correctly* mostly still compiles; the migrations below cover the ones that do not.
+
+Not in this release: the compact `[byte]` buffer (135.18) and the `[byte]` into
+`@f64`/`@str`/`@i64` rejection that rides with it (127.342) are on the held
+integration branch, not on main; `let y:@f64=s.bytes("ab")` still checks clean in
+3.2.0.
+
 ### Breaking changes (with migration)
 
-| # | Change | Story | Migration |
+| # | Change | Story, commit | Migration |
 |---|---|---|---|
-| 1 | **`std.tls` clients verify the server by default.** `tls.connect` with `tls.tlsconfig`, a `$tlsconfig{...}` literal without a pin, or no configuration now checks the server's chain against the system trust store (`SSL_CERT_FILE`/`SSL_CERT_DIR` override it) and checks the host name (DNS name, or IP address for an address literal). A self-signed, expired, wrongly named or untrusted certificate now makes `tls.connect` return `0`; before, any certificate was accepted (audit-120 TLS-02). Pinned configurations (`tls.pinconfig`, `tls.mutualconfig`) are unchanged. `tlsconfig` gains a fifth field, `insecure`, which a literal may omit (it is `false`). An IP-address `host` is no longer sent as SNI. | 121.64 (owner decision 2026-10-01 §3.1) | Install the CA or point `SSL_CERT_FILE` at it; to trust one self-signed peer, pin it with `tls.pinconfig("";"";peercert)`; to keep the old unverified connection, say so: `tls.insecureconfig(cert;key)` (new). No caller in toke, toke-ooke or toke-website relied on the old behaviour. |
-| 2 | **Text-format log lines are logfmt.** The message is now the field `msg=`, quoted by the same rule as every value (quoted when empty or holding a space, `=`, `"`, `\` or a control byte, with `\"` `\\` `\n` `\r` `\t` `\xHH` escapes): `[INFO] msg="request received" request_id=abc123`. Before, the message was written bare, so a message holding ` user=admin` read as a `user` field. JSON-format logs and the access logs are unchanged. An unknown `log.accessformat` name is now echoed escaped. | 121.41 (3) (owner decision 2026-10-01 §3.2) | A reader of text logs that took everything after `[LEVEL] ` up to the first `key=` as the message should parse the `msg` field instead. |
-| 3 | **`ocr.lasterr`, `ocr.lasterrkind`, `pdf.lasterr`, `pdf.lasterrkind` and `xlsx.lasterr` are retired.** They duplicated what the `$err` arm has bound since 127.241: the `$ocrerr`/`$pdferr`/`$xlsxerr` variant (the old kind token) and its message. Calling one is now E4027. `ocr.setlanguages` still returns `false` for an unknown tag or a missing engine; `ocr.isavailable()` tells those apart. | 127.246 (3) (owner decision 2026-10-01 §3.3, as 127.102 for csv/file/zip) | Match `$err:e` and read the variant and its payload: `mt e {$encrypted:m …; $baddoc:m …}` |
-| 4 | **The stdlib `.tki` type names are lower-case.** The 40 upper-case types (`FileErr`, `DbErr`, `JsonErr`, `ProcessErr`, `TimeParts`, `SecureBuf`, ...) are lower-cased (`$fileerr`, `$dberr`, ...), and the seven whose lower-case spelling is a module or a sub-namespace are named `<module><noun>`: `Json` → `$jsonval`, `Row` → `$dbrow`, `Toon` → `$toonval`, `Yaml` → `$yamlval`, `Vec` → `$vechandle`, `VecStore` → `$vecstorehandle`, `Duration` → `$timeduration`. A bare `e:DbErr` no longer compiles. A `$name` that names only a module alias is now E3011: `$json`, `$row`, `$toon` and `$yaml`, which the module pages documented, compiled against no type at all (a `b:$json` parameter accepted a str). | 127.251 | Write the `$` spelling. Every old spelling is E3011 with `fix` "did you mean '$dberr'?" when its module is imported, and `tkc --migrate` rewrites bare and `$` old spellings (not `$row` beside `std.ml`, which has its own `row`, nor a name the program declares as its own type). |
-| 5 | **A match-arm label must name a type or a variant.** A label that names nothing was never checked: beside a recognised label it lowered by position (`{$i64:v v;StrErr:e 0}` worked, `{StrErr:e 0;$i64:v v}` gave a wrong value), and with none recognised (`{Handle:h ..;ProcessErr:e ..}`, the pre-127.251 spellings) the build died with E9005 after `--check` passed. It is now E3011 at `--check`. | 127.292 | Spell the label as the type or variant it means. An old upper-case stdlib type spelling (`ProcessErr:e`) carries `fix` "did you mean '$processerr'?" when its module is imported, and `tkc --migrate` rewrites it; `StrErr` was never a type -- `s.toint`'s error is `$parseerr`. |
+| 1 | **`std.tls` clients verify the server by default.** `tls.connect` with `tls.tlsconfig`, or a `$tlsconfig{...}` literal without a pin, now checks the server's chain against the system trust store (`SSL_CERT_FILE`/`SSL_CERT_DIR` override it) and checks the host name (DNS name, or IP address for an address literal). A self-signed, expired, wrongly named or untrusted certificate now makes `tls.connect` return `0`; before, any certificate was accepted (audit-120 TLS-02). Pinned configurations (`tls.pinconfig`, `tls.mutualconfig`) are unchanged. `tlsconfig` gains a fifth field, `insecure`; a literal must give it (E4077, #9 below). An IP-address `host` is no longer sent as SNI. | 121.64 (owner decision 2026-10-01 §3.1) — `781c32b8`; 127.365 — `6e67239a` | Install the CA or point `SSL_CERT_FILE` at it; to trust one self-signed peer, pin it with `tls.pinconfig("";"";peercert)`; to keep the old unverified connection, say so: `tls.insecureconfig(cert;key)` (new). A `$tlsconfig{...}` literal writes `insecure:false`. No caller in toke, toke-ooke or toke-website relied on the old behaviour. |
+| 2 | **Text-format log lines are logfmt.** The message is now the field `msg=`, quoted by the same rule as every value (quoted when empty or holding a space, `=`, `"`, `\` or a control byte, with `\"` `\\` `\n` `\r` `\t` `\xHH` escapes): `[INFO] msg="request received" request_id=abc123`. Before, the message was written bare, so a message holding ` user=admin` read as a `user` field. JSON-format logs and the access logs are unchanged. An unknown `log.accessformat` name is now echoed escaped. | 121.41 (3) (owner decision 2026-10-01 §3.2) — `1cf24940` | A reader of text logs that took everything after `[LEVEL] ` up to the first `key=` as the message should parse the `msg` field instead. |
+| 3 | **`ocr.lasterr`, `ocr.lasterrkind`, `pdf.lasterr`, `pdf.lasterrkind` and `xlsx.lasterr` are retired.** They duplicated what the `$err` arm has bound since 127.241: the `$ocrerr`/`$pdferr`/`$xlsxerr` variant (the old kind token) and its message. Calling one is now E4027. `ocr.setlanguages` still returns `false` for an unknown tag or a missing engine; `ocr.isavailable()` tells those apart. | 127.246 (3) (owner decision 2026-10-01 §3.3, as 127.102 for csv/file/zip) — `18be0e31` | Match `$err:e` and read the variant and its payload: `mt e {$encrypted:m …; $baddoc:m …}` |
+| 4 | **The stdlib `.tki` type names are lower-case.** The 40 upper-case types (`FileErr`, `DbErr`, `JsonErr`, `ProcessErr`, `TimeParts`, `SecureBuf`, ...) are lower-cased (`$fileerr`, `$dberr`, ...), and the seven whose lower-case spelling is a module or a sub-namespace are named `<module><noun>`: `Json` → `$jsonval`, `Row` → `$dbrow`, `Toon` → `$toonval`, `Yaml` → `$yamlval`, `Vec` → `$vechandle`, `VecStore` → `$vecstorehandle`, `Duration` → `$timeduration`. A bare `e:DbErr` no longer compiles. A `$name` that names only a module alias is now E3011: `$json`, `$row`, `$toon` and `$yaml`, which the module pages documented, compiled against no type at all (a `b:$json` parameter accepted a str). | 127.251 — `16c3088d`, `6cb3ae6f` | Write the `$` spelling. Every old spelling is E3011 with `fix` "did you mean '$dberr'?" when its module is imported, and `tkc --migrate` rewrites bare and `$` old spellings (not `$row` beside `std.ml`, which has its own `row`, nor a name the program declares as its own type). |
+| 5 | **A match-arm label must name a type or a variant.** A label that names nothing was never checked: beside a recognised label it lowered by position (`{$i64:v v;StrErr:e 0}` worked, `{StrErr:e 0;$i64:v v}` gave a wrong value), and with none recognised (`{Handle:h ..;ProcessErr:e ..}`, the pre-127.251 spellings) the build died with E9005 after `--check` passed. It is now E3011 at `--check`. | 127.292 — `d3d4d73e`, `dd9821ec` | Spell the label as the type or variant it means. An old upper-case stdlib type spelling (`ProcessErr:e`) carries `fix` "did you mean '$processerr'?" when its module is imported, and `tkc --migrate` rewrites it; `StrErr` was never a type -- `s.toint`'s error is `$parseerr`. |
+| 6 | **Opaque std handles are judged by their declared `.tki` type** (loke T-60, the spawn half). A field-less std record (`handle`, `vechandle`, `strbuf`, `tomlval`, `pdfdoc`, `xlsxbook`, `ziparchive`, `securebuf`, `svgelem`) passed wherever one was declared, whatever the value: `process.wait("abc")` built and read the string's bytes as a process handle. A str, float, array, map or other record where a handle is declared (or a handle where one of those is) is now **E4031**; a `$err` arm of `@()` or a string beside `$ok:h h` is **E4011**. `j.enc`/`j.print` of an opaque handle, which died with E9002 at build, is E4031 at `--check`. | 138.21 — `daab5644`; 127.402 — `839ad02a` | Use `process.badhandle()` as the failure value (`$err:e process.badhandle()`), or return from the `$err` arm; encode values read from a handle, not the handle |
+| 7 | **An expression-`if` whose two branches have different known types is E4011** ("if branches have inconsistent types"). `let v=if(n>3){ n }el{ "s" }` checked clean and yielded the string's address as an i64. Unknown and void tails, `u64` beside `i64` and integer literals that fit are tolerated; `el if` chains are checked link by link. | 138.22 — `433f469f` | Make both branches yield the same type |
+| 8 | **A `mt` over a std call that returns an inline `record!err` types its `$ok` payload as that record** (`httpresp`, `jsonval`, `timeduration`, `csvrow`, `dbrow`, `wsmsg`, ...). `{$ok:x x; $err:e "oops"}` and `$err:e 5` are now **E4011**, `x.nosuch` is **E4025**, and binding the result to a `str` is **E4031**; `let j=mt json.dec("{bad"){$ok:v v;$err:e "oops"}; io.println(j.raw)` segfaulted. `$err:e 0` stays legal (the null filler). Reading `r.status as i64` now draws W1001, since `status` is `u64` in `http.tki`. | 138.33 — `82ac08d4`; examples fixed in `5745bfa3` | Return from the `$err` arm (`$err:e <http.resjson(400;..)`), or give it a value of the record type; pass the payload as its record type (`o:$jsonval`, not `o:i64`) |
+| 9 | **Struct literals are checked field by field.** A literal must give every declared field (**E4077**, new, naming each omitted field) and each field once (**E4078**, new); each value is held to its declared field type (**E4031**). Before, an omitted field read whatever the slot held (`$r{a:5}` printed `r.b` as 1), a repeated field kept the last write, and `$r{a:"x";b:3}` for `a:i64;b:f64` printed a pointer and a denormal. Sum-variant literals (local, `$err` boxes, void payloads) are exempt. | 127.365, 127.366 — `63facdc3`, `41cee56a`; 127.356 — `7d8d1e76`, `37efd5d0` | Give every field exactly once, with a value of its type (`$tlsconfig{…; insecure:false}`) |
+| 10 | **More silent-wrong programs are new check-time errors:** `x as str` on a record, sum, array or map is **E4079** (new; it read the value as a C string); `mt` on a record value with `$variant` arms is **E4080** (new; it failed at build); a field read on a `str` other than `.len` is **E4034** at `--check` (it failed at build, or segfaulted); re-raising a user error into a different error type (`inner()!$eb` where `inner` declares `!$ea`) is **E4076** (new), with **RT010** as the runtime backstop where the checker cannot judge (owner decision 2026-10-01 §2.3); assigning to a closure parameter or a `mt` arm binding is **E4070**. | 127.362 — `c3173af9`; 127.367 — `7f8c3a6a`, 127.380 — `b6b53bb0`; 127.430 — `a8dc06fc`; 127.225 — `7afd78e4`; 127.281 — `729515d1` | Interpolate a field instead of casting the record; match the sum, or read the record's field; declare the field or drop the read; raise the outer error type explicitly; bind a fresh `let` |
+| 11 | **Std-call and cross-module arguments are judged.** **E4031** now catches: a str passed for a typed `i64` std parameter (`str.fromint("x")`), and a std result that is a record or a `T!E` bound to a scalar-annotated `let` (127.304); a std `[T]` result, let-bound or `mut`-bound, reaching a `str` parameter (`s.len(s.split(..))`, 127.314, 127.315); a `json.parse` result as the document argument of a `std.json` reader (138.9, loke T-17); every argument of a call into another user module, including sum-typed parameters, and an imported sum's variant literal used as the wrong type (127.378, 127.382, 127.385). A `mt` over an `i64!E` std call compares its arms (**E4011**; `{$ok:n n;$err:e "bad"}` over `s.toint` segfaulted, 127.337). The `.tki` records that spelled a str parameter `i64` are retyped `str` (`json.getint/geti64/geti32/getbool/getf32/getfloat` key, `http.resok/resbad/reserr/resjson` body). The checker's exemption for a str where the glue reads a C string is gone (127.255). | 127.304 — `b738143f`, `5af5548f`; 127.314 — `10f5a079`; 127.315 — `d8a46b0a`; 138.9 — `12c71a58`; 127.378 — `63558d92`; 127.382 — `2ce71a0c`; 127.385 — `8f261a6f`; 127.337 — `3054de7f`; 127.255 — `8fd95d9f` | Pass the declared type; use `json.decode` for a document; match a `T!E` std result before binding it to a scalar |
+| 12 | **A map lookup `m.get(k)` is the error union `V!$err`.** `m.get(k)+1`, a lookup passed or returned as an `i64`, and the same through `let v=m.get(k)` checked clean and used the 0 filler on a miss; they are now E4031 ("the left side is 'i64!$err'"). `!` on a lookup propagates on the error channel, so a stored `0`/`false` is a hit. Every accepted program lowers as before. | 127.244 (owner decision 127.30) — `42d669ed`, callers migrated in `5b419052` | `m.getor(k;default)`, or `mt m.get(k) {$ok:v …; $err:e …}` |
+| 13 | **A `let` inside a block goes out of scope at the end of the block** (owner decision 2026-10-01 §2.2). Reading it after the block is E3011. Measured first: no corpus record, toke/ooke/website program or toke-test-programs file relied on the leak. | 127.196 — `fe71f602` | Declare the binding before the block (`let x=mut.0;`) and assign it inside |
+| 14 | **Advice-only `fix` fields removed from E4031**, so a repair loop reading `fix` finds it absent where it was never a deterministic repair (AGENTS §6). The six binary-operator sites (array concatenation of mismatched element types or of an array and a scalar, `&&`/`\|\|` left and right, bitwise, modulo) and four more (unary minus, bitwise NOT, a map key of the wrong type, `[]` on a non-array) no longer emit `fix`; codes and messages are unchanged. Also: E4070 on an assigned function parameter no longer carries a `let x=mut.` fix (it is wrong for every parameter), and E2030 for an unresolved **user** module no longer guesses a stdlib module in `fix`. Still carrying prose, pending an owner decision (127.438): the non-integer index hint and the str `+` advice. | 127.436 — `984eb9ef`; 127.438 — `aff79119`; 127.281 — `4763bba2`; 127.309 — `5db3a4ad` | Read `message`/`expected`/`got` |
+| 15 | **Toolchain and CLI.** tkc runs the clang found when it was built, by absolute path (baked into `build_info.h`), never a `clang` from `$PATH`; `TKC_CC` overrides it; a missing or non-executable compiler is **E9027** (new), exit 3 (owner decision §2.10 (c)). Every limit **E9010** exits **1** (a user error), not 2, and `--check` refuses the caps the build refuses. A declined `--migrate` is **E9026** (new) with exit **4**, source echoed byte for byte, and no longer stops a multi-file run. `tkc --version` appends the build commit, `toke 3.2.0 (git <sha>[, dirty])`, and `--version --json` prints `name`/`version`/`git_sha`/`git_dirty`. `tkc --help` names the binary `tkc`, not `toke`. | 121.28 — `7b2c1991`, `426d3ed5`; 127.264 — `eaeb9ff6`, `161d7dc5`; 127.197 — `e98150c2`, `6abd889e`; 131.33 — `096c48a9`; 127.352 — `102fd974` | A packager whose install moves clang sets `TKC_CC` (packaged installs: 132.122, owner decision §5.4); scripts that match `tkc --version` exactly read `--version --json`; treat exit 1 as a limit error and 4 as a decline |
+| 16 | **Wider capability gates:** `i18n.load`, `template.load` and `vecstore.collection` need `fs.read` (each opened a program-chosen path with no gate). | 121.42 — `04654c6a` | `--allow-read` or a `tkc.toml [capabilities]` grant |
+| 17 | Behaviour changes in other modules: **`tpl.render` escapes each value for its HTML context** (text, quoted and unquoted attribute, URL with an http/https/mailto scheme allowlist, JS string and code in `<script>` and `on*`, CSS), and `tpl.renderfile` now escapes too (it escaped nothing); `file.read` on a directory is `$err $isdir`, not `$ok ""`; `xml.*` and `soap.*` results are typed `str` and a miss is `""` (they typed as `i64`, and `xml.get` returned NULL); `std.vec` `get`/`set` outside `[0, len)` traps RT003 (it returned 0 or did nothing); the HTTP client answers `$err` for a response cut short — a header block with no blank line, a body short of its `Content-Length`, a chunked body that ends before its last chunk, a close-delimited body that ends in a timeout or reset (loke T-64); `log.info/warn/error/debug` return `true` when the line is written (they always returned `false`), and level names are case-insensitive; an HTTP/1.0 request without keep-alive closes the connection, gets no `Transfer-Encoding: chunked`, and a handler's `Connection: close` is honoured. | 121.37 — `be8086d0`; 121.65 — `0b4c4b96`; 131.48 — `44b1d9f6`; 121.31 — `ef4b101a`; 138.23 — `60c319af`; 138.31 — `1046f364`; 127.406 — `7ab40d50`; 127.407 — `c25e9b2b`; 121.102 — `38413d04`; 121.103 — `f66b5496`; 121.101 — `06410e29` | Mark a trusted value `{{x\|raw}}`; match `$isdir`; test `xml.get(..)==""` for a miss; treat a cut HTTP response as the error it is |
+
+### Fixed for loke (the 2026-11-09 handoff, Epic 138)
+
+- **T-62** (loke F10.42) — chained `.get` on a map of arrays, an `@@str` row
+  subscripted inline as a call argument, no longer emits invalid IR (E9003).
+  127.274 — `75209d81`.
+- **T-64** — the HTTP client's cut responses (above, #17). 138.23 — `60c319af`;
+  138.31 — `1046f364`.
+- **T-48 addendum** — an `httpclient` passed where a `str` URL is declared
+  (`http.postheaders(http.client(url);…)`, `http.geturl(http.client(url))`) is
+  E4031, as a let binding already was. 138.26 — `aa6f65e7`.
+- **T-60, the spawn half** — opaque handles (above, #6). 138.21 — `daab5644`.
+- **T-17** — a `json.parse` result is not a JSON document (above, #11). 138.9 —
+  `12c71a58`.
+- The client's `Host` header names a non-default port (RFC 9110 §7.2). 138.28 —
+  `a37cd26e`.
+- Found while probing T-60: expression-`if` branch types (above, #7, 138.22) and
+  the `$ok` payload of a std `record!err` (above, #8, 138.33).
+- **Still open for loke**: `==` on arrays (T-60's other half, 138.20); a
+  whole-request deadline and a body-size cap for the HTTP client (T-63, 138.24);
+  connecting to a given address with host-name verification (T-63, 138.25); a
+  header-carrying GET (T-58 addendum, 138.27); scoped capability grants (T-59 /
+  B9, 138.19).
+
+### Security fixes
+
+- **TLS clients verify by default** (above, #1). 121.64.
+- **Template injection** — per-context escaping (above, #17): `href="{{u}}"`
+  passed `javascript:alert(1)`, and `<script>var s={{x}};` took the value as code.
+  121.37 — `be8086d0`.
+- **HTTP response splitting** — `std.http` drops handler response headers whose
+  name or value could split the response (CR/LF), and HTTP/2 drops header values
+  with any control byte, as HTTP/1.1 does. 121.92 — `912b9979`; 121.98 —
+  `dcc599d9`.
+- **Toolchain substitution** — tkc ran `execvp("clang")`, so a directory early on
+  `$PATH` could substitute the compiler (above, #15). 121.28 — `7b2c1991`.
+- **Hybrid post-quantum key exchange** — every `std.http` and `std.llm` TLS
+  context sets an explicit group list that prefers `X25519MLKEM768`, falls back
+  to classical groups, and fails closed. 122.15 — `ace7ed58`, `56745750`.
+- **TLS, ACME and LLM hardening** — a TLS registry refcount and per-connection
+  I/O lock, ACME storage, payload and renewal hardening (121.19 — `3eb9ebef`);
+  TLS for `std.llm`, refusal of a cleartext key, escaped bridge JSON and a bounded
+  `.vecs` loader (121.23 — `585889e1`).
+- **Compiler front end** — parser nesting depth is bounded (one located E9010
+  instead of SIGSEGV); the auto-glue temp file is created with `mkstemps`, not a
+  pid name; a stdlib or runtime directory holding whitespace is refused (E9024,
+  new). 121.28 COM-02/03 — `e9ac0498`, `71172560`, `a880238c`.
+- **Runtime reliability** — process pipes drain while waiting, a request that
+  cannot allocate fails cleanly, the request buffer grows on demand, and worker
+  respawns back off. 121.29 — `6049cd97`, `481e3f0c`, `d84825d7`, `59f879a9`.
+- **Over-reads** — `encoding.jsonfield` and `std.llm`'s JSON string decoder read
+  past the NUL when a value ended in a backslash. 127.317 — `e7757ed1`; 127.331 —
+  `ec32c74a`.
+- **Borrowed environment pointers** — `os.getenv`, `env.get` and `env.getor`
+  return owned copies. 121.75 — `e7c829a6`; 121.78 — `db07f4b8`.
+- **Hangs on a FIFO** — `file.read`, `file.write/append/copy` and the driver's
+  source readers no longer block forever on a FIFO with no peer. 121.73 —
+  `c68bfb43`; 121.77 — `10526c11`; 121.85 — `478c1956`.
+- **SIGPIPE** — a peer that closes first no longer kills the process: the plain
+  HTTP client, the WebSocket client and router WebSocket server, `router.serve`,
+  `std.tls`, and `std.llm` over http and https. 127.341 — `75aa44a0`; 127.347 —
+  `6f96b32d`; 127.350 — `72c9ad27`; 127.351 — `a788172c`; 127.388 — `dd3a51e1`;
+  127.394 — `c1b1ae49`. The https client on Linux (127.346 — `ab9a4051`) is merged
+  and awaits verification there.
+
+### Everything else
+
+- **Packages**: `tkc pkg init|add|remove|resolve|fetch|list` manages `pkg.toml`
+  and `pkg.lock`; a `pkg.*` import resolves through the lock, every cached
+  package is re-hashed against it, and fetch is git-based; new codes E9011–E9014,
+  E9025, E9028–E9035, W9010 and W9011 (ADR-0004). 76.1.3b, 76.1.3d — `9f20178f`;
+  76.1.3c — `461c5724`; `tkc pkg --help` 132.142 — `711ef103`.
+- **Binary IR round trip**: `.tkir` 1.2 carries the token text and the parse
+  tree; `--from-tkir` compiles it through the same resolver, checker and backend
+  as source, and `--read-tkir` summarises one. 76.1.6c — `fd4c03fc`; 127.345 —
+  `7ab5ea7e`; the type and data tables grow to the u16 limit, E9010 past it
+  (127.344 — `1d6e119b`).
+- **`tkc --python-view`**: a read-only, Python-like rendering of a toke file, for
+  review only. 96.7 — `85831037`.
+- **Lexer and lint**: a raw control byte in a string literal is **W1021** (a
+  warning) with an exact `\xHH` fix (131.32 — `d5dee55b`); a nested-`if`-ladder
+  lint rule with a deterministic `el if` fix (131.64 — `5800ac34`); `--lint --fix`
+  keeps a binding's type when it drops `mut.` or inlines a single-use `let`
+  (131.104 — `f324d408`; 131.59 — `02c5e457`); E1003's message for an underscore
+  speaks v0.4 (127.338 — `a1e9828f`); `(* *)` is the one comment form (127.198 —
+  `5dc9b99e`).
+- **Checker, typing results it left untyped** (each printed a pointer or a raw
+  bit pattern): `m.getor(k;d)` and its default (127.320 — `0e42cdff`, 127.324 —
+  `67113149`, 127.325 — `8dff5994`, 127.379 — `87153202`); the `$ok` binding of a
+  `mt` over a map lookup, a `[stdrecord]!E` call and an array `.get` (127.322 —
+  `8a56271d`, 127.424 — `551946cb`, 127.428 — `ab9d1a7b`); an expression-`if` or
+  `mt` bound by `let` (127.326 — `e98c69d3`, 127.327 — `dcf648f0`, 127.375 —
+  `6dca2454`); receiver-method results (127.364 — `9c90a288`, 127.371 —
+  `213baf2f`, 127.358 — `838f5c89`); std record fields that are arrays
+  (127.333 — `7ce76983`, 127.335 — `98c68127`, 127.336 — `c2a469f7`); a std
+  record or handle returned and used in place (127.386 — `6d270505`, 127.392 —
+  `0d347948`); imported function types, records and sums (127.377 — `4ef15404`,
+  127.384 — `91f4effd`); a stdlib `@f64!E` and cross-module `@$str` result
+  (127.297, 127.302, 127.308 — `7e0bd556`); a false E4011 on a returned match
+  whose arm yields the function's error value (127.340 — `61f8fb31`) and a false
+  E4010 on a result match over a local record (127.426 — `55918886`); E3012 names
+  the import alias a declaration clashes with (127.285 — `91825094`).
+- **Codegen**: `!` through a function value keeps the error (127.276 —
+  `98a8a4be`); a closure calls only its own closure-bound locals (127.282 —
+  `558d8056`); an `mt` arm binding ends with its arm (127.321 — `2ac20568`);
+  libm declarations match by exact symbol (127.305 — `da15a4e8`); a cross-module
+  `@f32` element reads as f32 (127.313 — `77951e74`); in-place append survives
+  `std.image`, cross-module callees and struct literals (127.306 — `340af4b0`,
+  127.307 — `2e05f5e5`); `j.enc` and `j.print` of a record are typed from its
+  descriptor, never guessed (127.361 — `08b401fc`, 127.353 — `026a93b5`); a
+  function-value `getor` default is released (127.383 — `183fb159`).
+- **Runtime**: strings carry their length in a sealed string heap, so `.len` and
+  offset checks are linear, not a scan (owner decision 2026-10-01 §2.1);
+  conversion of the remaining producers continues under 127.295. 127.170 —
+  `df8a53db`, `152dc4a9`, `7cd91c72`, `e979c4a9`.
+- **HTTP and router**: HTTP/2 over TLS is offered in ALPN again (121.80 —
+  `f919e344`); binary bodies are served whole on HTTP/1.1, TLS, h2 and through
+  `std.router` (121.86 — `3353d92c`, 121.88 — `4914d373`); h2 responses are
+  gzipped and already-compressed types are not (121.87 — `f388b26e`, 121.89 —
+  `41afa79d`); `std.router` dispatches `:param` and `*` routes, carries request
+  and response headers and reason phrases, and grows its tables instead of
+  dropping routes (127.343 — `3f76d385`, 121.90 — `9a7429ef`, 127.348 —
+  `75ad77ba`, 127.349 — `6dc2d288`); `http.servedir` decodes paths, serves
+  precompressed variants by `Accept-Encoding` weight, and its misses get the
+  `setnotfound` body (121.81 — `b092a73c`, 121.99 — `01694b44`, 121.96 —
+  `23f40f40`, 121.62 — `8a0e16ed`); HEAD carries the GET's framing (121.100 —
+  `581c094c`); one Content-Length per response (121.97 — `d8db68af`).
+- **Standard library additions** (spec amendments): `file.realpath` (121.60 —
+  `69de0b75`); `io.eprint`, and `os.write` writes every byte or returns `$err`
+  (121.70 — `d43cc6fa`, `077f38c3`); `toml.has`, `toml.f64`, `toml.f64arr`,
+  arrays, keys and distinct accessor errors (121.68 — `2265c710`; 113.B.4 —
+  `fee72f55`, `99faa861`); a typed `std.json` object surface — keys, entries,
+  has, get, scalar reads, object building (113.B.5 — `1df07046`); `args.all`
+  and `args.get`'s reason (113.B.8 — `22e678b6`); `md.renderfile`'s `$mderr`
+  (113.B.7 — `3dbc426e`); `str.checkre` returns an invalid pattern's error as a
+  value (121.45 — `25d7a3cc`); `os.onofollow` and `log.closeerror` (136.77 —
+  `68537a23`).
+- **Standard library fixes**: `std.json` member names with escapes are found and
+  `json.kv` encodes its key (127.300 — `f0349377`, 127.301 — `62680600`);
+  `json.u64`/`json.i64` read a whole integer (127.303 — `90dc487d`); log fields
+  decode as `[[str]]` pairs (127.400 — `8d2c7366`); access-log retention keeps
+  the newest (127.401 — `60823920`); SIGHUP reopens every log in every serving
+  mode (121.53 — `45e170bf`, 121.72 — `7f49d2f3`); `html.render`/`svg.render`
+  results survive a re-render (127.316 — `146e3d47`); leaks in csv, file.listall,
+  toml and llm tool calls (127.422 — `01382180`, 127.415 — `021a9fe5`, 127.272 —
+  `12c0489f`, the llm tool-calling response `f74d3645`); the infer streaming thread is joined on unload (136.75
+  — `a1c71e29`); stdlib TLS builds against OpenSSL 4 (121.104 — `69a26c66`).
+- **Removed dead code**: 14 duplicate C implementations and 52 unreachable glue
+  wrappers (136.67 — `b65162bb`, 136.71 — `409ae154`); the unreachable
+  `server_ops.c` and the never-built Postgres/MySQL backends, archived (121.71 —
+  `e79285b9`); `ws_server.c`'s dead handshake with the wrong GUID (127.332 —
+  `7409df12`).
+- **Diagnostics**: `source_line` is written by length and cut on a UTF-8
+  boundary, so a raw NUL or a long line no longer truncates it or makes invalid
+  JSON. 127.267 — `b47547e6`; 127.269 — `7216aa26`.
+- **Licensing**: the standard library is MIT-licensed, with `stdlib/LICENSE` and
+  SPDX headers; the full Apache-2.0 text is in the tree. 135.15a — `0a5fd452`;
+  `ab2d88cf`.
+
+### Build, platform and release
+
+The release workflow could not pass on GitHub's current runners (Ubuntu with gcc
+15 and a C23 glibc; macOS 13 retired). Fixing it found real defects as well as
+environment ones; these are the changes a user can observe. 127.439 is the
+umbrella story.
+
+- **`std.http` servers set `TCP_NODELAY`** on every accepted connection, plain and
+  TLS. A response goes out in several writes, and Nagle held each write after the
+  first until the client's delayed ACK: about 40 ms per keep-alive response on
+  Linux. C1790 checks the option and times 300 keep-alive responses. 127.443 —
+  `7b03be29`.
+- **A restarted server can rebind its port on Linux.** `tk_bind_exclusive` now sets
+  `SO_REUSEADDR` on every Linux attempt (a `TIME_WAIT` socket keeps its
+  listener's flag, and the rebind needs both); binding over a live listener is
+  still refused. macOS keeps its probe-first order. Covers the http, router, net
+  and tls listeners. 127.444 — `b081cd83`.
+- **tkc names its linker on Linux.** `make` records the linker clang names at build
+  time (`clang -print-prog-name=ld`) as `TKC_LD_PATH`, and tkc passes it as
+  `--ld-path` when its baked clang links for the host. Before, clang looked `ld` up
+  on `$PATH`: an empty `PATH` could not link (E9003), and a planted `ld` on `PATH`
+  would have linked every program. Not used when `TKC_CC` is set or with
+  `--target`. 127.447 — `a394a330`, `c6ef75f1`.
+- **tkc takes Homebrew's prefix from `brew --prefix` at build time** instead of a
+  hard-coded `/opt/homebrew`; on an Intel Mac every link printed "search path
+  '/opt/homebrew/lib' not found". With no brew at build time no Homebrew flags are
+  passed. A release tkc carries the prefix of the machine that built it. 127.446 —
+  `4852e582`, `10164977`.
+- **Emitted IR states PIC/PIE level 2**, so programs link as position-independent
+  executables on Linux. 127.439 — `6ccf348b`.
+- **Runtime and stdlib fixes:** the inline error box is `int64_t`-aligned
+  (`5713b92b`); stdlib allocations abort on out-of-memory where nothing checked
+  the result (`db80e19b`); `ml.kmeans` no longer reads past an empty point array
+  (127.441 — `0f9718db`, `4b92f854`); the inference backend's hardware probe no
+  longer closes a directory twice (127.442 — `09d27141`); an empty
+  `sha512_update` is a no-op (`58b10d7f`); the capability provenance label has
+  room for the module name (`21f68dfa`); compress copies only the schema keys it
+  read (`53c71644`).
+- **Builds:** the compiler and stdlib build clean under gcc 15 `-Werror` and with
+  glibc's C23 string macros under `-std=c99` (`6490a01a`, `2e8692c6`); the release
+  binary is built with the Makefile's hardening flags (`ec3f8be7`); macos-x86_64
+  is built on `macos-15-intel` and the release archives ship the stdlib MIT text
+  (`f2a7f347`).
+
+Known on this release: the linux-arm64 runner's OpenSSL 3.0 lacks the
+`X25519MLKEM768` hybrid group, so the hybrid-handshake cases of C1180 and C1200
+report a skip there; the classical fallback is tested in full.
+
+### Publishing
+
+Tagged `v3.2.0`; the release workflow builds and signs the four platform archives
+(linux-x86_64, linux-arm64, macos-arm64, macos-x86_64) with an SBOM. Next: bump
+ooke's `ooke.toml [requires]` floor to 3.2.0 and the Homebrew formulae to the
+release checksums.
 
 ---
 

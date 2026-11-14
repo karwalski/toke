@@ -44,14 +44,14 @@ static void ensure_dir(const char *path)
     /* mkdir -p equivalent via system() — acceptable in tests only */
     char cmd[512];
     snprintf(cmd, sizeof cmd, "mkdir -p %s", path);
-    (void)system(cmd);
+    if (system(cmd) != 0) { /* cleanup only: a failure is harmless (127.439) */ }
 }
 
 static void cleanup_dir(const char *path)
 {
     char cmd[512];
     snprintf(cmd, sizeof cmd, "rm -rf %s", path);
-    (void)system(cmd);
+    if (system(cmd) != 0) { /* cleanup only: a failure is harmless (127.439) */ }
 }
 
 /* -------------------------------------------------------------------------

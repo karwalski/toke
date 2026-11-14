@@ -11,13 +11,14 @@ per-change record for each release, with every breaking change and its migration
 repository; this page summarises it. Story numbers refer to the tracker,
 [`docs/progress.md`](https://github.com/karwalski/toke/blob/main/docs/progress.md).
 
-## 3.2.0 (unreleased)
+## 3.2.0 — released 2026-11-15
 
-**Not released.** Everything on `main` since the `v3.1.0` tag (2026-09-30). The version
-is prepared on a release branch and is not tagged or published; until it is, a
-downstream that needs one of these fixes pins a `main` commit.
+Everything on `main` since the `v3.1.0` tag (2026-09-30), cut from `main` `fffec674` on
+branch `release/3.2.0`, plus the build and platform fixes that let the release workflow
+pass on current GitHub runners (`CHANGELOG.md` § 3.2.0, "Build, platform and release").
+Tagged `v3.2.0`.
 
-**Breaking changes.** `CHANGELOG.md` § Unreleased lists each with its migration:
+**Breaking changes.** `CHANGELOG.md` § 3.2.0 lists each with its commit and migration:
 
 - `std.tls` clients verify the server's certificate chain and host name by default;
   `tls.insecureconfig` is the explicit opt-out (121.64).
@@ -27,6 +28,16 @@ downstream that needs one of these fixes pins a `main` commit.
   (127.251).
 - A match-arm label must name a type or a variant (127.292), and the `lasterr` accessors
   of `ocr`, `pdf` and `xlsx` are retired in favour of the `$err` arm (127.246).
+- New check-time rejections of programs that compiled and ran wrongly: opaque std
+  handles are judged by their declared type (138.21); expression-`if` branches of
+  different types are E4011 (138.22); the `$ok` payload of a `mt` over a std
+  `record!err` call is typed, so a mismatched arm is E4011, an unknown field E4025 and a
+  wrong binding E4031 (138.33); a struct literal must give every field once, with values
+  of the declared types (E4077, E4078, E4031; 127.365, 127.366, 127.356); `as str` on a
+  composite is E4079 (127.362); a map lookup `m.get(k)` is the error union `V!$err`
+  (127.244).
+- E4031 no longer puts advice in its `fix` field at the binary-operator, unary and index
+  sites, so a repair loop finds `fix` absent there (127.436, 127.438).
 
 **Compiler and tooling.**
 
@@ -37,9 +48,9 @@ downstream that needs one of these fixes pins a `main` commit.
   compiled back with the same LLVM IR as from source (76.1.6c).
 - tkc runs the clang found when it was built, by absolute path; `TKC_CC` overrides it and
   an unusable path is E9027 (121.28). A program over a compiler limit exits 1 (127.264).
-- `--migrate` keeps comments, and declines with E9026 and exit 4 on source it should not
-  touch (127.197, 127.198).
-- Re-raising an error into another error type is E4076 at `--check` (127.275).
+- `--migrate` keeps comments (127.161), and declines with E9026 and exit 4 on source it
+  should not touch (127.197).
+- Re-raising an error into another error type is E4076 at `--check` (127.225).
 - A `let` inside a block goes out of scope at the end of the block (127.196).
 - Strings carry their length, so `.len` and `str.charat` scans are linear (127.170).
 - `m.get(k)` is an error union the checker enforces (127.244).
@@ -59,7 +70,7 @@ downstream that needs one of these fixes pins a `main` commit.
 - The standard library is MIT-licensed, with the licence text and SPDX headers in the
   tree (135.15a).
 
-### Fixed for loke since 3.1.0
+### Fixed for loke in 3.2.0
 
 loke's IDs are from its handoff of 2026-11-09; the toke and ooke stories close them.
 

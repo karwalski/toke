@@ -112,7 +112,11 @@ static inline int64_t tks_hdrlen(const char *p)
     if (!((__atomic_load_n(&tks_bits[g >> 3], __ATOMIC_ACQUIRE) >> (g & 7)) & 1))
         return -1;
     int64_t n;
-    memcpy(&n, p - 8, sizeof n);
+    /* 127.439: read the header through lo, the region it lives in (lo + o
+     * == p).  Spelled p - 8, gcc 15 inlined this into callers passing a
+     * stack buffer and reported -Warray-bounds on that path, which the
+     * range check above has already returned from. */
+    memcpy(&n, lo + (o - 8), sizeof n);
     if ((TK_STR_VERIFY || tks_verify) && (size_t)n != strlen(p))
         tks_verify_fail(p, n);
     return n;

@@ -93,7 +93,11 @@ if [ -x j ]; then
     else
         fail "json: exit ${rc} (want 9), ${n} lines (want 2)"
     fi
-    env -u TK_LOG_LEVEL TK_STR_VERIFY=1 ./j > j.out 2>&-; rc=$?
+    # 127.439: not through env(1).  Ubuntu 26.04's env is uutils (Rust), and
+    # the Rust runtime reopens a closed fd 0-2 on /dev/null at startup, so the
+    # program inherited a WRITABLE stderr and every line was "written".  A
+    # subshell that execs the program hands it the closed descriptor itself.
+    ( unset TK_LOG_LEVEL; TK_STR_VERIFY=1; export TK_STR_VERIFY; exec ./j > j.out 2>&- ); rc=$?
     if [ "${rc}" -eq 0 ]; then
         pass "stderr closed: every call returns false"
     else

@@ -64,6 +64,9 @@ void llvm_xmod_end(void);
  * (main.c resolves it: TKC_CC, else the clang found at build time).  NULL or
  * "" restores the default, `clang` looked up on $PATH. */
 void llvm_set_cc(const char *path);
+/* llvm_set_ld (127.439): an absolute linker path compile_binary passes to
+ * clang as --ld-path when it links for the host; NULL/"" = clang's own search. */
+void llvm_set_ld(const char *path);
 
 /* compile_binary: invoke clang to compile out_ll to a native binary at out_bin.
  * target: LLVM triple string (NULL = native target).

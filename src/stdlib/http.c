@@ -17,6 +17,7 @@
 #include "tk_http_field.h" /* 121.92: tk_http_field_name_ok/_value_ok */
 #include "tk_strhdr.h"     /* 127.295: tk_strlen, tks_dup (runtime-abi §3.1) */
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -24,6 +25,7 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h> /* 127.443: TCP_NODELAY */
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/types.h>
@@ -97,6 +99,29 @@
 void http_sock_nosigpipe(int fd)
 {
     tk_sock_nosigpipe(fd);
+}
+
+/*
+ * http_sock_nodelay — turn Nagle off on an accepted server connection
+ * (127.443).
+ *
+ * A response goes out in several writes: the status line, the handler's
+ * fields, the security and CORS fields, the blank line, the body.  With
+ * Nagle on, the first write leaves at once and every later small write is
+ * held until the peer ACKs it; a client that is waiting for the whole
+ * response sends nothing, so its stack delays that ACK.  On Linux that is
+ * about 40 ms per keep-alive response: S005's 7,264 loopback requests ran
+ * past its 180 s alarm on the ubuntu-latest runner, where macOS took a
+ * second or two.  Every pipelined or keep-alive client of std.http on Linux
+ * paid the same 40 ms.  The writes are already whole lines or bodies, so
+ * sending each one as it is made costs a few small segments, not a stall.
+ * Fails harmlessly (ENOTSOCK, EOPNOTSUPP) on the pipes, files and AF_UNIX
+ * sockets http_handle_fd() is also handed.
+ */
+static void http_sock_nodelay(int fd)
+{
+    int one = 1;
+    (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
 }
 
 /*
@@ -1077,6 +1102,9 @@ static void send_response(int fd, Res res, int keep_alive, int may_chunk) {
 static void fd_peer_ip(int fd, char *buf, size_t bufsz)
 {
     struct sockaddr_storage ss;
+    /* 127.439: zeroed, so ss_family is defined even if getpeername filled
+     * less than the family field (clang UndefinedBinaryOperatorResult). */
+    memset(&ss, 0, sizeof ss);
     socklen_t sslen = sizeof ss;
     if (getpeername(fd, (struct sockaddr *)&ss, &sslen) != 0) {
         snprintf(buf, bufsz, "-"); return;
@@ -1791,6 +1819,7 @@ static void handle_connection(int fd)
     /* 127.144: before anything is written to this socket.  A peer that
      * resets mid-response must give us EPIPE, not a fatal signal. */
     http_sock_nosigpipe(fd);
+    http_sock_nodelay(fd);   /* 127.443: no Nagle stall per response */
 
     /* 127.60: the per-IP rate limiter that stood here is gone — see the note
      * where it was defined.  Rate limiting belongs in front of the server. */
@@ -5861,6 +5890,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
      * are written through send(MSG_NOSIGNAL) instead -- see SSL attach
      * below; on Linux http_serve_tls_workers' SIG_IGN still stands. */
     http_sock_nosigpipe(fd);
+    http_sock_nodelay(fd);   /* 127.443: a TLS record per write, too */
 
     /* Set socket timeouts BEFORE SSL_accept to prevent workers from
      * blocking indefinitely on incomplete TLS handshakes (e.g., port

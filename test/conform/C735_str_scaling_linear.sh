@@ -29,7 +29,9 @@
 # Negative control: TOKE=<tkc built from main fb0592a1> — all three FAIL
 # (ratios 9.72, 17.02, 17.75).
 #
-# Counter: macOS /usr/bin/time -l; Linux perf stat.  Neither: CONFORM-SKIP.
+# Counter: macOS /usr/bin/time -l; Linux perf stat, else valgrind cachegrind
+# (127.439: GitHub's Linux VMs expose no hardware counter; CI installs
+# valgrind).  None: CONFORM-SKIP.
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

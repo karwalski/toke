@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdio.h>
 #include "tk_regex.h" /* 137.9/121.35: the one pattern language (no POSIX regex.h) */
 

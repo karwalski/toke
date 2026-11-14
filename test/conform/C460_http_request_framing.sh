@@ -315,7 +315,7 @@ build_run() {
         || { fail "${name}: stdlib link set: see stderr above"; return; }
     while IFS= read -r l; do LIBS+=("$l"); done <<< "${LINKSET}"
     if ! "${CC}" "${CF[@]}" \
-            -o "${WORK}/${name}" "${WORK}/h.c" "${LIBS[@]}" "$@" -lz -lpthread \
+            -o "${WORK}/${name}" "${WORK}/h.c" "${LIBS[@]}" "$@" -lz -lpthread -lm \
             >"${WORK}/${name}.cc" 2>&1; then
         fail "${name}: build: $(grep -a -m3 -E 'error' "${WORK}/${name}.cc" | head -c 400)"
         return

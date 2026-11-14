@@ -21,11 +21,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
-command -v python3 >/dev/null 2>&1 || { echo "CONFORM-SKIP: python3 not found"; exit 0; }
-python3 -c 'import pytest' 2>/dev/null || { echo "CONFORM-SKIP: pytest not installed (python3 -m pip install pytest)"; exit 0; }
-python3 -c 'import tokenizers' 2>/dev/null || { echo "CONFORM-SKIP: tokenizers not installed (python3 -m pip install tokenizers)"; exit 0; }
+# 127.439: TKC_PY names the interpreter, as for C031/C032: CI installs pytest
+# and tokenizers into a virtualenv (a system pip install is refused under
+# PEP 668), and the plain python3 on PATH never sees them.
+PY="${TKC_PY:-python3}"
+command -v "${PY}" >/dev/null 2>&1 || { echo "CONFORM-SKIP: ${PY} not found"; exit 0; }
+"${PY}" -c 'import pytest' 2>/dev/null || { echo "CONFORM-SKIP: pytest not installed (python3 -m pip install pytest, or set TKC_PY to a python that has it)"; exit 0; }
+"${PY}" -c 'import tokenizers' 2>/dev/null || { echo "CONFORM-SKIP: tokenizers not installed (python3 -m pip install tokenizers, or set TKC_PY to a python that has it)"; exit 0; }
 cd "${REPO_ROOT}" || exit 1
-OUT="$(python3 -m pytest -q -p no:cacheprovider scripts/patterns/tests/test_lanes.py \
+OUT="$("${PY}" -m pytest -q -p no:cacheprovider scripts/patterns/tests/test_lanes.py \
        scripts/patterns/tests/test_count_tokens.py 2>&1)"
 RC=$?
 echo "${OUT}" | grep -E 'passed|failed|error|skipped' | tail -3

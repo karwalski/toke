@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 /*
  * 121.9 (WEB-01) replaced an overflowing `off += snprintf(buf+off, cap-off,…)`

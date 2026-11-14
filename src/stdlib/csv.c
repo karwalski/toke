@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "tk_xalloc.h" /* 127.439: OOM stops at the allocation */
 #include <string.h>
 
 /* 135.2 last-error state, defined at the bottom of this file with the rest of
@@ -300,7 +301,7 @@ struct TkCsvReader {
 
 TkCsvReader *csv_reader_new(const char *data, uint64_t len)
 {
-    TkCsvReader *r = (TkCsvReader *)malloc(sizeof(TkCsvReader));
+    TkCsvReader *r = (TkCsvReader *)tk_xmalloc(sizeof(TkCsvReader));
     r->data         = data;
     r->len          = len;
     r->pos          = 0;
@@ -434,7 +435,7 @@ struct TkCsvWriter {
 
 TkCsvWriter *csv_writer_new(void)
 {
-    TkCsvWriter *w = (TkCsvWriter *)malloc(sizeof(TkCsvWriter));
+    TkCsvWriter *w = (TkCsvWriter *)tk_xmalloc(sizeof(TkCsvWriter));
     strbuf_init(&w->buf);
     w->first_row = 1;
     w->sep       = ',';

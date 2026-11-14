@@ -101,7 +101,9 @@ arena_alloc(Arena *arena, size_t size)
     if (size == 0) size = 1;
     if (size > arena_max_alloc()) return NULL;
     /* round up to alignment boundary */
-    int aligned = ((int)size + TKC_ARENA_ALIGN - 1) & ~(TKC_ARENA_ALIGN - 1);
+    /* Rounded in size_t (127.439, cppcheck integerOverflowCond); the bound
+     * above keeps the result within int, as before. */
+    int aligned = (int)((size + TKC_ARENA_ALIGN - 1) & ~(size_t)(TKC_ARENA_ALIGN - 1));
 
     ArenaBlock *b = arena->head;
     if (aligned > b->cap - b->used) {   /* not used + aligned: no overflow */

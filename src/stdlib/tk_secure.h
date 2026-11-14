@@ -93,10 +93,12 @@ static inline void tk_random_bytes(void *buf, size_t n)
     if (got < n) {
         FILE *f = fopen(TK_URANDOM_PATH, "rb");
         if (f) {
+            /* fread returns short only at EOF or on an error, and after
+             * either the stream must not be read again (127.439: clang's
+             * unix.Stream on Linux).  Same result: what was read counts. */
             while (got < n) {
-                size_t r = fread(p + got, 1, n - got, f);
-                if (r == 0) break;
-                got += r;
+                got += fread(p + got, 1, n - got, f);
+                if (feof(f) || ferror(f)) break;
             }
             fclose(f);
         }

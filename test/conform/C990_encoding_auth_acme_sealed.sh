@@ -168,7 +168,7 @@ LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TK
     || { fail "stdlib link set: see stderr above"; exit 1; }
 LS=(); while IFS= read -r l; do LS+=("$l"); done <<< "${LINKSET}"
 # Built without TK_HAVE_OPENSSL, the set needs only zlib beyond libc.
-if ! "${CC}" "${CF[@]}" -o seal seal.c "${LS[@]}" -lz -lpthread > seal.cc 2>&1; then
+if ! "${CC}" "${CF[@]}" -o seal seal.c "${LS[@]}" -lz -lpthread -lm > seal.cc 2>&1; then
     fail "C harness did not build"; sed 's/^/        /' seal.cc | head -6
 else
     run_c seal
@@ -264,7 +264,7 @@ C
         || { fail "acme link set: see stderr above"; exit 1; }
     LA=(); while IFS= read -r l; do LA+=("$l"); done <<< "${LINKSET}"
     # shellcheck disable=SC2086
-    if ! "${CC}" "${ACF[@]}" -o t_acme t_acme.c "${LA[@]}" ${OSSL_LIBS} -lz -lpthread > t_acme.cc 2>&1; then
+    if ! "${CC}" "${ACF[@]}" -o t_acme t_acme.c "${LA[@]}" ${OSSL_LIBS} -lz -lpthread -lm > t_acme.cc 2>&1; then
         fail "acme harness did not build"; sed 's/^/        /' t_acme.cc | head -6
     else
         run_c t_acme

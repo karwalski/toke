@@ -518,6 +518,9 @@ int64_t tk_json_obj_w(int64_t raw) {
     if (!jp) return 0;
     /* Duplicate the string so the Json owns its memory */
     jp->raw = strdup(s);
+    /* The Json escapes as an i64 handle, which cppcheck does not follow
+     * (127.439: false memleak); the toke program owns and frees it. */
+    /* cppcheck-suppress memleak */
     return (int64_t)(intptr_t)jp;
 }
 

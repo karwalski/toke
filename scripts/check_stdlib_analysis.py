@@ -524,6 +524,16 @@ def main():
             unanalysable = set()
             plain_sites = {src: set(analyze_sites(out))
                            for src, ok, out in results if ok and not src.endswith(OPENSSL_TAG)}
+            # 127.439: where each unaccounted warning is, so a CI log names
+            # the line (a count alone cannot be acted on without a rerun).
+            where = {}
+            for src, ok, out in results:
+                if not ok:
+                    continue
+                tag = OPENSSL_TAG if src.endswith(OPENSSL_TAG) else ""
+                for (wpath, wline, _wcol, wchk) in analyze_sites(out):
+                    where.setdefault((wpath + tag, wchk), set()).add(
+                        "%s:%s" % (wpath, wline))
             for src, ok, out in results:
                 if not ok:
                     unanalysable.add(src)
@@ -559,8 +569,9 @@ def main():
                             % (path, checker, n, allowed,
                                os.path.relpath(SKIPLIST, REPO_ROOT)))
                 else:
-                    failures.append("ANALYZE: %s [%s]: %d warnings, not on the skiplist"
-                                    % (path, checker, n))
+                    failures.append("ANALYZE: %s [%s]: %d warnings, not on the skiplist (%s)"
+                                    % (path, checker, n,
+                                       ", ".join(sorted(where.get((path, checker), ())))))
                     proposed.append("%-8s %-44s %d  # " % ("analyze", "%s::%s" % (path, checker), n))
             # An analyze skip that fired zero times is stale — including one
             # whose file has left $(ANALYZE_SRCS) entirely, which is how a

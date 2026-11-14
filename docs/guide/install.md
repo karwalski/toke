@@ -91,6 +91,13 @@ TKC_CC=/opt/homebrew/opt/llvm/bin/clang ./toke test.tk -o test
 If `TKC_CC` (or the clang `toke` was built with) is not an executable file,
 the build stops with error E9027 and exits 3. `toke --check` runs no clang.
 
+On Linux, clang runs the linker by name. `make` also records the linker that
+clang names at build time (`clang -print-prog-name=ld`), and `toke` passes it
+to the baked clang as `--ld-path`, so `PATH` cannot swap in a different `ld`
+either. Pass `make TKC_LD_PATH=/abs/path/ld` to pick one, or `TKC_LD_PATH=` for
+none. If the recorded linker is no longer an executable file, or `TKC_CC` is
+set, or the build has a `--target`, clang finds its linker itself.
+
 ### Packaged installs: release tarballs and Homebrew
 
 A `toke` you did not build yourself -- a release tarball, or the Homebrew

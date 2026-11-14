@@ -9,7 +9,7 @@
 > a toke number.
 
 **Last updated:** 2026-11-12, regenerated from `docs/progress.md` at `main` `f7d59452`
-**Compiler:** toke 3.1.0 (`tkc --version`)
+**Compiler:** toke 3.2.0 (`tkc --version`)
 **Language version:** **v0.4** — [`docs/spec/toke-spec-v0.4.md`](docs/spec/toke-spec-v0.4.md)
 is normative. Epic 116 shipped the breaking `=`/`==` split, expression-`if`/`match`,
 `&&`/`||`, and a backtrack-free grammar; v1.0 RFC pending.

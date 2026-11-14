@@ -135,6 +135,9 @@ int64_t tk_os_access(int64_t path, int64_t amode) {
  * failure results included (135.23). */
 static int64_t os_empty_owned(void) {
     char *e = (char *)calloc(1, 1);
+    /* Escapes as an i64 handle the caller frees; cppcheck does not follow
+     * a pointer through an integer cast (127.439: false memleak). */
+    /* cppcheck-suppress memleak */
     return (int64_t)(intptr_t)(e ? e : "");   /* "" only if calloc(1,1) fails */
 }
 
@@ -184,6 +187,8 @@ int64_t tk_os_getenv(int64_t name) {
     const char *val = key ? getenv(key) : NULL;
     if (!val) return os_empty_owned();
     char *out = strdup(val);
+    /* escapes as an i64 handle (127.439), see os_empty_owned */
+    /* cppcheck-suppress memleak */
     return out ? (int64_t)(intptr_t)out : os_empty_owned();
 }
 
@@ -209,16 +214,20 @@ int64_t tk_os_errno(void) {
  * be the buffer); POSIX/XSI (macOS, musl, BSD) returns 0 or an error. */
 int64_t tk_os_strerror(int64_t errnum) {
     char buf[256];
-    const char *text = buf;
     buf[0] = '\0';
+    /* 127.439: text is set once per branch; initialising it to buf first was
+     * a dead store on glibc (clang deadcode.DeadStores on Linux). */
 #if defined(__GLIBC__) && defined(_GNU_SOURCE)
-    text = strerror_r((int)errnum, buf, sizeof buf);
+    const char *text = strerror_r((int)errnum, buf, sizeof buf);
     if (!text) text = "";
 #else
+    const char *text = buf;
     if (strerror_r((int)errnum, buf, sizeof buf) != 0 && buf[0] == '\0')
         snprintf(buf, sizeof buf, "Unknown error: %lld", (long long)errnum);
 #endif
     char *out = strdup(text);
+    /* escapes as an i64 handle (127.439), see os_empty_owned */
+    /* cppcheck-suppress memleak */
     return out ? (int64_t)(intptr_t)out : os_empty_owned();
 }
 

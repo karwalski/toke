@@ -11,6 +11,7 @@
 #include "str.h"
 #include "tk_strhdr.h"   /* 127.170: the sealed string heap (state at the end of this file) */
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>

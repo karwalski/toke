@@ -14,6 +14,7 @@
 #include <stdarg.h>   /* 135.10: formatted last-error messages */
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <errno.h>
 #include <unistd.h>
 #include <dirent.h>

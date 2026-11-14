@@ -163,6 +163,24 @@ static void test_kmeans_k_greater_than_n(void)
     ml_kmeans_free(&model);
 }
 
+static void test_kmeans_no_rows(void)
+{
+    /* 127.441: no points at all.  The first-centroid copy used to read
+     * ncols doubles from a zero-size allocation (ASAN: heap over-read). */
+    double col_data[] = {0.0};
+    F64Array cols[1];
+    cols[0].data = col_data;
+    cols[0].len  = 0;
+
+    KMeansModel model = ml_kmeanstrain(cols, 1, 0, 2, 10);
+    ASSERT(model.k == 2, "kmeans nrows=0: model.k preserved");
+    ASSERT(model.centroids != NULL, "kmeans nrows=0: returns a model");
+    if (model.centroids)
+        ASSERT(model.centroids[0] == 0.0 && model.centroids[1] == 0.0,
+               "kmeans nrows=0: centroids stay zero");
+    ml_kmeans_free(&model);
+}
+
 static void test_kmeans_k_equals_1(void)
 {
     /* k=1: all points belong to one cluster, centroid = mean. */
@@ -807,6 +825,7 @@ int main(void)
     test_linreg_duplicate_points();
     test_linreg_empty();
     test_kmeans_k_greater_than_n();
+    test_kmeans_no_rows();
     test_kmeans_k_equals_1();
     test_kmeans_single_point_clusters();
     test_kmeans_convergence_well_separated();

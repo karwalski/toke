@@ -147,6 +147,10 @@ C
 
 cat > "${WORK}/srv.py" <<'PY'
 import http.server, json, sys, threading
+import socketserver as _ss
+def _bind(self):  # 127.439 (Z205): HTTPServer.server_bind does a reverse-DNS getfqdn() that stalls for seconds on the macos-15-intel runner
+    _ss.TCPServer.server_bind(self); self.server_name = "127.0.0.1"; self.server_port = self.server_address[1]
+http.server.HTTPServer.server_bind = _bind
 out = sys.argv[1]
 n = [0]
 ID = '"' * 80

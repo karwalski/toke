@@ -136,7 +136,9 @@ int main(void) {
 EOF
 
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
-if ! "${CC}" -std=c99 -g -O1 ${SAN} -iquote "${S}" -I"${S}" -o "${WORK}/d" "${WORK}/d.c" \
+# 127.439: -D_GNU_SOURCE, as the Makefile builds pkg.c: strdup is POSIX, and
+# glibc under -std=c99 alone does not declare it (macOS does).
+if ! "${CC}" -std=c99 -D_GNU_SOURCE -g -O1 ${SAN} -iquote "${S}" -I"${S}" -o "${WORK}/d" "${WORK}/d.c" \
         "${S}/pkg.c" "${S}/sha256.c" >"${WORK}/cc.log" 2>&1; then
     fail "build: $(grep -a -m3 error "${WORK}/cc.log" | head -c 400)"
 else
