@@ -78,10 +78,11 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - **Deny-by-default capabilities** (ADR-0010) — a program gets no file, network,
   environment or subprocess access unless it is granted at build or run time
 
-## On `main` since 3.1.0 (unreleased)
+## New in 3.2.0
 
-These are merged on `main` and listed under *Unreleased* in
-[`CHANGELOG.md`](CHANGELOG.md); no tagged release carries them yet.
+3.2.0 is prepared on branch `release/3.2.0` (2026-11-14) and not yet tagged.
+[`CHANGELOG.md`](CHANGELOG.md) § 3.2.0 lists every change, breaking changes first: the
+checker now rejects many programs that 3.1.0 compiled and then ran wrongly.
 
 - **Packages** — `tkc pkg init|add|remove|resolve|fetch|list` manages `pkg.toml` and
   `pkg.lock`; a `pkg.*` import resolves through the lock, every cached package is
