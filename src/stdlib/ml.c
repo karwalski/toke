@@ -150,7 +150,8 @@ KMeansModel ml_kmeanstrain(F64Array *cols, uint64_t ncols, uint64_t nrows,
     /* Build a temporary row-major point array for convenience. */
     /* 127.441: calloc, so no element is indeterminate (gcc 15
      * -Wmaybe-uninitialized on the nrows == 0 path below). */
-    double *points = (double *)calloc(nrows * ncols ? nrows * ncols : 1, sizeof(double));
+    uint64_t npts = nrows * ncols;
+    double *points = (double *)calloc(npts > 0 ? npts : 1, sizeof(double));
     if (!points || !model.centroids) {
         free(points);
         return model; /* out of memory; caller checks centroids != NULL */
