@@ -67,7 +67,7 @@
   },
   "compiler": {
     "name": "tkc",
-    "version": "toke 3.1.0",
+    "version": "toke 3.2.0",
     "value": "tkc, the reference compiler: C99; links only libc, libm, zlib and pthreads; emits LLVM IR and drives clang to build native binaries for x86-64 and ARM64; structured diagnostics with stable error codes, machine-parseable spans and a fix field.",
     "retired": "single-pass C99, zero dependencies beyond LLVM (story 132.141: tkc has separate lexer/parser/resolver/checker/lowering stages, does not link LLVM, and needs clang at run time to build a binary)",
     "licence": "Apache-2.0",
