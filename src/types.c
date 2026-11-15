@@ -6053,7 +6053,8 @@ static Type *recv_slot_union(Ctx *cx, const Node *call) {
  * fallible call, a map lookup, a std `T!E` call) read as its value in a
  * position no other rule judges: an if/lp condition, the operand of `!`, a
  * string interpolation, a std-call argument, an assignment to a `mut`
- * binding.  Each of these took the zero filler on a failure (the defect
+ * binding, the operand of an `as` cast, each operand of a comparison.  Each
+ * of these took the zero filler on a failure (the defect
  * 127.30 removed), or printed it.  Returns 1 when `t` is a union (reported
  * or not -- the caller treats the value as unusable).
  *
