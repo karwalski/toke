@@ -13249,12 +13249,7 @@ timeparts_done:
          * here (the entry module) so exactly one strong definition exists, and
          * only when grants were declared (else the weak ALLOW_ALL default holds
          * and behaviour is unchanged). */
-        if (lim.cap_present) {
-            fprintf(body_file, "@__tk_cap_baked_grants = constant i32 %u\n", lim.cap_grants);
-            fputs("@__tk_cap_baked_present = constant i32 1\n", body_file);
-            fprintf(body_file, "@__tk_cap_baked_enforce = constant i32 %d\n",
-                    lim.cap_enforce ? 1 : 0);
-        }
+        if (lim.cap_present) tkc_emit_cap_globals(body_file, &lim);   /* 138.19: + scopes, runtime mode */
         /* 135.29: main publishes its status for tk_exitfail.h's atexit
          * handler, which otherwise could only exit 1 after a recorded
          * failure (a failed test assertion, a server that did not start)
