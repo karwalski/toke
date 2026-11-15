@@ -950,7 +950,10 @@ other operand is. Two struct or sum values (story 138.9, loke T-14):
 (story 138.20, loke T-60; owner decision 2026-11-15, register 1.2 (a)):
 `'==' does not compare arrays ('<L>' == '<R>'): toke has no array equality; test
 emptiness with .len or compare the elements`, `expected` `a scalar or str
-operand`, `got` the array operand's type. Through 3.2.0 this compiled: against
+operand`. `got` is the array the comparison is about: when exactly one operand
+is the literal `@()` and the other is an array, the other operand (`@()==x` with
+`x:@i64` gives `@(i64)`, not the literal's `@(?)`); otherwise the left operand
+if it is an array, else the right. Through 3.2.0 this compiled: against
 the literal `@()` it compared the array's address with a fresh allocation, so
 `a==@()` was false for every empty `a`, and between two named arrays it compared
 the elements' bytes as a C string, so `@(256)==@(512)` was true. The fix is

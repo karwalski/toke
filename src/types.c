@@ -6434,7 +6434,13 @@ static void refuse_array_equality(Ctx *cx, const Node *node,
              "'%s' does not compare arrays ('%s' %s '%s'): toke has no array "
              "equality; test emptiness with .len or compare the elements",
              op, ltn, op, rtn);
-    const char *got = l->kind == TY_ARRAY ? ltn : rtn;
+    /* `got` is the array the comparison is about.  With exactly one operand
+     * the literal `@()` and the other an array, that is the other operand
+     * (`@()==x`, x of type @i64, reports '@(i64)', not the literal's
+     * '@(?)'); otherwise it is the left operand if that is an array, else
+     * the right. */
+    const char *got = (xt && xt->kind == TY_ARRAY) ? (xn == ln ? ltn : rtn)
+                    : l->kind == TY_ARRAY ? ltn : rtn;
     if (fixp)
         diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col, msg,
                   "expected", "a scalar or str operand", "got", got,

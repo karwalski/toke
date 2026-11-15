@@ -15,6 +15,11 @@
 # map, `@()` against `@()`, and an array operand that is not an identifier
 # (a field, a call, an index) get none.
 #
+# `got` is the array the comparison is about: with exactly one operand the
+# literal `@()` and the other an array, the other operand (`@()==x`, x of
+# type @i64, gives '@(i64)'); otherwise the left operand if it is an array,
+# else the right.
+#
 # Negative control: TKC=<v3.2.0 toke> -- cases 1-9 and 13-17 fail (rc=0, no
 # diagnostic: the miscompiled comparison checked clean).  Cases 10-12 pass
 # there too: a handle, str or map against `@()` was already E4031, as a type
@@ -70,11 +75,11 @@ PY
 expect "1 typed array == @()" \
     "$(diags 'm=q;f=main():i64{let x:@str=@();if(x==@()){<1};<0};')" "E4031|@(str)|x.len==0"
 expect "2 @() == typed array (either order)" \
-    "$(diags 'm=q;f=g(x:@i64):bool{<@()==x};f=main():i64{<0};')" "E4031|@(?)|x.len==0"
+    "$(diags 'm=q;f=g(x:@i64):bool{<@()==x};f=main():i64{<0};')" "E4031|@(i64)|x.len==0"
 expect "3 array != @()" \
     "$(diags 'm=q;f=main():i64{let x=mut.@(1);if(x!=@()){<1};<0};')" "E4031|@(i64)|x.len!=0"
 expect "4 @() != array" \
-    "$(diags 'm=q;f=main():i64{let x:@i64=@(1);if(@()!=x){<1};<0};')" "E4031|@(?)|x.len!=0"
+    "$(diags 'm=q;f=main():i64{let x:@i64=@(1);if(@()!=x){<1};<0};')" "E4031|@(i64)|x.len!=0"
 expect "5 inside a larger condition" \
     "$(diags 'm=q;f=main():i64{let x:@i64=@(1);if(true&&x==@()){<1};<0};')" "E4031|@(i64)|x.len==0"
 expect "6 the fix of case 1 checks clean" \
