@@ -16,11 +16,11 @@ order: 4
 
 | # | Criterion | Threshold | Result | Verdict |
 |---|-----------|-----------|--------|---------|
-| 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **Recorded as met; withdrawn as a gate measure** (D3) |
+| 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab), measured on the 46,754-program corpus the tokenizer was trained on, not on held-out tasks (§ Token Efficiency below) | **Recorded as met; withdrawn as a gate measure** (D3) |
 | 2 | Functional Pass@1 on held-out tasks | >= 60% | **58.8%** (588/1,000) | **NOT MET** |
 
 > **Criterion 1 reworded 2026-11-15 (owner decision D3, amending the 2026-09-22
-> ruling in story 128.19).** Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown.
+> ruling in story 128.19).** Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown.
 > The verdict stays NOT PASSED. Until 2026-11-15 the row above read **PASS** and the
 > decision below said criterion 1 "stands as met". Register:
 > `docs/owner-decisions-2026-11-12.md`, § Answers recorded 2026-11-15, item D3.
@@ -57,7 +57,7 @@ is below the gate's own >= 60% threshold.
 on criterion 2, functional Pass@1 (58.8% against >= 60%). The original decision is
 left above as the record of what was concluded at the time.
 
-**Criterion 1, as reworded by owner decision D3 on 2026-11-15:** Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. The
+**Criterion 1, as reworded by owner decision D3 on 2026-11-15:** Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. The
 verdict stays NOT PASSED. (Until 2026-11-15 this paragraph said that criterion 1, the
 token reduction, "stands as met".)
 

@@ -2129,10 +2129,11 @@ Table of Contents
    so the verdict was re-opened, and on 2026-09-22 the owner
    decided Gate 1 NOT PASSED (story 128.19).  The Gate 1 token
    criterion reads, by owner decision D3 of 2026-11-15 (the 12.5% was
-   measured over N = 46,754 programs): Recorded as met on 2026-04-03
-   at 12.5%, a tokenizer-vs-tokenizer figure: the 8K
-   purpose-built toke BPE against cl100k_base on the same held-out
-   toke text.  Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1).
+   measured over N = 46,754 programs, the corpus the tokenizer was
+   trained on): Recorded as met on 2026-04-03 at 12.5%, a
+   tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE
+   against cl100k_base on the same toke text.  Withdrawn as a gate
+   measure 2026-09-19 (TEMSpec §8.1).
    Against Python, the comparator named in the 2026-03-27 proposal,
    a reduction is not shown.  The v0.4 measurements are in Section
    5.3.
