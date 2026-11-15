@@ -4,7 +4,7 @@ slug: patterns-v0.4
 section: spec
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `0adbc9cf3172`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `01211376909d`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Status:** normative (Epic 131). **Protocol:** `0.4` — [patterns-protocol-v0.4](/docs/spec/patterns-protocol-v0.4/) defines the schema (§3), the token (§4) and runtime (§5) measurements, the verdict algorithm (§6) and how a verdict is enforced (§7). **Companion:** [idiom-v0.4](/docs/spec/idiom-v0.4/) (the prose rules these verdicts measure), [Lesson 11 — Patterns and Efficiency](/docs/learn/11-patterns-and-efficiency/) (the teaching view of the same data).
 
@@ -2752,6 +2752,7 @@ f=pat():str{
 **Bug caveats.**
 
 - [127.7](https://github.com/karwalski/toke/blob/main/docs/progress.md): "\(args.get(1))" prints a pointer
+- [127.470](https://github.com/karwalski/toke/blob/main/docs/progress.md): runtime held (127.461): the 2026-11-15 bench timed form a (`mt args.get(1)` on the miss path) at 1016 ms against 89 ms for b, because args.get formats its error message on every miss (also on v3.2.0). The wall, RSS, alloc and bigO figures here are the 2026-09-19 toke 2.8.0 run of the pre-migration forms; the tokens and min_bytes are the 2026-11-15 fixtures'. The verdict stays as measured on 2026-09-19 until the owner answers 127.461.
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 

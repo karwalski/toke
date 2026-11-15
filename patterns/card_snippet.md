@@ -1,4 +1,4 @@
-## Patterns — measured canonical forms (catalogue 0adbc9cf3172; 46 entries, 46 provisional)
+## Patterns — measured canonical forms (catalogue 01211376909d; 46 entries, 46 provisional)
 - cond: if: return per branch, never mut flag [cond-bind-if] · el if chain, never nested if/el [cond-elif-chain] · combine tests in one expr-if, no flags [cond-bool-combine]
 - cond: clamp: one el if chain expression [cond-clamp] · bool text: expr-if picks the literal [cond-bool-render]
 - acc: sum: lp into a mut, not reduce [acc-sum] · count-if: lp + if + counter [acc-count-if] · min: xs.sort(&cmp).get(0); big N: lp [acc-min-max]

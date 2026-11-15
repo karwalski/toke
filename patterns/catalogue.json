@@ -4131,6 +4131,11 @@
           "issue": "127.7",
           "effect": "\"\\(args.get(1))\" prints a pointer",
           "preferred_when_fixed": null
+        },
+        {
+          "issue": "127.470",
+          "effect": "runtime held (127.461): the 2026-11-15 bench timed form a (`mt args.get(1)` on the miss path) at 1016 ms against 89 ms for b, because args.get formats its error message on every miss (also on v3.2.0). The wall, RSS, alloc and bigO figures here are the 2026-09-19 toke 2.8.0 run of the pre-migration forms; the tokens and min_bytes are the 2026-11-15 fixtures'. The verdict stays as measured on 2026-09-19 until the owner answers 127.461.",
+          "preferred_when_fixed": null
         }
       ],
       "lint": null,
