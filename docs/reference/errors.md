@@ -518,8 +518,11 @@ stdlib type (`ProcessErr:e`) carries the same `fix` as above --
 `tkc --migrate` rewrites it; any other label gets no `fix`.
 
 A bare `lp` init assigns a binding that must already be in force, so
-`lp(i=0;i<3;i=i+1)` with no `i` declared is E3011 at the init (127.289);
-`lp(let i=0;..)` declares the loop variable.
+`lp(i=0;i<3;i=i+1)` with no `i` declared is E3011 at the init, reported once
+(127.289); `lp(let i=0;..)` declares the loop variable. That E3011 carries no
+"did you mean" `fix`: the likely repair is `lp(let i=`, which declares the
+name, so a near-miss name in scope (`ix`, or even `main`) is not a certain
+one.
 
 **Fix:** Declare the identifier before using it, or check for typos.
 
@@ -1033,7 +1036,7 @@ Emitted when code assigns to a `let` binding that was not declared mutable.
 
 Also emitted, with no `fix`, for an assignment to a module constant (`lim=5:i64;` then `lim=6` in a body; story 127.310): a constant is not mutable (semantics §4.2) and has no `mut` spelling to rewrite it to.
 
-Also emitted, with no `fix`, for a bare `lp` init (`lp(i=0;i<n;i=i+1)`, no `let`) when the binding of `i` in force is an immutable `let`, a parameter or an `mt` arm binding (story 127.289): the bare init assigns that binding, as `i=0` does (toke-spec-v0.4 §K). Two repairs are plausible and run differently -- `let i=mut.` makes the loop assign `i`, `lp(let i=0;..)` gives the loop a fresh variable and leaves `i` as it was -- so neither is the `fix`. The step `i=i+1` assigns the same binding and draws its own E4070, with the usual `fix` when the binding is a `let`.
+Also emitted, with no `fix`, for a bare `lp` init (`lp(i=0;i<n;i=i+1)`, no `let`) when the binding of `i` in force is not mutable: an immutable `let` (local or module-level), a parameter, an `mt` arm binding, a module constant or an import alias (story 127.289; `got` is "immutable binding", "constant" or "import alias"). The bare init assigns that binding, as `i=0` does (toke-spec-v0.4 §K). Two repairs are plausible and run differently -- `let i=mut.` makes the loop assign `i`, `lp(let i=0;..)` gives the loop a fresh variable and leaves `i` as it was -- so neither is the `fix`. The step `i=i+1` assigns the same binding and draws its own E4070, and when the step names the init's binding that E4070 has no `fix` either. An assignment anywhere else, the loop body included, keeps the usual `fix` when the binding is a `let`.
 
 ### E4071
 

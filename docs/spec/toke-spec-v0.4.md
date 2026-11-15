@@ -312,9 +312,10 @@ has two forms:
   assignment `i = e` to the binding of `i` in force at the loop, checked
   and run exactly as that statement is (§I): the step and the body then
   assign the same binding, and its last value is visible after the loop.
-  If that binding is an immutable `let`, a parameter or an `mt` arm
-  binding, the init is **E4070**; if no binding of `i` is in force, it is
-  **E3011**.
+  If that binding is not mutable -- an immutable `let`, local or
+  module-level, a parameter, an `mt` arm binding, a module constant or an
+  import alias -- the init is **E4070**; if no binding of `i` is in force, it
+  is **E3011**.
 
 This is what v0.3 §11.10 already said ("a binding or assignment executed once
 before the loop"). The compiler did otherwise until story 127.289: a bare init
@@ -337,7 +338,9 @@ f=main():i64{
 With `let i = 7;` (immutable) instead, the first loop's init is E4070, and
 so is its step `i = i + 1`. Either repair is a different program -- `let i =
 mut.7` makes the loop assign `i`; `lp(let i = 0; ...)` leaves `i` at 7 -- so
-the init's E4070 carries no `fix`.
+neither E4070 carries a `fix`; an assignment to `i` elsewhere keeps the usual
+one. With no `i` declared, the init's E3011 carries no "did you mean" `fix`
+either: the likely repair is `lp(let i = 0; ...)`.
 
 The grammar of record states the clause as the parser reads it (story
 127.290; `grammar.ebnf` `LoopStmt`):
@@ -396,7 +399,8 @@ Resolved by stories **127.289** and **127.290** (owner decision 2026-10-01
   supersedes the v0.3 Operators table's "add (numeric only)" for `+`; the
   compiler's behaviour is unchanged.
 - **2026-11-15 (stories 127.289, 127.290):** §K added — a bare `lp(i=e;..)`
-  init assigns the binding of `i` in force (E4070 over an immutable `let` or
-  a parameter, E3011 when there is none); only `lp(let i=e;..)` declares a
-  loop variable. `grammar.ebnf` `LoopStmt` now states the init and step
-  clauses the parser accepts, and the one-clause form.
+  init assigns the binding of `i` in force (E4070 over a binding that is not
+  mutable, E3011 when there is none, neither with a `fix`); only
+  `lp(let i=e;..)` declares a loop variable. `grammar.ebnf` `LoopStmt` now
+  states the init and step clauses the parser accepts, and the one-clause
+  form.

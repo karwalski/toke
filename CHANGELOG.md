@@ -20,10 +20,14 @@ may no longer compile.
   loop variable whatever was in scope: with `let i=mut.7`, the loop
   `lp(i=0;i<5;i=i+1){..}` left `i` at 7, and over an immutable `let i=7` or a
   parameter `i` it compiled with no error. Now the init is the assignment
-  `i=0`: the loop leaves `i` at 5, an immutable `let`, a parameter or an `mt`
-  arm binding is **E4070** (no `fix`: `let i=mut.` and `lp(let i=..` are both
-  plausible and run differently), and no binding of `i` in force is **E3011**
-  at the init. A module `mut` global is assigned; a module constant is E4070.
+  `i=0`: the loop leaves `i` at 5; an immutable `let` (local or module-level),
+  a parameter, an `mt` arm binding, a module constant or an import alias is
+  **E4070** (no `fix`: `let i=mut.` and `lp(let i=..` are both plausible and
+  run differently; the step's E4070 has none either when the step assigns the
+  same binding), and no binding of `i` in force is **E3011** at the init, with
+  no "did you mean" `fix`. A module `mut` global is assigned. `--migrate`
+  still adds no `mut.` for a bare init, so a migrated file that assigns an
+  outer `let` this way reports E4070.
   `--lint` counts a bare init as a write, so `mutable-never-mutated` no longer
   fires on a binding only a bare init assigns. Measured before the change: one
   corpus regen record (`P3-MIG-P2-A-A-MTH-0092v13-fa507f0f`), one library
@@ -37,7 +41,7 @@ may no longer compile.
   32 ooke, 25 website and 3,573 toke-test-programs files and the 23,382 regen
   records reports the same diagnostics for every one. Migration: write
   `lp(let i=..` where a fresh loop variable was meant. Conformance: C1820,
-  D575, D576.
+  D575-D578.
 - **grammar.ebnf `LoopStmt` states the clauses the parser accepts** (127.290):
   `( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';' IDENT '=' Expr`, or the
   one-clause `Expr`. It read `'lp' '(' Stmt Expr ';' Stmt ')'`, which admitted

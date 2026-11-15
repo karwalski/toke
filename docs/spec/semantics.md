@@ -463,9 +463,13 @@ Only the `let` form introduces a variable. A bare init `lp(i = e; ...)`
 introduces nothing: it assigns the binding of `i` in force at the loop, as
 the statement `i = e` would (§2.9), so the condition, step and body use that
 binding and its last value remains after the loop. It is
-`[errors.md E4070]` when that binding is an immutable `let`, a parameter or
-an `mt` arm binding, and `[errors.md E3011]` when no binding of `i` is in
-force (127.289; toke-spec-v0.4.md §K).
+`[errors.md E4070]` when that binding is not mutable (§4.2) -- an immutable
+`let`, local or module-level, a parameter, an `mt` arm binding, a module
+constant or an import alias -- and `[errors.md E3011]` when no binding of
+`i` is in force (127.289; toke-spec-v0.4.md §K). Neither diagnostic carries
+a `fix`: `let i = mut.` and `lp(let i = ...)` both repair the E4070 and run
+differently, and the likely repair of the E3011 is `lp(let i = ...)`. The
+step's E4070, when the step assigns the init's binding, has no `fix` either.
 
 ### 4.8 Match Arm Scoping
 
