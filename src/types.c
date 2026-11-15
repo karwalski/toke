@@ -1063,6 +1063,26 @@ static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
     return x && x->tok_len == nl && nl > 0
         && memcmp(src + x->tok_start, nm, (size_t)nl) == 0;
 }
+/* bare_init_step (127.289) -- 1 when `asg` is the step of an `lp` inside
+ * `root` whose init is BARE and assigns the same name: `lp(i=0;..;i=i+1)`.
+ * The init and the step then assign one binding, and an E4070 on the step
+ * has the init's two repairs (`let i=mut.`, `lp(let i=`) that run
+ * differently, so it carries no `fix` either. */
+static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+    if (!root || !asg) return 0;
+    if (root->kind == NODE_LOOP_STMT && root->child_count == 4
+        && root->children[2] == asg) {
+        const Node *ini = root->children[0];
+        return ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
+            && ini->child_count > 0 && ini->children[0]
+            && asg->child_count > 0 && asg->children[0]
+            && ident_same(ini->children[0], src, src + asg->children[0]->tok_start,
+                          asg->children[0]->tok_len);
+    }
+    for (int i = 0; i < root->child_count; i++)
+        if (bare_init_step(root->children[i], src, asg)) return 1;
+    return 0;
+}
 /* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
  * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
  * innermost scope first and, within one statement list, the NEAREST earlier
@@ -8122,7 +8142,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     char fix[256];
                     snprintf(fix,sizeof(fix),
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                    if (is_let&&!lp_init)
+                    /* 127.289: nor on the step of a loop whose bare init
+                     * assigns the same binding (bare_init_step). */
+                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
