@@ -200,7 +200,7 @@ What the broker does with each value (`src/config.c`, `src/stdlib/capabilities.c
   meaning — the **whole** class: `fs_read = "/srv/www"` grants `fs.read` for every
   path, the program can read `/etc/hosts` — and the compiler reports **W9012** for
   it, naming the release and, when the string is not a valid scope
-  (`net = "10.255.255.1:9"`), saying the manifest will not parse then. An empty
+  (`net = "192.0.2.1:9"`), saying the manifest will not parse then. An empty
   string `""` is read as `false`. Write `true` for the whole class, or the array
   form for a scope.
 - **`enforce` does not switch enforcement.** Enforcement is the default (§4),

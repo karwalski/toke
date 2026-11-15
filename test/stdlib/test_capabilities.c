@@ -71,9 +71,10 @@ static void scoped(void) {
     DENY(wild, RQ_CONNECT, "a.example.com", 80, "net: the scope's port is enforced (80 denied)");
     DENY(wild, RQ_LISTEN, "127.0.0.1", 443, "net: a connect-only grant denies a listen");
 
-    char *cidr[] = { "t", "--allow-net=connect:10.0.0.0/8", NULL };
-    ADMIT(cidr, RQ_CONNECT, "10.1.2.3", 9, "net: an IP literal inside a CIDR scope (any port)");
-    DENY(cidr, RQ_CONNECT, "11.0.0.1", 9, "net: an IP literal outside the CIDR scope");
+    /* Documentation ranges only (RFC 5737): nothing here is dialled. */
+    char *cidr[] = { "t", "--allow-net=connect:198.51.100.0/24", NULL };
+    ADMIT(cidr, RQ_CONNECT, "198.51.100.7", 9, "net: an IP literal inside a CIDR scope (any port)");
+    DENY(cidr, RQ_CONNECT, "203.0.113.1", 9, "net: an IP literal outside the CIDR scope");
     DENY(cidr, RQ_CONNECT, "ten.example.com", 9, "net: a CIDR scope never matches a name (no DNS)");
 
     char *v6[] = { "t", "--allow-net=connect:[::1]:443", NULL };
@@ -121,9 +122,9 @@ static void syntax(void) {
            "syntax: listen without a port is malformed");
     ASSERT(tk_cap_scope_syntax(TK_CAP_IDX_NET, "listen:localhost:80", err, sizeof err) == 0,
            "syntax: listen needs an IP literal");
-    ASSERT(tk_cap_scope_syntax(TK_CAP_IDX_NET, "udp:1.2.3.4:5", err, sizeof err) == 0,
+    ASSERT(tk_cap_scope_syntax(TK_CAP_IDX_NET, "udp:192.0.2.4:5", err, sizeof err) == 0,
            "syntax: an unknown net prefix is malformed");
-    ASSERT(tk_cap_scope_syntax(TK_CAP_IDX_NET, "10.255.255.1:9", err, sizeof err) == 0,
+    ASSERT(tk_cap_scope_syntax(TK_CAP_IDX_NET, "192.0.2.1:9", err, sizeof err) == 0,
            "syntax: a net scope without a direction is malformed");
     ASSERT(tk_cap_scope_syntax(TK_CAP_IDX_NET, "connect:*:443", err, sizeof err) == 0,
            "syntax: a bare * host is malformed (that is the class)");

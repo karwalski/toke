@@ -1,6 +1,6 @@
 id: D616
 series: D
-description: "138.19 D4: a quoted-string grant that is not a valid scope (net = \"10.255.255.1:9\", loke T-59 point 1) is W9012 saying the manifest will not parse once quoted strings are scopes; no fix. Run from the repository root (the fixture path is relative)."
+description: "138.19 D4: a quoted-string grant that is not a valid scope (net = \"192.0.2.1:9\", the shape of loke T-59 point 1, in the documentation range) is W9012 saying the manifest will not parse once quoted strings are scopes; no fix. Run from the repository root (the fixture path is relative)."
 flags: --config=test/diagnostics/D616_quoted_net_grant.toml
 input: |
   m=t;

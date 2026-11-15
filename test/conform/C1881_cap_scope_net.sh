@@ -4,7 +4,7 @@
 #
 # THE DEFECT (loke T-59 points 1 and 2).  `net` was one grant covering
 # listening on any address and port AND connecting to any host: a binary
-# granted `net = "10.255.255.1:9"` bound a loopback port, and nothing could
+# granted `net = "192.0.2.1:9"` bound a loopback port, and nothing could
 # say "listen on loopback only" or "connect to this host only".
 #
 # THE CHANGE.  A net grant is the whole class or a list of direction-prefixed

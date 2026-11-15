@@ -26,8 +26,9 @@
 #   3. all = true parses (cap-grants = 0xffffffff)
 #   4. the --companion record lists each class with its scopes
 #   5. loke's T-59 point 1 in the array form: fs_read = ["/nonexistent-dir-only"]
-#      denies reading /etc/hosts (CAP002); net = ["connect:10.255.255.1:9"]
-#      denies net.portavailable (a listen)
+#      denies reading /etc/hosts (CAP002); net = ["connect:192.0.2.1:9"]
+#      denies net.portavailable (a listen) (loke's probe used a private
+#      address; this uses the documentation range, and nothing is dialled)
 #   6. W9012 (D4): fs_read = "<dir>" warns in --diag-json (code W9012,
 #      severity warning, no fix, the message names 3.4.0) and in text, and the
 #      binary still reads OUTSIDE <dir> -- the meaning has not changed yet
@@ -101,7 +102,7 @@ bad() {   # LABEL VALUE-LINE REGEX
     fi
 }
 bad "unterminated array"     'fs_read = ["./a"'                 'one line'
-bad "unknown net prefix"     'net = ["udp:1.2.3.4:5"]'          'connect:HOST'
+bad "unknown net prefix"     'net = ["udp:192.0.2.4:5"]'          'connect:HOST'
 bad "empty string"           'fs_read = [""]'                   'empty scope'
 bad "trailing comma"         'fs_read = ["./a",]'               'trailing comma'
 bad "nested array"           'fs_read = [["./a"]]'              'quoted strings only'
@@ -130,7 +131,7 @@ fi
 
 # 5 T-59 point 1, array form
 printf '[capabilities]\nfs_read = ["/nonexistent-dir-only"]\n' >"${WORK}/sfs.toml"
-printf '[capabilities]\nnet = ["connect:10.255.255.1:9"]\n' >"${WORK}/snet.toml"
+printf '[capabilities]\nnet = ["connect:192.0.2.1:9"]\n' >"${WORK}/snet.toml"
 for m in sfs snet; do
     ( cd "${WORK}" && "${TKC}" --config="${WORK}/${m}.toml" --out "${WORK}/${m}" probe.tk ) >"${WORK}/${m}.cl" 2>&1 || fail "5 build ${m}"
 done
@@ -140,7 +141,7 @@ if [ "${rc}" -eq 1 ] && /usr/bin/grep -a -q "^CAP002: capability 'fs.read'" "${W
 else fail "5a rc=${rc}"; sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -3; fi
 rc=0; ( cd "${WORK}" && ./snet net ) >"${WORK}/o" 2>"${WORK}/e" || rc=$?
 if [ "${rc}" -eq 1 ] && /usr/bin/grep -a -q "^CAP002: capability 'net'" "${WORK}/e" && [ ! -s "${WORK}/o" ]; then
-    pass "5b net = [\"connect:10.255.255.1:9\"]: a listen denied ($(head -1 "${WORK}/e" | cut -c1-80))"
+    pass "5b net = [\"connect:192.0.2.1:9\"]: a listen denied ($(head -1 "${WORK}/e" | cut -c1-80))"
 else fail "5b rc=${rc}"; sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -3; fi
 
 # 6 W9012, the D4 warning release

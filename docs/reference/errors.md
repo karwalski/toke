@@ -1921,7 +1921,7 @@ A `tkc.toml [capabilities]` class key whose value is a quoted string
 **whole** class, so the program may read any path — and the warning says that from
 toke 3.4.0 a quoted string is a one-element scope list (`fs_read = ["/srv/www"]`),
 granting only that scope; when the string is not a valid scope for its class
-(`net = "10.255.255.1:9"`, which has no `connect:` / `listen:`), it says the manifest
+(`net = "192.0.2.1:9"`, which has no `connect:` / `listen:`), it says the manifest
 will not parse then (story 138.19, owner decision D4: one release of warnings). The
 record's `file` and `pos.line` name the manifest line. There is no `fix`: the
 manifest is not the source file a fix edits. Write `true` to keep the whole class,

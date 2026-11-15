@@ -31,7 +31,7 @@ A grant is either a **whole class** or a **list of scopes** for that class
 | Class | A scope is | Example |
 |-------|------------|---------|
 | `fs_read`, `fs_write` | a path; the grant covers it and everything beneath it | `./content`, `/etc/ssl/certs`, `~/.config/app` |
-| `net` | `connect:HOST[:PORT]` or `listen:ADDR:PORT` | `connect:api.example.com:443`, `connect:*.example.com`, `connect:10.0.0.0/8`, `listen:127.0.0.1:8080` |
+| `net` | `connect:HOST[:PORT]` or `listen:ADDR:PORT` | `connect:api.example.com:443`, `connect:*.example.com`, `connect:198.51.100.0/24`, `listen:127.0.0.1:8080` |
 | `process_spawn` | a command: an absolute path, or a name found on `PATH` at start-up | `/usr/bin/git`, `git` |
 | `env_write` | a variable name, or a prefix ending in `*` | `TZ`, `TOKE_*` |
 
