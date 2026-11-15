@@ -73,6 +73,15 @@ static const char *i18n_scope_dir(const char *base, const char *loc, char *out, 
     return out;
 }
 
+/* 138.19: a locale holding a '/' names files in another directory, which
+ * the scope must cover too.  (A helper, so the entry's own gate is the one
+ * C674's negative control removes.) */
+static void i18n_require_locale_dir(const char *base, const char *loc) {
+    char b[4096];
+    if (base && loc && strchr(loc, '/'))
+        TK_REQUIRE_PATH(TK_CAP_FS_READ, i18n_scope_dir(base, loc, b, sizeof b));
+}
+
 /* 121.42: reads the files named by the program -- fs.read, like file.read. */
 int64_t tk_i18n_load_w(int64_t path, int64_t locale) {
     const char *p = (const char *)(intptr_t)path;
@@ -80,11 +89,10 @@ int64_t tk_i18n_load_w(int64_t path, int64_t locale) {
     if (p && (!loc || !*loc)) loc = i18n_locale();   /* only when none was asked for */
     {   /* 138.19: i18n_load reads <path>.<locale>.<ext> and <path>.<ext>,
          * siblings of `path`, so the scope check is on the directory that
-         * holds them -- for each name, since a locale may hold a '/'. */
-        char a[4096], b[4096];
+         * holds them -- and on the locale's, since a locale may hold a '/'. */
+        char a[4096];
         TK_REQUIRE_PATH(TK_CAP_FS_READ, i18n_scope_dir(p, NULL, a, sizeof a));
-        if (p && loc && strchr(loc, '/'))
-            TK_REQUIRE_PATH(TK_CAP_FS_READ, i18n_scope_dir(p, loc, b, sizeof b));
+        i18n_require_locale_dir(p, loc);
     }
     if (!path) { tk_current_error = 1; return 0; }
     I18nBundleResult r = i18n_load(p, loc ? loc : "en");

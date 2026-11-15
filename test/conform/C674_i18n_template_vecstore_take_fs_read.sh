@@ -65,7 +65,7 @@ cp -R "${REPO_ROOT}/stdlib" "${WORK}/tree/stdlib"
 f="${WORK}/tree/src/stdlib/i18n_glue.c"
 awk '
     index($0, "tk_i18n_load_w(") && /^int64_t/ { infn = 1 }
-    infn && !done && /TK_REQUIRE\(/ { done = 1; infn = 0; next }
+    infn && !done && /TK_REQUIRE(_[A-Z]+)?\(/ { done = 1; infn = 0; next }
     { print }' "${f}" >"${f}.new" && mv "${f}.new" "${f}"
 if cmp -s "${f}" "${REPO_ROOT}/src/stdlib/i18n_glue.c"; then
     fail "2 injection did not land (i18n_glue.c unchanged) -- control proves nothing"

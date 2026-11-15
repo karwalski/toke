@@ -80,7 +80,7 @@ control() {  # $1 label  $2 file  $3 function  $4 expected entry
     local f="${WORK}/tree/src/stdlib/${file}"
     awk -v fn="${fn}" '
         index($0, fn "(") && /^[a-zA-Z]/ { infn = 1 }
-        infn && !done && /TK_REQUIRE\(/ { done = 1; infn = 0; next }
+        infn && !done && /TK_REQUIRE(_[A-Z]+)?\(/ { done = 1; infn = 0; next }
         { print }' "${f}" >"${f}.new" && mv "${f}.new" "${f}"
     if cmp -s "${f}" "${REPO_ROOT}/src/stdlib/${file}"; then
         fail "${label} injection did not land (${file}:${fn} unchanged) -- control proves nothing"
