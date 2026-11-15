@@ -39,6 +39,11 @@ Paths are compared after resolving symlinks and `..`, component by component, so
 `./content` does not cover `./content-old`, and a symlink inside `./content` that
 points elsewhere is not covered. Hosts are compared with the name the program
 passes, before DNS: `connect:127.0.0.1:80` does not cover `localhost`.
+`file.listglob` under a scoped grant returns only the matches it found through
+directories inside the scope (a match reached through `..` or a symlink that leads
+out is left out). `db.open` and the files SQL opens (`ATTACH`, `VACUUM INTO`) are
+checked like any other path, and an SQLite URI filename (`file:...`) is refused
+under a scoped grant: name the database by its path.
 
 ### Compile-time — `tkc.toml` manifest (recommended)
 
@@ -88,10 +93,10 @@ binary:
   the run-time flags **are** the grants.
 - **Built with grants:** run-time flags can only **narrow** them. A flag for a class
   limits that class to where both the baked grant and the flag allow it; it can never
-  add a class or a scope, and `--allow-all` is refused. Put `runtime = "union"` in
+  add a class or a scope, and `--allow-all` is refused (`CAP003`). Put `runtime = "union"` in
   `[capabilities]` to let a launcher widen the grants instead.
 
-## The `CAP001` and `CAP002` diagnostics
+## The `CAP001`, `CAP002` and `CAP003` diagnostics
 
 When a program calls a gated operation whose class it wasn't granted, it aborts with
 a machine-parseable error:
@@ -112,8 +117,10 @@ CAP002: capability 'fs.read' is granted, but not for '/srv/www/data.json'
 With `TK_DIAG_JSON=1` each also prints one JSON line (`diagnostic_id`, `capability`,
 for CAP002 `scope`, and a `fix` where one edit is sure to admit the call). The
 generate-compile-repair loop treats them like any other diagnostic: CAP001 means add
-a grant, CAP002 means widen one. See [the capability spec](/docs/spec/capabilities/)
-§3 for when each `fix` is given.
+a grant, CAP002 means widen one. A run-time flag the program cannot honour (a
+malformed scope, or `--allow-all` on a binary built with grants) stops it before
+`main` with `CAP003: <flag> refused: <reason>`, and a JSON line with no `fix`. See
+[the capability spec](/docs/spec/capabilities/) §3 for when each `fix` is given.
 
 ## Relationship to the other controls
 

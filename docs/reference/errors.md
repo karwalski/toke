@@ -1927,7 +1927,7 @@ record's `file` and `pos.line` name the manifest line. There is no `fix`: the
 manifest is not the source file a fix edits. Write `true` to keep the whole class,
 or the array form to scope it now. Conformance: D615, D616, C1885.
 
-## Runtime capability diagnostics (CAP001, CAP002)
+## Runtime capability diagnostics (CAP001, CAP002, CAP003)
 
 The capability broker (ADR-0010, [the capability spec](/docs/spec/capabilities/))
 reports a denied call at run time, before the syscall, and exits 1. With
@@ -1951,9 +1951,24 @@ The JSON line adds `scope`: the canonical path, `connect:HOST:PORT` /
 scope where one edit is sure to admit the call — `--allow-<class>=<scope>` when
 run-time flags union with the grant or only they exclude it,
 `<key> = ["<scope>"]` when only the baked grant excludes it — and is absent
-otherwise (both exclude it; a dangling symlink; a command not on `PATH`). A std entry
-still on the class-only gate, reached under a scoped grant, is CAP002 with an empty
-`scope` and no `fix`. Conformance: C1880–C1884.
+otherwise (both exclude it; a dangling symlink; a command not on `PATH`; an SQLite
+URI filename or a computed `ATTACH` name, which no scope admits; a scope the flag or
+the manifest cannot carry, such as a `,` in a flag value or a `"` in a `tkc.toml`
+string). The second text line says which. A std entry still on the class-only gate,
+reached under a scoped grant, is CAP002 with an empty `scope` and no `fix`. The text
+lines escape control characters in the value (`\n`, `\xHH`), so a path cannot
+forge a diagnostic line; the JSON line carries it exactly. Conformance:
+C1880–C1886.
+
+### CAP003
+
+**Run-time capability flag refused** (story 138.19) — at start-up, before `main`
+runs: a malformed `--allow-<class>=<scope>` value, `--allow-all=<value>`, or
+`--allow-all` on a binary whose baked grants run-time flags may only narrow. The
+program exits 1 with one line, `CAP003: <flag> refused: <reason>`. With
+`TK_DIAG_JSON=1` the JSON line adds `flag` (the argument as given) and `reason`.
+There is no `fix`: the right flag depends on what the launcher meant. Conformance:
+C1883, C1884.
 
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 

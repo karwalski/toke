@@ -102,12 +102,28 @@ scan of a manifest-sized list, once per acquisition.
   are canonicalised the same way at start-up; a relative grant resolves against
   the **working directory at process start**, and `~` expands from `HOME` at
   start-up. Directory-taking readers (`file.list`, `http.servedir`) are checked on
-  the directory; `file.listglob` on its pattern's directory before the first glob
-  component (a `..` after a glob component is checked as `/`); `i18n.load` on the
-  directory of the `<base>[.<locale>].<ext>` files it reads; `db.open` on the
-  database path (`":memory:"` included: it is checked as a path like any other
-  name). The residual race is check-then-open (a component swapped for a symlink
-  between the check and the `open`); it is accepted, as Deno accepts it.
+  the directory; `i18n.load` on the directory of the `<base>[.<locale>].<ext>`
+  files it reads. The residual race is check-then-open (a component swapped for a
+  symlink between the check and the `open`); it is accepted, as Deno accepts it.
+- **Glob patterns.** `file.listglob` is checked on its pattern's literal directory,
+  the components before the first one holding a glob character (CAP002 when that
+  directory is outside the scope). Under a scoped grant, a match is returned only
+  when every directory `glob(3)` read or searched to find it is admitted: one per
+  component from the first glob component on. A match reached through `..` (which
+  `.?`, `.*` and `.[.]` match) or through a symlink that leads out of the scope is
+  **left out**, not reported, so an empty result says nothing about what lies
+  outside the scope. The whole class returns every match.
+- **Databases.** `db.open` is checked on the database path, for `fs.read` and
+  `fs.write` (`":memory:"` included: it is checked as a path like any other name).
+  An SQLite URI filename (`file:...`) names a file and parameters the path check
+  cannot see, so under a scoped grant it is refused with CAP002 and no fix; open
+  the database by its path. SQL opens files too, and each is a new acquisition by
+  path, gated like `db.open`: `ATTACH DATABASE '<file>'`, `VACUUM INTO '<file>'`
+  (SQLite runs it as an ATTACH), and `PRAGMA temp_store_directory = '<dir>'`. An
+  ATTACH whose file name is computed (a bound parameter or an expression) cannot be
+  checked and is refused with CAP002 and no fix; an empty ATTACH name (a private
+  temporary database, which a plain `VACUUM` uses) opens no named file and passes.
+  Under the whole classes none of this is checked, as before.
 - **Hosts.** A connect scope is matched against the **name the program passed**,
   before DNS resolution, case-insensitively and without a final dot. An IP or CIDR
   scope matches only an IP literal: `connect:127.0.0.1:80` does not admit
@@ -141,7 +157,7 @@ Grants come from the compiler-baked set (§2.2) and the run-time `--allow-*` fla
 - **A grant set baked:** the run-time flags **narrow** it. A class a run-time flag
   names is admitted only where both the baked grant and the flag admit it; a class
   no flag names keeps its baked grant. A run-time flag can never add a class or a
-  scope. `--allow-all` at run time is refused with one line before `main` runs
+  scope. `--allow-all` at run time is refused with CAP003 (§3) before `main` runs
   (exit 1), unless the baked set is already every class.
 - **`runtime = "union"`** in `[capabilities]` restores the union of the baked set
   and the run-time flags (and `--allow-all` then switches the broker to
@@ -160,8 +176,8 @@ Passed to the compiled binary itself:
 A flag with no `=value` is the whole class; with a value, the comma-separated
 scopes (§1.2). A flag may be repeated, and its scopes accumulate. Every class is
 denied unless granted (§4); `--allow-all` is the deliberately broad, greppable
-escape hatch. A malformed scope stops the program at start-up with one line
-(`capabilities: --allow-net=api.example.com refused: ...`). A flag name matches
+escape hatch. A malformed scope stops the program at start-up with **CAP003**
+(§3): one line, `CAP003: --allow-net=api.example.com refused: ...`. A flag name matches
 exactly (`--allow-read`, `--allow-read=...`, `--allow-fs-read`); consumed flags are
 stripped from the program's own argv.
 
@@ -230,7 +246,8 @@ line per scope), and the `--companion` record lists each class with its scopes.
 
 At startup `tk_cap_init` (called from `tk_runtime_init`) computes the grants and
 mode. Each gated sink calls its scoped gate; a denied call raises **CAP001** or
-**CAP002** and exits non-zero *before* the syscall (fail-closed).
+**CAP002** and exits non-zero *before* the syscall (fail-closed). A run-time grant
+flag the broker cannot honour raises **CAP003** at start-up.
 
 **CAP001** — the class is not granted at all (text and JSON unchanged by 138.19):
 
@@ -269,10 +286,32 @@ class, in the one place that admits the call: a run-time flag when run-time flag
 union with the grant (no baked set, or `runtime = "union"`) or when only the
 run-time flags exclude it; the manifest (`fs_read = ["/srv/www/data.json"]`) when
 only the baked grant excludes it. It is absent when both exclude it, when the
-request has no canonical scope (a dangling symlink, a command not on `PATH`), or
-when the scope cannot be written in that form (a comma in a run-time flag). Whether
-a fix is wise is the reviewer's call; it is always sufficient. A class-only gate
-reached under a scoped grant (§1.3) is CAP002 with an empty `scope` and no `fix`.
+request has no canonical scope (a dangling symlink, a command not on `PATH`), when
+the value is one no scope admits (an SQLite URI filename, a computed ATTACH name:
+§1.3), or when the scope cannot be written in that form (a comma in a run-time
+flag; a quote, backslash or control character in a `tkc.toml` string); the hint
+line says which. Whether a fix is wise is the reviewer's call; it is always
+sufficient. A class-only gate reached under a scoped grant (§1.3), and a computed
+ATTACH name, are CAP002 with an empty `scope` and no `fix`.
+
+The text lines print a value the program controls (a path, host, key or flag)
+with its control characters escaped (`\n`, `\r`, `\t`, `\xHH`, and `\\` for a
+backslash), so a newline in a path cannot start a line that looks like another
+diagnostic; the JSON line carries the value exactly, JSON-escaped.
+
+**CAP003** — a run-time `--allow-*` flag refused at start-up, before `main`: a
+malformed scope, `--allow-all=VALUE`, or `--allow-all` on a binary whose baked
+grants run-time flags may only narrow (§2). One text line, and under
+`TK_DIAG_JSON=1` one JSON line with `flag` (the argument as given) and `reason`,
+and no `fix`:
+
+```
+CAP003: --allow-net=api.example.com refused: 'api.example.com' is not a net scope: a net scope is connect:HOST[:PORT] or listen:ADDR:PORT
+```
+
+```json
+{"diagnostic_id":"CAP003","severity":"error","stage":"runtime","flag":"--allow-net=api.example.com","reason":"'api.example.com' is not a net scope: a net scope is connect:HOST[:PORT] or listen:ADDR:PORT"}
+```
 
 ## 4. Modes & the transition [I]
 
@@ -313,6 +352,8 @@ compile with `--allow-all` so that measurement is unaffected.
 - An attacker who controls the binary, its baked constants, or the environment it
   starts in (`PATH`, `HOME`, the working directory).
 - Reads of the environment, and reads or writes on a handle acquired under a grant.
+  (A file an SQL statement opens by name -- `ATTACH`, `VACUUM INTO` -- is not I/O
+  on the handle; it is a new acquisition, gated as §1.3 says.)
 
 ## 6. Compatibility (138.19) [I]
 
@@ -333,4 +374,4 @@ compile with `--allow-all` so that measurement is unaffected.
 - [138.19 — Scoped capability grants](/docs/decisions/138.19-scoped-capability-grants/) (design note, accepted)
 - [memory-model.md §6.6/§6.7](/docs/spec/memory-model/) — spatial safety, injection resistance
 - Implementation: `src/stdlib/capabilities.{h,c}`, `src/config.c`, `src/main.c`, `src/llvm.c`
-- Conformance: C470 (scoped gates), C1880–C1885, D615–D616
+- Conformance: C470 (scoped gates), C1880–C1886, D615–D616
