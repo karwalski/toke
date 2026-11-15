@@ -8,7 +8,7 @@ order: 14
 **Project:** toke — A Programming Language Designed to Reduce Token Cost of AI-Generated Code
 **Date:** 2026-05-23 (updated with research review responses)
 **Author:** Matthew Watt (karwalski)
-**Status:** Post-Gate 2, planning 12-week functional correctness sprint. v0.3 syntax locked.
+**Status:** Post-Gate 2, planning 12-week functional correctness sprint. v0.3 syntax locked. *(2026-11-15: the Gate 2 PASS was withdrawn, owner decision D4; Gate 2 has no standing verdict, [gate2-decision.md](/docs/decisions/gate2-decision/).)*
 **Reasoning channel:** Out-of-band reasoning mandated via `.tkc` companion files — see [reasoning-channel.md](/docs/spec/reasoning-channel/)
 
 ---
@@ -18,8 +18,8 @@ order: 14
 toke is a statically typed, compiled programming language designed from first principles so that large language models can write better code. After 18 months of development, we have achieved:
 
 - **Gate 1 (2026-04-03):** **58.8%** functional Pass@1 with legacy syntax (588 of 1,000 solutions generated); 92.3% compiled. *Published as "63.7% Pass@1 compilation rate" until 2026-09-19 (story 128.19) — wrong twice over: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator, and it is the functional rate, not the compilation rate. 58.8% is below Gate 1's own >= 60% minimum, and on 2026-09-22 the owner decided Gate 1 NOT PASSED.*
-- **Gate 2 (2026-05-22):** 100% Pass@1 compilation rate with default syntax (7B model)
-- **Functional correctness:** 55.6% (corrected from ~8% after stdlib fix — see [gate2-decision.md @ `1c5ffce`](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md))
+- **Gate 2 (2026-05-22):** 100% compilation rate with default syntax (7B model), on the curated 500-hidden + 200-eval set. The PASS recorded on it 2026-05-24 was **withdrawn on 2026-11-15** (owner decision D4): neither pre-registered Gate 2 criterion is a compile rate, and Gate 2 has no standing verdict ([gate2-decision.md](/docs/decisions/gate2-decision/)).
+- **Functional correctness:** 55.6% (272/489), corrected from ~8% after a stdlib fix; the 200-eval half of the set may be corpus-derived, and its provenance is unresolved ([gate2-decision.md](/docs/decisions/gate2-decision/); the original record: [gate2-decision.md @ `1c5ffce`](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md))
 
 We are seeking feedback from researchers in code generation, curriculum learning, program synthesis, and AI safety on our next training phase design.
 
@@ -50,7 +50,7 @@ The full normative specification is available at:
 - **Spec:** [toke-spec-v0.3.md](/docs/spec/toke-spec-v0.3/) (142KB, 31 sections)
 - **Grammar:** [grammar.ebnf](https://github.com/karwalski/toke/blob/main/docs/spec/grammar.ebnf) (EBNF, 53 productions; Appendix A gives the FIRST-sets and the enumerated bounded-lookahead exceptions)
 - **Gate 1 decision:** [gate1-decision.md](/docs/decisions/gate1-decision/)
-- **Gate 2 decision:** [gate2-decision.md](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)
+- **Gate 2 decision:** [gate2-decision.md](/docs/decisions/gate2-decision/) (2026-11-15: the PASS withdrawn, no standing verdict); the withdrawn record of 2026-05-24: [gate2-decision.md @ `1c5ffce`](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)
 
 ---
 
@@ -75,7 +75,7 @@ The full normative specification is available at:
 | Method | QLoRA (rank 64, alpha 128, 3 epochs) |
 | Corpus | 25,953 records (canonical prompt, includes 6,069 from production codebase) |
 | Compilation Pass@1 | **100%** (700/700 tasks) |
-| Functional Pass@1 | 55.6% (272/489) — corrected 2026-05-25 from ~8% after io.readln() fix |
+| Functional Pass@1 | 55.6% (272/489) — corrected 2026-05-25 from ~8% after io.readln() fix; the 200-eval half of the set may be corpus-derived, and its provenance is unresolved (owner decision D4) |
 | BPE tokenizer | 8,192 tokens, trained on v0.3 corpus |
 | Training time | 37 hours on NVIDIA A10G 24GB |
 
@@ -116,7 +116,7 @@ Each phase uses the previous phase's checkpoint as starting point. Evaluation ga
 
 ### Self-Improvement Loop
 
-4. **Bootstrapping:** We can generate 50K candidates at 100% compile rate and 55.6% functional rate. Is rejection sampling (keep only correct) the best use of this, or should we also train on the incorrect-but-compilable examples with appropriate labels?
+4. **Bootstrapping:** We can generate 50K candidates at 100% compile rate and 55.6% functional rate (the Gate 2 figures; the 200-eval half of the set may be corpus-derived, and its provenance is unresolved). Is rejection sampling (keep only correct) the best use of this, or should we also train on the incorrect-but-compilable examples with appropriate labels?
 
 5. **Diversity:** When generating training data via self-play, how do we avoid mode collapse (model generating the same solution patterns repeatedly)?
 
@@ -211,8 +211,8 @@ We welcome feedback in any form:
 | Date | Milestone |
 |------|-----------|
 | 2026-04-03 | Gate 1 recorded PASS (63.7% compile) — re-opened 2026-09-19: the figure is 58.8% functional Pass@1 (588/1,000), below the >= 60% minimum; **Gate 1 NOT PASSED, owner decision 2026-09-22** (story 128.19) |
-| 2026-05-22 | Gate 2 PASS (100% compile) |
+| 2026-05-22 | Gate 2 recorded PASS (100% compile) — **withdrawn 2026-11-15** (owner decision D4): Gate 2 has no standing verdict ([gate2-decision.md](/docs/decisions/gate2-decision/)) |
 | 2026-06 (target) | Self-improvement loop: 30K execution-verified records |
-| 2026-07 (target) | Gate 3 attempt (>50% functional) |
+| 2026-07 (target) | Gate 3 attempt (>50% functional) — never ran; void since 2026-10-01 (story 128.24) |
 | 2026-Q3 (target) | Community corpus program launch |
 | 2026-Q4 (target) | Gate 4 (multi-model, self-improvement demonstrated) |

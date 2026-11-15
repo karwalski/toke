@@ -11,7 +11,7 @@
 
 toke is a compiled programming language designed as a code generation target for large language models (LLMs). It uses a 59-character alphabet, 14 keywords, and a backtrack-free grammar with bounded lookahead of up to 3 tokens to produce programs that are shorter, cheaper, and more likely to compile correctly on the first pass than equivalent programs in Python, C, or Java.
 
-The toke project has completed its first validation gate. At Gate 1, the language demonstrated 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`) and **58.8%** functional Pass@1 on 1,000 held-out tasks (588/1,000) using a fine-tuned 7B model. The token-reduction threshold was exceeded; the Pass@1 threshold was not.
+The toke project has completed its first validation gate. At Gate 1, the project recorded a 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`) and **58.8%** functional Pass@1 on 1,000 held-out tasks (588/1,000) using a fine-tuned 7B model. The Pass@1 threshold was not met. The token-reduction criterion reads, by owner decision D3 of 2026-11-15: Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown.
 
 *Pass@1 corrected 2026-09-19 (story 128.19).* This paragraph read "63.7% first-pass compilation accuracy ... These results exceeded the pre-registered go/no-go thresholds" until that date. 63.7% was 588/**923** -- the 77 solutions that failed to compile were dropped from the denominator, which measures Pass@1 *given that the solution compiled*. On the 1,000 generated it is 588/1,000 = **58.8%**, below the >= 60% minimum Gate 1 declared. (It is also the *functional* Pass@1, not a compilation rate; the compile rate was 92.3%.) The verdict was therefore re-opened, and on 2026-09-22 the owner decided Gate 1 NOT PASSED -- see `docs/decisions/gate1-decision.md`.
 
@@ -266,14 +266,14 @@ This proposal is aspirational but grounded. Transparency about where the project
 - A working compiler with a conformance suite of 225 YAML cases plus shell-script suites, which every compiler change must pass in full (`make conform`).
 - A formal specification at v0.4.
 - A validated training corpus: 23,382 audited v0.4 records today; 46,754 programs in the v0.2-era corpus on which Gate 1 was measured.
-- Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 **58.8%**, 588/1,000). The token-reduction threshold was exceeded; the >= 60% Pass@1 threshold was not, and on 2026-09-22 the owner decided Gate 1 NOT PASSED. *(Published as 63.7% = 588/923 until 2026-09-19 -- story 128.19.)*
+- Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 **58.8%**, 588/1,000). The >= 60% Pass@1 threshold was not met, and on 2026-09-22 the owner decided Gate 1 NOT PASSED. The token-reduction criterion reads, by owner decision D3 of 2026-11-15: Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. *(Published as 63.7% = 588/923 until 2026-09-19 -- story 128.19.)*
 - Published governance, contribution, security, and licensing documents.
 - 67 standard library modules (`stdlib/*.tki`) with C runtime implementations.
 - An MCP server, tree-sitter grammar, web playground, and evaluation harness.
 
 **What does not yet exist:**
 - A second independent implementation of the language (required for spec 1.0).
-- Gate 2 completion (on hold, waiting for local compute hardware).
+- A Gate 2 verdict. The PASS recorded 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4, `docs/decisions/gate2-decision.md`), and Gate 2 has no standing verdict.
 - Any enterprise adopter or production deployment.
 - A package ecosystem or third-party library registry.
 

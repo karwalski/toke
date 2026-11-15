@@ -19,6 +19,10 @@ order: 12
 >   C1's 35% threshold". The threshold no longer exists, and the Gate-2 figure
 >   (55.6%, 272/489) was measured on the v0.3-era curated set, not on the
 >   benchmark this document names.
+> - **"Gate 2 passed 2026-05-22"** in the "Context" line: the Gate 2 PASS was
+>   withdrawn on 2026-11-15 (owner decision D4, `docs/decisions/gate2-decision.md`);
+>   Gate 2 has no standing verdict, and the 200-eval half of the set behind the
+>   55.6% may be corpus-derived (provenance unresolved).
 > - **"500 hidden tasks (same set used in Gate 2)" and the "200-task held-out
 >   eval set" are replaced** by BENCH-128 (protocol §5). The 200-task set is
 >   corpus-derived and quarantined (128.16).

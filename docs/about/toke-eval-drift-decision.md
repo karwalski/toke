@@ -106,7 +106,8 @@ faults.
 - **Any model capability, Pass@1, or generation quality.** These 60 programs are
   *hand-repaired by a human-directed agent*, not generated: 33 of 60 were edited. The set
   measures what the language and the compiler can do, not what a model produces. It is not
-  comparable to Gate 1's 58.8% Pass@1 or Gate 2's 55.6% functional correctness, and must
+  comparable to Gate 1's 58.8% Pass@1 or Gate 2's 55.6% functional correctness (whose
+  200-eval half may be corpus-derived, provenance unresolved; owner decision D4), and must
   never be presented beside them as progress. (This line quoted Gate 1 as 63.7% until
   2026-09-19; that was 588/**923**, computed after the non-compiling solutions had been
   dropped from the denominator. On the 1,000 generated it is 588/1,000 = 58.8% -- story

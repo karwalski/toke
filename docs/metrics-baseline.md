@@ -23,12 +23,15 @@ stories; each row cites its origin.
 2. **"Gate 2 100% compile-Pass@1" is on a *curated* hidden+eval set** the model was
    optimised against. A **full-local re-audit of all 1,748 corpus programs
    (101.R1, v0.3.9)** is the harsher, honest real-world floor: **37.5% compile,
-   ~2.2% fully-correct.** Never cite the 100% without this context.
+   ~2.2% fully-correct.** Never cite the 100% without this context. The Gate 2 PASS
+   (recorded 2026-05-24) was **withdrawn on 2026-11-15** (owner decision D4): Gate 2 has
+   no standing verdict (`docs/decisions/gate2-decision.md`).
 3. **Efficiency must be measured on the `--min` canonical form**, not readable
    source. Measuring readable source understated toke by **28.2%** (116/B2). Any
    cross-language token comparison must use the same tokenizer basis on both sides.
 4. **Functional correctness — not compile rate — is the open weakness.** Compile
-   Pass@1 is high on curated sets; functional correctness is ~56% at best.
+   Pass@1 is high on curated sets; functional correctness is ~56% at best, on a curated
+   set whose 200-eval half may be corpus-derived (provenance unresolved; D4).
 
 ---
 
@@ -167,7 +170,7 @@ across 87K lines" as part of a dated historical document.
 
 | Metric | Value | Basis / caveat | Source |
 |---|---|---|---|
-| Gate 1 token reduction vs baseline | **12.5%** | 8K purpose-built BPE vocab | Gate 1 (2026-04-03) |
+| Gate 1 criterion 1, token reduction | **12.5%** | Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. | Gate 1 (2026-04-03); wording: owner decision D3 (2026-11-15), `docs/decisions/gate1-decision.md` |
 | `--min` vs readable-source understatement | **28.2%** | published library used readable source; canonical basis is `--min` | 116/B2 |
 | Target (1B model, north star) | illegal-char <0.1% | — | `architecture/1b-model-design.md` |
 
@@ -253,7 +256,7 @@ any toke-trained tokenizer named alongside a non-toke baseline.
 
 | Evaluation | Compile Pass@1 | Functional | Set / model | Source |
 |---|---|---|---|---|
-| Gate 2 (curated) | **100%** | **55.6%** (272/489) | 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA (v0.3) | 2.5.1 (2026-05-22); functional corrected 2026-05-25 from ~8% after an `io.readln` stdlib fix |
+| Gate 2 (curated) | **100%** | **55.6%** (272/489) — the 200-eval half may be corpus-derived; its provenance is unresolved | 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA (v0.3) | 2.5.1 (2026-05-22); functional corrected 2026-05-25 from ~8% after an `io.readln` stdlib fix; PASS withdrawn 2026-11-15, owner decision D4 (`docs/decisions/gate2-decision.md`) |
 | **Full-local re-audit (honest floor)** | **37.5%** (655/1748) | **~2.2%** (38 PASS) | all 1,748 programs, v0.3.9 | 101.R1 / 102.17 (2026-05-28): 38 PASS, 141 WRONG_OUTPUT, 64 RUN_FAIL, 9 BUILD_FAIL, 1093 COMPILE_FAIL |
 | `toke_generate` sample | 84% (21/25) | 78% (18/23) | 25-prompt benchmark, new model | 71.5.4 (2026-05-24) |
 | Corpus after v0.4 mechanical migration | **84.3%** (1781/2112) | n/a | `=`→`==` only, not yet idiomatic | 118.2 (2026-07-02) |
@@ -269,7 +272,8 @@ and strictly more generous quantity. The denominator is the 1,000 generated:
 588/1,000 = **58.8%**. No re-run was needed; the correction is arithmetic.
 **58.8% is below the `pass_at_1_minimum: 0.60` Gate 1 declared. The verdict was
 re-opened on 2026-09-19, and on 2026-09-22 the owner decided Gate 1 NOT PASSED
-(story 128.19)** — criterion 2 is not met; criterion 1 (token reduction) stands. See
+(story 128.19)** — criterion 2 is not met. Criterion 1, as worded by owner decision D3
+(2026-11-15): Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. The verdict stays NOT PASSED. See
 `docs/decisions/gate1-decision.md` and `toke-eval/docs/suspect-numbers-128-1c.md` §1.
 
 ---
@@ -444,8 +448,10 @@ September findings below show why.
 **One-sentence form for downstream copy (132.2/132.3):** *"August 2026 produced a
 training-data quality freeze — 23,382 audited v0.4 corpus records, 14,727 passing every
 execution gate, and 1,583/1,583 library programs — not a model gate; the most recent model
-gate remains Gate 2 of 2026-05-22 (100% compile-Pass@1, 55.6% functional, on a v0.3-trained
-model), and no v0.4-native model has been trained."*
+gate remains Gate 2 of 2026-05-22 (100% compile-Pass@1, 55.6% functional on a set whose
+200-eval half may be corpus-derived, on a v0.3-trained model; its PASS was withdrawn on
+2026-11-15), and no v0.4-native model has been trained."* (The caveat and the withdrawal
+were added 2026-11-15, owner decision D4; copies made before then lack them.)
 
 ---
 
