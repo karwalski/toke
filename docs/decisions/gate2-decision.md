@@ -5,27 +5,12 @@ section: decisions
 order: 21
 ---
 
-> **Archived 2026-11-15 (owner decision D4; stories 2.5.1, 102.15, 128.24).** This is
-> the dated record of the Gate 2 verdict and of Gate 3. It is not a live result.
-> Superseded facts:
->
-> - **"Gate 2: PASS"**, recorded 2026-05-24 for the evaluation run of 2026-05-22, is
->   **withdrawn. Gate 2 has no standing verdict.**
-> - **"100% Pass@1"** was a compile rate. Neither pre-registered Gate 2 criterion is a
->   compile rate.
-> - **55.6% (272/489)** is never quoted without its caveat: the 200-eval half of the set
->   it was measured on may be corpus-derived, and its provenance is unresolved.
-> - **Gate 3**, pre-registered for a decision on 2026-08-17, never ran. It was bannered
->   void on 2026-10-01 (story 128.24) and is superseded by the 128.15 lane scorecard.
->
-> Live gate status: `PROJECT_STATUS.md`, § Gate Status. Every figure below is from
-> `docs/metrics-baseline.md`, § Correctness.
-
 **Date:** 2026-11-15
-**Status:** recorded PASS 2026-05-24 — **withdrawn 2026-11-15: Gate 2 has no standing verdict** (owner decision D4)
+**Status (2026-11-15):** the live record of the Gate 2 verdict and of Gate 3. Recorded PASS 2026-05-24 — **withdrawn 2026-11-15: Gate 2 has no standing verdict** (owner decision D4). Gate 3 never ran and has been void since 2026-10-01 (story 128.24).
 **Deciders:** Matthew Watt
 **Stories:** 2.5.1 (the evaluation), 102.15 (the functional re-evaluation), 128.24 (Gate 3 bannered void)
 **Decision register:** `docs/owner-decisions-2026-11-12.md`, § Answers recorded 2026-11-15, item D4
+**Gate summary:** `PROJECT_STATUS.md`, § Gate Status. **Figures:** `docs/metrics-baseline.md`, § Correctness.
 
 ---
 
