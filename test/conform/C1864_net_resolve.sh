@@ -14,7 +14,8 @@
 # lookup is network traffic: the call takes the `net` grant, as connect does.
 #
 # Nothing here leaves the machine: only "localhost" and address literals are
-# resolved, from the hosts file.
+# resolved, from the hosts file, and case 6's name is one no DNS query can
+# carry.
 #   1. localhost: exactly the addresses Python's getaddrinfo(localhost,
 #      SOCK_STREAM) gives on this host (scope ids dropped), 127.0.0.1 among them
 #   2. "127.0.0.1": @("127.0.0.1")
@@ -22,6 +23,13 @@
 #   4. "": $err "net.resolve: empty name", code 0
 #   5. built --cap-enforce, run without --allow-net: exit 1, CAP001 'net',
 #      and nothing after the call ran
+#   6. a name that does not resolve: $err "net.resolve: <name>: <the
+#      resolver's reason>", code 0.  The name has a 64-character label, one
+#      over DNS's 63, so it cannot be put in a DNS query at all: the
+#      resolver library refuses it before asking anyone (measured on macOS:
+#      0 ms, EAI_NONAME), and no hosts file or resolver that answers every
+#      name (NXDOMAIN rewriting) can make it resolve.  The reason text is
+#      the platform's gai_strerror, so only the prefix and code are checked.
 #
 # Negative control: C1864_STDLIB=<dir> builds against another stdlib tree.
 # Measured 2026-11-15: against v3.2.0's src/stdlib the program does not
@@ -93,6 +101,13 @@ if [ "${rc}" -eq 1 ] && grep -a -q "CAP001: capability 'net'" e5 && [ "$(cat o5)
 else
     expect "5 no net grant" "exit ${rc}, stdout $(tr '\n' '|' < o5), stderr $(head -c 160 e5)" "exit 1, CAP001 'net', stdout start"
 fi
+
+LONG="$(printf 'a%.0s' $(seq 1 64)).invalid"
+G6="$(got "${LONG}")"
+case "${G6}" in
+"err net.resolve: ${LONG}: "*" code=0 ") expect "6 a name that cannot resolve: \$err with the resolver's reason, code 0" "ok" "ok" ;;
+*) expect "6 a name that cannot resolve" "${G6}" "err net.resolve: ${LONG}: <reason> code=0 " ;;
+esac
 
 echo ""
 echo "C1864: ${PASS} passed, ${FAIL} failed"
