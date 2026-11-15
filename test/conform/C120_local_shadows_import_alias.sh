@@ -53,7 +53,7 @@ runs() { "${TKC}" "$1" -o "${WORK}/b" >/dev/null 2>&1 && "${WORK}/b" 2>/dev/null
 # 1. a parameter
 cat > "${WORK}/p1.tk" <<'EOF'
 m=t;i=s:std.str;i=io:std.io;
-f=first(s:str):str{<s.slice(0;1)};
+f=first(s:str):str{<mt s.slice(0;1){$ok:v v;$err:e ""}};
 f=up(s:str):str{<s.upper()};
 f=main():i64{io.println(first("hey"));io.println(up("abc"));<0};
 EOF
@@ -63,7 +63,7 @@ expect "1-param-runs"   "$(runs "${WORK}/p1.tk")" "h ABC "
 # 2. a let, after it is bound
 cat > "${WORK}/p2.tk" <<'EOF'
 m=t;i=s:std.str;i=io:std.io;
-f=main():i64{let s="hello";io.println(s.slice(1;3));io.println(s.trim());<0};
+f=main():i64{let s="hello";io.println(mt s.slice(1;3){$ok:v v;$err:e ""});io.println(s.trim());<0};
 EOF
 expect "2-let-checks" "$(errs "${WORK}/p2.tk")" ""
 expect "2-let-runs"   "$(runs "${WORK}/p2.tk")" "el hello "
@@ -80,7 +80,7 @@ expect "3-closure-param-runs"   "$(runs "${WORK}/p3.tk")" "ZZ "
 cat > "${WORK}/p4.tk" <<'EOF'
 m=t;i=s:std.str;i=io:std.io;
 f=main():i64{
-  io.println(s.slice("before";0;2));
+  io.println(mt s.slice("before";0;2){$ok:v v;$err:e ""});
   let s=@("a";"b";"c");
   io.println("\(s.len)");
   io.println(s.join(","));
@@ -101,7 +101,7 @@ expect "5-init-is-module-runs"   "$(runs "${WORK}/p5.tk")" "X "
 # 6. positive guard: unshadowed, the module call is still arity-checked
 cat > "${WORK}/p6.tk" <<'EOF'
 m=t;i=s:std.str;i=io:std.io;
-f=main():i64{io.println(s.slice("x";0));<0};
+f=main():i64{io.println(mt s.slice("x";0){$ok:v v;$err:e ""});<0};
 EOF
 expect "6-module-call-still-checked" "$(errs "${WORK}/p6.tk")" "E4026 "
 

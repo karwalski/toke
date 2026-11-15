@@ -405,7 +405,6 @@ Resolved by stories **127.289** and **127.290** (owner decision 2026-10-01
   arrays outside a loop instead of growing an accumulator with `acc + @(k)`,
   which is not the canonical accumulator form (owner decision 4.11 (d)). §J's
   rules are unchanged.
-
 - **2026-11-15 (stories 127.289, 127.290):** §K added — a bare `lp(i=e;..)`
   init assigns the binding of `i` in force (E4070 over a binding that is not
   mutable, E3011 when there is none, neither with a `fix`); only

@@ -14,7 +14,7 @@ f=main():i64{
     fails=fails+1
   };
 
-  let dec=str.frombytes(enc.b64decode("aGVsbG8="));
+  let dec=mt str.frombytes(mt enc.b64decode("aGVsbG8="){$ok:v v;$err:e @()}){$ok:v v;$err:e ""};
   if(str.eq(dec;"hello")){
     io.println("PASS b64decode aGVsbG8= gives hello")
   }el{
@@ -30,7 +30,7 @@ f=main():i64{
     fails=fails+1
   };
 
-  let urldec=enc.urldecode("hello%20world");
+  let urldec=mt enc.urldecode("hello%20world"){$ok:v v;$err:e ""};
   if(str.eq(urldec;"hello world")){
     io.println("PASS urldecode hello%20world gives hello world")
   }el{
@@ -38,7 +38,7 @@ f=main():i64{
     fails=fails+1
   };
 
-  let rt1=str.frombytes(enc.b64decode(enc.b64encode(str.bytes("round trip test"))));
+  let rt1=mt str.frombytes(mt enc.b64decode(enc.b64encode(str.bytes("round trip test"))){$ok:v v;$err:e @()}){$ok:v v;$err:e ""};
   if(str.eq(rt1;"round trip test")){
     io.println("PASS b64 round-trip decode(encode(x)) == x")
   }el{
@@ -46,7 +46,7 @@ f=main():i64{
     fails=fails+1
   };
 
-  let rt2=enc.urldecode(enc.urlencode("foo bar&baz=1"));
+  let rt2=mt enc.urldecode(enc.urlencode("foo bar&baz=1")){$ok:v v;$err:e ""};
   if(str.eq(rt2;"foo bar&baz=1")){
     io.println("PASS url round-trip decode(encode(x)) == x")
   }el{

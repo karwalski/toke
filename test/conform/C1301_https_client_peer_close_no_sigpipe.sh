@@ -148,9 +148,9 @@ i=http:std.http;
 i=file:std.file;
 i=args:std.args;
 f=main():i64{
-  let body=mt file.readbytes(args.get(3)) {$ok:b b; $err:e @()};
-  let c=http.client(args.get(1));
-  let r=mt http.clientpost(c;args.get(2);body;"") {$ok:x "ok \(x.status)"; $err:e "err \(e.code)"};
+  let body=mt file.readbytes(mt args.get(3){$ok:v v;$err:e ""}) {$ok:b b; $err:e @()};
+  let c=http.client(mt args.get(1){$ok:v v;$err:e ""});
+  let r=mt http.clientpost(c;mt args.get(2){$ok:v v;$err:e ""};body;"") {$ok:x "ok \(x.status)"; $err:e "err \(e.code)"};
   io.println(r);
   <0
 };

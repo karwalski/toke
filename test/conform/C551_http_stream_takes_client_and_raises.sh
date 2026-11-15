@@ -41,7 +41,7 @@ i=env:std.env;
 f=main():i64{
   let c=http.client(env.getor("URL";""));
   let r=mt http.stream(c) {
-    $ok:s mt http.streamnext(s) { $ok:b "ok:\(str.frombytes(b))"; $err:e "nexterr:\(e.msg)" };
+    $ok:s mt http.streamnext(s) { $ok:b "ok:\(mt str.frombytes(b){$ok:v v;$err:e ""})"; $err:e "nexterr:\(e.msg)" };
     $err:e "err:\(e.msg)"
   };
   io.println(r);

@@ -13,8 +13,8 @@ f=strless(a:$str; b:$str):$bool {
   let lb=s.len(b);
   let m=if (lb<la) {lb} el {la};
   lp (let i=0; i<m; i=i+1) {
-    let ca=ord(s.slice(a; i; i+1));
-    let cb=ord(s.slice(b; i; i+1));
+    let ca=ord(mt s.slice(a; i; i+1){$ok:v v;$err:e ""});
+    let cb=ord(mt s.slice(b; i; i+1){$ok:v v;$err:e ""});
     if (ca<cb) {
       <true
     };
@@ -36,30 +36,30 @@ f=main():$i64 {
   let i=mut.0;
   lp (true) {
     let tk="\"term\":\"";
-    let tp=s.indexof(s.slice(json; i; n); tk);
+    let tp=s.indexof(mt s.slice(json; i; n){$ok:v v;$err:e ""}; tk);
     if (tp<0) {
       br
     };
     let ts=i+tp+s.len(tk);
     let te=mut.ts;
     lp (let e=ts; e<n; e=e+1) {
-      if (s.slice(json; e; e+1)=="\"") {
+      if ((mt s.slice(json; e; e+1){$ok:v v;$err:e ""})=="\"") {
         te=e;
         e=n
       }
     };
-    let term=s.slice(json; ts; te);
+    let term=mt s.slice(json; ts; te){$ok:v v;$err:e ""};
     let dk="\"definition\":\"";
-    let dp=s.indexof(s.slice(json; te; n); dk);
+    let dp=s.indexof(mt s.slice(json; te; n){$ok:v v;$err:e ""}; dk);
     let ds=te+dp+s.len(dk);
     let de=mut.ds;
     lp (let e=ds; e<n; e=e+1) {
-      if (s.slice(json; e; e+1)=="\"") {
+      if ((mt s.slice(json; e; e+1){$ok:v v;$err:e ""})=="\"") {
         de=e;
         e=n
       }
     };
-    let dval=s.slice(json; ds; de);
+    let dval=mt s.slice(json; ds; de){$ok:v v;$err:e ""};
     terms=terms.append(term);
     defs=defs.append(dval);
     i=de+1

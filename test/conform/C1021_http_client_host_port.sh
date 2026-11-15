@@ -67,7 +67,7 @@ i=http:std.http;
 i=str:std.str;
 i=args:std.args;
 f=main():i64{
-  let base=args.get(1);
+  let base=mt args.get(1){$ok:v v;$err:e ""};
   let c=http.client(base);
   io.println(mt http.geturl(str.concat(base;"/1")) { $ok:b "1 ok"; $err:e "1 err" });
   io.println(mt http.clientget(c;"/2") { $ok:r "2 ok"; $err:e "2 err" });
@@ -81,7 +81,7 @@ f=main():i64{
   io.println(mt http.clientget(p8080;"/7") { $ok:r "7 ok"; $err:e "7 err" });
   let px80=http.withproxy(http.client("http://example.test:80");base);
   io.println(mt http.clientget(px80;"/8") { $ok:r "8 ok"; $err:e "8 err" });
-  io.println("9 \(http.downloadfile(c;"/9";args.get(2)))");
+  io.println("9 \(http.downloadfile(c;"/9";mt args.get(2){$ok:v v;$err:e ""}))");
   <0
 };
 TOKE

@@ -36,7 +36,7 @@ f=encstr(str:$str):$str {
     <"80"
   };
   if (n==1) {
-    let c=s.charcode(s.slice(str; 0; 1); 0);
+    let c=s.charcode(mt s.slice(str; 0; 1){$ok:v v;$err:e ""}; 0);
     if (c<128) {
       <hex2(c)
     }
@@ -44,7 +44,7 @@ f=encstr(str:$str):$str {
   let b=s.builder();
   let i=mut.0;
   lp (i<n) {
-    s.add(b; hex2(s.charcode(s.slice(str; i; i+1); 0)));
+    s.add(b; hex2(s.charcode(mt s.slice(str; i; i+1){$ok:v v;$err:e ""}; 0)));
     i=i+1
   };
   let body=s.build(b);
@@ -58,17 +58,17 @@ f=main():$i64 {
   let line=s.trim(io.readln());
   let n=s.len(line);
   if (s.startswith(line; "\"")) {
-    io.println(encstr(s.slice(line; 1; n-1)));
+    io.println(encstr(mt s.slice(line; 1; n-1){$ok:v v;$err:e ""}));
     <0
   };
   if (s.startswith(line; "[")) {
-    let inner=s.slice(line; 1; n-1);
+    let inner=mt s.slice(line; 1; n-1){$ok:v v;$err:e ""};
     let items=mut.@();
     let i=mut.0;
     let cur=mut."";
     let inq=mut.false;
     lp (i<s.len(inner)) {
-      let ch=s.slice(inner; i; i+1);
+      let ch=mt s.slice(inner; i; i+1){$ok:v v;$err:e ""};
       if (ch=="\"") {
         if (inq) {
           items=items.append(cur);

@@ -6,8 +6,8 @@ i=s:std.str;
 f=basename(p:$str):$str {
   let idx=mut.s.len(p)-1;
   lp (idx>=0) {
-    if (s.equals(s.slice(p; idx; idx+1); "/")) {
-      <s.slice(p; idx+1; s.len(p))
+    if (s.equals(mt s.slice(p; idx; idx+1){$ok:v v;$err:e ""}; "/")) {
+      <mt s.slice(p; idx+1; s.len(p)){$ok:v v;$err:e ""}
     };
     idx=idx-1
   };
@@ -18,8 +18,8 @@ f=ext(p:$str):$str {
   let bn=basename(p);
   let idx=mut.s.len(bn)-1;
   lp (idx>=0) {
-    if (s.equals(s.slice(bn; idx; idx+1); ".")) {
-      <s.slice(bn; idx; s.len(bn))
+    if (s.equals(mt s.slice(bn; idx; idx+1){$ok:v v;$err:e ""}; ".")) {
+      <mt s.slice(bn; idx; s.len(bn)){$ok:v v;$err:e ""}
     };
     idx=idx-1
   };

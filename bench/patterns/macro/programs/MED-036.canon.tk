@@ -8,7 +8,7 @@ f=findfrom(hay:$str; needle:$str; start:$i64):$i64 {
   let nl=s.len(needle);
   let i=mut.start;
   lp (i+nl<=hl) {
-    if (s.eq(s.slice(hay; i; i+nl); needle)) {
+    if (s.eq(mt s.slice(hay; i; i+nl){$ok:v v;$err:e ""}; needle)) {
       <i
     };
     i=i+1
@@ -44,15 +44,15 @@ f=main():$i64 {
     if (nl<0) {
       br
     };
-    let lang=s.slice(text; open+3; nl);
+    let lang=mt s.slice(text; open+3; nl){$ok:v v;$err:e ""};
     let cstart=nl+1;
     let close=findfrom(text; "```"; cstart);
     if (close<0) {
       br
     };
-    let raw=s.slice(text; cstart; close);
+    let raw=mt s.slice(text; cstart; close){$ok:v v;$err:e ""};
     let cl=s.len(raw);
-    let code=if(cl>0&&s.eq(s.slice(raw; cl-1; cl); "\n")){s.slice(raw; 0; cl-1)}el{raw};
+    let code=if(cl>0&&s.eq(mt s.slice(raw; cl-1; cl){$ok:v v;$err:e ""}; "\n")){mt s.slice(raw; 0; cl-1){$ok:v v;$err:e ""}}el{raw};
     if (nblocks>0) {
       s.add(out; "\n---\n")
     };

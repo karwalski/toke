@@ -52,7 +52,7 @@ f=h(req:i64):i64{ <router.ok("routed") };
 f=main():i64{
   let r=router.new();
   router.get(r;"/";&h);
-  let p=mt str.toint(args.get(1)) {$ok:v v; $err:e 0};
+  let p=mt str.toint(mt args.get(1){$ok:v v;$err:e ""}) {$ok:v v; $err:e 0};
   <mt router.serve(r;"";p as u64) {$ok:v 0; $err:e 7}
 };
 TOKE

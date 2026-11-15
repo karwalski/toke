@@ -22,17 +22,17 @@ f=viaparam(m:@(str:str);k:str):str{
 
 f=main():$i64{
   let z=@("x":"y");
-  cks("get-str-value";"\(z.get("x"))";"y");
-  cks("get-str-concat";s.concat(z.get("x");"!");"y!");
+  cks("get-str-value";"\(mt z.get("x"){$ok:v v;$err:e ""})";"y");
+  cks("get-str-concat";s.concat(mt z.get("x"){$ok:v v;$err:e ""};"!");"y!");
   let n=@("a":1);
-  cks("get-int-value-unchanged";"\(n.get("a"))";"1");
+  cks("get-int-value-unchanged";"\(mt n.get("a"){$ok:v v;$err:e 0})";"1");
   let u=mkmap();
-  cks("get-str-from-user-fn";"\(u.get("k"))";"v");
-  cks("get-str-from-user-fn-2";"\(u.get("k2"))";"v2");
+  cks("get-str-from-user-fn";"\(mt u.get("k"){$ok:v v;$err:e ""})";"v");
+  cks("get-str-from-user-fn-2";"\(mt u.get("k2"){$ok:v v;$err:e ""})";"v2");
   cks("get-str-via-param";"\(viaparam(u;"k"))";"v");
   let e=mut.@("p":"q");
   e=e.set("r";"s");
-  cks("get-str-after-set";"\(e.get("r"))";"s");
+  cks("get-str-after-set";"\(mt e.get("r"){$ok:v v;$err:e ""})";"s");
   cks("getor-str-present";"\(z.getor("x";"d"))";"y");
   cks("str-map-len-unchanged";"\(z.len) \(u.len)";"1 2");
   <0

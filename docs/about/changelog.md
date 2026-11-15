@@ -11,6 +11,22 @@ per-change record for each release, with every breaking change and its migration
 repository; this page summarises it. Story numbers refer to the tracker,
 [`docs/progress.md`](https://github.com/karwalski/toke/blob/main/docs/progress.md).
 
+## Unreleased — toke 3.3.0
+
+Not tagged. `CHANGELOG.md` § Unreleased lists each breaking change with its migration.
+
+- A std call whose interface declares `T!E` (`str.toint`, `str.slice`, `json.*`,
+  `file.*`, `args.get`, ...) is the error union it is, as a map lookup has been since
+  3.2.0 (127.244): reading its result as a plain `T` is E4031 with no `fix` (127.319).
+  In 3.2.0 the checker typed these calls as nothing, so `str.toint("x")+1` checked
+  clean and computed with the zero filler.
+- The receiver spelling `t.slice(a;b)` (and `.substr`, `.substring`) on a `str` is the
+  same union as `str.slice(t;a;b)` (127.462).
+- An error union read as its value is E4031 in more positions: a condition, `!`, an
+  interpolation, a stdlib or receiver-method argument, an `as` cast, each operand of a
+  comparison, and an assignment to a `mut` binding that is not consumed as a union
+  (127.323). `docs/spec/semantics.md` 5.1 lists what is judged and what is not.
+
 ## 3.2.0 — released 2026-11-15
 
 Everything on `main` since the `v3.1.0` tag (2026-09-30), cut from `main` `fffec674` on

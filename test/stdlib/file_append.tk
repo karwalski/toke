@@ -17,7 +17,7 @@ i=env:std.env;
 i=str:std.str;
 
 f=main():i64{
-  let path=env.get("APPENDPATH");
+  let path=mt env.get("APPENDPATH"){$ok:v v;$err:e ""};
   let ok=mt file.append(path;"line\n") {$ok:v 1;$err:e 0-1};
   io.println("append.rc=\(ok)");
   let body=mt file.read(path) {$ok:s s;$err:e ""};

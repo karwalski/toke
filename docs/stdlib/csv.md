@@ -205,7 +205,11 @@ f=filterscores(inpath:$str;outpath:$str;threshold:$str):i64{
   };
 
   let out=csv.flush(w);
-  <mt file.write(outpath;str.frombytes(out)) {
+  let txt=mt str.frombytes(out) {
+    $ok:t  t;
+    $err:e <1
+  };
+  <mt file.write(outpath;txt) {
     $ok:ok 0;
     $err:e 1
   }

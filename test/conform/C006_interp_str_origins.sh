@@ -115,7 +115,7 @@ m=t;
 i=io:std.io;
 i=e:std.env;
 f=main():i64{
-  io.println("path=\(e.get("TK_127_80_PROBE"))");
+  io.println("path=\(mt e.get("TK_127_80_PROBE"){$ok:v v;$err:e ""})");
   <0
 };'
 

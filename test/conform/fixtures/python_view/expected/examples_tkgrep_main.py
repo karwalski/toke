@@ -49,7 +49,11 @@ def parseargs() -> Result[opts, greperr]:
     positional = []  # mut
     i = 1
     while i < int(args.count()):
-        arg = args[i]
+        match args[i]:
+            case ok(v):
+                arg = v
+            case err(e):
+                return greperr.usage("cannot read the arguments")
         if str.startswith(arg, "-"):
             if str.contains(arg, "i"):
                 ignorecase = True

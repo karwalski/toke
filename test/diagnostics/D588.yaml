@@ -1,0 +1,12 @@
+id: D588
+series: D
+description: "127.319: a map lookup left as the tail of an i64 function is E4071 with NO fix -- '<' would make it an E4031 (returning i64!$err as i64), so '<' is not a certain repair for a fallible tail"
+input: |
+  m=t;
+  f=k(m:@($str:i64)):i64{
+    m.get("a")
+  };
+  f=main():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E4071"]
+expected_fix_absent: true

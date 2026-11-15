@@ -147,7 +147,7 @@ mkdir kc2
 cat > k.tk <<'TOKE'
 m=main;i=io:std.io;i=kc:std.keychain;i=str:std.str;i=env:std.env;
 f=main():i64{
-  let d=env.get("C311DIR");
+  let d=mt env.get("C311DIR"){$ok:v v;$err:e ""};
   let pa=str.concat(d;"/a.keychain");
   let pb=str.concat(d;"/b.keychain");
   let c1=kc.create(pa;"pw");

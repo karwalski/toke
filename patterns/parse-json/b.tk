@@ -5,9 +5,9 @@ i=env:std.env;
 i=json:std.json;
 f=pat(src:str):i64{
   let pa=s.indexof(src;"\"a\":")+4;
-  let a=mt s.toint(s.slice(src;pa;s.indexof(src;","))) {$ok:v v;$err:e <-1};
+  let a=mt s.toint(mt s.slice(src;pa;s.indexof(src;",")){$ok:v v;$err:e <-1}) {$ok:v v;$err:e <-1};
   let pb=s.indexof(src;"\"b\":\"")+5;
-  <a+s.len(s.slice(src;pb;s.len(src)-2))
+  <a+s.len(mt s.slice(src;pb;s.len(src)-2){$ok:v v;$err:e <-1})
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);

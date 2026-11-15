@@ -496,6 +496,55 @@ An error union type `T!Err` represents a value that is either a success
 value of type `T` or an error value. Error unions are declared in function
 return types.
 
+A value of an error union type is read only after it is unwrapped -- by an
+`mt` with `$ok`/`$err` arms, by `!` (5.2), or by `getor` for a map lookup
+(10.1). Using it where its `T` is read is `[errors.md E4031]`, with no `fix`
+(owner decision 127.30; register 1.1, 2026-11-15; stories 127.244, 127.319,
+127.323, 127.462):
+
+- as the operand of an arithmetic, bitwise, logical or unary operator;
+- as either operand of a comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`): each
+  union operand is reported, so two unions of the same type are not compared
+  (they compared their zero fillers);
+- as the operand of an `as` cast, which converts the slot's value and does
+  not unwrap it;
+- as an argument of a user function, a closure, a stdlib call or a receiver
+  method, as an array index, or stored by `.set`/`.append` into a typed array;
+- as a returned `T`, through an annotated `let`, or through an un-annotated
+  `let` (or `let ..=mut.`) that binds the union and is read later;
+- as an `if` or `lp` condition, as the operand of `!`, in a string
+  interpolation, or as a field of a record literal;
+- assigned to an untyped `mut` binding, unless the binding is consumed as a
+  union somewhere in the function: as an `mt` scrutinee, as the operand of a
+  postfix `!`, or as the value of `<` in a function (or closure) whose return
+  type is an error union. Such a binding holds the union, and the assignment
+  is accepted (`let r=mut.0; r=s.toint(x); mt r{..}`, story 135.16a). Copying
+  it (`let z=r`), a bare `r;` statement or an arm value do not consume it.
+
+This holds for a user function declaring `T!Err`, for a map lookup, for every
+stdlib call whose interface declares `T!E`, and for the receiver spelling of
+`str.slice` on a `str` value (`t.slice(a;b)`, `t.substr(a;b)`,
+`t.substring(a;b)`), which lowers to the same glue and is the same union
+`str!$sliceerr`. A call whose result is not used at all (a statement) is not
+a use.
+
+Not judged; each of these reads the value as `T`, the zero filler on a
+failure:
+
+- an error union as the base of a field read or a subscript (`m.get(k).len`,
+  `mm.get(k).get(i)`, `str.slice(s;0;1).len`), or as the receiver of a method
+  call (`str.slice(s;0;3).upper()`, or `let u=str.slice(s;0;3); u.upper()`);
+- the other reads of a `mut` binding that is consumed as a union, as above:
+  a read before the assignment is the binding's plain value, so a
+  flow-insensitive rule would reject correct programs (story 127.323);
+- an error union stored as an element of an array or map literal
+  (`@(g())`, `@("k":g())`); the collection is judged where it meets a typed
+  parameter, and an element read back is the union;
+- a variant constructor's payload (`$ok(g())`);
+- the receiver spelling of `str.slice` on a receiver whose type the checker
+  cannot establish, and the module form `str.substr(s;a;b)`, whose interface
+  record is untyped although it lowers to the same glue.
+
 ### 5.2 The Propagation Operator `!`
 
 The postfix `!` operator (propagate) may be applied to an expression of
@@ -729,10 +778,12 @@ and the same through a `let v=m.get(k)` or `let v=mut.m.get(k)` binding — is
 `[errors.md E4031]` (no `fix`: `mt`, `!` and `getor` are all repairs).
 `m.get(k)!$e` inside a function returning `T!$e` propagates a miss on the
 error channel, so a stored `0`/`false` is a hit; a `$ok`/`$err` match on a
-bool-valued map is exhaustive. Not judged yet: interpolating a lookup
-(`"\(m.get(k))"`), passing it to a stdlib call and assigning it to an
-existing `mut` binding (the same as for a user `T!Err`), and a lookup used as
-the base of a field read or a subscript (`mm.get(k).get(i)`). Its repairs
+bool-valued map is exhaustive. Interpolating a lookup (`"\(m.get(k))"`),
+passing it to a stdlib call, testing it as a condition or with `!`, comparing
+it (`m.get(a)==m.get(b)`), casting it with `as`, and assigning it to an
+untyped `mut` binding that is not consumed as a union are E4031 as well
+(story 127.323, 5.1). Not judged yet: a lookup used as the base of a field
+read or a subscript (`mm.get(k).get(i)`), as listed in 5.1. Its repairs
 carry the value type `$v` when it is a `str`, `bool`, `f64`, a map, or an
 array of those: `m.getor(k;d)` (story 127.320) and the `$ok` binding of
 `mt m.get(k){…}` (story 127.322), so `mm.getor(k;d).get(i)` and
@@ -745,9 +796,10 @@ array, never a map (the empty map is `@($k:$v)`). Any other default type is
 `[errors.md E4031]`, no `fix`. Module calls spelled `getor` (`env.getor`)
 are judged by their own interface.
 
-The stdlib calls whose records declare `T!Err` (`str.toint`, `json.i64`, …)
-report failure on the same channel but are still given the value's type (or
-none) by the checker; enforcing them is the remainder of 127.244.
+The stdlib calls whose records declare `T!Err` (`str.toint`, `json.i64`,
+`str.slice`, `file.read`, …) report failure on the same channel, and the
+checker types each as its error union `T!$E` too (story 127.319): the rules
+of 5.1 apply to them unchanged.
 
 ### 10.2 Map iteration order
 

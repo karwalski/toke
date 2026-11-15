@@ -1,0 +1,16 @@
+id: D591
+series: D
+description: "127.323: a comparison of two std unions (str.toint(a)==str.toint(b)) is E4031 on each operand with NO fix -- it compared the two zero fillers, so two failures were equal"
+input: |
+  m=t;
+  i=str:std.str;
+  f=main():i64{
+    if(str.toint("x")==str.toint("y")){<1};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64!$parseerr"

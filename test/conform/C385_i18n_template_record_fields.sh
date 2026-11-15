@@ -97,7 +97,7 @@ f=main():i64{
   let m=@("name":"Bob");
   let v=tpl.vars(m);
   let e:@($str:$str)=v.entries;
-  io.println(str.concat(str.fromint(e.len as i64); str.concat(" "; e.get("name"))));
+  io.println(str.concat(str.fromint(e.len as i64); str.concat(" "; mt e.get("name"){$ok:v v;$err:e ""})));
   io.println(mt tpl.render(t;v) {$ok:s s;$err:e "err"});
   io.println(mt tpl.render($tmpl{id:0;src:"Yo {{name}}"};v) {$ok:s s;$err:e "err"});
   io.println(mt tpl.render(u;tpl.vars(@("name":"<Eve>"))) {$ok:s s;$err:e "err"});

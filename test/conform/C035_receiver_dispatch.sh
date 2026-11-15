@@ -424,7 +424,7 @@ runs "sub-namespace prefix df.* under i=dataframe:std.dataframe builds and runs"
 i=io:std.io;
 i=dataframe:std.dataframe;
 f=main():i64{
-  let d=df.fromcsv("a,b\n1,2\n3,4\n");
+  let d=mt df.fromcsv("a,b\n1,2\n3,4\n"){$ok:v v;$err:e <1};
   let s=df.shape(d);
   io.println("\(s.rows) \(s.cols)");
   <0
@@ -446,7 +446,7 @@ runs "the import alias itself: df.fromcsv under i=df:std.dataframe still runs" "
 i=io:std.io;
 i=df:std.dataframe;
 f=main():i64{
-  let d=df.fromcsv("a,b\n1,2\n3,4\n");
+  let d=mt df.fromcsv("a,b\n1,2\n3,4\n"){$ok:v v;$err:e <1};
   let s=df.shape(d);
   io.println("\(s.rows) \(s.cols)");
   <0
@@ -468,7 +468,7 @@ f=main():i64{
   let s="hello";
   io.println(s.upper());
   io.println("\(s.contains("ell"))");
-  io.println(s.slice(0;2));
+  io.println(mt s.slice(0;2){$ok:v v;$err:e ""});
   <0
 };'
 
@@ -490,7 +490,7 @@ true" \
 i=io:std.io;
 f=main():i64{
   let m=@("k":"v");
-  io.println(m.get("k"));
+  io.println(mt m.get("k"){$ok:v v;$err:e ""});
   io.println("\(m.contains("k"))");
   <0
 };'

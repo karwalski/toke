@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/gazeta/GAZ-041/solution.tk sha256 59537d04c49a0e621dd2c7373f548247cc0973b3aaf24c741a9c5d7771f85d5a manifest ~/tk/toke-test-programs/results/library/gazeta.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/gazeta/GAZ-041/solution.tk sha256 59537d04c49a0e621dd2c7373f548247cc0973b3aaf24c741a9c5d7771f85d5a manifest ~/tk/toke-test-programs/results/library/gazeta.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=tue13;i=io:std.io;i=s:std.str;
 f=daysfromcivil(yy:i64;m:i64;d:i64):i64{
   let y=mut.yy;
@@ -25,12 +25,12 @@ f=readall():$str{
 };
 f=main():i64{
   let toks=s.fields(readall());
-  let sy=s.toint(toks.get(0));
-  let sm=s.toint(toks.get(1));
-  let sd=s.toint(toks.get(2));
-  let ey=s.toint(toks.get(3));
-  let em=s.toint(toks.get(4));
-  let ed=s.toint(toks.get(5));
+  let sy=mt s.toint(toks.get(0)){$ok:v v;$err:e 0};
+  let sm=mt s.toint(toks.get(1)){$ok:v v;$err:e 0};
+  let sd=mt s.toint(toks.get(2)){$ok:v v;$err:e 0};
+  let ey=mt s.toint(toks.get(3)){$ok:v v;$err:e 0};
+  let em=mt s.toint(toks.get(4)){$ok:v v;$err:e 0};
+  let ed=mt s.toint(toks.get(5)){$ok:v v;$err:e 0};
   let start=daysfromcivil(sy;sm;sd);
   let end=daysfromcivil(ey;em;ed);
   let count=mut.@(0;0;0;0;0;0;0);

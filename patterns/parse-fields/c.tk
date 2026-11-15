@@ -8,10 +8,10 @@ f=pat(line:str):@str{
   let n=s.len(line);
   lp(let i=0;i<n;i=i+1){
     if(s.charcode(line;i)==32){
-      if(st>=0){r=r.append(s.slice(line;st;i));st=-1}
+      if(st>=0){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e <@()});st=-1}
     }el{if(st<0){st=i}}
   };
-  <if(st>=0){r.append(s.slice(line;st;n))}el{r}
+  <if(st>=0){r.append(mt s.slice(line;st;n){$ok:v v;$err:e <@()})}el{r}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);

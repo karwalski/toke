@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `f307ce04ec2e`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `0adbc9cf3172`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -1292,9 +1292,9 @@ i=env:std.env;
 i=json:std.json;
 f=pat(src:str):i64{
   let pa=s.indexof(src;"\"a\":")+4;
-  let a=mt s.toint(s.slice(src;pa;s.indexof(src;","))) {$ok:v v;$err:e <-1};
+  let a=mt s.toint(mt s.slice(src;pa;s.indexof(src;",")){$ok:v v;$err:e <-1}) {$ok:v v;$err:e <-1};
   let pb=s.indexof(src;"\"b\":\"")+5;
-  <a+s.len(s.slice(src;pb;s.len(src)-2))
+  <a+s.len(mt s.slice(src;pb;s.len(src)-2){$ok:v v;$err:e <-1})
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -1307,7 +1307,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — per-char charcode scan loop (sketch) (`patterns/parse-json/c.tk`). Choose it when the layout is fixed and machine-generated, the parse sits in a loop body executed > 100k times AND profiling shows `json.dec` on the hot path; never for external input (hand scans are wrong on reordered or escaped JSON). The charcode scan measured 50.6 ms against 66.6 ms for `json.dec` (-24%), for 11 tokens more.
+**Hot path** — per-char charcode scan loop (sketch) (`patterns/parse-json/c.tk`). Choose it when the layout is fixed and machine-generated, the parse sits in a loop body executed > 100k times AND profiling shows `json.dec` on the hot path; never for external input (hand scans are wrong on reordered or escaped JSON). The charcode scan measured 63.9 ms against 92.2 ms for `json.dec` (-31%), for 11 tokens more.
 
 ```toke
 m=main;
@@ -1347,9 +1347,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 40 | 161 | 67.18 | 33696 |
-| `b` — avoid | 46 | 198 | 66.45 | 33648 |
-| `c` — hot path | 51 | 244 | 56.18 | 25600 |
+| `a` — canonical | 40 | 161 | 92.18 | 33760 |
+| `b` — avoid | 49 | 242 | 74.69 | 33712 |
+| `c` — hot path | 51 | 244 | 63.86 | 25664 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1424,7 +1424,7 @@ f=main():i64{
 
 Split one line on a single-character delimiter into a field array.
 
-Any delimiter split where empty fields must be preserved. s.split is 5-7x fewer tokens than either manual form and is the only one that does not re-scan the string; b re-slices the remainder every iteration (quadratic in fields x line length).
+Any delimiter split where empty fields must be preserved. s.split is 6-9x fewer tokens than either manual form and is the only one that does not re-scan the string; b re-slices the remainder every iteration (quadratic in fields x line length).
 
 **Write this** — s.split(line;",") (`patterns/parse-delim-split/a.tk`):
 
@@ -1461,9 +1461,9 @@ f=pat(line:str):@str{
   let st=mut.0;
   let n=s.len(line);
   lp(let k=0;k<n;k=k+1){
-    let p=s.indexof(s.slice(line;st;n);",");
-    if(p<0){r=r.append(s.slice(line;st;n));br};
-    r=r.append(s.slice(line;st;st+p));
+    let p=s.indexof(mt s.slice(line;st;n){$ok:v v;$err:e <@()};",");
+    if(p<0){r=r.append(mt s.slice(line;st;n){$ok:v v;$err:e <@()});br};
+    r=r.append(mt s.slice(line;st;st+p){$ok:v v;$err:e <@()});
     st=st+p+1
   };
   <r
@@ -1483,9 +1483,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 7 | 40 | 60.06 | 53808 |
-| `b` — avoid | 50 | 219 | 79.77 | 90048 |
-| `c` — avoid | 35 | 185 | 75.98 | 90016 |
+| `a` — canonical | 7 | 40 | 62.47 | 57904 |
+| `b` — avoid | 60 | 288 | 90.78 | 104672 |
+| `c` — avoid | 40 | 231 | 85.53 | 94192 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1531,10 +1531,10 @@ f=pat(line:str):@str{
   let n=s.len(line);
   lp(let i=0;i<n;i=i+1){
     if(s.charcode(line;i)==32){
-      if(st>=0){r=r.append(s.slice(line;st;i));st=-1}
+      if(st>=0){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e <@()});st=-1}
     }el{if(st<0){st=i}}
   };
-  <if(st>=0){r.append(s.slice(line;st;n))}el{r}
+  <if(st>=0){r.append(mt s.slice(line;st;n){$ok:v v;$err:e <@()})}el{r}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -1551,9 +1551,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 9 | 37 | 97.69 | 97952 |
-| `b` — avoid | 22 | 132 | 211.39 | 299232 |
-| `c` — avoid | 49 | 230 | 169.29 | 178400 |
+| `a` — canonical | 9 | 37 | 60.05 | 49808 |
+| `b` — avoid | 22 | 132 | 107.01 | 150672 |
+| `c` — avoid | 55 | 276 | 97.27 | 90128 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1632,7 +1632,7 @@ i=env:std.env;
 f=chk(m:@(str:str)):i64{
   let ks=m.keys();
   let t=mut.ks.len*1000000;
-  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.get(ks.get(i)))};
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.getor(ks.get(i);""))};
   <t
 };
 f=pat(txt:str):i64{
@@ -1653,7 +1653,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — s.indexof "=" + s.slice -> m.set (`patterns/parse-kv-lines/b.tk`). Choose it when millions of lines are parsed: `b` allocates two strings per line where `a` allocates a 2-element array plus two strings, and measured 67.3 ms against 74.7 ms (-10%), for 12 tokens more.
+**Hot path** — s.indexof "=" + s.slice -> m.set (`patterns/parse-kv-lines/b.tk`). Choose it when millions of lines are parsed: `b` allocates two strings per line where `a` allocates a 2-element array plus two strings, and measured 89.8 ms against 104.2 ms (-14%), for 15 tokens more.
 
 ```toke
 m=main;
@@ -1663,7 +1663,7 @@ i=env:std.env;
 f=chk(m:@(str:str)):i64{
   let ks=m.keys();
   let t=mut.ks.len*1000000;
-  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.get(ks.get(i)))};
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.getor(ks.get(i);""))};
   <t
 };
 f=pat(txt:str):i64{
@@ -1672,7 +1672,7 @@ f=pat(txt:str):i64{
   lp(let i=0;i<ls.len;i=i+1){
     let l=ls.get(i);
     let p=s.indexof(l;"=");
-    if(p>0){m=m.set(s.slice(l;0;p);s.slice(l;p+1;s.len(l)))}
+    if(p>0){m=m.set(mt s.slice(l;0;p){$ok:v v;$err:e <-1};mt s.slice(l;p+1;s.len(l)){$ok:v v;$err:e <-1})}
   };
   <chk(m)
 };
@@ -1687,8 +1687,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 33 | 173 | 85.07 | 80560 |
-| `b` — hot path | 45 | 195 | 76.78 | 64080 |
+| `a` — canonical | 33 | 173 | 104.17 | 87360 |
+| `b` — hot path | 48 | 239 | 89.77 | 71264 |
 
 ## Iteration (`iter`)
 
@@ -2566,7 +2566,7 @@ This family covers argv, stdin and printing results.
 
 Read the first program argument with a default when absent.
 
-args.get(n) returns $err past the end, so mt is a one-expression form; the count check is 7 tokens more. The args.get result interpolates as a pointer (127.7 class) - print it directly or take s.len. args.count() includes the program name.
+args.get(n) returns $err past the end, so mt is a one-expression form; the count check is 9 tokens more. The args.get result interpolates as a pointer (127.7 class) - print it directly or take s.len. args.count() includes the program name.
 
 **Write this** — mt args.get(1) {$ok:v v;$err:e "default"} (`patterns/cli-argv/a.tk`):
 
@@ -2588,7 +2588,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — if(args.count()>1){args.get(1)}el{"default"} (`patterns/cli-argv/b.tk`):
+**Not this** — if(args.count()>1){mt args.get(1){..}}el{"default"} (`patterns/cli-argv/b.tk`):
 
 ```toke
 m=main;
@@ -2597,7 +2597,7 @@ i=s:std.str;
 i=env:std.env;
 i=args:std.args;
 f=pat():str{
-  <if(args.count()>1){args.get(1)}el{"default"}
+  <if(args.count()>1){mt args.get(1){$ok:v v;$err:e "default"}}el{"default"}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -2611,7 +2611,7 @@ f=main():i64{
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
 | `a` — canonical | 8 | 53 | 64.43 | 1408 |
-| `b` — avoid | 15 | 58 | 64.52 | 1408 |
+| `b` — avoid | 17 | 86 | 64.52 | 1408 |
 
 ### cli-flag-filter
 
@@ -2950,9 +2950,9 @@ f=pat(path:str):@str{
   let st=mut.0;
   let n=s.len(txt);
   lp(let i=0;i<n;i=i+1){
-    if(s.charcode(txt;i)==10){r=r.append(s.slice(txt;st;i));st=i+1}
+    if(s.charcode(txt;i)==10){r=r.append(mt s.slice(txt;st;i){$ok:v v;$err:e <@()});st=i+1}
   };
-  <r.append(s.slice(txt;st;n))
+  <r.append(mt s.slice(txt;st;n){$ok:v v;$err:e <@()})
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -2970,8 +2970,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 19 | 87 | 84.12 | 83152 |
-| `b` — avoid | 45 | 228 | 30000.00 | pending |
+| `a` — canonical | 19 | 87 | 59.41 | 50096 |
+| `b` — avoid | 50 | 274 | 30000.00 | pending |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 

@@ -46,7 +46,7 @@ f=main():i64{
   let z=s.bytes("");
   let y=z+b;
   io.println("\(y.len) \(y.get(1))");
-  io.println(s.frombytes(b+s.bytes("cd")));
+  io.println(mt s.frombytes(b+s.bytes("cd")){$ok:v v;$err:e ""});
   <0
 };
 EOF

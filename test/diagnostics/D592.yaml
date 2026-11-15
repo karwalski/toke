@@ -1,0 +1,16 @@
+id: D592
+series: D
+description: "127.323: an ordering comparison of two map lookups (m.get(a)<m.get(b)) is E4031 on each operand with NO fix"
+input: |
+  m=t;
+  f=main():i64{
+    let m=@("a":1;"b":2);
+    if(m.get("a")<m.get("b")){<1};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64!$err"

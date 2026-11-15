@@ -62,7 +62,7 @@ f=onconn(conn:i64):i64{
 f=main():i64{
   let kp=mt tls.genselfsigned("localhost";1) {\$ok:k k;\$err:e <2};
   let cfg=tls.tlsconfig(tls.certof(kp);tls.keyof(kp));
-  let port=mt str.toint(args.get(1)) {\$ok:n n;\$err:e <4};
+  let port=mt str.toint(mt args.get(1){\$ok:v v;\$err:e ""}) {\$ok:n n;\$err:e <4};
   let r=tls.listen(port as i32;cfg;&onconn);
   io.println("returned");
   <3

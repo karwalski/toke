@@ -107,9 +107,13 @@ i=tls:std.tls;
 i=file:std.file;
 i=io:std.io;
 
+f=keygenfailed(why:str):i64{
+  io.println("keygen failed: \(why)");
+  <1
+};
+
 f=emit(cn:str;certp:str;keyp:str):i64{
-  let kp=tls.genselfsigned(cn;365);
-  if(kp==0){ io.println("keygen failed"); <1 };
+  let kp=mt tls.genselfsigned(cn;365){$ok:k k;$err:e <keygenfailed(e)};
   let a=mt file.write(certp;tls.certof(kp)){$ok:v v;$err:e false};
   let b=mt file.write(keyp;tls.keyof(kp)){$ok:v v;$err:e false};
   io.println(tls.fingerprint(tls.certof(kp)));

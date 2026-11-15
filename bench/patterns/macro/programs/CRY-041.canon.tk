@@ -55,10 +55,10 @@ let start=mut.0;lp(start<newwork.len()){if(newwork.get(start)==0){start=start+1}
 let tmp=mut.@();let jj=mut.start;lp(jj<newwork.len()){tmp=tmp.append(newwork.get(jj));jj=jj+1};work=tmp;
 };
 let res=s.builder();let z=mut.0;lp(z<leadz){s.add(res;"1");z=z+1};
-let kk=mut.digits.len()-1;lp(kk>=0){s.add(res;s.slice(alphabet;digits.get(kk);digits.get(kk)+1));kk=kk-1};
+let kk=mut.digits.len()-1;lp(kk>=0){s.add(res;mt s.slice(alphabet;digits.get(kk);digits.get(kk)+1){$ok:v v;$err:e ""});kk=kk-1};
 <s.build(res)};
 f=main():$i64{
-let h160=ripemd160(cr.sha256(enc.hexdecode(s.lower(s.trim(io.readln())))));
+let h160=ripemd160(cr.sha256(mt enc.hexdecode(s.lower(s.trim(io.readln()))){$ok:v v;$err:e @()}));
 let versioned=cat(@(0);h160);
 let h2=cr.sha256(cr.sha256(versioned));
 let cs=mut.@();let i=mut.0;lp(i<4){cs=cs.append(h2.get(i));i=i+1};

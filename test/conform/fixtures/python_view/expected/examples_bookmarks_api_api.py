@@ -70,7 +70,12 @@ def handlelist(req: int) -> int:
 
 
 def handleget(req: int) -> int:
-    match str.toint(http.param(req, "id")):
+    match http.param(req, "id"):
+        case ok(v):
+            raw = v
+        case err(e):
+            return http.resjson(404, "{\"error\":\"not found\"}")
+    match str.toint(raw):
         case ok(v):
             id = v
         case err(e):
@@ -106,7 +111,12 @@ def handlecreate(req: int) -> int:
 
 
 def handledelete(req: int) -> int:
-    match str.toint(http.param(req, "id")):
+    match http.param(req, "id"):
+        case ok(v):
+            raw = v
+        case err(e):
+            return http.resjson(404, "{\"error\":\"not found\"}")
+    match str.toint(raw):
         case ok(v):
             id = v
         case err(e):

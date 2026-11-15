@@ -88,10 +88,9 @@ i=str:std.str;
 f=decryptdemo(key:@(u8);nonce:@(u8);ct:@(u8)):$str{
   let result=enc.aes256gcmdecrypt(key;nonce;ct;@());
   if(result.err==""){
-    str.frombytes(result.ok)
-  }el{
-    ""
-  }
+    <mt str.frombytes(result.ok){$ok:s s;$err:e ""}
+  };
+  <""
 };
 ```
 

@@ -1,0 +1,16 @@
+id: D590
+series: D
+description: "127.319: an 'as' cast of a std T!E (str.toint(\"x\") as i64) is E4031 with NO fix -- `as` does not unwrap a union, it converts the slot's value, the zero filler on a failure (register 1.1)"
+input: |
+  m=t;
+  i=str:std.str;
+  f=main():i64{
+    let x=str.toint("x") as i64;
+    <x
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64!$parseerr"

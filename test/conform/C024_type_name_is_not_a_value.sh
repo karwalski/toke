@@ -367,7 +367,7 @@ f=main():i64{
   let t:@(str:i64)=@("k":1);
   let e=@($str:$str);
   let q=(2.0 as f64) as i64;
-  io.println("\(y) \(t.get("k")) \(q)");
+  io.println("\(y) \(mt t.get("k"){$ok:v v;$err:e 0}) \(q)");
   <0
 };'
 runs "a local named like a built-in type is a value" "3" \

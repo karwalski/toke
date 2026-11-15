@@ -204,7 +204,7 @@ f=show(r:$httpresp):i64{
   <0
 };
 f=main():i64{
-  let c=http.client(args.get(1));
+  let c=http.client(mt args.get(1){$ok:v v;$err:e ""});
   <mt http.clientget(c;"/h") { $ok:v show(v); $err:e 3 }
 };
 TOKE

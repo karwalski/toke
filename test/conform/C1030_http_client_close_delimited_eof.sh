@@ -142,7 +142,7 @@ f=gu(u:str):str{
   <mt http.geturl(u) { $ok:b "ok \(str.len(b) as i64) \(b)"; $err:e "err \(e.code) \(e.msg)" }
 };
 f=main():i64{
-  io.println(gu(args.get(1)));
+  io.println(gu(mt args.get(1){$ok:v v;$err:e ""}));
   <0
 };
 TOKE

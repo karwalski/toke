@@ -84,7 +84,7 @@ f=main():i64{
   let o=$outer{name:"o";b:$bag{idx:@("a":1)}};
   let n=o.b.idx.set("n";9);
   let o2=bump(bump(o;"x");"y");
-  io.println("\(n.len) \(n.get("n")) \(o.b.idx.len) \(o2.b.idx.len) \(o2.b.idx.get("y")) \(o2.b.idx.contains("x"))");
+  io.println("\(n.len) \(n.get("n")) \(o.b.idx.len) \(o2.b.idx.len) \(mt o2.b.idx.get("y"){$ok:v v;$err:e 0}) \(o2.b.idx.contains("x"))");
   <0
 };
 EOF

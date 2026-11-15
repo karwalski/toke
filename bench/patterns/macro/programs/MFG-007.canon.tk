@@ -79,10 +79,10 @@ f=main():$i64 {
     let cn=cells.len as i64;
     if (cn>0) {
       ss=cn;
-      let mn=mut.s.tofloat(cells.get(0));
-      let mx=mut.s.tofloat(cells.get(0));
+      let mn=mut.mt s.tofloat(cells.get(0)){$ok:v v;$err:e 0.0};
+      let mx=mut.mt s.tofloat(cells.get(0)){$ok:v v;$err:e 0.0};
       lp (let i=1; i<cn; i=i+1) {
-        let v=s.tofloat(cells.get(i));
+        let v=mt s.tofloat(cells.get(i)){$ok:v v;$err:e 0.0};
         if (v<mn) {
           mn=v
         };

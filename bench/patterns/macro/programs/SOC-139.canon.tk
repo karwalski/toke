@@ -10,8 +10,8 @@ f=getstr(o:$str; k:$str):$str {
     <""
   };
   let st=idx+s.len(pat);
-  let end=s.indexof(s.slice(o; st; s.len(o)); "\"");
-  <s.slice(o; st; st+end)
+  let end=s.indexof(mt s.slice(o; st; s.len(o)){$ok:v v;$err:e ""}; "\"");
+  <mt s.slice(o; st; st+end){$ok:v v;$err:e ""}
 };
 
 f=main():$i64 {

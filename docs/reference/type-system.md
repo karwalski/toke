@@ -337,7 +337,7 @@ i=str:std.str;
 f=topscore(board:@($str:i64)):i64{
   let best=mut.0;
   lp(let i=0 as u64;i<board.len;i=i+1 as u64){
-    let v = board.get(str.fromint(i as i64));
+    let v = board.getor(str.fromint(i as i64);0);
     if(v>best){ best=v; };
   };
   < best
