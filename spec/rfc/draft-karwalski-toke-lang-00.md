@@ -2138,10 +2138,14 @@ Table of Contents
    Later results supersede the compile and correctness figures in the
    table above.  Gate 2 (2026-05-22, v0.3-syntax fine-tune) reached
    100% compile Pass@1 with 55.6% functional correctness (272/489) on
-   a curated hidden-plus-eval set; a full local re-audit of all 1,748
-   corpus programs gives the honest floor of 37.5% compile and about
-   2.2% fully correct.  No model has been trained on v0.4 syntax.  All
-   figures: `docs/metrics-baseline.md`.
+   a curated hidden-plus-eval set whose 200-eval half may be
+   corpus-derived (its provenance is unresolved); a full local
+   re-audit of all 1,748 corpus programs gives the honest floor of
+   37.5% compile and about 2.2% fully correct.  The Gate 2 PASS
+   recorded 2026-05-24 was withdrawn on 2026-11-15, and Gate 2 has no
+   standing verdict (owner decision D4,
+   docs/decisions/gate2-decision.md).  No model has been trained on
+   v0.4 syntax.  All figures: `docs/metrics-baseline.md`.
 
    Full Gate 1 decision document: docs/gate1-decision.md
 
