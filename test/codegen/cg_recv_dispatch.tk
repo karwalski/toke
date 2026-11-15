@@ -33,7 +33,7 @@ f=main():i64{
   let c8:bool=m.contains("four");
   cs("contains on each kind";"\(yn(c1))\(yn(c2)) \(yn(c3))\(yn(c4)) \(yn(c5))\(yn(c6)) \(yn(c7))\(yn(c8))";"yn yn yn yn");
   let sub=a.slice(1;3);
-  cs("slice on str and array";"\(s.slice(0;5)) \(sub.len) \(sub.get(0)) \(sub.get(1))";"hello 2 20 30");
+  cs("slice on str and array";"\(mt s.slice(0;5){$ok:v v;$err:e ""}) \(sub.len) \(sub.get(0)) \(sub.get(1))";"hello 2 20 30");
   cs("indexof on str, @i64, @str";"\(s.indexof("o")) \(a.indexof(40)) \(w.indexof("zzz")) \(a.indexof(99))";"4 3 2 -1");
   cs("get on @i64, @str, map";"\(a.get(1)) \(w.get(2)) \(mt m.get("three"){$ok:v v;$err:e 0})";"20 zzz 3");
   let a2=a.set(0;11);

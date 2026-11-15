@@ -97,7 +97,7 @@ f=main():i64{
   a=a.set(0;5);
   m=m.set("j";2);
   if(s.contains("ell")&&a.contains(4)&&m.contains("j")){io.println("contains")};
-  io.println("\(s.len()) \(s.upper()) \(s.slice(1;3)) \(s.find("l"))");
+  io.println("\(s.len()) \(s.upper()) \(mt s.slice(1;3){$ok:v v;$err:e ""}) \(s.find("l"))");
   io.println("\(a.len()) \(a.indexof(2)) \(a.get(0))");
   io.println("\(m.len()) \(m.getor("z";9)) \(m.keys().len)");
   io.println("\(w.join("-")) \(",".join(w))");

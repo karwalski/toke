@@ -468,7 +468,7 @@ f=main():i64{
   let s="hello";
   io.println(s.upper());
   io.println("\(s.contains("ell"))");
-  io.println(s.slice(0;2));
+  io.println(mt s.slice(0;2){$ok:v v;$err:e ""});
   <0
 };'
 

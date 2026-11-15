@@ -32,10 +32,10 @@ i=io:std.io;
 i=s:std.str;
 f=main():i64{
   let t:str="abc";
-  io.println("1 \(t.slice(0;1) as str)");
-  let u=t.slice(0;1);
+  io.println("1 \((mt t.slice(0;1){$ok:v v;$err:e ""}) as str)");
+  let u=mt t.slice(0;1){$ok:v v;$err:e ""};
   io.println("2 \(u as str)");
-  let b:str=t.slice(1;3) as str;
+  let b:str=(mt t.slice(1;3){$ok:v v;$err:e ""}) as str;
   io.println("3 \(b)");
   io.println("4 \(s.upper(t) as str)");
   io.println("5 \(t as str)");

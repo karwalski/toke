@@ -24,7 +24,7 @@ f=main():$i64{
   cks("interp-trim";"[\(x.trim())]";"[a]");
   cks("interp-upper";"<\(csv.upper())>";"<A,B,C>");
   cks("interp-concat";"\(csv.concat("!"))";"a,b,c!");
-  cks("interp-slice";"\(csv.slice(0;1))";"a");
+  cks("interp-slice";"\(mt csv.slice(0;1){$ok:v v;$err:e ""})";"a");
   cks("interp-replace";"\(csv.replace(",";"-"))";"a-b-c");
   let y=x.trim();
   cks("let-then-interp";"[\(y)]";"[a]");
