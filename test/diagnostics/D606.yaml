@@ -1,0 +1,16 @@
+id: D606
+series: D
+description: "138.25: net.resolve takes a name (str); an integer there is E4031 at --check with no fix -- there is no deterministic repair for a wrong argument"
+input: |
+  m=t;
+  i=net:std.net;
+  f=main():i64{
+    let r=mt net.resolve(42) {$ok:a a.len; $err:e 0};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "str"

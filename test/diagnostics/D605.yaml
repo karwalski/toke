@@ -1,0 +1,16 @@
+id: D605
+series: D
+description: "138.27: http.getheaders takes (url; headers) -- a call written with postheaders' (url; body; headers) is E4026 naming the arity, with the existing E4026 advice in fix"
+input: |
+  m=t;
+  i=http:std.http;
+  f=main():i64{
+    let r=mt http.getheaders("http://127.0.0.1:1/";"body";@(@("User-Agent";"t"))) {$ok:x x.status; $err:e 0};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4026"]
+expected_fix: "match the call to the declaration, or reconcile the interface with the implementation if they disagree"
+expected_diag_field:
+  field: expected
+  value: "2"
