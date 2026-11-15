@@ -308,11 +308,14 @@ For `x = expr`:
 - The left-hand side type and right-hand side type must be equal.
   Violation: `[errors.md E4031]`.
 - The binding must be mutable: declared with `let x=mut.`, or the loop
-  variable introduced by an `lp` init (§4.7), which is mutable without
-  `mut.`. Assigning to any other binding -- an immutable `let`, a
+  variable introduced by an `lp(let ..)` init (§4.7), which is mutable
+  without `mut.`. Assigning to any other binding -- an immutable `let`, a
   parameter, an `mt` arm binding -- is `[errors.md E4070]`. So
   `lp(let i=0; i<n; i=i+1){...}` is legal, and so is an assignment to `i`
   in the loop body (127.283).
+- A bare `lp` init `lp(x = expr; ...)` (no `let`) is an assignment
+  statement in this sense, with the same two rules: it assigns the binding
+  of `x` in force at the loop (127.289, §4.7).
 
 ### 2.10 Return Statements
 
@@ -455,6 +458,14 @@ The init variable is **mutable**, though it is written without `mut.`: the
 step (`i = i + 1`) and any assignment to it in the body are legal (§2.9).
 The init takes no `mut.` qualifier -- `lp(let i = mut.e; ...)` does not
 parse (`[errors.md E2002]`) (127.283).
+
+Only the `let` form introduces a variable. A bare init `lp(i = e; ...)`
+introduces nothing: it assigns the binding of `i` in force at the loop, as
+the statement `i = e` would (§2.9), so the condition, step and body use that
+binding and its last value remains after the loop. It is
+`[errors.md E4070]` when that binding is an immutable `let`, a parameter or
+an `mt` arm binding, and `[errors.md E3011]` when no binding of `i` is in
+force (127.289; toke-spec-v0.4.md §K).
 
 ### 4.8 Match Arm Scoping
 

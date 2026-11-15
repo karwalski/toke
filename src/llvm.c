@@ -4189,7 +4189,7 @@ static int later_uce_assign(Ctx *c, const Node *root, const char *raw,
                             const Node *after)
 {
     if (!root) return 0;
-    if (root->kind == NODE_ASSIGN_STMT && root->child_count >= 2
+    if (node_assigns(root) && root->child_count >= 2            /* 127.289 */
         && root->start > after->start && root->children[0]
         && root->children[0]->kind == NODE_IDENT) {
         char an[NAME_BUF]; tok_cp(c->src, root->children[0], an, sizeof an);
@@ -10763,7 +10763,7 @@ static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *
             if (la_borrowed_init(c, init, x)) (*borrowed)++;   /* 127.229 (7) */
             else if (!la_fresh_rhs(c, init, x)) return 0;
         }
-    } else if (n->kind == NODE_ASSIGN_STMT) {
+    } else if (node_assigns(n)) {                                  /* 127.289 */
         if (n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
             if (!la_fresh_rhs(c, n->children[1], x)) return 0;
             if (la_self_update_call(c, n->children[1], x, NULL) ||
@@ -11095,7 +11095,7 @@ static void compute_str_arrays(Ctx *c, const Node *fn) {
         const Node *stack[512]; int sp = 0; stack[sp++] = body;
         while (sp > 0) {
             const Node *n = stack[--sp]; if (!n) continue;
-            if ((n->kind == NODE_ASSIGN_STMT || n->kind == NODE_BIND_STMT ||
+            if ((node_assigns(n) || n->kind == NODE_BIND_STMT ||     /* 127.289 */
                  n->kind == NODE_MUT_BIND_STMT) && n->child_count >= 2 &&
                 n->children[0]->kind == NODE_IDENT) {
                 const Node *rhs = (n->child_count >= 3 && n->children[2]) ? n->children[2]
@@ -11127,7 +11127,7 @@ static void compute_str_arrays(Ctx *c, const Node *fn) {
  * field-owner search. */
 static const char *accum_struct_elem(Ctx *c, const Node *n, const char *x, const char *acc) {
     if (!n || !acc) return acc;
-    if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
+    if (node_assigns(n) && n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {  /* 127.289 */
         const Node *r = n->children[1];
         char m[NAME_BUF];
         if (la_self_update_call(c, r, x, m) && strcmp(m, "set") && r->child_count >= 2) {
@@ -11871,6 +11871,17 @@ static void emit_stmt(Ctx *c, const Node *n)
         break;
     }
     case NODE_LOOP_INIT: {
+        /* 127.289: a bare `lp(i=0; ...)` init declares nothing: it is the
+         * assignment `i=0;` to the binding in force (a local, a parameter
+         * slot or a module `mut` global), lowered by the one assignment
+         * path.  Until 127.289 it fell through to the alloca below and made
+         * a fresh slot, so an outer `i` was silently left untouched. */
+        if (!loop_init_declares(n)) {
+            Node as = *n;
+            as.kind = NODE_ASSIGN_STMT;
+            emit_stmt(c, &as);
+            break;
+        }
         /* lp(let i=0; ...) — alloca + store for the loop variable */
         tok_cp(c->src, n->children[0], tb, sizeof tb);
         /* 127.64: a loop variable that shadows an earlier binding of the same
@@ -12007,8 +12018,11 @@ static void emit_stmt(Ctx *c, const Node *n)
         if (!c->term) fprintf(c->out, "  br label %%loop_hdr%d\n", L);
         fprintf(c->out, "loop_exit%d:\n", L);
         c->term = 0;
+        /* 127.196; 127.289: only an `lp(let ..)` init has a variable to
+         * retire -- a bare init assigned the binding in force. */
         scope_end(c, &lp_sm, NULL,
-                  n->child_count > 0 ? n->children[0] : NULL);   /* 127.196 */
+                  n->child_count > 0 && loop_init_declares(n->children[0])
+                      ? n->children[0] : NULL);
         break;
     }
     case NODE_ARENA_STMT:

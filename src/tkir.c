@@ -837,6 +837,13 @@ static void enc_emit_stmt(Enc *e, const Node *n)
         e->brk[e->brk_n++] = enc_branch(e, TKIR_OP_BR, 0);
         break;
     case NODE_LOOP_INIT:
+        /* 127.289: a bare `lp(i=e;..)` init assigns the binding in force;
+         * only `lp(let i=e;..)` takes a fresh slot. */
+        if (!loop_init_declares(n)) {
+            if (n->child_count >= 2)
+                enc_ins(e, TKIR_OP_STORE, 0, enc_emit_expr(e, n->children[1]), 0);
+            break;
+        }
         if (n->child_count >= 2) {
             uint16_t val = enc_emit_expr(e, n->children[1]);
             uint16_t slot = enc_next_reg(e);

@@ -2368,23 +2368,33 @@ static int resolve_node(const Node *node, const char *src,
         if (!lp_scope) { *had_error = 1; return -1; }
 
         const Node *init = node->child_count > 0 ? node->children[0] : NULL;
-        if (init && init->kind == NODE_LOOP_INIT) {
-            /* Resolve the init expression first (RHS), then bind the name. */
+        if (init && init->kind == NODE_LOOP_INIT && !loop_init_declares(init)) {
+            /* 127.289: a bare `lp(i=e;..)` init is an ASSIGNMENT to the
+             * binding of `i` in force at the loop (owner decision 2026-10-01
+             * §2.18 (a); v0.3 §11.10 "a binding or assignment").  Resolve it
+             * as `i=e` is resolved: the target, then the value.  No binding
+             * in force is E3011 here, at the init, and the error marker
+             * resolve_ident leaves in lp_scope keeps the condition, step and
+             * body from reporting the same name again.  The type checker
+             * owns mutability (E4070). */
+            for (int i = 0; i < init->child_count && i < 2; i++)
+                resolve_node(init->children[i], src, lp_scope, arena, had_error);
+        } else if (loop_init_declares(init)) {
+            /* `lp(let i=e;..)`: resolve the init expression first (RHS),
+             * then bind the name. */
             if (init->child_count > 1)
                 resolve_node(init->children[1], src, lp_scope, arena, had_error);
-            if (init->op == TK_KW_LET || init->op == TK_KW_MUT) {
-                const Node *vname = init->child_count > 0 ? init->children[0] : NULL;
-                if (vname) {
-                    /* Loop variables are implicitly mutable — the loop
-                     * step reassigns them on every iteration. */
-                    warn_enclosing_shadow(lp_scope, src, vname);   /* 137.6 */
-                    DeclKind dk = DECL_MUT;
-                    int r = scope_insert(lp_scope, arena, src,
-                                         vname->start, vname->tok_len,
-                                         vname->tok_start, vname->tok_len,
-                                         dk, init, vname->line, vname->col);
-                    if (r < 0) *had_error = 1;
-                }
+            const Node *vname = init->child_count > 0 ? init->children[0] : NULL;
+            if (vname) {
+                /* Loop variables are implicitly mutable — the loop
+                 * step reassigns them on every iteration. */
+                warn_enclosing_shadow(lp_scope, src, vname);   /* 137.6 */
+                DeclKind dk = DECL_MUT;
+                int r = scope_insert(lp_scope, arena, src,
+                                     vname->start, vname->tok_len,
+                                     vname->tok_start, vname->tok_len,
+                                     dk, init, vname->line, vname->col);
+                if (r < 0) *had_error = 1;
             }
         }
 

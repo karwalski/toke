@@ -291,10 +291,11 @@ static void count_refs(const Node *n, const Node *parent, int idx,
         if (!name_is(n, name, len, src)) return;
         NodeKind pk = parent ? parent->kind : NODE_PROGRAM;
         if (pk == NODE_FIELD_EXPR && idx == 1) return;            /* field name */
+        /* 127.289: a bare `lp(x=..)` init is a write, not a binder. */
+        if (node_assigns(parent) && idx == 0) { rc->writes++; return; }
         if ((pk == NODE_BIND_STMT || pk == NODE_MUT_BIND_STMT ||
              pk == NODE_LOOP_INIT || pk == NODE_PARAM) && idx == 0) { rc->binds++; return; }
         if (pk == NODE_MATCH_ARM && idx == 1) { rc->binds++; return; }
-        if (pk == NODE_ASSIGN_STMT && idx == 0) { rc->writes++; return; }
         rc->ast_refs++;
         if (!rc->first_ref) rc->first_ref = n;
         return;
@@ -510,12 +511,13 @@ static int program_declares_fn(const Node *root, const char *name, int len, cons
 static const Node *method_call(const Node *n, const Node **base);
 static int method_is(const Node *m, const char *name, const char *src);
 
-/* count_assign_to — number of NODE_ASSIGN_STMT whose LHS is (name,len). */
+/* count_assign_to — number of assignments (NODE_ASSIGN_STMT, or a bare
+ * `lp(x=..)` init, 127.289) whose LHS is (name,len). */
 static int count_assign_to(const Node *node, const char *name, int len, const char *src)
 {
     if (!node) return 0;
     int c = 0;
-    if (node->kind == NODE_ASSIGN_STMT && node->child_count > 0 &&
+    if (node_assigns(node) && node->child_count > 0 &&             /* 127.289 */
         name_is(node->children[0], name, len, src))
         c = 1;
     for (int i = 0; i < node->child_count; i++)
@@ -1949,7 +1951,7 @@ static int count_bind_sites(const Node *n, const Node *parent, int idx,
     int c = 0;
     if (n->kind == NODE_IDENT && name_is(n, name, len, src) && parent && idx == 0 &&
         (parent->kind == NODE_BIND_STMT || parent->kind == NODE_MUT_BIND_STMT ||
-         parent->kind == NODE_LOOP_INIT || parent->kind == NODE_PARAM)) {
+         loop_init_declares(parent) || parent->kind == NODE_PARAM)) {   /* 127.289 */
         if (parent->kind == NODE_MUT_BIND_STMT) *mut_decl = parent;
         return 1;
     }

@@ -14,6 +14,31 @@ may no longer compile.
 
 ## Unreleased
 
+- **Breaking: a bare `lp(i=0;..)` init assigns the binding in force; only
+  `lp(let i=0;..)` declares a loop variable** (127.289; owner decision
+  2026-10-01 §2.18 (a); toke-spec-v0.4 §K). Before, a bare init made a fresh
+  loop variable whatever was in scope: with `let i=mut.7`, the loop
+  `lp(i=0;i<5;i=i+1){..}` left `i` at 7, and over an immutable `let i=7` or a
+  parameter `i` it compiled with no error. Now the init is the assignment
+  `i=0`: the loop leaves `i` at 5, an immutable `let`, a parameter or an `mt`
+  arm binding is **E4070** (no `fix`: `let i=mut.` and `lp(let i=..` are both
+  plausible and run differently), and no binding of `i` in force is **E3011**
+  at the init. A module `mut` global is assigned; a module constant is E4070.
+  `--lint` counts a bare init as a write, so `mutable-never-mutated` no longer
+  fires on a binding only a bare init assigns. Measured before the change: one
+  corpus regen record (`P3-MIG-P2-A-A-MTH-0092v13-fa507f0f`), one library
+  record (toke-test-programs `DAT-094`: `solution.tk` and
+  `solution.stripped.tk`) and one more toke-test-programs file
+  (`SEC-064/toke_api_original.tk`) use a bare init. Each assigns an outer
+  `mut` binding that is not read after the loop, so none checks or runs
+  differently (the stripped file's E4031 and the SEC-064 file's E1002 are
+  unrelated and unchanged). Nothing in the toke tree, ooke or the website uses
+  one. `--check` run with this compiler and with `685aa852` over 716 toke-tree,
+  32 ooke, 25 website and 3,573 toke-test-programs files and the 23,382 regen
+  records reports the same diagnostics for every one. Migration: write
+  `lp(let i=..` where a fresh loop variable was meant. Conformance: C1820,
+  D575, D576.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

@@ -81,6 +81,12 @@ The three parts are:
 | `condition` | Boolean test | Before each iteration |
 | `step` | Update statement | After each iteration body |
 
+The `init` has two forms. `let i=0` declares a fresh loop variable: it is
+mutable, and it is gone after the loop. `i=0`, without `let`, assigns a
+variable already in scope, which must be mutable (`let i=mut.0`); the loop
+then counts in that variable, and it keeps its last value after the loop.
+Without a mutable `i` in scope, the bare form is an error (E4070 or E3011).
+
 ### Counting loop
 
 ```

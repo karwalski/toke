@@ -963,7 +963,7 @@ static const Node *find_binding_node(const Node *root, const char *src,
                                      const char *name, int nlen) {
     if (!root) return NULL;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
+         ||loop_init_declares(root))
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
@@ -1009,7 +1009,7 @@ static void find_binding_before_rec(const Node *root, const char *src,
                                     const Node *use, const Node **best) {
     if (!root) return;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
+         ||loop_init_declares(root))
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
@@ -1089,7 +1089,7 @@ static const Node *lex_binder_rec(const Node *a, const char *src, const Node *us
         if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1
             && ident_same(a->children[1], src, nm, nl)) return a;
         if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
-            && a->children[0]->kind == NODE_LOOP_INIT
+            && loop_init_declares(a->children[0])
             && a->children[0]->child_count > 0
             && ident_same(a->children[0]->children[0], src, nm, nl))
             return a->children[0];
@@ -8004,13 +8004,27 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * propagation).
      *
      * Returns TY_VOID (assignments are statements).
+     *
+     * 127.289: a bare `lp(i=e;..)` init is checked here too.  It assigns
+     * the binding of `i` in force at the loop, as `i=e;` does (owner
+     * decision 2026-10-01 §2.18 (a)); only `lp(let i=e;..)` declares a
+     * loop variable, and that form keeps the default walk below.
      * ──────────────────────────────────────────────────────────────────── */
+    case NODE_LOOP_INIT:
+        if (node->op == TK_KW_LET) {
+            Type *last=mk_type(A,TY_VOID);
+            for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
+            return last;
+        }
+        /* fall through */
     case NODE_ASSIGN_STMT: {
+        int lp_init = node->kind == NODE_LOOP_INIT;   /* 127.289 */
         /* ── Mutability check ─────────────────────────────────────────
          * If the LHS is a simple identifier, find its binding in the
          * enclosing function AST.  If the binding is NODE_BIND_STMT
          * (immutable let) or NODE_PARAM, emit E4070.
-         * NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable. */
+         * NODE_MUT_BIND_STMT and an `lp(let ..)` NODE_LOOP_INIT are
+         * mutable; a bare `lp(i=..)` init binds nothing (127.289). */
         if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
@@ -8058,8 +8072,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                      * only where it is correct in every case), so only an
                      * immutable `let` carries one. */
                     int is_let=lb->kind==NODE_BIND_STMT;
-                    char msg[256];
-                    if (is_let)
+                    char msg[384];
+                    if (lp_init&&is_let)
+                        /* 127.289: two repairs are plausible -- `let i=mut.`
+                         * on the binding (the loop then assigns it) or
+                         * `lp(let i=..` (a fresh loop variable, the outer
+                         * binding untouched) -- and they run differently, so
+                         * neither is a `fix` (AGENTS §6). */
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
+                            "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
+                    else if (lp_init)
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force, "
+                            "and a %s cannot be assigned: write 'lp(let %s=' for a new loop variable",
+                            nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
+                    else if (is_let)
                         snprintf(msg,sizeof(msg),
                             "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
                     else
@@ -8069,7 +8097,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     char fix[256];
                     snprintf(fix,sizeof(fix),
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                    if (is_let)
+                    if (is_let&&!lp_init)
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
