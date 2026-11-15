@@ -265,10 +265,17 @@ report a skip there; the classical fallback is tested in full.
 
 ### Publishing
 
-Tagged `v3.2.0`; the release workflow builds and signs the four platform archives
-(linux-x86_64, linux-arm64, macos-arm64, macos-x86_64) with an SBOM. Next: bump
-ooke's `ooke.toml [requires]` floor to 3.2.0 and the Homebrew formulae to the
-release checksums.
+Tagged `v3.2.0` and published 2026-11-15 with four platform archives (linux-x86_64,
+linux-arm64, macos-arm64, macos-x86_64) and `checksums.txt`. Check a download against
+`checksums.txt`, fetched over HTTPS from the release page. The release also carries
+`tkc.sig` and an SPDX SBOM, but in 3.2.0 both cover a `tkc` the workflow rebuilt on
+Linux for signing, which is in none of the archives; they do not verify a downloaded
+archive (toke 127.453, fixed from the next tag).
+
+Platform floors: the macOS binaries need macOS 15 (Sequoia) or later, and the Linux
+binaries glibc 2.38 or later (Ubuntu 24.04+, Debian 13+, Fedora 39+); older systems build
+from source (toke 127.454). ooke 3.0.0 requires toke 3.2.0; Homebrew installs both
+(`brew install karwalski/toke/tkc`, `karwalski/toke/ooke`).
 
 ---
 

@@ -23,6 +23,13 @@ We use sigstore cosign keyless signing so that:
 
 ---
 
+> **Limitation in v3.2.0 and earlier (toke 127.453).** The release workflow signs, and
+> runs syft on, a `tkc` it rebuilds on Linux in the signing job, not the binaries inside
+> the published archives. So `tkc.sig` and `tkc-sbom.spdx.json` do not verify a
+> downloaded archive. Until the fix ships, verify an archive against `checksums.txt`
+> fetched over HTTPS from the release page (`shasum -a 256 -c checksums.txt
+> --ignore-missing`).
+
 ## Signing method
 
 Binaries are signed during the GitHub Actions release workflow
