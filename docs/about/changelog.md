@@ -176,6 +176,6 @@ Require `>= 3.0.0` for anything written in v0.4 syntax.
 | Gate | Criteria | Status |
 |------|----------|--------|
 | Gate 1 (Month 8) | Token reduction >= 10%, Pass@1 >= 60% | **NOT PASSED** (owner decision 2026-09-22, story 128.19; recorded PASS Apr 2026 on a Pass@1 later corrected to 58.8%) |
-| Gate 2 (Month 14) | 7B model >= 65% Pass@1, extended features maintain efficiency | **ON HOLD** |
-| Gate 3 (Month 26) | Two+ LLM families >= 70% Pass@1, self-improvement loop running | Pending |
+| Gate 2 (Month 14) | 7B model >= 65% Pass@1, extended features maintain efficiency | **NO STANDING VERDICT** — the PASS recorded 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4, [gate2-decision.md](/docs/decisions/gate2-decision/)) |
+| Gate 3 (Month 26) | Two+ LLM families >= 70% Pass@1, self-improvement loop running | **VOID — NEVER RAN** — pre-registered 2026-05-24 with a GO/NO-GO date of 2026-08-17; bannered void 2026-10-01 (story 128.24); superseded by the 128.15 lane scorecard ([gate2-decision.md](/docs/decisions/gate2-decision/)) |
 | Gate 4 (Month 32) | All benchmarks met, spec complete, consortium proposal ready | Pending |

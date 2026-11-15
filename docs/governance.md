@@ -35,7 +35,7 @@ Design decisions affecting the compiler architecture, standard library structure
 | Gate | Criteria | Authority |
 |------|----------|-----------|
 | Gate 1 | Token efficiency > 10%, Pass@1 > 60% | BDFL |
-| Gate 2 | Default syntax implemented, 7B model outperforms baseline | BDFL |
+| Gate 2 | Extended language features maintain token efficiency AND a trained 7B model reaches ≥ 65% Pass@1 (spec v0.3 §21.5; ≥ 75% in the April criteria sheet). No standing verdict: the PASS recorded 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4, `docs/decisions/gate2-decision.md`) | BDFL |
 | Gate 3+ | Defined per-milestone in `docs/progress.md` | BDFL or TSC |
 
 ### 2.3 Lazy Consensus

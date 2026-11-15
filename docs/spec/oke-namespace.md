@@ -174,5 +174,5 @@ When assigning a new `*oke` name, follow these checks:
 | Date | Version | Change |
 |------|---------|--------|
 | 2026-04-06 | 0.1 | Initial draft. Established namespace registry, linguistic audit, layer architecture, and naming rules. |
-| 2026-05-23 | 0.2 | Updated assigned names with current production status (Gate 2 PASS, loke in production, ooke serving tokelang.dev, moke reclassified as demo application). |
+| 2026-05-23 | 0.2 | Updated assigned names with current production status (Gate 2 PASS, loke in production, ooke serving tokelang.dev, moke reclassified as demo application). *(The Gate 2 PASS was withdrawn on 2026-11-15, owner decision D4: `docs/decisions/gate2-decision.md`.)* |
 | 2026-09-19 | 0.3 | Story 132.14: character set corrected to 59, stdlib count to 57, loke size figures withdrawn as unreproducible. |

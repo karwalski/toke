@@ -273,7 +273,7 @@ This proposal is aspirational but grounded. Transparency about where the project
 
 **What does not yet exist:**
 - A second independent implementation of the language (required for spec 1.0).
-- Gate 2 completion (on hold, waiting for local compute hardware).
+- A Gate 2 verdict. The PASS recorded 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4, `docs/decisions/gate2-decision.md`), and Gate 2 has no standing verdict.
 - Any enterprise adopter or production deployment.
 - A package ecosystem or third-party library registry.
 
