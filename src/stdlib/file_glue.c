@@ -349,7 +349,7 @@ int64_t tk_file_ensuredir_w(int64_t path) {
  * is checked as "/": only the whole class (or a "/" scope) admits it. */
 static const char *glob_scope_dir(const char *pattern, char *out, size_t outsz) {
     if (!pattern) return NULL;
-    size_t n = strlen(pattern), meta = n, cut = 0;
+    size_t n = tk_strlen(pattern), meta = n, cut = 0;
     for (size_t i = 0; i < n; i++)
         if (strchr("*?[{", pattern[i])) { meta = i; break; }
     if (meta == n) { snprintf(out, outsz, "%s", pattern); return out; }

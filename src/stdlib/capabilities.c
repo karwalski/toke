@@ -396,9 +396,10 @@ static int add_scope(int src, int ci, const char *text, char *err, unsigned errs
     Scope s;
     g->named = 1;
     if (!parse_scope(ci, text, &s, err, errsz)) {
+        free(s.text);
         memset(&s, 0, sizeof s);
         s.dead = 1;
-        grant_push(g, &s);
+        (void)grant_push(g, &s);   /* text NULL: nothing to free if it fails */
         return 0;
     }
     if (s.kind == TK_CAP_SK_PATH || s.kind == TK_CAP_SK_CMD) {
@@ -409,7 +410,7 @@ static int add_scope(int src, int ci, const char *text, char *err, unsigned errs
         s.text = ok ? strdup(buf) : NULL;
         if (!s.text) s.dead = 1;
     }
-    grant_push(g, &s);
+    if (!grant_push(g, &s)) free(s.text);   /* out of memory: the scope admits nothing */
     return 1;
 }
 
