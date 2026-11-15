@@ -8064,6 +8064,31 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     return mk_type(A,TY_VOID);
                 }
+                /* 127.289: a bare `lp` init over a module-level immutable
+                 * `let` or an import alias (semantics.md §4.2: DECL_LET and
+                 * DECL_IMPORT_ALIAS are not mutable).  The `let` was
+                 * assigned silently; the alias passed --check and failed in
+                 * codegen (E9003).  No `fix`: for the `let`, `let g=mut.`
+                 * and `lp(let g=..` run differently, as for a local; an
+                 * alias has no mutable spelling at all. */
+                if (md&&lp_init&&(md->kind==DECL_LET||md->kind==DECL_IMPORT_ALIAS)) {
+                    if (tc_can_emit(cx)) {
+                        int alias=md->kind==DECL_IMPORT_ALIAS;
+                        char msg[384];
+                        if (alias)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to import alias '%s'; a bare 'lp' init assigns the binding in force, "
+                                "and an import alias cannot be assigned: write 'lp(let %s=' for a new loop variable",nb,nb);
+                        else
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
+                                "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
+                        diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                            "expected","mutable binding","got",alias?"import alias":"immutable binding",
+                            (const char*)NULL);
+                    }
+                    return mk_type(A,TY_VOID);
+                }
             }
             if (immutable) {
                 if (tc_can_emit(cx)) {

@@ -35,6 +35,10 @@
 #  13  guard: the one-clause `lp(cond)` form is unchanged
 #  14  lint: a `mut.` binding assigned only by a bare init is not
 #      "mutable-never-mutated"
+#  15  module-level immutable `let` -> E4070 at the init, no fix, --check
+#      fails (it was assigned silently)
+#  16  import alias -> E4070 at the init, no fix, --check fails (it passed
+#      --check and then failed in codegen with E9003)
 #
 # Negative control: TKC built from 685aa852 (main) -- 14 of 21 checks are
 # red, at least one in each of cases 1-10 and 14 (a wrong value after the
@@ -75,6 +79,8 @@ for l in sys.stdin:
     if d.get("severity") != "error": continue
     print(1 if "fix" in d else 0); break'; }
 runs() { "${TKC}" "$1" -o "${WORK}/b" >/dev/null 2>&1 && "${WORK}/b" 2>/dev/null | tr '\n' ' '; }
+# "fails" when --check exits non-zero, else "passes"
+check_rc() { if "${TKC}" --check "$1" >/dev/null 2>&1; then echo passes; else echo fails; fi; }
 
 # 1. outer mut: the bare init assigns it, and after the loop it holds 5
 cat > "${WORK}/p1.tk" <<'EOF'
@@ -264,6 +270,35 @@ EOF
 lint14="$("${TKC}" --lint "${WORK}/p14.tk" 2>&1 | grep -c 'mutable-never-mutated' || true)"
 expect "14-lint-bare-init-is-a-write" "${lint14}" "0"
 expect "14-runs"                       "$(runs "${WORK}/p14.tk")" "5 "
+
+# 15. module-level immutable let: E4070 at the init (line 5 col 6), no fix
+cat > "${WORK}/p15.tk" <<'EOF'
+m=t;
+i=io:std.io;
+let g=5;
+f=main():i64{
+  lp(g=0;g<3;g=g+1){ };
+  io.println("\(g)");
+  <0
+};
+EOF
+expect "15-module-let-E4070-at-init" "$(first_at "${WORK}/p15.tk")" "E4070@5:6"
+expect "15-module-let-init-no-fix"   "$(first_fix "${WORK}/p15.tk")" "0"
+expect "15-module-let-check-fails"   "$(check_rc "${WORK}/p15.tk")" "fails"
+
+# 16. import alias: E4070 at the init (line 5 col 6), no fix
+cat > "${WORK}/p16.tk" <<'EOF'
+m=t;
+i=io:std.io;
+f=main():i64{
+  let j=mut.0;
+  lp(io=0;j<3;j=j+1){ };
+  <0
+};
+EOF
+expect "16-import-alias-E4070-at-init" "$(first_at "${WORK}/p16.tk")" "E4070@5:6"
+expect "16-import-alias-init-no-fix"   "$(first_fix "${WORK}/p16.tk")" "0"
+expect "16-import-alias-check-fails"   "$(check_rc "${WORK}/p16.tk")" "fails"
 
 echo "C1820: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
