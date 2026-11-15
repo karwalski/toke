@@ -39,12 +39,21 @@
 #      fails (it was assigned silently)
 #  16  import alias -> E4070 at the init, no fix, --check fails (it passed
 #      --check and then failed in codegen with E9003)
+#  17  --migrate, pinned as it is today (open question in the 127.289 row):
+#      it adds no `mut.` for a bare init over an outer `let` -- a program
+#      written before 127.289 meant a fresh loop variable -- so the migrated
+#      file reports E4070 at the init; a body assignment still gets `mut.`
+#  18  .tkir: a bare init encodes as a STORE to the binding in force with no
+#      ALLOCA of its own (one ALLOCA, the outer `let`; a `let` init has two),
+#      and the program rebuilt with --from-tkir leaves the counter at 5
 #
-# Negative control: TKC built from 685aa852 (main) -- 14 of 21 checks are
-# red, at least one in each of cases 1-10 and 14 (a wrong value after the
-# loop, no E4070 / E4031, E3011 at the condition instead of the init, a
-# false lint warning); 11-13 and the "compiles clean" checks of 1, 5, 6
-# and 9 pass on both.
+# Negative control: TKC built from 685aa852 (main) -- 23 of 33 checks are
+# red, at least one in each of cases 1-10 and 14-18 (a wrong value after
+# the loop, no E4070 / E4031, E3011 at the condition instead of the init, a
+# false lint warning, a slot of its own in the .tkir); 11-13, the "compiles
+# clean" checks of 1, 5, 6 and 9, the `let`-init .tkir check and the two
+# --migrate rewrite checks of 17 pass on both.  Cases 15 and 16 are also
+# red on the first 127.289 build (370528a0), which checked them clean.
 #
 # Story: 127.289
 
@@ -299,6 +308,38 @@ EOF
 expect "16-import-alias-E4070-at-init" "$(first_at "${WORK}/p16.tk")" "E4070@5:6"
 expect "16-import-alias-init-no-fix"   "$(first_fix "${WORK}/p16.tk")" "0"
 expect "16-import-alias-check-fails"   "$(check_rc "${WORK}/p16.tk")" "fails"
+
+# 17. --migrate: no `mut.` for the bare init's outer let; E4070 remains
+cat > "${WORK}/p17.tk" <<'EOF'
+m=t;
+f=main():i64{
+  let i=0;
+  let s=0;
+  lp(i=0;i<3;i=i+1){ s=s+i };
+  <s
+};
+EOF
+"${TKC}" --migrate "${WORK}/p17.tk" > "${WORK}/p17m.tk" 2>/dev/null
+expect "17-migrate-no-mut-for-bare-init" "$(grep -c 'let i=mut\.' "${WORK}/p17m.tk")" "0"
+expect "17-migrate-body-assign-gets-mut" "$(grep -c 'let s=mut\.0' "${WORK}/p17m.tk")" "1"
+expect "17-migrated-file-E4070-at-init"  "$(first_at "${WORK}/p17m.tk")" "E4070@5:6"
+
+# 18. .tkir: the bare init takes no slot of its own; --from-tkir runs it
+cat > "${WORK}/p18.tk" <<'EOF'
+m=t;
+f=main():i64{
+  let i=mut.7;
+  lp(i=0;i<5;i=i+1){ };
+  <i
+};
+EOF
+sed 's/lp(i=0;/lp(let i=0;/' "${WORK}/p18.tk" > "${WORK}/p18l.tk"
+allocas() { "${TKC}" --emit-tkir "$1" --out "$2" >/dev/null 2>&1 \
+    && "${TKC}" --read-tkir "$2" 2>/dev/null | grep -o 'ALLOCA=[0-9]*' | head -1; }
+expect "18-tkir-bare-init-no-slot" "$(allocas "${WORK}/p18.tk" "${WORK}/p18.tkir")" "ALLOCA=1"
+expect "18-tkir-let-init-own-slot" "$(allocas "${WORK}/p18l.tk" "${WORK}/p18l.tkir")" "ALLOCA=2"
+rc18="$("${TKC}" --from-tkir "${WORK}/p18.tkir" -o "${WORK}/b18" >/dev/null 2>&1 && "${WORK}/b18" >/dev/null 2>&1; echo $?)"
+expect "18-from-tkir-final-counter" "${rc18}" "5"
 
 echo "C1820: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
