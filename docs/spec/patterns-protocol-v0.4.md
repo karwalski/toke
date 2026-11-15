@@ -161,6 +161,21 @@ For each pattern, over its non-blocked candidates:
 2. Compute `runtime_verdict` per §5.3.
 3. **Canonical** = the form that is `best`-or-`tied` on **both**. If several qualify, choose the one with the
    fewer `proxy8k` tokens, then fewer `min_bytes`, then fewer `allocs.calls`.
+
+   **Identical code is a tie, and a tie keeps the incumbent** (amended 2026-11-15, owner decision 4.11 (d),
+   stories 127.437 and 127.440). Two forms are *proven to lower to identical code* when the machine code
+   `tkc -O2` produces for their fixtures is identical, measured with the tkc the run records in
+   `measured_at`, and a conformance test pins the lowering that makes it so. Such forms are runtime-tied by
+   construction: §5.3 is not applied between them, they share the better of their two runtime verdicts, and
+   any wall or RSS difference the harness reports between them is noise. If they are also token-tied under
+   §4, they are tied, and the tie keeps the **incumbent**, the form the catalogue records as `canonical`
+   before the run is ingested: the `proxy8k` / `min_bytes` / `allocs.calls` ordering above is not applied
+   between them. A challenger with identical code displaces the incumbent only by being strictly better on
+   the token axis, outside the §4 tie rule. Example: acc-array's `x=x.append(v)` (a, the incumbent) and
+   `x=x+@(v)` (b) both lower to the in-place `tk_array_append_inplace_w` call since 127.229 (pinned by
+   conformance test C267), and `tkc -O2` gives the two fixtures identical machine code (checked 2026-11-15 on
+   toke main `685aa852`). Both count 13 `proxy8k` tokens. b's 5 fewer `min_bytes` would win the ordering
+   above, but the tie keeps a, so `.append` stays canonical.
 4. If **no** form qualifies on both axes: `canonical` = the token-best form *provided* it is not `worse-bigO`
    **and** its median wall is < 10 × the runtime-best form's (the **order-of-magnitude rule**, added
    2026-09-18 after 131.7: a same-big-O form that is ≥ 10 × slower — e.g. one syscall per line instead of one

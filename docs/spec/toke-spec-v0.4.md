@@ -278,13 +278,16 @@ concatenation (ADR-0004), and maps have no concatenation operator.
 m=demo;i=io:std.io;
 f=main():i64{
   let a = @(1; 2);
-  let b = a + @(3);
-  let acc = mut.@();
-  lp(let k = 0; k < 3; k = k + 1){ acc = acc + @(k) };
-  io.println("\(a.len) \(b.len) \(b.get(2)) \(acc.len)");  (* 2 3 3 3 *)
+  let b = @(3; 4; 5);
+  let c = a + b;
+  io.println("\(a.len) \(b.len) \(c.len) \(c.get(2))");  (* 2 3 5 3 *)
   <0
 };
 ```
+
+The example joins two named arrays once. It does not grow an accumulator in a
+loop: the canonical accumulator is `x=x.append(v)` (patterns catalogue entry
+`acc-array`; patterns protocol §6, amended 2026-11-15).
 
 The element types must be equal; an element type not yet established (the
 empty literal `@()`) matches any, and an array literal of integer literals
@@ -333,3 +336,7 @@ changes.
   concatenation, the one spelling (owner decision 2026-11-12 §1.6). It
   supersedes the v0.3 Operators table's "add (numeric only)" for `+`; the
   compiler's behaviour is unchanged.
+- **2026-11-15 (stories 127.437, 127.440):** §J's example joins two named
+  arrays outside a loop instead of growing an accumulator with `acc + @(k)`,
+  which is not the canonical accumulator form (owner decision 4.11 (d)). §J's
+  rules are unchanged.
