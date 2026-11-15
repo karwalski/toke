@@ -371,7 +371,9 @@ All type conversions must use an explicit `as` cast (Section 2.5).
 A type `unknown` is compatible with any other type. This is not a coercion;
 it is an error-recovery mechanism. When the type checker encounters `unknown`,
 it suppresses further type mismatch diagnostics to avoid cascading errors
-from a single root cause.
+from a single root cause. Operator refusals that do not depend on the other
+operand still fire: `==` / `!=` with an array operand is refused whatever
+the other side is, `unknown` included (§2.4, story 138.20).
 
 ---
 

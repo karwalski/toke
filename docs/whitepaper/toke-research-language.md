@@ -472,7 +472,7 @@ before the run) and none of its numbers. The 2026-05 document is kept as a dated
 The original timeline said mid-August 2026. That date passed without a training run, because
 the corpus was not trustworthy enough to train on — which the audit and pattern sweeps
 proved rather than assumed — and because the training lanes are compute-gated. We state the
-slip plainly instead of quietly re-dating it. Gate 3 now runs against the 128.15 scorecard:
+slip plainly instead of quietly re-dating it. Gate 3 is void (it never ran; 128.24) and is superseded by the 128.15 scorecard:
 compile Pass@1, functional Pass@1 by execution, tokens per solved task in every 131.50 lane,
 cost and energy per solved task, repair-loop convergence within 3 rounds, and first-shot
 validity under constrained decoding — with the rule that **no lane advances without beating

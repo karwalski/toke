@@ -86,10 +86,12 @@ tested. With that fixed, the re-evaluation of 2026-05-25 gave 272/489 (story 102
 
 The re-audit (story 101.R1, retested under toke v0.3.9 in 102.17) covered 1,748 programs.
 They are the output of the Epic 101 generation pipeline: initial generation through the
-toke API, then a Claude repair loop of up to five iterations (story 101.5;
-`toke-test-programs/infra/README.md`). Which model the toke API served for them was not
-traced, so the re-audit is not a Pass@1 of the Gate 2 model and is not scored against
-Gate 2's thresholds. Of the 1,748, 1,345 had a solution file (403 NO_SOURCE, 101.R1); of
+toke API, with Claude generating instead whenever that API was unavailable
+(`toke-test-programs/infra/worker-generate.py`, the fallback added in 47692b84), then a
+Claude repair loop of up to five iterations (story 101.5;
+`toke-test-programs/infra/README.md`). The fallback and the repair loop already make the
+re-audit something other than a Pass@1 of any single model, so it is not scored against
+Gate 2's thresholds; which model the toke API served was not traced either. Of the 1,748, 1,345 had a solution file (403 NO_SOURCE, 101.R1); of
 those, 38 PASS, 141 WRONG_OUTPUT, 64 RUN_FAIL, 9 BUILD_FAIL and 1,093 COMPILE_FAIL. It is
 the harsher floor, and it is cited beside any Gate 2 figure.
 
