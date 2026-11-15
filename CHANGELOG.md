@@ -16,7 +16,7 @@ may no longer compile.
 
 ### Added — HTTP client controls, a header-carrying GET and a resolver (spec amendment 138.24)
 
-One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2.3; `docs/decisions/138.24-http-client-controls.md`), for loke's handoffs T-63 and the T-58 addendum. Nothing changes for existing calls: every control is opt-in and off on a client from `http.client`.
+One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2.3; `docs/decisions/138.24-http-client-controls.md`), for loke's handoffs T-63 and the T-58 addendum. Every control is opt-in and off on a client from `http.client`. Two corrections change existing calls, and only where they were unsafe: a client written as a record literal no longer reads settings from past its end, and a URL that would rewrite the request is refused (last two rows).
 
 | Change | Story, commit |
 |---|---|
@@ -27,8 +27,10 @@ One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2
 | **`http.getheaders(url:$str;headers:@(@($str))):$httpresp!$httperr`** — `http.postheaders` without a body, as `GET`; `Host` and `Content-Length` reserved, CR/LF refused, https verified. | 138.27 — `da9755d6` |
 | `http.stream` and `http.downloadfile` refuse a client that carries one of the three controls (they read on paths the controls do not reach). | 138.24 — `d14f878b` |
 | **Documentation:** `$httpclient.timeoutms` is a per-read timeout, not a per-request one, as `docs/stdlib/http.md` used to say. | 138.34 — `113dc13b` |
+| **Fixed: a `$httpclient` written as a record literal** (`$httpclient{baseurl:..;poolsize:..;timeoutms:..}`) is a client with no proxy and no controls. The client read its proxy (since 42.1.3) and the new controls from past the literal's three fields, so a literal client took a spurious cap, deadline or connect address, and `http.withproxy` on one could segfault. std now reads those settings only from a client it made. | 138.24 — `c79119a7` |
+| **Fixed: every client call refuses a URL that would rewrite the request** — a host that is not a DNS name or IPv4 address, or a port or path with a control character or a space — with `$err` `URL refused: ...` (`http.downloadfile`: `-1`) before anything is sent. A CR/LF in the URL used to be sent, so `http.getheaders` with `"http://h/x HTTP/1.1\r\nHost: evil.example\r\n..."` delivered the caller's own `Host`; a space or tab drew a `400`. | 138.24 — `e5678505` |
 
-Tests: `C1860`–`C1864`, `D605`–`D608` (`6055e9ca`). Open: the response header block is not capped (138.49).
+Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `e25bbd7d`, `c44d48a4`). Open: the response header block is not capped (138.49).
 
 ---
 
