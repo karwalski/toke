@@ -5,7 +5,7 @@ i=env:std.env;
 f=chk(m:@(str:str)):i64{
   let ks=m.keys();
   let t=mut.ks.len*1000000;
-  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(mt m.get(ks.get(i)){$ok:v v;$err:e ""})};
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.getor(ks.get(i);""))};
   <t
 };
 f=pat(txt:str):i64{

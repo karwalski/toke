@@ -1424,9 +1424,9 @@ f=main():i64{
 ```toke
 f=pat(src:str):i64{
   let pa=s.indexof(src;"\"a\":")+4;
-  let a=mt s.toint(mt s.slice(src;pa;s.indexof(src;",")){$ok:v v;$err:e ""}) {$ok:v v;$err:e <-1};
+  let a=mt s.toint(mt s.slice(src;pa;s.indexof(src;",")){$ok:v v;$err:e <-1}) {$ok:v v;$err:e <-1};
   let pb=s.indexof(src;"\"b\":\"")+5;
-  <a+s.len(mt s.slice(src;pb;s.len(src)-2){$ok:v v;$err:e ""})
+  <a+s.len(mt s.slice(src;pb;s.len(src)-2){$ok:v v;$err:e <-1})
 };
 ```
 
@@ -1578,9 +1578,9 @@ f=pat(line:str):@str{
   let st=mut.0;
   let n=s.len(line);
   lp(let k=0;k<n;k=k+1){
-    let p=s.indexof(mt s.slice(line;st;n){$ok:v v;$err:e ""};",");
-    if(p<0){r=r.append(mt s.slice(line;st;n){$ok:v v;$err:e ""});br};
-    r=r.append(mt s.slice(line;st;st+p){$ok:v v;$err:e ""});
+    let p=s.indexof(mt s.slice(line;st;n){$ok:v v;$err:e <@()};",");
+    if(p<0){r=r.append(mt s.slice(line;st;n){$ok:v v;$err:e <@()});br};
+    r=r.append(mt s.slice(line;st;st+p){$ok:v v;$err:e <@()});
     st=st+p+1
   };
   <r
@@ -1595,9 +1595,9 @@ f=pat(line:str):@str{
   let st=mut.0;
   let n=s.len(line);
   lp(let i=0;i<n;i=i+1){
-    if(s.charcode(line;i)==44){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e ""});st=i+1}
+    if(s.charcode(line;i)==44){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e <@()});st=i+1}
   };
-  <r.append(mt s.slice(line;st;n){$ok:v v;$err:e ""})
+  <r.append(mt s.slice(line;st;n){$ok:v v;$err:e <@()})
 };
 ```
 
@@ -1669,10 +1669,10 @@ f=pat(line:str):@str{
   let n=s.len(line);
   lp(let i=0;i<n;i=i+1){
     if(s.charcode(line;i)==32){
-      if(st>=0){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e ""});st=-1}
+      if(st>=0){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e <@()});st=-1}
     }el{if(st<0){st=i}}
   };
-  <if(st>=0){r.append(mt s.slice(line;st;n){$ok:v v;$err:e ""})}el{r}
+  <if(st>=0){r.append(mt s.slice(line;st;n){$ok:v v;$err:e <@()})}el{r}
 };
 ```
 
@@ -1770,7 +1770,7 @@ i=env:std.env;
 f=chk(m:@(str:str)):i64{
   let ks=m.keys();
   let t=mut.ks.len*1000000;
-  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(mt m.get(ks.get(i)){$ok:v v;$err:e ""})};
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.getor(ks.get(i);""))};
   <t
 };
 f=pat(txt:str):i64{
@@ -1800,7 +1800,7 @@ f=pat(txt:str):i64{
   lp(let i=0;i<ls.len;i=i+1){
     let l=ls.get(i);
     let p=s.indexof(l;"=");
-    if(p>0){m=m.set(mt s.slice(l;0;p){$ok:v v;$err:e ""};mt s.slice(l;p+1;s.len(l)){$ok:v v;$err:e ""})}
+    if(p>0){m=m.set(mt s.slice(l;0;p){$ok:v v;$err:e <-1};mt s.slice(l;p+1;s.len(l)){$ok:v v;$err:e <-1})}
   };
   <chk(m)
 };
@@ -2740,7 +2740,7 @@ f=main():i64{
 
 ```toke
 f=pat():str{
-  <if(args.count()>1){mt args.get(1){$ok:v v;$err:e ""}}el{"default"}
+  <if(args.count()>1){mt args.get(1){$ok:v v;$err:e "default"}}el{"default"}
 };
 ```
 
@@ -3104,9 +3104,9 @@ f=pat(path:str):@str{
   let st=mut.0;
   let n=s.len(txt);
   lp(let i=0;i<n;i=i+1){
-    if(s.charcode(txt;i)==10){r=r.append(mt s.slice(txt;st;i){$ok:v v;$err:e ""});st=i+1}
+    if(s.charcode(txt;i)==10){r=r.append(mt s.slice(txt;st;i){$ok:v v;$err:e <@()});st=i+1}
   };
-  <r.append(mt s.slice(txt;st;n){$ok:v v;$err:e ""})
+  <r.append(mt s.slice(txt;st;n){$ok:v v;$err:e <@()})
 };
 ```
 

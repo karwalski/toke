@@ -9,9 +9,9 @@ f=pat(path:str):@str{
   let st=mut.0;
   let n=s.len(txt);
   lp(let i=0;i<n;i=i+1){
-    if(s.charcode(txt;i)==10){r=r.append(mt s.slice(txt;st;i){$ok:v v;$err:e ""});st=i+1}
+    if(s.charcode(txt;i)==10){r=r.append(mt s.slice(txt;st;i){$ok:v v;$err:e <@()});st=i+1}
   };
-  <r.append(mt s.slice(txt;st;n){$ok:v v;$err:e ""})
+  <r.append(mt s.slice(txt;st;n){$ok:v v;$err:e <@()})
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
