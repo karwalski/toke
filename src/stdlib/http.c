@@ -34,6 +34,7 @@
 #include <fcntl.h>    /* 135.32: bind probe */
 #include <signal.h>
 #include <time.h>
+#include <pthread.h>  /* 138.24: the owned-client set (client_own) */
 #include <zlib.h>
 #ifdef TK_HAVE_OPENSSL
 #include <openssl/ssl.h>
@@ -3099,6 +3100,130 @@ static HttpClientResp err_resp_client(const char *msg, uint64_t code)
     return r;
 }
 
+/* ── The clients http.c made (138.24) ────────────────────────────────
+ *
+ * $httpclient is a declared record of three fields (stdlib/http.tki), so a
+ * program may build one as a literal, $httpclient{baseurl:..;poolsize:..;
+ * timeoutms:..}, and --check accepts it.  That literal is three 8-byte
+ * slots and nothing more.  The private settings after them in HttpClient
+ * (proxy_url and the 138.24 / 138.25 controls) exist only in a client this
+ * file allocated, in http_client or client_copy.  Read through a literal
+ * they are whatever lies past its end: v3.2.0 read proxy_url there, and the
+ * first round of 138.24 read four slots, so a literal client took garbage
+ * as its cap, deadline and connect address, and http.withproxy on one
+ * segfaulted (review of Z214, 2026-11-15).
+ *
+ * This set holds every client this file allocated and has not freed.  A
+ * client that is not in it is a record literal: its private settings are
+ * all off (no proxy, no deadline, no cap, no connect address), and nothing
+ * past its third slot is read.  client_priv is the only reader of those
+ * fields for a client the caller handed in.
+ *
+ * Open addressing with linear probing and backward-shift deletion, under a
+ * mutex: std.task may run client calls on several threads. */
+static pthread_mutex_t      g_owned_mu = PTHREAD_MUTEX_INITIALIZER;
+static const HttpClient   **g_owned;       /* NULL = empty slot */
+static size_t               g_owned_cap;   /* 0 or a power of two */
+static size_t               g_owned_n;
+
+static size_t owned_home(const HttpClient *c, size_t mask)
+{
+    uint64_t h = (uint64_t)(uintptr_t)c;
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 33;
+    return (size_t)h & mask;
+}
+
+/* The slot holding c, or g_owned_cap when c is not in the set.  The caller
+ * holds g_owned_mu. */
+static size_t owned_find(const HttpClient *c)
+{
+    if (!g_owned_cap) return 0;
+    size_t mask = g_owned_cap - 1;
+    for (size_t j = owned_home(c, mask); g_owned[j]; j = (j + 1) & mask)
+        if (g_owned[j] == c) return j;
+    return g_owned_cap;
+}
+
+/* Record c as allocated here.  0, or -1 when the set cannot grow (the
+ * caller then frees c and answers no client at all). */
+static int client_own(const HttpClient *c)
+{
+    int rc = 0;
+    pthread_mutex_lock(&g_owned_mu);
+    if ((g_owned_n + 1) * 2 > g_owned_cap) {
+        size_t ncap = g_owned_cap ? g_owned_cap * 2 : 64;
+        const HttpClient **nt = calloc(ncap, sizeof *nt);
+        if (!nt) {
+            rc = -1;
+        } else {
+            for (size_t i = 0; i < g_owned_cap; i++) {
+                if (!g_owned[i]) continue;
+                size_t j = owned_home(g_owned[i], ncap - 1);
+                while (nt[j]) j = (j + 1) & (ncap - 1);
+                nt[j] = g_owned[i];
+            }
+            free(g_owned);
+            g_owned = nt;
+            g_owned_cap = ncap;
+        }
+    }
+    if (rc == 0) {
+        size_t mask = g_owned_cap - 1, j = owned_home(c, mask);
+        while (g_owned[j] && g_owned[j] != c) j = (j + 1) & mask;
+        if (!g_owned[j]) { g_owned[j] = c; g_owned_n++; }
+    }
+    pthread_mutex_unlock(&g_owned_mu);
+    return rc;
+}
+
+/* Take c out of the set.  1 if it was there (allocated here), else 0. */
+static int client_disown(const HttpClient *c)
+{
+    pthread_mutex_lock(&g_owned_mu);
+    size_t i = owned_find(c);
+    if (i == g_owned_cap) { pthread_mutex_unlock(&g_owned_mu); return 0; }
+    size_t mask = g_owned_cap - 1;
+    g_owned[i] = NULL;
+    /* Backward shift: an entry after the hole whose home slot is not
+     * cyclically within (i, j] moves into the hole, so every entry stays
+     * reachable from its home slot without tombstones. */
+    for (size_t j = (i + 1) & mask; g_owned[j]; j = (j + 1) & mask) {
+        size_t k = owned_home(g_owned[j], mask);
+        int stays = i <= j ? (i < k && k <= j) : (i < k || k <= j);
+        if (!stays) { g_owned[i] = g_owned[j]; g_owned[j] = NULL; i = j; }
+    }
+    g_owned_n--;
+    pthread_mutex_unlock(&g_owned_mu);
+    return 1;
+}
+
+/* A client's private settings: its own when this file allocated it, all
+ * off when it is a record literal. */
+typedef struct {
+    const char *proxy_url;      /* NULL = direct */
+    uint64_t    deadline_ms;    /* HTTP_CLIENT_OFF = none */
+    uint64_t    max_body;       /* HTTP_CLIENT_OFF = none */
+    const char *connect_addr;   /* NULL = the URL's host */
+} ClientPriv;
+
+static ClientPriv client_priv(const HttpClient *c)
+{
+    ClientPriv p = { NULL, HTTP_CLIENT_OFF, HTTP_CLIENT_OFF, NULL };
+    if (!c) return p;
+    pthread_mutex_lock(&g_owned_mu);
+    int owned = owned_find(c) != g_owned_cap;
+    pthread_mutex_unlock(&g_owned_mu);
+    if (owned) {
+        p.proxy_url    = c->proxy_url;
+        p.deadline_ms  = c->deadline_ms;
+        p.max_body     = c->max_body;
+        p.connect_addr = c->connect_addr;
+    }
+    return p;
+}
+
 /* ── URL parsing ───────────────────────────────────────────────────── */
 
 static int client_parse_url(const char *base_url, const char *path_suffix,
@@ -3637,22 +3762,24 @@ static HttpClientResp client_do_request(HttpClient *c,
 
     char host[256], port[16], full_path[1024];
     int is_https = 0;
-    if (client_parse_url(c->base_url, path,
-                         host, sizeof(host), port, sizeof(port),
-                         full_path, sizeof(full_path), &is_https) != 0) {
-        return err_resp_client("failed to parse URL", 0);
-    }
+    int pu = client_parse_url(c->base_url, path,
+                              host, sizeof(host), port, sizeof(port),
+                              full_path, sizeof(full_path), &is_https);
+    if (pu != 0) return err_resp_client("failed to parse URL", 0);
 
     uint64_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
+    /* 138.24: the proxy and the controls, read only from a client this
+     * file made (a record literal has none: client_priv). */
+    ClientPriv pv = client_priv(c);
 
     /* ── Proxy support (Story 42.1.3) ──────────────────────────────── */
     char proxy_host[256], proxy_port[16];
     int  use_proxy = 0;
-    if (c->proxy_url && c->proxy_url[0]) {
+    if (pv.proxy_url && pv.proxy_url[0]) {
         /* Parse proxy URL — must be http:// */
         char dummy_path[16];
         int  dummy_https = 0;
-        if (client_parse_url(c->proxy_url, NULL,
+        if (client_parse_url(pv.proxy_url, NULL,
                              proxy_host, sizeof(proxy_host),
                              proxy_port, sizeof(proxy_port),
                              dummy_path, sizeof(dummy_path),
@@ -3667,7 +3794,7 @@ static HttpClientResp client_do_request(HttpClient *c,
      * never a name that would be looked up again here; and a proxy makes
      * its own connection to the URL's host, which the address cannot
      * steer. */
-    const char *caddr = c->connect_addr;
+    const char *caddr = pv.connect_addr;
     if (caddr) {
         unsigned char ab[16];
         if (inet_pton(AF_INET, caddr, ab) != 1 && inet_pton(AF_INET6, caddr, ab) != 1)
@@ -3681,13 +3808,13 @@ static HttpClientResp client_do_request(HttpClient *c,
     ClientClock ck;
     memset(&ck, 0, sizeof ck);
     ck.per_ms = timeout;
-    if (c->deadline_ms != HTTP_CLIENT_OFF) {
-        uint64_t d = c->deadline_ms > 0x3fffffffffffULL ? 0x3fffffffffffULL : c->deadline_ms;
-        ck.total_ms = c->deadline_ms;
+    if (pv.deadline_ms != HTTP_CLIENT_OFF) {
+        uint64_t d = pv.deadline_ms > 0x3fffffffffffULL ? 0x3fffffffffffULL : pv.deadline_ms;
+        ck.total_ms = pv.deadline_ms;
         ck.at = client_now_ms() + (int64_t)d;
         if (ck.at == 0) ck.at = 1;
     }
-    uint64_t body_cap = c->max_body;
+    uint64_t body_cap = pv.max_body;
     int capped = body_cap != HTTP_CLIENT_OFF;
     char dl_msg[200];
 #define CLIENT_DEADLINE_ERR(where_) do { \
@@ -4228,12 +4355,19 @@ HttpClient *http_client(const char *base_url)
     c->deadline_ms  = HTTP_CLIENT_OFF;   /* 138.24: every control off */
     c->max_body     = HTTP_CLIENT_OFF;
     c->connect_addr = NULL;
+    if (client_own(c) != 0) {
+        free(c->base_url);
+        free(c);
+        return NULL;
+    }
     return c;
 }
 
+/* Frees only a client this file made (client_own); a record literal is
+ * the program's, and has no private fields to free. */
 void http_client_free(HttpClient *c)
 {
-    if (!c) return;
+    if (!c || !client_disown(c)) return;
     free(c->base_url);
     free(c->proxy_url);
     free(c->connect_addr);
@@ -4245,20 +4379,26 @@ void http_client_free(HttpClient *c)
  * client shared by two callers is never re-aimed by either). */
 static HttpClient *client_copy(const HttpClient *c)
 {
+    /* c may be a record literal: only its three record fields are read
+     * here, and its private settings come from client_priv (all off). */
+    ClientPriv pv = client_priv(c);
     HttpClient *n = malloc(sizeof(HttpClient));
     if (!n) return NULL;
     n->base_url     = hstrdup(c->base_url);
     n->pool_size    = c->pool_size;
     n->timeout_ms   = c->timeout_ms;
-    n->proxy_url    = hstrdup(c->proxy_url);
-    n->deadline_ms  = c->deadline_ms;
-    n->max_body     = c->max_body;
-    n->connect_addr = hstrdup(c->connect_addr);
+    n->proxy_url    = hstrdup(pv.proxy_url);
+    n->deadline_ms  = pv.deadline_ms;
+    n->max_body     = pv.max_body;
+    n->connect_addr = hstrdup(pv.connect_addr);
     /* A setting lost to a failed copy must not become a client without
      * it: no client at all is the caller's "null client" $err. */
-    if ((c->base_url && !n->base_url) || (c->proxy_url && !n->proxy_url)
-        || (c->connect_addr && !n->connect_addr)) {
-        http_client_free(n);
+    if ((c->base_url && !n->base_url) || (pv.proxy_url && !n->proxy_url)
+        || (pv.connect_addr && !n->connect_addr) || client_own(n) != 0) {
+        free(n->base_url);
+        free(n->proxy_url);
+        free(n->connect_addr);
+        free(n);
         return NULL;
     }
     return n;
@@ -4313,8 +4453,9 @@ HttpClient *http_withconnectaddr(HttpClient *c, const char *addr)
  * there rather than silently fetched without it. */
 static int client_has_controls(const HttpClient *c)
 {
-    return c->deadline_ms != HTTP_CLIENT_OFF || c->max_body != HTTP_CLIENT_OFF
-        || c->connect_addr != NULL;
+    ClientPriv pv = client_priv(c);
+    return pv.deadline_ms != HTTP_CLIENT_OFF || pv.max_body != HTTP_CLIENT_OFF
+        || pv.connect_addr != NULL;
 }
 
 HttpClientResp http_get(HttpClient *c, const char *path)
@@ -4379,9 +4520,10 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
 
     char host[256], port[16], full_path[1024];
     int is_https = 0;
-    if (client_parse_url(c->base_url, req.url,
-                         host, sizeof(host), port, sizeof(port),
-                         full_path, sizeof(full_path), &is_https) != 0) {
+    int pu = client_parse_url(c->base_url, req.url,
+                              host, sizeof(host), port, sizeof(port),
+                              full_path, sizeof(full_path), &is_https);
+    if (pu != 0) {
         result.is_err  = 1;
         result.err_msg = hstrdup("failed to parse URL");
         return result;
@@ -4392,10 +4534,11 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
     /* ── Proxy support for streaming (Story 42.1.3) ──────────────── */
     char proxy_host[256], proxy_port[16];
     int  use_proxy = 0;
-    if (c->proxy_url && c->proxy_url[0]) {
+    const char *proxy_url = client_priv(c).proxy_url;   /* 138.24 */
+    if (proxy_url && proxy_url[0]) {
         char dummy_path[16];
         int  dummy_https = 0;
-        if (client_parse_url(c->proxy_url, NULL,
+        if (client_parse_url(proxy_url, NULL,
                              proxy_host, sizeof(proxy_host),
                              proxy_port, sizeof(proxy_port),
                              dummy_path, sizeof(dummy_path),

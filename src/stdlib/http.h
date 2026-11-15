@@ -503,7 +503,14 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 /* tki-record-prefix: http.httpclient
  * 138.24 / 138.25: the three request controls are private fields after the
  * record's, set only through http_withdeadline / http_withmaxbody /
- * http_withconnectaddr, and OFF in every client http_client() makes. */
+ * http_withconnectaddr, and OFF in every client http_client() makes.
+ *
+ * A program may also build a $httpclient as a record literal, which is the
+ * three record slots and nothing after them.  So the private fields
+ * (proxy_url included) exist only in a client http.c allocated
+ * (http_client, or a with* copy), and http.c reads them only through
+ * client_priv, which answers "all off" for any other pointer.  Never read
+ * them directly from a client a caller handed in. */
 typedef struct {
     char    *base_url;
     uint64_t pool_size;
