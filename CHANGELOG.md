@@ -14,6 +14,22 @@ may no longer compile.
 
 ## Unreleased
 
+### Added — HTTP client controls, a header-carrying GET and a resolver (spec amendment 138.24)
+
+One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2.3; `docs/decisions/138.24-http-client-controls.md`), for loke's handoffs T-63 and the T-58 addendum. Nothing changes for existing calls: every control is opt-in and off on a client from `http.client`.
+
+| Change | Story, commit |
+|---|---|
+| **`http.withdeadline(c;ms):$httpclient`** — each request must finish (connect, TLS handshake, send, response headers and body) within `ms` of the call, else `$err` `request deadline exceeded (<ms> ms) <stage>`. `timeoutms` restarts on every byte, so a server dripping a byte every 5 s held a request for 40 s and it answered `$ok`. | 138.24 — `d14f878b` |
+| **`http.withmaxbody(c;bytes):$httpclient`** — a response body over the cap is `$err` `response body exceeds the cap (<bytes> bytes): ...` and the read stops (a `Content-Length` over it before the body is read, a chunked body on the size line that passes it). A 64 MiB body used to be read whole. | 138.24 — `d14f878b` |
+| **`http.withconnectaddr(c;addr):$httpclient`** — connect to an IPv4/IPv6 literal (no lookup) while `Host`, SNI and certificate verification use the URL's host, the `curl --resolve` equivalent; a non-literal, or one with `withproxy`, is `$err` at request time. | 138.25 — `d14f878b` |
+| **`net.resolve(name:$str):@($str)!$neterr`** — every address a name has (A and AAAA), each once, as numeric strings; needs the `net` capability. `$neterr{msg;code}` is new, shaped as `$httperr`. | 138.25 — `0e2d3f1c` |
+| **`http.getheaders(url:$str;headers:@(@($str))):$httpresp!$httperr`** — `http.postheaders` without a body, as `GET`; `Host` and `Content-Length` reserved, CR/LF refused, https verified. | 138.27 — `da9755d6` |
+| `http.stream` and `http.downloadfile` refuse a client that carries one of the three controls (they read on paths the controls do not reach). | 138.24 — `d14f878b` |
+| **Documentation:** `$httpclient.timeoutms` is a per-read timeout, not a per-request one, as `docs/stdlib/http.md` used to say. | 138.34 — `113dc13b` |
+
+Tests: `C1860`–`C1864`, `D605`–`D608` (`6055e9ca`). Open: the response header block is not capped (138.49).
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
