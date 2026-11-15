@@ -8084,28 +8084,48 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     return mk_type(A,TY_VOID);
                 }
-                /* 127.289: a bare `lp` init over a module-level immutable
-                 * `let` or an import alias (semantics.md §4.2: DECL_LET and
-                 * DECL_IMPORT_ALIAS are not mutable).  The `let` was
-                 * assigned silently; the alias passed --check and failed in
-                 * codegen (E9003).  No `fix`: for the `let`, `let g=mut.`
-                 * and `lp(let g=..` run differently, as for a local; an
-                 * alias has no mutable spelling at all. */
-                if (md&&lp_init&&(md->kind==DECL_LET||md->kind==DECL_IMPORT_ALIAS)) {
+                /* 127.289, 127.465: a module-level immutable `let` or an
+                 * import alias (semantics.md §4.2: DECL_LET and
+                 * DECL_IMPORT_ALIAS are not mutable), assigned by `g=e;` or
+                 * by a bare `lp(g=e;..)` init.  Until 127.465 the `let` was
+                 * assigned silently, and the alias passed --check and failed
+                 * in codegen (E9003, at the function).
+                 *
+                 * The `fix` is the local `let` one: `let g=mut.` is a valid
+                 * module-level binding for every initialiser `let g=` takes.
+                 * Not on a bare init, nor on the step of a loop whose bare
+                 * init assigns `g` (bare_init_step): there `let g=mut.` and
+                 * `lp(let g=..` run differently.  An alias has no mutable
+                 * spelling, so it never has one (AGENTS §6). */
+                if (md&&(md->kind==DECL_LET||md->kind==DECL_IMPORT_ALIAS)) {
                     if (tc_can_emit(cx)) {
                         int alias=md->kind==DECL_IMPORT_ALIAS;
                         char msg[384];
-                        if (alias)
+                        if (alias&&lp_init)
                             snprintf(msg,sizeof(msg),
                                 "cannot assign to import alias '%s'; a bare 'lp' init assigns the binding in force, "
                                 "and an import alias cannot be assigned: write 'lp(let %s=' for a new loop variable",nb,nb);
-                        else
+                        else if (alias)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to import alias '%s'; an import alias names a module and cannot be assigned",nb);
+                        else if (lp_init)
                             snprintf(msg,sizeof(msg),
                                 "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
                                 "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
-                        diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
-                            "expected","mutable binding","got",alias?"import alias":"immutable binding",
-                            (const char*)NULL);
+                        else
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                        char fix[256];
+                        snprintf(fix,sizeof(fix),
+                            "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
+                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                            diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                                "expected","mutable binding","got","immutable binding",
+                                "fix",fix,(const char*)NULL);
+                        else
+                            diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                                "expected","mutable binding","got",alias?"import alias":"immutable binding",
+                                (const char*)NULL);
                     }
                     return mk_type(A,TY_VOID);
                 }

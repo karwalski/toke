@@ -42,6 +42,21 @@ may no longer compile.
   records reports the same diagnostics for every one. Migration: write
   `lp(let i=..` where a fresh loop variable was meant. Conformance: C1820,
   D575-D578.
+- **An assignment to a module-level `let` or to an import alias is E4070**
+  (127.465). The assignment check looked for a local binder and, finding
+  none, knew only module constants: `let g=5;` at module level and `g=0;` in
+  a function checked clean and overwrote the immutable binding, and `io=0;`
+  with `i=io:std.io;` checked clean and then failed in codegen with E9003,
+  reported at the function. Both are now E4070 at the assignment. The
+  module-level `let` carries the local `let` fix, "change 'let g=' to 'let
+  g=mut.' to make it mutable" (`let g=mut.<v>` is a valid module-level
+  binding for every initialiser `let g=` takes, and `--migrate` makes the
+  same rewrite), except on the step of a loop whose bare init assigns it;
+  the alias has no fix. Measured with `--check`, 685aa852 against this
+  compiler: 716 toke-tree, 32 ooke, 25 website and 3,573 toke-test-programs
+  files, 829 doc blocks, 344 conformance YAML inputs, 605 conformance-script
+  programs and the 23,382 regen records report the same diagnostics, so no
+  program in them is newly refused. Conformance: C1821, D579.
 - **grammar.ebnf `LoopStmt` states the clauses the parser accepts** (127.290):
   `( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';' IDENT '=' Expr`, or the
   one-clause `Expr`. It read `'lp' '(' Stmt Expr ';' Stmt ')'`, which admitted

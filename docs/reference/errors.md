@@ -1033,6 +1033,18 @@ and the call disagrees with its arity.
 | Stage    | type_check |
 
 Emitted when code assigns to a `let` binding that was not declared mutable.
+The binding is the one in force at the assignment: a local one, or else the
+module-level declaration of that name. A module-level `let g=5;` assigned in
+a function (`g=0`) is E4070 with the same `fix` as a local `let`, "change
+'let g=' to 'let g=mut.' to make it mutable": `let g=mut.<v>` is a valid
+module-level binding for every initialiser `let g=` takes, and `tkc
+--migrate` makes the same rewrite (story 127.465). Until 127.465 that
+assignment checked clean and overwrote the immutable binding.
+
+Also emitted, with no `fix`, for an assignment to an import alias (`i=io:std.io;`
+then `io=0` in a body; `got` is "import alias"; story 127.465): an alias names
+a module and has no mutable spelling. Until 127.465 it checked clean and then
+failed in codegen with E9003, reported at the function.
 
 Also emitted, with no `fix`, for an assignment to a module constant (`lim=5:i64;` then `lim=6` in a body; story 127.310): a constant is not mutable (semantics §4.2) and has no `mut` spelling to rewrite it to.
 

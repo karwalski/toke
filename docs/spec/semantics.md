@@ -309,8 +309,9 @@ For `x = expr`:
   Violation: `[errors.md E4031]`.
 - The binding must be mutable: declared with `let x=mut.`, or the loop
   variable introduced by an `lp(let ..)` init (§4.7), which is mutable
-  without `mut.`. Assigning to any other binding -- an immutable `let`, a
-  parameter, an `mt` arm binding -- is `[errors.md E4070]`. So
+  without `mut.`. Assigning to any other binding -- an immutable `let`
+  (local or module-level, 127.465), a parameter, an `mt` arm binding, a
+  module constant, an import alias (127.465) -- is `[errors.md E4070]`. So
   `lp(let i=0; i<n; i=i+1){...}` is legal, and so is an assignment to `i`
   in the loop body (127.283).
 - A bare `lp` init `lp(x = expr; ...)` (no `let`) is an assignment
