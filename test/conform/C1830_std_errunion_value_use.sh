@@ -21,7 +21,12 @@
 # str.parsefloat), sliceerr (str.slice), encodingerr (str.frombytes,
 # encoding.urldecode), jsonerr (json.i64, json.str), fileerr (file.size,
 # file.read), oserr (os.write), argserr (args.get), enverr (env.get),
-# tomlerr (toml.i64).
+# tomlerr (toml.i64).  And one per structurally distinct spelling of T!E,
+# each asserting the exact machine-readable `got`: a record T (db.one,
+# `dbrow!dberr`), a compound T (db.many, `[dbrow]!dberr`), a dotted error
+# type (llmtool.chatwithtools, `toolcall!llm.llmerr`) and the sigil spelling
+# (tpl.render, `$str!$tmplerr`), whose T `got` named '?' until std_union_of
+# read it (127.319 wave 2).
 #
 # Negative control: C1830_TKC=<v3.2.0 tkc> -- every `rejects` case fails
 # (rc 0, clean); every `clean` and `runs` case passes.
@@ -105,6 +110,15 @@ rejects v1 'env.get returned as a str (enverr)' "str!\$enverr" \
   "m=v1;${H}f=k():\$str{<env.get(\"HOME\")};f=main():i64{<0};"
 rejects t1 'toml.i64(..)+1 (tomlerr)' "i64!\$tomlerr" \
   "m=t1;${H}f=main():i64{let d=mt toml.load(\"a=1\"){\$ok:v v;\$err:e <1};let x=toml.i64(d;\"a\")+1;<x};"
+# ── each spelling of T!E: `got` names T exactly ─────────────────────────
+rejects d1 'db.one returned as a $dbrow (a record T)' '"got":"dbrow!$dberr"' \
+  'm=d1;i=db:std.db;f=k():$dbrow{<db.one("select 1";@())};f=main():i64{<0};'
+rejects d2 'db.many returned as an @($dbrow) (a compound T)' '"got":"@(dbrow)!$dberr"' \
+  'm=d2;i=db:std.db;f=k():@($dbrow){<db.many("select 1";@())};f=main():i64{<0};'
+rejects l1 'llmtool.chatwithtools returned as a $toolcall (a dotted error type)' '"got":"toolcall!$llm.llmerr"' \
+  'm=l1;i=llm:std.llm;i=lt:std.llmtool;f=k(c:$llmclient):$toolcall{<lt.chatwithtools(c;@())};f=main():i64{<0};'
+rejects g1 'tpl.render returned as a $str (the sigil spelling; got names T)' '"got":"str!$tmplerr"' \
+  'm=g1;i=tpl:std.template;f=k(t:$tmpl;v:$tmplvars):$str{<tpl.render(t;v)};f=main():i64{<0};'
 
 # ── the union consumed: clean, as before ─────────────────────────────────
 clean c1 'mt with $ok/$err arms' \

@@ -1,6 +1,6 @@
 id: D587
 series: D
-description: "127.319: a std T!E used as an array index is E4031 with NO fix -- the cast fix ('cast index to i64 or u64 using as') would be wrong for a union, which `as` does not unwrap"
+description: "127.319: a std T!E used as an array index is E4031 with NO fix -- the cast fix ('cast index to i64 or u64 using as') would be wrong for a union: the cast reads the union's value (the zero filler on a failure), and an as cast of a union is itself E4031 (D590)"
 input: |
   m=t;
   i=str:std.str;

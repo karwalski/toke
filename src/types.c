@@ -5948,20 +5948,48 @@ static Type *slot_union_base(Type *t) {
  * payload keeps its 127.180 typing).  Same gate as std_nonscalar_ret: a std
  * module alias, not shadowed, a typed (not "gen":"abi") public record.
  */
-static Type *std_slot_union(Ctx *cx, const Node *call) {
-    char rb[192];
-    if (!std_nonscalar_ret(cx, call, rb, sizeof rb)) return NULL;
-    char *bang = strchr(rb, '!');
+/* std_union_of (127.319) -- the union for a record's return spelling `T!E`
+ * (`rb`, cut at the '!' in place), whose slot_lower is `lower` (TY_UNKNOWN
+ * when NULL).  T is read by tki_compound_type after two spellings it does
+ * not take are normalised: the `$` sigil (template.tki's `$str!$tmplerr`,
+ * `$tmpl!$tmplerr`) and `@(..)` for an array (file.readbytes `@(byte)`,
+ * ocr's `@(ocrrun)`), read as `[..]`.  Without them T was unknown and the
+ * diagnostic's machine-readable `got` read '?!$tmplerr'.  A T it still
+ * cannot read (a dotted `llm.llmresp`) stays unknown and is reported '?'. */
+static Type *std_union_of(Ctx *cx, char *rb, Type *lower) {
+    char *bang = rb ? strchr(rb, '!') : NULL;
     if (!bang) return NULL;              /* a record, not a union */
     *bang = '\0';
     Arena *A = cx->env->arena;
     Type *u = mk_type(A, TY_ERROR_TYPE);
     if (!u) return NULL;
-    Type *ok = rb[0] ? tki_compound_type(cx, rb, strlen(rb), 0) : NULL;
+    char tb[192]; size_t tn = 0;
+    int ap[16]; int apn = 0;             /* 1 = this '(' opened an `@(` array */
+    for (const char *p = rb; *p && tn + 1 < sizeof tb; p++) {
+        if (*p == '$') continue;
+        if (p[0] == '@' && p[1] == '(') {
+            if (apn < 16) ap[apn++] = 1;
+            tb[tn++] = '['; p++; continue;
+        }
+        if (*p == '(') { if (apn < 16) ap[apn++] = 0; tb[tn++] = '('; continue; }
+        if (*p == ')') {
+            int arr = apn > 0 ? ap[--apn] : 0;
+            tb[tn++] = arr ? ']' : ')'; continue;
+        }
+        tb[tn++] = *p;
+    }
+    tb[tn] = '\0';
+    Type *ok = tn ? tki_compound_type(cx, tb, tn, 0) : NULL;
     u->elem = ok ? ok : mk_type(A, TY_UNKNOWN);
     u->name = ty_intern(A, bang[1] ? bang + 1 : "?");
-    u->slot_lower = mk_type(A, TY_UNKNOWN);
+    u->slot_lower = lower ? lower : mk_type(A, TY_UNKNOWN);
     return u;
+}
+
+static Type *std_slot_union(Ctx *cx, const Node *call) {
+    char rb[192];
+    if (!std_nonscalar_ret(cx, call, rb, sizeof rb)) return NULL;
+    return std_union_of(cx, rb, NULL);
 }
 
 /*
@@ -5978,16 +6006,7 @@ static Type *std_get_union(Ctx *cx, const char *alias) {
         snprintf(rb, sizeof rb, "%s!%s", f->okret, f->errty ? f->errty : "?");
     else if (f->ret && strchr(f->ret, '!')) snprintf(rb, sizeof rb, "%s", f->ret);
     else return NULL;
-    char *bang = strchr(rb, '!');
-    *bang = '\0';
-    Arena *A = cx->env->arena;
-    Type *u = mk_type(A, TY_ERROR_TYPE);
-    if (!u) return NULL;
-    Type *ok = rb[0] ? tki_compound_type(cx, rb, strlen(rb), 0) : NULL;
-    u->elem = ok ? ok : mk_type(A, TY_UNKNOWN);
-    u->name = ty_intern(A, bang[1] ? bang + 1 : "?");
-    u->slot_lower = mk_type(A, TY_UNKNOWN);
-    return u;
+    return std_union_of(cx, rb, NULL);
 }
 
 /*
@@ -6062,25 +6081,36 @@ static void std_call_union_args(Ctx *cx, const Node *call, Type *const *ats,
     }
 }
 
+/* fn_node_returns_union (127.323) -- the function or closure `fn` declares
+ * an error-union return (`f=k():i64!$e`): its return spec has the `!E`
+ * child.  Structural, so it resolves no type and emits nothing. */
+static int fn_node_returns_union(const Node *fn) {
+    if (!fn) return 0;
+    for (int i = 0; i < fn->child_count; i++) {
+        const Node *ch = fn->children[i];
+        if (ch && ch->kind == NODE_RETURN_SPEC) return ch->child_count >= 2;
+    }
+    return 0;
+}
+
 /*
  * union_bind_consumed (127.323) -- 1 when the `mut` binding `lb` (named
- * `nm`) is used anywhere in the function as the union it may hold: an `mt`
- * scrutinee, a `!` operand, a value returned from a fallible function, the
- * whole initialiser or
- * right-hand side of another binding, an arm or a statement value.  135.16a
+ * `nm`) is consumed as the union it may hold somewhere in the function: it
+ * is an `mt` scrutinee, the operand of a postfix `!`, or the value of a `<`
+ * from a function (or closure) whose return type is a union.  135.16a
  * (C067) made `let r=mut.0; r=s.toint(x); mt r{..}` match on the assigned
- * call's channel, so such a binding is a union by use and an assignment of
- * one into it is sound.  Flow-insensitive on purpose: only a binding that is
- * NEVER consumed so is judged, so no accepted program of that shape breaks.
+ * call's channel, so a union assigned into such a binding is consumed
+ * soundly and the assignment is not judged.  Nothing else counts: `let
+ * z=r`, a bare `r;`, an arm value, an argument or an operand read the
+ * value (the filler on a failure).  Flow-insensitive.  The other reads of
+ * an exempted binding are NOT judged: a read before the assignment (C067's
+ * `if(q>100){q=s.toint(..)}` guard) is a plain value, so a flow-insensitive
+ * read rule rejects correct programs -- an owner question (127.323).
  */
 static int union_bind_consumed_rec(Ctx *cx, const Node *n, const Node *lb,
-                                   const char *nm, int nl, int in_closure) {
+                                   const char *nm, int nl, int ret_union) {
     if (!n) return 0;
-    if (n->kind == NODE_CLOSURE) in_closure = 1;
-    /* a return passes the union on only from a fallible function (or a
-     * closure, whose return type is not read here) */
-    int ret_union = in_closure
-        || (cx->fn_ret && cx->fn_ret->kind == TY_ERROR_TYPE);
+    if (n->kind == NODE_CLOSURE) ret_union = fn_node_returns_union(n);
     for (int i = 0; i < n->child_count; i++) {
         const Node *c = n->children[i];
         if (!c) continue;
@@ -6088,18 +6118,13 @@ static int union_bind_consumed_rec(Ctx *cx, const Node *n, const Node *lb,
             int by_union =
                    (n->kind == NODE_MATCH_STMT && i == 0)
                 || (n->kind == NODE_PROPAGATE_EXPR && i == 0)
-                || (n->kind == NODE_RETURN_STMT && ret_union)
-                || ((n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT)
-                    && i >= 1)
-                || (n->kind == NODE_ASSIGN_STMT && i == 1)
-                || n->kind == NODE_MATCH_ARM
-                || n->kind == NODE_EXPR_STMT;
+                || (n->kind == NODE_RETURN_STMT && ret_union);
             if (by_union
                 && tk_binder_at(cx->fn_node, cx->src, c, nm, nl, NULL) == lb)
                 return 1;
             continue;
         }
-        if (union_bind_consumed_rec(cx, c, lb, nm, nl, in_closure)) return 1;
+        if (union_bind_consumed_rec(cx, c, lb, nm, nl, ret_union)) return 1;
     }
     return 0;
 }
@@ -7061,6 +7086,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_BINARY_EXPR: {
         Type *l=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *r=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
+        /* 127.323: a comparison reads each operand's value.  An error-union
+         * operand (a user `T!E`, a map lookup, a std `T!E`) compared the
+         * zero filler on a failure: `str.toint("x")==str.toint("y")` was
+         * true, and two same-typed unions passed types_compat, so only a
+         * mixed pair was ever rejected.  Each union operand is E4031, no
+         * fix, before any other rule. */
+        if (node->child_count>1
+            &&(node->op==TK_LT||node->op==TK_GT||node->op==TK_EQ
+               ||node->op==TK_LE||node->op==TK_GE||node->op==TK_NE)) {
+            const char *ops=node->op==TK_LT?"<":node->op==TK_GT?">":node->op==TK_EQ?"=="
+                           :node->op==TK_LE?"<=":node->op==TK_GE?">=":"!=";
+            char wh[64]; snprintf(wh,sizeof wh,"a comparison '%s'",ops);
+            int u0=union_value_use(cx,node->children[0],l,NULL,wh);
+            int u1=union_value_use(cx,node->children[1],r,NULL,wh);
+            if (u0||u1) return mk_type(A,TY_BOOL);
+        }
         /* Story 111.12: catch `+` between a known $str and a TY_UNKNOWN
          * operand BEFORE the early-return below. This is the slip-through
          * that caused FIN-079-style segfaults — type-checker silently
@@ -7699,6 +7740,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count>1) {
             Type *src_t=infer(cx,node->children[0]);
             Type *dst_t=resolve_type(cx,node->children[1]);
+            /* 127.319: `as` does not unwrap an error union -- it converts
+             * whatever the slot holds, the zero filler on a failure, so
+             * `str.toint("x") as i64` checked clean and was 0.  The operand
+             * of a cast is read as a value: E4031, no fix, for a user
+             * `T!E`, a map lookup and a std `T!E` alike. */
+            if (union_value_use(cx,node->children[0],src_t,NULL,"an 'as' cast"))
+                return dst_t;
             /* 127.362: `x as str` reinterprets the value's word as a C string.
              * For a composite (a record, an array, a map) that word is a
              * pointer to slots or to an array block, never to text: the cast
@@ -7882,9 +7930,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64
             &&idx->kind!=TY_I8&&idx->kind!=TY_I16&&idx->kind!=TY_I32
             &&idx->kind!=TY_U8&&idx->kind!=TY_U16&&idx->kind!=TY_U32) {
-            /* 127.319: an error union is not cast to an index -- `as`
-             * does not unwrap it, so the cast `fix` (1.17 (a), 127.438)
-             * would be wrong in every case: no fix for a union. */
+            /* 127.319: an error union used as an index is E4031 with no
+             * fix.  The cast `fix` (1.17 (a), 127.438) would be wrong in
+             * every case: `a.get(u as i64)` reads the union's value -- the
+             * zero filler on a failure -- and an `as` cast of a union is
+             * itself E4031 (NODE_CAST_EXPR). */
             if (idx->kind==TY_ERROR_TYPE) {
                 if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                     char msg[320];
@@ -8329,9 +8379,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             int al=(int)strlen(an);
             const Node *alb=tk_binder_at(cx->fn_node,cx->src,node->children[0],an,al,NULL);
             if (alb&&(alb->kind==NODE_MUT_BIND_STMT||alb->kind==NODE_LOOP_INIT)
-                &&!union_bind_consumed_rec(cx,cx->fn_node,alb,an,al,0)) {
+                &&!union_bind_consumed_rec(cx,cx->fn_node,alb,an,al,
+                                            fn_node_returns_union(cx->fn_node))) {
                 char wh[320];
-                snprintf(wh,sizeof wh,"the assignment to '%s' (a 'mut' binding never matched)",an);
+                snprintf(wh,sizeof wh,"the assignment to '%s' (a 'mut' binding that is never "
+                         "matched, propagated with '!' or returned as a union)",an);
                 union_value_use(cx,node->children[1],rhs,NULL,wh);
                 return mk_type(A,TY_VOID);
             }
