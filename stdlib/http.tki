@@ -794,6 +794,16 @@
     },
     {
       "kind": "func",
+      "name": "http.getheaders",
+      "params": [
+        "str",
+        "[[str]]"
+      ],
+      "return": "httpresp!httperr",
+      "note": "url; headers \u2014 GET a full URL with @(@(name;value)...) headers, typed like http.postheaders: Host and Content-Length are the client's, a name or value with CR/LF is refused; $err only for a transport failure; https is verified (138.27)"
+    },
+    {
+      "kind": "func",
       "name": "http.postroutejson",
       "params": [
         "i64",
