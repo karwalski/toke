@@ -1,0 +1,3 @@
+# D615 fixture (138.19 D4): a quoted-string grant, a valid fs.read scope.
+[capabilities]
+fs_read = "./content"
