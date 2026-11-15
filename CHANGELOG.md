@@ -14,6 +14,12 @@ may no longer compile.
 
 ## Unreleased
 
+### Breaking changes (with migration)
+
+| # | Change | Story, commit | Migration |
+|---|---|---|---|
+| 1 | **`==` and `!=` with an array operand are E4031** (loke T-60, the other half). The emitter has no array equality: against the literal `@()` it compared the array's address with a fresh allocation, so `a==@()` was false for every empty `a` (loke's `h==@()` spawn-failure checks never fired), and between two named arrays it compared the elements' bytes as a C string, so `@(256)==@(512)` and `@(1;2)==@(1;2;3)` were true. Both now fail at `--check`, whatever the other operand is: `'==' does not compare arrays ('@(i64)' == '@(?)'): toke has no array equality; test emptiness with .len or compare the elements`. The refusal sits beside 3.2.0's struct/sum refusal (138.9, loke T-14). `<`/`>` on arrays and `==` on maps are not changed. Measured before landing (read-only, with this commit's `tkc --check`): no site in the toke tree, ooke main (`make check`, every file), toke-website or toke-test-programs (including the library solutions; the sources there that stop at an older error first hold no comparison against `@()` either). In the banked v0.4 regen set, 4 records draw it, all the shape `if(val==other){..}` on two arrays, and their banked output came from the defect: A-ARR-0033v2, A-ARR-0090v2, MIG-P2-A-A-ARR-0010v2 and MIG-P2-A-A-ARR-0027v2 go to correctness repair (127.460). | 138.20 (owner decision 2026-11-15, register 1.2 (a)) — `62806474` | `x==@()` becomes `x.len==0` and `x!=@()` becomes `x.len!=0`: the `fix` field carries exactly that rewrite when the other operand is an identifier of array type. Compare two arrays by length and then element by element in a loop; test a process handle's failure in the `$err` arm (`process.badhandle()`, 3.2.0 #6), not against `@()`. |
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

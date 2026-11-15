@@ -1,0 +1,19 @@
+id: D574
+series: D
+description: "138.20 (loke T-60): a process handle or a str compared with `@()` is E4031 with no fix -- `.len` is not the test for either"
+input: |
+  m=t;
+  i=process:std.process;
+  f=main():i64{
+    let h=mt process.spawn(@("/nonexistent")) {$ok:h h;$err:e <1};
+    if(h==@()){<2};
+    let s="";
+    if(s!=@()){<3};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "a scalar or str operand"
