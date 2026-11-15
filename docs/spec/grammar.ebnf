@@ -96,7 +96,23 @@ BreakStmt    = 'br' ';' ;
 
 IfStmt       = 'if' '(' Expr ')' '{' StmtList '}' [ 'el' ( IfStmt | '{' StmtList '}' ) ] ;
 (* 127.23: the statement form chains `el if (...)` exactly like IfExpr.      *)
-LoopStmt     = 'lp' '(' Stmt Expr ';' Stmt ')' '{' StmtList '}' ;
+LoopStmt     = 'lp' '(' ( ( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';'
+                          IDENT '=' Expr
+                        | Expr ) ')' '{' StmtList '}' ;
+(* 127.290: the clauses as src/parser.c reads them, written in line so the  *)
+(* production count is unchanged.  The three-clause form is                 *)
+(*   LoopInit ';' Cond ';' LoopStep  with                                   *)
+(*   LoopInit = ( 'let' IDENT | IDENT ) '=' Expr   and                      *)
+(*   LoopStep = IDENT '=' Expr ;                                            *)
+(* the one-clause form `lp(Expr)` repeats while Expr holds (Appendix A E3). *)
+(* Until 127.290 this read `'lp' '(' Stmt Expr ';' Stmt ')'`, which admitted *)
+(* any statement as the init and the step; the parser never did.           *)
+(* `lp(let i=e;..)` declares a fresh loop variable, scoped to the loop and   *)
+(* mutable without `mut.` (which the init does not accept, 127.283).  A     *)
+(* bare `lp(i=e;..)` declares nothing: it assigns the binding of `i` in     *)
+(* force, exactly as AssignStmt does -- E4070 when that binding is an        *)
+(* immutable let or a parameter, E3011 when there is none (127.289;          *)
+(* toke-spec-v0.4.md §K).                                                    *)
 ArenaStmt    = '{' 'arena' StmtList '}' ;
 
 ExprStmt     = Expr ';' ;

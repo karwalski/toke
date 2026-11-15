@@ -38,6 +38,12 @@ may no longer compile.
   records reports the same diagnostics for every one. Migration: write
   `lp(let i=..` where a fresh loop variable was meant. Conformance: C1820,
   D575, D576.
+- **grammar.ebnf `LoopStmt` states the clauses the parser accepts** (127.290):
+  `( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';' IDENT '=' Expr`, or the
+  one-clause `Expr`. It read `'lp' '(' Stmt Expr ';' Stmt ')'`, which admitted
+  any statement as the init and the step. Written in line, so the published
+  production count is unchanged. `toke.gbnf` already matched the parser, and
+  both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
 
 ---
 
