@@ -2,11 +2,13 @@
 """migrate_std_errunion.py -- INTERNAL migration for story 127.319 / 127.323.
 
 toke 3.3.0 judges a std call that declares `T!E` (str.toint, str.slice,
-json.*, file.*, ...) as the error union it is, and rejects an error union
-read as its value in a condition, `!`, an interpolation, a std-call argument
-and an assignment to a `mut` binding (E4031).  This script rewrites each such
-use in a file into the explicit match that keeps today's runtime result
-exactly -- the value on success, T's zero filler on a failure:
+json.*, file.*, ...) -- and the receiver spelling of str.slice (`t.slice(a;b)`,
+`.substr`, `.substring`, 127.462) -- as the error union it is, and rejects an
+error union read as its value in a condition, `!`, an interpolation, a std-call
+argument, an assignment to a `mut` binding, an `as` cast and each operand of a
+comparison (E4031).  This script rewrites each such use in a file into the
+explicit match that keeps today's runtime result exactly -- the value on
+success, T's zero filler on a failure:
 
     str.toint(s)+1        ->  (mt str.toint(s){$ok:v v;$err:e 0})+1
     io.println(str.slice(t;0;1))
@@ -207,6 +209,10 @@ def pick_expr(tree, d):
     for n in cands:
         k, ch = n["kind"], n.get("children", [])
         if k == "BINARY_EXPR" and len(ch) == 2:
+            # a comparison reports each union operand at its own offset, so
+            # the binary node shares the LEFT operand's (127.323)
+            if "a comparison '" in msg:
+                return ch[0] if tree.ext[id(ch[0])][0] == off else ch[1]
             if "the left side is" in msg:
                 return ch[0]
             if "the right side is" in msg:
@@ -214,6 +220,8 @@ def pick_expr(tree, d):
             if exp_u is not None and got_u is None:
                 return ch[0]
             return ch[1]
+        if k == "CAST_EXPR" and ch and "an 'as' cast" in msg:
+            return ch[0]                       # the cast's operand (127.319)
         if k == "INDEX_EXPR" and "array index must be integer" in msg and len(ch) == 2:
             return ch[1]
         if k in ("RETURN_STMT",) and ch:
