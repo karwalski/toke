@@ -6384,6 +6384,67 @@ static void check_reraise_type(Ctx *cx, const Node *node, const Type *inner) {
               "expected", exp, "got", got, (const char *)NULL);
 }
 
+/*
+ * 138.20 (loke T-60) — refuse `==` / `!=` with an array operand (E4031).
+ *
+ * The emitter has no array equality.  Against the literal `@()` it compared
+ * the array's address with a fresh allocation (`a==@()` was false for every
+ * empty `a`, so loke's `h==@()` spawn-failure checks never fired); between
+ * two named arrays it ran tk_str_cmp over the blocks, reading the elements'
+ * bytes as a C string (`@(256)==@(512)` was true).  Owner decision
+ * 2026-11-15 (register 1.2 (a)): refuse, as 138.9 T-14 does for struct and
+ * sum values, rather than invent element-wise equality.
+ *
+ * `fix` is the rewritten comparison, `x.len==0` / `x.len!=0`, and is given
+ * only when one operand is the literal `@()` and the other is an IDENTIFIER
+ * whose type is an array (either order): that is the one shape where "is
+ * empty" is what the comparison can have meant and where the rewrite needs
+ * no source span the AST does not keep (the 127.358 `(a+b)` rule).  `.len`
+ * binds tighter than any operator and the rewrite keeps the operator, so
+ * it substitutes in place wherever the comparison stands.  Two named
+ * arrays, a handle, a str, an unresolved operand, or an array operand that
+ * is not an identifier get no `fix` (AGENTS §6).
+ */
+static void refuse_array_equality(Ctx *cx, const Node *node,
+                                  const Type *l, const Type *r) {
+    if (!l || !r) return;
+    const char *op = node->op == TK_EQ ? "==" : "!=";
+    const Node *ln = node->child_count > 0 ? node->children[0] : NULL;
+    const Node *rn = node->child_count > 1 ? node->children[1] : NULL;
+    int l_empty = ln && ln->kind == NODE_ARRAY_LIT && ln->child_count == 0;
+    int r_empty = rn && rn->kind == NODE_ARRAY_LIT && rn->child_count == 0;
+    const Node *xn = NULL;
+    const Type *xt = NULL;
+    if (r_empty && !l_empty) { xn = ln; xt = l; }
+    else if (l_empty && !r_empty) { xn = rn; xt = r; }
+    char fix[192];
+    const char *fixp = NULL;
+    char nm[128];
+    /* A name TOKSTR would truncate gets no fix rather than a wrong one. */
+    if (xn && xn->kind == NODE_IDENT && xt && xt->kind == TY_ARRAY
+        && xn->tok_len > 0 && xn->tok_len < (int)sizeof nm) {
+        TOKSTR(nm, cx->src, xn);
+        snprintf(fix, sizeof fix, "%s.len%s0", nm, op);
+        fixp = fix;
+    }
+    char ltn[96], rtn[96], msg[384];
+    snprintf(ltn, sizeof ltn, "%s", type_name(l));
+    snprintf(rtn, sizeof rtn, "%s", type_name(r));
+    snprintf(msg, sizeof msg,
+             "'%s' does not compare arrays ('%s' %s '%s'): toke has no array "
+             "equality; test emptiness with .len or compare the elements",
+             op, ltn, op, rtn);
+    const char *got = l->kind == TY_ARRAY ? ltn : rtn;
+    if (fixp)
+        diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col, msg,
+                  "expected", "a scalar or str operand", "got", got,
+                  "fix", fixp, (const char *)NULL);
+    else
+        diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col, msg,
+                  "expected", "a scalar or str operand", "got", got,
+                  (const char *)NULL);
+}
+
 
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
@@ -6887,6 +6948,49 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           (const char *)NULL);
             return mk_type(A,TY_UNKNOWN);
         }
+        /* `==` / `!=` the emitter has no equality for (138.9 T-14, 138.20
+         * T-60).  These run before the unknown-operand early-out below: the
+         * array refusal holds whatever the other operand is, and the
+         * struct/sum one needs both sides known, so the early-out could
+         * only hide the first.
+         *
+         * 138.9 (T-14): `==` / `!=` on two struct or sum values.  The
+         * emitter has no structural equality for them: it compares the two
+         * handles (`x==$lvl{$restricted:0}` with x returned from a function
+         * was never true) or runs tk_str_cmp over the boxes, reading the tag
+         * word as a C string and ignoring the payload.  Both answers are
+         * wrong, so the comparison is refused rather than miscompiled.  An
+         * opaque .tki handle (a zero-field record) and `$none` keep their
+         * handle comparison.  No `fix`: matching on the variant, comparing a
+         * field, or writing an eq function are all plausible. */
+        if ((node->op==TK_EQ||node->op==TK_NE)
+            &&l->kind==TY_STRUCT&&r->kind==TY_STRUCT
+            &&!opaque_handle_type(l)&&!opaque_handle_type(r)
+            &&!(l->name&&strcmp(l->name,"none")==0)
+            &&!(r->name&&strcmp(r->name,"none")==0)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[320], tn[96];
+                snprintf(tn,sizeof tn,"%s",type_name(l));
+                snprintf(msg,sizeof msg,
+                         "'%s' does not compare struct or sum values ('%s'): "
+                         "toke has no structural equality for them; match on "
+                         "the variant or compare a field",
+                         node->op==TK_EQ?"==":"!=",tn);
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","a scalar or str operand","got",tn,
+                          (const char*)NULL);
+            }
+            return mk_type(A,TY_BOOL);
+        }
+        /* 138.20 (loke T-60): `==` / `!=` with an array operand, whatever
+         * the other operand is (owner decision 2026-11-15, register 1.2 (a)).
+         * See refuse_array_equality for what the emitter did instead. */
+        if ((node->op==TK_EQ||node->op==TK_NE)
+            &&(l->kind==TY_ARRAY||r->kind==TY_ARRAY)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx))
+                refuse_array_equality(cx,node,l,r);
+            return mk_type(A,TY_BOOL);
+        }
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
         /* Story 114.19c: array + non-array (e.g. `@(a)+(b)`, appending an unwrapped
          * scalar) is a type error, not a runtime segfault. Both operands are concrete
@@ -6963,34 +7067,6 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 127.436: no `fix` -- the prose restated the error. */
             emit_mm(cx,node,l,r,NULL);
             return mk_type(A,TY_UNKNOWN);
-        }
-        /* 138.9 (T-14): `==` / `!=` on two struct or sum values.  The
-         * emitter has no structural equality for them: it compares the two
-         * handles (`x==$lvl{$restricted:0}` with x returned from a function
-         * was never true) or runs tk_str_cmp over the boxes, reading the tag
-         * word as a C string and ignoring the payload.  Both answers are
-         * wrong, so the comparison is refused rather than miscompiled.  An
-         * opaque .tki handle (a zero-field record) and `$none` keep their
-         * handle comparison.  No `fix`: matching on the variant, comparing a
-         * field, or writing an eq function are all plausible. */
-        if ((node->op==TK_EQ||node->op==TK_NE)
-            &&l->kind==TY_STRUCT&&r->kind==TY_STRUCT
-            &&!opaque_handle_type(l)&&!opaque_handle_type(r)
-            &&!(l->name&&strcmp(l->name,"none")==0)
-            &&!(r->name&&strcmp(r->name,"none")==0)) {
-            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
-                char msg[320], tn[96];
-                snprintf(tn,sizeof tn,"%s",type_name(l));
-                snprintf(msg,sizeof msg,
-                         "'%s' does not compare struct or sum values ('%s'): "
-                         "toke has no structural equality for them; match on "
-                         "the variant or compare a field",
-                         node->op==TK_EQ?"==":"!=",tn);
-                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","a scalar or str operand","got",tn,
-                          (const char*)NULL);
-            }
-            return mk_type(A,TY_BOOL);
         }
         if (arith||cmp) {
             /* Epic 111 / ADR-0004: + is strictly numeric. When str+str is

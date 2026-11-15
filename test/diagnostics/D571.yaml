@@ -1,0 +1,14 @@
+id: D571
+series: D
+description: "138.20 (loke T-60): `@()==xs` (the literal on the left) is E4031 with the same rewrite, `xs.len==0`"
+input: |
+  m=t;
+  f=isempty(xs:@i64):bool{
+    <@()==xs
+  };
+  f=main():i64{
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix: "xs.len==0"
