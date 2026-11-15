@@ -68,6 +68,23 @@ for them are recorded in the item rows of `docs/progress.md` as recommendations 
 - **D4:** withdraw the Gate 2 PASS of 2026-05-24 in a dated `docs/decisions/gate2-decision.md` ("no standing verdict"), folding in Gate 3 (void, never ran). 55.6% is not restated without the possibly-corpus-derived caveat.
 - **D-rel-1:** edit the published v3.2.0 release body: correct the signing statement (the signature and SBOM cover a CI rebuild, not the archives), link the breaking-change table, and state the glibc ≥ 2.38 and macOS 15 floors.
 
+**Answers recorded later on 2026-11-15 (loke's third handoff).** loke's handoff of 2026-11-15
+(`loke/docs/upstream/handoff-2026-11-15.md`, drafted, not sent) asked for these. The owner answered
+each when asked directly; the recommendation in each case was the register's own.
+
+| Item | Answer | Rows |
+|---|---|---|
+| 2.1 | **(a) opt-in controls on the HTTP client, defaults off:** a whole-request deadline covering connect, TLS handshake, headers and body, and a body cap that stops the read and answers `$err` for an over-cap body (as 138.23 does for a short one). Defaults are revisited at the next major. One spec amendment with 2.2 and 2.3, which also corrects the per-read `timeoutms` documentation (138.34); it ships in the first release it is ready for. | 138.24, 138.34 |
+| 2.2 | **A client option `connectaddr`** (connect to a caller-checked address while SNI and certificate verification use the URL's host) **plus `net.resolve`** returning every address, gated by the `net` capability. Same amendment. | 138.25 |
+| 2.3 | **Accept as proposed:** `http.getheaders(url;headers)`, typed like `http.postheaders`, with 138.8's header rules (Host and Content-Length reserved, CR/LF refused). Same amendment. | 138.27 |
+| 3.4 | **Accept D1–D4** of `docs/decisions/138.19-scoped-capability-grants.md` as written; **D5** (OS-level enforcement) becomes its own story. | 138.19, 138.44 |
+| T-67 (new) | **Checker and runtime.** `--check` refuses an integer other than the literal `0` where an opaque std handle or a runtime C string is read, in std slots and in user parameters declared `$handle`; and the process runtime answers a handle it did not create as it answers NULL (-1, `$err`, false). Breaking for code that carries handles in an `i64`: loke's helpers move to `h:$handle`, which is valid on 3.2.0. | 138.35, 138.36 |
+
+**1.12 is overtaken rather than answered.** Measured on v3.2.0 (2026-11-15): `$handle` already names
+the type in a parameter (`f=waitfor(h:$handle):i64` checks, and a str argument to it is E4031);
+`h:handle` is E2005 only because a v0.4 type takes the `$` sigil. What loke needed from 1.12 (b),
+call sites of its own helpers judged, comes from the T-67 answer.
+
 ## Decide these first
 
 These block the most work. 1–3 sit on the corpus critical path (131.15 → 131.16/131.17 → 131.19 →
