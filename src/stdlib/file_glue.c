@@ -13,6 +13,7 @@
 #include "tk_runtime.h"     /* 135.12: tk_current_error + tk_err_box (127.109) */
 #include "tk_strhdr.h"      /* 127.170: file.read returns a sealed string */
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -115,7 +116,7 @@ static int64_t file_strarray(const char *op, StrArray arr, int free_data) {
 }
 
 int64_t tk_file_read_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.read: null path");
     StrFileResult r = file_read_into((const char *)(intptr_t)path, tks_alloc, tks_seal);
     if (r.is_err) return file_raise_op("file.read", r.err, path);
@@ -123,7 +124,7 @@ int64_t tk_file_read_w(int64_t path) {
 }
 
 int64_t tk_file_write_w(int64_t path, int64_t content) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.write: null path");
     if (!content) return file_badarg("file.write: null content");
     BoolFileResult r = file_write((const char *)(intptr_t)path, (const char *)(intptr_t)content);
@@ -132,13 +133,13 @@ int64_t tk_file_write_w(int64_t path, int64_t content) {
 }
 
 int64_t tk_file_isdir_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return 0;
     return (int64_t)file_is_dir((const char *)(intptr_t)path);
 }
 
 int64_t tk_file_mkdir_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.mkdir: null path");
     BoolFileResult r = file_mkdir_p((const char *)(intptr_t)path);
     if (r.is_err) return file_raise_op("file.mkdir", r.err, path);
@@ -146,8 +147,8 @@ int64_t tk_file_mkdir_w(int64_t path) {
 }
 
 int64_t tk_file_copy_w(int64_t src, int64_t dst) {
-    TK_REQUIRE(TK_CAP_FS_READ);   /* reads src */
-    TK_REQUIRE(TK_CAP_FS_WRITE);  /* writes dst */
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)src);    /* reads src */
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)dst);   /* writes dst */
     if (!src || !dst) return file_badarg("file.copy: null path");
     /* 121.84: name the path that failed -- dst for an open/write/close of
      * the destination, src otherwise (it used to be src for every error). */
@@ -159,7 +160,7 @@ int64_t tk_file_copy_w(int64_t src, int64_t dst) {
 }
 
 int64_t tk_file_listall_w(int64_t dir) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)dir);
     if (!dir) return file_badarg("file.listall: null path");
     StrArrayFileResult r = file_listall((const char *)(intptr_t)dir);
     if (r.is_err) return file_raise_op("file.listall", r.err, dir);
@@ -173,7 +174,7 @@ int64_t tk_file_listall_w(int64_t dir) {
 }
 
 int64_t tk_file_exists_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return 0;
     return (int64_t)file_exists((const char *)(intptr_t)path);
 }
@@ -184,7 +185,7 @@ int64_t tk_file_exists_w(int64_t path) {
  * directories on it (lstat/readlink of every component), so it is fs.read,
  * like file.exists and file.isdir. */
 int64_t tk_file_realpath_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.realpath: null path");
     StrFileResult r = file_realpath((const char *)(intptr_t)path);
     if (r.is_err) return file_raise_op("file.realpath", r.err, path);
@@ -192,7 +193,7 @@ int64_t tk_file_realpath_w(int64_t path) {
 }
 
 int64_t tk_file_list_w(int64_t dir) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)dir);
     if (!dir) return file_badarg("file.list: null path");
     StrArrayFileResult r = file_list((const char *)(intptr_t)dir);
     if (r.is_err) return file_raise_op("file.list", r.err, dir);
@@ -210,7 +211,7 @@ int64_t tk_file_list_w(int64_t dir) {
  * accumulate catalogue entry calls file.append with the documented two.
  */
 int64_t tk_file_append_w(int64_t path, int64_t content) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.append: null path");
     if (!content) return file_badarg("file.append: null content");
     BoolFileResult r = file_append((const char *)(intptr_t)path, (const char *)(intptr_t)content);
@@ -219,7 +220,7 @@ int64_t tk_file_append_w(int64_t path, int64_t content) {
 }
 
 int64_t tk_file_delete_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.delete: null path");
     BoolFileResult r = file_delete((const char *)(intptr_t)path);
     if (r.is_err) return file_raise_op("file.delete", r.err, path);
@@ -227,14 +228,16 @@ int64_t tk_file_delete_w(int64_t path) {
 }
 
 int64_t tk_file_rename_w(int64_t from, int64_t to) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    /* 138.19: a move removes `from` and creates `to` -- both are writes. */
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)from);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)to);
     if (!from || !to) return 0;
     BoolFileResult r = file_move((const char *)(intptr_t)from, (const char *)(intptr_t)to);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_readlines_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return 0;
     StrArrayFileResult r = file_readlines((const char *)(intptr_t)path);
     if (r.is_err) return 0;
@@ -250,7 +253,7 @@ int64_t tk_file_readlines_w(int64_t path) {
 }
 
 int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path || !lines) return 0;
     /* lines points to block+1; block[0] (at lines[-1]) is the length */
     int64_t *arr = (int64_t *)(intptr_t)lines;
@@ -298,7 +301,7 @@ int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
  * file.size, which can tell an empty file from a failure.
  */
 int64_t tk_file_stat_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return 0;
     U64FileResult r = file_size((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)r.ok;
@@ -317,7 +320,7 @@ int64_t tk_file_listdir_w(int64_t path) {
 
 /* file.appendline(path, line) — append a line with trailing newline */
 int64_t tk_file_appendline_w(int64_t path, int64_t line) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path || !line) return 0;
     const char *l = (const char *)(intptr_t)line;
     size_t llen = tk_strlen(l);
@@ -333,15 +336,40 @@ int64_t tk_file_appendline_w(int64_t path, int64_t line) {
 
 /* file.ensuredir(path) — create directory if it doesn't exist (mkdir -p) */
 int64_t tk_file_ensuredir_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path) return 0;
     BoolFileResult r = file_mkdir_p((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
+/* 138.19: the directory a glob pattern lists -- its components before the
+ * first one holding a glob metacharacter ("content/x*.md" -> "content"; a
+ * pattern with none is checked as itself).  A ".." among the globbed
+ * components could climb out of any directory named here, so such a pattern
+ * is checked as "/": only the whole class (or a "/" scope) admits it. */
+static const char *glob_scope_dir(const char *pattern, char *out, size_t outsz) {
+    if (!pattern) return NULL;
+    size_t n = strlen(pattern), meta = n, cut = 0;
+    for (size_t i = 0; i < n; i++)
+        if (strchr("*?[{", pattern[i])) { meta = i; break; }
+    if (meta == n) { snprintf(out, outsz, "%s", pattern); return out; }
+    for (size_t i = meta; i + 1 < n; i++)          /* a ".." component after the glob */
+        if (pattern[i] == '.' && pattern[i + 1] == '.' &&
+            (i == 0 || pattern[i - 1] == '/') && (i + 2 == n || pattern[i + 2] == '/')) {
+            snprintf(out, outsz, "/");
+            return out;
+        }
+    for (size_t i = 0; i < meta; i++) if (pattern[i] == '/') cut = i + 1;
+    if (cut == 0) snprintf(out, outsz, ".");
+    else if (cut == 1) snprintf(out, outsz, "/");
+    else snprintf(out, outsz, "%.*s", (int)(cut - 1), pattern);
+    return out;
+}
+
 /* file.listglob(pattern) — list files matching a glob pattern */
 int64_t tk_file_listglob_w(int64_t pattern) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    char gdir[4096];
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, glob_scope_dir((const char *)(intptr_t)pattern, gdir, sizeof gdir));
     if (!pattern) return 0;
     StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
     if (r.is_err) return 0;
@@ -398,7 +426,7 @@ int64_t tk_file_tempdir_w(void) {
  */
 
 int64_t tk_file_readbytes_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.readbytes: null path");
     BytesFileResult r = file_readbytes((const char *)(intptr_t)path);
     if (r.is_err) return file_raise(r.err.kind, r.err.msg);
@@ -416,7 +444,7 @@ int64_t tk_file_readbytes_w(int64_t path) {
 }
 
 int64_t tk_file_writebytes_w(int64_t path, int64_t data) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.writebytes: null path");
     if (!data) {
         /* A genuinely empty `@(byte)` is a real zero-length handle, never 0.
@@ -449,7 +477,7 @@ int64_t tk_file_writebytes_w(int64_t path, int64_t data) {
 
 /* file.readrange(path; offset; len) -> @(byte)!FileErr */
 int64_t tk_file_readrange_w(int64_t path, int64_t offset, int64_t len) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.readrange: null path");
     BytesFileResult r = file_readrange((const char *)(intptr_t)path, offset, len);
     if (r.is_err) return file_raise(r.err.kind, r.err.msg);
@@ -468,7 +496,7 @@ int64_t tk_file_readrange_w(int64_t path, int64_t offset, int64_t len) {
 
 /* file.size(path) -> i64!FileErr — 0 is a real size, never a failure. */
 int64_t tk_file_size_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     if (!path) return file_badarg("file.size: null path");
     U64FileResult r = file_size((const char *)(intptr_t)path);
     if (r.is_err) return file_raise(r.err.kind, r.err.msg);

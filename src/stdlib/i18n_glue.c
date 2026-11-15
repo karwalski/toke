@@ -60,13 +60,33 @@ int64_t tk_i18n_str_w(int64_t bundle, int64_t key) {
     return (int64_t)(intptr_t)i18n_get(bundle_of(bundle), (const char *)(intptr_t)key);
 }
 
+/* 138.19: the directory holding "<base>[.<locale>].x" (dirname semantics:
+ * "msgs" -> ".", "/a/msgs" -> "/a", "/msgs" -> "/"). */
+static const char *i18n_scope_dir(const char *base, const char *loc, char *out, size_t outsz) {
+    if (!base) return NULL;
+    int w = loc ? snprintf(out, outsz, "%s.%s", base, loc) : snprintf(out, outsz, "%s", base);
+    if (w < 0 || (size_t)w >= outsz) return NULL;
+    char *sl = strrchr(out, '/');
+    if (!sl) snprintf(out, outsz, ".");
+    else if (sl == out) out[1] = '\0';
+    else *sl = '\0';
+    return out;
+}
+
 /* 121.42: reads the files named by the program -- fs.read, like file.read. */
 int64_t tk_i18n_load_w(int64_t path, int64_t locale) {
-    TK_REQUIRE(TK_CAP_FS_READ);
-    if (!path) { tk_current_error = 1; return 0; }
     const char *p = (const char *)(intptr_t)path;
     const char *loc = locale ? (const char *)(intptr_t)locale : NULL;
-    if (!loc || !*loc) loc = i18n_locale();       /* only when none was asked for */
+    if (p && (!loc || !*loc)) loc = i18n_locale();   /* only when none was asked for */
+    {   /* 138.19: i18n_load reads <path>.<locale>.<ext> and <path>.<ext>,
+         * siblings of `path`, so the scope check is on the directory that
+         * holds them -- for each name, since a locale may hold a '/'. */
+        char a[4096], b[4096];
+        TK_REQUIRE_PATH(TK_CAP_FS_READ, i18n_scope_dir(p, NULL, a, sizeof a));
+        if (p && loc && strchr(loc, '/'))
+            TK_REQUIRE_PATH(TK_CAP_FS_READ, i18n_scope_dir(p, loc, b, sizeof b));
+    }
+    if (!path) { tk_current_error = 1; return 0; }
     I18nBundleResult r = i18n_load(p, loc ? loc : "en");
     if (r.is_err) { tk_current_error = 1; return 0; }
     I18nBundle *b = (I18nBundle *)malloc(sizeof *b);

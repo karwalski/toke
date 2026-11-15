@@ -585,8 +585,8 @@ static char *ws_generate_key(void)
  * host_out must be freed by caller.
  * path_out must be freed by caller.
  */
-static int ws_parse_url(const char *url, char **host_out,
-                        uint16_t *port_out, char **path_out)
+int ws_parse_url(const char *url, char **host_out,
+                 uint16_t *port_out, char **path_out)
 {
     const char *p;
     const char *host_start;

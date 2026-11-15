@@ -36,8 +36,11 @@ static int find_col(Row r, const char *col);
 
 int64_t db_connect(const char *dsn)
 {
-    TK_REQUIRE(TK_CAP_FS_READ);
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    /* 138.19: the database file (sqlite3_open may create it); ":memory:"
+     * is checked as a path like any other name, so a scoped grant must
+     * cover it (docs/spec/capabilities.md §1.2). */
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, dsn);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, dsn);
     if (!dsn) return -1;
     if (g_nconns == g_capconns) {
         int nc = g_capconns ? g_capconns * 2 : 8;

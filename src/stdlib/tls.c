@@ -643,7 +643,7 @@ static void *accept_thread(void *arg)
 
 int tls_listen(int32_t port, TlsConfig cfg, TlsConnCallback cb)
 {
-    TK_REQUIRE(TK_CAP_NET);
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, "0.0.0.0", port < 0 ? 0 : port);   /* 138.19: INADDR_ANY below */
     SSL_CTX *ctx = build_ssl_ctx(1, cfg);
     if (!ctx) return 0;
 
@@ -719,7 +719,7 @@ int tls_listen(int32_t port, TlsConfig cfg, TlsConnCallback cb)
 
 TlsConnResult tls_connect(const char *host, int32_t port, TlsConfig cfg)
 {
-    TK_REQUIRE(TK_CAP_NET);
+    TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, port < 0 ? 0 : port);   /* 138.19 */
     TlsConnResult result;
     result.conn.id = NULL;
     result.is_none = 1;

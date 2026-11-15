@@ -76,7 +76,7 @@ int64_t tk_log_open_access_w(int64_t path_ptr, int64_t max_lines,
                                int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
-    if (!log_path_is_own_stream(path)) TK_REQUIRE(TK_CAP_FS_WRITE);
+    if (!log_path_is_own_stream(path)) TK_REQUIRE_PATH(TK_CAP_FS_WRITE, path);   /* 138.19 */
     TkAccessLog *al = tk_access_log_open(path, (int)max_lines,
                                           (int)max_files, (int)max_age_days);
     if (!al) return -1;
@@ -88,7 +88,7 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
                               int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
-    if (!log_path_is_own_stream(path)) TK_REQUIRE(TK_CAP_FS_WRITE);   /* 121.22 */
+    if (!log_path_is_own_stream(path)) TK_REQUIRE_PATH(TK_CAP_FS_WRITE, path);   /* 121.22, 138.19 */
     TkAccessLog *el = tk_error_log_open(path, (int)max_lines,
                                          (int)max_files, (int)max_age_days);
     if (!el) return -1;

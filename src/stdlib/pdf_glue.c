@@ -145,7 +145,7 @@ int64_t tk_pdf_open_w(int64_t data)
  * sink (124.4c). */
 int64_t tk_pdf_openfile_w(int64_t path)
 {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return pdf_raise(5, "pdf.openfile: null path");
     {
         TkPdfDoc *doc = pdf_open_file((const char *)(intptr_t)path);

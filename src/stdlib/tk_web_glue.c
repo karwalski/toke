@@ -1347,8 +1347,9 @@ int64_t tk_http_serve_staticdir_w(int64_t prefix_i64, int64_t root_i64) {
     if (!prefix || !root) return -1;
     /* 121.42 (4): the mount hands staticdir_handler the authority to read
      * any file under root, per request (stat, realpath, fopen) -- fs.read,
-     * taken here at registration, where the program asks for it. */
-    TK_REQUIRE(TK_CAP_FS_READ);
+     * taken here at registration, where the program asks for it.  138.19:
+     * on the directory mounted, so an fs_read scope must cover root. */
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, root);
 
     /* 127.75: re-mounting the same prefix replaces its root; a new prefix
      * adds a mount; the wildcard route is registered once, not per call. */
@@ -1533,8 +1534,10 @@ int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
     const char *templates_dir = (const char *)(intptr_t)templates_dir_i64;
     if (!pages_dir || !templates_dir) return -1;
     /* 121.42 (4): the scan below reads pages_dir now, and tk_page_dispatch
-     * re-reads the pages and templates on every request -- fs.read. */
-    TK_REQUIRE(TK_CAP_FS_READ);
+     * re-reads the pages and templates on every request -- fs.read.
+     * 138.19: on both directories. */
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, pages_dir);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, templates_dir);
 
     /* Scan directory for .tkt files and register routes */
     scan_pages_recursive(pages_dir, "", templates_dir);

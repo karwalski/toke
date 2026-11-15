@@ -112,7 +112,7 @@ int64_t tk_xlsx_open_w(int64_t data)
  * (124.4c). */
 int64_t tk_xlsx_openfile_w(int64_t path)
 {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return xlsx_raise(XLSX_E_IO, "xlsx.openfile: null path");
     TkXlsxBook *wb = xlsx_open_file((const char *)(intptr_t)path);
     if (!wb) return xlsx_raise_last();

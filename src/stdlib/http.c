@@ -2089,7 +2089,7 @@ static void reopen_logs_if_requested(void)
  * net.c and net_glue.c share it; server_ops.c was archived by 121.71). */
 
 int http_serve(uint16_t port) {
-    TK_REQUIRE(TK_CAP_NET);
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, "0.0.0.0", port);   /* 138.19: binds INADDR_ANY below */
     struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET; addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
@@ -2179,7 +2179,8 @@ static void workers_parent_sighandler(int sig)
  * host == NULL means INADDR_ANY.  Returns fd or -1 on error. */
 static int bind_listen(const char *host, uint64_t port)
 {
-    TK_REQUIRE(TK_CAP_NET);
+    /* 138.19: the address bound below -- INADDR_ANY when none is given. */
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, (host == NULL || host[0] == '\0') ? "0.0.0.0" : host, port);
 
     /* 127.203: never SO_REUSEPORT. It let a second server on a busy port
      * bind it and silently split its connections with the first. The
@@ -3173,7 +3174,8 @@ static void client_host_value(char *out, size_t cap, const char *host,
 static int client_tcp_connect(const char *host, const char *port,
                               uint64_t timeout_ms)
 {
-    TK_REQUIRE(TK_CAP_NET);
+    /* 138.19: the name the program passed, before DNS (design §3.2). */
+    TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, port ? strtoul(port, NULL, 10) : 0);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
@@ -3451,6 +3453,9 @@ static HttpClientResp client_do_request(HttpClient *c,
 
     int fd;
     if (use_proxy) {
+        /* 138.19: through a proxy the program still reaches the origin, so a
+         * connect scope must admit the origin as well as the proxy. */
+        TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, strtoul(port, NULL, 10));
         fd = client_tcp_connect(proxy_host, proxy_port, timeout);
     } else {
         fd = client_tcp_connect(host, port, timeout);
@@ -4028,6 +4033,9 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
 
     int fd;
     if (use_proxy) {
+        /* 138.19: through a proxy the program still reaches the origin, so a
+         * connect scope must admit the origin as well as the proxy. */
+        TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, strtoul(port, NULL, 10));
         fd = client_tcp_connect(proxy_host, proxy_port, timeout);
     } else {
         fd = client_tcp_connect(host, port, timeout);
@@ -4365,7 +4373,7 @@ int http_downloadfile(HttpClient *c, const char *url,
     /* 121.42 (3): the download is written to dest_path -- fs.write, as well
      * as the net grant client_tcp_connect takes.  Checked before anything
      * is fetched, so a denied program has touched neither. */
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, dest_path);
 
     if (strncmp(c->base_url, "https://", 8) == 0) return -1;
 
