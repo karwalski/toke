@@ -143,13 +143,22 @@ f=reporttojson(r:$report):$str{
 };
 
 
+(* usage — a missing argument prints the usage line and exits with code 2. *)
+f=usage():$i64{
+  io.eprintln("usage: datapipe <input.csv> <output.json>");
+  <2
+};
+
+
 f=main():$i64{
-  if(args.count()<3){
-    io.eprintln("usage: datapipe <input.csv> <output.json>");
-    <2
+  let path=mt args.get(1) {
+    $ok:v v;
+    $err:e <usage()
   };
-  let path=mt args.get(1){$ok:v v;$err:e ""};
-  let output=mt args.get(2){$ok:v v;$err:e ""};
+  let output=mt args.get(2) {
+    $ok:v v;
+    $err:e <usage()
+  };
   let raw=mt file.read(path) {
     $ok:v v;
     $err:e ""
