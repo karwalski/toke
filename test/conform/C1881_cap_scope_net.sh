@@ -27,6 +27,12 @@
 #   5. listen:127.0.0.1:P admits net.listen and then net.accept of a client
 #      connection on it (the accept is checked on the listener's address)
 #   6. the whole class (--allow-net) still admits all of it
+#   7. the HTTP client's gate (client_tcp_connect, the path loke uses):
+#      http.geturl to a scoped host and port is admitted, to another port
+#      denied; through http.withproxy the proxy AND the origin must both be
+#      admitted (the origin is example.invalid, a reserved name that is never
+#      resolved: through a proxy only the proxy is dialled, and here it is a
+#      closed 127.0.0.1 port)
 # (Wildcard and IPv6 matching, which would need DNS or v6 here, are in the
 # broker's unit test, test/stdlib/test_capabilities.c.)
 #
@@ -56,6 +62,7 @@ i=args:std.args;
 i=net:std.net;
 i=ws:std.ws;
 i=s:std.str;
+i=http:std.http;
 f=main():i64{
   let op=mt args.get(1) {$ok:v v;$err:e ""};
   let a=mt args.get(2) {$ok:v v;$err:e ""};
@@ -70,6 +77,16 @@ f=main():i64{
   if(op=="connect"){
     let r=mt ws.connect(a) {$ok:c 1;$err:e 2};
     io.println("connect-done \(r)");
+  }el{};
+  if(op=="geturl"){
+    let r=mt http.geturl(a) {$ok:b 1;$err:e 2};
+    io.println("geturl-done \(r)");
+  }el{};
+  if(op=="proxyget"){
+    let o=mt args.get(3) {$ok:v v;$err:e ""};
+    let c=http.withproxy(http.client(o);a);
+    let r=mt http.clientget(c;"/") {$ok:b 1;$err:e 2};
+    io.println("proxyget-done \(r)");
   }el{};
   if(op=="accept"){
     let l=net.listen(a);
@@ -132,6 +149,21 @@ fi
 # 6 whole class
 run "6a --allow-net (whole class) portavailable" admit "${P}" avail 48117 --allow-net
 run "6b --allow-net (whole class) connect" admit "${P}" connect ws://127.0.0.1:48118/ --allow-net
+
+# 7 the HTTP client (closed 127.0.0.1 ports 48122/48123: an admitted
+# request ends in a refused connection)
+run "7a http.geturl 127.0.0.1:48122 under connect:127.0.0.1:48122" admit "${P}" geturl http://127.0.0.1:48122/ --allow-net=connect:127.0.0.1:48122
+run "7b http.geturl 127.0.0.1:48123 (another port)" deny "${P}" geturl http://127.0.0.1:48123/ --allow-net=connect:127.0.0.1:48122
+run "7c http.geturl localhost:48122 under connect:127.0.0.1:48122 (a name)" deny "${P}" geturl http://localhost:48122/ --allow-net=connect:127.0.0.1:48122
+run "7d proxy admitted, origin example.invalid not" deny "${P}" proxyget http://127.0.0.1:48122 http://example.invalid/ --allow-net=connect:127.0.0.1:48122
+if /usr/bin/grep -a -q "not for 'connect:example.invalid:80'" "${WORK}/e"; then
+    pass "7d the denial names the origin (connect:example.invalid:80)"
+else fail "7d denial: $(head -1 "${WORK}/e")"; fi
+run "7e proxy and origin both admitted" admit "${P}" proxyget http://127.0.0.1:48122 http://example.invalid/ --allow-net=connect:127.0.0.1:48122,connect:example.invalid:80
+run "7f origin admitted, the proxy not" deny "${P}" proxyget http://127.0.0.1:48122 http://example.invalid/ --allow-net=connect:example.invalid:80
+if /usr/bin/grep -a -q "not for 'connect:127.0.0.1:48122'" "${WORK}/e"; then
+    pass "7f the denial names the proxy (connect:127.0.0.1:48122)"
+else fail "7f denial: $(head -1 "${WORK}/e")"; fi
 
 echo "------------------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
