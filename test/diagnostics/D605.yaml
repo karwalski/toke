@@ -1,6 +1,6 @@
 id: D605
 series: D
-description: "138.27: http.getheaders takes (url; headers) -- a call written with postheaders' (url; body; headers) is E4026 naming the arity, with the existing E4026 advice in fix"
+description: "138.27: http.getheaders takes (url; headers) -- a call written with postheaders' (url; body; headers) is E4026 naming the arity (expected 2).  E4026's fix text is advice, not a mechanical repair (AGENTS 6), so it is not pinned here"
 input: |
   m=t;
   i=http:std.http;
@@ -10,7 +10,6 @@ input: |
   };
 expected_exit_code: 1
 expected_error_codes: ["E4026"]
-expected_fix: "match the call to the declaration, or reconcile the interface with the implementation if they disagree"
 expected_diag_field:
   field: expected
   value: "2"
