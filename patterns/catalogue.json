@@ -2160,17 +2160,17 @@
             "qwen25coder": 76,
             "cl100k": 74
           },
-          "wall_ms_median": 67.183,
+          "wall_ms_median": 92.176,
           "wall_ci95": [
-            66.364,
-            67.474
+            91.571,
+            96.187
           ],
-          "rss_kb_median": 33696,
+          "rss_kb_median": 33760,
           "allocs": {
-            "calls": 1280199,
-            "bytes": 20909395
+            "calls": 1024197,
+            "bytes": 30756598
           },
-          "bigO_ratio": 3.701,
+          "bigO_ratio": 3.402,
           "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
@@ -2179,25 +2179,25 @@
           "form": "b",
           "label": "indexof/slice hand scan (sketch)",
           "fixture": "patterns/parse-json/b.tk",
-          "min_bytes": 198,
+          "min_bytes": 242,
           "tokens": {
-            "proxy8k": 46,
-            "byte256": 186,
-            "v03": 70,
-            "qwen25coder": 77,
-            "cl100k": 76
+            "proxy8k": 49,
+            "byte256": 230,
+            "v03": 83,
+            "qwen25coder": 98,
+            "cl100k": 97
           },
-          "wall_ms_median": 66.45,
+          "wall_ms_median": 74.687,
           "wall_ci95": [
-            65.7,
-            67.054
+            74.415,
+            75.092
           ],
-          "rss_kb_median": 33648,
+          "rss_kb_median": 33712,
           "allocs": {
-            "calls": 1280199,
-            "bytes": 20286290
+            "calls": 512197,
+            "bytes": 12324598
           },
-          "bigO_ratio": 3.653,
+          "bigO_ratio": 3.352,
           "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
@@ -2214,17 +2214,17 @@
             "qwen25coder": 131,
             "cl100k": 125
           },
-          "wall_ms_median": 56.179,
+          "wall_ms_median": 63.857,
           "wall_ci95": [
-            55.892,
-            56.776
+            63.367,
+            64.309
           ],
-          "rss_kb_median": 25600,
+          "rss_kb_median": 25664,
           "allocs": {
-            "calls": 768199,
-            "bytes": 17837395
+            "calls": 512197,
+            "bytes": 12324598
           },
-          "bigO_ratio": 3.681,
+          "bigO_ratio": 3.325,
           "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "more"
@@ -2233,7 +2233,7 @@
       "verdict": {
         "canonical": "a",
         "hot_path": "c",
-        "choose_hot_path_when": "the layout is fixed and machine-generated, the parse sits in a loop body executed > 100k times AND profiling shows `json.dec` on the hot path; never for external input (hand scans are wrong on reordered or escaped JSON). The charcode scan measured 50.6 ms against 66.6 ms for `json.dec` (-24%), for 11 tokens more",
+        "choose_hot_path_when": "the layout is fixed and machine-generated, the parse sits in a loop body executed > 100k times AND profiling shows `json.dec` on the hot path; never for external input (hand scans are wrong on reordered or escaped JSON). The charcode scan measured 63.9 ms against 92.2 ms for `json.dec` (-31%), for 11 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -2247,12 +2247,12 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "47a863f569ce",
+        "tkc_version": "toke 3.2.0 (git 47a863f569ce)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261115-200127.json",
+        "date": "2026-11-15",
         "load_warning": true
       }
     },
@@ -2350,7 +2350,7 @@
       "id": "parse-delim-split",
       "family": "parse",
       "intent": "Split one line on a single-character delimiter into a field array.",
-      "applicability": "Any delimiter split where empty fields must be preserved. s.split is 5-7x fewer tokens than either manual form and is the only one that does not re-scan the string; b re-slices the remainder every iteration (quadratic in fields x line length).",
+      "applicability": "Any delimiter split where empty fields must be preserved. s.split is 6-9x fewer tokens than either manual form and is the only one that does not re-scan the string; b re-slices the remainder every iteration (quadratic in fields x line length).",
       "card_rule": "delimited fields: s.split(line;\",\")",
       "candidates": [
         {
@@ -2365,17 +2365,17 @@
             "qwen25coder": 16,
             "cl100k": 16
           },
-          "wall_ms_median": 60.056,
+          "wall_ms_median": 62.467,
           "wall_ci95": [
-            58.56,
-            60.335
+            61.979,
+            63.871
           ],
-          "rss_kb_median": 53808,
+          "rss_kb_median": 57904,
           "allocs": {
-            "calls": 2048199,
-            "bytes": 36670306
+            "calls": 768197,
+            "bytes": 28708626
           },
-          "bigO_ratio": 3.585,
+          "bigO_ratio": 3.113,
           "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
@@ -2384,25 +2384,25 @@
           "form": "b",
           "label": "indexof + slice loop",
           "fixture": "patterns/parse-delim-split/b.tk",
-          "min_bytes": 219,
+          "min_bytes": 288,
           "tokens": {
-            "proxy8k": 50,
-            "byte256": 219,
-            "v03": 55,
-            "qwen25coder": 93,
-            "cl100k": 93
+            "proxy8k": 60,
+            "byte256": 288,
+            "v03": 74,
+            "qwen25coder": 129,
+            "cl100k": 129
           },
-          "wall_ms_median": 79.772,
+          "wall_ms_median": 90.778,
           "wall_ci95": [
-            79.352,
-            81.784
+            89.262,
+            93.392
           ],
-          "rss_kb_median": 90048,
+          "rss_kb_median": 104672,
           "allocs": {
-            "calls": 3584199,
-            "bytes": 62960976
+            "calls": 1280197,
+            "bytes": 45092626
           },
-          "bigO_ratio": 3.685,
+          "bigO_ratio": 3.366,
           "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
@@ -2411,25 +2411,25 @@
           "form": "c",
           "label": "charcode scan + slice loop",
           "fixture": "patterns/parse-delim-split/c.tk",
-          "min_bytes": 185,
+          "min_bytes": 231,
           "tokens": {
-            "proxy8k": 35,
-            "byte256": 185,
-            "v03": 44,
-            "qwen25coder": 76,
-            "cl100k": 75
+            "proxy8k": 40,
+            "byte256": 231,
+            "v03": 58,
+            "qwen25coder": 100,
+            "cl100k": 99
           },
-          "wall_ms_median": 75.985,
+          "wall_ms_median": 85.531,
           "wall_ci95": [
-            75.092,
-            76.831
+            84.08,
+            89.762
           ],
-          "rss_kb_median": 90016,
+          "rss_kb_median": 94192,
           "allocs": {
-            "calls": 2816199,
-            "bytes": 67390306
+            "calls": 1536197,
+            "bytes": 59428626
           },
-          "bigO_ratio": 3.713,
+          "bigO_ratio": 3.466,
           "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
@@ -2452,12 +2452,12 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "47a863f569ce",
+        "tkc_version": "toke 3.2.0 (git 47a863f569ce)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261115-200127.json",
+        "date": "2026-11-15",
         "load_warning": true
       }
     },
@@ -2480,18 +2480,18 @@
             "qwen25coder": 14,
             "cl100k": 14
           },
-          "wall_ms_median": 97.69,
+          "wall_ms_median": 60.052,
           "wall_ci95": [
-            97.376,
-            98.955
+            59.05,
+            60.505
           ],
-          "rss_kb_median": 97952,
+          "rss_kb_median": 49808,
           "allocs": {
-            "calls": 3584199,
-            "bytes": 60222286
+            "calls": 1536197,
+            "bytes": 24501496
           },
-          "bigO_ratio": 3.814,
-          "pat_n": 512000,
+          "bigO_ratio": 3.194,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -2507,18 +2507,18 @@
             "qwen25coder": 55,
             "cl100k": 55
           },
-          "wall_ms_median": 211.393,
+          "wall_ms_median": 107.007,
           "wall_ci95": [
-            210.045,
-            214.769
+            105.365,
+            110.918
           ],
-          "rss_kb_median": 299232,
+          "rss_kb_median": 150672,
           "allocs": {
-            "calls": 9216199,
-            "bytes": 206654286
+            "calls": 1792197,
+            "bytes": 92196606
           },
-          "bigO_ratio": 3.899,
-          "pat_n": 512000,
+          "bigO_ratio": 3.538,
+          "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -2526,26 +2526,26 @@
           "form": "c",
           "label": "charcode scan + slice loop",
           "fixture": "patterns/parse-fields/c.tk",
-          "min_bytes": 230,
+          "min_bytes": 276,
           "tokens": {
-            "proxy8k": 49,
-            "byte256": 230,
-            "v03": 58,
-            "qwen25coder": 100,
-            "cl100k": 99
+            "proxy8k": 55,
+            "byte256": 276,
+            "v03": 72,
+            "qwen25coder": 124,
+            "cl100k": 123
           },
-          "wall_ms_median": 169.291,
+          "wall_ms_median": 97.266,
           "wall_ci95": [
-            167.665,
-            172.305
+            95.814,
+            97.443
           ],
-          "rss_kb_median": 178400,
+          "rss_kb_median": 90128,
           "allocs": {
-            "calls": 5632199,
-            "bytes": 133950286
+            "calls": 1536197,
+            "bytes": 57380606
           },
-          "bigO_ratio": 4.018,
-          "pat_n": 512000,
+          "bigO_ratio": 3.424,
+          "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
@@ -2573,12 +2573,12 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "47a863f569ce",
+        "tkc_version": "toke 3.2.0 (git 47a863f569ce)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261115-200127.json",
+        "date": "2026-11-15",
         "load_warning": true
       }
     },
@@ -2690,17 +2690,17 @@
             "qwen25coder": 74,
             "cl100k": 73
           },
-          "wall_ms_median": 85.069,
+          "wall_ms_median": 104.166,
           "wall_ci95": [
-            84.304,
-            86.661
+            101.912,
+            106.242
           ],
-          "rss_kb_median": 80560,
+          "rss_kb_median": 87360,
           "allocs": {
-            "calls": 2048273,
-            "bytes": 75163951
+            "calls": 1024269,
+            "bytes": 60000496
           },
-          "bigO_ratio": 4.208,
+          "bigO_ratio": 3.337,
           "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
@@ -2709,25 +2709,25 @@
           "form": "b",
           "label": "s.indexof \"=\" + s.slice -> m.set",
           "fixture": "patterns/parse-kv-lines/b.tk",
-          "min_bytes": 195,
+          "min_bytes": 239,
           "tokens": {
-            "proxy8k": 45,
-            "byte256": 194,
-            "v03": 60,
-            "qwen25coder": 86,
-            "cl100k": 85
+            "proxy8k": 48,
+            "byte256": 238,
+            "v03": 72,
+            "qwen25coder": 108,
+            "cl100k": 107
           },
-          "wall_ms_median": 76.78,
+          "wall_ms_median": 89.773,
           "wall_ci95": [
-            75.475,
-            78.347
+            84.573,
+            93.381
           ],
-          "rss_kb_median": 64080,
+          "rss_kb_median": 71264,
           "allocs": {
-            "calls": 1536270,
-            "bytes": 60827910
+            "calls": 512267,
+            "bytes": 45664456
           },
-          "bigO_ratio": 4.163,
+          "bigO_ratio": 4.071,
           "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "more"
@@ -2736,7 +2736,7 @@
       "verdict": {
         "canonical": "a",
         "hot_path": "b",
-        "choose_hot_path_when": "millions of lines are parsed: `b` allocates two strings per line where `a` allocates a 2-element array plus two strings, and measured 67.3 ms against 74.7 ms (-10%), for 12 tokens more",
+        "choose_hot_path_when": "millions of lines are parsed: `b` allocates two strings per line where `a` allocates a 2-element array plus two strings, and measured 89.8 ms against 104.2 ms (-14%), for 15 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -2752,12 +2752,12 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "47a863f569ce",
+        "tkc_version": "toke 3.2.0 (git 47a863f569ce)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261115-200127.json",
+        "date": "2026-11-15",
         "load_warning": true
       }
     },
@@ -4058,7 +4058,7 @@
       "id": "cli-argv",
       "family": "cli",
       "intent": "Read the first program argument with a default when absent.",
-      "applicability": "args.get(n) returns $err past the end, so mt is a one-expression form; the count check is 7 tokens more. The args.get result interpolates as a pointer (127.7 class) - print it directly or take s.len. args.count() includes the program name.",
+      "applicability": "args.get(n) returns $err past the end, so mt is a one-expression form; the count check is 9 tokens more. The args.get result interpolates as a pointer (127.7 class) - print it directly or take s.len. args.count() includes the program name.",
       "card_rule": "argv: mt args.get(1) with default",
       "candidates": [
         {
@@ -4090,15 +4090,15 @@
         },
         {
           "form": "b",
-          "label": "if(args.count()>1){args.get(1)}el{\"default\"}",
+          "label": "if(args.count()>1){mt args.get(1){..}}el{\"default\"}",
           "fixture": "patterns/cli-argv/b.tk",
-          "min_bytes": 58,
+          "min_bytes": 86,
           "tokens": {
-            "proxy8k": 15,
-            "byte256": 52,
-            "v03": 18,
-            "qwen25coder": 22,
-            "cl100k": 22
+            "proxy8k": 17,
+            "byte256": 74,
+            "v03": 22,
+            "qwen25coder": 33,
+            "cl100k": 33
           },
           "wall_ms_median": 64.516,
           "wall_ci95": [
@@ -4641,18 +4641,18 @@
             "qwen25coder": 35,
             "cl100k": 35
           },
-          "wall_ms_median": 84.116,
+          "wall_ms_median": 59.41,
           "wall_ci95": [
-            81.854,
-            86.007
+            55.318,
+            61.538
           ],
-          "rss_kb_median": 83152,
+          "rss_kb_median": 50096,
           "allocs": {
-            "calls": 1536227,
-            "bytes": 104733357
+            "calls": 256223,
+            "bytes": 33871666
           },
-          "bigO_ratio": 3.804,
-          "pat_n": 512000,
+          "bigO_ratio": 3.504,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -4660,13 +4660,13 @@
           "form": "b",
           "label": "mt file.read + charcode scan + slice per line",
           "fixture": "patterns/io-read-lines/b.tk",
-          "min_bytes": 228,
+          "min_bytes": 274,
           "tokens": {
-            "proxy8k": 45,
-            "byte256": 228,
-            "v03": 63,
-            "qwen25coder": 95,
-            "cl100k": 94
+            "proxy8k": 50,
+            "byte256": 274,
+            "v03": 77,
+            "qwen25coder": 119,
+            "cl100k": 118
           },
           "wall_ms_median": 30000,
           "wall_ci95": [
@@ -4676,7 +4676,7 @@
           "rss_kb_median": null,
           "allocs": null,
           "bigO_ratio": 99,
-          "pat_n": 512000,
+          "pat_n": 256000,
           "runtime_verdict": "worse-bigO",
           "token_verdict": "more"
         }
@@ -4698,12 +4698,12 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "47a863f569ce",
+        "tkc_version": "toke 3.2.0 (git 47a863f569ce)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261115-200127.json",
+        "date": "2026-11-15",
         "load_warning": true
       }
     },
