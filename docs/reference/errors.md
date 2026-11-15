@@ -1905,6 +1905,56 @@ re-resolves.
 `tkc pkg init` found a `pkg.toml` and left it unchanged (ADR-0004: init
 never overwrites). Exit 0.
 
+## Capability manifest (W9012)
+
+### W9012
+
+**tkc.toml capability grant written as a quoted string**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | codegen |
+
+A `tkc.toml [capabilities]` class key whose value is a quoted string
+(`fs_read = "/srv/www"`). In this release the string keeps its old meaning — the
+**whole** class, so the program may read any path — and the warning says that from
+toke 3.4.0 a quoted string is a one-element scope list (`fs_read = ["/srv/www"]`),
+granting only that scope; when the string is not a valid scope for its class
+(`net = "10.255.255.1:9"`, which has no `connect:` / `listen:`), it says the manifest
+will not parse then (story 138.19, owner decision D4: one release of warnings). The
+record's `file` and `pos.line` name the manifest line. There is no `fix`: the
+manifest is not the source file a fix edits. Write `true` to keep the whole class,
+or the array form to scope it now. Conformance: D615, D616, C1885.
+
+## Runtime capability diagnostics (CAP001, CAP002)
+
+The capability broker (ADR-0010, [the capability spec](/docs/spec/capabilities/))
+reports a denied call at run time, before the syscall, and exits 1. With
+`TK_DIAG_JSON=1` it also prints one JSON line with `diagnostic_id`, `severity`
+(`error`), `stage` (`runtime`) and `capability`.
+
+### CAP001
+
+**Capability required but not granted** — the class is not granted at all. The `fix`
+is `grant --allow-<class> or tkc.toml [capabilities] <class>=true`; on a binary whose
+baked grants run-time flags may only narrow (138.19 D2) it is
+`tkc.toml [capabilities] <key> = true`, and absent when a run-time flag scopes the
+class. Conformance: C470, C1884.
+
+### CAP002
+
+**Capability granted, but not for this scope** (story 138.19, D3) — the class is
+granted for listed scopes, and this path, host, command or key is not among them.
+The JSON line adds `scope`: the canonical path, `connect:HOST:PORT` /
+`listen:ADDR:PORT`, the resolved command, or the key. The `fix` names exactly that
+scope where one edit is sure to admit the call — `--allow-<class>=<scope>` when
+run-time flags union with the grant or only they exclude it,
+`<key> = ["<scope>"]` when only the baked grant excludes it — and is absent
+otherwise (both exclude it; a dangling symlink; a command not on `PATH`). A std entry
+still on the class-only gate, reached under a scoped grant, is CAP002 with an empty
+`scope` and no `fix`. Conformance: C1880–C1884.
+
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.

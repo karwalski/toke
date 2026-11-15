@@ -14,6 +14,43 @@ may no longer compile.
 
 ## Unreleased
 
+### Changed — scoped capability grants (spec amendment 138.19)
+
+The owner accepted D1–D4 of `docs/decisions/138.19-scoped-capability-grants.md` as
+written on 2026-11-15 (register item 3.4); D5, OS-level enforcement, is 138.44.
+loke's T-59 / B9. A grant is now the whole class **or a list of scopes** — fs paths,
+`connect:HOST[:PORT]` / `listen:ADDR:PORT`, commands, env keys — and a binary that
+bakes grants can no longer be widened by whoever launches it. `true`, a bare
+`--allow-x` and `--allow-all` behave exactly as before. Normative text:
+`docs/spec/capabilities.md`.
+
+#### Breaking changes (with migration)
+
+| # | Change | Story, commit | Migration |
+|---|---|---|---|
+| 1 | **A value on a capability flag is a scope.** `--allow-read=/srv/www` grants `fs.read` under `/srv/www` only (paths compared component by component after `realpath`; a `..` or symlink escape is denied); before, the value was ignored and the flag granted every path. The same for `--allow-write`, `--allow-net` (`connect:HOST[:PORT]`, `listen:ADDR:PORT`), `--allow-run` (a command) and `--allow-env` (a key or `PREFIX*`), at compile time and at run time; a flag may repeat or list scopes with commas. A value that is not a valid scope (`--allow-net=api.example.com`) is refused: at compile time as an error, at run time with one line before `main`. Flag names now match exactly (`--allow-readers` is no longer `--allow-read`). | 138.19 — `a4350649`, `4e17ab3f` | Drop the value for the whole class (`--allow-read`), or write the scope you mean (`--allow-net=connect:api.example.com:443`). No caller in toke, toke-ooke or toke-website passed a value. |
+| 2 | **Run-time flags narrow a baked grant set** (D2). A binary built with any grant (a class key or `all` in `tkc.toml [capabilities]`, or a compile-time `--allow-*`) admits a run-time-flagged class only where both the baked grant and the flag allow it; a class no flag names keeps its baked grant. A run-time flag can no longer add a class or a scope, and `--allow-all` on such a binary is refused (one line, exit 1) unless the baked set is already everything. A binary with no baked grants — and one built with only `enforce` / `--cap-enforce`, which bake none — takes its run-time flags as the grant, as before. | 138.19 — `a4350649`, `4e17ab3f` | Declare every class the program needs in `[capabilities]`; to let a launcher widen the baked set, add `runtime = "union"`. |
+| 3 | **Every capability sink checks the value it uses** (a scoped gate at each acquisition site), and the class-only check passes only for the whole class, so a scoped grant fails closed wherever the scope cannot be checked. Under a scoped grant a value the sink cannot use (a null path, an unparseable URL) is denied, and `db.open(":memory:")` is checked as a path. | 138.19 — `a03e974a` | Grant the scope the sink names in its CAP002 line. |
+
+#### Added
+
+- **`tkc.toml [capabilities]` scope lists:** `fs_read = ["./content", "/etc/ssl/certs"]`, `net = ["connect:api.example.com:443", "listen:127.0.0.1:8080"]`, `process_spawn = ["/usr/bin/git"]`, `env_write = ["TZ"]` — one line, quoted strings, no trailing comma; a malformed array, an unknown scope prefix or an empty string is a parse error naming the line. `runtime = "union" | "narrow"`. A `# comment` may follow a value. (138.19 — `4e17ab3f`)
+- **CAP002** (D3), "capability granted, but not for this scope", a new runtime code beside CAP001. Its `TK_DIAG_JSON` line carries `capability`, `scope` (the canonical path, `connect:`/`listen:` host and port, resolved command or key) and a `fix` naming that exact scope as a run-time flag or a manifest line — whichever would admit the call — and none where no single edit would. CAP001 is unchanged, except on a narrowing binary, where its hint and `fix` name the manifest (the run-time flag it suggested cannot add a class there). (138.19 — `a4350649`)
+- **W9012** (D4, the warning release): a quoted-string grant (`fs_read = "/srv/www"`) **keeps its whole-class meaning in this release** and is reported, naming **toke 3.4.0** as the release in which it becomes a one-element scope list. Write `true` for the whole class, or the array form. (138.19 — `4e17ab3f`)
+- `--show-limits` prints `cap-runtime` and one `cap-scope` line per scope; the `--companion` record lists each class with its scopes and the run-time mode. (138.19 — `4e17ab3f`)
+- `scripts/check_capability_sinks.py` (C470) fails with `CLASSONLY` when a sink is reached only through a class-only gate. (138.19 — `a03e974a`)
+
+#### Fixed
+
+- **`all = true` in `tkc.toml [capabilities]` parses.** It was refused as "unknown capability 'all'": the unknown-key sentinel was the same all-ones value as `TK_CAP_ALL`. (`bdca26cd`)
+- **The `--companion` record no longer calls a binary built without `enforce = true` "advisory (allow-all)"**; enforcement is the default and `enforce` is vestigial. (138.19 — `4e17ab3f`)
+- **Documentation: `enforce = false` does not opt a build out of enforcement** (loke T-59 point 6). `docs/reference/capabilities.md` said it did; a binary built with only `enforce = false` has always stopped with CAP001 at its first ungranted call. The only opt-out is `all = true` / `--allow-all`.
+
+Not changed (not covered by the design note): `env = true` is still the short
+spelling of `env_write`, with no warning (loke T-59 point 5).
+
+Tests: C1880–C1885, D615–D616, C470's new CLASSONLY control (`4d2cb26d`).
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
