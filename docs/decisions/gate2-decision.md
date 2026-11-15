@@ -43,11 +43,15 @@ the model "significantly outperforms baseline". The 63.7% was a functional figur
 compile rate, and it has since been corrected to 58.8% (story 128.19). The comparison put a
 compile rate against a functional one.
 
-No verdict replaces the PASS, and this record does not substitute a FAIL. The run's only
-functional figure, 55.6% (272/489), is below both pre-registered thresholds. Part of the
-set it was measured on may be corpus-derived (see the caveat below), so it cannot decide
-the gate either way. Model evaluation now follows the pre-registered protocol of story
-128.1 (BENCH-128), under which no Gate 2 number is a target.
+The owner withdrew the PASS and recorded no verdict in its place; this record does not
+substitute one. Every measured functional figure is below both pre-registered thresholds
+(>= 65% and >= 75% Pass@1, next section): 55.6% (272/489) for the Gate 2 run, and about
+2.2% fully correct for the re-audit. The caveats only make those figures less favourable,
+never more: the 200-eval half of the Gate 2 set may be corpus-derived, which would inflate
+the 55.6%; the 2026-05-24 record never stated which 489 of the 700 tasks it counts; and
+every figure is on v0.3 syntax, so none carries forward to v0.4 (`docs/metrics-baseline.md`,
+caveat 1). Model evaluation now follows the pre-registered protocol of story 128.1
+(BENCH-128), under which no Gate 2 number is a target.
 
 The record of 2026-05-24 is kept, not erased: `docs/spec/gate2-decision.md` at toke
 `1c5ffce` ([link](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)).
