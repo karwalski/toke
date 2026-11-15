@@ -50,7 +50,7 @@ f=main():$i64{
   let m=mk();
   let ks=m.keys();
   cks("userfn-map-keys";"\(ks.len) \(ks.get(0)) \(ks.get(1))";"2 a b");
-  cks("userfn-map-get-len";"\(m.get("b")) \(m.len)";"2 2");
+  cks("userfn-map-get-len";"\(mt m.get("b"){$ok:v v;$err:e 0}) \(m.len)";"2 2");
   io.println("RESULT done");
   <0
 };

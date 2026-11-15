@@ -44,7 +44,7 @@ m=tl;
 i=toml:std.toml;
 i=args:std.args;
 f=main():i64{
-  let p=args.get(1);
+  let p=mt args.get(1){$ok:v v;$err:e ""};
   let r=mt toml.loadfile(p) {$ok:v 0;$err:e 3};
   <r
 };

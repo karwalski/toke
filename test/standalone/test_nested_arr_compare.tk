@@ -10,7 +10,7 @@ m=cr;i=io:std.io;i=s:std.str;f=main():i64{
     lp(col<n){ rd=rd+@(s.toint(parts.get(col))); col=col+1 };
     dist=dist+@(rd); row=row+1
   };
-  let v=dist.get(0).get(1);
+  let v=mt dist.get(0).get(1){$ok:v v;$err:e 0};
   if(v>=999999){io.println("BIG")}el{io.println("ok")};
   <0
 }

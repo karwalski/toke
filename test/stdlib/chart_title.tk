@@ -18,9 +18,9 @@ i=str:std.str;
 
 f=main():i64{
   let titled=chart.bar(@("Mon";"Tue";"Wed");@(10.0;20.0;15.0);"Daily Hits");
-  io.println(str.concat("titled=";str.frombytes(chart.tojson(titled))));
+  io.println(str.concat("titled=";mt str.frombytes(chart.tojson(titled)){$ok:v v;$err:e ""}));
 
   let other=chart.bar(@("Q1";"Q2");@(1.5;2.5);"Revenue by Quarter");
-  io.println(str.concat("other=";str.frombytes(chart.tojson(other))));
+  io.println(str.concat("other=";mt str.frombytes(chart.tojson(other)){$ok:v v;$err:e ""}));
   <0
 };

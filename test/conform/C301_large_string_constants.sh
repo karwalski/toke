@@ -46,7 +46,7 @@ python3 - "${WORK}/big.tk" <<'PY'
 import sys
 s = "".join("abcdefghij"[i % 10] for i in range(300000))
 open(sys.argv[1], "w").write('m=g;\ni=s:std.str;\ni=io:std.io;\nf=main():i64{\n'
-                             '  let b="%s";\n  io.println("\\(s.len(b)) \\(s.slice(b;299995;300000))");\n  <0\n};\n' % s)
+                             '  let b="%s";\n  io.println("\\(s.len(b)) \\(mt s.slice(b;299995;300000){$ok:v v;$err:e ""})");\n  <0\n};\n' % s)
 PY
 expect "2-300k-literal" "$(run "${WORK}/big.tk")" "300000 fghij "
 

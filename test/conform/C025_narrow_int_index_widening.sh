@@ -150,7 +150,7 @@ i=s:std.str;
 t=Box{mm:@(str:i64);n:i64};
 f=main():i64{
   let b=Box{mm:@("a":77;"b":88);n:1};
-  io.println(s.fromint(b.mm.get("a")));
+  io.println(s.fromint(mt b.mm.get("a"){$ok:v v;$err:e 0}));
   <0
 };'
 

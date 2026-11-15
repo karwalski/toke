@@ -4,7 +4,7 @@ i=s:std.str;
 i=env:std.env;
 i=args:std.args;
 f=pat():str{
-  <if(args.count()>1){args.get(1)}el{"default"}
+  <if(args.count()>1){mt args.get(1){$ok:v v;$err:e ""}}el{"default"}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);

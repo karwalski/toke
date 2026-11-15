@@ -80,7 +80,7 @@ expect "3-closure-param-runs"   "$(runs "${WORK}/p3.tk")" "ZZ "
 cat > "${WORK}/p4.tk" <<'EOF'
 m=t;i=s:std.str;i=io:std.io;
 f=main():i64{
-  io.println(s.slice("before";0;2));
+  io.println(mt s.slice("before";0;2){$ok:v v;$err:e ""});
   let s=@("a";"b";"c");
   io.println("\(s.len)");
   io.println(s.join(","));
@@ -101,7 +101,7 @@ expect "5-init-is-module-runs"   "$(runs "${WORK}/p5.tk")" "X "
 # 6. positive guard: unshadowed, the module call is still arity-checked
 cat > "${WORK}/p6.tk" <<'EOF'
 m=t;i=s:std.str;i=io:std.io;
-f=main():i64{io.println(s.slice("x";0));<0};
+f=main():i64{io.println(mt s.slice("x";0){$ok:v v;$err:e ""});<0};
 EOF
 expect "6-module-call-still-checked" "$(errs "${WORK}/p6.tk")" "E4026 "
 

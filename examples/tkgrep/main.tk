@@ -36,7 +36,7 @@ f=parseargs():$opts!$greperr{
   let positional=mut.@();
 
   lp(let i=1;i<(args.count() as i64);i=i+1){
-    let arg=args.get(i);
+    let arg=mt args.get(i){$ok:v v;$err:e ""};
     if(str.startswith(arg;"-")){
       if(str.contains(arg;"i")){ignorecase=true};
       if(str.contains(arg;"c")){countonly=true};

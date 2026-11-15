@@ -45,7 +45,7 @@ f=main():$i64{
   cks("module-slice";"\(arr.slice(a;1;3).get(0))";"1");
   cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"true"); (* 127.94: a declared-bool stdlib return renders true/false *)
   cks("str-indexof-unchanged";"\(s.indexof("hello";"l"))";"2");
-  cks("str-slice-unchanged";s.slice("hello";1;3);"el");
+  cks("str-slice-unchanged";mt s.slice("hello";1;3){$ok:v v;$err:e ""};"el");
   let h="hello";
   cks("str-method-slice-unchanged";h.slice(1;3);"el");
   cks("str-method-contains-unchanged";"\(h.contains("ell"))";"true"); (* 127.194: a predicate receiver method renders true/false *)

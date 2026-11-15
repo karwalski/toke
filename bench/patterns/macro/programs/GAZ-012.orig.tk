@@ -72,7 +72,7 @@ f=main():i64{
   let toks=s.fields(readall());
   if(toks.len()==0){ <0 };
   let mode=toks.get(0);
-  let nn=s.toint(toks.get(1));
+  let nn=mt s.toint(toks.get(1)){$ok:v v;$err:e 0};
   if(nn<0){ io.println("error: n must be non-negative"); <0 };
   let bn=mut.@(1); lp(let i=1;i<=nn;i=i+1){ bn=bmul(bn;i); };
   if(mode=="fact"){ io.println(brender(bn)); }

@@ -30,13 +30,13 @@ f=main():i64{
   if(str.eq(fi;"42")){io.println("PASS str.fromint")}el{io.println("FAIL str.fromint")};
   let ff=str.fromfloat(3.14);
   if(str.isempty(ff)){io.println("FAIL str.fromfloat")}el{io.println("PASS str.fromfloat")};
-  let ti=str.toint("99");
+  let ti=mt str.toint("99"){$ok:v v;$err:e 0};
   if(ti==99){io.println("PASS str.toint")}el{io.println("FAIL str.toint")};
   if(str.isempty("")){io.println("PASS str.isempty true")}el{io.println("FAIL str.isempty true")};
   if(str.isempty("x")){io.println("FAIL str.isempty false")}el{io.println("PASS str.isempty false")};
   let rp=str.replace("hello";"l";"r");
   if(str.eq(rp;"herro")){io.println("PASS str.replace")}el{io.println("FAIL str.replace")};
-  let sl=str.slice("hello";1;4);
+  let sl=mt str.slice("hello";1;4){$ok:v v;$err:e ""};
   if(str.eq(sl;"ell")){io.println("PASS str.slice")}el{io.println("FAIL str.slice")};
   let idx=str.indexof("hello world";"world");
   if(idx==6){io.println("PASS str.indexof")}el{io.println("FAIL str.indexof")};

@@ -7,9 +7,9 @@ f=pat(line:str):@str{
   let st=mut.0;
   let n=s.len(line);
   lp(let i=0;i<n;i=i+1){
-    if(s.charcode(line;i)==44){r=r.append(s.slice(line;st;i));st=i+1}
+    if(s.charcode(line;i)==44){r=r.append(mt s.slice(line;st;i){$ok:v v;$err:e ""});st=i+1}
   };
-  <r.append(s.slice(line;st;n))
+  <r.append(mt s.slice(line;st;n){$ok:v v;$err:e ""})
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);

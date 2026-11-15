@@ -48,7 +48,7 @@ expect "3 through a copy of the binding" \
 expect "4 a str-returning call stays clean" \
     "$(diags "${H}"'f=main():i64{let t=s.trim(" a ");<g(t)};')" "rc=0"
 expect "5 bytes into a [byte] consumer stays clean" \
-    "$(diags "${H}"'f=main():i64{let b=s.bytes("abc");let t=s.frombytes(b);<g(t)};')" "rc=0"
+    "$(diags "${H}"'f=main():i64{let b=s.bytes("abc");let t=mt s.frombytes(b){$ok:v v;$err:e ""};<g(t)};')" "rc=0"
 
 echo "C243: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

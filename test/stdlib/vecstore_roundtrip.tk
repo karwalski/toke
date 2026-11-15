@@ -23,8 +23,8 @@ f=vecb():@(f64){
 };
 
 f=phasewrite(dir:str):bool{
-  let s=vs.open(dir);
-  let c=vs.collection(s;"docs");
+  let s=mt vs.open(dir){$ok:v v;$err:e <false};
+  let c=mt vs.collection(s;"docs"){$ok:v v;$err:e <false};
   let ok1=vs.upsert(c;"doc-1";veca();"payload-one");
   let ok2=vs.upsert(c;"doc-2";vecb();"payload-two");
   let n=vs.count(c);
@@ -36,8 +36,8 @@ f=phasewrite(dir:str):bool{
 (* Runs in a process that never saw the writes. Anything it observes came off
    disk. *)
 f=phaseread(dir:str):bool{
-  let s=vs.open(dir);
-  let c=vs.collection(s;"docs");
+  let s=mt vs.open(dir){$ok:v v;$err:e <false};
+  let c=mt vs.collection(s;"docs"){$ok:v v;$err:e <false};
   let n=vs.count(c);
   let r=vs.search(c;veca();5;0.0);
   let hits=r.len();
@@ -54,8 +54,8 @@ f=phaseread(dir:str):bool{
    query and scores 0.0, so a floor of 0.5 must drop it. The glue hard-coded
    0.0 before 136.4 and dropped the argument entirely. *)
 f=phasefilter(dir:str):bool{
-  let s=vs.open(dir);
-  let c=vs.collection(s;"docs");
+  let s=mt vs.open(dir){$ok:v v;$err:e <false};
+  let c=mt vs.collection(s;"docs"){$ok:v v;$err:e <false};
   let all=vs.search(c;veca();5;0.0);
   let some=vs.search(c;veca();5;0.5);
   io.println(str.concat("filter: all=";str.concat(str.fromint(all.len());str.concat(" above0.5=";str.fromint(some.len())))));
@@ -65,8 +65,8 @@ f=phasefilter(dir:str):bool{
 
 (* Deletes must reach disk too, by the same route. *)
 f=phasedelete(dir:str):bool{
-  let s=vs.open(dir);
-  let c=vs.collection(s;"docs");
+  let s=mt vs.open(dir){$ok:v v;$err:e <false};
+  let c=mt vs.collection(s;"docs"){$ok:v v;$err:e <false};
   let removed=vs.delete(c;"doc-2");
   let n=vs.count(c);
   io.println(str.concat("delete: removed=";str.concat(str.fromint(removed);str.concat(" count=";str.fromint(n)))));
@@ -75,8 +75,8 @@ f=phasedelete(dir:str):bool{
 };
 
 f=phaseafterdelete(dir:str):bool{
-  let s=vs.open(dir);
-  let c=vs.collection(s;"docs");
+  let s=mt vs.open(dir){$ok:v v;$err:e <false};
+  let c=mt vs.collection(s;"docs"){$ok:v v;$err:e <false};
   let n=vs.count(c);
   io.println(str.concat("afterdelete: count=";str.fromint(n)));
   vs.close(s);
@@ -86,8 +86,8 @@ f=phaseafterdelete(dir:str):bool{
 (* An empty collection must hand back a real zero-length array, not a null the
    consumer then indexes. *)
 f=phaseempty(dir:str):bool{
-  let s=vs.open(dir);
-  let c=vs.collection(s;"fresh");
+  let s=mt vs.open(dir){$ok:v v;$err:e <false};
+  let c=mt vs.collection(s;"fresh"){$ok:v v;$err:e <false};
   let n=vs.count(c);
   let r=vs.search(c;veca();5;0.0);
   io.println(str.concat("empty: count=";str.concat(str.fromint(n);str.concat(" hits=";str.fromint(r.len())))));

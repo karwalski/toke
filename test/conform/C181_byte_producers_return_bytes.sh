@@ -37,7 +37,7 @@ m=t;i=chart:std.chart;i=io:std.io;i=str:std.str;
 f=main():i64{
   let c=chart.bar(@("Mon";"Tue");@(10.0;20.0);"Hits");
   let j=chart.tojson(c);
-  let s=str.frombytes(j);
+  let s=mt str.frombytes(j){$ok:v v;$err:e ""};
   io.println("\(j.len==str.len(s)) \(j.len>50) \(j.get(0))");
   io.println(s);
   <0
@@ -59,7 +59,7 @@ m=t;i=http:std.http;i=io:std.io;i=str:std.str;i=os:std.os;
 f=main():i64{
   let s=mt http.stream(http.client(os.getenv("URL"))) {$ok:v v;$err:e 0};
   let chunk=mt http.streamnext(s) {$ok:v v;$err:e @()};
-  io.println("\(chunk.len) \(str.frombytes(chunk))");
+  io.println("\(chunk.len) \(mt str.frombytes(chunk){$ok:v v;$err:e ""})");
   <0
 };
 EOF

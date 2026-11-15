@@ -171,7 +171,7 @@ i=http:std.http;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let c=http.withproxy(http.client(args.get(1)); args.get(2));
+  let c=http.withproxy(http.client(mt args.get(1){$ok:v v;$err:e ""}); mt args.get(2){$ok:v v;$err:e ""});
   io.println(mt http.clientget(c;"/v") {$ok:r "ok \(r.status)"; $err:e "err"});
   <0
 };

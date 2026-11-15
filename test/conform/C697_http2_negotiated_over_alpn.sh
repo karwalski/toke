@@ -83,7 +83,7 @@ f=main():i64{
   http.getstatic("/ok"; "ok");
   http.servedir("/s";"${WORK}/pub");
   let r=mut.0;
-  if(args.get(1)=="2"){ r=http.servetlsworkerson("127.0.0.1";0;"${WORK}/cert.pem";"${WORK}/key.pem";2) }el{
+  if((mt args.get(1){\$ok:v v;\$err:e ""})=="2"){ r=http.servetlsworkerson("127.0.0.1";0;"${WORK}/cert.pem";"${WORK}/key.pem";2) }el{
   r=http.servetlsworkerson("127.0.0.1";0;"${WORK}/cert.pem";"${WORK}/key.pem";1) };
   <0
 };

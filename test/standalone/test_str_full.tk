@@ -73,11 +73,11 @@ f=main():i64{
   if(str.eq(sp1l;"c")){io.println("PASS str.split last")}el{io.println("FAIL str.split last");fails=fails+1};
 
   io.println("--- str.slice ---");
-  let sl1=str.slice("hello";1;4);
+  let sl1=mt str.slice("hello";1;4){$ok:v v;$err:e ""};
   if(str.eq(sl1;"ell")){io.println("PASS str.slice middle")}el{io.println("FAIL str.slice middle");fails=fails+1};
-  let sl2=str.slice("hello";0;5);
+  let sl2=mt str.slice("hello";0;5){$ok:v v;$err:e ""};
   if(str.eq(sl2;"hello")){io.println("PASS str.slice full")}el{io.println("FAIL str.slice full");fails=fails+1};
-  let sl3=str.slice("hello";0;0);
+  let sl3=mt str.slice("hello";0;0){$ok:v v;$err:e ""};
   if(str.eq(sl3;"")){io.println("PASS str.slice empty range")}el{io.println("FAIL str.slice empty range");fails=fails+1};
 
   io.println("--- str.indexof ---");
@@ -99,9 +99,9 @@ f=main():i64{
   if(str.eq(fi2;"0")){io.println("PASS str.fromi64 zero")}el{io.println("FAIL str.fromi64 zero");fails=fails+1};
 
   io.println("--- str.toint ---");
-  let ti1=str.toint("99");
+  let ti1=mt str.toint("99"){$ok:v v;$err:e 0};
   if(ti1==99){io.println("PASS str.toint basic")}el{io.println("FAIL str.toint basic");fails=fails+1};
-  let ti2=str.toint("0");
+  let ti2=mt str.toint("0"){$ok:v v;$err:e 0};
   if(ti2==0){io.println("PASS str.toint zero")}el{io.println("FAIL str.toint zero");fails=fails+1};
 
   io.println("--- str.repeat ---");

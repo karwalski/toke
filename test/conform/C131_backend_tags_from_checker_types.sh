@@ -58,11 +58,11 @@ f=mi():@(i64:i64){<@(1:10;2:20)};
 f=fl():@f64{<@(1.5;2.25)};
 f=main():i64{
   let m=mk();
-  io.println("\(m.len) \(m.get("k")) \(m.contains("j"))");
+  io.println("\(m.len) \(mt m.get("k"){$ok:v v;$err:e 0}) \(m.contains("j"))");
   let s=ms();
-  io.println("\(s.get("b"))");
+  io.println("\(mt s.get("b"){$ok:v v;$err:e ""})");
   let n=mi();
-  io.println("\(n.get(2)) \(n.len)");
+  io.println("\(mt n.get(2){$ok:v v;$err:e 0}) \(n.len)");
   let fs=@($flag{on:true;n:1};$flag{on:false;n:2});
   let f0=fs.get(0);
   io.println("\(f0.on) \(fs.get(1).on)");

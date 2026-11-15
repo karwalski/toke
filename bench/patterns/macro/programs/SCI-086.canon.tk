@@ -31,8 +31,8 @@ f=main():$i64 {
   let q=s.trim(io.readln());
   if (s.len(q)>0) {
     let parts=s.split(q; " ");
-    let nn=s.toint(parts.get(0));
-    let kk=s.toint(parts.get(1));
+    let nn=mt s.toint(parts.get(0)){$ok:v v;$err:e 0};
+    let kk=mt s.toint(parts.get(1)){$ok:v v;$err:e 0};
     let r=mut.@(1);
     let i2=mut.0;
     lp (i2<nn) {

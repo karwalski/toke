@@ -81,7 +81,7 @@ f=main():i64{
   let a=mut.@($str:$i64);
   let n0=a.len;
   a=a.set("k";5);
-  io.println("\(n0) \(a.len) \(a.get("k"))");
+  io.println("\(n0) \(a.len) \(mt a.get("k"){$ok:v v;$err:e 0})");
   <0
 };
 EOF2
@@ -98,7 +98,7 @@ f=main():i64{
   b=b.set("k";@("w":3));
   let av=a.get("k");
   let bv=b.get("k");
-  io.println("\(av.get(0)) \(bv.get("w"))");
+  io.println("\(av.get(0)) \(mt bv.get("w"){$ok:v v;$err:e 0})");
   <0
 };
 EOF2

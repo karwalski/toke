@@ -54,7 +54,7 @@ i=file:std.file;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let r=mt file.read(args.get(1)) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
+  let r=mt file.read((mt args.get(1){\$ok:v v;\$err:e ""})) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
   io.print(r);
   <0
 };
@@ -65,7 +65,7 @@ i=file:std.file;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let r=mt file.write(args.get(1);"x") {\$ok:v "ok";\$err:e mt e {${ARMS}}};
+  let r=mt file.write((mt args.get(1){\$ok:v v;\$err:e ""});"x") {\$ok:v "ok";\$err:e mt e {${ARMS}}};
   io.print(r);
   <0
 };
@@ -76,7 +76,7 @@ i=file:std.file;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let r=mt file.readbytes(args.get(1)) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
+  let r=mt file.readbytes((mt args.get(1){\$ok:v v;\$err:e ""})) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
   io.print(r);
   <0
 };
@@ -87,7 +87,7 @@ i=toml:std.toml;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let r=mt toml.loadfile(args.get(1)) {$ok:v "ok";$err:e e.msg};
+  let r=mt toml.loadfile(mt args.get(1){$ok:v v;$err:e ""}) {$ok:v "ok";$err:e e.msg};
   io.print(r);
   <0
 };

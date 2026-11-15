@@ -7,9 +7,9 @@ f=pat(line:str):@str{
   let st=mut.0;
   let n=s.len(line);
   lp(let k=0;k<n;k=k+1){
-    let p=s.indexof(s.slice(line;st;n);",");
-    if(p<0){r=r.append(s.slice(line;st;n));br};
-    r=r.append(s.slice(line;st;st+p));
+    let p=s.indexof(mt s.slice(line;st;n){$ok:v v;$err:e ""};",");
+    if(p<0){r=r.append(mt s.slice(line;st;n){$ok:v v;$err:e ""});br};
+    r=r.append(mt s.slice(line;st;st+p){$ok:v v;$err:e ""});
     st=st+p+1
   };
   <r

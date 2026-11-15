@@ -62,10 +62,10 @@ f=unit():@(f64){
 };
 
 f=phasewrite(da:str;db:str;marker:str):bool{
-  let a=vs.open(da);
-  let ca=vs.collection(a;"docs");
-  let b=vs.open(db);
-  let cb=vs.collection(b;"docs");
+  let a=mt vs.open(da){$ok:v v;$err:e <false};
+  let ca=mt vs.collection(a;"docs"){$ok:v v;$err:e <false};
+  let b=mt vs.open(db){$ok:v v;$err:e <false};
+  let cb=mt vs.collection(b;"docs"){$ok:v v;$err:e <false};
   let u1=vs.upsert(ca;"a1";unit();"payload-a1");
   let fl=vs.flush(a);
   let u2=vs.upsert(ca;"a2";@(0.0;1.0;0.0);"payload-a2");
@@ -77,10 +77,10 @@ f=phasewrite(da:str;db:str;marker:str):bool{
 };
 
 f=phaseread(da:str;db:str):bool{
-  let a=vs.open(da);
-  let ca=vs.collection(a;"docs");
-  let b=vs.open(db);
-  let cb=vs.collection(b;"docs");
+  let a=mt vs.open(da){$ok:v v;$err:e <false};
+  let ca=mt vs.collection(a;"docs"){$ok:v v;$err:e <false};
+  let b=mt vs.open(db){$ok:v v;$err:e <false};
+  let cb=mt vs.collection(b;"docs"){$ok:v v;$err:e <false};
   let na=vs.count(ca);
   let nb=vs.count(cb);
   let r=vs.search(ca;unit();5;0.0);
@@ -93,8 +93,8 @@ f=phaseread(da:str;db:str):bool{
 };
 
 f=phasefail(da:str):bool{
-  let a=vs.open(da);
-  let ca=vs.collection(a;"docs");
+  let a=mt vs.open(da){$ok:v v;$err:e <false};
+  let ca=mt vs.collection(a;"docs"){$ok:v v;$err:e <false};
   let u=vs.upsert(ca;"late";unit();"payload-late");
   let fl=vs.flush(a);
   io.println(str.concat("fail: flush=";str.fromint(fl)));
@@ -102,8 +102,8 @@ f=phasefail(da:str):bool{
 };
 
 f=phaseclean(da:str):bool{
-  let a=vs.open(da);
-  let ca=vs.collection(a;"docs");
+  let a=mt vs.open(da){$ok:v v;$err:e <false};
+  let ca=mt vs.collection(a;"docs"){$ok:v v;$err:e <false};
   let n=vs.count(ca);
   let fl=vs.flush(a);
   io.println(str.concat("clean: count=";str.concat(str.fromint(n);str.concat(" flush=";str.fromint(fl)))));

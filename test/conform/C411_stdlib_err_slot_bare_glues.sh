@@ -127,7 +127,7 @@ f=main():i64{
 expect "12-cleared-after-failure" "$(run 'm=main;i=io:std.io;i=enc:std.encoding;i=time:std.time;i=toon:std.toon;i=pdf:std.pdf;i=proc:std.process;i=s:std.str;
 f=main():i64{
   let a=mt enc.hexdecode("zz") {$ok:v "ok";$err:e "err"};
-  let b=mt enc.hexdecode("4142") {$ok:v s.frombytes(v);$err:e "err"};
+  let b=mt enc.hexdecode("4142") {$ok:v mt s.frombytes(v){$ok:v v;$err:e ""};$err:e "err"};
   let c=mt time.parse("x";"%Y") {$ok:v "ok";$err:e "err"};
   let d=mt time.parse("2000";"%Y") {$ok:v "ok";$err:e "err"};
   let t1=mt toon.dec("") {$ok:v "ok";$err:e "err"};

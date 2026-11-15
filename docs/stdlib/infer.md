@@ -37,8 +37,11 @@ f=main():i64{
   (* load is a stub that returns 0, so this handle is never valid and
      isloaded is correspondingly false. The else branch is what runs. *)
   let o=$inferopts{ngpulayers:0;nthreads:0;seed:-1};
-  let h=infer.load("/models/mistral-7b.Q4KM.gguf";o);
-  if(infer.isloaded(h)){
+  let loaded=mt infer.load("/models/mistral-7b.Q4KM.gguf";o) {
+    $ok:h  infer.isloaded(h);
+    $err:e false
+  };
+  if(loaded){
     io.println("model loaded")
   }el{
     io.println("no local inference: std.infer glue is a stub")

@@ -41,17 +41,17 @@ f=evalQ(text:$str; query:$str):$bool {
 
 f=extractstr(json:$str; key:$str; startFrom:$i64):$str {
   let pat="\"\(key)\":\"";
-  let idx=s.indexof(s.slice(json; startFrom; s.len(json)); pat);
+  let idx=s.indexof(mt s.slice(json; startFrom; s.len(json)){$ok:v v;$err:e ""}; pat);
   if (idx<0) {
     <""
   };
   let start=startFrom+idx+s.len(pat);
-  let rest=s.slice(json; start; s.len(json));
+  let rest=mt s.slice(json; start; s.len(json)){$ok:v v;$err:e ""};
   let end=s.indexof(rest; "\"");
   if (end<0) {
     <""
   };
-  <s.slice(rest; 0; end)
+  <mt s.slice(rest; 0; end){$ok:v v;$err:e ""}
 };
 
 f=main():$i64 {
@@ -60,7 +60,7 @@ f=main():$i64 {
   let i=mut.0;
   lp (i<s.len(json)) {
     let pat="\"id\":\"";
-    let idx=s.indexof(s.slice(json; i; s.len(json)); pat);
+    let idx=s.indexof(mt s.slice(json; i; s.len(json)){$ok:v v;$err:e ""}; pat);
     if (idx<0) {
       br
     };

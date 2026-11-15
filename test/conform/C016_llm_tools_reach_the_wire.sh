@@ -130,7 +130,7 @@ f=rtext(r:$llmresp):str{ <r.content };
 
 f=main():$i64{
   let empty=$toolcall{name:"";args:@();id:""};
-  let base=llm.client(env.get("C016URL");"dummy-not-a-key";"modelZ");
+  let base=llm.client(mt env.get("C016URL"){$ok:v v;$err:e ""};"dummy-not-a-key";"modelZ");
   let p=$toolparam{name:"city";type:"string";desc:"City name";required:true};
   let decl=$tooldecl{name:"getweather";desc:"Return weather";params:@(p)};
   let armed=tool.withtools(base;@(decl));

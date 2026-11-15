@@ -10,11 +10,11 @@ f=parsestr(line:$str; key:$str):$str {
     <""
   };
   let start=idx+s.len(pat);
-  let after=s.slice(line; start; s.len(line));
+  let after=mt s.slice(line; start; s.len(line)){$ok:v v;$err:e ""};
   if (s.startswith(after; "\"")) {
-    let inner=s.slice(after; 1; s.len(after));
+    let inner=mt s.slice(after; 1; s.len(after)){$ok:v v;$err:e ""};
     let cl=s.indexof(inner; "\"");
-    <s.slice(inner; 0; cl)
+    <mt s.slice(inner; 0; cl){$ok:v v;$err:e ""}
   };
   <""
 };
@@ -26,9 +26,9 @@ f=parsearr(line:$str; key:$str):$str {
     <""
   };
   let start=idx+s.len(pat);
-  let after=s.slice(line; start; s.len(line));
+  let after=mt s.slice(line; start; s.len(line)){$ok:v v;$err:e ""};
   let bk=s.indexof(after; "]");
-  <s.slice(after; 0; bk)
+  <mt s.slice(after; 0; bk){$ok:v v;$err:e ""}
 };
 
 f=parselist(arr:$str):@$str {
@@ -38,7 +38,7 @@ f=parselist(arr:$str):@$str {
   let cur=mut."";
   let inq=mut.false;
   lp (i<n) {
-    let ch=s.slice(arr; i; i+1);
+    let ch=mt s.slice(arr; i; i+1){$ok:v v;$err:e ""};
     if (ch=="\"") {
       if (inq) {
         out=out.append(cur);
@@ -93,13 +93,13 @@ f=main():$i64 {
   let ids=mut.@();
   let depsstr=mut.@();
   lp (i<n) {
-    let c=s.slice(line; i; i+1);
+    let c=mt s.slice(line; i; i+1){$ok:v v;$err:e ""};
     if (c=="{") {
-      let e=s.indexof(s.slice(line; i; n); "}");
+      let e=s.indexof(mt s.slice(line; i; n){$ok:v v;$err:e ""}; "}");
       if (e<0) {
         br
       };
-      let obj=s.slice(line; i; i+e+1);
+      let obj=mt s.slice(line; i; i+e+1){$ok:v v;$err:e ""};
       let id=parsestr(obj; "id");
       let darr=parsearr(obj; "depends_on");
       let dl=parselist(darr);

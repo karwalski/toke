@@ -148,8 +148,8 @@ f=main():$i64{
     io.eprintln("usage: datapipe <input.csv> <output.json>");
     <2
   };
-  let path=args.get(1);
-  let output=args.get(2);
+  let path=mt args.get(1){$ok:v v;$err:e ""};
+  let output=mt args.get(2){$ok:v v;$err:e ""};
   let raw=mt file.read(path) {
     $ok:v v;
     $err:e ""

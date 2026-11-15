@@ -75,8 +75,8 @@ i=io:std.io;
 f=hi(req:i64):i64{ <http.resok("ok") };
 f=main():i64{
   http.getstatic("/ok"; "ok");
-  let mode=args.get(1);
-  let host=args.get(2);
+  let mode=mt args.get(1){\$ok:v v;\$err:e ""};
+  let host=mt args.get(2){\$ok:v v;\$err:e ""};
   let r=mut.0;
   if(mode=="on"){ r=http.serveon(host;0) }el{
   if(mode=="workerson"){ r=http.serveworkerson(host;0;1) }el{

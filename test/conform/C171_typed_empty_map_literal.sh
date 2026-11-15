@@ -50,7 +50,7 @@ f=main():i64{
   a=a.set("x";5);
   a=a.set("y";6);
   let ks=a.keys();
-  io.println("\(n0) \(a.len) \(a.get("y")) \(ks.len)");
+  io.println("\(n0) \(a.len) \(mt a.get("y"){$ok:v v;$err:e 0}) \(ks.len)");
   let s=@($str:$str);
   let s2=s.set("k";"vee");
   io.println("\(s.len) \(s2.len) \(s2.get("k"))");
@@ -66,7 +66,7 @@ f=main():i64{
   let b=mut.@($i64:$str);
   let n0=b.len;
   b=b.set(3;"three");
-  io.println("\(n0) \(b.len) \(b.get(3))");
+  io.println("\(n0) \(b.len) \(mt b.get(3){$ok:v v;$err:e ""})");
   <0
 };
 EOF
@@ -83,7 +83,7 @@ f=main():i64{
   let t:@(str:i64)=@($str:$i64);
   let t2=add(t;"q");
   let mm=@($str:@($str:$i64));
-  io.println("\(c.entries.len) \(n.len) \(n.get("z").get(0).v) \(t2.len) \(t2.get("q")) \(mm.len)");
+  io.println("\(c.entries.len) \(n.len) \(n.get("z").get(0).v) \(t2.len) \(mt t2.get("q"){$ok:v v;$err:e 0}) \(mm.len)");
   <0
 };
 EOF

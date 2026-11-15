@@ -74,8 +74,8 @@ i=log:std.log;
 i=args:std.args;
 f=main():i64{
   http.getstatic("/ok"; "ok");
-  let lr=log.openaccess(args.get(2);0;0;0);
-  let mode=args.get(1);
+  let lr=log.openaccess(mt args.get(2){\$ok:v v;\$err:e ""};0;0;0);
+  let mode=mt args.get(1){\$ok:v v;\$err:e ""};
   let r=mut.0;
   if(mode=="workers"){ r=http.serveworkerson("127.0.0.1";0;2) }el{
   if(mode=="single"){ r=http.serveworkerson("127.0.0.1";0;1) }el{

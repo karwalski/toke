@@ -19,7 +19,7 @@ f=cval(c:$str):$i64 {
   if (c=="T") {
     <10
   };
-  <s.toint(c)
+  <mt s.toint(c){$ok:v v;$err:e 0}
 };
 
 f=main():$i64 {

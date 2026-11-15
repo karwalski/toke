@@ -58,7 +58,7 @@ f=main():i64{
   io.println("two.len=\(two.len())");
 
   (* withtools returns a NEW client; the original must still work *)
-  let base=llm.client(env.get("LLMA");"keyA";"modelA");
+  let base=llm.client(mt env.get("LLMA"){$ok:v v;$err:e ""};"keyA";"modelA");
   let p=$toolparam{name:"city";type:"string";desc:"City name";required:true};
   let decl=$tooldecl{name:"getweather";desc:"Return weather";params:@(p)};
   let armed=tool.withtools(base;@(decl));

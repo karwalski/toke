@@ -22,8 +22,8 @@ i=str:std.str;
 i=env:std.env;
 
 f=main():i64{
-  let urla=env.get("LLMA");
-  let urlb=env.get("LLMB");
+  let urla=mt env.get("LLMA"){$ok:v v;$err:e ""};
+  let urlb=mt env.get("LLMB"){$ok:v v;$err:e ""};
   let a=llm.client(urla;"keyA";"modelA");
   let b=llm.client(urlb;"keyB";"modelB");
 

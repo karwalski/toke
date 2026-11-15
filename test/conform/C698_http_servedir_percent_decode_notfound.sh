@@ -68,7 +68,7 @@ i=http:std.http;
 i=args:std.args;
 f=main():i64{
   http.getstatic("/ok"; "ok");
-  if(args.get(1)=="set"){ http.setnotfound("${BODY}") };
+  if((mt args.get(1){\$ok:v v;\$err:e ""})=="set"){ http.setnotfound("${BODY}") };
   http.servedir("/s";"${WORK}/pub");
   let r=http.serveworkerson("127.0.0.1";0;1);
   <0

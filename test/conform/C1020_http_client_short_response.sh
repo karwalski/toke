@@ -106,7 +106,7 @@ f=gu(u:str):str{
   <mt http.geturl(u) { $ok:b "ok \(str.len(b) as i64) \(b)"; $err:e "err \(e.code)" }
 };
 f=main():i64{
-  let base=args.get(1);
+  let base=mt args.get(1){$ok:v v;$err:e ""};
   let c=http.client(base);
   io.println(str.concat("1 ";gu(str.concat(base;"/short"))));
   let r2=mt http.clientget(c;"/short") { $ok:r "ok \(r.status)"; $err:e "err \(e.code)" };

@@ -65,7 +65,8 @@ f=handlelist(req:i64):i64{
 
 
 f=handleget(req:i64):i64{
-  let id=mt str.toint(http.param(req;"id")) {
+  let raw=mt http.param(req;"id") {$ok:v v;$err:e ""};
+  let id=mt str.toint(raw) {
     $ok:v v;
     $err:e (0-1)
   };
@@ -109,7 +110,8 @@ f=handlecreate(req:i64):i64{
 
 
 f=handledelete(req:i64):i64{
-  let id=mt str.toint(http.param(req;"id")) {
+  let raw=mt http.param(req;"id") {$ok:v v;$err:e ""};
+  let id=mt str.toint(raw) {
     $ok:v v;
     $err:e (0-1)
   };

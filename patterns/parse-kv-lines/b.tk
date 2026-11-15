@@ -5,7 +5,7 @@ i=env:std.env;
 f=chk(m:@(str:str)):i64{
   let ks=m.keys();
   let t=mut.ks.len*1000000;
-  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.get(ks.get(i)))};
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(mt m.get(ks.get(i)){$ok:v v;$err:e ""})};
   <t
 };
 f=pat(txt:str):i64{
@@ -14,7 +14,7 @@ f=pat(txt:str):i64{
   lp(let i=0;i<ls.len;i=i+1){
     let l=ls.get(i);
     let p=s.indexof(l;"=");
-    if(p>0){m=m.set(s.slice(l;0;p);s.slice(l;p+1;s.len(l)))}
+    if(p>0){m=m.set(mt s.slice(l;0;p){$ok:v v;$err:e ""};mt s.slice(l;p+1;s.len(l)){$ok:v v;$err:e ""})}
   };
   <chk(m)
 };

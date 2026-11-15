@@ -164,8 +164,7 @@ i=tls:std.tls;
 i=file:std.file;
 
 f=emit(cn:str;certp:str;keyp:str):i64{
-  let kp=tls.genselfsigned(cn; 1);
-  if(kp==0){ <1 };
+  let kp=mt tls.genselfsigned(cn; 1){\$ok:k k;\$err:e <1};
   let a=mt file.write(certp; tls.certof(kp)){\$ok:v v;\$err:e false};
   let b=mt file.write(keyp; tls.keyof(kp)){\$ok:v v;\$err:e false};
   tls.freekeypair(kp);
@@ -244,7 +243,7 @@ f=rd(p:str):str{
 };
 
 f=main():i64{
-  let mode=args.get(1);
+  let mode=mt args.get(1){\$ok:v v;\$err:e ""};
   let scert=rd("${WORK}/s.crt");
   let cfg=mut.0;
   if(mode=="auth"){
@@ -321,8 +320,7 @@ i=file:std.file;
 i=io:std.io;
 
 f=emit(cn:str;alg:str;certp:str):i64{
-  let kp=tls.genselfsignedalg(cn; 1; alg);
-  if(kp==0){ <1 };
+  let kp=mt tls.genselfsignedalg(cn; 1; alg){\$ok:k k;\$err:e <1};
   let a=mt file.write(certp; tls.certof(kp)){\$ok:v v;\$err:e false};
   tls.freekeypair(kp);
   if(a==false){ <1 };
