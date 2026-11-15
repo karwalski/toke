@@ -17,7 +17,7 @@ item was checked against main or its branch to confirm it is still open. Numbers
 where that was cheap (marked **re-measured**); the rest are quoted from the row or batch report
 named in the item.
 
-**Nothing here is decided.** Each item carries a recommendation only.
+**Answers recorded 2026-11-15:** the items in "Answers recorded" below are decided. Every other item still carries a recommendation only.
 
 **How to use this:** answer an item with its number and a letter (e.g. "1.2 a", or "1.2 rec" to
 accept the recommendation). The main thread then records the decision in the row, lifts the block
@@ -33,6 +33,40 @@ into toke main (`integrate/z-wave-1110b`; conform 516/0) and their rows, with ID
 `integrate/z-wave-1112c`, held for 1.14 and 1.15.
 
 ---
+
+## Answers recorded 2026-11-15
+
+The owner approved the decision plan of 2026-11-15, which accepted the "decide now" answers below.
+Each was researched against the tree and red-teamed by a second agent first (workflow
+`wf_23130273-504`). Every other item in this register is still open; the plan's recommendations
+for them are recorded in the item rows of `docs/progress.md` as recommendations only.
+
+| Item | Answer | Rows |
+|---|---|---|
+| 1.1 | **(a) migrate, then flip.** The semantics were settled by 127.30. Port the std half of the Z92 patch (`tmpwork/Z92/full_std_union.patch`) onto main with the 127.323 positions. The `$err` filler lives only in an internal migration script for the toke tree, toke-test-programs and ooke: never a `--fix` rule, never the E4031 `fix` field, never corpus records. Measure with the real checker in one batched pass. Vehicle: toke 3.3.0 (R1). | 127.319, 127.323 |
+| 1.2 | **(a) refuse** `==`/`!=` with an array operand (E4031, the 138.9 block). `fix` only when the other operand is the literal `@()` and the operand has array type (`x.len==0` / `x.len!=0`); none for a handle, a str or two named arrays. The three regen records whose banked output came from the defect (A-ARR-0033v2, A-ARR-0090v2, MIG-P2-A-A-ARR-0010v2) go through correctness repair. Ships in the next release; not held for 1.1. | 138.20 |
+| 1.6 | **(a), ratified as shipped:** an array has no `.concat` method (E4036); `a+b` is the one spelling. Five records cited this answer before it was recorded. | 127.318, 127.358, 127.359 |
+| 4.1 | **(a) waive** the --min-bytes and proxy-token gates where a row's merged patches meet a declared, tested correctness set (regen: 131.42, 131.43, 131.67, 131.105, 131.106, 131.111, 131.114; library: 131.106, 131.117), recorded as `size_gate_note: waived(<story>)` with the byte delta. | 131.108, 131.15, 131.17 |
+| 4.2 | Map nested-if-ladder to cond-elif-chain form b, deterministic, judge weight **0.02**. Scan the 641 rows' style mandates first and add `MANDATE_EXEMPTIONS` where a mandate asks for nesting. | 131.107 |
+| 4.3 | **(a)** exact match plus an allowlist of i32→i64 and u32→u64/i64 only, each justified by identical stdout. Mismatches go through a new route_merge patch that joins the 4.1 correctness set. | 131.99 |
+| 4.7 | **Defer GPU spend explicitly.** Trigger: the 131.29 export exists, Lane A is scored on BENCH-128 and published at G0 (128.17), and a named trained lane has a written §7.1 case. Review date: G0 + 2 weeks, when the owner approves a capped spend for one named lane or records NO-TRAIN under training-reset-128 §7.3. | 128.4 |
+| 4.11 | **(d) amend patterns protocol §6:** forms proven to lower to identical code are tied, and a tie keeps the incumbent, so `.append` stays canonical. toke-spec-v0.4 §J's example changes so it no longer teaches a non-canonical accumulator. | 127.437, 127.440 |
+| 5.2 | **(a), executed:** toke v3.2.0 released 2026-11-15 (`ea7ddf22`), without 138.20. | 138.17 |
+| 3.8 | Owner action, now: state the Stripe key roll date and the request-log review outcome (roll it now if it never happened); then, with owner approval, delete the stale ref and gc. | 130.21 |
+| 3.9 / 6.7 | One owner cloud inventory (Lightsail and EC2 instances, static IPs, key pairs, snapshots): delete the workers and stale hosts, rotate the website host's key, confirm the firewall admits only Cloudflare ranges. toke-web history (31adaab..c812cd9) carries an old host address and key filename; the tree is clean. No history rewrite (AGENTS §7.5). | 130.22, 130.25 |
+| 6.6 | Enable GitHub private vulnerability reporting on every public repo, then Cloudflare Email Routing for security@. | 100.0 |
+| 5.3 | Send the loke reply now, after its corrections (138.32 paragraph, PKCE padding note, the 127.452 ask, the 1.1 release vehicle). | 138.17 |
+
+**Answers outside the item list (same approval):**
+
+- **R1 release vehicle:** the acceptance batch (1.1, 1.2, 1.3, 1.9, 4.3, 127.360, 1.15, 2.4 as each is answered) ships in **toke 3.3.0**, cut from the main commit that carries it. **ooke 3.0.1 ships first**, with `run.tk`/`build.tk` migrated to spellings valid on 3.2.0; Homebrew ooke moves with or before tkc.
+- **R2 corpus repair route for 1.1:** agent repair only, with a catalogue pattern for single-character reads through `str.charcode` (no union). No mechanical filler rewrite.
+- **R3 131.15 pin:** not v3.2.0. Land the batch on main, measure once, cut a `corpus_pin` from that commit (131.103 convention), re-prep 131.15 once.
+- **D7 kill rules F1–F6:** the owner is the decider; each verdict is computed by its story's script and published whatever it shows. Dates: F6 2027-01-31; F2 2027-02-28; F1 static half 2027-02-28, generation half 4.7 trigger + 8 weeks; F5 = 131.19 done + 6 weeks (backstop 2027-04-30); Lane A G0 2027-04-30; F4 = G0 + 6 weeks, with Lane A pre-named and a ratio CI. Conditional on the corpus-batch items being answered by 2026-11-30.
+- **132.7:** ratify the positioning brief once, as v2 merged with the 2026-11-15 review, before any registry text is published. Keep the 19-word one-liner; drop "compact to emit" and "compact in whatever unit"; §3's numbers become pointers to metrics-baseline; delete its PENDING entry in `check_metrics_claims.py`.
+- **D3 (amends the 2026-09-22 ruling in 128.19):** Gate 1 criterion 1 reads "Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown." The verdict stays NOT PASSED.
+- **D4:** withdraw the Gate 2 PASS of 2026-05-24 in a dated `docs/decisions/gate2-decision.md` ("no standing verdict"), folding in Gate 3 (void, never ran). 55.6% is not restated without the possibly-corpus-derived caveat.
+- **D-rel-1:** edit the published v3.2.0 release body: correct the signing statement (the signature and SBOM cover a CI rebuild, not the archives), link the breaking-change table, and state the glibc ≥ 2.38 and macOS 15 floors.
 
 ## Decide these first
 

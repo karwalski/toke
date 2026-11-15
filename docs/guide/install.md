@@ -100,6 +100,13 @@ set, or the build has a `--target`, clang finds its linker itself.
 
 ### Packaged installs: release tarballs and Homebrew
 
+**Platform floors (3.2.0).** The release binaries need macOS 15 (Sequoia) or later, and on
+Linux glibc 2.38 or later (Ubuntu 24.04+, Debian 13+, Fedora 39+), because they are built
+on those images (toke 127.454). On an older system, build from source (above). Programs
+that use std.http, TLS, std.db or compression also need the libraries: on macOS the
+Homebrew formula pulls in openssl@4; on Linux install clang, libssl-dev, zlib1g-dev and
+libsqlite3-dev. Check a downloaded tarball against the release's `checksums.txt`.
+
 A `toke` you did not build yourself -- a release tarball, or the Homebrew
 formula, which installs that tarball -- runs the clang path baked in **on the
 machine that built it**: whatever `command -v clang` returned on the release
