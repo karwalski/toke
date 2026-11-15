@@ -170,7 +170,7 @@ across 87K lines" as part of a dated historical document.
 
 | Metric | Value | Basis / caveat | Source |
 |---|---|---|---|
-| Gate 1 token reduction vs baseline | **12.5%** | 8K purpose-built BPE vocab | Gate 1 (2026-04-03) |
+| Gate 1 criterion 1, token reduction | **12.5%** | Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. | Gate 1 (2026-04-03); wording: owner decision D3 (2026-11-15), `docs/decisions/gate1-decision.md` |
 | `--min` vs readable-source understatement | **28.2%** | published library used readable source; canonical basis is `--min` | 116/B2 |
 | Target (1B model, north star) | illegal-char <0.1% | — | `architecture/1b-model-design.md` |
 
@@ -272,7 +272,8 @@ and strictly more generous quantity. The denominator is the 1,000 generated:
 588/1,000 = **58.8%**. No re-run was needed; the correction is arithmetic.
 **58.8% is below the `pass_at_1_minimum: 0.60` Gate 1 declared. The verdict was
 re-opened on 2026-09-19, and on 2026-09-22 the owner decided Gate 1 NOT PASSED
-(story 128.19)** — criterion 2 is not met; criterion 1 (token reduction) stands. See
+(story 128.19)** — criterion 2 is not met. Criterion 1, as worded by owner decision D3
+(2026-11-15): Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. The verdict stays NOT PASSED. See
 `docs/decisions/gate1-decision.md` and `toke-eval/docs/suspect-numbers-128-1c.md` §1.
 
 ---

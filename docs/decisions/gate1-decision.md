@@ -6,7 +6,7 @@ order: 4
 ---
 
 **Date:** 2026-04-03
-**Status:** recorded PASS 2026-04-03 — re-opened 2026-09-19 — **NOT PASSED, owner decision 2026-09-22** (story 128.19)
+**Status:** recorded PASS 2026-04-03 — re-opened 2026-09-19 — **NOT PASSED, owner decision 2026-09-22** (story 128.19); criterion 1 reworded by owner decision D3, 2026-11-15
 **Deciders:** Matthew Watt
 **Story:** 1.6.4
 
@@ -16,8 +16,14 @@ order: 4
 
 | # | Criterion | Threshold | Result | Verdict |
 |---|-----------|-----------|--------|---------|
-| 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **PASS** |
+| 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **Recorded as met; withdrawn as a gate measure** (D3) |
 | 2 | Functional Pass@1 on held-out tasks | >= 60% | **58.8%** (588/1,000) | **NOT MET** |
+
+> **Criterion 1 reworded 2026-11-15 (owner decision D3, amending the 2026-09-22
+> ruling in story 128.19).** Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown.
+> The verdict stays NOT PASSED. Until 2026-11-15 the row above read **PASS** and the
+> decision below said criterion 1 "stands as met". Register:
+> `docs/owner-decisions-2026-11-12.md`, § Answers recorded 2026-11-15, item D3.
 
 > **Pass@1 corrected 2026-09-19 (story 128.19): 58.8%, not 63.7%.**
 > 1,000 solutions were generated, 923 compiled, 588 passed every hidden test. The
@@ -48,13 +54,20 @@ of **PASS**. That is the withdrawn figure and it is kept here, not erased.
 is below the gate's own >= 60% threshold.
 
 **Decided 2026-09-22 (owner decision, story 128.19): Gate 1 is NOT PASSED.** It fails
-on criterion 2, functional Pass@1 (58.8% against >= 60%). Criterion 1, the token
-reduction, stands as met. The original decision is left above as the record of what
-was concluded at the time.
+on criterion 2, functional Pass@1 (58.8% against >= 60%). The original decision is
+left above as the record of what was concluded at the time.
+
+**Criterion 1, as reworded by owner decision D3 on 2026-11-15:** Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same held-out toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. The
+verdict stays NOT PASSED. (Until 2026-11-15 this paragraph said that criterion 1, the
+token reduction, "stands as met".)
 
 ---
 
 ## Token Efficiency (Criterion 1)
+
+Criterion 1 is worded by owner decision D3 (2026-11-15; the note under the criteria
+table). The tables below are the record of the 12.5% figure: a tokenizer-vs-tokenizer
+measurement on toke text, not a comparison with Python.
 
 Measured with a purpose-built BPE tokenizer trained on 46,754 validated toke programs, compared against OpenAI's cl100k_base tokenizer on the same corpus.
 
@@ -75,6 +88,12 @@ Cross-language comparison (cl100k_base, complete programs):
 | Python | 156 | 3.0x more |
 | C | 168 | 3.2x more |
 | Java | 127 | 2.4x more |
+
+This cross-language table is withdrawn, and it is not evidence for criterion 1. TEMSpec
+§8.2 records that it counted the toke side with the toke-specific BPE and the Python, C
+and Java side with cl100k_base, a lane crossing. Under one shared tokenizer
+(cl100k_base) toke costs **1.34x [1.22, 1.48]** the tokens of equivalent Python on the
+60 Gate-1 tasks (N = 60, 2026-09-19; `docs/metrics-baseline.md`).
 
 ---
 
