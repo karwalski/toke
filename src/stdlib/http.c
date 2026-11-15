@@ -4411,15 +4411,20 @@ HttpClient *http_client(const char *base_url)
     return c;
 }
 
+static void client_release(HttpClient *c)
+{
+    free(c->base_url);
+    free(c->proxy_url);
+    free(c->connect_addr);
+    free(c);
+}
+
 /* Frees only a client this file made (client_own); a record literal is
  * the program's, and has no private fields to free. */
 void http_client_free(HttpClient *c)
 {
     if (!c || !client_disown(c)) return;
-    free(c->base_url);
-    free(c->proxy_url);
-    free(c->connect_addr);
-    free(c);
+    client_release(c);
 }
 
 /* client_copy — a new client with every setting of `c` (138.24: the
@@ -4492,7 +4497,11 @@ HttpClient *http_withconnectaddr(HttpClient *c, const char *addr)
     if (!n) return NULL;
     free(n->connect_addr);
     n->connect_addr = hstrdup(addr ? addr : "");
-    if (!n->connect_addr) { http_client_free(n); return NULL; }
+    if (!n->connect_addr) {   /* n is client_copy's, so in the set */
+        (void)client_disown(n);
+        client_release(n);
+        return NULL;
+    }
     return n;
 }
 
