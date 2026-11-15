@@ -1738,6 +1738,10 @@ static int mt_not_string_match(const Node *m, const char *src, const Scope *scop
 
 /* 127.98 (i): set while the base identifier of a member access is resolved */
 static int s_resolving_member_base = 0;
+/* 127.289: the target of the bare `lp(i=e;..)` init being resolved.  E3011
+ * there carries no "did you mean" fix: the likely repair is `lp(let i=`,
+ * which declares the name, so a near-miss spelling is not deterministic. */
+static const Node *s_bare_init_target = NULL;
 
 static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
@@ -1860,7 +1864,7 @@ static void resolve_ident(const Node *node, const char *src,
                                        ren_fix, sizeof ren_fix);
             /* If no foreign-keyword fix, try Levenshtein suggestion from scope */
             char lev_fix[256];
-            if (!fix) {
+            if (!fix && node != s_bare_init_target) {   /* 127.289 */
                 const char *best_name = NULL;
                 int best_dist = 4; /* max distance 3 */
                 int want_type = (node->kind == NODE_TYPE_IDENT ||
@@ -2376,9 +2380,15 @@ static int resolve_node(const Node *node, const char *src,
              * in force is E3011 here, at the init, and the error marker
              * resolve_ident leaves in lp_scope keeps the condition, step and
              * body from reporting the same name again.  The type checker
-             * owns mutability (E4070). */
-            for (int i = 0; i < init->child_count && i < 2; i++)
-                resolve_node(init->children[i], src, lp_scope, arena, had_error);
+             * owns mutability (E4070).  The E3011 carries no Levenshtein
+             * fix (s_bare_init_target). */
+            const Node *saved_bt = s_bare_init_target;
+            s_bare_init_target = init->child_count > 0 ? init->children[0] : NULL;
+            if (init->child_count > 0)
+                resolve_node(init->children[0], src, lp_scope, arena, had_error);
+            s_bare_init_target = saved_bt;
+            if (init->child_count > 1)
+                resolve_node(init->children[1], src, lp_scope, arena, had_error);
         } else if (loop_init_declares(init)) {
             /* `lp(let i=e;..)`: resolve the init expression first (RHS),
              * then bind the name. */
