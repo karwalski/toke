@@ -42,7 +42,7 @@ No offensive, trademarked, or culturally sensitive meanings were found for `oke`
 These names are actively in use or committed for development.
 
 ### toke — the language
-The core programming language. 59-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead of up to 3 tokens. Purpose-built 16K BPE tokenizer (v0.3): 52% fewer tokens than cl100k_base on the same toke source, N = 42 benchmark programs -- a tokenizer-vs-tokenizer figure, superseded on v0.4 text (`docs/metrics-baseline.md`). Gate 2 PASS (2026-05-22): 100% compilation Pass@1 on fine-tuned 7B model (curated set). 57 stdlib modules (`ls stdlib/*.tki`; `docs/metrics-baseline.md` § Project facts).
+The core programming language. 59-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead of up to 3 tokens. Purpose-built 16K BPE tokenizer (v0.3): 52% fewer tokens than cl100k_base on the same toke source, N = 42 benchmark programs -- a tokenizer-vs-tokenizer figure, superseded on v0.4 text (`docs/metrics-baseline.md`). Gate 2 (2026-05-22): 100% compile Pass@1 on a fine-tuned 7B model, on the curated 500-hidden + 200-eval set with v0.3 syntax. The PASS recorded on it 2026-05-24 was **withdrawn on 2026-11-15** (owner decision D4): neither pre-registered Gate 2 criterion is a compile rate, and Gate 2 has no standing verdict ([gate2-decision.md](/docs/decisions/gate2-decision/)). 57 stdlib modules (`ls stdlib/*.tki`; `docs/metrics-baseline.md` § Project facts).
 **Traditional stack equivalent:** Programming language and compiler (Rust, Go, TypeScript).
 
 ### ooke — static site generator and web framework
