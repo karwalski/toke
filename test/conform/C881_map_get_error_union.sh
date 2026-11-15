@@ -86,7 +86,9 @@ rejects v6 'a lookup passed to an i64 parameter' "got 'i64!\$err'" \
   "m=v6;${H}f=h(a:i64):i64{<a};f=main():i64{${M}<h(m.get(\"a\"))};"
 rejects v7 'a lookup returned as an i64' "got 'i64!\$err'" \
   "m=v7;${H}f=k(m:@(\$str:i64)):i64{<m.get(\"a\")};f=main():i64{<0};"
-rejects v8 'a std T!E into an i64 annotation (127.304)' "got 'i64!parseerr'" \
+# 127.319: the std call is now the union itself, so E4031 renders it as every
+# union is rendered, `T!$E` (127.304 spelled the record's `i64!parseerr`).
+rejects v8 'a std T!E into an i64 annotation (127.304)' "got 'i64!\$parseerr'" \
   "m=v8;${H}f=main():i64{let x:i64=str.toint(\"3\");<x};"
 # ── E4031 names both sides of a user T!E (it printed 'i64', got 'i64') ──
 rejects v12 'a mut binding of a lookup is the union too (as for a user T!E)' "i64!\$err" \

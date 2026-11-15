@@ -22,9 +22,8 @@
 # another binding): 135.16a (C067) made `let r=mut.0; r=s.toint(x); mt r{..}`
 # match on the assigned call's channel, and that program stays clean.
 #
-# Negative control: C1831_TKC=<v3.2.0 tkc> -- every `rejects` case except the
-# user-union std argument into a `str` parameter (judged since 127.304) fails
-# clean; the `clean` cases pass.
+# Negative control: C1831_TKC=<v3.2.0 tkc> -- all 18 `rejects` cases fail
+# (each checks clean there); the 5 `clean` cases pass.
 #
 # Story: 127.323
 set -uo pipefail
