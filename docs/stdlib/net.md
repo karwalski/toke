@@ -5,7 +5,7 @@ section: reference/stdlib
 order: 28
 ---
 
-The `std.net` module is planned for a future release. It will provide low-level TCP and UDP socket operations for use cases not covered by the higher-level `std.http` module.
+The `std.net` module provides low-level network operations for use cases not covered by the higher-level `std.http` module: a resolver that returns every address a name has, and a minimal TCP server surface. UDP and a TCP client are not part of it yet.
 
 **Status:** Partial. A minimal IPv4 TCP server surface exists -- `net.listen`, `net.accept`, `net.read`, `net.write`, `net.close`, `net.portavailable` -- and a resolver, `net.resolve`; all need the `net` capability (`--allow-net`). `net.listen` and `net.resolve` are typed; the rest are untyped ABI entries in `stdlib/net.tki`.
 

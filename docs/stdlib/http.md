@@ -59,6 +59,8 @@ An opaque client handle created by `http.client`. Holds connection pool state an
 | poolsize | u64 | Maximum number of pooled connections |
 | timeoutms | u64 | Per-read timeout in milliseconds (30000): how long each wait for data may take |
 
+**A client written as a record literal** — `$httpclient{baseurl:"http://h";poolsize:4;timeoutms:5000}` — is a client with those three fields, no proxy and none of the [request controls](#request-controls). The proxy and the controls are not record fields, so only a client from `http.client`, or from `http.withproxy` and the other `with` options, carries them. Each `with` option accepts a literal client and returns a client with the one setting added (story 138.24: the client used to read these settings from past the end of a literal, so a literal client took a spurious cap or deadline, and `http.withproxy` on one could crash).
+
 **`timeoutms` is per read, not per request** (story 138.34). It is the socket's receive timeout (`SO_RCVTIMEO`), which restarts whenever data arrives, so a server that sends a byte inside every timeout keeps a request open indefinitely. Until 138.34 this page called it a per-request timeout. To bound a request as a whole, use [`http.withdeadline`](#httpwithdeadlineclient-httpclient-ms-u64-httpclient). To bound the body a response may carry, use [`http.withmaxbody`](#httpwithmaxbodyclient-httpclient-bytes-u64-httpclient). Both are off on a client from `http.client`.
 
 ### $httpresp
@@ -828,7 +830,14 @@ A program can therefore resolve a name with [`net.resolve`](/docs/stdlib/net/), 
 
 `http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` **register routes** — `http.get("/health"; &handler)` — and send nothing. The client calls have names of their own (story 138.3): before them, `http.get(client;"/health")` compiled and registered a GET route whose path was the client handle (nothing was sent; loke saw the call "succeed" from the 257th time on, once the route table was full), a client DELETE could not be reached at all, and `http.get(url)` returned `""` for a server that was not there. `http.get(url)` with one argument still compiles today to an untyped GET; use `http.geturl`, which has an error channel.
 
-A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse, HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
+A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse or is refused (below), HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
+
+**A URL that would rewrite the request is refused before anything is sent** (story 138.24). The URL's host, port and path go into the request line and the `Host` header as they are, so a line break in any of them would let the URL add headers, or a second `Host`, of its own. Every client call — `http.geturl`, `http.postheaders`, `http.getheaders`, the `http.client…` calls, `http.stream` and `http.downloadfile` — therefore requires:
+
+- a host that is a DNS name or an IPv4 address: ASCII letters, digits, `-`, `.` and `_`. A bracketed IPv6 literal is not parsed; connect to an IPv6 address with [`http.withconnectaddr`](#httpwithconnectaddrclient-httpclient-addr-str-httpclient);
+- a port and a path with no control character (U+0000–U+001F, U+007F) and no space. Percent-encode a space as `%20`. Bytes above `0x7f` are sent as they are.
+
+A refused URL is `$err` (`code` 0) with the message `URL refused: the host must be a DNS name or an IPv4 address, and the port and path may not hold a space or a control character`. `http.downloadfile` returns `-1`, and a refused proxy URL is `failed to parse proxy URL`. Before this, a URL holding a line break was sent with the smuggled lines in it, and one holding a space or tab drew a `400` from the server.
 
 A response that ends before it is complete is also a transport failure (`code` 0): the connection closes, or a read times out, before the blank line that ends the headers, before all the bytes its `Content-Length` promises, or before the last (zero-size) chunk of a `Transfer-Encoding: chunked` body. `msg` says which, e.g. `incomplete response: connection closed after 3 of 8 body bytes (Content-Length)`. Until story 138.23 each of these answered `$ok` with whatever had arrived. A body with neither header ends when the server closes the connection; a `204`, a `304` and a `1xx` response have no body.
 
@@ -918,6 +927,7 @@ f=main():i64{
 - the headers are sent as given, with no `Content-Type` and no `Content-Length` added;
 - `Host` and `Content-Length` are set by the client, and giving either is `$err`;
 - a header name or value containing a carriage return or line feed is `$err`, and nothing is sent;
+- the `url` is held to the same rule: a host, port or path that would rewrite the request is `$err`, and nothing is sent (see [Client calls and route registration are different names](#client-calls-and-route-registration-are-different-names));
 - `$err` means a transport failure, and a status such as `404` is a response, in `r.status`;
 - over `https://` the server's certificate is verified, as for every client call.
 
