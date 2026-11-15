@@ -3226,6 +3226,51 @@ static ClientPriv client_priv(const HttpClient *c)
 
 /* ── URL parsing ───────────────────────────────────────────────────── */
 
+/* 138.24: what a URL may hold before any of it is sent.  The host, port and
+ * path are written as they are into the request line, the Host header, the
+ * proxy CONNECT line and SNI, so a CR or LF in any of them ends that line
+ * and lets the URL write headers of its own -- header injection through
+ * the one argument 138.8's header rules never looked at.  Measured in the
+ * review of Z214: http.getheaders("http://127.0.0.1:P/x HTTP/1.1\r\nHost:
+ * evil.example\r\nX-Inj: 1\r\nY: z"; ...) answered $ok 200 and the server
+ * read Host: evil.example; and a URL host "svc.example\r\nX-Inj:P", which
+ * a name lookup used to fail, went straight into Host under
+ * http.withconnectaddr (no lookup).
+ *
+ * So the host must be a DNS name or an IPv4 address: ASCII letters,
+ * digits, '-', '.' and '_' (the URL parser takes no [IPv6] literal), and
+ * the port and path may not hold a control byte (C0 or DEL) or a space --
+ * a space cannot inject a header, but it splits the request line, which no
+ * server reads as the path meant.  client_parse_url answers -2 for these,
+ * before anything is connected or sent. */
+static int url_host_ok(const char *h)
+{
+    if (!h[0]) return 0;
+    for (; *h; h++) {
+        unsigned char ch = (unsigned char)*h;
+        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+              || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.' || ch == '_'))
+            return 0;
+    }
+    return 1;
+}
+
+static int url_text_ok(const char *s)
+{
+    for (; *s; s++) {
+        unsigned char ch = (unsigned char)*s;
+        if (ch <= 0x20 || ch == 0x7f) return 0;
+    }
+    return 1;
+}
+
+#define CLIENT_URL_REFUSED \
+    "URL refused: the host must be a DNS name or an IPv4 address, and the " \
+    "port and path may not hold a space or a control character"
+
+/* client_parse_url — split base_url (+ path_suffix) into host, port and
+ * path.  0, or -1 for a URL it cannot split (no http:// or https://, a
+ * part too long), or -2 for one it refuses (url_host_ok, url_text_ok). */
 static int client_parse_url(const char *base_url, const char *path_suffix,
                             char *host_out, size_t host_cap,
                             char *port_out, size_t port_cap,
@@ -3275,6 +3320,8 @@ static int client_parse_url(const char *base_url, const char *path_suffix,
     if (path_out[0] == '\0') {
         snprintf(path_out, path_cap, "/");
     }
+    if (!url_host_ok(host_out) || !url_text_ok(port_out) || !url_text_ok(path_out))
+        return -2;
     return 0;
 }
 
@@ -3765,6 +3812,7 @@ static HttpClientResp client_do_request(HttpClient *c,
     int pu = client_parse_url(c->base_url, path,
                               host, sizeof(host), port, sizeof(port),
                               full_path, sizeof(full_path), &is_https);
+    if (pu == -2) return err_resp_client(CLIENT_URL_REFUSED, 0);
     if (pu != 0) return err_resp_client("failed to parse URL", 0);
 
     uint64_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
@@ -4525,7 +4573,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
                               full_path, sizeof(full_path), &is_https);
     if (pu != 0) {
         result.is_err  = 1;
-        result.err_msg = hstrdup("failed to parse URL");
+        result.err_msg = hstrdup(pu == -2 ? CLIENT_URL_REFUSED : "failed to parse URL");
         return result;
     }
 

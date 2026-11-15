@@ -26,13 +26,24 @@
 #   7. a closed port: $err
 #   8. https, certificate trusted: $ok 200, User-Agent delivered
 #   9. https, certificate not trusted: $err, nothing arrives
+#  10. the url carries the smuggling (review of Z214): a path of
+#      "/inj HTTP/1.1\r\nHost: evil.example\r\nX-Inj: 1\r\nY: z" is $err
+#      "URL refused", and nothing arrives -- no Host evil.example, no X-Inj.
+#      The header rules above held for the headers argument, but the url
+#      went into the request line as it was: $ok 200, and the server read
+#      the url's Host ahead of the client's.
+#  11. a CR/LF in the url's host: $err "URL refused", nothing arrives
+#  12. a space in the url's path: $err "URL refused", nothing arrives
+#  13. control: a query string (?a=1&b=two%20x) is sent as it is, $ok 200
 #
 # Negative control: C1863_STDLIB=<dir> builds against another stdlib tree.
 # Measured 2026-11-15: against v3.2.0's src/stdlib the program does not
 # check (E4034: getheaders' result is not a known record there).  With
 # tk_http_getheaders_w dropping the caller's headers: 3 passed, 6 failed --
 # 1 and 8 arrive without User-Agent, and 2-5 are sent ($ok) because nothing
-# is left to refuse.
+# is left to refuse.  With client_parse_url's URL check removed: 10 and 12
+# fail ($ok 200 / $ok 400, and the server read Host evil.example and X-Inj
+# for 10); 11 fails at the lookup instead ("TCP connect failed").
 #
 # Story: 138.27
 set -uo pipefail
@@ -70,6 +81,9 @@ class H(http.server.BaseHTTPRequestHandler):
         with open(LOG, "a") as f:
             f.write("GET %s ua=%s xa=%s host=%s cl=%s ct=%s\n" % (self.path, h.get("User-Agent"), h.get("X-A"),
                     h.get("Host"), h.get("Content-Length"), h.get("Content-Type")))
+            if h.get("X-Inj") is not None: f.write("SMUGGLED X-Inj: %s\n" % h.get("X-Inj"))
+            for v in h.get_all("Host") or []:
+                if "evil" in v: f.write("SMUGGLED Host: %s\n" % v)
         code = 404 if self.path == "/missing" else 200
         self.send_response(code); self.send_header("Content-Length", "2"); self.end_headers(); self.wfile.write(b"ok")
 class S(http.server.HTTPServer):
@@ -113,6 +127,10 @@ f=main():i64{
   io.println(show("5";str.concat(base;"/lfname");@(@("X-A\nX-B";"b"))));
   io.println(show("6";str.concat(base;"/missing");@(@("User-Agent";"loke/1.0"))));
   io.println(show("7";"http://127.0.0.1:1/x";@(@("User-Agent";"loke/1.0"))));
+  io.println(show("10";str.concat(base;"/inj HTTP/1.1\r\nHost: evil.example\r\nX-Inj: 1\r\nY: z");@(@("User-Agent";"t"))));
+  io.println(show("11";str.concat(str.concat("http://127.0.0.1\r\nX-Inj: 1:";args.get(2));"/h");@(@("User-Agent";"t"))));
+  io.println(show("12";str.concat(base;"/sp ace");@(@("User-Agent";"t"))));
+  io.println(show("13";str.concat(base;"/q?a=1&b=two%20x");@(@("User-Agent";"t"))));
   <0
 };
 TOKE
@@ -120,7 +138,7 @@ if ! "${TKC}" --allow-all --out gh_bin gh.tk > build.log 2>&1; then
     echo "  FAIL: the program does not build"; sed 's/^/      /' build.log | head -6
     echo "C1863: 0 passed, 1 failed"; exit 1
 fi
-./gh_bin "http://127.0.0.1:${HP}" > plain.out 2>&1
+./gh_bin "http://127.0.0.1:${HP}" "${HP}" > plain.out 2>&1
 line() { awk -v k="$2" '$1==k{print; exit}' "$1"; }
 sent() { grep -a -c "^GET $1 " plain.log; }
 RES="err Content-Length and Host are set by the client, not the caller"
@@ -135,12 +153,21 @@ expect "4 CR/LF in a value: \$err, nothing arrives" "$(line plain.out 4) $(sent 
 expect "5 LF in a name: \$err, nothing arrives" "$(line plain.out 5) $(sent /lfname)" "5 ${INV} 0"
 expect "6 a 404 is a response" "$(line plain.out 6)" "6 ok 404 ok"
 expect "7 a closed port: \$err" "$(line plain.out 7)" "7 err TCP connect failed"
+REF="err URL refused: the host must be a DNS name or an IPv4 address, and the port and path may not hold a space or a control character"
+expect "10 Host and a header smuggled through the url: \$err, nothing arrives" \
+    "$(line plain.out 10) | $(sent /inj) $(grep -a -c '^SMUGGLED' plain.log)" "10 ${REF} | 0 0"
+expect "11 CR/LF in the url's host: \$err, nothing arrives" \
+    "$(line plain.out 11) | $(sent /h)" "11 ${REF} | 0"
+expect "12 a space in the url's path: \$err, nothing arrives" \
+    "$(line plain.out 12) | $(sent /sp)" "12 ${REF} | 0"
+expect "13 control: a query string is sent as it is" \
+    "$(line plain.out 13) | $(grep -a -c '^GET /q?a=1&b=two%20x ua=t ' plain.log)" "13 ok 200 ok | 1"
 
-SSL_CERT_FILE="${WORK}/srv.pem" ./gh_bin "https://127.0.0.1:${SP}" > tls.out 2>&1
+SSL_CERT_FILE="${WORK}/srv.pem" ./gh_bin "https://127.0.0.1:${SP}" "${SP}" > tls.out 2>&1
 expect "8 https, certificate trusted: \$ok 200, User-Agent delivered" \
     "$(line tls.out 1) | $(grep -a -c '^GET /one ua=loke/1.0 ' tls.log)" "1 ok 200 ok | 1"
 : > tls.log
-env -u SSL_CERT_FILE -u SSL_CERT_DIR ./gh_bin "https://127.0.0.1:${SP}" > tls2.out 2>&1
+env -u SSL_CERT_FILE -u SSL_CERT_DIR ./gh_bin "https://127.0.0.1:${SP}" "${SP}" > tls2.out 2>&1
 case "$(line tls2.out 1)" in
 "1 err TLS certificate verification failed"*)
     expect "9 https, certificate not trusted: \$err, nothing arrives" "$(grep -a -c '^GET' tls.log)" "0" ;;
