@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/calculators-finance/FIN-122/solution.tk sha256 bf491de14d21d9ca77c8bdc07b66c760bafddfb6a5583ab67f06a013aeccd6dc manifest ~/tk/toke-test-programs/results/library/calculators-finance.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/calculators-finance/FIN-122/solution.tk sha256 bf491de14d21d9ca77c8bdc07b66c760bafddfb6a5583ab67f06a013aeccd6dc manifest ~/tk/toke-test-programs/results/library/calculators-finance.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=crypto;i=io:std.io;i=s:std.str;
 f=main():$i64{
   let totalprofit=mut.0.0;

@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/crypto-blockchain/CRY-041/solution.tk sha256 78814f6ddb4d29a5aa270ac76dd3c06449191fe4f35b2c521c4dc56900aafcee manifest ~/tk/toke-test-programs/results/library/crypto-blockchain.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/crypto-blockchain/CRY-041/solution.tk sha256 78814f6ddb4d29a5aa270ac76dd3c06449191fe4f35b2c521c4dc56900aafcee manifest ~/tk/toke-test-programs/results/library/crypto-blockchain.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=btcaddr;i=io:std.io;i=s:std.str;i=enc:std.encoding;i=cr:std.crypto;
 f=m32(x:$i64):$i64{<x&4294967295};
 f=rol(x:$i64;n:$i64):$i64{let v=x&4294967295;<((v<<n)|((v>>(32-n))&((1<<n)-1)))&4294967295};

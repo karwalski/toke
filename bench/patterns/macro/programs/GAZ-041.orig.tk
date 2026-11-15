@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/gazeta/GAZ-041/solution.tk sha256 59537d04c49a0e621dd2c7373f548247cc0973b3aaf24c741a9c5d7771f85d5a manifest ~/tk/toke-test-programs/results/library/gazeta.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/gazeta/GAZ-041/solution.tk sha256 59537d04c49a0e621dd2c7373f548247cc0973b3aaf24c741a9c5d7771f85d5a manifest ~/tk/toke-test-programs/results/library/gazeta.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=tue13;i=io:std.io;i=s:std.str;
 f=daysfromcivil(yy:i64;m:i64;d:i64):i64{
   let y=mut.yy;

@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/gazeta/GAZ-012/solution.tk sha256 268a69a4dd911bbdf0d8234a3650d2730dbccf661541016ba7cf119039b07736 manifest ~/tk/toke-test-programs/results/library/gazeta.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/gazeta/GAZ-012/solution.tk sha256 268a69a4dd911bbdf0d8234a3650d2730dbccf661541016ba7cf119039b07736 manifest ~/tk/toke-test-programs/results/library/gazeta.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=fact;i=io:std.io;i=s:std.str;
 f=readall():$str{
   let all=mut.""; lp(1==1){ let ln=io.readln(); all=s.concat(all;s.concat(ln;" ")); if(io.eof()){br} }; <all

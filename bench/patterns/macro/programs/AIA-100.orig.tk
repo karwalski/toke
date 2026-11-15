@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk sha256 a9b844193e5a53a6e8ac631f6dbe11b922d1489eb4cc512eac3472fa52096253 manifest ~/tk/toke-test-programs/results/library/ai-agents.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk sha256 a9b844193e5a53a6e8ac631f6dbe11b922d1489eb4cc512eac3472fa52096253 manifest ~/tk/toke-test-programs/results/library/ai-agents.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=mergestate;i=io:std.io;i=s:std.str;i=json:std.json;
 f=pdoc(x:$str):$jsonval{<mt json.dec(x){$ok:d d;$err:e pdoc("{}")}};
 f=first(x:$str):$str{ if(s.len(x)==0){<""}; <mt s.slice(x;0;1){$ok:v v;$err:e ""} };
