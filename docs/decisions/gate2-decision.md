@@ -76,7 +76,7 @@ syntax". Its own results table set a target of ">70%" against a compile column.
 | Evaluation | Compile | Functional | Set | Source |
 |---|---|---|---|---|
 | Gate 2 run, 2026-05-22 | 100% | 55.6% (272/489), **with the caveat below** | 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax | 2.5.1; functional re-evaluated 2026-05-25 (102.15) |
-| Full-local re-audit, 2026-05-28 (the honest floor) | **37.5%** (655/1,748) | **about 2.2%** fully correct (38 PASS of 1,748) | all 1,748 programs, v0.3.9 | 101.R1 / 102.17 |
+| Full-local re-audit, 2026-05-28 (the honest floor) | **37.5%** (655/1,748), metrics-baseline's figure; it counts the 403 NO_SOURCE programs as compiled (see below) | **about 2.2%** fully correct (38 PASS of 1,748) | 1,748 programs, 1,345 with a solution file; v0.3.9 | 101.R1 / 102.17 |
 
 **The caveat on 55.6%, which travels with the number.** The 200-eval half of the Gate 2
 set may be corpus-derived. The evaluation protocol of story 128.1 found that it most
@@ -92,11 +92,18 @@ infrastructure, not the model: `io.readln()` was declared in its interface file 
 C implementation, so programs that read standard input compiled but could not be linked and
 tested. With that fixed, the re-evaluation of 2026-05-25 gave 272/489 (story 102.15).
 
-The re-audit recompiled and re-ran all 1,748 programs under toke v0.3.9: 38 PASS,
+The re-audit (story 101.R1, retested under toke v0.3.9 in 102.17) covered 1,748 programs.
+Of the 1,748, 1,345 had a solution file (403 NO_SOURCE, 101.R1); of those, 38 PASS,
 141 WRONG_OUTPUT, 64 RUN_FAIL, 9 BUILD_FAIL and 1,093 COMPILE_FAIL. It is the harsher floor,
 and it is cited beside any Gate 2 figure.
 
-Every number in this section is from a v0.3-syntax model. No v0.4-native model exists.
+The 37.5% compile figure above is `docs/metrics-baseline.md`'s, cited as that file gives it.
+It is (1,748 − 1,093) / 1,748, so it counts the 403 NO_SOURCE programs as compiled, while
+the about 2.2% fully correct (38 / 1,748) counts them as failures. Both figures are being
+re-derived with one decided treatment of NO_SOURCE under story 127.467; until then
+metrics-baseline's figures stand as published.
+
+Every number in this section is on v0.3 syntax. No v0.4-native model exists.
 
 ---
 
