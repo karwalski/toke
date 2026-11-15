@@ -27,7 +27,8 @@ static int failures = 0;
     else { printf("FAIL: %s\n", (msg)); failures++; } } while (0)
 
 /* One request kind per child. */
-enum { RQ_PATH_R, RQ_CONNECT, RQ_LISTEN, RQ_ENV, RQ_CLASSONLY_R, RQ_INIT_ONLY };
+enum { RQ_PATH_R, RQ_CONNECT, RQ_LISTEN, RQ_ENV, RQ_CLASSONLY_R, RQ_INIT_ONLY,
+       RQ_PROBE_R, RQ_WHOLE_RW };
 
 /* Fork; the child inits the broker from argv (NULL-terminated), makes the
  * request and exits 0 if it returned.  Returns the child's exit status. */
@@ -47,6 +48,10 @@ static int child(char **argv, int kind, const char *v, unsigned port) {
             case RQ_LISTEN:      tk_cap_require_net(TK_CAP_NET_LISTEN, v, port); break;
             case RQ_ENV:         tk_cap_require_env(v); break;
             case RQ_CLASSONLY_R: TK_REQUIRE(TK_CAP_FS_READ); break;
+            /* the non-exiting probe: exit 0 / 3 carries its answer (a
+             * broker exit would be 1) */
+            case RQ_PROBE_R:     _exit(tk_cap_path_admitted(TK_CAP_FS_READ, v) ? 0 : 3);
+            case RQ_WHOLE_RW:    tk_cap_require_whole(TK_CAP_FS_READ | TK_CAP_FS_WRITE, v, "why"); break;
             default: break;
         }
         _exit(0);
@@ -58,6 +63,7 @@ static int child(char **argv, int kind, const char *v, unsigned port) {
 
 #define ADMIT(argv, kind, v, port, msg) ASSERT(child((argv), (kind), (v), (port)) == 0, (msg))
 #define DENY(argv, kind, v, port, msg)  ASSERT(child((argv), (kind), (v), (port)) == 1, (msg))
+#define NOTADM(argv, v, msg)             ASSERT(child((argv), RQ_PROBE_R, (v), 0) == 3, (msg))
 
 static void scoped(void) {
     /* D1 net: a wildcard covers one or more labels, never the apex, and is
@@ -102,6 +108,21 @@ static void scoped(void) {
     char *wh[] = { "t", "--allow-read", NULL };
     ADMIT(wh, RQ_CLASSONLY_R, NULL, 0, "whole class: class-only TK_REQUIRE admitted");
     ADMIT(wh, RQ_PATH_R, "/nonexistent/x", 0, "whole class: scoped gate admits without canonicalising");
+
+    /* 138.19 round 2: the non-exiting path probe answers as the gate would,
+     * and tk_cap_require_whole passes only under the whole classes. */
+    char *pr[] = { "t", "--allow-read=/usr", NULL };
+    ADMIT(pr, RQ_PROBE_R, "/usr/bin", 0, "probe: tk_cap_path_admitted admits /usr/bin under /usr");
+    NOTADM(pr, "/etc", "probe: tk_cap_path_admitted answers 0 for /etc, with no exit");
+    NOTADM(pr, "/usr/..", "probe: tk_cap_path_admitted answers 0 for /usr/..");
+    char *none[] = { "t", NULL };
+    NOTADM(none, "/usr", "probe: 0 when the class is not granted (no CAP001 exit)");
+    ADMIT(wh, RQ_PROBE_R, "/etc", 0, "probe: the whole class admits anything");
+    char *rw[] = { "t", "--allow-read", "--allow-write", NULL };
+    ADMIT(rw, RQ_WHOLE_RW, "file:x.db", 0, "whole: tk_cap_require_whole passes under both whole classes");
+    char *rws[] = { "t", "--allow-read", "--allow-write=/tmp", NULL };
+    DENY(rws, RQ_WHOLE_RW, "file:x.db", 0, "whole: tk_cap_require_whole denies when one class is scoped");
+    DENY(pr, RQ_WHOLE_RW, "file:x.db", 0, "whole: tk_cap_require_whole denies when a class is not granted");
 
     /* A malformed run-time scope stops the program at start-up. */
     char *bad[] = { "t", "--allow-net=api.example.com", NULL };

@@ -551,11 +551,12 @@ static void deny_class(uint32_t cap) {
  *   - a run-time flag, when run-time flags union (no baked set, or
  *     runtime = "union") or when only the run-time flags exclude it;
  *   - the manifest, when only the baked grant excludes it;
- * and is absent when both exclude it, or no single scope can be named. */
-static void deny_scope(int ci, const char *scope, int canon_ok, int b, int r) {
+ * and is absent when both exclude it, or no single scope can be named, or
+ * the caller gives a reason no scope admits the value (`why`, the hint). */
+static void deny_scope(int ci, const char *scope, int canon_ok, int b, int r, const char *why) {
     const Grant *rg = &g_src[SRC_RUN][ci];
     int where = 0;   /* 1 run-time flag, 2 manifest */
-    if (canon_ok && tk_cap_scope_syntax(ci, scope, NULL, 0)) {
+    if (!why && canon_ok && tk_cap_scope_syntax(ci, scope, NULL, 0)) {
         if (!g_narrow || (b && !r)) where = 1;
         else if (!b && (!rg->named || r)) where = 2;
     }
@@ -563,8 +564,13 @@ static void deny_scope(int ci, const char *scope, int canon_ok, int b, int r) {
     if (where == 2) for (const char *p = scope; *p; p++)        /* a TOML basic string */
         if (*p == '"' || *p == '\\' || (unsigned char)*p < 0x20) { where = 0; break; }
 
-    fprintf(stderr, "CAP002: capability '%s' is granted, but not for '%s'\n", k_dot[ci], scope);
-    if (where == 1)
+    if (why && !*scope)
+        fprintf(stderr, "CAP002: capability '%s' is granted, but only for listed scopes\n", k_dot[ci]);
+    else
+        fprintf(stderr, "CAP002: capability '%s' is granted, but not for '%s'\n", k_dot[ci], scope);
+    if (why)
+        fprintf(stderr, "  %s\n", why);
+    else if (where == 1)
         fprintf(stderr, "  grant this scope at run time with %s=%s\n", k_flag[ci], scope);
     else if (where == 2)
         fprintf(stderr, "  add it to tkc.toml [capabilities] and rebuild: %s = [\"%s\"]\n"
@@ -613,26 +619,54 @@ void tk_cap_deny(uint32_t cap) {
     deny_class(cap);
 }
 
+/* Is request q of class ci admitted?  b / r: by the baked / run-time grant. */
+static int req_admitted(int ci, const Req *q, int *b, int *r) {
+    *b = admits(&g_src[SRC_BAKED][ci], q);
+    *r = admits(&g_src[SRC_RUN][ci], q);
+    return g_narrow ? (*b && (!g_src[SRC_RUN][ci].named || *r)) : (*b || *r);
+}
+
 /* Evaluate request q of class ci; returns only when it is admitted. */
 static void require(int ci, const Req *q, const char *scope_text) {
-    int b = admits(&g_src[SRC_BAKED][ci], q), r = admits(&g_src[SRC_RUN][ci], q);
-    int ok = g_narrow ? (b && (!g_src[SRC_RUN][ci].named || r)) : (b || r);
-    if (ok) return;
-    deny_scope(ci, scope_text, q->ok, b, r);
+    int b, r;
+    if (req_admitted(ci, q, &b, &r)) return;
+    deny_scope(ci, scope_text, q->ok, b, r, NULL);
 }
 
 /* ── Scoped gates ─────────────────────────────────────────────────── */
+
+static void path_req(Req *q, const char *path) {
+    memset(q, 0, sizeof *q);
+    q->kind = TK_CAP_SK_PATH;
+    q->raw  = path ? path : "";
+    q->ok   = path && canon_path(path, 0, q->canon);
+}
 
 void tk_cap_require_path(uint32_t cap, const char *path) {
     int ci = class_index(cap);
     if (ci < 0 || eff_whole(ci)) return;
     if (!eff_granted(ci)) deny_class(class_bit(ci));
     Req q;
-    memset(&q, 0, sizeof q);
-    q.kind = TK_CAP_SK_PATH;
-    q.raw  = path ? path : "";
-    q.ok   = path && canon_path(path, 0, q.canon);
+    path_req(&q, path);
     require(ci, &q, q.ok ? q.canon : q.raw);
+}
+
+int tk_cap_path_admitted(uint32_t cap, const char *path) {
+    int ci = class_index(cap), b, r;
+    if (ci < 0) return 0;
+    if (eff_whole(ci)) return 1;
+    if (!eff_granted(ci)) return 0;
+    Req q;
+    path_req(&q, path);
+    return req_admitted(ci, &q, &b, &r);
+}
+
+void tk_cap_require_whole(uint32_t cap, const char *value, const char *why) {
+    for (int ci = 0; ci < TK_CAP_NCLASSES; ci++) {
+        if (!(cap & class_bit(ci)) || eff_whole(ci)) continue;
+        if (!eff_granted(ci)) deny_class(class_bit(ci));
+        deny_scope(ci, value ? value : "", 1, 0, 0, why);
+    }
 }
 
 void tk_cap_require_net(uint32_t dir, const char *host, uint64_t port) {

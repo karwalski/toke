@@ -23,10 +23,11 @@
 # in capabilities.h (TK_REQUIRE_PATH / _NET / _CMD / _ENV, 138.19) call them in
 # every fs/net/env/process sink; 136.73 taught the classifier to follow a
 # header macro into the .c files that expand it, so they are `c-internal`.
+# Nor tk_cap_check / tk_cap_path_admitted / tk_cap_require_whole: file.listglob
+# and std.db call them directly (138.19 round 2), so they are `c-internal` too.
 
 # ── std capabilities broker (ADR-0010) ──────────────────────────────────────
 tk_cap_grants c-api src/stdlib/capabilities.h,test/stdlib/test_capabilities.c   # "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c
-tk_cap_check c-api src/stdlib/capabilities.h,test/stdlib/test_capabilities.c   # the class-only gate behind TK_REQUIRE; since 138.19 no sink expands it (every sink is scoped; C470's classonly skiplist is empty), kept for an entry that must take the whole class, and asserted by test_capabilities.c
 tk_cap_deny c-api src/stdlib/capabilities.h   # TK_REQUIRE's denial (CAP001, or CAP002 when the class is granted for scopes only); unreached while no sink expands TK_REQUIRE (138.19)
 
 # ── std.log C runtime ───────────────────────────────────────────────────────

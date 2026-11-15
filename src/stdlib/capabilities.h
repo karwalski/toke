@@ -142,6 +142,23 @@ void tk_cap_require_net(uint32_t dir, const char *host, uint64_t port);
 void tk_cap_require_cmd(const char *argv0);
 void tk_cap_require_env(const char *key);
 
+/*
+ * tk_cap_path_admitted — would TK_REQUIRE_PATH(cap, path) pass?  1 or 0,
+ * never a diagnostic and never an exit.  For a sink that must leave out
+ * what a scope does not admit rather than stop: file.listglob drops a match
+ * found through a directory outside the scope (138.19 round 2).
+ */
+int tk_cap_path_admitted(uint32_t cap, const char *path);
+
+/*
+ * tk_cap_require_whole — `value` is something no scope can admit (an SQLite
+ * URI filename, an ATTACH whose file name the statement computes): pass when
+ * every class in `cap` is granted whole; otherwise CAP001 for a class not
+ * granted at all, else CAP002 naming `value`, with `why` as its hint and no
+ * fix, and exit 1.
+ */
+void tk_cap_require_whole(uint32_t cap, const char *value, const char *why);
+
 /* Format an IPv4 address held in network byte order (a sockaddr_in's
  * sin_addr.s_addr) into buf, for TK_REQUIRE_NET(TK_CAP_NET_LISTEN, ...). */
 #define TK_CAP_ADDRSTRLEN 64

@@ -344,35 +344,77 @@ int64_t tk_file_ensuredir_w(int64_t path) {
 
 /* 138.19: the directory a glob pattern lists -- its components before the
  * first one holding a glob metacharacter ("content/x*.md" -> "content"; a
- * pattern with none is checked as itself).  A ".." among the globbed
- * components could climb out of any directory named here, so such a pattern
- * is checked as "/": only the whole class (or a "/" scope) admits it. */
-static const char *glob_scope_dir(const char *pattern, char *out, size_t outsz) {
+ * pattern with none is checked as itself).  *ncomp is set to the number of
+ * those literal components (-1 when the pattern has no metacharacter).  Where
+ * the matches lead from there -- through '..', which glob(3) matches with
+ * '.?', '.*' or '.[.]', or through a symlink -- glob_match_admitted checks. */
+static const char *glob_scope_dir(const char *pattern, char *out, size_t outsz, int *ncomp) {
+    *ncomp = -1;
     if (!pattern) return NULL;
     size_t n = tk_strlen(pattern), meta = n, cut = 0;
     for (size_t i = 0; i < n; i++)
         if (strchr("*?[{", pattern[i])) { meta = i; break; }
     if (meta == n) { snprintf(out, outsz, "%s", pattern); return out; }
-    for (size_t i = meta; i + 1 < n; i++)          /* a ".." component after the glob */
-        if (pattern[i] == '.' && pattern[i + 1] == '.' &&
-            (i == 0 || pattern[i - 1] == '/') && (i + 2 == n || pattern[i + 2] == '/')) {
-            snprintf(out, outsz, "/");
-            return out;
-        }
     for (size_t i = 0; i < meta; i++) if (pattern[i] == '/') cut = i + 1;
+    *ncomp = 0;
+    for (size_t i = 0; i < cut; i++)
+        if (pattern[i] != '/' && (i == 0 || pattern[i - 1] == '/')) (*ncomp)++;
     if (cut == 0) snprintf(out, outsz, ".");
     else if (cut == 1) snprintf(out, outsz, "/");
     else snprintf(out, outsz, "%.*s", (int)(cut - 1), pattern);
     return out;
 }
 
+/* 138.19 (round 2): may file.listglob return `match`?  glob(3) read or
+ * searched one directory for each of the match's components from the
+ * pattern's first glob component on: the directory named by the match's
+ * text before that component.  Every one of them must be admitted by
+ * fs.read, as file.list's directory is.  The first `skip` components are the
+ * literal directory the gate already checked.  This keeps a '..' that '.?',
+ * '.*' or '.[.]' matched, and a symlink inside the scope that leads out of
+ * it, from naming -- or, through a literal component after the glob, from
+ * confirming the existence of -- anything outside the scope. */
+static int glob_match_admitted(const char *match, int skip) {
+    size_t n = tk_strlen(match), i = 0;
+    int comp = 0;
+    char dir[4096];
+    for (;;) {
+        size_t start = i;                   /* the slashes before this component */
+        while (i < n && match[i] == '/') i++;
+        if (i >= n) return 1;
+        if (comp >= skip) {
+            if (start == 0) snprintf(dir, sizeof dir, "%s", match[0] == '/' ? "/" : ".");
+            else if (start >= sizeof dir) return 0;
+            else snprintf(dir, sizeof dir, "%.*s", (int)start, match);
+            if (!tk_cap_path_admitted(TK_CAP_FS_READ, dir)) return 0;
+        }
+        while (i < n && match[i] != '/') i++;
+        comp++;
+    }
+}
+
 /* file.listglob(pattern) — list files matching a glob pattern */
 int64_t tk_file_listglob_w(int64_t pattern) {
     char gdir[4096];
-    TK_REQUIRE_PATH(TK_CAP_FS_READ, glob_scope_dir((const char *)(intptr_t)pattern, gdir, sizeof gdir));
+    int skip;
+    TK_REQUIRE_PATH(TK_CAP_FS_READ,
+                    glob_scope_dir((const char *)(intptr_t)pattern, gdir, sizeof gdir, &skip));
     if (!pattern) return 0;
     StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
     if (r.is_err) return 0;
+    /* 138.19: under a scoped fs.read grant, a match found through a
+     * directory outside the scope is left out -- not returned, not reported
+     * -- so the result is the listing the scope can see, and an empty one
+     * says nothing about what lies outside it.  The whole class keeps every
+     * match. */
+    if (skip >= 0 && !tk_cap_check(TK_CAP_FS_READ)) {
+        uint64_t k = 0;
+        for (uint64_t i = 0; i < r.ok.len; i++) {
+            if (glob_match_admitted(r.ok.data[i], skip)) r.ok.data[k++] = r.ok.data[i];
+            else free((void *)r.ok.data[i]);
+        }
+        r.ok.len = k;
+    }
     seal_all(r.ok);
     StrArray arr = r.ok;
     int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);

@@ -26,10 +26,18 @@
 #   9. a dangling symlink inside <dir> (target outside, not yet created) is
 #      denied for a write -- a symlink cannot pass by pointing at nothing
 #  10. the whole class (--allow-read, no value) still reads anywhere
+#  11. file.listglob (138.19 round 2): its pattern's literal directory is
+#      gated (CAP002 outside the scope), and a match glob(3) found through a
+#      directory outside the scope is left out -- through the '..' entry,
+#      which '.?', '.*' and '.[.]' match, or through a symlink inside the
+#      scope -- with the same empty answer whether or not the outside file
+#      exists (no existence oracle).  Each pattern is shown, under the whole
+#      class, to reach the outside file: the scope is what removes it.
 #
 # NEGATIVE CONTROL: run this script with TKC=<a v3.2.0 toke>.  On v3.2.0 the
 # value of --allow-read=<dir> is ignored, so 1-4 and 7's denials FAIL (the
-# outside file is read / written, exit 0).
+# outside file is read / written, exit 0), and so do 11's (every glob match
+# is returned, and the outside directory is listed).
 #
 # Story: 138.19
 set -uo pipefail
@@ -51,6 +59,7 @@ m=fsprobe;
 i=io:std.io;
 i=args:std.args;
 i=file:std.file;
+i=str:std.str;
 f=main():i64{
   let op=mt args.get(1) {$ok:v v;$err:e ""};
   let p=mt args.get(2) {$ok:v v;$err:e ""};
@@ -65,6 +74,10 @@ f=main():i64{
   if(op=="list"){
     let l=mt file.list(p) {$ok:v 1;$err:e 2};
     io.println("list-done \(l)");
+  }el{};
+  if(op=="glob"){
+    let g=file.listglob(p);
+    io.println("glob-done \(g.len) [\(str.join(",";g))]");
   }el{};
   <0
 };
@@ -128,6 +141,39 @@ run "9 write through <dir>/dangling -> outside" deny "${P}" write "${D}/dangling
 if [ -e "${WORK}/newfile-outside" ]; then fail "9 the dangling symlink's target was created"; else pass "9 nothing created through the symlink"; fi
 # 10 whole class unchanged
 run "10 --allow-read (whole class) reads out.txt" admit "${P}" read "${WORK}/out.txt" --allow-read
+
+# 11 file.listglob.  G/www is the scope; G/outside holds s.txt; G/www/link
+# is a symlink to G/outside.
+G="${WORK}/g"; mkdir -p "${G}/www" "${G}/outside"
+echo i >"${G}/www/in.txt"; echo s >"${G}/outside/s.txt"; ln -s "${G}/outside" "${G}/www/link"
+# globn LABEL WANT_COUNT ARGS...: exit 0 and "glob-done WANT_COUNT"
+globn() {
+    local label="$1" want="$2"; shift 2
+    local rc=0
+    ( cd "${WORK}" && "$@" ) >"${WORK}/o" 2>"${WORK}/e" || rc=$?
+    local got; got="$(/usr/bin/grep -a -o "^glob-done [0-9]*" "${WORK}/o" | cut -d' ' -f2)"
+    if [ "${rc}" -eq 0 ] && [ "${got}" = "${want}" ]; then
+        pass "${label}: ${want} match(es) ($(head -1 "${WORK}/o" | sed "s#${WORK}#<work>#g" | cut -c1-90))"
+    else
+        fail "${label}: wanted ${want} match(es), got rc=${rc} count='${got}'"
+        sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -4
+    fi
+}
+globn "11a www/*.txt under --allow-read=<g>/www" 1 "${P}" glob "${G}/www/*.txt" "--allow-read=${G}/www"
+for pat in '.?' '.*' '.[.]'; do
+    globn "11b www/${pat}/outside/* (the .. entry) -- whole class reaches it" 1 "${P}" glob "${G}/www/${pat}/outside/*" --allow-read
+    globn "11b www/${pat}/outside/* under --allow-read=<g>/www: left out" 0 "${P}" glob "${G}/www/${pat}/outside/*" "--allow-read=${G}/www"
+done
+globn "11c www/*/s.txt (through the symlink) -- whole class reaches it" 1 "${P}" glob "${G}/www/*/s.txt" --allow-read
+globn "11c www/*/s.txt under the scope: left out" 0 "${P}" glob "${G}/www/*/s.txt" "--allow-read=${G}/www"
+globn "11c www/l*/* under the scope: left out" 0 "${P}" glob "${G}/www/l*/*" "--allow-read=${G}/www"
+globn "11d www/.?/outside/s.txt (exists) under the scope" 0 "${P}" glob "${G}/www/.?/outside/s.txt" "--allow-read=${G}/www"
+globn "11d www/.?/outside/nosuch (does not exist): the same answer" 0 "${P}" glob "${G}/www/.?/outside/nosuch" "--allow-read=${G}/www"
+globn "11e www/l* names the symlink itself (as file.list of www would)" 1 "${P}" glob "${G}/www/l*" "--allow-read=${G}/www"
+run "11f outside/* (the pattern's directory is outside the scope)" deny "${P}" glob "${G}/outside/*" "--allow-read=${G}/www"
+if /usr/bin/grep -a -q "^  grant this scope at run time with --allow-read=${G}/outside$" "${WORK}/e"; then
+    pass "11f the hint names the pattern's directory, never '/'"
+else fail "11f hint: $(sed -n 2p "${WORK}/e")"; fi
 
 echo "------------------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

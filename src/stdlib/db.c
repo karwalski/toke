@@ -34,11 +34,65 @@ static int64_t  g_next_id = 1;
 static sqlite3 *conn_db(int64_t conn_id);
 static int find_col(Row r, const char *col);
 
+/* 138.19 (round 2): what the fs gates cannot see in a database name.
+ *
+ * An SQLite URI filename ("file:/abs/x.db?mode=ro") opens the file its URI
+ * names, with its own parameters (mode=rwc, vfs=, modeof=), when the library
+ * honours URIs -- the macOS system libsqlite3 is built with SQLITE_USE_URI.
+ * The path gate would canonicalise it as a relative name in the working
+ * directory and admit a different file from the one opened.  Under a scoped
+ * fs grant such a name is refused (CAP002, no fix); under the whole classes
+ * it opens as before.  SQLite tests the prefix case-sensitively ("file:"),
+ * and so does this. */
+static const char k_uri_why[] =
+    "an SQLite URI filename opens the file its URI names, with its own "
+    "parameters, not the path a scope is checked against; under a scoped grant "
+    "name the database by its path (data/app.db)";
+static const char k_attach_why[] =
+    "ATTACH names its file in the statement, and this name is computed (a bound "
+    "parameter or an expression), so no scope can be checked against it: write "
+    "the file name as a string literal";
+
+/* The fs.read and fs.write gates for a file a statement opens by name. */
+static void db_gate_name(const char *name) {
+    if (name && strncmp(name, "file:", 5) == 0)
+        tk_cap_require_whole(TK_CAP_FS_READ | TK_CAP_FS_WRITE, name, k_uri_why);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, name);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, name);
+}
+
+/* SQL opens files too: ATTACH DATABASE '<file>' reads or creates any
+ * database, VACUUM INTO '<file>' writes one (SQLite runs it as an ATTACH,
+ * so the authorizer sees its target as SQLITE_ATTACH), and PRAGMA
+ * temp_store_directory points temporary files at a directory.  Each is a
+ * new acquisition by path, not I/O on the handle db.open checked, so under a
+ * scoped fs grant each goes through the same gates as db.open: CAP001 /
+ * CAP002 and exit before the statement runs.  An empty ATTACH name is a
+ * private temporary database (plain VACUUM attaches one) and opens no file
+ * the program names. */
+static int db_authorize(void *u, int action, const char *a1, const char *a2,
+                        const char *dbname, const char *trigger)
+{
+    (void)u; (void)dbname; (void)trigger;
+    if (action == SQLITE_ATTACH) {
+        if (!a1) tk_cap_require_whole(TK_CAP_FS_READ | TK_CAP_FS_WRITE, NULL, k_attach_why);
+        else if (a1[0]) db_gate_name(a1);
+    } else if (action == SQLITE_PRAGMA && a1 && a2 && a2[0] &&
+               (sqlite3_stricmp(a1, "temp_store_directory") == 0 ||
+                sqlite3_stricmp(a1, "data_store_directory") == 0)) {
+        db_gate_name(a2);
+    }
+    return SQLITE_OK;
+}
+
 int64_t db_connect(const char *dsn)
 {
     /* 138.19: the database file (sqlite3_open may create it); ":memory:"
      * is checked as a path like any other name, so a scoped grant must
-     * cover it (docs/spec/capabilities.md §1.2). */
+     * cover it (docs/spec/capabilities.md §1.2).  A URI filename is refused
+     * under a scoped grant (above). */
+    if (dsn && strncmp(dsn, "file:", 5) == 0)
+        tk_cap_require_whole(TK_CAP_FS_READ | TK_CAP_FS_WRITE, dsn, k_uri_why);
     TK_REQUIRE_PATH(TK_CAP_FS_READ, dsn);
     TK_REQUIRE_PATH(TK_CAP_FS_WRITE, dsn);
     if (!dsn) return -1;
@@ -50,6 +104,11 @@ int64_t db_connect(const char *dsn)
     }
     sqlite3 *db = NULL;
     if (sqlite3_open(dsn, &db) != SQLITE_OK) {
+        sqlite3_close(db); return -1;
+    }
+    /* Under the whole classes nothing a statement opens needs a check. */
+    if (!tk_cap_check(TK_CAP_FS_READ | TK_CAP_FS_WRITE) &&
+        sqlite3_set_authorizer(db, db_authorize, NULL) != SQLITE_OK) {
         sqlite3_close(db); return -1;
     }
     g_conns[g_nconns].id = g_next_id++;
