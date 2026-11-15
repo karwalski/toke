@@ -3499,6 +3499,7 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
 
 static Type *recv_method_result_type(Ctx *cx, const Node *call);   /* 127.364 */
 static Type *recv_method_mut_result_type(Ctx *cx, const Node *bn); /* 127.371 */
+static Type *recv_slot_union(Ctx *cx, const Node *call);          /* 127.462 */
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -3516,6 +3517,13 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         {
             Type *su = std_slot_union(cx, initN);
             if (su) return su;
+        }
+        /* 127.462: and so does its receiver spelling (`t.slice(a;b)`). */
+        if (cx->bind_infer_depth < MAX_BIND_INFER_DEPTH) {
+            cx->bind_infer_depth++;
+            Type *ru = recv_slot_union(cx, initN);
+            cx->bind_infer_depth--;
+            if (ru) return ru;
         }
         /* 127.325: `let d=mm.getor(k;D)` binds the map's value V, the type
          * the same call has in place (infer, 127.320).  Left unknown, `d`
@@ -6010,6 +6018,37 @@ static Type *std_get_union(Ctx *cx, const char *alias) {
 }
 
 /*
+ * recv_slot_union (127.462) -- the receiver spelling of a fallible std
+ * function, or NULL.  `t.slice(a;b)`, `t.substr(a;b)` and `t.substring(a;b)`
+ * on a str value lower to tk_str_slice_w (tk_str_substr_w calls it): the
+ * glue `str.slice(t;a;b)` lowers to, which reports failure on the error slot
+ * (127.241) -- `mt t.slice(2;9){..}` takes the $err arm.  The module form is
+ * the union `str!$sliceerr` (127.319), so the receiver form is the same
+ * union and is judged in the same positions; the checker typed it a plain
+ * str (127.364), so `io.println(t.slice(2;9))` checked clean and printed the
+ * null filler, and rewriting `str.slice(t;a;b)` to `t.slice(a;b)` silenced
+ * E4031.  Only an ESTABLISHED str receiver (recv_method_result_type answers
+ * str): an array's `.slice` lowers to tk_arr_slice_w, which clamps and
+ * cannot fail, and an unknown receiver stays unjudged as before.  Its
+ * slot_lower is that str, the type the node had, so codegen does not move.
+ * The error type is str.slice's record (`str!sliceerr`, stdlib/str.tki);
+ * C1832 pins the two spellings to the same `got`.
+ */
+static Type *recv_slot_union(Ctx *cx, const Node *call) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[1]) return NULL;
+    char mb[64]; TOKSTR(mb, cx->src, callee->children[1]);
+    if (strcmp(mb, "slice") != 0 && strcmp(mb, "substr") != 0
+        && strcmp(mb, "substring") != 0) return NULL;
+    Type *rt = recv_method_result_type(cx, call);
+    if (!rt || rt->kind != TY_STR) return NULL;
+    char rb[32]; snprintf(rb, sizeof rb, "str!sliceerr");
+    return std_union_of(cx, rb, rt);
+}
+
+/*
  * union_value_use (127.323) -- E4031 for an error union `T!E` (a user
  * fallible call, a map lookup, a std `T!E` call) read as its value in a
  * position no other rule judges: an if/lp condition, the operand of `!`, a
@@ -7651,6 +7690,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (grt) return grt;
                 /* 127.364: a kind-preserving receiver method yields the
                  * receiver's kind. */
+                /* 127.462: a fallible receiver spelling (`t.slice(a;b)`)
+                 * is the union its module form is. */
+                Type *ru=recv_slot_union(cx,node);
+                if (ru) return ru;
                 Type *rrt=recv_method_result_type(cx,node);
                 if (rrt) return rrt;
             }
