@@ -14,6 +14,16 @@ may no longer compile.
 
 ## Unreleased
 
+### Notes for downstream builds
+
+- **Which stdlib C sources a program links is documented** (138.42): what `tkc
+  --emit-deps` prints for each module, plus the flags it leaves to the caller
+  (`docs/compiler/build-deps.md`, "Linking a program yourself"). From this release,
+  an entry names every change to what `--emit-deps` prints for a module, and every
+  lint rule added or changed (138.41; `make check-lint-rules` checks the rule ids).
+  Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
+  to both are in its addenda.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
@@ -306,6 +316,27 @@ The rules `tkc --lint` runs in 3.2.0, for a downstream that ratchets per rule:
 `single-use-let`, `string-concat-chain`, `unreachable-code`, `unused-import`,
 `unused-let`. Each is described in `docs/compiler/lint-rules-v1.md`. From the next
 release, an entry names every lint rule added or changed (CONTRIBUTING.md).
+
+### Addendum, 2026-11-15: the stdlib C sources a program links
+
+Added after the release at loke's request (loke's handoff of 2026-11-15, N-8; story
+138.42). loke compiles toke's stdlib C sources itself from a list of its own, and on
+3.2.0 its link failed on `tk_infer_stream_cleanup` until it added `infer_stream.c`.
+
+What a program links is what `tkc --emit-deps` prints for each of its modules, the set
+tkc's own driver links (`docs/compiler/build-deps.md`, "Linking a program yourself").
+Link that and do not keep a list. These are the changes 3.2.0 made to it
+(`git diff v3.1.0 v3.2.0 -- src/stdlib_deps.c`); a build that keeps its own list must
+make each of them:
+
+| Module | Change to its link set | Why | Story, commit |
+|---|---|---|---|
+| `std.infer` | adds `infer_stream.c` and `-lpthread` | `tk_infer_unload` now joins the streaming thread, through `tk_infer_stream_cleanup` in `infer_stream.c` | 136.75 — `8347a71c` |
+| `std.os` | adds `os_glue.c` | `os.write`'s wrapper moved there when it learned to write every byte | 121.70 — `077f38c3` |
+| `std.toml` | depends on `std.file` (`file.c`, `file_glue.c`) | `toml.loadfile` reads through `std.file` | 121.74 — `b2191dcf` |
+| `std.db` | depends on `std.time` | `db_glue.c` calls `tk_time_nowms_w`; every program already linked it through `std.str`, so no file is new | 127.269 — `19da1fd3` |
+| `std.llm` | adds `-lssl -lcrypto` | `llm.c` speaks https over OpenSSL; tkc compiles the sources with `-DTK_HAVE_OPENSSL` when `-lssl` is among the flags | 121.23 — `585889e1` |
+| `std.http` | drops `server_ops.c` | archived as unreachable | 121.71 — `e79285b9` |
 
 ---
 

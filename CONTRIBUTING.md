@@ -105,12 +105,18 @@ by a downstream's build or gates. Name these too:
   also fails unless every id added or removed since that tag is named in the
   new release's section. A changed rule keeps its id, so neither can see it:
   name it yourself.
+- **The stdlib link set** (story 138.42). A change to what `tkc --emit-deps`
+  prints for a module (a C file added, split, moved or removed in
+  `src/stdlib_deps.c`, or a new link flag) is named with the module, the file
+  or flag, and why. A downstream that compiles toke's stdlib C sources from a
+  list of its own fails to link until it makes the same change.
 
 ## Pull request checklist
 
 - [ ] `make conform` passes 100%
 - [ ] `CHANGELOG.md` `## Unreleased` names the change, including any lint rule
-      added or changed (id, message, effect)
+      added or changed (id, message, effect) and any change to a module's
+      `tkc --emit-deps` set (module, file or flag)
 - [ ] `make check-downstream` passes, if `src/stdlib/*.c`, `src/stdlib_deps.c` or
       `stdlib/*.tki` changed
 - [ ] `make lint` produces zero warnings
