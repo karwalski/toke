@@ -29,14 +29,17 @@ compile rate, and it has since been corrected to 58.8% (story 128.19). The compa
 compile rate against a functional one.
 
 The owner withdrew the PASS and recorded no verdict in its place; this record does not
-substitute one. Every measured functional figure is below both pre-registered thresholds
-(>= 65% and >= 75% Pass@1, next section): 55.6% (272/489) for the Gate 2 run, and about
-2.2% fully correct for the re-audit. The caveats only make those figures less favourable,
-never more: the 200-eval half of the Gate 2 set may be corpus-derived, which would inflate
-the 55.6%; the 2026-05-24 record never stated which 489 of the 700 tasks it counts; and
-every figure is on v0.3 syntax, so none carries forward to v0.4 (`docs/metrics-baseline.md`,
-caveat 1). Model evaluation now follows the pre-registered protocol of story 128.1
-(BENCH-128), under which no Gate 2 number is a target.
+substitute one. Every functional figure measured on the Gate 2 run is below both
+pre-registered thresholds (>= 65% and >= 75% Pass@1, next section): 55.6% (272/489), and
+the roughly 8% (4 of 50) first reported before the stdlib fix (below). The caveats only
+make the 55.6% less favourable, never more: the 200-eval half of the Gate 2 set may be
+corpus-derived, which would inflate it; the 2026-05-24 record never stated which 489 of
+the 700 tasks it counts; and it is on v0.3 syntax, so it does not carry forward to v0.4
+(`docs/metrics-baseline.md`, caveat 1). The full-local re-audit below is context, not a
+second Gate 2 figure: it measures a different population, the programs of the Epic 101
+generation pipeline, and it is not a Pass@1 run of the Gate 2 model. Model evaluation now
+follows the pre-registered protocol of story 128.1 (BENCH-128), under which no Gate 2
+number is a target.
 
 The record of 2026-05-24 is kept, not erased: `docs/spec/gate2-decision.md` at toke
 `1c5ffce` ([link](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)).
@@ -65,7 +68,7 @@ syntax". Its own results table set a target of ">70%" against a compile column.
 | Evaluation | Compile | Functional | Set | Source |
 |---|---|---|---|---|
 | Gate 2 run, 2026-05-22 | 100% | 55.6% (272/489), **with the caveat below** | 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax | 2.5.1; functional re-evaluated 2026-05-25 (102.15) |
-| Full-local re-audit, 2026-05-28 (the honest floor) | **37.5%** (655/1,748), metrics-baseline's figure; it counts the 403 NO_SOURCE programs as compiled (see below) | **about 2.2%** fully correct (38 PASS of 1,748) | 1,748 programs, 1,345 with a solution file; v0.3.9 | 101.R1 / 102.17 |
+| Full-local re-audit, 2026-05-28 (the honest floor) | **37.5%** (655/1,748), metrics-baseline's figure; it counts the 403 NO_SOURCE programs as compiled (see below) | **about 2.2%** fully correct (38 PASS of 1,748) | 1,748 programs from the Epic 101 generation pipeline, 1,345 with a solution file; v0.3.9 | 101.R1 / 102.17 |
 
 **The caveat on 55.6%, which travels with the number.** The 200-eval half of the Gate 2
 set may be corpus-derived. The evaluation protocol of story 128.1 found that it most
@@ -82,9 +85,13 @@ C implementation, so programs that read standard input compiled but could not be
 tested. With that fixed, the re-evaluation of 2026-05-25 gave 272/489 (story 102.15).
 
 The re-audit (story 101.R1, retested under toke v0.3.9 in 102.17) covered 1,748 programs.
-Of the 1,748, 1,345 had a solution file (403 NO_SOURCE, 101.R1); of those, 38 PASS,
-141 WRONG_OUTPUT, 64 RUN_FAIL, 9 BUILD_FAIL and 1,093 COMPILE_FAIL. It is the harsher floor,
-and it is cited beside any Gate 2 figure.
+They are the output of the Epic 101 generation pipeline: initial generation through the
+toke API, then a Claude repair loop of up to five iterations (story 101.5;
+`toke-test-programs/infra/README.md`). Which model the toke API served for them was not
+traced, so the re-audit is not a Pass@1 of the Gate 2 model and is not scored against
+Gate 2's thresholds. Of the 1,748, 1,345 had a solution file (403 NO_SOURCE, 101.R1); of
+those, 38 PASS, 141 WRONG_OUTPUT, 64 RUN_FAIL, 9 BUILD_FAIL and 1,093 COMPILE_FAIL. It is
+the harsher floor, and it is cited beside any Gate 2 figure.
 
 The 37.5% compile figure above is `docs/metrics-baseline.md`'s, cited as that file gives it.
 It is (1,748 − 1,093) / 1,748, so it counts the 403 NO_SOURCE programs as compiled, while
