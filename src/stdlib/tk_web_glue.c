@@ -2021,6 +2021,19 @@ int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
     return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
 }
 
+/* 138.24 / 138.25 — request controls, in withproxy's shape: each returns a
+ * copy of the client with one setting changed (http.c http_with*). */
+int64_t tk_http_withdeadline_w(int64_t client, int64_t ms) {
+    return (int64_t)(intptr_t)http_withdeadline((HttpClient *)(intptr_t)client, (uint64_t)ms);
+}
+int64_t tk_http_withmaxbody_w(int64_t client, int64_t bytes) {
+    return (int64_t)(intptr_t)http_withmaxbody((HttpClient *)(intptr_t)client, (uint64_t)bytes);
+}
+int64_t tk_http_withconnectaddr_w(int64_t client, int64_t addr) {
+    return (int64_t)(intptr_t)http_withconnectaddr((HttpClient *)(intptr_t)client,
+                                                   (const char *)(intptr_t)addr);
+}
+
 /* ── router closure-dispatch table + get/post/put/delete/use/serve wrappers
  *    moved to router_glue.c (114.48). ── */
 

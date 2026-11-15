@@ -3168,18 +3168,95 @@ static void client_host_value(char *out, size_t cap, const char *host,
         snprintf(out, cap, "%s:%s", host, port);
 }
 
+/* ── The whole-request deadline (138.24) ──────────────────────────────
+ *
+ * timeoutms is a PER-READ timeout: SO_RCVTIMEO, which restarts whenever a
+ * byte arrives, so a server sending one byte inside every timeout holds a
+ * request for as long as it likes (loke T-63: one body byte every 5 s
+ * answered $ok after 40 s).  http.withdeadline bounds the request as a
+ * whole -- connect, TLS handshake, sending, the response headers and body.
+ *
+ * A request with a deadline puts its socket in non-blocking mode and waits
+ * in poll() for at most the time left (and at most the per-read timeout,
+ * which keeps its meaning).  Blocking reads cannot do this: SSL_read and
+ * SSL_connect make several reads of their own, each of which SO_RCVTIMEO
+ * restarts.  A request with no deadline takes exactly the blocking path it
+ * always did; ck.at == 0 selects it everywhere below. */
+typedef struct {
+    int64_t  at;        /* CLOCK_MONOTONIC ms the request must end by; 0 = none */
+    uint64_t per_ms;    /* the per-read timeout (timeoutms) */
+    uint64_t total_ms;  /* the deadline as the caller set it, for messages */
+    int      hit;       /* set once the deadline has been found passed */
+} ClientClock;
+
+static int64_t client_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + (int64_t)(ts.tv_nsec / 1000000L);
+}
+
+/* Has the deadline passed?  Sets ck->hit when it has. */
+static int client_past(ClientClock *ck)
+{
+    if (!ck || !ck->at) return 0;
+    if (client_now_ms() >= ck->at) ck->hit = 1;
+    return ck->hit;
+}
+
+/* Wait until fd is ready for `ev`, for no longer than the per-read timeout
+ * and never past the deadline.  1 = ready, 0 = the per-read timeout
+ * expired, -1 = the deadline passed (ck->hit set), -2 = poll() failed. */
+static int client_wait(int fd, short ev, ClientClock *ck)
+{
+    for (;;) {
+        int64_t left = ck->at - client_now_ms();
+        if (left <= 0) { ck->hit = 1; return -1; }
+        int64_t ms = left;
+        int by_deadline = 1;
+        if (ck->per_ms > 0 && ck->per_ms < (uint64_t)ms) {
+            ms = (int64_t)ck->per_ms;
+            by_deadline = 0;
+        }
+        if (ms > 0x7fffffff) ms = 0x7fffffff;
+        struct pollfd p;
+        p.fd = fd; p.events = ev; p.revents = 0;
+        int r = poll(&p, 1, (int)ms);
+        if (r > 0) return 1;
+        if (r == 0) {
+            if (by_deadline) { ck->hit = 1; return -1; }
+            return 0;
+        }
+        if (errno == EINTR) continue;
+        return -2;
+    }
+}
+
 /* ── TCP connect ───────────────────────────────────────────────────── */
 
+/* `addr` (138.25, http.withconnectaddr) is an IP literal the caller has
+ * already checked: it is connected to with AI_NUMERICHOST, so no lookup
+ * happens and the URL's host is never resolved.  With a deadline (ck->at)
+ * the connect is non-blocking, bounded by the time left, and the socket
+ * stays non-blocking for the rest of the request.  With neither, this is
+ * the blocking connect it always was. */
 static int client_tcp_connect(const char *host, const char *port,
-                              uint64_t timeout_ms)
+                              uint64_t timeout_ms, const char *addr,
+                              ClientClock *ck)
 {
     TK_REQUIRE(TK_CAP_NET);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
+    if (addr) hints.ai_flags = AI_NUMERICHOST;
+    int timed = ck && ck->at;
 
-    if (getaddrinfo(host, port, &hints, &res) != 0) return -1;
+    /* A lookup cannot be interrupted (getaddrinfo blocks); the deadline is
+     * checked before it starts and when it returns. */
+    if (timed && client_past(ck)) return -1;
+    if (getaddrinfo(addr ? addr : host, port, &hints, &res) != 0) return -1;
+    if (timed && client_past(ck)) { freeaddrinfo(res); return -1; }
 
     int fd = -1;
     for (rp = res; rp != NULL; rp = rp->ai_next) {
@@ -3197,7 +3274,26 @@ static int client_tcp_connect(const char *host, const char *port,
             setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
             setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
         }
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
+        if (!timed) {
+            if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
+        } else {
+            int fl = fcntl(fd, F_GETFL, 0);
+            if (fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) < 0) {
+                close(fd); fd = -1; continue;
+            }
+            if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
+            if (errno == EINPROGRESS || errno == EINTR) {
+                int w = client_wait(fd, POLLOUT, ck);
+                if (w == 1) {
+                    int soerr = 0;
+                    socklen_t sl = sizeof soerr;
+                    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) == 0
+                        && soerr == 0)
+                        break;
+                }
+                if (w == -1) { close(fd); fd = -1; break; }  /* no time left */
+            }
+        }
         close(fd);
         fd = -1;
     }
@@ -3216,23 +3312,40 @@ static int client_tcp_connect(const char *host, const char *port,
  * (the old single recv() then left the tail in the socket for the TLS
  * handshake to read as garbage), and nothing past the blank line may be
  * consumed, because it belongs to the origin.  The socket's receive timeout
- * (client_tcp_connect) bounds each read.
+ * (client_tcp_connect) bounds each read.  With a deadline (ck->at, 138.24)
+ * the socket is non-blocking, and the tunnel's sends and reads wait in
+ * client_send / client_recv like the request's own.
  */
-static const char *proxy_connect_tunnel(int fd, const char *host, const char *port)
+static long client_send(int fd, void *sslp, const void *buf, size_t len,
+                        ClientClock *ck);
+static int client_recv(int fd, void *sslp, char *buf, size_t len,
+                       int *how, int *err_out, char *tls_reason, size_t trcap,
+                       ClientClock *ck);
+
+static const char *proxy_connect_tunnel(int fd, const char *host, const char *port,
+                                        ClientClock *ck)
 {
     char req[600];
+    int timed = ck && ck->at;
     int n = snprintf(req, sizeof req,
                      "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n",
                      host, port, host, port);
     if (n < 0 || (size_t)n >= sizeof req)
         return "proxy CONNECT: host name too long";
-    if (http_write_all(fd, req, (size_t)n) < 0)
+    if ((timed ? client_send(fd, NULL, req, (size_t)n, ck)
+               : http_write_all(fd, req, (size_t)n)) < 0)
         return "proxy CONNECT send failed";
     char rep[8192];
     size_t got = 0;
     for (;;) {
         if (got + 1 >= sizeof rep) return "proxy CONNECT reply too long";
-        ssize_t r = recv(fd, rep + got, 1, 0);
+        ssize_t r;
+        if (timed) {
+            int how = 0, err = 0;
+            r = client_recv(fd, NULL, rep + got, 1, &how, &err, NULL, 0, ck);
+        } else {
+            r = recv(fd, rep + got, 1, 0);
+        }
         if (r <= 0) return "proxy CONNECT recv failed";
         got++;
         if (got >= 4 && memcmp(rep + got - 4, "\r\n\r\n", 4) == 0) break;
@@ -3256,7 +3369,8 @@ enum {
     CLIENT_RECV_TIMEOUT,        /* SO_RCVTIMEO expired (EAGAIN / WANT_READ) */
     CLIENT_RECV_RESET,          /* ECONNRESET */
     CLIENT_RECV_FAILED,         /* any other socket error (errno kept) */
-    CLIENT_RECV_TLS             /* a TLS protocol error */
+    CLIENT_RECV_TLS,            /* a TLS protocol error */
+    CLIENT_RECV_DEADLINE        /* 138.24: the whole-request deadline passed */
 };
 
 /* Is this end of a read a close, so a close-delimited body is complete?
@@ -3283,12 +3397,16 @@ static int client_recv_errno_kind(int e)
 /* One read for client_do_request.  Returns the byte count (> 0), or 0 with
  * *how saying why nothing was read.  *err_out gets errno for
  * CLIENT_RECV_FAILED (else 0); *tls_reason gets the OpenSSL reason string
- * for CLIENT_RECV_TLS. */
-static int client_recv(int fd, void *sslp, char *buf, size_t len,
-                       int *how, int *err_out, char *tls_reason, size_t trcap)
+ * for CLIENT_RECV_TLS.  *want (138.24) is the poll() event a non-blocking
+ * socket must wait for when *how is CLIENT_RECV_TIMEOUT because nothing was
+ * ready yet (EAGAIN, SSL_ERROR_WANT_READ/WRITE); 0 otherwise. */
+static int client_recv_once(int fd, void *sslp, char *buf, size_t len,
+                            int *how, int *err_out, char *tls_reason, size_t trcap,
+                            short *want)
 {
     if (len > 0x7fffffff) len = 0x7fffffff;
     *err_out = 0;
+    *want = 0;
     if (tls_reason && trcap) tls_reason[0] = '\0';
 #ifdef TK_HAVE_OPENSSL
     if (sslp) {
@@ -3305,8 +3423,9 @@ static int client_recv(int fd, void *sslp, char *buf, size_t len,
         case SSL_ERROR_ZERO_RETURN:          /* close_notify */
             *how = CLIENT_RECV_EOF; break;
         case SSL_ERROR_WANT_READ:            /* blocking socket: SO_RCVTIMEO */
+            *how = CLIENT_RECV_TIMEOUT; *want = POLLIN; break;
         case SSL_ERROR_WANT_WRITE:
-            *how = CLIENT_RECV_TIMEOUT; break;
+            *how = CLIENT_RECV_TIMEOUT; *want = POLLOUT; break;
         case SSL_ERROR_SYSCALL:
             /* Before OpenSSL 3.0 an EOF without close_notify was reported
              * here with errno 0 and nothing on the error stack. */
@@ -3354,8 +3473,87 @@ static int client_recv(int fd, void *sslp, char *buf, size_t len,
         if (errno == EINTR) continue;
         *how = client_recv_errno_kind(errno);
         if (*how == CLIENT_RECV_FAILED) *err_out = errno;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) *want = POLLIN;
         return 0;
     }
+}
+
+/* client_recv — one read, as client_recv_once, except that with a deadline
+ * (ck->at, 138.24) the socket is non-blocking: a read that finds nothing
+ * ready waits in client_wait() and retries.  The deadline is checked before
+ * every read, so a server that keeps sending inside the per-read timeout is
+ * still cut off once it passes (*how = CLIENT_RECV_DEADLINE); the per-read
+ * timeout still answers CLIENT_RECV_TIMEOUT. */
+static int client_recv(int fd, void *sslp, char *buf, size_t len,
+                       int *how, int *err_out, char *tls_reason, size_t trcap,
+                       ClientClock *ck)
+{
+    short want = 0;
+    if (!ck || !ck->at)
+        return client_recv_once(fd, sslp, buf, len, how, err_out,
+                                tls_reason, trcap, &want);
+    for (;;) {
+        if (client_past(ck)) {
+            *how = CLIENT_RECV_DEADLINE; *err_out = 0;
+            return 0;
+        }
+        int n = client_recv_once(fd, sslp, buf, len, how, err_out,
+                                 tls_reason, trcap, &want);
+        if (n > 0) return n;
+        if (*how != CLIENT_RECV_TIMEOUT || !want) return 0;
+        int w = client_wait(fd, want, ck);
+        if (w == 1) continue;
+        if (w == -1) *how = CLIENT_RECV_DEADLINE;
+        else if (w == -2) { *how = CLIENT_RECV_FAILED; *err_out = errno; }
+        return 0;                       /* w == 0: the per-read timeout */
+    }
+}
+
+/* client_send — send all of buf.  With no deadline this is the one
+ * SSL_write / send() the client always made, and returns what it returned.
+ * With a deadline (138.24) the socket is non-blocking: a send that cannot
+ * proceed waits in client_wait(), and the deadline is checked before every
+ * attempt; -1 (with ck->hit set when the deadline was the cause) on
+ * failure. */
+static long client_send(int fd, void *sslp, const void *buf, size_t len,
+                        ClientClock *ck)
+{
+#ifndef TK_HAVE_OPENSSL
+    (void)sslp;
+#endif
+    if (!ck || !ck->at) {
+#ifdef TK_HAVE_OPENSSL
+        if (sslp) return (long)SSL_write((SSL *)sslp, buf, (int)len);
+#endif
+        return (long)send(fd, buf, len, HTTP_SEND_FLAGS);
+    }
+    size_t off = 0;
+    while (off < len) {
+        if (client_past(ck)) return -1;
+        short want = 0;
+#ifdef TK_HAVE_OPENSSL
+        if (sslp) {
+            /* After WANT_*, SSL_write must be retried with the same
+             * arguments: off only moves on success. */
+            ERR_clear_error();
+            int r = SSL_write((SSL *)sslp, (const char *)buf + off, (int)(len - off));
+            if (r > 0) { off += (size_t)r; continue; }
+            int e = SSL_get_error((SSL *)sslp, r);
+            if (e == SSL_ERROR_WANT_WRITE) want = POLLOUT;
+            else if (e == SSL_ERROR_WANT_READ) want = POLLIN;
+            else return -1;
+        } else
+#endif
+        {
+            ssize_t n = send(fd, (const char *)buf + off, len - off, HTTP_SEND_FLAGS);
+            if (n > 0) { off += (size_t)n; continue; }
+            if (n < 0 && errno == EINTR) continue;
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) want = POLLOUT;
+            else return -1;
+        }
+        if (client_wait(fd, want, ck) != 1) return -1;
+    }
+    return (long)len;
 }
 
 /* What ended a read, for an $httperr msg. */
@@ -3367,6 +3565,7 @@ static const char *client_recv_how(int how, int err, const char *tls_reason,
     case CLIENT_RECV_EOF_NOTIFY: return "connection closed (TLS, without close_notify)";
     case CLIENT_RECV_TIMEOUT:    return "receive timed out";
     case CLIENT_RECV_RESET:      return "connection reset by peer";
+    case CLIENT_RECV_DEADLINE:   return "request deadline exceeded";
     case CLIENT_RECV_TLS:
         snprintf(buf, cap, "TLS error (%s)", tls_reason && tls_reason[0] ? tls_reason : "unknown");
         return buf;
@@ -3374,6 +3573,20 @@ static const char *client_recv_how(int how, int err, const char *tls_reason,
         snprintf(buf, cap, "receive failed (%s)", strerror(err));
         return buf;
     }
+}
+
+/* 138.24: the $httperr msg for a response read that ended early.  A read
+ * the deadline cut off says so first, "request deadline exceeded (N ms)
+ * <where>"; any other is the "incomplete response: <cause> <where>" of
+ * 138.23 / 138.31, byte for byte. */
+static void client_read_msg(char *out, size_t cap, int how, const char *cause,
+                            uint64_t deadline_ms, const char *where)
+{
+    if (how == CLIENT_RECV_DEADLINE)
+        snprintf(out, cap, "request deadline exceeded (%llu ms) %s",
+                 (unsigned long long)deadline_ms, where);
+    else
+        snprintf(out, cap, "incomplete response: %s %s", cause, where);
 }
 
 /*
@@ -3449,13 +3662,49 @@ static HttpClientResp client_do_request(HttpClient *c,
         use_proxy = 1;
     }
 
+    /* 138.25: http.withconnectaddr.  The address is the one the caller
+     * checked (net.resolve, then its own rules), so it must be an address,
+     * never a name that would be looked up again here; and a proxy makes
+     * its own connection to the URL's host, which the address cannot
+     * steer. */
+    const char *caddr = c->connect_addr;
+    if (caddr) {
+        unsigned char ab[16];
+        if (inet_pton(AF_INET, caddr, ab) != 1 && inet_pton(AF_INET6, caddr, ab) != 1)
+            return err_resp_client("withconnectaddr: not an IPv4 or IPv6 address literal", 0);
+        if (use_proxy)
+            return err_resp_client("withconnectaddr cannot be combined with withproxy", 0);
+    }
+
+    /* 138.24: http.withdeadline and http.withmaxbody (HTTP_CLIENT_OFF = not
+     * set).  The deadline is counted from here. */
+    ClientClock ck;
+    memset(&ck, 0, sizeof ck);
+    ck.per_ms = timeout;
+    if (c->deadline_ms != HTTP_CLIENT_OFF) {
+        uint64_t d = c->deadline_ms > 0x3fffffffffffULL ? 0x3fffffffffffULL : c->deadline_ms;
+        ck.total_ms = c->deadline_ms;
+        ck.at = client_now_ms() + (int64_t)d;
+        if (ck.at == 0) ck.at = 1;
+    }
+    uint64_t body_cap = c->max_body;
+    int capped = body_cap != HTTP_CLIENT_OFF;
+    char dl_msg[200];
+#define CLIENT_DEADLINE_ERR(where_) do { \
+        snprintf(dl_msg, sizeof dl_msg, "request deadline exceeded (%llu ms) %s", \
+                 (unsigned long long)ck.total_ms, (where_)); \
+        return err_resp_client(dl_msg, 0); } while (0)
+
     int fd;
     if (use_proxy) {
-        fd = client_tcp_connect(proxy_host, proxy_port, timeout);
+        fd = client_tcp_connect(proxy_host, proxy_port, timeout, NULL, &ck);
     } else {
-        fd = client_tcp_connect(host, port, timeout);
+        fd = client_tcp_connect(host, port, timeout, caddr, &ck);
     }
-    if (fd < 0) return err_resp_client("TCP connect failed", 0);
+    if (fd < 0) {
+        if (ck.hit) CLIENT_DEADLINE_ERR("during connect");
+        return err_resp_client("TCP connect failed", 0);
+    }
 
     /* HTTPS through a proxy: open the CONNECT tunnel on the bare socket,
      * THEN negotiate TLS with the origin inside it (135.26).  This block
@@ -3464,8 +3713,12 @@ static HttpClientResp client_do_request(HttpClient *c,
      * request through http.withproxy failed.  Measured by C341 against a
      * local proxy: the proxy's first line was TLS bytes, never CONNECT. */
     if (use_proxy && is_https) {
-        const char *cerr = proxy_connect_tunnel(fd, host, port);
-        if (cerr) { close(fd); return err_resp_client(cerr, 0); }
+        const char *cerr = proxy_connect_tunnel(fd, host, port, &ck);
+        if (cerr) {
+            close(fd);
+            if (ck.hit) CLIENT_DEADLINE_ERR("during the proxy CONNECT");
+            return err_resp_client(cerr, 0);
+        }
     }
 
 #ifdef TK_HAVE_OPENSSL
@@ -3516,7 +3769,28 @@ static HttpClientResp client_do_request(HttpClient *c,
                 return err_resp_client("TLS: cannot set the name to verify", 0);
             }
         }
-        if (SSL_connect(ssl) <= 0) {
+        /* 138.24: with a deadline the socket is non-blocking, so the
+         * handshake is driven here, each wait bounded by the time left. */
+        int hs;
+        if (!ck.at) {
+            hs = SSL_connect(ssl);
+        } else {
+            for (;;) {
+                if (client_past(&ck)) { hs = -1; break; }
+                ERR_clear_error();
+                hs = SSL_connect(ssl);
+                if (hs == 1) break;
+                int e = SSL_get_error(ssl, hs);
+                short want = e == SSL_ERROR_WANT_READ ? POLLIN
+                           : e == SSL_ERROR_WANT_WRITE ? POLLOUT : 0;
+                if (!want || client_wait(fd, want, &ck) != 1) { if (hs > 0) hs = -1; break; }
+            }
+        }
+        if (hs <= 0) {
+            if (ck.hit) {
+                SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+                CLIENT_DEADLINE_ERR("during the TLS handshake");
+            }
             long vr = SSL_get_verify_result(ssl);
             char m[200];
             if (vr != X509_V_OK)
@@ -3528,14 +3802,14 @@ static HttpClientResp client_do_request(HttpClient *c,
             return err_resp_client(m, 0);
         }
     }
-#define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, HTTP_SEND_FLAGS))
+#define CLIENT_SEND(buf, len) client_send(fd, is_https ? (void *)ssl : NULL, buf, len, &ck)
 #define CLIENT_RECV(buf, len) client_recv(fd, is_https ? (void *)ssl : NULL, buf, len, \
-                                          &rd_how, &rd_err, rd_tls, sizeof rd_tls)
+                                          &rd_how, &rd_err, rd_tls, sizeof rd_tls, &ck)
 #define CLIENT_CLOSE() do { if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); } if (ssl_ctx) SSL_CTX_free(ssl_ctx); close(fd); } while(0)
 #else
-#define CLIENT_SEND(buf, len) send(fd, buf, len, HTTP_SEND_FLAGS)
+#define CLIENT_SEND(buf, len) client_send(fd, NULL, buf, len, &ck)
 #define CLIENT_RECV(buf, len) client_recv(fd, NULL, buf, len, \
-                                          &rd_how, &rd_err, rd_tls, sizeof rd_tls)
+                                          &rd_how, &rd_err, rd_tls, sizeof rd_tls, &ck)
 #define CLIENT_CLOSE() close(fd)
 #endif
 
@@ -3593,11 +3867,13 @@ static HttpClientResp client_do_request(HttpClient *c,
 
     if (CLIENT_SEND(req_buf, (size_t)req_len) < 0) {
         CLIENT_CLOSE();
+        if (ck.hit) CLIENT_DEADLINE_ERR("while sending the request");
         return err_resp_client("send header failed", 0);
     }
     if (body && body_len > 0) {
         if (CLIENT_SEND(body, (size_t)body_len) < 0) {
             CLIENT_CLOSE();
+            if (ck.hit) CLIENT_DEADLINE_ERR("while sending the request");
             return err_resp_client("send body failed", 0);
         }
     }
@@ -3646,18 +3922,29 @@ static HttpClientResp client_do_request(HttpClient *c,
     char rd_tls[120] = "", rd_how_buf[160];
 #define CLIENT_HOW(n_) ((void)(n_), client_recv_how(rd_how, rd_err, rd_tls, \
                                                      rd_how_buf, sizeof rd_how_buf))
+    /* A read that returned nothing: the deadline's message or 138.23's. */
+#define CLIENT_READ_FAIL(...) do {                                      \
+        char where_[200];                                               \
+        snprintf(where_, sizeof where_, __VA_ARGS__);                   \
+        client_read_msg(read_err_buf, sizeof read_err_buf, rd_how,      \
+                        CLIENT_HOW(n), ck.total_ms, where_);            \
+        read_err = read_err_buf; goto read_done; } while (0)
+    /* 138.24: a body over the cap.  The read stops here: the connection
+     * is closed with the rest unread. */
+#define CLIENT_CAP_FAIL(...) do {                                       \
+        char where_[200];                                               \
+        snprintf(where_, sizeof where_, __VA_ARGS__);                   \
+        snprintf(read_err_buf, sizeof read_err_buf,                     \
+                 "response body exceeds the cap (%llu bytes): %s",      \
+                 (unsigned long long)body_cap, where_);                 \
+        read_err = read_err_buf; goto read_done; } while (0)
 
     /* Phase 1: read until we have full headers (\r\n\r\n) */
     while (!hdr_end_ptr) {
         CLIENT_GROW();
         n = CLIENT_RECV(resp + used, cap - used - 1);
-        if (n <= 0) {
-            snprintf(read_err_buf, sizeof read_err_buf,
-                     "incomplete response: %s before the header block ended (%zu bytes)",
-                     CLIENT_HOW(n), used);
-            read_err = read_err_buf;
-            goto read_done;
-        }
+        if (n <= 0)
+            CLIENT_READ_FAIL("before the header block ended (%zu bytes)", used);
         used += (size_t)n;
         resp[used] = '\0';
         hdr_end_ptr = strstr(resp, "\r\n\r\n");
@@ -3712,17 +3999,17 @@ static HttpClientResp client_do_request(HttpClient *c,
 
     /* Phase 2: read body according to framing mode */
     if (body_mode == 1) {
+        /* 138.24: a Content-Length over the cap is refused before a byte
+         * of the body is waited for. */
+        if (capped && (uint64_t)content_length > body_cap)
+            CLIENT_CAP_FAIL("Content-Length is %zu", content_length);
         /* Content-Length: read exactly content_length bytes of body */
         while (used - hdr_end_off < content_length) {
             CLIENT_GROW();
             n = CLIENT_RECV(resp + used, cap - used - 1);
-            if (n <= 0) {
-                snprintf(read_err_buf, sizeof read_err_buf,
-                         "incomplete response: %s after %zu of %zu body bytes (Content-Length)",
-                         CLIENT_HOW(n), used - hdr_end_off, content_length);
-                read_err = read_err_buf;
-                goto read_done;
-            }
+            if (n <= 0)
+                CLIENT_READ_FAIL("after %zu of %zu body bytes (Content-Length)",
+                                 used - hdr_end_off, content_length);
             used += (size_t)n;
         }
     } else if (body_mode == 2) {
@@ -3759,6 +4046,11 @@ static HttpClientResp client_do_request(HttpClient *c,
                     goto read_done;
                 }
                 if (sz == 0) { last = 1; pos = lf + 1; continue; }
+                /* 138.24: refused on the size line, before the data is
+                 * waited for (dec_len never passes body_cap). */
+                if (capped && (uint64_t)sz > body_cap - (uint64_t)dec_len)
+                    CLIENT_CAP_FAIL("a chunked body of more than %llu bytes",
+                                    (unsigned long long)body_cap);
                 size_t d = lf + 1;                         /* first data byte */
                 if (used - d < sz + 1) break;              /* need more */
                 size_t after;
@@ -3784,15 +4076,27 @@ static HttpClientResp client_do_request(HttpClient *c,
                 pos = after;
             }
             if (done) break;
+            if (capped) {
+                /* 138.24: with a cap the bytes already decoded are dropped
+                 * from the buffer, so what it holds past the header block
+                 * is one unfinished element: a chunk (at most the cap
+                 * left, plus its size line) or one trailer line.  More
+                 * than that plus 8 KiB is framing nobody needs. */
+                if (pos > hdr_end_off) {
+                    memmove(resp + hdr_end_off, resp + pos, used - pos);
+                    used = hdr_end_off + (used - pos);
+                    pos = hdr_end_off;
+                    resp[used] = '\0';
+                }
+                if ((uint64_t)(used - hdr_end_off) > body_cap - (uint64_t)dec_len + 8192u)
+                    CLIENT_CAP_FAIL("a chunk size line or trailer of more than %u bytes",
+                                    8192u);
+            }
             CLIENT_GROW();
             n = CLIENT_RECV(resp + used, cap - used - 1);
-            if (n <= 0) {
-                snprintf(read_err_buf, sizeof read_err_buf,
-                         "incomplete response: %s before the last chunk of a chunked body (%zu body bytes decoded)",
-                         CLIENT_HOW(n), dec_len);
-                read_err = read_err_buf;
-                goto read_done;
-            }
+            if (n <= 0)
+                CLIENT_READ_FAIL("before the last chunk of a chunked body (%zu body bytes decoded)",
+                                 dec_len);
             used += (size_t)n;
             resp[used] = '\0';
         }
@@ -3803,15 +4107,17 @@ static HttpClientResp client_do_request(HttpClient *c,
          * arrived.  CLIENT_RECV_IS_CLOSE says which ends count as a close
          * (TLS without close_notify does -- see client_recv). */
         for (;;) {
+            /* 138.24: checked before every read, so body bytes that came
+             * with the header block count too. */
+            if (capped && (uint64_t)(used - hdr_end_off) > body_cap)
+                CLIENT_CAP_FAIL("more than %llu bytes before the connection closed",
+                                (unsigned long long)body_cap);
             CLIENT_GROW();
             n = CLIENT_RECV(resp + used, cap - used - 1);
             if (n <= 0) {
                 if (CLIENT_RECV_IS_CLOSE(rd_how)) break;
-                snprintf(read_err_buf, sizeof read_err_buf,
-                         "incomplete response: %s after %zu body bytes of a body with no Content-Length (it ends only at connection close)",
-                         CLIENT_HOW(n), used - hdr_end_off);
-                read_err = read_err_buf;
-                goto read_done;
+                CLIENT_READ_FAIL("after %zu body bytes of a body with no Content-Length (it ends only at connection close)",
+                                 used - hdr_end_off);
             }
             used += (size_t)n;
         }
@@ -3820,6 +4126,9 @@ static HttpClientResp client_do_request(HttpClient *c,
 read_done:
 #undef CLIENT_GROW
 #undef CLIENT_HOW
+#undef CLIENT_READ_FAIL
+#undef CLIENT_CAP_FAIL
+#undef CLIENT_DEADLINE_ERR
     CLIENT_CLOSE();
 #undef CLIENT_SEND
 #undef CLIENT_RECV
@@ -3916,6 +4225,9 @@ HttpClient *http_client(const char *base_url)
     c->pool_size  = 4;
     c->timeout_ms = 30000;
     c->proxy_url  = NULL;
+    c->deadline_ms  = HTTP_CLIENT_OFF;   /* 138.24: every control off */
+    c->max_body     = HTTP_CLIENT_OFF;
+    c->connect_addr = NULL;
     return c;
 }
 
@@ -3924,7 +4236,32 @@ void http_client_free(HttpClient *c)
     if (!c) return;
     free(c->base_url);
     free(c->proxy_url);
+    free(c->connect_addr);
     free(c);
+}
+
+/* client_copy — a new client with every setting of `c` (138.24: the
+ * with* functions return a copy and leave the original unchanged, so a
+ * client shared by two callers is never re-aimed by either). */
+static HttpClient *client_copy(const HttpClient *c)
+{
+    HttpClient *n = malloc(sizeof(HttpClient));
+    if (!n) return NULL;
+    n->base_url     = hstrdup(c->base_url);
+    n->pool_size    = c->pool_size;
+    n->timeout_ms   = c->timeout_ms;
+    n->proxy_url    = hstrdup(c->proxy_url);
+    n->deadline_ms  = c->deadline_ms;
+    n->max_body     = c->max_body;
+    n->connect_addr = hstrdup(c->connect_addr);
+    /* A setting lost to a failed copy must not become a client without
+     * it: no client at all is the caller's "null client" $err. */
+    if ((c->base_url && !n->base_url) || (c->proxy_url && !n->proxy_url)
+        || (c->connect_addr && !n->connect_addr)) {
+        http_client_free(n);
+        return NULL;
+    }
+    return n;
 }
 
 /* ── http_withproxy (Story 42.1.3) ─────────────────────────────────── */
@@ -3932,13 +4269,52 @@ void http_client_free(HttpClient *c)
 HttpClient *http_withproxy(HttpClient *c, const char *proxy_url)
 {
     if (!c) return NULL;
-    HttpClient *n = malloc(sizeof(HttpClient));
+    HttpClient *n = client_copy(c);
     if (!n) return NULL;
-    n->base_url   = hstrdup(c->base_url);
-    n->pool_size  = c->pool_size;
-    n->timeout_ms = c->timeout_ms;
+    free(n->proxy_url);
     n->proxy_url  = proxy_url ? hstrdup(proxy_url) : NULL;
     return n;
+}
+
+/* ── Request controls (138.24, 138.25) ────────────────────────────── */
+
+HttpClient *http_withdeadline(HttpClient *c, uint64_t ms)
+{
+    if (!c) return NULL;
+    HttpClient *n = client_copy(c);
+    if (n) n->deadline_ms = ms;
+    return n;
+}
+
+HttpClient *http_withmaxbody(HttpClient *c, uint64_t bytes)
+{
+    if (!c) return NULL;
+    HttpClient *n = client_copy(c);
+    if (n) n->max_body = bytes;
+    return n;
+}
+
+/* The address is not checked here: http.withconnectaddr returns a client,
+ * with no error channel, so a malformed address is the request's $err
+ * (client_do_request). */
+HttpClient *http_withconnectaddr(HttpClient *c, const char *addr)
+{
+    if (!c) return NULL;
+    HttpClient *n = client_copy(c);
+    if (!n) return NULL;
+    free(n->connect_addr);
+    n->connect_addr = hstrdup(addr ? addr : "");
+    if (!n->connect_addr) { http_client_free(n); return NULL; }
+    return n;
+}
+
+/* 138.24: http.stream and http.downloadfile read on paths of their own,
+ * which the controls do not reach.  A client carrying one is refused
+ * there rather than silently fetched without it. */
+static int client_has_controls(const HttpClient *c)
+{
+    return c->deadline_ms != HTTP_CLIENT_OFF || c->max_body != HTTP_CLIENT_OFF
+        || c->connect_addr != NULL;
 }
 
 HttpClientResp http_get(HttpClient *c, const char *path)
@@ -3990,6 +4366,11 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
         result.err_msg = hstrdup("null client");
         return result;
     }
+    if (client_has_controls(c)) {
+        result.is_err  = 1;
+        result.err_msg = hstrdup("http.stream does not apply withdeadline, withmaxbody or withconnectaddr");
+        return result;
+    }
     if (strncmp(c->base_url, "https://", 8) == 0) {
         result.is_err  = 1;
         result.err_msg = hstrdup("HTTPS requires TLS (not compiled in)");
@@ -4028,9 +4409,9 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
 
     int fd;
     if (use_proxy) {
-        fd = client_tcp_connect(proxy_host, proxy_port, timeout);
+        fd = client_tcp_connect(proxy_host, proxy_port, timeout, NULL, NULL);
     } else {
-        fd = client_tcp_connect(host, port, timeout);
+        fd = client_tcp_connect(host, port, timeout, NULL, NULL);
     }
     if (fd < 0) {
         result.is_err  = 1;
@@ -4367,6 +4748,7 @@ int http_downloadfile(HttpClient *c, const char *url,
      * is fetched, so a denied program has touched neither. */
     TK_REQUIRE(TK_CAP_FS_WRITE);
 
+    if (client_has_controls(c)) return -1;   /* 138.24: see client_has_controls */
     if (strncmp(c->base_url, "https://", 8) == 0) return -1;
 
     char host[256], port[16], full_path[1024];
@@ -4377,7 +4759,7 @@ int http_downloadfile(HttpClient *c, const char *url,
         return -1;
 
     uint64_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
-    int fd = client_tcp_connect(host, port, timeout);
+    int fd = client_tcp_connect(host, port, timeout, NULL, NULL);
     if (fd < 0) return -1;
 
     /* send GET request */

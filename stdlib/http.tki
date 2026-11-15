@@ -390,6 +390,36 @@
     },
     {
       "kind": "func",
+      "name": "http.withdeadline",
+      "params": [
+        "httpclient",
+        "u64"
+      ],
+      "return": "httpclient",
+      "note": "client; ms \u2014 a copy of the client whose requests must finish (connect, TLS handshake, send, response headers and body) within ms milliseconds of the call, else $err \"request deadline exceeded (...)\"; off by default; timeoutms stays per read (138.24)"
+    },
+    {
+      "kind": "func",
+      "name": "http.withmaxbody",
+      "params": [
+        "httpclient",
+        "u64"
+      ],
+      "return": "httpclient",
+      "note": "client; bytes \u2014 a copy of the client whose requests answer $err \"response body exceeds the cap (...)\" for a response body over bytes, and stop reading it; off by default (138.24)"
+    },
+    {
+      "kind": "func",
+      "name": "http.withconnectaddr",
+      "params": [
+        "httpclient",
+        "str"
+      ],
+      "return": "httpclient",
+      "note": "client; addr \u2014 a copy of the client that connects to addr, an IPv4 or IPv6 literal, instead of resolving the URL's host; SNI, certificate verification and Host still use the URL's host; $err at request time for a non-literal addr or with withproxy (138.25)"
+    },
+    {
+      "kind": "func",
       "name": "http.stream",
       "params": [
         "httpclient"

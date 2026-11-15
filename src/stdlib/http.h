@@ -500,13 +500,23 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
 
 /* ── Client types (Story 35.1.2) ──────────────────────────────────── */
 
-/* tki-record-prefix: http.httpclient */
+/* tki-record-prefix: http.httpclient
+ * 138.24 / 138.25: the three request controls are private fields after the
+ * record's, set only through http_withdeadline / http_withmaxbody /
+ * http_withconnectaddr, and OFF in every client http_client() makes. */
 typedef struct {
     char    *base_url;
     uint64_t pool_size;
-    uint64_t timeout_ms;
+    uint64_t timeout_ms;    /* per read (SO_RCVTIMEO), not per request (138.34) */
     char    *proxy_url;     /* NULL = direct connect (Story 42.1.3) */
+    uint64_t deadline_ms;   /* whole request; HTTP_CLIENT_OFF = none (138.24) */
+    uint64_t max_body;      /* response body cap; HTTP_CLIENT_OFF = none (138.24) */
+    char    *connect_addr;  /* IP literal to connect to; NULL = the URL's host (138.25) */
 } HttpClient;
+
+/* "No deadline" / "no cap": a deadline of 2^64-1 ms or a cap of 2^64-1
+ * bytes is no limit anyway, so the value needs no flag beside it. */
+#define HTTP_CLIENT_OFF UINT64_MAX
 
 typedef struct {
     const char  *method;
@@ -563,6 +573,24 @@ void http_client_free(HttpClient *c);
 /* http_withproxy — return a new HttpClient with proxy_url set (Story 42.1.3).
  * Does NOT mutate the original. */
 HttpClient *http_withproxy(HttpClient *c, const char *proxy_url);
+
+/* 138.24 / 138.25: request controls, each returning a new client (the
+ * original is unchanged), as http_withproxy does.  They apply to the
+ * request calls (http_get/post/put/delete, http_request_headers);
+ * http_stream and http_downloadfile refuse a client that carries one.
+ *
+ * http_withdeadline — the whole request (connect, TLS handshake, sending,
+ *   the response headers and body) must finish within `ms` milliseconds of
+ *   the call, or it is an error whose message begins
+ *   "request deadline exceeded".  0 is a deadline already passed.
+ * http_withmaxbody — a response body longer than `bytes` is an error whose
+ *   message begins "response body exceeds the cap"; the read stops there.
+ * http_withconnectaddr — connect to `addr`, an IPv4 or IPv6 literal (checked
+ *   at request time), instead of resolving the URL's host; SNI, certificate
+ *   verification and the Host header still use the URL's host. */
+HttpClient *http_withdeadline(HttpClient *c, uint64_t ms);
+HttpClient *http_withmaxbody(HttpClient *c, uint64_t bytes);
+HttpClient *http_withconnectaddr(HttpClient *c, const char *addr);
 
 /* HTTP methods */
 HttpClientResp http_get   (HttpClient *c, const char *path);
