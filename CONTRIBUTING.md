@@ -98,7 +98,13 @@ by a downstream's build or gates. Name these too:
 - **Lint rules** (story 138.41). A lint rule added or removed, or changed in
   what it reports or fixes, is named by its id and message, with its effect on
   unchanged source. A downstream that ratchets its `tkc --lint` counts sees a
-  new hint as a regression.
+  new hint as a regression. `make check-lint-rules` (part of `make ci`) fails
+  when a rule id in `src/lint.c` is not named in `CHANGELOG.md` and in the
+  rule table of `docs/compiler/lint-rules-v1.md`; when cutting a release, run
+  `python3 scripts/check_lint_rules_named.py --since <previous tag>`, which
+  also fails unless every id added or removed since that tag is named in the
+  new release's section. A changed rule keeps its id, so neither can see it:
+  name it yourself.
 
 ## Pull request checklist
 
