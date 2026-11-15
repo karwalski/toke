@@ -31,7 +31,9 @@
 #      address; this uses the documentation range, and nothing is dialled)
 #   6. W9012 (D4): fs_read = "<dir>" warns in --diag-json (code W9012,
 #      severity warning, no fix, the message names 3.4.0) and in text, and the
-#      binary still reads OUTSIDE <dir> -- the meaning has not changed yet
+#      binary still reads OUTSIDE <dir> -- the meaning has not changed yet;
+#      (round 2) under --diag-sarif its artifactLocation is the manifest,
+#      while a diagnostic in the source keeps the source file
 #
 # NEGATIVE CONTROL: TKC=<a v3.2.0 toke> -- 1, 3, 4, 5 FAIL (arrays and `all`
 # are refused), 6 FAILS (no warning).
@@ -165,6 +167,26 @@ else fail "6b rc=${rc}"; sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -3; 
 if ( cd "${WORK}" && "${TKC}" --diag-text --config="${WORK}/q.toml" --check probe.tk ) 2>&1 | /usr/bin/grep -a -q '^warning\[W9012\]'; then
     pass "6c --diag-text prints warning[W9012]"
 else fail "6c text warning"; fi
+
+# 6d SARIF: W9012 is located in the manifest; a source diagnostic in the same
+# run keeps the source file (the file is recorded per diagnostic).
+printf 'm=bad;\ni=io:std.io;\nf=main():i64{\n  let x:i64="s";\n  <0\n};\n' >"${WORK}/bad.tk"
+( cd "${WORK}" && "${TKC}" --diag-sarif --config=q.toml --check bad.tk ) >"${WORK}/s.out" 2>"${WORK}/s.err"
+if python3 -I - "${WORK}/s.out" "${WORK}/s.err" <<'PY'
+import json, sys
+text = open(sys.argv[1]).read() + open(sys.argv[2]).read()
+doc = json.loads(text[text.index("{"):])
+locs = {}
+for r in doc["runs"][0]["results"]:
+    pl = r["locations"][0]["physicalLocation"]
+    locs.setdefault(r["ruleId"], []).append((pl["artifactLocation"]["uri"], pl["region"]["startLine"]))
+w = locs.get("W9012", [])
+src = [l for k, v in locs.items() if k.startswith("E") for l in v]
+ok = (w == [("q.toml", 2)] and src and all(u == "bad.tk" for u, _ in src))
+sys.exit(0 if ok else 1)
+PY
+then pass "6d --diag-sarif: W9012 at q.toml line 2; the source error at bad.tk"
+else fail "6d SARIF locations"; sed 's/^/      | /' "${WORK}/s.out" "${WORK}/s.err" | head -6; fi
 
 echo "------------------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
