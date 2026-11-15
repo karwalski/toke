@@ -1,5 +1,5 @@
 m=cr;i=io:std.io;i=s:std.str;f=main():i64{
-  let n=s.toint(io.readln());
+  let n=mt s.toint(io.readln()){$ok:v v;$err:e 0};
   let dist=mut.@();
   let row=mut.0;
   lp(row<n){

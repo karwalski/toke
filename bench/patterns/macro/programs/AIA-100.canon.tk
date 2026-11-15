@@ -57,12 +57,12 @@ lp(ui<nu){ order=order.append(ui); ui=ui+1; };
 let oi=mut.1;
 lp(oi<nu){
 let cur=order.get(oi);
-let curts=json.getint(updates.get(cur);"timestamp");
+let curts=mt json.getint(updates.get(cur);"timestamp"){$ok:v v;$err:e 0};
 let jj=mut.oi-1;
 let inspos=mut.0;
 lp(jj>=0){
 let pj=order.get(jj);
-let pts=json.getint(updates.get(pj);"timestamp");
+let pts=mt json.getint(updates.get(pj);"timestamp"){$ok:v v;$err:e 0};
 if(pts>curts){
 order=setint(order;jj+1;pj);
 jj=jj-1;

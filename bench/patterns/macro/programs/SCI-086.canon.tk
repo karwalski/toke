@@ -4,7 +4,7 @@ i=io:std.io;
 i=s:std.str;
 
 f=main():$i64 {
-  let n=s.toint(s.trim(io.readln()));
+  let n=mt s.toint(s.trim(io.readln())){$ok:v v;$err:e 0};
   let prev=mut.@(1);
   let row=mut.0;
   lp (row<n) {
