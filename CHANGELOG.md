@@ -14,6 +14,10 @@ may no longer compile.
 
 ## Unreleased
 
+### Fixed for loke (the 2026-11-15 handoff, Epic 138)
+
+- **T-67, the runtime half: std.process refuses a handle it did not create.** `process.wait(5)`, loke's helper shape `f(h:i64){process.wait(h)}` called with any integer, a handle changed by arithmetic, a value cast with `as`, and a `process.spawndetached` pid passed as a handle all checked clean, built, and died with SIGSEGV: the runtime read the integer as a process record. `process.spawn` now hands out a registry token instead of the record's address, and every call that takes a handle (`wait`, `stdout`, `stderr`, `kill`, `exitcode`, `hasexited`, `poll`, `isalive`) looks it up without reading it as memory. A value it did not hand out is answered exactly as `process.badhandle()` is: `-1`, the `$err` arm with `$io`, `false`, `0` or `1`. A real handle behaves as before, a waited handle stays valid, and `process.wait(0)` is still `-1`. No source change is needed. The checker half (an integer refused at `--check` where a handle is read) is 138.35. 138.36 — C1850.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
