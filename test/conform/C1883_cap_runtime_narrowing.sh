@@ -12,7 +12,7 @@
 # --allow-* flag) takes run-time flags as a NARROWING: a class a run-time flag
 # names is admitted only where both the baked grant and the flag admit it; a
 # class no flag names keeps its baked grant.  --allow-all at run time on such
-# a binary is refused with one line (exit 1), unless the baked set is already
+# a binary is refused with one CAP003 line (exit 1), unless the baked set is already
 # everything.  `runtime = "union"` in the manifest restores the old union.  A
 # binary with no baked grant set -- including one built with only `enforce` or
 # --cap-enforce, which are vestigial -- takes its run-time flags as the grant,
@@ -26,7 +26,7 @@
 #   3. loke's T-59 manifest (no env_write) + --allow-env: env.set stops with
 #      CAP001, and the hint names the manifest, not the flag
 #   4. --allow-all on that binary is refused before main runs (exit 1, one
-#      line, no program output)
+#      CAP003 line, no program output; its JSON record is C1884 case 12)
 #   5. all = true baked: --allow-all is accepted (it widens nothing); a scoped
 #      flag still narrows
 #   6. runtime = "union": --allow-env adds env.write, --allow-read=<outside>
@@ -95,7 +95,7 @@ expect() {
         deny)    [ "${rc}" -eq 1 ] && /usr/bin/grep -a -q "^CAP002:" "${WORK}/e" && ok=1 ;;
         cap001)  [ "${rc}" -eq 1 ] && /usr/bin/grep -a -q "^CAP001:" "${WORK}/e" && ok=1 ;;
         refused) [ "${rc}" -eq 1 ] && [ ! -s "${WORK}/o" ] && [ "$(wc -l <"${WORK}/e" | tr -d ' ')" = 1 ] \
-                 && /usr/bin/grep -a -q "^capabilities: --allow-all refused" "${WORK}/e" && ok=1 ;;
+                 && /usr/bin/grep -a -q "^CAP003: --allow-all refused" "${WORK}/e" && ok=1 ;;
     esac
     if [ "${ok}" -eq 1 ]; then
         pass "${label}: ${want} ($(head -1 "${WORK}/o" "${WORK}/e" 2>/dev/null | /usr/bin/grep -a -v '^==>' | /usr/bin/grep -a . | head -1 | sed "s#${WORK}#<work>#g" | cut -c1-90))"

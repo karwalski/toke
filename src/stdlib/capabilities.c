@@ -544,6 +544,29 @@ static void deny_class(uint32_t cap) {
     exit(1);
 }
 
+/* A value the program controls (a path, key, host or flag), on a TEXT line.
+ * A newline in it would start a line of its own -- a forged diagnostic, a
+ * fake {"diagnostic_id":...} record for a repair loop that reads stderr line
+ * by line (138.19 round 2) -- so control characters are written as \n, \r,
+ * \t or \xHH, and a backslash as \\.  The JSON line escapes with json_str. */
+static void text_str(FILE *f, const char *s) {
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p == '\\')      fputs("\\\\", f);
+        else if (*p == '\n') fputs("\\n", f);
+        else if (*p == '\r') fputs("\\r", f);
+        else if (*p == '\t') fputs("\\t", f);
+        else if (*p < 0x20 || *p == 0x7f) fprintf(f, "\\x%02x", (unsigned)*p);
+        else fputc(*p, f);
+    }
+}
+
+/* Does `s` hold a character a tkc.toml basic string cannot carry as is? */
+static int toml_unsafe(const char *s) {
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++)
+        if (*p == '"' || *p == '\\' || *p < 0x20 || *p == 0x7f) return 1;
+    return 0;
+}
+
 /* CAP002 (D3): the class is granted, but not for this scope.  `scope` is
  * the canonical scope that would admit the call (or the raw value, when it
  * could not be canonicalised: canon_ok = 0).  The fix names exactly that
@@ -551,38 +574,56 @@ static void deny_class(uint32_t cap) {
  *   - a run-time flag, when run-time flags union (no baked set, or
  *     runtime = "union") or when only the run-time flags exclude it;
  *   - the manifest, when only the baked grant excludes it;
- * and is absent when both exclude it, or no single scope can be named, or
- * the caller gives a reason no scope admits the value (`why`, the hint). */
+ * and is absent when both exclude it, when no single scope can be named,
+ * when the scope cannot be written in that place (a ',' in a run-time flag
+ * value; a quote, backslash or control character in a tkc.toml string), or
+ * when the caller gives a reason no scope admits the value (`why`). */
 static void deny_scope(int ci, const char *scope, int canon_ok, int b, int r, const char *why) {
     const Grant *rg = &g_src[SRC_RUN][ci];
-    int where = 0;   /* 1 run-time flag, 2 manifest */
-    if (!why && canon_ok && tk_cap_scope_syntax(ci, scope, NULL, 0)) {
-        if (!g_narrow || (b && !r)) where = 1;
-        else if (!b && (!rg->named || r)) where = 2;
-    }
-    if (where == 1 && strchr(scope, ',')) where = 0;           /* the flag splits on ',' */
-    if (where == 2) for (const char *p = scope; *p; p++)        /* a TOML basic string */
-        if (*p == '"' || *p == '\\' || (unsigned char)*p < 0x20) { where = 0; break; }
+    int want = 0;    /* where one edit would admit it: 1 a run-time flag, 2 the manifest */
+    if (!g_narrow || (b && !r)) want = 1;
+    else if (!b && (!rg->named || r)) want = 2;
+    enum { CAN = 0, CANT_GIVEN, CANT_SYNTAX, CANT_COMMA, CANT_TOML } cant = CAN;
+    if (why || !canon_ok) cant = CANT_GIVEN;               /* the hint below says why */
+    else if (!tk_cap_scope_syntax(ci, scope, NULL, 0)) cant = CANT_SYNTAX;
+    else if (want == 1 && strchr(scope, ',')) cant = CANT_COMMA;
+    else if (want == 2 && toml_unsafe(scope)) cant = CANT_TOML;
+    int where = cant == CAN ? want : 0;
 
-    if (why && !*scope)
+    if (why && !*scope) {
         fprintf(stderr, "CAP002: capability '%s' is granted, but only for listed scopes\n", k_dot[ci]);
-    else
-        fprintf(stderr, "CAP002: capability '%s' is granted, but not for '%s'\n", k_dot[ci], scope);
-    if (why)
+    } else {
+        fprintf(stderr, "CAP002: capability '%s' is granted, but not for '", k_dot[ci]);
+        text_str(stderr, scope);
+        fputs("'\n", stderr);
+    }
+    if (why) {
         fprintf(stderr, "  %s\n", why);
-    else if (where == 1)
-        fprintf(stderr, "  grant this scope at run time with %s=%s\n", k_flag[ci], scope);
-    else if (where == 2)
-        fprintf(stderr, "  add it to tkc.toml [capabilities] and rebuild: %s = [\"%s\"]\n"
-                        "  (run-time flags can narrow this binary's baked grants, not widen them)\n",
-                k_key[ci], scope);
-    else if (!canon_ok)
+    } else if (where == 1) {
+        fprintf(stderr, "  grant this scope at run time with %s=", k_flag[ci]);
+        text_str(stderr, scope);
+        fputc('\n', stderr);
+    } else if (where == 2) {
+        fprintf(stderr, "  add it to tkc.toml [capabilities] and rebuild: %s = [\"", k_key[ci]);
+        text_str(stderr, scope);
+        fputs("\"]\n  (run-time flags can narrow this binary's baked grants, not widen them)\n",
+              stderr);
+    } else if (!canon_ok) {
         fprintf(stderr, "  it does not resolve to a canonical %s (a dangling symlink, a loop, "
                         "a name not on PATH, or too long), so no scope admits it\n",
                 ci == TK_CAP_IDX_PROCESS_SPAWN ? "command" : "scope");
-    else
+    } else if (cant == CANT_SYNTAX) {
+        fprintf(stderr, "  it cannot be written as a %s scope, so no fix is offered\n", k_dot[ci]);
+    } else if (cant == CANT_COMMA) {
+        fprintf(stderr, "  it cannot be granted with %s: the flag splits its value on ',', "
+                        "and this scope contains one, so no fix is offered\n", k_flag[ci]);
+    } else if (cant == CANT_TOML) {
+        fprintf(stderr, "  it cannot be written in tkc.toml: a scope string there takes no quote, "
+                        "backslash or control character, so no fix is offered\n");
+    } else {
         fprintf(stderr, "  both the baked grant (tkc.toml [capabilities] %s) and the run-time "
                         "%s flags exclude it\n", k_key[ci], k_flag[ci]);
+    }
     if (getenv("TK_DIAG_JSON")) {
         fprintf(stderr, "{\"diagnostic_id\":\"CAP002\",\"severity\":\"error\",\"stage\":\"runtime\","
                         "\"capability\":\"%s\",\"scope\":", k_dot[ci]);
@@ -771,9 +812,24 @@ static int flag_class(const char *arg, const char **val) {
     return -1;
 }
 
-/* A run-time flag the broker cannot honour: one line, exit 1, before main. */
+/* CAP003: a run-time flag the broker cannot honour -- one line (and, under
+ * TK_DIAG_JSON, one JSON record with no fix), exit 1, before main.  Both
+ * the flag and the reason can hold text from the command line, so the text
+ * line escapes them as deny_scope does. */
 static void refuse(const char *flag, const char *why) {
-    fprintf(stderr, "capabilities: %s refused: %s\n", flag, why);
+    fputs("CAP003: ", stderr);
+    text_str(stderr, flag);
+    fputs(" refused: ", stderr);
+    text_str(stderr, why);
+    fputc('\n', stderr);
+    if (getenv("TK_DIAG_JSON")) {
+        fputs("{\"diagnostic_id\":\"CAP003\",\"severity\":\"error\",\"stage\":\"runtime\","
+              "\"flag\":", stderr);
+        json_str(stderr, flag);
+        fputs(",\"reason\":", stderr);
+        json_str(stderr, why);
+        fputs("}\n", stderr);
+    }
     exit(1);
 }
 

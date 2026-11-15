@@ -89,7 +89,8 @@ typedef struct {
  * Reads the compiler-baked grant set (weak globals below) and the runtime
  * --allow-* flags: unioned with the baked set when none is baked (or the
  * manifest says runtime = "union"), intersected with it otherwise.  Exits 1
- * with one line on a malformed scope or on a refused --allow-all.
+ * with CAP003 (one line, and a JSON line under TK_DIAG_JSON) on a malformed
+ * scope or on a refused --allow-all.
  * Idempotent; called once from tk_runtime_init.
  */
 void tk_cap_init(int argc, char **argv);

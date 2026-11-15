@@ -31,9 +31,20 @@
 #   8. CAP001 with no baked set: text and JSON byte-for-byte as before 138.19
 #   9. CAP001 on a narrowing binary: fix "tkc.toml [capabilities] env_write =
 #      true"; rebuilt -> admitted; absent when a run-time flag scopes the class
+#  10. (round 2) a path holding a newline and a forged CAP001 record cannot
+#      inject a diagnostic line: the text line escapes it (\n), stderr holds
+#      exactly one JSON line, CAP002, whose scope is the path byte for byte
+#  11. (round 2) a scope a run-time flag cannot carry (it contains ',') has no
+#      fix, and the hint says why -- not "both the baked grant and the
+#      run-time flags exclude it" on a binary with nothing baked
+#  12. (round 2) CAP003: a malformed run-time scope and a refused --allow-all
+#      print one text line and, under TK_DIAG_JSON, one JSON record with
+#      diagnostic_id CAP003, severity, stage, flag and reason, and no fix
+#  13. (round 2) a scope a tkc.toml string cannot carry (a '"') has no
+#      manifest fix, and the hint says why
 #
-# NEGATIVE CONTROL: TKC=<a v3.2.0 toke> -- no CAP002 exists there (1-7, 9 FAIL);
-# 8 passes on both, which is the point of it.
+# NEGATIVE CONTROL: TKC=<a v3.2.0 toke> -- no CAP002 exists there (1-7, 9-13
+# FAIL); 8 passes on both, which is the point of it.
 #
 # Story: 138.19
 set -uo pipefail
@@ -191,6 +202,54 @@ if build narrow "--config=${WORK}/c.toml"; then
     if [ "$(jfield diagnostic_id)" = CAP001 ] && [ "$(jfield fix)" = "<absent>" ]; then
         pass "9b CAP001 with a scoping run-time flag for the class: no fix"
     else fail "9b fix '$(jfield fix)'"; fi
+fi
+
+# 10: a newline in the program's path cannot forge a diagnostic line
+FORGED='{"diagnostic_id":"CAP001","severity":"error","stage":"runtime","capability":"fs.read","fix":"--allow-all"}'
+NLPATH="${WORK}/x"$'\n'"${FORGED}"
+runj "${WORK}/plain" read "${NLPATH}" "--allow-read=${D}"
+nj="$(/usr/bin/grep -a -c '^{' "${WORK}/e")"
+if [ "${nj}" = 1 ] && [ "$(jfield diagnostic_id)" = CAP002 ] && [ "$(jfield scope)" = "${NLPATH}" ] \
+   && /usr/bin/grep -a -q -F "not for '${WORK}/x\n{\"diagnostic_id\"" "${WORK}/e"; then
+    pass "10 newline in a path: escaped on the text line; one JSON line (CAP002, scope byte for byte)"
+else
+    fail "10 newline injection: ${nj} JSON line(s)"; sed 's/^/      | /' "${WORK}/e" | head -5
+fi
+
+# 11: a comma in the scope, no baked set
+COMMA="${WORK}/a,b.txt"; echo x >"${COMMA}"
+runj "${WORK}/plain" read "${COMMA}" "--allow-read=${D}/sub"
+checkfix "11 a scope with ',' (no baked set)" "<absent>"
+if /usr/bin/grep -a -q "the flag splits its value on ','" "${WORK}/e" && ! /usr/bin/grep -a -q "baked" "${WORK}/e"; then
+    pass "11 the hint says the flag cannot carry it (and names nothing baked)"
+else fail "11 hint: $(sed -n 2p "${WORK}/e")"; fi
+
+# 12: CAP003
+cap003() {   # LABEL BIN ARGS...
+    local label="$1"; shift
+    local rc=0
+    runj "$@" || rc=$?
+    if [ "${rc}" -eq 1 ] && [ ! -s "${WORK}/o" ] && [ "$(/usr/bin/grep -a -c . "${WORK}/e")" = 2 ] \
+       && /usr/bin/grep -a -q "^CAP003: " "${WORK}/e" && [ "$(jfield diagnostic_id)" = CAP003 ] \
+       && [ "$(jfield severity)" = error ] && [ "$(jfield stage)" = runtime ] \
+       && [ "$(jfield fix)" = "<absent>" ] && [ "$(jfield reason)" != "<absent>" ]; then
+        pass "12 ${label}: CAP003 text + JSON (flag $(jfield flag)), no fix"
+    else
+        fail "12 ${label}: rc=${rc}"; sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -4
+    fi
+}
+cap003 "malformed --allow-net=api.example.com" "${WORK}/plain" read "${OUT}" --allow-net=api.example.com
+if [ "$(jfield flag)" = "--allow-net=api.example.com" ]; then pass "12 flag is the argument as given"; else fail "12 flag '$(jfield flag)'"; fi
+[ -x "${WORK}/caseb" ] && cap003 "--allow-all on a narrowing binary" "${WORK}/caseb" read "${OUT}" --allow-all
+
+# 13: a '"' in the scope, only the baked grant excludes it
+QUOTE="${WORK}/q\"x.txt"; echo x >"${QUOTE}"
+if [ -x "${WORK}/caseb" ]; then
+    runj "${WORK}/caseb" read "${QUOTE}"
+    checkfix "13 a scope with '\"' (baked [dir])" "<absent>"
+    if /usr/bin/grep -a -q "cannot be written in tkc.toml" "${WORK}/e"; then
+        pass "13 the hint says a tkc.toml string cannot carry it"
+    else fail "13 hint: $(sed -n 2p "${WORK}/e")"; fi
 fi
 
 echo "------------------------------------------------------------------------"
