@@ -88,9 +88,23 @@ To run clang-tidy locally:
 
     make fuzz
 
+## Changelog
+
+A change a user can observe gets an entry under `## Unreleased` in
+`CHANGELOG.md` that names its story and commit; a breaking change goes first,
+with its migration. Some changes alter no program's output and are still seen
+by a downstream's build or gates. Name these too:
+
+- **Lint rules** (story 138.41). A lint rule added or removed, or changed in
+  what it reports or fixes, is named by its id and message, with its effect on
+  unchanged source. A downstream that ratchets its `tkc --lint` counts sees a
+  new hint as a regression.
+
 ## Pull request checklist
 
 - [ ] `make conform` passes 100%
+- [ ] `CHANGELOG.md` `## Unreleased` names the change, including any lint rule
+      added or changed (id, message, effect)
 - [ ] `make check-downstream` passes, if `src/stdlib/*.c`, `src/stdlib_deps.c` or
       `stdlib/*.tki` changed
 - [ ] `make lint` produces zero warnings

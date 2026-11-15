@@ -277,6 +277,36 @@ binaries glibc 2.38 or later (Ubuntu 24.04+, Debian 13+, Fedora 39+); older syst
 from source (toke 127.454). ooke 3.0.0 requires toke 3.2.0; Homebrew installs both
 (`brew install karwalski/toke/tkc`, `karwalski/toke/ooke`).
 
+### Addendum, 2026-11-15: lint rules
+
+Added after the release at loke's request (loke's handoff of 2026-11-15, N-7; story
+138.41). The entries above mention the new lint rule only in passing and name no rule
+id. A downstream that ratchets its `tkc --lint` counts sees new findings on unchanged
+source as a regression: loke's count went from 552 to 737 on 3.2.0, all of it the new
+rule.
+
+One rule is new and five changed between `v3.1.0` and `v3.2.0` (`git diff v3.1.0
+v3.2.0 -- src/lint.c`). The messages of the five are unchanged. Measured with both
+compilers over ooke's sources, toke's examples and test programs and the website's
+programs, only `nested-if-ladder` adds findings; the others change which findings carry
+a `fix`, or report less.
+
+| Rule id | Severity | Change | Effect on unchanged source | Story, commit |
+|---|---|---|---|---|
+| `nested-if-ladder` (new) | hint | Reports an `if` whose `el` block holds exactly one statement, another `if`: one finding per ladder, at its first nested `if`. Message, for a one-rung ladder: ``else block holds only another if (1 nested rung) — write `el if(...)`: an el-if chain is one nesting level, each `el{if}` rung adds one (quality_rubric: depth > 3 flags, > 4 fails)``. `--lint --fix` splices the inner `if` up into `el if(...)`; no fix when a comment sits in the block | New hints wherever the shape occurs. A hint: the `--lint` exit status does not change | 131.64 — `5800ac34` |
+| `single-use-let` | hint | `--lint` type-checks the file silently first, and the `fix` (inline the binding) is offered only when the checker typed the use and the initialiser identically; a file that does not type-check keeps the hint without a fix | Same findings; fewer carry a `fix` | 131.59 — `02c5e457`, `ac12618f`, `e5a917b3` |
+| `mutable-never-mutated` | warning | The `fix` (delete `mut.`) is offered only when the program with the deletion type-checks and types every node identically | Same findings; fewer carry a `fix` | 131.104 — `f324d408` |
+| `string-concat-chain` | warning | The fix that `TKC_LINT_CONCAT_FIX=1` arms is offered only for a module-style `std.str` chain whose every part the checker typed `str` | Same findings; without that variable no finding carries a fix, as before | 131.110 — `f4dae47c` |
+| `unused-import` | warning | Reads a qualified type's alias from the parse tree, not from the source bytes before the type | Fewer findings: an import used as `alias.$type` with a comment between the tokens was reported unused, and `--fix` deleted it | 131.81 — `968de8c6` |
+| `discarded-value-result` | error | Its `std.vec` exemption (a bare `push`/`set` on a handle mutates in place) recognises the renamed handle type `$vechandle` (was `Vec`, #4 above) | None on source that compiles on 3.2.0 | 127.251 — `16c3088d` |
+
+The rules `tkc --lint` runs in 3.2.0, for a downstream that ratchets per rule:
+`discarded-value-result`, `empty-fn-body`, `flag-soup`, `loop-rebuilds-array`,
+`mut-flag-if`, `mutable-never-mutated`, `nested-if-ladder`, `redundant-bind`,
+`single-use-let`, `string-concat-chain`, `unreachable-code`, `unused-import`,
+`unused-let`. Each is described in `docs/compiler/lint-rules-v1.md`. From the next
+release, an entry names every lint rule added or changed (CONTRIBUTING.md).
+
 ---
 
 ## 3.1.0 — loke's handoff, the typed standard library, and security fixes
