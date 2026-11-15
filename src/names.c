@@ -1856,6 +1856,12 @@ static void resolve_ident(const Node *node, const char *src,
             memcpy(nbuf, name, (size_t)mlen);
             nbuf[mlen] = '\0';
             const char *fix = foreign_keyword_fix(nbuf);
+            /* 127.289: no curated hint at a bare lp init either.  `var`,
+             * `null`, `return` and the rest name a foreign keyword, and the
+             * hint ("use let x=mut.val; ...") applied to the init gives
+             * `lp(let x=mut.0;..)`, which the init clause does not accept
+             * (E2002, 127.283).  The message still names the identifier. */
+            if (node == s_bare_init_target) fix = NULL;
             /* 127.251: an old stdlib type spelling has one right answer. */
             char ren_fix[128];
             if (!fix && (node->kind == NODE_TYPE_IDENT || node->kind == NODE_STRUCT_LIT))
