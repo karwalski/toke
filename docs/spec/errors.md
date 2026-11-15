@@ -953,7 +953,9 @@ emptiness with .len or compare the elements`, `expected` `a scalar or str
 operand`. `got` is the array the comparison is about: when exactly one operand
 is the literal `@()` and the other is an array, the other operand (`@()==x` with
 `x:@i64` gives `@(i64)`, not the literal's `@(?)`); otherwise the left operand
-if it is an array, else the right. Through 3.2.0 this compiled: against
+if it is an array, else the right. An array compares with nothing, so the
+refusal does not wait on the other operand: one whose type an earlier error left
+`unknown` still draws it, with no fix. Through 3.2.0 this compiled: against
 the literal `@()` it compared the array's address with a fresh allocation, so
 `a==@()` was false for every empty `a`, and between two named arrays it compared
 the elements' bytes as a C string, so `@(256)==@(512)` was true. The fix is

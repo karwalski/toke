@@ -20,10 +20,15 @@
 # type @i64, gives '@(i64)'); otherwise the left operand if it is an array,
 # else the right.
 #
-# Negative control: TKC=<v3.2.0 toke> -- cases 1-9 and 13-17 fail (rc=0, no
-# diagnostic: the miscompiled comparison checked clean).  Cases 10-12 pass
-# there too: a handle, str or map against `@()` was already E4031, as a type
-# mismatch with no fix.  18-22 are unchanged by design.
+# The refusal runs before the unknown-operand early-out: an array compares
+# with nothing, whatever the other side is.  So an operand an earlier error
+# left unknown draws a second E4031, with no fix (case 18).
+#
+# Negative control: TKC=<v3.2.0 toke> -- cases 1-9 and 13-18 fail (rc=0 and
+# no diagnostic, or only case 18's earlier error: the miscompiled comparison
+# checked clean).  Cases 10-12 pass there too: a handle, str or map against
+# `@()` was already E4031, as a type mismatch with no fix.  19-23 are
+# unchanged by design.
 #
 # Story: 138.20
 
@@ -109,15 +114,18 @@ expect "16 an index into @@i64 == @()" \
 expect "17 untyped empties (T-60 repro): x==y no fix, x==@() fix" \
     "$(diags 'm=q;f=main():i64{let x=@();let y=@();let u=x==y;let v=x==@();<0};')" \
     "E4031|@(?)|ABSENT / E4031|@(?)|x.len==0"
+expect "18 an operand an earlier error left unknown: refused, no fix" \
+    "$(diags 'm=q;f=main():i64{let a:@i64=@(1);let u=a.get(0)+"s";if(a==u){<1};<0};')" \
+    "E4031|str|ABSENT / E4031|@(i64)|ABSENT"
 
 # --- unchanged -------------------------------------------------------------
-expect "18 struct refusal unchanged (C249)" \
+expect "19 struct refusal unchanged (C249)" \
     "$(diags 'm=q;t=$pt{x:i64};f=main():i64{let a=$pt{x:1};let b=$pt{x:1};if(a==b){<1};<0};')" "E4031|pt|ABSENT"
-expect "19 sum refusal unchanged (C249)" \
+expect "20 sum refusal unchanged (C249)" \
     "$(diags 'm=q;t=$lvl{$public:i64;$restricted:i64};f=main():i64{let a=$lvl{$restricted:0};let b=$lvl{$restricted:1};if(a!=b){<1};<0};')" "E4031|lvl|ABSENT"
-expect "20 scalar and str == unchanged" \
+expect "21 scalar and str == unchanged" \
     "$(diags 'm=q;f=main():i64{let a=1;let b=2;let s="x";if(a==b){<1};if(s!="y"){<2};if(1.5==2.5){<3};<0};')" "rc=0"
-expect "21 .len and element comparisons stay clean" \
+expect "22 .len and element comparisons stay clean" \
     "$(diags 'm=q;f=main():i64{let x:@i64=@(1;2);if(x.len==0){<1};if(x.get(0)!=1){<2};<0};')" "rc=0"
 
 # A program that compiled before 138.20 is unaffected, and the rewrites the fix
@@ -139,9 +147,9 @@ f=main():i64{
 TK
 if "${TKC}" "${WORK}/r.tk" -o "${WORK}/r.bin" >/dev/null 2>&1; then
     out="$("${WORK}/r.bin")"; rc=$?
-    expect "22 unaffected program runs" "${out} rc=${rc}" "ok rc=15"
+    expect "23 unaffected program runs" "${out} rc=${rc}" "ok rc=15"
 else
-    expect "22 unaffected program runs" "build failed" "ok rc=15"
+    expect "23 unaffected program runs" "build failed" "ok rc=15"
 fi
 
 echo "C1810: ${PASS} passed, ${FAIL} failed"

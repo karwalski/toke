@@ -6918,8 +6918,18 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *   Both operands must have matching types (including non-numeric
      *   types like str == str).  The result type is always TY_BOOL.
      *
-     * If either operand is TY_UNKNOWN, the check is skipped (poison
-     * propagation).  The fix hint suggests using 'as' to cast the RHS.
+     * If either operand is TY_UNKNOWN, the operand-type checks after the
+     * unknown-operand early-out are skipped (poison propagation, semantics
+     * §3.3).  Three checks run before that early-out, and two of them can
+     * fire with an unknown operand: `+` between a str and an unresolved
+     * operand (111.12), and `==` / `!=` with an array operand (138.20).
+     * The array refusal runs first because its verdict does not depend on
+     * the other side -- an array compares with nothing -- and so it also
+     * catches an operand that is genuinely untyped rather than poisoned.
+     * The cost is a second E4031, with no fix, when an earlier error left
+     * the other operand unknown (`a==u`, pinned by C1810).  The struct/sum
+     * refusal (138.9) needs both operands known and never fires there.
+     * The fix hint suggests using 'as' to cast the RHS.
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_BINARY_EXPR: {
         Type *l=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
