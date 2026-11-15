@@ -943,11 +943,12 @@ or `f32` into `f64` (story 127.230); a narrowing, a non-numeric pair and an
 array of another element type get no fix. An integer literal that fits the
 declared integer type is not a mismatch at all (`let b:u8=5`).
 
-**`==` / `!=` the emitter has no equality for** are E4031 too, whatever the
-other operand is. Two struct or sum values (story 138.9, loke T-14):
+**`==` / `!=` the emitter has no equality for** are E4031 too. Both operands
+struct or sum values (story 138.9, loke T-14):
 `'==' does not compare struct or sum values ('<T>') ...`, with no fix (an opaque
-`.tki` handle and `$none` keep their handle comparison). An array operand
-(story 138.20, loke T-60; owner decision 2026-11-15, register 1.2 (a)):
+`.tki` handle and `$none` keep their handle comparison). An array operand,
+whatever the other operand is (story 138.20, loke T-60; owner decision
+2026-11-15, register 1.2 (a)):
 `'==' does not compare arrays ('<L>' == '<R>'): toke has no array equality; test
 emptiness with .len or compare the elements`, `expected` `a scalar or str
 operand`. `got` is the array the comparison is about: when exactly one operand
