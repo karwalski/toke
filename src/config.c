@@ -29,9 +29,10 @@ static char *strip(char *s)
 }
 
 /*
- * Map a [capabilities] key to its TK_CAP_* bit (or 0 for the special "enforce"
- * key, handled by the caller). Returns (unsigned)-1 for an unknown key.
- * Accepts both the dotted-name and short spellings.
+ * Map a [capabilities] key to its TK_CAP_* bit (TK_CAP_ALL for "all").
+ * Returns 0 for an unknown key.  Accepts both the dotted-name and short
+ * spellings.  (The unknown-key sentinel was all-ones, which is also
+ * TK_CAP_ALL, so `all = true` was refused as an unknown capability.)
  */
 static unsigned cap_key_bit(const char *key)
 {
@@ -41,7 +42,7 @@ static unsigned cap_key_bit(const char *key)
     if (!strcmp(key, "net"))                                 return TK_CAP_NET;
     if (!strcmp(key, "env_write")|| !strcmp(key, "env"))     return TK_CAP_ENV_WRITE;
     if (!strcmp(key, "process_spawn") || !strcmp(key, "run")) return TK_CAP_PROCESS_SPAWN;
-    return (unsigned)-1;
+    return 0u;
 }
 
 /*
@@ -129,7 +130,7 @@ int tkc_load_config(const char *path, TkcLimits *limits)
                 limits->cap_enforce = truthy;
             } else {
                 unsigned bit = cap_key_bit(key);
-                if (bit == (unsigned)-1) {
+                if (bit == 0u) {
                     fprintf(stderr, "tkc: %s:%d: unknown capability '%s'\n", path, lineno, key);
                     fclose(f); return -2;
                 }
