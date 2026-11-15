@@ -20,7 +20,9 @@
 #   - an empty common name takes $err with its message;
 #   - a successful call right AFTER a failure takes $ok (the slot is cleared,
 #     not stale), and the handle is usable (tls.certof is a PEM);
-#   - the value is still 0 on failure, so `kp==0` keeps working;
+#   - (127.319, 2026-11-15) the old sentinel test `kp==0` is no longer a
+#     program: a `tlskeypair!str` compared as a value is E4031, no fix --
+#     the failure is read with `mt` (as every case above does);
 #   - tls.tki declares no TlsErr and returns TlsKeypair!str; tls.md agrees.
 #
 # Negative control: drop the `tk_current_error = ...` stores from
@@ -64,8 +66,6 @@ f=main():i64{
   io.println(mt tls.genselfsigned("";30){$ok:kp "OK";$err:e e});
   let pem=mt tls.genselfsigned("host";30){$ok:kp tls.certof(kp);$err:e ""};
   if(str.startswith(pem;"-----BEGIN CERTIFICATE-----")){io.println("true")}el{io.println("false")};
-  let z=tls.genselfsignedalg("host";30;"bogus");
-  if(z==0){io.println("zero")}el{io.println("nonzero")};
   <0
 };
 EOF2
@@ -85,8 +85,11 @@ l() { sed -n "${1}p" "${WORK}/out"; }
     && pass "empty common name -> \$err with its message" || fail "empty cn: '$(l 3)'"
 [ "$(l 4)" = "true" ] \
     && pass "success after a failure -> \$ok, certof is a PEM (slot not stale)" || fail "success after failure: '$(l 4)'"
-[ "$(l 5)" = "zero" ] \
-    && pass "value is 0 on failure (kp==0 still works)" || fail "sentinel: '$(l 5)'"
+printf '%s\n' 'm=tlsz;i=tls:std.tls;f=main():i64{let z=tls.genselfsignedalg("host";30;"bogus");if(z==0){<1};<0};' > "${WORK}/z.tk"
+zout="$("${TKC}" --check "${WORK}/z.tk" 2>&1)"
+printf '%s' "${zout}" | grep -q '"error_code":"E4031"' && printf '%s' "${zout}" | grep -qF 'tlskeypair!$str' \
+    && ! printf '%s' "${zout}" | grep -q '"fix"' \
+    && pass "the sentinel test kp==0 is E4031 'tlskeypair!\$str', no fix (127.319)" || fail "sentinel: $(printf '%s' "${zout}" | head -c 200)"
 
 TKI="${REPO_ROOT}/stdlib/tls.tki"
 MD="${REPO_ROOT}/docs/stdlib/tls.md"

@@ -14,6 +14,26 @@ may no longer compile.
 
 ## Unreleased
 
+Vehicle: **toke 3.3.0** (owner answer R1, 2026-11-15, `docs/owner-decisions-2026-11-12.md`
+"Answers recorded 2026-11-15"). **ooke 3.0.1 ships first**: it is migrated to spellings
+toke 3.2.0 already accepts, so it builds on both.
+
+### Breaking changes (with migration)
+
+| # | Change | Story, commit | Migration |
+|---|---|---|---|
+| 1 | **A std call whose interface declares `T!E` is the error union it is** (owner decision 127.30, register 1.1 (a) 2026-11-15). The 183 such functions across 37 `.tki` -- `str.toint`/`tofloat`/`parsefloat` (`!parseerr`), `str.slice` (`!sliceerr`), `str.frombytes`, `encoding.*decode` (`!encodingerr`), `json.*` (`!jsonerr`), `file.*` (`!fileerr`), `os.write` (`!oserr`), `args.get` (`!argserr`), `env.get` (`!enverr`), `toml.*`, `csv.*`, `db.*`, `http.param`/`header`, ... -- report failure on the error slot, but the checker typed them as nothing, so `str.toint("x")+1` checked clean and computed with the zero filler. A use of the result as a plain `T` -- an operand, a comparison, a `T` parameter, a return, a `let` (or `let ..=mut.`) read later, an array element -- is now **E4031** naming the union (`got 'i64!$parseerr'`), **with no `fix`**. Every accepted program lowers exactly as before. The receiver forms (`s.slice(0;1)` on a str value) are not affected. | 127.319 | `mt str.toint(s){$ok:v v;$err:e <your value>}`, `!` in a fallible function, or `getor` for a map; a statement call whose result is unused is unchanged |
+| 2 | **An error union read as its value is rejected in five more positions**, for a user `T!E`, a map lookup and a std `T!E` alike: an `if` or `lp` condition, the operand of `!`, a string interpolation (`"\(m.get(k))"` -- rejected, not printed), an argument of a std call or of a value-receiver method (`str.fromint(g())`, `xs.append(str.toint(s))`), and an assignment to an untyped `mut` binding that is never matched (`let y=mut.0; y=g()`). Each is **E4031**, no `fix`. A `mut` binding assigned a union and then matched (`let r=mut.0; r=s.toint(x); mt r{..}`, 135.16a) is still accepted. Also: the cast `fix` on a non-integer array index and the `<` `fix` on a discarded tail are no longer offered when the value is a union (neither repair compiles). | 127.323 | as above |
+
+Measured before the flip with this checker (127.319 row, batch Z211): 88 of 695 toke-tree
+sources and 14 of 509 documentation programs, 1,584 of 3,573 toke-test-programs files, ooke
+`src/run.tk` and `src/store.tk` (4 sites), the website's `main.tk` (3 sites), and in the
+corpus 1,158 of the 23,382 regen records and 1,210 of the 1,583 library records (repaired by
+agents, owner answer R2; never by a mechanical filler). The toke tree was migrated with the internal
+`scripts/migrate_std_errunion.py`, which writes the old behaviour out as an explicit
+`mt ..{$ok:v v;$err:e <zero filler>}`; that filler is a migration device for existing
+programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

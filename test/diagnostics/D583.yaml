@@ -1,0 +1,16 @@
+id: D583
+series: D
+description: "127.323: a bool map lookup as a lp condition (lp(m.get(k)){..}) is E4031 with no fix"
+input: |
+  m=t;
+  f=main():i64{
+    let bm=@("t":true);
+    lp(bm.get("t")){<1};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "bool!$err"
