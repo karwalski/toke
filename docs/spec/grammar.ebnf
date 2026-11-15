@@ -110,8 +110,8 @@ LoopStmt     = 'lp' '(' ( ( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';'
 (* `lp(let i=e;..)` declares a fresh loop variable, scoped to the loop and   *)
 (* mutable without `mut.` (which the init does not accept, 127.283).  A     *)
 (* bare `lp(i=e;..)` declares nothing: it assigns the binding of `i` in     *)
-(* force, exactly as AssignStmt does -- E4070 when that binding is an        *)
-(* immutable let or a parameter, E3011 when there is none (127.289;          *)
+(* force, exactly as AssignStmt does -- E4070 when that binding is not      *)
+(* mutable (semantics.md §4.2), E3011 when there is none (127.289;           *)
 (* toke-spec-v0.4.md §K).                                                    *)
 ArenaStmt    = '{' 'arena' StmtList '}' ;
 
