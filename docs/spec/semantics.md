@@ -233,6 +233,12 @@ For a binary expression `lhs op rhs`:
 - Both operands must have equal types.
 - The result type is `bool`.
 - Violation: `[errors.md E4031]`.
+- `==` and `!=` are not defined on two struct or sum values (story 138.9) or
+  with an array operand (story 138.20, owner decision 2026-11-15): there is
+  no structural or element-wise equality, and both are `[errors.md E4031]`.
+  Test an array for emptiness with `x.len==0`; compare elements in a loop.
+  Pinned by `test/conform/C249_no_equality_on_struct_or_sum.sh` and
+  `test/conform/C1810_no_equality_on_arrays.sh`.
 
 **String building** (canonical patterns; see `decisions/ADR-0004.md`):
 - **Interpolation** `"text \(expr) more text"` — primary form for templates
