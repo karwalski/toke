@@ -1,0 +1,13 @@
+id: D576
+series: D
+description: "127.289: a bare `lp(i=..)` init over a parameter `i` is E4070 with no fix -- a parameter has no `let` to rewrite"
+input: |
+  m=test;
+  f=bad(i:i64):i64{
+    let j=mut.0;
+    lp(i=0;j<3;j=j+1){ };
+    <i
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix_absent: true

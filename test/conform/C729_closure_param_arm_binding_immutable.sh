@@ -10,9 +10,11 @@
 #     mt pick(3){$ok:v if(v>0){v=v+1;v}el{v};$err:e 0}
 #
 # THE RULE. docs/spec/semantics.md §2.9: the binding an assignment targets
-# "must have been declared with `let x=mut.`"; §4.2: a parameter is not
-# mutable.  A closure parameter is a parameter, and an arm binding is not a
-# `let x=mut.`.  No `fix`: neither has a `let` to rewrite (AGENTS §6).
+# "must be mutable: declared with `let x=mut.`, or the loop variable
+# introduced by an `lp(let ..)` init" (wording amended by 127.283 and
+# 127.289); §4.2: a parameter is not mutable.  A closure parameter is a
+# parameter, and an arm binding is neither.  No `fix`: neither has a `let`
+# to rewrite (AGENTS §6).
 #
 # Negative control: TKC built from 7ca0e318 (main) — cases 1-4 are red (no
 # E4070; they compile); 5-9 are guards that pass on both.

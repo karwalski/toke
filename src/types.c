@@ -963,7 +963,7 @@ static const Node *find_binding_node(const Node *root, const char *src,
                                      const char *name, int nlen) {
     if (!root) return NULL;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
+         ||loop_init_declares(root))
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
@@ -1009,7 +1009,7 @@ static void find_binding_before_rec(const Node *root, const char *src,
                                     const Node *use, const Node **best) {
     if (!root) return;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
+         ||loop_init_declares(root))
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
@@ -1063,6 +1063,26 @@ static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
     return x && x->tok_len == nl && nl > 0
         && memcmp(src + x->tok_start, nm, (size_t)nl) == 0;
 }
+/* bare_init_step (127.289) -- 1 when `asg` is the step of an `lp` inside
+ * `root` whose init is BARE and assigns the same name: `lp(i=0;..;i=i+1)`.
+ * The init and the step then assign one binding, and an E4070 on the step
+ * has the init's two repairs (`let i=mut.`, `lp(let i=`) that run
+ * differently, so it carries no `fix` either. */
+static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+    if (!root || !asg) return 0;
+    if (root->kind == NODE_LOOP_STMT && root->child_count == 4
+        && root->children[2] == asg) {
+        const Node *ini = root->children[0];
+        return ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
+            && ini->child_count > 0 && ini->children[0]
+            && asg->child_count > 0 && asg->children[0]
+            && ident_same(ini->children[0], src, src + asg->children[0]->tok_start,
+                          asg->children[0]->tok_len);
+    }
+    for (int i = 0; i < root->child_count; i++)
+        if (bare_init_step(root->children[i], src, asg)) return 1;
+    return 0;
+}
 /* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
  * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
  * innermost scope first and, within one statement list, the NEAREST earlier
@@ -1089,7 +1109,7 @@ static const Node *lex_binder_rec(const Node *a, const char *src, const Node *us
         if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1
             && ident_same(a->children[1], src, nm, nl)) return a;
         if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
-            && a->children[0]->kind == NODE_LOOP_INIT
+            && loop_init_declares(a->children[0])
             && a->children[0]->child_count > 0
             && ident_same(a->children[0]->children[0], src, nm, nl))
             return a->children[0];
@@ -8096,13 +8116,27 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * propagation).
      *
      * Returns TY_VOID (assignments are statements).
+     *
+     * 127.289: a bare `lp(i=e;..)` init is checked here too.  It assigns
+     * the binding of `i` in force at the loop, as `i=e;` does (owner
+     * decision 2026-10-01 §2.18 (a)); only `lp(let i=e;..)` declares a
+     * loop variable, and that form keeps the default walk below.
      * ──────────────────────────────────────────────────────────────────── */
+    case NODE_LOOP_INIT:
+        if (node->op == TK_KW_LET) {
+            Type *last=mk_type(A,TY_VOID);
+            for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
+            return last;
+        }
+        /* fall through */
     case NODE_ASSIGN_STMT: {
+        int lp_init = node->kind == NODE_LOOP_INIT;   /* 127.289 */
         /* ── Mutability check ─────────────────────────────────────────
          * If the LHS is a simple identifier, find its binding in the
          * enclosing function AST.  If the binding is NODE_BIND_STMT
          * (immutable let) or NODE_PARAM, emit E4070.
-         * NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable. */
+         * NODE_MUT_BIND_STMT and an `lp(let ..)` NODE_LOOP_INIT are
+         * mutable; a bare `lp(i=..)` init binds nothing (127.289). */
         if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
@@ -8142,6 +8176,51 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     return mk_type(A,TY_VOID);
                 }
+                /* 127.289, 127.465: a module-level immutable `let` or an
+                 * import alias (semantics.md §4.2: DECL_LET and
+                 * DECL_IMPORT_ALIAS are not mutable), assigned by `g=e;` or
+                 * by a bare `lp(g=e;..)` init.  Until 127.465 the `let` was
+                 * assigned silently, and the alias passed --check and failed
+                 * in codegen (E9003, at the function).
+                 *
+                 * The `fix` is the local `let` one: `let g=mut.` is a valid
+                 * module-level binding for every initialiser `let g=` takes.
+                 * Not on a bare init, nor on the step of a loop whose bare
+                 * init assigns `g` (bare_init_step): there `let g=mut.` and
+                 * `lp(let g=..` run differently.  An alias has no mutable
+                 * spelling, so it never has one (AGENTS §6). */
+                if (md&&(md->kind==DECL_LET||md->kind==DECL_IMPORT_ALIAS)) {
+                    if (tc_can_emit(cx)) {
+                        int alias=md->kind==DECL_IMPORT_ALIAS;
+                        char msg[384];
+                        if (alias&&lp_init)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to import alias '%s'; a bare 'lp' init assigns the binding in force, "
+                                "and an import alias cannot be assigned: write 'lp(let %s=' for a new loop variable",nb,nb);
+                        else if (alias)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to import alias '%s'; an import alias names a module and cannot be assigned",nb);
+                        else if (lp_init)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
+                                "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
+                        else
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                        char fix[256];
+                        snprintf(fix,sizeof(fix),
+                            "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
+                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                            diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                                "expected","mutable binding","got","immutable binding",
+                                "fix",fix,(const char*)NULL);
+                        else
+                            diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                                "expected","mutable binding","got",alias?"import alias":"immutable binding",
+                                (const char*)NULL);
+                    }
+                    return mk_type(A,TY_VOID);
+                }
             }
             if (immutable) {
                 if (tc_can_emit(cx)) {
@@ -8150,8 +8229,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                      * only where it is correct in every case), so only an
                      * immutable `let` carries one. */
                     int is_let=lb->kind==NODE_BIND_STMT;
-                    char msg[256];
-                    if (is_let)
+                    char msg[384];
+                    if (lp_init&&is_let)
+                        /* 127.289: two repairs are plausible -- `let i=mut.`
+                         * on the binding (the loop then assigns it) or
+                         * `lp(let i=..` (a fresh loop variable, the outer
+                         * binding untouched) -- and they run differently, so
+                         * neither is a `fix` (AGENTS §6). */
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
+                            "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
+                    else if (lp_init)
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force, "
+                            "and a %s cannot be assigned: write 'lp(let %s=' for a new loop variable",
+                            nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
+                    else if (is_let)
                         snprintf(msg,sizeof(msg),
                             "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
                     else
@@ -8161,7 +8254,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     char fix[256];
                     snprintf(fix,sizeof(fix),
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                    if (is_let)
+                    /* 127.289: nor on the step of a loop whose bare init
+                     * assigns the same binding (bare_init_step). */
+                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);

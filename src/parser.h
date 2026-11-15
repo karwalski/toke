@@ -114,6 +114,23 @@ struct Node {
     struct Type *rtype;
 };
 
+/*
+ * loop_init_declares (127.289) — 1 when `n` is an `lp(let i=e;..)` init,
+ * which DECLARES a fresh loop variable scoped to the loop.  A bare
+ * `lp(i=e;..)` init (op != TK_KW_LET) declares nothing: it assigns the
+ * binding of `i` already in force, exactly as the statement `i=e;` does
+ * (owner decision 2026-10-01 §2.18 (a); toke-spec-v0.4 §K).
+ */
+static inline int loop_init_declares(const Node *n) {
+    return n && n->kind == NODE_LOOP_INIT && n->op == TK_KW_LET;
+}
+/* node_assigns (127.289) — 1 when `n` assigns children[0] the value
+ * children[1]: the statement `x=e;` or a bare `lp(x=e;..)` init. */
+static inline int node_assigns(const Node *n) {
+    return n && (n->kind == NODE_ASSIGN_STMT
+                 || (n->kind == NODE_LOOP_INIT && n->op != TK_KW_LET));
+}
+
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Diagnostic severity and error codes                                       */
 /* ────────────────────────────────────────────────────────────────────────── */

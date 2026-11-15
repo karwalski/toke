@@ -1,0 +1,16 @@
+id: D579
+series: D
+description: "127.465: assigning a module-level immutable `let` in a function is E4070 with the local `let` fix -- `let g=mut.<v>` is a valid module-level binding for every initialiser `let g=` takes, and --migrate makes the same rewrite"
+input: |
+  m=test;
+  let g=5;
+  f=bad():i64{
+    g=0;
+    <g
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix: "change 'let g=' to 'let g=mut.' to make it mutable"
+expected_diag_field:
+  field: got
+  value: "immutable binding"

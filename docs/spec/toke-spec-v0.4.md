@@ -302,6 +302,71 @@ Resolved by story **127.359** (owner decision 2026-11-12 §1.6). The compiler
 already behaved this way (stories 114.10, 114.19c, 127.230); only the text
 changes.
 
+## K. The `lp` init clause: `let` declares, a bare name assigns (supersedes the v0.3 §10 `LoopStmt` production; clarifies v0.3 §11.10)
+
+The three-clause loop is `lp(init; cond; step){ body }`, and its init clause
+has two forms:
+
+- `lp(let i = e; ...)` **declares** a fresh loop variable `i`, as §I states:
+  in scope in the condition, the step and the body, not after the loop, and
+  mutable without `mut.`. An enclosing binding of the same name is shadowed
+  for the loop (warning **W3013**) and untouched by it.
+- `lp(i = e; ...)`, with no `let`, **declares nothing**. It is the
+  assignment `i = e` to the binding of `i` in force at the loop, checked
+  and run exactly as that statement is (§I): the step and the body then
+  assign the same binding, and its last value is visible after the loop.
+  If that binding is not mutable -- an immutable `let`, local or
+  module-level, a parameter, an `mt` arm binding, a module constant or an
+  import alias -- the init is **E4070**; if no binding of `i` is in force, it
+  is **E3011**.
+
+This is what v0.3 §11.10 already said ("a binding or assignment executed once
+before the loop"). The compiler did otherwise until story 127.289: a bare init
+made a new loop variable, so an outer `i` was silently left at its old value
+and an immutable one was never checked.
+
+```toke
+m=demo;i=io:std.io;
+f=main():i64{
+  let i = mut.7;
+  let n = mut.0;
+  lp(i = 0; i < 3; i = i + 1){ n = n + i };
+  io.println("\(i) \(n)");                       (* 3 3: the loop assigned i *)
+  lp(let i = 10; i < 12; i = i + 1){ n = n + 1 };
+  io.println("\(i) \(n)");                       (* 3 5: a fresh i, scoped to the loop *)
+  <0
+};
+```
+
+With `let i = 7;` (immutable) instead, the first loop's init is E4070, and
+so is its step `i = i + 1`. Either repair is a different program -- `let i =
+mut.7` makes the loop assign `i`; `lp(let i = 0; ...)` leaves `i` at 7 -- so
+neither E4070 carries a `fix`; an assignment to `i` elsewhere keeps the usual
+one. With no `i` declared, the init's E3011 carries no "did you mean" `fix`
+either: the likely repair is `lp(let i = 0; ...)`.
+
+The grammar of record states the clause as the parser reads it (story
+127.290; `grammar.ebnf` `LoopStmt`):
+
+```
+LoopStmt = 'lp' '(' ( ( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';'
+                      IDENT '=' Expr
+                    | Expr ) ')' '{' StmtList '}' ;
+```
+
+v0.3 §10 wrote `'lp' '(' Stmt Expr ';' Stmt ')'`, which admitted any
+statement as the init and the step; no conforming parser did. The one-clause
+`lp(Expr)` repeats while `Expr` holds (`grammar.ebnf` Appendix A, E3).
+
+Measured before the change (owner decision 2026-10-01 §2.18): one corpus
+regen record and three toke-test-programs files (two of them one library
+record) used a bare init. Each assigns an outer `mut` binding that is not read
+after the loop, so none checks or runs differently; nothing in the compiler
+tree, ooke or the website used one.
+
+Resolved by stories **127.289** and **127.290** (owner decision 2026-10-01
+§2.18 (a)).
+
 ---
 
 ## Conformance & migration
@@ -340,3 +405,10 @@ changes.
   arrays outside a loop instead of growing an accumulator with `acc + @(k)`,
   which is not the canonical accumulator form (owner decision 4.11 (d)). §J's
   rules are unchanged.
+
+- **2026-11-15 (stories 127.289, 127.290):** §K added — a bare `lp(i=e;..)`
+  init assigns the binding of `i` in force (E4070 over a binding that is not
+  mutable, E3011 when there is none, neither with a `fix`); only
+  `lp(let i=e;..)` declares a loop variable. `grammar.ebnf` `LoopStmt` now
+  states the init and step clauses the parser accepts, and the one-clause
+  form.
