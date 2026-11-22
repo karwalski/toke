@@ -306,6 +306,14 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   and the registry-descriptions note are re-copied. `make check-canonical` now enforces
   v2 on every declared surface, so each sibling copy (repo READMEs, model cards, the
   site's home page and `llms.txt`) reports DRIFTED until its own repository re-copies it.
+- **`make check-docs` compiles the tutorials' fragments** (127.486).
+  `scripts/check_tutorial_fragments.py` requires every toke fence in `docs/tutorials/`
+  to be a whole-line excerpt of one file under `examples/` (which `make check-examples`
+  builds), or to pass `tkc --check` inside the program a `<!-- fragment-context ...
+  {{fragment}} ... -->` comment above it declares, or to be a std-only program that
+  checks. Anything else fails, with a self-test as its negative control; on the tutorials
+  as they stood before 127.472 it reports 18 failures. `static-site.md` (ooke page code,
+  whose modules are not in this repository) warns under story 132.156 instead.
 - **toke-model's Gate 2 statements are enforced copies of the canonical `models` fact**
   (127.495, owner decision D4). `check_canonical.py` now requires the fact word for word
   in toke-model's `README.md`, `huggingface/README.md` and `ollama/README.md`, which were

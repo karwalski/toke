@@ -1347,6 +1347,8 @@ check-docs: $(BIN)
 	python3 scripts/check_doc_site_links.py --self-test  # 132.111; TOKE_WORKSPACE exported globally (132.112)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
+	python3 scripts/check_tutorial_fragments.py --self-test  # 127.486: tutorial fences are
+	python3 scripts/check_tutorial_fragments.py              # example excerpts or compile
 	python3 scripts/render_cli_reference.py --selftest  # 132.135: docs/reference/cli.md
 	python3 scripts/render_cli_reference.py --check     # matches `tkc --help` (TKC above)
 
