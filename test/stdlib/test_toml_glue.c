@@ -46,16 +46,19 @@
 #ifdef TK_TEST_REAL_RUNTIME
 #include "../../src/stdlib/tk_runtime.h"
 #else
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-_Thread_local int64_t tk_current_error = 0;
-#else
-__thread int64_t tk_current_error = 0;
-#endif
+/* 127.504: the slot is the first member of one thread-local object that
+ * also holds the box buffer, which the glue's inline tk_err_box reads, so the
+ * stand-in defines the object (tk_runtime.h).  buf stays NULL, so every raise
+ * reaches the tk_err_box stub below. */
+#include "../../src/stdlib/tk_runtime.h"
+#undef tk_current_error
+TK_TLS TkErrTls tk_current_error;
+#define tk_current_error (tk_current_error.slot)
 
 /* 127.182: a failure now stores a one-slot {msg} box built by tk_err_box
  * (tk_runtime.c) — stood in for here like the slot itself. */
 static int64_t g_errbox[8];
-void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
+void *(tk_err_box)(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
 
 /* 127.272: toml_raise copies its message through tk_err_msg (the runtime's
  * message ring) — a one-slot stand-in is enough for these single-raise checks. */

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <limits.h>
 #include <string.h>
 #include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <strings.h>
@@ -18,6 +19,8 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <ctype.h>
 
 /* ── Cache-Control directives (63.1.2) ───────────────────────────────── */
 
@@ -197,17 +200,25 @@ static void cache_entry_free(CacheEntry *e)
     free(e);
 }
 
-/* Evict LRU entries until under limits */
-static void cache_evict(void)
+static void cache_spill_victim(const CacheEntry *e);
+
+/* Evict LRU entries until under limits.  Each victim is offered to the disk
+ * tier first (63.1.6, 127.496): with a disk_dir set it is spilled, then freed.
+ * keep (may be NULL) is never evicted: http_cache_get passes the entry it just
+ * read back from disk, whose pointers it is about to hand out. */
+static void cache_evict_keep(const CacheEntry *keep)
 {
-    while (g_cache.tail &&
+    while (g_cache.tail && g_cache.tail != keep &&
            (g_cache.count > g_cache.max_entries ||
             g_cache.total_size > g_cache.max_size)) {
         CacheEntry *victim = g_cache.tail;
         cache_unlink(victim);
+        cache_spill_victim(victim);
         cache_entry_free(victim);
     }
 }
+
+static void cache_evict(void) { cache_evict_keep(NULL); }
 
 /* ── Cache lookup ────────────────────────────────────────────────────── */
 
@@ -239,33 +250,58 @@ static int cache_write_all(int fd, const char *buf, size_t len)
     return 0;
 }
 
-/* Write one entry to path as "status\nttl\netag\ntype\nbody".  Returns 0
- * and counts body_len in disk_used only when the whole file was written and
- * closed.  On any failure (open, a write, close) the partial file is removed,
- * nothing is counted and -1 is returned with errno from the failing call.
- * The cache has no error channel (http_cache_put is void): a spill that
- * fails leaves the entry evicted, which is a later MISS, never a truncated
- * body (127.445). */
+/* On-disk format (127.496): a text header, then the raw bytes.
+ *
+ *     TKC1\n<status>\n<ttl>\n<inserted>\n<klen> <elen> <clen> <blen>\n
+ *     <key><etag><content_type><body>
+ *
+ * Each length is a decimal byte count; -1 for an etag or content type means
+ * absent (NULL).  The key is stored so a read-back can tell its own entry from
+ * another key whose FNV-1a filename collides, and inserted so the TTL keeps
+ * counting from the original store.  A file whose size is not exactly the
+ * header plus the four lengths is not an entry (a truncated or foreign file). */
+#define CACHE_DISK_MAGIC "TKC1\n"
+
+static long cache_slen(const char *s) { return s ? (long)strlen(s) : -1; }
+
+/* Write one entry to path in the format above.  Returns 0 and counts body_len
+ * in disk_used only when the whole file was written and closed.  On any
+ * failure (open, a write, close) the partial file is removed, nothing is
+ * counted and -1 is returned with errno from the failing call.  The cache has
+ * no error channel (http_cache_put is void): a spill that fails leaves the
+ * entry evicted, which is a later MISS, never a truncated body (127.445). */
 static int cache_spill_file(const char *path, const CacheEntry *e)
 {
-    const char *etag = e->etag ? e->etag : "";
-    const char *ctype = e->content_type ? e->content_type : "";
-    int hlen = snprintf(NULL, 0, "%u\n%ld\n%s\n%s\n",
-                        e->status, e->ttl, etag, ctype);
+    const char *key = e->key ? e->key : "";
+    long klen = cache_slen(key);
+    long elen = cache_slen(e->etag), clen = cache_slen(e->content_type);
+    int hlen = snprintf(NULL, 0, CACHE_DISK_MAGIC "%u\n%ld\n%lld\n%ld %ld %ld %zu\n",
+                        e->status, e->ttl, (long long)e->inserted,
+                        klen, elen, clen, e->body_len);
     if (hlen < 0) return -1;
     char *hdr = malloc((size_t)hlen + 1);
     if (!hdr) return -1;
-    snprintf(hdr, (size_t)hlen + 1, "%u\n%ld\n%s\n%s\n",
-             e->status, e->ttl, etag, ctype);
+    snprintf(hdr, (size_t)hlen + 1, CACHE_DISK_MAGIC "%u\n%ld\n%lld\n%ld %ld %ld %zu\n",
+             e->status, e->ttl, (long long)e->inserted,
+             klen, elen, clen, e->body_len);
 
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    /* Remove whatever is at path (a symlink itself, never its target), then
+     * create with O_EXCL|O_NOFOLLOW: a file or symlink planted there in
+     * between is not followed or truncated; the spill fails instead (a later
+     * MISS).  0600: cached bodies are not left readable by other users. */
+    unlink(path);
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (fd < 0) { int er = errno; free(hdr); errno = er; return -1; }
 
     int rc = cache_write_all(fd, hdr, (size_t)hlen);
     int er = errno;
     free(hdr);
-    if (rc == 0 && e->body_len > 0) {
-        rc = cache_write_all(fd, e->body, e->body_len);
+    const char *parts[4] = { key, e->etag, e->content_type, e->body };
+    size_t lens[4] = { (size_t)klen, elen > 0 ? (size_t)elen : 0,
+                       clen > 0 ? (size_t)clen : 0, e->body_len };
+    for (int i = 0; i < 4 && rc == 0; i++) {
+        if (lens[i] == 0) continue;
+        rc = cache_write_all(fd, parts[i], lens[i]);
         er = errno;
     }
     if (close(fd) != 0 && rc == 0) { rc = -1; er = errno; }
@@ -278,6 +314,229 @@ static int cache_spill_file(const char *path, const CacheEntry *e)
     return 0;
 }
 
+/* The spill file for key: disk_dir/<FNV-1a of key>.cache */
+static void cache_disk_path(const char *key, char *path, size_t cap)
+{
+    uint32_t h = 2166136261u;
+    for (const char *p = key; *p; p++) {
+        h ^= (uint8_t)*p;
+        h *= 16777619u;
+    }
+    snprintf(path, cap, "%s/%08x.cache", g_cache.disk_dir, h);
+}
+
+/* Free an entry that is not in the LRU list and was never counted. */
+static void cache_entry_discard(CacheEntry *e)
+{
+    if (!e) return;
+    free(e->key); free(e->body); free(e->etag);
+    free(e->last_modified); free(e->vary); free(e->content_type);
+    free(e);
+}
+
+/* Parse one decimal field ending in term; -1 is allowed when neg is set. */
+static int cache_parse_num(const char **pp, const char *end, char term,
+                           int neg, long long *out)
+{
+    const char *p = *pp;
+    int minus = 0;
+    if (neg && p < end && *p == '-') { minus = 1; p++; }
+    if (p >= end || *p < '0' || *p > '9') return -1;
+    long long v = 0;
+    while (p < end && *p >= '0' && *p <= '9') {
+        if (v > (LLONG_MAX - 9) / 10) return -1;
+        v = v * 10 + (*p - '0');
+        p++;
+    }
+    if (p >= end || *p != term) return -1;
+    if (minus && v != 1) return -1;
+    *out = minus ? -v : v;
+    *pp = p + 1;
+    return 0;
+}
+
+static char *cache_dup_n(const char *p, long long n)
+{
+    if (n < 0) return NULL;
+    char *s = malloc((size_t)n + 1);
+    if (!s) return NULL;
+    memcpy(s, p, (size_t)n);
+    s[n] = '\0';
+    return s;
+}
+
+/* Read the spill file at path into a new, unlinked, uncounted entry.
+ * Returns NULL when the file is absent, unreadable or not exactly one entry
+ * in the format above. */
+static CacheEntry *cache_disk_load(const char *path)
+{
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return NULL;
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0) {
+        close(fd);
+        return NULL;
+    }
+    size_t sz = (size_t)st.st_size;
+    char *buf = malloc(sz);
+    size_t got = 0;
+    while (buf && got < sz) {
+        ssize_t n = read(fd, buf + got, sz - got);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        got += (size_t)n;
+    }
+    close(fd);
+    if (!buf || got != sz) { free(buf); return NULL; }
+
+    const char *p = buf, *end = buf + sz;
+    long long status, ttl, ins, kl, el, cl, bl;
+    size_t ml = sizeof(CACHE_DISK_MAGIC) - 1;
+    CacheEntry *e = NULL;
+    if (sz < ml || memcmp(p, CACHE_DISK_MAGIC, ml) != 0) goto out;
+    p += ml;
+    if (cache_parse_num(&p, end, '\n', 0, &status) || status > UINT32_MAX ||
+        cache_parse_num(&p, end, '\n', 0, &ttl) ||
+        cache_parse_num(&p, end, '\n', 0, &ins) ||
+        cache_parse_num(&p, end, ' ', 0, &kl) ||
+        cache_parse_num(&p, end, ' ', 1, &el) ||
+        cache_parse_num(&p, end, ' ', 1, &cl) ||
+        cache_parse_num(&p, end, '\n', 0, &bl))
+        goto out;
+    /* Each length is checked against what is left before it is consumed, so
+     * a crafted header cannot wrap the sum and point p outside buf. */
+    size_t rest = (size_t)(end - p);
+    long long lens[4] = { kl, el > 0 ? el : 0, cl > 0 ? cl : 0, bl };
+    for (int i = 0; i < 4; i++) {
+        if ((unsigned long long)lens[i] > rest) goto out;
+        rest -= (size_t)lens[i];
+    }
+    if (rest != 0) goto out;
+
+    e = calloc(1, sizeof(CacheEntry));
+    if (!e) goto out;
+    e->status = (uint32_t)status;
+    e->ttl = (long)ttl;
+    e->inserted = (time_t)ins;
+    e->last_access = time(NULL);
+    /* last_modified and vary are not in the spill format: a read-back entry
+     * has them NULL.  Nothing reads either field after a put (Vary is already
+     * part of the key), so the read-back is lossy only in those two fields. */
+    e->key = cache_dup_n(p, kl);              p += kl;
+    e->etag = cache_dup_n(p, el);             p += el > 0 ? el : 0;
+    e->content_type = cache_dup_n(p, cl);     p += cl > 0 ? cl : 0;
+    e->body_len = (size_t)bl;
+    if (bl > 0) e->body = cache_dup_n(p, bl);
+    if (!e->key || (el >= 0 && !e->etag) || (cl >= 0 && !e->content_type) ||
+        (bl > 0 && !e->body)) {
+        cache_entry_discard(e);
+        e = NULL;
+    }
+out:
+    free(buf);
+    return e;
+}
+
+/* Remove the spill file at path and uncount the body it holds (a file this
+ * process did not write was never counted: disk_used does not go below 0). */
+static void cache_disk_remove(const char *path, size_t body_len)
+{
+    if (unlink(path) == 0)
+        g_cache.disk_used = g_cache.disk_used > body_len
+                          ? g_cache.disk_used - body_len : 0;
+}
+
+/* Remove key's spill file, if the file at its path holds key. */
+static void cache_disk_forget(const char *key)
+{
+    if (!g_cache.disk_dir) return;
+    char path[1024];
+    cache_disk_path(key, path, sizeof(path));
+    CacheEntry *d = cache_disk_load(path);
+    if (d && strcmp(d->key, key) == 0) cache_disk_remove(path, d->body_len);
+    cache_entry_discard(d);
+}
+
+/* Spill an eviction victim to disk_dir (63.1.6).  Whatever file sits at its
+ * path (an older copy, or another key that collides) is replaced.  A spill
+ * that would take disk_used past disk_max_size is not made: the entry is
+ * dropped, a later MISS. */
+static void cache_spill_victim(const CacheEntry *e)
+{
+    if (!g_cache.disk_dir || !e->key) return;
+    if (!e->body && e->body_len > 0) return;
+    char path[1024];
+    cache_disk_path(e->key, path, sizeof(path));
+    CacheEntry *old = cache_disk_load(path);
+    if (old) cache_disk_remove(path, old->body_len);
+    else unlink(path);
+    cache_entry_discard(old);
+    if (e->body_len > g_cache.disk_max_size ||
+        g_cache.disk_used > g_cache.disk_max_size - e->body_len)
+        return;
+    (void)cache_spill_file(path, e);
+}
+
+/* Read key back from disk_dir: the entry moves to the front of the memory
+ * tier (its file is removed and uncounted) and is returned; NULL when there
+ * is no spill file holding key. */
+static CacheEntry *cache_disk_promote(const char *key)
+{
+    if (!g_cache.disk_dir) return NULL;
+    char path[1024];
+    cache_disk_path(key, path, sizeof(path));
+    CacheEntry *e = cache_disk_load(path);
+    if (!e) return NULL;
+    if (strcmp(e->key, key) != 0) { cache_entry_discard(e); return NULL; }
+    cache_disk_remove(path, e->body_len);
+    g_cache.total_size += e->body_len;
+    g_cache.count++;
+    cache_push_front(e);
+    cache_evict_keep(e);
+    return e;
+}
+
+/* Does key "METHOD|URI|vary..." name uri (wildcard: URI starts with the
+ * first plen bytes of uri)?  http_cache_purge and http_cache_purge_pattern
+ * apply it to both tiers. */
+static int cache_key_names(const char *key, const char *uri, int wildcard,
+                           size_t plen)
+{
+    const char *pipe = strchr(key, '|');
+    if (!pipe) return 0;
+    pipe++;
+    if (wildcard) return strncmp(pipe, uri, plen) == 0;
+    const char *pipe2 = strchr(pipe, '|');
+    size_t uri_len = pipe2 ? (size_t)(pipe2 - pipe) : strlen(pipe);
+    return strlen(uri) == uri_len && strncmp(pipe, uri, uri_len) == 0;
+}
+
+/* Purge matching spill files from disk_dir; returns how many. */
+static int cache_disk_purge(const char *uri, int wildcard, size_t plen)
+{
+    if (!g_cache.disk_dir) return 0;
+    DIR *d = opendir(g_cache.disk_dir);
+    if (!d) return 0;
+    int purged = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        int hex = 1;
+        for (int i = 0; i < 8 && hex; i++)
+            hex = isxdigit((unsigned char)de->d_name[i]) != 0;
+        if (!hex || strcmp(de->d_name + 8, ".cache") != 0) continue;
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/%s", g_cache.disk_dir, de->d_name);
+        CacheEntry *e = cache_disk_load(path);
+        if (e && cache_key_names(e->key, uri, wildcard, plen)) {
+            cache_disk_remove(path, e->body_len);
+            purged++;
+        }
+        cache_entry_discard(e);
+    }
+    closedir(d);
+    return purged;
+}
+
 /* ── Public API ──────────────────────────────────────────────────────── */
 
 /* Initialise the cache (call once) */
@@ -287,7 +546,9 @@ void http_cache_init(size_t max_entries, size_t max_size_bytes)
     g_cache.max_size = max_size_bytes > 0 ? max_size_bytes : (64 * 1024 * 1024);
 }
 
-/* Set disk cache directory (63.1.6) */
+/* Set disk cache directory (63.1.6).  Entries evicted from memory are
+ * spilled here while disk_used + body length stays within max_size_bytes
+ * (0: nothing is spilled), and http_cache_get reads them back (127.496). */
 void http_cache_set_disk(const char *dir, size_t max_size_bytes)
 {
     free(g_cache.disk_dir);
@@ -298,7 +559,12 @@ void http_cache_set_disk(const char *dir, size_t max_size_bytes)
     mkdir(dir, 0755);
 }
 
-/* Check cache for a response. Returns cache status string. */
+/* Check cache for a response. Returns cache status string.
+ * The out_body, out_etag and out_content_type pointers point into the cache
+ * and are valid only until the next http_cache_get, http_cache_put or purge
+ * call: since 127.496 a get that reads an entry back from disk can evict
+ * (and free) the entries an earlier get returned.  Copy what must outlive
+ * that. */
 const char *http_cache_get(const char *method, const char *uri,
                             const char *vary,
                             const char *const *req_hdr_names,
@@ -313,6 +579,8 @@ const char *http_cache_get(const char *method, const char *uri,
     if (!key) return "MISS";
 
     CacheEntry *e = cache_find(key);
+    /* Not in memory: read it back from the disk tier (63.1.6, 127.496) */
+    if (!e) e = cache_disk_promote(key);
     free(key);
 
     if (!e) return "MISS";
@@ -375,12 +643,13 @@ void http_cache_put(const char *method, const char *uri,
                                  req_hdr_names, req_hdr_values, req_nhdr);
     if (!key) return;
 
-    /* Remove existing entry with same key */
+    /* Remove existing entry with same key, in memory and on disk */
     CacheEntry *existing = cache_find(key);
     if (existing) {
         cache_unlink(existing);
         cache_entry_free(existing);
     }
+    cache_disk_forget(key);
 
     /* Create new entry */
     CacheEntry *e = calloc(1, sizeof(CacheEntry));
@@ -408,27 +677,9 @@ void http_cache_put(const char *method, const char *uri,
     g_cache.count++;
 
     cache_push_front(e);
+    /* Over a limit: the LRU entries are spilled to disk_dir (when one is set)
+     * and leave memory (63.1.6, 127.496). */
     cache_evict();
-
-    /* Spill to disk if memory is over limit (63.1.6) */
-    if (g_cache.disk_dir && g_cache.total_size > g_cache.max_size) {
-        /* Move LRU entry to disk */
-        CacheEntry *cold = g_cache.tail;
-        if (cold && cold->body) {
-            char path[1024];
-            /* Use hash of key as filename */
-            uint32_t h = 2166136261u;
-            for (const char *p = cold->key; *p; p++) {
-                h ^= (uint8_t)*p;
-                h *= 16777619u;
-            }
-            snprintf(path, sizeof(path), "%s/%08x.cache",
-                     g_cache.disk_dir, h);
-            (void)cache_spill_file(path, cold);
-            cache_unlink(cold);
-            cache_entry_free(cold);
-        }
-    }
 }
 
 /* ── Purge / invalidation (63.2.1) ───────────────────────────────────── */
@@ -441,21 +692,14 @@ int http_cache_purge(const char *uri)
     while (e) {
         CacheEntry *next = e->next;
         /* Key format is "METHOD|URI|vary..." — check if URI matches */
-        char *pipe = strchr(e->key, '|');
-        if (pipe) {
-            pipe++;
-            char *pipe2 = strchr(pipe, '|');
-            size_t uri_len = pipe2 ? (size_t)(pipe2 - pipe) : strlen(pipe);
-            if (strlen(uri) == uri_len &&
-                strncmp(pipe, uri, uri_len) == 0) {
-                cache_unlink(e);
-                cache_entry_free(e);
-                purged++;
-            }
+        if (cache_key_names(e->key, uri, 0, 0)) {
+            cache_unlink(e);
+            cache_entry_free(e);
+            purged++;
         }
         e = next;
     }
-    return purged;
+    return purged + cache_disk_purge(uri, 0, 0);
 }
 
 /* Purge by wildcard pattern (e.g. "/api/") */
@@ -472,27 +716,14 @@ int http_cache_purge_pattern(const char *pattern)
     CacheEntry *e = g_cache.head;
     while (e) {
         CacheEntry *next = e->next;
-        char *pipe = strchr(e->key, '|');
-        if (pipe) {
-            pipe++;
-            int match;
-            if (is_wildcard) {
-                match = (strncmp(pipe, pattern, prefix_len) == 0);
-            } else {
-                char *pipe2 = strchr(pipe, '|');
-                size_t uri_len = pipe2 ? (size_t)(pipe2 - pipe) : strlen(pipe);
-                match = (strlen(pattern) == uri_len &&
-                         strncmp(pipe, pattern, uri_len) == 0);
-            }
-            if (match) {
-                cache_unlink(e);
-                cache_entry_free(e);
-                purged++;
-            }
+        if (cache_key_names(e->key, pattern, is_wildcard, prefix_len)) {
+            cache_unlink(e);
+            cache_entry_free(e);
+            purged++;
         }
         e = next;
     }
-    return purged;
+    return purged + cache_disk_purge(pattern, is_wildcard, prefix_len);
 }
 
 /* ── Micro-caching (63.2.2) ──────────────────────────────────────────── */

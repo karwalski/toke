@@ -177,7 +177,9 @@ fi
 #    `-std=c99 -Wpedantic -Werror`, under which `_Thread_local` is a hard
 #    -Wc11-extensions error, so spelling it directly breaks the build. ──
 
-if grep -q 'TK_TLS int64_t tk_current_error' "${STDLIB_DIR}/tk_runtime.c"; then
+# 127.504: the slot is the first member of one TK_TLS object (TkErrTls) that
+# also holds the error box's buffer; the symbol is still tk_current_error.
+if grep -q 'TK_TLS TkErrTls tk_current_error' "${STDLIB_DIR}/tk_runtime.c"; then
     echo "  PASS: tk_runtime.c defines the slot TK_TLS"
     PASS=$((PASS + 1))
 else
