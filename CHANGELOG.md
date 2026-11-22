@@ -278,6 +278,16 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
   to both are in its addenda.
 
+### Changed — diagnostics
+
+- **E4026 (wrong argument count) has no `fix` field** (138.51, AGENTS.md §6). The
+  four texts it carried were advice, not a repair right in every case: which side
+  is wrong (the call, or an interface that disagrees with its implementation) and
+  whether an argument is missing or surplus cannot be decided at the call site. An
+  alias or module call's message now ends with the advice ("...; match the call to
+  the declaration, or reconcile the interface with the implementation if they
+  disagree"); the code, `expected` and `got` are unchanged. Tests: D710-D713, C2057.
+
 ### Documentation and claim gates
 
 - **The canonical `models` fact states the Gate 2 withdrawal** (127.459, owner decision

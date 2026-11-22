@@ -4246,6 +4246,12 @@ static void tki_member_sig(const ImportedFunc *f, const char *alias,
     if (used + 2 < outsz) { out[used++] = ')'; out[used] = '\0'; }
 }
 
+/* 138.51: E4026 carries no `fix` -- which side is wrong (the call, or an
+ * interface that disagrees with its implementation) is not decidable at the
+ * call site -- so the advice that used to be the `fix` ends the message. */
+#define E4026_ADVICE "match the call to the declaration, or reconcile the " \
+                     "interface with the implementation if they disagree"
+
 static void tki_arity_error(const Node *call, const char *what,
                             const char *mpath, const char *member,
                             const char *decl, int expected, int actual) {
@@ -4255,23 +4261,20 @@ static void tki_arity_error(const Node *call, const char *what,
     if (decl && decl[0])
         snprintf(msg, sizeof msg,
                  "wrong number of arguments for '%s.%s': the %s declares "
-                 "%s — %d argument%s, the call passes %d",
+                 "%s — %d argument%s, the call passes %d; " E4026_ADVICE,
                  mpath, member, what, decl, expected,
                  expected == 1 ? "" : "s", actual);
     else
         snprintf(msg, sizeof msg,
                  "wrong number of arguments for '%s.%s': the %s takes %d "
-                 "argument%s, the call passes %d",
+                 "argument%s, the call passes %d; " E4026_ADVICE,
                  mpath, member, what, expected,
                  expected == 1 ? "" : "s", actual);
-    /* AGENTS.md §6 — the `fix` is guidance that holds in every case this
-     * fires. It must not say "add an argument": the interface and the
-     * implementation may be the two things that disagree (Epic 136), and then
-     * changing the call is the wrong remedy. */
+    /* AGENTS.md §6 — no `fix` (138.51): the interface and the implementation
+     * may be the two things that disagree (Epic 136), so no one edit is right
+     * in every case; the advice is in the message. */
     diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
               "expected", exp_str, "got", got_str,
-              "fix", "match the call to the declaration, or reconcile the "
-                     "interface with the implementation if they disagree",
               (const char *)NULL);
 }
 
@@ -5588,14 +5591,12 @@ static void recv_arity_error(const Node *call, const char *member,
              "%d argument%s including the receiver, the call passes %d%s",
              member, expected, expected == 1 ? "" : "s", actual,
              note ? note : "");
-    /* AGENTS.md §3.1 — the `fix` must hold in every case this fires. It must
-     * not say "remove an argument": too few is the same diagnostic as too
-     * many, and the surplus-argument form was silently DROPPING them, so the
-     * author's intent is not recoverable from the call site. */
+    /* AGENTS.md §6 — no `fix` (138.51): too few is the same diagnostic as
+     * too many, and the surplus-argument form was silently DROPPING them, so
+     * the author's intent is not recoverable from the call site.  The message
+     * already says the receiver counts as the first argument. */
     diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
               "expected", exp_str, "got", got_str,
-              "fix", "match the call to the method's signature; the receiver "
-                     "is its first argument",
               (const char *)NULL);
 }
 
@@ -5679,19 +5680,17 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
             int actual = call->child_count - 1;
             if (abi >= 0 && actual != abi && tc_first_report(cx, call) &&
                 tc_can_emit(cx)) {
-                char msg[384], exp_str[16], got_str[16];
+                char msg[512], exp_str[16], got_str[16];
                 snprintf(exp_str, sizeof exp_str, "%d", abi);
                 snprintf(got_str, sizeof got_str, "%d", actual);
                 snprintf(msg, sizeof msg,
                          "wrong number of arguments for '%s.%s.%s': the "
                          "implementation takes %d argument%s, the call "
-                         "passes %d",
+                         "passes %d; " E4026_ADVICE,
                          alias, seg, member, abi, abi == 1 ? "" : "s", actual);
+                /* 138.51: no `fix` (see E4026_ADVICE). */
                 diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col,
                           msg, "expected", exp_str, "got", got_str,
-                          "fix", "match the call to the declaration, or "
-                                 "reconcile the interface with the "
-                                 "implementation if they disagree",
                           (const char *)NULL);
             }
             return;
@@ -8081,9 +8080,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 char exp_str[16], got_str[16];
                 snprintf(exp_str,sizeof(exp_str),"%d",pi);
                 snprintf(got_str,sizeof(got_str),"%d",actual_args);
+                /* 138.51: no `fix` -- "check the signature" restated the
+                 * error; which argument to add or drop is not decidable. */
                 diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
                           "expected",exp_str,"got",got_str,
-                          "fix","check the function signature for the correct number of parameters",
                           (const char*)NULL);
             }
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
