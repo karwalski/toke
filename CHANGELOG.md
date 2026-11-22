@@ -299,6 +299,13 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   `check_metrics_claims.py`'s `PENDING` list is deleted, so rules 1 and 2 now fail it
   instead of warning. The canonical block and its downstream copies still carry v1's
   sentence and paragraph until 132.154 copies v2 everywhere at once.
+- **The canonical block carries v2's claim sentence and 79-word paragraph** (132.154,
+  owner decision of 2026-11-15). `canonical.json` (`purpose_one_sentence`,
+  `blocks.paragraph`) and `canonical.md` §3/§9 drop "compact in whatever unit the model
+  generates in" and "compact to emit"; this repository's README, the whitepaper's quotes
+  and the registry-descriptions note are re-copied. `make check-canonical` now enforces
+  v2 on every declared surface, so each sibling copy (repo READMEs, model cards, the
+  site's home page and `llms.txt`) reports DRIFTED until its own repository re-copies it.
 - **toke-model's Gate 2 statements are enforced copies of the canonical `models` fact**
   (127.495, owner decision D4). `check_canonical.py` now requires the fact word for word
   in toke-model's `README.md`, `huggingface/README.md` and `ollama/README.md`, which were

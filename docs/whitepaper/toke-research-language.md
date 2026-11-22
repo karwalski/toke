@@ -13,10 +13,9 @@ Whitepaper v2 — spec v0.4, compiler `tkc` toke 2.8.0
 > toke is a compiled programming language designed for LLM code generation. It has 14
 > keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
 > canonical form per construct, chosen by measurement in a 46-pattern catalogue and
-> reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
-> cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one
-> measured property of toke, always reported with its tokenizer and its baseline, not the
-> whole claim.
+> reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding
+> and cheap for a compiler to verify afterwards. Token efficiency is one measured property
+> of toke, always reported with its tokenizer and its baseline, not the whole claim.
 
 The first version of this paper argued a token-count thesis: that a purpose-built language
 plus a purpose-built tokenizer would cut the token cost of AI-generated code far enough to
@@ -52,11 +51,10 @@ The claim, in one sentence:
 
 > toke is a compiled programming language designed for LLM code generation: small,
 > strictly structured, and canonical, so that generated code is cheap to constrain while
-> it is being produced, cheap for a compiler to verify once it is, and compact in whatever
-> unit the model generates in.
+> it is being produced and cheap for a compiler to verify once it is.
 
 It names the audience (LLM code generation), the three mechanical properties (small,
-structured, canonical), and the three things they buy (constrain, verify, compact). It does
+structured, canonical), and the two things they buy (constrain, verify). It does
 not depend on the BPE token being the unit of account, which is the property the first
 version of this paper lacked. The authoritative wording is
 [`docs/about/positioning-2026-09.md`](/docs/about/positioning-2026-09/); this paper quotes it
