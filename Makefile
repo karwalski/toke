@@ -890,6 +890,14 @@ test-asan-compiler: asan-selftest
 	@# 127.439: tkc too -- conform runs ./tkc, the symlink `all` makes, and
 	@# on a fresh checkout (CI) building $(BIN) alone left none to run.
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN) tkc
+	@# 127.449: ASan's redzones make tkc's recursive passes need several times
+	@# the stack of the shipped -O2 build.  C584's just-under-the-limit cases
+	@# (a 990-deep expression, 250 prefix operators) need 2-4 MiB in the
+	@# shipped build -- inside the default 8 MiB -- but 16-32 MiB instrumented,
+	@# so on 8 MiB they overflowed in types.c/llvm.c and failed.  The suite
+	@# runs with a 64 MiB stack (macOS's hard limit) so every case still runs
+	@# and an overflow past that is still reported.
+	ulimit -s 65520 2>/dev/null || echo "test-asan-compiler: WARNING: could not raise the stack limit to 64 MiB; C584 may overflow"; \
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" conform
 
 # The stdlib C unit tests, instrumented. A red result here is a true result:

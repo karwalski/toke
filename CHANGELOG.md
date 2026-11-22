@@ -112,6 +112,11 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   replays clean under ASAN+UBSAN. libFuzzer now gets the seed files, the
   `Executed` lines are counted against the inputs, and a failure with no
   sanitizer line prints the output's tail.
+- **`make test-asan-compiler` runs the conformance suite with a 64 MiB stack**
+  (127.449). C584's cases just under the nesting limit need 2-4 MiB in the
+  shipped build but 16-32 MiB under ASan, and overflowed the default 8 MiB.
+  C080 now relinks the tree's objects with the `-fsanitize` flags they were
+  built with (from `.build-flags`), not without them.
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
 - **T-67, the runtime half: std.process refuses a handle it did not create.** `process.wait(5)`, loke's helper shape `f(h:i64){process.wait(h)}` called with any integer, a handle changed by arithmetic, a value cast with `as`, and a `process.spawndetached` pid passed as a handle all checked clean, built, and died with SIGSEGV: the runtime read the integer as a process record. `process.spawn` now hands out a registry token instead of the record's address, and every call that takes a handle (`wait`, `stdout`, `stderr`, `kill`, `exitcode`, `hasexited`, `poll`, `isalive`) looks it up without reading it as memory. A value it did not hand out is answered exactly as `process.badhandle()` is: `-1`, the `$err` arm with `$io`, `false`, `0` or `1`. A real handle behaves as before, a waited handle stays valid, and `process.wait(0)` is still `-1`. No source change is needed. The checker half (an integer refused at `--check` where a handle is read) is 138.35. 138.36 — C1850.
