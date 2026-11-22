@@ -413,6 +413,14 @@ let n=s.term*12;
 
 Right:
 
+<!-- fragment-context
+m=snippet;
+t=$scenario{principal:f64;rate:f64;term:u64;extra:f64};
+f=permonth(s:$scenario):f64{
+{{fragment}}
+};
+-->
+
 ```toke
 let n=s.term*12;
 <s.principal/(n as f64)
@@ -444,6 +452,16 @@ str.add(line;" world")
 
 Right:
 
+<!-- fragment-context
+m=snippet;
+i=str:std.str;
+f=demo():i64{
+  let line=str.buf();
+{{fragment}};
+  <0
+};
+-->
+
 ```toke
 str.add(line;"hello");
 str.add(line;" world")
@@ -465,6 +483,16 @@ io.println(str.format(v;"%.2f"));
 ```
 
 Right:
+
+<!-- fragment-context
+m=snippet;
+i=io:std.io;
+i=str:std.str;
+f=demo(line:$str):i64{
+{{fragment}}
+  <0
+};
+-->
 
 ```toke
 let v=mt str.tofloat(line) {
@@ -490,6 +518,15 @@ bal=bal-princ;
 ```
 
 Right:
+
+<!-- fragment-context
+m=snippet;
+t=$scenario{principal:f64;rate:f64;term:u64;extra:f64};
+f=demo(s:$scenario;princ:f64):f64{
+{{fragment}}
+  <bal
+};
+-->
 
 ```toke
 let bal=mut.s.principal;

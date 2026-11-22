@@ -442,6 +442,15 @@ kill <pid>
 
 Or change the port in `main.tk`:
 
+<!-- fragment-context
+m=snippet;
+i=http:std.http;
+f=main():i64{
+{{fragment}}
+  <0
+};
+-->
+
 ```toke
 http.serveworkers(3000; 1);
 ```

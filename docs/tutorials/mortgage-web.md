@@ -784,6 +784,16 @@ error: address already in use: 0.0.0.0:8080
 
 Kill the previous instance or change the port in `app.tk`:
 
+<!-- fragment-context
+m=snippet;
+i=router:std.router;
+f=main():i64{
+  let r=router.new();
+{{fragment}}
+  <0
+};
+-->
+
 ```toke
   router.serve(r;"0.0.0.0";3000);
 ```

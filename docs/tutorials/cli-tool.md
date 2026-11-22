@@ -92,14 +92,7 @@ Before writing any logic, define the types that flow through the program. A sum 
 ```toke
 t=$greperr{$usage:$str;$fileerr:$str;$nopattern:void};
 
-t=$opts{
-  pattern:$str;
-  path:$str;
-  ignorecase:bool;
-  countonly:bool;
-  nolinenum:bool;
-  invert:bool
-};
+t=$opts{pattern:$str;path:$str;ignorecase:bool;countonly:bool;nolinenum:bool;invert:bool};
 ```
 
 Sum type variants start with `$`. The `$nopattern` variant carries no data, so it uses `void`. The `$opts` struct holds everything extracted from argv.
@@ -483,6 +476,15 @@ Replace the `str.contains` check in `matches` with a regex search. Add a `-r` fl
 
 **Hint:** add a `regex:bool` field to `$opts`, set it in `parseargs`, pass it to `matches` as a `regex:bool` parameter, and branch there:
 
+<!-- fragment-context
+m=snippet;
+i=str:std.str;
+f=matches(line:$str;pattern:$str;ignorecase:bool;regex:bool):bool{
+{{fragment}}
+  <str.contains(line;pattern)
+};
+-->
+
 ```toke
 if(regex){
   <str.containsre(line;pattern)==1
@@ -503,6 +505,14 @@ src/util.tk:3:f=helper(x:i64):i64{
 ### Exercise 3 -- Coloured output
 
 When stdout is a terminal, highlight the matching portion of each line using ANSI escape codes:
+
+<!-- fragment-context
+m=snippet;
+f=demo():i64{
+{{fragment}}
+  <0
+};
+-->
 
 ```toke
 let red="\x1b[31m";
