@@ -48,9 +48,13 @@ print(len(recs), sum(1 for d in recs if "fix" in d), recs[0]["message"] if recs 
 }
 
 # 1. The sum type is not established (a sum passed through an i64 param).
+#    138.37: over the i64 parameter itself the checker now refuses the arms
+#    first (E4031); a `mut` copy is not judged at check, so codegen's E9005
+#    is still what stops it.
 expect "1-unestablished" "$(e9005 'm=main;
 f=pick(sh:i64):i64{
-  <mt(sh){$circle:x 10;$square:x 20;$tri:x 30}
+  let s=mut.sh;
+  <mt(s){$circle:x 10;$square:x 20;$tri:x 30}
 };
 f=main():i64{<pick(0)};')" "1 0 match has 3 arms, but the sum type of the matched value is not established"
 
