@@ -155,19 +155,16 @@ Inspect its contents:
 syft convert tkc-<tag>-<platform>.tar.gz.spdx.json -o table
 ```
 
-The SBOM is taken of the archive as published: its root package is the archive, named
-with the archive's SHA-256, and syft unpacks it and lists the `tkc` executable it finds
-there. syft has no cataloger for C sources, so the stdlib C sources and the vendored
-cmark, tomlc99 and miniz sources in `stdlib/vendor/` do not appear in it; their versions
-and provenance are in `stdlib/vendor/README.md`.
+What the table should show is described in "What the SBOM covers" below.
 
 ---
 
 ## What the SBOM covers
 
-The SBOM lists what syft finds in the archive: the archive itself (by SHA-256) and the
-`tkc` executable inside it (see "Verifying the SBOM" above). It lists nothing else, and
-there is nothing else it would need to list for the compiler binary:
+The SBOM is taken of the archive as published. Its root package is the archive, named
+with the archive's SHA-256; syft unpacks it and lists the `tkc` executable it finds
+there. It lists nothing else, and there is nothing else it would need to list for the
+compiler binary:
 
 - tkc links against two shared libraries, both provided by the OS: the system C
   library (glibc on Linux, libSystem on macOS) and zlib (`libz.so.1` on Linux,
@@ -177,7 +174,8 @@ there is nothing else it would need to list for the compiler binary:
   part of the archive or its SBOM.
 - The stdlib C sources and the vendored C sources (cmark, tomlc99, miniz) ship as
   sources in the archive and are compiled into a user's program only when it imports
-  the module they back. They are tracked in `stdlib/vendor/README.md`, not in the SBOM.
+  the module they back. syft has no cataloger for C sources, so they do not appear in
+  the SBOM; their versions and provenance are in `stdlib/vendor/README.md`.
 
 ---
 
