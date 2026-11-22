@@ -193,10 +193,14 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   for each out-of-range index, so the canonical default form
   `mt args.get(1){$ok:v v;$err:e "default"}` ran about 11x slower than the
   `args.count()` check (pattern bench 2026-11-15: 1016 ms vs 89 ms). The one
-  reason `args_get` reports is a literal, so the box now holds the static
-  literal `args.get: index out of bounds` (same text; any other reason is
-  still formatted). Measured on the cli-argv fixtures at `PAT_N=16384000`,
-  user CPU: form a 1.11 s (3.2.0) -> 0.33 s, form b 0.07 s. One visible
+  reason `args_get` reports is `ARGS_ERR_OOB` (now exported by `args.h`,
+  recognised by address), so the box holds the static literal
+  `args.get: index out of bounds` (same text; any other reason is still
+  formatted). Measured on the cli-argv fixtures at `PAT_N=16384000`, user
+  CPU: form a 1.11 s (3.2.0) -> 0.19 s, form b 0.07 s; the pattern bench
+  (`run_patterns.py --pattern cli-argv`, N=8,192,000, load ~45) a 662 ms ->
+  143 ms against b 84 / 62 ms. The rest of the gap is the error-box raise
+  itself. The catalogue entry is not re-ingested (127.461). One visible
   difference, a fix: a let-kept `args.get` error read after eight or more
   later raises that use the ring (`toml.*`, `file.*`, ...) printed one of
   their messages; it now keeps its own. Conformance: C1980.

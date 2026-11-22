@@ -9,7 +9,6 @@
 #include "args.h"
 #include "tk_runtime.h"   /* 127.241: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
-#include <string.h>   /* 127.470: strcmp */
 
 int64_t tk_args_count_w(void) {
     return (int64_t)args_count();
@@ -26,11 +25,12 @@ int64_t tk_args_get_w(int64_t n) {
          * so a new failure args_get reports reaches `e.msg` as it says it.
          * 127.470: but formatting it costs a vsnprintf on EVERY miss (the
          * canonical `mt args.get(1){..}` default form ran ~11x slower than
-         * the count check).  The one reason args_get reports today is a
-         * literal, so its message is a static literal too (same text, and it
+         * the count check).  The one reason args_get reports today is
+         * ARGS_ERR_OOB, recognised by address (a strcmp per miss cost as much
+         * again), so its message is a static literal too (same text, and it
          * outlives the ring); any other reason is still formatted. */
         const char *m;
-        if (r.err_msg && strcmp(r.err_msg, "index out of bounds") == 0)
+        if (r.err_msg == ARGS_ERR_OOB)
             m = "args.get: index out of bounds";
         else
             m = tk_err_msg("args.get: %s", r.err_msg ? r.err_msg : "failed");

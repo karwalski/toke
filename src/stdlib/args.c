@@ -13,6 +13,8 @@
 #include <string.h>
 #include <stdint.h>
 
+const char ARGS_ERR_OOB[] = "index out of bounds";   /* 127.470 */
+
 /* Set by args_init() at startup; read-only thereafter. */
 static int    tk_argc = 0;
 static char **tk_argv = NULL;
@@ -49,7 +51,7 @@ StrArgsResult args_get(uint64_t n)
 
     if (tk_argv == NULL || n >= (uint64_t)tk_argc) {
         r.is_err  = 1;
-        r.err_msg = "index out of bounds";
+        r.err_msg = ARGS_ERR_OOB;
         return r;
     }
 
