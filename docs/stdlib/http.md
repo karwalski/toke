@@ -974,7 +974,7 @@ Opens a streaming HTTP connection for server-sent events or chunked transfer res
 
 ### http.streamnext(stream: $httpstream): @(byte)!$httperr
 
-Reads the next available chunk of bytes from an open `$httpstream`. Returns an empty byte array when the server closes the connection gracefully; returns `$httperr` on network or protocol error. Call this in a loop until the returned byte array is empty or an error occurs.
+Reads the next available chunk of bytes from an open `$httpstream`. Returns an empty byte array when the server closes the connection gracefully; returns `$httperr` on network or protocol error. Only a stream `http.stream` returned is read: a `$httpstream` record literal, or any other value, takes the `$err` arm with `msg` `http.streamnext: null stream` (138.50). Call this in a loop until the returned byte array is empty or an error occurs.
 
 ```toke
 m=streamdemo;

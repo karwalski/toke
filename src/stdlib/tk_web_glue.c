@@ -1704,6 +1704,14 @@ static HttpClient *client_in(int64_t v)
     return tk_record_plausible(v) ? (HttpClient *)(intptr_t)v : NULL;
 }
 
+/* 138.50: an $httpstream is the record http.stream made, never a literal:
+ * a literal holds only {id; open} and http_streamnext reads the socket and
+ * buffer past them.  Registered by address (toke reads .open from it). */
+static HttpStream *stream_in(int64_t v)
+{
+    return (HttpStream *)tk_handle_addr(TK_HK_HTTPSTREAM, v);
+}
+
 /* tk_http_post_w — POST request via client handle; body is a string. */
 int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
     HttpClient *c = client_in(client);   /* 138.61 */
@@ -1751,9 +1759,10 @@ int64_t tk_http_stream_w(int64_t client) {
         return z;
     }
     HttpStream *heap = (HttpStream *)malloc(sizeof(HttpStream));
-    if (!heap) {
+    if (!heap || !tk_handle_adopt(TK_HK_HTTPSTREAM, heap)) {   /* 138.50 */
         if (r.stream.fd >= 0) close(r.stream.fd);
         free(r.stream.buf);
+        free(heap);
         return http_raise("out of memory", 0);
     }
     *heap = r.stream;
@@ -1762,8 +1771,11 @@ int64_t tk_http_stream_w(int64_t client) {
 }
 /* tk_http_streamnext_w — read the next chunk from a stream. */
 int64_t tk_http_streamnext_w(int64_t stream) {
-    if (!stream) return 0;
-    HttpStream *s = (HttpStream *)(intptr_t)stream;
+    /* 138.50: only a stream http.stream made; a literal or a forged value is
+     * the null stream, and the null stream is an httperr (it was a bare 0
+     * with the error slot untouched, so `$ok` bound a null [byte]). */
+    HttpStream *s = stream_in(stream);
+    if (!s) return http_raise("http.streamnext: null stream", 0);
     HttpChunkResult r = http_streamnext(s);
     /* 135.19 (3): declared `[byte]!httperr` (stdlib/http.tki) but returned a
      * malloc'd C string, so `.len` read the eight bytes before it and

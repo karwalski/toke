@@ -10,12 +10,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include "tk_strhdr.h"
-#include "tk_runtime.h"   /* 138.61: the handle registry */
+#include "tk_runtime.h"   /* 138.50 / 138.61: the handle registry */
 
-/* 138.61: every $htmldoc this glue hands out is registered by address (no
- * toke call frees one), and every call reads only a registered one; a forged
- * `5 as $htmldoc` is the null document. */
+/* 138.50 / 138.61: every $htmldoc and $htmlnode this glue hands out is
+ * registered by address (no toke call frees either, and toke reads a node's
+ * record fields from it), and every call reads only a registered one.  A
+ * $htmlnode literal holds only {tag; attrs; content}, while html_append
+ * links the node through the private child/sibling fields past them, so a
+ * literal -- like a forged `5 as $htmlnode` or `5 as $htmldoc` -- is the
+ * null node / null document. */
 static TkHtmlDoc *doc_in(int64_t v)   { return (TkHtmlDoc *)tk_handle_addr(TK_HK_HTMLDOC, v); }
+static TkHtmlNode *node_in(int64_t v) { return (TkHtmlNode *)tk_handle_addr(TK_HK_HTMLNODE, v); }
+static int64_t node_out(TkHtmlNode *n)
+{
+    /* a node the table cannot hold is left to the heap: no toke call frees one */
+    return (int64_t)(intptr_t)tk_handle_adopt(TK_HK_HTMLNODE, n);
+}
 
 /*
  * html.doc() takes no arguments -- stdlib/html.tki says so, docs/stdlib/html.md
@@ -34,7 +44,7 @@ int64_t tk_html_doc_w(void) {
 
 int64_t tk_html_h1_w(int64_t text) {
     TkHtmlNode *node = html_h1((const char *)(intptr_t)text);
-    return (int64_t)(intptr_t)node;
+    return node_out(node);   /* 138.50 */
 }
 
 /*
@@ -89,7 +99,7 @@ int64_t tk_html_table_w(int64_t headers_i64, int64_t rows_i64) {
                                   cells, (uint64_t)nrows);
     free(headers);
     free(cells);
-    return (int64_t)(intptr_t)node;
+    return node_out(node);   /* 138.50 */
 }
 
 /* 127.316: html_render() returns the document's cached buffer, which the
@@ -122,9 +132,10 @@ int64_t tk_html_title_w(int64_t doc, int64_t t) {
 }
 
 int64_t tk_html_append_w(int64_t doc, int64_t elem) {
-    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
-    if (!d || !elem) return d ? doc : 0;
-    html_append(d, (TkHtmlNode *)(intptr_t)elem);
+    TkHtmlDoc *d = doc_in(doc);      /* 138.61 */
+    TkHtmlNode *n = node_in(elem);   /* 138.50 */
+    if (!d || !n) return d ? doc : 0;
+    html_append(d, n);
     return doc;
 }
 

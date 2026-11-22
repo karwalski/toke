@@ -213,8 +213,8 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_error_log_set_global` | `log.c` | log_glue.c |
 | `tk_error_log_write` | `log.c` | http.c |
 | `tk_get_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_handle_addr` | `tk_runtime.c` | collections_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, securemem_glue.c, svg_glue.c, task.c, tls_glue.c, vecstore_glue.c |
-| `tk_handle_adopt` | `tk_runtime.c` | collections_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, securemem_glue.c, svg_glue.c, task.c, tls_glue.c, vecstore_glue.c |
+| `tk_handle_addr` | `tk_runtime.c` | canvas_glue.c, collections_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
+| `tk_handle_adopt` | `tk_runtime.c` | canvas_glue.c, collections_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
 | `tk_handle_adopt_view` | `tk_runtime.c` | vecstore_glue.c |
 | `tk_handle_drop` | `tk_runtime.c` | pdf_glue.c, str_glue.c, tls_glue.c, toml_glue.c, vecstore_glue.c, xlsx_glue.c, zip_glue.c |
 | `tk_handle_issue` | `tk_runtime.c` | pdf_glue.c, process_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
