@@ -520,10 +520,28 @@ static void scope_end(Ctx *c, const ScopeMark *m, const Node *list, const Node *
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
  * rather than "i64".
  */
-static int is_ptr_local(Ctx *c, const char *name) {
+/* 138.38: the registries below are keyed by the LLVM name a binding was
+ * given (make_unique_name), but many readers ask with the toke spelling.
+ * Since 138.38 every digit-ending name is aliased on first use (m1 -> m1.N),
+ * so a toke-spelled lookup of such a binding would miss and fall to a
+ * default (an i64 slot, "not a map"), miscompiling `m1=m1.set(k;v)` as an
+ * array store.  A miss on the spelling is therefore retried under the alias
+ * currently in force -- the slot emit_expr loads.  A hit on the spelling is
+ * kept exactly as before, so no lookup that already answered changes. */
+static const char *get_llvm_name(Ctx *c, const char *toke_name);
+static const char *reg_alias(Ctx *c, const char *name) {
+    const char *ln = get_llvm_name(c, name);
+    return (ln && ln != name && strcmp(ln, name)) ? ln : NULL;
+}
+static int is_ptr_local_raw(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name)) return 1;
     return 0;
+}
+static int is_ptr_local(Ctx *c, const char *name) {
+    if (is_ptr_local_raw(c, name)) return 1;
+    const char *al = reg_alias(c, name);           /* 138.38 */
+    return al ? is_ptr_local_raw(c, al) : 0;
 }
 /*
  * is_map_var — Return 1 if `name` was registered as a map-type local
@@ -535,7 +553,9 @@ static int is_map_var(Ctx *c, const char *name) {
         if (!strcmp(c->ptrs[i].name, name) &&
             /* 127.41: "__map__" or the int-keyed variant "__map__i" */
             !strncmp(c->ptrs[i].struct_type, "__map__", 7)) return 1;
-    return 0;
+    if (is_ptr_local_raw(c, name)) return 0;
+    const char *al = reg_alias(c, name);           /* 138.38 */
+    return al ? is_map_var(c, al) : 0;
 }
 /*
  * ptr_local_struct_type — Return the toke struct type name associated with
@@ -547,7 +567,9 @@ static const char *ptr_local_struct_type(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name) && c->ptrs[i].struct_type[0])
             return c->ptrs[i].struct_type;
-    return NULL;
+    if (is_ptr_local_raw(c, name)) return NULL;
+    const char *al = reg_alias(c, name);           /* 138.38 */
+    return al ? ptr_local_struct_type(c, al) : NULL;
 }
 
 /* ── 114.44: module-level mutable globals ──────────────────────────── */
@@ -9641,7 +9663,9 @@ static void locals_cap_flush(Ctx *c, const Node *at, const char *what) {
 static const char *get_local_type(Ctx *c, const char *name) {
     for (int i = 0; i < c->local_count; i++)
         if (!strcmp(c->locals[i].name, name)) return c->locals[i].ty;
-    if (is_ptr_local(c, name)) return "i8*";
+    if (is_ptr_local_raw(c, name)) return "i8*";
+    const char *al = reg_alias(c, name);           /* 138.38: see is_ptr_local */
+    if (al) return get_local_type(c, al);
     return "i64";
 }
 
