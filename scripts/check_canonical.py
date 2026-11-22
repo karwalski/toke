@@ -402,8 +402,14 @@ STALE = [
     # exists. As for Gate 1, the generic CORRECTION markers cannot excuse it
     # ("superseded", "corrected" and the like sit beside the PASS on every
     # surface that kept it); only the withdrawal itself does -- see
-    # GATE2_WITHDRAWN. Upper case only, so "Gate 2 Pass@1" is never caught.
-    (re.compile(r"\bGate[\s-]*2\s*[:—–-]?\s*(?:\*\*)?PASS(?:ED)?\b(?!@)"),
+    # GATE2_WITHDRAWN. Between "Gate 2" and the verdict it allows table cells
+    # ("| Gate 2 | **PASSED** |"), punctuation, bold, and one linking word
+    # ("Gate 2 verdict: PASS", "Gate 2 was PASSED"). "PASS" is matched in upper
+    # case only, so the metric "Gate 2 Pass@1" is never caught; "passed" in any
+    # case, since it is never a metric name.
+    (re.compile(r"\bGate[\s-]*2\b[\s|:*—–-]*"
+                r"(?:(?:verdict|status|result|outcome|was|is|has|had)\b[\s|:*—–-]*)?"
+                r"(?:PASS(?:ED)?\b(?!@)|(?i:passed)\b)"),
      "Gate 2 PASS",
      "the Gate 2 PASS was withdrawn on 2026-11-15 (owner decision D4): Gate 2 "
      "has no standing verdict (docs/decisions/gate2-decision.md)",
@@ -419,9 +425,15 @@ VERDICT_DECIDED = re.compile(r"\bnot\s+passed\b|\b2026-09-22\b", re.I)
 
 # Story 127.459 — the only thing that excuses the retired Gate 2 verdict is its
 # withdrawal (owner decision D4, 2026-11-15), stated within the same paragraph
-# window.
-GATE2_WITHDRAWN = re.compile(r"\bwithdr[ae]w(?:n|s|al)?\b|\bno\s+standing\s+verdict\b"
-                             r"|\b2026-11-15\b", re.I)
+# window AND about the verdict: "withdrawn" has to sit within 120 characters of
+# a PASS/verdict word (either order) with no `.` between them, or the window
+# says Gate 2 has "no standing verdict". A date or an unrelated "withdrawn headline" nearby does not excuse.
+_G2_VERDICT_WORD = r"(?:\bPASS(?:ED)?\b(?!@)|\b(?i:passed|verdict)\b)"
+_G2_WITHDRAW = r"\b(?i:withdr[ae]w(?:n|s|al)?)\b"
+GATE2_WITHDRAWN = re.compile(
+    _G2_VERDICT_WORD + r"[^.]{0,120}?" + _G2_WITHDRAW
+    + r"|" + _G2_WITHDRAW + r"[^.]{0,120}?" + _G2_VERDICT_WORD
+    + r"|\b(?i:no\s+standing\s+verdict)\b")
 
 # Story 132.29 — a NEGATION of the retired fact itself: "it is NOT strict LL(1)",
 # "there are not 13 keywords". This is built per stale fact from that fact's own
@@ -852,8 +864,14 @@ SELFTEST = [
     # Story 127.459 — the withdrawn Gate 2 verdict (owner decision D4).
     (False, "present-tense Gate 2 PASS (about/ecosystem.md:12 before 3d88bcc4)",
      "Gate 2 PASS (2026-05-24): 100% compile Pass@1 on the curated set."),
-    (False, "Gate 2 PASSED in a table cell", "| Gate 2 | **PASSED** | 2026-05-24 |\n"
-     "| Gate 2: **PASSED** | 100% compile |"),
+    (False, "Gate 2 PASSED in a table cell", "| Gate 2 | **PASSED** | 2026-05-24 |"),
+    (False, "Gate 2 PASSED in a padded table cell", "| Gate 2   |   PASSED   | 100% |"),
+    (False, "Gate 2: **PASSED** in one cell", "| Gate 2: **PASSED** | 100% compile |"),
+    (False, "lower-case Gate 2 passed", "In May, Gate 2 passed on the curated set."),
+    (False, "Gate 2 verdict: PASS", "Gate 2 verdict: PASS (2026-05-24)."),
+    (False, "Gate 2 PASS beside an unrelated withdrawn headline",
+     "Gate 2 PASS on 2026-05-24.\nThe 12.5% headline is withdrawn (Epic 128)."),
+    (False, "Gate 2 PASS beside a bare date", "Gate 2 PASS, reviewed 2026-11-15."),
     (False, "Gate 2 PASS beside a generic correction marker",
      "Gate 2 PASS — superseded figures corrected 2026-05-25 (stdlib fix)."),
     (True, "Gate 2 PASS with its withdrawal in the same sentence",

@@ -129,7 +129,10 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   is void, and carry the 55.6% with its possibly-corpus-derived caveat.
   `check_canonical.py` Rule 2 now fails a present-tense "Gate 2 PASS" anywhere in the
   workspace unless the withdrawal is stated in the same window (generic correction
-  markers do not excuse it).
+  markers do not excuse it). It also catches the table form `| Gate 2 | **PASSED** |`,
+  "Gate 2 passed" in any case and "Gate 2 verdict: PASS", and the excuse has to tie
+  "withdrawn" to the PASS or the verdict in the same sentence (or say "no standing
+  verdict"); a nearby date or an unrelated withdrawn headline no longer excuses it.
 - **`docs/spec/stdlib-signatures.md` is held to the `.tki` interfaces, which are
   normative** (127.456). `scripts/check_stdlib_signatures.py`, run by `make check-tki`,
   fails on a hand-written entry that names a non-export or states a parameter count or
