@@ -130,16 +130,13 @@ int main(void)
 }
 EOF
 CF=(-std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -O2 -I"${S}")
-if ! "${CC}" "${CF[@]}" -o h h.c "${S}/tk_runtime.c" "${S}/args.c" "${S}/capabilities.c" "${S}/str.c" \
-        -lpthread -lm > h.cc 2>&1; then
-    # tk_runtime.c's link set varies by tree; fall back to the link-set script.
-    LS="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" 2>/dev/null || true)"
-    # shellcheck disable=SC2086
-    if [ -z "${LS}" ] || ! "${CC}" "${CF[@]}" -o h h.c ${LS} -lz -lpthread -lm >> h.cc 2>&1; then
-        fail "the harness builds against ${S} (no TkErrTls on a tree before 127.504)"
-        sed 's/^/    /' h.cc | grep -m6 -E 'error|undefined'
-        echo "C2086: ${PASS} passed, ${FAIL} failed"; exit 1
-    fi
+LINKSET="$("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc "${CC}" \
+        --objects -- "${CF[@]}" 2>h.ls)" || LINKSET=""
+LS=(); while IFS= read -r l; do [ -n "$l" ] && LS+=("$l"); done <<< "${LINKSET}"
+if [ -z "${LINKSET}" ] || ! "${CC}" "${CF[@]}" -o h h.c "${LS[@]}" -lz -lpthread -lm > h.cc 2>&1; then
+    fail "the harness builds against ${S} (no TkErrTls on a tree before 127.504)"
+    cat h.ls h.cc 2>/dev/null | sed 's/^/    /' | grep -m6 -E 'error|undefined|stdlib_link_set'
+    echo "C2086: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
 pass "the harness builds against tk_runtime.c with the project's flags"
 ./h > h.log 2>&1
