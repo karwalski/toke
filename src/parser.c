@@ -1737,8 +1737,11 @@ static Node *parse_import_decl(Parser *p) {
  * Field names may be TK_IDENT, TK_TYPE_IDENT (legacy uppercase variants),
  * or TK_DOLLAR + TK_IDENT (default mode $variant fields in sum types).
  *
- * Semicolons separate fields; a trailing semicolon before '}' is allowed
- * (the loop peeks ahead to avoid consuming a ';' that precedes '}').
+ * Semicolons separate fields.  grammar.ebnf's FieldList admits no trailing
+ * ';', so a ';' directly before '}' is refused with ONE E2002 at the ';'
+ * (no fix: E2002 carries none, errors.md); the ';' is then consumed so the
+ * caller's '}' check does not cascade (127.339).  Whether lists take a
+ * trailing ';' at all is the owner's question 127.360.
  *
  * Error recovery: emits E2002 on unexpected token and breaks; calls
  * sync() on missing ':'.
@@ -1767,7 +1770,11 @@ static Node *parse_field_list(Parser *p) {
         if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
         ch(p,f,parse_type_expr(p)); ch(p,n,f);
         if(peek(p)!=TK_SEMICOLON) break;
-        if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_RBRACE) break;
+        if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_RBRACE){
+            /* 127.339: one diagnostic, then skip the ';' (no cascade). */
+            eerr_got(p,E2002,cur(p),"trailing ';' before '}' in a type declaration (FieldList separates fields with ';' and takes none after the last)");
+            adv(p); break;
+        }
         adv(p);
     } while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF);
     return n;

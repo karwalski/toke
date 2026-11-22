@@ -204,6 +204,16 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   difference, a fix: a let-kept `args.get` error read after eight or more
   later raises that use the ring (`toml.*`, `file.*`, ...) printed one of
   their messages; it now keeps its own. Conformance: C1980.
+- **A trailing `;` before `}` in a type declaration is one E2002, not four
+  diagnostics** (127.339). `m=a;t=$p{x:i64;};` reported E2002, E2004, E2002,
+  E2002: `parse_field_list` stopped before the `;` without consuming it, so
+  the caller's `}` check cascaded, while its comment claimed the form was
+  allowed. grammar.ebnf (`FieldList = Field { ';' Field }`) admits no
+  trailing `;`, so it is still refused, now with ONE E2002 at the `;`
+  ("trailing ';' before '}' in a type declaration ..."), no `fix` (E2002
+  carries none), and parsing continues after it. Nothing that compiled
+  before changes. Whether `;`-separated lists take a trailing `;` at all is
+  the open owner question 127.360. Conformance: C1981, D660.
 
 ---
 
