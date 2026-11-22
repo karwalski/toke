@@ -187,18 +187,18 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_access_log_set_global` | `log.c` | log_glue.c |
 | `tk_access_log_write` | `log.c` | http.c, log.c |
 | `tk_arr_sort_qsort_cmp` | `collections_glue.c` | collections_glue.c |
-| `tk_cap_check` | `capabilities.c` | db.c, file_glue.c |
+| `tk_cap_check` | `capabilities.c` | db.c, file_glue.c, log_glue.c |
 | `tk_cap_class_name` | `capabilities.c` | capabilities.c |
 | `tk_cap_init` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_ip4str` | `capabilities.c` | router.c |
 | `tk_cap_is_grant_flag` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_mode` | `capabilities.c` | capabilities.c |
-| `tk_cap_path_admitted` | `capabilities.c` | file_glue.c |
+| `tk_cap_path_admitted` | `capabilities.c` | file_glue.c, tk_web_glue.c |
 | `tk_cap_require_cmd` | `capabilities.c` | via `TK_REQUIRE_CMD` in 1 file |
 | `tk_cap_require_env` | `capabilities.c` | via `TK_REQUIRE_ENV` in 2 files |
 | `tk_cap_require_net` | `capabilities.c` | via `TK_REQUIRE_NET` in 7 files |
 | `tk_cap_require_path` | `capabilities.c` | via `TK_REQUIRE_PATH` in 18 files |
-| `tk_cap_require_whole` | `capabilities.c` | db.c |
+| `tk_cap_require_whole` | `capabilities.c` | db.c, file_glue.c |
 | `tk_cap_sockname` | `capabilities.c` | net_glue.c |
 | `tk_clos_base` | `tk_runtime.c` | tk_runtime.c |
 | `tk_delegate_class` | `webview.c` | webview.c |

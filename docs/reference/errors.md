@@ -1952,13 +1952,15 @@ scope where one edit is sure to admit the call — `--allow-<class>=<scope>` whe
 run-time flags union with the grant or only they exclude it,
 `<key> = ["<scope>"]` when only the baked grant excludes it — and is absent
 otherwise (both exclude it; a dangling symlink; a command not on `PATH`; an SQLite
-URI filename or a computed `ATTACH` name, which no scope admits; a scope the flag or
+URI filename, a computed `ATTACH` name or a `file.listglob` pattern holding `\`,
+which no scope admits; a path that passes through a directory outside the scope on
+the way to its target, where `scope` names that directory; a scope the flag or
 the manifest cannot carry, such as a `,` in a flag value or a `"` in a `tkc.toml`
 string). The second text line says which. A std entry still on the class-only gate,
 reached under a scoped grant, is CAP002 with an empty `scope` and no `fix`. The text
 lines escape control characters in the value (`\n`, `\xHH`), so a path cannot
 forge a diagnostic line; the JSON line carries it exactly. Conformance:
-C1880–C1886.
+C1880–C1887.
 
 ### CAP003
 

@@ -41,7 +41,10 @@ points elsewhere is not covered. Hosts are compared with the name the program
 passes, before DNS: `connect:127.0.0.1:80` does not cover `localhost`.
 `file.listglob` under a scoped grant returns only the matches it found through
 directories inside the scope (a match reached through `..` or a symlink that leads
-out is left out). `db.open` and the files SQL opens (`ATTACH`, `VACUUM INTO`) are
+out is left out), and refuses a pattern holding `\` (glob reads it as an escape:
+write a literal `*` as `[*]`). A path that passes through a directory outside the
+scope on its way back in (`www/../outside/../www/f`) is refused, though it ends
+inside. `db.open` and the files SQL opens (`ATTACH`, `VACUUM INTO`) are
 checked like any other path, and an SQLite URI filename (`file:...`) is refused
 under a scoped grant: name the database by its path.
 

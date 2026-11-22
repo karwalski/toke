@@ -101,18 +101,35 @@ scan of a manifest-sized list, once per acquisition.
   a symlink cannot pass by pointing at something not yet created. Granted paths
   are canonicalised the same way at start-up; a relative grant resolves against
   the **working directory at process start**, and `~` expands from `HOME` at
-  start-up. Directory-taking readers (`file.list`, `http.servedir`) are checked on
+  start-up. The **way to the target** is checked too: every directory the path
+  enters before its last component must be admitted, an ancestor of a granted
+  scope, or the working directory or one of its ancestors. So
+  `www/../outside/../www/f` and `www/link/../www/f` (a symlink leading out and
+  back) are refused with CAP002 naming the directory passed through, and no fix,
+  even though they end inside `www`: whether the call succeeded would say whether
+  that directory exists. A command path given to `process.spawn` is checked the
+  same way. Directory-taking readers (`file.list`, `http.servedir`) are checked on
   the directory; `i18n.load` on the directory of the `<base>[.<locale>].<ext>`
-  files it reads. The residual race is check-then-open (a component swapped for a
+  files it reads. `http.servepages` skips a page-directory entry the scope does not
+  admit (a symlink leading out of it), and checks each page and layout it re-reads
+  at request time; a refused one fails the render (500). Under a scoped `fs.write`
+  grant, `log.openaccess` / `log.openerror` on a regular-file path also need the
+  log's directory, where they create a `.<name>.lock` sidecar and rotated files and
+  delete old ones. The residual race is check-then-open (a component swapped for a
   symlink between the check and the `open`); it is accepted, as Deno accepts it.
 - **Glob patterns.** `file.listglob` is checked on its pattern's literal directory,
   the components before the first one holding a glob character (CAP002 when that
-  directory is outside the scope). Under a scoped grant, a match is returned only
+  directory is outside the scope). `glob(3)` reads `\` as an escape (`\.` is a
+  `.`, `\/` a `/`), so under a scoped grant a pattern holding a backslash is
+  refused with CAP002 and no fix, whether or not anything matches; write a literal
+  `*`, `?` or `[` as `[*]`, `[?]` or `[[]`. Under a scoped grant, a match is returned only
   when every directory `glob(3)` read or searched to find it is admitted: one per
   component from the first glob component on. A match reached through `..` (which
   `.?`, `.*` and `.[.]` match) or through a symlink that leads out of the scope is
   **left out**, not reported, so an empty result says nothing about what lies
-  outside the scope. The whole class returns every match.
+  outside the scope. A match must also begin with the literal directory text the
+  gate checked, and a pattern with no glob character must come back as itself.
+  The whole class returns every match.
 - **Databases.** `db.open` is checked on the database path, for `fs.read` and
   `fs.write` (`":memory:"` included: it is checked as a path like any other name).
   An SQLite URI filename (`file:...`) names a file and parameters the path check
