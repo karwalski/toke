@@ -205,6 +205,8 @@ f=handler(req:i64):i64{
     $ok:v v;
     $err:e <router.status(500;"template error")
   };
+  (* pass the rendered body as the {{content}} var — the engine substitutes
+     unknown vars with empty, so a post-render str.replace would find nothing *)
   let vars=tpl.vars(@("title":"Mortgage Calculator";"content":body));
   let page=mt tpl.renderfile("templates/layout.tkt";vars) {
     $ok:v v;
@@ -240,7 +242,8 @@ Five imports: HTTP primitives, template rendering, string manipulation, math (fo
 #### 4.5.2 Form parsing
 
 ```toke
-(* look up a urlencoded form field directly from the request body *)
+(* look up a urlencoded form field directly from the request body — only
+   str/[str] cross the boundary, avoiding the array-of-maps ABI confusion *)
 f=formval(body:str;key:str):str{
   let pairs=str.split(body;"&");
   lp(let i=0;i<(pairs.len as i64);i=i+1){
@@ -462,7 +465,6 @@ f=calctotals(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):@f64{
   };
   <@(totalinterest;totalpaid)
 };
-
 
 f=handler(req:i64):i64{
   let body=router.reqbody(req);
@@ -783,7 +785,7 @@ error: address already in use: 0.0.0.0:8080
 Kill the previous instance or change the port in `app.tk`:
 
 ```toke
-mt router.serve(r;"0.0.0.0";3000) {
+  router.serve(r;"0.0.0.0";3000);
 ```
 
 ---
