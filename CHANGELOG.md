@@ -99,7 +99,16 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   draws it nowhere; ooke `make check-toke-candidate` and the website's
   `make check-toke` pass. Conformance: C1920, D635; C027 (cases 2, 5), C373
   (case 1) and C400 (case 9) now meet the refusal at `--check`, and keep the
-  E9005 backstop pinned through a `mut` copy, which is not judged.
+  E9005 backstop pinned through a `mut` copy, which is not judged. The
+  subject's binder is found lexically, so a sum-typed closure parameter, body
+  `let` or loop-init `let` that shadows a scalar parameter of the same name is
+  not judged by the parameter's annotation (C1920 cases 5-7).
+- **`$ok`/`$err` over a shadow of a scalar parameter no longer draws a false
+  E4031** (138.56). 127.202's check read the function's parameter list before
+  the bindings in force, so `f=h(e:i64):i64{let e=str.toint("7"); <mt e
+  {$ok:v v;$err:x 0}}` was refused although it builds and returns 7. The
+  parameter's annotation now counts only when that parameter is the binder in
+  force at the subject. Conformance: C1920 case 6.
 - **A user name can no longer collide with an IR temporary or block label**
   (138.38, loke T-65). `f=g(t0:i64):i64{<t0+1}` passed `--check` and clang
   refused the IR ("multiple definition of local value named 't0'"); a local
