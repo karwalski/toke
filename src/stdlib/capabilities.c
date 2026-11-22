@@ -282,12 +282,6 @@ int tk_cap_scope_syntax(int cls, const char *text, char *err, unsigned errsz) {
 
 /* ── Canonicalisation (§3.1, §3.3) ────────────────────────────────── */
 
-/* The canonical absolute form of `in` (PATH_MAX buffer): realpath() of its
- * longest existing prefix, then the components that do not exist yet, with
- * `.` dropped and `..` taken lexically.  A component that EXISTS but does not
- * resolve (a dangling symlink, a loop) fails: a symlink must never pass the
- * check by pointing at something not yet created.  `~` expands from HOME only
- * when expand_tilde (grants; a program's own "~/x" is a relative path). */
 /* `in` as an absolute path (PATH_MAX buffer), not yet canonical. */
 static int abs_path(const char *in, int expand_tilde, char *abs) {
     if (!in || !*in) return 0;
@@ -305,6 +299,12 @@ static int abs_path(const char *in, int expand_tilde, char *abs) {
     return 1;
 }
 
+/* The canonical absolute form of `in` (PATH_MAX buffer): realpath() of its
+ * longest existing prefix, then the components that do not exist yet, with
+ * `.` dropped and `..` taken lexically.  A component that EXISTS but does not
+ * resolve (a dangling symlink, a loop) fails: a symlink must never pass the
+ * check by pointing at something not yet created.  `~` expands from HOME only
+ * when expand_tilde (grants; a program's own "~/x" is a relative path). */
 static int canon_path(const char *in, int expand_tilde, char *out) {
     char abs[PATH_MAX];
     if (!abs_path(in, expand_tilde, abs)) return 0;
