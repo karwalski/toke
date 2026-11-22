@@ -6110,9 +6110,43 @@ static Type *std_union_of(Ctx *cx, char *rb, Type *lower) {
     return u;
 }
 
+/*
+ * std_substr_call (127.475) -- `alias.substr(s;a;b)` on a std.str alias.
+ * Its std.tki record is an untyped `"gen":"abi"` placeholder (i64 params,
+ * i64 return), so std_nonscalar_ret does not read a union from it, but it
+ * lowers to tk_str_substr_w, which is tk_str_slice_w: the same error-slot
+ * glue as str.slice (`mt str.substr(s;2;9){..}` takes $err).  The checker
+ * types it as str.slice's union here; the interface record is not changed
+ * (typing it there is a stdlib-signature change).
+ */
+static int std_substr_call(Ctx *cx, const Node *call) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count != 4
+        || !cx->env || !cx->env->names) return 0;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return 0;
+    char mb[32]; TOKSTR(mb, cx->src, callee->children[1]);
+    if (strcmp(mb, "substr") != 0) return 0;
+    if (alias_shadowed(cx, callee->children[0])) return 0;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char pbuf[256];
+    const char *mpath = import_module_path(cx, ab, pbuf, sizeof pbuf);
+    if (!mpath || strcmp(mpath, "std.str") != 0) return 0;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->kind != DECL_IMPORT_ALIAS) return 0;
+    return 1;
+}
+
 static Type *std_slot_union(Ctx *cx, const Node *call) {
     char rb[192];
-    if (!std_nonscalar_ret(cx, call, rb, sizeof rb)) return NULL;
+    if (!std_nonscalar_ret(cx, call, rb, sizeof rb)) {
+        if (std_substr_call(cx, call)) {                     /* 127.475 */
+            snprintf(rb, sizeof rb, "str!sliceerr");   /* std_union_of writes rb */
+            return std_union_of(cx, rb, NULL);
+        }
+        return NULL;
+    }
     return std_union_of(cx, rb, NULL);
 }
 
@@ -6159,6 +6193,30 @@ static Type *recv_slot_union(Ctx *cx, const Node *call) {
     if (strcmp(mb, "slice") != 0 && strcmp(mb, "substr") != 0
         && strcmp(mb, "substring") != 0) return NULL;
     Type *rt = recv_method_result_type(cx, call);
+    /* 127.475: and a str FIELD or array ELEMENT receiver (`p.name.slice(..)`
+     * on a `name:$str` field, `xs.get(0).slice(..)` on an `@($str)`), which
+     * recv_value_type does not establish but lowers to the same glue.  The
+     * receiver's own type is inferred (memoised; the 127.226 block already
+     * infers a field receiver) -- only for these three members, so no other
+     * receiver method gains checks.  An import-alias path (`lib.c.slice`) is
+     * a module member, not a value, and is left alone. */
+    if (!rt) {
+        const Node *recv = callee->children[0];
+        if (recv && (recv->kind == NODE_FIELD_EXPR || recv->kind == NODE_INDEX_EXPR)
+            && recv->child_count >= 2 && recv->children[0]) {
+            const Node *b = recv->children[0];
+            int is_mod = 0;
+            if (b->kind == NODE_IDENT && !alias_shadowed(cx, b)) {
+                char ab[128]; TOKSTR(ab, cx->src, b);
+                char pb[256];
+                if (import_module_path(cx, ab, pb, sizeof pb)) is_mod = 1;
+            }
+            if (!is_mod && b->kind != NODE_TYPE_IDENT) {
+                Type *vt = recv->rtype ? recv->rtype : infer(cx, recv);
+                if (vt && vt->kind == TY_STR) rt = vt;
+            }
+        }
+    }
     if (!rt || rt->kind != TY_STR) return NULL;
     char rb[32]; snprintf(rb, sizeof rb, "str!sliceerr");
     return std_union_of(cx, rb, rt);
