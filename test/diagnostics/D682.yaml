@@ -1,0 +1,14 @@
+id: D682
+series: D
+description: "138.57: a closure parameter annotated i64 matched with variant arms is E4031 'expected a sum type' at --check with NO fix, as 138.37 judges a function parameter (whether a sum-typed value or integer-literal arms were meant is not decidable); with an outer sum parameter of the same name it passed --check, built and died with SIGSEGV on v3.2.0"
+input: |
+  m=t;
+  t=$fe{$a:i64;$b:i64};
+  f=h(e:$fe):i64{let g=fn(e:i64):i64{<mt e {$a:v 1;$b:v 2}}; <g(3)};
+  f=main():i64{<h($fe{$a:1})};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "a sum type"

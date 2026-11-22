@@ -121,7 +121,29 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   variant arms are E4031 `expected` "a sum type" and `$ok`/`$err` arms are
   E4031 `expected` "T!E", both with no `fix`. A variant match over a scalar
   closure parameter with no outer parameter, which stopped at build with
-  E9005, is now refused at `--check`. Conformance: C1920 case 8.
+  E9005, is now refused at `--check`. Conformance: C1920 case 8; D682 and
+  D683 pin the absent `fix`. Measured (Z230): `--check` over the toke tree,
+  ooke `main`, the website and toke-test-programs (4,346 sources) refuses no
+  source that `465ebeb6` (the commit before the change) accepted for this
+  reason.
+- **An `mt` arm binding of a sum-variant payload has the payload's type**
+  (127.484, silent wrong value). With `t=$shape{$circle:f64;$sq:f64}`,
+  `mt s{$circle:r r*r;$sq:n n}` over `$circle:2.0` gave 4616189618054758400
+  (the double's bits) and `f=area(s:$shape):f64{<mt s{$circle:r r*r;..}}`
+  returned 4.61619e+18, on 3.2.0 and later: the match's result slot was
+  sized with the binding unbound, as an i64. The checker typed every arm
+  binding other than `$ok`'s as unknown, which also lost a record or array
+  payload's layout: `q.w` failed E4034 when two records declare `w`, an
+  `@f64` payload's elements were multiplied as integers (RT002),
+  `q.get(1).len()` on an `@str` payload read the array's length, a bool
+  payload printed 1, and a sum payload matched in the arm stopped at build
+  with E9005. The binding of an arm naming a variant of a declared sum now
+  has that variant's payload type, for the checker and the lowering alike.
+  Because it is typed, an arm body can now disagree: an f64-payload arm
+  beside an i64-payload arm is E4011, and the match's value assigned to a
+  `str` is E4031, both with no `fix`. Measured (Z230): `--check` over the
+  toke tree, ooke `main`, the website and toke-test-programs (4,346 sources)
+  refuses nothing new. Conformance: C2020, D680, D681.
 - **A user name can no longer collide with an IR temporary or block label**
   (138.38, loke T-65). `f=g(t0:i64):i64{<t0+1}` passed `--check` and clang
   refused the IR ("multiple definition of local value named 't0'"); a local

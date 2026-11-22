@@ -1,0 +1,17 @@
+id: D680
+series: D
+description: "127.484: an mt arm binding of a sum-variant payload has the variant's payload type, so an f64-payload arm beside an i64-payload arm is E4011 'f64' vs 'i64' with NO fix (which arm is wrong is not decidable); it passed --check before and the build mixed the two"
+input: |
+  m=t;
+  t=$shape{$circle:f64;$sq:i64};
+  f=main():i64{
+    let ls=$shape{$circle:2.0};
+    let b=mt ls{$circle:r r*r;$sq:n n};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4011"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64"
