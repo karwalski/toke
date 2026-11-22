@@ -1005,6 +1005,15 @@ found", and an unresolved base took the first registered struct declaring a
 field of that name. Both guesses produce a value of the right type from the
 wrong place.
 
+Story 138.40 (loke T-39): a field read on a record that another user module's
+function returns (`let r=srv.handle(x); <r.text`, or `srv.handle(x).text`),
+where the module that declares the record is not imported, is refused at
+`--check` too. A type is in module scope only through an import (semantics.md
+4.1, 6.1), so the layout is not established; the compile always refused it, and
+`--check` used to pass it. The message names the call and the record
+(`'srv.handle' returns '$res', a type of a module this file does not import`).
+Still no `fix`: which import supplies the record is not decidable from the file.
+
 ---
 
 ### E4040 -- Map key type mismatch (reserved)
