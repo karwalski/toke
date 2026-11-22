@@ -39,15 +39,23 @@
 #      (500), as a layout("../x") already did.
 #   D. Under a scoped fs.write grant, a log at a regular-file path needs its
 #      directory admitted; CAP002 names the directory.
+#   E. (round 4, AGENTS §6) A CAP002 fix must work on its own.  A path that
+#      ENDS outside the scope and passes through an outside directory now
+#      names that directory with no fix (it used to get its target's fix, and
+#      applying it stopped at the transit denial); a log's directory is
+#      checked before the log, with a fix only when the log resolves inside
+#      it.  Every fix offered in §E is applied and the call must then pass.
 #   The whole class (a bare --allow-read / --allow-write / --allow-run) is
-#   unchanged: every case below is first shown to reach outside under it.
+#   unchanged: every case in A-D is first shown to reach outside under it.
 #
 # NOT COVERED HERE (decision note §3.1, D5 = story 138.44): a symlink swapped
 # in by ANOTHER process between the check and the syscall.  The gates run in
 # the process; only OS-level enforcement closes that window.
 #
 # NEGATIVE CONTROL: run with TKC=<a toke built at 71677b6b>: A (1e-1i), B and
-# C fail and D's deny fails.  With TKC=<v3.2.0 toke> every scoped deny fails.
+# C fail and D's deny fails.  With TKC=<a toke built at bb2208ea> (round 3)
+# 7a-7e and 7h-7i fail: a fix is offered that does not work.  With
+# TKC=<v3.2.0 toke> every scoped deny fails.
 #
 # Port: 127.0.0.1:48215 (batch Z215's range), stopped by PID.
 #
@@ -278,6 +286,66 @@ if ls -A "${G}/logs" | /usr/bin/grep -q .; then fail "6a files created: $(ls -A 
 run "6b the same, --allow-write=<g>/logs" admit "${G}" "${P}" log "${G}/logs/app.log" "--allow-write=${G}/logs"
 if [ -e "${G}/logs/.app.log.lock" ]; then pass "6b its sidecar is inside the scope"; else fail "6b no sidecar: $(ls -A "${G}/logs")"; fi
 run "6c <g>/outdir/app.log, whole class" admit "${G}" "${P}" log "${G}/outdir/app.log" --allow-write
+run "6d the 6a run, TK_DIAG_JSON=1" deny "${G}" env TK_DIAG_JSON=1 "${P}" log "${G}/logs/app.log" "--allow-write=${G}/logs/app.log"
+if /usr/bin/grep -a '^{"diagnostic_id":"CAP002"' "${WORK}/e" | /usr/bin/grep -q -F "\"fix\":\"--allow-write=${G}/logs\"}"; then
+    pass "6d the record's fix is exactly --allow-write=<g>/logs"
+else fail "6d JSON record: $(/usr/bin/grep -a '^{' "${WORK}/e" | head -1 | sed "s#${WORK}#<work>#g")"; fi
+
+# ── E. a fix offered is one that works on its own (AGENTS §6) ───────────
+# Round-4 review: the target was checked before the way there, so a path
+# that ENDS outside the scope and also passes through an outside directory
+# got the target's fix -- and applying it stopped at the transit denial.
+# The way there is now checked first (its denial has no fix), and a log's
+# directory before the log.  fixworks: run with TK_DIAG_JSON=1; if the
+# CAP002 record carries a fix, apply it (a run-time flag: append the scope to
+# the grant) and the call must then be admitted.
+mkdir -p "${G}/bin2" "${G}/logs2"
+echo o >"${G}/other/f.txt"
+printf '#!/bin/sh\nexit 0\n' >"${G}/bin2/tool"; chmod +x "${G}/bin2/tool"
+echo l >"${G}/outdir/app2.log"; ln -s "${G}/outdir/app2.log" "${G}/logs2/app.log"
+# fixworks LABEL EXPECT(fix|nofix) DIR FLAG GRANT ARGS...
+fixworks() {
+    local label="$1" expect="$2" dir="$3" flag="$4" grant="$5"; shift 5
+    local rc=0
+    ( cd "${dir}" && TK_DIAG_JSON=1 "${P}" "$@" "${flag}=${grant}" ) >"${WORK}/o" 2>"${WORK}/e" || rc=$?
+    local rec; rec="$(/usr/bin/grep -a '^{"diagnostic_id":"CAP002"' "${WORK}/e" | head -1)"
+    if [ "${rc}" -ne 1 ] || [ -z "${rec}" ]; then
+        fail "${label}: wanted a CAP002 record, got rc=${rc}"; return
+    fi
+    local fix; fix="$(printf '%s' "${rec}" | sed -n 's/.*"fix":"\([^"]*\)".*/\1/p')"
+    if [ -z "${fix}" ]; then
+        if [ "${expect}" = nofix ]; then pass "${label}: no fix ($(printf '%s' "${rec}" | sed "s#${WORK}#<work>#g" | cut -c40-150))"
+        else fail "${label}: wanted a fix: $(printf '%s' "${rec}" | sed "s#${WORK}#<work>#g")"; fi
+        return
+    fi
+    if [ "${expect}" = nofix ]; then fail "${label}: offered '${fix//${WORK}/<work>}', wanted none"; return; fi
+    case "${fix}" in "${flag}="*) ;; *) fail "${label}: fix '${fix}' is not ${flag}"; return ;; esac
+    rc=0
+    ( cd "${dir}" && "${P}" "$@" "${flag}=${grant},${fix#"${flag}="}" ) >"${WORK}/o" 2>"${WORK}/e" || rc=$?
+    if [ "${rc}" -eq 0 ] && /usr/bin/grep -a -q -- "-done" "${WORK}/o"; then
+        pass "${label}: its fix ${fix//${WORK}/<work>} admits the call"
+    else fail "${label}: applying '${fix//${WORK}/<work>}' still fails: $(head -1 "${WORK}/e" | sed "s#${WORK}#<work>#g")"; fi
+}
+fixworks "7a read www/../outside/../other/f.txt (ends outside, passes outside)" nofix "${G}" --allow-read "${G}/www" read www/../outside/../other/f.txt
+/usr/bin/grep -a -q "^CAP002: capability 'fs.read' is granted, but not for '${G}/outside'$" "${WORK}/e" \
+    && pass "7a names the directory passed through" || fail "7a: $(head -1 "${WORK}/e" | sed "s#${WORK}#<work>#g")"
+fixworks "7b read www/../nosuch/../other/f.txt (through a missing directory)" nofix "${G}" --allow-read "${G}/www" read www/../nosuch/../other/f.txt
+fixworks "7c glob www/../outside/../other/* (its literal prefix)" nofix "${G}" --allow-read "${G}/www" glob 'www/../outside/../other/*'
+fixworks "7d write www/../outside/../other/n.txt" nofix "${G}" --allow-write "${G}/www" write www/../outside/../other/n.txt
+fixworks "7e spawn bin/../outside/../bin2/tool" nofix "${G}" --allow-run "${G}/bin/tool" spawn bin/../outside/../bin2/tool
+/usr/bin/grep -a -q "^CAP002: capability 'process.spawn' is granted, but not for '${G}/outside'$" "${WORK}/e" \
+    && pass "7e names the directory passed through" || fail "7e: $(head -1 "${WORK}/e" | sed "s#${WORK}#<work>#g")"
+# where the way there is admitted, the target's fix still comes, and works
+fixworks "7f read other/f.txt (outside, no transit)" fix "${G}" --allow-read "${G}/www" read other/f.txt
+fixworks "7g spawn bin2/tool" fix "${G}" --allow-run "${G}/bin/tool" spawn bin2/tool
+fixworks "7h log <g>/logs/app.log under --allow-write=<g>/www (file and directory outside)" fix "${G}" --allow-write "${G}/www" log "${G}/logs/app.log"
+# a log that is a symlink leading out of its directory: the directory's
+# grant would not admit the file, so the directory's denial has no fix ...
+fixworks "7i log <g>/logs2/app.log -> <g>/outdir/app2.log, --allow-write=<g>/www" nofix "${G}" --allow-write "${G}/www" log "${G}/logs2/app.log"
+/usr/bin/grep -a -q "^  the file does not resolve inside this directory" "${WORK}/e" \
+    && pass "7i says why no fix is offered" || fail "7i: $(sed -n 2p "${WORK}/e" | sed "s#${WORK}#<work>#g")"
+# ... and once the directory is granted, the file's fix completes it
+fixworks "7j the same, --allow-write=<g>/logs2" fix "${G}" --allow-write "${G}/logs2" log "${G}/logs2/app.log"
 
 echo "------------------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
