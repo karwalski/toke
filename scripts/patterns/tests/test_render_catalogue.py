@@ -273,3 +273,135 @@ def test_catalogue_dump_roundtrips_committed_formatting(tmp_path):
     out = tmp_path / "c.json"
     rc.dump(doc, str(out))
     assert out.read_bytes() == open(CAT, "rb").read()
+
+
+# ─── identical code (protocol §6 step 3, owner decision 4.11 (d), story 127.440) ───────────────────
+SHA = "0558545d5b78"
+
+
+def _proof(forms=("a", "b"), sha=SHA):
+    return {"forms": list(forms), "tkc_sha": sha, "text_sha256": "0" * 64, "conform": "C267", "date": "2026-11-23"}
+
+
+def _measured(form, proxy, min_bytes, wall, rtv, tkv, rss=1000):
+    return _cand(form, proxy, min_bytes, wall_ms_median=wall, wall_ci95=[wall - 1, wall + 1], rss_kb_median=rss,
+                 allocs={"calls": 1, "bytes": 2}, bigO_ratio=4.0, pat_n=1000, runtime_verdict=rtv, token_verdict=tkv)
+
+
+def _acc_like(proof=True, b_proxy=13, sha=SHA):
+    """acc-array's shape: a is the incumbent; b has the same proxy8k (or b_proxy), 5 fewer min_bytes and,
+    in this run, a faster wall clock — noise, since the two lower to identical code."""
+    e = _real_entry([_measured("a", 13, 74, 100.0, "best", "best"), _measured("b", b_proxy, 69, 100.0, "best", "best"),
+                     _measured("c", 27, 95, 100.0, "tied", "more")], canonical="a")
+    e["measured_at"]["tkc_sha"] = sha
+    if proof:
+        e["identical_code"] = [_proof()]
+    return e
+
+
+def _acc_run(tmp_path, sha=SHA):
+    # b 7% faster than a with no CI overlap: without the amendment a would be `slower` and b canonical
+    r = _results({"a": (100.0, [99, 101], 1000, 4.0), "b": (93.0, [92, 94], 1000, 4.0), "c": (99.0, [98, 100], 1000, 4.0)},
+                 pid="str-y")
+    r["meta"]["tkc_git_sha"] = sha
+    res = tmp_path / "r.json"
+    res.write_text(json.dumps(r))
+    return str(res)
+
+
+def test_identical_code_token_tied_pair_keeps_the_incumbent(tmp_path):
+    e = _acc_like()
+    doc = {"protocol": "0.4", "entries": [e]}
+    _, warnings = rc.ingest(doc, _acc_run(tmp_path))
+    a, b, c = e["candidates"]
+    assert (a["runtime_verdict"], b["runtime_verdict"]) == ("best", "best")  # runtime-tied by construction
+    assert c["runtime_verdict"] == "slower" and c["token_verdict"] == "more"  # judged against b, the faster run
+    assert e["verdict"]["canonical"] == "a" and e["verdict"]["hot_path"] is None  # b's 5 bytes do not displace a
+    assert not any("owner verdict" in w for w in warnings)
+    assert vc.validate_doc(doc, "") == []
+
+
+def test_without_a_proof_the_ordering_still_applies(tmp_path):
+    e = _acc_like(proof=False)
+    doc = {"protocol": "0.4", "entries": [e]}
+    rc.ingest(doc, _acc_run(tmp_path))
+    assert e["candidates"][0]["runtime_verdict"] == "slower"
+    assert e["verdict"]["canonical"] == "b"   # the unamended §6 ordering: what 127.437 held the ingest for
+
+
+def test_identical_code_validator_accepts_either_tied_form_as_recorded_incumbent():
+    e = _acc_like()
+    for f in ("a", "b"):
+        e["verdict"]["canonical"] = f
+        assert vc.derive_verdicts(e)["canonical"] == f
+        assert vc.validate_doc({"protocol": "0.4", "entries": [e]}, "") == []
+    e["verdict"]["canonical"] = "c"   # not tied with a/b: the tie cannot keep it
+    assert any("canonical should be" in x or "owner verdict" in x for x in vc.validate_doc({"protocol": "0.4", "entries": [e]}, ""))
+
+
+def test_identical_code_token_untied_pair_needs_an_owner_verdict(tmp_path):
+    # a 13, b 10 proxy8k: outside the §4 tie rule. 4.11 (d) is not confirmed for this case (127.501),
+    # so the tool neither lets b win on tokens nor keeps a — it refuses and leaves the entry as it was
+    e = _acc_like(b_proxy=10)
+    e["candidates"][0]["token_verdict"] = "more"
+    doc = {"protocol": "0.4", "entries": [e]}
+    before = copy.deepcopy(e)
+    changes, warnings = rc.ingest(doc, _acc_run(tmp_path))
+    assert e == before and changes == []
+    assert any("not token-tied" in w and "NOT ingested" in w for w in warnings)
+    d = vc.derive_verdicts(e)
+    assert d["undecided"] and "127.501" in d["undecided"]
+    assert any("not token-tied" in x for x in vc.validate_doc(doc, ""))
+
+
+def test_identical_code_on_a_first_measurement_needs_an_owner_verdict(tmp_path):
+    # no live form measured before the run: there is no incumbent, and 4.11 (d) does not say what then
+    e = _real_entry([_cand("a", 13, 74), _cand("b", 13, 69), _cand("c", 27, 95)], canonical="a")
+    e["measured_at"]["tkc_sha"] = SHA
+    e["identical_code"] = [_proof()]
+    doc = {"protocol": "0.4", "entries": [e]}
+    before = copy.deepcopy(e)
+    changes, warnings = rc.ingest(doc, _acc_run(tmp_path))
+    assert e == before and changes == []
+    assert any("no incumbent" in w and "NOT ingested" in w for w in warnings)
+
+
+def test_first_measurement_ingests_when_the_tie_does_not_decide(tmp_path):
+    # identical-code a/b are both `slower` than c, which is also token-best: canonical c, no tie involved
+    e = _real_entry([_cand("a", 13, 74), _cand("b", 13, 69), _cand("c", 12, 95)], canonical="a")
+    e["measured_at"]["tkc_sha"] = SHA
+    e["identical_code"] = [_proof()]
+    doc = {"protocol": "0.4", "entries": [e]}
+    r = _results({"a": (200.0, [199, 201], 1000, 4.0), "b": (190.0, [189, 191], 1000, 4.0), "c": (100.0, [99, 101], 1000, 4.0)},
+                 pid="str-y")
+    r["meta"]["tkc_git_sha"] = SHA
+    res = tmp_path / "r.json"
+    res.write_text(json.dumps(r))
+    _, warnings = rc.ingest(doc, str(res))
+    assert e["verdict"]["canonical"] == "c" and e["verdict"]["hot_path"] is None
+    assert [x["runtime_verdict"] for x in e["candidates"]] == ["slower", "slower", "best"]
+    assert not any("owner verdict" in w for w in warnings)
+
+
+def test_stale_identical_code_proof_is_refused(tmp_path):
+    e = _acc_like()
+    doc = {"protocol": "0.4", "entries": [e]}
+    _, warnings = rc.ingest(doc, _acc_run(tmp_path, sha="aaaaaaaaaaaa"))   # a different tkc than the proof's
+    assert any("stale" in w for w in warnings)
+    errs = vc.validate_doc(doc, "")
+    assert any("stale" in x for x in errs)
+
+
+def test_identical_code_schema():
+    e = _acc_like()
+    assert vc.validate_doc({"protocol": "0.4", "entries": [e]}, "") == []
+    for bad in ({"forms": ["a"]}, {"forms": ["a", "z"]}, {"conform": "267"}, {"text_sha256": "x"}, {"date": "23/11"}):
+        f = copy.deepcopy(e)
+        f["identical_code"][0].update(bad)
+        assert vc.validate_doc({"protocol": "0.4", "entries": [f]}, ""), bad
+    f = copy.deepcopy(e)
+    f["identical_code"].append(_proof(("b", "c")))
+    assert any("two proofs" in x for x in vc.validate_doc({"protocol": "0.4", "entries": [f]}, ""))
+    f = copy.deepcopy(e)
+    f["identical_code"][0]["extra"] = 1
+    assert any("exactly keys" in x for x in vc.validate_doc({"protocol": "0.4", "entries": [f]}, ""))

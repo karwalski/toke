@@ -63,6 +63,7 @@ Every entry has exactly these keys (validated by `scripts/patterns/validate_cata
 | `bug_caveats` | array | `{issue: "127.x", effect, preferred_when_fixed: <form id or null>}` — may be empty |
 | `lint` | object or null | `{rule, severity ∈ error\|warning\|hint, fixable: bool}` — the rule 131.9 emits for the non-canonical forms |
 | `measured_at` | object | `{tkc_sha, tkc_version, proxy_sha, corpus_sha, bench_result, date}`, plus optional `load_warning: true` when the bench run that produced the numbers was recorded on a loaded machine (§8) |
+| `identical_code` | array (optional) | proofs for §6 step 3: `{forms: [≥ 2 form ids], tkc_sha, text_sha256, conform: "C<n>", date}` — the forms' `tkc -O2` text sections (`otool -tV`) are identical under the tkc in `measured_at` (a proof for another tkc is stale and rejected), and conformance test `conform` pins the lowering. Written by `scripts/patterns/prove_identical_code.py`, never by hand (127.440) |
 | `card_rule` | string | ≤ 40 chars, imperative, the one-line rule the syntax card carries for this entry (e.g. "expr-if, never a mut flag"); added 2026-09-18 so 40–60 entries fit the ≤ 20-line card block at 2–3 rules per line |
 
 Each **candidate**:
@@ -176,9 +177,12 @@ For each pattern, over its non-blocked candidates:
    `tk_array_append_inplace_w` call since 127.229 (pinned by conformance test C267), and `tkc -O2` gives
    the two fixtures identical machine code (checked 2026-11-15 on toke main `685aa852`). Both count 13
    `proxy8k` tokens. b's 5 fewer `min_bytes` would win the ordering above, but the tie keeps a, so
-   `.append` stays canonical. The tooling does not implement this amendment yet: `derive_verdicts` in
-   `scripts/patterns/validate_catalogue.py` still applies the ordering above (story 127.440), so acc-array
-   must not be re-ingested before it does.
+   `.append` stays canonical. The proof is recorded in the entry's `identical_code` (§3). The tooling
+   (`derive_verdicts` in `scripts/patterns/validate_catalogue.py`, story 127.440) implements the tie for
+   identical-code forms that are also token-tied under §4, and keeps the incumbent. Two cases are not yet
+   owner-confirmed and the tooling refuses them for an owner verdict instead of resolving them (story
+   127.501): identical-code forms that are not token-tied, and a tie with no incumbent among the tied forms
+   (a first measurement included).
 4. If **no** form qualifies on both axes: `canonical` = the token-best form *provided* it is not `worse-bigO`
    **and** its median wall is < 10 × the runtime-best form's (the **order-of-magnitude rule**, added
    2026-09-18 after 131.7: a same-big-O form that is ≥ 10 × slower — e.g. one syscall per line instead of one
