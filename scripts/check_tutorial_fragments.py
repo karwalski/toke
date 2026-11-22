@@ -36,22 +36,34 @@ THE RULE. For every ```toke / ```tk fence in docs/tutorials/*.md:
      `tkc --check`. The comment does not render; it is the declaration the
      reader is told about in the prose ("add a `regex:bool` parameter").
 
-  3. FULL PROGRAM. Otherwise a fence that is a complete std-only program
+  3. OOKE PAGE. Otherwise a fence that is an ooke page -- it declares a
+     `m=pages.` module, or imports an `ooke.` module -- must pass
+     `tkc --check -I <ooke>/src` against an ooke checkout (story 132.156), so a
+     page that calls an ooke API which no longer exists, or reads a `T!E` as
+     its value, fails. The checkout is $OOKE_DIR, else a sibling `toke-ooke/`
+     or `ooke/` next to this repository; it counts only if it has
+     `src/ooke.template.tki`. With none present the fence is NOT checked: the
+     page is reported as a WARN naming the missing checkout, which is not a
+     pass.
+
+  4. FULL PROGRAM. Otherwise a fence that is a complete std-only program
      (`m=` and `f=`, only `std.` imports) must pass `tkc --check` as written.
 
   Anything else FAILS: an uncompiled fragment is how the drift happened.
 
-UNCHECKED lists the only exception: a tutorial whose code imports modules that
-are not in this repository (ooke page code), keyed to the story that owns
-making it checkable. It warns, naming the story, and is not a pass.
+UNCHECKED lists tutorials exempted outright, keyed to the story that owns
+making them checkable. It warns, naming the story, and is not a pass. It is
+empty since 132.156 made the ooke page code checkable.
 
 `--self-test` is the negative control: it proves the gate rejects a drifted
 excerpt, a mid-line "excerpt", chunks taken from two different files, an
-uncompiled bare fragment, and a snippet whose context makes it a union-as-value
-read (E4031), and accepts each of the good forms. `make check-docs` runs it
-first.
+uncompiled bare fragment, a snippet whose context makes it a union-as-value
+read (E4031), and an ooke page that imports an ooke module the checkout does
+not have; that an ooke page with no checkout is a warning, not a pass; and
+accepts each of the good forms. `make check-docs` runs it first.
 
-Reads nothing outside this repository. Needs a built tkc (TKC, default ./tkc).
+Reads nothing outside this repository except the ooke checkout of rule 3
+(its `src/*.tki`, read by tkc). Needs a built tkc (TKC, default ./tkc).
 
 Usage: python3 scripts/check_tutorial_fragments.py [--root DIR] [--verbose]
        python3 scripts/check_tutorial_fragments.py --self-test
@@ -73,10 +85,20 @@ CONTEXT = re.compile(r"<!--[ \t]*fragment-context[ \t]*\n(.*?)-->", re.DOTALL)
 SLOT = "{{fragment}}"
 
 # tutorial -> the story that owns making its fences checkable
-UNCHECKED = {
-    "static-site.md": "132.156 -- ooke page code (i=...:ooke.*); ooke's modules "
-                      "are not in this repository",
-}
+UNCHECKED = {}
+
+OOKE_PAGE = re.compile(r"(^|\n)(m=pages\.|i=\w+:ooke\.)")
+
+
+def find_ooke(root):
+    """An ooke checkout to check ooke page fences against, or None (rule 3)."""
+    cands = [os.environ.get("OOKE_DIR", "")]
+    parent = os.path.dirname(os.path.abspath(root))
+    cands += [os.path.join(parent, "toke-ooke"), os.path.join(parent, "ooke")]
+    for c in cands:
+        if c and os.path.isfile(os.path.join(c, "src", "ooke.template.tki")):
+            return os.path.abspath(c)
+    return None
 
 
 def norm(text):
@@ -146,20 +168,24 @@ def first_error(out):
     return (out.strip().splitlines() or ["compile failed"])[0]
 
 
-def check_src(src):
+def check_src(src, incs=()):
     d = tempfile.mkdtemp(prefix="tutfrag-")
     try:
         p = os.path.join(d, "frag.tk")
         with open(p, "w") as f:
             f.write(src)
-        r = subprocess.run([TKC, p, "--check"], capture_output=True, text=True)
+        cmd = [TKC, p, "--check"]
+        for inc in incs:
+            cmd += ["-I", inc]
+        r = subprocess.run(cmd, capture_output=True, text=True)
         return None if r.returncode == 0 else first_error(r.stdout + "\n" + r.stderr)
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
 
-def check_page(rel, text, examples):
-    """Yield (line, kind, detail) for every fence; kind 'fail' is a failure."""
+def check_page(rel, text, examples, ooke=None):
+    """Yield (line, kind, detail) for every fence; kind 'fail' is a failure,
+    kind 'unchecked' an ooke page with no ooke checkout to check it against."""
     for m in FENCE.finditer(text):
         line = text[:m.start()].count("\n") + 2
         body = norm(m.group(1))
@@ -176,6 +202,16 @@ def check_page(rel, text, examples):
             yield (line, "fail", "snippet does not compile in its context: " + err) \
                 if err else (line, "snippet", "compiles in context")
             continue
+        if OOKE_PAGE.search(body):
+            if ooke is None:
+                yield line, "unchecked", ("ooke page, no ooke checkout (set "
+                                          "OOKE_DIR, or check out toke-ooke "
+                                          "beside this repository)")
+                continue
+            err = check_src(body + "\n", [os.path.join(ooke, "src")])
+            yield (line, "fail", "ooke page does not check against %s: %s"
+                   % (ooke, err)) if err else (line, "ooke-page", "checks")
+            continue
         if is_full_program(body):
             err = check_src(body + "\n")
             yield (line, "fail", "program does not compile: " + err) \
@@ -189,6 +225,7 @@ def check_page(rel, text, examples):
 
 def run(root, verbose=False):
     examples = load_examples(root)
+    ooke = find_ooke(root)
     fails = warns = n = 0
     for page in sorted(glob.glob(os.path.join(root, "docs", "tutorials", "*.md"))):
         rel = os.path.relpath(page, root)
@@ -202,13 +239,21 @@ def run(root, verbose=False):
                 print("WARN  %s: %d fence(s) not checked -- story %s"
                       % (rel, k, UNCHECKED[base]))
             continue
-        for line, kind, detail in check_page(rel, text, examples):
+        skipped = 0
+        for line, kind, detail in check_page(rel, text, examples, ooke):
             n += 1
             if kind == "fail":
                 fails += 1
                 print("FAIL  %s:%d: %s" % (rel, line, detail))
+            elif kind == "unchecked":
+                skipped += 1
             elif verbose:
                 print("ok    %s:%d: %s (%s)" % (rel, line, kind, detail))
+        if skipped:
+            warns += 1
+            print("WARN  %s: %d ooke page fence(s) not checked -- no ooke "
+                  "checkout (set OOKE_DIR, or check out toke-ooke beside this "
+                  "repository)" % (rel, skipped))
     print("tutorial fragments: %d fence(s), %d failure(s), %d page(s) unchecked"
           % (n, fails, warns))
     return 1 if fails else 0
@@ -261,6 +306,11 @@ CASES = [
      CTX + "\n```toke\nlet n=str.toint(s)+1;\n```\n", True),
     ("context without a slot",
      "<!-- fragment-context\nm=s;\n-->\n```toke\nlet x=1;\n```\n", True),
+    ("ooke page, no checkout: a warning, not a pass",
+     "```toke\nm=pages.about;\n```\n", "unchecked"),
+    ("ooke page against a checkout", "```toke\nm=pages.about;\n```\n", False),
+    ("ooke page importing a module the checkout lacks",
+     "```toke\nm=pages.about;\ni=s:ooke.nosuchmodule;\n```\n", True),
     ("context not directly above the fence",
      CTX + "\nsome prose\n\n```toke\nlet n=mt str.toint(s) {$ok:v v;$err:e <1};\n```\n",
      True),
@@ -271,12 +321,21 @@ def self_test():
     bad = 0
     examples = [("examples/demo/main.tk", "\n" + norm(EX) + "\n"),
                 ("examples/other/main.tk", "\n" + norm(EX2) + "\n")]
+    # an "ooke checkout" with nothing in it: enough for tkc -I, and a module
+    # it does not have must be rejected
+    fake = tempfile.mkdtemp(prefix="tutfrag-ooke-")
+    os.makedirs(os.path.join(fake, "src"))
     for name, md, expect_fail in CASES:
-        got = [k for _, k, _ in check_page("t.md", md, examples)]
-        failed = "fail" in got
-        ok = failed == expect_fail and got
+        if expect_fail == "unchecked":
+            got = [k for _, k, _ in check_page("t.md", md, examples, None)]
+            ok = got == ["unchecked"]
+        else:
+            got = [k for _, k, _ in check_page("t.md", md, examples, fake)]
+            failed = "fail" in got
+            ok = failed == expect_fail and got
         print("  %s  %s -> %s" % ("ok  " if ok else "BAD ", name, ",".join(got)))
         bad += 0 if ok else 1
+    shutil.rmtree(fake, ignore_errors=True)
     print("selftest: %d/%d cases as expected" % (len(CASES) - bad, len(CASES)))
     return 1 if bad else 0
 

@@ -395,6 +395,18 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   `tpl.render`'s positional escaping is needed instead, and its example is a complete
   program that `make check-docs` builds. The `str.concat` examples beside it used `,`
   as the argument separator and now use `;`.
+- **The static-site tutorial is ooke 3.x, and its page code is checked against ooke**
+  (132.156). `docs/tutorials/static-site.md` taught an ooke that does not exist: page
+  handlers calling `store.slug`/`store.all`/`tpl.renderfile` (not ooke's API, and
+  `req.param("slug")` read a `T!E` as its value), `{% for %}`/`{% if %}` template
+  tags, chained filters and `site.title`. Its pages are now the route markers ooke 3.x
+  reads (`m=pages.blog.slug;`), its templates use `layout`/`block`/`yield`, its posts
+  live in `content/blog/`, and every step was built with `ooke build` from ooke main.
+  `scripts/check_tutorial_fragments.py` gains a rule for ooke page fences (a `m=pages.`
+  module or an `ooke.` import): `tkc --check -I <ooke>/src` against `$OOKE_DIR` or a
+  sibling `toke-ooke/` checkout; with no checkout the page is a WARN, not a pass. The
+  page's `UNCHECKED` entry is deleted. On the old page the rule reports both fences
+  (E4036 `req.param`, E3011).
 - **toke-model's Gate 2 statements are enforced copies of the canonical `models` fact**
   (127.495, owner decision D4). `check_canonical.py` now requires the fact word for word
   in toke-model's `README.md`, `huggingface/README.md` and `ollama/README.md`, which were
