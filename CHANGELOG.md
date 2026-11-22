@@ -87,6 +87,39 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   any statement as the init and the step. Written in line, so the published
   production count is unchanged. `toke.gbnf` already matched the parser, and
   both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
+- **Variant arms on a known scalar subject are E4031 at `--check`** (138.37,
+  loke T-66). `f=h(e:i64):$r{<mt e {$notfound:v ..;$permission:v ..;$io:v ..}}`
+  passed `--check` and the build stopped with E9005 (2 or 3+ arms) or invalid
+  IR (a `u8` subject); a one-arm form over an i64 built. A match with no
+  `$ok`/`$err` arm, over a parameter or immutable `let` of a scalar type, a
+  numeric literal or a call returning a scalar, whose arm names a label that
+  is not a primitive, `some`/`none` or a declared type, is now E4031 at that
+  label (`expected` "a sum type", `got` the scalar), with no `fix`. `--check`
+  over the 683 toke-tree, ooke `main` and 3,573 toke-test-programs sources
+  draws it nowhere; ooke `make check-toke-candidate` and the website's
+  `make check-toke` pass. Conformance: C1920, D635.
+- **A user name can no longer collide with an IR temporary or block label**
+  (138.38, loke T-65). `f=g(t0:i64):i64{<t0+1}` passed `--check` and clang
+  refused the IR ("multiple definition of local value named 't0'"); a local
+  or parameter named like a block label (`svarm3`) gave "'%svarm3' is not a
+  basic block". A user name that ends in a digit (or, under `--legacy`,
+  starts with `_`) is now always given a dotted LLVM name, for parameters,
+  closure parameters, closure captures and locals alike; other names keep
+  their spelling in the IR. Conformance: C1921.
+- **E4070's `let` fix is worded from the declaration** (127.468). It was the
+  fixed text "change 'let g=' to 'let g=mut.'", which does not occur in
+  `let g:i64=5`; it is now "change 'let g:i64=' to 'let g:i64=mut.' to make it
+  mutable", taken from the source, and absent when that spelling occurs more
+  than once in the file or a module-level name is declared more than once.
+  An assignment in the body of a loop whose bare init assigns the same
+  binding now has no fix, as the init and step already had none.
+  Conformance: D636-D638.
+- **`+` over two different non-numeric operands names each side** (127.474):
+  `str.slice(t;0;1)+"z"` said "both sides are 'str!$sliceerr'"; it now says
+  "the left side is 'str!$sliceerr' and the right side is 'str'". Conformance:
+  D639.
+- The checker's interpolation anchor (`Ctx.interp_host`) is initialised in
+  `type_check` (127.476); it was read uninitialised.
 
 ---
 
