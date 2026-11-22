@@ -1,0 +1,14 @@
+id: D645
+series: D
+description: "127.469: a module-level closure that assigns a module-level immutable `let` is E4070 with the local `let` fix (127.465's rule, which the closure's body had not reached: it has no enclosing function, so the assignment was silent once a global closure became callable)"
+input: |
+  m=test;
+  let g=5;
+  let k=fn():i64{g=7;<g};
+  f=main():i64{<k()};
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix: "change 'let g=' to 'let g=mut.' to make it mutable"
+expected_diag_field:
+  field: got
+  value: "immutable binding"

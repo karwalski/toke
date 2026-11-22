@@ -1986,11 +1986,38 @@ static const Node *fnval_bind_rec(const Node *a, const char *src, const Node *us
 }
 static const Node *in_tree_use(const Ctx *cx, const Node *use);
 static const Node *fnval_binding(Ctx *cx, const Node *ident) {
-    if (!cx->fn_node || !ident || ident->kind != NODE_IDENT) return NULL;
+    if (!ident || ident->kind != NODE_IDENT) return NULL;
     char nb[128]; TOKSTR(nb, cx->src, ident);
     int found = 0;
     const Node *use = in_tree_use(cx, ident);
-    return fnval_bind_rec(cx->fn_node, cx->src, use, nb, (int)strlen(nb), &found);
+    /* 127.469: outside any function (a module-level initialiser, or the
+     * body of a module-level closure `let k=fn(p:(i64):i64):i64{<p(4)};`)
+     * the lexical search runs from the module root, so the closure's own
+     * parameters and locals shadow a module-level `let` of the same name,
+     * exactly as they do inside a function.  A flat scan of the module's
+     * lets alone judged `p(4)` / a shadowing `ad(..)` against the global
+     * (false E4026/E4031) or left it unrecorded (lowered as its argument). */
+    const Node *lroot = cx->fn_node ? cx->fn_node : cx->root;
+    const Node *b = !lroot ? NULL : fnval_bind_rec(lroot, cx->src, use, nb, (int)strlen(nb), &found);
+    if (b || !cx->root) return b;
+    /* 127.469: no parameter or local is in force, so the name may be a
+     * module-level `let h=fn..;` (declared anywhere: a function body runs
+     * after every global is set).  Unrecorded, a call `h(1)` was never
+     * judged against h's signature and codegen lowered it as its argument
+     * (h(1) returned 1; a zero-argument h failed the build with E9003). */
+    for (int i = 0; i < cx->root->child_count; i++) {
+        const Node *d = cx->root->children[i];
+        const Node *list = (d && d->kind == NODE_MODULE) ? d : NULL;
+        int n = list ? list->child_count : 1;
+        for (int j = 0; j < n; j++) {
+            const Node *st = list ? list->children[j] : d;
+            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+                && st->child_count > 0
+                && ident_same(st->children[0], cx->src, nb, (int)strlen(nb)))
+                return st;
+        }
+    }
+    return NULL;
 }
 /* The signature a function-value binding holds, or NULL. */
 static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
@@ -2011,9 +2038,10 @@ static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
     if (init->kind == NODE_CLOSURE) return params_sig(cx, init, 1);
     if (init->kind == NODE_FUNC_REF) return func_ref_sig(cx, init);
     if (init->kind == NODE_IDENT) {
-        int found = 0;
-        char nb[128]; TOKSTR(nb, cx->src, init);
-        const Node *ib = fnval_bind_rec(cx->fn_node, cx->src, init, nb, (int)strlen(nb), &found);
+        /* 127.469: fnval_binding, not the enclosing function alone, so a
+         * copy `let q=ad;` of a module-level function value inherits ad's
+         * signature (unrecorded, `q(2)` was lowered as its argument). */
+        const Node *ib = fnval_binding(cx, init);
         /* 127.276: `let g=inner` -- the bare name of a module function, as
          * `&inner` is.  Its signature (error type included) is what a call
          * `g(..)` is judged against and what codegen keys the error channel
@@ -7234,8 +7262,25 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * "expected str, got func" on stdlib/path.tk (a file removed later,
          * 135.14). */
         const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
+        /* 127.469: the lexical binder in force, searched from the enclosing
+         * function or, outside one, from the module root.  A closure's own
+         * parameter shadows the module declaration (`let ad=fn..;` then
+         * `fn(ad:i64):i64{<ad*2}` typed `ad` as the function: a false
+         * E4031), and so does a local or loop variable of a module-level
+         * closure, which local_in_force (function bodies only) never sees. */
+        if (d&&d->def_node&&!shadow) {
+            const Node *lroot=cx->fn_node?cx->fn_node:cx->root;
+            const Node *lb=lroot?tk_binder_at(lroot,cx->src,in_tree_use(cx,node),nb,nlen,NULL):NULL;
+            if (lb&&lb->kind==NODE_PARAM)
+                return lb->child_count>1&&lb->children[1]
+                     ? resolve_type(cx,lb->children[1]) : mk_type(A,TY_UNKNOWN);
+            if (lb&&!cx->fn_node&&closure_between(cx->root,lb)
+                &&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_MUT_BIND_STMT
+                   ||lb->kind==NODE_LOOP_INIT))
+                shadow=lb;
+        }
         /* If not found at module scope, check current function's local binds. */
-        if (((!d||!d->def_node)||shadow)&&cx->fn_node) {
+        if (((!d||!d->def_node)&&cx->fn_node)||shadow) {
             /* Search the function body for local bindings with type annotations. */
             const Node *bn=shadow?shadow:find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
@@ -8646,7 +8691,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * (immutable let) or NODE_PARAM, emit E4070.
          * NODE_MUT_BIND_STMT and an `lp(let ..)` NODE_LOOP_INIT are
          * mutable; a bare `lp(i=..)` init binds nothing (127.289). */
-        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
+        /* 127.469: a module-level closure (`let k=fn(){g=7;..};`) has no
+         * enclosing function; its binders are searched from the module
+         * root, where an earlier module-level `let` is found lexically. */
+        const Node *asc=cx->fn_node?cx->fn_node:cx->root;
+        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&asc) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
             int immutable=0;
@@ -8666,7 +8715,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * not mutable.  Until 127.281 only the function's own
              * parameters were checked, so `fn(a:i64):i64{a=a+1;<a}` and
              * `mt r{$ok:v if(c){v=v+1;v}el{v};..}` compiled. */
-            const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
+            const Node *lb=tk_binder_at(asc,cx->src,node->children[0],nb,nlen,NULL);
             if (lb&&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_PARAM
                      ||lb->kind==NODE_MATCH_ARM)) immutable=1;
             /* 127.310: no local binder, and the module-level name is a
@@ -8730,7 +8779,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         }
                         int has_fix=!alias&&mdecls==1&&md->def_node
                             &&let_mut_fix(cx->src,md->def_node,fix,sizeof fix);
-                        if (has_fix&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                        if (has_fix&&!lp_init&&!bare_init_step(asc,cx->src,node))
                             diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                                 "expected","mutable binding","got","immutable binding",
                                 "fix",fix,(const char*)NULL);
@@ -8775,7 +8824,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     /* 127.289: nor on the step of a loop whose bare init
                      * assigns the same binding (bare_init_step).  127.468:
                      * worded from the declaration (let_mut_fix). */
-                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node)
+                    if (is_let&&!lp_init&&!bare_init_step(asc,cx->src,node)
                         &&let_mut_fix(cx->src,lb,fix,sizeof fix))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",

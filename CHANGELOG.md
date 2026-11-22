@@ -251,6 +251,37 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   open as 138.58: in a file without a foreign `$type`, an import that only
   codegen needs can still be reported.
 
+- **Module-level `let` globals read back their value** (127.469; silent
+  wrong results before). A global is held in an `i64` cell, and every read
+  was an `i64` with no conversion to the value's type: `let y=1.5;` then
+  `"\(y)"` printed 4609434218613702656 (1.5's bits), `let z=y+0.0` added the
+  bits as an integer, and a global `byte`/`i32`/`bool` read was untyped.
+  A read now converts to the global's type (its annotation, else the
+  checker's type of the initialiser), as the initialiser was converted when
+  stored. A global function value (`let h=fn(x:i64):i64{<x+1};`) was never
+  recorded as one by the checker, so `h(1)` lowered as its argument (1) and
+  a zero-argument one failed the build with E9003; it is now called through
+  like a local function value, from a function or from another global's
+  initialiser, and its calls are judged against its signature (wrong arity
+  E4026, a mistyped argument E4031, no fix). A copy of one (`let q=ad;`,
+  at module level or in a function) carries its signature too; `q(2)` also
+  lowered as its argument. Inside a module-level closure the closure's own
+  parameters and locals now shadow a global, as they do in a function: a
+  call through a function-typed parameter (`let kp=fn(p:(i64):i64):i64
+  {<p(4)};`) lowered as its argument, and a parameter, local or loop
+  variable named like a global was judged against the global (false E4026
+  and E4031). A closure parameter that shadows a module name is typed as
+  the parameter in a function too (`fn(ad:i64):i64{<ad*2}` beside a global
+  or function `ad` was a false E4031). An assignment inside a
+  module-level closure (`let k=fn(){g=7;..}`) now gets 127.465's E4070 and
+  its fix. Same-named globals in two modules each read their own value.
+  `--check` on the 313 workspace sources that declare a module-level `let`
+  (toke tree, ooke main, website, toke-test-programs), b518b41c against this
+  compiler: same diagnostics in all. grammar.ebnf `SourceFile` now lists the
+  module-level `let` globals between the constants and the functions, where
+  the parser and `toke.gbnf` already had them (no production added).
+  Conformance: C1940, D645, D646.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

@@ -25,7 +25,12 @@
 (* ================================================================== *)
 
 SourceFile   = ModuleDecl { ImportDecl } { TypeDecl } { ConstDecl }
-               { FuncDecl } EOF ;
+               { BindStmt | MutBindStmt } { FuncDecl } EOF ;
+(* The BindStmt / MutBindStmt between the constants and the functions are
+   module-level `let` globals (spec v0.4 §I, semantics.md): the parser has
+   accepted them in this position since 114.44, and toke.gbnf's root rule
+   lists them (`letstmt`).  Restated here by story 127.469; no production
+   is added. *)
 
 
 (* ================================================================== *)

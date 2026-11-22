@@ -125,7 +125,12 @@ typedef struct { char name[NAME_BUF]; const char *ty; } LocalType;
  *   LLVM symbol (`@<llvm_name>`), `struct_type` the $type for field access (or
  *   ""), and `init` the initializer AST node (run at startup via a ctor).
  */
-typedef struct { char name[NAME_BUF]; char llvm_name[NAME_BUF]; char struct_type[NAME_BUF]; const Node *init; } GlobalVar;
+typedef struct { char name[NAME_BUF]; char llvm_name[NAME_BUF]; char struct_type[NAME_BUF]; const Node *init; const char *ty; } GlobalVar;
+/* 127.469: `ty` is the LLVM type a read of the global yields.  The cell is
+ *   always `i64`; a read converts it to `ty` (bitcast for f64/f32, trunc for
+ *   bool and the narrow integers) exactly as the initialiser was converted to
+ *   i64 when stored.  Pointer-held values (str, arrays, maps, structs, sums,
+ *   function values) stay i64, the convention every consumer already handles. */
 
 /*
  * NameAlias — Maps a toke variable name to a unique LLVM name.
@@ -1260,6 +1265,7 @@ static void prepass_funcs(Ctx *c, const Node *n) {
  * containers, so binds inside function bodies stay locals. Must run after
  * prepass_structs + prepass_load_tki so the initializer's struct type resolves.
  */
+static const char *fnv_llvm_ty(const Type *t);   /* 127.469: defined later */
 static void prepass_globals(Ctx *c, const Node *n) {
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
         for (int i = 0; i < n->child_count; i++) prepass_globals(c, n->children[i]);
@@ -1272,6 +1278,18 @@ static void prepass_globals(Ctx *c, const Node *n) {
     snprintf(g->llvm_name, sizeof g->llvm_name, "%s%s", c->module_prefix, g->name);
     g->init = n->children[n->child_count - 1];   /* [0]=name, [opt type], last=init */
     g->struct_type[0] = '\0';
+    /* 127.469: the value's own type -- the annotation when there is one,
+     * else the checker's type of the initialiser.  Every read was an i64,
+     * so an f64 global printed its raw bits. */
+    {
+        const char *vt = (n->child_count >= 3 && n->children[1])
+                         ? resolve_llvm_type(c, n->children[1])
+                         : fnv_llvm_ty(g->init ? g->init->rtype : NULL);
+        static const char *const scal[] = { "double", "float", "i1", "i8", "i16", "i32" };
+        g->ty = "i64";
+        for (size_t k = 0; k < sizeof scal / sizeof scal[0]; k++)
+            if (vt && !strcmp(vt, scal[k])) g->ty = scal[k];
+    }
     const char *st = expr_struct_type(c, g->init);
     if (st) { strncpy(g->struct_type, st, sizeof g->struct_type - 1); g->struct_type[sizeof g->struct_type - 1] = '\0'; }
     c->global_count++;
@@ -4550,7 +4568,7 @@ static int emit_expr(Ctx *c, const Node *n)
             if (g && !name_is_local(c, tb)) {
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = load i64, i64* @%s\n", t, g->llvm_name);
-                return t;
+                return coerce_value(c, t, "i64", g->ty);   /* 127.469 */
             }
         }
         /* 114.36: a bare function name used in value position resolves to a
@@ -5444,7 +5462,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * address (call it directly); both are toke functions, fastcc. */
         if (n->children[0]->kind == NODE_IDENT && tk_type_is_fnval(n->children[0]->rtype)) {
             char vnm[128]; tok_cp(c->src, n->children[0], vnm, sizeof vnm);
-            if (name_is_local(c, vnm)) {
+            if (name_is_local(c, vnm) || lookup_global(c, vnm)) {   /* 127.469: a module-level function value */
                 const Type *ft = n->children[0]->rtype;
                 int np = ft->field_count;
                 int na = n->child_count - 1;
@@ -9714,6 +9732,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         if (!strcmp(nb, "true") || !strcmp(nb, "false")) return "i1";
         { const Node *cd = const_decl_for(c, n);              /* 127.310 */
           if (cd) return resolve_llvm_type(c, cd->children[2]); }
+        { GlobalVar *g = lookup_global(c, nb);                 /* 127.469 */
+          if (g && !name_is_local(c, nb)) return g->ty; }
         const char *ln = get_llvm_name(c, nb);
         return get_local_type(c, ln);
     }
@@ -9789,7 +9809,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             /* 124.0c: any other function value (emit_expr's generic path) */
             if (callee->kind == NODE_IDENT && tk_type_is_fnval(callee->rtype)) {
                 char vnm[128]; tok_cp(c->src, callee, vnm, sizeof vnm);
-                if (name_is_local(c, vnm)) {
+                if (name_is_local(c, vnm) || lookup_global(c, vnm)) {   /* 127.469: a module-level function value */
                     const char *rty = fnv_llvm_ty(callee->rtype->elem);
                     return (!strcmp(rty, "i8*") || !strcmp(rty, "void")) ? "i64" : rty;
                 }
