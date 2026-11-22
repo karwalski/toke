@@ -1,0 +1,12 @@
+id: D718
+series: D
+description: "138.46 (T-67 class): the literal 0 (the null record) where std.svg declares $svgdoc stays legal -- svg.render(0) checks clean"
+input: |
+  m=t;
+  i=svg:std.svg;
+  f=main():i64{
+    let s=svg.render(0);
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []

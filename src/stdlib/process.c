@@ -347,9 +347,36 @@ static int pump(ProcessHandle *h, int timeout_ms,
     return 0;
 }
 
-static void record_status(ProcessHandle *h, int status)
+/* 138.48: once the child has been reaped, a write to its stdin is
+ * meaningless, so the write end of the pipe is closed then.  No toke call
+ * frees a handle (process_glue.c keeps it for wait/stdout/stderr to answer
+ * from), and stdin_fd was closed only by process_handle_free, which nothing
+ * reachable from toke calls: every spawn kept one descriptor for the life of
+ * the program, and a long-running spawner hit the fd limit (247 spawns under
+ * ulimit -n 256).  stdout/stderr close at EOF; a child reaped by a poll
+ * (process.poll / hasexited / isalive) whose output nobody reads would still
+ * hold both, so what is already in the pipes is drained into the record now,
+ * without blocking: the child has exited, so its output and EOF are normally
+ * there at once (a grandchild still holding a pipe leaves it open, and
+ * stdout/stderr read it as before). */
+static void mark_reaped(ProcessHandle *h)
 {
     h->exited = 1;
+    if (h->stdin_fd >= 0) { close(h->stdin_fd); h->stdin_fd = -1; }
+    for (int i = 0; i < 4096; i++) {
+        int open_out = (h->stdout_fd >= 0 && !h->out_done) || (h->stderr_fd >= 0 && !h->err_done);
+        if (!open_out) break;
+        size_t ol = h->outlen, el = h->errlen;
+        int of = h->stdout_fd, ef = h->stderr_fd;
+        const char *em = NULL;
+        if (pump(h, 0, NULL, 0, NULL, &em) != 0) break;
+        if (ol == h->outlen && el == h->errlen && of == h->stdout_fd && ef == h->stderr_fd) break;
+    }
+}
+
+static void record_status(ProcessHandle *h, int status)
+{
+    mark_reaped(h);
     if (WIFEXITED(status)) {
         h->exit_code = (int32_t)WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
@@ -555,12 +582,7 @@ int process_is_running(ProcessHandle *h)
     }
     if (result == h->pid) {
         /* process exited */
-        h->exited = 1;
-        if (WIFEXITED(status)) {
-            h->exit_code = (int32_t)WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-            h->exit_code = (int32_t)(-WTERMSIG(status));
-        }
+        record_status(h, status);
         return 0;
     }
     /* waitpid error — treat as not running to avoid spinning */
@@ -609,7 +631,7 @@ I32ProcessResult process_timeout(ProcessHandle *h, uint64_t timeout_ms)
         waited = waitpid(h->pid, &status, 0);
     } while (waited == -1 && errno == EINTR);
 
-    h->exited = 1;
+    mark_reaped(h);   /* 138.48 */
     if (waited == h->pid) {
         if (WIFEXITED(status)) {
             h->exit_code = (int32_t)WEXITSTATUS(status);

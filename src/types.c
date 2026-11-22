@@ -5192,12 +5192,35 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
              * char* as a row array (handle[-1]). */
             if (!ac || !pc || (ac == pc && !(ac == 4 && std_elem_clash(at, pt))))
                 continue;
-            /* An integer where a RECORD is declared is a handle: std callbacks
-             * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
-             * then `tls.read(conn)` -- conform C022), and every record crosses
-             * the ABI as an i64 slot.  The reverse (a record where a number is
-             * read) stays judged. */
-            if (pc == 6 && ac == 2) continue;
+            /* An integer where a RECORD is declared used to pass as a handle
+             * (a std callback's `f=onconn(conn:i64)` for tls.listen, then
+             * `tls.read(conn)`).  138.46 (the T-67 class, owner answer T-67
+             * extended from opaque records by the Z213 survey): the runtime
+             * reads through a std record -- http.clientget(5;..),
+             * tls.read(5), svg.render(5), image.fliph(5), vecstore.flush(5)
+             * all checked clean and died with SIGSEGV (std.db's `row.` calls
+             * never reach this function: 138.62) -- so
+             * only the literal 0 (the null record) may stand for one; a
+             * callback declares its parameter with the record's type
+             * (`conn:$tlsconn`).  E4031, no `fix`: retyping the parameter or
+             * passing the record itself are both repairs.  The reverse (a
+             * record where a number is read) stays judged. */
+            if (pc == 6 && ac == 2) {
+                if (int_lit_zero(cx->src, an)) continue;
+                if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+                char msg[512], en[96], gn[96];
+                snprintf(en, sizeof en, "%s", type_name(pt));
+                snprintf(gn, sizeof gn, "%s", type_name(at));
+                snprintf(msg, sizeof msg,
+                         "type mismatch: argument %d of '%s.%s' is declared "
+                         "'%s' (%s.tki), got '%s' -- the runtime reads a std "
+                         "record through its address, so only the record "
+                         "itself or the literal 0 may be passed",
+                         i + 1, alias, member, en, mpath + 4, gn);
+                diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col,
+                          msg, "expected", en, "got", gn, (const char *)NULL);
+                continue;
+            }
             if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
                 && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
         }

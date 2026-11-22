@@ -89,6 +89,25 @@ static int64_t xlsx_ok(int64_t v)
     return v;
 }
 
+/* 138.45: an xlsxbook is looked up in the runtime's handle registry
+ * (tk_runtime.c) before it is read (the value toke holds is a registry
+ * token, never the address, so a released one stays refused after malloc
+ * reuses its memory).  Any value xlsx.open/openfile did not
+ * hand out, or one xlsx.close has closed, is answered as the null workbook is
+ * (sheets @(), rows $err, datesystem "1900", close a no-op); it used to be
+ * read as a TkXlsxBook and the program died with SIGSEGV (xlsx.sheets(5)),
+ * and a second close freed the workbook twice. */
+static TkXlsxBook *xlsx_in(int64_t h) { return (TkXlsxBook *)tk_handle_token(TK_HK_XLSXBOOK, h); }
+static int64_t xlsx_out(TkXlsxBook *wb)
+{
+    int64_t tok = tk_handle_issue(TK_HK_XLSXBOOK, wb);   /* a token, not the address */
+    if (!tok) {
+        xlsx_close(wb);
+        return xlsx_raise(XLSX_E_IO, "xlsx: out of memory");
+    }
+    return xlsx_ok(tok);
+}
+
 /* xlsx.open(data:@(byte)) -> $xlsxbook!$xlsxerr
  *
  * On any rejection the $err arm binds the $xlsxerr (127.241). */
@@ -100,7 +119,7 @@ int64_t tk_xlsx_open_w(int64_t data)
     TkXlsxBook *wb = xlsx_open_mem(buf, n);
     free(buf);
     if (!wb) return xlsx_raise_last();
-    return xlsx_ok((int64_t)(intptr_t)wb);
+    return xlsx_out(wb);
 }
 
 /* xlsx.openfile(path:str) -> $xlsxbook!$xlsxerr
@@ -116,7 +135,7 @@ int64_t tk_xlsx_openfile_w(int64_t path)
     if (!path) return xlsx_raise(XLSX_E_IO, "xlsx.openfile: null path");
     TkXlsxBook *wb = xlsx_open_file((const char *)(intptr_t)path);
     if (!wb) return xlsx_raise_last();
-    return xlsx_ok((int64_t)(intptr_t)wb);
+    return xlsx_out(wb);
 }
 
 /* xlsx.sheets(wb:$xlsxbook) -> @(str)
@@ -125,7 +144,7 @@ int64_t tk_xlsx_openfile_w(int64_t path)
  * yields a zero-length array, never 0: a null would be indexed. */
 int64_t tk_xlsx_sheets_w(int64_t handle)
 {
-    TkXlsxBook *wb = (TkXlsxBook *)(intptr_t)handle;
+    TkXlsxBook *wb = xlsx_in(handle);
     uint32_t n = xlsx_sheet_count(wb);
     if (!wb || n == 0) return tk_arr_alloc(0, 0);
 
@@ -179,7 +198,7 @@ static int64_t build_cell(const TkXlsxCell *c)
  * cross-check the placement can. */
 int64_t tk_xlsx_rows_w(int64_t handle, int64_t sheet)
 {
-    TkXlsxBook *wb = (TkXlsxBook *)(intptr_t)handle;
+    TkXlsxBook *wb = xlsx_in(handle);
     if (!wb || !sheet) return xlsx_raise(XLSX_E_IO, "xlsx.rows: null argument");
 
     TkXlsxSheet *sh = xlsx_read_sheet(wb, (const char *)(intptr_t)sheet);
@@ -219,7 +238,7 @@ int64_t tk_xlsx_rows_w(int64_t handle, int64_t sheet)
  * this module exists to remove it from. */
 int64_t tk_xlsx_datesystem_w(int64_t handle)
 {
-    TkXlsxBook *wb = (TkXlsxBook *)(intptr_t)handle;
+    TkXlsxBook *wb = xlsx_in(handle);
     return (int64_t)(intptr_t)(xlsx_date1904(wb) ? "1904" : "1900");
 }
 
@@ -243,6 +262,7 @@ int64_t tk_xlsx_datefromserial_w(int64_t serial, int64_t system)
 /* xlsx.close(wb:$xlsxbook) -> void — releases the workbook and its zip. */
 int64_t tk_xlsx_close_w(int64_t handle)
 {
-    xlsx_close((TkXlsxBook *)(intptr_t)handle);
+    TkXlsxBook *wb = xlsx_in(handle);   /* 138.45: closed once; a second close is refused */
+    if (wb) { tk_handle_drop(wb); xlsx_close(wb); }
     return 0;
 }

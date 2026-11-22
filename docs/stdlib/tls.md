@@ -21,7 +21,7 @@ That history explains two things about the interface below that otherwise look r
 
 **Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig`, `tls.mutualconfig` and `tls.insecureconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `tlsconfig` and `tlskeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$tlsconfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
 
-**The handles are opaque i64.** A `tlsconn` or `tlskeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
+**The handles are opaque i64 at the ABI.** A `tlsconn` or `tlskeypair` arrives in toke as a handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:$tlsconn):i64`. Since story 138.46 an integer other than the literal `0` is E4031 where a `tlsconn` is declared (the runtime reads the record through its address), so a callback that declares `conn:i64` and passes it on to `tls.read` no longer checks.
 
 ## Types
 
@@ -211,7 +211,7 @@ f=rd(p:str):str{
   <mt file.read(p){$ok:v v;$err:e ""}
 };
 
-f=onconn(conn:i64):i64{
+f=onconn(conn:$tlsconn):i64{
   io.println(str.concat("proto=";tls.protocol(conn)));
 
   let pc=tls.peercert(conn);

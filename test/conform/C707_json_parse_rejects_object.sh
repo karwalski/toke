@@ -96,9 +96,12 @@ printf '%s\n' 'm=main;i=j:std.json;i=s:std.str;f=main():i64{let t:str=j.parse(s.
 expect "6 annotated and un-annotated json.parse results printed: clean" \
     "$(check "${WORK}/own.tk")" "rc=0 "
 
-# 7: an annotated binding is not traced (the program states its type).
+# 7: an annotated binding is not traced (the program states its type) -- but
+# since 138.46 its stated type is judged: an i64 where json.has declares a
+# $jsonval record is E4031 by type (one diagnostic, at the argument), not by
+# this file's json.parse trace.
 printf '%s\n' 'm=c;i=json:std.json;f=main():i64{let p:i64=json.parse("7");let h=json.has(p;"a");<0};' > "${WORK}/ann.tk"
-expect "7 an annotated json.parse binding is not judged" "$(check "${WORK}/ann.tk")" "rc=0 "
+expect "7 an annotated json.parse binding is judged by its type (138.46), not traced" "$(check "${WORK}/ann.tk")" "rc=1 E4031@1:75"
 
 # 8: the checker's list is exactly the json_glue.c wrappers that read their
 # first argument as a Json * (directly or through another wrapper).

@@ -620,3 +620,279 @@ void tk_clos_release(int64_t v)
         v = last;
     }
 }
+
+/* ── 138.45: the registry of live std handles ────────────────────────────────
+ *
+ * Lifted from 138.36's process registry (process_glue.c) so that every std
+ * module refuses a handle it did not create the same way, and given a KIND
+ * per slot so a vechandle is refused where a strbuf is read.  See
+ * tk_runtime.h for the contract.
+ *
+ * Layout.  `slots` is the table proper: an address, a serial and a kind per
+ * slot; a token is (serial << 32) | (slot + 1), as in 138.36.  `index` is an
+ * open-addressing hash of addresses to slot + 1 (0 = empty), at most half
+ * full, with backward-shift deletion (the http client set's scheme, 138.24),
+ * so an address lookup reads only the table.  A dropped slot goes on a free
+ * list and is reused under the next serial; serials stay in [1, 2^31) so a
+ * token is a positive i64 and never 0.
+ *
+ * Locking.  A spinlock on __atomic builtins rather than a pthread mutex:
+ * tk_runtime.c is linked into every program and must not add -lpthread to
+ * one that never starts a thread.  Hold times are a few loads.
+ *
+ * The hot path.  std.vec reaches tk_handle_addr from compiled indexing
+ * (`v.get(i)` in a loop), so a lookup must not cost a lock every time.  Each
+ * thread caches the last few values it validated (addresses and tokens),
+ * with the registry generation it saw; the generation moves on every drop or kind change, never on an
+ * add (an add cannot make a valid value invalid).  A cache hit is a few
+ * thread-local loads and one atomic load. */
+typedef struct { void *p; const void *owner; uint32_t serial; uint16_t kind; uint8_t has_views; uint32_t next_free; } TkHSlot;
+
+static struct {
+    char      lock;          /* __atomic_test_and_set flag */
+    TkHSlot  *slots;
+    uint32_t  n, cap;        /* slots in use (high-water mark), allocated */
+    uint32_t  free_head;     /* slot + 1 of the first free slot, 0 = none */
+    uint32_t  serial;        /* last serial handed out */
+    uint32_t *index;         /* slot + 1 per bucket, 0 = empty */
+    size_t    icap, in;      /* buckets (0 or a power of two), entries */
+} g_hreg;
+
+static uint64_t g_hreg_gen = 1;   /* atomic: bumped on drop / kind change */
+
+/* A few ways, so code that reads two or three handles in turn (`a.get(j) +
+ * b.get(j)`) hits as often as code that reads one.  `v` is the value looked
+ * up (an address or a token), `tok` says which, `p` the object it named. */
+#define TK_HCACHE_WAYS 4
+typedef struct { int64_t v; void *p; uint64_t gen; int kind; int tok; } TkHCache;
+static TK_TLS TkHCache hcache[TK_HCACHE_WAYS];
+static TK_TLS unsigned hcache_next;
+
+static void *hcache_get(int64_t v, int kind, int tok, uint64_t gen)
+{
+    for (unsigned w = 0; w < TK_HCACHE_WAYS; w++)
+        if (hcache[w].v == v && hcache[w].kind == kind && hcache[w].tok == tok
+            && hcache[w].gen == gen)
+            return hcache[w].p;
+    return NULL;
+}
+static void hcache_put(int64_t v, int kind, int tok, uint64_t gen, void *p)
+{
+    TkHCache *e = &hcache[hcache_next++ % TK_HCACHE_WAYS];
+    e->v = v; e->p = p; e->gen = gen; e->kind = kind; e->tok = tok;
+}
+
+static void hreg_lock(void)
+{
+    while (__atomic_test_and_set(&g_hreg.lock, __ATOMIC_ACQUIRE)) { /* spin */ }
+}
+static void hreg_unlock(void) { __atomic_clear(&g_hreg.lock, __ATOMIC_RELEASE); }
+
+static size_t hreg_home(const void *p, size_t mask)
+{
+    uint64_t h = (uint64_t)(uintptr_t)p;
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 33;
+    return (size_t)h & mask;
+}
+
+/* The bucket holding p, or icap when p is not indexed.  Lock held. */
+static size_t hreg_find(const void *p)
+{
+    if (!g_hreg.icap) return 0;
+    size_t mask = g_hreg.icap - 1;
+    for (size_t j = hreg_home(p, mask); g_hreg.index[j]; j = (j + 1) & mask)
+        if (g_hreg.slots[g_hreg.index[j] - 1].p == p) return j;
+    return g_hreg.icap;
+}
+
+/* Room for one more index entry.  0, or -1 when the index cannot grow. */
+static int hreg_index_room(void)
+{
+    if ((g_hreg.in + 1) * 2 <= g_hreg.icap) return 0;
+    size_t ncap = g_hreg.icap ? g_hreg.icap * 2 : 64;
+    uint32_t *ni = (uint32_t *)calloc(ncap, sizeof *ni);
+    if (!ni) return -1;
+    for (size_t i = 0; i < g_hreg.icap; i++) {
+        if (!g_hreg.index[i]) continue;
+        size_t j = hreg_home(g_hreg.slots[g_hreg.index[i] - 1].p, ncap - 1);
+        while (ni[j]) j = (j + 1) & (ncap - 1);
+        ni[j] = g_hreg.index[i];
+    }
+    free(g_hreg.index);
+    g_hreg.index = ni;
+    g_hreg.icap = ncap;
+    return 0;
+}
+
+/* Remove bucket i (backward shift, no tombstones).  Lock held. */
+static void hreg_unindex(size_t i)
+{
+    size_t mask = g_hreg.icap - 1;
+    g_hreg.index[i] = 0;
+    for (size_t j = (i + 1) & mask; g_hreg.index[j]; j = (j + 1) & mask) {
+        size_t k = hreg_home(g_hreg.slots[g_hreg.index[j] - 1].p, mask);
+        int stays = i <= j ? (i < k && k <= j) : (i < k || k <= j);
+        if (!stays) { g_hreg.index[i] = g_hreg.index[j]; g_hreg.index[j] = 0; i = j; }
+    }
+    g_hreg.in--;
+}
+
+/* Register p (lock held): its slot index, or -1.  An address already
+ * registered keeps its slot and serial; under another kind it takes the new
+ * kind (the old object was freed without a drop and its address reused). */
+static int64_t hreg_add(int kind, void *p, const void *owner)
+{
+    size_t b = hreg_find(p);
+    if (b != g_hreg.icap) {
+        TkHSlot *s = &g_hreg.slots[g_hreg.index[b] - 1];
+        if (s->kind != (uint16_t)kind) {
+            s->kind = (uint16_t)kind;
+            __atomic_add_fetch(&g_hreg_gen, 1, __ATOMIC_RELEASE);
+        }
+        return (int64_t)(g_hreg.index[b] - 1);
+    }
+    if (hreg_index_room() != 0) return -1;
+    uint32_t i;
+    if (g_hreg.free_head) {
+        i = g_hreg.free_head - 1;
+        g_hreg.free_head = g_hreg.slots[i].next_free;
+    } else {
+        if (g_hreg.n == g_hreg.cap) {
+            if (g_hreg.cap >= 0x7fffffffu) return -1;
+            uint32_t nc = g_hreg.cap ? g_hreg.cap * 2 : 64;
+            if (nc > 0x7fffffffu || nc < g_hreg.cap) nc = 0x7fffffffu;
+            TkHSlot *ns = (TkHSlot *)realloc(g_hreg.slots, (size_t)nc * sizeof *ns);
+            if (!ns) return -1;
+            g_hreg.slots = ns;
+            g_hreg.cap = nc;
+        }
+        i = g_hreg.n++;
+    }
+    g_hreg.serial = (g_hreg.serial % 0x7fffffffu) + 1u;
+    g_hreg.slots[i].p = p;
+    g_hreg.slots[i].serial = g_hreg.serial;
+    g_hreg.slots[i].kind = (uint16_t)kind;
+    g_hreg.slots[i].owner = owner;
+    g_hreg.slots[i].has_views = 0;
+    g_hreg.slots[i].next_free = 0;
+    if (owner) {
+        /* mark the owner, so only ITS drop scans for views */
+        size_t ob = hreg_find(owner);
+        if (ob != g_hreg.icap) g_hreg.slots[g_hreg.index[ob] - 1].has_views = 1;
+    }
+    size_t mask = g_hreg.icap - 1, j = hreg_home(p, mask);
+    while (g_hreg.index[j]) j = (j + 1) & mask;
+    g_hreg.index[j] = i + 1u;
+    g_hreg.in++;
+    return (int64_t)i;
+}
+
+int64_t tk_handle_issue(int kind, void *p)
+{
+    return tk_handle_issue_view(kind, p, NULL);
+}
+
+int64_t tk_handle_issue_view(int kind, void *p, const void *owner)
+{
+    if (!p) return 0;
+    hreg_lock();
+    int64_t i = hreg_add(kind, p, owner);
+    int64_t tok = i < 0 ? 0
+        : (int64_t)(((uint64_t)g_hreg.slots[i].serial << 32) | (uint64_t)(i + 1));
+    hreg_unlock();
+    return tok;
+}
+
+void *tk_handle_token(int kind, int64_t tok)
+{
+    uint64_t u = (uint64_t)tok;
+    uint32_t serial = (uint32_t)(u >> 32), lo = (uint32_t)(u & 0xffffffffu);
+    void *p = NULL;
+    if (serial == 0 || lo == 0) return NULL;
+    uint64_t gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
+    if ((p = hcache_get(tok, kind, 1, gen)) != NULL) return p;
+    hreg_lock();
+    gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
+    if (lo - 1u < g_hreg.n && g_hreg.slots[lo - 1u].serial == serial
+        && g_hreg.slots[lo - 1u].kind == (uint16_t)kind)
+        p = g_hreg.slots[lo - 1u].p;
+    hreg_unlock();
+    if (p) hcache_put(tok, kind, 1, gen, p);
+    return p;
+}
+
+void *tk_handle_adopt(int kind, void *p)
+{
+    if (!p) return NULL;
+    hreg_lock();
+    int64_t i = hreg_add(kind, p, NULL);
+    hreg_unlock();
+    return i < 0 ? NULL : p;
+}
+
+const void *tk_handle_owner(const void *p)
+{
+    const void *o = NULL;
+    if (!p) return NULL;
+    hreg_lock();
+    size_t b = hreg_find(p);
+    if (b != g_hreg.icap) o = g_hreg.slots[g_hreg.index[b] - 1].owner;
+    hreg_unlock();
+    return o;
+}
+
+void *tk_handle_addr(int kind, int64_t v)
+{
+    const void *p = (const void *)(intptr_t)v;
+    if (!p) return NULL;
+    uint64_t gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
+    if (hcache_get(v, kind, 0, gen)) return (void *)(intptr_t)v;
+    int ok = 0;
+    hreg_lock();
+    gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
+    size_t b = hreg_find(p);
+    if (b != g_hreg.icap && g_hreg.slots[g_hreg.index[b] - 1].kind == (uint16_t)kind)
+        ok = 1;
+    hreg_unlock();
+    if (!ok) return NULL;
+    hcache_put(v, kind, 0, gen, (void *)(intptr_t)v);
+    return (void *)(intptr_t)v;
+}
+
+/* Free slot i, whose index bucket is b.  Lock held. */
+static void hreg_free_slot(uint32_t i, size_t b)
+{
+    hreg_unindex(b);
+    g_hreg.slots[i].p = NULL;
+    g_hreg.slots[i].owner = NULL;
+    g_hreg.slots[i].serial = 0;   /* no token names a free slot */
+    g_hreg.slots[i].kind = 0;
+    g_hreg.slots[i].has_views = 0;
+    g_hreg.slots[i].next_free = g_hreg.free_head;
+    g_hreg.free_head = i + 1u;
+}
+
+int tk_handle_drop(const void *p)
+{
+    if (!p) return 0;
+    int was = 0, views = 0;
+    hreg_lock();
+    size_t b = hreg_find(p);
+    if (b != g_hreg.icap) {
+        views = g_hreg.slots[g_hreg.index[b] - 1].has_views;
+        hreg_free_slot(g_hreg.index[b] - 1, b);
+        was = 1;
+    }
+    /* The views into p die with it (a toml section of a freed document);
+     * only an owner that has had a view pays for the scan. */
+    for (uint32_t i = 0; views && i < g_hreg.n; i++) {
+        if (g_hreg.slots[i].owner != p || !g_hreg.slots[i].p) continue;
+        size_t vb = hreg_find(g_hreg.slots[i].p);
+        if (vb != g_hreg.icap) hreg_free_slot(i, vb);
+    }
+    __atomic_add_fetch(&g_hreg_gen, 1, __ATOMIC_RELEASE);
+    hreg_unlock();
+    return was;
+}

@@ -55,7 +55,7 @@ i=io:std.io;
 i=tls:std.tls;
 i=args:std.args;
 i=str:std.str;
-f=onconn(conn:i64):i64{
+f=onconn(conn:\$tlsconn):i64{
   tls.close(conn);
   <0
 };

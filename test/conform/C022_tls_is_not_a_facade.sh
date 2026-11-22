@@ -197,7 +197,7 @@ f=say(s:str):i64{
   <0
 };
 
-f=onconn(conn:i64):i64{
+f=onconn(conn:\$tlsconn):i64{
   say(str.concat("proto="; tls.protocol(conn)));
   let pc=tls.peercert(conn);
   if(pc==0){

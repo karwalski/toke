@@ -1,0 +1,19 @@
+id: D716
+series: D
+description: "138.46 (T-67 class): an i64 parameter passed on where std.http declares $httpclient -- http.clientget(c;..) with c:i64 -- is E4031 with NO fix (retyping the parameter c:$httpclient is one repair of several)"
+input: |
+  m=t;
+  i=http:std.http;
+  f=get(c:i64):i64{
+    let r=http.clientget(c;"http://127.0.0.1:9/");
+    <0
+  };
+  f=main():i64{
+    <get(7)
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "httpclient"

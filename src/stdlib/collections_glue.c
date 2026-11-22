@@ -658,14 +658,23 @@ int64_t tk_arr_join_w(int64_t arr, int64_t sep) {
 int64_t tk_array_join_w(int64_t arr, int64_t sep) { return tk_arr_join_w(arr, sep); }
 
 /* ── std.vec — mutable growable vector wrappers (Story 114.18) ──── */
-int64_t tk_vec_new_w(void)                                { return tk_vec_new(); }
-int64_t tk_vec_push_w(int64_t v, int64_t val)             { return tk_vec_push(v, val); }
-int64_t tk_vec_pop_w(int64_t v)                           { return tk_vec_pop(v); }
-int64_t tk_vec_get_w(int64_t v, int64_t idx)              { return tk_vec_get(v, idx); }
-int64_t tk_vec_set_w(int64_t v, int64_t idx, int64_t val) { return tk_vec_set(v, idx, val); }
-int64_t tk_vec_len_w(int64_t v)                           { return tk_vec_len(v); }
-int64_t tk_vec_tovec_w(int64_t arr)                       { return tk_vec_tovec(arr); }
-int64_t tk_vec_toarray_w(int64_t v)                       { return tk_vec_toarray(v); }
+/* 138.45: a vechandle is looked up in the runtime's handle registry
+ * (tk_runtime.c) before it is read.  Any value std.vec did not hand out -- an
+ * integer, `n as $vechandle`, another module's handle -- is answered as the
+ * null handle is (len 0, get/pop 0, push/set return 0, toarray @()); it used
+ * to be read as a DynArr and the program died with SIGSEGV.  The value stays
+ * the DynArr's address because compiled code calls these wrappers directly
+ * (`v.get(i)`); a vec is never freed, so its entry lives as long as it does. */
+static int64_t vec_out(int64_t v) { return (int64_t)(intptr_t)tk_handle_adopt(TK_HK_VEC, (void *)(intptr_t)v); }
+static int64_t vec_in(int64_t v)  { return (int64_t)(intptr_t)tk_handle_addr(TK_HK_VEC, v); }
+int64_t tk_vec_new_w(void)                                { return vec_out(tk_vec_new()); }
+int64_t tk_vec_push_w(int64_t v, int64_t val)             { return tk_vec_push(vec_in(v), val); }
+int64_t tk_vec_pop_w(int64_t v)                           { return tk_vec_pop(vec_in(v)); }
+int64_t tk_vec_get_w(int64_t v, int64_t idx)              { return tk_vec_get(vec_in(v), idx); }
+int64_t tk_vec_set_w(int64_t v, int64_t idx, int64_t val) { return tk_vec_set(vec_in(v), idx, val); }
+int64_t tk_vec_len_w(int64_t v)                           { return tk_vec_len(vec_in(v)); }
+int64_t tk_vec_tovec_w(int64_t arr)                       { return vec_out(tk_vec_tovec(arr)); }
+int64_t tk_vec_toarray_w(int64_t v)                       { return tk_vec_toarray(vec_in(v)); }
 
 /* ── 127.45: arr.slice(start;end) ───────────────────────────────────────
  *

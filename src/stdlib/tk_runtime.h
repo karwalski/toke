@@ -144,4 +144,50 @@ void    tk_overflow_trap(int32_t op_code);
 void tk_clos_retain(int64_t v);
 void tk_clos_release(int64_t v);
 
+/* ── 138.45: the registry of live std handles (tk_runtime.c) ─────────────────
+ * One table for every std module that hands a C object to a toke program as
+ * an i64 (lifted from 138.36's process registry).  A slot holds the object's
+ * address, its KIND and a serial; lookups read only the table, never the
+ * value as memory, so a value the runtime did not hand out -- a forged
+ * integer, a record literal, a handle of another kind, a released one -- is
+ * answered NULL and the caller answers it as it answers a null handle.
+ *
+ * Two ways to name an entry:
+ *   - a TOKEN, (serial << 32) | (slot + 1) (tk_handle_issue / tk_handle_token).
+ *     Every kind with a release call (process, strbuf, pdfdoc, xlsxbook,
+ *     ziparchive, tomlval) hands these out instead of the address: a released
+ *     object's slot is reused only under a fresh serial, so a stale token is
+ *     refused even after malloc hands its address to a newer object;
+ *   - the ADDRESS itself (tk_handle_adopt / tk_handle_addr), for kinds whose
+ *     value must stay a real pointer and that toke code never releases: a
+ *     record toke code reads fields of, a handle compiled code passes to the
+ *     glue directly (std.vec), or an object C callbacks hand to toke.  An
+ *     address-keyed kind must not gain a release call: a dropped address is
+ *     accepted again once malloc reuses it (138.45 review).
+ * Registering an address again is idempotent (the same token, for a token
+ * kind).  tk_handle_drop forgets one. */
+enum {
+    TK_HK_PROCESS = 1, TK_HK_VEC = 2, TK_HK_STRBUF = 3, TK_HK_SECUREBUF = 4,
+    TK_HK_PDFDOC = 5, TK_HK_XLSXBOOK = 6, TK_HK_ZIPARCHIVE = 7,
+    TK_HK_TOMLVAL = 8, TK_HK_SVGELEM = 9, TK_HK_SVGDOC = 10,
+    TK_HK_TASKSCOPE = 11, TK_HK_LLMCLIENT = 12
+};
+/* A token for p (0 when the table is full; the caller disposes of p). */
+int64_t tk_handle_issue(int kind, void *p);
+/* As tk_handle_issue, for a VIEW into another registered object `owner` (a
+ * toml section of a document): dropping the owner drops its views too. */
+int64_t tk_handle_issue_view(int kind, void *p, const void *owner);
+/* The object a token names, or NULL. */
+void   *tk_handle_token(int kind, int64_t tok);
+/* Register p as a live object of `kind`; returns p, or NULL when the table
+ * is full (or p is NULL). */
+void   *tk_handle_adopt(int kind, void *p);
+/* The owner p was adopted under, or NULL (not a view, or not registered). */
+const void *tk_handle_owner(const void *p);
+/* v as a pointer when it is a live object of `kind`, else NULL. */
+void   *tk_handle_addr(int kind, int64_t v);
+/* Forget p (any kind) and every view adopted with p as its owner.  1 when p
+ * was registered. */
+int     tk_handle_drop(const void *p);
+
 #endif /* TK_RUNTIME_H */
