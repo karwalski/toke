@@ -20,9 +20,15 @@ This page is held to the .tki the same way:
      and the return type equal the export's after the spelling normalisation
      check_stdlib_doc_exports.py uses (imported, not copied).
   3. Every `t=$name` line names a type export of that .tki.
-  4. COVERAGE.  The section between the GENERATED markers is rendered from
-     the .tki (`--write`): for every public module with no hand-written block,
-     its public types and non-abi func exports.  It is never edited by hand;
+  4. COVERAGE.  Every public type and every public non-abi func export of a
+     public module appears on the page, either in its hand-written block or in
+     the section between the GENERATED markers, which is rendered from the
+     .tki (`--write`).  The generated section lists, for every module with no
+     hand-written block, its public types and non-abi funcs, and, for every
+     module with one, the public types and non-abi funcs the block leaves out
+     ("exports not listed above").  So a new export in any module -- with or
+     without a hand-written block -- makes the section stale until the page is
+     re-rendered or the block is extended.  It is never edited by hand;
      `--check` (run by `make check-tki`) fails when it is stale.  Parameter
      names there are positional (`a`, `b`, ...) because a .tki carries types,
      not names.
@@ -30,10 +36,11 @@ This page is held to the .tki the same way:
 An `f=` line can be excused from rules 1-2 only by a `(* not exported ... *)`
 comment on the same line, which says in the page that no interface declares it.
 
-Usage:  python3 scripts/check_stdlib_signatures.py [--check | --write | --report]
+Usage:  python3 scripts/check_stdlib_signatures.py [--check | --write | --report | --selftest]
         --check   (default) fail on any disagreement or a stale generated section
         --write   re-render the generated section from the .tki
         --report  list every disagreement, never fail
+        --selftest  planted-fault cases for every rule, including coverage
 """
 import json
 import pathlib
@@ -127,10 +134,12 @@ def parse_func(line):
 
 
 def problems(lines, mods):
+    """(disagreements, documented) where documented maps each module with a
+    hand-written block to the (func names, type names) that block lists."""
     out = []
-    documented = set()
+    documented = {}
     for mod, ln, kind, raw in doc_entries(lines):
-        documented.add(mod)
+        seen_f, seen_t = documented.setdefault(mod, (set(), set()))
         where = "%s:%d" % (DOC.relative_to(REPO), ln)
         if mod not in mods:
             out.append((where, "std.%s has no stdlib/*.tki interface" % mod, raw))
@@ -138,6 +147,8 @@ def problems(lines, mods):
         funcs, types = mods[mod]
         if kind == "t":
             m = re.match(r"\s*t=\$?([A-Za-z0-9_]+)", raw)
+            if m:
+                seen_t.add(m.group(1).lower())
             if m and m.group(1).lower() not in types and not NOT_EXPORTED.search(raw):
                 out.append((where, "type $%s is not declared by %s.tki"
                             % (m.group(1), mod), raw))
@@ -152,6 +163,7 @@ def problems(lines, mods):
                 out.append((where, "%s.%s is marked not exported but %s.tki exports it"
                             % (mod, name, mod), raw))
             continue
+        seen_f.add(name)
         exp = funcs.get(name)
         if exp is None:
             out.append((where, "%s.%s is not an export of %s.tki" % (mod, name, mod), raw))
@@ -175,6 +187,17 @@ def problems(lines, mods):
     return out, documented
 
 
+def closes_at_end(t, k):
+    """True when the bracket opened at t[k] closes at the last character."""
+    depth = 0
+    for i, c in enumerate(t[k:], k):
+        depth += c in "(["
+        depth -= c in ")]"
+        if depth == 0:
+            return i == len(t) - 1
+    return False
+
+
 def surface(t):
     """A .tki type in the page's surface spelling: str -> $str, [T] -> @(T).
 
@@ -182,6 +205,10 @@ def surface(t):
     `str!fileerr`) and, in some hand-written .tki, the surface form already
     (`$str`, `@(byte)`, `fn($x):void`).  The latter is left as written."""
     t = t.strip()
+    if t.startswith("@(") and closes_at_end(t, 1):
+        # a half-surface .tki spelling such as `@(str)`: sigil the inside
+        inner = split_top(t[2:-1], ":")
+        return "@(" + ":".join(surface(x) for x in inner) + ")"
     if "$" in t or "@" in t or t.startswith("fn("):
         return t
     if t.startswith("[") and t.endswith("]"):
@@ -198,34 +225,41 @@ def surface(t):
 
 
 def render(mods, documented):
+    """The generated section: whole modules with no hand-written block, then
+    (in the same alphabetical pass) the exports each hand-written block omits."""
     out = [BEGIN, ""]
     names = "abcdefghijklmnopqrstuvwxyz"
     for mod in sorted(mods):
-        if mod in documented:
-            continue
         funcs, types = mods[mod]
+        seen_f, seen_t = documented.get(mod, (set(), set()))
         pub_f = [(n, e) for n, e in funcs.items()
-                 if not e.get("internal") and e.get("gen") != "abi"]
-        pub_t = [e for e in types.values() if not e.get("internal")]
-        abi = sum(1 for e in funcs.values() if not e.get("internal") and e.get("gen") == "abi")
+                 if not e.get("internal") and e.get("gen") != "abi" and n not in seen_f]
+        pub_t = [e for k, e in types.items() if not e.get("internal") and k not in seen_t]
+        abi = sum(1 for n, e in funcs.items()
+                  if not e.get("internal") and e.get("gen") == "abi" and n not in seen_f)
         if not pub_f and not pub_t and not abi:
             continue
-        out.append("### std.%s (generated)" % mod)
+        if mod in documented:
+            out.append("### std.%s: exports not listed above (generated)" % mod)
+        else:
+            out.append("### std.%s (generated)" % mod)
         out.append("")
-        out.append("```text")
-        for e in sorted(pub_t, key=lambda e: e["name"]):
-            out.append("t=$%s" % e["name"].split(".")[-1].lstrip("$"))
-        for n, e in sorted(pub_f):
-            ps = ";".join("%s:%s" % (names[k % 26], surface(p))
-                          for k, p in enumerate(e.get("params") or []))
-            out.append("f=%s(%s):%s" % (n, ps, surface(e.get("return") or "void")))
-        out.append("```")
-        if abi:
+        if pub_f or pub_t:
+            out.append("```text")
+            for e in sorted(pub_t, key=lambda e: e["name"]):
+                out.append("t=$%s" % e["name"].split(".")[-1].lstrip("$"))
+            for n, e in sorted(pub_f):
+                ps = ";".join("%s:%s" % (names[k % 26], surface(p))
+                              for k, p in enumerate(e.get("params") or []))
+                out.append("f=%s(%s):%s" % (n, ps, surface(e.get("return") or "void")))
+            out.append("```")
             out.append("")
-            out.append("Plus %d `\"gen\":\"abi\"` export%s of `stdlib/%s.tki`, whose "
+        if abi:
+            out.append("Not listed: %d %s`\"gen\":\"abi\"` export%s of `stdlib/%s.tki`, whose "
                        "types are ABI placeholders (only the arity is declared)."
-                       % (abi, "" if abi == 1 else "s", mod))
-        out.append("")
+                       % (abi, "further " if (pub_f or pub_t or mod in documented) else "",
+                          "" if abi == 1 else "s", mod))
+            out.append("")
     out.append(END)
     return out
 
@@ -238,8 +272,60 @@ def splice(lines, gen):
     return None
 
 
+def selftest():
+    """In-memory cases: each rule fires on a planted fault and stays quiet on
+    the clean page."""
+    def f(name, params, ret, **kw):
+        return dict(kind="func", name=name, params=params, **{"return": ret}, **kw)
+    mods = {"m": ({"a": f("m.a", ["str"], "u64"),
+                   "b": f("m.b", ["i64"], "bool"),
+                   "c": f("m.c", ["i64"], "i64", gen="abi"),
+                   "h": f("m.h", ["i64"], "i64", internal=True)},
+                  {"t": dict(kind="type", name="$t")}),
+            "n": ({"x": f("n.x", ["@(str)"], "[str]")}, {})}
+    page = ["### std.m", "```text", "t=$t", "f=a(s:$str):u64", "f=b(n:i64):bool",
+            "```", "", BEGIN, END]
+    cases, fails = 0, 0
+
+    def expect(label, cond):
+        nonlocal cases, fails
+        cases += 1
+        if not cond:
+            fails += 1
+            print("SELFTEST FAIL: " + label)
+
+    found, doc = problems(page, mods)
+    gen = render(mods, doc)
+    expect("clean page has no disagreements", not found)
+    expect("documented module with only abi left gets a count, no fence",
+           "### std.m: exports not listed above (generated)" in gen
+           and not any(l == "```text" for l in gen[:gen.index("### std.n (generated)")]))
+    expect("undocumented module rendered whole, inner str sigilled",
+           "f=x(a:@($str)):@($str)" in gen)
+    expect("internal export never rendered", not any("f=h(" in l for l in gen))
+    # COVERAGE: a new export in a hand-documented module lands in the
+    # generated section, so a page rendered before it is stale.
+    spliced = splice(page, gen)
+    mods["m"][0]["zzz"] = f("m.zzz", ["str"], "bool")
+    found2, doc2 = problems(spliced, mods)
+    expect("new export in hand-documented module makes the page stale",
+           splice(spliced, render(mods, doc2)) != spliced
+           and "f=zzz(a:$str):bool" in render(mods, doc2))
+    del mods["m"][0]["zzz"]
+    bad = [l.replace("f=a(s:$str):u64", "f=a(s:$str):i64") for l in spliced]
+    expect("wrong return type is a disagreement", problems(bad, mods)[0])
+    bad = [l.replace("f=b(n:i64):bool", "f=b(n:i64;k:i64):bool") for l in spliced]
+    expect("wrong arity is a disagreement", problems(bad, mods)[0])
+    bad = spliced[:3] + ["f=gone(n:i64):bool"] + spliced[3:]
+    expect("unknown function is a disagreement", problems(bad, mods)[0])
+    print("check_stdlib_signatures selftest: %d case(s), %d failure(s)" % (cases, fails))
+    return 1 if fails else 0
+
+
 def main():
     mode = (sys.argv[1] if len(sys.argv) > 1 else "--check")
+    if mode == "--selftest":
+        return selftest()
     lines = DOC.read_text().split("\n")
     mods = load_tki()
     found, documented = problems(lines, mods)
@@ -249,7 +335,7 @@ def main():
         if new is None:
             sys.exit("check_stdlib_signatures: %s has no GENERATED markers" % DOC)
         DOC.write_text("\n".join(new))
-        print("wrote the generated section of %s (%d modules with no hand-written block)"
+        print("wrote the generated section of %s (%d module blocks)"
               % (DOC.relative_to(REPO), sum(1 for l in gen if l.startswith("### "))))
         return 0
     for where, msg, raw in found:
@@ -258,6 +344,11 @@ def main():
     if stale:
         print("%s: the generated section is missing or stale -- run "
               "`python3 scripts/check_stdlib_signatures.py --write`" % DOC.relative_to(REPO))
+        if new is not None:
+            import difflib
+            for d in list(difflib.unified_diff(lines, new, lineterm="", n=0))[2:40]:
+                if not d.startswith("@@"):
+                    print("    " + d)
     if mode == "--report":
         print("%d disagreement(s)" % len(found))
         return 0

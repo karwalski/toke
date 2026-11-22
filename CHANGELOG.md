@@ -137,7 +137,10 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   normative** (127.456). `scripts/check_stdlib_signatures.py`, run by `make check-tki`,
   fails on a hand-written entry that names a non-export or states a parameter count or
   type that differs from the `.tki`; the page's last section is generated from the
-  interfaces for the 41 modules that had no block (`make render-stdlib-signatures`).
+  interfaces for the 41 modules that had no block (`make render-stdlib-signatures`),
+  and for every export a hand-written block leaves out (108 functions in 16 modules,
+  e.g. most of std.str, std.time and std.http), so a new export in any module fails
+  `make check-tki` until the page is re-rendered or the block is extended.
   38 drifted entries were corrected to the interfaces (std.str, toon, yaml, i18n,
   file, env, process, time, log, test); no `.tki` or runtime signature changed.
 - **The stale `tree-sitter-toke/` copy is archived** (127.457); the maintained grammar is

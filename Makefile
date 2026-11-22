@@ -704,6 +704,7 @@ check-tki: check-tki-layout check-tki-names
 	python3 scripts/check_stdlib_doc_exports.py
 	@# 127.456: docs/spec/stdlib-signatures.md is held to the .tki, which are
 	@# normative; its last section is generated (render-stdlib-signatures).
+	python3 scripts/check_stdlib_signatures.py --selftest
 	python3 scripts/check_stdlib_signatures.py --check
 	@# 135.17a: the generator agrees with every .tki, and every arity
 	@# disagreement it declines to fix is recorded with its reason.
