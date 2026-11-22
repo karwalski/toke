@@ -102,9 +102,17 @@ int main(void) {
 }
 C
 
+# The C sources std.args links, from tkc's own dependency table (127.268;
+# C696 forbids a hand list), plus their link flags.
+LINKSRCS=(); LINKFLAGS=()
+while IFS= read -r l; do [ -n "$l" ] && LINKSRCS+=("$l"); done \
+    < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" args)
+while IFS= read -r l; do [ -n "$l" ] && LINKFLAGS+=($l); done \
+    < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags args)
+
 build_run() {   # <label> <flags>
     if ! "${CC}" -std=c99 -D_GNU_SOURCE $2 -iquote "${S}" -o "${WORK}/t_$1" "${WORK}/t.c" \
-            "${S}/tk_runtime.c" "${S}/capabilities.c" "${S}/args.c" "${S}/str.c" \
+            "${LINKSRCS[@]}" ${LINKFLAGS[@]+"${LINKFLAGS[@]}"} \
             >"${WORK}/cc_$1.log" 2>&1; then
         echo "  FAIL: build ($1): $(head -c 600 "${WORK}/cc_$1.log")"; rc=1; return
     fi
