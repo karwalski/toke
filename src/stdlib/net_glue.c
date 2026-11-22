@@ -138,8 +138,10 @@ static int64_t net_raise(const char *msg)
 }
 
 int64_t tk_net_resolve_w(int64_t name) {
-    TK_REQUIRE(TK_CAP_NET);
     const char *nm = (const char *)(intptr_t)name;
+    /* 138.19: under a scoped net grant a lookup needs a connect scope for the
+     * name (any port); the whole class admits every name, as before. */
+    TK_REQUIRE_NET(TK_CAP_NET_CONNECT, nm ? nm : "", TK_CAP_ANY_PORT);
     if (!nm || !nm[0]) return net_raise("net.resolve: empty name");
     NetAddrs a = net_resolve(nm);
     if (a.err) {

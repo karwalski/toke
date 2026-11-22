@@ -455,7 +455,7 @@ static int scope_match(const Scope *s, const Req *q) {
         return s->wild ? strncmp(q->raw, s->text, strlen(s->text)) == 0
                        : strcmp(q->raw, s->text) == 0;
     case TK_CAP_SK_CONNECT: case TK_CAP_SK_LISTEN:
-        if (s->port != -1 && s->port != q->port) return 0;
+        if (s->port != -1 && q->port != -1 && s->port != q->port) return 0;
         switch (s->hk) {
         case HK_NAME:  return !q->fam && strcmp(q->canon, s->text) == 0;
         case HK_WILD: {
@@ -829,15 +829,18 @@ void tk_cap_require_net(uint32_t dir, const char *host, uint64_t port) {
     memset(&q, 0, sizeof q);
     q.kind = is_listen ? TK_CAP_SK_LISTEN : TK_CAP_SK_CONNECT;
     q.raw  = host ? host : "";
-    q.port = (long)port;
-    q.ok   = host && port <= 65535 && norm_host(host, q.canon, sizeof q.canon);
+    int any_port = !is_listen && port == TK_CAP_ANY_PORT;   /* a lookup: no port */
+    q.port = any_port ? -1 : (long)port;
+    q.ok   = host && (any_port || port <= 65535) && norm_host(host, q.canon, sizeof q.canon);
     if (q.ok) {
         if (inet_pton(AF_INET, q.canon, q.addr) == 1) q.fam = 4;
         else if (inet_pton(AF_INET6, q.canon, q.addr) == 1) q.fam = 6;
         else if (is_listen) q.ok = 0;          /* a bind address is an IP literal */
     }
     char scope[PATH_MAX];
-    if (q.ok)
+    if (q.ok && any_port)
+        snprintf(scope, sizeof scope, q.fam == 6 ? "connect:[%s]" : "connect:%s", q.canon);
+    else if (q.ok)
         snprintf(scope, sizeof scope, q.fam == 6 ? "%s:[%s]:%ld" : "%s:%s:%ld",
                  is_listen ? "listen" : "connect", q.canon, q.port);
     else
