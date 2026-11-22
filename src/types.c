@@ -535,6 +535,27 @@ static int lit_fits_int(const char *src, const Node *n, const Type *to) {
     }
     return neg ? (m <= nmax) : (m <= pmax);
 }
+/*
+ * forged_handle_arg (138.35, owner answer T-67) -- an INTEGER value where an
+ * opaque std handle (a `.tki` record with no fields: process's `handle`,
+ * vechandle, strbuf, ...) is declared.  The runtime dereferences such a
+ * slot, so `process.wait(5)` and a helper `h:i64` passing any integer on
+ * passed --check and died with SIGSEGV.  Only the literal `0` -- the null
+ * handle a `$err:e 0` arm yields, which the runtime answers -1 / `$err` --
+ * may stand for one.  A value of the handle's own type, a handle where an
+ * integer is declared (136.36), and an untyped value are not judged here.
+ * E4031, no `fix`: retyping the helper parameter or passing the handle
+ * itself are both repairs, and which is meant is not certain.
+ */
+static int int_lit_zero(const char *src, const Node *n) {
+    int neg; unsigned long long m;
+    return n && n->kind == NODE_INT_LIT && lit_int_value(src, n, &neg, &m)
+           && !neg && m == 0;
+}
+static int forged_handle_arg(const char *src, const Node *an, const Type *at,
+                             const Type *pt) {
+    return opaque_handle_type(pt) && is_integer(at) && !int_lit_zero(src, an);
+}
 static int lit_narrows(const char *src, const Node *n, const Type *to) {
     if (!n || !to) return 0;
     if (is_integer(to)) return lit_fits_int(src, n, to);
@@ -4809,6 +4830,23 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
             const Type *h = opaque_handle_type(pt) ? pt : at;
             const Type *o = h == pt ? at : pt;
             int oc = tki_arg_class(o);
+            /* 138.35: except an integer INTO a handle slot -- only the
+             * literal 0 (the null handle) may stand for one. */
+            if (h == pt && forged_handle_arg(cx->src, an, at, pt)) {
+                if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+                char msg[512], en[96], gn[96];
+                snprintf(en, sizeof en, "%s", type_name(pt));
+                snprintf(gn, sizeof gn, "%s", type_name(at));
+                snprintf(msg, sizeof msg,
+                         "type mismatch: argument %d of '%s.%s' is declared "
+                         "'%s' (%s.tki), got '%s' -- an opaque std handle is "
+                         "read by the runtime as a pointer, so only a handle "
+                         "or the literal 0 (the null handle) may be passed",
+                         i + 1, alias, member, en, mpath + 4, gn);
+                diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col,
+                          msg, "expected", en, "got", gn, (const char *)NULL);
+                continue;
+            }
             if (scalar_int_type(o)) continue;
             if (o->kind == TY_STRUCT && o->name && h->name
                 && strcmp(o->name, h->name) == 0) continue;
@@ -4924,7 +4962,8 @@ static void check_user_fn_args(Ctx *cx, const Node *call) {
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID
             || (pt->kind == TY_FUNC && !func_has_sig(pt))
             || !at || at->kind == TY_UNKNOWN) continue;
-        if (types_compat(at, pt) || lit_narrows(cx->src, an, pt)) continue;
+        if ((types_compat(at, pt) || lit_narrows(cx->src, an, pt))
+            && !forged_handle_arg(cx->src, an, at, pt)) continue;   /* 138.35 */
         if (subtree_reported(cx, an) || !tc_first_report(cx, an)) continue;
         emit_mm(cx, an, pt, at, NULL);
     }
@@ -5026,9 +5065,13 @@ static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
         Type *at = arg->rtype;
         if (!at) continue;
         int clash = 0;
+        /* 138.35 (owner answer T-67): an integer in an S slot, other than
+         * the literal 0 (the NULL a wrapper's `if (!s)` answers), is read
+         * as an address: `str.toupper(42)` died with SIGSEGV. */
         if (k == 'S')
             clash = at->kind == TY_ARRAY || at->kind == TY_MAP
-                 || at->kind == TY_STRUCT;
+                 || at->kind == TY_STRUCT
+                 || (is_integer(at) && !int_lit_zero(cx->src, arg));
         else
             clash = at->kind == TY_STR
                  && !(idx < 32 && (bytemask & (1u << idx)));
@@ -5041,8 +5084,11 @@ static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
                  "'%s.%s' is read by the runtime as %s",
                  k == 'S' ? "'" : "", want, k == 'S' ? "'" : "",
                  type_name(at), idx + 1, mpath, member,
-                 k == 'S' ? "a C string, so a handle of another kind is "
-                            "read as text"
+                 k == 'S' ? (is_integer(at)
+                             ? "a C string, so an integer other than the "
+                               "literal 0 is read as an address"
+                             : "a C string, so a handle of another kind is "
+                               "read as text")
                           : "an array whose length precedes its first "
                             "element, which a str does not have");
         diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
@@ -7857,8 +7903,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     if (ar&&tc_first_report(cx,node->children[ai]))
                         emit_mm(cx,node->children[ai],pt,ar,NULL);
                 }
-                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)
-                    &&!lit_narrows(cx->src,node->children[ai],pt)) {   /* 127.230 (4) */
+                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
+                    &&((!types_compat(at,pt)
+                        &&!lit_narrows(cx->src,node->children[ai],pt))   /* 127.230 (4) */
+                       ||forged_handle_arg(cx->src,node->children[ai],at,pt))) { /* 138.35 */
                     /* 127.220 item 4: "cast argument to str using 'as'" was
                      * offered for a [byte] (any array, map, struct) passed
                      * as str, and `as` does not convert those.  The cast is
