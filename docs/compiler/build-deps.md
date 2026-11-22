@@ -256,13 +256,16 @@ For that one source file it prints, one entry per line:
 This is the set tkc's own driver links: both read the module table in
 `src/stdlib_deps.c` through the same resolver.
 
-- **Run it on every module, one file per run, and link the union.** Each run
+- **Run it on every module and link the union.** Each file's list
   covers only that file's own imports. A `main.tk` that imports a module of
   its own which imports `std.json` does not list `json.c`, and linked with
   `main.tk`'s list alone the program fails on undefined symbols. Given several
-  files at once it prints each file's sections one after another with nothing
-  between them, so the second file's sources follow the first file's flags and
-  read as flags (story 138.54).
+  files at once (`tkc --emit-deps -I . b.tk main.tk`) it prints that union
+  itself, in the same layout as for one file: every file's sources, then `---`
+  and the flags, then `---` and the user modules, each entry once in first-seen
+  order, with a `-framework` line kept beside its name; if any file fails, it
+  prints nothing on stdout (story 138.54; before it, the sections were printed
+  back to back and the second file's sources read as flags).
 - **Pass the arguments the build passes.** The file must type-check, so give
   it the same `-I` directories. A file that does not type-check prints its
   diagnostics on stderr, nothing on stdout, and exits non-zero; stop the build
