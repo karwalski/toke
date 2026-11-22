@@ -97,7 +97,9 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   label (`expected` "a sum type", `got` the scalar), with no `fix`. `--check`
   over the 683 toke-tree, ooke `main` and 3,573 toke-test-programs sources
   draws it nowhere; ooke `make check-toke-candidate` and the website's
-  `make check-toke` pass. Conformance: C1920, D635.
+  `make check-toke` pass. Conformance: C1920, D635; C027 (cases 2, 5), C373
+  (case 1) and C400 (case 9) now meet the refusal at `--check`, and keep the
+  E9005 backstop pinned through a `mut` copy, which is not judged.
 - **A user name can no longer collide with an IR temporary or block label**
   (138.38, loke T-65). `f=g(t0:i64):i64{<t0+1}` passed `--check` and clang
   refused the IR ("multiple definition of local value named 't0'"); a local
