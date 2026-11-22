@@ -55,7 +55,7 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `keywords` | **14** | `sed -n '/KEYWORDS_DEFAULT/,/};/p' src/lexer.c` — 10 reserved words (`if el lp br let mut as rt sc mt`) plus the 4 declaration heads `m= i= t= f=` |
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **67** | `ls stdlib/*.tki \| wc -l` |
-| `conformance_cases_yaml` | **414** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 240, lexical 37) |
+| `conformance_cases_yaml` | **414** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 240, lexical 37, types 39) |
 | `conformance_cases_shell` | **640** | `ls test/conform/*.sh \| wc -l` |
 | `conformance_cases_total` | **1,054** | the two rows above; `make conform` runs both |
 | `diagnostic_codes_documented` | **92** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
