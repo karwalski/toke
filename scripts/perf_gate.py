@@ -340,9 +340,17 @@ def main():
             print("perf-gate: no baseline at %s (record one with --record)" % a.baseline)
             return 2
         # 127.451: a baseline from before the counter was recorded is "hw".
-        if base.get("host") != fp or base.get("counter", "hw") != counter_name:
-            print("SKIP perf-gate: this host is not the baseline's host, so its "
-                  "counts are not comparable. Nothing was compared.")
+        host_differs = base.get("host") != fp
+        counter_differs = base.get("counter", "hw") != counter_name
+        if host_differs or counter_differs:
+            why = []
+            if host_differs:
+                why.append("this host is not the baseline's host")
+            if counter_differs:
+                why.append("this host counts with another counter than the "
+                           "baseline's")
+            print("SKIP perf-gate: %s, so its counts are not comparable. "
+                  "Nothing was compared." % " and ".join(why))
             print("  baseline host: %s" % json.dumps(base.get("host")))
             print("  this host:     %s" % json.dumps(fp))
             print("  counter:       baseline %s, this host %s"
