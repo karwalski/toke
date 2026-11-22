@@ -162,6 +162,20 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   right name because the block had not been reused yet; with freed memory
   filled, the message carried the filler. W9010 is now emitted before the
   manifest is freed. No change to which programs are accepted. Test: C1960.
+- **`image.decode` / `image.tiffdecode` refuse a TIFF whose strips cannot back
+  its declared page** (127.488, a decompression-bomb guard). Every TIFF
+  decompressor zero-fills what a strip does not cover, so a 1,686-byte file
+  found by libFuzzer, declaring a 2600 x 65435 page over one 1,590-byte
+  uncompressed strip, decoded to a 170 MB page of zeros (3.2 s CPU and ~1 GB
+  peak RSS in the fuzz harness, which also encodes and flips the result). Each
+  codec now has a ceiling on what a strip's bytes can decode to (none 1:1,
+  PackBits 64:1, LZW 4096 bytes per 9-bit code, Deflate 1032:1, CCITT one row
+  per bit); when the declared bytes beyond those ceilings total more than
+  1 MiB, the page is refused before anything is allocated with
+  `image_tiff_decode: the strips are too short for the declared page
+  (decompression-bomb guard: ...)`. A well-formed file is never refused, and a
+  short strip within the 1 MiB slack still zero-fills as before. Tests: C2030;
+  the input is kept as `test/fuzz/corpus-adversarial/image_tiff_short_strip_127488.tif`.
 
 ### Build and CI gates
 

@@ -3111,6 +3111,36 @@ static uint8_t tiff_scale8(uint32_t v, uint32_t bps)
     }
 }
 
+/* ---- decompression-bomb guard (127.488) ---------------------------------- */
+
+/* The most bytes a strip of `scnt` input bytes can decode to, per codec.
+ * Upper bounds, so a valid strip always fits under its own:
+ *   1      none: one byte per byte.
+ *   32773  PackBits: a 2-byte run header + value repeats at most 128 bytes.
+ *   5      LZW: a code is at least 9 bits and expands to at most
+ *          TIFF_LZW_MAX bytes (the dictionary's longest string).
+ *   8/32946 Deflate: DEFLATE's ceiling is 258 bytes per 2 bits (1032:1).
+ *   2/3/4  CCITT: every row costs at least one bit, so scnt bytes back at
+ *          most 8 * scnt rows.
+ * scnt < 2^32 and src_row < 2^32, so no product here wraps uint64. */
+#define TIFF_UNBACKED_MAX (1ull << 20)
+
+static uint64_t tiff_max_decoded(uint32_t comp, uint64_t scnt, uint64_t src_row)
+{
+    switch (comp) {
+        case 1:     return scnt;
+        case 32773: return (scnt / 2 + 1) * 128;
+        case 5:     return (scnt * 8 / 9 + 1) * TIFF_LZW_MAX;
+        case 8:
+        case 32946: return (scnt + 1) * 1032;
+        case 2: case 3: case 4:
+                    /* h <= 2^28 rows, so past that the bound is moot. */
+                    if (scnt >= (1ull << 25)) return UINT64_MAX;
+                    return scnt * 8 * src_row;
+        default:    return 0;
+    }
+}
+
 /* ---- public entry points ------------------------------------------------ */
 
 int64_t image_tiff_pages(const uint8_t *bytes, uint64_t len)
@@ -3278,6 +3308,40 @@ ImgResult image_tiff_decode(const uint8_t *bytes, uint64_t len, uint32_t page)
 
     uint64_t src_row = ((uint64_t)w * spp * bps + 7) / 8;
     uint64_t out_len = (uint64_t)w * h * outch;
+
+    /* 127.488: the decompression-bomb guard.  Every decompressor below
+     * zero-fills a strip its bytes do not cover, so before this check a
+     * 1.7 KB header declaring 2600 x 65435 decoded to a 170 MB page of
+     * zeros (and every transform on it cost as much again).  Each codec has
+     * a hard ceiling on what n input bytes can decode to, so a strip's
+     * bytes bound its rows; the declared bytes no strip can back ("unbacked")
+     * may total at most TIFF_UNBACKED_MAX, which keeps a short final strip
+     * decoding as before and refuses the header before anything is
+     * allocated.  A well-formed file has no unbacked bytes at all.  The
+     * strip-bounds check moves here too, so it also runs before allocating. */
+    {
+        uint64_t unbacked = 0;
+        for (uint32_t s = 0; s < nstrips; s++) {
+            uint32_t rows = rps;
+            if ((uint64_t)s * rps + rows > h) rows = (uint32_t)(h - (uint64_t)s * rps);
+            uint64_t soff = tiff_val(&t, &so,  s);
+            uint64_t scnt = tiff_val(&t, &sbc, s);
+            if (soff >= len || soff + scnt > len) {
+                res.err_msg = "image_tiff_decode: strip runs past the end of the "
+                              "buffer";
+                return res;
+            }
+            uint64_t want = src_row * rows;
+            uint64_t can  = tiff_max_decoded(comp, scnt, src_row);
+            if (can < want) unbacked += want - can;
+        }
+        if (unbacked > TIFF_UNBACKED_MAX) {
+            res.err_msg = "image_tiff_decode: the strips are too short for the "
+                          "declared page (decompression-bomb guard: their bytes "
+                          "cannot decode to its width x height)";
+            return res;
+        }
+    }
 
     uint8_t *out    = (uint8_t *)malloc((size_t)out_len);
     uint8_t *rowbuf = (uint8_t *)malloc((size_t)(src_row * rps));

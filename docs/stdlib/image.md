@@ -156,6 +156,13 @@ Photometric tag decides which bit value is black, so a page decodes to a one-cha
 of 0 and 255. A corrupt or truncated strip fails with a message beginning
 `image_tiff_decode: CCITT strip:` that says what was wrong.
 
+A page whose strips are too short to hold its declared width x height is refused before
+anything is allocated (a decompression-bomb guard): each compression has a ceiling on what
+its bytes can decode to, and when the declared bytes past those ceilings total more than
+1 MiB, decoding fails with `image_tiff_decode: the strips are too short for the declared
+page`. A well-formed file is never refused; a slightly short final strip still decodes,
+zero-filled.
+
 Not supported, each rejected with a message naming what was found rather than a generic
 failure: CCITT uncompressed mode (an extension no mainstream encoder emits), JPEG-in-TIFF,
 tiled layouts, PlanarConfiguration 2 and BigTIFF.
