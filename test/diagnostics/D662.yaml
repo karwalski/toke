@@ -1,0 +1,18 @@
+id: D662
+series: D
+description: "127.475: the module form str.substr(s;a;b) lowers to the same fallible glue as str.slice (tk_str_substr_w calls tk_str_slice_w) although its std.tki record is an untyped gen:abi placeholder; passed to io.println it is E4031 got str!$sliceerr with NO fix"
+input: |
+  m=t;
+  i=io:std.io;
+  i=str:std.str;
+  f=main():i64{
+    let s="abc";
+    io.println(str.substr(s;0;9));
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "str!$sliceerr"

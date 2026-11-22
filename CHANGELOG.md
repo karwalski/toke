@@ -27,6 +27,7 @@ toke 3.2.0 already accepts, so it builds on both.
 | 3 | **An error union read as its value is rejected in more positions**, for a user `T!E`, a map lookup and a std `T!E` alike: an `if` or `lp` condition, the operand of `!`, a string interpolation (`"\(m.get(k))"` -- rejected, not printed), an argument of a std call or of a value-receiver method (`str.fromint(g())`, `xs.append(str.toint(s))`), the operand of an `as` cast (`str.toint("x") as i64` was 0: `as` converts the slot's value, it does not unwrap), each union operand of a comparison (`str.toint("x")==str.toint("y")` compared two fillers and was true; a union compared with an untyped operand was not judged either), and an assignment to an untyped `mut` binding that is not consumed as a union. Each is **E4031**, no `fix`. A `mut` binding is consumed only as an `mt` scrutinee, the operand of a postfix `!`, or the value of `<` in a function whose return type is a union: `let r=mut.0; r=s.toint(x); mt r{..}` (135.16a) is accepted, while `let z=r`, a bare `r;` or an arm value do not consume it. The other reads of a consumed binding are not judged (`docs/spec/semantics.md` 5.1 lists every position that is not). Also: the cast `fix` on a non-integer array index (the cast compiles and reads the filler) and the `<` `fix` on a discarded tail (it returns a union as `T`) are no longer offered when the value is a union; v3.2.0 offers both for a map lookup (127.466). | 127.323 | as above |
 | 4 | **The receiver spelling of `str.slice` is the union its module form is.** `t.slice(a;b)`, `t.substr(a;b)` and `t.substring(a;b)` on a `str` lower to the same error-slot glue as `str.slice(t;a;b)` (`mt t.slice(2;9){..}` takes `$err`) but checked as a plain `str`, so `io.println(t.slice(2;9))` printed the null filler and rewriting the module form to the receiver form silenced E4031. They are now `str!$sliceerr`, judged in the same positions, no `fix`; `t.slice(0;9)!$e` propagates (it was E3020). An array `.slice` clamps and is unchanged. | 127.462 | as above |
 | 5 | **An integer other than the literal `0` is E4031 where an opaque std handle or a runtime C string is read** (loke T-67). `process.wait(5)`, `process.stdout(7)`, a helper `f=waitfor(h:i64)` passing any integer on to `process.wait`, and `str.toupper(42)` / `str.reverse(12345)` (a `gen:"abi"` member whose glue reads a C string) checked clean and died with SIGSEGV; 3.2.0 refused a str, float or array there (138.21, 127.201) but not an integer. Newly refused forms, each **E4031 with no `fix`**: an integer literal other than `0`, an `i64` local or parameter (including one bound to `0`), arithmetic (`n+1`), and `h as i64`, passed where a std function declares an opaque record (`handle`, `vechandle`, `strbuf`, `tomlval`, `pdfdoc`, `xlsxbook`, `ziparchive`, `securebuf`) or to a user parameter declared `$handle` / `process.$handle` (same module, imported, or through a function value or closure); and an integer other than the literal `0` where a std wrapper reads a C string. The literal `0` (the null handle a `$err:e 0` arm yields; `process.wait(0)` still answers -1) and a real handle are unchanged, and so is a handle passed where an integer is declared (136.36). A value forged out of the checker's sight (`n as $handle`, a value through C) is the runtime half, 138.36. Measured before landing (batch Z217, this checker on `b518b41c`): no source file in the toke tree (695 sources; 510/510 doc programs, examples, stdlib-tk), ooke `main` (`make check-toke-candidate` passes) or the website (`make check-toke` passes); toke-test-programs: 1 of 3,573 files (`results/solutions/crypto-blockchain/CRY-017/solution.tk`, vec handles carried in `$i64` parameters); corpus: 0 of the 23,382 regen records and 0 of the 1,583 library records. In the toke tree, conformance script C005 carried a toml document in a `cfg:i64` helper parameter and was migrated to `cfg:$tomlval`. loke's helpers that carry a handle in an `i64` break, as decided: `src/core/inference/sidecar.tk` (`process.kill`/`wait` on an `i64`) and `packages/shared/src/config.tk` (`toml.section` on a `doc:i64`). | 138.35 (owner answer T-67, 2026-11-15) | Declare the parameter or field that holds a handle with its type: `h:$handle` (or `process.$handle`, `$vechandle`, `$strbuf`, `$tomlval`), valid on 3.2.0 too (138.32, C1906); keep `0` as the null handle; pass a `str` where a string is read. |
+| 6 | **A str slice on a record field or an array element, and the module form `str.substr`, are the union `str.slice` is** (extends row 4). `p.name.slice(2;9)` on a `name:$str` field, `p.sub.tag.slice(..)`, `xs.get(0).slice(..)` / `.substr` / `.substring` on an `@($str)` element, and `str.substr(s;a;b)` (whose std.tki record is an untyped `"gen":"abi"` placeholder; it lowers to `tk_str_substr_w`, which is `tk_str_slice_w`) checked clean and printed the null filler on a failure. They are now `str!$sliceerr`, judged in the same positions, **E4031 with no `fix`**; codegen does not move (IR identical on the 61 toke-tree, ooke and website programs that slice; the element receiver's IR gains only a comment). The interface record is not changed. Measured before landing (`--check`, this checker against the same tree without the rule): no change in the toke tree (695 sources; doc programs 513/513 build), ooke `main` (31) or the website (25); toke-test-programs: 38 of 3,573 files gain 119 diagnostics, 25 of them newly refused, every one the module form `s.substr(..)` (`results/solutions/`). | 127.475 | as row 4: `mt str.substr(s;a;b){$ok:v v;$err:e <your value>}`, or `!` in a fallible function |
 
 Measured before the flip with this checker against main `685aa852` (rows 127.319, 127.323
 and 127.462, batch Z211): 92 of 695 toke-tree sources and 15 of 509 documentation programs;
@@ -286,6 +287,32 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   in a file without one is still reported and fixed. Unchanged from 3.2.0, and
   open as 138.58: in a file without a foreign `$type`, an import that only
   codegen needs can still be reported.
+- **`args.get` no longer formats its error message on every miss** (127.470).
+  Since 113.B.8 the glue ran `vsnprintf("args.get: %s")` into the message ring
+  for each out-of-range index, so the canonical default form
+  `mt args.get(1){$ok:v v;$err:e "default"}` ran about 11x slower than the
+  `args.count()` check (pattern bench 2026-11-15: 1016 ms vs 89 ms). The one
+  reason `args_get` reports is `ARGS_ERR_OOB` (now exported by `args.h`,
+  recognised by address), so the box holds the static literal
+  `args.get: index out of bounds` (same text; any other reason is still
+  formatted). Measured on the cli-argv fixtures at `PAT_N=16384000`, user
+  CPU: form a 1.11 s (3.2.0) -> 0.19 s, form b 0.07 s; the pattern bench
+  (`run_patterns.py --pattern cli-argv`, N=8,192,000, load ~45) a 662 ms ->
+  143 ms against b 84 / 62 ms. The rest of the gap is the error-box raise
+  itself. The catalogue entry is not re-ingested (127.461). One visible
+  difference, a fix: a let-kept `args.get` error read after eight or more
+  later raises that use the ring (`toml.*`, `file.*`, ...) printed one of
+  their messages; it now keeps its own. Conformance: C1980.
+- **A trailing `;` before `}` in a type declaration is one E2002, not four
+  diagnostics** (127.339). `m=a;t=$p{x:i64;};` reported E2002, E2004, E2002,
+  E2002: `parse_field_list` stopped before the `;` without consuming it, so
+  the caller's `}` check cascaded, while its comment claimed the form was
+  allowed. grammar.ebnf (`FieldList = Field { ';' Field }`) admits no
+  trailing `;`, so it is still refused, now with ONE E2002 at the `;`
+  ("trailing ';' before '}' in a type declaration ..."), no `fix` (E2002
+  carries none), and parsing continues after it. Nothing that compiled
+  before changes. Whether `;`-separated lists take a trailing `;` at all is
+  the open owner question 127.360. Conformance: C1981, D660.
 
 - **Module-level `let` globals read back their value** (127.469; silent
   wrong results before). A global is held in an `i64` cell, and every read

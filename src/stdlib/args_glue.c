@@ -22,9 +22,19 @@ int64_t tk_args_get_w(int64_t n) {
     if (r.is_err) {
         int64_t *box = (int64_t *)tk_err_box((int64_t)sizeof(int64_t));
         /* 113.B.8: the core's own reason, not a constant standing in for it,
-         * so a new failure args_get reports reaches `e.msg` as it says it. */
-        box[0] = (int64_t)(intptr_t)tk_err_msg("args.get: %s",
-                                               r.err_msg ? r.err_msg : "failed");
+         * so a new failure args_get reports reaches `e.msg` as it says it.
+         * 127.470: but formatting it costs a vsnprintf on EVERY miss (the
+         * canonical `mt args.get(1){..}` default form ran ~11x slower than
+         * the count check).  The one reason args_get reports today is
+         * ARGS_ERR_OOB, recognised by address (a strcmp per miss cost as much
+         * again), so its message is a static literal too (same text, and it
+         * outlives the ring); any other reason is still formatted. */
+        const char *m;
+        if (r.err_msg == ARGS_ERR_OOB)
+            m = "args.get: index out of bounds";
+        else
+            m = tk_err_msg("args.get: %s", r.err_msg ? r.err_msg : "failed");
+        box[0] = (int64_t)(intptr_t)m;
         tk_current_error = (int64_t)(intptr_t)box;
         return 0;
     }
