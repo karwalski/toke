@@ -34,7 +34,7 @@
 # Negative control: the round-2 head 1254e614 fails the five shadow cases
 # (shclosure, shlet, shloop, shnested, shresult: false E4031).
 #
-# Story: 138.37
+# Story: 138.37, 138.56, 138.57
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -141,6 +141,46 @@ f=main():i64{<h(1)};'
 refused shclosed 3:54 i64 'm=t;
 t=$fe{$notfound:i64;$io:i64};
 f=h(e:i64):i64{if(e>0){let e=$fe{$io:3}; e}; <mt e {$notfound:v v+1;$io:v v+2}};
+f=main():i64{<h(1)};'
+
+# resrefused NAME LINE:COL SOURCE — 127.202's `$ok`/`$err` refusal (T!E).
+resrefused() {
+    printf '%s\n' "$3" > "${WORK}/$1.tk"
+    local out rc
+    out="$("${TKC}" --check "${WORK}/$1.tk" 2>&1)"; rc=$?
+    if [ "${rc}" -eq 0 ]; then fail "$1: --check passed it"; return; fi
+    local rec; rec="$(printf '%s\n' "${out}" | grep -m1 '"error_code":"E4031"')"
+    if [ -z "${rec}" ]; then fail "$1: no E4031: $(printf '%s' "${out}" | head -c 200)"; return; fi
+    local line="${2%%:*}" col="${2##*:}"
+    printf '%s' "${rec}" | grep -q "\"line\":${line},\"col\":${col}" \
+        && printf '%s' "${rec}" | grep -q '"expected":"T!E","got":"i64"' \
+        && pass "$1: E4031 T!E/i64 at $2" || fail "$1: wrong record: ${rec}"
+    printf '%s' "${rec}" | grep -q '"fix"' && fail "$1: carries a fix" || pass "$1: no fix"
+}
+
+# 8. A closure parameter is the binder in force and is judged by its own
+#    annotation (story 138.57).  Z218's 6e53633d skipped every closure
+#    parameter, so (a) and (b) -- refused on base b518b41c only because the
+#    outer function had a same-named i64 parameter -- passed --check, built
+#    and took `$err` (exit 3).  (c) passed --check on v3.2.0, base and
+#    6e53633d, and the binary died with SIGSEGV.  (d), with no outer
+#    parameter, stopped at build with E9005 and is now refused at --check.
+resrefused clres 2:40 'm=t;
+f=h(e:i64):i64{let g=fn(e:i64):i64{<mt e {$ok:v v+10;$err:x 3}}; <g(0)};
+f=main():i64{<h(1)};'
+resrefused cllet 2:49 'm=t;
+f=h(e:i64):i64{let g=fn(k:i64):i64{let e=k; <mt e {$ok:v v+10;$err:x 3}}; <g(0)};
+f=main():i64{<h(1)};'
+refused clvar 3:44 i64 'm=t;
+t=$fe{$a:i64;$b:i64};
+f=h(e:$fe):i64{let g=fn(e:i64):i64{<mt e {$a:v 1;$b:v 2}}; <g(3)};
+f=main():i64{<h($fe{$a:1})};'
+refused clmain 2:42 i64 'm=t;
+f=main():i64{let g=fn(e:i64):i64{<mt e {$a:v 1;$b:v 2}}; <g(3)};'
+# A sum-typed closure parameter with no outer parameter still runs.
+runs clsum 5 'm=t;
+t=$fe{$a:i64;$b:i64};
+f=h(e:i64):i64{let g=fn(e:$fe):i64{<mt e {$a:v v;$b:v v+1}}; <g($fe{$b:4})};
 f=main():i64{<h(1)};'
 
 # Controls: still clean.
