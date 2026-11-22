@@ -1074,21 +1074,64 @@ static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
  * `root` whose init is BARE and assigns the same name: `lp(i=0;..;i=i+1)`.
  * The init and the step then assign one binding, and an E4070 on the step
  * has the init's two repairs (`let i=mut.`, `lp(let i=`) that run
- * differently, so it carries no `fix` either. */
-static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+ * differently, so it carries no `fix` either.
+ *
+ * 127.468 (2): so does any other assignment inside that loop -- its body --
+ * that assigns the binding the bare init assigns.  In `let i=7;
+ * lp(i=0;i<5;i=i+1){ i=i+2 }` the body's `i=i+2` kept the `let` fix, and the
+ * two repairs still run differently (`let i=mut.7` exits 6, `lp(let i=0;..`
+ * exits 7).  An assignment to an inner binding of the same name (a `let i`
+ * in the body) is that binding's own and is not judged here. */
+static const Node *tk_binder_at(const Node *root, const char *src, const Node *use,
+                                const char *name, int nlen, const Node *anchor);
+static int bare_init_step_rec(const Node *fn, const Node *root, const char *src,
+                              const Node *asg) {
     if (!root || !asg) return 0;
     if (root->kind == NODE_LOOP_STMT && root->child_count == 4
-        && root->children[2] == asg) {
+        && root->children[0] != asg && node_contains(root, asg)) {
         const Node *ini = root->children[0];
-        return ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
+        if (ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
             && ini->child_count > 0 && ini->children[0]
-            && asg->child_count > 0 && asg->children[0]
-            && ident_same(ini->children[0], src, src + asg->children[0]->tok_start,
-                          asg->children[0]->tok_len);
+            && asg->child_count > 0 && asg->children[0]) {
+            const Node *an = asg->children[0];
+            const char *nm = src + an->tok_start;
+            if (ident_same(ini->children[0], src, nm, an->tok_len)) {
+                if (root->children[2] == asg) return 1;
+                if (tk_binder_at(fn, src, an, nm, an->tok_len, NULL)
+                    == tk_binder_at(fn, src, ini->children[0], nm, an->tok_len, NULL))
+                    return 1;
+            }
+        }
     }
     for (int i = 0; i < root->child_count; i++)
-        if (bare_init_step(root->children[i], src, asg)) return 1;
+        if (bare_init_step_rec(fn, root->children[i], src, asg)) return 1;
     return 0;
+}
+static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+    return bare_init_step_rec(root, root, src, asg);
+}
+/* let_mut_fix (127.468 (1)) -- the E4070 `fix` for an immutable `let` that
+ * `decl` (a NODE_BIND_STMT) declares, worded from the declaration's own
+ * spelling: "change 'let g=' to 'let g=mut.'", or for a typed binding
+ * "change 'let g:i64=' to 'let g:i64=mut.'" (the rewrite --migrate makes).
+ * The fixed text "let g=" did not occur in `let g:i64=5`.  The spelling is
+ * the source from `let` through the first `=`; 0 (no fix, AGENTS 6) when
+ * that is not found on the line, or when the spelling occurs more than once
+ * in the file -- a redeclared name (`let g=1;` ... `let g=2;`), or the same
+ * spelling elsewhere, where the edit would not say which declaration. */
+static int let_mut_fix(const char *src, const Node *decl, char *fix, size_t fsz) {
+    if (!src || !decl || decl->kind != NODE_BIND_STMT) return 0;
+    const char *s = src + decl->start;
+    if (strncmp(s, "let", 3) != 0 || !(s[3] == ' ' || s[3] == '\t')) return 0;
+    int k = 3;
+    while (s[k] && s[k] != '=' && s[k] != '\n' && s[k] != ';' && k < 200) k++;
+    if (s[k] != '=') return 0;
+    char sp[208]; memcpy(sp, s, (size_t)k + 1); sp[k + 1] = '\0';
+    int occ = 0;
+    for (const char *p = strstr(src, sp); p; p = strstr(p + 1, sp)) occ++;
+    if (occ != 1) return 0;
+    snprintf(fix, fsz, "change '%s' to '%smut.' to make it mutable", sp, sp);
+    return 1;
 }
 /* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
  * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
@@ -8535,10 +8578,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         else
                             snprintf(msg,sizeof(msg),
                                 "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
-                        char fix[256];
-                        snprintf(fix,sizeof(fix),
-                            "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                        /* 127.468 (1): worded from the declaration's spelling,
+                         * and absent for a name declared more than once at
+                         * module level (the assignment's binding is then not
+                         * the one a fix on the first would rewrite). */
+                        char fix[512];
+                        int mdecls=0;
+                        for (int ri=0;cx->root&&ri<cx->root->child_count;ri++) {
+                            const Node *rd=cx->root->children[ri];
+                            if (rd&&(rd->kind==NODE_BIND_STMT||rd->kind==NODE_MUT_BIND_STMT)
+                                &&rd->child_count>0&&ident_same(rd->children[0],cx->src,nb,nlen))
+                                mdecls++;
+                        }
+                        int has_fix=!alias&&mdecls==1&&md->def_node
+                            &&let_mut_fix(cx->src,md->def_node,fix,sizeof fix);
+                        if (has_fix&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
                             diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                                 "expected","mutable binding","got","immutable binding",
                                 "fix",fix,(const char*)NULL);
@@ -8579,12 +8633,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         snprintf(msg,sizeof(msg),
                             "cannot assign to immutable binding '%s'; a %s cannot be assigned, copy it into a 'let %s=mut.' first",
                             nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
-                    char fix[256];
-                    snprintf(fix,sizeof(fix),
-                        "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
+                    char fix[512];
                     /* 127.289: nor on the step of a loop whose bare init
-                     * assigns the same binding (bare_init_step). */
-                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                     * assigns the same binding (bare_init_step).  127.468:
+                     * worded from the declaration (let_mut_fix). */
+                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node)
+                        &&let_mut_fix(cx->src,lb,fix,sizeof fix))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
