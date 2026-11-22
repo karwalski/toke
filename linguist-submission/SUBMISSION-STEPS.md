@@ -5,12 +5,15 @@ The PR has NOT been submitted -- follow these steps when ready.
 
 ## Pre-flight checks
 
-1. **Adoption threshold** -- Linguist requires at least 200 unique `.tk` files
-   indexed on GitHub (excluding forks) in the last year. Check:
+1. **Adoption threshold** -- Linguist's usage bar for a new language is about
+   2,000 `.tk` files indexed on GitHub (excluding forks) in the last year, spread
+   across many repositories, not 200. Check:
    https://github.com/search?q=extension%3Atk+NOT+fork%3Atrue&type=code
 
 2. **Tree-sitter grammar license** -- must be one of Linguist's approved
-   licenses. The grammar at `tree-sitter-toke/` is ISC, which is approved.
+   licenses. The grammar is `tree-sitter-toke/` in karwalski/toke-spec, licensed
+   MIT (its `package.json`; the toke-spec `LICENSE`), which is approved. The
+   older copy that sat in this repository was archived (story 127.457).
 
 3. **No extension conflicts** -- `.tk` is not currently claimed by another
    language in Linguist.
@@ -31,7 +34,7 @@ git checkout -b add-toke-language
 #    OMIT the language_id line -- the script generates it.
 
 # 4. Add the tree-sitter grammar
-script/add-grammar https://github.com/karwalski/toke.git#tree-sitter-toke
+script/add-grammar https://github.com/karwalski/toke-spec.git#tree-sitter-toke
 
 # 5. Copy sample files
 cp /path/to/linguist-submission/samples/toke/* samples/toke/
@@ -63,9 +66,7 @@ gh pr create --title "Add toke programming language" \
 
 ## Grammar reference
 
-The tree-sitter grammar lives at `/Users/matthew.watt/tk/toke/tree-sitter-toke/`
-and is already configured with:
-- Scope: `source.toke`
-- File type: `.tk`
-- Highlights query: `queries/highlights.scm`
-- License: ISC
+The tree-sitter grammar lives in karwalski/toke-spec, at `tree-sitter-toke/`
+(https://github.com/karwalski/toke-spec/tree/main/tree-sitter-toke). Its
+`package.json` configures scope `source.toke` and file type `.tk`; its README
+states what the grammar covers; its licence is MIT.
