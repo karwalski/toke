@@ -50,6 +50,19 @@ f=example():void{
 };
 ```
 
+### str.substr(s: $str; start: u64; end: u64): $str!$sliceerr
+
+The same function as `str.slice`, under a second name: the same byte indices, the same result and the same `$sliceerr` on an index past the end or `start > end`. The receiver spellings `s.slice(a;b)`, `s.substr(a;b)` and `s.substring(a;b)` are this call too.
+
+```toke
+m=test;
+i=str:std.str;
+f=example():void{
+  let r = str.substr("hello"; 1; 3);
+  let e = str.substr("hello"; 3; 10);
+};
+```
+
 ### str.fromint(n: i64): $str
 
 Converts a signed 64-bit integer to its decimal string representation.

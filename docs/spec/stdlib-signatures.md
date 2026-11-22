@@ -50,6 +50,7 @@ toke uses a **TOON-first serialization strategy**: TOON for tabular data, YAML a
 f=len(s:$str):u64
 f=concat(a:$str;b:$str):$str
 f=slice(s:$str;start:u64;end:u64):$str!$sliceerr
+f=substr(s:$str;start:u64;end:u64):$str!$sliceerr
 f=split(s:$str;sep:$str):@$str
 f=upper(s:$str):$str
 f=lower(s:$str):$str
@@ -59,6 +60,11 @@ f=replace(s:$str;old:$str;new:$str):$str
 f=starts(s:$str;prefix:$str):bool
 f=ends(s:$str;suffix:$str):bool
 ```
+
+`substr` is `slice` under a second name: the same glue, the same arguments and
+the same `$sliceerr`, as are the receiver spellings `s.slice(a;b)`,
+`s.substr(a;b)` and `s.substring(a;b)` (story 127.493 typed its interface
+record, which had been an untyped `"gen":"abi"` placeholder).
 
 Regular expressions (one pattern language, `docs/stdlib/str.md` "Regular
 expressions"; amended 2026-09-30, story 121.45: `checkre` and `$regexerr`):
@@ -1368,7 +1374,7 @@ f=trimprefix(a:$str;b:$str):$str
 f=trimsuffix(a:$str;b:$str):$str
 ```
 
-Not listed: 49 further `"gen":"abi"` exports of `stdlib/str.tki`, whose types are ABI placeholders (only the arity is declared).
+Not listed: 48 further `"gen":"abi"` exports of `stdlib/str.tki`, whose types are ABI placeholders (only the arity is declared).
 
 ### std.svg (generated)
 
