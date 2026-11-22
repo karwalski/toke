@@ -160,6 +160,8 @@ Releases the configuration and zeroes any key material in it.
 
 Binds a TCP socket on `port` and accepts TLS connections in a loop, invoking `cb` with each accepted `tlsconn`. Pass the callback by reference, `&handler`.
 
+The handler owns the connection and must end it with `tls.close`; the listener never closes it. A connection the handler leaves open keeps its socket, its TLS session and its `tlsconn` record (about 40 bytes, plus its entry in the runtime's handle table, 138.61) until the process exits, so a long-running listener whose handler skips `tls.close` grows without bound.
+
 Returns `false` at once if the socket cannot be bound or the TLS context cannot be created. Otherwise it does not return: it runs until the process exits.
 
 ### tls.connect(host: str; port: i32; cfg: tlsconfig): ?(tlsconn)
