@@ -311,7 +311,7 @@ A lookup can miss, so `m.get(k)` on a map `@($k:$v)` is the error union `$v!$err
 m=exprs;
 f=demo():i64{
   let scores=@("alice":30;"bob":25);
-  < mt scores.get("alice") {$ok:v v;$err:e 0}
+  < scores.getor("alice";0)
 };
 ```
 
@@ -392,9 +392,9 @@ The `!` postfix operator unwraps an error union value. If the value is `$ok`, it
 ```toke
 m=exprs;
 i=file:std.file;
-f=linecount(path:$str):i64{
-  let result=file.read(path);
-  < mt result {$ok:data data.len as i64;$err:e 0}
+f=linecount(path:$str):i64!$fileerr{
+  let data=file.read(path)!$fileerr;
+  < data.len as i64
 };
 ```
 

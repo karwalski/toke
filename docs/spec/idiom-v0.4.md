@@ -54,7 +54,7 @@ v0.4 (A3): `==` compares, `=` binds/assigns. `if(x==0)`, not `if(x=0)`.
 This is the largest single win. The stdlib has typed, working parsers.
 ```
 BAD   a per-char lp scan with s.charat/s.slice to read JSON   (* ~16+ tok, brittle *)
-GOOD  let d=mt j.dec(src){$ok:v v;$err:e 0};                  (*  9 tok, −44%, correct *)
+GOOD  let d=mt j.dec(src){$ok:v v;$err:e <1};                 (* 12 tok, correct *)
 ```
 - JSON → `json.dec` + typed accessors `json.str`/`i64`/`u64`/`f64`/`bool`/`arr`.
 - CSV → `csv.parse` / `csv.reader`+`csv.next`.

@@ -207,10 +207,6 @@ i=file:std.file;
 i=io:std.io;
 i=str:std.str;
 
-f=rd(p:str):str{
-  <mt file.read(p){$ok:v v;$err:e ""}
-};
-
 f=onconn(conn:i64):i64{
   io.println(str.concat("proto=";tls.protocol(conn)));
 
@@ -236,7 +232,12 @@ f=onconn(conn:i64):i64{
    documented route, and it makes "mutual auth" an intent rather than a
    boolean somebody forgets to set. *)
 f=main():i64{
-  let cfg=tls.mutualconfig(rd("/tmp/toke-tls-s.crt");rd("/tmp/toke-tls-s.key");rd("/tmp/toke-tls-c.crt"));
+  (* a PEM file that cannot be read stops the server here, instead of
+     reaching tls.mutualconfig as an empty string *)
+  let crt=mt file.read("/tmp/toke-tls-s.crt"){$ok:v v;$err:e <1};
+  let key=mt file.read("/tmp/toke-tls-s.key"){$ok:v v;$err:e <1};
+  let ca=mt file.read("/tmp/toke-tls-c.crt"){$ok:v v;$err:e <1};
+  let cfg=tls.mutualconfig(crt;key;ca);
   io.println("listening on 8443");
   tls.listen(8443;cfg;&onconn);
   tls.freeconfig(cfg);
@@ -253,13 +254,12 @@ i=file:std.file;
 i=io:std.io;
 i=str:std.str;
 
-f=rd(p:str):str{
-  <mt file.read(p){$ok:v v;$err:e ""}
-};
-
 f=main():i64{
   (* present our own certificate AND pin the server's *)
-  let cfg=tls.pinconfig(rd("/tmp/toke-tls-c.crt");rd("/tmp/toke-tls-c.key");rd("/tmp/toke-tls-s.crt"));
+  let crt=mt file.read("/tmp/toke-tls-c.crt"){$ok:v v;$err:e <1};
+  let key=mt file.read("/tmp/toke-tls-c.key"){$ok:v v;$err:e <1};
+  let pin=mt file.read("/tmp/toke-tls-s.crt"){$ok:v v;$err:e <1};
+  let cfg=tls.pinconfig(crt;key;pin);
 
   let conn=tls.connect("127.0.0.1";8443;cfg);
   if(conn==0){
