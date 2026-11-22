@@ -4,7 +4,7 @@ slug: patterns-v0.4
 section: spec
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `01211376909d`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `ea9b223e363c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Status:** normative (Epic 131). **Protocol:** `0.4` — [patterns-protocol-v0.4](/docs/spec/patterns-protocol-v0.4/) defines the schema (§3), the token (§4) and runtime (§5) measurements, the verdict algorithm (§6) and how a verdict is enforced (§7). **Companion:** [idiom-v0.4](/docs/spec/idiom-v0.4/) (the prose rules these verdicts measure), [Lesson 11 — Patterns and Efficiency](/docs/learn/11-patterns-and-efficiency/) (the teaching view of the same data).
 
@@ -583,15 +583,17 @@ f=pat(xs:@i64):i64{
 
 **Intent.** Accumulate values into a new @i64 in a loop.
 
-**Applicability.** Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w), so it is linear too. The form b numbers below are the 2026-09-19 tkc 2.8.0 measurement (a timeout), which predates 127.229. Re-measured on tkc 3b469371 (2026-11-14, loadavg 5-7), a and b have equal RSS and allocation counts, and the faster of the two changed between runs (b +6.5% at N=16,384,000; a +8.6% at N=8,192,000). Ingesting either run would settle the canonical form by noise, so the new numbers are held for an owner decision (127.437). std.vec is a separate handle type needing `vec.toarray` at the end.
+**Applicability.** Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w, pinned by conformance test C267), and `tkc -O2` gives forms a and b identical machine code (recorded in the entry's `identical_code` proof). Under protocol §6 step 3 (owner decision 4.11 (d), 2026-11-15) the two are tied and the tie keeps the incumbent, so `.append` stays canonical; b's 5 fewer `--min` bytes do not displace it, and the wall difference between a and b in any run is noise. `x=x+@(v)` is not slower, only not the canonical spelling. std.vec is a separate handle type needing `vec.toarray` at the end.
 
 | form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **a** | `x=x.append(v)` — expected: best (in-place amortised) | 13 | 74 | 15 | 41 | 39 | 74 | 81.94 | 260912 | 226 / 268464611 | 3.47 | best | best |
-| b | `x=x+@(v)` — in-place append since 127.229 (its 2026-09-19 numbers predate that) | 13 | 69 | 14 | 42 | 40 | 69 | 30000.00 | pending | pending | 99.00 | worse-bigO | best |
-| c | std.vec push then toarray — expected: tied (amortised push, one final copy) | 27 | 95 | 26 | 47 | 45 | 95 | 86.59 | 259664 | 223 / 399535915 | 3.51 | slower | more |
+| **a** | `x=x.append(v)` — expected: best (in-place amortised) | 13 | 74 | 15 | 41 | 39 | 74 | 65.50 | 66656 | 225 / 67146948 | 2.08 | best | best |
+| b | `x=x+@(v)` — in-place append since 127.229; identical code to a | 13 | 69 | 14 | 42 | 40 | 69 | 64.62 | 66640 | 225 / 67146948 | 2.50 | best | best |
+| c | std.vec push then toarray — expected: tied (amortised push, one final copy) | 27 | 95 | 26 | 47 | 45 | 95 | 73.55 | 67760 | 222 / 99914300 | 1.92 | slower | more |
 
 **Verdict.** canonical = `a` (`x=x.append(v)`); status = `provisional`.
+
+**Identical code.** Forms `a`, `b` lower to identical `tkc -O2` machine code (tkc @ `0558545d5b78`, `otool -tV` text sha256 `0543b0a6b8cd`, checked 2026-11-23; the lowering is pinned by conformance test C267). Under protocol §6 step 3 they are tied, and the tie keeps the incumbent.
 
 **Canonical form** (`patterns/acc-array/a.tk`, full fixture program):
 
@@ -618,7 +620,7 @@ f=main():i64{
 };
 ```
 
-**Form `b`** — `x=x+@(v)` — in-place append since 127.229 (its 2026-09-19 numbers predate that) (`patterns/acc-array/b.tk`, `pat` only):
+**Form `b`** — `x=x+@(v)` — in-place append since 127.229; identical code to a (`patterns/acc-array/b.tk`, `pat` only):
 
 ```toke
 f=pat(n:i64):@i64{
@@ -650,7 +652,7 @@ f=pat(n:i64):@i64{
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
-**Measured at.** tkc `toke 2.8.0` @ `67d244c78216`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `20260919-152046.json`; date 2026-09-19. Timed on a machine under load (`meta.load_warning`) — every verdict here stays `provisional` until story 131.25 re-measures (protocol §8).
+**Measured at.** tkc `toke 3.2.0 (git 0558545d5b78)` @ `0558545d5b78`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `20261123-015310.json`; date 2026-11-22. Timed on a machine under load (`meta.load_warning`) — every verdict here stays `provisional` until story 131.25 re-measures (protocol §8).
 
 ### acc-map-build
 

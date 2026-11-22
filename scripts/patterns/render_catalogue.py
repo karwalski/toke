@@ -16,7 +16,9 @@ Subcommands
     ingest --results bench/patterns/results/<file>.json [--write]
                   -> copy the 131.5 runtime numbers into the catalogue per (id, form), set
                      measured_at.bench_result, re-derive runtime/token verdicts + canonical/hot_path
-                     with validate_catalogue.derive_verdicts (the one implementation of protocol §6);
+                     with validate_catalogue.derive_verdicts (the one implementation of protocol §6;
+                     the incumbent for the identical-code tie is the canonical recorded before the run, none on
+                     a first measurement; an entry that needs an owner verdict is left exactly as it was);
                      a harness `timeout` form is ingested deterministically (protocol §5.2: wall 30000,
                      ci [30000,30000], bigO 99 -> worse-bigO); status stays `provisional` (or `blocked`).
                      A results file with meta.load_warning is refused unless --accept-load-warning is
@@ -38,6 +40,7 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import copy
 import difflib
 import hashlib
 import json
@@ -312,6 +315,11 @@ def render_spec(doc: dict, sha: str) -> str:
                 verdict += f"; hot path = `{vd['hot_path']}` ({esc(short_label(hot['label']))}) — choose it when {vd['choose_hot_path_when']}"
             verdict += f"; status = `{vd['status']}`."
             L += [verdict, ""]
+            for p in e.get("identical_code") or []:
+                L += [f"**Identical code.** Forms {', '.join('`' + f + '`' for f in p['forms'])} lower to identical "
+                      f"`tkc -O2` machine code (tkc @ `{str(p['tkc_sha'])[:12]}`, `otool -tV` text sha256 "
+                      f"`{p['text_sha256'][:12]}`, checked {p['date']}; the lowering is pinned by conformance test "
+                      f"{p['conform']}). Under protocol §6 step 3 they are tied, and the tie keeps the incumbent.", ""]
             L += [f"**Canonical form** (`{canon['fixture']}`, full fixture program):", "", fence_toke(read_fixture(canon["fixture"])), ""]
             for c in e["candidates"]:
                 if c is canon:
@@ -508,6 +516,11 @@ def ingest(doc: dict, results_path: str, accept_load_warning: bool = False) -> t
             warnings.append(f"{pid}: bench status {pr.get('status')!r} — entry skipped")
             continue
         forms = pr.get("forms", {})
+        before, n_changes = copy.deepcopy(e), len(changes)   # restored if the entry needs an owner verdict
+        # protocol §6 step 3 (127.440): the incumbent is the canonical form recorded before this run is
+        # ingested; on a pattern's first measurement (no live form measured yet) there is none
+        live_before = [c for c in e["candidates"] if not is_blocked(c)]
+        incumbent = e["verdict"]["canonical"] if live_before and all(vc._measured(c) for c in live_before) else None
         for f in sorted(set(forms) - {c["form"] for c in e["candidates"]}):
             # e.g. the std.fmt probes cond-bool-render/d, cli-print-results/d (127.48): measured on purpose,
             # not candidates — never silently dropped, so fixture drift is visible in the ingest log
@@ -579,9 +592,20 @@ def ingest(doc: dict, results_path: str, accept_load_warning: bool = False) -> t
                     warnings.append(f"{pid}: bench tkc_sha {str(v)[:12]} differs from token-measurement sha {str(ma[k])[:12]} — tokens may need re-counting")
                 changes.append(f"{pid}.measured_at.{k}: {ma.get(k)!r} -> {v!r}")
                 ma[k] = v
-        d = vc.derive_verdicts(e)
+        for p in e.get("identical_code") or []:
+            if not vc._sha_match(p.get("tkc_sha"), ma["tkc_sha"]):
+                warnings.append(f"{pid}: identical_code proof for {p.get('forms')} was made with tkc {str(p.get('tkc_sha'))[:12]}, "
+                                f"not this run's {str(ma['tkc_sha'])[:12]} — stale; re-prove before ingesting "
+                                f"(scripts/patterns/prove_identical_code.py)")
+        d = vc.derive_verdicts(e, incumbent=incumbent)
         if d is None:
             warnings.append(f"{pid}: some live form still unmeasured — verdicts left as authored")
+            continue
+        if d["undecided"]:
+            e.clear()
+            e.update(before)
+            del changes[n_changes:]
+            warnings.append(f"{pid}: {d['undecided']} — entry NOT ingested (left exactly as it was)")
             continue
         for c in e["candidates"]:
             if is_blocked(c):

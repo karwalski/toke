@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `01211376909d`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `ea9b223e363c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -508,7 +508,7 @@ f=main():i64{
 
 Accumulate values into a new @i64 in a loop.
 
-Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w), so it is linear too. The form b numbers below are the 2026-09-19 tkc 2.8.0 measurement (a timeout), which predates 127.229. Re-measured on tkc 3b469371 (2026-11-14, loadavg 5-7), a and b have equal RSS and allocation counts, and the faster of the two changed between runs (b +6.5% at N=16,384,000; a +8.6% at N=8,192,000). Ingesting either run would settle the canonical form by noise, so the new numbers are held for an owner decision (127.437). std.vec is a separate handle type needing `vec.toarray` at the end.
+Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w, pinned by conformance test C267), and `tkc -O2` gives forms a and b identical machine code (recorded in the entry's `identical_code` proof). Under protocol §6 step 3 (owner decision 4.11 (d), 2026-11-15) the two are tied and the tie keeps the incumbent, so `.append` stays canonical; b's 5 fewer `--min` bytes do not displace it, and the wall difference between a and b in any run is noise. `x=x+@(v)` is not slower, only not the canonical spelling. std.vec is a separate handle type needing `vec.toarray` at the end.
 
 **Write this** — `x=x.append(v)` (`patterns/acc-array/a.tk`):
 
@@ -535,18 +535,19 @@ f=main():i64{
 };
 ```
 
-**Not this** — `x=x+@(v)` — in-place append since 127.229 (its 2026-09-19 numbers predate that) (`patterns/acc-array/b.tk`):
+**Not this** — std.vec push then toarray (`patterns/acc-array/c.tk`):
 
 ```toke
 m=main;
 i=io:std.io;
 i=env:std.env;
+i=vec:std.vec;
 f=pat(n:i64):@i64{
-  let x=mut.@();
+  let v=mut.vec.new();
   lp(let i=0;i<n;i=i+1){
-    x=x+@(i*3)
+    v=vec.push(v;i*3)
   };
-  <x
+  <vec.toarray(v)
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -562,9 +563,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 74 | 81.94 | 260912 |
-| `b` — avoid | 13 | 69 | 30000.00 | pending |
-| `c` — avoid | 27 | 95 | 86.59 | 259664 |
+| `a` — canonical | 13 | 74 | 65.50 | 66656 |
+| `b` — avoid | 13 | 69 | 64.62 | 66640 |
+| `c` — avoid | 27 | 95 | 73.55 | 67760 |
 
 ### acc-map-build
 

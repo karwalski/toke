@@ -288,6 +288,20 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
 - **The stale `tree-sitter-toke/` copy is archived** (127.457); the maintained grammar is
   `tree-sitter-toke/` in karwalski/toke-spec.
 
+- **The pattern verdict tooling implements the identical-code tie, and acc-array is
+  re-measured** (127.440, 127.437; owner decision 4.11 (d), 2026-11-15). `derive_verdicts`
+  (`scripts/patterns/validate_catalogue.py`, used by `render_catalogue.py ingest`) now
+  treats forms with an `identical_code` proof (new optional catalogue key, written by
+  `scripts/patterns/prove_identical_code.py`: identical `tkc -O2` text under the measured
+  tkc, plus the conformance test pinning the lowering) as runtime-tied, and a tie keeps the
+  incumbent. Identical-code forms that are not token-tied, and a tie with no incumbent among
+  the tied forms (a first measurement), are refused for an owner verdict, not resolved
+  (127.501). acc-array was re-measured on tkc `0558545d5b78` (under load, so it stays
+  provisional) and ingested: `x=x.append(v)` stays canonical, `x=x+@(v)` is now runtime
+  `best` beside it instead of the stale 2.8.0 timeout, and the card rule reads
+  `x=x.append(v)` without the old "never x=x+@(v)" clause. toke-tokenizer's must-merge
+  list is re-derived (branch `fix/127.440-mustmerge`; merge both together).
+
 ### Changed — scoped capability grants (spec amendment 138.19)
 
 The owner accepted D1–D4 of `docs/decisions/138.19-scoped-capability-grants.md` as
