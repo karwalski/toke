@@ -708,7 +708,7 @@ A route handler is an ordinary function, `(req:$req):$res`. A test calls it dire
 - **Route params are given, not matched.** The server binds `:id` from the route pattern; a test passes the bindings it wants in `params`.
 - **The response is the handler's, not the wire's.** The `res*` functions read the response the handler returned. The server adds `Content-Length`, `Connection` and any CORS header when it sends, and those are not in it.
 
-A handler declared `(req:i64):i64` cannot take the `$req` from `http.mockreq` (E4031); declare it `(req:$req):$res`. The route registration and the accessors accept both forms.
+A handler declared `(req:i64):i64` cannot take the `$req` from `http.mockreq` (E4031); declare it `(req:$req):$res`. The route registration accepts both forms, but since story 138.46 the accessors (`http.param`, `http.header`, `http.reqbody`, ...) refuse an `i64` other than the literal `0` where a `$req` is declared (E4031), so a handler that reads the request declares `req:$req`.
 
 ### http.mockreq(method: $str; path: $str; headers: @(@($str)); body: $str; params: @(@($str))): $req
 
