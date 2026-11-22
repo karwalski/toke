@@ -825,6 +825,7 @@ A program can therefore resolve a name with [`net.resolve`](/docs/stdlib/net/), 
 
 - an `addr` that is not an address literal, such as `"localhost"`, is `$err` (`withconnectaddr: not an IPv4 or IPv6 address literal`) and nothing is sent;
 - a client that has both `withconnectaddr` and `withproxy` is `$err` (`withconnectaddr cannot be combined with withproxy`), because the proxy makes its own connection to the URL's host.
+- under a scoped `net` grant (138.19), both the URL's host and `addr` must be admitted by a `connect:` scope, because `addr` is the address actually dialled. A grant for the host alone does not reach an arbitrary address (CAP002 names whichever is missing).
 
 ### Client calls and route registration are different names
 

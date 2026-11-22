@@ -33,6 +33,9 @@
 #      admitted (the origin is example.invalid, a reserved name that is never
 #      resolved: through a proxy only the proxy is dialled, and here it is a
 #      closed 127.0.0.1 port)
+#   8. http.withconnectaddr (138.25) dials the address, not the URL's host:
+#      the address must be admitted as well as the host (example.invalid is
+#      never resolved; the address is a closed 127.0.0.1 port)
 # (Wildcard and IPv6 matching, which would need DNS or v6 here, are in the
 # broker's unit test, test/stdlib/test_capabilities.c.)
 #
@@ -87,6 +90,12 @@ f=main():i64{
     let c=http.withproxy(http.client(o);a);
     let r=mt http.clientget(c;"/") {$ok:b 1;$err:e 2};
     io.println("proxyget-done \(r)");
+  }el{};
+  if(op=="caddrget"){
+    let o=mt args.get(3) {$ok:v v;$err:e ""};
+    let c=http.withconnectaddr(http.client(a);o);
+    let r=mt http.clientget(c;"/") {$ok:b 1;$err:e 2};
+    io.println("caddrget-done \(r)");
   }el{};
   if(op=="accept"){
     let l=net.listen(a);
@@ -164,6 +173,14 @@ run "7f origin admitted, the proxy not" deny "${P}" proxyget http://127.0.0.1:48
 if /usr/bin/grep -a -q "not for 'connect:127.0.0.1:48122'" "${WORK}/e"; then
     pass "7f the denial names the proxy (connect:127.0.0.1:48122)"
 else fail "7f denial: $(head -1 "${WORK}/e")"; fi
+
+# 8 http.withconnectaddr: the dialled address must be in scope too
+run "8a host admitted, connectaddr 127.0.0.1 not" deny "${P}" caddrget http://example.invalid:48124 127.0.0.1 --allow-net=connect:example.invalid:48124
+if /usr/bin/grep -a -q "not for 'connect:127.0.0.1:48124'" "${WORK}/e"; then
+    pass "8a the denial names the dialled address (connect:127.0.0.1:48124)"
+else fail "8a denial: $(head -1 "${WORK}/e")"; fi
+run "8b host and address both admitted" admit "${P}" caddrget http://example.invalid:48124 127.0.0.1 --allow-net=connect:example.invalid:48124,connect:127.0.0.1:48124
+run "8c address admitted, host not" deny "${P}" caddrget http://example.invalid:48124 127.0.0.1 --allow-net=connect:127.0.0.1:48124
 
 echo "------------------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

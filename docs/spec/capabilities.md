@@ -75,7 +75,7 @@ class set does not change; `net` takes its direction inside the scope.
 | Class | Scope form | Matches |
 |---|---|---|
 | `fs.read`, `fs.write` | a path: `/srv/www`, `./content`, `~/.config/loke` | the path itself and everything beneath it, compared **component by component** after canonicalisation (§1.3). `/srv/www` does not match `/srv/wwwx`. |
-| `net` | `connect:HOST[:PORT]` or `listen:ADDR:PORT` | `HOST` is a DNS name, `*.example.com` (one or more labels, never the bare apex), an IPv4 literal, a bracketed IPv6 literal (`[::1]`) or a CIDR block. `PORT` is a number or `*`; an omitted connect port means any port. A listen `ADDR` is an IP literal and the port is required, so `listen:0.0.0.0:8080` is visibly different from `listen:127.0.0.1:8080`. |
+| `net` | `connect:HOST[:PORT]` or `listen:ADDR:PORT` | `HOST` is a DNS name, `*.example.com` (one or more labels, never the bare apex), an IPv4 literal, a bracketed IPv6 literal (`[::1]`) or a CIDR block. `PORT` is a number or `*`; an omitted connect port means any port. A listen `ADDR` is an IP literal and the port is required, so `listen:0.0.0.0:8080` is visibly different from `listen:127.0.0.1:8080`. The HTTP client checks the URL's host, and with `http.withconnectaddr` also the address it dials; through a proxy it checks both the proxy and the origin. |
 | `process.spawn` | a command: `/usr/bin/git` or `git` | the executable that would run, after `PATH` lookup (§1.3) |
 | `env.write` | a variable name: `TZ`, `LANG`, `TOKE_*` | the key passed to `env.set` / `os.setenv`, with one trailing `*` as a prefix wildcard |
 

@@ -3419,6 +3419,10 @@ static int client_tcp_connect(const char *host, const char *port,
 {
     /* 138.19: the name the program passed, before DNS (design §3.2). */
     TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, port ? strtoul(port, NULL, 10) : 0);
+    /* 138.19 x 138.25: http.withconnectaddr dials `addr`, not `host`, so a
+     * connect scope must admit the address actually dialled as well as the
+     * URL's host; otherwise a grant for one name reaches any address. */
+    if (addr) TK_REQUIRE_NET(TK_CAP_NET_CONNECT, addr, port ? strtoul(port, NULL, 10) : 0);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
