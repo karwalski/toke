@@ -1,0 +1,17 @@
+id: D641
+series: D
+description: "138.39 (T-39) negative control: beside an import needed for a struct-field type, a genuinely unused import is still unused-import, and --fix deletes that one only"
+input: |
+  m=t;
+  i=c:std.csv;
+  i=j:std.json;
+  t=$h{r:$csvreader;k:i64};
+  f=main():i64{<0};
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["unused-import"]
+expected_fixed_output: |
+  m=t;
+  i=c:std.csv;
+  t=$h{r:$csvreader;k:i64};
+  f=main():i64{<0};

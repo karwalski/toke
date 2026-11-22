@@ -747,14 +747,26 @@ static int node_name(const Node *n, const char *src, const char **out)
     return e - p;
 }
 
+/* 138.39: only the declared NAME (the TYPE_DECL's own TYPE_IDENT child) and
+ * the field labels are declarations.  A TYPE_IDENT inside a field's type --
+ * `t=$holder{items:@$item}` -- is a REFERENCE; collecting it as declared
+ * made `$item` look local, so the import that supplies it was reported
+ * unused and `--fix` deleted it (E3011 on the next check). */
 static void collect_local_type_names(const Node *n, const char *src,
                                      NameSet *ns, int in_type_decl)
 {
     const char *s; int len;
     if (!n) return;
-    if (n->kind == NODE_TYPE_DECL) in_type_decl = 1;
-    if (in_type_decl && (n->kind == NODE_FIELD ||
-                         (n->kind == NODE_TYPE_IDENT && n->op != TK_DOT))) {
+    if (n->kind == NODE_TYPE_DECL) {
+        in_type_decl = 1;
+        if (n->child_count > 0 && n->children[0]
+            && n->children[0]->kind == NODE_TYPE_IDENT
+            && n->children[0]->op != TK_DOT) {
+            len = node_name(n->children[0], src, &s);
+            nameset_add(ns, s, len);
+        }
+    }
+    if (in_type_decl && n->kind == NODE_FIELD) {
         len = node_name(n, src, &s);
         nameset_add(ns, s, len);
     }
@@ -795,6 +807,29 @@ static int program_has_foreign_type_ref(const Node *root, const char *src)
     return 0;
 }
 
+/* 138.39: does the source with the n import statements [ds[k], de[k])
+ * deleted still lex, parse and type-check with no error?  The spans are in
+ * source order and do not overlap (one per import declaration). */
+static int import_drop_rechecks(const LintOptions *o, const char *src,
+                                int src_len, const int *ds, const int *de,
+                                int n)
+{
+    char *p = malloc((size_t)src_len + 1);
+    if (!p) return 0;
+    int len = 0;
+    for (int k = 0; k < src_len; k++) {
+        int del = 0;
+        for (int j = 0; j < n && !del; j++) del = (k >= ds[j] && k < de[j]);
+        if (!del) p[len++] = src[k];
+    }
+    p[len] = '\0';
+    void *h = NULL;
+    const Node *nr = o->recheck(o->recheck_ctx, p, len, &h);
+    if (o->recheck_free) o->recheck_free(o->recheck_ctx, h);
+    free(p);
+    return nr != NULL;
+}
+
 /* ── Rule: unused-import ──────────────────────────────────────────────── */
 
 /*
@@ -808,9 +843,20 @@ static int rule_unused_import(const Node *root, const char *src,
 {
     if (!root || root->kind != NODE_PROGRAM) return 0;
 
+    /* 138.39: when the program type-checks and the caller can re-check a
+     * candidate (LintOptions.recheck), an import with no syntactic use is
+     * reported only if the program WITHOUT it -- and without every import
+     * already reported -- still checks clean.  That counts every use lint
+     * cannot see in the AST: a type position naming an import's record
+     * unqualified, and a field read whose layout only the import establishes
+     * (`r.text` on the `$res` another module returns, E4034 without it). */
+    int probe = opts && opts->typed && opts->recheck;
+    int drop_s[64], drop_e[64], drop_n = 0;
+
     /* 137.8: an unqualified `$type` this file does not declare arrives through
-     * SOME import, and lint cannot tell which — so none is provably unused. */
-    if (program_has_foreign_type_ref(root, src)) return 0;
+     * SOME import, and lint cannot tell which — so, without the re-check,
+     * none is provably unused. */
+    if (!probe && program_has_foreign_type_ref(root, src)) return 0;
 
     for (int i = 0; i < root->child_count; i++) {
         const Node *imp = root->children[i];
@@ -832,6 +878,20 @@ static int rule_unused_import(const Node *root, const char *src,
             if (ident_used_in(decl, name, name_len, src)) { used = 1; break; }
             /* 127.81: a type-only use (`p:alias.$rec`) leaves no ident node. */
             if (qual_type_used_in(decl, name, name_len, src)) { used = 1; break; }
+        }
+
+        if (!used && probe) {
+            int ss = span_start_of_stmt(imp, src);
+            int se = span_end_of_stmt(imp, src, src_len);
+            if (drop_n >= 64) used = 1;     /* cannot probe: keep it */
+            else {
+                drop_s[drop_n] = ss; drop_e[drop_n] = se;
+                if (import_drop_rechecks(opts, src, src_len, drop_s, drop_e,
+                                         drop_n + 1))
+                    drop_n++;
+                else
+                    used = 1;
+            }
         }
 
         if (!used && rule_enabled("unused-import", opts)) {
