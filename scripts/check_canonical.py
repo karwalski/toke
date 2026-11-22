@@ -134,6 +134,13 @@ SURFACES = [
     {"path": "../toke-mcp/vscode-toke/README.md", "blocks": ["one_liner", "paragraph"]},
     {"path": "../toke-model/huggingface/README.md", "blocks": ["one_liner", "paragraph"]},
     {"path": "../toke-model/ollama/README.md", "blocks": ["one_liner"]},
+
+    # Story 127.495: the toke-model surfaces that state the Gate 2 result copy the
+    # canonical `models` fact (canonical.md §8) word for word, so the D4 withdrawal
+    # and the 55.6% caveat cannot drift out of them again (they had, until then).
+    {"path": "../toke-model/README.md", "facts": ["models"]},
+    {"path": "../toke-model/huggingface/README.md", "facts": ["models"]},
+    {"path": "../toke-model/ollama/README.md", "facts": ["models"]},
 ]
 
 # ------------------------------------------------------- awaiting publish ----
