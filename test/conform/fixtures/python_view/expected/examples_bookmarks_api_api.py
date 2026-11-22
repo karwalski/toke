@@ -65,11 +65,11 @@ def findindex(id: u64) -> int:
     return 0 - 1
 
 
-def handlelist(req: int) -> int:
+def handlelist(req: req) -> int:
     return http.resjson(200, bookmarkstojson(store.items))
 
 
-def handleget(req: int) -> int:
+def handleget(req: req) -> int:
     match http.param(req, "id"):
         case ok(v):
             raw = v
@@ -86,7 +86,7 @@ def handleget(req: int) -> int:
     return http.resjson(200, bookmarktojson(store.items[idx]))
 
 
-def handlecreate(req: int) -> int:
+def handlecreate(req: req) -> int:
     body = http.reqbody(req)
     match json.dec(body):
         case ok(d):
@@ -110,7 +110,7 @@ def handlecreate(req: int) -> int:
     return http.resjson(201, bookmarktojson(newb))
 
 
-def handledelete(req: int) -> int:
+def handledelete(req: req) -> int:
     match http.param(req, "id"):
         case ok(v):
             raw = v
