@@ -642,9 +642,9 @@ void tk_clos_release(int64_t v)
  *
  * The hot path.  std.vec reaches tk_handle_addr from compiled indexing
  * (`v.get(i)` in a loop), so a lookup must not cost a lock every time.  Each
- * thread caches the last address it validated, with the registry generation
- * it saw; the generation moves on every drop or kind change, never on an
- * add (an add cannot make a valid address invalid).  A cache hit is two
+ * thread caches the last few values it validated (addresses and tokens),
+ * with the registry generation it saw; the generation moves on every drop or kind change, never on an
+ * add (an add cannot make a valid value invalid).  A cache hit is a few
  * thread-local loads and one atomic load. */
 typedef struct { void *p; const void *owner; uint32_t serial; uint16_t kind; uint8_t has_views; uint32_t next_free; } TkHSlot;
 
@@ -660,8 +660,27 @@ static struct {
 
 static uint64_t g_hreg_gen = 1;   /* atomic: bumped on drop / kind change */
 
-typedef struct { const void *p; uint64_t gen; int kind; } TkHCache;
-static TK_TLS TkHCache hcache;
+/* A few ways, so code that reads two or three handles in turn (`a.get(j) +
+ * b.get(j)`) hits as often as code that reads one.  `v` is the value looked
+ * up (an address or a token), `tok` says which, `p` the object it named. */
+#define TK_HCACHE_WAYS 4
+typedef struct { int64_t v; void *p; uint64_t gen; int kind; int tok; } TkHCache;
+static TK_TLS TkHCache hcache[TK_HCACHE_WAYS];
+static TK_TLS unsigned hcache_next;
+
+static void *hcache_get(int64_t v, int kind, int tok, uint64_t gen)
+{
+    for (unsigned w = 0; w < TK_HCACHE_WAYS; w++)
+        if (hcache[w].v == v && hcache[w].kind == kind && hcache[w].tok == tok
+            && hcache[w].gen == gen)
+            return hcache[w].p;
+    return NULL;
+}
+static void hcache_put(int64_t v, int kind, int tok, uint64_t gen, void *p)
+{
+    TkHCache *e = &hcache[hcache_next++ % TK_HCACHE_WAYS];
+    e->v = v; e->p = p; e->gen = gen; e->kind = kind; e->tok = tok;
+}
 
 static void hreg_lock(void)
 {
@@ -772,9 +791,14 @@ static int64_t hreg_add(int kind, void *p, const void *owner)
 
 int64_t tk_handle_issue(int kind, void *p)
 {
+    return tk_handle_issue_view(kind, p, NULL);
+}
+
+int64_t tk_handle_issue_view(int kind, void *p, const void *owner)
+{
     if (!p) return 0;
     hreg_lock();
-    int64_t i = hreg_add(kind, p, NULL);
+    int64_t i = hreg_add(kind, p, owner);
     int64_t tok = i < 0 ? 0
         : (int64_t)(((uint64_t)g_hreg.slots[i].serial << 32) | (uint64_t)(i + 1));
     hreg_unlock();
@@ -787,24 +811,23 @@ void *tk_handle_token(int kind, int64_t tok)
     uint32_t serial = (uint32_t)(u >> 32), lo = (uint32_t)(u & 0xffffffffu);
     void *p = NULL;
     if (serial == 0 || lo == 0) return NULL;
+    uint64_t gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
+    if ((p = hcache_get(tok, kind, 1, gen)) != NULL) return p;
     hreg_lock();
+    gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
     if (lo - 1u < g_hreg.n && g_hreg.slots[lo - 1u].serial == serial
         && g_hreg.slots[lo - 1u].kind == (uint16_t)kind)
         p = g_hreg.slots[lo - 1u].p;
     hreg_unlock();
+    if (p) hcache_put(tok, kind, 1, gen, p);
     return p;
 }
 
 void *tk_handle_adopt(int kind, void *p)
 {
-    return tk_handle_adopt_view(kind, p, NULL);
-}
-
-void *tk_handle_adopt_view(int kind, void *p, const void *owner)
-{
     if (!p) return NULL;
     hreg_lock();
-    int64_t i = hreg_add(kind, p, owner);
+    int64_t i = hreg_add(kind, p, NULL);
     hreg_unlock();
     return i < 0 ? NULL : p;
 }
@@ -825,8 +848,7 @@ void *tk_handle_addr(int kind, int64_t v)
     const void *p = (const void *)(intptr_t)v;
     if (!p) return NULL;
     uint64_t gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
-    if (hcache.p == p && hcache.kind == kind && hcache.gen == gen)
-        return (void *)(intptr_t)v;
+    if (hcache_get(v, kind, 0, gen)) return (void *)(intptr_t)v;
     int ok = 0;
     hreg_lock();
     gen = __atomic_load_n(&g_hreg_gen, __ATOMIC_ACQUIRE);
@@ -835,7 +857,7 @@ void *tk_handle_addr(int kind, int64_t v)
         ok = 1;
     hreg_unlock();
     if (!ok) return NULL;
-    hcache.p = p; hcache.kind = kind; hcache.gen = gen;
+    hcache_put(v, kind, 0, gen, (void *)(intptr_t)v);
     return (void *)(intptr_t)v;
 }
 

@@ -90,19 +90,22 @@ static int64_t xlsx_ok(int64_t v)
 }
 
 /* 138.45: an xlsxbook is looked up in the runtime's handle registry
- * (tk_runtime.c) before it is read.  Any value xlsx.open/openfile did not
+ * (tk_runtime.c) before it is read (the value toke holds is a registry
+ * token, never the address, so a released one stays refused after malloc
+ * reuses its memory).  Any value xlsx.open/openfile did not
  * hand out, or one xlsx.close has closed, is answered as the null workbook is
  * (sheets @(), rows $err, datesystem "1900", close a no-op); it used to be
  * read as a TkXlsxBook and the program died with SIGSEGV (xlsx.sheets(5)),
  * and a second close freed the workbook twice. */
-static TkXlsxBook *xlsx_in(int64_t h) { return (TkXlsxBook *)tk_handle_addr(TK_HK_XLSXBOOK, h); }
+static TkXlsxBook *xlsx_in(int64_t h) { return (TkXlsxBook *)tk_handle_token(TK_HK_XLSXBOOK, h); }
 static int64_t xlsx_out(TkXlsxBook *wb)
 {
-    if (!tk_handle_adopt(TK_HK_XLSXBOOK, wb)) {
+    int64_t tok = tk_handle_issue(TK_HK_XLSXBOOK, wb);   /* a token, not the address */
+    if (!tok) {
         xlsx_close(wb);
         return xlsx_raise(XLSX_E_IO, "xlsx: out of memory");
     }
-    return xlsx_ok((int64_t)(intptr_t)wb);
+    return xlsx_ok(tok);
 }
 
 /* xlsx.open(data:@(byte)) -> $xlsxbook!$xlsxerr

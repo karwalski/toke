@@ -120,19 +120,22 @@ static int64_t f64_to_i64(double d)
 }
 
 /* 138.45: a pdfdoc is looked up in the runtime's handle registry
- * (tk_runtime.c) before it is read.  Any value pdf.open/openfile did not hand
+ * (tk_runtime.c) before it is read (the value toke holds is a registry
+ * token, never the address, so a released one stays refused after malloc
+ * reuses its memory).  Any value pdf.open/openfile did not hand
  * out, or one pdf.close has closed, is answered as the null document is
  * (pagecount 0, sizes 0, hastext false, runs/pagetext $err, close a no-op);
  * it used to be read as a TkPdfDoc and the program died with SIGSEGV
  * (pdf.pagecount(5)), and a second close freed the document twice. */
-static TkPdfDoc *pdf_in(int64_t h) { return (TkPdfDoc *)tk_handle_addr(TK_HK_PDFDOC, h); }
+static TkPdfDoc *pdf_in(int64_t h) { return (TkPdfDoc *)tk_handle_token(TK_HK_PDFDOC, h); }
 static int64_t pdf_out(TkPdfDoc *doc, const char *who)
 {
-    if (!tk_handle_adopt(TK_HK_PDFDOC, doc)) {
+    int64_t tok = tk_handle_issue(TK_HK_PDFDOC, doc);   /* a token, not the address */
+    if (!tok) {
         pdf_close(doc);
         return pdf_raise(3, who);   /* the registry could not grow */
     }
-    return pdf_ok((int64_t)(intptr_t)doc);
+    return pdf_ok(tok);
 }
 
 /* pdf.open(data:@(byte)) -> $pdfdoc!$pdferr

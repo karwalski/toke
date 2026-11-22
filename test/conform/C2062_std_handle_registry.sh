@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # C2062_std_handle_registry.sh — std.vec, std.str's builder, std.securemem,
-# std.pdf, std.zip, std.toml and std.svg answer a handle they did not create
+# std.pdf, std.xlsx, std.zip, std.toml and std.svg answer a handle they did not create
 # as they answer the null handle, and never read through it (story 138.45,
 # the T-67 class beyond std.process; owner answer T-67).
 #
@@ -22,9 +22,13 @@
 # it.  A value the module did not hand out, one of another kind, and one
 # already closed/finished/freed are answered as NULL is.  A toml section is a
 # view owned by its document and is refused once the document is freed.
+# The kinds with a release call (strbuf, pdfdoc, xlsxbook, ziparchive,
+# tomlval) hand out a registry token, not the address, so a released handle
+# stays refused after malloc gives its address to a newer object.
 #
 # WHAT IS ASSERTED, per module: the forged value's null answer, a real handle
-# still working, and the closed/finished/freed handle refused afterwards.
+# still working, and the closed/finished/freed handle refused afterwards --
+# also when a new object of the same kind was made in between (*stale).
 #
 # Negative control: TKC=<base ee27591c tree>/toke -- every forged program
 # exits 139 (or aborts on a double free); the real-handle lines pass.
@@ -63,6 +67,23 @@ out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
 for o in offs: out += b"%010d 00000 n \n" % o
 out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, x)
 open('t.pdf', 'wb').write(out)
+# a one-sheet workbook (the parts xlsx.c reads; no openpyxl needed)
+ns = 'http://schemas.openxmlformats.org/'
+with zipfile.ZipFile('t.xlsx', 'w') as z:
+    z.writestr('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="%spackage/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/></Types>' % ns)
+    z.writestr('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="%spackage/2006/relationships">'
+        '<Relationship Id="rId1" Type="%sofficeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        '</Relationships>' % (ns, ns))
+    z.writestr('xl/workbook.xml', '<?xml version="1.0"?><workbook xmlns="%sspreadsheetml/2006/main" '
+        'xmlns:r="%sofficeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/>'
+        '</sheets></workbook>' % (ns, ns))
+    z.writestr('xl/_rels/workbook.xml.rels', '<?xml version="1.0"?><Relationships xmlns="%spackage/2006/relationships">'
+        '<Relationship Id="rId1" Type="%sofficeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        '</Relationships>' % (ns, ns))
+    z.writestr('xl/worksheets/sheet1.xml', '<?xml version="1.0"?><worksheet xmlns="%sspreadsheetml/2006/main">'
+        '<sheetData><row r="1"><c r="A1"><v>7</v></c></row></sheetData></worksheet>' % ns)
 PY
 
 # case NAME IMPORTS BODY EXPECTED -- build and run one program
@@ -163,6 +184,76 @@ case_ svgforged 'i=svg:std.svg;' '
   let fd2=svg.append(fd;svg.rect(1.0;1.0;2.0;2.0;st));
   io.println("elems=\(sd4.elements.len) out=\(svg.render(sd4).len>0) forgeddoc=[\(svg.render(fd2))]");' \
 'elems=2 out=true forgeddoc=[]'
+
+case_ xlsxforged 'i=xlsx:std.xlsx;' '
+  let fx=n as $xlsxbook;
+  io.println("sheets=\(xlsx.sheets(fx).len) ds=[\(xlsx.datesystem(fx))] rows=\(mt xlsx.rows(fx;"Data"){$ok:r "OK";$err:e "ERR"})");
+  xlsx.close(fx);
+  xlsx.close(fx);
+  let w=mt xlsx.openfile("t.xlsx"){$ok:v v;$err:e 0 as $xlsxbook};
+  io.println("real sheets=\(xlsx.sheets(w).len) rows=\(mt xlsx.rows(w;"Data"){$ok:r r.len;$err:e -1})");
+  xlsx.close(w);
+  io.println("closed sheets=\(xlsx.sheets(w).len) rows=\(mt xlsx.rows(w;"Data"){$ok:r r.len;$err:e -1})");
+  xlsx.close(w);' \
+'sheets=0 ds=[1900] rows=ERR
+real sheets=1 rows=1
+closed sheets=0 rows=-1'
+
+# STALE HANDLES AFTER REUSE (138.45 review).  A released handle stays refused
+# when a NEW object of the same kind is made between the release and the
+# stale use -- the common case, where malloc hands the freed address to the
+# new object.  Keyed by address, the stale handle acted on the new object
+# (b2=twoSTALE; toml.i64(doc1) answered the new document's 2).
+case_ strbufstale 'i=str:std.str;' '
+  let b1=str.buf();
+  str.add(b1;"one");
+  io.println("b1=[\(str.done(b1))]");
+  let b2=str.buf();
+  str.add(b2;"two");
+  str.add(b1;"STALE");
+  str.addbyte(b1;33);
+  io.println("stale done=[\(str.done(b1))] b2=[\(str.done(b2))]");' \
+'b1=[one]
+stale done=[] b2=[two]'
+
+case_ tomlstale 'i=toml:std.toml;' '
+  let d1=mt toml.load("a=1\n[s]\nb=10\n"){$ok:v v;$err:e 0 as $tomlval};
+  let s1=mt toml.section(d1;"s"){$ok:v v;$err:e 0 as $tomlval};
+  io.println("freed=\(toml.free(d1))");
+  let d2=mt toml.load("a=2\n[s]\nb=20\n"){$ok:v v;$err:e 0 as $tomlval};
+  let s2=mt toml.section(d2;"s"){$ok:v v;$err:e 0 as $tomlval};
+  io.println("stale a=\(mt toml.i64(d1;"a"){$ok:v v;$err:e -1}) b=\(mt toml.i64(s1;"b"){$ok:v v;$err:e -1}) free=\(toml.free(d1))");
+  io.println("new a=\(mt toml.i64(d2;"a"){$ok:v v;$err:e -1}) b=\(mt toml.i64(s2;"b"){$ok:v v;$err:e -1})");' \
+'freed=true
+stale a=-1 b=-1 free=false
+new a=2 b=20'
+
+case_ pdfstale 'i=pdf:std.pdf;' '
+  let d1=mt pdf.openfile("t.pdf"){$ok:v v;$err:e 0 as $pdfdoc};
+  pdf.close(d1);
+  let d2=mt pdf.openfile("t.pdf"){$ok:v v;$err:e 0 as $pdfdoc};
+  pdf.close(d1);
+  io.println("stale count=\(pdf.pagecount(d1)) new count=\(pdf.pagecount(d2))");
+  pdf.close(d2);' \
+'stale count=0 new count=1'
+
+case_ zipstale 'i=zip:std.zip;' '
+  let z1=mt zip.openfile("t.zip"){$ok:v v;$err:e 0 as $ziparchive};
+  zip.close(z1);
+  let z2=mt zip.openfile("t.zip"){$ok:v v;$err:e 0 as $ziparchive};
+  zip.close(z1);
+  io.println("stale entries=\(zip.entries(z1).len) new entries=\(zip.entries(z2).len)");
+  zip.close(z2);' \
+'stale entries=0 new entries=1'
+
+case_ xlsxstale 'i=xlsx:std.xlsx;' '
+  let w1=mt xlsx.openfile("t.xlsx"){$ok:v v;$err:e 0 as $xlsxbook};
+  xlsx.close(w1);
+  let w2=mt xlsx.openfile("t.xlsx"){$ok:v v;$err:e 0 as $xlsxbook};
+  xlsx.close(w1);
+  io.println("stale sheets=\(xlsx.sheets(w1).len) new sheets=\(xlsx.sheets(w2).len)");
+  xlsx.close(w2);' \
+'stale sheets=0 new sheets=1'
 
 echo "----------------------------------------------------------------------"
 echo "C2062: ${PASS} passed, ${FAIL} failed"

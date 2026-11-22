@@ -82,19 +82,22 @@ static int64_t zip_ok(int64_t v)
 }
 
 /* 138.45: a ziparchive is looked up in the runtime's handle registry
- * (tk_runtime.c) before it is read.  Any value zip.open/openfile did not hand
+ * (tk_runtime.c) before it is read (the value toke holds is a registry
+ * token, never the address, so a released one stays refused after malloc
+ * reuses its memory).  Any value zip.open/openfile did not hand
  * out, or one zip.close has closed, is answered as the null archive is
  * (entries @(), read $err, close a no-op); it used to be read as a
  * TkZipArchive and the program died with SIGSEGV (zip.entries(5)), and a
  * second close freed the archive twice. */
-static TkZipArchive *zip_in(int64_t h) { return (TkZipArchive *)tk_handle_addr(TK_HK_ZIPARCHIVE, h); }
+static TkZipArchive *zip_in(int64_t h) { return (TkZipArchive *)tk_handle_token(TK_HK_ZIPARCHIVE, h); }
 static int64_t zip_out(TkZipArchive *a)
 {
-    if (!tk_handle_adopt(TK_HK_ZIPARCHIVE, a)) {
+    int64_t tok = tk_handle_issue(TK_HK_ZIPARCHIVE, a);   /* a token, not the address */
+    if (!tok) {
         zip_close(a);
         return zip_raise(ZIP_E_IO, "zip: out of memory");
     }
-    return zip_ok((int64_t)(intptr_t)a);
+    return zip_ok(tok);
 }
 
 /* zip.open(data:@(byte)) -> $ziparchive!$ziperr */

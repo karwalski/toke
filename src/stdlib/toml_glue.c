@@ -62,29 +62,33 @@ static int64_t toml_raise(const char *msg) {
 
 /* 138.45: a tomlval is looked up in the runtime's handle registry
  * (tk_runtime.c) before it is read.  A document (toml.load / loadfile) is
- * registered as itself; a section (toml.section, an element of
- * toml.sectionarr) as a view owned by its document, so toml.free drops the
- * document and every view into it.  Any value std.toml did not hand out, and
+ * handed out as a registry token, not its address; a section (toml.section,
+ * an element of toml.sectionarr) as a token for a view owned by its
+ * document, so toml.free drops the document and every view into it, and a
+ * freed document's token stays refused after malloc reuses its memory.  Any value std.toml did not hand out, and
  * a document or section after toml.free, is answered as the null table is
  * ($err "toml: null argument", has false, keys @(), len 0, free false); it
  * used to be read as a toml_table_t and the program died with SIGSEGV
  * (toml.keys(5)), and a section read after its document was freed read freed
  * memory. */
-static int64_t toml_tab(int64_t v) { return (int64_t)(intptr_t)tk_handle_addr(TK_HK_TOMLVAL, v); }
+static int64_t toml_tab(int64_t v) { return (int64_t)(intptr_t)tk_handle_token(TK_HK_TOMLVAL, v); }
 static int64_t toml_doc_out(void *doc)
 {
-    if (!tk_handle_adopt(TK_HK_TOMLVAL, doc)) {
+    int64_t tok = tk_handle_issue(TK_HK_TOMLVAL, doc);   /* a token, not the address */
+    if (!tok) {
         toml_free_root(doc);
         return toml_raise("toml: out of memory");
     }
     tk_current_error = 0;
-    return (int64_t)(intptr_t)doc;
+    return tok;
 }
-static void *toml_view_out(void *view, int64_t parent)
+/* The token for a section `view` read from the table at address `parent`;
+ * 0 when the registry cannot grow. */
+static int64_t toml_view_out(void *view, int64_t parent)
 {
     const void *p = (const void *)(intptr_t)parent;
     const void *owner = tk_handle_owner(p);
-    return tk_handle_adopt_view(TK_HK_TOMLVAL, view, owner ? owner : p);
+    return tk_handle_issue_view(TK_HK_TOMLVAL, view, owner ? owner : p);
 }
 
 int64_t tk_toml_load_w(int64_t src) {
@@ -105,9 +109,10 @@ int64_t tk_toml_section_w(int64_t tab, int64_t key) {
     if (!tab || !key) { return toml_raise("toml: null argument"); }
     TomlResult r = toml_get_section((void *)(intptr_t)tab, (const char *)(intptr_t)key);
     if (r.is_err) return toml_raise(r.err_msg);
-    if (!toml_view_out(r.ok, tab)) return toml_raise("toml: out of memory");
+    int64_t tok = toml_view_out(r.ok, tab);
+    if (!tok) return toml_raise("toml: out of memory");
     tk_current_error = 0;
-    return (int64_t)(intptr_t)r.ok;
+    return tok;
 }
 
 /* 127.295: toml_get_str's result is tomlc99's malloc'd copy (caller-owned,
@@ -237,7 +242,7 @@ static int64_t toml_arr_w(int64_t tab, int64_t key, char kind) {
         slots[i] = kind == 's' ? (int64_t)(intptr_t)seal_take((const char *)(intptr_t)r.data[i])
                                : r.data[i];
         /* 138.45: each table of a sectionarr is a view into the document */
-        if (kind == 't' && !toml_view_out((void *)(intptr_t)r.data[i], tab)) slots[i] = 0;
+        if (kind == 't') slots[i] = toml_view_out((void *)(intptr_t)r.data[i], tab);
     }
     free(r.data);
     tk_current_error = 0;

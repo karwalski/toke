@@ -908,15 +908,17 @@ int64_t tk_str_sha256prefix_w(int64_t s, int64_t n) {
 
 /* StrBuf is a simple growable buffer stored as a heap struct:
  *   struct { char *data; size_t len; size_t cap; }
- * We pack the pointer to this struct into an i64. */
+ * The i64 toke holds is a registry token for it (138.45), not its address. */
 typedef struct { char *data; size_t len; size_t cap; } TkStrBuilder;
 
 /* 138.45: a strbuf is looked up in the runtime's handle registry
- * (tk_runtime.c) before it is read; any value str.buf did not hand out, or
+ * (tk_runtime.c) before it is read (the value toke holds is a registry
+ * token, never the address, so a released one stays refused after malloc
+ * reuses its memory); any value str.buf did not hand out, or
  * one str.done has already finished, is answered as the null builder is
  * (add/addbyte do nothing, done returns "").  It used to be read as a
  * TkStrBuilder and the program died with SIGSEGV (str.done(5)). */
-static TkStrBuilder *strbuf_in(int64_t b) { return (TkStrBuilder *)tk_handle_addr(TK_HK_STRBUF, b); }
+static TkStrBuilder *strbuf_in(int64_t b) { return (TkStrBuilder *)tk_handle_token(TK_HK_STRBUF, b); }
 
 /* str.buf() — create a new string builder */
 int64_t tk_str_buf_w(void) {
@@ -927,8 +929,9 @@ int64_t tk_str_buf_w(void) {
     if (!buf->data) { free(buf); return 0; }
     buf->len = 0;
     buf->data[0] = '\0';
-    if (!tk_handle_adopt(TK_HK_STRBUF, buf)) { free(buf->data); free(buf); return 0; }
-    return (int64_t)(intptr_t)buf;
+    int64_t tok = tk_handle_issue(TK_HK_STRBUF, buf);   /* 138.45: a token, not the address */
+    if (!tok) { free(buf->data); free(buf); return 0; }
+    return tok;
 }
 
 /* str.add(buf, s) — append a string to the builder */
