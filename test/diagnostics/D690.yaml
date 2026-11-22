@@ -1,0 +1,16 @@
+id: D690
+series: D
+description: "127.493: str.substr's std.tki record is typed (str;u64;u64 -> str!sliceerr, the record str.slice has), so a str where an index is declared is E4031 naming the declaration, with no fix. Under the old untyped gen:abi record (i64 placeholders) it checked clean and passed the string's address as the index."
+input: |
+  m=a;
+  i=str:std.str;
+  f=main():i64{
+    let n=str.substr("abc";"x";2);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "u64"

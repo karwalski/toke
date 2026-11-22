@@ -531,8 +531,8 @@ stdlib call whose interface declares `T!E`, and for the receiver spelling of
 `str!$sliceerr`. The receiver may be a `str` variable, literal or call
 result, a `str` record field (`p.name.slice(a;b)`, story 127.475) or a `str`
 array element (`xs.get(i).slice(a;b)`). The module form `str.substr(s;a;b)`
-lowers to the same glue and is the same union, although its interface record
-is an untyped ABI placeholder (127.475). A call whose result is not used at
+lowers to the same glue and is the same union; its interface record declares
+it (127.475, 127.493). A call whose result is not used at
 all (a statement) is not a use.
 
 Not judged; each of these reads the value as `T`, the zero filler on a
