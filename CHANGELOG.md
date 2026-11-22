@@ -88,6 +88,68 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   any statement as the init and the step. Written in line, so the published
   production count is unchanged. `toke.gbnf` already matched the parser, and
   both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
+- **Variant arms on a known scalar subject are E4031 at `--check`** (138.37,
+  loke T-66). `f=h(e:i64):$r{<mt e {$notfound:v ..;$permission:v ..;$io:v ..}}`
+  passed `--check` and the build stopped with E9005 (2 or 3+ arms) or invalid
+  IR (a `u8` subject); a one-arm form over an i64 built. A match with no
+  `$ok`/`$err` arm, over a parameter or immutable `let` of a scalar type, a
+  numeric literal or a call returning a scalar, whose arm names a label that
+  is not a primitive, `some`/`none` or a declared type, is now E4031 at that
+  label (`expected` "a sum type", `got` the scalar), with no `fix`. `--check`
+  over the 683 toke-tree, ooke `main` and 3,573 toke-test-programs sources
+  draws it nowhere; ooke `make check-toke-candidate` and the website's
+  `make check-toke` pass. Conformance: C1920, D635; C027 (cases 2, 5), C373
+  (case 1) and C400 (case 9) now meet the refusal at `--check`, and keep the
+  E9005 backstop pinned through a `mut` copy, which is not judged. The
+  subject's binder is found lexically, so a sum-typed closure parameter, body
+  `let` or loop-init `let` that shadows a scalar parameter of the same name is
+  not judged by the parameter's annotation (C1920 cases 5-7).
+- **`$ok`/`$err` over a shadow of a scalar parameter no longer draws a false
+  E4031** (138.56). 127.202's check read the function's parameter list before
+  the bindings in force, so `f=h(e:i64):i64{let e=str.toint("7"); <mt e
+  {$ok:v v;$err:x 0}}` was refused although it builds and returns 7. The
+  parameter's annotation now counts only when that parameter is the binder in
+  force at the subject. Conformance: C1920 case 6.
+- **A closure parameter annotated with a scalar is judged as a match subject**
+  (138.57). `f=h(e:$fe):i64{let g=fn(e:i64):i64{<mt e {$a:v 1;$b:v 2}};
+  <g(3)}` passed `--check`, built, and the binary died with SIGSEGV (3.2.0
+  and later); `fn(e:i64)` matched with `$ok`/`$err` built and took `$err` for
+  0 unless an outer function happened to have a same-named scalar parameter.
+  A parameter that is the binder in force at the subject, whether of the
+  function or of a closure inside it, is now judged by its own annotation:
+  variant arms are E4031 `expected` "a sum type" and `$ok`/`$err` arms are
+  E4031 `expected` "T!E", both with no `fix`. A variant match over a scalar
+  closure parameter with no outer parameter, which stopped at build with
+  E9005, is now refused at `--check`. Conformance: C1920 case 8.
+- **A user name can no longer collide with an IR temporary or block label**
+  (138.38, loke T-65). `f=g(t0:i64):i64{<t0+1}` passed `--check` and clang
+  refused the IR ("multiple definition of local value named 't0'"); a local
+  or parameter named like a block label (`svarm3`) gave "'%svarm3' is not a
+  basic block". A user name that ends in a digit (or, under `--legacy`,
+  starts with `_`) is now always given a dotted LLVM name, for parameters,
+  closure parameters, closure captures and locals alike; other names keep
+  their spelling in the IR. The pointer-tag and local-type registries are
+  keyed by that LLVM name, so a lookup made with the source spelling now
+  retries under the alias in force when the spelling misses: without it,
+  `let m1=mut.@("":0);m1=m1.set("a";40)` lowered as an array in-place set
+  and trapped with RT003, which a local named `t1` already did on 3.2.0
+  (114.15's aliasing), and a captured str local got an i64 slot.
+  Conformance: C1921 (cases 7-13, including a plain-vs-digit-suffixed IR
+  differential).
+- **E4070's `let` fix is worded from the declaration** (127.468). It was the
+  fixed text "change 'let g=' to 'let g=mut.'", which does not occur in
+  `let g:i64=5`; it is now "change 'let g:i64=' to 'let g:i64=mut.' to make it
+  mutable", taken from the source, and absent when that spelling occurs more
+  than once in the file or a module-level name is declared more than once.
+  An assignment in the body of a loop whose bare init assigns the same
+  binding now has no fix, as the init and step already had none.
+  Conformance: D636-D638.
+- **`+` over two different non-numeric operands names each side** (127.474):
+  `str.slice(t;0;1)+"z"` said "both sides are 'str!$sliceerr'"; it now says
+  "the left side is 'str!$sliceerr' and the right side is 'str'". Conformance:
+  D639.
+- The checker's interpolation anchor (`Ctx.interp_host`) is initialised in
+  `type_check` (127.476); it was read uninitialised.
 
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 

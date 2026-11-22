@@ -1,0 +1,13 @@
+id: D638
+series: D
+description: "127.468 (2): in a loop whose bare init assigns an immutable `let i`, an assignment to i in the BODY is E4070 with no fix, as the init and the step are -- `let i=mut.7` (exits 6) and `lp(let i=0;..` (exits 7) run differently (AGENTS 6)"
+input: |
+  m=test;
+  f=bad():i64{
+    let i=7;
+    lp(i=0;i<5;i=i+1){ i=i+2 };
+    <i
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix_absent: true

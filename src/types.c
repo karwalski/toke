@@ -1095,21 +1095,64 @@ static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
  * `root` whose init is BARE and assigns the same name: `lp(i=0;..;i=i+1)`.
  * The init and the step then assign one binding, and an E4070 on the step
  * has the init's two repairs (`let i=mut.`, `lp(let i=`) that run
- * differently, so it carries no `fix` either. */
-static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+ * differently, so it carries no `fix` either.
+ *
+ * 127.468 (2): so does any other assignment inside that loop -- its body --
+ * that assigns the binding the bare init assigns.  In `let i=7;
+ * lp(i=0;i<5;i=i+1){ i=i+2 }` the body's `i=i+2` kept the `let` fix, and the
+ * two repairs still run differently (`let i=mut.7` exits 6, `lp(let i=0;..`
+ * exits 7).  An assignment to an inner binding of the same name (a `let i`
+ * in the body) is that binding's own and is not judged here. */
+static const Node *tk_binder_at(const Node *root, const char *src, const Node *use,
+                                const char *name, int nlen, const Node *anchor);
+static int bare_init_step_rec(const Node *fn, const Node *root, const char *src,
+                              const Node *asg) {
     if (!root || !asg) return 0;
     if (root->kind == NODE_LOOP_STMT && root->child_count == 4
-        && root->children[2] == asg) {
+        && root->children[0] != asg && node_contains(root, asg)) {
         const Node *ini = root->children[0];
-        return ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
+        if (ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
             && ini->child_count > 0 && ini->children[0]
-            && asg->child_count > 0 && asg->children[0]
-            && ident_same(ini->children[0], src, src + asg->children[0]->tok_start,
-                          asg->children[0]->tok_len);
+            && asg->child_count > 0 && asg->children[0]) {
+            const Node *an = asg->children[0];
+            const char *nm = src + an->tok_start;
+            if (ident_same(ini->children[0], src, nm, an->tok_len)) {
+                if (root->children[2] == asg) return 1;
+                if (tk_binder_at(fn, src, an, nm, an->tok_len, NULL)
+                    == tk_binder_at(fn, src, ini->children[0], nm, an->tok_len, NULL))
+                    return 1;
+            }
+        }
     }
     for (int i = 0; i < root->child_count; i++)
-        if (bare_init_step(root->children[i], src, asg)) return 1;
+        if (bare_init_step_rec(fn, root->children[i], src, asg)) return 1;
     return 0;
+}
+static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+    return bare_init_step_rec(root, root, src, asg);
+}
+/* let_mut_fix (127.468 (1)) -- the E4070 `fix` for an immutable `let` that
+ * `decl` (a NODE_BIND_STMT) declares, worded from the declaration's own
+ * spelling: "change 'let g=' to 'let g=mut.'", or for a typed binding
+ * "change 'let g:i64=' to 'let g:i64=mut.'" (the rewrite --migrate makes).
+ * The fixed text "let g=" did not occur in `let g:i64=5`.  The spelling is
+ * the source from `let` through the first `=`; 0 (no fix, AGENTS 6) when
+ * that is not found on the line, or when the spelling occurs more than once
+ * in the file -- a redeclared name (`let g=1;` ... `let g=2;`), or the same
+ * spelling elsewhere, where the edit would not say which declaration. */
+static int let_mut_fix(const char *src, const Node *decl, char *fix, size_t fsz) {
+    if (!src || !decl || decl->kind != NODE_BIND_STMT) return 0;
+    const char *s = src + decl->start;
+    if (strncmp(s, "let", 3) != 0 || !(s[3] == ' ' || s[3] == '\t')) return 0;
+    int k = 3;
+    while (s[k] && s[k] != '=' && s[k] != '\n' && s[k] != ';' && k < 200) k++;
+    if (s[k] != '=') return 0;
+    char sp[208]; memcpy(sp, s, (size_t)k + 1); sp[k + 1] = '\0';
+    int occ = 0;
+    for (const char *p = strstr(src, sp); p; p = strstr(p + 1, sp)) occ++;
+    if (occ != 1) return 0;
+    snprintf(fix, fsz, "change '%s' to '%smut.' to make it mutable", sp, sp);
+    return 1;
 }
 /* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
  * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
@@ -3410,12 +3453,16 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
         char nb[128]; TOKSTR(nb, cx->src, scr);
         int nlen = (int)strlen(nb);
         if (arm_bind_lookup(cx, nb, nlen, scr)) return NULL;
-        for (int pi = 0; pi < cx->fn_node->child_count; pi++) {
-            const Node *pc = cx->fn_node->children[pi];
-            if (!pc || pc->kind != NODE_PARAM || pc->child_count < 2) continue;
-            char pn[128]; TOKSTR(pn, cx->src, pc->children[0]);
-            if (strcmp(pn, nb) != 0) continue;
-            Type *pt = resolve_type(cx, pc->children[1]);
+        /* The binder in force at the use, found lexically: a closure
+         * parameter, loop-init `let` or body `let` of the same name shadows
+         * a function parameter.  A parameter binder is judged by its own
+         * annotation, whether it belongs to the function or to a closure
+         * inside it: it is exactly what the subject names. */
+        const Node *bd = tk_binder_at(cx->fn_node, cx->src,
+                                      in_tree_use(cx, scr), nb, nlen, NULL);
+        if (bd && bd->kind == NODE_PARAM) {
+            if (bd->child_count < 2 || !bd->children[1]) return NULL;
+            Type *pt = resolve_type(cx, bd->children[1]);
             return pt && kind_is_scalar(pt->kind) ? type_name(pt) : NULL;
         }
         const Node *bn = local_in_force(cx, nb, nlen, scr);
@@ -7600,11 +7647,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                                 : node->op==TK_STAR ? "*" : "/";
                 if (tc_can_emit(cx)) {
                     char msg[256];
-                    if (!is_numeric(l) && !is_numeric(r))
+                    /* 127.474: "both sides are" only when they are the
+                     * same type.  `str.slice(t;0;1)+"z"` said both were
+                     * 'str!$sliceerr' (and the mirror, both 'str'), so a
+                     * repair of one side met an E4031 it was never told
+                     * of.  Each side is named. */
+                    if (!is_numeric(l) && !is_numeric(r) && types_equal(l, r))
                         snprintf(msg, sizeof msg,
                                  "'%s' requires numeric operands: both sides are "
                                  "'%s'", opn, type_name(bad));
-                    else
+                    else if (!is_numeric(l) && !is_numeric(r)) {
+                        char ln[128];
+                        snprintf(ln, sizeof ln, "%s", type_name(l));
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: the left side is "
+                                 "'%s' and the right side is '%s'", opn, ln,
+                                 type_name(r));
+                    } else
                         snprintf(msg, sizeof msg,
                                  "'%s' requires numeric operands: the %s side is "
                                  "'%s'", opn, !is_numeric(l) ? "left" : "right",
@@ -8657,10 +8716,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         else
                             snprintf(msg,sizeof(msg),
                                 "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
-                        char fix[256];
-                        snprintf(fix,sizeof(fix),
-                            "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                        /* 127.468 (1): worded from the declaration's spelling,
+                         * and absent for a name declared more than once at
+                         * module level (the assignment's binding is then not
+                         * the one a fix on the first would rewrite). */
+                        char fix[512];
+                        int mdecls=0;
+                        for (int ri=0;cx->root&&ri<cx->root->child_count;ri++) {
+                            const Node *rd=cx->root->children[ri];
+                            if (rd&&(rd->kind==NODE_BIND_STMT||rd->kind==NODE_MUT_BIND_STMT)
+                                &&rd->child_count>0&&ident_same(rd->children[0],cx->src,nb,nlen))
+                                mdecls++;
+                        }
+                        int has_fix=!alias&&mdecls==1&&md->def_node
+                            &&let_mut_fix(cx->src,md->def_node,fix,sizeof fix);
+                        if (has_fix&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
                             diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                                 "expected","mutable binding","got","immutable binding",
                                 "fix",fix,(const char*)NULL);
@@ -8701,12 +8771,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         snprintf(msg,sizeof(msg),
                             "cannot assign to immutable binding '%s'; a %s cannot be assigned, copy it into a 'let %s=mut.' first",
                             nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
-                    char fix[256];
-                    snprintf(fix,sizeof(fix),
-                        "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
+                    char fix[512];
                     /* 127.289: nor on the step of a loop whose bare init
-                     * assigns the same binding (bare_init_step). */
-                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                     * assigns the same binding (bare_init_step).  127.468:
+                     * worded from the declaration (let_mut_fix). */
+                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node)
+                        &&let_mut_fix(cx->src,lb,fix,sizeof fix))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
@@ -8993,6 +9063,45 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     "takes '$err' whenever it is 0",st,st);
                 diag_emit(DIAG_ERROR,E4031,sn->start,sn->line,sn->col,msg,
                           "expected","T!E","got",st,(const char*)NULL);
+            }
+        }
+        /* 138.37 (loke T-66): variant arms on a KNOWN non-union scalar.
+         * `f=h(e:i64):$r{<mt e {$notfound:v ..;$permission:v ..;$io:v ..}}`
+         * passed --check and the build stopped with E9005 ("the sum type of
+         * the matched value is not established"): an integer has no variants
+         * for a label to select.  Judged only where mt_nonunion_scalar is
+         * certain of the scalar; a result match is 127.202's (above), and a
+         * label naming a primitive, an option side or a declared type is left
+         * to the type-named lowering.  No `fix`: whether a sum-typed value was
+         * meant, or integer-literal arms, is not decidable. */
+        if (!has_result_arm&&arm_tag_count>0) {
+            const char *st=mt_nonunion_scalar(cx,node->children[0],0);
+            const Node *vl=NULL;
+            static const char *const tl[]={"some","none","str","i64","i32","i16",
+                "i8","u64","u32","u16","u8","f64","f32","bool","byte","void",NULL};
+            for (int i=1;st&&i<node->child_count&&!vl;i++) {
+                const Node *arm=node->children[i];
+                if (!arm||arm->kind!=NODE_MATCH_ARM||arm->child_count<1||!arm->children[0]
+                    ||arm->children[0]->kind!=NODE_TYPE_IDENT) continue;
+                char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
+                int named_type=0;
+                for (int q=0;tl[q]&&!named_type;q++) if (!strcmp(tb,tl[q])) named_type=1;
+                if (!named_type&&cx->env->names) {
+                    Decl *d=tc_lookup(cx->env->names->module_scope,tb,(int)strlen(tb));
+                    if (d&&d->kind==DECL_TYPE) named_type=1;
+                    if (imported_type_lookup(cx->env->names,tb)) named_type=1;
+                }
+                if (!named_type) vl=arm->children[0];
+            }
+            if (vl&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char tb[128]; TOKSTR(tb,cx->src,vl);
+                char msg[384];
+                snprintf(msg,sizeof(msg),
+                    "type mismatch: expected a sum type, got '%s' -- '$%s' names a "
+                    "variant, and type '%s' has no variants, so no arm can be selected",
+                    st,tb,st);
+                diag_emit(DIAG_ERROR,E4031,vl->start,vl->line,vl->col,msg,
+                          "expected","a sum type","got",st,(const char*)NULL);
             }
         }
         /* 127.249 (2): a result match whose VALUE is used must have both
@@ -9463,6 +9572,7 @@ int type_check(const Node *ast, const char *src,
     cx.reported_count=0;
     cx.armb_count=0; cx.mt_discard=NULL; cx.resolving_n=0;   /* 138.13 */
     cx.if_discard=NULL; cx.valued_block=NULL;               /* 127.252 (2) */
+    cx.interp_host=NULL;                                    /* 127.476 */
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;

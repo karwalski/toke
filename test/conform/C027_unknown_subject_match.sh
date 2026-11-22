@@ -74,20 +74,20 @@ cd "${WORK}"
 echo "C027: a 3+-arm match on an unestablished subject is a diagnostic"
 echo "----------------------------------------------------------------"
 
-# reject_build NAME SOURCE — must be refused with E9005, and must not leave a
-# binary behind.  Asserted against --out, not --check: the guarantee is that
+# reject_build NAME SOURCE [CODE] — must be refused with CODE (default E9005),
+# and must not leave a binary behind.  Asserted against --out, not --check: the guarantee is that
 # no such program reaches a runnable binary.
 reject_build() {
-    local name="$1" src="$2"
+    local name="$1" src="$2" code="${3:-E9005}"
     printf '%s\n' "${src}" > "case.tk"
     local out rc=0
     rm -f case_bin
     out="$("${TKC}" --allow-all --out case_bin "case.tk" 2>&1)" || rc=$?
-    if [ "${rc}" -ne 0 ] && [ ! -x case_bin ] && printf '%s' "${out}" | grep -q 'E9005'; then
-        echo "  PASS: ${name} refused with E9005"
+    if [ "${rc}" -ne 0 ] && [ ! -x case_bin ] && printf '%s' "${out}" | grep -q "${code}"; then
+        echo "  PASS: ${name} refused with ${code}"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: ${name}: expected the compiler to refuse with E9005, got rc ${rc}"
+        echo "  FAIL: ${name}: expected the compiler to refuse with ${code}, got rc ${rc}"
         printf '%s\n' "${out}" | sed 's/^/      /' | head -3
         [ -x case_bin ] && echo "      it produced a binary, which printed: $(./case_bin 2>&1)"
         FAIL=$((FAIL + 1))
@@ -155,6 +155,9 @@ f=main():i64{
 };"
 
 # ── Case 2: a sum value passed through an i64-typed parameter ───────────
+# CHANGED 2026-11-22 (138.37, loke T-66).  The checker now knows the subject
+# is a plain i64 and refuses the variant arms at --check (E4031), before
+# codegen; the E9005 backstop stays covered by C373 and C400 case 9.
 reject_build "3-arm match on an i64-typed parameter" \
 "${SUM}
 f=pick(sh:i64):i64{
@@ -163,7 +166,7 @@ f=pick(sh:i64):i64{
 f=main():i64{
   io.println(\"\\(pick(mk(0) as i64))\");
   <0
-};"
+};" E4031
 
 # ── Case 3: the guard — a KNOWN sum type still dispatches all three arms ─
 # Asserted on all three variants, not just one: a lowering that fell back to
@@ -233,6 +236,7 @@ f=main():i64{
 # 3+-arm rule applied where the same impossibility holds at 2 arms.  The
 # concern this case guarded -- that case 4's labelled stdlib shapes keep
 # building -- is still what case 4 asserts.
+# CHANGED 2026-11-22 (138.37): refused at --check with E4031, as case 2.
 reject_build "2-arm match on an unestablished subject with unlabelled arms" \
 "${SUM}
 f=pick(sh:i64):i64{
@@ -241,7 +245,7 @@ f=pick(sh:i64):i64{
 f=main():i64{
   io.println(\"\\(pick(mk(0) as i64)) \\(pick(mk(1) as i64))\");
   <0
-};"
+};" E4031
 
 # ── Case 6: once the checker DOES establish the subject, exhaustiveness
 # applies.  `xs.get(0)` on an @($shape) is a $shape (886bdb0), so a 2-arm

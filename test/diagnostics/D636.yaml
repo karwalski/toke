@@ -1,0 +1,13 @@
+id: D636
+series: D
+description: "127.468 (1): E4070 on a typed immutable `let g:i64=5` names the declaration's own spelling -- `let g=` does not occur there; the rewrite is `let g:i64=mut.5` (what --migrate makes)"
+input: |
+  m=test;
+  f=bad():i64{
+    let g:i64=5;
+    g=6;
+    <g
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix: "change 'let g:i64=' to 'let g:i64=mut.' to make it mutable"
