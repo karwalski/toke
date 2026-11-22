@@ -228,6 +228,36 @@ jobs:
           echo "TARBALL=${STAGING}.tar.gz" >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=tkc-${{ matrix.target }}" >> "$GITHUB_ENV"
 
+      # 127.453 (review): the conformance gate above ran the development
+      # build on the newest runner image; the bytes that ship are built with
+      # another toolchain (gcc-12 in the ${LINUX_BUILD_IMAGE} container, the
+      # macOS deployment target).  These two steps run the shipped tkc,
+      # unpacked from the tarball, on this runner.
+      #
+      # The smoke runs on every run, a manual one included: from a directory
+      # outside the checkout, with no TKC_STDLIB_DIR, so it also proves the
+      # baked relative stdlib path (127.179) and the baked clang path.
+      - name: Shipped compiler builds and runs a program
+        run: |
+          U="$RUNNER_TEMP/unpacked"; mkdir -p "$U"
+          tar xzf "$TARBALL" -C "$U"
+          T="$(ls -d "$U"/tkc-*/tkc)"
+          echo "SHIPPED_TKC=$T" >> "$GITHUB_ENV"
+          W="$RUNNER_TEMP/smoke"; mkdir -p "$W"; cd "$W"
+          printf 'm=smoke;\ni=io:std.io;\nf=main():i64{\n  io.println("release smoke ok");\n  <0\n};\n' > smoke.tk
+          env -u TKC_STDLIB_DIR "$T" smoke.tk -o smoke
+          test "$(./smoke)" = "release smoke ok"
+
+      # The YAML conformance cases (`make conform-check`) against the shipped
+      # tkc.  conform_isolated.sh runs a private copy of the binary, away
+      # from the tarball's src/stdlib, so the stdlib is named explicitly --
+      # the tarball's own copy.
+      - name: Conformance cases under the shipped compiler
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
+        run: |
+          TKC="$SHIPPED_TKC" TKC_STDLIB_DIR="$(dirname "$SHIPPED_TKC")/src/stdlib" \
+            bash scripts/conform_isolated.sh yaml
+
       # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
       # compiler under which programs the website publishes no longer
       # compiled. This is the release-ritual closure the tracker names as the
@@ -244,9 +274,7 @@ jobs:
       - name: Website examples compile under the release compiler
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
         run: |
-          U="$RUNNER_TEMP/unpacked"; mkdir -p "$U"
-          tar xzf "$TARBALL" -C "$U"
-          T="$(ls -d "$U"/tkc-*/tkc)"
+          T="$SHIPPED_TKC"
           "$T" --version
           V=.site/scripts/verify_site_examples.py
           if [ ! -f "$V" ]; then echo "SKIP: $V not found"
@@ -419,7 +447,7 @@ jobs:
             | `<archive>.cosign.bundle` | cosign keyless signature bundle of that archive | |
             | `checksums.txt` (+ `.cosign.bundle`) | SHA-256 of every archive and SBOM, signed | |
 
-            **Platform floors.** The Linux binaries are built in an `${{ env.LINUX_BUILD_IMAGE }}` container and need glibc ${{ env.LINUX_GLIBC_FLOOR }} or later; the macOS binaries are built with a deployment target of macOS ${{ env.MACOS_FLOOR }}. Both are checked on the binaries before release. The conformance suite runs on the newest runner images. On an older system, build from source.
+            **Platform floors.** The Linux binaries are built in an `${{ env.LINUX_BUILD_IMAGE }}` container and need glibc ${{ env.LINUX_GLIBC_FLOOR }} or later; the macOS binaries are built with a deployment target of macOS ${{ env.MACOS_FLOOR }}. Both are checked on the binaries before release. The full conformance suite runs on the newest runner images, and the shipped binaries pass the YAML conformance cases. On an older system, build from source.
 
             ### Install
 

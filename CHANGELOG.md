@@ -218,8 +218,12 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   the baked clang and linker are stated as `/usr/bin/clang` and `/usr/bin/ld`), the macOS
   ones with `MACOSX_DEPLOYMENT_TARGET=14.0`; a step checks each binary's newest `GLIBC_x`
   symbol version or Mach-O `minos` against the floor, and the release notes state the
-  floors from the same workflow variables. The conformance suite still runs on the newest
-  runner images. The floor values are the conservative choice pending owner decision R4.
+  floors from the same workflow variables. The full conformance suite still runs on the
+  development build on the newest runner images; the shipped `tkc`, unpacked from its
+  tarball, now builds and runs a program on every run (from outside the checkout, so the
+  baked stdlib and clang paths are exercised) and passes the YAML conformance cases
+  (`conform-check`) on a tag. The floor values are the conservative choice pending owner
+  decision R4.
 - **The perf gate measures on CI** (127.451). `bench.yml`'s perf-gate failed with "harness
   failure: ./tkc exited 0" on every pull request: GitHub's macOS runners are VMs without
   performance counters, `/usr/bin/time -l` prints no "instructions retired" line there,
