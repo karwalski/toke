@@ -87,6 +87,27 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   any statement as the init and the step. Written in line, so the published
   production count is unchanged. `toke.gbnf` already matched the parser, and
   both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
+- **Module-level `let` globals read back their value** (127.469; silent
+  wrong results before). A global is held in an `i64` cell, and every read
+  was an `i64` with no conversion to the value's type: `let y=1.5;` then
+  `"\(y)"` printed 4609434218613702656 (1.5's bits), `let z=y+0.0` added the
+  bits as an integer, and a global `byte`/`i32`/`bool` read was untyped.
+  A read now converts to the global's type (its annotation, else the
+  checker's type of the initialiser), as the initialiser was converted when
+  stored. A global function value (`let h=fn(x:i64):i64{<x+1};`) was never
+  recorded as one by the checker, so `h(1)` lowered as its argument (1) and
+  a zero-argument one failed the build with E9003; it is now called through
+  like a local function value, from a function or from another global's
+  initialiser, and its calls are judged against its signature (wrong arity
+  E4026, a mistyped argument E4031, no fix). An assignment inside a
+  module-level closure (`let k=fn(){g=7;..}`) now gets 127.465's E4070 and
+  its fix. Same-named globals in two modules each read their own value.
+  `--check` on the 313 workspace sources that declare a module-level `let`
+  (toke tree, ooke main, website, toke-test-programs), b518b41c against this
+  compiler: same diagnostics in all. grammar.ebnf `SourceFile` now lists the
+  module-level `let` globals between the constants and the functions, where
+  the parser and `toke.gbnf` already had them (no production added).
+  Conformance: C1940, D645, D646.
 
 ---
 

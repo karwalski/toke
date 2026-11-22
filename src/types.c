@@ -1922,11 +1922,29 @@ static const Node *fnval_bind_rec(const Node *a, const char *src, const Node *us
 }
 static const Node *in_tree_use(const Ctx *cx, const Node *use);
 static const Node *fnval_binding(Ctx *cx, const Node *ident) {
-    if (!cx->fn_node || !ident || ident->kind != NODE_IDENT) return NULL;
+    if (!ident || ident->kind != NODE_IDENT) return NULL;
     char nb[128]; TOKSTR(nb, cx->src, ident);
     int found = 0;
     const Node *use = in_tree_use(cx, ident);
-    return fnval_bind_rec(cx->fn_node, cx->src, use, nb, (int)strlen(nb), &found);
+    const Node *b = !cx->fn_node ? NULL : fnval_bind_rec(cx->fn_node, cx->src, use, nb, (int)strlen(nb), &found);
+    if (b || !cx->root) return b;
+    /* 127.469: no parameter or local is in force, so the name may be a
+     * module-level `let h=fn..;`.  Unrecorded, a call `h(1)` was never
+     * judged against h's signature and codegen lowered it as its argument
+     * (h(1) returned 1; a zero-argument h failed the build with E9003). */
+    for (int i = 0; i < cx->root->child_count; i++) {
+        const Node *d = cx->root->children[i];
+        const Node *list = (d && d->kind == NODE_MODULE) ? d : NULL;
+        int n = list ? list->child_count : 1;
+        for (int j = 0; j < n; j++) {
+            const Node *st = list ? list->children[j] : d;
+            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+                && st->child_count > 0
+                && ident_same(st->children[0], cx->src, nb, (int)strlen(nb)))
+                return st;
+        }
+    }
+    return NULL;
 }
 /* The signature a function-value binding holds, or NULL. */
 static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
@@ -8465,7 +8483,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * (immutable let) or NODE_PARAM, emit E4070.
          * NODE_MUT_BIND_STMT and an `lp(let ..)` NODE_LOOP_INIT are
          * mutable; a bare `lp(i=..)` init binds nothing (127.289). */
-        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
+        /* 127.469: a module-level closure (`let k=fn(){g=7;..};`) has no
+         * enclosing function; its binders are searched from the module
+         * root, where an earlier module-level `let` is found lexically. */
+        const Node *asc=cx->fn_node?cx->fn_node:cx->root;
+        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&asc) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
             int immutable=0;
@@ -8485,7 +8507,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * not mutable.  Until 127.281 only the function's own
              * parameters were checked, so `fn(a:i64):i64{a=a+1;<a}` and
              * `mt r{$ok:v if(c){v=v+1;v}el{v};..}` compiled. */
-            const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
+            const Node *lb=tk_binder_at(asc,cx->src,node->children[0],nb,nlen,NULL);
             if (lb&&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_PARAM
                      ||lb->kind==NODE_MATCH_ARM)) immutable=1;
             /* 127.310: no local binder, and the module-level name is a
@@ -8538,7 +8560,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         char fix[256];
                         snprintf(fix,sizeof(fix),
                             "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                        if (!alias&&!lp_init&&!bare_init_step(asc,cx->src,node))
                             diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                                 "expected","mutable binding","got","immutable binding",
                                 "fix",fix,(const char*)NULL);
@@ -8584,7 +8606,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
                     /* 127.289: nor on the step of a loop whose bare init
                      * assigns the same binding (bare_init_step). */
-                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                    if (is_let&&!lp_init&&!bare_init_step(asc,cx->src,node))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
