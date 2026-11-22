@@ -338,7 +338,7 @@ published, so the first release publishes this text.
 > language designed for LLM code generation, with a small grammar, one canonical form and
 > compiler verification.
 
-README (the marketplace long description) opens with the one-liner **and** the 82-word
+README (the marketplace long description) opens with the one-liner **and** the 79-word
 paragraph, verbatim, plus links to tokelang.dev, `karwalski/toke` and `karwalski/toke-mcp`.
 
 ### Applied in-repo (commit in `toke-mcp`)

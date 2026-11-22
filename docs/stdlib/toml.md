@@ -59,7 +59,7 @@ i=toml:std.toml;
 
 f=main():i64{
   let cfg = mt toml.load("[server]\nhost = \"localhost\"\n") {$ok:v v;$err:e < 1};
-  let host = mt toml.str(cfg; "host") {$ok:v v;$err:e ""};
+  let host = mt toml.str(cfg; "host") {$ok:v v;$err:e < 1};
   < 0
 };
 ```
@@ -75,7 +75,7 @@ i=toml:std.toml;
 
 f=main():i64{
   let cfg = mt toml.load("[server]\nport = 8080\n") {$ok:v v;$err:e < 1};
-  let port = mt toml.i64(cfg; "port") {$ok:v v;$err:e 0};
+  let port = mt toml.i64(cfg; "port") {$ok:v v;$err:e < 1};
   < port
 };
 ```
@@ -91,7 +91,7 @@ i=toml:std.toml;
 
 f=main():i64{
   let cfg = mt toml.load("debug = true\n") {$ok:v v;$err:e < 1};
-  let debug = mt toml.bool(cfg; "debug") {$ok:v v;$err:e false};
+  let debug = mt toml.bool(cfg; "debug") {$ok:v v;$err:e < 1};
   < 0
 };
 ```
@@ -145,7 +145,7 @@ i=toml:std.toml;
 f=main():i64{
   let cfg = mt toml.load("[server]\nhost = \"localhost\"\n") {$ok:v v;$err:e < 1};
   let server = mt toml.section(cfg; "server") {$ok:v v;$err:e < 1};
-  let host   = mt toml.str(server; "host") {$ok:v v;$err:e ""};
+  let host   = mt toml.str(server; "host") {$ok:v v;$err:e < 1};
   < 0
 };
 ```
@@ -190,7 +190,8 @@ f=main():i64{
   let routes = mt toml.sectionarr(cfg; "route") {$ok:v v;$err:e < 1};
   let i = mut.0;
   lp(i<routes.len){
-    io.println(mt toml.str(routes.get(i); "path") {$ok:v v;$err:e ""});
+    let path = mt toml.str(routes.get(i); "path") {$ok:v v;$err:e < 1};
+    io.println(path);
     i = i + 1
   };
   < 0
@@ -230,7 +231,7 @@ i=toml:std.toml;
 
 f=main():i64{
   let cfg = mt toml.load("port = 8080\n") {$ok:v v;$err:e < 1};
-  let port = mt toml.i64(cfg; "port") {$ok:v v;$err:e 0};
+  let port = mt toml.i64(cfg; "port") {$ok:v v;$err:e < 1};
   let freed = toml.free(cfg);
   < port
 };
@@ -250,12 +251,12 @@ f=main():i64{
   let cfg = mt toml.loadfile("ooke.toml") {$ok:v v;$err:e < 1};
 
   let server  = mt toml.section(cfg; "server") {$ok:v v;$err:e < 1};
-  let host    = mt toml.str(server;  "host") {$ok:v v;$err:e ""};
-  let port    = mt toml.i64(server;  "port") {$ok:v v;$err:e 0};
-  let debug   = mt toml.bool(server; "debug") {$ok:v v;$err:e false};
+  let host    = mt toml.str(server;  "host") {$ok:v v;$err:e < 1};
+  let port    = mt toml.i64(server;  "port") {$ok:v v;$err:e < 1};
+  let debug   = mt toml.bool(server; "debug") {$ok:v v;$err:e < 1};
 
   let db      = mt toml.section(cfg; "db") {$ok:v v;$err:e < 1};
-  let dburl  = mt toml.str(db; "url") {$ok:v v;$err:e ""};
+  let dburl  = mt toml.str(db; "url") {$ok:v v;$err:e < 1};
 
   log.info(str.concat("listening on "; str.concat(host; str.concat(":"; str.fromint(port)))); @());
   < 0

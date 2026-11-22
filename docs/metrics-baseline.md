@@ -470,3 +470,36 @@ measurements under tkc **toke 2.8.0**; none is a model evaluation.
 
 **What is still NOT measured (unchanged):** no v0.4-native model exists; no model has been
 trained since April 2026; every functional-correctness number on this page is v0.3-era.
+
+## 2026-11-23 — the 60-task ratio against minified Python (story 132.155)
+
+The 1.34× in § Canonical wording is measured against the Python side of KERN's 60 pairs as
+`ast.unparse` prints it (formatted, with type hints and the JSON-CLI wrapper;
+`docs/about/reviews/kern-2026-08.md` § Method). The 2026-11-15 positioning review reported
+the same ratio against other treatments of that Python. One of them can be sourced from
+committed measurements, and only that one is recorded here.
+
+| Metric type (TEMSpec) | Tokenizer | Baseline (Python treatment) | N | toke | Python | Ratio |
+|---|---|---|---|---|---|---|
+| Cross-language density (§2.3, informational) | cl100k_base | the same 60 programs through python-minifier 3.2.0 (locals renamed, globals kept) | 60 | 4,787 | 2,892 | **1.66×** — toke costs more |
+| Cross-language density (§2.3, informational) | o200k_base | the same, as above | 60 | 4,778 | 2,945 | **1.62×** — toke costs more |
+
+Sources: the toke side is the 133.4 re-delivery row in § 2026-09 (hand-written v0.4,
+`tkc --min`, `toke-eval/docs/gate1-60-v04.md`); the Python side is the `totals` of
+`docs/about/reviews/kern-2026-08.repro.json` (story 133.1, tiktoken 0.14.0, 2026-09-18),
+whose 60 `per_task` rows sum to the same figures. The ratio is the quotient of those
+committed totals, recomputed on 2026-11-23.
+
+**Caveats.** Point ratios only: no confidence interval, because the per-task v0.4 toke counts
+are not committed in this repository, so a paired bootstrap cannot be run from it. Same
+hand-written-not-model-generated caveat as the 133.4 row. The two sides were tokenized a
+day apart, by separate scripts.
+
+**Not recorded, because no committed measurement or runnable script in this repository
+holds them:** the review's ratio against Python as committed (readable, blank lines),
+against Python with type hints removed, on 1,123 larger model-written pairs, in raw bytes
+(the committed Python figure is characters, not bytes), and its 59-task v0.3 → v0.4 figure
+(needs per-task v0.4 counts). None of these may be quoted until it is added here with its
+fields. The review's note that the 3,565 denominator is a constant copied into the 133.4
+measuring script stands for that script; the same figure is also the sum of the 60
+committed per-task rows of the 133.1 reproduction, which tokenized the programs itself.

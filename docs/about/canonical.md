@@ -54,11 +54,12 @@ Not a DSL, not a template language, not a serialization format, not a prompt syn
 
 > toke is a compiled programming language designed for LLM code generation: small,
 > strictly structured, and canonical, so that generated code is cheap to constrain while
-> it is being produced, cheap for a compiler to verify once it is, and compact in whatever
-> unit the model generates in.
+> it is being produced and cheap for a compiler to verify once it is.
 
-*Verbatim from `docs/about/positioning-2026-09.md` §1 (story 132.7, commit 33f72e8). This
-is the sentence every downstream surface quotes.*
+*Verbatim from `docs/about/positioning-2026-09.md` §1, v2 (story 132.7; copied here by story
+132.154). This is the sentence every downstream surface quotes. v1 (commit 33f72e8) ended
+with a third benefit, compactness "in whatever unit the model generates in"; the owner
+dropped it on 2026-11-15, and it must not be re-copied.*
 
 ## 4. Language facts
 
@@ -175,17 +176,18 @@ compares each copy against `canonical.json`.
 
 *Verbatim from `docs/about/positioning-2026-09.md` §9 (story 132.7).*
 
-### Paragraph (82 words)
+### Paragraph (79 words)
 
 > toke is a compiled programming language designed for LLM code generation. It has 14
 > keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
 > canonical form per construct, chosen by measurement in a 46-pattern catalogue and
-> reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
-> cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one
-> measured property of toke, always reported with its tokenizer and its baseline, not the
-> whole claim.
+> reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding
+> and cheap for a compiler to verify afterwards. Token efficiency is one measured property
+> of toke, always reported with its tokenizer and its baseline, not the whole claim.
 
-*Verbatim from `docs/about/positioning-2026-09.md` §9 (story 132.7).*
+*Verbatim from `docs/about/positioning-2026-09.md` §9, v2 (story 132.7; copied here by story
+132.154). v1's 82-word paragraph ended its third sentence "and compact to emit"; the owner
+dropped that on 2026-11-15.*
 
 ### Token efficiency, short form
 

@@ -53,10 +53,10 @@ recorded as decided, so this brief neither adopts nor rejects them; §1 changes 
 deletion the owner made.
 
 **Copying v2 downstream is story 132.154.** `docs/about/canonical.md` and `canonical.json`
-still carry v1's claim sentence and paragraph, and every declared surface copies them.
-Changing them is one coordinated change across the canonical block and every repository
-that reproduces it, so that `make check-canonical` stays green; until it lands, the gates
-enforce v1's text and v2's is the ratification text.
+carry v2's claim sentence and paragraph (2026-11-23), and `make check-canonical` enforces
+them on every declared surface. Each copy in another repository is re-copied from the
+canonical block in that repository's own change; until a copy is, the gate reports it as
+drifted.
 
 **Corrections this brief applies to its own sources.**
 
@@ -108,8 +108,8 @@ about toke is in one of three states, and a reader is always told which.
 > strictly structured, and canonical, so that generated code is cheap to constrain while
 > it is being produced and cheap for a compiler to verify once it is.
 
-This is the sentence every downstream surface quotes, once 132.154 has copied it into the
-canonical block. It names the audience (LLM code generation), the three mechanical
+This is the sentence every downstream surface quotes; 132.154 copied it into the canonical
+block. It names the audience (LLM code generation), the three mechanical
 properties (small, structured, canonical) and the two things they buy (constrain, verify),
 and it does not depend on any unit of generation.
 
@@ -236,9 +236,9 @@ the figures, with their TEMSpec §6.3 fields (metric type, tokenizer, baseline, 
 **The comparison basis matters, and the best case is already against us.** The 2026-11-15
 review reports that the shared-tokenizer ratio above is measured against formatted,
 type-hinted Python, and that the ratio grows against Python with the hints removed, against
-minified Python and on larger program pairs. Those figures are not in
-`docs/metrics-baseline.md`, so they are not quoted here or on any surface until they are
-added there with their fields.
+minified Python and on larger program pairs. The minified-Python ratio is now in
+`docs/metrics-baseline.md` § 2026-11-23 (story 132.155), with its fields; the others are
+not, so they are not quoted here or on any surface until they are added there.
 
 **No tokenizer claim until the tokenizer work reports.** No "purpose-built tokenizer beats
 cl100k" claim is supportable until the v0.4 tokenizer is trained and locked against the
@@ -470,8 +470,8 @@ decoding on cost per solved task with no training at all. Neither is assumed her
 
 Reproduced word for word by the 132.1 canonical facts block, every toke repo README, the
 home page, and every registry description. Do not paraphrase; if it needs to change, change
-it here first. Story 132.154 copies v2's paragraph into `canonical.json` and every surface
-that carries it; until then the gates enforce v1's.
+it here first. Story 132.154 copied v2's paragraph into `canonical.json`, and the gates
+enforce it on every surface that carries it.
 
 ### Paragraph (79 words)
 

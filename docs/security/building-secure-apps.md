@@ -115,8 +115,8 @@ Escape it, and validate its shape first (section 3).
 
 ```
 f=handleuser(params:@($str:$str)):$str{
-  let name=mt params.get("name") {$ok:v v;$err:e ""};
-  <str.concat("<h1>", str.concat(name, "</h1>"))
+  let name=mt params.get("name") {$ok:v v;$err:e <"<h1>not found</h1>"};
+  <str.concat("<h1>";str.concat(name;"</h1>"))
 };
 ```
 
@@ -124,11 +124,11 @@ f=handleuser(params:@($str:$str)):$str{
 
 ```
 f=handleuser(params:@($str:$str)):$str{
-  let raw=mt params.get("name") {$ok:v v;$err:e ""};
+  let raw=mt params.get("name") {$ok:v v;$err:e <"<h1>invalid</h1>"};
   if(!isidentifier(raw)){
     <"<h1>invalid</h1>"
   }el{
-    <str.concat("<h1>", str.concat(html.escape(raw), "</h1>"))
+    <str.concat("<h1>";str.concat(html.escape(raw);"</h1>"))
   }
 };
 ```
@@ -159,20 +159,20 @@ m=app.validate;
 i=str:std.str;
 
 f=isidentifier(s:$str):bool{
-  let n=str.len(s);
-  if(n=0){<false}el{};
-  if(n>64){<false}el{};        // always bound length
-  let ok=mut.true;
+  let n=str.len(s) as i64;
+  if(n==0){<false};
+  if(n>64){<false};        (* always bound length *)
   lp(let i=0;i<n;i=i+1){
-    let c=mt str.slice(s;i;i+1) {$ok:v v;$err:e ""};
-    let isalnum=(c>="a"&&c<="z")||(c>="A"&&c<="Z")||(c>="0"&&c<="9")||c="_";
-    if(!isalnum){ok=false}el{}
+    (* one character's code, read without a fallible slice: a-z A-Z 0-9 and the underscore (95) *)
+    let c=str.charcode(s;i);
+    let isalnum=(c>=97&&c<=122)||(c>=65&&c<=90)||(c>=48&&c<=57)||c==95;
+    if(!isalnum){<false}
   };
-  <ok
+  <true
 };
 
 f=isintinrange(s:$str;lo:i64;hi:i64):bool{
-  let n=mt str.toint(s) {$ok:v v;$err:e (lo-1)};
+  let n=mt str.toint(s) {$ok:v v;$err:e <false};
   <(n>=lo)&&(n<=hi)
 };
 ```
@@ -303,14 +303,14 @@ length and never early-exit:
 f=consteq(a:$str;b:$str):bool{
   let la=str.len(a);
   let lb=str.len(b);
-  let diff=mut.(la=lb ? 0 : 1);
-  let n=(la<lb ? la : lb);
+  let diff=mut.if(la==lb){0}el{1};
+  let n=if(la<lb){la}el{lb};
   lp(let i=0;i<n;i=i+1){
-    let ca=mt str.slice(a;i;i+1) {$ok:v v;$err:e ""};
-    let cb=mt str.slice(b;i;i+1) {$ok:v v;$err:e ""};
+    let ca=mt str.slice(a;i;i+1) {$ok:v v;$err:e <false};
+    let cb=mt str.slice(b;i;i+1) {$ok:v v;$err:e <false};
     if(!str.eq(ca;cb)){diff=1}el{}
   };
-  <diff=0
+  <diff==0
 };
 ```
 
