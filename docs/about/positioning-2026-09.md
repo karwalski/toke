@@ -236,9 +236,9 @@ the figures, with their TEMSpec §6.3 fields (metric type, tokenizer, baseline, 
 **The comparison basis matters, and the best case is already against us.** The 2026-11-15
 review reports that the shared-tokenizer ratio above is measured against formatted,
 type-hinted Python, and that the ratio grows against Python with the hints removed, against
-minified Python and on larger program pairs. Those figures are not in
-`docs/metrics-baseline.md`, so they are not quoted here or on any surface until they are
-added there with their fields.
+minified Python and on larger program pairs. The minified-Python ratio is now in
+`docs/metrics-baseline.md` § 2026-11-23 (story 132.155), with its fields; the others are
+not, so they are not quoted here or on any surface until they are added there.
 
 **No tokenizer claim until the tokenizer work reports.** No "purpose-built tokenizer beats
 cl100k" claim is supportable until the v0.4 tokenizer is trained and locked against the
