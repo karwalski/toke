@@ -5,7 +5,7 @@ section: tutorials
 order: 1
 ---
 
-Build a fully working command-line mortgage calculator in toke. By the end you will have a program that collects loan details from stdin, computes compound interest and a full amortisation schedule, prints a formatted table, and saves/loads scenarios as JSON files.
+Build a fully working command-line mortgage calculator in toke. By the end you will have a program that collects loan details from stdin, computes compound interest and a full amortisation schedule, and prints a formatted table.
 
 **Time:** ~30 minutes
 **Difficulty:** Beginner
@@ -20,7 +20,7 @@ The finished program does four things:
 - **Interactive input** — prompts for principal, annual interest rate, loan term (years), and optional extra monthly payment.
 - **Compound interest calculation** — standard formula `M = P * [r(1+r)^n] / [(1+r)^n - 1]` with a zero-rate fallback.
 - **Amortisation schedule** — month-by-month table showing payment, principal, interest, and remaining balance.
-- **JSON save/load** — serialise a scenario to a JSON file so you can reload it later.
+- **Typed errors** — an invalid rate or term comes back as a `$calcerr` variant, and every fallible call is matched before its value is used.
 
 The project is split across three source files:
 
@@ -28,7 +28,7 @@ The project is split across three source files:
 |------|---------------|
 | `model.tk` | Type definitions: scenario, payment, result, error |
 | `calc.tk` | Validation, monthly payment formula, amortisation loop |
-| `main.tk` | CLI I/O, formatting, JSON serialisation, entry point |
+| `main.tk` | CLI I/O, formatting, error reporting, entry point |
 
 ---
 
@@ -51,29 +51,28 @@ You can recreate this project by feeding the following prompts to an LLM that kn
 ### Prompt 2 — Calculation Engine
 
 > Generate a toke module `mortgage.calc` in a file called `calc.tk`.
-> Import `mortgage.model` as `m` and `std.math` as `math`.
-> Implement three functions:
+> Import `mortgage.model` as `md` and `std.math` as `math`.
+> Implement four functions:
 >
-> - `validate(s:m.$scenario):bool!m.$calcerr` — return `$err` if rate is outside 0..1 or term is less than 1
-> - `monthly(s:m.$scenario):f64` — standard compound interest formula; degenerate to `P/n` when rate is near zero
-> - `amortise(s:m.$scenario):@(m.$payment)` — build the full schedule array, applying extra payments and capping at zero balance
-> - `calculate(s:m.$scenario):m.$result!m.$calcerr` — validate, then return a `$result` with monthly, totals, and schedule
+> - `validate(s:$scenario):$scenario!$calcerr` — return a `$calcerr` variant if rate is outside 0..1 or term is less than 1, otherwise the scenario
+> - `monthly(s:$scenario):f64` — standard compound interest formula; degenerate to `P/n` when rate is near zero
+> - `amortise(s:$scenario):@$payment` — build the full schedule array, applying extra payments and capping at zero balance
+> - `calculate(s:$scenario):$result!$calcerr` — validate (propagating its error), then return a `$result` with monthly, totals, and schedule
 >
 > Use `mut.` for mutable bindings and `lp` for loops.
 
 ### Prompt 3 — CLI Front End
 
 > Generate a toke module `mortgage.main` in a file called `main.tk`.
-> Import `std.io`, `std.json`, `std.file`, `std.str`, and the two mortgage modules.
+> Import `std.io`, `std.str`, and the two mortgage modules.
 > Implement:
 >
-> - `promptfloat(msg:str):f64` and `promptint(msg:str):u64` — read one value from stdin
-> - `printsummary(r:m.$result):void` — display monthly payment, total interest, total cost
-> - `printschedule(sched:@(m.$payment)):void` — formatted table with header
-> - `scenariotojson(s:m.$scenario):str` and `jsontoscenario(raw:str):m.$scenario!m.$calcerr` — round-trip JSON
-> - `savescenario` / `loadscenario` — file I/O wrappers
-> - `run():void` — interactive main loop: prompt, calculate, print, optionally save
-> - `main():i64` — entry point returning 0
+> - `promptfloat(msg:$str):f64` and `promptint(msg:$str):u64` — read one value from stdin; match the parse result, using 0 when the line does not parse
+> - `printsummary(r:$result):$i64` — display monthly payment, total interest, total cost
+> - `printschedule(sched:@$payment):$i64` — formatted table with header
+> - `showresult(r:$result):$i64` and `showerror(e:$calcerr):$i64` — print a result, or name the error variant
+> - `run():$i64` — prompt, calculate, then match the result into `showresult` or `showerror`
+> - `main():$i64` — entry point returning 0
 >
 > Handle every fallible call with `mt expr { $ok:...; $err:... }` match syntax.
 
@@ -81,7 +80,7 @@ You can recreate this project by feeding the following prompts to an LLM that kn
 
 > Review the three mortgage modules for correctness:
 > - Does `amortise` cap the final payment when balance drops below the regular amount?
-> - Does `jsontoscenario` return a clear error for every missing field?
+> - Is every `T!E` result matched (or propagated with `!`) before its value is used?
 > - Are all mutable bindings declared with `mut.`?
 
 ---
@@ -115,20 +114,25 @@ t=$calcerr{$invalidrate:f64;$invalidterm:u64;$fileerr:$str};
 
 ```toke
 m=mortgage.calc;
-i=m:mortgage.model;
+i=md:mortgage.model;
 i=math:std.math;
 
-f=validate(s:m.$scenario):bool!m.$calcerr{
+
+(* validate — returns the scenario on success, or a $calcerr. Returns the
+ * scenario (not bool) so the ok value is a non-zero handle, avoiding the
+ * error-union zero sentinel (a bool false would collide with it). *)
+f=validate(s:$scenario):$scenario!$calcerr{
   if(s.rate<0.0||s.rate>1.0){
-    <$err(m.$calcerr.$invalidrate(s.rate))
+    <$calcerr{$invalidrate:s.rate}
   };
   if(s.term<1){
-    <$err(m.$calcerr.$invalidterm(s.term))
+    <$calcerr{$invalidterm:s.term}
   };
-  <$ok(true)
+  <s
 };
 
-f=monthly(s:m.$scenario):f64{
+
+f=monthly(s:$scenario):f64{
   let n=s.term*12;
   let r=s.rate/12.0;
   if(r<0.000000001){
@@ -138,21 +142,22 @@ f=monthly(s:m.$scenario):f64{
   <s.principal*(r*rn)/(rn-1.0)
 };
 
-f=amortise(s:m.$scenario):@(m.$payment){
+
+f=amortise(s:$scenario):@$payment{
   let pmt=monthly(s);
   let n=s.term*12;
   let bal=mut.s.principal;
   let sched=mut.@();
   lp(let i=1;i<(n as i64)+1;i=i+1){
     let mi=bal*(s.rate/12.0);
-    let mp=pmt-mi+s.extra;
-    if(mp>bal){
+    let mp=mut.(pmt+s.extra);
+    if(mp>bal+mi){
       mp=bal+mi
     };
     let princ=mp-mi;
     bal=bal-princ;
     if(bal<0.0){bal=0.0};
-    let row=m.$payment{
+    let row=$payment{
       month:(i as u64);
       payment:mp;
       principal:princ;
@@ -167,11 +172,9 @@ f=amortise(s:m.$scenario):@(m.$payment){
   <sched
 };
 
-f=calculate(s:m.$scenario):m.$result!m.$calcerr{
-  mt validate(s) {
-    $ok:_ ();
-    $err:e <$err(e)
-  };
+
+f=calculate(s:$scenario):$result!$calcerr{
+  let ok=validate(s)!$calcerr;
   let pmt=monthly(s);
   let sched=amortise(s);
   let n=sched.len;
@@ -182,20 +185,21 @@ f=calculate(s:m.$scenario):m.$result!m.$calcerr{
     totalcost=totalcost+row.payment;
     totalinterest=totalinterest+row.interest
   };
-  <$ok(m.$result{
+  <$result{
     monthly:pmt;
     totalinterest:totalinterest;
     totalcost:totalcost;
     schedule:sched
-  })
+  }
 };
 ```
 
 **Key points:**
 
-- `i=m:mortgage.model;` imports the model module under the alias `m`.
-- `:bool!m.$calcerr` means the function returns `bool` on success or `m.$calcerr` on error (result type).
-- `<$err(...)` and `<$ok(...)` are early returns wrapping the result.
+- `i=md:mortgage.model;` imports the model module; its types are used by name (`$scenario`, `$calcerr`).
+- `:$scenario!$calcerr` means the function returns a `$scenario` on success or a `$calcerr` on error (a result type).
+- The ok return is the bare value (`<s`); the error return constructs a variant (`<$calcerr{$invalidrate:s.rate}`). There is no `$ok(...)` / `$err(...)` wrapper.
+- `validate(s)!$calcerr` propagates: if `validate` fails, `calculate` returns that error at once; otherwise the expression is the scenario.
 - `let bal=mut.s.principal;` creates a mutable binding initialised from an immutable value.
 - `lp(init;cond;step){...}` is toke's loop construct.
 - `math.pow(base;exp)` calls the standard library power function. Arguments are separated by semicolons.
@@ -206,23 +210,24 @@ f=calculate(s:m.$scenario):m.$result!m.$calcerr{
 ```toke
 m=mortgage.main;
 i=io:std.io;
-i=json:std.json;
-i=file:std.file;
 i=str:std.str;
 i=calc:mortgage.calc;
-i=m:mortgage.model;
+i=md:mortgage.model;
 
-f=formatcurrency(v:f64):str{
-  let s=str.fromfloat(v);
-  <s
+
+f=formatcurrency(v:f64):$str{
+  <str.format(v;"%.2f")
 };
 
-f=printheader():void{
+
+f=printheader():$i64{
   io.println("Month    Payment    Principal  Interest   Balance");
-  io.println("-----  ----------  ----------  ---------  ----------")
+  io.println("-----  ----------  ----------  ---------  ----------");
+  <0
 };
 
-f=printrow(p:m.$payment):void{
+
+f=printrow(p:$payment):$i64{
   let line=str.buf();
   str.add(line;str.fromint(p.month as i64));
   str.add(line;"      ");
@@ -233,96 +238,43 @@ f=printrow(p:m.$payment):void{
   str.add(line;formatcurrency(p.interest));
   str.add(line;"    ");
   str.add(line;formatcurrency(p.balance));
-  io.println(str.done(line))
+  io.println(str.done(line));
+  <0
 };
 
-f=printsummary(r:m.$result):void{
+
+f=printsummary(r:$result):$i64{
   io.println("");
   io.println(str.concat("Monthly payment:  ";formatcurrency(r.monthly)));
   io.println(str.concat("Total interest:   ";formatcurrency(r.totalinterest)));
   io.println(str.concat("Total cost:       ";formatcurrency(r.totalcost)));
-  io.println("")
+  io.println("");
+  <0
 };
 
-f=printschedule(sched:@(m.$payment)):void{
+
+f=printschedule(sched:@$payment):$i64{
   printheader();
   lp(let i=0;i<(sched.len as i64);i=i+1){
     let row=sched.get(i);
     printrow(row)
-  }
+  };
+  <0
 };
 
-f=scenariotojson(s:m.$scenario):str{
-  let b=str.buf();
-  str.add(b;"{");
-  str.add(b;"\"principal\":");
-  str.add(b;str.fromfloat(s.principal));
-  str.add(b;",\"rate\":");
-  str.add(b;str.fromfloat(s.rate));
-  str.add(b;",\"term\":");
-  str.add(b;str.fromint(s.term as i64));
-  str.add(b;",\"extra\":");
-  str.add(b;str.fromfloat(s.extra));
-  str.add(b;"}");
-  <str.done(b)
-};
 
-f=jsontoscenario(raw:str):m.$scenario!m.$calcerr{
-  let doc=mt json.dec(raw) {
-    $ok:d d;
-    $err:e <$err(m.$calcerr.$fileerr("invalid json"))
-  };
-  let principal=mt json.f64(doc;"principal") {
-    $ok:v v;
-    $err:e <$err(m.$calcerr.$fileerr("missing principal"))
-  };
-  let rate=mt json.f64(doc;"rate") {
-    $ok:v v;
-    $err:e <$err(m.$calcerr.$fileerr("missing rate"))
-  };
-  let term=mt json.u64(doc;"term") {
-    $ok:v v;
-    $err:e <$err(m.$calcerr.$fileerr("missing term"))
-  };
-  let extra=mt json.f64(doc;"extra") {
-    $ok:v v;
-    $err:e <$err(m.$calcerr.$fileerr("missing extra"))
-  };
-  <$ok(m.$scenario{
-    principal:principal;
-    rate:rate;
-    term:(term as u64);
-    extra:extra
-  })
-};
-
-f=savescenario(s:m.$scenario;path:str):bool!m.$calcerr{
-  let data=scenariotojson(s);
-  mt file.write(path;data) {
-    $ok:v <$ok(true);
-    $err:e <$err(m.$calcerr.$fileerr("could not write file"))
-  }
-};
-
-f=loadscenario(path:str):m.$scenario!m.$calcerr{
-  let raw=mt file.read(path) {
-    $ok:v v;
-    $err:e <$err(m.$calcerr.$fileerr("could not read file"))
-  };
-  <jsontoscenario(raw)
-};
-
-f=promptfloat(msg:str):f64{
+f=promptfloat(msg:$str):f64{
   io.print(msg);
   let line=io.readln();
   let v=mt str.tofloat(str.trim(line)) {
-    $ok:v v;
+    $ok:x x;
     $err:e 0.0
   };
   <v
 };
 
-f=promptint(msg:str):u64{
+
+f=promptint(msg:$str):u64{
   io.print(msg);
   let line=io.readln();
   let v=mt str.toint(str.trim(line)) {
@@ -332,7 +284,26 @@ f=promptint(msg:str):u64{
   <(v as u64)
 };
 
-f=run():void{
+
+f=showresult(r:$result):$i64{
+  printsummary(r);
+  printschedule(r.schedule);
+  <0
+};
+
+
+f=showerror(e:$calcerr):$i64{
+  io.println("Calculation error:");
+  mt e {
+    $invalidrate:v io.println(str.concat("  Invalid rate: ";str.format(v;"%.4f")));
+    $invalidterm:v io.println(str.concat("  Invalid term: ";str.fromint(v as i64)));
+    $fileerr:v     io.println(str.concat("  File error: ";v))
+  };
+  <0
+};
+
+
+f=run():$i64{
   io.println("=== Toke Mortgage Calculator ===");
   io.println("");
 
@@ -341,7 +312,7 @@ f=run():void{
   let term=promptint("Loan term in years: ");
   let extra=promptfloat("Extra monthly payment (0 for none): ");
 
-  let s=m.$scenario{
+  let s=$scenario{
     principal:principal;
     rate:rate;
     term:term;
@@ -349,34 +320,14 @@ f=run():void{
   };
 
   mt calc.calculate(s) {
-    $ok:r {
-      printsummary(r);
-      printschedule(r.schedule);
-
-      io.println("");
-      io.print("Save scenario to file? (y/n): ");
-      let ans=str.trim(io.readln());
-      if(str.startswith(ans;"y")){
-        io.print("File path: ");
-        let path=str.trim(io.readln());
-        mt savescenario(s;path) {
-          $ok:_ io.println("Scenario saved.");
-          $err:e io.println("Error saving scenario.")
-        }
-      }
-    };
-    $err:e {
-      io.println("Calculation error:");
-      mt e {
-        $invalidrate:v io.println(str.concat("  Invalid rate: ";str.fromfloat(v)));
-        $invalidterm:v io.println(str.concat("  Invalid term: ";str.fromint(v as i64)));
-        $fileerr:v     io.println(str.concat("  File error: ";v))
-      }
-    }
-  }
+    $ok:r showresult(r);
+    $err:e showerror(e)
+  };
+  <0
 };
 
-f=main():i64{
+
+f=main():$i64{
   run();
   <0
 };
@@ -387,10 +338,10 @@ f=main():i64{
 - `str.buf()` creates a mutable string buffer. Append with `str.add(buf;val)` and finalise with `str.done(buf)`.
 - `io.print` writes without a newline; `io.println` adds one.
 - `io.readln()` reads one line from stdin.
-- `json.dec(raw)` parses a JSON string into a document, returning a result type.
-- `json.f64(doc;"key")` extracts a float field from a JSON document by key.
+- `str.tofloat` and `str.toint` return result types, so `promptfloat` and `promptint` match them before use: `mt str.tofloat(str.trim(line)) {$ok:x x; $err:e 0.0}` gives the number, or `0.0` for a line that does not parse. Passing the result on as a number without the match is rejected at `--check` (E4031).
+- `mt calc.calculate(s) {$ok:r showresult(r); $err:e showerror(e)}` handles both outcomes; `showerror` matches the `$calcerr` variants by name.
 - Every fallible call is handled with `mt expr { $ok:...; $err:... }` match syntax -- toke does not have exceptions.
-- `f=main():i64` is the program entry point. Return `0` for success.
+- `f=main():$i64` is the program entry point. Return `0` for success.
 
 ---
 
@@ -421,31 +372,16 @@ Loan term in years: 30
 Extra monthly payment (0 for none): 0
 
 Monthly payment:  3160.34
-Total interest:   637722.40
-Total cost:       1137722.40
+Total interest:   637722.44
+Total cost:       1137722.44
 
 Month    Payment    Principal  Interest   Balance
 -----  ----------  ----------  ---------  ----------
-1      3160.34    1493.67    1666.67    498506.33
-2      3160.34    1498.65    1661.69    497007.68
-3      3160.34    1503.64    1656.69    495504.04
+1      3160.34    452.01    2708.33    499547.99
+2      3160.34    454.46    2705.88    499093.54
 ...
-360    3160.34    3149.84    10.50      0.00
-
-Save scenario to file? (y/n): y
-File path: my-mortgage.json
-Scenario saved.
+360      3160.34    3143.31    17.03    0.00
 ```
-
-### Load a Saved Scenario
-
-Saved files are plain JSON:
-
-```json
-{"principal":500000.0,"rate":0.065,"term":30,"extra":0.0}
-```
-
-You can edit them in any text editor and load them by extending the program (see exercises below).
 
 ---
 
@@ -466,13 +402,20 @@ error[E4031]: expected `f64`, found `i64`
   --> calc.tk:20
 ```
 
-Numeric types do not implicitly convert. Use `as f64` or `as i64` at the point of use:
+Numeric types do not implicitly convert. Use `as f64` or `as i64` at the point of use.
+
+Wrong (`n` is a `u64`, `s.principal` an `f64`):
+
+```text
+let n=s.term*12;
+<s.principal/n
+```
+
+Right:
 
 ```toke
 let n=s.term*12;
-s.principal/n
-
-s.principal/(n as f64)
+<s.principal/(n as f64)
 ```
 
 ### E1006: uppercase keyword
@@ -490,12 +433,18 @@ error: unexpected token
   --> main.tk:25
 ```
 
-Statements inside blocks are separated by semicolons. The last statement in a block does not need one, but every statement before it does:
+Statements inside blocks are separated by semicolons. The last statement in a block does not need one, but every statement before it does.
 
-```toke
+Wrong:
+
+```text
 str.add(line;"hello")
 str.add(line;" world")
+```
 
+Right:
+
+```toke
 str.add(line;"hello");
 str.add(line;" world")
 ```
@@ -503,18 +452,26 @@ str.add(line;" world")
 ### Forgetting to handle result types
 
 ```
-error[E4031]: expected `f64`, found `f64!$calcerr`
+error[E4031]: type mismatch: expected 'f64', got 'f64!$parseerr' -- argument 1 of 'str.format' reads the value of a fallible result; unwrap it first ('mt' with $ok/$err arms, or '!' in a fallible function)
 ```
 
-Any function returning `type!error` produces a result that must be matched before you can use the inner value:
+Any function returning `type!error` produces a result that must be matched before you can use the inner value. Binding the result is allowed; reading it as an `f64` (passing it to `str.format`, doing arithmetic on it, interpolating it) is E4031.
+
+Wrong:
+
+```text
+let v=str.tofloat(line);
+io.println(str.format(v;"%.2f"));
+```
+
+Right:
 
 ```toke
-let v=str.tofloat(line);
-
 let v=mt str.tofloat(line) {
-  $ok:v v;
+  $ok:x x;
   $err:e 0.0
 };
+io.println(str.format(v;"%.2f"));
 ```
 
 ### Mutable binding errors
@@ -523,12 +480,18 @@ let v=mt str.tofloat(line) {
 error: cannot assign to immutable binding `bal`
 ```
 
-Use `mut.` to create mutable bindings:
+Use `mut.` to create mutable bindings.
 
-```toke
+Wrong:
+
+```text
 let bal=s.principal;
 bal=bal-princ;
+```
 
+Right:
+
+```toke
 let bal=mut.s.principal;
 bal=bal-princ;
 ```
@@ -566,6 +529,6 @@ Add a `save_csv` function that writes the amortisation schedule as a CSV file:
 
 ```csv
 month,payment,principal,interest,balance
-1,3160.34,1493.67,1666.67,498506.33
-2,3160.34,1498.65,1661.69,497007.68
+1,3160.34,452.01,2708.33,499547.99
+2,3160.34,454.46,2705.88,499093.54
 ```

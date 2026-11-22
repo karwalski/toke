@@ -147,7 +147,7 @@ f=findindex(id:u64):i64{
 };
 ```
 
-`findindex` scans the store and returns the array index of a matching id, or `-1` if none. JSON request parsing is done inline in the create handler below: `mt json.dec(body) {$ok:d d; $err:e (0-1)}` yields the parsed document handle or a `0` sentinel, which the handler then checks.
+`findindex` scans the store and returns the array index of a matching id, or `-1` if none. JSON request parsing is done inline in the create handler below: `mt json.dec(body) {$ok:d d; $err:e <http.resjson(400; …)}` binds the parsed document, and a parse failure returns the 400 response from the handler directly.
 
 #### Route handlers
 
@@ -159,7 +159,11 @@ f=handlelist(req:i64):i64{
 };
 
 f=handleget(req:i64):i64{
-  let id=mt str.toint(http.param(req;"id")) {
+  let raw=mt http.param(req;"id") {
+    $ok:v v;
+    $err:e <http.resjson(404; "{\"error\":\"not found\"}")
+  };
+  let id=mt str.toint(raw) {
     $ok:v v;
     $err:e (0-1)
   };
@@ -174,10 +178,7 @@ f=handlecreate(req:i64):i64{
   let body=http.reqbody(req);
   let doc=mt json.dec(body) {
     $ok:d d;
-    $err:e (0-1)
-  };
-  if(doc<0){
-    <http.resjson(400; "{\"error\":\"invalid json\"}")
+    $err:e <http.resjson(400; "{\"error\":\"invalid json\"}")
   };
   let url=mt json.str(doc;"url") {
     $ok:v v;
@@ -204,7 +205,11 @@ f=handlecreate(req:i64):i64{
 };
 
 f=handledelete(req:i64):i64{
-  let id=mt str.toint(http.param(req;"id")) {
+  let raw=mt http.param(req;"id") {
+    $ok:v v;
+    $err:e <http.resjson(404; "{\"error\":\"not found\"}")
+  };
+  let id=mt str.toint(raw) {
     $ok:v v;
     $err:e (0-1)
   };
@@ -226,7 +231,7 @@ f=handledelete(req:i64):i64{
 };
 ```
 
-Each handler updates the store by creating a fresh `$bookmarks` value and reassigning `store` (toke values are immutable; `mut.` makes the *binding* reassignable). `http.param(req;"id")` returns the `:id` path parameter as a string, which `str.toint` parses; the `if(idx<0)` checks return a 404. Create validates that a `url` was supplied before inserting.
+Each handler updates the store by creating a fresh `$bookmarks` value and reassigning `store` (toke values are immutable; `mut.` makes the *binding* reassignable). `http.param(req;"id")` returns the `:id` path parameter as a `$str!$httprouteerr` result, so it is matched before use: `$ok:v v` binds the string, and a missing parameter returns a 404 from the `$err` arm. `str.toint` is a result too, matched the same way (an id that does not parse becomes `-1`, which no bookmark has). The `if(idx<0)` checks return a 404. Passing either result straight on as a value (`str.toint(http.param(req;"id"))`) is rejected at `--check` (E4031). Create validates that a `url` was supplied before inserting.
 
 #### Registering the routes
 
@@ -260,11 +265,12 @@ i=http:std.http;
 i=io:std.io;
 i=api:bookmarks.api;
 
+
 f=main():$i64{
   api.routes();
   io.println("bookmarks api listening on http://localhost:8080");
   (* single worker: the in-memory store is per-process, so one worker
-     keeps state consistent across requests *)
+     keeps state consistent across requests (a single-process demo) *)
   http.serveworkers(8080; 1);
   <0
 };

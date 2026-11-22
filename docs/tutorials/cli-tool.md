@@ -140,7 +140,10 @@ f=parseargs():$opts!$greperr{
   let positional=mut.@();
 
   lp(let i=1;i<(args.count() as i64);i=i+1){
-    let arg=args.get(i);
+    let arg=mt args.get(i) {
+      $ok:v v;
+      $err:e <$greperr{$usage:"cannot read the arguments"}
+    };
     if(str.startswith(arg;"-")){
       if(str.contains(arg;"i")){ignorecase=true};
       if(str.contains(arg;"c")){countonly=true};
@@ -174,6 +177,9 @@ Key patterns to notice:
 - The **ok return** is just the bare value (`<$opts{...}`); the **error return**
   constructs an error variant (`<$greperr{$usage:"…"}`). There is no `$ok(...)` /
   `$err(...)` wrapper — the `T!$err` signature already says which is which.
+- **`args.get(i)`** returns `$str!$argserr`: an argument read can fail, so the
+  result is matched before use (`$ok:v v`), and a failure becomes a `$greperr`
+  return. Using the union directly as a `$str` is rejected at `--check` (E4031).
 - **`mut.@()`** creates a mutable empty array; **`=`** is equality
   (`startswith(arg;"-")=false`).
 
@@ -223,10 +229,14 @@ f=search(opts:$opts):u64!$greperr{
     $err:e <$greperr{$fileerr:str.concat("cannot read file: ";opts.path)}
   };
   let lines=str.split(content;"\n");
+  (* A file ending in a newline splits into one extra, empty element, which
+     is not a line: -v printed it as a phantom last line and -v -c counted it. *)
+  let nlines=mut.(lines.len as i64);
+  if(nlines>0&&str.endswith(content;"\n")){nlines=nlines-1};
   let count=mut.0;
   let shownum=opts.nolinenum==false;
 
-  lp(let i=0;i<(lines.len as i64);i=i+1){
+  lp(let i=0;i<nlines;i=i+1){
     let line=lines.get(i);
     let hit=matches(line;opts.pattern;opts.ignorecase);
     let show=mut.hit;
@@ -469,13 +479,13 @@ Try extending `tkgrep` with the following features. Each exercise builds on the 
 
 ### Exercise 1 -- Regex support
 
-Replace the `str.contains` check in `matches` with a regex engine call. Add a `-r` flag that switches from substring to regex matching. The `std.re` module provides `re.match(pattern;text):bool`.
+Replace the `str.contains` check in `matches` with a regex search. Add a `-r` flag that switches from substring to regex matching. `std.str` provides `str.containsre(s;pattern):i64`, which is `1` when `pattern` matches anywhere in `s` (see the str module's "Regular expressions" section for the pattern language).
 
-**Hint:** add a `regex:bool` field to `$opts`, check it in `parseargs`, and branch inside `matches`:
+**Hint:** add a `regex:bool` field to `$opts`, set it in `parseargs`, pass it to `matches` as a `regex:bool` parameter, and branch there:
 
 ```toke
-if(opts.regex){
-  <re.match(pattern;line)
+if(regex){
+  <str.containsre(line;pattern)==1
 };
 ```
 
