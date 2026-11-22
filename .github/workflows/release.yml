@@ -182,10 +182,6 @@ jobs:
             test "$minos" = "$MACOS_FLOOR" || { echo "release binary records macOS ${minos}, not the ${MACOS_FLOOR} floor" >&2; exit 1; }
           fi
 
-      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
-      # compiler under which programs the website publishes no longer
-      # compiled. This is the release-ritual closure the tracker names as the
-      # one that would have caught it: the tag fails instead.
       - name: Package release tarball
         run: |
           # On a tag the version is the tag; on a pull request or a manual
