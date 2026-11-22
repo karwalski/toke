@@ -4857,6 +4857,22 @@ static void check_json_opaque_arg(Ctx *cx, const Node *call, const char *mpath,
               "got", got, (const char *)NULL);
 }
 
+/* 127.497 -- the element of an array argument against the element of the
+ * array a std interface declares, by the representation class
+ * check_tki_arg_types judges a scalar by (tki_arg_class): nested arrays are
+ * followed down, an unknown element (an empty literal) or an opaque handle
+ * is not judged, and an integer where a record is declared is a handle, as
+ * at the top level.  1 when the classes differ. */
+static int std_elem_clash(const Type *at, const Type *pt) {
+    for (int d = 0; d < 8 && at && pt && at->kind == TY_ARRAY
+                    && pt->kind == TY_ARRAY; d++) {
+        at = at->elem; pt = pt->elem;
+    }
+    int ac = tki_arg_class(at), pc = tki_arg_class(pt);
+    if (!ac || !pc || ac == pc) return 0;
+    if (pc == 6 && ac == 2) return 0;
+    return 1;
+}
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
@@ -5018,7 +5034,12 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
              * a number where a str is read, a str or a record where a number
              * is, an array where a scalar is. */
             int ac = tki_arg_class(at), pc = tki_arg_class(pt);
-            if (!ac || !pc || ac == pc) continue;
+            /* 127.497: an array against an array is judged by its element
+             * class too, as a user call is: `csv.serialize(@("a";"b"))`
+             * passed where `[[str]]` is declared, and the glue read each
+             * char* as a row array (handle[-1]). */
+            if (!ac || !pc || (ac == pc && !(ac == 4 && std_elem_clash(at, pt))))
+                continue;
             /* An integer where a RECORD is declared is a handle: std callbacks
              * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
              * then `tls.read(conn)` -- conform C022), and every record crosses
