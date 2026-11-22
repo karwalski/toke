@@ -23,8 +23,9 @@
 #   2. A reaped handle still answers: wait twice gives the same code, stdout
 #      after wait gives the child's output, kill after wait is false.
 #
-# Negative control: TKC=<base ee27591c>/toke -- case 1a gives ok=~55 bad=~245
-# and fails; cases 2 pass on both.
+# Negative control: TKC=<base ee27591c tree>/toke (measured 2026-11-23) --
+# full ok=54 bad=246, waitonly ok=54 bad=246, pollreap ok=18 bad=282; the
+# reaped case passes on both.
 #
 # Story: 138.48
 set -uo pipefail

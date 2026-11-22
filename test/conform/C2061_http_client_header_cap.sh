@@ -23,9 +23,10 @@
 #   4. a header block of 65537 bytes, cap 100: $err (the header cap)
 #   5. no cap, a 1 MiB header block: $ok 200 10 (unchanged)
 #
-# Negative control: TKC=<base ee27591c tree>/toke -- 1 reads all 64 MiB and
-# answers "incomplete response"-class $err after the server closes, or holds
-# 64 MiB; 4 answers $ok.  2, 3 and 5 pass on both.
+# Negative control: TKC=<base ee27591c tree>/toke (measured 2026-11-23) --
+# 1 reads all 67108881 bytes into memory and answers "incomplete response:
+# connection closed before the header block ended" only when the server
+# closes; 4 answers $ok 200 10.  2, 3 and 5 pass on both.
 #
 # Story: 138.49
 set -uo pipefail
