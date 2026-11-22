@@ -109,6 +109,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   {$ok:v v;$err:x 0}}` was refused although it builds and returns 7. The
   parameter's annotation now counts only when that parameter is the binder in
   force at the subject. Conformance: C1920 case 6.
+- **A closure parameter annotated with a scalar is judged as a match subject**
+  (138.57). `f=h(e:$fe):i64{let g=fn(e:i64):i64{<mt e {$a:v 1;$b:v 2}};
+  <g(3)}` passed `--check`, built, and the binary died with SIGSEGV (3.2.0
+  and later); `fn(e:i64)` matched with `$ok`/`$err` built and took `$err` for
+  0 unless an outer function happened to have a same-named scalar parameter.
+  A parameter that is the binder in force at the subject, whether of the
+  function or of a closure inside it, is now judged by its own annotation:
+  variant arms are E4031 `expected` "a sum type" and `$ok`/`$err` arms are
+  E4031 `expected` "T!E", both with no `fix`. A variant match over a scalar
+  closure parameter with no outer parameter, which stopped at build with
+  E9005, is now refused at `--check`. Conformance: C1920 case 8.
 - **A user name can no longer collide with an IR temporary or block label**
   (138.38, loke T-65). `f=g(t0:i64):i64{<t0+1}` passed `--check` and clang
   refused the IR ("multiple definition of local value named 't0'"); a local
