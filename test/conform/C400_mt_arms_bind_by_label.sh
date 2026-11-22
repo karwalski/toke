@@ -219,15 +219,21 @@ expect "8-control-ok-first" "$(run k1.tk)" "ok err 4 -1|rc=0"
 #    there is no dispatch to lower, so the build stops with E9005 (as it does
 #    at 3+ arms) instead of choosing on value-vs-zero.  Main at 8efba9e built
 #    this and printed "inv:0" (Batch E1, C411 case 5).
+#    138.37: over an immutable binding of a known i64 the checker now refuses
+#    it first (E4031, 9b); a `mut` binding is not judged there, so it still
+#    reaches the codegen backstop (9).
 cat > a1.tk <<'EOF'
 m=a1;
 i=io:std.io;
 t=$ue{$notfound:str;$invalid:str};
-f=h(x:i64):str{ let e=x; <mt e {$notfound:m "nf:\(m)";$invalid:m "inv:\(m)"} };
+f=h(x:i64):str{ let e=mut.x; <mt e {$notfound:m "nf:\(m)";$invalid:m "inv:\(m)"} };
 f=main():i64{ io.println(h(0)); <0 };
 EOF
 expect "9-two-unlabelled-arms-E9005" \
     "$("${TKC}" --out b a1.tk 2>&1 | grep -o '"error_code":"E9005"' | head -1)" '"error_code":"E9005"'
+sed 's/let e=mut.x;/let e=x;/' a1.tk > a2.tk
+expect "9b-two-unlabelled-arms-on-i64-E4031-at-check" \
+    "$("${TKC}" --check a2.tk 2>&1 | grep -o '"error_code":"E4031"' | head -1)" '"error_code":"E4031"'
 
 echo "C400: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
