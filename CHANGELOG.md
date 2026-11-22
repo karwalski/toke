@@ -258,6 +258,21 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   nothing. `http_cache_put` has no error channel, so a failed spill is a later
   MISS. Test: C2000.
 
+- **std.cache's disk tier is reachable: evicted entries spill, and are read
+  back** (127.496). `http_cache_put` ran the LRU eviction before its spill
+  test, so the test could never hold and every evicted entry was dropped;
+  `http_cache_get` never read `disk_dir`, and `disk_max_size` was never
+  consulted. Now each entry the eviction drops (over `max_entries` or
+  `max_size`) is spilled first while `disk_used` stays within `disk_max_size`
+  (0 spills nothing), and a memory miss reads the key's spill file back,
+  moves the entry to the front of memory and removes the file. The file now
+  stores the key (an FNV-1a filename collision is a MISS, not another key's
+  body), the insertion time (freshness keeps counting from the store) and the
+  field lengths; files in the old layout are a MISS. A put of a key drops its
+  disk copy, and `http_cache_purge` / `http_cache_purge_pattern` purge matching
+  spill files too and count them. Nothing in the tree calls `http_cache_*`.
+  Test: C2085.
+
 - **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
   register 2.11, recommendation). Its interface declared an `i64` ABI
   placeholder and the glue read a packed C block that no toke value has: a call

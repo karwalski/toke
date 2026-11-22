@@ -18,7 +18,7 @@
 #
 # WHAT IS ASSERTED (cache.c is #included into a C driver, so the static
 # helpers are reachable; nothing in the tree calls http_cache_* yet, and the
-# spill branch in http_cache_put is not reachable through the API -- 127.496):
+# spill was not reachable through the API before 127.496; C2085 drives it so):
 #   1. write(2) replaced by a shim (only cache.c's calls):
 #        - every write returns at most 7 bytes and the first returns EINTR:
 #          the file holds the whole header and body, disk_used grows by
@@ -38,6 +38,9 @@
 # harness reports the old tree and fails.  The old inline code, transplanted
 # into a function in a scratch driver, under the same RLIMIT_FSIZE child left
 # a 512-byte truncated file and counted all 4096 bytes (Z229).
+#
+# The file layout checked by whole_file() is the one 127.496 introduced (key,
+# inserted time and lengths in the header); C2085 covers the tier itself.
 #
 # Story: 127.445
 set -uo pipefail
@@ -123,11 +126,12 @@ static long fsize(const char *p)
     return stat(p, &st) == 0 ? (long)st.st_size : -1;
 }
 
-static const char HDR[] = "200\n60\n\"abc\"\ntext/plain\n";
-
+/* The 127.496 layout: header, then key (empty here), etag, type, body. */
 static int whole_file(const char *p, const CacheEntry *e)
 {
-    size_t hl = sizeof(HDR) - 1;
+    char HDR[128];
+    size_t hl = (size_t)snprintf(HDR, sizeof(HDR),
+        "TKC1\n200\n60\n0\n0 5 10 %zu\n\"abc\"text/plain", e->body_len);
     if (fsize(p) != (long)(hl + e->body_len)) return 0;
     FILE *f = fopen(p, "rb");
     if (!f) return 0;
