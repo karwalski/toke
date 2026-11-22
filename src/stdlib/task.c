@@ -15,6 +15,7 @@
  */
 
 #include "task.h"
+#include "tk_runtime.h"   /* 138.47: the handle registry (weak fallback below) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -167,6 +168,25 @@ static tk_task *handle_lookup(int64_t handle)
     return g_handles[idx];
 }
 
+/* ── 138.47: scopes are looked up, not read ───────────────────────────
+ *
+ * A scope crosses to toke as an i64 (task.tki declares every parameter
+ * `i64`, so no checker rule can tell a scope from any other integer).
+ * task.awaitall(5), task.cancel(5) and task.spawn(5;f) cast the integer to a
+ * tk_scope and locked its mutex: SIGSEGV.  Every scope tk_task_scope makes is
+ * now registered in the runtime's handle registry (tk_runtime.c, 138.45) and
+ * each call looks its argument up first; a value that is not a live scope is
+ * answered as the null scope is (-1).  Task handles already go through the
+ * handle table above (task.result(5) answers -1).
+ *
+ * tk_runtime.c is linked into every program but not into the tkc binary,
+ * whose curated link set includes this file (Makefile STDLIB_SRCS) and never
+ * calls it; these weak pass-through definitions let that link resolve, and
+ * the runtime's strong definitions replace them in every program. */
+__attribute__((weak)) void *tk_handle_adopt(int kind, void *p) { (void)kind; return p; }
+__attribute__((weak)) void *tk_handle_addr(int kind, int64_t v) { (void)kind; return (void *)(intptr_t)v; }
+static tk_scope *scope_in(int64_t v) { return (tk_scope *)tk_handle_addr(TK_HK_TASKSCOPE, v); }
+
 /* ── Public API ───────────────────────────────────────────────────── */
 
 /* task.scope():i64 */
@@ -179,13 +199,19 @@ int64_t tk_task_scope(void)
     if (!s) return 0;
     pthread_mutex_init(&s->mu, NULL);
     pthread_cond_init(&s->cv, NULL);
+    if (!tk_handle_adopt(TK_HK_TASKSCOPE, s)) {   /* 138.47 */
+        pthread_mutex_destroy(&s->mu);
+        pthread_cond_destroy(&s->cv);
+        free(s);
+        return 0;
+    }
     return (int64_t)(intptr_t)s;
 }
 
 /* task.spawn(scope:i64; fn:i64):i64 */
 int64_t tk_task_spawn(int64_t scope, int64_t fn)
 {
-    tk_scope *s = (tk_scope *)(intptr_t)scope;
+    tk_scope *s = scope_in(scope);   /* 138.47 */
     if (!s || !fn) return -1;
 
     pthread_mutex_lock(&s->mu);
@@ -216,7 +242,7 @@ int64_t tk_task_spawn(int64_t scope, int64_t fn)
 /* task.awaitall(scope:i64):i64 */
 int64_t tk_task_awaitall(int64_t scope)
 {
-    tk_scope *s = (tk_scope *)(intptr_t)scope;
+    tk_scope *s = scope_in(scope);   /* 138.47 */
     if (!s) return -1;
 
     /* Spin-wait (with yield) for all tasks to complete.
@@ -248,7 +274,7 @@ int64_t tk_task_result(int64_t handle)
 /* task.cancel(scope:i64):i64 */
 int64_t tk_task_cancel(int64_t scope)
 {
-    tk_scope *s = (tk_scope *)(intptr_t)scope;
+    tk_scope *s = scope_in(scope);   /* 138.47 */
     if (!s) return -1;
 
     pthread_mutex_lock(&s->mu);
