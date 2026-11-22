@@ -83,7 +83,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4010 | error | type_check | Non-exhaustive match | -- |
 | E4011 | error | type_check | Match arms have inconsistent types | -- |
 | E4025 | error | type_check | Struct has no field with that name | D092, T001 |
-| E4026 | error | type_check | Wrong argument count in function call | C035 |
+| E4026 | error | type_check | Wrong argument count in function call | C035, D710-D713, C2057 |
 | E4027 | error | type_check | Module has no exported member with that name | D093, C038, C219, T002 |
 | E4031 | error | type_check | Type mismatch | D086, D570-D574, C038, C249, C1810 |
 | E4032 | error | type_check | Cannot interpolate a composite value into a string | n/s |
@@ -879,8 +879,8 @@ does not exist in the struct type.
 | **Stage** | type_check |
 | **Severity** | error |
 | **Message** | `wrong number of arguments: expected <N>, got <M>` (alias and receiver calls name the function and signature) |
-| **Fix field** | informational text |
-| **Conformance test** | C035 (receiver calls) |
+| **Fix field** | absent (story 138.51: the old text was advice, not a repair; an alias or module call's message ends with it) |
+| **Conformance test** | C035 (receiver calls), D710-D713, C2057 |
 
 **Notes:** A call passes too few or too many arguments. This covers plain
 calls, calls through an import alias (`alias.member(...)`, story 136.1) and

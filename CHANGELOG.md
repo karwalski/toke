@@ -326,6 +326,31 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   lint rule added or changed (138.41; `make check-lint-rules` checks the rule ids).
   Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
   to both are in its addenda.
+- **`tkc --emit-deps` given several files prints one merged set** (138.54). It
+  printed each file's sections back to back, so the second file's C sources
+  followed the first file's `---` and read as link flags to every consumer that
+  splits on `---`. With more than one file it now prints the union in the
+  one-file layout -- sources, then `---` and flags, then `---` and user modules as
+  `<path>.ll` -- each entry once, in first-seen order, a `-framework X` pair kept
+  together; a file that does not type-check prints nothing on stdout for the whole
+  run. One file's output is byte-identical. ooke's `scripts/emit_deps.sh` and the
+  `build-deps.md` recipe run one file per call and are unaffected. Test: C2055.
+
+### Changed — diagnostics
+
+- **E4026 (wrong argument count) has no `fix` field** (138.51, AGENTS.md §6). The
+  four texts it carried were advice, not a repair right in every case: which side
+  is wrong (the call, or an interface that disagrees with its implementation) and
+  whether an argument is missing or surplus cannot be decided at the call site. An
+  alias or module call's message now ends with the advice ("...; match the call to
+  the declaration, or reconcile the interface with the implementation if they
+  disagree"); the code, `expected` and `got` are unchanged. Tests: D710-D713, C2057.
+- **CAP001's JSON `fix` names the tkc.toml key** (138.53). On a binary with no
+  baked grants it read `grant --allow-write or tkc.toml [capabilities] fs.write=true`;
+  tkc refuses `fs.write` as an unknown capability. It now reads `... fs_write = true`
+  (`fs_read`, `fs_write`, `net`, `env_write`, `process_spawn`), the spelling the
+  narrowing-binary fix already used. The text lines are unchanged. Tests: C2056,
+  C1884 case 8.
 
 ### Documentation and claim gates
 

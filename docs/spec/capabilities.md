@@ -271,7 +271,9 @@ mode. Each gated sink calls its scoped gate; a denied call raises **CAP001** or
 **CAP002** and exits non-zero *before* the syscall (fail-closed). A run-time grant
 flag the broker cannot honour raises **CAP003** at start-up.
 
-**CAP001** — the class is not granted at all (text and JSON unchanged by 138.19):
+**CAP001** — the class is not granted at all (text and JSON unchanged by 138.19;
+since 138.53 the `fix` names the manifest key, `fs_write`, not the class name
+`fs.write`, which tkc.toml refuses as an unknown capability):
 
 ```
 CAP001: capability 'fs.write' required but not granted
@@ -282,7 +284,7 @@ With `TK_DIAG_JSON=1` a machine-parseable line is also emitted so the
 generate-compile-repair loop can repair a missing grant mechanically:
 
 ```json
-{"diagnostic_id":"CAP001","severity":"error","stage":"runtime","capability":"fs.write","fix":"grant --allow-write or tkc.toml [capabilities] fs.write=true"}
+{"diagnostic_id":"CAP001","severity":"error","stage":"runtime","capability":"fs.write","fix":"grant --allow-write or tkc.toml [capabilities] fs_write = true"}
 ```
 
 On a binary whose baked set run-time flags may only narrow (§2), the run-time half

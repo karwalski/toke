@@ -795,7 +795,7 @@ Since 136.1 this also covers a call through an import alias, `alias.member(...)`
 
 Since 127.1 it also covers a member call on a VALUE receiver, `recv.member(args)`. The receiver counts as the method's first argument, and the arity is read from the compiler's record of the native side — but only when every glue symbol that member may lower to agrees on it, since the symbol chosen depends on the receiver's kind (`contains` is a hash lookup on a map, a linear scan on an array and a substring search on a string). Where they disagree the compiler has no established arity and says nothing. Before this, surplus arguments were **discarded in silence** on the method path: `a.concat("A";"B")` on `a="xx"` compiled clean and returned `"xxA"`, and `a.len(1;2;3)` returned the length.
 
-**Fix:** Match the call to the declaration, or reconcile the interface with the implementation if they disagree. For a receiver method, the receiver is the first argument.
+**Fix:** none (story 138.51). Which side is wrong -- the call, or an interface that disagrees with its implementation -- cannot be decided at the call site, and whether an argument is missing or surplus cannot either, so no one edit is right in every case (AGENTS.md §6). The message of an alias or module call ends with the advice that used to be the `fix`: "match the call to the declaration, or reconcile the interface with the implementation if they disagree". For a receiver method the message says the receiver counts as the first argument.
 
 ### E4027
 
@@ -1966,10 +1966,12 @@ reports a denied call at run time, before the syscall, and exits 1. With
 ### CAP001
 
 **Capability required but not granted** — the class is not granted at all. The `fix`
-is `grant --allow-<class> or tkc.toml [capabilities] <class>=true`; on a binary whose
+is `grant --allow-<class> or tkc.toml [capabilities] <key> = true`, where `<key>` is
+the manifest key (`fs_read`, `fs_write`, `net`, `env_write`, `process_spawn`; before
+138.53 it named the class, `fs.write=true`, which tkc.toml refuses); on a binary whose
 baked grants run-time flags may only narrow (138.19 D2) it is
 `tkc.toml [capabilities] <key> = true`, and absent when a run-time flag scopes the
-class. Conformance: C470, C1884.
+class. Conformance: C470, C1884, C2056.
 
 ### CAP002
 

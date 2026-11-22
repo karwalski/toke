@@ -28,7 +28,9 @@
 #   5. case D (baked [dir] AND a narrower run-time flag): no fix
 #   6. a dangling symlink: scope is the path as given, no fix
 #   7. net: fix "--allow-net=connect:127.0.0.1:48120"; applied -> admitted
-#   8. CAP001 with no baked set: text and JSON byte-for-byte as before 138.19
+#   8. CAP001 with no baked set: text byte-for-byte as before 138.19; the
+#      JSON too, but for the manifest key in its fix (138.53: fs_read, not
+#      fs.read, which tkc.toml refuses)
 #   9. CAP001 on a narrowing binary: fix "tkc.toml [capabilities] env_write =
 #      true"; rebuilt -> admitted; absent when a run-time flag scopes the class
 #  10. (round 2) a path holding a newline and a forged CAP001 record cannot
@@ -44,7 +46,7 @@
 #      manifest fix, and the hint says why
 #
 # NEGATIVE CONTROL: TKC=<a v3.2.0 toke> -- no CAP002 exists there (1-7, 9-13
-# FAIL); 8 passes on both, which is the point of it.
+# FAIL); 8 differed there only in the fix's manifest key (138.53).
 #
 # Story: 138.19
 set -uo pipefail
@@ -177,13 +179,13 @@ if admitted "${WORK}/plain" connect ws://127.0.0.1:48120/ --allow-net=connect:12
     pass "7 the fix applied: admitted (the connect itself is refused: closed port)"
 else fail "7 the fix applied: still denied"; fi
 
-# 8: CAP001 unchanged
+# 8: CAP001 unchanged but for 138.53's manifest key
 rc=0; ( cd "${WORK}" && TK_DIAG_JSON=1 "${WORK}/plain" read "${OUT}" ) >"${WORK}/o" 2>"${WORK}/e" || rc=$?
 want8="CAP001: capability 'fs.read' required but not granted
   grant it at run time with --allow-read, or declare it in tkc.toml [capabilities]
-{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\",\"capability\":\"fs.read\",\"fix\":\"grant --allow-read or tkc.toml [capabilities] fs.read=true\"}"
+{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\",\"capability\":\"fs.read\",\"fix\":\"grant --allow-read or tkc.toml [capabilities] fs_read = true\"}"
 if [ "${rc}" -eq 1 ] && [ "$(cat "${WORK}/e")" = "${want8}" ]; then
-    pass "8 CAP001 (no baked set): text and JSON byte-for-byte as before"
+    pass "8 CAP001 (no baked set): text and JSON byte-for-byte (fix names fs_read, 138.53)"
 else
     fail "8 CAP001 changed (rc=${rc})"; sed 's/^/      | /' "${WORK}/e" | head -4
 fi
