@@ -85,13 +85,25 @@ printf 'print-objs:\n\t@echo $(OBJS)\n' > "${WORK}/objs.mk"
 OBJS="$(make -s -C "${REPO_ROOT}" -f Makefile -f "${WORK}/objs.mk" print-objs 2>/dev/null)"
 REL="${WORK}/release"
 mkdir -p "${REL}/src" "${WORK}/bare/bin"
+# 127.449: the objects are relinked as they were BUILT.  Under the ASAN+UBSAN
+# job (make test-asan-compiler) they carry sanitizer instrumentation, and a
+# link without -fsanitize failed with undefined __asan_*/__ubsan_* symbols, so
+# this case failed for the harness, not for tkc.  The -fsanitize flags are
+# read from the build's own record of its CFLAGS (.build-flags, 136.62) and
+# applied to main.c and the link alike; an ordinary build records none.
+SAN=()
+if [ -f "${REPO_ROOT}/.build-flags" ]; then
+    for f in $(cut -d'|' -f2 "${REPO_ROOT}/.build-flags" | tr ' ' '\n' | grep -E '^-f(no-)?sanitize'); do
+        SAN+=("${f}")
+    done
+fi
 ok=1
-"${CC}" -std=c99 -D_GNU_SOURCE -DTKC_STDLIB_DIR='"src/stdlib"' \
+"${CC}" -std=c99 -D_GNU_SOURCE -DTKC_STDLIB_DIR='"src/stdlib"' ${SAN[@]+"${SAN[@]}"} \
     -I"${REPO_ROOT}/src" -c "${REPO_ROOT}/src/main.c" -o "${WORK}/main_rel.o" 2> cc.log || ok=0
 if [ "${ok}" -eq 1 ]; then
     others=()
     for o in ${OBJS}; do [ "${o}" = src/main.o ] || others+=("${REPO_ROOT}/${o}"); done
-    "${CC}" -o "${REL}/tkc" "${others[@]}" "${WORK}/main_rel.o" -lm -lz -lpthread 2>> cc.log || ok=0
+    "${CC}" ${SAN[@]+"${SAN[@]}"} -o "${REL}/tkc" "${others[@]}" "${WORK}/main_rel.o" -lm -lz -lpthread 2>> cc.log || ok=0
 fi
 if [ "${ok}" -ne 1 ] || [ ! -x "${REL}/tkc" ]; then
     fail "could not relink a relative-baked tkc"; sed 's/^/      /' cc.log | head -5

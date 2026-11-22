@@ -247,6 +247,7 @@ HEADER_FLAGS = ["-x", "c", "-Wno-pragma-once-outside-header",
 # Which macro identifies "this host".  Undefining it is what reaches the #else
 # branch.  This is the C033 technique, generalised.
 HOST_MACRO = "__APPLE__" if sys.platform == "darwin" else "__linux__"
+HOST_NAME = "darwin" if sys.platform == "darwin" else "linux"   # 127.450
 
 # ── 135.3h: say which kind of --nonhost this was ─────────────────────────────
 #
@@ -279,7 +280,11 @@ def nonhost_desc():
             % HOST_MACRO)
 
 WARN_RE = re.compile(r"^(.*?):(\d+):(\d+): warning: (.*?)\s*\[([A-Za-z0-9_.]+)\]\s*$")
-DIAG_RE = re.compile(r"^(.*?):(\d+):(\d+): (?:fatal )?error: (.*)$")
+# 127.450: the column is optional.  GCC reports some errors at a line only
+# ("x.h:17: error: ISO C forbids an empty translation unit"); with a required
+# column nothing matched, and the failure was reported as the last line of
+# the output -- "cc1: all warnings being treated as errors" -- with no file.
+DIAG_RE = re.compile(r"^(.*?):(\d+):(?:(\d+):)? (?:fatal )?error: (.*)$")
 
 
 def rel(path):
@@ -346,6 +351,19 @@ def load_skiplist():
                 continue
             parts = line.split()
             kind = parts[0]
+            # 127.450: `nonhost-uncoverable@<host>` holds on that host only.
+            # What -U<host macro> cannot build depends on the host SDK: on
+            # macOS log.c and sys_glue.c cannot be built that way, on Linux
+            # (-U__linux__, glibc headers) they build clean.  An entry for
+            # another host is neither in play nor stale here.
+            if "@" in kind:
+                kind, host = kind.split("@", 1)
+                if kind != "nonhost-uncoverable" or host not in ("darwin", "linux"):
+                    errors.append("%s:%d: only nonhost-uncoverable takes a host, and it "
+                                  "is darwin or linux (got %r)" % (SKIPLIST, lineno, parts[0]))
+                    continue
+                if host != HOST_NAME:
+                    continue
             if kind in ("compile", "nonhost", "nonhost-uncoverable"):
                 if len(parts) != 2:
                     errors.append("%s:%d: %s takes exactly one path" % (SKIPLIST, lineno, kind))
@@ -425,7 +443,10 @@ def analyze_sites(output):
     return out
 
 
-def first_errors(output, limit=4):
+def first_errors(output, limit=4, src=None):
+    """The first `limit` located errors.  With none to locate, the output's
+    last line -- prefixed with `src` (127.450), so a failure always names the
+    file it was compiling."""
     out = []
     for line in output.splitlines():
         m = DIAG_RE.match(line.strip())
@@ -433,7 +454,8 @@ def first_errors(output, limit=4):
             out.append("%s:%s: %s" % (rel(m.group(1)), m.group(2), m.group(4)))
             if len(out) >= limit:
                 break
-    return out or [output.strip().splitlines()[-1] if output.strip() else "failed"]
+    last = output.strip().splitlines()[-1] if output.strip() else "failed"
+    return out or ["%s: %s" % (rel(src), last) if src else last]
 
 
 # ── main ─────────────────────────────────────────────────────────────────────
@@ -513,9 +535,10 @@ def main():
                                  % (key[0], src, os.path.relpath(SKIPLIST, REPO_ROOT)))
                 elif not ok and not skipped:
                     tag = OPENSSL_TAG if src.endswith(OPENSSL_TAG) else ""
-                    for e in first_errors(out):
+                    path = src[:-len(tag)] if tag else src
+                    for e in first_errors(out, src=path):
                         failures.append("%s%s: %s" % (mode.upper(), tag, e))
-                    proposed.append("%-8s %-44s # %s" % (mode, src, first_errors(out, 1)[0]))
+                    proposed.append("%-8s %-44s # %s" % (mode, src, first_errors(out, 1, src=path)[0]))
                 elif verbose and ok:
                     print("  ok   %s %s" % (mode, src))
 

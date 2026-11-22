@@ -151,6 +151,42 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 - The checker's interpolation anchor (`Ctx.interp_host`) is initialised in
   `type_check` (127.476); it was read uninitialised.
 
+### Security fixes
+
+- **`tkc` no longer reads freed memory when it warns that `pkg.lock` is stale**
+  (127.449). A build or `--check` of a program with a `pkg.*` import whose
+  `pkg.lock` no longer matches `pkg.toml` formatted W9010's dependency name from
+  the parsed manifest after freeing it: a heap use-after-free in the compiler,
+  found by the ASAN+UBSAN CI job (C1162). An ordinary build usually printed the
+  right name because the block had not been reused yet; with freed memory
+  filled, the message carried the filler. W9010 is now emitted before the
+  manifest is freed. No change to which programs are accepted. Test: C1960.
+
+### Build and CI gates
+
+- **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
+  libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
+  ("Not a directory: ...; exiting", exit 1) before running anything, so every
+  target with adversarial inputs (json, yaml, toon, xml, multipart, ws_frame,
+  image, http_parse) failed in the Security nightly, which runs every day except
+  Monday. The one green run, on 2026-11-16, was the Monday CVE job; the fuzz job
+  was skipped. It was not a sanitizer finding: every seed and adversarial input
+  replays clean under ASAN+UBSAN. libFuzzer now gets the seed files, the
+  `Executed` lines are counted against the inputs, and a failure with no
+  sanitizer line prints the output's tail.
+- **`make test-asan-compiler` runs the conformance suite with a 64 MiB stack**
+  (127.449). C584's cases just under the nesting limit need 2-4 MiB in the
+  shipped build but 16-32 MiB under ASan, and overflowed the default 8 MiB.
+  C080 now relinks the tree's objects with the `-fsanitize` flags they were
+  built with (from `.build-flags`), not without them.
+- **`make lint-nonhost` runs under `LINT_CC` (default clang), as `make lint`
+  does** (127.450). Under GCC (CI's default `cc`) the macro-only headers
+  `src/build_info.h` and `src/version.h` failed as empty translation units,
+  reported only as `cc1: all warnings being treated as errors`. A failure now
+  always names its file. Also, the `nonhost-uncoverable` skips for `log.c` and
+  `sys_glue.c` are now `nonhost-uncoverable@darwin`: they hold on macOS and were
+  stale on Linux. Test: C1961.
+
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
 - **T-67, the runtime half: std.process refuses a handle it did not create.** `process.wait(5)`, loke's helper shape `f(h:i64){process.wait(h)}` called with any integer, a handle changed by arithmetic, a value cast with `as`, and a `process.spawndetached` pid passed as a handle all checked clean, built, and died with SIGSEGV: the runtime read the integer as a process record. `process.spawn` now hands out a registry token instead of the record's address, and every call that takes a handle (`wait`, `stdout`, `stderr`, `kill`, `exitcode`, `hasexited`, `poll`, `isalive`) looks it up without reading it as memory. A value it did not hand out is answered exactly as `process.badhandle()` is: `-1`, the `$err` arm with `$io`, `false`, `0` or `1`. A real handle behaves as before, a waited handle stays valid, and `process.wait(0)` is still `-1`. No source change is needed. The checker half (an integer refused at `--check` where a handle is read) is 138.35. 138.36 — C1850.

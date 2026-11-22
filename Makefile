@@ -516,8 +516,13 @@ check-str-strlen:
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
+# 127.450: under LINT_CC, as `lint` is.  It ran under the default cc -- GCC
+# on the Linux CI runner -- while the script's header flags are clang's
+# (-Wno-empty-translation-unit), so GCC failed the macro-only headers
+# src/build_info.h and src/version.h as empty translation units.
 lint-nonhost: $(BUILD_INFO_H)
-	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 122.13 (10): the same three passes over ONE file (or a few), with the
 # skiplist entries for every other file out of scope rather than stale.
@@ -890,6 +895,14 @@ test-asan-compiler: asan-selftest
 	@# 127.439: tkc too -- conform runs ./tkc, the symlink `all` makes, and
 	@# on a fresh checkout (CI) building $(BIN) alone left none to run.
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN) tkc
+	@# 127.449: ASan's redzones make tkc's recursive passes need several times
+	@# the stack of the shipped -O2 build.  C584's just-under-the-limit cases
+	@# (a 990-deep expression, 250 prefix operators) need 2-4 MiB in the
+	@# shipped build -- inside the default 8 MiB -- but 16-32 MiB instrumented,
+	@# so on 8 MiB they overflowed in types.c/llvm.c and failed.  The suite
+	@# runs with a 64 MiB stack (macOS's hard limit) so every case still runs
+	@# and an overflow past that is still reported.
+	ulimit -s 65520 2>/dev/null || echo "test-asan-compiler: WARNING: could not raise the stack limit to 64 MiB; C584 may overflow"; \
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" conform
 
 # The stdlib C unit tests, instrumented. A red result here is a true result:
@@ -2535,6 +2548,13 @@ fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
 # under either engine (libFuzzer's -runs=0 executes the given corpus and
 # exits), so it is the same check here and on CI.  Fails on any sanitizer
 # report, on a harness that replays nothing, or on a target with no seeds.
+# 127.480: libFuzzer takes EITHER corpus directories OR individual files, not
+# a mix.  Given the seed directory plus the adversarial files it printed
+# "Not a directory: <file>; exiting" and exited 1 before running anything, so
+# every target with adversarial inputs failed in the nightly while the filter
+# below hid the reason.  It is handed the seed FILES now, its "Executed"
+# lines are counted against the inputs (a replay that skips any input
+# fails), and a failure with no sanitizer line prints the output's tail.
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
 	@fail=0; for t in $(FUZZ_TARGETS); do \
@@ -2543,14 +2563,19 @@ fuzz-smoke: fuzz-120-22
 	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
 	  adv=$$(ls test/fuzz/corpus-adversarial/$${t}_* 2>/dev/null); \
 	  if [ "$(FUZZ_ENGINE_R)" = libfuzzer ]; then \
-	    out=$$($$b -runs=0 test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	    out=$$($$b -runs=0 test/fuzz/seeds/$$t/* $$adv 2>&1); rc=$$?; \
+	    ran=$$(printf '%s\n' "$$out" | grep -a -c '^Executed '); \
 	  else \
-	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; ran=; \
 	  fi; \
 	  n=$$(ls test/fuzz/seeds/$$t | wc -l | tr -d ' '); a=$$(printf '%s\n' $$adv | grep -c . ); \
-	  if [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
+	  if [ $$rc -eq 0 ] && [ -n "$$ran" ] && [ "$$ran" -ne $$((n + a)) ]; then \
+	    echo "  FAIL $$t: replayed $$ran of $$((n + a)) input(s)"; fail=1; \
+	  elif [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
 	  else echo "  FAIL $$t (exit $$rc)"; \
-	    printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6 | sed 's/^/      /'; fail=1; fi; \
+	    msg=$$(printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6); \
+	    [ -n "$$msg" ] || msg=$$(printf '%s\n' "$$out" | tail -4); \
+	    printf '%s\n' "$$msg" | sed 's/^/      /'; fail=1; fi; \
 	done; \
 	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS)) harnesses replayed clean" \
 	  || { echo "fuzz-smoke: FAILED"; exit 1; }
