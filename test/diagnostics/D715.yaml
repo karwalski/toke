@@ -1,0 +1,16 @@
+id: D715
+series: D
+description: "138.46 (T-67 class): an integer literal other than 0 where std.tls declares a record with fields -- tls.read(5) -- is E4031 with NO fix (the runtime reads the record through its address; passing the record itself or the literal 0 is not mechanical)"
+input: |
+  m=t;
+  i=tls:std.tls;
+  f=main():i64{
+    let r=tls.read(5);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "tlsconn"
