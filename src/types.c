@@ -5242,8 +5242,8 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
              * extended from opaque records by the Z213 survey): the runtime
              * reads through a std record -- http.clientget(5;..),
              * tls.read(5), svg.render(5), image.fliph(5), vecstore.flush(5)
-             * all checked clean and died with SIGSEGV (std.db's `row.` calls
-             * never reach this function: 138.62) -- so
+             * all checked clean and died with SIGSEGV (and std.db's `row.`
+             * calls, judged here since 138.62) -- so
              * only the literal 0 (the null record) may stand for one; a
              * callback declares its parameter with the record's type
              * (`conn:$tlsconn`).  E4031, no `fix`: retyping the parameter or
