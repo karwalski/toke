@@ -18,12 +18,18 @@
 #
 # WHAT THIS DRIVES.  Each program builds and runs at -O0 and -O2 and prints
 # its hand-derived line; case `plain` asserts a name without a trailing digit
-# keeps its spelling.
+# keeps its spelling.  Cases 7-12 drive the name-keyed fast paths (map
+# in-place set, array append/set, x=x+@(..), str accumulators, a str
+# capture) with digit-ending bindings, and case 13 checks plain and
+# digit-suffixed spellings of one program lower to the same IR.
 #
 # Negative control: v3.2.0 (ea7ddf22) — params, labels and loop fail to
 # build ("multiple definition of local value named 't0'", "'%svarm3' is not
 # a basic block"); `control` builds there too, and so does `closure`, only
 # because a lifted body's temporaries happen to be numbered past t0/t3 there.
+# mapset_t1 traps with RT003 on v3.2.0 and on base b518b41c (114.15's t<N>
+# aliasing); at round-1 61725c51 mapset trapped too and the differential
+# failed (the map set, and zz9's capture slot typed i64).
 #
 # Story: 138.38
 
@@ -135,6 +141,121 @@ if "${TKC}" --emit-llvm --out "${WORK}/plain.ll" "${WORK}/plain.tk" >/dev/null 2
     pass "plain: a parameter 'total' is still %total"
 else
     fail "plain: %total not found in the IR"
+fi
+
+# 7-12. Round 2 (reviewer finding on 61725c51): aliasing every digit-ending
+#    name (m1 -> %m1.N) left registry lookups made with the toke spelling --
+#    the map tag, the local's type, a capture's type -- missing, so
+#    `m1=m1.set(k;v)` lowered as an ARRAY in-place set and trapped with
+#    RT003 (and so did `t1` on 3.2.0, under 114.15's aliasing).  Each case
+#    exercises one name-keyed fast path with a digit-ending binding.
+run mapset '40|' 'm=c1921g;
+i=io:std.io;
+f=main():i64{
+  let m1=mut.@("":0);
+  m1=m1.set("a";40);
+  io.println("\(mt m1.get("a"){$ok:v v;$err:e 0})");
+  <0
+};'
+run mapset_t1 '40|' 'm=c1921h;
+i=io:std.io;
+f=main():i64{
+  let t1=mut.@("":0);
+  t1=t1.set("a";40);
+  io.println("\(mt t1.get("a"){$ok:v v;$err:e 0})");
+  <0
+};'
+# appends 0..4 then set(0;7): 7+1+2+3+4+0 = 17 over 6 elements.
+run arrappend '17 6|' 'm=c1921i;
+i=io:std.io;
+f=main():i64{
+  let xs1=mut.@(0);
+  lp(let k=0;k<5;k=k+1){ xs1=xs1.append(k) };
+  xs1=xs1.set(0;7);
+  let tot2=mut.0;
+  lp(let j=0;j<xs1.len;j=j+1){ tot2=tot2+xs1.get(j) };
+  io.println("\(tot2) \(xs1.len)");
+  <0
+};'
+# x=x+@(..) in place (127.229): 1 + 3*2 = 7 elements, the last is 3.
+run selfconcat '7 3|' 'm=c1921j;
+i=io:std.io;
+f=main():i64{
+  let xs2=mut.@(0);
+  lp(let k=1;k<4;k=k+1){ xs2=xs2+@(k;k) };
+  io.println("\(xs2.len) \(xs2.get(6))");
+  <0
+};'
+# a str accumulator, and an array proven to hold strings (126.8 @str tag).
+run strs 'ababab|w=p|w=q|' 'm=c1921k;
+i=io:std.io;
+i=str:std.str;
+f=main():i64{
+  let sb1=mut."";
+  lp(let k=0;k<3;k=k+1){ sb1=str.concat(sb1;"ab") };
+  io.println(sb1);
+  let ws2=mut.@();
+  ws2=ws2.append("p");
+  ws2=ws2.append("q");
+  lp(let k=0;k<ws2.len;k=k+1){ io.println("w=\(ws2.get(k))") };
+  <0
+};'
+# a captured str local keeps its i8* slot in the lifted closure.
+run strcapture 'hey|8|' 'm=c1921l;
+i=io:std.io;
+f=main():i64{
+  let zz9="hey";
+  let nm9=7;
+  let g=fn(q:i64):i64{ io.println(zz9); <q+nm9 };
+  io.println("\(g(1))");
+  <0
+};'
+# 13. differential: one program written with plain names and with every
+#     binding digit-suffixed lowers to the SAME IR once the names are
+#     normalised (%name9.N / %name -> %name).  Any registry lookup that
+#     misses for the aliased spelling changes the lowering and shows here.
+plainsrc='m=c1921m;
+i=io:std.io;
+i=str:std.str;
+f=main():i64{
+  let mp=mut.@("":0);
+  mp=mp.set("a";40);
+  let xs=mut.@(0);
+  lp(let k=0;k<3;k=k+1){ xs=xs.append(k) };
+  xs=xs.set(0;5);
+  xs=xs+@(9);
+  let sb=mut."";
+  sb=str.concat(sb;"ab");
+  let zz="hey";
+  let nm=7;
+  let g=fn(q:i64):i64{ io.println(zz); <q+nm };
+  io.println("\(mt mp.get("a"){$ok:v v;$err:e 0}) \(xs.len) \(sb) \(g(1))");
+  <0
+};'
+digitsrc="$(printf '%s' "${plainsrc}" | sed -E 's/(^|[^A-Za-z.])(mp|xs|sb|zz|nm)([^A-Za-z0-9]|$)/\1\29\3/g; s/(^|[^A-Za-z.])(mp|xs|sb|zz|nm)([^A-Za-z0-9]|$)/\1\29\3/g; s/mut\.(mp|xs|sb|zz|nm)([^0-9])/mut.\19\2/g')"
+printf '%s\n' "${plainsrc}" > "${WORK}/dplain.tk"
+printf '%s\n' "${digitsrc}" > "${WORK}/ddigit.tk"
+if ! grep -q 'mp9=mp9.set' "${WORK}/ddigit.tk"; then
+    fail "differential: the digit-suffixed copy was not produced"
+elif "${TKC}" --emit-llvm --out "${WORK}/dplain.ll" "${WORK}/dplain.tk" >/dev/null 2>&1 &&
+     "${TKC}" --emit-llvm --out "${WORK}/ddigit.ll" "${WORK}/ddigit.tk" >/dev/null 2>&1; then
+    norm() {
+        python3 - "$1" <<'PY'
+import re, sys
+ir = open(sys.argv[1]).read()
+ir = re.sub(r'%(mp|xs|sb|zz|nm)9?(\.\d+)?(?![\w.])', r'%\1', ir)
+ir = re.sub(r'^; ModuleID.*$|^source_filename.*$', '', ir, flags=re.M)
+sys.stdout.write(ir)
+PY
+    }
+    if [ "$(norm "${WORK}/dplain.ll")" = "$(norm "${WORK}/ddigit.ll")" ]; then
+        pass "differential: plain and digit-suffixed names lower to the same IR"
+    else
+        fail "differential: the IR differs once names are normalised"
+        diff <(norm "${WORK}/dplain.ll") <(norm "${WORK}/ddigit.ll") | head -10
+    fi
+else
+    fail "differential: --emit-llvm failed"
 fi
 
 echo "C1921: ${PASS} passed, ${FAIL} failed"
