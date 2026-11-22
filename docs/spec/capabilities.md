@@ -107,15 +107,20 @@ scan of a manifest-sized list, once per acquisition.
   `www/../outside/../www/f` and `www/link/../www/f` (a symlink leading out and
   back) are refused with CAP002 naming the directory passed through, and no fix,
   even though they end inside `www`: whether the call succeeded would say whether
-  that directory exists. A command path given to `process.spawn` is checked the
+  that directory exists. A path refused where it ends gets its target's fix only
+  when granting the target would also admit the way there; otherwise its CAP002
+  names the outside directory it passes through, with no fix
+  (`www/../outside/../other/f` names `outside`). A command path given to `process.spawn` is checked the
   same way. Directory-taking readers (`file.list`, `http.servedir`) are checked on
   the directory; `i18n.load` on the directory of the `<base>[.<locale>].<ext>`
   files it reads. `http.servepages` skips a page-directory entry the scope does not
   admit (a symlink leading out of it), and checks each page and layout it re-reads
   at request time; a refused one fails the render (500). Under a scoped `fs.write`
-  grant, `log.openaccess` / `log.openerror` on a regular-file path also need the
-  log's directory, where they create a `.<name>.lock` sidecar and rotated files and
-  delete old ones. The residual race is check-then-open (a component swapped for a
+  grant, `log.openaccess` / `log.openerror` on any path other than the process's
+  own stdout/stderr also need the log's directory, where they create a
+  `.<name>.lock` sidecar and rotated files and delete old ones (a FIFO or tty path
+  included). The directory is checked before the log, and its CAP002 carries a fix
+  only when the log resolves inside it. The residual race is check-then-open (a component swapped for a
   symlink between the check and the `open`); it is accepted, as Deno accepts it.
 - **Glob patterns.** `file.listglob` is checked on its pattern's literal directory,
   the components before the first one holding a glob character (CAP002 when that

@@ -1954,7 +1954,10 @@ run-time flags union with the grant or only they exclude it,
 otherwise (both exclude it; a dangling symlink; a command not on `PATH`; an SQLite
 URI filename, a computed `ATTACH` name or a `file.listglob` pattern holding `\`,
 which no scope admits; a path that passes through a directory outside the scope on
-the way to its target, where `scope` names that directory; a scope the flag or
+the way to its target, where `scope` names that directory, even when the target is
+outside too, because granting the target alone would not admit the call; a log
+whose directory is outside the scope while the log resolves elsewhere through a
+symlink; a scope the flag or
 the manifest cannot carry, such as a `,` in a flag value or a `"` in a `tkc.toml`
 string). The second text line says which. A std entry still on the class-only gate,
 reached under a scoped grant, is CAP002 with an empty `scope` and no `fix`. The text
