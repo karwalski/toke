@@ -5,6 +5,9 @@
 # natural semantic is stated in combinator-status.md. A first line of
 # "#checkfail" in .expect means correctness == `tkc --check` REJECTS the program.
 set -euo pipefail
+# 127.471: bools interpolate as true/false (owner decision 127.15, shipped by
+# 127.94), and map_get/map_set/strslice_module match their T!E result before
+# use (127.319/127.462), so this generator reproduces the committed probes.
 cd "$(dirname "$0")"
 rm -f ./*.tk ./*.expect
 P='m=probe;i=io:std.io;i=s:std.str;'
@@ -30,7 +33,7 @@ mk sort_method     '1 2 3'   "${A}let b=a.sort(&cmp);io.println(\"\\(b.get(0)) \
 mk first_method    '3'       "${A}io.println(\"\\(a.first())\");"
 mk last_method     '2'       "${A}io.println(\"\\(a.last())\");"
 mk indexof_method  '1'       "${A}io.println(\"\\(a.indexof(1))\");"
-mk contains_method '1'    "${A}io.println(\"\\(a.contains(2))\");"
+mk contains_method 'true' "${A}io.println(\"\\(a.contains(2))\");"
 mk slice_method    '1 2'     "${A}let b=a.slice(1;3);io.println(\"\\(b.get(0)) \\(b.get(1))\");"
 mk reduce_method   '6'       "${A}io.println(\"\\(a.reduce(0;&addf))\");"
 mk fold_method     '6'       "${A}io.println(\"\\(a.fold(0;&addf))\");"
@@ -41,8 +44,8 @@ mk values_prop     '2 1'     'let m=@("a":1;"b":2);let v=m.values;io.println("\(
 mk values_method   '2 1'     'let m=@("a":1;"b":2);let v=m.values();io.println("\(v.len) \(v.get(0))");'
 # 136.59: the map rows of combinator-status.md that had no probe (m.len was
 # measured ad hoc; m.get and m=m.set were never measured by a probe either)
-mk map_get         '2'       'let m=@("a":1;"b":2);io.println("\(m.get("b"))");'
-mk map_set         '3'       'let m=mut.@("a":1;"b":2);m=m.set("c";3);io.println("\(m.get("c"))");'
+mk map_get         '2'       'let m=@("a":1;"b":2);io.println("\(mt m.get("b"){$ok:v v;$err:e 0})");'
+mk map_set         '3'       'let m=mut.@("a":1;"b":2);m=m.set("c";3);io.println("\(mt m.get("c"){$ok:v v;$err:e 0})");'
 mk maplen          '2'       'let m=@("a":1;"b":2);io.println("\(m.len)");'
 mk maplen_after_set '3'      'let m=mut.@("a":1;"b":2);m=m.set("c";3);io.println("\(m.len)");'
 mk maplen_set_existing '2'   'let m=mut.@("a":1;"b":2);m=m.set("a";5);io.println("\(m.len)");'
@@ -73,7 +76,7 @@ mk sort_module     '1 2 3'   "${A}let b=arr.sort(a;&cmp);io.println(\"\\(b.get(0
 mk first_module    '3'       "${A}io.println(\"\\(arr.first(a))\");"
 mk last_module     '2'       "${A}io.println(\"\\(arr.last(a))\");"
 mk indexof_module  '1'       "${A}io.println(\"\\(arr.indexof(a;1))\");"
-mk contains_module '1'    "${A}io.println(\"\\(arr.contains(a;2))\");"
+mk contains_module 'true' "${A}io.println(\"\\(arr.contains(a;2))\");"
 mk slice_module    '1 2'     "${A}let b=arr.slice(a;1;3);io.println(\"\\(b.get(0)) \\(b.get(1))\");"
 mk reduce_module   '6'       "${A}io.println(\"\\(arr.reduce(a;0;&addf))\");"
 mk fold_module     '6'       "${A}io.println(\"\\(arr.fold(a;0;&addf))\");"
@@ -106,18 +109,18 @@ mk upper_method    'AB'      'let x="ab";io.println(x.upper());'
 mk upper_module    'AB'      'let x="ab";io.println(s.upper(x));'
 mk lower_method    'ab'      'let x="AB";io.println(x.lower());'
 mk lower_module    'ab'      'let x="AB";io.println(s.lower(x));'
-mk ends_method     '1'    'let x="ab";io.println("\(x.ends("b"))");'
-mk endswith_module '1'    'let x="ab";io.println("\(s.endswith(x;"b"))");'
-mk starts_method   '1'    'let x="ab";io.println("\(x.starts("a"))");'
-mk startswith_module '1'  'let x="ab";io.println("\(s.startswith(x;"a"))");'
+mk ends_method     'true' 'let x="ab";io.println("\(x.ends("b"))");'
+mk endswith_module 'true' 'let x="ab";io.println("\(s.endswith(x;"b"))");'
+mk starts_method   'true' 'let x="ab";io.println("\(x.starts("a"))");'
+mk startswith_module 'true' 'let x="ab";io.println("\(s.startswith(x;"a"))");'
 mk replace_method  'a+b'     'let x="a-b";io.println(x.replace("-";"+"));'
 mk replace_module  'a+b'     'let x="a-b";io.println(s.replace(x;"-";"+"));'
-mk strcontains_method '1' 'let x="abc";io.println("\(x.contains("b"))");'
-mk strcontains_module '1' 'let x="abc";io.println("\(s.contains(x;"b"))");'
+mk strcontains_method 'true' 'let x="abc";io.println("\(x.contains("b"))");'
+mk strcontains_module 'true' 'let x="abc";io.println("\(s.contains(x;"b"))");'
 mk strindexof_method '2'     'let x="abc";io.println("\(x.indexof("c"))");'
 mk strindexof_module '2'     'let x="abc";io.println("\(s.indexof(x;"c"))");'
 mk strslice_method 'bc'      'let x="abcdef";io.println(mt x.slice(1;3){$ok:v v;$err:e <1});'
-mk strslice_module 'bc'      'let x="abcdef";io.println(s.slice(x;1;3));'
+mk strslice_module 'bc'      'let x="abcdef";io.println(mt s.slice(x;1;3){$ok:v v;$err:e ""});'
 mk strfind_method  '2'       'let x="abc";io.println("\(x.find("c"))");'
 mk strfind_module  '2'       'let x="abc";io.println("\(s.find(x;"c"))");'
 mk trim_method     'a'       'let x="  a  ";io.println(x.trim());'
@@ -148,8 +151,8 @@ mk concat_append_dfio '1: a\n2: b' 'let lines=s.split("a\nb";"\n");let labels=mu
 mk interp_append_lit_get '1\n2' 'let labels=mut.@();lp(let i=0;i<2;i=i+1){labels=labels.append("\(i+1)")};lp(let j=0;j<2;j=j+1){io.println("\(labels.get(j))")};'
 mk interp_append_seeded '1\n2' 'let labels=mut.@("");let l2=labels.pop();lp(let i=0;i<2;i=i+1){l2=l2.append("\(i+1)")};lp(let j=0;j<2;j=j+1){io.println("\(l2.get(j))")};'
 # ── diagnostics added after the first batch (new-bug candidates) ───────────
-mk bool_native_interp   '1'   'io.println("\(1==1)");'
-mk bool_userfn_interp   '1'   'io.println("\(iseven(2))");'
+mk bool_native_interp   'true' 'io.println("\(1==1)");'
+mk bool_userfn_interp   'true' 'io.println("\(iseven(2))");'
 mk keys_prop_len        '2'   'let m=@("a":1;"b":2);let k=m.keys;io.println("\(k.len)");'
 mk keys_method_len      '2'   'let m=@("a":1;"b":2);let k=m.keys();io.println("\(k.len)");'
 mk keys_method_direct   'a'   'let m=@("a":1;"b":2);let k=m.keys();io.println(k.get(0));'
@@ -162,7 +165,7 @@ mk get_const0_let       '3'   "${A}let v=a.0;io.println(\"\\(v)\");"
 mk concat_append_interp_read '0: item\n1: item\n2: item' 'let items=mut.@();lp(let i=0;i<3;i=i+1){let line=s.concat(s.fromint(i);": item");items=items.append(line)};lp(let j=0;j<3;j=j+1){io.println("\(items.get(j))")};'
 mk lit_append_interp_read 'x\nx\nx' 'let items=mut.@();lp(let i=0;i<3;i=i+1){items=items.append("x")};lp(let j=0;j<3;j=j+1){io.println("\(items.get(j))")};'
 mk plusat_append_interp_read '0: item\n1: item\n2: item' 'let items=mut.@();lp(let i=0;i<3;i=i+1){items=items+@("\(i): item")};lp(let j=0;j<3;j=j+1){io.println("\(items.get(j))")};'
-mk arr_contains_let     '1'   "${A}let r=a.contains(2);io.println(\"\\(r)\");"
+mk arr_contains_let     'true' "${A}let r=a.contains(2);io.println(\"\\(r)\");"
 # ── fold workaround (card canonical) as an oracle control ──────────────────
 mk fold_loop_control '6' "${A}let acc=mut.0;lp(let i=0;i<a.len;i=i+1){acc=acc+a.get(i)};io.println(\"\\(acc)\");"
 ls *.tk | wc -l

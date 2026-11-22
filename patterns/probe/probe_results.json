@@ -1,10 +1,10 @@
 {
  "story": "131.2",
- "tkc_version": "toke 3.0.0",
- "tkc_sha": "08c1bbd09971f8ab125f8f4d03120a5594083c2e",
- "tkc_bin_sha": "87014cad7a5fd48a81c71546427418c84b3d48bc520319195c75c7c6f79da309",
+ "tkc_version": "toke 3.2.0 (git 6d90ac437e26)",
+ "tkc_sha": "acaff8107ebd7ea09936182c7492ce3ee9bc1ec0",
+ "tkc_bin_sha": "3aad4ecf819b42720a83d5f945c54c8cbeb349242ac950a6ab6908538148d8fb",
  "tkc_path": "tkc",
- "generated": "2026-09-25",
+ "generated": "2026-11-22",
  "summary": {
   "probes": 136,
   "check_ok": 105,
@@ -155,9 +155,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -365,9 +365,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
