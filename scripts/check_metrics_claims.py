@@ -127,8 +127,9 @@ SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".py", ".js", ".php",
 # Files owned by another story: reported as warnings, never fail the build,
 # until that story lands and the entry is deleted. Keep this list SHORT and
 # always keyed to a story number.
+# 132.7 (v2, 2026-11-23): the repositioning brief left this list; it is enforced
+# by rules 1 and 2 like any other published page.
 PENDING = {
-    "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
 
 # Same idea, by prefix — used for the sibling repos swept by story 132.15.

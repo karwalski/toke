@@ -275,6 +275,20 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   "Gate 2 passed" in any case and "Gate 2 verdict: PASS", and the excuse has to tie
   "withdrawn" to the PASS or the verdict in the same sentence (or say "no standing
   verdict"); a nearby date or an unrelated withdrawn headline no longer excuses it.
+- **The repositioning brief is v2 and is gated like any other page** (132.7, owner
+  decision of 2026-11-15). `docs/about/positioning-2026-09.md` keeps the 19-word
+  one-liner, drops "compact in whatever unit the model generates in" from the claim
+  sentence and "compact to emit" from the paragraph (now 79 words), replaces every number
+  in §3 with a pointer to `docs/metrics-baseline.md`, states Gate 2 per D4 and Gate 1's
+  token criterion per D3, and dates the falsification rules per D7. Its entry in
+  `check_metrics_claims.py`'s `PENDING` list is deleted, so rules 1 and 2 now fail it
+  instead of warning. The canonical block and its downstream copies still carry v1's
+  sentence and paragraph until 132.154 copies v2 everywhere at once.
+- **toke-model's Gate 2 statements are enforced copies of the canonical `models` fact**
+  (127.495, owner decision D4). `check_canonical.py` now requires the fact word for word
+  in toke-model's `README.md`, `huggingface/README.md` and `ollama/README.md`, which were
+  re-copied on toke-model `docs/127.495-models-fact`; until that branch merges, the
+  check fails against toke-model main, whose copies lack the withdrawal and the caveat.
 - **`docs/spec/stdlib-signatures.md` is held to the `.tki` interfaces, which are
   normative** (127.456). `scripts/check_stdlib_signatures.py`, run by `make check-tki`,
   fails on a hand-written entry that names a non-export or states a parameter count or
