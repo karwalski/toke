@@ -13,10 +13,41 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sign_test:
+        # 127.453: a dispatch runs the whole release job except publishing.
+        # With sign_test it also signs the archives keyless, verifies each
+        # bundle and runs the tamper test, so the signing path is proven
+        # before a tag. Keyless signing writes an entry to the public Rekor
+        # transparency log naming this workflow and ref; nothing else leaves
+        # the run (the signed set is a workflow artifact, kept one day).
+        description: "also sign + verify the archives (writes a Rekor log entry; publishes nothing)"
+        type: boolean
+        default: false
+      skip_gates:
+        # 127.453: a dispatch that exercises the packaging, floor, SBOM and
+        # signing steps on a tree whose conformance or website gate is red
+        # for other reasons.  It applies only to a manual run on a branch
+        # ref.  A tag ref is a publishing path and always runs every gate:
+        # a manual run on a tag that sets skip_gates fails at the first step
+        # of both jobs, and the publish step refuses any run that set it.
+        description: "skip the conformance and website gates (manual run on a branch only; refused on a tag)"
+        type: boolean
+        default: false
 
 # Least privilege by default; the release job asks for what it needs.
 permissions:
   contents: read
+
+# 127.454: the platform floors of the shipped binaries -- one place, read by
+# the builds (the Linux build image and MACOSX_DEPLOYMENT_TARGET), by the
+# floor checks after them, and by the release notes below.  Raising or
+# lowering a floor is a change here and nowhere else (owner decision R4 is
+# still open; these are the conservative values, see 127.454).
+env:
+  LINUX_BUILD_IMAGE: ubuntu:22.04   # glibc 2.35
+  LINUX_GLIBC_FLOOR: "2.35"
+  MACOS_FLOOR: "14.0"
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
@@ -52,7 +83,21 @@ jobs:
             os: macos
             arch: x86_64
 
+    env:
+      # 127.453 (review r2): the gates are skipped only on a manual run that
+      # asks for it on a ref that is not a tag.  Every gate step tests this,
+      # never the input alone.
+      SKIP_GATES: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_gates && !startsWith(github.ref, 'refs/tags/') }}
+
     steps:
+      # A tag is a publishing path: it never runs with the gates skipped.
+      # Fail loudly rather than quietly run them, so the request is seen.
+      - name: skip_gates is refused on a tag ref
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_gates && startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "::error::skip_gates was set on ${GITHUB_REF}; a tag ref always runs every gate" >&2
+          exit 1
+
       - uses: actions/checkout@v4
 
       # 127.439: a tag that does not match VERSION would publish a binary
@@ -72,14 +117,32 @@ jobs:
         run: make -k   # -k: report every failing object, not just the first
 
       - name: Conformance gate
+        if: env.SKIP_GATES != 'true'
         run: make conform
 
+      # 127.490: the release binary is built in a pristine worktree of the
+      # same commit, not in place.  In place, the next `make` (the website
+      # check below, whose target depends on the binary) saw the build flags
+      # change back and rebuilt it with the development flags, so the 3.2.0
+      # archives shipped that rebuild: the runner's absolute stdlib path baked
+      # in, no -DNDEBUG.  Nothing else builds in this tree.
+      #
+      # 127.454: built for the floors in the workflow `env` above.  Linux: in
+      # a ${LINUX_BUILD_IMAGE} container (its glibc is the floor; the newest
+      # runner image's glibc made the floor 2.38).  macOS: with
+      # MACOSX_DEPLOYMENT_TARGET (the runner's SDK default made it 15.0);
+      # -Werror turns any API newer than the target into a build failure
+      # (-Wunguarded-availability-new).  The conformance gate above ran on the
+      # newest runner image, from the same commit.
       - name: Build release binary
-        env:
-          SOURCE_DATE_EPOCH: ${{ github.event.head_commit.timestamp && '0' || '0' }}
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          export SOURCE_DATE_EPOCH
+          TKC_GIT_SHA="$(git rev-parse --short=12 HEAD)"
+          TKC_GIT_DIRTY=0
+          export SOURCE_DATE_EPOCH TKC_GIT_SHA TKC_GIT_DIRTY
+          REL="$RUNNER_TEMP/rel"
+          git worktree add --detach "$REL" HEAD
+          echo "REL=$REL" >> "$GITHUB_ENV"
           # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
           # of the tkc executable (the tarball puts src/stdlib beside tkc), not
           # the caller's cwd, so a released tkc works from any directory.
@@ -87,20 +150,53 @@ jobs:
           # these, not a replacement CFLAGS.  The old replacement dropped the
           # 123.9 hardening flags (the shipped binary had none) and the
           # -Wno-format-truncation policy (gcc 15 then failed the build).
-          make BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          if [ "${{ matrix.os }}" = linux ]; then
+            # gcc-12: the first gcc that enforces _FORTIFY_SOURCE=3 (22.04's
+            # default gcc 11 silently gives level 2).  Ubuntu's gcc-12
+            # predefines _FORTIFY_SOURCE=2 at -O2, so the Makefile's =3 is a
+            # redefinition (-Werror); -U in CC comes before CFLAGS' -D.  The clang and linker
+            # tkc runs are stated, not probed in the image: the image's
+            # clang is not the one users have, and 121.28/127.439 bake an
+            # absolute path.  /usr/bin/clang and /usr/bin/ld are where every
+            # Debian/Ubuntu/Fedora clang and binutils package puts them;
+            # TKC_CC overrides at run time (docs/guide/install.md).
+            docker run --rm -v "$REL:/rel" -w /rel \
+              -e SOURCE_DATE_EPOCH -e TKC_GIT_SHA -e TKC_GIT_DIRTY \
+              -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+              "$LINUX_BUILD_IMAGE" bash -euc '
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq
+                apt-get install -y -qq --no-install-recommends \
+                  make gcc-12 libc6-dev zlib1g-dev python3 >/dev/null
+                ldd --version | head -1
+                make CC="gcc-12 -U_FORTIFY_SOURCE" TKC_CLANG_PATH=/usr/bin/clang TKC_LD_PATH=/usr/bin/ld \
+                  BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+                chown -R "$HOST_UID:$HOST_GID" /rel'
+          else
+            MACOSX_DEPLOYMENT_TARGET="$MACOS_FLOOR" \
+              make -C "$REL" BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          fi
+          "$REL/toke" --version
 
-      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
-      # compiler under which programs the website publishes no longer
-      # compiled. This is the release-ritual closure the tracker names as the
-      # one that would have caught it: the tag fails instead.
-      - name: Check out the website
-        uses: actions/checkout@v4
-        with:
-          repository: karwalski/toke-web
-          path: .site
-
-      - name: Website examples compile under the release compiler
-        run: make SITE_REPO=.site check-site-compile
+      # 127.454: the floor is checked on the binary, not assumed from the
+      # build image: the newest GLIBC_x symbol version it needs, and the
+      # Mach-O minimum OS it records.
+      - name: Release binary meets the platform floor
+        run: |
+          if [ "${{ matrix.os }}" = linux ]; then
+            need="$(objdump -T "$REL/toke" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)"
+            # An empty list (static, or no versioned imports) would sort the
+            # floor last and pass without testing anything.
+            test -n "$need" || { echo "no GLIBC_ symbol versions found in the release binary; cannot check the floor" >&2; exit 1; }
+            echo "needs glibc ${need}; floor ${LINUX_GLIBC_FLOOR}"
+            top="$(printf '%s\n%s\n' "$need" "$LINUX_GLIBC_FLOOR" | sort -V | tail -1)"
+            test "$top" = "$LINUX_GLIBC_FLOOR" || { echo "release binary needs glibc ${need}, above the ${LINUX_GLIBC_FLOOR} floor" >&2; exit 1; }
+          else
+            minos="$(otool -l "$REL/toke" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')"
+            echo "minos ${minos}; floor ${MACOS_FLOOR}"
+            test -n "$minos" || { echo "no LC_BUILD_VERSION minos in the release binary; cannot check the floor" >&2; exit 1; }
+            test "$minos" = "$MACOS_FLOOR" || { echo "release binary records macOS ${minos}, not the ${MACOS_FLOOR} floor" >&2; exit 1; }
+          fi
 
       - name: Package release tarball
         run: |
@@ -115,8 +211,8 @@ jobs:
           mkdir -p "${STAGING}/src/stdlib"
           mkdir -p "${STAGING}/stdlib/vendor"
 
-          # Compiler binary
-          cp toke "${STAGING}/tkc"
+          # Compiler binary: the release build (127.490), not ./toke
+          cp "$REL/toke" "${STAGING}/tkc"
           chmod +x "${STAGING}/tkc"
 
           # stdlib C sources (needed for linking user programs)
@@ -144,6 +240,60 @@ jobs:
           echo "TARBALL=${STAGING}.tar.gz" >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=tkc-${{ matrix.target }}" >> "$GITHUB_ENV"
 
+      # 127.453 (review): the conformance gate above ran the development
+      # build on the newest runner image; the bytes that ship are built with
+      # another toolchain (gcc-12 in the ${LINUX_BUILD_IMAGE} container, the
+      # macOS deployment target).  These two steps run the shipped tkc,
+      # unpacked from the tarball, on this runner.
+      #
+      # The smoke runs on every run, a manual one included: from a directory
+      # outside the checkout, with no TKC_STDLIB_DIR, so it also proves the
+      # baked relative stdlib path (127.179) and the baked clang path.
+      - name: Shipped compiler builds and runs a program
+        run: |
+          U="$RUNNER_TEMP/unpacked"; mkdir -p "$U"
+          tar xzf "$TARBALL" -C "$U"
+          T="$(ls -d "$U"/tkc-*/tkc)"
+          echo "SHIPPED_TKC=$T" >> "$GITHUB_ENV"
+          W="$RUNNER_TEMP/smoke"; mkdir -p "$W"; cd "$W"
+          printf 'm=smoke;\ni=io:std.io;\nf=main():i64{\n  io.println("release smoke ok");\n  <0\n};\n' > smoke.tk
+          env -u TKC_STDLIB_DIR "$T" smoke.tk -o smoke
+          test "$(./smoke)" = "release smoke ok"
+
+      # The YAML conformance cases (`make conform-check`) against the shipped
+      # tkc.  conform_isolated.sh runs a private copy of the binary, away
+      # from the tarball's src/stdlib, so the stdlib is named explicitly --
+      # the tarball's own copy.
+      - name: Conformance cases under the shipped compiler
+        if: env.SKIP_GATES != 'true'
+        run: |
+          TKC="$SHIPPED_TKC" TKC_STDLIB_DIR="$(dirname "$SHIPPED_TKC")/src/stdlib" \
+            bash scripts/conform_isolated.sh yaml
+
+      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
+      # compiler under which programs the website publishes no longer
+      # compiled. This is the release-ritual closure the tracker names as the
+      # one that would have caught it: the tag fails instead.
+      - name: Check out the website
+        uses: actions/checkout@v4
+        with:
+          repository: karwalski/toke-web
+          path: .site
+
+      # 127.490: run against the tkc UNPACKED FROM THE TARBALL, the bytes that
+      # ship, not through `make check-site-compile` (its $(BIN) prerequisite
+      # rebuilt ./toke).  Same guards as that target.
+      - name: Website examples compile under the release compiler
+        if: env.SKIP_GATES != 'true'
+        run: |
+          T="$SHIPPED_TKC"
+          "$T" --version
+          V=.site/scripts/verify_site_examples.py
+          if [ ! -f "$V" ]; then echo "SKIP: $V not found"
+          elif ! grep -q -- '--compile-only' "$V"; then echo "SKIP: the site predates --compile-only (132.43)"
+          else TKC="$T" python3 "$V" --check --compile-only
+          fi
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -154,6 +304,17 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # SBOM + signing + release: runs once on Linux after all builds succeed
   # ────────────────────────────────────────────────────────────────────────────
+  # 127.453: the SBOMs and signatures cover EXACTLY the published archives --
+  # the four tarballs the build jobs of this run uploaded -- and checksums.txt.
+  # Through 3.2.0 this job rebuilt tkc on ubuntu-latest and signed and
+  # SBOM'd that rebuild, which is in none of the archives.
+  #
+  # Guards: nothing is published, uploaded to a release or tagged unless the
+  # ref is refs/tags/v* (each such step carries its own `if:`).  Signing runs
+  # on a tag, or on a manual run that asks for it (sign_test); never on a
+  # pull request.  A run that set skip_gates never publishes, whatever its
+  # ref: the job fails at its first step on a tag ref, and the publish step
+  # tests the same condition again (127.453, review r2).
   release:
     name: SBOM, signing, and release
     runs-on: ubuntu-latest
@@ -161,31 +322,42 @@ jobs:
     permissions:
       contents: write      # needed by softprops/action-gh-release to create releases
       id-token: write      # needed by cosign keyless signing (OIDC token exchange)
+    env:
+      SIGN: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.sign_test) }}
+      # The identity a verifier pins: this workflow, at this ref.
+      CERT_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+      CERT_ISSUER: https://token.actions.githubusercontent.com
+      # True when this run asked to skip the gates, on any ref.  The build
+      # job honours the request only off a tag; this job refuses to sign or
+      # publish a tag for a run that made it at all.
+      GATES_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_gates }}
 
-    # 127.439: on a pull request or a manual run this job rebuilds and
-    # generates the SBOM (neither signs nor publishes anything), so the SBOM
-    # tooling is exercised before a tag.  Every signing, tamper-test,
-    # download and release step below is guarded to refs/tags/v* only.
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-
-      - name: Rebuild binary for signing
+      - name: A run that skipped its gates is not published
+        if: env.GATES_SKIPPED == 'true' && startsWith(github.ref, 'refs/tags/')
         run: |
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          export SOURCE_DATE_EPOCH
-          # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
-          # of the tkc executable (the tarball puts src/stdlib beside tkc), not
-          # the caller's cwd, so a released tkc works from any directory.
-          # 127.439: the release build is the Makefile's own flag set plus
-          # these, not a replacement CFLAGS.  The old replacement dropped the
-          # 123.9 hardening flags (the shipped binary had none) and the
-          # -Wno-format-truncation policy (gcc 15 then failed the build).
-          make BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          echo "::error::skip_gates was set on ${GITHUB_REF}; a tag ref is never signed or published without its gates" >&2
+          exit 1
 
-      # ── SBOM ──────────────────────────────────────────────────────────────
+      # ── The archives the build jobs uploaded ────────────────────────────
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: tkc-*
+          merge-multiple: true
+
+      - name: Exactly the four platform archives
+        working-directory: dist
+        run: |
+          ls -la
+          n="$(ls tkc-*.tar.gz | wc -l)"
+          test "$n" -eq 4 || { echo "expected 4 archives, found $n" >&2; exit 1; }
+          for t in linux-x86_64 linux-arm64 macos-arm64 macos-x86_64; do
+            ls tkc-*-"$t".tar.gz >/dev/null || { echo "no $t archive" >&2; exit 1; }
+          done
+
+      # ── SBOM, one per archive ──────────────────────────────────────────────
       # 127.439: pinned (installer script and binary from the same tag);
       # `syft packages` is deprecated in favour of `syft scan`.
       - name: Install syft
@@ -195,94 +367,111 @@ jobs:
             | sh -s -- -b /usr/local/bin "${v}"
           syft version
 
-      - name: Generate SPDX SBOM
-        run: syft scan file:./tkc -o spdx-json > tkc-sbom.spdx.json
+      # syft's file source unpacks an archive: the SBOM's root package is the
+      # archive (by SHA-256) and it lists the tkc executable inside.  syft has
+      # no C-source cataloger, so the vendored cmark/tomlc99/miniz are not in
+      # it (stdlib/vendor/README.md tracks them).  Measured on a dispatch run
+      # 2026-11-22: 1 package, 1 file per archive.
+      - name: Generate an SPDX SBOM for each archive
+        working-directory: dist
+        env:
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          for t in tkc-*.tar.gz; do
+            syft scan "file:$t" -o spdx-json > "$t.spdx.json"
+            printf '%s: %s packages, %s files\n' "$t.spdx.json" \
+              "$(jq '.packages | length' "$t.spdx.json")" "$(jq '(.files // []) | length' "$t.spdx.json")"
+          done
 
-      - name: Compute SBOM checksum
-        run: sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
+      - name: Compute checksums
+        working-directory: dist
+        run: |
+          sha256sum tkc-*.tar.gz tkc-*.tar.gz.spdx.json > checksums.txt
+          cat checksums.txt
 
-      # ── Binary signing (cosign keyless via GitHub Actions OIDC) ───────────
+      # ── Signing (cosign keyless via GitHub Actions OIDC) ──────────────────
       - name: Install cosign
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.SIGN == 'true'
         uses: sigstore/cosign-installer@v3.10.1
         with:
           cosign-release: 'v2.6.1'
 
-      # 127.439: `sign-blob > tkc.sig` wrote a bare base64 signature, which
-      # `verify-blob --bundle tkc.sig` (the tamper test and the published
-      # instructions) cannot read, so the tamper test "passed" on a parse
-      # error and proved nothing.  --bundle writes the bundle (signature,
-      # certificate and Rekor entry) that verify-blob --bundle expects.
-      - name: Sign binary (keyless)
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-        run: cosign sign-blob --yes --bundle tkc.sig tkc
-
-      # ── Tamper-detection test ─────────────────────────────────────────────
-      - name: Tamper test
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          COSIGN_EXPERIMENTAL: "1"
+      # 127.439: --bundle writes the bundle (signature, certificate and Rekor
+      # entry) that `verify-blob --bundle` reads; a bare `sign-blob > x.sig`
+      # cannot be verified that way.  Each archive, and checksums.txt (which
+      # also covers the SBOMs), gets its own bundle: <file>.cosign.bundle.
+      - name: Sign each archive and checksums.txt (keyless)
+        if: env.SIGN == 'true'
+        working-directory: dist
         run: |
-          # Positive control first (127.439): the untampered binary must
-          # verify, or a rejection of the tampered one proves nothing.
-          cosign verify-blob \
-               --bundle tkc.sig \
-               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
-               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-               tkc
-          cp tkc tkc-tampered
-          echo "x" >> tkc-tampered
-          if cosign verify-blob \
-               --bundle tkc.sig \
-               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
-               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-               tkc-tampered 2>/dev/null; then
-            echo "ERROR: cosign accepted a tampered binary" >&2
-            exit 1
-          fi
-          echo "Tamper test passed: tampered binary correctly rejected."
-          rm tkc-tampered
+          for f in tkc-*.tar.gz checksums.txt; do
+            cosign sign-blob --yes --bundle "$f.cosign.bundle" "$f"
+          done
 
-      # ── Download all platform tarballs ──────────────────────────────────
-      - name: Download all artifacts
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/download-artifact@v4
+      # ── Verification and tamper test ───────────────────────────────────────
+      # Positive control first (127.439): each untampered file must verify
+      # with the published command, or a rejection of a tampered one proves
+      # nothing.  Then one appended byte must make each one fail.
+      - name: Verify each bundle, then the tamper test
+        if: env.SIGN == 'true'
+        working-directory: dist
+        run: |
+          echo "identity: $CERT_IDENTITY"
+          for f in tkc-*.tar.gz checksums.txt; do
+            cosign verify-blob --bundle "$f.cosign.bundle" \
+              --certificate-identity "$CERT_IDENTITY" \
+              --certificate-oidc-issuer "$CERT_ISSUER" "$f"
+            cp "$f" "$RUNNER_TEMP/tampered"
+            echo "x" >> "$RUNNER_TEMP/tampered"
+            if cosign verify-blob --bundle "$f.cosign.bundle" \
+                 --certificate-identity "$CERT_IDENTITY" \
+                 --certificate-oidc-issuer "$CERT_ISSUER" "$RUNNER_TEMP/tampered" 2>/dev/null; then
+              echo "ERROR: cosign accepted a tampered $f" >&2
+              exit 1
+            fi
+            echo "Tamper test passed: tampered $f correctly rejected."
+            rm "$RUNNER_TEMP/tampered"
+          done
+          # The documented checksum route: checksums.txt verified above, then
+          # every archive and SBOM against it.
+          sha256sum -c checksums.txt
+
+      # A run that does not publish keeps the set it built for inspection.
+      - name: Keep the unpublished release set (not a tag)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
         with:
-          path: release-artifacts/
-          merge-multiple: true
-
-      - name: Compute checksums
-        if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: release-artifacts
-        run: sha256sum tkc-*.tar.gz > checksums.txt
+          name: release-set-unpublished
+          path: dist/
+          retention-days: 1
 
       # ── Publish GitHub release ────────────────────────────────────────────
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.GATES_SKIPPED != 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-artifacts/tkc-*.tar.gz
-            release-artifacts/checksums.txt
-            tkc-sbom.spdx.json
-            tkc-sbom.spdx.json.sha256
-            tkc.sig
+            dist/tkc-*.tar.gz
+            dist/tkc-*.tar.gz.spdx.json
+            dist/tkc-*.tar.gz.cosign.bundle
+            dist/checksums.txt
+            dist/checksums.txt.cosign.bundle
           body: |
             ## tkc ${{ github.ref_name }}
 
             ### Platform binaries
 
-            | File | Platform |
-            |------|----------|
-            | `tkc-${{ github.ref_name }}-linux-x86_64.tar.gz` | Linux x86-64 |
-            | `tkc-${{ github.ref_name }}-linux-arm64.tar.gz` | Linux ARM64 |
-            | `tkc-${{ github.ref_name }}-macos-arm64.tar.gz` | macOS ARM64 (Apple Silicon) |
-            | `tkc-${{ github.ref_name }}-macos-x86_64.tar.gz` | macOS x86-64 (Intel) |
-            | `checksums.txt` | SHA-256 checksums for all tarballs |
-            | `tkc-sbom.spdx.json` | Software Bill of Materials (SPDX) |
-            | `tkc.sig` | cosign keyless signature bundle |
+            | File | Platform | Needs |
+            |------|----------|-------|
+            | `tkc-${{ github.ref_name }}-linux-x86_64.tar.gz` | Linux x86-64 | glibc ${{ env.LINUX_GLIBC_FLOOR }} or later |
+            | `tkc-${{ github.ref_name }}-linux-arm64.tar.gz` | Linux ARM64 | glibc ${{ env.LINUX_GLIBC_FLOOR }} or later |
+            | `tkc-${{ github.ref_name }}-macos-arm64.tar.gz` | macOS ARM64 (Apple Silicon) | macOS ${{ env.MACOS_FLOOR }} or later |
+            | `tkc-${{ github.ref_name }}-macos-x86_64.tar.gz` | macOS x86-64 (Intel) | macOS ${{ env.MACOS_FLOOR }} or later |
+            | `<archive>.spdx.json` | SPDX SBOM of that archive | |
+            | `<archive>.cosign.bundle` | cosign keyless signature bundle of that archive | |
+            | `checksums.txt` (+ `.cosign.bundle`) | SHA-256 of every archive and SBOM, signed | |
+
+            **Platform floors.** The Linux binaries are built in an `${{ env.LINUX_BUILD_IMAGE }}` container and need glibc ${{ env.LINUX_GLIBC_FLOOR }} or later; the macOS binaries are built with a deployment target of macOS ${{ env.MACOS_FLOOR }}. Both are checked on the binaries before release. The full conformance suite runs on the newest runner images, and the shipped binaries pass the YAML conformance cases. On an older system, build from source.
 
             ### Install
 
@@ -300,14 +489,16 @@ jobs:
             - `stdlib/vendor/` — vendored cmark, tomlc99 and miniz sources
             - `LICENSE`, `NOTICE`, `LICENSING.md`, `stdlib/LICENSE` (MIT, the standard library)
 
-            ### Verifying the binary
+            ### Verifying a download
 
-            See [docs/security/release-signing.md](https://github.com/${{ github.repository }}/blob/main/docs/security/release-signing.md) for full instructions.
+            Each archive is signed as published. See [docs/security/release-signing.md](https://github.com/${{ github.repository }}/blob/main/docs/security/release-signing.md) for the full instructions.
 
             ```sh
             cosign verify-blob \
-              --bundle tkc.sig \
+              --bundle tkc-${{ github.ref_name }}-linux-x86_64.tar.gz.cosign.bundle \
               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              tkc-${{ github.ref_name }}-linux-x86_64/tkc
+              tkc-${{ github.ref_name }}-linux-x86_64.tar.gz
             ```
+
+            Or verify `checksums.txt` the same way (with `checksums.txt.cosign.bundle`), then `sha256sum -c --ignore-missing checksums.txt`.

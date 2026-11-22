@@ -370,6 +370,55 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   the parser and `toke.gbnf` already had them (no production added).
   Conformance: C1940, D645, D646.
 
+### Build, platform and release
+
+- **The release archives carry the release build of `tkc`** (127.490). `release.yml` built
+  the release binary in place (`BAKED_STDLIB_DIR=src/stdlib`, `-DNDEBUG -g0`), and the next
+  step's `make check-site-compile`, whose target depends on the binary, saw the build flags
+  change back and rebuilt it with the development flags; the packaging step then copied
+  that rebuild. The 3.2.0 archives' `tkc` bakes the runner's absolute stdlib path
+  (`/Users/runner/work/toke/toke/src/stdlib` in the macos-arm64 archive) and was built
+  without `-DNDEBUG`. The release binary is now built in a pristine worktree of the same
+  commit and packaged from there, and the website examples are compiled with the `tkc`
+  unpacked from the tarball, the bytes that ship.
+- **The signatures and SBOMs cover the published archives** (127.453). Through 3.2.0 the
+  release job rebuilt `tkc` on ubuntu-latest and signed (`tkc.sig`) and SBOM'd
+  (`tkc-sbom.spdx.json`) that rebuild, which is in none of the four archives. The job now
+  downloads the four archives the build jobs of the same run uploaded and writes, per
+  archive, an SPDX SBOM (`<archive>.spdx.json`) and a cosign keyless bundle
+  (`<archive>.cosign.bundle`), plus `checksums.txt` over every archive and SBOM, itself
+  signed (`checksums.txt.cosign.bundle`). Each bundle is verified with the published
+  command and the tamper test runs on each signed file before anything is published.
+  `tkc.sig`, `tkc-sbom.spdx.json` and its `.sha256` are no longer release assets.
+  Publishing is still tag-only; a manual run with `sign_test` signs and verifies without
+  publishing (it writes a Rekor log entry). A manual run may set `skip_gates` to test the
+  pipeline on a branch whose gates are red for other reasons; it is refused on a tag ref
+  (the run fails at its first step), and the publish step never runs for a run that set it.
+  Verification: `docs/security/release-signing.md`.
+- **Lower platform floors for the release binaries** (127.454): **glibc 2.35** (Ubuntu
+  22.04+, Debian 12+, Fedora 36+) and **macOS 14**, down from 3.2.0's glibc 2.38 and
+  macOS 15, which were the floors of the runner images. The Linux release binaries are
+  built in an `ubuntu:22.04` container (gcc-12, so `_FORTIFY_SOURCE=3` is still enforced;
+  the baked clang and linker are stated as `/usr/bin/clang` and `/usr/bin/ld`), the macOS
+  ones with `MACOSX_DEPLOYMENT_TARGET=14.0`; a step checks each binary's newest `GLIBC_x`
+  symbol version or Mach-O `minos` against the floor, and the release notes state the
+  floors from the same workflow variables. The full conformance suite still runs on the
+  development build on the newest runner images; the shipped `tkc`, unpacked from its
+  tarball, now builds and runs a program on every run (from outside the checkout, so the
+  baked stdlib and clang paths are exercised) and passes the YAML conformance cases
+  (`conform-check`) on a tag. The floor values are the conservative choice pending owner
+  decision R4.
+- **The perf gate measures on CI** (127.451). `bench.yml`'s perf-gate failed with "harness
+  failure: ./tkc exited 0" on every pull request: GitHub's macOS runners are VMs without
+  performance counters, `/usr/bin/time -l` prints no "instructions retired" line there,
+  and `scripts/perf_gate.py` took any macOS host as having a counter. The gate now probes
+  each counter before using it (macOS `/usr/bin/time -l`, Linux `perf`, then valgrind's
+  cachegrind, which counts instructions exactly in software), records which counter made
+  a baseline and refuses to compare across counters, and runs once per count under
+  cachegrind. The CI gate runs on ubuntu-latest under cachegrind with `--require-host` on
+  both the record and the compare step (no counter is a failure, not a SKIP), and can be
+  dispatched against a named base. Allocation counts stay macOS-only.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
