@@ -9523,12 +9523,22 @@ static const char *get_llvm_name(Ctx *c, const char *toke_name) {
 /* Story 114.15: a user local named t<N> (e.g. t1, t2) collides with the
  * compiler's %tN SSA temporaries, producing duplicate-definition clang errors.
  * Such names must always be aliased to a dotted form (%t1.N, distinct from the
- * dotless temp namespace) even on first use. */
+ * dotless temp namespace) even on first use.
+ *
+ * 138.38 (loke T-65): the rule was the `t` prefix only, and parameters and
+ * closure captures never went through it, so `f=g(t0:i64)` defined %t0 twice.
+ * Every name codegen mints itself is a prefix and a counter (%t<N>, and the
+ * block labels marm<N>, mend<N>, sel<N>, if_then<N>, loop_cnt_<N>, ... --
+ * LLVM keeps labels and values in ONE per-function namespace), or starts
+ * with `_` (%__env, %__crel.<N>).  So a user name that ends in a digit, or
+ * (--legacy only) starts with `_`, is always aliased: it can then never equal
+ * a minted name, whatever prefixes are added later.  Any other user name keeps
+ * its spelling, so the IR stays readable and diffable. */
 static int is_temp_like_name(const char *s) {
-    if (s[0] != 't' || !s[1]) return 0;
-    for (const char *p = s + 1; *p; p++)
-        if (*p < '0' || *p > '9') return 0;
-    return 1;
+    if (!s[0]) return 0;
+    if (s[0] == '_') return 1;
+    size_t n = strlen(s);
+    return s[n - 1] >= '0' && s[n - 1] <= '9';
 }
 
 static const char *make_unique_name(Ctx *c, const char *toke_name) {
@@ -9549,7 +9559,10 @@ static const char *make_unique_name(Ctx *c, const char *toke_name) {
     }
     NameAlias *a = &c->aliases[c->alias_count++];
     strncpy(a->toke_name, toke_name, 127); a->toke_name[127] = '\0';
-    snprintf(a->llvm_name, 128, "%s.%d", toke_name, ++c->name_scope);
+    /* 138.38: a `_`-led (--legacy) name is aliased as u.<name>.N, so that
+     * `__crel` cannot become %__crel.N, the shape of a minted slot. */
+    snprintf(a->llvm_name, 128, toke_name[0] == '_' ? "u.%s.%d" : "%s.%d",
+             toke_name, ++c->name_scope);
     return a->llvm_name;
 }
 
@@ -12491,13 +12504,16 @@ static void emit_toplevel(Ctx *c, const Node *n)
             const char *pty = "i64";
             if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                 pty = resolve_llvm_type(c, n->children[i]->children[1]);
-            if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, n->children[i]);
-            set_local_type(c, pn, pty);
-            fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+            /* 138.38: the slot takes the alias rule locals take, so a
+             * parameter `t0` is %t0.N, never the temporary %t0. */
+            const char *sn = make_unique_name(c, pn);
+            if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, sn, n->children[i]);
+            set_local_type(c, sn, pty);
+            fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", sn, pty, pty, pn, pty, sn);
             /* 124.0c item 3: a function-typed parameter is borrowed */
             if (n->children[i]->child_count > 1 && n->children[i]->children[1] &&
                 n->children[i]->children[1]->kind == NODE_FUNC_TYPE)
-                fnv_mark_local(c, pn);
+                fnv_mark_local(c, sn);
         }
         c->term = 0;
         /* 114.18: identify linearly-owned array locals for in-place mutation. */
@@ -12905,12 +12921,13 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         /* 124.0c: restore the capture's own type and tag (see g_cap_info). */
         const char *cty = (i < TKC_CAP_TYPED && g_cap_info[cid].ty[i]) ? g_cap_info[cid].ty[i] : "i64";
         int cv = coerce_value(c, lv, "i64", cty);
-        set_local_type(c, caps[i], cty);
+        const char *cn = make_unique_name(c, caps[i]);   /* 138.38 */
+        set_local_type(c, cn, cty);
         if (i < TKC_CAP_TYPED && g_cap_info[cid].tag[i][0])
-            mark_ptr_with_type(c, caps[i], g_cap_info[cid].tag[i]);
-        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", caps[i], cty, cty, cv, cty, caps[i]);
+            mark_ptr_with_type(c, cn, g_cap_info[cid].tag[i]);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", cn, cty, cty, cv, cty, cn);
         /* 124.0c item 3: a captured closure is held by the environment */
-        if (i < TKC_CAP_TYPED && g_cap_info[cid].isfn[i]) fnv_mark_local(c, caps[i]);
+        if (i < TKC_CAP_TYPED && g_cap_info[cid].isfn[i]) fnv_mark_local(c, cn);
     }
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind != NODE_PARAM) continue;
@@ -12918,12 +12935,13 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         const char *pty = "i64";
         if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
             pty = resolve_llvm_type(c, clos->children[i]->children[1]);
-        if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, clos->children[i]);  /* 124.0c */
-        set_local_type(c, pn, pty);
-        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+        const char *sn = make_unique_name(c, pn);   /* 138.38 */
+        if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, sn, clos->children[i]);  /* 124.0c */
+        set_local_type(c, sn, pty);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", sn, pty, pty, pn, pty, sn);
         if (clos->children[i]->child_count > 1 && clos->children[i]->children[1] &&
             clos->children[i]->children[1]->kind == NODE_FUNC_TYPE)
-            fnv_mark_local(c, pn);                   /* 124.0c item 3: borrowed */
+            fnv_mark_local(c, sn);                   /* 124.0c item 3: borrowed */
     }
     compute_closure_releases(c, clos);               /* 124.0c item 3 */
     /* 127.229: the linear-array set belongs to the f= it was computed for.
