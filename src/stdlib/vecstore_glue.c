@@ -36,10 +36,10 @@ static TkVecCollection *coll_in(int64_t v)
 int64_t tk_vecstore_open_w(int64_t path) {
     if (!path) return 0;
     TkVecStore *vs = vecstore_open((const char *)(intptr_t)path);
-    if (vs && !tk_handle_adopt(TK_HK_VECSTORE, vs)) {   /* 138.61: table full */
-        vecstore_close(vs);
-        return 0;
-    }
+    /* 138.61: when the table is full the store is left open and unreachable
+     * (a fresh store has nothing to write, and vecstore_close would write
+     * under fs.write, which open does not take). */
+    if (vs && !tk_handle_adopt(TK_HK_VECSTORE, vs)) return 0;
     return (int64_t)(intptr_t)vs;
 }
 
