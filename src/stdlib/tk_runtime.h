@@ -144,4 +144,39 @@ void    tk_overflow_trap(int32_t op_code);
 void tk_clos_retain(int64_t v);
 void tk_clos_release(int64_t v);
 
+/* ── 138.45: the registry of live std handles (tk_runtime.c) ─────────────────
+ * One table for every std module that hands a C object to a toke program as
+ * an i64 (lifted from 138.36's process registry).  A slot holds the object's
+ * address, its KIND and a serial; lookups read only the table, never the
+ * value as memory, so a value the runtime did not hand out -- a forged
+ * integer, a record literal, a handle of another kind, a released one -- is
+ * answered NULL and the caller answers it as it answers a null handle.
+ *
+ * Two ways to name an entry:
+ *   - a TOKEN, (serial << 32) | (slot + 1): std.process hands these out
+ *     instead of the address (tk_handle_issue / tk_handle_token);
+ *   - the ADDRESS itself (tk_handle_adopt / tk_handle_addr), for kinds whose
+ *     value must stay a real pointer: a record toke code reads fields of, a
+ *     handle compiled code passes to the glue directly (std.vec), or an
+ *     object C callbacks hand to toke.
+ * Registering an address again is idempotent.  tk_handle_drop forgets one;
+ * its slot is reused only under a fresh serial, so an old token is refused
+ * even when the slot names a newer object. */
+enum {
+    TK_HK_PROCESS = 1, TK_HK_VEC, TK_HK_STRBUF, TK_HK_SECUREBUF, TK_HK_PDFDOC,
+    TK_HK_XLSXBOOK, TK_HK_ZIPARCHIVE, TK_HK_TOMLVAL, TK_HK_SVGELEM,
+    TK_HK_TASKSCOPE
+};
+/* A token for p (0 when the table is full; the caller disposes of p). */
+int64_t tk_handle_issue(int kind, void *p);
+/* The object a token names, or NULL. */
+void   *tk_handle_token(int kind, int64_t tok);
+/* Register p as a live object of `kind`; returns p, or NULL when the table
+ * is full (or p is NULL). */
+void   *tk_handle_adopt(int kind, void *p);
+/* v as a pointer when it is a live object of `kind`, else NULL. */
+void   *tk_handle_addr(int kind, int64_t v);
+/* Forget p (any kind).  1 when it was registered. */
+int     tk_handle_drop(const void *p);
+
 #endif /* TK_RUNTIME_H */
