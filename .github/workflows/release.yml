@@ -136,7 +136,9 @@ jobs:
           # -Wno-format-truncation policy (gcc 15 then failed the build).
           if [ "${{ matrix.os }}" = linux ]; then
             # gcc-12: the first gcc that enforces _FORTIFY_SOURCE=3 (22.04's
-            # default gcc 11 silently gives level 2).  The clang and linker
+            # default gcc 11 silently gives level 2).  Ubuntu's gcc-12
+            # predefines _FORTIFY_SOURCE=2 at -O2, so the Makefile's =3 is a
+            # redefinition (-Werror); -U in CC comes before CFLAGS' -D.  The clang and linker
             # tkc runs are stated, not probed in the image: the image's
             # clang is not the one users have, and 121.28/127.439 bake an
             # absolute path.  /usr/bin/clang and /usr/bin/ld are where every
@@ -151,7 +153,7 @@ jobs:
                 apt-get install -y -qq --no-install-recommends \
                   make gcc-12 libc6-dev zlib1g-dev python3 >/dev/null
                 ldd --version | head -1
-                make CC=gcc-12 TKC_CLANG_PATH=/usr/bin/clang TKC_LD_PATH=/usr/bin/ld \
+                make CC="gcc-12 -U_FORTIFY_SOURCE" TKC_CLANG_PATH=/usr/bin/clang TKC_LD_PATH=/usr/bin/ld \
                   BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
                 chown -R "$HOST_UID:$HOST_GID" /rel'
           else
