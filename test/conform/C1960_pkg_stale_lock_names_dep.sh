@@ -34,7 +34,7 @@ PASS=0; FAIL=0
 ok()  { echo "PASS $1"; PASS=$((PASS + 1)); }
 bad() { echo "FAIL $1"; [ -n "${2:-}" ] && echo "        $2"; FAIL=$((FAIL + 1)); }
 expect() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$3] got [$2]"; fi; }
-command -v git >/dev/null 2>&1 || { echo "SKIP C1960: git not installed"; exit 0; }
+command -v git >/dev/null 2>&1 || { echo "CONFORM-SKIP: git not installed"; exit 0; }
 [ -x "${TKC}" ] || { echo "FAIL: tkc not found at ${TKC}"; exit 1; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c1960_XXXXXX")"
