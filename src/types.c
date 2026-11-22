@@ -3382,17 +3382,15 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
         char nb[128]; TOKSTR(nb, cx->src, scr);
         int nlen = (int)strlen(nb);
         if (arm_bind_lookup(cx, nb, nlen, scr)) return NULL;
-        /* The binder in force at the use, found lexically (Z218 round 3):
-         * a closure parameter, loop-init `let` or body `let` of the same
-         * name shadows a function parameter, so the parameter's annotation
-         * is read only when that parameter IS the binder in force. */
+        /* The binder in force at the use, found lexically: a closure
+         * parameter, loop-init `let` or body `let` of the same name shadows
+         * a function parameter.  A parameter binder is judged by its own
+         * annotation, whether it belongs to the function or to a closure
+         * inside it: it is exactly what the subject names. */
         const Node *bd = tk_binder_at(cx->fn_node, cx->src,
                                       in_tree_use(cx, scr), nb, nlen, NULL);
         if (bd && bd->kind == NODE_PARAM) {
-            int own = 0;
-            for (int pi = 0; pi < cx->fn_node->child_count && !own; pi++)
-                if (cx->fn_node->children[pi] == bd) own = 1;
-            if (!own || bd->child_count < 2) return NULL;
+            if (bd->child_count < 2 || !bd->children[1]) return NULL;
             Type *pt = resolve_type(cx, bd->children[1]);
             return pt && kind_is_scalar(pt->kind) ? type_name(pt) : NULL;
         }
