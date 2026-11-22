@@ -130,6 +130,15 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   `check_canonical.py` Rule 2 now fails a present-tense "Gate 2 PASS" anywhere in the
   workspace unless the withdrawal is stated in the same window (generic correction
   markers do not excuse it).
+- **`docs/spec/stdlib-signatures.md` is held to the `.tki` interfaces, which are
+  normative** (127.456). `scripts/check_stdlib_signatures.py`, run by `make check-tki`,
+  fails on a hand-written entry that names a non-export or states a parameter count or
+  type that differs from the `.tki`; the page's last section is generated from the
+  interfaces for the 41 modules that had no block (`make render-stdlib-signatures`).
+  38 drifted entries were corrected to the interfaces (std.str, toon, yaml, i18n,
+  file, env, process, time, log, test); no `.tki` or runtime signature changed.
+- **The stale `tree-sitter-toke/` copy is archived** (127.457); the maintained grammar is
+  `tree-sitter-toke/` in karwalski/toke-spec.
 
 ### Changed — scoped capability grants (spec amendment 138.19)
 
