@@ -165,29 +165,19 @@ and provenance are in `stdlib/vendor/README.md`.
 
 ## What the SBOM covers
 
-tkc has **zero external compiled runtime dependencies**.  The only runtime
-library it links against is:
+The SBOM lists what syft finds in the archive: the archive itself (by SHA-256) and the
+`tkc` executable inside it (see "Verifying the SBOM" above). It lists nothing else, and
+there is nothing else it would need to list for the compiler binary:
 
-| Component | Type | Provided by |
-|-----------|------|-------------|
-| libc (glibc on Linux, libSystem on macOS) | System library | OS vendor |
-
-The SBOM documents:
-
-- The tkc compiler source files compiled into the binary.
-- The system C library (libc) identified from the ELF/Mach-O binary by syft.
-- LLVM is **not** a compile-time or link-time dependency.  It is invoked
-  as a subprocess at runtime (`clang`), so it appears in the SBOM only as a
-  noted runtime tool, not as a linked library.
-
-This means:
-
-- The vendored C sources (cmark, tomlc99, miniz) ship as sources in the archive and
-  are compiled into a user's program only when it imports the module they back; they
-  are tracked in `stdlib/vendor/README.md`, not in the SBOM.
-- There are no transitive dependency trees to audit.
-- The compiler's attack surface at the binary level is limited to the OS libc
-  and the compiler's own source.
+- tkc links against two shared libraries, both provided by the OS: the system C
+  library (glibc on Linux, libSystem on macOS) and zlib (`libz.so.1` on Linux,
+  `/usr/lib/libz.1.dylib` on macOS). syft does not record either.
+- LLVM is not linked into tkc. tkc runs `clang` as a separate program to compile and
+  link user programs, so clang is a runtime requirement (docs/guide/install.md), not
+  part of the archive or its SBOM.
+- The stdlib C sources and the vendored C sources (cmark, tomlc99, miniz) ship as
+  sources in the archive and are compiled into a user's program only when it imports
+  the module they back. They are tracked in `stdlib/vendor/README.md`, not in the SBOM.
 
 ---
 

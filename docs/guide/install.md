@@ -111,7 +111,7 @@ that use std.http, TLS, std.db or compression also need the libraries: on macOS 
 Homebrew formula pulls in openssl@4; on Linux install clang, libssl-dev, zlib1g-dev and
 libsqlite3-dev. Verify a downloaded tarball with its signature bundle, or against the
 release's signed `checksums.txt`
-([`docs/security/release-signing.md`](../security/release-signing.md); for 3.2.0 and
+([`docs/security/release-signing.md`](https://github.com/karwalski/toke/blob/main/docs/security/release-signing.md); for 3.2.0 and
 earlier only the `checksums.txt` route applies).
 
 A `toke` you did not build yourself -- a release tarball, or the Homebrew
