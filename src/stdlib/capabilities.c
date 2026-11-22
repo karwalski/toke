@@ -514,8 +514,8 @@ static const char *cap_flag_hint(uint32_t cap) {
     return ci >= 0 ? k_flag[ci] : "--allow-all";
 }
 
-/* CAP001 as before 138.19, byte for byte, when run-time flags can add the
- * class.  On a binary whose baked set they may only narrow (D2), the run-time
+/* CAP001 as before 138.19 (but for 138.53's manifest key), when run-time
+ * flags can add the class.  On a binary whose baked set they may only narrow (D2), the run-time
  * half of the advice is wrong, so the hint and fix name the manifest alone --
  * and the fix is left out when a run-time flag scopes the class, since it
  * would still narrow the new grant. */
@@ -528,11 +528,13 @@ static void deny_class(uint32_t cap) {
             "CAP001: capability '%s' required but not granted\n"
             "  grant it at run time with %s, or declare it in tkc.toml [capabilities]\n",
             cls, flag);
+        /* 138.53: the manifest half names the tkc.toml key (fs_write), not
+         * the class (fs.write), which src/config.c refuses as unknown. */
         if (getenv("TK_DIAG_JSON"))
             fprintf(stderr,
                 "{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\","
-                "\"capability\":\"%s\",\"fix\":\"grant %s or tkc.toml [capabilities] %s=true\"}\n",
-                cls, flag, cls);
+                "\"capability\":\"%s\",\"fix\":\"grant %s or tkc.toml [capabilities] %s = true\"}\n",
+                cls, flag, ci >= 0 ? k_key[ci] : "all");
         exit(1);
     }
     fprintf(stderr,

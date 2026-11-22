@@ -287,6 +287,12 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   alias or module call's message now ends with the advice ("...; match the call to
   the declaration, or reconcile the interface with the implementation if they
   disagree"); the code, `expected` and `got` are unchanged. Tests: D710-D713, C2057.
+- **CAP001's JSON `fix` names the tkc.toml key** (138.53). On a binary with no
+  baked grants it read `grant --allow-write or tkc.toml [capabilities] fs.write=true`;
+  tkc refuses `fs.write` as an unknown capability. It now reads `... fs_write = true`
+  (`fs_read`, `fs_write`, `net`, `env_write`, `process_spawn`), the spelling the
+  narrowing-binary fix already used. The text lines are unchanged. Tests: C2056,
+  C1884 case 8.
 
 ### Documentation and claim gates
 

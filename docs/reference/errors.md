@@ -1966,10 +1966,12 @@ reports a denied call at run time, before the syscall, and exits 1. With
 ### CAP001
 
 **Capability required but not granted** — the class is not granted at all. The `fix`
-is `grant --allow-<class> or tkc.toml [capabilities] <class>=true`; on a binary whose
+is `grant --allow-<class> or tkc.toml [capabilities] <key> = true`, where `<key>` is
+the manifest key (`fs_read`, `fs_write`, `net`, `env_write`, `process_spawn`; before
+138.53 it named the class, `fs.write=true`, which tkc.toml refuses); on a binary whose
 baked grants run-time flags may only narrow (138.19 D2) it is
 `tkc.toml [capabilities] <key> = true`, and absent when a run-time flag scopes the
-class. Conformance: C470, C1884.
+class. Conformance: C470, C1884, C2056.
 
 ### CAP002
 
