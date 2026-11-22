@@ -27,9 +27,11 @@ on:
       skip_gates:
         # 127.453: a dispatch that exercises the packaging, floor, SBOM and
         # signing steps on a tree whose conformance or website gate is red
-        # for other reasons.  Only a manual run reads it: a tag push always
-        # runs both gates, and nothing a manual run makes is published.
-        description: "skip the conformance and website gates (manual pipeline test only)"
+        # for other reasons.  It applies only to a manual run on a branch
+        # ref.  A tag ref is a publishing path and always runs every gate:
+        # a manual run on a tag that sets skip_gates fails at the first step
+        # of both jobs, and the publish step refuses any run that set it.
+        description: "skip the conformance and website gates (manual run on a branch only; refused on a tag)"
         type: boolean
         default: false
 
@@ -81,7 +83,21 @@ jobs:
             os: macos
             arch: x86_64
 
+    env:
+      # 127.453 (review r2): the gates are skipped only on a manual run that
+      # asks for it on a ref that is not a tag.  Every gate step tests this,
+      # never the input alone.
+      SKIP_GATES: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_gates && !startsWith(github.ref, 'refs/tags/') }}
+
     steps:
+      # A tag is a publishing path: it never runs with the gates skipped.
+      # Fail loudly rather than quietly run them, so the request is seen.
+      - name: skip_gates is refused on a tag ref
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_gates && startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "::error::skip_gates was set on ${GITHUB_REF}; a tag ref always runs every gate" >&2
+          exit 1
+
       - uses: actions/checkout@v4
 
       # 127.439: a tag that does not match VERSION would publish a binary
@@ -101,7 +117,7 @@ jobs:
         run: make -k   # -k: report every failing object, not just the first
 
       - name: Conformance gate
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
+        if: env.SKIP_GATES != 'true'
         run: make conform
 
       # 127.490: the release binary is built in a pristine worktree of the
@@ -249,7 +265,7 @@ jobs:
       # from the tarball's src/stdlib, so the stdlib is named explicitly --
       # the tarball's own copy.
       - name: Conformance cases under the shipped compiler
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
+        if: env.SKIP_GATES != 'true'
         run: |
           TKC="$SHIPPED_TKC" TKC_STDLIB_DIR="$(dirname "$SHIPPED_TKC")/src/stdlib" \
             bash scripts/conform_isolated.sh yaml
@@ -268,7 +284,7 @@ jobs:
       # ship, not through `make check-site-compile` (its $(BIN) prerequisite
       # rebuilt ./toke).  Same guards as that target.
       - name: Website examples compile under the release compiler
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
+        if: env.SKIP_GATES != 'true'
         run: |
           T="$SHIPPED_TKC"
           "$T" --version
@@ -296,7 +312,9 @@ jobs:
   # Guards: nothing is published, uploaded to a release or tagged unless the
   # ref is refs/tags/v* (each such step carries its own `if:`).  Signing runs
   # on a tag, or on a manual run that asks for it (sign_test); never on a
-  # pull request.
+  # pull request.  A run that set skip_gates never publishes, whatever its
+  # ref: the job fails at its first step on a tag ref, and the publish step
+  # tests the same condition again (127.453, review r2).
   release:
     name: SBOM, signing, and release
     runs-on: ubuntu-latest
@@ -309,8 +327,18 @@ jobs:
       # The identity a verifier pins: this workflow, at this ref.
       CERT_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
       CERT_ISSUER: https://token.actions.githubusercontent.com
+      # True when this run asked to skip the gates, on any ref.  The build
+      # job honours the request only off a tag; this job refuses to sign or
+      # publish a tag for a run that made it at all.
+      GATES_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_gates }}
 
     steps:
+      - name: A run that skipped its gates is not published
+        if: env.GATES_SKIPPED == 'true' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "::error::skip_gates was set on ${GITHUB_REF}; a tag ref is never signed or published without its gates" >&2
+          exit 1
+
       # ── The archives the build jobs uploaded ────────────────────────────
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -419,7 +447,7 @@ jobs:
 
       # ── Publish GitHub release ────────────────────────────────────────────
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.GATES_SKIPPED != 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: |

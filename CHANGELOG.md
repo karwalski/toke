@@ -210,7 +210,10 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   command and the tamper test runs on each signed file before anything is published.
   `tkc.sig`, `tkc-sbom.spdx.json` and its `.sha256` are no longer release assets.
   Publishing is still tag-only; a manual run with `sign_test` signs and verifies without
-  publishing (it writes a Rekor log entry). Verification: `docs/security/release-signing.md`.
+  publishing (it writes a Rekor log entry). A manual run may set `skip_gates` to test the
+  pipeline on a branch whose gates are red for other reasons; it is refused on a tag ref
+  (the run fails at its first step), and the publish step never runs for a run that set it.
+  Verification: `docs/security/release-signing.md`.
 - **Lower platform floors for the release binaries** (127.454): **glibc 2.35** (Ubuntu
   22.04+, Debian 12+, Fedora 36+) and **macOS 14**, down from 3.2.0's glibc 2.38 and
   macOS 15, which were the floors of the runner images. The Linux release binaries are
