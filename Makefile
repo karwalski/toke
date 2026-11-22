@@ -2264,8 +2264,9 @@ test-stdlib-args:
 	$(RUN_TEST) ./test/stdlib/test_args
 
 test-stdlib-map:
-	$(CC) $(CFLAGS) -o test/stdlib/test_map \
-	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c
+	$(CC) $(CFLAGS) -DTK_TEST_REAL_RUNTIME -o test/stdlib/test_map \
+	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c \
+	    src/stdlib/tk_runtime.c src/stdlib/capabilities.c src/stdlib/args.c
 	$(RUN_TEST) ./test/stdlib/test_map
 
 test-stdlib-md: $(CMARK_TEST_OBJS)
@@ -2281,9 +2282,9 @@ test-stdlib-toml: $(TOML_TEST_OBJS)
 # Story 127.67: the std.toml wrappers must distinguish a value of false/0
 # from an error, and a missing section must not resolve to its parent.
 test-stdlib-toml-glue: $(TOML_TEST_OBJS)
-	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
+	$(CC) $(CFLAGS) $(TOML_FLAGS) -DTK_TEST_REAL_RUNTIME -o test/stdlib/test_toml_glue \
 	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c src/stdlib/toml_glue.c \
-	    src/stdlib/capabilities.c $(TOML_TEST_OBJS) -lpthread
+	    src/stdlib/capabilities.c src/stdlib/tk_runtime.c src/stdlib/args.c $(TOML_TEST_OBJS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────

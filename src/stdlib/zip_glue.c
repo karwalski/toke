@@ -81,6 +81,22 @@ static int64_t zip_ok(int64_t v)
     return v;
 }
 
+/* 138.45: a ziparchive is looked up in the runtime's handle registry
+ * (tk_runtime.c) before it is read.  Any value zip.open/openfile did not hand
+ * out, or one zip.close has closed, is answered as the null archive is
+ * (entries @(), read $err, close a no-op); it used to be read as a
+ * TkZipArchive and the program died with SIGSEGV (zip.entries(5)), and a
+ * second close freed the archive twice. */
+static TkZipArchive *zip_in(int64_t h) { return (TkZipArchive *)tk_handle_addr(TK_HK_ZIPARCHIVE, h); }
+static int64_t zip_out(TkZipArchive *a)
+{
+    if (!tk_handle_adopt(TK_HK_ZIPARCHIVE, a)) {
+        zip_close(a);
+        return zip_raise(ZIP_E_IO, "zip: out of memory");
+    }
+    return zip_ok((int64_t)(intptr_t)a);
+}
+
 /* zip.open(data:@(byte)) -> $ziparchive!$ziperr */
 int64_t tk_zip_open_w(int64_t data)
 {
@@ -90,7 +106,7 @@ int64_t tk_zip_open_w(int64_t data)
     TkZipArchive *a = zip_open_mem(buf, n);
     free(buf);
     if (!a) return zip_raise_last();
-    return zip_ok((int64_t)(intptr_t)a);
+    return zip_out(a);
 }
 
 /* zip.openfile(path:str) -> $ziparchive!$ziperr
@@ -105,7 +121,7 @@ int64_t tk_zip_openfile_w(int64_t path)
     if (!path) return zip_raise(ZIP_E_IO, "zip: empty path");
     TkZipArchive *a = zip_open_file((const char *)(intptr_t)path);
     if (!a) return zip_raise_last();
-    return zip_ok((int64_t)(intptr_t)a);
+    return zip_out(a);
 }
 
 /* zip.entries(a:$ziparchive) -> @($zipentry)
@@ -114,7 +130,7 @@ int64_t tk_zip_openfile_w(int64_t path)
  * would be indexed by the caller. */
 int64_t tk_zip_entries_w(int64_t handle)
 {
-    TkZipArchive *a = (TkZipArchive *)(intptr_t)handle;
+    TkZipArchive *a = zip_in(handle);
     uint32_t n = zip_entry_count(a);
     if (!a || n == 0) return tk_arr_alloc(0, 0);
 
@@ -149,7 +165,7 @@ int64_t tk_zip_entries_w(int64_t handle)
  * value from the failure filler 0 — and the slot, not the value, decides. */
 int64_t tk_zip_read_w(int64_t handle, int64_t name)
 {
-    TkZipArchive *a = (TkZipArchive *)(intptr_t)handle;
+    TkZipArchive *a = zip_in(handle);
     if (!a || !name) return zip_raise(ZIP_E_IO, "zip: invalid argument");
     uint64_t len = 0;
     uint8_t *buf = zip_read_entry(a, (const char *)(intptr_t)name, &len);
@@ -163,6 +179,7 @@ int64_t tk_zip_read_w(int64_t handle, int64_t name)
 /* zip.close(a:$ziparchive) -> void — releases the archive and its names. */
 int64_t tk_zip_close_w(int64_t handle)
 {
-    zip_close((TkZipArchive *)(intptr_t)handle);
+    TkZipArchive *a = zip_in(handle);   /* 138.45: closed once; a second close is refused */
+    if (a) { tk_handle_drop(a); zip_close(a); }
     return 0;
 }

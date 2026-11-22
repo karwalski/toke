@@ -646,7 +646,7 @@ void tk_clos_release(int64_t v)
  * it saw; the generation moves on every drop or kind change, never on an
  * add (an add cannot make a valid address invalid).  A cache hit is two
  * thread-local loads and one atomic load. */
-typedef struct { void *p; uint32_t serial; uint16_t kind; uint32_t next_free; } TkHSlot;
+typedef struct { void *p; const void *owner; uint32_t serial; uint16_t kind; uint8_t has_views; uint32_t next_free; } TkHSlot;
 
 static struct {
     char      lock;          /* __atomic_test_and_set flag */
@@ -723,7 +723,7 @@ static void hreg_unindex(size_t i)
 /* Register p (lock held): its slot index, or -1.  An address already
  * registered keeps its slot and serial; under another kind it takes the new
  * kind (the old object was freed without a drop and its address reused). */
-static int64_t hreg_add(int kind, void *p)
+static int64_t hreg_add(int kind, void *p, const void *owner)
 {
     size_t b = hreg_find(p);
     if (b != g_hreg.icap) {
@@ -755,7 +755,14 @@ static int64_t hreg_add(int kind, void *p)
     g_hreg.slots[i].p = p;
     g_hreg.slots[i].serial = g_hreg.serial;
     g_hreg.slots[i].kind = (uint16_t)kind;
+    g_hreg.slots[i].owner = owner;
+    g_hreg.slots[i].has_views = 0;
     g_hreg.slots[i].next_free = 0;
+    if (owner) {
+        /* mark the owner, so only ITS drop scans for views */
+        size_t ob = hreg_find(owner);
+        if (ob != g_hreg.icap) g_hreg.slots[g_hreg.index[ob] - 1].has_views = 1;
+    }
     size_t mask = g_hreg.icap - 1, j = hreg_home(p, mask);
     while (g_hreg.index[j]) j = (j + 1) & mask;
     g_hreg.index[j] = i + 1u;
@@ -767,7 +774,7 @@ int64_t tk_handle_issue(int kind, void *p)
 {
     if (!p) return 0;
     hreg_lock();
-    int64_t i = hreg_add(kind, p);
+    int64_t i = hreg_add(kind, p, NULL);
     int64_t tok = i < 0 ? 0
         : (int64_t)(((uint64_t)g_hreg.slots[i].serial << 32) | (uint64_t)(i + 1));
     hreg_unlock();
@@ -790,11 +797,27 @@ void *tk_handle_token(int kind, int64_t tok)
 
 void *tk_handle_adopt(int kind, void *p)
 {
+    return tk_handle_adopt_view(kind, p, NULL);
+}
+
+void *tk_handle_adopt_view(int kind, void *p, const void *owner)
+{
     if (!p) return NULL;
     hreg_lock();
-    int64_t i = hreg_add(kind, p);
+    int64_t i = hreg_add(kind, p, owner);
     hreg_unlock();
     return i < 0 ? NULL : p;
+}
+
+const void *tk_handle_owner(const void *p)
+{
+    const void *o = NULL;
+    if (!p) return NULL;
+    hreg_lock();
+    size_t b = hreg_find(p);
+    if (b != g_hreg.icap) o = g_hreg.slots[g_hreg.index[b] - 1].owner;
+    hreg_unlock();
+    return o;
 }
 
 void *tk_handle_addr(int kind, int64_t v)
@@ -816,23 +839,38 @@ void *tk_handle_addr(int kind, int64_t v)
     return (void *)(intptr_t)v;
 }
 
+/* Free slot i, whose index bucket is b.  Lock held. */
+static void hreg_free_slot(uint32_t i, size_t b)
+{
+    hreg_unindex(b);
+    g_hreg.slots[i].p = NULL;
+    g_hreg.slots[i].owner = NULL;
+    g_hreg.slots[i].serial = 0;   /* no token names a free slot */
+    g_hreg.slots[i].kind = 0;
+    g_hreg.slots[i].has_views = 0;
+    g_hreg.slots[i].next_free = g_hreg.free_head;
+    g_hreg.free_head = i + 1u;
+}
+
 int tk_handle_drop(const void *p)
 {
     if (!p) return 0;
-    int was = 0;
+    int was = 0, views = 0;
     hreg_lock();
     size_t b = hreg_find(p);
     if (b != g_hreg.icap) {
-        uint32_t i = g_hreg.index[b] - 1;
-        hreg_unindex(b);
-        g_hreg.slots[i].p = NULL;
-        g_hreg.slots[i].serial = 0;   /* no token names a free slot */
-        g_hreg.slots[i].kind = 0;
-        g_hreg.slots[i].next_free = g_hreg.free_head;
-        g_hreg.free_head = i + 1u;
-        __atomic_add_fetch(&g_hreg_gen, 1, __ATOMIC_RELEASE);
+        views = g_hreg.slots[g_hreg.index[b] - 1].has_views;
+        hreg_free_slot(g_hreg.index[b] - 1, b);
         was = 1;
     }
+    /* The views into p die with it (a toml section of a freed document);
+     * only an owner that has had a view pays for the scan. */
+    for (uint32_t i = 0; views && i < g_hreg.n; i++) {
+        if (g_hreg.slots[i].owner != p || !g_hreg.slots[i].p) continue;
+        size_t vb = hreg_find(g_hreg.slots[i].p);
+        if (vb != g_hreg.icap) hreg_free_slot(i, vb);
+    }
+    __atomic_add_fetch(&g_hreg_gen, 1, __ATOMIC_RELEASE);
     hreg_unlock();
     return was;
 }

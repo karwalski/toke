@@ -119,6 +119,22 @@ static int64_t f64_to_i64(double d)
     return i;
 }
 
+/* 138.45: a pdfdoc is looked up in the runtime's handle registry
+ * (tk_runtime.c) before it is read.  Any value pdf.open/openfile did not hand
+ * out, or one pdf.close has closed, is answered as the null document is
+ * (pagecount 0, sizes 0, hastext false, runs/pagetext $err, close a no-op);
+ * it used to be read as a TkPdfDoc and the program died with SIGSEGV
+ * (pdf.pagecount(5)), and a second close freed the document twice. */
+static TkPdfDoc *pdf_in(int64_t h) { return (TkPdfDoc *)tk_handle_addr(TK_HK_PDFDOC, h); }
+static int64_t pdf_out(TkPdfDoc *doc, const char *who)
+{
+    if (!tk_handle_adopt(TK_HK_PDFDOC, doc)) {
+        pdf_close(doc);
+        return pdf_raise(3, who);   /* the registry could not grow */
+    }
+    return pdf_ok((int64_t)(intptr_t)doc);
+}
+
 /* pdf.open(data:@(byte)) -> $pdfdoc!$pdferr
  *
  * 0 on any rejection, which is what the compiled error-union ABI lowers the
@@ -134,7 +150,7 @@ int64_t tk_pdf_open_w(int64_t data)
     doc = pdf_open_mem(buf, n);
     free(buf);
     if (!doc) return pdf_raise_last(0, "pdf.open: not a PDF");
-    return pdf_ok((int64_t)(intptr_t)doc);
+    return pdf_out(doc, "pdf.open: out of memory");
 }
 
 /* pdf.openfile(path:str) -> $pdfdoc!$pdferr
@@ -150,20 +166,20 @@ int64_t tk_pdf_openfile_w(int64_t path)
     {
         TkPdfDoc *doc = pdf_open_file((const char *)(intptr_t)path);
         if (!doc) return pdf_raise_last(5, "pdf.openfile: the file could not be opened");
-        return pdf_ok((int64_t)(intptr_t)doc);
+        return pdf_out(doc, "pdf.openfile: out of memory");
     }
 }
 
 /* pdf.pagecount(doc:$pdfdoc) -> i64 */
 int64_t tk_pdf_pagecount_w(int64_t handle)
 {
-    return (int64_t)pdf_page_count((const TkPdfDoc *)(intptr_t)handle);
+    return (int64_t)pdf_page_count(pdf_in(handle));
 }
 
 /* pdf.pagewidth(doc:$pdfdoc; page:i64) -> f64 — /MediaBox width in points. */
 int64_t tk_pdf_pagewidth_w(int64_t handle, int64_t page)
 {
-    return f64_to_i64(pdf_page_width((TkPdfDoc *)(intptr_t)handle, (uint32_t)page));
+    return f64_to_i64(pdf_page_width(pdf_in(handle), (uint32_t)page));
 }
 
 /* pdf.pageheight(doc:$pdfdoc; page:i64) -> f64
@@ -173,7 +189,7 @@ int64_t tk_pdf_pagewidth_w(int64_t handle, int64_t page)
  * height — and assuming A4 is wrong for every US document, silently. */
 int64_t tk_pdf_pageheight_w(int64_t handle, int64_t page)
 {
-    return f64_to_i64(pdf_page_height((TkPdfDoc *)(intptr_t)handle, (uint32_t)page));
+    return f64_to_i64(pdf_page_height(pdf_in(handle), (uint32_t)page));
 }
 
 /* One $textrun as a flat seven-slot block. */
@@ -203,7 +219,7 @@ static int64_t build_run(const TkPdfRun *r)
  * sorts. */
 int64_t tk_pdf_runs_w(int64_t handle, int64_t page)
 {
-    TkPdfDoc *doc = (TkPdfDoc *)(intptr_t)handle;
+    TkPdfDoc *doc = pdf_in(handle);
     TkPdfPage *pg;
     uint32_t n, built = 0;
     int64_t arr;
@@ -236,8 +252,9 @@ int64_t tk_pdf_pagetext_w(int64_t handle, int64_t page)
 {
     char *t;
     int64_t out;
-    if (!handle) return pdf_raise(0, "pdf.pagetext: null document");
-    t = pdf_page_text((TkPdfDoc *)(intptr_t)handle, (uint32_t)page);
+    TkPdfDoc *doc = pdf_in(handle);   /* 138.45 */
+    if (!doc) return pdf_raise(0, "pdf.pagetext: null document");
+    t = pdf_page_text(doc, (uint32_t)page);
     if (!t) return pdf_raise_last(0, "pdf.pagetext: the page could not be read");
     out = dup_str(t);
     free(t);
@@ -253,12 +270,13 @@ int64_t tk_pdf_pagetext_w(int64_t handle, int64_t page)
  * document that has a text layer pays an error rate it never needed. */
 int64_t tk_pdf_hastext_w(int64_t handle, int64_t page)
 {
-    return pdf_page_has_text((TkPdfDoc *)(intptr_t)handle, (uint32_t)page) ? 1 : 0;
+    return pdf_page_has_text(pdf_in(handle), (uint32_t)page) ? 1 : 0;
 }
 
 /* pdf.close(doc:$pdfdoc) -> void — releases the document and its objects. */
 int64_t tk_pdf_close_w(int64_t handle)
 {
-    pdf_close((TkPdfDoc *)(intptr_t)handle);
+    TkPdfDoc *doc = pdf_in(handle);   /* 138.45: closed once; a second close is refused */
+    if (doc) { tk_handle_drop(doc); pdf_close(doc); }
     return 0;
 }

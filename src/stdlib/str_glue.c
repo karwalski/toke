@@ -16,6 +16,7 @@
 #include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdio.h>
 #include "tk_regex.h" /* 137.9/121.35: the one pattern language (no POSIX regex.h) */
+#include "tk_runtime.h"   /* 138.45: the handle registry (strbuf) */
 
 /* 114.53/114.54: the string→number parse wrappers signal parse failure via
  * tk_current_error (0 = ok, else a ParseErr box -- 127.241) and always return
@@ -910,6 +911,13 @@ int64_t tk_str_sha256prefix_w(int64_t s, int64_t n) {
  * We pack the pointer to this struct into an i64. */
 typedef struct { char *data; size_t len; size_t cap; } TkStrBuilder;
 
+/* 138.45: a strbuf is looked up in the runtime's handle registry
+ * (tk_runtime.c) before it is read; any value str.buf did not hand out, or
+ * one str.done has already finished, is answered as the null builder is
+ * (add/addbyte do nothing, done returns "").  It used to be read as a
+ * TkStrBuilder and the program died with SIGSEGV (str.done(5)). */
+static TkStrBuilder *strbuf_in(int64_t b) { return (TkStrBuilder *)tk_handle_addr(TK_HK_STRBUF, b); }
+
 /* str.buf() — create a new string builder */
 int64_t tk_str_buf_w(void) {
     TkStrBuilder *buf = (TkStrBuilder *)malloc(sizeof(TkStrBuilder));
@@ -919,12 +927,13 @@ int64_t tk_str_buf_w(void) {
     if (!buf->data) { free(buf); return 0; }
     buf->len = 0;
     buf->data[0] = '\0';
+    if (!tk_handle_adopt(TK_HK_STRBUF, buf)) { free(buf->data); free(buf); return 0; }
     return (int64_t)(intptr_t)buf;
 }
 
 /* str.add(buf, s) — append a string to the builder */
 int64_t tk_str_add_w(int64_t b, int64_t s) {
-    TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
+    TkStrBuilder *buf = strbuf_in(b);   /* 138.45 */
     if (!buf) return 0;
     const char *str = s ? (const char *)(intptr_t)s : "";
     size_t slen = tk_strlen(str);
@@ -943,7 +952,7 @@ int64_t tk_str_add_w(int64_t b, int64_t s) {
 
 /* str.addbyte(buf, byte) — append a single byte to the builder */
 int64_t tk_str_addbyte_w(int64_t b, int64_t ch) {
-    TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
+    TkStrBuilder *buf = strbuf_in(b);   /* 138.45 */
     if (!buf) return 0;
     if (buf->len + 2 > buf->cap) {
         size_t newcap = buf->cap * 2;
@@ -959,8 +968,9 @@ int64_t tk_str_addbyte_w(int64_t b, int64_t ch) {
 
 /* str.done(buf) — finalize and return the built string */
 int64_t tk_str_done_w(int64_t b) {
-    TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
+    TkStrBuilder *buf = strbuf_in(b);   /* 138.45 */
     if (!buf) return (int64_t)(intptr_t)"";
+    tk_handle_drop(buf);   /* finished: a second done is refused, not a double free */
     /* 127.170: one copy into a sealed string, so .len / charat / indexfrom on
      * the result are O(1).  The header is the C-string length, not buf->len:
      * str.addbyte(b; 0) can store a 0 byte, and the header must equal

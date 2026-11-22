@@ -163,9 +163,10 @@ void tk_clos_release(int64_t v);
  * its slot is reused only under a fresh serial, so an old token is refused
  * even when the slot names a newer object. */
 enum {
-    TK_HK_PROCESS = 1, TK_HK_VEC, TK_HK_STRBUF, TK_HK_SECUREBUF, TK_HK_PDFDOC,
-    TK_HK_XLSXBOOK, TK_HK_ZIPARCHIVE, TK_HK_TOMLVAL, TK_HK_SVGELEM,
-    TK_HK_TASKSCOPE
+    TK_HK_PROCESS = 1, TK_HK_VEC = 2, TK_HK_STRBUF = 3, TK_HK_SECUREBUF = 4,
+    TK_HK_PDFDOC = 5, TK_HK_XLSXBOOK = 6, TK_HK_ZIPARCHIVE = 7,
+    TK_HK_TOMLVAL = 8, TK_HK_SVGELEM = 9, TK_HK_SVGDOC = 10,
+    TK_HK_TASKSCOPE = 11, TK_HK_LLMCLIENT = 12
 };
 /* A token for p (0 when the table is full; the caller disposes of p). */
 int64_t tk_handle_issue(int kind, void *p);
@@ -174,9 +175,15 @@ void   *tk_handle_token(int kind, int64_t tok);
 /* Register p as a live object of `kind`; returns p, or NULL when the table
  * is full (or p is NULL). */
 void   *tk_handle_adopt(int kind, void *p);
+/* As tk_handle_adopt, for a VIEW into another registered object `owner` (a
+ * toml section of a document): dropping the owner drops its views too. */
+void   *tk_handle_adopt_view(int kind, void *p, const void *owner);
+/* The owner p was adopted under, or NULL (not a view, or not registered). */
+const void *tk_handle_owner(const void *p);
 /* v as a pointer when it is a live object of `kind`, else NULL. */
 void   *tk_handle_addr(int kind, int64_t v);
-/* Forget p (any kind).  1 when it was registered. */
+/* Forget p (any kind) and every view adopted with p as its owner.  1 when p
+ * was registered. */
 int     tk_handle_drop(const void *p);
 
 #endif /* TK_RUNTIME_H */
