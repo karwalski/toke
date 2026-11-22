@@ -37,8 +37,8 @@ We use sigstore cosign keyless signing so that:
 Exactly what you download. The release job takes the four platform archives that the
 build jobs of the same workflow run uploaded, and:
 
-1. writes one SPDX SBOM per archive, `<archive>.spdx.json` (syft unpacks the archive and
-   catalogs what is in it);
+1. writes one SPDX SBOM per archive, `<archive>.spdx.json` (syft unpacks the archive; see
+   "What the SBOM covers");
 2. writes `checksums.txt`: the SHA-256 of each archive and each SBOM;
 3. signs each archive and `checksums.txt` keyless, writing `<file>.cosign.bundle`;
 4. verifies every bundle with the command below, then appends one byte to each file and
@@ -155,8 +155,11 @@ Inspect its contents:
 syft convert tkc-<tag>-<platform>.tar.gz.spdx.json -o table
 ```
 
-The SBOM is taken of the archive as published: syft unpacks it and catalogs the `tkc`
-binary, the stdlib C sources and the vendored sources in `stdlib/vendor/`.
+The SBOM is taken of the archive as published: its root package is the archive, named
+with the archive's SHA-256, and syft unpacks it and lists the `tkc` executable it finds
+there. syft has no cataloger for C sources, so the stdlib C sources and the vendored
+cmark, tomlc99 and miniz sources in `stdlib/vendor/` do not appear in it; their versions
+and provenance are in `stdlib/vendor/README.md`.
 
 ---
 
@@ -179,7 +182,9 @@ The SBOM documents:
 
 This means:
 
-- There are no vendored third-party C libraries to patch.
+- The vendored C sources (cmark, tomlc99, miniz) ship as sources in the archive and
+  are compiled into a user's program only when it imports the module they back; they
+  are tracked in `stdlib/vendor/README.md`, not in the SBOM.
 - There are no transitive dependency trees to audit.
 - The compiler's attack surface at the binary level is limited to the OS libc
   and the compiler's own source.

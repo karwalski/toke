@@ -311,8 +311,11 @@ jobs:
             | sh -s -- -b /usr/local/bin "${v}"
           syft version
 
-      # syft's file source unpacks an archive and catalogs its contents (the
-      # binary, the stdlib C sources, the vendored cmark/tomlc99/miniz).
+      # syft's file source unpacks an archive: the SBOM's root package is the
+      # archive (by SHA-256) and it lists the tkc executable inside.  syft has
+      # no C-source cataloger, so the vendored cmark/tomlc99/miniz are not in
+      # it (stdlib/vendor/README.md tracks them).  Measured on a dispatch run
+      # 2026-11-22: 1 package, 1 file per archive.
       - name: Generate an SPDX SBOM for each archive
         working-directory: dist
         env:
