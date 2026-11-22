@@ -1965,9 +1965,10 @@ static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
     if (init->kind == NODE_CLOSURE) return params_sig(cx, init, 1);
     if (init->kind == NODE_FUNC_REF) return func_ref_sig(cx, init);
     if (init->kind == NODE_IDENT) {
-        int found = 0;
-        char nb[128]; TOKSTR(nb, cx->src, init);
-        const Node *ib = fnval_bind_rec(cx->fn_node, cx->src, init, nb, (int)strlen(nb), &found);
+        /* 127.469: fnval_binding, not the enclosing function alone, so a
+         * copy `let q=ad;` of a module-level function value inherits ad's
+         * signature (unrecorded, `q(2)` was lowered as its argument). */
+        const Node *ib = fnval_binding(cx, init);
         /* 127.276: `let g=inner` -- the bare name of a module function, as
          * `&inner` is.  Its signature (error type included) is what a call
          * `g(..)` is judged against and what codegen keys the error channel

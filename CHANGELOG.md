@@ -99,7 +99,9 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   a zero-argument one failed the build with E9003; it is now called through
   like a local function value, from a function or from another global's
   initialiser, and its calls are judged against its signature (wrong arity
-  E4026, a mistyped argument E4031, no fix). An assignment inside a
+  E4026, a mistyped argument E4031, no fix). A copy of one (`let q=ad;`,
+  at module level or in a function) carries its signature too; `q(2)` also
+  lowered as its argument. An assignment inside a
   module-level closure (`let k=fn(){g=7;..}`) now gets 127.465's E4070 and
   its fix. Same-named globals in two modules each read their own value.
   `--check` on the 313 workspace sources that declare a module-level `let`

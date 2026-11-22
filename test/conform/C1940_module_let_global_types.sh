@@ -21,7 +21,9 @@
 # expr_llvm_type answers that type.  types.c fnval_binding falls back to a
 # module-level `let` when no local or parameter is in force (also inside a
 # module-level initialiser), and the function-value call path accepts a
-# global.  Pointer-held values (str, arrays, maps, structs, sums) keep the
+# global.  fnval_bind_sig resolves a copy's source (`let q=ad;`) through
+# fnval_binding too, so a copy of a global function value keeps its
+# signature.  Pointer-held values (str, arrays, maps, structs, sums) keep the
 # i64 convention every consumer already handles; they are covered here so
 # that stays true.
 #
@@ -149,6 +151,27 @@ let gf=3.75;
 f=main():i64{<gf as i64};
 EOF
 
+# A copy of a global function value, at module level and inside a function,
+# calls the function (127.469 round 2).  The copy's source was looked up only
+# in the enclosing function, so `let q=ad;` got no signature and `q(2)`
+# lowered as its argument (printed 2, not 7).
+cat > copy.tk <<'EOF'
+m=a;
+i=io:std.io;
+let ad=fn(x:i64):i64{<x+5};
+let q=ad;
+let q2=q;
+let gr=&inc;
+let qr=gr;
+f=inc(x:i64):i64{<x+10};
+f=main():i64{
+  let w=ad;
+  let w2=q;
+  io.println("q=\(q(2)) q2=\(q2(3)) w=\(w(4)) w2=\(w2(1)) qr=\(qr(1))");
+  <0
+};
+EOF
+
 # runs <name> <expected-stdout> <expected-exit> <opt> <sources...>
 runs() {
     local name="$1" expected="$2" want_rc="$3" opt="$4"; shift 4
@@ -194,6 +217,7 @@ for opt in -O0 -O2; do
     runs "every global kind" "${KINDS_OUT}" 0 "${opt}" kinds.tk
     runs "same global names in two modules" "app 0.5 false 1 lib 5 true 13" 0 "${opt}" lib.tk app.tk
     runs "f64 global as the exit code" "" 3 "${opt}" rc.tk
+    runs "copies of a global function value" "q=7 q2=8 w=9 w2=6 qr=11" 0 "${opt}" copy.tk
 done
 
 # A call of a global function value is judged against its signature, as a
@@ -208,6 +232,12 @@ cat > argty.tk <<'EOF'
 m=a;
 let h=fn(x:i64):i64{<x+1};
 f=main():i64{<h("s")};
+EOF
+cat > copyarity.tk <<'EOF'
+m=a;
+let ad=fn(x:i64):i64{<x+5};
+let q=ad;
+f=main():i64{<q(1;2)};
 EOF
 cat > asgclos.tk <<'EOF'
 m=a;
@@ -229,6 +259,7 @@ checks() {
 }
 checks "global function value: wrong arity is E4026" E4026 arity.tk
 checks "global function value: mistyped argument is E4031" E4031 argty.tk
+checks "copy of a global function value: wrong arity is E4026" E4026 copyarity.tk
 checks "module-level closure assigning an immutable global is E4070" E4070 asgclos.tk
 
 echo ""
