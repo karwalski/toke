@@ -524,6 +524,14 @@ typedef struct {
 /* "No deadline" / "no cap": a deadline of 2^64-1 ms or a cap of 2^64-1
  * bytes is no limit anyway, so the value needs no flag beside it. */
 #define HTTP_CLIENT_OFF UINT64_MAX
+/* 138.49: under http.withmaxbody the response header block (status line,
+ * headers and the blank line) is capped too, at this many bytes.  Without
+ * the cap the client read the block, with or without withmaxbody, until its
+ * blank line with no ceiling, so a hostile server could grow a capped
+ * client's memory without bound (in time, only withdeadline bounded it).
+ * 64 KiB: eight times the server's own limit (HTTP_DEFAULT_MAX_HEADER_SIZE),
+ * room for cookie-heavy responses. */
+#define HTTP_CLIENT_MAX_HEADER 65536u
 
 typedef struct {
     const char  *method;

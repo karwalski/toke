@@ -809,7 +809,9 @@ Returns a copy of `client` whose requests answer `$err` for a response body long
 - **Chunked:** the body is refused on the size line of the chunk that would take it past the cap, before that chunk's data is read. A size line, chunk extension or trailer line longer than the room the cap has left plus 8 KiB is refused too.
 - **Neither header (the body ends when the connection closes):** the body is refused as soon as it passes the cap.
 
-A body exactly `bytes` long is `$ok`. A cap of `0` admits only an empty body. The cap counts the body as the response delivers it (`r.body`, decoded from chunks). A `HEAD`, `204` or `304` response has no body, so it never exceeds the cap. The response header block is not capped.
+A body exactly `bytes` long is `$ok`. A cap of `0` admits only an empty body. The cap counts the body as the response delivers it (`r.body`, decoded from chunks). A `HEAD`, `204` or `304` response has no body, so it never exceeds the cap.
+
+The same client also refuses a response **header block** (the status line, the headers and the blank line that ends them) longer than 65536 bytes, whatever `bytes` is (story 138.49): the read stops, the connection is closed, and the `msg` begins `response header block exceeds the cap (65536 bytes)`. Without it a server that never sends the blank line could grow the client's memory for as long as the request lasted. A client without `http.withmaxbody` does not cap the header block.
 
 ### http.withconnectaddr(client: $httpclient; addr: $str): $httpclient
 

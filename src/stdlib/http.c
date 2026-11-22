@@ -4123,6 +4123,13 @@ static HttpClientResp client_do_request(HttpClient *c,
                  (unsigned long long)body_cap, where_);                 \
         read_err = read_err_buf; goto read_done; } while (0)
 
+    /* 138.49: under withmaxbody, the header block is capped as well. */
+#define CLIENT_HDR_CAP_FAIL(what_) do {                                 \
+        snprintf(read_err_buf, sizeof read_err_buf,                     \
+                 "response header block exceeds the cap (%u bytes): %s", \
+                 HTTP_CLIENT_MAX_HEADER, (what_));                      \
+        read_err = read_err_buf; goto read_done; } while (0)
+
     /* Phase 1: read until we have full headers (\r\n\r\n) */
     while (!hdr_end_ptr) {
         CLIENT_GROW();
@@ -4132,8 +4139,14 @@ static HttpClientResp client_do_request(HttpClient *c,
         used += (size_t)n;
         resp[used] = '\0';
         hdr_end_ptr = strstr(resp, "\r\n\r\n");
+        /* 138.49: no blank line within the cap means the block ends past
+         * it (a terminator straddling the read ends at used + 1 or later). */
+        if (capped && !hdr_end_ptr && used >= HTTP_CLIENT_MAX_HEADER)
+            CLIENT_HDR_CAP_FAIL("no blank line yet");
     }
     hdr_end_off = (size_t)(hdr_end_ptr - resp) + 4;
+    if (capped && hdr_end_off > HTTP_CLIENT_MAX_HEADER)
+        CLIENT_HDR_CAP_FAIL("the blank line is past it");
 
     /* status line: "HTTP/1.x NNN ..." */
     {
@@ -4312,6 +4325,7 @@ read_done:
 #undef CLIENT_HOW
 #undef CLIENT_READ_FAIL
 #undef CLIENT_CAP_FAIL
+#undef CLIENT_HDR_CAP_FAIL
 #undef CLIENT_DEADLINE_ERR
     CLIENT_CLOSE();
 #undef CLIENT_SEND
