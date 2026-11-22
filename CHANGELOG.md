@@ -343,6 +343,23 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   difference, a fix: a let-kept `args.get` error read after eight or more
   later raises that use the ring (`toml.*`, `file.*`, ...) printed one of
   their messages; it now keeps its own. Conformance: C1980.
+- **Every std raise is cheaper: the error box is zeroed without a call**
+  (127.492). `tk_err_box`, which every std error return calls, zeroed the box
+  with a variable-size `memset` (a libc call and a heavier prologue on every
+  raise). A box that fits the inline 64 bytes, which is every 2-slot sum and
+  every record of up to 8 fields, is now zeroed with a constant-size store;
+  the buffer's capacity is never below 64 once it exists, so the contract
+  (a zeroed box of at least `nbytes`, one reused buffer per thread) is
+  unchanged. Measured on Darwin arm64, cli-argv form a
+  (`mt args.get(1){$ok:v v;$err:e "default"}`, all misses), `PAT_N=16384000`
+  user CPU: 0.20 s -> 0.12-0.13 s, against form b's 0.06 s (a payload-less
+  raise, the floor without any box, measures 0.09 s); the pattern bench
+  (`run_patterns.py --pattern cli-argv`, N=8,192,000, load ~18, so
+  `load_warning`) a 137.8 ms -> 90.5 ms against b 57.3 / 64.0 ms, from 2.4x
+  b to 1.4x. The rest is the two thread-local slots (`tk_current_error` and
+  the box), each a `tlv_get_addr` call on Darwin, which the emitted code
+  addresses by name. The catalogue entry is not re-ingested (127.461).
+  Conformance: C2031.
 - **A trailing `;` before `}` in a type declaration is one E2002, not four
   diagnostics** (127.339). `m=a;t=$p{x:i64;};` reported E2002, E2004, E2002,
   E2002: `parse_field_list` stopped before the `;` without consuming it, so
