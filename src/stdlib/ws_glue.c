@@ -39,7 +39,16 @@ static int64_t ws_slot(int64_t v, const char *msg) {
 static const char tk_ws_connect_fail[] =
     "ws.connect: the connection could not be opened";
 int64_t tk_ws_connect_w(int64_t url) {
-    TK_REQUIRE(TK_CAP_NET);
+    {   /* 138.19: the host and port ws_connect will dial (its own parser);
+         * a URL it refuses is checked as given, so a scoped grant denies it. */
+        const char *u = (const char *)(intptr_t)url;
+        char *wh = NULL, *wp = NULL;
+        uint16_t wport = 80;
+        int parsed = u && ws_parse_url(u, &wh, &wport, &wp) == 0;
+        TK_REQUIRE_NET(TK_CAP_NET_CONNECT, parsed ? wh : u, parsed ? wport : 0);
+        free(wh);
+        free(wp);
+    }
     if (!url) return ws_slot(0, tk_ws_connect_fail);
     WsConnResult r = ws_connect((const char *)(intptr_t)url);
     if (r.is_err || !r.conn) return ws_slot(0, tk_ws_connect_fail);

@@ -248,7 +248,7 @@ int64_t tk_ocr_runs_w(int64_t data)
  * decoded.  Gated on fs.read like every other filesystem sink (124.4c). */
 int64_t tk_ocr_runsfile_w(int64_t path)
 {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return ocr_raise(OCR_ERR_IO, "ocr.runsfile: null path");
     {
         TkOcrPage *page = ocr_recognize_file((const char *)(intptr_t)path);
@@ -323,7 +323,7 @@ int64_t tk_ocr_text_w(int64_t data)
 /* ocr.textfile(path:str) -> str!$ocrerr */
 int64_t tk_ocr_textfile_w(int64_t path)
 {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return ocr_raise(OCR_ERR_IO, "ocr.textfile: null path");
     {
         TkOcrPage *page = ocr_recognize_file((const char *)(intptr_t)path);

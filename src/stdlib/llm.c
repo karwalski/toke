@@ -212,8 +212,8 @@ static int tcp_connect(const char *host, const char *port, uint32_t timeout_ms)
      * llmtool's chatwithtools/submitresult) connects through here, and it
      * opened TCP with no grant -- a --cap-enforce binary with no net grant
      * reached the model server.  Denied without the net grant, as http.c's
-     * client connect is. */
-    TK_REQUIRE(TK_CAP_NET);
+     * client connect is.  138.19: scoped to the host and port dialled. */
+    TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, port ? strtoul(port, NULL, 10) : 0);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
@@ -330,7 +330,8 @@ static int addr_is_loopback(const struct sockaddr *sa)
 /* 1 if every address host:port resolves to is loopback (and it resolves). */
 static int host_is_loopback(const char *host, const char *port)
 {
-    TK_REQUIRE(TK_CAP_NET);   /* a name lookup is network use too */
+    /* a name lookup is network use too; 138.19: of the host about to be dialled */
+    TK_REQUIRE_NET(TK_CAP_NET_CONNECT, host, port ? strtoul(port, NULL, 10) : 0);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;

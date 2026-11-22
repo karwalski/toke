@@ -109,6 +109,25 @@ static ProcessHandle *proc_lookup(int64_t v)
     return h;
 }
 
+/* 138.19: the first token of a command string, as spawn_cmdstr splits it
+ * (whitespace-separated, "..." kept whole) -- the executable a
+ * process.exec / process.spawndetached would run, for the scoped gate. */
+static const char *cmdstr_first(const char *cmdstr, char *out, size_t outsz) {
+    if (!cmdstr || !outsz) return NULL;
+    const char *p = cmdstr;
+    size_t n = 0;
+    while (*p == ' ' || *p == '\t' || *p == '\n') p++;
+    if (!*p) return NULL;
+    if (*p == '"') {
+        p++;
+        while (*p && *p != '"' && n + 1 < outsz) out[n++] = *p++;
+    } else {
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n' && n + 1 < outsz) out[n++] = *p++;
+    }
+    out[n] = '\0';
+    return out;
+}
+
 /* 124.3 (ADR-0011): run a single command STRING as argv WITHOUT a shell.
  * Used by the convenience wrappers (exec/spawndetached) which pass one command
  * string, not a [str] argv array. The string is tokenized on whitespace (with
@@ -177,9 +196,12 @@ static int64_t proc_ok(int64_t v) {
  * matching the runtime array layout (cf. tk_str_split_w in str_glue.c).
  * We decode it into a real NULL-terminated argv[] and execvp directly. */
 int64_t tk_process_spawn_w(int64_t cmd) {
-    TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
-    if (!cmd) return proc_raise(PROCESS_ERR_IO, "process.spawn: null command array");
+    /* 138.19: the executable that would run, checked before PATH lookup by
+     * the broker's own copy of it (process_spawn searches the same start-up
+     * PATH).  Arguments are not scoped (design note, threat model). */
     const int64_t *block = (const int64_t *)(intptr_t)cmd;
+    TK_REQUIRE_CMD((cmd && block[-1] > 0) ? (const char *)(intptr_t)block[0] : NULL);
+    if (!cmd) return proc_raise(PROCESS_ERR_IO, "process.spawn: null command array");
     int64_t n = block[-1];
     if (n <= 0) return proc_raise(PROCESS_ERR_IO, "process.spawn: empty command");
     const char **argv = (const char **)malloc((size_t)(n + 1) * sizeof(char *));
@@ -285,7 +307,8 @@ int64_t tk_process_env_w(int64_t name) {
 
 /* process.exec(cmd) — run command and return stdout as string */
 int64_t tk_process_exec_w(int64_t cmd) {
-    TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
+    char first[4096];
+    TK_REQUIRE_CMD(cmdstr_first((const char *)(intptr_t)cmd, first, sizeof first));
     if (!cmd) return 0;
     int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     if (!handle) return 0;
@@ -321,7 +344,8 @@ int64_t tk_process_readlines_w(int64_t cmd) {
 
 /* process.spawndetached(cmd) — spawn a background process, don't track handle */
 int64_t tk_process_spawndetached_w(int64_t cmd) {
-    TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
+    char first[4096];
+    TK_REQUIRE_CMD(cmdstr_first((const char *)(intptr_t)cmd, first, sizeof first));
     if (!cmd) return 0;
     int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     /* Return pid as integer, don't wait */

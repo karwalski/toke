@@ -121,6 +121,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9011 | error | codegen | Package not found: no git source and no index, or not a dependency | n/s |
 | W9011 | warning | codegen | pkg.toml already exists | n/s |
 | E9012 | error | codegen | Malformed pkg.toml | n/s |
+| W9012 | warning | codegen | tkc.toml capability grant written as a quoted string | D615, D616, C1885 |
 | E9013 | error | codegen | Git clone or fetch of a dependency failed | n/s |
 | E9014 | error | codegen | No git tag matches the resolved version | n/s |
 | E9020 | error | codegen | Failed to write .tkir file | n/s |

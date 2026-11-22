@@ -394,8 +394,9 @@ toke pkg init|add|remove|resolve|fetch|list
   --lint [--fix]      run the lint rules; --fix rewrites mechanical violations
   --migrate           migrate a legacy .tk file to the default syntax
   --legacy            legacy mode (86-character syntax)
-  --allow-read[=PATH] --allow-write[=PATH] --allow-net[=HOST] --allow-env --allow-run[=PATH]
-                      grant a capability (deny-by-default, ADR-0010)
+  --allow-read[=PATH,...] --allow-write[=PATH,...] --allow-env[=KEY,...] --allow-run[=CMD,...]
+  --allow-net[=connect:HOST[:PORT],listen:ADDR:PORT,...]
+                      grant a capability, whole or scoped (deny-by-default, ADR-0010)
   --diag-json         structured JSON diagnostics (the default)
   --diag-text         human-readable diagnostics with the source line
   --diag-sarif        SARIF v2.1.0 diagnostics

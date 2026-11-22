@@ -183,6 +183,11 @@ typedef struct {
 /* Connect to a WebSocket server (ws:// URL).
  * Performs TCP connect + HTTP Upgrade handshake.
  * Caller owns the returned WsConn; release with ws_close + ws_conn_free. */
+/* 138.19: the parser ws_connect uses (ws:// URLs only), so ws.connect's
+ * capability gate checks the host and port it will dial.  host_out and
+ * path_out are malloc'd; 0 on success, -1 on a URL ws_connect refuses. */
+int ws_parse_url(const char *url, char **host_out, uint16_t *port_out, char **path_out);
+
 WsConnResult   ws_connect(const char *url);
 
 /* Send a UTF-8 text message on an open connection. */

@@ -155,6 +155,11 @@ void tmpl_register_helper(const char *name, TkTmplHelperFn fn);
 const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
                             const TkTmplVar *vars, uint64_t nvar);
 
+/* tmpl_set_page_path_check — 138.19 (round 3): tmpl_renderpage reads the
+ * page and its layout only when ok(path) returns nonzero (NULL: no check).
+ * http.servepages installs the fs.read scope check here. */
+void tmpl_set_page_path_check(int (*ok)(const char *path));
+
 /* .tki compatibility aliases (tpl.* → tpl_*) */
 #define tpl_compile            tmpl_compile
 #define tpl_free               tmpl_free

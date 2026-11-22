@@ -40,7 +40,7 @@ static int64_t md_raise(const char *msg) {
 
 /* 121.42 (5): reads the file named by the program -- fs.read, like file.read. */
 int64_t tk_md_renderfile_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return md_raise("md.renderfile: null path");
     MdFileResult r = md_render_file((const char *)(intptr_t)path);
     if (r.is_err) return md_raise(r.err_msg);

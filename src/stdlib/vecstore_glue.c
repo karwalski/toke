@@ -11,6 +11,7 @@
 #include "capabilities.h"   /* 136.15 x 121.22: flush/close take fs.write */
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,9 +27,16 @@ int64_t tk_vecstore_collection_w(int64_t store, int64_t name) {
     /* 121.42: opening a collection loads its file from the store's directory
      * when one exists -- fs.read.  Taken on every call, not only when the
      * file is there: asking first would itself probe the file system. */
-    TK_REQUIRE(TK_CAP_FS_READ);
-    if (!store || !name) return 0;
     TkVecStore *vs = (TkVecStore *)(intptr_t)store;
+    {   /* 138.19: the collection's file, {data_dir}/{name}.vecs (a name
+         * holding '/' is refused by vecstore_collection). */
+        char cpath[4096];
+        const char *dd = vs ? vecstore_datadir(vs) : NULL;
+        int ok = dd && name && snprintf(cpath, sizeof cpath, "%s/%s.vecs", dd,
+                                        (const char *)(intptr_t)name) < (int)sizeof cpath;
+        TK_REQUIRE_PATH(TK_CAP_FS_READ, ok ? cpath : NULL);
+    }
+    if (!store || !name) return 0;
     TkVecCollection *col = vecstore_collection(vs, (const char *)(intptr_t)name);
     return (int64_t)(intptr_t)col;
 }
@@ -77,7 +85,8 @@ int64_t tk_vecstore_close_w(int64_t store) {
     if (!store) return 0;
     /* 121.22: close writes only when something is dirty, so only then does it
      * take fs.write -- a read-only consumer closes without the grant. */
-    if (vecstore_dirty((TkVecStore *)(intptr_t)store)) TK_REQUIRE(TK_CAP_FS_WRITE);
+    if (vecstore_dirty((TkVecStore *)(intptr_t)store))
+        TK_REQUIRE_PATH(TK_CAP_FS_WRITE, vecstore_datadir((TkVecStore *)(intptr_t)store));   /* 138.19 */
     vecstore_close((TkVecStore *)(intptr_t)store);
     return 0;
 }
@@ -88,7 +97,8 @@ int64_t tk_vecstore_close_w(int64_t store) {
  * safe.  Returns true only when every dirty collection reached disk. */
 int64_t tk_vecstore_flush_w(int64_t store) {
     if (!store) return 0;
-    TK_REQUIRE(TK_CAP_FS_WRITE);   /* writing is the call's whole purpose */
+    /* writing is the call's whole purpose; 138.19: into the store's directory */
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, vecstore_datadir((TkVecStore *)(intptr_t)store));
     return (int64_t)vecstore_flush((TkVecStore *)(intptr_t)store);
 }
 

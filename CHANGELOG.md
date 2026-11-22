@@ -120,6 +120,48 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
   to both are in its addenda.
 
+### Changed — scoped capability grants (spec amendment 138.19)
+
+The owner accepted D1–D4 of `docs/decisions/138.19-scoped-capability-grants.md` as
+written on 2026-11-15 (register item 3.4); D5, OS-level enforcement, is 138.44.
+loke's T-59 / B9. A grant is now the whole class **or a list of scopes** — fs paths,
+`connect:HOST[:PORT]` / `listen:ADDR:PORT`, commands, env keys — and a binary that
+bakes grants can no longer be widened by whoever launches it. `true`, a bare
+`--allow-x` and `--allow-all` behave exactly as before. Normative text:
+`docs/spec/capabilities.md`.
+
+#### Breaking changes (with migration)
+
+| # | Change | Story, commit | Migration |
+|---|---|---|---|
+| 1 | **A value on a capability flag is a scope.** `--allow-read=/srv/www` grants `fs.read` under `/srv/www` only (paths compared component by component after `realpath`; a `..` or symlink escape is denied); before, the value was ignored and the flag granted every path. The same for `--allow-write`, `--allow-net` (`connect:HOST[:PORT]`, `listen:ADDR:PORT`), `--allow-run` (a command) and `--allow-env` (a key or `PREFIX*`), at compile time and at run time; a flag may repeat or list scopes with commas. A value that is not a valid scope (`--allow-net=api.example.com`) is refused: at compile time as an error, at run time with **CAP003** before `main`. Flag names now match exactly (`--allow-readers` is no longer `--allow-read`). | 138.19 — `a4350649`, `4e17ab3f` | Drop the value for the whole class (`--allow-read`), or write the scope you mean (`--allow-net=connect:api.example.com:443`). No caller in toke, toke-ooke or toke-website passed a value. |
+| 2 | **Run-time flags narrow a baked grant set** (D2). A binary built with any grant (a class key or `all` in `tkc.toml [capabilities]`, or a compile-time `--allow-*`) admits a run-time-flagged class only where both the baked grant and the flag allow it; a class no flag names keeps its baked grant. A run-time flag can no longer add a class or a scope, and `--allow-all` on such a binary is refused (CAP003, exit 1) unless the baked set is already everything. A binary with no baked grants — and one built with only `enforce` / `--cap-enforce`, which bake none — takes its run-time flags as the grant, as before. | 138.19 — `a4350649`, `4e17ab3f` | Declare every class the program needs in `[capabilities]`; to let a launcher widen the baked set, add `runtime = "union"`. |
+| 3 | **Every capability sink checks the value it uses** (a scoped gate at each acquisition site), and the class-only check passes only for the whole class, so a scoped grant fails closed wherever the scope cannot be checked. Under a scoped grant a value the sink cannot use (a null path, an unparseable URL) is denied, and `db.open(":memory:")` is checked as a path. | 138.19 — `a03e974a` | Grant the scope the sink names in its CAP002 line. |
+| 4 | **Under a scoped fs grant, sinks that open more than the value they are given are checked on what they open.** `file.listglob` returns only matches found through directories inside the scope: a match reached through `..` (which `.?`, `.*` and `.[.]` match) or a symlink that leads out is left out, not reported. `db.open` refuses an SQLite URI filename (`file:...`, CAP002, no fix). `ATTACH DATABASE`, `VACUUM INTO` and `PRAGMA temp_store_directory` go through the same gates as `db.open` (CAP002 and exit), and an `ATTACH` with a computed file name is refused. The whole classes behave as before. | 138.19 — `c952a84b` | Name the database by its path (`data/app.db`), write an `ATTACH` file name as a string literal, and grant the directories a glob walks. |
+| 5 | **Under a scoped grant, a path is checked on the way to its target, and four more ways round an fs scope are closed** (138.19 review, round 3). A path that enters a directory outside the scope before coming back in (`www/../outside/../www/f`, or out and back through a symlink) is refused with CAP002 naming that directory, and no fix, though it ends inside; the same for a command path given to `process.spawn`. `file.listglob` refuses a pattern holding `\` (glob reads it as an escape; CAP002, no fix) and checks each match's text. `http.servepages` skips a page entry that leads out of the scope and fails the render (500) of a page or layout that does. `log.openaccess` / `log.openerror` need the log's directory under a scoped `fs.write` grant (they create a `.lock` sidecar and rotated files beside the log). The whole classes behave as before. | 138.19 — `10e7fd50`, `5c5e7dcf`, `04e226d5`, `323378c1`, `9c766d25` | Name the target without going through outside directories; write a literal `*`, `?` or `[` in a glob as `[*]`, `[?]` or `[[]`; grant a log's directory, not the log file alone. |
+| 6 | **A CAP002 `fix` is offered only when applying it admits the call** (138.19 review, round 4). A path that ends outside a scope and also passes through an outside directory (`www/../outside/../other/f`) used to get its target's fix, which stopped again at the outside directory once applied; its CAP002 now names that directory, with no fix. The same for a `process.spawn` command path and a `file.listglob` pattern's literal directory. `log.openaccess` / `log.openerror` check the log's directory before the log, and the directory's fix comes only when the log resolves inside it. | 138.19 | Name the target without going through outside directories, then apply the fix the next CAP002 gives. |
+
+#### Added
+
+- **`tkc.toml [capabilities]` scope lists:** `fs_read = ["./content", "/etc/ssl/certs"]`, `net = ["connect:api.example.com:443", "listen:127.0.0.1:8080"]`, `process_spawn = ["/usr/bin/git"]`, `env_write = ["TZ"]` — one line, quoted strings, no trailing comma; a malformed array, an unknown scope prefix or an empty string is a parse error naming the line. `runtime = "union" | "narrow"`. A `# comment` may follow a value. (138.19 — `4e17ab3f`)
+- **CAP002** (D3), "capability granted, but not for this scope", a new runtime code beside CAP001. Its `TK_DIAG_JSON` line carries `capability`, `scope` (the canonical path, `connect:`/`listen:` host and port, resolved command or key) and a `fix` naming that exact scope as a run-time flag or a manifest line — whichever would admit the call — and none where no single edit would. CAP001 is unchanged, except on a narrowing binary, where its hint and `fix` name the manifest (the run-time flag it suggested cannot add a class there). The text lines escape control characters in the value they print (a newline in a path cannot forge a diagnostic line), and when no fix fits the second line says why. (138.19 — `a4350649`, `8ceed01a`)
+- **CAP003**, "run-time capability flag refused": a malformed `--allow-x=VALUE`, `--allow-all=VALUE`, or `--allow-all` on a narrowing binary stops the program before `main` with `CAP003: <flag> refused: <reason>` and, under `TK_DIAG_JSON`, a JSON line with `flag` and `reason` and no `fix`. (138.19 — `8ceed01a`)
+- **W9012** (D4, the warning release): a quoted-string grant (`fs_read = "/srv/www"`) **keeps its whole-class meaning in this release** and is reported, naming **toke 3.4.0** as the release in which it becomes a one-element scope list (the switch is 138.52). Write `true` for the whole class, or the array form. (138.19 — `4e17ab3f`)
+- `--show-limits` prints `cap-runtime` and one `cap-scope` line per scope; the `--companion` record lists each class with its scopes and the run-time mode. (138.19 — `4e17ab3f`)
+- `scripts/check_capability_sinks.py` (C470) fails with `CLASSONLY` when a sink is reached only through a class-only gate. (138.19 — `a03e974a`)
+
+#### Fixed
+
+- **`all = true` in `tkc.toml [capabilities]` parses.** It was refused as "unknown capability 'all'": the unknown-key sentinel was the same all-ones value as `TK_CAP_ALL`. (`bdca26cd`)
+- **The `--companion` record no longer calls a binary built without `enforce = true` "advisory (allow-all)"**; enforcement is the default and `enforce` is vestigial. (138.19 — `4e17ab3f`)
+- **`--diag-sarif` locates each result in the file it was emitted for.** The flush used the file current at the end of compilation, so W9012 (emitted for `tkc.toml`) was reported in the `.tk` source at the manifest's line number. (138.19 — `2f03cde1`)
+- **Documentation: `enforce = false` does not opt a build out of enforcement** (loke T-59 point 6). `docs/reference/capabilities.md` said it did; a binary built with only `enforce = false` has always stopped with CAP001 at its first ungranted call. The only opt-out is `all = true` / `--allow-all`.
+
+Not changed (not covered by the design note): `env = true` is still the short
+spelling of `env_write`, with no warning (loke T-59 point 5).
+
+Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c952a84b`, `8ceed01a`, `2f03cde1`, `541c388d`).
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

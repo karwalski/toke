@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 /*
  * Decode a log `fields` argument into a flat key/value const char ** array.
@@ -72,11 +73,30 @@ static int log_path_is_own_stream(const char *path)
                     strcmp(path, "/dev/stdout") == 0);
 }
 
+/* 138.19 (round 3): a log at a path also creates its directory,
+ * a ".<name>.lock" sidecar and rotated "<stem>.<stamp><ext>.gz" files beside
+ * it, and deletes old ones -- files a scope naming only the log does not
+ * admit.  Under a scoped fs.write grant the log's directory must therefore be
+ * admitted too.  This is checked before anything looks at the path, so a
+ * stream other than the process's own (a tty, a FIFO), which gets no
+ * sidecar, needs its directory as well: the conservative answer. */
+static const char *log_dir_of(const char *path, char dir[4096])
+{
+    const char *sl = path ? strrchr(path, '/') : NULL;
+    if (!sl) snprintf(dir, 4096, ".");
+    else if (sl == path) snprintf(dir, 4096, "/");
+    else snprintf(dir, 4096, "%.*s", (int)(sl - path), path);
+    return dir;
+}
+
 int64_t tk_log_open_access_w(int64_t path_ptr, int64_t max_lines,
                                int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
-    if (!log_path_is_own_stream(path)) TK_REQUIRE(TK_CAP_FS_WRITE);
+    if (!log_path_is_own_stream(path)) {
+        char dir[4096];   /* the directory before the file, so a fix offered works */
+        TK_REQUIRE_PATH_DIR(TK_CAP_FS_WRITE, path, log_dir_of(path, dir));   /* 138.19 */
+    }
     TkAccessLog *al = tk_access_log_open(path, (int)max_lines,
                                           (int)max_files, (int)max_age_days);
     if (!al) return -1;
@@ -88,7 +108,10 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
                               int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
-    if (!log_path_is_own_stream(path)) TK_REQUIRE(TK_CAP_FS_WRITE);   /* 121.22 */
+    if (!log_path_is_own_stream(path)) {
+        char dir[4096];   /* the directory before the file, so a fix offered works */
+        TK_REQUIRE_PATH_DIR(TK_CAP_FS_WRITE, path, log_dir_of(path, dir));   /* 121.22, 138.19 */
+    }
     TkAccessLog *el = tk_error_log_open(path, (int)max_lines,
                                          (int)max_files, (int)max_age_days);
     if (!el) return -1;

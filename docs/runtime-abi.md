@@ -1627,9 +1627,13 @@ fallback) and an opt-in ML-DSA-65 self-signed cert path. (See ADR-0013.)
 
 ## 13. Capability Broker
 
-`tk_cap_init` (called from `tk_runtime_init`) computes the effective grant set from
-the compiler-baked `@__tk_cap_baked_{grants,present,enforce}` globals unioned with
-runtime `--allow-*` flags. Each fs/net/env/process sink calls `tk_cap_check`; a
-denied call raises `CAP001` and exits before the syscall. Default mode is
-`ALLOW_ALL` (no-op) until the deny-by-default flip. Full details in
+`tk_cap_init` (called from `tk_runtime_init`) computes the grants from the
+compiler-baked `@__tk_cap_baked_{grants,present,enforce,runtime}` globals and the
+`@__tk_cap_baked_scopes` / `_nscopes` table (138.19), and the runtime `--allow-*`
+flags: unioned with the baked set when none is baked (or `runtime = "union"`),
+narrowing it otherwise. Each fs/net/env/process sink calls a scoped gate
+(`tk_cap_require_path` / `_net` / `_cmd` / `_env`) with the value it is about to
+use; a denied call raises `CAP001` (class not granted) or `CAP002` (class granted,
+scope not) and exits before the syscall. The default mode is `ENFORCE`
+(deny-by-default, since 124.4g). Full details in
 [spec/capabilities.md](spec/capabilities.md) and ADR-0010.

@@ -27,7 +27,8 @@
 #include <netdb.h>      /* gai_strerror */
 
 int64_t tk_net_portavailable_w(int64_t port) {
-    TK_REQUIRE(TK_CAP_NET);
+    /* 138.19: net_portavailable binds 127.0.0.1:port to find out -- a listen. */
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, "127.0.0.1", port);
     return (int64_t)net_portavailable((uint64_t)port);
 }
 
@@ -40,26 +41,26 @@ int64_t tk_net_portavailable_w(int64_t port) {
  * pointer on a supported platform -- is taken as the PORT and bound to
  * 127.0.0.1, the loopback address, never to every interface. */
 int64_t tk_net_listen_w(int64_t addr) {
-    TK_REQUIRE(TK_CAP_NET);
     char portaddr[32];
-    if (addr <= 0) return 0;              /* null, or no port / address at all */
-    if (addr < 65536) {
+    if (addr > 0 && addr < 65536) {
         snprintf(portaddr, sizeof portaddr, "127.0.0.1:%d", (int)addr);
         addr = (int64_t)(intptr_t)portaddr;
     }
-    const char *s = (const char *)(intptr_t)addr;
+    const char *s = addr > 0 ? (const char *)(intptr_t)addr : NULL;
 
-    /* Parse "host:port" — find last ':' to split. */
-    const char *colon = strrchr(s, ':');
-    if (!colon || colon == s) return 0;
-
-    char host[256];
-    size_t hlen = (size_t)(colon - s);
-    if (hlen >= sizeof(host)) return 0;
-    memcpy(host, s, hlen);
-    host[hlen] = '\0';
-
-    int port = atoi(colon + 1);
+    /* Parse "host:port" — find last ':' to split.  138.19: parsed first, so
+     * the listen gate sees the address and port it would bind (a value that
+     * does not parse binds nothing, and under a scoped grant is denied). */
+    const char *colon = s ? strrchr(s, ':') : NULL;
+    char host[256] = "";
+    int port = 0;
+    if (colon && colon != s && (size_t)(colon - s) < sizeof host) {
+        memcpy(host, s, (size_t)(colon - s));
+        host[colon - s] = '\0';
+        port = atoi(colon + 1);
+    }
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, host[0] ? host : s, port > 0 ? port : 0);
+    if (!s || !host[0]) return 0;         /* null, or no port / address at all */
     if (port <= 0 || port > 65535) return 0;
 
     struct sockaddr_in sa;
@@ -82,7 +83,13 @@ int64_t tk_net_listen_w(int64_t addr) {
 }
 
 int64_t tk_net_accept_w(int64_t listener) {
-    TK_REQUIRE(TK_CAP_NET);
+    /* 138.19: accepting on a listener is listen authority on the address it
+     * is bound to, so a listen:ADDR:PORT scope that admitted net.listen
+     * admits its accepts. */
+    char la[TK_CAP_ADDRSTRLEN];
+    uint64_t lport = 0;
+    const char *lhost = tk_cap_sockname((int)listener, la, &lport);
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, lhost, lport);
     int fd = accept((int)listener, NULL, NULL);
     if (fd < 0) return 0;
     return (int64_t)fd;

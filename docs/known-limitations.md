@@ -337,10 +337,14 @@ and ADR-0012.
 A compiled program has **no** fs/net/env-write/process-spawn authority unless it
 is granted — via `tkc.toml [capabilities]` / `--allow-*` at compile time (baked)
 or `--allow-*` at run time. An ungranted sink fails closed with `CAP001`.
-Consumed `--allow-*` flags are stripped from the program's own argv. One
-coarsening remains: scoped grants (`--allow-net=host`, `--allow-read=/path`) are
-honoured at the **class** level (per-path/per-host scoping is a planned
-refinement). See [spec/capabilities.md](spec/capabilities.md).
+Consumed `--allow-*` flags are stripped from the program's own argv. Since story
+138.19 a grant may be scoped to paths, `connect:` / `listen:` hosts and ports,
+commands and env keys (`CAP002` when the class is granted but not the scope), and
+run-time flags only narrow a baked grant set. Two limits remain: a quoted string in
+`tkc.toml` (`fs_read = "/srv/www"`) still grants the whole class until toke 3.4.0
+(W9012 warns), and the broker is a policy layer in the standard library, not an OS
+sandbox — native code (`extern` C, FFI) does not pass through it (OS-level
+enforcement is story 138.44). See [spec/capabilities.md](spec/capabilities.md).
 
 ### 5. Ambient-hardening behavioural changes (124.4h)
 

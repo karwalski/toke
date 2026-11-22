@@ -1,0 +1,3 @@
+# D616 fixture (138.19 D4): a quoted-string grant that is not a net scope (the shape of loke T-59 point 1; loke used a private address, this is the documentation range).
+[capabilities]
+net = "192.0.2.1:9"

@@ -1,86 +1,1039 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * capabilities.c — deny-by-default capability broker (ADR-0010, Epic 124.4a).
- * See capabilities.h for the model. This is the runtime half: broker state,
- * the tk_cap_check gate, and the runtime --allow-* flag parse. Default mode is
- * ALLOW_ALL so behaviour is unchanged until the sinks are wired (124.4c) and
- * the default is flipped (124.4g).
+ * capabilities.c — deny-by-default capability broker (ADR-0010, Epic 124.4a;
+ * scoped grants 138.19).  See capabilities.h for the model.  This is the
+ * runtime half: broker state, the class-only and scoped gates, and the
+ * runtime --allow-* flag parse.  The compiler links it too, for
+ * tk_cap_scope_syntax (manifest and --allow-* validation, src/config.c).
+ *
+ * 138.19 (D1-D3 of docs/decisions/138.19-scoped-capability-grants.md):
+ *   - each class holds, per source (baked / run time), "whole class" or a
+ *     list of scopes, parsed and canonicalised ONCE here, never on the hot
+ *     path; a scoped check is a linear scan of a manifest-sized list, once
+ *     per acquisition;
+ *   - a whole-class grant answers before any canonicalisation, so `true`,
+ *     a bare --allow-x and --allow-all behave exactly as before;
+ *   - paths: realpath() of the longest existing prefix plus the components
+ *     that do not exist yet, compared component by component (§3.1);
+ *   - hosts: the name the program passed, before DNS; IP and CIDR scopes
+ *     match IP literals only (§3.2);
+ *   - commands: argv[0] resolved as process.c resolves it (the PATH captured
+ *     at start-up) and compared by canonical path; a bare-name grant is
+ *     resolved once, here, and pinned (§3.3);
+ *   - D2: with a baked grant set, run-time flags narrow it (both must admit),
+ *     unless the manifest said runtime = "union".
  */
 #include "capabilities.h"
 
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-/* Weak baked-grant defaults: absent, no grants, not enforcing. The compiler
- * (124.4b) emits strong overrides when a program declares grants. */
+#ifndef PATH_MAX
+#define PATH_MAX 4096   /* POSIX minimum is 256; 4096 is Linux's, and the larger is the safe bound */
+#endif
+
+/* Weak baked-grant defaults: absent, no grants, no scopes, legacy union.
+ * The compiler (124.4b, 138.19) emits strong overrides when a program
+ * declares grants.  A binary built before 138.19 has no scope table and no
+ * runtime mode, so it behaves exactly as before. */
 __attribute__((weak)) const uint32_t __tk_cap_baked_grants  = 0u;
 __attribute__((weak)) const int      __tk_cap_baked_present = 0;
 __attribute__((weak)) const int      __tk_cap_baked_enforce = 0;
+__attribute__((weak)) const TkCapBakedScope *const __tk_cap_baked_scopes = NULL;
+__attribute__((weak)) const int      __tk_cap_baked_nscopes = 0;
+__attribute__((weak)) const int      __tk_cap_baked_runtime = TK_CAP_RUNTIME_LEGACY;
 
-/* ── Broker state ─────────────────────────────────────────────────── */
+/* ── Scope and grant state ────────────────────────────────────────── */
+
+enum { HK_NAME = 1, HK_WILD, HK_IP4, HK_IP6, HK_CIDR4, HK_CIDR6 };
+
+typedef struct {
+    int   kind;            /* TK_CAP_SK_* */
+    int   dead;            /* could not be canonicalised: admits nothing */
+    char *text;            /* canonical path / command; env key without '*'; net host */
+    int   hk;              /* HK_*, net only */
+    unsigned char addr[16];
+    int   prefix;          /* CIDR length */
+    long  port;            /* -1: any port */
+    int   wild;            /* env: the key had a trailing '*' */
+} Scope;
+
+typedef struct {
+    int    named;          /* this source mentions the class at all */
+    int    whole;          /* the whole class */
+    int    n, cap;
+    Scope *v;
+} Grant;
+
+#define SRC_BAKED 0
+#define SRC_RUN   1
+static Grant g_src[2][TK_CAP_NCLASSES];
+
 /* 124.4g: deny-by-default. The mode with no baked grants and no runtime flags is
  * ENFORCE — a program has no fs/net/env/process authority unless it is granted.
  * Only an explicit --allow-all (baked or runtime) opts back into ALLOW_ALL. */
 static TkCapMode g_mode   = TK_CAP_MODE_ENFORCE;
-static uint32_t  g_grants = 0u;
 static int       g_inited = 0;
+static int       g_narrow = 0;     /* 138.19 D2: run-time flags intersect the baked set */
+static char     *g_path0  = NULL;  /* PATH at start-up: process.c spawns through the same snapshot */
+
+static const char *const k_dot[TK_CAP_NCLASSES]  =
+    { "fs.read", "fs.write", "net", "env.write", "process.spawn" };
+static const char *const k_key[TK_CAP_NCLASSES]  =
+    { "fs_read", "fs_write", "net", "env_write", "process_spawn" };
+static const char *const k_flag[TK_CAP_NCLASSES] =
+    { "--allow-read", "--allow-write", "--allow-net", "--allow-env", "--allow-run" };
+
+/* The class index of a TK_CAP_* value (a class bit, or a net direction). */
+static int class_index(uint32_t cap) {
+    if (cap & TK_CAP_FS_READ)       return TK_CAP_IDX_FS_READ;
+    if (cap & TK_CAP_FS_WRITE)      return TK_CAP_IDX_FS_WRITE;
+    if (cap & TK_CAP_NET)           return TK_CAP_IDX_NET;
+    if (cap & TK_CAP_ENV_WRITE)     return TK_CAP_IDX_ENV_WRITE;
+    if (cap & TK_CAP_PROCESS_SPAWN) return TK_CAP_IDX_PROCESS_SPAWN;
+    return -1;
+}
+
+static uint32_t class_bit(int ci) { return 1u << ci; }
+
+/* ── Scope syntax (shared with the compiler) ──────────────────────── */
+
+static void seterr(char *err, unsigned errsz, const char *msg) {
+    if (err && errsz) snprintf(err, errsz, "%s", msg);
+}
+
+/* A port: decimal, or `*` (any).  0 is a port only for listen (ephemeral). */
+static int parse_port(const char *s, int allow_zero, long *out) {
+    if (!strcmp(s, "*")) { *out = -1; return 1; }
+    if (!*s) return 0;
+    long v = 0;
+    for (const char *p = s; *p; p++) {
+        if (!isdigit((unsigned char)*p)) return 0;
+        v = v * 10 + (*p - '0');
+        if (v > 65535) return 0;
+    }
+    if (v == 0 && !allow_zero) return 0;
+    *out = v;
+    return 1;
+}
+
+/* A DNS name: dot-separated labels of [A-Za-z0-9_-], 1..63 each, <= 253. */
+static int valid_dns(const char *h) {
+    size_t n = strlen(h), lab = 0;
+    if (n == 0 || n > 253) return 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)h[i];
+        if (c == '.') { if (lab == 0) return 0; lab = 0; continue; }
+        if (!(isalnum(c) || c == '-' || c == '_')) return 0;
+        if (++lab > 63) return 0;
+    }
+    return lab > 0;
+}
+
+/* Lowercase `in` into out, dropping [] around an IPv6 literal and one
+ * trailing dot.  Returns 0 when it does not fit. */
+static int norm_host(const char *in, char *out, size_t outsz) {
+    size_t n = strlen(in);
+    if (n >= 2 && in[0] == '[' && in[n - 1] == ']') { in++; n -= 2; }
+    if (n > 1 && in[n - 1] == '.') n--;
+    if (n == 0 || n >= outsz) return 0;
+    for (size_t i = 0; i < n; i++) out[i] = (char)tolower((unsigned char)in[i]);
+    out[n] = '\0';
+    return 1;
+}
+
+/* Classify a host (no brackets): IP, CIDR, *.wildcard or DNS name. */
+static int parse_hostpart(const char *h, int lis, Scope *s, char *err, unsigned errsz) {
+    char buf[256];
+    if (!norm_host(h, buf, sizeof buf)) { seterr(err, errsz, "empty or over-long host"); return 0; }
+    const char *slash = strchr(buf, '/');
+    if (slash) {
+        char ip[256];
+        size_t al = (size_t)(slash - buf);
+        memcpy(ip, buf, al); ip[al] = '\0';
+        char *end = NULL;
+        long len = strtol(slash + 1, &end, 10);
+        if (!slash[1] || *end || lis) {
+            seterr(err, errsz, lis ? "a listen address is one IP literal, not a CIDR block"
+                                      : "a CIDR block is ADDRESS/LENGTH");
+            return 0;
+        }
+        if (inet_pton(AF_INET, ip, s->addr) == 1 && len >= 0 && len <= 32) s->hk = HK_CIDR4;
+        else if (inet_pton(AF_INET6, ip, s->addr) == 1 && len >= 0 && len <= 128) s->hk = HK_CIDR6;
+        else { seterr(err, errsz, "a CIDR block is an IPv4 or IPv6 address and a prefix length"); return 0; }
+        s->prefix = (int)len;
+    } else if (inet_pton(AF_INET, buf, s->addr) == 1) {
+        s->hk = HK_IP4;
+    } else if (inet_pton(AF_INET6, buf, s->addr) == 1) {
+        s->hk = HK_IP6;
+    } else if (lis) {
+        seterr(err, errsz, "a listen address is an IP literal (127.0.0.1, 0.0.0.0, [::1])");
+        return 0;
+    } else if (buf[0] == '*' && buf[1] == '.' && valid_dns(buf + 2)) {
+        s->hk = HK_WILD;
+    } else if (valid_dns(buf)) {
+        s->hk = HK_NAME;
+    } else {
+        seterr(err, errsz, "a host is a DNS name, *.domain, an IP literal or a CIDR block");
+        return 0;
+    }
+    s->text = strdup(s->hk == HK_WILD ? buf + 1 : buf);   /* the wildcard keeps ".domain" */
+    if (!s->text) { seterr(err, errsz, "out of memory"); return 0; }
+    return 1;
+}
+
+/* connect:HOST[:PORT] / listen:ADDR:PORT, the prefix already removed. */
+static int parse_net(const char *in, int lis, Scope *s, char *err, unsigned errsz) {
+    char host[300], port[16] = "";
+    const char *pstart = NULL;
+    if (in[0] == '[') {                              /* [IPv6] or [IPv6/len] */
+        const char *rb = strchr(in, ']');
+        if (!rb || (size_t)(rb - in) >= sizeof host) { seterr(err, errsz, "unterminated [IPv6] host"); return 0; }
+        memcpy(host, in + 1, (size_t)(rb - in - 1)); host[rb - in - 1] = '\0';
+        if (rb[1] == ':') pstart = rb + 2;
+        else if (rb[1]) { seterr(err, errsz, "expected :PORT after ]"); return 0; }
+    } else {
+        const char *c1 = strchr(in, ':');
+        if (c1 && strchr(c1 + 1, ':')) {             /* bare IPv6, no port */
+            if (strlen(in) >= sizeof host) { seterr(err, errsz, "host too long"); return 0; }
+            strcpy(host, in);
+        } else {
+            size_t hl = c1 ? (size_t)(c1 - in) : strlen(in);
+            if (hl >= sizeof host) { seterr(err, errsz, "host too long"); return 0; }
+            memcpy(host, in, hl); host[hl] = '\0';
+            if (c1) pstart = c1 + 1;
+        }
+    }
+    if (pstart) {
+        if (strlen(pstart) >= sizeof port || !parse_port(pstart, lis, &s->port)) {
+            seterr(err, errsz, lis ? "a listen port is 0-65535 or *"
+                                      : "a connect port is 1-65535 or *");
+            return 0;
+        }
+    } else if (lis) {
+        seterr(err, errsz, "a listen scope needs an explicit address and port: listen:ADDR:PORT");
+        return 0;
+    } else {
+        s->port = -1;                                /* an omitted connect port: any */
+    }
+    return parse_hostpart(host, lis, s, err, errsz);
+}
+
+/* Parse `text` as a scope of class ci into s (net hosts parsed, paths and
+ * commands NOT yet canonicalised; s->text then holds a copy of the text).
+ * Returns the kind, or 0 with err set. */
+static int parse_scope(int ci, const char *text, Scope *s, char *err, unsigned errsz) {
+    memset(s, 0, sizeof *s);
+    s->port = -1;
+    if (!text || !*text) { seterr(err, errsz, "an empty scope"); return 0; }
+    switch (ci) {
+    case TK_CAP_IDX_FS_READ: case TK_CAP_IDX_FS_WRITE: case TK_CAP_IDX_PROCESS_SPAWN:
+        if (text[0] == '~' && text[1] && text[1] != '/') {
+            seterr(err, errsz, "~user is not expanded; write ~/ or the full path");
+            return 0;
+        }
+        s->kind = ci == TK_CAP_IDX_PROCESS_SPAWN ? TK_CAP_SK_CMD : TK_CAP_SK_PATH;
+        break;
+    case TK_CAP_IDX_NET:
+        if (!strncmp(text, "connect:", 8)) {
+            s->kind = TK_CAP_SK_CONNECT;
+            return parse_net(text + 8, 0, s, err, errsz) ? s->kind : 0;
+        }
+        if (!strncmp(text, "listen:", 7)) {
+            s->kind = TK_CAP_SK_LISTEN;
+            return parse_net(text + 7, 1, s, err, errsz) ? s->kind : 0;
+        }
+        seterr(err, errsz, "a net scope is connect:HOST[:PORT] or listen:ADDR:PORT");
+        return 0;
+    case TK_CAP_IDX_ENV_WRITE: {
+        const char *star = strchr(text, '*');
+        if (strchr(text, '=')) { seterr(err, errsz, "an environment key has no '='"); return 0; }
+        if (star && star[1]) { seterr(err, errsz, "'*' is allowed only as the last character (a prefix)"); return 0; }
+        s->kind = TK_CAP_SK_ENV;
+        s->wild = star != NULL;
+        break;
+    }
+    default:
+        seterr(err, errsz, "not a capability class");
+        return 0;
+    }
+    s->text = strdup(text);
+    if (!s->text) { seterr(err, errsz, "out of memory"); return 0; }
+    if (s->kind == TK_CAP_SK_ENV && s->wild) s->text[strlen(s->text) - 1] = '\0';
+    return s->kind;
+}
+
+int tk_cap_scope_syntax(int cls, const char *text, char *err, unsigned errsz) {
+    Scope s;
+    int k = parse_scope(cls, text, &s, err, errsz);
+    free(s.text);
+    return k;
+}
+
+/* ── Canonicalisation (§3.1, §3.3) ────────────────────────────────── */
+
+/* `in` as an absolute path (PATH_MAX buffer), not yet canonical. */
+static int abs_path(const char *in, int expand_tilde, char *abs) {
+    if (!in || !*in) return 0;
+    if (expand_tilde && in[0] == '~' && (in[1] == '\0' || in[1] == '/')) {
+        const char *home = getenv("HOME");
+        if (!home || !*home) return 0;
+        if (snprintf(abs, PATH_MAX, "%s%s", home, in + 1) >= PATH_MAX) return 0;
+    } else if (in[0] == '/') {
+        if (snprintf(abs, PATH_MAX, "%s", in) >= PATH_MAX) return 0;
+    } else {
+        char cwd[PATH_MAX];
+        if (!getcwd(cwd, sizeof cwd)) return 0;
+        if (snprintf(abs, PATH_MAX, "%s/%s", cwd, in) >= PATH_MAX) return 0;
+    }
+    return 1;
+}
+
+/* The canonical absolute form of `in` (PATH_MAX buffer): realpath() of its
+ * longest existing prefix, then the components that do not exist yet, with
+ * `.` dropped and `..` taken lexically.  A component that EXISTS but does not
+ * resolve (a dangling symlink, a loop) fails: a symlink must never pass the
+ * check by pointing at something not yet created.  `~` expands from HOME only
+ * when expand_tilde (grants; a program's own "~/x" is a relative path). */
+static int canon_path(const char *in, int expand_tilde, char *out) {
+    char abs[PATH_MAX];
+    if (!abs_path(in, expand_tilde, abs)) return 0;
+    /* Components of abs (empty and "." dropped; ".." kept for realpath). */
+    char *comp[PATH_MAX / 2];
+    int nc = 0;
+    for (char *p = abs; *p; ) {
+        while (*p == '/') *p++ = '\0';
+        if (!*p) break;
+        comp[nc] = p;
+        while (*p && *p != '/') p++;
+        if (strcmp(comp[nc], ".") != 0) nc++;
+    }
+    /* Longest prefix that realpath resolves. */
+    char head[PATH_MAX], res[PATH_MAX];
+    int k = nc;
+    for (; k >= 0; k--) {
+        size_t hl = 0;
+        head[0] = '\0';
+        for (int i = 0; i < k; i++) {
+            int w = snprintf(head + hl, sizeof head - hl, "/%s", comp[i]);
+            if (w < 0 || (size_t)w >= sizeof head - hl) return 0;
+            hl += (size_t)w;
+        }
+        if (k == 0) snprintf(head, sizeof head, "/");
+        if (realpath(head, res)) break;
+        if (k == 0) return 0;
+    }
+    if (k < nc) {
+        /* comp[k] did not resolve: it must not exist at all. */
+        char probe[PATH_MAX];
+        struct stat st;
+        if (snprintf(probe, sizeof probe, "%s/%s", strcmp(res, "/") ? res : "", comp[k])
+                >= (int)sizeof probe) return 0;
+        if (lstat(probe, &st) == 0) return 0;
+    }
+    size_t ol = strlen(res);
+    if (ol >= PATH_MAX) return 0;
+    memcpy(out, res, ol + 1);
+    for (int i = k; i < nc; i++) {
+        if (!strcmp(comp[i], "..")) {
+            char *sl = strrchr(out, '/');
+            if (sl && sl != out) *sl = '\0'; else snprintf(out, PATH_MAX, "/");
+            continue;
+        }
+        ol = strlen(out);
+        int w = snprintf(out + ol, PATH_MAX - ol, "%s%s", (ol == 1) ? "" : "/", comp[i]);
+        if (w < 0 || (size_t)w >= PATH_MAX - ol) return 0;
+    }
+    return 1;
+}
+
+/* argv[0] as process.c's exec_no_ambient_path resolves it: a name with a `/`
+ * is a path; a bare name is searched on the PATH captured at start-up, first
+ * regular executable file wins.  Empty PATH entries are skipped, as that
+ * function's strtok_r skips them (it never searches "." for one). */
+static int resolve_cmd(const char *argv0, int expand_tilde, char *out) {
+    if (!argv0 || !*argv0) return 0;
+    if (strchr(argv0, '/') || (expand_tilde && argv0[0] == '~'))
+        return canon_path(argv0, expand_tilde, out);
+    const char *path = g_path0 ? g_path0 : "/usr/bin:/bin";
+    const char *p = path;
+    for (;;) {
+        const char *e = strchr(p, ':');
+        size_t dl = e ? (size_t)(e - p) : strlen(p);
+        char full[PATH_MAX];
+        struct stat st;
+        if (dl && snprintf(full, sizeof full, "%.*s/%s", (int)dl, p, argv0) < (int)sizeof full &&
+            access(full, X_OK) == 0 && stat(full, &st) == 0 && S_ISREG(st.st_mode))
+            return canon_path(full, 0, out);
+        if (!e) break;
+        p = e + 1;
+    }
+    return 0;
+}
+
+/* ── Grant tables ─────────────────────────────────────────────────── */
+
+static int grant_push(Grant *g, const Scope *s) {
+    if (g->n == g->cap) {
+        int nc = g->cap ? g->cap * 2 : 4;
+        Scope *v = (Scope *)realloc(g->v, (size_t)nc * sizeof *v);
+        if (!v) return 0;
+        g->v = v; g->cap = nc;
+    }
+    g->v[g->n++] = *s;
+    return 1;
+}
+
+/* Add `text` as a scope of class ci to source src.  A scope that does not
+ * parse or canonicalise stays in the list, dead: the class is still granted
+ * for scopes (CAP002, not CAP001) and it admits nothing. */
+static int add_scope(int src, int ci, const char *text, char *err, unsigned errsz) {
+    Grant *g = &g_src[src][ci];
+    Scope s;
+    g->named = 1;
+    if (!parse_scope(ci, text, &s, err, errsz)) {
+        free(s.text);
+        memset(&s, 0, sizeof s);
+        s.dead = 1;
+        (void)grant_push(g, &s);   /* text NULL: nothing to free if it fails */
+        return 0;
+    }
+    if (s.kind == TK_CAP_SK_PATH || s.kind == TK_CAP_SK_CMD) {
+        char buf[PATH_MAX];
+        int ok = s.kind == TK_CAP_SK_PATH ? canon_path(s.text, 1, buf)
+                                           : resolve_cmd(s.text, 1, buf);
+        free(s.text);
+        s.text = ok ? strdup(buf) : NULL;
+        if (!s.text) s.dead = 1;
+    }
+    if (!grant_push(g, &s)) free(s.text);   /* out of memory: the scope admits nothing */
+    return 1;
+}
+
+/* ── Requests and matching ────────────────────────────────────────── */
+
+typedef struct {
+    int  kind;                 /* TK_CAP_SK_* */
+    int  ok;                   /* canonicalised / parsed */
+    const char *raw;
+    char canon[PATH_MAX];      /* path / command; env key; net host */
+    int  fam;                  /* 4 / 6 when the host is an IP literal */
+    unsigned char addr[16];
+    long port;
+} Req;
+
+static int prefix_eq(const unsigned char *a, const unsigned char *b, int bits) {
+    int full = bits / 8, rem = bits % 8;
+    if (memcmp(a, b, (size_t)full) != 0) return 0;
+    if (!rem) return 1;
+    unsigned char m = (unsigned char)(0xFFu << (8 - rem));
+    return (a[full] & m) == (b[full] & m);
+}
+
+static int path_under(const char *req, const char *grant) {
+    size_t gl = strlen(grant);
+    if (gl == 1 && grant[0] == '/') return 1;
+    return strncmp(req, grant, gl) == 0 && (req[gl] == '\0' || req[gl] == '/');
+}
+
+static int scope_match(const Scope *s, const Req *q) {
+    if (s->dead || s->kind != q->kind || !q->ok) return 0;
+    switch (s->kind) {
+    case TK_CAP_SK_PATH: return path_under(q->canon, s->text);
+    case TK_CAP_SK_CMD:  return strcmp(q->canon, s->text) == 0;
+    case TK_CAP_SK_ENV:
+        return s->wild ? strncmp(q->raw, s->text, strlen(s->text)) == 0
+                       : strcmp(q->raw, s->text) == 0;
+    case TK_CAP_SK_CONNECT: case TK_CAP_SK_LISTEN:
+        if (s->port != -1 && s->port != q->port) return 0;
+        switch (s->hk) {
+        case HK_NAME:  return !q->fam && strcmp(q->canon, s->text) == 0;
+        case HK_WILD: {
+            size_t ql = strlen(q->canon), sl = strlen(s->text);   /* s->text is ".domain" */
+            return !q->fam && ql > sl && strcmp(q->canon + ql - sl, s->text) == 0;
+        }
+        case HK_IP4:   return q->fam == 4 && memcmp(q->addr, s->addr, 4) == 0;
+        case HK_IP6:   return q->fam == 6 && memcmp(q->addr, s->addr, 16) == 0;
+        case HK_CIDR4: return q->fam == 4 && prefix_eq(q->addr, s->addr, s->prefix);
+        case HK_CIDR6: return q->fam == 6 && prefix_eq(q->addr, s->addr, s->prefix);
+        default:       return 0;
+        }
+    default: return 0;
+    }
+}
+
+static int admits(const Grant *g, const Req *q) {
+    if (g->whole) return 1;
+    for (int i = 0; i < g->n; i++)
+        if (scope_match(&g->v[i], q)) return 1;
+    return 0;
+}
+
+/* The whole class, effectively (baked and run time combined). */
+static int eff_whole(int ci) {
+    if (g_mode == TK_CAP_MODE_ALLOW_ALL) return 1;
+    const Grant *b = &g_src[SRC_BAKED][ci], *r = &g_src[SRC_RUN][ci];
+    if (g_narrow) return b->whole && (!r->named || r->whole);
+    return b->whole || r->whole;
+}
+
+/* The class granted in any form (whole or for scopes). */
+static int eff_granted(int ci) {
+    if (g_mode == TK_CAP_MODE_ALLOW_ALL) return 1;
+    const Grant *b = &g_src[SRC_BAKED][ci], *r = &g_src[SRC_RUN][ci];
+    int gb = b->whole || b->n > 0, gr = r->whole || r->n > 0;
+    if (g_narrow) return gb && (!r->named || gr);
+    return gb || gr;
+}
+
+/* ── Diagnostics ──────────────────────────────────────────────────── */
+
+static void json_str(FILE *f, const char *s) {
+    fputc('"', f);
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p == '"' || *p == '\\') fprintf(f, "\\%c", *p);
+        else if (*p < 0x20) fprintf(f, "\\u%04x", (unsigned)*p);
+        else fputc(*p, f);
+    }
+    fputc('"', f);
+}
+
+/* The --allow-* flag that grants a given class (for the diagnostic hint). */
+static const char *cap_flag_hint(uint32_t cap) {
+    int ci = class_index(cap);
+    return ci >= 0 ? k_flag[ci] : "--allow-all";
+}
+
+/* CAP001 as before 138.19, byte for byte, when run-time flags can add the
+ * class.  On a binary whose baked set they may only narrow (D2), the run-time
+ * half of the advice is wrong, so the hint and fix name the manifest alone --
+ * and the fix is left out when a run-time flag scopes the class, since it
+ * would still narrow the new grant. */
+static void deny_class(uint32_t cap) {
+    int ci = class_index(cap);
+    const char *cls = tk_cap_class_name(cap);
+    const char *flag = cap_flag_hint(cap);
+    if (!g_narrow || ci < 0) {
+        fprintf(stderr,
+            "CAP001: capability '%s' required but not granted\n"
+            "  grant it at run time with %s, or declare it in tkc.toml [capabilities]\n",
+            cls, flag);
+        if (getenv("TK_DIAG_JSON"))
+            fprintf(stderr,
+                "{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\","
+                "\"capability\":\"%s\",\"fix\":\"grant %s or tkc.toml [capabilities] %s=true\"}\n",
+                cls, flag, cls);
+        exit(1);
+    }
+    fprintf(stderr,
+        "CAP001: capability '%s' required but not granted\n"
+        "  this binary's grants are baked, and run-time flags can narrow them, not add to them:\n"
+        "  declare it in tkc.toml [capabilities] (%s = true, or a scope list) and rebuild\n",
+        cls, k_key[ci]);
+    if (getenv("TK_DIAG_JSON")) {
+        fprintf(stderr, "{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\","
+                        "\"capability\":\"%s\"", cls);
+        if (!g_src[SRC_RUN][ci].named || g_src[SRC_RUN][ci].whole)
+            fprintf(stderr, ",\"fix\":\"tkc.toml [capabilities] %s = true\"", k_key[ci]);
+        fputs("}\n", stderr);
+    }
+    exit(1);
+}
+
+/* A value the program controls (a path, key, host or flag), on a TEXT line.
+ * A newline in it would start a line of its own -- a forged diagnostic, a
+ * fake {"diagnostic_id":...} record for a repair loop that reads stderr line
+ * by line (138.19 round 2) -- so control characters are written as \n, \r,
+ * \t or \xHH, and a backslash as \\.  The JSON line escapes with json_str. */
+static void text_str(FILE *f, const char *s) {
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p == '\\')      fputs("\\\\", f);
+        else if (*p == '\n') fputs("\\n", f);
+        else if (*p == '\r') fputs("\\r", f);
+        else if (*p == '\t') fputs("\\t", f);
+        else if (*p < 0x20 || *p == 0x7f) fprintf(f, "\\x%02x", (unsigned)*p);
+        else fputc(*p, f);
+    }
+}
+
+/* Does `s` hold a character a tkc.toml basic string cannot carry as is? */
+static int toml_unsafe(const char *s) {
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++)
+        if (*p == '"' || *p == '\\' || *p < 0x20 || *p == 0x7f) return 1;
+    return 0;
+}
+
+/* CAP002 (D3): the class is granted, but not for this scope.  `scope` is
+ * the canonical scope that would admit the call (or the raw value, when it
+ * could not be canonicalised: canon_ok = 0).  The fix names exactly that
+ * scope in the one place that would admit it:
+ *   - a run-time flag, when run-time flags union (no baked set, or
+ *     runtime = "union") or when only the run-time flags exclude it;
+ *   - the manifest, when only the baked grant excludes it;
+ * and is absent when both exclude it, when no single scope can be named,
+ * when the scope cannot be written in that place (a ',' in a run-time flag
+ * value; a quote, backslash or control character in a tkc.toml string), or
+ * when the caller gives a reason no scope admits the value (`why`). */
+static void deny_scope(int ci, const char *scope, int canon_ok, int b, int r, const char *why) {
+    const Grant *rg = &g_src[SRC_RUN][ci];
+    int want = 0;    /* where one edit would admit it: 1 a run-time flag, 2 the manifest */
+    if (!g_narrow || (b && !r)) want = 1;
+    else if (!b && (!rg->named || r)) want = 2;
+    enum { CAN = 0, CANT_GIVEN, CANT_SYNTAX, CANT_COMMA, CANT_TOML } cant = CAN;
+    if (why || !canon_ok) cant = CANT_GIVEN;               /* the hint below says why */
+    else if (!tk_cap_scope_syntax(ci, scope, NULL, 0)) cant = CANT_SYNTAX;
+    else if (want == 1 && strchr(scope, ',')) cant = CANT_COMMA;
+    else if (want == 2 && toml_unsafe(scope)) cant = CANT_TOML;
+    int where = cant == CAN ? want : 0;
+
+    if (why && !*scope) {
+        fprintf(stderr, "CAP002: capability '%s' is granted, but only for listed scopes\n", k_dot[ci]);
+    } else {
+        fprintf(stderr, "CAP002: capability '%s' is granted, but not for '", k_dot[ci]);
+        text_str(stderr, scope);
+        fputs("'\n", stderr);
+    }
+    if (why) {
+        fprintf(stderr, "  %s\n", why);
+    } else if (where == 1) {
+        fprintf(stderr, "  grant this scope at run time with %s=", k_flag[ci]);
+        text_str(stderr, scope);
+        fputc('\n', stderr);
+    } else if (where == 2) {
+        fprintf(stderr, "  add it to tkc.toml [capabilities] and rebuild: %s = [\"", k_key[ci]);
+        text_str(stderr, scope);
+        fputs("\"]\n  (run-time flags can narrow this binary's baked grants, not widen them)\n",
+              stderr);
+    } else if (!canon_ok) {
+        fprintf(stderr, "  it does not resolve to a canonical %s (a dangling symlink, a loop, "
+                        "a name not on PATH, or too long), so no scope admits it\n",
+                ci == TK_CAP_IDX_PROCESS_SPAWN ? "command" : "scope");
+    } else if (cant == CANT_SYNTAX) {
+        fprintf(stderr, "  it cannot be written as a %s scope, so no fix is offered\n", k_dot[ci]);
+    } else if (cant == CANT_COMMA) {
+        fprintf(stderr, "  it cannot be granted with %s: the flag splits its value on ',', "
+                        "and this scope contains one, so no fix is offered\n", k_flag[ci]);
+    } else if (cant == CANT_TOML) {
+        fprintf(stderr, "  it cannot be written in tkc.toml: a scope string there takes no quote, "
+                        "backslash or control character, so no fix is offered\n");
+    } else {
+        fprintf(stderr, "  both the baked grant (tkc.toml [capabilities] %s) and the run-time "
+                        "%s flags exclude it\n", k_key[ci], k_flag[ci]);
+    }
+    if (getenv("TK_DIAG_JSON")) {
+        fprintf(stderr, "{\"diagnostic_id\":\"CAP002\",\"severity\":\"error\",\"stage\":\"runtime\","
+                        "\"capability\":\"%s\",\"scope\":", k_dot[ci]);
+        json_str(stderr, scope);
+        if (where) {
+            char fix[PATH_MAX + 64];
+            if (where == 1) snprintf(fix, sizeof fix, "%s=%s", k_flag[ci], scope);
+            else            snprintf(fix, sizeof fix, "%s = [\"%s\"]", k_key[ci], scope);
+            fputs(",\"fix\":", stderr);
+            json_str(stderr, fix);
+        }
+        fputs("}\n", stderr);
+    }
+    exit(1);
+}
+
+/* 138.19 §3.4: a class-only gate reached while the class is granted for
+ * scopes only.  It fails closed; no single scope can be named. */
+static void deny_classonly(int ci) {
+    fprintf(stderr,
+        "CAP002: capability '%s' is granted, but only for listed scopes, and this std entry "
+        "checks the whole class\n"
+        "  (an entry the scoped gates do not cover yet fails closed rather than ignore the scopes)\n",
+        k_dot[ci]);
+    if (getenv("TK_DIAG_JSON"))
+        fprintf(stderr, "{\"diagnostic_id\":\"CAP002\",\"severity\":\"error\",\"stage\":\"runtime\","
+                        "\"capability\":\"%s\",\"scope\":\"\"}\n", k_dot[ci]);
+    exit(1);
+}
+
+void tk_cap_deny(uint32_t cap) {
+    int ci = class_index(cap);
+    if (ci >= 0 && eff_granted(ci)) deny_classonly(ci);
+    deny_class(cap);
+}
+
+/* Is request q of class ci admitted?  b / r: by the baked / run-time grant. */
+static int req_admitted(int ci, const Req *q, int *b, int *r) {
+    *b = admits(&g_src[SRC_BAKED][ci], q);
+    *r = admits(&g_src[SRC_RUN][ci], q);
+    return g_narrow ? (*b && (!g_src[SRC_RUN][ci].named || *r)) : (*b || *r);
+}
+
+/* Evaluate request q of class ci; returns only when it is admitted. */
+static void require(int ci, const Req *q, const char *scope_text) {
+    int b, r;
+    if (req_admitted(ci, q, &b, &r)) return;
+    deny_scope(ci, scope_text, q->ok, b, r, NULL);
+}
+
+/* ── Scoped gates ─────────────────────────────────────────────────── */
+
+/* 138.19 (round 3): the directories a path passes through.  Canonicalising
+ * the path names where it ENDS, not the way there: "www/../outside/../www/f"
+ * ends inside a www scope, but opening it walks through outside/, so whether
+ * the call succeeds tells the program whether outside/ exists -- an existence
+ * test on a directory the scope does not admit (and a symlink inside the
+ * scope that leads out and back, "www/link/../www/f", is the same walk).
+ * Each directory the path enters before its last component must therefore be
+ * one the walk could not learn anything from: admitted by the grant, an
+ * ancestor of a granted scope (the way down to it), or the working directory
+ * or one of its ancestors (where a relative path starts).  `bad` gets the
+ * first canonical directory that is none of these.  `also`, when not NULL,
+ * is a canonical scope counted as granted: the walk as it would be once a
+ * CAP002's fix were applied, so the fix is offered only when it works. */
+static int transit_dir_ok(int ci, const char *dir, const char *cwd, const char *also) {
+    Req q;
+    int b, r;
+    memset(&q, 0, sizeof q);
+    q.kind = TK_CAP_SK_PATH;
+    q.raw  = dir;
+    q.ok   = 1;
+    snprintf(q.canon, sizeof q.canon, "%s", dir);
+    if (req_admitted(ci, &q, &b, &r)) return 1;
+    if (*cwd && path_under(cwd, dir)) return 1;
+    if (also && (path_under(dir, also) || path_under(also, dir))) return 1;
+    for (int src = 0; src < 2; src++) {
+        const Grant *g = &g_src[src][ci];
+        for (int i = 0; i < g->n; i++)
+            if (!g->v[i].dead && (g->v[i].kind == TK_CAP_SK_PATH || g->v[i].kind == TK_CAP_SK_CMD)
+                && path_under(g->v[i].text, dir))
+                return 1;
+    }
+    return 0;
+}
+
+static int path_transit_ok(int ci, const char *path, const char *also, char *bad) {
+    char abs[PATH_MAX], cwd[PATH_MAX], cwdr[PATH_MAX], pre[PATH_MAX], c[PATH_MAX];
+    *bad = '\0';
+    if (!abs_path(path, 0, abs)) return 0;
+    cwd[0] = '\0';
+    if (getcwd(cwdr, sizeof cwdr) && !realpath(cwdr, cwd)) cwd[0] = '\0';
+    for (size_t i = 0; abs[i]; ) {
+        while (abs[i] == '/') i++;               /* the start of a component */
+        size_t e = i;
+        while (abs[e] && abs[e] != '/') e++;     /* its end */
+        size_t nx = e;
+        while (abs[nx] == '/') nx++;
+        if (!abs[nx]) break;                     /* the last one: the target itself */
+        if (!(e - i == 1 && abs[i] == '.')) {    /* "." enters nothing new */
+            memcpy(pre, abs, e);
+            pre[e] = '\0';
+            if (!canon_path(pre, 0, c)) { snprintf(bad, PATH_MAX, "%s", pre); return 0; }
+            if (!transit_dir_ok(ci, c, cwd, also)) { snprintf(bad, PATH_MAX, "%s", c); return 0; }
+        }
+        i = nx;
+    }
+    return 1;
+}
+
+static const char k_transit_why[] =
+    "the path passes through this directory, which the scope does not admit, so the call "
+    "could test what lies outside the scope; name the target without going through it";
+
+static void path_req(Req *q, const char *path) {
+    memset(q, 0, sizeof *q);
+    q->kind = TK_CAP_SK_PATH;
+    q->raw  = path ? path : "";
+    q->ok   = path && canon_path(path, 0, q->canon);
+}
+
+/* Require path request q (for `path`); returns only when it is admitted.
+ * A CAP002 for the target carries its fix only when that fix works on its
+ * own (AGENTS §6): granting the target also admits the directories above it,
+ * but not a directory outside it the path passes through, so when the way
+ * there would still be refused, the denial names that directory instead,
+ * with no fix.  The transit check looks at nothing the target check had not. */
+static void require_path_req(int ci, const Req *q, const char *path) {
+    int b, r;
+    char bad[PATH_MAX];
+    if (req_admitted(ci, q, &b, &r)) return;
+    if (q->ok && path && !path_transit_ok(ci, path, q->canon, bad))
+        deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+    deny_scope(ci, q->ok ? q->canon : q->raw, q->ok, b, r, NULL);
+}
+
+void tk_cap_require_path(uint32_t cap, const char *path) {
+    int ci = class_index(cap);
+    if (ci < 0 || eff_whole(ci)) return;
+    if (!eff_granted(ci)) deny_class(class_bit(ci));
+    Req q;
+    path_req(&q, path);
+    require_path_req(ci, &q, path);
+    char bad[PATH_MAX];
+    if (!path_transit_ok(ci, path, NULL, bad)) deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+}
+
+static const char k_dir_why[] =
+    "the file does not resolve inside this directory (a symlink leads out of it), so "
+    "admitting the directory alone would not admit the call; no fix is offered";
+
+void tk_cap_require_path_dir(uint32_t cap, const char *path, const char *dir) {
+    int ci = class_index(cap), b, r;
+    if (ci < 0 || eff_whole(ci)) return;
+    if (!eff_granted(ci)) deny_class(class_bit(ci));
+    char bad[PATH_MAX];
+    Req d, f;
+    path_req(&d, dir);
+    path_req(&f, path);
+    /* The directory first: a grant naming it admits the file as well exactly
+     * when the file resolves under it, so only then is its fix the one edit. */
+    if (!req_admitted(ci, &d, &b, &r)) {
+        if (d.ok && path && !path_transit_ok(ci, path, d.canon, bad))
+            deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+        if (d.ok && f.ok && path_under(f.canon, d.canon)) deny_scope(ci, d.canon, 1, b, r, NULL);
+        deny_scope(ci, d.ok ? d.canon : d.raw, d.ok, b, r, d.ok ? k_dir_why : NULL);
+    }
+    require_path_req(ci, &f, path);
+    if (!path_transit_ok(ci, path, NULL, bad)) deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+}
+
+int tk_cap_path_admitted(uint32_t cap, const char *path) {
+    int ci = class_index(cap), b, r;
+    if (ci < 0) return 0;
+    if (eff_whole(ci)) return 1;
+    if (!eff_granted(ci)) return 0;
+    Req q;
+    path_req(&q, path);
+    char bad[PATH_MAX];
+    return req_admitted(ci, &q, &b, &r) && path_transit_ok(ci, path, NULL, bad);
+}
+
+void tk_cap_require_whole(uint32_t cap, const char *value, const char *why) {
+    for (int ci = 0; ci < TK_CAP_NCLASSES; ci++) {
+        if (!(cap & class_bit(ci)) || eff_whole(ci)) continue;
+        if (!eff_granted(ci)) deny_class(class_bit(ci));
+        deny_scope(ci, value ? value : "", 1, 0, 0, why);
+    }
+}
+
+void tk_cap_require_net(uint32_t dir, const char *host, uint64_t port) {
+    const int ci = TK_CAP_IDX_NET;
+    if (eff_whole(ci)) return;
+    if (!eff_granted(ci)) deny_class(TK_CAP_NET);
+    int is_listen = (dir & TK_CAP_NET_LISTEN & ~TK_CAP_NET) != 0;
+    Req q;
+    memset(&q, 0, sizeof q);
+    q.kind = is_listen ? TK_CAP_SK_LISTEN : TK_CAP_SK_CONNECT;
+    q.raw  = host ? host : "";
+    q.port = (long)port;
+    q.ok   = host && port <= 65535 && norm_host(host, q.canon, sizeof q.canon);
+    if (q.ok) {
+        if (inet_pton(AF_INET, q.canon, q.addr) == 1) q.fam = 4;
+        else if (inet_pton(AF_INET6, q.canon, q.addr) == 1) q.fam = 6;
+        else if (is_listen) q.ok = 0;          /* a bind address is an IP literal */
+    }
+    char scope[PATH_MAX];
+    if (q.ok)
+        snprintf(scope, sizeof scope, q.fam == 6 ? "%s:[%s]:%ld" : "%s:%s:%ld",
+                 is_listen ? "listen" : "connect", q.canon, q.port);
+    else
+        snprintf(scope, sizeof scope, "%s:%s:%llu", is_listen ? "listen" : "connect",
+                 q.raw, (unsigned long long)port);
+    require(ci, &q, scope);
+}
+
+void tk_cap_require_cmd(const char *argv0) {
+    const int ci = TK_CAP_IDX_PROCESS_SPAWN;
+    if (eff_whole(ci)) return;
+    if (!eff_granted(ci)) deny_class(TK_CAP_PROCESS_SPAWN);
+    Req q;
+    memset(&q, 0, sizeof q);
+    q.kind = TK_CAP_SK_CMD;
+    q.raw  = argv0 ? argv0 : "";
+    q.ok   = argv0 && resolve_cmd(argv0, 0, q.canon);
+    /* 138.19 (round 3): a path to the command walks its directories too.  As
+     * for a path, the command's fix comes only when granting it would also
+     * admit the way there; otherwise CAP002 names the directory passed. */
+    int slash = argv0 && strchr(argv0, '/');
+    require_path_req(ci, &q, slash ? argv0 : NULL);
+    char bad[PATH_MAX];
+    if (slash && !path_transit_ok(ci, argv0, NULL, bad))
+        deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+}
+
+void tk_cap_require_env(const char *key) {
+    const int ci = TK_CAP_IDX_ENV_WRITE;
+    if (eff_whole(ci)) return;
+    if (!eff_granted(ci)) deny_class(TK_CAP_ENV_WRITE);
+    Req q;
+    memset(&q, 0, sizeof q);
+    q.kind = TK_CAP_SK_ENV;
+    q.raw  = key ? key : "";
+    q.ok   = key && *key;
+    require(ci, &q, q.raw);
+}
+
+const char *tk_cap_ip4str(uint32_t s_addr_be, char buf[TK_CAP_ADDRSTRLEN]) {
+    struct in_addr a;
+    a.s_addr = s_addr_be;
+    if (!inet_ntop(AF_INET, &a, buf, TK_CAP_ADDRSTRLEN)) return NULL;
+    return buf;
+}
+
+const char *tk_cap_sockname(int fd, char buf[TK_CAP_ADDRSTRLEN], uint64_t *port) {
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof ss;
+    *port = 0;
+    memset(&ss, 0, sizeof ss);
+    if (fd < 0 || getsockname(fd, (struct sockaddr *)&ss, &len) != 0) return NULL;
+    if (ss.ss_family == AF_INET) {
+        const struct sockaddr_in *a = (const struct sockaddr_in *)&ss;
+        *port = ntohs(a->sin_port);
+        return inet_ntop(AF_INET, &a->sin_addr, buf, TK_CAP_ADDRSTRLEN);
+    }
+    if (ss.ss_family == AF_INET6) {
+        const struct sockaddr_in6 *a = (const struct sockaddr_in6 *)&ss;
+        *port = ntohs(a->sin6_port);
+        return inet_ntop(AF_INET6, &a->sin6_addr, buf, TK_CAP_ADDRSTRLEN);
+    }
+    return NULL;
+}
+
+/* ── Start-up ─────────────────────────────────────────────────────── */
 
 /*
- * Map a single --allow-* flag (without value) to its capability bit(s).
- * Path/host scoping (e.g. --allow-read=/srv/www) is a later refinement
- * (124.4c); here the value, if any, is ignored and the whole class is granted.
- * Returns 0 for an unrecognised flag.
+ * Map one --allow-* flag to its class: TK_CAP_IDX_*, TK_CAP_NCLASSES for
+ * --allow-all, -1 for anything else.  The name must end at '\0' or '=' (an
+ * earlier prefix match took --allow-readers for --allow-read); *val is the
+ * text after '=' or NULL.  Both --allow-read and --allow-fs-read spellings.
  */
-static uint32_t flag_to_caps(const char *arg) {
-    /* accept both --allow-read and --allow-fs-read spellings */
-    if (!strncmp(arg, "--allow-all", 11))          return TK_CAP_ALL;
-    if (!strncmp(arg, "--allow-read", 12) ||
-        !strncmp(arg, "--allow-fs-read", 15))       return TK_CAP_FS_READ;
-    if (!strncmp(arg, "--allow-write", 13) ||
-        !strncmp(arg, "--allow-fs-write", 16))      return TK_CAP_FS_WRITE;
-    if (!strncmp(arg, "--allow-net", 11))           return TK_CAP_NET;
-    if (!strncmp(arg, "--allow-env", 11))           return TK_CAP_ENV_WRITE;
-    if (!strncmp(arg, "--allow-run", 11))           return TK_CAP_PROCESS_SPAWN;
-    return 0u;
+static int flag_class(const char *arg, const char **val) {
+    static const struct { const char *name; int ci; } names[] = {
+        {"--allow-all", TK_CAP_NCLASSES},
+        {"--allow-read", TK_CAP_IDX_FS_READ},   {"--allow-fs-read", TK_CAP_IDX_FS_READ},
+        {"--allow-write", TK_CAP_IDX_FS_WRITE}, {"--allow-fs-write", TK_CAP_IDX_FS_WRITE},
+        {"--allow-net", TK_CAP_IDX_NET},        {"--allow-env", TK_CAP_IDX_ENV_WRITE},
+        {"--allow-run", TK_CAP_IDX_PROCESS_SPAWN},
+    };
+    *val = NULL;
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+        size_t n = strlen(names[i].name);
+        if (strncmp(arg, names[i].name, n) != 0) continue;
+        if (arg[n] == '\0') return names[i].ci;
+        if (arg[n] == '=') { *val = arg + n + 1; return names[i].ci; }
+    }
+    return -1;
+}
+
+/* CAP003: a run-time flag the broker cannot honour -- one line (and, under
+ * TK_DIAG_JSON, one JSON record with no fix), exit 1, before main.  Both
+ * the flag and the reason can hold text from the command line, so the text
+ * line escapes them as deny_scope does. */
+static void refuse(const char *flag, const char *why) {
+    fputs("CAP003: ", stderr);
+    text_str(stderr, flag);
+    fputs(" refused: ", stderr);
+    text_str(stderr, why);
+    fputc('\n', stderr);
+    if (getenv("TK_DIAG_JSON")) {
+        fputs("{\"diagnostic_id\":\"CAP003\",\"severity\":\"error\",\"stage\":\"runtime\","
+              "\"flag\":", stderr);
+        json_str(stderr, flag);
+        fputs(",\"reason\":", stderr);
+        json_str(stderr, why);
+        fputs("}\n", stderr);
+    }
+    exit(1);
+}
+
+/* One --allow-x=a,b,c: every scope must parse. */
+static void add_flag_scopes(int ci, const char *flag, const char *val) {
+    char buf[PATH_MAX], err[160];
+    const char *p = val;
+    for (;;) {
+        const char *e = strchr(p, ',');
+        size_t n = e ? (size_t)(e - p) : strlen(p);
+        if (n >= sizeof buf) refuse(flag, "a scope is too long");
+        memcpy(buf, p, n); buf[n] = '\0';
+        if (!add_scope(SRC_RUN, ci, buf, err, sizeof err)) {
+            char why[PATH_MAX + 200];
+            snprintf(why, sizeof why, "'%s' is not a %s scope: %s", buf, k_dot[ci], err);
+            refuse(flag, why);
+        }
+        if (!e) break;
+        p = e + 1;
+    }
 }
 
 void tk_cap_init(int argc, char **argv) {
     if (g_inited) return;
     g_inited = 1;
-
-    /* Start from the compiler-baked grant set (if the program declared one).
-     * Post-flip the mode is ENFORCE by default (set statically above), so a
-     * baked allowlist simply enforces those grants. The only opt-out is an
-     * explicit --allow-all (all bits) — baked or at run time. The legacy
-     * __tk_cap_baked_enforce flag is now vestigial (enforcement is the default). */
-    if (__tk_cap_baked_present) {
-        g_grants = __tk_cap_baked_grants;
-        if (__tk_cap_baked_grants == TK_CAP_ALL)
-            g_mode = TK_CAP_MODE_ALLOW_ALL;
+    {
+        const char *p = getenv("PATH");
+        g_path0 = p ? strdup(p) : NULL;
     }
 
-    /* Union in runtime --allow-* flags. --allow-all drops to permissive mode
-     * (the explicit escape hatch); any specific grant keeps deny-by-default for
-     * every other class. */
+    /* The compiler-baked grant set (if the program declared one).  Post-flip
+     * the mode is ENFORCE by default, so a baked allowlist simply enforces
+     * those grants; __tk_cap_baked_enforce is vestigial. */
+    int baked_all = 0;
+    if (__tk_cap_baked_present) {
+        uint32_t b = __tk_cap_baked_grants;
+        baked_all = (b == TK_CAP_ALL);
+        for (int ci = 0; ci < TK_CAP_NCLASSES; ci++)
+            if (b & class_bit(ci)) { g_src[SRC_BAKED][ci].whole = 1; g_src[SRC_BAKED][ci].named = 1; }
+        for (int i = 0; __tk_cap_baked_scopes && i < __tk_cap_baked_nscopes; i++) {
+            const TkCapBakedScope *s = &__tk_cap_baked_scopes[i];
+            if (s->cls >= 0 && s->cls < TK_CAP_NCLASSES)
+                (void)add_scope(SRC_BAKED, s->cls, s->text, NULL, 0);
+        }
+        g_narrow = (__tk_cap_baked_runtime == TK_CAP_RUNTIME_NARROW);
+    }
+
+    /* Run-time --allow-* flags: unioned with the baked set, or (D2) narrowing
+     * it.  --allow-all drops to permissive mode only where it widens nothing
+     * it may not: never on a binary whose narrower set is baked. */
+    int run_all = 0, run_any = 0;
     for (int i = 1; i < argc; i++) {
-        const char *a = argv[i];
+        const char *a = argv[i], *val;
         if (strncmp(a, "--allow-", 8) != 0) continue;
-        uint32_t caps = flag_to_caps(a);
-        if (caps == 0u) continue;
-        g_grants |= caps;
-        if (caps == TK_CAP_ALL)
-            g_mode = TK_CAP_MODE_ALLOW_ALL;
+        int ci = flag_class(a, &val);
+        if (ci < 0) continue;
+        if (ci == TK_CAP_NCLASSES) {
+            if (val) refuse(a, "--allow-all takes no value");
+            run_all = 1;
+            continue;
+        }
+        run_any = 1;
+        g_src[SRC_RUN][ci].named = 1;
+        if (!val) g_src[SRC_RUN][ci].whole = 1;
+        else add_flag_scopes(ci, a, val);
+    }
+    if (run_all && g_narrow && !baked_all)
+        refuse("--allow-all", "this binary's grants are baked (tkc.toml [capabilities] or "
+               "tkc --allow-*), and run-time flags may only narrow them; rebuild with "
+               "runtime = \"union\" to let a launcher widen them");
+    if (g_narrow) {
+        if (baked_all && !run_any) g_mode = TK_CAP_MODE_ALLOW_ALL;
+    } else if (baked_all || run_all) {
+        g_mode = TK_CAP_MODE_ALLOW_ALL;
     }
 }
 
 int tk_cap_is_grant_flag(const char *arg) {
-    return arg && strncmp(arg, "--allow-", 8) == 0 && flag_to_caps(arg) != 0u;
+    const char *val;
+    return arg && strncmp(arg, "--allow-", 8) == 0 && flag_class(arg, &val) >= 0;
 }
 
 int tk_cap_check(uint32_t cap) {
     if (g_mode == TK_CAP_MODE_ALLOW_ALL) return 1;
-    return (g_grants & cap) == cap;
+    for (int ci = 0; ci < TK_CAP_NCLASSES; ci++)
+        if ((cap & class_bit(ci)) && !eff_whole(ci)) return 0;
+    return 1;
 }
 
 const char *tk_cap_class_name(uint32_t cap) {
@@ -94,35 +1047,12 @@ const char *tk_cap_class_name(uint32_t cap) {
     }
 }
 
-/* The --allow-* flag that grants a given class (for the diagnostic hint). */
-static const char *cap_flag_hint(uint32_t cap) {
-    switch (cap) {
-        case TK_CAP_FS_READ:       return "--allow-read";
-        case TK_CAP_FS_WRITE:      return "--allow-write";
-        case TK_CAP_NET:           return "--allow-net";
-        case TK_CAP_ENV_WRITE:     return "--allow-env";
-        case TK_CAP_PROCESS_SPAWN: return "--allow-run";
-        default:                   return "--allow-all";
-    }
-}
-
-void tk_cap_deny(uint32_t cap) {
-    const char *cls = tk_cap_class_name(cap);
-    const char *flag = cap_flag_hint(cap);
-    fprintf(stderr,
-        "CAP001: capability '%s' required but not granted\n"
-        "  grant it at run time with %s, or declare it in tkc.toml [capabilities]\n",
-        cls, flag);
-    /* 124.4d: opt-in machine-parseable line so the generate-compile-repair loop
-     * can repair the missing grant mechanically (like a type error). */
-    if (getenv("TK_DIAG_JSON")) {
-        fprintf(stderr,
-            "{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\","
-            "\"capability\":\"%s\",\"fix\":\"grant %s or tkc.toml [capabilities] %s=true\"}\n",
-            cls, flag, cls);
-    }
-    exit(1);
-}
-
 TkCapMode tk_cap_mode(void)  { return g_mode; }
-uint32_t  tk_cap_grants(void) { return g_grants; }
+
+uint32_t tk_cap_grants(void) {
+    if (g_mode == TK_CAP_MODE_ALLOW_ALL) return TK_CAP_ALL;
+    uint32_t g = 0;
+    for (int ci = 0; ci < TK_CAP_NCLASSES; ci++)
+        if (eff_granted(ci)) g |= class_bit(ci);
+    return g;
+}
