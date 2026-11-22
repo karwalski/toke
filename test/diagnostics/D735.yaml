@@ -1,0 +1,16 @@
+id: D735
+series: D
+description: "138.62: std.db's row. sub-namespace calls are argument-checked -- an integer other than 0 where row.str declares $dbrow (row.str(5;\"k\")) is E4031 with NO fix (it checked clean and died with SIGSEGV)"
+input: |
+  m=t;
+  i=db:std.db;
+  f=main():i64{
+    let r=mt row.str(5;"k") {$ok:v v;$err:e "err"};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "dbrow"
