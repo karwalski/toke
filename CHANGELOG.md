@@ -336,7 +336,8 @@ downstream that ratchets its `tkc --lint` counts sees new findings on unchanged 
 measured with this build, the toke tree gains 66 (27 `negated-comparison`, 24
 `nested-if-and`, 14 `modulo-emulation`, 1 `negated-equality`, in 29 of 695 sources,
 20 of them under `bench/patterns/macro/programs/`), ooke `main` 33 (25 `negated-equality`, 8
-`negated-comparison`), the website 0.
+`negated-comparison`), the website 0, and loke (1,091 `.tk` files, read-only) 110: 52
+`negated-comparison`, 50 `negated-equality`, 5 `modulo-emulation`, 3 `nested-if-and`.
 
 | Rule id | Severity | Reports | Message | `fix` | Story |
 |---|---|---|---|---|---|
