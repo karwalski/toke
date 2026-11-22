@@ -271,6 +271,15 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   field lengths; files in the old layout are a MISS. A put of a key drops its
   disk copy, and `http_cache_purge` / `http_cache_purge_pattern` purge matching
   spill files too and count them. Nothing in the tree calls `http_cache_*`.
+  The read-back leaves `last_modified` and `vary` unset (they are not in the
+  file; nothing reads them after a put, and Vary is part of the key). A spill
+  file is parsed length by length against the bytes left, so a crafted file
+  with lengths that wrap is a MISS; spill files are created `O_EXCL |
+  O_NOFOLLOW`, mode 0600, so a symlink planted at the path is not followed.
+  **Lifetime:** the body, etag and content-type pointers `http_cache_get`
+  returns are valid only until the next `http_cache_get`, `http_cache_put` or
+  purge call: a get that reads an entry back from disk can now evict, and
+  free, the entries an earlier get returned. Copy what must outlive that.
   Test: C2085.
 
 - **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner

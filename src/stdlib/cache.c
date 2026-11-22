@@ -285,7 +285,12 @@ static int cache_spill_file(const char *path, const CacheEntry *e)
              e->status, e->ttl, (long long)e->inserted,
              klen, elen, clen, e->body_len);
 
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    /* Remove whatever is at path (a symlink itself, never its target), then
+     * create with O_EXCL|O_NOFOLLOW: a file or symlink planted there in
+     * between is not followed or truncated; the spill fails instead (a later
+     * MISS).  0600: cached bodies are not left readable by other users. */
+    unlink(path);
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (fd < 0) { int er = errno; free(hdr); errno = er; return -1; }
 
     int rc = cache_write_all(fd, hdr, (size_t)hlen);
@@ -365,7 +370,7 @@ static char *cache_dup_n(const char *p, long long n)
  * in the format above. */
 static CacheEntry *cache_disk_load(const char *path)
 {
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return NULL;
     struct stat st;
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0) {
@@ -398,11 +403,15 @@ static CacheEntry *cache_disk_load(const char *path)
         cache_parse_num(&p, end, ' ', 1, &cl) ||
         cache_parse_num(&p, end, '\n', 0, &bl))
         goto out;
+    /* Each length is checked against what is left before it is consumed, so
+     * a crafted header cannot wrap the sum and point p outside buf. */
     size_t rest = (size_t)(end - p);
-    unsigned long long need = (unsigned long long)kl +
-        (unsigned long long)(el > 0 ? el : 0) +
-        (unsigned long long)(cl > 0 ? cl : 0) + (unsigned long long)bl;
-    if (need != rest) goto out;
+    long long lens[4] = { kl, el > 0 ? el : 0, cl > 0 ? cl : 0, bl };
+    for (int i = 0; i < 4; i++) {
+        if ((unsigned long long)lens[i] > rest) goto out;
+        rest -= (size_t)lens[i];
+    }
+    if (rest != 0) goto out;
 
     e = calloc(1, sizeof(CacheEntry));
     if (!e) goto out;
@@ -410,6 +419,9 @@ static CacheEntry *cache_disk_load(const char *path)
     e->ttl = (long)ttl;
     e->inserted = (time_t)ins;
     e->last_access = time(NULL);
+    /* last_modified and vary are not in the spill format: a read-back entry
+     * has them NULL.  Nothing reads either field after a put (Vary is already
+     * part of the key), so the read-back is lossy only in those two fields. */
     e->key = cache_dup_n(p, kl);              p += kl;
     e->etag = cache_dup_n(p, el);             p += el > 0 ? el : 0;
     e->content_type = cache_dup_n(p, cl);     p += cl > 0 ? cl : 0;
@@ -547,7 +559,12 @@ void http_cache_set_disk(const char *dir, size_t max_size_bytes)
     mkdir(dir, 0755);
 }
 
-/* Check cache for a response. Returns cache status string. */
+/* Check cache for a response. Returns cache status string.
+ * The out_body, out_etag and out_content_type pointers point into the cache
+ * and are valid only until the next http_cache_get, http_cache_put or purge
+ * call: since 127.496 a get that reads an entry back from disk can evict
+ * (and free) the entries an earlier get returned.  Copy what must outlive
+ * that. */
 const char *http_cache_get(const char *method, const char *uri,
                             const char *vary,
                             const char *const *req_hdr_names,
