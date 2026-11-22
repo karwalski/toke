@@ -188,6 +188,18 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   in a file without one is still reported and fixed. Unchanged from 3.2.0, and
   open as 138.58: in a file without a foreign `$type`, an import that only
   codegen needs can still be reported.
+- **`args.get` no longer formats its error message on every miss** (127.470).
+  Since 113.B.8 the glue ran `vsnprintf("args.get: %s")` into the message ring
+  for each out-of-range index, so the canonical default form
+  `mt args.get(1){$ok:v v;$err:e "default"}` ran about 11x slower than the
+  `args.count()` check (pattern bench 2026-11-15: 1016 ms vs 89 ms). The one
+  reason `args_get` reports is a literal, so the box now holds the static
+  literal `args.get: index out of bounds` (same text; any other reason is
+  still formatted). Measured on the cli-argv fixtures at `PAT_N=16384000`,
+  user CPU: form a 1.11 s (3.2.0) -> 0.33 s, form b 0.07 s. One visible
+  difference, a fix: a let-kept `args.get` error read after eight or more
+  later raises that use the ring (`toml.*`, `file.*`, ...) printed one of
+  their messages; it now keeps its own. Conformance: C1980.
 
 ---
 
