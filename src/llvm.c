@@ -2614,6 +2614,9 @@ static int call_is_err_union(Ctx *c, const Node *e) {
 }
 
 static const char *expr_llvm_type(Ctx *c, const Node *n);
+static const char *sum_arm_body_llvm_type(Ctx *c, const Node *m, const Node *arm);
+static const char *sum_payload_tag(Ctx *c, const Node *scr, const StructInfo *ssi,
+                                   const char *tag);
 static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
     if (!ety || strcmp(ety, "i64")) return 0;
     if (call_declares_bool(c, e) || field_declares_bool(c, e) || recv_call_is_bool(c, e))
@@ -2628,7 +2631,7 @@ static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
             if (!arm || arm->child_count < 3 || !arm->children[2]) return 0;
             const Node *b = arm->children[2];
             if (b->kind == NODE_RETURN_STMT) continue;
-            const char *bt = expr_llvm_type(c, b);
+            const char *bt = sum_arm_body_llvm_type(c, e, arm);   /* 127.484 */
             int isb = (bt && !strcmp(bt, "i1")) || b->kind == NODE_BOOL_LIT ||
                       (b->rtype && b->rtype->kind == TY_BOOL) ||
                       expr_abi_bool(c, b, bt);
@@ -3154,10 +3157,39 @@ static const char *sum_arm_bind_llvm_type(Ctx *c, const Node *m, const Node *arm
     if (vty[0] == '$') vty++;
     if (!strcmp(vty, "f64") || !strcmp(vty, "f32")) return "double";
     if (!strcmp(vty, "str")) return "i8*";
+    /* 127.484: a bool payload is bound as an i1 local, like any bool. */
+    if (!strcmp(vty, "bool")) return "i1";
     static const char *const ints[] = { "i64", "i32", "i16", "i8", "u64", "u32",
-                                        "u16", "u8", "bool", NULL };
+                                        "u16", "u8", "byte", "Byte", NULL };
     for (int i = 0; ints[i]; i++) if (!strcmp(vty, ints[i])) return "i64";
     return NULL;
+}
+
+/* 127.484: the LLVM type a value arm of a match yields, predicted with the
+ * arm's binding in force.  The result slot is sized before any arm is
+ * lowered, so a body that reads its binding (`$circle:r r*r`) was predicted
+ * with `r` unbound -- i64 -- and the f64 product was stored as its bits and
+ * converted back with sitofp: `mt s{$circle:r r*r;..}` returned
+ * 4616189618054758400 for 2.0.  For a variant of a sum, the binding is put
+ * in force under a private alias for the prediction (the slot type the
+ * lowering gives it, sum_arm_bind_llvm_type) and withdrawn after it.  Any
+ * other arm is predicted as before. */
+static const char *sum_arm_body_llvm_type(Ctx *c, const Node *m, const Node *arm) {
+    const Node *body = (arm && arm->child_count >= 3) ? arm->children[2] : NULL;
+    const Node *bn = (arm && arm->child_count >= 2) ? arm->children[1] : NULL;
+    const char *bty = (body && bn && bn->kind == NODE_IDENT)
+                    ? sum_arm_bind_llvm_type(c, m, arm) : NULL;
+    if (!bty || c->alias_count >= c->alias_cap || c->local_count >= c->local_cap)
+        return expr_llvm_type(c, body);
+    NameAlias *a = &c->aliases[c->alias_count++];
+    tok_cp(c->src, bn, a->toke_name, sizeof a->toke_name);
+    snprintf(a->llvm_name, sizeof a->llvm_name, "%.100s.~arm", a->toke_name);
+    int lc0 = c->local_count;
+    set_local_type(c, a->llvm_name, bty);
+    const char *r = expr_llvm_type(c, body);
+    c->local_count = lc0;
+    c->alias_count--;
+    return r;
 }
 
 /*
@@ -7777,7 +7809,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *sty = sum_arm_bind_llvm_type(c, n, arm);  /* 127.220 */
                     arm0_ty = sty ? sty : expr_llvm_type(c, n->children[0]);
                 } else
-                    arm0_ty = expr_llvm_type(c, ab);
+                    arm0_ty = sum_arm_body_llvm_type(c, n, arm);   /* 127.484 */
                 if (strcmp(arm0_ty, "i64")) { res_ty = arm0_ty; }
                 break;
             }
@@ -7945,13 +7977,23 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *vty = ssi->field_types[vidx];
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
                     int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
-                    const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                    /* 127.484: a bool payload binds an i1 local, as a bool
+                     * `let` does; held as i64 it printed 1 and lost its
+                     * bool-ness in the arm body. */
+                    int is_b = (!strcmp(vty, "bool") || !strcmp(vty, "$bool"));
+                    const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : (is_b ? "i1" : "i64"));
                     snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                     set_local_type(c, vname, slot_ty);
-                    if (is_str) mark_ptr_with_type(c, vname, "$str");
+                    /* 127.484: a record or array payload carries its layout
+                     * tag, as a parameter of that type does (`q.w` on a
+                     * record, `q.get(0)` on an @f64). */
+                    const char *ptag = is_str ? "$str"
+                                     : (is_f || is_b) ? NULL
+                                     : sum_payload_tag(c, n->children[0], ssi, tag);
+                    if (ptag) mark_ptr_with_type(c, vname, ptag);
                     if (vshadow) {
                         clear_ptr_local(c, vraw);
-                        if (is_str) mark_ptr_with_type(c, vraw, "$str");
+                        if (ptag) mark_ptr_with_type(c, vraw, ptag);
                     }
                     fprintf(c->out, "  %%%s = alloca %s\n", vname, slot_ty);
                     int payp = next_tmp(c);
@@ -7966,6 +8008,10 @@ static int emit_expr(Ctx *c, const Node *n)
                         int pp = next_tmp(c);
                         fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pp, payv);
                         fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", pp, vname);
+                    } else if (is_b) {
+                        int tb = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", tb, payv);
+                        fprintf(c->out, "  store i1 %%t%d, i1* %%%s\n", tb, vname);
                     } else {
                         fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", payv, vname);
                     }
@@ -8850,6 +8896,27 @@ static const char *type_backend_tag(Ctx *c, const Type *t) {
 }
 
 static const char *expr_struct_type_legacy(Ctx *c, const Node *n);
+/* 127.484: the backend tag of the payload of variant `tag` of the sum `ssi`
+ * that the scrutinee `scr` holds -- a record's name, an array's "@<elem>" --
+ * or NULL.  The checker's type of the scrutinee answers first (its variant
+ * types are resolved); the declared spelling of a record payload otherwise. */
+static const char *sum_payload_tag(Ctx *c, const Node *scr, const StructInfo *ssi,
+                                   const char *tag) {
+    const Type *st = scr ? scr->rtype : NULL;
+    if (st && st->kind == TY_STRUCT && st->field_names && st->field_types) {
+        for (int i = 0; i < st->field_count; i++) {
+            if (!st->field_names[i] || strcmp(st->field_names[i], tag)) continue;
+            const char *tg = type_backend_tag(c, st->field_types[i]);
+            if (tg) return tg;
+            break;
+        }
+    }
+    if (!ssi || !struct_has_field(ssi, tag)) return NULL;
+    const char *vty = ssi->field_types[struct_field_index(ssi, tag)];
+    if (vty[0] == '$') vty++;
+    const StructInfo *ps = lookup_struct(c, vty);
+    return (ps && !ps->is_sum) ? ps->name : NULL;
+}
 /* 127.52: the checker's type first; the legacy string inference only where
  * the checker left the node untyped or its type has no tag. */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
@@ -9989,7 +10056,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                 const char *sty = sum_arm_bind_llvm_type(c, n, arm0);  /* 127.220 */
                 mrt = sty ? sty : expr_llvm_type(c, n->children[0]);
             } else
-                mrt = expr_llvm_type(c, ab);
+                mrt = sum_arm_body_llvm_type(c, n, arm0);   /* 127.484 */
             break;
         }
         /* 114.42: f64-payload error union — see the matching inference in
