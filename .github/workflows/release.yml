@@ -29,6 +29,16 @@ on:
 permissions:
   contents: read
 
+# 127.454: the platform floors of the shipped binaries -- one place, read by
+# the builds (the Linux build image and MACOSX_DEPLOYMENT_TARGET), by the
+# floor checks after them, and by the release notes below.  Raising or
+# lowering a floor is a change here and nowhere else (owner decision R4 is
+# still open; these are the conservative values, see 127.454).
+env:
+  LINUX_BUILD_IMAGE: ubuntu:22.04   # glibc 2.35
+  LINUX_GLIBC_FLOOR: "2.35"
+  MACOS_FLOOR: "14.0"
+
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # Build matrix: compile tkc on every target platform and package release
@@ -91,7 +101,14 @@ jobs:
       # change back and rebuilt it with the development flags, so the 3.2.0
       # archives shipped that rebuild: the runner's absolute stdlib path baked
       # in, no -DNDEBUG.  Nothing else builds in this tree.
-
+      #
+      # 127.454: built for the floors in the workflow `env` above.  Linux: in
+      # a ${LINUX_BUILD_IMAGE} container (its glibc is the floor; the newest
+      # runner image's glibc made the floor 2.38).  macOS: with
+      # MACOSX_DEPLOYMENT_TARGET (the runner's SDK default made it 15.0);
+      # -Werror turns any API newer than the target into a build failure
+      # (-Wunguarded-availability-new).  The conformance gate above ran on the
+      # newest runner image, from the same commit.
       - name: Build release binary
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
@@ -108,9 +125,52 @@ jobs:
           # these, not a replacement CFLAGS.  The old replacement dropped the
           # 123.9 hardening flags (the shipped binary had none) and the
           # -Wno-format-truncation policy (gcc 15 then failed the build).
-          make -C "$REL" BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          if [ "${{ matrix.os }}" = linux ]; then
+            # gcc-12: the first gcc that enforces _FORTIFY_SOURCE=3 (22.04's
+            # default gcc 11 silently gives level 2).  The clang and linker
+            # tkc runs are stated, not probed in the image: the image's
+            # clang is not the one users have, and 121.28/127.439 bake an
+            # absolute path.  /usr/bin/clang and /usr/bin/ld are where every
+            # Debian/Ubuntu/Fedora clang and binutils package puts them;
+            # TKC_CC overrides at run time (docs/guide/install.md).
+            docker run --rm -v "$REL:/rel" -w /rel \
+              -e SOURCE_DATE_EPOCH -e TKC_GIT_SHA -e TKC_GIT_DIRTY \
+              -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+              "$LINUX_BUILD_IMAGE" bash -euc '
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq
+                apt-get install -y -qq --no-install-recommends \
+                  make gcc-12 libc6-dev zlib1g-dev python3 >/dev/null
+                ldd --version | head -1
+                make CC=gcc-12 TKC_CLANG_PATH=/usr/bin/clang TKC_LD_PATH=/usr/bin/ld \
+                  BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+                chown -R "$HOST_UID:$HOST_GID" /rel'
+          else
+            MACOSX_DEPLOYMENT_TARGET="$MACOS_FLOOR" \
+              make -C "$REL" BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          fi
           "$REL/toke" --version
 
+      # 127.454: the floor is checked on the binary, not assumed from the
+      # build image: the newest GLIBC_x symbol version it needs, and the
+      # Mach-O minimum OS it records.
+      - name: Release binary meets the platform floor
+        run: |
+          if [ "${{ matrix.os }}" = linux ]; then
+            need="$(objdump -T "$REL/toke" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)"
+            echo "needs glibc ${need}; floor ${LINUX_GLIBC_FLOOR}"
+            top="$(printf '%s\n%s\n' "$need" "$LINUX_GLIBC_FLOOR" | sort -V | tail -1)"
+            test "$top" = "$LINUX_GLIBC_FLOOR" || { echo "release binary needs glibc ${need}, above the ${LINUX_GLIBC_FLOOR} floor" >&2; exit 1; }
+          else
+            minos="$(otool -l "$REL/toke" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')"
+            echo "minos ${minos}; floor ${MACOS_FLOOR}"
+            test "$minos" = "$MACOS_FLOOR" || { echo "release binary records macOS ${minos}, not the ${MACOS_FLOOR} floor" >&2; exit 1; }
+          fi
+
+      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
+      # compiler under which programs the website publishes no longer
+      # compiled. This is the release-ritual closure the tracker names as the
+      # one that would have caught it: the tag fails instead.
       - name: Package release tarball
         run: |
           # On a tag the version is the tag; on a pull request or a manual
@@ -330,15 +390,17 @@ jobs:
 
             ### Platform binaries
 
-            | File | Platform |
-            |------|----------|
-            | `tkc-${{ github.ref_name }}-linux-x86_64.tar.gz` | Linux x86-64 |
-            | `tkc-${{ github.ref_name }}-linux-arm64.tar.gz` | Linux ARM64 |
-            | `tkc-${{ github.ref_name }}-macos-arm64.tar.gz` | macOS ARM64 (Apple Silicon) |
-            | `tkc-${{ github.ref_name }}-macos-x86_64.tar.gz` | macOS x86-64 (Intel) |
-            | `<archive>.spdx.json` | SPDX SBOM of that archive |
-            | `<archive>.cosign.bundle` | cosign keyless signature bundle of that archive |
-            | `checksums.txt` (+ `.cosign.bundle`) | SHA-256 of every archive and SBOM, signed |
+            | File | Platform | Needs |
+            |------|----------|-------|
+            | `tkc-${{ github.ref_name }}-linux-x86_64.tar.gz` | Linux x86-64 | glibc ${{ env.LINUX_GLIBC_FLOOR }} or later |
+            | `tkc-${{ github.ref_name }}-linux-arm64.tar.gz` | Linux ARM64 | glibc ${{ env.LINUX_GLIBC_FLOOR }} or later |
+            | `tkc-${{ github.ref_name }}-macos-arm64.tar.gz` | macOS ARM64 (Apple Silicon) | macOS ${{ env.MACOS_FLOOR }} or later |
+            | `tkc-${{ github.ref_name }}-macos-x86_64.tar.gz` | macOS x86-64 (Intel) | macOS ${{ env.MACOS_FLOOR }} or later |
+            | `<archive>.spdx.json` | SPDX SBOM of that archive | |
+            | `<archive>.cosign.bundle` | cosign keyless signature bundle of that archive | |
+            | `checksums.txt` (+ `.cosign.bundle`) | SHA-256 of every archive and SBOM, signed | |
+
+            **Platform floors.** The Linux binaries are built in an `${{ env.LINUX_BUILD_IMAGE }}` container and need glibc ${{ env.LINUX_GLIBC_FLOOR }} or later; the macOS binaries are built with a deployment target of macOS ${{ env.MACOS_FLOOR }}. Both are checked on the binaries before release. The conformance suite runs on the newest runner images. On an older system, build from source.
 
             ### Install
 

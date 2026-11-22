@@ -211,6 +211,15 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   `tkc.sig`, `tkc-sbom.spdx.json` and its `.sha256` are no longer release assets.
   Publishing is still tag-only; a manual run with `sign_test` signs and verifies without
   publishing (it writes a Rekor log entry). Verification: `docs/security/release-signing.md`.
+- **Lower platform floors for the release binaries** (127.454): **glibc 2.35** (Ubuntu
+  22.04+, Debian 12+, Fedora 36+) and **macOS 14**, down from 3.2.0's glibc 2.38 and
+  macOS 15, which were the floors of the runner images. The Linux release binaries are
+  built in an `ubuntu:22.04` container (gcc-12, so `_FORTIFY_SOURCE=3` is still enforced;
+  the baked clang and linker are stated as `/usr/bin/clang` and `/usr/bin/ld`), the macOS
+  ones with `MACOSX_DEPLOYMENT_TARGET=14.0`; a step checks each binary's newest `GLIBC_x`
+  symbol version or Mach-O `minos` against the floor, and the release notes state the
+  floors from the same workflow variables. The conformance suite still runs on the newest
+  runner images. The floor values are the conservative choice pending owner decision R4.
 
 ---
 
