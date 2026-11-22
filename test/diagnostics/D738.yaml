@@ -8,6 +8,7 @@ input: |
     let r=$dbrow{cols:@(@("k";"v"))};
     let s=mt row.str(r;"k") {$ok:v v;$err:e "err"};
     let f=mt row.f64(0;"k") {$ok:v v;$err:e 0.0};
+    let n=mt db.one("select 1";@()) {$ok:x mt row.i64(x;"k") {$ok:v v;$err:e 0};$err:e 0};
     <0
   };
 expected_exit_code: 0
