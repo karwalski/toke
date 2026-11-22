@@ -189,6 +189,18 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   open as 138.58: in a file without a foreign `$type`, an import that only
   codegen needs can still be reported.
 
+### Build, platform and release
+
+- **The release archives carry the release build of `tkc`** (127.490). `release.yml` built
+  the release binary in place (`BAKED_STDLIB_DIR=src/stdlib`, `-DNDEBUG -g0`), and the next
+  step's `make check-site-compile`, whose target depends on the binary, saw the build flags
+  change back and rebuilt it with the development flags; the packaging step then copied
+  that rebuild. The 3.2.0 archives' `tkc` bakes the runner's absolute stdlib path
+  (`/Users/runner/work/toke/toke/src/stdlib` in the macos-arm64 archive) and was built
+  without `-DNDEBUG`. The release binary is now built in a pristine worktree of the same
+  commit and packaged from there, and the website examples are compiled with the `tkc`
+  unpacked from the tarball, the bytes that ship.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

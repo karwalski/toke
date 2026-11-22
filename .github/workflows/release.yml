@@ -74,12 +74,22 @@ jobs:
       - name: Conformance gate
         run: make conform
 
+      # 127.490: the release binary is built in a pristine worktree of the
+      # same commit, not in place.  In place, the next `make` (the website
+      # check below, whose target depends on the binary) saw the build flags
+      # change back and rebuilt it with the development flags, so the 3.2.0
+      # archives shipped that rebuild: the runner's absolute stdlib path baked
+      # in, no -DNDEBUG.  Nothing else builds in this tree.
+
       - name: Build release binary
-        env:
-          SOURCE_DATE_EPOCH: ${{ github.event.head_commit.timestamp && '0' || '0' }}
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          export SOURCE_DATE_EPOCH
+          TKC_GIT_SHA="$(git rev-parse --short=12 HEAD)"
+          TKC_GIT_DIRTY=0
+          export SOURCE_DATE_EPOCH TKC_GIT_SHA TKC_GIT_DIRTY
+          REL="$RUNNER_TEMP/rel"
+          git worktree add --detach "$REL" HEAD
+          echo "REL=$REL" >> "$GITHUB_ENV"
           # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
           # of the tkc executable (the tarball puts src/stdlib beside tkc), not
           # the caller's cwd, so a released tkc works from any directory.
@@ -87,20 +97,8 @@ jobs:
           # these, not a replacement CFLAGS.  The old replacement dropped the
           # 123.9 hardening flags (the shipped binary had none) and the
           # -Wno-format-truncation policy (gcc 15 then failed the build).
-          make BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
-
-      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
-      # compiler under which programs the website publishes no longer
-      # compiled. This is the release-ritual closure the tracker names as the
-      # one that would have caught it: the tag fails instead.
-      - name: Check out the website
-        uses: actions/checkout@v4
-        with:
-          repository: karwalski/toke-web
-          path: .site
-
-      - name: Website examples compile under the release compiler
-        run: make SITE_REPO=.site check-site-compile
+          make -C "$REL" BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          "$REL/toke" --version
 
       - name: Package release tarball
         run: |
@@ -115,8 +113,8 @@ jobs:
           mkdir -p "${STAGING}/src/stdlib"
           mkdir -p "${STAGING}/stdlib/vendor"
 
-          # Compiler binary
-          cp toke "${STAGING}/tkc"
+          # Compiler binary: the release build (127.490), not ./toke
+          cp "$REL/toke" "${STAGING}/tkc"
           chmod +x "${STAGING}/tkc"
 
           # stdlib C sources (needed for linking user programs)
@@ -143,6 +141,31 @@ jobs:
           tar czf "${STAGING}.tar.gz" "${STAGING}"
           echo "TARBALL=${STAGING}.tar.gz" >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=tkc-${{ matrix.target }}" >> "$GITHUB_ENV"
+
+      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
+      # compiler under which programs the website publishes no longer
+      # compiled. This is the release-ritual closure the tracker names as the
+      # one that would have caught it: the tag fails instead.
+      - name: Check out the website
+        uses: actions/checkout@v4
+        with:
+          repository: karwalski/toke-web
+          path: .site
+
+      # 127.490: run against the tkc UNPACKED FROM THE TARBALL, the bytes that
+      # ship, not through `make check-site-compile` (its $(BIN) prerequisite
+      # rebuilt ./toke).  Same guards as that target.
+      - name: Website examples compile under the release compiler
+        run: |
+          U="$RUNNER_TEMP/unpacked"; mkdir -p "$U"
+          tar xzf "$TARBALL" -C "$U"
+          T="$(ls -d "$U"/tkc-*/tkc)"
+          "$T" --version
+          V=.site/scripts/verify_site_examples.py
+          if [ ! -f "$V" ]; then echo "SKIP: $V not found"
+          elif ! grep -q -- '--compile-only' "$V"; then echo "SKIP: the site predates --compile-only (132.43)"
+          else TKC="$T" python3 "$V" --check --compile-only
+          fi
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
