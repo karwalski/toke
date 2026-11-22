@@ -22,14 +22,9 @@
 #include "tk_array.h"
 #include "bytes_rt.h"
 
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
 
 /* 135.5b — a `T!str` error carries its message.  runtime-abi.md §7.3: for an
  * error type of plain `str` the slot holds the message pointer itself (never

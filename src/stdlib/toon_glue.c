@@ -31,14 +31,9 @@ static int64_t f64_to_i64(double d){int64_t i;memcpy(&i,&d,sizeof(i));return i;}
  * tk_current_error and still return the real value, because 0 and false are
  * legitimate results that the 0 sentinel cannot distinguish from failure.
  */
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
 
 int64_t tk_toon_parse_w(int64_t s) {
     if (!s) return 0;
@@ -90,7 +85,6 @@ int64_t tk_toon_enc_w(int64_t v) {
  * messages are string literals, so the box never dangles.  (tk_err_box is
  * declared by hand: this file spells the slot itself rather than including
  * tk_runtime.h, see above.) */
-void *tk_err_box(int64_t nbytes);
 static int64_t toon_raise(ToonErrKind kind, const char *msg) {
     int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
     box[0] = (int64_t)kind;

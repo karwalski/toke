@@ -1344,6 +1344,17 @@ thread, and so is the `$err` arm's binding of it — so there is nothing to free
 per error. A `let`-bound fallible value is the one place a box must outlive
 later raises, and it keeps its own copy (127.103, §7.5 item 1).
 
+**One thread-local object (127.504).** The slot and the box's buffer live in
+one TLS object, `TkErrTls {slot, buf, cap}` (`tk_runtime.h`), whose symbol is
+`tk_current_error` and whose first member is the slot, so the `i64` the
+emitted code declares in §7.1 is unchanged. C sees the name as a macro for the
+slot; `tk_err_box`'s fast path is inline in the header, so a C raise reaches
+the box and the slot through one thread-local lookup (one `tlv_get_addr` on
+Darwin, where it used to be two). The emitted code's own raise still calls the
+out-of-line `tk_err_box` and stores the slot. A file that includes
+`tk_runtime.h` must not redeclare either name, and a test that stands in for
+the runtime defines the `TkErrTls` object (C2086).
+
 The buffer is an inline thread-local array sized for the common box (a 2-slot
 sum, or a record of up to 8 fields), so the usual error return performs **no
 allocation at all** and cannot fail. Only a wider error type reaches the heap;

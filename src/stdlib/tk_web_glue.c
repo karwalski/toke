@@ -25,15 +25,9 @@
 #include "capabilities.h" /* 121.42: servedir/servepages take fs.read */
 /* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
  * returns the real value; defined in tk_runtime.c. */
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
-void *tk_err_box(int64_t nbytes);   /* tk_runtime.c (127.109) */
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 #  define TK_WEB_TLS _Thread_local
 #else

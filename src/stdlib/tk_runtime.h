@@ -16,6 +16,7 @@
 #define TK_RUNTIME_H
 
 #include <stdint.h>
+#include <string.h>   /* memset, tk_err_box_fast */
 
 /* ── Story 127.101/127.109: the error channel ────────────────────────────────
  * runtime-abi.md §7.  `tk_current_error` is the tri-valued slot (0 = ok,
@@ -38,7 +39,34 @@
 #  define TK_TLS __thread
 #endif
 
-extern TK_TLS int64_t tk_current_error;
+/* 127.504: ONE thread-local object holds the slot AND the error box's buffer.
+ * On Darwin every distinct thread-local variable a function touches costs a
+ * tlv_get_addr call, and a std raise touched two: the box state inside
+ * tk_err_box and the slot in the glue.  With both in one object and the box's
+ * fast path inline below, a raise in a glue function makes one lookup.
+ *
+ * The SYMBOL is still `tk_current_error`, and `slot` is its first member, so
+ * the address the emitted code loads and stores through
+ * (`@tk_current_error = external thread_local global i64`, runtime-abi.md
+ * §7.1) is the slot's, exactly as before: codegen is unchanged.  In C the
+ * name is a macro for the slot, so `tk_current_error = x` keeps meaning what
+ * it did.  The rules that follow:
+ *   - never redeclare `tk_current_error` (or tk_err_box) in a file that
+ *     includes this header -- it is declared here, as the object;
+ *   - a test that stands in for tk_runtime.c defines the OBJECT, not an
+ *     int64_t, because inlined glue reads `buf` past the slot:
+ *         #undef tk_current_error
+ *         TK_TLS TkErrTls tk_current_error;
+ *         #define tk_current_error (tk_current_error.slot)
+ *     and defines its tk_err_box stub as `void *(tk_err_box)(int64_t n)`.
+ * A C file that does not include this header may still declare
+ * `extern TK_TLS int64_t tk_current_error;` and reads the slot correctly. */
+typedef struct {
+    int64_t slot;   /* MUST stay first: the emitted code's @tk_current_error */
+    void   *buf;    /* the error box (tk_err_box), NULL until the first raise */
+    int64_t cap;    /* its capacity, never below TK_ERR_INLINE once buf is set */
+} TkErrTls;
+extern TK_TLS TkErrTls tk_current_error;
 
 /* tk_err_box — the thread's error box, at least `nbytes` and zeroed.
  *
@@ -60,6 +88,27 @@ extern TK_TLS int64_t tk_current_error;
  * 0, and 0 is SUCCESS (§7.2), so an out-of-memory error return would have read
  * back as a successful one. */
 void   *tk_err_box(int64_t nbytes);
+
+/* The common raise, inline (127.504): a box that fits the inline size, once
+ * the thread's buffer exists, is zeroed with a constant-size store (127.492)
+ * and returned with no call.  Its capacity is never below TK_ERR_INLINE (the
+ * buffer starts there and only grows; the OOM fallback returns to it), so
+ * zeroing past nbytes stays inside it.  Everything else is the out-of-line
+ * tk_err_box, which the emitted code also calls. */
+#define TK_ERR_INLINE 64
+static inline void *tk_err_box_fast(int64_t nbytes)
+{
+    TkErrTls *t = &tk_current_error;
+    if (nbytes > 0 && nbytes <= TK_ERR_INLINE && t->buf) {
+        memset(t->buf, 0, TK_ERR_INLINE);
+        return t->buf;
+    }
+    return (tk_err_box)(nbytes);
+}
+
+/* Declared and used above as the object; from here on, the slot. */
+#define tk_current_error (tk_current_error.slot)
+#define tk_err_box(n) tk_err_box_fast(n)
 
 /* Release this thread's error-box buffer.  Registered via atexit() for the
  * main thread; a worker that raises leaves one buffer behind at thread exit,

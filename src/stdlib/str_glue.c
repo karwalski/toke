@@ -22,17 +22,9 @@
  * the real value — the 0
  * sentinel can't distinguish a legitimately-parsed 0/0.0 from failure. The
  * match-decode discriminates ok/err on this flag for those calls. */
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
-
-/* 127.241: the per-thread error box (tk_runtime.c, 127.109). */
-void *tk_err_box(int64_t nbytes);
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
 
 /*
  * str_raise — 127.241.  Fail a `T!SliceErr` / `T!ParseErr` / `T!EncodingErr`

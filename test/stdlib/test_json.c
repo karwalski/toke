@@ -26,13 +26,16 @@ int64_t tk_json_encval_w(int64_t v, int64_t desc);
  * json_glue.c without the runtime, so it provides the two symbols itself —
  * thread-local, because a plain global against the glue's TLS extern links
  * silently and then SIGBUSes (127.101). */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-_Thread_local int64_t tk_current_error = 0;
-#else
-__thread int64_t tk_current_error = 0;
-#endif
+/* 127.504: the slot is the first member of one thread-local object that
+ * also holds the box buffer, which the glue's inline tk_err_box reads, so the
+ * stand-in defines the object (tk_runtime.h).  buf stays NULL, so every raise
+ * reaches the tk_err_box stub below. */
+#include "../../src/stdlib/tk_runtime.h"
+#undef tk_current_error
+TK_TLS TkErrTls tk_current_error;
+#define tk_current_error (tk_current_error.slot)
 static int64_t g_errbox[8];
-void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
+void *(tk_err_box)(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
 
 int64_t tk_json_bool_w(int64_t obj, int64_t key);
 int64_t tk_json_getbool_w(int64_t obj, int64_t key);

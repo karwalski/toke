@@ -28,7 +28,11 @@
  * always denied.  std.task's pool_worker invokes a toke function pointer on a
  * worker thread, so a shared slot really did let two threads overwrite each
  * other's error. */
-TK_TLS int64_t tk_current_error = 0;
+#undef tk_current_error
+TK_TLS TkErrTls tk_current_error = { 0, NULL, 0 };   /* 127.504: slot + box */
+/* The object, for the box code below (the name is the slot past here). */
+static inline TkErrTls *err_obj(void) { return &tk_current_error; }
+#define tk_current_error (tk_current_error.slot)
 
 /* ── 127.109/127.49: the per-thread error box ────────────────────────────────
  * One buffer per thread, grown on demand, reused by every raise.  See the
@@ -40,8 +44,8 @@ TK_TLS int64_t tk_current_error = 0;
  * leaves the old block valid, so keeping it is correct and the raise falls
  * back to the payload-less flag. */
 /* One TLS object, not two: on Darwin every distinct thread-local reference
- * goes through a tlv_get_addr thunk, so folding the buffer and its capacity
- * into one struct halves the lookups on the raise path. */
+ * goes through a tlv_get_addr thunk, so the buffer and its capacity live in
+ * tk_current_error's object with the slot (127.504, tk_runtime.h). */
 /* The buffer starts as an INLINE thread-local array, so the overwhelmingly
  * common error box — a 2-slot sum (16 bytes) or a record of up to 8 fields —
  * needs no allocation at all and, more importantly, CANNOT FAIL.  A failed
@@ -51,9 +55,6 @@ TK_TLS int64_t tk_current_error = 0;
  * with the old per-error malloc() too; sizing the common case inline removes
  * it rather than moving it.  Only an error type wider than this reaches the
  * heap, and the null it can still return is handled by the caller below. */
-#define TK_ERR_INLINE 64
-typedef struct { void *buf; int64_t cap; } TkErrBuf;
-static TK_TLS TkErrBuf       err = { NULL, 0 };
 /* 127.439: int64_t storage, not unsigned char.  Every box is written as
  * int64_t slots, and a char array has alignment 1: in glibc's TLS block it
  * landed 4-byte aligned, so each raise stored to a misaligned address (UBSan
@@ -61,8 +62,8 @@ static TK_TLS TkErrBuf       err = { NULL, 0 };
  * C310/C524/C542/C203/C1691 on Linux).  macOS happened to place it aligned. */
 static TK_TLS int64_t        err_inline_words[TK_ERR_INLINE / sizeof(int64_t)];
 #define err_inline ((unsigned char *)err_inline_words)
-#define err_buf err.buf
-#define err_cap err.cap
+#define err_buf (err_obj()->buf)
+#define err_cap (err_obj()->cap)
 
 void tk_err_release(void)
 {
@@ -71,18 +72,22 @@ void tk_err_release(void)
     err_cap = 0;
 }
 
+/* The out-of-line definition; tk_runtime.h maps C calls to the inline
+ * tk_err_box_fast, which comes here past its fast path. */
+#undef tk_err_box
 void *tk_err_box(int64_t nbytes)
 {
-    /* 127.492: the fast path every std raise takes.  A box that fits the
-     * inline size is zeroed with a CONSTANT-size store of TK_ERR_INLINE bytes
-     * (four vector stores, no call): once the buffer exists its capacity is
-     * never below TK_ERR_INLINE (it starts there, only grows, and the OOM
-     * fallback returns to it), so zeroing past nbytes stays inside it.  The
+    /* 127.492: the fast path every raise takes.  A box that fits the inline
+     * size is zeroed with a CONSTANT-size store of TK_ERR_INLINE bytes (four
+     * vector stores, no call): once the buffer exists its capacity is never
+     * below TK_ERR_INLINE (it starts there, only grows, and the OOM fallback
+     * returns to it), so zeroing past nbytes stays inside it.  The
      * variable-size memset below was a libc call plus a heavier prologue:
      * measured on Darwin arm64, the cli-argv form-a miss loop at
-     * PAT_N=16,384,000 went from 0.20 s to 0.12-0.13 s user CPU.  One TLS
-     * lookup (`err`), as before. */
-    TkErrBuf *eb = &err;
+     * PAT_N=16,384,000 went from 0.20 s to 0.12-0.13 s user CPU.  C callers
+     * get this path inline (tk_err_box_fast, 127.504); the emitted code and
+     * every other case come here. */
+    TkErrTls *eb = err_obj();
     if (nbytes > 0 && nbytes <= TK_ERR_INLINE && eb->buf) {
         memset(eb->buf, 0, TK_ERR_INLINE);
         return eb->buf;

@@ -446,6 +446,22 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   the box), each a `tlv_get_addr` call on Darwin, which the emitted code
   addresses by name. The catalogue entry is not re-ingested (127.461).
   Conformance: C2031.
+- **A std raise makes one thread-local lookup in C, not two** (127.504). The
+  slot `tk_current_error` and the error box's buffer are now one thread-local
+  object (`TkErrTls {slot, buf, cap}` in `tk_runtime.h`), and `tk_err_box`'s
+  fast path is inline in the header, so a glue function's raise reaches the
+  box and the slot through one `tlv_get_addr` on Darwin. The slot is the
+  object's first member and the symbol is still `tk_current_error`, so the
+  emitted code (`@tk_current_error = external thread_local global i64`) is
+  unchanged. Measured on Darwin arm64 (user CPU, min of 9, `PAT_N=65536000`,
+  load 7-50): cli-argv form a 0.46-0.52 s -> 0.35-0.41 s, form b
+  0.26-0.28 s -> 0.24-0.26 s (a/b from about 1.85x to 1.5x); at
+  `PAT_N=16384000` a 0.12 s -> 0.10 s against b 0.06 s. The emitted code's own
+  raise (a user `$err`) still calls the out-of-line `tk_err_box` and stores
+  the slot itself. For C: a file that includes `tk_runtime.h` must not
+  redeclare `tk_current_error` or `tk_err_box` (11 glue files did; they now
+  include the header), and a test that stands in for the runtime defines the
+  `TkErrTls` object, not an `int64_t`. Conformance: C2086.
 - **A trailing `;` before `}` in a type declaration is one E2002, not four
   diagnostics** (127.339). `m=a;t=$p{x:i64;};` reported E2002, E2004, E2002,
   E2002: `parse_field_list` stopped before the `;` without consuming it, so
