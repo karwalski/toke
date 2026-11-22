@@ -80,6 +80,12 @@ TkVecStore *vecstore_open(const char *data_dir);
  * invalid. */
 void vecstore_close(TkVecStore *vs);
 
+/* 138.64: as vecstore_close, but the store and collection structs (and their
+ * data_dir / name strings) are kept allocated, never freed, so their
+ * addresses are never reused.  For the toke glue, whose handles are those
+ * addresses; C callers use vecstore_close. */
+void vecstore_retire(TkVecStore *vs);
+
 /* vecstore.flush(vs:VecStore) -> bool
  *
  * 136.15: writes every dirty collection to disk now, without closing.  Each

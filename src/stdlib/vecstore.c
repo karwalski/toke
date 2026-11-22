@@ -455,6 +455,41 @@ void vecstore_close(TkVecStore *vs)
     free(vs);
 }
 
+/* 138.64: vecstore_close for the toke glue.  Saves and releases exactly what
+ * vecstore_close does, except the store and collection structs themselves
+ * and the strings toke reads from them (.path = data_dir, .name = name):
+ * those shells stay allocated for the life of the process, so their
+ * addresses are never handed out again and a handle the glue has forgotten
+ * can never come to name a store or collection opened later. */
+void vecstore_retire(TkVecStore *vs)
+{
+    if (!vs) return;
+
+    pthread_mutex_lock(&vs->mutex);
+
+    for (int32_t i = 0; i < vs->ncol; i++) {
+        TkVecCollection *col = vs->collections[i];
+        if (!col) continue;
+        if (col->dirty) collection_save(col);
+        for (int32_t j = 0; j < col->count; j++)
+            entry_free_members(&col->entries[j]);
+        free(col->entries);
+        free(col->file_path);
+        col->entries = NULL;
+        col->file_path = NULL;
+        col->count = col->capacity = 0;
+        col->dirty = 0;
+        vs->collections[i] = NULL;
+    }
+
+    free(vs->collections);
+    vs->collections = NULL;
+    vs->ncol = vs->col_cap = 0;
+
+    pthread_mutex_unlock(&vs->mutex);
+    pthread_mutex_destroy(&vs->mutex);
+}
+
 /* -------------------------------------------------------------------------
  * Collection operations
  * ------------------------------------------------------------------------- */

@@ -22,7 +22,8 @@
  * reads only a registered one: a forged `5 as $vecstorehandle`, a record
  * literal or a closed store is answered as the null handle.  A collection
  * is a view of its store, so vecstore.close forgets the store's collections
- * with it (vecstore_close frees them). */
+ * with it (138.64: vecstore_retire keeps their memory, so the addresses are
+ * never reused). */
 static TkVecStore *store_in(int64_t v)
 {
     return (TkVecStore *)tk_handle_addr(TK_HK_VECSTORE, v);
@@ -103,8 +104,8 @@ int64_t tk_vecstore_upsert_w(int64_t coll, int64_t id, int64_t embedding, int64_
  * reachable path to disk at all — upserts accumulated in memory and died with
  * the process. The persistence layer itself (vecstore.c collection_save /
  * collection_load, the "TKVC" format) was complete the whole time; only this
- * entry point was missing. After this call the store handle and every
- * collection handle derived from it are dangling, exactly as documented. */
+ * entry point was missing. 138.61/138.64: after this call the store handle
+ * and every collection handle derived from it are the null handle. */
 int64_t tk_vecstore_close_w(int64_t store) {
     TkVecStore *vs = store_in(store);   /* 138.61: a second close is a no-op */
     if (!vs) return 0;
@@ -113,7 +114,10 @@ int64_t tk_vecstore_close_w(int64_t store) {
     if (vecstore_dirty(vs))
         TK_REQUIRE_PATH(TK_CAP_FS_WRITE, vecstore_datadir(vs));   /* 138.19 */
     (void)tk_handle_drop(vs);   /* 138.61: and its collections */
-    vecstore_close(vs);
+    /* 138.64: not vecstore_close -- the shells stay allocated, so a later
+     * vecstore.open or vecstore.collection never gets this address back and
+     * a closed handle stays the null handle. */
+    vecstore_retire(vs);
     return 0;
 }
 

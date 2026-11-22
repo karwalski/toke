@@ -28,7 +28,7 @@
 # Negative control: TKC=<base 6ec0044d tree>/tkc -- every forged program
 # exits 139.
 #
-# Story: 138.61
+# Stories: 138.61, 138.64 (vsreopen)
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -95,8 +95,8 @@ run vsforged 'store: flush=false coll=ERR
 coll: count=0 up=false s=0 d=false db=0
 literal: flush=false count=0'
 
-# A real store and collection work; after vecstore.close both are refused
-# (close frees them), and a second close is a no-op.
+# A real store and collection work; after vecstore.close both are refused,
+# and a second close is a no-op.
 mkdir -p vsd
 cat > vsclosed.tk <<'EOF'
 m=v;
@@ -114,6 +114,43 @@ f=main():i64{
 EOF
 run vsclosed 'open: up=true count=1 s=1 flush=true
 closed: count=0 s=0 flush=false coll=ERR'
+
+# 138.64: close then reopen.  vecstore.close used to free the store and its
+# collections, so malloc gave their addresses to the next vecstore.open and
+# vecstore.collection, and the closed handles came back to life naming the
+# new ones (an upsert through the old collection landed in the new store).
+# Now close keeps the shells (vecstore_retire), so their addresses are never
+# reused: the old handles stay refused, their .path/.name still read, and
+# the reopened store sees only what was written to disk before the close.
+mkdir -p vsr
+cat > vsreopen.tk <<'EOF'
+m=v;
+i=io:std.io;
+i=vs:std.vecstore;
+f=main():i64{
+  let s1=mt vs.open("vsr"){$ok:x x;$err:e (0 as $vecstorehandle)};
+  let c1=mt vs.collection(s1;"docs"){$ok:x x;$err:e (0 as $veccollection)};
+  io.println("first: up=\(vs.upsert(c1;"a";@(1.0;0.0);"p")) count=\(vs.count(c1))");
+  vs.close(s1);
+  let s2=mt vs.open("vsr"){$ok:x x;$err:e (0 as $vecstorehandle)};
+  let c2=mt vs.collection(s2;"docs"){$ok:x x;$err:e (0 as $veccollection)};
+  io.println("old: up=\(vs.upsert(c1;"b";@(0.0;1.0);"q")) count=\(vs.count(c1)) flush=\(vs.flush(s1)) path=\(s1.path) name=\(c1.name)");
+  io.println("new: count=\(vs.count(c2)) up=\(vs.upsert(c2;"c";@(0.0;1.0);"r")) count=\(vs.count(c2))");
+  vs.close(s1);
+  io.println("after old close: count=\(vs.count(c2)) flush=\(vs.flush(s2))");
+  vs.close(s2);
+  let s3=mt vs.open("vsr"){$ok:x x;$err:e (0 as $vecstorehandle)};
+  let c3=mt vs.collection(s3;"docs"){$ok:x x;$err:e (0 as $veccollection)};
+  io.println("third: count=\(vs.count(c3)) old2=\(vs.count(c2)) old1=\(vs.count(c1))");
+  vs.close(s3);
+  <0
+};
+EOF
+run vsreopen 'first: up=true count=1
+old: up=false count=0 flush=false path=vsr name=docs
+new: count=1 up=true count=2
+after old close: count=2 flush=true
+third: count=2 old2=0 old1=0'
 
 cat > htmlforged.tk <<'EOF'
 m=ht;

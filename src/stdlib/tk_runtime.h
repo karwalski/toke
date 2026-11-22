@@ -211,8 +211,10 @@ void tk_clos_release(int64_t v);
  *     value must stay a real pointer and that toke code never releases: a
  *     record toke code reads fields of, a handle compiled code passes to the
  *     glue directly (std.vec), or an object C callbacks hand to toke.  An
- *     address-keyed kind must not gain a release call: a dropped address is
- *     accepted again once malloc reuses it (138.45 review).
+ *     address-keyed kind must not gain a release call that frees it: a
+ *     dropped address is accepted again once malloc reuses it (138.45
+ *     review).  tls.close and vecstore.close drop their records but keep
+ *     them allocated (138.61, 138.64), so the address is never reused.
  * Registering an address again is idempotent (the same token, for a token
  * kind).  tk_handle_drop forgets one. */
 enum {
