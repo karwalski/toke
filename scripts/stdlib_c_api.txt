@@ -28,6 +28,7 @@
 
 # ── std capabilities broker (ADR-0010) ──────────────────────────────────────
 tk_cap_grants c-api src/stdlib/capabilities.h,test/stdlib/test_capabilities.c   # "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c
+tk_cap_deny c-api src/stdlib/capabilities.h   # TK_REQUIRE's denial (CAP001, or CAP002 when the class is granted for scopes only); unreached while no sink expands TK_REQUIRE (138.19)
 
 # ── std.log C runtime ───────────────────────────────────────────────────────
 tk_log_security c-api src/stdlib/log.h,docs/stdlib/log.md,test/conform/C137_log_injection_redaction.sh,test/conform/C660_log_output_reopens_after_rotation.sh   # the C runtime's security-event stream; log.md: "not yet part of the std.log interface"

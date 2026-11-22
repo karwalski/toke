@@ -90,9 +90,9 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 73 |
-| `c-internal` | called only from other C in `src/stdlib/` | 166 |
+| `c-internal` | called only from other C in `src/stdlib/` | 165 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 28 |
+| `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 29 |
 | `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 1 |
 | | **total** | **277** |
 
@@ -176,7 +176,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (166)
+### `c-internal` (165)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -189,7 +189,6 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_arr_sort_qsort_cmp` | `collections_glue.c` | collections_glue.c |
 | `tk_cap_check` | `capabilities.c` | db.c, file_glue.c |
 | `tk_cap_class_name` | `capabilities.c` | capabilities.c |
-| `tk_cap_deny` | `capabilities.c` | via `TK_REQUIRE` in 1 file |
 | `tk_cap_init` | `capabilities.c` | tk_runtime.c |
 | `tk_cap_ip4str` | `capabilities.c` | router.c |
 | `tk_cap_is_grant_flag` | `capabilities.c` | tk_runtime.c |
@@ -361,10 +360,11 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `c-api` (28)
+### `c-api` (29)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
+| `tk_cap_deny` | `capabilities.c` | TK_REQUIRE's denial (CAP001, or CAP002 when the class is granted for scopes only); unreached while no sink expands TK_REQUIRE (138.19) |
 | `tk_cap_grants` | `capabilities.c` | "exposed for testing and diagnostics" (capabilities.h); asserted by test_capabilities.c |
 | `tk_infer_is_loaded` | `infer.c` | handle query of the finished C core; tested from C |
 | `tk_infer_unload` | `infer.c` | infer.md: "`tk_infer_unload` exists; the wrapper returns 0" |
