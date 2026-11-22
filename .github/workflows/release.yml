@@ -24,12 +24,12 @@ on:
         description: "also sign + verify the archives (writes a Rekor log entry; publishes nothing)"
         type: boolean
         default: false
-      skip_conform:
+      skip_gates:
         # 127.453: a dispatch that exercises the packaging, floor, SBOM and
-        # signing steps on a tree whose conformance gate is red for other
-        # reasons.  Only a manual run reads it: a tag push always runs the
-        # gate, and nothing a manual run makes is published.
-        description: "skip the conformance gate (manual pipeline test only)"
+        # signing steps on a tree whose conformance or website gate is red
+        # for other reasons.  Only a manual run reads it: a tag push always
+        # runs both gates, and nothing a manual run makes is published.
+        description: "skip the conformance and website gates (manual pipeline test only)"
         type: boolean
         default: false
 
@@ -101,7 +101,7 @@ jobs:
         run: make -k   # -k: report every failing object, not just the first
 
       - name: Conformance gate
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_conform) }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
         run: make conform
 
       # 127.490: the release binary is built in a pristine worktree of the
@@ -236,6 +236,7 @@ jobs:
       # ship, not through `make check-site-compile` (its $(BIN) prerequisite
       # rebuilt ./toke).  Same guards as that target.
       - name: Website examples compile under the release compiler
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_gates) }}
         run: |
           U="$RUNNER_TEMP/unpacked"; mkdir -p "$U"
           tar xzf "$TARBALL" -C "$U"
