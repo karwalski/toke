@@ -1301,7 +1301,7 @@ test-ci: test-ci-green
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
 # 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics diff-codegen test-standalone
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics check-lint-rules diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1581,6 +1581,18 @@ check-open-epics:
 # documented in docs/reference/errors.md, and errors.md must not list dead codes.
 check-error-codes:
 	python3 scripts/check_error_codes.py
+
+# 138.41 -- every lint rule id in src/lint.c is named in CHANGELOG.md and has a
+# row in docs/compiler/lint-rules-v1.md's rule table. A new rule reports on
+# code nobody changed; loke's lint ratchet read 3.2.0's nested-if-ladder as a
+# regression because no release note named it. When cutting a release, also
+# run it with --since <previous tag>: every id added or removed since then must
+# be named in the new release's section. A changed rule keeps its id, so this
+# cannot see it; CONTRIBUTING.md asks for it by hand.
+.PHONY: check-lint-rules
+check-lint-rules:
+	python3 scripts/check_lint_rules_named.py --selftest
+	python3 scripts/check_lint_rules_named.py
 
 # 124.0b — differential codegen regression gate (root of trust). Fails if any
 # full-program test's observable behaviour (compile / exit / stdout) changed vs

@@ -25,6 +25,10 @@ tkc --diag-text broken.tk     # human-readable diagnostics
 tkc pkg init myapp            # write pkg.toml
 ```
 
+A build that links with its own clang command, rather than through `tkc`, links the
+standard library C sources and flags `tkc --emit-deps` prints for each of its modules;
+see [Build Dependencies](/docs/compiler/build-deps/), "Linking a program yourself".
+
 Everything below this line is generated from the compiler's own help text by
 `scripts/render_cli_reference.py`: `tkc --help` for the flags, `tkc pkg --help` and
 each `tkc pkg <command> --help` for the package commands, and `src/tkc_limits.h` for

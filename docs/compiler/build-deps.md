@@ -222,3 +222,103 @@ Then build:
 cd toke && make clean && make CC=clang    # builds tkc
 cd toke-ooke && make clean && make        # builds ooke (requires tkc in PATH)
 ```
+
+---
+
+## Linking a program yourself: `tkc --emit-deps`
+
+`tkc main.tk` compiles and links in one step, and `tkc b.tk main.tk` builds
+several modules into one binary. A build that compiles toke modules to LLVM IR
+(`--emit-llvm`) and links them with its own clang command, as ooke's Makefile
+and loke's build do, must also compile the standard library's C sources
+(`src/stdlib/*.c`, and vendored sources under `stdlib/vendor/`). Which files
+depends on what the program imports, and the set changes between releases: in
+3.2.0 `std.infer` started needing `infer_stream.c`, and a build that kept its
+own list stopped linking, on `tk_infer_stream_cleanup`. Do not keep a list.
+Ask the compiler:
+
+```sh
+tkc --emit-deps -I . main.tk
+```
+
+For that one source file it prints, one entry per line:
+
+1. the stdlib C sources, as absolute paths: always `tk_runtime.c` and
+   `capabilities.c`; the core modules every program uses (`str`, `collections`,
+   `args`) and what they depend on; and each `std.*` module the file imports,
+   with its dependencies and vendored sources;
+2. if any of those modules needs link flags, a line `---`, then the flags, one
+   word per line (`-lssl`, `-lz`, `-lpthread`; on macOS a `-framework` line is
+   followed by the framework's name);
+3. if the file imports modules of its own, a line `---`, then each of them as
+   `<module path>.ll` (`a.b` is `a/b.ll`): the IR files to link with it.
+
+This is the set tkc's own driver links: both read the module table in
+`src/stdlib_deps.c` through the same resolver.
+
+- **Run it on every module, one file per run, and link the union.** Each run
+  covers only that file's own imports. A `main.tk` that imports a module of
+  its own which imports `std.json` does not list `json.c`, and linked with
+  `main.tk`'s list alone the program fails on undefined symbols. Given several
+  files at once it prints each file's sections one after another with nothing
+  between them, so the second file's sources follow the first file's flags and
+  read as flags (story 138.54).
+- **Pass the arguments the build passes.** The file must type-check, so give
+  it the same `-I` directories. A file that does not type-check prints its
+  diagnostics on stderr, nothing on stdout, and exits non-zero; stop the build
+  there rather than link a partial list.
+- **The stdlib directory** is the one tkc uses for every build:
+  `TKC_STDLIB_DIR` if set, else the path built into tkc, else the one beside
+  the executable. Vendored sources are spelled through it
+  (`<stdlib>/../../stdlib/vendor/...`); normalise paths before merging them
+  with a list of your own, or a file named two ways is compiled, and defined,
+  twice.
+- **Not printed: the flags tkc's driver adds to every link.** Add them
+  yourself: `-lm -lpthread`; `-DTK_HAVE_OPENSSL` when the flags include
+  `-lssl` (the modules compile their TLS code under it), and with it on macOS
+  `-framework Security -framework CoreFoundation`; the vendored include
+  directories `-I<toke>/stdlib/vendor/cmark/src` and
+  `-I<toke>/stdlib/vendor/tomlc99`; and on macOS with Homebrew's OpenSSL,
+  `-I$(brew --prefix)/include` and `-L$(brew --prefix)/lib`.
+
+A two-module build (bash; checked on macOS with toke 3.2.0, with and without a
+module that imports `std.http`):
+
+```sh
+TOKE=/path/to/toke          # the tree tkc was built from, or the extracted release archive
+tkc=$TOKE/tkc
+
+# 1. each module to IR; a module that another imports also writes its .tki
+$tkc --emit-llvm --emit-interface --out b.ll b.tk
+$tkc --emit-llvm --out main.ll -I . main.tk
+
+# 2. each module's link set; the binary links the union
+: > srcs.txt; : > flags.txt
+for f in b.tk main.tk; do
+  $tkc --emit-deps -I . "$f" | awk -v S=srcs.txt -v F=flags.txt '
+    $0 == "---" { sec++; next }
+    sec == 0    { print >> S; next }
+    !/\.ll$/    { print >> F }'
+done
+
+# 3. the flags --emit-deps leaves to you, then one link
+cflags="-D_GNU_SOURCE -I$TOKE/stdlib/vendor/cmark/src -I$TOKE/stdlib/vendor/tomlc99"
+ldextra=""
+grep -qx -- -lssl flags.txt && cflags="$cflags -DTK_HAVE_OPENSSL"
+if [ "$(uname -s)" = Darwin ]; then
+  cflags="$cflags -I$(brew --prefix)/include"; ldextra="-L$(brew --prefix)/lib"
+  grep -qx -- -lssl flags.txt && ldextra="$ldextra -framework Security -framework CoreFoundation"
+fi
+clang -O2 -w $cflags -x ir b.ll main.ll -x c $(sort -u srcs.txt) \
+  -o prog $(cat flags.txt) $ldextra -lm -lpthread
+```
+
+ooke's `scripts/emit_deps.sh` does the same over every module of an ooke
+binary and merges more carefully: it normalises paths and keeps each
+`-framework` with its name.
+
+**When the set changes.** `CHANGELOG.md` names every change to what
+`--emit-deps` prints for a module (a C file added, split, moved or removed, or
+a new link flag) under the release that makes it; the 3.2.0 changes are in
+that release's addendum. A build that links what `--emit-deps` names needs no
+change for any of them.

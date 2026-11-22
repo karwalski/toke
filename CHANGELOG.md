@@ -110,6 +110,16 @@ One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2
 
 Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `e25bbd7d`, `c44d48a4`). Open: the response header block is not capped (138.49).
 
+### Notes for downstream builds
+
+- **Which stdlib C sources a program links is documented** (138.42): what `tkc
+  --emit-deps` prints for each module, plus the flags it leaves to the caller
+  (`docs/compiler/build-deps.md`, "Linking a program yourself"). From this release,
+  an entry names every change to what `--emit-deps` prints for a module, and every
+  lint rule added or changed (138.41; `make check-lint-rules` checks the rule ids).
+  Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
+  to both are in its addenda.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
@@ -372,6 +382,57 @@ Platform floors: the macOS binaries need macOS 15 (Sequoia) or later, and the Li
 binaries glibc 2.38 or later (Ubuntu 24.04+, Debian 13+, Fedora 39+); older systems build
 from source (toke 127.454). ooke 3.0.0 requires toke 3.2.0; Homebrew installs both
 (`brew install karwalski/toke/tkc`, `karwalski/toke/ooke`).
+
+### Addendum, 2026-11-15: lint rules
+
+Added after the release at loke's request (loke's handoff of 2026-11-15, N-7; story
+138.41). The entries above mention the new lint rule only in passing and name no rule
+id. A downstream that ratchets its `tkc --lint` counts sees new findings on unchanged
+source as a regression: loke's count went from 552 to 737 on 3.2.0, all of it the new
+rule.
+
+One rule is new and five changed between `v3.1.0` and `v3.2.0` (`git diff v3.1.0
+v3.2.0 -- src/lint.c`). The messages of the five are unchanged. Measured with both
+compilers over ooke's sources, toke's examples and test programs and the website's
+programs, only `nested-if-ladder` adds findings; the others change which findings carry
+a `fix`, or report less.
+
+| Rule id | Severity | Change | Effect on unchanged source | Story, commit |
+|---|---|---|---|---|
+| `nested-if-ladder` (new) | hint | Reports an `if` whose `el` block holds exactly one statement, another `if`: one finding per ladder, at its first nested `if`. Message, for a one-rung ladder: ``else block holds only another if (1 nested rung) — write `el if(...)`: an el-if chain is one nesting level, each `el{if}` rung adds one (quality_rubric: depth > 3 flags, > 4 fails)``. `--lint --fix` splices the inner `if` up into `el if(...)`; no fix when a comment sits in the block | New hints wherever the shape occurs. A hint: the `--lint` exit status does not change | 131.64 — `5800ac34` |
+| `single-use-let` | hint | `--lint` type-checks the file silently first, and the `fix` (inline the binding) is offered only when the checker typed the use and the initialiser identically; a file that does not type-check keeps the hint without a fix | Same findings; fewer carry a `fix` | 131.59 — `02c5e457`, `ac12618f`, `e5a917b3` |
+| `mutable-never-mutated` | warning | The `fix` (delete `mut.`) is offered only when the program with the deletion type-checks and types every node identically | Same findings; fewer carry a `fix` | 131.104 — `f324d408` |
+| `string-concat-chain` | warning | The fix that `TKC_LINT_CONCAT_FIX=1` arms is offered only for a module-style `std.str` chain whose every part the checker typed `str` | Same findings; without that variable no finding carries a fix, as before | 131.110 — `f4dae47c` |
+| `unused-import` | warning | Reads a qualified type's alias from the parse tree, not from the source bytes before the type | Fewer findings: an import used as `alias.$type` with a comment between the tokens was reported unused, and `--fix` deleted it | 131.81 — `968de8c6` |
+| `discarded-value-result` | error | Its `std.vec` exemption (a bare `push`/`set` on a handle mutates in place) recognises the renamed handle type `$vechandle` (was `Vec`, #4 above) | None on source that compiles on 3.2.0 | 127.251 — `16c3088d` |
+
+The rules `tkc --lint` runs in 3.2.0, for a downstream that ratchets per rule:
+`discarded-value-result`, `empty-fn-body`, `flag-soup`, `loop-rebuilds-array`,
+`mut-flag-if`, `mutable-never-mutated`, `nested-if-ladder`, `redundant-bind`,
+`single-use-let`, `string-concat-chain`, `unreachable-code`, `unused-import`,
+`unused-let`. Each is described in `docs/compiler/lint-rules-v1.md`. From the next
+release, an entry names every lint rule added or changed (CONTRIBUTING.md).
+
+### Addendum, 2026-11-15: the stdlib C sources a program links
+
+Added after the release at loke's request (loke's handoff of 2026-11-15, N-8; story
+138.42). loke compiles toke's stdlib C sources itself from a list of its own, and on
+3.2.0 its link failed on `tk_infer_stream_cleanup` until it added `infer_stream.c`.
+
+What a program links is what `tkc --emit-deps` prints for each of its modules, the set
+tkc's own driver links (`docs/compiler/build-deps.md`, "Linking a program yourself").
+Link that and do not keep a list. These are the changes 3.2.0 made to it
+(`git diff v3.1.0 v3.2.0 -- src/stdlib_deps.c`); a build that keeps its own list must
+make each of them:
+
+| Module | Change to its link set | Why | Story, commit |
+|---|---|---|---|
+| `std.infer` | adds `infer_stream.c` and `-lpthread` | `tk_infer_unload` now joins the streaming thread, through `tk_infer_stream_cleanup` in `infer_stream.c` | 136.75 — `8347a71c` |
+| `std.os` | adds `os_glue.c` | `os.write`'s wrapper moved there when it learned to write every byte | 121.70 — `077f38c3` |
+| `std.toml` | depends on `std.file` (`file.c`, `file_glue.c`) | `toml.loadfile` reads through `std.file` | 121.74 — `b2191dcf` |
+| `std.db` | depends on `std.time` | `db_glue.c` calls `tk_time_nowms_w`; every program already linked it through `std.str`, so no file is new | 127.269 — `19da1fd3` |
+| `std.llm` | adds `-lssl -lcrypto` | `llm.c` speaks https over OpenSSL; tkc compiles the sources with `-DTK_HAVE_OPENSSL` when `-lssl` is among the flags | 121.23 — `585889e1` |
+| `std.http` | drops `server_ops.c` | archived as unreachable | 121.71 — `e79285b9` |
 
 ---
 
