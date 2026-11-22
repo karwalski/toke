@@ -11,7 +11,7 @@ there is a coin toss.  Every metric below is a COUNT, which load does not move:
 
   compile_insns  instructions retired by the tkc process compiling the program
                  at -O2 (macOS `/usr/bin/time -l`; Linux `perf stat -e
-                 instructions:u`).  tkc's own work only: the C toolchain it
+                 instructions:u`; else valgrind's cachegrind, 127.451).  tkc's own work only: the C toolchain it
                  invokes is a child process and is not counted.
   compile_allocs malloc+calloc+realloc calls made by tkc during that compile
                  (bench/patterns/alloccount.c interposer; macOS only)
@@ -76,7 +76,10 @@ fingerprint differs the gate prints a named SKIP and exits 0 (use
 --require-host to make that a failure).  CI therefore does not compare against
 the checked-in file: bench.yml measures the PR's base commit and head commit
 on the same runner (--record into a temp file with the base compiler, then
-compare the head compiler against it).
+compare the head compiler against it), on a Linux runner under cachegrind:
+GitHub's VM runners expose no hardware counter (127.451), and cachegrind's
+counts are exact, so a run there is measured once (--runs defaults to 1) and
+carries no alloc counts (the interposer is macOS-only).
 
 Usage:
   perf_gate.py [--tkc PATH] [--baseline FILE] [--runs N] [--only NAME ...]
@@ -146,7 +149,22 @@ def fingerprint(cc):
 
 
 def counter():
-    """Return a function(argv, env) -> instructions retired, or None."""
+    """Return (name, function(argv, env, cwd, any_rc) -> (instructions, proc)),
+    or None when this host has no instruction counter.
+
+    127.451: every counter is PROBED before it is used.  A macOS VM (GitHub's
+    macos-* runners) has no performance counters, and there /usr/bin/time -l
+    prints its resource table without an "instructions retired" line; the
+    gate took any macOS host as "has a counter" and then reported each clean
+    run as a harness failure (exit 2) on every pull request.  The order is:
+    macOS /usr/bin/time -l, Linux perf (instructions:u), then valgrind's
+    cachegrind, which counts instructions in software -- exact and
+    deterministic, so it works on a VM with no hardware counter (GitHub's
+    runners; test/perf/strlen/scaling.sh uses it the same way since 127.439).
+    The first two are "hw"; cachegrind's counts are not comparable with
+    theirs, so the counter's name is recorded in the baseline and compared.
+    """
+    probe_env = os.environ.copy()
     if platform.system() == "Darwin" and os.path.exists("/usr/bin/time"):
         def mac(argv, env, cwd, any_rc=False):
             p = subprocess.run(["/usr/bin/time", "-l"] + argv, env=env, cwd=cwd,
@@ -156,8 +174,12 @@ def counter():
                 raise Harness("%s exited %d (stderr tail: %s)"
                               % (argv[0], p.returncode, p.stderr[-300:]))
             return int(m.group(1)), p
-        return mac
-    if shutil.which("perf"):
+        try:
+            mac(["/usr/bin/true"], probe_env, None)
+            return "hw", mac
+        except Harness:
+            pass
+    if platform.system() == "Linux" and shutil.which("perf"):
         def linux(argv, env, cwd, any_rc=False):
             p = subprocess.run(["perf", "stat", "-x,", "-e", "instructions:u"]
                                + argv, env=env, cwd=cwd, capture_output=True,
@@ -168,10 +190,31 @@ def counter():
                               % (argv[0], p.returncode, p.stderr[-300:]))
             return int(m.group(1)), p
         try:
-            linux(["true"], os.environ.copy(), None)
-            return linux
+            linux(["true"], probe_env, None)
+            return "hw", linux
         except Harness:
-            return None
+            pass
+    if shutil.which("valgrind"):
+        def cachegrind(argv, env, cwd, any_rc=False):
+            # --trace-children=no (the default): the process's own
+            # instructions only, as with the hardware counters -- the C
+            # toolchain tkc spawns is not counted.  The summary line is
+            # "==PID== I refs: 1,234,567"; the program's own stderr shares
+            # the stream, hence the anchor.
+            p = subprocess.run(["valgrind", "--tool=cachegrind", "--cache-sim=no",
+                                "--cachegrind-out-file=/dev/null"] + argv,
+                               env=env, cwd=cwd, capture_output=True, text=True,
+                               timeout=1800)
+            m = re.search(r"^==\d+==\s+I\s+refs:\s+([\d,]+)", p.stderr, re.M)
+            if (p.returncode != 0 and not any_rc) or not m:
+                raise Harness("%s exited %d under cachegrind (stderr tail: %s)"
+                              % (argv[0], p.returncode, p.stderr[-300:]))
+            return int(m.group(1).replace(",", "")), p
+        try:
+            cachegrind(["true"], probe_env, None)
+            return "cachegrind", cachegrind
+        except (Harness, OSError, subprocess.SubprocessError):
+            pass
     return None
 
 
@@ -256,7 +299,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--tkc", default=os.environ.get("TKC", str(ROOT / "tkc")))
     ap.add_argument("--baseline", default=str(DEFAULT_BASELINE))
-    ap.add_argument("--runs", type=int, default=5)
+    ap.add_argument("--runs", type=int, default=None,
+                    help="runs per count, minimum taken (default 5 on a hardware "
+                         "counter, 1 under cachegrind, whose counts are exact)")
     ap.add_argument("--only", action="append", default=[])
     ap.add_argument("--record", action="store_true")
     ap.add_argument("--require-host", action="store_true",
@@ -265,12 +310,15 @@ def main():
 
     cc = os.environ.get("CC", "cc")
     fp = fingerprint(cc)
-    count = counter()
-    if count is None:
+    found = counter()
+    if found is None:
         print("SKIP perf-gate: no instruction counter on this host (macOS "
-              "/usr/bin/time -l, or Linux perf with instructions:u). Nothing "
-              "was measured.")
+              "/usr/bin/time -l reports none on a VM; Linux perf with "
+              "instructions:u; or valgrind's cachegrind). Nothing was measured.")
         return 2 if a.require_host else 0
+    counter_name, count = found
+    if a.runs is None:
+        a.runs = 1 if counter_name == "cachegrind" else 5
     try:
         lib = alloc_lib()
     except Harness as e:
@@ -291,15 +339,19 @@ def main():
         except OSError:
             print("perf-gate: no baseline at %s (record one with --record)" % a.baseline)
             return 2
-        if base.get("host") != fp:
+        # 127.451: a baseline from before the counter was recorded is "hw".
+        if base.get("host") != fp or base.get("counter", "hw") != counter_name:
             print("SKIP perf-gate: this host is not the baseline's host, so its "
                   "counts are not comparable. Nothing was compared.")
             print("  baseline host: %s" % json.dumps(base.get("host")))
             print("  this host:     %s" % json.dumps(fp))
+            print("  counter:       baseline %s, this host %s"
+                  % (base.get("counter", "hw"), counter_name))
             return 2 if a.require_host else 0
 
-    print("perf-gate: %d program(s), min of %d run(s), counts not wall time%s"
-          % (len(names), a.runs, "" if lib else " (no alloc counter on this OS)"))
+    print("perf-gate: %d program(s), min of %d run(s), counts not wall time "
+          "(counter: %s)%s" % (len(names), a.runs, counter_name,
+                               "" if lib else " (no alloc counter on this OS)"))
     try:
         cur, traps, ver = measure(a.tkc, names, a.runs, count, lib)
     except Harness as e:
@@ -323,13 +375,14 @@ def main():
             except (OSError, ValueError):
                 old = None
             if old is not None:
-                if old.get("host") != fp:
+                if old.get("host") != fp or old.get("counter", "hw") != counter_name:
                     print("perf-gate: --record --only into a baseline from another host "
                           "would mix incomparable counts; record all programs instead")
                     return 2
                 programs = dict(old.get("programs", {}))
                 programs.update(cur)
         doc = {"story": "123.11", "host": fp, "tkc_version": ver,
+               "counter": counter_name,
                "runs": a.runs, "thresholds": {k: {"pct": v[0], "abs": v[1]}
                                               for k, v in THRESHOLDS.items()},
                "programs": programs}

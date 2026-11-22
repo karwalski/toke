@@ -7,6 +7,16 @@ on:
     branches: [main]
   release:
     types: [published]
+  # 127.451: the perf gate on demand, against a named base (default main).
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "base ref or commit the gate compares against"
+        required: false
+        default: main
+
+permissions:
+  contents: read
 
 jobs:
   # 123.11 — the perf-regression gate. Until this job, this workflow uploaded
@@ -19,17 +29,35 @@ jobs:
   # that recorded it (the gate SKIPs by name elsewhere). Here the PR's BASE
   # commit is built and recorded on this same runner, then the HEAD compiler
   # is compared against that record: same host, same toolchain, same programs.
+  #
+  # 127.451: Linux + cachegrind, not macOS.  GitHub's macOS runners are VMs
+  # with no performance counters: /usr/bin/time -l prints no "instructions
+  # retired" line there, so recording the base compiler failed as a "harness
+  # failure" (exit 2) on every pull request.  GitHub's Linux VMs expose no
+  # counter to perf either, but valgrind's cachegrind counts instructions in
+  # software, exactly (C735's scaling gate uses it the same way, 127.439).
+  # perf_gate.py now probes each counter before using it; --require-host on
+  # both steps makes "no counter" a failure here rather than a silent SKIP.
+  # The alloc counts are macOS-only (DYLD interposer), so this gate compares
+  # instruction counts and exit status only.
   perf-gate:
-    if: github.event_name == 'pull_request'
-    runs-on: macos-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev clang libssl-dev valgrind
+
       - name: Build the base commit's compiler
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
         run: |
-          git worktree add ../base "${{ github.event.pull_request.base.sha }}"
+          git fetch --no-tags origin "$BASE" 2>/dev/null || true
+          git worktree add ../base "$(git rev-parse --verify "$BASE^{commit}" 2>/dev/null || git rev-parse --verify "origin/$BASE^{commit}")"
           make -C ../base -j3
           cp -L ../base/tkc "$RUNNER_TEMP/tkc-base"
 
@@ -37,13 +65,13 @@ jobs:
         run: make -j3
 
       - name: Record the base compiler's counts
-        run: python3 scripts/perf_gate.py --tkc "$RUNNER_TEMP/tkc-base" --record --baseline "$RUNNER_TEMP/base.json"
+        run: python3 scripts/perf_gate.py --tkc "$RUNNER_TEMP/tkc-base" --record --baseline "$RUNNER_TEMP/base.json" --require-host
 
       - name: Compare the head compiler (fails on a regression past threshold)
         run: python3 scripts/perf_gate.py --tkc ./tkc --baseline "$RUNNER_TEMP/base.json" --require-host
 
   bench:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

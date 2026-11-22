@@ -220,6 +220,16 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   symbol version or Mach-O `minos` against the floor, and the release notes state the
   floors from the same workflow variables. The conformance suite still runs on the newest
   runner images. The floor values are the conservative choice pending owner decision R4.
+- **The perf gate measures on CI** (127.451). `bench.yml`'s perf-gate failed with "harness
+  failure: ./tkc exited 0" on every pull request: GitHub's macOS runners are VMs without
+  performance counters, `/usr/bin/time -l` prints no "instructions retired" line there,
+  and `scripts/perf_gate.py` took any macOS host as having a counter. The gate now probes
+  each counter before using it (macOS `/usr/bin/time -l`, Linux `perf`, then valgrind's
+  cachegrind, which counts instructions exactly in software), records which counter made
+  a baseline and refuses to compare across counters, and runs once per count under
+  cachegrind. The CI gate runs on ubuntu-latest under cachegrind with `--require-host` on
+  both the record and the compare step (no counter is a failure, not a SKIP), and can be
+  dispatched against a named base. Allocation counts stay macOS-only.
 
 ---
 
