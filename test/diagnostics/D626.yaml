@@ -1,0 +1,18 @@
+id: D626
+series: D
+description: "138.35 (T-67): a helper parameter typed i64 passing its value into a handle slot -- the shape loke wrote -- is E4031 with NO fix (retyping the parameter to $handle is a repair, but not the only one)"
+input: |
+  m=t;
+  i=process:std.process;
+  f=waitfor(h:i64):i64{
+    <process.wait(h) as i64
+  };
+  f=main():i64{
+    <waitfor(0)
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64"
