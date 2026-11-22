@@ -24,7 +24,7 @@ f=main():i64{
   if(str.contains(fmt2;":")){}el{fails=fails+1};
   let fmt3=time.format(now;"%Y");
   if(str.len(fmt3)==4){}el{fails=fails+1};
-  let year=str.toint(fmt3);
+  let year=mt str.toint(fmt3){$ok:v v;$err:e 0};
   if(year>2024){}el{fails=fails+1};
   let now3=time.now();
   let fmt4=time.format(now3;"%Y-%m-%d");

@@ -14,6 +14,80 @@ may no longer compile.
 
 ## Unreleased
 
+Vehicle: **toke 3.3.0** (owner answer R1, 2026-11-15, `docs/owner-decisions-2026-11-12.md`
+"Answers recorded 2026-11-15"). **ooke 3.0.1 ships first**: it is migrated to spellings
+toke 3.2.0 already accepts, so it builds on both.
+
+### Breaking changes (with migration)
+
+| # | Change | Story, commit | Migration |
+|---|---|---|---|
+| 1 | **`==` and `!=` with an array operand are E4031** (loke T-60, the other half). The emitter has no array equality: against the literal `@()` it compared the array's address with a fresh allocation, so `a==@()` was false for every empty `a` (loke's `h==@()` spawn-failure checks never fired), and between two named arrays it compared the elements' bytes as a C string, so `@(256)==@(512)` and `@(1;2)==@(1;2;3)` were true. Both now fail at `--check`, whatever the other operand is: `'==' does not compare arrays ('@(i64)' == '@(?)'): toke has no array equality; test emptiness with .len or compare the elements`. The refusal sits beside 3.2.0's struct/sum refusal (138.9, loke T-14). `<`/`>` on arrays and `==` on maps are not changed. Measured before landing (read-only, with this commit's `tkc --check`): no site in the toke tree, ooke main (`make check`, every file), toke-website or toke-test-programs (including the library solutions; the sources there that stop at an older error first hold no comparison against `@()` either). In the banked v0.4 regen set, 4 records draw it, all the shape `if(val==other){..}` on two arrays, and their banked output came from the defect: A-ARR-0033v2, A-ARR-0090v2, MIG-P2-A-A-ARR-0010v2 and MIG-P2-A-A-ARR-0027v2 go to correctness repair (127.460). | 138.20 (owner decision 2026-11-15, register 1.2 (a)) — `62806474` | `x==@()` becomes `x.len==0` and `x!=@()` becomes `x.len!=0`: the `fix` field carries exactly that rewrite when the other operand is an identifier of array type. Compare two arrays by length and then element by element in a loop; test a process handle's failure in the `$err` arm (`process.badhandle()`, 3.2.0 #6), not against `@()`. |
+| 2 | **A std call whose interface declares `T!E` is the error union it is** (owner decision 127.30, register 1.1 (a) 2026-11-15). The 183 such functions across 37 `.tki` -- `str.toint`/`tofloat`/`parsefloat` (`!parseerr`), `str.slice` (`!sliceerr`), `str.frombytes`, `encoding.*decode` (`!encodingerr`), `json.*` (`!jsonerr`), `file.*` (`!fileerr`), `os.write` (`!oserr`), `args.get` (`!argserr`), `env.get` (`!enverr`), `toml.*`, `csv.*`, `db.*`, `http.param`/`header`, ... -- report failure on the error slot, but the checker typed them as nothing, so `str.toint("x")+1` checked clean and computed with the zero filler. A use of the result as a plain `T` -- an operand, a comparison, a `T` parameter, a return, a `let` (or `let ..=mut.`) read later, an array element -- is now **E4031** naming the union (`got 'i64!$parseerr'`), **with no `fix`**. Every accepted program lowers exactly as before. | 127.319 | `mt str.toint(s){$ok:v v;$err:e <your value>}`, `!` in a fallible function, or `getor` for a map; a statement call whose result is unused is unchanged |
+| 3 | **An error union read as its value is rejected in more positions**, for a user `T!E`, a map lookup and a std `T!E` alike: an `if` or `lp` condition, the operand of `!`, a string interpolation (`"\(m.get(k))"` -- rejected, not printed), an argument of a std call or of a value-receiver method (`str.fromint(g())`, `xs.append(str.toint(s))`), the operand of an `as` cast (`str.toint("x") as i64` was 0: `as` converts the slot's value, it does not unwrap), each union operand of a comparison (`str.toint("x")==str.toint("y")` compared two fillers and was true; a union compared with an untyped operand was not judged either), and an assignment to an untyped `mut` binding that is not consumed as a union. Each is **E4031**, no `fix`. A `mut` binding is consumed only as an `mt` scrutinee, the operand of a postfix `!`, or the value of `<` in a function whose return type is a union: `let r=mut.0; r=s.toint(x); mt r{..}` (135.16a) is accepted, while `let z=r`, a bare `r;` or an arm value do not consume it. The other reads of a consumed binding are not judged (`docs/spec/semantics.md` 5.1 lists every position that is not). Also: the cast `fix` on a non-integer array index (the cast compiles and reads the filler) and the `<` `fix` on a discarded tail (it returns a union as `T`) are no longer offered when the value is a union; v3.2.0 offers both for a map lookup (127.466). | 127.323 | as above |
+| 4 | **The receiver spelling of `str.slice` is the union its module form is.** `t.slice(a;b)`, `t.substr(a;b)` and `t.substring(a;b)` on a `str` lower to the same error-slot glue as `str.slice(t;a;b)` (`mt t.slice(2;9){..}` takes `$err`) but checked as a plain `str`, so `io.println(t.slice(2;9))` printed the null filler and rewriting the module form to the receiver form silenced E4031. They are now `str!$sliceerr`, judged in the same positions, no `fix`; `t.slice(0;9)!$e` propagates (it was E3020). An array `.slice` clamps and is unchanged. | 127.462 | as above |
+
+Measured before the flip with this checker against main `685aa852` (rows 127.319, 127.323
+and 127.462, batch Z211): 92 of 695 toke-tree sources and 15 of 509 documentation programs;
+1,625 of 3,573 toke-test-programs files; ooke `main` `src/run.tk` (2 sites) and
+`src/store.tk` (3 sites); the website's `main.tk` (3 sites); and in the corpus 2,479 of the
+23,382 regen records and 1,244 of the 1,583 library records, all banked-accepted (repaired by
+agents, owner answer R2; never by a mechanical filler). Row 4 alone accounts for 1,243 of
+those regen records and 4 of the tree sources. The toke tree was migrated with the internal
+`scripts/migrate_std_errunion.py`, which writes the old behaviour out as an explicit
+`mt ..{$ok:v v;$err:e <zero filler>}`; that filler is a migration device for existing
+programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
+
+- **Breaking: a bare `lp(i=0;..)` init assigns the binding in force; only
+  `lp(let i=0;..)` declares a loop variable** (127.289; owner decision
+  2026-10-01 §2.18 (a); toke-spec-v0.4 §K). Before, a bare init made a fresh
+  loop variable whatever was in scope: with `let i=mut.7`, the loop
+  `lp(i=0;i<5;i=i+1){..}` left `i` at 7, and over an immutable `let i=7` or a
+  parameter `i` it compiled with no error. Now the init is the assignment
+  `i=0`: the loop leaves `i` at 5; an immutable `let` (local or module-level),
+  a parameter, an `mt` arm binding, a module constant or an import alias is
+  **E4070** (no `fix`: `let i=mut.` and `lp(let i=..` are both plausible and
+  run differently; the step's E4070 has none either when the step assigns the
+  same binding), and no binding of `i` in force is **E3011** at the init, with
+  no "did you mean" `fix`. A module `mut` global is assigned. `--migrate`
+  still adds no `mut.` for a bare init, so a migrated file that assigns an
+  outer `let` this way reports E4070.
+  `--lint` counts a bare init as a write, so `mutable-never-mutated` no longer
+  fires on a binding only a bare init assigns. Measured before the change: one
+  corpus regen record (`P3-MIG-P2-A-A-MTH-0092v13-fa507f0f`), one library
+  record (toke-test-programs `DAT-094`: `solution.tk` and
+  `solution.stripped.tk`) and one more toke-test-programs file
+  (`SEC-064/toke_api_original.tk`) use a bare init. Each assigns an outer
+  `mut` binding that is not read after the loop, so none checks or runs
+  differently (the stripped file's E4031 and the SEC-064 file's E1002 are
+  unrelated and unchanged). Nothing in the toke tree, ooke or the website uses
+  one. `--check` run with this compiler and with `685aa852` over 716 toke-tree,
+  32 ooke, 25 website and 3,573 toke-test-programs files and the 23,382 regen
+  records reports the same diagnostics for every one. Migration: write
+  `lp(let i=..` where a fresh loop variable was meant. Conformance: C1820,
+  D575-D578.
+- **An assignment to a module-level `let` or to an import alias is E4070**
+  (127.465). The assignment check looked for a local binder and, finding
+  none, knew only module constants: `let g=5;` at module level and `g=0;` in
+  a function checked clean and overwrote the immutable binding, and `io=0;`
+  with `i=io:std.io;` checked clean and then failed in codegen with E9003,
+  reported at the function. Both are now E4070 at the assignment. The
+  module-level `let` carries the local `let` fix, "change 'let g=' to 'let
+  g=mut.' to make it mutable" (`let g=mut.<v>` is a valid module-level
+  binding for every initialiser `let g=` takes, and `--migrate` makes the
+  same rewrite), except on the step of a loop whose bare init assigns it;
+  the alias has no fix. Measured with `--check`, 685aa852 against this
+  compiler: 716 toke-tree, 32 ooke, 25 website and 3,573 toke-test-programs
+  files, 829 doc blocks, 344 conformance YAML inputs, 605 conformance-script
+  programs and the 23,382 regen records report the same diagnostics, so no
+  program in them is newly refused. Conformance: C1821, D579.
+- **grammar.ebnf `LoopStmt` states the clauses the parser accepts** (127.290):
+  `( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';' IDENT '=' Expr`, or the
+  one-clause `Expr`. It read `'lp' '(' Stmt Expr ';' Stmt ')'`, which admitted
+  any statement as the init and the step. Written in line, so the published
+  production count is unchanged. `toke.gbnf` already matched the parser, and
+  both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

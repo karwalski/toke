@@ -73,8 +73,8 @@ i=io:std.io;
 i=s:std.str;
 i=args:std.args;
 f=main():i64{
-  let c=mt file.read(args.get(2)) {\$ok:t t;\$err:e ""};
-  let r=mt file.${op}(args.get(1);c) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
+  let c=mt file.read(mt args.get(2){\$ok:v v;\$err:e ""}) {\$ok:t t;\$err:e ""};
+  let r=mt file.${op}((mt args.get(1){\$ok:v v;\$err:e ""});c) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
   io.println(r);
   <0
 };
@@ -87,7 +87,7 @@ i=io:std.io;
 i=s:std.str;
 i=args:std.args;
 f=main():i64{
-  let r=mt file.copy(args.get(1);args.get(2)) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
+  let r=mt file.copy((mt args.get(1){\$ok:v v;\$err:e ""});(mt args.get(2){\$ok:v v;\$err:e ""})) {\$ok:v "ok";\$err:e mt e {${ARMS}}};
   io.println(r);
   <0
 };

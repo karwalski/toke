@@ -41,13 +41,13 @@ f=main():i64{
   cs("value semantics: snapshot unchanged";"\(snap.len) \(sd)";"3 false");
   ck("sum of values via keys";total(m);19);
   let m2=addone(m;"a");
-  cs("user fn returns a new map, caller's is intact";"\(m2.get("a")) \(m.get("a"))";"11 10");
+  cs("user fn returns a new map, caller's is intact";"\(mt m2.get("a"){$ok:v v;$err:e 0}) \(mt m.get("a"){$ok:v v;$err:e 0})";"11 10");
   let im=mut.@(1:"one";2:"two");
   im=im.set(3;"three");
-  cs("i64 keys";"\(im.get(1)) \(im.get(3)) \(im.len)";"one three 3");
+  cs("i64 keys";"\(mt im.get(1){$ok:v v;$err:e ""}) \(mt im.get(3){$ok:v v;$err:e ""}) \(im.len)";"one three 3");
   let acc=mut.@("x":0);
   lp(let i=0;i<100;i=i+1){ acc=acc.set("x";acc.getor("x";0)+i); acc=addone(acc;"n"); };
-  cs("accumulator through a user fn";"\(acc.get("x")) \(acc.get("n")) \(acc.len)";"4950 100 2");
+  cs("accumulator through a user fn";"\(mt acc.get("x"){$ok:v v;$err:e 0}) \(mt acc.get("n"){$ok:v v;$err:e 0}) \(acc.len)";"4950 100 2");
   let big=mut.@("k0":0);
   lp(let i=1;i<300;i=i+1){ big=big.set("k\(i)";i); };
   ck("growth keeps every key";big.len as i64;300);

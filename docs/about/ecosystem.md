@@ -9,7 +9,7 @@ A layered stack of tools, frameworks, and runtimes -- each named with the `*oke`
 
 ## toke — language
 
-The core programming language. Compiles to native code via LLVM. 59-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead. Token efficiency is measured, not assumed: under cl100k_base toke costs 1.34x the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60) and no shipped toke tokenizer yet beats cl100k_base on v0.4 text (N = 2,000) -- see `docs/metrics-baseline.md`. Gate 2 PASS: 100% compilation Pass@1 on a fine-tuned 7B model (curated set, v0.3 model).
+The core programming language. Compiles to native code via LLVM. 59-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead. Token efficiency is measured, not assumed: under cl100k_base toke costs 1.34x the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60) and no shipped toke tokenizer yet beats cl100k_base on v0.4 text (N = 2,000) -- see `docs/metrics-baseline.md`. Gate 2 (2026-05-22): 100% compile Pass@1 on a fine-tuned 7B model, on the curated 500-hidden + 200-eval set with v0.3 syntax. The PASS recorded on it 2026-05-24 was **withdrawn on 2026-11-15** (owner decision D4): neither pre-registered Gate 2 criterion is a compile rate, and Gate 2 has no standing verdict ([gate2-decision.md](/docs/decisions/gate2-decision/)).
 
 - [Documentation](/docs)
 - [GitHub](https://github.com/karwalski/toke)

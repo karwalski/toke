@@ -61,8 +61,8 @@ f=gentoken(sid:$str):$str {
   let buf=s.buf();
   let k=mut.0;
   lp (k<s.len(hexstr)) {
-    let hi=hv(s.slice(hexstr; k; k+1));
-    let lo=hv(s.slice(hexstr; k+1; k+2));
+    let hi=hv(mt s.slice(hexstr; k; k+1){$ok:v v;$err:e ""});
+    let lo=hv(mt s.slice(hexstr; k+1; k+2){$ok:v v;$err:e ""});
     s.addbyte(buf; hi*16+lo);
     k=k+2
   };

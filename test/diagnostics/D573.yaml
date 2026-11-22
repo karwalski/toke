@@ -1,0 +1,17 @@
+id: D573
+series: D
+description: "138.20 (loke T-60): `==` between two named arrays is E4031 with no fix -- it ran tk_str_cmp over the blocks; element-wise equality is not a rewrite the compiler can choose"
+input: |
+  m=t;
+  f=main():i64{
+    let p:@i64=@(256);
+    let q:@i64=@(512);
+    if(p==q){<1};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "@(i64)"

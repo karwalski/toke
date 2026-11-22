@@ -93,7 +93,7 @@ i=io:std.io;
 i=str:std.str;
 f=main():i64{
   let c=http.client("http://127.0.0.1:${P}");
-  io.println(mt http.clientget(c;"/health") {\$ok:r "1 ok \(r.status) [\(str.frombytes(r.body))] hdrs=\(r.headers.len)"; \$err:e "1 err"});
+  io.println(mt http.clientget(c;"/health") {\$ok:r "1 ok \(r.status) [\(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})] hdrs=\(r.headers.len)"; \$err:e "1 err"});
   io.println(mt http.clientpost(c;"/p";str.bytes("x=1");"text/plain") {\$ok:r "2 ok \(r.status)"; \$err:e "2 err"});
   io.println(mt http.clientput(c;"/q";str.bytes("y=2");"text/plain") {\$ok:r "3 ok \(r.status)"; \$err:e "3 err"});
   io.println(mt http.clientdelete(c;"/item/7") {\$ok:r "4 ok \(r.status)"; \$err:e "4 err"});

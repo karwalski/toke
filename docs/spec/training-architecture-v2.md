@@ -65,5 +65,5 @@ Every program in the corpus MUST:
 - ~615 execution-verified programs (Epic 100 workers, growing)
 - 0 error→fix pairs captured (need to add to worker scripts)
 - 73K curriculum records (from 71.5.7, need I/O verification)
-- **55.6% functional Pass@1** (272/489) — corrected from 8% after io.readln() stdlib fix (2026-05-25). The model generates functionally correct code at a much higher rate than originally measured.
+- **55.6% functional Pass@1** (272/489) — corrected from 8% after io.readln() stdlib fix (2026-05-25). The model generates functionally correct code at a much higher rate than originally measured. *(2026-11-15, owner decision D4: the 200-eval half of the set may be corpus-derived, and its provenance is unresolved; the Gate 2 PASS was withdrawn and Gate 2 has no standing verdict, [gate2-decision.md](/docs/decisions/gate2-decision/).)*
 - 0% one-shot rate from toke API — all complex programs written by Claude repair loop

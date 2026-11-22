@@ -1,0 +1,13 @@
+id: D570
+series: D
+description: "138.20 (loke T-60): `x==@()` on an array identifier is E4031 with the fix `x.len==0` -- the comparison was an address compare, false for every empty array"
+input: |
+  m=t;
+  f=main():i64{
+    let x:@str=@();
+    if(x==@()){<1};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix: "x.len==0"

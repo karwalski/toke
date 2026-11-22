@@ -1,0 +1,17 @@
+id: D586
+series: D
+description: "127.323: a std T!E assigned to a mut binding that is never matched (let y=mut.0; y=str.toint(s)) is E4031 with no fix"
+input: |
+  m=t;
+  i=str:std.str;
+  f=main():i64{
+    let y=mut.0;
+    y=str.toint("5");
+    <y
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64!$parseerr"

@@ -162,7 +162,7 @@ m=t;
 i=an:std.analytics;
 i=df:std.dataframe;
 f=main():i64{
-  let d=df.fromcsv("/tmp/nonexistent.csv");
+  let d=mt df.fromcsv("/tmp/nonexistent.csv"){$ok:v v;$err:e <1};
   an.pivot(d);
   <0
 };'
@@ -172,7 +172,7 @@ m=t;
 i=an:std.analytics;
 i=df:std.dataframe;
 f=main():i64{
-  let d=df.fromcsv("/tmp/nonexistent.csv");
+  let d=mt df.fromcsv("/tmp/nonexistent.csv"){$ok:v v;$err:e <1};
   an.pivot(d);
   <0
 };'
@@ -226,7 +226,7 @@ m=t;
 i=an:std.analytics;
 i=df:std.dataframe;
 f=main():i64{
-  let d=df.fromcsv("/tmp/nonexistent.csv");
+  let d=mt df.fromcsv("/tmp/nonexistent.csv"){$ok:v v;$err:e <1};
   an.pivot(d;"a";"b";"c");
   <0
 };'

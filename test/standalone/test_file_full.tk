@@ -7,7 +7,7 @@ f=main():i64{
   let fails=mut.0;
 
   file.write("/tmp/toke_test_file_full_rw.txt";"toke file test content");
-  let content=file.read("/tmp/toke_test_file_full_rw.txt");
+  let content=mt file.read("/tmp/toke_test_file_full_rw.txt"){$ok:v v;$err:e ""};
   if(str.eq(content;"toke file test content")){
     io.println("PASS write then read matches")
   }el{
@@ -32,7 +32,7 @@ f=main():i64{
 
   file.write("/tmp/toke_test_file_full_overwrite.txt";"first");
   file.write("/tmp/toke_test_file_full_overwrite.txt";"second");
-  let ov=file.read("/tmp/toke_test_file_full_overwrite.txt");
+  let ov=mt file.read("/tmp/toke_test_file_full_overwrite.txt"){$ok:v v;$err:e ""};
   if(str.eq(ov;"second")){
     io.println("PASS overwrite replaces content")
   }el{
@@ -50,7 +50,7 @@ f=main():i64{
   };
 
   file.write("/tmp/toke_test_file_full_dir/nested.txt";"nested");
-  let nested=file.read("/tmp/toke_test_file_full_dir/nested.txt");
+  let nested=mt file.read("/tmp/toke_test_file_full_dir/nested.txt"){$ok:v v;$err:e ""};
   if(str.eq(nested;"nested")){
     io.println("PASS write and read in created directory")
   }el{

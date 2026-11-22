@@ -1,0 +1,16 @@
+id: D580
+series: D
+description: "127.319: a std call declaring T!E (str.toint -> i64!parseerr) read as a plain i64 is E4031 with NO fix -- mt, ! and getor are all repairs, and a filler for the $err arm is never suggested (owner, register 1.1, 2026-11-15)"
+input: |
+  m=t;
+  i=str:std.str;
+  f=main():i64{
+    let x=str.toint("3")+1;
+    <x
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64!$parseerr"

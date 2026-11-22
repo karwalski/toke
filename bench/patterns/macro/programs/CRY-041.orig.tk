@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/crypto-blockchain/CRY-041/solution.tk sha256 78814f6ddb4d29a5aa270ac76dd3c06449191fe4f35b2c521c4dc56900aafcee manifest ~/tk/toke-test-programs/results/library/crypto-blockchain.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/crypto-blockchain/CRY-041/solution.tk sha256 78814f6ddb4d29a5aa270ac76dd3c06449191fe4f35b2c521c4dc56900aafcee manifest ~/tk/toke-test-programs/results/library/crypto-blockchain.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=btcaddr;i=io:std.io;i=s:std.str;i=enc:std.encoding;i=cr:std.crypto;
 f=m32(x:$i64):$i64{<x&4294967295};
 f=rol(x:$i64;n:$i64):$i64{let v=x&4294967295;<((v<<n)|((v>>(32-n))&((1<<n)-1)))&4294967295};
@@ -56,11 +56,11 @@ let start=mut.0;lp(start<newwork.len()){if(newwork.get(start)==0){start=start+1}
 let tmp=mut.@();let jj=mut.start;lp(jj<newwork.len()){tmp=tmp+@(newwork.get(jj));jj=jj+1};work=tmp;
 };
 let res=mut."";let z=mut.0;lp(z<leadz){res=s.concat(res;"1");z=z+1};
-let kk=mut.digits.len()-1;lp(kk>=0){res=s.concat(res;s.slice(alphabet;digits.get(kk);digits.get(kk)+1));kk=kk-1};
+let kk=mut.digits.len()-1;lp(kk>=0){res=s.concat(res;mt s.slice(alphabet;digits.get(kk);digits.get(kk)+1){$ok:v v;$err:e ""});kk=kk-1};
 <res};
 f=main():$i64{
 let hex=s.lower(s.trim(io.readln()));
-let pubkey=enc.hexdecode(hex);
+let pubkey=mt enc.hexdecode(hex){$ok:v v;$err:e @()};
 let h160=ripemd160(cr.sha256(pubkey));
 let versioned=cat(@(0);h160);
 let h2=cr.sha256(cr.sha256(versioned));

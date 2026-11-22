@@ -31,7 +31,7 @@ f=main():$i64 {
     let w=s.trim(words.get(i));
     let cb=s.builder();
     lp (let j=0; j<s.len(w); j=j+1) {
-      let c=s.slice(w; j; j+1);
+      let c=mt s.slice(w; j; j+1){$ok:v v;$err:e ""};
       if (s.indexof("ABCDEFGHIJKLMNOPQRSTUVWXYZ"; c)>=0) {
         s.add(cb; c)
       }

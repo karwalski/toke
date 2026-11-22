@@ -146,12 +146,22 @@ def reporttojson(r: report) -> str:
     return str.done(buf)
 
 
+def usage() -> int:
+    io.eprintln("usage: datapipe <input.csv> <output.json>")
+    return 2
+
+
 def main() -> int:
-    if args.count() < 3:
-        io.eprintln("usage: datapipe <input.csv> <output.json>")
-        return 2
-    path = args[1]
-    output = args[2]
+    match args[1]:
+        case ok(v):
+            path = v
+        case err(e):
+            return usage()
+    match args[2]:
+        case ok(v):
+            output = v
+        case err(e):
+            return usage()
     match file.read(path):
         case ok(v):
             raw = v

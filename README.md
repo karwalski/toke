@@ -129,8 +129,8 @@ The corpus, tokenizer and model must be refreshed before any of these carry forw
 
 | Evaluation | Date | Result |
 |---|---|---|
-| Gate 1 | 2026-04-03 | **58.8% functional Pass@1** (588 of 1,000 generated), fine-tuned 7B on v0.3 syntax; 923 of the 1,000 compiled. Published as "63.7% compile Pass@1" until 2026-09-19 — wrong on both counts: the number was 588/**923**, which drops non-compiling solutions from the denominator, and the label was wrong (the figure is functional, not compile). 58.8% is below Gate 1's declared 60% minimum, so the verdict was re-opened on 2026-09-19 and on 2026-09-22 the owner decided **Gate 1 NOT PASSED** (story 128.19); the token-reduction criterion stands as met. |
-| Gate 2 (curated set) | 2026-05-22 | **100% compile Pass@1** and **55.6% functional** (272/489) on the curated 500-hidden + 200-eval set; Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax |
+| Gate 1 | 2026-04-03 | **58.8% functional Pass@1** (588 of 1,000 generated), fine-tuned 7B on v0.3 syntax; 923 of the 1,000 compiled. Published as "63.7% compile Pass@1" until 2026-09-19 — wrong on both counts: the number was 588/**923**, which drops non-compiling solutions from the denominator, and the label was wrong (the figure is functional, not compile). 58.8% is below Gate 1's declared 60% minimum, so the verdict was re-opened on 2026-09-19 and on 2026-09-22 the owner decided **Gate 1 NOT PASSED** (story 128.19). Criterion 1 (owner decision D3, 2026-11-15; the 12.5% was measured over N = 46,754 programs, the corpus the tokenizer was trained on, `docs/decisions/gate1-decision.md`): Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. |
+| Gate 2 (curated set) | 2026-05-22 | **100% compile Pass@1** and **55.6% functional** (272/489) on the curated 500-hidden + 200-eval set, whose 200-eval half may be corpus-derived (its provenance is unresolved); Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax. The PASS recorded 2026-05-24 was withdrawn on 2026-11-15: **Gate 2 has no standing verdict** (owner decision D4, [`docs/decisions/gate2-decision.md`](docs/decisions/gate2-decision.md)). |
 | Full-local re-audit (the honest floor) | 2026-05-28 | **37.5% compile** (655/1,748) and **about 2.2% fully correct** (38 PASS) across all 1,748 v0.3.9 corpus programs |
 | Gate-1 60 re-delivered on v0.4 | 2026-09-19 | 60/60 `tkc --check`, 60/60 hidden tests (120 cases each), lint 0/0 |
 
@@ -139,10 +139,10 @@ re-delivery is **hand-written, not model-generated** — 27 ids are pure `--migr
 and 33 were hand-repaired — so it measures what the *language* can express, not what a
 *model* produces, and it may not be quoted as a model result or as a Pass@1.
 
-**Gate 2 is on hold**, waiting for local compute: no model has been trained or
-evaluated since the 2026-05-22 run above, and the next evaluation follows the
-pre-registered protocol of story 128.1. Gate status is summarised in
-[`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+**Gate 2 has no standing verdict** (owner decision D4, 2026-11-15), and Gate 3 never
+ran. No model has been trained or evaluated since the 2026-05-22 run above, and the
+next evaluation follows the pre-registered protocol of story 128.1. Gate status is
+summarised in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 **What works:** the compiler is stable at 3.2.0, the conformance suite passes, and
 compile-checking removes an entire error class cheaply. **What does not yet:** functional

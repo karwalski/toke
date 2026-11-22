@@ -29,9 +29,9 @@ f=main():i64{
   p=ck("hmac-rfc4231-tc1";c.tohex(c.hmacsha256(k;s.bytes("Hi There")));
        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7";p);
   (* hex round-trip *)
-  p=ck("hex-roundtrip";s.frombytes(e.hexdecode("414243"));"ABC";p);
+  p=ck("hex-roundtrip";mt s.frombytes(mt e.hexdecode("414243"){$ok:v v;$err:e @()}){$ok:v v;$err:e ""};"ABC";p);
   (* base64 round-trip *)
-  p=ck("b64-roundtrip";s.frombytes(e.b64decode("aGVsbG8="));"hello";p);
+  p=ck("b64-roundtrip";mt s.frombytes(mt e.b64decode("aGVsbG8="){$ok:v v;$err:e @()}){$ok:v v;$err:e ""};"hello";p);
   io.println(s.concat("RESULT pass=";s.fromint(p)));
   <0
 };

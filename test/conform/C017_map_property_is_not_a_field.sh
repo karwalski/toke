@@ -281,7 +281,7 @@ f=main():i64{
   let m=@("a":1;"b":2);
   let m2=m.set("c";3);
   let k=m.keys();
-  io.println("\(m.get("a")) \(m2.get("b")) \(m.contains("a")) \(m.contains("z")) \(k.len) \(m.getor("zz";9)) \(m.contains("c"))");
+  io.println("\(mt m.get("a"){$ok:v v;$err:e 0}) \(m2.get("b")) \(m.contains("a")) \(m.contains("z")) \(k.len) \(m.getor("zz";9)) \(m.contains("c"))");
   <0
 };'
 

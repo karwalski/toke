@@ -21,7 +21,7 @@ f=hex8(val:$i64):$str{
   let shift=mut.28;
   lp(shift>=0){
     let nib=(val>>shift)&15;
-    s.add(out;s.slice(digits;nib;nib+1));
+    s.add(out;mt s.slice(digits;nib;nib+1){$ok:v v;$err:e ""});
     shift=shift-4
   };
   <s.build(out)

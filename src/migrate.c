@@ -1670,6 +1670,13 @@ static void mut_walk(MutCtx *c, const Node *n)
         for (int i = 0; i < n->child_count; i++) {
             const Node *ch = n->children[i];
             if (ch && ch->kind == NODE_LOOP_INIT) {
+                /* 127.289: the checker now reads a BARE `lp(x=..)` init as an
+                 * assignment to the binding in force.  It is deliberately
+                 * still a mutable loop binding here, so this pass never adds
+                 * `mut.` to an outer `let x` for it: a program written before
+                 * 127.289 meant a fresh loop variable, and making the outer
+                 * `x` mutable would change what it computes.  The checker's
+                 * E4070 reports it instead, and the author picks the form. */
                 for (int k = 1; k < ch->child_count; k++) mut_walk(c, ch->children[k]);
                 if (ch->child_count > 0) mut_add(c, ch->children[0], ch, 1);
             } else mut_walk(c, ch);

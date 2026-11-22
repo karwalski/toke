@@ -120,7 +120,7 @@ cat > c6.tk <<'TOKE'
 m=t;i=io:std.io;
 f=main():i64{
   let s="  Hello ";
-  let t=s.trim().upper().slice(0;3);
+  let t=mt s.trim().upper().slice(0;3){$ok:v v;$err:e ""};
   let u=t.concat("!").lower().replace("h";"j").substr(0;3);
   let a=@(1;2;3;4);
   let v=a.slice(1;3).slice(0;1);

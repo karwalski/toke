@@ -18,7 +18,7 @@ i=str:std.str;
 i=env:std.env;
 
 f=main():i64{
-  let base=env.get("I18NBASE");
+  let base=mt env.get("I18NBASE"){$ok:v v;$err:e ""};
   let en=mt i18n.load(base;"en") {$ok:b b;$err:e i18n.empty()};
   let fr=mt i18n.load(base;"fr") {$ok:b b;$err:e i18n.empty()};
 

@@ -1,0 +1,17 @@
+id: D594
+series: D
+description: "127.462: the receiver spelling t.slice(a;b) of the fallible str.slice, passed to io.println, is E4031 with NO fix -- it lowers to the same error-slot glue and is the same union str!$sliceerr"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let t="abc";
+    io.println(t.slice(2;9));
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "str!$sliceerr"

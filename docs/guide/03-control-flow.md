@@ -81,6 +81,15 @@ The three parts are:
 | `condition` | Boolean test | Before each iteration |
 | `step` | Update statement | After each iteration body |
 
+The `init` has two forms. `let i=0` declares a fresh loop variable: it is
+mutable, and it is gone after the loop. `i=0`, without `let`, assigns a
+variable already in scope, which must be mutable (`let i=mut.0`, local or at
+module level); the loop then counts in that variable, and it keeps its last
+value after the loop. If the `i` in scope is not mutable (an immutable `let`,
+a parameter, a constant, an import alias), the bare form is E4070; if there
+is no `i` in scope, it is E3011. Neither error offers a `fix`, because both
+`lp(let i=0;..)` and `let i=mut.` repair it and the two run differently.
+
 ### Counting loop
 
 ```

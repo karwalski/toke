@@ -46,7 +46,7 @@ i=file:std.file;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let p=args.get(1);
+  let p=mt args.get(1){$ok:v v;$err:e ""};
   let r=mt file.read(p) {$ok:v v;$err:e "ERR"};
   io.print(r);
   <0

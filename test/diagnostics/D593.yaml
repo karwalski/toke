@@ -1,0 +1,18 @@
+id: D593
+series: D
+description: "127.323: a std T!E assigned to a mut binding that is only copied (let z=r) and never matched, propagated or returned as a union is E4031 with NO fix -- `let z=r` reads the value, so it does not exempt the assignment"
+input: |
+  m=t;
+  i=str:std.str;
+  f=main():i64{
+    let r=mut.0;
+    r=str.toint("x");
+    let z=r;
+    <z+1
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64!$parseerr"

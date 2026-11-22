@@ -1,4 +1,4 @@
-(* source: ~/tk/toke-test-programs/results/solutions/data-processing/DAT-045/solution.tk sha256 28a637d79c5b90622115a454e0723c528f7f50d20a92776a57f17f6816ff78c7 manifest ~/tk/toke-test-programs/results/library/data-processing.json *)
+(* source: ~/tk/toke-test-programs/results/solutions/data-processing/DAT-045/solution.tk sha256 28a637d79c5b90622115a454e0723c528f7f50d20a92776a57f17f6816ff78c7 manifest ~/tk/toke-test-programs/results/library/data-processing.json; migrated 127.319 by scripts/migrate_std_errunion.py: that sha256 is of the source before migration, not of this copy *)
 m=checksum;i=io:std.io;i=s:std.str;
 f=crc32(line:$str):$i64{
   let n=s.len(line);
@@ -22,7 +22,7 @@ f=hex8(val:$i64):$str{
   let shift=mut.28;
   lp(shift>=0){
     let nib=(val>>shift)&15;
-    out=s.concat(out;s.slice(digits;nib;nib+1));
+    out=s.concat(out;mt s.slice(digits;nib;nib+1){$ok:v v;$err:e ""});
     shift=shift-4
   };
   <out

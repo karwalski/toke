@@ -79,7 +79,7 @@ EOF
 runs c2 'tpl.render with a tmplvars literal' 'x=v y=w ' <<'EOF'
 i=tpl:std.template;
 f=main():i64{let tv=$tmplvars{entries:@("k":"v";"k2":"w")};
-let o=mt tpl.render(tpl.compile("x={{k}} y={{k2}}");tv) {$ok:s s;$err:e "err"};
+let o=mt tpl.render(mt tpl.compile("x={{k}} y={{k2}}"){$ok:t t;$err:e <1};tv) {$ok:s s;$err:e "err"};
 io.println("\(o)");<0};
 EOF
 

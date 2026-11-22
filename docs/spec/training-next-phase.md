@@ -23,6 +23,11 @@ order: 17
 > - **"Gate 3 Criteria (Proposed)"** (functional > 50%, argv > 80%) and the
 >   "≥ 50% on 2+ families" target are void. Epic 128 inherits no absolute
 >   threshold and scores relative to Lane A on BENCH-128 (protocol K3).
+> - **"Gate 2 passed with 100% compilation"** and the 55.6% quoted with it: the
+>   Gate 2 PASS was withdrawn on 2026-11-15 (owner decision D4,
+>   `docs/decisions/gate2-decision.md`); Gate 2 has no standing verdict, and the
+>   200-eval half of the set behind the 55.6% may be corpus-derived (provenance
+>   unresolved).
 > - **"v0.3 ... LOCKED — no changes"** in the Version Roadmap is stale.
 >
 > The research-review recommendations here (GRPO/RLVR, adaptive curriculum,

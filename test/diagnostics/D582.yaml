@@ -1,0 +1,17 @@
+id: D582
+series: D
+description: "127.323: a fallible bool as an if condition (if(gb()){..}) is E4031 with no fix -- the zero filler defect 127.30 removed"
+input: |
+  m=t;
+  t=$e{msg:$str};
+  f=gb():bool!$e{<true};
+  f=main():i64{
+    if(gb()){<1};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "bool"

@@ -100,14 +100,14 @@ i=io:std.io;
 i=str:std.str;
 i=args:std.args;
 f=main():i64{
-  let base=args.get(1);
+  let base=mt args.get(1){\$ok:v v;\$err:e ""};
   let h=@(@("x-api-key";"k1");@("content-type";"application/json"));
-  io.println(mt http.postheaders(str.concat(base;"/one");"{\"n\":1}";h) {\$ok:r "1 ok \(r.status) \(str.frombytes(r.body))"; \$err:e "1 err"});
-  io.println(mt http.postheaders(str.concat(base;"/two");"n=2";@(@("Content-Type";"text/plain"))) {\$ok:r "2 ok \(r.status) \(str.frombytes(r.body))"; \$err:e "2 err"});
-  io.println(mt http.postheaders(str.concat(base;"/three");"{}";@(@("x-api-key";"k3"))) {\$ok:r "3 ok \(r.status) \(str.frombytes(r.body))"; \$err:e "3 err"});
-  io.println(mt http.postheaders(str.concat(base;"/deny");"{}";h) {\$ok:r "4 ok \(r.status) \(str.frombytes(r.body))"; \$err:e "4 err"});
-  io.println(mt http.postheaders(str.concat(base;"/inj");"{}";@(@("x-api-key";"a\r\nX-Evil: 1"))) {\$ok:r "5 ok \(r.status) \(str.frombytes(r.body))"; \$err:e "5 err"});
-  io.println(mt http.postheaders("http://127.0.0.1:1/x";"{}";h) {\$ok:r "6 ok \(r.status) \(str.frombytes(r.body))"; \$err:e "6 err"});
+  io.println(mt http.postheaders(str.concat(base;"/one");"{\"n\":1}";h) {\$ok:r "1 ok \(r.status) \(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})"; \$err:e "1 err"});
+  io.println(mt http.postheaders(str.concat(base;"/two");"n=2";@(@("Content-Type";"text/plain"))) {\$ok:r "2 ok \(r.status) \(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})"; \$err:e "2 err"});
+  io.println(mt http.postheaders(str.concat(base;"/three");"{}";@(@("x-api-key";"k3"))) {\$ok:r "3 ok \(r.status) \(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})"; \$err:e "3 err"});
+  io.println(mt http.postheaders(str.concat(base;"/deny");"{}";h) {\$ok:r "4 ok \(r.status) \(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})"; \$err:e "4 err"});
+  io.println(mt http.postheaders(str.concat(base;"/inj");"{}";@(@("x-api-key";"a\r\nX-Evil: 1"))) {\$ok:r "5 ok \(r.status) \(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})"; \$err:e "5 err"});
+  io.println(mt http.postheaders("http://127.0.0.1:1/x";"{}";h) {\$ok:r "6 ok \(r.status) \(mt str.frombytes(r.body){\$ok:v v;\$err:e ""})"; \$err:e "6 err"});
   <0
 };
 TOKE

@@ -4,7 +4,7 @@ i=io:std.io;
 i=str:std.str;
 f=main():i64{
   file.write("/tmp/toke_test_rw.txt";"hello toke");
-  let content=file.read("/tmp/toke_test_rw.txt");
+  let content=mt file.read("/tmp/toke_test_rw.txt"){$ok:v v;$err:e ""};
   if(str.eq(content;"hello toke")){io.println("PASS file.write+read roundtrip")}el{io.println("FAIL file.write+read roundtrip")};
   if(file.exists("/tmp/toke_test_rw.txt")){io.println("PASS file.exists true")}el{io.println("FAIL file.exists true")};
   file.delete("/tmp/toke_test_rw.txt");
@@ -14,7 +14,7 @@ f=main():i64{
   if(file.isdir("/tmp/toke_test_mkdir_dir")){io.println("PASS file.mkdir+isdir")}el{io.println("FAIL file.mkdir+isdir")};
   file.write("/tmp/toke_test_copy_src.txt";"copy content");
   file.copy("/tmp/toke_test_copy_src.txt";"/tmp/toke_test_copy_dst.txt");
-  let copied=file.read("/tmp/toke_test_copy_dst.txt");
+  let copied=mt file.read("/tmp/toke_test_copy_dst.txt"){$ok:v v;$err:e ""};
   if(str.eq(copied;"copy content")){io.println("PASS file.copy")}el{io.println("FAIL file.copy")};
   file.delete("/tmp/toke_test_copy_src.txt");
   file.delete("/tmp/toke_test_copy_dst.txt");

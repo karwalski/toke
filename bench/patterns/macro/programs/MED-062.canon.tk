@@ -98,9 +98,9 @@ f=main():$i64 {
   let out=s.builder();
   let i=mut.0;
   lp (i<s.len(line)) {
-    let c=s.slice(line; i; i+1);
+    let c=mt s.slice(line; i; i+1){$ok:v v;$err:e ""};
     if (c=="%"&&i+2<s.len(line)) {
-      let n=mt enc.hexdecode(s.slice(line; i+1; i+3)) {$ok:v v.get(0);$err:e 0};
+      let n=mt enc.hexdecode(mt s.slice(line; i+1; i+3){$ok:v v;$err:e ""}) {$ok:v v.get(0);$err:e 0};
       s.add(out; tochar(n));
       i=i+3
     } el {

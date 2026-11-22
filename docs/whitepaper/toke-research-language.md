@@ -180,7 +180,8 @@ one compiler invocation.
 
 *Mechanically:* it is a verifiable signal, and it is demonstrably **insufficient on its
 own**. Gate 2 reached **100% compile Pass@1** with **55.6% functional correctness (272/489)**
-on the same curated set (§5). Compile-checking removes one error class and leaves algorithmic
+on the same curated set (§5), whose 200-eval half may be corpus-derived (its provenance is
+unresolved). Compile-checking removes one error class and leaves algorithmic
 correctness untouched. Execution feedback is what moves the rest, which is why the training
 lanes are scored on functional deltas rather than compile deltas.
 
@@ -394,7 +395,7 @@ This is the weak half of the project and always has been.
 | Evaluation | Compile Pass@1 | Functional | Set / model |
 |---|---|---|---|
 | Gate 1 (2026-04-03) | 92.3% (923/1,000) | **58.8%** (588/1,000) | fine-tuned 7B baseline; ~2.5% illegal-char |
-| Gate 2 (2026-05-22) | **100%** | **55.6%** (272/489) | curated 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA, **v0.3 syntax** |
+| Gate 2 (2026-05-22) | **100%** | **55.6%** (272/489); the 200-eval half of the set may be corpus-derived, and its provenance is unresolved | curated 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA, **v0.3 syntax** |
 | Full-local re-audit (honest floor) | **37.5%** (655/1,748) | **~2.2%** (38 PASS) | all 1,748 programs in [toke-test-programs](https://github.com/karwalski/toke-test-programs), v0.3.9 |
 | `toke_generate` sample (71.5.4) | 84% (21/25) | 78% (18/23) | 25-prompt benchmark |
 | Corpus after v0.4 mechanical migration | 84.3% (1,781/2,112) | n/a | `=`→`==` only, not yet idiomatic |
@@ -421,7 +422,10 @@ Four caveats do the work here, and none of them may be dropped when a number is 
    as about 8% because the `io.readln` C glue was missing; fixing the stdlib link on
    2026-05-25 moved it to 55.6% (272/489). External descriptions of toke still quote the 8%,
    and that figure is stale in our favour as well as against us — we state it here so that
-   neither version circulates uncorrected.
+   neither version circulates uncorrected. The 55.6% carries a caveat of its own: the
+   200-eval half of the Gate 2 set may be corpus-derived, and its provenance is unresolved.
+   The Gate 2 PASS recorded on 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4):
+   Gate 2 has no standing verdict (`docs/decisions/gate2-decision.md`).
 4. **Passing a test is not evidence of correctness when the test can be gamed.** The
    clearest finding in the project is story 131.42: of 576 A-ERR error-union corpus records,
    **429 across 69 bases are gamed** — 424 build the harness's expected marker as a string
@@ -468,7 +472,7 @@ before the run) and none of its numbers. The 2026-05 document is kept as a dated
 The original timeline said mid-August 2026. That date passed without a training run, because
 the corpus was not trustworthy enough to train on — which the audit and pattern sweeps
 proved rather than assumed — and because the training lanes are compute-gated. We state the
-slip plainly instead of quietly re-dating it. Gate 3 now runs against the 128.15 scorecard:
+slip plainly instead of quietly re-dating it. Gate 3 is void (it never ran; 128.24) and is superseded by the 128.15 scorecard:
 compile Pass@1, functional Pass@1 by execution, tokens per solved task in every 131.50 lane,
 cost and energy per solved task, repair-loop convergence within 3 rounds, and first-shot
 validity under constrained decoding — with the rule that **no lane advances without beating
@@ -569,7 +573,8 @@ them forward.
 
 ## 10. What toke has not shown
 
-- **Functional correctness.** 55.6% on a curated v0.3 set, about 2.2% on the honest floor.
+- **Functional correctness.** 55.6% on a curated v0.3 set whose 200-eval half may be
+  corpus-derived (provenance unresolved), about 2.2% on the honest floor.
   This is the open weakness and the reason execution feedback is the priority lane.
 - **Any v0.4 model result.** None exists. Every model number in this paper is v0.3-era.
 - **A token win under the tokenizers models actually use.** Today toke costs more (§3.1).
@@ -628,7 +633,9 @@ would look like.
 6. KERN review and reproduction. `docs/about/reviews/kern-2026-08.md`, `kern-2026-08.repro.py`
 7. v0.4 code samples, every tokenizer lane. `docs/about/samples-v04.md`
 8. Gate-1 60, v0.4 re-delivery. `toke-eval/docs/gate1-60-v04.md`
-9. Gate 2 decision (2026-05-22). Moved out of the tree on 2026-08-19 (130.3); last published at
+9. Gate 2 decision record (2026-11-15: the 2026-05-24 PASS withdrawn, no standing verdict;
+   Gate 3 folded in). `docs/decisions/gate2-decision.md`. The withdrawn record of 2026-05-24
+   was moved out of the tree on 2026-08-19 (130.3); last published at
    [`docs/spec/gate2-decision.md` @ `1c5ffce`](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)
 10. Gate 3 pre-registration (2026-05-24; archived, thresholds not carried forward). `docs/spec/gate3-criteria.md`
 11. Liu et al. "SuperBPE: Space Travel for Language Models." arXiv 2503.13423, ICML 2025.

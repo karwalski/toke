@@ -7,20 +7,20 @@ f=field(obj:$str; key:$str):$str {
   let pat="\"\(key)\":\"";
   let idx=str.find(obj; pat);
   let start=idx+str.len(pat);
-  let rest=str.slice(obj; start; str.len(obj));
+  let rest=mt str.slice(obj; start; str.len(obj)){$ok:v v;$err:e ""};
   let endidx=str.find(rest; "\"");
-  <str.slice(rest; 0; endidx)
+  <mt str.slice(rest; 0; endidx){$ok:v v;$err:e ""}
 };
 
 f=numfield(obj:$str; key:$str):$str {
   let pat="\"\(key)\":";
   let idx=str.find(obj; pat);
   let start=idx+str.len(pat);
-  let rest=str.slice(obj; start; str.len(obj));
+  let rest=mt str.slice(obj; start; str.len(obj)){$ok:v v;$err:e ""};
   let c1=str.find(rest; ",");
   let c2=str.find(rest; "}");
   let endidx=if (c1<0||(c2>=0&&c2<c1)) {c2} el {c1};
-  <str.slice(rest; 0; endidx)
+  <mt str.slice(rest; 0; endidx){$ok:v v;$err:e ""}
 };
 
 f=pad(sa:$str; n:$i64):$str {
@@ -33,7 +33,7 @@ f=pad(sa:$str; n:$i64):$str {
 
 f=main():$i64 {
   let line=io.readln();
-  let body=str.slice(line; 1; str.len(line)-1);
+  let body=mt str.slice(line; 1; str.len(line)-1){$ok:v v;$err:e ""};
   let parts=str.split(body; "},{");
   let out=str.builder();
   str.add(out; "Service Health Dashboard\n\n");

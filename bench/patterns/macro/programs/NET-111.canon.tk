@@ -10,7 +10,7 @@ f=main():$i64 {
   let status=if (s.contains(url; "status/")) {
     let parts=s.split(url; "status/");
     if (parts.len()>=2) {
-      s.toint(s.trim(parts.get(1)))
+      mt s.toint(s.trim(parts.get(1))){$ok:v v;$err:e 0}
     } el {
       0
     }
@@ -20,7 +20,7 @@ f=main():$i64 {
   let expected=if (s.contains(condition; "=")) {
     let cparts=s.split(condition; "=");
     if (cparts.len()>=2) {
-      s.toint(s.trim(cparts.get(1)))
+      mt s.toint(s.trim(cparts.get(1))){$ok:v v;$err:e 0}
     } el {
       0
     }

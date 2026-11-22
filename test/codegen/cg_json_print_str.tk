@@ -13,7 +13,7 @@ f=main():i64{
   j.print(g());
   let r=g();
   j.print(r);
-  let q=r.slice(0;1);
+  let q=mt r.slice(0;1){$ok:v v;$err:e ""};
   j.print(q);
   j.print(r.upper());
   let s:str=g();

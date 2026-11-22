@@ -119,7 +119,7 @@ f=main():i64{
   let fd=o.open("out.txt";o.owronly()+o.ocreat()+o.otrunc();420);
   io.println(mt o.write(fd;"") {$ok:n s.concat("ok ";s.fromint(n));$err:e e.msg});
   io.println(mt o.write(fd;"abc") {$ok:n s.concat("ok ";s.fromint(n));$err:e e.msg});
-  let n=o.write(fd;"xy");
+  let n=mt o.write(fd;"xy"){$ok:v v;$err:e 0};
   io.println(s.fromint(n));
   o.close(fd);
   <0

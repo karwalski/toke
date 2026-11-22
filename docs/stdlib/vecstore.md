@@ -293,8 +293,8 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let s=vs.open("/tmp/tokevecdemo");
-  let col=vs.collection(s;"chunks");
+  let s=mt vs.open("/tmp/tokevecdemo"){$ok:v v;$err:e <1};
+  let col=mt vs.collection(s;"chunks"){$ok:c c;$err:e <1};
 
   vs.upsert(col;"doc-1";@(1.0;0.0;0.0);"{\"text\":\"the quick brown fox\"}");
   vs.upsert(col;"doc-2";@(0.0;1.0;0.0);"{\"text\":\"unrelated\"}");
@@ -326,8 +326,8 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let s=vs.open("/tmp/tokevecdemo");
-  let col=vs.collection(s;"sessioncontext");
+  let s=mt vs.open("/tmp/tokevecdemo"){$ok:v v;$err:e <1};
+  let col=mt vs.collection(s;"sessioncontext"){$ok:c c;$err:e <1};
 
   (* remove anything created more than an hour ago *)
   let cutoff=(tm.now()/1000)-3600;

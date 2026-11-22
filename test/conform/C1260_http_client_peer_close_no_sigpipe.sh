@@ -76,8 +76,8 @@ i=http:std.http;
 i=file:std.file;
 i=args:std.args;
 f=main():i64{
-  let body=mt file.readbytes(args.get(2)) {$ok:b b; $err:e @()};
-  let c=http.client(args.get(1));
+  let body=mt file.readbytes(mt args.get(2){$ok:v v;$err:e ""}) {$ok:b b; $err:e @()};
+  let c=http.client(mt args.get(1){$ok:v v;$err:e ""});
   let r=mt http.clientpost(c;"/up";body;"") {$ok:x "ok \(x.status)"; $err:e "err \(e.code)"};
   io.println(r);
   <0

@@ -1,0 +1,13 @@
+id: D577
+series: D
+description: "127.289: E3011 at a bare `lp(i=..)` init with no `i` in force carries no did-you-mean fix -- the likely repair is `lp(let i=`, which declares the name, so a near-miss spelling ('ix' here) is not deterministic (AGENTS 6)"
+input: |
+  m=test;
+  f=bad():i64{
+    let ix=mut.0;
+    lp(i=0;i<3;i=i+1){ ix=ix+i };
+    <ix
+  };
+expected_exit_code: 1
+expected_error_codes: ["E3011"]
+expected_fix_absent: true

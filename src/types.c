@@ -768,6 +768,8 @@ static void shift_tok_offsets(Node *n, int delta, const Node *anchor) {
  * so inferring it introduces no new diagnostics for valid programs.
  */
 static int tc_can_emit(Ctx *cx);
+static int union_value_use(Ctx *cx, const Node *at, const Type *t,
+                           const char *exp, const char *where);   /* 127.323 */
 static void check_interp_composites(Ctx *cx, const Node *strnode) {
     if (!strnode || strnode->tok_len <= 3) return;
     int tl = strnode->tok_len;
@@ -911,6 +913,11 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                 cx->interp_host = strnode;
                 Type *t = infer(cx, expr);
                 cx->interp_host = saved_host;
+                /* 127.323: a fallible result interpolated prints its zero
+                 * filler on a failure -- it is read as a value, so it is
+                 * E4031 (register 1.1: rejected, not printed). */
+                if (union_value_use(cx, expr, t, NULL, "a string interpolation '\\(..)'"))
+                    { i = j; continue; }
                 int composite = t && (t->kind == TY_ARRAY || t->kind == TY_MAP ||
                                       t->kind == TY_STRUCT);
                 /* 123.11-fu: a bare composite *local* (`\(arrVar)`) infers
@@ -963,7 +970,7 @@ static const Node *find_binding_node(const Node *root, const char *src,
                                      const char *name, int nlen) {
     if (!root) return NULL;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
+         ||loop_init_declares(root))
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
@@ -1009,7 +1016,7 @@ static void find_binding_before_rec(const Node *root, const char *src,
                                     const Node *use, const Node **best) {
     if (!root) return;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
-         ||root->kind==NODE_LOOP_INIT)
+         ||loop_init_declares(root))
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
@@ -1063,6 +1070,26 @@ static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
     return x && x->tok_len == nl && nl > 0
         && memcmp(src + x->tok_start, nm, (size_t)nl) == 0;
 }
+/* bare_init_step (127.289) -- 1 when `asg` is the step of an `lp` inside
+ * `root` whose init is BARE and assigns the same name: `lp(i=0;..;i=i+1)`.
+ * The init and the step then assign one binding, and an E4070 on the step
+ * has the init's two repairs (`let i=mut.`, `lp(let i=`) that run
+ * differently, so it carries no `fix` either. */
+static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+    if (!root || !asg) return 0;
+    if (root->kind == NODE_LOOP_STMT && root->child_count == 4
+        && root->children[2] == asg) {
+        const Node *ini = root->children[0];
+        return ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
+            && ini->child_count > 0 && ini->children[0]
+            && asg->child_count > 0 && asg->children[0]
+            && ident_same(ini->children[0], src, src + asg->children[0]->tok_start,
+                          asg->children[0]->tok_len);
+    }
+    for (int i = 0; i < root->child_count; i++)
+        if (bare_init_step(root->children[i], src, asg)) return 1;
+    return 0;
+}
 /* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
  * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
  * innermost scope first and, within one statement list, the NEAREST earlier
@@ -1089,7 +1116,7 @@ static const Node *lex_binder_rec(const Node *a, const char *src, const Node *us
         if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1
             && ident_same(a->children[1], src, nm, nl)) return a;
         if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
-            && a->children[0]->kind == NODE_LOOP_INIT
+            && loop_init_declares(a->children[0])
             && a->children[0]->child_count > 0
             && ident_same(a->children[0]->children[0], src, nm, nl))
             return a->children[0];
@@ -2383,6 +2410,10 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
 
     const Node *expr=NULL;
     int known = tail_ty && tail_ty->kind!=TY_VOID && tail_ty->kind!=TY_UNKNOWN;
+    /* 127.319: a `void!E` std call (`sse.emit(..)`, `router.serve(..)`) has
+     * no value to discard -- judged as the plain void tail call it was. */
+    if (known && tail_ty->kind==TY_ERROR_TYPE && tail_ty->elem
+        && tail_ty->elem->kind==TY_VOID) known = 0;
     int prop = 0;                          /* 127.127: unresolved tail `!` */
 
     switch (tail->kind) {
@@ -2456,7 +2487,12 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
     const char *got = known ? type_name(tail_ty)
                     : (prop && tail_ty && tail_ty->kind==TY_VOID) ? "void"   /* 127.188 */
                     : "unknown";
-    if (expr && tail_fix_is_certain(expr) && !expr_has_lt(expr))   /* 127.248 (2) */
+    /* 127.319: a fallible tail (`m.get(k)`, a std `T!E`) returned from a
+     * function that is not fallible is E4031 once `<` is added, so `<` is
+     * not a certain repair there. */
+    int union_tail = known && tail_ty->kind==TY_ERROR_TYPE
+                     && cx->fn_ret->kind!=TY_ERROR_TYPE;
+    if (expr && !union_tail && tail_fix_is_certain(expr) && !expr_has_lt(expr))   /* 127.248 (2) */
         diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
                   "expected",type_name(cx->fn_ret),"got",got,
                   "fix","prefix the expression with '<' to return it",
@@ -2515,6 +2551,8 @@ static const char *import_module_path(Ctx *cx, const char *alias,
 static Type *std_scalar_ret(Ctx *cx, const Node *call);   /* 138.3 */
 static Type *repr_payload_type(Ctx *cx, const char *sp);   /* 127.297 */
 static Type *slot_union_base(Type *t);                     /* 127.320 */
+static Type *std_slot_union(Ctx *cx, const Node *call);   /* 127.319 */
+static Type *std_get_union(Ctx *cx, const char *alias);   /* 127.319 */
 static const char *std_nonscalar_ret(Ctx *cx, const Node *call, char *buf, size_t bsz);   /* 127.304 */
 static int user_module_call(Ctx *cx, const Node *call);          /* 127.384 */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
@@ -3481,6 +3519,7 @@ static Type *if_expr_bind_type(Ctx *cx, const Node *ifn) {
 
 static Type *recv_method_result_type(Ctx *cx, const Node *call);   /* 127.364 */
 static Type *recv_method_mut_result_type(Ctx *cx, const Node *bn); /* 127.371 */
+static Type *recv_slot_union(Ctx *cx, const Node *call);          /* 127.462 */
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -3492,6 +3531,20 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (bn->kind != NODE_BIND_STMT && std_scalar_ret(cx, initN)) return NULL;
         Type *rt = call_decl_ret_type(cx, initN);
         if (rt && rt->kind != TY_UNKNOWN && rt->kind != TY_VOID) return rt;
+        /* 127.319: a std `T!E` binds its union, `let` and `mut` alike -- a
+         * user `T!E` call (call_decl_ret_type) and a map lookup (127.244,
+         * C881 v12) bind theirs either way. */
+        {
+            Type *su = std_slot_union(cx, initN);
+            if (su) return su;
+        }
+        /* 127.462: and so does its receiver spelling (`t.slice(a;b)`). */
+        if (cx->bind_infer_depth < MAX_BIND_INFER_DEPTH) {
+            cx->bind_infer_depth++;
+            Type *ru = recv_slot_union(cx, initN);
+            cx->bind_infer_depth--;
+            if (ru) return ru;
+        }
         /* 127.325: `let d=mm.getor(k;D)` binds the map's value V, the type
          * the same call has in place (infer, 127.320).  Left unknown, `d`
          * on a map of maps lost its value type, so `d.getor("k";0.5)` read
@@ -5906,6 +5959,237 @@ static Type *slot_union_base(Type *t) {
 }
 
 /*
+ * std_slot_union (127.319) -- the error union `T!E` a typed std record
+ * declares for `alias.member(..)` (str.toint -> `i64!parseerr`, json.at ->
+ * `jsonval!jsonerr`, file.read -> `str!fileerr`), or NULL.  Owner decision
+ * 127.30 ("return error unions") and register 1.1 (a) 2026-11-15: these
+ * report failure on the runtime's error slot, and the checker judges them as
+ * it judges a user `T!E` -- a use of the result as a plain `T` is E4031.  The
+ * checker left them TY_UNKNOWN (127.66), so `str.toint("x")+1` checked clean
+ * and evaluated the zero filler on a failure.
+ *
+ * Built as the 127.244 map lookup is: its `slot_lower` (TY_UNKNOWN, what the
+ * node was before) is what infer() stores as the node's rtype, so the
+ * emitter lowers every accepted program exactly as it did.  T is the
+ * record's spelling when tki_compound_type can read it, else unknown; it is
+ * reported, and reaches a consumer only through slot_lower (`!`, an `mt`
+ * payload keeps its 127.180 typing).  Same gate as std_nonscalar_ret: a std
+ * module alias, not shadowed, a typed (not "gen":"abi") public record.
+ */
+/* std_union_of (127.319) -- the union for a record's return spelling `T!E`
+ * (`rb`, cut at the '!' in place), whose slot_lower is `lower` (TY_UNKNOWN
+ * when NULL).  T is read by tki_compound_type after two spellings it does
+ * not take are normalised: the `$` sigil (template.tki's `$str!$tmplerr`,
+ * `$tmpl!$tmplerr`) and `@(..)` for an array (file.readbytes `@(byte)`,
+ * ocr's `@(ocrrun)`), read as `[..]`.  Without them T was unknown and the
+ * diagnostic's machine-readable `got` read '?!$tmplerr'.  A T it still
+ * cannot read (a dotted `llm.llmresp`) stays unknown and is reported '?'. */
+static Type *std_union_of(Ctx *cx, char *rb, Type *lower) {
+    char *bang = rb ? strchr(rb, '!') : NULL;
+    if (!bang) return NULL;              /* a record, not a union */
+    *bang = '\0';
+    Arena *A = cx->env->arena;
+    Type *u = mk_type(A, TY_ERROR_TYPE);
+    if (!u) return NULL;
+    char tb[192]; size_t tn = 0;
+    int ap[16]; int apn = 0;             /* 1 = this '(' opened an `@(` array */
+    for (const char *p = rb; *p && tn + 1 < sizeof tb; p++) {
+        if (*p == '$') continue;
+        if (p[0] == '@' && p[1] == '(') {
+            if (apn < 16) ap[apn++] = 1;
+            tb[tn++] = '['; p++; continue;
+        }
+        if (*p == '(') { if (apn < 16) ap[apn++] = 0; tb[tn++] = '('; continue; }
+        if (*p == ')') {
+            int arr = apn > 0 ? ap[--apn] : 0;
+            tb[tn++] = arr ? ']' : ')'; continue;
+        }
+        tb[tn++] = *p;
+    }
+    tb[tn] = '\0';
+    Type *ok = tn ? tki_compound_type(cx, tb, tn, 0) : NULL;
+    u->elem = ok ? ok : mk_type(A, TY_UNKNOWN);
+    u->name = ty_intern(A, bang[1] ? bang + 1 : "?");
+    u->slot_lower = lower ? lower : mk_type(A, TY_UNKNOWN);
+    return u;
+}
+
+static Type *std_slot_union(Ctx *cx, const Node *call) {
+    char rb[192];
+    if (!std_nonscalar_ret(cx, call, rb, sizeof rb)) return NULL;
+    return std_union_of(cx, rb, NULL);
+}
+
+/*
+ * std_get_union (127.319) -- `args.get(i)` / `env.get(k)`: a one-argument
+ * `alias.get(x)` on a std module alias parses as an index expression, not a
+ * call, so std_slot_union never sees it.  The same union, from the module's
+ * `get` record (args.get `str!argserr`, env.get `str!enverr`), or NULL.
+ */
+static Type *std_get_union(Ctx *cx, const char *alias) {
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, "get");
+    if (!f || f->abi_ret || f->internal) return NULL;
+    char rb[192];
+    if (f->okret && f->okret[0])
+        snprintf(rb, sizeof rb, "%s!%s", f->okret, f->errty ? f->errty : "?");
+    else if (f->ret && strchr(f->ret, '!')) snprintf(rb, sizeof rb, "%s", f->ret);
+    else return NULL;
+    return std_union_of(cx, rb, NULL);
+}
+
+/*
+ * recv_slot_union (127.462) -- the receiver spelling of a fallible std
+ * function, or NULL.  `t.slice(a;b)`, `t.substr(a;b)` and `t.substring(a;b)`
+ * on a str value lower to tk_str_slice_w (tk_str_substr_w calls it): the
+ * glue `str.slice(t;a;b)` lowers to, which reports failure on the error slot
+ * (127.241) -- `mt t.slice(2;9){..}` takes the $err arm.  The module form is
+ * the union `str!$sliceerr` (127.319), so the receiver form is the same
+ * union and is judged in the same positions; the checker typed it a plain
+ * str (127.364), so `io.println(t.slice(2;9))` checked clean and printed the
+ * null filler, and rewriting `str.slice(t;a;b)` to `t.slice(a;b)` silenced
+ * E4031.  Only an ESTABLISHED str receiver (recv_method_result_type answers
+ * str): an array's `.slice` lowers to tk_arr_slice_w, which clamps and
+ * cannot fail, and an unknown receiver stays unjudged as before.  Its
+ * slot_lower is that str, the type the node had, so codegen does not move.
+ * The error type is str.slice's record (`str!sliceerr`, stdlib/str.tki);
+ * C1832 pins the two spellings to the same `got`.
+ */
+static Type *recv_slot_union(Ctx *cx, const Node *call) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[1]) return NULL;
+    char mb[64]; TOKSTR(mb, cx->src, callee->children[1]);
+    if (strcmp(mb, "slice") != 0 && strcmp(mb, "substr") != 0
+        && strcmp(mb, "substring") != 0) return NULL;
+    Type *rt = recv_method_result_type(cx, call);
+    if (!rt || rt->kind != TY_STR) return NULL;
+    char rb[32]; snprintf(rb, sizeof rb, "str!sliceerr");
+    return std_union_of(cx, rb, rt);
+}
+
+/*
+ * union_value_use (127.323) -- E4031 for an error union `T!E` (a user
+ * fallible call, a map lookup, a std `T!E` call) read as its value in a
+ * position no other rule judges: an if/lp condition, the operand of `!`, a
+ * string interpolation, a std-call argument, an assignment to a `mut`
+ * binding, the operand of an `as` cast, each operand of a comparison.  Each
+ * of these took the zero filler on a failure (the defect
+ * 127.30 removed), or printed it.  Returns 1 when `t` is a union (reported
+ * or not -- the caller treats the value as unusable).
+ *
+ * No `fix` (register 1.1, owner 2026-11-15): an `mt` with $ok/$err arms, a
+ * `!` in a fallible function and `getor` on a map are all repairs, and the
+ * value an `$err` arm should yield is the program's to choose -- a filler
+ * is never offered.
+ */
+static int union_value_use(Ctx *cx, const Node *at, const Type *t,
+                           const char *exp, const char *where) {
+    if (!t || t->kind != TY_ERROR_TYPE || !at) return 0;
+    if (!tc_first_report(cx, at) || !tc_can_emit(cx)) return 1;
+    char msg[512], got[200], ex[200];
+    snprintf(got, sizeof got, "%s", type_name(t));
+    if (exp) snprintf(ex, sizeof ex, "%s", exp);
+    else if (t->elem && t->elem->kind != TY_UNKNOWN)
+        snprintf(ex, sizeof ex, "%s", type_name(t->elem));
+    else snprintf(ex, sizeof ex, "a value");
+    int q = exp || (t->elem && t->elem->kind != TY_UNKNOWN);
+    snprintf(msg, sizeof msg,
+             "type mismatch: expected %s%s%s, got '%s' -- %s reads the value "
+             "of a fallible result; unwrap it first ('mt' with $ok/$err arms, "
+             "or '!' in a fallible function)",
+             q ? "'" : "", ex, q ? "'" : "", got, where);
+    diag_emit(DIAG_ERROR, E4031, at->start, at->line, at->col, msg,
+              "expected", ex, "got", got, (const char *)NULL);
+    return 1;
+}
+
+/*
+ * std_call_union_args (127.323) -- a union passed as an argument of a std
+ * call: a module call (`str.fromint(g())`, `io.println(str.slice(s;0;1))`)
+ * or a value-receiver method, which lowers to std glue (`xs.join(..)`).  The
+ * glue reads the slot's value, so a failure passed the zero filler (or a
+ * null str) on.  check_tki_arg_types judges a `str` parameter by the stored
+ * rtype, which for a std or map union is its slot_lower; the types the
+ * arguments were inferred with (`ats`) are the unions.  A user-module call
+ * (`lib.f(x)`) is not a std call and is left to check_user_fn_args.
+ * `skip` is set when another check already reported on this call.
+ */
+static void std_call_union_args(Ctx *cx, const Node *call, Type *const *ats,
+                                int nats, int skip) {
+    if (skip || !call || call->child_count < 2) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || !callee->children[1]) return;
+    char what[300];
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    const Node *base = callee->children[0];
+    if (base->kind == NODE_IDENT && !alias_shadowed(cx, base)) {
+        char ab[128]; TOKSTR(ab, cx->src, base);
+        char pbuf[256];
+        const char *mpath = import_module_path(cx, ab, pbuf, sizeof pbuf);
+        if (mpath && strncmp(mpath, "std.", 4) != 0) return;   /* user module */
+        if (mpath) snprintf(what, sizeof what, "'%s.%s'", ab, mb);
+        else snprintf(what, sizeof what, "the method '.%s'", mb);
+    } else if (base->kind == NODE_TYPE_IDENT) {
+        return;
+    } else snprintf(what, sizeof what, "the method '.%s'", mb);
+    for (int i = 1; i < call->child_count && i - 1 < nats; i++) {
+        char where[400];
+        snprintf(where, sizeof where, "argument %d of %s", i, what);
+        union_value_use(cx, call->children[i], ats[i - 1], NULL, where);
+    }
+}
+
+/* fn_node_returns_union (127.323) -- the function or closure `fn` declares
+ * an error-union return (`f=k():i64!$e`): its return spec has the `!E`
+ * child.  Structural, so it resolves no type and emits nothing. */
+static int fn_node_returns_union(const Node *fn) {
+    if (!fn) return 0;
+    for (int i = 0; i < fn->child_count; i++) {
+        const Node *ch = fn->children[i];
+        if (ch && ch->kind == NODE_RETURN_SPEC) return ch->child_count >= 2;
+    }
+    return 0;
+}
+
+/*
+ * union_bind_consumed (127.323) -- 1 when the `mut` binding `lb` (named
+ * `nm`) is consumed as the union it may hold somewhere in the function: it
+ * is an `mt` scrutinee, the operand of a postfix `!`, or the value of a `<`
+ * from a function (or closure) whose return type is a union.  135.16a
+ * (C067) made `let r=mut.0; r=s.toint(x); mt r{..}` match on the assigned
+ * call's channel, so a union assigned into such a binding is consumed
+ * soundly and the assignment is not judged.  Nothing else counts: `let
+ * z=r`, a bare `r;`, an arm value, an argument or an operand read the
+ * value (the filler on a failure).  Flow-insensitive.  The other reads of
+ * an exempted binding are NOT judged: a read before the assignment (C067's
+ * `if(q>100){q=s.toint(..)}` guard) is a plain value, so a flow-insensitive
+ * read rule rejects correct programs -- an owner question (127.323).
+ */
+static int union_bind_consumed_rec(Ctx *cx, const Node *n, const Node *lb,
+                                   const char *nm, int nl, int ret_union) {
+    if (!n) return 0;
+    if (n->kind == NODE_CLOSURE) ret_union = fn_node_returns_union(n);
+    for (int i = 0; i < n->child_count; i++) {
+        const Node *c = n->children[i];
+        if (!c) continue;
+        if (c->kind == NODE_IDENT && ident_same(c, cx->src, nm, nl)) {
+            int by_union =
+                   (n->kind == NODE_MATCH_STMT && i == 0)
+                || (n->kind == NODE_PROPAGATE_EXPR && i == 0)
+                || (n->kind == NODE_RETURN_STMT && ret_union);
+            if (by_union
+                && tk_binder_at(cx->fn_node, cx->src, c, nm, nl, NULL) == lb)
+                return 1;
+            continue;
+        }
+        if (union_bind_consumed_rec(cx, c, lb, nm, nl, ret_union)) return 1;
+    }
+    return 0;
+}
+
+/*
  * map_get_union (127.244) -- `m.get(k)` on a map `@(K:V)` is fallible
  * (semantics.md 10.1): `V!$err`, judged like a user `T!E`; its slot_lower
  * is V, the type the lookup had before.
@@ -6384,6 +6668,73 @@ static void check_reraise_type(Ctx *cx, const Node *node, const Type *inner) {
               "expected", exp, "got", got, (const char *)NULL);
 }
 
+/*
+ * 138.20 (loke T-60) — refuse `==` / `!=` with an array operand (E4031).
+ *
+ * The emitter has no array equality.  Against the literal `@()` it compared
+ * the array's address with a fresh allocation (`a==@()` was false for every
+ * empty `a`, so loke's `h==@()` spawn-failure checks never fired); between
+ * two named arrays it ran tk_str_cmp over the blocks, reading the elements'
+ * bytes as a C string (`@(256)==@(512)` was true).  Owner decision
+ * 2026-11-15 (register 1.2 (a)): refuse, as 138.9 T-14 does for struct and
+ * sum values, rather than invent element-wise equality.
+ *
+ * `fix` is the rewritten comparison, `x.len==0` / `x.len!=0`, and is given
+ * only when one operand is the literal `@()` and the other is an IDENTIFIER
+ * whose type is an array (either order): that is the one shape where "is
+ * empty" is what the comparison can have meant and where the rewrite needs
+ * no source span the AST does not keep (the 127.358 `(a+b)` rule).  `.len`
+ * binds tighter than any operator and the rewrite keeps the operator, so
+ * it substitutes in place wherever the comparison stands.  Two named
+ * arrays, a handle, a str, an unresolved operand, or an array operand that
+ * is not an identifier get no `fix` (AGENTS §6).
+ */
+static void refuse_array_equality(Ctx *cx, const Node *node,
+                                  const Type *l, const Type *r) {
+    if (!l || !r) return;
+    const char *op = node->op == TK_EQ ? "==" : "!=";
+    const Node *ln = node->child_count > 0 ? node->children[0] : NULL;
+    const Node *rn = node->child_count > 1 ? node->children[1] : NULL;
+    int l_empty = ln && ln->kind == NODE_ARRAY_LIT && ln->child_count == 0;
+    int r_empty = rn && rn->kind == NODE_ARRAY_LIT && rn->child_count == 0;
+    const Node *xn = NULL;
+    const Type *xt = NULL;
+    if (r_empty && !l_empty) { xn = ln; xt = l; }
+    else if (l_empty && !r_empty) { xn = rn; xt = r; }
+    char fix[192];
+    const char *fixp = NULL;
+    char nm[128];
+    /* A name TOKSTR would truncate gets no fix rather than a wrong one. */
+    if (xn && xn->kind == NODE_IDENT && xt && xt->kind == TY_ARRAY
+        && xn->tok_len > 0 && xn->tok_len < (int)sizeof nm) {
+        TOKSTR(nm, cx->src, xn);
+        snprintf(fix, sizeof fix, "%s.len%s0", nm, op);
+        fixp = fix;
+    }
+    char ltn[96], rtn[96], msg[384];
+    snprintf(ltn, sizeof ltn, "%s", type_name(l));
+    snprintf(rtn, sizeof rtn, "%s", type_name(r));
+    snprintf(msg, sizeof msg,
+             "'%s' does not compare arrays ('%s' %s '%s'): toke has no array "
+             "equality; test emptiness with .len or compare the elements",
+             op, ltn, op, rtn);
+    /* `got` is the array the comparison is about.  With exactly one operand
+     * the literal `@()` and the other an array, that is the other operand
+     * (`@()==x`, x of type @i64, reports '@(i64)', not the literal's
+     * '@(?)'); otherwise it is the left operand if that is an array, else
+     * the right. */
+    const char *got = (xt && xt->kind == TY_ARRAY) ? (xn == ln ? ltn : rtn)
+                    : l->kind == TY_ARRAY ? ltn : rtn;
+    if (fixp)
+        diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col, msg,
+                  "expected", "a scalar or str operand", "got", got,
+                  "fix", fixp, (const char *)NULL);
+    else
+        diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col, msg,
+                  "expected", "a scalar or str operand", "got", got,
+                  (const char *)NULL);
+}
+
 
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
@@ -6814,6 +7165,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_UNARY_EXPR: {
         Type *op=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
+        /* 127.323: `!` on a fallible bool (`!gb()`, `!m.get(k)`) negated
+         * the zero filler on a failure -- read as a value: E4031. */
+        if (node->op==TK_BANG&&node->child_count>0
+            &&union_value_use(cx,node->children[0],op,"bool","the operand of '!'"))
+            return mk_type(A,TY_UNKNOWN);
         if (node->op==TK_MINUS&&op->kind!=TY_UNKNOWN
             &&op->kind!=TY_I64&&op->kind!=TY_F64
             &&op->kind!=TY_I8&&op->kind!=TY_I16&&op->kind!=TY_I32
@@ -6851,12 +7207,38 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *   Both operands must have matching types (including non-numeric
      *   types like str == str).  The result type is always TY_BOOL.
      *
-     * If either operand is TY_UNKNOWN, the check is skipped (poison
-     * propagation).  The fix hint suggests using 'as' to cast the RHS.
+     * If either operand is TY_UNKNOWN, the operand-type checks after the
+     * unknown-operand early-out are skipped (poison propagation, semantics
+     * §3.3).  Three checks run before that early-out, and two of them can
+     * fire with an unknown operand: `+` between a str and an unresolved
+     * operand (111.12), and `==` / `!=` with an array operand (138.20).
+     * The array refusal runs first because its verdict does not depend on
+     * the other side -- an array compares with nothing -- and so it also
+     * catches an operand that is genuinely untyped rather than poisoned.
+     * The cost is a second E4031, with no fix, when an earlier error left
+     * the other operand unknown (`a==u`, pinned by C1810).  The struct/sum
+     * refusal (138.9) needs both operands known and never fires there.
+     * The fix hint suggests using 'as' to cast the RHS.
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_BINARY_EXPR: {
         Type *l=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *r=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
+        /* 127.323: a comparison reads each operand's value.  An error-union
+         * operand (a user `T!E`, a map lookup, a std `T!E`) compared the
+         * zero filler on a failure: `str.toint("x")==str.toint("y")` was
+         * true, and two same-typed unions passed types_compat, so only a
+         * mixed pair was ever rejected.  Each union operand is E4031, no
+         * fix, before any other rule. */
+        if (node->child_count>1
+            &&(node->op==TK_LT||node->op==TK_GT||node->op==TK_EQ
+               ||node->op==TK_LE||node->op==TK_GE||node->op==TK_NE)) {
+            const char *ops=node->op==TK_LT?"<":node->op==TK_GT?">":node->op==TK_EQ?"=="
+                           :node->op==TK_LE?"<=":node->op==TK_GE?">=":"!=";
+            char wh[64]; snprintf(wh,sizeof wh,"a comparison '%s'",ops);
+            int u0=union_value_use(cx,node->children[0],l,NULL,wh);
+            int u1=union_value_use(cx,node->children[1],r,NULL,wh);
+            if (u0||u1) return mk_type(A,TY_BOOL);
+        }
         /* Story 111.12: catch `+` between a known $str and a TY_UNKNOWN
          * operand BEFORE the early-return below. This is the slip-through
          * that caused FIN-079-style segfaults — type-checker silently
@@ -6886,6 +7268,49 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           "s.fromint(n) / s.format(f;\"%.4f\"). See ADR-0004.",
                           (const char *)NULL);
             return mk_type(A,TY_UNKNOWN);
+        }
+        /* `==` / `!=` the emitter has no equality for (138.9 T-14, 138.20
+         * T-60).  These run before the unknown-operand early-out below: the
+         * array refusal holds whatever the other operand is, and the
+         * struct/sum one needs both sides known, so the early-out could
+         * only hide the first.
+         *
+         * 138.9 (T-14): `==` / `!=` on two struct or sum values.  The
+         * emitter has no structural equality for them: it compares the two
+         * handles (`x==$lvl{$restricted:0}` with x returned from a function
+         * was never true) or runs tk_str_cmp over the boxes, reading the tag
+         * word as a C string and ignoring the payload.  Both answers are
+         * wrong, so the comparison is refused rather than miscompiled.  An
+         * opaque .tki handle (a zero-field record) and `$none` keep their
+         * handle comparison.  No `fix`: matching on the variant, comparing a
+         * field, or writing an eq function are all plausible. */
+        if ((node->op==TK_EQ||node->op==TK_NE)
+            &&l->kind==TY_STRUCT&&r->kind==TY_STRUCT
+            &&!opaque_handle_type(l)&&!opaque_handle_type(r)
+            &&!(l->name&&strcmp(l->name,"none")==0)
+            &&!(r->name&&strcmp(r->name,"none")==0)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char msg[320], tn[96];
+                snprintf(tn,sizeof tn,"%s",type_name(l));
+                snprintf(msg,sizeof msg,
+                         "'%s' does not compare struct or sum values ('%s'): "
+                         "toke has no structural equality for them; match on "
+                         "the variant or compare a field",
+                         node->op==TK_EQ?"==":"!=",tn);
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","a scalar or str operand","got",tn,
+                          (const char*)NULL);
+            }
+            return mk_type(A,TY_BOOL);
+        }
+        /* 138.20 (loke T-60): `==` / `!=` with an array operand, whatever
+         * the other operand is (owner decision 2026-11-15, register 1.2 (a)).
+         * See refuse_array_equality for what the emitter did instead. */
+        if ((node->op==TK_EQ||node->op==TK_NE)
+            &&(l->kind==TY_ARRAY||r->kind==TY_ARRAY)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx))
+                refuse_array_equality(cx,node,l,r);
+            return mk_type(A,TY_BOOL);
         }
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
         /* Story 114.19c: array + non-array (e.g. `@(a)+(b)`, appending an unwrapped
@@ -6963,34 +7388,6 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 127.436: no `fix` -- the prose restated the error. */
             emit_mm(cx,node,l,r,NULL);
             return mk_type(A,TY_UNKNOWN);
-        }
-        /* 138.9 (T-14): `==` / `!=` on two struct or sum values.  The
-         * emitter has no structural equality for them: it compares the two
-         * handles (`x==$lvl{$restricted:0}` with x returned from a function
-         * was never true) or runs tk_str_cmp over the boxes, reading the tag
-         * word as a C string and ignoring the payload.  Both answers are
-         * wrong, so the comparison is refused rather than miscompiled.  An
-         * opaque .tki handle (a zero-field record) and `$none` keep their
-         * handle comparison.  No `fix`: matching on the variant, comparing a
-         * field, or writing an eq function are all plausible. */
-        if ((node->op==TK_EQ||node->op==TK_NE)
-            &&l->kind==TY_STRUCT&&r->kind==TY_STRUCT
-            &&!opaque_handle_type(l)&&!opaque_handle_type(r)
-            &&!(l->name&&strcmp(l->name,"none")==0)
-            &&!(r->name&&strcmp(r->name,"none")==0)) {
-            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
-                char msg[320], tn[96];
-                snprintf(tn,sizeof tn,"%s",type_name(l));
-                snprintf(msg,sizeof msg,
-                         "'%s' does not compare struct or sum values ('%s'): "
-                         "toke has no structural equality for them; match on "
-                         "the variant or compare a field",
-                         node->op==TK_EQ?"==":"!=",tn);
-                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
-                          "expected","a scalar or str operand","got",tn,
-                          (const char*)NULL);
-            }
-            return mk_type(A,TY_BOOL);
         }
         if (arith||cmp) {
             /* Epic 111 / ADR-0004: + is strictly numeric. When str+str is
@@ -7291,8 +7688,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return crt?crt:mk_type(A,TY_UNKNOWN);
         }
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
-            for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            /* 127.323: keep the inferred argument types -- a std or map
+             * union's stored rtype is its slot_lower, not the union. */
+            Type *uats[32]; int nuats=0;
+            for (int i=1;i<node->child_count;i++) {
+                Type *at=infer(cx,node->children[i]);
+                if (nuats<32) uats[nuats++]=at;
+            }
             { Type *crt=closure_local_call_ret(cx,node); if (crt) return crt; }
+            int uec0=diag_error_count();
             /* 127.14: a `alias.method(...)` stdlib call the checker cannot
              * resolve — enforce the declared str parameters against the
              * argument types just inferred. */
@@ -7350,6 +7754,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             check_array_store_elem(cx,node);
             /* 127.324: and a map's getor default must be a V. */
             check_map_getor_default(cx,node);
+            /* 127.323: and a fallible result passed as a std argument,
+             * unless one of the checks above reported this call. */
+            std_call_union_args(cx,node,uats,nuats,diag_error_count()!=uec0);
             /* 127.224 item 7: a map from another user module, used in place
              * (`lib.mk().get("a")`) — the same answer the `let` binding gets
              * from bind_init_type.  Maps only: see call_decl_ret_type. */
@@ -7388,11 +7795,18 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * (`str.nowunix()/86400`). */
                 Type *srt=std_scalar_ret(cx,node);
                 if (srt) return srt;
+                /* 127.319: and a declared `T!E`, as the error union it is. */
+                Type *su=std_slot_union(cx,node);
+                if (su) return su;
                 /* 127.320: `m.getor(k;d)` yields the map's value V. */
                 Type *grt=map_getor_type(cx,node);
                 if (grt) return grt;
                 /* 127.364: a kind-preserving receiver method yields the
                  * receiver's kind. */
+                /* 127.462: a fallible receiver spelling (`t.slice(a;b)`)
+                 * is the union its module form is. */
+                Type *ru=recv_slot_union(cx,node);
+                if (ru) return ru;
                 Type *rrt=recv_method_result_type(cx,node);
                 if (rrt) return rrt;
             }
@@ -7482,6 +7896,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count>1) {
             Type *src_t=infer(cx,node->children[0]);
             Type *dst_t=resolve_type(cx,node->children[1]);
+            /* 127.319: `as` does not unwrap an error union -- it converts
+             * whatever the slot holds, the zero filler on a failure, so
+             * `str.toint("x") as i64` checked clean and was 0.  The operand
+             * of a cast is read as a value: E4031, no fix, for a user
+             * `T!E`, a map lookup and a std `T!E` alike. */
+            if (union_value_use(cx,node->children[0],src_t,NULL,"an 'as' cast"))
+                return dst_t;
             /* 127.362: `x as str` reinterprets the value's word as a C string.
              * For a composite (a record, an array, a map) that word is a
              * pointer to slots or to an array block, never to text: the cast
@@ -7600,7 +8021,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     char es[16]; snprintf(es,sizeof es,"%d",ga);
                     diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,amsg,
                               "expected",es,"got","1",(const char*)NULL);
+                    return mk_type(A,TY_UNKNOWN);
                 }
+                /* 127.319: and a fallible `get` record is its union. */
+                { Type *gu=std_get_union(cx,ab); if (gu) return gu; }
                 return mk_type(A,TY_UNKNOWN);
             }
         }
@@ -7662,6 +8086,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64
             &&idx->kind!=TY_I8&&idx->kind!=TY_I16&&idx->kind!=TY_I32
             &&idx->kind!=TY_U8&&idx->kind!=TY_U16&&idx->kind!=TY_U32) {
+            /* 127.319: an error union used as an index is E4031 with no
+             * fix.  The cast `fix` (1.17 (a), 127.438) would be wrong in
+             * every case: `a.get(u as i64)` reads the union's value -- the
+             * zero filler on a failure -- and an `as` cast of a union is
+             * itself E4031 (NODE_CAST_EXPR). */
+            if (idx->kind==TY_ERROR_TYPE) {
+                if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                    char msg[320];
+                    snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s' "
+                             "-- unwrap the fallible result first ('mt' with $ok/$err arms, or '!' "
+                             "in a fallible function)",type_name(idx));
+                    diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                              "expected","integer","got",type_name(idx),(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
             if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s'",type_name(idx));
@@ -8004,13 +8444,27 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * propagation).
      *
      * Returns TY_VOID (assignments are statements).
+     *
+     * 127.289: a bare `lp(i=e;..)` init is checked here too.  It assigns
+     * the binding of `i` in force at the loop, as `i=e;` does (owner
+     * decision 2026-10-01 §2.18 (a)); only `lp(let i=e;..)` declares a
+     * loop variable, and that form keeps the default walk below.
      * ──────────────────────────────────────────────────────────────────── */
+    case NODE_LOOP_INIT:
+        if (node->op == TK_KW_LET) {
+            Type *last=mk_type(A,TY_VOID);
+            for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
+            return last;
+        }
+        /* fall through */
     case NODE_ASSIGN_STMT: {
+        int lp_init = node->kind == NODE_LOOP_INIT;   /* 127.289 */
         /* ── Mutability check ─────────────────────────────────────────
          * If the LHS is a simple identifier, find its binding in the
          * enclosing function AST.  If the binding is NODE_BIND_STMT
          * (immutable let) or NODE_PARAM, emit E4070.
-         * NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable. */
+         * NODE_MUT_BIND_STMT and an `lp(let ..)` NODE_LOOP_INIT are
+         * mutable; a bare `lp(i=..)` init binds nothing (127.289). */
         if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
@@ -8050,6 +8504,51 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     return mk_type(A,TY_VOID);
                 }
+                /* 127.289, 127.465: a module-level immutable `let` or an
+                 * import alias (semantics.md §4.2: DECL_LET and
+                 * DECL_IMPORT_ALIAS are not mutable), assigned by `g=e;` or
+                 * by a bare `lp(g=e;..)` init.  Until 127.465 the `let` was
+                 * assigned silently, and the alias passed --check and failed
+                 * in codegen (E9003, at the function).
+                 *
+                 * The `fix` is the local `let` one: `let g=mut.` is a valid
+                 * module-level binding for every initialiser `let g=` takes.
+                 * Not on a bare init, nor on the step of a loop whose bare
+                 * init assigns `g` (bare_init_step): there `let g=mut.` and
+                 * `lp(let g=..` run differently.  An alias has no mutable
+                 * spelling, so it never has one (AGENTS §6). */
+                if (md&&(md->kind==DECL_LET||md->kind==DECL_IMPORT_ALIAS)) {
+                    if (tc_can_emit(cx)) {
+                        int alias=md->kind==DECL_IMPORT_ALIAS;
+                        char msg[384];
+                        if (alias&&lp_init)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to import alias '%s'; a bare 'lp' init assigns the binding in force, "
+                                "and an import alias cannot be assigned: write 'lp(let %s=' for a new loop variable",nb,nb);
+                        else if (alias)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to import alias '%s'; an import alias names a module and cannot be assigned",nb);
+                        else if (lp_init)
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
+                                "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
+                        else
+                            snprintf(msg,sizeof(msg),
+                                "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                        char fix[256];
+                        snprintf(fix,sizeof(fix),
+                            "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
+                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                            diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                                "expected","mutable binding","got","immutable binding",
+                                "fix",fix,(const char*)NULL);
+                        else
+                            diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                                "expected","mutable binding","got",alias?"import alias":"immutable binding",
+                                (const char*)NULL);
+                    }
+                    return mk_type(A,TY_VOID);
+                }
             }
             if (immutable) {
                 if (tc_can_emit(cx)) {
@@ -8058,8 +8557,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                      * only where it is correct in every case), so only an
                      * immutable `let` carries one. */
                     int is_let=lb->kind==NODE_BIND_STMT;
-                    char msg[256];
-                    if (is_let)
+                    char msg[384];
+                    if (lp_init&&is_let)
+                        /* 127.289: two repairs are plausible -- `let i=mut.`
+                         * on the binding (the loop then assigns it) or
+                         * `lp(let i=..` (a fresh loop variable, the outer
+                         * binding untouched) -- and they run differently, so
+                         * neither is a `fix` (AGENTS §6). */
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force: "
+                            "write 'lp(let %s=' for a new loop variable, or declare it 'let %s=mut.'",nb,nb,nb);
+                    else if (lp_init)
+                        snprintf(msg,sizeof(msg),
+                            "cannot assign to immutable binding '%s'; a bare 'lp' init assigns the binding in force, "
+                            "and a %s cannot be assigned: write 'lp(let %s=' for a new loop variable",
+                            nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
+                    else if (is_let)
                         snprintf(msg,sizeof(msg),
                             "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
                     else
@@ -8069,7 +8582,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     char fix[256];
                     snprintf(fix,sizeof(fix),
                         "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                    if (is_let)
+                    /* 127.289: nor on the step of a loop whose bare init
+                     * assigns the same binding (bare_init_step). */
+                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
@@ -8085,6 +8600,25 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_VOID);
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
+        /* 127.323: a fallible result assigned to an untyped `mut` binding
+         * (`let y=mut.0; y=g()`) that is never consumed as a union (C067's
+         * `mt r` after `r=s.toint(..)`, union_bind_consumed_rec) is read
+         * as its value: E4031.  A typed target is judged below. */
+        if (lhs->kind==TY_UNKNOWN&&rhs->kind==TY_ERROR_TYPE
+            &&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
+            char an[256]; TOKSTR(an,cx->src,node->children[0]);
+            int al=(int)strlen(an);
+            const Node *alb=tk_binder_at(cx->fn_node,cx->src,node->children[0],an,al,NULL);
+            if (alb&&(alb->kind==NODE_MUT_BIND_STMT||alb->kind==NODE_LOOP_INIT)
+                &&!union_bind_consumed_rec(cx,cx->fn_node,alb,an,al,
+                                            fn_node_returns_union(cx->fn_node))) {
+                char wh[320];
+                snprintf(wh,sizeof wh,"the assignment to '%s' (a 'mut' binding that is never "
+                         "matched, propagated with '!' or returned as a union)",an);
+                union_value_use(cx,node->children[1],rhs,NULL,wh);
+                return mk_type(A,TY_VOID);
+            }
+        }
         if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)
             &&!lit_narrows(cx->src,node->children[1],lhs)) {       /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(lhs));
@@ -8679,8 +9213,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *   children[2] = NODE_STMT_LIST — else-branch body (deeper scope, optional)
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_IF_STMT: {
-        /* Infer condition at current depth */
-        if (node->child_count>0) infer(cx,node->children[0]);
+        /* Infer condition at current depth.  127.323: a fallible bool
+         * (`if(gb()){..}`) took the zero filler on a failure -- E4031. */
+        if (node->child_count>0) {
+            Type *ct=infer(cx,node->children[0]);
+            union_value_use(cx,node->children[0],ct,"bool","an 'if' condition");
+        }
         /* Infer then/else branches at increased depth.
          * 137.6: the bind side-table is popped with the scope.  Nothing used
          * to pop it, so a `let x` inside the branch left a depth-1 entry
@@ -8729,7 +9267,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_LOOP_STMT: {
         int saved_bc=cx->bind_count;   /* 137.6: see NODE_IF_STMT */
         cx->scope_depth++;
-        for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
+        /* 127.323: the condition is children[1] after a NODE_LOOP_INIT,
+         * else children[0] (`lp(cond){..}`); the last child is the body.
+         * A fallible bool there took the zero filler on a failure. */
+        int lci=(node->child_count>0&&node->children[0]
+                 &&node->children[0]->kind==NODE_LOOP_INIT)?1:0;
+        for (int i=0;i<node->child_count;i++) {
+            Type *lt=infer(cx,node->children[i]);
+            if (i==lci&&i<node->child_count-1)
+                union_value_use(cx,node->children[i],lt,"bool","a 'lp' condition");
+        }
         cx->scope_depth--;
         cx->bind_count=saved_bc;
         return mk_type(A,TY_VOID);

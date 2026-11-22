@@ -1,7 +1,7 @@
 m=mergestate;i=io:std.io;i=s:std.str;i=json:std.json;
 f=pdoc(x:$str):$jsonval{<mt json.dec(x){$ok:d d;$err:e pdoc("{}")}};
-f=first(x:$str):$str{ if(s.len(x)==0){<""}; <s.slice(x;0;1) };
-f=innerarr(raw:$str):$str{ let n=s.len(raw); if(n<=2){<""}; <s.slice(raw;1;n-1) };
+f=first(x:$str):$str{ if(s.len(x)==0){<""}; <mt s.slice(x;0;1){$ok:v v;$err:e ""} };
+f=innerarr(raw:$str):$str{ let n=s.len(raw); if(n<=2){<""}; <mt s.slice(raw;1;n-1){$ok:v v;$err:e ""} };
 f=setstr(a:@$str;idx:$i64;v:$str):@$str{
 let r=mut.@(); let n=a.len(); let i=mut.0;
 lp(i<n){ r=r+@(if(i==idx){v}el{a.get(i)}); i=i+1; };
@@ -57,12 +57,12 @@ lp(ui<nu){ order=order.append(ui); ui=ui+1; };
 let oi=mut.1;
 lp(oi<nu){
 let cur=order.get(oi);
-let curts=json.getint(updates.get(cur);"timestamp");
+let curts=mt json.getint(updates.get(cur);"timestamp"){$ok:v v;$err:e 0};
 let jj=mut.oi-1;
 let inspos=mut.0;
 lp(jj>=0){
 let pj=order.get(jj);
-let pts=json.getint(updates.get(pj);"timestamp");
+let pts=mt json.getint(updates.get(pj);"timestamp"){$ok:v v;$err:e 0};
 if(pts>curts){
 order=setint(order;jj+1;pj);
 jj=jj-1;
@@ -78,7 +78,7 @@ lp(s2<nu){
 let upi=order.get(s2);
 let upd=updates.get(upi);
 let agentid=json.getobj(upd;"agent_id").raw;
-let ts=json.getint(upd;"timestamp");
+let ts=mt json.getint(upd;"timestamp"){$ok:v v;$err:e 0};
 let changes=json.getobj(upd;"changes");
 let cks=json.keys(changes);
 let ci=mut.0;
@@ -154,9 +154,9 @@ s.add(b;"{\"key\":");
 s.add(b;json.enc(mkeys.get(mk2)));
 s.add(b;",\"resolution\":");
 let val=mvals.get(mk2);
-s.add(b;json.enc(s.slice(val;1;s.len(val)-1)));
+s.add(b;json.enc(mt s.slice(val;1;s.len(val)-1){$ok:v v;$err:e ""}));
 s.add(b;",\"reason\":\"Latest timestamp (");
-s.add(b;s.slice(magent.get(mk2);1;s.len(magent.get(mk2))-1));
+s.add(b;mt s.slice(magent.get(mk2);1;s.len(magent.get(mk2))-1){$ok:v v;$err:e ""});
 s.add(b;" at ");
 s.add(b;"\(mts.get(mk2) as $i64)");
 s.add(b;") wins for conflicting scalar\"}");

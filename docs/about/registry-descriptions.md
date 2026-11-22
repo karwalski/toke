@@ -375,7 +375,10 @@ is being retired:
   with no set named, and contradicted on the same page by the honest floor (37.5% compile
   across all 1,748 v0.3.9 corpus programs).
 - `model-index` publishes `Functional Pass@1 = 8` with `verified: true`; the corrected
-  figure is **55.6%** (272/489), the ~8% having been a stdlib defect fixed on 2026-05-25.
+  figure is **55.6%** (272/489), the ~8% having been a stdlib defect fixed on 2026-05-25;
+  the 200-eval half of the set behind it may be corpus-derived, and its provenance is
+  unresolved (owner decision D4, 2026-11-15, which also withdrew the Gate 2 PASS:
+  [gate2-decision.md](/docs/decisions/gate2-decision/)).
 - No statement that the model writes **v0.3** syntax while the language is on v0.4.
 - Links to `console.tokelang.dev` and `api.tokelang.dev` advertising "Free API access" —
   the owner must confirm those still exist before the card is re-published.

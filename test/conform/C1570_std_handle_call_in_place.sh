@@ -103,7 +103,7 @@ let mp=@("k":mk());
 let st=svg.style("red";"blue";1.0);
 let d=svg.append(svg.doc(4.0;4.0);svg.group(@(svg.rect(0.0;0.0;1.0;1.0;st);svg.circle(1.0;1.0;1.0;st));"g"));
 let x=vec.toarray(vec.tovec(@(4;5;6)));
-io.println("\(s.done(b)) \(vec.len(vec.push(vec.push(vec.new();1);2))) \(vec.get(vec.set(vec.push(vec.new();1);0;9);0)) \(vec.len(h.h)) \(vec.len(hs.get(1))) \(vec.len(mp.get("k"))) \(x.get(2)) \(sm.write(sm.alloc(16;0);"x")) \(s.len(svg.render(d))>40)");
+io.println("\(s.done(b)) \(vec.len(vec.push(vec.push(vec.new();1);2))) \(vec.get(vec.set(vec.push(vec.new();1);0;9);0)) \(vec.len(h.h)) \(vec.len(hs.get(1))) \(vec.len(mt mp.get("k"){$ok:v v;$err:e vec.new()})) \(x.get(2)) \(sm.write(sm.alloc(16;0);"x")) \(s.len(svg.render(d))>40)");
 <0};
 EOF
 rm -f "${WORK}/r13.bin"

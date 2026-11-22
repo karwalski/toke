@@ -127,7 +127,7 @@ f=main():i64{
   lp(let i=0;i<5;i=i+1){
     m=m.set("k\(i)";i)
   };
-  io.println("acc len=\(m.len) k3=\(m.get("k3"))");
+  io.println("acc len=\(m.len) k3=\(mt m.get("k3"){$ok:v v;$err:e 0})");
   <0
 };'
 

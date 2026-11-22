@@ -75,11 +75,11 @@ f=main():i64{
   let v:f64=d.data.get(1);
   io.println(str.concat(str.fromint(d.data.len as i64); str.concat(" "; str.fromf64(v))));
   io.println(str.concat("color="; d.color));
-  io.println(str.frombytes(chart.tojson(c)));
+  io.println(mt str.frombytes(chart.tojson(c)){$ok:v v;$err:e ""});
   let lit=$chartspec{type:"line";labels:@("x";"y";"z");
     datasets:@($dataset{label:"p";data:@(1.0;2.0;3.0);color:"red"};
                $dataset{label:"q";data:@(4.0;5.0;6.0);color:"blue"});title:"Lit"};
-  io.println(str.frombytes(chart.tojson(lit)));
+  io.println(mt str.frombytes(chart.tojson(lit)){$ok:v v;$err:e ""});
   let o=chart.bar(@("k");@(9.0);"Other");
   io.println(str.concat(o.title; str.concat(" "; o.labels.get(0))));
   <0
@@ -112,8 +112,8 @@ f=main():i64{
   let c=chart.bar(@("a";"b");@(1.5;2.5);"Sales");
   let w=dashboard.addchart(d;"w1";c);
   io.println(str.concat(w.id; str.concat(" "; w.type)));
-  io.println(str.frombytes(w.spec));
-  io.println(str.frombytes(chart.tojson(c)));
+  io.println(mt str.frombytes(w.spec){$ok:v v;$err:e ""});
+  io.println(mt str.frombytes(chart.tojson(c)){$ok:v v;$err:e ""});
   <0
 };
 TK

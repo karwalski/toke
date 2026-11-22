@@ -4,7 +4,7 @@
   "consumer": "toke-tokenizer data/must_merge_v04.json (scripts/derive_must_merge.py, story 131.23)",
   "note": "sha256 pins of every input of the must-merge derivation. `make check-patterns` fails when a pinned file changes; re-pin only after re-deriving the consumer. Never hand-edit.",
   "catalogues": {
-    "patterns/catalogue.json": "f307ce04ec2e8fea02889b6d5b6fc9c81326ad6a94e9830fa0e205e9f3362472"
+    "patterns/catalogue.json": "01211376909de28eaf222fd7e7888a1f4b3071c93679269d6f694e190fb738b7"
   },
   "fixtures": [
     {
@@ -341,14 +341,14 @@
       "role": "canonical",
       "form": "a",
       "fixture": "patterns/parse-kv-lines/a.tk",
-      "sha256": "bbec75b640dcebf396b2f2a8beda4574ceaf74b94f556b4d43cd09811f963e61"
+      "sha256": "c8178aacab03b1ca94b4bb7148d7ccd6f2c4a00a64a841e9afecb1e88a763ab8"
     },
     {
       "id": "parse-kv-lines",
       "role": "hot_path",
       "form": "b",
       "fixture": "patterns/parse-kv-lines/b.tk",
-      "sha256": "19bbef732ed4020d421d8fca3a97512502c6493f68a5e7f4bf0dd2c10bf58936"
+      "sha256": "18d8c5713dbb70af45aa9bfc2781888721fe6f749fbd868347184bcbb96e6e3e"
     },
     {
       "id": "str-array-render",

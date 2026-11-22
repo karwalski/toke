@@ -96,7 +96,7 @@ i=s:std.str;
 f=chk(m:@(str:str)):i64{
   let ks=m.keys();
   let t=mut.ks.len*1000000;
-  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.get(ks.get(i)))};
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(mt m.get(ks.get(i)){$ok:v v;$err:e ""})};
   <t
 };
 f=main():i64{
@@ -208,7 +208,7 @@ f=main():i64{
   m=m.set("k";"v1");
   let h=idm(m);
   m=m.set("k";"v2");
-  io.println("\(h.get("k")) \(m.get("k"))");
+  io.println("\(mt h.get("k"){$ok:v v;$err:e ""}) \(mt m.get("k"){$ok:v v;$err:e ""})");
   <0
 };'
 

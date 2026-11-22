@@ -99,9 +99,9 @@ f=fail(msg:$str):i64{
   <1
 };
 f=main():i64{
-  let body=mt file.readbytes(args.get(3)) {$ok:b b; $err:e @()};
-  let mode=args.get(2);
-  let c=mt ws.connect("ws://127.0.0.1:\(args.get(1))/\(mode)") {$ok:k k; $err:e <fail("connect-err")};
+  let body=mt file.readbytes(mt args.get(3){$ok:v v;$err:e ""}) {$ok:b b; $err:e @()};
+  let mode=mt args.get(2){$ok:v v;$err:e ""};
+  let c=mt ws.connect("ws://127.0.0.1:\(mt args.get(1){$ok:v v;$err:e ""})/\(mode)") {$ok:k k; $err:e <fail("connect-err")};
   let pre=if(mode=="before"){mt ws.recv(c) {$ok:x "recv-ok "; $err:e "recv-err "}}el{""};
   let a=mt ws.sendbytes(c;body) {$ok:v "ok"; $err:e "err"};
   let b=mt ws.sendbytes(c;body) {$ok:v "ok"; $err:e "err"};

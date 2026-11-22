@@ -85,7 +85,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4025 | error | type_check | Struct has no field with that name | D092, T001 |
 | E4026 | error | type_check | Wrong argument count in function call | C035 |
 | E4027 | error | type_check | Module has no exported member with that name | D093, C038, C219, T002 |
-| E4031 | error | type_check | Type mismatch | D086, C038 |
+| E4031 | error | type_check | Type mismatch | D086, D570-D574, C038, C249, C1810 |
 | E4032 | error | type_check | Cannot interpolate a composite value into a string | n/s |
 | E4033 | error | type_check | A type name used where a value is required | T003 |
 | E4034 | error | type_check | Field access on a layout the compiler cannot establish | T003 |
@@ -923,8 +923,8 @@ member is carried in the `got` field.
 | **Stage** | type_check |
 | **Severity** | error |
 | **Message** | `type mismatch: expected '<T1>', got '<T2>'` |
-| **Fix field** | present (contextual, e.g. `"cast RHS to i64 using 'as'"`) |
-| **Conformance test** | D086, C038 |
+| **Fix field** | present (contextual, e.g. `"cast RHS to i64 using 'as'"`; for `x==@()` / `x!=@()`, the rewritten comparison `"x.len==0"` / `"x.len!=0"`) |
+| **Conformance test** | D086, D570-D574, C038, C249, C1810 |
 
 **Notes:** The workhorse type error. Emitted for mismatched operands in binary
 expressions, mismatched function arguments, mismatched binding annotations,
@@ -942,6 +942,32 @@ present only when the cast cannot change the value -- any integer into `i64`,
 or `f32` into `f64` (story 127.230); a narrowing, a non-numeric pair and an
 array of another element type get no fix. An integer literal that fits the
 declared integer type is not a mismatch at all (`let b:u8=5`).
+
+**`==` / `!=` the emitter has no equality for** are E4031 too. Both operands
+struct or sum values (story 138.9, loke T-14):
+`'==' does not compare struct or sum values ('<T>') ...`, with no fix (an opaque
+`.tki` handle and `$none` keep their handle comparison). An array operand,
+whatever the other operand is (story 138.20, loke T-60; owner decision
+2026-11-15, register 1.2 (a)):
+`'==' does not compare arrays ('<L>' == '<R>'): toke has no array equality; test
+emptiness with .len or compare the elements`, `expected` `a scalar or str
+operand`. `got` is the array the comparison is about: when exactly one operand
+is the literal `@()` and the other is an array, the other operand (`@()==x` with
+`x:@i64` gives `@(i64)`, not the literal's `@(?)`); otherwise the left operand
+if it is an array, else the right. An array compares with nothing, so the
+refusal does not wait on the other operand: one whose type an earlier error left
+`unknown` still draws it, with no fix. Through 3.2.0 this compiled: against
+the literal `@()` it compared the array's address with a fresh allocation, so
+`a==@()` was false for every empty `a`, and between two named arrays it compared
+the elements' bytes as a C string, so `@(256)==@(512)` was true. The fix is
+present only when one operand is the literal `@()` and the other is an
+identifier of array type, in either order: it is the whole comparison
+rewritten, `"x.len==0"` for `x==@()` or `@()==x` and `"x.len!=0"` for `!=`,
+which substitutes in place because `.len` binds tighter than any operator. Two
+named arrays, a handle, a str, a map, `@()` against `@()`, and an array operand
+that is not an identifier (a field, a call, an index) get no fix: element-wise
+comparison is not a rewrite the compiler can choose, and `.len` is not the test
+for a handle or a str.
 
 ---
 
@@ -1189,6 +1215,11 @@ zero.
 | D086 | D | E4031 | Interpolation fix for a scalar passed as str |
 | D092 | D | E4025 | Fix field absent for an undeclared struct field (127.243) |
 | D093 | D | E4027 | Fix field absent for a member with no near miss (127.243) |
+| D570 | D | E4031 | `x==@()` on an array identifier: fix `x.len==0` (138.20) |
+| D571 | D | E4031 | `@()==xs`, literal on the left: fix `xs.len==0` (138.20) |
+| D572 | D | E4031 | `x!=@()`: fix `x.len!=0` (138.20) |
+| D573 | D | E4031 | Fix field absent for `==` between two named arrays (138.20) |
+| D574 | D | E4031 | Fix field absent for a process handle or a str against `@()` (138.20) |
 | D101 | D | E1007 | Fix field absent for unterminated comment |
 | D111 | D | E2003 | Fix field absent for missing semicolon |
 | D112 | D | E2001 | Fix field absent for declaration ordering violation |

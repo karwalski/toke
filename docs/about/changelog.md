@@ -11,6 +11,22 @@ per-change record for each release, with every breaking change and its migration
 repository; this page summarises it. Story numbers refer to the tracker,
 [`docs/progress.md`](https://github.com/karwalski/toke/blob/main/docs/progress.md).
 
+## Unreleased — toke 3.3.0
+
+Not tagged. `CHANGELOG.md` § Unreleased lists each breaking change with its migration.
+
+- A std call whose interface declares `T!E` (`str.toint`, `str.slice`, `json.*`,
+  `file.*`, `args.get`, ...) is the error union it is, as a map lookup has been since
+  3.2.0 (127.244): reading its result as a plain `T` is E4031 with no `fix` (127.319).
+  In 3.2.0 the checker typed these calls as nothing, so `str.toint("x")+1` checked
+  clean and computed with the zero filler.
+- The receiver spelling `t.slice(a;b)` (and `.substr`, `.substring`) on a `str` is the
+  same union as `str.slice(t;a;b)` (127.462).
+- An error union read as its value is E4031 in more positions: a condition, `!`, an
+  interpolation, a stdlib or receiver-method argument, an `as` cast, each operand of a
+  comparison, and an assignment to a `mut` binding that is not consumed as a union
+  (127.323). `docs/spec/semantics.md` 5.1 lists what is judged and what is not.
+
 ## 3.2.0 — released 2026-11-15
 
 Everything on `main` since the `v3.1.0` tag (2026-09-30), cut from `main` `fffec674` on
@@ -155,7 +171,7 @@ Require `>= 3.0.0` for anything written in v0.4 syntax.
 - **(2026-04-15)** **Documentation consolidation**: All documentation merged into `~/tk/docs/` as single source of truth. Research and planning documents moved to `~/tk/research/`.
 - **(2026-04-12)** **Corpus overhaul complete**: 188,830 deduplicated records, 18,890 train + 994 eval rows in chat format with quality gates. Phase 1 data archived.
 - **(2026-04-05)** **Syntax frozen** at `v0.2-syntax-lock`. 55-char profile is the default ("toke"). 80-char profile available under `--legacy`.
-- **(2026-04-03)** **Gate 1 recorded PASS** (NOT PASSED since the owner decision of 2026-09-22, story 128.19): 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`); **58.8% Pass@1** (588 of 1,000 solutions generated; Qwen 2.5 Coder 7B + LoRA, 1,000 held-out tasks). *(The original entry read "vs. Python/Go/Rust equivalents" -- corrected 2026-09-19, story 132.6: the figure never compared toke with another language. It also read "63.7% Pass@1" and "Both thresholds exceeded" -- corrected 2026-09-19, story 128.19: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator. The Pass@1 threshold of >= 60% was **not** met; the verdict was re-opened, and on 2026-09-22 the owner decided Gate 1 NOT PASSED; the token-reduction threshold of >= 10% was met. See `docs/decisions/gate1-decision.md`.)*
+- **(2026-04-03)** **Gate 1 recorded PASS** (NOT PASSED since the owner decision of 2026-09-22, story 128.19): 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`); **58.8% Pass@1** (588 of 1,000 solutions generated; Qwen 2.5 Coder 7B + LoRA, 1,000 held-out tasks). *(The original entry read "vs. Python/Go/Rust equivalents" -- corrected 2026-09-19, story 132.6: the figure never compared toke with another language. It also read "63.7% Pass@1" and "Both thresholds exceeded" -- corrected 2026-09-19, story 128.19: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator. The Pass@1 threshold of >= 60% was **not** met; the verdict was re-opened, and on 2026-09-22 the owner decided Gate 1 NOT PASSED. The token-reduction criterion reads, by owner decision D3 of 2026-11-15: Recorded as met on 2026-04-03 at 12.5%, a tokenizer-vs-tokenizer figure: the 8K purpose-built toke BPE against cl100k_base on the same toke text. Withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1). Against Python, the comparator named in the 2026-03-27 proposal, a reduction is not shown. Until 2026-11-15 this note said the token-reduction threshold "was met". See `docs/decisions/gate1-decision.md`.)*
 
 ## Q1 2026
 
@@ -176,6 +192,6 @@ Require `>= 3.0.0` for anything written in v0.4 syntax.
 | Gate | Criteria | Status |
 |------|----------|--------|
 | Gate 1 (Month 8) | Token reduction >= 10%, Pass@1 >= 60% | **NOT PASSED** (owner decision 2026-09-22, story 128.19; recorded PASS Apr 2026 on a Pass@1 later corrected to 58.8%) |
-| Gate 2 (Month 14) | 7B model >= 65% Pass@1, extended features maintain efficiency | **ON HOLD** |
-| Gate 3 (Month 26) | Two+ LLM families >= 70% Pass@1, self-improvement loop running | Pending |
+| Gate 2 (Month 14) | 7B model >= 65% Pass@1, extended features maintain efficiency | **NO STANDING VERDICT** — the PASS recorded 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4, [gate2-decision.md](/docs/decisions/gate2-decision/)) |
+| Gate 3 (Month 26) | Two+ LLM families >= 70% Pass@1, self-improvement loop running | **VOID — NEVER RAN** — pre-registered 2026-05-24 with a GO/NO-GO date of 2026-08-17; bannered void 2026-10-01 (story 128.24); superseded by the 128.15 lane scorecard ([gate2-decision.md](/docs/decisions/gate2-decision/)) |
 | Gate 4 (Month 32) | All benchmarks met, spec complete, consortium proposal ready | Pending |

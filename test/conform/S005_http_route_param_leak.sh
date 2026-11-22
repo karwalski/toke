@@ -35,7 +35,8 @@
 # CASE 2 IS WHAT STOPS THE FIX BEING A LEAK TRADED FOR A DANGLING POINTER.
 # A `:param` value belongs to the matcher, but a handler may hand that exact
 # pointer back as the response body — `http.resok(http.param(req;"name"))` is
-# the obvious way to write a `:param` handler, and the Res constructors store
+# the obvious way to write a `:param` handler (since 127.319 the result is
+# matched first; the `$ok` value is that same pointer), and the Res constructors store
 # the pointer without copying it.  The first version of this fix freed the
 # bindings the moment the handler returned, and every such response came back
 # EMPTY while the same handler with the value copied into a new string
@@ -109,7 +110,8 @@ else
 m=srv;
 i=http:std.http;
 f=greet(req:i64):i64{
-  <http.resok(http.param(req;"name"))
+  let v=mt http.param(req;"name"){\$ok:p p;\$err:e ""};
+  <http.resok(v)
 };
 f=main():i64{
   http.gethandler("/api/greet/:name";&greet);

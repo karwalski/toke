@@ -10,7 +10,7 @@ f=main():$i64 {
   lp (let i=0; i<parts.len(); i=i+1) {
     let tok=s.trim(parts.get(i));
     if (s.len(tok)>0) {
-      arr=arr.append(s.toint(tok))
+      arr=arr.append(mt s.toint(tok){$ok:v v;$err:e 0})
     }
   };
   let n=arr.len();

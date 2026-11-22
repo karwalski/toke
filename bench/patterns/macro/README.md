@@ -27,7 +27,7 @@ Per pair:
 
 | file | what |
 |---|---|
-| `programs/<name>.orig.tk` | verbatim original + provenance header |
+| `programs/<name>.orig.tk` | verbatim original + provenance header (25 library originals were since migrated by 127.319: see below) |
 | `programs/<name>.canon.tk` | the rewrite: catalogue canonical forms applied wherever a pattern applies, **nothing else changed** (no renames, reordering, dead-code removal, operator or stdlib substitutions) |
 | `programs/<name>.patterns.json` | `applied` (pattern id, site count, note), `not_applied` (pattern id, `issue` = the open 127.x bug that blocks it, reason), `reformatted` |
 
@@ -91,6 +91,25 @@ Verdict (canon relative to original, protocol §5.4):
 | `output_mismatch` / `compile_error` / `timeout` | should not happen after `verify.py` |
 
 Results: `results/<YYYYMMDD-HHMMSS>.json` (`meta`, per-pair `sides`, `summary`).
+
+## Migration (127.319, 2026-11-15)
+
+toke 3.3.0 types every stdlib call whose interface declares `T!E` as an error
+union and rejects reading its result as a plain value (127.319). 25 of the 32
+library originals did that (AIA-100, AIA-118, CRY-041, CRY-119, DAT-045, DEV-104, EDU-085, EDU-098, FIN-122, GAM-072, GAM-117, GAZ-012, GAZ-041, MED-036, MED-062, MFG-007, MFG-051, MSG-038, NET-111, SCI-024, SCI-086, SEC-010, SOC-139, SYS-010, SYS-066), so
+`scripts/migrate_std_errunion.py` rewrote them and their canons to explicit
+matches that keep the 3.2.0 runtime result (the zero filler on a failure).
+Those 25 originals are no longer verbatim: each header says so, and its `sha256`
+is the source's before migration, not the file's. The sources in
+toke-test-programs are not edited here, so `prepare.py` would copy them back
+unmigrated. The 12 bench programs and the other 7 library pairs are unchanged.
+
+Output identity was proved again on the migrated set: **44/44 identical**
+(`results/verify_20261115-200956.json`; toke 3.2.0 built at `3738c9254910`, whose
+compiler source is that of `47a863f5`). The stdin runner was verify.py's built-in
+fallback, because toke-corpus no longer has `regen/validate.py`. The wall, RSS and
+token results below (`results/20260919-*.json`) predate the migration and were not
+re-run, so their `src_sha256` fields name the pre-migration files.
 
 ## Results
 

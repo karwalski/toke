@@ -53,7 +53,7 @@ f=h(req:i64):i64{ <router.ok("routed") };
 f=main():i64{
   let r=router.new();
   router.get(r;"/";&h);
-  <mt router.serve(r;args.get(1);0) {$ok:v 0; $err:e 7}
+  <mt router.serve(r;mt args.get(1){$ok:v v;$err:e ""};0) {$ok:v 0; $err:e 7}
 };
 TOKE
 if ! "${TKC}" --allow-all --out rs_bin rs.tk > build.log 2>&1; then

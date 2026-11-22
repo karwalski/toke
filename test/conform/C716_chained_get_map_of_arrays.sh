@@ -120,9 +120,9 @@ cat > "${WORK}/m.tk" <<'EOF2'
 m=t;i=io:std.io;
 f=main():i64{
   let a=@(@("k":"v"));
-  io.println(a.get(0).get("k"));
+  io.println(mt a.get(0).get("k"){$ok:v v;$err:e ""});
   let m=@("o":@("i":"w"));
-  io.println(m.get("o").get("i"));
+  io.println(mt m.get("o").get("i"){$ok:v v;$err:e ""});
   let n=@("o":@("i":2.5));
   io.println("\(mt n.get("o").get("i"){$ok:y y+1.0;$err:e 0.0})");
   let p=@("o":@("i":4));
@@ -140,9 +140,9 @@ m=cr;i=io:std.io;i=s:std.str;f=main():i64{
   rd=rd+@(s.toint("1"));
   rd=rd+@(s.toint("1000000"));
   dist=dist+@(rd);
-  let v=dist.get(0).get(1);
+  let v=mt dist.get(0).get(1){$ok:v v;$err:e 0};
   if(v>=999999){io.println("BIG")}el{io.println("ok")};
-  if(dist.get(0).get(0)>=999999){io.println("BIG")}el{io.println("ok")};
+  if((mt dist.get(0).get(0){$ok:v v;$err:e 0})>=999999){io.println("BIG")}el{io.println("ok")};
   <0
 };
 EOF2

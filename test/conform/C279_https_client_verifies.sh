@@ -93,7 +93,7 @@ i=http:std.http;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let c=http.client(args.get(1));
+  let c=http.client(mt args.get(1){$ok:v v;$err:e ""});
   io.println(mt http.clientget(c;"/v") {$ok:r "ok \(r.status)"; $err:e "err"});
   <0
 };

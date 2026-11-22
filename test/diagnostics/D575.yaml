@@ -1,0 +1,17 @@
+id: D575
+series: D
+description: "127.289: a bare `lp(i=..)` init over an immutable `let i` is E4070 with no fix -- `let i=mut.` (the loop assigns i) and `lp(let i=..` (a fresh loop variable) are both plausible and run differently (AGENTS 6)"
+input: |
+  m=test;
+  f=bad():i64{
+    let i=7;
+    let j=mut.0;
+    lp(i=0;j<3;j=j+1){ };
+    <i
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "immutable binding"

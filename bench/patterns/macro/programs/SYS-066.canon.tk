@@ -9,7 +9,7 @@ f=parsecsv(line:$str):@$str {
   let inquote=mut.0;
   let i=mut.0;
   lp (i<s.len(line)) {
-    let ch=s.slice(line; i; i+1);
+    let ch=mt s.slice(line; i; i+1){$ok:v v;$err:e ""};
     if (s.equals(ch; "\"")) {
       inquote=1-inquote
     } el if (s.equals(ch; ",")&&inquote==0) {
