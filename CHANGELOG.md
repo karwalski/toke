@@ -388,6 +388,13 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   checks. Anything else fails, with a self-test as its negative control; on the tutorials
   as they stood before 127.472 it reports 18 failures. `static-site.md` (ooke page code,
   whose modules are not in this repository) warns under story 132.156 instead.
+- **The security guide recommends an escaper that exists** (132.157).
+  `docs/security/building-secure-apps.md` told readers to escape hand-built HTML with
+  `html.escape`, a quarantined `std.html` export with no implementation (`tkc` rejects
+  the call with E4027). It now recommends `tpl.escape` from `std.template`, says when
+  `tpl.render`'s positional escaping is needed instead, and its example is a complete
+  program that `make check-docs` builds. The `str.concat` examples beside it used `,`
+  as the argument separator and now use `;`.
 - **toke-model's Gate 2 statements are enforced copies of the canonical `models` fact**
   (127.495, owner decision D4). `check_canonical.py` now requires the fact word for word
   in toke-model's `README.md`, `huggingface/README.md` and `ollama/README.md`, which were
