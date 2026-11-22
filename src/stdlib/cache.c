@@ -477,9 +477,21 @@ static void cache_spill_victim(const CacheEntry *e)
     (void)cache_spill_file(path, e);
 }
 
+/* Move e, just loaded from the spill file at path, to the front of the memory
+ * tier: its file is removed and uncounted, and the eviction it causes never
+ * takes e itself (its pointers are about to be handed out). */
+static CacheEntry *cache_disk_adopt(CacheEntry *e, const char *path)
+{
+    cache_disk_remove(path, e->body_len);
+    g_cache.total_size += e->body_len;
+    g_cache.count++;
+    cache_push_front(e);
+    cache_evict_keep(e);
+    return e;
+}
+
 /* Read key back from disk_dir: the entry moves to the front of the memory
- * tier (its file is removed and uncounted) and is returned; NULL when there
- * is no spill file holding key. */
+ * tier and is returned; NULL when there is no spill file holding key. */
 static CacheEntry *cache_disk_promote(const char *key)
 {
     if (!g_cache.disk_dir) return NULL;
@@ -488,12 +500,15 @@ static CacheEntry *cache_disk_promote(const char *key)
     CacheEntry *e = cache_disk_load(path);
     if (!e) return NULL;
     if (strcmp(e->key, key) != 0) { cache_entry_discard(e); return NULL; }
-    cache_disk_remove(path, e->body_len);
-    g_cache.total_size += e->body_len;
-    g_cache.count++;
-    cache_push_front(e);
-    cache_evict_keep(e);
-    return e;
+    return cache_disk_adopt(e, path);
+}
+
+/* Is de_name a spill file's name, <8 hex digits>.cache? */
+static int cache_disk_name(const char *de_name)
+{
+    for (int i = 0; i < 8; i++)
+        if (!isxdigit((unsigned char)de_name[i])) return 0;
+    return strcmp(de_name + 8, ".cache") == 0;
 }
 
 /* Does key "METHOD|URI|vary..." name uri (wildcard: URI starts with the
@@ -520,10 +535,7 @@ static int cache_disk_purge(const char *uri, int wildcard, size_t plen)
     int purged = 0;
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
-        int hex = 1;
-        for (int i = 0; i < 8 && hex; i++)
-            hex = isxdigit((unsigned char)de->d_name[i]) != 0;
-        if (!hex || strcmp(de->d_name + 8, ".cache") != 0) continue;
+        if (!cache_disk_name(de->d_name)) continue;
         char path[1024];
         snprintf(path, sizeof(path), "%s/%s", g_cache.disk_dir, de->d_name);
         CacheEntry *e = cache_disk_load(path);
@@ -561,8 +573,8 @@ void http_cache_set_disk(const char *dir, size_t max_size_bytes)
 
 /* Check cache for a response. Returns cache status string.
  * The out_body, out_etag and out_content_type pointers point into the cache
- * and are valid only until the next http_cache_get, http_cache_put or purge
- * call: since 127.496 a get that reads an entry back from disk can evict
+ * and are valid only until the next http_cache_get, http_cache_put, purge or
+ * http_cache_stale_if_error call: since 127.496 a get that reads an entry back from disk can evict
  * (and free) the entries an earlier get returned.  Copy what must outlive
  * that. */
 const char *http_cache_get(const char *method, const char *uri,
@@ -753,8 +765,53 @@ void http_cache_micro(const char *method, const char *uri,
 
 /* ── Stale-if-error (63.2.4) ─────────────────────────────────────────── */
 
+/* Is e a stale-if-error fallback for "METHOD|URI" (prefix, plen) at now:
+ * its key starts with prefix and it is within its TTL plus 5 minutes? */
+static int cache_stale_match(const CacheEntry *e, const char *prefix,
+                             size_t plen, time_t now)
+{
+    /* Allow stale up to 5 minutes by default for error fallback */
+    return strncmp(e->key, prefix, plen) == 0 && now - e->inserted < e->ttl + 300;
+}
+
+/* The stale-if-error fallback on disk (127.511): scan disk_dir as
+ * cache_disk_purge does, through cache_disk_load's bounds-checked read-back,
+ * and adopt the matching spill file with the latest insertion time (the
+ * freshest copy; directory order is arbitrary) into memory.  NULL when no
+ * spill file matches. */
+static CacheEntry *cache_disk_stale(const char *prefix, size_t plen, time_t now)
+{
+    if (!g_cache.disk_dir) return NULL;
+    DIR *d = opendir(g_cache.disk_dir);
+    if (!d) return NULL;
+    CacheEntry *best = NULL;
+    char best_path[1024] = "";
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (!cache_disk_name(de->d_name)) continue;
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/%s", g_cache.disk_dir, de->d_name);
+        CacheEntry *e = cache_disk_load(path);
+        if (e && cache_stale_match(e, prefix, plen, now) &&
+            (!best || e->inserted > best->inserted)) {
+            cache_entry_discard(best);
+            best = e;
+            snprintf(best_path, sizeof(best_path), "%s", path);
+        } else {
+            cache_entry_discard(e);
+        }
+    }
+    closedir(d);
+    return best ? cache_disk_adopt(best, best_path) : NULL;
+}
+
 /* Get a stale cache entry when origin returns error.
- * Returns the cached body if available and within stale_if_error window. */
+ * Returns the cached body if available and within stale_if_error window.
+ * The memory tier is searched first, then the spill files in disk_dir
+ * (127.511); an entry found on disk moves to the front of memory.  The
+ * returned pointers are valid only until the next http_cache_get,
+ * http_cache_put, purge or http_cache_stale_if_error call (that move can
+ * evict). */
 const char *http_cache_stale_if_error(const char *method, const char *uri,
                                        uint32_t *out_status,
                                        size_t *out_body_len,
@@ -765,20 +822,16 @@ const char *http_cache_stale_if_error(const char *method, const char *uri,
     snprintf(prefix, sizeof(prefix), "%s|%s", method ? method : "GET",
              uri ? uri : "/");
     size_t prefix_len = strlen(prefix);
+    time_t now = time(NULL);
 
-    for (CacheEntry *e = g_cache.head; e; e = e->next) {
-        if (strncmp(e->key, prefix, prefix_len) == 0) {
-            time_t age = time(NULL) - e->inserted;
-            /* Allow stale up to 5 minutes by default for error fallback */
-            if (age < e->ttl + 300) {
-                *out_status = e->status;
-                *out_body_len = e->body_len;
-                *out_content_type = e->content_type;
-                return e->body;
-            }
-        }
-    }
-    return NULL;
+    CacheEntry *e = g_cache.head;
+    while (e && !cache_stale_match(e, prefix, prefix_len, now)) e = e->next;
+    if (!e) e = cache_disk_stale(prefix, prefix_len, now);
+    if (!e) return NULL;
+    *out_status = e->status;
+    *out_body_len = e->body_len;
+    *out_content_type = e->content_type;
+    return e->body;
 }
 
 /* ── Cache statistics ────────────────────────────────────────────────── */
