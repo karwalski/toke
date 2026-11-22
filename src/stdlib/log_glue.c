@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <sys/stat.h>
 
 /*
  * Decode a log `fields` argument into a flat key/value const char ** array.
@@ -78,13 +77,13 @@ static int log_path_is_own_stream(const char *path)
  * a ".<name>.lock" sidecar and rotated "<stem>.<stamp><ext>.gz" files beside
  * it, and deletes old ones -- files a scope naming only the log does not
  * admit.  Under a scoped fs.write grant the log's directory must therefore be
- * admitted too.  A stream (a tty, a FIFO) gets no sidecar and needs no more. */
+ * admitted too.  This is checked before anything looks at the path, so a
+ * stream other than the process's own (a tty, a FIFO), which gets no
+ * sidecar, needs its directory as well: the conservative answer. */
 static void log_require_dir(const char *path)
 {
-    struct stat st;
     char dir[4096];
     if (!path || tk_cap_check(TK_CAP_FS_WRITE)) return;
-    if (stat(path, &st) == 0 && !S_ISREG(st.st_mode)) return;
     const char *sl = strrchr(path, '/');
     if (!sl) snprintf(dir, sizeof dir, ".");
     else if (sl == path) snprintf(dir, sizeof dir, "/");
