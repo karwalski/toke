@@ -3311,6 +3311,32 @@ static Type *std_i64_ok_payload(Ctx *cx, const Node *scr, int depth) {
     return mk_type(cx->env->arena, TY_I64);
 }
 
+/*
+ * 127.484 -- the payload type of the variant an arm names, when the
+ * scrutinee is a value of a declared SUM type (`scr`, the scrutinee's
+ * inferred type), or NULL.  `t=$shape{$circle:f64;..}; mt s {$circle:r r*r}`
+ * bound `r` as unknown: nothing about it was checked, and codegen, asking
+ * the checker for the arm's type, predicted an i64 product.  The variant's
+ * declared payload is the binding's type, as the lowering binds it.  A
+ * record (E4080's case), an unknown or unresolved payload, and a label that
+ * is not one of the sum's variants are not answered.
+ */
+static int reraise_err_shape(Ctx *cx, const char *nm);
+static Type *sum_variant_payload_type(Ctx *cx, const Type *scr, const Node *arm) {
+    if (!scr || scr->kind != TY_STRUCT || !scr->name || !scr->field_names
+        || !scr->field_types || !arm || arm->child_count < 1 || !arm->children[0]
+        || arm->children[0]->kind != NODE_TYPE_IDENT) return NULL;
+    const char *nm = scr->name[0] == '$' ? scr->name + 1 : scr->name;
+    if (reraise_err_shape(cx, nm) != 2) return NULL;
+    char tag[128]; TOKSTR(tag, cx->src, arm->children[0]);
+    for (int i = 0; i < scr->field_count; i++) {
+        if (!scr->field_names[i] || strcmp(scr->field_names[i], tag)) continue;
+        Type *ft = scr->field_types[i];
+        return (ft && ft->kind != TY_UNKNOWN) ? ft : NULL;
+    }
+    return NULL;
+}
+
 static Type *arm_bind_type(Ctx *cx, const Node *m, const Node *arm) {
     Type *u = mk_type(cx->env->arena, TY_UNKNOWN);
     if (!arm->children[0] || m->child_count < 1) return u;
@@ -9093,6 +9119,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 cx->armb[k].name=cx->src+arm->children[1]->tok_start;
                 cx->armb[k].len=arm->children[1]->tok_len;
                 cx->armb[k].ty=arm_bind_type(cx,node,arm);
+                /* 127.484: a sum variant's payload. */
+                if (cx->armb[k].ty->kind==TY_UNKNOWN) {
+                    Type *vt=sum_variant_payload_type(cx,scr,arm);
+                    if (vt) cx->armb[k].ty=vt;
+                }
                 cx->armb[k].body=body;
                 pushed=1;
             }
