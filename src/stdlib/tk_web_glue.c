@@ -1912,7 +1912,7 @@ int64_t tk_http_clientdelete_w(int64_t client, int64_t path) {
 }
 
 /* body is a toke [byte]; ctype "" sends no Content-Type of our choosing. */
-static int64_t client_send(const char *fn, int is_put, int64_t client, int64_t path,
+static int64_t client_send_body(const char *fn, int is_put, int64_t client, int64_t path,
                            int64_t body, int64_t ctype)
 {
     if (!client) return http_raise(fn, 0);
@@ -1929,11 +1929,11 @@ static int64_t client_send(const char *fn, int is_put, int64_t client, int64_t p
 }
 
 int64_t tk_http_clientpost_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
-    return client_send("http.clientpost: null client", 0, client, path, body, ctype);
+    return client_send_body("http.clientpost: null client", 0, client, path, body, ctype);
 }
 
 int64_t tk_http_clientput_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
-    return client_send("http.clientput: null client", 1, client, path, body, ctype);
+    return client_send_body("http.clientput: null client", 1, client, path, body, ctype);
 }
 
 /* http.geturl(url) -> str!httperr: the body of a 2xx response. */
