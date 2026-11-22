@@ -55,12 +55,14 @@ Limit overrides (per-session):
   --max-iters=N       Max loop iterations at runtime (default: 0 = unlimited)
   --show-limits       Print effective limits and exit
 
-Capabilities (ADR-0010, deny-by-default; grants also declarable in
-tkc.toml [capabilities] and passable at run time on the compiled binary):
-  --allow-read[=PATH] --allow-write[=PATH]  Grant fs read / write
-  --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn
+Capabilities (ADR-0010, deny-by-default; a flag with no =value grants the whole
+class, with values only those scopes; also declarable in tkc.toml [capabilities]
+and passable at run time on the compiled binary, where they narrow a baked set):
+  --allow-read[=PATH,...] --allow-write[=PATH,...]  Grant fs read / write
+  --allow-net[=connect:HOST[:PORT],listen:ADDR:PORT,...]  Grant net
+  --allow-env[=KEY,PREFIX*,...]  --allow-run[=CMD,...]  Grant env write / spawn
   --allow-all         Grant every capability
-  --cap-enforce       Bake deny-by-default enforcement into the binary
+  --cap-enforce       Accepted for compatibility; enforcement is the default
 
 Packages (ADR-0004, docs/reference/package-manifest.md):
   tkc pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock
