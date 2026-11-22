@@ -220,6 +220,31 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
   to both are in its addenda.
 
+### Documentation and claim gates
+
+- **The canonical `models` fact states the Gate 2 withdrawal** (127.459, owner decision
+  D4): `docs/about/canonical.md` §8 and `canonical.json` "models" now say the PASS of
+  2026-05-24 was withdrawn on 2026-11-15, that Gate 2 has no standing verdict and Gate 3
+  is void, and carry the 55.6% with its possibly-corpus-derived caveat.
+  `check_canonical.py` Rule 2 now fails a present-tense "Gate 2 PASS" anywhere in the
+  workspace unless the withdrawal is stated in the same window (generic correction
+  markers do not excuse it). It also catches the table form `| Gate 2 | **PASSED** |`,
+  "Gate 2 passed" in any case and "Gate 2 verdict: PASS", and the excuse has to tie
+  "withdrawn" to the PASS or the verdict in the same sentence (or say "no standing
+  verdict"); a nearby date or an unrelated withdrawn headline no longer excuses it.
+- **`docs/spec/stdlib-signatures.md` is held to the `.tki` interfaces, which are
+  normative** (127.456). `scripts/check_stdlib_signatures.py`, run by `make check-tki`,
+  fails on a hand-written entry that names a non-export or states a parameter count or
+  type that differs from the `.tki`; the page's last section is generated from the
+  interfaces for the 41 modules that had no block (`make render-stdlib-signatures`),
+  and for every export a hand-written block leaves out (108 functions in 16 modules,
+  e.g. most of std.str, std.time and std.http), so a new export in any module fails
+  `make check-tki` until the page is re-rendered or the block is extended.
+  38 drifted entries were corrected to the interfaces (std.str, toon, yaml, i18n,
+  file, env, process, time, log, test); no `.tki` or runtime signature changed.
+- **The stale `tree-sitter-toke/` copy is archived** (127.457); the maintained grammar is
+  `tree-sitter-toke/` in karwalski/toke-spec.
+
 ### Changed — scoped capability grants (spec amendment 138.19)
 
 The owner accepted D1–D4 of `docs/decisions/138.19-scoped-capability-grants.md` as

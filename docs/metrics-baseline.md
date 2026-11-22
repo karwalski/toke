@@ -3,7 +3,7 @@
 **Purpose.** A single, honest reference for every quantitative claim about toke —
 token efficiency, compile rate, functional correctness. External, academic, and
 marketing claims MUST cite these numbers and this methodology, **not** headline
-figures stripped of context (e.g. "Gate 2 PASS 100%"). This exists because the
+figures stripped of context (e.g. "Gate 2 PASS 100%", a verdict withdrawn on 2026-11-15). This exists because the
 project's thesis is *falsifiable research* (risk R001) and its credibility depends
 on numbers that survive peer review (R008, R015).
 

@@ -272,7 +272,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal render-stdlib-signatures check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -707,6 +707,10 @@ check-tki: check-tki-layout check-tki-names
 	python3 scripts/check_tki_coverage.py --internal-md-check
 	python3 scripts/check_stdlib_doc_quarantine.py
 	python3 scripts/check_stdlib_doc_exports.py
+	@# 127.456: docs/spec/stdlib-signatures.md is held to the .tki, which are
+	@# normative; its last section is generated (render-stdlib-signatures).
+	python3 scripts/check_stdlib_signatures.py --selftest
+	python3 scripts/check_stdlib_signatures.py --check
 	@# 135.17a: the generator agrees with every .tki, and every arity
 	@# disagreement it declines to fix is recorded with its reason.
 	python3 scripts/gen_tki.py --check
@@ -734,6 +738,11 @@ render-stdlib-doc-quarantine:
 # fails on drift. Never hand-write a second list — link to the generated page.
 render-tki-quarantine:
 	python3 scripts/check_tki_coverage.py --quarantine-md
+
+# 127.456: re-render the generated section of docs/spec/stdlib-signatures.md
+# (every module with no hand-written block) from stdlib/*.tki.
+render-stdlib-signatures:
+	python3 scripts/check_stdlib_signatures.py --write
 
 # 136.54 / 136.34: docs/reference/stdlib-internal.md -- exports marked
 # "internal": true, and every tk_* definition no interface reaches, by class.
