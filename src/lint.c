@@ -2509,6 +2509,26 @@ static int if_cond_parens(const PatCtx *c, const Node *ifn, int *open, int *clos
     return 1;
 }
 
+/* 1 when cond can stand as an `&&` operand without parentheses: a node the
+ * parser builds at or above parse_and's precedence.  `||`, an `mt` match and
+ * an expression-`if` are accepted only at the top of parse_expr (or, for `||`,
+ * bind looser), so `x&&mt ..` and `if(p){..}el{..}&&x` do not parse; those,
+ * and any kind not listed, are parenthesised. */
+static int and_operand_bare(const Node *cond)
+{
+    if (!cond) return 0;
+    switch (cond->kind) {
+    case NODE_BINARY_EXPR:  return cond->op != TK_OR;
+    case NODE_UNARY_EXPR:   case NODE_CALL_EXPR:  case NODE_CAST_EXPR:
+    case NODE_PROPAGATE_EXPR: case NODE_INDEX_EXPR: case NODE_FIELD_EXPR:
+    case NODE_IDENT:        case NODE_INT_LIT:    case NODE_FLOAT_LIT:
+    case NODE_STR_LIT:      case NODE_BOOL_LIT:   case NODE_FUNC_REF:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int check_nested_if_and(PatCtx *c, const Node *ifn, const Node *grand)
 {
     const Node *inner = sole_then_if(ifn);
@@ -2542,8 +2562,7 @@ static int check_nested_if_and(PatCtx *c, const Node *ifn, const Node *grand)
         while (t < ocb && src_is_space(s[t])) t++;
         if (t != ocb) break;
         const Node *ca = ifn->children[0], *cb = inner->children[0];
-        int pa = ca && ca->kind == NODE_BINARY_EXPR && ca->op == TK_OR;
-        int pb = cb && cb->kind == NODE_BINARY_EXPR && cb->op == TK_OR;
+        int pa = !and_operand_bare(ca), pb = !and_operand_bare(cb);
         int al = ac - ao - 1, bl = bc - bo - 1, bodyl = icb + 1 - ib;
         rep = malloc((size_t)(al + bl + bodyl) + 16);
         if (!rep) return -1;
@@ -2564,7 +2583,7 @@ static int check_nested_if_and(PatCtx *c, const Node *ifn, const Node *grand)
 
     int rc = lint_push(c->out, "nested-if-and",
                        "`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`",
-                       inner->start, inner->line, inner->col, LINT_HINT,
+                       ifn->start, ifn->line, ifn->col, LINT_HINT,
                        fixable, span_s, span_e, rep);
     free(rep);
     return rc;

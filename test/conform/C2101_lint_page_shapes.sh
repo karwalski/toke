@@ -16,10 +16,12 @@
 #
 # WHAT IS ASSERTED
 #   1. Each shape is reported under its rule id; a three-deep if chain is
-#      reported once; an `el` on either if is not reported.
+#      reported once, at the outer if; an `el` on either if is not reported.
 #   2. DIFFERENTIAL: `--lint --fix` of an integer program over every sign
 #      combination (-7..7, incl. 0 for the comparisons) prints the same as the
-#      original at -O0 and -O2.
+#      original at -O0 and -O2. Nested-if operands include an `||`, an `mt`
+#      match and an expression-`if`, which the fix parenthesises (an `&&`
+#      operand cannot be any of them bare).
 #   3. TRAPS: `a-a/b*b` and its fix both exit 1 with RT004 for b==0 and for
 #      the most negative value by -1.
 #   4. WHY floats get no fix: `!(x==y)` and `x!=y` print different results
@@ -75,14 +77,17 @@ f=g(a:i64;b:i64;p:bool):i64{
   if(a>0){if(b>0){n=n+1}}el{n=n-1};
   if(a>0){n=n+1;if(b>0){n=n+1}};
   if(!(a<=b)){n=n+1};
+  if(a>0){
+    if(b>0){n=n+1}
+  };
   <n
 };
 f=main():i64{<g(1;2;true)};
 EOF
 got="$(rules "${WORK}/r.tk" | tr '\n' '|')"
-want="4 negated-equality fix|5 negated-comparison fix|6 negated-comparison fix|7 modulo-emulation fix|8 nested-if-and fix|"
+want="4 negated-equality fix|5 negated-comparison fix|6 negated-comparison fix|7 modulo-emulation fix|8 nested-if-and fix|13 nested-if-and fix|"
 if [ "${got}" = "${want}" ]; then
-    pass "each shape reported once with a fix; el variants, a second statement and !(a<=b) are not"
+    pass "each shape reported once with a fix, a nested if at the outer if's line; el variants, a second statement and !(a<=b) are not"
 else
     fail "findings: got '${got}', want '${want}'"
 fi
@@ -100,6 +105,10 @@ f=both(a:i64;b:i64):i64{
   let n=mut.0;
   if(a>0){if(b<0){n=1}};
   if(a<0||b==0){if(b>=0||a==b){n=n+2}};
+  let c=@("k":a);
+  if(mt c.get("k"){$ok:v v>b;$err:e false}){if(b<0){n=n+4}};
+  if(b!=0){if(mt c.get("k"){$ok:v v<b;$err:e true}){n=n+8}};
+  if(if(b>0){a<b}el{a>b}){if(a!=0){n=n+16}};
   <n
 };
 f=main():i64{

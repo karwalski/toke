@@ -1,6 +1,6 @@
 id: D733
 series: D
-description: "lint nested-if-and (131.138): `if(a){if(b){..}}` with no el on either is one hint at the outermost if of a chain; the fix writes `if(a&&b){..}`, parenthesising an `||` operand, and --fix folds a three-deep chain in one invocation"
+description: "lint nested-if-and (131.138): `if(a){if(b){..}}` with no el on either is one hint, located at the outermost if of a chain; the fix writes `if(a&&b){..}`, parenthesising an operand that cannot stand bare beside `&&` (an `||`, an `mt` match, an expression-`if`), and --fix folds a three-deep chain in one invocation"
 input: |
   m=t;
   f=g(a:i64;b:i64;p:bool):i64{
@@ -8,6 +8,10 @@ input: |
     if(a>0){if(b>0){n=n+1}};
     if(a>0||p){if(b>0){n=n+2}};
     if(a>0){if(b>0){if(p){n=n+4}}};
+    let c=@("k":a);
+    if(mt c.get("k"){$ok:v v>0;$err:e false}){if(b>0){n=n+8}};
+    if(a>0){if(mt c.get("k"){$ok:v v>0;$err:e false}){n=n+16}};
+    if(if(p){a>0}el{b>0}){if(b>0){n=n+32}};
     <n
   };
   f=main():i64{
@@ -23,6 +27,10 @@ expected_fixed_output: |
     if(a>0&&b>0){n=n+1};
     if((a>0||p)&&b>0){n=n+2};
     if(a>0&&b>0&&p){n=n+4};
+    let c=@("k":a);
+    if((mt c.get("k"){$ok:v v>0;$err:e false})&&b>0){n=n+8};
+    if(a>0&&(mt c.get("k"){$ok:v v>0;$err:e false})){n=n+16};
+    if((if(p){a>0}el{b>0})&&b>0){n=n+32};
     <n
   };
   f=main():i64{

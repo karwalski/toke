@@ -976,9 +976,9 @@ category: hint
 fixable: yes
 ```
 
-**Description:** an `if` with no `el` whose block holds exactly one statement, another `if` with no `el`: `if(a){if(b){..}}`. A chain `if(a){if(b){if(c){..}}}` is reported once, at the outermost `if`. Message: ``"`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`"``.
+**Description:** an `if` with no `el` whose block holds exactly one statement, another `if` with no `el`: `if(a){if(b){..}}`. A chain `if(a){if(b){if(c){..}}}` is reported once; the diagnostic's position and the fix span both start at the outermost `if`. Message: ``"`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`"``.
 
-**Auto-fix:** `if(a&&b){..}` with the inner block as written; an operand that is an `||` is parenthesised. `&&` short-circuits, so `b` runs exactly when it did. The `--fix` fixpoint loop folds a chain one level per round. **No fix** when a comment (`(*`, `//`, `#`) sits in the outer block, or anything but whitespace and one `;` separates the blocks.
+**Auto-fix:** `if(a&&b){..}` with the inner block as written; an operand that cannot stand bare beside `&&` is parenthesised: an `||`, an `mt` match and an expression-`if` (the parser accepts the last two only at the head of an expression, so `a&&mt x{..}` does not parse), and any operand that is not an operator expression, call, cast, `!`-propagation, index, field, name or literal. `&&` short-circuits, so `b` runs exactly when it did. The `--fix` fixpoint loop folds a chain one level per round. **No fix** when a comment (`(*`, `//`, `#`) sits in the outer block, or anything but whitespace and one `;` separates the blocks.
 
 **Not reported:** an `el` on either `if` (`&&` would change which branch runs), or a second statement in the outer block.
 
