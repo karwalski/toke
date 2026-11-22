@@ -117,6 +117,14 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   shipped build but 16-32 MiB under ASan, and overflowed the default 8 MiB.
   C080 now relinks the tree's objects with the `-fsanitize` flags they were
   built with (from `.build-flags`), not without them.
+- **`make lint-nonhost` runs under `LINT_CC` (default clang), as `make lint`
+  does** (127.450). Under GCC (CI's default `cc`) the macro-only headers
+  `src/build_info.h` and `src/version.h` failed as empty translation units,
+  reported only as `cc1: all warnings being treated as errors`. A failure now
+  always names its file. Also, the `nonhost-uncoverable` skips for `log.c` and
+  `sys_glue.c` are now `nonhost-uncoverable@darwin`: they hold on macOS and were
+  stale on Linux. Test: C1961.
+
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
 - **T-67, the runtime half: std.process refuses a handle it did not create.** `process.wait(5)`, loke's helper shape `f(h:i64){process.wait(h)}` called with any integer, a handle changed by arithmetic, a value cast with `as`, and a `process.spawndetached` pid passed as a handle all checked clean, built, and died with SIGSEGV: the runtime read the integer as a process record. `process.spawn` now hands out a registry token instead of the record's address, and every call that takes a handle (`wait`, `stdout`, `stderr`, `kill`, `exitcode`, `hasexited`, `poll`, `isalive`) looks it up without reading it as memory. A value it did not hand out is answered exactly as `process.badhandle()` is: `-1`, the `$err` arm with `$io`, `false`, `0` or `1`. A real handle behaves as before, a waited handle stays valid, and `process.wait(0)` is still `-1`. No source change is needed. The checker half (an integer refused at `--check` where a handle is read) is 138.35. 138.36 — C1850.

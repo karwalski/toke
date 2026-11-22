@@ -516,8 +516,13 @@ check-str-strlen:
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
+# 127.450: under LINT_CC, as `lint` is.  It ran under the default cc -- GCC
+# on the Linux CI runner -- while the script's header flags are clang's
+# (-Wno-empty-translation-unit), so GCC failed the macro-only headers
+# src/build_info.h and src/version.h as empty translation units.
 lint-nonhost: $(BUILD_INFO_H)
-	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 122.13 (10): the same three passes over ONE file (or a few), with the
 # skiplist entries for every other file out of scope rather than stale.
