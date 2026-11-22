@@ -31,7 +31,8 @@
 #      directory outside the scope is left out -- through the '..' entry,
 #      which '.?', '.*' and '.[.]' match, or through a symlink inside the
 #      scope -- with the same empty answer whether or not the outside file
-#      exists (no existence oracle).  Each pattern is shown, under the whole
+#      exists (no existence oracle; a backslash-escaped pattern and a path
+#      through an outside directory are C1887).  Each pattern is shown, under the whole
 #      class, to reach the outside file: the scope is what removes it.
 #
 # NEGATIVE CONTROL: run this script with TKC=<a v3.2.0 toke>.  On v3.2.0 the
