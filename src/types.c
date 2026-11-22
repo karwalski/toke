@@ -9446,6 +9446,7 @@ int type_check(const Node *ast, const char *src,
     cx.reported_count=0;
     cx.armb_count=0; cx.mt_discard=NULL; cx.resolving_n=0;   /* 138.13 */
     cx.if_discard=NULL; cx.valued_block=NULL;               /* 127.252 (2) */
+    cx.interp_host=NULL;                                    /* 127.476 */
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
