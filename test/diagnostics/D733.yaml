@@ -1,0 +1,30 @@
+id: D733
+series: D
+description: "lint nested-if-and (131.138): `if(a){if(b){..}}` with no el on either is one hint at the outermost if of a chain; the fix writes `if(a&&b){..}`, parenthesising an `||` operand, and --fix folds a three-deep chain in one invocation"
+input: |
+  m=t;
+  f=g(a:i64;b:i64;p:bool):i64{
+    let n=mut.0;
+    if(a>0){if(b>0){n=n+1}};
+    if(a>0||p){if(b>0){n=n+2}};
+    if(a>0){if(b>0){if(p){n=n+4}}};
+    <n
+  };
+  f=main():i64{
+    <g(1;1;true)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["nested-if-and"]
+expected_fixed_output: |
+  m=t;
+  f=g(a:i64;b:i64;p:bool):i64{
+    let n=mut.0;
+    if(a>0&&b>0){n=n+1};
+    if((a>0||p)&&b>0){n=n+2};
+    if(a>0&&b>0&&p){n=n+4};
+    <n
+  };
+  f=main():i64{
+    <g(1;1;true)
+  };

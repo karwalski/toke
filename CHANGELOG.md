@@ -328,6 +328,27 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
   change together. Test: C2001.
 
+### Added — lint rules for the pre-132.15 spec-page shapes (131.138)
+
+Four new hints, one per long form the withdrawn specification page prescribed. They
+compile and are not errors; a hint does not change the `--lint` exit status. A
+downstream that ratchets its `tkc --lint` counts sees new findings on unchanged source:
+measured with this build, the toke tree gains 66 (27 `negated-comparison`, 24
+`nested-if-and`, 14 `modulo-emulation`, 1 `negated-equality`, in 29 of 695 sources,
+20 of them under `bench/patterns/macro/programs/`), ooke `main` 33 (25 `negated-equality`, 8
+`negated-comparison`), the website 0.
+
+| Rule id | Severity | Reports | Message | `fix` | Story |
+|---|---|---|---|---|---|
+| `negated-equality` (new) | hint | `!(a==b)` | ``"`!(a==b)` negates a comparison toke has as one operator — write `a!=b`"`` | `a!=b`, only on integer or bool operands (by the checker's types) and where the parent takes a comparison unparenthesised; none on floats (`!=` is `fcmp one`: NaN) or str | 131.138 |
+| `negated-comparison` (new) | hint | `!(a<b)`, `!(a>b)` | as above, naming `<`/`>=` or `>`/`<=` | `a>=b` / `a<=b`, integer operands only (NaN: `!(x>y)` is true, `x<=y` false) | 131.138 |
+| `modulo-emulation` (new) | hint | `a-a/b*b`, `a-(a/b)*b` with the same name, field path or literal both times | ``"`a-a/b*b` computes the remainder the long way — write `a%b`"`` | `a%b` on integer operands: equal for every sign; both trap RT004 for `b==0` and MIN by -1 (the trap message says `remainder` for `division`) | 131.138 |
+| `nested-if-and` (new) | hint | `if(a){if(b){..}}` with no `el` on either and nothing else in the outer block; a chain once, at its outermost `if` | ``"`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`"`` | `if(a&&b){..}` (an `\|\|` operand parenthesised); none when a comment sits in the outer block | 131.138 |
+
+Tests: D730–D734, C2101 (a differential of each fix over every sign combination at
+`-O0`/`-O2`, and the two traps). Reference: `docs/compiler/lint-rules-v1.md`
+"Page-shape rules".
+
 ### Notes for downstream builds
 
 - **Which stdlib C sources a program links is documented** (138.42): what `tkc
