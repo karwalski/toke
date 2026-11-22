@@ -23,6 +23,17 @@
 #
 # Negative control: v3.2.0 (ea7ddf22) — cases 1-4 check clean (rc 0).
 #
+# SHADOWING (Z218 round 3).  The subject's binder is found lexically: a
+# closure parameter, a body `let` or a loop-init `let` of the same name as an
+# i64 function parameter shadows it, so a sum-typed shadow is not judged by
+# the parameter's annotation.  The round-2 predicate read the function's
+# parameter list first and refused all three (false E4031); each must check
+# clean and run.  The same predicate drives 127.202's `$ok`/`$err` refusal:
+# a `let e=str.toint(..)` shadowing `e:i64` drew a false E4031 on base
+# b518b41c and must check clean and run too (story 138.56).
+# Negative control: the round-2 head 1254e614 fails the five shadow cases
+# (shclosure, shlet, shloop, shnested, shresult: false E4031).
+#
 # Story: 138.37
 
 set -uo pipefail
@@ -87,6 +98,50 @@ f=main():i64{let e=5; <mt e {$a:v 1;$b:v 2;$c:v 3}};'
 refused u8one 2:23 u8 'm=t;
 f=h(e:u8):i64{<mt e {$a:v 1}};
 f=main():i64{<h(4)};'
+
+# runs NAME EXIT SOURCE — checks clean, builds and exits with EXIT.
+runs() {
+    printf '%s\n' "$3" > "${WORK}/$1.tk"
+    local out rc
+    if ! out="$("${TKC}" --check "${WORK}/$1.tk" 2>&1)"; then
+        fail "$1: rejected: $(printf '%s' "${out}" | grep -m1 -o '"message":"[^"]*"')"; return
+    fi
+    pass "$1: checks clean"
+    if ! "${TKC}" --allow-all --out "${WORK}/$1" "${WORK}/$1.tk" >"${WORK}/$1.b" 2>&1; then
+        fail "$1: build failed: $(head -c 200 "${WORK}/$1.b")"; return
+    fi
+    "${WORK}/$1" >/dev/null 2>&1; rc=$?
+    [ "${rc}" -eq "$2" ] && pass "$1: exits $2" || fail "$1: exit ${rc}, want $2"
+}
+
+# 5. Shadowing: the subject is a sum-typed binding that shadows an i64
+#    parameter of the same name.  Not refused; each runs.
+runs shclosure 6 'm=t;
+t=$fe{$notfound:i64;$io:i64};
+f=h(e:i64):i64{let g=fn(e:$fe):i64{<mt e {$notfound:v v+1;$io:v v+2}}; <g($fe{$io:4})};
+f=main():i64{<h(1)};'
+runs shlet 5 'm=t;
+t=$fe{$notfound:i64;$io:i64};
+f=h(e:i64):i64{let e=$fe{$io:3}; <mt e {$notfound:v v+1;$io:v v+2}};
+f=main():i64{<h(1)};'
+runs shloop 7 'm=t;
+t=$fe{$notfound:i64;$io:i64};
+f=h(e:i64):i64{let r=mut.0; lp(let e=$fe{$io:3};r<1;r=r+1){ r=mt e {$notfound:v v+1;$io:v v+3} }; <r};
+f=main():i64{<h(1)};'
+runs shnested 9 'm=t;
+t=$fe{$notfound:i64;$io:i64};
+f=h(e:i64):i64{let r=mut.0; if(e>0){let e=$fe{$notfound:8}; r=mt e {$notfound:v v+1;$io:v v+2}}; <r};
+f=main():i64{<h(1)};'
+# 6. 127.202 over a shadow: `$ok`/`$err` on a T!E `let` shadowing `e:i64`.
+runs shresult 7 'm=t;
+i=str:std.str;
+f=h(e:i64):i64{let e=str.toint("7"); <mt e {$ok:v v;$err:x 0}};
+f=main():i64{<h(1)};'
+# 7. The parameter itself is still judged after a shadow has closed.
+refused shclosed 3:54 i64 'm=t;
+t=$fe{$notfound:i64;$io:i64};
+f=h(e:i64):i64{if(e>0){let e=$fe{$io:3}; e}; <mt e {$notfound:v v+1;$io:v v+2}};
+f=main():i64{<h(1)};'
 
 # Controls: still clean.
 clean sum 'm=t;
