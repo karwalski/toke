@@ -2130,13 +2130,30 @@ test-stdlib-coverage:
 	    src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3 -lpthread
 	$(RUN_TEST) ./test/stdlib/test_stdlib_coverage
 
-bench:
+# 127.479: the stdlib benchmark (bench.yml). Its link line was a hand-kept
+# source list that rotted (capabilities.c, encoding.c, tk_runtime.c and -lz
+# all went missing as modules gained dependencies), so the workflow failed on
+# every main push. The list is now DERIVED from the module manifest
+# (src/stdlib_deps.c, via `tkc --emit-deps`) -- the same closure every
+# compiled toke program links -- for exactly the modules bench_stdlib.c
+# calls. The benchmark calls the C API directly, so the toke-facing
+# *_glue.c wrappers are left out. Add a module here when the benchmark
+# starts calling it; its dependencies follow automatically.
+BENCH_MODULES = str json file crypto time process env log
+BENCH_STUB    = test/stdlib/bench_deps.tk
+bench: $(BIN)
+	@set -e; \
+	{ echo 'm=benchdeps;'; \
+	  for m in $(BENCH_MODULES); do echo "i=$$m:std.$$m;"; done; \
+	  echo 'f=main():i64{<0};'; } > $(BENCH_STUB); \
+	deps=$$(TKC_STDLIB_DIR=$(CURDIR)/src/stdlib ./$(BIN) --emit-deps $(BENCH_STUB)) \
+	    || { rm -f $(BENCH_STUB); exit 1; }; \
+	rm -f $(BENCH_STUB); \
+	srcs=$$(printf '%s\n' "$$deps" | sed '/^---$$/,$$d' | grep -v '_glue\.c$$'); \
+	libs=$$(printf '%s\n' "$$deps" | sed '1,/^---$$/d'); \
+	echo "bench: linking" $$(printf '%s\n' "$$srcs" | sed 's|.*/||') $$libs; \
 	$(CC) -O2 -iquote src/stdlib -o test/stdlib/bench_stdlib \
-	    test/stdlib/bench_stdlib.c \
-	    src/stdlib/str.c src/stdlib/json.c src/stdlib/file.c \
-	    src/stdlib/crypto.c src/stdlib/tk_time.c src/stdlib/process.c \
-	    src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
-	    src/stdlib/db.c src/stdlib/http.c -lsqlite3 -lpthread
+	    test/stdlib/bench_stdlib.c $$srcs $$libs -lpthread
 	./test/stdlib/bench_stdlib
 
 # ── 123.11: performance-regression gate ────────────────────────────────────

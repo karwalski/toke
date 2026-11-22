@@ -4,13 +4,10 @@
  * Stories: 3.8.2
  * Branch:  feature/stdlib-3.8-bench
  *
- * Build: cc -O2 -Isrc/stdlib -o test/stdlib/bench_stdlib \
- *            test/stdlib/bench_stdlib.c \
- *            src/stdlib/str.c src/stdlib/json.c src/stdlib/file.c \
- *            src/stdlib/crypto.c src/stdlib/tk_time.c src/stdlib/process.c \
- *            src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
- *            src/stdlib/db.c src/stdlib/http.c -lsqlite3
- * Run:   ./test/stdlib/bench_stdlib
+ * Build and run: make bench
+ *   (127.479: the link list is derived from the module manifest via
+ *   `tkc --emit-deps` for BENCH_MODULES in the Makefile; a module this file
+ *   starts calling must be added there.)
  *
  * Output format: BENCH <module.function> <N_iters> <total_ms> <avg_us>
  */
