@@ -141,7 +141,7 @@ Seven compiler codegen bugs were identified and fixed during benchmark iteration
 6. **String .len and [i] on parsed strings** — runtime functions for string length and char-at added
 7. **i1/i64 boundary coercion** — branch conditions and cast expressions didn't handle type mismatches; added `icmp ne` coercion and source-type-aware casting
 
-All fixes validated with zero regressions across 90 conformance tests and 9 e2e tests.
+All fixes validated with zero regressions across 90 conformance tests and 9 e2e tests (as of 2026-04-03).
 
 ### Remaining Failures (41.2%)
 
@@ -180,7 +180,7 @@ These are predominantly model quality issues, not compiler bugs. Further trainin
 Conformance: 90/90 tests passing. 9/9 e2e tests passing.
 Targets: x86-64 Linux (ELF), ARM64 Linux (ELF), ARM64 macOS (Mach-O).
 
-### Standard Library (14 modules)
+### Standard Library (14 modules as of 2026-04-03)
 
 str, json, toon, yaml, i18n, http, db, file, env, process, crypto, time, log, test.
 
@@ -213,7 +213,7 @@ SAST (cppcheck + clang-tidy), libFuzzer fuzzing, secret scanning, dependency sca
 
 As recorded 2026-04-03, with Gate 1 then passed, the project proceeded to:
 
-1. **Default syntax implementation** (Epic 2.1) — 56-character set, type sigils, array literals
+1. **Default syntax implementation** (Epic 2.1) — 56-character set as planned on 2026-04-03 (the shipped set is 59: `docs/metrics-baseline.md`), type sigils, array literals
 2. **Corpus default syntax transformation** (Epic 2.14) — transform 46K programs to default syntax
 3. **Model scaling** — larger base models, expanded training data, improved prompts
 4. **Hugging Face publication** (Epic 6.1) — model card, weights, benchmark results

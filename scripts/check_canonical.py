@@ -315,7 +315,10 @@ SKIP_PREFIXES = (
     "docs/progress.md",
     "docs/epics_and_stories.md",
     "docs/about/reviews/",
-    "docs/decisions/",
+    # 127.477: docs/decisions/ is no longer here. A decision record is skipped
+    # only once it carries the dated Archived banner (RECORD_PREFIXES and
+    # skipped() in check_metrics_claims); a live one -- gate2-decision.md holds
+    # the current Gate 2 status -- is a claim surface and is scanned.
     "docs/audits/",
     "docs/spec/toke-spec-v0.3.md",
     # canonical.json is NOT skipped: its "forbidden" object names the retired strings,
@@ -726,8 +729,16 @@ def check_stale(path, rel):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_metrics_claims import (deployed_source, is_deployed_tree,  # noqa: E402
                                   is_generated_mirror, never_read, repo_key,
-                                  walk_readable,
+                                  walk_readable, RECORD_PREFIXES,
                                   scan_deployed_tree, report_stale_trees, STALE_TREES)
+from check_metrics_claims import skipped as _record_skipped  # noqa: E402
+
+
+def skipped(rel, path):
+    """This guard's SKIP_PREFIXES, plus an archived decision record (127.477)."""
+    if rel.startswith(SKIP_PREFIXES):
+        return True
+    return rel.startswith(RECORD_PREFIXES) and _record_skipped(rel, path)
 
 
 def scan_files(targets):
@@ -1057,7 +1068,9 @@ def selftest_workspace():
 def selftest():
     import tempfile
     sbad, nstructured = selftest_structured()
-    bad = selftest_rule1() + selftest_workspace() + sbad
+    from check_metrics_claims import selftest_decision_records   # 127.477
+    bad = selftest_rule1() + selftest_workspace() + sbad + \
+        selftest_decision_records(skipped, "canonical")
     for accept, name, text in SELFTEST:
         with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
                                          delete=False) as fh:
@@ -1116,8 +1129,7 @@ def main():
         # policy -- skip prefix and archive banner -- and, where the source
         # passes, is reported rather than asserted (see check_metrics_claims).
         src = deployed_source(path)
-        if rel.startswith(SKIP_PREFIXES) or \
-                (src and relpath(src).startswith(SKIP_PREFIXES)):
+        if skipped(rel, path) or (src and skipped(relpath(src), src)):
             continue
         scanned += 1
         src_lines = []

@@ -21,7 +21,7 @@ Each decision lists the conflicting recommendations, which teams raised it, and 
 
 ### D1. Token efficiency metric definition and reconciliation
 
-**Issue:** README/website claim "2.5–4x token density improvement" but Gate 1 measured 12.5% reduction. These are different metrics (cross-language comparison vs same-language custom-BPE improvement) but presented without disambiguation.
+**Issue:** README/website claim "2.5–4x token density improvement" but Gate 1 measured 12.5% reduction. [Editor's note, 2026-11-22 (story 127.477), per `docs/metrics-baseline.md`: recorded on 2026-04-03 as a tokenizer-vs-tokenizer figure, the 8K purpose-built toke BPE against cl100k_base on the same toke text, N = 46,754 programs (the v0.2-era corpus of 2026-04-01); withdrawn as a gate measure 2026-09-19 (TEMSpec §8.1).] These are different metrics (cross-language comparison vs same-language custom-BPE improvement) but presented without disambiguation.
 
 **Raised by:** T1 (all three sources), T6, T7, T8
 
@@ -223,7 +223,7 @@ Each decision lists the conflicting recommendations, which teams raised it, and 
 **Raised by:** T7 (all sources), T8
 
 **Options:**
-- A) Position as complementary: Toke + constrained decoding = best of both worlds. LL(1) grammar makes constrained decoding maximally efficient.
+- A) Position as complementary: Toke + constrained decoding = best of both worlds. LL(1) grammar makes constrained decoding maximally efficient. [Editor's note: the LL(1) claim was retired by ADR-0009 on 2026-07-02; the grammar is backtrack-free with bounded lookahead of up to 3 tokens.]
 - B) Position as alternative: Toke provides what constrained decoding cannot — token efficiency, compiled performance, structured diagnostics.
 - C) Run ablation study: Toke + constrained decoding vs Python + constrained decoding on same tasks. Let data answer.
 
