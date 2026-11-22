@@ -12,12 +12,14 @@
 # did the same.  Now an integer reaching such a slot is refused unless it is
 # the literal `0`, the null handle (`$err:e 0`), which the runtime answers
 # -1 / `$err`.  The check covers std calls and user parameters declared
-# `$handle` / `process.$handle` (same module and imported).  A forged value
+# `$handle` / `process.$handle` (same module, imported, and through a
+# function value or a closure).  A forged value
 # the checker cannot see (`n as $handle`, a value through C) is the runtime
 # half, 138.36.
 #
 # Negative control: TKC built from toke main b518b41c, and from v3.2.0
-# (ea7ddf22) -- cases 1-12 and 21 red (--check rc 0), 13-20 and 22 green.
+# (ea7ddf22) -- cases 1-12, 21, 23 and 24 red (--check rc 0), 13-20, 22
+# and 25 green.
 #
 # Story: 138.35
 
@@ -122,6 +124,15 @@ expect "19-control-str-into-cstring" \
 # 20 — control: 138.21's refusals unchanged (a str into a $handle parameter)
 expect "20-control-str-into-handle-param" \
   "$(chk 'let w=waith("abc");')" "rc=1 E4031 handle str fix=0"
+# 23 — a call through a function value whose parameter is $handle
+expect "23-fnvalue-handle-param" \
+  "$(chk 'let g=waith; let w=g(5);')" "rc=1 E4031 handle i64 fix=0"
+# 24 — a closure called in place with a $handle parameter
+expect "24-closure-handle-param" \
+  "$(chk 'let w=(fn(h:$handle):i64{<process.wait(h) as i64})(7);')" "rc=1 E4031 handle i64 fix=0"
+# 25 — control: the literal 0 through a function value
+expect "25-control-fnvalue-zero" \
+  "$(chk 'let g=waith; let w=g(0);')" "rc=0    fix=0"
 
 # 21/22 — an imported user module's $handle parameter (127.378 path)
 cat > "${WORK}/a_lib.tk" <<'EOF'

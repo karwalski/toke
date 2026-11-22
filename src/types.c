@@ -7645,7 +7645,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     Type *at=infer(cx,an);
                     Type *pt=(ft&&func_has_sig(ft))?ft->field_types[i-1]:NULL;
                     if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
-                        &&!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                        &&((!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                           ||forged_handle_arg(cx->src,an,at,pt)))   /* 138.35 */
                         emit_mm(cx,an,pt,at,NULL);
                 }
             }
@@ -7714,7 +7715,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         Type *at=infer(cx,an);
                         Type *pt=ft->field_types[i];
                         if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
-                            &&!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                            &&((!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                               ||forged_handle_arg(cx->src,an,at,pt)))   /* 138.35 */
                             emit_mm(cx,an,pt,at,NULL);
                     }
                 }
