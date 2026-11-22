@@ -24,6 +24,14 @@ on:
         description: "also sign + verify the archives (writes a Rekor log entry; publishes nothing)"
         type: boolean
         default: false
+      skip_conform:
+        # 127.453: a dispatch that exercises the packaging, floor, SBOM and
+        # signing steps on a tree whose conformance gate is red for other
+        # reasons.  Only a manual run reads it: a tag push always runs the
+        # gate, and nothing a manual run makes is published.
+        description: "skip the conformance gate (manual pipeline test only)"
+        type: boolean
+        default: false
 
 # Least privilege by default; the release job asks for what it needs.
 permissions:
@@ -93,6 +101,7 @@ jobs:
         run: make -k   # -k: report every failing object, not just the first
 
       - name: Conformance gate
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_conform) }}
         run: make conform
 
       # 127.490: the release binary is built in a pristine worktree of the
