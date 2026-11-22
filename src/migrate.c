@@ -1987,6 +1987,12 @@ static void postpass_str_index(char **bufp, int *blen_p)
     if (done > 0)
         fprintf(stderr, "migrate: note: %d str index(es) → .slice(i;i+1), %d → .charat(i)\n",
                 c.nstr, c.nbyte);
+    /* 127.510: `.slice` is `str!$sliceerr` (127.462), so each one is an
+     * E4031 until the author gives it an error arm; no filler is written
+     * for them (owner answer R2). */
+    if (done > 0 && c.nstr > 0)
+        fprintf(stderr, "migrate: note: each .slice(i;i+1) is str!$sliceerr: read it through "
+                        "'mt' or '!' (or use .charat(i) for the byte) before it compiles\n");
 }
 
 /* ── legacy `a + b` on strings → "\(a)\(b)" / alias.concat(a;b) ──────── */

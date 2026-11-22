@@ -239,6 +239,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   always names its file. Also, the `nonhost-uncoverable` skips for `log.c` and
   `sys_glue.c` are now `nonhost-uncoverable@darwin`: they hold on macOS and were
   stale on Linux. Test: C1961.
+- **`make test-ci-green` is green again** (127.510). Two of its 82 targets
+  failed at the integration base on rules that are correct (rows 3 and 4
+  above), not on a regression. test-codegen's `multimod/mapret` interpolated
+  map lookups and now reads them through `mt`. test-migrate's `str_index`
+  migrates a legacy str index used as a str to `.slice(i;i+1)`, which is
+  `str!$sliceerr` since 127.462, so the migrated output is five E4031s: the
+  fixture now pins those diagnostics (`str_index.check`) instead of expecting a
+  clean compile, because `--migrate` writes no filler error arm (owner answer
+  R2). `--migrate` now says so on stderr: `note: each .slice(i;i+1) is
+  str!$sliceerr: read it through 'mt' or '!' (or use .charat(i) for the byte)
+  before it compiles`. Test: C2100.
 
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
