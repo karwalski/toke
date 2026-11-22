@@ -528,8 +528,12 @@ This holds for a user function declaring `T!Err`, for a map lookup, for every
 stdlib call whose interface declares `T!E`, and for the receiver spelling of
 `str.slice` on a `str` value (`t.slice(a;b)`, `t.substr(a;b)`,
 `t.substring(a;b)`), which lowers to the same glue and is the same union
-`str!$sliceerr`. A call whose result is not used at all (a statement) is not
-a use.
+`str!$sliceerr`. The receiver may be a `str` variable, literal or call
+result, a `str` record field (`p.name.slice(a;b)`, story 127.475) or a `str`
+array element (`xs.get(i).slice(a;b)`). The module form `str.substr(s;a;b)`
+lowers to the same glue and is the same union; its interface record declares
+it (127.475, 127.493). A call whose result is not used at
+all (a statement) is not a use.
 
 Not judged; each of these reads the value as `T`, the zero filler on a
 failure:
@@ -545,8 +549,8 @@ failure:
   parameter, and an element read back is the union;
 - a variant constructor's payload (`$ok(g())`);
 - the receiver spelling of `str.slice` on a receiver whose type the checker
-  cannot establish, and the module form `str.substr(s;a;b)`, whose interface
-  record is untyped although it lowers to the same glue.
+  cannot establish (an untyped binding, or an element of an
+  array whose element type is unknown).
 
 ### 5.2 The Propagation Operator `!`
 

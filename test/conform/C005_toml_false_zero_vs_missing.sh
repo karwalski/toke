@@ -113,7 +113,7 @@ m=t;
 i=toml:std.toml;
 i=io:std.io;
 i=str:std.str;
-f=readflag(cfg:i64;key:$str):bool{
+f=readflag(cfg:$tomlval;key:$str):bool{
   <mt toml.bool(cfg;key){$ok:v v;$err:e true}
 };
 f=say(name:$str;v:bool):i64{

@@ -1347,8 +1347,9 @@ int64_t tk_http_serve_staticdir_w(int64_t prefix_i64, int64_t root_i64) {
     if (!prefix || !root) return -1;
     /* 121.42 (4): the mount hands staticdir_handler the authority to read
      * any file under root, per request (stat, realpath, fopen) -- fs.read,
-     * taken here at registration, where the program asks for it. */
-    TK_REQUIRE(TK_CAP_FS_READ);
+     * taken here at registration, where the program asks for it.  138.19:
+     * on the directory mounted, so an fs_read scope must cover root. */
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, root);
 
     /* 127.75: re-mounting the same prefix replaces its root; a new prefix
      * adds a mount; the wildcard route is registered once, not per call. */
@@ -1473,6 +1474,10 @@ static void scan_pages_recursive(const char *dir_path, const char *prefix,
         char fullpath[2048];
         snprintf(fullpath, sizeof fullpath, "%s/%s", dir_path, ent->d_name);
 
+        /* 138.19 (round 3): stat follows symlinks, so an entry that leads
+         * out of an fs.read scope is skipped, not scanned or served. */
+        if (!tk_cap_path_admitted(TK_CAP_FS_READ, fullpath)) continue;
+
         struct stat st;
         if (stat(fullpath, &st) != 0) continue;
 
@@ -1528,13 +1533,23 @@ static void scan_pages_recursive(const char *dir_path, const char *prefix,
     closedir(d);
 }
 
+static int page_path_admitted(const char *path) {
+    return tk_cap_path_admitted(TK_CAP_FS_READ, path);
+}
+
 int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
     const char *pages_dir = (const char *)(intptr_t)pages_dir_i64;
     const char *templates_dir = (const char *)(intptr_t)templates_dir_i64;
     if (!pages_dir || !templates_dir) return -1;
     /* 121.42 (4): the scan below reads pages_dir now, and tk_page_dispatch
-     * re-reads the pages and templates on every request -- fs.read. */
-    TK_REQUIRE(TK_CAP_FS_READ);
+     * re-reads the pages and templates on every request -- fs.read.
+     * 138.19: on both directories. */
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, pages_dir);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, templates_dir);
+    /* 138.19 (round 3): each request re-reads the page and its layout, so
+     * each read is checked against the scope then (a layout that is a
+     * symlink leading out of templates_dir fails the render: 500). */
+    tmpl_set_page_path_check(page_path_admitted);
 
     /* Scan directory for .tkt files and register routes */
     scan_pages_recursive(pages_dir, "", templates_dir);
@@ -1897,7 +1912,7 @@ int64_t tk_http_clientdelete_w(int64_t client, int64_t path) {
 }
 
 /* body is a toke [byte]; ctype "" sends no Content-Type of our choosing. */
-static int64_t client_send(const char *fn, int is_put, int64_t client, int64_t path,
+static int64_t client_send_body(const char *fn, int is_put, int64_t client, int64_t path,
                            int64_t body, int64_t ctype)
 {
     if (!client) return http_raise(fn, 0);
@@ -1914,11 +1929,11 @@ static int64_t client_send(const char *fn, int is_put, int64_t client, int64_t p
 }
 
 int64_t tk_http_clientpost_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
-    return client_send("http.clientpost: null client", 0, client, path, body, ctype);
+    return client_send_body("http.clientpost: null client", 0, client, path, body, ctype);
 }
 
 int64_t tk_http_clientput_w(int64_t client, int64_t path, int64_t body, int64_t ctype) {
-    return client_send("http.clientput: null client", 1, client, path, body, ctype);
+    return client_send_body("http.clientput: null client", 1, client, path, body, ctype);
 }
 
 /* http.geturl(url) -> str!httperr: the body of a 2xx response. */
@@ -2019,6 +2034,19 @@ int64_t tk_http_listen_w(int64_t addr, int64_t handler) {
 }
 int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
     return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
+}
+
+/* 138.24 / 138.25 — request controls, in withproxy's shape: each returns a
+ * copy of the client with one setting changed (http.c http_with*). */
+int64_t tk_http_withdeadline_w(int64_t client, int64_t ms) {
+    return (int64_t)(intptr_t)http_withdeadline((HttpClient *)(intptr_t)client, (uint64_t)ms);
+}
+int64_t tk_http_withmaxbody_w(int64_t client, int64_t bytes) {
+    return (int64_t)(intptr_t)http_withmaxbody((HttpClient *)(intptr_t)client, (uint64_t)bytes);
+}
+int64_t tk_http_withconnectaddr_w(int64_t client, int64_t addr) {
+    return (int64_t)(intptr_t)http_withconnectaddr((HttpClient *)(intptr_t)client,
+                                                   (const char *)(intptr_t)addr);
 }
 
 /* ── router closure-dispatch table + get/post/put/delete/use/serve wrappers
@@ -2229,22 +2257,37 @@ int64_t tk_http_pathparam_w(int64_t req, int64_t name) {
  * (C279) and a Content-Type among `headers` replaces the default
  * application/json instead of being sent twice.
  */
-int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64) {
-    if (!url_i64) return http_raise("http.postheaders: null url", 0);
-    const char *u = (const char *)(intptr_t)url_i64;
-    const char *body = body_i64 ? (const char *)(intptr_t)body_i64 : "";
+/* One request to a full URL with caller headers, for http.postheaders and
+ * http.getheaders (138.27): the same URL check, the same @(name; value)
+ * header list, and the same shared client, so 138.8's rules (Host and
+ * Content-Length reserved, CR/LF refused) and https verification apply to
+ * both alike.  `fn` names the call in its messages; body is NULL for GET. */
+static int64_t url_headers_request(const char *fn, const char *method,
+                                   const char *u, const char *body,
+                                   int64_t headers_i64)
+{
+    char m[160];
+    if (!u) { snprintf(m, sizeof m, "%s: null url", fn); return http_raise(m, 0); }
     const char *p = u;
     if (strncmp(p, "http://", 7) == 0) p += 7;
     else if (strncmp(p, "https://", 8) == 0) p += 8;
-    else return http_raise("http.postheaders: the url must start with http:// or https://", 0);
+    else {
+        snprintf(m, sizeof m, "%s: the url must start with http:// or https://", fn);
+        return http_raise(m, 0);
+    }
 
     int64_t nh = headers_i64 ? ((int64_t *)(intptr_t)headers_i64)[-1] : 0;
-    if (nh < 0 || nh > 256) return http_raise("http.postheaders: too many headers", 0);
+    if (nh < 0 || nh > 256) {
+        snprintf(m, sizeof m, "%s: too many headers", fn);
+        return http_raise(m, 0);
+    }
     StrPair hv[256];
     for (int64_t i = 0; i < nh; i++) {
         int64_t pair = ((int64_t *)(intptr_t)headers_i64)[i];
-        if (!pair || ((int64_t *)(intptr_t)pair)[-1] != 2)
-            return http_raise("http.postheaders: each header must be @(name; value)", 0);
+        if (!pair || ((int64_t *)(intptr_t)pair)[-1] != 2) {
+            snprintf(m, sizeof m, "%s: each header must be @(name; value)", fn);
+            return http_raise(m, 0);
+        }
         hv[i].key = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[0];
         hv[i].val = (const char *)(intptr_t)((int64_t *)(intptr_t)pair)[1];
     }
@@ -2257,11 +2300,32 @@ int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers
     HttpClient *c = http_client(base);
     free(base);
     if (!c) return http_raise("out of memory", 0);
-    HttpClientResp r = http_request_headers(c, "POST", slash ? slash : "/",
-                                            (const uint8_t *)body, tk_strlen(body),
-                                            "application/json", hv, (uint64_t)nh);
+    HttpClientResp r = http_request_headers(c, method, slash ? slash : "/",
+                                            (const uint8_t *)body,
+                                            body ? tk_strlen(body) : 0,
+                                            body ? "application/json" : NULL,
+                                            hv, (uint64_t)nh);
     http_client_free(c);
     return client_result(r);
+}
+
+int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64) {
+    const char *url = (const char *)(intptr_t)url_i64;
+    const char *body = body_i64 ? (const char *)(intptr_t)body_i64 : "";
+    return url_headers_request("http.postheaders", "POST", url, body, headers_i64);
+}
+
+/*
+ * 138.27 — http.getheaders(url; headers) -> httpresp!httperr (loke T-58
+ * addendum: the GitHub API refuses a request with no User-Agent, and no GET
+ * took headers).  Typed like http.postheaders, with no body: GET with the
+ * caller's @(name; value) headers, $err only for a transport failure (a
+ * status is in r.status), Host and Content-Length reserved and CR/LF
+ * refused as 138.8 has them.
+ */
+int64_t tk_http_getheaders_w(int64_t url_i64, int64_t headers_i64) {
+    const char *url = (const char *)(intptr_t)url_i64;
+    return url_headers_request("http.getheaders", "GET", url, NULL, headers_i64);
 }
 
 /* http.queryparam(req, name) — extract query string parameter */

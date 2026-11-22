@@ -264,9 +264,15 @@ f=reporttojson(r:$report):$str{
 
 ### 8. print summary and wire together
 
-`printstats` prints one column to stdout; `main` orchestrates the whole
-pipeline — read, parse, compute every numeric column, print the summary, then
-write the JSON report to the output path:
+`printstats` prints one column to stdout; `usage` prints the usage line and
+returns exit code 2; `main` orchestrates the whole pipeline — read the two
+arguments, read and parse the file, compute every numeric column, print the
+summary, then write the JSON report to the output path.
+
+`args.get(i)` returns `$str!$argserr`, so each argument is matched before use:
+`$ok:v v` binds the value, and a missing argument takes the `$err` arm, which
+returns `usage()` from `main`. Using the result directly as a `$str` is
+rejected at `--check` (E4031).
 
 ```toke
 f=printstats(s:$colstats):$i64{
@@ -278,13 +284,20 @@ f=printstats(s:$colstats):$i64{
   <0
 };
 
+f=usage():$i64{
+  io.eprintln("usage: datapipe <input.csv> <output.json>");
+  <2
+};
+
 f=main():$i64{
-  if(args.count()<3){
-    io.eprintln("usage: datapipe <input.csv> <output.json>");
-    <2
+  let path=mt args.get(1) {
+    $ok:v v;
+    $err:e <usage()
   };
-  let path=args.get(1);
-  let output=args.get(2);
+  let output=mt args.get(2) {
+    $ok:v v;
+    $err:e <usage()
+  };
   let raw=mt file.read(path) {
     $ok:v v;
     $err:e ""
@@ -305,6 +318,7 @@ f=main():$i64{
   let ncols=headers.len as i64;
   let ndata=(rows.len as i64)-1;
 
+  (* compute stats for every numeric column *)
   let stats=mut.@();
   lp(let c=0;c<ncols;c=c+1){
     if(iscolnumeric(rows;c;ndata)){
@@ -312,6 +326,7 @@ f=main():$i64{
     }
   };
 
+  (* print a human-readable summary *)
   io.println(str.concat("file:    ";path));
   io.println(str.concat("rows:    ";str.fromint(ndata)));
   io.println(str.concat("columns: ";str.fromint(ncols)));
@@ -321,6 +336,7 @@ f=main():$i64{
     printstats(stats.get(i))
   };
 
+  (* write the JSON report to the output path *)
   let report=$report{
     filename:path;
     rows:(ndata as u64);

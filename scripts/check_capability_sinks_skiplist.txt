@@ -87,3 +87,8 @@ exempt | tk_time.c:tz_file_offset | fopen | 2026-09-30 | 121.42 | the system tim
 # File readers that bypassed file.read's gate: i18n.load, template.load and
 # vecstore.collection take fs.read since 2026-10-01 (121.42); their 3 lines
 # were deleted.
+
+exempt | capabilities.c:canon_path | realpath | 2026-11-15 | 138.19 | the broker canonicalising a granted path or command at start-up (and a requested one at a scoped gate); metadata only, reads no content
+exempt | capabilities.c:canon_path | lstat | 2026-11-15 | 138.19 | the broker refusing a dangling-symlink component while canonicalising a scope; metadata only, reads no content
+exempt | capabilities.c:resolve_cmd | access | 2026-11-15 | 138.19 | the broker's PATH lookup of a granted bare command name at start-up, as process.c's exec_no_ambient_path does it; X_OK probe only
+exempt | capabilities.c:resolve_cmd | stat | 2026-11-15 | 138.19 | the broker's PATH lookup of a granted bare command name at start-up: is the match a regular file; metadata only

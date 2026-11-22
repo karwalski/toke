@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # C470_capability_sinks_gated.sh -- every stdlib entry that reaches an fs /
 # net / env-write / process-spawn primitive passes a capability check of that
-# class on the way (ADR-0010; story 121.22).
+# class on the way (ADR-0010; story 121.22), and since 138.19 a SCOPED one
+# (TK_REQUIRE_PATH / _NET / _CMD / _ENV, given the path, host, command or key):
+# a class-only TK_REQUIRE fails closed under a scoped grant, so the gate
+# refuses one outside its skiplist.
 #
 # THE DEFECT.  124.4c/124.4c2 gated the sinks once, by hand, and nothing
 # re-checked them.  Two of the entries they missed, measured on main with a
@@ -21,6 +24,9 @@
 #      asserted to have landed before the gate runs.
 #   3. NEGATIVE CONTROL: delete toml.loadfile's new TK_REQUIRE -> the gate
 #      FAILS naming tk_toml_loadfile_w (the fix is what makes it pass)
+#   3b. NEGATIVE CONTROL (138.19): turn file.read's scoped gate back into the
+#      class-only TK_REQUIRE(TK_CAP_FS_READ) -> the gate FAILS with CLASSONLY
+#      naming tk_file_read_w (the conversion is what makes it pass)
 #   4. runtime, --cap-enforce and no grant: log.openaccess on a file path
 #      exits 1 with CAP001 'fs.write' and creates nothing; with the runtime
 #      flag --allow-write the same binary opens it (exit 0, file exists)
@@ -66,10 +72,11 @@ control() {  # $1 label  $2 file  $3 function  $4 expected entry
     local label="$1" file="$2" fn="$3" want="$4"
     mkcopy
     local f="${WORK}/tree/src/stdlib/${file}"
-    # delete the first TK_REQUIRE line inside function $fn
+    # delete the first gate line (TK_REQUIRE or a 138.19 scoped
+    # TK_REQUIRE_PATH / _NET / _CMD / _ENV) inside function $fn
     awk -v fn="${fn}" '
         index($0, fn "(") && /^[a-z]/ { infn = 1 }
-        infn && !done && /TK_REQUIRE\(/ { done = 1; infn = 0; next }
+        infn && !done && /TK_REQUIRE(_[A-Z]+)?\(/ { done = 1; infn = 0; next }
         { print }' "${f}" >"${f}.new" && mv "${f}.new" "${f}"
     if cmp -s "${f}" "${REPO_ROOT}/src/stdlib/${file}"; then
         fail "${label} injection did not land (${file}:${fn} unchanged) -- control proves nothing"
@@ -85,6 +92,23 @@ control() {  # $1 label  $2 file  $3 function  $4 expected entry
 }
 control 2 file_glue.c tk_file_write_w tk_file_write_w
 control 3 toml_glue.c tk_toml_loadfile_w tk_toml_loadfile_w
+
+# 3b (138.19): a scoped gate turned back into the class-only form
+mkcopy
+f3="${WORK}/tree/src/stdlib/file_glue.c"
+awk '
+    index($0, "tk_file_read_w(") && /^[a-z]/ { infn = 1 }
+    infn && !done && /TK_REQUIRE_PATH\(TK_CAP_FS_READ/ { print "    TK_REQUIRE(TK_CAP_FS_READ);"; done = 1; infn = 0; next }
+    { print }' "${f3}" >"${f3}.new" && mv "${f3}.new" "${f3}"
+if cmp -s "${f3}" "${REPO_ROOT}/src/stdlib/file_glue.c"; then
+    fail "3b injection did not land (file_glue.c:tk_file_read_w unchanged) -- control proves nothing"
+elif python3 "${GATE}" --root "${WORK}/tree" >"${WORK}/g.out" 2>&1; then
+    fail "3b gate stayed OK with tk_file_read_w on the class-only gate"
+elif /usr/bin/grep -a -q "^CLASSONLY: tk_file_read_w " "${WORK}/g.out"; then
+    pass "3b tk_file_read_w back on TK_REQUIRE -> gate FAILS: $(/usr/bin/grep -a -m1 "^CLASSONLY: tk_file_read_w " "${WORK}/g.out" | cut -c1-90)"
+else
+    fail "3b gate failed but did not name tk_file_read_w as CLASSONLY"; sed 's/^/      | /' "${WORK}/g.out" | head -8
+fi
 
 # ── 4-6: the runtime ──────────────────────────────────────────────────────
 cd "${WORK}"

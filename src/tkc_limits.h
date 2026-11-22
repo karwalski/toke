@@ -15,6 +15,8 @@
 #ifndef TKC_LIMITS_H
 #define TKC_LIMITS_H
 
+#include <stdio.h>   /* 138.19: FILE, for tkc_emit_cap_globals */
+
 /* ── Parser ───────────────────────────────────────────────────────────── */
 
 /*
@@ -324,6 +326,23 @@
 /* ── Runtime Limits Struct ─────────────────────────────────────────── */
 
 /*
+ * TKC_CAP_MAX_SCOPES — scoped capability grants one build can bake (138.19:
+ * tkc.toml [capabilities] arrays plus --allow-x=a,b flags).  A manifest is
+ * small -- loke's names under ten scopes -- and a fixed bound keeps TkcLimits
+ * a plain value that RunOpts copies.  Exceeding it is a config error.
+ * TKC_CAP_MAX_QUOTED — quoted-string grants reported by W9012 per build
+ * (138.19 D4); one per class key, so 16 covers every key twice.
+ * Configurable: no.
+ */
+#define TKC_CAP_MAX_SCOPES 64
+#define TKC_CAP_MAX_QUOTED 16
+
+/* 138.19: one scope (cls = TK_CAP_IDX_*, text as written, heap copy that
+ * lives for the compiler run) and one quoted-string grant for W9012. */
+typedef struct { int cls; char *text; } TkcCapScope;
+typedef struct { int line; int cls; char *text; } TkcCapQuoted;
+
+/*
  * TkcLimits — runtime-overridable compiler limits.
  *
  * Initialised to compiled defaults by tkc_limits_defaults().
@@ -347,7 +366,27 @@ typedef struct {
     unsigned cap_grants;
     int cap_present;
     int cap_enforce;
+    /* 138.19: scoped grants (D1) and run-time narrowing (D2).  cap_set=1 when
+     * a class key, `all`, or an --allow-* flag declared a grant set -- the
+     * binary then takes run-time --allow-* flags as a narrowing, unless
+     * tkc.toml said runtime = "union" (cap_runtime_union).  `enforce` and
+     * --cap-enforce alone set cap_present, not cap_set.  cap_scopes are the
+     * classes granted for listed scopes only (cap_grants has no bit for a
+     * class granted that way).  cap_quoted are the quoted-string values the
+     * D4 warning release reports (W9012), from cap_config. */
+    int cap_set;
+    int cap_runtime_union;
+    int cap_nscopes;
+    TkcCapScope cap_scopes[TKC_CAP_MAX_SCOPES];
+    int cap_nquoted;
+    TkcCapQuoted cap_quoted[TKC_CAP_MAX_QUOTED];
+    const char *cap_config;
 } TkcLimits;
+
+/* tkc_emit_cap_globals — the @__tk_cap_baked_* definitions for the entry
+ * module (124.4b; 138.19 adds the scope table and the run-time mode).
+ * Defined in src/config.c. */
+void tkc_emit_cap_globals(FILE *out, const TkcLimits *lim);
 
 static inline void tkc_limits_defaults(TkcLimits *lim)
 {
@@ -363,6 +402,11 @@ static inline void tkc_limits_defaults(TkcLimits *lim)
     lim->cap_grants       = 0u;
     lim->cap_present      = 0;   /* no capability config -> emit nothing */
     lim->cap_enforce      = 0;
+    lim->cap_set          = 0;   /* 138.19 */
+    lim->cap_runtime_union = 0;
+    lim->cap_nscopes      = 0;
+    lim->cap_nquoted      = 0;
+    lim->cap_config       = 0;
 }
 
 #endif /* TKC_LIMITS_H */

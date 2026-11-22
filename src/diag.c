@@ -95,6 +95,8 @@ typedef struct {
     int  span_end;
     char message[512];
     char fix[256];
+    char *file;      /* the file this diagnostic is in (138.19: W9012 names
+                        tkc.toml; the source file is set later), or NULL */
 } SarifEntry;
 
 static SarifEntry s_sarif_buf[SARIF_MAX_DIAGS];
@@ -565,6 +567,10 @@ buffer_sarif(DiagSeverity sev, int code,
     e->byte_offset = byte_offset;
     e->span_start = span_start;
     e->span_end   = span_end;
+    /* The file at emission time: s_source_file may name another by the
+     * flush (138.19: W9012 is emitted for tkc.toml before the source file is
+     * set).  Kept for the life of the buffer, which is the compiler run. */
+    e->file = strdup(s_source_file ? s_source_file : "");
     strncpy(e->message, message, sizeof(e->message) - 1);
     e->message[sizeof(e->message) - 1] = '\0';
     if (fix && fix[0]) {
@@ -689,7 +695,7 @@ diag_flush_sarif(void)
               "              \"physicalLocation\": {\n"
               "                \"artifactLocation\": {\n"
               "                  \"uri\": \"", fp);
-        sarif_json_escape(fp, s_source_file);
+        sarif_json_escape(fp, e->file ? e->file : s_source_file);
         fprintf(fp,
                 "\"\n"
                 "                },\n"

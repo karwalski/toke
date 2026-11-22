@@ -31,7 +31,7 @@ in its default provider (`openssl list -signature-algorithms`).
 | S1 | `encrypt.ed25519keypair` / `ed25519sign` / `ed25519verify` (`stdlib/encrypt.tki:28-30`; `src/stdlib/encrypt.c:1553`, `:1582`, `:1660`) | Ed25519, hand-rolled libc core | program-defined, can be years | program-defined | often |
 | S2 | `tls.genselfsigned` / `tls.genselfsignedalg` (`src/stdlib/tls.c:402`, `:573`; `stdlib/tls.tki:31-32`) | ECDSA P-384 by default; **ML-DSA-65 opt-in shipped** (`tls.c:432`) | certificate validity (`valid_days`) | TLS peers (pinned self-signed certs) | usually: pinned pairs are toke on both sides |
 | S3 | ACME account key and certificate key (`src/stdlib/acme.c:137-150`, generated at `:456` and `:803`) | ECDSA P-256 (ES256 JWS, P-256 CSR) | account: indefinite; certificate: CA-set (~90 days) | the ACME CA; every browser and client | **no**: the CA and the WebPKI decide |
-| S4 | Release signing (`.github/workflows/release.yml:149-170`, `docs/security/release-signing.md`) | sigstore cosign keyless (Fulcio-issued certificate, Rekor log) | indefinite: old releases stay verifiable | anyone installing `tkc` | **no**: sigstore decides |
+| S4 | Release signing (`.github/workflows/release.yml`, the `release` job, `docs/security/release-signing.md`) | sigstore cosign keyless (Fulcio-issued certificate, Rekor log) | indefinite: old releases stay verifiable | anyone installing `tkc` | **no**: sigstore decides |
 | S5 | `std.auth` JWT (`src/stdlib/auth.c:89`) | HS256 only (allowlisted, `alg:none` rejected) | token lifetime | the issuing service | yes |
 
 S5 is symmetric and therefore already adequate; it is listed because ADR-0013 (b)

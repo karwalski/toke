@@ -3,7 +3,7 @@
 **Purpose.** A single, honest reference for every quantitative claim about toke —
 token efficiency, compile rate, functional correctness. External, academic, and
 marketing claims MUST cite these numbers and this methodology, **not** headline
-figures stripped of context (e.g. "Gate 2 PASS 100%"). This exists because the
+figures stripped of context (e.g. "Gate 2 PASS 100%", a verdict withdrawn on 2026-11-15). This exists because the
 project's thesis is *falsifiable research* (risk R001) and its credibility depends
 on numbers that survive peer review (R008, R015).
 
@@ -55,11 +55,11 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `keywords` | **14** | `sed -n '/KEYWORDS_DEFAULT/,/};/p' src/lexer.c` — 10 reserved words (`if el lp br let mut as rt sc mt`) plus the 4 declaration heads `m= i= t= f=` |
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **67** | `ls stdlib/*.tki \| wc -l` |
-| `conformance_cases_yaml` | **371** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 197, lexical 37) |
-| `conformance_cases_shell` | **591** | `ls test/conform/*.sh \| wc -l` |
-| `conformance_cases_total` | **962** | the two rows above; `make conform` runs both |
-| `diagnostic_codes_documented` | **91** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
-| `diagnostic_codes_in_src` | **91** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
+| `conformance_cases_yaml` | **398** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 224, lexical 37) |
+| `conformance_cases_shell` | **625** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **1,023** | the two rows above; `make conform` runs both |
+| `diagnostic_codes_documented` | **92** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
+| `diagnostic_codes_in_src` | **92** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |
 | `corpus_records_v02_2026_04` | **46,754** | `jq .total_entries ../toke-corpus/corpus/manifest.json` — the **v0.2-era** corpus of 2026-04-01, historical |
 | `epics` | **138** | `grep -oE '^#{2,3} Epic [0-9]+' docs/progress.md \| awk '{print $3}' \| sort -u \| wc -l` — *live, not gated: re-derive before citing* |

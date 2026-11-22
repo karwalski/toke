@@ -73,6 +73,20 @@ void tk_err_release(void)
 
 void *tk_err_box(int64_t nbytes)
 {
+    /* 127.492: the fast path every std raise takes.  A box that fits the
+     * inline size is zeroed with a CONSTANT-size store of TK_ERR_INLINE bytes
+     * (four vector stores, no call): once the buffer exists its capacity is
+     * never below TK_ERR_INLINE (it starts there, only grows, and the OOM
+     * fallback returns to it), so zeroing past nbytes stays inside it.  The
+     * variable-size memset below was a libc call plus a heavier prologue:
+     * measured on Darwin arm64, the cli-argv form-a miss loop at
+     * PAT_N=16,384,000 went from 0.20 s to 0.12-0.13 s user CPU.  One TLS
+     * lookup (`err`), as before. */
+    TkErrBuf *eb = &err;
+    if (nbytes > 0 && nbytes <= TK_ERR_INLINE && eb->buf) {
+        memset(eb->buf, 0, TK_ERR_INLINE);
+        return eb->buf;
+    }
     if (nbytes <= 0) nbytes = 16;
     if (!err_buf) { err_buf = err_inline; err_cap = TK_ERR_INLINE; }
     if (nbytes > err_cap) {

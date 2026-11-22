@@ -135,7 +135,7 @@ int64_t tk_toml_loadfile_w(int64_t path) {
      * path with no gate, so a --cap-enforce binary with no grants could read
      * any TOML file (measured on main: exit 0).  file.read has been gated
      * since 124.4c; this is the same check at the same place. */
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) { return toml_raise("toml: null argument"); }
     TomlResult r = toml_load_file((const char *)(intptr_t)path);
     if (r.is_err) return toml_raise(r.err_msg);

@@ -1,0 +1,16 @@
+id: D625
+series: D
+description: "138.35 (T-67): an integer literal other than 0 where std.process declares an opaque handle -- process.wait(5) -- is E4031 with NO fix (the runtime dereferences the slot; the repair, passing the handle itself or the literal 0, is not mechanical)"
+input: |
+  m=t;
+  i=process:std.process;
+  f=main():i64{
+    let w=process.wait(5);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "handle"

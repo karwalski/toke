@@ -95,6 +95,10 @@ int vecstore_flush(TkVecStore *vs);
  * whether vecstore_flush / vecstore_close would write. */
 int vecstore_dirty(TkVecStore *vs);
 
+/* 138.19: the directory the store keeps its collection files in
+ * ({data_dir}/{name}.vecs), for the capability gates. */
+const char *vecstore_datadir(const TkVecStore *vs);
+
 /* -------------------------------------------------------------------------
  * Collection operations
  * ------------------------------------------------------------------------- */

@@ -1612,6 +1612,14 @@ const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
  * template engine with the provided variable bindings.
  * ----------------------------------------------------------------------- */
 
+/* 138.19 (round 3): the check http.servepages installs (tk_web_glue.c), so
+ * a page or layout file that is a symlink leading out of an fs.read scope is
+ * not read at request time.  NULL -- every other caller, and the unit tests
+ * that link this file without the capability broker -- checks nothing. */
+static int (*g_tmpl_page_path_ok)(const char *path) = NULL;
+
+void tmpl_set_page_path_check(int (*ok)(const char *path)) { g_tmpl_page_path_ok = ok; }
+
 /* Read a file into a heap-allocated string. Caller owns result. */
 static char *tmpl_readfile(const char *path) {
     if (!path) return NULL;
@@ -1806,6 +1814,7 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
     if (!page_path || !templates_dir) return NULL;
 
     /* Read the page file */
+    if (g_tmpl_page_path_ok && !g_tmpl_page_path_ok(page_path)) return NULL;
     char *page_src = tmpl_readfile(page_path);
     if (!page_src) return NULL;
 
@@ -1853,7 +1862,8 @@ const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
         pos += 4;
         layout_path[pos] = '\0';
 
-        char *layout_src = tmpl_readfile(layout_path);
+        char *layout_src = (g_tmpl_page_path_ok && !g_tmpl_page_path_ok(layout_path))
+                           ? NULL : tmpl_readfile(layout_path);
         free(layout_path);
         if (!layout_src) goto cleanup;
 

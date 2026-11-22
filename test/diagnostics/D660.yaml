@@ -1,0 +1,14 @@
+id: D660
+series: D
+description: "127.339: a trailing ';' before '}' in a type declaration (m=a;t=$p{x:i64;};) is ONE E2002 at the ';' -- grammar.ebnf FieldList = Field { ';' Field } admits none -- with no fix (E2002 carries none, errors.md) and no E2004 cascade. Whether lists take a trailing ';' is the owner's 127.360."
+input: |
+  m=a;
+  t=$p{x:i64;};
+  f=main():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E2002"]
+expected_absent_codes: ["E2004"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: ";"

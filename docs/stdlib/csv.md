@@ -161,6 +161,20 @@ f=flushdemo():i64{
 };
 ```
 
+### csv.serialize(rows: @(@($str))): $str
+
+Writes every row at once and returns the CSV text: the same bytes as a `csv.writer(44)`, one `csv.writerow` per row and a `csv.flush`. Fields are comma-separated and quoted per RFC 4180 (a field with a comma, a double-quote or a line break is wrapped in double-quotes, and its double-quotes are doubled), rows are separated by CRLF, and there is no line break after the last row. No rows gives `""`; an empty row is an empty line. Rows may have different lengths. (127.354: until this release the parameter was an ABI placeholder that no toke value matched.)
+
+```toke
+m=example;
+i=csv:std.csv;
+
+f=serializedemo():$str{
+  let rows=@(@("name";"score");@("Bob, Jr.";"87"));
+  < csv.serialize(rows)
+};
+```
+
 ## Usage Examples
 
 Read a CSV file, filter rows where score is above a threshold, write the filtered subset to a new file:

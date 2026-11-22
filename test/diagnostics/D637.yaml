@@ -1,0 +1,17 @@
+id: D637
+series: D
+description: "127.468 (1): E4070 on a module-level name declared twice carries no fix -- a `let g=mut.` on the first declaration leaves E4070, and the text 'let g=' does not say which declaration (AGENTS 6)"
+input: |
+  m=test;
+  let g=5;
+  let g=6;
+  f=bad():i64{
+    g=0;
+    <g
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "immutable binding"

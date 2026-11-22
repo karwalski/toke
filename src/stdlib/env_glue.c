@@ -18,7 +18,7 @@ int64_t tk_env_get_or(int64_t key, int64_t def) {
 }
 
 int64_t tk_env_set_w(int64_t key, int64_t val) {
-    TK_REQUIRE(TK_CAP_ENV_WRITE);
+    TK_REQUIRE_ENV((const char *)(intptr_t)key);   /* 138.19: env_write = ["TZ", "TOKE_*"] */
     return (int64_t)env_set(
         (const char *)(intptr_t)key,
         (const char *)(intptr_t)val);

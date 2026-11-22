@@ -1,0 +1,15 @@
+id: D615
+series: D
+description: "138.19 D4 (the warning release): a tkc.toml grant written as a quoted string (fs_read = \"./content\") keeps its whole-class meaning and is W9012, naming the release that makes it a scope; no fix -- the manifest is not the source file a fix edits (AGENTS 6). Run from the repository root (the fixture path is relative)."
+flags: --config=test/diagnostics/D615_quoted_grant.toml
+input: |
+  m=t;
+  f=main():i64{
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: ["W9012"]
+expected_fix_absent: true
+expected_diag_field:
+  field: pos.line
+  value: "3"

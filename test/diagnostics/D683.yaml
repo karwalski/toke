@@ -1,0 +1,12 @@
+id: D683
+series: D
+description: "138.57: a closure parameter annotated i64 matched with $ok/$err arms is E4031 'expected T!E' at --check with NO fix, as 127.202 judges a function parameter; with no outer parameter of that name it passed --check, built and took $err for 0"
+input: |
+  m=t;
+  f=main():i64{let g=fn(e:i64):i64{<mt e {$ok:v v+10;$err:x 3}}; <g(0)};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "T!E"

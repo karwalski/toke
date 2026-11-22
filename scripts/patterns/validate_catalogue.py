@@ -16,6 +16,14 @@ default mode lets an entry be authored before its bench run. The single
 exception is a timeout sentinel (protocol §5.2, `bigO_ratio == 99`): the
 harness kills such a form before it reports peak RSS or allocation counts, so
 `rss_kb_median`/`allocs` may stay null there. Everything else stays strict.
+
+Identical code (protocol §6 step 3, owner decision 4.11 (d), story 127.440): an entry may carry an
+optional `identical_code` list of proofs that two or more forms lower to identical `tkc -O2` machine
+code (recorded by scripts/patterns/prove_identical_code.py with the tkc in `measured_at`, naming the
+conformance test that pins the lowering). Such forms are tied and the tie keeps the incumbent.
+Only that decided core is implemented; the cases the owner has not confirmed (an identical-code group
+whose forms are not token-tied under §4, or a tie with no incumbent among the tied forms, e.g. a first
+measurement) are refused for an owner verdict, never resolved by the tool (story 127.501).
 """
 from __future__ import annotations
 
@@ -38,6 +46,15 @@ MEASURED_AT_KEYS = {"tkc_sha", "tkc_version", "proxy_sha", "corpus_sha", "bench_
 # optional provenance (protocol §8): present and true when the bench results were recorded on a loaded
 # machine (meta.load_warning) — the verdicts stay provisional until 131.25 re-measures
 MEASURED_AT_OPTIONAL = {"load_warning"}
+# optional entry key (protocol §6 step 3, 127.440): proofs that forms lower to identical tkc -O2 code
+ENTRY_OPTIONAL = {"identical_code"}
+IDENTICAL_CODE_KEYS = {"forms", "tkc_sha", "text_sha256", "conform", "date"}
+CONFORM_RE = re.compile(r"^C\d+$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# verdict strength order, used when identical-code forms take the better of their verdicts
+TOKEN_RANK = {"best": 0, "tied": 1, "more": 2}
+RUNTIME_RANK = {"best": 0, "tied": 1, "slower": 2, "worse-bigO": 3}
 RUNTIME_VERDICTS = {"best", "tied", "slower", "worse-bigO", "blocked"}
 TOKEN_VERDICTS = {"best", "tied", "more", "blocked"}
 STATUSES = {"measured", "provisional", "blocked"}
@@ -157,7 +174,33 @@ def _measured(c: dict) -> bool:
     )
 
 
-def derive_verdicts(e: dict) -> dict | None:
+def _sha_match(a, b) -> bool:
+    """Two tkc git shas name the same commit when one is a prefix of the other (bench meta records
+    the 12-char `--version --json` sha; older entries carry 40 chars)."""
+    a, b = str(a or ""), str(b or "")
+    return len(a) >= 7 and len(b) >= 7 and (a.startswith(b) or b.startswith(a))
+
+
+def identical_groups(e: dict) -> list[list[str]]:
+    """Form groups proven to lower to identical code for the tkc this entry was measured with
+    (protocol §6 step 3). A proof for another tkc is stale and proves nothing (validator reports it)."""
+    tkc = (e.get("measured_at") or {}).get("tkc_sha")
+    out = []
+    for p in e.get("identical_code") or []:
+        if isinstance(p, dict) and isinstance(p.get("forms"), list) and _sha_match(p.get("tkc_sha"), tkc):
+            out.append(sorted(p["forms"]))
+    return out
+
+
+def _token_tied(t: int, u: int) -> bool:
+    lo, hi = min(t, u), max(t, u)
+    return (hi - lo) <= TOKEN_TIE_ABS or (hi - lo) <= TOKEN_TIE_REL * max(lo, 1)
+
+
+_RECORDED = object()
+
+
+def derive_verdicts(e: dict, incumbent=_RECORDED) -> dict | None:
     """Re-derive every verdict of an entry from its candidates' numbers (protocol §4–§6).
 
     Single source of the verdict rules: check_verdict_consistency() compares the
@@ -168,6 +211,16 @@ def derive_verdicts(e: dict) -> dict | None:
          "canonical": form, "hot_path": form|None, "conflict": bool, "best_tok": int}
     `conflict` is True when no form is best-or-tied on both axes (§6 step 4).
     Blocked candidates are absent from the per-form maps (they stay `blocked`).
+
+    Identical code (§6 step 3, owner decision 4.11 (d), 127.440): forms in an `identical_code` group
+    are runtime-tied (§5.3 is not applied between them: each takes the group's better runtime
+    verdict), and when the choice of canonical or hot path lands on such a group the tie keeps the
+    `incumbent` — the form the catalogue records as canonical before the run is ingested (default:
+    the entry's recorded `verdict.canonical`; ingest passes None on a pattern's first measurement).
+    The result also carries `undecided`: None, or the reason the entry needs an owner verdict
+    because it reaches a case 4.11 (d) does not settle (127.501) — identical-code forms that are not
+    token-tied under §4, or a tie with no incumbent among the tied forms. The tool never resolves
+    those; `canonical`/`hot_path` then carry the unamended ordering's answer for display only.
     """
     cands = [c for c in e["candidates"] if isinstance(c, dict)]
     live = [c for c in cands if c.get("runtime_verdict") != "blocked"]
@@ -199,7 +252,37 @@ def derive_verdicts(e: dict) -> dict | None:
             )
             exp = "tied" if tied else "slower"
         runtime[c["form"]] = exp
+    # --- identical code (§6 step 3, 127.440): runtime-tied by construction
+    if incumbent is _RECORDED:
+        incumbent = (e.get("verdict") or {}).get("canonical")
+    undecided = None
+    groups = []
+    for g in identical_groups(e):
+        g = [f for f in g if f in runtime]
+        if len(g) < 2:
+            continue
+        groups.append(g)
+        rt = min((runtime[f] for f in g), key=RUNTIME_RANK.__getitem__)
+        for f in g:
+            runtime[f] = rt
+        toks = {f: next(c["tokens"]["proxy8k"] for c in live if c["form"] == f) for f in g}
+        if not all(_token_tied(toks[f], toks[h]) for f in g for h in g) or len({f in tok_ok for f in g}) > 1:
+            undecided = (f"forms {', '.join(g)} lower to identical code but are not token-tied "
+                         f"(proxy8k {', '.join(str(toks[f]) for f in g)}); owner decision 4.11 (d) does not "
+                         f"settle this case — owner verdict needed (127.501)")
     rt_ok = {f for f, x in runtime.items() if x in ("best", "tied")}
+
+    def keep_incumbent(form, role):
+        nonlocal undecided
+        for g in groups:
+            if form in g:
+                if incumbent in g:
+                    return incumbent
+                if undecided is None:
+                    undecided = (f"the {role} falls on identical-code forms {', '.join(g)} and no incumbent is among "
+                                 f"them (incumbent {incumbent!r}); owner decision 4.11 (d) does not settle a tie "
+                                 f"without one — owner verdict needed (127.501)")
+        return form
     # --- canonical choice (§6 step 3/4)
     both = tok_ok & rt_ok
     if both:
@@ -207,7 +290,7 @@ def derive_verdicts(e: dict) -> dict | None:
             (c for c in live if c["form"] in both),
             key=lambda c: (c["tokens"]["proxy8k"], c["min_bytes"] or 0, (c["allocs"] or {}).get("calls", 0)),
         )
-        canonical, hot = ranked[0]["form"], None
+        canonical, hot = keep_incumbent(ranked[0]["form"], "canonical"), None
     else:
         tok_best = min(live, key=lambda c: (c["tokens"]["proxy8k"], c["min_bytes"] or 0))
         oom = tok_best["wall_ms_median"] >= OOM_FACTOR * max(best_rt["wall_ms_median"], 1e-9)
@@ -215,8 +298,11 @@ def derive_verdicts(e: dict) -> dict | None:
             canonical, hot = best_rt["form"], None
         else:
             canonical, hot = tok_best["form"], best_rt["form"]
+        canonical = keep_incumbent(canonical, "canonical")
+        if hot is not None:
+            hot = keep_incumbent(hot, "hot path")
     return {"token": token, "runtime": runtime, "canonical": canonical, "hot_path": hot,
-            "conflict": not both, "best_tok": best_tok}
+            "conflict": not both, "best_tok": best_tok, "undecided": undecided}
 
 
 def check_verdict_consistency(v: V, e: dict) -> None:
@@ -229,6 +315,9 @@ def check_verdict_consistency(v: V, e: dict) -> None:
             c.get("runtime_verdict") != "blocked" for c in e["candidates"] if isinstance(c, dict)
         ):
             v.err(eid, "status 'measured' but some candidates lack measurements")
+        return
+    if d["undecided"]:
+        v.err(eid, d["undecided"])
         return
     live = [c for c in e["candidates"] if isinstance(c, dict) and c.get("runtime_verdict") != "blocked"]
     for c in live:
@@ -271,10 +360,49 @@ def check_card_rule(v: V, eid: str, rule) -> None:
         v.err(eid, "card_rule must be a single line")
 
 
+def check_identical_code(v: V, e: dict, cands: list, root: str) -> None:
+    """protocol §6 step 3 (127.440): each proof names >= 2 live candidate forms (no form in two proofs),
+    the tkc it was made with — which must be the tkc in measured_at, or the proof is stale — the sha256
+    of the shared `otool -tV` text, the conformance test that pins the lowering, and the date."""
+    eid = e.get("id", "?")
+    proofs = e["identical_code"]
+    if not (isinstance(proofs, list) and proofs):
+        v.err(eid, "identical_code must be a non-empty list when present")
+        return
+    live = {c.get("form") for c in cands if isinstance(c, dict) and not str(c.get("fixture", "")).endswith(".blocked.tk")}
+    seen: set = set()
+    tkc = (e.get("measured_at") or {}).get("tkc_sha")
+    for p in proofs:
+        if not (isinstance(p, dict) and set(p) == IDENTICAL_CODE_KEYS):
+            v.err(eid, f"identical_code proof must have exactly keys {sorted(IDENTICAL_CODE_KEYS)}")
+            continue
+        forms = p["forms"]
+        if not (isinstance(forms, list) and len(forms) >= 2 and len(set(forms)) == len(forms)
+                and all(f in live for f in forms)):
+            v.err(eid, "identical_code.forms must list >= 2 distinct non-blocked candidate forms")
+        elif seen & set(forms):
+            v.err(eid, f"identical_code: form(s) {sorted(seen & set(forms))} appear in two proofs")
+        else:
+            seen |= set(forms)
+        if not _sha_match(p["tkc_sha"], tkc):
+            v.err(eid, f"identical_code proof for {forms} was made with tkc {str(p['tkc_sha'])[:12]} but the entry is "
+                       f"measured with {str(tkc)[:12]} — stale; re-prove with the measured tkc "
+                       f"(scripts/patterns/prove_identical_code.py)")
+        if not (isinstance(p["text_sha256"], str) and SHA256_RE.match(p["text_sha256"])):
+            v.err(eid, "identical_code.text_sha256 must be a sha256 hex digest")
+        if not (isinstance(p["date"], str) and DATE_RE.match(p["date"])):
+            v.err(eid, "identical_code.date must be YYYY-MM-DD")
+        c = p["conform"]
+        if not (isinstance(c, str) and CONFORM_RE.match(c)):
+            v.err(eid, "identical_code.conform must name a conformance test (C<n>)")
+        elif root and not any(n.startswith(c + "_") for n in os.listdir(os.path.join(root, "test", "conform"))):
+            v.err(eid, f"identical_code.conform {c} has no test/conform/{c}_*.sh")
+
+
 def check_entry(v: V, e: dict, root: str, strict: bool, seen: set) -> None:
     eid = e.get("id", "?")
     missing = ENTRY_KEYS - set(e)
-    extra = set(e) - ENTRY_KEYS
+    extra = set(e) - ENTRY_KEYS - ENTRY_OPTIONAL
     if missing:
         v.err(eid, f"missing keys {sorted(missing)}")
     if extra:
@@ -355,6 +483,8 @@ def check_entry(v: V, e: dict, root: str, strict: bool, seen: set) -> None:
         v.err(eid, "measured_at.load_warning must be a bool when present")
     elif isinstance(ma.get("load_warning"), bool) and ma["load_warning"] and isinstance(vd, dict) and vd.get("status") == "measured":
         v.err(eid, "measured_at.load_warning is true — status cannot be 'measured' before the 131.25 re-measure (protocol §8)")
+    if "identical_code" in e:
+        check_identical_code(v, e, cands, root)
     if isinstance(vd, dict) and isinstance(cands, list) and "canonical" in vd:
         try:
             check_verdict_consistency(v, e)

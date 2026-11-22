@@ -4,7 +4,7 @@
  * Story 127.201. Per glue wrapper, the representation the body reads each
  * parameter as: S = a C string (toke str), A = an i64 array with its length
  * at ptr[-1] (toke array), . = not established. Grounded on the glue bodies,
- * never on the .tki. 482 symbols with at least one S or A.
+ * never on the .tki. 485 symbols with at least one S or A.
  */
 
     { "tk_analytics_anomalies_w", ".S." },
@@ -153,6 +153,7 @@
     { "tk_http_delete_w", ".S" },
     { "tk_http_downloadfile_w", ".SS" },
     { "tk_http_get_w", "S" },
+    { "tk_http_getheaders_w", "S." },
     { "tk_http_geturl_w", "S" },
     { "tk_http_listen_w", "S." },
     { "tk_http_mockreq_w", "SS.S." },
@@ -165,6 +166,7 @@
     { "tk_http_resp_w", ".SS" },
     { "tk_http_serve_staticdir_w", "SS" },
     { "tk_http_servepages_w", "SS" },
+    { "tk_http_withconnectaddr_w", ".S" },
     { "tk_http_withproxy_w", ".S" },
     { "tk_i18n_fmt_w", ".SS" },
     { "tk_i18n_get_w", ".S" },
@@ -264,6 +266,7 @@
     { "tk_ml_linregfit_w", "AA" },
     { "tk_ml_linregpredict_w", ".A" },
     { "tk_net_listen_w", "S" },
+    { "tk_net_resolve_w", "S" },
     { "tk_net_write_w", ".S" },
     { "tk_ocr_runs_w", "A" },
     { "tk_ocr_runsfile_w", "S" },

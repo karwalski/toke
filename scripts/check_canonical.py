@@ -134,6 +134,13 @@ SURFACES = [
     {"path": "../toke-mcp/vscode-toke/README.md", "blocks": ["one_liner", "paragraph"]},
     {"path": "../toke-model/huggingface/README.md", "blocks": ["one_liner", "paragraph"]},
     {"path": "../toke-model/ollama/README.md", "blocks": ["one_liner"]},
+
+    # Story 127.495: the toke-model surfaces that state the Gate 2 result copy the
+    # canonical `models` fact (canonical.md §8) word for word, so the D4 withdrawal
+    # and the 55.6% caveat cannot drift out of them again (they had, until then).
+    {"path": "../toke-model/README.md", "facts": ["models"]},
+    {"path": "../toke-model/huggingface/README.md", "facts": ["models"]},
+    {"path": "../toke-model/ollama/README.md", "facts": ["models"]},
 ]
 
 # ------------------------------------------------------- awaiting publish ----
@@ -315,7 +322,10 @@ SKIP_PREFIXES = (
     "docs/progress.md",
     "docs/epics_and_stories.md",
     "docs/about/reviews/",
-    "docs/decisions/",
+    # 127.477: docs/decisions/ is no longer here. A decision record is skipped
+    # only once it carries the dated Archived banner (RECORD_PREFIXES and
+    # skipped() in check_metrics_claims); a live one -- gate2-decision.md holds
+    # the current Gate 2 status -- is a claim surface and is scanned.
     "docs/audits/",
     "docs/spec/toke-spec-v0.3.md",
     # canonical.json is NOT skipped: its "forbidden" object names the retired strings,
@@ -392,6 +402,25 @@ STALE = [
      "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
      "(docs/decisions/gate1-decision.md)",
      "verdict-gate1"),
+    # Story 127.459 — the retired Gate 2 VERDICT. The PASS recorded 2026-05-24
+    # was withdrawn on 2026-11-15 (owner decision D4): Gate 2 has no standing
+    # verdict and Gate 3, which never ran, is void. A surface that announces
+    # "Gate 2 PASS" / "Gate 2: PASSED" publishes a verdict that no longer
+    # exists. As for Gate 1, the generic CORRECTION markers cannot excuse it
+    # ("superseded", "corrected" and the like sit beside the PASS on every
+    # surface that kept it); only the withdrawal itself does -- see
+    # GATE2_WITHDRAWN. Between "Gate 2" and the verdict it allows table cells
+    # ("| Gate 2 | **PASSED** |"), punctuation, bold, and one linking word
+    # ("Gate 2 verdict: PASS", "Gate 2 was PASSED"). "PASS" is matched in upper
+    # case only, so the metric "Gate 2 Pass@1" is never caught; "passed" in any
+    # case, since it is never a metric name.
+    (re.compile(r"\bGate[\s-]*2\b[\s|:*—–-]*"
+                r"(?:(?:verdict|status|result|outcome|was|is|has|had)\b[\s|:*—–-]*)?"
+                r"(?:PASS(?:ED)?\b(?!@)|(?i:passed)\b)"),
+     "Gate 2 PASS",
+     "the Gate 2 PASS was withdrawn on 2026-11-15 (owner decision D4): Gate 2 "
+     "has no standing verdict (docs/decisions/gate2-decision.md)",
+     "verdict-gate2"),
 ]
 
 # Story 132.127 — a paraphrased verdict is a Gate 1 claim only beside "Gate 1".
@@ -400,6 +429,18 @@ GATE1_CONTEXT = re.compile(r"\bgate[\s-]*(?:1|one)\b", re.I)
 # Story 132.69 — the only thing that excuses the retired verdict is the decision
 # that retired it, stated within the same paragraph window.
 VERDICT_DECIDED = re.compile(r"\bnot\s+passed\b|\b2026-09-22\b", re.I)
+
+# Story 127.459 — the only thing that excuses the retired Gate 2 verdict is its
+# withdrawal (owner decision D4, 2026-11-15), stated within the same paragraph
+# window AND about the verdict: "withdrawn" has to sit within 120 characters of
+# a PASS/verdict word (either order) with no `.` between them, or the window
+# says Gate 2 has "no standing verdict". A date or an unrelated "withdrawn headline" nearby does not excuse.
+_G2_VERDICT_WORD = r"(?:\bPASS(?:ED)?\b(?!@)|\b(?i:passed|verdict)\b)"
+_G2_WITHDRAW = r"\b(?i:withdr[ae]w(?:n|s|al)?)\b"
+GATE2_WITHDRAWN = re.compile(
+    _G2_VERDICT_WORD + r"[^.]{0,120}?" + _G2_WITHDRAW
+    + r"|" + _G2_WITHDRAW + r"[^.]{0,120}?" + _G2_VERDICT_WORD
+    + r"|\b(?i:no\s+standing\s+verdict)\b")
 
 # Story 132.29 — a NEGATION of the retired fact itself: "it is NOT strict LL(1)",
 # "there are not 13 keywords". This is built per stale fact from that fact's own
@@ -700,6 +741,9 @@ def check_stale(path, rel):
             elif kind == ["verdict"]:
                 if VERDICT_DECIDED.search(near):
                     continue
+            elif kind == ["verdict-gate2"]:                   # 127.459
+                if GATE2_WITHDRAWN.search(near):
+                    continue
             elif CORRECTION.search(near) or negation_of(pat).search(near):
                 continue
             findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
@@ -726,8 +770,16 @@ def check_stale(path, rel):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_metrics_claims import (deployed_source, is_deployed_tree,  # noqa: E402
                                   is_generated_mirror, never_read, repo_key,
-                                  walk_readable,
+                                  walk_readable, RECORD_PREFIXES,
                                   scan_deployed_tree, report_stale_trees, STALE_TREES)
+from check_metrics_claims import skipped as _record_skipped  # noqa: E402
+
+
+def skipped(rel, path):
+    """This guard's SKIP_PREFIXES, plus an archived decision record (127.477)."""
+    if rel.startswith(SKIP_PREFIXES):
+        return True
+    return rel.startswith(RECORD_PREFIXES) and _record_skipped(rel, path)
 
 
 def scan_files(targets):
@@ -816,6 +868,25 @@ SELFTEST = [
     (False, "criteria were both met", "The Gate 1 criteria were both met."),
     (False, "both Gate 1 criteria satisfied, emphasised",
      "**Both Gate 1 criteria were satisfied** (token reduction and Pass@1)."),
+    # Story 127.459 — the withdrawn Gate 2 verdict (owner decision D4).
+    (False, "present-tense Gate 2 PASS (about/ecosystem.md:12 before 3d88bcc4)",
+     "Gate 2 PASS (2026-05-24): 100% compile Pass@1 on the curated set."),
+    (False, "Gate 2 PASSED in a table cell", "| Gate 2 | **PASSED** | 2026-05-24 |"),
+    (False, "Gate 2 PASSED in a padded table cell", "| Gate 2   |   PASSED   | 100% |"),
+    (False, "Gate 2: **PASSED** in one cell", "| Gate 2: **PASSED** | 100% compile |"),
+    (False, "lower-case Gate 2 passed", "In May, Gate 2 passed on the curated set."),
+    (False, "Gate 2 verdict: PASS", "Gate 2 verdict: PASS (2026-05-24)."),
+    (False, "Gate 2 PASS beside an unrelated withdrawn headline",
+     "Gate 2 PASS on 2026-05-24.\nThe 12.5% headline is withdrawn (Epic 128)."),
+    (False, "Gate 2 PASS beside a bare date", "Gate 2 PASS, reviewed 2026-11-15."),
+    (False, "Gate 2 PASS beside a generic correction marker",
+     "Gate 2 PASS — superseded figures corrected 2026-05-25 (stdlib fix)."),
+    (True, "Gate 2 PASS with its withdrawal in the same sentence",
+     "The Gate 2 PASS of 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4)."),
+    (True, "Gate 2 PASS, withdrawal wrapped onto the next line",
+     "Gate 2 PASS (recorded 2026-05-24) --\nwithdrawn: Gate 2 has no standing verdict."),
+    (True, "Gate 2 Pass@1 is a metric, not the verdict",
+     "Gate 2 Pass@1 was 55.6% functional on a set whose 200-eval half may be corpus-derived."),
     (True, "one criterion met is not the verdict (docs/about/why.md:28 after Z122)",
      "Gate 1 required greater than 10% token reduction and a Pass@1 rate of at least "
      "60%. The token-reduction criterion stands as met; the Pass@1 criterion does not."),
@@ -1057,7 +1128,9 @@ def selftest_workspace():
 def selftest():
     import tempfile
     sbad, nstructured = selftest_structured()
-    bad = selftest_rule1() + selftest_workspace() + sbad
+    from check_metrics_claims import selftest_decision_records   # 127.477
+    bad = selftest_rule1() + selftest_workspace() + sbad + \
+        selftest_decision_records(skipped, "canonical")
     for accept, name, text in SELFTEST:
         with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
                                          delete=False) as fh:
@@ -1116,8 +1189,7 @@ def main():
         # policy -- skip prefix and archive banner -- and, where the source
         # passes, is reported rather than asserted (see check_metrics_claims).
         src = deployed_source(path)
-        if rel.startswith(SKIP_PREFIXES) or \
-                (src and relpath(src).startswith(SKIP_PREFIXES)):
+        if skipped(rel, path) or (src and skipped(relpath(src), src)):
             continue
         scanned += 1
         src_lines = []

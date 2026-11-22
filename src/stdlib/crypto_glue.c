@@ -64,13 +64,13 @@ int64_t tk_crypto_hmacsha256_w(int64_t key, int64_t data) {
 
 /* 121.42 (5): reads the file named by the program -- fs.read, like file.read. */
 int64_t tk_crypto_sha256file_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return 0;
     const char *hex = seal_take(crypto_sha256file((const char *)(intptr_t)path));
     return hex ? (int64_t)(intptr_t)hex : 0;
 }
 int64_t tk_crypto_sha256verify_w(int64_t path, int64_t expected) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path || !expected) return 0;
     return (int64_t)crypto_sha256verify(
         (const char *)(intptr_t)path,

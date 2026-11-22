@@ -121,6 +121,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9011 | error | codegen | Package not found: no git source and no index, or not a dependency | n/s |
 | W9011 | warning | codegen | pkg.toml already exists | n/s |
 | E9012 | error | codegen | Malformed pkg.toml | n/s |
+| W9012 | warning | codegen | tkc.toml capability grant written as a quoted string | D615, D616, C1885 |
 | E9013 | error | codegen | Git clone or fetch of a dependency failed | n/s |
 | E9014 | error | codegen | No git tag matches the resolved version | n/s |
 | E9020 | error | codegen | Failed to write .tkir file | n/s |
@@ -1004,6 +1005,15 @@ unestablished layout with a guess: `struct_field_index()` returns `0` for "not
 found", and an unresolved base took the first registered struct declaring a
 field of that name. Both guesses produce a value of the right type from the
 wrong place.
+
+Story 138.40 (loke T-39): a field read on a record that another user module's
+function returns (`let r=srv.handle(x); <r.text`, or `srv.handle(x).text`),
+where the module that declares the record is not imported, is refused at
+`--check` too. A type is in module scope only through an import (semantics.md
+4.1, 6.1), so the layout is not established; the compile always refused it, and
+`--check` used to pass it. The message names the call and the record
+(`'srv.handle' returns '$res', a type of a module this file does not import`).
+Still no `fix`: which import supplies the record is not decidable from the file.
 
 ---
 

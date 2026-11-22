@@ -100,12 +100,19 @@ set, or the build has a `--target`, clang finds its linker itself.
 
 ### Packaged installs: release tarballs and Homebrew
 
-**Platform floors (3.2.0).** The release binaries need macOS 15 (Sequoia) or later, and on
-Linux glibc 2.38 or later (Ubuntu 24.04+, Debian 13+, Fedora 39+), because they are built
-on those images (toke 127.454). On an older system, build from source (above). Programs
+**Platform floors.** From the release after 3.2.0, the release binaries need macOS 14
+(Sonoma) or later, and on Linux glibc 2.35 or later (Ubuntu 22.04+, Debian 12+,
+Fedora 36+): the Linux binaries are built in an Ubuntu 22.04 container and the macOS
+binaries with a deployment target of 14.0, and both floors are checked on the binaries
+before a release (toke 127.454). The 3.2.0 binaries need macOS 15 (Sequoia) and glibc
+2.38 (Ubuntu 24.04+, Debian 13+, Fedora 39+), the floors of the images they were built
+on. On an older system, build from source (above). Programs
 that use std.http, TLS, std.db or compression also need the libraries: on macOS the
 Homebrew formula pulls in openssl@4; on Linux install clang, libssl-dev, zlib1g-dev and
-libsqlite3-dev. Check a downloaded tarball against the release's `checksums.txt`.
+libsqlite3-dev. Verify a downloaded tarball with its signature bundle, or against the
+release's signed `checksums.txt`
+([`docs/security/release-signing.md`](https://github.com/karwalski/toke/blob/main/docs/security/release-signing.md); for 3.2.0 and
+earlier only the `checksums.txt` route applies).
 
 A `toke` you did not build yourself -- a release tarball, or the Homebrew
 formula, which installs that tarball -- runs the clang path baked in **on the

@@ -535,6 +535,27 @@ static int lit_fits_int(const char *src, const Node *n, const Type *to) {
     }
     return neg ? (m <= nmax) : (m <= pmax);
 }
+/*
+ * forged_handle_arg (138.35, owner answer T-67) -- an INTEGER value where an
+ * opaque std handle (a `.tki` record with no fields: process's `handle`,
+ * vechandle, strbuf, ...) is declared.  The runtime dereferences such a
+ * slot, so `process.wait(5)` and a helper `h:i64` passing any integer on
+ * passed --check and died with SIGSEGV.  Only the literal `0` -- the null
+ * handle a `$err:e 0` arm yields, which the runtime answers -1 / `$err` --
+ * may stand for one.  A value of the handle's own type, a handle where an
+ * integer is declared (136.36), and an untyped value are not judged here.
+ * E4031, no `fix`: retyping the helper parameter or passing the handle
+ * itself are both repairs, and which is meant is not certain.
+ */
+static int int_lit_zero(const char *src, const Node *n) {
+    int neg; unsigned long long m;
+    return n && n->kind == NODE_INT_LIT && lit_int_value(src, n, &neg, &m)
+           && !neg && m == 0;
+}
+static int forged_handle_arg(const char *src, const Node *an, const Type *at,
+                             const Type *pt) {
+    return opaque_handle_type(pt) && is_integer(at) && !int_lit_zero(src, an);
+}
 static int lit_narrows(const char *src, const Node *n, const Type *to) {
     if (!n || !to) return 0;
     if (is_integer(to)) return lit_fits_int(src, n, to);
@@ -1074,21 +1095,64 @@ static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
  * `root` whose init is BARE and assigns the same name: `lp(i=0;..;i=i+1)`.
  * The init and the step then assign one binding, and an E4070 on the step
  * has the init's two repairs (`let i=mut.`, `lp(let i=`) that run
- * differently, so it carries no `fix` either. */
-static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+ * differently, so it carries no `fix` either.
+ *
+ * 127.468 (2): so does any other assignment inside that loop -- its body --
+ * that assigns the binding the bare init assigns.  In `let i=7;
+ * lp(i=0;i<5;i=i+1){ i=i+2 }` the body's `i=i+2` kept the `let` fix, and the
+ * two repairs still run differently (`let i=mut.7` exits 6, `lp(let i=0;..`
+ * exits 7).  An assignment to an inner binding of the same name (a `let i`
+ * in the body) is that binding's own and is not judged here. */
+static const Node *tk_binder_at(const Node *root, const char *src, const Node *use,
+                                const char *name, int nlen, const Node *anchor);
+static int bare_init_step_rec(const Node *fn, const Node *root, const char *src,
+                              const Node *asg) {
     if (!root || !asg) return 0;
     if (root->kind == NODE_LOOP_STMT && root->child_count == 4
-        && root->children[2] == asg) {
+        && root->children[0] != asg && node_contains(root, asg)) {
         const Node *ini = root->children[0];
-        return ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
+        if (ini && ini->kind == NODE_LOOP_INIT && !loop_init_declares(ini)
             && ini->child_count > 0 && ini->children[0]
-            && asg->child_count > 0 && asg->children[0]
-            && ident_same(ini->children[0], src, src + asg->children[0]->tok_start,
-                          asg->children[0]->tok_len);
+            && asg->child_count > 0 && asg->children[0]) {
+            const Node *an = asg->children[0];
+            const char *nm = src + an->tok_start;
+            if (ident_same(ini->children[0], src, nm, an->tok_len)) {
+                if (root->children[2] == asg) return 1;
+                if (tk_binder_at(fn, src, an, nm, an->tok_len, NULL)
+                    == tk_binder_at(fn, src, ini->children[0], nm, an->tok_len, NULL))
+                    return 1;
+            }
+        }
     }
     for (int i = 0; i < root->child_count; i++)
-        if (bare_init_step(root->children[i], src, asg)) return 1;
+        if (bare_init_step_rec(fn, root->children[i], src, asg)) return 1;
     return 0;
+}
+static int bare_init_step(const Node *root, const char *src, const Node *asg) {
+    return bare_init_step_rec(root, root, src, asg);
+}
+/* let_mut_fix (127.468 (1)) -- the E4070 `fix` for an immutable `let` that
+ * `decl` (a NODE_BIND_STMT) declares, worded from the declaration's own
+ * spelling: "change 'let g=' to 'let g=mut.'", or for a typed binding
+ * "change 'let g:i64=' to 'let g:i64=mut.'" (the rewrite --migrate makes).
+ * The fixed text "let g=" did not occur in `let g:i64=5`.  The spelling is
+ * the source from `let` through the first `=`; 0 (no fix, AGENTS 6) when
+ * that is not found on the line, or when the spelling occurs more than once
+ * in the file -- a redeclared name (`let g=1;` ... `let g=2;`), or the same
+ * spelling elsewhere, where the edit would not say which declaration. */
+static int let_mut_fix(const char *src, const Node *decl, char *fix, size_t fsz) {
+    if (!src || !decl || decl->kind != NODE_BIND_STMT) return 0;
+    const char *s = src + decl->start;
+    if (strncmp(s, "let", 3) != 0 || !(s[3] == ' ' || s[3] == '\t')) return 0;
+    int k = 3;
+    while (s[k] && s[k] != '=' && s[k] != '\n' && s[k] != ';' && k < 200) k++;
+    if (s[k] != '=') return 0;
+    char sp[208]; memcpy(sp, s, (size_t)k + 1); sp[k + 1] = '\0';
+    int occ = 0;
+    for (const char *p = strstr(src, sp); p; p = strstr(p + 1, sp)) occ++;
+    if (occ != 1) return 0;
+    snprintf(fix, fsz, "change '%s' to '%smut.' to make it mutable", sp, sp);
+    return 1;
 }
 /* lex_binder_rec — the node that binds `nm` lexically at `use` (a NODE_PARAM,
  * NODE_LOOP_INIT, NODE_MATCH_ARM, or a NODE_BIND_STMT / NODE_MUT_BIND_STMT),
@@ -1922,11 +1986,38 @@ static const Node *fnval_bind_rec(const Node *a, const char *src, const Node *us
 }
 static const Node *in_tree_use(const Ctx *cx, const Node *use);
 static const Node *fnval_binding(Ctx *cx, const Node *ident) {
-    if (!cx->fn_node || !ident || ident->kind != NODE_IDENT) return NULL;
+    if (!ident || ident->kind != NODE_IDENT) return NULL;
     char nb[128]; TOKSTR(nb, cx->src, ident);
     int found = 0;
     const Node *use = in_tree_use(cx, ident);
-    return fnval_bind_rec(cx->fn_node, cx->src, use, nb, (int)strlen(nb), &found);
+    /* 127.469: outside any function (a module-level initialiser, or the
+     * body of a module-level closure `let k=fn(p:(i64):i64):i64{<p(4)};`)
+     * the lexical search runs from the module root, so the closure's own
+     * parameters and locals shadow a module-level `let` of the same name,
+     * exactly as they do inside a function.  A flat scan of the module's
+     * lets alone judged `p(4)` / a shadowing `ad(..)` against the global
+     * (false E4026/E4031) or left it unrecorded (lowered as its argument). */
+    const Node *lroot = cx->fn_node ? cx->fn_node : cx->root;
+    const Node *b = !lroot ? NULL : fnval_bind_rec(lroot, cx->src, use, nb, (int)strlen(nb), &found);
+    if (b || !cx->root) return b;
+    /* 127.469: no parameter or local is in force, so the name may be a
+     * module-level `let h=fn..;` (declared anywhere: a function body runs
+     * after every global is set).  Unrecorded, a call `h(1)` was never
+     * judged against h's signature and codegen lowered it as its argument
+     * (h(1) returned 1; a zero-argument h failed the build with E9003). */
+    for (int i = 0; i < cx->root->child_count; i++) {
+        const Node *d = cx->root->children[i];
+        const Node *list = (d && d->kind == NODE_MODULE) ? d : NULL;
+        int n = list ? list->child_count : 1;
+        for (int j = 0; j < n; j++) {
+            const Node *st = list ? list->children[j] : d;
+            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+                && st->child_count > 0
+                && ident_same(st->children[0], cx->src, nb, (int)strlen(nb)))
+                return st;
+        }
+    }
+    return NULL;
 }
 /* The signature a function-value binding holds, or NULL. */
 static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
@@ -1947,9 +2038,10 @@ static Type *fnval_bind_sig(Ctx *cx, const Node *b, int depth) {
     if (init->kind == NODE_CLOSURE) return params_sig(cx, init, 1);
     if (init->kind == NODE_FUNC_REF) return func_ref_sig(cx, init);
     if (init->kind == NODE_IDENT) {
-        int found = 0;
-        char nb[128]; TOKSTR(nb, cx->src, init);
-        const Node *ib = fnval_bind_rec(cx->fn_node, cx->src, init, nb, (int)strlen(nb), &found);
+        /* 127.469: fnval_binding, not the enclosing function alone, so a
+         * copy `let q=ad;` of a module-level function value inherits ad's
+         * signature (unrecorded, `q(2)` was lowered as its argument). */
+        const Node *ib = fnval_binding(cx, init);
         /* 127.276: `let g=inner` -- the bare name of a module function, as
          * `&inner` is.  Its signature (error type included) is what a call
          * `g(..)` is judged against and what codegen keys the error channel
@@ -2658,6 +2750,56 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
 }
 
 /*
+ * 138.40 (T-39) — the record name a user-module call returns, when no module
+ * this file imports (and nothing this file declares) provides that record.
+ *
+ * `i=srv:server;` where server.tki says `handle` returns `res`, a type of
+ * `proto` that this file does not import: the checker cannot adopt the
+ * record (imported_struct_type finds nothing), so `r.text` used to be read on
+ * an untyped value and pass --check, while codegen -- which registers only
+ * the records of imported modules -- refused the same read with E4034.  The
+ * spec puts types in module scope only through an import (semantics.md 4.1,
+ * 6.1), so the conservative answer is that both refuse.
+ *
+ * `base` is the field read's receiver: the call itself (`srv.handle(x).text`)
+ * or an un-annotated `let`/`mut` bound to it.  Answers only a bare record
+ * name; a scalar, a compound spelling (`[..]`, `(..):..`), a `T!E`, a std
+ * module and a name this file declares are all left alone (NULL).  The answer
+ * is copied into `out`.
+ */
+static const char *unimported_user_ret(Ctx *cx, const Node *base,
+                                       char *out, size_t outsz,
+                                       char *callee, size_t calleesz) {
+    static const char *const scal[] = {
+        "i64","u64","f64","str","bool","void","i8","i16","i32","u8","u16",
+        "u32","f32","byte","any",NULL };
+    if (!base) return NULL;
+    if (base->kind == NODE_IDENT) {
+        char nb[128]; TOKSTR(nb, cx->src, base);
+        const Node *b = local_in_force(cx, nb, (int)strlen(nb), base);
+        if (!b || b->kind == NODE_LOOP_INIT || b->child_count != 2) return NULL;
+        base = b->children[1];
+        if (!base) return NULL;
+    }
+    if (base->kind != NODE_CALL_EXPR || !user_module_call(cx, base)) return NULL;
+    const Node *cal = base->children[0];
+    char ab[128]; TOKSTR(ab, cx->src, cal->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, cal->children[1]);
+    const char *ret = imported_func_ret(cx->env->names, ab, mb);
+    if (!ret || !*ret) return NULL;
+    for (const char *q = ret; *q; q++)
+        if (!((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+              || (*q >= '0' && *q <= '9') || *q == '_')) return NULL;
+    for (int i = 0; scal[i]; i++) if (!strcmp(ret, scal[i])) return NULL;
+    if (imported_type_lookup(cx->env->names, ret)) return NULL;
+    if (tc_lookup(cx->env->names->module_scope, ret, (int)strlen(ret)))
+        return NULL;
+    snprintf(out, outsz, "%s", ret);
+    snprintf(callee, calleesz, "%s.%s", ab, mb);
+    return out;
+}
+
+/*
  * bind_init_type — the type of an *un-annotated* binding `let x = init`,
  * recovered from its initialiser, or NULL when the checker must keep the
  * binding unknown.
@@ -3169,6 +3311,32 @@ static Type *std_i64_ok_payload(Ctx *cx, const Node *scr, int depth) {
     return mk_type(cx->env->arena, TY_I64);
 }
 
+/*
+ * 127.484 -- the payload type of the variant an arm names, when the
+ * scrutinee is a value of a declared SUM type (`scr`, the scrutinee's
+ * inferred type), or NULL.  `t=$shape{$circle:f64;..}; mt s {$circle:r r*r}`
+ * bound `r` as unknown: nothing about it was checked, and codegen, asking
+ * the checker for the arm's type, predicted an i64 product.  The variant's
+ * declared payload is the binding's type, as the lowering binds it.  A
+ * record (E4080's case), an unknown or unresolved payload, and a label that
+ * is not one of the sum's variants are not answered.
+ */
+static int reraise_err_shape(Ctx *cx, const char *nm);
+static Type *sum_variant_payload_type(Ctx *cx, const Type *scr, const Node *arm) {
+    if (!scr || scr->kind != TY_STRUCT || !scr->name || !scr->field_names
+        || !scr->field_types || !arm || arm->child_count < 1 || !arm->children[0]
+        || arm->children[0]->kind != NODE_TYPE_IDENT) return NULL;
+    const char *nm = scr->name[0] == '$' ? scr->name + 1 : scr->name;
+    if (reraise_err_shape(cx, nm) != 2) return NULL;
+    char tag[128]; TOKSTR(tag, cx->src, arm->children[0]);
+    for (int i = 0; i < scr->field_count; i++) {
+        if (!scr->field_names[i] || strcmp(scr->field_names[i], tag)) continue;
+        Type *ft = scr->field_types[i];
+        return (ft && ft->kind != TY_UNKNOWN) ? ft : NULL;
+    }
+    return NULL;
+}
+
 static Type *arm_bind_type(Ctx *cx, const Node *m, const Node *arm) {
     Type *u = mk_type(cx->env->arena, TY_UNKNOWN);
     if (!arm->children[0] || m->child_count < 1) return u;
@@ -3339,12 +3507,16 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
         char nb[128]; TOKSTR(nb, cx->src, scr);
         int nlen = (int)strlen(nb);
         if (arm_bind_lookup(cx, nb, nlen, scr)) return NULL;
-        for (int pi = 0; pi < cx->fn_node->child_count; pi++) {
-            const Node *pc = cx->fn_node->children[pi];
-            if (!pc || pc->kind != NODE_PARAM || pc->child_count < 2) continue;
-            char pn[128]; TOKSTR(pn, cx->src, pc->children[0]);
-            if (strcmp(pn, nb) != 0) continue;
-            Type *pt = resolve_type(cx, pc->children[1]);
+        /* The binder in force at the use, found lexically: a closure
+         * parameter, loop-init `let` or body `let` of the same name shadows
+         * a function parameter.  A parameter binder is judged by its own
+         * annotation, whether it belongs to the function or to a closure
+         * inside it: it is exactly what the subject names. */
+        const Node *bd = tk_binder_at(cx->fn_node, cx->src,
+                                      in_tree_use(cx, scr), nb, nlen, NULL);
+        if (bd && bd->kind == NODE_PARAM) {
+            if (bd->child_count < 2 || !bd->children[1]) return NULL;
+            Type *pt = resolve_type(cx, bd->children[1]);
             return pt && kind_is_scalar(pt->kind) ? type_name(pt) : NULL;
         }
         const Node *bn = local_in_force(cx, nb, nlen, scr);
@@ -4809,6 +4981,23 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
             const Type *h = opaque_handle_type(pt) ? pt : at;
             const Type *o = h == pt ? at : pt;
             int oc = tki_arg_class(o);
+            /* 138.35: except an integer INTO a handle slot -- only the
+             * literal 0 (the null handle) may stand for one. */
+            if (h == pt && forged_handle_arg(cx->src, an, at, pt)) {
+                if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+                char msg[512], en[96], gn[96];
+                snprintf(en, sizeof en, "%s", type_name(pt));
+                snprintf(gn, sizeof gn, "%s", type_name(at));
+                snprintf(msg, sizeof msg,
+                         "type mismatch: argument %d of '%s.%s' is declared "
+                         "'%s' (%s.tki), got '%s' -- an opaque std handle is "
+                         "read by the runtime as a pointer, so only a handle "
+                         "or the literal 0 (the null handle) may be passed",
+                         i + 1, alias, member, en, mpath + 4, gn);
+                diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col,
+                          msg, "expected", en, "got", gn, (const char *)NULL);
+                continue;
+            }
             if (scalar_int_type(o)) continue;
             if (o->kind == TY_STRUCT && o->name && h->name
                 && strcmp(o->name, h->name) == 0) continue;
@@ -4924,7 +5113,8 @@ static void check_user_fn_args(Ctx *cx, const Node *call) {
         if (!pt || pt->kind == TY_UNKNOWN || pt->kind == TY_VOID
             || (pt->kind == TY_FUNC && !func_has_sig(pt))
             || !at || at->kind == TY_UNKNOWN) continue;
-        if (types_compat(at, pt) || lit_narrows(cx->src, an, pt)) continue;
+        if ((types_compat(at, pt) || lit_narrows(cx->src, an, pt))
+            && !forged_handle_arg(cx->src, an, at, pt)) continue;   /* 138.35 */
         if (subtree_reported(cx, an) || !tc_first_report(cx, an)) continue;
         emit_mm(cx, an, pt, at, NULL);
     }
@@ -5026,9 +5216,13 @@ static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
         Type *at = arg->rtype;
         if (!at) continue;
         int clash = 0;
+        /* 138.35 (owner answer T-67): an integer in an S slot, other than
+         * the literal 0 (the NULL a wrapper's `if (!s)` answers), is read
+         * as an address: `str.toupper(42)` died with SIGSEGV. */
         if (k == 'S')
             clash = at->kind == TY_ARRAY || at->kind == TY_MAP
-                 || at->kind == TY_STRUCT;
+                 || at->kind == TY_STRUCT
+                 || (is_integer(at) && !int_lit_zero(cx->src, arg));
         else
             clash = at->kind == TY_STR
                  && !(idx < 32 && (bytemask & (1u << idx)));
@@ -5041,8 +5235,11 @@ static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
                  "'%s.%s' is read by the runtime as %s",
                  k == 'S' ? "'" : "", want, k == 'S' ? "'" : "",
                  type_name(at), idx + 1, mpath, member,
-                 k == 'S' ? "a C string, so a handle of another kind is "
-                            "read as text"
+                 k == 'S' ? (is_integer(at)
+                             ? "a C string, so an integer other than the "
+                               "literal 0 is read as an address"
+                             : "a C string, so a handle of another kind is "
+                               "read as text")
                           : "an array whose length precedes its first "
                             "element, which a str does not have");
         diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
@@ -6016,6 +6213,8 @@ static Type *std_union_of(Ctx *cx, char *rb, Type *lower) {
 
 static Type *std_slot_union(Ctx *cx, const Node *call) {
     char rb[192];
+    /* str.substr is read from its std.tki record like any other T!E since
+     * 127.493 typed it (127.475 special-cased the old gen:abi placeholder). */
     if (!std_nonscalar_ret(cx, call, rb, sizeof rb)) return NULL;
     return std_union_of(cx, rb, NULL);
 }
@@ -6063,6 +6262,30 @@ static Type *recv_slot_union(Ctx *cx, const Node *call) {
     if (strcmp(mb, "slice") != 0 && strcmp(mb, "substr") != 0
         && strcmp(mb, "substring") != 0) return NULL;
     Type *rt = recv_method_result_type(cx, call);
+    /* 127.475: and a str FIELD or array ELEMENT receiver (`p.name.slice(..)`
+     * on a `name:$str` field, `xs.get(0).slice(..)` on an `@($str)`), which
+     * recv_value_type does not establish but lowers to the same glue.  The
+     * receiver's own type is inferred (memoised; the 127.226 block already
+     * infers a field receiver) -- only for these three members, so no other
+     * receiver method gains checks.  An import-alias path (`lib.c.slice`) is
+     * a module member, not a value, and is left alone. */
+    if (!rt) {
+        const Node *recv = callee->children[0];
+        if (recv && (recv->kind == NODE_FIELD_EXPR || recv->kind == NODE_INDEX_EXPR)
+            && recv->child_count >= 2 && recv->children[0]) {
+            const Node *b = recv->children[0];
+            int is_mod = 0;
+            if (b->kind == NODE_IDENT && !alias_shadowed(cx, b)) {
+                char ab[128]; TOKSTR(ab, cx->src, b);
+                char pb[256];
+                if (import_module_path(cx, ab, pb, sizeof pb)) is_mod = 1;
+            }
+            if (!is_mod && b->kind != NODE_TYPE_IDENT) {
+                Type *vt = recv->rtype ? recv->rtype : infer(cx, recv);
+                if (vt && vt->kind == TY_STR) rt = vt;
+            }
+        }
+    }
     if (!rt || rt->kind != TY_STR) return NULL;
     char rb[32]; snprintf(rb, sizeof rb, "str!sliceerr");
     return std_union_of(cx, rb, rt);
@@ -7091,8 +7314,25 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * "expected str, got func" on stdlib/path.tk (a file removed later,
          * 135.14). */
         const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
+        /* 127.469: the lexical binder in force, searched from the enclosing
+         * function or, outside one, from the module root.  A closure's own
+         * parameter shadows the module declaration (`let ad=fn..;` then
+         * `fn(ad:i64):i64{<ad*2}` typed `ad` as the function: a false
+         * E4031), and so does a local or loop variable of a module-level
+         * closure, which local_in_force (function bodies only) never sees. */
+        if (d&&d->def_node&&!shadow) {
+            const Node *lroot=cx->fn_node?cx->fn_node:cx->root;
+            const Node *lb=lroot?tk_binder_at(lroot,cx->src,in_tree_use(cx,node),nb,nlen,NULL):NULL;
+            if (lb&&lb->kind==NODE_PARAM)
+                return lb->child_count>1&&lb->children[1]
+                     ? resolve_type(cx,lb->children[1]) : mk_type(A,TY_UNKNOWN);
+            if (lb&&!cx->fn_node&&closure_between(cx->root,lb)
+                &&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_MUT_BIND_STMT
+                   ||lb->kind==NODE_LOOP_INIT))
+                shadow=lb;
+        }
         /* If not found at module scope, check current function's local binds. */
-        if (((!d||!d->def_node)||shadow)&&cx->fn_node) {
+        if (((!d||!d->def_node)&&cx->fn_node)||shadow) {
             /* Search the function body for local bindings with type annotations. */
             const Node *bn=shadow?shadow:find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
@@ -7504,11 +7744,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                                 : node->op==TK_STAR ? "*" : "/";
                 if (tc_can_emit(cx)) {
                     char msg[256];
-                    if (!is_numeric(l) && !is_numeric(r))
+                    /* 127.474: "both sides are" only when they are the
+                     * same type.  `str.slice(t;0;1)+"z"` said both were
+                     * 'str!$sliceerr' (and the mirror, both 'str'), so a
+                     * repair of one side met an E4031 it was never told
+                     * of.  Each side is named. */
+                    if (!is_numeric(l) && !is_numeric(r) && types_equal(l, r))
                         snprintf(msg, sizeof msg,
                                  "'%s' requires numeric operands: both sides are "
                                  "'%s'", opn, type_name(bad));
-                    else
+                    else if (!is_numeric(l) && !is_numeric(r)) {
+                        char ln[128];
+                        snprintf(ln, sizeof ln, "%s", type_name(l));
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: the left side is "
+                                 "'%s' and the right side is '%s'", opn, ln,
+                                 type_name(r));
+                    } else
                         snprintf(msg, sizeof msg,
                                  "'%s' requires numeric operands: the %s side is "
                                  "'%s'", opn, !is_numeric(l) ? "left" : "right",
@@ -7599,7 +7851,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     Type *at=infer(cx,an);
                     Type *pt=(ft&&func_has_sig(ft))?ft->field_types[i-1]:NULL;
                     if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
-                        &&!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                        &&((!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                           ||forged_handle_arg(cx->src,an,at,pt)))   /* 138.35 */
                         emit_mm(cx,an,pt,at,NULL);
                 }
             }
@@ -7668,7 +7921,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         Type *at=infer(cx,an);
                         Type *pt=ft->field_types[i];
                         if (at&&pt&&at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
-                            &&!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                            &&((!types_compat(at,pt)&&!lit_narrows(cx->src,an,pt))
+                               ||forged_handle_arg(cx->src,an,at,pt)))   /* 138.35 */
                             emit_mm(cx,an,pt,at,NULL);
                     }
                 }
@@ -7857,8 +8111,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     if (ar&&tc_first_report(cx,node->children[ai]))
                         emit_mm(cx,node->children[ai],pt,ar,NULL);
                 }
-                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)
-                    &&!lit_narrows(cx->src,node->children[ai],pt)) {   /* 127.230 (4) */
+                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN
+                    &&((!types_compat(at,pt)
+                        &&!lit_narrows(cx->src,node->children[ai],pt))   /* 127.230 (4) */
+                       ||forged_handle_arg(cx->src,node->children[ai],at,pt))) { /* 138.35 */
                     /* 127.220 item 4: "cast argument to str using 'as'" was
                      * offered for a [byte] (any array, map, struct) passed
                      * as str, and `as` does not convert those.  The cast is
@@ -8293,6 +8549,28 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     return func_has_sig(drt->field_types[i])
                            ?drt->field_types[i]:mk_type(A,TY_UNKNOWN);
         }
+        /* 138.40: a record another user module returns, whose module this
+         * file does not import -- codegen cannot establish its layout and
+         * answers E4034; --check now says the same.  No `fix`: which import
+         * provides the record is not decidable from this file. */
+        if (base->kind==TY_UNKNOWN&&node->children[0]) {
+            char rn[128], cn[260];
+            if (unimported_user_ret(cx,node->children[0],rn,sizeof rn,cn,sizeof cn)) {
+                if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                    char msg[600], got[160];
+                    snprintf(msg,sizeof(msg),
+                             "no struct in scope declares a field '%s', and the type "
+                             "of this value is not established: '%s' returns '$%s', "
+                             "a type of a module this file does not import",
+                             fname,cn,rn);
+                    snprintf(got,sizeof(got),"$%s",rn);
+                    diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                              "expected","a value of an established struct type",
+                              "got",got,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+        }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
@@ -8465,7 +8743,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * (immutable let) or NODE_PARAM, emit E4070.
          * NODE_MUT_BIND_STMT and an `lp(let ..)` NODE_LOOP_INIT are
          * mutable; a bare `lp(i=..)` init binds nothing (127.289). */
-        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
+        /* 127.469: a module-level closure (`let k=fn(){g=7;..};`) has no
+         * enclosing function; its binders are searched from the module
+         * root, where an earlier module-level `let` is found lexically. */
+        const Node *asc=cx->fn_node?cx->fn_node:cx->root;
+        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&asc) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
             int immutable=0;
@@ -8485,7 +8767,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * not mutable.  Until 127.281 only the function's own
              * parameters were checked, so `fn(a:i64):i64{a=a+1;<a}` and
              * `mt r{$ok:v if(c){v=v+1;v}el{v};..}` compiled. */
-            const Node *lb=tk_binder_at(cx->fn_node,cx->src,node->children[0],nb,nlen,NULL);
+            const Node *lb=tk_binder_at(asc,cx->src,node->children[0],nb,nlen,NULL);
             if (lb&&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_PARAM
                      ||lb->kind==NODE_MATCH_ARM)) immutable=1;
             /* 127.310: no local binder, and the module-level name is a
@@ -8535,10 +8817,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         else
                             snprintf(msg,sizeof(msg),
                                 "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
-                        char fix[256];
-                        snprintf(fix,sizeof(fix),
-                            "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
-                        if (!alias&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                        /* 127.468 (1): worded from the declaration's spelling,
+                         * and absent for a name declared more than once at
+                         * module level (the assignment's binding is then not
+                         * the one a fix on the first would rewrite). */
+                        char fix[512];
+                        int mdecls=0;
+                        for (int ri=0;cx->root&&ri<cx->root->child_count;ri++) {
+                            const Node *rd=cx->root->children[ri];
+                            if (rd&&(rd->kind==NODE_BIND_STMT||rd->kind==NODE_MUT_BIND_STMT)
+                                &&rd->child_count>0&&ident_same(rd->children[0],cx->src,nb,nlen))
+                                mdecls++;
+                        }
+                        int has_fix=!alias&&mdecls==1&&md->def_node
+                            &&let_mut_fix(cx->src,md->def_node,fix,sizeof fix);
+                        if (has_fix&&!lp_init&&!bare_init_step(asc,cx->src,node))
                             diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                                 "expected","mutable binding","got","immutable binding",
                                 "fix",fix,(const char*)NULL);
@@ -8579,12 +8872,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         snprintf(msg,sizeof(msg),
                             "cannot assign to immutable binding '%s'; a %s cannot be assigned, copy it into a 'let %s=mut.' first",
                             nb,lb->kind==NODE_MATCH_ARM?"match-arm binding":"parameter",nb);
-                    char fix[256];
-                    snprintf(fix,sizeof(fix),
-                        "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
+                    char fix[512];
                     /* 127.289: nor on the step of a loop whose bare init
-                     * assigns the same binding (bare_init_step). */
-                    if (is_let&&!lp_init&&!bare_init_step(cx->fn_node,cx->src,node))
+                     * assigns the same binding (bare_init_step).  127.468:
+                     * worded from the declaration (let_mut_fix). */
+                    if (is_let&&!lp_init&&!bare_init_step(asc,cx->src,node)
+                        &&let_mut_fix(cx->src,lb,fix,sizeof fix))
                         diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                             "expected","mutable binding","got","immutable binding",
                             "fix",fix,(const char*)NULL);
@@ -8794,6 +9087,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 cx->armb[k].name=cx->src+arm->children[1]->tok_start;
                 cx->armb[k].len=arm->children[1]->tok_len;
                 cx->armb[k].ty=arm_bind_type(cx,node,arm);
+                /* 127.484: a sum variant's payload. */
+                if (cx->armb[k].ty->kind==TY_UNKNOWN) {
+                    Type *vt=sum_variant_payload_type(cx,scr,arm);
+                    if (vt) cx->armb[k].ty=vt;
+                }
                 cx->armb[k].body=body;
                 pushed=1;
             }
@@ -8871,6 +9169,45 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     "takes '$err' whenever it is 0",st,st);
                 diag_emit(DIAG_ERROR,E4031,sn->start,sn->line,sn->col,msg,
                           "expected","T!E","got",st,(const char*)NULL);
+            }
+        }
+        /* 138.37 (loke T-66): variant arms on a KNOWN non-union scalar.
+         * `f=h(e:i64):$r{<mt e {$notfound:v ..;$permission:v ..;$io:v ..}}`
+         * passed --check and the build stopped with E9005 ("the sum type of
+         * the matched value is not established"): an integer has no variants
+         * for a label to select.  Judged only where mt_nonunion_scalar is
+         * certain of the scalar; a result match is 127.202's (above), and a
+         * label naming a primitive, an option side or a declared type is left
+         * to the type-named lowering.  No `fix`: whether a sum-typed value was
+         * meant, or integer-literal arms, is not decidable. */
+        if (!has_result_arm&&arm_tag_count>0) {
+            const char *st=mt_nonunion_scalar(cx,node->children[0],0);
+            const Node *vl=NULL;
+            static const char *const tl[]={"some","none","str","i64","i32","i16",
+                "i8","u64","u32","u16","u8","f64","f32","bool","byte","void",NULL};
+            for (int i=1;st&&i<node->child_count&&!vl;i++) {
+                const Node *arm=node->children[i];
+                if (!arm||arm->kind!=NODE_MATCH_ARM||arm->child_count<1||!arm->children[0]
+                    ||arm->children[0]->kind!=NODE_TYPE_IDENT) continue;
+                char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
+                int named_type=0;
+                for (int q=0;tl[q]&&!named_type;q++) if (!strcmp(tb,tl[q])) named_type=1;
+                if (!named_type&&cx->env->names) {
+                    Decl *d=tc_lookup(cx->env->names->module_scope,tb,(int)strlen(tb));
+                    if (d&&d->kind==DECL_TYPE) named_type=1;
+                    if (imported_type_lookup(cx->env->names,tb)) named_type=1;
+                }
+                if (!named_type) vl=arm->children[0];
+            }
+            if (vl&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char tb[128]; TOKSTR(tb,cx->src,vl);
+                char msg[384];
+                snprintf(msg,sizeof(msg),
+                    "type mismatch: expected a sum type, got '%s' -- '$%s' names a "
+                    "variant, and type '%s' has no variants, so no arm can be selected",
+                    st,tb,st);
+                diag_emit(DIAG_ERROR,E4031,vl->start,vl->line,vl->col,msg,
+                          "expected","a sum type","got",st,(const char*)NULL);
             }
         }
         /* 127.249 (2): a result match whose VALUE is used must have both
@@ -9341,6 +9678,7 @@ int type_check(const Node *ast, const char *src,
     cx.reported_count=0;
     cx.armb_count=0; cx.mt_discard=NULL; cx.resolving_n=0;   /* 138.13 */
     cx.if_discard=NULL; cx.valued_block=NULL;               /* 127.252 (2) */
+    cx.interp_host=NULL;                                    /* 127.476 */
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;

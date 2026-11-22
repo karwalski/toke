@@ -898,8 +898,8 @@
       "id": "acc-array",
       "family": "acc",
       "intent": "Accumulate values into a new @i64 in a loop.",
-      "applicability": "Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w), so it is linear too. The form b numbers below are the 2026-09-19 tkc 2.8.0 measurement (a timeout), which predates 127.229. Re-measured on tkc 3b469371 (2026-11-14, loadavg 5-7), a and b have equal RSS and allocation counts, and the faster of the two changed between runs (b +6.5% at N=16,384,000; a +8.6% at N=8,192,000). Ingesting either run would settle the canonical form by noise, so the new numbers are held for an owner decision (127.437). std.vec is a separate handle type needing `vec.toarray` at the end.",
-      "card_rule": "x=x.append(v), never x=x+@(v)",
+      "applicability": "Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); since 127.229 the literal self-update `x=x+@(v)` is lowered to the same in-place append call (tk_array_append_inplace_w, pinned by conformance test C267), and `tkc -O2` gives forms a and b identical machine code (recorded in the entry's `identical_code` proof). Under protocol §6 step 3 (owner decision 4.11 (d), 2026-11-15) the two are tied and the tie keeps the incumbent, so `.append` stays canonical; b's 5 fewer `--min` bytes do not displace it, and the wall difference between a and b in any run is noise. `x=x+@(v)` is not slower, only not the canonical spelling. std.vec is a separate handle type needing `vec.toarray` at the end.",
+      "card_rule": "x=x.append(v)",
       "candidates": [
         {
           "form": "a",
@@ -913,24 +913,24 @@
             "qwen25coder": 41,
             "cl100k": 39
           },
-          "wall_ms_median": 81.94,
+          "wall_ms_median": 65.503,
           "wall_ci95": [
-            80.358,
-            93.237
+            53.216,
+            76.999
           ],
-          "rss_kb_median": 260912,
+          "rss_kb_median": 66656,
           "allocs": {
-            "calls": 226,
-            "bytes": 268464611
+            "calls": 225,
+            "bytes": 67146948
           },
-          "bigO_ratio": 3.469,
-          "pat_n": 16384000,
+          "bigO_ratio": 2.077,
+          "pat_n": 4096000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
         {
           "form": "b",
-          "label": "`x=x+@(v)` — in-place append since 127.229 (its 2026-09-19 numbers predate that)",
+          "label": "`x=x+@(v)` — in-place append since 127.229; identical code to a",
           "fixture": "patterns/acc-array/b.tk",
           "min_bytes": 69,
           "tokens": {
@@ -940,16 +940,19 @@
             "qwen25coder": 42,
             "cl100k": 40
           },
-          "wall_ms_median": 30000,
+          "wall_ms_median": 64.623,
           "wall_ci95": [
-            30000,
-            30000
+            55.292,
+            74.084
           ],
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": 99,
-          "pat_n": 16384000,
-          "runtime_verdict": "worse-bigO",
+          "rss_kb_median": 66640,
+          "allocs": {
+            "calls": 225,
+            "bytes": 67146948
+          },
+          "bigO_ratio": 2.5,
+          "pat_n": 4096000,
+          "runtime_verdict": "best",
           "token_verdict": "best"
         },
         {
@@ -964,18 +967,18 @@
             "qwen25coder": 47,
             "cl100k": 45
           },
-          "wall_ms_median": 86.586,
+          "wall_ms_median": 73.551,
           "wall_ci95": [
-            82.3,
-            105.455
+            68.894,
+            85.576
           ],
-          "rss_kb_median": 259664,
+          "rss_kb_median": 67760,
           "allocs": {
-            "calls": 223,
-            "bytes": 399535915
+            "calls": 222,
+            "bytes": 99914300
           },
-          "bigO_ratio": 3.513,
-          "pat_n": 16384000,
+          "bigO_ratio": 1.92,
+          "pat_n": 4096000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
@@ -994,14 +997,26 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "67d244c78216082e7be2dca1fb7bdd2b2798df83",
-        "tkc_version": "toke 2.8.0",
+        "tkc_sha": "0558545d5b78",
+        "tkc_version": "toke 3.2.0 (git 0558545d5b78)",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "20260919-152046.json",
-        "date": "2026-09-19",
+        "bench_result": "20261123-015310.json",
+        "date": "2026-11-22",
         "load_warning": true
-      }
+      },
+      "identical_code": [
+        {
+          "forms": [
+            "a",
+            "b"
+          ],
+          "tkc_sha": "0558545d5b78",
+          "text_sha256": "0543b0a6b8cdfdecbf67e6803dcc2716c76bcac13a80d22790bb76a4f1d36a86",
+          "conform": "C267",
+          "date": "2026-11-23"
+        }
+      ]
     },
     {
       "id": "acc-map-build",

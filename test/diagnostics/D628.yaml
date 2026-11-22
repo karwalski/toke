@@ -1,0 +1,16 @@
+id: D628
+series: D
+description: "138.35 (T-67): an integer where the runtime reads a C string -- str.toupper(42), a gen:abi member -- is E4031 with NO fix"
+input: |
+  m=t;
+  i=str:std.str;
+  f=main():i64{
+    let a=str.toupper(42);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "i64"

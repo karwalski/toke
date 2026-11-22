@@ -51,13 +51,17 @@ A handler may build its response as a literal, `$res{status:201;headers:@(@("Loc
 
 ### $httpclient
 
-An opaque client handle created by `http.client`. Holds connection pool state and applies a shared timeout to all requests issued through it.
+An opaque client handle created by `http.client`. Holds connection pool state and applies a shared per-read timeout to all requests issued through it.
 
 | Field | Type | Meaning |
 |-------|------|---------|
 | baseurl | $str | Base URL prepended to all request paths |
 | poolsize | u64 | Maximum number of pooled connections |
-| timeoutms | u64 | Per-request timeout in milliseconds |
+| timeoutms | u64 | Per-read timeout in milliseconds (30000): how long each wait for data may take |
+
+**A client written as a record literal** — `$httpclient{baseurl:"http://h";poolsize:4;timeoutms:5000}` — is a client with those three fields, no proxy and none of the [request controls](#request-controls). The proxy and the controls are not record fields, so only a client from `http.client`, or from `http.withproxy` and the other `with` options, carries them. Each `with` option accepts a literal client and returns a client with the one setting added (story 138.24: the client used to read these settings from past the end of a literal, so a literal client took a spurious cap or deadline, and `http.withproxy` on one could crash).
+
+**`timeoutms` is per read, not per request** (story 138.34). It is the socket's receive timeout (`SO_RCVTIMEO`), which restarts whenever data arrives, so a server that sends a byte inside every timeout keeps a request open indefinitely. Until 138.34 this page called it a per-request timeout. To bound a request as a whole, use [`http.withdeadline`](#httpwithdeadlineclient-httpclient-ms-u64-httpclient). To bound the body a response may carry, use [`http.withmaxbody`](#httpwithmaxbodyclient-httpclient-bytes-u64-httpclient). Both are off on a client from `http.client`.
 
 ### $httpresp
 
@@ -746,7 +750,7 @@ f=main():i64{
 
 ### http.client(baseurl: $str): $httpclient
 
-Creates an HTTP client configured to send all requests relative to `baseurl`. The returned handle maintains a connection pool and a default timeout; pass it to `http.stream`, `http.withproxy` and `http.downloadfile`, the exported functions that take one.
+Creates an HTTP client configured to send all requests relative to `baseurl`. The returned handle maintains a connection pool and a default per-read timeout (`timeoutms`, 30 s). Pass it to the client calls (`http.clientget` and the rest), to `http.stream` and `http.downloadfile`, and to the options that return a changed copy: `http.withproxy` and the [request controls](#request-controls).
 
 ```toke
 i=http:std.http;
@@ -759,11 +763,82 @@ f=main():void{
 
 Returns a copy of `client` that sends its requests through the HTTP proxy at `proxyurl` (`http://host:port`); `client` itself is unchanged. The client calls (`http.clientget` and the rest) use it. A plain `http://` request goes to the proxy with the absolute URL in its request line. An `https://` request first asks the proxy for a tunnel (`CONNECT host:port`) and then negotiates TLS with the server through it. The server's certificate is verified exactly as without a proxy. A proxy that refuses the tunnel is `$err`. Before story 135.26 the client started TLS with the proxy itself, so every https request through a proxy failed.
 
+### Request controls
+
+The next three functions are the client's request controls (stories 138.24 and 138.25; spec amendment [138.24](/docs/decisions/138.24-http-client-controls/)). They exist for a program that fetches URLs it does not control. Each works like `http.withproxy`: it returns a copy of the client with one setting changed and leaves the original unchanged, so the controls can be combined in any order. A client from `http.client` has none of them, and every call behaves as it always has.
+
+They apply to `http.clientget`, `http.clientpost`, `http.clientput` and `http.clientdelete`. `http.stream` and `http.downloadfile` read on separate code paths, so they refuse a client that carries any of the controls: `http.stream` answers `$err`, and `http.downloadfile` returns `-1`. Silently ignoring a control could fetch something the caller meant to refuse. Each failure below is an `$httperr` with `code` 0, a transport failure.
+
+```toke
+m=fetchdemo;
+i=http:std.http;
+i=net:std.net;
+i=io:std.io;
+f=fetch(name:$str;addr:$str):$str{
+  let c=http.client("https://\(name)");
+  let c2=http.withmaxbody(http.withdeadline(http.withconnectaddr(c;addr);5000);1048576);
+  <mt http.clientget(c2;"/data.json") {$ok:r "status \(r.status), \(r.body.len) bytes"; $err:e e.msg}
+};
+f=main():i64{
+  let addrs=mt net.resolve("example.com") {$ok:a a; $err:e @("")};
+  io.println(fetch("example.com";addrs.get(0)));
+  <0
+};
+```
+
+A real caller checks every address `net.resolve` returns against its own rules (private, loopback and link-local ranges, cloud metadata addresses) before it connects to one.
+
+### http.withdeadline(client: $httpclient; ms: u64): $httpclient
+
+Returns a copy of `client` whose requests must each finish within `ms` milliseconds of the call. The deadline covers the whole request:
+
+- connecting (and the proxy `CONNECT`, when there is a proxy);
+- the TLS handshake;
+- sending the request;
+- reading the response headers and body.
+
+A request that runs past it is `$err`. Its `msg` begins `request deadline exceeded (<ms> ms)`, then names the stage the request had reached, for example `request deadline exceeded (5000 ms) after 3 of 8 body bytes (Content-Length)`, `... during the TLS handshake` or `... before the header block ended (12 bytes)`. The deadline does not restart when data arrives, so it cuts off a server that sends one byte at a time inside `timeoutms`. `timeoutms` still applies to each wait within the deadline. A deadline of `0` has already passed, so every request fails at once. No value turns the deadline off: to drop it, use the client it was added to.
+
+A lookup of the URL's host name cannot be interrupted, because `getaddrinfo` blocks. The deadline is checked before the lookup starts and again when it returns. With `http.withconnectaddr` there is no lookup.
+
+### http.withmaxbody(client: $httpclient; bytes: u64): $httpclient
+
+Returns a copy of `client` whose requests answer `$err` for a response body longer than `bytes`. The read stops there: the connection is closed with the rest unread, and a cut-short body is never answered `$ok`. The `msg` begins `response body exceeds the cap (<bytes> bytes)`. When the check happens depends on how the body is framed:
+
+- **`Content-Length`:** a length over the cap is refused before the body is read (`...: Content-Length is 67108864`).
+- **Chunked:** the body is refused on the size line of the chunk that would take it past the cap, before that chunk's data is read. A size line, chunk extension or trailer line longer than the room the cap has left plus 8 KiB is refused too.
+- **Neither header (the body ends when the connection closes):** the body is refused as soon as it passes the cap.
+
+A body exactly `bytes` long is `$ok`. A cap of `0` admits only an empty body. The cap counts the body as the response delivers it (`r.body`, decoded from chunks). A `HEAD`, `204` or `304` response has no body, so it never exceeds the cap. The response header block is not capped.
+
+### http.withconnectaddr(client: $httpclient; addr: $str): $httpclient
+
+Returns a copy of `client` that connects to `addr` instead of looking up the URL's host. This is the equivalent of `curl --resolve`. `addr` is an IPv4 or IPv6 address literal (`"203.0.113.7"`, `"2001:db8::7"`), written without brackets, port or zone. It is connected to without any lookup, on the URL's port. Everything else still uses the URL's host:
+
+- the `Host` header;
+- the TLS server name (SNI);
+- the name the server's certificate must carry (verified as for every `https://` request).
+
+A program can therefore resolve a name with [`net.resolve`](/docs/stdlib/net/), check every address it gets, and connect to the address it checked without the name being resolved a second time to something else (DNS rebinding).
+
+`addr` is checked when a request is made, since this function has no error channel:
+
+- an `addr` that is not an address literal, such as `"localhost"`, is `$err` (`withconnectaddr: not an IPv4 or IPv6 address literal`) and nothing is sent;
+- a client that has both `withconnectaddr` and `withproxy` is `$err` (`withconnectaddr cannot be combined with withproxy`), because the proxy makes its own connection to the URL's host.
+- under a scoped `net` grant (138.19), both the URL's host and `addr` must be admitted by a `connect:` scope, because `addr` is the address actually dialled. A grant for the host alone does not reach an arbitrary address (CAP002 names whichever is missing).
+
 ### Client calls and route registration are different names
 
 `http.get`, `http.post`, `http.put`, `http.delete` and `http.patch` **register routes** — `http.get("/health"; &handler)` — and send nothing. The client calls have names of their own (story 138.3): before them, `http.get(client;"/health")` compiled and registered a GET route whose path was the client handle (nothing was sent; loke saw the call "succeed" from the 257th time on, once the route table was full), a client DELETE could not be reached at all, and `http.get(url)` returned `""` for a server that was not there. `http.get(url)` with one argument still compiles today to an untyped GET; use `http.geturl`, which has an error channel.
 
-A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse, HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
+A client call's `$err` is a **transport** failure: no connection, a send or receive that failed, a URL that does not parse or is refused (below), HTTPS without TLS in the build. An HTTP status is not an error — `404` is a response, and `r.status` is `404`. The error is an `$httperr` (`msg`, `code`).
+
+**A URL that would rewrite the request is refused before anything is sent** (story 138.24). The URL's host, port and path go into the request line and the `Host` header as they are, so a line break in any of them would let the URL add headers, or a second `Host`, of its own. Every client call — `http.geturl`, `http.postheaders`, `http.getheaders`, the `http.client…` calls, `http.stream` and `http.downloadfile` — therefore requires:
+
+- a host that is a DNS name or an IPv4 address: ASCII letters, digits, `-`, `.` and `_`. A bracketed IPv6 literal is not parsed; connect to an IPv6 address with [`http.withconnectaddr`](#httpwithconnectaddrclient-httpclient-addr-str-httpclient);
+- a port and a path with no control character (U+0000–U+001F, U+007F) and no space. Percent-encode a space as `%20`. Bytes above `0x7f` are sent as they are.
+
+A refused URL is `$err` (`code` 0) with the message `URL refused: the host must be a DNS name or an IPv4 address, and the port and path may not hold a space or a control character`. `http.downloadfile` returns `-1`, and a refused proxy URL is `failed to parse proxy URL`. Before this, a URL holding a line break was sent with the smuggled lines in it, and one holding a space or tab drew a `400` from the server.
 
 A response that ends before it is complete is also a transport failure (`code` 0): the connection closes, or a read times out, before the blank line that ends the headers, before all the bytes its `Content-Length` promises, or before the last (zero-size) chunk of a `Transfer-Encoding: chunked` body. `msg` says which, e.g. `incomplete response: connection closed after 3 of 8 body bytes (Content-Length)`. Until story 138.23 each of these answered `$ok` with whatever had arrived. A body with neither header ends when the server closes the connection; a `204`, a `304` and a `1xx` response have no body.
 
@@ -842,6 +917,33 @@ f=main():i64{
     $err:e "request failed"
   };
   io.println(r);
+  <0
+};
+```
+
+### http.getheaders(url: $str; headers: @(@($str))): $httpresp!$httperr
+
+`GET` a full `http://` or `https://` URL with the given headers, each an `@(name; value)` pair (story 138.27). It is `http.postheaders` without a body:
+
+- the headers are sent as given, with no `Content-Type` and no `Content-Length` added;
+- `Host` and `Content-Length` are set by the client, and giving either is `$err`;
+- a header name or value containing a carriage return or line feed is `$err`, and nothing is sent;
+- the `url` is held to the same rule: a host, port or path that would rewrite the request is `$err`, and nothing is sent (see [Client calls and route registration are different names](#client-calls-and-route-registration-are-different-names));
+- `$err` means a transport failure, and a status such as `404` is a response, in `r.status`;
+- over `https://` the server's certificate is verified, as for every client call.
+
+It takes a URL, not a client, so the [request controls](#request-controls) do not apply to it.
+
+```toke
+m=getheadersdemo;
+i=http:std.http;
+i=io:std.io;
+f=main():i64{
+  let h=@(@("User-Agent";"loke-update/1.0");@("Accept";"application/vnd.github+json"));
+  io.println(mt http.getheaders("https://api.github.com/repos/karwalski/toke/releases/latest";h) {
+    $ok:r "status \(r.status)";
+    $err:e e.msg
+  });
   <0
 };
 ```
@@ -933,7 +1035,7 @@ A sum type representing request-accessor failures, returned by `http.param` and 
 
 ### $httperr
 
-A struct, not a sum type: the `$err` of the client calls (`http.clientget`, `http.clientpost`, `http.clientput`, `http.clientdelete`, `http.geturl`) and of the stream functions `http.stream` and `http.streamnext`.
+A struct, not a sum type: the `$err` of the client calls (`http.clientget`, `http.clientpost`, `http.clientput`, `http.clientdelete`, `http.geturl`, `http.postheaders`, `http.getheaders`) and of the stream functions `http.stream` and `http.streamnext`. A request cut off by [`http.withdeadline`](#httpwithdeadlineclient-httpclient-ms-u64-httpclient) or refused by [`http.withmaxbody`](#httpwithmaxbodyclient-httpclient-bytes-u64-httpclient) is one too, with `code` 0 and a `msg` that begins `request deadline exceeded` or `response body exceeds the cap`.
 
 | Field | Type | Meaning |
 |-------|------|---------|

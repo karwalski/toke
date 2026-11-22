@@ -264,19 +264,15 @@ function, then reference the wrapper: `f=wrapper(){mod.func()}` and use
 
 ### 1. Separate compilation and manual linking
 
-Each `.tk` file must be compiled separately, then linked with clang. There is
-no single-command whole-program compilation.
+`tkc b.tk main.tk` builds several modules into one binary (114.40), so this
+applies only to a build that compiles each module itself (`--emit-llvm`) and
+links with its own clang command.
 
-**Workaround:** Use `toke --emit-deps` to get the list of required stdlib C
-files, then link with clang:
-
-```
-toke --emit-llvm main.tk
-clang main.ll $(toke --emit-deps main.tk) -o main
-```
-
-**Planned fix:** Multi-file batch compile (`toke --emit-llvm main.tk mod.tk`)
-is backlogged (Story 81b.5).
+**Workaround:** link the stdlib C sources and flags `tkc --emit-deps` prints
+for every module of the program, plus the flags it leaves to you; the recipe
+is in `docs/compiler/build-deps.md`, "Linking a program yourself" (138.42).
+The output is a list in sections (sources, `---`, flags, `---`, imported
+modules), so it cannot be pasted onto a clang command line as it stands.
 
 ### 2. Interface files must be in CWD or search path
 
@@ -293,10 +289,9 @@ The toke stdlib is implemented in C. You must link the required C source files
 (e.g. `str_glue.c`, `collections_glue.c`, `collections.c`) when building your
 program.
 
-**Workaround:** Use `toke --emit-deps` to get the full list of required files.
-Note that `str_glue.c`, `collections_glue.c`, and `collections.c` are always
-required (array/map built-in methods like `.push`, `.get`, `.append` depend on
-them).
+**Workaround:** link what `tkc --emit-deps` prints for each module (see 1
+above). It always includes the core modules' sources (`str`, `collections`,
+`args`), which the built-in array, map and string methods depend on.
 
 ### 4. No incremental compilation
 
@@ -342,10 +337,14 @@ and ADR-0012.
 A compiled program has **no** fs/net/env-write/process-spawn authority unless it
 is granted — via `tkc.toml [capabilities]` / `--allow-*` at compile time (baked)
 or `--allow-*` at run time. An ungranted sink fails closed with `CAP001`.
-Consumed `--allow-*` flags are stripped from the program's own argv. One
-coarsening remains: scoped grants (`--allow-net=host`, `--allow-read=/path`) are
-honoured at the **class** level (per-path/per-host scoping is a planned
-refinement). See [spec/capabilities.md](spec/capabilities.md).
+Consumed `--allow-*` flags are stripped from the program's own argv. Since story
+138.19 a grant may be scoped to paths, `connect:` / `listen:` hosts and ports,
+commands and env keys (`CAP002` when the class is granted but not the scope), and
+run-time flags only narrow a baked grant set. Two limits remain: a quoted string in
+`tkc.toml` (`fs_read = "/srv/www"`) still grants the whole class until toke 3.4.0
+(W9012 warns), and the broker is a policy layer in the standard library, not an OS
+sandbox — native code (`extern` C, FFI) does not pass through it (OS-level
+enforcement is story 138.44). See [spec/capabilities.md](spec/capabilities.md).
 
 ### 5. Ambient-hardening behavioural changes (124.4h)
 

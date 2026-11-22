@@ -1414,7 +1414,10 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
     /* 121.42 (1): binding is net authority (ADR-0010).  router.serve --
      * and chart.serve and dashboard.serve, which serve through here -- bound
      * and listened in a --cap-enforce binary granted nothing. */
-    TK_REQUIRE(TK_CAP_NET);
+    {   /* 138.19: listen authority on the address and port bound below */
+        char ab[TK_CAP_ADDRSTRLEN];
+        TK_REQUIRE_NET(TK_CAP_NET_LISTEN, tk_cap_ip4str(addr.sin_addr.s_addr, ab), port);
+    }
     int srv = tk_bind_exclusive(&addr);
     if (srv < 0) {
         TkRouterErr e = {1, errno == EADDRINUSE

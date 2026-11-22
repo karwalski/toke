@@ -272,7 +272,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal render-stdlib-signatures check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -516,8 +516,13 @@ check-str-strlen:
 
 # The #else branch of every platform conditional, built.  Generalises what
 # test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
+# 127.450: under LINT_CC, as `lint` is.  It ran under the default cc -- GCC
+# on the Linux CI runner -- while the script's header flags are clang's
+# (-Wno-empty-translation-unit), so GCC failed the macro-only headers
+# src/build_info.h and src/version.h as empty translation units.
 lint-nonhost: $(BUILD_INFO_H)
-	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
+	$(LINT_CC_CHECK)
+	@CC='$(LINT_CC)' python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS) $(ANALYZE_HDRS)
 
 # 122.13 (10): the same three passes over ONE file (or a few), with the
 # skiplist entries for every other file out of scope rather than stale.
@@ -702,6 +707,10 @@ check-tki: check-tki-layout check-tki-names
 	python3 scripts/check_tki_coverage.py --internal-md-check
 	python3 scripts/check_stdlib_doc_quarantine.py
 	python3 scripts/check_stdlib_doc_exports.py
+	@# 127.456: docs/spec/stdlib-signatures.md is held to the .tki, which are
+	@# normative; its last section is generated (render-stdlib-signatures).
+	python3 scripts/check_stdlib_signatures.py --selftest
+	python3 scripts/check_stdlib_signatures.py --check
 	@# 135.17a: the generator agrees with every .tki, and every arity
 	@# disagreement it declines to fix is recorded with its reason.
 	python3 scripts/gen_tki.py --check
@@ -729,6 +738,11 @@ render-stdlib-doc-quarantine:
 # fails on drift. Never hand-write a second list — link to the generated page.
 render-tki-quarantine:
 	python3 scripts/check_tki_coverage.py --quarantine-md
+
+# 127.456: re-render the generated section of docs/spec/stdlib-signatures.md
+# (every module with no hand-written block) from stdlib/*.tki.
+render-stdlib-signatures:
+	python3 scripts/check_stdlib_signatures.py --write
 
 # 136.54 / 136.34: docs/reference/stdlib-internal.md -- exports marked
 # "internal": true, and every tk_* definition no interface reaches, by class.
@@ -890,6 +904,14 @@ test-asan-compiler: asan-selftest
 	@# 127.439: tkc too -- conform runs ./tkc, the symlink `all` makes, and
 	@# on a fresh checkout (CI) building $(BIN) alone left none to run.
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN) tkc
+	@# 127.449: ASan's redzones make tkc's recursive passes need several times
+	@# the stack of the shipped -O2 build.  C584's just-under-the-limit cases
+	@# (a 990-deep expression, 250 prefix operators) need 2-4 MiB in the
+	@# shipped build -- inside the default 8 MiB -- but 16-32 MiB instrumented,
+	@# so on 8 MiB they overflowed in types.c/llvm.c and failed.  The suite
+	@# runs with a 64 MiB stack (macOS's hard limit) so every case still runs
+	@# and an overflow past that is still reported.
+	ulimit -s 65520 2>/dev/null || echo "test-asan-compiler: WARNING: could not raise the stack limit to 64 MiB; C584 may overflow"; \
 	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" conform
 
 # The stdlib C unit tests, instrumented. A red result here is a true result:
@@ -1301,7 +1323,7 @@ test-ci: test-ci-green
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
 # 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics diff-codegen test-standalone
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics check-lint-rules diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1581,6 +1603,18 @@ check-open-epics:
 # documented in docs/reference/errors.md, and errors.md must not list dead codes.
 check-error-codes:
 	python3 scripts/check_error_codes.py
+
+# 138.41 -- every lint rule id in src/lint.c is named in CHANGELOG.md and has a
+# row in docs/compiler/lint-rules-v1.md's rule table. A new rule reports on
+# code nobody changed; loke's lint ratchet read 3.2.0's nested-if-ladder as a
+# regression because no release note named it. When cutting a release, also
+# run it with --since <previous tag>: every id added or removed since then must
+# be named in the new release's section. A changed rule keeps its id, so this
+# cannot see it; CONTRIBUTING.md asks for it by hand.
+.PHONY: check-lint-rules
+check-lint-rules:
+	python3 scripts/check_lint_rules_named.py --selftest
+	python3 scripts/check_lint_rules_named.py
 
 # 124.0b — differential codegen regression gate (root of trust). Fails if any
 # full-program test's observable behaviour (compile / exit / stdout) changed vs
@@ -2130,13 +2164,30 @@ test-stdlib-coverage:
 	    src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3 -lpthread
 	$(RUN_TEST) ./test/stdlib/test_stdlib_coverage
 
-bench:
+# 127.479: the stdlib benchmark (bench.yml). Its link line was a hand-kept
+# source list that rotted (capabilities.c, encoding.c, tk_runtime.c and -lz
+# all went missing as modules gained dependencies), so the workflow failed on
+# every main push. The list is now DERIVED from the module manifest
+# (src/stdlib_deps.c, via `tkc --emit-deps`) -- the same closure every
+# compiled toke program links -- for exactly the modules bench_stdlib.c
+# calls. The benchmark calls the C API directly, so the toke-facing
+# *_glue.c wrappers are left out. Add a module here when the benchmark
+# starts calling it; its dependencies follow automatically.
+BENCH_MODULES = str json file crypto time process env log
+BENCH_STUB    = test/stdlib/bench_deps.tk
+bench: $(BIN)
+	@set -e; \
+	{ echo 'm=benchdeps;'; \
+	  for m in $(BENCH_MODULES); do echo "i=$$m:std.$$m;"; done; \
+	  echo 'f=main():i64{<0};'; } > $(BENCH_STUB); \
+	deps=$$(TKC_STDLIB_DIR=$(CURDIR)/src/stdlib ./$(BIN) --emit-deps $(BENCH_STUB)) \
+	    || { rm -f $(BENCH_STUB); exit 1; }; \
+	rm -f $(BENCH_STUB); \
+	srcs=$$(printf '%s\n' "$$deps" | sed '/^---$$/,$$d' | grep -v '_glue\.c$$'); \
+	libs=$$(printf '%s\n' "$$deps" | sed '1,/^---$$/d'); \
+	echo "bench: linking" $$(printf '%s\n' "$$srcs" | sed 's|.*/||') $$libs; \
 	$(CC) -O2 -iquote src/stdlib -o test/stdlib/bench_stdlib \
-	    test/stdlib/bench_stdlib.c \
-	    src/stdlib/str.c src/stdlib/json.c src/stdlib/file.c \
-	    src/stdlib/crypto.c src/stdlib/tk_time.c src/stdlib/process.c \
-	    src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
-	    src/stdlib/db.c src/stdlib/http.c -lsqlite3 -lpthread
+	    test/stdlib/bench_stdlib.c $$srcs $$libs -lpthread
 	./test/stdlib/bench_stdlib
 
 # ── 123.11: performance-regression gate ────────────────────────────────────
@@ -2506,6 +2557,13 @@ fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
 # under either engine (libFuzzer's -runs=0 executes the given corpus and
 # exits), so it is the same check here and on CI.  Fails on any sanitizer
 # report, on a harness that replays nothing, or on a target with no seeds.
+# 127.480: libFuzzer takes EITHER corpus directories OR individual files, not
+# a mix.  Given the seed directory plus the adversarial files it printed
+# "Not a directory: <file>; exiting" and exited 1 before running anything, so
+# every target with adversarial inputs failed in the nightly while the filter
+# below hid the reason.  It is handed the seed FILES now, its "Executed"
+# lines are counted against the inputs (a replay that skips any input
+# fails), and a failure with no sanitizer line prints the output's tail.
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
 	@fail=0; for t in $(FUZZ_TARGETS); do \
@@ -2514,14 +2572,19 @@ fuzz-smoke: fuzz-120-22
 	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
 	  adv=$$(ls test/fuzz/corpus-adversarial/$${t}_* 2>/dev/null); \
 	  if [ "$(FUZZ_ENGINE_R)" = libfuzzer ]; then \
-	    out=$$($$b -runs=0 test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	    out=$$($$b -runs=0 test/fuzz/seeds/$$t/* $$adv 2>&1); rc=$$?; \
+	    ran=$$(printf '%s\n' "$$out" | grep -a -c '^Executed '); \
 	  else \
-	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; ran=; \
 	  fi; \
 	  n=$$(ls test/fuzz/seeds/$$t | wc -l | tr -d ' '); a=$$(printf '%s\n' $$adv | grep -c . ); \
-	  if [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
+	  if [ $$rc -eq 0 ] && [ -n "$$ran" ] && [ "$$ran" -ne $$((n + a)) ]; then \
+	    echo "  FAIL $$t: replayed $$ran of $$((n + a)) input(s)"; fail=1; \
+	  elif [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
 	  else echo "  FAIL $$t (exit $$rc)"; \
-	    printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6 | sed 's/^/      /'; fail=1; fi; \
+	    msg=$$(printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6); \
+	    [ -n "$$msg" ] || msg=$$(printf '%s\n' "$$out" | tail -4); \
+	    printf '%s\n' "$$msg" | sed 's/^/      /'; fail=1; fi; \
 	done; \
 	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS)) harnesses replayed clean" \
 	  || { echo "fuzz-smoke: FAILED"; exit 1; }

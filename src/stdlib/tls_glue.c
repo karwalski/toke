@@ -378,8 +378,8 @@ int64_t tk_tls_freekeypair_w(int64_t keypair)
  * resolved to nothing. */
 int64_t tk_tls_connect_w(int64_t host, int64_t port, int64_t cfg)
 {
-    TK_REQUIRE(TK_CAP_NET);
     const char *h = as_str(host);
+    TK_REQUIRE_NET(TK_CAP_NET_CONNECT, h, port < 0 ? 0 : port);   /* 138.19 */
     if (!h || *h == '\0') return 0;
 
     TlsConnResult r = tls_connect(h, (int32_t)port, cfg_of(cfg));
@@ -414,7 +414,7 @@ static void tls_handler_trampoline(TlsConn conn)
  * actually binds a socket. */
 int64_t tk_tls_listen_w(int64_t port, int64_t cfg, int64_t handler)
 {
-    TK_REQUIRE(TK_CAP_NET);
+    TK_REQUIRE_NET(TK_CAP_NET_LISTEN, "0.0.0.0", port < 0 ? 0 : port);   /* 138.19: tls_listen binds INADDR_ANY */
     if (!handler) return 0;
     g_tls_handler = handler;
     return tls_listen((int32_t)port, cfg_of(cfg), tls_handler_trampoline);

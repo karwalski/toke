@@ -671,6 +671,10 @@ The argument of `json.print` or `json.enc` that is, or holds, an opaque std hand
 
 `==` or `!=` with an array operand is E4031, whatever the other operand is (story 138.20, loke T-60; owner decision 2026-11-15): `'==' does not compare arrays ('@(i64)' == '@(?)'): toke has no array equality; test emptiness with .len or compare the elements`. `expected` is `a scalar or str operand`. `got` is the array the comparison is about: when exactly one operand is the literal `@()` and the other is an array, the other operand (`@()==x` with `x:@i64` gives `@(i64)`, not the literal's `@(?)`); otherwise the left operand if it is an array, else the right. An array compares with nothing, so the refusal does not wait on the other operand: one whose type an earlier error left `unknown` still draws it, with no fix. Through 3.2.0 this compiled and answered wrongly: against the literal `@()` it compared the array's address with a fresh allocation, so `a==@()` was false for every empty `a`, and between two named arrays it compared the elements' bytes as a C string, so `@(256)==@(512)` was true. The `fix` is present only when one operand is the literal `@()` and the other is an identifier of array type, in either order; it is the comparison rewritten: `x==@()` and `@()==x` give `"x.len==0"`, and `x!=@()` gives `"x.len!=0"`. Two named arrays, a process handle, a str, a map, `@()` against `@()`, and an array operand that is not an identifier (a field, a call, an index) get no `fix`: compare `.len` or the elements yourself. The same rule refuses `==`/`!=` on two struct or sum values, with no `fix` (story 138.9, loke T-14).
 
+A `mt` whose arms name variants (`$notfound:v ..`), with no `$ok`/`$err` arm, over a subject the checker knows is a plain scalar -- a parameter or immutable `let` of an integer or float type, a numeric literal, or a call returning one -- is E4031 at the first such label, with no `fix` (story 138.37, loke T-66): `type mismatch: expected a sum type, got 'i64' -- '$notfound' names a variant, and type 'i64' has no variants, so no arm can be selected`. `expected` is `a sum type` and `got` is the scalar type. A label naming a primitive (`$i64:v`), `some`/`none` or a declared type is not judged, nor is a `mut` binding. Through 3.2.0 it passed `--check` and the build stopped with E9005 (or invalid IR for a narrow integer); a one-arm form over an i64 built.
+
+`+` (and `-`, `*`, `/`) over two non-numeric operands of different types names each side (story 127.474): `'+' requires numeric operands: the left side is 'str!$sliceerr' and the right side is 'str'`. It said "both sides are" the left operand's type, so a repair of one side met an E4031 it had not been told of. Operands of one type keep "both sides are".
+
 The diagnostic may include a fix suggestion such as `"cast RHS to i64 using 'as'"`.
 
 **Composite types print structurally** (127.54). `expected` and `got` render an
@@ -1050,7 +1054,9 @@ failed in codegen with E9003, reported at the function.
 
 Also emitted, with no `fix`, for an assignment to a module constant (`lim=5:i64;` then `lim=6` in a body; story 127.310): a constant is not mutable (semantics §4.2) and has no `mut` spelling to rewrite it to.
 
-Also emitted, with no `fix`, for a bare `lp` init (`lp(i=0;i<n;i=i+1)`, no `let`) when the binding of `i` in force is not mutable: an immutable `let` (local or module-level), a parameter, an `mt` arm binding, a module constant or an import alias (story 127.289; `got` is "immutable binding", "constant" or "import alias"). The bare init assigns that binding, as `i=0` does (toke-spec-v0.4 §K). Two repairs are plausible and run differently -- `let i=mut.` makes the loop assign `i`, `lp(let i=0;..)` gives the loop a fresh variable and leaves `i` as it was -- so neither is the `fix`. The step `i=i+1` assigns the same binding and draws its own E4070, and when the step names the init's binding that E4070 has no `fix` either. An assignment anywhere else, the loop body included, keeps the usual `fix` when the binding is a `let`.
+Also emitted, with no `fix`, for a bare `lp` init (`lp(i=0;i<n;i=i+1)`, no `let`) when the binding of `i` in force is not mutable: an immutable `let` (local or module-level), a parameter, an `mt` arm binding, a module constant or an import alias (story 127.289; `got` is "immutable binding", "constant" or "import alias"). The bare init assigns that binding, as `i=0` does (toke-spec-v0.4 §K). Two repairs are plausible and run differently -- `let i=mut.` makes the loop assign `i`, `lp(let i=0;..)` gives the loop a fresh variable and leaves `i` as it was -- so neither is the `fix`. The step `i=i+1` assigns the same binding and draws its own E4070, and when the step names the init's binding that E4070 has no `fix` either. An assignment in the loop's body that assigns the same binding has no `fix` either (story 127.468): in `let i=7; lp(i=0;i<5;i=i+1){ i=i+2 }` the repairs `let i=mut.7` (exits 6) and `lp(let i=0;..` (exits 7) still differ. An assignment anywhere else, or to an inner binding of the same name, keeps the usual `fix` when the binding is a `let`.
+
+The `let` `fix` is worded from the declaration's own spelling (story 127.468): the source from `let` through the first `=`, so `let g:i64=5` gets "change 'let g:i64=' to 'let g:i64=mut.' to make it mutable" (the rewrite `--migrate` makes; the old fixed text `let g=` did not occur there). It is absent when that spelling occurs more than once in the file, and for a module-level name declared more than once, because the edit would not say which declaration it means.
 
 ### E4071
 
@@ -1927,6 +1933,76 @@ re-resolves.
 
 `tkc pkg init` found a `pkg.toml` and left it unchanged (ADR-0004: init
 never overwrites). Exit 0.
+
+## Capability manifest (W9012)
+
+### W9012
+
+**tkc.toml capability grant written as a quoted string**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | codegen |
+
+A `tkc.toml [capabilities]` class key whose value is a quoted string
+(`fs_read = "/srv/www"`). In this release the string keeps its old meaning — the
+**whole** class, so the program may read any path — and the warning says that from
+toke 3.4.0 a quoted string is a one-element scope list (`fs_read = ["/srv/www"]`),
+granting only that scope; when the string is not a valid scope for its class
+(`net = "192.0.2.1:9"`, which has no `connect:` / `listen:`), it says the manifest
+will not parse then (story 138.19, owner decision D4: one release of warnings). The
+record's `file` and `pos.line` name the manifest line. There is no `fix`: the
+manifest is not the source file a fix edits. Write `true` to keep the whole class,
+or the array form to scope it now. Conformance: D615, D616, C1885.
+
+## Runtime capability diagnostics (CAP001, CAP002, CAP003)
+
+The capability broker (ADR-0010, [the capability spec](/docs/spec/capabilities/))
+reports a denied call at run time, before the syscall, and exits 1. With
+`TK_DIAG_JSON=1` it also prints one JSON line with `diagnostic_id`, `severity`
+(`error`), `stage` (`runtime`) and `capability`.
+
+### CAP001
+
+**Capability required but not granted** — the class is not granted at all. The `fix`
+is `grant --allow-<class> or tkc.toml [capabilities] <class>=true`; on a binary whose
+baked grants run-time flags may only narrow (138.19 D2) it is
+`tkc.toml [capabilities] <key> = true`, and absent when a run-time flag scopes the
+class. Conformance: C470, C1884.
+
+### CAP002
+
+**Capability granted, but not for this scope** (story 138.19, D3) — the class is
+granted for listed scopes, and this path, host, command or key is not among them.
+The JSON line adds `scope`: the canonical path, `connect:HOST:PORT` /
+`listen:ADDR:PORT`, the resolved command, or the key. The `fix` names exactly that
+scope where one edit is sure to admit the call — `--allow-<class>=<scope>` when
+run-time flags union with the grant or only they exclude it,
+`<key> = ["<scope>"]` when only the baked grant excludes it — and is absent
+otherwise (both exclude it; a dangling symlink; a command not on `PATH`; an SQLite
+URI filename, a computed `ATTACH` name or a `file.listglob` pattern holding `\`,
+which no scope admits; a path that passes through a directory outside the scope on
+the way to its target, where `scope` names that directory, even when the target is
+outside too, because granting the target alone would not admit the call; a log
+whose directory is outside the scope while the log resolves elsewhere through a
+symlink; a scope the flag or
+the manifest cannot carry, such as a `,` in a flag value or a `"` in a `tkc.toml`
+string). The second text line says which. A std entry still on the class-only gate,
+reached under a scoped grant, is CAP002 with an empty `scope` and no `fix`. The text
+lines escape control characters in the value (`\n`, `\xHH`), so a path cannot
+forge a diagnostic line; the JSON line carries it exactly. Conformance:
+C1880–C1887.
+
+### CAP003
+
+**Run-time capability flag refused** (story 138.19) — at start-up, before `main`
+runs: a malformed `--allow-<class>=<scope>` value, `--allow-all=<value>`, or
+`--allow-all` on a binary whose baked grants run-time flags may only narrow. The
+program exits 1 with one line, `CAP003: <flag> refused: <reason>`. With
+`TK_DIAG_JSON=1` the JSON line adds `flag` (the argument as given) and `reason`.
+There is no `fix`: the right flag depends on what the launcher meant. Conformance:
+C1883, C1884.
 
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 

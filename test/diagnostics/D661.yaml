@@ -1,0 +1,18 @@
+id: D661
+series: D
+description: "127.475: a str slice on a record FIELD receiver (p.name.slice(2;9) on a name:$str field) is the union str!$sliceerr, as 127.462 made t.slice on a str value; read as a str (string interpolation) it is E4031 with NO fix (an mt arm, a ! or another callee are all repairs)"
+input: |
+  m=t;
+  i=io:std.io;
+  t=$pt{name:$str};
+  f=main():i64{
+    let p=$pt{name:"abc"};
+    io.println("[\(p.name.slice(2;9))]");
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "str!$sliceerr"

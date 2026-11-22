@@ -219,6 +219,65 @@ static CacheEntry *cache_find(const char *key)
     return NULL;
 }
 
+/* ── Disk spill (63.1.6, 127.445) ────────────────────────────────────── */
+
+/* Write all of buf to fd: retry on EINTR, continue after a short write.
+ * Returns 0 when every byte was written, -1 otherwise (errno set; a write
+ * that returns 0 counts as ENOSPC). */
+static int cache_write_all(int fd, const char *buf, size_t len)
+{
+    while (len > 0) {
+        ssize_t n = write(fd, buf, len);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (n == 0) { errno = ENOSPC; return -1; }
+        buf += (size_t)n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
+/* Write one entry to path as "status\nttl\netag\ntype\nbody".  Returns 0
+ * and counts body_len in disk_used only when the whole file was written and
+ * closed.  On any failure (open, a write, close) the partial file is removed,
+ * nothing is counted and -1 is returned with errno from the failing call.
+ * The cache has no error channel (http_cache_put is void): a spill that
+ * fails leaves the entry evicted, which is a later MISS, never a truncated
+ * body (127.445). */
+static int cache_spill_file(const char *path, const CacheEntry *e)
+{
+    const char *etag = e->etag ? e->etag : "";
+    const char *ctype = e->content_type ? e->content_type : "";
+    int hlen = snprintf(NULL, 0, "%u\n%ld\n%s\n%s\n",
+                        e->status, e->ttl, etag, ctype);
+    if (hlen < 0) return -1;
+    char *hdr = malloc((size_t)hlen + 1);
+    if (!hdr) return -1;
+    snprintf(hdr, (size_t)hlen + 1, "%u\n%ld\n%s\n%s\n",
+             e->status, e->ttl, etag, ctype);
+
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { int er = errno; free(hdr); errno = er; return -1; }
+
+    int rc = cache_write_all(fd, hdr, (size_t)hlen);
+    int er = errno;
+    free(hdr);
+    if (rc == 0 && e->body_len > 0) {
+        rc = cache_write_all(fd, e->body, e->body_len);
+        er = errno;
+    }
+    if (close(fd) != 0 && rc == 0) { rc = -1; er = errno; }
+    if (rc != 0) {
+        unlink(path);
+        errno = er;
+        return -1;
+    }
+    g_cache.disk_used += e->body_len;
+    return 0;
+}
+
 /* ── Public API ──────────────────────────────────────────────────────── */
 
 /* Initialise the cache (call once) */
@@ -365,19 +424,7 @@ void http_cache_put(const char *method, const char *uri,
             }
             snprintf(path, sizeof(path), "%s/%08x.cache",
                      g_cache.disk_dir, h);
-            int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (fd >= 0) {
-                /* Simple format: status\nttl\netag\ntype\nbody */
-                dprintf(fd, "%u\n%ld\n%s\n%s\n",
-                        cold->status, cold->ttl,
-                        cold->etag ? cold->etag : "",
-                        cold->content_type ? cold->content_type : "");
-                if (cold->body_len > 0) {
-                    write(fd, cold->body, cold->body_len);
-                }
-                close(fd);
-                g_cache.disk_used += cold->body_len;
-            }
+            (void)cache_spill_file(path, cold);
             cache_unlink(cold);
             cache_entry_free(cold);
         }

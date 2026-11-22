@@ -1,0 +1,16 @@
+id: D607
+series: D
+description: "138.24: http.withdeadline's ms is u64; a duration string (\"5s\") is E4031 at --check with no fix"
+input: |
+  m=t;
+  i=http:std.http;
+  f=main():i64{
+    let c=http.withdeadline(http.client("https://a.example");"5s");
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "u64"

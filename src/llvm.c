@@ -125,7 +125,12 @@ typedef struct { char name[NAME_BUF]; const char *ty; } LocalType;
  *   LLVM symbol (`@<llvm_name>`), `struct_type` the $type for field access (or
  *   ""), and `init` the initializer AST node (run at startup via a ctor).
  */
-typedef struct { char name[NAME_BUF]; char llvm_name[NAME_BUF]; char struct_type[NAME_BUF]; const Node *init; } GlobalVar;
+typedef struct { char name[NAME_BUF]; char llvm_name[NAME_BUF]; char struct_type[NAME_BUF]; const Node *init; const char *ty; } GlobalVar;
+/* 127.469: `ty` is the LLVM type a read of the global yields.  The cell is
+ *   always `i64`; a read converts it to `ty` (bitcast for f64/f32, trunc for
+ *   bool and the narrow integers) exactly as the initialiser was converted to
+ *   i64 when stored.  Pointer-held values (str, arrays, maps, structs, sums,
+ *   function values) stay i64, the convention every consumer already handles. */
 
 /*
  * NameAlias — Maps a toke variable name to a unique LLVM name.
@@ -520,10 +525,28 @@ static void scope_end(Ctx *c, const ScopeMark *m, const Node *list, const Node *
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
  * rather than "i64".
  */
-static int is_ptr_local(Ctx *c, const char *name) {
+/* 138.38: the registries below are keyed by the LLVM name a binding was
+ * given (make_unique_name), but many readers ask with the toke spelling.
+ * Since 138.38 every digit-ending name is aliased on first use (m1 -> m1.N),
+ * so a toke-spelled lookup of such a binding would miss and fall to a
+ * default (an i64 slot, "not a map"), miscompiling `m1=m1.set(k;v)` as an
+ * array store.  A miss on the spelling is therefore retried under the alias
+ * currently in force -- the slot emit_expr loads.  A hit on the spelling is
+ * kept exactly as before, so no lookup that already answered changes. */
+static const char *get_llvm_name(Ctx *c, const char *toke_name);
+static const char *reg_alias(Ctx *c, const char *name) {
+    const char *ln = get_llvm_name(c, name);
+    return (ln && ln != name && strcmp(ln, name)) ? ln : NULL;
+}
+static int is_ptr_local_raw(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name)) return 1;
     return 0;
+}
+static int is_ptr_local(Ctx *c, const char *name) {
+    if (is_ptr_local_raw(c, name)) return 1;
+    const char *al = reg_alias(c, name);           /* 138.38 */
+    return al ? is_ptr_local_raw(c, al) : 0;
 }
 /*
  * is_map_var — Return 1 if `name` was registered as a map-type local
@@ -535,7 +558,9 @@ static int is_map_var(Ctx *c, const char *name) {
         if (!strcmp(c->ptrs[i].name, name) &&
             /* 127.41: "__map__" or the int-keyed variant "__map__i" */
             !strncmp(c->ptrs[i].struct_type, "__map__", 7)) return 1;
-    return 0;
+    if (is_ptr_local_raw(c, name)) return 0;
+    const char *al = reg_alias(c, name);           /* 138.38 */
+    return al ? is_map_var(c, al) : 0;
 }
 /*
  * ptr_local_struct_type — Return the toke struct type name associated with
@@ -547,7 +572,9 @@ static const char *ptr_local_struct_type(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name) && c->ptrs[i].struct_type[0])
             return c->ptrs[i].struct_type;
-    return NULL;
+    if (is_ptr_local_raw(c, name)) return NULL;
+    const char *al = reg_alias(c, name);           /* 138.38 */
+    return al ? ptr_local_struct_type(c, al) : NULL;
 }
 
 /* ── 114.44: module-level mutable globals ──────────────────────────── */
@@ -1238,6 +1265,7 @@ static void prepass_funcs(Ctx *c, const Node *n) {
  * containers, so binds inside function bodies stay locals. Must run after
  * prepass_structs + prepass_load_tki so the initializer's struct type resolves.
  */
+static const char *fnv_llvm_ty(const Type *t);   /* 127.469: defined later */
 static void prepass_globals(Ctx *c, const Node *n) {
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
         for (int i = 0; i < n->child_count; i++) prepass_globals(c, n->children[i]);
@@ -1250,6 +1278,18 @@ static void prepass_globals(Ctx *c, const Node *n) {
     snprintf(g->llvm_name, sizeof g->llvm_name, "%s%s", c->module_prefix, g->name);
     g->init = n->children[n->child_count - 1];   /* [0]=name, [opt type], last=init */
     g->struct_type[0] = '\0';
+    /* 127.469: the value's own type -- the annotation when there is one,
+     * else the checker's type of the initialiser.  Every read was an i64,
+     * so an f64 global printed its raw bits. */
+    {
+        const char *vt = (n->child_count >= 3 && n->children[1])
+                         ? resolve_llvm_type(c, n->children[1])
+                         : fnv_llvm_ty(g->init ? g->init->rtype : NULL);
+        static const char *const scal[] = { "double", "float", "i1", "i8", "i16", "i32" };
+        g->ty = "i64";
+        for (size_t k = 0; k < sizeof scal / sizeof scal[0]; k++)
+            if (vt && !strcmp(vt, scal[k])) g->ty = scal[k];
+    }
     const char *st = expr_struct_type(c, g->init);
     if (st) { strncpy(g->struct_type, st, sizeof g->struct_type - 1); g->struct_type[sizeof g->struct_type - 1] = '\0'; }
     c->global_count++;
@@ -2574,6 +2614,9 @@ static int call_is_err_union(Ctx *c, const Node *e) {
 }
 
 static const char *expr_llvm_type(Ctx *c, const Node *n);
+static const char *sum_arm_body_llvm_type(Ctx *c, const Node *m, const Node *arm);
+static const char *sum_payload_tag(Ctx *c, const Node *scr, const StructInfo *ssi,
+                                   const char *tag);
 static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
     if (!ety || strcmp(ety, "i64")) return 0;
     if (call_declares_bool(c, e) || field_declares_bool(c, e) || recv_call_is_bool(c, e))
@@ -2588,7 +2631,7 @@ static int expr_abi_bool(Ctx *c, const Node *e, const char *ety) {
             if (!arm || arm->child_count < 3 || !arm->children[2]) return 0;
             const Node *b = arm->children[2];
             if (b->kind == NODE_RETURN_STMT) continue;
-            const char *bt = expr_llvm_type(c, b);
+            const char *bt = sum_arm_body_llvm_type(c, e, arm);   /* 127.484 */
             int isb = (bt && !strcmp(bt, "i1")) || b->kind == NODE_BOOL_LIT ||
                       (b->rtype && b->rtype->kind == TY_BOOL) ||
                       expr_abi_bool(c, b, bt);
@@ -3114,10 +3157,39 @@ static const char *sum_arm_bind_llvm_type(Ctx *c, const Node *m, const Node *arm
     if (vty[0] == '$') vty++;
     if (!strcmp(vty, "f64") || !strcmp(vty, "f32")) return "double";
     if (!strcmp(vty, "str")) return "i8*";
+    /* 127.484: a bool payload is bound as an i1 local, like any bool. */
+    if (!strcmp(vty, "bool")) return "i1";
     static const char *const ints[] = { "i64", "i32", "i16", "i8", "u64", "u32",
-                                        "u16", "u8", "bool", NULL };
+                                        "u16", "u8", "byte", "Byte", NULL };
     for (int i = 0; ints[i]; i++) if (!strcmp(vty, ints[i])) return "i64";
     return NULL;
+}
+
+/* 127.484: the LLVM type a value arm of a match yields, predicted with the
+ * arm's binding in force.  The result slot is sized before any arm is
+ * lowered, so a body that reads its binding (`$circle:r r*r`) was predicted
+ * with `r` unbound -- i64 -- and the f64 product was stored as its bits and
+ * converted back with sitofp: `mt s{$circle:r r*r;..}` returned
+ * 4616189618054758400 for 2.0.  For a variant of a sum, the binding is put
+ * in force under a private alias for the prediction (the slot type the
+ * lowering gives it, sum_arm_bind_llvm_type) and withdrawn after it.  Any
+ * other arm is predicted as before. */
+static const char *sum_arm_body_llvm_type(Ctx *c, const Node *m, const Node *arm) {
+    const Node *body = (arm && arm->child_count >= 3) ? arm->children[2] : NULL;
+    const Node *bn = (arm && arm->child_count >= 2) ? arm->children[1] : NULL;
+    const char *bty = (body && bn && bn->kind == NODE_IDENT)
+                    ? sum_arm_bind_llvm_type(c, m, arm) : NULL;
+    if (!bty || c->alias_count >= c->alias_cap || c->local_count >= c->local_cap)
+        return expr_llvm_type(c, body);
+    NameAlias *a = &c->aliases[c->alias_count++];
+    tok_cp(c->src, bn, a->toke_name, sizeof a->toke_name);
+    snprintf(a->llvm_name, sizeof a->llvm_name, "%.100s.~arm", a->toke_name);
+    int lc0 = c->local_count;
+    set_local_type(c, a->llvm_name, bty);
+    const char *r = expr_llvm_type(c, body);
+    c->local_count = lc0;
+    c->alias_count--;
+    return r;
 }
 
 /*
@@ -4528,7 +4600,7 @@ static int emit_expr(Ctx *c, const Node *n)
             if (g && !name_is_local(c, tb)) {
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = load i64, i64* @%s\n", t, g->llvm_name);
-                return t;
+                return coerce_value(c, t, "i64", g->ty);   /* 127.469 */
             }
         }
         /* 114.36: a bare function name used in value position resolves to a
@@ -5422,7 +5494,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * address (call it directly); both are toke functions, fastcc. */
         if (n->children[0]->kind == NODE_IDENT && tk_type_is_fnval(n->children[0]->rtype)) {
             char vnm[128]; tok_cp(c->src, n->children[0], vnm, sizeof vnm);
-            if (name_is_local(c, vnm)) {
+            if (name_is_local(c, vnm) || lookup_global(c, vnm)) {   /* 127.469: a module-level function value */
                 const Type *ft = n->children[0]->rtype;
                 int np = ft->field_count;
                 int na = n->child_count - 1;
@@ -7737,7 +7809,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *sty = sum_arm_bind_llvm_type(c, n, arm);  /* 127.220 */
                     arm0_ty = sty ? sty : expr_llvm_type(c, n->children[0]);
                 } else
-                    arm0_ty = expr_llvm_type(c, ab);
+                    arm0_ty = sum_arm_body_llvm_type(c, n, arm);   /* 127.484 */
                 if (strcmp(arm0_ty, "i64")) { res_ty = arm0_ty; }
                 break;
             }
@@ -7905,13 +7977,23 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *vty = ssi->field_types[vidx];
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
                     int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
-                    const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                    /* 127.484: a bool payload binds an i1 local, as a bool
+                     * `let` does; held as i64 it printed 1 and lost its
+                     * bool-ness in the arm body. */
+                    int is_b = (!strcmp(vty, "bool") || !strcmp(vty, "$bool"));
+                    const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : (is_b ? "i1" : "i64"));
                     snprintf(arm_bn, sizeof arm_bn, "%s", vname);   /* 127.246 (4) */
                     set_local_type(c, vname, slot_ty);
-                    if (is_str) mark_ptr_with_type(c, vname, "$str");
+                    /* 127.484: a record or array payload carries its layout
+                     * tag, as a parameter of that type does (`q.w` on a
+                     * record, `q.get(0)` on an @f64). */
+                    const char *ptag = is_str ? "$str"
+                                     : (is_f || is_b) ? NULL
+                                     : sum_payload_tag(c, n->children[0], ssi, tag);
+                    if (ptag) mark_ptr_with_type(c, vname, ptag);
                     if (vshadow) {
                         clear_ptr_local(c, vraw);
-                        if (is_str) mark_ptr_with_type(c, vraw, "$str");
+                        if (ptag) mark_ptr_with_type(c, vraw, ptag);
                     }
                     fprintf(c->out, "  %%%s = alloca %s\n", vname, slot_ty);
                     int payp = next_tmp(c);
@@ -7926,6 +8008,10 @@ static int emit_expr(Ctx *c, const Node *n)
                         int pp = next_tmp(c);
                         fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pp, payv);
                         fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", pp, vname);
+                    } else if (is_b) {
+                        int tb = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", tb, payv);
+                        fprintf(c->out, "  store i1 %%t%d, i1* %%%s\n", tb, vname);
                     } else {
                         fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", payv, vname);
                     }
@@ -8810,6 +8896,27 @@ static const char *type_backend_tag(Ctx *c, const Type *t) {
 }
 
 static const char *expr_struct_type_legacy(Ctx *c, const Node *n);
+/* 127.484: the backend tag of the payload of variant `tag` of the sum `ssi`
+ * that the scrutinee `scr` holds -- a record's name, an array's "@<elem>" --
+ * or NULL.  The checker's type of the scrutinee answers first (its variant
+ * types are resolved); the declared spelling of a record payload otherwise. */
+static const char *sum_payload_tag(Ctx *c, const Node *scr, const StructInfo *ssi,
+                                   const char *tag) {
+    const Type *st = scr ? scr->rtype : NULL;
+    if (st && st->kind == TY_STRUCT && st->field_names && st->field_types) {
+        for (int i = 0; i < st->field_count; i++) {
+            if (!st->field_names[i] || strcmp(st->field_names[i], tag)) continue;
+            const char *tg = type_backend_tag(c, st->field_types[i]);
+            if (tg) return tg;
+            break;
+        }
+    }
+    if (!ssi || !struct_has_field(ssi, tag)) return NULL;
+    const char *vty = ssi->field_types[struct_field_index(ssi, tag)];
+    if (vty[0] == '$') vty++;
+    const StructInfo *ps = lookup_struct(c, vty);
+    return (ps && !ps->is_sum) ? ps->name : NULL;
+}
 /* 127.52: the checker's type first; the legacy string inference only where
  * the checker left the node untyped or its type has no tag. */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
@@ -9523,12 +9630,22 @@ static const char *get_llvm_name(Ctx *c, const char *toke_name) {
 /* Story 114.15: a user local named t<N> (e.g. t1, t2) collides with the
  * compiler's %tN SSA temporaries, producing duplicate-definition clang errors.
  * Such names must always be aliased to a dotted form (%t1.N, distinct from the
- * dotless temp namespace) even on first use. */
+ * dotless temp namespace) even on first use.
+ *
+ * 138.38 (loke T-65): the rule was the `t` prefix only, and parameters and
+ * closure captures never went through it, so `f=g(t0:i64)` defined %t0 twice.
+ * Every name codegen mints itself is a prefix and a counter (%t<N>, and the
+ * block labels marm<N>, mend<N>, sel<N>, if_then<N>, loop_cnt_<N>, ... --
+ * LLVM keeps labels and values in ONE per-function namespace), or starts
+ * with `_` (%__env, %__crel.<N>).  So a user name that ends in a digit, or
+ * (--legacy only) starts with `_`, is always aliased: it can then never equal
+ * a minted name, whatever prefixes are added later.  Any other user name keeps
+ * its spelling, so the IR stays readable and diffable. */
 static int is_temp_like_name(const char *s) {
-    if (s[0] != 't' || !s[1]) return 0;
-    for (const char *p = s + 1; *p; p++)
-        if (*p < '0' || *p > '9') return 0;
-    return 1;
+    if (!s[0]) return 0;
+    if (s[0] == '_') return 1;
+    size_t n = strlen(s);
+    return s[n - 1] >= '0' && s[n - 1] <= '9';
 }
 
 static const char *make_unique_name(Ctx *c, const char *toke_name) {
@@ -9549,7 +9666,10 @@ static const char *make_unique_name(Ctx *c, const char *toke_name) {
     }
     NameAlias *a = &c->aliases[c->alias_count++];
     strncpy(a->toke_name, toke_name, 127); a->toke_name[127] = '\0';
-    snprintf(a->llvm_name, 128, "%s.%d", toke_name, ++c->name_scope);
+    /* 138.38: a `_`-led (--legacy) name is aliased as u.<name>.N, so that
+     * `__crel` cannot become %__crel.N, the shape of a minted slot. */
+    snprintf(a->llvm_name, 128, toke_name[0] == '_' ? "u.%s.%d" : "%s.%d",
+             toke_name, ++c->name_scope);
     return a->llvm_name;
 }
 
@@ -9628,7 +9748,9 @@ static void locals_cap_flush(Ctx *c, const Node *at, const char *what) {
 static const char *get_local_type(Ctx *c, const char *name) {
     for (int i = 0; i < c->local_count; i++)
         if (!strcmp(c->locals[i].name, name)) return c->locals[i].ty;
-    if (is_ptr_local(c, name)) return "i8*";
+    if (is_ptr_local_raw(c, name)) return "i8*";
+    const char *al = reg_alias(c, name);           /* 138.38: see is_ptr_local */
+    if (al) return get_local_type(c, al);
     return "i64";
 }
 
@@ -9677,6 +9799,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         if (!strcmp(nb, "true") || !strcmp(nb, "false")) return "i1";
         { const Node *cd = const_decl_for(c, n);              /* 127.310 */
           if (cd) return resolve_llvm_type(c, cd->children[2]); }
+        { GlobalVar *g = lookup_global(c, nb);                 /* 127.469 */
+          if (g && !name_is_local(c, nb)) return g->ty; }
         const char *ln = get_llvm_name(c, nb);
         return get_local_type(c, ln);
     }
@@ -9752,7 +9876,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             /* 124.0c: any other function value (emit_expr's generic path) */
             if (callee->kind == NODE_IDENT && tk_type_is_fnval(callee->rtype)) {
                 char vnm[128]; tok_cp(c->src, callee, vnm, sizeof vnm);
-                if (name_is_local(c, vnm)) {
+                if (name_is_local(c, vnm) || lookup_global(c, vnm)) {   /* 127.469: a module-level function value */
                     const char *rty = fnv_llvm_ty(callee->rtype->elem);
                     return (!strcmp(rty, "i8*") || !strcmp(rty, "void")) ? "i64" : rty;
                 }
@@ -9932,7 +10056,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                 const char *sty = sum_arm_bind_llvm_type(c, n, arm0);  /* 127.220 */
                 mrt = sty ? sty : expr_llvm_type(c, n->children[0]);
             } else
-                mrt = expr_llvm_type(c, ab);
+                mrt = sum_arm_body_llvm_type(c, n, arm0);   /* 127.484 */
             break;
         }
         /* 114.42: f64-payload error union — see the matching inference in
@@ -12491,13 +12615,16 @@ static void emit_toplevel(Ctx *c, const Node *n)
             const char *pty = "i64";
             if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                 pty = resolve_llvm_type(c, n->children[i]->children[1]);
-            if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, n->children[i]);
-            set_local_type(c, pn, pty);
-            fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+            /* 138.38: the slot takes the alias rule locals take, so a
+             * parameter `t0` is %t0.N, never the temporary %t0. */
+            const char *sn = make_unique_name(c, pn);
+            if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, sn, n->children[i]);
+            set_local_type(c, sn, pty);
+            fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", sn, pty, pty, pn, pty, sn);
             /* 124.0c item 3: a function-typed parameter is borrowed */
             if (n->children[i]->child_count > 1 && n->children[i]->children[1] &&
                 n->children[i]->children[1]->kind == NODE_FUNC_TYPE)
-                fnv_mark_local(c, pn);
+                fnv_mark_local(c, sn);
         }
         c->term = 0;
         /* 114.18: identify linearly-owned array locals for in-place mutation. */
@@ -12905,12 +13032,13 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         /* 124.0c: restore the capture's own type and tag (see g_cap_info). */
         const char *cty = (i < TKC_CAP_TYPED && g_cap_info[cid].ty[i]) ? g_cap_info[cid].ty[i] : "i64";
         int cv = coerce_value(c, lv, "i64", cty);
-        set_local_type(c, caps[i], cty);
+        const char *cn = make_unique_name(c, caps[i]);   /* 138.38 */
+        set_local_type(c, cn, cty);
         if (i < TKC_CAP_TYPED && g_cap_info[cid].tag[i][0])
-            mark_ptr_with_type(c, caps[i], g_cap_info[cid].tag[i]);
-        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", caps[i], cty, cty, cv, cty, caps[i]);
+            mark_ptr_with_type(c, cn, g_cap_info[cid].tag[i]);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%t%d, %s* %%%s\n", cn, cty, cty, cv, cty, cn);
         /* 124.0c item 3: a captured closure is held by the environment */
-        if (i < TKC_CAP_TYPED && g_cap_info[cid].isfn[i]) fnv_mark_local(c, caps[i]);
+        if (i < TKC_CAP_TYPED && g_cap_info[cid].isfn[i]) fnv_mark_local(c, cn);
     }
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind != NODE_PARAM) continue;
@@ -12918,12 +13046,13 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
         const char *pty = "i64";
         if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
             pty = resolve_llvm_type(c, clos->children[i]->children[1]);
-        if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, pn, clos->children[i]);  /* 124.0c */
-        set_local_type(c, pn, pty);
-        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+        const char *sn = make_unique_name(c, pn);   /* 138.38 */
+        if (!strcmp(pty, "i8*")) mark_param_ptr_tag(c, sn, clos->children[i]);  /* 124.0c */
+        set_local_type(c, sn, pty);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", sn, pty, pty, pn, pty, sn);
         if (clos->children[i]->child_count > 1 && clos->children[i]->children[1] &&
             clos->children[i]->children[1]->kind == NODE_FUNC_TYPE)
-            fnv_mark_local(c, pn);                   /* 124.0c item 3: borrowed */
+            fnv_mark_local(c, sn);                   /* 124.0c item 3: borrowed */
     }
     compute_closure_releases(c, clos);               /* 124.0c item 3 */
     /* 127.229: the linear-array set belongs to the f= it was computed for.
@@ -13263,12 +13392,7 @@ timeparts_done:
          * here (the entry module) so exactly one strong definition exists, and
          * only when grants were declared (else the weak ALLOW_ALL default holds
          * and behaviour is unchanged). */
-        if (lim.cap_present) {
-            fprintf(body_file, "@__tk_cap_baked_grants = constant i32 %u\n", lim.cap_grants);
-            fputs("@__tk_cap_baked_present = constant i32 1\n", body_file);
-            fprintf(body_file, "@__tk_cap_baked_enforce = constant i32 %d\n",
-                    lim.cap_enforce ? 1 : 0);
-        }
+        if (lim.cap_present) tkc_emit_cap_globals(body_file, &lim);   /* 138.19: + scopes, runtime mode */
         /* 135.29: main publishes its status for tk_exitfail.h's atexit
          * handler, which otherwise could only exit 1 after a recorded
          * failure (a failed test assertion, a server that did not start)

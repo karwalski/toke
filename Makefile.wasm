@@ -35,7 +35,7 @@ CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/diag.c src/config.c src/fmt.c \
           src/stdlib_tables.c src/stdlib_deps.c \
-          src/stdlib/str.c \
+          src/stdlib/str.c src/stdlib/capabilities.c \
           src/wasm_api.c
 
 OUTDIR  = wasm

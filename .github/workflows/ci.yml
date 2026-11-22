@@ -106,6 +106,10 @@ jobs:
       - name: Diagnostic codes are documented
         run: make check-error-codes
 
+      # 138.41: every lint rule id is named in CHANGELOG.md and the lint reference.
+      - name: Lint rules are named in the changelog
+        run: make check-lint-rules
+
       # The pattern catalogue's generated docs match the catalogue.
       - name: Pattern catalogue is in sync
         run: make check-patterns

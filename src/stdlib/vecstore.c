@@ -362,6 +362,11 @@ load_err:
  * Store lifecycle
  * ------------------------------------------------------------------------- */
 
+const char *vecstore_datadir(const TkVecStore *vs)
+{
+    return vs ? vs->data_dir : NULL;
+}
+
 TkVecStore *vecstore_open(const char *data_dir)
 {
     if (!data_dir || data_dir[0] == '\0') return NULL;

@@ -946,12 +946,11 @@
       "kind": "func",
       "name": "str.substr",
       "params": [
-        "i64",
-        "i64",
-        "i64"
+        "str",
+        "u64",
+        "u64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str!sliceerr"
     },
     {
       "kind": "func",

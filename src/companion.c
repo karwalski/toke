@@ -24,6 +24,7 @@
  */
 
 #include "companion.h"
+#include "config.h"   /* 138.19: tkc_cap_describe */
 #include "tkc_limits.h"
 #include "version.h"      /* 135.3j: TKC_VERSION */
 #include "sha256.h"       /* 122.13: tk_sha256_* */
@@ -444,20 +445,18 @@ static void emit_capabilities_section(FILE *out, const TkcLimits *lim)
 {
     if (!lim || !lim->cap_present) return;
     fprintf(out, "\n## Capabilities\n\n");
-    fprintf(out, "Declared authority baked into the binary (ADR-0010). Mode: **%s**.\n\n",
-            lim->cap_enforce ? "enforce (deny-by-default)" : "advisory (allow-all)");
-    static const struct { unsigned bit; const char *name; } classes[] = {
-        {TK_CAP_FS_READ, "fs.read"}, {TK_CAP_FS_WRITE, "fs.write"},
-        {TK_CAP_NET, "net"}, {TK_CAP_ENV_WRITE, "env.write"},
-        {TK_CAP_PROCESS_SPAWN, "process.spawn"},
-    };
-    int any = 0;
-    for (int i = 0; i < 5; i++)
-        if (lim->cap_grants & classes[i].bit) {
-            fprintf(out, "- `%s`\n", classes[i].name);
-            any = 1;
-        }
-    if (!any) fprintf(out, "- (none — pure computation)\n");
+    /* 138.19: the mode line said "advisory (allow-all)" for any binary built
+     * without `enforce = true`, but enforcement has been the default since
+     * 124.4g and `enforce` is vestigial (spec §2.2): only `all` opts out. */
+    fprintf(out, "Declared authority baked into the binary (ADR-0010). Mode: **%s**. "
+                 "Run-time --allow-* flags: **%s**.\n\n",
+            lim->cap_grants == TK_CAP_ALL ? "allow-all" : "enforce (deny-by-default)",
+            !lim->cap_set ? "grant (no grant set baked)"
+                          : lim->cap_runtime_union ? "union (may widen)" : "narrow only");
+    /* 138.19: each class with its scopes, or "(whole class)". */
+    tkc_cap_describe(out, lim, "- ");
+    if (!(lim->cap_grants & 0x1Fu) && lim->cap_nscopes == 0)   /* the five class bits */
+        fprintf(out, "- (none — pure computation)\n");
 }
 
 void emit_companion(FILE *out, const char *source_path, const char *source,

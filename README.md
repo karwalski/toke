@@ -282,7 +282,6 @@ Every row above except the two struck ones was re-checked on 2026-09-20 and reso
 | `docs/` | Specification (`docs/spec/`), stdlib reference, architecture decisions, project tracking, security policies |
 | `examples/` | Complete example programs (CLI tools, web apps, REST APIs) |
 | `bench/` | Compiler benchmark programs and performance scripts |
-| `tree-sitter-toke/` | Tree-sitter grammar for editor syntax highlighting |
 | `scripts/` | Build, deployment and claim-guard helper scripts |
 | `wasm/` | WebAssembly playground (experimental) |
 
@@ -292,6 +291,8 @@ Every row above except the two struck ones was re-checked on 2026-09-20 and reso
   (v0.4 is normative; [v0.3](docs/spec/toke-spec-v0.3.md) is historical)
 - **Formal grammar:** [docs/spec/grammar.ebnf](docs/spec/grammar.ebnf),
   [docs/spec/toke.gbnf](docs/spec/toke.gbnf)
+- **Tree-sitter grammar** (editor syntax highlighting): `tree-sitter-toke/` in
+  [karwalski/toke-spec](https://github.com/karwalski/toke-spec/tree/main/tree-sitter-toke)
 - **Canonical description of toke:** [docs/about/canonical.md](docs/about/canonical.md)
 - **Every published number:** [docs/metrics-baseline.md](docs/metrics-baseline.md)
 - **Positioning and falsification tests:** [docs/about/positioning-2026-09.md](docs/about/positioning-2026-09.md)
@@ -394,8 +395,9 @@ toke pkg init|add|remove|resolve|fetch|list
   --lint [--fix]      run the lint rules; --fix rewrites mechanical violations
   --migrate           migrate a legacy .tk file to the default syntax
   --legacy            legacy mode (86-character syntax)
-  --allow-read[=PATH] --allow-write[=PATH] --allow-net[=HOST] --allow-env --allow-run[=PATH]
-                      grant a capability (deny-by-default, ADR-0010)
+  --allow-read[=PATH,...] --allow-write[=PATH,...] --allow-env[=KEY,...] --allow-run[=CMD,...]
+  --allow-net[=connect:HOST[:PORT],listen:ADDR:PORT,...]
+                      grant a capability, whole or scoped (deny-by-default, ADR-0010)
   --diag-json         structured JSON diagnostics (the default)
   --diag-text         human-readable diagnostics with the source line
   --diag-sarif        SARIF v2.1.0 diagnostics
@@ -476,7 +478,7 @@ The Homebrew tap (`brew tap karwalski/toke`) is not published yet; see
 
 This repository is mixed-licence:
 
-- The compiler (`tkc`), documentation, tooling and `tree-sitter-toke/` are licensed under
+- The compiler (`tkc`), documentation and tooling are licensed under
   the [Apache License 2.0](LICENSE); attribution is in [NOTICE](NOTICE).
 - The language specification (`spec/`) and the standard library (`stdlib/`, `src/stdlib/`)
   are licensed under the MIT License ([spec/LICENSE](spec/LICENSE),

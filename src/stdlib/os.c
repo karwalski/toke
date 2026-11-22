@@ -27,9 +27,10 @@ int64_t tk_os_open(int64_t path, int64_t flags, int64_t mode) {
     /* 124.4c2: gate by access mode — reads need FS_READ, any write/create/
      * truncate/append needs FS_WRITE (O_RDWR needs both). */
     int af = (int)flags & O_ACCMODE;
-    if (af == O_RDONLY || af == O_RDWR) TK_REQUIRE(TK_CAP_FS_READ);
+    const char *p = (const char *)(intptr_t)path;
+    if (af == O_RDONLY || af == O_RDWR) TK_REQUIRE_PATH(TK_CAP_FS_READ, p);
     if (af == O_WRONLY || af == O_RDWR ||
-        ((int)flags & (O_CREAT | O_TRUNC | O_APPEND))) TK_REQUIRE(TK_CAP_FS_WRITE);
+        ((int)flags & (O_CREAT | O_TRUNC | O_APPEND))) TK_REQUIRE_PATH(TK_CAP_FS_WRITE, p);
     /* AMB-07: do not follow a symlink on the final component. A caller who
      * genuinely needs to open a symlink must clear this via a future opt-out. */
     return (int64_t)open((const char *)(intptr_t)path,
@@ -97,7 +98,7 @@ int64_t tk_os_lseek(int64_t fd, int64_t offset, int64_t whence) {
 }
 
 int64_t tk_os_stat(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     struct stat st;
     int rc = stat((const char *)(intptr_t)path, &st);
     if (rc != 0) return (int64_t)-1;
@@ -105,28 +106,29 @@ int64_t tk_os_stat(int64_t path) {
 }
 
 int64_t tk_os_unlink(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     return (int64_t)unlink((const char *)(intptr_t)path);
 }
 
 int64_t tk_os_rename(int64_t oldpath, int64_t newpath) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)oldpath);   /* 138.19: both ends */
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)newpath);
     return (int64_t)rename((const char *)(intptr_t)oldpath,
                            (const char *)(intptr_t)newpath);
 }
 
 int64_t tk_os_mkdir(int64_t path, int64_t mode) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     return (int64_t)mkdir((const char *)(intptr_t)path, (mode_t)mode);
 }
 
 int64_t tk_os_rmdir(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_WRITE);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, (const char *)(intptr_t)path);
     return (int64_t)rmdir((const char *)(intptr_t)path);
 }
 
 int64_t tk_os_access(int64_t path, int64_t amode) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);
     return (int64_t)access((const char *)(intptr_t)path, (int)amode);
 }
 
@@ -193,7 +195,7 @@ int64_t tk_os_getenv(int64_t name) {
 }
 
 int64_t tk_os_setenv(int64_t name, int64_t value) {
-    TK_REQUIRE(TK_CAP_ENV_WRITE);
+    TK_REQUIRE_ENV((const char *)(intptr_t)name);
     return (int64_t)setenv((const char *)(intptr_t)name,
                            (const char *)(intptr_t)value, 1);
 }

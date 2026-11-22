@@ -1,0 +1,20 @@
+id: D635
+series: D
+description: "138.37 (loke T-66): a `mt` whose arms name variants over an i64 parameter is E4031 at --check with no fix (it passed --check and the build stopped with E9005) -- whether a sum-typed value or integer-literal arms were meant is not decidable (AGENTS 6)"
+input: |
+  m=test;
+  t=$r{ok:bool;msg:str};
+  f=h(e:i64):$r{
+    <mt e {
+      $notfound:v $r{ok:false;msg:"nf"};
+      $permission:v $r{ok:false;msg:"pd"};
+      $io:v $r{ok:false;msg:"io"}
+    }
+  };
+  f=main():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "a sum type"

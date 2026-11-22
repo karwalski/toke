@@ -19,6 +19,10 @@ The `std.process` module provides functions for spawning child processes, readin
 
 An opaque handle representing a spawned child process. Obtained from `process.spawn` and passed to `process.wait`, `process.stdout`, and `process.kill`.
 
+**Only a value `process.spawn` returned is a handle.** The runtime keeps a registry of the handles it has handed out and looks every argument up there without reading it as memory. Any other value (an integer, a pid from `process.spawndetached`, a handle changed by arithmetic, a value cast with `as`) is answered exactly as `process.badhandle()` (`0`) is: `process.wait` and `process.exitcode` return `-1`, `process.stdout` and `process.stderr` take the `$err` arm with `$io`, `process.kill` returns `false`, `process.isalive` returns `0`, and `process.hasexited` and `process.poll` return `1`. Before 138.36 such a value was read as a process record, and the program died with SIGSEGV (loke T-67).
+
+A waited handle stays valid: `process.wait` returns the same exit code again, `process.stdout` and `process.stderr` return the output drained while waiting, and `process.kill` returns `false` because the child has exited. No call in `std.process` frees a handle.
+
 ### $processerr
 
 A sum type representing process operation failures.

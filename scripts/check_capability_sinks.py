@@ -23,17 +23,25 @@ WHAT IT DOES.
      deliberate: http.servedir registers staticdir_handler as a callback, and
      that handler's fopen() is authority the servedir entry hands out.
   3. SINKS are direct uses of the libc/POSIX primitives in SINK_CLASSES.
-  4. From each entry it walks the graph.  A function whose body contains
-     TK_REQUIRE(...) or tk_cap_check(...) grants every TK_CAP_* class named in
-     its body to everything below it.  A sink reached with its class not
-     granted on that path is a FINDING: (entry, function, primitive, class).
+  4. From each entry it walks the graph.  A function whose body contains a
+     gate grants the TK_CAP_* classes named in that gate's arguments to
+     everything below it.  A sink reached with its class not granted on that
+     path is an UNGATED finding: (entry, function, primitive, class).
+  5. 138.19: a gate is SCOPED (TK_REQUIRE_PATH / _NET / _CMD / _ENV, which
+     take the path, host, command or key the sink is about to use) or
+     CLASS-ONLY (TK_REQUIRE, tk_cap_check).  A class-only gate passes only
+     for the whole class, so under a scoped grant (fs_read = ["./content"])
+     the entry fails closed.  Every sink must therefore be reached through a
+     SCOPED gate of its class; one reached only through a class-only gate is
+     a CLASSONLY finding, legal only on the skiplist.
 
   `fopen`/`open`/`openat` are "fs": either fs.read or fs.write satisfies them,
   because the class depends on a mode argument this scan does not evaluate.
 
-THE SKIPLIST (scripts/check_capability_sinks_skiplist.txt) holds two kinds
+THE SKIPLIST (scripts/check_capability_sinks_skiplist.txt) holds three kinds
 of line, each with a date, a story and a reason: `exempt` sinks that are not
-the program's authority at all, and `ungated` entries that are known gaps.
+the program's authority at all, `ungated` entries that are known gaps, and
+`classonly` entries still on the class-only gate (138.19; none today).
 It is self-failing, like check_stdlib_analysis_skiplist.txt:
   * a finding NOT on the list fails the gate -- that is a removed or missing
     TK_REQUIRE;
@@ -44,8 +52,8 @@ WHAT IT DOES NOT SEE (stated, not asserted): function pointers reached through
 a table or struct field rather than by name; a sink reached through a vendored
 library (stdlib/vendor) or another shared object; a gate placed AFTER the sink
 in the same function (the scan treats a gated function as gated throughout);
-and a scoped grant (--allow-read=/srv) -- scopes are coarsened to the class
-today (124.4c).
+and whether a scoped gate is passed the value the sink then uses (that it is
+passed one at all is what this checks; which one, the runtime tests show).
 
 Usage:
   python3 scripts/check_capability_sinks.py            # gate: exit 0/1
@@ -67,6 +75,8 @@ CAP_TOKENS = {
     "TK_CAP_FS_READ": FS_READ,
     "TK_CAP_FS_WRITE": FS_WRITE,
     "TK_CAP_NET": NET,
+    "TK_CAP_NET_CONNECT": NET,      # 138.19: the net class's two directions
+    "TK_CAP_NET_LISTEN": NET,
     "TK_CAP_ENV_WRITE": ENV_WRITE,
     "TK_CAP_PROCESS_SPAWN": SPAWN,
     "TK_CAP_ALL": "*",
@@ -108,7 +118,33 @@ KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "do",
 IDENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
 # a primitive counts as used only when CALLED: `bind(` not `.bind` / `->bind`
 CALL = re.compile(r"(?<![.>\w])([A-Za-z_][A-Za-z0-9_]*)\s*\(")
-GATE = re.compile(r"\b(TK_REQUIRE|tk_cap_check)\s*\(")
+GATE = re.compile(r"\b(TK_REQUIRE(?:_PATH_DIR|_PATH|_NET|_CMD|_ENV)?|tk_cap_check)\s*\(")
+# 138.19: the scoped gates, and the class a gate implies without a token
+SCOPED_GATES = {"TK_REQUIRE_PATH", "TK_REQUIRE_PATH_DIR", "TK_REQUIRE_NET", "TK_REQUIRE_CMD",
+                "TK_REQUIRE_ENV"}
+GATE_IMPLIES = {"TK_REQUIRE_NET": NET, "TK_REQUIRE_CMD": SPAWN, "TK_REQUIRE_ENV": ENV_WRITE}
+
+
+def gate_grants(body: str):
+    """(classes, scoped_classes) the gates in a function body grant.  Each
+    gate's own argument list names its classes (balanced parentheses), so a
+    body holding a scoped fs.read gate and a class-only fs.write gate grants
+    fs.write class-only."""
+    held, scoped = set(), set()
+    for m in GATE.finditer(body):
+        depth, j = 1, m.end()
+        while j < len(body) and depth:
+            depth += {"(": 1, ")": -1}.get(body[j], 0)
+            j += 1
+        args = body[m.end():j]
+        cls = {CAP_TOKENS[t] for t in re.findall(r"\bTK_CAP_[A-Z_]+\b", args)
+               if t in CAP_TOKENS}
+        if m.group(1) in GATE_IMPLIES:
+            cls.add(GATE_IMPLIES[m.group(1)])
+        held |= cls
+        if m.group(1) in SCOPED_GATES:
+            scoped |= cls
+    return held, scoped
 
 
 def blank_comments_and_strings(src: str) -> str:
@@ -261,11 +297,7 @@ def scan(root: str):
 
     info = {}
     for (fn, name), body in funcs.items():
-        grants = set()
-        if GATE.search(body):
-            for tok in re.findall(r"\bTK_CAP_[A-Z_]+\b", body):
-                if tok in CAP_TOKENS:
-                    grants.add(CAP_TOKENS[tok])
+        grants = gate_grants(body)
         sinks = sorted({m.group(1) for m in CALL.finditer(body)
                         if m.group(1) in SINK_CLASSES
                         and resolve(fn, m.group(1)) is None})
@@ -288,15 +320,17 @@ def scan(root: str):
 
     entries = sorted(e for e in load_entries(root) if e in globals_)
     findings = {}         # (entry, "file:func", primitive, class) -> chain
+    classonly = {}        # 138.19: the same key, reached through class-only gates only
     for e in entries:
         start = (globals_[e][0], e)
         seen = set()
-        stack = [(start, frozenset(), (start,))]
+        stack = [(start, frozenset(), frozenset(), (start,))]
         while stack:
-            node, held, chain = stack.pop()
-            grants, sinks, refs = info[node]
+            node, held, held_sc, chain = stack.pop()
+            (grants, grants_sc), sinks, refs = info[node]
             held = held | grants
-            key = (node, held)
+            held_sc = held_sc | grants_sc
+            key = (node, held, held_sc)
             if key in seen:
                 continue
             seen.add(key)
@@ -306,27 +340,35 @@ def scan(root: str):
                 cls = SINK_CLASSES[s]
                 if cls == FS_ANY:
                     ok = FS_READ in held or FS_WRITE in held
+                    ok_sc = FS_READ in held_sc or FS_WRITE in held_sc
                 else:
                     ok = cls in held
+                    ok_sc = cls in held_sc
                 if not ok:
                     findings.setdefault((e, f"{node[0]}:{node[1]}", s, cls),
                                         chain)
+                elif not ok_sc:
+                    classonly.setdefault((e, f"{node[0]}:{node[1]}", s, cls),
+                                         chain)
             for r in refs:
-                stack.append((r, held, chain + (r,)))
-    return entries, findings
+                stack.append((r, held, held_sc, chain + (r,)))
+    return entries, findings, classonly
 
 
 def load_skiplist(path: str):
-    """Two kinds of line, fields separated by `|`:
-         exempt  | file.c:function | primitive | date | story | reason
-         ungated | entry | file.c:function | primitive | date | story | reason
+    """Three kinds of line, fields separated by `|`:
+         exempt    | file.c:function | primitive | date | story | reason
+         ungated   | entry | file.c:function | primitive | date | story | reason
+         classonly | entry | file.c:function | primitive | date | story | reason
     An EXEMPT sink is not the program's authority at all (entropy from
     /dev/urandom, the server's own pre-forked workers, a log file's rotation
     after the log was opened under a grant); it is exempt from every entry.
-    An UNGATED line is a known gap: one entry, one sink, not yet fixed."""
-    exempt, ungated = {}, {}
+    An UNGATED line is a known gap: one entry, one sink, not yet fixed.
+    A CLASSONLY line (138.19) is an entry still on the class-only gate, which
+    fails closed under a scoped grant."""
+    exempt, ungated, classonly = {}, {}, {}
     if not os.path.exists(path):
-        return exempt, ungated
+        return exempt, ungated, classonly
     for n, ln in enumerate(open(path, encoding="utf-8"), 1):
         ln = ln.strip()
         if not ln or ln.startswith("#"):
@@ -336,12 +378,14 @@ def load_skiplist(path: str):
             exempt[(parts[1], parts[2])] = n
         elif parts[0] == "ungated" and len(parts) >= 7 and all(parts[:7]):
             ungated[(parts[1], parts[2], parts[3])] = n
+        elif parts[0] == "classonly" and len(parts) >= 7 and all(parts[:7]):
+            classonly[(parts[1], parts[2], parts[3])] = n
         else:
             print(f"{path}:{n}: malformed skiplist line (every field, "
                   f"including date, story and reason, is required): {ln}",
                   file=sys.stderr)
             sys.exit(2)
-    return exempt, ungated
+    return exempt, ungated, classonly
 
 
 def main() -> int:
@@ -355,18 +399,19 @@ def main() -> int:
                     help="print the reference chain for each reported finding")
     a = ap.parse_args()
 
-    entries, findings = scan(a.root)
+    entries, findings, classonly = scan(a.root)
     if a.list:
-        for f in sorted(findings):
-            print(" | ".join(f))
-            if a.why:
-                print("    via " + " -> ".join(n[1] for n in findings[f]))
-        print(f"{len(findings)} finding(s) across {len(entries)} entries",
-              file=sys.stderr)
+        for kind, fs in (("ungated", findings), ("classonly", classonly)):
+            for f in sorted(fs):
+                print(kind + " | " + " | ".join(f))
+                if a.why:
+                    print("    via " + " -> ".join(n[1] for n in fs[f]))
+        print(f"{len(findings)} ungated and {len(classonly)} class-only finding(s) "
+              f"across {len(entries)} entries", file=sys.stderr)
         return 0
 
-    exempt, ungated = load_skiplist(a.skiplist)
-    new, used_ex, used_un = [], set(), set()
+    exempt, ungated, classok = load_skiplist(a.skiplist)
+    new, new_co, used_ex, used_un, used_co = [], [], set(), set(), set()
     for f in sorted(findings):
         entry, func, prim, _cls = f
         if (func, prim) in exempt:
@@ -375,22 +420,37 @@ def main() -> int:
             used_un.add((entry, func, prim))
         else:
             new.append(f)
+    for f in sorted(classonly):
+        entry, func, prim, _cls = f
+        if (func, prim) in exempt:
+            used_ex.add((func, prim))
+        elif (entry, func, prim) in classok:
+            used_co.add((entry, func, prim))
+        else:
+            new_co.append(f)
     stale = ([("exempt",) + k for k in sorted(exempt) if k not in used_ex] +
-             [("ungated",) + k for k in sorted(ungated) if k not in used_un])
+             [("ungated",) + k for k in sorted(ungated) if k not in used_un] +
+             [("classonly",) + k for k in sorted(classok) if k not in used_co])
     for f in new:
         print("UNGATED: " + " | ".join(f) +
               "  -- reaches the primitive with no TK_REQUIRE of its class")
         print("    via " + " -> ".join(n[1] for n in findings[f]))
+    for f in new_co:
+        print("CLASSONLY: " + " | ".join(f) +
+              "  -- reached through a class-only TK_REQUIRE; a scoped grant fails "
+              "closed here: pass the value to TK_REQUIRE_PATH / _NET / _CMD / _ENV")
+        print("    via " + " -> ".join(n[1] for n in classonly[f]))
     for k in stale:
         print("STALE:   " + " | ".join(k) +
               "  -- on the skiplist but no longer found; delete the line")
-    if new or stale:
-        print(f"check_capability_sinks: FAIL -- {len(new)} ungated, "
-              f"{len(stale)} stale ({len(entries)} entries scanned)")
+    if new or new_co or stale:
+        print(f"check_capability_sinks: FAIL -- {len(new)} ungated, {len(new_co)} "
+              f"class-only, {len(stale)} stale ({len(entries)} entries scanned)")
         return 1
     print(f"check_capability_sinks: OK -- {len(entries)} entries scanned; "
-          f"{len(findings)} sink paths, all accounted for by the skiplist "
-          f"({len(exempt)} exempt sinks, {len(ungated)} known-ungated entries)")
+          f"{len(findings) + len(classonly)} sink paths, all scoped-gated or "
+          f"accounted for by the skiplist ({len(exempt)} exempt sinks, "
+          f"{len(ungated)} known-ungated entries, {len(classok)} class-only entries)")
     return 0
 
 

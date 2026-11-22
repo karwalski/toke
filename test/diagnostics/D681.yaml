@@ -1,0 +1,17 @@
+id: D681
+series: D
+description: "127.484: the value of `mt s{$circle:r r*r;..}` over an f64 payload is an f64, so binding it to a str annotation is E4031 expected str got f64 with NO fix; the arm binding was untyped and --check passed"
+input: |
+  m=t;
+  t=$shape{$circle:f64;$sq:f64};
+  f=main():i64{
+    let ls=$shape{$circle:2.0};
+    let b:str=mt ls{$circle:r r*r;$sq:n n};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "f64"

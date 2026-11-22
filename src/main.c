@@ -362,12 +362,14 @@ static const char *const HELP_SECTIONS[] = {
     "  --max-iters=N       Max loop iterations at runtime (default: 0 = unlimited)\n"
     "  --show-limits       Print effective limits and exit\n"
     "\n",
-    "Capabilities (ADR-0010, deny-by-default; grants also declarable in\n"
-    "tkc.toml [capabilities] and passable at run time on the compiled binary):\n"
-    "  --allow-read[=PATH] --allow-write[=PATH]  Grant fs read / write\n"
-    "  --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn\n"
+    "Capabilities (ADR-0010, deny-by-default; a flag with no =value grants the whole\n"
+    "class, with values only those scopes; also declarable in tkc.toml [capabilities]\n"
+    "and passable at run time on the compiled binary, where they narrow a baked set):\n"
+    "  --allow-read[=PATH,...] --allow-write[=PATH,...]  Grant fs read / write\n"
+    "  --allow-net[=connect:HOST[:PORT],listen:ADDR:PORT,...]  Grant net\n"
+    "  --allow-env[=KEY,PREFIX*,...]  --allow-run[=CMD,...]  Grant env write / spawn\n"
     "  --allow-all         Grant every capability\n"
-    "  --cap-enforce       Bake deny-by-default enforcement into the binary\n"
+    "  --cap-enforce       Accepted for compatibility; enforcement is the default\n"
     "\n"
     "Packages (ADR-0004, docs/reference/package-manifest.md):\n"
     "  tkc pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
@@ -1909,6 +1911,7 @@ int main(int argc, char **argv)
     const char *verify_companion_path = NULL;
     const char *companion_diff_comp = NULL;
     int show_limits = 0;
+    int cap_flag_rc = 0;   /* 138.19: tkc_cap_flag's answer for one --allow-* */
     Profile profile = PROFILE_DEFAULT;
     TkcLimits limits;
     tkc_limits_defaults(&limits);
@@ -2011,16 +2014,12 @@ int main(int argc, char **argv)
         else if (!strncmp(argv[i], "--arena-block=", 14)) limits.arena_block_size = atoi(argv[i] + 14);
         else if (!strncmp(argv[i], "--max-iters=", 12))  limits.max_iters = atoi(argv[i] + 12);
         /* 124.4b (ADR-0010): compile-time capability grants baked into the
-         * binary. Accept an optional =scope (coarsened to the class for now).
-         * --cap-enforce bakes deny-by-default. */
-        else if (!strncmp(argv[i], "--allow-all", 11))   { limits.cap_grants |= TK_CAP_ALL; limits.cap_present = 1; }
-        else if (!strncmp(argv[i], "--allow-read", 12) ||
-                 !strncmp(argv[i], "--allow-fs-read", 15))  { limits.cap_grants |= TK_CAP_FS_READ; limits.cap_present = 1; }
-        else if (!strncmp(argv[i], "--allow-write", 13) ||
-                 !strncmp(argv[i], "--allow-fs-write", 16)) { limits.cap_grants |= TK_CAP_FS_WRITE; limits.cap_present = 1; }
-        else if (!strncmp(argv[i], "--allow-net", 11))   { limits.cap_grants |= TK_CAP_NET; limits.cap_present = 1; }
-        else if (!strncmp(argv[i], "--allow-env", 11))   { limits.cap_grants |= TK_CAP_ENV_WRITE; limits.cap_present = 1; }
-        else if (!strncmp(argv[i], "--allow-run", 11))   { limits.cap_grants |= TK_CAP_PROCESS_SPAWN; limits.cap_present = 1; }
+         * binary.  138.19 (D1): --allow-x is the whole class, --allow-x=a,b
+         * bakes those scopes (each validated here).  --cap-enforce is
+         * vestigial: recorded, and it bakes no grant set. */
+        else if (!strncmp(argv[i], "--allow-", 8) && (cap_flag_rc = tkc_cap_flag(argv[i], &limits)) != 0) {
+            if (cap_flag_rc < 0) return EUSAGE;
+        }
         else if (!strcmp(argv[i], "--cap-enforce"))      { limits.cap_enforce = 1; limits.cap_present = 1; }
         else if (!strncmp(argv[i], "--config=", 9)) { /* already handled */ }
         else if (!strcmp(argv[i], "--target")) {
@@ -2077,6 +2076,16 @@ int main(int argc, char **argv)
         printf("  cap-present  = %d\n", limits.cap_present);
         printf("  cap-grants   = 0x%x\n", limits.cap_grants);
         printf("  cap-enforce  = %d\n", limits.cap_enforce);
+        /* 138.19: the scopes, and whether run-time flags narrow (D2). */
+        printf("  cap-runtime  = %s\n", !limits.cap_set ? "union (no grant set baked)"
+                                       : limits.cap_runtime_union ? "union" : "narrow");
+        for (int k = 0; k < limits.cap_nscopes; k++)
+            printf("  cap-scope    = %s %s\n",
+                   limits.cap_scopes[k].cls == TK_CAP_IDX_FS_READ ? "fs.read" :
+                   limits.cap_scopes[k].cls == TK_CAP_IDX_FS_WRITE ? "fs.write" :
+                   limits.cap_scopes[k].cls == TK_CAP_IDX_NET ? "net" :
+                   limits.cap_scopes[k].cls == TK_CAP_IDX_ENV_WRITE ? "env.write" : "process.spawn",
+                   limits.cap_scopes[k].text);
         return 0;
     }
     /* --compress / --decompress / --compress-stream: standalone stdin modes */
@@ -2150,6 +2159,14 @@ int main(int argc, char **argv)
     if (verify_companion_path) return verify_companion(verify_companion_path);
     if (source_file_count == 0) { print_help(); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
+    /* 138.19 D4 (the warning release): a quoted-string grant in tkc.toml
+     * keeps its whole-class meaning, and W9012 says when that changes. */
+    if (limits.cap_nquoted) {
+        diag_set_format(dsarif ? DIAG_FMT_SARIF :
+                        djson  ? DIAG_FMT_JSON  :
+                        dtext  ? DIAG_FMT_TEXT  : DIAG_FMT_JSON);
+        tkc_cap_warn_quoted(&limits);
+    }
     /* 76.1.6c: a .tkir is a compiled program, not source text.  The modes
      * that read or rewrite the source file itself (and --lint --fix would
      * rewrite the .tkir in place) do not apply to it. */

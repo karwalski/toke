@@ -127,8 +127,9 @@ SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".py", ".js", ".php",
 # Files owned by another story: reported as warnings, never fail the build,
 # until that story lands and the entry is deleted. Keep this list SHORT and
 # always keyed to a story number.
+# 132.7 (v2, 2026-11-23): the repositioning brief left this list; it is enforced
+# by rules 1 and 2 like any other published page.
 PENDING = {
-    "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
 
 # Same idea, by prefix — used for the sibling repos swept by story 132.15.
@@ -211,11 +212,37 @@ SKIP_PREFIXES = (
     "docs/progress.md",              # the tracker; story text quotes claims to fix them
     "docs/epics_and_stories.md",     # historical backlog
     "docs/about/reviews/",           # third-party reviews, quoted as published
-    "docs/decisions/",               # decision records quoting the options considered
     "docs/metrics-baseline.md",      # the source of truth; it defines the wording
     "docs/about/samples-v04.md",     # the per-lane dataset, with its own do-not rules
     "docs/reference/token-comparison.md",  # v0.3 dataset, requalified in place by 132.6
 )
+
+# 127.477: decision records are skipped only once they are records. docs/decisions/
+# used to sit in SKIP_PREFIXES ("decision records quoting the options considered"),
+# so the LIVE Gate 2 status in docs/decisions/gate2-decision.md (owner decision D4)
+# and its deployed website copy were scanned by neither guard. A decision record
+# under these prefixes is now scanned like any other surface unless it opens with
+# the dated `**Archived YYYY-MM-DD**` banner, which makes it a record and keeps it
+# out of the scan as before. check_canonical.py uses the same helper.
+RECORD_PREFIXES = (
+    "docs/decisions/",
+)
+
+
+def skipped(rel, path):
+    """True when the file at `path` (repo-relative `rel`, the SOURCE path for a
+    deployed page) is not a claim surface: a SKIP_PREFIXES entry, or an archived
+    decision record (127.477)."""
+    if rel.startswith(SKIP_PREFIXES):
+        return True
+    if rel.startswith(RECORD_PREFIXES):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                head = [next(fh, "") for _ in range(ARCHIVE_HEAD)]
+        except OSError:
+            return False
+        return is_archived([ln.rstrip("\n") for ln in head])
+    return False
 
 PCT = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d+)?\s?%")
 TOKEN_WORD = re.compile(r"\btoken(s|izer|izers|ization|ised|ized)?\b", re.I)
@@ -390,7 +417,9 @@ HISTORICAL_CUE = re.compile(r"\bv0\.[0-3]\b|\bera\b|\bhistorical\b", re.I)
 # "toke's Profile-1 character set excludes `_`" and this gate read it as a claim
 # of a ONE-character alphabet — a label the list below already exempts, missed
 # only because it was written `Profile-1` rather than `Profile 1`.
-_LABEL_WORDS = ("Phase", "Profile", "Tier", "Gate", "Epic", "Wave")
+# 127.477: "RFC 2119 keywords" names a standard, not a count of toke keywords
+# (docs/decisions/gate1-research-review-decisions.md, scanned since 127.477).
+_LABEL_WORDS = ("Phase", "Profile", "Tier", "Gate", "Epic", "Wave", "RFC")
 NOT_LABEL = "".join("(?<!%s%s)" % (w, sep)          # re.I makes these case-blind
                     for w in _LABEL_WORDS for sep in (" ", "-"))
 
@@ -1205,7 +1234,7 @@ def check_file(path):
     src = deployed_source(path)
     if src:
         rel = os.path.relpath(src, ROOT)
-    if rel.startswith(SKIP_PREFIXES):
+    if skipped(rel, src or path):
         return []
     try:
         lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
@@ -1304,6 +1333,11 @@ SELFTEST = [
     (True, "rule 1: fully qualified",
      "Tokenizer-vs-tokenizer on identical toke source: toke-16K vs cl100k, "
      "12.5% reduction, N = 500 programs."),
+    # -- 127.477: "RFC 2119 keywords" names a standard; a real count still fails --
+    (True, "127.477: RFC 2119 keywords is a standard's name, not a count",
+     "RFC 2119 keywords are designed for protocol interoperability."),
+    (False, "127.477: a keyword count that is not the tree's still fails",
+     "The language reserves 2119 keywords."),
     (True, "rule 1: a threshold, not a result",
      "Gate 2 requires token reduction >= 15% on the held-out suite."),
     (True, "rule 1: a percentage that is not about tokens",
@@ -1597,9 +1631,43 @@ def selftest_never_read():
     return bad
 
 
+def selftest_decision_records(skip_fn, label="metrics"):
+    """127.477 -- a decision record is scanned unless it carries the dated
+    Archived banner; the other skip prefixes are unchanged. `skip_fn` is the
+    calling guard's skipped(), so check_canonical.py runs the same cases."""
+    import tempfile
+    bad = 0
+    cases = [
+        ("live decision record (the Gate 2 status) is scanned",
+         "docs/decisions/gate2-decision.md",
+         "# Gate 2\n\n**Status:** no standing verdict (owner decision D4).\n", False),
+        ("archived decision record stays a record",
+         "docs/decisions/old.md",
+         "# Old\n\n> **Archived 2026-09-19 (story 132.15).** Superseded.\n", True),
+        ("banner below the first 40 lines does not archive it",
+         "docs/decisions/late.md",
+         "# Late\n" + "x\n" * 45 + "**Archived 2026-09-19 (story 1).**\n", False),
+        ("the tracker stays skipped",
+         "docs/progress.md", "# Tracker\n", True),
+        ("an ordinary doc is scanned",
+         "docs/about/why.md", "# Why\n", False),
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, rel, text, want in cases:
+            path = os.path.join(tmp, os.path.basename(rel))
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            if bool(skip_fn(rel, path)) != want:
+                bad += 1
+                print("SELFTEST FAIL [%s decision records] %s: %s"
+                      % (label, name, "skipped" if not want else "scanned"))
+    return bad
+
+
 def selftest():
     import tempfile
-    bad = selftest_structure() + selftest_never_read()
+    bad = selftest_structure() + selftest_never_read() + \
+        selftest_decision_records(skipped)
     for case in SELFTEST:
         accept, name, text = case[:3]
         suffix = case[3] if len(case) > 3 else ".md"
@@ -1673,7 +1741,7 @@ def main():
                   "(run `make build` there)" % os.path.relpath(tp, ROOT))
     for path in md_files(targets):
         rel = os.path.relpath(path, ROOT)
-        if rel.startswith(SKIP_PREFIXES):
+        if skipped(rel, path):
             continue
         scanned += 1
         # 132.46: a rendered docs page whose SOURCE passes is reported, not

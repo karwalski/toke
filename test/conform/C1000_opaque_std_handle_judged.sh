@@ -93,7 +93,8 @@ expect "9-control-ooke-idiom-runs" \
 expect "10-control-badhandle-runs" \
   "$(run "let b=mt ${SPAWN_BAD} {\$ok:v v;\$err:e process.badhandle()}; io.println(\"wb=\\(process.wait(b))\");")" \
   "wb=-1 "
-# 11 — control: an integer where a handle is declared stays clean (136.36)
+# 11 — control: the literal 0 (the null handle) where a handle is declared
+#      stays clean (136.36; any other integer is E4031 since 138.35, C1905)
 expect "11-control-int-handle" \
   "$(chk 'let w=process.wait(0); let n=vec.len(0);')" \
   "rc=0   "

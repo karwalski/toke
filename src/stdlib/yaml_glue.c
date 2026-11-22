@@ -170,7 +170,7 @@ int64_t tk_yaml_stringify_w(int64_t val) {
 
 /* 121.42 (5): reads the file named by the program -- fs.read, like file.read. */
 int64_t tk_yaml_load_w(int64_t path) {
-    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, (const char *)(intptr_t)path);   /* 138.19 */
     if (!path) return 0;
     StrFileResult fr = file_read((const char *)(intptr_t)path);
     if (fr.is_err || !fr.ok) return 0;

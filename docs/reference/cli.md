@@ -25,6 +25,10 @@ tkc --diag-text broken.tk     # human-readable diagnostics
 tkc pkg init myapp            # write pkg.toml
 ```
 
+A build that links with its own clang command, rather than through `tkc`, links the
+standard library C sources and flags `tkc --emit-deps` prints for each of its modules;
+see [Build Dependencies](/docs/compiler/build-deps/), "Linking a program yourself".
+
 Everything below this line is generated from the compiler's own help text by
 `scripts/render_cli_reference.py`: `tkc --help` for the flags, `tkc pkg --help` and
 each `tkc pkg <command> --help` for the package commands, and `src/tkc_limits.h` for
@@ -97,14 +101,15 @@ tkc [flags] <source-file> [source-file ...]
 | `--max-iters=N` | Max loop iterations at runtime (default: 0 = unlimited) |
 | `--show-limits` | Print effective limits and exit |
 
-## Capabilities (ADR-0010, deny-by-default; grants also declarable in tkc.toml [capabilities] and passable at run time on the compiled binary)
+## Capabilities (ADR-0010, deny-by-default; a flag with no =value grants the whole class, with values only those scopes; also declarable in tkc.toml [capabilities] and passable at run time on the compiled binary, where they narrow a baked set)
 
 | Flag | Description |
 |---|---|
-| `--allow-read[=PATH] --allow-write[=PATH]` | Grant fs read / write |
-| `--allow-net[=HOST] --allow-env --allow-run[=PATH]` | Grant net / env / spawn |
+| `--allow-read[=PATH,...] --allow-write[=PATH,...]` | Grant fs read / write |
+| `--allow-net[=connect:HOST[:PORT],listen:ADDR:PORT,...]` | Grant net |
+| `--allow-env[=KEY,PREFIX*,...] --allow-run[=CMD,...]` | Grant env write / spawn |
 | `--allow-all` | Grant every capability |
-| `--cap-enforce` | Bake deny-by-default enforcement into the binary |
+| `--cap-enforce` | Accepted for compatibility; enforcement is the default |
 
 ## Packages (ADR-0004, docs/reference/package-manifest.md)
 

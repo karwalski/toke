@@ -1,0 +1,18 @@
+id: D608
+series: D
+description: "138.24/138.25/138.27 positive guard: the amendment's calls, used as documented, check clean -- withdeadline/withmaxbody/withconnectaddr compose and return a client, getheaders and net.resolve are matched"
+input: |
+  m=t;
+  i=http:std.http;
+  i=net:std.net;
+  i=io:std.io;
+  f=main():i64{
+    let addrs=mt net.resolve("localhost") {$ok:a a; $err:e @("")};
+    let c=http.withmaxbody(http.withdeadline(http.withconnectaddr(http.client("https://svc.example");"127.0.0.1");5000);1048576);
+    io.println(mt http.clientget(c;"/v") {$ok:r "\(r.status)"; $err:e e.msg});
+    io.println(mt http.getheaders("https://svc.example/v";@(@("User-Agent";"t"))) {$ok:r "\(r.status)"; $err:e e.msg});
+    io.println("\(addrs.len) \(c.timeoutms)");
+    <0
+  };
+expected_exit_code: 0
+expected_absent_codes: ["E4026", "E4027", "E4031", "E4011"]
