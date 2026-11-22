@@ -395,6 +395,19 @@ STALE = [
      "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
      "(docs/decisions/gate1-decision.md)",
      "verdict-gate1"),
+    # Story 127.459 — the retired Gate 2 VERDICT. The PASS recorded 2026-05-24
+    # was withdrawn on 2026-11-15 (owner decision D4): Gate 2 has no standing
+    # verdict and Gate 3, which never ran, is void. A surface that announces
+    # "Gate 2 PASS" / "Gate 2: PASSED" publishes a verdict that no longer
+    # exists. As for Gate 1, the generic CORRECTION markers cannot excuse it
+    # ("superseded", "corrected" and the like sit beside the PASS on every
+    # surface that kept it); only the withdrawal itself does -- see
+    # GATE2_WITHDRAWN. Upper case only, so "Gate 2 Pass@1" is never caught.
+    (re.compile(r"\bGate[\s-]*2\s*[:—–-]?\s*(?:\*\*)?PASS(?:ED)?\b(?!@)"),
+     "Gate 2 PASS",
+     "the Gate 2 PASS was withdrawn on 2026-11-15 (owner decision D4): Gate 2 "
+     "has no standing verdict (docs/decisions/gate2-decision.md)",
+     "verdict-gate2"),
 ]
 
 # Story 132.127 — a paraphrased verdict is a Gate 1 claim only beside "Gate 1".
@@ -403,6 +416,12 @@ GATE1_CONTEXT = re.compile(r"\bgate[\s-]*(?:1|one)\b", re.I)
 # Story 132.69 — the only thing that excuses the retired verdict is the decision
 # that retired it, stated within the same paragraph window.
 VERDICT_DECIDED = re.compile(r"\bnot\s+passed\b|\b2026-09-22\b", re.I)
+
+# Story 127.459 — the only thing that excuses the retired Gate 2 verdict is its
+# withdrawal (owner decision D4, 2026-11-15), stated within the same paragraph
+# window.
+GATE2_WITHDRAWN = re.compile(r"\bwithdr[ae]w(?:n|s|al)?\b|\bno\s+standing\s+verdict\b"
+                             r"|\b2026-11-15\b", re.I)
 
 # Story 132.29 — a NEGATION of the retired fact itself: "it is NOT strict LL(1)",
 # "there are not 13 keywords". This is built per stale fact from that fact's own
@@ -703,6 +722,9 @@ def check_stale(path, rel):
             elif kind == ["verdict"]:
                 if VERDICT_DECIDED.search(near):
                     continue
+            elif kind == ["verdict-gate2"]:                   # 127.459
+                if GATE2_WITHDRAWN.search(near):
+                    continue
             elif CORRECTION.search(near) or negation_of(pat).search(near):
                 continue
             findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
@@ -827,6 +849,19 @@ SELFTEST = [
     (False, "criteria were both met", "The Gate 1 criteria were both met."),
     (False, "both Gate 1 criteria satisfied, emphasised",
      "**Both Gate 1 criteria were satisfied** (token reduction and Pass@1)."),
+    # Story 127.459 — the withdrawn Gate 2 verdict (owner decision D4).
+    (False, "present-tense Gate 2 PASS (about/ecosystem.md:12 before 3d88bcc4)",
+     "Gate 2 PASS (2026-05-24): 100% compile Pass@1 on the curated set."),
+    (False, "Gate 2 PASSED in a table cell", "| Gate 2 | **PASSED** | 2026-05-24 |\n"
+     "| Gate 2: **PASSED** | 100% compile |"),
+    (False, "Gate 2 PASS beside a generic correction marker",
+     "Gate 2 PASS — superseded figures corrected 2026-05-25 (stdlib fix)."),
+    (True, "Gate 2 PASS with its withdrawal in the same sentence",
+     "The Gate 2 PASS of 2026-05-24 was withdrawn on 2026-11-15 (owner decision D4)."),
+    (True, "Gate 2 PASS, withdrawal wrapped onto the next line",
+     "Gate 2 PASS (recorded 2026-05-24) --\nwithdrawn: Gate 2 has no standing verdict."),
+    (True, "Gate 2 Pass@1 is a metric, not the verdict",
+     "Gate 2 Pass@1 was 55.6% functional on a set whose 200-eval half may be corpus-derived."),
     (True, "one criterion met is not the verdict (docs/about/why.md:28 after Z122)",
      "Gate 1 required greater than 10% token reduction and a Pass@1 rate of at least "
      "60%. The token-reduction criterion stands as met; the Pass@1 criterion does not."),

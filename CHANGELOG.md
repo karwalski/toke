@@ -121,6 +121,16 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
   to both are in its addenda.
 
+### Documentation and claim gates
+
+- **The canonical `models` fact states the Gate 2 withdrawal** (127.459, owner decision
+  D4): `docs/about/canonical.md` §8 and `canonical.json` "models" now say the PASS of
+  2026-05-24 was withdrawn on 2026-11-15, that Gate 2 has no standing verdict and Gate 3
+  is void, and carry the 55.6% with its possibly-corpus-derived caveat.
+  `check_canonical.py` Rule 2 now fails a present-tense "Gate 2 PASS" anywhere in the
+  workspace unless the withdrawal is stated in the same window (generic correction
+  markers do not excuse it).
+
 ### Changed — scoped capability grants (spec amendment 138.19)
 
 The owner accepted D1–D4 of `docs/decisions/138.19-scoped-capability-grants.md` as

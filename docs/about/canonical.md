@@ -146,16 +146,22 @@ as a model result, as a Pass@1, or as a reduction against Python.
 ## 8. Models
 
 No v0.4-native model exists, and no model has been trained since April 2026. The most
-recent model gate is **Gate 2, 2026-05-22**: Qwen 2.5 Coder 7B + QLoRA on v0.3 syntax —
+recent model gate run is **Gate 2, 2026-05-22**: Qwen 2.5 Coder 7B + QLoRA on v0.3 syntax —
 **100% compile Pass@1** and **55.6% functional** (272/489) on the curated 500-hidden +
-200-eval set. The honest floor is the full-local re-audit of all 1,748 v0.3.9 corpus
-programs: **37.5% compile** (655/1,748) and **about 2.2% fully correct** (38 PASS).
+200-eval set, whose 200-eval half may be corpus-derived. The PASS recorded on it was
+**withdrawn on 2026-11-15** (owner decision D4): **Gate 2 has no standing verdict**, and
+Gate 3 never ran and is void. The honest floor is the full-local re-audit of all 1,748
+v0.3.9 corpus programs: **37.5% compile** (655/1,748) and **about 2.2% fully correct** (38
+PASS).
 
-Never quote the 100% without the curated set it was measured on, and never present the
-August 2026 corpus freeze as a model gate — August produced a training-data quality
-freeze, not a gate result.
+Never quote the 100% without the curated set it was measured on, never quote the 55.6%
+without the caveat that the 200-eval half may be corpus-derived, never call Gate 2 passed
+(its PASS was withdrawn on 2026-11-15, owner decision D4), and never present the August
+2026 corpus freeze as a model gate — August produced a training-data quality freeze, not a
+gate result.
 
-*Source: `docs/metrics-baseline.md` § Correctness and § 2026-08 (story 132.0(a)).*
+*Source: `docs/metrics-baseline.md` § Correctness and § 2026-08 (story 132.0(a));
+`docs/decisions/gate2-decision.md` (owner decision D4, story 127.459).*
 
 ## 9. The blocks to copy
 

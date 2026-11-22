@@ -1,7 +1,7 @@
 {
   "schema": "toke-canonical-facts/1",
   "story": "132.1",
-  "updated": "2026-11-13",
+  "updated": "2026-11-22",
   "companion": "docs/about/canonical.md",
   "rules": [
     "Every downstream surface (site, llms.txt, every repo README, registry descriptions, model cards) copies the strings in `blocks` word for word. Do not paraphrase.",
@@ -83,9 +83,9 @@
     "source": "docs/metrics-baseline.md (2026-09 rows, story 133.4); docs/about/toke-eval-drift-decision.md"
   },
   "models": {
-    "value": "No v0.4-native model exists and none has been trained since April 2026. The most recent model gate is Gate 2, 2026-05-22: Qwen 2.5 Coder 7B + QLoRA on v0.3 syntax, 100% compile Pass@1 and 55.6% functional (272/489) on the curated 500-hidden + 200-eval set. The honest floor is the full-local re-audit of all 1,748 v0.3.9 corpus programs: 37.5% compile (655/1,748) and about 2.2% fully correct (38 PASS).",
-    "rule": "Never quote the 100% without the curated set it was measured on, and never present the August 2026 corpus freeze as a model gate.",
-    "source": "docs/metrics-baseline.md § Correctness; § 2026-08 (story 132.0(a))"
+    "value": "No v0.4-native model exists and none has been trained since April 2026. The most recent model gate run is Gate 2, 2026-05-22: Qwen 2.5 Coder 7B + QLoRA on v0.3 syntax, 100% compile Pass@1 and 55.6% functional (272/489) on the curated 500-hidden + 200-eval set, whose 200-eval half may be corpus-derived. The PASS recorded on it was withdrawn on 2026-11-15 (owner decision D4): Gate 2 has no standing verdict, and Gate 3 never ran and is void. The honest floor is the full-local re-audit of all 1,748 v0.3.9 corpus programs: 37.5% compile (655/1,748) and about 2.2% fully correct (38 PASS).",
+    "rule": "Never quote the 100% without the curated set it was measured on, never quote the 55.6% without the caveat that the 200-eval half may be corpus-derived, never call Gate 2 passed (its PASS was withdrawn on 2026-11-15, owner decision D4), and never present the August 2026 corpus freeze as a model gate.",
+    "source": "docs/metrics-baseline.md § Correctness; § 2026-08 (story 132.0(a)); docs/decisions/gate2-decision.md (owner decision D4, story 127.459)"
   },
   "source_code": {
     "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0, except spec/, stdlib/ and src/stdlib/, which are MIT. The project is thirteen public repositories under github.com/karwalski, plus two private ones; the site is tokelang.dev, built with ooke and served by a toke binary on std.http.",
