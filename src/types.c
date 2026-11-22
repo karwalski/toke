@@ -2679,6 +2679,56 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
 }
 
 /*
+ * 138.40 (T-39) — the record name a user-module call returns, when no module
+ * this file imports (and nothing this file declares) provides that record.
+ *
+ * `i=srv:server;` where server.tki says `handle` returns `res`, a type of
+ * `proto` that this file does not import: the checker cannot adopt the
+ * record (imported_struct_type finds nothing), so `r.text` used to be read on
+ * an untyped value and pass --check, while codegen -- which registers only
+ * the records of imported modules -- refused the same read with E4034.  The
+ * spec puts types in module scope only through an import (semantics.md 4.1,
+ * 6.1), so the conservative answer is that both refuse.
+ *
+ * `base` is the field read's receiver: the call itself (`srv.handle(x).text`)
+ * or an un-annotated `let`/`mut` bound to it.  Answers only a bare record
+ * name; a scalar, a compound spelling (`[..]`, `(..):..`), a `T!E`, a std
+ * module and a name this file declares are all left alone (NULL).  The answer
+ * is copied into `out`.
+ */
+static const char *unimported_user_ret(Ctx *cx, const Node *base,
+                                       char *out, size_t outsz,
+                                       char *callee, size_t calleesz) {
+    static const char *const scal[] = {
+        "i64","u64","f64","str","bool","void","i8","i16","i32","u8","u16",
+        "u32","f32","byte","any",NULL };
+    if (!base) return NULL;
+    if (base->kind == NODE_IDENT) {
+        char nb[128]; TOKSTR(nb, cx->src, base);
+        const Node *b = local_in_force(cx, nb, (int)strlen(nb), base);
+        if (!b || b->kind == NODE_LOOP_INIT || b->child_count != 2) return NULL;
+        base = b->children[1];
+        if (!base) return NULL;
+    }
+    if (base->kind != NODE_CALL_EXPR || !user_module_call(cx, base)) return NULL;
+    const Node *cal = base->children[0];
+    char ab[128]; TOKSTR(ab, cx->src, cal->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, cal->children[1]);
+    const char *ret = imported_func_ret(cx->env->names, ab, mb);
+    if (!ret || !*ret) return NULL;
+    for (const char *q = ret; *q; q++)
+        if (!((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+              || (*q >= '0' && *q <= '9') || *q == '_')) return NULL;
+    for (int i = 0; scal[i]; i++) if (!strcmp(ret, scal[i])) return NULL;
+    if (imported_type_lookup(cx->env->names, ret)) return NULL;
+    if (tc_lookup(cx->env->names->module_scope, ret, (int)strlen(ret)))
+        return NULL;
+    snprintf(out, outsz, "%s", ret);
+    snprintf(callee, calleesz, "%s.%s", ab, mb);
+    return out;
+}
+
+/*
  * bind_init_type — the type of an *un-annotated* binding `let x = init`,
  * recovered from its initialiser, or NULL when the checker must keep the
  * binding unknown.
@@ -8342,6 +8392,28 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (drt->field_names[i]&&strcmp(drt->field_names[i],fname)==0)
                     return func_has_sig(drt->field_types[i])
                            ?drt->field_types[i]:mk_type(A,TY_UNKNOWN);
+        }
+        /* 138.40: a record another user module returns, whose module this
+         * file does not import -- codegen cannot establish its layout and
+         * answers E4034; --check now says the same.  No `fix`: which import
+         * provides the record is not decidable from this file. */
+        if (base->kind==TY_UNKNOWN&&node->children[0]) {
+            char rn[128], cn[260];
+            if (unimported_user_ret(cx,node->children[0],rn,sizeof rn,cn,sizeof cn)) {
+                if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                    char msg[600], got[160];
+                    snprintf(msg,sizeof(msg),
+                             "no struct in scope declares a field '%s', and the type "
+                             "of this value is not established: '%s' returns '$%s', "
+                             "a type of a module this file does not import",
+                             fname,cn,rn);
+                    snprintf(got,sizeof(got),"$%s",rn);
+                    diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                              "expected","a value of an established struct type",
+                              "got",got,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
         }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         for (int i=0;i<base->field_count;i++)

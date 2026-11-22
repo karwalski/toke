@@ -163,6 +163,32 @@ spelling of `env_write`, with no warning (loke T-59 point 5).
 
 Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c952a84b`, `8ceed01a`, `2f03cde1`, `541c388d`).
 
+- **`--check` refuses a field read on a record whose module is not imported (E4034)**
+  (138.40, loke T-39). `let r=srv.handle(x); <r.text`, where `handle` returns
+  `$res` of a module `proto` this file does not import, passed `--check` while
+  the compile refused it with E4034. A type is in module scope only through an
+  import (`docs/spec/semantics.md` 4.1, 6.1), so `--check` now refuses it too,
+  bound or read in place, naming the call and the record; no `fix` (which import
+  supplies the record is not decidable from the file). Measured before landing
+  with `--check` against `b518b41c`: no change in any of 4,325 sources (the toke
+  tree, ooke `main`, toke-website, toke-test-programs); ooke
+  `make check-toke-candidate` and the website's `make check-toke` pass.
+- **`unused-import` no longer reports an import used only as a struct-field type,
+  or needed only for a field read** (138.39, loke T-39). A type named inside a
+  `t=` field (`t=$holder{items:@$item}`, `it:$item`) was taken for this file's
+  own, and an import needed only so `r.text` resolves has no name in the file;
+  `--lint --fix` deleted both, and the next check was E3011 or E4034. Only a
+  `t=`'s declared name and field labels now count as local. And when the file
+  type-checks, an import with no syntactic use is reported only if the file
+  without it (and without every import already reported) still type-checks
+  clean. That re-check sees only what `--check` judges: an import that only
+  codegen needs (an array of another module's record, a `T!E` payload) is not
+  seen, so the 137.8 caution stays in force in every file -- a foreign
+  unqualified `$type` still keeps all of its imports. A genuinely unused import
+  in a file without one is still reported and fixed. Unchanged from 3.2.0, and
+  open as 138.58: in a file without a foreign `$type`, an import that only
+  codegen needs can still be reported.
+
 ---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages

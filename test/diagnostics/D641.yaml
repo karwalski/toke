@@ -1,0 +1,15 @@
+id: D641
+series: D
+description: "138.39 (T-39) negative control: the import-drop re-check only withdraws reports -- beside a used import, a genuinely unused one is still unused-import, and --fix deletes that one only"
+input: |
+  m=t;
+  i=s:std.str;
+  i=j:std.json;
+  f=main():i64{<s.len("ab")};
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["unused-import"]
+expected_fixed_output: |
+  m=t;
+  i=s:std.str;
+  f=main():i64{<s.len("ab")};
