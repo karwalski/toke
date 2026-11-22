@@ -131,11 +131,11 @@ f=num(s:$str):u64{
   <mt str.toint(s) {$ok:v v as u64; $err:e 0 as u64}
 };
 f=main():i64{
-  let mb=args.get(3);
-  let c0=http.client(args.get(1));
+  let mb=(mt args.get(3){$ok:v v;$err:e ""});
+  let c0=http.client((mt args.get(1){$ok:v v;$err:e ""}));
   let c1=if(mb=="-"){c0}el{http.withmaxbody(c0;num(mb))};
   let t0=time.nowms();
-  let out=mt http.clientget(c1;args.get(2)) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"};
+  let out=mt http.clientget(c1;(mt args.get(2){$ok:v v;$err:e ""})) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"};
   io.println(out);
   io.println("\(time.nowms()-t0)");
   <0

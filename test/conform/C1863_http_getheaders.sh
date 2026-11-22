@@ -119,7 +119,7 @@ f=show(k:$str;u:$str;h:@(@($str))):$str{
   <mt http.getheaders(u;h) {$ok:r "\(k) ok \(r.status) \(str.frombytes(r.body))"; $err:e "\(k) err \(e.msg)"}
 };
 f=main():i64{
-  let base=args.get(1);
+  let base=(mt args.get(1){$ok:v v;$err:e ""});
   io.println(show("1";str.concat(base;"/one");@(@("User-Agent";"loke/1.0");@("X-A";"b"))));
   io.println(show("2";str.concat(base;"/host");@(@("Host";"evil.example"))));
   io.println(show("3";str.concat(base;"/len");@(@("content-length";"5"))));
@@ -128,7 +128,7 @@ f=main():i64{
   io.println(show("6";str.concat(base;"/missing");@(@("User-Agent";"loke/1.0"))));
   io.println(show("7";"http://127.0.0.1:1/x";@(@("User-Agent";"loke/1.0"))));
   io.println(show("10";str.concat(base;"/inj HTTP/1.1\r\nHost: evil.example\r\nX-Inj: 1\r\nY: z");@(@("User-Agent";"t"))));
-  io.println(show("11";str.concat(str.concat("http://127.0.0.1\r\nX-Inj: 1:";args.get(2));"/h");@(@("User-Agent";"t"))));
+  io.println(show("11";str.concat(str.concat("http://127.0.0.1\r\nX-Inj: 1:";(mt args.get(2){$ok:v v;$err:e ""}));"/h");@(@("User-Agent";"t"))));
   io.println(show("12";str.concat(base;"/sp ace");@(@("User-Agent";"t"))));
   io.println(show("13";str.concat(base;"/q?a=1&b=two%20x");@(@("User-Agent";"t"))));
   <0

@@ -136,11 +136,11 @@ f=num(s:$str):u64{
   <mt str.toint(s) {$ok:v v as u64; $err:e 0 as u64}
 };
 f=main():i64{
-  let dl=args.get(3);
-  let c0=http.client(args.get(1));
+  let dl=(mt args.get(3){$ok:v v;$err:e ""});
+  let c0=http.client((mt args.get(1){$ok:v v;$err:e ""}));
   let c1=if(dl=="-"){c0}el{http.withdeadline(c0;num(dl))};
   let t0=time.nowms();
-  let out=mt http.clientget(c1;args.get(2)) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"};
+  let out=mt http.clientget(c1;(mt args.get(2){$ok:v v;$err:e ""})) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"};
   io.println(out);
   io.println("\(time.nowms()-t0)");
   <0
@@ -153,10 +153,10 @@ i=http:std.http;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let c0=http.client(args.get(1));
+  let c0=http.client((mt args.get(1){$ok:v v;$err:e ""}));
   let c1=http.withdeadline(c0;500);
-  io.println(mt http.clientget(c0;args.get(2)) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"});
-  io.println(mt http.clientget(c1;args.get(2)) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"});
+  io.println(mt http.clientget(c0;(mt args.get(2){$ok:v v;$err:e ""})) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"});
+  io.println(mt http.clientget(c1;(mt args.get(2){$ok:v v;$err:e ""})) {$ok:r "ok \(r.status) \(r.body.len)"; $err:e "err \(e.msg)"});
   <0
 };
 TOKE

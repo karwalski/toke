@@ -64,7 +64,7 @@ i=io:std.io;
 i=args:std.args;
 f=main():i64{
   io.println("start");
-  let out=mt net.resolve(args.get(1)) {
+  let out=mt net.resolve((mt args.get(1){$ok:v v;$err:e ""})) {
     $ok:a a;
     $err:e @("err \(e.msg) code=\(e.code)")
   };

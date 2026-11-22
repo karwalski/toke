@@ -110,10 +110,10 @@ f=g(k:$str;c:$httpclient;p:$str):$str{
   <mt http.clientget(c;p) {$ok:v "\(k) ok \(v.status)"; $err:e "\(k) err \(e.msg)"}
 };
 f=main():i64{
-  let b=str.concat("http://127.0.0.1:";args.get(1));
+  let b=str.concat("http://127.0.0.1:";(mt args.get(1){$ok:v v;$err:e ""}));
   let c=http.client(b);
   io.println(g("1";c;"/one HTTP/1.1\r\nX-Inj: 1\r\nY: z"));
-  io.println(g("2";http.client(str.concat("http://127.0.0.1\r\nX-Inj: 1:";args.get(1)));"/two"));
+  io.println(g("2";http.client(str.concat("http://127.0.0.1\r\nX-Inj: 1:";(mt args.get(1){$ok:v v;$err:e ""})));"/two"));
   io.println(mt http.geturl(str.concat(b;"/three\r\nX-Inj: 1")) {$ok:s "3 ok \(s)"; $err:e "3 err \(e.msg)"});
   io.println(mt http.postheaders(str.concat(b;"/four HTTP/1.1\r\nX-Inj: 1\r\nY: z");"{}";@()) {$ok:v "4 ok \(v.status)"; $err:e "4 err \(e.msg)"});
   io.println(mt http.clientpost(c;"/five\nX-Inj: 1";str.bytes("x");"text/plain") {$ok:v "5 ok \(v.status)"; $err:e "5 err \(e.msg)"});
@@ -121,7 +121,7 @@ f=main():i64{
   io.println(g("7";c;"/seven x"));
   io.println(mt http.stream(http.client(str.concat(b;"/eight\r\nX-Inj: 1"))) {$ok:s "8 ok stream"; $err:e "8 err \(e.msg)"});
   io.println("9 download \(http.downloadfile(c;"/nine\r\nX-Inj: 1";"dl.out"))");
-  io.println(g("10";http.withproxy(c;str.concat("http://127.0.0.1\r\nX-Inj: 1:";args.get(1)));"/ten"));
+  io.println(g("10";http.withproxy(c;str.concat("http://127.0.0.1\r\nX-Inj: 1:";(mt args.get(1){$ok:v v;$err:e ""})));"/ten"));
   io.println(g("11";c;"/eleven?q=a%20b&x=1"));
   io.println(g("12";c;"/twelve/\xc3\xa9"));
   io.println(mt http.geturl(str.concat(b;"/thirteen")) {$ok:s "13 ok \(s)"; $err:e "13 err \(e.msg)"});

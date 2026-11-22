@@ -147,15 +147,15 @@ i=http:std.http;
 i=io:std.io;
 i=args:std.args;
 f=main():i64{
-  let mode=args.get(3);
-  let c=http.withconnectaddr(http.client(args.get(1));args.get(2));
+  let mode=(mt args.get(3){$ok:v v;$err:e ""});
+  let c=http.withconnectaddr(http.client((mt args.get(1){$ok:v v;$err:e ""}));(mt args.get(2){$ok:v v;$err:e ""}));
   let cp=if(mode=="proxy"){http.withproxy(c;"http://127.0.0.1:9")}el{c};
   let out=if(mode=="stream"){
     mt http.stream(c) {$ok:s "ok stream"; $err:e "err \(e.msg)"}
   }el{if(mode=="download"){
     "download \(http.downloadfile(c;"/v";"dl.out"))"
   }el{if(mode=="plaindl"){
-    "download \(http.downloadfile(http.client(args.get(1));"/v";"dl.out"))"
+    "download \(http.downloadfile(http.client((mt args.get(1){$ok:v v;$err:e ""}));"/v";"dl.out"))"
   }el{
     mt http.clientget(cp;"/v") {$ok:r "ok \(r.status)"; $err:e "err \(e.msg)"}
   }}};

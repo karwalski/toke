@@ -110,10 +110,10 @@ f=get(c:$httpclient):$str{
   <mt http.clientget(c;"/x") {$ok:r "ok \(r.status) len=\(r.body.len)"; $err:e "err \(e.msg)"}
 };
 f=main():i64{
-  let mode=args.get(2);
-  let lit=$httpclient{baseurl:args.get(1);poolsize:4;timeoutms:5000};
+  let mode=(mt args.get(2){$ok:v v;$err:e ""});
+  let lit=$httpclient{baseurl:(mt args.get(1){$ok:v v;$err:e ""});poolsize:4;timeoutms:5000};
   let out=if(mode=="get"){get(lit)}
-    el{if(mode=="proxy"){get(http.withproxy(lit;args.get(3)))}
+    el{if(mode=="proxy"){get(http.withproxy(lit;(mt args.get(3){$ok:v v;$err:e ""})))}
     el{if(mode=="deadline"){get(http.withdeadline(lit;5000))}
     el{if(mode=="cap"){get(http.withmaxbody(lit;10))}
     el{if(mode=="addr"){get(http.withconnectaddr(lit;"127.0.0.1"))}
