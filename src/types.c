@@ -552,9 +552,15 @@ static int int_lit_zero(const char *src, const Node *n) {
     return n && n->kind == NODE_INT_LIT && lit_int_value(src, n, &neg, &m)
            && !neg && m == 0;
 }
+/* 138.55: a bool is judged as an integer is.  It reached the slot through
+ * scalar_int_type (136.36's handle-as-integer compatibility), and
+ * `process.wait(true)` handed the runtime handle 1.  `false` is not the
+ * literal 0 and is refused too: the null handle is spelled 0. */
 static int forged_handle_arg(const char *src, const Node *an, const Type *at,
                              const Type *pt) {
-    return opaque_handle_type(pt) && is_integer(at) && !int_lit_zero(src, an);
+    return opaque_handle_type(pt)
+           && (is_integer(at) || (at && at->kind == TY_BOOL))
+           && !int_lit_zero(src, an);
 }
 static int lit_narrows(const char *src, const Node *n, const Type *to) {
     if (!n || !to) return 0;
