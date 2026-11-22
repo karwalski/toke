@@ -252,10 +252,10 @@
       "kind": "func",
       "name": "csv.serialize",
       "params": [
-        "i64"
+        "[[str]]"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str",
+      "note": "rows -- each row a [str]; comma-separated, RFC 4180 quoting, CRLF between rows, no trailing line break; no rows is \"\" (127.354)"
     }
   ]
 }

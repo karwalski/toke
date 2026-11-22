@@ -800,12 +800,11 @@ f=parse(a:@(byte)):@($csvrow)!$csverr
 f=raggedreport(a:$csvreader):@($str)
 f=reader(a:@(byte);b:u8):$csvreader
 f=readeropts(a:@(byte);b:$csvopts):$csvreader!$csverr
+f=serialize(a:@(@($str))):$str
 f=sniff(a:@(byte)):$csvdialect!$csverr
 f=writer(a:u8):$csvwriter
 f=writerow(a:$csvwriter;b:@($str)):void
 ```
-
-Not listed: 1 further `"gen":"abi"` export of `stdlib/csv.tki`, whose types are ABI placeholders (only the arity is declared).
 
 ### std.dashboard (generated)
 

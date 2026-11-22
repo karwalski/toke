@@ -221,6 +221,16 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   nothing. `http_cache_put` has no error channel, so a failed spill is a later
   MISS. Test: C2000.
 
+- **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
+  register 2.11, recommendation). Its interface declared an `i64` ABI
+  placeholder and the glue read a packed C block that no toke value has: a call
+  with an array of rows compiled and segfaulted, and an integer argument
+  checked clean. It now takes an array of rows and returns the CSV text,
+  byte-for-byte what `csv.writer(44)` + `csv.writerow` per row + `csv.flush`
+  produce (RFC 4180 quoting, CRLF between rows, no trailing line break; no rows
+  is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
+  change together. Test: C2001.
+
 ### Notes for downstream builds
 
 - **Which stdlib C sources a program links is documented** (138.42): what `tkc
