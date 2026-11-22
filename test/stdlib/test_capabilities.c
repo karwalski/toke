@@ -115,6 +115,15 @@ static void scoped(void) {
     ADMIT(pr, RQ_PROBE_R, "/usr/bin", 0, "probe: tk_cap_path_admitted admits /usr/bin under /usr");
     NOTADM(pr, "/etc", "probe: tk_cap_path_admitted answers 0 for /etc, with no exit");
     NOTADM(pr, "/usr/..", "probe: tk_cap_path_admitted answers 0 for /usr/..");
+    /* 138.19 round 3: a path is checked on the way to its target too --
+     * entering a directory neither admitted, nor an ancestor of a scope, nor
+     * the working directory's way up is refused even when the path ends
+     * inside the scope. */
+    ADMIT(pr, RQ_PATH_R, "/usr/../usr/bin", 0, "transit: /usr/../usr/bin passes through '/', an ancestor");
+    DENY(pr, RQ_PATH_R, "/usr/../etc/../usr/bin", 0, "transit: /usr/../etc/../usr/bin passes through /etc: denied");
+    NOTADM(pr, "/usr/../etc/../usr/bin", "transit: the probe answers 0 for the same path");
+    DENY(pr, RQ_PATH_R, "/usr/../tk-no-such-dir-138-19/../usr/bin", 0,
+         "transit: through a directory that does not exist: denied the same way");
     char *none[] = { "t", NULL };
     NOTADM(none, "/usr", "probe: 0 when the class is not granted (no CAP001 exit)");
     ADMIT(wh, RQ_PROBE_R, "/etc", 0, "probe: the whole class admits anything");

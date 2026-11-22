@@ -288,20 +288,26 @@ int tk_cap_scope_syntax(int cls, const char *text, char *err, unsigned errsz) {
  * resolve (a dangling symlink, a loop) fails: a symlink must never pass the
  * check by pointing at something not yet created.  `~` expands from HOME only
  * when expand_tilde (grants; a program's own "~/x" is a relative path). */
-static int canon_path(const char *in, int expand_tilde, char *out) {
-    char abs[PATH_MAX];
+/* `in` as an absolute path (PATH_MAX buffer), not yet canonical. */
+static int abs_path(const char *in, int expand_tilde, char *abs) {
     if (!in || !*in) return 0;
     if (expand_tilde && in[0] == '~' && (in[1] == '\0' || in[1] == '/')) {
         const char *home = getenv("HOME");
         if (!home || !*home) return 0;
-        if (snprintf(abs, sizeof abs, "%s%s", home, in + 1) >= (int)sizeof abs) return 0;
+        if (snprintf(abs, PATH_MAX, "%s%s", home, in + 1) >= PATH_MAX) return 0;
     } else if (in[0] == '/') {
-        if (snprintf(abs, sizeof abs, "%s", in) >= (int)sizeof abs) return 0;
+        if (snprintf(abs, PATH_MAX, "%s", in) >= PATH_MAX) return 0;
     } else {
         char cwd[PATH_MAX];
         if (!getcwd(cwd, sizeof cwd)) return 0;
-        if (snprintf(abs, sizeof abs, "%s/%s", cwd, in) >= (int)sizeof abs) return 0;
+        if (snprintf(abs, PATH_MAX, "%s/%s", cwd, in) >= PATH_MAX) return 0;
     }
+    return 1;
+}
+
+static int canon_path(const char *in, int expand_tilde, char *out) {
+    char abs[PATH_MAX];
+    if (!abs_path(in, expand_tilde, abs)) return 0;
     /* Components of abs (empty and "." dropped; ".." kept for realpath). */
     char *comp[PATH_MAX / 2];
     int nc = 0;
@@ -676,6 +682,65 @@ static void require(int ci, const Req *q, const char *scope_text) {
 
 /* ── Scoped gates ─────────────────────────────────────────────────── */
 
+/* 138.19 (round 3): the directories a path passes through.  Canonicalising
+ * the path names where it ENDS, not the way there: "www/../outside/../www/f"
+ * ends inside a www scope, but opening it walks through outside/, so whether
+ * the call succeeds tells the program whether outside/ exists -- an existence
+ * test on a directory the scope does not admit (and a symlink inside the
+ * scope that leads out and back, "www/link/../www/f", is the same walk).
+ * Each directory the path enters before its last component must therefore be
+ * one the walk could not learn anything from: admitted by the grant, an
+ * ancestor of a granted scope (the way down to it), or the working directory
+ * or one of its ancestors (where a relative path starts).  `bad` gets the
+ * first canonical directory that is none of these. */
+static int transit_dir_ok(int ci, const char *dir, const char *cwd) {
+    Req q;
+    int b, r;
+    memset(&q, 0, sizeof q);
+    q.kind = TK_CAP_SK_PATH;
+    q.raw  = dir;
+    q.ok   = 1;
+    snprintf(q.canon, sizeof q.canon, "%s", dir);
+    if (req_admitted(ci, &q, &b, &r)) return 1;
+    if (*cwd && path_under(cwd, dir)) return 1;
+    for (int src = 0; src < 2; src++) {
+        const Grant *g = &g_src[src][ci];
+        for (int i = 0; i < g->n; i++)
+            if (!g->v[i].dead && (g->v[i].kind == TK_CAP_SK_PATH || g->v[i].kind == TK_CAP_SK_CMD)
+                && path_under(g->v[i].text, dir))
+                return 1;
+    }
+    return 0;
+}
+
+static int path_transit_ok(int ci, const char *path, char *bad) {
+    char abs[PATH_MAX], cwd[PATH_MAX], cwdr[PATH_MAX], pre[PATH_MAX], c[PATH_MAX];
+    *bad = '\0';
+    if (!abs_path(path, 0, abs)) return 0;
+    cwd[0] = '\0';
+    if (getcwd(cwdr, sizeof cwdr) && !realpath(cwdr, cwd)) cwd[0] = '\0';
+    for (size_t i = 0; abs[i]; ) {
+        while (abs[i] == '/') i++;               /* the start of a component */
+        size_t e = i;
+        while (abs[e] && abs[e] != '/') e++;     /* its end */
+        size_t nx = e;
+        while (abs[nx] == '/') nx++;
+        if (!abs[nx]) break;                     /* the last one: the target itself */
+        if (!(e - i == 1 && abs[i] == '.')) {    /* "." enters nothing new */
+            memcpy(pre, abs, e);
+            pre[e] = '\0';
+            if (!canon_path(pre, 0, c)) { snprintf(bad, PATH_MAX, "%s", pre); return 0; }
+            if (!transit_dir_ok(ci, c, cwd)) { snprintf(bad, PATH_MAX, "%s", c); return 0; }
+        }
+        i = nx;
+    }
+    return 1;
+}
+
+static const char k_transit_why[] =
+    "the path passes through this directory, which the scope does not admit, so the call "
+    "could test what lies outside the scope; name the target without going through it";
+
 static void path_req(Req *q, const char *path) {
     memset(q, 0, sizeof *q);
     q->kind = TK_CAP_SK_PATH;
@@ -690,6 +755,8 @@ void tk_cap_require_path(uint32_t cap, const char *path) {
     Req q;
     path_req(&q, path);
     require(ci, &q, q.ok ? q.canon : q.raw);
+    char bad[PATH_MAX];
+    if (!path_transit_ok(ci, path, bad)) deny_scope(ci, bad, 1, 0, 0, k_transit_why);
 }
 
 int tk_cap_path_admitted(uint32_t cap, const char *path) {
@@ -699,7 +766,8 @@ int tk_cap_path_admitted(uint32_t cap, const char *path) {
     if (!eff_granted(ci)) return 0;
     Req q;
     path_req(&q, path);
-    return req_admitted(ci, &q, &b, &r);
+    char bad[PATH_MAX];
+    return req_admitted(ci, &q, &b, &r) && path_transit_ok(ci, path, bad);
 }
 
 void tk_cap_require_whole(uint32_t cap, const char *value, const char *why) {
@@ -746,6 +814,10 @@ void tk_cap_require_cmd(const char *argv0) {
     q.raw  = argv0 ? argv0 : "";
     q.ok   = argv0 && resolve_cmd(argv0, 0, q.canon);
     require(ci, &q, q.ok ? q.canon : q.raw);
+    /* 138.19 (round 3): a path to the command walks its directories too. */
+    char bad[PATH_MAX];
+    if (strchr(argv0, '/') && !path_transit_ok(ci, argv0, bad))
+        deny_scope(ci, bad, 1, 0, 0, k_transit_why);
 }
 
 void tk_cap_require_env(const char *key) {
