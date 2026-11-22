@@ -210,6 +210,27 @@ One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2
 
 Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `e25bbd7d`, `c44d48a4`). Open: the response header block is not capped (138.49).
 
+### Fixed — standard library
+
+- **std.cache's disk spill writes the whole entry or leaves no file** (127.445).
+  The spill to `disk_dir` ignored `write(2)`'s result and counted the body in
+  `disk_used` whatever happened, so a short or failed write (ENOSPC, EFBIG,
+  EINTR) left a truncated `.cache` file and the byte count drifted; Ubuntu's gcc
+  also refused the file at `-O1 -Werror`. Writes now loop over short writes and
+  EINTR; a failed open, write or close removes the partial file and counts
+  nothing. `http_cache_put` has no error channel, so a failed spill is a later
+  MISS. Test: C2000.
+
+- **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
+  register 2.11, recommendation). Its interface declared an `i64` ABI
+  placeholder and the glue read a packed C block that no toke value has: a call
+  with an array of rows compiled and segfaulted, and an integer argument
+  checked clean. It now takes an array of rows and returns the CSV text,
+  byte-for-byte what `csv.writer(44)` + `csv.writerow` per row + `csv.flush`
+  produce (RFC 4180 quoting, CRLF between rows, no trailing line break; no rows
+  is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
+  change together. Test: C2001.
+
 ### Notes for downstream builds
 
 - **Which stdlib C sources a program links is documented** (138.42): what `tkc

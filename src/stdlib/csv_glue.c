@@ -141,24 +141,31 @@ int64_t tk_csv_parse_w(int64_t data) {
 }
 
 /*
- * tk_csv_serialize_w — serialize a toke array-of-arrays into a CSV string.
- * Expects data to point to a packed block: [nrows i64][StrArray * nrows].
- * Returns a heap-allocated CSV string pointer, or 0 on NULL input.
+ * csv.serialize(rows: [[str]]) -> str (127.354).  rows is a toke array of
+ * rows, each a toke [str] (runtime-abi.md §4: the handle points at data[0],
+ * the length sits at handle[-1], each slot is one element).  The rows are
+ * written as csv.writer(44) + csv.writerow per row + csv.flush would write
+ * them -- comma-separated, RFC 4180 quoting, CRLF between rows, no trailing
+ * line break -- and returned as one sealed str.  No rows (or an absent
+ * handle) is "".  It used to read a packed [nrows][StrArray...] C block that
+ * no toke value has, typed i64 in csv.tki, so it was unusable from toke.
  */
-int64_t tk_csv_serialize_w(int64_t data) {
-    if (!data) return 0;
-    int64_t *block = (int64_t *)(intptr_t)data;
-    int64_t nrows = block[0];
-    if (nrows <= 0) return 0;
-    StrArray *rows = (StrArray *)(block + 1);
+int64_t tk_csv_serialize_w(int64_t rows) {
+    int64_t *outer = (int64_t *)(intptr_t)rows;
+    int64_t nrows = outer ? outer[-1] : 0;
     TkCsvWriter *w = csv_writer_new();
-    if (!w) return 0;
+    if (!w) return (int64_t)(intptr_t)seal_copy("");
     for (int64_t i = 0; i < nrows; i++) {
-        csv_writer_writerow(w, rows[i]);
+        int64_t *row = (int64_t *)(intptr_t)outer[i];
+        StrArray a;
+        a.len = (uint64_t)(row && row[-1] > 0 ? row[-1] : 0);
+        a.data = (const char **)row;
+        csv_writer_writerow(w, a);
     }
     const char *result = csv_writer_flush(w);
     csv_writer_free(w);
-    return (int64_t)(intptr_t)result;
+    if (!result) return (int64_t)(intptr_t)seal_copy("");
+    return (int64_t)(intptr_t)seal_take(result);
 }
 
 /* ── 114.43: streaming reader/writer wrappers ────────────────────────────
