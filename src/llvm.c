@@ -2671,9 +2671,18 @@ static int array_lit_spread_idx(Ctx *c, const Node *n, int *elem_count) {
              * CURRENT binding is actually pointer-typed (via the uniquified
              * name's local type) before treating `@(x)` as a spread. */
             const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
+            /* 138.60: and the checker does not type it as a record.  A
+             * binding of an `"opaque": true` std type ($svgelem, $tomlval,
+             * $csvreader, ...) made with `as` is an i8* pointer local with no
+             * registered layout (the .tki record has no "fields" key, so
+             * register_tki_struct_types skips it), and `@(fe)` read word -1
+             * of the element as a length: len 0 for a real one, SIGSEGV for
+             * a forged one.  A record is never an array. */
+            const Type *ert = n->children[i]->rtype;
             if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
                 !ptr_local_struct_type(c, eid) &&
-                !strcmp(cur_ty, "i8*"))
+                !strcmp(cur_ty, "i8*") &&
+                !(ert && ert->kind == TY_STRUCT))
                 spread_idx = i;
         }
         count++;
