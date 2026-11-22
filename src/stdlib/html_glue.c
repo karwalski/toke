@@ -10,6 +10,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include "tk_strhdr.h"
+#include "tk_runtime.h"   /* 138.61: the handle registry */
+
+/* 138.61: every $htmldoc this glue hands out is registered by address (no
+ * toke call frees one), and every call reads only a registered one; a forged
+ * `5 as $htmldoc` is the null document. */
+static TkHtmlDoc *doc_in(int64_t v)   { return (TkHtmlDoc *)tk_handle_addr(TK_HK_HTMLDOC, v); }
 
 /*
  * html.doc() takes no arguments -- stdlib/html.tki says so, docs/stdlib/html.md
@@ -23,7 +29,7 @@
 int64_t tk_html_doc_w(void) {
     TkHtmlDoc *doc = html_doc();
     if (!doc) return 0;
-    return (int64_t)(intptr_t)doc;
+    return (int64_t)(intptr_t)tk_handle_adopt(TK_HK_HTMLDOC, doc);   /* 138.61 */
 }
 
 int64_t tk_html_h1_w(int64_t text) {
@@ -96,25 +102,29 @@ static int64_t html_str_copy(const char *s) {
 }
 
 int64_t tk_html_render_w(int64_t doc) {
-    if (!doc) return 0;
-    return html_str_copy(html_render((TkHtmlDoc *)(intptr_t)doc));
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d) return 0;
+    return html_str_copy(html_render(d));
 }
 
 int64_t tk_html_style_w(int64_t doc, int64_t css) {
-    if (!doc) return 0;
-    html_style((TkHtmlDoc *)(intptr_t)doc, (const char *)(intptr_t)css);
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d) return 0;
+    html_style(d, (const char *)(intptr_t)css);
     return doc;
 }
 
 int64_t tk_html_title_w(int64_t doc, int64_t t) {
-    if (!doc) return 0;
-    html_title((TkHtmlDoc *)(intptr_t)doc, (const char *)(intptr_t)t);
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d) return 0;
+    html_title(d, (const char *)(intptr_t)t);
     return doc;
 }
 
 int64_t tk_html_append_w(int64_t doc, int64_t elem) {
-    if (!doc || !elem) return doc;
-    html_append((TkHtmlDoc *)(intptr_t)doc, (TkHtmlNode *)(intptr_t)elem);
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d || !elem) return d ? doc : 0;
+    html_append(d, (TkHtmlNode *)(intptr_t)elem);
     return doc;
 }
 

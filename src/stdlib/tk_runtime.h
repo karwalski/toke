@@ -219,7 +219,11 @@ enum {
     TK_HK_PROCESS = 1, TK_HK_VEC = 2, TK_HK_STRBUF = 3, TK_HK_SECUREBUF = 4,
     TK_HK_PDFDOC = 5, TK_HK_XLSXBOOK = 6, TK_HK_ZIPARCHIVE = 7,
     TK_HK_TOMLVAL = 8, TK_HK_SVGELEM = 9, TK_HK_SVGDOC = 10,
-    TK_HK_TASKSCOPE = 11, TK_HK_LLMCLIENT = 12
+    TK_HK_TASKSCOPE = 11, TK_HK_LLMCLIENT = 12,
+    /* 138.61 / 138.50 */
+    TK_HK_TLSCONN = 13, TK_HK_VECSTORE = 14, TK_HK_VECCOLL = 15,
+    TK_HK_HTMLNODE = 16, TK_HK_HTTPSTREAM = 17, TK_HK_CANVAS = 18,
+    TK_HK_HTMLDOC = 19
 };
 /* A token for p (0 when the table is full; the caller disposes of p). */
 int64_t tk_handle_issue(int kind, void *p);
@@ -231,6 +235,9 @@ void   *tk_handle_token(int kind, int64_t tok);
 /* Register p as a live object of `kind`; returns p, or NULL when the table
  * is full (or p is NULL). */
 void   *tk_handle_adopt(int kind, void *p);
+/* 138.61: as tk_handle_adopt, for a VIEW into the registered object `owner`
+ * (a vecstore collection of its store): dropping the owner drops it too. */
+void   *tk_handle_adopt_view(int kind, void *p, const void *owner);
 /* The owner p was adopted under, or NULL (not a view, or not registered). */
 const void *tk_handle_owner(const void *p);
 /* v as a pointer when it is a live object of `kind`, else NULL. */
@@ -238,5 +245,17 @@ void   *tk_handle_addr(int kind, int64_t v);
 /* Forget p (any kind) and every view adopted with p as its owner.  1 when p
  * was registered. */
 int     tk_handle_drop(const void *p);
+
+/* 138.61: a std record that a program may also write as a record literal
+ * ($dbrow, $imgbuf, $httpclient) cannot be checked against the registry --
+ * the literal is a plain malloc the runtime never saw -- so its glue refuses
+ * only a value that cannot be the address of any record: one inside the
+ * never-mapped first page (a small integer cast with `as`), a negative one,
+ * or one that is not 8-aligned (malloc's minimum).  0 is the null record and
+ * is answered by the caller's own null path. */
+static inline int tk_record_plausible(int64_t v)
+{
+    return v >= 4096 && (v & 7) == 0;
+}
 
 #endif /* TK_RUNTIME_H */

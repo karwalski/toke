@@ -837,6 +837,15 @@ void *tk_handle_adopt(int kind, void *p)
     return i < 0 ? NULL : p;
 }
 
+void *tk_handle_adopt_view(int kind, void *p, const void *owner)
+{
+    if (!p) return NULL;
+    hreg_lock();
+    int64_t i = hreg_add(kind, p, owner);
+    hreg_unlock();
+    return i < 0 ? NULL : p;
+}
+
 const void *tk_handle_owner(const void *p)
 {
     const void *o = NULL;

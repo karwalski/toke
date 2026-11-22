@@ -39,6 +39,7 @@
 #include "tls.h"
 #include "capabilities.h"   /* 124.4c: net capability gate */
 #include "tk_strhdr.h"      /* 127.295: sealed strings, tk_strlen */
+#include "tk_runtime.h"     /* 138.61: the handle registry */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,11 +122,16 @@ static const char *as_str(int64_t s)
     return (const char *)(intptr_t)s;
 }
 
-/* A $TlsConn handle (a TlsConn *, 135.30) as the core's TlsConn value. */
+/* A $TlsConn handle (a TlsConn *, 135.30) as the core's TlsConn value.
+ * 138.61: only a record box_conn made is read; any other value -- a forged
+ * `5 as $tlsconn`, a record literal, a closed connection's record -- is the
+ * null connection (id NULL), which every tls.c call answers as an unknown
+ * connection (none / 0). */
 static TlsConn conn_of(int64_t h)
 {
     TlsConn c;
-    c.id = h ? ((const TlsConn *)(intptr_t)h)->id : NULL;
+    const TlsConn *b = (const TlsConn *)tk_handle_addr(TK_HK_TLSCONN, h);
+    c.id = b ? b->id : NULL;
     return c;
 }
 
@@ -135,6 +141,11 @@ static int64_t box_conn(char *id)
     TlsConn *b = malloc(sizeof *b);
     if (!b) return 0;
     b->id = seal_take(id);   /* 127.295: .id is a str toke can read */
+    /* 138.61: registered by address -- toke reads .id from the record, and
+     * the box is never freed, so its address is never reused.  When the
+     * table is full the record is still returned (its .id reads), and every
+     * tls call answers it as the null connection. */
+    (void)tk_handle_adopt(TK_HK_TLSCONN, b);
     return (int64_t)(intptr_t)b;
 }
 
@@ -434,7 +445,12 @@ int64_t tk_tls_write_w(int64_t conn, int64_t data)
 /* tls.close(conn) — clean TLS shutdown plus socket close. */
 int64_t tk_tls_close_w(int64_t conn)
 {
-    return tls_close(conn_of(conn));
+    int rc = tls_close(conn_of(conn));
+    /* 138.61: forget the record (it stays allocated, so .id still reads and
+     * the address is never reused); a later call on it is the null
+     * connection.  Keeps a long-running listener's registry bounded. */
+    (void)tk_handle_drop((const void *)(intptr_t)conn);
+    return rc;
 }
 
 /* ── peer identity ───────────────────────────────────────────────────────── */

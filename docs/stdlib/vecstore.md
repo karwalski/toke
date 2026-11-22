@@ -97,8 +97,12 @@ let vs=vecstore.open("/var/data/embeddings");
 
 Flushes all dirty collections to disk and releases all resources associated
 with the store.  Each collection is written to `{data_dir}/{name}.vecs` in
-binary format.  Using the `$vecstorehandle` or any of its `$veccollection` handles
-after `vecstore.close` is undefined behaviour.
+binary format.  After `vecstore.close` the `$vecstorehandle` and every
+`$veccollection` it opened are answered as the null handle (`vecstore.flush`
+`false`, `vecstore.count` 0, `vecstore.collection` `$err`, ...), and a second
+`vecstore.close` does nothing (138.61).  So is a handle `vecstore.open` or
+`vecstore.collection` did not make -- a record literal or a value cast with
+`as`.
 
 **Example:**
 ```toke

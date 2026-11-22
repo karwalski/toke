@@ -171,7 +171,12 @@ static void row_drop_index(Row *r) {
  * elements reads "" for what it lacks. */
 static Row row_view(int64_t rec_h) {
     Row r; r.col_names = NULL; r.col_values = NULL; r.col_nulls = NULL; r.col_count = 0;
-    const TkRowRec *rec = (const TkRowRec *)(intptr_t)rec_h;
+    /* 138.61: a $dbrow literal is legal (db.md), so the registry cannot
+     * vouch for a row; a value that cannot be any record's address (`5 as
+     * $dbrow`) reads as the empty row, and the row.* accessors answer it as
+     * they answer a null row. */
+    const TkRowRec *rec = tk_record_plausible(rec_h)
+        ? (const TkRowRec *)(intptr_t)rec_h : NULL;
     int64_t n = rec ? tk_arr_len(rec->cols) : 0;
     if (n <= 0) return r;
     const char **names  = (const char **)malloc((size_t)n * sizeof(char *));
@@ -298,7 +303,7 @@ int64_t tk_db_getrow_w(int64_t result, int64_t idx) {
 
 /* tk_db_getfield_w — get a field value by column name from a $row. */
 int64_t tk_db_getfield_w(int64_t row, int64_t name) {
-    if (!row || !name) return 0;
+    if (!tk_record_plausible(row) || !name) return 0;   /* 138.61 */
     Row r = row_view(row);
     StrResult res = row_str(r, (const char *)(intptr_t)name);
     row_view_free(&r);
@@ -329,7 +334,7 @@ int64_t tk_db_print_w(int64_t rows) {
  * pointer, never 0 on success (an empty column is ""), so the sentinel
  * already tells it apart; it sets the slot too, for one rule everywhere. */
 int64_t tk_row_str_w(int64_t row, int64_t col) {
-    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.str: null row or column name");
+    if (!tk_record_plausible(row) || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.str: null row or column name");
     Row r = row_view(row);
     StrResult res = row_str(r, (const char *)(intptr_t)col);
     row_view_free(&r);
@@ -339,7 +344,7 @@ int64_t tk_row_str_w(int64_t row, int64_t col) {
 }
 
 int64_t tk_row_i64_w(int64_t row, int64_t col) {
-    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.i64: null row or column name");
+    if (!tk_record_plausible(row) || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.i64: null row or column name");
     Row r = row_view(row);
     I64Result res = row_i64(r, (const char *)(intptr_t)col);
     row_view_free(&r);
@@ -349,7 +354,7 @@ int64_t tk_row_i64_w(int64_t row, int64_t col) {
 }
 
 int64_t tk_row_u64_w(int64_t row, int64_t col) {
-    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.u64: null row or column name");
+    if (!tk_record_plausible(row) || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.u64: null row or column name");
     Row r = row_view(row);
     U64Result res = row_u64(r, (const char *)(intptr_t)col);
     row_view_free(&r);
@@ -359,7 +364,7 @@ int64_t tk_row_u64_w(int64_t row, int64_t col) {
 }
 
 int64_t tk_row_f64_w(int64_t row, int64_t col) {
-    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.f64: null row or column name");
+    if (!tk_record_plausible(row) || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.f64: null row or column name");
     Row r = row_view(row);
     F64Result res = row_f64(r, (const char *)(intptr_t)col);
     row_view_free(&r);
@@ -369,7 +374,7 @@ int64_t tk_row_f64_w(int64_t row, int64_t col) {
 }
 
 int64_t tk_row_bool_w(int64_t row, int64_t col) {
-    if (!row || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.bool: null row or column name");
+    if (!tk_record_plausible(row) || !col) return db_raise_msg(DB_ERR_NOT_FOUND, "row.bool: null row or column name");
     Row r = row_view(row);
     BoolResult res = row_bool(r, (const char *)(intptr_t)col);
     row_view_free(&r);

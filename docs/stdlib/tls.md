@@ -176,7 +176,7 @@ Writes `data`. `false` if the write failed, typically because the connection is 
 
 ### tls.close(conn: tlsconn): bool
 
-Clean TLS shutdown followed by socket close. The handle must not be used afterwards.
+Clean TLS shutdown followed by socket close. Afterwards the handle is answered as one that is not an open connection (`false`, `0`, `""`); its `id` still reads (138.61). So is a `$tlsconn` `tls.connect` or `tls.listen` did not hand out -- a record literal or a value cast with `as`.
 
 ### tls.protocol(conn: tlsconn): str
 
