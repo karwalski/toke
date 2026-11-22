@@ -22,6 +22,9 @@
 #include <arpa/inet.h>
 #include "tk_bind.h"   /* 135.33 */
 #include "tk_strhdr.h" /* 127.170: net.read returns a sealed string */
+#include "tk_array.h"   /* 138.25: net.resolve returns [str] */
+#include "tk_runtime.h" /* 138.25: tk_current_error, tk_err_box, tk_err_msg */
+#include <netdb.h>      /* gai_strerror */
 
 int64_t tk_net_portavailable_w(int64_t port) {
     TK_REQUIRE(TK_CAP_NET);
@@ -105,4 +108,54 @@ int64_t tk_net_write_w(int64_t conn, int64_t data) {
 int64_t tk_net_close_w(int64_t conn) {
     close((int)conn);
     return 0;
+}
+
+/* net.resolve(name) -> [str]!neterr (138.25, owner answer 2.2).
+ *
+ * Every address `name` has, A and AAAA, as numeric strings, so that a
+ * caller can check each one (private, loopback, link-local, metadata
+ * addresses) and then connect to the one it checked with
+ * http.withconnectaddr: resolving inside the connect, as the http client
+ * does, lets the name answer differently the second time (DNS rebinding).
+ *
+ * Gated by `net`: a lookup is network traffic, and getaddrinfo is a net
+ * primitive to scripts/check_capability_sinks.py.  The error is a neterr
+ * {msg; code} box in tk_current_error (runtime-abi §7), code 0. */
+static int64_t net_raise(const char *msg)
+{
+    TkNetErrRec *box = (TkNetErrRec *)tk_err_box((int64_t)sizeof *box);
+    box->msg  = tk_err_msg("%s", msg ? msg : "");
+    box->code = 0;
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+int64_t tk_net_resolve_w(int64_t name) {
+    TK_REQUIRE(TK_CAP_NET);
+    const char *nm = (const char *)(intptr_t)name;
+    if (!nm || !nm[0]) return net_raise("net.resolve: empty name");
+    NetAddrs a = net_resolve(nm);
+    if (a.err) {
+        char m[320];
+        snprintf(m, sizeof m, "net.resolve: %s: %s", nm, gai_strerror(a.err));
+        return net_raise(m);
+    }
+    int64_t h = tk_arr_alloc((int64_t)a.n, (int64_t)a.n);
+    if (!h) { net_addrs_free(&a); return net_raise("net.resolve: out of memory"); }
+    int64_t *block = (int64_t *)(intptr_t)h;
+    for (size_t i = 0; i < a.n; i++) {
+        char *s = tks_strdup(a.addrs[i]);   /* sealed (127.170) */
+        if (!s) {
+            /* the block from tk_arr_alloc starts TK_ARR_HDR words before
+             * its handle; the strings already sealed are never freed
+             * (runtime-abi §3.1) */
+            free(block - TK_ARR_HDR);
+            net_addrs_free(&a);
+            return net_raise("net.resolve: out of memory");
+        }
+        block[i] = (int64_t)(intptr_t)s;
+    }
+    net_addrs_free(&a);
+    tk_current_error = 0;
+    return h;
 }

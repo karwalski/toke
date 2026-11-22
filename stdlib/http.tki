@@ -390,6 +390,36 @@
     },
     {
       "kind": "func",
+      "name": "http.withdeadline",
+      "params": [
+        "httpclient",
+        "u64"
+      ],
+      "return": "httpclient",
+      "note": "client; ms \u2014 a copy of the client whose requests must finish (connect, TLS handshake, send, response headers and body) within ms milliseconds of the call, else $err \"request deadline exceeded (...)\"; off by default; timeoutms stays per read (138.24)"
+    },
+    {
+      "kind": "func",
+      "name": "http.withmaxbody",
+      "params": [
+        "httpclient",
+        "u64"
+      ],
+      "return": "httpclient",
+      "note": "client; bytes \u2014 a copy of the client whose requests answer $err \"response body exceeds the cap (...)\" for a response body over bytes, and stop reading it; off by default (138.24)"
+    },
+    {
+      "kind": "func",
+      "name": "http.withconnectaddr",
+      "params": [
+        "httpclient",
+        "str"
+      ],
+      "return": "httpclient",
+      "note": "client; addr \u2014 a copy of the client that connects to addr, an IPv4 or IPv6 literal, instead of resolving the URL's host; SNI, certificate verification and Host still use the URL's host; $err at request time for a non-literal addr or with withproxy (138.25)"
+    },
+    {
+      "kind": "func",
       "name": "http.stream",
       "params": [
         "httpclient"
@@ -761,6 +791,16 @@
       ],
       "return": "httpresp!httperr",
       "note": "url; body; headers \u2014 POST body to a full URL with @(@(name;value)...) headers; a Content-Type among them replaces the default application/json; https is verified (138.8)"
+    },
+    {
+      "kind": "func",
+      "name": "http.getheaders",
+      "params": [
+        "str",
+        "[[str]]"
+      ],
+      "return": "httpresp!httperr",
+      "note": "url; headers \u2014 GET a full URL with @(@(name;value)...) headers, typed like http.postheaders: Host and Content-Length are the client's, a name or value with CR/LF is refused; $err only for a transport failure; https is verified (138.27)"
     },
     {
       "kind": "func",

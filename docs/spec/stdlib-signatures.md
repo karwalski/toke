@@ -212,7 +212,9 @@ f=http.serveon(host:$str;port:u64):i64
 f=http.serveworkerson(host:$str;port:u64;workers:u64):i64
 f=http.servetlson(host:$str;port:u64;cert:$str;key:$str):i64
 f=http.servetlsworkerson(host:$str;port:u64;cert:$str;key:$str;workers:u64):i64
-(* client-side: types *)
+(* client-side: types.  timeoutms is a PER-READ timeout (SO_RCVTIMEO,
+   restarting whenever data arrives), not a per-request one (138.34);
+   http.withdeadline bounds a request as a whole. *)
 t=$httpclient{baseurl:$str;poolsize:u64;timeoutms:u64}
 t=$httpreq{method:$str;url:$str;headers:@($str:$str);body:@$byte}
 t=$httpresp{status:u64;headers:@($str:$str);body:@$byte}
@@ -223,12 +225,32 @@ t=$httpstream{id:u64;open:bool}
    block used to overload them by argument type, which no implementation
    ever resolved: a client call on a route name registered a route. *)
 f=http.client(baseurl:$str):$httpclient
+f=http.withproxy(c:$httpclient;proxyurl:$str):$httpclient
+(* request controls (spec amendment 138.24, owner answers 2026-11-15 2.1 and
+   2.2; docs/decisions/138.24-http-client-controls.md).  Each returns a copy
+   of c with one setting changed; a client from http.client has none.  They
+   apply to clientget/post/put/delete; http.stream and http.downloadfile
+   refuse a client carrying one.
+   withdeadline: the whole request (connect, TLS handshake, send, response
+     headers and body) within ms of the call, else $err "request deadline
+     exceeded (<ms> ms) <stage>"; 0 has already passed.
+   withmaxbody: a response body over bytes is $err "response body exceeds
+     the cap (<bytes> bytes): ..." and the read stops; never a cut body $ok.
+   withconnectaddr: connect to addr, an IPv4/IPv6 literal, with no lookup;
+     Host, SNI and certificate verification use the URL's host; a
+     non-literal addr, or one with withproxy, is $err at request time. *)
+f=http.withdeadline(c:$httpclient;ms:u64):$httpclient
+f=http.withmaxbody(c:$httpclient;bytes:u64):$httpclient
+f=http.withconnectaddr(c:$httpclient;addr:$str):$httpclient
 f=http.clientget(c:$httpclient;path:$str):$httpresp!$httperr
 f=http.clientpost(c:$httpclient;path:$str;body:@$byte;ctype:$str):$httpresp!$httperr
 f=http.clientput(c:$httpclient;path:$str;body:@$byte;ctype:$str):$httpresp!$httperr
 f=http.clientdelete(c:$httpclient;path:$str):$httpresp!$httperr
 f=http.geturl(url:$str):$str!$httperr
 f=http.postheaders(url:$str;body:$str;headers:@(@($str))):$httpresp!$httperr
+(* 138.27: postheaders without a body, as GET; 138.8's rules: Host and
+   Content-Length are the client's, CR/LF in a name or value is $err *)
+f=http.getheaders(url:$str;headers:@(@($str))):$httpresp!$httperr
 f=http.stream(c:$httpclient):$httpstream!$httperr
 (* 121.53 (2), 2026-09-30: the implemented and published (http.tki) form is
    the client alone -- a GET of its base URL.  The (c;req) form this file
@@ -236,6 +258,19 @@ f=http.stream(c:$httpclient):$httpstream!$httperr
    (http_stream in http.c) would send req's method, path and body but not its
    headers, so restoring it needs an http.c change first. *)
 f=http.streamnext(s:$httpstream):@$byte!$httperr
+```
+
+### std.net
+
+```text
+(* 138.25 (spec amendment 138.24, owner answer 2026-11-15 2.2): every
+   address name resolves to, A and AAAA, numeric strings, each once, in the
+   resolver's order; needs the net capability (CAP001 without it).
+   neterr has httperr's shape; code 0 = no number of its own. *)
+t=$neterr{msg:$str;code:u64}
+f=net.resolve(name:$str):@($str)!$neterr
+(* the IPv4 server surface (net.listen and the untyped ABI entries beside
+   it) is described in docs/stdlib/net.md and stdlib/net.tki *)
 ```
 
 ### std.db
