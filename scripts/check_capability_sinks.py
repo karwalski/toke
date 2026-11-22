@@ -118,9 +118,10 @@ KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "do",
 IDENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
 # a primitive counts as used only when CALLED: `bind(` not `.bind` / `->bind`
 CALL = re.compile(r"(?<![.>\w])([A-Za-z_][A-Za-z0-9_]*)\s*\(")
-GATE = re.compile(r"\b(TK_REQUIRE(?:_PATH|_NET|_CMD|_ENV)?|tk_cap_check)\s*\(")
+GATE = re.compile(r"\b(TK_REQUIRE(?:_PATH_DIR|_PATH|_NET|_CMD|_ENV)?|tk_cap_check)\s*\(")
 # 138.19: the scoped gates, and the class a gate implies without a token
-SCOPED_GATES = {"TK_REQUIRE_PATH", "TK_REQUIRE_NET", "TK_REQUIRE_CMD", "TK_REQUIRE_ENV"}
+SCOPED_GATES = {"TK_REQUIRE_PATH", "TK_REQUIRE_PATH_DIR", "TK_REQUIRE_NET", "TK_REQUIRE_CMD",
+                "TK_REQUIRE_ENV"}
 GATE_IMPLIES = {"TK_REQUIRE_NET": NET, "TK_REQUIRE_CMD": SPAWN, "TK_REQUIRE_ENV": ENV_WRITE}
 
 

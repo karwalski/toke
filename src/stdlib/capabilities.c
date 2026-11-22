@@ -692,8 +692,10 @@ static void require(int ci, const Req *q, const char *scope_text) {
  * one the walk could not learn anything from: admitted by the grant, an
  * ancestor of a granted scope (the way down to it), or the working directory
  * or one of its ancestors (where a relative path starts).  `bad` gets the
- * first canonical directory that is none of these. */
-static int transit_dir_ok(int ci, const char *dir, const char *cwd) {
+ * first canonical directory that is none of these.  `also`, when not NULL,
+ * is a canonical scope counted as granted: the walk as it would be once a
+ * CAP002's fix were applied, so the fix is offered only when it works. */
+static int transit_dir_ok(int ci, const char *dir, const char *cwd, const char *also) {
     Req q;
     int b, r;
     memset(&q, 0, sizeof q);
@@ -703,6 +705,7 @@ static int transit_dir_ok(int ci, const char *dir, const char *cwd) {
     snprintf(q.canon, sizeof q.canon, "%s", dir);
     if (req_admitted(ci, &q, &b, &r)) return 1;
     if (*cwd && path_under(cwd, dir)) return 1;
+    if (also && (path_under(dir, also) || path_under(also, dir))) return 1;
     for (int src = 0; src < 2; src++) {
         const Grant *g = &g_src[src][ci];
         for (int i = 0; i < g->n; i++)
@@ -713,7 +716,7 @@ static int transit_dir_ok(int ci, const char *dir, const char *cwd) {
     return 0;
 }
 
-static int path_transit_ok(int ci, const char *path, char *bad) {
+static int path_transit_ok(int ci, const char *path, const char *also, char *bad) {
     char abs[PATH_MAX], cwd[PATH_MAX], cwdr[PATH_MAX], pre[PATH_MAX], c[PATH_MAX];
     *bad = '\0';
     if (!abs_path(path, 0, abs)) return 0;
@@ -730,7 +733,7 @@ static int path_transit_ok(int ci, const char *path, char *bad) {
             memcpy(pre, abs, e);
             pre[e] = '\0';
             if (!canon_path(pre, 0, c)) { snprintf(bad, PATH_MAX, "%s", pre); return 0; }
-            if (!transit_dir_ok(ci, c, cwd)) { snprintf(bad, PATH_MAX, "%s", c); return 0; }
+            if (!transit_dir_ok(ci, c, cwd, also)) { snprintf(bad, PATH_MAX, "%s", c); return 0; }
         }
         i = nx;
     }
@@ -748,15 +751,54 @@ static void path_req(Req *q, const char *path) {
     q->ok   = path && canon_path(path, 0, q->canon);
 }
 
+/* Require path request q (for `path`); returns only when it is admitted.
+ * A CAP002 for the target carries its fix only when that fix works on its
+ * own (AGENTS §6): granting the target also admits the directories above it,
+ * but not a directory outside it the path passes through, so when the way
+ * there would still be refused, the denial names that directory instead,
+ * with no fix.  The transit check looks at nothing the target check had not. */
+static void require_path_req(int ci, const Req *q, const char *path) {
+    int b, r;
+    char bad[PATH_MAX];
+    if (req_admitted(ci, q, &b, &r)) return;
+    if (q->ok && path && !path_transit_ok(ci, path, q->canon, bad))
+        deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+    deny_scope(ci, q->ok ? q->canon : q->raw, q->ok, b, r, NULL);
+}
+
 void tk_cap_require_path(uint32_t cap, const char *path) {
     int ci = class_index(cap);
     if (ci < 0 || eff_whole(ci)) return;
     if (!eff_granted(ci)) deny_class(class_bit(ci));
     Req q;
     path_req(&q, path);
-    require(ci, &q, q.ok ? q.canon : q.raw);
+    require_path_req(ci, &q, path);
     char bad[PATH_MAX];
-    if (!path_transit_ok(ci, path, bad)) deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+    if (!path_transit_ok(ci, path, NULL, bad)) deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+}
+
+static const char k_dir_why[] =
+    "the file does not resolve inside this directory (a symlink leads out of it), so "
+    "admitting the directory alone would not admit the call; no fix is offered";
+
+void tk_cap_require_path_dir(uint32_t cap, const char *path, const char *dir) {
+    int ci = class_index(cap), b, r;
+    if (ci < 0 || eff_whole(ci)) return;
+    if (!eff_granted(ci)) deny_class(class_bit(ci));
+    char bad[PATH_MAX];
+    Req d, f;
+    path_req(&d, dir);
+    path_req(&f, path);
+    /* The directory first: a grant naming it admits the file as well exactly
+     * when the file resolves under it, so only then is its fix the one edit. */
+    if (!req_admitted(ci, &d, &b, &r)) {
+        if (d.ok && path && !path_transit_ok(ci, path, d.canon, bad))
+            deny_scope(ci, bad, 1, 0, 0, k_transit_why);
+        if (d.ok && f.ok && path_under(f.canon, d.canon)) deny_scope(ci, d.canon, 1, b, r, NULL);
+        deny_scope(ci, d.ok ? d.canon : d.raw, d.ok, b, r, d.ok ? k_dir_why : NULL);
+    }
+    require_path_req(ci, &f, path);
+    if (!path_transit_ok(ci, path, NULL, bad)) deny_scope(ci, bad, 1, 0, 0, k_transit_why);
 }
 
 int tk_cap_path_admitted(uint32_t cap, const char *path) {
@@ -767,7 +809,7 @@ int tk_cap_path_admitted(uint32_t cap, const char *path) {
     Req q;
     path_req(&q, path);
     char bad[PATH_MAX];
-    return req_admitted(ci, &q, &b, &r) && path_transit_ok(ci, path, bad);
+    return req_admitted(ci, &q, &b, &r) && path_transit_ok(ci, path, NULL, bad);
 }
 
 void tk_cap_require_whole(uint32_t cap, const char *value, const char *why) {
@@ -813,10 +855,13 @@ void tk_cap_require_cmd(const char *argv0) {
     q.kind = TK_CAP_SK_CMD;
     q.raw  = argv0 ? argv0 : "";
     q.ok   = argv0 && resolve_cmd(argv0, 0, q.canon);
-    require(ci, &q, q.ok ? q.canon : q.raw);
-    /* 138.19 (round 3): a path to the command walks its directories too. */
+    /* 138.19 (round 3): a path to the command walks its directories too.  As
+     * for a path, the command's fix comes only when granting it would also
+     * admit the way there; otherwise CAP002 names the directory passed. */
+    int slash = argv0 && strchr(argv0, '/');
+    require_path_req(ci, &q, slash ? argv0 : NULL);
     char bad[PATH_MAX];
-    if (strchr(argv0, '/') && !path_transit_ok(ci, argv0, bad))
+    if (slash && !path_transit_ok(ci, argv0, NULL, bad))
         deny_scope(ci, bad, 1, 0, 0, k_transit_why);
 }
 

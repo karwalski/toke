@@ -137,11 +137,21 @@ int tk_cap_is_grant_flag(const char *arg);
 #define TK_REQUIRE_NET(dir, host, port) tk_cap_require_net((dir), (host), (uint64_t)(port))
 #define TK_REQUIRE_CMD(argv0)           tk_cap_require_cmd(argv0)
 #define TK_REQUIRE_ENV(key)             tk_cap_require_env(key)
+#define TK_REQUIRE_PATH_DIR(cap, path, dir) tk_cap_require_path_dir((cap), (path), (dir))
 
 void tk_cap_require_path(uint32_t cap, const char *path);
 void tk_cap_require_net(uint32_t dir, const char *host, uint64_t port);
 void tk_cap_require_cmd(const char *argv0);
 void tk_cap_require_env(const char *key);
+
+/*
+ * TK_REQUIRE_PATH_DIR / tk_cap_require_path_dir — TK_REQUIRE_PATH for a sink that also creates and
+ * removes files beside `path` in `dir` (log.openaccess / log.openerror: a
+ * lock sidecar and rotated files; 138.19).  The way to `path` is checked,
+ * then `dir`, then `path`.  The directory's CAP002 carries a fix only when
+ * `path` resolves under it, so the fix is the one edit that admits the call.
+ */
+void tk_cap_require_path_dir(uint32_t cap, const char *path, const char *dir);
 
 /*
  * tk_cap_path_admitted — would TK_REQUIRE_PATH(cap, path) pass?  1 or 0,
