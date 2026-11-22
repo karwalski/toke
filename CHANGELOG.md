@@ -174,6 +174,16 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   D639.
 - The checker's interpolation anchor (`Ctx.interp_host`) is initialised in
   `type_check` (127.476); it was read uninitialised.
+- **Every integer-to-integer `as` cast builds, and gives C's value** (127.506;
+  corpus pointer 131.131). `a as i32` on a `u32`, `a as u32` on an `i32` (any
+  same-width signedness change below 64 bits) and a widening cast into a
+  sub-64-bit target (`a as i32` on an `i16`) checked clean and failed the build
+  with E9003 (invalid LLVM IR: the cast left the value at the target's width
+  where its consumer expected the i64 the narrowing path produces). A signed
+  source widened into an unsigned target is now sign-extended, as C, Rust and Go
+  do: `b as u16` on an `i8` of -1 is 65535 (it was 255, while `b as i64 as u16`
+  was already 65535). Conformance: C2040 (all 64 pairs over 20 values, against
+  C's output).
 
 ### Security fixes
 
