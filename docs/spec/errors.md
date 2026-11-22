@@ -1015,6 +1015,16 @@ where the module that declares the record is not imported, is refused at
 (`'srv.handle' returns '$res', a type of a module this file does not import`).
 Still no `fix`: which import supplies the record is not decidable from the file.
 
+Story 138.58 extends this to the same record reached through another value: an
+element of an array or map such a call returns (`rs.get(0).text`, in place or
+bound), the `$ok` or `$err` payload of its `T!E`, a sum type's variant payload
+bound by an `mt` arm, and a field of an imported record whose type is such a
+record (`wr.r.text`). The message names the record and where it came from
+(`it is '$res' (from 'srv.many'), a type of a module this file does not
+import`). It is refused even when another struct in scope declares a field of
+that name: codegen's field-owner fallback would otherwise read that struct's
+offset. No `fix`.
+
 ---
 
 ### E4040 -- Map key type mismatch (reserved)

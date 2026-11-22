@@ -552,9 +552,15 @@ static int int_lit_zero(const char *src, const Node *n) {
     return n && n->kind == NODE_INT_LIT && lit_int_value(src, n, &neg, &m)
            && !neg && m == 0;
 }
+/* 138.55: a bool is judged as an integer is.  It reached the slot through
+ * scalar_int_type (136.36's handle-as-integer compatibility), and
+ * `process.wait(true)` handed the runtime handle 1.  `false` is not the
+ * literal 0 and is refused too: the null handle is spelled 0. */
 static int forged_handle_arg(const char *src, const Node *an, const Type *at,
                              const Type *pt) {
-    return opaque_handle_type(pt) && is_integer(at) && !int_lit_zero(src, an);
+    return opaque_handle_type(pt)
+           && (is_integer(at) || (at && at->kind == TY_BOOL))
+           && !int_lit_zero(src, an);
 }
 static int lit_narrows(const char *src, const Node *n, const Type *to) {
     if (!n || !to) return 0;
@@ -2800,6 +2806,158 @@ static const char *unimported_user_ret(Ctx *cx, const Node *base,
 }
 
 /*
+ * 138.58 — the same refusal (138.40) for a record of an unimported module
+ * that is reached THROUGH another value rather than returned bare: an
+ * element of an array or map a user-module call returns (`rs.get(0).text`,
+ * `srv.many(x).get(0).text`, `m.get(k).text`), the `$ok` payload of its
+ * `T!E` or the `$err` one, a sum type's variant payload bound by an `mt`
+ * arm, and a field of an imported record whose own type is such a record
+ * (`wr.r.text`).  Codegen registers only the records of imported modules
+ * and answers each of these with E4034; --check passed them.
+ *
+ * decl_spell follows the value back to the declared .tki spelling of its
+ * type -- through un-annotated `let`/`mut` bindings, `.get(..)` on an array
+ * (`[T]` -> T) or a map (`[K:V]` -> V), an imported record's field, and an
+ * `mt` arm binding -- and answers it in `out` ("res", "[res]", "res!perr"),
+ * or NULL when the value does not come from a user-module call.  `callee`
+ * receives the call it came from.
+ */
+static const char *decl_elem_spell(Ctx *cx, const Node *coll, char *out,
+                                   size_t outsz, char *callee,
+                                   size_t calleesz, int depth);
+static const char *decl_spell(Ctx *cx, const Node *e, char *out, size_t outsz,
+                              char *callee, size_t calleesz, int depth) {
+    if (!e || depth > 8) return NULL;
+    if (e->kind == NODE_IDENT) {
+        char nb[128]; TOKSTR(nb, cx->src, e);
+        if (!cx->fn_node) return NULL;
+        const Node *use = in_tree_use(cx, e);
+        const Node *b = tk_binder_at(cx->fn_node, cx->src, use, nb,
+                                     (int)strlen(nb), NULL);
+        if (!b) return NULL;
+        if (b->kind == NODE_BIND_STMT || b->kind == NODE_MUT_BIND_STMT) {
+            if (b->child_count != 2) return NULL;   /* annotated: not judged */
+            return decl_spell(cx, b->children[1], out, outsz, callee,
+                              calleesz, depth + 1);
+        }
+        if (b->kind != NODE_MATCH_ARM || b->child_count < 3) return NULL;
+        const Node *root = cx->fn_node;
+        const Node *mt = parent_of(root, b);
+        if (!mt || mt->kind != NODE_MATCH_STMT || mt->child_count < 2)
+            return NULL;
+        char sc[256];
+        if (!decl_spell(cx, mt->children[0], sc, sizeof sc, callee, calleesz,
+                        depth + 1)) return NULL;
+        char lb[128]; TOKSTR(lb, cx->src, b->children[0]);
+        const char *lab = lb[0] == '$' ? lb + 1 : lb;
+        char *bang = strchr(sc, '!');
+        if (bang) {                               /* a T!E */
+            *bang = '\0';
+            if (!strcmp(lab, "ok")) { snprintf(out, outsz, "%s", sc); return out; }
+            if (!strcmp(lab, "err")) { snprintf(out, outsz, "%s", bang + 1); return out; }
+            return NULL;
+        }
+        const ImportedType *st = imported_type_lookup(cx->env->names, sc);
+        if (st && st->is_sum) {
+            for (int i = 0; i < st->field_count; i++)
+                if (st->field_names[i] && !strcmp(st->field_names[i], lab)
+                    && st->field_types && st->field_types[i]) {
+                    snprintf(out, outsz, "%s", st->field_types[i]);
+                    return out;
+                }
+            return NULL;
+        }
+        if (!strcmp(lab, "ok")) { snprintf(out, outsz, "%s", sc); return out; }
+        return NULL;
+    }
+    if (e->kind == NODE_FIELD_EXPR && e->child_count >= 2) {
+        Type *bt = e->children[0] ? e->children[0]->rtype : NULL;
+        char fb[128]; TOKSTR(fb, cx->src, e->children[1]);
+        if (!bt || bt->kind != TY_STRUCT || !bt->name) return NULL;
+        const ImportedType *it = imported_type_lookup(cx->env->names, bt->name);
+        if (!it || it->is_sum || it->is_std) return NULL;
+        for (int i = 0; i < it->field_count; i++)
+            if (it->field_names[i] && !strcmp(it->field_names[i], fb)
+                && it->field_types && it->field_types[i]) {
+                snprintf(out, outsz, "%s", it->field_types[i]);
+                snprintf(callee, calleesz, "the field '%s' of '$%s'", fb, bt->name);
+                return out;
+            }
+        return NULL;
+    }
+    if (e->kind == NODE_INDEX_EXPR && e->child_count == 2)  /* `.get(i)` */
+        return decl_elem_spell(cx, e->children[0], out, outsz, callee,
+                               calleesz, depth);
+    if (e->kind != NODE_CALL_EXPR || e->child_count < 1) return NULL;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2) return NULL;
+    if (user_module_call(cx, e)) {
+        char ab[128]; TOKSTR(ab, cx->src, cal->children[0]);
+        char mb[128]; TOKSTR(mb, cx->src, cal->children[1]);
+        const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+        if (!f || f->abi_ret) return NULL;
+        /* a `T!E` export records T as okret and an empty ret (127.180) */
+        const char *rt = (f->ret && f->ret[0]) ? f->ret : f->okret;
+        if (!rt || !rt[0]) return NULL;
+        if (f->errty && f->errty[0] && !strchr(rt, '!'))
+            snprintf(out, outsz, "%s!%s", rt, f->errty);
+        else
+            snprintf(out, outsz, "%s", rt);
+        snprintf(callee, calleesz, "'%s.%s'", ab, mb);
+        return out;
+    }
+    /* `.get(..)` on an array or a map a user-module call returns */
+    char mb[64]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "get") != 0 || e->child_count != 2) return NULL;
+    return decl_elem_spell(cx, cal->children[0], out, outsz, callee,
+                           calleesz, depth);
+}
+/* decl_elem_spell -- the element spelling of the `[T]` (T) or `[K:V]` (V)
+ * that decl_spell answers for `coll`. */
+static const char *decl_elem_spell(Ctx *cx, const Node *coll, char *out,
+                                   size_t outsz, char *callee,
+                                   size_t calleesz, int depth) {
+    char rs[256];
+    if (!decl_spell(cx, coll, rs, sizeof rs, callee, calleesz,
+                    depth + 1)) return NULL;
+    size_t n = strlen(rs);
+    if (n < 3 || rs[0] != '[' || rs[n - 1] != ']') return NULL;
+    rs[n - 1] = '\0';
+    const char *in = rs + 1, *el = in;
+    int lvl = 0;
+    for (const char *q = in; *q; q++) {           /* a top-level ':' => map */
+        if (*q == '[' || *q == '(') lvl++;
+        else if (*q == ']' || *q == ')') lvl--;
+        else if (*q == ':' && lvl == 0) { el = q + 1; break; }
+    }
+    snprintf(out, outsz, "%s", el);
+    return out;
+}
+/* unimported_decl_rec — decl_spell's answer when it is a bare record name
+ * that no imported module and nothing this file declares provides (the
+ * 138.40 test), else NULL. */
+static const char *unimported_decl_rec(Ctx *cx, const Node *base,
+                                       char *out, size_t outsz,
+                                       char *callee, size_t calleesz) {
+    static const char *const scal[] = {
+        "i64","u64","f64","str","bool","void","i8","i16","i32","u8","u16",
+        "u32","f32","byte","any",NULL };
+    char sp[256];
+    callee[0] = '\0';
+    if (!decl_spell(cx, base, sp, sizeof sp, callee, calleesz, 0)) return NULL;
+    const char *r = sp[0] == '$' ? sp + 1 : sp;
+    if (!*r) return NULL;
+    for (const char *q = r; *q; q++)
+        if (!((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+              || (*q >= '0' && *q <= '9') || *q == '_')) return NULL;
+    for (int i = 0; scal[i]; i++) if (!strcmp(r, scal[i])) return NULL;
+    if (imported_type_lookup(cx->env->names, r)) return NULL;
+    if (tc_lookup(cx->env->names->module_scope, r, (int)strlen(r))) return NULL;
+    snprintf(out, outsz, "%s", r);
+    return out;
+}
+
+/*
  * bind_init_type — the type of an *un-annotated* binding `let x = init`,
  * recovered from its initialiser, or NULL when the checker must keep the
  * binding unknown.
@@ -4851,6 +5009,22 @@ static void check_json_opaque_arg(Ctx *cx, const Node *call, const char *mpath,
               "got", got, (const char *)NULL);
 }
 
+/* 127.497 -- the element of an array argument against the element of the
+ * array a std interface declares, by the representation class
+ * check_tki_arg_types judges a scalar by (tki_arg_class): nested arrays are
+ * followed down, an unknown element (an empty literal) or an opaque handle
+ * is not judged, and an integer where a record is declared is a handle, as
+ * at the top level.  1 when the classes differ. */
+static int std_elem_clash(const Type *at, const Type *pt) {
+    for (int d = 0; d < 8 && at && pt && at->kind == TY_ARRAY
+                    && pt->kind == TY_ARRAY; d++) {
+        at = at->elem; pt = pt->elem;
+    }
+    int ac = tki_arg_class(at), pc = tki_arg_class(pt);
+    if (!ac || !pc || ac == pc) return 0;
+    if (pc == 6 && ac == 2) return 0;
+    return 1;
+}
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
@@ -5012,7 +5186,12 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
              * a number where a str is read, a str or a record where a number
              * is, an array where a scalar is. */
             int ac = tki_arg_class(at), pc = tki_arg_class(pt);
-            if (!ac || !pc || ac == pc) continue;
+            /* 127.497: an array against an array is judged by its element
+             * class too, as a user call is: `csv.serialize(@("a";"b"))`
+             * passed where `[[str]]` is declared, and the glue read each
+             * char* as a row array (handle[-1]). */
+            if (!ac || !pc || (ac == pc && !(ac == 4 && std_elem_clash(at, pt))))
+                continue;
             /* An integer where a RECORD is declared is a handle: std callbacks
              * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
              * then `tls.read(conn)` -- conform C022), and every record crosses
@@ -8563,6 +8742,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                              "of this value is not established: '%s' returns '$%s', "
                              "a type of a module this file does not import",
                              fname,cn,rn);
+                    snprintf(got,sizeof(got),"$%s",rn);
+                    diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                              "expected","a value of an established struct type",
+                              "got",got,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+            /* 138.58: the same record reached through an array or map
+             * element, a T!E or sum payload, or an imported record's field. */
+            if (unimported_decl_rec(cx,node->children[0],rn,sizeof rn,cn,sizeof cn)) {
+                if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                    char msg[700], got[160];
+                    snprintf(msg,sizeof(msg),
+                             "field '%s' is read on a value whose type is not "
+                             "established: it is '$%s' (from %s), a type of a module "
+                             "this file does not import",
+                             fname,rn,cn);
                     snprintf(got,sizeof(got),"$%s",rn);
                     diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
                               "expected","a value of an established struct type",

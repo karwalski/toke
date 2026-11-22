@@ -1,0 +1,16 @@
+id: D703
+series: D
+description: "127.497: http.postheaders declares its headers [[str]] (pairs of name and value); a flat [str] is E4031 naming the declaration, with no fix. It checked clean and the glue read each header string as a pair array."
+input: |
+  m=a;
+  i=http:std.http;
+  f=main():i64{
+    let r=mt http.postheaders("http://127.0.0.1:48200/";"{}";@("content-type";"text/plain")){$ok:v 0;$err:e 1};
+    <r
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "@(@(str))"
