@@ -136,7 +136,7 @@ post-quantum counterpart beside it.
 | Certificate and account keys: `tls_gen_self_signed_alg` (`tls.c:402`, P-384 default), ACME (`acme.c:137`, P-256, used at `:456` and `:803`) | In TLS 1.3 the certificate key only authenticates; the session key comes from the ephemeral exchange, so recording traffic and later breaking the certificate key does not decrypt it. These are signature-migration items (roadmap S2, S3) |
 | `std.auth` JWT (`auth.c:89`, HS256 only) | symmetric HMAC |
 | `encrypt.aes256gcm*`, `encrypt_seal`/`encrypt_open`, `encrypt.hkdfsha256` | symmetric / hash at 256-bit strength |
-| Release signing (cosign keyless, `.github/workflows/release.yml:149-170`) | signatures (roadmap S4) |
+| Release signing (cosign keyless, `.github/workflows/release.yml`, the `release` job) | signatures (roadmap S4) |
 
 ## Priority
 

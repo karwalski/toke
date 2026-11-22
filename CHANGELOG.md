@@ -200,6 +200,17 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   without `-DNDEBUG`. The release binary is now built in a pristine worktree of the same
   commit and packaged from there, and the website examples are compiled with the `tkc`
   unpacked from the tarball, the bytes that ship.
+- **The signatures and SBOMs cover the published archives** (127.453). Through 3.2.0 the
+  release job rebuilt `tkc` on ubuntu-latest and signed (`tkc.sig`) and SBOM'd
+  (`tkc-sbom.spdx.json`) that rebuild, which is in none of the four archives. The job now
+  downloads the four archives the build jobs of the same run uploaded and writes, per
+  archive, an SPDX SBOM (`<archive>.spdx.json`) and a cosign keyless bundle
+  (`<archive>.cosign.bundle`), plus `checksums.txt` over every archive and SBOM, itself
+  signed (`checksums.txt.cosign.bundle`). Each bundle is verified with the published
+  command and the tamper test runs on each signed file before anything is published.
+  `tkc.sig`, `tkc-sbom.spdx.json` and its `.sha256` are no longer release assets.
+  Publishing is still tag-only; a manual run with `sign_test` signs and verifies without
+  publishing (it writes a Rekor log entry). Verification: `docs/security/release-signing.md`.
 
 ---
 

@@ -13,6 +13,17 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sign_test:
+        # 127.453: a dispatch runs the whole release job except publishing.
+        # With sign_test it also signs the archives keyless, verifies each
+        # bundle and runs the tamper test, so the signing path is proven
+        # before a tag. Keyless signing writes an entry to the public Rekor
+        # transparency log naming this workflow and ref; nothing else leaves
+        # the run (the signed set is a workflow artifact, kept one day).
+        description: "also sign + verify the archives (writes a Rekor log entry; publishes nothing)"
+        type: boolean
+        default: false
 
 # Least privilege by default; the release job asks for what it needs.
 permissions:
@@ -177,6 +188,15 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # SBOM + signing + release: runs once on Linux after all builds succeed
   # ────────────────────────────────────────────────────────────────────────────
+  # 127.453: the SBOMs and signatures cover EXACTLY the published archives --
+  # the four tarballs the build jobs of this run uploaded -- and checksums.txt.
+  # Through 3.2.0 this job rebuilt tkc on ubuntu-latest and signed and
+  # SBOM'd that rebuild, which is in none of the archives.
+  #
+  # Guards: nothing is published, uploaded to a release or tagged unless the
+  # ref is refs/tags/v* (each such step carries its own `if:`).  Signing runs
+  # on a tag, or on a manual run that asks for it (sign_test); never on a
+  # pull request.
   release:
     name: SBOM, signing, and release
     runs-on: ubuntu-latest
@@ -184,31 +204,32 @@ jobs:
     permissions:
       contents: write      # needed by softprops/action-gh-release to create releases
       id-token: write      # needed by cosign keyless signing (OIDC token exchange)
+    env:
+      SIGN: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.sign_test) }}
+      # The identity a verifier pins: this workflow, at this ref.
+      CERT_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+      CERT_ISSUER: https://token.actions.githubusercontent.com
 
-    # 127.439: on a pull request or a manual run this job rebuilds and
-    # generates the SBOM (neither signs nor publishes anything), so the SBOM
-    # tooling is exercised before a tag.  Every signing, tamper-test,
-    # download and release step below is guarded to refs/tags/v* only.
     steps:
-      - uses: actions/checkout@v4
+      # ── The archives the build jobs uploaded ────────────────────────────
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: tkc-*
+          merge-multiple: true
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-
-      - name: Rebuild binary for signing
+      - name: Exactly the four platform archives
+        working-directory: dist
         run: |
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          export SOURCE_DATE_EPOCH
-          # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
-          # of the tkc executable (the tarball puts src/stdlib beside tkc), not
-          # the caller's cwd, so a released tkc works from any directory.
-          # 127.439: the release build is the Makefile's own flag set plus
-          # these, not a replacement CFLAGS.  The old replacement dropped the
-          # 123.9 hardening flags (the shipped binary had none) and the
-          # -Wno-format-truncation policy (gcc 15 then failed the build).
-          make BAKED_STDLIB_DIR=src/stdlib EXTRA_CFLAGS="-DNDEBUG -g0"
+          ls -la
+          n="$(ls tkc-*.tar.gz | wc -l)"
+          test "$n" -eq 4 || { echo "expected 4 archives, found $n" >&2; exit 1; }
+          for t in linux-x86_64 linux-arm64 macos-arm64 macos-x86_64; do
+            ls tkc-*-"$t".tar.gz >/dev/null || { echo "no $t archive" >&2; exit 1; }
+          done
 
-      # ── SBOM ──────────────────────────────────────────────────────────────
+      # ── SBOM, one per archive ──────────────────────────────────────────────
       # 127.439: pinned (installer script and binary from the same tag);
       # `syft packages` is deprecated in favour of `syft scan`.
       - name: Install syft
@@ -218,68 +239,80 @@ jobs:
             | sh -s -- -b /usr/local/bin "${v}"
           syft version
 
-      - name: Generate SPDX SBOM
-        run: syft scan file:./tkc -o spdx-json > tkc-sbom.spdx.json
+      # syft's file source unpacks an archive and catalogs its contents (the
+      # binary, the stdlib C sources, the vendored cmark/tomlc99/miniz).
+      - name: Generate an SPDX SBOM for each archive
+        working-directory: dist
+        env:
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          for t in tkc-*.tar.gz; do
+            syft scan "file:$t" -o spdx-json > "$t.spdx.json"
+            printf '%s: %s packages, %s files\n' "$t.spdx.json" \
+              "$(jq '.packages | length' "$t.spdx.json")" "$(jq '(.files // []) | length' "$t.spdx.json")"
+          done
 
-      - name: Compute SBOM checksum
-        run: sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
+      - name: Compute checksums
+        working-directory: dist
+        run: |
+          sha256sum tkc-*.tar.gz tkc-*.tar.gz.spdx.json > checksums.txt
+          cat checksums.txt
 
-      # ── Binary signing (cosign keyless via GitHub Actions OIDC) ───────────
+      # ── Signing (cosign keyless via GitHub Actions OIDC) ──────────────────
       - name: Install cosign
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.SIGN == 'true'
         uses: sigstore/cosign-installer@v3.10.1
         with:
           cosign-release: 'v2.6.1'
 
-      # 127.439: `sign-blob > tkc.sig` wrote a bare base64 signature, which
-      # `verify-blob --bundle tkc.sig` (the tamper test and the published
-      # instructions) cannot read, so the tamper test "passed" on a parse
-      # error and proved nothing.  --bundle writes the bundle (signature,
-      # certificate and Rekor entry) that verify-blob --bundle expects.
-      - name: Sign binary (keyless)
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-        run: cosign sign-blob --yes --bundle tkc.sig tkc
-
-      # ── Tamper-detection test ─────────────────────────────────────────────
-      - name: Tamper test
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          COSIGN_EXPERIMENTAL: "1"
+      # 127.439: --bundle writes the bundle (signature, certificate and Rekor
+      # entry) that `verify-blob --bundle` reads; a bare `sign-blob > x.sig`
+      # cannot be verified that way.  Each archive, and checksums.txt (which
+      # also covers the SBOMs), gets its own bundle: <file>.cosign.bundle.
+      - name: Sign each archive and checksums.txt (keyless)
+        if: env.SIGN == 'true'
+        working-directory: dist
         run: |
-          # Positive control first (127.439): the untampered binary must
-          # verify, or a rejection of the tampered one proves nothing.
-          cosign verify-blob \
-               --bundle tkc.sig \
-               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
-               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-               tkc
-          cp tkc tkc-tampered
-          echo "x" >> tkc-tampered
-          if cosign verify-blob \
-               --bundle tkc.sig \
-               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
-               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-               tkc-tampered 2>/dev/null; then
-            echo "ERROR: cosign accepted a tampered binary" >&2
-            exit 1
-          fi
-          echo "Tamper test passed: tampered binary correctly rejected."
-          rm tkc-tampered
+          for f in tkc-*.tar.gz checksums.txt; do
+            cosign sign-blob --yes --bundle "$f.cosign.bundle" "$f"
+          done
 
-      # ── Download all platform tarballs ──────────────────────────────────
-      - name: Download all artifacts
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/download-artifact@v4
+      # ── Verification and tamper test ───────────────────────────────────────
+      # Positive control first (127.439): each untampered file must verify
+      # with the published command, or a rejection of a tampered one proves
+      # nothing.  Then one appended byte must make each one fail.
+      - name: Verify each bundle, then the tamper test
+        if: env.SIGN == 'true'
+        working-directory: dist
+        run: |
+          echo "identity: $CERT_IDENTITY"
+          for f in tkc-*.tar.gz checksums.txt; do
+            cosign verify-blob --bundle "$f.cosign.bundle" \
+              --certificate-identity "$CERT_IDENTITY" \
+              --certificate-oidc-issuer "$CERT_ISSUER" "$f"
+            cp "$f" "$RUNNER_TEMP/tampered"
+            echo "x" >> "$RUNNER_TEMP/tampered"
+            if cosign verify-blob --bundle "$f.cosign.bundle" \
+                 --certificate-identity "$CERT_IDENTITY" \
+                 --certificate-oidc-issuer "$CERT_ISSUER" "$RUNNER_TEMP/tampered" 2>/dev/null; then
+              echo "ERROR: cosign accepted a tampered $f" >&2
+              exit 1
+            fi
+            echo "Tamper test passed: tampered $f correctly rejected."
+            rm "$RUNNER_TEMP/tampered"
+          done
+          # The documented checksum route: checksums.txt verified above, then
+          # every archive and SBOM against it.
+          sha256sum -c checksums.txt
+
+      # A run that does not publish keeps the set it built for inspection.
+      - name: Keep the unpublished release set (not a tag)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
         with:
-          path: release-artifacts/
-          merge-multiple: true
-
-      - name: Compute checksums
-        if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: release-artifacts
-        run: sha256sum tkc-*.tar.gz > checksums.txt
+          name: release-set-unpublished
+          path: dist/
+          retention-days: 1
 
       # ── Publish GitHub release ────────────────────────────────────────────
       - name: Create GitHub release
@@ -287,11 +320,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-artifacts/tkc-*.tar.gz
-            release-artifacts/checksums.txt
-            tkc-sbom.spdx.json
-            tkc-sbom.spdx.json.sha256
-            tkc.sig
+            dist/tkc-*.tar.gz
+            dist/tkc-*.tar.gz.spdx.json
+            dist/tkc-*.tar.gz.cosign.bundle
+            dist/checksums.txt
+            dist/checksums.txt.cosign.bundle
           body: |
             ## tkc ${{ github.ref_name }}
 
@@ -303,9 +336,9 @@ jobs:
             | `tkc-${{ github.ref_name }}-linux-arm64.tar.gz` | Linux ARM64 |
             | `tkc-${{ github.ref_name }}-macos-arm64.tar.gz` | macOS ARM64 (Apple Silicon) |
             | `tkc-${{ github.ref_name }}-macos-x86_64.tar.gz` | macOS x86-64 (Intel) |
-            | `checksums.txt` | SHA-256 checksums for all tarballs |
-            | `tkc-sbom.spdx.json` | Software Bill of Materials (SPDX) |
-            | `tkc.sig` | cosign keyless signature bundle |
+            | `<archive>.spdx.json` | SPDX SBOM of that archive |
+            | `<archive>.cosign.bundle` | cosign keyless signature bundle of that archive |
+            | `checksums.txt` (+ `.cosign.bundle`) | SHA-256 of every archive and SBOM, signed |
 
             ### Install
 
@@ -323,14 +356,16 @@ jobs:
             - `stdlib/vendor/` — vendored cmark, tomlc99 and miniz sources
             - `LICENSE`, `NOTICE`, `LICENSING.md`, `stdlib/LICENSE` (MIT, the standard library)
 
-            ### Verifying the binary
+            ### Verifying a download
 
-            See [docs/security/release-signing.md](https://github.com/${{ github.repository }}/blob/main/docs/security/release-signing.md) for full instructions.
+            Each archive is signed as published. See [docs/security/release-signing.md](https://github.com/${{ github.repository }}/blob/main/docs/security/release-signing.md) for the full instructions.
 
             ```sh
             cosign verify-blob \
-              --bundle tkc.sig \
+              --bundle tkc-${{ github.ref_name }}-linux-x86_64.tar.gz.cosign.bundle \
               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              tkc-${{ github.ref_name }}-linux-x86_64/tkc
+              tkc-${{ github.ref_name }}-linux-x86_64.tar.gz
             ```
+
+            Or verify `checksums.txt` the same way (with `checksums.txt.cosign.bundle`), then `sha256sum -c --ignore-missing checksums.txt`.

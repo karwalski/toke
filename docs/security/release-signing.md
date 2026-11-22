@@ -1,6 +1,7 @@
 # Release signing and SBOM verification
 
-**Applies to:** tkc releases v1.0.0 and later
+**Applies to:** tkc releases after v3.2.0 (the next tag). For v3.2.0 and earlier, see the
+limitation below.
 **Signing method:** sigstore cosign keyless (OIDC-backed, no private key)
 **SBOM format:** SPDX 2.3 JSON
 
@@ -23,17 +24,40 @@ We use sigstore cosign keyless signing so that:
 
 ---
 
-> **Limitation in v3.2.0 and earlier (toke 127.453).** The release workflow signs, and
-> runs syft on, a `tkc` it rebuilds on Linux in the signing job, not the binaries inside
-> the published archives. So `tkc.sig` and `tkc-sbom.spdx.json` do not verify a
-> downloaded archive. Until the fix ships, verify an archive against `checksums.txt`
+> **Limitation in v3.2.0 and earlier (toke 127.453).** Those releases' workflow signed,
+> and ran syft on, a `tkc` it rebuilt on Linux in the signing job, not the binaries inside
+> the published archives. So their `tkc.sig` and `tkc-sbom.spdx.json` do not verify a
+> downloaded archive. For those releases, verify an archive against `checksums.txt`
 > fetched over HTTPS from the release page (`shasum -a 256 -c checksums.txt
-> --ignore-missing`).
+> --ignore-missing`). From the next release the workflow signs and SBOMs the published
+> archives themselves, as described below.
+
+## What is signed
+
+Exactly what you download. The release job takes the four platform archives that the
+build jobs of the same workflow run uploaded, and:
+
+1. writes one SPDX SBOM per archive, `<archive>.spdx.json` (syft unpacks the archive and
+   catalogs what is in it);
+2. writes `checksums.txt`: the SHA-256 of each archive and each SBOM;
+3. signs each archive and `checksums.txt` keyless, writing `<file>.cosign.bundle`;
+4. verifies every bundle with the command below, then appends one byte to each file and
+   requires verification to fail (the tamper test);
+5. only then, and only for a `v*` tag, publishes the release.
+
+Release assets:
+
+| Asset | What it is |
+|---|---|
+| `tkc-<tag>-<platform>.tar.gz` | the archive (platforms: `linux-x86_64`, `linux-arm64`, `macos-arm64`, `macos-x86_64`) |
+| `tkc-<tag>-<platform>.tar.gz.cosign.bundle` | its signature bundle (signature, certificate, Rekor entry) |
+| `tkc-<tag>-<platform>.tar.gz.spdx.json` | its SBOM |
+| `checksums.txt`, `checksums.txt.cosign.bundle` | SHA-256 of every archive and SBOM, and its signature bundle |
 
 ## Signing method
 
-Binaries are signed during the GitHub Actions release workflow
-(`.github/workflows/release.yml`) using cosign keyless mode.
+The archives are signed during the GitHub Actions release workflow
+(`.github/workflows/release.yml`, the `release` job) using cosign keyless mode.
 
 **How keyless signing works:**
 
@@ -41,7 +65,8 @@ Binaries are signed during the GitHub Actions release workflow
 2. cosign exchanges that token with Fulcio (sigstore's certificate authority),
    which issues a short-lived X.509 certificate binding the signing key to the
    workflow's OIDC identity.
-3. cosign signs the binary and writes the signature bundle (`tkc.sig`).
+3. cosign signs each archive and `checksums.txt`, writing one bundle per file
+   (`<file>.cosign.bundle`).
 4. The signing event (certificate + signature) is appended to the Rekor
    transparency log.
 
@@ -52,7 +77,7 @@ sign-time, which Rekor proves.
 **Signer OIDC identity:**
 
 ```
-https://github.com/karwalski/toke/.github/workflows/release.yml
+https://github.com/karwalski/toke/.github/workflows/release.yml@refs/tags/<tag>
 ```
 
 **OIDC issuer:**
@@ -67,7 +92,7 @@ well-formed.
 
 ---
 
-## Verifying a downloaded binary
+## Verifying a download
 
 ### Prerequisites
 
@@ -82,17 +107,17 @@ curl -sSfL https://raw.githubusercontent.com/sigstore/cosign/main/install.sh \
   | sh -s -- -b /usr/local/bin
 ```
 
-### Verification command
+### Verify an archive
 
-Replace `<tag>` with the release tag you downloaded (e.g. `v1.0.0`) and
-`<binary>` with `tkc-linux-x86_64` or `tkc-macos-arm64`.
+Download the archive and its `.cosign.bundle` from the release page into one directory.
+Replace `<tag>` with the release tag (e.g. `v3.3.0`) and `<platform>` with yours.
 
 ```sh
 cosign verify-blob \
-  --bundle tkc.sig \
+  --bundle tkc-<tag>-<platform>.tar.gz.cosign.bundle \
   --certificate-identity "https://github.com/karwalski/toke/.github/workflows/release.yml@refs/tags/<tag>" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  <binary>
+  tkc-<tag>-<platform>.tar.gz
 ```
 
 A successful verification prints:
@@ -101,45 +126,37 @@ A successful verification prints:
 Verified OK
 ```
 
-Any other output, or a non-zero exit code, means the binary has not been
-signed by the release workflow or has been modified since signing.  Do not
-use it.
+Any other output, or a non-zero exit code, means the archive was not signed by the
+release workflow at that tag or has been modified since signing. Do not use it.
 
-### Downloading the release bundle
+### Or verify through checksums.txt
 
-All required files (`tkc-linux-x86_64`, `tkc-macos-arm64`, `tkc.sig`) are
-attached to each GitHub release on the Releases page.  Download them into the
-same directory before running the verify command.
+`checksums.txt` is signed the same way and lists every archive and SBOM:
+
+```sh
+cosign verify-blob \
+  --bundle checksums.txt.cosign.bundle \
+  --certificate-identity "https://github.com/karwalski/toke/.github/workflows/release.yml@refs/tags/<tag>" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+sha256sum -c --ignore-missing checksums.txt      # macOS: shasum -a 256 -c --ignore-missing checksums.txt
+```
 
 ---
 
 ## Verifying the SBOM
 
-The SBOM (`tkc-sbom.spdx.json`) is published alongside the binary.  Its
-SHA-256 checksum is in `tkc-sbom.spdx.json.sha256`.
+Each archive has its own SBOM, `tkc-<tag>-<platform>.tar.gz.spdx.json`. Its SHA-256 is in
+`checksums.txt`, so verifying `checksums.txt` as above and running `sha256sum -c` covers it.
 
-**Step 1 — Checksum integrity:**
-
-```sh
-sha256sum -c tkc-sbom.spdx.json.sha256
-```
-
-Expected output:
-
-```
-tkc-sbom.spdx.json: OK
-```
-
-**Step 2 — Inspect SBOM contents:**
+Inspect its contents:
 
 ```sh
-syft convert tkc-sbom.spdx.json -o table
+syft convert tkc-<tag>-<platform>.tar.gz.spdx.json -o table
 ```
 
-This prints every component identified in the binary.  For tkc you should see
-only the compiler's own source files and glibc (or the macOS system libSystem)
-as the sole runtime library component.  There are no third-party compiled
-libraries.
+The SBOM is taken of the archive as published: syft unpacks it and catalogs the `tkc`
+binary, the stdlib C sources and the vendored sources in `stdlib/vendor/`.
 
 ---
 
@@ -171,18 +188,18 @@ This means:
 
 ## Tamper test description
 
-The release workflow includes an automated tamper-detection step.  After
-signing the binary, it:
+The release workflow includes an automated tamper-detection step.  For each
+signed file (each archive and `checksums.txt`) it:
 
-1. Copies the signed binary to `tkc-tampered`.
-2. Appends a single byte (`x`) to `tkc-tampered`, changing its SHA-256 hash.
-3. Attempts to verify `tkc-tampered` using the same signature bundle.
+1. Verifies the untouched file with its bundle (the positive control).
+2. Copies the file and appends a single byte (`x`), changing its SHA-256 hash.
+3. Attempts to verify the copy using the same signature bundle.
 4. Asserts that cosign returns a **non-zero exit code**.
 
-If cosign incorrectly accepts the tampered binary, the step fails with:
+If cosign incorrectly accepts a tampered file, the step fails with:
 
 ```
-ERROR: cosign accepted a tampered binary — aborting release
+ERROR: cosign accepted a tampered <file>
 ```
 
 This forces the workflow to stop before publishing any release artifacts,
@@ -202,6 +219,7 @@ a user would run.  A pass here means the verify command works as documented.
 | Certificate authority | Fulcio (sigstore public instance) |
 | Transparency log | Rekor (sigstore public instance) |
 | OIDC issuer | `https://token.actions.githubusercontent.com` |
-| Signer identity | `https://github.com/karwalski/toke/.github/workflows/release.yml` |
+| Signer identity | `https://github.com/karwalski/toke/.github/workflows/release.yml@refs/tags/<tag>` |
+| Signed files | each `tkc-<tag>-<platform>.tar.gz` and `checksums.txt` |
 | Private key stored | No — ephemeral per-run key, certificate expires in 10 minutes |
 | Key rotation required | No |
