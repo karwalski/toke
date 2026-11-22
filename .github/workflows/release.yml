@@ -169,12 +169,16 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = linux ]; then
             need="$(objdump -T "$REL/toke" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)"
+            # An empty list (static, or no versioned imports) would sort the
+            # floor last and pass without testing anything.
+            test -n "$need" || { echo "no GLIBC_ symbol versions found in the release binary; cannot check the floor" >&2; exit 1; }
             echo "needs glibc ${need}; floor ${LINUX_GLIBC_FLOOR}"
             top="$(printf '%s\n%s\n' "$need" "$LINUX_GLIBC_FLOOR" | sort -V | tail -1)"
             test "$top" = "$LINUX_GLIBC_FLOOR" || { echo "release binary needs glibc ${need}, above the ${LINUX_GLIBC_FLOOR} floor" >&2; exit 1; }
           else
             minos="$(otool -l "$REL/toke" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')"
             echo "minos ${minos}; floor ${MACOS_FLOOR}"
+            test -n "$minos" || { echo "no LC_BUILD_VERSION minos in the release binary; cannot check the floor" >&2; exit 1; }
             test "$minos" = "$MACOS_FLOOR" || { echo "release binary records macOS ${minos}, not the ${MACOS_FLOOR} floor" >&2; exit 1; }
           fi
 
