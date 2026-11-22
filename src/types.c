@@ -8873,6 +8873,45 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                           "expected","T!E","got",st,(const char*)NULL);
             }
         }
+        /* 138.37 (loke T-66): variant arms on a KNOWN non-union scalar.
+         * `f=h(e:i64):$r{<mt e {$notfound:v ..;$permission:v ..;$io:v ..}}`
+         * passed --check and the build stopped with E9005 ("the sum type of
+         * the matched value is not established"): an integer has no variants
+         * for a label to select.  Judged only where mt_nonunion_scalar is
+         * certain of the scalar; a result match is 127.202's (above), and a
+         * label naming a primitive, an option side or a declared type is left
+         * to the type-named lowering.  No `fix`: whether a sum-typed value was
+         * meant, or integer-literal arms, is not decidable. */
+        if (!has_result_arm&&arm_tag_count>0) {
+            const char *st=mt_nonunion_scalar(cx,node->children[0],0);
+            const Node *vl=NULL;
+            static const char *const tl[]={"some","none","str","i64","i32","i16",
+                "i8","u64","u32","u16","u8","f64","f32","bool","byte","void",NULL};
+            for (int i=1;st&&i<node->child_count&&!vl;i++) {
+                const Node *arm=node->children[i];
+                if (!arm||arm->kind!=NODE_MATCH_ARM||arm->child_count<1||!arm->children[0]
+                    ||arm->children[0]->kind!=NODE_TYPE_IDENT) continue;
+                char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
+                int named_type=0;
+                for (int q=0;tl[q]&&!named_type;q++) if (!strcmp(tb,tl[q])) named_type=1;
+                if (!named_type&&cx->env->names) {
+                    Decl *d=tc_lookup(cx->env->names->module_scope,tb,(int)strlen(tb));
+                    if (d&&d->kind==DECL_TYPE) named_type=1;
+                    if (imported_type_lookup(cx->env->names,tb)) named_type=1;
+                }
+                if (!named_type) vl=arm->children[0];
+            }
+            if (vl&&tc_first_report(cx,node)&&tc_can_emit(cx)) {
+                char tb[128]; TOKSTR(tb,cx->src,vl);
+                char msg[384];
+                snprintf(msg,sizeof(msg),
+                    "type mismatch: expected a sum type, got '%s' -- '$%s' names a "
+                    "variant, and type '%s' has no variants, so no arm can be selected",
+                    st,tb,st);
+                diag_emit(DIAG_ERROR,E4031,vl->start,vl->line,vl->col,msg,
+                          "expected","a sum type","got",st,(const char*)NULL);
+            }
+        }
         /* 127.249 (2): a result match whose VALUE is used must have both
          * sides.  `let a=mt g() {$ok:v v}` was accepted and the missing
          * side lowered as the zero value of the result type (138.2's empty
