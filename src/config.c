@@ -34,8 +34,9 @@ static char *strip(char *s)
 
 /*
  * Map a [capabilities] key to its TK_CAP_* bit (TK_CAP_ALL for "all").
- * Returns 0 for an unknown key.  Accepts both the dotted-name and short
- * spellings.  (Until 138.19 the unknown-key sentinel was all-ones, which is
+ * Returns 0 for an unknown key.  Accepts the key and short spellings
+ * (`fs_write` / `write`, ...; docs/spec/capabilities.md), not the dotted
+ * class name: `fs.write` is an unknown capability (C2056).  (Until 138.19 the unknown-key sentinel was all-ones, which is
  * also TK_CAP_ALL, so `all = true` was refused as an unknown capability.)
  */
 static unsigned cap_key_bit(const char *key)
