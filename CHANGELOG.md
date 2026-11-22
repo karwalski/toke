@@ -107,7 +107,14 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   basic block". A user name that ends in a digit (or, under `--legacy`,
   starts with `_`) is now always given a dotted LLVM name, for parameters,
   closure parameters, closure captures and locals alike; other names keep
-  their spelling in the IR. Conformance: C1921.
+  their spelling in the IR. The pointer-tag and local-type registries are
+  keyed by that LLVM name, so a lookup made with the source spelling now
+  retries under the alias in force when the spelling misses: without it,
+  `let m1=mut.@("":0);m1=m1.set("a";40)` lowered as an array in-place set
+  and trapped with RT003, which a local named `t1` already did on 3.2.0
+  (114.15's aliasing), and a captured str local got an i64 slot.
+  Conformance: C1921 (cases 7-13, including a plain-vs-digit-suffixed IR
+  differential).
 - **E4070's `let` fix is worded from the declaration** (127.468). It was the
   fixed text "change 'let g=' to 'let g=mut.'", which does not occur in
   `let g:i64=5`; it is now "change 'let g:i64=' to 'let g:i64=mut.' to make it
