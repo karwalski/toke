@@ -101,7 +101,14 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   initialiser, and its calls are judged against its signature (wrong arity
   E4026, a mistyped argument E4031, no fix). A copy of one (`let q=ad;`,
   at module level or in a function) carries its signature too; `q(2)` also
-  lowered as its argument. An assignment inside a
+  lowered as its argument. Inside a module-level closure the closure's own
+  parameters and locals now shadow a global, as they do in a function: a
+  call through a function-typed parameter (`let kp=fn(p:(i64):i64):i64
+  {<p(4)};`) lowered as its argument, and a parameter, local or loop
+  variable named like a global was judged against the global (false E4026
+  and E4031). A closure parameter that shadows a module name is typed as
+  the parameter in a function too (`fn(ad:i64):i64{<ad*2}` beside a global
+  or function `ad` was a false E4031). An assignment inside a
   module-level closure (`let k=fn(){g=7;..}`) now gets 127.465's E4070 and
   its fix. Same-named globals in two modules each read their own value.
   `--check` on the 313 workspace sources that declare a module-level `let`

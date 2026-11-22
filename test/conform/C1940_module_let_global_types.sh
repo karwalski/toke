@@ -23,9 +23,12 @@
 # module-level initialiser), and the function-value call path accepts a
 # global.  fnval_bind_sig resolves a copy's source (`let q=ad;`) through
 # fnval_binding too, so a copy of a global function value keeps its
-# signature.  Pointer-held values (str, arrays, maps, structs, sums) keep the
-# i64 convention every consumer already handles; they are covered here so
-# that stays true.
+# signature.  Outside any function (a module-level initialiser or a
+# module-level closure) the binder search runs lexically from the module
+# root, so a closure's own parameters and locals shadow a global as they
+# do in a function.  Pointer-held values (str, arrays, maps, structs, sums)
+# keep the i64 convention every consumer already handles; they are covered
+# here so that stays true.
 #
 # Every case runs at -O0 and -O2 and compares the exact stdout.
 
@@ -197,6 +200,47 @@ runs() {
     fi
 }
 
+# Round 3: inside a module-level closure the closure's own parameters and
+# locals are in scope, exactly as inside a function.  The global fallback
+# used to be a flat scan of the module's lets, so a module-level closure
+# calling its function-typed PARAMETER (`kp(&dbl)`, body `p(4)`) lowered the
+# call as its argument (printed 4, not 8), and a parameter or local that
+# shadows the global `ad` was judged against ad's signature (false E4026
+# "takes 1, got 0" / "got 2", false E4031 on an (f64):f64 or (i64):str
+# parameter).  A non-function parameter, local or loop variable named `ad`
+# or `gs` was typed as the global (false E4031 "the left side is
+# '(i64):i64'"); for a closure parameter that held inside functions too
+# (`kin`).
+cat > clos.tk <<'EOF'
+m=a;
+i=io:std.io;
+let ad=fn(x:i64):i64{<x+5};
+let gs=3;
+let kp=fn(p:(i64):i64):i64{<p(4)};
+let kz=fn(ad:():i64):i64{<ad()};
+let kk=fn(y:i64):i64{let ad=fn(x:i64;z:i64):i64{<x*z};<ad(y;3)};
+let kf=fn(ad:(f64):f64):f64{<ad(1.5)};
+let ks=fn(ad:(i64):str):str{<ad(3)};
+let kn=fn(ad:i64):i64{<ad*2};
+let ki=fn(ad:i64):str{<"v\(ad*2)"};
+let kg=fn(gs:f64):f64{<gs*2.0};
+let kl=fn():f64{let gs=1.25;<gs*2.0};
+let lpk=fn():i64{let s=mut.0;lp(let ad=0;ad<3;ad=ad+1){s=s+ad};<s};
+let k2=fn(y:i64):i64{<ad(y)};
+let outer=fn(p:(i64):i64):i64{let inner=fn(z:i64):i64{<p(z)};<inner(3)};
+let k9=fn():i64{<9};
+let half=fn(x:f64):f64{<x/2.0};
+let sh=fn(x:i64):str{<"n\(x)"};
+f=dbl(x:i64):i64{<x*2};
+f=main():i64{
+  let kin=fn(ad:i64):i64{<ad*3};
+  io.println("kp=\(kp(&dbl)) kz=\(kz(k9)) kk=\(kk(4)) kf=\(kf(half)) ks=\(ks(sh))");
+  io.println("kn=\(kn(4)) ki=\(ki(4)) kg=\(kg(1.5)) kl=\(kl()) lpk=\(lpk())");
+  io.println("k2=\(k2(1)) outer=\(outer(&dbl)) kin=\(kin(2)) ad=\(ad(0)) gs=\(gs)");
+  <0
+};
+EOF
+
 REPRO_OUT="y=1.5 z=1.5 b=false
 h=2 g=7"
 
@@ -212,12 +256,17 @@ gcount=2 gmf=2.25 gmb=false
 cl gf=1.5 gb=true
 shadow=101"
 
+CLOS_OUT="kp=8 kz=9 kk=12 kf=0.75 ks=n3
+kn=8 ki=v8 kg=3 kl=2.5 lpk=3
+k2=6 outer=6 kin=6 ad=5 gs=3"
+
 for opt in -O0 -O2; do
     runs "story repro (f64, bool, function values)" "${REPRO_OUT}" 0 "${opt}" repro.tk
     runs "every global kind" "${KINDS_OUT}" 0 "${opt}" kinds.tk
     runs "same global names in two modules" "app 0.5 false 1 lib 5 true 13" 0 "${opt}" lib.tk app.tk
     runs "f64 global as the exit code" "" 3 "${opt}" rc.tk
     runs "copies of a global function value" "q=7 q2=8 w=9 w2=6 qr=11" 0 "${opt}" copy.tk
+    runs "module-level closure parameters and locals shadow globals" "${CLOS_OUT}" 0 "${opt}" clos.tk
 done
 
 # A call of a global function value is judged against its signature, as a

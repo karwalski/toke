@@ -1926,10 +1926,19 @@ static const Node *fnval_binding(Ctx *cx, const Node *ident) {
     char nb[128]; TOKSTR(nb, cx->src, ident);
     int found = 0;
     const Node *use = in_tree_use(cx, ident);
-    const Node *b = !cx->fn_node ? NULL : fnval_bind_rec(cx->fn_node, cx->src, use, nb, (int)strlen(nb), &found);
+    /* 127.469: outside any function (a module-level initialiser, or the
+     * body of a module-level closure `let k=fn(p:(i64):i64):i64{<p(4)};`)
+     * the lexical search runs from the module root, so the closure's own
+     * parameters and locals shadow a module-level `let` of the same name,
+     * exactly as they do inside a function.  A flat scan of the module's
+     * lets alone judged `p(4)` / a shadowing `ad(..)` against the global
+     * (false E4026/E4031) or left it unrecorded (lowered as its argument). */
+    const Node *lroot = cx->fn_node ? cx->fn_node : cx->root;
+    const Node *b = !lroot ? NULL : fnval_bind_rec(lroot, cx->src, use, nb, (int)strlen(nb), &found);
     if (b || !cx->root) return b;
     /* 127.469: no parameter or local is in force, so the name may be a
-     * module-level `let h=fn..;`.  Unrecorded, a call `h(1)` was never
+     * module-level `let h=fn..;` (declared anywhere: a function body runs
+     * after every global is set).  Unrecorded, a call `h(1)` was never
      * judged against h's signature and codegen lowered it as its argument
      * (h(1) returned 1; a zero-argument h failed the build with E9003). */
     for (int i = 0; i < cx->root->child_count; i++) {
@@ -7110,8 +7119,25 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * "expected str, got func" on stdlib/path.tk (a file removed later,
          * 135.14). */
         const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
+        /* 127.469: the lexical binder in force, searched from the enclosing
+         * function or, outside one, from the module root.  A closure's own
+         * parameter shadows the module declaration (`let ad=fn..;` then
+         * `fn(ad:i64):i64{<ad*2}` typed `ad` as the function: a false
+         * E4031), and so does a local or loop variable of a module-level
+         * closure, which local_in_force (function bodies only) never sees. */
+        if (d&&d->def_node&&!shadow) {
+            const Node *lroot=cx->fn_node?cx->fn_node:cx->root;
+            const Node *lb=lroot?tk_binder_at(lroot,cx->src,in_tree_use(cx,node),nb,nlen,NULL):NULL;
+            if (lb&&lb->kind==NODE_PARAM)
+                return lb->child_count>1&&lb->children[1]
+                     ? resolve_type(cx,lb->children[1]) : mk_type(A,TY_UNKNOWN);
+            if (lb&&!cx->fn_node&&closure_between(cx->root,lb)
+                &&(lb->kind==NODE_BIND_STMT||lb->kind==NODE_MUT_BIND_STMT
+                   ||lb->kind==NODE_LOOP_INIT))
+                shadow=lb;
+        }
         /* If not found at module scope, check current function's local binds. */
-        if (((!d||!d->def_node)||shadow)&&cx->fn_node) {
+        if (((!d||!d->def_node)&&cx->fn_node)||shadow) {
             /* Search the function body for local bindings with type annotations. */
             const Node *bn=shadow?shadow:find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
