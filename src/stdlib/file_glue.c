@@ -348,14 +348,17 @@ int64_t tk_file_ensuredir_w(int64_t path) {
  * those literal components (-1 when the pattern has no metacharacter).  Where
  * the matches lead from there -- through '..', which glob(3) matches with
  * '.?', '.*' or '.[.]', or through a symlink -- glob_match_admitted checks. */
-static const char *glob_scope_dir(const char *pattern, char *out, size_t outsz, int *ncomp) {
+static const char *glob_scope_dir(const char *pattern, char *out, size_t outsz, int *ncomp,
+                                  size_t *cutp) {
     *ncomp = -1;
+    *cutp = 0;
     if (!pattern) return NULL;
     size_t n = tk_strlen(pattern), meta = n, cut = 0;
     for (size_t i = 0; i < n; i++)
         if (strchr("*?[{", pattern[i])) { meta = i; break; }
     if (meta == n) { snprintf(out, outsz, "%s", pattern); return out; }
     for (size_t i = 0; i < meta; i++) if (pattern[i] == '/') cut = i + 1;
+    *cutp = cut;
     *ncomp = 0;
     for (size_t i = 0; i < cut; i++)
         if (pattern[i] != '/' && (i == 0 || pattern[i - 1] == '/')) (*ncomp)++;
@@ -393,24 +396,43 @@ static int glob_match_admitted(const char *match, int skip) {
     }
 }
 
+/* 138.19 (round 3): glob(3) reads a backslash as an escape -- "\." is a
+ * '.', "\/" a '/' -- but the gate and the filter read the pattern's text, so
+ * "www/\.\./x" passed as a name inside www while glob opened www/../x.
+ * Under a scoped grant such a pattern is refused; a literal metacharacter is
+ * written as a one-character set instead. */
+static const char k_glob_escape_why[] =
+    "glob(3) reads '\\' as an escape, so under a scoped fs.read grant a pattern holding "
+    "one is refused; write a literal *, ? or [ as [*], [?] or [[]";
+
 /* file.listglob(pattern) — list files matching a glob pattern */
 int64_t tk_file_listglob_w(int64_t pattern) {
     char gdir[4096];
     int skip;
-    TK_REQUIRE_PATH(TK_CAP_FS_READ,
-                    glob_scope_dir((const char *)(intptr_t)pattern, gdir, sizeof gdir, &skip));
-    if (!pattern) return 0;
-    StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
+    size_t cut;
+    const char *pat = (const char *)(intptr_t)pattern;
+    if (pat && strchr(pat, '\\') && !tk_cap_check(TK_CAP_FS_READ))
+        tk_cap_require_whole(TK_CAP_FS_READ, pat, k_glob_escape_why);
+    TK_REQUIRE_PATH(TK_CAP_FS_READ, glob_scope_dir(pat, gdir, sizeof gdir, &skip, &cut));
+    if (!pat) return 0;
+    StrArrayFileResult r = file_glob(pat);
     if (r.is_err) return 0;
     /* 138.19: under a scoped fs.read grant, a match found through a
      * directory outside the scope is left out -- not returned, not reported
      * -- so the result is the listing the scope can see, and an empty one
      * says nothing about what lies outside it.  The whole class keeps every
-     * match. */
-    if (skip >= 0 && !tk_cap_check(TK_CAP_FS_READ)) {
+     * match.  Round 3, defence in depth: every match is checked, and one
+     * that does not start with the literal directory text the gate checked
+     * (glob copies that text as is) -- or, for a pattern with no
+     * metacharacter, is not the pattern itself -- is left out too. */
+    if (!tk_cap_check(TK_CAP_FS_READ)) {
         uint64_t k = 0;
         for (uint64_t i = 0; i < r.ok.len; i++) {
-            if (glob_match_admitted(r.ok.data[i], skip)) r.ok.data[k++] = r.ok.data[i];
+            const char *m = r.ok.data[i];
+            int keep = skip >= 0
+                ? strncmp(m, pat, cut) == 0 && glob_match_admitted(m, skip)
+                : strcmp(m, pat) == 0 && tk_cap_path_admitted(TK_CAP_FS_READ, m);
+            if (keep) r.ok.data[k++] = r.ok.data[i];
             else free((void *)r.ok.data[i]);
         }
         r.ok.len = k;
