@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
 /*
  * Decode a log `fields` argument into a flat key/value const char ** array.
@@ -72,11 +74,32 @@ static int log_path_is_own_stream(const char *path)
                     strcmp(path, "/dev/stdout") == 0);
 }
 
+/* 138.19 (round 3): a log at a regular-file path also creates its directory,
+ * a ".<name>.lock" sidecar and rotated "<stem>.<stamp><ext>.gz" files beside
+ * it, and deletes old ones -- files a scope naming only the log does not
+ * admit.  Under a scoped fs.write grant the log's directory must therefore be
+ * admitted too.  A stream (a tty, a FIFO) gets no sidecar and needs no more. */
+static void log_require_dir(const char *path)
+{
+    struct stat st;
+    char dir[4096];
+    if (!path || tk_cap_check(TK_CAP_FS_WRITE)) return;
+    if (stat(path, &st) == 0 && !S_ISREG(st.st_mode)) return;
+    const char *sl = strrchr(path, '/');
+    if (!sl) snprintf(dir, sizeof dir, ".");
+    else if (sl == path) snprintf(dir, sizeof dir, "/");
+    else snprintf(dir, sizeof dir, "%.*s", (int)(sl - path), path);
+    TK_REQUIRE_PATH(TK_CAP_FS_WRITE, dir);
+}
+
 int64_t tk_log_open_access_w(int64_t path_ptr, int64_t max_lines,
                                int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
-    if (!log_path_is_own_stream(path)) TK_REQUIRE_PATH(TK_CAP_FS_WRITE, path);   /* 138.19 */
+    if (!log_path_is_own_stream(path)) {
+        TK_REQUIRE_PATH(TK_CAP_FS_WRITE, path);   /* 138.19 */
+        log_require_dir(path);
+    }
     TkAccessLog *al = tk_access_log_open(path, (int)max_lines,
                                           (int)max_files, (int)max_age_days);
     if (!al) return -1;
@@ -88,7 +111,10 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
                               int64_t max_files, int64_t max_age_days)
 {
     const char *path = (const char *)(intptr_t)path_ptr;
-    if (!log_path_is_own_stream(path)) TK_REQUIRE_PATH(TK_CAP_FS_WRITE, path);   /* 121.22, 138.19 */
+    if (!log_path_is_own_stream(path)) {
+        TK_REQUIRE_PATH(TK_CAP_FS_WRITE, path);   /* 121.22, 138.19 */
+        log_require_dir(path);
+    }
     TkAccessLog *el = tk_error_log_open(path, (int)max_lines,
                                          (int)max_files, (int)max_age_days);
     if (!el) return -1;
