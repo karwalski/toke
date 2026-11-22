@@ -88,8 +88,6 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   production count is unchanged. `toke.gbnf` already matched the parser, and
   both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
 
----
-
 - **`--check` refuses a field read on a record whose module is not imported (E4034)**
   (138.40, loke T-39). `let r=srv.handle(x); <r.text`, where `handle` returns
   `$res` of a module `proto` this file does not import, passed `--check` while
@@ -104,12 +102,19 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   or needed only for a field read** (138.39, loke T-39). A type named inside a
   `t=` field (`t=$holder{items:@$item}`, `it:$item`) was taken for this file's
   own, and an import needed only so `r.text` resolves has no name in the file;
-  `--lint --fix` deleted both, and the next check was E3011 or E4034. When the
-  file type-checks, an import with no syntactic use is now reported only if the
-  file without it (and without every import already reported) still checks
-  clean, which is the program `--fix` writes; a genuinely unused import is still
-  reported and fixed, including beside a foreign unqualified `$type`, which
-  used to silence the rule for the whole file.
+  `--lint --fix` deleted both, and the next check was E3011 or E4034. Only a
+  `t=`'s declared name and field labels now count as local. And when the file
+  type-checks, an import with no syntactic use is reported only if the file
+  without it (and without every import already reported) still type-checks
+  clean. That re-check sees only what `--check` judges: an import that only
+  codegen needs (an array of another module's record, a `T!E` payload) is not
+  seen, so the 137.8 caution stays in force in every file -- a foreign
+  unqualified `$type` still keeps all of its imports. A genuinely unused import
+  in a file without one is still reported and fixed. Unchanged from 3.2.0, and
+  open as 138.58: in a file without a foreign `$type`, an import that only
+  codegen needs can still be reported.
+
+---
 
 ## 3.2.0 — loke's second handoff, a checker that closes silent-wrong paths, and packages
 

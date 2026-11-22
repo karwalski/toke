@@ -843,20 +843,22 @@ static int rule_unused_import(const Node *root, const char *src,
 {
     if (!root || root->kind != NODE_PROGRAM) return 0;
 
+    /* 137.8: an unqualified `$type` this file does not declare arrives through
+     * SOME import, and lint cannot tell which -- so none is provably unused.
+     * This holds in typed files too: the re-check below sees only what
+     * --check judges, and codegen still needs imports for shapes --check
+     * does not judge (an array of a foreign record, a T!E payload, ...). */
+    if (program_has_foreign_type_ref(root, src)) return 0;
+
     /* 138.39: when the program type-checks and the caller can re-check a
      * candidate (LintOptions.recheck), an import with no syntactic use is
      * reported only if the program WITHOUT it -- and without every import
-     * already reported -- still checks clean.  That counts every use lint
-     * cannot see in the AST: a type position naming an import's record
-     * unqualified, and a field read whose layout only the import establishes
-     * (`r.text` on the `$res` another module returns, E4034 without it). */
+     * already reported -- still checks clean.  This only ever withdraws a
+     * report: it counts a field read whose layout only the import
+     * establishes (`r.text` on the `$res` another module returns, E4034
+     * without it, 138.40).  A use only codegen needs is not seen. */
     int probe = opts && opts->typed && opts->recheck;
     int drop_s[64], drop_e[64], drop_n = 0;
-
-    /* 137.8: an unqualified `$type` this file does not declare arrives through
-     * SOME import, and lint cannot tell which — so, without the re-check,
-     * none is provably unused. */
-    if (!probe && program_has_foreign_type_ref(root, src)) return 0;
 
     for (int i = 0; i < root->child_count; i++) {
         const Node *imp = root->children[i];

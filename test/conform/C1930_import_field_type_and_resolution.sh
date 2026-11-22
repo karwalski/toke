@@ -27,6 +27,9 @@
 #   4. Negative controls: a genuinely unused import is still flagged and still
 #      fixed, alone and beside a load-bearing one; the import-present program
 #      checks clean (the new E4034 is not a false positive).
+#   5. The 137.8 caution still holds in typed files: with an unqualified
+#      foreign `$type`, no import is reported, so --fix cannot drop one that
+#      only codegen needs (an array of another module's record).
 #
 # Story: 138.39, 138.40
 
@@ -156,19 +159,61 @@ i=p:proto;
 f=main():i64{<0};
 EOF
 expect "genuine-both-flagged" "$(nflag "${W}/genuine.tk")" "2"
+# Beside a load-bearing import (field resolution only), the unused one is
+# flagged and --fix drops that one only; the result still checks and builds.
 cat > "${W}/mixed.tk" <<'EOF'
 m=mixed;
-i=d:defs;
+i=srv:server;
 i=p:proto;
-t=$h{it:$item};
-f=one(x:$h):i64{<x.it.n};
+i=d:defs;
+f=preview(x:str):str{
+  let r=srv.handle(x);
+  <r.text
+};
 EOF
-expect "mixed-only-proto-flagged" "$("${TKC}" -I "${W}/ifc" --lint "${W}/mixed.tk" 2>&1 | grep -o "imported module '[a-z]*'" | tr '\n' ' ')" "imported module 'p' "
+expect "mixed-only-defs-flagged" "$("${TKC}" -I "${W}/ifc" --lint "${W}/mixed.tk" 2>&1 | grep -o "imported module '[a-z]*'" | tr '\n' ' ')" "imported module 'd' "
 cp "${W}/mixed.tk" "${W}/out/mixed.tk"
 "${TKC}" -I "${W}/ifc" --lint --fix "${W}/out/mixed.tk" >/dev/null 2>&1
-expect "mixed-fix-drops-proto-only" "$(grep -c '^i=' "${W}/out/mixed.tk")" "1"
-"${TKC}" -I "${W}/ifc" --check "${W}/out/mixed.tk" >/dev/null 2>&1
-expect "mixed-checks-after-fix" "$?" "0"
+expect "mixed-fix-drops-defs-only" "$(grep '^i=' "${W}/out/mixed.tk" | tr '\n' ' ')" "i=srv:server; i=p:proto; "
+"${TKC}" -I "${W}/ifc" --emit-llvm --out "${W}/out" "${W}/out/mixed.tk" >/dev/null 2>&1
+expect "mixed-compiles-after-fix" "$?" "0"
+
+# ── 5. 137.8 still holds in typed files (round-2 regression guard) ───────
+# A file with an unqualified foreign `$item` gets no unused-import at all:
+# the re-check sees only what --check judges, and `proto` here is needed
+# only by codegen (an array of `$res` -- E4034 at compile without it).
+cat > "${W}/server2.tk" <<'EOF'
+m=server2;
+i=p:proto;
+f=many(x:str):@$res{<@($res{iserror:false;text:x})};
+EOF
+"${TKC}" -I "${W}/ifc" --emit-interface --emit-llvm --out "${W}/ifc" "${W}/server2.tk" >/dev/null 2>&1
+cat > "${W}/arr.tk" <<'EOF'
+m=arr;
+i=srv:server2;
+i=p:proto;
+i=d:defs;
+f=num(x:$item):i64{<x.n};
+f=preview(x:str):str{
+  let rs=srv.many(x);
+  <rs.get(0).text
+};
+EOF
+cat > "${W}/inl.tk" <<'EOF'
+m=inl;
+i=srv:server2;
+i=p:proto;
+i=d:defs;
+f=num(x:$item):i64{<x.n};
+f=preview(x:str):str{<srv.many(x).get(0).text};
+EOF
+for f in arr inl; do
+    expect "${f}-foreign-type-none-flagged" "$(nflag "${W}/${f}.tk")" "0"
+    cp "${W}/${f}.tk" "${W}/out/${f}.tk"
+    "${TKC}" -I "${W}/ifc" --lint --fix "${W}/out/${f}.tk" >/dev/null 2>&1
+    "${TKC}" -I "${W}/ifc" --emit-llvm --out "${W}/out" "${W}/out/${f}.tk" >/dev/null 2>&1
+    expect "${f}-compiles-after-fix" "$?" "0"
+done
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
