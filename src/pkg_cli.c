@@ -1478,11 +1478,13 @@ pkg_build_prepare(PkgEmitIfaceFn emit, void *ud)
         return bp_fail(E9028, "pkg.lock is malformed%s", pkg_allow_file_sources() ? "" :
                        " (a file:// source needs --allow-file-source)");
     }
+    /* 127.449: `stale` points into m->deps, so the warning is emitted before
+     * m is freed (it used to be formatted from freed memory). */
     const char *stale = lock_stale(m, &s_bp_lock);
-    free(m);
     if (stale)
         pdiag(DIAG_WARNING, W9010, PKG_LOCKFILE, 0,
               "pkg.lock is out of date relative to pkg.toml ('%s'); run `tkc pkg fetch`", stale);
+    free(m);
     if (pkg_lock_check_pinned(&s_bp_lock, err, (int)sizeof err) != 0)
         return bp_fail(E9029, "%s; run `tkc pkg fetch`", err);
 

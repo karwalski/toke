@@ -89,6 +89,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   production count is unchanged. `toke.gbnf` already matched the parser, and
   both tree-sitter grammars already had the `['let'] IDENT '=' Expr` init.
 
+### Security fixes
+
+- **`tkc` no longer reads freed memory when it warns that `pkg.lock` is stale**
+  (127.449). A build or `--check` of a program with a `pkg.*` import whose
+  `pkg.lock` no longer matches `pkg.toml` formatted W9010's dependency name from
+  the parsed manifest after freeing it: a heap use-after-free in the compiler,
+  found by the ASAN+UBSAN CI job (C1162). An ordinary build usually printed the
+  right name because the block had not been reused yet; with freed memory
+  filled, the message carried the filler. W9010 is now emitted before the
+  manifest is freed. No change to which programs are accepted. Test: C1960.
+
 ### Build and CI gates
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
