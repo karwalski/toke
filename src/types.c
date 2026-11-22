@@ -7547,11 +7547,23 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                                 : node->op==TK_STAR ? "*" : "/";
                 if (tc_can_emit(cx)) {
                     char msg[256];
-                    if (!is_numeric(l) && !is_numeric(r))
+                    /* 127.474: "both sides are" only when they are the
+                     * same type.  `str.slice(t;0;1)+"z"` said both were
+                     * 'str!$sliceerr' (and the mirror, both 'str'), so a
+                     * repair of one side met an E4031 it was never told
+                     * of.  Each side is named. */
+                    if (!is_numeric(l) && !is_numeric(r) && types_equal(l, r))
                         snprintf(msg, sizeof msg,
                                  "'%s' requires numeric operands: both sides are "
                                  "'%s'", opn, type_name(bad));
-                    else
+                    else if (!is_numeric(l) && !is_numeric(r)) {
+                        char ln[128];
+                        snprintf(ln, sizeof ln, "%s", type_name(l));
+                        snprintf(msg, sizeof msg,
+                                 "'%s' requires numeric operands: the left side is "
+                                 "'%s' and the right side is '%s'", opn, ln,
+                                 type_name(r));
+                    } else
                         snprintf(msg, sizeof msg,
                                  "'%s' requires numeric operands: the %s side is "
                                  "'%s'", opn, !is_numeric(l) ? "left" : "right",

@@ -1,0 +1,17 @@
+id: D639
+series: D
+description: "127.474: `+` with an error-union operand and a str operand names each side's type -- it said 'both sides are' the left type, so a repair of one side met an E4031 it was not told of; no fix"
+input: |
+  m=test;
+  i=str:std.str;
+  f=main():i64{
+    let t="abc";
+    let x="z"+str.slice(t;0;1);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: message
+  value: "'+' requires numeric operands: the left side is 'str' and the right side is 'str!$sliceerr'"
