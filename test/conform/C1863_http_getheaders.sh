@@ -116,7 +116,7 @@ i=io:std.io;
 i=str:std.str;
 i=args:std.args;
 f=show(k:$str;u:$str;h:@(@($str))):$str{
-  <mt http.getheaders(u;h) {$ok:r "\(k) ok \(r.status) \(str.frombytes(r.body))"; $err:e "\(k) err \(e.msg)"}
+  <mt http.getheaders(u;h) {$ok:r "\(k) ok \(r.status) \(mt str.frombytes(r.body){$ok:b b;$err:x ""})"; $err:e "\(k) err \(e.msg)"}
 };
 f=main():i64{
   let base=(mt args.get(1){$ok:v v;$err:e ""});
