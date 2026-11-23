@@ -243,6 +243,18 @@ def tki_record(mod, rec):
     return None, "stdlib/%s.tki declares no type %r" % (mod, rec)
 
 
+def tki_opaque(mod, rec):
+    """138.65: True when stdlib/<mod>.tki marks record `rec` `"opaque": true`
+    -- tkc refuses every field read of it (E4034)."""
+    d = _tki_cache.get(mod)
+    if not isinstance(d, dict):
+        return False
+    for e in d.get("exports", []):
+        if e.get("kind") == "type" and e.get("name") == rec:
+            return e.get("opaque") is True
+    return False
+
+
 def norm(name):
     """C spells a field base_url where the .tki says baseurl (no-underscore
     convention, 113.2a); compare the two without underscores or case."""
@@ -328,6 +340,13 @@ def main(argv):
             continue
         for e in compare_fields(name, mod, rec, cfields, tfields, prefix):
             errors.append("%s:%d: %s" % (rel(path), at, e))
+        # 138.65: a record whose fields are its C layout is readable; an
+        # `"opaque": true` one has every field read refused by tkc.
+        if tki_opaque(mod, rec):
+            errors.append("%s:%d: %s mirrors %s.%s, but the .tki marks that "
+                          "record \"opaque\": true, so tkc refuses its field "
+                          "reads (E4034); drop the flag or the marker"
+                          % (rel(path), at, name, mod, rec))
     errors += compile_layout(structs)
     errors += source_spelled_fields()
     marked = {(mod, rec) for _, _, mod, rec, *_ in structs}

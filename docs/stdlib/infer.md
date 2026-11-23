@@ -76,7 +76,7 @@ Everything below describes what `src/stdlib/infer.c` already implements and what
 
 #### modelhandle
 
-An opaque handle to a loaded model, carrying the model instance id. Spelled `model_handle` before 136.46.
+An opaque handle to a loaded model, carrying the model instance id. It has no readable fields: reading `h.id` is a compile error, E4034 (138.65); `infer.isloaded` says whether it names a loaded model. Spelled `model_handle` before 136.46.
 
 #### inferopts
 

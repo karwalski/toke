@@ -5,7 +5,6 @@
     {
       "kind": "type",
       "name": "htmldoc",
-      "opaque": true,
       "fields": [
         {
           "name": "id",

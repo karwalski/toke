@@ -13,7 +13,7 @@ The `std.router` module provides a declarative HTTP router. Register routes by m
 
 ### $router
 
-Opaque handle to a router instance.
+Opaque handle to a router instance. It has no readable fields: reading `r.id` is a compile error, E4034 (138.65; until then it read the router's first route pointer). The same holds for `$handler` and `$middleware`.
 
 ### $handler
 

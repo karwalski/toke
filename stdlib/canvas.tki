@@ -5,7 +5,6 @@
     {
       "kind": "type",
       "name": "canvasop",
-      "opaque": true,
       "fields": [
         {
           "name": "tag",
