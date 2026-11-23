@@ -63,6 +63,7 @@ cat > seal.c <<'C'
 #include "vecstore.h"
 #include "template.h"
 #include "router.h"
+#include "tk_runtime.h"
 int64_t tk_vecstore_search_w(int64_t coll, int64_t query_vec, int64_t k, int64_t min_score_bits);
 static int bad = 0;
 #define CHECK(c, m) do { if (c) printf("  PASS: %s\n", m); \
@@ -91,6 +92,10 @@ int main(int argc, char **argv)
     double qd[3] = { 1.0, 0.25, 0.0 };
     for (int i = 0; i < 3; i++) memcpy(&((int64_t *)(intptr_t)q)[i], &qd[i], 8);
     double ms = 0.0; int64_t msb; memcpy(&msb, &ms, 8);
+    /* 138.61: the glue reads only a collection the runtime registered (as
+     * tk_vecstore_collection_w does); this harness made it with the C API. */
+    tk_handle_adopt(TK_HK_VECSTORE, vs);
+    tk_handle_adopt_view(TK_HK_VECCOLL, c, vs);
     int64_t r = tk_vecstore_search_w((int64_t)(intptr_t)c, q, 5, msb);
     CHECK(tk_arr_len(r) == 2, "search returns both entries");
     if (tk_arr_len(r) == 2) {

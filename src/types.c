@@ -5029,6 +5029,36 @@ static int std_elem_clash(const Type *at, const Type *pt) {
     return 1;
 }
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
+/* 138.62: the std interface function a SUB-namespace call names -- the
+ * export spelled "<prefix>.<member>" verbatim (std.db's "row.str") in an
+ * interface imported from a std module -- with that module's path written
+ * into buf; NULL when there is none.  names.c registers the prefix as an
+ * import alias from the same exports (Story 7.6.1), and the emitter lowers
+ * the call to tk_<prefix>_<member>_w. */
+static const ImportedFunc *std_subnamespace_func(Ctx *cx, const char *prefix,
+                                                 const char *member,
+                                                 char *buf, size_t bufsz) {
+    const NameEnv *env = cx->env->names;
+    /* Only the prefixes the emitter lowers as a sub-namespace
+     * (llvm.c resolve_sub_namespace_call: "row").  dataframe's "df." and
+     * template's "tpl." exports lower another way and are not this story. */
+    if (strcmp(prefix, "row") != 0) return NULL;
+    char want[256];
+    int n = snprintf(want, sizeof want, "%s.%s", prefix, member);
+    if (n < 0 || n >= (int)sizeof want) return NULL;
+    for (int i = 0; i < env->ifunc_count; i++) {
+        const ImportedFunc *f = &env->ifuncs[i];
+        if (!f->fn || !f->alias || strcmp(f->fn, want) != 0) continue;
+        if (strcmp(f->alias, prefix) == 0) continue;   /* an ordinary import */
+        const char *mp = import_module_path(cx, f->alias, buf, bufsz);
+        if (mp && strncmp(mp, "std.", 4) == 0) {
+            if (mp != buf) snprintf(buf, bufsz, "%s", mp);
+            return f;
+        }
+    }
+    return NULL;
+}
+
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -5040,6 +5070,16 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
     char member[128]; TOKSTR(member, cx->src, callee->children[1]);
     char mbuf[256];
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    /* 138.62: a std SUB-NAMESPACE call (`row.str(r;"k")`: std.db exports
+     * "row.str") names no import, so it was never judged -- `row.str(5;"k")`
+     * checked clean and died with SIGSEGV.  It is resolved the way the
+     * emitter's call works: the std interface that exports "<alias>.<member>"
+     * verbatim, judged against that module's record. */
+    const ImportedFunc *subf = NULL;
+    if (!mpath) {
+        subf = std_subnamespace_func(cx, alias, member, mbuf, sizeof mbuf);
+        if (subf) mpath = mbuf;
+    }
     if (!mpath || strncmp(mpath, "std.", 4) != 0) return;
     Decl *ad = tc_lookup(cx->env->names->module_scope, alias, (int)strlen(alias));
     if (ad && (ad->kind == DECL_FUNC || ad->kind == DECL_CONST ||
@@ -5083,7 +5123,8 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         check_json_opaque_arg(cx, call, mpath, alias, member);      /* 127.402 */
     }
 
-    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
+    const ImportedFunc *f = subf ? subf
+        : imported_func_lookup(cx->env->names, alias, member);
     if (!f || f->abi_ret || !f->param_types || f->param_count != actual) return;
     /* A symbol codegen redirects by argument type accepts every kind
      * (`j.enc(x)` -> tk_json_encarr_w / encbool / encf64 / encnum): the same
@@ -5201,8 +5242,8 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
              * extended from opaque records by the Z213 survey): the runtime
              * reads through a std record -- http.clientget(5;..),
              * tls.read(5), svg.render(5), image.fliph(5), vecstore.flush(5)
-             * all checked clean and died with SIGSEGV (std.db's `row.` calls
-             * never reach this function: 138.62) -- so
+             * all checked clean and died with SIGSEGV (and std.db's `row.`
+             * calls, judged here since 138.62) -- so
              * only the literal 0 (the null record) may stand for one; a
              * callback declares its parameter with the record's type
              * (`conn:$tlsconn`).  E4031, no `fix`: retyping the parameter or

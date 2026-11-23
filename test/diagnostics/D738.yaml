@@ -1,0 +1,15 @@
+id: D738
+series: D
+description: "138.62: a row. call with a $dbrow (a literal or one db.one returned) and a str column, or the literal 0 (the null row), stays legal"
+input: |
+  m=t;
+  i=db:std.db;
+  f=main():i64{
+    let r=$dbrow{cols:@(@("k";"v"))};
+    let s=mt row.str(r;"k") {$ok:v v;$err:e "err"};
+    let f=mt row.f64(0;"k") {$ok:v v;$err:e 0.0};
+    let n=mt db.one("select 1";@()) {$ok:x mt row.i64(x;"k") {$ok:v v;$err:e 0};$err:e 0};
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []

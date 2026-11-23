@@ -1694,10 +1694,28 @@ int64_t tk_http_posturl_w(int64_t url, int64_t body) {
     return (int64_t)(intptr_t)s;
 }
 
+/* 138.61: a $httpclient may be a record literal (138.24: a client with no
+ * proxy and no controls), so the registry cannot vouch for one, and http.c's
+ * client set (client_priv) guards only the private fields.  A value that
+ * cannot be any record's address -- `5 as $httpclient` -- is the null
+ * client here, before http.c reads base_url from it. */
+static HttpClient *client_in(int64_t v)
+{
+    return tk_record_plausible(v) ? (HttpClient *)(intptr_t)v : NULL;
+}
+
+/* 138.50: an $httpstream is the record http.stream made, never a literal:
+ * a literal holds only {id; open} and http_streamnext reads the socket and
+ * buffer past them.  Registered by address (toke reads .open from it). */
+static HttpStream *stream_in(int64_t v)
+{
+    return (HttpStream *)tk_handle_addr(TK_HK_HTTPSTREAM, v);
+}
+
 /* tk_http_post_w — POST request via client handle; body is a string. */
 int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
-    if (!client || !path) return 0;
-    HttpClient *c = (HttpClient *)(intptr_t)client;
+    HttpClient *c = client_in(client);   /* 138.61 */
+    if (!c || !path) return 0;
     const char *b = body ? (const char *)(intptr_t)body : "";
     HttpClientResp resp = http_post(c, (const char *)(intptr_t)path,
                                      (const uint8_t *)b, tk_strlen(b),
@@ -1709,8 +1727,8 @@ int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
 }
 /* tk_http_delete_w — DELETE request via client handle. */
 int64_t tk_http_delete_w(int64_t client, int64_t path) {
-    if (!client || !path) return 0;
-    HttpClient *c = (HttpClient *)(intptr_t)client;
+    HttpClient *c = client_in(client);   /* 138.61 */
+    if (!c || !path) return 0;
     HttpClientResp resp = http_delete(c, (const char *)(intptr_t)path);
     if (resp.is_err || !resp.body) return 0;
     char *s = body_seal(resp.body, resp.body_len);   /* 127.295 */
@@ -1728,7 +1746,7 @@ static int64_t http_raise(const char *msg, uint64_t code);
  * It now takes the client (borrowed: the caller keeps it, the stream owns
  * only its socket and buffer) and raises an httperr on failure. */
 int64_t tk_http_stream_w(int64_t client) {
-    if (!client) return http_raise("http.stream: null client", 0);
+    if (!client_in(client)) return http_raise("http.stream: null client", 0);   /* 138.61 */
     HttpClientReq req;
     memset(&req, 0, sizeof(req));
     req.method = "GET";
@@ -1741,9 +1759,10 @@ int64_t tk_http_stream_w(int64_t client) {
         return z;
     }
     HttpStream *heap = (HttpStream *)malloc(sizeof(HttpStream));
-    if (!heap) {
+    if (!heap || !tk_handle_adopt(TK_HK_HTTPSTREAM, heap)) {   /* 138.50 */
         if (r.stream.fd >= 0) close(r.stream.fd);
         free(r.stream.buf);
+        free(heap);
         return http_raise("out of memory", 0);
     }
     *heap = r.stream;
@@ -1752,8 +1771,11 @@ int64_t tk_http_stream_w(int64_t client) {
 }
 /* tk_http_streamnext_w — read the next chunk from a stream. */
 int64_t tk_http_streamnext_w(int64_t stream) {
-    if (!stream) return 0;
-    HttpStream *s = (HttpStream *)(intptr_t)stream;
+    /* 138.50: only a stream http.stream made; a literal or a forged value is
+     * the null stream, and the null stream is an httperr (it was a bare 0
+     * with the error slot untouched, so `$ok` bound a null [byte]). */
+    HttpStream *s = stream_in(stream);
+    if (!s) return http_raise("http.streamnext: null stream", 0);
     HttpChunkResult r = http_streamnext(s);
     /* 135.19 (3): declared `[byte]!httperr` (stdlib/http.tki) but returned a
      * malloc'd C string, so `.len` read the eight bytes before it and
@@ -1773,15 +1795,15 @@ int64_t tk_http_streamnext_w(int64_t stream) {
 }
 int64_t tk_http_downloadfile_w(int64_t client, int64_t url, int64_t dest) {
     return (int64_t)http_downloadfile(
-        (HttpClient *)(intptr_t)client,
+        client_in(client),   /* 138.61 */
         (const char *)(intptr_t)url,
         (const char *)(intptr_t)dest,
         NULL);
 }
 /* tk_http_put_w — PUT request via client handle; body is a string. */
 int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) {
-    if (!client || !path) return 0;
-    HttpClient *c = (HttpClient *)(intptr_t)client;
+    HttpClient *c = client_in(client);   /* 138.61 */
+    if (!c || !path) return 0;
     const char *b = body ? (const char *)(intptr_t)body : "";
     HttpClientResp resp = http_put(c, (const char *)(intptr_t)path,
                                     (const uint8_t *)b, tk_strlen(b),
@@ -1894,13 +1916,13 @@ static int64_t client_result(HttpClientResp r)
 }
 
 int64_t tk_http_clientget_w(int64_t client, int64_t path) {
-    if (!client) return http_raise("http.clientget: null client", 0);
+    if (!client_in(client)) return http_raise("http.clientget: null client", 0);   /* 138.61 */
     return client_result(http_get((HttpClient *)(intptr_t)client,
                                   path ? (const char *)(intptr_t)path : "/"));
 }
 
 int64_t tk_http_clientdelete_w(int64_t client, int64_t path) {
-    if (!client) return http_raise("http.clientdelete: null client", 0);
+    if (!client_in(client)) return http_raise("http.clientdelete: null client", 0);   /* 138.61 */
     return client_result(http_delete((HttpClient *)(intptr_t)client,
                                      path ? (const char *)(intptr_t)path : "/"));
 }
@@ -1909,7 +1931,7 @@ int64_t tk_http_clientdelete_w(int64_t client, int64_t path) {
 static int64_t client_send_body(const char *fn, int is_put, int64_t client, int64_t path,
                            int64_t body, int64_t ctype)
 {
-    if (!client) return http_raise(fn, 0);
+    if (!client_in(client)) return http_raise(fn, 0);   /* 138.61 */
     uint8_t *buf = NULL;
     uint64_t n = tk_bytes_unpack(body, &buf);
     if (!buf) return http_raise("out of memory", 0);
@@ -2027,19 +2049,19 @@ int64_t tk_http_listen_w(int64_t addr, int64_t handler) {
     return serveworkers_as("http.listen", (int64_t)(intptr_t)hostbuf, port, 1);
 }
 int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
-    return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
+    return (int64_t)(intptr_t)http_withproxy(client_in(client), (const char *)(intptr_t)proxy_url);
 }
 
 /* 138.24 / 138.25 — request controls, in withproxy's shape: each returns a
  * copy of the client with one setting changed (http.c http_with*). */
 int64_t tk_http_withdeadline_w(int64_t client, int64_t ms) {
-    return (int64_t)(intptr_t)http_withdeadline((HttpClient *)(intptr_t)client, (uint64_t)ms);
+    return (int64_t)(intptr_t)http_withdeadline(client_in(client), (uint64_t)ms);
 }
 int64_t tk_http_withmaxbody_w(int64_t client, int64_t bytes) {
-    return (int64_t)(intptr_t)http_withmaxbody((HttpClient *)(intptr_t)client, (uint64_t)bytes);
+    return (int64_t)(intptr_t)http_withmaxbody(client_in(client), (uint64_t)bytes);
 }
 int64_t tk_http_withconnectaddr_w(int64_t client, int64_t addr) {
-    return (int64_t)(intptr_t)http_withconnectaddr((HttpClient *)(intptr_t)client,
+    return (int64_t)(intptr_t)http_withconnectaddr(client_in(client),
                                                    (const char *)(intptr_t)addr);
 }
 

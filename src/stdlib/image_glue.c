@@ -57,7 +57,10 @@ static int64_t imgbuf_to_toke(TkImgBuf b) {
 static TkImgBuf imgbuf_from_toke(int64_t h, uint8_t **owned) {
     TkImgBuf b; memset(&b, 0, sizeof b);
     *owned = NULL;
-    if (!h) return b;
+    /* 138.61: a program may write an $imgbuf literal, so the registry cannot
+     * vouch for it; a value that cannot be any record's address (`5 as
+     * $imgbuf`) is the empty image, as 0 is. */
+    if (!tk_record_plausible(h)) return b;
     int64_t *s = (int64_t *)(intptr_t)h;
     b.width    = (uint32_t)s[IMG_W];
     b.height   = (uint32_t)s[IMG_H];
