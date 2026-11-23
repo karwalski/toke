@@ -45,7 +45,28 @@ Opaque handle to an HTML document being constructed. Its one field, `id` (u64), 
 Text passed to the node constructors (`html.p`, `html.h1`, `html.h2`,
 `html.div` content, table headers and cells) is **markup, not text**: it is written
 into the document as given, so that a caller can nest elements. Pass anything
-that did not come from your own program through `html.escape` first.
+that did not come from your own program through `tpl.escape` (`std.template`)
+first. It HTML-escapes `&`, `<`, `>`, `"` and `'`. (`html.escape` is declared
+but quarantined: it has no implementation, and a call to it is rejected with
+`E4027`.)
+
+```toke
+m=greet;
+i=io:std.io;
+i=html:std.html;
+i=tpl:std.template;
+
+f=main():i64{
+  let name="<script>alert(1)</script>";
+  let doc=html.doc();
+  html.title(doc;"Greeting");
+  html.append(doc;html.h1(tpl.escape(name)));
+  (io.println(html.render(doc)));
+  <0
+};
+```
+
+The heading is rendered as `<h1>&lt;script&gt;alert(1)&lt;/script&gt;</h1>`.
 
 `html.style` and `html.script` add to the document's one `<style>` and one
 `<script>` element: a second call appends its content, after a newline, to

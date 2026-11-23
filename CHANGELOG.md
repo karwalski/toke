@@ -456,6 +456,10 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
   describe the shipped behaviour (OOK-02 closed): leave the default, keep `|raw` for
   HTML you produced, and `|md` is written unescaped behind `std.md`'s safe mode,
   whose limits are stated. The checklist line follows.
+- **`std.html`'s docs point at an escaper that exists** (132.159). `docs/stdlib/html.md`
+  told readers to pass untrusted text through `html.escape`, which is quarantined
+  (E4027). It now names `tpl.escape` from `std.template`, with a program
+  `make check-docs` builds.
 - **The static-site tutorial is ooke 3.x, and its page code is checked against ooke**
   (132.156). `docs/tutorials/static-site.md` taught an ooke that does not exist: page
   handlers calling `store.slug`/`store.all`/`tpl.renderfile` (not ooke's API, and
