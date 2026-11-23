@@ -31,14 +31,14 @@
 #include <string.h>
 #include "tk_array.h"
 
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
+
+/* 138.63: a $dataframe is registered by dataframe_glue.c (tk_runtime.h);
+ * a value it did not hand out (`5 as $dataframe`, a record literal) is the
+ * null dataframe here and is never read.  pivot's result is registered. */
+static int64_t df_live(int64_t v) { return (int64_t)(intptr_t)tk_handle_addr(TK_HK_DATAFRAME, v); }
 
 static int64_t f64_to_i64(double d) { int64_t i; memcpy(&i, &d, sizeof(i)); return i; }
 
@@ -46,6 +46,7 @@ static int64_t empty_arr(void) { tk_current_error = 1; return tk_arr_alloc(0, 0)
 
 /* analytics.describe(d) : @($statsrow)!$dferr */
 int64_t tk_analytics_describe_w(int64_t df) {
+    df = df_live(df);   /* 138.63 */
     if (!df) return empty_arr();
     DescribeResult r = analytics_describe((TkDataframe *)(intptr_t)df);
     if (!r.rows) return empty_arr();
@@ -82,6 +83,7 @@ int64_t tk_analytics_describe_w(int64_t df) {
  * what the page promises.
  */
 int64_t tk_analytics_corr_w(int64_t df, int64_t cola, int64_t colb) {
+    df = df_live(df);   /* 138.63 */
     if (!df || !cola || !colb) { tk_current_error = 1; return f64_to_i64(0.0); }
     CorrMatrix m = analytics_corr((TkDataframe *)(intptr_t)df);
     if (!m.matrix || !m.col_names || m.ncols == 0) {
@@ -106,6 +108,7 @@ int64_t tk_analytics_corr_w(int64_t df, int64_t cola, int64_t colb) {
 
 /* analytics.anomalies(d; col; threshold) : @(u64)!$dferr */
 int64_t tk_analytics_anomalies_w(int64_t df, int64_t col, int64_t threshold) {
+    df = df_live(df);   /* 138.63 */
     if (!df || !col) return empty_arr();
     double z;
     memcpy(&z, &threshold, sizeof z);
@@ -125,6 +128,7 @@ int64_t tk_analytics_anomalies_w(int64_t df, int64_t col, int64_t threshold) {
 
 /* analytics.groupstats(d; groupcol; valuecol) : @($groupstat)!$dferr */
 int64_t tk_analytics_groupstats_w(int64_t df, int64_t groupcol, int64_t valuecol) {
+    df = df_live(df);   /* 138.63 */
     if (!df || !groupcol || !valuecol) return empty_arr();
     GroupStatResult r = analytics_groupstats((TkDataframe *)(intptr_t)df,
                                              (const char *)(intptr_t)groupcol,
@@ -152,11 +156,13 @@ int64_t tk_analytics_groupstats_w(int64_t df, int64_t groupcol, int64_t valuecol
 /* analytics.pivot(d; rowcol; colcol; valuecol) : $dataframe!$dferr */
 int64_t tk_analytics_pivot_w(int64_t df, int64_t rowcol, int64_t colcol,
                              int64_t valuecol) {
+    df = df_live(df);   /* 138.63 */
     if (!df || !rowcol || !colcol || !valuecol) { tk_current_error = 1; return 0; }
     TkDataframe *out = analytics_pivot((TkDataframe *)(intptr_t)df,
                                        (const char *)(intptr_t)rowcol,
                                        (const char *)(intptr_t)colcol,
                                        (const char *)(intptr_t)valuecol);
+    if (out && !tk_handle_adopt(TK_HK_DATAFRAME, out)) { df_free(out); out = NULL; }
     tk_current_error = out ? 0 : 1;
     return (int64_t)(intptr_t)out;
 }
@@ -174,6 +180,7 @@ int64_t tk_analytics_pivot_w(int64_t df, int64_t rowcol, int64_t colcol,
 
 int64_t tk_analytics_timeseries_w(int64_t df, int64_t tscol, int64_t valuecol,
                                   int64_t window) {
+    df = df_live(df);   /* 138.63 */
     if (!df || !tscol) return empty_arr();
     TkTimeseries ts = analytics_timeseries((TkDataframe *)(intptr_t)df,
                                            (const char *)(intptr_t)tscol,

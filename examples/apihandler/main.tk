@@ -4,12 +4,12 @@ i=str:std.str;
 i=time:std.time;
 
 
-f=helloget(req:i64):i64{
+f=helloget(req:$req):i64{
   <http.resjson(200; "{\"msg\":\"hello\",\"status\":\"ok\"}")
 };
 
 
-f=timeget(req:i64):i64{
+f=timeget(req:$req):i64{
   let now=time.now();
   let ts=time.format(now; "%Y-%m-%dT%H:%M:%S");
   let body=str.concat("{\"time\":\""; str.concat(ts; "\"}"));
@@ -17,7 +17,7 @@ f=timeget(req:i64):i64{
 };
 
 
-f=echopost(req:i64):i64{
+f=echopost(req:$req):i64{
   let body=http.reqbody(req);
   let resp=str.concat("{\"echo\":"; str.concat(body; "}"));
   <http.resjson(200; resp)

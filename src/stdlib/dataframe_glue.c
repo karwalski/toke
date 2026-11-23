@@ -18,6 +18,7 @@
  */
 #include "dataframe.h"
 #include <stdint.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include "tk_array.h"
@@ -40,13 +41,27 @@ static int64_t df_slot(int64_t v, const char *msg) {
     return 0;
 }
 
+/* 138.63: the registry (tk_runtime.h) vouches for every $dataframe a toke
+ * program holds.  A dataframe is never released from toke, so it is its
+ * address, registered wherever this file hands one out (df_out); every
+ * wrapper looks its argument up first (df_in), so a value the runtime did
+ * not hand out -- `5 as $dataframe`, a record literal -- is the null
+ * dataframe and is never read. */
+static TkDataframe *df_in(int64_t v) { return (TkDataframe *)tk_handle_addr(TK_HK_DATAFRAME, v); }
+static int64_t df_out(TkDataframe *d)
+{
+    if (!d) return 0;
+    if (!tk_handle_adopt(TK_HK_DATAFRAME, d)) { df_free(d); return 0; }
+    return (int64_t)(intptr_t)d;
+}
+
 int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
     int64_t ncols = tk_arr_len(headers);
     int64_t nrows = tk_arr_len(rows);
-    if (ncols <= 0) return (int64_t)(intptr_t)df_new();
+    if (ncols <= 0) return df_out(df_new());
 
     const char **hdr = (const char **)malloc((size_t)ncols * sizeof(char *));
-    if (!hdr) return (int64_t)(intptr_t)df_new();
+    if (!hdr) return df_out(df_new());
     int64_t *hs = (int64_t *)(intptr_t)headers;
     for (int64_t i = 0; i < ncols; i++)
         hdr[i] = hs[i] ? (const char *)(intptr_t)hs[i] : "";
@@ -54,7 +69,7 @@ int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
     const char ***cells = NULL;
     if (nrows > 0) {
         cells = (const char ***)malloc((size_t)nrows * sizeof(char **));
-        if (!cells) { free(hdr); return (int64_t)(intptr_t)df_new(); }
+        if (!cells) { free(hdr); return df_out(df_new()); }
         int64_t *rs = (int64_t *)(intptr_t)rows;
         for (int64_t r = 0; r < nrows; r++) {
             const char **row = (const char **)calloc((size_t)ncols, sizeof(char *));
@@ -77,7 +92,7 @@ int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
         free(cells);
     }
     free(hdr);
-    return (int64_t)(intptr_t)(out ? out : df_new());
+    return df_out(out ? out : df_new());
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -104,14 +119,15 @@ static int64_t df_fromcsv_impl(int64_t csv) {
     uint64_t len = tk_strlen(s);
     DfResult r = df_fromcsv(s, len, 1);
     if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    return df_out(r.ok);
 }
 
+/* 138.63: the null dataframe's shape is {0; 0}, a record toke can read; it
+ * was 0, which `.rows` read as the null record (nil trap). */
 static int64_t df_shape_impl(int64_t df_ptr) {
-    if (!df_ptr) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    uint64_t nrows, ncols;
-    df_shape(d, &nrows, &ncols);
+    TkDataframe *d = df_in(df_ptr);
+    uint64_t nrows = 0, ncols = 0;
+    if (d) df_shape(d, &nrows, &ncols);
     /* Pack nrows and ncols into a heap block */
     int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
     if (!block) return 0;
@@ -120,36 +136,98 @@ static int64_t df_shape_impl(int64_t df_ptr) {
     return (int64_t)(intptr_t)block;
 }
 
+/* 138.66: df.filter(dataframe;str;str;str) -- op and val are toke strs, as
+ * the .tki and docs/stdlib/dataframe.md declare.  The glue read op as
+ * df_filter's int operator code and val's pointer bits as an f64, so the
+ * call kept no rows and refused nothing.  op is one of the documented "<"
+ * "<=" "=" ">=" ">" "!=" (exactly, over op's whole length, so an embedded
+ * NUL is $err; anything else is $err), and val must parse as an f64 in full
+ * (strtod, no leading whitespace, no trailing or NUL bytes; "" is $err). */
+static int df_filter_op(const char *op)
+{
+    static const char *const ops[] = { "<", "<=", "=", ">=", ">", "!=" };
+    static const size_t lens[] = { 1, 2, 1, 2, 1, 2 };
+    size_t olen = tk_strlen(op);
+    for (int i = 0; i < 6; i++)
+        if (olen == lens[i] && memcmp(op, ops[i], olen) == 0) return i;
+    return -1;
+}
+
 static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t val) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    double threshold;
-    memcpy(&threshold, &val, sizeof(double));
+    TkDataframe *d = df_in(df_ptr);
+    if (!d || !col || !op || !val) return 0;
+    int code = df_filter_op((const char *)(intptr_t)op);
+    if (code < 0) return 0;
+    const char *vs = (const char *)(intptr_t)val;
+    uint64_t vlen = tk_strlen(vs);
+    if (vlen == 0 || memchr(vs, '\0', (size_t)vlen)) return 0;
+    if (isspace((unsigned char)vs[0])) return 0;
+    char *end = NULL;
+    double threshold = strtod(vs, &end);
+    if (end != vs + vlen) return 0;
     TkDataframe *result = df_filter(d, (const char *)(intptr_t)col,
-                                     threshold, (int)op);
-    return (int64_t)(intptr_t)result;
+                                     threshold, code);
+    return df_out(result);
 }
 
+/* 127.518: df.groupby(dataframe;str):[dataframe]!dferr -- a toke array of
+ * registered dataframes, one per distinct value of the str column col (in
+ * order of first appearance), as the .tki and docs/stdlib/dataframe.md
+ * declare.  The glue handed back a malloc'd DfGroupResult* (and asked
+ * df_groupby for no aggregate column, so every call was $err); `.len` and
+ * `.get(i)` read that struct as an array.  A frame with no rows is @(). */
 static int64_t df_groupby_impl(int64_t df_ptr, int64_t col) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    /* Default: group by col, aggregate count on first numeric column */
-    DfGroupResult gr = df_groupby(d, (const char *)(intptr_t)col, NULL, 0);
-    if (!gr.rows) return 0;
-    /* Return pointer to the result (caller can iterate) */
-    DfGroupResult *heap = (DfGroupResult *)malloc(sizeof(DfGroupResult));
-    if (!heap) return 0;
-    *heap = gr;
-    return (int64_t)(intptr_t)heap;
+    TkDataframe *d = df_in(df_ptr);
+    if (!d || !col) return 0;
+    uint64_t n = 0;
+    TkDataframe **groups = df_split(d, (const char *)(intptr_t)col, &n);
+    if (!groups) return 0;
+    int64_t arr = tk_arr_alloc((int64_t)n, (int64_t)n);
+    if (!arr) {
+        for (uint64_t i = 0; i < n; i++) df_free(groups[i]);
+        free(groups);
+        return 0;
+    }
+    int64_t *slots = (int64_t *)(intptr_t)arr;
+    for (uint64_t i = 0; i < n; i++) {
+        /* df_out frees a frame it cannot register; the frames after it
+         * have not been handed out yet. */
+        slots[i] = df_out(groups[i]);
+        if (!slots[i]) {
+            for (uint64_t j = i + 1; j < n; j++) df_free(groups[j]);
+            free(groups);
+            free(slots - TK_ARR_HDR);   /* the block tk_arr_alloc made */
+            return 0;
+        }
+    }
+    free(groups);
+    return arr;
 }
 
+/* 127.520: df.columnstr(dataframe;str):[str]!dferr -- a toke array of
+ * sealed strings, one per row in row order, as the .tki and
+ * docs/stdlib/dataframe.md declare.  The glue handed back df_columnstr's
+ * malloc'd char**, which has no array header: `.len` read the word before
+ * the block (0 for a 2-row column) and `.get(i)` was checked against it.
+ * A str column of a frame with no rows is @(). */
 static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    uint64_t out_len = 0;
-    char **strs = df_columnstr(d, (const char *)(intptr_t)col, &out_len);
-    if (!strs) return 0;
-    return (int64_t)(intptr_t)strs;
+    TkDataframe *d = df_in(df_ptr);
+    if (!d || !col) return 0;
+    DfCol *c = df_column(d, (const char *)(intptr_t)col);
+    if (!c || c->type != DF_COL_STR) return 0;
+    int64_t n = (int64_t)c->nrows;
+    int64_t arr = tk_arr_alloc(n, n);
+    if (!arr) return 0;
+    int64_t *slots = (int64_t *)(intptr_t)arr;
+    for (int64_t i = 0; i < n; i++) {
+        char *s = tks_strdup(c->str_data[i] ? c->str_data[i] : "");
+        if (!s) {
+            free(slots - TK_ARR_HDR);   /* the block tk_arr_alloc made */
+            return 0;
+        }
+        slots[i] = (int64_t)(intptr_t)s;
+    }
+    return arr;
 }
 
 static const char tk_dataframe_fromcsv_fail[] =
@@ -157,7 +235,7 @@ static const char tk_dataframe_fromcsv_fail[] =
 int64_t tk_dataframe_fromcsv_w(int64_t csv) { return df_slot(df_fromcsv_impl(csv), tk_dataframe_fromcsv_fail); }
 int64_t tk_dataframe_shape_w(int64_t df) { return df_shape_impl(df); }
 static const char tk_dataframe_filter_fail[] =
-    "df.filter: the filter could not be applied (unknown column or operator)";
+    "df.filter: the filter could not be applied (unknown or non-numeric column, unknown op, or a val that is not an f64)";
 int64_t tk_dataframe_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_slot(df_filter_impl(df, col, op, val), tk_dataframe_filter_fail); }
 static const char tk_dataframe_groupby_fail[] =
     "df.groupby: the column could not be grouped";
@@ -169,8 +247,9 @@ int64_t tk_dataframe_columnstr_w(int64_t df, int64_t col) { return df_slot(df_co
  * (freed here); the original is handed over unsealed only if the copy
  * cannot be made.  No C code calls tk_dataframe_tocsv_w. */
 int64_t tk_dataframe_tocsv_w(int64_t df) {
-    if (!df) return 0;
-    const char *s = df_tocsv((TkDataframe *)(intptr_t)df);
+    TkDataframe *d = df_in(df);
+    if (!d) return 0;
+    const char *s = df_tocsv(d);
     if (!s) return 0;
     char *t = tks_strdup(s);
     if (!t) return (int64_t)(intptr_t)s;

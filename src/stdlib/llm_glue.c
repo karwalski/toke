@@ -10,20 +10,16 @@
  */
 #include "llm.h"
 #include "tk_array.h"
+#include "tk_runtime.h"   /* 138.50: the handle registry */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
  * returns the real value; defined in tk_runtime.c. */
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
 
 /*
  * Story 136.18 — llm.client / llm.chat / llm.complete take the client.
@@ -47,8 +43,19 @@ int64_t tk_llm_client_w(int64_t base_url, int64_t api_key, int64_t model) {
     const char *k = api_key  ? (const char *)(intptr_t)api_key  : NULL;
     const char *m = model    ? (const char *)(intptr_t)model    : NULL;
     if (!u || !*u) return 0;
-    return (int64_t)(intptr_t)llm_client(u, k, m && *m ? m : "llama3");
+    /* 138.50: registered, so only a client llm.client made is used (below). */
+    return (int64_t)(intptr_t)tk_handle_adopt(TK_HK_LLMCLIENT, llm_client(u, k, m && *m ? m : "llama3"));
 }
+
+/* 138.50: $llmclient is a tki-record-prefix type -- toke sees {provider;
+ * model}, and base_url, api_key, the timeouts, the retry policy and the
+ * usage counters follow in C (llm.h).  A record literal
+ * $llmclient{provider:..;model:..} holds the two slots only, so a call on one
+ * read its base URL and API key from whatever lay past its end, and an
+ * integer was read through outright.  Only a client llm.client made (looked
+ * up in the runtime's handle registry, tk_runtime.c) is used; anything else
+ * is answered as the null client is ($err, countokens 0). */
+static TkLlmClient *llm_client_in(int64_t v) { return (TkLlmClient *)tk_handle_addr(TK_HK_LLMCLIENT, v); }
 
 /*
  * decode_llm_msgs — a toke @(llmmsg) into a TkLlmMsg array.
@@ -94,8 +101,8 @@ static int64_t llmresp_block(const char *content, uint64_t tin, uint64_t tout,
 }
 
 int64_t tk_llm_complete_w(int64_t client, int64_t prompt) {
-    if (!client || !prompt) { tk_current_error = 1; return 0; }
-    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    TkLlmClient *c = llm_client_in(client);   /* 138.50 */
+    if (!c || !prompt) { tk_current_error = 1; return 0; }
     TkLlmResp r = llm_complete(c, (const char *)(intptr_t)prompt, 0.7);
     if (r.is_err || !r.content) { tk_current_error = 1; return 0; }
     tk_current_error = 0;
@@ -103,8 +110,8 @@ int64_t tk_llm_complete_w(int64_t client, int64_t prompt) {
 }
 
 int64_t tk_llm_chat_w(int64_t client, int64_t messages) {
-    if (!client) { tk_current_error = 1; return 0; }
-    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    TkLlmClient *c = llm_client_in(client);   /* 138.50 */
+    if (!c) { tk_current_error = 1; return 0; }
     uint64_t n = 0;
     TkLlmMsg *msgs = decode_llm_msgs(messages, &n);
     if (!msgs) { tk_current_error = 1; return 0; }
@@ -116,8 +123,8 @@ int64_t tk_llm_chat_w(int64_t client, int64_t messages) {
 }
 
 int64_t tk_llm_countokens_w(int64_t client, int64_t text) {
-    if (!client || !text) return 0;
-    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    TkLlmClient *c = llm_client_in(client);   /* 138.50 */
+    if (!c || !text) return 0;
     return (int64_t)llm_countokens(c, (const char *)(intptr_t)text);
 }
 
@@ -143,8 +150,8 @@ static TkLlmStreamSlot g_llm_streams[TK_LLM_MAX_STREAMS];
 static int             g_llm_nstreams = 0;
 
 int64_t tk_llm_chatstream_w(int64_t client, int64_t messages) {
-    if (!client) { tk_current_error = 1; return 0; }
-    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    TkLlmClient *c = llm_client_in(client);   /* 138.50 */
+    if (!c) { tk_current_error = 1; return 0; }
     uint64_t n = 0;
     TkLlmMsg *msgs = decode_llm_msgs(messages, &n);
     if (!msgs) { tk_current_error = 1; return 0; }
@@ -163,12 +170,19 @@ int64_t tk_llm_chatstream_w(int64_t client, int64_t messages) {
     TkLlmStreamRec *block = (TkLlmStreamRec *)malloc(sizeof *block);
     if (!block) { tk_current_error = 1; return 0; }
     block->id = (int64_t)idx + 1;         /* $llmstream.id, 1-based */
+    /* 138.63: registered by address (toke reads .id; a stream is never
+     * released), so llm.streamnext reads only a record it made */
+    if (!tk_handle_adopt(TK_HK_LLMSTREAM, block)) { free(block); tk_current_error = 1; return 0; }
     return (int64_t)(intptr_t)block;
 }
 
+/* 138.63: a record llm.chatstream did not make -- `5 as $llmstream`, or a
+ * literal such as the documented `$llmstream{}` -- is the exhausted stream
+ * and is never read (a literal's id used to select a live stream). */
 int64_t tk_llm_streamnext_w(int64_t stream) {
     if (!stream) { tk_current_error = 1; return (int64_t)(intptr_t)""; }
-    int64_t id = ((const TkLlmStreamRec *)(intptr_t)stream)->id;
+    const TkLlmStreamRec *rec = (const TkLlmStreamRec *)tk_handle_addr(TK_HK_LLMSTREAM, stream);
+    int64_t id = rec ? rec->id : 0;
     if (id <= 0 || id > g_llm_nstreams || !g_llm_streams[id - 1].used) {
         /* the empty $llmstream{} of the documented $err arm: nothing to read */
         tk_current_error = 0;

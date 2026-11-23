@@ -708,7 +708,7 @@ A route handler is an ordinary function, `(req:$req):$res`. A test calls it dire
 - **Route params are given, not matched.** The server binds `:id` from the route pattern; a test passes the bindings it wants in `params`.
 - **The response is the handler's, not the wire's.** The `res*` functions read the response the handler returned. The server adds `Content-Length`, `Connection` and any CORS header when it sends, and those are not in it.
 
-A handler declared `(req:i64):i64` cannot take the `$req` from `http.mockreq` (E4031); declare it `(req:$req):$res`. The route registration and the accessors accept both forms.
+A handler declared `(req:i64):i64` cannot take the `$req` from `http.mockreq` (E4031); declare it `(req:$req):$res`. The route registration accepts both forms, but since story 138.46 the accessors (`http.param`, `http.header`, `http.reqbody`, ...) refuse an `i64` other than the literal `0` where a `$req` is declared (E4031), so a handler that reads the request declares `req:$req`.
 
 ### http.mockreq(method: $str; path: $str; headers: @(@($str)); body: $str; params: @(@($str))): $req
 
@@ -809,7 +809,9 @@ Returns a copy of `client` whose requests answer `$err` for a response body long
 - **Chunked:** the body is refused on the size line of the chunk that would take it past the cap, before that chunk's data is read. A size line, chunk extension or trailer line longer than the room the cap has left plus 8 KiB is refused too.
 - **Neither header (the body ends when the connection closes):** the body is refused as soon as it passes the cap.
 
-A body exactly `bytes` long is `$ok`. A cap of `0` admits only an empty body. The cap counts the body as the response delivers it (`r.body`, decoded from chunks). A `HEAD`, `204` or `304` response has no body, so it never exceeds the cap. The response header block is not capped.
+A body exactly `bytes` long is `$ok`. A cap of `0` admits only an empty body. The cap counts the body as the response delivers it (`r.body`, decoded from chunks). A `HEAD`, `204` or `304` response has no body, so it never exceeds the cap.
+
+The same client also refuses a response **header block** (the status line, the headers and the blank line that ends them) longer than 65536 bytes, whatever `bytes` is (story 138.49): the read stops, the connection is closed, and the `msg` begins `response header block exceeds the cap (65536 bytes)`. Without it a server that never sends the blank line could grow the client's memory for as long as the request lasted. A client without `http.withmaxbody` does not cap the header block.
 
 ### http.withconnectaddr(client: $httpclient; addr: $str): $httpclient
 
@@ -972,7 +974,7 @@ Opens a streaming HTTP connection for server-sent events or chunked transfer res
 
 ### http.streamnext(stream: $httpstream): @(byte)!$httperr
 
-Reads the next available chunk of bytes from an open `$httpstream`. Returns an empty byte array when the server closes the connection gracefully; returns `$httperr` on network or protocol error. Call this in a loop until the returned byte array is empty or an error occurs.
+Reads the next available chunk of bytes from an open `$httpstream`. Returns an empty byte array when the server closes the connection gracefully; returns `$httperr` on network or protocol error. Only a stream `http.stream` returned is read: a `$httpstream` record literal, or any other value, takes the `$err` arm with `msg` `http.streamnext: null stream` (138.50). Call this in a loop until the returned byte array is empty or an error occurs.
 
 ```toke
 m=streamdemo;

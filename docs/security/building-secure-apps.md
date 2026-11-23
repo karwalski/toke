@@ -6,7 +6,7 @@ services in toke, using the `std` library, the `ooke` site framework, and the
 security audit (`docs/security/audit-120/`); finding IDs such as `OOK-02` or
 `AMB-02` are cited so you can read the underlying analysis.
 
-> **Read this first (updated 2026-07-07).** toke's security posture has moved
+> **Read this first (updated 2026-11-23).** toke's security posture has moved
 > quickly since the Epic 120 audit — several findings below are now closed at the
 > platform level:
 >
@@ -19,10 +19,14 @@ security audit (`docs/security/audit-120/`); finding IDs such as `OOK-02` or
 >   121.13). Do **not** rely on a runtime WAF — put rate-limiting behind an external
 >   proxy. The real controls are capabilities (ADR-0010), parameterized-only SQL and
 >   argv-only exec (ADR-0011), and the spatial-safety traps (ADR-0012).
+> - **Template output is escaped by default (`OOK-02` closed).** `ooke` 3.0.0
+>   escapes every `{=x=}` for the place it sits in the HTML, and `std.template`'s
+>   `tpl.render` does the same for every `{{slot}}` (story 121.37, ADR-0011). Do
+>   not escape a value yourself before handing it to either, or it is escaped
+>   twice; `|raw` (`{=x|raw=}`, `{{x|raw}}`) is the explicit opt-out (section 2).
 >
-> Still application-side today: **HTML escaping is opt-in** — escape untrusted values
-> with `tpl.escape` before rendering (auto-escape by default is accepted, ADR-0011,
-> but not yet shipped; `OOK-02`) — and `ooke` has no built-in session/CSRF/authz
+> Still application-side today: HTML you build by hand must be escaped with
+> `tpl.escape` (section 2), and `ooke` has no built-in session/CSRF/authz
 > primitive (`OOK-03`). This guide shows the patterns for the gaps the platform
 > hasn't closed yet. Sections that predate the capability flip are being refreshed;
 > where a section describes ambient authority or the WAF as present, treat the
@@ -57,52 +61,85 @@ containment.**
 
 ## 2. Output escaping and XSS
 
-### The template auto-escape gap (OOK-02)
+### Template output is escaped by default (OOK-02, closed)
 
-`ooke` templates emit interpolated values **verbatim**. `{=title=}` performs no
-HTML encoding; escaping only happens when you explicitly add `|escape`. The safe
-path is the one you have to remember, and the failure mode is silent — this is
-XSS-by-default for any multi-author content site.
+The Epic 120 audit found that `ooke` templates emitted `{=title=}` verbatim
+(`OOK-02`). Since `ooke` 3.0.0 (ADR-0011) every interpolation is escaped for the
+place it sits: HTML text and attribute values get entities, a URL attribute
+refuses any scheme but `http`, `https` and `mailto` (the value becomes
+`#ZtokeZ`), a value inside `<script>` or an `on*` attribute becomes a quoted
+JavaScript string, and one in `<style>` or `style=` is kept only if it is a
+plain CSS value. The `upper`, `lower`, `trim` and `escape` filters are escaped
+after they apply, so `|escape` spells out the default rather than escaping
+again. `std.template`'s `tpl.render` escapes each `{{slot}}` the same way
+(story 121.37, `docs/stdlib/template.md`, "Escaping").
 
-**Don't** — rely on the bare interpolation for anything derived from stored
-content, frontmatter, or request input:
+**Don't** — opt out with `|raw` for anything derived from stored content,
+frontmatter, or request input:
+
+```
+<h1>{=title|raw=}</h1>
+```
+
+**Do** — leave the default in place:
 
 ```
 <h1>{=title=}</h1>
-<div>{=body=}</div>
+<a href="{=link=}">more</a>
 ```
 
-**Do** — escape every interpolation of untrusted data:
+Reserve `|raw` for HTML you generated yourself. When upgrading an `ooke` 2.x
+template: a template that relied on raw output now prints escaped text
+(add `|raw` only where the HTML is yours), and a value you escaped before
+handing it to `ooke` is now escaped twice.
 
-```
-<h1>{=title|escape=}</h1>
-<div>{=body|escape=}</div>
-```
-
-Treat `|escape` as mandatory. Reserve unescaped output only for values you
-generated yourself and know to be safe HTML (e.g. a pre-sanitized layout
-fragment). If you render Markdown with `|md`, remember `md.render` forces
-`CMARK_OPT_UNSAFE` and does **not** sanitize link hrefs or raw HTML (`PAR-05`) —
-run its output through an allowlist sanitizer before serving multi-author
-Markdown, or disable raw HTML/`javascript:` links.
+`|md` output is **not** escaped: it is written as `md.render` produced it.
+`md.render` runs cmark in its safe mode, so raw HTML in the Markdown source is
+dropped and `javascript:`, `vbscript:`, `file:` and `data:` links (except
+PNG, GIF, JPEG and WebP images) become `href=""`, table cells included
+(`PAR-05`; stories 124.3, 121.16). That is all it filters: links and images
+to any other URL are kept, so if multi-author Markdown must not link to or
+embed off-site content, filter the source before rendering it.
 
 ### Escape at the point of emission when building HTML by hand
 
-`std.html` gives you `html.escape`. Use it on any value you concatenate into
-markup yourself.
+`std.template` gives you `tpl.escape`, which HTML-escapes `&`, `<`, `>`, `"` and
+`'`. Use it on any value you concatenate into markup yourself. (`std.html`
+declares an `html.escape` too, but it has no implementation yet: a call to it is
+rejected with `E4027`. See `docs/reference/tki-quarantine.md`.)
 
 **Don't**:
 
-```
-let out = str.concat("<p>Hello ", str.concat(name, "</p>"));
+```toke
+let out=str.concat("<p>Hello ";str.concat(name;"</p>"));
 ```
 
 **Do**:
 
+```toke
+m=hello;
+i=io:std.io;
+i=str:std.str;
+i=tpl:std.template;
+
+f=hello(name:$str):$str{
+  let safe=tpl.escape(name);
+  <str.concat("<p>Hello ";str.concat(safe;"</p>"))
+};
+
+f=main():i64{
+  (io.println(hello("<script>alert(1)</script>")));
+  <0
+};
 ```
-let safe = html.escape(name);
-let out = str.concat("<p>Hello ", str.concat(safe, "</p>"));
-```
+
+This prints `<p>Hello &lt;script&gt;alert(1)&lt;/script&gt;</p>`.
+
+`tpl.escape` is for HTML text and quoted attribute values. It is not enough
+inside `<script>`, a `style` attribute or a URL attribute: render those through
+`tpl.render`, which escapes each `{{slot}}` for the position it sits in
+(`docs/stdlib/template.md`, "Escaping"). Do not pass a value through both
+`tpl.escape` and `tpl.render`, or it is escaped twice.
 
 ### Route parameters and query values are not decoded/escaped for you
 
@@ -115,20 +152,21 @@ Escape it, and validate its shape first (section 3).
 
 ```
 f=handleuser(params:@($str:$str)):$str{
-  let name=mt params.get("name") {$ok:v v;$err:e ""};
-  <str.concat("<h1>", str.concat(name, "</h1>"))
+  let name=mt params.get("name") {$ok:v v;$err:e <"<h1>not found</h1>"};
+  <str.concat("<h1>";str.concat(name;"</h1>"))
 };
 ```
 
-**Do** — validate then escape:
+**Do** — validate then escape (`isidentifier` is the validator from section 3;
+`tpl` is `i=tpl:std.template;`):
 
 ```
 f=handleuser(params:@($str:$str)):$str{
-  let raw=mt params.get("name") {$ok:v v;$err:e ""};
+  let raw=mt params.get("name") {$ok:v v;$err:e <"<h1>invalid</h1>"};
   if(!isidentifier(raw)){
     <"<h1>invalid</h1>"
   }el{
-    <str.concat("<h1>", str.concat(html.escape(raw), "</h1>"))
+    <str.concat("<h1>";str.concat(tpl.escape(raw);"</h1>"))
   }
 };
 ```
@@ -159,20 +197,20 @@ m=app.validate;
 i=str:std.str;
 
 f=isidentifier(s:$str):bool{
-  let n=str.len(s);
-  if(n=0){<false}el{};
-  if(n>64){<false}el{};        // always bound length
-  let ok=mut.true;
+  let n=str.len(s) as i64;
+  if(n==0){<false};
+  if(n>64){<false};        (* always bound length *)
   lp(let i=0;i<n;i=i+1){
-    let c=mt str.slice(s;i;i+1) {$ok:v v;$err:e ""};
-    let isalnum=(c>="a"&&c<="z")||(c>="A"&&c<="Z")||(c>="0"&&c<="9")||c="_";
-    if(!isalnum){ok=false}el{}
+    (* one character's code, read without a fallible slice: a-z A-Z 0-9 and the underscore (95) *)
+    let c=str.charcode(s;i);
+    let isalnum=(c>=97&&c<=122)||(c>=65&&c<=90)||(c>=48&&c<=57)||c==95;
+    if(!isalnum){<false}
   };
-  <ok
+  <true
 };
 
 f=isintinrange(s:$str;lo:i64;hi:i64):bool{
-  let n=mt str.toint(s) {$ok:v v;$err:e (lo-1)};
+  let n=mt str.toint(s) {$ok:v v;$err:e <false};
   <(n>=lo)&&(n<=hi)
 };
 ```
@@ -303,14 +341,14 @@ length and never early-exit:
 f=consteq(a:$str;b:$str):bool{
   let la=str.len(a);
   let lb=str.len(b);
-  let diff=mut.(la=lb ? 0 : 1);
-  let n=(la<lb ? la : lb);
+  let diff=mut.if(la==lb){0}el{1};
+  let n=if(la<lb){la}el{lb};
   lp(let i=0;i<n;i=i+1){
-    let ca=mt str.slice(a;i;i+1) {$ok:v v;$err:e ""};
-    let cb=mt str.slice(b;i;i+1) {$ok:v v;$err:e ""};
+    let ca=mt str.slice(a;i;i+1) {$ok:v v;$err:e <false};
+    let cb=mt str.slice(b;i;i+1) {$ok:v v;$err:e <false};
     if(!str.eq(ca;cb)){diff=1}el{}
   };
-  <diff=0
+  <diff==0
 };
 ```
 
@@ -515,7 +553,7 @@ harden yours accordingly.
 
 Before shipping a toke web app, confirm:
 
-- [ ] Every template interpolation of untrusted data uses `|escape` (or `html.escape`); Markdown is sanitized (`OOK-02`, `PAR-05`).
+- [ ] No template interpolation of untrusted data uses `|raw`; HTML built by hand goes through `tpl.escape` (`std.template`), and no value is escaped both by hand and by the template (`OOK-02`, `PAR-05`).
 - [ ] Route params and query values are validated and escaped before reflection (`OOK-06`, `WEB-06`).
 - [ ] All request input is length-bounded and allowlist-validated before use (section 3).
 - [ ] Every SQL value is bound as a parameter; identifiers are allowlisted (`DAT-01`, `OOK-04`).

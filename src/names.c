@@ -1251,12 +1251,17 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
         it.name        = arena_intern(arena, name, (int)strlen(name));
         it.is_sum      = 0;
         it.is_std      = is_std;
+        it.is_opaque   = 0;
         it.field_count = 0;
         it.field_names = NULL;
         it.field_types = NULL;
         {
             const char *sv = tki_obj_key(rec, end, "is_sum");
             if (sv && sv < end && strncmp(sv, "true", 4) == 0) it.is_sum = 1;
+        }
+        {   /* 138.65: `"opaque": true` (a bare JSON literal) */
+            const char *ov = tki_obj_key(rec, end, "opaque");
+            it.is_opaque = (ov && end - ov >= 4 && memcmp(ov, "true", 4) == 0);
         }
 
         const char *fa = tki_obj_key(rec, end, "fields");

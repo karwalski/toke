@@ -1,0 +1,19 @@
+id: D734
+series: D
+description: "lint nested-if-and / modulo-emulation (131.138): no fix when a comment sits in the outer block, nor for f64 `x-x/y*y` (not a remainder); an el on either if is not the shape at all"
+input: |
+  m=t;
+  f=g(a:i64;b:i64;x:f64;y:f64):f64{
+    let n=mut.0;
+    if(a>0){(* keep *)if(b>0){n=n+1}};
+    if(a>0){if(b>0){n=n+1}el{n=n-1}};
+    if(a>0){if(b>0){n=n+1}}el{n=n-1};
+    <x-x/y*y+(n as f64)
+  };
+  f=main():i64{
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["nested-if-and", "modulo-emulation"]
+expected_fix_absent_for: ["nested-if-and", "modulo-emulation"]

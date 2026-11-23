@@ -77,7 +77,7 @@ DfCol       *df_column(TkDataframe *df, const char *name);
 
 /* df_filter: return a new dataframe containing only rows where the f64
  * column named col satisfies (value OP threshold).
- * op: 0=<  1=<=  2===  3=>=  4=>
+ * op: 0=<  1=<=  2===  3=>=  4=>  5=!= (138.66)
  * Returns NULL if col is not found or is not DF_COL_F64. */
 TkDataframe *df_filter(TkDataframe *df, const char *col,
                        double threshold, int op);
@@ -152,6 +152,14 @@ typedef struct {
  * Returns a DfGroupResult with heap-allocated rows; caller owns it. */
 DfGroupResult df_groupby(TkDataframe *df, const char *group_col,
                          const char *agg_col, int agg);
+
+/* df_split (127.518): split df into one sub-frame per distinct value of the
+ * string column col, each holding every row with that value (all columns,
+ * original row order), the groups ordered by each value's first row.
+ * Returns a heap array of *out_n frames (caller owns the array and each
+ * frame); a frame with no rows gives a non-NULL array and *out_n == 0.
+ * Returns NULL if col is not found or is not DF_COL_STR, or on OOM. */
+TkDataframe **df_split(TkDataframe *df, const char *col, uint64_t *out_n);
 
 /* -------------------------------------------------------------------------
  * Sort, unique, and column operations  (Story 31.1.1)

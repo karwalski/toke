@@ -34,11 +34,16 @@ int64_t tk_array_append_w(int64_t arr, int64_t elem);
  * the map runtime does not, so stub it to keep this test's link line short. */
 int64_t tk_str_join_w(int64_t sep, int64_t arr) { (void)sep; (void)arr; return 0; }
 
-/* 127.30: tk_map_get writes the error slot, which tk_runtime.c defines. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-_Thread_local int64_t tk_current_error = 0;
-#else
-__thread int64_t tk_current_error = 0;
+/* 127.30: tk_map_get writes the error slot, which tk_runtime.c defines.
+ * 138.45: collections_glue.c's std.vec wrappers use tk_runtime.c's handle
+ * registry, so the Makefile links the real runtime (TK_TEST_REAL_RUNTIME).
+ * 127.504: without it, the stand-in defines the one thread-local object
+ * (slot first, then the box buffer) that the glue's inline tk_err_box reads. */
+#include "../../src/stdlib/tk_runtime.h"
+#ifndef TK_TEST_REAL_RUNTIME
+#undef tk_current_error
+TK_TLS TkErrTls tk_current_error;
+#define tk_current_error (tk_current_error.slot)
 #endif
 
 static int failures = 0;

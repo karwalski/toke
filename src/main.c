@@ -1280,6 +1280,63 @@ static int typecheck_after_name_errors(Node *ast, const char *sbuf, int slen,
 
 
 /*
+ * 138.54: `tkc --emit-deps` given several files prints ONE merged set, in the
+ * single-file layout -- the C sources, then (if any) `---` and the link flags,
+ * then (if any) `---` and the user modules as <path>.ll -- each entry once, in
+ * first-seen order.  Printed back to back, as before, every consumer that
+ * splits on `---` read the second file's sources as the first file's flags.
+ * With one file the entries are printed as they are found, unchanged.
+ */
+enum { DEPS_SEC_SRC, DEPS_SEC_FLAG, DEPS_SEC_MOD, DEPS_NSEC };
+static struct {
+    int on;                       /* merging: more than one file */
+    char **v[DEPS_NSEC];
+    int n[DEPS_NSEC], cap[DEPS_NSEC];
+} g_deps_merge;
+
+/* Print (one file) or record (a merge) one entry; `pair` is the framework
+ * name after "-framework", kept with it as one entry.  0 on out of memory. */
+static int deps_merge_put(int sec, const char *s, const char *pair)
+{
+    if (!g_deps_merge.on) {
+        puts(s);
+        if (pair) puts(pair);
+        return 1;
+    }
+    size_t len = strlen(s) + (pair ? strlen(pair) + 1 : 0) + 1;
+    char *e = malloc(len);
+    if (!e) return 0;
+    if (pair) snprintf(e, len, "%s\n%s", s, pair); else snprintf(e, len, "%s", s);
+    for (int i = 0; i < g_deps_merge.n[sec]; i++)
+        if (!strcmp(g_deps_merge.v[sec][i], e)) { free(e); return 1; }
+    if (g_deps_merge.n[sec] == g_deps_merge.cap[sec]) {
+        int nc = g_deps_merge.cap[sec] ? g_deps_merge.cap[sec] * 2 : 64;
+        char **nv = realloc(g_deps_merge.v[sec], (size_t)nc * sizeof *nv);
+        if (!nv) { free(e); return 0; }
+        g_deps_merge.v[sec] = nv; g_deps_merge.cap[sec] = nc;
+    }
+    g_deps_merge.v[sec][g_deps_merge.n[sec]++] = e;
+    return 1;
+}
+
+/* End a merge: print the set when every file succeeded (a partial list would
+ * fail later as an undefined symbol), and free it either way. */
+static void deps_merge_finish(int print)
+{
+    for (int sec = 0; sec < DEPS_NSEC; sec++) {
+        if (print && sec > 0 && g_deps_merge.n[sec] > 0) puts("---");
+        for (int i = 0; i < g_deps_merge.n[sec]; i++) {
+            if (print) puts(g_deps_merge.v[sec][i]);
+            free(g_deps_merge.v[sec][i]);
+        }
+        free(g_deps_merge.v[sec]);
+        g_deps_merge.v[sec] = NULL;
+        g_deps_merge.n[sec] = g_deps_merge.cap[sec] = 0;
+    }
+    g_deps_merge.on = 0;
+}
+
+/*
  * process_file — run ONE source file through the pipeline in the mode
  * selected by `o`. This is the single per-file dispatch: every positional
  * file goes through here in argument order, so a non-compile mode
@@ -1630,20 +1687,27 @@ have_ast:
             char *save = NULL;
             char *tok = strtok_r(deps.sources, " ", &save);
             while (tok) {
-                puts(tok);
+                if (!deps_merge_put(DEPS_SEC_SRC, tok, NULL)) { rc = EINTERNAL; goto deps_out; }
                 tok = strtok_r(NULL, " ", &save);
             }
         }
 
         /* Print separator and flags (if any) */
         if (deps.flags[0]) {
-            puts("---");
+            if (!g_deps_merge.on) puts("---");
             char buf[512];
             snprintf(buf, sizeof buf, "%s", deps.flags);
             char *save = NULL;
             char *tok = strtok_r(buf, " ", &save);
             while (tok) {
-                puts(tok);
+                /* 138.54: in a merge "-framework X" is one entry, so the
+                 * pair is never split by deduplication. */
+                const char *fw = NULL;
+                if (g_deps_merge.on && !strcmp(tok, "-framework")) {
+                    fw = strtok_r(NULL, " ", &save);
+                    if (!fw) break;
+                }
+                if (!deps_merge_put(DEPS_SEC_FLAG, tok, fw)) { rc = EINTERNAL; goto deps_out; }
                 tok = strtok_r(NULL, " ", &save);
             }
         }
@@ -1655,17 +1719,20 @@ have_ast:
                 const char *mp = st.entries[ui].module_path;
                 if (!mp || !st.entries[ui].resolved) continue;
                 if (strncmp(mp, "std.", 4) == 0 || strcmp(mp, "std") == 0) continue;
-                if (!has_user_deps) { puts("---"); has_user_deps = 1; }
+                if (!has_user_deps && !g_deps_merge.on) puts("---");
+                has_user_deps = 1;
                 /* Convert dots to slashes for nested module paths */
                 char mod_ll[PATH_BUF];
                 strncpy(mod_ll, mp, sizeof(mod_ll) - 4);
                 mod_ll[sizeof(mod_ll) - 4] = '\0';
                 for (char *p = mod_ll; *p; p++) { if (*p == '.') *p = '/'; }
                 strcat(mod_ll, ".ll");
-                puts(mod_ll);
+                if (!deps_merge_put(DEPS_SEC_MOD, mod_ll, NULL)) { rc = EINTERNAL; goto deps_out; }
             }
         }
 
+    deps_out:
+        if (rc == EINTERNAL) fputs("tkc: out of memory merging --emit-deps output\n", stderr);
         symtab_free(&st);
         goto done;
     }
@@ -2312,12 +2379,17 @@ int main(int argc, char **argv)
         from_tkir
     };
     int rc = 0;
+    g_deps_merge.on = emit_deps && source_file_count > 1;   /* 138.54 */
     for (int si = 0; si < source_file_count; si++) {
         if (si > 0) diag_reset();
         int r = process_file(source_files[si], &o);
         if (r == 0) continue;
-        if (r != ECOMPILE && r != EDECLINED) return r;
+        if (r != ECOMPILE && r != EDECLINED) {
+            if (g_deps_merge.on) deps_merge_finish(0);
+            return r;
+        }
         if (rc != ECOMPILE) rc = r;
     }
+    if (g_deps_merge.on) deps_merge_finish(rc == 0);
     return rc;
 }

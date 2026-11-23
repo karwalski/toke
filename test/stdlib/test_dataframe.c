@@ -562,6 +562,53 @@ static void t27_filter_equality(void)
     df_free(df);
 }
 
+/* 138.66: op 5 is "!=", the one documented df.filter op df_filter lacked */
+static void t65_filter_not_equal(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    /* age != 30 -> Bob and Dave */
+    TkDataframe *filtered = df_filter(df, "age", 30.0, 5 /* != */);
+    ASSERT(filtered != NULL,      "T65: filter != returns non-NULL");
+    ASSERT(filtered && filtered->nrows == 2, "T65: age != 30 yields 2 rows");
+    df_free(filtered);
+    df_free(df);
+}
+
+/* 127.518: df_split, the C behind df.groupby -- one frame per distinct value
+ * of a str column, groups in first-appearance order, all columns kept. */
+static void t66_split(void)
+{
+    uint64_t len    = (uint64_t)strlen(CSV_GROUP);
+    DfResult r      = df_fromcsv(CSV_GROUP, len, 1);
+    if (r.is_err || !r.ok) { ASSERT(0, "T66: df_fromcsv group csv"); return; }
+    TkDataframe *df = r.ok;
+    uint64_t n = 99;
+    TkDataframe **gs = df_split(df, "cat", &n);
+    ASSERT(gs != NULL && n == 3, "T66: split on cat gives 3 frames");
+    uint64_t total = 0;
+    for (uint64_t i = 0; gs && i < n; i++) {
+        ASSERT(gs[i]->ncols == df->ncols, "T66: every group keeps every column");
+        DfCol *c = df_column(gs[i], "cat");
+        for (uint64_t k = 0; c && k < gs[i]->nrows; k++)
+            ASSERT(strcmp(c->str_data[k], c->str_data[0]) == 0,
+                   "T66: a group holds one key value");
+        total += gs[i]->nrows;
+    }
+    ASSERT(total == df->nrows, "T66: the groups hold every row once");
+    if (gs && n == 3) {
+        DfCol *c0 = df_column(gs[0], "cat");
+        ASSERT(c0 && strcmp(c0->str_data[0], df_column(df, "cat")->str_data[0]) == 0,
+               "T66: the first group is the first row's value");
+    }
+    for (uint64_t i = 0; gs && i < n; i++) df_free(gs[i]);
+    free(gs);
+    n = 99;
+    ASSERT(df_split(df, "val", &n) == NULL && n == 0, "T66: an f64 column is refused");
+    ASSERT(df_split(df, "nope", &n) == NULL, "T66: a missing column is refused");
+    df_free(df);
+}
+
 static void t28_join_missing_col(void)
 {
     uint64_t ll = (uint64_t)strlen(CSV_LEFT);
@@ -1371,6 +1418,8 @@ int main(void)
     t62_get_row_valid();
     t63_get_row_oob();
     t64_to_html();
+    t65_filter_not_equal();
+    t66_split();
 
     printf("\n%s -- %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
     return failures == 0 ? 0 : 1;

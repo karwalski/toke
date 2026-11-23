@@ -2671,9 +2671,18 @@ static int array_lit_spread_idx(Ctx *c, const Node *n, int *elem_count) {
              * CURRENT binding is actually pointer-typed (via the uniquified
              * name's local type) before treating `@(x)` as a spread. */
             const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
+            /* 138.60: and the checker does not type it as a record.  A
+             * binding of an `"opaque": true` std type ($svgelem, $tomlval,
+             * $csvreader, ...) made with `as` is an i8* pointer local with no
+             * registered layout (the .tki record has no "fields" key, so
+             * register_tki_struct_types skips it), and `@(fe)` read word -1
+             * of the element as a length: len 0 for a real one, SIGSEGV for
+             * a forged one.  A record is never an array. */
+            const Type *ert = n->children[i]->rtype;
             if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
                 !ptr_local_struct_type(c, eid) &&
-                !strcmp(cur_ty, "i8*"))
+                !strcmp(cur_ty, "i8*") &&
+                !(ert && ert->kind == TY_STRUCT))
                 spread_idx = i;
         }
         count++;
@@ -6581,6 +6590,7 @@ static int emit_expr(Ctx *c, const Node *n)
                                           { dst_ty = "i8"; dst_signed = 0; }
             else if (!strcmp(tn, "bool")) { dst_ty = "i1"; }
             if (dst_ty) {
+                int narrow_res = 0;   /* 127.506: %t is at dst_ty's width */
                 int src_is_float = (!strcmp(src_ty, "double") || !strcmp(src_ty, "float"));
                 int src_is_int = (!strcmp(src_ty, "i64") || !strcmp(src_ty, "i32") ||
                                   !strcmp(src_ty, "i16") || !strcmp(src_ty, "i8") ||
@@ -6602,8 +6612,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     /* Same LLVM type — identity */
                     if (dst_is_float)
                         fprintf(c->out, "  %%t%d = fadd %s 0.0, %%t%d\n", t, dst_ty, v);
-                    else
+                    else {
                         fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
+                        narrow_res = 1;   /* 127.506: u32 <-> i32 */
+                    }
                 } else if (dst_is_float && src_is_float) {
                     /* float <-> float */
                     int sbits = !strcmp(src_ty, "double") ? 64 : 32;
@@ -6645,12 +6657,29 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (db > sb) {
                         /* 127.217: widening follows the SOURCE's signedness
                          * too — `e as i64` on a u8 holding 200 is 200. */
-                        int use_zext = (!strcmp(src_ty, "i1") || !dst_signed ||
-                                        type_is_unsigned(n->children[0]->rtype));
+                        /* 127.506: and only by the source's.  A signed
+                         * source sign-extends into an unsigned target as C
+                         * does (`b as u16` on an i8 of -1 is 65535, the
+                         * value `b as i64 as u16` already gave); it was
+                         * zero-extended (255).  A source whose signedness
+                         * is not known keeps the target's rule. */
+                        const Node *se = n->children[0];
+                        int s_uns = type_is_unsigned(se->rtype);
+                        if (!s_uns && se->kind == NODE_IDENT && c->la_fn) {
+                            char sb_[NAME_BUF]; tok_cp(c->src, se, sb_, sizeof sb_);
+                            int u = 0;
+                            if (ubind_find(c, c->la_fn, sb_, &u)) s_uns = u;
+                        }
+                        int s_sgn = !s_uns && se->rtype &&
+                                    (se->rtype->kind == TY_I8 || se->rtype->kind == TY_I16 ||
+                                     se->rtype->kind == TY_I32);
+                        int use_zext = (!strcmp(src_ty, "i1") || s_uns ||
+                                        (!s_sgn && !dst_signed));
                         if (use_zext)
                             fprintf(c->out, "  %%t%d = zext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
                         else
                             fprintf(c->out, "  %%t%d = sext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                        narrow_res = 1;   /* 127.506: i16 -> i32 */
                     } else if (db < sb) {
                         fprintf(c->out, "  %%t%d = trunc %s %%t%d to %s\n", t, src_ty, v, dst_ty);
                         /* 80.2.1: all toke variables are i64 — re-extend
@@ -6665,11 +6694,26 @@ static int emit_expr(Ctx *c, const Node *n)
                         }
                     } else {
                         fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
+                        narrow_res = 1;
                     }
                 } else if (!strcmp(src_ty, "i8*")) {
                     fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to %s\n", t, v, dst_ty);
                 } else {
                     fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
+                }
+                /* 127.506: expr_llvm_type answers i64 for every sub-64-bit
+                 * integer target (80.2.1: the narrowing path re-extends for
+                 * storage), but the identity (`a as i32` on a u32, `a as u32`
+                 * on an i32) and widening (`a as i32` on an i16) paths left
+                 * the value at the target's width, and the consumer -- a
+                 * return, a let, an argument -- emitted `trunc i64` on an i32:
+                 * invalid IR (E9003).  Re-extend by the target's signedness,
+                 * as the narrowing path does. */
+                if (narrow_res && strcmp(dst_ty, "i64") && strcmp(dst_ty, "i1")) {
+                    int t2x = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = %s %s %%t%d to i64\n", t2x,
+                            dst_signed ? "sext" : "zext", dst_ty, t);
+                    t = t2x;
                 }
                 return t;
             }

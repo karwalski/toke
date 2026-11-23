@@ -154,6 +154,7 @@ expect "11 --objects without flags, and flags without --objects: non-zero, nothi
 # 12: harnesses use --objects
 # Allowlist: script -> why its call stays on sources.
 cat > "${WORK}/allow" <<'ALLOW'
+C2031_err_box_fast_path.sh	builds the same sources once per sanitizer flag set (plain, ASan+UBSan) for one test driver
 C208_stdlib_residue_135_3j.sh	the llmtool driver force-includes a per-run counter header (-include $WORK/cnt.h)
 C276_llmtool_args_escapes.sh	force-includes a per-run counter header (-include $WORK/cnt.h)
 C342_llmtool_args_nested.sh	force-includes a per-run counter header (-include $WORK/cnt.h)

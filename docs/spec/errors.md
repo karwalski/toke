@@ -83,7 +83,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4010 | error | type_check | Non-exhaustive match | -- |
 | E4011 | error | type_check | Match arms have inconsistent types | -- |
 | E4025 | error | type_check | Struct has no field with that name | D092, T001 |
-| E4026 | error | type_check | Wrong argument count in function call | C035 |
+| E4026 | error | type_check | Wrong argument count in function call | C035, D710-D713, C2057 |
 | E4027 | error | type_check | Module has no exported member with that name | D093, C038, C219, T002 |
 | E4031 | error | type_check | Type mismatch | D086, D570-D574, C038, C249, C1810 |
 | E4032 | error | type_check | Cannot interpolate a composite value into a string | n/s |
@@ -879,8 +879,8 @@ does not exist in the struct type.
 | **Stage** | type_check |
 | **Severity** | error |
 | **Message** | `wrong number of arguments: expected <N>, got <M>` (alias and receiver calls name the function and signature) |
-| **Fix field** | informational text |
-| **Conformance test** | C035 (receiver calls) |
+| **Fix field** | absent (story 138.51: the old text was advice, not a repair; an alias or module call's message ends with it) |
+| **Conformance test** | C035 (receiver calls), D710-D713, C2057 |
 
 **Notes:** A call passes too few or too many arguments. This covers plain
 calls, calls through an import alias (`alias.member(...)`, story 136.1) and
@@ -1014,6 +1014,16 @@ where the module that declares the record is not imported, is refused at
 `--check` used to pass it. The message names the call and the record
 (`'srv.handle' returns '$res', a type of a module this file does not import`).
 Still no `fix`: which import supplies the record is not decidable from the file.
+
+Story 138.58 extends this to the same record reached through another value: an
+element of an array or map such a call returns (`rs.get(0).text`, in place or
+bound), the `$ok` or `$err` payload of its `T!E`, a sum type's variant payload
+bound by an `mt` arm, and a field of an imported record whose type is such a
+record (`wr.r.text`). The message names the record and where it came from
+(`it is '$res' (from 'srv.many'), a type of a module this file does not
+import`). It is refused even when another struct in scope declares a field of
+that name: codegen's field-owner fallback would otherwise read that struct's
+offset. No `fix`.
 
 ---
 

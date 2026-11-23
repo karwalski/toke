@@ -16,6 +16,7 @@
 #define TK_RUNTIME_H
 
 #include <stdint.h>
+#include <string.h>   /* memset, tk_err_box_fast */
 
 /* ── Story 127.101/127.109: the error channel ────────────────────────────────
  * runtime-abi.md §7.  `tk_current_error` is the tri-valued slot (0 = ok,
@@ -38,7 +39,34 @@
 #  define TK_TLS __thread
 #endif
 
-extern TK_TLS int64_t tk_current_error;
+/* 127.504: ONE thread-local object holds the slot AND the error box's buffer.
+ * On Darwin every distinct thread-local variable a function touches costs a
+ * tlv_get_addr call, and a std raise touched two: the box state inside
+ * tk_err_box and the slot in the glue.  With both in one object and the box's
+ * fast path inline below, a raise in a glue function makes one lookup.
+ *
+ * The SYMBOL is still `tk_current_error`, and `slot` is its first member, so
+ * the address the emitted code loads and stores through
+ * (`@tk_current_error = external thread_local global i64`, runtime-abi.md
+ * §7.1) is the slot's, exactly as before: codegen is unchanged.  In C the
+ * name is a macro for the slot, so `tk_current_error = x` keeps meaning what
+ * it did.  The rules that follow:
+ *   - never redeclare `tk_current_error` (or tk_err_box) in a file that
+ *     includes this header -- it is declared here, as the object;
+ *   - a test that stands in for tk_runtime.c defines the OBJECT, not an
+ *     int64_t, because inlined glue reads `buf` past the slot:
+ *         #undef tk_current_error
+ *         TK_TLS TkErrTls tk_current_error;
+ *         #define tk_current_error (tk_current_error.slot)
+ *     and defines its tk_err_box stub as `void *(tk_err_box)(int64_t n)`.
+ * A C file that does not include this header may still declare
+ * `extern TK_TLS int64_t tk_current_error;` and reads the slot correctly. */
+typedef struct {
+    int64_t slot;   /* MUST stay first: the emitted code's @tk_current_error */
+    void   *buf;    /* the error box (tk_err_box), NULL until the first raise */
+    int64_t cap;    /* its capacity, never below TK_ERR_INLINE once buf is set */
+} TkErrTls;
+extern TK_TLS TkErrTls tk_current_error;
 
 /* tk_err_box — the thread's error box, at least `nbytes` and zeroed.
  *
@@ -60,6 +88,27 @@ extern TK_TLS int64_t tk_current_error;
  * 0, and 0 is SUCCESS (§7.2), so an out-of-memory error return would have read
  * back as a successful one. */
 void   *tk_err_box(int64_t nbytes);
+
+/* The common raise, inline (127.504): a box that fits the inline size, once
+ * the thread's buffer exists, is zeroed with a constant-size store (127.492)
+ * and returned with no call.  Its capacity is never below TK_ERR_INLINE (the
+ * buffer starts there and only grows; the OOM fallback returns to it), so
+ * zeroing past nbytes stays inside it.  Everything else is the out-of-line
+ * tk_err_box, which the emitted code also calls. */
+#define TK_ERR_INLINE 64
+static inline void *tk_err_box_fast(int64_t nbytes)
+{
+    TkErrTls *t = &tk_current_error;
+    if (nbytes > 0 && nbytes <= TK_ERR_INLINE && t->buf) {
+        memset(t->buf, 0, TK_ERR_INLINE);
+        return t->buf;
+    }
+    return (tk_err_box)(nbytes);
+}
+
+/* Declared and used above as the object; from here on, the slot. */
+#define tk_current_error (tk_current_error.slot)
+#define tk_err_box(n) tk_err_box_fast(n)
 
 /* Release this thread's error-box buffer.  Registered via atexit() for the
  * main thread; a worker that raises leaves one buffer behind at thread exit,
@@ -143,5 +192,78 @@ void    tk_overflow_trap(int32_t op_code);
 /* 124.0c item 3: closure environment reference counting (tk_runtime.c). */
 void tk_clos_retain(int64_t v);
 void tk_clos_release(int64_t v);
+
+/* ── 138.45: the registry of live std handles (tk_runtime.c) ─────────────────
+ * One table for every std module that hands a C object to a toke program as
+ * an i64 (lifted from 138.36's process registry).  A slot holds the object's
+ * address, its KIND and a serial; lookups read only the table, never the
+ * value as memory, so a value the runtime did not hand out -- a forged
+ * integer, a record literal, a handle of another kind, a released one -- is
+ * answered NULL and the caller answers it as it answers a null handle.
+ *
+ * Two ways to name an entry:
+ *   - a TOKEN, (serial << 32) | (slot + 1) (tk_handle_issue / tk_handle_token).
+ *     Every kind with a release call (process, strbuf, pdfdoc, xlsxbook,
+ *     ziparchive, tomlval) hands these out instead of the address: a released
+ *     object's slot is reused only under a fresh serial, so a stale token is
+ *     refused even after malloc hands its address to a newer object;
+ *   - the ADDRESS itself (tk_handle_adopt / tk_handle_addr), for kinds whose
+ *     value must stay a real pointer and that toke code never releases: a
+ *     record toke code reads fields of, a handle compiled code passes to the
+ *     glue directly (std.vec), or an object C callbacks hand to toke.  An
+ *     address-keyed kind must not gain a release call that frees it: a
+ *     dropped address is accepted again once malloc reuses it (138.45
+ *     review).  tls.close, vecstore.close and csv.close drop their records
+ *     but keep them allocated (138.61, 138.64, 138.63), so the address is
+ *     never reused.
+ * Registering an address again is idempotent (the same token, for a token
+ * kind).  tk_handle_drop forgets one. */
+enum {
+    TK_HK_PROCESS = 1, TK_HK_VEC = 2, TK_HK_STRBUF = 3, TK_HK_SECUREBUF = 4,
+    TK_HK_PDFDOC = 5, TK_HK_XLSXBOOK = 6, TK_HK_ZIPARCHIVE = 7,
+    TK_HK_TOMLVAL = 8, TK_HK_SVGELEM = 9, TK_HK_SVGDOC = 10,
+    TK_HK_TASKSCOPE = 11, TK_HK_LLMCLIENT = 12,
+    /* 138.61 / 138.50 */
+    TK_HK_TLSCONN = 13, TK_HK_VECSTORE = 14, TK_HK_VECCOLL = 15,
+    TK_HK_HTMLNODE = 16, TK_HK_HTTPSTREAM = 17, TK_HK_CANVAS = 18,
+    TK_HK_HTMLDOC = 19,
+    /* 138.63: the opaque std types of csv, dashboard, dataframe, ml, router
+     * and llm (address-keyed but for ROUTERREQ, a per-dispatch token) */
+    TK_HK_CSVREADER = 20, TK_HK_CSVWRITER = 21, TK_HK_DASHBOARD = 22,
+    TK_HK_DATAFRAME = 23, TK_HK_DTREEMODEL = 24, TK_HK_ROUTER = 25,
+    TK_HK_ROUTERREQ = 26, TK_HK_LLMSTREAM = 27
+};
+/* A token for p (0 when the table is full; the caller disposes of p). */
+int64_t tk_handle_issue(int kind, void *p);
+/* As tk_handle_issue, for a VIEW into another registered object `owner` (a
+ * toml section of a document): dropping the owner drops its views too. */
+int64_t tk_handle_issue_view(int kind, void *p, const void *owner);
+/* The object a token names, or NULL. */
+void   *tk_handle_token(int kind, int64_t tok);
+/* Register p as a live object of `kind`; returns p, or NULL when the table
+ * is full (or p is NULL). */
+void   *tk_handle_adopt(int kind, void *p);
+/* 138.61: as tk_handle_adopt, for a VIEW into the registered object `owner`
+ * (a vecstore collection of its store): dropping the owner drops it too. */
+void   *tk_handle_adopt_view(int kind, void *p, const void *owner);
+/* The owner p was adopted under, or NULL (not a view, or not registered). */
+const void *tk_handle_owner(const void *p);
+/* v as a pointer when it is a live object of `kind`, else NULL. */
+void   *tk_handle_addr(int kind, int64_t v);
+/* Forget p (any kind) and every view adopted with p as its owner.  1 when p
+ * was registered. */
+int     tk_handle_drop(const void *p);
+
+/* 138.61: a std record that a program may also write as a record literal
+ * ($dbrow, $imgbuf, $httpclient) cannot be checked against the registry --
+ * the literal is a plain malloc the runtime never saw -- so its glue refuses
+ * only a value that cannot be the address of any record: one inside the
+ * never-mapped first page (a small integer cast with `as`), a negative one,
+ * or one that is not 8-aligned (malloc's minimum).  0 is the null record and
+ * is answered by the caller's own null path. */
+static inline int tk_record_plausible(int64_t v)
+{
+    return v >= 4096 && (v & 7) == 0;
+}
 
 #endif /* TK_RUNTIME_H */

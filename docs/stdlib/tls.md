@@ -21,7 +21,7 @@ That history explains two things about the interface below that otherwise look r
 
 **Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig`, `tls.mutualconfig` and `tls.insecureconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `tlsconfig` and `tlskeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$tlsconfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
 
-**The handles are opaque i64.** A `tlsconn` or `tlskeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
+**The handles are opaque i64 at the ABI.** A `tlsconn` or `tlskeypair` arrives in toke as a handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:$tlsconn):i64`. Since story 138.46 an integer other than the literal `0` is E4031 where a `tlsconn` is declared (the runtime reads the record through its address), so a callback that declares `conn:i64` and passes it on to `tls.read` no longer checks.
 
 ## Types
 
@@ -160,6 +160,8 @@ Releases the configuration and zeroes any key material in it.
 
 Binds a TCP socket on `port` and accepts TLS connections in a loop, invoking `cb` with each accepted `tlsconn`. Pass the callback by reference, `&handler`.
 
+The handler owns the connection and must end it with `tls.close`; the listener never closes it. A connection the handler leaves open keeps its socket, its TLS session and its `tlsconn` record (about 40 bytes, plus its entry in the runtime's handle table, 138.61) until the process exits, so a long-running listener whose handler skips `tls.close` grows without bound.
+
 Returns `false` at once if the socket cannot be bound or the TLS context cannot be created. Otherwise it does not return: it runs until the process exits.
 
 ### tls.connect(host: str; port: i32; cfg: tlsconfig): ?(tlsconn)
@@ -176,7 +178,7 @@ Writes `data`. `false` if the write failed, typically because the connection is 
 
 ### tls.close(conn: tlsconn): bool
 
-Clean TLS shutdown followed by socket close. The handle must not be used afterwards.
+Clean TLS shutdown followed by socket close. Afterwards the handle is answered as one that is not an open connection (`false`, `0`, `""`); its `id` still reads (138.61). So is a `$tlsconn` `tls.connect` or `tls.listen` did not hand out -- a record literal or a value cast with `as`.
 
 ### tls.protocol(conn: tlsconn): str
 
@@ -207,11 +209,7 @@ i=file:std.file;
 i=io:std.io;
 i=str:std.str;
 
-f=rd(p:str):str{
-  <mt file.read(p){$ok:v v;$err:e ""}
-};
-
-f=onconn(conn:i64):i64{
+f=onconn(conn:$tlsconn):i64{
   io.println(str.concat("proto=";tls.protocol(conn)));
 
   let pc=tls.peercert(conn);
@@ -236,7 +234,12 @@ f=onconn(conn:i64):i64{
    documented route, and it makes "mutual auth" an intent rather than a
    boolean somebody forgets to set. *)
 f=main():i64{
-  let cfg=tls.mutualconfig(rd("/tmp/toke-tls-s.crt");rd("/tmp/toke-tls-s.key");rd("/tmp/toke-tls-c.crt"));
+  (* a PEM file that cannot be read stops the server here, instead of
+     reaching tls.mutualconfig as an empty string *)
+  let crt=mt file.read("/tmp/toke-tls-s.crt"){$ok:v v;$err:e <1};
+  let key=mt file.read("/tmp/toke-tls-s.key"){$ok:v v;$err:e <1};
+  let ca=mt file.read("/tmp/toke-tls-c.crt"){$ok:v v;$err:e <1};
+  let cfg=tls.mutualconfig(crt;key;ca);
   io.println("listening on 8443");
   tls.listen(8443;cfg;&onconn);
   tls.freeconfig(cfg);
@@ -253,13 +256,12 @@ i=file:std.file;
 i=io:std.io;
 i=str:std.str;
 
-f=rd(p:str):str{
-  <mt file.read(p){$ok:v v;$err:e ""}
-};
-
 f=main():i64{
   (* present our own certificate AND pin the server's *)
-  let cfg=tls.pinconfig(rd("/tmp/toke-tls-c.crt");rd("/tmp/toke-tls-c.key");rd("/tmp/toke-tls-s.crt"));
+  let crt=mt file.read("/tmp/toke-tls-c.crt"){$ok:v v;$err:e <1};
+  let key=mt file.read("/tmp/toke-tls-c.key"){$ok:v v;$err:e <1};
+  let pin=mt file.read("/tmp/toke-tls-s.crt"){$ok:v v;$err:e <1};
+  let cfg=tls.pinconfig(crt;key;pin);
 
   let conn=tls.connect("127.0.0.1";8443;cfg);
   if(conn==0){

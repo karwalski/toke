@@ -60,6 +60,10 @@ Exit codes: `--lint` exits `0` whether or not findings exist (findings are data 
 | `discarded-value-result` | error | Bare `x.set/push/append(…)` statement: the new collection is discarded (pattern rule; absorbs 127.3) |
 | `loop-rebuilds-array` | hint | A `lp` whose only statement is `acc=acc.append(f(i))` — a combinator may express it (pattern rule) |
 | `nested-if-ladder` | hint | An `el` block whose only statement is another `if` — write `el if` (pattern rule, 131.64; fixable) |
+| `negated-equality` | hint | `!(a==b)` — write `a!=b` (page-shape rule, 131.138; fixable on integer/bool operands) |
+| `negated-comparison` | hint | `!(a<b)` / `!(a>b)` — write `a>=b` / `a<=b` (page-shape rule, 131.138; fixable on integer operands) |
+| `modulo-emulation` | hint | `a-a/b*b` or `a-(a/b)*b` — write `a%b` (page-shape rule, 131.138; fixable on integer operands) |
+| `nested-if-and` | hint | `if(a){if(b){..}}` with no `el` on either — write `if(a&&b){..}` (page-shape rule, 131.138; fixable) |
 
 ---
 
@@ -917,8 +921,68 @@ f=tier(x:i64):i64{
 **Edge cases:**
 
 - An `el` block with a second statement (`el{let b=a+1;if(b>0){…}}`) is not a ladder — not flagged.
-- An `if` nested in the **then** branch (`if(a){if(b){…}}`) is not this rule: merging it into `&&` changes behaviour when the outer `if` has an `el`.
+- An `if` nested in the **then** branch (`if(a){if(b){…}}`) is not this rule: merging it into `&&` changes behaviour when the outer `if` has an `el`. With no `el` on either, it is [`nested-if-and`](#nested-if-and).
 - `el if` chains are already canonical — not flagged.
+
+---
+
+## Page-shape rules (story 131.138)
+
+The specification page withdrawn by story 132.15 told writers to spell four operators the long way: `!(a==b)` for `!=`, `!(a>b)` for `<=`, a nested `if` for `&&`, and `a-a/b*b` for `%`. Every one compiles, and corpus records written to that page still carry them (the toke-corpus sweep detects them with its own regexes, 131.135). These four hints let every `tkc --lint` consumer see them. All four are hints: the `--lint` exit status does not change.
+
+A `fix` is offered only where the rewrite is the same program in every case (AGENTS.md §6). The operator rules consult the checker's types (`--lint` type-checks the file silently first); a file that does not type-check keeps the hint without a fix.
+
+### `negated-equality`
+
+```yaml
+id: negated-equality
+category: hint
+fixable: yes (integer or bool operands)
+```
+
+**Description:** `!(a==b)`. Message: ``"`!(a==b)` negates a comparison toke has as one operator — write `a!=b`"``.
+
+**Auto-fix:** `!(a==b)` becomes `a!=b`, the text inside the parentheses kept as written. Offered only when both operands are integers (or both bools) by the checker's types, and the parent takes a comparison unparenthesised (anything but a unary, `as`, `!` propagation, field or index, or a binary operator other than `&&`, `||`, `&`, `|`, `^`). **No fix on `f64`/`f32`:** `!=` lowers to `fcmp one`, so on NaN `!(x==y)` is true and `x!=y` is false. No fix on `str`.
+
+### `negated-comparison`
+
+```yaml
+id: negated-comparison
+category: hint
+fixable: yes (integer operands)
+```
+
+**Description:** `!(a<b)` or `!(a>b)`. Message: ``"`!(a>b)` negates a comparison toke has as one operator — write `a<=b`"`` (or `<` / `>=`). `!(a<=b)` and `!(a>=b)` are not reported.
+
+**Auto-fix:** `a>=b` / `a<=b`, under the same conditions as `negated-equality`, integers only: on NaN `!(x>y)` is true and `x<=y` is false.
+
+### `modulo-emulation`
+
+```yaml
+id: modulo-emulation
+category: hint
+fixable: yes (integer operands)
+```
+
+**Description:** `a-a/b*b` or `a-(a/b)*b`, where both `a`s and both `b`s are the same name, field path or integer literal written the same way. Message: ``"`a-a/b*b` computes the remainder the long way — write `a%b`"``.
+
+**Auto-fix:** `a%b`, when all four operands are integers. Integer `/` truncates toward zero and `%` takes the sign of the dividend, so the two are equal for every sign; both trap RT004 (exit 1) for `b==0` and for the most negative value by `-1`; the only difference is the trap message's word (`remainder` for `division`). No fix on floats, where `x-x/y*y` is not a remainder.
+
+### `nested-if-and`
+
+```yaml
+id: nested-if-and
+category: hint
+fixable: yes
+```
+
+**Description:** an `if` with no `el` whose block holds exactly one statement, another `if` with no `el`: `if(a){if(b){..}}`. A chain `if(a){if(b){if(c){..}}}` is reported once; the diagnostic's position and the fix span both start at the outermost `if`. Message: ``"`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`"``.
+
+**Auto-fix:** `if(a&&b){..}` with the inner block as written; an operand that cannot stand bare beside `&&` is parenthesised: an `||`, an `mt` match and an expression-`if` (the parser accepts the last two only at the head of an expression, so `a&&mt x{..}` does not parse), and any operand that is not an operator expression, call, cast, `!`-propagation, index, field, name or literal. `&&` short-circuits, so `b` runs exactly when it did. The `--fix` fixpoint loop folds a chain one level per round. **No fix** when a comment (`(*`, `//`, `#`) sits in the outer block, or anything but whitespace and one `;` separates the blocks.
+
+**Not reported:** an `el` on either `if` (`&&` would change which branch runs), or a second statement in the outer block.
+
+Tests: `test/diagnostics/D730`–`D734`, `test/conform/C2101` (a differential over every sign combination and the two traps).
 
 ---
 

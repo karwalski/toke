@@ -21,11 +21,11 @@ A single parsed row. Each element of `fields` corresponds to one delimited colum
 
 ### $csvreader
 
-An opaque streaming reader handle created by `csv.reader`. It holds a reference to the source byte buffer, the current read position, the configured separator, and a line counter. The handle must not be used after the source buffer is freed.
+An opaque streaming reader handle created by `csv.reader` or `csv.readeropts`. It holds a reference to the source byte buffer, the current read position, the configured separator, and a line counter. The handle must not be used after the source buffer is freed. It has no readable fields: reading one is a compile error, E4034 (138.65; until then `r.pos` read the handle's token as a record and died with SIGSEGV). After `csv.close` it is no reader: `csv.next` and `csv.header` return `$err` with kind `badarg`, `csv.atend` is true, and a second `csv.close` does nothing; so is any value `csv.reader` did not return, such as `5 as $csvreader` (138.63).
 
 ### $csvwriter
 
-An opaque writer handle created by `csv.writer`. It accumulates rows in an internal byte buffer. Fields containing the separator, a double-quote, or a newline are automatically quoted and escaped according to RFC 4180. Call `csv.flush` to retrieve the accumulated bytes.
+An opaque writer handle created by `csv.writer`. It accumulates rows in an internal byte buffer. Fields containing the separator, a double-quote, or a newline are automatically quoted and escaped according to RFC 4180. Call `csv.flush` to retrieve the accumulated bytes. It has no readable fields: the interface declares `buf`, `sep` and `pos`, but reading one is a compile error, E4034 (138.65; until then `w.sep` printed 0 whatever the separator). A value `csv.writer` did not return is no writer: `csv.writerow` ignores it and `csv.flush` returns no bytes (138.63).
 
 ### $csverr
 

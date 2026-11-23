@@ -33,6 +33,49 @@
 
 #include "router.h"
 #include "tk_strhdr.h"   /* 127.343: tks_strdup -- request strings toke keeps */
+#include "tk_runtime.h"  /* 138.63: the handle registry */
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <mach-o/getsect.h>
+#endif
+
+/* ── 138.63: what the runtime vouches for ────────────────────────────────
+ *   - a $router is registered by address where router.new hands it out
+ *     (it is never released from toke); register_route and router.serve
+ *     look it up first, so `5 as $router` is the null router;
+ *   - the request a handler is given is a registry TOKEN made for that one
+ *     dispatch and dropped when it returns, so the req accessors refuse a
+ *     forged i64 and a req a handler kept past its request ("");
+ *   - a $handler is a code address the compiler made (`&f`), which no
+ *     registry sees: register_route refuses one that does not lie in a
+ *     loaded image's __TEXT (macOS) -- or, elsewhere, one inside the
+ *     never-mapped first page or negative -- instead of calling it at
+ *     dispatch (handler_plausible);
+ *   - router.use never reads its $middleware (see tk_router_use_w). */
+static TkRouter *router_in(int64_t v) { return (TkRouter *)tk_handle_addr(TK_HK_ROUTER, v); }
+
+static int handler_plausible(int64_t fn)
+{
+    if (fn < 4096) return 0;
+#if defined(__APPLE__)
+    uintptr_t a = (uintptr_t)fn;
+    uint32_t n = _dyld_image_count();
+    for (uint32_t i = 0; i < n; i++) {
+        const struct mach_header *mh = _dyld_get_image_header(i);
+        unsigned long size = 0;
+        if (!mh) continue;
+#if defined(__LP64__)
+        uint8_t *text = getsegmentdata((const struct mach_header_64 *)mh, "__TEXT", &size);
+#else
+        uint8_t *text = getsegmentdata(mh, "__TEXT", &size);
+#endif
+        if (text && a >= (uintptr_t)text && a - (uintptr_t)text < size) return 1;
+    }
+    return 0;
+#else
+    return 1;
+#endif
+}
 
 /* call_route_handler — invoke a toke router handler with one argument.
  * `&handler` lowers to a raw function pointer (ptrtoint @handler), i.e.
@@ -222,6 +265,10 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
             strcmp(g_closure_routes[i].method, mm) == 0) {
             TkRouterReq req;
             memset(&req, 0, sizeof req);
+            /* 138.63: the handler is given a token for req, live for this
+             * dispatch only (0 when the table is full: the accessors then
+             * answer "" as for a null req) */
+            int64_t req_tok = tk_handle_issue(TK_HK_ROUTERREQ, &req);
             req.method = g_closure_routes[i].method;
             req.path   = ctx.path;
             req.query  = ctx.query;
@@ -234,8 +281,9 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
              * does not re-enter dispatch from a handler (router.h). */
             g_in_dispatch = 1;
             int64_t res_i64 = call_route_handler(g_closure_routes[i].handler,
-                                                 (int64_t)(intptr_t)&req);
+                                                 req_tok);
             g_in_dispatch = 0;
+            tk_handle_drop(&req);
             TkRouteResp out;
             if (!res_i64) {
                 out = router_resp_status(500, "handler returned null");
@@ -265,7 +313,12 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
 static int64_t register_route(const char *method, int64_t router_i64,
                               int64_t path, int64_t handler,
                               int (*reg)(TkRouter *, const char *, TkRouteHandler)) {
-    if (!router_i64 || !path) return -1;
+    if (!router_in(router_i64) || !path) return -1;
+    if (!handler_plausible(handler)) {
+        fprintf(stderr, "DIAGNOSTIC: kind=router_register_failed "
+                "method=%s reason=\"the handler is not a function\"\n", method);
+        return -1;
+    }
     if (g_closure_route_count == g_closure_route_cap) {
         size_t nc = g_closure_route_cap ? g_closure_route_cap * 2 : 64;
         TkClosureRoute *nt = NULL;
@@ -301,6 +354,7 @@ static int64_t register_route(const char *method, int64_t router_i64,
 
 int64_t tk_router_new_w(void) {
     TkRouter *r = router_new();
+    if (r && !tk_handle_adopt(TK_HK_ROUTER, r)) { router_free(r); r = NULL; }
     return (int64_t)(intptr_t)r;
 }
 
@@ -322,7 +376,8 @@ int64_t tk_router_delete_w(int64_t router_i64, int64_t path, int64_t handler) {
 
 /* router.use — middleware registration. Toke-level middleware closures are not
  * yet wired through; accept and ignore so programs that register none still
- * link and run. (A real implementation would adapt a toke closure to the
+ * link and run.  138.63: neither argument is read, so a forged one is
+ * harmless here. (A real implementation would adapt a toke closure to the
  * TkMiddleware (ctx, next) ABI.) */
 int64_t tk_router_use_w(int64_t router_i64, int64_t middleware) {
     (void)router_i64; (void)middleware;
@@ -332,7 +387,8 @@ int64_t tk_router_use_w(int64_t router_i64, int64_t middleware) {
 /* router.serve(router; host:str; port:u64) -> void!routererr.
  * The toke signature passes host and port as separate args (see router.tki). */
 int64_t tk_router_serve_w(int64_t router_i64, int64_t host, int64_t port) {
-    if (!router_i64) return -1;
+    TkRouter *rt = router_in(router_i64);
+    if (!rt) return -1;
     const char *h = host ? (const char *)(intptr_t)host : NULL;
     /* Treat "", "0.0.0.0" and "*" as "bind all interfaces" (NULL host). */
     if (h && (h[0] == '\0' || !strcmp(h, "0.0.0.0") || !strcmp(h, "*"))) h = NULL;
@@ -342,7 +398,7 @@ int64_t tk_router_serve_w(int64_t router_i64, int64_t host, int64_t port) {
      * router_serve reports on stderr (DIAGNOSTIC: kind=server_listening
      * port=N) once listening, and a port above 65535 is router_serve's
      * "port out of range" -- the $err arm of router.serve. */
-    TkRouterErr err = router_serve((TkRouter *)(intptr_t)router_i64, h,
+    TkRouterErr err = router_serve(rt, h,
                                    (uint64_t)port);
     return err.failed ? -1 : 0;
 }
@@ -363,29 +419,33 @@ static int64_t req_copy(const char *s, const char **memo) {
     return req_str(*memo ? *memo : "");
 }
 
+/* 138.63: the TkRouterReq a live req token names, or NULL */
+static TkRouterReq *req_in(int64_t req) { return (TkRouterReq *)tk_handle_token(TK_HK_ROUTERREQ, req); }
+
 int64_t tk_router_reqbody_w(int64_t req) {
-    if (!req) return req_str("");
-    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    TkRouterReq *r = req_in(req);
+    if (!r) return req_str("");
     return req_copy(r->body, &r->cbody);
 }
 int64_t tk_router_reqpath_w(int64_t req) {
-    if (!req) return req_str("");
-    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    TkRouterReq *r = req_in(req);
+    if (!r) return req_str("");
     return req_copy(r->path, &r->cpath);
 }
 int64_t tk_router_reqmethod_w(int64_t req) {
-    if (!req) return req_str("");
-    return req_str(((TkRouterReq *)(intptr_t)req)->method);
+    TkRouterReq *r = req_in(req);
+    if (!r) return req_str("");
+    return req_str(r->method);
 }
 int64_t tk_router_reqquery_w(int64_t req) {
-    if (!req) return req_str("");
-    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    TkRouterReq *r = req_in(req);
+    if (!r) return req_str("");
     return req_copy(r->query, &r->cquery);
 }
 /* router.param(req; name) — value of the :name path param, or "". */
 int64_t tk_router_param_w(int64_t req, int64_t name) {
-    if (!req || !name) return req_str("");
-    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    TkRouterReq *r = req_in(req);
+    if (!r || !name) return req_str("");
     const char *nm = (const char *)(intptr_t)name;
     for (uint64_t i = 0; i < r->nparam; i++)
         if (r->pnames && r->pnames[i] && strcmp(r->pnames[i], nm) == 0) {

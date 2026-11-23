@@ -1,0 +1,17 @@
+id: D701
+series: D
+description: "138.55: a bool passed to a user parameter declared as an opaque std handle ($handle) is E4031 with no fix, as an integer is (138.35)."
+input: |
+  m=a;
+  i=process:std.process;
+  f=w(h:$handle):i64{<process.wait(h)};
+  f=main():i64{
+    let a=w(false);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "bool"

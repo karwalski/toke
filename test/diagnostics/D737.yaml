@@ -1,0 +1,16 @@
+id: D737
+series: D
+description: "138.62: a str where row.bool declares $dbrow -- row.bool(\"x\";\"k\") -- is E4031 with NO fix"
+input: |
+  m=t;
+  i=db:std.db;
+  f=main():i64{
+    let b=mt row.bool("x";"k") {$ok:v v;$err:e false};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "dbrow"

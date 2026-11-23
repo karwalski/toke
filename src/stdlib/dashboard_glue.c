@@ -18,11 +18,18 @@
 #include "chart.h"
 #include "router.h"
 #include "bytes_rt.h"
+#include "tk_runtime.h"   /* 138.63: the handle registry */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* ── dashboard wrappers (dashboard.h) ─────────────────────────────── */
+
+/* 138.63: a $dashboard is registered by address (it is never released from
+ * toke) where dashboard.new hands it out, and every wrapper looks its
+ * argument up first: a value the runtime did not hand out -- `5 as
+ * $dashboard`, a record literal -- is the null dashboard, never read. */
+static TkDashboard *dash_in(int64_t v) { return (TkDashboard *)tk_handle_addr(TK_HK_DASHBOARD, v); }
 /* 136.70: dashboard.new(title:str; cols:u64) -- the documented signature and
  * dashboard_new()'s own.  The wrapper took the title alone and hard-coded
  * 12 grid columns, so the documented `dashboard.new("Metrics"; 2)` was an
@@ -31,6 +38,7 @@ int64_t tk_dashboard_new_w(int64_t title, int64_t cols) {
     const char *t = title ? (const char *)(intptr_t)title : "Dashboard";
     uint32_t n = (cols < 0 || cols > 0xFFFF) ? 0u : (uint32_t)cols;
     TkDashboard *d = dashboard_new(t, n);
+    if (d && !tk_handle_adopt(TK_HK_DASHBOARD, d)) { dashboard_free(d); d = NULL; }
     return (int64_t)(intptr_t)d;
 }
 
@@ -42,7 +50,7 @@ int64_t tk_dashboard_new_w(int64_t title, int64_t cols) {
  * the result is a $dashwidget {id; type; spec}, where it used to be the
  * dashboard pointer. */
 int64_t tk_dashboard_addchart_w(int64_t dash, int64_t id, int64_t chart) {
-    if (!dash || !chart) return 0;
+    if (!dash_in(dash) || !chart) return 0;
     TkChartSpec *spec = chart_spec_from_rec(chart);
     TkDashWidgetRec *w = (TkDashWidgetRec *)malloc(sizeof *w);
     if (!spec || !w) { chart_spec_free_conv(spec); free(w); return 0; }
@@ -58,7 +66,7 @@ int64_t tk_dashboard_addchart_w(int64_t dash, int64_t id, int64_t chart) {
 }
 
 int64_t tk_dashboard_serve_w(int64_t dash, int64_t port) {
-    if (!dash) return -1;
+    if (!dash_in(dash)) return -1;
     TkRouterErr err = dashboard_serve((TkDashboard *)(intptr_t)dash,
                                        (uint64_t)port);
     return err.failed ? -1 : 0;
@@ -72,14 +80,14 @@ int64_t tk_dashboard_serve_w(int64_t dash, int64_t port) {
  * the dashboard code they call, and src/stdlib_deps.c lists dashboard as a
  * dependency of chart. Bodies unchanged. */
 int64_t tk_chart_addchart_w(int64_t dash, int64_t chart) {
-    if (!dash || !chart) return 0;
+    if (!dash_in(dash) || !chart) return 0;
     dashboard_addchart((TkDashboard *)(intptr_t)dash, NULL, NULL,
                         (TkChartSpec *)(intptr_t)chart, 0, 0, 1, 1);
     return dash;
 }
 
 int64_t tk_chart_serve_w(int64_t dash, int64_t port) {
-    if (!dash) return -1;
+    if (!dash_in(dash)) return -1;
     TkRouterErr err = dashboard_serve((TkDashboard *)(intptr_t)dash,
                                        (uint64_t)port);
     return err.failed ? -1 : 0;

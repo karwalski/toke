@@ -59,12 +59,12 @@ f=findindex(id:u64):i64{
 };
 
 
-f=handlelist(req:i64):i64{
+f=handlelist(req:$req):i64{
   <http.resjson(200; bookmarkstojson(store.items))
 };
 
 
-f=handleget(req:i64):i64{
+f=handleget(req:$req):i64{
   let raw=mt http.param(req;"id") {
     $ok:v v;
     $err:e <http.resjson(404; "{\"error\":\"not found\"}")
@@ -81,7 +81,7 @@ f=handleget(req:i64):i64{
 };
 
 
-f=handlecreate(req:i64):i64{
+f=handlecreate(req:$req):i64{
   let body=http.reqbody(req);
   let doc=mt json.dec(body) {
     $ok:d d;
@@ -112,7 +112,7 @@ f=handlecreate(req:i64):i64{
 };
 
 
-f=handledelete(req:i64):i64{
+f=handledelete(req:$req):i64{
   let raw=mt http.param(req;"id") {
     $ok:v v;
     $err:e <http.resjson(404; "{\"error\":\"not found\"}")

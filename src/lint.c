@@ -39,6 +39,9 @@
  *   nested-if-ladder       — (131.64) `el{if(...){...}...}`: an else block
  *                            whose only statement is another if — write
  *                            `el if(...)`; fix splices the inner if up
+ *   negated-equality, negated-comparison, modulo-emulation, nested-if-and
+ *                          — (131.138) the four long forms the pre-132.15
+ *                            spec page prescribed; see rule_page_shapes
  *
  * Fix model: every fixable diagnostic carries [span_start, span_end) and a
  * replacement string ("" = delete). main.c applies fixes right-to-left.
@@ -2293,6 +2296,317 @@ static int check_nested_if_ladder(PatCtx *c, const Node *ifn, int value_pos)
     return rc;
 }
 
+/* ── Rules 8-11: the four pre-132.15 spec-page shapes (131.138) ──────── */
+
+/*
+ * The spec page withdrawn by 132.15 told writers to spell four operators the
+ * long way.  Each long form compiles; each is reported as a hint naming the
+ * operator it stands for:
+ *   negated-equality    `!(a==b)`              -> `a!=b`
+ *   negated-comparison  `!(a<b)` / `!(a>b)`    -> `a>=b` / `a<=b`
+ *   modulo-emulation    `a-a/b*b`, `a-(a/b)*b` -> `a%b`
+ *   nested-if-and       `if(a){if(b){..}}`     -> `if(a&&b){..}`
+ * A `fix` is offered only where the rewrite is the same program in every case:
+ *   - the three operator rules need the checker's types (opts->typed): both
+ *     operands integers (or bools, for `==`).  A float is never fixed: `!=`
+ *     lowers to `fcmp one`, so `!(x==y)` and `x!=y` differ on NaN, and
+ *     `!(x>y)` is true on NaN where `x<=y` is false; `a-a/b*b` on floats is
+ *     not a remainder at all.  Integer `/` truncates and `%` takes the
+ *     dividend's sign, so `a-(a/b)*b` equals `a%b` for every sign; both trap
+ *     RT004 for b==0 and for the most negative value by -1 (the trap message
+ *     names `remainder` instead of `division`).  `a` and `b` must be names,
+ *     field paths or literals written the same both times (no call is
+ *     evaluated twice or once fewer).
+ *   - the `!(..)` rewrite drops a pair of parentheses, so its parent must take
+ *     a comparison as an operand unparenthesised: anything but a unary,
+ *     cast, propagation, field, index or a binary operator other than
+ *     `&&`, `||`, `&`, `|`, `^` (which bind looser than a comparison).
+ *   - nested-if-and: the outer `if` has no `el` and its block holds only the
+ *     inner `if`, which has no `el` either (with an `el` on either, `&&`
+ *     changes behaviour); `&&` short-circuits, so `b` is evaluated exactly
+ *     when it was.  No fix when a comment sits in the outer block or between
+ *     the blocks.  An operand that is an `||` is parenthesised.
+ * A chain `if(a){if(b){if(c){..}}}` is reported once, at its outermost `if`;
+ * the --fix fixpoint loop folds it one level per round.
+ */
+
+/* paren_close — s[open] == '('; offset of the matching ')', -1 when
+ * unbalanced, -2 when a comment opener appears outside a string literal. */
+static int paren_close(const char *s, int len, int open)
+{
+    int depth = 0, i = open;
+    while (i < len) {
+        char ch = s[i];
+        if (ch == '"') { i = skip_str_lit(s, len, i); if (i < 0) return -1; continue; }
+        if (ch == '#') return -2;
+        if (i + 1 < len && ((ch == '(' && s[i + 1] == '*') || (ch == '/' && s[i + 1] == '/')))
+            return -2;
+        if (ch == '(') depth++;
+        else if (ch == ')') { if (--depth == 0) return i; }
+        i++;
+    }
+    return -1;
+}
+
+static int page_int_typed(const Node *n)
+{
+    if (!n) return 0;
+    if (n->kind == NODE_INT_LIT) return 1;
+    if (!n->rtype) return 0;
+    switch (n->rtype->kind) {
+    case TY_I64: case TY_U64: case TY_I8: case TY_I16: case TY_I32:
+    case TY_U8: case TY_U16: case TY_U32:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int page_bool_typed(const Node *n)
+{
+    return n && (n->kind == NODE_BOOL_LIT || (n->rtype && n->rtype->kind == TY_BOOL));
+}
+
+/* A comparison may replace `!(..)` under this parent without parentheses. */
+static int page_parent_takes_compare(const Node *parent)
+{
+    if (!parent) return 0;
+    switch (parent->kind) {
+    case NODE_UNARY_EXPR: case NODE_CAST_EXPR: case NODE_PROPAGATE_EXPR:
+    case NODE_FIELD_EXPR: case NODE_INDEX_EXPR:
+        return 0;
+    case NODE_BINARY_EXPR:
+        return parent->op == TK_AND || parent->op == TK_OR || parent->op == TK_AMP ||
+               parent->op == TK_PIPE || parent->op == TK_CARET;
+    default:
+        return 1;
+    }
+}
+
+/* Same name, field path or literal, written the same way both times. */
+static int page_same_simple(const PatCtx *c, const Node *a, const Node *b)
+{
+    if (!a || !b || a->kind != b->kind) return 0;
+    if (a->kind != NODE_IDENT && a->kind != NODE_FIELD_EXPR && a->kind != NODE_INT_LIT)
+        return 0;
+    if (!is_pure_expr(a, c->src)) return 0;
+    int as = subtree_min_start(a), ae = subtree_max_end(a);
+    int bs = subtree_min_start(b), be = subtree_max_end(b);
+    if (as < 0 || bs < 0 || ae <= as || be <= bs || ae - as != be - bs) return 0;
+    return memcmp(c->src + as, c->src + bs, (size_t)(ae - as)) == 0;
+}
+
+/* `!(a==b)`, `!(a<b)`, `!(a>b)`: n is the `!` UNARY_EXPR. */
+static int check_negated_compare(PatCtx *c, const Node *n, const Node *parent)
+{
+    if (n->op != TK_BANG || n->child_count != 1) return 0;
+    const Node *b = n->children[0];
+    if (!b || b->kind != NODE_BINARY_EXPR || b->child_count != 2) return 0;
+    if (b->op != TK_EQ && b->op != TK_LT && b->op != TK_GT) return 0;
+    const char *s = c->src;
+    int len = c->src_len;
+    int k = n->start + 1;
+    while (k < len && src_is_space(s[k])) k++;
+    if (k >= len || s[k] != '(') return 0;            /* `!x==y` is not the shape */
+    int open = k, close = paren_close(s, len, open);
+    if (close == -1 || b->start <= open || (close >= 0 && b->start >= close)) return 0;
+    int eq = (b->op == TK_EQ);
+    if (eq ? !rule_enabled("negated-equality", c->opts)
+           : !rule_enabled("negated-comparison", c->opts)) return 0;
+    const char *want = eq ? "!=" : (b->op == TK_LT ? ">=" : "<=");
+    const char *have = eq ? "==" : (b->op == TK_LT ? "<" : ">");
+    int oplen = (int)strlen(have);
+
+    int fixable = 0;
+    char *rep = NULL;
+    const Node *l = b->children[0], *r = b->children[1];
+    int typed_ok = c->opts && c->opts->typed &&
+                   ((page_int_typed(l) && page_int_typed(r)) ||
+                    (eq && page_bool_typed(l) && page_bool_typed(r)));
+    if (close > 0 && typed_ok && page_parent_takes_compare(parent) &&
+        b->start + oplen <= close && !strncmp(s + b->start, have, (size_t)oplen) &&
+        (oplen == 2 || (s[b->start + 1] != '=' && s[b->start + 1] != '<' &&
+                        s[b->start + 1] != '>'))) {
+        int pre = b->start - (open + 1), post = close - (b->start + oplen);
+        rep = malloc((size_t)(pre + post) + 3);
+        if (!rep) return -1;
+        memcpy(rep, s + open + 1, (size_t)pre);
+        memcpy(rep + pre, want, 2);
+        memcpy(rep + pre + 2, s + b->start + oplen, (size_t)post);
+        rep[pre + 2 + post] = '\0';
+        fixable = 1;
+    }
+    char msg[200];
+    snprintf(msg, sizeof msg, "`!(a%sb)` negates a comparison toke has as one operator "
+             "— write `a%sb`", have, want);
+    int fe = close > 0 ? close + 1 : n->start;
+    int rc = eq ? lint_push(c->out, "negated-equality", msg, n->start, n->line, n->col,
+                            LINT_HINT, fixable, n->start, fe, rep)
+                : lint_push(c->out, "negated-comparison", msg, n->start, n->line, n->col,
+                            LINT_HINT, fixable, n->start, fe, rep);
+    free(rep);
+    return rc;
+}
+
+/* `a-a/b*b` (also `a-(a/b)*b`): n is the `-` BINARY_EXPR. */
+static int check_modulo_emulation(PatCtx *c, const Node *n)
+{
+    if (n->op != TK_MINUS || n->child_count != 2) return 0;
+    const Node *a = n->children[0], *mul = n->children[1];
+    if (!mul || mul->kind != NODE_BINARY_EXPR || mul->op != TK_STAR || mul->child_count != 2)
+        return 0;
+    const Node *div = mul->children[0], *b2 = mul->children[1];
+    if (!div || div->kind != NODE_BINARY_EXPR || div->op != TK_SLASH || div->child_count != 2)
+        return 0;
+    const Node *a2 = div->children[0], *b = div->children[1];
+    if (!page_same_simple(c, a, a2) || !page_same_simple(c, b, b2)) return 0;
+    if (!rule_enabled("modulo-emulation", c->opts)) return 0;
+
+    int fixable = 0;
+    char *rep = NULL;
+    int ss = subtree_min_start(a), se = subtree_max_end(b2);
+    if (c->opts && c->opts->typed && page_int_typed(a) && page_int_typed(a2) &&
+        page_int_typed(b) && page_int_typed(b2) && ss >= 0 && se > ss &&
+        balanced(c->src, ss, se)) {
+        int al = subtree_max_end(a) - ss, bs = subtree_min_start(b), bl = subtree_max_end(b) - bs;
+        rep = malloc((size_t)(al + bl) + 2);
+        if (!rep) return -1;
+        memcpy(rep, c->src + ss, (size_t)al);
+        rep[al] = '%';
+        memcpy(rep + al + 1, c->src + bs, (size_t)bl);
+        rep[al + 1 + bl] = '\0';
+        fixable = 1;
+    }
+    int rc = lint_push(c->out, "modulo-emulation",
+                       "`a-a/b*b` computes the remainder the long way — write `a%b`",
+                       n->start, n->line, n->col, LINT_HINT, fixable, ss, se, rep);
+    free(rep);
+    return rc;
+}
+
+/* The IF_STMT that is the only statement of ifn's then block, when neither
+ * if has an el. */
+static const Node *sole_then_if(const Node *ifn)
+{
+    if (!ifn || ifn->kind != NODE_IF_STMT || ifn->child_count != 2) return NULL;
+    const Node *th = ifn->children[1];
+    if (!th || th->kind != NODE_STMT_LIST || th->child_count != 1) return NULL;
+    const Node *in = th->children[0];
+    return (in && in->kind == NODE_IF_STMT && in->child_count == 2) ? in : NULL;
+}
+
+/* Offsets of an if's condition parentheses: *open is '(' and *close its ')'. */
+static int if_cond_parens(const PatCtx *c, const Node *ifn, int *open, int *close)
+{
+    int k = ifn->start;
+    if (k < 0 || k + 2 > c->src_len || strncmp(c->src + k, "if", 2) != 0) return 0;
+    k += 2;
+    while (k < c->src_len && src_is_space(c->src[k])) k++;
+    if (k >= c->src_len || c->src[k] != '(') return 0;
+    int e = paren_close(c->src, c->src_len, k);
+    if (e < 0) return 0;
+    *open = k; *close = e;
+    return 1;
+}
+
+/* 1 when cond can stand as an `&&` operand without parentheses: a node the
+ * parser builds at or above parse_and's precedence.  `||`, an `mt` match and
+ * an expression-`if` are accepted only at the top of parse_expr (or, for `||`,
+ * bind looser), so `x&&mt ..` and `if(p){..}el{..}&&x` do not parse; those,
+ * and any kind not listed, are parenthesised. */
+static int and_operand_bare(const Node *cond)
+{
+    if (!cond) return 0;
+    switch (cond->kind) {
+    case NODE_BINARY_EXPR:  return cond->op != TK_OR;
+    case NODE_UNARY_EXPR:   case NODE_CALL_EXPR:  case NODE_CAST_EXPR:
+    case NODE_PROPAGATE_EXPR: case NODE_INDEX_EXPR: case NODE_FIELD_EXPR:
+    case NODE_IDENT:        case NODE_INT_LIT:    case NODE_FLOAT_LIT:
+    case NODE_STR_LIT:      case NODE_BOOL_LIT:   case NODE_FUNC_REF:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int check_nested_if_and(PatCtx *c, const Node *ifn, const Node *grand)
+{
+    const Node *inner = sole_then_if(ifn);
+    if (!inner) return 0;
+    if (grand && sole_then_if(grand) == ifn) return 0;   /* reported at the outer if */
+    if (!rule_enabled("nested-if-and", c->opts)) return 0;
+
+    const char *s = c->src;
+    int len = c->src_len;
+    int fixable = 0, span_s = ifn->start, span_e = ifn->start;
+    char *rep = NULL;
+    do {
+        int ao, ac, bo, bc;
+        if (!if_cond_parens(c, ifn, &ao, &ac) || !if_cond_parens(c, inner, &bo, &bc)) break;
+        int ob = ac + 1;                                 /* outer `{` */
+        while (ob < len && src_is_space(s[ob])) ob++;
+        if (ob >= len || s[ob] != '{') break;
+        int k = ob + 1;
+        while (k < len && src_is_space(s[k])) k++;
+        if (k != inner->start) break;
+        int ocb = match_block_close(s, len, ob);         /* -2: a comment */
+        if (ocb < 0) break;
+        int ib = bc + 1;                                 /* inner `{` */
+        while (ib < len && src_is_space(s[ib])) ib++;
+        if (ib >= len || s[ib] != '{') break;
+        int icb = match_block_close(s, len, ib);
+        if (icb < 0 || icb >= ocb) break;
+        int t = icb + 1;
+        while (t < ocb && src_is_space(s[t])) t++;
+        if (t < ocb && s[t] == ';') t++;
+        while (t < ocb && src_is_space(s[t])) t++;
+        if (t != ocb) break;
+        const Node *ca = ifn->children[0], *cb = inner->children[0];
+        int pa = !and_operand_bare(ca), pb = !and_operand_bare(cb);
+        int al = ac - ao - 1, bl = bc - bo - 1, bodyl = icb + 1 - ib;
+        rep = malloc((size_t)(al + bl + bodyl) + 16);
+        if (!rep) return -1;
+        int w = 0;
+        memcpy(rep + w, "if(", 3); w += 3;
+        if (pa) rep[w++] = '(';
+        memcpy(rep + w, s + ao + 1, (size_t)al); w += al;
+        if (pa) rep[w++] = ')';
+        memcpy(rep + w, "&&", 2); w += 2;
+        if (pb) rep[w++] = '(';
+        memcpy(rep + w, s + bo + 1, (size_t)bl); w += bl;
+        if (pb) rep[w++] = ')';
+        rep[w++] = ')';
+        memcpy(rep + w, s + ib, (size_t)bodyl); w += bodyl;
+        rep[w] = '\0';
+        span_e = ocb + 1; fixable = 1;
+    } while (0);
+
+    int rc = lint_push(c->out, "nested-if-and",
+                       "`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`",
+                       ifn->start, ifn->line, ifn->col, LINT_HINT,
+                       fixable, span_s, span_e, rep);
+    free(rep);
+    return rc;
+}
+
+static int rule_page_shapes(PatCtx *c, const Node *n, const Node *parent,
+                            const Node *grand, int in_fn)
+{
+    if (!n) return 0;
+    if (n->kind == NODE_FUNC_DECL) in_fn = 1;
+    if (in_fn) {
+        int rc = 0;
+        if (n->kind == NODE_UNARY_EXPR) rc = check_negated_compare(c, n, parent);
+        else if (n->kind == NODE_BINARY_EXPR) rc = check_modulo_emulation(c, n);
+        else if (n->kind == NODE_IF_STMT) rc = check_nested_if_and(c, n, grand);
+        if (rc < 0) return -1;
+    }
+    /* An if's grandparent through its then block: if -> STMT_LIST -> if. */
+    for (int i = 0; i < n->child_count; i++)
+        if (rule_page_shapes(c, n->children[i], n, parent, in_fn) < 0) return -1;
+    return 0;
+}
+
 /* ── Pattern walker ───────────────────────────────────────────────────── */
 
 /* 127.33 — value position.  The parser yields the same NODE_IF_STMT for the
@@ -2387,6 +2701,7 @@ int tkc_lint(const Node *ast, const char *src, int src_len,
     collect_aliases(ast, &c.aliases);
     if (pattern_walk(&c, ast, NULL, 0, 0) < 0) return -1;
     if (rule_concat_chain(&c, ast) < 0) return -1;
+    if (rule_page_shapes(&c, ast, NULL, NULL, 0) < 0) return -1;   /* 131.138 */
 
     return 0;
 }

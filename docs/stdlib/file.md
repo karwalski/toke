@@ -426,9 +426,8 @@ i=file:std.file;
 i=s:std.str;
 
 f=inside(root:$str;p:$str):bool{
-  let r=mt file.realpath(root) {$ok:t t;$err:e ""};
-  let q=mt file.realpath(p) {$ok:t t;$err:e ""};
-  if(s.len(r)==0){<false};
+  let r=mt file.realpath(root) {$ok:t t;$err:e <false};
+  let q=mt file.realpath(p) {$ok:t t;$err:e <false};
   <s.startswith(q;s.concat(r;"/"))
 };
 ```
@@ -463,15 +462,15 @@ f=countlines(content:$str):i64{
 f=summarize(dir:$str):i64{
   let entries=mt file.list(dir) {
     $ok:e  e;
-    $err:e @()
+    $err:e <1
   };
 
   let total=mut.0;
   lp(let i=0;i<entries.len;i=i+1){
-    let name=mt entries.get(i) {$ok:v v;$err:e ""};
+    let name=mt entries.get(i) {$ok:v v;$err:e <1};
     let path=str.concat(dir;str.concat("/";name));
     let r=file.read(path);
-    let n=mt r {$ok:content countlines(content);$err:e 0};
+    let n=mt r {$ok:content countlines(content);$err:e <1};
     total=total+n;
     log.info(name;@())
   };

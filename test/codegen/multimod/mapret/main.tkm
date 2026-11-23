@@ -2,17 +2,18 @@
  * user module was left untyped by the checker, and the emitter (which decides
  * map vs array from the checker's type since 127.52) lowered `.get(k)` as an
  * array index: RT003 with the key's address as the index.  Bound to a `let`
- * and used in place.  Expected output below is the correct one. *)
+ * and used in place.  Expected output below is the correct one.  Each lookup is
+ * read through `mt`: a map lookup is a union since 127.323 (127.510). *)
 m=cgmm.mapmain;
 i=io:std.io;
 i=ml:cgmm.maplib;
 f=main():i64{
   let c=ml.counts();
-  io.println("\(c.len) \(c.get("a")) \(c.get("b"))");
+  io.println("\(c.len) \(mt c.get("a"){$ok:v v;$err:e 0}) \(mt c.get("b"){$ok:v v;$err:e 0})");
   let k=c.keys;
   io.println("\(k.len)");
-  io.println("\(ml.counts().get("b"))");
+  io.println("\(mt ml.counts().get("b"){$ok:v v;$err:e 0})");
   let n=ml.names();
-  io.println("\(n.get("y")) \(ml.names().get("x"))");
+  io.println("\(mt n.get("y"){$ok:v v;$err:e ""}) \(mt ml.names().get("x"){$ok:v v;$err:e ""})");
   <0
 };

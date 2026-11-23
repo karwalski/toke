@@ -48,7 +48,7 @@ A trained k-means model holding all cluster centroids.
 
 ### $dtreemodel
 
-Opaque handle to a trained decision tree. The internal structure (node array, split thresholds, leaf values) is managed by the runtime; use `ml.dtreepredict` to query it.
+Opaque handle to a trained decision tree. The internal structure (node array, split thresholds, leaf values) is managed by the runtime; use `ml.dtreepredict` to query it. `ml.dtreepredict` answers `""` for any model `ml.dtreefit` did not return, a record literal included (138.63).
 
 ### $mlerr
 

@@ -1347,6 +1347,8 @@ check-docs: $(BIN)
 	python3 scripts/check_doc_site_links.py --self-test  # 132.111; TOKE_WORKSPACE exported globally (132.112)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
+	python3 scripts/check_tutorial_fragments.py --self-test  # 127.486: tutorial fences are
+	python3 scripts/check_tutorial_fragments.py              # example excerpts or compile
 	python3 scripts/render_cli_reference.py --selftest  # 132.135: docs/reference/cli.md
 	python3 scripts/render_cli_reference.py --check     # matches `tkc --help` (TKC above)
 
@@ -2264,8 +2266,9 @@ test-stdlib-args:
 	$(RUN_TEST) ./test/stdlib/test_args
 
 test-stdlib-map:
-	$(CC) $(CFLAGS) -o test/stdlib/test_map \
-	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c
+	$(CC) $(CFLAGS) -DTK_TEST_REAL_RUNTIME -o test/stdlib/test_map \
+	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c src/stdlib/str.c \
+	    src/stdlib/tk_runtime.c src/stdlib/capabilities.c src/stdlib/args.c
 	$(RUN_TEST) ./test/stdlib/test_map
 
 test-stdlib-md: $(CMARK_TEST_OBJS)
@@ -2281,9 +2284,9 @@ test-stdlib-toml: $(TOML_TEST_OBJS)
 # Story 127.67: the std.toml wrappers must distinguish a value of false/0
 # from an error, and a missing section must not resolve to its parent.
 test-stdlib-toml-glue: $(TOML_TEST_OBJS)
-	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
+	$(CC) $(CFLAGS) $(TOML_FLAGS) -DTK_TEST_REAL_RUNTIME -o test/stdlib/test_toml_glue \
 	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/file.c src/stdlib/str.c src/stdlib/toml_glue.c \
-	    src/stdlib/capabilities.c $(TOML_TEST_OBJS) -lpthread
+	    src/stdlib/capabilities.c src/stdlib/tk_runtime.c src/stdlib/args.c $(TOML_TEST_OBJS) -lpthread
 	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────

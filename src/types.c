@@ -552,9 +552,15 @@ static int int_lit_zero(const char *src, const Node *n) {
     return n && n->kind == NODE_INT_LIT && lit_int_value(src, n, &neg, &m)
            && !neg && m == 0;
 }
+/* 138.55: a bool is judged as an integer is.  It reached the slot through
+ * scalar_int_type (136.36's handle-as-integer compatibility), and
+ * `process.wait(true)` handed the runtime handle 1.  `false` is not the
+ * literal 0 and is refused too: the null handle is spelled 0. */
 static int forged_handle_arg(const char *src, const Node *an, const Type *at,
                              const Type *pt) {
-    return opaque_handle_type(pt) && is_integer(at) && !int_lit_zero(src, an);
+    return opaque_handle_type(pt)
+           && (is_integer(at) || (at && at->kind == TY_BOOL))
+           && !int_lit_zero(src, an);
 }
 static int lit_narrows(const char *src, const Node *n, const Type *to) {
     if (!n || !to) return 0;
@@ -2800,6 +2806,158 @@ static const char *unimported_user_ret(Ctx *cx, const Node *base,
 }
 
 /*
+ * 138.58 — the same refusal (138.40) for a record of an unimported module
+ * that is reached THROUGH another value rather than returned bare: an
+ * element of an array or map a user-module call returns (`rs.get(0).text`,
+ * `srv.many(x).get(0).text`, `m.get(k).text`), the `$ok` payload of its
+ * `T!E` or the `$err` one, a sum type's variant payload bound by an `mt`
+ * arm, and a field of an imported record whose own type is such a record
+ * (`wr.r.text`).  Codegen registers only the records of imported modules
+ * and answers each of these with E4034; --check passed them.
+ *
+ * decl_spell follows the value back to the declared .tki spelling of its
+ * type -- through un-annotated `let`/`mut` bindings, `.get(..)` on an array
+ * (`[T]` -> T) or a map (`[K:V]` -> V), an imported record's field, and an
+ * `mt` arm binding -- and answers it in `out` ("res", "[res]", "res!perr"),
+ * or NULL when the value does not come from a user-module call.  `callee`
+ * receives the call it came from.
+ */
+static const char *decl_elem_spell(Ctx *cx, const Node *coll, char *out,
+                                   size_t outsz, char *callee,
+                                   size_t calleesz, int depth);
+static const char *decl_spell(Ctx *cx, const Node *e, char *out, size_t outsz,
+                              char *callee, size_t calleesz, int depth) {
+    if (!e || depth > 8) return NULL;
+    if (e->kind == NODE_IDENT) {
+        char nb[128]; TOKSTR(nb, cx->src, e);
+        if (!cx->fn_node) return NULL;
+        const Node *use = in_tree_use(cx, e);
+        const Node *b = tk_binder_at(cx->fn_node, cx->src, use, nb,
+                                     (int)strlen(nb), NULL);
+        if (!b) return NULL;
+        if (b->kind == NODE_BIND_STMT || b->kind == NODE_MUT_BIND_STMT) {
+            if (b->child_count != 2) return NULL;   /* annotated: not judged */
+            return decl_spell(cx, b->children[1], out, outsz, callee,
+                              calleesz, depth + 1);
+        }
+        if (b->kind != NODE_MATCH_ARM || b->child_count < 3) return NULL;
+        const Node *root = cx->fn_node;
+        const Node *mt = parent_of(root, b);
+        if (!mt || mt->kind != NODE_MATCH_STMT || mt->child_count < 2)
+            return NULL;
+        char sc[256];
+        if (!decl_spell(cx, mt->children[0], sc, sizeof sc, callee, calleesz,
+                        depth + 1)) return NULL;
+        char lb[128]; TOKSTR(lb, cx->src, b->children[0]);
+        const char *lab = lb[0] == '$' ? lb + 1 : lb;
+        char *bang = strchr(sc, '!');
+        if (bang) {                               /* a T!E */
+            *bang = '\0';
+            if (!strcmp(lab, "ok")) { snprintf(out, outsz, "%s", sc); return out; }
+            if (!strcmp(lab, "err")) { snprintf(out, outsz, "%s", bang + 1); return out; }
+            return NULL;
+        }
+        const ImportedType *st = imported_type_lookup(cx->env->names, sc);
+        if (st && st->is_sum) {
+            for (int i = 0; i < st->field_count; i++)
+                if (st->field_names[i] && !strcmp(st->field_names[i], lab)
+                    && st->field_types && st->field_types[i]) {
+                    snprintf(out, outsz, "%s", st->field_types[i]);
+                    return out;
+                }
+            return NULL;
+        }
+        if (!strcmp(lab, "ok")) { snprintf(out, outsz, "%s", sc); return out; }
+        return NULL;
+    }
+    if (e->kind == NODE_FIELD_EXPR && e->child_count >= 2) {
+        Type *bt = e->children[0] ? e->children[0]->rtype : NULL;
+        char fb[128]; TOKSTR(fb, cx->src, e->children[1]);
+        if (!bt || bt->kind != TY_STRUCT || !bt->name) return NULL;
+        const ImportedType *it = imported_type_lookup(cx->env->names, bt->name);
+        if (!it || it->is_sum || it->is_std) return NULL;
+        for (int i = 0; i < it->field_count; i++)
+            if (it->field_names[i] && !strcmp(it->field_names[i], fb)
+                && it->field_types && it->field_types[i]) {
+                snprintf(out, outsz, "%s", it->field_types[i]);
+                snprintf(callee, calleesz, "the field '%s' of '$%s'", fb, bt->name);
+                return out;
+            }
+        return NULL;
+    }
+    if (e->kind == NODE_INDEX_EXPR && e->child_count == 2)  /* `.get(i)` */
+        return decl_elem_spell(cx, e->children[0], out, outsz, callee,
+                               calleesz, depth);
+    if (e->kind != NODE_CALL_EXPR || e->child_count < 1) return NULL;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2) return NULL;
+    if (user_module_call(cx, e)) {
+        char ab[128]; TOKSTR(ab, cx->src, cal->children[0]);
+        char mb[128]; TOKSTR(mb, cx->src, cal->children[1]);
+        const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+        if (!f || f->abi_ret) return NULL;
+        /* a `T!E` export records T as okret and an empty ret (127.180) */
+        const char *rt = (f->ret && f->ret[0]) ? f->ret : f->okret;
+        if (!rt || !rt[0]) return NULL;
+        if (f->errty && f->errty[0] && !strchr(rt, '!'))
+            snprintf(out, outsz, "%s!%s", rt, f->errty);
+        else
+            snprintf(out, outsz, "%s", rt);
+        snprintf(callee, calleesz, "'%s.%s'", ab, mb);
+        return out;
+    }
+    /* `.get(..)` on an array or a map a user-module call returns */
+    char mb[64]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "get") != 0 || e->child_count != 2) return NULL;
+    return decl_elem_spell(cx, cal->children[0], out, outsz, callee,
+                           calleesz, depth);
+}
+/* decl_elem_spell -- the element spelling of the `[T]` (T) or `[K:V]` (V)
+ * that decl_spell answers for `coll`. */
+static const char *decl_elem_spell(Ctx *cx, const Node *coll, char *out,
+                                   size_t outsz, char *callee,
+                                   size_t calleesz, int depth) {
+    char rs[256];
+    if (!decl_spell(cx, coll, rs, sizeof rs, callee, calleesz,
+                    depth + 1)) return NULL;
+    size_t n = strlen(rs);
+    if (n < 3 || rs[0] != '[' || rs[n - 1] != ']') return NULL;
+    rs[n - 1] = '\0';
+    const char *in = rs + 1, *el = in;
+    int lvl = 0;
+    for (const char *q = in; *q; q++) {           /* a top-level ':' => map */
+        if (*q == '[' || *q == '(') lvl++;
+        else if (*q == ']' || *q == ')') lvl--;
+        else if (*q == ':' && lvl == 0) { el = q + 1; break; }
+    }
+    snprintf(out, outsz, "%s", el);
+    return out;
+}
+/* unimported_decl_rec — decl_spell's answer when it is a bare record name
+ * that no imported module and nothing this file declares provides (the
+ * 138.40 test), else NULL. */
+static const char *unimported_decl_rec(Ctx *cx, const Node *base,
+                                       char *out, size_t outsz,
+                                       char *callee, size_t calleesz) {
+    static const char *const scal[] = {
+        "i64","u64","f64","str","bool","void","i8","i16","i32","u8","u16",
+        "u32","f32","byte","any",NULL };
+    char sp[256];
+    callee[0] = '\0';
+    if (!decl_spell(cx, base, sp, sizeof sp, callee, calleesz, 0)) return NULL;
+    const char *r = sp[0] == '$' ? sp + 1 : sp;
+    if (!*r) return NULL;
+    for (const char *q = r; *q; q++)
+        if (!((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+              || (*q >= '0' && *q <= '9') || *q == '_')) return NULL;
+    for (int i = 0; scal[i]; i++) if (!strcmp(r, scal[i])) return NULL;
+    if (imported_type_lookup(cx->env->names, r)) return NULL;
+    if (tc_lookup(cx->env->names->module_scope, r, (int)strlen(r))) return NULL;
+    snprintf(out, outsz, "%s", r);
+    return out;
+}
+
+/*
  * bind_init_type — the type of an *un-annotated* binding `let x = init`,
  * recovered from its initialiser, or NULL when the checker must keep the
  * binding unknown.
@@ -4246,6 +4404,12 @@ static void tki_member_sig(const ImportedFunc *f, const char *alias,
     if (used + 2 < outsz) { out[used++] = ')'; out[used] = '\0'; }
 }
 
+/* 138.51: E4026 carries no `fix` -- which side is wrong (the call, or an
+ * interface that disagrees with its implementation) is not decidable at the
+ * call site -- so the advice that used to be the `fix` ends the message. */
+#define E4026_ADVICE "match the call to the declaration, or reconcile the " \
+                     "interface with the implementation if they disagree"
+
 static void tki_arity_error(const Node *call, const char *what,
                             const char *mpath, const char *member,
                             const char *decl, int expected, int actual) {
@@ -4255,23 +4419,20 @@ static void tki_arity_error(const Node *call, const char *what,
     if (decl && decl[0])
         snprintf(msg, sizeof msg,
                  "wrong number of arguments for '%s.%s': the %s declares "
-                 "%s — %d argument%s, the call passes %d",
+                 "%s — %d argument%s, the call passes %d; " E4026_ADVICE,
                  mpath, member, what, decl, expected,
                  expected == 1 ? "" : "s", actual);
     else
         snprintf(msg, sizeof msg,
                  "wrong number of arguments for '%s.%s': the %s takes %d "
-                 "argument%s, the call passes %d",
+                 "argument%s, the call passes %d; " E4026_ADVICE,
                  mpath, member, what, expected,
                  expected == 1 ? "" : "s", actual);
-    /* AGENTS.md §6 — the `fix` is guidance that holds in every case this
-     * fires. It must not say "add an argument": the interface and the
-     * implementation may be the two things that disagree (Epic 136), and then
-     * changing the call is the wrong remedy. */
+    /* AGENTS.md §6 — no `fix` (138.51): the interface and the implementation
+     * may be the two things that disagree (Epic 136), so no one edit is right
+     * in every case; the advice is in the message. */
     diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
               "expected", exp_str, "got", got_str,
-              "fix", "match the call to the declaration, or reconcile the "
-                     "interface with the implementation if they disagree",
               (const char *)NULL);
 }
 
@@ -4851,7 +5012,53 @@ static void check_json_opaque_arg(Ctx *cx, const Node *call, const char *mpath,
               "got", got, (const char *)NULL);
 }
 
+/* 127.497 -- the element of an array argument against the element of the
+ * array a std interface declares, by the representation class
+ * check_tki_arg_types judges a scalar by (tki_arg_class): nested arrays are
+ * followed down, an unknown element (an empty literal) or an opaque handle
+ * is not judged, and an integer where a record is declared is a handle, as
+ * at the top level.  1 when the classes differ. */
+static int std_elem_clash(const Type *at, const Type *pt) {
+    for (int d = 0; d < 8 && at && pt && at->kind == TY_ARRAY
+                    && pt->kind == TY_ARRAY; d++) {
+        at = at->elem; pt = pt->elem;
+    }
+    int ac = tki_arg_class(at), pc = tki_arg_class(pt);
+    if (!ac || !pc || ac == pc) return 0;
+    if (pc == 6 && ac == 2) return 0;
+    return 1;
+}
 static Type *std_array_ret(Ctx *cx, const Node *n, int depth);   /* 127.314 */
+/* 138.62: the std interface function a SUB-namespace call names -- the
+ * export spelled "<prefix>.<member>" verbatim (std.db's "row.str") in an
+ * interface imported from a std module -- with that module's path written
+ * into buf; NULL when there is none.  names.c registers the prefix as an
+ * import alias from the same exports (Story 7.6.1), and the emitter lowers
+ * the call to tk_<prefix>_<member>_w. */
+static const ImportedFunc *std_subnamespace_func(Ctx *cx, const char *prefix,
+                                                 const char *member,
+                                                 char *buf, size_t bufsz) {
+    const NameEnv *env = cx->env->names;
+    /* Only the prefixes the emitter lowers as a sub-namespace
+     * (llvm.c resolve_sub_namespace_call: "row").  dataframe's "df." and
+     * template's "tpl." exports lower another way and are not this story. */
+    if (strcmp(prefix, "row") != 0) return NULL;
+    char want[256];
+    int n = snprintf(want, sizeof want, "%s.%s", prefix, member);
+    if (n < 0 || n >= (int)sizeof want) return NULL;
+    for (int i = 0; i < env->ifunc_count; i++) {
+        const ImportedFunc *f = &env->ifuncs[i];
+        if (!f->fn || !f->alias || strcmp(f->fn, want) != 0) continue;
+        if (strcmp(f->alias, prefix) == 0) continue;   /* an ordinary import */
+        const char *mp = import_module_path(cx, f->alias, buf, bufsz);
+        if (mp && strncmp(mp, "std.", 4) == 0) {
+            if (mp != buf) snprintf(buf, bufsz, "%s", mp);
+            return f;
+        }
+    }
+    return NULL;
+}
+
 static void check_tki_arg_types(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !cx->env || !cx->env->names) return;
     const Node *callee = call->children[0];
@@ -4863,6 +5070,16 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
     char member[128]; TOKSTR(member, cx->src, callee->children[1]);
     char mbuf[256];
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    /* 138.62: a std SUB-NAMESPACE call (`row.str(r;"k")`: std.db exports
+     * "row.str") names no import, so it was never judged -- `row.str(5;"k")`
+     * checked clean and died with SIGSEGV.  It is resolved the way the
+     * emitter's call works: the std interface that exports "<alias>.<member>"
+     * verbatim, judged against that module's record. */
+    const ImportedFunc *subf = NULL;
+    if (!mpath) {
+        subf = std_subnamespace_func(cx, alias, member, mbuf, sizeof mbuf);
+        if (subf) mpath = mbuf;
+    }
     if (!mpath || strncmp(mpath, "std.", 4) != 0) return;
     Decl *ad = tc_lookup(cx->env->names->module_scope, alias, (int)strlen(alias));
     if (ad && (ad->kind == DECL_FUNC || ad->kind == DECL_CONST ||
@@ -4906,7 +5123,8 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
         check_json_opaque_arg(cx, call, mpath, alias, member);      /* 127.402 */
     }
 
-    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
+    const ImportedFunc *f = subf ? subf
+        : imported_func_lookup(cx->env->names, alias, member);
     if (!f || f->abi_ret || !f->param_types || f->param_count != actual) return;
     /* A symbol codegen redirects by argument type accepts every kind
      * (`j.enc(x)` -> tk_json_encarr_w / encbool / encf64 / encnum): the same
@@ -5012,13 +5230,41 @@ static void check_tki_arg_types(Ctx *cx, const Node *call) {
              * a number where a str is read, a str or a record where a number
              * is, an array where a scalar is. */
             int ac = tki_arg_class(at), pc = tki_arg_class(pt);
-            if (!ac || !pc || ac == pc) continue;
-            /* An integer where a RECORD is declared is a handle: std callbacks
-             * hand their record as an i64 (`f=onconn(conn:i64)` for tls.listen,
-             * then `tls.read(conn)` -- conform C022), and every record crosses
-             * the ABI as an i64 slot.  The reverse (a record where a number is
-             * read) stays judged. */
-            if (pc == 6 && ac == 2) continue;
+            /* 127.497: an array against an array is judged by its element
+             * class too, as a user call is: `csv.serialize(@("a";"b"))`
+             * passed where `[[str]]` is declared, and the glue read each
+             * char* as a row array (handle[-1]). */
+            if (!ac || !pc || (ac == pc && !(ac == 4 && std_elem_clash(at, pt))))
+                continue;
+            /* An integer where a RECORD is declared used to pass as a handle
+             * (a std callback's `f=onconn(conn:i64)` for tls.listen, then
+             * `tls.read(conn)`).  138.46 (the T-67 class, owner answer T-67
+             * extended from opaque records by the Z213 survey): the runtime
+             * reads through a std record -- http.clientget(5;..),
+             * tls.read(5), svg.render(5), image.fliph(5), vecstore.flush(5)
+             * all checked clean and died with SIGSEGV (and std.db's `row.`
+             * calls, judged here since 138.62) -- so
+             * only the literal 0 (the null record) may stand for one; a
+             * callback declares its parameter with the record's type
+             * (`conn:$tlsconn`).  E4031, no `fix`: retyping the parameter or
+             * passing the record itself are both repairs.  The reverse (a
+             * record where a number is read) stays judged. */
+            if (pc == 6 && ac == 2) {
+                if (int_lit_zero(cx->src, an)) continue;
+                if (!tc_first_report(cx, an) || !tc_can_emit(cx)) return;
+                char msg[512], en[96], gn[96];
+                snprintf(en, sizeof en, "%s", type_name(pt));
+                snprintf(gn, sizeof gn, "%s", type_name(at));
+                snprintf(msg, sizeof msg,
+                         "type mismatch: argument %d of '%s.%s' is declared "
+                         "'%s' (%s.tki), got '%s' -- the runtime reads a std "
+                         "record through its address, so only the record "
+                         "itself or the literal 0 may be passed",
+                         i + 1, alias, member, en, mpath + 4, gn);
+                diag_emit(DIAG_ERROR, E4031, an->start, an->line, an->col,
+                          msg, "expected", en, "got", gn, (const char *)NULL);
+                continue;
+            }
             if (pc == 6 && at->kind == TY_STRUCT && pt->kind == TY_STRUCT
                 && at->name && pt->name && strcmp(at->name, pt->name) == 0) continue;
         }
@@ -5588,14 +5834,12 @@ static void recv_arity_error(const Node *call, const char *member,
              "%d argument%s including the receiver, the call passes %d%s",
              member, expected, expected == 1 ? "" : "s", actual,
              note ? note : "");
-    /* AGENTS.md §3.1 — the `fix` must hold in every case this fires. It must
-     * not say "remove an argument": too few is the same diagnostic as too
-     * many, and the surplus-argument form was silently DROPPING them, so the
-     * author's intent is not recoverable from the call site. */
+    /* AGENTS.md §6 — no `fix` (138.51): too few is the same diagnostic as
+     * too many, and the surplus-argument form was silently DROPPING them, so
+     * the author's intent is not recoverable from the call site.  The message
+     * already says the receiver counts as the first argument. */
     diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
               "expected", exp_str, "got", got_str,
-              "fix", "match the call to the method's signature; the receiver "
-                     "is its first argument",
               (const char *)NULL);
 }
 
@@ -5679,19 +5923,17 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
             int actual = call->child_count - 1;
             if (abi >= 0 && actual != abi && tc_first_report(cx, call) &&
                 tc_can_emit(cx)) {
-                char msg[384], exp_str[16], got_str[16];
+                char msg[512], exp_str[16], got_str[16];
                 snprintf(exp_str, sizeof exp_str, "%d", abi);
                 snprintf(got_str, sizeof got_str, "%d", actual);
                 snprintf(msg, sizeof msg,
                          "wrong number of arguments for '%s.%s.%s': the "
                          "implementation takes %d argument%s, the call "
-                         "passes %d",
+                         "passes %d; " E4026_ADVICE,
                          alias, seg, member, abi, abi == 1 ? "" : "s", actual);
+                /* 138.51: no `fix` (see E4026_ADVICE). */
                 diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col,
                           msg, "expected", exp_str, "got", got_str,
-                          "fix", "match the call to the declaration, or "
-                                 "reconcile the interface with the "
-                                 "implementation if they disagree",
                           (const char *)NULL);
             }
             return;
@@ -8081,9 +8323,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 char exp_str[16], got_str[16];
                 snprintf(exp_str,sizeof(exp_str),"%d",pi);
                 snprintf(got_str,sizeof(got_str),"%d",actual_args);
+                /* 138.51: no `fix` -- "check the signature" restated the
+                 * error; which argument to add or drop is not decidable. */
                 diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
                           "expected",exp_str,"got",got_str,
-                          "fix","check the function signature for the correct number of parameters",
                           (const char*)NULL);
             }
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
@@ -8570,8 +8813,55 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 }
                 return mk_type(A,TY_UNKNOWN);
             }
+            /* 138.58: the same record reached through an array or map
+             * element, a T!E or sum payload, or an imported record's field. */
+            if (unimported_decl_rec(cx,node->children[0],rn,sizeof rn,cn,sizeof cn)) {
+                if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                    char msg[700], got[160];
+                    snprintf(msg,sizeof(msg),
+                             "field '%s' is read on a value whose type is not "
+                             "established: it is '$%s' (from %s), a type of a module "
+                             "this file does not import",
+                             fname,rn,cn);
+                    snprintf(got,sizeof(got),"$%s",rn);
+                    diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                              "expected","a value of an established struct type",
+                              "got",got,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
         }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
+        /* 138.65: a field of an `"opaque": true` std type ($csvreader,
+         * $csvwriter, $dataframe, $router, $jsonstream, ...).  Its .tki
+         * fields describe no layout toke can read: the value is a C object
+         * (or, since 138.63, a registry token), and codegen loaded slot
+         * <index> of it -- `w.sep` on a csv.writer(44) printed 0,
+         * `d.ncols` on a frame printed the column array's address, and
+         * `r.pos` on a $csvreader died with SIGSEGV.  A std record whose
+         * fields ARE its C layout (checked by `make check-tki-layout`) is
+         * not marked opaque.  A type this module declares is its own.  No
+         * `fix`: which module function the program meant is not decidable. */
+        if (base->name && cx->env->names) {
+            const ImportedType *oit = imported_type_lookup(cx->env->names, base->name);
+            Decl *ld = tc_lookup(cx->env->names->module_scope, base->name,
+                                 (int)strlen(base->name));
+            if (oit && oit->is_std && oit->is_opaque
+                && !(ld && ld->def_node && ld->def_node->kind == NODE_TYPE_DECL)) {
+                if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                    char msg[512], got[192];
+                    snprintf(msg,sizeof(msg),
+                             "'$%s' is an opaque std type: field '%s' is not "
+                             "readable from toke; use the module's functions",
+                             base->name,fname);
+                    snprintf(got,sizeof(got),"$%s.%s",base->name,fname);
+                    diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                              "expected","a record whose fields toke can read",
+                              "got",got,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+        }
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
                 return base->field_types[i];

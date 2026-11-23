@@ -134,7 +134,7 @@ clean c5 'a let-bound union matched later' \
 clean c6 'a mut binding later ASSIGNED a call and matched (135.16a, C067)' \
   "m=c6;${H}f=main():i64{let r=mut.0;r=str.toint(\"0\");io.println(mt r{\$ok:v \"ok|\\(v)\";\$err:e \"err\"});<0};"
 clean c7 'a void!E std call in tail position is a void call' \
-  "m=c7;i=sse:std.sse;f=j(c:i64):i64{if(c>0){<1};sse.emitdata(c;\"x\")};f=main():i64{<0};"
+  "m=c7;i=sse:std.sse;f=j(c:\$ssectx;k:i64):i64{if(k>0){<1};sse.emitdata(c;\"x\")};f=main():i64{<0};"
 
 # ── and lowers as it did ─────────────────────────────────────────────────
 runs r1 'mt on str.toint / str.slice: ok and err values' '42 -1 b E ' \

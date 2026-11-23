@@ -367,14 +367,23 @@ int64_t tk_ml_dtreefit_w(int64_t rows, int64_t labels, int64_t maxdepth) {
     model->nodes    = (int64_t)h->tree.nnodes;
     model->maxdepth = maxdepth;
     model->arena    = (int64_t)(intptr_t)h;
+    /* 138.63: registered by address (toke reads .nodes/.maxdepth; a model is
+     * never released), so ml.dtreepredict reads only a model it made */
+    if (!tk_handle_adopt(TK_HK_DTREEMODEL, model)) {
+        ml_dtree_free(&h->tree); free((void *)h->vocab.names); free(h); free(model);
+        return ml_slot(0, tk_ml_dtreefit_fail);
+    }
     return ml_slot((int64_t)(intptr_t)model, tk_ml_dtreefit_fail);
 }
 
 /* ml.dtreepredict(model; point) : $str — the caller's own label string.
- * Returns "" for the empty `$dtreemodel{}` the docs use as an error arm. */
+ * Returns "" for the empty `$dtreemodel{}` the docs use as an error arm.
+ * 138.63: and for any model ml.dtreefit did not make -- a record literal,
+ * `5 as $dtreemodel` -- whose .arena it used to follow. */
 int64_t tk_ml_dtreepredict_w(int64_t model, int64_t point) {
-    if (!model || !point) return (int64_t)(intptr_t)"";
-    MlDTree *h = (MlDTree *)(intptr_t)((const TkDTreeModelRec *)(intptr_t)model)->arena;
+    const TkDTreeModelRec *rec = (const TkDTreeModelRec *)tk_handle_addr(TK_HK_DTREEMODEL, model);
+    if (!rec || !point) return (int64_t)(intptr_t)"";
+    MlDTree *h = (MlDTree *)(intptr_t)rec->arena;
     if (!h || h->tree.nnodes == 0) return (int64_t)(intptr_t)"";
     uint64_t pn = 0;
     double *p = ml_point(point, &pn);

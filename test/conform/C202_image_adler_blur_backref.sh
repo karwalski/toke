@@ -52,7 +52,12 @@ cat > "${WORK}/t.c" <<'C'
 #include "image.c"          /* for the static outbuf_push_backref */
 #include "bytes_rt.h"
 
-_Thread_local int64_t tk_current_error;
+/* 127.504: the slot is the first member of the runtime's thread-local object
+ * (tk_runtime.h); a stand-in defines the object, not an int64_t. */
+#include "tk_runtime.h"
+#undef tk_current_error
+TK_TLS TkErrTls tk_current_error;
+#define tk_current_error (tk_current_error.slot)
 int64_t tk_image_fromraw_w(int64_t bytes, int64_t width, int64_t height, int64_t channels);
 int64_t tk_image_blur_w(int64_t buf, int64_t passes);
 int64_t tk_image_pixelat_w(int64_t buf, int64_t x, int64_t y);

@@ -1,0 +1,30 @@
+id: D730
+series: D
+description: "lint negated-equality / negated-comparison (131.138): `!(a==b)`, `!(a>b)` and `!(a<b)` on integers are hints with a fix (`a!=b`, `a<=b`, `a>=b`), also under `&&`; --fix is idempotent"
+input: |
+  m=t;
+  f=g(a:i64;b:i64):i64{
+    let n=mut.0;
+    if(!(a==b)){n=n+1};
+    if(!(a>b)){n=n+2};
+    if(!(a<b)&&!(b==0)){n=n+4};
+    <n
+  };
+  f=main():i64{
+    <g(3;5)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["negated-equality", "negated-comparison"]
+expected_fixed_output: |
+  m=t;
+  f=g(a:i64;b:i64):i64{
+    let n=mut.0;
+    if(a!=b){n=n+1};
+    if(a<=b){n=n+2};
+    if(a>=b&&b!=0){n=n+4};
+    <n
+  };
+  f=main():i64{
+    <g(3;5)
+  };

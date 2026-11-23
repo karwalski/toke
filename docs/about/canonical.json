@@ -1,7 +1,7 @@
 {
   "schema": "toke-canonical-facts/1",
   "story": "132.1",
-  "updated": "2026-11-22",
+  "updated": "2026-11-23",
   "companion": "docs/about/canonical.md",
   "rules": [
     "Every downstream surface (site, llms.txt, every repo README, registry descriptions, model cards) copies the strings in `blocks` word for word. Do not paraphrase.",
@@ -22,9 +22,9 @@
     "source": "docs/about/positioning-2026-09.md §1; docs/spec/toke-spec-v0.4.md"
   },
   "purpose_one_sentence": {
-    "value": "toke is a compiled programming language designed for LLM code generation: small, strictly structured, and canonical, so that generated code is cheap to constrain while it is being produced, cheap for a compiler to verify once it is, and compact in whatever unit the model generates in.",
+    "value": "toke is a compiled programming language designed for LLM code generation: small, strictly structured, and canonical, so that generated code is cheap to constrain while it is being produced and cheap for a compiler to verify once it is.",
     "verbatim": true,
-    "source": "docs/about/positioning-2026-09.md §1 (story 132.7, commit 33f72e8)"
+    "source": "docs/about/positioning-2026-09.md §1 v2 (story 132.7; owner decision 2026-11-15; copied by story 132.154)"
   },
   "spec_version": {
     "value": "v0.4",
@@ -103,10 +103,10 @@
       "source": "docs/about/positioning-2026-09.md §9 (story 132.7)"
     },
     "paragraph": {
-      "words": 82,
-      "value": "toke is a compiled programming language designed for LLM code generation. It has 14 keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one canonical form per construct, chosen by measurement in a 46-pattern catalogue and reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding, cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one measured property of toke, always reported with its tokenizer and its baseline, not the whole claim.",
+      "words": 79,
+      "value": "toke is a compiled programming language designed for LLM code generation. It has 14 keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one canonical form per construct, chosen by measurement in a 46-pattern catalogue and reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding and cheap for a compiler to verify afterwards. Token efficiency is one measured property of toke, always reported with its tokenizer and its baseline, not the whole claim.",
       "verbatim": true,
-      "source": "docs/about/positioning-2026-09.md §9 (story 132.7)"
+      "source": "docs/about/positioning-2026-09.md §9 v2 (story 132.7; owner decision 2026-11-15; copied by story 132.154)"
     },
     "token_efficiency_short_form": {
       "value": "**Token efficiency, measured:** under one shared tokenizer (cl100k_base) toke costs **1.34× [1.22, 1.48]** the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60, 2026-09-19) — more, not fewer. The v0.3-era \"52% fewer tokens\" figure was a *tokenizer-vs-tokenizer* measurement on identical toke text (Toke-16K v0.3 vs cl100k_base, N = 42) and is superseded: on canonical v0.4 text the shipped 8K tokenizer needs **15.4% more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.",

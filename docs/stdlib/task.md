@@ -23,15 +23,15 @@ All handles are `i64`. A function is passed by reference with `&name`; it must t
 
 ### task.scope(): i64
 
-Creates a new scope and returns its handle, or `0` if allocation fails.
+Creates a new scope and returns its handle, or `0` if allocation fails. A scope is an `i64`, so the checker cannot tell it from another integer; the runtime looks every scope argument up among the scopes it created and never reads any other value as one (story 138.47: `task.awaitall(5)` and `task.cancel(5)` died with SIGSEGV before).
 
 ### task.spawn(scope: i64; fn: i64): i64
 
-Queues `fn` (written `&name`) to run on the pool and returns a task handle (`1`, `2`, ...). Returns `-1` if `scope` or `fn` is `0`, the scope is full, or the scope has been cancelled.
+Queues `fn` (written `&name`) to run on the pool and returns a task handle (`1`, `2`, ...). Returns `-1` if `scope` is not a scope `task.scope` returned (`0` included), `fn` is `0`, the scope is full, or the scope has been cancelled.
 
 ### task.awaitall(scope: i64): i64
 
-Blocks until every task spawned into `scope` has finished, then returns `0`. Returns `-1` for a `0` scope.
+Blocks until every task spawned into `scope` has finished, then returns `0`. Returns `-1` for a value that is not a scope `task.scope` returned (`0` included).
 
 ### task.result(handle: i64): i64
 
@@ -39,7 +39,7 @@ Returns the value the task's function returned. Returns `-1` if the handle is un
 
 ### task.cancel(scope: i64): i64
 
-Marks the scope and every task in it as cancelled and returns `0` (`-1` for a `0` scope). Cancellation does not interrupt a running function: a task that has not *started* yet is skipped and its result is `-1`; one already running completes normally. Later `task.spawn` calls on the scope return `-1`.
+Marks the scope and every task in it as cancelled and returns `0` (`-1` for a value that is not a scope `task.scope` returned, `0` included). Cancellation does not interrupt a running function: a task that has not *started* yet is skipped and its result is `-1`; one already running completes normally. Later `task.spawn` calls on the scope return `-1`.
 
 ## Example
 

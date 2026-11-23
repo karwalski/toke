@@ -1,0 +1,13 @@
+id: D712
+series: D
+description: "138.51: a std alias call judged against the implementation (`json.parse` with two arguments) is E4026 with no fix; the advice that was the fix ends the message (AGENTS 6)"
+input: |
+  m=t;
+  i=json:std.json;
+  f=main():i64{let r=json.parse("a";"b");<0};
+expected_exit_code: 1
+expected_error_codes: ["E4026"]
+expected_fix_absent: true
+expected_diag_field:
+  field: message
+  value: "wrong number of arguments for 'std.json.parse': the implementation takes 1 argument, the call passes 2; match the call to the declaration, or reconcile the interface with the implementation if they disagree"

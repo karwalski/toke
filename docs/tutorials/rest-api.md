@@ -72,7 +72,7 @@ t=$apierr{$notfound:u64;$badrequest:$str};
 > - handleget: extract :id from the route, find the bookmark, return 200 or 404
 > - handledelete: extract :id, remove from store, return 200 or 404
 >
-> Each handler receives the request handle (`req:i64`) and returns a response
+> Each handler receives the request handle (`req:$req`) and returns a response
 > built with `http.resjson(status; body)`.
 > Serialise all JSON manually using str.buf().
 
@@ -151,14 +151,14 @@ f=findindex(id:u64):i64{
 
 #### Route handlers
 
-Each handler takes the request handle (`req:i64`) and returns an HTTP response built with `http.resjson(status; body)`. Reading the store, the `:id` route param (`http.param`), and the request body (`http.reqbody`) all go through `std.http` helpers.
+Each handler takes the request handle (`req:$req`) and returns an HTTP response built with `http.resjson(status; body)`. Reading the store, the `:id` route param (`http.param`), and the request body (`http.reqbody`) all go through `std.http` helpers.
 
 ```toke
-f=handlelist(req:i64):i64{
+f=handlelist(req:$req):i64{
   <http.resjson(200; bookmarkstojson(store.items))
 };
 
-f=handleget(req:i64):i64{
+f=handleget(req:$req):i64{
   let raw=mt http.param(req;"id") {
     $ok:v v;
     $err:e <http.resjson(404; "{\"error\":\"not found\"}")
@@ -174,7 +174,7 @@ f=handleget(req:i64):i64{
   <http.resjson(200; bookmarktojson(store.items.get(idx)))
 };
 
-f=handlecreate(req:i64):i64{
+f=handlecreate(req:$req):i64{
   let body=http.reqbody(req);
   let doc=mt json.dec(body) {
     $ok:d d;
@@ -204,7 +204,7 @@ f=handlecreate(req:i64):i64{
   <http.resjson(201; bookmarktojson(newb))
 };
 
-f=handledelete(req:i64):i64{
+f=handledelete(req:$req):i64{
   let raw=mt http.param(req;"id") {
     $ok:v v;
     $err:e <http.resjson(404; "{\"error\":\"not found\"}")
@@ -441,6 +441,15 @@ kill <pid>
 ```
 
 Or change the port in `main.tk`:
+
+<!-- fragment-context
+m=snippet;
+i=http:std.http;
+f=main():i64{
+{{fragment}}
+  <0
+};
+-->
 
 ```toke
 http.serveworkers(3000; 1);

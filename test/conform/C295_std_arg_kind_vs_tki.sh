@@ -64,10 +64,15 @@ expect "8 io.println(str.len(..)) -- a u64 where a str is read" \
 expect "9 io.println(str.trim(..)) stays clean" \
     "$(diags 'm=q;i=io:std.io;i=str:std.str;f=main():i64{io.println(str.trim(" a "));<0};')" "rc=0"
 
-# A record parameter receiving an integer is a handle (std callbacks hand
-# their record as an i64 -- conform C022's tls.listen handler).
-expect "10 an i64 handle into a record parameter is not judged" \
-    "$(diags 'm=q;i=tls:std.tls;f=onconn(conn:i64):i64{tls.close(conn);<0};f=main():i64{<0};')" "rc=0"
+# 138.46: an integer where a std record is declared is no longer taken for a
+# handle -- the runtime reads the record through its address, so only the
+# record itself or the literal 0 may be passed (E4031, no fix).  A callback
+# declares its parameter with the record's type (conform C022's tls.listen
+# handler, conn:$tlsconn).
+expect "10 an i64 into a record parameter is E4031 (138.46)" \
+    "$(diags 'm=q;i=tls:std.tls;f=onconn(conn:i64):i64{tls.close(conn);<0};f=main():i64{<0};')" "E4031|i64|ABSENT"
+expect "10b the record's own type in the callback stays clean" \
+    "$(diags 'm=q;i=tls:std.tls;f=onconn(conn:$tlsconn):i64{tls.close(conn);<0};f=main():i64{<0};')" "rc=0"
 
 # http.stream's .tki and glue now agree (121.53 (2), Batch Y1): it takes the
 # httpclient it publishes, so a URL str where the record is declared is judged.

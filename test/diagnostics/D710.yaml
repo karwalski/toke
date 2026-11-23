@@ -1,0 +1,13 @@
+id: D710
+series: D
+description: "138.51: a call of a declared function with the wrong argument count is E4026 with no fix -- 'check the function signature' restated the error, and whether an argument is missing or surplus is not decidable from the call (AGENTS 6)"
+input: |
+  m=t;
+  f=add(a:i64;b:i64):i64{<a};
+  f=main():i64{<add(1)};
+expected_exit_code: 1
+expected_error_codes: ["E4026"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "2"

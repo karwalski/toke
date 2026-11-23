@@ -95,10 +95,19 @@ let vs=vecstore.open("/var/data/embeddings");
 
 ### vecstore.close(vs: $vecstorehandle): void
 
-Flushes all dirty collections to disk and releases all resources associated
-with the store.  Each collection is written to `{data_dir}/{name}.vecs` in
-binary format.  Using the `$vecstorehandle` or any of its `$veccollection` handles
-after `vecstore.close` is undefined behaviour.
+Flushes all dirty collections to disk and releases the store's entries and
+collection data.  Each collection is written to `{data_dir}/{name}.vecs` in
+binary format.  After `vecstore.close` the `$vecstorehandle` and every
+`$veccollection` it opened are answered as the null handle (`vecstore.flush`
+`false`, `vecstore.count` 0, `vecstore.upsert` `false`, `vecstore.collection`
+`$err`, ...), and a second `vecstore.close` does nothing (138.61).  This holds
+for the life of the process, also after the same directory is opened again:
+the closed store and collection records themselves stay allocated (a few
+dozen bytes each, plus their `.path` / `.name`, which still read), so a later
+`vecstore.open` or `vecstore.collection` never reuses their addresses and an
+old handle never comes to name a new store (138.64).  A handle
+`vecstore.open` or `vecstore.collection` did not make -- a record literal or a
+value cast with `as` -- is the null handle too.
 
 **Example:**
 ```toke

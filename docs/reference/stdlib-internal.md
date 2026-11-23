@@ -90,11 +90,11 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 73 |
-| `c-internal` | called only from other C in `src/stdlib/` | 165 |
+| `c-internal` | called only from other C in `src/stdlib/` | 173 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 29 |
 | `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 1 |
-| | **total** | **277** |
+| | **total** | **285** |
 
 A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the conformance harness -- and is listed with the file that documents it. A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -176,7 +176,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (165)
+### `c-internal` (173)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -213,6 +213,14 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_error_log_set_global` | `log.c` | log_glue.c |
 | `tk_error_log_write` | `log.c` | http.c |
 | `tk_get_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
+| `tk_handle_addr` | `tk_runtime.c` | analytics_glue.c, canvas_glue.c, collections_glue.c, csv_glue.c, dashboard_glue.c, dataframe_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, ml_glue.c, router_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
+| `tk_handle_adopt` | `tk_runtime.c` | analytics_glue.c, canvas_glue.c, collections_glue.c, csv_glue.c, dashboard_glue.c, dataframe_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, ml_glue.c, router_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
+| `tk_handle_adopt_view` | `tk_runtime.c` | vecstore_glue.c |
+| `tk_handle_drop` | `tk_runtime.c` | csv_glue.c, pdf_glue.c, router_glue.c, str_glue.c, tls_glue.c, toml_glue.c, vecstore_glue.c, xlsx_glue.c, zip_glue.c |
+| `tk_handle_issue` | `tk_runtime.c` | csv_glue.c, pdf_glue.c, process_glue.c, router_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
+| `tk_handle_issue_view` | `tk_runtime.c` | tk_runtime.c, toml_glue.c |
+| `tk_handle_owner` | `tk_runtime.c` | toml_glue.c |
+| `tk_handle_token` | `tk_runtime.c` | csv_glue.c, pdf_glue.c, process_glue.c, router_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
 | `tk_http_listen_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
 | `tk_infer_detect_storage_type` | `infer_stream.c` | infer_stream.c |
 | `tk_infer_embed` | `infer.c` | infer.c |

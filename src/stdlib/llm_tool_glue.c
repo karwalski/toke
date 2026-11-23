@@ -29,6 +29,7 @@
 #include "tk_array.h"
 #include "strbuf.h"   /* 135.24: strbuf_append_json_unescape */
 #include "tk_strhdr.h" /* 127.295: tks_strdup */
+#include "tk_runtime.h"   /* 138.50: the handle registry ($llmclient) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,14 +37,9 @@
 
 /* 114.53/114.54/127.67: report failure through this flag and still return the
  * real value; defined in tk_runtime.c. */
-/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
- * A plain-global declaration here links with no diagnostic and then SIGBUSes
- * on the first access, so the spelling must match the definition. */
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-extern _Thread_local int64_t tk_current_error;
-#else
-extern __thread int64_t tk_current_error;
-#endif
+/* 127.101/127.504: the thread-local slot and tk_err_box, declared once
+ * (runtime-abi.md §7). */
+#include "tk_runtime.h"
 
 /* ── toke struct slot layouts (one i64 per field, in declaration order) ──
  *   $toolparam { name; type; desc; required }
@@ -332,12 +328,18 @@ static int64_t llmresp_block(const TkLlmResp *r, const char *model) {
 
 /* ── the published surface ────────────────────────────────────────────── */
 
+/* 138.50: only a client llm.client or withtools made is read (llm_glue.c
+ * says why: a $llmclient record literal holds two of its slots); anything
+ * else is answered as the null client is. */
+static TkLlmClient *tool_client_in(int64_t v) { return (TkLlmClient *)tk_handle_addr(TK_HK_LLMCLIENT, v); }
+
 int64_t tk_llmtool_withtools_w(int64_t client, int64_t tools_arr) {
-    if (!client) { tk_current_error = 1; return 0; }
-    const TkLlmClient *src = (const TkLlmClient *)(intptr_t)client;
+    const TkLlmClient *src = tool_client_in(client);   /* 138.50 */
+    if (!src) { tk_current_error = 1; return 0; }
     TkLlmClient *copy = (TkLlmClient *)malloc(sizeof(TkLlmClient));
     if (!copy) { tk_current_error = 1; return 0; }
     *copy = *src;                       /* the original is left unchanged */
+    if (!tk_handle_adopt(TK_HK_LLMCLIENT, copy)) { free(copy); tk_current_error = 1; return 0; }
 
     uint64_t ntools = 0;
     TkToolDecl *tools = decode_tools(tools_arr, &ntools);
@@ -356,8 +358,8 @@ int64_t tk_llmtool_withtools_w(int64_t client, int64_t tools_arr) {
 }
 
 int64_t tk_llmtool_chatwithtools_w(int64_t client, int64_t msgs_arr) {
-    if (!client) { tk_current_error = 1; return 0; }
-    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    TkLlmClient *c = tool_client_in(client);   /* 138.50 */
+    if (!c) { tk_current_error = 1; return 0; }
     const ToolBinding *b = binding_for(c);
     uint64_t nmsgs = 0;
     TkLlmMsg *msgs = decode_msgs(msgs_arr, &nmsgs);
@@ -376,8 +378,8 @@ int64_t tk_llmtool_chatwithtools_w(int64_t client, int64_t msgs_arr) {
 }
 
 int64_t tk_llmtool_submitresult_w(int64_t client, int64_t msgs_arr, int64_t result) {
-    if (!client || !result) { tk_current_error = 1; return 0; }
-    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    TkLlmClient *c = tool_client_in(client);   /* 138.50 */
+    if (!c || !result) { tk_current_error = 1; return 0; }
     const ToolBinding *b = binding_for(c);
     uint64_t nmsgs = 0;
     TkLlmMsg *msgs = decode_msgs(msgs_arr, &nmsgs);

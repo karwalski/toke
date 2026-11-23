@@ -13,7 +13,7 @@ The `std.router` module provides a declarative HTTP router. Register routes by m
 
 ### $router
 
-Opaque handle to a router instance.
+Opaque handle to a router instance. It has no readable fields: reading `r.id` is a compile error, E4034 (138.65; until then it read the router's first route pointer). The same holds for `$handler` and `$middleware`.
 
 ### $handler
 
@@ -129,6 +129,21 @@ other toke string: a handler may keep one in a mutable global and read it on
 a later request. Each is copied out of the request once per request, on its
 first read (127.343: they used to point into the request's own memory, which
 the next request overwrote or which was freed when the handler returned).
+
+### Handles the router vouches for
+
+A `$router` is the one `router.new` returned; any other value -- `5 as
+$router`, a record literal -- is no router: `router.get`, `post`, `put` and
+`delete` register nothing and `router.serve` returns `$err`. The `req` a
+handler is given names that request only while the handler runs: the
+strings it read stay valid (above), but the `req` itself, kept in a
+mutable global and passed to an accessor on a later request, reads `""`, as
+does any `i64` that is not a live request. A `$handler` must be a function
+(`&f`): a route whose handler is not code in the program (macOS; elsewhere,
+an integer below 4096 or a negative one) is not registered, and
+`DIAGNOSTIC: kind=router_register_failed` is printed on stderr. `router.use`
+does not read its `$middleware` yet. (Story 138.63: each of these used to be
+read, written or called through as an address.)
 
 ## Usage
 

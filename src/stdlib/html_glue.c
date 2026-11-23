@@ -10,6 +10,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include "tk_strhdr.h"
+#include "tk_runtime.h"   /* 138.50 / 138.61: the handle registry */
+
+/* 138.50 / 138.61: every $htmldoc and $htmlnode this glue hands out is
+ * registered by address (no toke call frees either, and toke reads a node's
+ * record fields from it), and every call reads only a registered one.  A
+ * $htmlnode literal holds only {tag; attrs; content}, while html_append
+ * links the node through the private child/sibling fields past them, so a
+ * literal -- like a forged `5 as $htmlnode` or `5 as $htmldoc` -- is the
+ * null node / null document. */
+static TkHtmlDoc *doc_in(int64_t v)   { return (TkHtmlDoc *)tk_handle_addr(TK_HK_HTMLDOC, v); }
+static TkHtmlNode *node_in(int64_t v) { return (TkHtmlNode *)tk_handle_addr(TK_HK_HTMLNODE, v); }
+static int64_t node_out(TkHtmlNode *n)
+{
+    /* a node the table cannot hold is left to the heap: no toke call frees one */
+    return (int64_t)(intptr_t)tk_handle_adopt(TK_HK_HTMLNODE, n);
+}
 
 /*
  * html.doc() takes no arguments -- stdlib/html.tki says so, docs/stdlib/html.md
@@ -23,12 +39,12 @@
 int64_t tk_html_doc_w(void) {
     TkHtmlDoc *doc = html_doc();
     if (!doc) return 0;
-    return (int64_t)(intptr_t)doc;
+    return (int64_t)(intptr_t)tk_handle_adopt(TK_HK_HTMLDOC, doc);   /* 138.61 */
 }
 
 int64_t tk_html_h1_w(int64_t text) {
     TkHtmlNode *node = html_h1((const char *)(intptr_t)text);
-    return (int64_t)(intptr_t)node;
+    return node_out(node);   /* 138.50 */
 }
 
 /*
@@ -83,7 +99,7 @@ int64_t tk_html_table_w(int64_t headers_i64, int64_t rows_i64) {
                                   cells, (uint64_t)nrows);
     free(headers);
     free(cells);
-    return (int64_t)(intptr_t)node;
+    return node_out(node);   /* 138.50 */
 }
 
 /* 127.316: html_render() returns the document's cached buffer, which the
@@ -96,25 +112,30 @@ static int64_t html_str_copy(const char *s) {
 }
 
 int64_t tk_html_render_w(int64_t doc) {
-    if (!doc) return 0;
-    return html_str_copy(html_render((TkHtmlDoc *)(intptr_t)doc));
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d) return 0;
+    return html_str_copy(html_render(d));
 }
 
 int64_t tk_html_style_w(int64_t doc, int64_t css) {
-    if (!doc) return 0;
-    html_style((TkHtmlDoc *)(intptr_t)doc, (const char *)(intptr_t)css);
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d) return 0;
+    html_style(d, (const char *)(intptr_t)css);
     return doc;
 }
 
 int64_t tk_html_title_w(int64_t doc, int64_t t) {
-    if (!doc) return 0;
-    html_title((TkHtmlDoc *)(intptr_t)doc, (const char *)(intptr_t)t);
+    TkHtmlDoc *d = doc_in(doc);   /* 138.61 */
+    if (!d) return 0;
+    html_title(d, (const char *)(intptr_t)t);
     return doc;
 }
 
 int64_t tk_html_append_w(int64_t doc, int64_t elem) {
-    if (!doc || !elem) return doc;
-    html_append((TkHtmlDoc *)(intptr_t)doc, (TkHtmlNode *)(intptr_t)elem);
+    TkHtmlDoc *d = doc_in(doc);      /* 138.61 */
+    TkHtmlNode *n = node_in(elem);   /* 138.50 */
+    if (!d || !n) return d ? doc : 0;
+    html_append(d, n);
     return doc;
 }
 

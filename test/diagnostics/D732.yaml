@@ -1,0 +1,22 @@
+id: D732
+series: D
+description: "lint modulo-emulation (131.138): integer `a-a/b*b` and `a-(a/b)*b` are hints with the fix `a%b` (truncating `/`, dividend-signed `%`: equal for every sign; both trap RT004 on 0 and MIN/-1)"
+input: |
+  m=t;
+  f=g(a:i64;b:i64):i64{
+    <(a-a/b*b)+(a-(a/b)*b)
+  };
+  f=main():i64{
+    <g(-7;3)+2
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["modulo-emulation"]
+expected_fixed_output: |
+  m=t;
+  f=g(a:i64;b:i64):i64{
+    <(a%b)+(a%b)
+  };
+  f=main():i64{
+    <g(-7;3)+2
+  };

@@ -633,18 +633,39 @@ i=df:std.dataframe;
 
 | Feature | Description |
 |---------|-------------|
-| Columns | Typed columnar storage for efficient data access |
-| Filter | Row filtering by predicate |
-| Group by | Aggregate rows by key column |
-| Join | Inner/left join two dataframes |
-| CSV import | Load directly from CSV files |
+| CSV import | `df.fromcsv` reads CSV text (a `$str`, e.g. from `file.read`) into a frame; each column is `f64` or `$str` |
+| Filter | `df.filter` keeps the rows where one numeric column compares (`<` `<=` `=` `>=` `>` `!=`) against a number |
+| Group by | Split rows into one frame per key value |
+| String column | `df.columnstr` returns a `$str` column's values as an `@($str)` |
+| Shape and export | `df.shape` gives the row and column counts; `df.tocsv` writes the frame back as CSV text |
 
-**Example: filter and aggregate**
+There is no join: `df.join` is declared in the interface but quarantined (no
+implementation, so `tkc --check` rejects a call to it), as are `df.column`,
+`df.head`, `df.tojson` and `df.schema`. See [std.dataframe](/docs/stdlib/dataframe/).
 
-```
-let data=df.fromcsv(file.read("sales.csv")!$apperr);
-let q4=df.filter(data;"quarter";"Q4");
-let totals=df.groupby(q4;"region";"revenue";df.sum);
+**Example: filter and group**
+
+`df.filter(d;col;op;val)` keeps the rows whose numeric column `col` compares
+true against `val` (`op` is one of `<` `<=` `=` `>=` `>` `!=`; `val` is a
+number in a `$str`). `df.groupby(d;col)` splits a frame into one frame per
+distinct value of the string column `col`.
+
+```toke
+m=sales;
+i=df:std.dataframe;
+i=file:std.file;
+i=io:std.io;
+
+f=main():i64{
+  let raw=mt file.read("sales.csv"){$ok:s s;$err:e ""};
+  let data=mt df.fromcsv(raw){$ok:d d;$err:e <1};
+  let big=mt df.filter(data;"revenue";">";"1000"){$ok:d d;$err:e <1};
+  let groups=mt df.groupby(big;"region"){$ok:g g;$err:e <1};
+  lp(let i=0;i<groups.len;i=i+1){
+    io.println(df.tocsv(groups.get(i)));
+  };
+  <0;
+}
 ```
 
 ### std.analytics -- Statistical analysis

@@ -29,6 +29,13 @@ toke 3.2.0 already accepts, so it builds on both.
 | 5 | **An integer other than the literal `0` is E4031 where an opaque std handle or a runtime C string is read** (loke T-67). `process.wait(5)`, `process.stdout(7)`, a helper `f=waitfor(h:i64)` passing any integer on to `process.wait`, and `str.toupper(42)` / `str.reverse(12345)` (a `gen:"abi"` member whose glue reads a C string) checked clean and died with SIGSEGV; 3.2.0 refused a str, float or array there (138.21, 127.201) but not an integer. Newly refused forms, each **E4031 with no `fix`**: an integer literal other than `0`, an `i64` local or parameter (including one bound to `0`), arithmetic (`n+1`), and `h as i64`, passed where a std function declares an opaque record (`handle`, `vechandle`, `strbuf`, `tomlval`, `pdfdoc`, `xlsxbook`, `ziparchive`, `securebuf`) or to a user parameter declared `$handle` / `process.$handle` (same module, imported, or through a function value or closure); and an integer other than the literal `0` where a std wrapper reads a C string. The literal `0` (the null handle a `$err:e 0` arm yields; `process.wait(0)` still answers -1) and a real handle are unchanged, and so is a handle passed where an integer is declared (136.36). A value forged out of the checker's sight (`n as $handle`, a value through C) is the runtime half, 138.36. Measured before landing (batch Z217, this checker on `b518b41c`): no source file in the toke tree (695 sources; 510/510 doc programs, examples, stdlib-tk), ooke `main` (`make check-toke-candidate` passes) or the website (`make check-toke` passes); toke-test-programs: 1 of 3,573 files (`results/solutions/crypto-blockchain/CRY-017/solution.tk`, vec handles carried in `$i64` parameters); corpus: 0 of the 23,382 regen records and 0 of the 1,583 library records. In the toke tree, conformance script C005 carried a toml document in a `cfg:i64` helper parameter and was migrated to `cfg:$tomlval`. loke's helpers that carry a handle in an `i64` break, as decided: `src/core/inference/sidecar.tk` (`process.kill`/`wait` on an `i64`) and `packages/shared/src/config.tk` (`toml.section` on a `doc:i64`). | 138.35 (owner answer T-67, 2026-11-15) | Declare the parameter or field that holds a handle with its type: `h:$handle` (or `process.$handle`, `$vechandle`, `$strbuf`, `$tomlval`), valid on 3.2.0 too (138.32, C1906); keep `0` as the null handle; pass a `str` where a string is read. |
 | 6 | **A str slice on a record field or an array element, and the module form `str.substr`, are the union `str.slice` is** (extends row 4). `p.name.slice(2;9)` on a `name:$str` field, `p.sub.tag.slice(..)`, `xs.get(0).slice(..)` / `.substr` / `.substring` on an `@($str)` element, and `str.substr(s;a;b)` (whose std.tki record is an untyped `"gen":"abi"` placeholder; it lowers to `tk_str_substr_w`, which is `tk_str_slice_w`) checked clean and printed the null filler on a failure. They are now `str!$sliceerr`, judged in the same positions, **E4031 with no `fix`**; codegen does not move (IR identical on the 61 toke-tree, ooke and website programs that slice; the element receiver's IR gains only a comment). The interface record is not changed. Measured before landing (`--check`, this checker against the same tree without the rule): no change in the toke tree (695 sources; doc programs 513/513 build), ooke `main` (31) or the website (25); toke-test-programs: 38 of 3,573 files gain 119 diagnostics, 25 of them newly refused, every one the module form `s.substr(..)` (`results/solutions/`). | 127.475 | as row 4: `mt str.substr(s;a;b){$ok:v v;$err:e <your value>}`, or `!` in a fallible function |
 | 7 | **`str.substr`'s interface record states the signature `str.slice` has** (`str;u64;u64 -> str!$sliceerr`); it was an untyped `"gen":"abi"` placeholder (`i64;i64;i64 -> i64`) although it is `str.slice`'s glue, and it is now in `docs/stdlib/str.md` and `stdlib-signatures.md`. Two effects. A **str or `f64` where an index is read** (`str.substr(s;"x";2)`, `str.substr(s;1.5;2)`) checked clean and passed the string's address or the float's bits as the index; it is now **E4031** naming the declaration (`argument 2 of 'str.substr' is declared 'u64' (str.tki), got 'str'`), **no `fix`**. And `mt str.substr(..)` was lowered against the return value instead of the error slot, so the `$err` binding was 0 and `e.msg` (or a `!$e` propagation's payload) died with RT005; it now binds the `$sliceerr` (`slice index out of range`), as `str.slice` does. 127.475's by-name rule is removed, since the record carries the union. Measured with `--check` against the base on every `.tk` file that mentions `substr` (60: this tree, ooke `main`, the website, toke-test-programs): no diagnostic changes; the 3 of them that build emit identical IR. | 127.493 | pass a `str` and two integer indices; `mt str.substr(s;a;b){$ok:v v;$err:e e.msg}` now works as written |
+| 8 | **A bool where an opaque std handle is declared is E4031, as an integer is** (extends row 5). `process.wait(true)` and a `bool` passed to a user parameter declared `$handle` checked clean, and the runtime read handle 1. `false` is refused too: the null handle is spelled `0`. **No `fix`**. Measured before landing (`--check` with this checker against the same tree without the rule, every `.tk` file): no diagnostic changes in the toke tree (695), ooke `main` (31; `make check-toke-candidate` passes), the website (25; `make check-toke` passes) or toke-test-programs (3,573). The corpus was not measured by this batch. | 138.55 | pass the handle, or the literal `0` for the null handle |
+| 9 | **The element type of an array argument to a std call is judged.** `csv.serialize(@("a";"b"))` and `http.postheaders(url;body;@("a";"b"))` checked clean where the interface declares `[[str]]`, and the glue read each string as a row array (an out-of-bounds read); a user call already refused the same argument. Elements are compared by the representation class a scalar argument is judged by (a number, a str, a float, an array, a map, a record), so element width is still not judged and an integer stays accepted where a record is declared. **E4031 with no `fix`** (`argument 1 of 'csv.serialize' is declared '@(@(str))' (csv.tki), got '@(str)'`). Measured before landing (`--check` with this checker against the same tree without the rule, every `.tk` file): no diagnostic changes in the toke tree (695), ooke `main` (31; `make check-toke-candidate` passes), the website (25; `make check-toke` passes) or toke-test-programs (3,573). The corpus was not measured by this batch. | 127.497 | pass the declared shape: `@(@("a";"b"))` for one row or one header pair |
+| 10 | **A field read on an unimported module's record is E4034 at `--check` in every shape the compile refuses** (extends 138.40). An element of an array or map a user-module call returns (`rs.get(0).text`, in place, bound, or in a loop), the `$ok`/`$err` payload of its `T!E`, a sum type's variant payload bound by `mt`, and a field of an imported record whose type is such a record (`wr.r.text`) passed `--check` and failed the compile with E4034; with another struct in scope declaring a field of the same name, codegen took that struct's offset and the read built and printed the wrong slot. **E4034, no `fix`**. As a consequence `--lint` no longer reports an import that only such a read needs as unused, so `--lint --fix` no longer deletes it into an E4034 compile. Measured before landing (`--check` with this checker against the same tree without the rule, every `.tk` file): no diagnostic changes in the toke tree (695), ooke `main` (31; `make check-toke-candidate` passes), the website (25; `make check-toke` passes) or toke-test-programs (3,573). The corpus was not measured by this batch. | 138.58 | import the module that declares the record (`i=p:proto;`) |
+
+| 8 | **An integer other than the literal `0` is E4031 where a std call declares a record with fields** (the T-67 class beyond opaque handles; extends row 5). `http.clientget(5;..)`, `tls.read(5)`, `tls.protocol(5)`, `svg.render(5)`, `image.fliph(5)`, `vecstore.flush(5)`, `vecstore.count(5)` checked clean and died with SIGSEGV: the runtime reads a std record through its address. Row 5 judged only records with no fields; every std record slot is now judged the same way -- an integer literal other than `0`, an `i64` local or parameter, arithmetic, `h as i64` -- **E4031 with no `fix`** (`... -- the runtime reads a std record through its address, so only the record itself or the literal 0 may be passed`). The literal `0` (the null record) and a value of the record's own type are unchanged. Not covered: std.db's `row.` calls (`row.str(5;"k")`), which the checker does not judge at all (138.62). Measured before landing (batch Z237, this checker on `ee27591c`, `--check`): no source in the toke tree (695), ooke `main` (32; `make check-toke-candidate` passes), the website (25; `make check-toke` passes), toke-test-programs (3,573) or the corpus library (1,583) draws it; the corpus regen set (23,382) none either. Three conformance scripts carried a record in an `i64` callback or helper parameter and were migrated: C022 and C575 (`f=onconn(conn:i64)` for `tls.listen` -> `conn:$tlsconn`) and C1830 case c7 (`c:i64` passed to `sse.emitdata` -> `c:$ssectx`); C295 case 10, which pinned the old exemption, and C707 case 7 (`let p:i64=json.parse(..); json.has(p;..)`), now assert the refusal; `docs/stdlib/tls.md` documented the `conn:i64` callback and now writes `conn:$tlsconn`. | 138.46 | declare the parameter that holds the record with its type (`conn:$tlsconn`, `c:$httpclient`, `ctx:$ssectx`, `img:$imgbuf`); keep `0` as the null record |
+| 11 | **std.db's `row.` calls are argument-checked** (extends row 8). `row.str`, `row.i64`, `row.u64`, `row.f64` and `row.bool` name no import (`row` is a sub-namespace std.db's interface exports), so the checker judged none of their arguments: `row.str(5;"k")` checked clean and died with SIGSEGV, and a number in the column-name slot or a str in the row slot passed too. They are now judged against std.db's records as any std call is: an integer other than `0` where `$dbrow` is declared, and a value of another kind in either slot, is **E4031 with no `fix`**. Measured before landing (`--check`, this checker against the same tree without it): every source that calls `row.*` -- the toke tree (`test/e2e/e2e_db_open.tk`), ooke `main` (`src/store.tk`, `test/store/test_store.tk`) and the corpus's doc examples (6 records) -- draws the same diagnostics as before; toke-test-programs and the website have none. | 138.62 | pass the `$dbrow` (or a `$dbrow{cols:..}` literal) and a `str` column name; keep `0` as the null row |
+| 12 | **A field read of an opaque std type is E4034 at `--check`** (138.65). A type its `.tki` marks `"opaque": true` -- `$csvreader`, `$csvwriter`, `$dataframe`, `$jsonstream`, `$router`, `$handler`, `$middleware`, `$modelhandle` -- declares fields that are no layout toke can read, and the flag was never read: `w.sep` on `csv.writer(44)` printed 0, `d.ncols` on a frame printed its column array's address (`d.nrows` the column count), `r.id` on a router its first route pointer, and `r.pos` on a `$csvreader` (a registry token since 138.63) died with SIGSEGV. The read is now refused, with no `fix`. `$dashboard`, `$htmldoc`, `$llmstream`, `$canvasop` and `$dtreemodel`, whose fields are their checked C layout, lose the flag and read as before; `make check-tki-layout` fails a `tki-record` that is marked opaque. Record literals of opaque types still build. | 138.65 | Use the module's functions: `df.shape(d).rows`/`.cols` for a frame's counts; the csv, json stream, router and infer handles expose nothing else. Measured over the toke tree, ooke main, the website and toke-test-programs: no source reads one of these fields. |
 
 Measured before the flip with this checker against main `685aa852` (rows 127.319, 127.323
 and 127.462, batch Z211): 92 of 695 toke-tree sources and 15 of 509 documentation programs;
@@ -174,6 +181,16 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   D639.
 - The checker's interpolation anchor (`Ctx.interp_host`) is initialised in
   `type_check` (127.476); it was read uninitialised.
+- **Every integer-to-integer `as` cast builds, and gives C's value** (127.506;
+  corpus pointer 131.131). `a as i32` on a `u32`, `a as u32` on an `i32` (any
+  same-width signedness change below 64 bits) and a widening cast into a
+  sub-64-bit target (`a as i32` on an `i16`) checked clean and failed the build
+  with E9003 (invalid LLVM IR: the cast left the value at the target's width
+  where its consumer expected the i64 the narrowing path produces). A signed
+  source widened into an unsigned target is now sign-extended, as C, Rust and Go
+  do: `b as u16` on an `i8` of -1 is 65535 (it was 255, while `b as i64 as u16`
+  was already 65535). Conformance: C2040 (all 64 pairs over 20 values, against
+  C's output).
 
 ### Security fixes
 
@@ -199,6 +216,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   (decompression-bomb guard: ...)`. A well-formed file is never refused, and a
   short strip within the 1 MiB slack still zero-fills as before. Tests: C2030;
   the input is kept as `test/fuzz/corpus-adversarial/image_tiff_short_strip_127488.tif`.
+- **std.cache no longer writes past its key buffer on a long URI** (127.516, a
+  heap overflow). `cache_build_key` built `METHOD|URI|vary...` in a fixed
+  1024-byte block and kept `snprintf`'s untruncated length as its offset, so for
+  a URI of about 1020 bytes or more a matched Vary header was appended from past
+  the block with a wrapped bound (`http_cache_get` or `http_cache_put` with a
+  1101-byte URI and `Vary: Accept-Encoding`: heap-buffer-overflow under ASan).
+  Without Vary the key was cut at 1023 bytes, so two URIs sharing their first
+  ~1019 bytes shared one entry for get, put and purge. The key, and
+  `http_cache_stale_if_error`'s `METHOD|URI` (a 1024-byte stack buffer), are
+  now allocated to their full length; matching stays exact (127.514). Nothing
+  in the tree calls `http_cache_*`. Test: C2160.
 
 ### Build and CI gates
 
@@ -224,10 +252,48 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   always names its file. Also, the `nonhost-uncoverable` skips for `log.c` and
   `sys_glue.c` are now `nonhost-uncoverable@darwin`: they hold on macOS and were
   stale on Linux. Test: C1961.
+- **`make test-ci-green` is green again** (127.510). Two of its 82 targets
+  failed at the integration base on rules that are correct (rows 3 and 4
+  above), not on a regression. test-codegen's `multimod/mapret` interpolated
+  map lookups and now reads them through `mt`. test-migrate's `str_index`
+  migrates a legacy str index used as a str to `.slice(i;i+1)`, which is
+  `str!$sliceerr` since 127.462, so the migrated output is five E4031s: the
+  fixture now pins those diagnostics (`str_index.check`) instead of expecting a
+  clean compile, because `--migrate` writes no filler error arm (owner answer
+  R2). `--migrate` now says so on stderr: `note: each .slice(i;i+1) is
+  str!$sliceerr: read it through 'mt' or '!' (or use .charat(i) for the byte)
+  before it compiles`. Test: C2100.
+- **`tkc --migrate` reads a one-character comparison as bytes** (127.512).
+  A legacy str index compared with another str index or with a one-byte str
+  literal (`a[0]=b[1]`, `v[i]="a"`, `"\n"=v[0]`) migrated to
+  `.slice(i;i+1)`, which is `str!$sliceerr`, so the migrated comparison did not
+  compile. Both sides now read the byte: `a.charat(0)==b.charat(1)`,
+  `v.charat(i)==97`, `10==v.charat(0)` (owner answer R2's single-character read,
+  no union, no filler arm). A str index used as a str (returned, concatenated,
+  printed, compared with a longer string) still migrates to `.slice(i;i+1)` with
+  the 127.510 note: std.str has no non-union one-character str read.
+  test-migrate's `str_index` now pins three E4031s, not five. Test: C2151.
 
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
 - **T-67, the runtime half: std.process refuses a handle it did not create.** `process.wait(5)`, loke's helper shape `f(h:i64){process.wait(h)}` called with any integer, a handle changed by arithmetic, a value cast with `as`, and a `process.spawndetached` pid passed as a handle all checked clean, built, and died with SIGSEGV: the runtime read the integer as a process record. `process.spawn` now hands out a registry token instead of the record's address, and every call that takes a handle (`wait`, `stdout`, `stderr`, `kill`, `exitcode`, `hasexited`, `poll`, `isalive`) looks it up without reading it as memory. A value it did not hand out is answered exactly as `process.badhandle()` is: `-1`, the `$err` arm with `$io`, `false`, `0` or `1`. A real handle behaves as before, a waited handle stays valid, and `process.wait(0)` is still `-1`. No source change is needed. The checker half (an integer refused at `--check` where a handle is read) is 138.35. 138.36 — C1850.
+
+- **T-67 class, the runtime half for std's opaque handles: std.vec, str's builder, std.securemem, std.pdf, std.xlsx, std.zip, std.toml and std.svg refuse a handle they did not create** (138.45). Each module handed its C object's address to the program and read through whatever came back, so a value the checker cannot see (`5 as $vechandle`, a value through C) died with SIGSEGV: `vec.len`, `str.done`, `securemem.wipe`, `pdf.pagecount`, `xlsx.sheets`, `zip.entries`, `toml.keys`, `svg.render`, a forged element in `svg.group`'s array. 138.36's process registry is now one table in `tk_runtime.c` with a kind per slot, and every handle these modules hand out is registered and looked up without being read: any other value, one of another kind, and one already closed or finished is answered as the null handle is (`vec.len` 0, `str.done` "", `pdf.pagecount` 0, `zip.entries` `@()`, `toml.*` `$err`, `svg.render` the null string, ...). So a second `pdf.close`/`xlsx.close`/`zip.close`/`str.done` is a no-op instead of a double free, and a `toml.section` (or `sectionarr` element) is a view that dies with its document: read after `toml.free` it is `$err` instead of a read of freed memory. The kinds with a release call (str's builder, pdfdoc, xlsxbook, ziparchive, tomlval and its section views) now hand out a registry token instead of the address, so a released handle stays refused even after malloc gives its memory to a newer object of the same kind (keyed by address, `str.done(b1)` then `b2=str.buf()` let `str.add(b1;..)` write into `b2`, and `toml.i64` on a freed document read the next one). The opaque values are not addresses any more; no toke code can tell, and no C caller in the tree takes them. vec, securebuf, svg and $llmclient keep their address (they have no release call). Cost: a 4-way per-thread cache serves repeated lookups; 20 M iterations of `a.get(j)+b.get(j)` measured user 0.09 s -> 0.27 s, `a.get(j)+a.get(j)` 0.09 s -> 0.23 s, 20 M `str.addbyte` 0.04 s -> 0.06 s. Not covered yet: the opaque types the Z213 survey did not measure (csvreader, dataframe, router, jsonstream, ...) and the std records with fields (138.46's runtime half). Kinds for std.task's scopes (138.47) and $llmclient (138.50) are reserved in the same table. Test: C2062.
+
+- **std.task refuses a scope it did not create** (138.47). `task.awaitall(5)`, `task.cancel(5)` and `task.spawn(5;&f)` read the integer as a scope and died with SIGSEGV; task.tki declares every parameter `i64`, so no checker rule can see it. Scopes are registered in the same registry and each call answers -1 for anything else, as for `0`. Test: C2063.
+
+- **A `$llmclient` record literal is no client** (138.50, the llmclient part). `$llmclient` declares {provider; model} and keeps base_url, api_key, timeouts, retries and usage counters private in C, so `llm.complete`/`chat`/`chatstream`/`countokens` (and `llmtool.*`) on a literal read its base URL and API key from past the literal's end, and a value cast with `as` was read through. Only a client `llm.client` or `llmtool.withtools` made is now used; anything else is answered as the null client is (`$err`, `countokens` 0). Unlike a `$httpclient` literal (138.24) it gets no defaults: it cannot carry a base URL. `html.htmlnode`, `http.httpstream` and `canvas.canvas` literals are not covered yet. Test: C2064.
+
+- **T-67 class, the runtime half for the std records with fields: std.tls, std.vecstore, std.html's `$htmldoc`, std.image, std.db's rows and std.http's client refuse a value the runtime cannot vouch for** (138.61). 138.46's checker half refuses an integer in these slots, but a value cast with `as` still reached the glue and was read as the record's address: `tls.protocol(5 as $tlsconn)`, `vecstore.flush(5 as $vecstorehandle)`, `vecstore.count(5 as $veccollection)`, `html.render(5 as $htmldoc)`, `image.fliph(5 as $imgbuf)`, `row.str(5 as $dbrow;"k")` and `http.clientget(5 as $httpclient;..)` died with SIGSEGV. Records only the runtime makes are now registered in the runtime's handle registry (138.45) and looked up first: a forged value, a record literal or a closed one is the null handle (`tls.*` answer an unknown connection: `""`, `false`, none; `vecstore.*` `false`/0/`@()`/`$err`; `html.*` do nothing). `tls.close` forgets its record (it stays allocated, so `.id` still reads), and `vecstore.close` forgets the store and its collections, so a second close is a no-op where it freed the store twice. The closed store and collection records stay allocated (their entries are released; `.path`/`.name` still read), so their addresses are never reused: after a close and a reopen of the same directory the old handles stay the null handle instead of naming the new store (138.64; an upsert through the old collection used to land in the new store). `$imgbuf`, `$dbrow` and `$httpclient` may be written as record literals (image.md, db.md, 138.24), so no registry can vouch for one; their glue refuses only a value that cannot be the address of any record (below 4096, negative, or not 8-aligned) and answers it as the null record (`image.*` the empty image, `row.*` `$err` "null row", `http.client*`/`http.stream` `$err` "null client"); a literal works as before, and a value that looks like an address but is not a record is still read. Not covered: the opaque types the Z213 survey did not measure (csvreader, csvwriter, dashboard, dataframe, dtreemodel, router, handler, middleware, jsonstream, llmstream; 138.63). Test: C2110 (vsreopen for 138.64).
+- **T-67 class, the runtime half for the opaque std types: std.csv's readers and writers, `$dashboard`, `$dataframe` (std.dataframe and std.analytics), std.ml's `$dtreemodel`, std.router's `$router`, `$handler` and request, and std.llm's `$llmstream` refuse a value the runtime did not make** (138.63). A value cast with `as` still reached their glue and was read as the object's address: `csv.next(5 as $csvreader)`, `df.tocsv(5 as $dataframe)`, `ml.dtreepredict(5 as $dtreemodel;..)`, `llm.streamnext(5 as $llmstream)` and `dashboard.serve(5 as $dashboard;0)` died with SIGSEGV, `router.get(5 as $router;..)` wrote through it, and a forged `$handler` was called at dispatch. Each object is now registered in the runtime's handle registry (138.45) where the glue hands it out and looked up first; anything else is the null object (`csv.next`/`csv.header` `$err` kind `badarg`, `csv.atend` true, `csv.flush` empty; `df.*` and `analytics.*` `$err` or `""`, `df.shape` `{0;0}` where it was the null record; `ml.dtreepredict` and `llm.streamnext` `""`, as for an empty literal; `dashboard.serve`/`router.serve` `$err`; `router.get`/`post`/`put`/`delete` register nothing). A `$csvreader` is now a registry token, not its address: `csv.close` forgets it, so a closed reader is refused even after a newer reader takes its memory, and a second `csv.close` is a no-op where it freed the reader twice (exit 133). Its fields (never documented) can no longer be read. A literal such as `$llmstream{id:1}` or `$dtreemodel{..}` no longer selects a live stream or model. The request a router handler is given is a token for that dispatch only: a request kept past its handler reads `""` instead of a stack frame since gone. `router.get` and friends refuse a `$handler` that is not code in a loaded image (macOS; elsewhere one below 4096 or negative) with `DIAGNOSTIC: kind=router_register_failed`, and the route answers 404. `router.use` never reads its `$middleware`. `$jsonstream` is unchanged: `json.streamparser` has no implementation (E4027), so no glue reads one. Test: C2140.
+
+- **`$htmlnode`, `$httpstream` and `$canvas` record literals are the null value** (138.50, the rest). These .tki records are only the leading slots of a larger C struct (`tki-record-prefix`), and `html.append`, `http.streamnext` and `canvas.fillrect`/`filltext`/`tohtml` read or wrote the private fields past a literal's end. `html.h1`/`html.table`, `http.stream` and `canvas.new` now register what they make, and those calls use only a registered one: `html.append` skips any other node, `http.streamnext` answers `$err` "null stream" (the null stream used to be a bare 0 with the error slot untouched, so `$ok` bound a null `[byte]`), and the canvas calls return the null canvas. As for `$llmclient`, a literal gets no defaults. Test: C2111.
+
+- **`@(x)` of a binding of an `"opaque": true` std type made with `as` is a one-element array** (138.60). `let fe=c as $svgelem; let a=@(fe)` was lowered as a spread of `fe`: the IR read word -1 of the element as a length (`a.len` 0 for a real element, SIGSEGV for a forged one), so `svg.group(@(fe;c);"")` lost its first element. An element the checker types as a record is never spread. A type declared `"fields": []` (`$vechandle`) was unaffected. Test: C2112.
+
+- **std.process: a reaped child holds no file descriptor** (138.48). No toke call frees a process handle, and the child's stdin pipe was closed only when the handle was freed, so every spawn kept one descriptor for the life of the program: 400 spawn+wait+stdout+stderr iterations under `ulimit -n 256` failed from the 247th spawn on. The runtime now closes the stdin pipe when it reaps the child (`process.wait`, or a `process.poll`/`hasexited`/`isalive` that sees the exit) and reads what is already in the output pipes into the handle without blocking, so a poll-only spawner that never reads the output is bounded too. `wait`, `stdout`, `stderr` and `kill` answer a reaped handle as before; no API change (row option (a)). Test: C2060.
+
+- **`http.withmaxbody` bounds the response header block too** (138.49). The client read the header block until its blank line with no ceiling, cap or no cap, so a server that never ends its headers grew a capped client's memory for as long as the request lasted. A client carrying `http.withmaxbody` now refuses a header block over 65536 bytes with `$err` `response header block exceeds the cap (65536 bytes): ...` and closes the connection; a client without it reads as before (the 138.24 amendment's opt-in convention; a cap on every client is an open owner question). Test: C2061.
 
 ### Added — HTTP client controls, a header-carrying GET and a resolver (spec amendment 138.24)
 
@@ -249,6 +315,38 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
 
 ### Fixed — standard library
 
+- **`df.filter(d;col;op;val)` reads its `op` and `val` strings** (138.66). The
+  glue passed `op`'s pointer to the C filter as its operator code and `val`'s
+  pointer bits as the f64 threshold, so every documented call
+  (`df.filter(d;"a";">";"2")`) kept no rows and a malformed `op` or `val` was
+  never refused. `op` is now exactly one of `<` `<=` `=` `>=` `>` `!=` (the C
+  filter gains `!=`, the one documented op it lacked) and `val` must parse in
+  full as an `f64` with C `strtod` syntax (so `"0x1p1"`, `"nan"` and `"inf"`
+  are numbers) and no leading whitespace; anything else, like `" 2"` or an
+  unknown or non-numeric column, is
+  `$err`, with the message `df.filter: the filter could not be applied
+  (unknown or non-numeric column, unknown op, or a val that is not an f64)`.
+  Tests: C2161, `test_dataframe` T65.
+- **`df.groupby(d;col)` returns the `[dataframe]` its interface declares**
+  (127.518). The glue asked the C group-and-aggregate routine for an
+  aggregate over no column, so every call was `$err`, and on success it would
+  have handed back a C `DfGroupResult*` where toke reads an array of
+  dataframes. It now returns one registered `$dataframe` per distinct value of
+  the `$str` column `col` -- every column, rows in their original order,
+  groups in order of each value's first row -- so `.len`, `.get(i)`,
+  `df.shape`, `df.tocsv` and `df.filter` work on the groups. A frame with no
+  rows gives `@()`; an unknown or non-`$str` column is still `$err`
+  (`df.groupby: the column could not be grouped`). Tests: C2180,
+  `test_dataframe` T66.
+- **`df.columnstr(d;name)` returns the `[str]` its interface declares**
+  (127.520). The glue handed back the C routine's malloc'd `char**`, which
+  has no toke array header, so `.len` of the `$ok` value read the word before
+  the block (0 for a 2-row column) and `.get(i)` was bounds-checked against
+  it. It now returns a toke array of sealed strings, one per row in row
+  order. A `$str` column of a frame with no rows gives `@()`; an unknown or
+  `f64` column is still `$err` (`df.columnstr: no such string column`).
+  Test: C2190.
+
 - **std.cache's disk spill writes the whole entry or leaves no file** (127.445).
   The spill to `disk_dir` ignored `write(2)`'s result and counted the body in
   `disk_used` whatever happened, so a short or failed write (ENOSPC, EFBIG,
@@ -257,6 +355,50 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   EINTR; a failed open, write or close removes the partial file and counts
   nothing. `http_cache_put` has no error channel, so a failed spill is a later
   MISS. Test: C2000.
+
+- **std.cache's disk tier is reachable: evicted entries spill, and are read
+  back** (127.496). `http_cache_put` ran the LRU eviction before its spill
+  test, so the test could never hold and every evicted entry was dropped;
+  `http_cache_get` never read `disk_dir`, and `disk_max_size` was never
+  consulted. Now each entry the eviction drops (over `max_entries` or
+  `max_size`) is spilled first while `disk_used` stays within `disk_max_size`
+  (0 spills nothing), and a memory miss reads the key's spill file back,
+  moves the entry to the front of memory and removes the file. The file now
+  stores the key (an FNV-1a filename collision is a MISS, not another key's
+  body), the insertion time (freshness keeps counting from the store) and the
+  field lengths; files in the old layout are a MISS. A put of a key drops its
+  disk copy, and `http_cache_purge` / `http_cache_purge_pattern` purge matching
+  spill files too and count them. Nothing in the tree calls `http_cache_*`.
+  The read-back leaves `last_modified` and `vary` unset (they are not in the
+  file; nothing reads them after a put, and Vary is part of the key). A spill
+  file is parsed length by length against the bytes left, so a crafted file
+  with lengths that wrap is a MISS; spill files are created `O_EXCL |
+  O_NOFOLLOW`, mode 0600, so a symlink planted at the path is not followed.
+  **Lifetime:** the body, etag and content-type pointers `http_cache_get`
+  returns are valid only until the next `http_cache_get`, `http_cache_put` or
+  purge call: a get that reads an entry back from disk can now evict, and
+  free, the entries an earlier get returned. Copy what must outlive that.
+  Test: C2085.
+
+- **std.cache's stale-if-error fallback reads the disk tier too** (127.511).
+  `http_cache_stale_if_error` searched only the in-memory list, so an entry
+  spilled to `disk_dir` was never served when the origin failed. With no
+  matching memory entry it now scans `disk_dir`'s spill files through the
+  same bounds-checked read-back as `http_cache_get`, takes the matching file
+  with the latest insertion time inside the same window (TTL + 300 s), moves
+  that entry to the front of memory and removes the file. A crafted or
+  truncated spill file is not a fallback. The pointers it returns follow the
+  127.496 lifetime rule: valid until the next `http_cache_get`,
+  `http_cache_put`, purge or `http_cache_stale_if_error` call. Nothing in the
+  tree calls `http_cache_*`. Test: C2130.
+
+- **std.cache's stale-if-error fallback is the request's own entry** (127.514).
+  `http_cache_stale_if_error` accepted any key that began with `METHOD|URI`, so
+  with `/a` not cached a lookup of `GET /a` served a cached `/ab`, `/a/b` or
+  `/api` body, from memory or (since 127.511) from a spill file. A key now
+  matches only when it is `METHOD|URI` itself or a Vary variant of it
+  (`METHOD|URI|...`), the split `http_cache_purge` already uses. Nothing in the
+  tree calls `http_cache_*`. Test: C2150.
 
 - **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
   register 2.11, recommendation). Its interface declared an `i64` ABI
@@ -268,6 +410,28 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
   change together. Test: C2001.
 
+### Added — lint rules for the pre-132.15 spec-page shapes (131.138)
+
+Four new hints, one per long form the withdrawn specification page prescribed. They
+compile and are not errors; a hint does not change the `--lint` exit status. A
+downstream that ratchets its `tkc --lint` counts sees new findings on unchanged source:
+measured with this build, the toke tree gains 66 (27 `negated-comparison`, 24
+`nested-if-and`, 14 `modulo-emulation`, 1 `negated-equality`, in 29 of 695 sources,
+20 of them under `bench/patterns/macro/programs/`), ooke `main` 33 (25 `negated-equality`, 8
+`negated-comparison`), the website 0, and loke (1,091 `.tk` files, read-only) 110: 52
+`negated-comparison`, 50 `negated-equality`, 5 `modulo-emulation`, 3 `nested-if-and`.
+
+| Rule id | Severity | Reports | Message | `fix` | Story |
+|---|---|---|---|---|---|
+| `negated-equality` (new) | hint | `!(a==b)` | ``"`!(a==b)` negates a comparison toke has as one operator — write `a!=b`"`` | `a!=b`, only on integer or bool operands (by the checker's types) and where the parent takes a comparison unparenthesised; none on floats (`!=` is `fcmp one`: NaN) or str | 131.138 |
+| `negated-comparison` (new) | hint | `!(a<b)`, `!(a>b)` | as above, naming `<`/`>=` or `>`/`<=` | `a>=b` / `a<=b`, integer operands only (NaN: `!(x>y)` is true, `x<=y` false) | 131.138 |
+| `modulo-emulation` (new) | hint | `a-a/b*b`, `a-(a/b)*b` with the same name, field path or literal both times | ``"`a-a/b*b` computes the remainder the long way — write `a%b`"`` | `a%b` on integer operands: equal for every sign; both trap RT004 for `b==0` and MIN by -1 (the trap message says `remainder` for `division`) | 131.138 |
+| `nested-if-and` (new) | hint | `if(a){if(b){..}}` with no `el` on either and nothing else in the outer block; a chain once, at its outermost `if` | ``"`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`"`` | `if(a&&b){..}` (an `\|\|`, `mt` or expression-`if` operand parenthesised, since none parses bare beside `&&`); none when a comment sits in the outer block | 131.138 |
+
+Tests: D730–D734, C2101 (a differential of each fix over every sign combination at
+`-O0`/`-O2`, and the two traps). Reference: `docs/compiler/lint-rules-v1.md`
+"Page-shape rules".
+
 ### Notes for downstream builds
 
 - **Which stdlib C sources a program links is documented** (138.42): what `tkc
@@ -277,6 +441,31 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   lint rule added or changed (138.41; `make check-lint-rules` checks the rule ids).
   Neither has changed on main since 3.2.0 (checked at `987d9f6f`); 3.2.0's changes
   to both are in its addenda.
+- **`tkc --emit-deps` given several files prints one merged set** (138.54). It
+  printed each file's sections back to back, so the second file's C sources
+  followed the first file's `---` and read as link flags to every consumer that
+  splits on `---`. With more than one file it now prints the union in the
+  one-file layout -- sources, then `---` and flags, then `---` and user modules as
+  `<path>.ll` -- each entry once, in first-seen order, a `-framework X` pair kept
+  together; a file that does not type-check prints nothing on stdout for the whole
+  run. One file's output is byte-identical. ooke's `scripts/emit_deps.sh` and the
+  `build-deps.md` recipe run one file per call and are unaffected. Test: C2055.
+
+### Changed — diagnostics
+
+- **E4026 (wrong argument count) has no `fix` field** (138.51, AGENTS.md §6). The
+  four texts it carried were advice, not a repair right in every case: which side
+  is wrong (the call, or an interface that disagrees with its implementation) and
+  whether an argument is missing or surplus cannot be decided at the call site. An
+  alias or module call's message now ends with the advice ("...; match the call to
+  the declaration, or reconcile the interface with the implementation if they
+  disagree"); the code, `expected` and `got` are unchanged. Tests: D710-D713, C2057.
+- **CAP001's JSON `fix` names the tkc.toml key** (138.53). On a binary with no
+  baked grants it read `grant --allow-write or tkc.toml [capabilities] fs.write=true`;
+  tkc refuses `fs.write` as an unknown capability. It now reads `... fs_write = true`
+  (`fs_read`, `fs_write`, `net`, `env_write`, `process_spawn`), the spelling the
+  narrowing-binary fix already used. The text lines are unchanged. Tests: C2056,
+  C1884 case 8.
 
 ### Documentation and claim gates
 
@@ -299,6 +488,53 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   `check_metrics_claims.py`'s `PENDING` list is deleted, so rules 1 and 2 now fail it
   instead of warning. The canonical block and its downstream copies still carry v1's
   sentence and paragraph until 132.154 copies v2 everywhere at once.
+- **The canonical block carries v2's claim sentence and 79-word paragraph** (132.154,
+  owner decision of 2026-11-15). `canonical.json` (`purpose_one_sentence`,
+  `blocks.paragraph`) and `canonical.md` §3/§9 drop "compact in whatever unit the model
+  generates in" and "compact to emit"; this repository's README, the whitepaper's quotes
+  and the registry-descriptions note are re-copied. `make check-canonical` now enforces
+  v2 on every declared surface, so each sibling copy (repo READMEs, model cards, the
+  site's home page and `llms.txt`) reports DRIFTED until its own repository re-copies it.
+- **`make check-docs` compiles the tutorials' fragments** (127.486).
+  `scripts/check_tutorial_fragments.py` requires every toke fence in `docs/tutorials/`
+  to be a whole-line excerpt of one file under `examples/` (which `make check-examples`
+  builds), or to pass `tkc --check` inside the program a `<!-- fragment-context ...
+  {{fragment}} ... -->` comment above it declares, or to be a std-only program that
+  checks. Anything else fails, with a self-test as its negative control; on the tutorials
+  as they stood before 127.472 it reports 18 failures. `static-site.md` (ooke page code,
+  whose modules are not in this repository) warns under story 132.156 instead.
+- **The security guide recommends an escaper that exists** (132.157).
+  `docs/security/building-secure-apps.md` told readers to escape hand-built HTML with
+  `html.escape`, a quarantined `std.html` export with no implementation (`tkc` rejects
+  the call with E4027). It now recommends `tpl.escape` from `std.template`, says when
+  `tpl.render`'s positional escaping is needed instead, and its example is a complete
+  program that `make check-docs` builds. The `str.concat` examples beside it used `,`
+  as the argument separator and now use `;`.
+- **The security guide describes the escaping that ships** (132.158).
+  `docs/security/building-secure-apps.md`'s "Read this first" banner said HTML
+  escaping was opt-in and auto-escape not yet shipped, and its OOK-02 section said
+  `ooke`'s `{=title=}` performs no HTML encoding and to add `|escape` everywhere.
+  `ooke` 3.0.0 escapes template output for its position by default, and `tpl.render`
+  does the same since 121.37, so following the banner escaped values twice. Both now
+  describe the shipped behaviour (OOK-02 closed): leave the default, keep `|raw` for
+  HTML you produced, and `|md` is written unescaped behind `std.md`'s safe mode,
+  whose limits are stated. The checklist line follows.
+- **`std.html`'s docs point at an escaper that exists** (132.159). `docs/stdlib/html.md`
+  told readers to pass untrusted text through `html.escape`, which is quarantined
+  (E4027). It now names `tpl.escape` from `std.template`, with a program
+  `make check-docs` builds.
+- **The static-site tutorial is ooke 3.x, and its page code is checked against ooke**
+  (132.156). `docs/tutorials/static-site.md` taught an ooke that does not exist: page
+  handlers calling `store.slug`/`store.all`/`tpl.renderfile` (not ooke's API, and
+  `req.param("slug")` read a `T!E` as its value), `{% for %}`/`{% if %}` template
+  tags, chained filters and `site.title`. Its pages are now the route markers ooke 3.x
+  reads (`m=pages.blog.slug;`), its templates use `layout`/`block`/`yield`, its posts
+  live in `content/blog/`, and every step was built with `ooke build` from ooke main.
+  `scripts/check_tutorial_fragments.py` gains a rule for ooke page fences (a `m=pages.`
+  module or an `ooke.` import): `tkc --check -I <ooke>/src` against `$OOKE_DIR` or a
+  sibling `toke-ooke/` checkout; with no checkout the page is a WARN, not a pass. The
+  page's `UNCHECKED` entry is deleted. On the old page the rule reports both fences
+  (E4036 `req.param`, E3011).
 - **toke-model's Gate 2 statements are enforced copies of the canonical `models` fact**
   (127.495, owner decision D4). `check_canonical.py` now requires the fact word for word
   in toke-model's `README.md`, `huggingface/README.md` and `ollama/README.md`, which were
@@ -431,6 +667,22 @@ Tests: C1880–C1886, D615–D616, C470's new CLASSONLY control (`4d2cb26d`, `c9
   the box), each a `tlv_get_addr` call on Darwin, which the emitted code
   addresses by name. The catalogue entry is not re-ingested (127.461).
   Conformance: C2031.
+- **A std raise makes one thread-local lookup in C, not two** (127.504). The
+  slot `tk_current_error` and the error box's buffer are now one thread-local
+  object (`TkErrTls {slot, buf, cap}` in `tk_runtime.h`), and `tk_err_box`'s
+  fast path is inline in the header, so a glue function's raise reaches the
+  box and the slot through one `tlv_get_addr` on Darwin. The slot is the
+  object's first member and the symbol is still `tk_current_error`, so the
+  emitted code (`@tk_current_error = external thread_local global i64`) is
+  unchanged. Measured on Darwin arm64 (user CPU, min of 9, `PAT_N=65536000`,
+  load 7-50): cli-argv form a 0.46-0.52 s -> 0.35-0.41 s, form b
+  0.26-0.28 s -> 0.24-0.26 s (a/b from about 1.85x to 1.5x); at
+  `PAT_N=16384000` a 0.12 s -> 0.10 s against b 0.06 s. The emitted code's own
+  raise (a user `$err`) still calls the out-of-line `tk_err_box` and stores
+  the slot itself. For C: a file that includes `tk_runtime.h` must not
+  redeclare `tk_current_error` or `tk_err_box` (11 glue files did; they now
+  include the header), and a test that stands in for the runtime defines the
+  `TkErrTls` object, not an `int64_t`. Conformance: C2086.
 - **A trailing `;` before `}` in a type declaration is one E2002, not four
   diagnostics** (127.339). `m=a;t=$p{x:i64;};` reported E2002, E2004, E2002,
   E2002: `parse_field_list` stopped before the `;` without consuming it, so

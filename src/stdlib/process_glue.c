@@ -15,11 +15,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <signal.h>
 #include <sys/wait.h>
 
-/* ── 138.36 (loke T-67): the registry of live process handles ──────────────
+/* ── 138.36 (loke T-67): process handles are registry tokens ──────────────
  *
  * A toke program holds a process `handle` as an i64.  Until 138.36 that i64
  * was the ProcessHandle pointer itself and every wrapper below cast it back
@@ -29,67 +28,32 @@
  * with SIGSEGV.  The checker refuses the routes it can see (138.35); this
  * covers every route, including the ones it cannot.
  *
- * What a toke program receives from process.spawn is now a TOKEN, never an
- * address:  token = (serial << 32) | (slot + 1).  `slot` indexes g_proc.slots;
- * `serial` is a counter, unique per registration and never 0, kept in the
- * slot.  proc_lookup() decodes the slot, bounds-checks it and compares the
- * stored serial: it reads only the registry, never the value as memory.  So
- * a value the runtime did not hand out finds no live slot and is answered
- * exactly as NULL is -- wait/exitcode -1, stdout/stderr $err, kill false,
- * isalive 0, hasexited/poll 1.  Every integer below 2^32 is refused (its
- * serial half is 0), and so is a real token with either half moved (h+1,
- * h + 2^32).  0 is never a token (slot + 1 >= 1), so `$err:e 0` and
+ * What a toke program receives from process.spawn is a TOKEN from the
+ * runtime's handle registry (tk_runtime.c, kind TK_HK_PROCESS; 138.45 lifted
+ * 138.36's table there so every std module shares it):
+ * token = (serial << 32) | (slot + 1).  proc_lookup() reads only the
+ * registry, never the value as memory.  So a value the runtime did not hand
+ * out finds no live slot and is answered exactly as NULL is --
+ * wait/exitcode -1, stdout/stderr $err, kill false, isalive 0,
+ * hasexited/poll 1.  Every integer below 2^32 is refused (its serial half is
+ * 0), and so is a real token with either half moved (h+1, h + 2^32), and a
+ * token of another kind.  0 is never a token, so `$err:e 0` and
  * process.badhandle() keep their meaning.
  *
  * Lifetime.  No toke call frees a handle: process.wait caches the exit code
  * and the output drained meanwhile, and a later wait, stdout, stderr or kill
  * answers from them (docs/stdlib/process.md), so a waited handle stays live
- * and is answered as before.  Slots are therefore never reused today.  If a
- * close is ever added (it needs a spec story), it must free the slot and give
- * it a fresh serial on reuse; the serial comparison then refuses the old
- * token even when the slot holds a newer child.
- *
- * Bounded: at most TK_PROC_MAX_LIVE slots of 16 bytes (16 MiB).  Each live
- * handle also holds its child's stdin pipe open, so the per-process fd limit
- * is reached long before this cap.  Thread-safe: task workers may call
- * std.process, so every access holds g_proc.mu.  A lookup returns the
- * ProcessHandle after unlocking, which is safe because nothing frees one. */
+ * and is answered as before.  If a close is ever
+ * added (it needs a spec story), it calls tk_handle_drop and the slot is
+ * reused only under a fresh serial, so the old token is refused even when
+ * the slot holds a newer child.  Thread-safe: task workers may call
+ * std.process; the registry locks. */
 
-/* 2^20 live handles: a table of 16 MiB at most; see above for why the fd
- * limit binds first. */
-#define TK_PROC_MAX_LIVE (1u << 20)
-
-typedef struct { ProcessHandle *h; uint32_t serial; } ProcSlot;
-
-static struct {
-    pthread_mutex_t mu;
-    ProcSlot *slots;
-    uint32_t  n, cap;
-    uint32_t  serial;   /* last serial handed out; 0 is never one */
-} g_proc = { PTHREAD_MUTEX_INITIALIZER, NULL, 0, 0, 0 };
-
-/* proc_register -- give h a slot and return its token, or 0 when the table
- * is full or cannot grow (the caller then disposes of h). */
+/* proc_register -- the token for h, or 0 when the registry cannot grow (the
+ * caller then disposes of h). */
 static int64_t proc_register(ProcessHandle *h)
 {
-    int64_t tok = 0;
-    pthread_mutex_lock(&g_proc.mu);
-    if (g_proc.n == g_proc.cap && g_proc.cap < TK_PROC_MAX_LIVE) {
-        uint32_t nc = g_proc.cap ? g_proc.cap * 2 : 16;
-        if (nc > TK_PROC_MAX_LIVE) nc = TK_PROC_MAX_LIVE;
-        ProcSlot *ns = (ProcSlot *)realloc(g_proc.slots, (size_t)nc * sizeof *ns);
-        if (ns) { g_proc.slots = ns; g_proc.cap = nc; }
-    }
-    if (g_proc.n < g_proc.cap) {
-        /* Serials stay below 2^31 so a token is a positive i64. */
-        g_proc.serial = (g_proc.serial % 0x7fffffffu) + 1u;
-        uint32_t i = g_proc.n++;
-        g_proc.slots[i].h = h;
-        g_proc.slots[i].serial = g_proc.serial;
-        tok = (int64_t)(((uint64_t)g_proc.serial << 32) | (uint64_t)(i + 1u));
-    }
-    pthread_mutex_unlock(&g_proc.mu);
-    return tok;
+    return tk_handle_issue(TK_HK_PROCESS, h);
 }
 
 /* proc_lookup -- the ProcessHandle a token names, or NULL for anything the
@@ -97,16 +61,7 @@ static int64_t proc_register(ProcessHandle *h)
  * Never dereferences v. */
 static ProcessHandle *proc_lookup(int64_t v)
 {
-    uint64_t u = (uint64_t)v;
-    uint32_t serial = (uint32_t)(u >> 32);
-    uint32_t lo = (uint32_t)(u & 0xffffffffu);
-    ProcessHandle *h = NULL;
-    if (serial == 0 || lo == 0) return NULL;
-    pthread_mutex_lock(&g_proc.mu);
-    if (lo - 1u < g_proc.n && g_proc.slots[lo - 1u].serial == serial)
-        h = g_proc.slots[lo - 1u].h;
-    pthread_mutex_unlock(&g_proc.mu);
-    return h;
+    return (ProcessHandle *)tk_handle_token(TK_HK_PROCESS, v);
 }
 
 /* 138.19: the first token of a command string, as spawn_cmdstr splits it

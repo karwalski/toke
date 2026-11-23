@@ -1,0 +1,17 @@
+id: D717
+series: D
+description: "138.46 (T-67 class): arithmetic on an integer where std.image declares $imgbuf -- image.fliph(n+1) -- is E4031 with NO fix"
+input: |
+  m=t;
+  i=image:std.image;
+  f=main():i64{
+    let n=4;
+    let g=image.fliph(n+1);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix_absent: true
+expected_diag_field:
+  field: expected
+  value: "imgbuf"

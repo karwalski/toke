@@ -437,9 +437,12 @@ used them for the `$err` arm of a `mt` over `yaml.dec`/`toon.dec`, where the
 match must produce a document and the only other constructor is the call that
 just failed. Both are now declared in their `.tki` and implemented.
 
-**Still unreachable:** `analytics`, `dataframe` and `dashboard` examples that
-call `df.fromcsv`, `df.filter`, `df.tocsv`, `df.columnstr`, `df.groupby`,
-`df.shape` or the `dashboard.*` constructors need `i=http:std.http` added to
-the program to link. Those nine wrappers exist and are correct but live in
-`tk_web_glue.c`, which the build system registers against the HTTP module
-(story 136.33).
+**No longer needs std.http:** `analytics`, `dataframe` and `dashboard`
+programs that call `df.fromcsv`, `df.filter`, `df.tocsv`, `df.columnstr`,
+`df.groupby`, `df.shape` or the `dashboard.*` constructors link on their own.
+Their wrappers used to live in `tk_web_glue.c`, which the build system
+registers against the HTTP module, so such a program needed
+`i=http:std.http` to link (story 136.33). Story 136.40 moved them into
+`dataframe_glue.c` and `dashboard_glue.c`, which `src/stdlib_deps.c`
+registers against their own modules; no import of std.http is needed
+(127.522).

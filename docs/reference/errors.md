@@ -795,7 +795,7 @@ Since 136.1 this also covers a call through an import alias, `alias.member(...)`
 
 Since 127.1 it also covers a member call on a VALUE receiver, `recv.member(args)`. The receiver counts as the method's first argument, and the arity is read from the compiler's record of the native side — but only when every glue symbol that member may lower to agrees on it, since the symbol chosen depends on the receiver's kind (`contains` is a hash lookup on a map, a linear scan on an array and a substring search on a string). Where they disagree the compiler has no established arity and says nothing. Before this, surplus arguments were **discarded in silence** on the method path: `a.concat("A";"B")` on `a="xx"` compiled clean and returned `"xxA"`, and `a.len(1;2;3)` returned the length.
 
-**Fix:** Match the call to the declaration, or reconcile the interface with the implementation if they disagree. For a receiver method, the receiver is the first argument.
+**Fix:** none (story 138.51). Which side is wrong -- the call, or an interface that disagrees with its implementation -- cannot be decided at the call site, and whether an argument is missing or surplus cannot either, so no one edit is right in every case (AGENTS.md §6). The message of an alias or module call ends with the advice that used to be the `fix`: "match the call to the declaration, or reconcile the interface with the implementation if they disagree". For a receiver method the message says the receiver counts as the first argument.
 
 ### E4027
 
@@ -921,7 +921,7 @@ Triggers E4033 on `thing`.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | type_check (emitted by codegen; also by the checker for a str receiver) |
+| Stage    | type_check (emitted by codegen; also by the checker for a str receiver and an opaque std type) |
 
 Emitted when a `.field` access reaches lowering and the base's struct type is not established, and the field name does not resolve to one unambiguous layout — either no struct in scope declares it, or several declare it at different offsets.
 
@@ -930,6 +930,8 @@ Codegen used to answer both cases with a guess that looked like data: `struct_fi
 No `fix` is supplied: the obvious instruction — annotate the binding — is not correct for every shape.
 
 A field read on a value the checker knows is a `str` is the same case: a str has no struct layout, and its only property is `.len` (story 127.430). `--check` reports it as E4034 with the message `a str has no field '<name>': its only property is 'len'`, `got` set to the field name, and no `fix` -- whether the receiver or the name is wrong is not decidable. This covers `let s="hey"; s.nosuch`, a str parameter or str struct field, `ss.get(0).nosuch` and the `$ok` binding of a match over a `[str]` lookup, and a method name written without parentheses (`s.upper`). Until 127.430 the checker passed these and the build stopped with E4034, or -- when some struct in scope declared a field of that name -- built a program that read a struct slot out of the string's bytes and crashed. Method calls (`s.split(",")`, `s.len()`) are not field reads and are unaffected.
+
+A field read on a value of an opaque std type -- one its module's `.tki` marks `"opaque": true`: `$csvreader`, `$csvwriter`, `$dataframe`, `$jsonstream`, `$router`, `$handler`, `$middleware`, `$modelhandle` -- is the same case (story 138.65). Such a value is a C object or a runtime registry token, and the fields its interface declares are no layout toke can read. `--check` reports E4034 with the message `'$<type>' is an opaque std type: field '<name>' is not readable from toke; use the module's functions`, `got` set to `$<type>.<name>`, and no `fix` -- which module function was meant is not decidable. Until 138.65 the read compiled to a load at the field's slot: `w.sep` on `csv.writer(44)` printed 0, `d.ncols` printed the frame's column array address, and `r.pos` on a `$csvreader` died with SIGSEGV. A std record whose fields are its C layout (`$dashboard`, `$htmldoc`, `$llmstream`, `$canvasop`, `$dtreemodel`) is not marked opaque and reads as before; a record literal of an opaque type still builds; and a type the module declares itself under the same name is its own.
 
 ### E4035
 
@@ -1966,10 +1968,12 @@ reports a denied call at run time, before the syscall, and exits 1. With
 ### CAP001
 
 **Capability required but not granted** — the class is not granted at all. The `fix`
-is `grant --allow-<class> or tkc.toml [capabilities] <class>=true`; on a binary whose
+is `grant --allow-<class> or tkc.toml [capabilities] <key> = true`, where `<key>` is
+the manifest key (`fs_read`, `fs_write`, `net`, `env_write`, `process_spawn`; before
+138.53 it named the class, `fs.write=true`, which tkc.toml refuses); on a binary whose
 baked grants run-time flags may only narrow (138.19 D2) it is
 `tkc.toml [capabilities] <key> = true`, and absent when a run-time flag scopes the
-class. Conformance: C470, C1884.
+class. Conformance: C470, C1884, C2056.
 
 ### CAP002
 

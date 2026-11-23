@@ -13,12 +13,7 @@ The `std.dataframe` module provides a columnar data frame for tabular data proce
 
 ### $dataframe
 
-Opaque handle to a columnar data frame. The frame owns all column memory; release it when no longer needed. The fields below are readable but you should treat the frame as an opaque value and interact with it only through `df.*` functions.
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| ncols | u64 | Number of columns |
-| nrows | u64 | Number of rows |
+Opaque handle to a columnar data frame. The frame owns all column memory; release it when no longer needed. It has no readable fields: use `df.shape` for the row and column counts and the other `df.*` functions for the rest. The interface declares `ncols`, `nrows` and `arena` so a record literal can be written, but reading one is a compile error, E4034 (138.65; until then `d.ncols` read the column array's address and `d.nrows` the column count). A value no `df.*` or `analytics.*` function returned -- a record literal, `5 as $dataframe` -- is the null frame: the fallible calls return `$err`, `df.tocsv` returns `""` and `df.shape` returns `{rows:0;cols:0}` (138.63).
 
 ### $series
 
@@ -83,7 +78,7 @@ let revenue = mt df.column(data; "revenue") {$ok:v v;$err:e @()};
 
 ### df.columnstr(d: $dataframe; name: $str): @($str)!$dferr
 
-Extracts a string column by name and returns its values as a `$str` array. Returns `$dferr` if the column is not found or was stored as `f64` rather than `$str`.
+Extracts a string column by name and returns its values as a `$str` array, one per row in row order (a frame with no rows gives `@()`). Returns `$dferr` if the column is not found or was stored as `f64` rather than `$str`.
 
 <!-- skip-check -->
 ```toke
@@ -92,7 +87,7 @@ let regions = mt df.columnstr(data; "region") {$ok:v v;$err:e @()};
 
 ### df.filter(d: $dataframe; col: $str; op: $str; val: $str): $dataframe!$dferr
 
-Returns a new data frame containing only the rows where the numeric column `col` satisfies `col op val`. The `op` argument must be one of `"<"`, `"<="`, `"="`, `">="`, `">"`, or `"!="`. Returns `$dferr` if `col` does not exist, is not a numeric column, or if `val` cannot be parsed as `f64`.
+Returns a new data frame containing only the rows where the numeric column `col` satisfies `col op val`. The `op` argument must be exactly one of `"<"`, `"<="`, `"="`, `">="`, `">"`, or `"!="`. `val` is a number written as text (`"2"`, `"2.5"`, `"-1"`, `"1e3"`), read in full as an `f64` with the C `strtod` number syntax, so hex floats (`"0x1p1"`), `"nan"` and `"inf"` are also accepted, as they are when `df.fromcsv` decides a column is numeric. Returns `$dferr` if `col` does not exist or is not a numeric column, if `op` is anything else (`"=="` and `" <"` included), or if `val` is empty, starts with whitespace (`" 2"`), or has anything after the number (`"2x"`, `"2 "`) (138.66).
 
 <!-- skip-check -->
 ```toke
@@ -102,7 +97,7 @@ let large = mt df.filter(apac; "revenue";   ">";  "5000") {$ok:d d;$err:e <1};
 
 ### df.groupby(d: $dataframe; col: $str): @($dataframe)!$dferr
 
-Splits the data frame into one sub-frame per distinct value in the string column `col`, returning them as an array. Each sub-frame contains all rows that share the same group key value. Returns `$dferr` if `col` is not found or is not a `$str` column.
+Splits the data frame into one sub-frame per distinct value in the string column `col`, returning them as an array. Each sub-frame has every column of `d` and contains all rows that share the same group key value, in their original order; the groups are ordered by the first row in which each value appears. Each element is a `$dataframe` like any other: `df.shape`, `df.tocsv`, `df.filter` and `df.groupby` all accept it. A frame with no rows gives an empty array. Returns `$dferr` if `col` is not found or is not a `$str` column.
 
 <!-- skip-check -->
 ```toke
