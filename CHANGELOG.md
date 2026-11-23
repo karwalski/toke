@@ -230,6 +230,21 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Build and CI gates
 
+- **`docs/spec/toke.lark`, and `make check-grammar-artefacts`** (131.52). The Lark
+  form of `toke.gbnf`, generated rule for rule by `scripts/gbnf_to_lark.py --write`
+  (one character per terminal, so llguidance's greedy lexer cannot change the
+  language). The new gate, in `make ci`, fails when `toke.lark` is not a fresh
+  generation of `toke.gbnf`, and, for each of Lark, XGrammar and llguidance that
+  is importable (`GRAMMAR_PY=<venv>/bin/python`, `bench/mask_cost/requirements.txt`),
+  when the engine's verdict differs from the reference recogniser's on
+  `test/gbnf/fragments.json`; an engine that is not installed is reported as
+  SKIPPED. All three agree on every fragment checked (Lark: every 8th, `--full`
+  for all). `make bench-mask-cost` measures per-token mask time and compile time
+  for toke against a generated Python-subset grammar
+  (`bench/mask_cost/python-subset.gbnf`, checked by `make bench-mask-cost-check`:
+  accepted ⇒ CPython `ast.parse` accepts) and JSON, under one vocabulary
+  (cl100k_base); results: `docs/about/reviews/mask-cost-2026-11-23.md`.
+
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
   ("Not a directory: ...; exiting", exit 1) before running anything, so every
