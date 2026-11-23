@@ -122,9 +122,10 @@ prototype branch.
    with the bytes or be recomputed.
 5. **Strings are never freed today**, in the runtime or in any generated code
    (§3: "the runtime does not track or free them"). `docs/spec/memory-model.md`
-   §1 describes per-scope arenas with bulk release; the implementation has
-   never had them. Every option below that allocates differently inherits that
-   gap rather than causing it.
+   §1 described per-scope arenas with bulk release, which the implementation
+   never had; since 127.524 (2026-11-24) it describes this never-free model
+   instead. Every option below that allocates differently inherits that
+   model rather than causing it.
 
 #### Consumer inventory
 
@@ -224,9 +225,9 @@ and `tls.group` added one `str`-returning export.
 - **Targets without `mmap`** (`Makefile.wasm`): `tks_init` fails and
   `tks_alloc` falls back to `malloc` — every string unsealed, behaviour
   identical to today.
-- **Future freeing:** if strings ever get the arenas `memory-model.md` §1
-  describes (or ADR-0006's release), the region must become per-arena and
-  release must clear its bits. S1 does not make that harder; it makes the
+- **Future freeing:** if strings ever get released (the `{arena}` ADR of
+  127.525, `memory-model.md` §1.2 and §7.2, or ADR-0006's release), the
+  region must become per-arena and release must clear its bits. S1 does not make that harder; it makes the
   current never-free behaviour explicit.
 - **135.18 (`fix/ea-bytes`, held):** independent — arrays and strings share no
   code path in this plan.

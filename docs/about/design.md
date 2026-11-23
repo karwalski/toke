@@ -84,9 +84,9 @@ Functions that can fail return a result-or-error type. The `!` operator propagat
 - Error handling is visible in the type signature.
 - The compiler can verify error handling completeness statically.
 
-## Arena Memory Discipline
+## Memory Model
 
-Memory allocation follows a lexical arena discipline. All heap allocations within a function body or explicit arena block are freed deterministically when the scope exits. No garbage collector. No reference counting. No manual `free()` calls. Memory safety is enforced by scope rules, not by runtime overhead.
+No garbage collector and no manual `free()` calls. Values the runtime creates are not released before the program exits, apart from closure environments and the number conversions of a string interpolation, so pure toke code cannot use memory after it is freed or free it twice. The cost is memory growth in long-running programs. Release by explicit `{arena}` blocks is planned under an ADR (story 127.525); the [memory model](/docs/spec/memory-model/) states what ships.
 
 ## Structured Diagnostics
 
