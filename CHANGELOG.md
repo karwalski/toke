@@ -425,6 +425,8 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
   change together. Test: C2001.
 
+- **std.infer's streaming loader refuses instead of returning a handle that is never loaded** (136.78). In a llama.cpp build (`TK_HAVE_LLAMACPP`), `tk_infer_load_streaming` returned success with a handle whose model and context stayed NULL, because its layer loop is a TODO: `tk_infer_is_loaded` said 0 and every `generate` / `embed` on it failed after a load that had succeeded. After the directory and shard checks (code -1) it now returns `is_err=1`, code -2 ("not implemented"), no handle and no prefetch thread; the prefetch machinery is kept behind `TK_INFER_STREAM_LAYER_LOOP`. The stub core and this repository's glue already failed and are unchanged, so no toke program changes behaviour. `docs/stdlib/infer.md` documents streaming as incomplete. Test: C2220.
+
 ### Changed — code generation: interpolation frees its number conversions (127.299)
 
 - **A string interpolation frees the number conversions it made** (127.299).

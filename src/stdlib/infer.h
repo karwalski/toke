@@ -120,14 +120,17 @@ TkEmbedResult tk_infer_embed(TkModelHandle *h, const char *text);
 
 /* infer.is_loaded(h:model_handle) -> bool
  *
- * Returns 1 if h refers to an active, loaded model; 0 otherwise. */
+ * Returns 1 if h refers to an active, loaded model; 0 otherwise.  Only
+ * tk_infer_load can produce such a handle: tk_infer_load_streaming returns
+ * no handle at all until its layer loop exists (136.78). */
 int tk_infer_is_loaded(const TkModelHandle *h);
 
 /* infer.load_streaming(model_dir:Str; opts:stream_opts) -> model_handle!infererr
  *
  * Epic 72.7 extension — disk-streaming load so only the active layer window
- * needs to reside in RAM.  NOT YET IMPLEMENTED: always returns is_err=1 with
- * code=-2. */
+ * needs to reside in RAM.  NOT YET IMPLEMENTED (136.78): never returns a
+ * handle; returns is_err=1 with code=-2 (code=-1 for a bad model_dir or a
+ * directory with no layer_NNN.gguf shards in a llama.cpp build). */
 TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
                                               TkStreamOpts opts);
 
