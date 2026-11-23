@@ -272,7 +272,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal render-stdlib-signatures check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal render-stdlib-signatures check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-grammar-artefacts bench-mask-cost bench-mask-cost-check check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -1323,7 +1323,7 @@ test-ci: test-ci-green
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
 # 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics check-lint-rules diff-codegen test-standalone
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-grammar-artefacts check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics check-lint-rules diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1406,6 +1406,23 @@ check-gbnf: $(BIN)
 	TKC=$(abspath $(BIN)) python3 scripts/gbnf_gate.py
 bench-gbnf: $(BIN)
 	TKC=$(abspath $(BIN)) python3 scripts/gbnf_bench.py
+
+# 131.52 — engine artefacts. docs/spec/toke.lark is GENERATED from toke.gbnf
+# (scripts/gbnf_to_lark.py --write); the gate fails if it differs from a fresh
+# generation, and, for each of lark / xgrammar / llguidance that is importable,
+# if the engine's verdict differs from gbnf_earley's on test/gbnf/fragments.json
+# (an engine that is not installed is reported SKIPPED). GRAMMAR_PY picks the
+# interpreter, e.g. a venv from bench/mask_cost/requirements.txt.
+# bench-mask-cost: per-token mask / compile time, toke vs a Python subset vs JSON,
+# XGrammar and llguidance, cl100k_base vocabulary (writes build/mask-cost/*.json).
+# bench-mask-cost-check: the Python-subset grammar's coverage and soundness check.
+GRAMMAR_PY ?= python3
+check-grammar-artefacts:
+	$(GRAMMAR_PY) scripts/gbnf_to_lark.py --check
+bench-mask-cost: $(BIN)
+	TKC=$(abspath $(BIN)) $(GRAMMAR_PY) bench/mask_cost/mask_cost.py
+bench-mask-cost-check: $(BIN)
+	TKC=$(abspath $(BIN)) $(GRAMMAR_PY) bench/mask_cost/python_subset_gbnf.py --check
 
 # 132.6 — token-efficiency claim gate. Every published percentage about tokens must
 # carry its TEMSpec §6.3 fields (metric type, tokenizer, baseline, N), no withdrawn

@@ -12,7 +12,9 @@
 # cleanly (exit 0 and no recovery warning: `#`/`//` comments, `let mut x`,
 # `if(c):{`, `mut x` without the dot are repairs, not toke).  Edit this file
 # and the gate together; the gate's KNOWN table lists the few places where a
-# context-free grammar over-approximates the parser on purpose.
+# context-free grammar over-approximates the parser on purpose.  docs/spec/toke.lark
+# is generated from this file (`python3 scripts/gbnf_to_lark.py --write`), and
+# `make check-grammar-artefacts` fails if it is stale.
 #
 # How the lexer is encoded:
 #   * `ws` (possibly empty) may separate any two tokens; it includes nested

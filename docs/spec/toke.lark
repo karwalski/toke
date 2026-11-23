@@ -1,0 +1,238 @@
+// toke v0.4 -- Lark grammar for grammar-constrained decoding and parsing (story 131.52).
+//
+// GENERATED from docs/spec/toke.gbnf by scripts/gbnf_to_lark.py -- do not edit.
+// Edit toke.gbnf, then run `python3 scripts/gbnf_to_lark.py --write`.
+// `make check-grammar-artefacts` fails if this file differs from a fresh
+// generation, and compares Lark / XGrammar / llguidance verdicts with the
+// reference recogniser on test/gbnf/fragments.json; `make check-gbnf` ties
+// toke.gbnf itself to the parser (`tkc --dump-ast`).
+//
+// Character level: the grammar encodes the lexer too (see toke.gbnf's header),
+// so every terminal is ONE character ("l" "e" "t", not "let"): a greedy
+// lexeme lexer such as llguidance's would otherwise read the `let` inside
+// `lettrue` as the keyword and change the language.  Load it
+// with an Earley parser and the dynamic lexer, e.g.
+//     Lark(open("toke.lark").read(), start="root", parser="earley", lexer="dynamic")
+// or hand it to llguidance as a Lark grammar with `start: root` prepended.  Rule names are toke.gbnf's,
+// with `-` spelled `_`.
+
+root: ws moddecl (sep importdecl)* (sep typedecl)* (sep constdecl)* (sep letstmt)* (sep funcdecl)* (ws ";")? ws
+sep: ws ";" ws
+moddecl: "m" ws "=" ws modpath
+importdecl: "i" ws "=" ws ident ws ":" ws modpath (ws string)?
+modpath: seg (ws "." ws seg)*
+seg: ident | typeident
+typedecl: "t" ws "=" ws ("$" ws ident | ident | typeident) ws "{" ws field (ws ";" ws field)* ws "}"
+field: ("$" ws)? (ident | typeident) ws ":" ws type
+constdecl: cname ws "=" ws literal ws ":" ws type
+funcdecl: "f" ws "=" ws ident ws "(" ws params? ws ")" ws ":" ws retspec (ws block)?
+params: param (ws ";" ws param)*
+param: ident ws ":" ws type
+retspec: type (ws "!" ws type)?
+block: "{" ws stmts? "}"
+stmts: (item ws)* simple ws | (item ws)+
+stmts_p: simple_p ws | item_p ws stmts?
+item: simple ws ";" | compound (ws ";")? | arena
+item_p: simple_p ws ";"
+simple: letstmt
+    | assign
+    | ret
+    | "b" "r"
+    | scope
+    | exprstmt
+simple_p: "<" (ws expr)? | orx_p
+compound: ifstmt | loop
+letstmt: "l" "e" "t" ws1 ident (ws ":" ws type)? ws "=" ws ("m" "u" "t" ws "." ws)? expr
+assign: ident ws "=" ws expr
+ret: "<" (ws expr)? | "r" "t" expr_aw?
+scope: "s" "c" ws block
+exprstmt: mtexpr | orx
+ifstmt: "i" "f" ws "(" ws expr ws ")" ws block (ws "e" "l" (ws1 ifstmt | ws block))?
+loop: "l" "p" ws "(" ws (loop3 | expr) ws ")" ws block
+loop3: ("l" "e" "t" ws1)? ident ws "=" ws expr ws ";" ws expr ws ";" ws ident ws "=" ws expr
+arena: "{" ws "a" "r" "e" "n" "a" (ws | ws1 stmts | stmts_p) "}"
+expr: ifexpr | mtexpr | orx
+expr_aw: ws1 expr | orx_p
+ifexpr: "i" "f" ws "(" ws expr ws ")" ws block ws "e" "l" (ws1 ifexpr | ws block)
+mtexpr: "m" "t" (ws1 orx_nt | orx_nt_p) ws "{" ws arm (ws ";" ws arm)* (ws ";")? ws "}"
+arm: ("$" ws ident | ident | typeident) ws ":" ws ident (ws "<" (ws expr)? | expr_aw)
+orx: un orrest
+orx_p: un_p orrest
+orrest: arrest (ws cmpop ws arx)? (ws logop ws cmpx)*
+arrest: (ws arop ws un)*
+arx: un arrest
+cmpx: arx (ws cmpop ws arx)?
+logop: "|" "|"
+    | "&" "&"
+    | "|"
+    | "^"
+    | "&"
+cmpop: "=" "="
+    | "!" "="
+    | "<" "="
+    | ">" "="
+    | "<"
+    | ">"
+arop: "<" "<"
+    | ">" ">"
+    | "+"
+    | "-"
+    | "*"
+    | "/"
+    | "%"
+orx_nt: un_nt | un orrest_nt
+orx_nt_p: un_nt_p | un_p orrest_nt
+orrest_nt: arrest ws arop ws un_nt | arrest ws cmpop ws arx_nt | arrest (ws cmpop ws arx)? (ws logop ws cmpx)* ws logop ws cmpx_nt
+arx_nt: (un ws arop ws)* un_nt
+cmpx_nt: arx_nt | arx ws cmpop ws arx_nt
+un: ("-" | "~") ws un
+    | "!" ws un_nsl
+    | cp
+    | "s" "p" "a" "w" "n" expr_aw
+un_p: ("-" | "~") ws un | "!" ws un_nsl | cp_p
+un_nsl: ("-" | "~") ws un
+    | "!" ws un_nsl
+    | cp_nsl
+    | "s" "p" "a" "w" "n" expr_aw
+un_nt: ("-" | "~") ws un_nt
+    | "!" ws un_nt
+    | cp_nt
+    | "s" "p" "a" "w" "n" expr_aw
+un_nt_p: ("-" | "~") ws un_nt | "!" ws un_nt | cp_nt_p
+cast_w: (ws1 "a" "s" asty)? prop?
+cast_p: (ws "a" "s" asty)? prop?
+cast1_w: ws1 "a" "s" asty prop? | prop
+cast1_p: ws "a" "s" asty prop? | prop
+asty: ws1 type | type_p
+prop: ws "!" ws type
+cp: prim_ew cast_w
+    | prim_ep cast_p
+    | prim tl_ew cast_w
+    | prim tl_ep cast_p
+    | "f" "n" cast_w
+cp_p: prim_p_ew cast_w
+    | prim_p_ep cast_p
+    | prim_p tl_ew cast_w
+    | prim_p tl_ep cast_p
+cp_nsl: prim_ew cast_w
+    | prim_ep_nsl cast_p
+    | prim_sl cast1_p
+    | prim tl_ew cast_w
+    | prim tl_ep cast_p
+    | "f" "n" cast_w
+cp_nt: prim_ew_nt cast_w
+    | prim_tr cast1_w
+    | prim_ep cast_p
+    | prim tl_ew cast_w
+    | prim tl_ep cast_p
+    | "f" "n" cast_w
+cp_nt_p: prim_ref cast_w
+    | prim_typ cast1_w
+    | prim_p_ep cast_p
+    | prim_p tl_ew cast_w
+    | prim_p tl_ep cast_p
+tl_ew: tlg* (tlg_d | idx idx2*)
+tl_ep: tlg* tlg_c
+tlg: tlg_c | tlg_d
+tlg_c: (idx idx2*)? ws "(" ws args? ws ")"
+tlg_d: (idx idx2*)? ws "." ws vname
+idx: ws "." ws int
+idx2: ws1 "." ws int | "." ws1 int
+args: expr (ws ";" ws expr)*
+prim: prim_ew | prim_ep
+prim_ew: prim_ew_nt | prim_tr
+prim_ew_nt: vname | literal_w | prim_ref
+prim_ep: prim_ep_nsl | prim_sl
+prim_ep_nsl: closure
+    | string
+    | prim_arr
+    | prim_par
+prim_p: prim_p_ew | prim_p_ep
+prim_p_ew: prim_typ | prim_ref
+prim_p_ep: string
+    | prim_slp
+    | prim_arr
+    | prim_par
+prim_tr: typeident | prim_typ
+prim_typ: "$" ws ident
+prim_ref: "&" ws ident
+prim_sl: typeident ws "{" sbody "}" | prim_slp
+prim_slp: "$" ws ident ws "{" sbody_d "}"
+prim_arr: "@" ws "(" ws (aitems ws)? ")"
+prim_par: "(" ws expr ws ")"
+closure: "f" "n" ws "(" ws params? ws ")" (ws ":" ws retspec)? ws block
+sbody: ws (finit (ws ";" ws finit)* (ws ";")? ws)?
+sbody_d: ws (finit_d (ws ";" ws finit_d)* (ws ";")? ws)?
+finit: (ident | typeident) ws ":" ws expr
+finit_d: ("$" ws)? (ident | typeident) ws ":" ws expr
+aitems: expr (ws ";" ws expr)* (ws ";")? | expr ws ":" ws expr (ws ";" ws expr ws ":" ws expr)* (ws ";")?
+type: type_w | type_p
+type_w: scalar | typeident | ident ws "." ws "$" ws ident
+type_p: type_np_p | functype
+type_np_p: "$" ws ident
+    | "*" ws type
+    | "@" ws "(" ptype ws (":" ws type ws)? ")"
+    | "@" ws (type_w | type_np_p)
+functype: "(" (ptype (ws ";" ws type)*)? ws ")" ws ":" ws type
+ptype: ws (type_w | "$" ws ident | "@" ws "(" ptype ws (":" ws type ws)? ")" | "@" ws (type_w | type_np_p) | functype) | ws1 "*" ws type
+scalar: "u" "8"
+    | "u" "1" "6"
+    | "u" "3" "2"
+    | "u" "6" "4"
+    | "i" "8"
+    | "i" "1" "6"
+    | "i" "3" "2"
+    | "i" "6" "4"
+    | "f" "3" "2"
+    | "f" "6" "4"
+    | "b" "o" "o" "l"
+    | "s" "t" "r"
+    | "b" "y" "t" "e"
+    | "v" "o" "i" "d"
+literal: literal_w | string
+literal_w: float
+    | int
+    | "t" "r" "u" "e"
+    | "f" "a" "l" "s" "e"
+int: "0" /[xX]/ /[0-9a-fA-F]/+ | "0" /[bB]/ /[01]/+ | /[0-9]/+
+float: /[0-9]/+ "." /[0-9]/+
+string: "\"" (/[^"\\]/ | "\\" /["\\ntr0]/ | "\\" "x" /[0-9a-fA-F]/ /[0-9a-fA-F]/ | "\\" "(" interp ")")* "\""
+interp: (/[^()]/ | "(" interp ")")*
+typeident: /[A-Z]/ /[a-zA-Z0-9]/*
+ident: /[a-z]/ | word | "f" "n"
+vname: /[a-z]/ | word
+cname: /[a-eg-hj-ln-su-z]/ | word | "f" "n"
+word: /[cdghjkn-qu-z]/ /[a-zA-Z0-9]/+
+    | "a" word_a
+    | "b" word_b
+    | "e" word_e
+    | "f" word_f
+    | "i" word_i
+    | "l" word_l
+    | "m" word_m
+    | "r" word_r
+    | "s" word_s
+    | "t" word_t
+word_a: /[0-9A-Za-rt-z]/ /[a-zA-Z0-9]/* | "s" /[a-zA-Z0-9]/+
+word_b: /[0-9A-Za-qs-z]/ /[a-zA-Z0-9]/* | "r" /[a-zA-Z0-9]/+
+word_e: /[0-9A-Za-km-z]/ /[a-zA-Z0-9]/* | "l" /[a-zA-Z0-9]/+
+word_f: /[0-9A-Zb-mo-z]/ /[a-zA-Z0-9]/* | "n" /[a-zA-Z0-9]/+ | "a" word_fa
+word_fa: /[0-9A-Za-km-z]/ /[a-zA-Z0-9]/* | "l" word_fal |
+word_fal: /[0-9A-Za-rt-z]/ /[a-zA-Z0-9]/* | "s" word_fals |
+word_fals: /[0-9A-Za-df-z]/ /[a-zA-Z0-9]/* | "e" /[a-zA-Z0-9]/+ |
+word_i: /[0-9A-Za-eg-z]/ /[a-zA-Z0-9]/* | "f" /[a-zA-Z0-9]/+
+word_l: /[0-9A-Za-df-oq-z]/ /[a-zA-Z0-9]/* | "p" /[a-zA-Z0-9]/+ | "e" word_le
+word_le: /[0-9A-Za-su-z]/ /[a-zA-Z0-9]/* | "t" /[a-zA-Z0-9]/+ |
+word_m: /[0-9A-Za-sv-z]/ /[a-zA-Z0-9]/* | "t" /[a-zA-Z0-9]/+ | "u" word_mu
+word_mu: /[0-9A-Za-su-z]/ /[a-zA-Z0-9]/* | "t" /[a-zA-Z0-9]/+ |
+word_r: /[0-9A-Za-su-z]/ /[a-zA-Z0-9]/* | "t" /[a-zA-Z0-9]/+
+word_s: /[0-9A-Zabd-z]/ /[a-zA-Z0-9]/* | "c" /[a-zA-Z0-9]/+
+word_t: /[0-9A-Za-qs-z]/ /[a-zA-Z0-9]/* | "r" word_tr
+word_tr: /[0-9A-Za-tv-z]/ /[a-zA-Z0-9]/* | "u" word_tru |
+word_tru: /[0-9A-Za-df-z]/ /[a-zA-Z0-9]/* | "e" /[a-zA-Z0-9]/+ |
+ws: (/[\x20\x09\x0d\x0a]/ | comment)*
+ws1: (/[\x20\x09\x0d\x0a]/ | comment)+
+comment: "(" "*" (cbody_n comment)* cbody "*" ")"
+cbody: cchunk* "*"*
+cbody_n: cchunk* ("*"+ | "*"* "("+)?
+cchunk: /[^(*]/ | "("+ /[^(*]/ | "*"+ (/[^()*]/ | "("+ /[^(*]/)
