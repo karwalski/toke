@@ -57,6 +57,9 @@ StrSliceResult str_slice(const char *s, uint64_t start, uint64_t end)
 const char *str_from_int(int64_t n)
 {
     /* "-9223372036854775808" is 20 chars + NUL */
+    /* 127.299: stays malloc'd, never sealed.  Generated code free()s this
+     * result (via tk_str_fromi64_w) after an interpolation's join_n copied
+     * it; converting it to tks_alloc needs that free removed (C2200). */
     char *buf = malloc(24);
     if (!buf) return NULL;
     snprintf(buf, 24, "%" PRId64, n);
@@ -65,6 +68,7 @@ const char *str_from_int(int64_t n)
 
 const char *str_from_float(double n)
 {
+    /* 127.299: stays malloc'd -- see str_from_int. */
     char *buf = malloc(64);
     if (!buf) return NULL;
     snprintf(buf, 64, "%g", n);

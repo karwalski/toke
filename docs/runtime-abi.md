@@ -54,7 +54,11 @@ Strings are **C strings**: null-terminated `ptr` (pointer to `i8`).
 - String literals are emitted as LLVM global constants
   (`@.str.N = private constant [K x i8] c"...\\00"`).
 - Runtime-created strings are never freed: the runtime does not track
-  them, and nothing may `free()` one that reached toke code.  Most are
+  them, and nothing may `free()` one that reached toke code.  The one
+  exception never reaches toke code (127.299): an interpolation literal frees
+  the `tk_str_fromi64_w` / `tk_str_fromfloat_w` conversions it emitted for
+  its own segments, right after its `tk_str_join_n` has copied them
+  (`docs/decisions/127.299-function-arena.md` §6).  Most are
   `malloc`'d; since 127.170 the core producers return **sealed strings**
   from the string heap instead, which carry their length (§3.1).  A sealed
   string is still a NUL-terminated C string, so nothing that reads one with

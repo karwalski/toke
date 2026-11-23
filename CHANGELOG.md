@@ -410,6 +410,24 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
   change together. Test: C2001.
 
+### Changed — code generation: interpolation frees its number conversions (127.299)
+
+- **A string interpolation frees the number conversions it made** (127.299).
+  In `"k\(i)=\(x)"` every int or float segment was converted into a fresh
+  `malloc`'d string, copied by the literal's single `tk_str_join_n`, and then
+  kept forever, although no toke value could reach it. The literal now frees
+  those conversions right after the join. Nothing a program can see changes:
+  the result is the same sealed string, a one-segment `"\(n)"` still returns
+  its conversion, and string, bool and u64/u8/u16/u32 operands are not
+  touched. Measured on 1M iterations of `"k\(i)=\(i*3);f=\(1.5)"`: peak RSS
+  went from 154.9 MB to 32.3 MB, frees from 14 to 3,000,015, with identical
+  output and time. The ooke template harness (127.257) is unchanged, because
+  its bytes are sealed token slices and builder output. This is the one slice
+  that `docs/decisions/127.299-function-arena.md` finds provably safe without
+  escape analysis. That note also records the per-function-arena and
+  `{arena}` designs the owner asked for (answer 1.13). Test: C2200
+  (ASan+UBSan, `TK_STR_VERIFY=1`).
+
 ### Added — lint rules for the pre-132.15 spec-page shapes (131.138)
 
 Four new hints, one per long form the withdrawn specification page prescribed. They
