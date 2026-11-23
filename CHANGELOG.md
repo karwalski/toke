@@ -327,6 +327,17 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   `$err`, with the message `df.filter: the filter could not be applied
   (unknown or non-numeric column, unknown op, or a val that is not an f64)`.
   Tests: C2161, `test_dataframe` T65.
+- **`df.groupby(d;col)` returns the `[dataframe]` its interface declares**
+  (127.518). The glue asked the C group-and-aggregate routine for an
+  aggregate over no column, so every call was `$err`, and on success it would
+  have handed back a C `DfGroupResult*` where toke reads an array of
+  dataframes. It now returns one registered `$dataframe` per distinct value of
+  the `$str` column `col` -- every column, rows in their original order,
+  groups in order of each value's first row -- so `.len`, `.get(i)`,
+  `df.shape`, `df.tocsv` and `df.filter` work on the groups. A frame with no
+  rows gives `@()`; an unknown or non-`$str` column is still `$err`
+  (`df.groupby: the column could not be grouped`). Tests: C2180,
+  `test_dataframe` T66.
 
 - **std.cache's disk spill writes the whole entry or leaves no file** (127.445).
   The spill to `disk_dir` ignored `write(2)`'s result and counted the body in
