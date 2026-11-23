@@ -338,6 +338,14 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   rows gives `@()`; an unknown or non-`$str` column is still `$err`
   (`df.groupby: the column could not be grouped`). Tests: C2180,
   `test_dataframe` T66.
+- **`df.columnstr(d;name)` returns the `[str]` its interface declares**
+  (127.520). The glue handed back the C routine's malloc'd `char**`, which
+  has no toke array header, so `.len` of the `$ok` value read the word before
+  the block (0 for a 2-row column) and `.get(i)` was bounds-checked against
+  it. It now returns a toke array of sealed strings, one per row in row
+  order. A `$str` column of a frame with no rows gives `@()`; an unknown or
+  `f64` column is still `$err` (`df.columnstr: no such string column`).
+  Test: C2190.
 
 - **std.cache's disk spill writes the whole entry or leaves no file** (127.445).
   The spill to `disk_dir` ignored `write(2)`'s result and counted the body in
