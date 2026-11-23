@@ -6,7 +6,7 @@ services in toke, using the `std` library, the `ooke` site framework, and the
 security audit (`docs/security/audit-120/`); finding IDs such as `OOK-02` or
 `AMB-02` are cited so you can read the underlying analysis.
 
-> **Read this first (updated 2026-07-07).** toke's security posture has moved
+> **Read this first (updated 2026-11-23).** toke's security posture has moved
 > quickly since the Epic 120 audit — several findings below are now closed at the
 > platform level:
 >
@@ -19,10 +19,14 @@ security audit (`docs/security/audit-120/`); finding IDs such as `OOK-02` or
 >   121.13). Do **not** rely on a runtime WAF — put rate-limiting behind an external
 >   proxy. The real controls are capabilities (ADR-0010), parameterized-only SQL and
 >   argv-only exec (ADR-0011), and the spatial-safety traps (ADR-0012).
+> - **Template output is escaped by default (`OOK-02` closed).** `ooke` 3.0.0
+>   escapes every `{=x=}` for the place it sits in the HTML, and `std.template`'s
+>   `tpl.render` does the same for every `{{slot}}` (story 121.37, ADR-0011). Do
+>   not escape a value yourself before handing it to either, or it is escaped
+>   twice; `|raw` (`{=x|raw=}`, `{{x|raw}}`) is the explicit opt-out (section 2).
 >
-> Still application-side today: **HTML escaping is opt-in** — escape untrusted values
-> with `tpl.escape` before rendering (auto-escape by default is accepted, ADR-0011,
-> but not yet shipped; `OOK-02`) — and `ooke` has no built-in session/CSRF/authz
+> Still application-side today: HTML you build by hand must be escaped with
+> `tpl.escape` (section 2), and `ooke` has no built-in session/CSRF/authz
 > primitive (`OOK-03`). This guide shows the patterns for the gaps the platform
 > hasn't closed yet. Sections that predate the capability flip are being refreshed;
 > where a section describes ambient authority or the WAF as present, treat the
@@ -57,34 +61,45 @@ containment.**
 
 ## 2. Output escaping and XSS
 
-### The template auto-escape gap (OOK-02)
+### Template output is escaped by default (OOK-02, closed)
 
-`ooke` templates emit interpolated values **verbatim**. `{=title=}` performs no
-HTML encoding; escaping only happens when you explicitly add `|escape`. The safe
-path is the one you have to remember, and the failure mode is silent — this is
-XSS-by-default for any multi-author content site.
+The Epic 120 audit found that `ooke` templates emitted `{=title=}` verbatim
+(`OOK-02`). Since `ooke` 3.0.0 (ADR-0011) every interpolation is escaped for the
+place it sits: HTML text and attribute values get entities, a URL attribute
+refuses any scheme but `http`, `https` and `mailto` (the value becomes
+`#ZtokeZ`), a value inside `<script>` or an `on*` attribute becomes a quoted
+JavaScript string, and one in `<style>` or `style=` is kept only if it is a
+plain CSS value. The `upper`, `lower`, `trim` and `escape` filters are escaped
+after they apply, so `|escape` spells out the default rather than escaping
+again. `std.template`'s `tpl.render` escapes each `{{slot}}` the same way
+(story 121.37, `docs/stdlib/template.md`, "Escaping").
 
-**Don't** — rely on the bare interpolation for anything derived from stored
-content, frontmatter, or request input:
+**Don't** — opt out with `|raw` for anything derived from stored content,
+frontmatter, or request input:
+
+```
+<h1>{=title|raw=}</h1>
+```
+
+**Do** — leave the default in place:
 
 ```
 <h1>{=title=}</h1>
-<div>{=body=}</div>
+<a href="{=link=}">more</a>
 ```
 
-**Do** — escape every interpolation of untrusted data:
+Reserve `|raw` for HTML you generated yourself. When upgrading an `ooke` 2.x
+template: a template that relied on raw output now prints escaped text
+(add `|raw` only where the HTML is yours), and a value you escaped before
+handing it to `ooke` is now escaped twice.
 
-```
-<h1>{=title|escape=}</h1>
-<div>{=body|escape=}</div>
-```
-
-Treat `|escape` as mandatory. Reserve unescaped output only for values you
-generated yourself and know to be safe HTML (e.g. a pre-sanitized layout
-fragment). If you render Markdown with `|md`, remember `md.render` forces
-`CMARK_OPT_UNSAFE` and does **not** sanitize link hrefs or raw HTML (`PAR-05`) —
-run its output through an allowlist sanitizer before serving multi-author
-Markdown, or disable raw HTML/`javascript:` links.
+`|md` output is **not** escaped: it is written as `md.render` produced it.
+`md.render` runs cmark in its safe mode, so raw HTML in the Markdown source is
+dropped and `javascript:`, `vbscript:`, `file:` and `data:` links (except
+PNG, GIF, JPEG and WebP images) become `href=""`, table cells included
+(`PAR-05`; stories 124.3, 121.16). That is all it filters: links and images
+to any other URL are kept, so if multi-author Markdown must not link to or
+embed off-site content, filter the source before rendering it.
 
 ### Escape at the point of emission when building HTML by hand
 
@@ -538,7 +553,7 @@ harden yours accordingly.
 
 Before shipping a toke web app, confirm:
 
-- [ ] Every template interpolation of untrusted data uses `|escape` (or `tpl.escape` from `std.template`); Markdown is sanitized (`OOK-02`, `PAR-05`).
+- [ ] No template interpolation of untrusted data uses `|raw`; HTML built by hand goes through `tpl.escape` (`std.template`), and no value is escaped both by hand and by the template (`OOK-02`, `PAR-05`).
 - [ ] Route params and query values are validated and escaped before reflection (`OOK-06`, `WEB-06`).
 - [ ] All request input is length-bounded and allowlist-validated before use (section 3).
 - [ ] Every SQL value is bound as a parameter; identifiers are allowlisted (`DAT-01`, `OOK-04`).
