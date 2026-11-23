@@ -310,6 +310,28 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 - **`http.withmaxbody` bounds the response header block too** (138.49). The client read the header block until its blank line with no ceiling, cap or no cap, so a server that never ends its headers grew a capped client's memory for as long as the request lasted. A client carrying `http.withmaxbody` now refuses a header block over 65536 bytes with `$err` `response header block exceeds the cap (65536 bytes): ...` and closes the connection; a client without it reads as before (the 138.24 amendment's opt-in convention; a cap on every client is an open owner question). Test: C2061.
 
+### Added — OS-level enforcement of capability grants, opt-in (138.44)
+
+This implements D5 of `docs/decisions/138.19-scoped-capability-grants.md`, which the owner made a separate story on 2026-11-15; the design is `docs/decisions/138.44-os-enforcement.md`. **Nothing changes for a binary that does not opt in**: its IR is byte-identical, and the runtime never reaches the new code.
+
+- **`os_enforce = true`** in `tkc.toml [capabilities]`, or **`tkc --cap-os-enforce`**, bakes `@__tk_cap_baked_os`. At start-up, after the grants are final and before `main`, the runtime then has the kernel refuse what the grants do not admit:
+  - macOS: `sandbox_init(3)` with a profile generated from the grants. No entitlement is needed.
+  - Linux: Landlock, for file-system read, write and execute and, from ABI 4, TCP bind and connect ports. A seccomp filter refuses IPv4/IPv6 sockets and `io_uring_setup` when `net` is not granted.
+- **What it catches:** a user `extern` C function, an FFI call, or a sink with its gate removed. Each is refused outside the grants, where before it succeeded. C2230 shows `fopen` and a broker-removed stdlib build (`file.read`/`file.write`/`process.spawn`/`net.listen`/`http.geturl`) succeeding without the key and refused with it.
+- **The broker is unchanged and answers first.** CAP001 and CAP002 are the same text and JSON. Every C188x case passes with the layer forced on.
+- **The kernel rules are a superset of the grants.** They narrow `net` to ports rather than hosts, and leave `env.write` alone. They add a read-only system baseline (the OS image, time zones, resolver and CA files, `/dev`) with no home or temporary directory.
+- **Two side effects for a binary that opts in:** child processes inherit the rules, and the standard library's own reads outside the baseline are refused.
+- **New runtime warning CAP004.** Where the kernel cannot carry a grant, CAP004 says so once at start-up, as a text line and, under `TK_DIAG_JSON`, a JSON line with `layer` and `reason` and no `fix`. The program then runs with the broker alone for that grant. CAP004 is given when:
+  - there is no OS layer on the platform;
+  - the kernel has no Landlock;
+  - Landlock has no TCP rules;
+  - an `fs.write` scope does not exist yet;
+  - a scope holds a control character;
+  - the seccomp filter is refused.
+- **Diagnostics and records:** `TK_CAP_OS_SHOW=1` prints the generated rules. `--show-limits` prints `cap-os`. The `--companion` record says when the layer is on.
+- **Tests:** C2230, plus `test/stdlib/test_cap_os.c` in `make test-stdlib-capabilities`.
+- **Not yet run on a Linux kernel:** the Linux path was compiled here (zig cc, glibc x86_64 and aarch64, and musl) and its rule planning was unit-tested, but it has not been executed on Linux. On Linux CI its kernel cases run where Landlock is present and are named skips where it is not.
+
 ### Added — HTTP client controls, a header-carrying GET and a resolver (spec amendment 138.24)
 
 One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2.3; `docs/decisions/138.24-http-client-controls.md`), for loke's handoffs T-63 and the T-58 addendum. Every control is opt-in and off on a client from `http.client`. Two corrections change existing calls, and only where they were unsafe: a client written as a record literal no longer reads settings from past its end, and a URL that would rewrite the request is refused (last two rows).
