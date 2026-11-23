@@ -314,6 +314,17 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
 
 ### Fixed — standard library
 
+- **`df.filter(d;col;op;val)` reads its `op` and `val` strings** (138.66). The
+  glue passed `op`'s pointer to the C filter as its operator code and `val`'s
+  pointer bits as the f64 threshold, so every documented call
+  (`df.filter(d;"a";">";"2")`) kept no rows and a malformed `op` or `val` was
+  never refused. `op` is now exactly one of `<` `<=` `=` `>=` `>` `!=` (the C
+  filter gains `!=`, the one documented op it lacked) and `val` must parse in
+  full as an `f64`; anything else, like an unknown or non-numeric column, is
+  `$err`, with the message `df.filter: the filter could not be applied
+  (unknown or non-numeric column, unknown op, or a val that is not an f64)`.
+  Tests: C2161, `test_dataframe` T65.
+
 - **std.cache's disk spill writes the whole entry or leaves no file** (127.445).
   The spill to `disk_dir` ignored `write(2)`'s result and counted the body in
   `disk_used` whatever happened, so a short or failed write (ENOSPC, EFBIG,

@@ -77,7 +77,7 @@ DfCol       *df_column(TkDataframe *df, const char *name);
 
 /* df_filter: return a new dataframe containing only rows where the f64
  * column named col satisfies (value OP threshold).
- * op: 0=<  1=<=  2===  3=>=  4=>
+ * op: 0=<  1=<=  2===  3=>=  4=>  5=!= (138.66)
  * Returns NULL if col is not found or is not DF_COL_F64. */
 TkDataframe *df_filter(TkDataframe *df, const char *col,
                        double threshold, int op);

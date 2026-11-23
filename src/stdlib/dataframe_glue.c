@@ -135,13 +135,33 @@ static int64_t df_shape_impl(int64_t df_ptr) {
     return (int64_t)(intptr_t)block;
 }
 
+/* 138.66: df.filter(dataframe;str;str;str) -- op and val are toke strs, as
+ * the .tki and docs/stdlib/dataframe.md declare.  The glue read op as
+ * df_filter's int operator code and val's pointer bits as an f64, so every
+ * call was $err.  op is one of the documented "<" "<=" "=" ">=" ">" "!="
+ * (exactly; anything else is $err), and val must parse as an f64 in full
+ * (strtod, no trailing bytes; "" is $err). */
+static int df_filter_op(const char *op)
+{
+    static const char *const ops[] = { "<", "<=", "=", ">=", ">", "!=" };
+    for (int i = 0; i < 6; i++)
+        if (strcmp(op, ops[i]) == 0) return i;
+    return -1;
+}
+
 static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t val) {
     TkDataframe *d = df_in(df_ptr);
-    if (!d || !col) return 0;
-    double threshold;
-    memcpy(&threshold, &val, sizeof(double));
+    if (!d || !col || !op || !val) return 0;
+    int code = df_filter_op((const char *)(intptr_t)op);
+    if (code < 0) return 0;
+    const char *vs = (const char *)(intptr_t)val;
+    uint64_t vlen = tk_strlen(vs);
+    if (vlen == 0 || strlen(vs) != vlen) return 0;
+    char *end = NULL;
+    double threshold = strtod(vs, &end);
+    if (end != vs + vlen) return 0;
     TkDataframe *result = df_filter(d, (const char *)(intptr_t)col,
-                                     threshold, (int)op);
+                                     threshold, code);
     return df_out(result);
 }
 
@@ -172,7 +192,7 @@ static const char tk_dataframe_fromcsv_fail[] =
 int64_t tk_dataframe_fromcsv_w(int64_t csv) { return df_slot(df_fromcsv_impl(csv), tk_dataframe_fromcsv_fail); }
 int64_t tk_dataframe_shape_w(int64_t df) { return df_shape_impl(df); }
 static const char tk_dataframe_filter_fail[] =
-    "df.filter: the filter could not be applied (unknown column or operator)";
+    "df.filter: the filter could not be applied (unknown or non-numeric column, unknown op, or a val that is not an f64)";
 int64_t tk_dataframe_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_slot(df_filter_impl(df, col, op, val), tk_dataframe_filter_fail); }
 static const char tk_dataframe_groupby_fail[] =
     "df.groupby: the column could not be grouped";

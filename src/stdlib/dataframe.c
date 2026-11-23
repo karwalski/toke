@@ -334,6 +334,7 @@ TkDataframe *df_filter(TkDataframe *df, const char *col,
             case 2: keep = (v == threshold); break;
             case 3: keep = (v >= threshold); break;
             case 4: keep = (v >  threshold); break;
+            case 5: keep = (v != threshold); break; /* 138.66: "!=" */
             default: break;
         }
         mask[r] = keep;

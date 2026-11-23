@@ -92,7 +92,7 @@ let regions = mt df.columnstr(data; "region") {$ok:v v;$err:e @()};
 
 ### df.filter(d: $dataframe; col: $str; op: $str; val: $str): $dataframe!$dferr
 
-Returns a new data frame containing only the rows where the numeric column `col` satisfies `col op val`. The `op` argument must be one of `"<"`, `"<="`, `"="`, `">="`, `">"`, or `"!="`. Returns `$dferr` if `col` does not exist, is not a numeric column, or if `val` cannot be parsed as `f64`.
+Returns a new data frame containing only the rows where the numeric column `col` satisfies `col op val`. The `op` argument must be exactly one of `"<"`, `"<="`, `"="`, `">="`, `">"`, or `"!="`. `val` is a number written as text (`"2"`, `"2.5"`, `"-1"`, `"1e3"`), read in full as an `f64`. Returns `$dferr` if `col` does not exist or is not a numeric column, if `op` is anything else (`"=="` included), or if `val` is empty or is not entirely a number (`"2x"`) (138.66).
 
 <!-- skip-check -->
 ```toke
