@@ -213,8 +213,9 @@ void tk_clos_release(int64_t v);
  *     glue directly (std.vec), or an object C callbacks hand to toke.  An
  *     address-keyed kind must not gain a release call that frees it: a
  *     dropped address is accepted again once malloc reuses it (138.45
- *     review).  tls.close and vecstore.close drop their records but keep
- *     them allocated (138.61, 138.64), so the address is never reused.
+ *     review).  tls.close, vecstore.close and csv.close drop their records
+ *     but keep them allocated (138.61, 138.64, 138.63), so the address is
+ *     never reused.
  * Registering an address again is idempotent (the same token, for a token
  * kind).  tk_handle_drop forgets one. */
 enum {
@@ -225,7 +226,12 @@ enum {
     /* 138.61 / 138.50 */
     TK_HK_TLSCONN = 13, TK_HK_VECSTORE = 14, TK_HK_VECCOLL = 15,
     TK_HK_HTMLNODE = 16, TK_HK_HTTPSTREAM = 17, TK_HK_CANVAS = 18,
-    TK_HK_HTMLDOC = 19
+    TK_HK_HTMLDOC = 19,
+    /* 138.63: the opaque std types of csv, dashboard, dataframe, ml, router
+     * and llm (address-keyed but for ROUTERREQ, a per-dispatch token) */
+    TK_HK_CSVREADER = 20, TK_HK_CSVWRITER = 21, TK_HK_DASHBOARD = 22,
+    TK_HK_DATAFRAME = 23, TK_HK_DTREEMODEL = 24, TK_HK_ROUTER = 25,
+    TK_HK_ROUTERREQ = 26, TK_HK_LLMSTREAM = 27
 };
 /* A token for p (0 when the table is full; the caller disposes of p). */
 int64_t tk_handle_issue(int kind, void *p);

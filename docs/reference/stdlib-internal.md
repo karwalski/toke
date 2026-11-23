@@ -213,14 +213,14 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_error_log_set_global` | `log.c` | log_glue.c |
 | `tk_error_log_write` | `log.c` | http.c |
 | `tk_get_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
-| `tk_handle_addr` | `tk_runtime.c` | canvas_glue.c, collections_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
-| `tk_handle_adopt` | `tk_runtime.c` | canvas_glue.c, collections_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
+| `tk_handle_addr` | `tk_runtime.c` | analytics_glue.c, canvas_glue.c, collections_glue.c, csv_glue.c, dashboard_glue.c, dataframe_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, ml_glue.c, router_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
+| `tk_handle_adopt` | `tk_runtime.c` | analytics_glue.c, canvas_glue.c, collections_glue.c, csv_glue.c, dashboard_glue.c, dataframe_glue.c, html_glue.c, llm_glue.c, llm_tool_glue.c, ml_glue.c, router_glue.c, securemem_glue.c, svg_glue.c, task.c, tk_web_glue.c, tls_glue.c, vecstore_glue.c |
 | `tk_handle_adopt_view` | `tk_runtime.c` | vecstore_glue.c |
-| `tk_handle_drop` | `tk_runtime.c` | pdf_glue.c, str_glue.c, tls_glue.c, toml_glue.c, vecstore_glue.c, xlsx_glue.c, zip_glue.c |
-| `tk_handle_issue` | `tk_runtime.c` | pdf_glue.c, process_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
+| `tk_handle_drop` | `tk_runtime.c` | csv_glue.c, pdf_glue.c, router_glue.c, str_glue.c, tls_glue.c, toml_glue.c, vecstore_glue.c, xlsx_glue.c, zip_glue.c |
+| `tk_handle_issue` | `tk_runtime.c` | csv_glue.c, pdf_glue.c, process_glue.c, router_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
 | `tk_handle_issue_view` | `tk_runtime.c` | tk_runtime.c, toml_glue.c |
 | `tk_handle_owner` | `tk_runtime.c` | toml_glue.c |
-| `tk_handle_token` | `tk_runtime.c` | pdf_glue.c, process_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
+| `tk_handle_token` | `tk_runtime.c` | csv_glue.c, pdf_glue.c, process_glue.c, router_glue.c, str_glue.c, toml_glue.c, xlsx_glue.c, zip_glue.c |
 | `tk_http_listen_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
 | `tk_infer_detect_storage_type` | `infer_stream.c` | infer_stream.c |
 | `tk_infer_embed` | `infer.c` | infer.c |
