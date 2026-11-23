@@ -11,12 +11,12 @@ f=isvowel(c:$i64):$bool{
 let lc=mut.0;
 lc=c;
 if(lc>=65&&lc<=90){lc=lc+32};
-if(lc=97){<true};
-if(lc=101){<true};
-if(lc=105){<true};
-if(lc=111){<true};
-if(lc=117){<true};
-if(lc=121){<true};
+if(lc==97){<true};
+if(lc==101){<true};
+if(lc==105){<true};
+if(lc==111){<true};
+if(lc==117){<true};
+if(lc==121){<true};
 <false
 };
 f=sylcount(word:$str):$i64{
@@ -32,7 +32,7 @@ prev=v;
 };
 if(n>0){
 let last=b.get(n-1);
-if(last=101||last=69){
+if(last==101||last==69){
 if(count>1){count=count-1}
 };
 };
@@ -65,14 +65,14 @@ let cur=mut."";
 lp(let i=0;i<n;i=i+1){
 let c=b.get(i);
 if(isalpha(c)){
-cur=s.concat(cur;s.substr(text;i;i+1));
+cur=s.concat(cur;mt s.substr(text;i;i+1) {$ok:t t;$err:e ""});
 }el{
 if(s.len(cur)>0){
 words=words+1;
 if(sylcount(cur)>=3){complex=complex+1};
 cur="";
 };
-if(c=46||c=33||c=63){sentences=sentences+1};
+if(c==46||c==33||c==63){sentences=sentences+1};
 };
 };
 if(s.len(cur)>0){
