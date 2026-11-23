@@ -97,7 +97,7 @@ let large = mt df.filter(apac; "revenue";   ">";  "5000") {$ok:d d;$err:e <1};
 
 ### df.groupby(d: $dataframe; col: $str): @($dataframe)!$dferr
 
-Splits the data frame into one sub-frame per distinct value in the string column `col`, returning them as an array. Each sub-frame contains all rows that share the same group key value. Returns `$dferr` if `col` is not found or is not a `$str` column.
+Splits the data frame into one sub-frame per distinct value in the string column `col`, returning them as an array. Each sub-frame has every column of `d` and contains all rows that share the same group key value, in their original order; the groups are ordered by the first row in which each value appears. Each element is a `$dataframe` like any other: `df.shape`, `df.tocsv`, `df.filter` and `df.groupby` all accept it. A frame with no rows gives an empty array. Returns `$dferr` if `col` is not found or is not a `$str` column.
 
 <!-- skip-check -->
 ```toke

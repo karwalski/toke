@@ -635,16 +635,33 @@ i=df:std.dataframe;
 |---------|-------------|
 | Columns | Typed columnar storage for efficient data access |
 | Filter | Row filtering by predicate |
-| Group by | Aggregate rows by key column |
+| Group by | Split rows into one frame per key value |
 | Join | Inner/left join two dataframes |
 | CSV import | Load directly from CSV files |
 
-**Example: filter and aggregate**
+**Example: filter and group**
 
-```
-let data=df.fromcsv(file.read("sales.csv")!$apperr);
-let q4=df.filter(data;"quarter";"Q4");
-let totals=df.groupby(q4;"region";"revenue";df.sum);
+`df.filter(d;col;op;val)` keeps the rows whose numeric column `col` compares
+true against `val` (`op` is one of `<` `<=` `=` `>=` `>` `!=`; `val` is a
+number in a `$str`). `df.groupby(d;col)` splits a frame into one frame per
+distinct value of the string column `col`.
+
+```toke
+m=sales;
+i=df:std.dataframe;
+i=file:std.file;
+i=io:std.io;
+
+f=main():i64{
+  let raw=mt file.read("sales.csv"){$ok:s s;$err:e ""};
+  let data=mt df.fromcsv(raw){$ok:d d;$err:e <1};
+  let big=mt df.filter(data;"revenue";">";"1000"){$ok:d d;$err:e <1};
+  let groups=mt df.groupby(big;"region"){$ok:g g;$err:e <1};
+  lp(let i=0;i<groups.len;i=i+1){
+    io.println(df.tocsv(groups.get(i)));
+  };
+  <0;
+}
 ```
 
 ### std.analytics -- Statistical analysis

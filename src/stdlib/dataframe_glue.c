@@ -170,17 +170,38 @@ static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t v
     return df_out(result);
 }
 
+/* 127.518: df.groupby(dataframe;str):[dataframe]!dferr -- a toke array of
+ * registered dataframes, one per distinct value of the str column col (in
+ * order of first appearance), as the .tki and docs/stdlib/dataframe.md
+ * declare.  The glue handed back a malloc'd DfGroupResult* (and asked
+ * df_groupby for no aggregate column, so every call was $err); `.len` and
+ * `.get(i)` read that struct as an array.  A frame with no rows is @(). */
 static int64_t df_groupby_impl(int64_t df_ptr, int64_t col) {
     TkDataframe *d = df_in(df_ptr);
     if (!d || !col) return 0;
-    /* Default: group by col, aggregate count on first numeric column */
-    DfGroupResult gr = df_groupby(d, (const char *)(intptr_t)col, NULL, 0);
-    if (!gr.rows) return 0;
-    /* Return pointer to the result (caller can iterate) */
-    DfGroupResult *heap = (DfGroupResult *)malloc(sizeof(DfGroupResult));
-    if (!heap) return 0;
-    *heap = gr;
-    return (int64_t)(intptr_t)heap;
+    uint64_t n = 0;
+    TkDataframe **groups = df_split(d, (const char *)(intptr_t)col, &n);
+    if (!groups) return 0;
+    int64_t arr = tk_arr_alloc((int64_t)n, (int64_t)n);
+    if (!arr) {
+        for (uint64_t i = 0; i < n; i++) df_free(groups[i]);
+        free(groups);
+        return 0;
+    }
+    int64_t *slots = (int64_t *)(intptr_t)arr;
+    for (uint64_t i = 0; i < n; i++) {
+        /* df_out frees a frame it cannot register; the frames after it
+         * have not been handed out yet. */
+        slots[i] = df_out(groups[i]);
+        if (!slots[i]) {
+            for (uint64_t j = i + 1; j < n; j++) df_free(groups[j]);
+            free(groups);
+            free(slots - TK_ARR_HDR);   /* the block tk_arr_alloc made */
+            return 0;
+        }
+    }
+    free(groups);
+    return arr;
 }
 
 static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {

@@ -733,6 +733,50 @@ DfGroupResult df_groupby(TkDataframe *df, const char *group_col,
 }
 
 /* =========================================================================
+ * df_split  (127.518: the C behind df.groupby)
+ * ========================================================================= */
+
+TkDataframe **df_split(TkDataframe *df, const char *col, uint64_t *out_n)
+{
+    if (out_n) *out_n = 0;
+    if (!df || !col || !out_n) return NULL;
+    DfCol *c = df_column(df, col);
+    if (!c || c->type != DF_COL_STR) return NULL;
+
+    /* One slot so a frame with no rows still returns a non-NULL (empty)
+     * array: zero groups is a result, not an error. */
+    TkDataframe **out = calloc(df->nrows ? df->nrows : 1, sizeof(TkDataframe *));
+    if (!out) return NULL;
+    if (df->nrows == 0) return out;
+
+    HashTable *ht = ht_new(df->nrows * 2 + HT_INIT_SIZE);
+    int *mask = calloc(df->nrows, sizeof(int));
+    if (!ht || !mask) { ht_free(ht); free(mask); free(out); return NULL; }
+    for (uint64_t r = 0; r < df->nrows; r++)
+        ht_insert(ht, c->str_data[r] ? c->str_data[r] : "", r);
+
+    /* Groups in order of each key's first row. */
+    uint64_t n = 0;
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        HtNode *nd = ht_lookup(ht, c->str_data[r] ? c->str_data[r] : "");
+        if (!nd || nd->rows[0] != r) continue;
+        memset(mask, 0, df->nrows * sizeof(int));
+        for (uint64_t k = 0; k < nd->nrows; k++) mask[nd->rows[k]] = 1;
+        TkDataframe *g = copy_rows_subset(df, mask, nd->nrows);
+        if (!g) {
+            for (uint64_t i = 0; i < n; i++) df_free(out[i]);
+            ht_free(ht); free(mask); free(out);
+            return NULL;
+        }
+        out[n++] = g;
+    }
+    ht_free(ht);
+    free(mask);
+    *out_n = n;
+    return out;
+}
+
+/* =========================================================================
  * df_fromrows  (build dataframe from row-major string data)
  * ========================================================================= */
 
