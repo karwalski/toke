@@ -766,12 +766,17 @@ void http_cache_micro(const char *method, const char *uri,
 /* ── Stale-if-error (63.2.4) ─────────────────────────────────────────── */
 
 /* Is e a stale-if-error fallback for "METHOD|URI" (prefix, plen) at now:
- * its key starts with prefix and it is within its TTL plus 5 minutes? */
+ * its key is "METHOD|URI" itself or a Vary variant of it ("METHOD|URI|..."),
+ * and it is within its TTL plus 5 minutes?  127.514: the byte after the
+ * prefix must end the key or be the Vary separator, so /a never falls back
+ * to /ab's (or /a/b's) body. */
 static int cache_stale_match(const CacheEntry *e, const char *prefix,
                              size_t plen, time_t now)
 {
     /* Allow stale up to 5 minutes by default for error fallback */
-    return strncmp(e->key, prefix, plen) == 0 && now - e->inserted < e->ttl + 300;
+    return strncmp(e->key, prefix, plen) == 0 &&
+           (e->key[plen] == '\0' || e->key[plen] == '|') &&
+           now - e->inserted < e->ttl + 300;
 }
 
 /* The stale-if-error fallback on disk (127.511): scan disk_dir as
@@ -817,7 +822,8 @@ const char *http_cache_stale_if_error(const char *method, const char *uri,
                                        size_t *out_body_len,
                                        const char **out_content_type)
 {
-    /* Simple linear search for any entry matching method|uri prefix */
+    /* Linear search for the entry keyed "METHOD|URI" or a Vary variant of
+     * it (127.514: not any key that merely starts with those bytes) */
     char prefix[1024];
     snprintf(prefix, sizeof(prefix), "%s|%s", method ? method : "GET",
              uri ? uri : "/");

@@ -347,6 +347,14 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   `http_cache_put`, purge or `http_cache_stale_if_error` call. Nothing in the
   tree calls `http_cache_*`. Test: C2130.
 
+- **std.cache's stale-if-error fallback is the request's own entry** (127.514).
+  `http_cache_stale_if_error` accepted any key that began with `METHOD|URI`, so
+  with `/a` not cached a lookup of `GET /a` served a cached `/ab`, `/a/b` or
+  `/api` body, from memory or (since 127.511) from a spill file. A key now
+  matches only when it is `METHOD|URI` itself or a Vary variant of it
+  (`METHOD|URI|...`), the split `http_cache_purge` already uses. Nothing in the
+  tree calls `http_cache_*`. Test: C2150.
+
 - **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
   register 2.11, recommendation). Its interface declared an `i64` ABI
   placeholder and the glue read a packed C block that no toke value has: a call
