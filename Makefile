@@ -2052,6 +2052,10 @@ test-stdlib-capabilities:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_capabilities \
 	    test/stdlib/test_capabilities.c src/stdlib/capabilities.c
 	$(RUN_TEST) ./test/stdlib/test_capabilities
+	@# 138.44: the OS layer (cap_os.h): profile text, Landlock rights, and a
+	@# forked child that applies a plan and opens files directly.
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_cap_os test/stdlib/test_cap_os.c
+	$(RUN_TEST) ./test/stdlib/test_cap_os
 
 test-stdlib-auth-flow-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_auth_flow_integration \

@@ -53,6 +53,9 @@ __attribute__((weak)) const int      __tk_cap_baked_enforce = 0;
 __attribute__((weak)) const TkCapBakedScope *const __tk_cap_baked_scopes = NULL;
 __attribute__((weak)) const int      __tk_cap_baked_nscopes = 0;
 __attribute__((weak)) const int      __tk_cap_baked_runtime = TK_CAP_RUNTIME_LEGACY;
+/* 138.44: OS-level enforcement (cap_os.h) is opt-in; a binary built
+ * without os_enforce / --cap-os-enforce keeps this 0 and never calls it. */
+__attribute__((weak)) const int      __tk_cap_baked_os = 0;
 
 /* ── Scope and grant state ────────────────────────────────────────── */
 
@@ -909,6 +912,108 @@ const char *tk_cap_sockname(int fd, char buf[TK_CAP_ADDRSTRLEN], uint64_t *port)
     return NULL;
 }
 
+/* ── OS-level enforcement (138.44, D5) ───────────────────────────── */
+
+#include "cap_os.h"
+
+/* CAP004: the OS layer is weaker than the grants, or absent.  A warning:
+ * the program runs, and the broker still enforces every grant. */
+static void os_warn(const char *layer, const char *reason) {
+    fputs("CAP004: OS-level enforcement (os_enforce) is partial: ", stderr);
+    text_str(stderr, reason);
+    fputs("; the in-process broker still enforces every grant\n", stderr);
+    if (getenv("TK_DIAG_JSON")) {
+        fputs("{\"diagnostic_id\":\"CAP004\",\"severity\":\"warning\",\"stage\":\"runtime\","
+              "\"layer\":", stderr);
+        json_str(stderr, layer);
+        fputs(",\"reason\":", stderr);
+        json_str(stderr, reason);
+        fputs("}\n", stderr);
+    }
+}
+
+/* The grant(s) whose scopes the OS layer admits for class ci, which is not
+ * whole.  A superset of what the broker admits: under D2 narrowing the
+ * baked scopes when the baked grant is scoped (the intersection lies inside
+ * them), else the run-time scopes; under a union, both. */
+static void os_sources(int ci, const Grant **a, const Grant **b) {
+    const Grant *gb = &g_src[SRC_BAKED][ci], *gr = &g_src[SRC_RUN][ci];
+    *a = *b = NULL;
+    if (g_narrow) *a = gb->whole ? gr : gb;
+    else { *a = gb; *b = gr; }
+}
+
+/* Does net scope s name only loopback addresses? */
+static int os_loopback(const Scope *s) {
+    static const unsigned char lo6[16] = { 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1 };
+    switch (s->hk) {
+    case HK_NAME:  return s->text && !strcmp(s->text, "localhost");
+    case HK_IP4:   return s->addr[0] == 127;
+    case HK_CIDR4: return s->prefix >= 8 && s->addr[0] == 127;
+    case HK_IP6:   return !memcmp(s->addr, lo6, 16);
+    case HK_CIDR6: return s->prefix == 128 && !memcmp(s->addr, lo6, 16);
+    default:       return 0;
+    }
+}
+
+/* Lift the restriction on one access when a scope cannot be carried to the
+ * kernel, so the OS layer never refuses what the broker admits. */
+static void os_lift(int *on, const char *cls, const char *text) {
+    char why[PATH_MAX + 160];
+    *on = 0;
+    snprintf(why, sizeof why, "the %s scope '%s' cannot be expressed to the kernel, so %s "
+             "is not restricted by the OS layer", cls, text ? text : "", cls);
+    os_warn("plan", why);
+}
+
+static void os_plan(TkOsPlan *p) {
+    memset(p, 0, sizeof *p);
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof cwd)) p->cwd = strdup(cwd);
+    }
+    TkOsPaths *fs[3] = { &p->read, &p->write, &p->exec };
+    const int fci[3] = { TK_CAP_IDX_FS_READ, TK_CAP_IDX_FS_WRITE, TK_CAP_IDX_PROCESS_SPAWN };
+    for (int k = 0; k < 3; k++) {
+        if (eff_whole(fci[k])) continue;
+        fs[k]->on = 1;
+        if (!eff_granted(fci[k])) continue;
+        const Grant *g[2];
+        os_sources(fci[k], &g[0], &g[1]);
+        for (int j = 0; j < 2 && fs[k]->on; j++)
+            for (int i = 0; g[j] && i < g[j]->n && fs[k]->on; i++)
+                if (!g[j]->v[i].dead && !tk_os_add_path(fs[k], g[j]->v[i].text))
+                    os_lift(&fs[k]->on, k_dot[fci[k]], g[j]->v[i].text);
+    }
+    if (!eff_whole(TK_CAP_IDX_NET)) {
+        p->bind.on = p->connect.on = 1;
+        p->net_none = !eff_granted(TK_CAP_IDX_NET);
+        const Grant *g[2];
+        os_sources(TK_CAP_IDX_NET, &g[0], &g[1]);
+        for (int j = 0; j < 2 && !p->net_none; j++)
+            for (int i = 0; g[j] && i < g[j]->n; i++) {
+                const Scope *s = &g[j]->v[i];
+                if (s->dead) continue;
+                TkOsPorts *ps = s->kind == TK_CAP_SK_LISTEN ? &p->bind : &p->connect;
+                /* listen:ADDR:0 binds an ephemeral port: any port */
+                long port = (s->kind == TK_CAP_SK_LISTEN && s->port == 0) ? -1 : s->port;
+                if (!tk_os_add_port(ps, port, os_loopback(s)))
+                    os_lift(&ps->on, "net", s->text);
+            }
+    }
+}
+
+/* Apply the OS layer once, at the end of tk_cap_init, before main and before
+ * any thread exists (Landlock and seccomp bind the calling thread and what
+ * it creates afterwards).  ALLOW_ALL grants everything: nothing to apply. */
+static void os_enforce(void) {
+    if (!__tk_cap_baked_os || g_mode != TK_CAP_MODE_ENFORCE) return;
+    TkOsPlan p;
+    os_plan(&p);
+    tk_os_apply(&p, os_warn);
+    tk_os_plan_free(&p);
+}
+
 /* ── Start-up ─────────────────────────────────────────────────────── */
 
 /*
@@ -1028,6 +1133,7 @@ void tk_cap_init(int argc, char **argv) {
     } else if (baked_all || run_all) {
         g_mode = TK_CAP_MODE_ALLOW_ALL;
     }
+    os_enforce();   /* 138.44: opt-in OS layer, after the grants are final */
 }
 
 int tk_cap_is_grant_flag(const char *arg) {
