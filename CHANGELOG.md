@@ -325,6 +325,18 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   free, the entries an earlier get returned. Copy what must outlive that.
   Test: C2085.
 
+- **std.cache's stale-if-error fallback reads the disk tier too** (127.511).
+  `http_cache_stale_if_error` searched only the in-memory list, so an entry
+  spilled to `disk_dir` was never served when the origin failed. With no
+  matching memory entry it now scans `disk_dir`'s spill files through the
+  same bounds-checked read-back as `http_cache_get`, takes the matching file
+  with the latest insertion time inside the same window (TTL + 300 s), moves
+  that entry to the front of memory and removes the file. A crafted or
+  truncated spill file is not a fallback. The pointers it returns follow the
+  127.496 lifetime rule: valid until the next `http_cache_get`,
+  `http_cache_put`, purge or `http_cache_stale_if_error` call. Nothing in the
+  tree calls `http_cache_*`. Test: C2130.
+
 - **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
   register 2.11, recommendation). Its interface declared an `i64` ABI
   placeholder and the glue read a packed C block that no toke value has: a call
