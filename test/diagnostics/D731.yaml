@@ -1,0 +1,20 @@
+id: D731
+series: D
+description: "lint negated-equality / negated-comparison (131.138): on f64 operands the hint carries NO fix (`!=` is `fcmp one`, so `!(x==y)` and `x!=y` differ on NaN, as `!(x>y)` and `x<=y` do); nor on a str, nor under a parent that binds tighter than a comparison"
+input: |
+  m=t;
+  f=g(x:f64;y:f64;s:str;a:i64;b:i64):bool{
+    let p=!(x==y);
+    let q=!(x>y);
+    let r=!(s=="k");
+    let u=!(a==b)==p;
+    <p&&q&&r&&u
+  };
+  f=main():i64{
+    if(g(1.0;2.0;"k";1;2)){<1};
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["negated-equality", "negated-comparison"]
+expected_fix_absent_for: ["negated-equality", "negated-comparison"]

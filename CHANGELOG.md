@@ -239,6 +239,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   always names its file. Also, the `nonhost-uncoverable` skips for `log.c` and
   `sys_glue.c` are now `nonhost-uncoverable@darwin`: they hold on macOS and were
   stale on Linux. Test: C1961.
+- **`make test-ci-green` is green again** (127.510). Two of its 82 targets
+  failed at the integration base on rules that are correct (rows 3 and 4
+  above), not on a regression. test-codegen's `multimod/mapret` interpolated
+  map lookups and now reads them through `mt`. test-migrate's `str_index`
+  migrates a legacy str index used as a str to `.slice(i;i+1)`, which is
+  `str!$sliceerr` since 127.462, so the migrated output is five E4031s: the
+  fixture now pins those diagnostics (`str_index.check`) instead of expecting a
+  clean compile, because `--migrate` writes no filler error arm (owner answer
+  R2). `--migrate` now says so on stderr: `note: each .slice(i;i+1) is
+  str!$sliceerr: read it through 'mt' or '!' (or use .charat(i) for the byte)
+  before it compiles`. Test: C2100.
 
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
@@ -316,6 +327,28 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   produce (RFC 4180 quoting, CRLF between rows, no trailing line break; no rows
   is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
   change together. Test: C2001.
+
+### Added — lint rules for the pre-132.15 spec-page shapes (131.138)
+
+Four new hints, one per long form the withdrawn specification page prescribed. They
+compile and are not errors; a hint does not change the `--lint` exit status. A
+downstream that ratchets its `tkc --lint` counts sees new findings on unchanged source:
+measured with this build, the toke tree gains 66 (27 `negated-comparison`, 24
+`nested-if-and`, 14 `modulo-emulation`, 1 `negated-equality`, in 29 of 695 sources,
+20 of them under `bench/patterns/macro/programs/`), ooke `main` 33 (25 `negated-equality`, 8
+`negated-comparison`), the website 0, and loke (1,091 `.tk` files, read-only) 110: 52
+`negated-comparison`, 50 `negated-equality`, 5 `modulo-emulation`, 3 `nested-if-and`.
+
+| Rule id | Severity | Reports | Message | `fix` | Story |
+|---|---|---|---|---|---|
+| `negated-equality` (new) | hint | `!(a==b)` | ``"`!(a==b)` negates a comparison toke has as one operator — write `a!=b`"`` | `a!=b`, only on integer or bool operands (by the checker's types) and where the parent takes a comparison unparenthesised; none on floats (`!=` is `fcmp one`: NaN) or str | 131.138 |
+| `negated-comparison` (new) | hint | `!(a<b)`, `!(a>b)` | as above, naming `<`/`>=` or `>`/`<=` | `a>=b` / `a<=b`, integer operands only (NaN: `!(x>y)` is true, `x<=y` false) | 131.138 |
+| `modulo-emulation` (new) | hint | `a-a/b*b`, `a-(a/b)*b` with the same name, field path or literal both times | ``"`a-a/b*b` computes the remainder the long way — write `a%b`"`` | `a%b` on integer operands: equal for every sign; both trap RT004 for `b==0` and MIN by -1 (the trap message says `remainder` for `division`) | 131.138 |
+| `nested-if-and` (new) | hint | `if(a){if(b){..}}` with no `el` on either and nothing else in the outer block; a chain once, at its outermost `if` | ``"`if(a){if(b){..}}` with no `el` on either is `&&` — write `if(a&&b){..}`"`` | `if(a&&b){..}` (an `\|\|`, `mt` or expression-`if` operand parenthesised, since none parses bare beside `&&`); none when a comment sits in the outer block | 131.138 |
+
+Tests: D730–D734, C2101 (a differential of each fix over every sign combination at
+`-O0`/`-O2`, and the two traps). Reference: `docs/compiler/lint-rules-v1.md`
+"Page-shape rules".
 
 ### Notes for downstream builds
 
