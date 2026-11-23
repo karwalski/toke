@@ -92,7 +92,7 @@ let regions = mt df.columnstr(data; "region") {$ok:v v;$err:e @()};
 
 ### df.filter(d: $dataframe; col: $str; op: $str; val: $str): $dataframe!$dferr
 
-Returns a new data frame containing only the rows where the numeric column `col` satisfies `col op val`. The `op` argument must be exactly one of `"<"`, `"<="`, `"="`, `">="`, `">"`, or `"!="`. `val` is a number written as text (`"2"`, `"2.5"`, `"-1"`, `"1e3"`), read in full as an `f64`. Returns `$dferr` if `col` does not exist or is not a numeric column, if `op` is anything else (`"=="` included), or if `val` is empty or is not entirely a number (`"2x"`) (138.66).
+Returns a new data frame containing only the rows where the numeric column `col` satisfies `col op val`. The `op` argument must be exactly one of `"<"`, `"<="`, `"="`, `">="`, `">"`, or `"!="`. `val` is a number written as text (`"2"`, `"2.5"`, `"-1"`, `"1e3"`), read in full as an `f64` with the C `strtod` number syntax, so hex floats (`"0x1p1"`), `"nan"` and `"inf"` are also accepted, as they are when `df.fromcsv` decides a column is numeric. Returns `$dferr` if `col` does not exist or is not a numeric column, if `op` is anything else (`"=="` and `" <"` included), or if `val` is empty, starts with whitespace (`" 2"`), or has anything after the number (`"2x"`, `"2 "`) (138.66).
 
 <!-- skip-check -->
 ```toke

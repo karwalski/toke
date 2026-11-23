@@ -18,6 +18,7 @@
  */
 #include "dataframe.h"
 #include <stdint.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include "tk_array.h"
@@ -137,15 +138,18 @@ static int64_t df_shape_impl(int64_t df_ptr) {
 
 /* 138.66: df.filter(dataframe;str;str;str) -- op and val are toke strs, as
  * the .tki and docs/stdlib/dataframe.md declare.  The glue read op as
- * df_filter's int operator code and val's pointer bits as an f64, so every
- * call was $err.  op is one of the documented "<" "<=" "=" ">=" ">" "!="
- * (exactly; anything else is $err), and val must parse as an f64 in full
- * (strtod, no trailing bytes; "" is $err). */
+ * df_filter's int operator code and val's pointer bits as an f64, so the
+ * call kept no rows and refused nothing.  op is one of the documented "<"
+ * "<=" "=" ">=" ">" "!=" (exactly, over op's whole length, so an embedded
+ * NUL is $err; anything else is $err), and val must parse as an f64 in full
+ * (strtod, no leading whitespace, no trailing or NUL bytes; "" is $err). */
 static int df_filter_op(const char *op)
 {
     static const char *const ops[] = { "<", "<=", "=", ">=", ">", "!=" };
+    static const size_t lens[] = { 1, 2, 1, 2, 1, 2 };
+    size_t olen = tk_strlen(op);
     for (int i = 0; i < 6; i++)
-        if (strcmp(op, ops[i]) == 0) return i;
+        if (olen == lens[i] && memcmp(op, ops[i], olen) == 0) return i;
     return -1;
 }
 
@@ -157,6 +161,7 @@ static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t v
     const char *vs = (const char *)(intptr_t)val;
     uint64_t vlen = tk_strlen(vs);
     if (vlen == 0 || memchr(vs, '\0', (size_t)vlen)) return 0;
+    if (isspace((unsigned char)vs[0])) return 0;
     char *end = NULL;
     double threshold = strtod(vs, &end);
     if (end != vs + vlen) return 0;

@@ -320,7 +320,9 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   (`df.filter(d;"a";">";"2")`) kept no rows and a malformed `op` or `val` was
   never refused. `op` is now exactly one of `<` `<=` `=` `>=` `>` `!=` (the C
   filter gains `!=`, the one documented op it lacked) and `val` must parse in
-  full as an `f64`; anything else, like an unknown or non-numeric column, is
+  full as an `f64` with C `strtod` syntax (so `"0x1p1"`, `"nan"` and `"inf"`
+  are numbers) and no leading whitespace; anything else, like `" 2"` or an
+  unknown or non-numeric column, is
   `$err`, with the message `df.filter: the filter could not be applied
   (unknown or non-numeric column, unknown op, or a val that is not an f64)`.
   Tests: C2161, `test_dataframe` T65.

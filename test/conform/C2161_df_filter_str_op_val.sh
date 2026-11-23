@@ -13,8 +13,11 @@
 #
 # THE FIX.  The glue maps op exactly to df_filter's code (df_filter gains
 # "!=", code 5, the one documented op it lacked) and parses val with strtod in
-# full.  Anything else is $err: an unknown op ("==", ""), a val that is empty
-# or has trailing bytes ("2x", "abc"), an unknown or non-numeric column.
+# full.  Anything else is $err: an unknown op ("==", ""), a val that is empty,
+# has leading whitespace (" 2") or trailing bytes ("2x", "abc"), an unknown or
+# non-numeric column.  (An op with an embedded NUL is also $err, but a toke
+# str literal cannot carry one -- "<\0x" has length 1 -- so it is not
+# reachable from here.)
 #
 # WHAT IS ASSERTED: each of the six ops over a{1,2,3,2} with val "2" keeps
 # exactly the rows the comparison selects (rows, and the CSV of the result,
@@ -64,6 +67,7 @@ f=main():i64{
   show(d;"a";">";"");
   show(d;"a";">";"2x");
   show(d;"a";">";"abc");
+  show(d;"a";">";" 2");
   show(d;"name";">";"2");
   show(d;"nosuch";">";"2");
   <0
@@ -119,6 +123,7 @@ cat > want.txt <<EOF
 [a > ] ${MSG}
 [a > 2x] ${MSG}
 [a > abc] ${MSG}
+[a >  2] ${MSG}
 [name > 2] ${MSG}
 [nosuch > 2] ${MSG}
 EOF
