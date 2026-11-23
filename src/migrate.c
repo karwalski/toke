@@ -1926,13 +1926,60 @@ static int uses_want_str(const Node *fn, const Node *prog, const char *src,
 
 typedef struct { MigEdit *ed; int ne; int nstr; int nbyte; const char *src; int blen; } IdxCtx;
 
+/* A legacy str index on a str receiver (`s.get(i)` after step 9's rewrite). */
+static int is_str_index(const Node *n, const Node *fn, const Node *prog, const char *src, int blen)
+{
+    return n && n->kind == NODE_INDEX_EXPR && n->child_count == 2 && fn &&
+           n->tok_start + 5 <= blen && !strncmp(src + n->tok_start, ".get(", 5) &&
+           classify_expr(n->children[0], fn, prog, src, 0) == RK_STR;
+}
+
+/* 127.512: the byte a one-byte str literal holds (`"a"`, `"\n"`), or -1. */
+static int one_byte_lit(const Node *n, const char *src, int blen)
+{
+    if (!n || n->kind != NODE_STR_LIT || n->tok_start < 0 || n->tok_start + n->tok_len > blen)
+        return -1;
+    const char *t = src + n->tok_start;
+    if (n->tok_len == 3 && t[0] == '"' && t[2] == '"' && t[1] != '"' && t[1] != '\\' &&
+        (unsigned char)t[1] >= 0x20 && (unsigned char)t[1] < 0x7f)
+        return (unsigned char)t[1];
+    if (n->tok_len == 4 && t[0] == '"' && t[1] == '\\' && t[3] == '"') {
+        switch (t[2]) {
+        case 'n': return 10; case 't': return 9; case 'r': return 13;
+        case '"': return 34; case '\\': return 92;
+        default: return -1;
+        }
+    }
+    return -1;
+}
+
+/* 127.512: `a[i]=b[j]` and `a[i]="x"` compare one character with one
+ * character: that is a byte comparison, so both sides read the byte
+ * (`.charat`, no union; owner answer R2's catalogue pattern) instead of
+ * `.slice(i;i+1)`, which is `str!$sliceerr`.  Returns the sibling when the
+ * comparison is of that shape, else NULL. */
+static const Node *byte_cmp_sibling(const Node *parent, const Node *n, const Node *fn,
+                                    const Node *prog, const char *src, int blen)
+{
+    if (!parent || parent->kind != NODE_BINARY_EXPR || parent->child_count != 2) return NULL;
+    if (parent->op != TK_EQEQ && parent->op != TK_EQ && parent->op != TK_NE) return NULL;
+    const Node *sib = parent->children[0] == n ? parent->children[1] : parent->children[0];
+    if (is_str_index(sib, fn, prog, src, blen) || one_byte_lit(sib, src, blen) >= 0) return sib;
+    return NULL;
+}
+
 static void index_walk(IdxCtx *c, const Node *n, const Node *parent, const Node *fn, const Node *prog)
 {
     if (!n) return;
-    if (n->kind == NODE_INDEX_EXPR && n->child_count == 2 && fn &&
-        n->tok_start + 5 <= c->blen && !strncmp(c->src + n->tok_start, ".get(", 5) &&
-        classify_expr(n->children[0], fn, prog, c->src, 0) == RK_STR && c->ne + 2 <= MIG_MAX_EDITS) {
-        int w = ctx_wants_str(parent, n, fn, prog, c->src, 0);
+    if (is_str_index(n, fn, prog, c->src, c->blen) && c->ne + 2 <= MIG_MAX_EDITS) {
+        const Node *bsib = byte_cmp_sibling(parent, n, fn, prog, c->src, c->blen);
+        int w = bsib ? -1 : ctx_wants_str(parent, n, fn, prog, c->src, 0);
+        int code = bsib ? one_byte_lit(bsib, c->src, c->blen) : -1;
+        if (code >= 0) {                    /* `"a"` → `97` beside the `.charat` */
+            c->ed[c->ne].off = bsib->tok_start; c->ed[c->ne].del = bsib->tok_len;
+            c->ed[c->ne].dyn = NULL;
+            snprintf(c->ed[c->ne].ins, sizeof c->ed[c->ne].ins, "%d", code); c->ne++;
+        }
         const Node *idx = n->children[1];
         int ilo, ihi;
         if (w >= 0 && node_span(idx, c->src, c->blen, &ilo, &ihi)) {

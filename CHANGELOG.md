@@ -251,6 +251,16 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   R2). `--migrate` now says so on stderr: `note: each .slice(i;i+1) is
   str!$sliceerr: read it through 'mt' or '!' (or use .charat(i) for the byte)
   before it compiles`. Test: C2100.
+- **`tkc --migrate` reads a one-character comparison as bytes** (127.512).
+  A legacy str index compared with another str index or with a one-byte str
+  literal (`a[0]=b[1]`, `v[i]="a"`, `"\n"=v[0]`) migrated to
+  `.slice(i;i+1)`, which is `str!$sliceerr`, so the migrated comparison did not
+  compile. Both sides now read the byte: `a.charat(0)==b.charat(1)`,
+  `v.charat(i)==97`, `10==v.charat(0)` (owner answer R2's single-character read,
+  no union, no filler arm). A str index used as a str (returned, concatenated,
+  printed, compared with a longer string) still migrates to `.slice(i;i+1)` with
+  the 127.510 note: std.str has no non-union one-character str read.
+  test-migrate's `str_index` now pins three E4031s, not five. Test: C2151.
 
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
@@ -337,6 +347,14 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   127.496 lifetime rule: valid until the next `http_cache_get`,
   `http_cache_put`, purge or `http_cache_stale_if_error` call. Nothing in the
   tree calls `http_cache_*`. Test: C2130.
+
+- **std.cache's stale-if-error fallback is the request's own entry** (127.514).
+  `http_cache_stale_if_error` accepted any key that began with `METHOD|URI`, so
+  with `/a` not cached a lookup of `GET /a` served a cached `/ab`, `/a/b` or
+  `/api` body, from memory or (since 127.511) from a spill file. A key now
+  matches only when it is `METHOD|URI` itself or a Vary variant of it
+  (`METHOD|URI|...`), the split `http_cache_purge` already uses. Nothing in the
+  tree calls `http_cache_*`. Test: C2150.
 
 - **`csv.serialize(rows:@(@($str))):$str` is usable from toke** (127.354; owner
   register 2.11, recommendation). Its interface declared an `i64` ABI
