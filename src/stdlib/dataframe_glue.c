@@ -156,7 +156,7 @@ static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t v
     if (code < 0) return 0;
     const char *vs = (const char *)(intptr_t)val;
     uint64_t vlen = tk_strlen(vs);
-    if (vlen == 0 || strlen(vs) != vlen) return 0;
+    if (vlen == 0 || memchr(vs, '\0', (size_t)vlen)) return 0;
     char *end = NULL;
     double threshold = strtod(vs, &end);
     if (end != vs + vlen) return 0;
