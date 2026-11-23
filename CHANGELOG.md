@@ -447,6 +447,15 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
   `tpl.render`'s positional escaping is needed instead, and its example is a complete
   program that `make check-docs` builds. The `str.concat` examples beside it used `,`
   as the argument separator and now use `;`.
+- **The security guide describes the escaping that ships** (132.158).
+  `docs/security/building-secure-apps.md`'s "Read this first" banner said HTML
+  escaping was opt-in and auto-escape not yet shipped, and its OOK-02 section said
+  `ooke`'s `{=title=}` performs no HTML encoding and to add `|escape` everywhere.
+  `ooke` 3.0.0 escapes template output for its position by default, and `tpl.render`
+  does the same since 121.37, so following the banner escaped values twice. Both now
+  describe the shipped behaviour (OOK-02 closed): leave the default, keep `|raw` for
+  HTML you produced, and `|md` is written unescaped behind `std.md`'s safe mode,
+  whose limits are stated. The checklist line follows.
 - **The static-site tutorial is ooke 3.x, and its page code is checked against ooke**
   (132.156). `docs/tutorials/static-site.md` taught an ooke that does not exist: page
   handlers calling `store.slug`/`store.all`/`tpl.renderfile` (not ooke's API, and
