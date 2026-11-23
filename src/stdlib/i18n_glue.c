@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdio.h>
 extern int64_t tk_array_append_w(int64_t,int64_t);
 extern int64_t tk_str_slice_w(int64_t,int64_t,int64_t);
