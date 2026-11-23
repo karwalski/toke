@@ -251,6 +251,16 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   R2). `--migrate` now says so on stderr: `note: each .slice(i;i+1) is
   str!$sliceerr: read it through 'mt' or '!' (or use .charat(i) for the byte)
   before it compiles`. Test: C2100.
+- **`tkc --migrate` reads a one-character comparison as bytes** (127.512).
+  A legacy str index compared with another str index or with a one-byte str
+  literal (`a[0]=b[1]`, `v[i]="a"`, `"\n"=v[0]`) migrated to
+  `.slice(i;i+1)`, which is `str!$sliceerr`, so the migrated comparison did not
+  compile. Both sides now read the byte: `a.charat(0)==b.charat(1)`,
+  `v.charat(i)==97`, `10==v.charat(0)` (owner answer R2's single-character read,
+  no union, no filler arm). A str index used as a str (returned, concatenated,
+  printed, compared with a longer string) still migrates to `.slice(i;i+1)` with
+  the 127.510 note: std.str has no non-union one-character str read.
+  test-migrate's `str_index` now pins three E4031s, not five. Test: C2151.
 
 ### Fixed for loke (the 2026-11-15 handoff, Epic 138)
 
