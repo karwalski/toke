@@ -109,7 +109,7 @@ else
     cat > "${WORK}/srv.tk" <<EOF
 m=srv;
 i=http:std.http;
-f=greet(req:i64):i64{
+f=greet(req:\$req):i64{
   let v=mt http.param(req;"name"){\$ok:p p;\$err:e ""};
   <http.resok(v)
 };
