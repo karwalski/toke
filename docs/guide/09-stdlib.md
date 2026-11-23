@@ -633,11 +633,15 @@ i=df:std.dataframe;
 
 | Feature | Description |
 |---------|-------------|
-| Columns | Typed columnar storage for efficient data access |
-| Filter | Row filtering by predicate |
+| CSV import | `df.fromcsv` reads CSV text (a `$str`, e.g. from `file.read`) into a frame; each column is `f64` or `$str` |
+| Filter | `df.filter` keeps the rows where one numeric column compares (`<` `<=` `=` `>=` `>` `!=`) against a number |
 | Group by | Split rows into one frame per key value |
-| Join | Inner/left join two dataframes |
-| CSV import | Load directly from CSV files |
+| String column | `df.columnstr` returns a `$str` column's values as an `@($str)` |
+| Shape and export | `df.shape` gives the row and column counts; `df.tocsv` writes the frame back as CSV text |
+
+There is no join: `df.join` is declared in the interface but quarantined (no
+implementation, so `tkc --check` rejects a call to it), as are `df.column`,
+`df.head`, `df.tojson` and `df.schema`. See [std.dataframe](/docs/stdlib/dataframe/).
 
 **Example: filter and group**
 
