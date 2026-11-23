@@ -215,6 +215,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   (decompression-bomb guard: ...)`. A well-formed file is never refused, and a
   short strip within the 1 MiB slack still zero-fills as before. Tests: C2030;
   the input is kept as `test/fuzz/corpus-adversarial/image_tiff_short_strip_127488.tif`.
+- **std.cache no longer writes past its key buffer on a long URI** (127.516, a
+  heap overflow). `cache_build_key` built `METHOD|URI|vary...` in a fixed
+  1024-byte block and kept `snprintf`'s untruncated length as its offset, so for
+  a URI of about 1020 bytes or more a matched Vary header was appended from past
+  the block with a wrapped bound (`http_cache_get` or `http_cache_put` with a
+  1101-byte URI and `Vary: Accept-Encoding`: heap-buffer-overflow under ASan).
+  Without Vary the key was cut at 1023 bytes, so two URIs sharing their first
+  ~1019 bytes shared one entry for get, put and purge. The key, and
+  `http_cache_stale_if_error`'s `METHOD|URI` (a 1024-byte stack buffer), are
+  now allocated to their full length; matching stays exact (127.514). Nothing
+  in the tree calls `http_cache_*`. Test: C2160.
 
 ### Build and CI gates
 

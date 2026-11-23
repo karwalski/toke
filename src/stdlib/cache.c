@@ -123,18 +123,54 @@ static HttpCache g_cache = {0};
 
 /* ── Cache key construction (63.1.4 — Vary-aware) ────────────────────── */
 
+/* Append "a" + "b" (+ "=" + "c" when c is non-NULL) to the key held in *key
+ * (length *len, capacity *cap), growing it as needed.  127.516: the key was a
+ * fixed 1024-byte buffer, cut short past 1023 bytes and overrun once a Vary
+ * value was appended after a cut; every append now fits before it is made.
+ * Returns 0, or -1 when an allocation fails (*key is then freed and NULL). */
+static int cache_key_append(char **key, size_t *len, size_t *cap,
+                            const char *a, const char *b, const char *c)
+{
+    size_t la = strlen(a), lb = strlen(b), lc = c ? strlen(c) + 1 : 0;
+    size_t need = la + lb + lc;
+    if (need > SIZE_MAX - *len - 1) goto fail;
+    if (*len + need + 1 > *cap) {
+        size_t ncap = *cap ? *cap : 64;
+        while (ncap < *len + need + 1)
+            ncap = ncap > SIZE_MAX / 2 ? *len + need + 1 : ncap * 2;
+        char *nk = realloc(*key, ncap);
+        if (!nk) goto fail;
+        *key = nk;
+        *cap = ncap;
+    }
+    memcpy(*key + *len, a, la); *len += la;
+    memcpy(*key + *len, b, lb); *len += lb;
+    if (c) {
+        (*key)[(*len)++] = '=';
+        memcpy(*key + *len, c, lc - 1); *len += lc - 1;
+    }
+    (*key)[*len] = '\0';
+    return 0;
+fail:
+    free(*key);
+    *key = NULL;
+    return -1;
+}
+
 /* Build a cache key from method + URI + Vary header values from request.
- * If vary is "Accept-Encoding", key includes the request's Accept-Encoding. */
+ * If vary is "Accept-Encoding", key includes the request's Accept-Encoding.
+ * The key is allocated to its full length (127.516): two URIs are one key
+ * only when they are the same bytes.  NULL when an allocation fails. */
 static char *cache_build_key(const char *method, const char *uri,
                               const char *vary, const char *const *hdr_names,
                               const char *const *hdr_values, int nhdr)
 {
-    size_t cap = 1024;
-    char *key = malloc(cap);
-    if (!key) return NULL;
-
-    int off = snprintf(key, cap, "%s|%s", method ? method : "GET",
-                       uri ? uri : "/");
+    char *key = NULL;
+    size_t len = 0, cap = 0;
+    if (cache_key_append(&key, &len, &cap, method ? method : "GET", "|",
+                         NULL) ||
+        cache_key_append(&key, &len, &cap, uri ? uri : "/", "", NULL))
+        return NULL;
 
     /* Append Vary header values */
     if (vary && strcmp(vary, "*") != 0) {
@@ -155,8 +191,9 @@ static char *cache_build_key(const char *method, const char *uri,
             for (int i = 0; i < nhdr; i++) {
                 if (strncasecmp(hdr_names[i], name_start, nlen) == 0 &&
                     hdr_names[i][nlen] == '\0') {
-                    off += snprintf(key + off, cap - (size_t)off,
-                                    "|%s=%s", hdr_names[i], hdr_values[i]);
+                    if (cache_key_append(&key, &len, &cap, "|", hdr_names[i],
+                                         hdr_values[i] ? hdr_values[i] : ""))
+                        return NULL;
                     break;
                 }
             }
@@ -824,15 +861,17 @@ const char *http_cache_stale_if_error(const char *method, const char *uri,
 {
     /* Linear search for the entry keyed "METHOD|URI" or a Vary variant of
      * it (127.514: not any key that merely starts with those bytes) */
-    char prefix[1024];
-    snprintf(prefix, sizeof(prefix), "%s|%s", method ? method : "GET",
-             uri ? uri : "/");
+    /* The prefix is allocated to its full length, as the key is (127.516):
+     * a 1023-byte cut would miss every longer URI's own entry. */
+    char *prefix = cache_build_key(method, uri, NULL, NULL, NULL, 0);
+    if (!prefix) return NULL;
     size_t prefix_len = strlen(prefix);
     time_t now = time(NULL);
 
     CacheEntry *e = g_cache.head;
     while (e && !cache_stale_match(e, prefix, prefix_len, now)) e = e->next;
     if (!e) e = cache_disk_stale(prefix, prefix_len, now);
+    free(prefix);
     if (!e) return NULL;
     *out_status = e->status;
     *out_body_len = e->body_len;
