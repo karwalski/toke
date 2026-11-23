@@ -98,10 +98,13 @@ void   *tk_err_box(int64_t nbytes);
 #define TK_ERR_INLINE 64
 static inline void *tk_err_box_fast(int64_t nbytes)
 {
-    TkErrTls *t = &tk_current_error;
-    if (nbytes > 0 && nbytes <= TK_ERR_INLINE && t->buf) {
-        memset(t->buf, 0, TK_ERR_INLINE);
-        return t->buf;
+    /* The TLS object's fields are read directly, not through a pointer to
+     * it: gcc's UBSan on Linux reports a pointer to a TLS object as null
+     * (C2031 [asan], CI 2026-11-24) although the object is live. */
+    void *b = tk_current_error.buf;
+    if (nbytes > 0 && nbytes <= TK_ERR_INLINE && b) {
+        memset(b, 0, TK_ERR_INLINE);
+        return b;
     }
     return (tk_err_box)(nbytes);
 }

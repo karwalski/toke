@@ -21,6 +21,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include "tk_array.h"
 
 #include "tk_runtime.h"   /* 127.238: tk_current_error + tk_err_box */
