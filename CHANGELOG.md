@@ -230,6 +230,15 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Build and CI gates
 
+- **`make check-tk-parse`: every committed `.tk` outside `test/` parses** (131.142).
+  131.52 found five that did not: the GitHub Linguist samples
+  (`linguist-submission/samples/toke/`, underscored identifiers and `=` for `==`) and
+  a stale `results/` copy of toke-test-programs' MED-009 solution. All are fixed (the
+  samples by `tkc --migrate` and the current std API; the map sample's size line reads
+  4, since std has no map delete). The gate runs `tkc --dump-ast` on every
+  `git ls-files '*.tk'` path outside `test/`, requires the Linguist samples to
+  `--check` with no output at all, and runs a `--selftest` negative control first. It
+  is in `make ci` and the CI workflow.
 - **`docs/spec/toke.lark`, and `make check-grammar-artefacts`** (131.52). The Lark
   form of `toke.gbnf`, generated rule for rule by `scripts/gbnf_to_lark.py --write`
   (one character per terminal, so llguidance's greedy lexer cannot change the
