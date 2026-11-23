@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 #include <stdlib.h>
 #include <netdb.h>
 #include "tk_bind.h"   /* 135.33 */

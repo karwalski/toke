@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
 /* ══ The error channel (135.12, then 127.102b for the whole module) ═══════
  *
