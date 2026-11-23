@@ -17,11 +17,15 @@ Build a personal blog with ooke: Markdown content, custom templates, static HTML
 
 A personal blog called "My toke Blog" with:
 
-- A homepage listing all posts by date (newest first)
+- A homepage that links to every post
 - Individual blog post pages rendered from Markdown
 - A shared layout with header, footer, and navigation
 - CSS styling
 - Static HTML output ready to deploy anywhere
+
+Everything here is checked against ooke 3.x: the page code below is type-checked
+against an ooke checkout by `make check-docs` in the toke repository, and the
+project builds with `ooke build` as shown.
 
 ---
 
@@ -33,45 +37,43 @@ Before building manually, here are prompts you can give an LLM to generate ooke 
 
 ```
 Generate an ooke.toml config for a blog called "My toke Blog".
-The site should have a title, description, base URL of "https://myblog.example.com",
-and build output to the "out" directory. Include a [content] section
-pointing to content/ and a [build] section with minify enabled.
+The [site] section should set name, url "https://myblog.example.com"
+and language "en"; the [build] section should write to "build/"
+with minify enabled.
 ```
 
 Expected output:
 
 ```toml
 [site]
-title = "My toke Blog"
-description = "A personal blog built with ooke"
-base_url = "https://myblog.example.com"
-
-[content]
-dir = "content"
+name = "My toke Blog"
+url = "https://myblog.example.com"
+language = "en"
 
 [build]
-output = "out"
+output = "build/"
 minify = true
 ```
 
 ### Prompt: blog post template
 
 ```
-Generate an ooke blog post template (.tkt file) with layout inheritance
-from "base". It should display the post title in an h1, the date,
-the post body rendered from Markdown, and previous/next navigation links.
+Generate an ooke blog post template (.tkt file) that declares the layout
+"base" and fills its "title" and "content" blocks. It should show the
+post title in an h1 and the post body rendered from Markdown with the
+md filter, followed by a link back to the homepage. The only values it
+can use are title, body, slug, site.name, site.url and site.language.
 ```
 
 ### Prompt: homepage template
 
 ```
-Generate an ooke homepage template (.tkt file) that inherits from "base".
-It should display the site title, a short intro paragraph, and list all
-blog posts sorted by date (newest first). Each post entry shows the title
-as a link and the date.
+Generate an ooke homepage template (.tkt file) that declares the layout
+"base". It should display site.name, a short intro paragraph, and a list
+of links to the blog posts at /blog/<slug>/.
 ```
 
-The LLM will generate `.tkt` files using the syntax shown in Section 4. Review the output and adjust to match the templates we build manually below.
+The LLM will generate `.tkt` files using the syntax shown in Section 4. Review the output and adjust to match the templates we build manually below. ooke templates have no loops or conditionals, so reject output that uses `{% for %}` or `{% if %}`.
 
 ---
 
@@ -91,55 +93,51 @@ This creates the project directory with the default structure:
 ```
 myblog/
   ooke.toml          # project configuration
-  content/            # Markdown content files
-  pages/              # route handlers (toke files)
-  templates/          # .tkt template files
-  static/             # CSS, images, fonts
+  pages/             # routes (.tk files); pages/index.tk is /
+  templates/         # .tkt templates; base.tkt and index.tkt
+  content/           # Markdown content
+  static/            # CSS, images, fonts, served at /static/
 ```
 
 ### 3.2 Configure the project
 
-Open `ooke.toml` and set your site details:
+Open `ooke.toml` and set your site details in the `[site]` and `[build]` sections (leave the rest of the scaffolded file as it is):
 
 ```toml
 [site]
-title = "My toke Blog"
-description = "A personal blog built with ooke"
-base_url = "https://myblog.example.com"
-
-[content]
-dir = "content"
+name = "My toke Blog"
+url = "https://myblog.example.com"
+language = "en"
 
 [build]
-output = "out"
+output = "build/"
 minify = true
 ```
 
-The `[site]` values are available in templates as `site.title`, `site.description`, and so on.
+The `[site]` values are available in every template as `site.name`, `site.url` and `site.language`.
 
 ### 3.3 Create the base layout
 
-Create `templates/base.tkt`. This is the shared HTML shell that every page inherits from:
+Replace `templates/base.tkt`. This is the shared HTML shell that every page uses:
 
 ```
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{= site.language =}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{= page.title =} -- {= site.title =}</title>
-  <link rel="stylesheet" href="/style.css">
+  <title>{! yield("title") !} -- {= site.name =}</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header>
     <nav>
-      <a href="/" class="site-name">{= site.title =}</a>
+      <a href="/" class="site-name">{= site.name =}</a>
     </nav>
   </header>
 
   <main>
-    {! block("content") !}
-    {! end !}
+    {! yield("content") !}
   </main>
 
   <footer>
@@ -149,24 +147,23 @@ Create `templates/base.tkt`. This is the shared HTML shell that every page inher
 </html>
 ```
 
-`{= expr =}` prints values. `{! block("content") !}...{! end !}` defines a named block that child templates fill. `{! layout("base") !}` in a child template wraps it in this layout.
+`{= expr =}` prints a value. `{! yield("content") !}` is where a page's `content` block goes. A page template starts with `{! layout("base") !}` and fills the blocks with `{! block("content") !}...{! end !}`.
 
 ### 3.4 Add a blog post
 
 Create the content directory and your first post:
 
 ```sh
-mkdir -p content/posts
+mkdir -p content/blog
 ```
 
-Create `content/posts/hello-world.md`:
+Create `content/blog/hello-world.md`:
 
 ```markdown
 ---
 title: Hello World
 slug: hello-world
 date: 2026-04-18
-summary: My first post on my new toke blog.
 ---
 
 Welcome to my blog! This is my first post, written in
@@ -178,96 +175,73 @@ toke is designed for LLM code generation -- fewer tokens,
 faster inference, lower cost.
 ```
 
-Frontmatter between `---` fences defines metadata. ooke loads content via `store.all("posts")` and `store.slug("posts"; slug)`.
+Frontmatter between `---` fences defines metadata. A post's template sees its `title`, its `slug` (from the frontmatter, or the file name when there is none) and its Markdown `body`. Other keys, such as `date`, are kept with the post but are not passed to the template.
 
-Add a second post so the listing page has more than one entry. Create `content/posts/second-post.md` with similar frontmatter (`title`, `slug`, `date`, `summary`) and Markdown body.
+Add a second post so the homepage has more than one link: `content/blog/second-post.md` with its own `title` and `slug` and a Markdown body.
 
-### 3.5 Create the blog post route handler
+### 3.5 Create the blog post route
 
-Create `pages/blog/[slug].tk`. The `[slug]` in the filename tells ooke this is a dynamic route -- `/blog/hello-world`, `/blog/template-tricks`, etc.
+Create `pages/blog/[slug].tk`. The `[slug]` in the file name tells ooke this is a dynamic route -- `/blog/hello-world`, `/blog/second-post`, and so on.
 
 ```toke
-m=page.blog.slug;
-i=http:std.http;
-i=tpl:ooke.template;
-i=store:ooke.store;
-
-f=get(req:http.$req):http.$res{
-  let post=store.slug("posts";req.param("slug"));
-  <tpl.renderfile("templates/posts/post.tkt";post);
-};
+m=pages.blog.slug;
 ```
 
-The module declaration mirrors the URL path. `store.slug("posts"; req.param("slug"))` loads the post matching the URL slug, and `tpl.renderfile(...)` renders the template with that data.
+That one line is the whole page. ooke routes by the page's path, not by code in it: for `pages/blog/[slug].tk` it serves `/blog/:slug`, takes the posts from `content/blog/` (the directory the page sits in), and renders `templates/blog/[slug].tkt` once per post. `ooke build` writes each result to `build/blog/<slug>/index.html`.
+
+A page that should run code for each request -- a JSON endpoint, a form handler -- goes under `pages/api/` and defines `f=get(req:i64):i64` or `f=post(req:i64):i64`; `ooke compile` builds those into a serve binary. A static blog needs none.
 
 ### 3.6 Create the blog post template
 
-Create `templates/posts/post.tkt`:
+Create `templates/blog/[slug].tkt`:
 
 ```
 {! layout("base") !}
+{! block("title") !}{= title =}{! end !}
 {! block("content") !}
-
 <article class="post">
-  <h1>{= post.title =}</h1>
-  <time datetime="{= post.date =}">{= post.date =}</time>
+  <h1>{= title =}</h1>
 
   <div class="post-body">
-    {= post.body | md =}
+    {= body | md =}
   </div>
 
-  <nav class="post-nav">
-    {% if prev %}
-      <a href="/blog/{= prev.slug =}">&larr; {= prev.title =}</a>
-    {% endif %}
-    {% if next %}
-      <a href="/blog/{= next.slug =}">{= next.title =} &rarr;</a>
-    {% endif %}
-  </nav>
+  <p class="post-nav"><a href="/">&larr; All posts</a></p>
 </article>
-
 {! end !}
 ```
 
-### 3.7 Create the homepage route handler
+`{= body | md =}` renders the Markdown body to HTML. `{= title =}` is HTML-escaped, as every value is unless a filter says otherwise.
 
-Create `pages/index.tk`:
+### 3.7 Create the homepage route
+
+`ooke new` already created `pages/index.tk`, the route for `/`:
 
 ```toke
-m=page.index;
-i=http:std.http;
-i=tpl:ooke.template;
-i=store:ooke.store;
-
-f=get(req:http.$req):http.$res{
-  let posts=store.all("posts";@(by:"date";order:"desc"));
-  <tpl.renderfile("templates/home.tkt";@(posts:posts));
-};
+m=pages.index;
 ```
+
+It renders `templates/index.tkt`.
 
 ### 3.8 Create the homepage template
 
-Create `templates/home.tkt`:
+Replace `templates/index.tkt`:
 
 ```
 {! layout("base") !}
+{! block("title") !}Home{! end !}
 {! block("content") !}
-
-<h1>{= site.title =}</h1>
+<h1>{= site.name =}</h1>
 <p class="intro">Welcome to my blog. I write about toke, ooke, and building things.</p>
 
-<section class="post-list">
-  {% for post in posts %}
-    <article class="post-summary">
-      <time datetime="{= post.date =}">{= post.date =}</time>
-      <h2><a href="/blog/{= post.slug =}">{= post.title =}</a></h2>
-      <p>{= post.summary =}</p>
-    </article>
-  {% endfor %}
-</section>
-
+<ul class="post-list">
+  <li><a href="/blog/second-post/">Second post</a></li>
+  <li><a href="/blog/hello-world/">Hello World</a></li>
+</ul>
 {! end !}
 ```
+
+ooke templates have no loops, and a static page such as `/` is rendered with the `site.*` values only, so the list of posts is written into the template. Add a line to it when you add a post.
 
 ### 3.9 Add CSS
 
@@ -283,20 +257,19 @@ body {
 header { margin-bottom: 2rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 1rem; }
 .site-name { font-weight: 700; font-size: 1.25rem; text-decoration: none; color: #222; }
 h1 { margin-bottom: 0.5rem; }
-time { display: block; color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
 .intro { font-size: 1.1rem; color: #555; margin-bottom: 2rem; }
-.post-list .post-summary { margin-bottom: 1.5rem; }
-.post-list h2 a { text-decoration: none; color: #0055aa; }
-.post-list h2 a:hover { text-decoration: underline; }
+.post-list { list-style: none; }
+.post-list li { margin-bottom: 0.75rem; }
+.post-list a { text-decoration: none; color: #0055aa; }
+.post-list a:hover { text-decoration: underline; }
 .post-body { margin: 1.5rem 0 2rem; }
 .post-body p { margin-bottom: 1rem; }
-.post-nav { display: flex; justify-content: space-between;
-  margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; }
+.post-nav { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; }
 .post-nav a { color: #0055aa; text-decoration: none; }
-footer { border-top: 1px solid #e0e0e0; padding-top: 1rem; color: #999; font-size: 0.85rem; }
+footer { border-top: 1px solid #e0e0e0; margin-top: 2rem; padding-top: 1rem; color: #999; font-size: 0.85rem; }
 ```
 
-Files in `static/` are copied as-is to the output directory during build.
+Files in `static/` are served at `/static/` and copied to `build/static/` by `ooke build`.
 
 ### 3.10 Build
 
@@ -304,7 +277,15 @@ Files in `static/` are copied as-is to the output directory during build.
 ooke build
 ```
 
-ooke loads content, renders every route through its template, and writes static HTML to `out/`. Each page becomes a directory with an `index.html` inside, giving clean URLs (`/blog/hello-world/` instead of `/blog/hello-world.html`).
+ooke renders every route through its template and writes static HTML to `build/`. Each page becomes a directory with an `index.html` inside, giving clean URLs (`/blog/hello-world/` instead of `/blog/hello-world.html`):
+
+```
+build/
+  index.html
+  blog/hello-world/index.html
+  blog/second-post/index.html
+  static/style.css
+```
 
 ### 3.11 Preview locally
 
@@ -312,150 +293,121 @@ ooke loads content, renders every route through its template, and writes static 
 ooke serve
 ```
 
-Open `http://localhost:3000` in your browser. You should see the homepage with posts listed newest first. Click a title to see the full post. `ooke serve` watches for changes and rebuilds automatically.
+Open `http://localhost:3000` in your browser. You should see the homepage with its two links. Click one to see the full post. `ooke serve` renders the templates when it starts, so restart it after you change a template or a post.
 
 ### 3.12 Deploy
 
 ooke builds plain static files. Deploy them anywhere that serves HTML. The simplest method is rsync:
 
 ```sh
-rsync -avz --delete out/ user@yourserver:/var/www/myblog/
+rsync -avz --delete build/ user@yourserver:/var/www/myblog/
 ```
 
-Other options: copy `out/` to any static hosting provider (Cloudflare Pages, Netlify, S3), serve with nginx or caddy, or use `ooke serve` in production for the built-in HTTP server with caching.
+Other options: copy `build/` to any static hosting provider (Cloudflare Pages, Netlify, S3), serve it with nginx or caddy, or run `ooke serve` for the built-in HTTP server.
 
 ---
 
 ## 4. Template syntax reference
 
-Quick reference of ooke template features used in this tutorial and beyond.
+Quick reference of the ooke template features used in this tutorial.
 
 ### Expressions
 
 Print a value into the output:
 
 ```
-{= site.title =}
-{= post.date =}
-{= post.body | md =}
+{= site.name =}
+{= title =}
+{= body | md =}
 ```
 
-Expressions are HTML-escaped by default. Use `| raw` for unescaped output.
+Values are escaped by default for where they sit in the HTML (text, attribute, URL, script or style). A name the page has no value for prints nothing.
 
-### Conditionals
+### Layouts and blocks
 
-```
-{% if post.summary %}
-  <p>{= post.summary =}</p>
-{% else %}
-  <p>No summary available.</p>
-{% endif %}
-```
-
-### Loops
+In the layout, mark where each block goes:
 
 ```
-{% for post in posts %}
-  <h2>{= post.title =}</h2>
-{% endfor %}
+<main>{! yield("content") !}</main>
 ```
 
-### Layout inheritance
-
-In the base template, define blocks:
-
-```
-{! block("content") !}
-  <p>Default content if not overridden</p>
-{! end !}
-```
-
-In a child template, declare the layout and fill the block:
+In a page template, declare the layout and fill the blocks:
 
 ```
 {! layout("base") !}
 {! block("content") !}
-  <p>This replaces the default content</p>
+  <p>This goes where the layout yields "content"</p>
 {! end !}
 ```
 
 ### Partials
 
-Include a reusable template fragment:
+Include a reusable fragment from `templates/`:
 
 ```
-{! partial("components/footer") !}
+{! partial("partials/footer") !}
 ```
 
-Partials receive the current template context. Pass extra data with `{! partial("components/card"; post) !}`.
+A partial sees the same values as the template that includes it.
 
 ### Filters
 
-Filters transform values using the pipe syntax `{= value | filter =}`:
+Filters transform a value with the pipe syntax `{= value | filter =}`. One filter per expression:
 
-| Filter   | Description                              | Example                        |
-|----------|------------------------------------------|--------------------------------|
-| `md`     | Render Markdown to HTML                  | `{= post.body \| md =}`       |
-| `escape` | HTML-escape (default, usually implicit)  | `{= title \| escape =}`       |
-| `raw`    | Output without escaping                  | `{= html_content \| raw =}`   |
-| `upper`  | Convert to uppercase                     | `{= tag \| upper =}`          |
-| `lower`  | Convert to lowercase                     | `{= name \| lower =}`         |
-| `trim`   | Strip leading/trailing whitespace        | `{= input \| trim =}`         |
-
-Filters can be chained: `{= post.body | md | raw =}`.
+| Filter   | Description                              | Example                     |
+|----------|------------------------------------------|-----------------------------|
+| `md`     | Render Markdown to HTML                  | `{= body \| md =}`          |
+| `escape` | Escape for the context (the default)     | `{= title \| escape =}`     |
+| `raw`    | No escaping -- only for HTML you produced yourself | `{= snippet \| raw =}` |
+| `upper`  | Convert to uppercase                     | `{= title \| upper =}`      |
+| `lower`  | Convert to lowercase                     | `{= title \| lower =}`      |
+| `trim`   | Strip leading/trailing whitespace        | `{= title \| trim =}`       |
 
 ### Directives summary
 
 | Syntax | Purpose |
 |---|---|
-| `{= expr =}` | Print expression |
-| `{! layout("name") !}` | Inherit from a layout template |
-| `{! block("name") !}...{! end !}` | Define or fill a named block |
-| `{! partial("name") !}` | Include a partial template |
-| `{% if cond %}...{% endif %}` | Conditional rendering |
-| `{% for x in list %}...{% endfor %}` | Loop over a collection |
+| `{= expr =}` | Print a value |
+| `{! layout("name") !}` | Render this template inside `templates/<name>.tkt` |
+| `{! block("name") !}...{! end !}` | Fill a named block |
+| `{! yield("name") !}` | In a layout: where a block goes |
+| `{! partial("name") !}` | Include `templates/<name>.tkt` |
+| `{# comment #}` | A comment; not rendered |
 
 ---
 
 ## 5. Troubleshooting
 
-### "template not found: base"
+### The page renders but a block is empty
 
-The layout name in `{! layout("base") !}` must match a file in `templates/`. Ensure `templates/base.tkt` exists. The name is the filename without the `.tkt` extension.
+The layout must `{! yield("name") !}` every block a page fills, and each `{! block("name") !}` needs its own `{! end !}`. A stray `{! end !}` with no open block is an error.
 
-### "content directory not found"
+### A layout or partial is not found
 
-Check that `ooke.toml` has `[content] dir = "content"` and that the `content/` directory exists at the project root.
+`{! layout("base") !}` reads `templates/base.tkt`; `{! partial("partials/footer") !}` reads `templates/partials/footer.tkt`. The name is relative to `templates/` and has no `.tkt` extension; `..`, a leading `/` and backslashes are refused.
 
-### Blog post not appearing in listing
+### A blog post is missing from the build
 
-- Confirm the `.md` file is inside `content/posts/`
-- Check that the frontmatter has valid YAML between `---` fences
-- Ensure the `slug` field is set and unique
-- Verify the `date` field is a valid date format (YYYY-MM-DD)
+- The `.md` file must be in `content/blog/` -- the directory named by the page's own directory under `pages/`
+- The post needs a slug: from its frontmatter `slug`, or its file name
+- Check the `ooke build` log: a post without a slug, or a template that fails to render, is reported there
 
 ### "route not found" for /blog/hello-world
 
-- The file `pages/blog/[slug].tk` must exist with the square brackets in the filename
-- The slug in the URL must match a `slug` field in a content file
-- Run `ooke build` and check the `out/` directory to see what was generated
+- The file `pages/blog/[slug].tk` must exist, with the square brackets in the file name
+- The slug in the URL must match a post's slug
+- Run `ooke build` and look in `build/blog/` to see what was generated
 
 ### CSS not loading
 
 - Static files must be in the `static/` directory
-- Reference them with absolute paths in templates: `/style.css`, not `style.css`
-- After `ooke build`, confirm the file was copied to `out/style.css`
+- Reference them as `/static/style.css`, not `style.css`
+- After `ooke build`, confirm the file was copied to `build/static/style.css`
 
 ### Markdown not rendering as HTML
 
-- Use the `md` filter: `{= post.body | md =}`
-- Without the filter, the raw Markdown text is printed as-is
-- If you see escaped HTML tags, you may need `| md | raw` to prevent double-escaping
-
-### Build produces empty pages
-
-- Check that the route handler returns a response: the function must use `<` (return) with `tpl.renderfile(...)`
-- Verify the template has `{! layout("base") !}` and `{! block("content") !}` correctly paired with `{! end !}`
+- Use the `md` filter: `{= body | md =}`
+- Without it, the Markdown source is printed as escaped text
 
 ---
 
@@ -463,12 +415,10 @@ Check that `ooke.toml` has `[content] dir = "content"` and that the `content/` d
 
 Try extending the blog on your own. These are listed roughly by difficulty.
 
-### 6.1 Add tags to posts
+### 6.1 Add an About page
 
-Add a `tags` field to your post frontmatter:
+Add `pages/about.tk` (`m=pages.about;`) and `templates/about.tkt`, which declares the `base` layout like the homepage does. ooke serves it at `/about` and builds `build/about/index.html`. Link to it from the `<nav>` in `base.tkt`.
 
-```yaml
-tags:
-  - toke
-  - tutorial
-```
+### 6.2 Move the footer into a partial
+
+Move the `<footer>` element of `base.tkt` into `templates/partials/footer.tkt` and include it with `{! partial("partials/footer") !}`.

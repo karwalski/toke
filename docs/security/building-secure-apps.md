@@ -88,21 +88,43 @@ Markdown, or disable raw HTML/`javascript:` links.
 
 ### Escape at the point of emission when building HTML by hand
 
-`std.html` gives you `html.escape`. Use it on any value you concatenate into
-markup yourself.
+`std.template` gives you `tpl.escape`, which HTML-escapes `&`, `<`, `>`, `"` and
+`'`. Use it on any value you concatenate into markup yourself. (`std.html`
+declares an `html.escape` too, but it has no implementation yet: a call to it is
+rejected with `E4027`. See `docs/reference/tki-quarantine.md`.)
 
 **Don't**:
 
-```
-let out = str.concat("<p>Hello ", str.concat(name, "</p>"));
+```toke
+let out=str.concat("<p>Hello ";str.concat(name;"</p>"));
 ```
 
 **Do**:
 
+```toke
+m=hello;
+i=io:std.io;
+i=str:std.str;
+i=tpl:std.template;
+
+f=hello(name:$str):$str{
+  let safe=tpl.escape(name);
+  <str.concat("<p>Hello ";str.concat(safe;"</p>"))
+};
+
+f=main():i64{
+  (io.println(hello("<script>alert(1)</script>")));
+  <0
+};
 ```
-let safe = html.escape(name);
-let out = str.concat("<p>Hello ", str.concat(safe, "</p>"));
-```
+
+This prints `<p>Hello &lt;script&gt;alert(1)&lt;/script&gt;</p>`.
+
+`tpl.escape` is for HTML text and quoted attribute values. It is not enough
+inside `<script>`, a `style` attribute or a URL attribute: render those through
+`tpl.render`, which escapes each `{{slot}}` for the position it sits in
+(`docs/stdlib/template.md`, "Escaping"). Do not pass a value through both
+`tpl.escape` and `tpl.render`, or it is escaped twice.
 
 ### Route parameters and query values are not decoded/escaped for you
 
@@ -120,7 +142,8 @@ f=handleuser(params:@($str:$str)):$str{
 };
 ```
 
-**Do** — validate then escape:
+**Do** — validate then escape (`isidentifier` is the validator from section 3;
+`tpl` is `i=tpl:std.template;`):
 
 ```
 f=handleuser(params:@($str:$str)):$str{
@@ -128,7 +151,7 @@ f=handleuser(params:@($str:$str)):$str{
   if(!isidentifier(raw)){
     <"<h1>invalid</h1>"
   }el{
-    <str.concat("<h1>";str.concat(html.escape(raw);"</h1>"))
+    <str.concat("<h1>";str.concat(tpl.escape(raw);"</h1>"))
   }
 };
 ```
@@ -515,7 +538,7 @@ harden yours accordingly.
 
 Before shipping a toke web app, confirm:
 
-- [ ] Every template interpolation of untrusted data uses `|escape` (or `html.escape`); Markdown is sanitized (`OOK-02`, `PAR-05`).
+- [ ] Every template interpolation of untrusted data uses `|escape` (or `tpl.escape` from `std.template`); Markdown is sanitized (`OOK-02`, `PAR-05`).
 - [ ] Route params and query values are validated and escaped before reflection (`OOK-06`, `WEB-06`).
 - [ ] All request input is length-bounded and allowlist-validated before use (section 3).
 - [ ] Every SQL value is bound as a parameter; identifiers are allowlisted (`DAT-01`, `OOK-04`).
