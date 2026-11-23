@@ -78,7 +78,7 @@ let revenue = mt df.column(data; "revenue") {$ok:v v;$err:e @()};
 
 ### df.columnstr(d: $dataframe; name: $str): @($str)!$dferr
 
-Extracts a string column by name and returns its values as a `$str` array. Returns `$dferr` if the column is not found or was stored as `f64` rather than `$str`.
+Extracts a string column by name and returns its values as a `$str` array, one per row in row order (a frame with no rows gives `@()`). Returns `$dferr` if the column is not found or was stored as `f64` rather than `$str`.
 
 <!-- skip-check -->
 ```toke

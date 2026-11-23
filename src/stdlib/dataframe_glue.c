@@ -204,13 +204,30 @@ static int64_t df_groupby_impl(int64_t df_ptr, int64_t col) {
     return arr;
 }
 
+/* 127.520: df.columnstr(dataframe;str):[str]!dferr -- a toke array of
+ * sealed strings, one per row in row order, as the .tki and
+ * docs/stdlib/dataframe.md declare.  The glue handed back df_columnstr's
+ * malloc'd char**, which has no array header: `.len` read the word before
+ * the block (0 for a 2-row column) and `.get(i)` was checked against it.
+ * A str column of a frame with no rows is @(). */
 static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {
     TkDataframe *d = df_in(df_ptr);
     if (!d || !col) return 0;
-    uint64_t out_len = 0;
-    char **strs = df_columnstr(d, (const char *)(intptr_t)col, &out_len);
-    if (!strs) return 0;
-    return (int64_t)(intptr_t)strs;
+    DfCol *c = df_column(d, (const char *)(intptr_t)col);
+    if (!c || c->type != DF_COL_STR) return 0;
+    int64_t n = (int64_t)c->nrows;
+    int64_t arr = tk_arr_alloc(n, n);
+    if (!arr) return 0;
+    int64_t *slots = (int64_t *)(intptr_t)arr;
+    for (int64_t i = 0; i < n; i++) {
+        char *s = tks_strdup(c->str_data[i] ? c->str_data[i] : "");
+        if (!s) {
+            free(slots - TK_ARR_HDR);   /* the block tk_arr_alloc made */
+            return 0;
+        }
+        slots[i] = (int64_t)(intptr_t)s;
+    }
+    return arr;
 }
 
 static const char tk_dataframe_fromcsv_fail[] =
