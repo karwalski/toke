@@ -19,9 +19,9 @@ f=area(s:$shape):f64{
 
 f=describe(s:$shape):$str{
   <mt s {
-    $circle:r str.concat("circle r="; str.fromFloat(r));
-    $square:side str.concat("square side="; str.fromFloat(side));
-    $rect:w str.concat("rect w="; str.fromFloat(w))
+    $circle:r str.concat("circle r="; str.fromfloat(r));
+    $square:side str.concat("square side="; str.fromfloat(side));
+    $rect:w str.concat("rect w="; str.fromfloat(w))
   };
 };
 
@@ -36,7 +36,7 @@ f=main():i64{
     let s=shapes.get(i);
     let desc=describe(s);
     let a=area(s);
-    io.println(str.concat(desc; str.concat(" area="; str.fromFloat(a))));
+    io.println(str.concat(desc; str.concat(" area="; str.fromfloat(a))));
   };
 
   <0;
