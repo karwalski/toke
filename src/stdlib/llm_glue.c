@@ -170,12 +170,19 @@ int64_t tk_llm_chatstream_w(int64_t client, int64_t messages) {
     TkLlmStreamRec *block = (TkLlmStreamRec *)malloc(sizeof *block);
     if (!block) { tk_current_error = 1; return 0; }
     block->id = (int64_t)idx + 1;         /* $llmstream.id, 1-based */
+    /* 138.63: registered by address (toke reads .id; a stream is never
+     * released), so llm.streamnext reads only a record it made */
+    if (!tk_handle_adopt(TK_HK_LLMSTREAM, block)) { free(block); tk_current_error = 1; return 0; }
     return (int64_t)(intptr_t)block;
 }
 
+/* 138.63: a record llm.chatstream did not make -- `5 as $llmstream`, or a
+ * literal such as the documented `$llmstream{}` -- is the exhausted stream
+ * and is never read (a literal's id used to select a live stream). */
 int64_t tk_llm_streamnext_w(int64_t stream) {
     if (!stream) { tk_current_error = 1; return (int64_t)(intptr_t)""; }
-    int64_t id = ((const TkLlmStreamRec *)(intptr_t)stream)->id;
+    const TkLlmStreamRec *rec = (const TkLlmStreamRec *)tk_handle_addr(TK_HK_LLMSTREAM, stream);
+    int64_t id = rec ? rec->id : 0;
     if (id <= 0 || id > g_llm_nstreams || !g_llm_streams[id - 1].used) {
         /* the empty $llmstream{} of the documented $err arm: nothing to read */
         tk_current_error = 0;

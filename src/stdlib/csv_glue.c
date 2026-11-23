@@ -185,6 +185,24 @@ static int64_t strarray_to_tokearr(StrArray a, int take) {
     return h;
 }
 
+/* 138.63: the registry (tk_runtime.h) vouches for every reader and writer
+ * a toke program holds.  A $csvreader has a release call (csv.close), so it
+ * is a TOKEN: a closed reader is refused even after malloc hands its memory
+ * to a newer one.  A $csvwriter is never released from toke, so it is its
+ * address.  A value the runtime did not hand out -- `5 as $csvreader`, a
+ * record literal, a closed reader -- is answered as the null reader/writer
+ * and never read. */
+static TkCsvReader *csvr_in(int64_t h) { return (TkCsvReader *)tk_handle_token(TK_HK_CSVREADER, h); }
+static TkCsvWriter *csvw_in(int64_t h) { return (TkCsvWriter *)tk_handle_addr(TK_HK_CSVWRITER, h); }
+/* r as a toke $csvreader (0, with r freed, when the table is full). */
+static int64_t csvr_out(TkCsvReader *r)
+{
+    if (!r) return 0;
+    int64_t tok = tk_handle_issue(TK_HK_CSVREADER, r);
+    if (!tok) csv_reader_free(r);
+    return tok;
+}
+
 /* csv.reader([byte] data; u8 sep) -> csvreader. csv_reader_new references the
  * data buffer, so it is kept alive for the reader's lifetime. */
 int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
@@ -199,15 +217,15 @@ int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
     if (!r) { free(s); return 0; }
     csv_reader_adopt(r, s);   /* 135.3c: freed by csv.close, not leaked */
     if (sep) csv_reader_set_separator(r, (char)sep);
-    return (int64_t)(intptr_t)r;
+    return csvr_out(r);
 }
 
 /* csv.next(csvreader) -> csvrow!csverr — 0 (err sentinel) at end of data. */
 static const char tk_csv_next_fail[] =
     "csv.next: no more rows (end of input, or a row could not be read)";
 int64_t tk_csv_next_w(int64_t reader) {
-    if (!reader) return csv_slot(0, "csv.next: null reader (an unchecked error value?)", "badarg");
-    TkCsvReader *r = (TkCsvReader *)(intptr_t)reader;
+    TkCsvReader *r = csvr_in(reader);
+    if (!r) return csv_slot(0, "csv.next: null reader (an unchecked error value?)", "badarg");
     /* 135.2: no has_next() short-circuit.  Going through csv_reader_next is
      * what sets the last-error kind, so "eof" and a refusal stop being the
      * same silent 0 to the caller. */
@@ -225,8 +243,9 @@ int64_t tk_csv_next_w(int64_t reader) {
 static const char tk_csv_header_fail[] =
     "csv.header: the reader has no header row";
 int64_t tk_csv_header_w(int64_t reader) {
-    if (!reader) return csv_slot(0, "csv.header: null reader (an unchecked error value?)", "badarg");
-    StrArray h = csv_reader_header((TkCsvReader *)(intptr_t)reader);
+    TkCsvReader *r = csvr_in(reader);
+    if (!r) return csv_slot(0, "csv.header: null reader (an unchecked error value?)", "badarg");
+    StrArray h = csv_reader_header(r);
     if (!h.data) return csv_slot_core(0, tk_csv_header_fail, "eof");
     return csv_slot_core(strarray_to_tokearr(h, 0), tk_csv_header_fail, "eof");
 }
@@ -236,25 +255,28 @@ int64_t tk_csv_writer_w(int64_t sep) {
     TkCsvWriter *w = csv_writer_new();
     if (!w) return 0;
     if (sep) csv_writer_set_separator(w, (char)sep);
+    if (!tk_handle_adopt(TK_HK_CSVWRITER, w)) { csv_writer_free(w); return 0; }
     return (int64_t)(intptr_t)w;
 }
 
 /* csv.writerow(csvwriter; [str] row) -> void */
 int64_t tk_csv_writerow_w(int64_t writer, int64_t row) {
-    if (!writer || !row) return 0;
+    TkCsvWriter *w = csvw_in(writer);
+    if (!w || !row) return 0;
     int64_t *ptr = (int64_t *)(intptr_t)row;
     int64_t n = ptr[-1];
     StrArray a;
     a.len = (uint64_t)(n > 0 ? n : 0);
     a.data = (const char **)ptr;
-    csv_writer_writerow((TkCsvWriter *)(intptr_t)writer, a);
+    csv_writer_writerow(w, a);
     return 0;
 }
 
 /* csv.flush(csvwriter) -> [byte] */
 int64_t tk_csv_flush_w(int64_t writer) {
-    if (!writer) return tk_bytes_pack((const uint8_t *)"", 0);
-    const char *res = csv_writer_flush((TkCsvWriter *)(intptr_t)writer);
+    TkCsvWriter *w = csvw_in(writer);
+    if (!w) return tk_bytes_pack((const uint8_t *)"", 0);
+    const char *res = csv_writer_flush(w);
     if (!res) return tk_bytes_pack((const uint8_t *)"", 0);
     int64_t h = tk_bytes_pack((const uint8_t *)res, tk_strlen(res));
     free((void *)res);   /* 127.422: csv_writer_flush's copy leaked on every flush */
@@ -362,13 +384,13 @@ int64_t tk_csv_readeropts_w(int64_t data, int64_t opts) {
      * owns the copy, so the staging buffer is freed here. */
     TkCsvReader *r = csv_reader_open((const char *)bytes, bytes ? len : 0, &o);
     free(bytes);
-    return csv_slot_core((int64_t)(intptr_t)r, tk_csv_readeropts_fail, "opts");
+    return csv_slot_core(csvr_out(r), tk_csv_readeropts_fail, "opts");
 }
 
 /* csv.dialect(r:$csvreader) -> $csvdialect — including a SNIFFED delimiter,
  * so that a delimiter the caller did not state is still visible to them. */
 int64_t tk_csv_dialect_w(int64_t reader) {
-    TkCsvDialect d = csv_reader_dialect((const TkCsvReader *)(intptr_t)reader);
+    TkCsvDialect d = csv_reader_dialect(csvr_in(reader));
     return dialect_to_block(&d);
 }
 
@@ -376,14 +398,14 @@ int64_t tk_csv_dialect_w(int64_t reader) {
  * Both make csv.next return the `$err` arm; only this tells them apart before
  * the call, and the csverr's kind ("eof" or the refusal) after it. */
 int64_t tk_csv_atend_w(int64_t reader) {
-    return csv_reader_at_end((const TkCsvReader *)(intptr_t)reader) ? 1 : 0;
+    return csv_reader_at_end(csvr_in(reader)) ? 1 : 0;
 }
 
 /* csv.raggedreport(r:$csvreader) -> @(str) — one line per ragged row seen so
  * far under the "report" (or "pad") policy.  A report a caller cannot read is
  * not a report, which is why this exists rather than a bare counter. */
 int64_t tk_csv_raggedreport_w(int64_t reader) {
-    const TkCsvReader *r = (const TkCsvReader *)(intptr_t)reader;
+    const TkCsvReader *r = csvr_in(reader);
     uint64_t n = csv_reader_ragged_count(r);
     int64_t h = tk_arr_alloc((int64_t)n, (int64_t)n);
     if (!h) return tk_arr_alloc(0, 0);
@@ -395,8 +417,12 @@ int64_t tk_csv_raggedreport_w(int64_t reader) {
     return h;
 }
 
-/* csv.close(r:$csvreader) -> void */
+/* csv.close(r:$csvreader) -> void.  138.63: a second close, or a close of
+ * a value that is not a live reader, is a no-op (it was a double free). */
 int64_t tk_csv_close_w(int64_t reader) {
-    csv_reader_free((TkCsvReader *)(intptr_t)reader);
+    TkCsvReader *r = csvr_in(reader);
+    if (!r) return 0;
+    tk_handle_drop(r);
+    csv_reader_free(r);
     return 0;
 }

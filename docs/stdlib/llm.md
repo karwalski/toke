@@ -50,7 +50,7 @@ The result of a non-streaming chat completion.
 
 ### $llmstream
 
-Opaque handle to a streaming response. Consume chunks one at a time with `llm.streamnext` until an empty string is returned.
+Opaque handle to a streaming response. Consume chunks one at a time with `llm.streamnext` until an empty string is returned. A stream `llm.chatstream` did not return -- a record literal, `5 as $llmstream` -- is an exhausted stream: `llm.streamnext` returns `""` (138.63).
 
 ### $llmerr
 

@@ -13,7 +13,7 @@ The `std.dashboard` module provides a high-level API for building live dashboard
 
 ### $dashboard
 
-Opaque handle to a dashboard instance. Its one field, `id` (u64), is a number unique within the process.
+Opaque handle to a dashboard instance. Its one field, `id` (u64), is a number unique within the process. A value `dashboard.new` did not return is no dashboard: `dashboard.addchart` adds nothing and `dashboard.serve` returns `$err` (138.63).
 
 ### $dashwidget
 

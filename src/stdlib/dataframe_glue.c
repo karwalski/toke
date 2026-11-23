@@ -40,13 +40,27 @@ static int64_t df_slot(int64_t v, const char *msg) {
     return 0;
 }
 
+/* 138.63: the registry (tk_runtime.h) vouches for every $dataframe a toke
+ * program holds.  A dataframe is never released from toke, so it is its
+ * address, registered wherever this file hands one out (df_out); every
+ * wrapper looks its argument up first (df_in), so a value the runtime did
+ * not hand out -- `5 as $dataframe`, a record literal -- is the null
+ * dataframe and is never read. */
+static TkDataframe *df_in(int64_t v) { return (TkDataframe *)tk_handle_addr(TK_HK_DATAFRAME, v); }
+static int64_t df_out(TkDataframe *d)
+{
+    if (!d) return 0;
+    if (!tk_handle_adopt(TK_HK_DATAFRAME, d)) { df_free(d); return 0; }
+    return (int64_t)(intptr_t)d;
+}
+
 int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
     int64_t ncols = tk_arr_len(headers);
     int64_t nrows = tk_arr_len(rows);
-    if (ncols <= 0) return (int64_t)(intptr_t)df_new();
+    if (ncols <= 0) return df_out(df_new());
 
     const char **hdr = (const char **)malloc((size_t)ncols * sizeof(char *));
-    if (!hdr) return (int64_t)(intptr_t)df_new();
+    if (!hdr) return df_out(df_new());
     int64_t *hs = (int64_t *)(intptr_t)headers;
     for (int64_t i = 0; i < ncols; i++)
         hdr[i] = hs[i] ? (const char *)(intptr_t)hs[i] : "";
@@ -54,7 +68,7 @@ int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
     const char ***cells = NULL;
     if (nrows > 0) {
         cells = (const char ***)malloc((size_t)nrows * sizeof(char **));
-        if (!cells) { free(hdr); return (int64_t)(intptr_t)df_new(); }
+        if (!cells) { free(hdr); return df_out(df_new()); }
         int64_t *rs = (int64_t *)(intptr_t)rows;
         for (int64_t r = 0; r < nrows; r++) {
             const char **row = (const char **)calloc((size_t)ncols, sizeof(char *));
@@ -77,7 +91,7 @@ int64_t tk_dataframe_fromrows_w(int64_t headers, int64_t rows) {
         free(cells);
     }
     free(hdr);
-    return (int64_t)(intptr_t)(out ? out : df_new());
+    return df_out(out ? out : df_new());
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -104,14 +118,15 @@ static int64_t df_fromcsv_impl(int64_t csv) {
     uint64_t len = tk_strlen(s);
     DfResult r = df_fromcsv(s, len, 1);
     if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok;
+    return df_out(r.ok);
 }
 
+/* 138.63: the null dataframe's shape is {0; 0}, a record toke can read; it
+ * was 0, which `.rows` read as the null record (nil trap). */
 static int64_t df_shape_impl(int64_t df_ptr) {
-    if (!df_ptr) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    uint64_t nrows, ncols;
-    df_shape(d, &nrows, &ncols);
+    TkDataframe *d = df_in(df_ptr);
+    uint64_t nrows = 0, ncols = 0;
+    if (d) df_shape(d, &nrows, &ncols);
     /* Pack nrows and ncols into a heap block */
     int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
     if (!block) return 0;
@@ -121,18 +136,18 @@ static int64_t df_shape_impl(int64_t df_ptr) {
 }
 
 static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t val) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
+    TkDataframe *d = df_in(df_ptr);
+    if (!d || !col) return 0;
     double threshold;
     memcpy(&threshold, &val, sizeof(double));
     TkDataframe *result = df_filter(d, (const char *)(intptr_t)col,
                                      threshold, (int)op);
-    return (int64_t)(intptr_t)result;
+    return df_out(result);
 }
 
 static int64_t df_groupby_impl(int64_t df_ptr, int64_t col) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
+    TkDataframe *d = df_in(df_ptr);
+    if (!d || !col) return 0;
     /* Default: group by col, aggregate count on first numeric column */
     DfGroupResult gr = df_groupby(d, (const char *)(intptr_t)col, NULL, 0);
     if (!gr.rows) return 0;
@@ -144,8 +159,8 @@ static int64_t df_groupby_impl(int64_t df_ptr, int64_t col) {
 }
 
 static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
+    TkDataframe *d = df_in(df_ptr);
+    if (!d || !col) return 0;
     uint64_t out_len = 0;
     char **strs = df_columnstr(d, (const char *)(intptr_t)col, &out_len);
     if (!strs) return 0;
@@ -169,8 +184,9 @@ int64_t tk_dataframe_columnstr_w(int64_t df, int64_t col) { return df_slot(df_co
  * (freed here); the original is handed over unsealed only if the copy
  * cannot be made.  No C code calls tk_dataframe_tocsv_w. */
 int64_t tk_dataframe_tocsv_w(int64_t df) {
-    if (!df) return 0;
-    const char *s = df_tocsv((TkDataframe *)(intptr_t)df);
+    TkDataframe *d = df_in(df);
+    if (!d) return 0;
+    const char *s = df_tocsv(d);
     if (!s) return 0;
     char *t = tks_strdup(s);
     if (!t) return (int64_t)(intptr_t)s;
