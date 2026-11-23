@@ -139,41 +139,4 @@ done
 cmp -s want.txt out.txt && pass "the whole output matches" || fail "the whole output matches"
 
 echo "C2161: ${PASS} passed, ${FAIL} failed"
-    exit 1
-fi
-pass "filt.tk builds"
-./filt > raw.txt 2>&1
-rc=$?
-# df.tocsv ends its records with CRLF (RFC 4180); compare by line.
-tr -d '\r' < raw.txt > out.txt
-[ "${rc}" -eq 0 ] && pass "filt exits 0" || fail "filt exits 0 (got ${rc})"
-
-MSG="ERR df.filter: the filter could not be applied (unknown or non-numeric column, unknown op, or a val that is not an f64)"
-# expect LABEL WANT -- the line for LABEL is exactly WANT (\n spelled \n)
-expect() {
-    local got want
-    got="$(awk -v l="[$1] " 'index($0,l)==1{found=1} found{print} /^\[/&&index($0,l)!=1{found=0}' out.txt)"
-    got="$(printf '%s' "${got}" | awk 'NR==1{sub(/^\[[^]]*\] /,"")} {print}')"
-    want="$(printf '%b' "$2")"
-    if [ "${got}" = "${want}" ]; then pass "[$1] -> $(printf '%s' "$2" | cut -c1-60)"
-    else fail "[$1]: want '$(printf '%s' "$2")' got '$(printf '%s' "${got}" | tr '\n' '|')'"; fi
-}
-expect 'a < 2'    '1 a,name\n1,x\n'
-expect 'a <= 2'   '3 a,name\n1,x\n2,y\n2,w\n'
-expect 'a = 2'    '2 a,name\n2,y\n2,w\n'
-expect 'a >= 2'   '3 a,name\n2,y\n3,z\n2,w\n'
-expect 'a > 2'    '1 a,name\n3,z\n'
-expect 'a != 2'   '2 a,name\n1,x\n3,z\n'
-expect 'a > 2.5'  '1 a,name\n3,z\n'
-expect 'a > -1'   '4 a,name\n1,x\n2,y\n3,z\n2,w\n'
-expect 'a <= 1e0' '1 a,name\n1,x\n'
-expect 'a == 2'   "${MSG}"
-expect 'a  2'     "${MSG}"
-expect 'a > '     "${MSG}"
-expect 'a > 2x'   "${MSG}"
-expect 'a > abc'  "${MSG}"
-expect 'name > 2' "${MSG}"
-expect 'nosuch > 2' "${MSG}"
-
-echo "C2161: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
