@@ -161,9 +161,10 @@ fail:
  * If vary is "Accept-Encoding", key includes the request's Accept-Encoding.
  * The key is allocated to its full length (127.516): two URIs are one key
  * only when they are the same bytes.  NULL when an allocation fails. */
-static char *cache_build_key(const char *method, const char *uri,
-                              const char *vary, const char *const *hdr_names,
-                              const char *const *hdr_values, int nhdr)
+static char *cache_build_key_n(const char *method, const char *uri,
+                                const char *vary, const char *const *hdr_names,
+                                const char *const *hdr_values, int nhdr,
+                                size_t *out_len)
 {
     char *key = NULL;
     size_t len = 0, cap = 0;
@@ -200,7 +201,16 @@ static char *cache_build_key(const char *method, const char *uri,
         }
     }
 
+    if (out_len) *out_len = len;
     return key;
+}
+
+static char *cache_build_key(const char *method, const char *uri,
+                              const char *vary, const char *const *hdr_names,
+                              const char *const *hdr_values, int nhdr)
+{
+    return cache_build_key_n(method, uri, vary, hdr_names, hdr_values, nhdr,
+                             NULL);
 }
 
 /* ── LRU operations ──────────────────────────────────────────────────── */
@@ -863,9 +873,10 @@ const char *http_cache_stale_if_error(const char *method, const char *uri,
      * it (127.514: not any key that merely starts with those bytes) */
     /* The prefix is allocated to its full length, as the key is (127.516):
      * a 1023-byte cut would miss every longer URI's own entry. */
-    char *prefix = cache_build_key(method, uri, NULL, NULL, NULL, 0);
+    size_t prefix_len = 0;
+    char *prefix = cache_build_key_n(method, uri, NULL, NULL, NULL, 0,
+                                     &prefix_len);
     if (!prefix) return NULL;
-    size_t prefix_len = strlen(prefix);
     time_t now = time(NULL);
 
     CacheEntry *e = g_cache.head;
