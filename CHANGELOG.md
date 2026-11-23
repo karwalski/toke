@@ -215,6 +215,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   (decompression-bomb guard: ...)`. A well-formed file is never refused, and a
   short strip within the 1 MiB slack still zero-fills as before. Tests: C2030;
   the input is kept as `test/fuzz/corpus-adversarial/image_tiff_short_strip_127488.tif`.
+- **std.cache no longer writes past its key buffer on a long URI** (127.516, a
+  heap overflow). `cache_build_key` built `METHOD|URI|vary...` in a fixed
+  1024-byte block and kept `snprintf`'s untruncated length as its offset, so for
+  a URI of about 1020 bytes or more a matched Vary header was appended from past
+  the block with a wrapped bound (`http_cache_get` or `http_cache_put` with a
+  1101-byte URI and `Vary: Accept-Encoding`: heap-buffer-overflow under ASan).
+  Without Vary the key was cut at 1023 bytes, so two URIs sharing their first
+  ~1019 bytes shared one entry for get, put and purge. The key, and
+  `http_cache_stale_if_error`'s `METHOD|URI` (a 1024-byte stack buffer), are
+  now allocated to their full length; matching stays exact (127.514). Nothing
+  in the tree calls `http_cache_*`. Test: C2160.
 
 ### Build and CI gates
 
@@ -302,6 +313,19 @@ One spec amendment, decided by the owner on 2026-11-15 (register 2.1 (a), 2.2, 2
 Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `e25bbd7d`, `c44d48a4`). Open: the response header block is not capped (138.49).
 
 ### Fixed — standard library
+
+- **`df.filter(d;col;op;val)` reads its `op` and `val` strings** (138.66). The
+  glue passed `op`'s pointer to the C filter as its operator code and `val`'s
+  pointer bits as the f64 threshold, so every documented call
+  (`df.filter(d;"a";">";"2")`) kept no rows and a malformed `op` or `val` was
+  never refused. `op` is now exactly one of `<` `<=` `=` `>=` `>` `!=` (the C
+  filter gains `!=`, the one documented op it lacked) and `val` must parse in
+  full as an `f64` with C `strtod` syntax (so `"0x1p1"`, `"nan"` and `"inf"`
+  are numbers) and no leading whitespace; anything else, like `" 2"` or an
+  unknown or non-numeric column, is
+  `$err`, with the message `df.filter: the filter could not be applied
+  (unknown or non-numeric column, unknown op, or a val that is not an f64)`.
+  Tests: C2161, `test_dataframe` T65.
 
 - **std.cache's disk spill writes the whole entry or leaves no file** (127.445).
   The spill to `disk_dir` ignored `write(2)`'s result and counted the body in

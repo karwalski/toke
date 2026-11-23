@@ -562,6 +562,19 @@ static void t27_filter_equality(void)
     df_free(df);
 }
 
+/* 138.66: op 5 is "!=", the one documented df.filter op df_filter lacked */
+static void t65_filter_not_equal(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    /* age != 30 -> Bob and Dave */
+    TkDataframe *filtered = df_filter(df, "age", 30.0, 5 /* != */);
+    ASSERT(filtered != NULL,      "T65: filter != returns non-NULL");
+    ASSERT(filtered && filtered->nrows == 2, "T65: age != 30 yields 2 rows");
+    df_free(filtered);
+    df_free(df);
+}
+
 static void t28_join_missing_col(void)
 {
     uint64_t ll = (uint64_t)strlen(CSV_LEFT);
@@ -1371,6 +1384,7 @@ int main(void)
     t62_get_row_valid();
     t63_get_row_oob();
     t64_to_html();
+    t65_filter_not_equal();
 
     printf("\n%s -- %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
     return failures == 0 ? 0 : 1;
