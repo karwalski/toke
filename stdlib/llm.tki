@@ -43,7 +43,6 @@
     {
       "kind": "type",
       "name": "llmstream",
-      "opaque": true,
       "fields": [
         {"name": "id", "type": "u64"}
       ]

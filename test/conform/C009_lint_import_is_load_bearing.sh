@@ -83,15 +83,16 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
-# `c` is referenced ONLY in the parameter type `c.$csvreader`. std.csv's
-# csvreader record is fields [data, pos, sep, line], so `.pos` is index 1 —
+# `c` is referenced ONLY in the parameter type `c.$csverr`. std.csv's
+# csverr record is fields [msg, line, kind], so `.line` is index 1 —
 # a value the compiler can only know by reading stdlib/csv.tki, which it only
-# reads because the import is present.
+# reads because the import is present.  (138.65: this read `.pos` on a
+# $csvreader until that opaque type's fields became unreadable, E4034.)
 
 cat > "${WORK}/typeonly.tk" <<'EOF'
 m=test;
 i=c:std.csv;
-f=getpos(r:c.$csvreader):u64{ <r.pos };
+f=getpos(r:c.$csverr):u64{ <r.line };
 f=main():i64{ <0 };
 EOF
 
@@ -124,9 +125,9 @@ expect "link-set-loses-csv-without"      "${without_csv}" "0"
 "${TKC}" --emit-llvm "${WORK}/removed.tk"  -o "${WORK}/without.ll" >/dev/null 2>&1
 
 gep_index() {
-    # The GEP index emitted for the `.pos` field access, or "none".
+    # The GEP index emitted for the `.line` field access, or "none".
     if [ -f "$1" ]; then
-        sed -n 's/.*getelementptr[^;]*i32 \([0-9][0-9]*\).*; \.pos.*/\1/p' "$1" |
+        sed -n 's/.*getelementptr[^;]*i32 \([0-9][0-9]*\).*; \.line.*/\1/p' "$1" |
             head -1 | grep -E '^[0-9]+$' || echo "none"
     else
         echo "none"
@@ -135,7 +136,7 @@ gep_index() {
 expect "field-index-correct-with-import" "$(gep_index "${WORK}/with.ll")" "1"
 
 # Without the import the compiler cannot know the layout. It must NOT quietly
-# emit index 0 (the `data` field) as if it did; either it refuses to emit, or
+# emit index 0 (the `msg` field) as if it did; either it refuses to emit, or
 # it emits something other than a confident wrong answer.
 without_index="$(gep_index "${WORK}/without.ll")"
 if [ "${without_index}" = "1" ]; then
@@ -166,7 +167,7 @@ expect "genuine-fixed-still-compiles" "$?" "0"
 cat > "${WORK}/unqual.tk" <<'EOF'
 m=test;
 i=c:std.csv;
-f=getpos(r:$csvreader):u64{ <r.pos };
+f=getpos(r:$csverr):u64{ <r.line };
 f=main():i64{ <0 };
 EOF
 cp "${WORK}/unqual.tk" "${WORK}/unqual.orig"

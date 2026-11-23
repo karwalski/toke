@@ -1,0 +1,16 @@
+id: D751
+series: D
+description: "138.65: a documented-looking field of an opaque std type read through a T!E $ok binding ($dataframe.nrows read the column count; df.shape is the reader) is E4034 at --check, with no fix"
+input: |
+  m=t;
+  i=df:std.dataframe;
+  f=main():i64{
+    let n=mt df.fromcsv("a\n1\n"){$ok:d d.nrows;$err:e 0};
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4034"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "$dataframe.nrows"

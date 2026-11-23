@@ -30,14 +30,7 @@ A streaming JSON writer that accumulates output into an internal byte buffer. Cr
 
 ### $jsonstream
 
-An opaque SAX-style streaming parser state. Created with `json.streamparser` and advanced one token at a time with `json.streamnext`. Maximum nesting depth is 256.
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| buf | @($byte) | The input byte buffer |
-| pos | u64 | Current read position |
-| depth | u64 | Current nesting depth |
-| state | u64 | Internal parser state machine value |
+An opaque SAX-style streaming parser state. Created with `json.streamparser` and advanced one token at a time with `json.streamnext`. Maximum nesting depth is 256. It has no readable fields: the interface declares `buf`, `pos`, `depth` and `state`, but reading one is a compile error, E4034 (138.65).
 
 ### $jsontoken
 

@@ -23,7 +23,6 @@
     {
       "kind": "type",
       "name": "dashboard",
-      "opaque": true,
       "fields": [
         {
           "name": "id",

@@ -13,12 +13,7 @@ The `std.dataframe` module provides a columnar data frame for tabular data proce
 
 ### $dataframe
 
-Opaque handle to a columnar data frame. The frame owns all column memory; release it when no longer needed. The fields below are readable but you should treat the frame as an opaque value and interact with it only through `df.*` functions. A value no `df.*` or `analytics.*` function returned -- a record literal, `5 as $dataframe` -- is the null frame: the fallible calls return `$err`, `df.tocsv` returns `""` and `df.shape` returns `{rows:0;cols:0}` (138.63).
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| ncols | u64 | Number of columns |
-| nrows | u64 | Number of rows |
+Opaque handle to a columnar data frame. The frame owns all column memory; release it when no longer needed. It has no readable fields: use `df.shape` for the row and column counts and the other `df.*` functions for the rest. The interface declares `ncols`, `nrows` and `arena` so a record literal can be written, but reading one is a compile error, E4034 (138.65; until then `d.ncols` read the column array's address and `d.nrows` the column count). A value no `df.*` or `analytics.*` function returned -- a record literal, `5 as $dataframe` -- is the null frame: the fallible calls return `$err`, `df.tocsv` returns `""` and `df.shape` returns `{rows:0;cols:0}` (138.63).
 
 ### $series
 

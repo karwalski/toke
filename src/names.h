@@ -157,6 +157,9 @@ typedef struct {
     const char  *name;          /* interned type name (e.g. "ookecfg")   */
     int          is_sum;        /* 1 for sum types — no field check      */
     int          is_std;        /* 127.226: declared by a std.* interface */
+    int          is_opaque;     /* 138.65: `"opaque": true` -- no field is
+                                 * readable from toke (the checker refuses
+                                 * a field read, E4034) */
     int          field_count;
     const char **field_names;   /* arena array of interned names          */
     const char **field_types;   /* arena array of interned toke types     */

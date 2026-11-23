@@ -40,7 +40,6 @@
     {
       "kind": "type",
       "name": "dtreemodel",
-      "opaque": true,
       "fields": [
         {"name": "nodes",    "type": "u64"},
         {"name": "maxdepth", "type": "u64"},

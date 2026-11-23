@@ -1,0 +1,17 @@
+id: D750
+series: D
+description: "138.65: a field read of an `\"opaque\": true` std type ($csvwriter's .tki fields are no layout toke can read) is E4034 at --check, with no fix -- which module function was meant is not decidable"
+input: |
+  m=t;
+  i=csv:std.csv;
+  f=main():i64{
+    let w=csv.writer(44);
+    let s=w.sep;
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4034"]
+expected_fix_absent: true
+expected_diag_field:
+  field: got
+  value: "$csvwriter.sep"

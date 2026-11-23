@@ -8832,6 +8832,36 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
         }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
+        /* 138.65: a field of an `"opaque": true` std type ($csvreader,
+         * $csvwriter, $dataframe, $router, $jsonstream, ...).  Its .tki
+         * fields describe no layout toke can read: the value is a C object
+         * (or, since 138.63, a registry token), and codegen loaded slot
+         * <index> of it -- `w.sep` on a csv.writer(44) printed 0,
+         * `d.ncols` on a frame printed the column array's address, and
+         * `r.pos` on a $csvreader died with SIGSEGV.  A std record whose
+         * fields ARE its C layout (checked by `make check-tki-layout`) is
+         * not marked opaque.  A type this module declares is its own.  No
+         * `fix`: which module function the program meant is not decidable. */
+        if (base->name && cx->env->names) {
+            const ImportedType *oit = imported_type_lookup(cx->env->names, base->name);
+            Decl *ld = tc_lookup(cx->env->names->module_scope, base->name,
+                                 (int)strlen(base->name));
+            if (oit && oit->is_std && oit->is_opaque
+                && !(ld && ld->def_node && ld->def_node->kind == NODE_TYPE_DECL)) {
+                if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                    char msg[512], got[192];
+                    snprintf(msg,sizeof(msg),
+                             "'$%s' is an opaque std type: field '%s' is not "
+                             "readable from toke; use the module's functions",
+                             base->name,fname);
+                    snprintf(got,sizeof(got),"$%s.%s",base->name,fname);
+                    diag_emit(DIAG_ERROR,E4034,node->start,node->line,node->col,msg,
+                              "expected","a record whose fields toke can read",
+                              "got",got,(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+        }
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
                 return base->field_types[i];

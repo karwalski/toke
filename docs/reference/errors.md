@@ -921,7 +921,7 @@ Triggers E4033 on `thing`.
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | type_check (emitted by codegen; also by the checker for a str receiver) |
+| Stage    | type_check (emitted by codegen; also by the checker for a str receiver and an opaque std type) |
 
 Emitted when a `.field` access reaches lowering and the base's struct type is not established, and the field name does not resolve to one unambiguous layout — either no struct in scope declares it, or several declare it at different offsets.
 
@@ -930,6 +930,8 @@ Codegen used to answer both cases with a guess that looked like data: `struct_fi
 No `fix` is supplied: the obvious instruction — annotate the binding — is not correct for every shape.
 
 A field read on a value the checker knows is a `str` is the same case: a str has no struct layout, and its only property is `.len` (story 127.430). `--check` reports it as E4034 with the message `a str has no field '<name>': its only property is 'len'`, `got` set to the field name, and no `fix` -- whether the receiver or the name is wrong is not decidable. This covers `let s="hey"; s.nosuch`, a str parameter or str struct field, `ss.get(0).nosuch` and the `$ok` binding of a match over a `[str]` lookup, and a method name written without parentheses (`s.upper`). Until 127.430 the checker passed these and the build stopped with E4034, or -- when some struct in scope declared a field of that name -- built a program that read a struct slot out of the string's bytes and crashed. Method calls (`s.split(",")`, `s.len()`) are not field reads and are unaffected.
+
+A field read on a value of an opaque std type -- one its module's `.tki` marks `"opaque": true`: `$csvreader`, `$csvwriter`, `$dataframe`, `$jsonstream`, `$router`, `$handler`, `$middleware`, `$modelhandle` -- is the same case (story 138.65). Such a value is a C object or a runtime registry token, and the fields its interface declares are no layout toke can read. `--check` reports E4034 with the message `'$<type>' is an opaque std type: field '<name>' is not readable from toke; use the module's functions`, `got` set to `$<type>.<name>`, and no `fix` -- which module function was meant is not decidable. Until 138.65 the read compiled to a load at the field's slot: `w.sep` on `csv.writer(44)` printed 0, `d.ncols` printed the frame's column array address, and `r.pos` on a `$csvreader` died with SIGSEGV. A std record whose fields are its C layout (`$dashboard`, `$htmldoc`, `$llmstream`, `$canvasop`, `$dtreemodel`) is not marked opaque and reads as before; a record literal of an opaque type still builds; and a type the module declares itself under the same name is its own.
 
 ### E4035
 
