@@ -148,7 +148,7 @@ int main(int argc, char **argv)
 {
     const char *dir = argv[1];
     char path[1024];
-    snprintf(path, sizeof(path), "%s/e.cache", dir);
+    if (snprintf(path, sizeof(path), "%s/e.cache", dir) >= (int)sizeof(path)) return 90;   /* gcc -Wformat-truncation: check the length */
     (void)argc;
 #ifdef C2000_SHIM
     CacheEntry e = mk(4096);
@@ -209,10 +209,10 @@ int main(int argc, char **argv)
 
     if (geteuid() != 0) {
         char ro[1024];
-        snprintf(ro, sizeof(ro), "%s/ro", dir);
+        if (snprintf(ro, sizeof(ro), "%s/ro", dir) >= (int)sizeof(ro)) return 90;   /* gcc -Wformat-truncation: check the length */
         mkdir(ro, 0555);
         chmod(ro, 0555);
-        snprintf(path, sizeof(path), "%s/e.cache", ro);
+        if (snprintf(path, sizeof(path), "%s/e.cache", ro) >= (int)sizeof(path)) return 90;   /* gcc -Wformat-truncation: check the length */
         CacheEntry e = mk(100);
         g_cache.disk_used = 7;
         errno = 0;
