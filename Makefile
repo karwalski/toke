@@ -1287,7 +1287,7 @@ define run_test_list
 	[ $$fail -eq 0 ]
 endef
 
-.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-test-ids check-site-compile check-examples check-stdlib-tk
+.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-test-ids check-site-compile check-examples check-tk-parse check-stdlib-tk
 test-ci-green:
 	$(call run_test_list,$(TEST_CI_GREEN),test-ci-green)
 
@@ -1323,7 +1323,7 @@ test-ci: test-ci-green
 # on main while the workflow was already red for other reasons. It is a
 # prerequisite of `ci` as of this line. 81 targets.
 # 131.45 — test-standalone joins `ci` (run_all.sh tests its own checkout).
-ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-gbnf check-grammar-artefacts check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics check-lint-rules diff-codegen test-standalone
+ci: test-ci-green check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-test-ids fuzz-smoke secrets-scan check-site-compile check-parallel-stdlib check-docs check-examples check-tk-parse check-stdlib-tk check-error-codes check-patterns check-gbnf check-grammar-artefacts check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress check-open-epics check-lint-rules diff-codegen test-standalone
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1371,6 +1371,12 @@ check-doc-patterns: $(BIN)
 # list. See the script for why multi-module examples are not linked yet.
 check-examples: $(BIN)
 	@bash scripts/check_examples.sh
+
+# 131.142 — every committed .tk outside test/ parses (tkc --dump-ast), and the
+# Linguist samples --check with no output. --selftest is the negative control.
+check-tk-parse: $(BIN)
+	@bash scripts/check_tk_parse.sh --selftest
+	@bash scripts/check_tk_parse.sh
 
 # 127.126 — the stdlib's own toke sources type-check. No target compiled
 # stdlib/*.tk, which is how two of the five genuine modules broke unnoticed.

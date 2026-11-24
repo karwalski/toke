@@ -416,7 +416,7 @@ The following are explicitly out of scope for the first version of the binary IR
 
 - **JIT compilation.** The format is designed for ahead-of-time compilation. A JIT engine could consume `.tkir` in the future, but v1 does not optimise for JIT load times or include any JIT-specific metadata.
 - **Optimisation passes.** The binary IR is a faithful representation of the programme as written. All optimisation is deferred to the LLVM lowering step (Phase 3). A future version may introduce toke-level optimisation passes operating on `.tkir`, but this is not a v1 goal.
-- **Garbage collection support.** Toke uses arena-based memory management. The IR does not include GC safepoints, root maps, or write barriers. If a future memory model introduces tracing GC, the instruction set would need extension.
+- **Garbage collection support.** Toke has no garbage collector (memory-model §1: runtime values are not released before exit). The IR does not include GC safepoints, root maps, or write barriers. If a future memory model introduces tracing GC, the instruction set would need extension.
 
 ---
 

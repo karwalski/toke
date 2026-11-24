@@ -1404,11 +1404,12 @@ f=main():i64{let m=mt $s{a:1;b:2} {$a:n n+10;$b:n n+20};<m};
 | Severity | error       |
 | Stage    | arena_check |
 
-Inside an `{arena ...}` block, assigning an arena-allocated value to a variable declared in an outer scope would create a dangling reference when the arena is freed.
+Reserved for a value that escapes an `{arena ...}` block: an assignment, inside the block, to a name declared at module scope. `{arena}` releases nothing today ([memory model](/docs/spec/memory-model/) §1.2, amended by 127.524), so no escape leaves a dangling reference; the full rule belongs to the `{arena}` ADR (127.525). The checker does not emit E5001 yet: it never reaches the block's statements (127.526). The intended trigger:
 <!-- skip-check -->
 ```text
 m=test;
-f=bad(): i64 { let x = 0; {arena x = 1}; < x };
+let g=mut.0;
+f=bad(): i64 { {arena g = 1} < g };
 ```
 ### E5002
 
@@ -2099,7 +2100,7 @@ mut.1` and write `x = 2`. If a distinct binding was meant, rename it.
 | Severity | warning |
 | Stage    | arena_check (emitted by the type checker) |
 
-Escape analysis warns that a value may outlive its arena.
+Escape analysis warns that a non-heap value bound in a nested block (`if`, `lp` or `{arena}`) is returned. No memory is released when a block exits ([memory model](/docs/spec/memory-model/) §1.3), so no program it flags reads freed memory.
 
 ### W8001
 

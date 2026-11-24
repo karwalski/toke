@@ -691,14 +691,17 @@ context.
 
 ### 7.3 Arena Blocks
 
-An `{arena ...}` block introduces a region-scoped allocation context.
+An `{arena ...}` block is a statement whose body is a statement list. It
+releases no memory: values made in it live under `memory-model.md` §1.3
+(amended 2026-11-24, story 127.524), and its release semantics are the
+subject of the `{arena}` ADR (story 127.525).
 
-**Escape analysis:** Assigning an arena-allocated value to a variable
-declared in an outer scope is a compile error `[errors.md E5001]`. This
-prevents dangling references when the arena is freed at block exit.
+**Escape analysis:** inside an `{arena}` block, an assignment to a name
+declared at module scope is a compile error `[errors.md E5001]`
+(`memory-model.md` §2.4). The checker does not emit it yet (127.526).
 
-The arena depth is tracked during type checking. STUB: Full formalization
-of arena lifetime rules requires the memory model specification.
+The arena depth is tracked during type checking. The lifetime rules are in
+`memory-model.md` §1 and §2.
 
 ---
 
@@ -865,5 +868,5 @@ The following areas are marked STUB and require further formalization:
 | 3.1.9   | Function type equality (parameter lists)       | Type checker update   |
 | 5.3     | Match on error union variants                  | Error type design     |
 | 6.2     | Interface file format specification             | Spec amendment        |
-| 7.3     | Arena lifetime formal rules                    | Memory model spec     |
+| 7.3     | `{arena}` release and escape rules             | ADR 127.525           |
 | 8.2     | Exhaustiveness for non-bool scrutinees         | Default syntax design |

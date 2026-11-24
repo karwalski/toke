@@ -1128,13 +1128,20 @@ expects `*u8`).
 | **Fix field** | absent |
 | **Conformance test** | -- |
 
-**Notes:** Inside an `{arena ...}` block, assigning to a variable declared in an
-outer scope would cause a dangling reference when the arena is freed.
+**Notes:** Reserved for a value that escapes an `{arena ...}` block
+(`memory-model.md` §2.4, amended 2026-11-24 by story 127.524). The checker's
+rule is an assignment, inside the block, to a name declared at module scope.
+`{arena}` releases nothing today (`memory-model.md` §1.2), so no escape leaves
+a dangling reference; the full rule, and whether an escape is rejected or
+copied out, belongs to the `{arena}` ADR (127.525).
 
-**Example trigger:**
+**Not emitted today (127.526).** The checker inspects the block's statement
+list as a single node, so it never reaches the assignment, and no input
+produces E5001. The intended trigger:
 ```text
 m=test;
-f=bad():i64{let x=0;{arena x=1};<x};
+let g=mut.0;
+f=bad():i64{{arena g=1}<g};
 ```
 
 ---

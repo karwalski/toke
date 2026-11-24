@@ -230,6 +230,15 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Build and CI gates
 
+- **`make check-tk-parse`: every committed `.tk` outside `test/` parses** (131.142).
+  131.52 found five that did not: the GitHub Linguist samples
+  (`linguist-submission/samples/toke/`, underscored identifiers and `=` for `==`) and
+  a stale `results/` copy of toke-test-programs' MED-009 solution. All are fixed (the
+  samples by `tkc --migrate` and the current std API; the map sample's size line reads
+  4, since std has no map delete). The gate runs `tkc --dump-ast` on every
+  `git ls-files '*.tk'` path outside `test/`, requires the Linguist samples to
+  `--check` with no output at all, and runs a `--selftest` negative control first. It
+  is in `make ci` and the CI workflow.
 - **`docs/spec/toke.lark`, and `make check-grammar-artefacts`** (131.52). The Lark
   form of `toke.gbnf`, generated rule for rule by `scripts/gbnf_to_lark.py --write`
   (one character per terminal, so llguidance's greedy lexer cannot change the
@@ -502,6 +511,20 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
 
 ### Documentation and claim gates
 
+- **The memory model describes the allocation model that ships** (127.524, owner answer
+  1.13 (b)). `docs/spec/memory-model.md` promised a per-function arena freed at scope exit
+  (§1.1, §1.3) and a copy of every returned value into the caller's arena (§2.3); no
+  implementation ever did either. The amended text, normative, says what ships: values come
+  from `malloc` or the S1 sealed-string heap and are not released before exit, except
+  closure environments (124.0c) and an interpolation's number conversions (127.299); an
+  implementation may release only what no toke value can reach. New §1.6 states the leak
+  budget per workload (bytes per iteration; unbounded growth for a long-running server).
+  `{arena}` parses and type-checks but releases nothing until the ADR of 127.525, and E5001
+  is reserved for an escape from it (not emitted today: 127.526). §3's per-task arenas, §5's
+  "reference counting: not present" and §6.4's bound are corrected. The docs that restated
+  the old promise (semantics §7.3, both E5001 entries, the guide's arena section, the
+  statements reference, design.md, known-limitations, runtime-abi) now say the same. No
+  compiler or runtime behaviour changes.
 - **The canonical `models` fact states the Gate 2 withdrawal** (127.459, owner decision
   D4): `docs/about/canonical.md` §8 and `canonical.json` "models" now say the PASS of
   2026-05-24 was withdrawn on 2026-11-15, that Gate 2 has no standing verdict and Gate 3

@@ -45,9 +45,9 @@ value is a heap box `{fn_ptr, captured…}` (the `{fn_ptr,env_ptr}` design of 76
 the lifted function is emitted at module scope and invoked via an indirect call.
 
 **Remaining follow-ups (do not block use for the common i64/pointer case):**
-- The env is `malloc`'d and **not freed until process exit** — ref-counted free
-  (memory-model §2.5) is a follow-up. No use-after-free; just retained memory,
-  consistent with the arena model.
+- ~~The env is `malloc`'d and not freed until process exit~~ — since 124.0c the
+  env is reference-counted and freed when its last reference is released
+  (memory-model §2.5).
 - Closures are **not yet type-checked** (`types.c` returns `TY_UNKNOWN` for a
   closure-valued call — call arity / arg / return types are unchecked). A soundness
   follow-up (its own ADR-adjacent story); codegen is correct.
@@ -304,16 +304,20 @@ tracking or caching of intermediate results.
 
 ## Runtime Limitations
 
-### 1. No garbage collection — arena allocator, all allocations freed on exit
+### 1. No garbage collection, and no release before exit
 
-toke uses an arena-based memory model. Allocations are never individually freed
-during program execution. All memory is released when the process exits.
+Values the runtime creates come from `malloc` or the S1 sealed-string heap and
+are not freed while the program runs, except closure environments (124.0c) and
+the number conversions inside a string interpolation (127.299). The operating
+system reclaims everything at exit. There are no per-function or per-task
+arenas, and `{arena}` blocks release nothing (`docs/spec/memory-model.md` §1,
+amended by 127.524).
 
-For long-running servers (e.g. ooke), each spawned task gets its own arena
-(Story 76.1.1a), but within a task, allocations accumulate.
+For long-running servers (e.g. ooke), memory therefore grows with every
+request's allocation; memory-model §1.6 states the leak budget per workload.
 
-**Planned fix:** Formal memory model is documented (Story 76.1.4). Arena-aware
-return value copying is verified correct (Story 76.1.4b). No GC is planned.
+**Planned fix:** release by `{arena}` blocks first, under an ADR (story
+127.525). No GC is planned.
 
 ### 2. No stack overflow detection
 

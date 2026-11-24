@@ -245,7 +245,7 @@ f=readornull(path:$str):$str{
 
 ## Arena Block — `{arena ...}`
 
-An arena block creates a scoped memory region. All allocations made inside the block are freed when the block exits.
+An arena block marks a region of statements. It parses and type-checks, but **it does not release memory**: values made in it live until the program exits, like values made anywhere else ([memory model](/docs/spec/memory-model/) §1.2 and §1.3, amended by story 127.524). Release by `{arena}` is the subject of an ADR (story 127.525).
 
 **Syntax:**
 ```
@@ -268,4 +268,4 @@ f=demo():i64{
 };
 ```
 
-**Constraint:** A value allocated inside an arena block cannot be assigned to a variable declared in an outer scope. Doing so produces error [E5001](/docs/reference/errors/#e5001). Arena-scoped values may be used freely within the block itself, and their computed results (non-pointer values) may be written to outer mutable bindings.
+**Constraint:** An assignment, inside an arena block, to a name declared at module scope is reserved as error [E5001](/docs/reference/errors/#e5001) (memory model §2.4); the checker does not emit it yet (story 127.526). Values made inside the block may be used freely within it and may be written to the function's own outer mutable bindings, as in the example.

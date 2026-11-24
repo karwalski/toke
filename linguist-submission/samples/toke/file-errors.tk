@@ -5,19 +5,9 @@ i=file:std.file;
 i=str:std.str;
 i=log:std.log;
 
-t=$fileerr{
-  $notfound:$str;
-  $permdenied:$str
-};
-
-f=readfile(path:$str):$str!$fileerr{
-  let content=file.read(path)!$fileerr;
-  <content;
-};
-
-f=linecount(text:$str):i64{
+f=linecount(text:$str):u64{
   let lines=str.split(text; "\n");
-  <lines.len as i64;
+  <lines.len;
 };
 
 f=wordcount(text:$str):i64{
@@ -25,27 +15,39 @@ f=wordcount(text:$str):i64{
   let count=mut.0;
   lp(let i=0;i<words.len;i=i+1){
     let w=str.trim(words.get(i));
-    if(!(w="")){
+    if(!(w=="")){
       count=count+1;
     };
   };
   <count;
 };
 
-f=processfile(path:$str):void{
-  let result=readfile(path);
-  mt result {
-    $ok:content {
-      let lines=linecount(content);
-      let words=wordcount(content);
-      log.info(str.concat("file: "; path));
-      log.info(str.concat("lines: "; str.fromInt(lines)));
-      log.info(str.concat("words: "; str.fromInt(words)));
-    };
-    $err:e mt e {
-      $notfound:p io.println(str.concat("not found: "; p));
-      $permdenied:p io.println(str.concat("permission denied: "; p))
-    }
+f=errtext(e:$fileerr):$str{
+  <mt e {
+    $notfound:p str.concat("not found: "; p);
+    $permission:p str.concat("permission denied: "; p);
+    $io:p str.concat("io error: "; p);
+    $invalid:p str.concat("invalid path: "; p);
+    $isdir:p str.concat("is a directory: "; p);
+    $notregular:p str.concat("not a regular file: "; p);
+    $symlink:p str.concat("symlink refused: "; p);
+    $toolarge:p str.concat("too large: "; p);
+    $nomem:p str.concat("out of memory: "; p);
+    $badarg:p str.concat("bad argument: "; p)
+  };
+};
+
+f=report(path:$str;content:$str):i64{
+  log.info(str.concat("file: "; path);@());
+  log.info("lines: \(linecount(content))";@());
+  log.info(str.concat("words: "; str.fromint(wordcount(content)));@());
+  <0;
+};
+
+f=processfile(path:$str):i64{
+  <mt file.read(path) {
+    $ok:content report(path; content);
+    $err:e io.println(errtext(e))
   };
 };
 
