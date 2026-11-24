@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tk_c99_string.h"
 #include <errno.h>
 #include <limits.h>
 #include <unistd.h>
