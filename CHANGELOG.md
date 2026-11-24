@@ -254,6 +254,22 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   (`bench/mask_cost/python-subset.gbnf`, checked by `make bench-mask-cost-check`:
   accepted ⇒ CPython `ast.parse` accepts) and JSON, under one vocabulary
   (cl100k_base); results: `docs/about/reviews/mask-cost-2026-11-23.md`.
+- **Engine-tuned grammars: `docs/spec/toke-lexeme.lark` and `docs/spec/toke-xgr.gbnf`**
+  (131.141). Both are generated from `toke.gbnf` by `scripts/gbnf_tune.py --write`.
+  `toke-lexeme.lark` is for llguidance: the parser rules stay, and the lexical rules
+  (identifiers, numbers, strings, comments, whitespace runs) become regex lexemes.
+  Comments and string interpolation nested deeper than 8 levels are rejected, which
+  the parser would accept, so this form accepts a subset of the language of
+  `toke.gbnf`. `toke-xgr.gbnf` is for XGrammar and describes the same language as
+  `toke.gbnf`: whitespace is inlined, and the rules that end a word token carry
+  lookahead assertions. `make check-grammar-artefacts` now also fails when either file
+  is stale. With the engines installed, it also fails when llguidance or XGrammar
+  disagrees with the reference recogniser on any fragment of `test/gbnf/fragments.json`.
+  Without them (as in CI today), the agreement checks report SKIPPED and only the
+  staleness check runs. Agreement on the fragment set is evidence, not a proof of
+  equivalence. The Python-subset baseline gets the same two forms, checked by
+  `make bench-mask-cost-check`, and `make bench-mask-cost` measures all four. Results:
+  `docs/about/reviews/mask-cost-2026-11-24.md`.
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
