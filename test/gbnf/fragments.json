@@ -1,7 +1,7 @@
 {
  "story": "131.52",
  "generator": "scripts/gbnf_gate.py --write-fragments",
- "count": 2473,
+ "count": 2541,
  "fragments": [
   {
    "id": "19d7a1a4de0e",
@@ -12367,6 +12367,346 @@
    "id": "82b2ee4fee3f",
    "src": "extra/x77.tk~ws",
    "text": "m=a;f=g():i64{<0b101+0x1F};"
+  },
+  {
+   "id": "72cf5ce46a23",
+   "src": "extra/x78.tk",
+   "text": "m=a;(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};\n"
+  },
+  {
+   "id": "9035e475c1cc",
+   "src": "extra/x78.tk~del",
+   "text": "m=a;(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d**a((b*c**((d*(*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};\n"
+  },
+  {
+   "id": "faf4b502ec51",
+   "src": "extra/x78.tk~ins",
+   "text": "m=a;(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*!c**((d*(*a((b*c**((d*(*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};\n"
+  },
+  {
+   "id": "a1a829f23c39",
+   "src": "extra/x78.tk~ws",
+   "text": "m=a;(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d*(*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};"
+  },
+  {
+   "id": "a4e847afba68",
+   "src": "extra/x79.tk",
+   "text": "m=a;(*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};\n"
+  },
+  {
+   "id": "8bdf1c559af4",
+   "src": "extra/x79.tk~del",
+   "text": "m=a;(*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d((*a((b*c**((d(((*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};\n"
+  },
+  {
+   "id": "bccc07f82995",
+   "src": "extra/x79.tk~ins",
+   "text": "m=a;(*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c*\"*((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};\n"
+  },
+  {
+   "id": "59c418b704ba",
+   "src": "extra/x79.tk~ws",
+   "text": "m=a;(*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d(((*a((b*c**((d***)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)a((b*c**((d**)f=g():i64{<1};"
+  },
+  {
+   "id": "694f78244959",
+   "src": "extra/x80.tk",
+   "text": "m=a;f=g():str{<\"\\\"\\\\\\n\\t\\r\\0\\x41 \\(a(a(a(a(a(a(a(x)b)b)b)b)b)b)b)\"};\n"
+  },
+  {
+   "id": "5cd006d449b5",
+   "src": "extra/x80.tk~del",
+   "text": "m=a;f=g():str{<\"\\\"\\\\\\n\\t\\r\\0\\x41 \\(a(a(a(a(a(a(a(x)b)bb)b)b)b)b)\"};\n"
+  },
+  {
+   "id": "0006b4ec65f9",
+   "src": "extra/x80.tk~ins",
+   "text": "m=a;f=g():str{<\"\\\"\\\\\\n\\t\\r\\0>\\x41 \\(a(a(a(a(a(a(a(x)b)b)b)b)b)b)b)\"};\n"
+  },
+  {
+   "id": "4c0186676cf3",
+   "src": "extra/x80.tk~ws",
+   "text": "m=a;f=g():str{<\"\\\"\\\\\\n\\t\\r\\0\\x41 \\(a(a(a(a(a(a(a(x)b)b)b)b)b)b)b)\"};"
+  },
+  {
+   "id": "0b37301e4a1c",
+   "src": "extra/x81.tk",
+   "text": "m=a;a=0:i64;cx=1:i64;ab=2:i64;a1=3:i64;aB=4:i64;asx=5:i64;bx=6:i64;b1=7:i64;brx=8:i64;ex=9:i64;elx=10:i64;fx=11:i64;fnx=12:i64;fa=13:i64;fax=14:i64;fal=15:i64;falx=16:i64;fals=17:i64;falsx=18:i64;falsex=19:i64;ix=20:i64;ifx=21:i64;lx=22:i64;lpx=23:i64;le=24:i64;lex=25:i64;letx=26:i64;mx=27:i64;mtx=28:i64;mu=29:i64;mux=30:i64;mutx=31:i64;rx=32:i64;rtx=33:i64;sx=34:i64;scx=35:i64;tx=36:i64;tr=37:i64;trx=38:i64;tru=39:i64;trux=40:i64;truex=41:i64;fn=1:i64;f=g():i64{let a=a;let cx=cx;let ab=ab;let a1=a1;let aB=aB;let asx=asx;let bx=bx;let b1=b1;let brx=brx;let ex=ex;let elx=elx;let fx=fx;let fnx=fnx;let fa=fa;let fax=fax;let fal=fal;let falx=falx;let fals=fals;let falsx=falsx;let falsex=falsex;let ix=ix;let ifx=ifx;let lx=lx;let lpx=lpx;let le=le;let lex=lex;let letx=letx;let mx=mx;let mtx=mtx;let mu=mu;let mux=mux;let mutx=mutx;let rx=rx;let rtx=rtx;let sx=sx;let scx=scx;let tx=tx;let tr=tr;let trx=trx;let tru=tru;let trux=trux;let truex=truex;<a};\n"
+  },
+  {
+   "id": "5703ec5158d6",
+   "src": "extra/x81.tk~del",
+   "text": "m=a;a=0:i64;cx=1:i64;ab=2:i64;a1=3:i64;aB=4:i64;asx=5:i64;bx=6:i64;b1=7:i64;brx=8:i64;ex=9:i64;elx=10:i64;fx=11:i64;fnx=12:i64;fa=13:i64;fax=14:i64;fal=15:i64;falx=16:i64;fals=17:i64;falsx=18:i64;falsex=19:i64;ix=20:i64;ifx=21:i64;lx=22:i64;lpx=23:i64;le=24:i64;lex=25:i64;letx=26:i64;mx=27:i64;mtx=28:i64;mu=29:i64;mux=30:i64;mutx=31:i64;rx=32:i64;rtx=33:i64;sx=34:i64;scx=35:i64;tx=36:i64;tr=37:i64;trx=38:i64;tru=39:i64;trux=40:i64;truex=41:i64;fn=1:i64;f=g():i64{let a=a;let cx=cx;let ab=ab;let a1=a1;let aB=aB;let asx=asx;let bx=bx;let b1=b1;let brx=brx;let ex=ex;let elx=elx;let fx=fx;let fnx=fnx;let fa=fa;let fax=fax;let fal=fal;let falx=falx;let fals=fals;let falsx=falsx;let falsex=falsex;let ix=ix;let ifx=ifx;let lx=lx;let lpx=lpx;let le=le;let lex=lex;let letx=letx;let mx=mx;let mtx=mtx;let mu=mu;let mux=mux;let mutx=mutx;let rx=rx;let rtx=tx;let sx=sx;let scx=scx;let tx=tx;let tr=tr;let trx=trx;let tru=tru;let trux=trux;let truex=truex;<a};\n"
+  },
+  {
+   "id": "3a2028061f7f",
+   "src": "extra/x81.tk~ins",
+   "text": "m=a;a=0:i64;cx=1:i64;ab=2:i64;a1=3:i64;aB=4:i64;asx=5:i64;bx=6:i64;b1=7:i64;brx=8:i64;ex=9:i64;elx=10:i64;fx=11:i64;fnx=12:i64;fa=13:i64;fax=14:i64;fal=15:i64;falx=16:i64;fals=17:i64;falsx=18:i64;falsex=19:i64;ix=20:i64;ifx=21:i64;lx=22:i64;lpx=23:i64;le=24:i64;lex=25:i64;letx=26:i64;mx=27:i64;mtx=28:i64;mu=29:i64;mux=30:i64+;mutx=31:i64;rx=32:i64;rtx=33:i64;sx=34:i64;scx=35:i64;tx=36:i64;tr=37:i64;trx=38:i64;tru=39:i64;trux=40:i64;truex=41:i64;fn=1:i64;f=g():i64{let a=a;let cx=cx;let ab=ab;let a1=a1;let aB=aB;let asx=asx;let bx=bx;let b1=b1;let brx=brx;let ex=ex;let elx=elx;let fx=fx;let fnx=fnx;let fa=fa;let fax=fax;let fal=fal;let falx=falx;let fals=fals;let falsx=falsx;let falsex=falsex;let ix=ix;let ifx=ifx;let lx=lx;let lpx=lpx;let le=le;let lex=lex;let letx=letx;let mx=mx;let mtx=mtx;let mu=mu;let mux=mux;let mutx=mutx;let rx=rx;let rtx=rtx;let sx=sx;let scx=scx;let tx=tx;let tr=tr;let trx=trx;let tru=tru;let trux=trux;let truex=truex;<a};\n"
+  },
+  {
+   "id": "7a1056b2b506",
+   "src": "extra/x81.tk~ws",
+   "text": "m=a;a=0:i64;cx=1:i64;ab=2:i64;a1=3:i64;aB=4:i64;asx=5:i64;bx=6:i64;b1=7:i64;brx=8:i64;ex=9:i64;elx=10:i64;fx=11:i64;fnx=12:i64;fa=13:i64;fax=14:i64;fal=15:i64;falx=16:i64;fals=17:i64;falsx=18:i64;falsex=19:i64;ix=20:i64;ifx=21:i64;lx=22:i64;lpx=23:i64;le=24:i64;lex=25:i64;letx=26:i64;mx=27:i64;mtx=28:i64;mu=29:i64;mux=30:i64;mutx=31:i64;rx=32:i64;rtx=33:i64;sx=34:i64;scx=35:i64;tx=36:i64;tr=37:i64;trx=38:i64;tru=39:i64;trux=40:i64;truex=41:i64;fn=1:i64;f=g():i64{let a=a;let cx=cx;let ab=ab;let a1=a1;let aB=aB;let asx=asx;let bx=bx;let b1=b1;let brx=brx;let ex=ex;let elx=elx;let fx=fx;let fnx=fnx;let fa=fa;let fax=fax;let fal=fal;letfalx=falx;let fals=fals;let falsx=falsx;let falsex=falsex;let ix=ix;let ifx=ifx;let lx=lx;let lpx=lpx;let le=le;let lex=lex;let letx=letx;let mx=mx;let mtx=mtx;let mu=mu;let mux=mux;let mutx=mutx;let rx=rx;let rtx=rtx;let sx=sx;let scx=scx;let tx=tx;let tr=tr;let trx=trx;let tru=tru;let trux=trux;let truex=truex;<a};\n"
+  },
+  {
+   "id": "206cc401b869",
+   "src": "extra/x82.tk",
+   "text": "m=a.B.c;i=io:std.io \"v1\";i=jx:std.Q;t=$p{$a:i64;B:u16;c:u32};t=q{x:byte;$Y:u8};t=R{y:i8};c=\"s\":str;d=1.5:f64;e=true:bool;h=false:bool;j=0x1F:u64;k=0b10:u8;let z=2;f=h():void;f=g(a:u16;b:u32;c:byte;d:u64;e:i8;h:i16;j:i32;k:i64;l:f32;n:f64;o:bool;p:str;q:void):i64{<1};\n"
+  },
+  {
+   "id": "5c11cbeffac2",
+   "src": "extra/x82.tk~del",
+   "text": "m=a.B.c;i=io:std.io \"v1\";i=jx:std.Q;t=$p{$a:i64;B:u16;c:u32};t=q{x:byte;$Y:u8};t=R{yi8};c=\"s\":str;d=1.5:f64;e=true:bool;h=false:bool;j=0x1F:u64;k=0b10:u8;let z=2;f=h():void;f=g(a:u16;b:u32;c:byte;d:u64;e:i8;h:i16;j:i32;k:i64;l:f32;n:f64;o:bool;p:str;q:void):i64{<1};\n"
+  },
+  {
+   "id": "b4d67b21b6d7",
+   "src": "extra/x82.tk~ins",
+   "text": "m=a.B.c;i=io:std.io \"v1\";i=jx:std.Q;t=$p{$a:i64;B:u16;c:u32};t=q{x:byte;$Y:u8};t=R{y:i8};c=\"s\":str;d=1.5:f64;e=true:bool;h=false:bool;j=0x1F:u64;k=0b10:u8;let z=2;f=h():void;f=g(a:u1{6;b:u32;c:byte;d:u64;e:i8;h:i16;j:i32;k:i64;l:f32;n:f64;o:bool;p:str;q:void):i64{<1};\n"
+  },
+  {
+   "id": "018c72891778",
+   "src": "extra/x82.tk~ws",
+   "text": "m=a.B.c;i=io:std.io \"v1\";i=jx:std.Q;t=$p{$a:i64;B:u16;c:u32};t=q{x:byte;$Y:u8};t=R{y:i8};c=\"s\":str;d=1.5:f64;e=true:bool;h=false:bool;j=0x1F:u64;k=0b10:u8;let z=2;f=h():void;f=g(a:u16;b:u32;c:byte;d:u64;e:i8;h:i16;j:i32;k:i64;l:f32;n:f64;o:bool;p:str;q:void):i64{<1};"
+  },
+  {
+   "id": "a744ac9ee193",
+   "src": "extra/x83.tk",
+   "text": "m=a;f=g(a:$t;b:*i64;c:@(i64);d:@(str:i64);e:@i64;h:@$t;j:@*i64;k:(i64;str):bool;l:():void;n:m.$t;o:@( *i64);p:@((i64):i64);q:@(@(i64));r:@(@i64);s:@($t);u:@(m.$t:@i64);v:@@$t;w:( *i64;$t):*@(i64);x:(@(i64)):i64;y:(@i64):i64;z:($t):i64):i64!$e{<1};\n"
+  },
+  {
+   "id": "5f029cacd49f",
+   "src": "extra/x83.tk~del",
+   "text": "m=a;f=g(a:$t;b:*i64;c:@(i64);d:@(str:i64);e:@i64;h:@$t;j:@*i64;k:(i64;str):bool;l:():void;n:m.$t;o:@( *i64);p:@((i64):i64);q:@(@(i64));r:@(@i64);s:@($t);u:@(m.$:@i64);v:@@$t;w:( *i64;$t):*@(i64);x:(@(i64)):i64;y:(@i64):i64;z:($t):i64):i64!$e{<1};\n"
+  },
+  {
+   "id": "6222f10bd1e3",
+   "src": "extra/x83.tk~ins",
+   "text": "m=a;f=g(a:$t;b:*i64;c:@(i64);d:@(str:i64);e:@i64;h:@$t;j:@*mt i64;k:(i64;str):bool;l:():void;n:m.$t;o:@( *i64);p:@((i64):i64);q:@(@(i64));r:@(@i64);s:@($t);u:@(m.$t:@i64);v:@@$t;w:( *i64;$t):*@(i64);x:(@(i64)):i64;y:(@i64):i64;z:($t):i64):i64!$e{<1};\n"
+  },
+  {
+   "id": "efd1378efd64",
+   "src": "extra/x83.tk~ws",
+   "text": "m=a;f=g(a:$t;b:*i64;c:@(i64);d:@(str:i64);e:@i64;h:@$t;j:@*i64;k:(i64;str):bool;l:():void;n:m.$t;o:@(*i64);p:@((i64):i64);q:@(@(i64));r:@(@i64);s:@($t);u:@(m.$t:@i64);v:@@$t;w:( *i64;$t):*@(i64);x:(@(i64)):i64;y:(@i64):i64;z:($t):i64):i64!$e{<1};\n"
+  },
+  {
+   "id": "4bdf4a5cf3ca",
+   "src": "extra/x84.tk",
+   "text": "m=a;f=g(x:i64):i64{let a:i64=1;let b=mut.2;b=3;sc{br};if(a){<1}el if(b){<2}el{<3};lp(let i=0;i<3;i=i+1){br};lp(j=0;j<3;j=j+1){};lp(a<b){br;};{arena};{arena b=1};{arena<1};{arena rt 1};{arena -x;<2};{arena-x;};mt x{$a:v <1;$b:w <;C:u -u;d:y v;};sc{a=spawn h();a=!spawn h();a=spawn(h());a=spawn\"s\"};rt};\n"
+  },
+  {
+   "id": "ee46f409db63",
+   "src": "extra/x84.tk~del",
+   "text": "m=a;f=g(x:i64):i64{let a:i64=1;let b=mut.2;b=3;sc{br};if(a){<1}el if(b){<2}el{<3};lp(let i=0;i<3;i=i+1){br};lp(j=0;j<3;j=j+1){};lp(a<b){br;};{arena};{arena b=1};{arena<1};{arena rt 1};{arena -x;<2};{arena-x;};mt x{$a:v <1;$b:w <;C:u -u;d:y v;};sc{a=spawn h();a=!spawn h();a=spwn(h());a=spawn\"s\"};rt};\n"
+  },
+  {
+   "id": "e26b4d1dbbe4",
+   "src": "extra/x84.tk~ins",
+   "text": "m=a;f=g(x:i64):i64{let a:i64=1;let b=mu1t.2;b=3;sc{br};if(a){<1}el if(b){<2}el{<3};lp(let i=0;i<3;i=i+1){br};lp(j=0;j<3;j=j+1){};lp(a<b){br;};{arena};{arena b=1};{arena<1};{arena rt 1};{arena -x;<2};{arena-x;};mt x{$a:v <1;$b:w <;C:u -u;d:y v;};sc{a=spawn h();a=!spawn h();a=spawn(h());a=spawn\"s\"};rt};\n"
+  },
+  {
+   "id": "bcb9091bdb85",
+   "src": "extra/x84.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{let a:i64=1;let b=mut.2;b=3;sc{br};if(a){<1}el if(b){<2}el{<3};lp(leti=0;i<3;i=i+1){br};lp(j=0;j<3;j=j+1){};lp(a<b){br;};{arena};{arena b=1};{arena<1};{arena rt 1};{arena -x;<2};{arena-x;};mt x{$a:v <1;$b:w <;C:u -u;d:y v;};sc{a=spawn h();a=!spawn h();a=spawn(h());a=spawn\"s\"};rt};\n"
+  },
+  {
+   "id": "bba0f14d782c",
+   "src": "extra/x85.tk",
+   "text": "m=a;f=g(x:i64):i64{a=b||c&&d|e^h&i==j;a=b!=c;a=b<=c;a=b>=c;a=b<c;a=b>c||d;a=b<<c>>d+e-h*i/j%k;<1};\n"
+  },
+  {
+   "id": "caa366017107",
+   "src": "extra/x85.tk~del",
+   "text": "m=a;f=g(x:i64):i64{a=b||c&&d|e^h&i==j;a=b!=c;a=b<=c;a=b>=c;a=b<c;a=>c||d;a=b<<c>>d+e-h*i/j%k;<1};\n"
+  },
+  {
+   "id": "52281c14825e",
+   "src": "extra/x85.tk~ins",
+   "text": "m==a;f=g(x:i64):i64{a=b||c&&d|e^h&i==j;a=b!=c;a=b<=c;a=b>=c;a=b<c;a=b>c||d;a=b<<c>>d+e-h*i/j%k;<1};\n"
+  },
+  {
+   "id": "cd4c5da93171",
+   "src": "extra/x85.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{a=b||c&&d|e^h&i==j;a=b!=c;a=b<=c;a=b>=c;a=b<c;a=b>c||d;a=b<<c>>d+e-h*i/j%k;<1};"
+  },
+  {
+   "id": "8d2f286563f0",
+   "src": "extra/x86.tk",
+   "text": "m=a;f=g(x:i64):i64{a=-x;a=~x;a=!x;a=!-x;a=!~x;a=!!x;a=!fn;a=!\"s\";a=!@(1);a=!(x);a=!fn(){};a=!T{a:1} as bool;a=!$p{a:1}!$e;a=-~!x;rt-x};\n"
+  },
+  {
+   "id": "17c908189bb7",
+   "src": "extra/x86.tk~del",
+   "text": "m=a;f=g(x:i64):i64{a=-x;a=~x;a=!x;a=!-x;a=!~x;a=!!x;a=!fn;a=!\"s\";a=!@(1);a=!(x);a=!fn(){}a=!T{a:1} as bool;a=!$p{a:1}!$e;a=-~!x;rt-x};\n"
+  },
+  {
+   "id": "77abd143ab3e",
+   "src": "extra/x86.tk~ins",
+   "text": "m=a;f=g(x:i64):i64{a=-x;a=~x;a=!x;a=!-x;a=!~x;a=!!x;a=!fn;a=!\"s\";a=!@(1);a=!(x);a=!fn(){};a=!T{a:1} as bool;a=!$p{ela:1}!$e;a=-~!x;rt-x};\n"
+  },
+  {
+   "id": "982566d4fbb9",
+   "src": "extra/x86.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{a=-x;a=~x;a=!x;a=!-x;a=!~x;a=!!x;a=!fn;a=!\"s\";a=!@(1);a=!(x);a=!fn(){};a=!T{a:1} asbool;a=!$p{a:1}!$e;a=-~!x;rt-x};\n"
+  },
+  {
+   "id": "25974607a4f8",
+   "src": "extra/x87.tk",
+   "text": "m=a;f=g(x:i64):i64{rt-x;rt~x;rt!x;rt$x;rt&x;rt\"s\";rt@(1);rt(1);rt$p{a:1};rt!-x;rt$x as i64;rt&x!$e;rt\"s\".len();rt(x)(1)};\n"
+  },
+  {
+   "id": "a8dae285a5d3",
+   "src": "extra/x87.tk~del",
+   "text": "m=a;f=g(x:i64):i64{rt-x;rt~x;rt!;rt$x;rt&x;rt\"s\";rt@(1);rt(1);rt$p{a:1};rt!-x;rt$x as i64;rt&x!$e;rt\"s\".len();rt(x)(1)};\n"
+  },
+  {
+   "id": "1bc038c308b4",
+   "src": "extra/x87.tk~ins",
+   "text": "m=a;f=g(x:i64):i64{rt-x;rt~x;rt!x;rt$x;rt&x;rt\"s\";rt@(1);rt(1);rt$p{a:1};rt!-x;rt$x1 as i64;rt&x!$e;rt\"s\".len();rt(x)(1)};\n"
+  },
+  {
+   "id": "ef93588dce3d",
+   "src": "extra/x87.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{rt-x;rt~x;rt!x;rt$x;rt&x;rt\"s\";rt@(1);rt(1);rt$p{a:1};rt!-x;rt$x asi64;rt&x!$e;rt\"s\".len();rt(x)(1)};\n"
+  },
+  {
+   "id": "5368f5279005",
+   "src": "extra/x88.tk",
+   "text": "m=a;f=g(x:i64):i64{sc{mt -x{$a:v 1};mt ~x{$a:v 1};mt !x{$a:v 1};mt-x{$a:v 1};mt~x{$a:v 1};mt!x{$a:v 1};mt!-x{$a:v 1};mt-!x{$a:v 1};mt ~-x{$a:v 1};mt fn{$a:v 1};mt fn as i64{$a:v 1};mt T as i64{$a:v 1};mt T!$e{$a:v 1};mt$t as i64{$a:v 1};mt $t!$e{$a:v 1};mt&x{$a:v 1};mt &x as i64{$a:v 1};mt\"s\"{$a:v 1};mt(x){$a:v 1};mt@(1){$a:v 1};mt$p{a:1}{$a:v 1};mt x.y{$a:v 1};mt x.0{$a:v 1};mt h(1){$a:v 1};mt$t.y{$a:v 1};mt$t(1){$a:v 1};mt&x.y{$a:v 1};mt x+-y{$a:v 1};mt x<-y{$a:v 1};mt x||-y{$a:v 1};mt x<y||a<-y{$a:v 1};mt x+y<-y{$a:v 1};mt-x+y{$a:v 1};mt-x<y{$a:v 1};mt 1{$a:v 1};mt 1.5{$a:v 1};mt true{$a:v 1};mt x as T{$a:v 1};mt fn(){}{$a:v 1};mt spawn x{$a:v 1};mt !spawn x{$a:v 1};mt -fn{$a:v 1};mt !T as i64{$a:v 1};mt-T as i64{$a:v 1};mt x+T as i64{$a:v 1};mt x||T as i64{$a:v 1}};<1};\n"
+  },
+  {
+   "id": "3238664bde83",
+   "src": "extra/x88.tk~del",
+   "text": "m=a;f=g(x:i64):i64{sc{mt -x{$a:v 1};mt ~x{$a:v 1};mt !x{$a:v 1};mt-x{$a:v 1};mt~x{$a:v 1};mt!x{$a:v 1};mt!-x{$a:v 1};mt-!x{$a:v 1};mt ~-x{$a:v 1};mt fn{$a:v 1};mt fn as i64{$a:v 1};mt T as i64{$a:v 1};mt T!$e{$a:v 1};mt$t as i64{$a:v 1};mt $t!$e{$a:v 1};mt&x{$a:v 1};mt &x as i64{$a:v 1};mt\"s\"{$a:v 1};mt(x){$a:v 1};mt@(1){$a:v 1};mt$p{a:1}{$a:v 1};mt x.y{$a:v 1};mt x.0{$a:v 1};mt h(1){$a:v 1};mt$t.y{$a:v 1};mt$t(1){$a:v 1};mt&x.y{$a:v 1};mt x+-y{$a:v 1};mt x<-y{$a:v 1};mt x||-y{$a:v 1};mt x<y||a<-y{$a:v 1};mt x+y<-y{$a:v 1};mt-x+y{$a:v 1};mt-x<y{$a:v 1};mt 1{$a:v 1};mt 1.5{$a:v 1};mt true{$a:v 1};mt x as T{$a:v 1};mt fn(){}{$a:v 1};mt spawn x{$a:v 1};mt !spawn x{$a:v 1};mt -fn{$a:v 1};mt !T as i64{$a:v 1};mt-T as i64{$a:v 1};mt x+T as i64{$a:v 1};mt x||T as i64{$:v 1}};<1};\n"
+  },
+  {
+   "id": "9fc5ffccb521",
+   "src": "extra/x88.tk~ins",
+   "text": "m=a;f=g(x:i64):i64{sc{mt -x{$a:v 1};mt ~x{$a:v 1};mt !x{$a:v 1};mt-x{$a:v 1};mt~x{$a:v 1};mt!x{$a:v 1};mt!-x{$a:v 1};mt-!x{$a:v 1};mt ~-x{$a:v 1};mt fn{$a:v 1};mt fn as i64{$a:v 1};mt T as i64{$a:v 1};mt T!$e{$a:v 1};mt$t as i64{$a:v 1};mt $t!$e{$a:v 1};mt&x{$a:v 1};mt &x as i64{$a:v 1};mt\"s\"{$a:v 1};mt(x){$a:v 1};mt@(1){$a:v 1};mt$p{a:1}{$a:v 1};mt x.y{$a:v 1};mt x.0{$a:v 1};mt h(1){$a:v 1};mt$t.y{$a:v 1};mt$t(1){$a:v 1};mt&x.y{$a:v 1};mt x+-<y{$a:v 1};mt x<-y{$a:v 1};mt x||-y{$a:v 1};mt x<y||a<-y{$a:v 1};mt x+y<-y{$a:v 1};mt-x+y{$a:v 1};mt-x<y{$a:v 1};mt 1{$a:v 1};mt 1.5{$a:v 1};mt true{$a:v 1};mt x as T{$a:v 1};mt fn(){}{$a:v 1};mt spawn x{$a:v 1};mt !spawn x{$a:v 1};mt -fn{$a:v 1};mt !T as i64{$a:v 1};mt-T as i64{$a:v 1};mt x+T as i64{$a:v 1};mt x||T as i64{$a:v 1}};<1};\n"
+  },
+  {
+   "id": "0cf92971e539",
+   "src": "extra/x88.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{sc{mt -x{$a:v 1};mt ~x{$a:v 1};mt !x{$a:v 1};mt-x{$a:v 1};mt~x{$a:v 1};mt!x{$a:v 1};mt!-x{$a:v 1};mt-!x{$a:v 1};mt ~-x{$a:v 1};mt fn{$a:v 1};mt fn as i64{$a:v1};mt T as i64{$a:v 1};mt T!$e{$a:v 1};mt$t as i64{$a:v 1};mt $t!$e{$a:v 1};mt&x{$a:v 1};mt &x as i64{$a:v 1};mt\"s\"{$a:v 1};mt(x){$a:v 1};mt@(1){$a:v 1};mt$p{a:1}{$a:v 1};mt x.y{$a:v 1};mt x.0{$a:v 1};mt h(1){$a:v 1};mt$t.y{$a:v 1};mt$t(1){$a:v 1};mt&x.y{$a:v 1};mt x+-y{$a:v 1};mt x<-y{$a:v 1};mt x||-y{$a:v 1};mt x<y||a<-y{$a:v 1};mt x+y<-y{$a:v 1};mt-x+y{$a:v 1};mt-x<y{$a:v 1};mt 1{$a:v 1};mt 1.5{$a:v 1};mt true{$a:v 1};mt x as T{$a:v 1};mt fn(){}{$a:v 1};mt spawn x{$a:v 1};mt !spawn x{$a:v 1};mt -fn{$a:v 1};mt !T as i64{$a:v 1};mt-T as i64{$a:v 1};mt x+T as i64{$a:v 1};mt x||T as i64{$a:v 1}};<1};\n"
+  },
+  {
+   "id": "8387b53d3798",
+   "src": "extra/x89.tk",
+   "text": "m=a;f=g(x:i64):i64{a=x as i64;a=x as$t;a=x as@(i64);a=x as*i64;a=x as(i64):i64;a=x as @i64;a=x as i64!$e;a=x!$e;a=x !$e;a=\"s\"as str;a=\"s\" as str;a=(x)as i64;a=h()as i64;a=h() as i64;a=h()!$e;a=$p{a:1}as i64;a=@(1)as i64;a=fn(){}as i64;a=T as i64;a=$t as i64;a=&x as i64;a=x.y as i64;a=x.0 as i64;a=x.y(1)as i64;a=x.0(1);a=x.y.z;a=x.0 .1;a=x.0. 1;a=x .0;a=x. 0;a=x.y.0;a=h(1).y(2).z;a=h(1;2)(3);a=\"s\".len();a=\"s\".y;a=(x).y;a=(x).0;a=@(1).y;a=$t.y;a=&x.y;a=T.y;a=T.y();a=fn as i64;a=fn!$e;a=1 as i64;a=1.5 as f64;a=true as bool;a=0x1F;a=0b101;a=0X1f;a=0B1;a=@();a=@(1;2;);a=@(1;2);a=@(1:2;3:4;);a=@(1:2);a=@( 1 );a=T{a:1;B:2;};a=T{};a=T{ a:1 };a=$p{a:1;$b:2;C:3;};a=$p{};a=fn(x:i64):i64{<x};a=fn(){};a=fn(x:i64;y:str){<x};a=fn():i64!$e{<1};a=-1;a=!true;<1};\n"
+  },
+  {
+   "id": "cfba3905d956",
+   "src": "extra/x89.tk~del",
+   "text": "m=a;f=g(x:i64):i64{a=x as i64;a=x as$t;a=x as@(i64);a=x as*i64;a=x as(i64):i64;a=x as @i64;a=x as i64!$e;a=x!$e;a=x !$e;a=\"s\"as str;a=\"s\" as str;a=(x)as i64;a=h()as i64;a=h() as i64;a=h()!$e;a=$p{a:1}as i64;a=@(1)as i64;a=fn(){}as i64;a=T as i64;a=$t as i64;a=&x as i64;a=x.y as i64;a=x.0 as i64;a=x.y(1)as i64;a=x.0(1);a=x.y.z;a=x.0 .1;a=x.0. 1;a=x .0;a=x. 0;a=x.y.0;a=h(1).y(2).z;a=h(1;2)(3);a=s\".len();a=\"s\".y;a=(x).y;a=(x).0;a=@(1).y;a=$t.y;a=&x.y;a=T.y;a=T.y();a=fn as i64;a=fn!$e;a=1 as i64;a=1.5 as f64;a=true as bool;a=0x1F;a=0b101;a=0X1f;a=0B1;a=@();a=@(1;2;);a=@(1;2);a=@(1:2;3:4;);a=@(1:2);a=@( 1 );a=T{a:1;B:2;};a=T{};a=T{ a:1 };a=$p{a:1;$b:2;C:3;};a=$p{};a=fn(x:i64):i64{<x};a=fn(){};a=fn(x:i64;y:str){<x};a=fn():i64!$e{<1};a=-1;a=!true;<1};\n"
+  },
+  {
+   "id": "2b9316b4fba4",
+   "src": "extra/x89.tk~ins",
+   "text": "m=a;f=g(x:i64):i64{a=x as i64;a=x as$t;a=x as@(i64);a=x as*i64;a=x as(i64):i64;a=x as @i64;a=x as i64!$e;a=x!$e;a=x !$e;a=\"s\"as str;a=\"s\" as str;a=(x)as i64;a=h()as i64;a=h() as i64;a=h()!$e;a=$p{a:1}as i64;a=@(1)as i64;a=fn(){}as i64;a=T as i64;a=$t as i64;a=&x as i64;a=x.y as i64;a=x.0 as i64;a=x.y(1)as i64;a=x.0(1);a=x.y.z;a=x.0 .1;a=x.0. 1;a=x .0;a=x. 0;a=x.y.0;a=h(1).y(2).z;a=h(1;2)(3);a=\"s\".len();a=\"s\".y;a=(x).y;a=(x).0;a=@(1).y;a=$t.y;a=&x.y;a=T.y;a=T.y();a=fn as i64;a=fn!$e;a=1 as i64;a=1.5 as f64;a=true as bool;a=0x1F;a=0b101;a=0X1f;a=0B1;a=@();a=@(1;2;);a=@(1;2);a=@(1:2;3:4;);a=@(1:2);a=@( 1 )|;a=T{a:1;B:2;};a=T{};a=T{ a:1 };a=$p{a:1;$b:2;C:3;};a=$p{};a=fn(x:i64):i64{<x};a=fn(){};a=fn(x:i64;y:str){<x};a=fn():i64!$e{<1};a=-1;a=!true;<1};\n"
+  },
+  {
+   "id": "5180e4cc672b",
+   "src": "extra/x89.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{a=x as i64;a=x as$t;a=x as@(i64);a=x as*i64;a=x as(i64):i64;a=x as @i64;a=x as i64!$e;a=x!$e;a=x !$e;a=\"s\"as str;a=\"s\" as str;a=(x)as i64;a=h()as i64;a=h() as i64;a=h()!$e;a=$p{a:1}asi64;a=@(1)as i64;a=fn(){}as i64;a=T as i64;a=$t as i64;a=&x as i64;a=x.y as i64;a=x.0 as i64;a=x.y(1)as i64;a=x.0(1);a=x.y.z;a=x.0 .1;a=x.0. 1;a=x .0;a=x. 0;a=x.y.0;a=h(1).y(2).z;a=h(1;2)(3);a=\"s\".len();a=\"s\".y;a=(x).y;a=(x).0;a=@(1).y;a=$t.y;a=&x.y;a=T.y;a=T.y();a=fn as i64;a=fn!$e;a=1 as i64;a=1.5 as f64;a=true as bool;a=0x1F;a=0b101;a=0X1f;a=0B1;a=@();a=@(1;2;);a=@(1;2);a=@(1:2;3:4;);a=@(1:2);a=@( 1 );a=T{a:1;B:2;};a=T{};a=T{ a:1 };a=$p{a:1;$b:2;C:3;};a=$p{};a=fn(x:i64):i64{<x};a=fn(){};a=fn(x:i64;y:str){<x};a=fn():i64!$e{<1};a=-1;a=!true;<1};\n"
+  },
+  {
+   "id": "1184815c48a3",
+   "src": "extra/x90.tk",
+   "text": "m=a;f=g(x:i64):i64{let(*c*)a=1;if(a){<1}el(*c*)if(a){<2};lp(let(*c*)i=0;i<3;i=i+1){};{arena(*c*)a=1};rt(*c*)x;a=if(a){1}el(*c*)if(a){2}el{3};a=mt(*c*)x{$a:v(*c*)1};a=x(*c*)as i64;a=x as(*c*)i64;a=x.0(*c*).1;a=x.0.(*c*)1;sc{a=spawn(*c*)x};<x};\n"
+  },
+  {
+   "id": "f22bc6529295",
+   "src": "extra/x90.tk~del",
+   "text": "m=a;f=g(x:i64):i64{let(*c*)a=1;if(a){<1}el(*c*)if(a){<2};lp(let(*c*)i=0;i<3;i=i+1){};{arena(*c*)a=1};rt(*c*)x;a=if(a){1}el(*c*)if(a){2}el{3};a=mt(*c*)x{$a:v(*c*)1};a=x(*c*)as i64;=x as(*c*)i64;a=x.0(*c*).1;a=x.0.(*c*)1;sc{a=spawn(*c*)x};<x};\n"
+  },
+  {
+   "id": "b5d2b1db592c",
+   "src": "extra/x90.tk~ins",
+   "text": "m=a;f=g(x:i64):i64{let(*c*)a=1;if(a){<1}el(*c*)if(a){<2};lp(let(*c*)i=0;i<3;i=i+1){};{arena(*c*)a=1};rt(*c*)x;a=if(a){1}el(*c*)if(a){2}el{3};a>=mt(*c*)x{$a:v(*c*)1};a=x(*c*)as i64;a=x as(*c*)i64;a=x.0(*c*).1;a=x.0.(*c*)1;sc{a=spawn(*c*)x};<x};\n"
+  },
+  {
+   "id": "6b1a2c72df14",
+   "src": "extra/x90.tk~ws",
+   "text": "m=a;f=g(x:i64):i64{let(*c*)a=1;if(a){<1}el(*c*)if(a){<2};lp(let(*c*)i=0;i<3;i=i+1){};{arena(*c*)a=1};rt(*c*)x;a=if(a){1}el(*c*)if(a){2}el{3};a=mt(*c*)x{$a:v(*c*)1};a=x(*c*)as i64;a=x as(*c*)i64;a=x.0(*c*).1;a=x.0.(*c*)1;sc{a=spawn(*c*)x};<x};"
+  },
+  {
+   "id": "3b934a66d669",
+   "src": "extra/x91.tk",
+   "text": "m=a;f=g(a:@((*c*)*i64);b:@(\t*i64);c:((*c*)i64):i64):i64{a=mt(*c*)T as i64{$a:v 1};a=mt(*c*)T(*c*)as i64{$a:v 1};a=mt(*c*)$t(*c*)as(*c*)i64{$a:v 1};<1};\n"
+  },
+  {
+   "id": "f4f88e584b81",
+   "src": "extra/x91.tk~del",
+   "text": "m=a;f=g(a:@((*c*)*i64);b:@(\t*i64);c:((*c*)i64):i64):i64{a=mt(*c*)T as i64{$a:v 1};a=mt(*c*)T(*c*)as i64{$a:v 1}a=mt(*c*)$t(*c*)as(*c*)i64{$a:v 1};<1};\n"
+  },
+  {
+   "id": "bace24171a60",
+   "src": "extra/x91.tk~ins",
+   "text": "m=a;f=g(:a:@((*c*)*i64);b:@(\t*i64);c:((*c*)i64):i64):i64{a=mt(*c*)T as i64{$a:v 1};a=mt(*c*)T(*c*)as i64{$a:v 1};a=mt(*c*)$t(*c*)as(*c*)i64{$a:v 1};<1};\n"
+  },
+  {
+   "id": "5d047387ce39",
+   "src": "extra/x91.tk~ws",
+   "text": "m=a;f=g(a:@((*c*)*i64);b:@(\t*i64);c:((*c*)i64):i64):i64{a=mt(*c*)T asi64{$a:v 1};a=mt(*c*)T(*c*)as i64{$a:v 1};a=mt(*c*)$t(*c*)as(*c*)i64{$a:v 1};<1};\n"
+  },
+  {
+   "id": "e6b43c0f4104",
+   "src": "extra/x92.tk",
+   "text": "m=a;f=g():i64!$e{a=if(b){1}el if(c){2}el{3};a=mt x{$a:v<1;B:w< 2;c:y<;$d:z -1};a=h(if(b){1}el{2};mt x{$a:v 1});{arena<1;x=2};{arena-x;y=1};{arena x};if(a){}{arena};if(a){};{arena};lp(a){}<1};\n"
+  },
+  {
+   "id": "7a9d56ebec58",
+   "src": "extra/x92.tk~del",
+   "text": "=a;f=g():i64!$e{a=if(b){1}el if(c){2}el{3};a=mt x{$a:v<1;B:w< 2;c:y<;$d:z -1};a=h(if(b){1}el{2};mt x{$a:v 1});{arena<1;x=2};{arena-x;y=1};{arena x};if(a){}{arena};if(a){};{arena};lp(a){}<1};\n"
+  },
+  {
+   "id": "280baed426a0",
+   "src": "extra/x92.tk~ins",
+   "text": "m=a;f=g():i64!$e{a=if(b){1}el if(c){2}el{3};a=mt x{$a:v<1;B:w< 2;c:y<;$d:z -1};a=h(if(b){1}el{2};mt x{$a:v 1});{arena<1;x=2};{arena-x;y=1};{arena x};if(a){}{arena};if(a){};{arena};lp{(a){}<1};\n"
+  },
+  {
+   "id": "cb368bb83dd0",
+   "src": "extra/x92.tk~ws",
+   "text": "m=a;f=g():i64!$e{a=if(b){1}el if(c){2}el{3};a=mt x{$a:v<1;B:w< 2;c:y<;$d:z -1};a=h(if(b){1}el{2};mtx{$a:v 1});{arena<1;x=2};{arena-x;y=1};{arena x};if(a){}{arena};if(a){};{arena};lp(a){}<1};\n"
+  },
+  {
+   "id": "71584121e77c",
+   "src": "extra/x93.tk",
+   "text": "m=a;f=g0():i64{br};f=g1():i64{sc{}};f=g2():i64{a=1};f=g3():i64{let a=1};f=g4():i64{<};f=g5():i64{rt};f=g6():i64{x};f=g7():i64{mt x{$a:v 1}};f=g8():i64{if(a){}};f=g9():i64{lp(a){}};f=g10():i64{{arena}};f=g11():i64{rt 1};f=g12():i64{<1};f=g13():i64{rt-1};f=g14():i64{x.y};f=g15():i64{h()};\n"
+  },
+  {
+   "id": "f6e920112da3",
+   "src": "extra/x93.tk~del",
+   "text": "m=a;f=g0():i64{br};f=g1():i64{sc{}};f=g2():i64{a=1};f=g3():i64{let a=1};f=g4():i64{<};f=g5():i64{rt};f=g6():i64{x};f=g7():i64{mt x{$a:v 1}};f=g8():i64{if(a){}};f=g9():i64{lp(a){}};f=g10():i64{{arena}};f=g1():i64{rt 1};f=g12():i64{<1};f=g13():i64{rt-1};f=g14():i64{x.y};f=g15():i64{h()};\n"
+  },
+  {
+   "id": "b6c1a359b0a8",
+   "src": "extra/x93.tk~ins",
+   "text": "m=a;f=g0():i64{br};f=g1():i64{sc{}};f=g2():i64{a=1};f=g3():i64{let a=1};f=g4():i64{<};f=g5():i64{rt};f=g6():i64{x};f=g7():i64{mt x{$a:v 1}};f=g8():i64{if(a){}};f=g9():i64{lp(a){}};f=g10()$:i64{{arena}};f=g11():i64{rt 1};f=g12():i64{<1};f=g13():i64{rt-1};f=g14():i64{x.y};f=g15():i64{h()};\n"
+  },
+  {
+   "id": "cb97e798de00",
+   "src": "extra/x93.tk~ws",
+   "text": "m=a;f=g0():i64{br};f=g1():i64{sc{}};f=g2():i64{a=1};f=g3():i64{let a=1};f=g4():i64{<};f=g5():i64{rt};f=g6():i64{x};f=g7():i64{mt x{$a:v 1}};f=g8():i64{if(a){}};f=g9():i64{lp(a){}};f=g10():i64{{arena}};f=g11():i64{rt 1};f=g12():i64{<1};f=g13():i64{rt-1};f=g14():i64{x.y};f=g15():i64{h()};"
+  },
+  {
+   "id": "1c32b462e816",
+   "src": "extra/x94.tk",
+   "text": "m=a;i=fn:std.io;f=fn(fn:i64;b:@(@$t);c:(@*i64):i64;d:@(@@i64)):i64{let fn=1;fn=2;a=b&&1;a=b&&(c);a=b&&-c;rt&x.y;rt(x).0;rt\"s\".y;rt$x.y.z;a=!x.y;a=!h(1);a=!x.0;a=!\"s\".len();<fn};\n"
+  },
+  {
+   "id": "46b51384dcd9",
+   "src": "extra/x94.tk~del",
+   "text": "m=a;i=fn:std.io;f=fn(fn:i64;b:@(@$t);c:(@*i64):i64;d:@(@@i64)):i64{let fn=1;fn=2;a=b&&1;a=b&&(c);a=b&&-c;rt&x.y;rt(x).0;rt\"s\".y;rt$x.y.z;a=!x.y;a=!h(1);a=!x.0;a!\"s\".len();<fn};\n"
+  },
+  {
+   "id": "e5e8423bbb88",
+   "src": "extra/x94.tk~ins",
+   "text": "m=a;i=fn:std.io;f=fn(fn:i64;b:@(@$t);c:(@*i64):i64;d:@@(@@i64)):i64{let fn=1;fn=2;a=b&&1;a=b&&(c);a=b&&-c;rt&x.y;rt(x).0;rt\"s\".y;rt$x.y.z;a=!x.y;a=!h(1);a=!x.0;a=!\"s\".len();<fn};\n"
+  },
+  {
+   "id": "715f2111481e",
+   "src": "extra/x94.tk~ws",
+   "text": "m=a;i=fn:std.io;f=fn(fn:i64;b:@(@$t);c:(@*i64):i64;d:@(@@i64)):i64{let fn=1;fn=2;a=b&&1;a=b&&(c);a=b&&-c;rt&x.y;rt(x).0;rt\"s\".y;rt$x.y.z;a=!x.y;a=!h(1);a=!x.0;a=!\"s\".len();<fn};"
   }
  ]
 }

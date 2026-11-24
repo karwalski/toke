@@ -1,0 +1,1 @@
+m=a.B.c;i=io:std.io "v1";i=jx:std.Q;t=$p{$a:i64;B:u16;c:u32};t=q{x:byte;$Y:u8};t=R{y:i8};c="s":str;d=1.5:f64;e=true:bool;h=false:bool;j=0x1F:u64;k=0b10:u8;let z=2;f=h():void;f=g(a:u16;b:u32;c:byte;d:u64;e:i8;h:i16;j:i32;k:i64;l:f32;n:f64;o:bool;p:str;q:void):i64{<1};
