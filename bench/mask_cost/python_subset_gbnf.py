@@ -77,6 +77,57 @@ fchunkq ::= (fcq | fesc)+
 fieldq  ::= "{" (ws1 ternary | ternary-nb) ws fspecq? "}"
 fspecq  ::= ":" [^{}'\\\n\r\x00]*
 """
+# 131.148: llguidance caps the Earley items one mask may create (step_max_items,
+# default 50,000), and the 131.141 form exceeded it on 40 of 48 benchmark
+# programs.  A mask walks the token trie and adds a parser row wherever a lexeme
+# ends inside a token, so the cost is (rows) x (items per row).  These rewrites
+# describe the same language with fewer, larger lexemes and fewer predicted
+# alternatives per row:
+#   * the precedence chain bor .. power (six left-associative levels) is one
+#     level, `factor (binop factor)*`, and or/and one level: precedence shapes
+#     the parse tree, not the set of strings accepted;
+#   * a choice among fixed strings is one regex lexeme: the operator sets
+#     (binsym, cmpsym, augop), the plain string kinds (pstr), None/True/False
+#     (kwconst), number-or-ellipsis (atomn), pass/break/continue (jump);
+#   * the two assignment forms that start with a single target share it;
+#   * the blank lines before a line and its indentation are one lexeme per
+#     level (ind<k>, see _depth_rules), so neither a run of blank lines nor the
+#     dedent continuations of every enclosing level is a row of its own.
+# The gate (--check) measures the claim: both forms must agree on every trap,
+# seed and mutant.
+PY_LEXEME_LEXICAL = ["binsym", "cmpsym", "augop", "pstr", "kwconst", "atomn", "jump"]
+PY_LEXEME_REFACTOR = r"""
+binsym      ::= "|" | "^" | "&" | "<<" | ">>" | [-+] | "*" | "/" | "//" | "%" | "@" | "**"
+cmpsym      ::= "<" | ">" | "==" | ">=" | "<=" | "!="
+binop       ::= ws binsym ws
+cmpop       ::= ws cmpsym ws | ws1 ("in" | "not" ws1 "in" | "is" | "is" ws1 "not") ws1
+boolop      ::= ws1 ("or" | "and") ws1
+ortest      ::= nottest (boolop nottest)*
+bor         ::= factor (binop factor)*
+factor      ::= [-+~] ws factor | primary
+ortest-nb   ::= nottest-nb (boolop nottest)*
+bor-nb      ::= factor-nb (binop factor)*
+factor-nb   ::= [-+~] ws factor | primary-nb
+kwconst     ::= "None" | "True" | "False"
+pstr        ::= tstr | tstrq | str | strq
+string      ::= pstr | fstr | fstrq
+atomnb      ::= name | strings | kwconst
+              | "(" ws (exprlist ws | test comp ws)? ")"
+              | "[" ws (exprlist ws | test comp ws)? "]"
+jump        ::= "pass" | "break" | "continue"
+single      ::= name | tprimary
+target      ::= single | "(" ws targets ws ")" | "[" ws targets ws "]"
+small       ::= jump | "return" (ws1 exprlist)?
+              | "raise" (ws1 test (ws1 "from" ws1 test)?)?
+              | "import" ws1 dotted (ws1 "as" ws1 name)? (ws "," ws dotted (ws1 "as" ws1 name)?)*
+              | "from" ws1 dotted ws1 "import" ws1 ("*" | name (ws1 "as" ws1 name)? (ws "," ws name (ws1 "as" ws1 name)?)*)
+              | ("global" | "nonlocal") ws1 name (ws "," ws name)*
+              | "del" ws1 targets
+              | "assert" ws1 test (ws "," ws test)?
+              | (targets ws "=" ws)+ exprlist
+              | single ws (augop ws exprlist | ":" ws test (ws "=" ws exprlist)?)
+              | exprlist
+"""
 PY_INLINE = {"ws": "[ \\t]*", "ws1": "[ \\t]+"}
 PY_WORD_END = "[^0-9A-Za-z_]"
 PY_LOOKAHEAD = {"name": PY_WORD_END, "capname": PY_WORD_END, "number": PY_WORD_END}
@@ -166,35 +217,46 @@ def _strings(q: str, tag: str) -> list[str]:
     ]
 
 
-def _depth_rules(d: int, depth: int) -> list[str]:
+def _depth_rules(d: int, depth: int, lexeme: bool = False) -> list[str]:
+    """The statement rules of indentation level `d`.  With `lexeme` (131.148,
+    the llguidance form only): the blank lines before a line and its
+    indentation are ONE lexeme, ind<k> ::= blank* "<4k spaces>", instead of a
+    `blank*` loop of one-line lexemes and an indentation literal.  The same
+    strings; see PY_LEXEME_REFACTOR."""
+    def at(k: int) -> str:
+        """What precedes a keyword or statement written at level k."""
+        if lexeme:
+            return f"ind{k} "
+        return "blank* " + (f'"{"    " * k}" ' if k else "")
     ind = "    " * d
     i = f'"{ind}" ' if d else ""
     nxt = d + 1
     deeper = nxt <= depth
     suite = f"suite{d}"
+    lead = f"ind{d} " if lexeme and d else i
     r = [
-        f"stmt{d}      ::= {i}(simples nl | compound{d})",
+        f"stmt{d}      ::= {lead}(simples nl | compound{d})",
         f"compound{d}  ::= if{d} | while{d} | for{d} | def{d} | class{d} | try{d} | with{d} | deco{d}"
         + (f" | match{d}" if deeper else ""),
         f"{suite}     ::= ws \":\" ws simples nl" + (f" | ws \":\" nl block{nxt}" if deeper else ""),
-        f"if{d}        ::= \"if\" ws1 test {suite} (blank* {i}\"elif\" ws1 test {suite})* (blank* {i}\"else\" {suite})?",
-        f"while{d}     ::= \"while\" ws1 test {suite} (blank* {i}\"else\" {suite})?",
-        f"for{d}       ::= \"for\" ws1 targets ws1 \"in\" ws1 exprlist {suite} (blank* {i}\"else\" {suite})?",
+        f"if{d}        ::= \"if\" ws1 test {suite} ({at(d)}\"elif\" ws1 test {suite})* ({at(d)}\"else\" {suite})?",
+        f"while{d}     ::= \"while\" ws1 test {suite} ({at(d)}\"else\" {suite})?",
+        f"for{d}       ::= \"for\" ws1 targets ws1 \"in\" ws1 exprlist {suite} ({at(d)}\"else\" {suite})?",
         f"def{d}       ::= \"def\" ws1 name ws \"(\" ws (params ws)? \")\" (ws \"->\" ws test)? {suite}",
         f"class{d}     ::= \"class\" ws1 name (ws \"(\" ws (cargs ws)? \")\")? {suite}",
-        f"try{d}       ::= \"try\" {suite} ((blank* {i}except{d})+ (blank* {i}\"except\" {suite})?"
-        f" | blank* {i}\"except\" {suite}) (blank* {i}\"else\" {suite})? (blank* {i}\"finally\" {suite})?"
-        f" | \"try\" {suite} blank* {i}\"finally\" {suite}",
+        f"try{d}       ::= \"try\" {suite} (({at(d)}except{d})+ ({at(d)}\"except\" {suite})?"
+        f" | {at(d)}\"except\" {suite}) ({at(d)}\"else\" {suite})? ({at(d)}\"finally\" {suite})?"
+        f" | \"try\" {suite} {at(d)}\"finally\" {suite}",
         f"except{d}    ::= \"except\" ws1 test (ws1 \"as\" ws1 name)? {suite}",
         f"with{d}      ::= \"with\" ws1 witem (ws \",\" ws witem)* {suite}",
-        f"deco{d}      ::= (\"@\" ws test nl blank* {i})+ (def{d} | class{d})",
+        f"deco{d}      ::= (\"@\" ws test nl {at(d)})+ (def{d} | class{d})",
     ]
     if deeper:
-        j = f'"{"    " * nxt}" '
-        r.append(f"match{d}     ::= \"match\" ws1 exprlist ws \":\" nl (blank* {j}case{nxt})+")
+        r.append(f"match{d}     ::= \"match\" ws1 exprlist ws \":\" nl ({at(nxt)}case{nxt})+")
         r.append(f"case{nxt}      ::= \"case\" ws1 pattern (ws1 \"if\" ws1 test)? suite{nxt}")
     if deeper:
-        r.append(f"block{nxt}     ::= blank* stmt{nxt} (blank* stmt{nxt})*")
+        r.append(f"block{nxt}     ::= stmt{nxt}+" if lexeme
+                 else f"block{nxt}     ::= blank* stmt{nxt} (blank* stmt{nxt})*")
     return r
 
 
@@ -308,11 +370,18 @@ idc         ::= [0-9A-Z_a-z]
 
 def generate_lexeme(depth: int = DEPTH) -> str:
     from gbnf_tune import lexeme_lark
-    head = (f"// Python 3.12+ SUBSET -- LEXEME-level Lark for llguidance (story 131.141).\n"
+    head = (f"// Python 3.12+ SUBSET -- LEXEME-level Lark for llguidance (stories 131.141, 131.148).\n"
             f"// GENERATED by bench/mask_cost/python_subset_gbnf.py --depth {depth} from\n"
             f"// python-subset.gbnf (scripts/gbnf_tune.py lexeme_lark) -- do not edit.\n"
-            f"// The same language; the lexical rules are regex lexemes.  A benchmark input.\n\n")
-    return lexeme_lark(generate(depth), PY_LEXICAL, 1, head, PY_REFACTOR)
+            f"// The same language; the lexical rules are regex lexemes, the precedence\n"
+            f"// chain is flattened and blank lines plus indentation are one lexeme per\n"
+            f"// level, so that a mask fits llguidance's default limits.  A benchmark input.\n\n")
+    stmts = [r for d in range(depth + 1) for r in _depth_rules(d, depth, lexeme=True)]
+    inds = [f"ind{d} ::= blank*" + (f' "{"    " * d}"' if d else "") for d in range(depth + 1)]
+    # (blank | stmt0)* with each run of blank lines one lexeme
+    refactor = "\n".join([PY_REFACTOR, PY_LEXEME_REFACTOR, "root ::= ind0 (stmt0 ind0)*"] + stmts + inds) + "\n"
+    lexical = PY_LEXICAL + PY_LEXEME_LEXICAL + [f"ind{d}" for d in range(depth + 1)]
+    return lexeme_lark(generate(depth), lexical, 1, head, refactor)
 
 
 def generate_xgr(depth: int = DEPTH) -> str:

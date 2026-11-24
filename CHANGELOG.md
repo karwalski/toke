@@ -310,6 +310,23 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   equivalence. The Python-subset baseline gets the same two forms, checked by
   `make bench-mask-cost-check`, and `make bench-mask-cost` measures all four. Results:
   `docs/about/reviews/mask-cost-2026-11-24.md`.
+- **The tuned Python baseline `bench/mask_cost/python-subset-lexeme.lark` fits
+  llguidance's default limits** (131.148). Under llguidance 1.9.1's default
+  `step_max_items` (50,000) it finished 8 of the 48 mask-cost programs and stopped on
+  the others with "Too many items". Each mask predicted many alternatives at every
+  operand position, and every enclosing indentation level added its own blank-line
+  loop and dedent continuations after a newline. The generator
+  (`python_subset_gbnf.py`) now hands `lexeme_lark` rewrites that accept the same
+  strings: the precedence chain is flattened, fixed-string choices (operator sets,
+  string kinds, constants) are single lexemes, and blank lines plus indentation are
+  one lexeme per level. It now finishes 48 of 48 at default limits (cl100k_base,
+  N = 48 programs), and `make bench-mask-cost-check` still agrees on 3857 of 3857
+  inputs. The Python subset's language, `python-subset.gbnf`, `python-subset-xgr.gbnf`
+  and the toke grammars are unchanged. `scripts/gbnf_tune.py` now escapes `/` inside a
+  regex lexeme. Before this fix, a lexeme containing `/` broke the generated grammar;
+  no existing lexeme file had one. The new numbers and a corrected sentence about
+  `own_token_disallowed` are in the 2026-11-25 addendum to
+  `docs/about/reviews/mask-cost-2026-11-24.md`.
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
