@@ -1239,7 +1239,7 @@ Table of Contents
    RT002  Integer division by zero
    RT003  Integer overflow (checked arithmetic)
    RT004  Null pointer dereference (FFI only)
-   RT005  Arena boundary violation
+   RT005  Nil dereference of a struct field
    RT006  Stack overflow
    RT007  Assertion failure
 ```
@@ -1272,7 +1272,7 @@ Table of Contents
          v             (ambiguous).
 
    Type checker        Enforces all type rules.  Exhaustiveness,
-         |             coercions, arena validity.  Structured error
+         |             coercions, {arena} escape (E5001).  Structured error
          v             with fix suggestion.
 
    IR lowering         AST to toke IR.  SSA form, explicit types,
@@ -1521,7 +1521,7 @@ Table of Contents
    2-4 files.  Type definitions separate from function implementations.
    Topics include:
 
-   o  Linked list, stack, queue implemented with arena allocation
+   o  Linked list, stack, queue implemented with arrays and structs
    o  Hash map and set
    o  Binary search tree and heap
    o  Graph representations and traversal
@@ -2147,7 +2147,7 @@ Table of Contents
    End-to-end gen. cost      Measuring     Medium       Medium       Phase 2
    Binary performance        Native        Interpreted  Native       LLVM
    Startup time              <1ms          ~100ms       <1ms         No VM
-   Memory (req. handler)     Arena/no GC   GC           Manual       Arena
+   Memory (req. handler)     No GC         GC           Manual       See 8.1
    Training data available   ~47K corpus   Vast         Vast         Built
    Conformance tests         90/90         N/A          N/A          100%
    Compiler size             ~3,700 LOC    N/A          N/A          C99
@@ -2204,7 +2204,7 @@ Table of Contents
    |-- tkc/
    |   |-- lexer.c            Lexer (~300 lines)
    |   |-- parser.c           Parser (~400 lines), backtrack-free
-   |   |-- type_checker.c     Type checking and arena validation
+   |   |-- type_checker.c     Type checking and {arena} escape check
    |   |-- ir_lower.c         AST to toke IR (SSA form)
    |   |-- llvm_backend.c     toke IR to LLVM IR
    |   `-- test/              Conformance suite
@@ -2316,7 +2316,7 @@ Table of Contents
 
       Minimal extern declarations suffice for Stage 1.  Full C ABI
       interop rules are designed in Stage 2 alongside the memory model
-      extension needed to handle non-arena pointers.
+      extension needed to handle pointers the runtime does not own.
 
    **Reserved characters ^ and ~ — CLOSED (story 114.8)**
 
