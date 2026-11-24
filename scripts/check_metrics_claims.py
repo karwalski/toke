@@ -392,6 +392,8 @@ def _accepted(facts):
         # HISTORICAL below and pass only when their own block dates them.
         "corpus_records": {facts.get("corpus_records_v04_frozen"), 1583},
         "charset": {facts["charset_total"], 86},   # 86 = the legacy profile
+        # 131.145: the canonical paragraph's "47-pattern catalogue".
+        "pattern_catalogue": {facts.get("patterns_catalogue_entries")} - {None},
     }
 
 
@@ -473,6 +475,17 @@ COUNT_RULES = [
     (re.compile(r"(?<![\w.])" + NOT_LABEL + r"(?P<n>\d[\d,]*)\s*\+?\s*stories\b", re.I), "stories", "stories"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:corpus\s+records?|validated\s+(?:training\s+)?programs?|audited\s+records?)\b", re.I),
      "corpus records", "corpus_records"),
+    # 131.145: the size of patterns/catalogue.json. The noun must be the
+    # catalogue itself -- "a 46-pattern catalogue", "the 46-entry (pattern)
+    # catalogue", "catalogue.json` holds **46 entries" -- so "9 of the 46
+    # patterns" or a record pinned to a catalogue sha ("catalogue c42dcc38a16c;
+    # 46 entries") does not fire.
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)[- ](?:pattern|entry)\**\s+"
+                r"(?:pattern\s+)?catalogue\b", re.I),
+     "pattern catalogue entries", "pattern_catalogue"),
+    (re.compile(r"\bcatalogue(?:\.json)?`?\s+(?:holds|has|contains)\s+\**"
+                r"(?P<n>\d[\d,]*)\s+(?:entries|patterns)\b", re.I),
+     "pattern catalogue entries", "pattern_catalogue"),
     # 132.61: "55-char syntax" (toke-website templates/ooke.tkt) passed both
     # guards because the noun was abbreviated. `char` counts as `character`.
     (re.compile(r"(?<![\w.])" + NOT_LABEL +
@@ -1374,6 +1387,17 @@ SELFTEST = [
     # -- Rule 4: a count of things that disagrees with the tree ----------------
     (False, "rule 4: a stdlib module count that is not the tree's",
      "toke ships 30+ standard library modules."),
+
+    # -- 131.145: the pattern catalogue's size --------------------------------
+    (False, "131.145: a stale catalogue size in the canonical paragraph",
+     "one canonical form per construct, chosen by measurement in a 1-pattern "
+     "catalogue and reproduced by `tkc --min`."),
+    (False, "131.145: a stale catalogue size, 'holds N entries' form",
+     "`patterns/catalogue.json` holds **1 entries across 10 families."),
+    (True, "131.145: a subset of the catalogue is not its size",
+     "between them they gate **1 of the 3 patterns**."),
+    (True, "131.145: a record pinned to a catalogue sha is not the live count",
+     "## Patterns (catalogue c42dcc38a16c; 3 entries, 3 provisional)"),
 
     # -- the exemptions, which must stay narrow -------------------------------
     # An archive banner exempts rules 3 and 4 (a dated record may restate what
